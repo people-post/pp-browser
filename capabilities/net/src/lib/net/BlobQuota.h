@@ -41,11 +41,11 @@ uint64_t RelayFileQuotaNeededBytes(const Error& err);
  * deleted here. When even all of them would not free enough, a QuotaExceeded error and no plan: nothing is
  * deleted for an upload that still could not go.
  */
-Roe<BlobQuotaRecoveryPlan> PlanOldestRelayFileDeletion(IBlobClient& blob, const std::string& relay_user_id,
+Roe<BlobQuotaRecoveryPlan> PlanOldestRelayFileDeletion(IBlobClient& blob, const std::string& account_id,
                                                        uint64_t needed_bytes);
 
 /** `/files/delete` of one id (an attachment's relay copy). */
-Roe<void> DeleteRelayFile(IBlobClient& blob, const std::string& relay_user_id, const std::string& blob_id);
+Roe<void> DeleteRelayFile(IBlobClient& blob, const std::string& account_id, const std::string& blob_id);
 
 /** What a confirmed recovery calls for each id of the plan. */
 using BlobQuotaFreeSlot = std::function<Roe<void>(const std::string& blob_id)>;

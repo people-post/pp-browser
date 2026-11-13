@@ -57,7 +57,7 @@ public:
    */
   virtual bool IsPeerConnected(const std::string& peer_key) const { return false; }
   /** Send `envelope`; `on_done` runs once, with the peer's ack or why the send failed. */
-  virtual void SendEnvelopeAsync(const std::string& peer_relay_user_id, const RelayEnvelope& envelope,
+  virtual void SendEnvelopeAsync(const std::string& peer_account_id, const RelayEnvelope& envelope,
                                  std::function<void(DirectSendRoe)> on_done) = 0;
 };
 

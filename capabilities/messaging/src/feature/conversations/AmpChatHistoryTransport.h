@@ -39,7 +39,7 @@ public:
   void Start();
   void Stop();
 
-  void RegisterPeerEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr);
+  void RegisterPeerEndpoint(const std::string& peer_account_id, const std::string& multiaddr);
 
   bool IsPeerReachable(const std::string& peer_identity_value) const override;
   Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) override;

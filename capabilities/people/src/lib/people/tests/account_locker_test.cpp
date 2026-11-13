@@ -19,7 +19,6 @@ LockerKeys KeysOf(uint8_t fill) {
 
 AccountLockerState SampleState() {
   AccountLockerState state;
-  state.relay_user_id = "relay:alice";
   state.nickname = "alice";
   Contact bob;
   bob.id = "c1";
@@ -47,7 +46,6 @@ TEST(AccountLockerTest, ASealedSnapshotOpensToTheSameState) {
   EXPECT_EQ(snapshot->version, 7u);
   auto opened = account_locker::Open(*snapshot, keys);
   ASSERT_TRUE(opened) << opened.error().message;
-  EXPECT_EQ(opened->relay_user_id, "relay:alice");
   ASSERT_EQ(opened->contacts.size(), 1u);
   EXPECT_EQ(opened->contacts[0].local.display_name, "Bob from work");
   ASSERT_EQ(opened->extras.groups.size(), 1u);

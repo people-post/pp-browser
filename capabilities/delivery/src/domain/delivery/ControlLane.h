@@ -23,11 +23,9 @@
 
 namespace pbr {
 
-class ContactsStore;
 class DeliveryOutbox;
 class E2ePublicSessionKeys;
 class IdentityStore;
-class PeerRouteBook;
 
 /** What a notice to this account's other devices is: what it carries and how long the relay keeps it. */
 enum class SiblingNotice {
@@ -44,15 +42,14 @@ enum class SiblingNotice {
  * thread, never stored. One relay record with a copy per device on the peer's newest card, each E2E under that
  * device pair's e2e_public session (the chat stream's, opened on first use; M024); the account copy, under the
  * account pair's, only for a peer we hold no card for (and, for one release, between two single-device accounts).
- * Sent on the critical lane, the relay first when a route is known (retried while fresh), else Amp; over a live
- * link to the peer as well, at once (#431). A send to many seals each peer's record in parallel off the caller's
+ * Sent on the critical lane, the relay first (to the peer's Account ID, its inbox: MR001; retried while fresh), else
+ * Amp; over a live link to the peer as well, at once (#431). A send to many seals each peer's record in parallel off the caller's
  * thread (V058 2). Any thread; the order keys are unique and rising per sender.
  */
 class ControlLane : public Module {
 public:
-  ControlLane(IdentityStore& identity, OwnCards& own_keys, AccountKeyResolver& peer_cards, ContactsStore& contacts,
-              PeerRouteBook& routes, E2ePublicSessionKeys& keys, std::function<IDirectMessageClient*()> direct_chat,
-              DeliveryOutbox& outbox);
+  ControlLane(IdentityStore& identity, OwnCards& own_keys, AccountKeyResolver& peer_cards, E2ePublicSessionKeys& keys,
+              std::function<IDirectMessageClient*()> direct_chat, DeliveryOutbox& outbox);
   /** Waits out a send to many that is resolving; the rest of it is dropped. */
   ~ControlLane();
 
@@ -62,14 +59,13 @@ public:
    * peer at once, the platform's most urgent push (an incoming call's). Our account card rides it only when a device it
    * addresses may not hold it (ControlLaneCarriesCard: one this device has not sent the card yet, a device just
    * linked to the peer's account too): `with_card` (or `urgent`) when the caller knows it may not. The relay keeps
-   * it kControlLaneRelayTtlMs.
+   * it kControlLaneRelayTtlMs, or its full window with `keep` (state the peer needs whenever it is back).
    */
   Roe<void> Send(const std::string& peer_identity, const ThreadMessage& control, bool urgent = false,
-                 bool with_card = false);
+                 bool with_card = false, bool keep = false);
 
   /**
-   * Each of `sends` to its peer, as Send — resolved (route, maybe a directory lookup; the pair's session, maybe
-   * opened) and sealed on `lane`'s workers, in parallel, never on the caller's thread. `done` (optional) gets one
+   * Each of `sends` to its peer, as Send — resolved (the pair's session, maybe opened) and sealed on `lane`'s workers, in parallel, never on the caller's thread. `done` (optional) gets one
    * result per send, in their order, on a worker, once the last is queued or refused. Live signaling takes the
    * critical lane; a notice to many that can wait takes a lower one, not to crowd it.
    */
@@ -104,8 +100,6 @@ private:
   OwnCards& own_keys_;
   /** The peers' kept cards: their device lists (M021). */
   AccountKeyResolver& peer_cards_;
-  ContactsStore& contacts_;
-  PeerRouteBook& routes_;
   E2ePublicSessionKeys& keys_;
   /** The mesh's direct chat client while Amp is attached; null otherwise. */
   std::function<IDirectMessageClient*()> direct_chat_;

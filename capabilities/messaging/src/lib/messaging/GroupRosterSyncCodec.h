@@ -50,13 +50,12 @@ inline constexpr size_t kReplyChangesBudgetBytes = 96 * 1024;
 
 /**
  * G019: who an inviter's `add` brings in, riding the `group_change` that carries it to the members — their account
- * card (as the inviter keeps it; unchecked here: kept once it proves itself and the add counts) and relay route, so
- * members key the newcomer with no lookup. Not signed.
+ * card (as the inviter keeps it; unchecked here: kept once it proves itself and the add counts), so members key the
+ * newcomer with no lookup (its Account ID is its relay inbox, multi-relay MR001). Not signed.
  */
 struct ChangeNewcomer {
   std::string member_identity;
   std::optional<Object> card;
-  std::string relay_user_id;
 };
 
 /** `group_change` detail (G018): `{ group_id, change, newcomer? }`, the change as GroupChange JSON. */

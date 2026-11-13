@@ -12,7 +12,6 @@ struct ProfileIdentityView {
   bool ready = false;
   std::string nickname;
   std::string peer_id;
-  std::string relay_id;
   /** Portable person id when minted (M002); preferred avatar color seed. */
   std::string account_id;
   /** This account's locator for an invite (ACCOUNT_CARD.md): Account ID, nickname, devices. */

@@ -9,18 +9,12 @@ bool IsContactReachableForMessaging(const Contact& contact, bool relay_configure
   if (contact.trust == TrustLevel::Blocked) {
     return false;
   }
-  if (PrimaryIdOfKind(contact, mesh::ContactIdKind::Account).empty() &&
-      PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser).empty() &&
-      PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId).empty()) {
+  const bool has_account = !PrimaryIdOfKind(contact, mesh::ContactIdKind::Account).empty();
+  if (!has_account && PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId).empty()) {
     return false;
   }
-  if (account_keys_known && !PrimaryIdOfKind(contact, mesh::ContactIdKind::Account).empty()) {
+  if (has_account && (relay_configured || account_keys_known)) {
     return true;
-  }
-  for (const mesh::ContactId& id : contact.ids) {
-    if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty() && relay_configured) {
-      return true;
-    }
   }
   return !contact.multiaddrs.empty();
 }

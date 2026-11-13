@@ -1,6 +1,6 @@
 #include "gui/chat/DeliveryNoticeText.h"
 
-#include "common/directory/ShortRelayId.h"
+#include "common/directory/ShortPersonId.h"
 #include "foundation/i18n/LocalizationService.h"
 
 namespace pbr {
@@ -32,6 +32,10 @@ const char* SendKey(const SendFailure failure) {
       return "chat.notice.send.relay_unreachable";
     case SendFailure::RelayRejected:
       return "chat.notice.send.relay_rejected";
+    case SendFailure::RecipientNotOnRelay:
+      return "chat.notice.send.recipient_not_on_relay";
+    case SendFailure::PaymentRequired:
+      return "chat.notice.send.payment_required";
     case SendFailure::Unknown:
       break;
   }
@@ -43,9 +47,9 @@ const char* SendKey(const SendFailure failure) {
 std::string ReceiveFailureText(const ReceiveFailure reason, const std::string& peer, const std::string& family) {
   if (reason == ReceiveFailure::GroupInviteNeedsContact) {
     return Tr("chat.receive_failure.group_invite_needs_contact",
-              {{"peer", peer.empty() ? Tr("chat.notice.receive.a_peer") : ShortRelayId(peer)}});
+              {{"peer", peer.empty() ? Tr("chat.notice.receive.a_peer") : ShortPersonId(peer)}});
   }
-  const std::string who = peer.empty() ? Tr("chat.notice.receive.a_peer") : ShortRelayId(peer);
+  const std::string who = peer.empty() ? Tr("chat.notice.receive.a_peer") : ShortPersonId(peer);
   const std::string why = reason == ReceiveFailure::ApplyFailed && !family.empty()
                               ? Tr("chat.receive_failure.apply_failed_family", {{"family", family}})
                               : Tr(std::string("chat.receive_failure.") + ReceiveFailureWire(reason));

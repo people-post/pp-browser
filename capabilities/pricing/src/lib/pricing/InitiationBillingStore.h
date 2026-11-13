@@ -14,11 +14,13 @@ namespace pbr {
 
 /**
  * Per-peer initiation billing state (P001).
- * Persists under profile `initiation_billing.json`. Keyed by peer identity string
- * (relay:… or peer id as used elsewhere).
+ * Persists under profile `initiation_billing.json`. Keyed by the peer's Account ID (or a peer id where no account is
+ * known). Schema 2; a 1 is stepped up on load, its `relay:` keys dropped (multi-relay MR001).
  */
 class InitiationBillingStore : public Module, public IInitiationBillingBook {
 public:
+  static constexpr uint64_t kSchemaVersion = 2;
+
   explicit InitiationBillingStore(std::string data_dir);
 
   Roe<void> Load();

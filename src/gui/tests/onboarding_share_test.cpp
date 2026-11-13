@@ -16,7 +16,6 @@ pbr::OnboardingPorts RegisteredAccountPorts() {
     view.ready = true;
     view.registered = "yes";
     view.nickname = "alice";
-    view.relay_id = "relay:alice";
     view.account_id = "account:alice";
     return view;
   };
@@ -29,7 +28,7 @@ pbr::OnboardingPorts RegisteredAccountPorts() {
 
 // "Share my account" goes to the system sheet; where there is none (or it cannot show) the wizard
 // copies the same invite text instead. The invite carries the name and the same account id that
-// Me → Profile shows (the relay id).
+// Me → Profile shows (the Account ID, MR001).
 TEST(OnboardingShareTest, FallsBackToClipboardWhenNoSheet) {
   ASSERT_TRUE(pbr::LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   pbr::LocalizationService::Instance().SetPreferredLanguage("en");
@@ -49,7 +48,7 @@ TEST(OnboardingShareTest, FallsBackToClipboardWhenNoSheet) {
   controller.OnShare();
   EXPECT_EQ(share_calls, 1);
   EXPECT_NE(copied.find("alice"), std::string::npos) << copied;
-  EXPECT_NE(copied.find("relay:alice"), std::string::npos) << copied;
+  EXPECT_NE(copied.find("account:alice"), std::string::npos) << copied;
 
   controller.BindPorts({});
   pbr::OnboardingController::ClearInstance();

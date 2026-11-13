@@ -220,7 +220,7 @@ struct AmpChatBlobTransport::Impl {
                 };
               }
               const ChatBlobRequester requester{remote_peer_id, &signing_keys, util::NowUnixMs()};
-              auto ciphertext = ChatBlobResponder::ServeFetch(store, request, local_identity->relay_user_id,
+              auto ciphertext = ChatBlobResponder::ServeFetch(store, request, local_identity->account_id,
                                                               profile_data_dir, content, requester);
               if (ciphertext) {
                 reply->Send(std::move(*ciphertext));
@@ -252,7 +252,7 @@ struct AmpChatBlobTransport::Impl {
               return;
             }
             const ChatBlobRequester requester{remote_peer_id, &signing_keys, util::NowUnixMs()};
-            auto pushed = ChatBlobResponder::ServePush(store, request, local_identity->relay_user_id, profile_data_dir,
+            auto pushed = ChatBlobResponder::ServePush(store, request, local_identity->account_id, profile_data_dir,
                                                        ciphertext, requester, CopyPushGate());
             if (!pushed) {
               logging::getLogger("AmpChatBlobTransport").info << "chat-blob push refused: " << pushed.error().message;

@@ -88,8 +88,7 @@ TEST(ChatPayloadValidatorTest, RelayWireRejectsLegacyBodyShapes) {
   }
   const Object public_relay = MakeObject({{"envelope_version", Value(int64_t{1})},
                                           {"message_id", Value("m1")},
-                                          {"sender_relay_id", Value("relay:a")},
-                                          {"sender_contact_id", Value("relay:a")},
+                                          {"sender_contact_id", Value("account:a")},
                                           {"route", ObjectValue(std::move(public_route))},
                                           {"body", ObjectValue(std::move(public_body))},
                                           {"timestamp", Value(int64_t{1})}});
@@ -99,8 +98,7 @@ TEST(ChatPayloadValidatorTest, RelayWireRejectsLegacyBodyShapes) {
   Object content_body = MakeObject({{"content_b64", Value("aGk=")}});
   const Object content_b64 = MakeObject({{"envelope_version", Value(int64_t{1})},
                                          {"message_id", Value("m2")},
-                                         {"sender_relay_id", Value("relay:a")},
-                                         {"sender_contact_id", Value("relay:a")},
+                                         {"sender_contact_id", Value("account:a")},
                                          {"route", ObjectValue(std::move(content_route))},
                                          {"body", ObjectValue(std::move(content_body))},
                                          {"timestamp", Value(int64_t{1})}});
@@ -116,8 +114,7 @@ TEST(ChatPayloadValidatorTest, RelayWireRejectsLegacyBodyShapes) {
   }
   const Object remote_rml = MakeObject({{"envelope_version", Value(int64_t{1})},
                                         {"message_id", Value("m3")},
-                                        {"sender_relay_id", Value("relay:a")},
-                                        {"sender_contact_id", Value("relay:a")},
+                                        {"sender_contact_id", Value("account:a")},
                                         {"route", ObjectValue(std::move(remote_route))},
                                         {"body", ObjectValue(std::move(remote_body))},
                                         {"timestamp", Value(int64_t{1})}});

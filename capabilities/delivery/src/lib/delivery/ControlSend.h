@@ -18,6 +18,11 @@ struct ControlSend {
   bool urgent = false;
   /** Our account card rides it whatever the peer was sent before: the peer may hold none of our cards. */
   bool with_card = false;
+  /**
+   * The relay keeps it its full window, not kControlLaneRelayTtlMs: state the peer needs whenever it comes back
+   * (a relay grant, MR005), not live signaling.
+   */
+  bool keep = false;
 };
 
 /** How one recipient's send went: queued (the outbox has it), or why not (no route, no session). */

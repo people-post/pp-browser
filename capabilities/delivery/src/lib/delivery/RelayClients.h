@@ -33,9 +33,9 @@ class IRelayClient {
 public:
   virtual ~IRelayClient() = default;
   virtual Roe<void> Send(const RelayEnvelope& envelope) = 0;
-  virtual Roe<RelayPollResult> PollInbox(const std::string& requester_contact_id, const std::string& cursor) = 0;
-  virtual Roe<RelayDeleteResult> AckInbox(const std::string& requester_contact_id, const std::string& cursor) = 0;
-  virtual Roe<RelayDeleteResult> ClearInbox(const std::string& requester_contact_id,
+  virtual Roe<RelayPollResult> PollInbox(const std::string& requester_account_id, const std::string& cursor) = 0;
+  virtual Roe<RelayDeleteResult> AckInbox(const std::string& requester_account_id, const std::string& cursor) = 0;
+  virtual Roe<RelayDeleteResult> ClearInbox(const std::string& requester_account_id,
                                             const std::string& before_created_at) = 0;
   virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
 };

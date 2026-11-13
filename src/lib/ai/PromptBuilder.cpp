@@ -165,7 +165,7 @@ std::string PromptBuilder::BuildChatAgentSystemPrompt(const std::string& tools_s
     out << "- Never expose raw tool JSON in blocks; summarize in plain structured blocks.\n";
     out << "- For people discovery set render_mode people_list (or emit long_list rows with title + subtitle/meta "
            "identifying each person).\n";
-    out << "- Never invent contact or relay IDs; use tool results only.\n";
+    out << "- Never invent contact or account IDs; use tool results only.\n";
     out << "- Do not dump a wall of unlabeled Add contact / Message suggestion buttons.\n\n";
   }
 

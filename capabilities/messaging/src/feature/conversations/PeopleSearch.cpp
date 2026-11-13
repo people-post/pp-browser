@@ -18,7 +18,7 @@ Roe<std::vector<mesh::DirectoryHit>> SearchDirectoryPeople(ConversationsHub& hub
   bool searched_exact = false;
   if (const std::optional<std::string> exact_id = NormalizeExactPeopleId(query)) {
     const std::string& id = *exact_id;
-    auto hit = id.rfind("account:", 0) == 0 ? hub.Directory().LookupByAccount(id) : hub.Directory().LookupRelayUser(id);
+    auto hit = hub.Directory().LookupByAccount(id);
     if (hit) {
       hits.push_back(*hit);
       searched_exact = true;
@@ -26,7 +26,7 @@ Roe<std::vector<mesh::DirectoryHit>> SearchDirectoryPeople(ConversationsHub& hub
       return hit.error();
     } else {
       // A bare 43-char token that is not an account may be a nickname of that shape: fall through to search.
-      // A prefixed id ("account:" / "relay:") that is not found stays empty.
+      // A prefixed id ("account:") that is not found stays empty.
       searched_exact = HasExactIdPrefix(query);
     }
   }

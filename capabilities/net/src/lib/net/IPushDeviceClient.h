@@ -11,7 +11,7 @@ struct PushDeviceRegistration {
   std::string platform;
   std::string push_token;
   std::string device_id;
-  std::string relay_user_id;
+  std::string account_id;
 };
 
 class IPushDeviceClient {

@@ -38,7 +38,7 @@ TEST_F(ContactsStoreTest, RemoveDeletesContactAndPersists) {
   contact.id = "contact-alice";
   contact.display_name = "Alice";
   contact.server_nickname = "alice";
-  contact.ids = {{mesh::ContactIdKind::RelayUser, "relay:alice123", true}};
+  contact.ids = {{mesh::ContactIdKind::Account, "account:alice123", true}};
   contact.trust = TrustLevel::Unknown;
 
   ASSERT_TRUE(static_cast<bool>(store.Upsert(contact))) << "upsert failed";
@@ -114,11 +114,11 @@ TEST_F(ContactsStoreTest, AddFromDirectoryHitMergesByAccountAndPreservesLocal) {
   ContactsStore store(data_dir_.string());
 
   mesh::DirectoryHit hit;
-  hit.hit_id = "relay:bob";
+  hit.hit_id = "account:bob";
   hit.display_name = "Bob";
   hit.nickname = "bob";
   hit.account_id = "account:bob";
-  hit.ids = {{mesh::ContactIdKind::Account, "account:bob", true}, {mesh::ContactIdKind::RelayUser, "relay:bob", false}};
+  hit.ids = {{mesh::ContactIdKind::Account, "account:bob", true}};
   hit.multiaddrs = {"/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWBob"};
 
   auto first = store.AddFromDirectoryHit(hit);
@@ -145,9 +145,9 @@ TEST_F(ContactsStoreTest, AddFromDirectoryHitMergesByAccountAndPreservesLocal) {
 TEST_F(ContactsStoreTest, AddFromDirectoryHitRequiresAccountId) {
   ContactsStore store(data_dir_.string());
   mesh::DirectoryHit hit;
-  hit.hit_id = "relay:bob";
+  hit.hit_id = "bob";
   hit.nickname = "bob";
-  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:bob", true}};
+  hit.ids = {{mesh::ContactIdKind::PeerId, "12D3KooWBob", true}};
   auto result = store.AddFromDirectoryHit(hit);
   ASSERT_FALSE(static_cast<bool>(result));
   EXPECT_NE(result.error().message.find("Account ID"), std::string::npos);
@@ -174,6 +174,38 @@ TEST_F(ContactsStoreTest, RejectsAnOlderOrUnversionedFile) {
     ASSERT_FALSE(static_cast<bool>(listed));
     EXPECT_NE(listed.error().message.find("schema"), std::string::npos) << listed.error().message;
   }
+}
+
+// contacts.json 2 → 3 (multi-relay MR001): a contact's `relay_user` id is dropped — its Account ID is its relay inbox —
+// and the file is written back at 3; everything else about the contact stays.
+TEST_F(ContactsStoreTest, AVersion2FileDropsItsRelayIdsAndIsWrittenBackAt3) {
+  const auto path = data_dir_ / "contacts.json";
+  std::filesystem::create_directories(data_dir_);
+  {
+    std::ofstream out(path);
+    ASSERT_TRUE(static_cast<bool>(out));
+    out << R"({"schema_version":2,"contacts":[{"id":"c1","local":{"display_name":"Ann","trust":"friendly"},
+      "remote":{"nickname":"ann","ids":[{"kind":"account","value":"account:ann","primary":true},
+      {"kind":"relay_user","value":"relay:ann","primary":false},{"kind":"peer_id","value":"12D3KooWAnn",
+      "primary":false}],"endpoints":[],"multiaddrs":[]},"overrides":{}}]})";
+  }
+  {
+    ContactsStore store(data_dir_.string());
+    auto listed = store.List();
+    ASSERT_TRUE(static_cast<bool>(listed)) << listed.error().message;
+    ASSERT_EQ(listed->size(), 1u);
+    const Contact& ann = listed->front();
+    EXPECT_EQ(ann.local.display_name, "Ann");
+    EXPECT_EQ(ann.trust, TrustLevel::Friendly);
+    ASSERT_EQ(ann.remote.ids.size(), 2u);
+    EXPECT_EQ(ann.remote.ids[0].value, "account:ann");
+    EXPECT_EQ(ann.remote.ids[1].value, "12D3KooWAnn");
+    store.Flush();
+  }
+  std::ifstream in(path);
+  const std::string written((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  EXPECT_NE(written.find("\"schema_version\": 3"), std::string::npos) << written;
+  EXPECT_EQ(written.find("relay:ann"), std::string::npos);
 }
 
 TEST_F(ContactsStoreTest, RejectsNewerSchemaVersion) {
@@ -260,7 +292,7 @@ TEST_F(ContactsStoreTest, ProfileRefreshChangesOnlyNicknameIconAndFetchTime) {
   mesh::DirectoryHit hit;
   hit.account_id = "account:ada";
   hit.nickname = "Ada";
-  hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true}, {mesh::ContactIdKind::RelayUser, "relay:ada", false}};
+  hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true}};
   hit.multiaddrs = {"/ip4/10.0.0.1/tcp/1/p2p/QmAda"};
   hit.icon = mesh::ProfileIconRef{"https://cdn.example/avatars/old.png", "old", ""};
   auto added = store.AddFromDirectoryHit(hit);
@@ -269,8 +301,7 @@ TEST_F(ContactsStoreTest, ProfileRefreshChangesOnlyNicknameIconAndFetchTime) {
   mesh::DirectoryHit fresh;
   fresh.account_id = "account:ada";
   fresh.nickname = "Ada L.";
-  fresh.ids = {{mesh::ContactIdKind::Account, "account:ada", true},
-               {mesh::ContactIdKind::RelayUser, "relay:other", false}};
+  fresh.ids = {{mesh::ContactIdKind::Account, "account:ada", true}};
   fresh.multiaddrs = {"/ip4/9.9.9.9/tcp/9/p2p/QmElse"};
   fresh.icon = mesh::ProfileIconRef{"https://cdn.example/avatars/new.png", "new", ""};
   auto refreshed = store.ApplyProfileRefresh(added->id, fresh, 12345);

@@ -21,7 +21,7 @@ TEST(ContactJsonCompat, AFlatRowFromBeforeTheSplitIsNotRead) {
     "id": "c1",
     "display_name": "Alice",
     "nickname": "alice",
-    "relay_user_id": "relay:alice123",
+    "account_id": "account:alice123",
     "peer_id": "12D3KooWPeer",
     "multiaddr": "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWPeer",
     "trust": "friendly"
@@ -42,7 +42,7 @@ TEST(ContactJsonCompat, NestedRoundTripPreservesLocalRemote) {
   contact.local.display_name = "Local Alice";
   contact.local.trust = TrustLevel::Friendly;
   contact.remote.nickname = "alice";
-  contact.remote.ids = {{mesh::ContactIdKind::RelayUser, "relay:alice", true}};
+  contact.remote.ids = {{mesh::ContactIdKind::Account, "account:alice", true}};
   contact.remote.multiaddrs = {"/ip4/1.2.3.4/tcp/1/p2p/12D3"};
   contact.remote.fetched_at = 1700000000000;
   SyncContactMirrors(contact);
@@ -61,20 +61,23 @@ TEST(ContactJsonCompat, NestedRoundTripPreservesLocalRemote) {
   EXPECT_TRUE(overrides->empty());
 }
 
-TEST(ContactJsonCompat, ParsesDirectoryWireShapeWithRelayUserId) {
+// The relay's lookup row (`GET /users/by-account`, multi-relay MR001) names its account and nothing else.
+TEST(ContactJsonCompat, ParsesTheLookupRowByItsAccountId) {
   const Object json = MustParseObject(R"({
-    "relay_user_id": "relay:demon",
+    "account_id": "account:demon",
+    "relay_user_id": "relay:retired",
     "nickname": "demon",
     "signing_public_key_b64": "sigkey",
     "kem_public_key_b64": "kemkey"
   })");
 
   const mesh::DirectoryHit hit = DirectoryHitFromJson(json);
-  EXPECT_EQ(hit.hit_id, "relay:demon");
+  EXPECT_EQ(hit.hit_id, "account:demon");
   EXPECT_EQ(hit.nickname, "demon");
   EXPECT_EQ(hit.display_name, "demon");
-  ASSERT_EQ(hit.ids.size(), 1u);
-  EXPECT_EQ(hit.ids[0].value, "relay:demon");
+  ASSERT_EQ(hit.ids.size(), 1u) << "a retired relay id is no id";
+  EXPECT_EQ(hit.ids[0].kind, mesh::ContactIdKind::Account);
+  EXPECT_EQ(hit.ids[0].value, "account:demon");
   EXPECT_TRUE(hit.ids[0].primary);
   ASSERT_TRUE(hit.signing_public_key_b64.has_value());
   EXPECT_EQ(*hit.signing_public_key_b64, "sigkey");
@@ -84,10 +87,10 @@ TEST(ContactJsonCompat, ParsesDirectoryWireShapeWithRelayUserId) {
 
 TEST(ContactJsonCompat, DirectoryHitRoundTripPreservesKeys) {
   mesh::DirectoryHit hit;
-  hit.hit_id = "relay:x";
+  hit.hit_id = "account:x";
   hit.display_name = "X";
   hit.nickname = "x";
-  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:x", true}};
+  hit.ids = {{mesh::ContactIdKind::Account, "account:x", true}};
   hit.signing_public_key_b64 = "sig";
   hit.kem_public_key_b64 = "kem";
   hit.initiation_floor = 55;
@@ -108,7 +111,7 @@ TEST(ContactJsonCompat, DirectoryHitRoundTripPreservesKeys) {
 
 TEST(ContactJsonCompat, DirectoryHitIgnoresTopLevelPeerId) {
   const Object json = MustParseObject(R"({
-    "relay_user_id": "relay:y",
+    "account_id": "account:y",
     "nickname": "y",
     "peer_id": "12D3Legacy",
     "multiaddrs": ["/ip4/9.9.9.9/tcp/1"],
@@ -133,14 +136,14 @@ TEST(ContactJsonCompat, DirectoryHitIgnoresTopLevelPeerId) {
 }
 
 TEST(ContactJsonCompat, DirectoryHitMissingFloorDefaultsZero) {
-  const Object json = MustParseObject(R"({"relay_user_id":"relay:y","nickname":"y"})");
+  const Object json = MustParseObject(R"({"account_id":"account:y","nickname":"y"})");
   const mesh::DirectoryHit hit = DirectoryHitFromJson(json);
   EXPECT_EQ(hit.initiation_floor, 0);
 }
 
 TEST(ContactJsonCompat, ParsesDirectoryIconAndRoundTripsContactRemote) {
   const Object json = MustParseObject(R"({
-    "relay_user_id": "relay:alice",
+    "account_id": "account:alice",
     "nickname": "alice",
     "icon": {
       "url": "https://cdn.example/icon.jpg",

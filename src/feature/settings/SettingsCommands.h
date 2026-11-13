@@ -56,9 +56,9 @@ struct SettingsCommands {
   std::function<Roe<std::vector<CasLibraryItemView>>(std::string filter)> list_cas_library;
   std::function<Roe<void>(const std::string& private_content_id_hex)> share_cas_publicly;
   std::function<Roe<void>(const std::string& public_content_id_hex)> unpublish_cas;
-  /** P4: fetch public tip from peer_relay_user_id into public Cache. */
+  /** P4: fetch public tip from peer_account_id into public Cache. */
   /** Asynchronous (a mesh fetch): `on_done` runs on UI. */
-  std::function<void(const std::string& tip, const std::string& peer_relay_user_id,
+  std::function<void(const std::string& tip, const std::string& peer_account_id,
                      std::function<void(Roe<void>)> on_done)>
       fetch_cas_public_tip;
   std::function<Roe<void>(const RegisterIdentityArgs& args)> register_identity;

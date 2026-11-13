@@ -19,7 +19,7 @@ CallControlClient::CallControlClient(IThreadTranscript& transcript, const ILocal
   redirectLogger("CallControlClient");
 }
 
-Roe<std::string> CallControlClient::LocalRelayIdentity() const {
+Roe<std::string> CallControlClient::LocalAccountIdentity() const {
   auto account = account_.GetAccountId();
   if (!account || account->empty()) {
     return Error("Local account identity unavailable");
@@ -33,7 +33,7 @@ Roe<void> CallControlClient::SendDirect(const std::string& peer_identity, const 
   if (!delivery_.send_control) {
     return Error("Call delivery not bound");
   }
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -93,7 +93,7 @@ Roe<void> CallControlClient::SendSummary(const std::string& thread_id, const Cal
       log().info << "call summary kept local thread=" << thread_id << " (" << sent.error().message << ")";
     }
   }
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -120,7 +120,7 @@ void CallControlClient::SendToEach(const std::vector<std::string>& peers, const 
     log().warning << "send to each: call delivery not bound type=" << CallControlTypeToWire(type);
     return;
   }
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     log().warning << "send to each: " << local.error().message;
     return;

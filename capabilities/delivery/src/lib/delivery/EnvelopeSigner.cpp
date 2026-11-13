@@ -20,10 +20,11 @@ namespace {
 
 constexpr std::array<char, 34> kSignDomain = {'p', 'p', '-', 'b', 'r', 'o', 'w', 's', 'e', 'r', ':', 'r',
                                               'e', 'l', 'a', 'y', '-', 'e', 'n', 'v', 'e', 'l', 'o', 'p',
-                                              'e', '-', 's', 'i', 'g', 'n', '-', 'v', '4', '\0'};
+                                              'e', '-', 's', 'i', 'g', 'n', '-', 'v', '5', '\0'};
 
-// 4: no group id (group-chat G018 item 7 — a group copy carries it inside its ciphertext).
-constexpr uint8_t kSignVersion = 4;
+// 5: no relay id (multi-relay MR001 — the sender's Account ID is its relay address); 4 dropped the group id
+// (group-chat G018 item 7 — a group copy carries it inside its ciphertext).
+constexpr uint8_t kSignVersion = 5;
 constexpr uint8_t kBodyKindE2e = 0x02;
 
 void AppendBigEndianInt64(std::ostringstream& oss, const int64_t value) {
@@ -152,8 +153,6 @@ Roe<std::vector<uint8_t>> EnvelopeSigner::BuildSignBytes(const RelayEnvelope& en
     ar & message_id;
     WireLenUtf8 sender_contact_id{envelope.sender_contact_id};
     ar & sender_contact_id;
-    WireLenUtf8 sender_relay_id{envelope.sender_relay_id};
-    ar & sender_relay_id;
     WireLenUtf8 sender_device{envelope.sender_device};
     ar & sender_device;
   }

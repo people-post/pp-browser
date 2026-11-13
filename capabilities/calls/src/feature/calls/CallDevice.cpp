@@ -106,7 +106,7 @@ CallDevice::CallDevice(const IThreadCatalog& threads, IThreadTranscript& transcr
 
 CallHopPath::HostPorts CallDevice::MakeTopologyHostPorts() {
   CallHopPath::HostPorts ports;
-  ports.local_relay_identity = [this]() { return LocalIdentity(); };
+  ports.local_account_identity = [this]() { return LocalIdentity(); };
   ports.call_media = [this](const std::string& call_id) { return call_media_.Media(call_id); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
                                 const std::string& display, const std::string& skip) {
@@ -154,7 +154,7 @@ void CallDevice::BindWorkflowHostPorts() {
 
 CallSessionWorkflow::WirePorts CallDevice::MakeWorkflowWirePorts() {
   CallSessionWorkflow::WirePorts ports;
-  ports.local_relay_identity = [this]() { return control_.LocalRelayIdentity(); };
+  ports.local_account_identity = [this]() { return control_.LocalAccountIdentity(); };
   ports.send_direct = [this](const std::string& peer, CallControlType type, const std::string& detail,
                              const std::string& display,
                              bool urgent) { return control_.SendDirect(peer, type, detail, display, urgent); };
@@ -923,7 +923,7 @@ void CallDevice::DropFollowUps() {
 void CallDevice::SendConnectGiveUp(const std::string& call_id, const std::string& peer_identity) {
   CallConnectGiveUpDetail detail;
   detail.call_id = call_id;
-  if (auto local = control_.LocalRelayIdentity()) {
+  if (auto local = control_.LocalAccountIdentity()) {
     detail.identity = *local;
   }
   auto encoded = CallControlCodec::EncodeConnectGiveUp(detail);
@@ -938,7 +938,7 @@ void CallDevice::SendConnectGiveUp(const std::string& call_id, const std::string
 }
 
 Roe<std::string> CallDevice::LocalIdentity() const {
-  return control_.LocalRelayIdentity();
+  return control_.LocalAccountIdentity();
 }
 
 Roe<void> CallDevice::TopologyLeaveCall(const std::string& call_id) {
@@ -1014,7 +1014,7 @@ void CallDevice::ResendMediaKey(const std::string& call_id, const std::string& p
 
 void CallDevice::ApplyInboundHello(const std::string& call_id, const std::string& identity,
                                    const std::string& peer_id) {
-  auto local = control_.LocalRelayIdentity();
+  auto local = control_.LocalAccountIdentity();
   if (!local) {
     return;
   }

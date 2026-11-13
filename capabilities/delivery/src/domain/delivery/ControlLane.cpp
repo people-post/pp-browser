@@ -2,12 +2,10 @@
 
 #include "domain/delivery/DeliveryOutbox.h"
 #include "domain/delivery/E2ePublicSessionKeys.h"
-#include "domain/delivery/PeerRouteBook.h"
 #include "lib/delivery/ControlLaneEnvelope.h"
 #include "lib/delivery/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "common/directory/DirectoryJson.h"
-#include "lib/people/ContactsStore.h"
+#include "lib/people/ContactIdentity.h"
 #include "lib/people/IdentityStore.h"
 #include "common/Utilities.h"
 #include "common/chat/SystemControl.h"
@@ -33,13 +31,11 @@ std::string CallIdOf(const ThreadMessage& control) {
 } // namespace
 
 ControlLane::ControlLane(IdentityStore& identity, OwnCards& own_keys, AccountKeyResolver& peer_cards,
-                         ContactsStore& contacts, PeerRouteBook& routes, E2ePublicSessionKeys& keys,
-                         std::function<IDirectMessageClient*()> direct_chat, DeliveryOutbox& outbox)
+                         E2ePublicSessionKeys& keys, std::function<IDirectMessageClient*()> direct_chat,
+                         DeliveryOutbox& outbox)
     : identity_(identity),
       own_keys_(own_keys),
       peer_cards_(peer_cards),
-      contacts_(contacts),
-      routes_(routes),
       keys_(keys),
       direct_chat_(std::move(direct_chat)),
       outbox_(outbox) {
@@ -144,7 +140,7 @@ Roe<std::vector<ControlLaneCopy>> ControlLane::CopiesFor(const std::string& peer
 }
 
 Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessage& control, const bool urgent,
-                            const bool with_card) {
+                            const bool with_card, const bool keep) {
   auto identity = identity_.Get();
   if (!identity || identity->account_id.empty()) {
     return Error("Local account identity unavailable");
@@ -154,26 +150,16 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
     return copies.error();
   }
 
-  // Route as for a DM with the peer (contacts, learned routes, directory) — no thread needed.
-  Thread route_view;
-  route_view.kind = ThreadKind::Direct;
-  route_view.channel = ThreadChannel::E2ePublic;
-  route_view.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
-  route_view.peer_identity_value = peer_identity;
-  if (auto contact = contacts_.FindByIdentity(peer_identity, mesh::ContactIdKind::Account); contact && *contact) {
-    route_view.participant_contact_ids = {(*contact)->id};
-  }
-  const auto peer_relay_id = routes_.ResolveWithDirectory(route_view);
+  // The relay delivers to the peer's Account ID (its inbox, MR001); Amp to a peer it reaches.
+  const bool relay_addressable = IsAccountIdentityValue(peer_identity);
   IDirectMessageClient* chat = direct_chat_ ? direct_chat_() : nullptr;
-  if (!peer_relay_id && !(chat && chat->IsPeerReachable(peer_identity))) {
+  if (!relay_addressable && !(chat && chat->IsPeerReachable(peer_identity))) {
     return Error("No route to the peer");
   }
 
   ControlLaneSendParams params;
   params.sender_account_id = identity->account_id;
-  params.sender_relay_id = identity->relay_user_id;
   params.peer_account_id = peer_identity;
-  params.route_party = peer_relay_id ? *peer_relay_id : peer_identity;
   const bool opens_session = std::any_of(copies->begin(), copies->end(), [](const ControlLaneCopy& copy) {
     return copy.key_init_b64 && !copy.key_init_b64->empty();
   });
@@ -203,19 +189,20 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
   if (urgent) {
     envelope.relay_wake_hint = SanitizeWakeHint(CallIdOf(control));
   }
-  // Lane messages are useless once no family would take them: the relay drops them then, not after 90 days.
-  envelope.relay_ttl_s = kControlLaneRelayTtlMs / 1000;
+  // Lane messages are useless once no family would take them: the relay drops them then, not after 90 days — but
+  // what the peer needs whenever it is back (`keep`: a relay grant) stays the relay's full window.
+  envelope.relay_ttl_s = keep ? 0 : kControlLaneRelayTtlMs / 1000;
   const std::string message_id = envelope.message_id;
   // Off the caller's thread, on the critical lane (signaling must not queue behind inbox polls); the
   // relay when a route is known, and over a live link to the peer at once as well (#431: an inbox
   // can lag tens of seconds; the receiver's control lane takes the first copy). No row to mark: a
   // relay failure is retried while fresh.
-  outbox_.Send(DeliveryRequest{.envelope = std::move(envelope),
-                               .message_id = message_id,
-                               .amp_peer_key = peer_identity,
-                               .relay_route = peer_relay_id,
-                               .route_account = peer_identity,
-                               .critical_lane = true});
+  outbox_.Send(
+      DeliveryRequest{.envelope = std::move(envelope),
+                      .message_id = message_id,
+                      .amp_peer_key = peer_identity,
+                      .relay_recipient = relay_addressable ? std::optional<std::string>(peer_identity) : std::nullopt,
+                      .critical_lane = true});
   return {};
 }
 
@@ -241,7 +228,7 @@ void ControlLane::SendToMany(std::vector<ControlSend> sends, ControlSendsDone do
     // One worker each: a cold route's directory lookup does not hold up the other peers' copies.
     lifetime_.Post([lane](std::function<void()> task) { AppRuntime::PostWorker(lane, std::move(task)); },
                    [this, gather, i, send = std::move(sends[i])]() {
-                     auto queued = Send(send.peer_identity, send.control, send.urgent, send.with_card);
+                     auto queued = Send(send.peer_identity, send.control, send.urgent, send.with_card, send.keep);
                      bool last = false;
                      {
                        std::lock_guard lock(gather->mutex);
@@ -257,7 +244,7 @@ void ControlLane::SendToMany(std::vector<ControlSend> sends, ControlSendsDone do
 
 Roe<void> ControlLane::NotifySiblings(const ThreadMessage& notice, const SiblingNotice kind) {
   auto identity = identity_.Get();
-  if (!identity || identity->account_id.empty() || identity->relay_user_id.empty()) {
+  if (!identity || identity->account_id.empty() || !identity->registered) {
     return Error("Local account identity unavailable");
   }
   auto device = own_keys_.DevicePeerId();
@@ -280,7 +267,6 @@ Roe<void> ControlLane::NotifySiblings(const ThreadMessage& notice, const Sibling
   }
   ControlLaneSendParams params;
   params.sender_account_id = identity->account_id;
-  params.sender_relay_id = identity->relay_user_id;
   params.sender_device = *device;
   params.sender_card_at = card->issued_at;
   std::vector<std::string> siblings;
@@ -294,7 +280,6 @@ Roe<void> ControlLane::NotifySiblings(const ThreadMessage& notice, const Sibling
     params.sender_card = AccountCardToJson(*card);
   }
   params.peer_account_id = identity->account_id;
-  params.route_party = identity->relay_user_id;
   params.copies = {ControlLaneCopy{.session_epoch = 1,
                                    .master_psk = std::move(opened->master_psk),
                                    .key_init_b64 = std::move(opened->key_init_b64)}};
@@ -312,7 +297,7 @@ Roe<void> ControlLane::NotifySiblings(const ThreadMessage& notice, const Sibling
   // The relay only: the account's own mailbox, read by every sibling.
   outbox_.Send(DeliveryRequest{.envelope = std::move(*built),
                                .message_id = message_id,
-                               .relay_route = identity->relay_user_id,
+                               .relay_recipient = identity->account_id,
                                .critical_lane = true});
   return {};
 }

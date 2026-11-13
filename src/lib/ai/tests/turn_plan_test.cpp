@@ -65,7 +65,7 @@ TEST(TurnPlanTest, HandlesNullSynthesisHints) {
 }
 
 TEST(TurnPlanTest, PeopleSearchShowsSelectableResultsEvenWhenPlannerOmitsListMode) {
-  for (const std::string query : {"小明", "account:abc_DEF-123", "relay:abc123"}) {
+  for (const std::string query : {"小明", "account:abc_DEF-123", "account:abc123"}) {
     pbr::TurnPlan plan;
     plan.user_request = "帮我加 " + query + " 为好友";
     pbr::Object arguments;

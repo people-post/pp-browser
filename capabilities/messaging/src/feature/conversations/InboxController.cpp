@@ -655,7 +655,7 @@ Roe<void> InboxController::NameAiThreadFromFirstMessage(const std::string& threa
 }
 
 std::string InboxController::ResolveSenderLabel(const std::string& sender_contact_id) const {
-  if (shadows_ && (sender_contact_id.rfind("account:", 0) == 0 || sender_contact_id.rfind("relay:", 0) == 0)) {
+  if (shadows_ && sender_contact_id.rfind("account:", 0) == 0) {
     shadows_->EnsureLookup(sender_contact_id);
   }
   return labels_.ResolveSender(sender_contact_id).title;
@@ -738,7 +738,7 @@ TranscriptFacts InboxController::Facts() const {
     return labels_.ResolveSender(contact_id).stable_id;
   };
   facts.sender_icon = [this](const std::string& contact_id) -> std::string {
-    // A contact id, or the account / relay id of a group member who is not a contact.
+    // A contact id, or the account of a group member who is not a contact.
     if (auto contact = contacts_.Get(contact_id); contact && *contact) {
       const std::string key = ProfileIconCacheKeyForContact(**contact);
       return key.empty() ? std::string() : ProfileIconLocalPath(profile_data_dir_, key);

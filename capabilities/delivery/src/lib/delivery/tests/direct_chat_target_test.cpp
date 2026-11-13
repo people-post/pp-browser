@@ -12,7 +12,6 @@ using namespace pbr;
 TEST(DirectChatTargetTest, UsesAccountId) {
   Contact contact;
   contact.ids = {{mesh::ContactIdKind::Account, "account:alice", true},
-                 {mesh::ContactIdKind::RelayUser, "relay:alice", false},
                  {mesh::ContactIdKind::PeerId, "12D3KooWPeer", false}};
 
   const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
@@ -22,8 +21,7 @@ TEST(DirectChatTargetTest, UsesAccountId) {
 
 TEST(DirectChatTargetTest, EmptyWithoutAccountEvenIfRelayOrPeerPresent) {
   Contact contact;
-  contact.ids = {{mesh::ContactIdKind::RelayUser, "relay:alice", true},
-                 {mesh::ContactIdKind::PeerId, "12D3KooWPeer", false}};
+  contact.ids = {{mesh::ContactIdKind::PeerId, "12D3KooWPeer", false}};
 
   const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
   EXPECT_TRUE(target.peer_identity_value.empty());

@@ -11,7 +11,6 @@
 #include "common/chat/MessagingLimits.h"
 #include "lib/people/ContactTypes.h"
 #include "lib/people/ContactsStore.h"
-#include "lib/delivery/PeerBriefRoute.h"
 
 #include <algorithm>
 #include <chrono>
@@ -61,15 +60,14 @@ Roe<ChatHistoryRequest> ChatSyncWorkflow::BuildRequest(const Thread& thread, con
   }
 
   ChatHistoryRequest request;
-  request.requester_identity_kind = ContactIdKindToString(mesh::ContactIdKind::RelayUser);
-  request.requester_identity_value = local_identity->relay_user_id;
-  // History/stream routing stays on Brief relay ids (M010); thread peer is Account ID.
-  const std::string peer_relay = ContactRelayRoute(thread, contacts_).value_or(std::string());
-  if (peer_relay.empty()) {
-    return Error("Direct thread missing peer relay route for history");
+  // Both parties by Account ID (multi-relay MR001), on the relay and over a link alike.
+  if (local_identity->account_id.empty() || thread.peer_identity_value.rfind("account:", 0) != 0) {
+    return Error("Direct thread missing an Account ID for history");
   }
-  request.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::RelayUser);
-  request.peer_identity_value = peer_relay;
+  request.requester_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+  request.requester_identity_value = local_identity->account_id;
+  request.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+  request.peer_identity_value = thread.peer_identity_value;
   request.channel = thread.channel;
   request.session_epoch = session_epoch;
   request.order = order;

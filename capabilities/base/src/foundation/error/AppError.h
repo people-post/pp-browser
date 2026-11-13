@@ -31,6 +31,11 @@ enum class Auth : int32_t {
   RateLimited = 4,
   /** HTTP 429 with code "server_busy": brief_AI as a whole is busy, not this user (brief_AI contract section 8). */
   ServerBusy = 5,
+  /**
+   * HTTP 429 with code "stranger_quota_exceeded": a relay send without the recipient's grant spent the recipient's
+   * first-contact quota for strangers (multi-relay MR005). Worth sending again later, after a backoff.
+   */
+  StrangerQuota = 6,
 };
 
 enum class Network : int32_t {
@@ -43,8 +48,17 @@ enum class Network : int32_t {
   TlsFailed = 6,
   /** The server refused the request itself (HTTP 4xx but 408 / 429): sending it again will not help. */
   HttpRejected = 7,
-  /** A relay send answered 404: the registry the route points at does not know the recipient. Final, like HttpRejected. */
-  HttpNotFound = 8,
+  /**
+   * A relay send answered 404 `recipient_not_registered`: the recipient is not registered on this relay (it left
+   * it, or never was). Final, like HttpRejected.
+   */
+  RecipientNotRegistered = 8,
+  /**
+   * A relay send answered 402 `payment_required`: the recipient charges strangers to open a conversation (its
+   * initiation floor, pricing P001 / MR005), and this send carried no grant of theirs. Final until paid; the
+   * detail ends `initiation_floor=<minor units>` (RelayPaymentRequiredFloor).
+   */
+  PaymentRequired = 9,
 };
 
 enum class Pin : int32_t {

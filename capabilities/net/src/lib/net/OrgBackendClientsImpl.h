@@ -33,7 +33,6 @@ class HttpDirectoryClient : public mesh::IDirectoryClient {
 public:
   explicit HttpDirectoryClient(std::string base_url);
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& query) override;
-  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string& account_id) override;
   Roe<std::vector<mesh::MeshNodeHit>> ListMeshNodes() override;
 
@@ -46,7 +45,6 @@ class FailoverDirectoryClient : public mesh::IDirectoryClient {
 public:
   explicit FailoverDirectoryClient(std::vector<std::unique_ptr<mesh::IDirectoryClient>> backends);
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& query) override;
-  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string& account_id) override;
   Roe<std::vector<mesh::MeshNodeHit>> ListMeshNodes() override;
 
@@ -71,9 +69,8 @@ public:
       const std::string& peer_id = "", const std::vector<std::string>& multiaddrs = {}, int64_t initiation_floor = 0,
       const RegistrationPublishOpts& publish = {}) override;
   Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
-                                         int64_t timestamp, const std::string& relay_user_id) override;
-  Roe<void> RevokeRegistration(const std::string& relay_user_id, const std::string& signature,
-                               int64_t timestamp) override;
+                                         int64_t timestamp, const std::string& account_id) override;
+  Roe<void> RevokeRegistration(const std::string& account_id, const std::string& signature, int64_t timestamp) override;
 
 private:
   std::string base_url_;

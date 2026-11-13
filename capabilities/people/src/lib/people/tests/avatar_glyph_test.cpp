@@ -17,7 +17,7 @@ TEST(AvatarGlyphTest, LetterFromUtf8Name) {
 }
 
 TEST(AvatarGlyphTest, LetterFallsBackToStableId) {
-  const AvatarGlyph g = MakeAvatarGlyph("  ", "relay:lHaEnkO4");
+  const AvatarGlyph g = MakeAvatarGlyph("  ", "account:lHaEnkO4");
   EXPECT_EQ(g.letter, "L");
 }
 
@@ -47,10 +47,9 @@ TEST(AvatarGlyphTest, ToneDiffersById) {
 }
 
 TEST(AvatarGlyphTest, AvatarStableIdPriority) {
-  EXPECT_EQ(AvatarStableId("account:a", "relay:r", "peer:p", "c1"), "account:a");
-  EXPECT_EQ(AvatarStableId("", "relay:r", "peer:p", "c1"), "relay:r");
-  EXPECT_EQ(AvatarStableId("", "", "peer:p", "c1"), "peer:p");
-  EXPECT_EQ(AvatarStableId("", "", "", "c1"), "c1");
+  EXPECT_EQ(AvatarStableId("account:a", "peer:p", "c1"), "account:a");
+  EXPECT_EQ(AvatarStableId("", "peer:p", "c1"), "peer:p");
+  EXPECT_EQ(AvatarStableId("", "", "c1"), "c1");
 }
 
 } // namespace

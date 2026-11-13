@@ -13,11 +13,11 @@ namespace pbr {
 
 namespace {
 
-Roe<std::string> RequireRelayUserId(const std::string& relay_user_id) {
-  if (relay_user_id.empty()) {
+Roe<std::string> RequireAccountId(const std::string& account_id) {
+  if (account_id.empty()) {
     return Error("Register on the network before using relay blob storage");
   }
-  return relay_user_id;
+  return account_id;
 }
 
 } // namespace
@@ -44,9 +44,9 @@ uint64_t RelayFileQuotaNeededBytes(const Error& err) {
   return value;
 }
 
-Roe<BlobQuotaRecoveryPlan> PlanOldestRelayFileDeletion(IBlobClient& blob, const std::string& relay_user_id,
+Roe<BlobQuotaRecoveryPlan> PlanOldestRelayFileDeletion(IBlobClient& blob, const std::string& account_id,
                                                        const uint64_t needed_bytes) {
-  auto uid = RequireRelayUserId(relay_user_id);
+  auto uid = RequireAccountId(account_id);
   if (!uid) {
     return uid.error();
   }
@@ -99,11 +99,11 @@ Roe<BlobQuotaRecoveryPlan> PlanOldestRelayFileDeletion(IBlobClient& blob, const 
   return plan;
 }
 
-Roe<void> DeleteRelayFile(IBlobClient& blob, const std::string& relay_user_id, const std::string& blob_id) {
+Roe<void> DeleteRelayFile(IBlobClient& blob, const std::string& account_id, const std::string& blob_id) {
   if (blob_id.empty()) {
     return Error("blob_id is required");
   }
-  auto uid = RequireRelayUserId(relay_user_id);
+  auto uid = RequireAccountId(account_id);
   if (!uid) {
     return uid.error();
   }

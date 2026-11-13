@@ -121,10 +121,7 @@ mesh::MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, mesh::MeshHost&
   hit.amp_wire = pp::adp::kWireVersion;
   hit.node_version = node_version;
   if (auto loaded = identity.Get()) {
-    hit.relay_user_id = loaded->relay_user_id.empty() ? loaded->peer_id : loaded->relay_user_id;
-    if (!loaded->account_id.empty()) {
-      hit.account_id = loaded->account_id;
-    }
+    hit.account_id = loaded->account_id; // the row's key (multi-relay MR001): a node always has one
     if (!loaded->nickname.empty()) {
       hit.nickname = loaded->nickname;
     }
@@ -134,9 +131,6 @@ mesh::MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, mesh::MeshHost&
     if (!loaded->kem_public_key_b64.empty()) {
       hit.kem_public_key_b64 = loaded->kem_public_key_b64;
     }
-  }
-  if (hit.relay_user_id.empty() && mesh.Amp()) {
-    hit.relay_user_id = mesh.Amp()->LocalPeerId();
   }
   hit.capabilities.circuit_relay = config.capabilities.circuit_relay;
   hit.capabilities.media_relay = config.capabilities.media_relay;

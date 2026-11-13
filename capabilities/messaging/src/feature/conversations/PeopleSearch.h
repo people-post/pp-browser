@@ -13,7 +13,7 @@ class ConversationsHub;
 
 /**
  * The directory search both the assistant's "find someone" and the contacts page's "add contact" use:
- * a full id ("account:…" / "relay:…") is looked up exactly (not found = empty), anything else is searched,
+ * a full Account ID ("account:…") is looked up exactly (not found = empty), anything else is searched,
  * our own identities are dropped, and exact nickname / display-name matches come first.
  */
 Roe<std::vector<mesh::DirectoryHit>> SearchDirectoryPeople(ConversationsHub& hub, const std::string& query);

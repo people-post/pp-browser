@@ -29,14 +29,6 @@ std::string FormatDirectoryTitle(const mesh::DirectoryHit& hit) {
     }
   }
   if (person_id.empty()) {
-    for (const mesh::ContactId& id : hit.ids) {
-      if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
-        person_id = id.value;
-        break;
-      }
-    }
-  }
-  if (person_id.empty()) {
     person_id = hit.hit_id;
   }
 
@@ -44,7 +36,7 @@ std::string FormatDirectoryTitle(const mesh::DirectoryHit& hit) {
   if (!nick.empty()) {
     title = "~" + nick;
   }
-  const std::string short_id = ShortRelayId(person_id);
+  const std::string short_id = ShortPersonId(person_id);
   if (!short_id.empty()) {
     if (!title.empty()) {
       title += " ";

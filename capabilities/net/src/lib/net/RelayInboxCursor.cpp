@@ -19,8 +19,8 @@ std::filesystem::path CursorPath(const std::string& profile_data_dir) {
 
 } // namespace
 
-std::string LoadRelayInboxCursor(const std::string& profile_data_dir, const std::string& relay_user_id) {
-  if (profile_data_dir.empty() || relay_user_id.empty()) {
+std::string LoadRelayInboxCursor(const std::string& profile_data_dir, const std::string& account_id) {
+  if (profile_data_dir.empty() || account_id.empty()) {
     return {};
   }
   std::ifstream in(CursorPath(profile_data_dir));
@@ -33,22 +33,22 @@ std::string LoadRelayInboxCursor(const std::string& profile_data_dir, const std:
   if (!root) {
     return {};
   }
-  auto stored_id = root->getString("relay_user_id");
-  if (!stored_id || *stored_id != relay_user_id) {
+  auto stored_id = root->getString("account_id");
+  if (!stored_id || *stored_id != account_id) {
     return {};
   }
   return root->getString("cursor").value_or("");
 }
 
-void SaveRelayInboxCursor(const std::string& profile_data_dir, const std::string& relay_user_id,
+void SaveRelayInboxCursor(const std::string& profile_data_dir, const std::string& account_id,
                           const std::string& cursor) {
-  if (profile_data_dir.empty() || relay_user_id.empty() || cursor.empty()) {
+  if (profile_data_dir.empty() || account_id.empty() || cursor.empty()) {
     return;
   }
   std::error_code ec;
   std::filesystem::create_directories(profile_data_dir, ec);
   Object root;
-  root.set("relay_user_id", relay_user_id);
+  root.set("account_id", account_id);
   root.set("cursor", cursor);
   // Replaced whole, not synced: written at every sync, and a cursor lost to a crash only fetches again what the
   // inbox drops as already seen.

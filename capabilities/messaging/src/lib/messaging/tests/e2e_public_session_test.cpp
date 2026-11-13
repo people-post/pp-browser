@@ -141,7 +141,7 @@ struct Side {
   /** Who we are on what we send. */
   EnvelopeSender Sender() const {
     return EnvelopeSender{
-        "relay:" + tag, account, keys.device.peer_id,
+        account, keys.device.peer_id,
         carry_keys ? std::optional<Object>(AccountCardToJson(own_card ? *own_card : keys.DeviceCard())) : std::nullopt};
   }
 
@@ -165,9 +165,7 @@ struct Side {
     control.timestamp = util::NowUnixMs();
     ControlLaneSendParams params;
     params.sender_account_id = account;
-    params.sender_relay_id = "relay:" + tag;
     params.peer_account_id = peer.account;
-    params.route_party = "relay:" + peer.tag;
     params.copies = {ControlLaneCopy{
         .session_epoch = epoch, .master_psk = session->master_psk, .key_init_b64 = session->key_init_b64}};
     params.sender_device = keys.device.peer_id;
@@ -215,9 +213,7 @@ struct Side {
     control.timestamp = util::NowUnixMs();
     ControlLaneSendParams params;
     params.sender_account_id = account;
-    params.sender_relay_id = "relay:" + tag;
     params.peer_account_id = peer_account;
-    params.route_party = "relay:" + peer_account;
     params.copies = std::move(copies);
     params.sender_device = keys.device.peer_id;
     params.sender_card = Sender().card;
@@ -253,8 +249,7 @@ struct Side {
     envelope.envelope_version = kRelayEnvelopeVersion;
     envelope.message_id = util::GenerateUuid();
     envelope.sender_contact_id = account;
-    envelope.sender_relay_id = "relay:" + tag;
-    envelope.recipient_contact_id = "relay:" + peer.tag;
+    envelope.recipient_account_id = "account:" + peer.tag;
     envelope.route.kind = "direct";
     envelope.route.channel = ThreadChannel::E2ePublic;
     envelope.sender_seq = ++chat_seq[epoch];
@@ -298,8 +293,9 @@ struct Side {
       auto copy = SealPairCopy(message, account, SendRelayOptions{}, *psk, pair,
                                Base64Decode(device.kem_public_key_b64).value());
       EXPECT_TRUE(copy) << copy.error().message;
-      RelayEnvelope envelope = BuildDirectEnvelope(message, Sender(), ThreadChannel::E2ePublic, "relay:" + peer_account,
-                                                   {DeviceCopy(device.peer_id, std::move(*copy))}, NextRelayOrderKey());
+      RelayEnvelope envelope =
+          BuildDirectEnvelope(message, Sender(), ThreadChannel::E2ePublic, "account:" + peer_account,
+                              {DeviceCopy(device.peer_id, std::move(*copy))}, NextRelayOrderKey());
       test::SignEnvelopeAs(keys, envelope);
       out[device.peer_id] = envelope;
     }
@@ -431,7 +427,7 @@ struct Side {
                            .key_init_b64 = encrypted->copies[i]->key_init_b64,
                            .payload_b64 = encrypted->copies[i]->payload_b64};
       RelayEnvelope envelope =
-          BuildGroupMemberEnvelope(message, Sender(), group_id, recipient, recipient, {copy}, NextRelayOrderKey());
+          BuildGroupMemberEnvelope(message, Sender(), group_id, recipient, {copy}, NextRelayOrderKey());
       test::SignEnvelopeAs(keys, envelope);
       out[per_device ? target.target_key.peer_device : recipient] = envelope;
     }
@@ -833,7 +829,7 @@ TEST_F(GroupCopyPrivacyTest, WhatTheRelayStoresNamesNoGroupAndTheCopyArrivesInIt
   EXPECT_EQ(record->stream_id, BuildGroupRelayStreamKey(group_, alice_->account, bob_->account, alice_->Device()));
 
   // From the relay to bob: read, and filed in the group the ciphertext names.
-  RelayInboundRecord inbound{.sender_contact_id = record->sender_contact_id,
+  RelayInboundRecord inbound{.sender_account_id = record->sender_account_id,
                              .stream_id = record->stream_id,
                              .index_key = record->index_key,
                              .blob_b64 = record->blob_b64};

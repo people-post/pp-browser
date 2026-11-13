@@ -172,7 +172,7 @@ void CallPresenter::PruneBlocked(const int64_t now_ms) {
 void CallPresenter::OnInviteBlocked(const BlockedCallInvite& blocked,
                                     const PendingNotificationTap::Clock::time_point now) {
   // Someone the user blocked (their texts are dropped unread too), or our own account: nothing at all.
-  if (ports_.local_relay_identity && ports_.local_relay_identity() == blocked.sender_identity) {
+  if (ports_.local_account_identity && ports_.local_account_identity() == blocked.sender_identity) {
     return;
   }
   if (ports_.find_contact_by_identity) {
@@ -407,8 +407,9 @@ void CallPresenter::Refresh() {
     // P001: waive / take-all when the inviter offered a positive initiation amount.
     next.offer_minor = backend->InitiationOfferMinorForPeer(top.inviter_identity);
     next.charge_enabled = next.offer_minor > 0 && PaymentRailsAvailable();
-    FillGuestRing(next, *backend, top,
-                  ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{}) : std::string{});
+    FillGuestRing(
+        next, *backend, top,
+        ports_.local_account_identity ? ports_.local_account_identity().value_or(std::string{}) : std::string{});
     if (!ring_shown_) {
       ring_shown_ = true;
       log().warning << "ring shown call_id=" << top.call_id;
@@ -433,7 +434,7 @@ void CallPresenter::Refresh() {
                surface.active->origin_group_id.has_value());
     next.thread_id = surface.active->origin_thread_id.value_or(std::string{});
     const std::string local =
-        ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{}) : std::string{};
+        ports_.local_account_identity ? ports_.local_account_identity().value_or(std::string{}) : std::string{};
     next.placed_here = !local.empty() && surface.active->initiator_identity == local;
     active_group_id_ = surface.active->origin_group_id.value_or(std::string{});
     FillGuests(next, *backend, active_group_id_, local);
@@ -607,8 +608,8 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   s.show_speaker = AudioSession::SupportsSpeakerToggle();
   s.speaker_on = SpeakerShownOn();
   std::string local_identity;
-  if (ports_.local_relay_identity) {
-    local_identity = ports_.local_relay_identity().value_or(std::string{});
+  if (ports_.local_account_identity) {
+    local_identity = ports_.local_account_identity().value_or(std::string{});
   }
   int joined = 0;
   if (auto participants = backend.ListJoinedParticipants(call_id); participants) {
@@ -1189,7 +1190,7 @@ bool CallPresenter::MayAddToActiveCall(const std::string& identity) const {
     return true;
   }
   const std::string local =
-      ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{}) : std::string{};
+      ports_.local_account_identity ? ports_.local_account_identity().value_or(std::string{}) : std::string{};
   return DecideCallAdd(true, backend->GroupStanding(active_group_id_, local),
                        backend->GroupStanding(active_group_id_, identity)) != CallAddVerdict::Refused;
 }

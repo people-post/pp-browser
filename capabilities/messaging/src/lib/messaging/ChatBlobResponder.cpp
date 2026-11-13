@@ -17,11 +17,11 @@ namespace pbr {
 namespace {
 
 Roe<DirectChatTarget> AuthorizeRequest(IThreadStore& store, const ChatBlobRequest& request,
-                                       const std::string& local_relay_user_id, const ChatBlobRequester& requester) {
-  if (local_relay_user_id.empty()) {
-    return Error("Local relay identity missing");
+                                       const std::string& local_account_id, const ChatBlobRequester& requester) {
+  if (local_account_id.empty()) {
+    return Error("Local account identity missing");
   }
-  if (request.peer_identity_value != local_relay_user_id) {
+  if (request.peer_identity_value != local_account_id) {
     return Error("Chat-blob request targets a different peer stream");
   }
   if (request.requester_identity_value.empty() || request.thread_id.empty()) {
@@ -100,15 +100,15 @@ std::unordered_set<std::string> ReferencedAttachmentHashes(IThreadStore& store, 
 } // namespace
 
 Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, const ChatBlobRequest& request,
-                                                        const std::string& local_relay_user_id,
+                                                        const std::string& local_account_id,
                                                         const std::string& profile_data_dir,
                                                         const ChatBlobContentSource& content,
                                                         const ChatBlobRequester& requester) {
   if (request.op == ChatBlobOp::FetchPublic) {
-    if (local_relay_user_id.empty()) {
-      return Error("Local relay identity missing");
+    if (local_account_id.empty()) {
+      return Error("Local account identity missing");
     }
-    if (request.peer_identity_value != local_relay_user_id) {
+    if (request.peer_identity_value != local_account_id) {
       return Error("Chat-blob request targets a different peer stream");
     }
     if (request.requester_identity_value.empty()) {
@@ -134,7 +134,7 @@ Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, con
   if (request.op != ChatBlobOp::Fetch) {
     return Error("Expected fetch chat-blob request");
   }
-  auto auth = AuthorizeRequest(store, request, local_relay_user_id, requester);
+  auto auth = AuthorizeRequest(store, request, local_account_id, requester);
   if (!auth) {
     return auth.error();
   }
@@ -170,13 +170,13 @@ Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, con
 }
 
 Roe<void> ChatBlobResponder::ServePush(IThreadStore& store, const ChatBlobRequest& request,
-                                       const std::string& local_relay_user_id, const std::string& profile_data_dir,
+                                       const std::string& local_account_id, const std::string& profile_data_dir,
                                        const std::vector<uint8_t>& ciphertext, const ChatBlobRequester& requester,
                                        const ChatBlobPushGate& push_gate) {
   if (request.op != ChatBlobOp::Push) {
     return Error("Expected push chat-blob request");
   }
-  auto auth = AuthorizeRequest(store, request, local_relay_user_id, requester);
+  auto auth = AuthorizeRequest(store, request, local_account_id, requester);
   if (!auth) {
     return auth.error();
   }

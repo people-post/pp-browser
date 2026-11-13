@@ -19,7 +19,7 @@ struct Endpoints {
 TEST(BlobClientTest, MockUploadRelayBlobBytesPresignPutRetain) {
   MockBlobClient blob;
   const std::string body = "encrypted-bytes";
-  auto uploaded = UploadRelayBlobBytes(blob, "relay:u1", "application/octet-stream", BlobPurpose::File, body);
+  auto uploaded = UploadRelayBlobBytes(blob, "account:u1", "application/octet-stream", BlobPurpose::File, body);
   ASSERT_TRUE(static_cast<bool>(uploaded));
   EXPECT_FALSE(uploaded.value().public_url.empty());
   ASSERT_EQ(blob.UploadedBodies().size(), 1u);

@@ -75,7 +75,7 @@ inline void PromoteFlatFieldsToNested(Contact& contact) {
   contact.remote.multiaddrs = contact.multiaddrs;
 }
 
-/** Title: local display_name, else remote nickname, else Account ID, else relay id. */
+/** Title: local display_name, else remote nickname, else Account ID. */
 inline std::string ContactEffectiveTitle(const Contact& contact) {
   if (!contact.local.display_name.empty()) {
     return contact.local.display_name;
@@ -90,11 +90,6 @@ inline std::string ContactEffectiveTitle(const Contact& contact) {
   }
   for (const mesh::ContactId& id : contact.remote.ids) {
     if (id.kind == mesh::ContactIdKind::Account && !id.value.empty()) {
-      return id.value;
-    }
-  }
-  for (const mesh::ContactId& id : contact.remote.ids) {
-    if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
       return id.value;
     }
   }

@@ -33,35 +33,14 @@ DeliveryOutbox::~DeliveryOutbox() {
   lifetime_.InvalidateAndWait();
 }
 
-namespace {
-
-/** Addresses `envelope` to `relay_id`; a direct stream key that named the old recipient follows (it is unsigned). */
-void ReaddressEnvelope(RelayEnvelope& envelope, const std::string& relay_id) {
-  const std::string old_route = envelope.recipient_contact_id.value_or("");
-  if (envelope.route.kind == "direct" &&
-      envelope.stream_key == BuildDeviceRelayStreamKey(envelope.sender_relay_id, old_route, envelope.route.channel,
-                                                       envelope.sender_device)) {
-    envelope.stream_key =
-        BuildDeviceRelayStreamKey(envelope.sender_relay_id, relay_id, envelope.route.channel, envelope.sender_device);
-  }
-  envelope.recipient_contact_id = relay_id;
-}
-
-} // namespace
-
-Roe<void> DeliveryOutbox::RelaySend(IRelayClient& relay, RelayEnvelope& envelope, const std::string& route_account) {
-  auto sent = relay.Send(envelope);
-  if (sent || !RelayRecipientUnknown(sent.error()) || !route_refresh_ || route_account.empty()) {
-    return sent;
-  }
-  const auto fresh = route_refresh_(route_account);
-  if (!fresh || *fresh == envelope.recipient_contact_id.value_or("")) {
-    return sent;
-  }
-  log().info << "relay does not know the recipient message_id=" << envelope.message_id << " account=" << route_account
-             << "; resending to its current route";
-  ReaddressEnvelope(envelope, *fresh);
-  return relay.Send(envelope);
+DeliveryOutcome DeliveryOutbox::RelayFailureOutcome(DeliveryOutcome outcome, const std::string& recipient,
+                                                    const Error& failure) {
+  outcome.ok = false;
+  outcome.failure = SendFailureFromRelay(failure);
+  outcome.detail = failure.message;
+  outcome.relay_recipient = recipient;
+  outcome.initiation_floor = RelayPaymentRequiredFloor(failure);
+  return outcome;
 }
 
 void DeliveryOutbox::Report(DeliveryOutcome outcome) {
@@ -172,9 +151,9 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
                               .message_id = request.message_id,
                               .group_member = request.group_member,
                               .copy_device = request.copy_device};
-      if (!request.relay_route) {
+      if (!request.relay_recipient) {
         outcome.failure = direct ? SendFailureFromDirect(direct->GetCode()) : SendFailure::NoAddress;
-        outcome.detail = direct ? direct->message : "Direct thread missing peer relay id";
+        outcome.detail = direct ? direct->message : "Peer has no Account ID for the relay";
         Finish(std::move(outcome));
         return;
       }
@@ -185,17 +164,21 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
         Finish(std::move(outcome));
         return;
       }
-      RelayEnvelope envelope = request.envelope; // re-addressed in place when the recipient moved
-      if (auto sent = RelaySend(*relay, envelope, request.route_account); !sent) {
-        Pending pending{.envelope = envelope,
+      if (auto sent = relay->Send(request.envelope); !sent) {
+        if (RelayRecipientNotRegistered(sent.error()) && TryAmpFallback(request, serial, sent.error())) {
+          return; // not on our relay: over a link to it, if one can be had
+        }
+        Pending pending{.envelope = request.envelope,
                         .message_id = request.message_id,
                         .thread_id = request.thread_id,
                         .attempt_count = 1,
                         .amp_peer_key = request.amp_peer_key,
                         .group_member = request.group_member,
                         .copy_device = request.copy_device,
-                        .route_account = request.route_account,
                         .serial = serial};
+        if (RelayStrangerQuota(sent.error())) {
+          pending.not_before_ms = util::NowUnixMs() + StrangerQuotaRetryAfter(1).count();
+        }
         const bool control_lane = request.thread_id.empty();
         bool again = false;
         if (control_lane) {
@@ -203,13 +186,12 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
         } else if ((again = OutboxRetryAgain(1, sent.error())) && !Enqueue(std::move(pending))) {
           return; // Cancelled while it was on the way: it ends here.
         }
-        log().warning << "relay send failed message_id=" << request.message_id << " peer=" << *request.relay_route
+        log().warning << "relay send failed message_id=" << request.message_id << " peer=" << *request.relay_recipient
                       << " err=" << sent.error().message
                       << (!again         ? " (not retried)"
                           : control_lane ? " (retrying shortly)"
                                          : " (queued for retry)");
-        outcome.failure = SendFailureFromRelay(sent.error());
-        outcome.detail = sent.error().message;
+        outcome = RelayFailureOutcome(std::move(outcome), *request.relay_recipient, sent.error());
         // Queued for a retry: the send goes on, so the failure is reported without ending it.
         if (again) {
           Report(std::move(outcome));
@@ -220,13 +202,14 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
       }
       outcome.ok = true;
       outcome.transport = MessageTransport::Relay;
+      outcome.relay_recipient = *request.relay_recipient;
       Finish(std::move(outcome));
     };
 
     IDirectMessageClient* chat = direct_chat_ ? direct_chat_() : nullptr;
     const bool reachable = chat && !request.amp_peer_key.empty() && chat->IsPeerReachable(request.amp_peer_key);
     const bool connected = chat && !request.amp_peer_key.empty() && chat->IsPeerConnected(request.amp_peer_key);
-    if (ControlAlsoGoesDirect(connected, request.relay_route.has_value(), request.critical_lane)) {
+    if (ControlAlsoGoesDirect(connected, request.relay_recipient.has_value(), request.critical_lane)) {
       // #431 (a): a live link carries it in milliseconds where the inbox can take tens of seconds; the
       // relay copy still goes (the outcome is its), and the receiver applies whichever lands first.
       chat->SendEnvelopeAsync(
@@ -240,9 +223,9 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
       finish_relay(std::nullopt);
       return;
     }
-    // Call signaling: Amp's open + ack per message races media setup — the relay first when a
-    // route is known; Amp remains for Amp-only peers.
-    if (!DirectSendTriesAmpFirst(reachable, request.relay_route.has_value(), request.critical_lane)) {
+    // Call signaling: Amp's open + ack per message races media setup — the relay first when it can
+    // carry it; Amp remains for Amp-only peers.
+    if (!DirectSendTriesAmpFirst(reachable, request.relay_recipient.has_value(), request.critical_lane)) {
       finish_relay(std::nullopt);
       return;
     }
@@ -271,6 +254,35 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
   } else {
     AppRuntime::PostWorkerNormal(std::move(work));
   }
+}
+
+bool DeliveryOutbox::TryAmpFallback(const DeliveryRequest& request, const uint64_t serial, const Error& relay_failure) {
+  IDirectMessageClient* chat = direct_chat_ ? direct_chat_() : nullptr;
+  if (request.amp_fallback_key.empty() || !chat || !chat->IsPeerReachable(request.amp_fallback_key)) {
+    return false;
+  }
+  log().info << "relay does not know the recipient message_id=" << request.message_id << "; over a link to "
+             << request.amp_fallback_key;
+  chat->SendEnvelopeAsync(
+      request.amp_fallback_key, request.envelope, [this, request, serial, relay_failure](DirectSendRoe direct) {
+        AppRuntime::PostWorkerNormal([this, request, serial, relay_failure, direct = std::move(direct)]() {
+          if (EndIfCancelled(request.thread_id, request.message_id, serial)) {
+            return;
+          }
+          DeliveryOutcome outcome{.thread_id = request.thread_id,
+                                  .message_id = request.message_id,
+                                  .group_member = request.group_member,
+                                  .copy_device = request.copy_device};
+          if (direct) {
+            outcome.ok = true;
+            outcome.transport = MessageTransport::Direct;
+            Finish(std::move(outcome));
+            return;
+          }
+          Finish(RelayFailureOutcome(std::move(outcome), request.relay_recipient.value_or(""), relay_failure));
+        });
+      });
+  return true;
 }
 
 bool DeliveryOutbox::RetryControlLater(Pending item, const Error& failure) {
@@ -307,7 +319,7 @@ void DeliveryOutbox::RetryControlNow(Pending item) {
     Enqueue(std::move(item));
     return;
   }
-  auto sent = RelaySend(*relay, item.envelope, item.route_account);
+  auto sent = relay->Send(item.envelope);
   DeliveryOutcome outcome{.thread_id = item.thread_id,
                           .message_id = item.message_id,
                           .group_member = item.group_member,
@@ -321,14 +333,13 @@ void DeliveryOutbox::RetryControlNow(Pending item) {
   }
   item.attempt_count += 1;
   const int attempts = item.attempt_count;
+  const RelayEnvelope envelope = item.envelope;
   if (RetryControlLater(std::move(item), sent.error())) {
     return;
   }
   log().warning << "control retry gave up message_id=" << outcome.message_id << " attempts=" << attempts
                 << " err=" << sent.error().message;
-  outcome.failure = SendFailureFromRelay(sent.error());
-  outcome.detail = sent.error().message;
-  Report(std::move(outcome));
+  Report(RelayFailureOutcome(std::move(outcome), envelope.recipient_account_id.value_or(""), sent.error()));
 }
 
 void DeliveryOutbox::Cancel(const std::string& message_id) {
@@ -380,6 +391,14 @@ void DeliveryOutbox::Retry() {
     pending.swap(queue_);
   }
   const int64_t now_ms = util::NowUnixMs();
+  {
+    // Not due yet (a stranger-quota backoff): back in the queue, untouched.
+    const auto due = std::stable_partition(pending.begin(), pending.end(),
+                                           [now_ms](const Pending& item) { return item.not_before_ms <= now_ms; });
+    std::lock_guard lock(mutex_);
+    std::move(due, pending.end(), std::back_inserter(queue_));
+    pending.erase(due, pending.end());
+  }
   std::vector<std::string> dropped; // rows whose request ends here (not sent again)
   std::erase_if(pending, [this, now_ms, &dropped](const Pending& item) {
     const bool control_lane = item.thread_id.empty();
@@ -446,31 +465,33 @@ void DeliveryOutbox::Retry() {
           return;
         }
         IRelayClient* relay = relay_;
-        auto result = relay ? RelaySend(*relay, item.envelope, item.route_account)
-                            : Roe<void>(Error("Relay client not configured"));
+        auto result = relay ? relay->Send(item.envelope) : Roe<void>(Error("Relay client not configured"));
         if (result) {
           Finish(DeliveryOutcome{.thread_id = item.thread_id,
                                  .message_id = item.message_id,
                                  .ok = true,
                                  .transport = MessageTransport::Relay,
                                  .group_member = item.group_member,
-                                 .copy_device = item.copy_device});
+                                 .copy_device = item.copy_device,
+                                 .relay_recipient = item.envelope.recipient_account_id.value_or("")});
         } else if (OutboxRetryAgain(item.attempt_count, result.error())) {
           item.attempt_count += 1;
+          if (RelayStrangerQuota(result.error())) {
+            item.not_before_ms = util::NowUnixMs() + StrangerQuotaRetryAfter(item.attempt_count).count();
+          }
           still_pending->push_back(std::move(item));
         } else {
-          Finish(DeliveryOutcome{.thread_id = item.thread_id,
-                                 .message_id = item.message_id,
-                                 .failure = SendFailureFromRelay(result.error()),
-                                 .detail = result.error().message,
-                                 .group_member = item.group_member,
-                                 .copy_device = item.copy_device});
+          Finish(RelayFailureOutcome(DeliveryOutcome{.thread_id = item.thread_id,
+                                                     .message_id = item.message_id,
+                                                     .group_member = item.group_member,
+                                                     .copy_device = item.copy_device},
+                                     item.envelope.recipient_account_id.value_or(""), result.error()));
         }
         (*process)(index + 1);
       };
       IDirectMessageClient* chat = direct_chat_ ? direct_chat_() : nullptr;
       const std::string peer_key =
-          !item.amp_peer_key.empty() ? item.amp_peer_key : item.envelope.recipient_contact_id.value_or("");
+          !item.amp_peer_key.empty() ? item.amp_peer_key : item.envelope.recipient_account_id.value_or("");
       if (!peer_key.empty() && chat && chat->IsPeerReachable(peer_key)) {
         const RelayEnvelope envelope = item.envelope;
         chat->SendEnvelopeAsync(

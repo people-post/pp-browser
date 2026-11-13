@@ -17,24 +17,9 @@ std::string AccountKeyFromHit(const mesh::DirectoryHit& hit) {
   return {};
 }
 
-std::string RelayKeyFromHit(const mesh::DirectoryHit& hit) {
-  if (auto relay = PrimaryRelayIdFromHit(hit)) {
-    return *relay;
-  }
-  if (!hit.hit_id.empty() && hit.hit_id.rfind("relay:", 0) == 0) {
-    return hit.hit_id;
-  }
-  return {};
-}
-
 void IndexHit(std::unordered_map<std::string, mesh::DirectoryHit>& by_id, const mesh::DirectoryHit& hit) {
-  const std::string account = AccountKeyFromHit(hit);
-  const std::string relay = RelayKeyFromHit(hit);
-  if (!account.empty()) {
+  if (const std::string account = AccountKeyFromHit(hit); !account.empty()) {
     by_id[account] = hit;
-  }
-  if (!relay.empty()) {
-    by_id[relay] = hit;
   }
 }
 
@@ -71,7 +56,7 @@ void DirectoryShadowCache::Remove(const std::string& identity) {
     return;
   }
   const mesh::DirectoryHit hit = it->second; // a copy: erasing the first key invalidates `it`
-  for (const std::string& key : {AccountKeyFromHit(hit), RelayKeyFromHit(hit), identity}) {
+  for (const std::string& key : {AccountKeyFromHit(hit), identity}) {
     by_id_.erase(key);
   }
 }
@@ -100,8 +85,8 @@ void DirectoryShadowCache::Put(const mesh::DirectoryHit& hit) {
 }
 
 void DirectoryShadowCache::EnsureLookup(const std::string& identity) {
-  if (identity.empty()) {
-    return;
+  if (!IsAccountIdentityValue(identity)) {
+    return; // the directory is keyed by Account ID only (multi-relay MR001)
   }
   {
     std::lock_guard lock(mutex_);
@@ -111,13 +96,9 @@ void DirectoryShadowCache::EnsureLookup(const std::string& identity) {
     inflight_.insert(identity);
   }
 
-  const bool by_account = IsAccountIdentityValue(identity);
   AppRuntime::PostWorkerAndReplyOnUI<Roe<mesh::DirectoryHit>>(
-      WorkerLane::Normal,
-      [this, identity, by_account]() {
-        return by_account ? directory_.LookupByAccount(identity) : directory_.LookupRelayUser(identity);
-      },
-      [this, identity, by_account](Roe<mesh::DirectoryHit> result) {
+      WorkerLane::Normal, [this, identity]() { return directory_.LookupByAccount(identity); },
+      [this, identity](Roe<mesh::DirectoryHit> result) {
         std::function<void()> notify;
         std::function<void(const mesh::DirectoryHit&)> on_hit;
         std::optional<mesh::DirectoryHit> cached;
@@ -126,37 +107,23 @@ void DirectoryShadowCache::EnsureLookup(const std::string& identity) {
           inflight_.erase(identity);
           if (!result) {
             // Until now a failed lookup left no trace: the chat kept showing a bare id and nothing said why.
-            logging::getLogger("DirectoryShadow").warning << "directory lookup failed ("
-                                                          << (by_account ? "account" : "relay user") << " " << identity
+            logging::getLogger("DirectoryShadow").warning << "directory lookup failed (account " << identity
                                                           << "): " << result.error().message;
           }
           if (result) {
             mesh::DirectoryHit hit = *result;
-            if (by_account) {
-              bool has_account = false;
-              for (const mesh::ContactId& id : hit.ids) {
-                if (id.kind == mesh::ContactIdKind::Account && id.value == identity) {
-                  has_account = true;
-                  break;
-                }
+            bool has_account = false;
+            for (const mesh::ContactId& id : hit.ids) {
+              if (id.kind == mesh::ContactIdKind::Account && id.value == identity) {
+                has_account = true;
+                break;
               }
-              if (!has_account) {
-                hit.ids.push_back({mesh::ContactIdKind::Account, identity, true});
-              }
-              if (!hit.account_id || hit.account_id->empty()) {
-                hit.account_id = identity;
-              }
-            } else {
-              bool has_relay = false;
-              for (const mesh::ContactId& id : hit.ids) {
-                if (id.kind == mesh::ContactIdKind::RelayUser && id.value == identity) {
-                  has_relay = true;
-                  break;
-                }
-              }
-              if (!has_relay) {
-                hit.ids.push_back({mesh::ContactIdKind::RelayUser, identity, false});
-              }
+            }
+            if (!has_account) {
+              hit.ids.push_back({mesh::ContactIdKind::Account, identity, true});
+            }
+            if (!hit.account_id || hit.account_id->empty()) {
+              hit.account_id = identity;
             }
             IndexHit(by_id_, hit);
             cached = hit;

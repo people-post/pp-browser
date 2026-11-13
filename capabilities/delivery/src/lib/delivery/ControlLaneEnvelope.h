@@ -30,10 +30,8 @@ struct ControlLaneCopy {
 /** Who sends to whom on the control lane, and the copies (each under its pair's e2e_public session). */
 struct ControlLaneSendParams {
   std::string sender_account_id;
-  std::string sender_relay_id;
+  /** The peer's Account ID: who it is for, and its relay inbox (multi-relay MR001). */
   std::string peer_account_id;
-  /** Where the relay delivers: the peer's relay id, or its account id when only Amp reaches it. */
-  std::string route_party;
   /** One per device of the peer's we know, or the one account copy (1 to kMaxRelayCopies). */
   std::vector<ControlLaneCopy> copies;
   /** This device's PeerId (M021): it signs the envelope. */

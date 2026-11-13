@@ -21,7 +21,8 @@ std::string UserFeedback::UserMessage(const Error& err, const bool device_offlin
   if (device_offline && AppError::CategoryOf(err) == ErrorCategory::Network &&
       err.code != static_cast<int32_t>(Err::Network::HttpError) &&
       err.code != static_cast<int32_t>(Err::Network::HttpRejected) &&
-      err.code != static_cast<int32_t>(Err::Network::HttpNotFound)) {
+      err.code != static_cast<int32_t>(Err::Network::RecipientNotRegistered) &&
+      err.code != static_cast<int32_t>(Err::Network::PaymentRequired)) {
     return Tr("errors.network.offline");
   }
   return UserMessage(err);

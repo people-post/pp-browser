@@ -94,7 +94,7 @@ TEST(GroupInviteLinkTest, AMalformedLinkIsRefused) {
   EXPECT_FALSE(gil::Find("pp://join/***"));
   EXPECT_FALSE(gil::Find(text_of(ByteVector(20, 1), ""))) << "short";
   EXPECT_FALSE(gil::Find(text_of(bytes_of(link), ""))) << "no maker";
-  EXPECT_FALSE(gil::Find(text_of(bytes_of(link), "relay:carol"))) << "a maker that is not an account";
+  EXPECT_FALSE(gil::Find(text_of(bytes_of(link), "peer:carol"))) << "a maker that is not an account";
   EXPECT_FALSE(gil::Find(text_of(bytes_of(link), "account:"))) << "an empty account";
   EXPECT_FALSE(gil::Find(text_of(bytes_of(link), "account:ca rol"))) << "a space in the account";
   EXPECT_FALSE(gil::Find(text_of(bytes_of(link), "account:" + std::string(200, 'c')))) << "overlong";

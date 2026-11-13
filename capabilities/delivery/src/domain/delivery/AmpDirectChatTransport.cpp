@@ -236,7 +236,7 @@ bool AmpDirectChatTransport::IsPeerReachable(const std::string& peer_identity_va
   return !ReachableKey(peer_identity_value).empty();
 }
 
-void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_user_id, const RelayEnvelope& envelope,
+void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_account_id, const RelayEnvelope& envelope,
                                                std::function<void(DirectSendRoe)> on_done) {
   auto settled = std::make_shared<std::atomic<bool>>(false);
   auto finish_once = std::make_shared<std::function<void(DirectSendRoe)>>();
@@ -253,7 +253,7 @@ void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_use
     (*finish_once)(DirectSendFailure::Of(DirectSendErr::NotStarted, "amp direct chat service not started"));
     return;
   }
-  if (!IsPeerReachable(peer_relay_user_id)) {
+  if (!IsPeerReachable(peer_account_id)) {
     (*finish_once)(DirectSendFailure::Of(DirectSendErr::NoAddress, "Peer-direct endpoint not registered"));
     return;
   }
@@ -270,7 +270,7 @@ void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_use
     (*finish_once)(std::move(value));
   };
 
-  const std::string peer_key = ReachableKey(peer_relay_user_id);
+  const std::string peer_key = ReachableKey(peer_account_id);
   links_.OpenChannel(
       peer_key, kDirectChatProtocolId, pp::amp::ControlJsonChannelPolicy(),
       [this, peer_key, envelope_json, finish, settled, session_holder,

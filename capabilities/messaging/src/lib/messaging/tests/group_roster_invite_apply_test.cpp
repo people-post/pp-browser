@@ -35,8 +35,8 @@ protected:
     pending.invite_nonce = "nonce-1";
     pending.group_id = "group:hike";
     pending.group_title = "Weekend hike";
-    pending.inviter_identity = "relay:alice";
-    pending.invitee_identity = "relay:bob";
+    pending.inviter_identity = "account:alice";
+    pending.invitee_identity = "account:bob";
     pending.roster_epoch = 1;
     pending.status = InviteStatus::Pending;
     pending.created_at = util::NowUnixMs();
@@ -47,7 +47,7 @@ protected:
   void SeedOwnedGroup(uint64_t epoch = 1) {
     GroupMetadata metadata;
     metadata.group_id = "group:hike";
-    metadata.owner_identity = "relay:alice";
+    metadata.owner_identity = "account:alice";
     metadata.title = "Weekend hike";
     metadata.roster_epoch = epoch;
     ASSERT_TRUE(roster_->UpsertMetadata(metadata));
@@ -55,7 +55,7 @@ protected:
 
   /** True when the owner (alice) added them now; false when accepted before. */
   Roe<bool> Accept(const std::string& nonce, const std::string& sender, const std::string& group = "group:hike") {
-    auto accepted = ApplyInviteAcceptToRoster(*roster_, nonce, sender, group, "relay:alice", util::NowUnixMs());
+    auto accepted = ApplyInviteAcceptToRoster(*roster_, nonce, sender, group, "account:alice", util::NowUnixMs());
     if (!accepted) {
       return accepted.error();
     }
@@ -75,19 +75,19 @@ protected:
 TEST_F(GroupRosterInviteApplyTest, AcceptAddsMemberAndBumpsEpoch) {
   GroupMetadata metadata;
   metadata.group_id = "group:hike";
-  metadata.owner_identity = "relay:alice";
+  metadata.owner_identity = "account:alice";
   metadata.title = "Weekend hike";
   metadata.roster_epoch = 1;
   ASSERT_TRUE(roster_->UpsertMetadata(metadata));
 
   GroupRosterMember owner;
-  owner.member_identity = "relay:alice";
+  owner.member_identity = "account:alice";
   owner.role = MemberRole::Owner;
   owner.joined_at = util::NowUnixMs();
   ASSERT_TRUE(roster_->UpsertMember("group:hike", owner));
   ASSERT_TRUE(roster_->UpsertPendingInvite(MakePending()));
 
-  auto accepted = Accept("nonce-1", "relay:bob");
+  auto accepted = Accept("nonce-1", "account:bob");
   ASSERT_TRUE(accepted) << accepted.error().message;
   EXPECT_TRUE(*accepted);
 
@@ -108,21 +108,21 @@ TEST_F(GroupRosterInviteApplyTest, AcceptAddsMemberAndBumpsEpoch) {
 TEST_F(GroupRosterInviteApplyTest, AcceptRejectsWrongSender) {
   SeedOwnedGroup();
   ASSERT_TRUE(roster_->UpsertPendingInvite(MakePending()));
-  auto result = Accept("nonce-1", "relay:eve");
+  auto result = Accept("nonce-1", "account:eve");
   ASSERT_FALSE(result);
 }
 
 TEST_F(GroupRosterInviteApplyTest, DeclineUpdatesStatusWithoutRemovingMembers) {
   GroupMetadata metadata;
   metadata.group_id = "group:hike";
-  metadata.owner_identity = "relay:alice";
+  metadata.owner_identity = "account:alice";
   metadata.title = "Weekend hike";
   metadata.roster_epoch = 1;
   ASSERT_TRUE(roster_->UpsertMetadata(metadata));
   // Decline must not assume invitee was ever on the active roster (pending ≠ member).
   ASSERT_TRUE(roster_->UpsertPendingInvite(MakePending()));
 
-  ASSERT_TRUE(ApplyInviteDeclineToRoster(*roster_, "nonce-1", "relay:bob", "group:hike"));
+  ASSERT_TRUE(ApplyInviteDeclineToRoster(*roster_, "nonce-1", "account:bob", "group:hike"));
   auto members = roster_->ListMembers("group:hike");
   ASSERT_TRUE(members);
   EXPECT_TRUE(members->empty());
@@ -134,22 +134,22 @@ TEST_F(GroupRosterInviteApplyTest, DeclineUpdatesStatusWithoutRemovingMembers) {
 TEST_F(GroupRosterInviteApplyTest, MemberJoinedAddsMemberAndBumpsEpoch) {
   GroupMetadata metadata;
   metadata.group_id = "group:hike";
-  metadata.owner_identity = "relay:alice";
+  metadata.owner_identity = "account:alice";
   metadata.title = "Weekend hike";
   metadata.roster_epoch = 1;
   ASSERT_TRUE(roster_->UpsertMetadata(metadata));
   GroupRosterMember alice;
-  alice.member_identity = "relay:alice";
+  alice.member_identity = "account:alice";
   alice.role = MemberRole::Owner;
   alice.joined_at = util::NowUnixMs();
   ASSERT_TRUE(roster_->UpsertMember("group:hike", alice));
 
   GroupMembershipCodec::MemberJoinedPayload payload;
   payload.group_id = "group:hike";
-  payload.member_identity = "relay:bob";
+  payload.member_identity = "account:bob";
   payload.role = MemberRole::Member;
   payload.roster_epoch = 2;
-  ASSERT_TRUE(ApplyMemberJoinedToRoster(*roster_, payload, "relay:alice"));
+  ASSERT_TRUE(ApplyMemberJoinedToRoster(*roster_, payload, "account:alice"));
 
   auto members = roster_->ListMembers("group:hike");
   ASSERT_TRUE(members);
@@ -163,39 +163,39 @@ TEST_F(GroupRosterInviteApplyTest, MemberJoinedSnapshotBackfillsPriorMembers) {
   // Late joiner (carol) only seeded owner+self locally; owner publish includes full roster.
   GroupMetadata metadata;
   metadata.group_id = "group:hike";
-  metadata.owner_identity = "relay:alice";
+  metadata.owner_identity = "account:alice";
   metadata.title = "Weekend hike";
   metadata.roster_epoch = 1;
   ASSERT_TRUE(roster_->UpsertMetadata(metadata));
   GroupRosterMember alice;
-  alice.member_identity = "relay:alice";
+  alice.member_identity = "account:alice";
   alice.role = MemberRole::Owner;
   alice.joined_at = util::NowUnixMs();
   ASSERT_TRUE(roster_->UpsertMember("group:hike", alice));
   GroupRosterMember carol_self;
-  carol_self.member_identity = "relay:carol";
+  carol_self.member_identity = "account:carol";
   carol_self.role = MemberRole::Member;
   carol_self.joined_at = util::NowUnixMs();
   ASSERT_TRUE(roster_->UpsertMember("group:hike", carol_self));
 
   GroupMembershipCodec::MemberJoinedPayload payload;
   payload.group_id = "group:hike";
-  payload.member_identity = "relay:carol";
+  payload.member_identity = "account:carol";
   payload.role = MemberRole::Member;
   payload.roster_epoch = 3;
   payload.members = {
-      {"relay:alice", MemberRole::Owner},
-      {"relay:bob", MemberRole::Member},
-      {"relay:carol", MemberRole::Member},
+      {"account:alice", MemberRole::Owner},
+      {"account:bob", MemberRole::Member},
+      {"account:carol", MemberRole::Member},
   };
-  ASSERT_TRUE(ApplyMemberJoinedToRoster(*roster_, payload, "relay:alice"));
+  ASSERT_TRUE(ApplyMemberJoinedToRoster(*roster_, payload, "account:alice"));
 
   auto members = roster_->ListMembers("group:hike");
   ASSERT_TRUE(members);
   ASSERT_EQ(members->size(), 3u);
   bool saw_bob = false;
   for (const GroupRosterMember& row : *members) {
-    if (row.member_identity == "relay:bob") {
+    if (row.member_identity == "account:bob") {
       saw_bob = true;
     }
   }
@@ -214,24 +214,24 @@ TEST_F(GroupRosterInviteApplyTest, MemberJoinedSnapshotBackfillsPriorMembers) {
 TEST_F(GroupRosterInviteApplyTest, MemberJoinedRejectsNonOwnerAndStaleEpoch) {
   GroupMetadata metadata;
   metadata.group_id = "group:hike";
-  metadata.owner_identity = "relay:alice";
+  metadata.owner_identity = "account:alice";
   metadata.title = "Weekend hike";
   metadata.roster_epoch = 2;
   ASSERT_TRUE(roster_->UpsertMetadata(metadata));
 
   GroupMembershipCodec::MemberJoinedPayload non_owner;
   non_owner.group_id = "group:hike";
-  non_owner.member_identity = "relay:bob";
+  non_owner.member_identity = "account:bob";
   non_owner.role = MemberRole::Member;
   non_owner.roster_epoch = 3;
-  EXPECT_FALSE(ApplyMemberJoinedToRoster(*roster_, non_owner, "relay:eve"));
+  EXPECT_FALSE(ApplyMemberJoinedToRoster(*roster_, non_owner, "account:eve"));
 
   GroupMembershipCodec::MemberJoinedPayload stale;
   stale.group_id = "group:hike";
-  stale.member_identity = "relay:bob";
+  stale.member_identity = "account:bob";
   stale.role = MemberRole::Member;
   stale.roster_epoch = 2;
-  EXPECT_FALSE(ApplyMemberJoinedToRoster(*roster_, stale, "relay:alice"));
+  EXPECT_FALSE(ApplyMemberJoinedToRoster(*roster_, stale, "account:alice"));
 }
 
 TEST_F(GroupRosterInviteApplyTest, PendingSnapshotRoundTrip) {
@@ -274,9 +274,9 @@ TEST_F(GroupRosterInviteApplyTest, InviteeAcceptSeedsOwnerAndSelfForFanout) {
   // Skip-self fan-out from invitee must still target the owner.
   size_t outbound = 0;
   for (const GroupRosterMember& member : *members) {
-    if (member.member_identity != "relay:bob") {
+    if (member.member_identity != "account:bob") {
       ++outbound;
-      EXPECT_EQ(member.member_identity, "relay:alice");
+      EXPECT_EQ(member.member_identity, "account:alice");
     }
   }
   EXPECT_EQ(outbound, 1u);
@@ -296,16 +296,16 @@ TEST_F(GroupRosterInviteApplyTest, ClearGroupTargetRemovesMapping) {
 TEST_F(GroupRosterInviteApplyTest, TransferLeavePreviousSetsOwnerAndRemovesActor) {
   GroupMetadata metadata;
   metadata.group_id = "group:hike";
-  metadata.owner_identity = "relay:alice";
+  metadata.owner_identity = "account:alice";
   metadata.title = "Weekend hike";
   metadata.roster_epoch = 1;
   ASSERT_TRUE(roster_->UpsertMetadata(metadata));
   GroupRosterMember alice;
-  alice.member_identity = "relay:alice";
+  alice.member_identity = "account:alice";
   alice.role = MemberRole::Owner;
   alice.joined_at = util::NowUnixMs();
   GroupRosterMember bob;
-  bob.member_identity = "relay:bob";
+  bob.member_identity = "account:bob";
   bob.role = MemberRole::Member;
   bob.joined_at = util::NowUnixMs();
   ASSERT_TRUE(roster_->UpsertMember("group:hike", alice));
@@ -313,19 +313,19 @@ TEST_F(GroupRosterInviteApplyTest, TransferLeavePreviousSetsOwnerAndRemovesActor
 
   GroupMembershipCodec::OwnerTransferredPayload payload;
   payload.group_id = "group:hike";
-  payload.new_owner_identity = "relay:bob";
+  payload.new_owner_identity = "account:bob";
   payload.roster_epoch = 2;
   payload.leave_previous = true;
-  ASSERT_TRUE(ApplyOwnerTransferredToRoster(*roster_, payload, "relay:alice"));
+  ASSERT_TRUE(ApplyOwnerTransferredToRoster(*roster_, payload, "account:alice"));
 
   auto meta = roster_->LoadMetadata("group:hike");
   ASSERT_TRUE(meta && meta->has_value());
-  EXPECT_EQ((*meta)->owner_identity, "relay:bob");
+  EXPECT_EQ((*meta)->owner_identity, "account:bob");
   EXPECT_EQ((*meta)->roster_epoch, 2u);
   auto members = roster_->ListMembers("group:hike");
   ASSERT_TRUE(members);
   ASSERT_EQ(members->size(), 1u);
-  EXPECT_EQ(members->front().member_identity, "relay:bob");
+  EXPECT_EQ(members->front().member_identity, "account:bob");
   EXPECT_EQ(members->front().role, MemberRole::Owner);
 }
 
@@ -336,14 +336,14 @@ TEST_F(GroupRosterInviteApplyTest, AcceptNeedsAnInviteWeIssuedForAGroupWeOwn) {
   received.invite_nonce = "nonce-in";
   received.outbound = false;
   ASSERT_TRUE(roster_->UpsertPendingInvite(received));
-  EXPECT_FALSE(Accept("nonce-in", "relay:bob")) << "an invite we received";
+  EXPECT_FALSE(Accept("nonce-in", "account:bob")) << "an invite we received";
 
   ASSERT_TRUE(roster_->UpsertPendingInvite(MakePending()));
-  EXPECT_FALSE(Accept("nonce-1", "relay:bob", "group:other")) << "another group";
+  EXPECT_FALSE(Accept("nonce-1", "account:bob", "group:other")) << "another group";
   EXPECT_FALSE(
-      ApplyInviteAcceptToRoster(*roster_, "nonce-1", "relay:bob", "group:hike", "relay:carol", util::NowUnixMs()))
+      ApplyInviteAcceptToRoster(*roster_, "nonce-1", "account:bob", "group:hike", "account:carol", util::NowUnixMs()))
       << "a group this device does not own";
-  EXPECT_FALSE(IsMember("relay:bob"));
+  EXPECT_FALSE(IsMember("account:bob"));
 }
 
 TEST_F(GroupRosterInviteApplyTest, AnExpiredInviteIsNotAccepted) {
@@ -351,8 +351,8 @@ TEST_F(GroupRosterInviteApplyTest, AnExpiredInviteIsNotAccepted) {
   PendingGroupInvite pending = MakePending();
   pending.expires_at = util::NowUnixMs() - kGroupInviteAcceptGraceMs - 1;
   ASSERT_TRUE(roster_->UpsertPendingInvite(pending));
-  EXPECT_FALSE(Accept("nonce-1", "relay:bob"));
-  EXPECT_FALSE(IsMember("relay:bob"));
+  EXPECT_FALSE(Accept("nonce-1", "account:bob"));
+  EXPECT_FALSE(IsMember("account:bob"));
   auto loaded = roster_->LoadPendingInvite("nonce-1");
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_EQ((*loaded)->status, InviteStatus::Expired);
@@ -364,8 +364,8 @@ TEST_F(GroupRosterInviteApplyTest, AnAcceptThatWaitedForTheOwnerStillCounts) {
   PendingGroupInvite pending = MakePending();
   pending.expires_at = util::NowUnixMs() - 1;
   ASSERT_TRUE(roster_->UpsertPendingInvite(pending));
-  EXPECT_TRUE(Accept("nonce-1", "relay:bob"));
-  EXPECT_TRUE(IsMember("relay:bob"));
+  EXPECT_TRUE(Accept("nonce-1", "account:bob"));
+  EXPECT_TRUE(IsMember("account:bob"));
 }
 
 TEST_F(GroupRosterInviteApplyTest, JoiningVoidsTheOtherCardsToThatPerson) {
@@ -375,7 +375,7 @@ TEST_F(GroupRosterInviteApplyTest, JoiningVoidsTheOtherCardsToThatPerson) {
   PendingGroupInvite second = first;
   second.invite_nonce = "nonce-2";
   ASSERT_TRUE(roster_->UpsertPendingInvite(second));
-  EXPECT_TRUE(Accept("nonce-1", "relay:bob"));
+  EXPECT_TRUE(Accept("nonce-1", "account:bob"));
   auto other = roster_->LoadPendingInvite("nonce-2");
   ASSERT_TRUE(other && other->has_value());
   EXPECT_EQ((*other)->status, InviteStatus::Expired);
@@ -387,7 +387,7 @@ TEST_F(GroupRosterInviteApplyTest, AcceptBumpsOurOwnEpochByOne) {
   PendingGroupInvite pending = MakePending();
   pending.roster_epoch = 1000;
   ASSERT_TRUE(roster_->UpsertPendingInvite(pending));
-  ASSERT_TRUE(Accept("nonce-1", "relay:bob"));
+  ASSERT_TRUE(Accept("nonce-1", "account:bob"));
   auto meta = roster_->LoadMetadata("group:hike");
   ASSERT_TRUE(meta && meta->has_value());
   EXPECT_EQ((*meta)->roster_epoch, 6u);
@@ -397,20 +397,20 @@ TEST_F(GroupRosterInviteApplyTest, AcceptBumpsOurOwnEpochByOne) {
 TEST_F(GroupRosterInviteApplyTest, AnAppliedAcceptDoesNotReaddARemovedMember) {
   SeedOwnedGroup();
   ASSERT_TRUE(roster_->UpsertPendingInvite(MakePending()));
-  ASSERT_TRUE(Accept("nonce-1", "relay:bob"));
-  ASSERT_TRUE(IsMember("relay:bob"));
+  ASSERT_TRUE(Accept("nonce-1", "account:bob"));
+  ASSERT_TRUE(IsMember("account:bob"));
 
   GroupMembershipCodec::MemberRemovedPayload removed;
   removed.group_id = "group:hike";
-  removed.member_identity = "relay:bob";
+  removed.member_identity = "account:bob";
   removed.roster_epoch = 3;
-  ASSERT_TRUE(ApplyMemberRemovedToRoster(*roster_, removed, "relay:alice"));
-  ASSERT_FALSE(IsMember("relay:bob"));
+  ASSERT_TRUE(ApplyMemberRemovedToRoster(*roster_, removed, "account:alice"));
+  ASSERT_FALSE(IsMember("account:bob"));
 
-  auto again = Accept("nonce-1", "relay:bob");
+  auto again = Accept("nonce-1", "account:bob");
   ASSERT_TRUE(again);
   EXPECT_FALSE(*again);
-  EXPECT_FALSE(IsMember("relay:bob"));
+  EXPECT_FALSE(IsMember("account:bob"));
 }
 
 // A stored invite is never rewritten by another with the same nonce.
@@ -433,18 +433,18 @@ TEST_F(GroupRosterInviteApplyTest, OnlyANewerOwnerRenameChangesTheTitle) {
   SeedOwnedGroup();
   GroupMembershipCodec::GroupRenamedPayload first{"group:hike", "A", 1, 1};
   GroupMembershipCodec::GroupRenamedPayload second{"group:hike", "B", 1, 2};
-  auto applied = ApplyGroupRenamedToRoster(*roster_, first, "relay:alice");
+  auto applied = ApplyGroupRenamedToRoster(*roster_, first, "account:alice");
   ASSERT_TRUE(applied && *applied);
-  applied = ApplyGroupRenamedToRoster(*roster_, second, "relay:alice");
+  applied = ApplyGroupRenamedToRoster(*roster_, second, "account:alice");
   ASSERT_TRUE(applied && *applied);
-  applied = ApplyGroupRenamedToRoster(*roster_, first, "relay:alice");
+  applied = ApplyGroupRenamedToRoster(*roster_, first, "account:alice");
   ASSERT_TRUE(applied);
   EXPECT_FALSE(*applied) << "older";
-  applied = ApplyGroupRenamedToRoster(*roster_, second, "relay:alice");
+  applied = ApplyGroupRenamedToRoster(*roster_, second, "account:alice");
   ASSERT_TRUE(applied);
   EXPECT_FALSE(*applied) << "the same one again";
   EXPECT_FALSE(ApplyGroupRenamedToRoster(*roster_, GroupMembershipCodec::GroupRenamedPayload{"group:hike", "C", 1, 9},
-                                         "relay:bob"))
+                                         "account:bob"))
       << "not the owner";
   auto meta = roster_->LoadMetadata("group:hike");
   ASSERT_TRUE(meta && meta->has_value());
@@ -458,7 +458,7 @@ TEST_F(GroupRosterInviteApplyTest, AnAcceptWhenTheGroupIsFullIsRefused) {
   SeedOwnedGroup(1);
   for (size_t i = 0; i + 1 < kMaxGroupMembers; ++i) { // 49 members: room for one more
     GroupRosterMember member;
-    member.member_identity = "relay:m" + std::to_string(i);
+    member.member_identity = "account:m" + std::to_string(i);
     member.role = i == 0 ? MemberRole::Owner : MemberRole::Member;
     ASSERT_TRUE(roster_->UpsertMember("group:hike", member));
   }
@@ -466,14 +466,14 @@ TEST_F(GroupRosterInviteApplyTest, AnAcceptWhenTheGroupIsFullIsRefused) {
   ASSERT_TRUE(roster_->UpsertPendingInvite(last));
   PendingGroupInvite late = MakePending();
   late.invite_nonce = "nonce-late";
-  late.invitee_identity = "relay:carol";
+  late.invitee_identity = "account:carol";
   ASSERT_TRUE(roster_->UpsertPendingInvite(late));
 
-  ASSERT_TRUE(Accept("nonce-1", "relay:bob")) << "the 50th member";
-  auto refused = Accept("nonce-late", "relay:carol");
+  ASSERT_TRUE(Accept("nonce-1", "account:bob")) << "the 50th member";
+  auto refused = Accept("nonce-late", "account:carol");
   ASSERT_FALSE(refused);
   EXPECT_EQ(refused.error().message, kGroupFullError);
-  EXPECT_FALSE(IsMember("relay:carol"));
+  EXPECT_FALSE(IsMember("account:carol"));
   auto invite = roster_->LoadPendingInvite("nonce-late");
   ASSERT_TRUE(invite && *invite);
   EXPECT_EQ((*invite)->status, InviteStatus::Expired) << "closed: a re-sent accept is not applied later";
@@ -488,7 +488,7 @@ TEST_F(GroupRosterInviteApplyTest, ConcurrentAcceptsBothLandAndEachBumpsTheEpoch
   for (int i = 0; i < kInvitees; ++i) {
     PendingGroupInvite pending = MakePending();
     pending.invite_nonce = "nonce-" + std::to_string(i);
-    pending.invitee_identity = "relay:member" + std::to_string(i);
+    pending.invitee_identity = "account:member" + std::to_string(i);
     ASSERT_TRUE(roster_->UpsertPendingInvite(pending));
   }
   std::vector<std::thread> workers;
@@ -498,8 +498,8 @@ TEST_F(GroupRosterInviteApplyTest, ConcurrentAcceptsBothLandAndEachBumpsTheEpoch
       // One roster for every worker: the update lock keeps each accept's read-then-bump whole (that the app's many
       // connections to profile.db hold up too is sqlite_group_roster_store_test's).
       auto accepted =
-          ApplyInviteAcceptToRoster(*roster_, "nonce-" + std::to_string(i), "relay:member" + std::to_string(i),
-                                    "group:hike", "relay:alice", util::NowUnixMs());
+          ApplyInviteAcceptToRoster(*roster_, "nonce-" + std::to_string(i), "account:member" + std::to_string(i),
+                                    "group:hike", "account:alice", util::NowUnixMs());
       if (accepted && *accepted == InviteAccepted::Added) {
         applied.fetch_add(1);
       }
@@ -510,7 +510,7 @@ TEST_F(GroupRosterInviteApplyTest, ConcurrentAcceptsBothLandAndEachBumpsTheEpoch
   }
   EXPECT_EQ(applied.load(), kInvitees);
   for (int i = 0; i < kInvitees; ++i) {
-    EXPECT_TRUE(IsMember("relay:member" + std::to_string(i))) << i;
+    EXPECT_TRUE(IsMember("account:member" + std::to_string(i))) << i;
   }
   auto metadata = roster_->LoadMetadata("group:hike");
   ASSERT_TRUE(metadata && *metadata);
@@ -532,19 +532,19 @@ TEST_F(GroupRosterInviteApplyTest, ListOutboundPendingInvitesKeepsLiveOutboundOn
     invite.outbound = outbound;
     ASSERT_TRUE(roster_->UpsertPendingInvite(invite));
   };
-  make("old", "relay:bob", now - 5000, InviteStatus::Pending, now + 100000, true, "group:hike");
-  make("new", "relay:bob", now - 1000, InviteStatus::Pending, now + 100000, true, "group:hike");
-  make("carol", "relay:carol", now - 3000, InviteStatus::Pending, now + 100000, true, "group:hike");
-  make("expired", "relay:dan", now - 9000, InviteStatus::Pending, now - 1, true, "group:hike");
-  make("done", "relay:eve", now - 9000, InviteStatus::Accepted, now + 100000, true, "group:hike");
-  make("inbound", "relay:fay", now - 9000, InviteStatus::Pending, now + 100000, false, "group:hike");
-  make("other", "relay:gus", now - 9000, InviteStatus::Pending, now + 100000, true, "group:other");
+  make("old", "account:bob", now - 5000, InviteStatus::Pending, now + 100000, true, "group:hike");
+  make("new", "account:bob", now - 1000, InviteStatus::Pending, now + 100000, true, "group:hike");
+  make("carol", "account:carol", now - 3000, InviteStatus::Pending, now + 100000, true, "group:hike");
+  make("expired", "account:dan", now - 9000, InviteStatus::Pending, now - 1, true, "group:hike");
+  make("done", "account:eve", now - 9000, InviteStatus::Accepted, now + 100000, true, "group:hike");
+  make("inbound", "account:fay", now - 9000, InviteStatus::Pending, now + 100000, false, "group:hike");
+  make("other", "account:gus", now - 9000, InviteStatus::Pending, now + 100000, true, "group:other");
   auto listed = roster_->ListOutboundPendingInvites("group:hike", now);
   ASSERT_TRUE(listed);
   ASSERT_EQ(listed->size(), 2u);
   EXPECT_EQ((*listed)[0].invite_nonce, "new");
-  EXPECT_EQ((*listed)[0].invitee_identity, "relay:bob");
-  EXPECT_EQ((*listed)[1].invitee_identity, "relay:carol");
+  EXPECT_EQ((*listed)[0].invitee_identity, "account:bob");
+  EXPECT_EQ((*listed)[1].invitee_identity, "account:carol");
 }
 
 TEST_F(GroupRosterInviteApplyTest, ExpireOutboundInvitesToOnlyEndsThatGroupsLiveInvitesToThatPerson) {
@@ -560,14 +560,14 @@ TEST_F(GroupRosterInviteApplyTest, ExpireOutboundInvitesToOnlyEndsThatGroupsLive
     invite.outbound = outbound;
     ASSERT_TRUE(roster_->UpsertPendingInvite(invite));
   };
-  make("bob", "relay:bob", true, "group:hike");
-  make("carol", "relay:carol", true, "group:hike");
-  make("bob-other", "relay:bob", true, "group:other");
-  ASSERT_TRUE(roster_->ExpireOutboundInvitesTo("group:hike", "relay:bob"));
+  make("bob", "account:bob", true, "group:hike");
+  make("carol", "account:carol", true, "group:hike");
+  make("bob-other", "account:bob", true, "group:other");
+  ASSERT_TRUE(roster_->ExpireOutboundInvitesTo("group:hike", "account:bob"));
   auto hike = roster_->ListOutboundPendingInvites("group:hike", now);
   ASSERT_TRUE(hike);
   ASSERT_EQ(hike->size(), 1u);
-  EXPECT_EQ((*hike)[0].invitee_identity, "relay:carol");
+  EXPECT_EQ((*hike)[0].invitee_identity, "account:carol");
   auto other = roster_->ListOutboundPendingInvites("group:other", now);
   ASSERT_TRUE(other);
   EXPECT_EQ(other->size(), 1u);

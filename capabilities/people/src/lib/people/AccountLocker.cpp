@@ -78,7 +78,6 @@ ByteVector SignBytes(const ByteVector& locker_id, const uint64_t version, const 
 
 std::string StateToJson(const AccountLockerState& state) {
   Object root;
-  root.set("relay_user_id", state.relay_user_id);
   root.set("nickname", state.nickname);
   std::vector<Value> contacts;
   for (const Contact& contact : state.contacts) {
@@ -113,12 +112,12 @@ Roe<AccountLockerState> StateFromJson(const std::string& json) {
     return Error("account locker: state is not a JSON object");
   }
   AccountLockerState state;
-  state.relay_user_id = root->getString("relay_user_id").value_or("");
   state.nickname = root->getString("nickname").value_or("");
   if (const Array* contacts = root->getArray("contacts")) {
     for (const Value& item : contacts->elements) {
       if (const Object* row = asObject(item)) {
         state.contacts.push_back(ContactFromJson(*row));
+        DropRetiredRelayIds(state.contacts.back()); // a snapshot from before MR001 may list them
       }
     }
   }

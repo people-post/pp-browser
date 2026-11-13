@@ -15,7 +15,7 @@ bool ContactProfileRefresh::NeedsRefresh(const std::string& contact_id, const in
     return false;
   }
   const Contact& contact = **found;
-  if (!ContactRelayUserId(contact)) {
+  if (!ContactAccountId(contact)) {
     return false;
   }
   return now_ms - contact.remote.fetched_at >= kStaleMs;
@@ -28,8 +28,8 @@ ContactProfileRefresh::Result ContactProfileRefresh::RefreshIfStale(const std::s
   if (!found || !found->has_value()) {
     return result;
   }
-  const auto relay_id = ContactRelayUserId(**found);
-  if (!relay_id || now_ms - (*found)->remote.fetched_at < kStaleMs) {
+  const auto account_id = ContactAccountId(**found);
+  if (!account_id || now_ms - (*found)->remote.fetched_at < kStaleMs) {
     return result;
   }
   {
@@ -39,7 +39,7 @@ ContactProfileRefresh::Result ContactProfileRefresh::RefreshIfStale(const std::s
     }
   }
   result.looked_up = true;
-  auto hit = directory_.LookupRelayUser(*relay_id);
+  auto hit = directory_.LookupByAccount(*account_id);
   if (hit) {
     auto applied = contacts_.ApplyProfileRefresh(contact_id, *hit, now_ms);
     if (applied) {

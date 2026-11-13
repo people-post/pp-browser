@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -28,10 +29,6 @@ public:
   explicit RecordingDirectory(std::vector<std::string>& asked) : asked_(asked) {}
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string&) override {
     return std::vector<mesh::DirectoryHit>{};
-  }
-  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override {
-    asked_.push_back("directory:relay:" + relay_user_id);
-    return answer;
   }
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string& account_id) override {
     asked_.push_back("directory:account:" + account_id);
@@ -103,7 +100,7 @@ protected:
     return SignAccountCard(card, [&account](const ByteVector& bytes) { return account.Sign(bytes); }).value();
   }
 
-  /** Bob as a QR code adds him: his Account ID and a device, no relay id. */
+  /** Bob as a QR code adds him: his Account ID and a device. */
   std::string AddBobByQr() {
     mesh::DirectoryHit hit;
     hit.hit_id = bob_.account_id;
@@ -119,11 +116,10 @@ protected:
   /** Our directory's entry for Bob, its keys his own. */
   mesh::DirectoryHit DirectoryBob() {
     mesh::DirectoryHit hit;
-    hit.hit_id = "relay:bob";
+    hit.hit_id = bob_.account_id;
     hit.account_id = bob_.account_id;
     hit.nickname = "Bob D.";
-    hit.ids = {{mesh::ContactIdKind::Account, bob_.account_id, true},
-               {mesh::ContactIdKind::RelayUser, "relay:bob", false}};
+    hit.ids = {{mesh::ContactIdKind::Account, bob_.account_id, true}};
     hit.signing_public_key_b64 = bob_.SigningPublicB64();
     hit.kem_public_key_b64 = bob_.KemPublicB64();
     hit.kem_binding_signature_b64 = bob_.KemBindingB64();
@@ -275,39 +271,38 @@ TEST_F(ContactRefreshWorkflowTest, TheLookupRunsOnTheBlockingLaneAndTheResultOnT
   EXPECT_EQ(Stored(id).remote.nickname, "Bob D.");
 }
 
-TEST_F(ContactRefreshWorkflowTest, AContactWithoutARelayIdRefreshesByAccountId) {
+TEST_F(ContactRefreshWorkflowTest, AContactRefreshesByAccountId) {
   const std::string id = AddBobByQr();
-  ASSERT_FALSE(ContactRelayUserId(Stored(id)).has_value());
   directory_.answer = DirectoryBob();
 
   const ContactRefreshResult result = Refresh(id);
 
-  for (const std::string& asked : asked_) {
-    EXPECT_EQ(asked.find("directory:relay:"), std::string::npos) << asked;
-  }
+  EXPECT_NE(std::find(asked_.begin(), asked_.end(), "directory:account:" + bob_.account_id), asked_.end());
   EXPECT_EQ(result.directory, ContactRefreshResult::Directory::Answered);
   EXPECT_TRUE(result.Changed());
   EXPECT_TRUE(HasKemKey(bob_.account_id)) << "messageable now";
-  EXPECT_EQ(ContactRelayUserId(Stored(id)).value_or(""), "relay:bob") << "our relay's route to the account";
+  EXPECT_EQ(ContactAccountId(Stored(id)).value_or(""), bob_.account_id);
 }
 
-TEST_F(ContactRefreshWorkflowTest, AContactKnownOnlyByRelayIdIsLookedUpByItAndTakesAVerifiedAccount) {
-  // An older contact: a relay id and no Account ID (a directory add no longer makes one).
+// Multi-relay MR001: the directory knows people by Account ID only, so a contact without one (named by
+// something else) asks neither its devices nor the directory.
+TEST_F(ContactRefreshWorkflowTest, AContactWithoutAnAccountIdAsksNoOne) {
   auto empty = contacts_->AddEmpty();
   ASSERT_TRUE(empty);
-  Contact relay_only = *empty;
-  relay_only.remote.nickname = "bob";
-  relay_only.remote.ids = {{mesh::ContactIdKind::RelayUser, "relay:bob", true}};
-  SyncContactMirrors(relay_only);
-  auto added = contacts_->Upsert(relay_only);
+  Contact other = *empty;
+  other.remote.nickname = "bob";
+  other.remote.ids = {{mesh::ContactIdKind::Custom, "custom:bob", true}};
+  SyncContactMirrors(other);
+  auto added = contacts_->Upsert(other);
   ASSERT_TRUE(added) << added.error().message;
   directory_.answer = DirectoryBob();
 
   const ContactRefreshResult result = Refresh(added->id);
 
-  EXPECT_EQ(asked_, (std::vector<std::string>{"directory:relay:relay:bob"})) << "no Account ID: no device to ask";
+  EXPECT_TRUE(asked_.empty());
   EXPECT_EQ(result.devices, ContactRefreshResult::Devices::NotAsked);
-  EXPECT_EQ(ContactAccountId(Stored(added->id)).value_or(""), bob_.account_id);
+  EXPECT_EQ(result.directory, ContactRefreshResult::Directory::NotAsked);
+  EXPECT_FALSE(ContactAccountId(Stored(added->id)).has_value());
 }
 
 TEST_F(ContactRefreshWorkflowTest, NothingAnsweringSaysWhichSourceFailed) {

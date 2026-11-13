@@ -48,7 +48,7 @@ void RankDirectoryHits(std::vector<mesh::DirectoryHit>& hits, const std::string&
 
 std::optional<std::string> NormalizeExactPeopleId(std::string_view query) {
   const std::string q = util::Trim(std::string(query));
-  if (q.rfind("account:", 0) == 0 || q.rfind("relay:", 0) == 0) {
+  if (q.rfind("account:", 0) == 0) {
     return q;
   }
   if (q.size() != 43) {
@@ -66,7 +66,7 @@ std::optional<std::string> NormalizeExactPeopleId(std::string_view query) {
 
 bool HasExactIdPrefix(std::string_view query) {
   const std::string q = util::Trim(std::string(query));
-  return q.rfind("account:", 0) == 0 || q.rfind("relay:", 0) == 0;
+  return q.rfind("account:", 0) == 0;
 }
 
 bool HitMatchesExactPeopleId(const mesh::DirectoryHit& hit, std::string_view query) {

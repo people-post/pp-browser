@@ -48,7 +48,6 @@ public:
     }
     {
       LocalIdentity updated = *identity->Get();
-      updated.relay_user_id = "relay:responder";
       updated.registered = true;
       if (!identity->Update(updated)) {
         throw std::runtime_error("identity update failed");
@@ -132,7 +131,7 @@ protected:
     key.source = "test";
     keys_.Put("account", data_->identity->Get()->account_id, key);
 
-    ASSERT_TRUE(static_cast<bool>(mesh_->chat_a().RegisterEndpoint("relay:responder", mesh_->ma_b)));
+    ASSERT_TRUE(static_cast<bool>(mesh_->chat_a().RegisterEndpoint(data_->identity->Get()->account_id, mesh_->ma_b)));
 
     responder_history_->Start();
     client_history_->Start();
@@ -160,10 +159,10 @@ TEST_F(AmpChatHistoryTransportTest, FetchHistoryRoundTrip) {
   data_->SeedOutbound(2, "beta");
 
   ChatHistoryRequest request;
-  request.requester_identity_kind = "relay_user";
-  request.requester_identity_value = "relay:requester";
-  request.peer_identity_kind = "relay_user";
-  request.peer_identity_value = "relay:responder";
+  request.requester_identity_kind = "account";
+  request.requester_identity_value = "account:requester";
+  request.peer_identity_kind = "account";
+  request.peer_identity_value = data_->identity->Get()->account_id; // the responder: its stream, by Account ID
   request.channel = ThreadChannel::E2e;
   request.session_epoch = 1;
   request.limit = 10;

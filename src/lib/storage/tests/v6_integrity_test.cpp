@@ -13,7 +13,7 @@ using namespace pbr;
 
 DirectChatTarget MakeTarget(const std::string& peer) {
   DirectChatTarget target;
-  target.peer_identity_kind = "relay_user";
+  target.peer_identity_kind = "account";
   target.peer_identity_value = peer;
   target.channel = ThreadChannel::E2e;
   return target;
@@ -52,7 +52,7 @@ TEST(V6IntegrityTest, BumpLocalEpochCancelsOldPendingAndResetsSeq) {
   SqliteThreadStore store(data_dir.string());
   ASSERT_TRUE(store.SetDek(TestDek()));
 
-  auto thread = store.FindOrCreateDirectThread(MakeTarget("relay:integrity-a"), "contact-a", "A");
+  auto thread = store.FindOrCreateDirectThread(MakeTarget("account:integrity-a"), "contact-a", "A");
   ASSERT_TRUE(static_cast<bool>(thread));
 
   MakeOutbound(store, thread->id, "pending-old", 1, 1, MessageDelivery::Pending);
@@ -85,7 +85,7 @@ TEST(V6IntegrityTest, PassiveEpochAdoptUpdatesChatTargetAndSyncState) {
   SqliteThreadStore store(data_dir.string());
   ASSERT_TRUE(store.SetDek(TestDek()));
 
-  auto thread = store.FindOrCreateDirectThread(MakeTarget("relay:integrity-b"), "contact-b", "B");
+  auto thread = store.FindOrCreateDirectThread(MakeTarget("account:integrity-b"), "contact-b", "B");
   ASSERT_TRUE(static_cast<bool>(thread));
 
   MakeOutbound(store, thread->id, "local-pending", 1, 1, MessageDelivery::Pending);
@@ -129,7 +129,7 @@ TEST(V6IntegrityTest, CompromisedHelperReflectsSyncState) {
   SqliteThreadStore store(data_dir.string());
   ASSERT_TRUE(store.SetDek(TestDek()));
 
-  auto thread = store.FindOrCreateDirectThread(MakeTarget("relay:integrity-c"), "contact-c", "C");
+  auto thread = store.FindOrCreateDirectThread(MakeTarget("account:integrity-c"), "contact-c", "C");
   ASSERT_TRUE(static_cast<bool>(thread));
   EXPECT_FALSE(IsE2eThreadCompromised(store, thread->id));
 

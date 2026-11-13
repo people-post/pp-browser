@@ -17,36 +17,36 @@ uint8_t HistoryOrderWire(const std::string& order) {
 std::vector<uint8_t> BuildRelayApiSendSignBytes(const RelayWireSendRecord& record, const int64_t timestamp) {
   std::ostringstream oss;
   AppendRelayApiHeader(oss, RelayApiOp::Send, timestamp);
-  RelaySignAppendWireLenUtf8(oss, record.sender_contact_id);
-  RelaySignAppendWireLenUtf8(oss, record.recipient_contact_id);
+  RelaySignAppendWireLenUtf8(oss, record.sender_account_id);
+  RelaySignAppendWireLenUtf8(oss, record.recipient_account_id);
   RelaySignAppendWireLenUtf8(oss, record.stream_id);
   RelaySignAppendU64(oss, record.index_key);
   return RelaySignOssToBytes(oss);
 }
 
-std::vector<uint8_t> BuildRelayApiPollInboxSignBytes(const std::string& requester_contact_id, const std::string& cursor,
+std::vector<uint8_t> BuildRelayApiPollInboxSignBytes(const std::string& requester_account_id, const std::string& cursor,
                                                      const int64_t timestamp) {
   std::ostringstream oss;
   AppendRelayApiHeader(oss, RelayApiOp::PollInbox, timestamp);
-  RelaySignAppendWireLenUtf8(oss, requester_contact_id);
+  RelaySignAppendWireLenUtf8(oss, requester_account_id);
   RelaySignAppendWireLenUtf8(oss, cursor);
   return RelaySignOssToBytes(oss);
 }
 
-std::vector<uint8_t> BuildRelayApiAckInboxSignBytes(const std::string& requester_contact_id, const std::string& cursor,
+std::vector<uint8_t> BuildRelayApiAckInboxSignBytes(const std::string& requester_account_id, const std::string& cursor,
                                                     const int64_t timestamp) {
   std::ostringstream oss;
   AppendRelayApiHeader(oss, RelayApiOp::AckInbox, timestamp);
-  RelaySignAppendWireLenUtf8(oss, requester_contact_id);
+  RelaySignAppendWireLenUtf8(oss, requester_account_id);
   RelaySignAppendWireLenUtf8(oss, cursor);
   return RelaySignOssToBytes(oss);
 }
 
-std::vector<uint8_t> BuildRelayApiClearInboxSignBytes(const std::string& requester_contact_id,
+std::vector<uint8_t> BuildRelayApiClearInboxSignBytes(const std::string& requester_account_id,
                                                       const std::string& before_created_at, const int64_t timestamp) {
   std::ostringstream oss;
   AppendRelayApiHeader(oss, RelayApiOp::ClearInbox, timestamp);
-  RelaySignAppendWireLenUtf8(oss, requester_contact_id);
+  RelaySignAppendWireLenUtf8(oss, requester_account_id);
   RelaySignAppendWireLenUtf8(oss, before_created_at);
   return RelaySignOssToBytes(oss);
 }

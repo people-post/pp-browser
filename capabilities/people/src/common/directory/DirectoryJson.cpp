@@ -9,8 +9,6 @@ std::string ContactIdKindToString(const mesh::ContactIdKind kind) {
   switch (kind) {
     case mesh::ContactIdKind::Account:
       return "account";
-    case mesh::ContactIdKind::RelayUser:
-      return "relay_user";
     case mesh::ContactIdKind::PeerId:
       return "peer_id";
     case mesh::ContactIdKind::Blockchain:
@@ -34,10 +32,7 @@ mesh::ContactIdKind ContactIdKindFromString(const std::string& value) {
   if (value == "custom") {
     return mesh::ContactIdKind::Custom;
   }
-  if (value == "relay_user") {
-    return mesh::ContactIdKind::RelayUser;
-  }
-  // Unknown kinds must not silently become relay_user (M009).
+  // An unknown kind stays unknown (M009); the retired `relay_user` included (multi-relay MR001).
   return mesh::ContactIdKind::Custom;
 }
 
@@ -165,15 +160,6 @@ Object ProfileIconRefToJson(const mesh::ProfileIconRef& icon) {
 
 namespace {
 
-bool HasRelayUserId(const std::vector<mesh::ContactId>& ids, const std::string& relay_user_id) {
-  for (const mesh::ContactId& id : ids) {
-    if (id.kind == mesh::ContactIdKind::RelayUser && id.value == relay_user_id) {
-      return true;
-    }
-  }
-  return false;
-}
-
 bool HasAccountId(const std::vector<mesh::ContactId>& ids, const std::string& account_id) {
   for (const mesh::ContactId& id : ids) {
     if (id.kind == mesh::ContactIdKind::Account && id.value == account_id) {
@@ -232,15 +218,8 @@ mesh::DirectoryHit DirectoryHitFromJson(const Object& json) {
         }
         hit.ids.insert(hit.ids.begin(), {mesh::ContactIdKind::Account, *account_id, true});
       }
-    }
-  }
-  if (auto relay_user_id = json.getString("relay_user_id")) {
-    if (!relay_user_id->empty()) {
       if (hit.hit_id.empty()) {
-        hit.hit_id = *relay_user_id;
-      }
-      if (!HasRelayUserId(hit.ids, *relay_user_id)) {
-        hit.ids.push_back({mesh::ContactIdKind::RelayUser, *relay_user_id, hit.ids.empty()});
+        hit.hit_id = *account_id; // a lookup row names its account, not a hit (multi-relay MR001)
       }
     }
   }

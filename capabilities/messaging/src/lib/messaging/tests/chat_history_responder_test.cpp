@@ -47,7 +47,6 @@ public:
     record.signing_public_key_b64 = requester.SigningPublicB64();
     record.source = "test";
     keys.Put("account", requester_account, record);
-    local_relay_id = "relay:local";
 
     DirectChatTarget target;
     target.peer_identity_kind = "account";
@@ -93,10 +92,10 @@ public:
   /** A history request from the requester, signed as it would send it (PeerRequestAuth). */
   ChatHistoryRequest SignedRequest(int64_t now_ms = util::NowUnixMs()) {
     ChatHistoryRequest request;
-    request.requester_identity_kind = "relay_user";
-    request.requester_identity_value = "relay:peer";
-    request.peer_identity_kind = "relay_user";
-    request.peer_identity_value = local_relay_id;
+    request.requester_identity_kind = "account";
+    request.requester_identity_value = requester_account;
+    request.peer_identity_kind = "account";
+    request.peer_identity_value = local.account_id;
     request.channel = ThreadChannel::E2e;
     request.session_epoch = 1;
     request.limit = 10;
@@ -112,7 +111,7 @@ public:
 
   Roe<ChatHistoryResponse> Serve(const ChatHistoryRequest& request, const std::string& remote_peer_id) {
     return ChatHistoryResponder::Serve(
-        store, psk_store, request, local_relay_id, local.account_id, local.device.peer_id,
+        store, psk_store, request, local.account_id, local.device.peer_id,
         [this](const std::vector<uint8_t>& bytes) { return local.device.Sign(bytes); }, remote_peer_id, keys_resolver,
         util::NowUnixMs());
   }
@@ -126,7 +125,6 @@ public:
   PeerSigningKeyResolver keys_resolver;
   std::string requester_account;
   Thread thread;
-  std::string local_relay_id;
 };
 
 } // namespace

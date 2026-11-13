@@ -46,7 +46,7 @@ class CallSessionWorkflow : public Module, public ICallSessionNotes {
 public:
   /** Delivery / roster wire + chrome activity banners. */
   struct WirePorts {
-    std::function<Roe<std::string>()> local_relay_identity;
+    std::function<Roe<std::string>()> local_account_identity;
     std::function<Roe<void>(const std::string& peer, CallControlType type, const std::string& detail,
                             const std::string& display, bool urgent)>
         send_direct;
@@ -82,7 +82,7 @@ public:
      */
     CallGroupStandingFn group_standing;
 
-    bool IsBound() const { return static_cast<bool>(local_relay_identity); }
+    bool IsBound() const { return static_cast<bool>(local_account_identity); }
   };
 
   /** The 1:1 start the session workflow schedules. */

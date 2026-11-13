@@ -1,7 +1,7 @@
 #include "feature/conversations/GroupMentions.h"
 
 #include "common/Utilities.h"
-#include "common/directory/ShortRelayId.h"
+#include "common/directory/ShortPersonId.h"
 #include "lib/messaging/QuoteReply.h"
 
 #include <algorithm>
@@ -68,7 +68,7 @@ std::string MemberPublicName(const std::string& account_id, const std::string& c
       return directory;
     }
   }
-  return ShortRelayId(account_id);
+  return ShortPersonId(account_id);
 }
 
 std::vector<MentionCandidate> AllMentionCandidates(
@@ -83,7 +83,7 @@ std::vector<MentionCandidate> AllMentionCandidates(
     }
     MentionCandidate candidate;
     candidate.account_id = member.member_identity;
-    candidate.name = public_name ? public_name(member.member_identity) : ShortRelayId(member.member_identity);
+    candidate.name = public_name ? public_name(member.member_identity) : ShortPersonId(member.member_identity);
     if (candidate.name.empty()) {
       continue;
     }
@@ -92,7 +92,7 @@ std::vector<MentionCandidate> AllMentionCandidates(
   }
   for (MentionCandidate& candidate : members) {
     if (name_counts[AsciiLower(candidate.name)] > 1) {
-      candidate.short_id = ShortRelayId(candidate.account_id);
+      candidate.short_id = ShortPersonId(candidate.account_id);
     }
   }
   std::stable_sort(members.begin(), members.end(), [](const MentionCandidate& a, const MentionCandidate& b) {

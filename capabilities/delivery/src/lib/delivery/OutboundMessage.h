@@ -99,7 +99,7 @@ Roe<PairCopy> SealPairCopy(const ThreadMessage& message, const std::string& send
 
 /** Who sends, as an envelope names us. */
 struct EnvelopeSender {
-  std::string relay_user_id;
+  /** Our Account ID: the envelope's sender and, on the relay, the sending account (multi-relay MR001). */
   std::string account_id;
   /** This device's PeerId (M021): it signs the envelope. */
   std::string device;
@@ -113,11 +113,11 @@ RelayCopy AccountCopy(const ThreadMessage& numbered, SealedPayload sealed);
 RelayCopy DeviceCopy(const std::string& device, PairCopy copy);
 
 /**
- * A direct send's envelope to `route_party` (relay id, or the account for an Amp-only peer): one relay record
- * with `copies` for the account's devices, or the account copy (M022). `order_key`: its relay index.
+ * A direct send's envelope to the account `recipient` (its relay inbox, MR001): one relay record with `copies` for
+ * the account's devices, or the account copy (M022). `order_key`: its relay index.
  */
 RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const EnvelopeSender& sender, ThreadChannel channel,
-                                  const std::string& route_party, std::vector<RelayCopy> copies, uint64_t order_key);
+                                  const std::string& recipient, std::vector<RelayCopy> copies, uint64_t order_key);
 
 /**
  * Control-lane signaling (call control) prefers the relay when a route is known (Amp's open + ack per message races the
@@ -137,13 +137,12 @@ bool ControlAlsoGoesDirect(bool peer_connected, bool has_relay_route, bool criti
 /**
  * One member's envelope of a group send: `copies` for the member's devices (each a pairwise payload numbered
  * in its device pair, with a key_init while that session is ours and not yet confirmed), or the member's
- * account copy (M022). `route_party`: the member's `relay:` id, or their account when only Amp reaches them.
- * The route names no group (G018 item 7: the copies carry it inside); `group_id` only makes the pair's stream id.
+ * account copy (M022), addressed to the member's account (its relay inbox, MR001). The route names no group
+ * (G018 item 7: the copies carry it inside); `group_id` only makes the pair's stream id.
  */
 RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
                                        const std::string& group_id, const std::string& recipient,
-                                       const std::string& route_party, std::vector<RelayCopy> copies,
-                                       uint64_t order_key);
+                                       std::vector<RelayCopy> copies, uint64_t order_key);
 
 // --- The outbox: sends queued after a failed relay attempt ----------------------------------------
 
@@ -163,8 +162,18 @@ bool OutboxSendStillWanted(bool control_lane, int64_t age_ms, bool thread_paused
  */
 bool OutboxRetryAgain(int attempts, const Error& failure);
 
-/** The relay answered a send with 404: it has no such recipient (the route is stale, e.g. another registry now). */
-bool RelayRecipientUnknown(const Error& failure);
+/** The relay answered a send `recipient_not_registered`: the recipient is not on this relay (MR003). Final. */
+bool RelayRecipientNotRegistered(const Error& failure);
+/** The relay answered a send `payment_required` (MR005): the recipient charges strangers. Final until paid. */
+bool RelayPaymentRequired(const Error& failure);
+/** The recipient's initiation floor (pp_credit minor units) a `payment_required` named; 0 when it named none. */
+int64_t RelayPaymentRequiredFloor(const Error& failure);
+/** The relay answered a send `stranger_quota_exceeded` (MR005): sent again later, after a backoff. */
+bool RelayStrangerQuota(const Error& failure);
+/** How long a send refused for the stranger quota waits before its next try (`attempts` so far): 1 min, doubling to 16. */
+std::chrono::milliseconds StrangerQuotaRetryAfter(int attempts);
+/** A send refused for the stranger quota is tried at most this many times (about two hours of backoff). */
+inline constexpr int kMaxStrangerQuotaAttempts = 8;
 
 /** The control lane's prompt retries back off to this and stay there for the rest of the window. */
 inline constexpr std::chrono::milliseconds kControlRetryMaxDelay{16000};

@@ -24,7 +24,7 @@ namespace pbr {
 struct MessagingPeoplePickerPorts {
   std::function<Roe<std::optional<Thread>>(const std::string& thread_id)> get_thread;
   std::function<Roe<std::vector<GroupRosterMember>>(const std::string& group_id)> list_group_roster;
-  std::function<std::optional<std::string>()> local_relay_identity;
+  std::function<std::optional<std::string>()> local_account_identity;
   /** Whether this account owns the group, by the engine's own check (the group's recorded owner). */
   std::function<Roe<bool>(const std::string& group_id)> is_local_owner;
   std::function<Roe<std::optional<Contact>>(const std::string& identity_value, mesh::ContactIdKind kind)>

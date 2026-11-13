@@ -3,6 +3,7 @@
 #include "lib/storage/SqliteCallMediaKeyStore.h"
 #include "lib/storage/SqliteCallSessionStore.h"
 #include "lib/storage/SqliteControlLaneSeenStore.h"
+#include "lib/storage/SqliteRelayGrantStore.h"
 #include "lib/storage/SqliteGroupInviteLinkStore.h"
 #include "lib/storage/SqliteGroupRosterStore.h"
 #include "lib/storage/SqliteObjectIndex.h"
@@ -61,6 +62,7 @@ Roe<ProfileStores> OpenSqliteProfileStores(const std::string& profile_data_dir, 
   stores.threads = std::move(threads);
   stores.peer_sessions = std::move(peer_sessions);
   stores.control_lane_seen = std::make_unique<SqliteControlLaneSeenStore>(stores.profile_db_path);
+  stores.relay_grants = std::make_unique<SqliteRelayGrantStore>(stores.profile_db_path);
   stores.rosters = std::make_unique<SqliteGroupRosterStore>(stores.profile_db_path);
   stores.thread_prefs = std::make_unique<SqliteThreadLocalPrefsStore>(stores.profile_db_path);
   stores.thread_mentions = std::make_unique<SqliteThreadMentionsStore>(stores.profile_db_path);

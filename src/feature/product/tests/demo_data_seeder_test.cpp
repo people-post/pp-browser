@@ -63,7 +63,7 @@ protected:
                         dir_.string(),
                         TestDek(),
                         64ULL * 1024 * 1024,
-                        /*own_relay_user_id=*/"",
+                        /*own_registered_account=*/"",
                         midnight,
                         midnight + 11 * 3600 * 1000,
                         ReadDemoAsset};
@@ -139,7 +139,6 @@ TEST_F(DemoDataSeederTest, SeedsContactsThreadsUnreadCountsAndTwoDifferentPictur
   for (const Contact& c : *contacts) {
     ASSERT_EQ(c.remote.ids.size(), 1u) << c.id; // only the local-only demo account id
     EXPECT_EQ(c.remote.ids[0].value, "demo-acct-" + c.id);
-    EXPECT_FALSE(ContactRelayUserId(c).has_value()) << c.id;
     EXPECT_TRUE(c.remote.multiaddrs.empty());
     EXPECT_GT(c.remote.fetched_at, 0);
   }
@@ -303,14 +302,14 @@ TEST_F(DemoDataSeederTest, NothingIsPendingAndTheOutboxIsEmpty) {
 TEST_F(DemoDataSeederTest, NothingCanBeRoutedOrQueued) {
   DemoDataSeeder seeder;
   ASSERT_TRUE(seeder.SeedOnce(Deps()));
-  // Direct chats carry a local-only account id (so the list shows the contact's name). No contact has a relay user
-  // id, a peer id or an address, so a send has no route: delivery marks it failed (never pending), and the demo app
-  // has no relay or mesh anyway. A group send stops at "Local relay identity unavailable" (no relay user id).
+  // Direct chats carry a local-only account id (so the list shows the contact's name). It is no Account ID (the
+  // relay's address, MR001), and no contact has a peer id or an address, so a send has no route: delivery marks it
+  // failed (never pending), and the demo app has no relay or mesh anyway.
   auto contacts = contacts_->List();
   ASSERT_TRUE(contacts);
   ASSERT_EQ(contacts->size(), 18u);
   for (const Contact& c : *contacts) {
-    EXPECT_FALSE(ContactRelayUserId(c).has_value()) << c.id;
+    EXPECT_EQ(c.remote.ids.front().value.rfind("account:", 0), std::string::npos) << c.id;
     EXPECT_TRUE(c.remote.multiaddrs.empty()) << c.id;
     EXPECT_TRUE(c.remote.endpoints.empty()) << c.id;
     for (const mesh::ContactId& id : c.remote.ids) {
@@ -324,7 +323,7 @@ TEST_F(DemoDataSeederTest, NothingCanBeRoutedOrQueued) {
 
 TEST_F(DemoDataSeederTest, ARegisteredAccountGetsNothing) {
   DemoSeedDeps deps = Deps();
-  deps.own_relay_user_id = "relay:real-user";
+  deps.own_registered_account = "account:real-user";
   DemoDataSeeder seeder;
   auto seeded = seeder.SeedOnce(deps);
   ASSERT_TRUE(seeded);
