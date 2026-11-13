@@ -1812,6 +1812,7 @@
     "settings.registration.expired": "expired",
     "settings.registration.expires": "Valid until:",
     "settings.registration.expiring_soon": "expiring soon",
+    "settings.registration.needs_renewal": "Needs updating",
     "settings.registration.label": "Account:",
     "settings.registration.not_registered": "not set up",
     "settings.registration.renew": "Update my card",

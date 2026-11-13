@@ -3,6 +3,7 @@
 // its input and its Copy / Share / QR buttons; the registration, renewal and PIN entries keep their gates.
 #include "foundation/i18n/LocalizationService.h"
 #include "gui/ProfileSettingsSection.h"
+#include "lib/people/RegistrationStatus.h"
 
 #include <gtest/gtest.h>
 
@@ -161,20 +162,79 @@ TEST_F(SettingsProfilePhoneTest, TheCardStatusRowAndTheNewLinesAreWordedInBothLa
   EXPECT_EQ(Tr("settings.profile.id_foot"), "settings.profile.id_foot") << "the footer key is gone";
 }
 
+// The page's real path: the section reads the identity view through its port (SyncFromSession), which ends in
+// ApplyIdentityView.
+SettingsUiState Synced(const ProfileIdentityView& view) {
+  SettingsCommands commands;
+  commands.load_profile_identity = [view]() { return view; };
+  ProfileSettingsSection section;
+  section.BindPorts(&commands);
+  BootstrapResult bootstrap;
+  SettingsUiState state;
+  section.SyncFromSession(bootstrap, state);
+  return state;
+}
+
+// The table is built from the labels the app really produces (RegistrationStatusLabel), one row per status, so a new
+// status cannot slip in unlabelled; only an active card drops the big button.
 TEST(ProfileRegisterPrimaryTest, OnlyAnActiveCardDropsTheBigButton) {
-  struct Row {
-    bool show_register;
-    const char* status;
-    bool primary;
-  };
-  const Row table[] = {
-      {true, "not registered", true}, {true, "expired", true},       {true, "expiring soon", true},
-      {true, "needs renewal", true},  {true, "something new", true}, {true, "active", false},
-      {false, "active", false},       {false, "expired", false},
-  };
-  for (const Row& row : table) {
-    EXPECT_EQ(ProfileRegisterIsPrimary(row.show_register, row.status), row.primary) << row.status;
+  const RegistrationStatus all[] = {RegistrationStatus::Unregistered, RegistrationStatus::Active,
+                                    RegistrationStatus::ExpiringSoon, RegistrationStatus::Expired,
+                                    RegistrationStatus::WrongBackend};
+  for (const RegistrationStatus status : all) {
+    const std::string label = RegistrationStatusLabel(status);
+    const bool active = status == RegistrationStatus::Active;
+    EXPECT_EQ(ProfileRegisterIsPrimary(true, label), !active) << label;
+    EXPECT_FALSE(ProfileRegisterIsPrimary(false, label)) << label << ": no register button, nothing to make primary";
   }
+  EXPECT_TRUE(ProfileRegisterIsPrimary(true, "something new")) << "an unknown label needs action";
+}
+
+// ApplyIdentityView hands the predicate the raw label, not the localized text: in Chinese an active card is still not
+// primary, and the status row shows the localized words.
+TEST_F(SettingsProfilePhoneTest, TheBigButtonIsDecidedOnTheRawLabelNotTheLocalizedOne) {
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  for (const RegistrationStatus status :
+       {RegistrationStatus::Unregistered, RegistrationStatus::Active, RegistrationStatus::ExpiringSoon,
+        RegistrationStatus::Expired, RegistrationStatus::WrongBackend}) {
+    ProfileIdentityView view;
+    view.ready = true;
+    view.show_register = true;
+    view.registration_status = RegistrationStatusLabel(status);
+    const SettingsUiState state = Synced(view);
+    EXPECT_EQ(state.profile_register_primary, status != RegistrationStatus::Active) << view.registration_status;
+    EXPECT_NE(state.profile_registration_status, view.registration_status) << "shown localized, not as the raw label";
+  }
+  LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
+TEST_F(SettingsProfilePhoneTest, EveryRegistrationStatusIsWordedInBothLanguages) {
+  const struct {
+    RegistrationStatus status;
+    const char* en;
+    const char* zh;
+  } rows[] = {{RegistrationStatus::WrongBackend, "Needs updating", "需要更新名片"}};
+  for (const auto& row : rows) {
+    ProfileIdentityView view;
+    view.ready = true;
+    view.registration_status = RegistrationStatusLabel(row.status);
+    LocalizationService::Instance().SetPreferredLanguage("en");
+    EXPECT_EQ(Synced(view).profile_registration_status, row.en);
+    LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+    EXPECT_EQ(Synced(view).profile_registration_status, row.zh);
+  }
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  // Every status has its own words: none falls through as the raw English label in Chinese.
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  for (const RegistrationStatus status :
+       {RegistrationStatus::Unregistered, RegistrationStatus::Active, RegistrationStatus::ExpiringSoon,
+        RegistrationStatus::Expired, RegistrationStatus::WrongBackend}) {
+    ProfileIdentityView view;
+    view.ready = true;
+    view.registration_status = RegistrationStatusLabel(status);
+    EXPECT_NE(Synced(view).profile_registration_status, view.registration_status);
+  }
+  LocalizationService::Instance().SetPreferredLanguage("en");
 }
 
 TEST_F(SettingsProfilePhoneTest, TheUpdateNowRowAndTheBigButtonBothFireRegisterProfileAndTheSwitchHasCaptions) {

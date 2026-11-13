@@ -39,6 +39,9 @@ std::string LocalizedRegistrationStatus(const std::string& label) {
   if (label == "expired") {
     return Tr("settings.registration.expired");
   }
+  if (label == "needs renewal") {
+    return Tr("settings.registration.needs_renewal");
+  }
   return label;
 }
 

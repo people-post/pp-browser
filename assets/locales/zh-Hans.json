@@ -1759,6 +1759,7 @@
     "settings.registration.expired": "已过期",
     "settings.registration.expires": "有效期至：",
     "settings.registration.expiring_soon": "即将到期",
+    "settings.registration.needs_renewal": "需要更新名片",
     "settings.registration.label": "账号：",
     "settings.registration.not_registered": "未开通",
     "settings.registration.renew": "更新我的名片",
