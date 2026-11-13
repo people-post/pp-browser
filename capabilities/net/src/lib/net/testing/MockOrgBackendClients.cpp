@@ -221,8 +221,8 @@ Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(
     const std::string& /*challenge*/, const std::string& public_key_b64, const std::string& nickname,
     const std::string& /*signature*/, int64_t /*timestamp*/, const std::string& /*signature_alg*/,
     const std::string& /*kem_public_key_b64*/, const std::string& /*kem_binding_signature_b64*/,
-    const std::string& /*peer_id*/, const std::vector<std::string>& /*multiaddrs*/, int64_t initiation_floor,
-    const RegistrationPublishOpts& /*publish*/) {
+    const std::string& /*peer_id*/, const std::vector<std::string>& /*multiaddrs*/,
+    const RegistrationPublishOpts& publish) {
   // The relay names the inbox by the Account ID of the key that registered (MR001).
   std::string account_id;
   if (auto key = Base64Decode(public_key_b64)) {
@@ -233,8 +233,7 @@ Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(
                             .message = "Registered as " + nickname,
                             .llm_api_key = "brf_llm_mock_key",
                             .expires_at = "2099-01-01T00:00:00.000Z",
-                            .initiation_floor = initiation_floor,
-                            .initiation_floor_present = true,
+                            .account_card_status = publish.account_card ? "stored" : "",
                             .kem_bound = true};
 }
 

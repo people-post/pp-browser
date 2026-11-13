@@ -9,6 +9,7 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "common/runtime/AppRuntime.h"
+#include "common/Utilities.h"
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
@@ -239,7 +240,10 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
       return Error("Registration client not configured");
     }
 
-    auto result = FinishAndPersistRegistration(*registration_, identity_, identity->nickname);
+    const RegistrationPublishOpts card =
+        mesh_messaging_ ? WithAccountCard({}, mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs()))
+                        : RegistrationPublishOpts{};
+    auto result = FinishAndPersistRegistration(*registration_, identity_, identity->nickname, {}, card);
     if (!result) {
       return result.error();
     }

@@ -52,22 +52,25 @@ TEST(RegistrationClientTest, ApplyRegistrationResultPersistsFields) {
                             .message = "ok",
                             .llm_api_key = "brf_llm_new",
                             .expires_at = "2099-12-31T23:59:59.000Z",
-                            .initiation_floor = 99,
-                            .initiation_floor_present = true};
+                            .account_card_status = "stored",
+                            .account_card_issued_at = 1234};
   ApplyRegistrationResult(identity, result);
   EXPECT_TRUE(identity.registered);
   EXPECT_EQ(identity.brief_llm_api_key, "brf_llm_new");
   EXPECT_TRUE(identity.brief_llm_guest_api_key.empty());
   EXPECT_EQ(identity.registration_expires_at, "2099-12-31T23:59:59.000Z");
-  EXPECT_EQ(identity.initiation_floor, 99);
+  EXPECT_EQ(identity.registered_card_issued_at, 1234);
 }
 
-TEST(RegistrationClientTest, ApplyRegistrationResultIgnoresMissingFloor) {
+TEST(RegistrationClientTest, TheFloorIsOursNotTheRelays) {
+  // P001 item 7 as amended by MR005: the floor goes in our card; registration neither sends nor takes one.
   LocalIdentity identity;
   identity.initiation_floor = 7;
+  identity.registered_card_issued_at = 55;
   RegistrationResult result{.success = true};
   ApplyRegistrationResult(identity, result);
   EXPECT_EQ(identity.initiation_floor, 7);
+  EXPECT_EQ(identity.registered_card_issued_at, 55) << "no card answered for: the last one stands";
 }
 
 TEST(RegistrationClientTest, NormalizeRegistrationBackendMatchesTheBackendProfileRule) {
@@ -217,14 +220,15 @@ public:
                                              int64_t timestamp, const std::string& signature_alg,
                                              const std::string& kem_public_key_b64,
                                              const std::string& kem_binding_signature_b64, const std::string& peer_id,
-                                             const std::vector<std::string>& multiaddrs, int64_t initiation_floor,
+                                             const std::vector<std::string>& multiaddrs,
                                              const RegistrationPublishOpts& publish) override {
     ++finish_calls;
     last_kem_public_key_b64 = kem_public_key_b64;
     last_binding = kem_binding_signature_b64;
-    auto result = MockRegistrationClient::FinishRegistration(
-        challenge, public_key_b64, nickname, signature, timestamp, signature_alg, kem_public_key_b64,
-        kem_binding_signature_b64, peer_id, multiaddrs, initiation_floor, publish);
+    last_card = publish.account_card;
+    auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signature, timestamp,
+                                                             signature_alg, kem_public_key_b64,
+                                                             kem_binding_signature_b64, peer_id, multiaddrs, publish);
     if (result) {
       result->kem_bound = relay_stores_binding;
     }
@@ -234,6 +238,7 @@ public:
   int finish_calls = 0;
   std::string last_kem_public_key_b64;
   std::string last_binding;
+  std::optional<Object> last_card;
 };
 
 class KemBindingPublishTest : public ::testing::Test {
@@ -357,6 +362,44 @@ TEST_F(KemBindingPublishTest, MaybeAutoRenewNetworkOnlyFollowsTheSameRule) {
   ASSERT_TRUE(static_cast<bool>(not_due));
   EXPECT_FALSE(not_due->has_value()) << "published and far from expiry: nothing due";
   EXPECT_EQ(client_.finish_calls, 1);
+}
+
+// The card at registration (MR002 / MR005): register/finish carries ours, so the relay reads our relays and floor
+// from it; a card newer than the one the relay answered for registers again, whatever the auto-renew preference.
+TEST_F(KemBindingPublishTest, RegistrationCarriesOurCardAndANewerOneGoesAgain) {
+  LocalIdentity published = identity_->Get().value();
+  published.kem_binding_published = true;
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(published)));
+  Object card;
+  card.set("card_version", int64_t{3});
+  card.set("issued_at", int64_t{1000});
+  const RegistrationPublishOpts with_card{.account_card = card};
+  EXPECT_FALSE(WithAccountCard({}, Error("signed out")).account_card) << "no card to give: none sent";
+
+  auto due = MaybeAutoRenewRegistration(client_, *identity_, /*auto_renew_enabled=*/false, with_card);
+  ASSERT_TRUE(static_cast<bool>(due)) << due.error().message;
+  EXPECT_TRUE(*due) << "the relay holds no card of ours yet";
+  ASSERT_EQ(client_.finish_calls, 1);
+  ASSERT_TRUE(client_.last_card);
+  EXPECT_EQ(client_.last_card->getIf<int64_t>("issued_at"), 1000);
+  EXPECT_EQ(identity_->Get().value().registered_card_issued_at, 1000);
+
+  due = MaybeAutoRenewRegistration(client_, *identity_, false, with_card);
+  ASSERT_TRUE(static_cast<bool>(due));
+  EXPECT_FALSE(*due) << "the relay answered for this card";
+  EXPECT_EQ(client_.finish_calls, 1);
+
+  RegistrationPublishOpts newer = with_card;
+  newer.account_card->set("issued_at", int64_t{2000}); // re-issued: our relays or floor changed
+  due = MaybeAutoRenewRegistration(client_, *identity_, false, newer);
+  ASSERT_TRUE(static_cast<bool>(due));
+  EXPECT_TRUE(*due);
+  EXPECT_EQ(client_.finish_calls, 2);
+  EXPECT_EQ(identity_->Get().value().registered_card_issued_at, 2000);
+
+  ASSERT_TRUE(static_cast<bool>(FinishAndPersistRegistration(client_, *identity_, "n")));
+  EXPECT_FALSE(client_.last_card) << "a pp-node registers without one";
+  EXPECT_EQ(identity_->Get().value().registered_card_issued_at, 2000) << "the relay still holds our last card";
 }
 
 // A renewal stored on the UI thread and a guest-key write off it (the 401 renewal, the diagnostics Bearer) at the

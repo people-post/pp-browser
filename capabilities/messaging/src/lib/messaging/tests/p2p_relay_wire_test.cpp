@@ -81,7 +81,7 @@ TEST(P2pRelayWireTest, TheSendersCardRidesWithAKeyInitAndTheDevicesAreSigned) {
   const auto unsigned_bytes = EnvelopeSigner::BuildSignBytes(envelope);
   Object card;
   card.set("account_id", "account:alice");
-  card.set("card_version", int64_t{2});
+  card.set("card_version", int64_t{3});
   envelope.body.e2e.sender_card = card;
   ASSERT_TRUE(unsigned_bytes);
   EXPECT_EQ(EnvelopeSigner::BuildSignBytes(envelope).value(), *unsigned_bytes)

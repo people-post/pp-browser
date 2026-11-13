@@ -257,6 +257,14 @@ void ConversationsHub::UpdateOrgBackendClients(const HubSettings& settings) {
   if (account_locker_) {
     account_locker_->SetClient(clients_.Locker());
   }
+  SetCardRelays();
+}
+
+void ConversationsHub::SetCardRelays() {
+  // Our card lists the relay we register on (multi-relay MR002): one today, preferred first.
+  if (mesh_messaging_) {
+    mesh_messaging_->OwnAccountCards().SetRelays({NormalizeRegistrationBackend(Registration().BaseUrl())});
+  }
 }
 
 void ConversationsHub::InstallOrgBackendClients(const HubSettings& settings) {
@@ -1094,6 +1102,7 @@ void ConversationsHub::BuildMessagingObjects() {
   mesh_messaging_ =
       std::make_unique<MeshDeliveryOrchestrator>(*store_, *contacts_, *identity_, relay_, *inbox_, *account_keys_,
                                                  *psk_store_, *group_roster_, group_invite_gate_.get());
+  SetCardRelays(); // before the first card is asked for
   mesh_messaging_->SetSystemControls(&system_controls_);
   // The relay's poll results feed the status line (#175); a fresh orchestrator starts with no result.
   mesh_messaging_->SetOnBriefRelayHealthChanged(
@@ -1895,7 +1904,8 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
       listen_addrs.push_back(mesh_->AmpListenMultiaddr());
     }
   }
-  auto applied = FinishAndPersistRegistration(Registration(), Identity(), identity->nickname, listen_addrs);
+  auto applied =
+      FinishAndPersistRegistration(Registration(), Identity(), identity->nickname, listen_addrs, RegistrationCard());
   if (!applied) {
     return applied.error();
   }
@@ -3738,7 +3748,7 @@ public:
   Roe<RegistrationResult> FinishRegistration(const std::string&, const std::string&, const std::string&,
                                              const std::string&, int64_t, const std::string&, const std::string&,
                                              const std::string&, const std::string&, const std::vector<std::string>&,
-                                             int64_t, const RegistrationPublishOpts&) override {
+                                             const RegistrationPublishOpts&) override {
     return Unavailable();
   }
   Roe<RegistrationResult> UpdateNickname(const std::string&, const std::string&, int64_t, const std::string&) override {
@@ -3776,6 +3786,13 @@ private:
 IRegistrationClient& ConversationsHub::Registration() {
   static UnconfiguredRegistrationClient unconfigured;
   return registration_ ? *registration_ : unconfigured;
+}
+
+RegistrationPublishOpts ConversationsHub::RegistrationCard() {
+  if (!mesh_messaging_) {
+    return {};
+  }
+  return WithAccountCard({}, mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs()));
 }
 
 IBlobClient& ConversationsHub::Blob() {

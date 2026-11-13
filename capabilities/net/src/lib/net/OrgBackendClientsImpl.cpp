@@ -404,7 +404,7 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     const std::string& challenge, const std::string& public_key_b64, const std::string& nickname,
     const std::string& signature, int64_t timestamp, const std::string& signature_alg,
     const std::string& kem_public_key_b64, const std::string& kem_binding_signature_b64, const std::string& peer_id,
-    const std::vector<std::string>& multiaddrs, int64_t initiation_floor, const RegistrationPublishOpts& publish) {
+    const std::vector<std::string>& multiaddrs, const RegistrationPublishOpts& publish) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
@@ -419,7 +419,6 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
   if (!kem_binding_signature_b64.empty()) {
     body.set("kem_binding_signature_b64", kem_binding_signature_b64);
   }
-  body.set("initiation_floor", initiation_floor);
   if (kem_public_key_b64.empty()) {
     return Error("kem_public_key_b64 is required");
   }
@@ -435,6 +434,9 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     body.set("multiaddrs", ArrayValue(std::move(addrs)));
   }
   ApplyRegistrationPublishOpts(body, publish);
+  if (publish.account_card) {
+    body.set("account_card", *publish.account_card);
+  }
   const auto response =
       HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
@@ -462,10 +464,7 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     if (auto expires_at = root->getString("expires_at")) {
       result.expires_at = *expires_at;
     }
-    if (auto floor = root->getIf<int64_t>("initiation_floor")) {
-      result.initiation_floor = *floor;
-      result.initiation_floor_present = true;
-    }
+    result.account_card_status = root->getString("account_card_status").value_or("");
     result.kem_bound = root->getIf<bool>("kem_bound").value_or(false);
   }
   return result;

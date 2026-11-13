@@ -75,6 +75,17 @@ PeerCardRecord MergeAccountCard(std::optional<PeerCardRecord> known, const Accou
   return merged;
 }
 
+std::vector<AccountCardRelay> KeptRelays(const PeerCardRecord& record) {
+  return record.newest_card ? record.newest_card->relays : std::vector<AccountCardRelay>{};
+}
+
+std::optional<int64_t> KeptInitiationFloor(const PeerCardRecord& record) {
+  if (!record.newest_card) {
+    return std::nullopt;
+  }
+  return record.newest_card->initiation_floor;
+}
+
 Object CarriedCardJson(const PeerCardRecord& record) {
   return record.newest_card ? AccountCardToJson(*record.newest_card) : KeyCardToJson(record.keys);
 }

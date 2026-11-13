@@ -68,7 +68,7 @@ TEST(LinkDeviceCodecTest, TheIssuersAccountCardRidesAlongWhenGiven) {
   auto without = LinkDeviceCodec::Parse(LinkDeviceCodec::Serialize(bundle).value());
   ASSERT_TRUE(without);
   EXPECT_FALSE(without->account_card_json.has_value()) << "a recovery bundle carries none";
-  bundle.account_card_json = R"({"card_version":2})";
+  bundle.account_card_json = R"({"card_version":3})";
   auto with = LinkDeviceCodec::Parse(LinkDeviceCodec::Serialize(bundle).value());
   ASSERT_TRUE(with);
   EXPECT_EQ(with->account_card_json, bundle.account_card_json) << "as given: the card checks itself on import";

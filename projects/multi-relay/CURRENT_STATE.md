@@ -25,15 +25,28 @@ button.
 
 **R2 step 1 (app) merged, not deployed** (#609; on main, pp-node 8.0.0): one relay as before, addressed by Account ID
 everywhere (no `relay:` ids, relay API sign version 2); grants (MR005) issued, delivered over the control lane,
-renewed and attached; the relay's new errors handled. Contracts: [SERVICE_ENDPOINTS](../../docs/contracts/SERVICE_ENDPOINTS.md),
+renewed and attached; the relay's new errors handled; calls grant their people. Contracts: [SERVICE_ENDPOINTS](../../docs/contracts/SERVICE_ENDPOINTS.md),
 [ACCOUNT_CARD § Relay grants](../../docs/contracts/ACCOUNT_CARD.md#relay-grants), [WIRE_SCHEMAS](../../docs/contracts/WIRE_SCHEMAS.md),
 [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md), [COMPATIBILITY](../../docs/contracts/COMPATIBILITY.md#clean-cutovers-pre-release).
 Needs pp-cpp-mesh v9.0.0 (directory rows by Account ID).
-Calls grant their people (answering grants the caller; joining grants each pair both ways; not renewed for
-non-contacts). Not yet: the account card's `relays` and `initiation_floor`; clients per relay; the card at
-registration.
 
-Deploy (clean cutover, together): the relays, the pp-node fleet on 8.0.0 (pp-relay-infra-ansible#20) and the
-TestFlight build from main `45097b11b`.
+**R2 step 2 (#612, relay nfsc-brief-reader/app-static-api#254), built, not merged:** account card version 3
+signs `relays` (preferred first) and `initiation_floor`, with MR004's bounds refused whole on both sides; one golden
+vector for the sign bytes in both repos; version 2 refused everywhere. Our card lists the relay we register on (the
+registration base URL; an `http://` lab relay is left off, so the lab's cards say the mesh only) and our floor; the
+relay list is the main device's, the floor the account's (a sibling's newer card sets it, as the nickname). The card
+goes at every `register/finish`, and again when it is newer than the one the relay last answered for; the
+registration's floor field is gone. The relay stores the card, serves it from `GET /users/by-account` and reads the
+stranger floor from it (402 with the card's floor). A contact keeps the newest list and floor with its card
+(`KeptRelays` / `KeptInitiationFloor`, read only). `profile.db` 7 steps kept version 2 cards: ours keeps its device
+list and is re-issued on first use, others' are asked for again. Contracts: [ACCOUNT_CARD](../../docs/contracts/ACCOUNT_CARD.md#account-card),
+[SERVICE_ENDPOINTS](../../docs/contracts/SERVICE_ENDPOINTS.md), [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md#schema-versions),
+[COMPATIBILITY](../../docs/contracts/COMPATIBILITY.md#clean-cutovers-pre-release).
 
-Next: R2's relay list and `initiation_floor` in the account card.
+Not yet: clients per relay and sending in list order (step 3); the pricing UI still takes a peer's floor from the
+directory hit and `charge_required`, not from its card; the contact page does not show the relays (R3).
+
+Deploy (clean cutover): the pp-node fleet runs 8.0.0 (pp-relay-infra-ansible#20); the relays (R1 and step 2) and the
+TestFlight build with step 2 switch together.
+
+Next: R2 step 3.

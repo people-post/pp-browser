@@ -232,6 +232,9 @@ LocalIdentity IdentityFromJson(const Object& root) {
   if (auto v = root.getIf<bool>("kem_binding_published")) {
     identity.kem_binding_published = *v;
   }
+  if (auto v = root.getIf<int64_t>("registered_card_issued_at")) {
+    identity.registered_card_issued_at = *v;
+  }
   return identity;
 }
 
@@ -261,6 +264,9 @@ Object IdentityToJson(const LocalIdentity& identity) {
   root.set("registered_backend_url", identity.registered_backend_url);
   root.set("initiation_floor", identity.initiation_floor);
   root.set("kem_binding_published", identity.kem_binding_published);
+  if (identity.registered_card_issued_at > 0) {
+    root.set("registered_card_issued_at", identity.registered_card_issued_at);
+  }
   return root;
 }
 
@@ -373,6 +379,7 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     identity_.registered = false;
     identity_.registration_expires_at.clear();
     identity_.registered_backend_url.clear();
+    identity_.registered_card_issued_at = 0;
     if (auto peer = DerivePeerId(identity_); !peer) {
       return peer.error();
     }
