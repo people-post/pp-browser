@@ -225,25 +225,25 @@ CallRowLook CallRowLookOf(const CallSummaryRow& row) {
       outcome = Tr("call.row.cancelled");
       break;
     case Outcome::Missed:
-      look.icon = "phone-missed";
+      look.icon = "phone-x";
       outcome = Tr("call.row.missed");
       break;
     case Outcome::Declined:
-      look.icon = "phone-declined";
+      look.icon = "phone-x";
       outcome = Tr("call.row.declined");
       break;
     case Outcome::DeclinedByPeer:
-      look.icon = "phone-declined";
+      look.icon = "phone-x";
       outcome = Tr("call.row.declined_by_peer");
       break;
     case Outcome::Failed:
-      look.icon = "phone-declined";
+      look.icon = "phone-x";
       outcome = Tr("call.row.failed");
       break;
   }
   look.text = outcome;
   if (row.video) {
-    look.text = Tr("call.row.video") + " · " + look.text;
+    look.icon.replace(0, 5, "video"); // the camera family mirrors the phone family: video-outgoing / -incoming / -x
   }
   if (row.group) {
     look.text = Tr("call.row.group") + " · " + look.text;

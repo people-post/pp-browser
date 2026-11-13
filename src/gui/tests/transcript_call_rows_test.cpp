@@ -114,12 +114,13 @@ TEST_F(TranscriptCallRowsTest, OurVoiceCallIsAPillOnOurSideWithThePhoneIcon) {
   EXPECT_EQ(rml.find("muted"), std::string::npos) << rml;
 }
 
-TEST_F(TranscriptCallRowsTest, TheirVideoCallSitsOnTheirSideWithTheIncomingIconAndAVideoWord) {
+TEST_F(TranscriptCallRowsTest, TheirVideoCallSitsOnTheirSideWithTheIncomingCamera) {
   const MessageDisplayRow row = Row("account:peer", CallMediaMode::Video, CallOutcome::Completed, 56'000);
   const std::string rml = row.content_rml.c_str();
   EXPECT_EQ(std::string(row.row_class.c_str()), "message-row-peer");
-  EXPECT_NE(rml.find("../icons/v2/phone-incoming.svg"), std::string::npos) << rml;
-  EXPECT_NE(rml.find(Tr("call.row.video") + " · 0:56"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("../icons/v2/video-incoming.svg"), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("phone-"), std::string::npos) << rml;
+  EXPECT_NE(rml.find(">0:56<"), std::string::npos) << rml;
 }
 
 TEST_F(TranscriptCallRowsTest, AGroupCallSomeoneElseStartedSitsOnTheirSide) {
@@ -135,7 +136,7 @@ TEST_F(TranscriptCallRowsTest, AGroupCallSomeoneElseStartedSitsOnTheirSide) {
 TEST_F(TranscriptCallRowsTest, AMissedCallIsMutedAndHasNoDuration) {
   const MessageDisplayRow row = Row("account:peer", CallMediaMode::Voice, CallOutcome::Missed, std::nullopt);
   const std::string rml = row.content_rml.c_str();
-  EXPECT_NE(rml.find("../icons/v2/phone-missed.svg"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("../icons/v2/phone-x.svg"), std::string::npos) << rml;
   EXPECT_NE(rml.find("chat-call-row muted"), std::string::npos) << rml;
   EXPECT_EQ(rml.find(':'), std::string::npos) << rml;
 }

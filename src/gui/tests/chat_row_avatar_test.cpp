@@ -84,7 +84,8 @@ TEST(ChatRowAvatarTest, ACallPreviewIconReachesTheRowAndTheTemplateBindsEachStat
   const std::string rml = ReadAsset("views/sidebar.rml");
   const size_t preview = rml.find("<p class=\"sidebar-session-preview\"");
   ASSERT_NE(preview, std::string::npos);
-  for (const char* icon : {"phone-outgoing", "phone-incoming", "phone-missed", "phone-declined"}) {
+  for (const char* icon :
+       {"phone-outgoing", "phone-incoming", "phone-x", "video-outgoing", "video-incoming", "video-x"}) {
     const std::string bound = std::string("data-if=\"session.preview_icon == '") + icon + "'\"";
     const size_t at = rml.find(bound);
     ASSERT_NE(at, std::string::npos) << icon;

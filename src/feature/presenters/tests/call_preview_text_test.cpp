@@ -61,24 +61,24 @@ TEST_F(CallPreviewTextTest, ACompletedCallIsItsDirectionIconAndTheDurationOnly) 
   const auto in = Summary(CallMediaMode::Voice, CallOutcome::Completed, "peer", 49000);
   EXPECT_EQ(TextOf(in), "0:49");
   EXPECT_EQ(IconOf(in), "phone-incoming");
-  // Video keeps the phone icons and says "视频" first.
+  // Video draws the camera twin and needs no word.
   const auto video = Summary(CallMediaMode::Video, CallOutcome::Completed, "peer", 5000);
-  EXPECT_EQ(TextOf(video), "视频 · 0:05");
-  EXPECT_EQ(IconOf(video), "phone-incoming");
+  EXPECT_EQ(TextOf(video), "0:05");
+  EXPECT_EQ(IconOf(video), "video-incoming");
 }
 
 TEST_F(CallPreviewTextTest, MissedAndDeclinedCallsAreTheirIconAndOneShortWord) {
   EXPECT_EQ(TextOf(Summary(CallMediaMode::Voice, CallOutcome::Missed, "peer")), "未接");
-  EXPECT_EQ(IconOf(Summary(CallMediaMode::Voice, CallOutcome::Missed, "peer")), "phone-missed");
-  EXPECT_EQ(TextOf(Summary(CallMediaMode::Video, CallOutcome::Declined, "peer")), "视频 · 已拒绝");
-  EXPECT_EQ(IconOf(Summary(CallMediaMode::Video, CallOutcome::Declined, "peer")), "phone-declined");
+  EXPECT_EQ(IconOf(Summary(CallMediaMode::Voice, CallOutcome::Missed, "peer")), "phone-x");
+  EXPECT_EQ(TextOf(Summary(CallMediaMode::Video, CallOutcome::Declined, "peer")), "已拒绝");
+  EXPECT_EQ(IconOf(Summary(CallMediaMode::Video, CallOutcome::Declined, "peer")), "video-x");
   const auto by_peer = Summary(CallMediaMode::Voice, CallOutcome::Declined, kLocalSelfContactId);
   EXPECT_EQ(TextOf(by_peer), "对方已拒绝");
-  EXPECT_EQ(IconOf(by_peer), "phone-declined");
+  EXPECT_EQ(IconOf(by_peer), "phone-x");
 }
 
-// Every state x voice / video x my side / their side maps to one of the four icons and a short label; the icon never
-// depends on voice vs video, and the label is the same for both apart from the "视频" lead.
+// Every state x voice / video x my side / their side maps to one of the three icons (phone family for voice, camera family for
+// video) and a short label; the label is the same for voice and video.
 TEST_F(CallPreviewTextTest, EveryStateMapsToAnIconAndAShortLabel) {
   using Outcome = CallSummaryRow::Outcome;
   struct Case {
@@ -94,14 +94,14 @@ TEST_F(CallPreviewTextTest, EveryStateMapsToAnIconAndAShortLabel) {
       {Outcome::NoAnswer, false, "phone-outgoing", "无人接听"},
       {Outcome::Cancelled, true, "phone-outgoing", "已取消"},
       {Outcome::Cancelled, false, "phone-outgoing", "已取消"},
-      {Outcome::Missed, true, "phone-missed", "未接"},
-      {Outcome::Missed, false, "phone-missed", "未接"},
-      {Outcome::Declined, true, "phone-declined", "已拒绝"},
-      {Outcome::Declined, false, "phone-declined", "已拒绝"},
-      {Outcome::DeclinedByPeer, true, "phone-declined", "对方已拒绝"},
-      {Outcome::DeclinedByPeer, false, "phone-declined", "对方已拒绝"},
-      {Outcome::Failed, true, "phone-declined", "未接通"},
-      {Outcome::Failed, false, "phone-declined", "未接通"},
+      {Outcome::Missed, true, "phone-x", "未接"},
+      {Outcome::Missed, false, "phone-x", "未接"},
+      {Outcome::Declined, true, "phone-x", "已拒绝"},
+      {Outcome::Declined, false, "phone-x", "已拒绝"},
+      {Outcome::DeclinedByPeer, true, "phone-x", "对方已拒绝"},
+      {Outcome::DeclinedByPeer, false, "phone-x", "对方已拒绝"},
+      {Outcome::Failed, true, "phone-x", "未接通"},
+      {Outcome::Failed, false, "phone-x", "未接通"},
   };
   for (const Case& c : cases) {
     for (const bool video : {false, true}) {
@@ -112,11 +112,11 @@ TEST_F(CallPreviewTextTest, EveryStateMapsToAnIconAndAShortLabel) {
       row.connected = c.outcome == Outcome::Connected;
       row.duration = row.connected ? "1:05" : "";
       const CallRowLook look = CallRowLookOf(row);
-      EXPECT_EQ(look.icon, c.icon) << c.label << " video=" << video << " ours=" << c.ours;
-      EXPECT_EQ(look.text, std::string(video ? "视频 · " : "") + c.label)
-          << c.label << " video=" << video << " ours=" << c.ours;
+      const std::string icon = video ? "video" + std::string(c.icon).substr(5) : std::string(c.icon);
+      EXPECT_EQ(look.icon, icon) << c.label << " video=" << video << " ours=" << c.ours;
+      EXPECT_EQ(look.text, std::string(c.label)) << c.label << " video=" << video << " ours=" << c.ours;
       row.group = true;
-      EXPECT_EQ(CallRowLookOf(row).text, std::string("群通话 · ") + (video ? "视频 · " : "") + c.label);
+      EXPECT_EQ(CallRowLookOf(row).text, std::string("群通话 · ") + c.label);
     }
   }
 }
