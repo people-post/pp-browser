@@ -118,7 +118,9 @@ public:
   }
   CallMediaRoe Connect(const CallMediaDirectConnectParams&, CallMediaDirectCallbacks, int) override { return {}; }
   Roe<void> SendAudio(const std::vector<uint8_t>&, uint32_t, uint8_t) override { return {}; }
-  Roe<void> SendMedia(uint8_t, const std::vector<uint8_t>&, uint32_t, uint8_t, uint64_t) override { return {}; }
+  Roe<void> SendMedia(uint8_t, const std::vector<uint8_t>&, uint32_t, uint8_t, uint64_t, uint32_t) override {
+    return {};
+  }
 
   bool active = false;
   CallMediaDirectConnectParams active_params;

@@ -5,6 +5,7 @@
 #include "lib/media/VideoLevelProfile.h"
 
 #include "lib/media/AudioSession.h"
+#include "lib/media/AudioCaptureClock.h"
 #include "lib/media/AudioPlayout.h"
 #include "lib/media/CameraCaptureOrientation.h"
 #include "lib/media/CaptureStarvePolicy.h"
@@ -386,6 +387,24 @@ struct MediaEngine::Impl {
   std::atomic<uint32_t> tx_video_seq{0};
   /** Picked with the counters above (they start here and only count up): the sender instance of every packet. */
   const uint64_t tx_instance = NewSenderInstance();
+  /** Where this sender session's capture times count from (MediaPacket::capture_ts), with the instance. */
+  const std::chrono::steady_clock::time_point tx_origin = std::chrono::steady_clock::now();
+  /** The sent audio's capture times (the capture thread's only). */
+  AudioCaptureClock tx_audio_clock;
+
+  /** `at` in ms since this sender session started (tx_origin). */
+  int64_t SessionMs(const std::chrono::steady_clock::time_point at) const {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(at - tx_origin).count();
+  }
+  /**
+   * When the first sample of a packet taken now was captured, by the steady clock (ms since the session started):
+   * `queued_samples` of audio, up to the packet's end, were read before now (what `pending` held; a paced silence
+   * frame stands for the last packet's length).
+   */
+  int64_t FirstSampleMs(const size_t queued_samples) const {
+    const int64_t queued_ms = static_cast<int64_t>(queued_samples) * 1000 / kSampleRate;
+    return SessionMs(std::chrono::steady_clock::now()) - queued_ms;
+  }
   std::atomic<bool> video_need_keyframe{false};
   std::atomic<bool> adaptation_send_video{true};
   std::atomic<int64_t>& adaptation_target_video_bps;
@@ -1539,6 +1558,8 @@ struct MediaEngine::Impl {
           continue;
         }
         bool paced_silence_frame = false;
+        // The packet's first sample by the steady clock, when it came from the microphone (else: a silence frame).
+        std::optional<int64_t> first_sample_ms;
         if (capture_available) {
           int16_t chunk[kFrameSamples];
           capture_stage.Set(MediaThreadStage::ReadMic);
@@ -1622,6 +1643,7 @@ struct MediaEngine::Impl {
               continue;
             }
           } else {
+            first_sample_ms = FirstSampleMs(pending.size());
             std::copy_n(pending.begin(), kPacketSamples, pcm.begin());
             pending.erase(pending.begin(), pending.begin() + kPacketSamples);
             // While the OS has the session (another phone call), the mic may still hear that call: send silence
@@ -1694,6 +1716,7 @@ struct MediaEngine::Impl {
           pkt.channel_id = mesh::kMediaChannelAudio;
           pkt.seq = tx_audio_seq.fetch_add(1) + 1;
           pkt.instance = tx_instance;
+          pkt.capture_ts = tx_audio_clock.Stamp(first_sample_ms.value_or(FirstSampleMs(kPacketSamples)), kPacketMs);
           pkt.payload.assign(opus_buf.data(), opus_buf.data() + encoded);
           try {
             capture_stage.Set(MediaThreadStage::Send);
@@ -1816,7 +1839,9 @@ struct MediaEngine::Impl {
 
   /** Video thread only: orient + crop → preview (mirrored like FaceTime / WhatsApp self-view, Kenneth
    *  2026-11-03 "视频显示自己是反的"); encode the un-mirrored frame → send on channel 1. */
-  void EncodeAndSend(VideoFrameRgba captured, const CameraGeometry& geometry, bool& need_keyframe, const bool encode) {
+  /** `capture_ts`: when the camera gave the frame (ms since the session started, MediaPacket::capture_ts). */
+  void EncodeAndSend(VideoFrameRgba captured, const CameraGeometry& geometry, bool& need_keyframe, const bool encode,
+                     const uint32_t capture_ts) {
     // Rotation follows the display turning mid-call (iOS: the phone's physical orientation); the
     // encode size stays the one chosen at open — ScaleCenterCropRgba cover-crops the rest.
     const CameraCaptureTransform opened{.rotate_cw = geometry.rotate_cw,
@@ -1881,6 +1906,7 @@ struct MediaEngine::Impl {
     pkt.channel_id = mesh::VideoChannel(video_level.load(std::memory_order_relaxed));
     pkt.seq = tx_video_seq.fetch_add(1) + 1;
     pkt.instance = tx_instance;
+    pkt.capture_ts = capture_ts;
     pkt.mark = encoded->keyframe ? 1 : 0;
     pkt.payload = std::move(encoded->annex_b);
     try {
@@ -2029,7 +2055,7 @@ struct MediaEngine::Impl {
       if (encode) {
         last_encode = now;
       }
-      EncodeAndSend(std::move(*frame), geometry, need_keyframe, encode);
+      EncodeAndSend(std::move(*frame), geometry, need_keyframe, encode, static_cast<uint32_t>(SessionMs(now)));
       (void)DropStuckEncoder();
       const auto elapsed = std::chrono::steady_clock::now() - t0;
       video_stage.Set(MediaThreadStage::Sleep);
@@ -2042,11 +2068,13 @@ struct MediaEngine::Impl {
     video_stage.Set(MediaThreadStage::Exiting);
   }
 
-  void OnRemoteOpusFrame(uint32_t stream_id, uint32_t seq, const std::byte* data, size_t size) {
+  void OnRemoteOpusFrame(const MediaPacket& in) {
+    const size_t size = in.payload.size();
     if (size == 0) {
       return;
     }
-    RemoteAudioTrack* track = EnsureRemoteTrackLocked(stream_id);
+    const uint8_t* data = in.payload.data();
+    RemoteAudioTrack* track = EnsureRemoteTrackLocked(in.stream_id);
     if (!track || !track->decoder) {
       return;
     }
@@ -2060,14 +2088,14 @@ struct MediaEngine::Impl {
     ++track->rx_frames;
     track->last_rx_ms = recv_ms;
     AudioPacket packet;
-    packet.seq = seq;
+    packet.seq = in.seq;
+    packet.capture_ts = in.capture_ts;
+    packet.instance = in.instance;
     packet.recv_ms = recv_mono_ms;
-    if (const int samples = opus_packet_get_nb_samples(reinterpret_cast<const unsigned char*>(data),
-                                                       static_cast<opus_int32>(size), kSampleRate);
-        samples > 0) {
+    if (const int samples = opus_packet_get_nb_samples(data, static_cast<opus_int32>(size), kSampleRate); samples > 0) {
       packet.duration_ms = samples * 1000 / kSampleRate;
     }
-    packet.payload.assign(reinterpret_cast<const uint8_t*>(data), reinterpret_cast<const uint8_t*>(data) + size);
+    packet.payload.assign(data, data + size);
     track->jitter.Push(std::move(packet));
     rx_audio_frames.fetch_add(1, std::memory_order_relaxed);
     last_rx_audio_ms.store(recv_ms, std::memory_order_relaxed);
@@ -2579,8 +2607,7 @@ void MediaEngine::OnInboundPacket(const MediaPacket& packet) {
       }
     }
     if (mesh::IsAudioChannel(packet.channel_id)) {
-      impl->OnRemoteOpusFrame(packet.stream_id, packet.seq, reinterpret_cast<const std::byte*>(packet.payload.data()),
-                              packet.payload.size());
+      impl->OnRemoteOpusFrame(packet);
     } else if (mesh::IsVideoChannel(packet.channel_id)) {
       impl->video_arrivals[packet.stream_id].Note(
           packet.seq,
@@ -2683,8 +2710,7 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
       h.streams.push_back(s);
       h.jitter_target_ms =
           std::max(h.jitter_target_ms, static_cast<int64_t>(track->jitter.TargetFrames()) * track->jitter.PacketMs());
-      h.jitter_depth_ms =
-          std::max(h.jitter_depth_ms, static_cast<int64_t>(track->jitter.size()) * track->jitter.PacketMs());
+      h.jitter_depth_ms = std::max(h.jitter_depth_ms, track->jitter.DepthMs());
       h.jitter_silence_drops += track->jitter.silence_drops();
       h.jitter_speech_drops += track->jitter.speech_drops();
       h.jitter_late_drops += track->jitter.drops_late();

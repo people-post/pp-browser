@@ -1,5 +1,6 @@
 #include "domain/call_media/CallMediaLegCoordinator.h"
 #include "mesh/l4/shared/ProductChannelPolicies.h"
+#include "mesh/types/MediaChannel.h"
 #include "mesh/testing/mesh_harness_support.h"
 #include "mesh/testing/mesh_test_harness.h"
 #include "crypto/MlDsa.h"
@@ -475,23 +476,24 @@ TEST_F(CallMediaLegCoordinatorTest, AudioSurvivesSingleDatagramLoss) {
 }
 
 // B20: on_media must carry the wire seq/mark. With seq always 0 the playout jitter buffer treated every
-// frame as a duplicate and audio was 100% packet-loss concealment ("杂音").
-TEST_F(CallMediaLegCoordinatorTest, OnMediaCarriesSeqAndMark) {
+// frame as a duplicate and audio was 100% packet-loss concealment ("杂音"). V066: and the capture time and the sender
+// instance it is on — the receiver schedules playout by them (#605: seq is no clock).
+TEST_F(CallMediaLegCoordinatorTest, OnMediaCarriesSeqMarkAndCaptureTime) {
   const std::string call_id = "call-amp-seq";
   ByteVector media_key(32, 0x66);
   std::atomic<bool> b_connected{false};
   std::mutex mu;
-  std::vector<std::pair<uint32_t, uint8_t>> seen;
+  std::vector<CallMediaFrameInfo> seen;
   b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
     params.offerer = false;
     cbs.on_connected = [&] { b_connected.store(true, std::memory_order_release); };
-    cbs.on_media = [&](uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>&) {
+    cbs.on_media = [&](uint8_t channel, const CallMediaFrameInfo& info, const std::vector<uint8_t>&) {
       std::lock_guard lock(mu);
       if (channel == 0) {
-        seen.emplace_back(seq, mark);
+        seen.push_back(info);
       }
     };
   }));
@@ -509,8 +511,12 @@ TEST_F(CallMediaLegCoordinatorTest, OnMediaCarriesSeqAndMark) {
   harness_->PumpUntil([&] { return b_connected.load(std::memory_order_acquire); });
 
   const std::vector<uint8_t> opus = {7, 7, 7};
+  constexpr uint64_t kInstance = 0x5eed;
   for (uint32_t seq = 41; seq <= 45; ++seq) {
-    ASSERT_TRUE(static_cast<bool>(a_call_->SendAudio(leg_id, opus, seq, seq == 41 ? 1 : 0)));
+    // A 2 s pause before the last one: its capture time jumps, its seq does not.
+    const uint32_t capture_ts = 0xFFFFFF00u + seq * 40 + (seq == 45 ? 2000 : 0);
+    ASSERT_TRUE(static_cast<bool>(
+        a_call_->SendMedia(leg_id, mesh::kMediaChannelAudio, opus, seq, seq == 41 ? 1 : 0, kInstance, capture_ts)));
     harness_->PumpBoth();
   }
   harness_->PumpUntil([&] {
@@ -520,8 +526,11 @@ TEST_F(CallMediaLegCoordinatorTest, OnMediaCarriesSeqAndMark) {
   std::lock_guard lock(mu);
   ASSERT_EQ(seen.size(), 5u);
   for (size_t i = 0; i < seen.size(); ++i) {
-    EXPECT_EQ(seen[i].first, 41u + static_cast<uint32_t>(i));
-    EXPECT_EQ(seen[i].second, i == 0 ? 1 : 0);
+    const uint32_t seq = 41u + static_cast<uint32_t>(i);
+    EXPECT_EQ(seen[i].seq, seq);
+    EXPECT_EQ(seen[i].mark, i == 0 ? 1 : 0);
+    EXPECT_EQ(seen[i].instance, kInstance);
+    EXPECT_EQ(seen[i].capture_ts, 0xFFFFFF00u + seq * 40 + (seq == 45 ? 2000u : 0u)) << "seq " << seq;
   }
 }
 
@@ -731,7 +740,7 @@ TEST_F(CallMediaLegCoordinatorTest, HelloAndEncryptedVideoRoundTripOver16KiB) {
       connected = true;
       cv.notify_one();
     };
-    cbs.on_media = [&](uint8_t channel, uint32_t, uint8_t, const std::vector<uint8_t>& payload) {
+    cbs.on_media = [&](uint8_t channel, const CallMediaFrameInfo&, const std::vector<uint8_t>& payload) {
       std::lock_guard lock(mu);
       received_ch = channel;
       received = payload;

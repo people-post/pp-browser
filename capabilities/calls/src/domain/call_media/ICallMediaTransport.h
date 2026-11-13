@@ -49,12 +49,23 @@ enum class CallMediaErr : int32_t {
 using CallMediaFailure = CodedFailure<CallMediaErr>;
 using CallMediaRoe = CodedRoe<void, CallMediaErr>;
 
+/** A received media frame's clear header past its channel: what the engine orders, de-dupes and schedules by. */
+struct CallMediaFrameInfo {
+  uint32_t seq = 0;
+  uint8_t mark = 0;
+  /** When the frame was captured: ms on the sender's clock (the media frame's capture_ts, V066). */
+  uint32_t capture_ts = 0;
+  /** The sender instance whose clock `capture_ts` is on (another one is a restarted sender). */
+  uint64_t instance = 0;
+};
+
 struct CallMediaDirectCallbacks {
   std::function<void()> on_connected;
   std::function<void(const std::vector<uint8_t>& opus_payload)> on_audio;
   /** V034: all channels (0=Opus, 1=H264). When set, preferred over on_audio. */
-  /** seq/mark come from the wire frame; the playout jitter buffer orders and de-dupes on seq (B20). */
-  std::function<void(uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload)> on_media;
+  /** `info` comes from the wire frame: the playout jitter buffer orders and de-dupes on seq (B20), schedules by
+   *  capture time (V066). */
+  std::function<void(uint8_t channel, const CallMediaFrameInfo& info, const std::vector<uint8_t>& payload)> on_media;
   /**
    * The leg failed; callers read the code, never the message (CODED_FAILURE.md). Before MediaReady a connect
    * failure (`Unreachable`, `Timeout`, `HelloRejected`, …); a leg that had connected and ends under the call
@@ -185,9 +196,12 @@ public:
                                int timeout_ms = 15000) = 0;
 
   virtual Roe<void> SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark = 0) = 0;
-  /** `instance`: the sender instance of the counter that numbered `seq` (0 = the transport's own; A029 H2). */
+  /**
+   * `instance`: the sender instance of the counter that numbered `seq` (0 = the transport's own; A029 H2).
+   * `capture_ts`: when the payload was captured, ms on that instance's clock (the frame's capture_ts, V066).
+   */
   virtual Roe<void> SendMedia(uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq, uint8_t mark = 0,
-                              uint64_t instance = 0) = 0;
+                              uint64_t instance = 0, uint32_t capture_ts = 0) = 0;
 };
 
 } // namespace pbr

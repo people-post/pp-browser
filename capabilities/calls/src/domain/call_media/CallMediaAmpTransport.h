@@ -55,7 +55,7 @@ public:
 
   Roe<void> SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark = 0) override;
   Roe<void> SendMedia(uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq, uint8_t mark = 0,
-                      uint64_t instance = 0) override;
+                      uint64_t instance = 0, uint32_t capture_ts = 0) override;
 
   CallMediaLegCoordinator& Coordinator() { return coordinator_; }
 
