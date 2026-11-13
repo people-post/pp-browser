@@ -38,7 +38,8 @@ constexpr const char* kSettingsLikePage =
     "<rml><body style=\"margin: 0;\">"
     "<div id=\"page\" style=\"position: absolute; left: 0px; top: 0px; width: 400px; height: 900px;\">"
     "<button id=\"row\" style=\"display: block; width: 400px; height: 60px;\">Row</button>"
-    "<button id=\"inset_row\" style=\"display: block; margin: 0px 20px; width: 360px; height: 60px;\">Inset row</button>"
+    "<button id=\"inset_row\" style=\"display: block; margin: 0px 20px; width: 360px; height: 60px;\">Inset "
+    "row</button>"
     "<input id=\"field\" type=\"checkbox\" style=\"display: block; width: 400px; height: 40px;\"/>"
     "<p id=\"text\" style=\"display: block; width: 400px; height: 40px;\">Footnote</p>"
     "</div></body></rml>";
