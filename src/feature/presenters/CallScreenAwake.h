@@ -23,6 +23,10 @@ struct CallScreenAwakeFacts {
   bool remote_video = false;
   /** This device has the call on hold. */
   bool on_hold = false;
+  /** An incoming call is ringing on this device (also a second call ringing over a live one): its page is looked at. */
+  bool ringing = false;
+  /** This device started the call (calling out), as opposed to answering or joining it. */
+  bool placed_here = false;
 };
 
 /**
@@ -38,6 +42,20 @@ inline bool CallWantsScreenOn(const CallScreenAwakeFacts& facts) {
     return facts.camera_on || facts.remote_video;
   }
   return facts.video_mode && facts.camera_on;
+}
+
+/**
+ * The screen goes black against the face (the phone's proximity sensor) only in a voice call: one that is live, or one
+ * this device placed that is not yet connected (the phone is at the ear while it rings out). Not while an incoming call
+ * rings (the user is looking for the answer button), not in a video call (cameras off or not), not for a failed call's
+ * page, not while the screen is held on for video. A call on hold still counts. Whether the sound comes from the
+ * earpiece (not the speaker, headphones or Bluetooth) is the platform layer's decision from the real output route.
+ */
+inline bool CallWantsProximityScreenOff(const CallScreenAwakeFacts& facts) {
+  if (!facts.has_call || facts.failed || facts.video_mode || facts.ringing || CallWantsScreenOn(facts)) {
+    return false;
+  }
+  return facts.connected || facts.placed_here;
 }
 
 /** Why the screen is (not) held, for the metric: video_call / ended / hold / no_video. */

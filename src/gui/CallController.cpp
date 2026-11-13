@@ -209,6 +209,10 @@ void CallController::SyncScreenAwake() {
                                      [](const CallRosterParticipantState& row) { return row.has_remote_video; });
   }
   facts.on_hold = local_hold_.OnHold();
+  // Ringing: an incoming call on screen, also over a live call (then the page is looked at, not held to the ear).
+  facts.ringing = screen.kind == CallScreen::Kind::Ringing;
+  facts.placed_here = screen.kind == CallScreen::Kind::InCall && screen.placed_here;
+  SyncProximityScreenOff(CallWantsProximityScreenOff(facts));
   screen_awake_reason_ = CallScreenAwakeReason(facts);
   if (screen_awake_.Set(CallWantsScreenOn(facts), util::NowUnixMs())) {
     MetricsLine("screen.keep_on")
@@ -218,7 +222,22 @@ void CallController::SyncScreenAwake() {
   }
 }
 
+void CallController::SyncProximityScreenOff(const bool want) {
+  const int64_t now = util::NowUnixMs();
+  if (want != proximity_wanted_) {
+    proximity_wanted_ = want;
+    proximity_next_ms_ = now + kProximityRecheckMs;
+    SetProximityScreenOff(want);
+  } else if (want && now >= proximity_next_ms_) {
+    // The output route may have changed (headphones, Bluetooth): the platform re-reads it, and writes only on a change.
+    proximity_next_ms_ = now + kProximityRecheckMs;
+    SetProximityScreenOff(true);
+  }
+}
+
 void CallController::ReleaseScreenAwake(const char* reason) {
+  proximity_wanted_ = false;
+  SetProximityScreenOff(false); // no call, no sensor: whatever path ends the call or the window passes here
   screen_awake_reason_ = reason;
   if (screen_awake_.ForceOff()) {
     MetricsLine("screen.keep_on").Add("on", false).Pick("reason", reason, kScreenAwakeReasons).Emit();
@@ -280,6 +299,8 @@ void CallController::OnAppBackground() {
 
 void CallController::OnAppForeground() {
   local_hold_.OnAppForeground();
+  // The call may have ended while in the background: write the current wanted value once, whatever was compared last.
+  SetProximityScreenOff(proximity_wanted_);
   // Back in front with the phone's call screen ringing for us: its settle time counts from now (the timer hands over).
   system_call_screen_.Reevaluate(AppLifecycle::IsVisible());
 }
