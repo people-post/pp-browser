@@ -104,5 +104,19 @@ TEST(CallScreenAwakeTest, EndedCallLetsTheScreenSleep) {
   EXPECT_FALSE(CallWantsScreenOn(f));
 }
 
+TEST(CallScreenAwakeTest, FailedOutgoingVideoCallNeverKeepsTheScreenOn) {
+  CallScreenAwakeFacts f;
+  f.has_call = true;
+  f.video_mode = true;
+  f.camera_on = true;
+  EXPECT_TRUE(CallWantsScreenOn(f)); // still trying: the preview is up
+  f.failed = true;                   // "couldn't connect" / "disconnected"
+  EXPECT_FALSE(CallWantsScreenOn(f));
+  EXPECT_STREQ(CallScreenAwakeReason(f), "ended");
+  f.connected = true;
+  f.remote_video = true;
+  EXPECT_FALSE(CallWantsScreenOn(f));
+}
+
 } // namespace
 } // namespace pbr

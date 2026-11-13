@@ -15,7 +15,7 @@ void SetKeepScreenOn(const bool on, const char* reason) {
     return;
   }
   logging::getLogger("ScreenAwake").info << "screen awake " << (on ? "on" : "off") << " reason=" << reason
-           << " allowed_by_os=" << (SDL_ScreenSaverEnabled() ? 1 : 0);
+                                         << " allowed_by_os=" << (SDL_ScreenSaverEnabled() ? 1 : 0);
 }
 
 void LogOsState(const char* reason) {

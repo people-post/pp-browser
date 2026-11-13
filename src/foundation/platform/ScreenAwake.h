@@ -5,8 +5,8 @@
 namespace pbr {
 
 /**
- * Keep the screen on, or let the OS sleep it (the user's auto-lock). PP lets it sleep (BrowserHost allows the screen
- * saver before SDL_Init); a video call holds it on. A thin wrapper over SDL's switch: iOS idle timer, Android
+ * Keep the screen on, or let the OS sleep it (the user's auto-lock). PP lets it sleep (EarlyInit sets the hint; BrowserHost
+ * enables the screen saver once video is up); a video call holds it on. A thin wrapper over SDL's switch: iOS idle timer, Android
  * FLAG_KEEP_SCREEN_ON, a Windows / macOS / Linux display-sleep block.
  *
  * UI thread only (SDL's main thread; the call controller's tick and the window bring-up both run there, on Android

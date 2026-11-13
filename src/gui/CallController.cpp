@@ -193,11 +193,13 @@ void CallController::SyncScreenAwake() {
   auto* backend = Backend();
   CallScreenAwakeFacts facts;
   facts.has_call = !call_id.empty() && call_id != presenter_.LeavingCallId();
-  // Not yet live: calling out / connecting (a call that never connected reads "couldn't connect").
+  // A failed call's page stays up; a camera preview there must not hold the screen.
+  facts.failed =
+      screen.status == CallScreen::Status::CouldntConnect || screen.status == CallScreen::Status::Disconnected;
+  // Not yet live: calling out / connecting.
   facts.connected = screen.status != CallScreen::Status::Calling && screen.status != CallScreen::Status::Connecting &&
                     screen.status != CallScreen::Status::SettingUpGroup &&
-                    screen.status != CallScreen::Status::WaitingForMediaPath &&
-                    screen.status != CallScreen::Status::CouldntConnect;
+                    screen.status != CallScreen::Status::WaitingForMediaPath;
   facts.video_mode = screen.video;
   facts.camera_on = backend && backend->Available() && backend->Media().IsCameraEnabled();
   // A peer's picture on screen: a group's tiles (their live streams), else the 1:1 stage (the presenter's decision).
@@ -208,7 +210,7 @@ void CallController::SyncScreenAwake() {
   }
   facts.on_hold = local_hold_.OnHold();
   screen_awake_reason_ = CallScreenAwakeReason(facts);
-  if (screen_awake_.Set(CallWantsScreenOn(facts))) {
+  if (screen_awake_.Set(CallWantsScreenOn(facts), util::NowUnixMs())) {
     MetricsLine("screen.keep_on")
         .Add("on", screen_awake_.On())
         .Pick("reason", screen_awake_reason_, kScreenAwakeReasons)

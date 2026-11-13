@@ -11,6 +11,8 @@ namespace pbr {
 struct CallScreenAwakeFacts {
   /** A call is on this device's screen and not being left. */
   bool has_call = false;
+  /** The call failed or was lost (couldn't connect / disconnected): its page may stay up, but it is not a call. */
+  bool failed = false;
   /** Past "calling / connecting": the call is live. */
   bool connected = false;
   /** This is a video call (its mode), not a voice call. */
@@ -29,7 +31,7 @@ struct CallScreenAwakeFacts {
  * both cameras off, a call on hold, and no call let the screen sleep.
  */
 inline bool CallWantsScreenOn(const CallScreenAwakeFacts& facts) {
-  if (!facts.has_call || facts.on_hold) {
+  if (!facts.has_call || facts.failed || facts.on_hold) {
     return false;
   }
   if (facts.connected) {
@@ -43,7 +45,7 @@ inline const char* CallScreenAwakeReason(const CallScreenAwakeFacts& facts) {
   if (CallWantsScreenOn(facts)) {
     return "video_call";
   }
-  if (!facts.has_call) {
+  if (!facts.has_call || facts.failed) {
     return "ended";
   }
   return facts.on_hold ? "hold" : "no_video";

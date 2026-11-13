@@ -252,8 +252,8 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 #endif
 
   // SDL turns the OS's screen sleep off at video init unless told otherwise (B215: PP kept a charging phone lit all
-  // night). Allow it; a video call holds the screen on itself (ScreenAwake). Must be set before SDL_Init.
-  SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1");
+  // night). Platform::EarlyInit sets the hint before any SDL init; the explicit enable below does not depend on who
+  // started video first.
 
 #if SDL_MAJOR_VERSION >= 3
   // Audio is initialized on demand by MediaEngine (a2); do not fail window
@@ -269,7 +269,9 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
   }
 #endif
 
-  pbr::ScreenAwake::LogOsState("startup"); // video is up: what the OS will actually do (the hint's evidence)
+  // Video is up: let the OS sleep the screen whatever started video and whether the hint was read (a video call
+  // holds it on itself). Logs allowed_by_os, the evidence; ScreenAwakeSync starts from this "off" state.
+  pbr::ScreenAwake::SetKeepScreenOn(false, "startup");
 
   EventLoopWake::Start();
 
