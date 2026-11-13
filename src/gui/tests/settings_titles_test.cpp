@@ -1,5 +1,5 @@
 // Settings titles (#155, phase 1 of DEV/PLAN-settings-reorg.md): every page has one title, centred in its bar; Home's
-// bar says "Me" and there is no large heading under it on phones.
+// bar says "Settings" and there is no large heading under it on phones.
 #include "foundation/i18n/LocalizationService.h"
 
 #include <gtest/gtest.h>
@@ -207,12 +207,12 @@ TEST(SettingsTitlesTest, PrivacyFollowsTheMockupOrderAndWords) {
   EXPECT_EQ(Tr("settings.profile.peer_id_copied"), "Account ID copied");
 }
 
-TEST(SettingsTitlesTest, HomeTitleIsMe) {
+TEST(SettingsTitlesTest, HomeTitleIsSettings) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("en");
-  EXPECT_EQ(Tr("settings.title"), "Me");
+  EXPECT_EQ(Tr("settings.title"), "Settings");
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(Tr("settings.title"), "我");
+  EXPECT_EQ(Tr("settings.title"), "设置");
   LocalizationService::Instance().SetPreferredLanguage("en");
 }
 
