@@ -20,16 +20,17 @@ Not yet in R0's scope (later phases): the contact's own relays (R2's relay list)
 asked, and the page does not show the preferred relay (R3). DESIGN's "Where it stands" still describes the old
 button.
 
-**R1 (relays):** `www` merged (#252); not deployed.
+**R1 (relays) merged, not deployed:** nfsc-brief-reader/app-static-api#252 and nfsc-brief-web3/app-messenger#28 (to
+`develop`).
 
-**R2 step 1 (app):** merged (#609): one relay as before, addressed by Account ID everywhere (no `relay:` ids, relay
-API sign version 2); grants (MR005) issued, delivered over the control lane, renewed and attached; the relay's new
-errors handled; calls grant their people. Contracts: [SERVICE_ENDPOINTS](../../docs/contracts/SERVICE_ENDPOINTS.md),
+**R2 step 1 (app) merged, not deployed** (#609; on main, pp-node 8.0.0): one relay as before, addressed by Account ID
+everywhere (no `relay:` ids, relay API sign version 2); grants (MR005) issued, delivered over the control lane,
+renewed and attached; the relay's new errors handled; calls grant their people. Contracts: [SERVICE_ENDPOINTS](../../docs/contracts/SERVICE_ENDPOINTS.md),
 [ACCOUNT_CARD § Relay grants](../../docs/contracts/ACCOUNT_CARD.md#relay-grants), [WIRE_SCHEMAS](../../docs/contracts/WIRE_SCHEMAS.md),
 [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md), [COMPATIBILITY](../../docs/contracts/COMPATIBILITY.md#clean-cutovers-pre-release).
 Needs pp-cpp-mesh v9.0.0 (directory rows by Account ID).
 
-**R2 step 2 (app `feat/card-relays`, relay `www` `feat/card-v3`), built, not merged:** account card version 3
+**R2 step 2 (#612, relay nfsc-brief-reader/app-static-api#254), built, not merged:** account card version 3
 signs `relays` (preferred first) and `initiation_floor`, with MR004's bounds refused whole on both sides; one golden
 vector for the sign bytes in both repos; version 2 refused everywhere. Our card lists the relay we register on (the
 registration base URL; an `http://` lab relay is left off, so the lab's cards say the mesh only) and our floor; the
@@ -45,4 +46,7 @@ list and is re-issued on first use, others' are asked for again. Contracts: [ACC
 Not yet: clients per relay and sending in list order (step 3); the pricing UI still takes a peer's floor from the
 directory hit and `charge_required`, not from its card; the contact page does not show the relays (R3).
 
-Next: R1, R2 step 1 and step 2 deploy together (clean cutover); then R2 step 3.
+Deploy (clean cutover): the pp-node fleet runs 8.0.0 (pp-relay-infra-ansible#20); the relays (R1 and step 2) and the
+TestFlight build with step 2 switch together.
+
+Next: R2 step 3.
