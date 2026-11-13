@@ -61,6 +61,7 @@ protected:
     pkt.stream_id = stream_id;
     pkt.channel_id = mesh::kMediaChannelAudio;
     pkt.seq = seq;
+    pkt.capture_ts = seq * 20; // a steady sender of 20 ms frames: the time each one was captured
     pkt.payload = frame_;
     engine_.OnInboundPacket(pkt);
   }
@@ -145,6 +146,7 @@ TEST_F(MediaSessionSpecTest, ReceivesTwentyAndFortyMsPackets) {
     pkt.stream_id = 43;
     pkt.channel_id = mesh::kMediaChannelAudio;
     pkt.seq = seq;
+    pkt.capture_ts = seq * 40; // 40 ms packets
     pkt.payload = forty;
     engine_.OnInboundPacket(pkt);
   }
@@ -213,6 +215,7 @@ TEST_F(MediaSessionSpecTest, CatchUpPastTheCapSkipsSilenceBeforeCuttingSpeech) {
     MediaEngine::MediaPacket pkt;
     pkt.stream_id = 42;
     pkt.channel_id = mesh::kMediaChannelAudio;
+    pkt.capture_ts = seq * 20; // 20 ms frames, captured back to back
     pkt.seq = seq++;
     pkt.payload = frame;
     engine_.OnInboundPacket(pkt);
@@ -235,6 +238,7 @@ TEST_F(MediaSessionSpecTest, CatchUpPastTheCapSkipsSilenceBeforeCuttingSpeech) {
     MediaEngine::MediaPacket pkt;
     pkt.stream_id = 43;
     pkt.channel_id = mesh::kMediaChannelAudio;
+    pkt.capture_ts = seq * 20; // 20 ms frames, captured back to back
     pkt.seq = seq++;
     pkt.payload = frame;
     engine_.OnInboundPacket(pkt);

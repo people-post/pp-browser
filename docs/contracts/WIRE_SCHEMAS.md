@@ -562,18 +562,28 @@ JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies ca
 
 ### Media frames
 
-One frame for every path a call's or broadcast's media takes: through a hop's fan-out, straight to the 1:1 peer, and from a broadcaster to its viewers (pp-cpp-mesh `mesh/l4/shared/MediaFrame.h`, [A029](../../projects/adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H2). Big endian:
+One frame for every path a call's or broadcast's media takes: through a hop's fan-out, straight to the 1:1 peer, and from a broadcaster to its viewers (pp-cpp-mesh `mesh/l4/shared/MediaFrame.h`, [A029](../../projects/adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H2; frame v4 since pp-cpp-mesh v8.0.0, [V066](../../projects/p2p-av-calls/DECISIONS.md)). Big endian:
 
 | Bytes | Field |
 |-------|-------|
-| 1 | version `3` (high nibble), `channel_type` << 2 (`0` Forward: audio, forwarded as it came; `1` LatestLossy: video, a hop drops it stale; other values refused — [MEDIA_CHANNELS § Channel type](MEDIA_CHANNELS.md#channel-type-relay-qos)), `mark` (bit 0: a keyframe) |
+| 1 | version `4` (high nibble), `channel_type` << 2 (`0` Forward: audio, forwarded as it came; `1` LatestLossy: video, a hop drops it stale; other values refused — [MEDIA_CHANNELS § Channel type](MEDIA_CHANNELS.md#channel-type-relay-qos)), `mark` (bit 0: a keyframe) |
 | 1 | `channel` ([MEDIA_CHANNELS](MEDIA_CHANNELS.md): audio `0x00`, video `0x10 \| level`) |
 | 4 | `stream_id`: the sender's (`PublisherStreamIdForIdentity`; `0` on a 1:1 call) |
-| 4 | `seq`: per sender instance and channel, from 1, only increasing |
+| 4 | `seq`: per sender instance and channel, from 1, only increasing — order, losses and duplicates, never a clock |
+| 4 | `capture_ts`: ms since the sender session started (its `instance`), of the frame's first sample (audio: the packet's first sample; video: the camera frame), wrapping at 2^32. A capture gap (a stalled or reopened microphone, an OS hold) shows as a jump, so a receiver schedules playout by it ([CALLS.md § Audio playout](../architecture/CALLS.md)) |
 | 8 | `instance`: random and nonzero, drawn where the sender's counters start |
+| 1 | `ext_len`: bytes of extensions that follow, 0–64 |
+| ext_len | extensions, each `type` (1) · `len` (1) · `value` (`len`) |
 | n + 16 | the payload sealed with the media key (XChaCha20-Poly1305), then its tag |
 
-The 18 B header is in the clear, so a hop routes and drops stale video without the key, and it is the seal's associated data together with a context: `call-media-sfu|<call_id>` through a hop, `call-media|<call_id>` on a 1:1 call, `broadcast-media|<program_id>|<join_handle>` for a broadcast. A frame never opens under another path, call or feature. The 24 B nonce is derived, never sent: `channel` (1), `stream_id` (4), `instance` (8), `seq` (4), the key epoch (4), three zero bytes. A sender refuses to seal a `seq` that did not move forward on its channel under one instance and epoch (`MediaFrameSendGuard`), so a bug drops a frame instead of repeating a nonce. A receiver refuses any other version (the relay frame v1 and the end-to-end body v2 before it).
+The header — the 22 B core, `ext_len` and the extensions — is in the clear, so a hop routes and drops stale video without the key, and it is the seal's associated data together with a context: `call-media-sfu|<call_id>` through a hop, `call-media|<call_id>` on a 1:1 call, `broadcast-media|<program_id>|<join_handle>` for a broadcast. A frame never opens under another path, call or feature, and no one can add, drop or change an extension or the capture time unseen. The 24 B nonce is derived, never sent: `channel` (1), `stream_id` (4), `instance` (8), `seq` (4), the key epoch (4), three zero bytes. A sender refuses to seal a `seq` that did not move forward on its channel under one instance and epoch (`MediaFrameSendGuard`), so a bug drops a frame instead of repeating a nonce.
+
+**Extensions** carry optional fields added later without a new version:
+- A receiver skips an extension type it does not know. The type's high bit (`0x80`) is **must understand**: a receiver that does not know such a type drops the frame. A hop routes by the core alone and forwards every frame whole, extensions it does not know included.
+- `ext_len` over 64, an extension running past the block, type `0`, or bytes left over in the block: the frame is malformed and dropped, by hops too.
+- Registry: no type is defined yet (`0` is invalid). A new optional field takes the next type here, with its meaning, and needs no version.
+
+The version changes only when the core, the seal or the nonce changes meaning; a receiver refuses any other version (v3 — an 18 B header without `capture_ts` and extensions — the relay frame v1 and the end-to-end body v2 before it).
 
 ## Versioning matrix
 
