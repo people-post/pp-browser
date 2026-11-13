@@ -2,7 +2,7 @@
 
 **As of:** 2026-11-12
 
-Design written ([DESIGN.md](DESIGN.md)); MR001–MR004 accepted.
+Design written ([DESIGN.md](DESIGN.md)); MR001–MR005 accepted.
 
 **R0 built** (app only, no wire change): the contact page's *Refresh account info* is on every contact's page
 (phone row and desktop button; no longer behind *advanced* or a `relay:` id). It runs
