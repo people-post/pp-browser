@@ -42,6 +42,11 @@ class Context;
 
 namespace pbr {
 
+/**
+ * Tester row: the Ask AI privacy card shows again on the next open (clears `ai_panel_intro_seen`). Saved at once.
+ */
+Roe<void> ClearAskAiIntroSeen(SessionStore& store);
+
 /** Me → Notifications shows the "set Banner Style to Persistent" row only for a banner that goes away by itself. */
 inline bool ShowCallBannerTip(BannerStyle style) {
   return style == BannerStyle::Temporary;
@@ -313,6 +318,7 @@ private:
   void OnTapVersion();
   /** Me → AI assistant: the AI dot's switch, look (`a`–`d`) and size (`s` / `m` / `l`), saved to the profile prefs at once. */
   void ToggleHomeAnimatedLogo();
+  void ShowAskAiIntroAgain();
   void ToggleAiDot();
   void SetAiDotLook(const std::string& look);
   /** "Assistant size": the pushed choice page (phones) with small / medium / large. */

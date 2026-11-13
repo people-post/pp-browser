@@ -785,6 +785,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
                            }));
     ctor.BindEventCallback("toggle_transparency", DataEvent<>([this]() { ToggleTransparency(); }));
     ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
+    ctor.BindEventCallback("show_ask_ai_intro_again", DataEvent<>([this]() { ShowAskAiIntroAgain(); }));
     ctor.BindEventCallback("toggle_home_show_dynamic", DataEvent<>([this]() { ToggleHomeShowDynamic(); }));
     ctor.BindEventCallback("toggle_home_animated_logo", DataEvent<>([this]() { ToggleHomeAnimatedLogo(); }));
     ctor.BindEventCallback("open_ui_perf_test", DataEvent<>([this]() {
@@ -2191,6 +2192,24 @@ void SettingsController::ToggleCallDiagnostics() {
   PullBindingsToUiState();
   MarkSectionDirty("appearance", /*show_toast=*/false);
   DirtyAll();
+}
+
+Roe<void> ClearAskAiIntroSeen(SessionStore& store) {
+  ProfilePreferences prefs = store.Snapshot().profile_prefs;
+  prefs.ai_panel_intro_seen = false;
+  prefs.schema_version = ProfilePreferences::kSchemaVersion;
+  return store.SaveProfilePrefs(prefs);
+}
+
+void SettingsController::ShowAskAiIntroAgain() {
+  if (!commands_.session_store) {
+    return;
+  }
+  if (auto saved = ClearAskAiIntroSeen(Store()); !saved) {
+    ReportFailure(saved.error());
+    return;
+  }
+  UserFeedback::Ok(Tr("settings.tester.show_ask_ai_intro.done"));
 }
 
 void SettingsController::ToggleHomeAnimatedLogo() {

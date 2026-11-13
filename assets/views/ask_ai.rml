@@ -12,7 +12,13 @@
   <p class="ask-ai-privacy">{{i18n:ask_ai.privacy}}</p>
   <div class="ask-ai-scroll" id="ask-ai-scroll">
     <div class="ask-ai-intro" data-if="show_intro">
-      <p class="ask-ai-intro-body">{{i18n:ask_ai.intro.body}}</p>
+      <p class="ask-ai-intro-body"><span class="ask-ai-intro-lead">{{i18n:ask_ai.intro.lead}}</span><span>{{i18n:ask_ai.intro.body}}</span></p>
+      <!-- Its own paragraph; the "?" is the settings pages' help button (same class and icon) and asks PP Support. -->
+      <div class="ask-ai-intro-own">
+        <p class="ask-ai-intro-body ask-ai-intro-own-text">{{i18n:ask_ai.intro.own_ai}}</p>
+        <button class="settings-q-btn ask-ai-intro-q" type="button" title="{{i18n:ask_ai.ask_support}}"
+                data-event-click="ask_ai_own_ai_help()"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
+      </div>
       <button class="ask-ai-intro-ok" type="button" data-event-click="ask_ai_intro_seen()">{{i18n:ask_ai.intro.ok}}</button>
     </div>
     <p class="ask-ai-section" data-if="once">{{i18n:ask_ai.once_title}}</p>

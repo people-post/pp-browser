@@ -5272,6 +5272,28 @@ select selectbox option {
   line-height: 21dp;
 }
 
+.ask-ai-intro-lead {
+  font-weight: bold;
+  margin-right: 4dp;
+}
+
+/* The second paragraph with the help "?" at the end of its last line (the button is the settings one). */
+.ask-ai-intro-own {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  margin-top: 12dp;
+}
+
+.ask-ai-intro-own-text {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.ask-ai-intro-q {
+  margin: -10dp 0 -10dp -2dp;
+}
+
 .ask-ai-intro-ok {
   display: block;
   width: 100%;

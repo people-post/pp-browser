@@ -117,6 +117,7 @@ bool AskAiPanel::Register(ui::Context* context) {
     ctor.BindEventCallback("ask_ai_send", DataEvent([this] { Send(); }));
     ctor.BindEventCallback("ask_ai_intro_seen", DataEvent([this] { DismissIntro(); }));
     ctor.BindEventCallback("ask_ai_support", DataEvent([this] { AskSupport(); }));
+    ctor.BindEventCallback("ask_ai_own_ai_help", DataEvent([this] { AskSupportOwnAi(); }));
     ctor.BindEventCallback("ask_ai_open_in_chat", DataEvent([this] { OpenInChat(); }));
     // The answers' own buttons and links (their markup is the chat's, bound to this model here).
     ctor.BindEventCallback("send_chat_action",
@@ -433,6 +434,13 @@ void AskAiPanel::AskSupport() {
     host_.AskAiCloseSheet(layer_id_);
   }
   host_.AskAiSupport(question);
+}
+
+void AskAiPanel::AskSupportOwnAi() {
+  if (IsOpen()) {
+    host_.AskAiCloseSheet(layer_id_);
+  }
+  host_.AskAiSupport(Tr("ask_ai.intro.support_question"));
 }
 
 void AskAiPanel::OpenInChat() {

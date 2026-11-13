@@ -413,6 +413,7 @@ data-event-click="set_cas_library_filter('cache')"	1	storage	tester	advanced;;ad
 data-event-click="set_cas_library_filter('private')"	1	storage	tester	advanced;;advanced	storage	
 data-event-click="set_cas_library_filter('public')"	1	storage	tester	advanced;;advanced	storage	
 data-event-click="share_cas_publicly(item_index)"	1	storage	tester	advanced;;advanced;;item.can_share_publicly	storage	
+data-event-click="show_ask_ai_intro_again()"	1	-	tester	advanced	tester	
 data-event-click="simulate_chats_link_connecting()"	1	-	tester	advanced;;dev_tools_available	about	
 data-event-click="simulate_chats_link_offline()"	1	-	tester	advanced;;dev_tools_available	about	
 data-event-click="simulate_chats_link_online()"	1	-	tester	advanced;;dev_tools_available	about	
@@ -429,6 +430,7 @@ data-value="relay_base_url"	1	network	tester	advanced;;advanced;;backend_is_cust
 {{i18n:dev.link.sim_connecting}}	1	-	tester	advanced;;dev_tools_available	about	
 {{i18n:dev.link.sim_offline}}	1	-	tester	advanced;;dev_tools_available	about	
 {{i18n:dev.link.sim_online}}	1	-	tester	advanced;;dev_tools_available	about	
+{{i18n:settings.tester.show_ask_ai_intro}}	1	-	tester	advanced	tester	
 {{i18n:dev.perf.row}}	1	-	tester	advanced;;dev_tools_available	about	
 {{i18n:settings.call_diagnostics.help}}	1	-	tester	advanced	appearance	
 {{i18n:settings.call_diagnostics.label}}	1	-	tester	advanced	appearance	

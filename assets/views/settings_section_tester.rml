@@ -65,6 +65,8 @@
             {{i18n:settings.security.clear_undelivered}}
           </button>
         </div>
+        <button class="btn btn-secondary settings-action-bar" type="button"
+                data-event-click="show_ask_ai_intro_again()">{{i18n:settings.tester.show_ask_ai_intro}}</button>
         <button class="btn btn-secondary settings-action-bar" type="button" data-if="dev_tools_available"
                 data-event-click="open_ui_perf_test()">{{i18n:dev.perf.row}}</button>
         <button class="btn btn-secondary settings-action-bar" type="button" data-if="dev_tools_available"

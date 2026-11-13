@@ -149,6 +149,8 @@ public:
   void Send();
   void DismissIntro();
   void AskSupport();
+  /** The intro card's "?": closes the sheet and asks PP Support how to use one's own AI. The card stays unseen. */
+  void AskSupportOwnAi();
   void OpenInChat();
   /** Closes the sheet (the draft stays; a running answer goes on). */
   void Close();
