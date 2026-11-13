@@ -1,6 +1,6 @@
 # Multi-relay — current state
 
-**As of:** 2026-11-12
+**As of:** 2026-11-13
 
 Design written ([DESIGN.md](DESIGN.md)); MR001–MR005 accepted.
 
@@ -20,9 +20,10 @@ Not yet in R0's scope (later phases): the contact's own relays (R2's relay list)
 asked, and the page does not show the preferred relay (R3). DESIGN's "Where it stands" still describes the old
 button.
 
-**R1 (relays):** on `www` / `messenger` branch `feat/inbox-by-account`, not merged or deployed.
+**R1 (relays) merged, not deployed:** nfsc-brief-reader/app-static-api#252 and nfsc-brief-web3/app-messenger#28 (to
+`develop`).
 
-**R2 step 1 (app), built on `feat/account-inbox`, not merged:** one relay as before, addressed by Account ID
+**R2 step 1 (app) merged, not deployed** (#609; on main, pp-node 8.0.0): one relay as before, addressed by Account ID
 everywhere (no `relay:` ids, relay API sign version 2); grants (MR005) issued, delivered over the control lane,
 renewed and attached; the relay's new errors handled. Contracts: [SERVICE_ENDPOINTS](../../docs/contracts/SERVICE_ENDPOINTS.md),
 [ACCOUNT_CARD § Relay grants](../../docs/contracts/ACCOUNT_CARD.md#relay-grants), [WIRE_SCHEMAS](../../docs/contracts/WIRE_SCHEMAS.md),
@@ -32,4 +33,7 @@ Calls grant their people (answering grants the caller; joining grants each pair 
 non-contacts). Not yet: the account card's `relays` and `initiation_floor`; clients per relay; the card at
 registration.
 
-Next: R1 and R2 step 1 merge and deploy together (clean cutover), then R2's relay list.
+Deploy (clean cutover, together): the relays, the pp-node fleet on 8.0.0 (pp-relay-infra-ansible#20) and the
+TestFlight build from main `45097b11b`.
+
+Next: R2's relay list and `initiation_floor` in the account card.
