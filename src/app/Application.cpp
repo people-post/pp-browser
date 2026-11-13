@@ -280,6 +280,10 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     chat.OnSessionSwipeAction(thread_id, action);
   });
 
+  shell.SetOnNewChatSwipeAction([&contacts](const std::string& contact_id, const std::string& action) {
+    contacts.OnNewChatSwipeAction(contact_id, action);
+  });
+
   shell.SetOnTransientMounted([ui_perf](const std::string& key) {
     if (ui_perf && key == "ui_perf_test") {
       ui_perf->OnMounted();

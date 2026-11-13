@@ -6,18 +6,15 @@
 #include <ui/dom/Event.h>
 #include <ui/base/ID.h>
 
+#include <algorithm>
 #include <cstdio>
 
 namespace pbr {
 
 namespace {
 
-constexpr const char* kListId = "sidebar-sessions";
-// The PP助手 page's AI conversations list: its rows swipe like the Chats rows.
-constexpr const char* kAiListId = "home-ai-sessions";
-// The phone AI drawer's list (ai_drawer.rml; DEV/PLAN-minimal-nav.md C): its own id, the Home list stays in the DOM.
-constexpr const char* kDrawerListId = "ai-drawer-sessions";
-constexpr const char* kRowClass = "sidebar-session";
+// The default lists and rows are in SessionSwipeGestureConfig: the Chats page, the PP助手 page's AI conversations list
+// and the phone AI drawer's list (ai_drawer.rml; DEV/PLAN-minimal-nav.md C).
 constexpr const char* kDraggingClass = "session-swipe-dragging";
 // Set while the row is moved off its rest position: the buttons outside the row are only drawn then, so they never
 // peek into the strip the list keeps on its right edge.
@@ -52,7 +49,30 @@ bool ParseAction(const ui::String& name, SessionSwipeAction& out) {
 
 } // namespace
 
+SessionSwipeGestureConfig ContactRowSwipeConfig() {
+  SessionSwipeGestureConfig config;
+  config.list_ids = {"new-chat-list"};
+  config.row_class = "contacts-row";
+  config.id_attribute = "contact-id";
+  config.swipe.button_dp = 60.f;
+  config.swipe.end_buttons = 4;
+  config.swipe.start_buttons = 0;
+  return config;
+}
+
+SessionSwipeGesture::SessionSwipeGesture(SessionSwipeGestureConfig config)
+    : config_(std::move(config)), model_(config_.swipe) {}
+
 void SessionSwipeGesture::Attach(ui::Element* page, ui::Context* context, ActionCallback on_action) {
+  AttachNamed(page, context, [on_action = std::move(on_action)](const std::string& row_id, const std::string& name) {
+    SessionSwipeAction action{};
+    if (on_action && ParseAction(name.c_str(), action)) {
+      on_action(row_id, action);
+    }
+  });
+}
+
+void SessionSwipeGesture::AttachNamed(ui::Element* page, ui::Context* context, NamedActionCallback on_action) {
   Detach();
   if (!page || !context) {
     return;
@@ -85,16 +105,17 @@ void SessionSwipeGesture::Detach() {
   open_row_ = nullptr;
   context_ = nullptr;
   on_action_ = nullptr;
-  model_ = SessionSwipeModel();
+  model_ = SessionSwipeModel(config_.swipe);
   swallow_click_ = false;
 }
 
 ui::Element* SessionSwipeGesture::RowOf(ui::Element* target) const {
   ui::Element* row = nullptr;
   for (ui::Element* node = target; node; node = node->GetParentNode()) {
-    if (node->IsClassSet(kRowClass) && node->HasAttribute("session-id")) {
+    if (node->IsClassSet(config_.row_class.c_str()) && node->HasAttribute(config_.id_attribute.c_str())) {
       row = node;
-    } else if (row && (node->GetId() == kListId || node->GetId() == kAiListId || node->GetId() == kDrawerListId)) {
+    } else if (row && std::find(config_.list_ids.begin(), config_.list_ids.end(), std::string(node->GetId().c_str())) !=
+                          config_.list_ids.end()) {
       return row;
     }
   }
@@ -106,7 +127,7 @@ ui::Element* SessionSwipeGesture::ButtonOf(ui::Element* target) const {
     if (node->HasAttribute("swipe-action")) {
       return node;
     }
-    if (node->IsClassSet(kRowClass)) {
+    if (node->IsClassSet(config_.row_class.c_str())) {
       break;
     }
   }
@@ -148,9 +169,11 @@ void SessionSwipeGesture::SetDragCapture(bool enabled) {
   capture_ = enabled;
 }
 
-void SessionSwipeGesture::Run(const std::string& thread_id, const SessionSwipeAction action) {
-  if (on_action_ && !thread_id.empty()) {
-    on_action_(thread_id, action);
+void SessionSwipeGesture::Run(const std::string& row_id, const std::string& action) {
+  if (on_action_ && !row_id.empty()) {
+    // A copy: the action may release this gesture (its page goes away) while it still runs.
+    const NamedActionCallback run = on_action_;
+    run(row_id, action);
   }
 }
 
@@ -182,15 +205,15 @@ void SessionSwipeGesture::ProcessEvent(ui::Event& event) {
       ui::Element* target = event.GetTargetElement();
       ui::Element* button = ButtonOf(target);
       ui::Element* row = button ? RowOf(button) : nullptr;
-      SessionSwipeAction action{};
-      if (!button || !row || !ParseAction(button->GetAttribute("swipe-action", ui::String()), action)) {
+      if (!button || !row) {
         return;
       }
+      const std::string action = button->GetAttribute("swipe-action", ui::String()).c_str();
       event.StopPropagation(); // the button is inside the row: it must not also open the chat
-      const std::string thread_id = row->GetAttribute("session-id", ui::String()).c_str();
+      const std::string row_id = row->GetAttribute(config_.id_attribute.c_str(), ui::String()).c_str();
       model_.CloseOpen();
       CloseRow(open_row_);
-      Run(thread_id, action);
+      Run(row_id, action);
       break;
     }
     case ui::EventId::Mousedown: {
@@ -210,7 +233,7 @@ void SessionSwipeGesture::ProcessEvent(ui::Event& event) {
       }
       const float ratio = dpr > 0.f ? dpr : 1.f;
       const float width_dp = row->GetBox().GetSize(ui::BoxArea::Border).x / ratio;
-      const std::string id = row->GetAttribute("session-id", ui::String()).c_str();
+      const std::string id = row->GetAttribute(config_.id_attribute.c_str(), ui::String()).c_str();
       const std::string closed = model_.Press(id, EventMouseX(event), EventMouseY(event), width_dp);
       if (!closed.empty()) {
         CloseRow(open_row_);

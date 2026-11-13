@@ -1788,6 +1788,10 @@ void ShellHost::SetOnSessionSwipeAction(SessionSwipeGesture::ActionCallback call
   on_session_swipe_action_ = std::move(callback);
 }
 
+void ShellHost::SetOnNewChatSwipeAction(SessionSwipeGesture::NamedActionCallback callback) {
+  on_new_chat_swipe_action_ = std::move(callback);
+}
+
 void ShellHost::SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp) {
   safe_area_top_from_prefs_dp_ = std::max(0, top_dp);
   safe_area_bottom_from_prefs_dp_ = std::max(0, bottom_dp);
@@ -2428,6 +2432,7 @@ void ShellHost::MountComposer() {
 }
 
 void ShellHost::DetachDismissGestures() {
+  new_chat_swipe_.Detach(); // the New chat page's own swipe; the Chats list's one is not touched
   swipe_back_gesture_.Detach();
   page_sheet_gesture_.Detach();
   gesture_axis_lock_.Unlock();
@@ -2506,6 +2511,15 @@ void ShellHost::AttachSwipeBackGesture() {
   }
 
   if (!state_.transient_stack.empty()) {
+    if (state_.layout_mode == LayoutMode::Compact && state_.transient_stack.back().spec.key == "new_chat") {
+      if (ui::Element* list = doc->GetElementById("new-chat-list")) {
+        new_chat_swipe_.AttachNamed(list, context_, [this](const std::string& contact_id, const std::string& action) {
+          if (on_new_chat_swipe_action_) {
+            on_new_chat_swipe_action_(contact_id, action);
+          }
+        });
+      }
+    }
     if (ui::Element* layer = doc->GetElementById("shell-transient-layer")) {
       options.chrome_classes = {"shell-transient-chrome", "shell-back-btn"};
       options.axis_lock = nullptr; // no sheet competition on transient

@@ -1545,6 +1545,31 @@ input.checkbox:checked {
   color: #ffffff;
 }
 
+/* New chat's contact swipe buttons (same material as the Chats ones). */
+.nc-swipe-btn--info {
+  background-color: #007aff;
+}
+
+.nc-swipe-btn--voice {
+  background-color: #34c759;
+}
+
+.nc-swipe-btn--video {
+  background-color: #30b0c7;
+}
+
+.nc-swipe-btn--more {
+  background-color: #8e8e93;
+}
+
+.nc-swipe-btn svg {
+  image-color: #ffffff;
+}
+
+.nc-swipe-label {
+  color: #ffffff;
+}
+
 .sidebar-session-active {
   background-color: #007aff1f;
   border-color: #007aff1f;

@@ -15207,6 +15207,47 @@ textarea:composing ~ .prompt-composer-label,
   padding: 0 0 0 12dp;
 }
 
+/* A left swipe on a contact row (SessionSwipeGesture, ContactRowSwipeConfig): four 60dp buttons ride just outside the
+   row, as on the Chats list; the group's rounded card clips them at its edge. The row moves with `left`, so its buttons
+   are hit where they are drawn. */
+.shell-layer-compact .nc-page .contacts-row {
+  position: relative;
+  transition: left 0.2s cubic-out;
+}
+
+.shell-layer-compact .nc-page .contacts-row.session-swipe-dragging {
+  transition: none;
+}
+
+.nc-swipe {
+  display: none;
+}
+
+.shell-layer-compact .nc-page .contacts-row.session-swipe-shown .nc-swipe {
+  display: flex;
+  flex-direction: row;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 100%;
+}
+
+.shell-layer-compact .nc-page .nc-swipe-btn {
+  width: 60dp;
+  min-height: 44dp;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.shell-layer-compact .nc-page .nc-swipe-label {
+  margin: 2dp 0 0 0;
+  font-size: 11dp;
+  text-align: center;
+}
+
 .shell-layer-compact .nc-page .contacts-row-avatar-frame {
   width: 40dp;
   height: 40dp;

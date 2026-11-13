@@ -202,6 +202,20 @@ public:
   void OnCallContact(const std::string& contact_id, bool video);
   /** A person who is not a contact, on the member page: asks, saves them as a blocked contact, shows their page. */
   void OnBlockMember();
+  /**
+   * A button of a swiped contact row on the phone New chat page (`action`: info, voice, video, more): that contact's page,
+   * a voice or video call, or the More sheet (block / unblock, remove). Every one works on `contact_id`, not on the
+   * selected contact.
+   */
+  void OnNewChatSwipeAction(const std::string& contact_id, const std::string& action);
+  /**
+   * The More sheet of a swiped New chat row: Block (red) or, for a blocked contact, Unblock; and Remove contact (red).
+   * Each runs the usual confirm and result pill on `contact_id`, then the New chat list is read again. Empty when there
+   * is no such contact.
+   */
+  std::vector<ContextMenuAction> NewChatMoreActions(const std::string& contact_id);
+  /** The contact ids the New chat list shows now, in order (what its rows are built from). */
+  std::vector<std::string> NewChatRowIds() const;
   void OnSelectContact(const std::string& contact_id);
   /** A group member who is not a contact: their page in its member state, pushed like a contact's page. */
   void OnShowMember(const std::string& account_id, const std::string& name, const std::string& icon_src);
@@ -384,6 +398,8 @@ private:
   /** "Add contact" with a pasted invite: the contact added, shown (UI thread). */
   void OnAddedFromInvite(const Roe<std::pair<std::string, bool>>& added);
   void OnSetTrust(const std::string& trust);
+  /** Block the selected contact, after the usual confirm. */
+  void OnBlockSelected();
   /** Saves `trust` for the contact; false (and a failure shown) when it could not be saved. */
   bool SetContactTrust(const std::string& contact_id, const std::string& trust);
   void SyncBlocked();

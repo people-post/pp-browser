@@ -1009,10 +1009,12 @@ void ContactsController::ToggleTrustFriendlyCallback(ui::DataModelHandle /*model
 
 void ContactsController::BlockContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
                                               const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  const std::string name = controller.selected_.title.empty() ? Tr("contacts.this_contact")
-                                                              : std::string(controller.selected_.title.c_str());
-  controller.ShowConfirm(
+  Instance().OnBlockSelected();
+}
+
+void ContactsController::OnBlockSelected() {
+  const std::string name = selected_.title.empty() ? Tr("contacts.this_contact") : std::string(selected_.title.c_str());
+  ShowConfirm(
       Tr("contacts.block_confirm_title"), Tr("contacts.block_confirm_body", {{"name", name}}),
       [](const bool ok) {
         if (ok) {
@@ -1565,6 +1567,68 @@ void ContactsController::OnNewChatPick(const std::string& contact_id) {
   OnStartChat();
   selected_ = {};
   DirtyAll();
+}
+
+void ContactsController::OnNewChatSwipeAction(const std::string& contact_id, const std::string& action) {
+  if (contact_id.empty()) {
+    return;
+  }
+  if (action == "info") {
+    OnSelectContact(contact_id);
+  } else if (action == "voice") {
+    OnCallContact(contact_id, false);
+  } else if (action == "video") {
+    OnCallContact(contact_id, true);
+  } else if (action == "more") {
+    LoadSelectedDetail(contact_id);
+    const std::string title = selected_.title.c_str();
+    std::vector<ContextMenuAction> actions = NewChatMoreActions(contact_id);
+    if (!actions.empty()) {
+      ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions), {}, title);
+    }
+  }
+}
+
+std::vector<std::string> ContactsController::NewChatRowIds() const {
+  std::vector<std::string> ids;
+  for (const NewChatSectionRow& section : new_chat_sections_) {
+    for (const ContactListRow& row : section.rows) {
+      ids.push_back(row.id.c_str());
+    }
+  }
+  return ids;
+}
+
+std::vector<ContextMenuAction> ContactsController::NewChatMoreActions(const std::string& contact_id) {
+  LoadSelectedDetail(contact_id);
+  if (selected_.id.empty()) {
+    return {};
+  }
+  const bool blocked = selected_.trust_key == "blocked";
+  // Each item picks the person again first: the existing flows (confirm, toast, refresh) work on the selected contact.
+  std::vector<ContextMenuAction> actions;
+  if (blocked) {
+    actions.push_back({"unblock", Tr("contacts.unblock"), nullptr,
+                       [this, contact_id]() {
+                         LoadSelectedDetail(contact_id);
+                         OnSetTrust("unknown");
+                       },
+                       "../icons/v2/block.svg"});
+  } else {
+    actions.push_back({"block", Tr("contacts.block"), nullptr,
+                       [this, contact_id]() {
+                         LoadSelectedDetail(contact_id);
+                         OnBlockSelected();
+                       },
+                       "../icons/v2/block.svg", /*danger=*/true});
+  }
+  actions.push_back({"remove", Tr("contacts.remove"), nullptr,
+                     [this, contact_id]() {
+                       LoadSelectedDetail(contact_id);
+                       OnRemoveContact();
+                     },
+                     "../icons/trash.svg", /*danger=*/true});
+  return actions;
 }
 
 void ContactsController::OnNewChatAction(const std::string& action) {
@@ -2290,6 +2354,10 @@ void ContactsController::OnSetTrust(const std::string& trust) {
   }
   LoadSelectedDetail(selected_.id.c_str());
   SyncFromStore();
+  if (new_chat_open_) {
+    SyncNewChat(); // New chat's list marks (or unmarks) the person at once
+    DirtyNewChat();
+  }
   if (blocked_open_) {
     SyncBlocked(); // unblocked on a contact page opened off the blocked list: gone from it on the way back
     DirtyBlocked();
@@ -2536,6 +2604,10 @@ void ContactsController::OnRemoveContact() {
           OnDetailDismissed();
         }
         SyncFromStore();
+        if (new_chat_open_) {
+          SyncNewChat(); // the person is gone from New chat's list at once
+          DirtyNewChat();
+        }
         DirtyAll();
         ShowToast(Tr("contacts.toast.removed"));
         if (contacts_ports_.notify_thread_changed) {
