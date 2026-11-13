@@ -1702,7 +1702,6 @@
     "call.row.declined_by_peer": "They declined",
     "call.row.failed": "Didn't connect",
     "call.row.group": "Group call",
-    "call.row.video": "Video",
     "call.blocked.pill.contacts_only": "Only contacts can call you — call declined",
     "call.blocked.pill.nobody": "Incoming calls are off — call declined",
     "call.blocked.row.one": "Missed call (declined by your settings)",

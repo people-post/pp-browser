@@ -7883,8 +7883,8 @@ input.checkbox {
 }
 
 .shell-chat-overlay .chat-call-row-icon {
-  width: 20dp;
-  height: 20dp;
+  width: 22dp;
+  height: 22dp;
   margin-right: 8dp;
 }
 
@@ -8047,8 +8047,8 @@ input.checkbox {
 }
 
 .shell-layer-compact .chat-row-preview-icon {
-  width: 16dp;
-  height: 16dp;
+  width: 18dp;
+  height: 18dp;
 }
 
 .sidebar-session-icon {

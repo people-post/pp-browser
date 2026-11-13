@@ -39,8 +39,9 @@ bool IsStoredCallPreview(const std::string& preview);
 /**
  * How a call record looks, in the transcript and in the chat list (Kenneth 2026-11-13): the icon carries the
  * meaning (direction, missed, declined), the words stay short. `icon` is a file stem under `assets/icons/v2/`:
- * phone-outgoing | phone-incoming | phone-missed | phone-declined. `text` is "1:05" or one short word; a group call
- * leads with "Group call", a video call with "Video" (the four phone icons serve voice and video alike).
+ * phone-outgoing | phone-incoming | phone-x (missed, declined and did-not-connect share the x), and for a video call
+ * the camera twins video-outgoing | video-incoming | video-x. `text` is "1:05" or one short word; a group call
+ * leads with "Group call".
  */
 struct CallRowLook {
   std::string icon;

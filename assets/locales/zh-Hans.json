@@ -1652,7 +1652,6 @@
     "call.row.declined_by_peer": "对方已拒绝",
     "call.row.failed": "未接通",
     "call.row.group": "群通话",
-    "call.row.video": "视频",
     "call.blocked.pill.contacts_only": "已设置只接好友来电，已拒接",
     "call.blocked.pill.nobody": "已设置不接听来电，已拒接",
     "call.blocked.row.one": "未接来电（已按你的设置拒接）",

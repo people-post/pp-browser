@@ -99,8 +99,10 @@
           <svg class="chat-row-blocked" src="../icons/v2/block.svg" width="14" height="14" data-if="session.blocked"></svg>
           <svg class="chat-row-preview-icon" src="../icons/v2/phone-outgoing.svg" width="14" height="14" data-if="session.preview_icon == 'phone-outgoing'"></svg>
           <svg class="chat-row-preview-icon" src="../icons/v2/phone-incoming.svg" width="14" height="14" data-if="session.preview_icon == 'phone-incoming'"></svg>
-          <svg class="chat-row-preview-icon" src="../icons/v2/phone-missed.svg" width="14" height="14" data-if="session.preview_icon == 'phone-missed'"></svg>
-          <svg class="chat-row-preview-icon" src="../icons/v2/phone-declined.svg" width="14" height="14" data-if="session.preview_icon == 'phone-declined'"></svg>
+          <svg class="chat-row-preview-icon" src="../icons/v2/phone-x.svg" width="14" height="14" data-if="session.preview_icon == 'phone-x'"></svg>
+          <svg class="chat-row-preview-icon" src="../icons/v2/video-outgoing.svg" width="14" height="14" data-if="session.preview_icon == 'video-outgoing'"></svg>
+          <svg class="chat-row-preview-icon" src="../icons/v2/video-incoming.svg" width="14" height="14" data-if="session.preview_icon == 'video-incoming'"></svg>
+          <svg class="chat-row-preview-icon" src="../icons/v2/video-x.svg" width="14" height="14" data-if="session.preview_icon == 'video-x'"></svg>
           <p class="sidebar-session-preview">{{session.preview}}</p>
           <span class="badge-count sidebar-unread" data-if="session.unread_count > 0">{{session.unread_display}}</span>
           <span class="sidebar-unread-dot" data-if="session.unread_dot"></span>
