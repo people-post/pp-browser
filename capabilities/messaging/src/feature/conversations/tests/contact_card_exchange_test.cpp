@@ -157,5 +157,54 @@ TEST_F(ContactCardExchangeTest, AnInviteWithNoDeviceReachedStillAddsThePerson) {
   EXPECT_EQ((*result)->contact.remote.endpoints[0].peer_id, "QmBobPhone");
 }
 
+TEST_F(ContactCardExchangeTest, ARefreshAsksTheDevicesEvenWhenACardIsKept) {
+  const AccountCard card = SignedCard(bob_, test::Devices({"QmBobPhone"}));
+  auto contact = exchange_->Add(Shared(DumpJson(AccountCardToJson(card))), kNow);
+  ASSERT_TRUE(contact);
+  std::vector<std::string> asked;
+  exchange_->SetCardFetcher(
+      [&](const std::string& peer_id, const std::string&, std::function<void(Roe<PeerCardRecord>)> done) {
+        asked.push_back(peer_id);
+        done(keys_->AddAccountCard(card, kNow, "device"));
+      });
+  bool refetched = true;
+  exchange_->RefreshIfMissing(*contact, [&](bool kept) { refetched = kept; });
+  EXPECT_FALSE(refetched);
+  EXPECT_TRUE(asked.empty()) << "a kept card is not asked for again on its own";
+
+  std::optional<ContactCardExchange::DeviceAsk> outcome;
+  exchange_->AskDevices(*contact, [&](ContactCardExchange::DeviceAsk ask) { outcome = ask; });
+  ASSERT_TRUE(outcome.has_value());
+  EXPECT_EQ(*outcome, ContactCardExchange::DeviceAsk::Kept);
+  EXPECT_EQ(asked, (std::vector<std::string>{test::PeerIdOf("QmBobPhone")})) << "the kept card's device";
+}
+
+TEST_F(ContactCardExchangeTest, ARefreshPressedAgainAtOnceDoesNotAskTheDevicesAgain) {
+  const AccountCard card = SignedCard(bob_, test::Devices({"QmBobPhone"}));
+  auto contact = exchange_->Add(Shared(DumpJson(AccountCardToJson(card))), kNow);
+  ASSERT_TRUE(contact);
+  int asks = 0;
+  exchange_->SetCardFetcher([&](const std::string&, const std::string&, std::function<void(Roe<PeerCardRecord>)> done) {
+    ++asks;
+    done(Error("not reached"));
+  });
+  std::vector<ContactCardExchange::DeviceAsk> outcomes;
+  exchange_->AskDevices(*contact, [&](ContactCardExchange::DeviceAsk ask) { outcomes.push_back(ask); });
+  exchange_->AskDevices(*contact, [&](ContactCardExchange::DeviceAsk ask) { outcomes.push_back(ask); });
+  EXPECT_EQ(asks, 1);
+  EXPECT_EQ(outcomes, (std::vector<ContactCardExchange::DeviceAsk>{ContactCardExchange::DeviceAsk::NotReached,
+                                                                   ContactCardExchange::DeviceAsk::NotReached}))
+      << "the last ask's outcome stands";
+}
+
+TEST_F(ContactCardExchangeTest, ARefreshOfAContactWithNoAccountAsksNoDevice) {
+  Contact contact;
+  contact.remote.ids = {{mesh::ContactIdKind::PeerId, "QmSomeDevice", true}};
+  std::optional<ContactCardExchange::DeviceAsk> outcome;
+  exchange_->AskDevices(contact, [&](ContactCardExchange::DeviceAsk ask) { outcome = ask; });
+  ASSERT_TRUE(outcome.has_value());
+  EXPECT_EQ(*outcome, ContactCardExchange::DeviceAsk::NoDevice);
+}
+
 } // namespace
 } // namespace pbr

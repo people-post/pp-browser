@@ -7,6 +7,8 @@
 #include "common/PbrCompat.h"
 #include "common/Utilities.h"
 
+#include <algorithm>
+#include <optional>
 #include <utility>
 
 namespace pbr {
@@ -20,6 +22,24 @@ std::string IdOfKind(const Contact& contact, mesh::ContactIdKind kind) {
     }
   }
   return {};
+}
+
+std::vector<std::string> ContactDevices(const Contact& contact) {
+  std::vector<std::string> devices;
+  for (const mesh::ContactId& id : contact.remote.ids) {
+    if (id.kind == mesh::ContactIdKind::PeerId && !id.value.empty()) {
+      devices.push_back(id.value);
+    }
+  }
+  return devices;
+}
+
+void AppendMissing(std::vector<std::string>& into, const std::vector<std::string>& more) {
+  for (const std::string& value : more) {
+    if (!value.empty() && std::find(into.begin(), into.end(), value) == into.end()) {
+      into.push_back(value);
+    }
+  }
 }
 
 } // namespace
@@ -191,14 +211,49 @@ void ContactCardExchange::RefreshIfMissing(const Contact& contact, std::function
     }
     last = now;
   }
-  std::vector<std::string> devices;
-  for (const mesh::ContactId& id : contact.remote.ids) {
-    if (id.kind == mesh::ContactIdKind::PeerId && !id.value.empty()) {
-      devices.push_back(id.value);
-    }
-  }
+  std::vector<std::string> devices = ContactDevices(contact);
   log().info << "asking again for the card of " << account_id << " (" << devices.size() << " device(s))";
   FetchCard(account_id, std::move(devices), std::move(done));
+}
+
+void ContactCardExchange::AskDevices(const Contact& contact, std::function<void(DeviceAsk)> done) {
+  const std::string account_id = IdOfKind(contact, mesh::ContactIdKind::Account);
+  // The account's own word on its devices first (the newest kept card), then the rows the contact has.
+  std::vector<std::string> devices;
+  if (!account_id.empty()) {
+    if (auto kept = keys_.Kept(account_id); kept && *kept) {
+      devices = (*kept)->devices;
+    }
+    AppendMissing(devices, ContactDevices(contact));
+  }
+  if (devices.empty() || !fetch_card_) {
+    done(DeviceAsk::NoDevice);
+    return;
+  }
+  const int64_t now = util::NowUnixMs();
+  std::optional<DeviceAsk> just_asked;
+  {
+    std::lock_guard lock(refetch_mutex_);
+    LastAsk& last = last_device_ask_[account_id];
+    if (last.at_ms != 0 && now - last.at_ms < kAskDevicesAgainAfterMs) {
+      just_asked = last.outcome;
+    } else {
+      last = LastAsk{.at_ms = now, .outcome = DeviceAsk::NotReached};
+    }
+  }
+  if (just_asked) {
+    done(*just_asked); // asked again at once: the devices were just asked
+    return;
+  }
+  log().info << "refresh: asking " << devices.size() << " device(s) for the card of " << account_id;
+  FetchFromDevices(std::move(devices), account_id, [this, account_id, done = std::move(done)](bool kept) {
+    const DeviceAsk outcome = kept ? DeviceAsk::Kept : DeviceAsk::NotReached;
+    {
+      std::lock_guard lock(refetch_mutex_);
+      last_device_ask_[account_id].outcome = outcome;
+    }
+    done(outcome);
+  });
 }
 
 } // namespace pbr

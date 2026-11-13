@@ -33,6 +33,7 @@
 #include "domain/peers/AccountKeyResolver.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "feature/conversations/ContactProfileRefresh.h"
+#include "feature/conversations/ContactRefreshWorkflow.h"
 #include "lib/messaging/ContactLocator.h"
 #include "lib/delivery/PeerRequestAuth.h"
 #include "lib/people/PeerCards.h"
@@ -1031,6 +1032,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   kept_cards_loaded_ = false; // read at the first EnsureMessagingReady (the cards are in the chat store)
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
   contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
+  contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, directory_, *contact_cards_);
   contact_cards_->SetCardFetcher(
       [this](const std::string& peer_id, const std::string& account_id, std::function<void(Roe<PeerCardRecord>)> done) {
         // On the hub's thread, with the address book as it is now: a contact just added (a scanned QR code) is
@@ -1678,6 +1680,25 @@ void ConversationsHub::RefreshContactProfileIfStale(const std::string& contact_i
     return;
   }
   AppRuntime::PostWorkerBackground([this, contact_id]() { RefreshContactProfileNow(contact_id); });
+}
+
+bool ConversationsHub::RefreshContact(const std::string& contact_id,
+                                      std::function<void(const ContactRefreshResult&)> done) {
+  if (!contact_refresh_ || !AppRuntime::IsRunning() || shutdown_requested_.load(std::memory_order_acquire)) {
+    return false;
+  }
+  return contact_refresh_->Start(contact_id, [this, done = std::move(done)](ContactRefreshResult result) {
+    if (shutdown_requested_.load(std::memory_order_acquire)) {
+      return;
+    }
+    if (result.contact && result.Changed()) {
+      if (mesh_messaging_) {
+        mesh_messaging_->RegisterContactDirectEndpoints(*result.contact);
+      }
+      EnsureContactIconCached(*result.contact);
+    }
+    done(result);
+  });
 }
 
 void ConversationsHub::RefreshStaleContactProfiles() {
@@ -3428,6 +3449,7 @@ void ConversationsHub::Shutdown() {
     inbox_->SetThreadMentions(nullptr);
   }
   thread_mentions_.reset();
+  contact_refresh_.reset();
   contact_cards_.reset();
   contact_profile_refresh_.reset();
   account_keys_.reset();

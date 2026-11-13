@@ -32,21 +32,10 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
   ports.get_signing_key = [&hub](const std::string& peer_identity_kind, const std::string& peer_identity_value) {
     return hub.SigningKeys().Get(peer_identity_kind, peer_identity_value);
   };
-  ports.lookup_relay_user = [&hub](const std::string& relay_user_id) {
-    return hub.Directory().LookupRelayUser(relay_user_id);
-  };
   ports.contact_icon_local_path = [&hub](const Contact& contact) { return hub.ContactIconLocalPath(contact); };
   ports.ensure_contact_icon_cached = [&hub](const Contact& contact) { hub.EnsureContactIconCached(contact); };
   ports.ensure_directory_hit_icon_cached = [&hub](const mesh::DirectoryHit& hit) {
     hub.EnsureDirectoryHitIconCached(hit);
-  };
-  ports.apply_remote_snapshot = [&hub](const std::string& contact_id, const mesh::DirectoryHit& hit,
-                                       const int64_t fetched_at_ms) {
-    auto result = hub.Contacts().ApplyRemoteSnapshot(contact_id, hit, fetched_at_ms);
-    if (result) {
-      hub.EnsureContactIconCached(*result);
-    }
-    return result;
   };
   ports.register_contact_direct_endpoints = [&hub](const Contact& contact) {
     hub.MeshMessaging().RegisterContactDirectEndpoints(contact);
@@ -91,6 +80,9 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
   };
   ports.refresh_contact_profile = [&hub](const std::string& contact_id) {
     hub.RefreshContactProfileIfStale(contact_id);
+  };
+  ports.refresh_contact = [&hub](const std::string& contact_id, std::function<void(const ContactRefreshResult&)> done) {
+    return hub.RefreshContact(contact_id, std::move(done));
   };
   return ports;
 }

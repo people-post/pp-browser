@@ -254,7 +254,6 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   }
   detail.relay_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser).c_str();
   detail.peer_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId).c_str();
-  detail.has_relay_id = !detail.relay_id.empty();
   if (!detail.relay_id.empty()) {
     detail.subtitle = ShortRelayId(detail.relay_id.c_str()).c_str();
   } else if (!detail.peer_id.empty()) {
@@ -599,7 +598,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
           detail_handle.RegisterMember("remote_updated", &ContactDetail::remote_updated);
           detail_handle.RegisterMember("can_message", &ContactDetail::can_message);
           detail_handle.RegisterMember("name_placeholder", &ContactDetail::name_placeholder);
-          detail_handle.RegisterMember("has_relay_id", &ContactDetail::has_relay_id);
+          detail_handle.RegisterMember("refreshing", &ContactDetail::refreshing);
           detail_handle.RegisterMember("has_icon", &ContactDetail::has_icon);
           detail_handle.RegisterMember("icon_src", &ContactDetail::icon_src);
           detail_handle.RegisterMember("avatar_letter", &ContactDetail::avatar_letter);
@@ -681,7 +680,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
         ctor.BindEventCallback("admin_reinvite", DataEvent<>([this]() { OnGroupAdminReinvite(); }));
         ctor.BindEventCallback("admin_remove", DataEvent<>([this]() { OnGroupAdminRemove(); }));
         ctor.BindEventCallback("admin_set_admin", DataEvent<>([this]() { OnGroupAdminSetAdmin(); }));
-        ctor.BindEventCallback("sync_contact_remote", &ContactsController::SyncRemoteCallback);
+        ctor.BindEventCallback("refresh_contact", &ContactsController::RefreshContactCallback);
         ctor.BindEventCallback("add_search_changed", &ContactsController::AddSearchChangedCallback);
         ctor.BindEventCallback("add_pick", DataEvent<std::string>([this](const std::string& i) { OnAddPick(i); }));
         ctor.BindEventCallback("add_action", DataEvent<std::string>([this](const std::string& a) { OnAddAction(a); }));
@@ -988,9 +987,9 @@ void ContactsController::OnContactFieldChangedCallback(ui::DataModelHandle /*mod
   Instance().OnContactFieldChanged();
 }
 
-void ContactsController::SyncRemoteCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                            const ui::VariantList& /*args*/) {
-  Instance().OnSyncRemote();
+void ContactsController::RefreshContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                const ui::VariantList& /*args*/) {
+  Instance().OnRefreshContact();
 }
 
 void ContactsController::ToggleTrustFriendlyCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -1086,6 +1085,7 @@ void ContactsController::LoadSelectedDetail(const std::string& contact_id) {
   }
   selected_ = ToContactDetail(**contact, contacts_ports_);
   selected_.starred = StarRank(Starred(), contact_id) >= 0;
+  selected_.refreshing = refreshing_contacts_.count(contact_id) > 0;
   ApplyMessagingEligibility(selected_, **contact, contacts_ports_);
 }
 
@@ -2224,6 +2224,66 @@ void ContactsController::OnSetTrust(const std::string& trust) {
   NotifySurfaceChanged();
 }
 
+namespace {
+
+/** "name, photo": what a refresh changed, in the user's words; empty when only something unnamed did. */
+std::string RefreshedParts(const ContactRefreshResult& result) {
+  std::vector<std::string> parts;
+  if (result.name_changed) {
+    parts.push_back(Tr("contacts.refresh.part.name"));
+  }
+  if (result.photo_changed) {
+    parts.push_back(Tr("contacts.refresh.part.photo"));
+  }
+  if (result.keys_changed) {
+    parts.push_back(Tr("contacts.refresh.part.keys"));
+  }
+  if (result.devices_changed) {
+    parts.push_back(Tr("contacts.refresh.part.devices"));
+  }
+  std::string joined;
+  for (const std::string& part : parts) {
+    joined += (joined.empty() ? "" : Tr("contacts.refresh.part_separator")) + part;
+  }
+  return joined;
+}
+
+/** Nothing answered: which source could not be reached, and why. */
+std::string RefreshUnreachableText(const ContactRefreshResult& result) {
+  using Devices = ContactRefreshResult::Devices;
+  using Directory = ContactRefreshResult::Directory;
+  const bool devices_offline = result.devices == Devices::NotReached;
+  switch (result.directory) {
+    case Directory::Unreachable:
+      return Tr(devices_offline ? "contacts.refresh.unreachable" : "contacts.refresh.directory_unreachable");
+    case Directory::NotFound:
+      return Tr(devices_offline ? "contacts.refresh.offline_not_found" : "contacts.refresh.not_found");
+    case Directory::NotAsked:
+    case Directory::Answered:
+      break;
+  }
+  return Tr(devices_offline ? "contacts.refresh.devices_offline" : "contacts.refresh.nothing_to_ask");
+}
+
+} // namespace
+
+ContactRefreshNotice DescribeContactRefresh(const ContactRefreshResult& result) {
+  if (result.directory_keys_rejected) {
+    return {.ok = false,
+            .text = Tr(result.Changed() ? "contacts.refresh.keys_rejected_updated" : "contacts.refresh.keys_rejected")};
+  }
+  if (result.Changed()) {
+    const std::string parts = RefreshedParts(result);
+    return {.ok = true,
+            .text = parts.empty() ? Tr("contacts.refresh.updated_plain")
+                                  : Tr("contacts.refresh.updated", {{"what", parts}})};
+  }
+  if (result.NothingAnswered()) {
+    return {.ok = false, .text = RefreshUnreachableText(result)};
+  }
+  return {.ok = true, .text = Tr("contacts.refresh.up_to_date")};
+}
+
 std::vector<Contact> BlockedContactsByName(const std::vector<Contact>& contacts) {
   std::vector<Contact> blocked;
   for (const Contact& contact : contacts) {
@@ -2317,43 +2377,48 @@ void ContactsController::OnOpenBlockedContact(const std::string& contact_id) {
   NotifySurfaceChanged();
 }
 
-void ContactsController::OnSyncRemote() {
-  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || selected_.id.empty() ||
-      !contacts_ports_.lookup_relay_user || !contacts_ports_.apply_remote_snapshot) {
+void ContactsController::OnRefreshContact() {
+  if (selected_.id.empty() || selected_.member_preview || !contacts_ports_.refresh_contact) {
     return;
+  }
+  const std::string contact_id = selected_.id.c_str();
+  if (refreshing_contacts_.count(contact_id) > 0) {
+    return; // pressed again while it runs
   }
   FlushPending();
-  const std::string relay_id = selected_.relay_id.c_str();
-  if (relay_id.empty()) {
-    UserFeedback::Fail(Tr("contacts.err.no_relay_id"));
+  // The devices and the directory are asked off the UI thread; the outcome comes back here.
+  const bool started = contacts_ports_.refresh_contact(
+      contact_id, lifetime_.Bind([this, contact_id](const ContactRefreshResult& result) {
+        OnContactRefreshed(contact_id, result);
+      }));
+  if (!started) {
     return;
   }
-  auto hit = contacts_ports_.lookup_relay_user(relay_id);
-  if (!hit) {
-    UserFeedback::Fail(hit.error().message.empty() ? Tr("contacts.err.sync") : hit.error().message);
-    return;
+  refreshing_contacts_.insert(contact_id);
+  selected_.refreshing = true;
+  DataModelHost::Instance().Dirty("contacts", "selected");
+}
+
+void ContactsController::OnContactRefreshed(const std::string& contact_id, const ContactRefreshResult& result) {
+  refreshing_contacts_.erase(contact_id);
+  const ContactRefreshNotice notice = DescribeContactRefresh(result);
+  if (notice.ok) {
+    UserFeedback::Ok(notice.text);
+  } else {
+    UserFeedback::Fail(notice.text);
   }
-  const bool carries_keys = (hit->signing_public_key_b64 && !hit->signing_public_key_b64->empty()) ||
-                            (hit->kem_public_key_b64 && !hit->kem_public_key_b64->empty());
-  if (carries_keys && (!hit->account_id || hit->account_id->empty())) {
-    UserFeedback::Fail(Tr("contacts.err.missing_account_id"));
-    return;
+  if (selected_.id.c_str() != contact_id) {
+    if (result.Changed()) {
+      SyncFromStore();
+      DirtyAll();
+    }
+    return; // another page is open now: its own state stays
   }
-  if (contacts_ports_.register_peer_keys_from_directory) {
-    contacts_ports_.register_peer_keys_from_directory(*hit);
+  LoadSelectedDetail(contact_id);
+  if (result.Changed()) {
+    SyncFromStore();
   }
-  auto applied = contacts_ports_.apply_remote_snapshot(selected_.id.c_str(), *hit, util::NowUnixMs());
-  if (!applied) {
-    UserFeedback::Fail(applied.error().message.empty() ? Tr("contacts.err.save_synced") : applied.error().message);
-    return;
-  }
-  if (contacts_ports_.register_contact_direct_endpoints) {
-    contacts_ports_.register_contact_direct_endpoints(*applied);
-  }
-  LoadSelectedDetail(selected_.id.c_str());
-  SyncFromStore();
   DirtyAll();
-  ShowToast(Tr("contacts.toast.synced"));
   NotifySurfaceChanged();
 }
 

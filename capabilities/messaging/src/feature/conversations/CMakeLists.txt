@@ -5,6 +5,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     ContactActionDispatcher.cpp
     ContactCardExchange.cpp
     ContactProfileRefresh.cpp
+    ContactRefreshWorkflow.cpp
     GroupInviteBatch.cpp
     GroupMembershipWorkflow.cpp
     GroupInviteLinkWorkflow.cpp
