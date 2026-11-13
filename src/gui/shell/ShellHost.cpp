@@ -91,6 +91,10 @@ constexpr int kDefaultEmojiKeyboardPanelDp = 280;
 constexpr float kAiDrawerMeHeightDp = 76.f;
 constexpr float kAiDrawerMePaddingDp = 8.f;
 
+/** System back on the Settings home with no chat thread under it: true goes to the chat page; false leaves it to the
+ *  platform (the app exits, as on the AI and chat root pages). Awaiting the owner's decision: flip this one line. */
+constexpr bool kSystemBackLeavesSettingsHome = true;
+
 } // namespace
 
 ShellHost::ShellHost() {
@@ -646,7 +650,7 @@ void ShellHost::SelectNavTab(NavTab tab) {
   state_.nav_tab = tab;
   ShellLayout::SyncNavTabString(state_);
   // The tab bar highlights the tab a hidden tab's page (Settings) was entered from.
-  state_.nav_bar_tab_str = ShellLayout::NavTabString(ShellLayout::IsHiddenTabOnCompact(tab) ? tab_before_hidden_ : tab);
+  state_.nav_bar_tab_str = ShellLayout::NavTabString(tab == NavTab::Contacts ? tab_before_hidden_ : tab);
   DataModelHost::Instance().Dirty("window", "nav_bar_tab");
   if (tab_changed && on_nav_tab_changed_) {
     on_nav_tab_changed_(tab);
@@ -671,7 +675,8 @@ void ShellHost::HiddenTabBack() {
   if (!ShellLayout::HiddenTabShown(state_)) {
     return;
   }
-  SelectNavTab(tab_before_hidden_);
+  // Settings with no chat under it is a root page of the bar: its system back lands on the chat page.
+  SelectNavTab(ShellLayout::HiddenTabHasBack(state_) ? tab_before_hidden_ : NavTab::Sessions);
 }
 
 void ShellHost::OpenSettingsFromAvatar() {
@@ -819,7 +824,12 @@ bool ShellHost::HomeRootShown() const {
 }
 
 bool ShellHost::HiddenTabRootShown() const {
-  return ShellLayout::HiddenTabShown(state_) && local_back_stack_.empty() &&
+  return ShellLayout::HiddenTabHasBack(state_) && local_back_stack_.empty() &&
+         ShellInterruption::Top(state_) == InterruptionKind::None;
+}
+
+bool ShellHost::SettingsHomeRootShown() const {
+  return ShellLayout::HiddenTabShown(state_) && !ShellLayout::HiddenTabHasBack(state_) && local_back_stack_.empty() &&
          ShellInterruption::Top(state_) == InterruptionKind::None;
 }
 
@@ -1062,7 +1072,10 @@ DismissTarget ShellHost::ResolveDismissTarget() const {
       return DismissTarget::CompactChatOverlay;
     case InterruptionKind::None:
       // A hidden tab's root page (phone Me / Contacts) goes back to the tab it came from.
-      return HiddenTabRootShown() ? DismissTarget::HiddenTab : DismissTarget::None;
+      if (HiddenTabRootShown()) {
+        return DismissTarget::HiddenTab;
+      }
+      return kSystemBackLeavesSettingsHome && SettingsHomeRootShown() ? DismissTarget::HiddenTab : DismissTarget::None;
     case InterruptionKind::Dialog:
     case InterruptionKind::PinGate:
     case InterruptionKind::CallRing:
@@ -1121,6 +1134,11 @@ void ShellHost::PlayPageEnter(const char* element_id) {
 }
 
 void ShellHost::BeginAnimatedDismiss(DismissTarget target) {
+  if (target == DismissTarget::HiddenTab && !ShellLayout::HiddenTabHasBack(state_)) {
+    // Settings home as a root page: nothing is under it to slide away from.
+    CommitDismiss(target);
+    return;
+  }
   int delay_ms = 220;
   const bool gesture_started = std::exchange(slide_out_started_, false);
   if (ui::Element* page = PageElementFor(target)) {
@@ -2453,6 +2471,8 @@ void ShellHost::AttachSwipeBackGesture() {
   // Chat overlay keeps the 28dp edge strip (horizontal swipes on messages are reserved for reply-quote);
   // the settings detail and transient pages accept a right-swipe from anywhere (vertical drags still scroll).
   options.require_edge = true;
+  // Settings is made of button rows: its edge strip starts the swipe even where a row is under the finger.
+  options.edge_over_buttons = state_.nav_tab == NavTab::Me;
   const auto slide_out = [this](DismissTarget target) {
     slide_out_started_ = true; // the released swipe's transition is the slide-out
     RequestDismiss(DismissStyle::Animated, target);
@@ -2478,6 +2498,17 @@ void ShellHost::AttachSwipeBackGesture() {
       };
       page_sheet_gesture_.Attach(
           sheet, context_, [slide_out]() { slide_out(DismissTarget::OverlayLayer); }, std::move(sheet_options));
+    }
+    return;
+  }
+
+  if (state_.layout_mode == LayoutMode::Compact && !state_.overlay_stack.empty() &&
+      state_.overlay_stack.back().full_screen && state_.overlay_stack.back().key == "avatar_view") {
+    // The photo viewer (a picture opened large from a profile or a contact page): an edge swipe closes it.
+    const std::string viewer_id = "shell-full-screen-" + std::to_string(state_.overlay_stack.back().id);
+    if (ui::Element* viewer = doc->GetElementById(viewer_id.c_str())) {
+      swipe_back_gesture_.Attach(viewer, context_, std::move(options),
+                                 [slide_out]() { slide_out(DismissTarget::OverlayLayer); });
     }
     return;
   }
@@ -2535,8 +2566,9 @@ void ShellHost::AttachSwipeBackGesture() {
     }
   }
 
-  if (HiddenTabRootShown()) {
-    // Phone Me / Contacts root page: an edge swipe goes back to the tab it came from (rows keep their own swipes).
+  if (HiddenTabRootShown() || (kSystemBackLeavesSettingsHome && SettingsHomeRootShown())) {
+    // Phone Contacts / Settings home: an edge swipe goes back to the tab it came from, or to the chat thread under
+    // Settings; Settings with nothing under it goes to the chat list (rows keep their own swipes).
     if (ui::Element* page = doc->GetElementById("shell-nav-page")) {
       options.chrome_classes = {"shell-circle-btn"};
       swipe_back_gesture_.Attach(page, context_, std::move(options),
@@ -3331,6 +3363,12 @@ void ShellHost::OnNavTabClicked(const std::string& tab_name) {
   // been opened (TODO #200); SelectNavTab then drops the rest of the tab's context.
   while (ShellLayout::SettingsTabBarShown(state_) && !state_.transient_stack.empty()) {
     PopTransient();
+  }
+  // A second tap on the selected "Settings" segment goes back to the Settings home, from any sub-page.
+  if (tab == NavTab::Me && state_.nav_tab == NavTab::Me && state_.layout_mode == LayoutMode::Compact) {
+    while (!local_back_stack_.empty()) {
+      CommitDismiss(DismissTarget::LocalBack);
+    }
   }
   SelectNavTab(tab);
 }

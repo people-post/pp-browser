@@ -1,6 +1,8 @@
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/ShellHost.h"
 #include "gui/shell/ShellLargeTitleScroll.h"
+#include "lib/ui/ShellInterruption.h"
+#include "lib/ui/ShellLayout.h"
 
 #include <ui/core/Core.h>
 #include <ui/dom/Context.h>
@@ -97,6 +99,59 @@ TEST_F(LargeTitleTest, ValueChangesAndTheNavPageFollows) {
   host.SetLargeTitleCollapsed(false);
   context->Update();
   EXPECT_FALSE(page->IsClassSet("large-title-collapsed"));
+}
+
+// Settings' back arrow is bound to compact_chat_open: whichever way the chat thread opens or closes, the value the view
+// sees is the actual one (no separate field to forget to dirty).
+TEST_F(LargeTitleTest, TheSettingsBackArrowSeesTheChatThreadOnEveryPath) {
+  ShellHost host;
+  ASSERT_TRUE(host.RegisterWindowModel(context));
+  host.State().layout_mode = LayoutMode::Compact;
+  ShellLayout::SyncLayoutModeString(host.State());
+  host.RegisterPane({.key = "chat", .rml_path = "views/chat.rml", .provides_composer = true});
+  auto* document = context->LoadDocumentFromMemory(
+      "<rml><body><div data-model=\"window\"><p id=\"back\" style=\"width: 5px; height: 5px;\" "
+      "data-if=\"compact_chat_open\"></p></div></body></rml>");
+  ASSERT_NE(document, nullptr);
+  document->Show();
+  // Every one of these changes asks for a layout sync, which dirties the whole window model (DirtyWindow); the sync
+  // needs the full shell DOM, so the test stands in for it with DirtyNavChrome, which covers compact_chat_open.
+  const auto shown = [&]() {
+    host.DirtyNavChrome();
+    context->Update();
+    return document->GetElementById("back")->IsVisible();
+  };
+  const auto agrees = [&](const char* path) {
+    EXPECT_EQ(shown(), host.State().compact_chat_open) << path << ": the view and the state agree";
+  };
+  host.SelectNavTab(NavTab::Sessions);
+  agrees("start");
+  EXPECT_FALSE(shown());
+  host.SetPrimaryPane("chat");
+  host.OpenCompactChat();
+  host.SelectNavTab(NavTab::Me); // a hint in the chat opens Settings over it
+  EXPECT_TRUE(shown()) << "OpenCompactChat + SelectNavTab(Me)";
+  EXPECT_TRUE(ShellLayout::HiddenTabHasBack(host.State()));
+  host.HiddenTabBack(); // the arrow: the chat is shown again, no Settings page
+  agrees("back to the thread");
+  host.CloseCompactChat();
+  EXPECT_FALSE(shown()) << "CloseCompactChat";
+  host.SelectNavTab(NavTab::Me);
+  EXPECT_FALSE(shown()) << "Settings with no chat under it: no arrow";
+  EXPECT_FALSE(ShellLayout::HiddenTabHasBack(host.State()));
+  host.SelectNavTab(NavTab::Home); // ClearTabContext
+  host.OpenCompactChat();
+  host.SelectNavTab(NavTab::Me);
+  EXPECT_TRUE(shown());
+  host.SelectNavTab(NavTab::Sessions);
+  host.SelectNavTab(NavTab::Home); // leaving drops the chat (ClearTabContext)
+  EXPECT_FALSE(shown()) << "SelectNavTab to another tab closes the chat";
+  // ShellInterruption::DismissTop closes the chat directly in the state (ShellInterruption.cpp); no production caller
+  // goes through it without a layout sync, which dirties compact_chat_open (DirtyNavChrome).
+  host.OpenCompactChat();
+  ShellInterruption::DismissTop(host.State());
+  host.DirtyNavChrome();
+  EXPECT_FALSE(shown()) << "the interruption path, then the shell's sync";
 }
 
 // The Chats header's status line (SetChatsLink): unknown shows nothing, then online / offline come through the window

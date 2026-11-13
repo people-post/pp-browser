@@ -1,9 +1,10 @@
 <div class="settings-panel stack" data-model="settings" data-class-settings-panel--subpage="show_detail && security_page != ''">
-  <!-- Phones: Settings is a hidden tab (DEV/PLAN-minimal-nav.md A): the round back returns to the tab it came from. -->
+  <!-- Phones: Settings is the third segment of the bottom bar, a root page with no back; only while a chat thread is
+       open under it (opened from a hint in that chat) the round back returns to the thread. -->
   <div class="pane-nav" data-if="!show_detail">
     <div class="pane-nav-bg"></div>
     <div class="bar-fade"></div>
-    <button class="pane-nav-back shell-circle-btn" type="button" data-model="window" data-event-click="hidden_tab_back()">
+    <button class="pane-nav-back shell-circle-btn" type="button" data-model="window" data-if="compact_chat_open" data-event-click="hidden_tab_back()">
       <span class="shell-circle-btn-face"><svg src="../icons/v2/back.svg" width="24" height="24"></svg></span>
     </button>
     <p class="pane-nav-title">{{i18n:settings.title}}</p>

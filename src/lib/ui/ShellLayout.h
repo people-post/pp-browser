@@ -18,6 +18,9 @@ struct ShellLayout {
   static bool IsHiddenTabOnCompact(NavTab tab);
   /** Phone layout on a hidden tab (IsHiddenTabOnCompact): its page covers a chat overlay left open under it. */
   static bool HiddenTabShown(const ShellState& state);
+  /** The hidden tab's root page has a back (the round arrow, the edge swipe): Contacts always; Settings (Me) only while
+   *  a chat thread is open under it, which the back returns to. Settings is otherwise a root page of the tab bar. */
+  static bool HiddenTabHasBack(const ShellState& state);
   /** Pages that may be pushed (transient) from Settings and keep the tab bar under them (TODO #200). */
   static bool IsSettingsFamilyTransient(const std::string& key);
   /** Phone layout on Settings (Me) with only settings-family pages pushed over it and no secret page: the tab bar is

@@ -444,26 +444,172 @@ void OpenChat(ShellHost& host) {
 
 } // namespace
 
-// DEV/PLAN-minimal-nav.md A: on phones Me and Contacts are hidden tabs; their back returns to the tab they came from.
-TEST(ShellHostHiddenTabTest, BackFromSettingsReturnsToTheTabItWasOpenedFrom) {
+// Settings is the third segment of the phone bar: a root page whose back (with no chat under it) lands on the chat list.
+TEST(ShellHostHiddenTabTest, BackFromSettingsWithNoChatUnderItGoesToTheChatList) {
   ShellHost& from_chats = PhoneHost(NavTab::Sessions);
   from_chats.OpenSettingsFromAvatar();
   EXPECT_EQ(from_chats.State().nav_tab, NavTab::Me);
+  EXPECT_EQ(from_chats.State().nav_bar_tab_str, "me") << "the bar highlights Settings itself";
+  EXPECT_FALSE(ShellLayout::HiddenTabHasBack(from_chats.State())) << "a root page: no back arrow";
   EXPECT_EQ(ShellLayout::CompactTabBarDp(from_chats.State()), 48.f) << "Settings keeps the tab bar (TODO #200)";
   from_chats.HiddenTabBack();
   EXPECT_EQ(from_chats.State().nav_tab, NavTab::Sessions);
 
   ShellHost& from_ai = PhoneHost(NavTab::Home);
   from_ai.SelectNavTab(NavTab::Me);
+  EXPECT_EQ(from_ai.State().nav_bar_tab_str, "me");
   from_ai.HiddenTabBack();
-  EXPECT_EQ(from_ai.State().nav_tab, NavTab::Home);
+  EXPECT_EQ(from_ai.State().nav_tab, NavTab::Sessions) << "back from Settings is the chat list, wherever it was opened";
+}
+
+// The bottom "Settings" segment: select_nav_tab('me') shows Settings, selected, with no back arrow.
+TEST(ShellHostHiddenTabTest, TheBottomSettingsSegmentOpensSettingsAsARootPage) {
+  ShellHost& host = PhoneHost(NavTab::Sessions);
+  host.OnNavTabClicked("me");
+  EXPECT_EQ(host.State().nav_tab, NavTab::Me);
+  EXPECT_EQ(host.State().nav_bar_tab_str, "me");
+  EXPECT_FALSE(ShellLayout::HiddenTabHasBack(host.State()));
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(host.State()), 48.f);
+  // AI drawer's "me" row and the chat hints' deep link select Settings the same way.
+  ShellHost& drawer = PhoneHost(NavTab::Home);
+  drawer.OpenSettingsFromAvatar();
+  EXPECT_EQ(drawer.State().nav_bar_tab_str, "me");
+  // From Settings, Chats and AI land on the tapped page.
+  host.OnNavTabClicked("sessions");
+  EXPECT_EQ(host.State().nav_tab, NavTab::Sessions);
+  EXPECT_EQ(host.State().nav_bar_tab_str, "sessions");
+  host.OnNavTabClicked("me");
+  host.OnNavTabClicked("home");
+  EXPECT_EQ(host.State().nav_tab, NavTab::Home);
+  EXPECT_EQ(host.State().nav_bar_tab_str, "home");
+}
+
+// A secret page hides the bar; closing it brings the bar back with "Settings" still selected.
+TEST(ShellHostHiddenTabTest, TheSecretPageHidesTheBottomSwitchAndSettingsStaysSelected) {
+  ShellHost& host = PhoneHost(NavTab::Sessions);
+  host.OnNavTabClicked("me");
+  host.SetSecretPageOpen(true);
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(host.State()), 0.f);
+  host.SetSecretPageOpen(false);
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(host.State()), 48.f);
+  EXPECT_EQ(host.State().nav_bar_tab_str, "me");
+}
+
+// Settings opened on top of an open chat thread (a hint in that chat): the back arrow shows and everything that goes
+// back (arrow, system back, the bottom "Chats") returns to the thread; "AI" leaves for the AI page.
+TEST(ShellHostHiddenTabTest, SettingsOverAThreadReturnsToTheThreadByEveryRoute) {
+  const auto open_settings_over_thread = []() -> ShellHost& {
+    ShellHost& host = PhoneHost(NavTab::Sessions);
+    OpenChat(host);
+    MakeShellNavigationPorts(host).select_nav_tab(NavTab::Me);
+    return host;
+  };
+  ShellHost& host = open_settings_over_thread();
+  EXPECT_EQ(host.State().nav_bar_tab_str, "me");
+  EXPECT_TRUE(ShellLayout::HiddenTabHasBack(host.State())) << "the back arrow shows";
+  // A settings page opened and closed: the thread is still under Settings, which stays selected.
+  bool closed = false;
+  host.PushLocalBack("settings_detail", [&closed]() { closed = true; });
+  EXPECT_TRUE(host.HandleDismiss());
+  EXPECT_TRUE(closed);
+  EXPECT_EQ(host.State().nav_bar_tab_str, "me");
+  EXPECT_TRUE(host.State().compact_chat_open);
+
+  ShellHost& by_arrow = open_settings_over_thread();
+  by_arrow.HiddenTabBack();
+  EXPECT_EQ(by_arrow.State().nav_tab, NavTab::Sessions);
+  EXPECT_TRUE(by_arrow.State().compact_chat_open);
+
+  ShellHost& by_system_back = open_settings_over_thread();
+  EXPECT_TRUE(by_system_back.HandleDismiss());
+  EXPECT_EQ(by_system_back.State().nav_tab, NavTab::Sessions);
+  EXPECT_TRUE(by_system_back.State().compact_chat_open) << "the thread, not the chat list";
+
+  ShellHost& by_chats_segment = open_settings_over_thread();
+  by_chats_segment.OnNavTabClicked("sessions");
+  EXPECT_EQ(by_chats_segment.State().nav_tab, NavTab::Sessions);
+  EXPECT_TRUE(by_chats_segment.State().compact_chat_open) << "tapping Chats is the same as the back arrow";
+  EXPECT_FALSE(ShellLayout::HiddenTabHasBack(by_chats_segment.State()));
+
+  ShellHost& by_ai_segment = open_settings_over_thread();
+  by_ai_segment.OnNavTabClicked("home");
+  EXPECT_EQ(by_ai_segment.State().nav_tab, NavTab::Home);
+  EXPECT_FALSE(by_ai_segment.State().compact_chat_open) << "AI leaves for the AI page";
+}
+
+// A second tap on the selected "Settings" goes back to the Settings home from a sub-page.
+TEST(ShellHostHiddenTabTest, TappingSettingsAgainFromASubPageReturnsToTheSettingsHome) {
+  ShellHost& host = PhoneHost(NavTab::Sessions);
+  host.OnNavTabClicked("me");
+  int closed = 0;
+  host.PushLocalBack("settings_detail", [&closed]() { ++closed; });
+  host.PushLocalBack("settings_subpage", [&closed]() { ++closed; });
+  host.PushTransient({.key = "contact_detail"});
+  ASSERT_TRUE(host.HasLocalBack("settings_subpage"));
+  host.OnNavTabClicked("me");
+  EXPECT_EQ(closed, 2) << "both levels were closed through their own commit";
+  EXPECT_FALSE(host.HasLocalBack("settings_detail"));
+  EXPECT_FALSE(host.HasLocalBack("settings_subpage"));
+  EXPECT_TRUE(host.State().transient_stack.empty());
+  EXPECT_EQ(host.State().nav_tab, NavTab::Me);
+  EXPECT_EQ(host.State().nav_bar_tab_str, "me");
+}
+
+// One back resolver for the swipe, the system back and the arrow: for each kind of settings page it names the right
+// thing to close (a level at a time, ending on the chat list).
+TEST(ShellHostHiddenTabTest, TheBackResolverNamesTheRightTargetOnEverySettingsPage) {
+  // Home, nothing under it: leaves Settings for the chat list.
+  ShellHost& home = PhoneHost(NavTab::Sessions);
+  home.OnNavTabClicked("me");
+  EXPECT_EQ(home.BackTarget(), DismissTarget::HiddenTab);
+  // Home over a thread: the same target, which lands on the thread.
+  ShellHost& over_thread = PhoneHost(NavTab::Sessions);
+  OpenChat(over_thread);
+  MakeShellNavigationPorts(over_thread).select_nav_tab(NavTab::Me);
+  EXPECT_EQ(over_thread.BackTarget(), DismissTarget::HiddenTab);
+  // A sub-page on the local back stack: closes that page first.
+  ShellHost& local = PhoneHost(NavTab::Sessions);
+  local.OnNavTabClicked("me");
+  local.PushLocalBack("settings_detail", []() {});
+  EXPECT_EQ(local.BackTarget(), DismissTarget::LocalBack);
+  // A pushed page (a contact's page, blocked people) over Settings: the pushed page first.
+  ShellHost& pushed = PhoneHost(NavTab::Sessions);
+  pushed.OnNavTabClicked("me");
+  pushed.PushTransient({.key = "blocked_people"});
+  EXPECT_EQ(pushed.BackTarget(), DismissTarget::Transient);
+  // Two levels deep (a choice page over a section): level by level, ending on the chat list.
+  ShellHost& deep = PhoneHost(NavTab::Sessions);
+  deep.OnNavTabClicked("me");
+  int closed = 0;
+  deep.PushLocalBack("settings_detail", [&closed]() { ++closed; });
+  deep.PushLocalBack("settings_subpage", [&closed]() { ++closed; });
+  EXPECT_EQ(deep.BackTarget(), DismissTarget::LocalBack);
+  EXPECT_TRUE(deep.HandleDismiss());
+  EXPECT_TRUE(deep.HandleDismiss());
+  EXPECT_EQ(closed, 2);
+  EXPECT_EQ(deep.State().nav_tab, NavTab::Me);
+  EXPECT_EQ(deep.BackTarget(), DismissTarget::HiddenTab);
+  EXPECT_TRUE(deep.HandleDismiss());
+  EXPECT_EQ(deep.State().nav_tab, NavTab::Sessions) << "the last level lands on the chat list";
+  EXPECT_FALSE(deep.HandleDismiss()) << "the chat list is a root page: the platform's";
+}
+
+// The desktop is untouched: Me is a plain tab there, no back, no bar.
+TEST(ShellHostHiddenTabTest, TheDesktopIsUnchangedByTheSettingsSegment) {
+  ShellHost& desktop = KeptHost();
+  desktop.SelectNavTab(NavTab::Me);
+  EXPECT_EQ(desktop.State().nav_tab, NavTab::Me);
+  EXPECT_FALSE(desktop.HandleDismiss());
+  EXPECT_EQ(desktop.State().nav_tab, NavTab::Me);
+  EXPECT_FALSE(ShellLayout::HiddenTabHasBack(desktop.State()));
+  EXPECT_EQ(desktop.BackTarget(), DismissTarget::None);
 }
 
 // TODO #200: a tab in the bar on Settings (or a page pushed from it) leaves the whole stack and shows that tab.
 TEST(ShellHostHiddenTabTest, ATabTapOnSettingsLeavesTheWholeSettingsStack) {
   ShellHost& host = PhoneHost(NavTab::Sessions);
   host.OpenSettingsFromAvatar();
-  EXPECT_EQ(host.State().nav_bar_tab_str, "sessions") << "the bar highlights the tab Settings was entered from";
+  EXPECT_EQ(host.State().nav_bar_tab_str, "me") << "the bar highlights Settings";
   host.PushTransient({.key = "contact_detail"});
   host.PushTransient({.key = "blocked_people"});
   ASSERT_EQ(host.State().transient_stack.size(), 2u);
@@ -477,7 +623,7 @@ TEST(ShellHostHiddenTabTest, ATabTapOnSettingsLeavesTheWholeSettingsStack) {
   // From the AI page: back to the AI page, by the same tap.
   ShellHost& from_ai = PhoneHost(NavTab::Home);
   from_ai.OpenSettingsFromAvatar();
-  EXPECT_EQ(from_ai.State().nav_bar_tab_str, "home");
+  EXPECT_EQ(from_ai.State().nav_bar_tab_str, "me");
   from_ai.OnNavTabClicked("home");
   EXPECT_EQ(from_ai.State().nav_tab, NavTab::Home);
 
@@ -582,7 +728,7 @@ TEST(ShellHostHiddenTabTest, SettingsEnteredOnTheDesktopStillGoesBackAfterTheWin
   host.State().layout_mode = LayoutMode::Compact;
   ShellLayout::SyncLayoutModeString(host.State());
   host.HiddenTabBack();
-  EXPECT_EQ(host.State().nav_tab, NavTab::Home) << "the tab Settings was entered from, not a stale one";
+  EXPECT_EQ(host.State().nav_tab, NavTab::Sessions) << "Settings is a root page of the bar: its back is the chat list";
 }
 
 TEST(ShellHostHiddenTabTest, BackToAChatLeftOpenUnderAHiddenTabSaysItIsShownAgain) {

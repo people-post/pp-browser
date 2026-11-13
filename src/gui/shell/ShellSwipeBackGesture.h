@@ -47,6 +47,11 @@ public:
      * drags that start on it (the New chat contact rows), so the page must not slide at the same time.
      */
     std::function<bool(ui::Element* target)> ignore_press;
+    /**
+     * A press that starts in the left edge strip may begin the swipe even on a button. Settings pages are made of
+     * buttons (cards, rows, choices), and a button anywhere else still keeps its press: only the edge strip is ours.
+     */
+    bool edge_over_buttons = false;
   };
 
   void Attach(ui::Element* listen_surface, ui::Context* context, AttachOptions options, DismissCallback on_dismiss);
@@ -56,7 +61,7 @@ public:
   void ProcessEvent(ui::Event& event) override;
 
 private:
-  bool ShouldIgnoreTarget(ui::Element* target) const;
+  bool ShouldIgnoreTarget(ui::Element* target, int x_px) const;
   bool ShouldStartSwipe(ui::Element* target, int x_px) const;
   bool IsChromeRegion(ui::Element* target) const;
   bool IsUnder(ui::Element* ancestor, ui::Element* target) const;

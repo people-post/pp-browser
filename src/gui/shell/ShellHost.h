@@ -166,6 +166,10 @@ public:
   bool HomeRootShown() const;
   /** Phone layout: the hidden tab's own root page is on top (nothing pushed over it, no settings page open). */
   bool HiddenTabRootShown() const;
+  /** What a back (edge swipe, system back, the arrow) closes now: the one resolver they all go through. */
+  DismissTarget BackTarget() const { return ResolveDismissTarget(); }
+  /** Phone Settings home with no chat thread under it: a root page of the tab bar (no back arrow, no edge swipe). */
+  bool SettingsHomeRootShown() const;
   /** Phone root pages: flips the large-title state; dirties the model only when it changes. */
   void SetLargeTitleCollapsed(bool collapsed);
   /** Chats header status line, event-driven (never polled): known=false shows nothing; else online/offline. Dirties only on change. */
