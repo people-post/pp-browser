@@ -668,7 +668,11 @@ void ChatController::OnRelayRegistrationSignal(const RelayRegistrationSignal sig
 
 void ChatController::OnRecoveryRenewal(const RenewResult& result, const bool auto_renew) {
   if (recovery_.CurrentState() == RegistrationRecovery::State::Ok) {
-    return; // the routine renewal after unlock: not the recovery's
+    // The routine renewal after unlock (also a backend switch, #602): not the recovery's, but it is an attempt.
+    if (result.registration) {
+      recovery_.OnRoutineRenewed(SteadyNowMs());
+    }
+    return;
   }
   RenewalOutcome outcome = RenewalOutcome::NothingDue;
   const char* result_name = "nothing_due";

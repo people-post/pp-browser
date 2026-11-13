@@ -79,6 +79,12 @@ RecoveryActions RegistrationRecovery::OnPollOk() {
   return out;
 }
 
+void RegistrationRecovery::OnRoutineRenewed(const int64_t now_ms) {
+  if (state_ == State::Ok) {
+    last_request_ms_ = now_ms;
+  }
+}
+
 bool RegistrationRecovery::OnUserTap() {
   if (state_ == State::Ok) {
     return false;

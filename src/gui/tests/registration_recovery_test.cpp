@@ -230,6 +230,23 @@ TEST(RegistrationRecoveryTest, RenewalResultsWhileOkAreIgnored) {
   }
 }
 
+// #602 renews at unlock when the registration was made at another backend; the relay there refuses the polls sent
+// before that renewal took effect. One event: one registration.
+TEST(RegistrationRecoveryTest, ARoutineRenewalCountsAsTheLastAttempt) {
+  RegistrationRecovery recovery;
+  recovery.OnRoutineRenewed(kT0);
+  EXPECT_FALSE(NotRegistered(recovery, kT0 + 500).request_renewal) << "a poll refused just before: no second one";
+  EXPECT_EQ(recovery.CurrentState(), State::AutoPending);
+  EXPECT_TRUE(NotRegistered(recovery, kT0 + kInterval).request_renewal) << "still refused 5 minutes on: try again";
+}
+
+TEST(RegistrationRecoveryTest, ARoutineRenewalWhileRecoveringLeavesTheClock) {
+  RegistrationRecovery recovery;
+  ASSERT_TRUE(NotRegistered(recovery, kT0).request_renewal);
+  recovery.OnRoutineRenewed(kT0 + kInterval - 1); // not Ok: the recovery's own clock stands
+  EXPECT_TRUE(NotRegistered(recovery, kT0 + kInterval).request_renewal);
+}
+
 // The glue ChatController runs for a "not registered" poll: while locked nothing is marked or renewed; the expired mark
 // is stored before the renewal runs.
 TEST(RegistrationRecoveryGlueTest, LockedMarksNothingAndRequestsNoRenewal) {

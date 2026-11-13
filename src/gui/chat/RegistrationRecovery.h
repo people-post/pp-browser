@@ -53,6 +53,12 @@ public:
   RecoveryActions OnNotRegistered(bool locked, bool auto_renew, bool call_live, int64_t now_ms);
   RecoveryActions OnRenewal(RenewalOutcome outcome, bool auto_renew, bool call_live);
   RecoveryActions OnPollOk();
+  /**
+   * A renewal made while Ok succeeded (the routine one after unlock, also run when the registration was made at
+   * another backend): it counts as the last attempt, so a poll refused just before it took effect does not register
+   * a second time for the same event.
+   */
+  void OnRoutineRenewed(int64_t now_ms);
   /** The user tapped the row or the alert's button. False: already Ok again, nothing to reconnect. */
   bool OnUserTap();
   /** Messaging was torn down: state and the retry clock go; the once-per-run alert and toast stay used. */
