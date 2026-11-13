@@ -35,6 +35,7 @@ public:
   Roe<void> Send(const RelayEnvelope& envelope) override {
     std::lock_guard lock(mu_);
     sent.push_back(envelope.message_id);
+    recipients.push_back(envelope.recipient_contact_id.value_or(""));
     if (envelope.recipient_contact_id && down_.count(*envelope.recipient_contact_id) != 0) {
       return failure_;
     }
@@ -62,6 +63,8 @@ public:
   Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest&) override { return Error("unused"); }
 
   std::vector<std::string> sent;
+  /** Each send's recipient, in order. */
+  std::vector<std::string> recipients;
 
 private:
   std::mutex mu_;
@@ -392,6 +395,65 @@ TEST_F(DeliveryOutboxTest, ARefusedSendEndsItAtOnce) {
   outbox->Retry();
   Drain();
   EXPECT_EQ(relay.SentCount(), 1u);
+}
+
+TEST_F(DeliveryOutboxTest, AnUnknownRecipientIsSentOnceMoreToItsCurrentRoute) {
+  FakeRelay relay(0, AppError::Network(Err::Network::HttpNotFound, "404"));
+  relay.RecipientDown("relay:old", true);
+  auto outbox = MakeOutbox(relay);
+  std::vector<std::string> asked;
+  outbox->SetRouteRefresh([&](const std::string& account) -> std::optional<std::string> {
+    asked.push_back(account);
+    return "relay:new";
+  });
+  DeliveryRequest request = ToRelay("t1", "m1");
+  request.envelope.recipient_contact_id = "relay:old";
+  request.route_account = "account:bob";
+  outbox->Send(std::move(request));
+  Drain();
+  ASSERT_EQ(Outcomes().size(), 1u);
+  EXPECT_TRUE(Outcomes()[0].ok);
+  EXPECT_EQ(relay.recipients, (std::vector<std::string>{"relay:old", "relay:new"}));
+  EXPECT_EQ(asked, (std::vector<std::string>{"account:bob"}));
+}
+
+TEST_F(DeliveryOutboxTest, AnUnknownRecipientIsRetriedOnlyOncePerAttemptAndNotQueued) {
+  FakeRelay relay(0, AppError::Network(Err::Network::HttpNotFound, "404"));
+  relay.RecipientDown("relay:old", true);
+  relay.RecipientDown("relay:new", true);
+  auto outbox = MakeOutbox(relay);
+  int asked = 0;
+  outbox->SetRouteRefresh([&](const std::string&) -> std::optional<std::string> {
+    ++asked;
+    return "relay:new";
+  });
+  DeliveryRequest request = ToRelay("t1", "m1");
+  request.envelope.recipient_contact_id = "relay:old";
+  request.route_account = "account:bob";
+  outbox->Send(std::move(request));
+  Drain();
+  ASSERT_EQ(Outcomes().size(), 1u);
+  EXPECT_FALSE(Outcomes()[0].ok);
+  EXPECT_EQ(Outcomes()[0].failure, SendFailure::RelayRejected);
+  EXPECT_EQ(relay.SentCount(), 2u);
+  EXPECT_EQ(asked, 1);
+  EXPECT_FALSE(outbox->SendStartedMs("m1")) << "a 404 is final: nothing is queued";
+}
+
+TEST_F(DeliveryOutboxTest, AnUnknownRecipientWithTheSameRouteOrNoneIsNotSentAgain) {
+  for (const std::optional<std::string>& fresh :
+       {std::optional<std::string>("relay:old"), std::optional<std::string>()}) {
+    FakeRelay relay(0, AppError::Network(Err::Network::HttpNotFound, "404"));
+    relay.RecipientDown("relay:old", true);
+    auto outbox = MakeOutbox(relay);
+    outbox->SetRouteRefresh([&](const std::string&) { return fresh; });
+    DeliveryRequest request = ToRelay("t1", "m1");
+    request.envelope.recipient_contact_id = "relay:old";
+    request.route_account = "account:bob";
+    outbox->Send(std::move(request));
+    Drain();
+    EXPECT_EQ(relay.SentCount(), 1u);
+  }
 }
 
 TEST_F(DeliveryOutboxTest, ASendThatEndsAtOnceLeavesNothingActive) {

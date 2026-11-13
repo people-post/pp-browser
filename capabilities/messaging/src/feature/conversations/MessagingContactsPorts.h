@@ -5,6 +5,7 @@
 #include "lib/net/OrgBackendClients.h"
 #include "lib/people/ContactTypes.h"
 #include "common/Error.h"
+#include "feature/conversations/ContactRefreshWorkflow.h"
 #include "feature/conversations/MessagingUiPorts.h"
 
 #include <cstdint>
@@ -33,10 +34,6 @@ struct MessagingContactsPorts {
   std::function<Roe<std::vector<mesh::DirectoryHit>>(const std::string& query)> search_people;
   std::function<Roe<Contact>(const mesh::DirectoryHit& hit)> add_contact_from_directory_hit;
   std::function<Roe<bool>(const std::string& contact_id)> remove_contact;
-  /** `requested_account_id`: the account a by-account lookup asked for (ContactsStore::ApplyRemoteSnapshot). */
-  std::function<Roe<Contact>(const std::string& contact_id, const mesh::DirectoryHit& hit, int64_t fetched_at_ms,
-                             const std::optional<std::string>& requested_account_id)>
-      apply_remote_snapshot;
 
   std::function<Roe<std::vector<Thread>>()> list_threads;
   std::function<int(const std::string& contact_id)> sum_unread_for_contact;
@@ -46,9 +43,6 @@ struct MessagingContactsPorts {
   std::function<std::optional<PeerSigningKeyRecord>(const std::string& peer_identity_kind,
                                                     const std::string& peer_identity_value)>
       get_signing_key;
-
-  std::function<Roe<mesh::DirectoryHit>(const std::string& relay_user_id)> lookup_relay_user;
-  std::function<Roe<mesh::DirectoryHit>(const std::string& account_id)> lookup_account;
 
   std::function<std::string(const Contact& contact)> contact_icon_local_path;
   std::function<void(const Contact& contact)> ensure_contact_icon_cached;
@@ -76,6 +70,12 @@ struct MessagingContactsPorts {
   std::function<void(const Contact& contact, std::function<void(bool kept)> done)> refresh_contact_card;
   /** The contact's nickname and photo again when its last directory answer is stale; background, silent (B142). */
   std::function<void(const std::string& contact_id)> refresh_contact_profile;
+  /**
+   * The contact page's Refresh: its devices, then our directory, off the UI thread (ContactRefreshWorkflow).
+   * `done` once, on the UI thread. False (no `done`) when one already runs for that contact.
+   */
+  std::function<bool(const std::string& contact_id, std::function<void(const ContactRefreshResult&)> done)>
+      refresh_contact;
 };
 
 class ConversationsHub;

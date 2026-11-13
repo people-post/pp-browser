@@ -11448,6 +11448,12 @@ input.checkbox {
   display: block;
 }
 
+/* A contact's Refresh while it runs (its label reads "Refreshing…"): dimmed, and a press does nothing. */
+.contacts-refresh-busy {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
 .cd-acts {
   justify-content: center;
   gap: 16dp;

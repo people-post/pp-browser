@@ -64,6 +64,7 @@ Error RegistrationHttpStatusError(const std::string& step, long status_code);
 class HttpRegistrationClient : public IRegistrationClient {
 public:
   explicit HttpRegistrationClient(std::string base_url);
+  std::string BaseUrl() const override { return base_url_; }
   Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
                                                  const std::string& signature_alg = "ml-dsa-65",
                                                  const std::string& kem_public_key_b64 = "",

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/Lifetime.h"
 #include "common/Module.h"
 #include "feature/conversations/MessagingContactsPorts.h"
 #include "gui/ChatSessionPorts.h"
@@ -21,6 +22,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -162,11 +164,6 @@ public:
     std::vector<ContactIdentityRow> identities;
     std::vector<ContactThreadRow> threads;
     bool can_message = false;
-    bool has_relay_id = false;
-    /** Refreshing the contact's info can be tried: it has an Account ID or a relay id. */
-    bool can_refresh = false;
-    /** The contact's Account ID (what a refresh looks up first); empty when it has none. */
-    ui::String account_id;
     bool has_icon = false;
     ui::String icon_src;
     ui::String avatar_letter = "?";
@@ -177,6 +174,8 @@ public:
     ui::String member_account;
     /** Starred as a favourite (the phone page's star button reads "Favorite" and is filled). */
     bool starred = false;
+    /** Its Refresh runs (the button reads "Refreshing…" and a press does nothing). */
+    bool refreshing = false;
   };
 
   bool RegisterModel(ui::Context* context);
@@ -189,8 +188,6 @@ public:
   void Tick();
   void FlushPending();
   void OnSelectContact(const std::string& contact_id);
-  /** "Refresh account info…" on the open contact: looks it up by Account ID (else relay id) and applies the answer. */
-  void OnSyncRemote();
   /** A group member who is not a contact: their page in its member state, pushed like a contact's page. */
   void OnShowMember(const std::string& account_id, const std::string& name, const std::string& icon_src);
   /**
@@ -327,7 +324,7 @@ private:
   static void NewChatPickCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void NewChatActionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void NewChatSearchCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SyncRemoteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void RefreshContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
   void SyncFromStore();
   /** Rebuilds the New chat page's frequent and lettered rows from the contacts and chats (and its search). */
@@ -386,6 +383,9 @@ private:
   void OnContactFieldLeft();
   /** The edit is over (field left, page gone, typing paused): "Note saved" once if a save changed the remark. */
   void AnnounceRemarkSaved();
+  /** The page's Refresh: starts the contact's refresh off the UI thread; OnContactRefreshed shows what it came to. */
+  void OnRefreshContact();
+  void OnContactRefreshed(const std::string& contact_id, const ContactRefreshResult& result);
   bool FlushSelectedContact();
   void UpdateMessagingEligibility(const Contact& contact);
   void DirtyAll();
@@ -483,6 +483,10 @@ private:
   std::function<bool(const std::string& text)> offer_group_join_;
   ContactsAccountPorts account_ports_;
   SessionStore* session_store_ = nullptr;
+  /** Contacts whose Refresh runs. */
+  std::set<std::string> refreshing_contacts_;
+  /** Last: what was bound to this controller stops first. */
+  pp::Lifetime lifetime_;
 
   static ContactsController* installed_instance_;
 };
@@ -497,6 +501,14 @@ ContactsController::ContactDetail MemberPreviewDetail(const std::string& account
                                                       const std::string& icon_src);
 /** Apply the editable detail fields (the remark, capped at kMaxNicknameChars) to a copy of the contact. */
 Contact BuildContactFromDetail(const Contact& existing, const ContactsController::ContactDetail& detail);
+
+/** What a contact's Refresh says: a success (Ok) or a failure (Fail), and its words. */
+struct ContactRefreshNotice {
+  bool ok = false;
+  std::string text;
+};
+/** Words for a refresh's outcome: what changed, else up to date, else which source could not be reached. */
+ContactRefreshNotice DescribeContactRefresh(const ContactRefreshResult& result);
 
 /** The blocked ones of `contacts`, sorted by name as the Contacts list sorts them. */
 std::vector<Contact> BlockedContactsByName(const std::vector<Contact>& contacts);

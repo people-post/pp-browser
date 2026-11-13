@@ -64,6 +64,10 @@ void ConversationsFacade::BindAgentInbound(AgentInboundPorts ports) {
   hub_.BindAgentInbound(std::move(ports));
 }
 
+std::string ConversationsFacade::RegistrationBackendUrl() {
+  return hub_.Registration().BaseUrl();
+}
+
 Roe<bool> ConversationsFacade::MaybeAutoRenewRegistration(const bool auto_renew_registration) {
   return pbr::MaybeAutoRenewRegistration(hub_.Registration(), hub_.Identity(), auto_renew_registration);
 }

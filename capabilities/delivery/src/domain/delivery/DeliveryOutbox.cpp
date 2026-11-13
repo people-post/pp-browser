@@ -1,5 +1,6 @@
 #include "domain/delivery/DeliveryOutbox.h"
 
+#include "common/chat/RelayStreamKey.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "lib/delivery/OutboundMessage.h"
@@ -30,6 +31,37 @@ DeliveryOutbox::~DeliveryOutbox() {
     AppRuntime::CancelCoordinatorTimer(timer);
   }
   lifetime_.InvalidateAndWait();
+}
+
+namespace {
+
+/** Addresses `envelope` to `relay_id`; a direct stream key that named the old recipient follows (it is unsigned). */
+void ReaddressEnvelope(RelayEnvelope& envelope, const std::string& relay_id) {
+  const std::string old_route = envelope.recipient_contact_id.value_or("");
+  if (envelope.route.kind == "direct" &&
+      envelope.stream_key == BuildDeviceRelayStreamKey(envelope.sender_relay_id, old_route, envelope.route.channel,
+                                                       envelope.sender_device)) {
+    envelope.stream_key =
+        BuildDeviceRelayStreamKey(envelope.sender_relay_id, relay_id, envelope.route.channel, envelope.sender_device);
+  }
+  envelope.recipient_contact_id = relay_id;
+}
+
+} // namespace
+
+Roe<void> DeliveryOutbox::RelaySend(IRelayClient& relay, RelayEnvelope& envelope, const std::string& route_account) {
+  auto sent = relay.Send(envelope);
+  if (sent || !RelayRecipientUnknown(sent.error()) || !route_refresh_ || route_account.empty()) {
+    return sent;
+  }
+  const auto fresh = route_refresh_(route_account);
+  if (!fresh || *fresh == envelope.recipient_contact_id.value_or("")) {
+    return sent;
+  }
+  log().info << "relay does not know the recipient message_id=" << envelope.message_id << " account=" << route_account
+             << "; resending to its current route";
+  ReaddressEnvelope(envelope, *fresh);
+  return relay.Send(envelope);
 }
 
 void DeliveryOutbox::Report(DeliveryOutcome outcome) {
@@ -153,14 +185,16 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
         Finish(std::move(outcome));
         return;
       }
-      if (auto sent = relay->Send(request.envelope); !sent) {
-        Pending pending{.envelope = request.envelope,
+      RelayEnvelope envelope = request.envelope; // re-addressed in place when the recipient moved
+      if (auto sent = RelaySend(*relay, envelope, request.route_account); !sent) {
+        Pending pending{.envelope = envelope,
                         .message_id = request.message_id,
                         .thread_id = request.thread_id,
                         .attempt_count = 1,
                         .amp_peer_key = request.amp_peer_key,
                         .group_member = request.group_member,
                         .copy_device = request.copy_device,
+                        .route_account = request.route_account,
                         .serial = serial};
         const bool control_lane = request.thread_id.empty();
         bool again = false;
@@ -273,7 +307,7 @@ void DeliveryOutbox::RetryControlNow(Pending item) {
     Enqueue(std::move(item));
     return;
   }
-  auto sent = relay->Send(item.envelope);
+  auto sent = RelaySend(*relay, item.envelope, item.route_account);
   DeliveryOutcome outcome{.thread_id = item.thread_id,
                           .message_id = item.message_id,
                           .group_member = item.group_member,
@@ -412,7 +446,8 @@ void DeliveryOutbox::Retry() {
           return;
         }
         IRelayClient* relay = relay_;
-        auto result = relay ? relay->Send(item.envelope) : Roe<void>(Error("Relay client not configured"));
+        auto result = relay ? RelaySend(*relay, item.envelope, item.route_account)
+                            : Roe<void>(Error("Relay client not configured"));
         if (result) {
           Finish(DeliveryOutcome{.thread_id = item.thread_id,
                                  .message_id = item.message_id,

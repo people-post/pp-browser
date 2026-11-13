@@ -229,6 +229,11 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
     }
   });
   outbox_.SetThreadPaused([this](const std::string& thread_id) { return IsThreadCompromised(thread_id); });
+  // A relay that does not know the recipient: the cached route is stale, ask the directory afresh.
+  outbox_.SetRouteRefresh([this](const std::string& account_id) {
+    routes_.Forget(account_id);
+    return routes_.ResolveAccountWithDirectory(account_id);
+  });
   // Blob + chat/history: Amp single entry ([A020] / D10). May also AttachAmpTransports later.
   if (amp_links) {
     AttachAmpTransports(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io),
@@ -551,6 +556,7 @@ Roe<void> MeshDeliveryOrchestrator::ResendDirectCopy(const Thread& thread, const
                                .message_id = message.id,
                                .amp_peer_key = linked ? device.peer_id : (peer_relay_id ? std::string() : asker),
                                .relay_route = peer_relay_id,
+                               .route_account = thread.peer_identity_value,
                                .copy_device = device.peer_id});
   return {};
 }
@@ -614,6 +620,7 @@ Roe<void> MeshDeliveryOrchestrator::ResendGroupCopy(const Thread& thread, const 
                                .message_id = message.id,
                                .amp_peer_key = LinkedTo(device.peer_id) ? device.peer_id : std::string(),
                                .relay_route = relay_route,
+                               .route_account = asker,
                                .group_member = asker});
   return {};
 }
@@ -769,6 +776,10 @@ void MeshDeliveryOrchestrator::RegisterContactDirectEndpoints(const Contact& con
 
 void MeshDeliveryOrchestrator::SetPeerRouteSources(DirectoryShadowCache* shadows, mesh::IDirectoryClient* directory) {
   routes_.SetSources(shadows, directory);
+}
+
+void MeshDeliveryOrchestrator::ForgetPeerRoutes() {
+  routes_.ForgetAll();
 }
 
 void MeshDeliveryOrchestrator::NoteAccountRelayRoute(const std::string& account_id, const std::string& relay_user_id) {
@@ -1674,6 +1685,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
                                    .message_id = appended->id,
                                    .amp_peer_key = device.peer_id,
                                    .relay_route = peer_relay_id,
+                                   .route_account = amp_peer_key,
                                    .critical_lane = options.critical_lane,
                                    .copy_device = device.peer_id});
       any = true;
@@ -1690,6 +1702,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
                                      .message_id = appended->id,
                                      .amp_peer_key = peer_relay_id ? std::string() : amp_peer_key,
                                      .relay_route = peer_relay_id,
+                                     .route_account = amp_peer_key,
                                      .critical_lane = options.critical_lane,
                                      .copy_device = "relay"});
         any = true;
@@ -1715,6 +1728,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
                                  .message_id = appended->id,
                                  .amp_peer_key = amp_peer_key,
                                  .relay_route = peer_relay_id,
+                                 .route_account = amp_peer_key,
                                  .critical_lane = options.critical_lane});
   }
 
@@ -1948,6 +1962,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
                                  .message_id = message.id,
                                  .amp_peer_key = device,
                                  .relay_route = relay_route,
+                                 .route_account = recipient,
                                  .group_member = recipient});
   }
   for (const std::string& recipient : members_in_order) {
@@ -1970,6 +1985,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
                                  .message_id = message.id,
                                  .amp_peer_key = relay_route ? std::string() : recipient,
                                  .relay_route = relay_route,
+                                 .route_account = recipient,
                                  .group_member = recipient});
   }
   if (any_missed) {

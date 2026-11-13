@@ -75,6 +75,49 @@ TEST(RegistrationClientTest, ApplyRegistrationResultIgnoresMissingFloor) {
   EXPECT_EQ(identity.initiation_floor, 7);
 }
 
+TEST(RegistrationClientTest, NormalizeRegistrationBackendMatchesTheBackendProfileRule) {
+  EXPECT_EQ(NormalizeRegistrationBackend("  HTTPS://Relay.Example.Test/ "), "https://relay.example.test");
+  EXPECT_EQ(NormalizeRegistrationBackend("https://relay.example.test/Base/"), "https://relay.example.test/Base");
+  EXPECT_EQ(NormalizeRegistrationBackend(""), "");
+}
+
+TEST(RegistrationClientTest, ARegistrationAtAnotherOrUnrecordedBackendNeedsRenewal) {
+  LocalIdentity identity;
+  identity.registered = true;
+  identity.registration_expires_at = "2099-01-01T00:00:00.000Z";
+  const int64_t now = 1'700'000'000'000;
+  const std::string current = "https://new.example.test/";
+
+  EXPECT_EQ(ClassifyRegistration(identity, now, current), RegistrationStatus::WrongBackend)
+      << "recorded by a build that did not say where";
+  EXPECT_TRUE(ShouldRenewRegistration(identity, now, current));
+  EXPECT_EQ(RegistrationActionLabel(RegistrationStatus::WrongBackend), "Renew registration");
+
+  identity.registered_backend_url = "https://old.example.test";
+  EXPECT_EQ(ClassifyRegistration(identity, now, current), RegistrationStatus::WrongBackend);
+
+  identity.registered_backend_url = "https://new.example.test";
+  EXPECT_EQ(ClassifyRegistration(identity, now, current), RegistrationStatus::Active)
+      << "same backend, trailing / aside";
+  EXPECT_FALSE(ShouldRenewRegistration(identity, now, current));
+  EXPECT_TRUE(RegisteredAtBackend(identity, ""));
+
+  LocalIdentity unregistered;
+  EXPECT_EQ(ClassifyRegistration(unregistered, now, current), RegistrationStatus::Unregistered);
+}
+
+TEST(RegistrationClientTest, ApplyRegistrationResultRecordsTheBackend) {
+  LocalIdentity identity;
+  identity.registered_backend_url = "https://old.example.test";
+  ApplyRegistrationResult(identity, RegistrationResult{.success = true, .relay_user_id = "relay:x"});
+  EXPECT_EQ(identity.registered_backend_url, "https://old.example.test") << "a result without one keeps the record";
+
+  RegistrationResult result{.success = true, .relay_user_id = "relay:x"};
+  result.registered_backend_url = "https://new.example.test";
+  ApplyRegistrationResult(identity, result);
+  EXPECT_EQ(identity.registered_backend_url, "https://new.example.test");
+}
+
 TEST(RegistrationClientTest, MarkRegistrationExpired) {
   LocalIdentity identity;
   identity.registered = true;
@@ -120,6 +163,33 @@ protected:
   std::unique_ptr<IdentityStore> identity_;
   RecordingRegistrationClient client_;
 };
+
+TEST_F(RevokeRegistrationTest, AutoRenewReRegistersAtTheCurrentBackendAndRecordsIt) {
+  auto identity = identity_->Get();
+  ASSERT_TRUE(static_cast<bool>(identity));
+  identity->registered = true;
+  identity->relay_user_id = "relay:u1";
+  identity->registration_expires_at = "2099-01-01T00:00:00.000Z";
+  identity->kem_binding_published = true;
+  identity->registered_backend_url = "https://old.example.test";
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(*identity)));
+  client_.SetBaseUrl("https://new.example.test/");
+
+  auto off = MaybeAutoRenewRegistration(client_, *identity_, /*auto_renew_enabled=*/false);
+  ASSERT_TRUE(static_cast<bool>(off)) << off.error().message;
+  EXPECT_FALSE(*off) << "with auto-renew off nothing happens";
+
+  auto renewed = MaybeAutoRenewRegistration(client_, *identity_, /*auto_renew_enabled=*/true);
+  ASSERT_TRUE(static_cast<bool>(renewed)) << renewed.error().message;
+  EXPECT_TRUE(*renewed);
+  auto stored = identity_->Get();
+  ASSERT_TRUE(static_cast<bool>(stored));
+  EXPECT_EQ(stored->registered_backend_url, "https://new.example.test");
+
+  auto again = MaybeAutoRenewRegistration(client_, *identity_, /*auto_renew_enabled=*/true);
+  ASSERT_TRUE(static_cast<bool>(again)) << again.error().message;
+  EXPECT_FALSE(*again) << "registered at this backend now: nothing is due";
+}
 
 TEST_F(RevokeRegistrationTest, UnregisteredIdentityIsANoOp) {
   auto result = RevokeRegistrationWithIdentity(client_, *identity_);

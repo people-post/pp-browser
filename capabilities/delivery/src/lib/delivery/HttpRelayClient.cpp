@@ -24,7 +24,8 @@ std::string TruncateForLog(const std::string& text, const size_t max_chars) {
   return text.substr(0, max_chars) + "...";
 }
 
-Error RelayHttpStatusError(const ShareWord action, long status_code, const std::string& body) {
+Error RelayHttpStatusError(const ShareWord action, long status_code, const std::string& body,
+                           const bool not_found_is_final = false) {
   DiagLine("relay.http_failed").Add("action", action).Add("status", status_code).Emit();
   std::string detail = std::string("Relay ") + action.c_str() + " failed with status " + std::to_string(status_code);
   std::string api_message;
@@ -43,6 +44,9 @@ Error RelayHttpStatusError(const ShareWord action, long status_code, const std::
   logging::getLogger("HttpRelayClient").warning << detail;
   // A 4xx (but a timeout or a rate limit) is the relay refusing this request: final, not a hiccup.
   const bool refused = status_code >= 400 && status_code < 500 && status_code != 408 && status_code != 429;
+  if (not_found_is_final && status_code == 404) {
+    return AppError::Network(Err::Network::HttpNotFound, detail); // a send's 404: the recipient is unknown there
+  }
   return AppError::Network(refused ? Err::Network::HttpRejected : Err::Network::HttpError, detail);
 }
 
@@ -115,7 +119,8 @@ Roe<void> HttpRelayClient::Send(const RelayEnvelope& envelope) {
                                                   << " recipient=" << record->recipient_contact_id
                                                   << " route=" << envelope.route.kind
                                                   << " body=" << response.value().body.substr(0, 160);
-    return RelayHttpStatusError("send", response.value().status_code, response.value().body);
+    return RelayHttpStatusError("send", response.value().status_code, response.value().body,
+                                /*not_found_is_final=*/true);
   }
   return {};
 }

@@ -198,7 +198,7 @@ reach.
   - **Find someone** — new AI thread with draft prefilled for directory discovery
 - Home is a prompt-first landing (no sticky AI thread). First send/suggestion creates a new AI session and switches to Sessions. Home chips are AI intents (find someone, headlines, articles, get started, capabilities); messaging entry points live on Sessions / Contacts.
 - **Contacts tab** header **`+`** opens a menu:
-  - **Add contact** — create an empty contact (`ContactsStore::AddEmpty`), open detail (**You**: display name + trust; **Directory**: nickname / relay / peer / multiaddrs as meta text; **Sync from directory…** when a relay id is present, refreshes remote only)
+  - **Add contact** — create an empty contact (`ContactsStore::AddEmpty`), open detail (**You**: display name + trust; **Directory**: nickname / relay / peer / multiaddrs as meta text; **Refresh account info** on every contact: off the UI thread, asks its devices for its account card, then the directory by Account ID; keys only when they verify against the Account ID — [ACCOUNT_CARD § Refresh](../contracts/ACCOUNT_CARD.md#card-exchange-over-amp))
   - Directory add merges by `relay_user` id (`AddFromDirectoryHit` updates remote, preserves local annotations)
   - `contacts.json` shape: `{ schema_version: 2, contacts: [{ local, remote, overrides{} }] }` — unversioned/flat legacy migrates on load
   - **Find someone** — same as Sessions find flow

@@ -70,9 +70,36 @@ int64_t ResolveNowMs(int64_t now_ms) {
 
 } // namespace
 
-RegistrationStatus ClassifyRegistration(const LocalIdentity& identity, int64_t now_ms) {
+std::string NormalizeRegistrationBackend(const std::string& url) {
+  size_t begin = 0;
+  size_t end = url.size();
+  while (begin < end && std::isspace(static_cast<unsigned char>(url[begin]))) {
+    ++begin;
+  }
+  while (end > begin && (std::isspace(static_cast<unsigned char>(url[end - 1])) || url[end - 1] == '/')) {
+    --end;
+  }
+  std::string out = url.substr(begin, end - begin);
+  const size_t scheme_end = out.find("://");
+  const size_t host_begin = scheme_end == std::string::npos ? 0 : scheme_end + 3;
+  const size_t host_end = out.find('/', host_begin);
+  for (size_t i = 0; i < (host_end == std::string::npos ? out.size() : host_end); ++i) {
+    out[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(out[i])));
+  }
+  return out;
+}
+
+bool RegisteredAtBackend(const LocalIdentity& identity, const std::string& backend_url) {
+  const std::string current = NormalizeRegistrationBackend(backend_url);
+  return current.empty() || identity.registered_backend_url == current;
+}
+
+RegistrationStatus ClassifyRegistration(const LocalIdentity& identity, int64_t now_ms, const std::string& backend_url) {
   if (!identity.registered) {
     return RegistrationStatus::Unregistered;
+  }
+  if (!RegisteredAtBackend(identity, backend_url)) {
+    return RegistrationStatus::WrongBackend;
   }
   const int64_t now = ResolveNowMs(now_ms);
   if (identity.registration_expires_at.empty()) {
@@ -91,9 +118,10 @@ RegistrationStatus ClassifyRegistration(const LocalIdentity& identity, int64_t n
   return RegistrationStatus::Active;
 }
 
-bool ShouldRenewRegistration(const LocalIdentity& identity, int64_t now_ms) {
-  const RegistrationStatus status = ClassifyRegistration(identity, now_ms);
-  return status == RegistrationStatus::ExpiringSoon || status == RegistrationStatus::Expired;
+bool ShouldRenewRegistration(const LocalIdentity& identity, int64_t now_ms, const std::string& backend_url) {
+  const RegistrationStatus status = ClassifyRegistration(identity, now_ms, backend_url);
+  return status == RegistrationStatus::ExpiringSoon || status == RegistrationStatus::Expired ||
+         status == RegistrationStatus::WrongBackend;
 }
 
 bool ShouldPublishKemBinding(const LocalIdentity& identity) {
@@ -110,6 +138,8 @@ std::string RegistrationStatusLabel(RegistrationStatus status) {
       return "expiring soon";
     case RegistrationStatus::Expired:
       return "expired";
+    case RegistrationStatus::WrongBackend:
+      return "needs renewal";
   }
   return "not registered";
 }
@@ -121,6 +151,7 @@ std::string RegistrationActionLabel(RegistrationStatus status) {
     case RegistrationStatus::Active:
     case RegistrationStatus::ExpiringSoon:
     case RegistrationStatus::Expired:
+    case RegistrationStatus::WrongBackend:
       return "Renew registration";
   }
   return "Register on network";

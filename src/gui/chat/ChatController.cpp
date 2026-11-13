@@ -573,7 +573,8 @@ void ChatController::MakeReadyTasks() {
     } else {
       const std::optional<LocalIdentity> identity = facade_ ? facade_->GetIdentity() : std::nullopt;
       // The reconnect row says it already when the relay does not know the account (B216).
-      if (identity && ShouldRenewRegistration(*identity) && !auto_renew && !recovery_.BannerVisible()) {
+      if (identity && ShouldRenewRegistration(*identity, 0, facade_->RegistrationBackendUrl()) && !auto_renew &&
+          !recovery_.BannerVisible()) {
         UserFeedback::NeedsSetup(Tr("chat.hint.registration_expires"));
       }
     }

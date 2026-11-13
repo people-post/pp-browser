@@ -33,6 +33,7 @@
 #include "domain/peers/AccountKeyResolver.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "feature/conversations/ContactProfileRefresh.h"
+#include "feature/conversations/ContactRefreshWorkflow.h"
 #include "lib/messaging/ContactLocator.h"
 #include "lib/delivery/PeerRequestAuth.h"
 #include "lib/people/PeerCards.h"
@@ -111,8 +112,8 @@ std::string FormatExpiresDisplay(const std::string& iso) {
   return iso;
 }
 
-void FillRegistrationFields(ProfileIdentityView& view, const LocalIdentity& identity) {
-  const RegistrationStatus status = ClassifyRegistration(identity);
+void FillRegistrationFields(ProfileIdentityView& view, const LocalIdentity& identity, const std::string& backend_url) {
+  const RegistrationStatus status = ClassifyRegistration(identity, 0, backend_url);
   view.registered = identity.registered ? "yes" : "no";
   view.registration_status = RegistrationStatusLabel(status);
   view.registration_expires =
@@ -1033,6 +1034,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   kept_cards_loaded_ = false; // read at the first EnsureMessagingReady (the cards are in the chat store)
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
   contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
+  contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, directory_, *contact_cards_);
   contact_cards_->SetCardFetcher(
       [this](const std::string& peer_id, const std::string& account_id, std::function<void(Roe<PeerCardRecord>)> done) {
         // On the hub's thread, with the address book as it is now: a contact just added (a scanned QR code) is
@@ -1144,6 +1146,7 @@ void ConversationsHub::BuildMessagingObjects() {
   mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), &directory_);
+  ForgetPeerRoutesOnBackendChange();
   WireAttachmentDownloads();
   CleanStaleAttachmentFiles(); // once per start: staged sends older than a day, half-finished downloads
   group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
@@ -1691,6 +1694,25 @@ void ConversationsHub::RefreshContactProfileIfStale(const std::string& contact_i
   AppRuntime::PostWorkerBackground([this, contact_id, force]() { RefreshContactProfileNow(contact_id, force); });
 }
 
+bool ConversationsHub::RefreshContact(const std::string& contact_id,
+                                      std::function<void(const ContactRefreshResult&)> done) {
+  if (!contact_refresh_ || !AppRuntime::IsRunning() || shutdown_requested_.load(std::memory_order_acquire)) {
+    return false;
+  }
+  return contact_refresh_->Start(contact_id, [this, done = std::move(done)](ContactRefreshResult result) {
+    if (shutdown_requested_.load(std::memory_order_acquire)) {
+      return;
+    }
+    if (result.contact && result.Changed()) {
+      if (mesh_messaging_) {
+        mesh_messaging_->RegisterContactDirectEndpoints(*result.contact);
+      }
+      EnsureContactIconCached(*result.contact);
+    }
+    done(result);
+  });
+}
+
 void ConversationsHub::RefreshStaleContactProfiles() {
   if (!contacts_ || !contact_profile_refresh_ || !HasDirectory() || !AppRuntime::IsRunning()) {
     return;
@@ -1816,7 +1838,7 @@ ProfileIdentityView ConversationsHub::LoadProfileIdentityView() {
   view.account_id = identity->account_id;
   view.contact_locator = OwnContactLocator().valueOr("");
   view.public_key_b64 = identity->account_signing_public_key_b64;
-  FillRegistrationFields(view, *identity);
+  FillRegistrationFields(view, *identity, config_.registration.base_url);
   view.profile_icon_path = ProfileIconLocalPath(data_dir_);
   view.profile_has_icon = !view.profile_icon_path.empty();
   return view;
@@ -3251,6 +3273,16 @@ void ConversationsHub::RefreshMeshCapabilities(const MeshConfig& mesh) {
   SyncMobileEphemeralListen();
 }
 
+void ConversationsHub::ForgetPeerRoutesOnBackendChange() {
+  if (!mesh_messaging_ || !identity_) {
+    return;
+  }
+  auto identity = identity_->Get();
+  if (identity && identity->registered && !RegisteredAtBackend(*identity, config_.registration.base_url)) {
+    mesh_messaging_->ForgetPeerRoutes();
+  }
+}
+
 void ConversationsHub::Apply(const NetworkConfig& next) {
   if (!initialized_) {
     return;
@@ -3289,6 +3321,7 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
     if (actions_) {
       actions_->SetRegistrationClient(registration_);
     }
+    ForgetPeerRoutesOnBackendChange();
   }
   if (mesh_changed && messaging_ready_) {
     RefreshMeshCapabilities(next.mesh);
@@ -3472,6 +3505,7 @@ void ConversationsHub::Shutdown() {
     inbox_->SetThreadMentions(nullptr);
   }
   thread_mentions_.reset();
+  contact_refresh_.reset();
   contact_cards_.reset();
   contact_profile_refresh_.reset();
   account_keys_.reset();

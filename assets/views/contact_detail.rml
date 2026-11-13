@@ -109,10 +109,12 @@
       <p class="cd-footnote" data-if="selected.trust_key == 'blocked'">{{i18n:contacts.blocked_hint}}</p>
 
       <div class="cd-card">
-        <button class="cd-row" type="button" data-if="advanced && selected.can_refresh" data-event-click="sync_contact_remote()">
+        <!-- Refresh (multi-relay R0): their devices, then our directory, off the UI thread; every contact has it. -->
+        <button class="cd-row" type="button" data-class-contacts-refresh-busy="selected.refreshing"
+                data-event-click="refresh_contact()">
           <span class="cd-row-body">
-            <span class="cd-row-text">{{i18n:contacts.sync_directory}}</span>
-            <svg class="cd-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            <span class="cd-row-text cd-row-text--accent" data-if="!selected.refreshing">{{i18n:contacts.refresh.button}}</span>
+            <span class="cd-row-text" data-if="selected.refreshing">{{i18n:contacts.refresh.running}}</span>
           </span>
         </button>
         <div class="cd-row">
@@ -241,10 +243,12 @@
       </p>
       <p class="text muted me-profile-meta" data-if="advanced">{{selected.remote_updated}}</p>
       <div class="me-profile-actions row">
-        <div data-if="advanced && selected.can_refresh">
-          <button class="btn btn-secondary btn-icon" type="button" data-event-click="sync_contact_remote()">
+        <div data-if="!selected.member_preview">
+          <button class="btn btn-secondary btn-icon" type="button" data-class-contacts-refresh-busy="selected.refreshing"
+                  data-event-click="refresh_contact()">
             <svg src="../icons/sync.svg" width="14" height="14" crop-to-content="true"></svg>
-            {{i18n:contacts.sync_directory}}
+            <span data-if="!selected.refreshing">{{i18n:contacts.refresh.button}}</span>
+            <span data-if="selected.refreshing">{{i18n:contacts.refresh.running}}</span>
           </button>
         </div>
         <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_contact_id()">

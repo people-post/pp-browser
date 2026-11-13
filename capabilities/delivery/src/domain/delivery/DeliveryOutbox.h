@@ -31,6 +31,8 @@ struct DeliveryRequest {
   std::string amp_peer_key;
   /** The peer's Brief `relay:` route; none: Amp only. */
   std::optional<std::string> relay_route;
+  /** The account `relay_route` was resolved for; with a route refresh set, a relay that does not know the recipient is asked again. */
+  std::string route_account;
   /** Time-critical signaling (a call's): the critical worker lane, and the relay first when a route is known. */
   bool critical_lane = false;
   /** One member's copy of a group message (their account): its outcome is that member's, not the row's. */
@@ -75,6 +77,14 @@ public:
 
   void SetRelayClient(IRelayClient* relay) { relay_ = relay; }
   void SetOnOutcome(std::function<void(const DeliveryOutcome&)> handler) { on_outcome_ = std::move(handler); }
+  /**
+   * Asks for the current `relay:` route of an account, dropping what is cached for it. When the relay answers a send
+   * with "no such recipient" (RelayRecipientUnknown) and the route has changed, the envelope is addressed to the new
+   * route and sent once more in that attempt.
+   */
+  void SetRouteRefresh(std::function<std::optional<std::string>(const std::string& account_id)> refresh) {
+    route_refresh_ = std::move(refresh);
+  }
   /** A thread whose sends are paused (e.g. its E2E session is compromised): its retries are dropped. */
   void SetThreadPaused(std::function<bool(const std::string& thread_id)> paused) { paused_ = std::move(paused); }
 
@@ -113,6 +123,7 @@ private:
     std::string amp_peer_key;
     std::string group_member;
     std::string copy_device;
+    std::string route_account;
     /** Its request's (BeginActive): a Cancel after the Send stops it. */
     uint64_t serial = 0;
   };
@@ -138,6 +149,8 @@ private:
   /** Queued for a retry; false (and the request ended, nothing reported) when it was cancelled. */
   bool Enqueue(Pending pending);
   bool EnqueueLocked(Pending pending);
+  /** relay_->Send; on "no such recipient" the route is refreshed and, if it changed, `envelope` is re-addressed and sent once more. */
+  Roe<void> RelaySend(IRelayClient& relay, RelayEnvelope& envelope, const std::string& route_account);
   /** Schedule the control-lane send again after `failure` (ControlRetryAfter); false: given up. */
   bool RetryControlLater(Pending item, const Error& failure);
   /** A control-lane retry's turn: over the relay, again later when that fails. */
@@ -148,6 +161,7 @@ private:
   IRelayClient* relay_ = nullptr;
   std::function<void(const DeliveryOutcome&)> on_outcome_;
   std::function<bool(const std::string&)> paused_;
+  std::function<std::optional<std::string>(const std::string&)> route_refresh_;
   /** A row's sends under way: when the first started, and how many requests have not ended. */
   struct ActiveSend {
     int64_t started_ms = 0;

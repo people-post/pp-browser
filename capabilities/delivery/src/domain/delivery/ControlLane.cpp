@@ -214,6 +214,7 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
                                .message_id = message_id,
                                .amp_peer_key = peer_identity,
                                .relay_route = peer_relay_id,
+                               .route_account = peer_identity,
                                .critical_lane = true});
   return {};
 }

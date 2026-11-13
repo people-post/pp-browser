@@ -64,6 +64,23 @@ std::optional<mesh::DirectoryHit> DirectoryShadowCache::Get(const std::string& i
   return it->second;
 }
 
+void DirectoryShadowCache::Remove(const std::string& identity) {
+  std::lock_guard lock(mutex_);
+  const auto it = by_id_.find(identity);
+  if (it == by_id_.end()) {
+    return;
+  }
+  const mesh::DirectoryHit hit = it->second; // a copy: erasing the first key invalidates `it`
+  for (const std::string& key : {AccountKeyFromHit(hit), RelayKeyFromHit(hit), identity}) {
+    by_id_.erase(key);
+  }
+}
+
+void DirectoryShadowCache::Clear() {
+  std::lock_guard lock(mutex_);
+  by_id_.clear();
+}
+
 void DirectoryShadowCache::Put(const mesh::DirectoryHit& hit) {
   std::function<void()> notify;
   std::function<void(const mesh::DirectoryHit&)> on_hit;

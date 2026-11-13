@@ -163,6 +163,9 @@ bool OutboxSendStillWanted(bool control_lane, int64_t age_ms, bool thread_paused
  */
 bool OutboxRetryAgain(int attempts, const Error& failure);
 
+/** The relay answered a send with 404: it has no such recipient (the route is stale, e.g. another registry now). */
+bool RelayRecipientUnknown(const Error& failure);
+
 /** The control lane's prompt retries back off to this and stay there for the rest of the window. */
 inline constexpr std::chrono::milliseconds kControlRetryMaxDelay{16000};
 

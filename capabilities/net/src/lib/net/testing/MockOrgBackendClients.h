@@ -104,6 +104,8 @@ private:
 
 class MockRegistrationClient : public IRegistrationClient {
 public:
+  std::string BaseUrl() const override { return base_url_; }
+  void SetBaseUrl(std::string base_url) { base_url_ = std::move(base_url); }
   Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
                                                  const std::string& signature_alg = "ml-dsa-65",
                                                  const std::string& kem_public_key_b64 = "",
@@ -120,6 +122,9 @@ public:
                                          int64_t timestamp, const std::string& relay_user_id) override;
   Roe<void> RevokeRegistration(const std::string& relay_user_id, const std::string& signature,
                                int64_t timestamp) override;
+
+private:
+  std::string base_url_;
 };
 
 class MockClientCompatClient : public IClientCompatClient {

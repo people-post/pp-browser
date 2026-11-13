@@ -92,6 +92,8 @@ class ProfileSecretsEngine;
 class AccountKeyResolver;
 class ContactCardExchange;
 class ContactProfileRefresh;
+class ContactRefreshWorkflow;
+struct ContactRefreshResult;
 class PeerCards;
 
 /**
@@ -397,6 +399,12 @@ public:
   void RefreshContactProfileIfStale(const std::string& contact_id, bool force = false);
   /** The same for every contact, one lookup at a time, at most one every half second; fresh ones cost nothing. */
   void RefreshStaleContactProfiles();
+  /**
+   * The contact page's Refresh (ContactRefreshWorkflow): its devices, then our directory; the new routes are
+   * registered and the photo fetched before `done`, on the UI thread. False (no `done`) when one already runs
+   * for that contact or messaging is not up. UI thread.
+   */
+  bool RefreshContact(const std::string& contact_id, std::function<void(const ContactRefreshResult&)> done);
   void SetOnPeerIconsChanged(std::function<void()> callback);
   /** Rotates the Brief LLM key at the service `llm_base_url` names (the app's: its preset and deployment). */
   Roe<void> RotateBriefLlmKey(const std::string& llm_base_url);
@@ -545,6 +553,8 @@ private:
   /** Undo BuildMessagingStack / StartMesh without a full hub Shutdown (shutdown race). */
   void DiscardMessagingBringUp();
   void ApplyMeshAdmissionPolicies();
+  /** Drops cached peer routes when the identity registered at another backend than the one in use. */
+  void ForgetPeerRoutesOnBackendChange();
   /** Republish who may learn our address (setting + contacts; projects/privacy T1). UI thread. */
   void PublishAddressDisclosure();
   /** The audience in force: the setting, or everyone in the Node role (P004). */
@@ -653,6 +663,7 @@ private:
   /** Contacts passed hand to hand (contact cards). */
   std::unique_ptr<ContactCardExchange> contact_cards_;
   std::unique_ptr<ContactProfileRefresh> contact_profile_refresh_;
+  std::unique_ptr<ContactRefreshWorkflow> contact_refresh_;
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;
   std::unique_ptr<AttachmentFetchWorkflow> attachment_downloads_;
