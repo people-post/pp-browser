@@ -140,8 +140,8 @@ CallMediaDirectCallbacks CallDirectPath::MakeBundleCallbacks(const std::string& 
     outbox.Emit(direct_event::BundleConnected{call_id, label});
   };
   cbs.on_media = [gate = receive_, engine = engine_, outbox = outbox_, call_id, fixed_stream](
-                     uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload) {
-    ReceiveDirectMedia(*gate, *engine, outbox, call_id, fixed_stream, channel, seq, mark, payload);
+                     uint8_t channel, const CallMediaFrameInfo& info, const std::vector<uint8_t>& payload) {
+    ReceiveDirectMedia(*gate, *engine, outbox, call_id, fixed_stream, channel, info, payload);
   };
   cbs.on_failed = [outbox = outbox_, call_id](const CallMediaFailure& failure) {
     outbox.Emit(direct_event::BundleFailed{call_id, failure.message, failure.GetCode()});
@@ -886,8 +886,8 @@ void CallDirectPath::CommitDirectConnected(const std::string& call_id) {
 
 void CallDirectPath::ReceiveDirectMedia(ReceiveGate& gate, CallEngine& engine,
                                         const OwnerOutbox<DirectPathEvent>& outbox, const std::string& call_id,
-                                        const uint32_t fixed_stream, const uint8_t channel, const uint32_t seq,
-                                        const uint8_t mark, const std::vector<uint8_t>& payload) {
+                                        const uint32_t fixed_stream, const uint8_t channel,
+                                        const CallMediaFrameInfo& info, const std::vector<uint8_t>& payload) {
   // The data plane stays on I/O, like the hop's frames: only atomics and the engine's thread-safe
   // surface here. Owner state it needs (the bound stream) is published into the gate.
   if (!gate.open.load(std::memory_order_acquire) || !engine.Runs() ||
@@ -914,8 +914,10 @@ void CallDirectPath::ReceiveDirectMedia(ReceiveGate& gate, CallEngine& engine,
   MediaEngine::MediaPacket pkt;
   pkt.stream_id = remote_stream;
   pkt.channel_id = channel;
-  pkt.seq = seq;
-  pkt.mark = mark;
+  pkt.seq = info.seq;
+  pkt.mark = info.mark;
+  pkt.instance = info.instance;
+  pkt.capture_ts = info.capture_ts;
   pkt.payload = payload;
   (void)engine.Deliver(pkt);
 }
@@ -1443,7 +1445,8 @@ Roe<void> CallDirectPath::StartDirectEngine(const std::string& call_id) {
     const bool audio = mesh::IsAudioChannel(pkt.channel_id);
     const uint32_t seq = audio ? (audio_seq_.fetch_add(1) + 1) : pkt.seq;
     const uint64_t instance = audio ? audio_instance_.load(std::memory_order_acquire) : pkt.instance;
-    (void)direct_.SendMedia(static_cast<uint8_t>(pkt.channel_id), pkt.payload, seq, pkt.mark, instance);
+    // The capture time stays the engine's: one clock, whichever instance numbers the frames.
+    (void)direct_.SendMedia(static_cast<uint8_t>(pkt.channel_id), pkt.payload, seq, pkt.mark, instance, pkt.capture_ts);
   });
   if (!started) {
     return started;

@@ -302,8 +302,8 @@ private:
   struct ReceiveGate;
   /** Transport I/O: hand a 1:1 frame to the engine (thread-safe), gated by `gate`. */
   static void ReceiveDirectMedia(ReceiveGate& gate, CallEngine& engine, const OwnerOutbox<DirectPathEvent>& outbox,
-                                 const std::string& call_id, uint32_t fixed_stream, uint8_t channel, uint32_t seq,
-                                 uint8_t mark, const std::vector<uint8_t>& payload);
+                                 const std::string& call_id, uint32_t fixed_stream, uint8_t channel,
+                                 const CallMediaFrameInfo& info, const std::vector<uint8_t>& payload);
   void RebindInboundStream(const std::string& call_id);
   void ReleaseDirectTransportBody();
   /** NAT dogfood: dialable "direct" with TX-only → force circuit ensure + re-dial. */

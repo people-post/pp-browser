@@ -49,6 +49,8 @@ std::function<void(mesh::MediaDataFrame)> CallHopMediaChannel::MakeFrameSink(std
     pkt.channel_id = frame.channel_id;
     pkt.seq = frame.seq;
     pkt.mark = frame.mark;
+    pkt.instance = frame.instance;
+    pkt.capture_ts = frame.capture_ts;
     const std::vector<SfuKeyRing::Key> open_with = keys->ForOpen(util::NowUnixMs());
     if (open_with.empty()) {
       pkt.payload = std::move(frame.payload);
@@ -92,6 +94,7 @@ MediaEngine::PacketSendFn CallHopMediaChannel::MakeSendFn(std::shared_ptr<SfuKey
     frame.seq = pkt.seq;
     frame.mark = pkt.mark;
     frame.instance = pkt.instance;
+    frame.capture_ts = pkt.capture_ts;
     const SfuKeyRing::Key key = keys->Current(); // the newest epoch (V003)
     if (!key.key.empty()) {
       // Never the same (channel, seq) twice under one instance and epoch: it would repeat a nonce (A029 H2).

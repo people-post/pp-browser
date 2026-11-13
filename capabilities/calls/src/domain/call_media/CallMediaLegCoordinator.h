@@ -133,10 +133,11 @@ public:
   /**
    * One media frame on the call's active path (A029 H2). `instance` is the sender's (the media engine's, with the
    * seq counters it numbers); 0 = this coordinator's own. A seq that does not move forward on its channel under the
-   * same instance and key epoch is refused (it would repeat a nonce).
+   * same instance and key epoch is refused (it would repeat a nonce). `capture_ts`: when the payload was captured, ms
+   * on the instance's clock (V066).
    */
   Roe<void> SendMedia(CallMediaLegId id, uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq,
-                      uint8_t mark = 0, uint64_t instance = 0);
+                      uint8_t mark = 0, uint64_t instance = 0, uint32_t capture_ts = 0);
   Roe<void> SendAudio(CallMediaLegId id, const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark = 0);
 
 private:

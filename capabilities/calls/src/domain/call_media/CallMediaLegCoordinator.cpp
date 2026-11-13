@@ -1008,7 +1008,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
     const auto channel = static_cast<uint8_t>(decoded->channel_id);
     if (cbs.on_media) {
-      cbs.on_media(channel, decoded->seq, decoded->mark, decoded->payload);
+      const CallMediaFrameInfo info{
+          .seq = decoded->seq, .mark = decoded->mark, .capture_ts = decoded->capture_ts, .instance = decoded->instance};
+      cbs.on_media(channel, info, decoded->payload);
     } else if (channel == mesh::kMediaChannelAudio && cbs.on_audio) {
       cbs.on_audio(decoded->payload);
     }
@@ -2671,7 +2673,7 @@ CallMediaPathState CallMediaLegCoordinator::PathState(const CallMediaLegId id) c
 
 Roe<void> CallMediaLegCoordinator::SendMedia(const CallMediaLegId id, const uint8_t channel,
                                              const std::vector<uint8_t>& payload, const uint32_t seq,
-                                             const uint8_t mark, const uint64_t instance) {
+                                             const uint8_t mark, const uint64_t instance, const uint32_t capture_ts) {
   std::shared_ptr<pp::amp::ChannelSession> session;
   CallMediaDirectConnectParams params;
   std::shared_ptr<mesh::MediaFrameSendGuard> guard;
@@ -2704,6 +2706,7 @@ Roe<void> CallMediaLegCoordinator::SendMedia(const CallMediaLegId id, const uint
   frame.seq = seq;
   frame.mark = mark;
   frame.instance = instance != 0 ? instance : own_instance;
+  frame.capture_ts = capture_ts;
   if (!guard->Admit(frame.instance, params.media_epoch, channel, seq)) {
     return Error("amp call-media: a frame's seq did not move forward");
   }

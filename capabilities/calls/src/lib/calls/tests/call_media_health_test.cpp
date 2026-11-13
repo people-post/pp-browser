@@ -180,6 +180,15 @@ TEST(CallMediaHealthTest, LogLineCarriesFecCounter) {
   EXPECT_NE(line.find(" io_underrun="), std::string::npos) << line;
 }
 
+// #605: a stream whose every packet comes after its slot shows in the log at a glance.
+TEST(CallMediaHealthTest, LogLineCarriesLateDrops) {
+  CallMediaHealthView v;
+  v.engine.jitter_speech_drops = 2;
+  v.engine.jitter_late_drops = 9;
+  const std::string line = FormatMediaHealthLogLine(v, /*now_ms=*/1000, "call:x");
+  EXPECT_NE(line.find(" jb_speech_drops=2 jb_late_drops=9 "), std::string::npos) << line;
+}
+
 TEST(CallMediaHealthTest, LogLineIncludesHopPeers) {
   auto in = BaseHealthyInput();
   CallHopPeerHealth peer;
