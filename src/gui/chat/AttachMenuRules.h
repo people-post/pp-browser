@@ -27,10 +27,12 @@ struct ComposerLocks {
  */
 inline ComposerLocks ComposerLocksOf(const bool compose_disabled, const bool attachment_here,
                                      const bool bubble_in_transcript, const bool attachment_busy,
-                                     const bool image_preparing, const bool voice_recording) {
+                                     const bool image_preparing, const bool voice_recording,
+                                     const bool editing_message = false) {
   ComposerLocks locks;
   locks.input = compose_disabled || (attachment_here && !bubble_in_transcript) || image_preparing || voice_recording;
-  locks.attach = locks.input || attachment_busy;
+  // Editing a sent message changes its words only: no picture, file or voice message meanwhile.
+  locks.attach = locks.input || attachment_busy || editing_message;
   return locks;
 }
 

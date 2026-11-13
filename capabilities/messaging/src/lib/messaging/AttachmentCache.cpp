@@ -1,5 +1,6 @@
 #include "lib/messaging/AttachmentCache.h"
 #include "common/AtomicFileWrite.h"
+#include "common/ImageMetadata.h"
 #include "common/PlatformLimits.h"
 #include "common/BoundedRead.h"
 #include "common/PathUtf8.h"
@@ -29,8 +30,8 @@ namespace {
 
 /** The poster's size bound (the extractor's default before the hook). */
 constexpr int kVideoPosterMaxDimension = 480;
-/** The thumbnail of a large image: same bound as the poster. */
-constexpr int kImageThumbnailMaxDimension = 480;
+/** A picture's preview (chat bubble, storage grid cell). */
+constexpr int kImageThumbnailMaxDimension = kImagePreviewMaxSide;
 /** A sound file's cover: shown 48dp square on its card (three times that for a dense screen). */
 constexpr int kAudioCoverMaxDimension = 144;
 
@@ -697,18 +698,29 @@ Roe<std::string> EnsureAttachmentImageThumbnail(const std::string& profile_dir, 
   if (std::filesystem::is_regular_file(thumb_path, ec) && !ec) {
     return thumb_path;
   }
-  auto jpeg = ImageThumbnail(image_bytes); // from memory: the plaintext is never written out for it
-  if (!jpeg) {
-    return jpeg.error();
-  }
-  if (jpeg->empty()) {
-    return Error("Image thumbnail JPEG empty");
-  }
-  const ByteVector bytes(jpeg->begin(), jpeg->end());
-  if (auto written = WriteBytesAtomic(std::filesystem::path(thumb_path), bytes); !written) {
-    return written.error();
-  }
-  return thumb_path;
+  // One line per picture made, to size the previews' cost: the source's bytes, the time, whether it worked.
+  const auto started = std::chrono::steady_clock::now();
+  const auto made = [&]() -> Roe<std::string> {
+    auto jpeg = ImageThumbnail(image_bytes); // from memory: the plaintext is never written out for it
+    if (!jpeg) {
+      return jpeg.error();
+    }
+    if (jpeg->empty()) {
+      return Error("Image thumbnail JPEG empty");
+    }
+    const ByteVector bytes(jpeg->begin(), jpeg->end());
+    if (auto written = WriteBytesAtomic(std::filesystem::path(thumb_path), bytes); !written) {
+      return written.error();
+    }
+    return thumb_path;
+  }();
+  const auto source = ReadImageHeaderBytes(image_bytes);
+  logging::getLogger("AttachmentCache").info
+      << "image thumbnail source_bytes=" << image_bytes.size()
+      << " source_px=" << (source ? static_cast<int64_t>(source->width) * source->height : 0) << " ms="
+      << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count()
+      << " ok=" << (made ? 1 : 0);
+  return made;
 }
 
 Roe<std::string> EnsureAttachmentAudioCover(const std::string& profile_dir, const std::string& thread_id,

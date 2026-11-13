@@ -635,10 +635,10 @@ protected:
       params.media_epoch = 1;
       params.offerer = false;
       cbs.on_connected = [&] { b_connected_ = true; };
-      cbs.on_media = [&](uint8_t channel, uint32_t seq, uint8_t, const std::vector<uint8_t>&) {
+      cbs.on_media = [&](uint8_t channel, const CallMediaFrameInfo& info, const std::vector<uint8_t>&) {
         if (channel == 0) {
           std::lock_guard lock(mu_);
-          b_seqs_.push_back(seq);
+          b_seqs_.push_back(info.seq);
         }
       };
       cbs.on_path_changed = [&](CallMediaLinkKind kind) { b_path_ = kind; };
@@ -1734,7 +1734,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedEncryptedVideoOver16KiB) {
       std::lock_guard lock(mu);
       answerer_connected = true;
     };
-    cbs.on_media = [&](uint8_t channel, uint32_t, uint8_t, const std::vector<uint8_t>& payload) {
+    cbs.on_media = [&](uint8_t channel, const CallMediaFrameInfo&, const std::vector<uint8_t>& payload) {
       std::lock_guard lock(mu);
       received_ch = channel;
       received = payload;

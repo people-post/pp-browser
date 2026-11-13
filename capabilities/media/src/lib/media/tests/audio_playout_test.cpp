@@ -22,9 +22,11 @@ TEST(ByteRateLimiterTest, EnforcesRate) {
   EXPECT_TRUE(lim.TryConsume(50, 1000)); // +1000ms → +1000 bytes tokens, capped at burst 100
 }
 
+// A 20 ms packet of a steady sender: captured at seq × 20 ms on its clock.
 AudioPacket Pkt(uint32_t seq, uint8_t fill = 1) {
   AudioPacket p;
   p.seq = seq;
+  p.capture_ts = seq * 20;
   p.payload.assign(8, fill);
   return p;
 }
@@ -255,26 +257,30 @@ TEST(AudioJitterBufferTest, BackwardSeqRestartReprimes) {
   EXPECT_EQ(buf.drops_late(), late_before);
 }
 
+// A restarted sender (re-StartDuplex / BeginSession, a new 1:1 numbering) is a new instance, its clock and seq start
+// over: re-primed at once, however early in the call — not ~600 ms of dropped "late" packets.
 TEST(AudioJitterBufferTest, EarlyBackwardRestartReprimesQuickly) {
   AudioJitterBuffer buf;
-  (void)RunSteady(buf, 1, 30); // restart within the first kResyncJump packets of the call
+  (void)RunSteady(buf, 1, 30); // restart within the first 30 packets of the call
   const uint64_t late_before = buf.drops_late();
   uint32_t seq = 1;
   int pops_until_audio = 0;
   for (; pops_until_audio < 20; ++pops_until_audio) {
-    buf.Push(Pkt(seq++));
+    AudioPacket restarted = Pkt(seq++);
+    restarted.instance = 7;
+    buf.Push(std::move(restarted));
     const auto p = buf.PopForPlayout();
     if (p.kind == Kind::Packet && p.seq < 20) { // a packet of the restarted stream, not a leftover
       break;
     }
   }
-  EXPECT_LE(pops_until_audio, 6); // ~120 ms of re-priming, not ~600 ms of dropped "late" packets
-  EXPECT_LE(buf.drops_late() - late_before, 2u);
+  EXPECT_LE(pops_until_audio, 3); // re-priming at the minimum target
+  EXPECT_EQ(buf.drops_late(), late_before);
 }
 
 TEST(AudioJitterBufferTest, MidCallStragglerBurstIsNotARestart) {
   AudioJitterBuffer buf;
-  uint32_t seq = RunSteady(buf, 1, 200); // well past kResyncJump
+  uint32_t seq = RunSteady(buf, 1, 200);
   const size_t depth = buf.size();
   // Path migration: a burst of reordered stragglers from the old path, all already played.
   for (uint32_t s = seq - 8; s < seq - 3; ++s) {
@@ -375,7 +381,7 @@ TEST(AudioJitterBufferTest, SingleLossInNormalBufferIsConcealed) {
 template <class Extra>
 uint32_t FeedArrivals(AudioArrivalJitter& j, uint32_t seq, int64_t t0, int n, Extra extra) {
   for (int i = 0; i < n; ++i) {
-    j.OnArrival(seq, t0 + static_cast<int64_t>(i) * 20 + extra(i));
+    j.OnArrival(static_cast<int64_t>(seq) * 20, t0 + static_cast<int64_t>(i) * 20 + extra(i));
     ++seq;
   }
   return seq;
@@ -420,7 +426,7 @@ TEST(AudioArrivalJitterTest, SingleLatePacketDoesNotRaiseTarget) {
   EXPECT_EQ(j.TargetFrames(), 3u);
 }
 
-TEST(AudioArrivalJitterTest, LargeSeqValuesStayStable) {
+TEST(AudioArrivalJitterTest, LargeCaptureTimesStayStable) {
   AudioArrivalJitter j;
   FeedArrivals(j, 0xFFFFFF00u, 5'000'000'000LL, 200, [](int) { return 0; });
   EXPECT_EQ(j.TargetFrames(), 3u);
@@ -453,7 +459,7 @@ TEST(AudioArrivalJitterTest, PacketsLaterThanAnyTargetCouldHoldAreAnOutageNotJit
   EXPECT_GE(j.TargetFrames(), 10u);
 }
 
-// Push with realistic recv_ms so the estimator sees the network.
+// Push with realistic recv_ms so the estimator sees the network (captured at seq × 20 ms).
 AudioPacket PktAt(uint32_t seq, int64_t recv_ms, uint8_t fill = 1) {
   AudioPacket p = Pkt(seq, fill);
   p.recv_ms = recv_ms;
@@ -624,10 +630,11 @@ TEST(AudioJitterBufferTest, PressureStaysLowAtElevatedTargetWhenHeldNearTarget) 
   EXPECT_LT(buf.Pressure(0), 0.75);
 }
 
-// #593 (a relayed call): steady 20 ms arrivals, then nothing for 1.2 s, then the backlog — 60 frames in 200 ms — and
-// steady again. An outage is not jitter: the target stays where it was (it pinned at its 400 ms top for the rest of
-// that call), the frames whose slot passed beyond the wait are late drops (concealed, never waited for), and what is
-// left fits under the cap: no speech is cut, the surplus goes in the next silences.
+// #593 (a relayed call): steady 20 ms arrivals, then nothing for 1.2 s while the sender goes on capturing, then the
+// backlog — 60 frames in 200 ms — and steady again. An outage is not jitter: the target stays where it was (it pinned
+// at its 400 ms top for the rest of that call); the backlog, whose time the head passed while the stream was out, is
+// late (concealed, never waited for); and the stream plays on at the target's delay, none added: no surplus to shed,
+// no speech cut.
 TEST(AudioJitterBufferTest, AnOutageThenItsBacklogIsNotJitter) {
   AudioJitterBuffer buf;
   uint32_t seq = 1;
@@ -645,6 +652,7 @@ TEST(AudioJitterBufferTest, AnOutageThenItsBacklogIsNotJitter) {
   }
   const size_t target_before = buf.TargetFrames();
   ASSERT_EQ(target_before, 3u);
+  const int64_t depth_before = buf.DepthMs();
   const uint32_t held_from = seq;
   for (int i = 0; i < 60; ++i) { // 1.2 s: the sender goes on, nothing arrives
     ++seq;
@@ -663,14 +671,15 @@ TEST(AudioJitterBufferTest, AnOutageThenItsBacklogIsNotJitter) {
     max_depth = std::max(max_depth, buf.size());
   }
   EXPECT_LE(buf.TargetFrames(), target_before + 1) << "the backlog raised the target";
-  EXPECT_LE(max_depth, AudioJitterBuffer::kMaxFrames);
+  EXPECT_LE(max_depth, buf.TargetFrames() + 1);
   EXPECT_EQ(buf.speech_drops(), 0u) << "nothing past the cap: no speech cut";
-  // The wait held its first slots (up to the target's top: 240 ms here, 12 frames); the rest of the gap was concealed
-  // and its frames came too late to play.
-  EXPECT_GT(buf.drops_late(), 40u);
-  EXPECT_LE(buf.drops_late(), 60u - 12u + 7u) << "the wait kept the first ones";
+  // Every frame of the outage came after the head had passed its time; the stream plays on from the newest.
+  EXPECT_GE(buf.drops_late(), 60u);
+  EXPECT_LE(buf.drops_late(), 70u - buf.TargetFrames());
+  EXPECT_LE(buf.DepthMs(), depth_before + 20) << "no delay added: nothing to shed in the next silences";
   for (int i = 0; i < 500; ++i) { // 10 s steady again
     slot({seq++});
+    ASSERT_LE(buf.DepthMs(), depth_before + 20) << "slot " << i;
   }
   EXPECT_LE(buf.TargetFrames(), target_before + 1) << "and stays";
   EXPECT_EQ(buf.speech_drops(), 0u);
@@ -679,6 +688,7 @@ TEST(AudioJitterBufferTest, AnOutageThenItsBacklogIsNotJitter) {
 // A029: a publisher sending 40 ms packets gets the same delays, counted in its packets.
 AudioPacket Pkt40(uint32_t seq, int64_t recv_ms = 0) {
   AudioPacket p = PktAt(seq, recv_ms);
+  p.capture_ts = seq * 40;
   p.duration_ms = 40;
   return p;
 }

@@ -128,7 +128,7 @@ public:
   }
   Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override { return {}; }
   Roe<void> SendMedia(uint8_t /*channel*/, const std::vector<uint8_t>& /*payload*/, uint32_t /*seq*/, uint8_t /*mark*/,
-                      uint64_t /*instance*/) override {
+                      uint64_t /*instance*/, uint32_t /*capture_ts*/) override {
     return {};
   }
 

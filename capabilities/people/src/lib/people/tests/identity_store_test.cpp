@@ -125,6 +125,7 @@ TEST_F(IdentityStoreTest, KeepsRegisteredRelayId) {
   identity.brief_llm_guest_api_key = "brf_guest_testkeyABCDEFGHIJKLMNOP";
   identity.registered = true;
   identity.registration_expires_at = "2099-06-01T00:00:00.000Z";
+  identity.registered_backend_url = "https://relay.example.test";
   auto updated = store.Update(identity);
   ASSERT_TRUE(static_cast<bool>(updated)) << updated.error().message;
 
@@ -137,6 +138,7 @@ TEST_F(IdentityStoreTest, KeepsRegisteredRelayId) {
   EXPECT_EQ(loaded->brief_llm_guest_api_key, "brf_guest_testkeyABCDEFGHIJKLMNOP");
   EXPECT_TRUE(loaded->registered);
   EXPECT_EQ(loaded->registration_expires_at, "2099-06-01T00:00:00.000Z");
+  EXPECT_EQ(loaded->registered_backend_url, "https://relay.example.test");
   EXPECT_FALSE(loaded->peer_id.empty());
 }
 

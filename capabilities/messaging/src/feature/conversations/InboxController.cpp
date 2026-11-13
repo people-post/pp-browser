@@ -9,6 +9,7 @@
 #include "common/ImageMetadata.h"
 #include "lib/messaging/AiThreadTitle.h"
 #include "lib/messaging/AttachmentCache.h"
+#include "lib/messaging/EditMessage.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/DirectChatTargetFromContact.h"
 #include "lib/messaging/GroupMembershipCodec.h"
@@ -197,8 +198,60 @@ Roe<void> InboxController::DeleteMessageForMe(const std::string& thread_id, cons
   if (!*deleted) {
     return Error("Message not found");
   }
+  // Its edit rows go blank too, and an edit of ours still queued is not sent: no edited words outlive the message
+  // (DEV/PLAN-message-edit.md).
+  (void)BlankEditRowsFor(store_, thread_id, message_id, {}, cancel_pending_send_);
   AfterMessageDeleted(thread_id, original);
   return {};
+}
+
+void InboxController::AfterMessageEdited(const std::string& thread_id, const ThreadMessage& before,
+                                         const ThreadMessage& after) {
+  if (mentions_) {
+    (void)mentions_->DropMessage(thread_id, before.id); // the edited text is plain: no "you were mentioned" left
+  }
+  if (auto memory = store_.GetThreadMemory(thread_id);
+      memory && *memory && (*memory)->compacted_through_display_order &&
+      before.display_order <= *(*memory)->compacted_through_display_order) {
+    (void)store_.ClearThreadMemory(thread_id); // its summary still carries the old words
+  }
+  auto page = store_.GetMessagesPage(thread_id, std::nullopt, 100);
+  if (!page) {
+    return;
+  }
+  const auto holder = store_.GetThread(thread_id);
+  const bool direct_thread = holder && *holder && (*holder)->kind == ThreadKind::Direct;
+  const ThreadMessage* newest = nullptr;
+  for (const ThreadMessage& message : *page) {
+    if (message.content_type != ChatContentType::Annotation &&
+        !(direct_thread && GroupMembershipCodec::IsHiddenInDirectThread(message))) {
+      newest = &message;
+    }
+  }
+  if (!newest || newest->id != before.id) {
+    return;
+  }
+  {
+    std::lock_guard<std::mutex> lock(thread_row_mu_);
+    auto thread = store_.GetThread(thread_id);
+    if (!thread || !*thread) {
+      return;
+    }
+    Thread updated = **thread;
+    updated.preview = after.text;
+    (void)store_.UpsertThread(updated); // updated_at untouched: an edit does not move the chat up the list
+  }
+  if (on_thread_changed_) {
+    if (AppRuntime::IsRunning()) {
+      AppRuntime::PostUI([this]() {
+        if (on_thread_changed_) {
+          on_thread_changed_();
+        }
+      });
+    } else {
+      on_thread_changed_();
+    }
+  }
 }
 
 void InboxController::AfterMessageDeleted(const std::string& thread_id, const ThreadMessage& original) {
@@ -732,43 +785,82 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
     view.local_path =
         AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime, fields->filename);
   }
-  if (view.on_demand && IsAttachmentImageMime(fields->mime) && !profile_data_dir_.empty() &&
-      AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
-    // A large picture shows its low-res thumbnail (a tap opens the original); `on_demand` stays for that open.
-    view.local_path = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
-  }
-  if (IsAttachmentImageMime(fields->mime) && !view.local_path.empty()) {
-    // The bytes are a contact's: look at the declared size before the picture is decoded into an <img>.
-    auto cached = inline_image_ok_.find(view.local_path);
+  // The pixel-cap verdict and upright size of a picture file, read from its head once per file.
+  const auto image_facts = [this](const std::string& path) -> const InlineImageFacts& {
+    auto cached = inline_image_ok_.find(path);
     if (cached == inline_image_ok_.end()) {
       const uint64_t max_pixels = attachment_downloads_ ? attachment_downloads_->Limits().max_image_pixels
                                                         : DefaultAttachmentLimits().max_image_pixels;
       InlineImageFacts facts;
-      if (const auto header = ReadImageHeader(view.local_path)) {
+      if (const auto header = ReadImageHeader(path)) {
         facts.ok = static_cast<uint64_t>(header->width) * static_cast<uint64_t>(header->height) <= max_pixels;
         // Orientations 5..8 turn the picture a quarter: it shows with its sides swapped.
         const bool turned = header->exif_orientation >= 5 && header->exif_orientation <= 8;
         facts.width = turned ? header->height : header->width;
         facts.height = turned ? header->width : header->height;
       }
-      cached = inline_image_ok_.emplace(view.local_path, facts).first;
+      cached = inline_image_ok_.emplace(path, facts).first;
     }
-    view.inline_image_ok = cached->second.ok;
-    view.image_width = cached->second.width;
-    view.image_height = cached->second.height;
+    return cached->second;
+  };
+  bool wants_preview = false;
+  if (IsAttachmentImageMime(fields->mime)) {
+    // B203: a bubble shows the picture's preview (kImagePreviewMaxSide), the picture itself only when it is no longer
+    // than that, else a placeholder of its size until the preview is made; a picture whose preview cannot be made is
+    // a file card. A tap opens the full picture either way.
+    const std::string preview = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
+    const bool preview_exists = AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash);
+    const bool preview_failed =
+        attachment_downloads_ && attachment_downloads_->ChatPreviewFailed(message.thread_id, fields->content_hash);
+    if (!view.on_demand) {
+      if (!view.local_path.empty()) {
+        // The bytes are a contact's: look at the declared size before the picture is decoded into an <img>.
+        const InlineImageFacts& facts = image_facts(view.local_path);
+        view.inline_image_ok = facts.ok;
+        view.image_width = facts.width;
+        view.image_height = facts.height;
+        if (facts.ok && ImageNeedsPreview(facts.width, facts.height)) {
+          if (preview_exists) {
+            view.local_path = preview; // laid out with the picture's own size: the placeholder had it too
+          } else if (preview_failed) {
+            view.inline_image_ok = false; // a file card that opens the picture (`local_path` stays its view)
+          } else {
+            view.picture_placeholder = true;
+            view.local_path.clear();
+            wants_preview = true;
+          }
+        }
+      }
+    } else if (preview_exists) {
+      // A large picture: its size is the preview's (the large file is not decrypted to draw a bubble).
+      view.local_path = preview;
+      const InlineImageFacts& facts = image_facts(preview);
+      view.inline_image_ok = facts.ok;
+      view.image_width = facts.width;
+      view.image_height = facts.height;
+    } else if (preview_failed) {
+      view.inline_image_ok = false; // a file card with Open
+    } else {
+      // A view an earlier Open made is the full picture: never in the bubble. The placeholder until the preview.
+      view.local_path.clear();
+      view.picture_placeholder = true;
+      view.image_width = kPicturePlaceholderFallbackWidth;
+      view.image_height = kPicturePlaceholderFallbackHeight;
+      wants_preview = true;
+    }
   }
   if (attachment_downloads_) {
     view.state = attachment_downloads_->StateFor(message.thread_id, *fields);
     view.download_percent = attachment_downloads_->ProgressPercent(message.thread_id, fields->content_hash);
-    if (view.on_demand && view.state == AttachmentFetchWorkflow::DownloadState::Ready &&
-        IsAttachmentImageMime(fields->mime) && !profile_data_dir_.empty() &&
-        !AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
-      // A stored large picture whose thumbnail went with the view cache (wiped at every start): made again on a
-      // worker, never here; the card is a file row until the change notification re-renders it.
-      attachment_downloads_->RequestImageThumbnail(message.thread_id, *fields);
+    if (wants_preview && view.state == AttachmentFetchWorkflow::DownloadState::Ready) {
+      // Made on a worker, never here; only these rows are drawn again when it is done (the chat-preview callback).
+      attachment_downloads_->RequestChatPreview(message.thread_id, *fields);
     }
-  } else if (!view.local_path.empty()) {
+  } else if (!view.local_path.empty() || view.picture_placeholder) {
     view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+  }
+  if (view.picture_placeholder && view.state != AttachmentFetchWorkflow::DownloadState::Ready) {
+    view.picture_placeholder = false; // not downloaded: the download card, as before
   }
   if (IsAttachmentVideoMime(fields->mime) && !profile_data_dir_.empty() &&
       AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
@@ -800,6 +892,21 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
       }
     } else {
       attachment_downloads_->RequestAudioTags(message.thread_id, fields->content_hash, view.local_path);
+    }
+  }
+  // Locked, or locking: the DEK goes before the view cache is wiped, so this is read after every file check above. No
+  // <img> may name a file of the view cache now (the UI library remembers a failed load for the whole run): a picture
+  // is its placeholder, a video or sound file has no cover.
+  if (attachment_downloads_ && !attachment_downloads_->HasDek()) {
+    view.poster_path.clear();
+    if (IsAttachmentImageMime(fields->mime) && view.inline_image_ok &&
+        view.state == AttachmentFetchWorkflow::DownloadState::Ready) {
+      view.local_path.clear();
+      view.picture_placeholder = true;
+      if (view.image_width <= 0 || view.image_height <= 0) {
+        view.image_width = kPicturePlaceholderFallbackWidth; // its own view could not be read: the fallback box
+        view.image_height = kPicturePlaceholderFallbackHeight;
+      }
     }
   }
   return view;

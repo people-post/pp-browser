@@ -31,6 +31,8 @@ struct DeliveryRequest {
   std::string amp_peer_key;
   /** The peer's Brief `relay:` route; none: Amp only. */
   std::optional<std::string> relay_route;
+  /** The account `relay_route` was resolved for; with a route refresh set, a relay that does not know the recipient is asked again. */
+  std::string route_account;
   /** Time-critical signaling (a call's): the critical worker lane, and the relay first when a route is known. */
   bool critical_lane = false;
   /** One member's copy of a group message (their account): its outcome is that member's, not the row's. */
@@ -75,13 +77,26 @@ public:
 
   void SetRelayClient(IRelayClient* relay) { relay_ = relay; }
   void SetOnOutcome(std::function<void(const DeliveryOutcome&)> handler) { on_outcome_ = std::move(handler); }
+  /**
+   * Asks for the current `relay:` route of an account, dropping what is cached for it. When the relay answers a send
+   * with "no such recipient" (RelayRecipientUnknown) and the route has changed, the envelope is addressed to the new
+   * route and sent once more in that attempt.
+   */
+  void SetRouteRefresh(std::function<std::optional<std::string>(const std::string& account_id)> refresh) {
+    route_refresh_ = std::move(refresh);
+  }
   /** A thread whose sends are paused (e.g. its E2E session is compromised): its retries are dropped. */
   void SetThreadPaused(std::function<bool(const std::string& thread_id)> paused) { paused_ = std::move(paused); }
 
   void Send(DeliveryRequest request);
   /** Send what is queued again (when the inbox is synced: the relay is likely reachable). */
   void Retry();
-  /** Drop a message's queued sends and its control-lane retries. */
+  /**
+   * Drop a message's queued sends and its control-lane retries. A transcript row's requests sent until now start no
+   * new attempt either (a first send on its way, an item a Retry holds): one that fails is not queued again, and
+   * nothing more is reported for it. Only the attempt already handed to a transport can still go out. A later Send of
+   * the same id is a new request and goes as usual.
+   */
   void Cancel(const std::string& message_id);
   /** Drop a thread's queued sends (synchronously: before its next send). */
   void PurgeThread(const std::string& thread_id);
@@ -92,6 +107,11 @@ public:
    * restart); the control lane is not tracked. It changes nothing that is reported or retried. Any thread.
    */
   std::optional<int64_t> SendStartedMs(const std::string& message_id) const;
+  /** How many messages are remembered as cancelled (tests: the record stays bounded). */
+  size_t CancelledCountForTest() const {
+    std::lock_guard lock(mutex_);
+    return cancelled_.size();
+  }
 
 private:
   struct Pending {
@@ -103,6 +123,9 @@ private:
     std::string amp_peer_key;
     std::string group_member;
     std::string copy_device;
+    std::string route_account;
+    /** Its request's (BeginActive): a Cancel after the Send stops it. */
+    uint64_t serial = 0;
   };
 
   /** A control-lane retry waiting on its timer. */
@@ -115,11 +138,19 @@ private:
   void Report(DeliveryOutcome outcome);
   /** A request's last outcome: it leaves `active_` first, then is reported as Report does. */
   void Finish(DeliveryOutcome outcome);
-  /** A transcript row's request starts (Send); the control lane (no thread) is not tracked. */
-  void BeginActive(const std::string& thread_id, const std::string& message_id);
-  /** One request of `message_id` ended. Holds `mutex_`. */
+  /** A request starts (Send): its serial. The control lane (no thread) is not tracked. */
+  uint64_t BeginActive(const std::string& thread_id, const std::string& message_id);
+  /** One request of `message_id` ended (with its last, the record of a cancel). Holds `mutex_`. */
   void EndActiveLocked(const std::string& message_id);
-  void Enqueue(Pending pending);
+  /** A transcript row's request cancelled after it was sent (Cancel). Holds `mutex_`. */
+  bool CancelledLocked(const std::string& thread_id, const std::string& message_id, uint64_t serial) const;
+  /** Before an attempt: true (and the request ended, nothing reported) when it was cancelled. */
+  bool EndIfCancelled(const std::string& thread_id, const std::string& message_id, uint64_t serial);
+  /** Queued for a retry; false (and the request ended, nothing reported) when it was cancelled. */
+  bool Enqueue(Pending pending);
+  bool EnqueueLocked(Pending pending);
+  /** relay_->Send; on "no such recipient" the route is refreshed and, if it changed, `envelope` is re-addressed and sent once more. */
+  Roe<void> RelaySend(IRelayClient& relay, RelayEnvelope& envelope, const std::string& route_account);
   /** Schedule the control-lane send again after `failure` (ControlRetryAfter); false: given up. */
   bool RetryControlLater(Pending item, const Error& failure);
   /** A control-lane retry's turn: over the relay, again later when that fails. */
@@ -130,6 +161,7 @@ private:
   IRelayClient* relay_ = nullptr;
   std::function<void(const DeliveryOutcome&)> on_outcome_;
   std::function<bool(const std::string&)> paused_;
+  std::function<std::optional<std::string>(const std::string&)> route_refresh_;
   /** A row's sends under way: when the first started, and how many requests have not ended. */
   struct ActiveSend {
     int64_t started_ms = 0;
@@ -140,6 +172,13 @@ private:
   std::vector<Pending> queue_;
   /** By message id (SendStartedMs). */
   std::unordered_map<std::string, ActiveSend> active_;
+  /**
+   * A cancelled message's requests up to this serial: none of them starts another attempt. Only while the message is
+   * in `active_` (it goes with its last request), so it holds no more ids than `active_` does.
+   */
+  std::unordered_map<std::string, uint64_t> cancelled_;
+  /** The last request's serial (BeginActive). */
+  uint64_t next_serial_ = 0;
   /** By a sequence number of ours: the timer's id is not known until it is scheduled. */
   std::unordered_map<uint64_t, ControlRetry> control_retries_;
   uint64_t next_control_retry_ = 0;

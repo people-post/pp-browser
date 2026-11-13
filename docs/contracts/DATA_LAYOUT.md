@@ -105,6 +105,12 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 3, floor 2 — D102, § Schema versions)
                             # messages.content_type 'deleted' = "delete for me" tombstone: id / seq / order kept, body = empty text (D103)
+                            # An edited text (D106): the row is rewritten in place (same id / seq / order / timestamp, the new text, no spans)
+                            # and its payload_json (inside content_enc) carries edited_at (the applied edit's send time, ms) and edited_by
+                            # (the applied edit's message id); no column, user_version unchanged. Its `edit` annotation rows stay; all but
+                            # the applied one are blanked (value / text empty), and all of them once the message is deleted.
+                            # An edit of ours blanked before it went out keeps its row, seq and delivery state; no further
+                            # send of it starts (only a try already on its way can still arrive).
                             # Local-only System rows (sender local:self, delivery 'local', never sent or synced; text empty, the UI words
                             # them from the payload): payload_json {control_type: "receive_failure"|"send_failure", detail: <JSON string>}.
                             # `send_failure` (#182): a message of ours did not go out, one row per message, id "send-failure-<message_id>"
@@ -130,7 +136,8 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
   object_index.db       # realm, content_id, mime, pins, published_from?, thread refs
   threads/{thread_id}/
     blobs_view/         # optional session plaintext materialization (not source of truth); wiped at start and on ClearDek;
-                        # a file above 4 MiB appears here only after an explicit Open
+                        # a file above 4 MiB appears here only after an explicit Open; {hash}.poster.jpg = a video's poster,
+                        # a sound file's cover, or a picture's preview (long side <= 640 px: what its chat bubble shows)
     # blobs/            # not used; durable bytes live in cas/private only
   picked/               # Android: <unique>/<name> = a copy of a content:// pick, made so decoders can read it; removed as soon as
                         # the attachment is prepared, and the whole folder at start (iOS keeps its own tmp/pp-picks)

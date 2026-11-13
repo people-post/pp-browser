@@ -64,6 +64,10 @@ void ConversationsFacade::BindAgentInbound(AgentInboundPorts ports) {
   hub_.BindAgentInbound(std::move(ports));
 }
 
+std::string ConversationsFacade::RegistrationBackendUrl() {
+  return hub_.Registration().BaseUrl();
+}
+
 Roe<bool> ConversationsFacade::MaybeAutoRenewRegistration(const bool auto_renew_registration) {
   return pbr::MaybeAutoRenewRegistration(hub_.Registration(), hub_.Identity(), auto_renew_registration);
 }
@@ -291,6 +295,15 @@ Roe<std::optional<ThreadMessage>> ConversationsFacade::GetMessage(const std::str
 
 Roe<void> ConversationsFacade::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {
   return hub_.DeleteMessageForEveryone(thread_id, message_id);
+}
+
+Roe<ThreadMessage> ConversationsFacade::EditMessage(const std::string& thread_id, const std::string& message_id,
+                                                    const std::string& new_text, const int64_t tapped_at_ms) {
+  return hub_.EditMessage(thread_id, message_id, new_text, tapped_at_ms);
+}
+
+Roe<ThreadMessage> ConversationsFacade::ResendEdit(const std::string& thread_id, const std::string& message_id) {
+  return hub_.ResendEdit(thread_id, message_id);
 }
 
 Roe<void> ConversationsFacade::ClearThreadHistory(const std::string& thread_id, const bool forget_memory) {
@@ -1195,6 +1208,15 @@ void ConversationsFacade::RequestGridThumbnail(const std::string& thread_id, con
 
 void ConversationsFacade::CancelGridThumbnails(const uint64_t page_generation) {
   hub_.CancelGridThumbnails(page_generation);
+}
+
+void ConversationsFacade::SetOnChatPreviewDone(
+    std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made)> callback) {
+  hub_.SetOnChatPreviewDone(std::move(callback));
+}
+
+void ConversationsFacade::CancelChatPreviews() {
+  hub_.CancelChatPreviews();
 }
 
 std::string ConversationsFacade::GridThumbnailPath(const std::string& thread_id,

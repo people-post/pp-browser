@@ -78,6 +78,7 @@ struct BroadcastViewerWorkflow::FrameSink {
     packet.seq = frame.seq;
     packet.mark = frame.mark;
     packet.instance = frame.instance;
+    packet.capture_ts = frame.capture_ts;
     packet.payload = std::move(*opened);
     engine->OnInboundPacket(packet);
   }

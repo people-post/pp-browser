@@ -75,7 +75,7 @@ struct Transcript {
 
   /** ChatController::SyncDisplayFromThread's row steps, in its order. */
   void Sync() {
-    const bool thread_changed = scroller.BeginDisplaySync(open);
+    const bool thread_changed = scroller.BeginDisplaySync(open, /*first_screen_messages=*/0);
     const auto [prev_tail_id, prev_count] = PendingUploadRows::RealTail(chat.messages);
     chat.messages = scroller.Rows(open, scroller.LoadedMinDisplayOrder(), scroller.LoadedMaxDisplayOrder());
     chat.has_turns = !chat.messages.empty();

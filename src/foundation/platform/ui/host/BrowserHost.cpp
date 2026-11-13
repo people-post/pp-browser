@@ -4,11 +4,13 @@
 #include "common/PbrCompat.h"
 #include "foundation/runtime/FramePacing.h"
 #include "foundation/platform/ImageEncode.h"
+#include "common/Logger.h"
 #include <ui/platform/Platform_SDL.h>
 #include <ui/render/Renderer_GL3.h>
 #include "TextLoupeRenderer.h"
 #include "CallVideoTileRenderer.h"
 #include "TouchSimOverlay.h"
+#include "EventLoopWake.h"
 #include <ui/render/GlBackend.h>
 #include "MobileGlLifecycle.h"
 #include <ui/dom/Context.h>
@@ -19,8 +21,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
-#include <mutex>
 #include <utility>
 #include <cmath>
 #include <cstdio>
@@ -53,6 +53,7 @@ public:
   RenderInterface_GL3_SDL() {}
 
   ui::TextureHandle LoadTexture(ui::Vector2i& texture_dimensions, const ui::String& source) override {
+    const auto load_started = std::chrono::steady_clock::now();
     ui::FileInterface* file_interface = ui::GetFileInterface();
     ui::FileHandle file_handle = file_interface->Open(source);
     if (!file_handle)
@@ -91,9 +92,13 @@ public:
     auto DestroySurface = [](SDL_Surface* surface) { SDL_FreeSurface(surface); };
 #endif
 
+    const auto decode_started = std::chrono::steady_clock::now();
     SDL_Surface* surface = CreateSurface();
     if (!surface)
       return {};
+    const auto decode_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_started)
+            .count();
 
     texture_dimensions = {surface->w, surface->h};
 
@@ -121,6 +126,16 @@ public:
 
     DestroySurface(surface);
 
+    // Pictures only (interface icons come through here too): size, file bytes and the time it took. No path or name.
+    if (texture_dimensions.x >= 400 || texture_dimensions.y >= 400) {
+      const auto total_ms =
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - load_started)
+              .count();
+      ::pp::logging::getLogger("Texture").info << "texture loaded w=" << texture_dimensions.x
+                                               << " h=" << texture_dimensions.y << " file_bytes=" << buffer_size
+                                               << " decode_ms=" << decode_ms << " total_ms=" << total_ms;
+    }
+
     return texture_handle;
   }
 };
@@ -140,8 +155,6 @@ struct BackendData {
   unsigned int uikit_renderbuffer = 0;
 
   bool running = true;
-  /** Cross-thread: RequestForceFrame / SyncContext may set from any thread. */
-  std::atomic<bool> force_next_frame{false};
 };
 static ui::UniquePtr<BackendData> data;
 #if SDL_MAJOR_VERSION >= 3
@@ -225,16 +238,7 @@ static bool SDLCALL LiveResizeEventWatch(void* /*userdata*/, SDL_Event* event) {
   return true;
 }
 #endif
-// Custom SDL user event that wakes SDL_WaitEventTimeout when UI work is posted.
-static Uint32 g_wake_event_type = 0;
-static std::atomic<bool> g_wake_pending{false};
-/**
- * The idle wait sleeps on this, not SDL_Delay: RequestForceFrame from another thread (a posted UI task, a new
- * call video frame) ends the wait at once instead of at the end of a 50 ms slice — at video rate a slice-bound
- * wake drew at most ~20 fps, unevenly. SDL input is still polled every slice.
- */
-static std::mutex g_idle_wait_mu;
-static std::condition_variable g_idle_wait_cv;
+// The wake flag, its SDL user event and the idle wait live in EventLoopWake (testable without a window).
 
 bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize, bool borderless) {
   UI_ASSERT(!data);
@@ -260,8 +264,7 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
   }
 #endif
 
-  g_wake_event_type = SDL_RegisterEvents(1);
-  g_wake_pending.store(false, std::memory_order_relaxed);
+  EventLoopWake::Start();
 
   // Submit click events when focusing the window.
   SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
@@ -386,7 +389,7 @@ void Backend::SyncContext(ui::Context* context) {
   context->SetDimensions(ui::Vector2i(pixel_w, pixel_h));
   context->SetDensityIndependentPixelRatio(SDL_GetWindowDisplayScale(data->window));
   data->render_interface.SetViewport(pixel_w, pixel_h);
-  data->force_next_frame.store(true, std::memory_order_release);
+  EventLoopWake::MarkFrame();
   ui::Log::Message(ui::Log::LT_DEBUG, "SyncContext: %dx%d scale=%.3f", pixel_w, pixel_h,
                    SDL_GetWindowDisplayScale(data->window));
 #else
@@ -439,7 +442,7 @@ void Backend::RecoverAfterDeviceReset(ui::Context* context) {
   if (context)
     SyncContext(context);
 
-  data->force_next_frame.store(true, std::memory_order_release);
+  EventLoopWake::MarkFrame();
 }
 #endif
 
@@ -483,8 +486,7 @@ void Backend::Shutdown() {
   SDL_DestroyWindow(data->window);
 
   data.reset();
-  g_wake_event_type = 0;
-  g_wake_pending.store(false, std::memory_order_relaxed);
+  EventLoopWake::Stop();
 
   SDL_Quit();
 }
@@ -548,14 +550,9 @@ bool Backend::ProcessEvents(ui::Context* context, KeyDownCallback key_down_callb
 
   bool result = true;
 
-  // Never use SDL_WaitEventTimeout for idle — on some X11/SDL builds it ignored the timeout
-  // until real input, so SyncLayout / call ring stayed invisible until Sessions was opened.
-  const bool force_frame = data->force_next_frame.exchange(false, std::memory_order_acq_rel);
-
   SDL_Event ev;
-  if (force_frame)
-    has_event = SDL_PollEvent(&ev);
-  else if (power_save) {
+  int timeout_ms = 0;
+  if (power_save) {
     constexpr double k_max_power_save_wait_sec = pbr::kIdleFrameMaxWaitSec;
     double delay_sec = context->GetNextUpdateDelay();
     if (!std::isfinite(delay_sec) || delay_sec > k_max_power_save_wait_sec) {
@@ -564,40 +561,14 @@ bool Backend::ProcessEvents(ui::Context* context, KeyDownCallback key_down_callb
     if (delay_sec < 0.0) {
       delay_sec = 0.0;
     }
-    const int timeout_ms = static_cast<int>(delay_sec * 1000.0);
-    const Uint64 deadline = SDL_GetTicks() + static_cast<Uint64>(timeout_ms);
-    SDL_PumpEvents();
-    has_event = SDL_PollEvent(&ev);
-    while (!has_event) {
-      // Mid-idle ForceFrame from another thread — exit without waiting out the slice.
-      if (data->force_next_frame.exchange(false, std::memory_order_acq_rel)) {
-        SDL_PumpEvents();
-        has_event = SDL_PollEvent(&ev);
-        break;
-      }
-      const Uint64 now = SDL_GetTicks();
-      if (now >= deadline) {
-        break;
-      }
-      Uint64 remaining = deadline - now;
-      if (remaining > 50) {
-        remaining = 50; // ≤50ms slices so PushEvent / ForceFrame are observed promptly
-      }
-      {
-        std::unique_lock lock(g_idle_wait_mu);
-        g_idle_wait_cv.wait_for(lock, std::chrono::milliseconds(remaining),
-                                [] { return data->force_next_frame.load(std::memory_order_acquire); });
-      }
-      SDL_PumpEvents();
-      has_event = SDL_PollEvent(&ev);
-    }
-  } else
-    has_event = SDL_PollEvent(&ev);
+    timeout_ms = static_cast<int>(delay_sec * 1000.0);
+  }
+  // One wake (flag + its wake event) ends one wait: both are taken here together (EventLoopWake.h).
+  has_event = EventLoopWake::TakeFirstEvent(&ev, power_save, timeout_ms);
 
   while (has_event) {
     bool propagate_event = true;
-    if (g_wake_event_type != 0 && ev.type == g_wake_event_type) {
-      g_wake_pending.store(false, std::memory_order_relaxed);
+    if (EventLoopWake::SwallowIfWake(ev)) {
       has_event = SDL_PollEvent(&ev);
       continue;
     }
@@ -700,35 +671,28 @@ void Backend::HideWindow() {
 }
 
 void Backend::WakeEventLoop() {
-  if (!data || g_wake_event_type == 0)
+  if (!data)
     return;
+  // The idle wait goes by the wake flag, so a wake event alone would be ignored: this is a full wake.
+  EventLoopWake::Request();
+}
 
-  // Always push a wake event. Coalescing via g_wake_pending alone dropped wakes when the
-  // flag was still set from a prior push that SDL had not yet delivered, leaving UI tasks
-  // (SyncLayout, call ring) queued until the next real input.
-  g_wake_pending.store(true, std::memory_order_release);
+static std::atomic<long long> g_force_frame_requests{0};
 
-  SDL_Event ev{};
-  ev.type = g_wake_event_type;
-#if SDL_MAJOR_VERSION >= 3
-  if (!SDL_PushEvent(&ev))
-#else
-  if (SDL_PushEvent(&ev) < 0)
-#endif
-  {
-    g_wake_pending.store(false, std::memory_order_relaxed);
-  }
+long long Backend::TakeForceFrameRequests() {
+  return g_force_frame_requests.exchange(0, std::memory_order_relaxed);
+}
+
+Backend::ProcessEventsCounts Backend::TakeProcessEventsCounts() {
+  const EventLoopWake::Counts c = EventLoopWake::TakeCounts();
+  return {c.flag, c.event_first, c.event_waited, c.timeout, c.flag_waited, c.wake_swallowed};
 }
 
 void Backend::RequestForceFrame() {
+  g_force_frame_requests.fetch_add(1, std::memory_order_relaxed);
   if (!data)
     return;
-  data->force_next_frame.store(true, std::memory_order_release);
-  {
-    std::lock_guard lock(g_idle_wait_mu); // a waiter between its check and its sleep sees the flag
-  }
-  g_idle_wait_cv.notify_one();
-  WakeEventLoop();
+  EventLoopWake::Request();
 }
 
 void Backend::BeginFrame() {

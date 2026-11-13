@@ -61,11 +61,17 @@ public:
   virtual void RememberEmoji(const std::string& emoji) = 0;
   virtual void InsertEmojiIntoDraft(const std::string& emoji, bool restore_composer_focus = true) = 0;
   virtual void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {}) = 0;
+  /** "Edit" is offered for this message now: our own text, sent at most 15 minutes ago (DEV/PLAN-message-edit.md). */
+  virtual bool CanEditMessage(const std::string& message_id) = 0;
+  /** "Edit": the message's words go into the composer under an "Edit message" bar. */
+  virtual void StartEditMessage(const std::string& message_id) = 0;
   virtual void DeleteMessageForMe(const std::string& message_id) = 0;
   virtual void DeleteMessageForEveryone(const std::string& message_id) = 0;
   virtual bool IsDeletedMessage(const std::string& message_id) const = 0;
   /** What the user reads in a message of the active thread ("" when not found). */
   virtual std::string MessagePlainText(const std::string& message_id) const = 0;
+  /** A call record row (the result of a voice / video call): one tap calls back, no menu. */
+  virtual bool IsCallRecord(const std::string& message_id) const = 0;
   /** A contact card (someone's contact, shared in the chat). */
   virtual bool IsContactCard(const std::string& message_id) const = 0;
   /** *Add to contacts* on a contact card: checks it, adds the person, shows them. */
@@ -75,6 +81,15 @@ public:
   /** Opens the ask-AI panel over the chat; nothing of the chat goes to the AI. */
   virtual void OpenAskAiPanel() = 0;
 };
+
+/** Puts "Edit" (running `start_edit`) right under "Copy" in a message's menu, or last when there is no Copy. */
+void InsertEditAction(std::vector<ContextMenuAction>& actions, std::function<void()> start_edit);
+
+/**
+ * While the open chat is editing a message: takes out "Edit", "Reply" and "Ask AI" (each would replace the words being
+ * edited, or do nothing); reactions, Copy and Delete stay.
+ */
+void RemoveActionsWhileEditing(std::vector<ContextMenuAction>& actions);
 
 /**
  * The chat screen's menus: the long-press / right-click menu (a chats-list row, a message, an item

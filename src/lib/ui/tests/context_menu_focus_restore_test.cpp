@@ -1,11 +1,13 @@
 #include "lib/ui/ContextMenuHost.h"
 
+#include <ui/base/SystemInterface.h>
 #include <ui/core/Core.h>
 #include <ui/dom/Context.h>
 #include <ui/dom/ElementDocument.h>
 #include <ui/paint/RenderInterface.h>
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <functional>
 #include <string>
 #include <vector>
@@ -37,7 +39,9 @@ protected:
     context_ = ui::CreateContext("context-menu-focus-test", {400, 400});
     ASSERT_NE(context_, nullptr);
     document_ = context_->LoadDocumentFromMemory(
-        "<rml><head><style>body { width: 400px; height: 400px; } input { width: 200px; height: 20px; }</style></head>"
+        "<rml><head><style>body { width: 400px; height: 400px; } input { width: 200px; height: 20px; } "
+        ".context-menu-layer { position: fixed; top: 0; left: 0; right: 0; bottom: 0; } "
+        ".context-menu-sheet { position: absolute; }</style></head>"
         "<body><div id='pane'><input id='field' type='text'/></div><div id='other'/></body></rml>");
     ASSERT_NE(document_, nullptr);
     document_->Show();
@@ -505,4 +509,704 @@ TEST_F(ContextMenuPopoverTest, ARowWithADetailShowsItUnderItsTitleAndTheCurrentO
 }
 
 } // namespace
+
+// The keyboard can hide (or show) while the bottom sheet is open: the sheet's `bottom` is a pixel value written when it
+// opened, so it must be written again when the inset changes (iPhone, 2026-11-12: the sheet hung one keyboard height
+// above the screen bottom after the keyboard went away).
+using ContextMenuBottomInsetTest = ContextMenuFocusRestoreTest;
+
+namespace {
+
+std::string PanelBottom(ui::ElementDocument* document) {
+  ui::Element* panel = document->GetElementById("context-menu-panel");
+  const ui::Property* bottom = panel ? panel->GetProperty("bottom") : nullptr;
+  return bottom ? bottom->ToString() : std::string();
+}
+
+} // namespace
+
+TEST_F(ContextMenuBottomInsetTest, TheSheetDropsWhenTheKeyboardHidesWhileItIsOpen) {
+  ContextMenuHost::Instance().SetCompactLayout(true);
+  ContextMenuHost::Instance().SetBottomInsetDp(300);
+  ContextMenuHost::Instance().ShowActions({10, 10}, OneAction());
+  context_->Update();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  const std::string raised = PanelBottom(document_);
+  ASSERT_FALSE(raised.empty());
+
+  ContextMenuHost::Instance().SetBottomInsetDp(0);
+  const std::string lowered = PanelBottom(document_);
+  EXPECT_NE(lowered, raised);
+  EXPECT_EQ(lowered, "0px");
+  ContextMenuHost::Instance().SetBottomInsetDp(0);
+  ContextMenuHost::Instance().SetCompactLayout(false);
+}
+
+TEST_F(ContextMenuBottomInsetTest, TheSheetRisesWhenTheKeyboardShowsWhileItIsOpen) {
+  ContextMenuHost::Instance().SetCompactLayout(true);
+  ContextMenuHost::Instance().SetBottomInsetDp(0);
+  ContextMenuHost::Instance().ShowActions({10, 10}, OneAction());
+  context_->Update();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  ASSERT_EQ(PanelBottom(document_), "0px");
+
+  ContextMenuHost::Instance().SetBottomInsetDp(300);
+  EXPECT_NE(PanelBottom(document_), "0px");
+  ContextMenuHost::Instance().SetBottomInsetDp(0);
+  ContextMenuHost::Instance().SetCompactLayout(false);
+}
+
+TEST_F(ContextMenuBottomInsetTest, ASameValueDoesNotLayTheSheetOutAgain) {
+  ContextMenuHost::Instance().SetCompactLayout(true);
+  ContextMenuHost::Instance().SetBottomInsetDp(300);
+  ContextMenuHost::Instance().ShowActions({10, 10}, OneAction());
+  context_->Update();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  ui::Element* panel = document_->GetElementById("context-menu-panel");
+  ASSERT_NE(panel, nullptr);
+
+  // Overwrite the value by hand: a repeated call with the same inset must leave it alone.
+  panel->SetProperty("bottom", "7px");
+  ContextMenuHost::Instance().SetBottomInsetDp(300);
+  EXPECT_EQ(PanelBottom(document_), "7px");
+  ContextMenuHost::Instance().SetBottomInsetDp(0);
+  ContextMenuHost::Instance().SetCompactLayout(false);
+}
+
+namespace {
+
+float PanelHeightPx(ui::ElementDocument* document) {
+  ui::Element* panel = document->GetElementById("context-menu-panel");
+  const ui::Property* height = panel ? panel->GetProperty("height") : nullptr;
+  return height ? std::strtof(height->ToString().c_str(), nullptr) : -1.f;
+}
+
+} // namespace
+
+// Opens the compact sheet with a reactions row whose "+" expands it, then taps the "+".
+class ContextMenuExpandedInsetTest : public ContextMenuBottomInsetTest {
+protected:
+  void OpenExpanded(const int inset_dp) {
+    ContextMenuHost::Instance().SetCompactLayout(true);
+    ContextMenuHost::Instance().SetBottomInsetDp(inset_dp);
+    ContextMenuAction more;
+    more.id = "more";
+    more.label = "+";
+    more.quick = true;
+    more.run = [] {};
+    more.expand = [](ui::Element* mount, std::function<void()>) { mount->SetInnerRML("<div>X</div>"); };
+    ContextMenuAction reply;
+    reply.id = "reply";
+    reply.label = "Reply";
+    reply.run = [] {};
+    ContextMenuHost::Instance().ShowActions({10, 10}, {more, reply}, nullptr, "Message");
+    context_->Update();
+    ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+    ui::ElementList quicks;
+    document_->GetElementById("context-menu-layer")->GetElementsByClassName(quicks, "context-menu-sheet-quick");
+    ASSERT_FALSE(quicks.empty());
+    ui::Element* plus = quicks[0]->GetChild(quicks[0]->GetNumChildren() - 1);
+    plus->DispatchEvent(ui::EventId::Mousedown, Pointer(380, 300));
+    plus->DispatchEvent(ui::EventId::Mouseup, Pointer(380, 300));
+    plus->DispatchEvent(ui::EventId::Click, Pointer(380, 300));
+    ContextMenuHost::Instance().Update();
+    ASSERT_TRUE(document_->GetElementById("context-menu-panel")->IsClassSet("context-menu-sheet--expanded"));
+  }
+
+  void TearDown() override {
+    ContextMenuHost::Instance().SetBottomInsetDp(0);
+    ContextMenuHost::Instance().SetCompactLayout(false);
+    ContextMenuBottomInsetTest::TearDown();
+  }
+};
+
+TEST_F(ContextMenuExpandedInsetTest, TheExpandedSheetGrowsWhenTheKeyboardHides) {
+  OpenExpanded(100);
+  const float with_keyboard = PanelHeightPx(document_);
+  ASSERT_GT(with_keyboard, 0.f);
+  ContextMenuHost::Instance().SetBottomInsetDp(0);
+  EXPECT_GT(PanelHeightPx(document_), with_keyboard);
+  EXPECT_TRUE(document_->GetElementById("context-menu-panel")->IsClassSet("context-menu-sheet--expanded"));
+}
+
+TEST_F(ContextMenuExpandedInsetTest, TheExpandedSheetShrinksWhenTheKeyboardShows) {
+  OpenExpanded(0);
+  const float without_keyboard = PanelHeightPx(document_);
+  ASSERT_GT(without_keyboard, 0.f);
+  ContextMenuHost::Instance().SetBottomInsetDp(100);
+  EXPECT_LT(PanelHeightPx(document_), without_keyboard);
+  EXPECT_TRUE(document_->GetElementById("context-menu-panel")->IsClassSet("context-menu-sheet--expanded"));
+}
+
+TEST_F(ContextMenuExpandedInsetTest, ASameValueLeavesTheExpandedHeightAlone) {
+  OpenExpanded(100);
+  ui::Element* panel = document_->GetElementById("context-menu-panel");
+  panel->SetProperty("height", "7px");
+  ContextMenuHost::Instance().SetBottomInsetDp(100);
+  EXPECT_EQ(PanelHeightPx(document_), 7.f);
+}
+
+TEST_F(ContextMenuBottomInsetTest, ChangingTheInsetWithoutAnOpenMenuIsHarmless) {
+  ASSERT_FALSE(ContextMenuHost::Instance().IsOpen());
+  ContextMenuHost::Instance().SetBottomInsetDp(300);
+  ContextMenuHost::Instance().SetBottomInsetDp(0);
+  EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
+}
+
+// iPhone, 2026-11-12 (Kenneth): typing, send, then a long press on the message just sent while the keyboard is still
+// up. The message sheet opened above the keyboard, then the keyboard went down and the sheet fell with it; Edit brought
+// the keyboard back up. The press on the message held the focus back from the composer until the finger lifted (a
+// touch that turns into a scroll keeps the keyboard); after a long press the lift still moved it, the composer lost
+// the focus and the keyboard closed. The keyboard now stays as it was while the sheet is open.
+namespace {
+
+// The platform: a clock the test moves, and the on-screen keyboard text input starts and stops.
+class FakeKeyboard : public ui::SystemInterface {
+public:
+  double GetElapsedTime() override { return now; }
+  void ActivateKeyboard(ui::Vector2f, float, ui::KeyboardType) override {
+    ++activations;
+    up = true;
+  }
+  void DeactivateKeyboard() override {
+    ++deactivations;
+    up = false;
+  }
+  double now = 100.0;
+  int activations = 0;
+  int deactivations = 0;
+  bool up = false;
+};
+
+// The message menu's actions, set by the test running (the host keeps its providers for the whole process).
+std::function<std::vector<ContextMenuAction>(const ContextMenuRequest&)>* g_message_actions = nullptr;
+
+constexpr int kKeyboardDp = 300;
+
+// The desktop message menu's actions (DesktopMessageMenuTest; the host keeps its providers for the whole process).
+std::function<std::vector<ContextMenuAction>(const ContextMenuRequest&)>* g_desktop_actions = nullptr;
+
+} // namespace
+
+class ContextMenuKeyboardTest : public testing::Test {
+protected:
+  void SetUp() override {
+    ui::SetRenderInterface(&renderer_);
+    ui::SetSystemInterface(&keyboard_);
+    initialized_ = ui::Initialise();
+    ASSERT_TRUE(initialized_);
+    context_ = ui::CreateContext("context-menu-keyboard-test", {400, 800});
+    ASSERT_NE(context_, nullptr);
+    // As in the chat: message bubbles take no focus (components.rcss), their row does.
+    document_ = context_->LoadDocumentFromMemory(
+        "<rml><head><style>body { display: block; width: 400px; height: 800px; margin: 0; } div { display: block; } "
+        "#msg { position: absolute; top: 40px; left: 0; width: 400px; height: 60px; } "
+        ".bubble { width: 200px; height: 40px; focus: none; } "
+        "#draft { position: absolute; top: 700px; left: 0; width: 300px; height: 40px; } "
+        "button { display: block; height: 50px; } "
+        ".context-menu-layer { position: fixed; top: 0; left: 0; right: 0; bottom: 0; } "
+        ".context-menu-scrim { position: absolute; top: 0; left: 0; right: 0; bottom: 0; } "
+        ".context-menu-sheet { position: absolute; }</style></head>"
+        "<body><div id='msg' message-id='m1'><div class='bubble' id='bubble'>hello</div></div>"
+        "<textarea id='draft'></textarea></body></rml>");
+    ASSERT_NE(document_, nullptr);
+    document_->Show();
+    context_->Update();
+    msg_ = document_->GetElementById("msg");
+    draft_ = document_->GetElementById("draft");
+    ASSERT_NE(msg_, nullptr);
+    ASSERT_NE(draft_, nullptr);
+
+    ContextMenuHost& host = ContextMenuHost::Instance();
+    host.Install(context_);
+    host.SetCompactLayout(true);
+    host.SetAnchorResolver([](ui::Element* target) -> ui::Element* {
+      for (ui::Element* cur = target; cur; cur = cur->GetParentNode()) {
+        if (cur->HasAttribute("message-id")) {
+          return cur;
+        }
+      }
+      return nullptr;
+    });
+    static const bool registered = [] {
+      ContextMenuHost::Instance().RegisterProvider([](const ContextMenuRequest& request) {
+        return g_message_actions ? (*g_message_actions)(request) : std::vector<ContextMenuAction>{};
+      });
+      return true;
+    }();
+    (void)registered;
+    message_actions_ = [this](const ContextMenuRequest& request) {
+      std::vector<ContextMenuAction> actions;
+      if (!request.target || (request.target != msg_ && !msg_->Contains(request.target))) {
+        return actions;
+      }
+      ContextMenuAction edit;
+      edit.id = "edit_message";
+      edit.label = "Edit";
+      edit.run = [this] { // as ChatController::StartEditMessage: the words go into the composer, which takes the focus
+        ++edits_;
+        draft_->Focus();
+      };
+      actions.push_back(std::move(edit));
+      ContextMenuAction copy;
+      copy.id = "copy_message";
+      copy.label = "Copy";
+      copy.run = [this] { ++copies_; };
+      actions.push_back(std::move(copy));
+      return actions;
+    };
+    g_message_actions = &message_actions_;
+  }
+
+  void TearDown() override {
+    g_message_actions = nullptr;
+    ContextMenuHost& host = ContextMenuHost::Instance();
+    host.Dismiss();
+    host.SetAnchorResolver(nullptr);
+    host.SetBottomInsetDp(0);
+    host.SetCompactLayout(false);
+    host.Install(nullptr);
+    if (context_) {
+      ui::RemoveContext("context-menu-keyboard-test");
+    }
+    if (initialized_) {
+      ui::Shutdown();
+    }
+    ui::SetSystemInterface(nullptr);
+    ui::SetRenderInterface(nullptr);
+  }
+
+  /** One UI turn in the app's order (Application's loop): the menu host, the inset the platform reports for the
+   *  keyboard (ShellHost::ApplySafeAreaLayout passes it on to the sheet), then the context. */
+  void Frame(const double seconds = 1.0 / 60.0) {
+    keyboard_.now += seconds;
+    ContextMenuHost::Instance().Update();
+    ContextMenuHost::Instance().SetBottomInsetDp(keyboard_.up ? kKeyboardDp : 0);
+    context_->Update();
+  }
+
+  /** The composer has the focus and the keyboard is up. */
+  void StartTyping() {
+    ASSERT_TRUE(draft_->Focus());
+    Frame();
+    ASSERT_TRUE(keyboard_.up);
+    ASSERT_EQ(context_->GetFocusElement(), draft_);
+    keyboard_.activations = 0;
+    keyboard_.deactivations = 0;
+  }
+
+  /** A finger held on the message's bubble past the long-press time; the sheet opens under it. */
+  void PressAndHoldMessage() {
+    context_->ProcessTouchStart(ui::TouchList{touch_}, 0);
+    Frame();
+    Frame(0.6);
+  }
+
+  void Lift() { context_->ProcessTouchEnd(ui::TouchList{touch_}, 0); }
+
+  ui::Element* SheetRow(const std::string& label) {
+    ui::Element* layer = document_->GetElementById("context-menu-layer");
+    if (!layer) {
+      return nullptr;
+    }
+    ui::ElementList rows;
+    layer->GetElementsByClassName(rows, "context-menu-item");
+    for (ui::Element* row : rows) {
+      if (row->GetInnerRML().find(label) != std::string::npos) {
+        return row;
+      }
+    }
+    return nullptr;
+  }
+
+  void Tap(ui::Element* element) {
+    element->DispatchEvent(ui::EventId::Mousedown, Pointer(100, 600));
+    element->DispatchEvent(ui::EventId::Mouseup, Pointer(100, 600));
+    element->DispatchEvent(ui::EventId::Click, Pointer(100, 600));
+  }
+
+  NullRender renderer_;
+  FakeKeyboard keyboard_;
+  bool initialized_ = false;
+  ui::Context* context_ = nullptr;
+  ui::ElementDocument* document_ = nullptr;
+  ui::Element* msg_ = nullptr;
+  ui::Element* draft_ = nullptr;
+  ui::Touch touch_{1, {50.f, 60.f}};
+  std::function<std::vector<ContextMenuAction>(const ContextMenuRequest&)> message_actions_;
+  int edits_ = 0;
+  int copies_ = 0;
+};
+
+TEST_F(ContextMenuKeyboardTest, ALongPressWhileTypingKeepsTheKeyboardAndTheSheetStill) {
+  StartTyping();
+  PressAndHoldMessage();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  const std::string opened_at = PanelBottom(document_);
+  ASSERT_EQ(opened_at, "300px");
+
+  Lift();
+  for (int i = 0; i < 10; ++i) {
+    Frame();
+    EXPECT_EQ(PanelBottom(document_), opened_at) << "frame " << i;
+  }
+  EXPECT_TRUE(ContextMenuHost::Instance().IsOpen());
+  EXPECT_EQ(keyboard_.deactivations, 0);
+  EXPECT_TRUE(keyboard_.up);
+  EXPECT_EQ(context_->GetFocusElement(), draft_);
+}
+
+TEST_F(ContextMenuKeyboardTest, EditFromTheSheetKeepsTheKeyboardUpThroughout) {
+  StartTyping();
+  PressAndHoldMessage();
+  Lift();
+  Frame();
+  ui::Element* edit = SheetRow("Edit");
+  ASSERT_NE(edit, nullptr);
+
+  Tap(edit);
+  for (int i = 0; i < 5; ++i) {
+    Frame();
+  }
+  EXPECT_EQ(edits_, 1);
+  EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
+  EXPECT_EQ(keyboard_.deactivations, 0) << "the keyboard went down and came back up";
+  EXPECT_TRUE(keyboard_.up);
+  EXPECT_EQ(context_->GetFocusElement(), draft_);
+}
+
+TEST_F(ContextMenuKeyboardTest, AnotherRowOrClosingTheSheetLeavesTheKeyboardAsItWas) {
+  StartTyping();
+  PressAndHoldMessage();
+  Lift();
+  Frame();
+  ui::Element* copy = SheetRow("Copy");
+  ASSERT_NE(copy, nullptr);
+  Tap(copy);
+  Frame();
+  EXPECT_EQ(copies_, 1);
+  EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
+
+  PressAndHoldMessage();
+  Lift();
+  Frame();
+  ui::Element* scrim = document_->GetElementById("context-menu-scrim");
+  ASSERT_NE(scrim, nullptr);
+  Tap(scrim);
+  Frame();
+  EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
+
+  EXPECT_EQ(keyboard_.deactivations, 0);
+  EXPECT_TRUE(keyboard_.up);
+  EXPECT_EQ(context_->GetFocusElement(), draft_);
+}
+
+TEST_F(ContextMenuKeyboardTest, ATapOnAMessageWhileTypingStillPutsTheKeyboardAway) {
+  StartTyping();
+  context_->ProcessTouchStart(ui::TouchList{touch_}, 0);
+  Frame();
+  Lift();
+  Frame();
+  EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
+  EXPECT_EQ(keyboard_.deactivations, 1);
+  EXPECT_NE(context_->GetFocusElement(), draft_);
+}
+
+TEST_F(ContextMenuKeyboardTest, AfterTheSheetClosesATapOnTheMessageStillPutsTheKeyboardAway) {
+  StartTyping();
+  PressAndHoldMessage();
+  Lift();
+  Frame();
+  Tap(document_->GetElementById("context-menu-scrim"));
+  Frame();
+  ASSERT_FALSE(ContextMenuHost::Instance().IsOpen());
+  ASSERT_EQ(keyboard_.deactivations, 0);
+
+  context_->ProcessTouchStart(ui::TouchList{touch_}, 0);
+  Frame();
+  Lift();
+  Frame();
+  EXPECT_EQ(keyboard_.deactivations, 1);
+  EXPECT_NE(context_->GetFocusElement(), draft_);
+}
+
+TEST_F(ContextMenuKeyboardTest, ALongPressWithoutTheKeyboardOpensTheSheetAsBefore) {
+  ASSERT_FALSE(keyboard_.up);
+  PressAndHoldMessage();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  EXPECT_EQ(PanelBottom(document_), "0px");
+  Lift();
+  Frame();
+  EXPECT_TRUE(ContextMenuHost::Instance().IsOpen());
+  EXPECT_EQ(PanelBottom(document_), "0px");
+  EXPECT_EQ(keyboard_.activations, 0);
+  EXPECT_EQ(keyboard_.deactivations, 0);
+  EXPECT_EQ(msg_->GetLocalProperty("focus"), nullptr);
+}
+
+// The composer's own sheets (the plus menu and the like) open from ShowActions, not from a long press: nothing about
+// them changes.
+TEST_F(ContextMenuKeyboardTest, ASheetOpenedFromAButtonWhileTypingIsUnchanged) {
+  StartTyping();
+  ContextMenuHost::Instance().ShowActions({10, 600}, OneAction());
+  Frame();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  EXPECT_EQ(PanelBottom(document_), "300px");
+  EXPECT_EQ(msg_->GetLocalProperty("focus"), nullptr);
+  Tap(document_->GetElementById("context-menu-scrim"));
+  Frame();
+  EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
+  EXPECT_EQ(keyboard_.deactivations, 0);
+  EXPECT_EQ(context_->GetFocusElement(), draft_);
+}
+
+// The desktop's pointer menu (right click) is not a touch: it holds no focus back.
+TEST_F(ContextMenuKeyboardTest, ADesktopRightClickMenuHoldsNoFocus) {
+  ContextMenuHost::Instance().SetCompactLayout(false);
+  ASSERT_TRUE(draft_->Focus());
+  Frame();
+  ASSERT_TRUE(ContextMenuHost::Instance().OnContextPointer(context_, 50, 60));
+  Frame();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  EXPECT_EQ(msg_->GetLocalProperty("focus"), nullptr);
+}
+
+// Kenneth 2026-11-12: a call record row in a chat opens no menu; one tap on it calls back. The long press on it must
+// leave things as they were: no sheet, no click when the finger lifts (that would call back), and a keyboard that is
+// up stays up.
+namespace {
+class ClickCounter : public ui::EventListener {
+public:
+  void ProcessEvent(ui::Event&) override { ++clicks; }
+  int clicks = 0;
+};
+} // namespace
+
+TEST_F(ContextMenuKeyboardTest, AnEmptyMenuLongPressShowsNothingAndItsLiftIsNoTap) {
+  message_actions_ = [](const ContextMenuRequest&) { return std::vector<ContextMenuAction>{}; };
+  ClickCounter counter;
+  msg_->AddEventListener(ui::EventId::Click, &counter);
+  PressAndHoldMessage();
+  EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
+  EXPECT_EQ(document_->GetElementById("context-menu-layer"), nullptr);
+  Lift();
+  for (int i = 0; i < 3; ++i) {
+    Frame();
+  }
+  EXPECT_EQ(counter.clicks, 0) << "the lift after a long press called back";
+  // The next plain tap is a tap again.
+  context_->ProcessTouchStart(ui::TouchList{touch_}, 0);
+  Frame();
+  Lift();
+  Frame();
+  EXPECT_EQ(counter.clicks, 1);
+  msg_->RemoveEventListener(ui::EventId::Click, &counter);
+}
+
+TEST_F(ContextMenuKeyboardTest, AnEmptyMenuLongPressWhileTypingLeavesTheKeyboardAndFocusAsTheyWere) {
+  message_actions_ = [](const ContextMenuRequest&) { return std::vector<ContextMenuAction>{}; };
+  StartTyping();
+  PressAndHoldMessage();
+  Lift();
+  for (int i = 0; i < 3; ++i) {
+    Frame();
+  }
+  EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
+  EXPECT_EQ(keyboard_.deactivations, 0);
+  EXPECT_TRUE(keyboard_.up);
+  EXPECT_EQ(context_->GetFocusElement(), draft_);
+  EXPECT_EQ(msg_->GetLocalProperty("focus"), nullptr);
+  // No residue: a tap on the message still puts the keyboard away.
+  context_->ProcessTouchStart(ui::TouchList{touch_}, 0);
+  Frame();
+  Lift();
+  Frame();
+  EXPECT_EQ(keyboard_.deactivations, 1);
+  EXPECT_NE(context_->GetFocusElement(), draft_);
+}
+
+// Kenneth 2026-11-12 (Mac): a right click on a message near the window's bottom edge opened the list below the message
+// and the window cut off its last items (Delete among them). The list now stays inside the window: above the message
+// when there is no room below, and in the measured height, not an estimate.
+class DesktopMessageMenuTest : public testing::Test {
+protected:
+  static constexpr float kW = 600.f;
+  static constexpr float kH = 500.f;
+
+  void SetUp() override {
+    ui::SetRenderInterface(&renderer_);
+    initialized_ = ui::Initialise();
+    ASSERT_TRUE(initialized_);
+    context_ = ui::CreateContext("desktop-message-menu-test", {600, 500});
+    ASSERT_NE(context_, nullptr);
+    document_ = context_->LoadDocumentFromMemory(
+        "<rml><head><style>body { display: block; width: 600px; height: 500px; margin: 0; } div { display: block; } "
+        ".row { position: absolute; width: 200px; height: 40px; } "
+        "#mid { top: 230px; left: 100px; } #bottom { top: 455px; left: 100px; } "
+        "#corner { top: 455px; left: 400px; } #topmost { top: 2px; left: 100px; } "
+        ".context-menu-layer { position: fixed; top: 0; left: 0; right: 0; bottom: 0; } "
+        ".context-menu-scrim { position: absolute; top: 0; left: 0; right: 0; bottom: 0; } "
+        ".context-menu-panel { position: absolute; min-width: 150px; padding: 4px; box-sizing: border-box; } "
+        ".context-menu-quick { display: flex; flex-direction: row; } "
+        ".context-menu-quick .context-menu-item { width: 36px; height: 36px; } "
+        ".context-menu-item { display: block; width: 150px; height: 36px; }</style></head>"
+        "<body><div class='row' id='mid' message-id='m1'>a</div><div class='row' id='bottom' message-id='m2'>b</div>"
+        "<div class='row' id='corner' message-id='m3'>c</div><div class='row' id='topmost' message-id='m4'>d</div>"
+        "</body></rml>");
+    ASSERT_NE(document_, nullptr);
+    document_->Show();
+    context_->Update();
+    ContextMenuHost& host = ContextMenuHost::Instance();
+    host.Install(context_);
+    host.SetCompactLayout(false);
+    host.SetAnchorResolver([](ui::Element* target) -> ui::Element* {
+      for (ui::Element* cur = target; cur; cur = cur->GetParentNode()) {
+        if (cur->HasAttribute("message-id")) {
+          return cur;
+        }
+      }
+      return nullptr;
+    });
+    static const bool registered = [] {
+      ContextMenuHost::Instance().RegisterProvider([](const ContextMenuRequest& request) {
+        return g_desktop_actions ? (*g_desktop_actions)(request) : std::vector<ContextMenuAction>{};
+      });
+      return true;
+    }();
+    (void)registered;
+    ItemCount(5);
+    g_desktop_actions = &actions_;
+  }
+
+  void TearDown() override {
+    g_desktop_actions = nullptr;
+    ContextMenuHost::Instance().Dismiss();
+    ContextMenuHost::Instance().SetAnchorResolver(nullptr);
+    ContextMenuHost::Instance().Install(nullptr);
+    if (context_) {
+      ui::RemoveContext("desktop-message-menu-test");
+    }
+    if (initialized_) {
+      ui::Shutdown();
+    }
+    ui::SetRenderInterface(nullptr);
+  }
+
+  /** Three quick emoji and `list` rows ending in Delete, as a message menu has them. */
+  void ItemCount(const int list) {
+    actions_ = [list](const ContextMenuRequest&) {
+      std::vector<ContextMenuAction> actions;
+      for (const char* emoji : {"1", "2", "+"}) {
+        ContextMenuAction react{std::string("react_") + emoji, emoji, nullptr, [] {}};
+        react.quick = true;
+        actions.push_back(std::move(react));
+      }
+      for (int i = 0; i + 1 < list; ++i) {
+        actions.push_back({"item" + std::to_string(i), "Item", nullptr, [] {}});
+      }
+      ContextMenuAction remove{"delete_message", "Delete", nullptr, [] {}};
+      remove.danger = true;
+      actions.push_back(std::move(remove));
+      return actions;
+    };
+  }
+
+  /** A right click at (x, y); the layout is the real one, measured after the menu is laid out. */
+  void RightClick(const int x, const int y) {
+    ASSERT_TRUE(ContextMenuHost::Instance().OnContextPointer(context_, x, y));
+    context_->Update();
+    ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  }
+
+  struct Box {
+    float left, top, right, bottom;
+  };
+  Box BoxOf(ui::Element* element) {
+    const ui::Vector2f at = element->GetAbsoluteOffset(ui::BoxArea::Border);
+    const ui::Vector2f size = element->GetBox().GetSize(ui::BoxArea::Border);
+    return {at.x, at.y, at.x + size.x, at.y + size.y};
+  }
+  void ExpectInside(const Box& box, const char* what) {
+    EXPECT_GE(box.left, 0.f) << what;
+    EXPECT_GE(box.top, 0.f) << what;
+    EXPECT_LE(box.right, kW) << what;
+    EXPECT_LE(box.bottom, kH) << what;
+  }
+  /** The whole menu (quick row and list) is inside the window and Delete is a clickable box inside it. */
+  void ExpectMenuVisible() {
+    ui::Element* panel = document_->GetElementById("context-menu-panel");
+    ui::Element* quick = document_->GetElementById("context-menu-quick");
+    ASSERT_NE(panel, nullptr);
+    ASSERT_NE(quick, nullptr);
+    ExpectInside(BoxOf(panel), "list");
+    ExpectInside(BoxOf(quick), "quick row");
+    ui::ElementList rows;
+    panel->GetElementsByClassName(rows, "context-menu-item");
+    ASSERT_FALSE(rows.empty());
+    ui::Element* last = rows.back();
+    EXPECT_NE(last->GetInnerRML().find("Delete"), std::string::npos);
+    const Box del = BoxOf(last);
+    ExpectInside(del, "Delete");
+    EXPECT_GT(del.bottom - del.top, 0.f);
+    // Clickable: the point at its centre hits Delete, not the window's edge or another layer.
+    const ui::Vector2f centre((del.left + del.right) / 2.f, (del.top + del.bottom) / 2.f);
+    ui::Element* hit = context_->GetElementAtPoint(centre);
+    ASSERT_NE(hit, nullptr);
+    bool inside_delete = false;
+    for (ui::Element* node = hit; node; node = node->GetParentNode()) {
+      inside_delete = inside_delete || node == last;
+    }
+    EXPECT_TRUE(inside_delete) << "Delete is not what is under its own centre";
+  }
+
+  std::function<std::vector<ContextMenuAction>(const ContextMenuRequest&)> actions_;
+  NullRender renderer_;
+  bool initialized_ = false;
+  ui::Context* context_ = nullptr;
+  ui::ElementDocument* document_ = nullptr;
+};
+
+TEST_F(DesktopMessageMenuTest, ASixItemMenuStaysInsideTheWindowNearTheBottomEdge) {
+  ItemCount(5); // quick row + four items + Delete
+  RightClick(150, 475);
+  ExpectMenuVisible();
+}
+
+TEST_F(DesktopMessageMenuTest, ASixItemMenuStaysInsideTheWindowInTheBottomRightCorner) {
+  RightClick(580, 490);
+  ExpectMenuVisible();
+}
+
+TEST_F(DesktopMessageMenuTest, ASixItemMenuStaysInsideTheWindowNearTheTopEdge) {
+  RightClick(150, 20);
+  ExpectMenuVisible();
+}
+
+TEST_F(DesktopMessageMenuTest, ASixItemMenuStaysInsideTheWindowInTheMiddle) {
+  RightClick(150, 250);
+  ExpectMenuVisible();
+}
+
+TEST_F(DesktopMessageMenuTest, AMenuTallerThanTheWindowScrollsInsideItAndKeepsDeleteReachable) {
+  ItemCount(14); // 14 rows of 36 px cannot fit in 500 px
+  RightClick(150, 475);
+  ui::Element* panel = document_->GetElementById("context-menu-panel");
+  ASSERT_NE(panel, nullptr);
+  ExpectInside(BoxOf(panel), "list");
+  ExpectInside(BoxOf(document_->GetElementById("context-menu-quick")), "quick row");
+}
+
+// Where there was always room the menu is where it was: the quick row above the message, the list under it.
+TEST_F(DesktopMessageMenuTest, InTheMiddleTheListStillOpensUnderTheMessage) {
+  RightClick(150, 250);
+  ui::Element* panel = document_->GetElementById("context-menu-panel");
+  ui::Element* quick = document_->GetElementById("context-menu-quick");
+  ASSERT_NE(panel, nullptr);
+  ASSERT_NE(quick, nullptr);
+  const Box anchor = BoxOf(document_->GetElementById("mid"));
+  EXPECT_GE(BoxOf(panel).top, anchor.bottom) << "the list is under the message";
+  EXPECT_LE(BoxOf(quick).bottom, anchor.top) << "the quick row is above the message";
+  EXPECT_NEAR(BoxOf(panel).top, anchor.bottom + 6.f, 1.f) << "the usual gap";
+}
+
 } // namespace pbr

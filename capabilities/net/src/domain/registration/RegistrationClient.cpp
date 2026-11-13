@@ -25,6 +25,9 @@ void ApplyRegistrationResult(LocalIdentity& identity, const RegistrationResult& 
   }
   if (result.success) {
     identity.kem_binding_published = result.kem_bound;
+    if (!result.registered_backend_url.empty()) {
+      identity.registered_backend_url = result.registered_backend_url;
+    }
   }
 }
 
@@ -71,9 +74,13 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
     return kem_binding.error();
   }
 
-  return registration.FinishRegistration(start->challenge, loaded->account_signing_public_key_b64, nickname, *signature,
-                                         timestamp, start->signature_alg, loaded->kem_public_key_b64, *kem_binding,
-                                         loaded->peer_id, multiaddrs, loaded->initiation_floor, publish);
+  auto finished = registration.FinishRegistration(
+      start->challenge, loaded->account_signing_public_key_b64, nickname, *signature, timestamp, start->signature_alg,
+      loaded->kem_public_key_b64, *kem_binding, loaded->peer_id, multiaddrs, loaded->initiation_floor, publish);
+  if (finished) {
+    finished->registered_backend_url = NormalizeRegistrationBackend(registration.BaseUrl());
+  }
+  return finished;
 }
 
 Roe<RegistrationResult> RenewNetworkOnly(IRegistrationClient& registration, IdentityStore& identity,
@@ -128,7 +135,9 @@ Roe<std::optional<RegistrationResult>> MaybeAutoRenewNetworkOnly(IRegistrationCl
     return loaded.error();
   }
   // A registration from before KEM key bindings publishes one now: peers take the KEM key only with it.
-  if (!ShouldPublishKemBinding(*loaded) && (!ShouldRenewRegistration(*loaded) || !auto_renew_enabled)) {
+  // A registration made at another backend (or by a build that did not record one) renews against this one.
+  const bool due = ShouldRenewRegistration(*loaded, 0, registration.BaseUrl());
+  if (!ShouldPublishKemBinding(*loaded) && (!due || !auto_renew_enabled)) {
     return std::optional<RegistrationResult>{};
   }
   auto result = RenewNetworkOnly(registration, identity, loaded->nickname);

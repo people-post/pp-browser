@@ -3,7 +3,7 @@
 ## P001 — Initiation floor + media quote gates (no payment rails yet)
 
 **Date:** 2026-08-08  
-**Status:** Accepted (first code slice)
+**Status:** Accepted (first code slice); item 7 (the floor published at directory registration) **amended by** [multi-relay MR005](../multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant): the floor is a field of the signed account card, and relays refuse a stranger's send below it (not built yet; today's registration field stays until then)
 
 ### Decision
 

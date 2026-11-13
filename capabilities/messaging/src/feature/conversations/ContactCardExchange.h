@@ -63,6 +63,21 @@ public:
   void RefreshIfMissing(const Contact& contact, std::function<void(bool kept)> done);
   static constexpr int64_t kRefetchAfterMs = 30 * 1000;
 
+  /** How asking a contact's devices for its account's card came out. */
+  enum class DeviceAsk {
+    NoDevice,   // no Account ID, or no device known to ask
+    Kept,       // a device answered with a card that checked out (kept)
+    NotReached, // no device answered with a card that held
+  };
+  /**
+   * The user asked for the contact to be refreshed (its page's Refresh): asks its devices — the newest kept
+   * card's, then the contact's own device rows — for its account's card even when one is kept, so a new
+   * device list, nickname or key comes in. Devices are asked at most once per kAskDevicesAgainAfterMs per
+   * account; within that, the last ask's outcome is the answer. `done` once, on any thread.
+   */
+  void AskDevices(const Contact& contact, std::function<void(DeviceAsk)> done);
+  static constexpr int64_t kAskDevicesAgainAfterMs = 15 * 1000;
+
 private:
   void FetchFromDevices(std::vector<std::string> devices, const std::string& account_id,
                         std::function<void(bool kept)> done);
@@ -70,6 +85,11 @@ private:
   void FetchCard(const std::string& account_id, std::vector<std::string> devices, std::function<void(bool kept)> done);
   std::mutex refetch_mutex_;
   std::unordered_map<std::string, int64_t> last_refetch_ms_;
+  struct LastAsk {
+    int64_t at_ms = 0;
+    DeviceAsk outcome = DeviceAsk::NotReached;
+  };
+  std::unordered_map<std::string, LastAsk> last_device_ask_;
   CardFetcher fetch_card_;
   std::function<void(std::function<void()>)> post_blocking_;
   ContactsStore& contacts_;

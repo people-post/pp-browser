@@ -347,11 +347,22 @@ Example (logical): `text = "Hi @Li Wei, all set"`, one mention of `acc-li` over 
 | Field | Encoding |
 |-------|----------|
 | `sub_version` | `u8` = **`1`** |
-| `annotation_type` | **LenUtf8** — `reaction` (add), `reaction_clear` (remove), or `retract` ("delete for everyone": the sender withdraws their own `target_message_id`; `value` empty; D104); other types reserved |
+| `annotation_type` | **LenUtf8** — `reaction` (add), `reaction_clear` (remove), `retract` ("delete for everyone": the sender withdraws their own `target_message_id`; `value` empty; D104), or `edit` (the sender replaces the text of their own `target_message_id`; D106); other types reserved |
 | `target_message_id` | **LenUtf8** (UUID of target message) |
-| `value` | **LenUtf8** — plain UTF-8 emoji string for reactions (not JSON object) |
+| `value` | **LenUtf8** — plain UTF-8 emoji string for reactions (not JSON object); for `edit`, the whole new text (plain text, at most 64 KiB like a typed message; empty in a blanked row, see below) |
 
 Top-level `text` is the display glyph for `reaction` (may be empty for `reaction_clear`, empty for `retract`). A receiver applies `retract` only when its sender is the target's sender and the target is a message (not an annotation or a system line): the target becomes a local tombstone (D103) and its bytes are deleted; a target arriving after its retract is stored as a tombstone. `retract` is exempt from the per-target annotation cap. **Chat history** (`ChatHistoryResponder`) serves annotation rows as annotations on E2E channels (left out on plaintext ones), and serves a message deleted on the sender's device as a **placeholder**: same `message_id` / seq, annotation `retract` whose `target_message_id` is its own `message_id`; the requester stores it as a tombstone, which fills the seq so its gap closes. See [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026) and D098.
+
+**`edit`** (D106). Top-level `text` equals `value`. No new field: the codec is the one above. A receiver applies an edit only when **all** of these hold, judged on the stored rows (sender = the verified envelope sender, time = the envelope `timestamp`, i.e. each message's own send time); otherwise it logs the reason (no content) and ignores it:
+1. the edit's sender is the target's sender (as `retract`; in a group no member, admin or owner edits another's message);
+2. the target is a text message (`text` / `text_spans`), not deleted;
+3. `value` is not empty and at most 64 KiB;
+4. 0 ≤ edit send time − target send time ≤ 15 minutes + 1 minute (an edit stamped before its message is refused). Both times are the author's own stamps; a receiver does not check them against its own clock or the time the edit arrived, so the window holds only for authors that stamp honestly;
+5. it is newer than the edit the target already carries: later send time, or the same time and the larger `message_id` (never the seq, which is per device and restarts on a reinstall).
+
+A text message stored with a rich body (`content_rml`, a locally drawn bubble; not on the wire) is not text for this rule: it is never offered for editing and an edit of it is refused as not text. A sender that voids an edit of its own before it went out (its message deleted, or edited again, on this device or by a sent copy from another of its devices) starts no further send of that edit (queued, or retried after a failed try); only a try already handed to the relay or a link, still on its way, can arrive.
+
+The sender stamps an edit when the user taps Send (never before the edit it already applied to that message + 1 ms, so a later edit from a second device wins whatever its clock, and never before the message itself), and the stamp travels unchanged through queueing, retries and history. Applied, the target row is rewritten in place (same id, seq, order and send time; plain text — spans dropped) and marked edited; the edit row is never shown, causes no unread count, preview bump or notice, and is exempt from the per-target annotation cap — neither it nor a `retract` counts toward it: the cap (32 per message) counts reactions and annotation types the receiver does not know, so a message edited many times still takes reactions. An edit that arrives before its target is stored and judged when the target arrives (the newest passing one applies). Only the applied edit row keeps its text: superseded or refused edit rows, and every edit row of a message that is deleted, are **blanked** (same `message_id`, seq, target and time; `value` and `text` empty), so seqs stay filled and nothing of an earlier version remains; an edit arriving for a deleted message is stored blanked. **Chat history** serves an edited message as its current text plus its edit row as sent (original `message_id` and `timestamp`, never re-stamped), so the requester applies it however late it asks; blanked rows go out blanked. An edit is copied to our other devices like a sent message (public chats and groups; not private chats). A client that does not know `edit` keeps the original text and shows the new text as a badge on it (or an unlinked row), as for any unknown annotation type.
 
 **`content_type = attachment` (relay blob upload a1):**
 
@@ -551,18 +562,28 @@ JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies ca
 
 ### Media frames
 
-One frame for every path a call's or broadcast's media takes: through a hop's fan-out, straight to the 1:1 peer, and from a broadcaster to its viewers (pp-cpp-mesh `mesh/l4/shared/MediaFrame.h`, [A029](../../projects/adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H2). Big endian:
+One frame for every path a call's or broadcast's media takes: through a hop's fan-out, straight to the 1:1 peer, and from a broadcaster to its viewers (pp-cpp-mesh `mesh/l4/shared/MediaFrame.h`, [A029](../../projects/adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H2; frame v4 since pp-cpp-mesh v8.0.0, [V066](../../projects/p2p-av-calls/DECISIONS.md)). Big endian:
 
 | Bytes | Field |
 |-------|-------|
-| 1 | version `3` (high nibble), `channel_type` << 2 (`0` Forward: audio, forwarded as it came; `1` LatestLossy: video, a hop drops it stale; other values refused — [MEDIA_CHANNELS § Channel type](MEDIA_CHANNELS.md#channel-type-relay-qos)), `mark` (bit 0: a keyframe) |
+| 1 | version `4` (high nibble), `channel_type` << 2 (`0` Forward: audio, forwarded as it came; `1` LatestLossy: video, a hop drops it stale; other values refused — [MEDIA_CHANNELS § Channel type](MEDIA_CHANNELS.md#channel-type-relay-qos)), `mark` (bit 0: a keyframe) |
 | 1 | `channel` ([MEDIA_CHANNELS](MEDIA_CHANNELS.md): audio `0x00`, video `0x10 \| level`) |
 | 4 | `stream_id`: the sender's (`PublisherStreamIdForIdentity`; `0` on a 1:1 call) |
-| 4 | `seq`: per sender instance and channel, from 1, only increasing |
+| 4 | `seq`: per sender instance and channel, from 1, only increasing — order, losses and duplicates, never a clock |
+| 4 | `capture_ts`: ms since the sender session started (its `instance`), of the frame's first sample (audio: the packet's first sample; video: the camera frame), wrapping at 2^32. A capture gap (a stalled or reopened microphone, an OS hold) shows as a jump, so a receiver schedules playout by it ([CALLS.md § Audio playout](../architecture/CALLS.md)) |
 | 8 | `instance`: random and nonzero, drawn where the sender's counters start |
+| 1 | `ext_len`: bytes of extensions that follow, 0–64 |
+| ext_len | extensions, each `type` (1) · `len` (1) · `value` (`len`) |
 | n + 16 | the payload sealed with the media key (XChaCha20-Poly1305), then its tag |
 
-The 18 B header is in the clear, so a hop routes and drops stale video without the key, and it is the seal's associated data together with a context: `call-media-sfu|<call_id>` through a hop, `call-media|<call_id>` on a 1:1 call, `broadcast-media|<program_id>|<join_handle>` for a broadcast. A frame never opens under another path, call or feature. The 24 B nonce is derived, never sent: `channel` (1), `stream_id` (4), `instance` (8), `seq` (4), the key epoch (4), three zero bytes. A sender refuses to seal a `seq` that did not move forward on its channel under one instance and epoch (`MediaFrameSendGuard`), so a bug drops a frame instead of repeating a nonce. A receiver refuses any other version (the relay frame v1 and the end-to-end body v2 before it).
+The header — the 22 B core, `ext_len` and the extensions — is in the clear, so a hop routes and drops stale video without the key, and it is the seal's associated data together with a context: `call-media-sfu|<call_id>` through a hop, `call-media|<call_id>` on a 1:1 call, `broadcast-media|<program_id>|<join_handle>` for a broadcast. A frame never opens under another path, call or feature, and no one can add, drop or change an extension or the capture time unseen. The 24 B nonce is derived, never sent: `channel` (1), `stream_id` (4), `instance` (8), `seq` (4), the key epoch (4), three zero bytes. A sender refuses to seal a `seq` that did not move forward on its channel under one instance and epoch (`MediaFrameSendGuard`), so a bug drops a frame instead of repeating a nonce.
+
+**Extensions** carry optional fields added later without a new version:
+- A receiver skips an extension type it does not know. The type's high bit (`0x80`) is **must understand**: a receiver that does not know such a type drops the frame. A hop routes by the core alone and forwards every frame whole, extensions it does not know included.
+- `ext_len` over 64, an extension running past the block, type `0`, or bytes left over in the block: the frame is malformed and dropped, by hops too.
+- Registry: no type is defined yet (`0` is invalid). A new optional field takes the next type here, with its meaning, and needs no version.
+
+The version changes only when the core, the seal or the nonce changes meaning; a receiver refuses any other version (v3 — an 18 B header without `capture_ts` and extensions — the relay frame v1 and the end-to-end body v2 before it).
 
 ## Versioning matrix
 

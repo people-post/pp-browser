@@ -33,6 +33,12 @@ struct SendRelayOptions {
    * (E027 `psk_rotate`, or call AutoKey pre-warm before the first CallInvite send).
    */
   std::optional<std::string> key_init_b64;
+  /**
+   * The message's id and send time, when the caller fixed them before the send: an edit is stamped when the user taps
+   * Send (its receivers judge that time), and a re-sent edit keeps its first time (DEV/PLAN-message-edit.md).
+   */
+  std::optional<std::string> message_id;
+  std::optional<int64_t> timestamp_ms;
 };
 
 } // namespace pbr

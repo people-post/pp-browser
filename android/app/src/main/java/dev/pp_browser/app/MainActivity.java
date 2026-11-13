@@ -244,6 +244,7 @@ public class MainActivity extends SDLActivity {
         PpCameraCapture.clearScratch(this);
         clearOpenDir(this);
         PpCallNotifications.init(this);
+        PpConnectionService.logLastKeepAlive(this);  // once per process: was it frozen or killed since?
         if (savedInstanceState == null) {
             PpCallNotifications.onActivityIntent(getIntent());  // Answer on a call notification started the app
         }
@@ -1386,12 +1387,81 @@ public class MainActivity extends SDLActivity {
         PpCallNotifications.endPendingPushCall();
     }
 
-    public void showIncomingCall(String callId, String callerName, boolean video) {
-        PpCallNotifications.showIncoming(callId, callerName, video);
+    public void showIncomingCall(String callId, String callerName, boolean video, boolean fullScreen) {
+        PpCallNotifications.showIncoming(callId, callerName, video, fullScreen);
     }
 
     public void endIncomingCall(String callId) {
         PpCallNotifications.endIncoming(callId);
+    }
+
+    /**
+     * For native DeviceScreenState_Android (the ring hand-back, asked every 300 ms while a call notification rings):
+     * bit 0 the screen is on (PowerManager.isInteractive), bit 1 the phone is locked (KeyguardManager.isKeyguardLocked);
+     * -1 when either cannot be asked (native then treats the app as not seen).
+     */
+    public int getCallScreenState() {
+        try {
+            final android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+            final android.app.KeyguardManager km =
+                    (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+            if (pm == null || km == null) {
+                return -1;
+            }
+            return (pm.isInteractive() ? 1 : 0) | (km.isKeyguardLocked() ? 2 : 0);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "screen state: " + e);
+            return -1;
+        }
+    }
+
+    /**
+     * For native DeviceRinger_Android (the app's own incoming ringtone follows the phone, read every 300 ms while it
+     * rings): {AudioManager ringer mode, NotificationManager interruption filter, STREAM_RING volume}; null when it
+     * cannot be asked (native then rings silently).
+     */
+    public int[] getRingerState() {
+        try {
+            final AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+            final NotificationManager nm = getSystemService(NotificationManager.class);
+            if (am == null || nm == null) {
+                return null;
+            }
+            return new int[] {am.getRingerMode(), nm.getCurrentInterruptionFilter(),
+                    am.getStreamVolume(AudioManager.STREAM_RING)};
+        } catch (RuntimeException e) {
+            Log.w(TAG, "ringer state: " + e);
+            return null;
+        }
+    }
+
+    /** The incoming-call vibration (the call notification's pattern, repeating) while the app's own ring vibrates. */
+    public void setRingVibration(boolean on) {
+        try {
+            final android.os.Vibrator vibrator = getSystemService(android.os.Vibrator.class);
+            if (vibrator == null) {
+                return;
+            }
+            if (!on) {
+                vibrator.cancel();
+                return;
+            }
+            if (!vibrator.hasVibrator()) {
+                return;
+            }
+            final long[] pattern = {0, 800, 800};
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                final AudioAttributes attributes = new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build();
+                vibrator.vibrate(android.os.VibrationEffect.createWaveform(pattern, 0), attributes);
+            } else {
+                vibrator.vibrate(pattern, 0);
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "ring vibration: " + e);
+        }
     }
 
     public void clearLocalNotification(String threadId) {

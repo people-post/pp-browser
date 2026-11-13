@@ -28,6 +28,13 @@ void McpClient::SetHttpPost(HttpPostFn post) {
   HttpPostSlot() = std::move(post);
 }
 
+void McpClient::SetHttpPostIfUnset(HttpPostFn post) {
+  std::lock_guard lock(HttpPostMutex());
+  if (!HttpPostSlot()) {
+    HttpPostSlot() = std::move(post);
+  }
+}
+
 namespace {
 
 Object EmptyObject() {
@@ -81,11 +88,16 @@ bool McpClient::StartHttp(const std::string& url) {
 }
 
 Roe<Object> McpClient::Request(const std::string& method, const Object& params, const long timeout_s) {
-  answered_ = false;
   if (http_) {
+    int64_t id = 0;
+    {
+      std::lock_guard lock(request_mutex_);
+      id = request_id_++;
+    }
+    answered_ = false;
     Object req;
     req.set("jsonrpc", "2.0");
-    req.set("id", static_cast<int64_t>(request_id_++));
+    req.set("id", id);
     req.set("method", method);
     req.set("params", params);
 
@@ -133,6 +145,8 @@ Roe<Object> McpClient::Request(const std::string& method, const Object& params, 
     return EmptyObject();
   }
 
+  std::lock_guard lock(request_mutex_); // one exchange at a time on the pipe
+  answered_ = false;
   if (!process_.IsActive()) {
     return Error("MCP process is not running");
   }
@@ -173,11 +187,11 @@ Roe<Object> McpClient::Request(const std::string& method, const Object& params, 
   return EmptyObject();
 }
 
-Roe<void> McpClient::Initialize() {
+Roe<void> McpClient::Initialize(const long timeout_s) {
   Object params;
   params.set("protocolVersion", "2024-11-05");
   params.set("capabilities", EmptyObject());
-  auto result = Request("initialize", params);
+  auto result = Request("initialize", params, timeout_s);
   if (!result) {
     log().error << "MCP initialize failed: " << result.error().message;
     return result.error();

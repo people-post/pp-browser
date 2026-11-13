@@ -6,7 +6,7 @@
 
 namespace pbr {
 
-bool StartMcpClient(McpClient& client, const McpConfig& config) {
+bool StartMcpClient(McpClient& client, const McpConfig& config, const long request_timeout_s) {
   if (!config.enabled || !config.IsConfigured()) {
     return false;
   }
@@ -23,7 +23,7 @@ bool StartMcpClient(McpClient& client, const McpConfig& config) {
   }
 
   if (client.IsRunning()) {
-    if (auto initialized = client.Initialize(); !initialized) {
+    if (auto initialized = client.Initialize(request_timeout_s); !initialized) {
       // HTTP is stateless per request: a failed initialize (typically the phone's network is not up yet at
       // launch) must not cost the server for the session; the next tools/list simply tries again. A stdio
       // server whose initialize failed is dropped: its process is not trustworthy (#300).
@@ -50,7 +50,7 @@ void McpRuntime::Stop() {
   custom.clear();
 }
 
-void McpRuntime::Start(const AppConfig& config, const AppConfig& defaults) {
+bool McpRuntime::Start(const AppConfig& config, const AppConfig& defaults, const long request_timeout_s) {
   std::lock_guard lock(mu_);
   if (promoted) {
     promoted->Stop();
@@ -63,11 +63,13 @@ void McpRuntime::Start(const AppConfig& config, const AppConfig& defaults) {
   }
   custom.clear();
 
+  bool all_started = true;
   const McpConfig promoted_config = ResolvePromotedMcp(config, defaults);
   if (promoted_config.IsConfigured()) {
     promoted = std::make_unique<McpClient>();
-    if (!StartMcpClient(*promoted, promoted_config)) {
+    if (!StartMcpClient(*promoted, promoted_config, request_timeout_s)) {
       promoted.reset();
+      all_started = !promoted_config.enabled; // a disabled server is not a failure
     }
   }
 
@@ -76,10 +78,13 @@ void McpRuntime::Start(const AppConfig& config, const AppConfig& defaults) {
       continue;
     }
     auto client = std::make_unique<McpClient>();
-    if (StartMcpClient(*client, entry)) {
+    if (StartMcpClient(*client, entry, request_timeout_s)) {
       custom.push_back(std::move(client));
+    } else {
+      all_started = false;
     }
   }
+  return all_started;
 }
 
 McpClient* McpRuntime::PromotedPtr() {

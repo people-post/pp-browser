@@ -4,6 +4,9 @@
 #include "common/Logger.h"
 
 #include <sqlite3.h>
+#include <functional>
+#include <memory>
+#include <utility>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -143,10 +146,114 @@ CallSession SessionFromStmt(sqlite3_stmt* stmt) {
   return session;
 }
 
+std::function<void()>& ReadHook() {
+  static std::function<void()> hook;
+  return hook;
+}
+
 } // namespace
+
+/** The shared read-only connection; closed when the store and every read in flight have let go of it. */
+struct SqliteCallSessionStore::ReadConnection {
+  explicit ReadConnection(sqlite3* opened) : db(opened) {}
+  ReadConnection(const ReadConnection&) = delete;
+  ReadConnection& operator=(const ReadConnection&) = delete;
+  ~ReadConnection() { sqlite3_close_v2(db); }
+
+  sqlite3* const db;
+  /**
+   * One statement at a time on the connection. Statements overlapping on one connection share a read transaction,
+   * so reads from two threads chained back to back could keep reading an old snapshot; one at a time, each read
+   * starts its own and sees the newest commit. It also keeps sqlite3_errmsg the read's own.
+   */
+  std::mutex statement_mutex;
+};
+
+/**
+ * One read on the shared connection: holds a reference to it and its statement lock for the read, and finalizes the
+ * statement on every return (an unfinalized statement would hold the connection on an old snapshot).
+ */
+class SqliteCallSessionStore::ReadStatement {
+public:
+  ReadStatement(std::shared_ptr<ReadConnection> connection, const char* sql) : connection_(std::move(connection)) {
+    if (ReadHook()) {
+      ReadHook()();
+    }
+    lock_ = std::unique_lock<std::mutex>(connection_->statement_mutex);
+    if (sqlite3_prepare_v2(connection_->db, sql, -1, &stmt_, nullptr) != SQLITE_OK) {
+      prepare_error_ = sqlite3_errmsg(connection_->db); // under the statement lock: this read's own message
+      sqlite3_finalize(stmt_);
+      stmt_ = nullptr;
+    }
+  }
+  ReadStatement(const ReadStatement&) = delete;
+  ReadStatement& operator=(const ReadStatement&) = delete;
+  // Finalize under the lock; then the lock goes, then the reference (members go in reverse order).
+  ~ReadStatement() { sqlite3_finalize(stmt_); }
+
+  explicit operator bool() const { return stmt_ != nullptr; }
+  sqlite3_stmt* Stmt() const { return stmt_; }
+  sqlite3* Db() const { return connection_->db; }
+  /** SQLite's words for why the statement did not prepare (SQL text and table names only, no row data). */
+  const std::string& PrepareError() const { return prepare_error_; }
+
+private:
+  std::shared_ptr<ReadConnection> connection_;
+  std::string prepare_error_;
+  std::unique_lock<std::mutex> lock_;
+  sqlite3_stmt* stmt_ = nullptr;
+};
 
 SqliteCallSessionStore::SqliteCallSessionStore(std::string profile_db_path)
     : profile_db_path_(std::move(profile_db_path)) {}
+
+Roe<std::shared_ptr<SqliteCallSessionStore::ReadConnection>> SqliteCallSessionStore::ReadDb() const {
+  std::lock_guard<std::mutex> lock(read_mutex_);
+  if (read_db_) {
+    return read_db_;
+  }
+  // A read-only connection cannot create the file or the tables: the writers' path makes them first (a fresh
+  // profile.db reads as empty, as when every read opened that way), and opens the WAL once.
+  auto writer = OpenDb();
+  if (!writer) {
+    return writer.error();
+  }
+  sqlite3_close(*writer);
+  sqlite3* db = nullptr;
+  if (sqlite3_open_v2(profile_db_path_.c_str(), &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nullptr) !=
+      SQLITE_OK) {
+    sqlite3_close(db); // a failed open still hands back a handle; none is kept half-open
+    return Error("Failed to open profile.db for call session reads");
+  }
+  sqlite3_busy_timeout(db, 5000);
+  ++read_opens_;
+  read_db_ = std::make_shared<ReadConnection>(db);
+  return read_db_;
+}
+
+size_t SqliteCallSessionStore::ReadConnectionOpensForTest() const {
+  std::lock_guard<std::mutex> lock(read_mutex_);
+  return read_opens_;
+}
+
+Roe<void> SqliteCallSessionStore::ExecOnReadConnectionForTest(const std::string& sql) const {
+  auto connection = ReadDb();
+  if (!connection) {
+    return connection.error();
+  }
+  std::lock_guard<std::mutex> lock((*connection)->statement_mutex);
+  char* err = nullptr;
+  if (sqlite3_exec((*connection)->db, sql.c_str(), nullptr, nullptr, &err) != SQLITE_OK) {
+    const std::string message = err ? err : "exec failed";
+    sqlite3_free(err);
+    return Error(message);
+  }
+  return {};
+}
+
+void SqliteCallSessionStore::SetReadHookForTest(std::function<void()> hook) {
+  ReadHook() = std::move(hook);
+}
 
 Roe<sqlite3*> SqliteCallSessionStore::OpenDb() const {
   if (auto gate = chat_store_gate::RequireOpen(profile_db_path_); !gate) {
@@ -230,47 +337,43 @@ Roe<void> SqliteCallSessionStore::UpsertSession(const CallSession& session) cons
 }
 
 Roe<std::optional<CallSession>> SqliteCallSessionStore::LoadSession(const std::string& call_id) const {
-  auto db = OpenDb();
+  auto db = ReadDb();
   if (!db) {
     return db.error();
   }
-  sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(*db,
-                         "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
-                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, planned_hop, "
-                         "planned_hop_ma, initiator_identity FROM call_sessions WHERE "
-                         "call_id = ? LIMIT 1;",
-                         -1, &stmt, nullptr) != SQLITE_OK) {
-    sqlite3_close(*db);
-    return Error("Failed to prepare call session load");
+  const ReadStatement read(std::move(*db),
+                           "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
+                           "created_at, ended_at, media_epoch, media_key_id, sfu_hint, planned_hop, "
+                           "planned_hop_ma, initiator_identity FROM call_sessions WHERE "
+                           "call_id = ? LIMIT 1;");
+  if (!read) {
+    return Error("Failed to prepare call session load: " + read.PrepareError());
   }
+  sqlite3_stmt* stmt = read.Stmt();
   sqlite3_bind_text(stmt, 1, call_id.c_str(), -1, SQLITE_TRANSIENT);
   std::optional<CallSession> result;
   const int rc = sqlite3_step(stmt);
   if (rc == SQLITE_ROW) {
     result = SessionFromStmt(stmt);
   }
-  WarnIfStepFailed("LoadSession", *db, rc);
-  sqlite3_finalize(stmt);
-  sqlite3_close(*db);
+  WarnIfStepFailed("LoadSession", read.Db(), rc);
   return result;
 }
 
 Roe<std::vector<CallSession>> SqliteCallSessionStore::ListActiveSessions() const {
-  auto db = OpenDb();
+  auto db = ReadDb();
   if (!db) {
     return db.error();
   }
-  sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(*db,
-                         "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
-                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, planned_hop, "
-                         "planned_hop_ma, initiator_identity FROM call_sessions WHERE state "
-                         "!= 'ended' ORDER BY created_at DESC;",
-                         -1, &stmt, nullptr) != SQLITE_OK) {
-    sqlite3_close(*db);
-    return Error("Failed to prepare active call list");
+  const ReadStatement read(std::move(*db),
+                           "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
+                           "created_at, ended_at, media_epoch, media_key_id, sfu_hint, planned_hop, "
+                           "planned_hop_ma, initiator_identity FROM call_sessions WHERE state "
+                           "!= 'ended' ORDER BY created_at DESC;");
+  if (!read) {
+    return Error("Failed to prepare active call list: " + read.PrepareError());
   }
+  sqlite3_stmt* stmt = read.Stmt();
   std::vector<CallSession> rows;
   int rc = SQLITE_ROW;
   while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
@@ -278,32 +381,26 @@ Roe<std::vector<CallSession>> SqliteCallSessionStore::ListActiveSessions() const
   }
   if (rc != SQLITE_DONE) {
     // The rows read so far are not the active calls: a failed read is not "no call" (the call screen trusts it).
-    std::string failure = StepFailure("ListActiveSessions", *db, rc);
-    sqlite3_finalize(stmt);
-    sqlite3_close(*db);
-    return Error(std::move(failure));
+    return Error(StepFailure("ListActiveSessions", read.Db(), rc));
   }
-  sqlite3_finalize(stmt);
-  sqlite3_close(*db);
   return rows;
 }
 
 Roe<std::vector<CallSession>> SqliteCallSessionStore::ListSessionsForGroup(const std::string& group_id,
                                                                            const size_t limit) const {
-  auto db = OpenDb();
+  auto db = ReadDb();
   if (!db) {
     return db.error();
   }
-  sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(*db,
-                         "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
-                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, planned_hop, "
-                         "planned_hop_ma, initiator_identity FROM call_sessions WHERE origin_group_id = ? "
-                         "ORDER BY created_at DESC LIMIT ?;",
-                         -1, &stmt, nullptr) != SQLITE_OK) {
-    sqlite3_close(*db);
-    return Error("Failed to prepare group call list");
+  const ReadStatement read(std::move(*db),
+                           "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
+                           "created_at, ended_at, media_epoch, media_key_id, sfu_hint, planned_hop, "
+                           "planned_hop_ma, initiator_identity FROM call_sessions WHERE origin_group_id = ? "
+                           "ORDER BY created_at DESC LIMIT ?;");
+  if (!read) {
+    return Error("Failed to prepare group call list: " + read.PrepareError());
   }
+  sqlite3_stmt* stmt = read.Stmt();
   sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int64(stmt, 2, static_cast<sqlite3_int64>(limit));
   std::vector<CallSession> rows;
@@ -311,35 +408,30 @@ Roe<std::vector<CallSession>> SqliteCallSessionStore::ListSessionsForGroup(const
   while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
     rows.push_back(SessionFromStmt(stmt));
   }
-  WarnIfStepFailed("ListSessionsForGroup", *db, rc);
-  sqlite3_finalize(stmt);
-  sqlite3_close(*db);
+  WarnIfStepFailed("ListSessionsForGroup", read.Db(), rc);
   return rows;
 }
 
 Roe<std::vector<CallSession>> SqliteCallSessionStore::ListRecentSessions(const size_t limit) const {
-  auto db = OpenDb();
+  auto db = ReadDb();
   if (!db) {
     return db.error();
   }
-  sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(*db,
-                         "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
-                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, planned_hop, "
-                         "planned_hop_ma, initiator_identity FROM call_sessions ORDER BY created_at DESC LIMIT ?;",
-                         -1, &stmt, nullptr) != SQLITE_OK) {
-    sqlite3_close(*db);
-    return Error("Failed to prepare recent call list");
+  const ReadStatement read(std::move(*db),
+                           "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
+                           "created_at, ended_at, media_epoch, media_key_id, sfu_hint, planned_hop, "
+                           "planned_hop_ma, initiator_identity FROM call_sessions ORDER BY created_at DESC LIMIT ?;");
+  if (!read) {
+    return Error("Failed to prepare recent call list: " + read.PrepareError());
   }
+  sqlite3_stmt* stmt = read.Stmt();
   sqlite3_bind_int64(stmt, 1, static_cast<sqlite3_int64>(limit));
   std::vector<CallSession> rows;
   int rc = SQLITE_ROW;
   while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
     rows.push_back(SessionFromStmt(stmt));
   }
-  WarnIfStepFailed("ListRecentSessions", *db, rc);
-  sqlite3_finalize(stmt);
-  sqlite3_close(*db);
+  WarnIfStepFailed("ListRecentSessions", read.Db(), rc);
   return rows;
 }
 
@@ -395,19 +487,18 @@ Roe<void> SqliteCallSessionStore::UpsertParticipant(const CallParticipant& parti
 }
 
 Roe<std::vector<CallParticipant>> SqliteCallSessionStore::ListParticipants(const std::string& call_id) const {
-  auto db = OpenDb();
+  auto db = ReadDb();
   if (!db) {
     return db.error();
   }
-  sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(
-          *db,
-          "SELECT identity, state, audio_muted, video_enabled, joined_at, left_at, on_hold, video_paused, brought_by "
-          "FROM call_participants WHERE call_id = ? ORDER BY identity ASC;",
-          -1, &stmt, nullptr) != SQLITE_OK) {
-    sqlite3_close(*db);
-    return Error("Failed to prepare call participant list");
+  const ReadStatement read(
+      std::move(*db),
+      "SELECT identity, state, audio_muted, video_enabled, joined_at, left_at, on_hold, video_paused, brought_by "
+      "FROM call_participants WHERE call_id = ? ORDER BY identity ASC;");
+  if (!read) {
+    return Error("Failed to prepare call participant list: " + read.PrepareError());
   }
+  sqlite3_stmt* stmt = read.Stmt();
   sqlite3_bind_text(stmt, 1, call_id.c_str(), -1, SQLITE_TRANSIENT);
   std::vector<CallParticipant> rows;
   int rc = SQLITE_ROW;
@@ -427,13 +518,8 @@ Roe<std::vector<CallParticipant>> SqliteCallSessionStore::ListParticipants(const
   }
   if (rc != SQLITE_DONE) {
     // Part of a call's people is not its people: FindParticipant / CountJoined answer from these rows.
-    std::string failure = StepFailure("ListParticipants", *db, rc);
-    sqlite3_finalize(stmt);
-    sqlite3_close(*db);
-    return Error(std::move(failure));
+    return Error(StepFailure("ListParticipants", read.Db(), rc));
   }
-  sqlite3_finalize(stmt);
-  sqlite3_close(*db);
   return rows;
 }
 
@@ -509,19 +595,19 @@ Roe<void> SqliteCallSessionStore::UpsertPendingInvite(const PendingCallInvite& i
 
 Roe<std::optional<PendingCallInvite>> SqliteCallSessionStore::LoadPendingInvite(
     const std::string& call_id, const std::string& invitee_identity) const {
-  auto db = OpenDb();
+  auto db = ReadDb();
   if (!db) {
     return db.error();
   }
-  sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(*db,
-                         "SELECT call_id, invitee_identity, inviter_identity, media_mode, video_allowed, "
-                         "origin_thread_id, origin_group_id, sfu_hint, expires_at, created_at, status FROM "
-                         "pending_call_invites WHERE call_id = ? AND invitee_identity = ? LIMIT 1;",
-                         -1, &stmt, nullptr) != SQLITE_OK) {
-    sqlite3_close(*db);
-    return Error("Failed to prepare pending call invite load");
+  const ReadStatement read(std::move(*db),
+                           "SELECT call_id, invitee_identity, inviter_identity, media_mode, video_allowed, "
+                           "origin_thread_id, origin_group_id, sfu_hint, expires_at, created_at, status "
+                           "FROM "
+                           "pending_call_invites WHERE call_id = ? AND invitee_identity = ? LIMIT 1;");
+  if (!read) {
+    return Error("Failed to prepare pending call invite load: " + read.PrepareError());
   }
+  sqlite3_stmt* stmt = read.Stmt();
   sqlite3_bind_text(stmt, 1, call_id.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(stmt, 2, invitee_identity.c_str(), -1, SQLITE_TRANSIENT);
   std::optional<PendingCallInvite> result;
@@ -541,28 +627,26 @@ Roe<std::optional<PendingCallInvite>> SqliteCallSessionStore::LoadPendingInvite(
     invite.status = ColumnText(stmt, 10);
     result = std::move(invite);
   }
-  WarnIfStepFailed("LoadPendingInvite", *db, rc);
-  sqlite3_finalize(stmt);
-  sqlite3_close(*db);
+  WarnIfStepFailed("LoadPendingInvite", read.Db(), rc);
   return result;
 }
 
 Roe<std::vector<PendingCallInvite>> SqliteCallSessionStore::ListPendingInvitesForInvitee(
     const std::string& invitee_identity) const {
-  auto db = OpenDb();
+  auto db = ReadDb();
   if (!db) {
     return db.error();
   }
-  sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(*db,
-                         "SELECT call_id, invitee_identity, inviter_identity, media_mode, video_allowed, "
-                         "origin_thread_id, origin_group_id, sfu_hint, expires_at, created_at, status FROM "
-                         "pending_call_invites WHERE invitee_identity = ? AND status = 'pending' ORDER BY "
-                         "created_at DESC;",
-                         -1, &stmt, nullptr) != SQLITE_OK) {
-    sqlite3_close(*db);
-    return Error("Failed to prepare pending call invite list");
+  const ReadStatement read(std::move(*db),
+                           "SELECT call_id, invitee_identity, inviter_identity, media_mode, video_allowed, "
+                           "origin_thread_id, origin_group_id, sfu_hint, expires_at, created_at, status "
+                           "FROM "
+                           "pending_call_invites WHERE invitee_identity = ? AND status = 'pending' ORDER BY "
+                           "created_at DESC;");
+  if (!read) {
+    return Error("Failed to prepare pending call invite list: " + read.PrepareError());
   }
+  sqlite3_stmt* stmt = read.Stmt();
   sqlite3_bind_text(stmt, 1, invitee_identity.c_str(), -1, SQLITE_TRANSIENT);
   std::vector<PendingCallInvite> rows;
   int rc = SQLITE_ROW;
@@ -581,9 +665,7 @@ Roe<std::vector<PendingCallInvite>> SqliteCallSessionStore::ListPendingInvitesFo
     invite.status = ColumnText(stmt, 10);
     rows.push_back(std::move(invite));
   }
-  WarnIfStepFailed("ListPendingInvitesForInvitee", *db, rc);
-  sqlite3_finalize(stmt);
-  sqlite3_close(*db);
+  WarnIfStepFailed("ListPendingInvitesForInvitee", read.Db(), rc);
   return rows;
 }
 

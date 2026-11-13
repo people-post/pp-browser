@@ -11,6 +11,7 @@
 #include "lib/media/DeviceVitals.h"
 #include "lib/media/ThreadCpu.h"
 #include "gui/UiFrameStats.h"
+#include "gui/shell/ShellBaseHide.h"
 #include "common/media/CallMediaHealth.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/CallHopAttachLogic.h"
@@ -18,10 +19,14 @@
 #include "lib/people/AvatarGlyph.h"
 #include "lib/people/ContactTypes.h"
 #include "foundation/runtime/AppLifecycle.h"
-#include "foundation/runtime/FramePacing.h"
+#include "gui/CallVideoFrameWake.h"
+#include "gui/CallRosterCache.h"
+#include "gui/CallVideoTiles.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/CallSystemUi.h"
+#include "foundation/platform/DeviceRinger.h"
+#include "foundation/platform/DeviceScreenState.h"
 #include "foundation/platform/IAssetLocator.h"
 #include "foundation/platform/OngoingCallService.h"
 #include "foundation/platform/Platform.h"
@@ -29,6 +34,7 @@
 #include "foundation/platform/PendingNotificationTap.h"
 #include "gui/CallStatusHint.h"
 #include "feature/presenters/CallRingSteps.h"
+#include "feature/presenters/CallRingerOutput.h"
 #include "feature/presenters/CallStepScroll.h"
 #include "feature/presenters/CallStoryList.h"
 #include "lib/ui/ShellTypes.h"
@@ -76,10 +82,17 @@ CallController::CallController()
               .leave = [this]() { (void)presenter_.Leave(); },
               .display_name = [this](const std::string& identity) { return CallerNameFor(identity).label; },
               .now_ms = {},
+              // The ring came back from the phone's call screen, or went to it: draw it where it is now.
+              .ring_moved = [this]() { Render(); },
+              .screen_state = []() { return ReadDeviceScreenState(); },
+              .pin_locked = [this]() { return pin_locked_ && pin_locked_(); },
           }),
       local_hold_(LocalHoldPorts()) {
   redirectLogger("CallController");
   CallRingtone::SetRingSoundPath(IAssetLocator::Instance().Resolve("sounds/call_ring.wav"));
+  // The incoming ringtone follows the phone's ringer (silent, vibrate, Do Not Disturb, volume 0); the ringback does not.
+  ringtone_.SetOutputPorts(
+      {.read = [this]() { return ReadRingOutput(); }, .vibrate = [](const bool on) { SetDeviceRingVibration(on); }});
   CallPresenter::Callbacks callbacks;
   callbacks.on_changed = [this]() { Render(); };
   callbacks.notify = [this](const CallNotice& notice) { ShowNotice(notice); };
@@ -133,6 +146,7 @@ CallController::CallController()
 }
 
 CallController::~CallController() {
+  AppRuntime::CancelCoordinatorTimer(ring_timer_);
   OngoingCallService::SetHangUpHandler({});
   AppLifecycle::RemoveListener(background_listener_);
   AppLifecycle::RemoveListener(foreground_listener_);
@@ -210,6 +224,10 @@ void CallController::SyncLocalHold() {
 }
 
 void CallController::OnAppBackground() {
+  // The app rings and the user left: the phone's call screen takes the ring now, not only at the next timer tick (a
+  // UI thread paused in the background never runs it). Not IsVisible(): it clears only after this listener (Android
+  // sends both at onPause, and only Android has the phone's call screen).
+  system_call_screen_.Reevaluate(false);
   auto* backend = Backend();
   if (!Platform::IsMobile() || !backend || !backend->Available() || presenter_.ActiveCallId().empty()) {
     return;
@@ -219,6 +237,8 @@ void CallController::OnAppBackground() {
 
 void CallController::OnAppForeground() {
   local_hold_.OnAppForeground();
+  // Back in front with the phone's call screen ringing for us: its settle time counts from now (the timer hands over).
+  system_call_screen_.Reevaluate(AppLifecycle::IsVisible());
 }
 
 namespace {
@@ -364,6 +384,8 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
                                    in_call.self_avatar_tone),
       .in_call_phone_failed = in_call.phone_failed,
       .in_call_failed_text = in_call.failed_text.c_str(),
+      .in_call_offer_redial = in_call.offer_redial,
+      .in_call_failed_kept = in_call.failed_kept,
       .in_call_story_active = in_call.story_active,
       .in_call_story_stage = in_call.story_stage,
       .in_call_story_steps = std::string(in_call.story_step1.c_str()) + "|" + in_call.story_step2.c_str() + "|" +
@@ -464,16 +486,6 @@ std::string ComposeGroupCallStatusHint() {
   return Tr("call.hint.group_media");
 }
 
-/** An engine frame as the tiles take it. */
-CallVideoTileRenderer::Frame TileFrame(IMediaView::VideoTileFrame&& tile) {
-  CallVideoTileRenderer::Frame frame;
-  frame.width = tile.width;
-  frame.height = tile.height;
-  frame.seq = tile.seq;
-  frame.rgba = std::move(tile.rgba);
-  return frame;
-}
-
 /** The remote stage's words where there is no picture ("": none). */
 const char* PlaceholderKey(const CallStagePlaceholder placeholder) {
   switch (placeholder) {
@@ -487,10 +499,6 @@ const char* PlaceholderKey(const CallStagePlaceholder placeholder) {
       break;
   }
   return "";
-}
-
-uint32_t RowStream(const CallRosterParticipantState& row) {
-  return static_cast<uint32_t>(std::strtoul(row.stream_id.c_str(), nullptr, 10));
 }
 
 } // namespace
@@ -510,6 +518,10 @@ void CallController::BindPeerLinkRefresh(std::function<void()> callback) {
 
 void CallController::BindOpenThread(std::function<void(const std::string& thread_id)> callback) {
   open_thread_ = std::move(callback);
+}
+
+void CallController::BindPinLocked(std::function<bool()> pin_locked) {
+  pin_locked_ = std::move(pin_locked);
 }
 
 void CallController::BindPeoplePickerNotify(PeoplePickerNotifyPorts ports) {
@@ -581,12 +593,19 @@ void CallController::BindVideoFrameWake(IMediaView& media) {
     return;
   }
   video_wake_bound_ = &media;
-  // Any thread (the camera's, a decoder's): a new frame to draw. Nothing else wakes the frame loop for it.
-  media.SetOnVideoFrame([last = std::make_shared<std::atomic<int64_t>>(0)]() {
-    if (TakeVideoFrameWake(*last, util::NowUnixMs())) {
-      Backend::RequestForceFrame();
-    }
-  });
+  // Any thread (the camera's, a decoder's): a new frame to draw. Nothing else wakes the frame loop for it. At most
+  // one wake per frame at 15 fps; a frame held back in a window is woken for when it ends (a coordinator one-shot
+  // that holds only the gate, never this controller).
+  auto gate = CallVideoFrameWake::Create([] { return CallVideoFrameWake::SteadyNowMs(); },
+                                         [](const int64_t delay_ms, std::function<void()> fire) {
+                                           AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(delay_ms),
+                                                                                  std::move(fire));
+                                         },
+                                         [] {
+                                           UiCostCounters::Instance().AddVideoWake();
+                                           Backend::RequestForceFrame();
+                                         });
+  media.SetOnVideoFrame([gate = std::move(gate)]() { gate->OnFrame(); });
 }
 
 const DeviceVitals& CallController::Vitals(const int64_t now_ms) {
@@ -612,6 +631,9 @@ void CallController::EmitPerfThreads(const int64_t now_ms) {
   perf_proc_cpu_s_ = vitals.cpu_s;
   perf_sample_ms_ = now_ms;
   const UiFrameTotals frames = UiFrameStats::TakeAndReset();
+  const UiCostTotals cost = UiCostCounters::Instance().TakeAndReset();
+  const long long force_frame_requests = Backend::TakeForceFrameRequests();
+  const Backend::ProcessEventsCounts pe = Backend::TakeProcessEventsCounts();
   if (prev_sample_ms == 0) {
     return; // the first sample only sets the baseline
   }
@@ -628,7 +650,32 @@ void CallController::EmitPerfThreads(const int64_t now_ms) {
       .Add("remote_video", in_call_.remote_video)
       .Add("frames", frames.frames)
       .Add("layout_ms", static_cast<double>(frames.layout_us) / 1000.0)
-      .Add("render_ms", static_cast<double>(frames.render_us) / 1000.0);
+      .Add("render_ms", static_cast<double>(frames.render_us) / 1000.0)
+      .Add("call_tick_ms", static_cast<double>(cost.call_tick_us) / 1000.0)
+      .Add("chat_update_ms", static_cast<double>(cost.chat_update_us) / 1000.0)
+      .Add("shell_update_ms", static_cast<double>(cost.shell_update_us) / 1000.0)
+      .Add("ctx_update_ms", static_cast<double>(cost.ctx_update_us) / 1000.0)
+      .Add("roster_ms", static_cast<double>(cost.roster_us) / 1000.0)
+      .Add("tiles_ms", static_cast<double>(cost.tiles_us) / 1000.0)
+      .Add("roster_builds", cost.roster_builds)
+      .Add("icon_lookups", cost.icon_lookups)
+      .Add("frame_copies", cost.frame_copies)
+      .Add("frame_copies_stale", cost.frame_copies_stale)
+      .Add("video_wakes", cost.video_wakes)
+      .Add("chrome_force_frames_remount", cost.chrome_force_frames_remount)
+      .Add("chrome_force_frames_dirty", cost.chrome_force_frames_dirty)
+      .Add("chrome_force_frames_parts", cost.chrome_force_frames_parts)
+      .Add("chrome_force_frames_levels", cost.chrome_force_frames_levels)
+      .Add("ui_tasks", cost.ui_tasks)
+      .Add("loops", cost.loops)
+      .Add("force_frame_requests", static_cast<int64_t>(force_frame_requests))
+      .Add("pe_flag", static_cast<int64_t>(pe.flag))
+      .Add("pe_event_first", static_cast<int64_t>(pe.event_first))
+      .Add("pe_event_waited", static_cast<int64_t>(pe.event_waited))
+      .Add("pe_timeout", static_cast<int64_t>(pe.timeout))
+      .Add("pe_flag_waited", static_cast<int64_t>(pe.flag_waited))
+      .Add("pe_wake_swallowed", static_cast<int64_t>(pe.wake_swallowed))
+      .Add("base_hidden", ShellBaseHide::Hidden());
   for (size_t i = 0; i < top.size(); ++i) {
     line.Pick(kKeys[i], top[i].name, kKnownThreadNames).Add(kMsKeys[i], top[i].ms);
   }
@@ -721,6 +768,8 @@ void CallController::PrepareForShutdown() {
   }
   ring_ = {};
   ui_probe_.Stop();
+  AppRuntime::CancelCoordinatorTimer(ring_timer_);
+  ring_timer_ = 0;
   // Budgeted join before SDL_Quit — do not hang product quit on SDL device close.
   if (!ringtone_.StopAndJoin(CallRingtone::kDefaultShutdownJoinBudget)) {
     log().warning << "PrepareForShutdown: ringtone join budget exceeded — detached";
@@ -743,6 +792,7 @@ void CallController::ClearInCall() {
   last_story_notice_ = CallStoryNotice::None;
   story_sheet_open_ = false;
   group_titles_.clear();
+  roster_cache_.Clear();
   in_call_ = {};
   CallVideoTileRenderer::Instance().Clear();
 }
@@ -764,6 +814,9 @@ void CallController::SetChromeMode(CallChromeMode mode) {
   if (!AppRuntime::CurrentlyOnUI()) {
     AppRuntime::PostUI([this, mode]() { SetChromeMode(mode); });
     return;
+  }
+  if (in_call_.failed_kept) {
+    return; // the kept failed page has no call to shrink to the chip (the page's pull-down lands here too)
   }
   if (mode == CallChromeMode::Minimized) {
     if (chrome_mode_ != CallChromeMode::Minimized) {
@@ -945,6 +998,7 @@ void CallController::SyncRingtone() {
   // The phone's own call screen rings it: the app's stays quiet.
   const bool should_ring = ring_.active && !system_call_screen_.SystemRings(presenter_.Screen().ring_call_id);
   if (should_ring && !ringtone_.IsPlaying()) {
+    ringer_logged_.clear(); // each ring logs the phone's ringer once
     ringtone_.Start();
   } else if (!should_ring && ringtone_.IsPlaying()) {
     ringtone_.Stop();
@@ -960,6 +1014,42 @@ void CallController::SyncRingtone() {
   } else if (!should_ringback && ringback_.IsPlaying()) {
     StopRingback(backend);
   }
+  SyncRingTimer();
+}
+
+void CallController::SyncRingTimer() {
+  const bool wanted = system_call_screen_.WantsRingTimer(ringtone_.IsPlaying());
+  if (wanted && ring_timer_ == 0) {
+    ring_timer_ = AppRuntime::ScheduleCoordinatorRepeating(
+        kRingTimerInterval, [this]() { AppRuntime::PostUI([this]() { OnRingTimer(); }); });
+  } else if (!wanted && ring_timer_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(ring_timer_);
+    ring_timer_ = 0;
+  }
+}
+
+void CallController::OnRingTimer() {
+  if (ring_timer_ == 0) {
+    return; // stopped after this tick was posted
+  }
+  system_call_screen_.Reevaluate(AppLifecycle::IsVisible()); // may redraw (Render): the ring moved
+  ringtone_.Refresh();
+  SyncRingTimer();
+}
+
+CallRingtone::Output CallController::ReadRingOutput() {
+  const std::optional<DeviceRingerReading> reading = ReadDeviceRinger();
+  std::string seen = "unread";
+  if (reading) {
+    seen = "mode=" + std::to_string(reading->ringer_mode) + " filter=" + std::to_string(reading->interruption_filter) +
+           " ring_volume=" + std::to_string(reading->ring_volume);
+  }
+  if (seen != ringer_logged_) {
+    ringer_logged_ = seen;
+    log().info << "phone ringer " << seen;
+  }
+  const CallRingerOutput out = CallRingerOutputFor(reading);
+  return {.sound = out.sound, .vibrate = out.vibrate};
 }
 
 void CallController::StopRingback(CallUiBackend* backend) {
@@ -1084,6 +1174,13 @@ void CallController::ShowNotice(const CallNotice& notice) {
     case CallNotice::Kind::CallBlocked:
       UserFeedback::Note(Tr(notice.key));
       return;
+    case CallNotice::Kind::Hint:
+      if (notice.alarm) {
+        UserFeedback::Fail(Tr(notice.key));
+      } else {
+        UserFeedback::Note(Tr(notice.key));
+      }
+      return;
   }
 }
 
@@ -1119,6 +1216,9 @@ void CallController::Render() {
       peer_link_refresh_();
     }
   }
+  if (in_call_.failed_kept && screen.kind != CallScreen::Kind::None) {
+    ClearInCall(); // a call or a ring takes the kept failed page's place: nothing of that page carries over
+  }
   switch (screen.kind) {
     case CallScreen::Kind::Answering:
       RenderAnswering(screen, presenter_.MediaScreen(), now_ms);
@@ -1152,6 +1252,10 @@ void CallController::Render() {
         SyncShellState();
         return;
       }
+      if (const std::optional<CallFailedPage>& page = presenter_.FailedPage()) {
+        RenderFailedPage(*page, now_ms);
+        return;
+      }
       ClearInCall();
       // "Incoming call, connecting…" has no call screen behind it: only StepWakePlaceholder takes it down.
       if (!ring_.awaiting_invite) {
@@ -1160,6 +1264,44 @@ void CallController::Render() {
       SyncShellState();
       return;
   }
+}
+
+void CallController::RenderFailedPage(const CallFailedPage& page, const int64_t now_ms) {
+  if (!in_call_.failed_kept) {
+    ClearInCall(); // the call's chrome (its mode, the chip's place, the tiles) went with the call
+  }
+  if (!ring_.awaiting_invite) {
+    ClearRing();
+  }
+  // The live failed page's words and buttons, drawn from the kept page: a page, not a call (no media, no meters).
+  CallScreen shown;
+  shown.kind = CallScreen::Kind::InCall;
+  shown.status = CallScreen::Status::CouldntConnect;
+  shown.call_id = page.call_id;
+  shown.peer_identity = page.peer_identity;
+  shown.thread_id = page.thread_id;
+  shown.video = page.video;
+  shown.hint = CallScreen::Hint::DirectConnect;
+  shown.hint_missing_mic = page.hint_missing_mic;
+  shown.hint_seed_unreachable = page.hint_seed_unreachable;
+  auto& in_call = in_call_;
+  in_call.active = true;
+  in_call.failed_kept = true;
+  in_call.call_id = "";
+  in_call.title = page.video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
+  in_call.peer_label = CallerNameFor(page.peer_identity).label.c_str();
+  in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
+  in_call.status_hint = StatusHintText(shown.hint, shown).c_str();
+  in_call.quality_hint = "";
+  in_call.show_retry = true; // the desktop bar's icon: Call again
+  in_call.show_invite = false;
+  in_call.show_speaker = false;
+  in_call.show_camera = false;
+  in_call.show_flip = false;
+  in_call.calling = false;
+  ApplyChromeModeToState(in_call);
+  FillPhoneCallFields(shown, now_ms);
+  SyncShellState();
 }
 
 void CallController::RenderAnswering(const CallScreen& screen, const CallMediaScreen& frame, const int64_t now_ms) {
@@ -1340,7 +1482,7 @@ void CallController::FillInCallFromScreen(const CallScreen& screen, const int64_
                 .c_str()
           : "";
   FillGuestActions(in_call, screen);
-  FillRoster(in_call, screen);
+  FillRoster(in_call, screen, now_ms);
   ResetChromeForCall(screen.call_id, in_call.show_roster || phone_layout_); // phones: the full call page
   ApplyChromeModeToState(in_call);
   ApplySpotlightToState(in_call);
@@ -1350,40 +1492,25 @@ void CallController::FillInCallFromScreen(const CallScreen& screen, const int64_
   } else {
     in_call.title = screen.video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
   }
-  const std::string peer_label =
-      screen.peer_identity.empty() ? Tr("call.label.them") : CallerNameFor(screen.peer_identity).label;
+  const std::string peer_label = screen.peer_identity.empty()
+                                     ? Tr("call.label.them")
+                                     : roster_cache_.Name(screen.peer_identity, now_ms, RosterLookups()).label;
   in_call.peer_label = in_call.show_roster ? Tr("call.label.others").c_str() : peer_label.c_str();
   in_call.show_retry = screen.show_retry;
   in_call.calling = ShowsCancelCall(screen);
   FillPhoneCallFields(screen, now_ms);
 }
 
-void CallController::FillRoster(CallInProgressState& in_call, const CallScreen& screen) {
-  in_call.roster.clear();
-  in_call.roster.reserve(screen.members.size());
-  for (const CallScreen::Member& member : screen.members) {
-    CallRosterParticipantState entry;
-    entry.is_local = member.is_local;
-    const CallerName caller = member.is_local ? CallerName{} : CallerNameFor(member.identity);
-    const std::string name = member.is_local ? Tr("call.label.you") : caller.label;
-    entry.name = name.c_str();
-    entry.identity = member.identity.c_str();
-    if (const std::string avatar_path = IconPath(member.identity); !avatar_path.empty()) {
-      entry.has_avatar = true;
-      entry.avatar_src = avatar_path.c_str();
-    }
-    entry.avatar_unknown = caller.unknown && !entry.has_avatar;
-    const AvatarGlyph glyph = MakeAvatarGlyph(name, member.identity);
-    entry.avatar_letter = glyph.letter.c_str();
-    entry.avatar_tone = glyph.tone;
-    entry.stream_id = std::to_string(PublisherStreamIdForIdentity(member.identity)).c_str();
-    entry.audio_muted = member.audio_muted;
-    entry.video_enabled = member.video_enabled;
-    entry.on_hold = member.on_hold;
-    entry.video_paused = member.video_paused;
-    entry.guest = member.guest;
-    in_call.roster.push_back(std::move(entry));
-  }
+void CallController::FillRoster(CallInProgressState& in_call, const CallScreen& screen, const int64_t now_ms) {
+  UiCostTimer cost_timer(&UiCostCounters::AddRosterUs);
+  UiCostCounters::Instance().AddRosterBuild();
+  roster_cache_.ForCall(screen.call_id);
+  FillCallRoster(in_call.roster, screen.members, Tr("call.label.you"), roster_cache_, now_ms, RosterLookups());
+}
+
+CallRosterCache::Lookups CallController::RosterLookups() const {
+  return {.name = [this](const std::string& identity) { return CallerNameFor(identity); },
+          .icon = [this](const std::string& identity) { return IconPath(identity); }};
 }
 
 void CallController::ResetChromeForCall(const std::string& call_id, const bool full_page) {
@@ -1403,6 +1530,7 @@ void CallController::ResetChromeForCall(const std::string& call_id, const bool f
 }
 
 std::string CallController::IconPath(const std::string& identity) const {
+  UiCostCounters::Instance().AddIconLookup();
   return call_ports_.identity_icon_local_path && !identity.empty() ? call_ports_.identity_icon_local_path(identity)
                                                                    : std::string();
 }
@@ -1554,6 +1682,10 @@ void CallController::RetryConnect() {
   presenter_.Retry();
 }
 
+void CallController::RedialCall() {
+  presenter_.Redial();
+}
+
 // On hold (another call has the audio) PP muted the mic and paused the camera itself; a tap on those buttons meanwhile
 // hands the choice to the user (the end of the hold then changes nothing) — never a locked button (Kenneth 2026-11-06:
 // if the OS never says the hold ended, the user must be able to unmute by hand).
@@ -1679,8 +1811,11 @@ void CallController::ApplyVideo(IMediaView& media, CallUiBackend& backend, const
   if (!in_call.remote_video) {
     CallVideoTileRenderer::Instance().ClearRemote();
   }
-  SubmitVideoTiles(media, now_ms);
-  SubmitRosterTiles(media);
+  {
+    UiCostTimer cost_timer(&UiCostCounters::AddTilesUs);
+    SubmitVideoTiles(media, now_ms);
+    SubmitRosterTiles(media);
+  }
   ApplySpotlightToState(in_call); // the spotlight / strip copies take the rows' new video flags
   RequestVideoRefreshes(media, backend, frame.media, now_ms);
   in_call.stage_visible = frame.media.stage_visible || in_call.local_preview;
@@ -1690,41 +1825,15 @@ void CallController::ApplyVideo(IMediaView& media, CallUiBackend& backend, const
 
 void CallController::SubmitVideoTiles(IMediaView& media, const int64_t now_ms) {
   auto& in_call = in_call_;
-  IMediaView::VideoTileFrame local_tile;
-  in_call.local_preview = media.CopyLocalVideoFrame(local_tile);
-  bool self_new = false;
-  bool peer_new = false;
-  if (in_call.local_preview) {
-    self_new = local_tile.seq != last_shown_self_seq_;
-    last_shown_self_seq_ = local_tile.seq;
-    CallVideoTileRenderer::Instance().SubmitLocalFrame(TileFrame(std::move(local_tile)));
-  }
-  if (IMediaView::VideoTileFrame remote_tile; in_call.remote_video && media.CopyRemoteVideoFrame(remote_tile)) {
-    peer_new = remote_tile.seq != last_shown_peer_seq_;
-    last_shown_peer_seq_ = remote_tile.seq;
-    CallVideoTileRenderer::Instance().SubmitRemoteFrame(TileFrame(std::move(remote_tile)));
-  }
-  metrics_.NoteVideoFrame(in_call.local_preview, self_new, in_call.remote_video, peer_new, now_ms);
+  // Copied only when the tile does not already hold the frame (CallVideoTiles.h): most frames find nothing new.
+  const CallVideoTilesShown shown =
+      SubmitCallVideoTiles(media, CallVideoTileRenderer::Instance(), in_call.remote_video);
+  in_call.local_preview = shown.local_preview;
+  metrics_.NoteVideoFrame(in_call.local_preview, shown.self_new, in_call.remote_video, shown.peer_new, now_ms);
 }
 
 void CallController::SubmitRosterTiles(IMediaView& media) {
-  std::vector<uint32_t> live_peer_streams;
-  for (CallRosterParticipantState& row : in_call_.roster) {
-    if (row.is_local) {
-      row.has_remote_video = false;
-      continue;
-    }
-    const uint32_t stream = RowStream(row);
-    row.has_remote_video = stream != 0 && media.HasRemoteVideoForStream(stream);
-    if (!row.has_remote_video) {
-      continue;
-    }
-    live_peer_streams.push_back(stream);
-    if (IMediaView::VideoTileFrame peer_tile; media.CopyRemoteVideoFrameForStream(stream, peer_tile)) {
-      CallVideoTileRenderer::Instance().SubmitPeerFrame(stream, TileFrame(std::move(peer_tile)));
-    }
-  }
-  CallVideoTileRenderer::Instance().RetainPeers(live_peer_streams);
+  SubmitCallRosterTiles(media, CallVideoTileRenderer::Instance(), in_call_.roster);
 }
 
 void CallController::RequestVideoRefreshes(IMediaView& media, CallUiBackend& backend, const CallMediaDecision& media_d,
@@ -1776,7 +1885,8 @@ void CallController::ApplyStatusLine(const CallScreen& screen, const CallMediaSc
   in_call.elapsed = FormatTimer(frame.timer_since_ms, now_ms).c_str();
   in_call.subtitle = StatusLineText(frame.line, screen, now_ms).c_str();
   in_call.status_hint = StatusHintText(frame.line.hint, screen).c_str();
-  in_call.quality_hint = frame.hint_shown ? Tr(frame.hint_key).c_str() : "";
+  // The middle line as the presenter decided (a 1:1 call: never; the pills say it — DEV/PLAN-call-failed-redial.md 9).
+  in_call.quality_hint = frame.center_hint_key.empty() ? "" : Tr(frame.center_hint_key).c_str();
 }
 
 std::string CallController::StatusLineText(const CallStatusLine& line, const CallScreen& screen,
@@ -1857,8 +1967,10 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend& backend,
   const bool audio_fault = view.quality == CallPathQuality::NoAudio || view.asymmetry != CallAudioAsymmetry::None;
   if (audio_fault_gate_.Update(presenter_.ActiveCallId(), audio_fault, now_ms)) {
     if (!frame.hint_key.empty()) {
-      // The phone layout already shows this hint as the centered line; don't say it twice. The gate stays consumed.
-      if (CallAudioFaultToastGate::ShouldToastHint(frame.hint_shown, in_call.status_hint.empty())) {
+      // A 1:1 call's hint is the presenter's pill (hint_pilled). A group's: the phone layout already shows it as the
+      // centered line; don't say it twice. The gate stays consumed.
+      if (!frame.hint_pilled &&
+          CallAudioFaultToastGate::ShouldToastHint(frame.hint_shown, in_call.status_hint.empty())) {
         UserFeedback::Fail(Tr(frame.hint_key));
       }
     } else if (label_key && label_key[0]) {
@@ -2185,7 +2297,11 @@ void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t
   const bool group = answering ? screen.ring_group : screen.group;
   const std::string& peer = answering ? screen.caller_identity : screen.peer_identity;
   in_call.video = answering ? screen.answered_video : screen.video;
-  const CallerName caller = peer.empty() ? CallerName{.label = {}, .unknown = false} : CallerNameFor(peer);
+  // Every frame: names and photos come from the call's cache (CallRosterCache), not from disk each time.
+  roster_cache_.ForCall(screen.call_id);
+  const CallRosterCache::Lookups lookups = RosterLookups();
+  const CallerName caller =
+      peer.empty() ? CallerName{.label = {}, .unknown = false} : roster_cache_.Name(peer, now_ms, lookups);
   const std::string& name = caller.label;
   if (group) {
     const std::string title = GroupTitle(screen.thread_id, now_ms);
@@ -2197,16 +2313,17 @@ void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t
   const AvatarGlyph peer_glyph = MakeAvatarGlyph(name, peer);
   in_call.peer_avatar_letter = peer_glyph.letter.c_str();
   in_call.peer_avatar_tone = peer_glyph.tone;
-  const std::string peer_photo = IconPath(peer);
+  const std::string peer_photo = roster_cache_.Icon(peer, now_ms, lookups);
   in_call.peer_has_avatar = !peer_photo.empty();
   in_call.peer_avatar_src = peer_photo.c_str();
   in_call.peer_unknown = !group && caller.unknown && peer_photo.empty();
-  FillSelfAvatar(screen);
+  FillSelfAvatar(screen, now_ms);
 
   // Couldn't connect / disconnected: the failure page says it plainly; why is in the log (#31 / #37).
   using Status = CallScreen::Status;
   in_call.phone_failed =
       !answering && (screen.status == Status::CouldntConnect || screen.status == Status::Disconnected);
+  in_call.offer_redial = !answering && OffersRedial(screen);
   if (screen.status == Status::Disconnected) {
     in_call.failed_text = Tr("call.status.disconnected").c_str();
   } else if (group || screen.hint_missing_mic) {
@@ -2217,7 +2334,7 @@ void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t
   in_call.story_sheet_open = story_sheet_open_ && !in_call.phone_failed;
 }
 
-void CallController::FillSelfAvatar(const CallScreen& screen) {
+void CallController::FillSelfAvatar(const CallScreen& screen, const int64_t now_ms) {
   std::string self;
   for (const CallScreen::Member& member : screen.members) {
     if (member.is_local) {
@@ -2227,7 +2344,8 @@ void CallController::FillSelfAvatar(const CallScreen& screen) {
   if (self.empty() && call_ports_.local_relay_identity) {
     self = call_ports_.local_relay_identity().value_or(std::string{});
   }
-  SetSelfAvatar(in_call_, MakeAvatarGlyph(Tr("call.label.you"), self), IconPath(self));
+  SetSelfAvatar(in_call_, MakeAvatarGlyph(Tr("call.label.you"), self),
+                roster_cache_.Icon(self, now_ms, RosterLookups()));
 }
 
 void CallController::ApplyConnectStory(const CallMediaScreen& frame) {

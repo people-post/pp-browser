@@ -6,6 +6,7 @@
 #include "feature/conversations/AmpChatHistoryTransport.h"
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "lib/messaging/EditMessage.h"
 
 #include "common/Localized.h"
 
@@ -198,6 +199,13 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
   receive_pipeline_->SetOnMessageRetracted([this](const std::string& thread_id, const ThreadMessage& original) {
     inbox_.AfterMessageDeleted(thread_id, original);
   });
+  // Our other device deleted or edited again a message whose edit is still queued here: that edit is not sent.
+  receive_pipeline_->SetCancelPendingSend([this](const std::string& message_id) { outbox_.Cancel(message_id); });
+  // A peer (or another of our devices) edited a message we hold: its preview, mention marker and summary follow.
+  receive_pipeline_->SetOnMessageEdited(
+      [this](const std::string& thread_id, const ThreadMessage& before, const ThreadMessage& after) {
+        inbox_.AfterMessageEdited(thread_id, before, after);
+      });
   transports_.SetInboundHandler([this](RelayEnvelope envelope, std::string from_peer_id) {
     HandleDirectInbound(std::move(envelope), from_peer_id);
   });
@@ -221,6 +229,11 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
     }
   });
   outbox_.SetThreadPaused([this](const std::string& thread_id) { return IsThreadCompromised(thread_id); });
+  // A relay that does not know the recipient: the cached route is stale, ask the directory afresh.
+  outbox_.SetRouteRefresh([this](const std::string& account_id) {
+    routes_.Forget(account_id);
+    return routes_.ResolveAccountWithDirectory(account_id);
+  });
   // Blob + chat/history: Amp single entry ([A020] / D10). May also AttachAmpTransports later.
   if (amp_links) {
     AttachAmpTransports(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io),
@@ -543,6 +556,7 @@ Roe<void> MeshDeliveryOrchestrator::ResendDirectCopy(const Thread& thread, const
                                .message_id = message.id,
                                .amp_peer_key = linked ? device.peer_id : (peer_relay_id ? std::string() : asker),
                                .relay_route = peer_relay_id,
+                               .route_account = thread.peer_identity_value,
                                .copy_device = device.peer_id});
   return {};
 }
@@ -606,6 +620,7 @@ Roe<void> MeshDeliveryOrchestrator::ResendGroupCopy(const Thread& thread, const 
                                .message_id = message.id,
                                .amp_peer_key = LinkedTo(device.peer_id) ? device.peer_id : std::string(),
                                .relay_route = relay_route,
+                               .route_account = asker,
                                .group_member = asker});
   return {};
 }
@@ -761,6 +776,10 @@ void MeshDeliveryOrchestrator::RegisterContactDirectEndpoints(const Contact& con
 
 void MeshDeliveryOrchestrator::SetPeerRouteSources(DirectoryShadowCache* shadows, mesh::IDirectoryClient* directory) {
   routes_.SetSources(shadows, directory);
+}
+
+void MeshDeliveryOrchestrator::ForgetPeerRoutes() {
+  routes_.ForgetAll();
 }
 
 void MeshDeliveryOrchestrator::NoteAccountRelayRoute(const std::string& account_id, const std::string& relay_user_id) {
@@ -1465,24 +1484,14 @@ bool MeshDeliveryOrchestrator::MarkDelivery(const std::string& thread_id, const 
   if (thread_id.empty()) {
     return false; // a control-lane send: no transcript row to update
   }
-  auto messages = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
-  if (!messages) {
+  // The delivery state only: a whole row read earlier would write back words blanked since (a voided edit of ours).
+  auto marked = store_.UpdateMessageDelivery(
+      thread_id, message_id, success ? MessageDelivery::Relayed : MessageDelivery::Failed,
+      success ? std::optional<MessageTransport>(transport) : std::nullopt, unless_delivered);
+  if (!marked) {
     return false;
   }
-  for (ThreadMessage& existing : *messages) {
-    if (existing.id == message_id) {
-      if (unless_delivered && existing.delivery == MessageDelivery::Relayed) {
-        return false;
-      }
-      existing.delivery = success ? MessageDelivery::Relayed : MessageDelivery::Failed;
-      if (success) {
-        existing.transport = transport;
-      }
-      (void)store_.UpdateMessage(existing);
-      break;
-    }
-  }
-  return true;
+  return *marked || !unless_delivered;
 }
 
 void MeshDeliveryOrchestrator::ApplySendSucceeded(const std::string& thread_id, const std::string& message_id,
@@ -1676,6 +1685,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
                                    .message_id = appended->id,
                                    .amp_peer_key = device.peer_id,
                                    .relay_route = peer_relay_id,
+                                   .route_account = amp_peer_key,
                                    .critical_lane = options.critical_lane,
                                    .copy_device = device.peer_id});
       any = true;
@@ -1692,6 +1702,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
                                      .message_id = appended->id,
                                      .amp_peer_key = peer_relay_id ? std::string() : amp_peer_key,
                                      .relay_route = peer_relay_id,
+                                     .route_account = amp_peer_key,
                                      .critical_lane = options.critical_lane,
                                      .copy_device = "relay"});
         any = true;
@@ -1717,6 +1728,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
                                  .message_id = appended->id,
                                  .amp_peer_key = amp_peer_key,
                                  .relay_route = peer_relay_id,
+                                 .route_account = amp_peer_key,
                                  .critical_lane = options.critical_lane});
   }
 
@@ -1950,6 +1962,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
                                  .message_id = message.id,
                                  .amp_peer_key = device,
                                  .relay_route = relay_route,
+                                 .route_account = recipient,
                                  .group_member = recipient});
   }
   for (const std::string& recipient : members_in_order) {
@@ -1972,6 +1985,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
                                  .message_id = message.id,
                                  .amp_peer_key = relay_route ? std::string() : recipient,
                                  .relay_route = relay_route,
+                                 .route_account = recipient,
                                  .group_member = recipient});
   }
   if (any_missed) {
@@ -2079,6 +2093,26 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::ClearReaction(const std::string& th
 Roe<ThreadMessage> MeshDeliveryOrchestrator::SendRetract(const std::string& thread_id,
                                                          const std::string& target_message_id) {
   return SendAnnotationReaction(*this, store_, thread_id, target_message_id, std::string(), kAnnotationTypeRetract);
+}
+
+Roe<ThreadMessage> MeshDeliveryOrchestrator::SendEdit(const std::string& thread_id,
+                                                      const std::string& target_message_id, const std::string& text,
+                                                      const std::string& message_id, const int64_t sent_at_ms) {
+  if (target_message_id.empty() || text.empty()) {
+    return Error("Nothing to edit");
+  }
+  auto thread = store_.GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  const SendRelayOptions options = EditSendOptions(target_message_id, text, message_id, sent_at_ms);
+  if ((*thread)->kind == ThreadKind::Group) {
+    return SendGroupMessage(thread_id, text, options);
+  }
+  return SendUserMessage(thread_id, text, options);
 }
 
 void MeshDeliveryOrchestrator::CancelPendingSend(const std::string& message_id) {

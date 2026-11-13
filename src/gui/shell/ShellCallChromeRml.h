@@ -22,5 +22,7 @@ std::string CallInProgressRml(const ShellState& state);
  * (kept in the band), else its share of the band with the heights last measured; < 0: no height known, no top.
  */
 float MinimizedChipTopDp(const ShellState& state);
+/** A ring or a live call is up: the frame loop runs often enough for its pulses and meters (kLiveChromeFrameIntervalSec). */
+bool CallChromeWantsLiveFrames(const ShellState& state);
 
 } // namespace pbr

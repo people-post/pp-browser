@@ -47,6 +47,7 @@ struct BroadcasterWorkflow::Sender {
     frame.seq = packet.seq;
     frame.mark = packet.mark;
     frame.instance = packet.instance;
+    frame.capture_ts = packet.capture_ts;
     if (!guard.Admit(frame.instance, epoch, static_cast<uint8_t>(frame.channel_id), frame.seq) ||
         !mesh::SealMediaFrame(key, context, epoch, frame, packet.payload)) {
       return;

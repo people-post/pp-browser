@@ -118,6 +118,13 @@ public:
                                   const std::string& emoji);
   /** "Delete for everyone": tell the peer / group to delete our message `target_message_id`. */
   Roe<ThreadMessage> SendRetract(const std::string& thread_id, const std::string& target_message_id);
+  /**
+   * Our edit of our message `target_message_id`: an `edit` annotation with the whole new `text`, as `message_id`, sent
+   * at `sent_at_ms` (fixed by the caller; DEV/PLAN-message-edit.md). The row stays when the send fails after it was
+   * stored (it is marked failed); an error before that stores nothing.
+   */
+  Roe<ThreadMessage> SendEdit(const std::string& thread_id, const std::string& target_message_id,
+                              const std::string& text, const std::string& message_id, int64_t sent_at_ms);
   /** A deleted message that has not gone out yet is not retried. */
   void CancelPendingSend(const std::string& message_id);
   /** When the send of our message `message_id` still under way started (DeliveryOutbox::SendStartedMs). Any thread. */
@@ -299,6 +306,8 @@ public:
    * Shadows: cached directory hits; directory: sync LookupByAccount on send miss.
    */
   void SetPeerRouteSources(DirectoryShadowCache* shadows, mesh::IDirectoryClient* directory);
+  /** The backend changed: every cached relay id is from the old registry (PeerRouteBook::ForgetAll). */
+  void ForgetPeerRoutes();
   /** Learn Account→`relay:` from inbound `sender_contact_id` + `sender_relay_id`. */
   void NoteAccountRelayRoute(const std::string& account_id, const std::string& relay_user_id);
   /** D052 — fetch one older-history page when scrolled to top. */

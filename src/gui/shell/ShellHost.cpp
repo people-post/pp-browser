@@ -29,6 +29,8 @@
 #include "gui/shell/MascotLook.h"
 #include "gui/shell/ShellLayoutRml.h"
 #include "gui/shell/ShellStatusbar.h"
+#include "gui/shell/ShellBaseHide.h"
+#include "gui/UiFrameStats.h"
 #include "gui/shell/ShellCallChromeRml.h"
 #include "gui/shell/ShellFeedback.h"
 #include "lib/ui/ShellInterruption.h"
@@ -420,6 +422,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("call_decline", DataEvent<>([this]() { CallDecline(); }));
     ctor.BindEventCallback("call_leave", DataEvent<>([this]() { CallLeave(); }));
     ctor.BindEventCallback("call_retry", DataEvent<>([this]() { CallRetry(); }));
+    ctor.BindEventCallback("call_redial", DataEvent<>([this]() { CallRedial(); }));
     ctor.BindEventCallback("call_mute", DataEvent<>([this]() { CallMute(); }));
     ctor.BindEventCallback("call_camera", DataEvent<>([this]() { CallCamera(); }));
     ctor.BindEventCallback("call_flip_camera", DataEvent<>([this]() { CallFlipCamera(); }));
@@ -1226,6 +1229,13 @@ bool ShellHost::HandleDismiss() {
     // Unlock: consume Escape without dismissing or quitting.
     return true;
   }
+  if (state_.call_in_progress.active && state_.call_in_progress.failed_kept) {
+    // DEV/PLAN-call-failed-redial.md 6: the failure page kept with no call behind it — back / Escape is its Try later.
+    if (call_actions_.leave_active) {
+      call_actions_.leave_active();
+    }
+    return true;
+  }
   // Phone back order (Android system back, Escape; DEV/PLAN-minimal-nav.md A / C): what is drawn over the drawer
   // (a menu, a dialog, the PIN gate) closes first; then (1) the AI drawer, and nothing else with it.
   if (state_.ai_drawer_open) {
@@ -1574,6 +1584,12 @@ void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, Call
   const bool awaiting_changed = state_.call_ring.awaiting_invite != snapshot.ring.awaiting_invite;
   state_.call_ring = snapshot.ring;
   state_.call_in_progress = snapshot.in_progress;
+  // The call page is no longer full screen (ended, hung up, cleared, shrunk to its chip): the pages under it show at
+  // once, without waiting for the remount below. Hiding waits for the remount (ApplySafeAreaLayout), so the page is
+  // mounted before what it covers goes.
+  if (ShellBaseHide::Hidden() && !ShellBaseHide::ShouldHide(state_) && context_ && context_->GetNumDocuments() > 0) {
+    ShellBaseHide::Apply(context_, context_->GetDocument(0), false);
+  }
   ReconcileStartupCover(); // an active ring takes the logo cover away
   if (awaiting_changed && state_.pin_gate.active) {
     RemountPinGateChrome(); // its layer class (clear scrim, card on the bottom edge) follows the awaiting page
@@ -1596,6 +1612,7 @@ void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, Call
     }
   }
   // Force Present so ring/accept chrome is not held behind idle wait (THREADING.md UI delivery).
+  UiCostCounters::Instance().AddChromeForceFrame(update);
   Backend::RequestForceFrame();
 }
 
@@ -1684,8 +1701,11 @@ void ShellHost::RestoreFocus() {
     saved_focus_id_.clear();
     return;
   }
-  if (ui::Element* element = context_->GetDocument(0)->GetElementById(saved_focus_id_)) {
-    element->Focus();
+  ui::ElementDocument* doc = context_->GetDocument(0);
+  if (ui::Element* element = doc->GetElementById(saved_focus_id_)) {
+    if (!ShellBaseHide::InHiddenLayer(doc, element)) { // not under a full-screen call page: no keyboard over the call
+      element->Focus();
+    }
   }
   saved_focus_id_.clear();
 }
@@ -1754,6 +1774,10 @@ void ShellHost::ApplyLayoutModeFromContext(ui::Context* context) {
 
 void ShellHost::SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback) {
   on_layout_mode_changed_ = std::move(callback);
+}
+
+void ShellHost::SetOnSyncLayoutMeasured(std::function<void(int64_t ms)> callback) {
+  on_sync_layout_measured_ = std::move(callback);
 }
 
 void ShellHost::SetOnLayoutSynced(std::function<void()> callback) {
@@ -1907,6 +1931,9 @@ void ShellHost::ApplySafeAreaLayout() {
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
       config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface, bottom_chrome_open_);
   ui::ElementDocument* doc = context_->GetDocument(0);
+  // The layers under a full-screen phone call page: from the call page now, every time the shell is synced or the call
+  // remounted (never toggled on events).
+  ShellBaseHide::Apply(context_, doc, ShellBaseHide::ShouldHide(state_));
 
   auto set_dp = [](ui::Element* element, const char* property, float value_dp) {
     if (!element) {
@@ -2649,11 +2676,15 @@ void ShellHost::SyncLayout() {
     const std::string& reason;
     int requests;
     logging::Logger& log;
+    const std::function<void(int64_t ms)>& measured;
     ~Report() {
       // Also runs while a failed rebuild unwinds: diagnostics must never turn that into a terminate.
       try {
         const auto ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+        if (measured) {
+          measured(static_cast<int64_t>(ms));
+        }
         if (ms >= kSlowSyncLayoutMs) {
           // Who asked is a call site or a reason key: the developer log's, not the shareable metric's.
           log.info << "slow SyncLayout ms=" << ms << " reason=" << reason << " requests=" << requests;
@@ -2665,7 +2696,7 @@ void ShellHost::SyncLayout() {
       } catch (...) {
       }
     }
-  } report{started, reason, requests, log()};
+  } report{started, reason, requests, log(), on_sync_layout_measured_};
   // Nestable remount gate: field blur/change commits must not run until settle.
   UiEditSession::Instance().BeginRemount();
   const LayoutMode mode = state_.layout_mode;
@@ -3252,7 +3283,7 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
   }
 
   // Call ring pulse / in-call meters need sub-second frames while overlays are active.
-  if (state_.call_ring.active || state_.call_in_progress.active) {
+  if (CallChromeWantsLiveFrames(state_)) {
     delay_sec = std::min(delay_sec, kLiveChromeFrameIntervalSec);
   }
 
@@ -3443,6 +3474,12 @@ void ShellHost::CallLeave() {
 void ShellHost::CallRetry() {
   if (call_actions_.retry_connect) {
     call_actions_.retry_connect();
+  }
+}
+
+void ShellHost::CallRedial() {
+  if (call_actions_.redial) {
+    call_actions_.redial();
   }
 }
 

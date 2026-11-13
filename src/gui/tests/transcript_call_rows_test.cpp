@@ -1,5 +1,6 @@
 // A call summary is drawn as a pill with an icon on the starter's side, not as a centered system line.
 #include "lib/calls/CallControlCodec.h"
+#include "lib/calls/CallControlFamily.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/storage/SqliteThreadStore.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
@@ -12,6 +13,8 @@
 #include "common/chat/SystemControl.h"
 
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <gtest/gtest.h>
 #include <memory>
 
@@ -181,6 +184,61 @@ TEST_F(TranscriptCallRowsTest, ARecordInAGroupThreadIsInertEvenIfTheRowIsNotMark
     }
   }
   EXPECT_TRUE(found);
+}
+
+// Kenneth 2026-11-12: a call record row opens no message menu (one tap calls back). ChatController::IsCallRecord asks
+// CallSummaryRowOf, ChatMenus::ForRequest returns an empty menu for it; ForRequest needs a live facade, so its order is
+// pinned by source like the other menu rules.
+ThreadMessage CallRecordMessage(const CallMediaMode mode, const CallOutcome outcome,
+                                const std::optional<int64_t> duration_ms) {
+  CallSummaryDetail detail;
+  detail.call_id = "call:record";
+  detail.media_mode = mode;
+  detail.outcome = outcome;
+  detail.duration_ms = duration_ms;
+  auto encoded = CallControlCodec::EncodeSummary(detail);
+  EXPECT_TRUE(encoded);
+  auto built = CallControlCodec::BuildSystemMessage("thread-calls", CallControlType::CallSummary, "call",
+                                                    encoded ? *encoded : std::string("{}"), "account:peer");
+  EXPECT_TRUE(built);
+  return built ? *built : ThreadMessage{};
+}
+
+TEST(CallRecordMenuTest, VoiceVideoAndMissedRecordsAreCallRecordsAndTextIsNot) {
+  EXPECT_TRUE(CallSummaryRowOf(CallRecordMessage(CallMediaMode::Voice, CallOutcome::Completed, 71'000)));
+  EXPECT_TRUE(CallSummaryRowOf(CallRecordMessage(CallMediaMode::Video, CallOutcome::Completed, 56'000)));
+  EXPECT_TRUE(CallSummaryRowOf(CallRecordMessage(CallMediaMode::Voice, CallOutcome::Missed, std::nullopt)));
+  ThreadMessage text;
+  text.content_type = ChatContentType::Text;
+  text.text = "hello";
+  EXPECT_FALSE(CallSummaryRowOf(text));
+  ThreadMessage card;
+  card.content_type = ChatContentType::ContactCard;
+  EXPECT_FALSE(CallSummaryRowOf(card));
+}
+
+TEST(CallRecordMenuTest, TheMessageMenuIsEmptyForACallRecordBeforeAnythingIsOffered) {
+  const auto read = [](const std::string& path) {
+    std::ifstream in(std::string(PP_SOURCE_DIR) + path, std::ios::binary);
+    std::ostringstream text;
+    text << in.rdbuf();
+    std::string source = text.str();
+    std::erase(source, '\r');
+    return source;
+  };
+  const std::string menus = read("/src/gui/chat/ChatMenus.cpp");
+  const size_t start = menus.find("std::vector<ContextMenuAction> ChatMenus::ForRequest(");
+  ASSERT_NE(start, std::string::npos);
+  const std::string body = menus.substr(start, menus.find("\n}\n", start) - start);
+  const size_t guard = body.find("if (host_.IsCallRecord(message_id)) {\n    return actions;");
+  ASSERT_NE(guard, std::string::npos);
+  EXPECT_LT(guard, body.find("QuickReactions(")) << "before the reactions";
+  EXPECT_LT(guard, body.find("\"reply_message\""));
+  EXPECT_LT(guard, body.find("\"delete_message\""));
+  const std::string controller = read("/src/gui/chat/ChatController.cpp");
+  const size_t is_record = controller.find("bool ChatController::IsCallRecord(");
+  ASSERT_NE(is_record, std::string::npos);
+  EXPECT_NE(controller.find("CallSummaryRowOf(", is_record), std::string::npos);
 }
 
 } // namespace

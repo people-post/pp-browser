@@ -23,6 +23,7 @@
 #include <chrono>
 #include <memory>
 #include <thread>
+#include <map>
 
 namespace pbr {
 namespace {
@@ -123,9 +124,10 @@ protected:
 };
 
 TEST_F(InboxAttachmentViewTest, AHeaderWithinTheCapIsShownInline) {
-  const auto view = ViewOf(1, PngHeader(1000, 1000));
+  const auto view = ViewOf(1, PngHeader(600, 600)); // no longer than the preview: shown from itself
   EXPECT_FALSE(view.local_path.empty());
   EXPECT_TRUE(view.inline_image_ok);
+  EXPECT_FALSE(view.picture_placeholder);
 }
 
 TEST_F(InboxAttachmentViewTest, AHeaderClaiming30000By30000IsAFileRowAndNeverDecoded) {
@@ -148,9 +150,11 @@ TEST_F(InboxAttachmentViewTest, ALargeFileHasNoViewUntilItIsOpened) {
   EXPECT_TRUE(before.local_path.empty());
   EXPECT_TRUE(before.inline_image_ok);
 
-  const auto after = ViewOf(4, PngHeader(10, 10), large, /*write_view=*/true); // an Open made it
+  // An Open made the full picture's view: the bubble still never shows it (B203), it waits for the preview.
+  const auto after = ViewOf(4, PngHeader(10, 10), large, /*write_view=*/true);
   EXPECT_TRUE(after.on_demand);
-  EXPECT_FALSE(after.local_path.empty());
+  EXPECT_TRUE(after.local_path.empty());
+  EXPECT_TRUE(after.picture_placeholder);
 
   const auto small = ViewOf(5, PngHeader(10, 10), 1000, /*write_view=*/true);
   EXPECT_FALSE(small.on_demand);
@@ -160,7 +164,8 @@ TEST_F(InboxAttachmentViewTest, ALargeFileHasNoViewUntilItIsOpened) {
 TEST_F(InboxAttachmentViewTest, ALargePictureWithAThumbnailShowsItInlineAndStaysOnDemand) {
   const uint64_t large = kMaxDirectAttachmentBytes + 1;
   const auto without = ViewOf(6, PngHeader(10, 10), large, /*write_view=*/false);
-  EXPECT_TRUE(without.local_path.empty()) << "no thumbnail yet: a file card";
+  EXPECT_TRUE(without.local_path.empty()) << "no preview yet: its placeholder";
+  EXPECT_TRUE(without.picture_placeholder);
 
   const std::vector<uint8_t> hash(32, 6);
   const std::string thumb = AttachmentPosterPath(data_dir_.string(), "t1", hash);
@@ -196,7 +201,8 @@ TEST_F(InboxAttachmentViewTest, AStoredLargePictureWithoutItsThumbnailGetsItMade
   downloads.SetContent(content);
   ASSERT_TRUE(downloads.SetDek(TestDek()));
   std::atomic<int> changed{0};
-  downloads.SetOnChanged([&changed]() { ++changed; });
+  downloads.SetOnChatPreviewDone(
+      [&changed](const std::string&, const std::vector<uint8_t>&, const bool made) { changed += made ? 1 : 0; });
   inbox_->SetAttachmentDownloads(&downloads);
 
   std::vector<uint8_t> plain(static_cast<size_t>(kMaxDirectAttachmentBytes) + 1000, 0x37);
@@ -229,7 +235,10 @@ TEST_F(InboxAttachmentViewTest, AStoredLargePictureWithoutItsThumbnailGetsItMade
 
   const auto first = inbox_->Facts().attachment(message);
   EXPECT_EQ(first.state, AttachmentFetchWorkflow::DownloadState::Ready);
-  EXPECT_TRUE(first.local_path.empty()) << "a file card until the thumbnail exists";
+  EXPECT_TRUE(first.local_path.empty()) << "its placeholder until the preview exists";
+  EXPECT_TRUE(first.picture_placeholder);
+  EXPECT_EQ(first.image_width, kPicturePlaceholderFallbackWidth) << "the large file is not decrypted for its size";
+  EXPECT_EQ(first.image_height, kPicturePlaceholderFallbackHeight);
   EXPECT_TRUE(first.on_demand);
   (void)inbox_->Facts().attachment(message);
   (void)inbox_->Facts().attachment(message);
@@ -239,15 +248,287 @@ TEST_F(InboxAttachmentViewTest, AStoredLargePictureWithoutItsThumbnailGetsItMade
     AppRuntime::RunUITasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
   }
-  EXPECT_GT(changed.load(), 0) << "the transcript is told to re-render";
+  EXPECT_GT(changed.load(), 0) << "the chat is told to redraw its rows";
   const auto second = inbox_->Facts().attachment(message);
   EXPECT_EQ(second.local_path, AttachmentPosterPath(data_dir_.string(), "t1", *hash));
   EXPECT_TRUE(second.inline_image_ok);
+  EXPECT_FALSE(second.picture_placeholder);
+  EXPECT_EQ(second.image_width, 480) << "a large picture's size is its preview's";
+  EXPECT_EQ(second.image_height, 360);
   EXPECT_TRUE(second.on_demand) << "a tap still opens the original";
   EXPECT_EQ(calls.load(), 1) << "made once";
   EXPECT_TRUE(same_bytes.load());
 
   inbox_->SetAttachmentDownloads(nullptr);
+}
+
+// --- B203: the bubble shows a preview or a placeholder, never the full picture --------------------------------------
+
+/** Pictures stored in a real workflow (encrypted store, DEK, workers), so drawing a card can ask for its preview. */
+class InboxPicturePreviewTest : public InboxAttachmentViewTest {
+protected:
+  void SetUp() override {
+    InboxAttachmentViewTest::SetUp();
+    AppRuntime::Initialize();
+    content_ = MakeInMemoryIndexedCasStore(data_dir_.string(), "p1");
+    downloads_ = std::make_unique<AttachmentFetchWorkflow>();
+    downloads_->SetProfileDataDir(data_dir_.string());
+    downloads_->SetContent(content_);
+    ASSERT_TRUE(downloads_->SetDek(TestDek()));
+    downloads_->SetOnChatPreviewDone(
+        [this](const std::string&, const std::vector<uint8_t>&, const bool made) { (made ? made_ : failed_)++; });
+    SetAttachmentPlatform(
+        {.image_thumbnail_jpeg = [this](const std::vector<uint8_t>&, int) -> Roe<std::vector<uint8_t>> {
+          ++calls_;
+          if (fail_) {
+            return Error("cannot decode");
+          }
+          return PngHeader(640, 512);
+        }});
+    inbox_->SetAttachmentDownloads(downloads_.get());
+  }
+  void TearDown() override {
+    inbox_->SetAttachmentDownloads(nullptr);
+    AppRuntime::Shutdown(); // its workers are joined before the workflow goes
+    downloads_.reset();
+    SetAttachmentPlatform({});
+    InboxAttachmentViewTest::TearDown();
+  }
+  /** A received picture of `mime` holding `bytes` (padded to `size`), stored encrypted: its message. */
+  ThreadMessage Stored(const std::string& id, std::vector<uint8_t> bytes, const std::string& mime = "image/png",
+                       const size_t size = 0) {
+    if (bytes.size() < size) {
+      bytes.resize(size, static_cast<uint8_t>(id.size()));
+    }
+    bytes.push_back(static_cast<uint8_t>(id.back()));
+    auto hash = AttachmentContentHash(bytes);
+    EXPECT_TRUE(hash);
+    EXPECT_TRUE(SaveAttachmentPlaintext(*content_, *hash, mime, bytes, "pic", TestDek()));
+    ChatAttachmentFields fields;
+    fields.url = "https://cdn.example/pic";
+    fields.mime = mime;
+    fields.filename = mime == "image/gif" ? "pic.gif" : "pic.png";
+    fields.byte_length = bytes.size();
+    fields.content_hash = *hash;
+    fields.content_key.assign(kSessionKeySize, 1);
+    fields.blob_nonce.assign(kAeadNonceSize, 2);
+    hashes_[id] = *hash;
+    ThreadMessage message;
+    message.id = id;
+    message.thread_id = "t1";
+    message.content_type = ChatContentType::Attachment;
+    message.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(fields);
+    return message;
+  }
+  TranscriptAttachmentView Draw(const ThreadMessage& message) { return inbox_->Facts().attachment(message); }
+  std::string PreviewOf(const std::string& id) const {
+    return AttachmentPosterPath(data_dir_.string(), "t1", hashes_.at(id));
+  }
+  bool Settled(const std::function<bool()>& done) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!done() && std::chrono::steady_clock::now() < deadline) {
+      AppRuntime::RunUITasks();
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    return done();
+  }
+  static std::vector<uint8_t> GifHeader(const uint16_t w, const uint16_t h) {
+    return {'G',
+            'I',
+            'F',
+            '8',
+            '9',
+            'a',
+            static_cast<uint8_t>(w),
+            static_cast<uint8_t>(w >> 8),
+            static_cast<uint8_t>(h),
+            static_cast<uint8_t>(h >> 8),
+            0,
+            0,
+            0};
+  }
+
+  std::shared_ptr<CasStore> content_;
+  std::unique_ptr<AttachmentFetchWorkflow> downloads_;
+  std::atomic<int> calls_{0};
+  std::atomic<int> made_{0};
+  std::atomic<int> failed_{0};
+  std::atomic<bool> fail_{false};
+  std::map<std::string, std::vector<uint8_t>> hashes_;
+};
+
+TEST_F(InboxPicturePreviewTest, APictureLongerThanThePreviewShowsItsPreviewWithItsOwnSize) {
+  const ThreadMessage message = Stored("m1", PngHeader(1000, 800));
+  ASSERT_TRUE(Draw(message).picture_placeholder);
+  ASSERT_TRUE(Settled([&] { return made_.load() == 1; }));
+  const auto view = Draw(message);
+  EXPECT_EQ(view.local_path, PreviewOf("m1"));
+  EXPECT_FALSE(view.picture_placeholder);
+  EXPECT_TRUE(view.inline_image_ok);
+  EXPECT_EQ(view.image_width, 1000) << "laid out as the placeholder was: nothing jumps";
+  EXPECT_EQ(view.image_height, 800);
+}
+
+TEST_F(InboxPicturePreviewTest, WithoutItsPreviewItIsAPlaceholderOfItsSizeAndThePreviewIsAskedForOnce) {
+  const ThreadMessage message = Stored("m1", PngHeader(1000, 800));
+  const auto view = Draw(message);
+  EXPECT_TRUE(view.picture_placeholder);
+  EXPECT_TRUE(view.local_path.empty()) << "the full picture never goes into the bubble";
+  EXPECT_EQ(view.state, AttachmentFetchWorkflow::DownloadState::Ready);
+  EXPECT_EQ(view.image_width, 1000);
+  EXPECT_EQ(view.image_height, 800);
+  (void)Draw(message); // drawn again while it is being made
+  ASSERT_TRUE(Settled([&] { return made_.load() == 1; }));
+  EXPECT_EQ(calls_.load(), 1);
+}
+
+TEST_F(InboxPicturePreviewTest, APictureNoLongerThanThePreviewShowsItselfAndAsksForNothing) {
+  const ThreadMessage message = Stored("m1", PngHeader(640, 300));
+  const auto view = Draw(message);
+  EXPECT_FALSE(view.picture_placeholder);
+  EXPECT_FALSE(view.local_path.empty());
+  EXPECT_EQ(view.local_path.find(".poster.jpg"), std::string::npos);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(calls_.load(), 0);
+}
+
+TEST_F(InboxPicturePreviewTest, APreviewThatCannotBeMadeLeavesAFileCardAndIsNotAskedAgain) {
+  fail_ = true;
+  const ThreadMessage message = Stored("m1", PngHeader(1000, 800));
+  ASSERT_TRUE(Draw(message).picture_placeholder);
+  ASSERT_TRUE(Settled([&] { return failed_.load() == 1; }));
+  const auto view = Draw(message);
+  EXPECT_FALSE(view.picture_placeholder);
+  EXPECT_FALSE(view.inline_image_ok) << "a file card";
+  EXPECT_FALSE(view.local_path.empty()) << "that still opens the picture";
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(calls_.load(), 1);
+}
+
+TEST_F(InboxPicturePreviewTest, AnUnreadableSizeIsAFileCard) {
+  const ThreadMessage message = Stored("m1", {'n', 'o', 't', ' ', 'a', ' ', 'p', 'i', 'c'});
+  const auto view = Draw(message);
+  EXPECT_FALSE(view.inline_image_ok);
+  EXPECT_FALSE(view.picture_placeholder);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(calls_.load(), 0);
+}
+
+TEST_F(InboxPicturePreviewTest, AGifIsTreatedLikeAnyPicture) {
+  const ThreadMessage big = Stored("g1", GifHeader(1000, 800), "image/gif");
+  const ThreadMessage small = Stored("g2", GifHeader(200, 200), "image/gif");
+  EXPECT_TRUE(Draw(big).picture_placeholder);
+  EXPECT_FALSE(Draw(small).picture_placeholder);
+  EXPECT_FALSE(Draw(small).local_path.empty());
+  ASSERT_TRUE(Settled([&] { return made_.load() == 1; }));
+  EXPECT_EQ(Draw(big).local_path, PreviewOf("g1"));
+}
+
+TEST_F(InboxPicturePreviewTest, ALargePictureIsNotDecryptedToDrawItsCard) {
+  const size_t large = static_cast<size_t>(kMaxDirectAttachmentBytes) + 100;
+  const ThreadMessage message = Stored("big", PngHeader(4000, 3000), "image/png", large);
+  const auto first = Draw(message);
+  EXPECT_TRUE(first.picture_placeholder);
+  EXPECT_EQ(first.image_width, kPicturePlaceholderFallbackWidth);
+  EXPECT_EQ(first.image_height, kPicturePlaceholderFallbackHeight);
+  ASSERT_TRUE(Settled([&] { return made_.load() == 1; }));
+  const auto second = Draw(message);
+  EXPECT_EQ(second.local_path, PreviewOf("big"));
+  EXPECT_EQ(second.image_width, 640) << "its size is the preview's";
+  EXPECT_EQ(second.image_height, 512);
+  // No plaintext view of the large file was written to draw it: only the preview is in the view cache.
+  size_t files = 0;
+  for (const auto& entry : std::filesystem::directory_iterator(AttachmentViewRoot(data_dir_.string(), "t1"))) {
+    (void)entry;
+    ++files;
+  }
+  EXPECT_EQ(files, 1u);
+}
+
+// Stopped, not failed: a lock (the view cache wiped), leaving the chat (cancelled) or the cache wiped after it was
+// made: the next drawing asks again, and the row stays a picture.
+TEST_F(InboxPicturePreviewTest, AnInterruptedPreviewIsAskedForAgainAndNeverTurnsIntoAFileCard) {
+  const ThreadMessage message = Stored("m1", PngHeader(1000, 800));
+  downloads_->ClearDek(); // locked: it waits
+  (void)Draw(message);
+  downloads_->CancelChatPreviews(); // the chat left before the unlock
+  ASSERT_TRUE(downloads_->SetDek(TestDek()));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(calls_.load(), 0);
+  EXPECT_TRUE(Draw(message).picture_placeholder) << "drawn again: asked again";
+  ASSERT_TRUE(Settled([&] { return made_.load() == 1; }));
+  ASSERT_EQ(Draw(message).local_path, PreviewOf("m1"));
+  ASSERT_TRUE(WipeAllAttachmentViewCaches(data_dir_.string())); // a lock's wipe after it was made
+  const auto again = Draw(message);
+  EXPECT_TRUE(again.picture_placeholder);
+  EXPECT_TRUE(again.inline_image_ok);
+  ASSERT_TRUE(Settled([&] { return made_.load() == 2; }));
+  EXPECT_EQ(failed_.load(), 0);
+}
+
+// No drawing may name a file that is not there (the UI library remembers a failed load for the whole run): a video's
+// poster only when its file is there; and under the lock nothing of the view cache at all, even a file the lock's
+// wipe has not reached yet (the DEK goes first, the files after).
+TEST_F(InboxPicturePreviewTest, NoFileIsNamedThatIsNotThereOrUnderTheLock) {
+  const ThreadMessage picture = Stored("m1", PngHeader(1000, 800));
+  const ThreadMessage small = Stored("m2", PngHeader(600, 400));
+  const ThreadMessage video = Stored("v3", {'v', 'i', 'd', 'e', 'o'}, "video/mp4");
+  ASSERT_TRUE(Draw(picture).picture_placeholder);
+  ASSERT_TRUE(Settled([&] { return made_.load() == 1; }));
+  ASSERT_EQ(Draw(picture).local_path, PreviewOf("m1"));
+  const std::string small_view = Draw(small).local_path;
+  ASSERT_FALSE(small_view.empty());
+
+  EXPECT_TRUE(Draw(video).poster_path.empty()) << "no poster file: no poster";
+  const auto put = [](const std::string& path, const std::vector<uint8_t>& bytes) {
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+    std::ofstream out(path, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+  };
+  put(PreviewOf("v3"), PngHeader(640, 360));
+  EXPECT_EQ(Draw(video).poster_path, PreviewOf("v3")) << "its file is there";
+
+  downloads_->ClearDek();
+  // The drawing raced the wipe: the files are still there.
+  put(PreviewOf("m1"), PngHeader(640, 512));
+  put(small_view, PngHeader(600, 400));
+  put(PreviewOf("v3"), PngHeader(640, 360));
+  for (const ThreadMessage* message : {&picture, &small}) {
+    const auto locked = Draw(*message);
+    EXPECT_TRUE(locked.local_path.empty()) << message->id << ": neither its preview nor its own view";
+    EXPECT_TRUE(locked.picture_placeholder) << message->id << ": its placeholder";
+    EXPECT_GT(locked.image_width, 0);
+  }
+  EXPECT_TRUE(Draw(video).poster_path.empty());
+
+  ASSERT_TRUE(downloads_->SetDek(TestDek())); // unlocked: shown again
+  EXPECT_EQ(Draw(picture).local_path, PreviewOf("m1"));
+  EXPECT_EQ(Draw(video).poster_path, PreviewOf("v3"));
+}
+
+// What a tap opens (ConversationsFacade::AttachmentLocalPathForMessage starts from AttachmentLocalPath) is the
+// picture's own full view whatever its bubble shows: the placeholder, the preview, or a file card.
+TEST_F(InboxPicturePreviewTest, TheOpenPathIsTheFullPictureWhateverTheBubbleShows) {
+  const ThreadMessage message = Stored("m1", PngHeader(1000, 800));
+  const auto open_path = [&](const std::string& id) {
+    return AttachmentLocalPath(data_dir_.string(), "t1", hashes_.at(id), "image/png", "pic.png");
+  };
+  ASSERT_TRUE(Draw(message).picture_placeholder);
+  const std::string full = open_path("m1");
+  EXPECT_FALSE(full.empty());
+  EXPECT_NE(full, PreviewOf("m1"));
+  ASSERT_TRUE(Settled([&] { return made_.load() == 1; }));
+  ASSERT_EQ(Draw(message).local_path, PreviewOf("m1")) << "the bubble shows the preview";
+  EXPECT_EQ(open_path("m1"), full) << "the open is still the full picture";
+
+  fail_ = true;
+  const ThreadMessage card = Stored("m2", PngHeader(1200, 900));
+  (void)Draw(card);
+  ASSERT_TRUE(Settled([&] { return failed_.load() == 1; }));
+  const auto view = Draw(card);
+  ASSERT_FALSE(view.inline_image_ok) << "a file card";
+  EXPECT_EQ(view.local_path, open_path("m2"));
+  EXPECT_NE(open_path("m2"), PreviewOf("m2"));
 }
 
 } // namespace

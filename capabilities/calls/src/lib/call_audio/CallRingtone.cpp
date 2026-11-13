@@ -90,7 +90,63 @@ CallRingtone::~CallRingtone() {
   StopAndJoin();
 }
 
+void CallRingtone::SetOutputPorts(OutputPorts ports) {
+  output_ = std::move(ports);
+}
+
 void CallRingtone::Start() {
+  if (tone_ != Tone::IncomingRing) {
+    StartTone();
+    return;
+  }
+  if (ringing_.load()) {
+    return;
+  }
+  ringing_ = true;
+  const Output out = output_.read ? output_.read() : Output{};
+  SDL_Log("CallRingtone: ring sound=%d vibrate=%d", out.sound ? 1 : 0, out.vibrate ? 1 : 0);
+  last_sound_ = out.sound;
+  Apply(out);
+}
+
+void CallRingtone::Refresh() {
+  if (tone_ != Tone::IncomingRing || !ringing_.load()) {
+    return;
+  }
+  const Output out = output_.read ? output_.read() : Output{};
+  if (out.sound != last_sound_ || out.vibrate != vibrating_) {
+    SDL_Log("CallRingtone: phone ringer changed sound=%d vibrate=%d", out.sound ? 1 : 0, out.vibrate ? 1 : 0);
+  }
+  last_sound_ = out.sound;
+  Apply(out);
+}
+
+void CallRingtone::Apply(const Output out) {
+  if (out.sound && !playing_.load()) {
+    StartTone(); // also retries a tone whose speaker did not open
+  } else if (!out.sound && playing_.load()) {
+    SDL_Log("CallRingtone: sound stopped (phone ringer)");
+    RequestStop(/*wait=*/false);
+  }
+  if (out.vibrate != vibrating_) {
+    vibrating_ = out.vibrate;
+    if (output_.vibrate) {
+      output_.vibrate(out.vibrate);
+    }
+  }
+}
+
+void CallRingtone::EndRing() {
+  ringing_ = false;
+  if (vibrating_) {
+    vibrating_ = false;
+    if (output_.vibrate) {
+      output_.vibrate(false);
+    }
+  }
+}
+
+void CallRingtone::StartTone() {
   {
     std::lock_guard lock(mutex_);
     if (playing_.load()) {
@@ -195,14 +251,17 @@ void CallRingtone::SetReleaseSessionOnStop(const bool release) {
 }
 
 void CallRingtone::Stop() {
+  EndRing();
   RequestStop(/*wait=*/false);
 }
 
 void CallRingtone::StopAndJoin() {
+  EndRing();
   RequestStop(/*wait=*/true);
 }
 
 bool CallRingtone::StopAndJoin(std::chrono::milliseconds budget) {
+  EndRing();
   RequestStop(/*wait=*/false);
 
   std::thread to_join;

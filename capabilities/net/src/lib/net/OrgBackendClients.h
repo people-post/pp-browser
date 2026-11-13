@@ -50,6 +50,8 @@ struct RegistrationResult {
   bool initiation_floor_present = false;
   /** The directory entry now carries the account's KEM key binding (the relay stored it). */
   bool kem_bound = false;
+  /** Set by the registration flow, not the wire: the normalized base URL of the registry that finished it. */
+  std::string registered_backend_url;
 };
 
 struct RegistrationStartResult {
@@ -61,6 +63,8 @@ struct RegistrationStartResult {
 class IRegistrationClient {
 public:
   virtual ~IRegistrationClient() = default;
+  /** The registry this client talks to; empty when unknown (the registration is then not bound to a backend). */
+  virtual std::string BaseUrl() const { return {}; }
   virtual Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
                                                          const std::string& signature_alg = "ml-dsa-65",
                                                          const std::string& kem_public_key_b64 = "",

@@ -1,5 +1,7 @@
 #include "feature/presenters/CallMediaFrame.h"
 
+#include <algorithm>
+
 namespace pbr {
 
 namespace {
@@ -140,6 +142,43 @@ CallStagePlaceholder DecidePlaceholder(const CallMediaFacts& facts, const CallMe
 
 } // namespace
 
+CallHintPrompt DecideCallHintPrompt(const CallHintPromptInput& in, const std::map<std::string, int64_t>& last_pill_ms) {
+  CallHintPrompt prompt;
+  if (in.group) {
+    prompt.center_key = in.hint_shown ? in.hint_key : ""; // a group call's page as before
+    return prompt;
+  }
+  // A 1:1 call: the steps say how the connecting goes (what "Connecting voice…" repeated); a lost or silent mic means
+  // something only once connected. On hold the silence is by design.
+  if (in.steps_shown || in.on_hold || in.quiet) {
+    return prompt;
+  }
+  std::string key;
+  bool alarm = false;
+  if (in.capture_lost) {
+    key = "call.quality.hint.mic_lost"; // the engine could not get the mic back: they hear nothing until a restart
+    alarm = true;
+  } else if (in.asymmetry == CallAudioAsymmetry::ReceivingOnly && in.not_sending_ms >= kOneWayPillAfterMs) {
+    // Why this device sends nothing, when it is known; else the same advice as a lost mic.
+    key = in.mic_blocked ? "hints.mic_blocked" : "call.quality.hint.not_sending_restart";
+    alarm = true;
+  } else if (in.asymmetry == CallAudioAsymmetry::SendingOnly && in.one_way_ms >= kOneWayPillAfterMs) {
+    const bool retrying = in.one_way_ms > CallMediaHintClock::kRetryAfterMs;
+    key = retrying ? (in.video ? "call.quality.hint.retrying_video" : "call.quality.hint.retrying_voice")
+                   : (in.video ? "call.quality.hint.connecting_video" : "call.quality.hint.connecting_voice");
+  }
+  if (key.empty()) {
+    return prompt;
+  }
+  if (const auto last = last_pill_ms.find(key);
+      last != last_pill_ms.end() && in.now_ms - last->second < kHintPillEveryMs) {
+    return prompt;
+  }
+  prompt.pill_key = key;
+  prompt.pill_alarm = alarm;
+  return prompt;
+}
+
 void CallMediaFrame::Reset() {
   *this = CallMediaFrame{};
 }
@@ -166,6 +205,10 @@ CallMediaDecision CallMediaFrame::Decide(const CallScreen& screen, const CallMed
     link_counters_ = {};
     link_health_ = {};
     link_sampled_ms_ = 0;
+    steps_gone_ms_ = 0;
+    one_way_since_ms_ = 0;
+    not_sending_since_ms_ = 0;
+    last_pill_ms_.clear();
   }
   CallMediaDecision d;
   // Whatever VideoAllowedForCall said (false, unknown), a sending camera can always be turned off.
@@ -260,7 +303,8 @@ const CallMediaScreen& CallMediaFrame::Finish(const CallScreen& screen, const Ca
   view_.hint_key = facts.engine.capture_lost ? "call.quality.hint.mic_lost" : (hint_key ? hint_key : "");
   view_.line = DecideStatusLine(screen, facts, d, health, view_.hint_key, view_.timer_since_ms);
   // On hold the silence is by design: no "no audio" hint (unless the path is lost).
-  view_.hint_shown = !view_.hint_key.empty() && !(d.on_hold && !d.couldnt_connect && !d.path_lost);
+  const bool held = d.on_hold && !d.couldnt_connect && !d.path_lost;
+  view_.hint_shown = !view_.hint_key.empty() && !held;
 
   CallStoryInput story;
   story.call_id = facts.call_id;
@@ -274,6 +318,50 @@ const CallMediaScreen& CallMediaFrame::Finish(const CallScreen& screen, const Ca
   story.quality_bars = health.quality_bars;
   story.now_ms = facts.now_ms;
   StepStory(story, screen.status == Status::Reconnecting || d.reconnect);
+
+  // What the page says of the hint (DEV/PLAN-call-failed-redial.md 9-10): one-way audio counts from when the steps went.
+  const int64_t now = facts.now_ms;
+  const bool steps = view_.story.connecting;
+  if (steps) {
+    steps_gone_ms_ = 0;
+  } else if (steps_gone_ms_ == 0) {
+    steps_gone_ms_ = now;
+  }
+  const bool sending_only = health.asymmetry == CallAudioAsymmetry::SendingOnly;
+  if (!sending_only) {
+    one_way_since_ms_ = 0;
+  } else if (one_way_since_ms_ == 0) {
+    one_way_since_ms_ = now;
+  }
+  const bool not_sending = health.asymmetry == CallAudioAsymmetry::ReceivingOnly;
+  if (!not_sending) {
+    not_sending_since_ms_ = 0;
+  } else if (not_sending_since_ms_ == 0) {
+    not_sending_since_ms_ = now;
+  }
+  CallHintPromptInput hint;
+  hint.group = screen.group;
+  hint.video = screen.video;
+  hint.steps_shown = steps;
+  hint.hint_key = view_.hint_key;
+  hint.hint_shown = view_.hint_shown;
+  hint.asymmetry = health.asymmetry;
+  hint.capture_lost = facts.engine.capture_lost;
+  hint.one_way_ms = sending_only && !steps ? now - std::max(one_way_since_ms_, steps_gone_ms_) : 0;
+  hint.not_sending_ms = not_sending && !steps ? now - std::max(not_sending_since_ms_, steps_gone_ms_) : 0;
+  hint.quiet = d.couldnt_connect || d.reconnect || screen.status == Status::CouldntConnect ||
+               screen.status == Status::Disconnected || screen.status == Status::Reconnecting;
+  hint.mic_blocked = facts.mic_blocked;
+  hint.on_hold = held;
+  hint.now_ms = now;
+  const CallHintPrompt prompt = DecideCallHintPrompt(hint, last_pill_ms_);
+  view_.center_hint_key = prompt.center_key;
+  view_.pill_key = prompt.pill_key;
+  view_.pill_alarm = prompt.pill_alarm;
+  view_.hint_pilled = !screen.group;
+  if (!prompt.pill_key.empty()) {
+    last_pill_ms_[prompt.pill_key] = now;
+  }
   return view_;
 }
 

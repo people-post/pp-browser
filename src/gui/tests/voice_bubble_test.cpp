@@ -221,7 +221,8 @@ TEST(VoiceBubbleRender, APlayingSoundFileKeepsItsProgressOnARedraw) {
 TEST(VoiceBubbleRender, TappingAPictureOpensItFull) {
   const std::string rml = Render(Attachment("p1", "photo.jpg", "image/jpeg", 50000), Facts(true));
   EXPECT_NE(rml.find("chat-attachment-image"), std::string::npos) << rml;
-  EXPECT_NE(rml.find("data-event-click=\"open_picture('p1','"), std::string::npos) << rml;
+  // B203: the message id only; the full picture is found from the message (the bubble shows only its preview).
+  EXPECT_NE(rml.find("data-event-click=\"open_picture('p1')\""), std::string::npos) << rml;
 }
 
 // Kenneth 2026-11-03: picture bubbles had one fixed size (a portrait picture filled two thirds, the rest was empty). The
@@ -343,8 +344,10 @@ TEST(PictureBubbleFit, ThePictureCarriesItsFittedSize) {
   const std::string rml = Render(Attachment("p3", "tall.jpg", "image/jpeg", 50000), facts);
   EXPECT_NE(rml.find("width=\"292\" height=\"389\" style=\"margin-top:-14dp\""), std::string::npos) << rml;
   // The picture sits in a same-sized clip box that rounds its corners (the engine does not round an <img>).
-  EXPECT_NE(rml.find("<div class=\"chat-attachment-clip\" style=\"width:292dp;height:360dp\"><img "), std::string::npos)
+  EXPECT_NE(rml.find("<div class=\"chat-attachment-clip\" style=\"width:292dp;height:360dp\" pic-id=\"p3\""),
+            std::string::npos)
       << rml;
+  EXPECT_NE(rml.find("\"><img class=\"chat-attachment-image\""), std::string::npos) << rml;
   EXPECT_NE(rml.find("')\"/></div>"), std::string::npos) << rml;
   // Without a known size the picture is left to the stylesheet's limits.
   const std::string unknown = Render(Attachment("p4", "x.jpg", "image/jpeg", 50000), Facts(true));

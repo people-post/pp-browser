@@ -257,6 +257,8 @@ public:
   /** Collapse/expand the secondary pane (expanded layout, tabs with a secondary pane only). */
   void ToggleSidebarCollapsed();
   void SetOnLayoutSynced(std::function<void()> callback);
+  /** Called as each SyncLayout ends with its whole duration in ms (measurement: chat.open's layout_ms). */
+  void SetOnSyncLayoutMeasured(std::function<void(int64_t ms)> callback);
   /** Phone Chats list: a swipe-row button (or a full swipe) was used on `thread_id`. */
   void SetOnSessionSwipeAction(SessionSwipeGesture::ActionCallback callback);
 
@@ -328,6 +330,7 @@ private:
   void CallDecline();
   void CallLeave();
   void CallRetry();
+  void CallRedial();
   void CallMute();
   void CallCamera();
   void CallFlipCamera();
@@ -521,6 +524,7 @@ private:
   std::function<void(int, bool)> on_sidebar_changed_;
   std::function<void(int)> on_auxiliary_width_changed_;
   std::function<void()> on_layout_synced_;
+  std::function<void(int64_t ms)> on_sync_layout_measured_;
   MessagingShellPorts shell_messaging_ports_;
   ShellStatusbar statusbar_{state_, context_, shell_messaging_ports_, [this]() { ApplySafeAreaLayout(); }};
   PinGateActionPorts pin_gate_actions_;

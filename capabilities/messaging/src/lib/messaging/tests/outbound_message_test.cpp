@@ -1,6 +1,7 @@
 // What a send of ours writes and puts on the wire (OutboundMessage), checked against the receive
 // pipeline of the peer it goes to.
 #include "lib/delivery/OutboundMessage.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "foundation/error/AppError.h"
 
 #include "lib/delivery/EnvelopeSigner.h"
@@ -8,6 +9,7 @@
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/delivery/ReactionTypes.h"
 #include "lib/messaging/RelayReceivePipeline.h"
+#include "lib/messaging/EditMessage.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "common/chat/MessagingLimits.h"
@@ -183,6 +185,123 @@ TEST_F(OutboundMessageTest, TheRowAndTheReactionCap) {
   retract.payload_json = BuildReactionPayloadJson(kAnnotationTypeRetract, "msg-1", "");
   EXPECT_TRUE(AppendOutboundMessage(*alice_->store, NewOutboundMessage(thread.id, "", retract, "del", 1)))
       << "the cap never stops a delete";
+  EXPECT_TRUE(AppendOutboundMessage(
+      *alice_->store, NewOutboundMessage(thread.id, "x", EditSendOptions("msg-1", "x", "ed", 7), "id", 1)))
+      << "nor an edit";
+}
+
+// Our edit (DEV/PLAN-message-edit.md): it goes out as an `edit` annotation with the id and send time fixed at the tap,
+// numbered and queued as any message (its own row here is what history serves later), our message reads the new text
+// here at once, and the peer applies it.
+TEST_F(OutboundMessageTest, AnEditGoesOutAsAnEditAnnotationStampedAtTheTap) {
+  const Thread thread = alice_->DirectThreadTo(*bob_, ThreadChannel::E2ePublic);
+  auto original = alice_->Send(thread, *bob_, "see you at 8");
+  ASSERT_TRUE(original) << original.error().message;
+  ASSERT_TRUE(bob_->pipeline->ProcessEnvelope(*original, bob_->keys.account_id).persisted);
+  ThreadMessage target = alice_->store->GetMessage(thread.id, original->message_id).value().value();
+  target.delivery = MessageDelivery::Relayed; // it went out
+  ASSERT_TRUE(alice_->store->UpdateMessage(target));
+
+  const int64_t tapped_at = target.timestamp + 14 * 60'000;
+  ASSERT_TRUE(CanEditMessage(target, ThreadKind::Direct, tapped_at));
+  const int64_t sent_at = EditSendTime(tapped_at, target);
+  auto edit =
+      alice_->Send(thread, *bob_, "see you at 9", EditSendOptions(target.id, "see you at 9", "edit-1", sent_at));
+  ASSERT_TRUE(edit) << edit.error().message;
+  EXPECT_EQ(edit->message_id, "edit-1");
+  EXPECT_EQ(edit->timestamp, sent_at) << "stamped at the tap, whenever it is delivered";
+  EXPECT_EQ(edit->sender_seq, original->sender_seq + 1) << "numbered as any message";
+
+  const ThreadMessage row = alice_->store->GetMessage(thread.id, "edit-1").value().value();
+  EXPECT_TRUE(IsEditAnnotation(row)) << "our own edit row stays here (history serves it)";
+  EXPECT_EQ(row.target_message_id, std::optional<std::string>(target.id));
+  EXPECT_EQ(EditTextOf(row), std::optional<std::string>("see you at 9"));
+  EXPECT_EQ(row.delivery, MessageDelivery::Pending);
+  const auto queued = alice_->store->ListPendingOutbox().value();
+  EXPECT_TRUE(std::any_of(queued.begin(), queued.end(), [](const auto& entry) { return entry.first == "edit-1"; }))
+      << "queued until it goes out, as any message";
+
+  auto edited = ApplyOwnEdit(*alice_->store, target, row, {});
+  ASSERT_TRUE(edited) << edited.error().message;
+  const ThreadMessage ours = alice_->store->GetMessage(thread.id, target.id).value().value();
+  EXPECT_EQ(ours.text, "see you at 9");
+  EXPECT_EQ(EditMarkOf(ours)->edited_by, "edit-1");
+
+  const RelayReceiveOutcome got = bob_->pipeline->ProcessEnvelope(*edit, bob_->keys.account_id);
+  EXPECT_TRUE(got.persisted) << got.receive_failure_detail;
+  EXPECT_TRUE(got.suppress_inbox_chrome);
+  auto bobs = bob_->store->GetMessages(bob_->DirectThreadTo(*alice_, ThreadChannel::E2ePublic).id).value();
+  const auto said = std::find_if(bobs.begin(), bobs.end(), [&](const ThreadMessage& m) { return m.id == target.id; });
+  ASSERT_NE(said, bobs.end());
+  EXPECT_EQ(said->text, "see you at 9");
+  EXPECT_TRUE(EditMarkOf(*said).has_value());
+}
+
+/** The longest edit text of 'a's that EditFitsOnTheWire takes for `target_id`. */
+size_t LongestEditThatFits(const std::string& target_id) {
+  size_t fits = kMaxEditTextBytes;
+  while (fits > 0 && !EditFitsOnTheWire(target_id, std::string(fits, 'a'))) {
+    --fits;
+  }
+  return fits;
+}
+
+// An edit carries its text twice (top-level `text` and `value`), so a text the composer takes as a message can be too
+// long as an edit. Such an edit is refused before anything is stored or sent: our message keeps its words, no edit row.
+// The longest one that fits goes out, and the peer applies it.
+TEST_F(OutboundMessageTest, AnEditTooLongForOnePayloadChangesNothingHereAndOneThatFitsGoesOut) {
+  const Thread thread = alice_->DirectThreadTo(*bob_, ThreadChannel::E2ePublic);
+  auto original = alice_->Send(thread, *bob_, "see you at 8");
+  ASSERT_TRUE(original) << original.error().message;
+  ASSERT_TRUE(bob_->pipeline->ProcessEnvelope(*original, bob_->keys.account_id).persisted);
+  ThreadMessage target = alice_->store->GetMessage(thread.id, original->message_id).value().value();
+  target.delivery = MessageDelivery::Relayed;
+  ASSERT_TRUE(alice_->store->UpdateMessage(target));
+  const int64_t tapped_at = target.timestamp + 60'000;
+
+  const size_t fits = LongestEditThatFits(target.id);
+  ASSERT_LT(fits, kMaxComposeTextBytes) << "the composer takes texts that do not fit as an edit";
+  ThreadMessage over_wire;
+  over_wire.content_type = ChatContentType::Annotation;
+  over_wire.text = std::string(fits + 1, 'a');
+  over_wire.target_message_id = target.id;
+  over_wire.payload_json = BuildEditPayloadJson(target.id, over_wire.text);
+  auto encoded = ChatPayloadCodec::EncodeToRow(over_wire);
+  EXPECT_TRUE(!encoded || encoded->size() + kEditPayloadHeadroomBytes > kMaxE2ePlaintextBytes)
+      << "one byte more is over the plaintext limit as the send encodes it";
+
+  std::optional<RelayEnvelope> sent;
+  const auto send = [&](const std::string& edit_id, const std::string& text, const int64_t sent_at_ms) {
+    auto envelope = alice_->Send(thread, *bob_, text, EditSendOptions(target.id, text, edit_id, sent_at_ms));
+    if (!envelope) {
+      return Roe<ThreadMessage>(envelope.error());
+    }
+    sent = *envelope;
+    return Roe<ThreadMessage>(alice_->store->GetMessage(thread.id, edit_id).value().value());
+  };
+
+  auto too_long = EditOwnMessage(*alice_->store, target, ThreadKind::Direct, std::string(fits + 1, 'a'), tapped_at,
+                                 "edit-long", send, {});
+  ASSERT_FALSE(too_long);
+  EXPECT_EQ(too_long.error().message, "Edited text is empty or too long");
+  EXPECT_FALSE(sent) << "nothing sent";
+  EXPECT_FALSE(alice_->store->GetMessage(thread.id, "edit-long").value()) << "no edit row";
+  EXPECT_TRUE(alice_->store->GetAnnotationsForTarget(thread.id, target.id).value().empty());
+  const ThreadMessage kept = alice_->store->GetMessage(thread.id, target.id).value().value();
+  EXPECT_EQ(kept.text, "see you at 8");
+  EXPECT_FALSE(EditMarkOf(kept));
+
+  auto just_fits = EditOwnMessage(*alice_->store, target, ThreadKind::Direct, std::string(fits, 'a'), tapped_at,
+                                  "edit-fits", send, {});
+  ASSERT_TRUE(just_fits) << just_fits.error().message;
+  EXPECT_FALSE(just_fits->stored_unsent);
+  EXPECT_EQ(just_fits->row.text, std::string(fits, 'a'));
+  ASSERT_TRUE(sent);
+  const RelayReceiveOutcome got = bob_->pipeline->ProcessEnvelope(*sent, bob_->keys.account_id);
+  EXPECT_TRUE(got.persisted) << got.receive_failure_detail;
+  const ThreadMessage bobs =
+      bob_->store->GetMessage(bob_->DirectThreadTo(*alice_, ThreadChannel::E2ePublic).id, target.id).value().value();
+  EXPECT_EQ(bobs.text, std::string(fits, 'a'));
 }
 
 TEST(OutboundSendRulesTest, WhoMaySendAndHow) {

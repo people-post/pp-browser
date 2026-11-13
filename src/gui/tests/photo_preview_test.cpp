@@ -5,12 +5,13 @@
 namespace pbr {
 namespace {
 
-TEST(PhotoPreview, RmlHasThePictureASpinnerAndATapToClose) {
-  const std::string rml = PhotoPreviewRml("/tmp/a \"b\".jpg");
-  EXPECT_NE(rml.find("photo-preview-image"), std::string::npos) << rml;
+// B203: a tap shows a spinner only, no picture (the bubble holds only the small preview); the viewer gets the full one.
+TEST(PhotoPreview, RmlIsASpinnerAndATapToCloseWithNoPicture) {
+  const std::string rml = PhotoPreviewRml();
+  EXPECT_EQ(rml.find("<img"), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("photo-preview-image"), std::string::npos) << rml;
   EXPECT_NE(rml.find("photo-preview-spinner"), std::string::npos) << rml;
   EXPECT_NE(rml.find("photo_preview_close()"), std::string::npos) << rml;
-  EXPECT_EQ(rml.find("a \"b\""), std::string::npos) << rml; // the path is escaped in the attribute
 }
 
 TEST(PhotoPreview, OpeningToastOnlyForALargeNonPicture) {

@@ -14,6 +14,7 @@
 #include "lib/ai/StructuredTextParser.h"
 #include "lib/calls/CallControlFamily.h"
 #include "lib/messaging/AttachmentCache.h"
+#include "lib/messaging/EditMessage.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/PlainTextLinks.h"
@@ -358,19 +359,27 @@ std::string CryptoTxRml(const ThreadMessage& message) {
 }
 
 /**
+ * The photo icon in the middle of a placeholder (static: no animation, the page would redraw every frame). An <svg> and
+ * no <div>: the clip's own end is found as the first "</div>" after its marks (PictureClipSpan, DropPictureImages).
+ */
+constexpr const char* kPicturePlaceholderIconRml =
+    "<svg class=\"chat-picture-placeholder-icon\" src=\"../icons/v2/photo.svg\" width=\"28\" height=\"28\"></svg>";
+
+/**
  * A picture fitted into its bubble: a clip box with the fitted size and rounded corners (the engine does not round an
  * <img>), the picture in it (a tall one cropped to its middle), then `overlay`. `src` empty: the box alone (a grey
  * placeholder by its class). `fit` unknown ({0, 0}): the stylesheet fills the box. `img_attrs` go on the <img>.
  */
 std::string PictureClipRml(const PictureBubbleSize& fit, const std::string& src, const std::string& clip_class,
-                           const std::string& img_attrs, const std::string& overlay = {}) {
+                           const std::string& img_attrs, const std::string& overlay = {},
+                           const std::string& clip_attrs = {}) {
   std::string html = "<div class=\"chat-attachment-clip" + clip_class;
   if (fit.width_dp > 0) {
     html += "\" style=\"width:" + std::to_string(fit.width_dp) + "dp;height:" + std::to_string(fit.height_dp) + "dp\"";
   } else {
     html += " chat-attachment-clip--auto\""; // unknown size: the stylesheet fills the box
   }
-  html += ">";
+  html += clip_attrs + ">";
   if (!src.empty()) {
     html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(src) + "\"";
     if (fit.width_dp > 0) {
@@ -384,6 +393,156 @@ std::string PictureClipRml(const PictureBubbleSize& fit, const std::string& src,
   }
   return html + overlay + "</div>";
 }
+
+} // namespace
+
+std::string EditedTimeLabel(const ThreadMessage& message, const std::string& time_label) {
+  if (message.content_type != ChatContentType::Text || !EditMarkOf(message)) {
+    return time_label;
+  }
+  const std::string edited = Tr("chat.message.edited");
+  return time_label.empty() ? edited : edited + " " + time_label;
+}
+
+std::string PictureBubbleClipRml(const std::string& message_id, const std::string& hash_hex,
+                                 const TranscriptAttachmentView& view) {
+  // Its size is given, so the frame round it is laid out for that size and never for the file's own; the engine does
+  // not round an <img>, so a clip box with the same size and rounded corners holds it. The clip names its message and
+  // bytes, so a preview made later replaces only this clip (ReplacePictureClip).
+  const PictureBubbleSize fit = FitPictureInBubble(view.image_width, view.image_height);
+  const std::string tap = " data-event-click=\"open_picture('" + JsArgInAttribute(message_id) + "')\"";
+  const std::string marks = " pic-id=\"" + StructuredTextParser::EscapeText(message_id) + "\" pic-hash=\"" +
+                            StructuredTextParser::EscapeText(hash_hex) + "\"";
+  if (view.picture_placeholder || view.local_path.empty()) {
+    return PictureClipRml(fit, std::string(), " chat-picture-placeholder", std::string(), kPicturePlaceholderIconRml,
+                          marks + tap);
+  }
+  return PictureClipRml(fit, view.local_path, std::string(), tap, std::string(), marks);
+}
+
+namespace {
+
+/** Where the picture clip of `message_id` starts and ends ([begin, end)) in a row's RML; nullopt: none. */
+std::optional<std::pair<size_t, size_t>> PictureClipSpan(const std::string& rml, const std::string& message_id) {
+  const std::string mark = " pic-id=\"" + StructuredTextParser::EscapeText(message_id) + "\"";
+  const size_t at = rml.find(mark);
+  if (at == std::string::npos) {
+    return std::nullopt;
+  }
+  const size_t begin = rml.rfind("<div class=\"chat-attachment-clip", at);
+  // The clip holds an <img .../> or nothing: its own end is the first close after its marks.
+  const size_t close = rml.find("</div>", at);
+  if (begin == std::string::npos || close == std::string::npos) {
+    return std::nullopt;
+  }
+  return std::make_pair(begin, close + 6);
+}
+
+} // namespace
+
+bool ReplacePictureClip(std::string& rml, const std::string& message_id, const std::string& clip_rml) {
+  const auto span = PictureClipSpan(rml, message_id);
+  if (!span) {
+    return false;
+  }
+  rml.replace(span->first, span->second - span->first, clip_rml);
+  return true;
+}
+
+bool RowShowsPicturePlaceholder(const MessageDisplayRow& row, const std::string& hash_hex) {
+  const std::string_view rml(row.content_rml.data(), row.content_rml.size());
+  const std::string mark = "pic-hash=\"" + StructuredTextParser::EscapeText(hash_hex) + "\"";
+  for (size_t at = rml.find(mark); at != std::string_view::npos; at = rml.find(mark, at + mark.size())) {
+    const size_t begin = rml.rfind("<div class=\"chat-attachment-clip", at);
+    const size_t open_end = rml.find('>', at);
+    if (begin != std::string_view::npos && open_end != std::string_view::npos &&
+        rml.substr(begin, open_end - begin).find("chat-picture-placeholder") != std::string_view::npos) {
+      return true;
+    }
+  }
+  return false;
+}
+
+ReadyPreviews ApplyReadyPreviews(
+    std::vector<MessageDisplayRow>& rows, const std::vector<std::string>& ready,
+    const std::unordered_set<std::string>& failed,
+    const std::function<std::optional<TranscriptAttachmentView>(const std::string& message_id)>& view_of) {
+  ReadyPreviews out;
+  for (MessageDisplayRow& row : rows) {
+    for (const std::string& hex : ready) {
+      if (!RowShowsPicturePlaceholder(row, hex)) {
+        continue;
+      }
+      if (failed.contains(hex)) {
+        out.redraw_all = true; // its card becomes a file card
+        continue;
+      }
+      const std::string message_id = row.message_id.c_str();
+      const std::optional<TranscriptAttachmentView> view = view_of(message_id);
+      if (!view) {
+        out.redraw_all = true;
+        continue;
+      }
+      if (view->picture_placeholder) {
+        continue; // gone again meanwhile (a lock): asked again, it comes later
+      }
+      if (view->local_path.empty() || !view->inline_image_ok) {
+        out.redraw_all = true;
+        continue;
+      }
+      // Only this picture's clip: the row's element and the other rows stay as they are (data-rml resets this row's
+      // content only, as its RML is the only one that changed).
+      std::string rml = row.content_rml.c_str();
+      if (ReplacePictureClip(rml, message_id, PictureBubbleClipRml(message_id, hex, *view))) {
+        row.content_rml = rml.c_str();
+        out.changed = true;
+      }
+    }
+  }
+  return out;
+}
+
+bool DropPictureImages(std::string& rml) {
+  bool changed = false;
+  static const std::string kClip = "<div class=\"chat-attachment-clip";
+  for (size_t begin = rml.find(kClip); begin != std::string::npos; begin = rml.find(kClip, begin + 1)) {
+    const size_t open_end = rml.find('>', begin);
+    if (open_end == std::string::npos) {
+      break;
+    }
+    const std::string open_tag = rml.substr(begin, open_end - begin);
+    if (open_tag.find(" pic-id=\"") == std::string::npos ||
+        open_tag.find("chat-picture-placeholder") != std::string::npos) {
+      continue; // not a chat picture's clip (the marks are only on those), or already its placeholder
+    }
+    const size_t close = rml.find("</div>", open_end);
+    if (close == std::string::npos) {
+      break;
+    }
+    rml.erase(open_end + 1, close - open_end - 1); // the <img .../> goes: nothing points at the wiped file
+    rml.insert(open_end + 1, kPicturePlaceholderIconRml);
+    rml.insert(begin + kClip.size(), " chat-picture-placeholder");
+    changed = true;
+  }
+  // A video's poster and a sound file's cover come from the same view cache. The poster's <img> goes and its frame
+  // stays empty (VideoBodyRml's frame without a poster); the cover becomes the music note it shows without one.
+  // An attribute value never holds "/>" (EscapeText escapes '>'), so the first one after the tag closes it.
+  const auto drop_tag = [&rml, &changed](const std::string& tag, const std::string& instead) {
+    for (size_t at = rml.find(tag); at != std::string::npos; at = rml.find(tag, at + instead.size())) {
+      const size_t end = rml.find("/>", at);
+      if (end == std::string::npos) {
+        return;
+      }
+      rml.replace(at, end + 2 - at, instead);
+      changed = true;
+    }
+  };
+  drop_tag("<img class=\"chat-attachment-video-poster\"", std::string());
+  drop_tag("<img class=\"chat-audio-cover-image\"", kAudioCoverNoteRml);
+  return changed;
+}
+
+namespace {
 
 /**
  * A video card's body, sent or being sent: the poster in its clip box (`poster_frame`: FitPictureInBubble; 216 x 122
@@ -495,7 +654,8 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
   const std::string& local_path = view.local_path;
 
   const bool ready = fields && state == AttachmentFetchWorkflow::DownloadState::Ready;
-  const bool inline_image = ready && IsAttachmentImageMime(fields->mime) && !local_path.empty() && view.inline_image_ok;
+  const bool inline_image = ready && IsAttachmentImageMime(fields->mime) &&
+                            (!local_path.empty() || view.picture_placeholder) && view.inline_image_ok;
   // A picture card is a thin frame around the picture on phones (its own modifier); files and videos are compact cards.
   // A video card is a frame round its poster like a picture's (--video: up to the picture's width, not the file 240dp).
   const bool video_card = ready && !inline_image && IsAttachmentVideoMime(fields->mime);
@@ -537,13 +697,9 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
                               facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
   }
   if (inline_image) {
-    // A tap opens the full picture in the system viewer (zoomable). The bubble shows it fitted inside 280 x 320dp:
-    // its size is given, so the frame round it is laid out for that size and never for the file's own.
-    // The engine does not round an <img>, so a clip box with the same size and rounded corners holds it.
-    const PictureBubbleSize fit = FitPictureInBubble(view.image_width, view.image_height);
-    html += PictureClipRml(fit, local_path, "",
-                           " data-event-click=\"open_picture('" + JsArgInAttribute(message.id) + "','" +
-                               JsArgInAttribute(local_path) + "')\"");
+    // A tap opens the full picture in the system viewer (zoomable). The bubble shows its preview (or the picture, when
+    // no longer than the preview) fitted inside the box, or a placeholder of that size until the preview is made.
+    html += PictureBubbleClipRml(message.id, AttachmentHashHex(fields->content_hash), view);
   } else if (ready && IsAttachmentVideoMime(fields->mime)) {
     // The whole frame is the tap target (the system player opens directly); the play disc is drawn over the poster
     // and takes no taps. The frame is clipped to the same size picture bubbles use, so nothing can exceed the bubble.
@@ -738,8 +894,9 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   } else {
     text_rml = paragraph + LinkedTextRml(message.text, id_arg, mention_runs) + "</p>";
   }
-  // The time sits at the bottom right inside the bubble (phones; hidden on the desktop, which has the meta line).
-  const std::string clock = MessageClockLabel(message.timestamp);
+  // The time sits at the bottom right inside the bubble (phones; hidden on the desktop, which has the meta line). An
+  // edited message says so before it, in the same size and colour (DEV/PLAN-message-edit.md).
+  const std::string clock = EditedTimeLabel(message, MessageClockLabel(message.timestamp));
   if (!clock.empty()) {
     text_rml += "<div class=\"bubble-time\">" + clock + "</div>";
   }
@@ -1081,7 +1238,7 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     row.mentions_me = mentions_me;
     row.has_reactions = !entry.reactions.empty();
     if (!entry.control) {
-      row.time_label = MessageTimeLabel(message.timestamp, now_ms).c_str();
+      row.time_label = EditedTimeLabel(message, MessageTimeLabel(message.timestamp, now_ms)).c_str();
     }
     const bool new_day = message.timestamp > 0 && !SameLocalDay(prev_ms, message.timestamp);
     if (new_day) {

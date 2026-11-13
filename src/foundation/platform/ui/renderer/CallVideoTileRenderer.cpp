@@ -87,6 +87,20 @@ void CallVideoTileRenderer::RetainPeers(const std::vector<uint32_t>& keep) {
   }
 }
 
+uint64_t CallVideoTileRenderer::HeldSeq(const CallVideoTileKind kind, const uint32_t stream_id) const {
+  switch (kind) {
+    case CallVideoTileKind::Remote:
+      return remote_.pending.seq;
+    case CallVideoTileKind::Local:
+      return local_.pending.seq;
+    case CallVideoTileKind::Peer: {
+      auto it = peers_.find(stream_id);
+      return it == peers_.end() ? 0 : it->second.pending.seq;
+    }
+  }
+  return 0;
+}
+
 void CallVideoTileRenderer::ReleaseGpuResources() {
   ReleaseTile(remote_);
   ReleaseTile(local_);

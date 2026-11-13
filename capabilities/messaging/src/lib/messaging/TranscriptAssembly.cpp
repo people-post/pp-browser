@@ -137,7 +137,7 @@ std::vector<TranscriptRow> AssembleTranscript(const std::vector<ThreadMessage>& 
   std::vector<TranscriptRow> orphans;
   for (const ThreadMessage* annotation : annotations) {
     const ChatAnnotationFields fields = AnnotationFieldsOf(*annotation);
-    if (fields.annotation_type == kAnnotationTypeRetract) {
+    if (fields.annotation_type == kAnnotationTypeRetract || fields.annotation_type == kAnnotationTypeEdit) {
       continue; // applied to its target (or waiting for it); never shown
     }
     const std::string target_id = annotation->target_message_id.value_or("");

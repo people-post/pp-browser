@@ -4,8 +4,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -23,8 +25,10 @@ public:
   }
   void SetCallbacks(Callbacks callbacks) override { callbacks_ = std::move(callbacks); }
   bool HasPendingPushCall() const override { return pending_push; }
-  void ReportIncoming(const std::string& call_id, const std::string& caller_name, bool video) override {
-    log.push_back("incoming " + call_id + " " + caller_name + (video ? " video" : ""));
+  void ReportIncoming(const std::string& call_id, const std::string& caller_name, bool video,
+                      bool full_screen) override {
+    log.push_back("incoming " + call_id + " " + caller_name + (video ? " video" : "") +
+                  (full_screen ? "" : " no-full-screen"));
     pending_push = false;
   }
   void ReportEnded(const std::string& call_id) override { log.push_back("ended " + call_id); }
@@ -50,20 +54,32 @@ public:
 class CallSystemUiBridgeTest : public ::testing::Test {
 protected:
   CallSystemUiBridgeTest()
-      : bridge_(ui_, {
-                         .accept =
-                             [this](const std::string& call_id, bool voice_only) {
-                               did.push_back(voice_only ? "accept voice" : "accept");
-                               accepted_ids.push_back(call_id);
-                               if (on_accept) {
-                                 on_accept(); // what the presenter does: it redraws at once
-                               }
-                             },
-                         .decline = [this]() { did.push_back("decline"); },
-                         .leave = [this]() { did.push_back("leave"); },
-                         .display_name = [](const std::string& identity) { return "name-of-" + identity; },
-                         .now_ms = [this]() { return now; },
-                     }) {}
+      : bridge_(ui_,
+                {
+                    .accept =
+                        [this](const std::string& call_id, bool voice_only) {
+                          did.push_back(voice_only ? "accept voice" : "accept");
+                          accepted_ids.push_back(call_id);
+                          if (on_accept) {
+                            on_accept(); // what the presenter does: it redraws at once
+                          }
+                        },
+                    .decline = [this]() { did.push_back("decline"); },
+                    .leave = [this]() { did.push_back("leave"); },
+                    .display_name = [](const std::string& identity) { return "name-of-" + identity; },
+                    .now_ms = [this]() { return now; },
+                    // What CallController's redraw does: the app rings the ring unless the system screen does.
+                    // Recorded in the system screen's log, so the order against "ended" shows.
+                    .ring_moved =
+                        [this]() {
+                          ui_.log.push_back((bridge_.SystemRings(ring_id) ? "system rings " : "app rings ") + ring_id);
+                          if (on_ring_moved) {
+                            on_ring_moved();
+                          }
+                        },
+                    .screen_state = [this]() { return screen; },
+                    .pin_locked = [this]() { return pin_locked; },
+                }) {}
 
   static CallScreen Ring(const std::string& call_id, bool video = false) {
     CallScreen s;
@@ -97,8 +113,24 @@ protected:
   std::vector<std::string> did;
   std::vector<std::string> accepted_ids;
   std::function<void()> on_accept;
+  std::function<void()> on_ring_moved;
   int64_t now = 1'000'000;
+  /** What the platform says about the screen (nothing: the query failed); PP's PIN gate. */
+  std::optional<DeviceScreenState> screen = DeviceScreenState{};
+  bool pin_locked = false;
+  /** The ring ring_moved reports on. */
+  std::string ring_id = "c1";
   CallSystemUiBridge bridge_;
+
+  /** The 300 ms ring timer firing for `ms` (Reevaluate at each tick), the app's visibility as given. */
+  void TicksFor(const int64_t ms, const bool app_foreground) {
+    for (int64_t t = 0; t < ms; t += kTickMs) {
+      now += kTickMs;
+      bridge_.Reevaluate(app_foreground);
+    }
+  }
+  int Count(const std::string& what) const { return static_cast<int>(std::count(did.begin(), did.end(), what)); }
+  static constexpr int64_t kTickMs = 300;
 };
 
 TEST_F(CallSystemUiBridgeTest, ARingInTheForegroundStaysInTheApp) {
@@ -419,6 +451,255 @@ TEST_F(CallSystemUiBridgeTest, NothingWithoutASystemScreen) {
   CallSystemUiBridge bridge(none, {});
   bridge.Sync(Ring("c1"), "", false);
   EXPECT_FALSE(bridge.SystemRings("c1"));
+}
+
+// --- Handing the ring back to the app (DEV/PLAN-android-incoming-call-screen.md) ---------------------------------
+
+// MIUI raises the app on the notification's full-screen intent: once the user has seen the app for 300 ms, its own ring
+// page and ringtone take the ring, then the notification goes — never told to the call as a decline or an end.
+TEST_F(CallSystemUiBridgeTest, SeenForTheSettleTimeTheRingComesBackToTheAppOnce) {
+  bridge_.Sync(Ring("c1"), "", /*app_foreground=*/false);
+  ASSERT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"})) << "the first one raises the app";
+  EXPECT_TRUE(bridge_.WantsReevaluation()) << "the 300 ms re-evaluation runs while the system screen rings";
+
+  bridge_.Sync(Ring("c1"), "", true); // MIUI raised the app: a frame alone hands nothing back
+  bridge_.Reevaluate(true);           // the foreground listener: the settle time starts
+  now += kCallRingHandBackSettleMs - 1;
+  bridge_.Reevaluate(true);
+  EXPECT_TRUE(bridge_.SystemRings("c1")) << "not yet 300 ms";
+  now += 1;
+  bridge_.Reevaluate(true);
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice", "app rings c1", "ended c1"}))
+      << "the app's ring page and ringtone first, then the notification goes";
+  EXPECT_FALSE(bridge_.SystemRings("c1"));
+  EXPECT_FALSE(bridge_.WantsReevaluation()) << "handed back: the re-evaluation stops";
+  EXPECT_EQ(Count("decline"), 0) << "taking the notification away is not a decline";
+  EXPECT_EQ(Count("leave"), 0) << "nor the end of the call";
+
+  TicksFor(3'000, true);
+  bridge_.Sync(Ring("c1"), "", true);
+  EXPECT_EQ(ui_.log.size(), 3u) << "once";
+  EXPECT_TRUE(did.empty());
+}
+
+TEST_F(CallSystemUiBridgeTest, ARedrawThatEndsTheRingDuringTheHandBackIsNotReportedTwice) {
+  bridge_.Sync(Ring("c1"), "", false);
+  bridge_.Reevaluate(true);
+  // The caller hung up just as the app redraws: that frame lets the notification go itself.
+  on_ring_moved = [this]() { bridge_.Sync(CallScreen{}, "", true); };
+  now += kTickMs;
+  bridge_.Reevaluate(true);
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice", "app rings c1", "ended c1"}));
+  EXPECT_FALSE(bridge_.WantsReevaluation());
+  EXPECT_TRUE(did.empty());
+}
+
+TEST_F(CallSystemUiBridgeTest, ALockedOrDarkPhoneInFrontKeepsTheRingOnTheSystemScreen) {
+  for (const auto& [name, state] : std::vector<std::pair<std::string, std::optional<DeviceScreenState>>>{
+           {"locked", DeviceScreenState{.interactive = true, .keyguard_locked = true}},
+           {"dark", DeviceScreenState{.interactive = false, .keyguard_locked = false}},
+           {"query failed", std::nullopt},
+       }) {
+    const std::string id = "call-" + name; // a new call each round
+    ui_.log.clear();
+    screen = state;
+    bridge_.Sync(Ring(id), "", false);
+    TicksFor(3'000, true);
+    EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming " + id + " name-of-alice"})) << name;
+    EXPECT_TRUE(bridge_.SystemRings(id)) << name << ": the notification and its ringtone stay";
+    EXPECT_TRUE(bridge_.WantsReevaluation()) << name;
+    bridge_.Sync(CallScreen{}, "", false); // the caller gives up
+    EXPECT_EQ(ui_.log.back(), "ended " + id) << name;
+    EXPECT_FALSE(bridge_.WantsReevaluation()) << name << ": the timer stops with the ring";
+  }
+}
+
+// Seen on a locked or dark phone, an app in front is not seen: the ring goes to the system screen even then.
+TEST_F(CallSystemUiBridgeTest, ARingOnALockedPhoneGoesToTheSystemScreenEvenWithTheAppInFront) {
+  screen = DeviceScreenState{.interactive = true, .keyguard_locked = true};
+  EXPECT_TRUE(bridge_.TakesRing(true, false));
+  screen = std::nullopt;
+  EXPECT_TRUE(bridge_.TakesRing(true, false)) << "a failed query counts as not seen";
+  screen = DeviceScreenState{};
+  pin_locked = true;
+  EXPECT_TRUE(bridge_.TakesRing(true, false)) << "behind the PIN";
+  pin_locked = false;
+  EXPECT_FALSE(bridge_.TakesRing(true, false));
+}
+
+TEST_F(CallSystemUiBridgeTest, BackToTheBackgroundBeforeTheSettleTimeHandsNothingBack) {
+  bridge_.Sync(Ring("c1"), "", false);
+  bridge_.Reevaluate(true);
+  now += 200;
+  bridge_.Reevaluate(false); // MIUI let the app go again
+  now += 200;
+  bridge_.Reevaluate(true); // in front again: the time starts over
+  now += kCallRingHandBackSettleMs - 1;
+  bridge_.Reevaluate(true);
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"}));
+  EXPECT_TRUE(bridge_.SystemRings("c1"));
+}
+
+// Not only the foreground switch counts: unlocking the phone with the app already in front is seen by the timer.
+TEST_F(CallSystemUiBridgeTest, LockedInFrontThenUnlockedTheTimerHandsTheRingBack) {
+  screen = DeviceScreenState{.interactive = true, .keyguard_locked = true};
+  bridge_.Sync(Ring("c1"), "", false);
+  bridge_.Reevaluate(true); // the foreground listener: behind the keyguard
+  TicksFor(1'500, true);
+  ASSERT_TRUE(bridge_.SystemRings("c1"));
+  screen = DeviceScreenState{}; // unlocked; no lifecycle event comes
+  now += kTickMs;
+  bridge_.Reevaluate(true); // the first tick that sees it
+  EXPECT_TRUE(bridge_.SystemRings("c1"));
+  now += kTickMs;
+  bridge_.Reevaluate(true); // 300 ms later
+  EXPECT_FALSE(bridge_.SystemRings("c1"));
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice", "app rings c1", "ended c1"}));
+}
+
+TEST_F(CallSystemUiBridgeTest, BehindThePinTheRingStaysThereUntilThePinIsEntered) {
+  pin_locked = true;
+  bridge_.Sync(Ring("c1"), "", false);
+  bridge_.Reevaluate(true); // raised onto the PIN page
+  TicksFor(3'000, true);
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"})) << "no ring page over the PIN";
+  pin_locked = false; // the PIN is entered
+  TicksFor(kTickMs, true);
+  EXPECT_TRUE(bridge_.SystemRings("c1"));
+  TicksFor(kTickMs, true);
+  EXPECT_FALSE(bridge_.SystemRings("c1")) << "300 ms after the PIN";
+  EXPECT_EQ(ui_.log.back(), "ended c1");
+}
+
+TEST_F(CallSystemUiBridgeTest, AnsweredOnTheNotificationOrWithAPushWaitingNothingIsHandedBack) {
+  bridge_.Sync(Ring("c1"), "", false);
+  ui_.pending_push = true; // a second call's push waits for its ring
+  TicksFor(3'000, true);
+  EXPECT_TRUE(bridge_.SystemRings("c1"));
+  ui_.pending_push = false;
+  ui_.callbacks_.answer("c1");
+  EXPECT_FALSE(bridge_.WantsReevaluation()) << "answered there: it keeps the call";
+  TicksFor(3'000, true);
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"}));
+  EXPECT_EQ(did, (std::vector<std::string>{"accept voice"}));
+}
+
+// Given back, then the user leaves the app while it still rings: the system screen rings it again, but this
+// notification must not raise the app (no full-screen intent), or Home would pull the app straight back up.
+TEST_F(CallSystemUiBridgeTest, LeftWhileTheAppRingsItTheNotificationReturnsWithoutRaisingTheApp) {
+  struct Leave {
+    std::string name;
+    bool app_foreground;
+    std::optional<DeviceScreenState> screen;
+    bool pin_locked;
+  };
+  const std::vector<Leave> leaves = {
+      {"Home", false, DeviceScreenState{}, false},
+      {"screen off", true, DeviceScreenState{.interactive = false, .keyguard_locked = false}, false},
+      {"locked", true, DeviceScreenState{.interactive = true, .keyguard_locked = true}, false},
+      {"PIN", true, DeviceScreenState{}, true},
+  };
+  int n = 0;
+  for (const Leave& leave : leaves) {
+    ring_id = "c" + std::to_string(++n); // a new call each round
+    ui_.log.clear();
+    screen = DeviceScreenState{};
+    pin_locked = false;
+    bridge_.Sync(Ring(ring_id), "", false);
+    bridge_.Reevaluate(true);
+    TicksFor(kTickMs, true);
+    ASSERT_EQ(ui_.log, (std::vector<std::string>{"incoming " + ring_id + " name-of-alice", "app rings " + ring_id,
+                                                 "ended " + ring_id}))
+        << leave.name;
+
+    screen = leave.screen;
+    pin_locked = leave.pin_locked;
+    bridge_.Reevaluate(leave.app_foreground); // the next tick sees the app gone
+    EXPECT_TRUE(bridge_.SystemRings(ring_id)) << leave.name;
+    ASSERT_EQ(ui_.log.size(), 5u) << leave.name;
+    EXPECT_EQ(ui_.log[3], "incoming " + ring_id + " name-of-alice no-full-screen") << leave.name;
+    EXPECT_EQ(ui_.log[4], "system rings " + ring_id) << leave.name << ": the app's page and ringtone go";
+    EXPECT_TRUE(bridge_.WantsReevaluation()) << leave.name;
+    TicksFor(3'000, leave.app_foreground);
+    EXPECT_EQ(ui_.log.size(), 5u) << leave.name << ": it stays on the system screen meanwhile";
+
+    // Seen again: back to the app after 300 ms, still without any decline.
+    screen = DeviceScreenState{};
+    pin_locked = false;
+    TicksFor(2 * kTickMs, true);
+    EXPECT_FALSE(bridge_.SystemRings(ring_id)) << leave.name;
+    EXPECT_EQ(ui_.log.back(), "ended " + ring_id) << leave.name;
+    EXPECT_TRUE(did.empty()) << leave.name;
+    bridge_.Sync(CallScreen{}, "", true); // over
+  }
+}
+
+// The app rang it in front from the start (no notification yet), then the user pressed Home: the notification that
+// takes it must not raise the app either — the user has seen this call already.
+TEST_F(CallSystemUiBridgeTest, RungInFrontFromTheStartThenLeftTheNotificationDoesNotRaiseTheApp) {
+  bridge_.Sync(Ring("c1"), "", /*app_foreground=*/true);
+  TicksFor(3 * kTickMs, true);
+  ASSERT_TRUE(ui_.log.empty()) << "the app rings it";
+
+  bridge_.Reevaluate(false); // Home
+  ASSERT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice no-full-screen", "system rings c1"}));
+  EXPECT_TRUE(bridge_.SystemRings("c1"));
+  EXPECT_TRUE(did.empty());
+}
+
+TEST_F(CallSystemUiBridgeTest, ANewCallsFirstNotificationRaisesTheAppAgain) {
+  bridge_.Sync(Ring("c1"), "", false);
+  TicksFor(2 * kTickMs, true);
+  bridge_.Reevaluate(false);
+  bridge_.Sync(CallScreen{}, "", false);
+  bridge_.Sync(Ring("c2"), "", false);
+  EXPECT_EQ(ui_.log.back(), "incoming c2 name-of-alice");
+}
+
+TEST_F(CallSystemUiBridgeTest, ARingOverACallIsNeverTakenByTheReevaluation) {
+  bridge_.Sync(InCall("c1"), "c1", true);
+  bridge_.Sync(RingOver("c2", "c1"), "c1", true);
+  TicksFor(1'000, false);
+  EXPECT_TRUE(ui_.log.empty());
+}
+
+TEST_F(CallSystemUiBridgeTest, TheRingEndingClearsTheStateAndStopsTheReevaluation) {
+  bridge_.Sync(Ring("c1"), "", false);
+  bridge_.Reevaluate(true);
+  bridge_.Sync(CallScreen{}, "", true);
+  EXPECT_EQ(ui_.log.back(), "ended c1");
+  EXPECT_FALSE(bridge_.WantsReevaluation());
+  TicksFor(1'000, true);
+  TicksFor(1'000, false);
+  EXPECT_EQ(ui_.log.size(), 2u) << "nothing rings, nothing is handed anywhere";
+  EXPECT_TRUE(did.empty());
+}
+
+// The 300 ms ring timer wakes the main loop: where the phone has no call screen (iOS, desktop) it has nothing to do.
+TEST_F(CallSystemUiBridgeTest, TheRingTimerDoesNotRunWhereTheSystemCallScreenIsUnavailable) {
+  ui_.available = false;
+  ui_.available_when_asked_again = false; // a new ring asks the OS again: it still says no
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_FALSE(bridge_.WantsRingTimer(/*app_rings=*/true)) << "the app rings: nothing to re-evaluate, no wake-ups";
+  EXPECT_FALSE(bridge_.WantsRingTimer(/*app_rings=*/false));
+}
+
+TEST_F(CallSystemUiBridgeTest, TheRingTimerRunsWhileTheAppRingsOrTheSystemScreenRings) {
+  EXPECT_FALSE(bridge_.WantsRingTimer(false)) << "nothing rings";
+  EXPECT_TRUE(bridge_.WantsRingTimer(true)) << "the app rings: the phone's ringer is read again";
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_TRUE(bridge_.WantsReevaluation());
+  EXPECT_TRUE(bridge_.WantsRingTimer(false)) << "the system screen rings: it is re-evaluated";
+}
+
+// A ring over the call the user is in (never taken) must not count as "seen": when the call is no longer a conflict
+// and the user is still away, the ring is new to them and raises the screen.
+TEST_F(CallSystemUiBridgeTest, ARingOverACallInTheBackgroundIsNotMarkedSeen) {
+  bridge_.Sync(InCall("c1"), "c1", false);
+  bridge_.Sync(RingOver("c2", "c1"), "c1", false);
+  EXPECT_TRUE(ui_.log.empty());
+  bridge_.Sync(Ring("c2"), "", false); // the call ended; the ring stays
+  EXPECT_EQ(ui_.log.back(), "incoming c2 name-of-alice") << "full-screen: the user never saw it";
 }
 
 } // namespace

@@ -6,7 +6,9 @@
 #include "feature/conversations/InboxController.h"
 #include "feature/presenters/PendingUpload.h"
 
+#include <functional>
 #include <optional>
+#include <unordered_set>
 #include <vector>
 
 namespace pbr {
@@ -36,12 +38,52 @@ inline constexpr int kPictureBubbleMaxHeightDp = 360;
 inline constexpr int kPictureBubbleMinShortSideDp = 120;
 
 /**
+ * A message's time as a bubble or the meta line shows it, with "Edited" before it when the message was edited
+ * (DEV/PLAN-message-edit.md); `time_label` alone otherwise ("" stays "" unless edited).
+ */
+std::string EditedTimeLabel(const ThreadMessage& message, const std::string& time_label);
+
+/**
  * A `width_px` x `height_px` picture laid out for the bubble: scaled to the box width (never enlarged past what its
  * short side needs to reach kPictureBubbleMinShortSideDp; at least 1dp a side). A picture taller than the box keeps
  * the full width and is cropped to the box height, its middle showing (`image_height_dp` > `height_dp`, the picture
  * drawn `image_offset_dp` above the clip). {0, 0} when the size is unknown.
  */
 PictureBubbleSize FitPictureInBubble(int width_px, int height_px);
+
+/**
+ * A chat picture's clip box (B203), laid out for the picture's size (`view.image_width` x `image_height`): its preview
+ * (or the picture itself when no longer than the preview) at `view.local_path`, or, with `view.picture_placeholder`,
+ * an empty box of the same size (class chat-picture-placeholder) until the preview is made. A tap on either opens
+ * the full picture (open_picture with the message id only: the open path is found from the message, never from the
+ * bubble). The clip carries `pic-id` (the message) and `pic-hash` (its bytes, hex) for ReplacePictureClip.
+ */
+std::string PictureBubbleClipRml(const std::string& message_id, const std::string& hash_hex,
+                                 const TranscriptAttachmentView& view);
+/** Puts `clip_rml` in place of the picture clip of `message_id` in a row's RML; false when the row has none. */
+bool ReplacePictureClip(std::string& rml, const std::string& message_id, const std::string& clip_rml);
+/** The row shows the placeholder of the picture with these bytes (hex). */
+bool RowShowsPicturePlaceholder(const MessageDisplayRow& row, const std::string& hash_hex);
+struct ReadyPreviews {
+  bool changed = false;    // some picture clips were replaced in their rows
+  bool redraw_all = false; // a row must be built again (its card changes: a file card now)
+};
+/**
+ * Previews made (or that cannot be made: `failed`) for the bytes `ready` (hex): each row showing one's placeholder
+ * gets only its picture clip replaced (ReplacePictureClip) with what `view_of(message id)` says now; a failed one, a
+ * message not found (nullopt) or a view with no picture asks for `redraw_all`; a view that is a placeholder again (a
+ * lock meanwhile) is left as it is. Other rows are not touched.
+ */
+ReadyPreviews ApplyReadyPreviews(
+    std::vector<MessageDisplayRow>& rows, const std::vector<std::string>& ready,
+    const std::unordered_set<std::string>& failed,
+    const std::function<std::optional<TranscriptAttachmentView>(const std::string& message_id)>& view_of);
+/**
+ * Every chat picture in a row's RML becomes its placeholder (its <img> taken out), a video's poster leaves its frame
+ * empty and a sound file's cover becomes the music note: the lock wipes the files they show, and a drawing must not
+ * ask for them again. True when something changed.
+ */
+bool DropPictureImages(std::string& rml);
 
 /**
  * The picture being sent, drawn as our picture bubble while it uploads (DEV/PLAN-picture-upload-bubble.md): the same

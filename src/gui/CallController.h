@@ -19,6 +19,7 @@
 #include "feature/presenters/CallSystemUiBridge.h"
 #include "feature/presenters/CallUiAttachGuard.h"
 #include "gui/CallChromeSync.h"
+#include "gui/CallRosterCache.h"
 #include "gui/CallDemoScenes.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
@@ -61,6 +62,8 @@ public:
   void BindPeerLinkRefresh(std::function<void()> callback);
   /** Opens a chat; used to land on the ringing call's thread after a call-alert tap. */
   void BindOpenThread(std::function<void(const std::string& thread_id)> callback);
+  /** PP's PIN gate is up (its vault is not open): a ring the phone's call screen rings stays there meanwhile. */
+  void BindPinLocked(std::function<bool()> pin_locked);
 
   void BindToMessaging();
   void Tick();
@@ -106,6 +109,8 @@ public:
   void EndDisconnectedCall(int64_t now_ms);
   std::string NoticeUserText(const CallNotice& notice) const;
   void RetryConnect();
+  /** A 1:1 failed page's "Call again" (CallPresenter::Redial). */
+  void RedialCall();
   void ToggleMute();
   void ToggleCamera();
   void FlipCamera();
@@ -145,17 +150,21 @@ private:
   /** The ring's answer buttons: video / voice, free / take-all (P001), the conflict's End & accept (V064). */
   void FillRingAnswerLabels(const CallScreen& screen);
   void FillRingPricing(const CallScreen& screen);
+  /** DEV/PLAN-call-failed-redial.md 6: the failed page kept with no call behind it (CallPresenter::FailedPage). */
+  void RenderFailedPage(const CallFailedPage& page, int64_t now_ms);
   /** Accept in flight: the ring is gone, a Connecting page / bar shows. */
   void RenderAnswering(const CallScreen& screen, const CallMediaScreen& frame, int64_t now_ms);
   void RenderInCall(const CallScreen& screen, const CallMediaScreen& frame, CallUiBackend& backend, int64_t now_ms);
   /** The in-call state from the presenter's screen (names, roster, buttons, chrome mode, phone page fields). */
   void FillInCallFromScreen(const CallScreen& screen, int64_t now_ms);
-  void FillRoster(CallInProgressState& in_call, const CallScreen& screen);
+  void FillRoster(CallInProgressState& in_call, const CallScreen& screen, int64_t now_ms);
+  /** Where the roster cache reads a name / an avatar path when it has none kept. */
+  CallRosterCache::Lookups RosterLookups() const;
   /** V062: the guests this device may remove or invite to the group, worded for the call chrome. */
   void FillGuestActions(CallInProgressState& in_call, const CallScreen& screen);
   /** The phone call page's names, avatars and failure line (ShellCallChromeRml). */
   void FillPhoneCallFields(const CallScreen& screen, int64_t now_ms);
-  void FillSelfAvatar(const CallScreen& screen);
+  void FillSelfAvatar(const CallScreen& screen, int64_t now_ms);
   /** The ring page's three lines (CallRingSteps) written into ring_; `caller` is the name or group title shown. */
   void FillRingSteps(bool awaiting_invite, const std::string& caller, CallRingMedia media);
   /** Our own avatar on the ring page's left: the photo / letter of the local identity, else "You" and a neutral tone. */
@@ -231,13 +240,22 @@ private:
   // --- Devices: ringtones, the video wake, the hold, the ongoing-call service, metrics. -----------------------------
   void SyncRingtone();
   /**
+   * The 300 ms ring timer (DEV/PLAN-android-incoming-call-screen.md): runs while the phone's call screen rings for us
+   * (is the ring where the user can see it?) or the app rings (the phone's ringer is read again). Started / stopped
+   * from SyncRingtone.
+   */
+  void SyncRingTimer();
+  void OnRingTimer();
+  /** How the incoming ringtone follows the phone's ringer now (asked afresh; one log line per change). */
+  CallRingtone::Output ReadRingOutput();
+  /**
    * Stop ringback_ if playing and, unless media is already active (the engine then owns
    * the session), release the phone audio session. Shared by SyncRingtone's own
    * playing->stopped transition and LeaveActive's immediate stop, so a hang-up during
    * ringback never Deactivates twice.
    */
   void StopRingback(CallUiBackend* backend);
-  /** Once per media view: its new video frames wake the frame loop (at most every kVideoWakeMinIntervalMs). */
+  /** Once per media view: its new video frames wake the frame loop (CallVideoFrameWake: at most every 66 ms). */
   void BindVideoFrameWake(IMediaView& media);
   CallLocalHold::Ports LocalHoldPorts();
   /** Hands the hold the OS's facts (each tick). */
@@ -343,6 +361,12 @@ private:
   // --- Devices.
   CallRingtone ringtone_;
   CallRingtone ringback_{CallRingtone::Tone::OutgoingRingback};
+  static constexpr std::chrono::milliseconds kRingTimerInterval{300};
+  /** The ring timer's coordinator id (0: not running). */
+  uint64_t ring_timer_ = 0;
+  /** The phone ringer's last logged reading. */
+  std::string ringer_logged_;
+  std::function<bool()> pin_locked_;
   /** V060: the call on hold while the OS has its audio, and the camera's rest (hold, background). */
   CallLocalHold local_hold_;
   uint64_t background_listener_ = 0;
@@ -354,10 +378,9 @@ private:
   int pushed_camera_rotation_ = -1;
   /** The media view whose frames wake the loop (BindVideoFrameWake). */
   IMediaView* video_wake_bound_ = nullptr;
+  /** The call members' names and avatar paths, kept for the call (read again every 5 s; cleared in ClearInCall). */
+  CallRosterCache roster_cache_;
   int64_t last_video_refresh_ms_ = 0;
-  /** The last self-view / peer frame sent to the screen (call.summary shown_*_fps counts new ones). */
-  uint64_t last_shown_self_seq_ = 0;
-  uint64_t last_shown_peer_seq_ = 0;
 
   // --- Metrics and logs.
   /** Operational metrics for the current call (Metrics channel; no identities). */

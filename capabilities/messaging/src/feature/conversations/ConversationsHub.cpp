@@ -8,6 +8,7 @@
 #include "domain/attachments/AttachmentMetrics.h"
 #include "lib/delivery/AttachmentContentCipher.h"
 #include "lib/messaging/DeleteForEveryone.h"
+#include "lib/messaging/EditMessage.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 
 #include "lib/people/RecoveryBundle.h"
@@ -32,6 +33,7 @@
 #include "domain/peers/AccountKeyResolver.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "feature/conversations/ContactProfileRefresh.h"
+#include "feature/conversations/ContactRefreshWorkflow.h"
 #include "lib/messaging/ContactLocator.h"
 #include "lib/delivery/PeerRequestAuth.h"
 #include "lib/people/PeerCards.h"
@@ -110,8 +112,8 @@ std::string FormatExpiresDisplay(const std::string& iso) {
   return iso;
 }
 
-void FillRegistrationFields(ProfileIdentityView& view, const LocalIdentity& identity) {
-  const RegistrationStatus status = ClassifyRegistration(identity);
+void FillRegistrationFields(ProfileIdentityView& view, const LocalIdentity& identity, const std::string& backend_url) {
+  const RegistrationStatus status = ClassifyRegistration(identity, 0, backend_url);
   view.registered = identity.registered ? "yes" : "no";
   view.registration_status = RegistrationStatusLabel(status);
   view.registration_expires =
@@ -702,6 +704,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);
     inbox_->SetAttachmentDownloads(nullptr);
+    inbox_->SetCancelPendingSend(nullptr);
   }
   system_controls_.Unbind(kGroupRosterSyncFamily);
   system_controls_.Unbind(kCopyAskFamily);
@@ -1029,6 +1032,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   kept_cards_loaded_ = false; // read at the first EnsureMessagingReady (the cards are in the chat store)
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
   contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
+  contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, directory_, *contact_cards_);
   contact_cards_->SetCardFetcher(
       [this](const std::string& peer_id, const std::string& account_id, std::function<void(Roe<PeerCardRecord>)> done) {
         // On the hub's thread, with the address book as it is now: a contact just added (a scanned QR code) is
@@ -1135,12 +1139,19 @@ void ConversationsHub::BuildMessagingObjects() {
   mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), &directory_);
+  ForgetPeerRoutesOnBackendChange();
   WireAttachmentDownloads();
   CleanStaleAttachmentFiles(); // once per start: staged sends older than a day, half-finished downloads
   group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
                                                                 *group_invite_gate_, *mesh_messaging_, *account_keys_);
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
+  // A message deleted here takes an unsent edit of ours with it (wired with each orchestrator, cleared with it).
+  inbox_->SetCancelPendingSend([this](const std::string& message_id) {
+    if (mesh_messaging_) {
+      mesh_messaging_->CancelPendingSend(message_id);
+    }
+  });
   BindGroupRosterSyncFamily();
   BindCopyAskFamily();
   BindCardAskFamily();
@@ -1603,6 +1614,12 @@ void ConversationsHub::SetOnGridThumbnailReady(
   on_grid_thumbnail_ready_ = std::move(callback);
 }
 
+void ConversationsHub::SetOnChatPreviewDone(
+    std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made)> callback) {
+  std::lock_guard lock(storage_callbacks_mu_);
+  on_chat_preview_done_ = std::move(callback);
+}
+
 void ConversationsHub::SetOnPeerIconsChanged(std::function<void()> callback) {
   on_peer_icons_changed_ = std::move(callback);
 }
@@ -1663,6 +1680,25 @@ void ConversationsHub::RefreshContactProfileIfStale(const std::string& contact_i
     return;
   }
   AppRuntime::PostWorkerBackground([this, contact_id]() { RefreshContactProfileNow(contact_id); });
+}
+
+bool ConversationsHub::RefreshContact(const std::string& contact_id,
+                                      std::function<void(const ContactRefreshResult&)> done) {
+  if (!contact_refresh_ || !AppRuntime::IsRunning() || shutdown_requested_.load(std::memory_order_acquire)) {
+    return false;
+  }
+  return contact_refresh_->Start(contact_id, [this, done = std::move(done)](ContactRefreshResult result) {
+    if (shutdown_requested_.load(std::memory_order_acquire)) {
+      return;
+    }
+    if (result.contact && result.Changed()) {
+      if (mesh_messaging_) {
+        mesh_messaging_->RegisterContactDirectEndpoints(*result.contact);
+      }
+      EnsureContactIconCached(*result.contact);
+    }
+    done(result);
+  });
 }
 
 void ConversationsHub::RefreshStaleContactProfiles() {
@@ -1790,7 +1826,7 @@ ProfileIdentityView ConversationsHub::LoadProfileIdentityView() {
   view.account_id = identity->account_id;
   view.contact_locator = OwnContactLocator().valueOr("");
   view.public_key_b64 = identity->account_signing_public_key_b64;
-  FillRegistrationFields(view, *identity);
+  FillRegistrationFields(view, *identity, config_.registration.base_url);
   view.profile_icon_path = ProfileIconLocalPath(data_dir_);
   view.profile_has_icon = !view.profile_icon_path.empty();
   return view;
@@ -2147,6 +2183,69 @@ Roe<void> ConversationsHub::DeleteMessageForEveryone(const std::string& thread_i
   // Done for everyone once retracted and deleted here; the server copy is a separate, best-effort step.
   DeleteUploadedCopy(original);
   return {};
+}
+
+Roe<ThreadMessage> ConversationsHub::EditMessage(const std::string& thread_id, const std::string& message_id,
+                                                 const std::string& new_text, const int64_t tapped_at_ms) {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  auto thread = Store().GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  auto found = Store().GetMessage(thread_id, message_id);
+  if (!found) {
+    return found.error();
+  }
+  if (!found->has_value()) {
+    return Error("Message not found");
+  }
+  ThreadMessage target = **found;
+  target.thread_id = thread_id;
+  // Checked (an edit too long for one payload is refused here, before anything is stored), sent, applied here.
+  auto edited = EditOwnMessage(
+      Store(), target, (*thread)->kind, new_text, tapped_at_ms, util::GenerateUuid(),
+      [this, &thread_id, &target](const std::string& edit_id, const std::string& text, const int64_t sent_at_ms) {
+        return MeshMessaging().SendEdit(thread_id, target.id, text, edit_id, sent_at_ms);
+      },
+      [this](const std::string& unsent_id) { MeshMessaging().CancelPendingSend(unsent_id); });
+  if (!edited) {
+    return edited.error();
+  }
+  if (edited->unchanged) {
+    return edited->row;
+  }
+  if (edited->stored_unsent) {
+    log().warning << "edit stored but not sent (the message shows the red mark)";
+  }
+  Inbox().AfterMessageEdited(thread_id, target, edited->row);
+  return edited->row;
+}
+
+Roe<ThreadMessage> ConversationsHub::ResendEdit(const std::string& thread_id, const std::string& message_id) {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  auto resent = ResendOwnEdit(
+      Store(), thread_id, message_id, util::GenerateUuid(),
+      [this, &thread_id, &message_id](const std::string& edit_id, const std::string& text, const int64_t sent_at_ms) {
+        return MeshMessaging().SendEdit(thread_id, message_id, text, edit_id, sent_at_ms);
+      },
+      [this](const std::string& unsent_id) { MeshMessaging().CancelPendingSend(unsent_id); });
+  if (!resent) {
+    return resent.error();
+  }
+  if (resent->stored_unsent) {
+    log().warning << "resent edit stored but not sent";
+  }
+  if (!resent->unsent_removed) {
+    log().warning << "resent edit: the unsent edit row was not removed";
+  }
+  return resent->edit_row;
 }
 
 void ConversationsHub::DeleteUploadedCopy(const ThreadMessage& message) {
@@ -2625,6 +2724,18 @@ void ConversationsHub::WireAttachmentDownloads() {
           callback(thread_id, content_hash);
         }
       }));
+  // A chat picture's preview: only the rows showing it are redrawn (no whole-chat re-render).
+  attachment_downloads_->SetOnChatPreviewDone(storage_callbacks_lifetime_.Bind(
+      [this](const std::string& thread_id, const std::vector<uint8_t>& content_hash, const bool made) {
+        std::function<void(const std::string&, const std::vector<uint8_t>&, bool)> callback;
+        {
+          std::lock_guard lock(storage_callbacks_mu_);
+          callback = on_chat_preview_done_;
+        }
+        if (callback) {
+          callback(thread_id, content_hash, made);
+        }
+      }));
   if (inbox_) {
     inbox_->SetProfileDataDir(data_dir_);
     inbox_->SetAttachmentDownloads(attachment_downloads_.get());
@@ -2699,6 +2810,12 @@ void ConversationsHub::RequestGridThumbnail(const std::string& thread_id, const 
 void ConversationsHub::CancelGridThumbnails(const uint64_t page_generation) {
   if (attachment_downloads_) {
     attachment_downloads_->CancelGridThumbnails(page_generation);
+  }
+}
+
+void ConversationsHub::CancelChatPreviews() {
+  if (attachment_downloads_) {
+    attachment_downloads_->CancelChatPreviews();
   }
 }
 
@@ -3102,6 +3219,16 @@ void ConversationsHub::RefreshMeshCapabilities(const MeshConfig& mesh) {
   SyncMobileEphemeralListen();
 }
 
+void ConversationsHub::ForgetPeerRoutesOnBackendChange() {
+  if (!mesh_messaging_ || !identity_) {
+    return;
+  }
+  auto identity = identity_->Get();
+  if (identity && identity->registered && !RegisteredAtBackend(*identity, config_.registration.base_url)) {
+    mesh_messaging_->ForgetPeerRoutes();
+  }
+}
+
 void ConversationsHub::Apply(const NetworkConfig& next) {
   if (!initialized_) {
     return;
@@ -3140,6 +3267,7 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
     if (actions_) {
       actions_->SetRegistrationClient(registration_);
     }
+    ForgetPeerRoutesOnBackendChange();
   }
   if (mesh_changed && messaging_ready_) {
     RefreshMeshCapabilities(next.mesh);
@@ -3256,6 +3384,7 @@ void ConversationsHub::Shutdown() {
   }
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);
+    inbox_->SetCancelPendingSend(nullptr);
   }
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnTeardownStarting();
@@ -3320,6 +3449,7 @@ void ConversationsHub::Shutdown() {
     inbox_->SetThreadMentions(nullptr);
   }
   thread_mentions_.reset();
+  contact_refresh_.reset();
   contact_cards_.reset();
   contact_profile_refresh_.reset();
   account_keys_.reset();

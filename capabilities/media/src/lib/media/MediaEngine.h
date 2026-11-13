@@ -64,9 +64,16 @@ public:
     uint8_t mark = 0;
     /**
      * Outbound: this engine's sender instance (random, never 0), with the seq counters it numbers: the media frame's
-     * nonce takes it, so a restarted engine under the same key never repeats one (A029 H2). Inbound: unused.
+     * nonce takes it, so a restarted engine under the same key never repeats one (A029 H2). Inbound: the frame's, whose
+     * clock `capture_ts` is on (another one is a restarted sender).
      */
     uint64_t instance = 0;
+    /**
+     * When the packet's first sample (audio) or its frame (video) was captured: ms since this sender's session started,
+     * on its steady clock, wrapping at 2^32 (the media frame's capture_ts, V066). A capture gap shows as a jump; a
+     * receiver schedules audio playout by it and compares it only within one instance.
+     */
+    uint32_t capture_ts = 0;
     std::vector<uint8_t> payload;
   };
   using PacketSendFn = std::function<void(const MediaPacket&)>;
@@ -234,6 +241,11 @@ public:
   bool CopyRemoteVideoFrame(VideoTileFrame& out) const override;
   /** Group: copy decoded frame for a publisher stream_id (0 = primary remote). */
   bool CopyRemoteVideoFrameForStream(uint32_t stream_id, VideoTileFrame& out) const override;
+  /** Copy only when the frame's seq differs from `last_seq` (IMediaView::FrameRead). */
+  FrameRead CopyLocalVideoFrameIfNew(uint64_t last_seq, VideoTileFrame& out) const override;
+  FrameRead CopyRemoteVideoFrameIfNew(uint64_t last_seq, VideoTileFrame& out) const override;
+  FrameRead CopyRemoteVideoFrameForStreamIfNew(uint32_t stream_id, uint64_t last_seq,
+                                               VideoTileFrame& out) const override;
   bool HasRemoteVideoForStream(uint32_t stream_id) const override;
 
 private:

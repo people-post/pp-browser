@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -34,6 +35,7 @@ public:
   Roe<void> Send(const RelayEnvelope& envelope) override {
     std::lock_guard lock(mu_);
     sent.push_back(envelope.message_id);
+    recipients.push_back(envelope.recipient_contact_id.value_or(""));
     if (envelope.recipient_contact_id && down_.count(*envelope.recipient_contact_id) != 0) {
       return failure_;
     }
@@ -61,12 +63,65 @@ public:
   Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest&) override { return Error("unused"); }
 
   std::vector<std::string> sent;
+  /** Each send's recipient, in order. */
+  std::vector<std::string> recipients;
 
 private:
   std::mutex mu_;
   Error failure_;
   int failures_;
   std::set<std::string> down_;
+};
+
+/** A relay whose sends wait while it is held (an offline send waiting out its timeout), then fail or go through. */
+class GatedRelay final : public IRelayClient {
+public:
+  Roe<void> Send(const RelayEnvelope& envelope) override {
+    std::unique_lock lock(mu_);
+    sent_.push_back(envelope.message_id);
+    entered_.notify_all();
+    released_.wait(lock, [this] { return !held_; });
+    if (fail_) {
+      return Error("relay unreachable");
+    }
+    return {};
+  }
+  void Hold() {
+    std::lock_guard lock(mu_);
+    held_ = true;
+  }
+  /** Lets the waiting sends (and every later one) finish: refused when `fail`. */
+  void Release(const bool fail) {
+    std::lock_guard lock(mu_);
+    fail_ = fail;
+    held_ = false;
+    released_.notify_all();
+  }
+  void SetFail(const bool fail) {
+    std::lock_guard lock(mu_);
+    fail_ = fail;
+  }
+  /** Until `count` sends have started. */
+  bool WaitForSends(const size_t count) {
+    std::unique_lock lock(mu_);
+    return entered_.wait_for(lock, std::chrono::seconds(5), [&] { return sent_.size() >= count; });
+  }
+  std::vector<std::string> Sent() {
+    std::lock_guard lock(mu_);
+    return sent_;
+  }
+  Roe<RelayPollResult> PollInbox(const std::string&, const std::string&) override { return Error("unused"); }
+  Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override { return Error("unused"); }
+  Roe<RelayDeleteResult> ClearInbox(const std::string&, const std::string&) override { return Error("unused"); }
+  Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest&) override { return Error("unused"); }
+
+private:
+  std::mutex mu_;
+  std::condition_variable entered_;
+  std::condition_variable released_;
+  std::vector<std::string> sent_;
+  bool held_ = false;
+  bool fail_ = true;
 };
 
 /** A direct-chat transport with a live link (or not) to the peer; records what it carried. */
@@ -103,7 +158,7 @@ protected:
 
   void Drain() { ASSERT_TRUE(AppRuntime::DrainWorkersThenUI()); }
 
-  std::unique_ptr<DeliveryOutbox> MakeOutbox(FakeRelay& relay) {
+  std::unique_ptr<DeliveryOutbox> MakeOutbox(IRelayClient& relay) {
     auto outbox = std::make_unique<DeliveryOutbox>([]() -> IDirectMessageClient* { return nullptr; });
     outbox->SetRelayClient(&relay);
     outbox->SetOnOutcome([this](const DeliveryOutcome& outcome) {
@@ -342,6 +397,65 @@ TEST_F(DeliveryOutboxTest, ARefusedSendEndsItAtOnce) {
   EXPECT_EQ(relay.SentCount(), 1u);
 }
 
+TEST_F(DeliveryOutboxTest, AnUnknownRecipientIsSentOnceMoreToItsCurrentRoute) {
+  FakeRelay relay(0, AppError::Network(Err::Network::HttpNotFound, "404"));
+  relay.RecipientDown("relay:old", true);
+  auto outbox = MakeOutbox(relay);
+  std::vector<std::string> asked;
+  outbox->SetRouteRefresh([&](const std::string& account) -> std::optional<std::string> {
+    asked.push_back(account);
+    return "relay:new";
+  });
+  DeliveryRequest request = ToRelay("t1", "m1");
+  request.envelope.recipient_contact_id = "relay:old";
+  request.route_account = "account:bob";
+  outbox->Send(std::move(request));
+  Drain();
+  ASSERT_EQ(Outcomes().size(), 1u);
+  EXPECT_TRUE(Outcomes()[0].ok);
+  EXPECT_EQ(relay.recipients, (std::vector<std::string>{"relay:old", "relay:new"}));
+  EXPECT_EQ(asked, (std::vector<std::string>{"account:bob"}));
+}
+
+TEST_F(DeliveryOutboxTest, AnUnknownRecipientIsRetriedOnlyOncePerAttemptAndNotQueued) {
+  FakeRelay relay(0, AppError::Network(Err::Network::HttpNotFound, "404"));
+  relay.RecipientDown("relay:old", true);
+  relay.RecipientDown("relay:new", true);
+  auto outbox = MakeOutbox(relay);
+  int asked = 0;
+  outbox->SetRouteRefresh([&](const std::string&) -> std::optional<std::string> {
+    ++asked;
+    return "relay:new";
+  });
+  DeliveryRequest request = ToRelay("t1", "m1");
+  request.envelope.recipient_contact_id = "relay:old";
+  request.route_account = "account:bob";
+  outbox->Send(std::move(request));
+  Drain();
+  ASSERT_EQ(Outcomes().size(), 1u);
+  EXPECT_FALSE(Outcomes()[0].ok);
+  EXPECT_EQ(Outcomes()[0].failure, SendFailure::RelayRejected);
+  EXPECT_EQ(relay.SentCount(), 2u);
+  EXPECT_EQ(asked, 1);
+  EXPECT_FALSE(outbox->SendStartedMs("m1")) << "a 404 is final: nothing is queued";
+}
+
+TEST_F(DeliveryOutboxTest, AnUnknownRecipientWithTheSameRouteOrNoneIsNotSentAgain) {
+  for (const std::optional<std::string>& fresh :
+       {std::optional<std::string>("relay:old"), std::optional<std::string>()}) {
+    FakeRelay relay(0, AppError::Network(Err::Network::HttpNotFound, "404"));
+    relay.RecipientDown("relay:old", true);
+    auto outbox = MakeOutbox(relay);
+    outbox->SetRouteRefresh([&](const std::string&) { return fresh; });
+    DeliveryRequest request = ToRelay("t1", "m1");
+    request.envelope.recipient_contact_id = "relay:old";
+    request.route_account = "account:bob";
+    outbox->Send(std::move(request));
+    Drain();
+    EXPECT_EQ(relay.SentCount(), 1u);
+  }
+}
+
 TEST_F(DeliveryOutboxTest, ASendThatEndsAtOnceLeavesNothingActive) {
   FakeRelay relay(0);
   auto outbox = MakeOutbox(relay);
@@ -447,6 +561,131 @@ TEST_F(DeliveryOutboxTest, TheControlLaneIsNotTracked) {
   EXPECT_FALSE(outbox->SendStartedMs("ctl-1"));
   ASSERT_TRUE(WaitFor([&] { return Outcomes().size() == 1u; }, std::chrono::seconds(5)));
   EXPECT_FALSE(outbox->SendStartedMs("ctl-1"));
+}
+
+// A cancelled message starts no new send attempt, wherever its request is when Cancel comes: queued, its first send
+// on the way, or held by a Retry. Only the attempt already handed to the relay can still go out. Nothing more is
+// reported for it, and the record of the cancel goes once its last request ends.
+
+TEST_F(DeliveryOutboxTest, CancelWhileTheFirstSendIsOnTheWayStopsItsRetries) {
+  GatedRelay relay;
+  relay.Hold();
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(ToRelay("t1", "m1"));
+  ASSERT_TRUE(relay.WaitForSends(1));
+  outbox->Cancel("m1");
+  EXPECT_EQ(outbox->CancelledCountForTest(), 1u) << "the attempt on the way is remembered as cancelled";
+  relay.Release(/*fail=*/true);
+  Drain();
+  outbox->Retry();
+  Drain();
+  EXPECT_EQ(relay.Sent().size(), 1u) << "the failed send was not queued again";
+  EXPECT_TRUE(Outcomes().empty()) << "a cancelled request reports nothing more";
+  EXPECT_FALSE(outbox->SendStartedMs("m1"));
+  EXPECT_EQ(outbox->CancelledCountForTest(), 0u) << "the record goes with the last request";
+}
+
+TEST_F(DeliveryOutboxTest, CancelReachesEveryGroupMemberCopyOnTheWay) {
+  GatedRelay relay;
+  relay.Hold();
+  auto outbox = MakeOutbox(relay);
+  for (const std::string who : {"bob", "carol"}) {
+    DeliveryRequest request = ToRelay("group-thread", "m1");
+    request.group_member = "account:" + who;
+    outbox->Send(std::move(request));
+  }
+  ASSERT_TRUE(relay.WaitForSends(1));
+  outbox->Cancel("m1");
+  relay.Release(/*fail=*/true);
+  Drain();
+  const size_t first_round = relay.Sent().size();
+  EXPECT_LE(first_round, 2u);
+  outbox->Retry();
+  Drain();
+  EXPECT_EQ(relay.Sent().size(), first_round) << "no member's copy was sent again";
+  EXPECT_FALSE(outbox->SendStartedMs("m1"));
+  EXPECT_EQ(outbox->CancelledCountForTest(), 0u);
+}
+
+TEST_F(DeliveryOutboxTest, CancelOfTheItemARetryHoldsKeepsItOutOfTheQueue) {
+  GatedRelay relay;
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(ToRelay("t1", "m1"));
+  Drain();
+  ASSERT_EQ(relay.Sent().size(), 1u);
+  relay.Hold();
+  outbox->Retry();
+  ASSERT_TRUE(relay.WaitForSends(2));
+  outbox->Cancel("m1");
+  relay.Release(/*fail=*/true);
+  Drain();
+  relay.SetFail(false);
+  outbox->Retry();
+  Drain();
+  EXPECT_EQ(relay.Sent().size(), 2u) << "the retry's failure was not put back";
+  EXPECT_FALSE(outbox->SendStartedMs("m1"));
+  EXPECT_EQ(outbox->CancelledCountForTest(), 0u);
+}
+
+TEST_F(DeliveryOutboxTest, CancelOfALaterItemInARetrySkipsItAndLeavesTheOthers) {
+  GatedRelay relay;
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(ToRelay("t1", "m1"));
+  Drain();
+  outbox->Send(ToRelay("t1", "m2"));
+  Drain();
+  ASSERT_EQ(relay.Sent(), (std::vector<std::string>{"m1", "m2"}));
+  relay.Hold();
+  outbox->Retry();
+  ASSERT_TRUE(relay.WaitForSends(3)); // m1's retry, m2 behind it
+  outbox->Cancel("m2");
+  relay.Release(/*fail=*/true);
+  Drain();
+  EXPECT_EQ(relay.Sent(), (std::vector<std::string>{"m1", "m2", "m1"})) << "m2 was not tried";
+  relay.SetFail(false);
+  outbox->Retry();
+  Drain();
+  EXPECT_EQ(relay.Sent(), (std::vector<std::string>{"m1", "m2", "m1", "m1"})) << "m1 goes on as before";
+  ASSERT_FALSE(Outcomes().empty());
+  EXPECT_TRUE(Outcomes().back().ok);
+  EXPECT_EQ(Outcomes().back().message_id, "m1");
+  EXPECT_FALSE(outbox->SendStartedMs("m2"));
+  EXPECT_EQ(outbox->CancelledCountForTest(), 0u);
+}
+
+// As before: a cancel ends what was sent until then; a Send of the same id afterwards is a new request and goes.
+TEST_F(DeliveryOutboxTest, ASendOfTheSameIdAfterACancelGoesAsUsual) {
+  GatedRelay relay;
+  relay.Hold();
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(ToRelay("t1", "m1"));
+  ASSERT_TRUE(relay.WaitForSends(1));
+  outbox->Cancel("m1");
+  outbox->Send(ToRelay("t1", "m1"));
+  relay.Release(/*fail=*/true);
+  Drain();
+  ASSERT_EQ(relay.Sent().size(), 2u) << "the new request was tried";
+  ASSERT_EQ(Outcomes().size(), 1u) << "only the new request reports";
+  EXPECT_FALSE(Outcomes()[0].ok);
+  EXPECT_TRUE(outbox->SendStartedMs("m1")) << "the new request is queued for a retry";
+  relay.SetFail(false);
+  outbox->Retry();
+  Drain();
+  EXPECT_EQ(relay.Sent().size(), 3u) << "only the new request was retried";
+  ASSERT_EQ(Outcomes().size(), 2u);
+  EXPECT_TRUE(Outcomes()[1].ok);
+  EXPECT_FALSE(outbox->SendStartedMs("m1"));
+  EXPECT_EQ(outbox->CancelledCountForTest(), 0u);
+}
+
+TEST_F(DeliveryOutboxTest, CancelOfAMessageWithNothingUnderWayRemembersNothing) {
+  FakeRelay relay(0);
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(ToRelay("t1", "m1"));
+  Drain();
+  outbox->Cancel("m1");
+  outbox->Cancel("never-sent");
+  EXPECT_EQ(outbox->CancelledCountForTest(), 0u);
 }
 
 } // namespace

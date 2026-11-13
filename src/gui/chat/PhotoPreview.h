@@ -1,7 +1,6 @@
 #pragma once
 
 #include "common/chat/MessagingLimits.h"
-#include "lib/ai/StructuredTextParser.h"
 
 #include <cstdint>
 #include <string>
@@ -13,13 +12,13 @@ namespace pbr {
 inline constexpr const char* kPhotoPreviewMountId = "shell-photo-mount";
 
 /**
- * Full-screen preview shown the moment a picture is tapped: the picture the bubble already shows, scaled to fit,
- * with a small spinner until the system viewer is ready. A tap anywhere closes it (`photo_preview_close`).
+ * What shows the moment a picture is tapped, until the system viewer is up: a spinner on the dimmed screen. No picture
+ * (B203): the bubble only holds the small preview, blurred full screen; the viewer gets the full picture. A tap
+ * anywhere closes it (`photo_preview_close`).
  */
-inline std::string PhotoPreviewRml(const std::string& local_path) {
+inline std::string PhotoPreviewRml() {
   return "<div class=\"photo-preview\" data-model=\"window\" data-event-click=\"photo_preview_close()\">"
-         "<img class=\"photo-preview-image\" src=\"" +
-         StructuredTextParser::EscapeText(local_path) + "\"/><div class=\"photo-preview-spinner\"></div></div>";
+         "<div class=\"photo-preview-spinner\"></div></div>";
 }
 
 /** The "Opening..." toast is only for a non-picture above the direct size (decrypting it takes a moment). */

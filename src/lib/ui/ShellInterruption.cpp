@@ -11,7 +11,8 @@ InterruptionKind ShellInterruption::Top(const ShellState& state) {
   if (state.call_ring.active) {
     return InterruptionKind::CallRing;
   }
-  if (state.call_in_progress.active) {
+  // The failure page kept with no call behind it is a page, not a call going on (its back is Try later: ShellHost).
+  if (state.call_in_progress.active && !state.call_in_progress.failed_kept) {
     return InterruptionKind::LiveSessionOn;
   }
   if (state.dialog.active) {

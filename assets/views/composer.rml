@@ -1,4 +1,8 @@
-<div class="prompt-quote" data-model="chat" data-if="quote_reply" keep-focus="">
+<!-- The bar above the box: the message being replied to, or "Edit message" while one of ours is edited (a pencil before
+     it; DEV/PLAN-message-edit.md). × ends either. -->
+<div class="prompt-quote" data-model="chat" data-if="quote_reply || editing_message"
+     data-class-prompt-quote--edit="editing_message" keep-focus="">
+  <span class="prompt-edit-bar-icon"></span>
   <span class="prompt-quote-text">{{quote_reply_text}}</span>
   <button class="prompt-attachment-chip-remove" type="button" data-event-click="cancel_quote_reply()"
           title="{{i18n:common.cancel}}">
