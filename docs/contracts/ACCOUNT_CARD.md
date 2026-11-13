@@ -183,6 +183,15 @@ this device asks it for the card — over its own link first, then the account's
 not the call or the message, ties the device to the account. A device that answered is not asked again
 for 10 minutes; one not reached (its link still coming up) is tried again after 15 s, up to 3 times.
 
+**Refresh on the contact page.** The user's *Refresh account info* asks the contact's devices (the kept
+card's, then the contact's device rows) for the account's card even when one is kept
+(`ContactCardExchange::AskDevices`; at most once per account per 15 s, a press within that gets the last
+ask's outcome), then the relay directory by Account ID (by relay id only for a contact with no Account
+ID). Keys are kept only as above: the card or the directory's key card must verify against the Account
+ID; a directory answer whose keys do not is used for its name and photo only, and one for another account
+not at all; the user is told either way. Name: the card's when a device answered, else the directory's;
+photo and device addresses: the directory's ([`ContactRefreshWorkflow`](../../capabilities/messaging/src/feature/conversations/ContactRefreshWorkflow.h)).
+
 **Using the devices.** A send to an account goes over a live link to any device its kept card lists
 (`AmpDirectChatTransport::ReachableKey`); the contact's endpoint rows follow the card, so dials to those
 devices pass the address audience.
