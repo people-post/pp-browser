@@ -31,22 +31,33 @@
       </button>
     </div>
   </div>
-  <div id="sidebar-sessions" class="sidebar-sessions root-scroll" data-event-scroll="sessions_scroll()">
-    <!-- You: your avatar where the large "Chats" title was (no name, no status line) → Settings. -->
+  <div id="sidebar-sessions" class="sidebar-sessions root-scroll" collapse-at="72" data-event-scroll="sessions_scroll()">
+    <!-- You: the AI drawer's "you" block (its classes, so the same look) where the large "Chats" title was: avatar, name
+         and the link status → Settings. The button is in the window model (the event lives there); the avatar and the
+         name are in the settings model; chats_link_* are window fields. -->
     <div class="large-title">
       <button class="chat-me" type="button" data-model="window" data-event-click="open_settings_from_avatar()">
-        <div class="chat-me-avatar" data-model="settings"
-           data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
-           data-class-avatar-tone-1="!profile_has_icon && profile_avatar_tone == 1"
-           data-class-avatar-tone-2="!profile_has_icon && profile_avatar_tone == 2"
-           data-class-avatar-tone-3="!profile_has_icon && profile_avatar_tone == 3"
-           data-class-avatar-tone-4="!profile_has_icon && profile_avatar_tone == 4"
-           data-class-avatar-tone-5="!profile_has_icon && profile_avatar_tone == 5"
-           data-class-avatar-tone-6="!profile_has_icon && profile_avatar_tone == 6"
-           data-class-avatar-tone-7="!profile_has_icon && profile_avatar_tone == 7">
-        <img class="chat-me-image" data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
-        <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
-      </div>
+        <div class="ai-drawer-me-avatar" data-model="settings"
+             data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
+             data-class-avatar-tone-1="!profile_has_icon && profile_avatar_tone == 1"
+             data-class-avatar-tone-2="!profile_has_icon && profile_avatar_tone == 2"
+             data-class-avatar-tone-3="!profile_has_icon && profile_avatar_tone == 3"
+             data-class-avatar-tone-4="!profile_has_icon && profile_avatar_tone == 4"
+             data-class-avatar-tone-5="!profile_has_icon && profile_avatar_tone == 5"
+             data-class-avatar-tone-6="!profile_has_icon && profile_avatar_tone == 6"
+             data-class-avatar-tone-7="!profile_has_icon && profile_avatar_tone == 7">
+          <img class="ai-drawer-me-image" data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
+          <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
+        </div>
+        <div class="ai-drawer-me-text">
+          <p class="ai-drawer-me-name" data-model="settings">{{profile_nickname}}</p>
+          <p class="ai-drawer-me-link" data-if="chats_link_state != ''">
+            <svg class="ai-drawer-me-link-icon ai-drawer-me-link-icon--ok" data-if="chats_link_state == 'ok'" src="../icons/v2/cloud-ok.svg" width="14" height="14"></svg>
+            <svg class="ai-drawer-me-link-icon ai-drawer-me-link-icon--connecting" data-if="chats_link_state == 'connecting'" src="../icons/v2/cloud-sync.svg" width="14" height="14"></svg>
+            <svg class="ai-drawer-me-link-icon ai-drawer-me-link-icon--offline" data-if="chats_link_state == 'offline'" src="../icons/v2/cloud-off.svg" width="14" height="14"></svg>
+            <span class="ai-drawer-me-link-text">{{chats_link_text}}</span>
+          </p>
+        </div>
       </button>
     </div>
     <div class="chat-search">

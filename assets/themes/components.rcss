@@ -8144,40 +8144,37 @@ input.checkbox {
   padding: 0 16dp;
 }
 
-/* Chats' large title row holds your avatar (40dp, in a 44dp tap area; its left edge is on the 16dp margin). */
-.shell-layer-compact .sidebar-sessions .chat-me {
-  display: block;
-  width: 44dp;
-  height: 44dp;
-  margin: 4dp 0 0 -2dp;
-  padding: 0;
+/* Chats' large title row holds the same "you" block as the AI drawer's bottom row: avatar, name and, under it, the link
+   status. Its inner parts are the drawer's own classes (.ai-drawer-me-*), so sizes and colours are identical; this rule
+   only lays the button out (56dp avatar + 8dp above and below = a 72dp row; ShellLargeTitleScroll collapses at 72dp). */
+.shell-layer-compact .sidebar-sessions .large-title {
+  height: 72dp;
+}
+
+.shell-layer-compact .sidebar-sessions .chat-me,
+.shell-layer-compact .sidebar-sessions .chat-me:hover,
+.shell-layer-compact .sidebar-sessions .chat-me:focus {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+  box-sizing: border-box;
+  width: 100%;
+  height: 72dp;
+  margin: 0;
+  padding: 8dp 0;
   border: 0;
+  border-radius: 0;
   background-color: transparent;
+  text-align: left;
   cursor: pointer;
 }
 
-.chat-me-avatar,
 .pane-nav-me-avatar {
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-}
-
-.chat-me-avatar {
-  width: 40dp;
-  height: 40dp;
-  margin: 2dp;
-  border-radius: 20dp;
-}
-
-.chat-me-image {
-  width: 40dp;
-  height: 40dp;
-}
-
-.chat-me-avatar .avatar-letter {
-  font-size: 17dp;
 }
 
 .shell-layer-compact .chat-search {

@@ -275,9 +275,8 @@ TEST_F(HomeMinimalLayoutTest, BlockReturnsWhenTheKeyboardOrEmojiSheetGoesAway) {
 }
 
 // The Chats header (sidebar.rml's .pane-nav) on a phone: a 56dp bar holding the compose button at the right and your
-// small avatar at the left, and the scroller's content under it starting with the large title row (your 40dp avatar,
-// no words) and then the search box. The name and the link status are not on this page (they live in the AI drawer's
-// "you" row). Bindings stripped.
+// small avatar at the left, and the scroller's content under it starting with the large title row (the AI drawer's
+// "you" block: 56dp avatar, name, link status; 72dp high) and then the search box. Bindings stripped.
 class ChatsHeaderTest : public HomeMinimalLayoutTest {
 protected:
   void LoadChats(const int top_inset_dp) {
@@ -321,7 +320,7 @@ protected:
   static ui::Vector2f SizeOf(ui::Element* e) { return e->GetBox().GetSize(ui::BoxArea::Border); }
 };
 
-TEST_F(ChatsHeaderTest, TitleRowIsYourAvatarButtonAndNothingElse) {
+TEST_F(ChatsHeaderTest, TitleRowIsTheYouBlockWithAvatarNameAndStatus) {
   const std::string rml = Asset("views/sidebar.rml");
   const size_t bar_end = rml.find("<div class=\"sidebar-header row\">");
   const std::string bar = rml.substr(0, bar_end);
@@ -341,13 +340,22 @@ TEST_F(ChatsHeaderTest, TitleRowIsYourAvatarButtonAndNothingElse) {
                      "data-event-click=\"open_settings_from_avatar()\">"),
             std::string::npos)
       << "the button is in the window model, where the event lives";
-  EXPECT_NE(row.find("class=\"chat-me-avatar\" data-model=\"settings\""), std::string::npos);
+  EXPECT_NE(row.find("class=\"ai-drawer-me-avatar\" data-model=\"settings\""), std::string::npos);
   EXPECT_NE(row.find("profile_icon_src"), std::string::npos);
   EXPECT_NE(row.find("profile_avatar_letter"), std::string::npos);
-  EXPECT_EQ(row.find("nav.sessions"), std::string::npos) << "no words in the title row";
-  EXPECT_EQ(row.find("profile_nickname"), std::string::npos);
-  EXPECT_EQ(row.find("chats_link"), std::string::npos);
+  EXPECT_NE(row.find("class=\"ai-drawer-me-name\" data-model=\"settings\">{{profile_nickname}}"), std::string::npos);
+  EXPECT_NE(row.find("data-if=\"chats_link_state != ''\""), std::string::npos);
+  EXPECT_NE(row.find("{{chats_link_text}}"), std::string::npos);
+  for (const char* icon : {"cloud-ok.svg", "cloud-sync.svg", "cloud-off.svg"}) {
+    EXPECT_NE(row.find(icon), std::string::npos) << icon;
+  }
+  EXPECT_EQ(row.find("nav.sessions"), std::string::npos) << "no title words in the title row";
   EXPECT_EQ(row.find("<p class=\"large-title\">"), std::string::npos);
+  EXPECT_NE(rml.find("collapse-at=\"72\""), std::string::npos) << "the row is 72dp, so the bar collapses at 72dp";
+  // The desktop header keeps its title and plus button.
+  const std::string desktop = rml.substr(bar_end, title - bar_end);
+  EXPECT_NE(desktop.find("{{i18n:nav.sessions}}"), std::string::npos);
+  EXPECT_NE(desktop.find("sidebar-new-chat"), std::string::npos);
 }
 
 TEST_F(ChatsHeaderTest, SmallBarHoldsTheAvatarNotTheTitle) {
@@ -373,24 +381,32 @@ TEST_F(ChatsHeaderTest, SmallBarHoldsTheAvatarNotTheTitle) {
 TEST_F(ChatsHeaderTest, AvatarSizesAndPlaces) {
   LoadChats(0);
   ui::Element* big = One("chat-me");
-  ui::Element* big_face = One("chat-me-avatar");
+  ui::Element* big_face = One("ai-drawer-me-avatar");
+  ui::Element* name = One("ai-drawer-me-name");
+  ui::Element* link = One("ai-drawer-me-link");
   ui::Element* small = One("pane-nav-me");
   ui::Element* small_face = One("pane-nav-me-avatar");
   ASSERT_NE(big, nullptr);
   ASSERT_NE(big_face, nullptr);
+  ASSERT_NE(name, nullptr);
+  ASSERT_NE(link, nullptr);
   ASSERT_NE(small, nullptr);
   ASSERT_NE(small_face, nullptr);
-  EXPECT_FLOAT_EQ(SizeOf(big).x, 44.f);
-  EXPECT_FLOAT_EQ(SizeOf(big).y, 44.f);
-  EXPECT_FLOAT_EQ(SizeOf(big_face).x, 40.f);
-  EXPECT_FLOAT_EQ(SizeOf(big_face).y, 40.f);
+  EXPECT_FLOAT_EQ(SizeOf(big).x, 390.f - 32.f) << "the whole block is the tap target";
+  EXPECT_FLOAT_EQ(SizeOf(big).y, 72.f);
+  EXPECT_FLOAT_EQ(SizeOf(big_face).x, 56.f) << "as big as the AI drawer's avatar";
+  EXPECT_FLOAT_EQ(SizeOf(big_face).y, 56.f);
   EXPECT_FLOAT_EQ(big_face->GetAbsoluteOffset(ui::BoxArea::Border).x, 16.f) << "the avatar is on the 16dp margin";
+  EXPECT_FLOAT_EQ(name->GetAbsoluteOffset(ui::BoxArea::Border).x, 16.f + 56.f + 12.f) << "the name follows the avatar";
+  EXPECT_GT(link->GetAbsoluteOffset(ui::BoxArea::Border).y,
+            name->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(name).y - 0.5f)
+      << "the status line is under the name";
   EXPECT_FLOAT_EQ(SizeOf(small).x, 44.f);
   EXPECT_FLOAT_EQ(SizeOf(small).y, 44.f);
   EXPECT_FLOAT_EQ(SizeOf(small_face).x, 28.f);
   EXPECT_FLOAT_EQ(SizeOf(small_face).y, 28.f);
   EXPECT_LT(small->GetAbsoluteOffset(ui::BoxArea::Border).x, 20.f) << "at the left of the bar";
-  EXPECT_EQ(small->GetComputedValues().opacity(), 0.f) << "clear until the large avatar has scrolled away";
+  EXPECT_EQ(small->GetComputedValues().opacity(), 0.f) << "clear until the large block has scrolled away";
 }
 
 TEST_F(ChatsHeaderTest, ComposeButtonSitsAtTheTopRight) {
@@ -425,7 +441,7 @@ TEST_F(ChatsHeaderTest, BarIs56dpAndTheLargeTitleThenTheSearchBoxScrollUnderIt) 
     EXPECT_FLOAT_EQ(scroller->GetComputedValues().padding_top().value, 56.f) << "the list clears the bar";
     const float bar_bottom = bar->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(bar).y;
     EXPECT_GE(title->GetAbsoluteOffset(ui::BoxArea::Border).y, bar_bottom - 0.5f) << "the title starts below the bar";
-    EXPECT_FLOAT_EQ(SizeOf(title).y, 52.f) << "the title row keeps its height (the collapse threshold)";
+    EXPECT_FLOAT_EQ(SizeOf(title).y, 72.f) << "the title row holds the 56dp avatar (the collapse threshold is 72dp)";
     EXPECT_GE(search->GetAbsoluteOffset(ui::BoxArea::Border).y,
               title->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(title).y - 0.5f)
         << "the search box is under the title";

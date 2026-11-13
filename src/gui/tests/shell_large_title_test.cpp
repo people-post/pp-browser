@@ -63,7 +63,7 @@ TEST(LargeTitleRules, CollapsesOnceTheWholeTitleIsScrolledAway) {
   EXPECT_FALSE(ShellState{}.large_title_collapsed);
 }
 
-// A scroller may carry `collapse-at` (dp) to replace the 52dp default threshold; the Chats page uses the default again.
+// A scroller may carry `collapse-at` (dp) to replace the 52dp default threshold; the Chats page sets 72dp (its row holds the 56dp avatar block).
 TEST(LargeTitleRules, ThresholdCanBeOverriddenPerScroller) {
   EXPECT_FALSE(ShellLargeTitleScroll::CollapsedAt(19.f, 1.f, 20.f));
   EXPECT_TRUE(ShellLargeTitleScroll::CollapsedAt(20.f, 1.f, 20.f));
@@ -72,7 +72,7 @@ TEST(LargeTitleRules, ThresholdCanBeOverriddenPerScroller) {
     std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "sidebar.rml");
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   }();
-  EXPECT_EQ(rml.find("collapse-at"), std::string::npos) << "Chats uses the default threshold";
+  EXPECT_NE(rml.find("collapse-at=\"72\""), std::string::npos) << "Chats collapses once its 72dp row has scrolled away";
   EXPECT_NE(rml.find("<div class=\"large-title\">"), std::string::npos) << "Chats has a large title row to collapse";
 }
 
