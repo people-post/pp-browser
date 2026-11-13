@@ -36,6 +36,7 @@ set(_pp_platform_gui_sources
   NetworkConnectivity.cpp
   NetworkMonitor.cpp
   PlatformEarlyInit.cpp
+  ScreenAwake.cpp
   AiImagePrep.cpp
   ImageEncode.cpp
   ImageSampleAffine.cpp

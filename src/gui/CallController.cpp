@@ -146,6 +146,7 @@ CallController::CallController()
 }
 
 CallController::~CallController() {
+  ReleaseScreenAwake("ended");
   AppRuntime::CancelCoordinatorTimer(ring_timer_);
   OngoingCallService::SetHangUpHandler({});
   AppLifecycle::RemoveListener(background_listener_);
@@ -180,6 +181,46 @@ void CallController::SyncOngoingCall() {
   ongoing_call_on_ = on;
   ongoing_call_title_ = title;
   OngoingCallService::SetOngoingCall(on, title);
+}
+
+namespace {
+constexpr ShareWord kScreenAwakeReasons[] = {"video_call", "ended", "hold", "no_video"};
+} // namespace
+
+void CallController::SyncScreenAwake() {
+  const CallScreen& screen = presenter_.Screen();
+  const std::string& call_id = presenter_.ActiveCallId();
+  auto* backend = Backend();
+  CallScreenAwakeFacts facts;
+  facts.has_call = !call_id.empty() && call_id != presenter_.LeavingCallId();
+  // Not yet live: calling out / connecting (a call that never connected reads "couldn't connect").
+  facts.connected = screen.status != CallScreen::Status::Calling && screen.status != CallScreen::Status::Connecting &&
+                    screen.status != CallScreen::Status::SettingUpGroup &&
+                    screen.status != CallScreen::Status::WaitingForMediaPath &&
+                    screen.status != CallScreen::Status::CouldntConnect;
+  facts.video_mode = screen.video;
+  facts.camera_on = backend && backend->Available() && backend->Media().IsCameraEnabled();
+  // A peer's picture on screen: a group's tiles (their live streams), else the 1:1 stage (the presenter's decision).
+  facts.remote_video = in_call_.remote_video;
+  if (in_call_.show_roster) {
+    facts.remote_video = std::any_of(in_call_.roster.begin(), in_call_.roster.end(),
+                                     [](const CallRosterParticipantState& row) { return row.has_remote_video; });
+  }
+  facts.on_hold = local_hold_.OnHold();
+  screen_awake_reason_ = CallScreenAwakeReason(facts);
+  if (screen_awake_.Set(CallWantsScreenOn(facts))) {
+    MetricsLine("screen.keep_on")
+        .Add("on", screen_awake_.On())
+        .Pick("reason", screen_awake_reason_, kScreenAwakeReasons)
+        .Emit();
+  }
+}
+
+void CallController::ReleaseScreenAwake(const char* reason) {
+  screen_awake_reason_ = reason;
+  if (screen_awake_.ForceOff()) {
+    MetricsLine("screen.keep_on").Add("on", false).Pick("reason", reason, kScreenAwakeReasons).Emit();
+  }
 }
 
 CallLocalHold::Ports CallController::LocalHoldPorts() {
@@ -568,6 +609,7 @@ void CallController::Tick() {
   SyncRingtone();
   SyncLocalHold();
   SyncOngoingCall();
+  SyncScreenAwake();
   EndDisconnectedCall(now);
   if (metrics_.Tracking()) {
     auto* backend = Backend();
@@ -763,6 +805,7 @@ void CallController::ClearRing() {
 }
 
 void CallController::PrepareForShutdown() {
+  ReleaseScreenAwake("ended"); // the window is still up: the OS's sleep comes back before SDL quits
   if (!AppRuntime::CurrentlyOnUI()) {
     log().warning << "PrepareForShutdown off UI thread";
   }

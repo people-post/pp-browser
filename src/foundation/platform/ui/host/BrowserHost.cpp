@@ -1,4 +1,5 @@
 #include "foundation/platform/ui/RmlUi_Backend.h"
+#include "foundation/platform/ScreenAwake.h"
 #include "foundation/platform/ScreenKeyboard.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
@@ -250,6 +251,10 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
   SDL_SetHint(SDL_HINT_ORIENTATIONS, "Portrait");
 #endif
 
+  // SDL turns the OS's screen sleep off at video init unless told otherwise (B215: PP kept a charging phone lit all
+  // night). Allow it; a video call holds the screen on itself (ScreenAwake). Must be set before SDL_Init.
+  SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1");
+
 #if SDL_MAJOR_VERSION >= 3
   // Audio is initialized on demand by MediaEngine (a2); do not fail window
   // bring-up if Pulse/ALSA is missing on a headless or minimal host.
@@ -263,6 +268,8 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
     return false;
   }
 #endif
+
+  pbr::ScreenAwake::LogOsState("startup"); // video is up: what the OS will actually do (the hint's evidence)
 
   EventLoopWake::Start();
 
