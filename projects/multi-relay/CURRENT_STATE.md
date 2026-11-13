@@ -27,7 +27,7 @@ everywhere (no `relay:` ids, relay API sign version 2); grants (MR005) issued, d
 renewed and attached; the relay's new errors handled. Contracts: [SERVICE_ENDPOINTS](../../docs/contracts/SERVICE_ENDPOINTS.md),
 [ACCOUNT_CARD § Relay grants](../../docs/contracts/ACCOUNT_CARD.md#relay-grants), [WIRE_SCHEMAS](../../docs/contracts/WIRE_SCHEMAS.md),
 [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md), [COMPATIBILITY](../../docs/contracts/COMPATIBILITY.md#clean-cutovers-pre-release).
-Needs pp-cpp-mesh 8.0.0 (directory rows by Account ID; local branch `feat/account-ids`, not tagged).
+Needs pp-cpp-mesh v9.0.0 (directory rows by Account ID).
 Calls grant their people (answering grants the caller; joining grants each pair both ways; not renewed for
 non-contacts). Not yet: the account card's `relays` and `initiation_floor`; clients per relay; the card at
 registration.
