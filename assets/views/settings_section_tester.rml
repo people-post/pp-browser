@@ -1,50 +1,6 @@
       <div class="stack" data-if="tester">
       <div class="settings-section settings-section--grouped stack">
         <p class="text muted settings-help group-foot">{{i18n:settings.tester.banner}}</p>
-        <div class="group-card" data-if="show_backend_switch">
-          <button class="settings-toggle-row settings-choice-row row group-row" type="button"
-                  data-event-click="on_choose_backend()">
-            <span class="group-row-body">
-              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.network.backend}}</span>
-              <span class="settings-choice-value row">
-                <span class="settings-choice-value-text">{{backend_label}}</span>
-                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
-              </span>
-            </span>
-          </button>
-        </div>
-        <p class="text muted settings-help group-foot" data-if="show_backend_switch">{{i18n:settings.network.backend.help}}</p>
-        <p class="text settings-help group-foot" data-if="show_backend_switch && backend_restart_pending">{{i18n:settings.network.backend.restart}}</p>
-        <div class="stack" data-if="tester">
-        <div class="group-card" data-if="backend_is_custom">
-          <label class="settings-field group-row group-row--field">
-            <span class="group-row-body group-row-body--field">
-              <span class="settings-label group-row-text">{{i18n:settings.network.relay}}</span>
-              <input class="field" type="text" data-value="relay_base_url" data-event-change="on_network_field_changed()"/>
-            </span>
-          </label>
-        </div>
-        <div class="group-card" data-if="backend_is_custom">
-          <label class="settings-field group-row group-row--field">
-            <span class="group-row-body group-row-body--field">
-              <span class="settings-label group-row-text">{{i18n:settings.network.directory}}</span>
-              <input class="field" type="text" data-value="directory_base_url" data-event-change="on_network_field_changed()"/>
-            </span>
-          </label>
-        </div>
-        <div class="group-card" data-if="backend_is_custom">
-          <label class="settings-field group-row group-row--field">
-            <span class="group-row-body group-row-body--field">
-              <span class="settings-label group-row-text">{{i18n:settings.network.registration}}</span>
-              <input class="field" type="text" data-value="registration_base_url" data-event-change="on_network_field_changed()"/>
-            </span>
-          </label>
-        </div>
-        <div class="settings-actions stack">
-          <button class="btn btn-secondary settings-action-bar" type="button"
-                  data-event-click="reset_section('network')">{{i18n:common.reset_defaults}}</button>
-        </div>
-        </div>
         <div class="group-card">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">

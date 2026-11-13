@@ -18,6 +18,7 @@
 #include "lib/ui/ContextMenuHost.h"
 #include "lib/ui/ViewCatalog.h"
 #include "feature/settings/AppearanceSettingsSection.h"
+#include "feature/settings/BackendChoices.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/StorageSettingsSection.h"
 #include "feature/settings/SettingsPages.h"
@@ -1789,17 +1790,18 @@ void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {
   DirtyAll();
 }
 
-void SettingsController::OnChooseBackend(ui::Event& ev) {
+std::vector<SettingsChoicePage::Option> SettingsController::BackendChoiceOptions() const {
   const std::string current = bindings_.backend_env.c_str();
   std::vector<SettingsChoicePage::Option> options;
-  for (const char* id : {"prod", "qa", "custom"}) {
-    if (std::string_view(id) == "qa" && !ui_state_.backend_qa_available) {
-      continue;
-    }
+  for (const char* id : BackendChoicesOffered(ui_state_.backend_qa_available, ui_state_.show_tester_options == "on")) {
     options.push_back({id, BackendDisplayLabel(id).c_str(), current == id});
   }
-  ShowChoice(ev, "backend", Tr("settings.network.backend"), Tr("settings.network.backend.help"), {}, std::move(options),
-             [this](const std::string& id) { ApplyBackendChoice(id); });
+  return options;
+}
+
+void SettingsController::OnChooseBackend(ui::Event& ev) {
+  ShowChoice(ev, "backend", Tr("settings.network.backend"), Tr("settings.network.backend.help"), {},
+             BackendChoiceOptions(), [this](const std::string& id) { ApplyBackendChoice(id); });
 }
 
 void SettingsController::ApplyBackendChoice(const std::string& env) {

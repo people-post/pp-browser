@@ -116,10 +116,58 @@ TEST(SettingsGatingTest, AdvancedIsSwitchedOnlyByTheHelpSwitchAndTestOptionsOnly
   }
 }
 
-TEST(SettingsGatingTest, TheTestOptionsPageFollowsOnlyTheTesterSwitch) {
+TEST(SettingsGatingTest, TheTestOptionsPageFollowsOnlyTheTesterSwitchAndHasNoServiceRow) {
   const std::string rml = ReadAsset("views/settings_section_tester.rml");
   EXPECT_EQ(rml.find("advanced"), std::string::npos) << "no advanced condition left";
   EXPECT_NE(rml.find("data-if=\"tester\""), std::string::npos);
+  EXPECT_EQ(rml.find("on_choose_backend"), std::string::npos);
+  EXPECT_EQ(rml.find("settings.network.backend"), std::string::npos);
+  EXPECT_EQ(rml.find("backend_is_custom"), std::string::npos);
+  EXPECT_EQ(rml.find("reset_section('network')"), std::string::npos);
+}
+
+// The Service rows moved from the Test options page as they were: the same events, bindings and conditions (the lines
+// below are the ones of `git show HEAD~:assets/views/settings_section_tester.rml` before the move), and nothing wraps them
+// but `advanced`, so they show with advanced on and the tester switch off.
+TEST(SettingsGatingTest, TheServiceRowsMovedToAdvancedUnchangedAndAreGatedOnlyOnAdvanced) {
+  const std::string rml = ReadAsset("views/settings_section_advanced.rml");
+  for (const char* line : {
+           "<div class=\"group-card\" data-if=\"show_backend_switch\">",
+           "data-event-click=\"on_choose_backend()\"",
+           "{{i18n:settings.network.backend}}</span>",
+           "<span class=\"settings-choice-value-text\">{{backend_label}}</span>",
+           "<p class=\"text muted settings-help group-foot\" data-if=\"show_backend_switch\">"
+           "{{i18n:settings.network.backend.help}}</p>",
+           "<p class=\"text settings-help group-foot\" data-if=\"show_backend_switch && backend_restart_pending\">"
+           "{{i18n:settings.network.backend.restart}}</p>",
+           "<div class=\"group-card\" data-if=\"backend_is_custom\">",
+           "data-value=\"relay_base_url\" data-event-change=\"on_network_field_changed()\"",
+           "data-value=\"directory_base_url\" data-event-change=\"on_network_field_changed()\"",
+           "data-value=\"registration_base_url\" data-event-change=\"on_network_field_changed()\"",
+           "data-event-click=\"reset_section('network')\">{{i18n:common.reset_defaults}}</button>",
+       }) {
+    EXPECT_NE(rml.find(line), std::string::npos) << line;
+  }
+  EXPECT_EQ(CountOf(rml, "data-event-click=\"on_choose_backend()\""), 1u);
+  EXPECT_EQ(CountOf(rml, "data-if=\"backend_is_custom\""), 3u);
+  // Gates around the Service card: the page root (advanced) and nothing else; the custom fields add the inner advanced.
+  const size_t card = rml.find("data-if=\"show_backend_switch\"");
+  ASSERT_NE(card, std::string::npos);
+  const std::string before = rml.substr(0, card);
+  EXPECT_EQ(CountOf(before, "data-if="), 1u) << "only the page root's data-if comes before the Service card";
+  EXPECT_NE(before.find("data-if=\"advanced\""), std::string::npos);
+  // The technical-users note has the warning triangle before it, tinted by the warn token (no colour in the markup).
+  const size_t intro = rml.find("{{i18n:settings.advanced.intro}}");
+  const size_t triangle = rml.find("icons/v2/alert-triangle.svg");
+  ASSERT_NE(triangle, std::string::npos);
+  EXPECT_LT(rml.find("settings-warn-row"), triangle);
+  EXPECT_LT(triangle, intro);
+  EXPECT_EQ(CountOf(rml, "alert-triangle.svg"), 1u) << "only this one line carries the icon";
+  EXPECT_EQ(rml.find("#", triangle), std::string::npos) << "no hard-coded colour";
+  EXPECT_EQ(CountOf(ReadAsset("themes/colors.rcss.tmpl"), ".settings-warn-icon svg {\n  image-color: {{warn}};"), 1u);
+  // The Service rows come right after the technical-users note, above the connection rows.
+  EXPECT_LT(rml.find("{{i18n:settings.advanced.intro}}"), card);
+  EXPECT_LT(card, rml.find("{{i18n:settings.advanced.group.connection}}"));
 }
 
 } // namespace pbr

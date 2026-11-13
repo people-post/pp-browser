@@ -257,7 +257,7 @@
     "settings.integrations.server_id": "ID",
     "settings.integrations.server_url": "URL",
     "settings.network.backend": "Service",
-    "settings.network.backend.help": "Each service keeps its own account and data.",
+    "settings.network.backend.help": "Custom is for organizations that run their own server. Switching opens a separate account and chats; the ones here are kept and come back when you switch back. After switching, turn on “Show advanced settings” in Help again to switch back.",
     "settings.network.backend.restart": "Restart the app to switch.",
     "settings.network.backend.prod": "Production",
     "settings.network.backend.qa": "Test (QA)",

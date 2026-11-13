@@ -342,7 +342,7 @@ data-value="server.url"	1	integrations	advanced	advanced;;advanced	integrations
 {{direct_connections_label}}	1	-	advanced	advanced	network	
 {{i18n:common.not_now}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'reachable'	network	
 {{i18n:common.remove}}	1	-	advanced	advanced;;advanced	integrations	
-{{i18n:common.reset_defaults}}	2	-	advanced	advanced;;advanced	appearance,integrations,llm,network	
+{{i18n:common.reset_defaults}}	3	-	advanced	advanced;;advanced	appearance,integrations,llm,network	
 {{i18n:settings.advanced.group.ai}}	1	-	advanced	advanced	-	
 {{i18n:settings.integrations.add_mcp}}	1	-	advanced	advanced;;advanced	integrations	
 {{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced	advanced;;advanced	integrations	
@@ -412,13 +412,13 @@ data-value="server.url"	1	integrations	advanced	advanced;;advanced	integrations
 {{reachability_summary}}	1	-	advanced	advanced;;show_connection_card	network	
 {{tool_permissions_summary}}	1	-	advanced	advanced;;advanced	security	
 data-class-settings-switch--on="call_diagnostics == 'on'"	1	-	tester	tester	appearance	
-data-event-change="on_network_field_changed()"	3	network	tester	tester;;tester;;backend_is_custom	network	
+data-event-change="on_network_field_changed()"	3	network	advanced	advanced;;advanced;;backend_is_custom	network	
 data-event-click="clear_undelivered_older_than()"	1	security	tester	tester;;tester	security	
 data-event-click="copy_cas_tip(item_index)"	1	storage	tester	tester;;tester;;item.can_copy_tip	storage	
 data-event-click="fetch_cas_tip()"	1	storage	tester	tester;;tester	storage	
-data-event-click="on_choose_backend()"	1	network	tester	tester;;show_backend_switch	network	
+data-event-click="on_choose_backend()"	1	network	advanced	advanced;;show_backend_switch	network	
 data-event-click="open_ui_perf_test()"	1	-	tester	tester;;dev_tools_available	about	
-data-event-click="reset_section('network')"	1	network	tester	tester;;tester	network	
+data-event-click="reset_section('network')"	1	network	advanced	advanced;;advanced	network	
 data-event-click="set_cas_library_filter('all')"	1	storage	tester	tester;;tester	storage	
 data-event-click="set_cas_library_filter('cache')"	1	storage	tester	tester;;tester	storage	
 data-event-click="set_cas_library_filter('private')"	1	storage	tester	tester;;tester	storage	
@@ -430,14 +430,13 @@ data-event-click="simulate_chats_link_offline()"	1	-	tester	tester;;dev_tools_av
 data-event-click="simulate_chats_link_online()"	1	-	tester	tester;;dev_tools_available	about	
 data-event-click="toggle_call_diagnostics()"	1	appearance	tester	tester	appearance	
 data-event-click="unpublish_cas(item_index)"	1	storage	tester	tester;;tester;;item.can_unpublish	storage	
-data-value="directory_base_url"	1	network	tester	tester;;tester;;backend_is_custom	network	
-data-value="registration_base_url"	1	network	tester	tester;;tester;;backend_is_custom	network	
-data-value="relay_base_url"	1	network	tester	tester;;tester;;backend_is_custom	network	
-{{backend_label}}	1	-	tester	tester;;show_backend_switch	network	
+data-value="directory_base_url"	1	network	advanced	advanced;;advanced;;backend_is_custom	network	
+data-value="registration_base_url"	1	network	advanced	advanced;;advanced;;backend_is_custom	network	
+data-value="relay_base_url"	1	network	advanced	advanced;;advanced;;backend_is_custom	network	
+{{backend_label}}	1	-	advanced	advanced;;show_backend_switch	network	
 {{cas_library_empty_label}}	1	-	tester	tester;;tester;;cas_library_rows.size == 0	storage	
 {{config_dir}}	1	-	tester	tester;;tester	storage	
 {{data_dir}}	1	-	tester	tester;;tester	storage	
-{{i18n:common.reset_defaults}}	1	-	tester	tester;;tester	appearance,integrations,llm,network	
 {{i18n:dev.link.sim_connecting}}	1	-	tester	tester;;dev_tools_available	about	
 {{i18n:dev.link.sim_offline}}	1	-	tester	tester;;dev_tools_available	about	
 {{i18n:dev.link.sim_online}}	1	-	tester	tester;;dev_tools_available	about	
@@ -445,12 +444,12 @@ data-value="relay_base_url"	1	network	tester	tester;;tester;;backend_is_custom	n
 {{i18n:dev.perf.row}}	1	-	tester	tester;;dev_tools_available	about	
 {{i18n:settings.call_diagnostics.help}}	1	-	tester	tester	appearance	
 {{i18n:settings.call_diagnostics.label}}	1	-	tester	tester	appearance	
-{{i18n:settings.network.backend.help}}	1	-	tester	tester;;show_backend_switch	network	
-{{i18n:settings.network.backend.restart}}	1	-	tester	tester;;show_backend_switch && backend_restart_pending	network	
-{{i18n:settings.network.backend}}	1	-	tester	tester;;show_backend_switch	network	
-{{i18n:settings.network.directory}}	1	-	tester	tester;;tester;;backend_is_custom	network	
-{{i18n:settings.network.registration}}	1	-	tester	tester;;tester;;backend_is_custom	network	
-{{i18n:settings.network.relay}}	1	-	tester	tester;;tester;;backend_is_custom	network	
+{{i18n:settings.network.backend.help}}	1	-	advanced	advanced;;show_backend_switch	network	
+{{i18n:settings.network.backend.restart}}	1	-	advanced	advanced;;show_backend_switch && backend_restart_pending	network	
+{{i18n:settings.network.backend}}	1	-	advanced	advanced;;show_backend_switch	network	
+{{i18n:settings.network.directory}}	1	-	advanced	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.registration}}	1	-	advanced	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.relay}}	1	-	advanced	advanced;;advanced;;backend_is_custom	network	
 {{i18n:settings.security.clear_undelivered.help}}	1	-	tester	tester;;tester	security	
 {{i18n:settings.security.clear_undelivered}}	1	-	tester	tester;;tester	security	
 {{i18n:settings.security.group.diagnostics}}	1	-	tester	tester;;tester	security	

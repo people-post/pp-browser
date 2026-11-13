@@ -638,6 +638,11 @@ select selectbox option:hover {
   image-color: #ff9f0a;
 }
 
+/* The warning triangle before the technical-users note at the top of the Advanced page (the words keep their colour). */
+.settings-warn-icon svg {
+  image-color: #ff9f0a;
+}
+
 .shell-call-quality-bar {
   background-color: #7878805c;
 }

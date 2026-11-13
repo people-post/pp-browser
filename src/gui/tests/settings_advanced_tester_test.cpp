@@ -71,8 +71,8 @@ protected:
     context = ui::CreateContext(kContext, {400, 800});
     ASSERT_NE(context, nullptr);
 
-    root = std::filesystem::temp_directory_path() /
-           ("pp_adv_tester_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    root =
+        std::filesystem::temp_directory_path() / ("pp_adv_tester_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
     std::filesystem::remove_all(root);
     std::filesystem::create_directories(root / "profile");
     BootstrapResult bootstrap{};
@@ -129,6 +129,14 @@ protected:
     context->Update();
   }
   std::string Text(const char* id) { return document->GetElementById(id)->GetInnerRML().c_str(); }
+  std::vector<std::string> ServiceIds() {
+    std::vector<std::string> ids;
+    for (const SettingsChoicePage::Option& option : settings.BackendChoiceOptions()) {
+      ids.push_back(option.id.c_str());
+    }
+    return ids;
+  }
+
   NullRender render;
   QuietSystem system;
   SessionStore store;
@@ -175,8 +183,8 @@ TEST_F(SettingsAdvancedTesterTest, FiveTapsOnTheVersionSwitchOnlyTheTesterOption
 TEST_F(SettingsAdvancedTesterTest, TheTapHintsNameOnlyTheTesterOptions) {
   for (const char* language : {"en", "zh-Hans"}) {
     LocalizationService::Instance().SetPreferredLanguage(language);
-    for (const char* key : {"settings.help.tap_open", "settings.help.tap_close", "settings.help.tester_on",
-                            "settings.help.tester_off"}) {
+    for (const char* key :
+         {"settings.help.tap_open", "settings.help.tap_close", "settings.help.tester_on", "settings.help.tester_off"}) {
       const std::string text = Tr(key, {{"n", "2"}});
       EXPECT_EQ(text.find("n}"), std::string::npos) << key;
       EXPECT_EQ(text.find("Advanced"), std::string::npos) << language << " " << key << ": " << text;
@@ -190,6 +198,42 @@ TEST_F(SettingsAdvancedTesterTest, TheTapHintsNameOnlyTheTesterOptions) {
   EXPECT_EQ(Tr("settings.help.tap_close", {{"n", "2"}}), "再点 2 次收起测试选项");
   EXPECT_EQ(Tr("settings.help.tester_on"), "已显示测试选项");
   EXPECT_EQ(Tr("settings.help.tester_off"), "已隐藏测试选项");
+}
+
+TEST_F(SettingsAdvancedTesterTest, QaIsOfferedOnlyWhileTheTesterOptionsAreOnAndWithoutARestart) {
+  EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "custom"}));
+  Click("toggle_adv");
+  EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "custom"})) << "Advanced alone does not offer QA";
+  for (int i = 0; i < 5; ++i) {
+    Click("version");
+  }
+  EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "qa", "custom"})) << "same session, no restart";
+  for (int i = 0; i < 5; ++i) {
+    Click("version");
+  }
+  EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "custom"}));
+}
+
+TEST_F(SettingsAdvancedTesterTest, WithoutAQaAddressInTheBuildQaIsNeverOffered) {
+  host().UiState().backend_qa_available = false;
+  host().PushToView(false);
+  for (int i = 0; i < 5; ++i) {
+    Click("version");
+  }
+  ASSERT_EQ(Text("tst"), "1");
+  EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "custom"}));
+}
+
+TEST_F(SettingsAdvancedTesterTest, RunningOnQaWithTheTesterOptionsOffStillShowsQaAndTheChooserHasNoSelectedRow) {
+  host().UiState().backend_env = "qa";
+  host().PushToView(false);
+  context->Update();
+  EXPECT_EQ(Text("lbl"), Tr("settings.network.backend.qa")) << "the row tells the truth about the current service";
+  const std::vector<SettingsChoicePage::Option> options = settings.BackendChoiceOptions();
+  ASSERT_EQ(options.size(), 2u);
+  for (const SettingsChoicePage::Option& option : options) {
+    EXPECT_FALSE(option.selected) << option.id.c_str();
+  }
 }
 
 TEST_F(SettingsAdvancedTesterTest, TheTesterBindingIsBoundAndRedrawnLikeTheAdvancedOne) {

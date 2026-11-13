@@ -131,6 +131,23 @@ TEST(SettingsPagesTest, AdvancedFollowsItsSwitchAndTestOptionsFollowTheTesterSwi
   EXPECT_EQ(Page("help").gate, SettingsPageGate::None);
 }
 
+// The Service row and its custom-address fields sit on the Advanced page: their handler is the network one, and that page
+// lists it, so a change there is saved.
+TEST(SettingsPagesTest, TheServiceRowsBelongToTheAdvancedPage) {
+  EXPECT_EQ(HandlerIdsOf(Page("advanced")).count("network"), 1u);
+  std::ifstream in(std::string(PP_SOURCE_DIR) + "/src/gui/tests/data/settings_row_checklist.txt");
+  ASSERT_TRUE(in.good());
+  std::string line;
+  size_t service_rows = 0;
+  while (std::getline(in, line)) {
+    if (line.find("on_choose_backend()") != std::string::npos || line.find("{{backend_label}}") != std::string::npos) {
+      EXPECT_NE(line.find("\tadvanced\t"), std::string::npos) << line;
+      ++service_rows;
+    }
+  }
+  EXPECT_EQ(service_rows, 2u);
+}
+
 // The Test options entry (the last row of Home's third group) selects page "tester": with the tester switch on the
 // page is listed and its view is the one registered for it; with the flag off nothing lists it, so selecting it opens
 // nothing (SettingsController::OnSelectSection returns when the id is not among the listed rows).

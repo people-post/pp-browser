@@ -161,6 +161,8 @@ public:
   void BindRunWhenRegistrationIdle(std::function<void(std::function<void()>)> run);
   /** The Me card's "QR code" button opens the full-page My QR code. */
   void BindShowMyQr(std::function<void()> show);
+  /** The rows "Service" offers now (prod, custom, and QA only with a QA build and the tester options on); `OnChooseBackend` shows exactly these. */
+  std::vector<SettingsChoicePage::Option> BackendChoiceOptions() const;
   /** Refresh reachability Connection card via SettingsCommands ports. */
   void SyncReachability();
   /** Persist skip/ack for the Me → Network reachability nudge (condition-keyed). */

@@ -256,7 +256,7 @@
     "settings.integrations.server_id": "ID",
     "settings.integrations.server_url": "URL",
     "settings.network.backend": "服务",
-    "settings.network.backend.help": "每个服务的账号和数据各自独立。",
+    "settings.network.backend.help": "自定义是给自己有服务器的机构用的。切换后是另一套账号和聊天，这里的不会丢，切回来就恢复。切换后要在“帮助”里重新打开“显示高级设置”才能再切回来。",
     "settings.network.backend.restart": "重启应用后切换。",
     "settings.network.backend.prod": "正式",
     "settings.network.backend.qa": "测试（QA）",

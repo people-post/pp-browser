@@ -13670,6 +13670,37 @@ textarea:composing ~ .prompt-composer-label,
   margin: 8dp 32dp 0 32dp;
 }
 
+/* A note with a warning triangle before it (the Advanced page's technical-users line): the triangle stays on the first
+   line when the words wrap. On a phone the row carries the note's side margins, the note none of its own. */
+.settings-warn-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+.settings-warn-row .group-foot {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settings-warn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18dp;
+  height: 18dp;
+  margin-right: 6dp;
+}
+
+.shell-layer-compact .settings-warn-row {
+  margin: 8dp 32dp 0 32dp;
+}
+
+.shell-layer-compact .settings-section .settings-warn-row .group-foot {
+  margin: 0;
+}
+
 .shell-layer-compact .settings-mock .group-head {
   margin: 24dp 32dp 8dp 32dp;
 }
