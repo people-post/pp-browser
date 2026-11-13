@@ -47,7 +47,7 @@ TEST(AvatarViewMarkupTest, TheViewerShowsTheSquareAsStoredNotCircular) {
   EXPECT_EQ(rule.find("border-radius"), std::string::npos) << "no circular mask";
 }
 
-TEST(AvatarViewMarkupTest, TheProfilePhotoTapsTheViewerOrMenuAndTheCameraBadgeAndChangePhotoAreTheOnlyChangeButtons) {
+TEST(AvatarViewMarkupTest, TheProfilePhotoTapsTheViewerOrMenuAndTheCameraBadgeIsTheOnlyChangeButton) {
   const std::string rml = ReadAsset("views/settings_section_profile.rml");
   EXPECT_NE(rml.find("<div class=\"me-profile-avatar-frame\" data-event-click=\"tap_profile_avatar()\""),
             std::string::npos);
@@ -57,14 +57,9 @@ TEST(AvatarViewMarkupTest, TheProfilePhotoTapsTheViewerOrMenuAndTheCameraBadgeAn
   EXPECT_NE(tag.find("data-event-click=\"pick_profile_icon()\""), std::string::npos);
   EXPECT_NE(tag.find("data-attrif-disabled=\"profile_icon_uploading\""), std::string::npos);
   EXPECT_NE(rml.find("../icons/v2/camera.svg"), std::string::npos);
-  // The phone's blue "Change photo" text opens the same menu and is disabled while a photo uploads.
-  const size_t change = rml.find("<button class=\"me-profile-change\"");
-  ASSERT_NE(change, std::string::npos);
-  const std::string change_tag = rml.substr(change, rml.find('>', change) - change);
-  EXPECT_NE(change_tag.find("data-event-click=\"pick_profile_icon()\""), std::string::npos);
-  EXPECT_NE(change_tag.find("data-attrif-disabled=\"profile_icon_uploading\""), std::string::npos);
-  EXPECT_NE(rml.find("{{i18n:settings.profile.change_photo}}", change), std::string::npos);
-  EXPECT_EQ(rml.find("<button class=\"me-profile-change\"", change + 1), std::string::npos) << "only one such button";
+  // No "Change photo" text button any more: the badge is the one change button.
+  EXPECT_EQ(rml.find("me-profile-change"), std::string::npos);
+  EXPECT_EQ(rml.find("change_photo"), std::string::npos);
   EXPECT_EQ(rml.find("me-profile-avatar-btn"), std::string::npos);
 }
 
@@ -85,9 +80,12 @@ TEST(AvatarViewMarkupTest, ThePhoneProfileRulesMakeThePhoto112AndCentredAndTheDe
   const std::string desktop_badge = rule(".me-profile-avatar-badge");
   EXPECT_NE(desktop_badge.find("display: flex"), std::string::npos);
   EXPECT_NE(desktop_badge.find("width: 24dp"), std::string::npos);
-  EXPECT_NE(desktop_badge.find("border-width: 2dp"), std::string::npos);
+  EXPECT_NE(rule(".me-profile-avatar-badge-dot").find("border-width: 2dp"), std::string::npos);
+  // On the phone the tap area is 44dp around the 36dp visible dot.
   const std::string badge = rule(".shell-layer-compact .me-profile-avatar-badge");
-  EXPECT_NE(badge.find("width: 36dp"), std::string::npos);
+  EXPECT_NE(badge.find("width: 44dp"), std::string::npos);
+  EXPECT_NE(badge.find("height: 44dp"), std::string::npos);
+  EXPECT_NE(rule(".shell-layer-compact .me-profile-avatar-badge-dot").find("width: 36dp"), std::string::npos);
 }
 
 TEST(AvatarViewControllerTest, OpenPushesAFullScreenLayerOnceAndCloseClosesItOnce) {

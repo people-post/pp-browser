@@ -80,9 +80,9 @@ TEST(SettingsTitlesTest, TheTesterPagesStorageLibraryIsNotInsideTheGroupedSectio
   EXPECT_NE(grouped_close, std::string::npos) << "the grouped section closes before the library section opens";
 }
 
-TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithAVersionLineAndTheCardCaption) {
-  // Follows logs/mockups/settings-reorg-1110.html: no icon tiles on the entry rows, the card caption under the name, the app
-  // version at the end (not tappable here: the five taps stay on the help page's version row).
+TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithTheCardCaptionAndNoVersionLine) {
+  // Follows logs/mockups/settings-reorg-1110.html: no icon tiles on the entry rows, the card caption under the name, no app
+  // version line (the version and its five taps live on the help page).
   const std::string rml = ReadAsset("views/settings.rml");
   const size_t phone = rml.find("<div class=\"settings-phone-only me-home\">");
   ASSERT_NE(phone, std::string::npos);
@@ -91,7 +91,8 @@ TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithAVersionLineAndTheCardCaption) {
   const std::string home = rml.substr(phone, phone_end - phone);
   EXPECT_EQ(home.find("group-icon"), std::string::npos);
   EXPECT_NE(home.find("<p class=\"me-card-meta\">{{i18n:settings.card.caption}}</p>"), std::string::npos);
-  EXPECT_NE(home.find("<p class=\"group-foot me-home-ver\">{{app_name}} {{app_version}}</p>"), std::string::npos);
+  EXPECT_EQ(home.find("me-home-ver"), std::string::npos) << "no version text at the bottom of the home page";
+  EXPECT_EQ(home.find("app_version"), std::string::npos);
   EXPECT_EQ(home.find("tap_version"), std::string::npos);
   const std::string css = ReadAsset("themes/components.rcss");
   EXPECT_NE(css.find(".shell-layer-compact .me-home .group-card,\n.shell-layer-compact .settings-mock .group-card {\n"

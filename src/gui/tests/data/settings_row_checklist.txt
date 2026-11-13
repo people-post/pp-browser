@@ -5,7 +5,7 @@ data-class-settings-switch--on="auto_renew_registration == 'auto'"	2	-	profile	a
 data-event-blur="on_profile_nickname_commit()"	1	profile	profile	-	profile	
 data-event-click="copy_profile_id()"	1	-	profile	-	profile	
 data-event-click="edit_profile_nickname()"	1	-	profile	-	profile	
-data-event-click="pick_profile_icon()"	2	-	profile	-	profile	
+data-event-click="pick_profile_icon()"	1	-	profile	-	profile	
 data-event-click="register_profile()"	1	profile	profile	profile_show_register	profile	
 data-event-click="register_profile()"	1	-	profile	profile_show_register && profile_register_primary	profile	
 data-event-click="register_profile()"	1	-	profile	advanced && profile_show_register && !profile_register_primary	profile	
@@ -476,7 +476,6 @@ data-value="relay_base_url"	1	network	advanced	advanced;;advanced;;backend_is_cu
 {{profile_label}}	1	-	tester	tester;;tester	storage	
 {{i18n:settings.profile.id_row}}	1	-	profile	-	profile	
 {{i18n:settings.profile.id_none}}	1	-	profile	profile_relay_id == ''	profile	
-{{i18n:settings.profile.change_photo}}	1	-	profile	-	profile	
 {{i18n:settings.profile.name_caption}}	1	-	profile	-	profile	
 {{profile_nickname}}	1	-	profile	-	profile	
 {{i18n:settings.profile.account_group}}	1	-	profile	-	profile	

@@ -42,28 +42,35 @@ protected:
   void TearDown() override { LocalizationService::Instance().SetPreferredLanguage("en"); }
 };
 
-TEST_F(SettingsProfilePhoneTest, TheHeadIsJustThePhotoWithItsBadgeAndChangePhoto) {
+TEST_F(SettingsProfilePhoneTest, TheHeadIsJustThePhotoWithItsBadge) {
   const std::string rml = ReadAsset("views/settings_section_profile.rml");
   const size_t frame = rml.find("class=\"me-profile-avatar-frame\" data-event-click=\"tap_profile_avatar()\"");
   const size_t badge = rml.find("<button class=\"me-profile-avatar-badge\"");
-  const size_t head = rml.find("<div class=\"me-profile-phone-head settings-phone-only\">");
+  const size_t head = rml.find("<div class=\"group-card settings-phone-only\">");
   ASSERT_NE(frame, std::string::npos);
   ASSERT_NE(badge, std::string::npos);
   ASSERT_NE(head, std::string::npos);
   EXPECT_LT(frame, badge);
   EXPECT_LT(badge, head);
-  EXPECT_NE(rml.find("<button class=\"me-profile-change\"", head), std::string::npos);
+  // The camera badge is the only way to change the photo: no text button, no key, no rules left.
+  EXPECT_EQ(rml.find("me-profile-change"), std::string::npos);
+  EXPECT_EQ(rml.find("change_photo"), std::string::npos);
+  EXPECT_EQ(rml.find("me-profile-phone-head"), std::string::npos);
+  const std::string badge_tag = rml.substr(badge, rml.find('>', badge) - badge);
+  EXPECT_NE(badge_tag.find("data-event-click=\"pick_profile_icon()\""), std::string::npos);
   // No large name and no grey caption under the photo.
   EXPECT_EQ(rml.find("me-profile-name"), std::string::npos);
   EXPECT_EQ(rml.find("me-profile-caption"), std::string::npos);
-  const size_t head_end = rml.find("<div class=\"group-card settings-phone-only\">", head);
-  ASSERT_NE(head_end, std::string::npos);
-  EXPECT_EQ(rml.substr(head, head_end - head).find("{{profile_nickname}}"), std::string::npos);
-  EXPECT_EQ(rml.substr(head, head_end - head).find("name_caption"), std::string::npos);
-  // The change button is a 44dp target in blue.
+  // Everything between the photo and the nickname card carries no name and no caption.
+  EXPECT_EQ(rml.substr(frame, head - frame).find("{{profile_nickname}}"), std::string::npos);
+  EXPECT_EQ(rml.substr(frame, head - frame).find("name_caption"), std::string::npos);
+  // The badge's tap area is 44dp around a 36dp visible dot.
   const std::string css = ReadAsset("themes/components.rcss");
-  EXPECT_NE(RuleBody(css, ".shell-layer-compact .settings-mock .me-profile-change").find("height: 44dp"),
-            std::string::npos);
+  const std::string tap = RuleBody(css, ".shell-layer-compact .me-profile-avatar-badge");
+  EXPECT_NE(tap.find("width: 44dp"), std::string::npos);
+  EXPECT_NE(tap.find("height: 44dp"), std::string::npos);
+  EXPECT_NE(RuleBody(css, ".shell-layer-compact .me-profile-avatar-badge-dot").find("width: 36dp"), std::string::npos);
+  EXPECT_EQ(css.find(".me-profile-change"), std::string::npos);
   EXPECT_EQ(css.find(".me-profile-name"), std::string::npos);
   EXPECT_EQ(css.find(".me-profile-caption"), std::string::npos);
 }
@@ -89,14 +96,6 @@ TEST_F(SettingsProfilePhoneTest, TheNicknameRowCarriesTheCaptionUnderItsTitleAnd
   EXPECT_NE(RuleBody(css, ".shell-layer-compact .group-row-sub").find("font-size: 13dp"), std::string::npos);
   EXPECT_NE(RuleBody(css, ".shell-layer-compact .settings-mock .group-row-tap").find("min-height: 52dp"),
             std::string::npos);
-}
-
-TEST_F(SettingsProfilePhoneTest, ChangePhotoIsBlueAndGreyedWhileAPhotoUploads) {
-  const std::string tmpl = ReadAsset("themes/colors.rcss.tmpl");
-  EXPECT_NE(RuleBody(tmpl, ".me-profile-change").find("color: {{accent}}"), std::string::npos);
-  EXPECT_NE(RuleBody(tmpl, ".me-profile-change:disabled").find("color: {{label-3}}"), std::string::npos);
-  EXPECT_NE(ReadAsset("themes/colors-light.rcss").find(".me-profile-change:disabled"), std::string::npos);
-  EXPECT_NE(ReadAsset("themes/colors-dark.rcss").find(".me-profile-change:disabled"), std::string::npos);
 }
 
 TEST_F(SettingsProfilePhoneTest, ThePhoneHasNoInputAndNoCopyRowAndTheDesktopKeepsBoth) {
@@ -147,14 +146,12 @@ TEST_F(SettingsProfilePhoneTest, TheAccountGroupHoldsTheRowsInOrderWithTodaysGat
 TEST_F(SettingsProfilePhoneTest, TheCardStatusRowAndTheNewLinesAreWordedInBothLanguages) {
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
   EXPECT_EQ(Tr("settings.profile.registration_row"), "名片状态");
-  EXPECT_EQ(Tr("settings.profile.change_photo"), "更换头像");
   EXPECT_EQ(Tr("settings.profile.name_caption"), "好友搜这个名字就能加你");
   EXPECT_EQ(Tr("settings.profile.update_now"), "立即更新一次");
   EXPECT_EQ(Tr("settings.auto_renew_on_caption"), "已打开：名片会自动保持最新，一般不用手动更新");
   EXPECT_EQ(Tr("settings.auto_renew_off_caption"), "已关闭：名片到期前需要你手动更新");
   LocalizationService::Instance().SetPreferredLanguage("en");
   EXPECT_EQ(Tr("settings.profile.registration_row"), "Card status");
-  EXPECT_EQ(Tr("settings.profile.change_photo"), "Change photo");
   EXPECT_EQ(Tr("settings.profile.name_caption"), "Friends can find you by this name");
   EXPECT_EQ(Tr("settings.profile.update_now"), "Update now");
   EXPECT_EQ(Tr("settings.auto_renew_on_caption"), "On: your card stays up to date by itself");

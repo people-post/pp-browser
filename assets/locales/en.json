@@ -183,7 +183,6 @@
     "settings.profile.relay_id_none": "Account ID: created when you set up your account",
     "settings.profile.id_row": "Account ID",
     "settings.profile.id_none": "Created when you set up your account",
-    "settings.profile.change_photo": "Change photo",
     "settings.profile.name_caption": "Friends can find you by this name",
     "settings.profile.nickname_prompt": "Friends will see this name",
     "settings.profile.nickname_not_saved": "Couldn't save the name. Try again.",

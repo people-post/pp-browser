@@ -18,16 +18,14 @@
           <div class="me-profile-avatar-uploading" data-if="profile_icon_uploading">
             <p class="me-profile-avatar-uploading-text">{{i18n:settings.profile.photo_uploading}}</p>
           </div>
-          <!-- The camera badge opens the source menu (camera, library, remove); the only visible way to change the photo. -->
+          <!-- The camera badge opens the source menu (camera, library, remove); the only visible way to change the photo. On the phone the button is a 44dp tap area around the 36dp visible dot. -->
           <button class="me-profile-avatar-badge" type="button" data-event-click="pick_profile_icon()"
                   data-attrif-disabled="profile_icon_uploading">
-            <svg src="../icons/v2/camera.svg" width="16" height="16"></svg>
+            <span class="me-profile-avatar-badge-dot">
+              <svg src="../icons/v2/camera.svg" width="16" height="16"></svg>
+            </span>
           </button>
           </div>
-        </div>
-        <div class="me-profile-phone-head settings-phone-only">
-          <button class="me-profile-change" type="button" data-event-click="pick_profile_icon()"
-                  data-attrif-disabled="profile_icon_uploading">{{i18n:settings.profile.change_photo}}</button>
         </div>
         </div>
         <div class="group-card settings-phone-only">

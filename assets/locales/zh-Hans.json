@@ -182,7 +182,6 @@
     "settings.profile.relay_id_none": "账号 ID：开通账号后生成",
     "settings.profile.id_row": "账号 ID",
     "settings.profile.id_none": "开通账号后生成",
-    "settings.profile.change_photo": "更换头像",
     "settings.profile.name_caption": "好友搜这个名字就能加你",
     "settings.profile.nickname_prompt": "朋友会看到这个名字",
     "settings.profile.nickname_not_saved": "昵称没有保存，请再试一次",

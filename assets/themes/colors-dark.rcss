@@ -3800,21 +3800,13 @@ input.checkbox:checked {
 }
 
 /* Profile page camera badge and the photo viewer. */
-.me-profile-avatar-badge {
+.me-profile-avatar-badge-dot {
   background-color: #0a84ff;
   border-color: #1c1c1e;
 }
 
 .me-profile-avatar-badge svg {
   image-color: #ffffff;
-}
-
-.me-profile-change {
-  color: #0a84ff;
-}
-
-.me-profile-change:disabled {
-  color: #ebebf54c;
 }
 
 .avatar-view-bg {
