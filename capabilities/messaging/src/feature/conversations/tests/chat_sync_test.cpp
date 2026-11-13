@@ -59,7 +59,7 @@ public:
               return account == "account:peer" ? std::optional<AccountCard>(peer.DeviceCard()) : std::nullopt;
             },
             psk_store, LocalKeysFromIdentity(identity), roster_store),
-        sync(store, identity, contacts, &relay, receive_pipeline, inbox, &peer_history) {
+        sync(store, identity, &relay, receive_pipeline, inbox, &peer_history) {
     std::filesystem::remove_all(data_dir);
     if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");

@@ -10,7 +10,6 @@
 #include "lib/delivery/RelayWirePayload.h"
 #include "common/chat/MessagingLimits.h"
 #include "lib/people/ContactTypes.h"
-#include "lib/people/ContactsStore.h"
 
 #include <algorithm>
 #include <chrono>
@@ -23,12 +22,11 @@
 
 namespace pbr {
 
-ChatSyncWorkflow::ChatSyncWorkflow(IThreadStore& store, IdentityStore& identity, ContactsStore& contacts,
-                                   IRelayClient* relay, RelayReceivePipeline& receive_pipeline, InboxController& inbox,
+ChatSyncWorkflow::ChatSyncWorkflow(IThreadStore& store, IdentityStore& identity, IRelayClient* relay,
+                                   RelayReceivePipeline& receive_pipeline, InboxController& inbox,
                                    IChatHistoryPeerClient* peer_client)
     : store_(store),
       identity_(identity),
-      contacts_(contacts),
       relay_(relay),
       peer_client_(peer_client),
       receive_pipeline_(receive_pipeline),

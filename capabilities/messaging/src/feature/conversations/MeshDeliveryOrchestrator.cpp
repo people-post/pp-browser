@@ -237,8 +237,8 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
   } else {
     log().warning << "direct chat/history/blob unavailable (Amp required)";
   }
-  chat_sync_ = std::make_unique<ChatSyncWorkflow>(store_, identity_, contacts_, relay_, *receive_pipeline_, inbox_,
-                                                  transports_.History());
+  chat_sync_ =
+      std::make_unique<ChatSyncWorkflow>(store_, identity_, relay_, *receive_pipeline_, inbox_, transports_.History());
   chat_sync_->SetOnMessagesChanged([this]() {
     if (on_messages_changed_) {
       AppRuntime::PostUI([this]() { on_messages_changed_(); });
@@ -703,7 +703,7 @@ void MeshDeliveryOrchestrator::SetRelayClient(IRelayClient* relay) {
     LoadPersistedRelayCursor(identity->account_id);
   }
   if (chat_sync_) {
-    chat_sync_ = std::make_unique<ChatSyncWorkflow>(store_, identity_, contacts_, relay_, *receive_pipeline_, inbox_,
+    chat_sync_ = std::make_unique<ChatSyncWorkflow>(store_, identity_, relay_, *receive_pipeline_, inbox_,
                                                     transports_.History());
     chat_sync_->SetOnMessagesChanged([this]() {
       if (on_messages_changed_) {
