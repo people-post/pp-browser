@@ -7883,9 +7883,9 @@ input.checkbox {
 }
 
 .shell-chat-overlay .chat-call-row-icon {
-  width: 22dp;
-  height: 22dp;
-  margin-right: 8dp;
+  width: 24dp;
+  height: 24dp;
+  margin: -1dp 8dp -1dp 0;
 }
 
 /* A call record in a 1:1 chat: tap = call back. Group records do not get this class. */
