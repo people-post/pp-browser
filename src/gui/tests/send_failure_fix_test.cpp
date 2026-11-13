@@ -51,6 +51,7 @@ protected:
       my_card_done.push_back(std::move(done));
     };
     ports.poll_ok_pending = [this]() { return recovering; };
+    ports.now_ms = [this]() { return now_ms; };
     ports.progress = [this](const std::string& text) { progress.push_back(text); };
     ports.say = [this](const std::string& text) { said.push_back(text); };
     fix.SetPorts(std::move(ports));
@@ -81,6 +82,7 @@ protected:
   int my_card_updates = 0;
   std::vector<std::function<void(bool)>> my_card_done;
   bool recovering = true;
+  int64_t now_ms = 1'000'000;
   std::vector<std::string> progress;
   std::vector<std::string> said;
 };
@@ -121,8 +123,9 @@ TEST_F(SendFailureFixTest, NotFoundSendsNothingAndSaysSo) {
   fix.UpdateTheirCard("t1", "m1", "contact:bob", true);
   Answer(Result(Devices::NotReached, Directory::NotFound));
   EXPECT_TRUE(resent.empty());
-  EXPECT_EQ(said, (std::vector<std::string>{
-                      "Couldn't find them. They may not have updated PP yet — let them know another way."}));
+  EXPECT_EQ(
+      said,
+      (std::vector<std::string>{"Couldn't find them. They may not have updated PP yet — let them know another way."}));
 }
 
 TEST_F(SendFailureFixTest, UnreachableSendsNothingAndSaysTryLater) {
@@ -169,6 +172,24 @@ TEST_F(SendFailureFixTest, AMessageThatCannotBeResentIsNotSentAndTheUserIsToldTo
   EXPECT_EQ(Words("chat.send.fix.not_found"), "没有找到对方。对方可能还没有更新 PP，请用别的方式提醒他。");
 }
 
+TEST_F(SendFailureFixTest, ARefusedRefreshSaysSoLeavesNothingPendingAndALaterTapWorks) {
+  refuse_refresh = true;
+  fix.UpdateTheirCard("t1", "m1", "contact:bob", true);
+  EXPECT_EQ(said, (std::vector<std::string>{"Their card is already being updated. Try again in a moment."}));
+  EXPECT_TRUE(refresh_done.empty());
+  EXPECT_TRUE(resent.empty());
+  EXPECT_FALSE(fix.Pending());
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Words("chat.send.fix.refresh_busy"), "正在更新对方的名片，请稍等一下再点。");
+
+  refuse_refresh = false;
+  said.clear();
+  fix.UpdateTheirCard("t1", "m1", "contact:bob", true);
+  Answer(Result(Devices::Answered, Directory::Answered, true));
+  EXPECT_EQ(resent, (std::vector<std::string>{"t1/m1"}));
+  EXPECT_TRUE(said.empty());
+}
+
 TEST_F(SendFailureFixTest, AnAnswerAfterTheTeardownDoesNothing) {
   fix.UpdateTheirCard("t1", "m1", "contact:bob", true);
   fix.Reset();
@@ -207,6 +228,62 @@ TEST_F(SendFailureFixTest, ASecondTapWhileTheUpdateRunsStartsNoSecondRegistratio
   EXPECT_EQ(my_card_updates, 1);
   fix.OnPollOk();
   EXPECT_EQ(resent, (std::vector<std::string>{"t1/m1", "t1/m2", "t1/m3"}));
+}
+
+TEST_F(SendFailureFixTest, AReleaseWithinTheLimitResendsOnce) {
+  fix.UpdateMyCard("t1", "m1", true);
+  MyCardEnds(true);
+  now_ms += SendFailureFix::kReleaseLimitMs - 1;
+  fix.OnPollOk();
+  EXPECT_EQ(resent, (std::vector<std::string>{"t1/m1"}));
+  fix.OnPollOk();
+  EXPECT_EQ(resent.size(), 1u);
+}
+
+TEST_F(SendFailureFixTest, ALateReleaseSendsNothingAndTheNextTapStartsAFreshUpdate) {
+  fix.UpdateMyCard("t1", "m1", true);
+  MyCardEnds(true);
+  now_ms += SendFailureFix::kReleaseLimitMs + 1;
+  fix.OnPollOk(); // the poll comes too late: nothing is sent, the registered update is told
+  EXPECT_TRUE(resent.empty());
+  EXPECT_FALSE(fix.Pending());
+  EXPECT_EQ(said, (std::vector<std::string>{"Updated. Please send it again."}));
+  fix.OnPollOk();
+  EXPECT_TRUE(resent.empty());
+
+  said.clear();
+  fix.UpdateMyCard("t1", "m2", true); // a fresh update, not a join of the dead one
+  EXPECT_EQ(my_card_updates, 2);
+  MyCardEnds(true);
+  fix.OnPollOk();
+  EXPECT_EQ(resent, (std::vector<std::string>{"t1/m2"}));
+}
+
+TEST_F(SendFailureFixTest, ATapAfterTheLimitDropsTheQueueAndStartsFresh) {
+  fix.UpdateMyCard("t1", "m1", true);
+  MyCardEnds(true); // registered, no poll yet
+  now_ms += SendFailureFix::kReleaseLimitMs + 1;
+  fix.UpdateMyCard("t1", "m2", true);
+  EXPECT_EQ(my_card_updates, 2);
+  EXPECT_EQ(said, (std::vector<std::string>{"Updated. Please send it again."})) << "its registration had worked";
+  MyCardEnds(true);
+  fix.OnPollOk();
+  EXPECT_EQ(resent, (std::vector<std::string>{"t1/m2"})) << "m1 is never sent";
+}
+
+TEST_F(SendFailureFixTest, AnUpdateThatNeverRegisteredAndTimedOutIsDroppedSilently) {
+  fix.UpdateMyCard("t1", "m1", true);
+  now_ms += SendFailureFix::kReleaseLimitMs + 1;
+  fix.UpdateMyCard("t1", "m2", true);
+  EXPECT_TRUE(said.empty());
+  EXPECT_EQ(my_card_updates, 2);
+  MyCardEnds(true); // the dead update answers late: ignored
+  EXPECT_TRUE(resent.empty());
+  fix.OnPollOk();
+  EXPECT_TRUE(resent.empty()) << "the fresh update has not registered yet";
+  MyCardEnds(true);
+  fix.OnPollOk();
+  EXPECT_EQ(resent, (std::vector<std::string>{"t1/m2"}));
 }
 
 TEST_F(SendFailureFixTest, AMessageThatCannotBeResentOnlyGetsTheSendItAgainWords) {
@@ -292,13 +369,17 @@ TEST_F(SendFailureFixTest, TheDialogsSayWhatThePlanSays) {
 }
 
 TEST_F(SendFailureFixTest, TheReasonWordsFollowHowATapGoesOn) {
-  EXPECT_EQ(SendFailureText(SendFailure::RecipientNotFound, SendAdvice::UpdateTheirCardAndResend),
-            "The server can't find them, so this message wasn't sent. Tap the red mark to update their card and resend.");
+  EXPECT_EQ(
+      SendFailureText(SendFailure::RecipientNotFound, SendAdvice::UpdateTheirCardAndResend),
+      "The server can't find them, so this message wasn't sent. Tap the red mark to update their card and resend.");
   EXPECT_EQ(SendFailureText(SendFailure::RecipientNotFound, SendAdvice::UpdateTheirCardOnly),
             "The server can't find them, so this message wasn't sent. Tap the red mark to update their card.");
-  EXPECT_EQ(SendFailureText(SendFailure::RecipientNotFound), "The server can't find them, so this message wasn't sent.");
-  EXPECT_EQ(SendFailureText(SendFailure::SenderNotRegistered),
+  EXPECT_EQ(SendFailureText(SendFailure::RecipientNotFound),
+            "The server can't find them, so this message wasn't sent.");
+  EXPECT_EQ(SendFailureText(SendFailure::SenderNotRegistered, SendAdvice::UpdateMyCard),
             "People can't find you right now, so this message wasn't sent. Update your card first.");
+  EXPECT_EQ(SendFailureText(SendFailure::SenderNotRegistered),
+            "People can't find you right now, so this message wasn't sent.");
   EXPECT_EQ(SendFailureReasonText(SendFailure::RecipientNotFound, SendMarkTap::Refusal::None,
                                   SendAdvice::UpdateTheirCardAndResend),
             SendFailureText(SendFailure::RecipientNotFound, SendAdvice::UpdateTheirCardAndResend));
@@ -308,7 +389,9 @@ TEST_F(SendFailureFixTest, TheReasonWordsFollowHowATapGoesOn) {
   EXPECT_EQ(SendFailureText(SendFailure::RecipientNotFound, SendAdvice::UpdateTheirCardOnly),
             "服务器上找不到对方，这条消息没有发出去。点红色叹号可以更新对方的名片。");
   EXPECT_EQ(SendFailureText(SendFailure::RecipientNotFound), "服务器上找不到对方，这条消息没有发出去。");
-  EXPECT_EQ(SendFailureText(SendFailure::SenderNotRegistered), "别人现在找不到你，这条消息没有发出去。请先更新你的名片。");
+  EXPECT_EQ(SendFailureText(SendFailure::SenderNotRegistered, SendAdvice::UpdateMyCard),
+            "别人现在找不到你，这条消息没有发出去。请先更新你的名片。");
+  EXPECT_EQ(SendFailureText(SendFailure::SenderNotRegistered), "别人现在找不到你，这条消息没有发出去。");
   // Every other reason's words ignore the advice.
   EXPECT_EQ(SendFailureText(SendFailure::RelayUnreachable, SendAdvice::UpdateTheirCardAndResend),
             SendFailureText(SendFailure::RelayUnreachable));

@@ -584,11 +584,18 @@ SendAdvice ChatPresenter::SendAdviceOf(const std::string& thread_id, const std::
   if (!facts.row || !facts.thread) {
     return SendAdvice::None;
   }
+  if (TapSendsEdit(*facts.row, message_id)) {
+    return SendAdvice::None; // the tap resends the edit: it never offers a card update (same order as TapSendMarkWith)
+  }
   facts.started_ms = facade_->SendStartedMs(message_id);
   facts.already_resent = resent_unremoved_.count(message_id) != 0;
   facts.now_ms = util::NowUnixMs();
   FillGuidanceFacts(thread_id, message_id, facts);
   return AdviceOf(DecideSendMarkTap(facts));
+}
+
+std::optional<std::string> ChatPresenter::TapSendsEdit(const ThreadMessage& row, const std::string& message_id) {
+  return EditResentByTap(row, facade_->SendStartedMs(message_id), util::NowUnixMs());
 }
 
 void ChatPresenter::FillGuidanceFacts(const std::string& thread_id, const std::string& message_id,
@@ -621,8 +628,7 @@ SendMarkTap ChatPresenter::TapSendMarkWith(const std::string& thread_id, const s
     return {}; // gone: a second tap after the row was taken away
   }
   // The mark of an edited message of ours is its edit's: a tap sends that edit again (same words, same send time).
-  if (const std::optional<std::string> edit_id = EditRowIdOf(*facts.row);
-      edit_id && MarkOf(*facts.row, facade_->SendStartedMs(message_id), util::NowUnixMs()) == SendMark::None) {
+  if (const std::optional<std::string> edit_id = TapSendsEdit(*facts.row, message_id)) {
     std::optional<ThreadMessage> edit_row;
     if (auto row = facade_->GetMessage(thread_id, *edit_id); row && *row) {
       edit_row = **row;

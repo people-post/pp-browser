@@ -652,6 +652,8 @@ private:
   void UpdatePrefs(const std::string& thread_id, const std::function<void(ThreadLocalPrefs&)>& change);
   void Changed();
 
+  /** The edit row a tap on `row`'s red mark sends again, when it takes that branch first (an edited message of ours). */
+  std::optional<std::string> TapSendsEdit(const ThreadMessage& row, const std::string& message_id);
   SendMarkTap TapSendMarkWith(const std::string& thread_id, const std::string& message_id, bool offer_fix);
   /** `facts.failure` and `facts.peer_contact_id` for a 1:1 chat (what the card-update results are decided from). */
   void FillGuidanceFacts(const std::string& thread_id, const std::string& message_id, SendMarkTapFacts& facts);

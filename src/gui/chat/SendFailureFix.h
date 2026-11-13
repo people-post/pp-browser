@@ -53,6 +53,8 @@ public:
     std::function<void(std::function<void(bool ok)> done)> update_my_card;
     /** The registration recovery is not Ok: a poll that gets through is still to come (OnPollOk). */
     std::function<bool()> poll_ok_pending;
+    /** The clock (unix ms) the update's time limit is read from; tests set it. */
+    std::function<int64_t()> now_ms;
     /** A progress note, and the answer (the bottom pill). */
     std::function<void(const std::string& text)> progress;
     std::function<void(const std::string& text)> say;
@@ -71,6 +73,9 @@ public:
   /** Messaging was torn down: nothing pending, and what is still out ends without effect. */
   void Reset();
 
+  /** How long an update of our card may wait for its release signal before its pending resends are dropped. */
+  static constexpr int64_t kReleaseLimitMs = 2 * 60 * 1000;
+
   bool Pending() const { return !pending_.empty(); }
 
 private:
@@ -81,6 +86,9 @@ private:
   };
   void Release();
   void DropPending();
+  int64_t NowMs() const { return ports_.now_ms ? ports_.now_ms() : 0; }
+  /** The update has waited past kReleaseLimitMs: drops it (says "updated, send again" when its registration worked). */
+  bool ExpireIfLate();
 
   Ports ports_;
   std::vector<PendingResend> pending_;
@@ -88,6 +96,10 @@ private:
   bool updating_ = false;
   /** The update worked; waiting for the poll that gets through. */
   bool registered_ = false;
+  /** When the update in flight started (NowMs). */
+  int64_t started_ms_ = 0;
+  /** Up at every start and every drop: a late answer of an update that was dropped is ignored. */
+  uint64_t update_id_ = 0;
   /** Up at every Reset: a late answer of the session before it is ignored. */
   uint64_t session_ = 0;
 };

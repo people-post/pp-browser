@@ -20,7 +20,9 @@ const char* SendKey(const SendFailure failure, const SendAdvice advice) {
       }
       return "chat.notice.send.recipient_not_found";
     case SendFailure::SenderNotRegistered:
-      return "chat.notice.send.sender_not_registered";
+      // "Update your card first" only where a tap offers it; elsewhere a tap just resends, so only the reason.
+      return advice == SendAdvice::UpdateMyCard ? "chat.notice.send.sender_not_registered"
+                                                : "chat.notice.send.sender_not_registered_reason";
     case SendFailure::MeshOff:
       return "chat.notice.send.mesh_off";
     case SendFailure::NoAddress:

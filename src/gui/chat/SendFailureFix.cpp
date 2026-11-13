@@ -45,7 +45,7 @@ void SendFailureFix::UpdateTheirCard(const std::string& thread_id, const std::st
     ports_.progress(Tr("chat.send.fix.updating"));
   }
   const uint64_t session = session_;
-  ports_.refresh_contact(
+  const bool started = ports_.refresh_contact(
       contact_id, [this, session, thread_id, message_id, resendable](const ContactRefreshResult& result) {
         if (session != session_) {
           return; // messaging was torn down meanwhile
@@ -78,11 +78,18 @@ void SendFailureFix::UpdateTheirCard(const std::string& thread_id, const std::st
           ports_.say(text);
         }
       });
+  if (!started && ports_.say) {
+    // One refresh of this contact already runs (or the hub is not running): nothing is pending, a later tap starts anew.
+    ports_.say(Tr("chat.send.fix.refresh_busy"));
+  }
 }
 
 void SendFailureFix::UpdateMyCard(const std::string& thread_id, const std::string& message_id, const bool resendable) {
   if (!ports_.update_my_card) {
     return;
+  }
+  if (updating_) {
+    ExpireIfLate(); // an update that never got its release signal does not hold this tap hostage
   }
   const bool known = std::any_of(pending_.begin(), pending_.end(),
                                  [&](const PendingResend& item) { return item.message_id == message_id; });
@@ -94,9 +101,11 @@ void SendFailureFix::UpdateMyCard(const std::string& thread_id, const std::strin
   }
   updating_ = true;
   registered_ = false;
+  started_ms_ = NowMs();
+  const uint64_t update_id = ++update_id_;
   const uint64_t session = session_;
-  ports_.update_my_card([this, session](const bool ok) {
-    if (session != session_ || !updating_) {
+  ports_.update_my_card([this, session, update_id](const bool ok) {
+    if (session != session_ || !updating_ || update_id != update_id_) {
       return;
     }
     if (!ok) {
@@ -113,6 +122,9 @@ void SendFailureFix::UpdateMyCard(const std::string& thread_id, const std::strin
 }
 
 void SendFailureFix::OnPollOk() {
+  if (updating_ && ExpireIfLate()) {
+    return; // too late: nothing is sent
+  }
   if (updating_ && registered_) {
     Release();
   }
@@ -140,6 +152,19 @@ void SendFailureFix::DropPending() {
   pending_.clear();
   updating_ = false;
   registered_ = false;
+  ++update_id_;
+}
+
+bool SendFailureFix::ExpireIfLate() {
+  if (NowMs() - started_ms_ < kReleaseLimitMs) {
+    return false;
+  }
+  const bool say_again = registered_;
+  DropPending();
+  if (say_again && ports_.say) {
+    ports_.say(Tr("chat.send.fix.updated_send_again"));
+  }
+  return true;
 }
 
 void SendFailureFix::Reset() {

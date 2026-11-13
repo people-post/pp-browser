@@ -97,10 +97,17 @@ bool IsRelayUserNotRegistered(const Error& error) {
          error.code == static_cast<int32_t>(Err::Auth::NotRegistered);
 }
 
+namespace {
+/** The marker is always appended last; the server's own text containing it elsewhere does not count. */
+bool EndsWithMarker(const std::string& message) {
+  const std::string marker = kRecipientNotFoundMarker;
+  return message.size() >= marker.size() && message.compare(message.size() - marker.size(), marker.size(), marker) == 0;
+}
+} // namespace
+
 bool IsRelayRecipientNotFound(const Error& error) {
   return AppError::CategoryOf(error) == ErrorCategory::Network &&
-         error.code == static_cast<int32_t>(Err::Network::HttpNotFound) &&
-         error.message.find(kRecipientNotFoundMarker) != std::string::npos;
+         error.code == static_cast<int32_t>(Err::Network::HttpNotFound) && EndsWithMarker(error.message);
 }
 
 Roe<std::string> HttpRelayClient::SignRelayApiBytes(const std::vector<uint8_t>& sign_bytes) const {

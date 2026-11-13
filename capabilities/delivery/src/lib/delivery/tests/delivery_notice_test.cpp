@@ -54,6 +54,16 @@ TEST(DeliveryNoticeTest, A404WithoutThatCodeStaysRejected) {
   EXPECT_FALSE(IsRelayRecipientNotFound(AppError::Network(Err::Network::HttpNotFound, "404")));
 }
 
+TEST(DeliveryNoticeTest, TheMarkerInsideTheServersOwnTextIsNotTheRelaysCode) {
+  // Server-controlled text may contain the marker anywhere; only the one appended last counts.
+  const Error error =
+      RelaySendHttpError(404, R"({"error":"gone [recipient_not_found] for now","code":"route_not_found"})");
+  EXPECT_FALSE(IsRelayRecipientNotFound(error));
+  EXPECT_EQ(SendFailureFromRelay(error), SendFailure::RelayRejected);
+  EXPECT_TRUE(IsRelayRecipientNotFound(
+      RelaySendHttpError(404, R"({"error":"gone [recipient_not_found] for now","code":"recipient_not_found"})")));
+}
+
 TEST(DeliveryNoticeTest, AnUnregisteredSenderReadsAsSenderNotRegistered) {
   const Error error = RelaySendHttpError(403, R"({"error":"Relay user not registered"})");
   EXPECT_TRUE(IsRelayUserNotRegistered(error));

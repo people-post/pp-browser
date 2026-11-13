@@ -1,5 +1,6 @@
 // "Copy account ID" puts on the clipboard the account ID the row shows (not the node ID next to it), and says so.
 #include "feature/settings/SettingsCommands.h"
+#include "foundation/error/AppError.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "gui/SettingsController.h"
 #include "gui/SettingsHost.h"
@@ -149,6 +150,36 @@ TEST_F(SettingsProfileCopyTest, ReconnectRegistersWithTheStoredNicknameAndLeaves
   EXPECT_EQ(registered_with, (std::vector<std::string>{"Stored Name"}));
   EXPECT_EQ(host.saves, 0) << "the page's nickname is not committed";
   EXPECT_EQ(host.pulls, 0) << "the page's fields are not read";
+}
+
+// A failed message's "update my card" waits on this answer: false (PIN cancelled, or refused) clears what it queued.
+TEST_F(SettingsProfileCopyTest, ReconnectAnswersFalseWhenThePinIsCancelledAndNeverRegisters) {
+  unlock.ensure_unlocked = [](std::function<void(bool)> then) { then(false); };
+  int registrations = 0;
+  commands.register_identity = [&](const RegisterIdentityArgs&) -> Roe<void> {
+    ++registrations;
+    return {};
+  };
+  std::vector<bool> answers;
+  actions->Register(/*quiet_success=*/true, [&](const bool ok) { answers.push_back(ok); });
+  EXPECT_EQ(answers, (std::vector<bool>{false}));
+  EXPECT_EQ(registrations, 0);
+}
+
+TEST_F(SettingsProfileCopyTest, ReconnectAnswersFalseWhenTheRegistrationFailsAndTrueWhenItWorks) {
+  unlock.ensure_unlocked = [](std::function<void(bool)> then) { then(true); };
+  bool works = false;
+  commands.register_identity = [&](const RegisterIdentityArgs&) -> Roe<void> {
+    if (!works) {
+      return AppError::Network(Err::Network::HttpRejected, "refused");
+    }
+    return {};
+  };
+  std::vector<bool> answers;
+  actions->Register(/*quiet_success=*/true, [&](const bool ok) { answers.push_back(ok); });
+  works = true;
+  actions->Register(/*quiet_success=*/true, [&](const bool ok) { answers.push_back(ok); });
+  EXPECT_EQ(answers, (std::vector<bool>{false, true}));
 }
 
 TEST_F(SettingsProfileCopyTest, TheSettingsButtonStillCommitsAndSendsThePagesNickname) {

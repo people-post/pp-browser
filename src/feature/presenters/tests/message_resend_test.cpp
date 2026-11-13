@@ -2,6 +2,7 @@
 // once its automatic sending has stopped, only in public chats; anything else just says why
 // (DEV/PLAN-message-resend.md). The ports run on the in-memory store, as the facade's run on the app's.
 #include "feature/presenters/DeliveryNoticePlan.h"
+#include "feature/presenters/MessageEdit.h"
 #include "feature/presenters/MessageResend.h"
 #include "feature/presenters/SendMark.h"
 #include "common/runtime/AppRuntime.h"
@@ -580,6 +581,21 @@ TEST_F(MessageResendTest, ARelayAnswering404RecipientNotFoundLeadsToUpdateTheirC
   const SendMarkTap tap = ResendAfterTap(GuidedFacts(Facts("m1"), reason), Ports());
   EXPECT_EQ(tap.kind, SendMarkTap::Kind::UpdateTheirCard);
   EXPECT_EQ(tap.contact_id, "contact:bob");
+}
+
+// The words that tell what a tap does and the tap itself share this decision (ChatPresenter::SendAdviceOf /
+// TapSendMarkWith): an edited message whose own mark is none resends its edit, never offers a card update.
+TEST_F(MessageResendTest, AnEditedMessageWithNoMarkOfItsOwnTakesTheEditBranchBeforeAnyCardUpdate) {
+  ThreadMessage edited = Unsent("m1");
+  edited.delivery = MessageDelivery::Relayed;
+  edited.payload_json = R"({"edited_at":1000500,"edited_by":"e1"})";
+  EXPECT_EQ(EditResentByTap(edited, std::nullopt, kNow), std::optional<std::string>("e1"));
+
+  ThreadMessage failed_itself = Unsent("m2"); // red by its own send: an ordinary tap, which may offer the fix
+  failed_itself.payload_json = edited.payload_json;
+  EXPECT_FALSE(EditResentByTap(failed_itself, std::nullopt, kNow));
+
+  EXPECT_FALSE(EditResentByTap(Unsent("m3"), std::nullopt, kNow)) << "never edited";
 }
 
 } // namespace

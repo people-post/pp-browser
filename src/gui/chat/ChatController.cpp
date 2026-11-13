@@ -803,6 +803,7 @@ void ChatController::MakeSendFixPorts() {
     reconnect_account_(std::move(done));
   };
   ports.poll_ok_pending = [this]() { return recovery_.CurrentState() != RegistrationRecovery::State::Ok; };
+  ports.now_ms = []() { return util::NowUnixMs(); };
   ports.progress = [](const std::string& text) { UserFeedback::Note(text); };
   ports.say = [this](const std::string& text) { ShowToast(text); };
   send_fix_.SetPorts(std::move(ports));
@@ -3455,10 +3456,11 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
     // "The server can't find them" says how a tap on the red mark goes on (update their card, and resend or not).
     const auto reason = SendFailureRowReason(failure_row);
     const auto message_id = SendFailureRowMessageId(failure_row);
-    if (!reason || !message_id || SendFailureFromWire(*reason) != SendFailure::RecipientNotFound) {
+    const auto failure = reason ? SendFailureFromWire(*reason) : std::nullopt;
+    if (!message_id || (failure != SendFailure::RecipientNotFound && failure != SendFailure::SenderNotRegistered)) {
       return std::nullopt;
     }
-    return SendFailureText(SendFailure::RecipientNotFound, presenter_.SendAdviceOf(thread_id, *message_id));
+    return SendFailureText(*failure, presenter_.SendAdviceOf(thread_id, *message_id));
   };
   facts.send_mark = [this, now_ms, &next_mark_change, &group_others, &red_ids](const ThreadMessage& message) {
     const SendMark mark = presenter_.SendMarkOf(message, now_ms, next_mark_change, group_others);
@@ -3539,8 +3541,10 @@ void ChatController::ApplySendMarkTap(const std::string& thread_id, const std::s
       const SendFixDialog dialog = UpdateTheirCardDialog(tap.resendable);
       UserFeedback::Confirm(
           dialog.title, dialog.body,
-          [this, thread_id, message_id, contact_id = tap.contact_id, resendable = tap.resendable](const bool ok) {
-            if (ok && messaging_ready_) {
+          [this, thread_id, message_id, contact_id = tap.contact_id, resendable = tap.resendable,
+           session = messaging_session_](const bool ok) {
+            // The answer of a dialog from before a lock / unlock belongs to no session now.
+            if (ok && messaging_ready_ && session == messaging_session_) {
               send_fix_.UpdateTheirCard(thread_id, message_id, contact_id, resendable);
             }
           },
@@ -3551,8 +3555,8 @@ void ChatController::ApplySendMarkTap(const std::string& thread_id, const std::s
       const SendFixDialog dialog = UpdateMyCardDialog();
       UserFeedback::Confirm(
           dialog.title, dialog.body,
-          [this, thread_id, message_id, resendable = tap.resendable](const bool ok) {
-            if (ok && messaging_ready_) {
+          [this, thread_id, message_id, resendable = tap.resendable, session = messaging_session_](const bool ok) {
+            if (ok && messaging_ready_ && session == messaging_session_) {
               // B216's action: it waits for an automatic renewal in flight (RunWhenRegistrationIdle) itself.
               send_fix_.UpdateMyCard(thread_id, message_id, resendable);
             }
@@ -3576,7 +3580,9 @@ void ChatController::ApplySendMarkTap(const std::string& thread_id, const std::s
       return;
     case SendMarkTap::Kind::Resent:
       // The new message is at the bottom (the draft untouched); the old row is gone unless it was delivered meanwhile.
-      scroller_.RequestScrollToLatest();
+      if (thread_id == ActiveThreadId()) {
+        scroller_.RequestScrollToLatest(); // only the chat that is open (a resend after a card update may be another)
+      }
       RefreshFromMessaging();
       return;
   }
