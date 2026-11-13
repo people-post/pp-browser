@@ -190,6 +190,7 @@ CallSessionWorkflow::WirePorts CallDevice::MakeWorkflowWirePorts() {
   ports.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
   ports.group_members = delivery_.group_members;
   ports.group_standing = delivery_.group_standing;
+  ports.grant_call_peers = delivery_.grant_call_peers;
   return ports;
 }
 

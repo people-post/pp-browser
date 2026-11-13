@@ -26,6 +26,8 @@ public:
   std::vector<std::string> All() const;
   /** The blocked contacts' accounts: their grants are not renewed. */
   std::vector<std::string> Blocked() const;
+  /** `account_id` is a contact we blocked: it gets no grant, whatever brings it (a call). */
+  bool IsBlocked(const std::string& account_id) const;
 
 private:
   /** A group we are in that has not ended or dropped us (its roster is live). */

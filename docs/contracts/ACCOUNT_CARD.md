@@ -246,9 +246,17 @@ grantor's Account ID). Golden vector: `relay_message_sign_payload_test.cpp` (`Re
 ported from the relay.
 
 **Who gets one.** Every contact not blocked (added; an opening offer accepted or waived adds the contact)
-and every member of a group we are in (`RelayGrantPeers`). Our own account needs none: a send to our own
-mailbox never carries a grant. Contacts and members we had before the cutover get theirs on the first
-run (the sweep finds no grant issued to them).
+and every member of a group we are in (`RelayGrantPeers`). Calls grant too, contacts or not: **answering a
+call** grants the caller and anyone already joined in it, and **someone joining a call we are in** is
+granted when it says so itself (its accept to our call, or its own `call_roster` naming it joined while we
+are; a roster's word about third parties grants nobody) — so each side of every pair in a call grants the
+other (`GrantCallPeers`). A call's signaling is more than a stranger's three sends an hour, and a call grown
+past contacts (Alice calls Bob, then adds Carol, whom Bob does not know) needs Bob and Carol to reach each
+other. These are ordinary 30-day grants, but only a contact's or a member's is renewed; a blocked account
+gets none from a call either. Before an answer, a stranger's invite (and a resend) fits the stranger quota,
+and control-lane sends never wait behind chat sends. Our own account needs none: a send to our own mailbox
+never carries a grant. Contacts and members we had before the cutover get theirs on the first run (the sweep
+finds no grant issued to them).
 
 **How it travels.** Over the control lane, peer to peer (`RelayGrantCoordinator`; family `relay_grant`):
 
@@ -268,7 +276,8 @@ When a grant arrives, the sends to its grantor that the stranger quota held back
 
 **Renewal and stop.** A sweep on messaging ready, on each contacts or roster change and every six hours
 issues to each granted peer whose grant has less than **10 days** left. A blocked contact or a removed
-member is no longer granted: nothing is renewed, and the grant it holds runs out.
+member is no longer granted: nothing is renewed, and the grant it holds runs out. A call's grant to someone
+who is neither is not renewed: asked for, it is sent again while it lasts, and then it runs out.
 
 **On a send.** The relay client attaches the recipient's grant when it is still usable (more than 10 min
 left). When the relay answers `grant_expired` or `invalid_grant`, the grant is dropped and asked for

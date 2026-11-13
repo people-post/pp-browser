@@ -5,6 +5,7 @@
 #include "domain/delivery/ControlLane.h"
 #include "domain/peers/AccountKeyResolver.h"
 #include "lib/delivery/RelayGrantSigner.h"
+#include "lib/people/ContactIdentity.h"
 #include "lib/people/IdentityStore.h"
 
 namespace pbr {
@@ -49,6 +50,20 @@ void RelayGrantCoordinator::SetGrantedPeer(std::function<bool(const std::string&
 
 int64_t RelayGrantCoordinator::Now() const {
   return now_ ? now_() : util::NowUnixMs();
+}
+
+void RelayGrantCoordinator::SetBlockedPeer(std::function<bool(const std::string&)> blocked) {
+  std::lock_guard lock(mutex_);
+  blocked_ = std::move(blocked);
+}
+
+bool RelayGrantCoordinator::Blocked(const std::string& account) const {
+  std::function<bool(const std::string&)> blocked;
+  {
+    std::lock_guard lock(mutex_);
+    blocked = blocked_;
+  }
+  return blocked && blocked(account);
 }
 
 bool RelayGrantCoordinator::Granted(const std::string& account) const {
@@ -134,6 +149,16 @@ void RelayGrantCoordinator::SendGrants(std::vector<RelayGrant> grants) {
 }
 
 void RelayGrantCoordinator::EnsureGranted(const std::vector<std::string>& accounts) {
+  IssueWhereDue(accounts, [this](const std::string& account) { return Granted(account); });
+}
+
+void RelayGrantCoordinator::GrantCallPeers(const std::vector<std::string>& accounts) {
+  IssueWhereDue(accounts,
+                [this](const std::string& account) { return IsAccountIdentityValue(account) && !Blocked(account); });
+}
+
+void RelayGrantCoordinator::IssueWhereDue(const std::vector<std::string>& accounts,
+                                          const std::function<bool(const std::string&)>& wanted) {
   IRelayGrantStore* store = nullptr;
   {
     std::lock_guard lock(mutex_);
@@ -146,7 +171,7 @@ void RelayGrantCoordinator::EnsureGranted(const std::vector<std::string>& accoun
   const int64_t now = Now();
   std::vector<RelayGrant> out;
   for (const std::string& account : accounts) {
-    if (account == own || !Granted(account)) {
+    if (account == own || !wanted(account)) {
       continue;
     }
     auto issued = store->IssuedTo(account);
@@ -299,14 +324,19 @@ Roe<void> RelayGrantCoordinator::OnNotice(const relay_grant::Notice& notice, con
       return {};
     }
     case relay_grant::NoticeKind::Ask: {
-      if (!Granted(sender) || !Due(resent_at_, sender, kResendOnAskMs)) {
+      if (Blocked(sender) || !Due(resent_at_, sender, kResendOnAskMs)) {
         return {};
       }
       auto issued = store->IssuedTo(sender);
-      if (issued && *issued && !RelayGrantDueForRenewal((*issued)->grant.expires_at, Now())) {
-        SendGrants({(*issued)->grant});
-      } else if (auto grant = IssueTo(own, sender)) {
-        SendGrants({std::move(*grant)});
+      const bool current = issued && *issued && (*issued)->grant.expires_at > Now();
+      if (current && !RelayGrantDueForRenewal((*issued)->grant.expires_at, Now())) {
+        SendGrants({(*issued)->grant}); // a granted peer's, or one a call gave: the same grant again
+      } else if (Granted(sender)) {
+        if (auto grant = IssueTo(own, sender)) {
+          SendGrants({std::move(*grant)});
+        }
+      } else if (current) {
+        SendGrants({(*issued)->grant}); // a call's grant is not renewed, only sent again while it lasts
       }
       return {};
     }

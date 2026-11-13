@@ -198,6 +198,8 @@ public:
   RelayGrantCoordinator& RelayGrants() { return relay_grants_; }
   /** Where the relay grants are kept (the profile's store); none: none are issued or attached. */
   void SetRelayGrantStore(IRelayGrantStore* store);
+  /** The participants of a call we answered or are in get our relay grant (MR005), off the caller's thread. */
+  void GrantCallPeers(std::vector<std::string> accounts);
   /** Account cards between devices (the card exchange over Amp). */
   AccountCardService& AccountCards() { return card_service_; }
   /** This account's own key card and device list (M021). */

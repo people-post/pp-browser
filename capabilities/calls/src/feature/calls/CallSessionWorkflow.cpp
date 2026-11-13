@@ -540,6 +540,7 @@ Roe<void> CallSessionWorkflow::CommitAccept(const std::string& call_id, Initiati
   if (AcceptSuperseded(call_id)) {
     return Error("Accept superseded");
   }
+  GrantJoinedPeers(call_id, local_identity); // the caller and anyone in it already: their signaling is a contact's
   ArmMediaAfterAccept(row, inviter, *accept);
   PostRosterAfterAccept(call_id, inviter, local_identity);
   log().info << "AcceptInvite end call_id=" << call_id << " ok";
@@ -710,6 +711,26 @@ void CallSessionWorkflow::ArmMediaAfterAccept(CallSession& row, const std::strin
   }
   // Pull CallMediaKey ASAP — do not wait for the next UI-tick poll.
   reports_.Emit(workflow_report::InboxSyncFromWake{});
+}
+
+void CallSessionWorkflow::GrantCallPeers(std::vector<std::string> accounts) {
+  if (host_.wire.grant_call_peers && !accounts.empty()) {
+    host_.wire.grant_call_peers(std::move(accounts));
+  }
+}
+
+void CallSessionWorkflow::GrantJoinedPeers(const std::string& call_id, const std::string& local_identity) {
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!participants) {
+    return;
+  }
+  std::vector<std::string> joined;
+  for (const CallParticipant& participant : *participants) {
+    if (participant.state == CallParticipantState::Joined && participant.identity != local_identity) {
+      joined.push_back(participant.identity);
+    }
+  }
+  GrantCallPeers(std::move(joined));
 }
 
 void CallSessionWorkflow::PostRosterAfterAccept(const std::string& call_id, const std::string& inviter,
@@ -1712,6 +1733,7 @@ Roe<std::optional<CallSession>> CallSessionWorkflow::CommitRemoteJoin(const Call
 
 void CallSessionWorkflow::StartMediaAfterRemoteAccept(const CallAcceptDetail& accept, const std::string& identity,
                                                       const std::string& local_identity, const bool implicit) {
+  GrantCallPeers({identity}); // someone joined a call we are in (the lane's verified sender)
   (void)key_exchange_.SendCurrent(accept.call_id, identity);
   auto joined_after = sessions_.CountJoined(accept.call_id);
   const size_t n_joined = joined_after ? *joined_after : 0;
@@ -1931,7 +1953,7 @@ void CallSessionWorkflow::EndForPeerBye(const workflow_event::PeerByeGraceOver& 
   (void)ParticipantGone(over.call_id, over.peer, *local);
 }
 
-Roe<void> CallSessionWorkflow::HandleInboundRoster(const std::string& detail_json) {
+Roe<void> CallSessionWorkflow::HandleInboundRoster(const std::string& detail_json, const std::string& sender_identity) {
   auto roster = CallControlCodec::DecodeRoster(detail_json);
   if (!roster) {
     return roster.error();
@@ -1943,6 +1965,18 @@ Roe<void> CallSessionWorkflow::HandleInboundRoster(const std::string& detail_jso
   }
   if (auto applied = ApplyCallRosterToStore(sessions_, *roster, local ? *local : std::string()); !applied) {
     return applied.error();
+  }
+  // Someone who joined a call we are in says so itself: it gets our grant. Only the sender — a roster's other names
+  // are its word about third parties, which grants nobody.
+  if (local && !sender_identity.empty() && sender_identity != *local) {
+    const auto joined_in = [&roster](const std::string& who) {
+      return std::any_of(roster->participants.begin(), roster->participants.end(), [&who](const CallRosterEntry& e) {
+        return e.identity == who && e.state == CallParticipantState::Joined;
+      });
+    };
+    if (joined_in(sender_identity) && joined_in(*local)) {
+      GrantCallPeers({sender_identity});
+    }
   }
   // Mid-call invite: CallAccept only reaches the inviter; initiator SoftMigrates when roster
   // shows N≥3 (V021 sticky initiator / V022 payer).

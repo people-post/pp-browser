@@ -420,8 +420,8 @@ Roe<void> CallSessionManager::HandleInboundMediaKey(const std::string& detail_js
   return {};
 }
 
-Roe<void> CallSessionManager::HandleInboundRoster(const std::string& detail_json) {
-  return workflow_.HandleInboundRoster(detail_json);
+Roe<void> CallSessionManager::HandleInboundRoster(const std::string& detail_json, const std::string& sender_identity) {
+  return workflow_.HandleInboundRoster(detail_json, sender_identity);
 }
 
 Roe<void> CallSessionManager::HandleInboundSfuAttach(const std::string& detail_json,
@@ -577,7 +577,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     case CallControlType::CallLeave:
       return HandleInboundLeave(detail_json, sender_identity, *local);
     case CallControlType::CallRoster:
-      return HandleInboundRoster(detail_json);
+      return HandleInboundRoster(detail_json, sender_identity);
     case CallControlType::CallMediaKey:
       return HandleInboundMediaKey(detail_json, sender_identity);
     case CallControlType::CallSfuAttach:

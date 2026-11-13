@@ -2854,6 +2854,7 @@ void ConversationsHub::WireRelayGrants() {
   RelayGrantCoordinator& grants = mesh_messaging_->RelayGrants();
   mesh_messaging_->SetRelayGrantStore(relay_grants_.get());
   grants.SetGrantedPeer([peers = grant_peers_.get()](const std::string& account) { return peers->Granted(account); });
+  grants.SetBlockedPeer([peers = grant_peers_.get()](const std::string& account) { return peers->IsBlocked(account); });
   clients_.SetRelaySendHooks(grants.SendHooks());
   system_controls_.Bind(grants.Family());
 }

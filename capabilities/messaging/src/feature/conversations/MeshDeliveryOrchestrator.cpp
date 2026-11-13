@@ -788,6 +788,14 @@ void MeshDeliveryOrchestrator::SetRelayGrantStore(IRelayGrantStore* store) {
   relay_grants_.SetStore(store);
 }
 
+void MeshDeliveryOrchestrator::GrantCallPeers(std::vector<std::string> accounts) {
+  if (accounts.empty()) {
+    return;
+  }
+  // Signing and the lane sends block: not on the calls loop.
+  AppRuntime::PostWorkerNormal([this, accounts = std::move(accounts)]() { relay_grants_.GrantCallPeers(accounts); });
+}
+
 void MeshDeliveryOrchestrator::NoteVerifiedSender(const RelayEnvelope& envelope, const bool sender_verified) {
   // A verified envelope: its sender is online now — a grant of ours it has not confirmed goes again, one of its we
   // lack is asked for (MR005).

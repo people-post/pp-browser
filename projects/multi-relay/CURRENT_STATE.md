@@ -28,8 +28,8 @@ renewed and attached; the relay's new errors handled. Contracts: [SERVICE_ENDPOI
 [ACCOUNT_CARD § Relay grants](../../docs/contracts/ACCOUNT_CARD.md#relay-grants), [WIRE_SCHEMAS](../../docs/contracts/WIRE_SCHEMAS.md),
 [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md), [COMPATIBILITY](../../docs/contracts/COMPATIBILITY.md#clean-cutovers-pre-release).
 Needs pp-cpp-mesh 8.0.0 (directory rows by Account ID; local branch `feat/account-ids`, not tagged).
-Not yet: the account card's `relays` and `initiation_floor`; clients per relay; the card at registration; a grant
-on accepting a call's opening offer (no accept or waive step exists on the receiving side yet — contacts and group
-members are granted).
+Calls grant their people (answering grants the caller; joining grants each pair both ways; not renewed for
+non-contacts). Not yet: the account card's `relays` and `initiation_floor`; clients per relay; the card at
+registration.
 
 Next: R1 and R2 step 1 merge and deploy together (clean cutover), then R2's relay list.

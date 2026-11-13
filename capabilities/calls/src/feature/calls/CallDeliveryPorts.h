@@ -49,6 +49,11 @@ struct CallDeliveryPorts {
   std::function<std::optional<std::set<std::string>>(const std::string& group_id)> group_members;
   /** V062: where an account stands in a group (none: this device holds no roster for it). Unset: not checked. */
   CallGroupStandingFn group_standing;
+  /**
+   * The people of a call we answered or are in: they get our relay grant (multi-relay MR005), so their signaling to
+   * us is a contact's on our relay, not a stranger's held to its small quota. Any thread; returns at once. Unset: none.
+   */
+  std::function<void(std::vector<std::string> accounts)> grant_call_peers;
   std::function<void(bool force)> sync_inbox_from_wake;
   /**
    * After the last local call ends — flush inbox + TailSync that were deferred while

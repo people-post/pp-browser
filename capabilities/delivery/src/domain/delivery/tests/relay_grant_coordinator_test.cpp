@@ -204,6 +204,36 @@ TEST_F(RelayGrantCoordinatorTest, AGrantedPeerGetsAGrantOfOursOverTheLaneAndOnly
   EXPECT_GT(grant_store_.IssuedTo(bob_.account_id).value()->grant.issued_at, grant.issued_at);
 }
 
+// MR005: a call we answered or are in grants its people, contacts or not (a stranger's call, a call grown past our
+// contacts) — an ordinary grant, sent at once; never to a blocked account; and nobody renews it unless the peer is
+// also a contact or a group member.
+TEST_F(RelayGrantCoordinatorTest, ACallsPeopleAreGrantedOnceNeverIfBlockedAndNotRenewed) {
+  grants_->SetBlockedPeer([](const std::string& account) { return account == "account:blocked"; });
+  grants_->GrantCallPeers({bob_.account_id, "account:blocked", me_});
+  auto issued = grant_store_.IssuedTo(bob_.account_id);
+  ASSERT_TRUE(issued && *issued) << "Bob is no contact, but he is in our call";
+  EXPECT_TRUE(CheckRelayGrant((*issued)->grant, me_, bob_.account_id, me_key_, now_.load()));
+  EXPECT_EQ((*issued)->grant.expires_at - (*issued)->grant.issued_at, kRelayGrantMaxLifetimeMs);
+  EXPECT_TRUE(SentTo(bob_.account_id, 1)) << "over the lane, like any grant";
+  EXPECT_FALSE(grant_store_.IssuedTo("account:blocked").value()) << "a blocked account gets none";
+  EXPECT_FALSE(grant_store_.IssuedTo(me_).value());
+
+  grants_->GrantCallPeers({bob_.account_id});
+  EXPECT_EQ(Settled(bob_.account_id), 1) << "the grant it holds is current: none again";
+
+  now_ += 21 * kDayMs;
+  grants_->EnsureGranted({bob_.account_id});
+  EXPECT_EQ(Settled(bob_.account_id), 1) << "not a contact or a member: not renewed";
+  ASSERT_TRUE(
+      static_cast<bool>(grants_->OnNotice(relay_grant::Notice{.kind = relay_grant::NoticeKind::Ask}, bob_.account_id)));
+  EXPECT_EQ(Settled(bob_.account_id), 2) << "asked: the same grant again while it lasts";
+  EXPECT_EQ(grant_store_.IssuedTo(bob_.account_id).value()->grant, (*issued)->grant);
+  now_ += 10 * kDayMs; // run out
+  ASSERT_TRUE(
+      static_cast<bool>(grants_->OnNotice(relay_grant::Notice{.kind = relay_grant::NoticeKind::Ask}, bob_.account_id)));
+  EXPECT_EQ(Settled(bob_.account_id), 2) << "run out: a call's grant is not renewed on an ask";
+}
+
 TEST_F(RelayGrantCoordinatorTest, AStoppedPeerIsNotRenewed) {
   Grant(bob_.account_id);
   grants_->EnsureGranted({bob_.account_id});

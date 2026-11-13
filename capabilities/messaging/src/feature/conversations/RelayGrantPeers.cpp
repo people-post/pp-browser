@@ -69,6 +69,11 @@ std::vector<std::string> RelayGrantPeers::All() const {
   return {granted.begin(), granted.end()};
 }
 
+bool RelayGrantPeers::IsBlocked(const std::string& account_id) const {
+  auto contact = contacts_.FindByIdentity(account_id, mesh::ContactIdKind::Account);
+  return contact && *contact && (*contact)->trust == TrustLevel::Blocked;
+}
+
 std::vector<std::string> RelayGrantPeers::Blocked() const {
   std::vector<std::string> out;
   if (auto contacts = contacts_.List()) {

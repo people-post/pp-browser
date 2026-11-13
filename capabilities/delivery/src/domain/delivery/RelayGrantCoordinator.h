@@ -37,6 +37,10 @@ class IdentityStore;
  *   A granted peer we have held no usable grant from for a few minutes is asked for one when heard from, at most
  *   every six hours (not on a send: an ask is a stranger's send too, and the relay allows strangers few). When a grant
  *   arrives, sends to its grantor held back by the stranger quota go at once.
+ * - **Calls:** answering a call grants the caller; joining one, or someone joining a call we are in, grants each
+ *   participant we are in it with (GrantCallPeers), so a call with a stranger, or a call grown past contacts, is not
+ *   held to the stranger quota. These are ordinary 30-day grants, but nobody renews them: only a contact or a group
+ *   member is renewed (EnsureGranted). A blocked account gets none.
  * - Self-sends need none.
  *
  * Any thread.
@@ -49,6 +53,8 @@ public:
   void SetStore(IRelayGrantStore* store);
   /** Who we grant: a contact not blocked, a member of a group we are in. None: nobody. */
   void SetGrantedPeer(std::function<bool(const std::string& account_id)> granted);
+  /** Who we never grant, whatever brings them (a blocked contact). None: nobody is blocked. */
+  void SetBlockedPeer(std::function<bool(const std::string& account_id)> blocked);
   /** Called with the grantor once a grant from it is kept (the outbox sends what the stranger quota held back). */
   void SetOnGrantReceived(std::function<void(const std::string& grantor)> on_received);
   void SetClockForTest(std::function<int64_t()> now) { now_ = std::move(now); }
@@ -60,6 +66,11 @@ public:
 
   /** Grant each of `accounts` that is a granted peer and holds no current grant of ours: issue, or renew. Blocking. */
   void EnsureGranted(const std::vector<std::string>& accounts);
+  /**
+   * Grant each of `accounts`, the participants of a call we answered or are in, that holds no current grant of ours
+   * and is not blocked (whether or not it is a granted peer). Blocking.
+   */
+  void GrantCallPeers(const std::vector<std::string>& accounts);
   /** Stop renewing the grant to `account` (blocked, removed from our groups); the one it holds runs out. */
   void Stop(const std::string& account);
   /** An envelope from `account` verified: it is online, so an unconfirmed grant goes again and a missing one is asked for. */
@@ -75,6 +86,9 @@ public:
 private:
   int64_t Now() const;
   bool Granted(const std::string& account) const;
+  bool Blocked(const std::string& account) const;
+  /** Issue to each of `accounts` passing `wanted` that holds no current grant of ours, and send them. */
+  void IssueWhereDue(const std::vector<std::string>& accounts, const std::function<bool(const std::string&)>& wanted);
   std::string OwnAccount() const;
   /** A new grant to `account`, kept as issued (unconfirmed); none when it could not be signed or kept. */
   std::optional<RelayGrant> IssueTo(const std::string& own, const std::string& account);
@@ -90,6 +104,7 @@ private:
   ControlLane& lane_;
   IRelayGrantStore* store_ = nullptr;
   std::function<bool(const std::string&)> granted_;
+  std::function<bool(const std::string&)> blocked_;
   std::function<int64_t()> now_;
   mutable std::mutex mutex_;
   /** Per account: when we last asked it for a grant, sent it ours again, looked at it on hearing from it. */
