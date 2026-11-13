@@ -11511,6 +11511,21 @@ input.checkbox {
   cursor: pointer;
 }
 
+/* The contact page's four tiles (Message, Voice call, Video call, Favorite): they share the row, 16dp from each
+   edge and 8dp apart, so 390 and 360dp screens both hold four; fewer tiles stay centred at a sane width. */
+.cd-acts--tiles {
+  gap: 8dp;
+  margin: 16dp 16dp 0 16dp;
+}
+
+.cd-acts--tiles .cd-act {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  max-width: 96dp;
+  height: 64dp;
+}
+
 .cd-act-icon {
   width: 24dp;
   height: 24dp;

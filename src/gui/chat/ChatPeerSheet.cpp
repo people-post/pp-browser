@@ -4,6 +4,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "gui/UserFeedback.h"
 #include "lib/people/PeerDisplayLabel.h"
+#include "common/directory/DirectoryJson.h"
 
 #include <ui/base/SystemInterface.h>
 
@@ -11,6 +12,30 @@
 #include <utility>
 
 namespace pbr {
+
+ChatPeerTarget ChooseChatPeerTarget(const bool compact, const ThreadKind kind, const bool is_contact,
+                                    const bool peer_is_account) {
+  if (!compact || kind != ThreadKind::Direct) {
+    return ChatPeerTarget::Menu;
+  }
+  if (is_contact) {
+    return ChatPeerTarget::ContactPage;
+  }
+  return peer_is_account ? ChatPeerTarget::MemberPage : ChatPeerTarget::Menu;
+}
+
+std::optional<std::string> DirectPeerContactId(ConversationsFacade& facade, const Thread& thread) {
+  std::optional<std::string> contact_id = facade.ResolveThreadLabel(thread).contact_id;
+  if (!contact_id && !thread.participant_contact_ids.empty()) {
+    const std::string& candidate = thread.participant_contact_ids.front();
+    if (!candidate.empty()) {
+      if (auto contact = facade.GetContact(candidate); contact && *contact) {
+        contact_id = candidate;
+      }
+    }
+  }
+  return contact_id;
+}
 
 ChatPeerSheet::ChatPeerSheet(ChatMenusHost& host, ChatPresenter& presenter, const ChatScreenState& chat,
                              const ContactsNotifyPorts& contacts_notify,
@@ -43,6 +68,42 @@ void ChatPeerSheet::Open(ui::Event& ev) {
                                           host_.Facade()->ResolveThreadLabel(*thread).title);
 }
 
+bool ChatPeerSheet::OpenPeerPage(const bool compact) {
+  ConversationsFacade* facade = host_.Facade();
+  if (!host_.MessagingIsReady() || !facade || !chat_.show_peer_sheet) {
+    return false;
+  }
+  auto thread = facade->GetActiveThread();
+  if (!thread || thread->kind != ThreadKind::Direct) {
+    return false;
+  }
+  const std::optional<std::string> contact_id = DirectPeerContactId(*facade, *thread);
+  const bool peer_is_account = !thread->peer_identity_value.empty() &&
+                               thread->peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::Account);
+  switch (ChooseChatPeerTarget(compact, thread->kind, contact_id.has_value(), peer_is_account)) {
+    case ChatPeerTarget::ContactPage:
+      if (!contacts_notify_.select_contact) {
+        return false;
+      }
+      contacts_notify_.select_contact(*contact_id);
+      return true;
+    case ChatPeerTarget::MemberPage: {
+      if (!contacts_notify_.show_member_sheet) {
+        return false;
+      }
+      // The same page as a stranger tapped in a group: the chat's own name and the photo the transcript shows.
+      const TranscriptFacts facts = facade->TranscriptFactsFor();
+      const std::string& account = thread->peer_identity_value;
+      contacts_notify_.show_member_sheet(account, facade->ResolveThreadLabel(*thread).title,
+                                         facts.sender_icon ? facts.sender_icon(account) : std::string());
+      return true;
+    }
+    case ChatPeerTarget::Menu:
+      break;
+  }
+  return false;
+}
+
 void ChatPeerSheet::OpenGroupMembers() {
   ConversationsFacade* facade = host_.Facade();
   if (!host_.MessagingIsReady() || !facade || !people_picker_notify_.open_group_members) {
@@ -59,15 +120,7 @@ std::vector<ContextMenuAction> ChatPeerSheet::DirectActions(const Thread& thread
   ConversationsFacade* facade = host_.Facade();
   std::vector<ContextMenuAction> actions;
   const std::string peer_id = thread.peer_identity_value;
-  std::optional<std::string> contact_id = facade->ResolveThreadLabel(thread).contact_id;
-  if (!contact_id && !thread.participant_contact_ids.empty()) {
-    const std::string& candidate = thread.participant_contact_ids.front();
-    if (!candidate.empty()) {
-      if (auto contact = facade->GetContact(candidate); contact && *contact) {
-        contact_id = candidate;
-      }
-    }
-  }
+  const std::optional<std::string> contact_id = DirectPeerContactId(*facade, thread);
   if (contact_id) {
     actions.push_back({
         "add_people",

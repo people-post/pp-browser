@@ -465,6 +465,10 @@ void ContactsController::BindAccountPorts(ContactsAccountPorts ports) {
   account_ports_ = std::move(ports);
 }
 
+void ContactsController::BindCallActions(CallActionsPorts ports) {
+  call_actions_ = std::move(ports);
+}
+
 void ContactsController::BindSessionStore(SessionStore* store) {
   session_store_ = store;
 }
@@ -643,6 +647,11 @@ bool ContactsController::RegisterModel(ui::Context* context) {
         ctor.BindEventCallback("add_member_contact", &ContactsController::AddMemberContactCallback);
         ctor.BindEventCallback("on_add_contact_menu", &ContactsController::AddContactMenuCallback);
         ctor.BindEventCallback("find_someone", &ContactsController::FindSomeoneCallback);
+        ctor.BindEventCallback("call_contact_voice",
+                               DataEvent<>([this]() { OnCallContact(selected_.id.c_str(), false); }));
+        ctor.BindEventCallback("call_contact_video",
+                               DataEvent<>([this]() { OnCallContact(selected_.id.c_str(), true); }));
+        ctor.BindEventCallback("block_member", DataEvent<>([this]() { OnBlockMember(); }));
         ctor.BindEventCallback("copy_contact_id", &ContactsController::CopyIdCallback);
         ctor.BindEventCallback("share_contact", &ContactsController::ShareContactCallback);
         ctor.BindEventCallback("toggle_trust_friendly", &ContactsController::ToggleTrustFriendlyCallback);
@@ -1997,6 +2006,78 @@ void ContactsController::OnStartChat() {
   NavigateToChatSession();
 }
 
+void ContactsController::OnCallContact(const std::string& contact_id, const bool video) {
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || contact_id.empty() ||
+      !contacts_ports_.get_contact || !contacts_ports_.find_or_create_direct_thread || !call_actions_.start_call) {
+    return;
+  }
+  auto contact = contacts_ports_.get_contact(contact_id);
+  if (!contact || !*contact) {
+    return;
+  }
+  if ((*contact)->local.trust == TrustLevel::Blocked) {
+    ShowToast(Tr("contacts.call_blocked"));
+    return;
+  }
+  // The same "can this person be reached" read the page's Message button goes by.
+  ContactDetail eligibility;
+  ApplyMessagingEligibility(eligibility, **contact, contacts_ports_);
+  if (!eligibility.can_message) {
+    ShowToast(eligibility.message_hint.empty() ? Tr("contacts.cant_message_yet")
+                                               : std::string(eligibility.message_hint.c_str()));
+    return;
+  }
+  if (call_actions_.peer_calls_ready && !call_actions_.peer_calls_ready()) {
+    ShowToast(Tr("contacts.call_not_ready"));
+    return;
+  }
+  FlushPending();
+  if (contacts_ports_.register_contact_direct_endpoints) {
+    contacts_ports_.register_contact_direct_endpoints(**contact);
+  }
+  auto thread = contacts_ports_.find_or_create_direct_thread(contact_id, ThreadChannel::E2ePublic);
+  if (!thread) {
+    return;
+  }
+  if (contacts_ports_.warm_peer_for_thread) {
+    contacts_ports_.warm_peer_for_thread(thread->id);
+  }
+  (void)call_actions_.start_call(thread->id, video); // the call screen comes up by itself; the page stays
+}
+
+void ContactsController::OnBlockMember() {
+  if (!selected_.member_preview || selected_.member_account.empty() || !block_stranger_) {
+    return;
+  }
+  const std::string account = selected_.member_account.c_str();
+  const std::string name = selected_.title.empty() ? Tr("contacts.this_contact") : std::string(selected_.title.c_str());
+  ShowConfirm(
+      Tr("contacts.block_confirm_title"), Tr("contacts.block_confirm_body", {{"name", name}}),
+      [this, account, name](const bool ok) {
+        if (!ok || !selected_.member_preview || selected_.member_account != account.c_str()) {
+          return;
+        }
+        auto blocked = block_stranger_(account);
+        if (!blocked) {
+          UserFeedback::Fail(Tr(blocked.error().message));
+          return;
+        }
+        SyncFromStore();
+        // They are a (blocked) contact now: the page turns into their own.
+        if (DetailSheetOpen()) {
+          OnSelectContactSheet(*blocked);
+        } else {
+          OnSelectContact(*blocked);
+        }
+        ShowToast(Tr("contacts.toast.blocked", {{"name", name}}));
+        if (contacts_ports_.notify_thread_changed) {
+          contacts_ports_.notify_thread_changed();
+        }
+        NotifySurfaceChanged();
+      },
+      true);
+}
+
 void ContactsController::OnSecureMessage() {
   if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || selected_.id.empty() ||
       !contacts_ports_.get_contact || !contacts_ports_.find_or_create_direct_thread) {
@@ -2047,6 +2128,9 @@ void ContactsController::OnFindSomeone() {
 void ContactsController::OnCopyId() {
   std::string value = selected_.relay_id.c_str();
   std::string label = Tr("contacts.id_kind.relay");
+  if (selected_.member_preview) {
+    value = selected_.member_account.c_str(); // a person who is not a contact: the account id the page looks up
+  }
   if (value.empty()) {
     value = selected_.peer_id.c_str();
     label = Tr("contacts.id_kind.peer");

@@ -158,6 +158,10 @@ public:
   void BindBadgeNotify(BadgeNotifyPorts ports);
   void BindInputCoordinator(InputCoordinator& input);
   void BindCallActions(CallActionsPorts ports);
+  /** Messaging and the mesh are ready: the header's call button shows on exactly this (ChatThreadChrome). */
+  bool PeerCallsReady() const { return messaging_ready_ && mesh_ready_; }
+  /** Blocks someone who is not a contact: saved as a blocked contact; the new contact's id (or why not). */
+  Roe<std::string> BlockStranger(const std::string& account_id) { return presenter_.BlockStranger(account_id); }
   /** Refresh peer-link / "In call" header (Application wires from CallController). */
   void UpdatePeerLinkChrome();
   void BindUnlockEnsure(UnlockEnsurePorts ports);
@@ -848,8 +852,9 @@ private:
   std::function<void(const std::string& section_id)> open_settings_section_;
   FlowCoordinatorPorts flow_coordinator_;
   /** The screen's menus (long press / right-click, header buttons, pickers' fallbacks). */
-  ChatMenus menus_{*this,           presenter_,   chat_, working_set_, contacts_notify_, emoji_picker_notify_,
-                   shell_feedback_, call_actions_};
+  ChatMenus menus_{*this,           presenter_,       chat_,
+                   working_set_,    contacts_notify_, emoji_picker_notify_,
+                   shell_feedback_, call_actions_,    people_picker_notify_};
   ChatPeerSheet peer_sheet_{*this, presenter_, chat_, contacts_notify_, people_picker_notify_};
   /** The phone's group info sheet over a group chat (DEV/PLAN-ui-batch8-group-pages.md 1). */
   GroupInfoSheet group_info_{*this};

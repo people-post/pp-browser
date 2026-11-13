@@ -16,6 +16,19 @@
 
 namespace pbr {
 
+/** What tapping the chat header's person opens (DEV/PLAN-fewer-taps-1.md 2): the small menu, or their page. */
+enum class ChatPeerTarget { Menu, ContactPage, MemberPage };
+
+/**
+ * Phones (`compact`), a 1:1 chat: a contact opens their page, a person who is not a contact (and whose chat id is an
+ * account id, which is what the member page looks up) opens the member page. A group chat, an AI chat, the desktop
+ * and any other kind of id keep the menu.
+ */
+ChatPeerTarget ChooseChatPeerTarget(bool compact, ThreadKind kind, bool is_contact, bool peer_is_account);
+
+/** The contact a 1:1 thread is with (as DirectActions found it for the menu), if the person is one. */
+std::optional<std::string> DirectPeerContactId(ConversationsFacade& facade, const Thread& thread);
+
 /**
  * The open chat's peer sheet (the header's person / group button), a menu. A direct chat: add people,
  * view or add the contact, copy the id. A group: rename it for me / for everyone (the owner), and the
@@ -29,6 +42,8 @@ public:
                 const ContactsNotifyPorts& contacts_notify, const PeoplePickerNotifyPorts& people_picker_notify);
 
   void Open(ui::Event& ev);
+  /** Phones, a 1:1 chat: opens the person's page instead of the menu. False when the menu should open instead. */
+  bool OpenPeerPage(bool compact);
   /** The group's member list (the header's "N members", and a peer sheet item). */
   void OpenGroupMembers();
 

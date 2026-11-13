@@ -64,14 +64,41 @@
           <p class="cd-act-label">{{i18n:contacts.message}}</p>
         </button>
       </div>
+      <!-- Everything the chat's person menu had: copy the account ID, block (a stranger is saved as a blocked contact). -->
+      <div class="cd-card">
+        <div class="cd-row">
+          <span class="cd-row-body">
+            <span class="cd-row-text">{{i18n:contacts.account_short}}</span>
+            <span class="cd-row-value">{{selected.short_id}}</span>
+            <button class="cd-icon-btn" type="button" title="{{i18n:contacts.copy_id}}" data-event-click="copy_contact_id()">
+              <svg class="cd-icon" src="../icons/v2/copy.svg" width="20" height="20"></svg>
+            </button>
+          </span>
+        </div>
+        <button class="cd-row cd-row--danger" type="button" data-event-click="block_member()">
+          <span class="cd-row-body"><span class="cd-row-text">{{i18n:contacts.block}}</span></span>
+        </button>
+      </div>
       <p class="cd-footnote cd-footnote--center">{{i18n:contacts.member_not_contact}}</p>
       <p class="cd-footnote cd-footnote--center" data-if="!selected.can_message">{{i18n:contacts.cant_message_yet}}</p>
     </div>
     <div data-if="!selected.member_preview">
-      <div class="cd-acts row">
+      <!-- Message, Voice call, Video call, Favorite: four equal tiles; the call tiles go with Message, and not for a
+           blocked person (DEV/PLAN-fewer-taps-1.md 3). -->
+      <div class="cd-acts cd-acts--tiles row">
         <button class="cd-act" type="button" data-if="selected.can_message" data-event-click="start_chat()">
           <svg class="cd-act-icon" src="../icons/v2/tab-chats.svg" width="24" height="24"></svg>
           <p class="cd-act-label">{{i18n:contacts.message}}</p>
+        </button>
+        <button class="cd-act" type="button" data-if="selected.can_message && selected.trust_key != 'blocked'"
+                data-event-click="call_contact_voice()">
+          <svg class="cd-act-icon" src="../icons/v2/phone.svg" width="24" height="24"></svg>
+          <p class="cd-act-label">{{i18n:call.start.voice}}</p>
+        </button>
+        <button class="cd-act" type="button" data-if="selected.can_message && selected.trust_key != 'blocked'"
+                data-event-click="call_contact_video()">
+          <svg class="cd-act-icon" src="../icons/v2/video.svg" width="24" height="24"></svg>
+          <p class="cd-act-label">{{i18n:call.start.video}}</p>
         </button>
         <!-- 常用联系人 (Kenneth 2026-11-04): first on Home's Favorites and in New chat's frequent group; device-only. -->
         <button class="cd-act" type="button" data-event-click="toggle_star()">

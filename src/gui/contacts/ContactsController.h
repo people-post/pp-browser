@@ -3,6 +3,7 @@
 #include "common/Lifetime.h"
 #include "common/Module.h"
 #include "feature/conversations/MessagingContactsPorts.h"
+#include "gui/CallActionsPorts.h"
 #include "gui/ChatSessionPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/contacts/ContactsAccountPorts.h"
@@ -83,6 +84,12 @@ public:
    */
   void BindGroupJoinOffer(std::function<bool(const std::string& text)> offer) { offer_group_join_ = std::move(offer); }
   void BindAccountPorts(ContactsAccountPorts ports);
+  /** Calls: `start_call` and `peer_calls_ready` (the chat header's own call-button condition). */
+  void BindCallActions(CallActionsPorts ports);
+  /** Block someone who is not a contact (saves them as a blocked contact; their id back): the chat's stranger block. */
+  void BindStrangerBlocker(std::function<Roe<std::string>(const std::string& account_id)> block) {
+    block_stranger_ = std::move(block);
+  }
   /** Where the stars ("常用联系人") are kept: the profile's preferences (device-only). */
   void BindSessionStore(SessionStore* store);
 
@@ -187,6 +194,14 @@ public:
   void SetShowAdvanced(bool advanced);
   void Tick();
   void FlushPending();
+  /**
+   * The contact page's / a list row's voice or video call: opens (or finds) the chat with `contact_id` and calls from
+   * it, as the chat's call button does. Never reads the selected contact: the caller says whose it is. Says why (a
+   * pill) when the person is blocked, cannot be reached yet, or this device is not connected yet.
+   */
+  void OnCallContact(const std::string& contact_id, bool video);
+  /** A person who is not a contact, on the member page: asks, saves them as a blocked contact, shows their page. */
+  void OnBlockMember();
   void OnSelectContact(const std::string& contact_id);
   /** A group member who is not a contact: their page in its member state, pushed like a contact's page. */
   void OnShowMember(const std::string& account_id, const std::string& name, const std::string& icon_src);
@@ -482,6 +497,8 @@ private:
   ScanPorts scan_ports_;
   std::function<bool(const std::string& text)> offer_group_join_;
   ContactsAccountPorts account_ports_;
+  CallActionsPorts call_actions_;
+  std::function<Roe<std::string>(const std::string& account_id)> block_stranger_;
   SessionStore* session_store_ = nullptr;
   /** Contacts whose Refresh runs. */
   std::set<std::string> refreshing_contacts_;

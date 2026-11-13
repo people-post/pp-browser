@@ -1511,6 +1511,7 @@ void Application::WireCalls() {
       return call_->CallFromChat(thread_id, want_video);
     };
     call_actions.refresh_pending_ring = [this]() { call_->RefreshPendingRing(); };
+    call_actions.peer_calls_ready = [this]() { return chat_->PeerCallsReady(); };
     call_actions.video_call_available = [this]() { return call_->VideoCallAvailable(); };
     call_actions.call_joinable = [this](const std::string& thread_id) {
       return call_->CallJoinableInThread(thread_id);
@@ -1569,6 +1570,7 @@ void Application::WireCalls() {
     };
     call_actions.show_call_details = [this]() { call_->ShowCallDetails(); };
     chat_->BindCallActions(call_actions);
+    contacts_->BindCallActions(call_actions);
     shell_->BindCallActions(call_actions);
     people_picker_->BindCallActions(std::move(call_actions));
   }
@@ -2149,6 +2151,8 @@ bool Application::MountPresenters(ui::Context* context) {
   contacts_notify.set_group_admin = [this](GroupAdminCard card) { contacts_->SetGroupAdminCard(std::move(card)); };
   contacts_notify.open_new_chat = [this]() { contacts_->OpenNewChatPage(); };
   contacts_notify.message_contact = [this](const std::string& id) { contacts_->MessageContact(id); };
+  contacts_->BindStrangerBlocker(
+      [this](const std::string& account_id) { return chat_->BlockStranger(account_id); }); // the member page's Block
   people_picker_->BindContactsNotify(contacts_notify); // a member's profile from the member list
   chat_->BindContactsNotify(std::move(contacts_notify));
 
@@ -2282,6 +2286,10 @@ bool Application::MountPresenters(ui::Context* context) {
       call_->BindShellCallChrome({});
       call_->BindPeerLinkRefresh(nullptr);
       call_->BindPeoplePickerNotify({});
+    }
+    if (contacts_) {
+      contacts_->BindCallActions({});
+      contacts_->BindStrangerBlocker(nullptr);
     }
     if (chat_) {
       chat_->BindCallActions({});
@@ -2830,6 +2838,8 @@ void Application::Shutdown() {
   }
   contacts_->BindScanPorts({});
   contacts_->BindAccountPorts({});
+  contacts_->BindCallActions({});
+  contacts_->BindStrangerBlocker(nullptr);
   shell_->BindScanAction({});
 
   // Cheap context flags for dogfood latency diagnosis (grep [startup] shutdown_context).

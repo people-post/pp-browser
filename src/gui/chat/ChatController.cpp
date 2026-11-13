@@ -6629,6 +6629,10 @@ void ChatController::OpenPeerSheet(ui::Event& ev) {
       return;
     }
   }
+  // Phones, a 1:1 chat: straight to their page (DEV/PLAN-fewer-taps-1.md 2); the menu stays elsewhere.
+  if (peer_sheet_.OpenPeerPage(AskAiCompact())) {
+    return;
+  }
   peer_sheet_.Open(ev);
 }
 
