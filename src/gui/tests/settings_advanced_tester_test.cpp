@@ -7,11 +7,7 @@
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/UserPreferences.h"
 #include "foundation/i18n/LocalizationService.h"
-// ApplyBackendChoice is private: it is what the Service chooser calls for a picked row (OnChooseBackend), and the test
-// reaches it directly rather than through the desktop float menu or the phone choice page.
-#define private public
 #include "gui/SettingsController.h"
-#undef private
 #include "gui/SettingsHost.h"
 #include "gui/UserFeedback.h"
 #include "gui/shell/DataModelHost.h"
@@ -215,7 +211,7 @@ TEST_F(SettingsAdvancedTesterTest, PickingCustomWithTheTesterOptionsOffSavesExac
   ASSERT_EQ(options.size(), 2u);
   EXPECT_STREQ(options[0].id.c_str(), "prod");
   EXPECT_STREQ(options[1].id.c_str(), "custom");
-  settings.ApplyBackendChoice(options[1].id.c_str());
+  settings.ChooseBackendForTest(options[1].id.c_str());
   EXPECT_EQ(store.Snapshot().config.backend.env, "custom");
 }
 
