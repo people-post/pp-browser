@@ -629,7 +629,7 @@ private:
   int AskAiPushSheet(const PaneSpec& spec, std::function<void()> on_closed) override;
   void AskAiCloseSheet(int layer_id) override;
   void AskAiOpenInChat(const std::string& thread_id) override;
-  void AskAiSupport(const std::string& question) override;
+  void AskAiSupport(const std::string& question, std::function<void()> on_opened) override;
   void AskAiRunAction(const std::string& thread_id, const std::string& entry_id, int action_index) override;
   void AskAiOpenLink(const std::string& thread_id, const std::string& entry_id, int link_index) override {
     OpenChatLinkIn(thread_id, entry_id, link_index);

@@ -6863,14 +6863,18 @@ void ChatController::AskAiOpenInChat(const std::string& thread_id) {
   AppRuntime::PostUI([this, thread_id]() { ShowThreadInChat(thread_id); });
 }
 
-void ChatController::AskAiSupport(const std::string& question) {
-  AppRuntime::PostUI([this, question]() {
+void ChatController::AskAiSupport(const std::string& question, std::function<void()> on_opened) {
+  AppRuntime::PostUI([this, question, on_opened = std::move(on_opened)]() {
     if (!ask_support_) {
       UserFeedback::Fail(Tr("settings.support.unavailable"));
       return;
     }
     if (auto asked = ask_support_(question); !asked) {
       (void)UserFeedback::FailFrom(asked.error());
+      return;
+    }
+    if (on_opened) {
+      on_opened();
     }
   });
 }

@@ -9,6 +9,8 @@
 #include "gui/chat/AskAiPanel.h"
 #include "gui/chat/AgentTurnController.h"
 #include "gui/SettingsController.h"
+#include "gui/UserFeedback.h"
+#include "gui/shell/ShellFeedback.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -99,6 +101,7 @@ public:
   int closes = 0;
   std::vector<std::string> opened_in_chat;
   std::vector<std::string> support;
+  bool support_opens = true; // false: opening the support chat failed (the host shows the reason)
   std::vector<std::string> toasts;
 
   bool AskAiCompact() const override { return compact; }
@@ -154,7 +157,12 @@ public:
     }
   }
   void AskAiOpenInChat(const std::string& thread_id) override { opened_in_chat.push_back(thread_id); }
-  void AskAiSupport(const std::string& question) override { support.push_back(question); }
+  void AskAiSupport(const std::string& question, std::function<void()> on_opened) override {
+    support.push_back(question);
+    if (support_opens && on_opened) {
+      on_opened();
+    }
+  }
   void AskAiRunAction(const std::string&, const std::string&, int) override {}
   void AskAiOpenLink(const std::string&, const std::string&, int) override {}
   void AskAiOpenUrl(const std::string&) override {}
@@ -631,6 +639,35 @@ TEST_F(AskAiPanelTest, ThePrivacyCardShowsOnlyUntilGotIt) {
   EXPECT_FALSE(panel_.View().show_intro);
 }
 
+TEST_F(AskAiPanelTest, TheSheetStaysOpenWhenPPSupportCannotBeOpened) {
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  panel_host_.support_opens = false;
+  panel_.AskSupportOwnAi();
+  EXPECT_EQ(panel_host_.support.size(), 1u);
+  EXPECT_EQ(panel_host_.closes, 0) << "the failure pill shows over the open sheet";
+  EXPECT_TRUE(panel_.IsOpen());
+  panel_host_.support_opens = true;
+  panel_.AskSupportOwnAi();
+  EXPECT_EQ(panel_host_.closes, 1) << "closes once the support chat opened";
+}
+
+std::string ReadSource(const std::string& relative);
+
+TEST(AskAiPanelSourceTest, UnavailableSupportShowsOneSettingsWordingNotTheGenericPill) {
+  std::string shown;
+  ShellFeedbackPorts ports;
+  ports.show_toast = [&shown](const std::string& text, ToastDuration) { shown = text; };
+  UserFeedback::BindPorts(ports);
+  const std::string app = ReadSource("src/app/Application.cpp");
+  EXPECT_NE(app.find("Error(\"Support is not available\").WithUser(Tr(\"settings.support.unavailable\"))"),
+            std::string::npos);
+  EXPECT_EQ(app.find("Error(Tr(\"support.unavailable\"))"), std::string::npos);
+  (void)UserFeedback::FailFrom(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
+  UserFeedback::BindPorts({});
+  EXPECT_EQ(shown, Tr("settings.support.unavailable"));
+  EXPECT_NE(shown, Tr("error.generic"));
+}
+
 TEST_F(AskAiPanelTest, TheQuestionMarkClosesTheSheetAndAsksSupportOnceWithoutMarkingTheCardSeen) {
   ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
   ASSERT_TRUE(panel_.View().show_intro);
@@ -672,6 +709,17 @@ TEST(AskAiPanelSourceTest, ThePrivacyCardHasABoldLeadTwoParagraphsAndAHelpQuesti
     ++paragraphs;
   }
   EXPECT_EQ(paragraphs, 2u);
+  // The "?" is inline inside the same <p> as the sentence (right after it), not in a separate container.
+  const size_t own_text = body.find("{{i18n:ask_ai.intro.own_ai}}");
+  const size_t own_p_end = body.find("</p>", own_text);
+  const size_t q_button = body.find("<button class=\"settings-q-btn ask-ai-intro-q\"");
+  ASSERT_NE(q_button, std::string::npos);
+  EXPECT_LT(q_button, own_p_end) << "inside the paragraph";
+  EXPECT_EQ(body.substr(own_text + std::string("{{i18n:ask_ai.intro.own_ai}}").size(),
+                        q_button - own_text - std::string("{{i18n:ask_ai.intro.own_ai}}").size()),
+            "")
+      << "directly after the text";
+  EXPECT_EQ(body.find("ask-ai-intro-own-text"), std::string::npos);
   // Not bold: the second paragraph carries no lead span.
   EXPECT_LT(body.find("ask-ai-intro-lead"), body.find("{{i18n:ask_ai.intro.own_ai}}"));
   EXPECT_EQ(body.find("ask-ai-intro-lead", body.find("{{i18n:ask_ai.intro.own_ai}}")), std::string::npos);
