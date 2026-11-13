@@ -108,17 +108,47 @@ TEST(ContactPageTilesTest, TheTilesShareTheRowEqually) {
   EXPECT_NE(tile_block.find("height: 64dp;"), std::string::npos);
 }
 
-TEST(MemberPageRowsTest, ACopyIdRowAndABlockRowOnThePageOfSomeoneWhoIsNotAContact) {
+TEST(MemberPageRowsTest, CopyIdAndBlockShowOnlyWhenOpenedFromThePersonsOwnChat) {
   const std::string rml = ReadAsset("views/contact_detail.rml");
   const size_t member = rml.find("<div data-if=\"selected.member_preview\">");
   const size_t contact = rml.find("<div data-if=\"!selected.member_preview\">");
   ASSERT_NE(member, std::string::npos);
   ASSERT_LT(member, contact);
   const std::string page = rml.substr(member, contact - member);
-  EXPECT_NE(page.find("data-event-click=\"copy_contact_id()\""), std::string::npos);
-  EXPECT_NE(page.find("data-event-click=\"block_member()\""), std::string::npos);
+  const size_t card = page.find("<div class=\"cd-card\" data-if=\"selected.member_from_dm\">");
+  ASSERT_NE(card, std::string::npos) << "the copy-ID and Block card is gated on member_from_dm";
+  const size_t copy = page.find("data-event-click=\"copy_contact_id()\"");
+  const size_t block = page.find("data-event-click=\"block_member()\"");
+  EXPECT_GT(copy, card);
+  EXPECT_GT(block, card);
   EXPECT_NE(page.find("{{i18n:contacts.block}}"), std::string::npos);
-  EXPECT_NE(page.find("data-event-click=\"add_member_contact()\""), std::string::npos) << "Add stays";
+  EXPECT_LT(page.find("data-event-click=\"add_member_contact()\""), card) << "Add stays above, for everyone";
+  // Nothing of the card is outside the gated block: the only copy / block events are inside it.
+  EXPECT_EQ(page.find("data-event-click=\"copy_contact_id()\"", copy + 1), std::string::npos);
+  EXPECT_EQ(page.find("data-event-click=\"block_member()\"", block + 1), std::string::npos);
+}
+
+TEST(MemberPageRowsTest, TheStrangerPageFromAChatHasItsOwnTitleAndOneLine) {
+  const std::string rml = ReadAsset("views/contact_detail.rml");
+  EXPECT_NE(rml.find("data-if=\"selected.member_preview && !selected.member_from_dm\">{{i18n:contacts.member_info}}"),
+            std::string::npos)
+      << "'Member info' only for a group member";
+  EXPECT_NE(rml.find("data-if=\"!selected.member_preview || selected.member_from_dm\">{{i18n:contacts.info}}"),
+            std::string::npos);
+  EXPECT_NE(rml.find("data-if=\"selected.member_from_dm\">{{i18n:contacts.dm_not_contact}}"), std::string::npos);
+  EXPECT_NE(rml.find("data-if=\"!selected.member_from_dm\">{{i18n:contacts.member_not_contact}}"), std::string::npos);
+  EXPECT_NE(rml.find("data-if=\"!selected.can_message\">{{i18n:contacts.cant_message_yet}}"), std::string::npos)
+      << "can_message is true on the chat's page, so this line stays hidden there";
+  for (const char* file : {"locales/en.json", "locales/zh-Hans.json"}) {
+    EXPECT_NE(ReadAsset(file).find("\"contacts.dm_not_contact\""), std::string::npos) << file;
+  }
+}
+
+TEST(MemberPageRowsTest, CanMessageIsTrueOnlyForThePageOpenedFromTheirChat) {
+  EXPECT_TRUE(MemberPreviewDetail("account:zed", "Zed", "", /*from_dm=*/true).can_message);
+  EXPECT_TRUE(MemberPreviewDetail("account:zed", "Zed", "", true).member_from_dm);
+  EXPECT_FALSE(MemberPreviewDetail("account:zed", "Zed", "").can_message) << "a group member: not yet";
+  EXPECT_FALSE(MemberPreviewDetail("account:zed", "Zed", "").member_from_dm);
 }
 
 TEST(ContactPageRowsTest, TheContactPageAlreadyHasCopyIdBlockUnblockAndRemove) {
@@ -155,11 +185,21 @@ protected:
       const auto it = contacts_.find(id);
       return it == contacts_.end() ? std::optional<Contact>{} : std::optional<Contact>{it->second};
     };
-    ports.find_or_create_direct_thread = [this](const std::string& contact_id, ThreadChannel) -> Roe<Thread> {
+    ports.find_direct_thread_quietly = [this](const std::string& contact_id, ThreadChannel) -> Roe<Thread> {
       thread_for_.push_back(contact_id);
       Thread thread;
       thread.id = "thread-of-" + contact_id;
       return thread;
+    };
+    ports.find_or_create_direct_thread = [this](const std::string& contact_id, ThreadChannel) -> Roe<Thread> {
+      opened_.push_back(contact_id); // the activating lookup (OnStartChat's): a call must never use it
+      Thread thread;
+      thread.id = "thread-of-" + contact_id;
+      return thread;
+    };
+    ports.search_people = [this](const std::string& query) -> Roe<std::vector<mesh::DirectoryHit>> {
+      lookups_.push_back(query);
+      return std::vector<mesh::DirectoryHit>{};
     };
     controller_.BindContactsPorts(ports);
     CallActionsPorts calls;
@@ -187,6 +227,8 @@ protected:
   std::map<std::string, Contact> contacts_;
   ContactsController controller_;
   std::vector<std::string> thread_for_;
+  std::vector<std::string> opened_;
+  std::vector<std::string> lookups_;
   std::vector<std::pair<std::string, bool>> started_;
   std::vector<std::string> toasts_;
   bool ready_ = true;
@@ -235,6 +277,13 @@ TEST_F(ContactCallTest, ACantMessageContactIsNotCalled) {
   EXPECT_EQ(toasts_.size(), 1u) << "the page's own reason is shown";
 }
 
+TEST_F(ContactCallTest, CallingNeverUsesTheOpeningLookup) {
+  controller_.OnCallContact("c-ann", false);
+  controller_.OnCallContact("c-bob", true);
+  EXPECT_EQ(thread_for_, (std::vector<std::string>{"c-ann", "c-bob"})) << "the quiet lookup found the chats";
+  EXPECT_TRUE(opened_.empty()) << "nothing was opened: no active chat, no unread count cleared";
+}
+
 TEST_F(ContactCallTest, AnUnknownContactDoesNothing) {
   controller_.OnCallContact("c-nobody", false);
   EXPECT_TRUE(started_.empty());
@@ -260,12 +309,64 @@ TEST_F(ContactCallTest, BlockingAStrangerAsksThenSavesThemAndTurnsThePageIntoThe
   };
   controller_.BindShellFeedback(feedback);
 
-  controller_.OnShowMember("account:zed", "Zed", "");
+  controller_.OnShowMember("account:zed", "Zed", "", /*from_dm=*/true);
   controller_.OnBlockMember();
   EXPECT_FALSE(asked.empty());
   EXPECT_EQ(blocked, std::vector<std::string>{"account:zed"});
   ASSERT_FALSE(toasts_.empty());
   EXPECT_EQ(toasts_.back(), Tr("contacts.toast.blocked", {{"name", "Zed"}}));
+  EXPECT_TRUE(opened_.empty()) << "blocking opens no chat of its own: the blocker is the chat menu's path";
+}
+
+TEST_F(ContactCallTest, ABlockIsNotOfferedOnAGroupMembersPage) {
+  int blocks = 0;
+  controller_.BindStrangerBlocker([&blocks](const std::string&) -> Roe<std::string> {
+    ++blocks;
+    return std::string("c-new");
+  });
+  int asked = 0;
+  ShellFeedbackPorts feedback;
+  feedback.show_toast = [this](const std::string& message, ToastDuration) { toasts_.push_back(message); };
+  feedback.show_confirm_destructive = [&asked](const std::string&, const std::string&,
+                                               std::function<void(bool)> on_result, const std::string&) {
+    ++asked;
+    on_result(true);
+  };
+  controller_.BindShellFeedback(feedback);
+  controller_.OnShowMember("account:zed", "Zed", ""); // from a group
+  controller_.OnBlockMember();
+  EXPECT_EQ(asked, 0);
+  EXPECT_EQ(blocks, 0) << "no 1:1 chat is made for someone met in a group";
+  EXPECT_TRUE(opened_.empty());
+}
+
+// --- Add on the page opened from a 1:1 chat ------------------------------------------------------------------------
+
+TEST_F(ContactCallTest, AddFromTheirChatPageUsesTheChatMenusAdd) {
+  std::vector<std::string> added;
+  controller_.BindStrangerAdder([this, &added](const std::string& account) -> Roe<std::string> {
+    added.push_back(account);
+    Add("c-new", account, TrustLevel::Unknown);
+    return std::string("c-new");
+  });
+  controller_.OnShowMember("account:zed", "Zed", "", /*from_dm=*/true);
+  controller_.OnAddMemberFromChat();
+  EXPECT_EQ(added, std::vector<std::string>{"account:zed"}) << "the local-copy path that hands the chat over";
+  EXPECT_TRUE(lookups_.empty()) << "no live directory lookup";
+  EXPECT_EQ(std::string(controller_.Selected().id.c_str()), "c-new") << "the page turns into the new contact's";
+  EXPECT_FALSE(controller_.Selected().member_preview);
+}
+
+TEST_F(ContactCallTest, AddFromAGroupMembersPageDoesNotUseIt) {
+  int adds = 0;
+  controller_.BindStrangerAdder([&adds](const std::string&) -> Roe<std::string> {
+    ++adds;
+    return std::string("c-new");
+  });
+  controller_.OnShowMember("account:zed", "Zed", "");
+  controller_.OnAddMemberFromChat();
+  EXPECT_EQ(adds, 0);
+  EXPECT_TRUE(controller_.Selected().member_preview) << "the group member's page stays as it was";
 }
 
 } // namespace

@@ -583,6 +583,7 @@
     "contacts.info": "Contact info",
     "contacts.member_info": "Member info",
     "contacts.member_not_contact": "In this group, not in your contacts.",
+    "contacts.dm_not_contact": "Not in your contacts yet.",
     "contacts.cant_message_yet": "You can't message them yet.",
     "contacts.call_not_ready": "Can't connect yet. Try again in a moment.",
     "contacts.call_blocked": "Blocked. Unblock to call.",

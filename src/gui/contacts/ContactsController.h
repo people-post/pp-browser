@@ -90,6 +90,10 @@ public:
   void BindStrangerBlocker(std::function<Roe<std::string>(const std::string& account_id)> block) {
     block_stranger_ = std::move(block);
   }
+  /** Add someone who is not a contact from the chat's local directory copy; the new contact's id (or why not). */
+  void BindStrangerAdder(std::function<Roe<std::string>(const std::string& account_id)> add) {
+    add_stranger_ = std::move(add);
+  }
   /** Where the stars ("常用联系人") are kept: the profile's preferences (device-only). */
   void BindSessionStore(SessionStore* store);
 
@@ -179,6 +183,11 @@ public:
     bool member_preview = false;
     /** That member's account id (what Add contact looks up). */
     ui::String member_account;
+    /**
+     * The page was opened from this person's own 1:1 chat (not from a group): the chat's Block, copy ID and Add show,
+     * the sheet says "Contact info", and they can be messaged (the chat is open).
+     */
+    bool member_from_dm = false;
     /** Starred as a favourite (the phone page's star button reads "Favorite" and is filled). */
     bool starred = false;
     /** Its Refresh runs (the button reads "Refreshing…" and a press does nothing). */
@@ -202,6 +211,10 @@ public:
   void OnCallContact(const std::string& contact_id, bool video);
   /** A person who is not a contact, on the member page: asks, saves them as a blocked contact, shows their page. */
   void OnBlockMember();
+  /** The page that is showing (tests read it to see that a swiped row never replaces it). */
+  const ContactDetail& Selected() const { return selected_; }
+  /** Add on a member page opened from a 1:1 chat: the chat menu's own add (local directory copy, the chat is adopted). */
+  void OnAddMemberFromChat();
   /**
    * A button of a swiped contact row on the phone New chat page (`action`: info, voice, video, more): that contact's page,
    * a voice or video call, or the More sheet (block / unblock, remove). Every one works on `contact_id`, not on the
@@ -213,12 +226,13 @@ public:
    * Each runs the usual confirm and result pill on `contact_id`, then the New chat list is read again. Empty when there
    * is no such contact.
    */
-  std::vector<ContextMenuAction> NewChatMoreActions(const std::string& contact_id);
+  std::vector<ContextMenuAction> NewChatMoreActions(const std::string& contact_id, std::string* title_out = nullptr);
   /** The contact ids the New chat list shows now, in order (what its rows are built from). */
   std::vector<std::string> NewChatRowIds() const;
   void OnSelectContact(const std::string& contact_id);
   /** A group member who is not a contact: their page in its member state, pushed like a contact's page. */
-  void OnShowMember(const std::string& account_id, const std::string& name, const std::string& icon_src);
+  void OnShowMember(const std::string& account_id, const std::string& name, const std::string& icon_src,
+                    bool from_dm = false);
   /**
    * Phones, from a group (a sender in the chat, the group info sheet, the member list): the contact's page as a 4/5
    * page sheet over where the user is (no tab or chat changes); swiped down, the user is back there. Elsewhere (the
@@ -226,7 +240,8 @@ public:
    */
   void OnSelectContactSheet(const std::string& contact_id);
   /** The same for a group member who is not a contact (its member state); elsewhere OnShowMember. */
-  void OnShowMemberSheet(const std::string& account_id, const std::string& name, const std::string& icon_src);
+  void OnShowMemberSheet(const std::string& account_id, const std::string& name, const std::string& icon_src,
+                         bool from_dm = false);
   /** A peer's photo arrived: an open member state shows the new one (`icon_for(account id)` is its photo path). */
   void RefreshMemberIcon(const std::function<std::string(const std::string&)>& icon_for);
   /** The contact page is open as a page sheet. */
@@ -400,6 +415,15 @@ private:
   void OnSetTrust(const std::string& trust);
   /** Block the selected contact, after the usual confirm. */
   void OnBlockSelected();
+  /** The same confirm for `contact_id` (a list row), which need not be the selected contact. */
+  void OnBlockContactById(const std::string& contact_id);
+  /**
+   * Runs `run` with `contact_id` as the selected contact (the existing flows read it) and then puts the previously
+   * selected page back, so a swiped row never leaks into an open contact page. Nothing runs when the contact is gone.
+   */
+  void WithContactSelected(const std::string& contact_id, const std::function<void()>& run);
+  /** The new contact's own page replaces the member page (after Add or Block from it). */
+  void ShowPersonPage(const std::string& contact_id);
   /** Saves `trust` for the contact; false (and a failure shown) when it could not be saved. */
   bool SetContactTrust(const std::string& contact_id, const std::string& trust);
   void SyncBlocked();
@@ -515,6 +539,7 @@ private:
   ContactsAccountPorts account_ports_;
   CallActionsPorts call_actions_;
   std::function<Roe<std::string>(const std::string& account_id)> block_stranger_;
+  std::function<Roe<std::string>(const std::string& account_id)> add_stranger_;
   SessionStore* session_store_ = nullptr;
   /** Contacts whose Refresh runs. */
   std::set<std::string> refreshing_contacts_;
@@ -531,7 +556,7 @@ bool ContactMatchesQuery(const Contact& contact, const std::string& query);
 ContactsController::ContactDetail ToContactDetail(const Contact& contact, const MessagingContactsPorts& ports);
 /** The page of a group member who is not a contact: name (else "Unnamed"), photo, last six of the account id. */
 ContactsController::ContactDetail MemberPreviewDetail(const std::string& account_id, const std::string& name,
-                                                      const std::string& icon_src);
+                                                      const std::string& icon_src, bool from_dm = false);
 /** Apply the editable detail fields (the remark, capped at kMaxNicknameChars) to a copy of the contact. */
 Contact BuildContactFromDetail(const Contact& existing, const ContactsController::ContactDetail& detail);
 

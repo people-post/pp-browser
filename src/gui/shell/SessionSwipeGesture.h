@@ -60,6 +60,11 @@ public:
   void AttachNamed(ui::Element* page, ui::Context* context, NamedActionCallback on_action);
   void Detach();
   bool Attached() const { return static_cast<bool>(page_); }
+  /**
+   * `target` is inside the row that is open (its buttons included). A press there belongs to this gesture: a drag on it
+   * slides the row back, so another gesture (the page's swipe back) must not start from it.
+   */
+  bool OpenRowHolds(ui::Element* target) const;
 
   void ProcessEvent(ui::Event& event) override;
 

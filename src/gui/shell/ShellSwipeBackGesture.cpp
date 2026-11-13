@@ -321,6 +321,9 @@ void ShellSwipeBackGesture::ProcessEvent(ui::Event& event) {
       if (ShouldIgnoreTarget(target)) {
         return;
       }
+      if (options_.ignore_press && options_.ignore_press(target)) {
+        return;
+      }
       if (!ShouldStartSwipe(target, EventMouseX(event))) {
         return;
       }

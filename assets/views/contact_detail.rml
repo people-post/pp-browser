@@ -1,8 +1,8 @@
 <!-- In a page sheet (a person opened from a group, on phones) the sheets' title row stays above the page; the pushed
      page and the desktop pane hide it (they have their own title bar). -->
 <div class="sheet-header cd-sheet-header" data-model="contacts">
-  <p class="sheet-title" data-if="selected.member_preview">{{i18n:contacts.member_info}}</p>
-  <p class="sheet-title" data-if="!selected.member_preview">{{i18n:contacts.info}}</p>
+  <p class="sheet-title" data-if="selected.member_preview && !selected.member_from_dm">{{i18n:contacts.member_info}}</p>
+  <p class="sheet-title" data-if="!selected.member_preview || selected.member_from_dm">{{i18n:contacts.info}}</p>
 </div>
 <div class="contact-detail-panel nav-bar-scroll stack" data-model="contacts">
   <div class="contacts-detail-header stack">
@@ -50,7 +50,8 @@
         </button>
       </div>
     </div>
-    <!-- A group member who is not a contact (opened from a group chat): only Add contact. -->
+    <!-- A group member who is not a contact (opened from a group chat): only Add contact. Opened from the person's own 1:1
+         chat (selected.member_from_dm) it also has copy ID and Block, the chat's old person menu. -->
     <div data-if="selected.member_preview">
       <div class="cd-acts row">
         <button class="cd-act" type="button" data-event-click="add_member_contact()">
@@ -58,14 +59,14 @@
           <p class="cd-act-label">{{i18n:contacts.add}}</p>
         </button>
       </div>
-      <div class="cd-acts row" data-if="selected.can_message">
+      <div class="cd-acts row" data-if="selected.can_message && !selected.member_from_dm">
         <button class="cd-act" type="button" data-event-click="start_chat()">
           <svg class="cd-act-icon" src="../icons/v2/tab-chats.svg" width="24" height="24"></svg>
           <p class="cd-act-label">{{i18n:contacts.message}}</p>
         </button>
       </div>
       <!-- Everything the chat's person menu had: copy the account ID, block (a stranger is saved as a blocked contact). -->
-      <div class="cd-card">
+      <div class="cd-card" data-if="selected.member_from_dm">
         <div class="cd-row">
           <span class="cd-row-body">
             <span class="cd-row-text">{{i18n:contacts.account_short}}</span>
@@ -79,7 +80,8 @@
           <span class="cd-row-body"><span class="cd-row-text">{{i18n:contacts.block}}</span></span>
         </button>
       </div>
-      <p class="cd-footnote cd-footnote--center">{{i18n:contacts.member_not_contact}}</p>
+      <p class="cd-footnote cd-footnote--center" data-if="selected.member_from_dm">{{i18n:contacts.dm_not_contact}}</p>
+      <p class="cd-footnote cd-footnote--center" data-if="!selected.member_from_dm">{{i18n:contacts.member_not_contact}}</p>
       <p class="cd-footnote cd-footnote--center" data-if="!selected.can_message">{{i18n:contacts.cant_message_yet}}</p>
     </div>
     <div data-if="!selected.member_preview">

@@ -2518,6 +2518,8 @@ void ShellHost::AttachSwipeBackGesture() {
             on_new_chat_swipe_action_(contact_id, action);
           }
         });
+        // An open contact row claims the drags that start on it (they slide it back): the page must not slide too.
+        options.ignore_press = [this](ui::Element* target) { return new_chat_swipe_.OpenRowHolds(target); };
       }
     }
     if (ui::Element* layer = doc->GetElementById("shell-transient-layer")) {

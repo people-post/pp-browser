@@ -384,7 +384,7 @@ void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const 
 } // namespace
 
 ContactsController::ContactDetail MemberPreviewDetail(const std::string& account_id, const std::string& name,
-                                                      const std::string& icon_src) {
+                                                      const std::string& icon_src, const bool from_dm) {
   ContactsController::ContactDetail detail;
   const std::string title = name.empty() ? Tr("people_picker.unnamed") : name;
   detail.title = title.c_str();
@@ -397,6 +397,8 @@ ContactsController::ContactDetail MemberPreviewDetail(const std::string& account
   detail.avatar_tone = glyph.tone;
   detail.member_preview = true;
   detail.member_account = account_id.c_str();
+  detail.member_from_dm = from_dm;
+  detail.can_message = from_dm; // opened from their own chat: they are being messaged right now
   return detail;
 }
 
@@ -610,6 +612,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
           detail_handle.RegisterMember("identities", &ContactDetail::identities);
           detail_handle.RegisterMember("threads", &ContactDetail::threads);
           detail_handle.RegisterMember("member_preview", &ContactDetail::member_preview);
+          detail_handle.RegisterMember("member_from_dm", &ContactDetail::member_from_dm);
           detail_handle.RegisterMember("starred", &ContactDetail::starred);
         }
         ctor.Bind("contacts", &controller.contacts_);
@@ -976,9 +979,15 @@ void ContactsController::AddMemberContactCallback(ui::DataModelHandle /*model*/,
   // The usual add-by-Account-ID path (directory lookup, keys from it, never from the group); once added, the page
   // turns into the contact's own (AddContactFromHit selects it).
   ContactsController& controller = Instance();
-  if (controller.selected_.member_preview) {
-    controller.AddContactByQuery(controller.selected_.member_account.c_str());
+  if (!controller.selected_.member_preview) {
+    return;
   }
+  if (controller.selected_.member_from_dm && controller.add_stranger_) {
+    // From their 1:1 chat: the chat menu's own Add (the local directory copy; the chat goes to the new contact).
+    controller.OnAddMemberFromChat();
+    return;
+  }
+  controller.AddContactByQuery(controller.selected_.member_account.c_str());
 }
 
 void ContactsController::AddContactMenuCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
@@ -1122,13 +1131,13 @@ void ContactsController::OnSelectContact(const std::string& contact_id) {
 }
 
 void ContactsController::OnShowMember(const std::string& account_id, const std::string& name,
-                                      const std::string& icon_src) {
+                                      const std::string& icon_src, const bool from_dm) {
   ClearGroupAdminCard();
   if (account_id.empty()) {
     return;
   }
   FlushPending();
-  selected_ = MemberPreviewDetail(account_id, name, icon_src);
+  selected_ = MemberPreviewDetail(account_id, name, icon_src, from_dm);
   OpenContactDetailPane();
   DirtyAll();
   NotifySurfaceChanged();
@@ -1171,10 +1180,10 @@ void ContactsController::OnSelectContactSheet(const std::string& contact_id) {
 }
 
 void ContactsController::OnShowMemberSheet(const std::string& account_id, const std::string& name,
-                                           const std::string& icon_src) {
+                                           const std::string& icon_src, const bool from_dm) {
   ClearGroupAdminCard();
   if (!DetailSheetAvailable()) {
-    OnShowMember(account_id, name, icon_src);
+    OnShowMember(account_id, name, icon_src, from_dm);
     return;
   }
   if (account_id.empty()) {
@@ -1185,7 +1194,7 @@ void ContactsController::OnShowMemberSheet(const std::string& account_id, const 
   if (!DetailSheetOpen()) {
     detail_under_sheet_ = selected_.member_preview ? std::string() : std::string(selected_.id.c_str());
   }
-  selected_ = MemberPreviewDetail(account_id, name, icon_src);
+  selected_ = MemberPreviewDetail(account_id, name, icon_src, from_dm);
   OpenContactDetailSheet();
   DirtyAll();
   NotifySurfaceChanged();
@@ -1580,11 +1589,11 @@ void ContactsController::OnNewChatSwipeAction(const std::string& contact_id, con
   } else if (action == "video") {
     OnCallContact(contact_id, true);
   } else if (action == "more") {
-    LoadSelectedDetail(contact_id);
-    const std::string title = selected_.title.c_str();
-    std::vector<ContextMenuAction> actions = NewChatMoreActions(contact_id);
+    std::string title;
+    std::vector<ContextMenuAction> actions = NewChatMoreActions(contact_id, &title);
     if (!actions.empty()) {
-      ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions), {}, title);
+      // A bottom action sheet on phones: it ignores the position, as the Chats list's More does.
+      ContextMenuHost::Instance().ShowActions(ui::Vector2i(0, 0), std::move(actions), {}, title);
     }
   }
 }
@@ -1599,34 +1608,60 @@ std::vector<std::string> ContactsController::NewChatRowIds() const {
   return ids;
 }
 
-std::vector<ContextMenuAction> ContactsController::NewChatMoreActions(const std::string& contact_id) {
+void ContactsController::WithContactSelected(const std::string& contact_id, const std::function<void()>& run) {
+  FlushPending();
+  ContactDetail previous = std::move(selected_);
   LoadSelectedDetail(contact_id);
-  if (selected_.id.empty()) {
+  if (!selected_.id.empty()) {
+    run();
+  }
+  selected_ = std::move(previous); // another contact's page that was showing stays what it was
+  DirtyAll();
+}
+
+void ContactsController::OnBlockContactById(const std::string& contact_id) {
+  std::string name = Tr("contacts.this_contact");
+  WithContactSelected(contact_id, [this, &name]() {
+    if (!selected_.title.empty()) {
+      name = selected_.title.c_str();
+    }
+  });
+  ShowConfirm(
+      Tr("contacts.block_confirm_title"), Tr("contacts.block_confirm_body", {{"name", name}}),
+      [this, contact_id](const bool ok) {
+        if (ok) {
+          WithContactSelected(contact_id, [this]() { OnSetTrust("blocked"); });
+        }
+      },
+      true);
+}
+
+std::vector<ContextMenuAction> ContactsController::NewChatMoreActions(const std::string& contact_id,
+                                                                      std::string* title_out) {
+  bool found = false;
+  bool blocked = false;
+  WithContactSelected(contact_id, [&]() {
+    found = true;
+    blocked = selected_.trust_key == "blocked";
+    if (title_out) {
+      *title_out = selected_.title.c_str();
+    }
+  });
+  if (!found) {
     return {};
   }
-  const bool blocked = selected_.trust_key == "blocked";
-  // Each item picks the person again first: the existing flows (confirm, toast, refresh) work on the selected contact.
+  // Each item works on this contact and puts back whatever page was showing (the existing flows read the selected one).
   std::vector<ContextMenuAction> actions;
   if (blocked) {
     actions.push_back({"unblock", Tr("contacts.unblock"), nullptr,
-                       [this, contact_id]() {
-                         LoadSelectedDetail(contact_id);
-                         OnSetTrust("unknown");
-                       },
+                       [this, contact_id]() { WithContactSelected(contact_id, [this]() { OnSetTrust("unknown"); }); },
                        "../icons/v2/block.svg"});
   } else {
-    actions.push_back({"block", Tr("contacts.block"), nullptr,
-                       [this, contact_id]() {
-                         LoadSelectedDetail(contact_id);
-                         OnBlockSelected();
-                       },
+    actions.push_back({"block", Tr("contacts.block"), nullptr, [this, contact_id]() { OnBlockContactById(contact_id); },
                        "../icons/v2/block.svg", /*danger=*/true});
   }
   actions.push_back({"remove", Tr("contacts.remove"), nullptr,
-                     [this, contact_id]() {
-                       LoadSelectedDetail(contact_id);
-                       OnRemoveContact();
-                     },
+                     [this, contact_id]() { WithContactSelected(contact_id, [this]() { OnRemoveContact(); }); },
                      "../icons/trash.svg", /*danger=*/true});
   return actions;
 }
@@ -2072,7 +2107,7 @@ void ContactsController::OnStartChat() {
 
 void ContactsController::OnCallContact(const std::string& contact_id, const bool video) {
   if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || contact_id.empty() ||
-      !contacts_ports_.get_contact || !contacts_ports_.find_or_create_direct_thread || !call_actions_.start_call) {
+      !contacts_ports_.get_contact || !contacts_ports_.find_direct_thread_quietly || !call_actions_.start_call) {
     return;
   }
   auto contact = contacts_ports_.get_contact(contact_id);
@@ -2099,7 +2134,8 @@ void ContactsController::OnCallContact(const std::string& contact_id, const bool
   if (contacts_ports_.register_contact_direct_endpoints) {
     contacts_ports_.register_contact_direct_endpoints(**contact);
   }
-  auto thread = contacts_ports_.find_or_create_direct_thread(contact_id, ThreadChannel::E2ePublic);
+  // The chat OnStartChat uses, found or made but not opened: a call must not make it the active chat or mark it read.
+  auto thread = contacts_ports_.find_direct_thread_quietly(contact_id, ThreadChannel::E2ePublic);
   if (!thread) {
     return;
   }
@@ -2109,8 +2145,31 @@ void ContactsController::OnCallContact(const std::string& contact_id, const bool
   (void)call_actions_.start_call(thread->id, video); // the call screen comes up by itself; the page stays
 }
 
+void ContactsController::ShowPersonPage(const std::string& contact_id) {
+  SyncFromStore();
+  if (DetailSheetOpen()) {
+    OnSelectContactSheet(contact_id);
+  } else {
+    OnSelectContact(contact_id);
+  }
+}
+
+void ContactsController::OnAddMemberFromChat() {
+  if (!selected_.member_preview || !selected_.member_from_dm || selected_.member_account.empty() || !add_stranger_) {
+    return;
+  }
+  auto added = add_stranger_(selected_.member_account.c_str());
+  if (!added) {
+    UserFeedback::Fail(Tr(added.error().message));
+    return;
+  }
+  ShowPersonPage(*added); // they are a contact now: the page turns into their own
+  NotifySurfaceChanged();
+}
+
 void ContactsController::OnBlockMember() {
-  if (!selected_.member_preview || selected_.member_account.empty() || !block_stranger_) {
+  // Only from a person's own 1:1 chat: a group member's page has no Block (it would make a 1:1 chat out of nothing).
+  if (!selected_.member_preview || !selected_.member_from_dm || selected_.member_account.empty() || !block_stranger_) {
     return;
   }
   const std::string account = selected_.member_account.c_str();
@@ -2121,18 +2180,15 @@ void ContactsController::OnBlockMember() {
         if (!ok || !selected_.member_preview || selected_.member_account != account.c_str()) {
           return;
         }
+        // The chat menu's own path (ChatPresenter::BlockStranger): the chat they are in is the one handed to the new
+        // contact; no other chat is made or opened.
         auto blocked = block_stranger_(account);
         if (!blocked) {
           UserFeedback::Fail(Tr(blocked.error().message));
           return;
         }
-        SyncFromStore();
         // They are a (blocked) contact now: the page turns into their own.
-        if (DetailSheetOpen()) {
-          OnSelectContactSheet(*blocked);
-        } else {
-          OnSelectContact(*blocked);
-        }
+        ShowPersonPage(*blocked);
         ShowToast(Tr("contacts.toast.blocked", {{"name", name}}));
         if (contacts_ports_.notify_thread_changed) {
           contacts_ports_.notify_thread_changed();
@@ -2600,8 +2656,11 @@ void ContactsController::OnRemoveContact() {
           ShowToast(Tr("contacts.err.not_found"));
           return;
         }
-        if (!CloseContactDetailPane()) {
-          OnDetailDismissed();
+        // Another contact's page that is showing (a swiped row was removed) stays; the removed one's page goes.
+        if (selected_.id.empty() || selected_.id == contact_id.c_str()) {
+          if (!CloseContactDetailPane()) {
+            OnDetailDismissed();
+          }
         }
         SyncFromStore();
         if (new_chat_open_) {

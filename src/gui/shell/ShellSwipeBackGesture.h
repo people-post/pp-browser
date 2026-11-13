@@ -42,6 +42,11 @@ public:
      * Useful when listening on a parent that also hosts non-drill-down chrome.
      */
     ui::Element* content_root = nullptr;
+    /**
+     * Optional: a press this says true for never starts the swipe-back. A list row's own swipe that is open claims the
+     * drags that start on it (the New chat contact rows), so the page must not slide at the same time.
+     */
+    std::function<bool(ui::Element* target)> ignore_press;
   };
 
   void Attach(ui::Element* listen_surface, ui::Context* context, AttachOptions options, DismissCallback on_dismiss);

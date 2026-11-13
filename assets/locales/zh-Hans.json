@@ -574,6 +574,7 @@
     "contacts.info": "联系人信息",
     "contacts.member_info": "成员信息",
     "contacts.member_not_contact": "群成员，还不是你的联系人。",
+    "contacts.dm_not_contact": "还不是你的联系人。",
     "contacts.cant_message_yet": "暂时不能给 TA 发消息",
     "contacts.call_not_ready": "现在还连不上，请稍后再打。",
     "contacts.call_blocked": "已屏蔽，取消屏蔽后才能通话",

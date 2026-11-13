@@ -38,6 +38,8 @@ struct MessagingContactsPorts {
   std::function<Roe<std::vector<Thread>>()> list_threads;
   std::function<int(const std::string& contact_id)> sum_unread_for_contact;
   std::function<Roe<Thread>(const std::string& contact_id, ThreadChannel channel)> find_or_create_direct_thread;
+  /** The same chat, found or made without opening it: not activated, unread count kept (a call's lookup). */
+  std::function<Roe<Thread>(const std::string& contact_id, ThreadChannel channel)> find_direct_thread_quietly;
   std::function<void()> notify_thread_changed;
 
   std::function<std::optional<PeerSigningKeyRecord>(const std::string& peer_identity_kind,

@@ -41,8 +41,12 @@ struct ContactsNotifyPorts {
    * (nothing under it changes; swiped down the user is back); the desktop as select_contact.
    */
   std::function<void(const std::string& contact_id)> select_contact_sheet;
-  /** The same for a group member who is not a contact: their page in its member state (account id, name, photo). */
-  std::function<void(const std::string& account_id, const std::string& name, const std::string& icon_src)>
+  /**
+   * The same for a group member who is not a contact: their page in its member state (account id, name, photo).
+   * `from_dm`: the page was opened from that person's own 1:1 chat (it then also offers copy ID, Block and Add; a
+   * group member's page does not).
+   */
+  std::function<void(const std::string& account_id, const std::string& name, const std::string& icon_src, bool from_dm)>
       show_member_sheet;
   /**
    * Right after select_contact_sheet / show_member_sheet from a group: the owner's admin card for that person on the

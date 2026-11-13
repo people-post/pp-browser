@@ -2,6 +2,7 @@
 // The swipe gesture is configurable (the Chats list keeps its defaults); the contact rows carry `contact-id`.
 #include "gui/contacts/ContactsController.h"
 #include "gui/shell/SessionSwipeGesture.h"
+#include "gui/shell/ShellSwipeBackGesture.h"
 
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/people/ContactTypes.h"
@@ -350,6 +351,50 @@ TEST_F(NewChatSwipeHitTest, AttachingAndDetachingTheSecondInstanceLeavesTheChats
   EXPECT_EQ(ChatsBehaviour(), before);
 }
 
+// The page's swipe back (listening on a parent of the list, from anywhere on the page) and the contact rows' own swipe
+// both follow a drag. An open row claims the drags that start on it; a closed row leaves a rightward drag to the page.
+TEST_F(NewChatSwipeHitTest, ADragOnAnOpenRowSlidesTheRowBackAndNotThePage) {
+  AttachContacts();
+  ui::Element* page = document_->GetElementById("page");
+  ShellSwipeBackGesture back;
+  ShellSwipeBackGesture::AttachOptions options;
+  options.require_edge = false;
+  options.axis_lock = nullptr;
+  options.ignore_press = [this](ui::Element* target) { return contacts_.OpenRowHolds(target); };
+  int dismissed = 0;
+  back.Attach(page, context_, std::move(options), [&dismissed]() { ++dismissed; });
+
+  Drag(380, 140, kContactY); // open the row
+  ASSERT_TRUE(contact_row_->IsClassSet("session-swipe-shown"));
+  EXPECT_TRUE(contacts_.OpenRowHolds(contact_row_));
+  Drag(60, 380, kContactY); // a long rightward drag on the open row
+  EXPECT_EQ(dismissed, 0) << "the page did not go back (a drag this long would have dismissed it)";
+  EXPECT_FALSE(contact_row_->IsClassSet("session-swipe-shown")) << "the row slid back instead";
+  EXPECT_FALSE(contacts_.OpenRowHolds(contact_row_));
+
+  // Closed again: the same rightward drag now belongs to the page.
+  Drag(60, 380, kContactY);
+  EXPECT_EQ(dismissed, 1) << "a closed row leaves the drag to the page's swipe back";
+  back.Detach();
+}
+
+TEST_F(NewChatSwipeHitTest, WithoutTheHookAnOpenRowDragAlsoStartsTheSwipeBack) {
+  // The behaviour the hook fixes: both gestures follow the same drag.
+  AttachContacts();
+  ui::Element* page = document_->GetElementById("page");
+  ShellSwipeBackGesture back;
+  ShellSwipeBackGesture::AttachOptions options;
+  options.require_edge = false;
+  options.axis_lock = nullptr;
+  int dismissed = 0;
+  back.Attach(page, context_, std::move(options), [&dismissed]() { ++dismissed; });
+  Drag(380, 140, kContactY);
+  ASSERT_TRUE(contact_row_->IsClassSet("session-swipe-shown"));
+  Drag(60, 380, kContactY);
+  EXPECT_EQ(dismissed, 1) << "no hook: the page goes back while the row closes";
+  back.Detach();
+}
+
 // --- the controller side -------------------------------------------------------------------------------------------
 
 // A result pill that names the person: the words before the name (the title shown depends on what other tests left).
@@ -402,7 +447,7 @@ protected:
       return contact;
     };
     ports.remove_contact = [this](const std::string& id) -> Roe<bool> { return contacts_.erase(id) > 0; };
-    ports.find_or_create_direct_thread = [](const std::string& contact_id, ThreadChannel) -> Roe<Thread> {
+    ports.find_direct_thread_quietly = [](const std::string& contact_id, ThreadChannel) -> Roe<Thread> {
       Thread thread;
       thread.id = "thread-of-" + contact_id;
       return thread;
@@ -498,6 +543,35 @@ TEST_F(NewChatSwipeControllerTest, BlockingFromMoreSaysSoAndRefreshesTheList) {
   EXPECT_EQ(toasts_.back().rfind(BeforeName("contacts.toast.blocked"), 0), 0u) << toasts_.back();
   const auto rows_after = controller_.NewChatRowIds();
   EXPECT_NE(rows_after, rows_before) << "the list was read again";
+}
+
+TEST_F(NewChatSwipeControllerTest, MoreAndItsActionsLeaveTheShowingContactPageAlone) {
+  controller_.OnSelectContact("c-bob"); // Bob's page is showing
+  ASSERT_EQ(std::string(controller_.Selected().id.c_str()), "c-bob");
+  std::string title;
+  auto actions = controller_.NewChatMoreActions("c-ann", &title);
+  ASSERT_EQ(actions.size(), 2u);
+  EXPECT_FALSE(title.empty()) << "the sheet is titled with the person";
+  EXPECT_EQ(std::string(controller_.Selected().id.c_str()), "c-bob") << "listing the sheet does not select Ann";
+  actions[0].run(); // block Ann (confirmed)
+  EXPECT_EQ(contacts_["c-ann"].local.trust, TrustLevel::Blocked);
+  EXPECT_EQ(std::string(controller_.Selected().id.c_str()), "c-bob") << "Bob's page is back after the block";
+  auto unblock = controller_.NewChatMoreActions("c-ann");
+  ASSERT_EQ(Ids(unblock), (std::vector<std::string>{"unblock", "remove"}));
+  unblock[0].run();
+  EXPECT_EQ(std::string(controller_.Selected().id.c_str()), "c-bob");
+  auto again = controller_.NewChatMoreActions("c-ann");
+  again[1].run(); // remove Ann
+  EXPECT_EQ(contacts_.count("c-ann"), 0u);
+  EXPECT_EQ(std::string(controller_.Selected().id.c_str()), "c-bob") << "removing a row does not close Bob's page";
+}
+
+TEST_F(NewChatSwipeControllerTest, MoreWithNothingShowingLeavesNothingSelected) {
+  auto actions = controller_.NewChatMoreActions("c-ann");
+  ASSERT_FALSE(actions.empty());
+  EXPECT_TRUE(controller_.Selected().id.empty());
+  actions[0].run();
+  EXPECT_TRUE(controller_.Selected().id.empty()) << "the swiped contact does not stay selected";
 }
 
 TEST_F(NewChatSwipeControllerTest, UnblockingFromMoreSaysSo) {

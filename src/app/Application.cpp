@@ -2149,14 +2149,15 @@ bool Application::MountPresenters(ui::Context* context) {
   contacts_notify.select_contact = [this](const std::string& id) { contacts_->OnSelectContact(id); };
   contacts_notify.select_contact_sheet = [this](const std::string& id) { contacts_->OnSelectContactSheet(id); };
   contacts_notify.show_member_sheet = [this](const std::string& account_id, const std::string& name,
-                                             const std::string& icon_src) {
-    contacts_->OnShowMemberSheet(account_id, name, icon_src);
+                                             const std::string& icon_src, const bool from_dm) {
+    contacts_->OnShowMemberSheet(account_id, name, icon_src, from_dm);
   };
   contacts_notify.set_group_admin = [this](GroupAdminCard card) { contacts_->SetGroupAdminCard(std::move(card)); };
   contacts_notify.open_new_chat = [this]() { contacts_->OpenNewChatPage(); };
   contacts_notify.message_contact = [this](const std::string& id) { contacts_->MessageContact(id); };
-  contacts_->BindStrangerBlocker(
-      [this](const std::string& account_id) { return chat_->BlockStranger(account_id); }); // the member page's Block
+  // The member page opened from a 1:1 chat: its Block and Add are the chat menu's own (ChatPresenter).
+  contacts_->BindStrangerBlocker([this](const std::string& account_id) { return chat_->BlockStranger(account_id); });
+  contacts_->BindStrangerAdder([this](const std::string& account_id) { return chat_->AddStranger(account_id); });
   people_picker_->BindContactsNotify(contacts_notify); // a member's profile from the member list
   chat_->BindContactsNotify(std::move(contacts_notify));
 
@@ -2294,6 +2295,7 @@ bool Application::MountPresenters(ui::Context* context) {
     if (contacts_) {
       contacts_->BindCallActions({});
       contacts_->BindStrangerBlocker(nullptr);
+      contacts_->BindStrangerAdder(nullptr);
     }
     if (chat_) {
       chat_->BindCallActions({});
@@ -2844,6 +2846,7 @@ void Application::Shutdown() {
   contacts_->BindAccountPorts({});
   contacts_->BindCallActions({});
   contacts_->BindStrangerBlocker(nullptr);
+  contacts_->BindStrangerAdder(nullptr);
   shell_->BindScanAction({});
 
   // Cheap context flags for dogfood latency diagnosis (grep [startup] shutdown_context).

@@ -162,6 +162,8 @@ public:
   bool PeerCallsReady() const { return messaging_ready_ && mesh_ready_; }
   /** Blocks someone who is not a contact: saved as a blocked contact; the new contact's id (or why not). */
   Roe<std::string> BlockStranger(const std::string& account_id) { return presenter_.BlockStranger(account_id); }
+  /** Adds someone who is not a contact from the local directory copy and hands them the chat (the old menu's Add). */
+  Roe<std::string> AddStranger(const std::string& account_id) { return presenter_.AddPeerToContacts(account_id); }
   /** Refresh peer-link / "In call" header (Application wires from CallController). */
   void UpdatePeerLinkChrome();
   void BindUnlockEnsure(UnlockEnsurePorts ports);

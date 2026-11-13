@@ -95,7 +95,8 @@ bool ChatPeerSheet::OpenPeerPage(const bool compact) {
       const TranscriptFacts facts = facade->TranscriptFactsFor();
       const std::string& account = thread->peer_identity_value;
       contacts_notify_.show_member_sheet(account, facade->ResolveThreadLabel(*thread).title,
-                                         facts.sender_icon ? facts.sender_icon(account) : std::string());
+                                         facts.sender_icon ? facts.sender_icon(account) : std::string(),
+                                         /*from_dm=*/true);
       return true;
     }
     case ChatPeerTarget::Menu:

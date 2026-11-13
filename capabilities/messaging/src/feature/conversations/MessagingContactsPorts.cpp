@@ -28,6 +28,9 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
   ports.find_or_create_direct_thread = [&hub](const std::string& contact_id, const ThreadChannel channel) {
     return hub.Inbox().FindOrCreateDirectThread(contact_id, channel);
   };
+  ports.find_direct_thread_quietly = [&hub](const std::string& contact_id, const ThreadChannel channel) {
+    return hub.Inbox().FindOrCreateDirectThreadQuietly(contact_id, channel);
+  };
   ports.notify_thread_changed = [&hub]() { hub.Inbox().NotifyThreadChanged(); };
   ports.get_signing_key = [&hub](const std::string& peer_identity_kind, const std::string& peer_identity_value) {
     return hub.SigningKeys().Get(peer_identity_kind, peer_identity_value);

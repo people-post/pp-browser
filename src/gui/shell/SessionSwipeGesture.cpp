@@ -122,6 +122,14 @@ ui::Element* SessionSwipeGesture::RowOf(ui::Element* target) const {
   return nullptr;
 }
 
+bool SessionSwipeGesture::OpenRowHolds(ui::Element* target) const {
+  if (!page_ || !open_row_ || model_.OpenRow().empty()) {
+    return false;
+  }
+  ui::Element* row = RowOf(target);
+  return row && row == open_row_.get();
+}
+
 ui::Element* SessionSwipeGesture::ButtonOf(ui::Element* target) const {
   for (ui::Element* node = target; node; node = node->GetParentNode()) {
     if (node->HasAttribute("swipe-action")) {
