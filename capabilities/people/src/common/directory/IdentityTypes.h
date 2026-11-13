@@ -73,9 +73,15 @@ struct LocalIdentity {
   std::string registered_backend_url;
   /**
    * Own initiation floor (pp_credit minor units, P001). Default 0.
-   * Dogfood via AppConfig.initiation_floor; published on register/renew when server supports it.
+   * Dogfood via AppConfig.initiation_floor; published in the account card (multi-relay MR005), which is the
+   * account's word: a sibling's newer card sets it here, as its nickname does.
    */
   int64_t initiation_floor = 0;
+  /**
+   * The `issued_at` of the account card the relay last answered for at register/finish (0: none sent): a newer card
+   * of ours registers again (ShouldPublishAccountCard).
+   */
+  int64_t registered_card_issued_at = 0;
   /**
    * The relay's directory entry carries this account's KEM key binding (foundation/crypto/KemKeyBinding.h):
    * peers take the KEM key only with it. A registration from before bindings re-registers once.

@@ -111,12 +111,14 @@ public:
                                                  const std::string& peer_id = "",
                                                  const std::vector<std::string>& multiaddrs = {},
                                                  const RegistrationPublishOpts& publish = {}) override;
-  Roe<RegistrationResult> FinishRegistration(
-      const std::string& challenge, const std::string& public_key_b64, const std::string& nickname,
-      const std::string& signature, int64_t timestamp, const std::string& signature_alg = "ml-dsa-65",
-      const std::string& kem_public_key_b64 = "", const std::string& kem_binding_signature_b64 = "",
-      const std::string& peer_id = "", const std::vector<std::string>& multiaddrs = {}, int64_t initiation_floor = 0,
-      const RegistrationPublishOpts& publish = {}) override;
+  Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
+                                             const std::string& nickname, const std::string& signature,
+                                             int64_t timestamp, const std::string& signature_alg = "ml-dsa-65",
+                                             const std::string& kem_public_key_b64 = "",
+                                             const std::string& kem_binding_signature_b64 = "",
+                                             const std::string& peer_id = "",
+                                             const std::vector<std::string>& multiaddrs = {},
+                                             const RegistrationPublishOpts& publish = {}) override;
   Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
                                          int64_t timestamp, const std::string& account_id) override;
   Roe<void> RevokeRegistration(const std::string& account_id, const std::string& signature, int64_t timestamp) override;

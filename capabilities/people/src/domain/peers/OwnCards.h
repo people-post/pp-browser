@@ -33,9 +33,11 @@ struct OwnDeviceList {
  * This account's own cards (docs/contracts/ACCOUNT_CARD.md): the key card, and the account card — the
  * account's device list (M021), kept with the other accounts' cards. The newest card wins (no union). Its first
  * device is the **master** (d4): only it changes the list — takes a device out, hands the role on. Any listed
- * device re-issues the card to bring its own entry or the nickname up to date, the list otherwise as it is; a
- * linked device appends itself once (`card_intent` join), a restored one starts a fresh list holding only itself
- * (`fresh`). A device the newest list leaves out is signed out: it issues nothing. Thread-safe.
+ * device re-issues the card to bring its own entry, the nickname or the initiation floor up to date, the list
+ * otherwise as it is; a linked device appends itself once (`card_intent` join), a restored one starts a fresh list
+ * holding only itself (`fresh`). The relay list (MR002) is the master's: the relays it registers on (SetRelays); the
+ * other devices keep the newest card's. A device the newest list leaves out is signed out: it issues nothing.
+ * Thread-safe.
  */
 class OwnCards {
 public:
@@ -72,6 +74,11 @@ public:
   /** This device's PeerId (its mesh identity, from the device key). */
   Roe<std::string> DevicePeerId();
   /**
+   * The relays this device registers on, preferred first (relay base URLs): the master's card lists the ones within
+   * MR004's bounds (an `http://` lab relay is left out), and its next Card() re-issues when they changed.
+   */
+  void SetRelays(const std::vector<std::string>& origins);
+  /**
    * Runs when the account's card changed here — this device issued one, or took a sibling's newer one — so its
    * siblings hear of it and its own devices are reached; outside any lock.
    */
@@ -83,9 +90,21 @@ public:
   void SetOnDeviceJoined(std::function<void(const AccountCard&)> on_joined) { on_joined_ = std::move(on_joined); }
 
 private:
-  /** The card listing `devices`: `base` when it says it all, else a new one (`issued` set). */
-  Roe<AccountCard> IssueLocked(const std::optional<AccountCard>& base, std::vector<AccountCardDevice> devices,
-                               const std::string& nickname, int64_t now_ms, bool& issued);
+  /** What a card says besides its keys: what IssueLocked compares and signs. */
+  struct CardContent {
+    std::vector<AccountCardDevice> devices;
+    std::string nickname;
+    std::vector<AccountCardRelay> relays;
+    int64_t initiation_floor = 0;
+  };
+  /** The card saying `content`: `base` when it says it all (and verifies), else a new one (`issued` set). */
+  Roe<AccountCard> IssueLocked(const std::optional<AccountCard>& base, CardContent content, int64_t now_ms,
+                               bool& issued);
+  /** `base` was signed by the account for what it says; checked once per signature. */
+  bool VerifiedLocked(const AccountCard& base, int64_t now_ms);
+  /** The relays a card issued by this device lists: its own when it is the master, else the newest card's. */
+  std::vector<AccountCardRelay> RelaysLocked(const std::vector<AccountCardDevice>& devices, const std::string& self,
+                                             const std::optional<AccountCard>& newest) const;
   Roe<AccountCard> ChangeList(const std::string& peer_id, bool make_master, int64_t now_ms);
   Roe<std::optional<AccountCard>> NewestLocked();
 
@@ -96,7 +115,9 @@ private:
   std::optional<KeyCard> keys_;
   std::function<void(const AccountCard&)> on_changed_;
   std::function<void(const AccountCard&)> on_joined_;
-  int64_t join_expected_until_ms_ = 0; // under mutex_
+  int64_t join_expected_until_ms_ = 0;   // under mutex_
+  std::vector<AccountCardRelay> relays_; // under mutex_
+  std::string verified_signature_;       // under mutex_: the kept card last found signed
 };
 
 } // namespace pbr
