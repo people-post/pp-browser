@@ -303,6 +303,26 @@ TEST_F(DeliveryOutboxTest, AFailedControlSendIsRetriedPromptlyWithoutAWake) {
   EXPECT_EQ(relay.SentCount(), 2u) << "nothing was left for the wake";
 }
 
+// A call invite refused for the stranger quota waits on its retry timer; if the recipient's grant arrives meanwhile,
+// it goes at once, before anything sent after it with the grant (its `call_ended`): the lab's redial storm rang the
+// callee for a call already over when the invite's timer fired after the end.
+TEST_F(DeliveryOutboxTest, AGrantSendsAQuotaHeldControlRetryAtOnceAndInOrder) {
+  FakeRelay relay(2, AppError::Auth(Err::Auth::StrangerQuota, "stranger_quota_exceeded"));
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(Control("invite"));
+  ASSERT_TRUE(WaitFor([&] { return Outcomes().size() == 1u; }, std::chrono::seconds(2))); // refused first
+  outbox->Send(Control("ringing"));
+  ASSERT_TRUE(WaitFor([&] { return Outcomes().size() == 2u; }, std::chrono::seconds(2)));
+  outbox->ReleaseHeldFor("account:carol");
+  EXPECT_EQ(relay.SentCount(), 2u) << "another recipient's grant releases nothing";
+  outbox->ReleaseHeldFor("account:bob");
+  ASSERT_EQ(relay.SentCount(), 4u) << "both at once, not on their timers";
+  EXPECT_EQ(relay.sent[2], "invite");
+  EXPECT_EQ(relay.sent[3], "ringing");
+  std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+  EXPECT_EQ(relay.SentCount(), 4u) << "their timers send nothing again";
+}
+
 TEST_F(DeliveryOutboxTest, CancelStopsAControlRetry) {
   FakeRelay relay(1);
   auto outbox = MakeOutbox(relay);

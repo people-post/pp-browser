@@ -297,20 +297,25 @@ bool DeliveryOutbox::RetryControlLater(Pending item, const Error& failure) {
     seq = ++next_control_retry_;
   }
   const std::string message_id = item.message_id;
-  const uint64_t timer =
-      AppRuntime::ScheduleCoordinatorOneShot(*delay, lifetime_.Bind([this, seq, item = std::move(item)]() mutable {
-        {
-          std::lock_guard lock(mutex_);
-          if (control_retries_.erase(seq) == 0) {
-            return; // Cancelled as it fired.
-          }
-        }
-        AppRuntime::PostWorkerCritical(
-            lifetime_.Bind([this, item = std::move(item)]() mutable { RetryControlNow(std::move(item)); }));
-      }));
+  const bool quota_held = RelayStrangerQuota(failure);
+  const uint64_t timer = AppRuntime::ScheduleCoordinatorOneShot(*delay, lifetime_.Bind([this, seq]() {
+    std::optional<Pending> due;
+    {
+      std::lock_guard lock(mutex_);
+      auto it = control_retries_.find(seq);
+      if (it == control_retries_.end()) {
+        return; // Cancelled, or released by a grant, as it fired.
+      }
+      due = std::move(it->second.item);
+      control_retries_.erase(it);
+    }
+    AppRuntime::PostWorkerCritical(
+        lifetime_.Bind([this, item = std::move(*due)]() mutable { RetryControlNow(std::move(item)); }));
+  }));
   // Recorded after scheduling (the timer's lock is not taken under ours); the delay is a second at least.
   std::lock_guard lock(mutex_);
-  control_retries_[seq] = ControlRetry{.timer_id = timer, .message_id = message_id};
+  control_retries_[seq] =
+      ControlRetry{.timer_id = timer, .message_id = message_id, .item = std::move(item), .quota_held = quota_held};
   return true;
 }
 
@@ -390,8 +395,16 @@ void DeliveryOutbox::ReleaseHeldFor(const std::string& recipient) {
     return;
   }
   bool held = false;
+  std::vector<std::pair<uint64_t, ControlRetry>> released; // by refusal order (seq)
   {
     std::lock_guard lock(mutex_);
+    std::erase_if(control_retries_, [&](auto& entry) {
+      if (!entry.second.quota_held || entry.second.item.relay_recipient != recipient) {
+        return false;
+      }
+      released.emplace_back(entry.first, std::move(entry.second));
+      return true;
+    });
     for (Pending& item : queue_) {
       if (item.not_before_ms != 0 && item.relay_recipient == recipient) {
         item.not_before_ms = 0;
@@ -399,8 +412,16 @@ void DeliveryOutbox::ReleaseHeldFor(const std::string& recipient) {
       }
     }
   }
+  std::sort(released.begin(), released.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+  for (auto& [seq, retry] : released) {
+    AppRuntime::CancelCoordinatorTimer(retry.timer_id);
+    RetryControlNow(std::move(retry.item));
+  }
+  if (held || !released.empty()) {
+    log().info << "grant from " << recipient << " arrived: sending what its stranger quota held back (control "
+               << released.size() << ")";
+  }
   if (held) {
-    log().info << "grant from " << recipient << " arrived: sending what its stranger quota held back";
     Retry();
   }
 }

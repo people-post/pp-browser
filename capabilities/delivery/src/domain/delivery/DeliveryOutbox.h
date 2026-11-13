@@ -93,8 +93,9 @@ public:
   /** Send what is queued again (when the inbox is synced: the relay is likely reachable). */
   void Retry();
   /**
-   * `recipient`'s grant to us just arrived: what its stranger quota held back is due now (a contact's send), and the
-   * queue is sent again. Blocking (relay sends), so off the UI thread.
+   * `recipient`'s grant to us just arrived: what its stranger quota held back is due now (a contact's send) — the
+   * control-lane retries first, in the order they were refused (a call invite before its later `call_ended`), then
+   * the queue is sent again. Blocking (relay sends), so off the UI thread.
    */
   void ReleaseHeldFor(const std::string& recipient);
   /**
@@ -137,10 +138,13 @@ private:
     uint64_t serial = 0;
   };
 
-  /** A control-lane retry waiting on its timer. */
+  /** A control-lane retry waiting on its timer: the item it sends (taken by the timer, or by ReleaseHeldFor). */
   struct ControlRetry {
     uint64_t timer_id = 0;
     std::string message_id;
+    Pending item;
+    /** Refused for the recipient's stranger quota: its grant arriving sends it at once. */
+    bool quota_held = false;
   };
 
   /** An outcome after which the request goes on (failed, queued for a retry). */

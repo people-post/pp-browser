@@ -264,7 +264,7 @@ verified envelope), at most once an hour; an ask is answered at once (at most ev
 itself a stranger's send, and the relay allows a stranger few (3 an hour per pair), so a send never asks:
 a device asks a peer it grants only when it hears from that peer after lacking its grant for a few minutes
 (a peer that just added us sends its grant unasked), at most every six hours, and 10 min after a refusal.
-When a grant arrives, the sends to its grantor that the stranger quota held back go at once.
+When a grant arrives, the sends to its grantor that the stranger quota held back go at once — control-lane retries first, in the order they were refused, so a call invite still reaches the callee before its own `call_ended`.
 
 **Renewal and stop.** A sweep on messaging ready, on each contacts or roster change and every six hours
 issues to each granted peer whose grant has less than **10 days** left. A blocked contact or a removed
