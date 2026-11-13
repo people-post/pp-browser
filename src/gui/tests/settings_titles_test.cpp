@@ -73,10 +73,10 @@ TEST(SettingsTitlesTest, TheTesterPagesStorageLibraryIsNotInsideTheGroupedSectio
   const size_t library = rml.find("{{i18n:settings.storage.library.title}}");
   ASSERT_NE(library, std::string::npos);
   const size_t own_section =
-      rml.rfind("<div class=\"settings-section stack storage-section\" data-if=\"advanced\">", library);
+      rml.rfind("<div class=\"settings-section stack storage-section\" data-if=\"tester\">", library);
   ASSERT_NE(own_section, std::string::npos);
   const size_t grouped_close =
-      rml.rfind("</div>\n      <div class=\"settings-section stack storage-section\" data-if=\"advanced\">", library);
+      rml.rfind("</div>\n      <div class=\"settings-section stack storage-section\" data-if=\"tester\">", library);
   EXPECT_NE(grouped_close, std::string::npos) << "the grouped section closes before the library section opens";
 }
 

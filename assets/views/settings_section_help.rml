@@ -69,6 +69,21 @@
           {{diagnostics_last_label}}
         </button>
         <div class="group-card">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="group-row-text">{{i18n:settings.help.show_advanced}}</span>
+                <span class="group-row-sub">{{i18n:settings.help.show_advanced.hint}}</span>
+              </span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="show_advanced_settings == 'on'"
+                      data-event-click="toggle_advanced_settings()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <div class="group-card">
           <button class="group-row" type="button" data-event-click="open_terms()">
             <span class="group-row-body">
               <span class="group-row-label"><span class="group-row-text">{{i18n:settings.help.terms}}</span></span>

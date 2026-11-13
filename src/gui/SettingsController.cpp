@@ -291,8 +291,10 @@ const SettingsSectionHandler* SettingsController::FindHandler(const std::string&
 
 void SettingsController::InitSections() {
   sections_.clear();
-  // Advanced and Test options are listed (and so reachable) only while the flag is on: five taps on the version.
-  for (const SettingsPage* page : ListedSettingsPages(ui_state_.show_advanced_settings == "on")) {
+  // Advanced is listed (and so reachable) only while "show advanced settings" is on (Me → Help); Test options only
+  // while the tester switch is on (five taps on the version).
+  for (const SettingsPage* page :
+       ListedSettingsPages(ui_state_.show_advanced_settings == "on", ui_state_.show_tester_options == "on")) {
     sections_.push_back({.id = page->id,
                          .title = Tr(page->title_key).c_str(),
                          .subtitle = "",
@@ -365,6 +367,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.home_animated_logo = bindings_.home_animated_logo.c_str();
   ui_state_.crash_reports_enabled = bindings_.crash_reports_enabled.c_str();
   ui_state_.show_advanced_settings = bindings_.show_advanced_settings.c_str();
+  ui_state_.show_tester_options = bindings_.show_tester_options.c_str();
   ui_state_.pin_protection_status = bindings_.pin_protection_status.c_str();
   ui_state_.pin_protection_is_default = bindings_.pin_protection_is_default;
   ui_state_.pin_protection_not_setup = bindings_.pin_protection_not_setup;
@@ -468,7 +471,9 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.home_animated_logo = ui_state_.home_animated_logo.c_str();
   bindings_.crash_reports_enabled = ui_state_.crash_reports_enabled.c_str();
   bindings_.show_advanced_settings = ui_state_.show_advanced_settings.c_str();
+  bindings_.show_tester_options = ui_state_.show_tester_options.c_str();
   bindings_.advanced = ui_state_.show_advanced_settings == "on";
+  bindings_.tester = ui_state_.show_tester_options == "on";
   bindings_.profile_label = ui_state_.profile_label.c_str();
   bindings_.config_dir = ui_state_.config_dir.c_str();
   bindings_.data_dir = ui_state_.data_dir.c_str();
@@ -696,6 +701,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("crash_reports_enabled", &controller.bindings_.crash_reports_enabled);
     ctor.Bind("show_advanced_settings", &controller.bindings_.show_advanced_settings);
     ctor.Bind("advanced", &controller.bindings_.advanced);
+    ctor.Bind("show_tester_options", &controller.bindings_.show_tester_options);
+    ctor.Bind("tester", &controller.bindings_.tester);
     ctor.Bind("profile_label", &controller.bindings_.profile_label);
     ctor.Bind("config_dir", &controller.bindings_.config_dir);
     ctor.Bind("data_dir", &controller.bindings_.data_dir);
@@ -818,6 +825,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
                              }
                            }));
     ctor.BindEventCallback("tap_version", DataEvent<>([this]() { OnTapVersion(); }));
+    ctor.BindEventCallback("toggle_advanced_settings", DataEvent<>([this]() { ToggleShowAdvancedSettings(); }));
     ctor.BindEventCallback("open_terms", DataEvent<>([]() { UserFeedback::Ok(Tr("settings.help.coming_soon")); }));
     ctor.BindEventCallback("open_privacy_policy",
                            DataEvent<>([]() { UserFeedback::Ok(Tr("settings.help.coming_soon")); }));
@@ -942,6 +950,8 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "ai_dot_look");
   host.Dirty("settings", "ai_dot_size_label");
   host.Dirty("settings", "advanced");
+  host.Dirty("settings", "show_tester_options");
+  host.Dirty("settings", "tester");
   host.Dirty("settings", "profile_label");
   host.Dirty("settings", "config_dir");
   host.Dirty("settings", "data_dir");
@@ -2340,10 +2350,10 @@ void SettingsController::SaveAiDot(const bool shown, const std::string& look, co
 }
 
 void SettingsController::OnTapVersion() {
-  const bool was_on = bindings_.show_advanced_settings == "on";
+  const bool was_on = bindings_.show_tester_options == "on";
   const VersionTapCounter::Result tap = version_taps_.Tap(SDL_GetTicks());
   if (tap.action == VersionTapCounter::Action::Toggle) {
-    ToggleShowAdvancedSettings();
+    ToggleShowTesterOptions();
     UserFeedback::Ok(Tr(was_on ? "settings.help.tester_off" : "settings.help.tester_on"));
   } else if (tap.action == VersionTapCounter::Action::Hint) {
     UserFeedback::Ok(
@@ -2356,6 +2366,15 @@ void SettingsController::ToggleShowAdvancedSettings() {
   PullBindingsToUiState();
   MarkSectionDirty("about", /*show_toast=*/false);
   InitSections(); // the advanced-only sections appear or go
+  PushUiStateToBindings();
+  DirtyAll();
+}
+
+void SettingsController::ToggleShowTesterOptions() {
+  bindings_.show_tester_options = bindings_.show_tester_options == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("about", /*show_toast=*/false);
+  InitSections(); // the Test options page appears or goes
   PushUiStateToBindings();
   DirtyAll();
 }

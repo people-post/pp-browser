@@ -16,6 +16,8 @@ struct McpServerUiState {
 struct SettingsUiState {
   /** UI switch value: "on" or "off" (Me → About). Hides ids, endpoints, MCP and paths when off. */
   std::string show_advanced_settings = "off";
+  /** UI switch value: "on" or "off" (Me → Help, five taps on the version). Shows the Test options page and the QA service. */
+  std::string show_tester_options = "off";
   std::string llm_preset = "brief";
   std::string llm_base_url;
   std::string llm_model;

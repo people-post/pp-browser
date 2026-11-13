@@ -27,13 +27,17 @@ size_t CountOf(const std::string& text, const std::string& needle) {
 
 } // namespace
 
-TEST(SettingsGatingTest, TheRootOfAdvancedAndTestOptionsIsGatedOnTheFlag) {
+TEST(SettingsGatingTest, TheRootOfAdvancedAndTestOptionsIsGatedOnTheirOwnSwitch) {
   for (const char* page : {"advanced", "tester"}) {
     const std::string rml = ReadAsset(std::string("views/settings_section_") + page + ".rml");
     ASSERT_FALSE(rml.empty()) << page;
     const size_t end_of_root = rml.find('>');
     ASSERT_NE(end_of_root, std::string::npos);
-    EXPECT_NE(rml.substr(0, end_of_root).find("data-if=\"advanced\""), std::string::npos) << page;
+    const std::string root = rml.substr(0, end_of_root);
+    EXPECT_NE(root.find(std::string("data-if=\"") + page + "\""), std::string::npos) << page;
+    EXPECT_EQ(root.find(std::string("data-if=\"") + (std::string(page) == "tester" ? "advanced" : "tester") + "\""),
+              std::string::npos)
+        << page << " follows only its own switch";
   }
   // Every other page is not gated at its root.
   for (const char* page :
@@ -95,13 +99,27 @@ TEST(SettingsGatingTest, HomeAndTheDesktopListNameNoPageDirectly) {
   EXPECT_EQ(CountOf(home, "data-for=\"section : sections\""), 4u) << "three phone groups and the desktop list";
 }
 
-TEST(SettingsGatingTest, TheFlagIsSwitchedOnlyByTheVersionRow) {
+TEST(SettingsGatingTest, AdvancedIsSwitchedOnlyByTheHelpSwitchAndTestOptionsOnlyByTheVersionRow) {
   const std::string help = ReadAsset("views/settings_section_help.rml");
-  EXPECT_EQ(help.find("toggle_show_advanced_settings"), std::string::npos) << "the switch row is gone";
+  EXPECT_EQ(help.find("toggle_show_advanced_settings"), std::string::npos);
   EXPECT_EQ(help.find("settings.about.advanced"), std::string::npos);
+  EXPECT_EQ(CountOf(help, "data-event-click=\"toggle_advanced_settings()\""), 1u) << "one row for both layouts";
   EXPECT_EQ(CountOf(help, "data-event-click=\"tap_version()\""), 2u) << "phone row and desktop line";
   EXPECT_NE(help.find("data-event-click=\"open_terms()\""), std::string::npos);
   EXPECT_NE(help.find("data-event-click=\"open_privacy_policy()\""), std::string::npos);
+  // Neither event is bound anywhere but the Help page.
+  for (const char* page :
+       {"profile", "privacy", "security", "devices", "notifications", "appearance", "storage", "advanced", "tester"}) {
+    const std::string rml = ReadAsset(std::string("views/settings_section_") + page + ".rml");
+    EXPECT_EQ(rml.find("toggle_advanced_settings"), std::string::npos) << page;
+    EXPECT_EQ(rml.find("tap_version"), std::string::npos) << page;
+  }
+}
+
+TEST(SettingsGatingTest, TheTestOptionsPageFollowsOnlyTheTesterSwitch) {
+  const std::string rml = ReadAsset("views/settings_section_tester.rml");
+  EXPECT_EQ(rml.find("advanced"), std::string::npos) << "no advanced condition left";
+  EXPECT_NE(rml.find("data-if=\"tester\""), std::string::npos);
 }
 
 } // namespace pbr

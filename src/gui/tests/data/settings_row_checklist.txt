@@ -258,6 +258,7 @@ data-event-click="toggle_attachment_auto_wifi()"	1	storage	storage	storage_page 
 {{storage_tab_picture_label}}	1	-	storage	storage_page == 'items'	storage	
 {{storage_tab_video_label}}	1	-	storage	storage_page == 'items'	storage	
 {{storage_total_label}}	1	-	storage	storage_page == 'main';;storage_ready	storage	
+data-class-settings-switch--on="show_advanced_settings == 'on'"	1	-	help	-	-	
 data-class-settings-switch--on="crash_reports_enabled == 'on'"	2	-	help	-	about,security	
 data-event-click="ask_setting_help('settings.security.crash_reports.label')"	2	-	help	-	about,security	
 data-event-click="copy_diagnostics_id()"	2	-	help	diagnostics_last_id != ''	about,security	
@@ -267,6 +268,7 @@ data-event-click="open_support_chat()"	1	-	help	support_visible	-
 data-event-click="open_terms()"	1	-	help	-	-	
 data-event-click="send_diagnostics()"	2	-	help	show_diagnostics_send	about,security	
 data-event-click="tap_version()"	2	-	help	-	-	
+data-event-click="toggle_advanced_settings()"	1	about	help	-	-	
 data-event-click="toggle_crash_reports()"	2	security	help	-	about,security	
 data-help-key="troubleshooting/send-diagnostics"	2	-	help	show_diagnostics_send	about,security	
 {{app_name}}	1	-	help	-	about	
@@ -276,6 +278,8 @@ data-help-key="troubleshooting/send-diagnostics"	2	-	help	show_diagnostics_send	
 {{i18n:settings.about.improve.title}}	1	-	help	-	about	
 {{i18n:settings.about.version}}	2	-	help	-	about	
 {{i18n:settings.help.privacy_policy}}	1	-	help	-	-	
+{{i18n:settings.help.show_advanced.hint}}	1	-	help	-	-	
+{{i18n:settings.help.show_advanced}}	1	-	help	-	-	
 {{i18n:settings.help.terms}}	1	-	help	-	-	
 {{i18n:settings.security.crash_reports.help}}	2	-	help	-	about,security	
 {{i18n:settings.security.crash_reports.label}}	2	-	help	-	about,security	
@@ -407,69 +411,69 @@ data-value="server.url"	1	integrations	advanced	advanced;;advanced	integrations
 {{reachability_status_label}}	1	-	advanced	advanced;;show_connection_card	network	
 {{reachability_summary}}	1	-	advanced	advanced;;show_connection_card	network	
 {{tool_permissions_summary}}	1	-	advanced	advanced;;advanced	security	
-data-class-settings-switch--on="call_diagnostics == 'on'"	1	-	tester	advanced	appearance	
-data-event-change="on_network_field_changed()"	3	network	tester	advanced;;advanced;;backend_is_custom	network	
-data-event-click="clear_undelivered_older_than()"	1	security	tester	advanced;;advanced	security	
-data-event-click="copy_cas_tip(item_index)"	1	storage	tester	advanced;;advanced;;item.can_copy_tip	storage	
-data-event-click="fetch_cas_tip()"	1	storage	tester	advanced;;advanced	storage	
-data-event-click="on_choose_backend()"	1	network	tester	advanced;;show_backend_switch	network	
-data-event-click="open_ui_perf_test()"	1	-	tester	advanced;;dev_tools_available	about	
-data-event-click="reset_section('network')"	1	network	tester	advanced;;advanced	network	
-data-event-click="set_cas_library_filter('all')"	1	storage	tester	advanced;;advanced	storage	
-data-event-click="set_cas_library_filter('cache')"	1	storage	tester	advanced;;advanced	storage	
-data-event-click="set_cas_library_filter('private')"	1	storage	tester	advanced;;advanced	storage	
-data-event-click="set_cas_library_filter('public')"	1	storage	tester	advanced;;advanced	storage	
-data-event-click="share_cas_publicly(item_index)"	1	storage	tester	advanced;;advanced;;item.can_share_publicly	storage	
-data-event-click="show_ask_ai_intro_again()"	1	-	tester	advanced	tester	
-data-event-click="simulate_chats_link_connecting()"	1	-	tester	advanced;;dev_tools_available	about	
-data-event-click="simulate_chats_link_offline()"	1	-	tester	advanced;;dev_tools_available	about	
-data-event-click="simulate_chats_link_online()"	1	-	tester	advanced;;dev_tools_available	about	
-data-event-click="toggle_call_diagnostics()"	1	appearance	tester	advanced	appearance	
-data-event-click="unpublish_cas(item_index)"	1	storage	tester	advanced;;advanced;;item.can_unpublish	storage	
-data-value="directory_base_url"	1	network	tester	advanced;;advanced;;backend_is_custom	network	
-data-value="registration_base_url"	1	network	tester	advanced;;advanced;;backend_is_custom	network	
-data-value="relay_base_url"	1	network	tester	advanced;;advanced;;backend_is_custom	network	
-{{backend_label}}	1	-	tester	advanced;;show_backend_switch	network	
-{{cas_library_empty_label}}	1	-	tester	advanced;;advanced;;cas_library_rows.size == 0	storage	
-{{config_dir}}	1	-	tester	advanced;;advanced	storage	
-{{data_dir}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:common.reset_defaults}}	1	-	tester	advanced;;advanced	appearance,integrations,llm,network	
-{{i18n:dev.link.sim_connecting}}	1	-	tester	advanced;;dev_tools_available	about	
-{{i18n:dev.link.sim_offline}}	1	-	tester	advanced;;dev_tools_available	about	
-{{i18n:dev.link.sim_online}}	1	-	tester	advanced;;dev_tools_available	about	
-{{i18n:settings.tester.show_ask_ai_intro}}	1	-	tester	advanced	tester	
-{{i18n:dev.perf.row}}	1	-	tester	advanced;;dev_tools_available	about	
-{{i18n:settings.call_diagnostics.help}}	1	-	tester	advanced	appearance	
-{{i18n:settings.call_diagnostics.label}}	1	-	tester	advanced	appearance	
-{{i18n:settings.network.backend.help}}	1	-	tester	advanced;;show_backend_switch	network	
-{{i18n:settings.network.backend.restart}}	1	-	tester	advanced;;show_backend_switch && backend_restart_pending	network	
-{{i18n:settings.network.backend}}	1	-	tester	advanced;;show_backend_switch	network	
-{{i18n:settings.network.directory}}	1	-	tester	advanced;;advanced;;backend_is_custom	network	
-{{i18n:settings.network.registration}}	1	-	tester	advanced;;advanced;;backend_is_custom	network	
-{{i18n:settings.network.relay}}	1	-	tester	advanced;;advanced;;backend_is_custom	network	
-{{i18n:settings.security.clear_undelivered.help}}	1	-	tester	advanced;;advanced	security	
-{{i18n:settings.security.clear_undelivered}}	1	-	tester	advanced;;advanced	security	
-{{i18n:settings.security.group.diagnostics}}	1	-	tester	advanced;;advanced	security	
-{{i18n:settings.storage.config_label}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.data_label}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.copy_tip}}	1	-	tester	advanced;;advanced;;item.can_copy_tip	storage	
-{{i18n:settings.storage.library.fetch_tip}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.filter_all}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.filter_cache}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.filter_private}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.filter_public}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.help}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.share_publicly}}	1	-	tester	advanced;;advanced;;item.can_share_publicly	storage	
-{{i18n:settings.storage.library.title}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.unpublish}}	1	-	tester	advanced;;advanced;;item.can_unpublish	storage	
-{{i18n:settings.storage.profile_data_label}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.profile_label}}	1	-	tester	advanced;;advanced	storage	
-{{item.detail}}	1	-	tester	advanced;;advanced	storage	
-{{item.pin_label}}	1	-	tester	advanced;;advanced	storage	
-{{item.realm_label}}	1	-	tester	advanced;;advanced	storage	
-{{item.title}}	1	-	tester	advanced;;advanced	storage	
-{{profile_dir}}	1	-	tester	advanced;;advanced	storage	
-{{profile_label}}	1	-	tester	advanced;;advanced	storage	
+data-class-settings-switch--on="call_diagnostics == 'on'"	1	-	tester	tester	appearance	
+data-event-change="on_network_field_changed()"	3	network	tester	tester;;tester;;backend_is_custom	network	
+data-event-click="clear_undelivered_older_than()"	1	security	tester	tester;;tester	security	
+data-event-click="copy_cas_tip(item_index)"	1	storage	tester	tester;;tester;;item.can_copy_tip	storage	
+data-event-click="fetch_cas_tip()"	1	storage	tester	tester;;tester	storage	
+data-event-click="on_choose_backend()"	1	network	tester	tester;;show_backend_switch	network	
+data-event-click="open_ui_perf_test()"	1	-	tester	tester;;dev_tools_available	about	
+data-event-click="reset_section('network')"	1	network	tester	tester;;tester	network	
+data-event-click="set_cas_library_filter('all')"	1	storage	tester	tester;;tester	storage	
+data-event-click="set_cas_library_filter('cache')"	1	storage	tester	tester;;tester	storage	
+data-event-click="set_cas_library_filter('private')"	1	storage	tester	tester;;tester	storage	
+data-event-click="set_cas_library_filter('public')"	1	storage	tester	tester;;tester	storage	
+data-event-click="share_cas_publicly(item_index)"	1	storage	tester	tester;;tester;;item.can_share_publicly	storage	
+data-event-click="show_ask_ai_intro_again()"	1	-	tester	tester	tester	
+data-event-click="simulate_chats_link_connecting()"	1	-	tester	tester;;dev_tools_available	about	
+data-event-click="simulate_chats_link_offline()"	1	-	tester	tester;;dev_tools_available	about	
+data-event-click="simulate_chats_link_online()"	1	-	tester	tester;;dev_tools_available	about	
+data-event-click="toggle_call_diagnostics()"	1	appearance	tester	tester	appearance	
+data-event-click="unpublish_cas(item_index)"	1	storage	tester	tester;;tester;;item.can_unpublish	storage	
+data-value="directory_base_url"	1	network	tester	tester;;tester;;backend_is_custom	network	
+data-value="registration_base_url"	1	network	tester	tester;;tester;;backend_is_custom	network	
+data-value="relay_base_url"	1	network	tester	tester;;tester;;backend_is_custom	network	
+{{backend_label}}	1	-	tester	tester;;show_backend_switch	network	
+{{cas_library_empty_label}}	1	-	tester	tester;;tester;;cas_library_rows.size == 0	storage	
+{{config_dir}}	1	-	tester	tester;;tester	storage	
+{{data_dir}}	1	-	tester	tester;;tester	storage	
+{{i18n:common.reset_defaults}}	1	-	tester	tester;;tester	appearance,integrations,llm,network	
+{{i18n:dev.link.sim_connecting}}	1	-	tester	tester;;dev_tools_available	about	
+{{i18n:dev.link.sim_offline}}	1	-	tester	tester;;dev_tools_available	about	
+{{i18n:dev.link.sim_online}}	1	-	tester	tester;;dev_tools_available	about	
+{{i18n:settings.tester.show_ask_ai_intro}}	1	-	tester	tester	tester	
+{{i18n:dev.perf.row}}	1	-	tester	tester;;dev_tools_available	about	
+{{i18n:settings.call_diagnostics.help}}	1	-	tester	tester	appearance	
+{{i18n:settings.call_diagnostics.label}}	1	-	tester	tester	appearance	
+{{i18n:settings.network.backend.help}}	1	-	tester	tester;;show_backend_switch	network	
+{{i18n:settings.network.backend.restart}}	1	-	tester	tester;;show_backend_switch && backend_restart_pending	network	
+{{i18n:settings.network.backend}}	1	-	tester	tester;;show_backend_switch	network	
+{{i18n:settings.network.directory}}	1	-	tester	tester;;tester;;backend_is_custom	network	
+{{i18n:settings.network.registration}}	1	-	tester	tester;;tester;;backend_is_custom	network	
+{{i18n:settings.network.relay}}	1	-	tester	tester;;tester;;backend_is_custom	network	
+{{i18n:settings.security.clear_undelivered.help}}	1	-	tester	tester;;tester	security	
+{{i18n:settings.security.clear_undelivered}}	1	-	tester	tester;;tester	security	
+{{i18n:settings.security.group.diagnostics}}	1	-	tester	tester;;tester	security	
+{{i18n:settings.storage.config_label}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.data_label}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.copy_tip}}	1	-	tester	tester;;tester;;item.can_copy_tip	storage	
+{{i18n:settings.storage.library.fetch_tip}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.filter_all}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.filter_cache}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.filter_private}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.filter_public}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.help}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.share_publicly}}	1	-	tester	tester;;tester;;item.can_share_publicly	storage	
+{{i18n:settings.storage.library.title}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.unpublish}}	1	-	tester	tester;;tester;;item.can_unpublish	storage	
+{{i18n:settings.storage.profile_data_label}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.profile_label}}	1	-	tester	tester;;tester	storage	
+{{item.detail}}	1	-	tester	tester;;tester	storage	
+{{item.pin_label}}	1	-	tester	tester;;tester	storage	
+{{item.realm_label}}	1	-	tester	tester;;tester	storage	
+{{item.title}}	1	-	tester	tester;;tester	storage	
+{{profile_dir}}	1	-	tester	tester;;tester	storage	
+{{profile_label}}	1	-	tester	tester;;tester	storage	
 {{i18n:settings.profile.id_row}}	1	-	profile	-	profile	
 {{i18n:settings.profile.id_none}}	1	-	profile	profile_relay_id == ''	profile	
 {{i18n:settings.profile.change_photo}}	1	-	profile	-	profile	
@@ -491,4 +495,4 @@ data-event-click="export_link_device()"	2	-	devices	security_can_export_link && 
 {{i18n:settings.security.link_device}}	1	-	devices	-	devices	
 {{i18n:settings.advanced.intro}}	1	-	advanced	advanced	-	
 {{i18n:settings.privacy.blocked_help}}	1	-	privacy	-	security	
-{{i18n:settings.tester.banner}}	1	-	tester	advanced	-	
+{{i18n:settings.tester.banner}}	1	-	tester	tester	-	

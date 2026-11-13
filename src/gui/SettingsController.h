@@ -254,6 +254,9 @@ private:
     ui::String show_advanced_settings = "off";
     /** show_advanced_settings == "on"; templates gate technical rows on it. */
     bool advanced = false;
+    ui::String show_tester_options = "off";
+    /** show_tester_options == "on"; the Test options page gates on it. */
+    bool tester = false;
     ui::String profile_label;
     ui::String config_dir;
     ui::String data_dir;
@@ -318,6 +321,7 @@ private:
   void ToggleCallDiagnostics();
   void ToggleHomeShowDynamic();
   void ToggleShowAdvancedSettings();
+  void ToggleShowTesterOptions();
   void OnTapVersion();
   /** Me → AI assistant: the AI dot's switch, look (`a`–`d`) and size (`s` / `m` / `l`), saved to the profile prefs at once. */
   void ToggleHomeAnimatedLogo();
