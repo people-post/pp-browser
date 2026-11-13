@@ -237,10 +237,6 @@ void SettingsController::BindShowMyQr(std::function<void()> show) {
   profile_actions_.BindShowMyQr(std::move(show));
 }
 
-void SettingsController::BindShareOwnCard(std::function<void()> share) {
-  profile_actions_.BindShareOwnCard(std::move(share));
-}
-
 void SettingsController::BindOpenUiPerfTest(std::function<void()> open) {
   open_ui_perf_test_ = std::move(open);
 }

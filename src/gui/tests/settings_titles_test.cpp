@@ -80,8 +80,8 @@ TEST(SettingsTitlesTest, TheTesterPagesStorageLibraryIsNotInsideTheGroupedSectio
   EXPECT_NE(grouped_close, std::string::npos) << "the grouped section closes before the library section opens";
 }
 
-TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithAVersionLineAndTheAccountId) {
-  // Follows logs/mockups/settings-reorg-1110.html: no icon tiles on the entry rows, the id under the name, the app
+TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithAVersionLineAndTheCardCaption) {
+  // Follows logs/mockups/settings-reorg-1110.html: no icon tiles on the entry rows, the card caption under the name, the app
   // version at the end (not tappable here: the five taps stay on the help page's version row).
   const std::string rml = ReadAsset("views/settings.rml");
   const size_t phone = rml.find("<div class=\"settings-phone-only me-home\">");
@@ -90,8 +90,7 @@ TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithAVersionLineAndTheAccountId) {
   ASSERT_NE(phone_end, std::string::npos);
   const std::string home = rml.substr(phone, phone_end - phone);
   EXPECT_EQ(home.find("group-icon"), std::string::npos);
-  EXPECT_NE(home.find("<p class=\"me-card-meta\" data-if=\"profile_relay_id != ''\">{{profile_relay_id}}</p>"),
-            std::string::npos);
+  EXPECT_NE(home.find("<p class=\"me-card-meta\">{{i18n:settings.card.caption}}</p>"), std::string::npos);
   EXPECT_NE(home.find("<p class=\"group-foot me-home-ver\">{{app_name}} {{app_version}}</p>"), std::string::npos);
   EXPECT_EQ(home.find("tap_version"), std::string::npos);
   const std::string css = ReadAsset("themes/components.rcss");
@@ -101,41 +100,53 @@ TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithAVersionLineAndTheAccountId) {
   EXPECT_NE(css.find(".shell-layer-compact .settings-mock .group-row-body {\n  min-height: 52dp;"), std::string::npos);
 }
 
-TEST(SettingsTitlesTest, TheMeCardHasThreeTilesShareAccountShareCardAndQr) {
-  // DEV/PLAN-fewer-taps-2.md commit 1: at the right end of the card's single row, in this order, each tile in the settings model with its event.
+TEST(SettingsTitlesTest, TheMeCardHasThreeButtonsCopyShareAndQr) {
+  // At the right end of the card's single row, in this order, identical buttons, each with its event and short label.
   const std::string rml = ReadAsset("views/settings.rml");
+  const size_t card = rml.find("<div class=\"me-card-row\">");
   const size_t row = rml.find("<div class=\"me-card-acts row\">");
+  ASSERT_NE(card, std::string::npos);
   ASSERT_NE(row, std::string::npos);
   const size_t end = rml.find("</div>", row);
-  const std::string tiles = rml.substr(row, end - row);
-  const size_t account = tiles.find("data-event-click=\"share_profile()\"");
-  const size_t card = tiles.find("data-event-click=\"share_profile_card()\"");
-  const size_t qr = tiles.find("data-event-click=\"show_my_qr()\"");
-  ASSERT_NE(account, std::string::npos);
-  ASSERT_NE(card, std::string::npos);
+  const std::string buttons = rml.substr(row, end - row);
+  const size_t copy = buttons.find("data-event-click=\"copy_profile_id()\"");
+  const size_t share = buttons.find("data-event-click=\"share_profile()\"");
+  const size_t qr = buttons.find("data-event-click=\"show_my_qr()\"");
+  ASSERT_NE(copy, std::string::npos);
+  ASSERT_NE(share, std::string::npos);
   ASSERT_NE(qr, std::string::npos);
-  EXPECT_LT(account, card);
-  EXPECT_LT(card, qr);
-  EXPECT_NE(tiles.find("{{i18n:settings.card.share_account}}"), std::string::npos);
-  EXPECT_NE(tiles.find("{{i18n:settings.card.share_card}}"), std::string::npos);
-  EXPECT_NE(tiles.find("{{i18n:settings.profile.show_qr}}"), std::string::npos);
-  // The card tile stays hidden until something sends my card (commit 2); the other two always show.
-  EXPECT_NE(tiles.find("data-if=\"profile_share_card_shown\" data-event-click=\"share_profile_card()\""),
-            std::string::npos);
-  // The old small share icon beside the name is gone; the copy icon stays.
-  EXPECT_EQ(rml.substr(0, row).find("share_profile()"), std::string::npos);
-  EXPECT_NE(rml.substr(0, row).find("copy_profile_id()"), std::string::npos);
+  EXPECT_LT(copy, share);
+  EXPECT_LT(share, qr);
+  EXPECT_NE(buttons.find("{{i18n:settings.card.copy}}"), std::string::npos);
+  EXPECT_NE(buttons.find("{{i18n:settings.card.share}}"), std::string::npos);
+  EXPECT_NE(buttons.find("{{i18n:settings.card.qr}}"), std::string::npos);
+  size_t count = 0;
+  for (size_t at = buttons.find("class=\"me-card-act\""); at != std::string::npos;
+       at = buttons.find("class=\"me-card-act\"", at + 1)) {
+    ++count;
+  }
+  EXPECT_EQ(count, 3u);
+  // No account id under the name, no separate copy icon, no hidden share-card button: a caption line only.
+  const std::string card_markup = rml.substr(card, end - card);
+  EXPECT_EQ(card_markup.find("profile_relay_id"), std::string::npos);
+  EXPECT_EQ(card_markup.find("relay_id_none"), std::string::npos);
+  EXPECT_EQ(card_markup.find("cd-icon-btn"), std::string::npos);
+  EXPECT_EQ(card_markup.find("share_profile_card"), std::string::npos);
+  EXPECT_NE(card_markup.find("<p class=\"me-card-meta\">{{i18n:settings.card.caption}}</p>"), std::string::npos);
 }
 
-TEST(SettingsTitlesTest, TheMeCardTilesAreLabelledInBothLanguages) {
+TEST(SettingsTitlesTest, TheMeCardTextIsLabelledInBothLanguages) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(Tr("settings.card.share_account"), "分享账号");
-  EXPECT_EQ(Tr("settings.card.share_card"), "分享名片");
-  EXPECT_EQ(Tr("settings.profile.show_qr"), "二维码");
+  EXPECT_EQ(Tr("settings.card.caption"), "我的名片");
+  EXPECT_EQ(Tr("settings.card.copy"), "复制");
+  EXPECT_EQ(Tr("settings.card.share"), "分享");
+  EXPECT_EQ(Tr("settings.card.qr"), "二维码");
   LocalizationService::Instance().SetPreferredLanguage("en");
-  EXPECT_EQ(Tr("settings.card.share_account"), "Share account");
-  EXPECT_EQ(Tr("settings.card.share_card"), "Share my card");
+  EXPECT_EQ(Tr("settings.card.caption"), "My card");
+  EXPECT_EQ(Tr("settings.card.copy"), "Copy");
+  EXPECT_EQ(Tr("settings.card.share"), "Share");
+  EXPECT_EQ(Tr("settings.card.qr"), "QR code");
 }
 
 TEST(SettingsTitlesTest, TheProfilePageFollowsTheMockupAndKeepsItsAccountGates) {

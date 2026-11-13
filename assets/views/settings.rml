@@ -31,27 +31,22 @@
             </div>
             <div class="me-card-text">
               <p class="me-card-name">{{profile_nickname}}</p>
-              <p class="me-card-meta" data-if="profile_relay_id != ''">{{profile_relay_id}}</p>
-              <p class="me-card-meta" data-if="profile_relay_id == ''">{{i18n:settings.profile.relay_id_none}}</p>
+              <p class="me-card-meta">{{i18n:settings.card.caption}}</p>
             </div>
           </button>
-          <button class="cd-icon-btn" type="button" data-event-click="copy_profile_id()">
-            <svg class="cd-icon" src="../icons/v2/copy.svg" width="20" height="20"></svg>
-          </button>
-          <!-- 我的名片: on the same row, right side: share the account text, send my card into a chat (hidden until it
-               is wired), show the QR page. Plain icons with a small word under each, 46x50dp tap areas. -->
+          <!-- 我的名片: the same row, right side: three identical buttons (icon over a small word), 48x50dp tap areas. -->
           <div class="me-card-acts row">
-            <button class="me-card-act" type="button" data-event-click="share_profile()">
-              <svg class="cd-icon" src="../icons/v2/at-sign.svg" width="22" height="22"></svg>
-              <p class="cd-act-label">{{i18n:settings.card.share_account}}</p>
+            <button class="me-card-act" type="button" data-event-click="copy_profile_id()">
+              <svg class="cd-icon" src="../icons/v2/copy.svg" width="22" height="22"></svg>
+              <p class="cd-act-label">{{i18n:settings.card.copy}}</p>
             </button>
-            <button class="me-card-act" type="button" data-if="profile_share_card_shown" data-event-click="share_profile_card()">
-              <svg class="cd-icon" src="../icons/v2/user.svg" width="22" height="22"></svg>
-              <p class="cd-act-label">{{i18n:settings.card.share_card}}</p>
+            <button class="me-card-act" type="button" data-event-click="share_profile()">
+              <svg class="cd-icon" src="../icons/share.svg" width="22" height="22"></svg>
+              <p class="cd-act-label">{{i18n:settings.card.share}}</p>
             </button>
             <button class="me-card-act" type="button" data-event-click="show_my_qr()">
               <svg class="cd-icon" src="../icons/v2/qr-code.svg" width="22" height="22"></svg>
-              <p class="cd-act-label">{{i18n:settings.profile.show_qr}}</p>
+              <p class="cd-act-label">{{i18n:settings.card.qr}}</p>
             </button>
           </div>
         </div>

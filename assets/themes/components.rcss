@@ -13641,9 +13641,9 @@ textarea:composing ~ .prompt-composer-label,
 
 .shell-layer-compact .me-home .me-card-avatar,
 .shell-layer-compact .me-home .me-card-avatar-image {
-  width: 56dp;
-  height: 56dp;
-  border-radius: 28dp;
+  width: 64dp;
+  height: 64dp;
+  border-radius: 32dp;
 }
 
 .shell-layer-compact .me-home .me-card-avatar .avatar-letter {
@@ -13655,16 +13655,11 @@ textarea:composing ~ .prompt-composer-label,
   line-height: 26dp;
 }
 
-.shell-layer-compact .me-home .cd-icon-btn {
-  width: 36dp;
-  height: 44dp;
-}
-
 /* The three share buttons at the right end of the card's one row: icon over a small word, no fill. */
 .shell-layer-compact .me-home .me-card-acts {
   flex-shrink: 0;
   align-items: center;
-  margin-right: 8dp;
+  margin-right: 4dp;
 }
 
 .shell-layer-compact .me-home .me-card-act {
@@ -13672,13 +13667,18 @@ textarea:composing ~ .prompt-composer-label,
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 46dp;
+  width: 48dp;
   height: 50dp;
   margin: 0;
   padding: 0;
   border: 0;
   box-sizing: border-box;
   cursor: pointer;
+}
+
+.shell-layer-compact .me-home .me-card-meta {
+  font-size: 13dp;
+  line-height: 18dp;
 }
 
 .shell-layer-compact .me-home .me-card-act:active {

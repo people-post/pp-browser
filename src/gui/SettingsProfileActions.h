@@ -51,10 +51,8 @@ public:
    * its argument at once, or once that renewal ends. Unbound: at once.
    */
   void BindRunWhenRegistrationIdle(std::function<void(std::function<void()>)> run);
-  /** The "QR code" tile on the Me card opens the full-page "My QR code" (ContactsController::OpenMyQr). */
+  /** The "QR code" button on the Me card opens the full-page "My QR code" (ContactsController::OpenMyQr). */
   void BindShowMyQr(std::function<void()> show);
-  /** The "Share my card" tile: shown only while this is bound (it sends my card into a chat). */
-  void BindShareOwnCard(std::function<void()> share);
 
 private:
   /** False when it did not register (the failure is reported). */
@@ -88,8 +86,6 @@ private:
 
   std::function<void(std::function<void()>)> run_when_registration_idle_;
   std::function<void()> show_my_qr_;
-  std::function<void()> share_own_card_;
-  bool share_card_shown_ = false;
   std::string qr_locator_;
   ui::String qr_svg_rml_;
   bool show_qr_ = false;
