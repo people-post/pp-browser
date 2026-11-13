@@ -175,6 +175,7 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
                         .amp_peer_key = request.amp_peer_key,
                         .group_member = request.group_member,
                         .copy_device = request.copy_device,
+                        .relay_recipient = *request.relay_recipient,
                         .serial = serial};
         if (RelayStrangerQuota(sent.error())) {
           pending.not_before_ms = util::NowUnixMs() + StrangerQuotaRetryAfter(1).count();
@@ -382,6 +383,26 @@ void DeliveryOutbox::PurgeThread(const std::string& thread_id) {
     }
     return true;
   });
+}
+
+void DeliveryOutbox::ReleaseHeldFor(const std::string& recipient) {
+  if (recipient.empty()) {
+    return;
+  }
+  bool held = false;
+  {
+    std::lock_guard lock(mutex_);
+    for (Pending& item : queue_) {
+      if (item.not_before_ms != 0 && item.relay_recipient == recipient) {
+        item.not_before_ms = 0;
+        held = true;
+      }
+    }
+  }
+  if (held) {
+    log().info << "grant from " << recipient << " arrived: sending what its stranger quota held back";
+    Retry();
+  }
 }
 
 void DeliveryOutbox::Retry() {

@@ -118,6 +118,9 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
           identity, own_cards_, account_keys, session_keys_, [this]() { return transports_.DirectChat(); }, outbox_),
       relay_grants_(identity, account_keys, control_lane_) {
   redirectLogger("MeshDeliveryOrchestrator");
+  relay_grants_.SetOnGrantReceived([this](const std::string& grantor) {
+    AppRuntime::PostWorkerNormal([this, grantor]() { outbox_.ReleaseHeldFor(grantor); });
+  });
   receive_pipeline_ = std::make_unique<RelayReceivePipeline>(
       store_,
       [this](const std::string& account_id) -> std::optional<AccountCard> {

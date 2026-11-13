@@ -463,6 +463,13 @@ TEST_F(DeliveryOutboxTest, AStrangerQuotaRefusalWaitsOutItsBackoff) {
   Drain();
   EXPECT_EQ(relay.SentCount(), 1u) << "not again before its backoff";
   EXPECT_TRUE(outbox->SendStartedMs("m1"));
+  outbox->ReleaseHeldFor("account:carol");
+  Drain();
+  EXPECT_EQ(relay.SentCount(), 1u) << "another recipient's grant releases nothing";
+  outbox->ReleaseHeldFor("account:bob");
+  Drain();
+  EXPECT_EQ(relay.SentCount(), 2u) << "Bob's grant arrived: a contact's send now, at once";
+  EXPECT_FALSE(outbox->SendStartedMs("m1"));
   EXPECT_EQ(StrangerQuotaRetryAfter(1), std::chrono::minutes(1));
   EXPECT_EQ(StrangerQuotaRetryAfter(3), std::chrono::minutes(4));
   EXPECT_EQ(StrangerQuotaRetryAfter(12), std::chrono::minutes(16));

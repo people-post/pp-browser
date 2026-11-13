@@ -150,9 +150,9 @@ protected:
   }
   /** Bob's grant to us, signed by Bob's account key. */
   RelayGrant BobsGrant(const int64_t issued_at) {
-    return IssueRelayGrant(bob_.account_id, me_, issued_at, [this](const std::vector<uint8_t>& bytes) {
-             return bob_.Sign(bytes);
-           }).value();
+    return IssueRelayGrant(bob_.account_id, me_, issued_at,
+                           [this](const std::vector<uint8_t>& bytes) { return bob_.Sign(bytes); })
+        .value();
   }
 
   std::filesystem::path dir_;
@@ -217,8 +217,8 @@ TEST_F(RelayGrantCoordinatorTest, AStoppedPeerIsNotRenewed) {
   now_ += 25 * kDayMs;
   grants_->EnsureGranted({bob_.account_id});
   grants_->NoteHeardFrom(bob_.account_id);
-  ASSERT_TRUE(static_cast<bool>(grants_->OnNotice(relay_grant::Notice{.kind = relay_grant::NoticeKind::Ask},
-                                                  bob_.account_id)));
+  ASSERT_TRUE(
+      static_cast<bool>(grants_->OnNotice(relay_grant::Notice{.kind = relay_grant::NoticeKind::Ask}, bob_.account_id)));
   EXPECT_EQ(Settled(bob_.account_id), 1) << "nothing more to a blocked contact";
   EXPECT_FALSE(grant_store_.IssuedTo(bob_.account_id).value());
 }
@@ -238,15 +238,15 @@ TEST_F(RelayGrantCoordinatorTest, AGrantThatIsNotTheGrantorsOwnForUsIsRefused) {
   const RelayGrant forged = IssueRelayGrant(bob_.account_id, me_, now_.load(), [&](const std::vector<uint8_t>& bytes) {
                               return mallory.Sign(bytes);
                             }).value();
-  EXPECT_FALSE(grants_->OnNotice(relay_grant::Notice{.kind = relay_grant::NoticeKind::Grant, .grant = forged},
-                                 bob_.account_id))
+  EXPECT_FALSE(
+      grants_->OnNotice(relay_grant::Notice{.kind = relay_grant::NoticeKind::Grant, .grant = forged}, bob_.account_id))
       << "not Bob's signature";
   const RelayGrant to_someone_else =
       IssueRelayGrant(bob_.account_id, "account:carol", now_.load(), [this](const std::vector<uint8_t>& bytes) {
         return bob_.Sign(bytes);
       }).value();
-  EXPECT_FALSE(grants_->OnNotice(
-      relay_grant::Notice{.kind = relay_grant::NoticeKind::Grant, .grant = to_someone_else}, bob_.account_id))
+  EXPECT_FALSE(grants_->OnNotice(relay_grant::Notice{.kind = relay_grant::NoticeKind::Grant, .grant = to_someone_else},
+                                 bob_.account_id))
       << "not for us";
   EXPECT_FALSE(grants_->OnNotice(
       relay_grant::Notice{.kind = relay_grant::NoticeKind::Grant, .grant = BobsGrant(now_.load())}, "account:carol"))
@@ -254,17 +254,45 @@ TEST_F(RelayGrantCoordinatorTest, AGrantThatIsNotTheGrantorsOwnForUsIsRefused) {
   EXPECT_FALSE(grant_store_.Received(bob_.account_id).value());
 }
 
-TEST_F(RelayGrantCoordinatorTest, NoUsableGrantFromAGrantedPeerIsAskedForAtMostEverySixHours) {
+// An ask is a stranger's send (we hold no grant), and the relay allows a stranger 3 an hour per pair: a send never
+// asks, and a peer heard from is asked only once we have lacked its grant a few minutes (it sends one unasked when it
+// adds us, which may be on its way), then at most every six hours.
+TEST_F(RelayGrantCoordinatorTest, NoUsableGrantFromAGrantedPeerIsAskedForOnlyWhenLongLackedAndAtMostEverySixHours) {
   Grant(bob_.account_id);
+  ASSERT_TRUE(grant_store_.PutIssued(
+      IRelayGrantStore::Issued{.grant = RelayGrant{.recipient_account_id = me_,
+                                                   .sender_account_id = bob_.account_id,
+                                                   .issued_at = now_.load(),
+                                                   .expires_at = now_.load() + kRelayGrantMaxLifetimeMs},
+                               .confirmed = true}));
   EXPECT_FALSE(grants_->GrantFor(bob_.account_id));
-  EXPECT_TRUE(SentTo(bob_.account_id, 1)) << "asked";
-  EXPECT_FALSE(grants_->GrantFor(bob_.account_id));
+  EXPECT_EQ(Settled(bob_.account_id), 0) << "a send does not ask";
+  grants_->NoteHeardFrom(bob_.account_id);
+  EXPECT_EQ(Settled(bob_.account_id), 0) << "just added us: its grant may be on its way";
+  now_ += 11LL * 60 * 1000;
+  grants_->NoteHeardFrom(bob_.account_id);
+  EXPECT_TRUE(SentTo(bob_.account_id, 1)) << "lacked for minutes: asked";
+  now_ += 11LL * 60 * 1000;
+  grants_->NoteHeardFrom(bob_.account_id);
   EXPECT_EQ(Settled(bob_.account_id), 1) << "not again so soon";
   now_ += 7LL * 60 * 60 * 1000;
-  EXPECT_FALSE(grants_->GrantFor(bob_.account_id));
+  grants_->NoteHeardFrom(bob_.account_id);
   EXPECT_EQ(Settled(bob_.account_id), 2);
-  EXPECT_FALSE(grants_->GrantFor("account:stranger"));
+  grants_->NoteHeardFrom("account:stranger");
+  now_ += 11LL * 60 * 1000;
+  grants_->NoteHeardFrom("account:stranger");
   EXPECT_EQ(Settled("account:stranger"), 0) << "a stranger is not asked";
+}
+
+TEST_F(RelayGrantCoordinatorTest, AGrantArrivingReleasesWhatItsGrantorsStrangerQuotaHeldBack) {
+  std::vector<std::string> released;
+  grants_->SetOnGrantReceived([&released](const std::string& grantor) { released.push_back(grantor); });
+  ASSERT_TRUE(static_cast<bool>(grants_->OnNotice(
+      relay_grant::Notice{.kind = relay_grant::NoticeKind::Grant, .grant = BobsGrant(now_.load())}, bob_.account_id)));
+  EXPECT_EQ(released, std::vector<std::string>{bob_.account_id});
+  EXPECT_FALSE(grants_->OnNotice(
+      relay_grant::Notice{.kind = relay_grant::NoticeKind::Grant, .grant = BobsGrant(now_.load())}, "account:carol"));
+  EXPECT_EQ(released.size(), 1u) << "a refused grant releases nothing";
 }
 
 TEST_F(RelayGrantCoordinatorTest, ARefusedGrantIsDroppedAndAskedForAgain) {
@@ -295,8 +323,8 @@ TEST_F(RelayGrantCoordinatorTest, AnUnconfirmedGrantGoesAgainWhenItsGranteeIsHea
 
 TEST_F(RelayGrantCoordinatorTest, AnAskFromAGrantedPeerIsAnsweredWithAGrant) {
   Grant(bob_.account_id);
-  ASSERT_TRUE(static_cast<bool>(
-      grants_->OnNotice(relay_grant::Notice{.kind = relay_grant::NoticeKind::Ask}, bob_.account_id)));
+  ASSERT_TRUE(
+      static_cast<bool>(grants_->OnNotice(relay_grant::Notice{.kind = relay_grant::NoticeKind::Ask}, bob_.account_id)));
   EXPECT_TRUE(SentTo(bob_.account_id, 1));
   EXPECT_TRUE(grant_store_.IssuedTo(bob_.account_id).value());
 }

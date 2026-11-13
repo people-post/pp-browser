@@ -93,6 +93,11 @@ public:
   /** Send what is queued again (when the inbox is synced: the relay is likely reachable). */
   void Retry();
   /**
+   * `recipient`'s grant to us just arrived: what its stranger quota held back is due now (a contact's send), and the
+   * queue is sent again. Blocking (relay sends), so off the UI thread.
+   */
+  void ReleaseHeldFor(const std::string& recipient);
+  /**
    * Drop a message's queued sends and its control-lane retries. A transcript row's requests sent until now start no
    * new attempt either (a first send on its way, an item a Retry holds): one that fails is not queued again, and
    * nothing more is reported for it. Only the attempt already handed to a transport can still go out. A later Send of
@@ -124,6 +129,8 @@ private:
     std::string amp_peer_key;
     std::string group_member;
     std::string copy_device;
+    /** The relay inbox it goes to (the request's relay_recipient). */
+    std::string relay_recipient;
     /** Not tried again before this (Unix ms): a send refused for the recipient's stranger quota waits it out. */
     int64_t not_before_ms = 0;
     /** Its request's (BeginActive): a Cancel after the Send stops it. */

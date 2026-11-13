@@ -34,8 +34,9 @@ class IdentityStore;
  *   asked for (`relay_grant_ask`) goes at once.
  * - **Hold:** grants given to us, checked with the grantor's account key, attached to each relay send to its inbox
  *   (SendHooks); one the relay refuses is dropped and asked for again, the send going once as a stranger's meanwhile.
- *   A granted peer we hold no usable grant from is asked for one (on a send to it, or when heard from), at most every
- *   six hours.
+ *   A granted peer we have held no usable grant from for a few minutes is asked for one when heard from, at most
+ *   every six hours (not on a send: an ask is a stranger's send too, and the relay allows strangers few). When a grant
+ *   arrives, sends to its grantor held back by the stranger quota go at once.
  * - Self-sends need none.
  *
  * Any thread.
@@ -48,6 +49,8 @@ public:
   void SetStore(IRelayGrantStore* store);
   /** Who we grant: a contact not blocked, a member of a group we are in. None: nobody. */
   void SetGrantedPeer(std::function<bool(const std::string& account_id)> granted);
+  /** Called with the grantor once a grant from it is kept (the outbox sends what the stranger quota held back). */
+  void SetOnGrantReceived(std::function<void(const std::string& grantor)> on_received);
   void SetClockForTest(std::function<int64_t()> now) { now_ = std::move(now); }
 
   /** For the relay client: the grant to attach, the refusal to meet, our key (HttpRelayClient). */
@@ -62,7 +65,7 @@ public:
   /** An envelope from `account` verified: it is online, so an unconfirmed grant goes again and a missing one is asked for. */
   void NoteHeardFrom(const std::string& account);
 
-  /** The usable grant `recipient` gave us (asks for one when a granted peer gave none). SendHooks' `grant_for`. */
+  /** The usable grant `recipient` gave us, if any. SendHooks' `grant_for`. */
   std::optional<RelayGrant> GrantFor(const std::string& recipient);
   /** The relay refused the grant `recipient` gave us. SendHooks' `grant_refused`. */
   void GrantRefused(const std::string& recipient);
@@ -93,6 +96,9 @@ private:
   std::unordered_map<std::string, int64_t> asked_at_;
   std::unordered_map<std::string, int64_t> resent_at_;
   std::unordered_map<std::string, int64_t> heard_at_;
+  /** Per granted peer: since when we have held no usable grant from it (noted when heard from). */
+  std::unordered_map<std::string, int64_t> lacking_since_;
+  std::function<void(const std::string&)> on_grant_received_;
 };
 
 } // namespace pbr

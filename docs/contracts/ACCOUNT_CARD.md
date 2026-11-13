@@ -260,9 +260,11 @@ run (the sweep finds no grant issued to them).
 
 Lane records older than an hour are dropped, so a grant can be lost while its grantee is offline. An
 issued grant stays **unconfirmed** until acked and goes again when its grantee is next heard from (a
-verified envelope), at most once an hour; an ask is answered at once (at most every 10 min). A grantee
-lacking a usable grant from a peer it grants asks for one on a send or when heard from, at most every six
-hours (10 min after a refusal).
+verified envelope), at most once an hour; an ask is answered at once (at most every 10 min). An ask is
+itself a stranger's send, and the relay allows a stranger few (3 an hour per pair), so a send never asks:
+a device asks a peer it grants only when it hears from that peer after lacking its grant for a few minutes
+(a peer that just added us sends its grant unasked), at most every six hours, and 10 min after a refusal.
+When a grant arrives, the sends to its grantor that the stranger quota held back go at once.
 
 **Renewal and stop.** A sweep on messaging ready, on each contacts or roster change and every six hours
 issues to each granted peer whose grant has less than **10 days** left. A blocked contact or a removed

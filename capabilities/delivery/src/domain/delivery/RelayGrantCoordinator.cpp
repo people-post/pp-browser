@@ -19,6 +19,11 @@ constexpr int64_t kResendEveryMs = 60LL * 60 * 1000;
 constexpr int64_t kResendOnAskMs = 10LL * 60 * 1000;
 /** Hearing from a peer is looked at at most this often (every inbound envelope reports it). */
 constexpr int64_t kHeardEveryMs = 10LL * 60 * 1000;
+/**
+ * A granted peer is asked for its grant only once we have lacked one this long: a peer that just added us sends its
+ * grant unasked, and an ask before it lands is a stranger's send the relay counts against a small quota.
+ */
+constexpr int64_t kAskAfterLackingMs = 2LL * 60 * 1000;
 
 } // namespace
 
@@ -30,6 +35,11 @@ RelayGrantCoordinator::RelayGrantCoordinator(IdentityStore& identity, AccountKey
 void RelayGrantCoordinator::SetStore(IRelayGrantStore* store) {
   std::lock_guard lock(mutex_);
   store_ = store;
+}
+
+void RelayGrantCoordinator::SetOnGrantReceived(std::function<void(const std::string&)> on_received) {
+  std::lock_guard lock(mutex_);
+  on_grant_received_ = std::move(on_received);
 }
 
 void RelayGrantCoordinator::SetGrantedPeer(std::function<bool(const std::string&)> granted) {
@@ -181,9 +191,19 @@ void RelayGrantCoordinator::NoteHeardFrom(const std::string& account) {
   } else if (!(*issued)->confirmed && Due(resent_at_, account, kResendEveryMs)) {
     SendGrants({(*issued)->grant});
   }
-  // Its to us: asked for when we hold none we could use.
+  // Its to us: asked for when we have held none we could use for a while (it may be on its way).
   auto received = store->Received(account);
-  if (!received || !*received || !RelayGrantUsable(**received, Now())) {
+  if (received && *received && RelayGrantUsable(**received, Now())) {
+    return;
+  }
+  const int64_t now = Now();
+  bool lacking_long = false;
+  {
+    std::lock_guard lock(mutex_);
+    const auto [it, first] = lacking_since_.try_emplace(account, now);
+    lacking_long = !first && now - it->second >= kAskAfterLackingMs;
+  }
+  if (lacking_long) {
     Ask(account, false);
   }
 }
@@ -197,12 +217,11 @@ std::optional<RelayGrant> RelayGrantCoordinator::GrantFor(const std::string& rec
   if (!store || recipient.empty() || recipient == OwnAccount()) {
     return std::nullopt;
   }
+  // No ask from here: a send is no sign the grantor is online, and the ask would be one more stranger's send
+  // (NoteHeardFrom asks).
   auto received = store->Received(recipient);
   if (received && *received && RelayGrantUsable(**received, Now())) {
     return **received;
-  }
-  if (Granted(recipient)) {
-    Ask(recipient, false);
   }
   return std::nullopt;
 }
@@ -256,8 +275,17 @@ Roe<void> RelayGrantCoordinator::OnNotice(const relay_grant::Notice& notice, con
       if (auto kept = store->PutReceived(grant); !kept) {
         return kept.error();
       }
+      std::function<void(const std::string&)> on_received;
+      {
+        std::lock_guard lock(mutex_);
+        lacking_since_.erase(sender);
+        on_received = on_grant_received_;
+      }
       if (auto ack = relay_grant::BuildAck(grant.issued_at)) {
         lane_.SendToMany({ControlSend{.peer_identity = sender, .control = std::move(*ack)}}, {}, WorkerLane::Normal);
+      }
+      if (on_received) {
+        on_received(sender); // sends held back by its stranger quota go now, as a contact's
       }
       return {};
     }
