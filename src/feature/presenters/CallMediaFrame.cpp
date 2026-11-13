@@ -119,6 +119,12 @@ CallStatusLine DecideStatusLine(const CallScreen& screen, const CallMediaFacts& 
       line.fallback_key = "call.status.on_hold_peer";
     }
   }
+  // Their audio arrives but nothing plays: the line says so in place of the timer, for as long as it lasts (a voice call
+  // at the ear has the screen black, the pill is gone by then). Holds and failures keep their own line.
+  if (facts.playout_stuck && (line.kind == LineKind::Timer || line.kind == LineKind::Participants) && !d.on_hold &&
+      !d.couldnt_connect && !d.path_lost && !d.reconnect) {
+    line = Words(screen.group ? "call.status.cant_hear_group" : "call.status.cant_hear_peer");
+  }
   line.hint = screen.status == Status::CouldntConnect ? screen.hint : CallScreen::Hint::None;
   return line;
 }
@@ -146,6 +152,16 @@ CallHintPrompt DecideCallHintPrompt(const CallHintPromptInput& in, const std::ma
   CallHintPrompt prompt;
   if (in.group) {
     prompt.center_key = in.hint_shown ? in.hint_key : ""; // a group call's page as before
+    // Their audio arrives but nothing plays: the only pill a group call raises (not over a lost mic, steps, a hold or a
+    // reconnect), the same at most once in 30 s.
+    if (in.playout_stuck && !in.capture_lost && !in.steps_shown && !in.on_hold && !in.quiet) {
+      const std::string key = "call.quality.hint.cant_hear_group";
+      if (const auto last = last_pill_ms.find(key);
+          last == last_pill_ms.end() || in.now_ms - last->second >= kHintPillEveryMs) {
+        prompt.pill_key = key;
+        prompt.pill_alarm = true;
+      }
+    }
     return prompt;
   }
   // A 1:1 call: the steps say how the connecting goes (what "Connecting voice…" repeated); a lost or silent mic means
@@ -157,6 +173,9 @@ CallHintPrompt DecideCallHintPrompt(const CallHintPromptInput& in, const std::ma
   bool alarm = false;
   if (in.capture_lost) {
     key = "call.quality.hint.mic_lost"; // the engine could not get the mic back: they hear nothing until a restart
+    alarm = true;
+  } else if (in.playout_stuck) {
+    key = "call.quality.hint.cant_hear_peer"; // their packets arrive, nothing plays: only a new call helps (#605)
     alarm = true;
   } else if (in.asymmetry == CallAudioAsymmetry::ReceivingOnly && in.not_sending_ms >= kOneWayPillAfterMs) {
     // Why this device sends nothing, when it is known; else the same advice as a lost mic.
@@ -352,6 +371,7 @@ const CallMediaScreen& CallMediaFrame::Finish(const CallScreen& screen, const Ca
   hint.quiet = d.couldnt_connect || d.reconnect || screen.status == Status::CouldntConnect ||
                screen.status == Status::Disconnected || screen.status == Status::Reconnecting;
   hint.mic_blocked = facts.mic_blocked;
+  hint.playout_stuck = facts.playout_stuck;
   hint.on_hold = held;
   hint.now_ms = now;
   const CallHintPrompt prompt = DecideCallHintPrompt(hint, last_pill_ms_);

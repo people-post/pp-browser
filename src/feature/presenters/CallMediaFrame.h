@@ -60,6 +60,8 @@ struct CallMediaFacts {
   bool local_on_hold = false;
   /** The microphone looks blocked (the failed page's hints.mic_blocked: CallUiBackend::DirectConnectMissingMic). */
   bool mic_blocked = false;
+  /** Their audio arrives but nothing plays (CallPlayoutStuck, fed by CallPresenter; #605). */
+  bool playout_stuck = false;
 
   // --- What the media health is evaluated from (EvaluateCallMediaHealth).
   MediaEngineHealth engine;
@@ -162,6 +164,8 @@ struct CallHintPromptInput {
   /** The call could not connect, or reconnects: its page says so itself, no pill over it. */
   bool quiet = false;
   bool mic_blocked = false;
+  /** Their audio arrives but nothing plays for about 6 s (CallPlayoutStuck): hang up and call again. */
+  bool playout_stuck = false;
   /** On hold here or there: the silence is by design. */
   bool on_hold = false;
   int64_t now_ms = 0;

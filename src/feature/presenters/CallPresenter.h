@@ -8,6 +8,7 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/presenters/CallBackOffer.h"
 #include "feature/presenters/CallMediaFrame.h"
+#include "feature/presenters/CallPlayoutStuck.h"
 #include "feature/presenters/CallSpeakerButton.h"
 #include "feature/presenters/CallUiAttachGuard.h"
 #include "feature/presenters/CallWakePlaceholder.h"
@@ -370,6 +371,9 @@ private:
   void StepMedia(CallUiBackend& backend, const CallScreen& next, int64_t now);
   /** One tick's media facts for the call on `s`, after the engine's video upkeep. */
   CallMediaFacts ReadMediaFacts(CallUiBackend& backend, const CallScreen& s, int64_t now);
+  /** Feeds CallPlayoutStuck from the facts (counts only while connected, not on hold, not reconnecting); sets
+   *  `facts.playout_stuck`, and writes the `call.playout_stuck` metric once when it turns true. */
+  void TrackPlayoutStuck(CallMediaFacts& facts, const CallScreen& s);
   /** What the frame asks of the call: the camera's failure told, a narrowed call's camera off, a dropped picture. */
   void ActOnMedia(CallUiBackend& backend, const CallMediaScreen& frame);
   /** The peer's camera (roster / frames) and the story's new moments, each change logged once. */
@@ -441,6 +445,9 @@ private:
   std::string answered_call_id_;
   CallBackOffer call_back_;
   CallMediaFrame media_frame_;
+  /** Their audio arrives but nothing plays (#605): fed each in-call tick by TrackPlayoutStuck, for `playout_call_id_`. */
+  CallPlayoutStuck playout_stuck_;
+  std::string playout_call_id_;
   /** What LogMedia last logged: the peer's camera ("roster/frames"), and the story's moments of `story_logged_call_`. */
   std::string peer_video_log_key_;
   std::string story_logged_call_;

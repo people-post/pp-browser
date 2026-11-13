@@ -647,5 +647,109 @@ TEST(CallHintPromptTest, AOneToOneCallsHintIsPilledHereNotByTheOldAudioFaultToas
   EXPECT_EQ(g.center_hint_key, "call.quality.hint.connecting_voice") << "and its hint line";
 }
 
+// Their audio arrives but nothing plays (#605, CallPlayoutStuck): a bottom pill with the advice, every 30 s while it
+// lasts; the status line carries it in place of the timer meanwhile.
+TEST(CallHintPromptTest, AStuckPlayoutSaysHangUpAndCallAgainEveryThirtySecondsUntilItClears) {
+  CallMediaFrame frame;
+  CallMediaFacts facts = LiveFacts(0);
+  facts.playout_stuck = true;
+  auto pills = PillsOver(frame, InCallScreen(), facts, 300'000, 365'000, [](int64_t) { return Health(); });
+  ASSERT_EQ(pills.size(), 3u) << "at once, then at 30 and 60 s";
+  for (const Pill& p : pills) {
+    EXPECT_EQ(p.key, "call.quality.hint.cant_hear_peer");
+    EXPECT_TRUE(p.alarm);
+  }
+  EXPECT_EQ(pills[1].at_ms - pills[0].at_ms, 30'000);
+  facts.playout_stuck = false;
+  pills = PillsOver(frame, InCallScreen(), facts, 365'100, 460'000, [](int64_t) { return Health(); });
+  EXPECT_TRUE(pills.empty()) << "cleared: no more";
+}
+
+TEST(CallHintPromptTest, NoStuckPlayoutNoPill) {
+  CallMediaFrame frame;
+  const auto pills = PillsOver(frame, InCallScreen(), LiveFacts(0), 300'000, 400'000, [](int64_t) { return Health(); });
+  EXPECT_TRUE(pills.empty());
+}
+
+TEST(CallHintPromptTest, AStuckPlayoutComesAfterALostMicButBeforeNotSending) {
+  CallHintPromptInput in;
+  in.now_ms = 500'000;
+  in.playout_stuck = true;
+  in.capture_lost = true;
+  EXPECT_EQ(DecideCallHintPrompt(in, {}).pill_key, "call.quality.hint.mic_lost") << "our own fault first";
+  in.capture_lost = false;
+  in.asymmetry = CallAudioAsymmetry::ReceivingOnly;
+  in.not_sending_ms = 20'000;
+  EXPECT_EQ(DecideCallHintPrompt(in, {}).pill_key, "call.quality.hint.cant_hear_peer");
+  in.playout_stuck = false;
+  EXPECT_EQ(DecideCallHintPrompt(in, {}).pill_key, "call.quality.hint.not_sending_restart");
+}
+
+TEST(CallHintPromptTest, AStuckPlayoutRaisesNoPillOnHoldWhileReconnectingOrOverTheSteps) {
+  for (int which = 0; which < 3; ++which) {
+    CallHintPromptInput in;
+    in.now_ms = 500'000;
+    in.playout_stuck = true;
+    in.on_hold = which == 0;
+    in.quiet = which == 1;
+    in.steps_shown = which == 2;
+    EXPECT_TRUE(DecideCallHintPrompt(in, {}).pill_key.empty()) << which;
+    in.group = true;
+    EXPECT_TRUE(DecideCallHintPrompt(in, {}).pill_key.empty()) << "group " << which;
+  }
+}
+
+TEST(CallHintPromptTest, AGroupCallSaysLeaveAndJoinAgainOnAStuckPlayoutAtMostEveryThirtySeconds) {
+  CallHintPromptInput in;
+  in.group = true;
+  in.playout_stuck = true;
+  in.now_ms = 500'000;
+  CallHintPrompt p = DecideCallHintPrompt(in, {});
+  EXPECT_EQ(p.pill_key, "call.quality.hint.cant_hear_group");
+  EXPECT_TRUE(p.pill_alarm);
+  const std::map<std::string, int64_t> last{{"call.quality.hint.cant_hear_group", 500'000}};
+  in.now_ms = 529'900;
+  EXPECT_TRUE(DecideCallHintPrompt(in, last).pill_key.empty());
+  in.now_ms = 530'000;
+  EXPECT_EQ(DecideCallHintPrompt(in, last).pill_key, "call.quality.hint.cant_hear_group");
+  in.capture_lost = true;
+  EXPECT_TRUE(DecideCallHintPrompt(in, {}).pill_key.empty()) << "a lost mic is said first (its hint line)";
+}
+
+TEST(CallMediaFrameTest, AStuckPlayoutReplacesTheTimerAndTheTimerComesBack) {
+  CallMediaFrame frame;
+  CallMediaFacts f = LiveFacts(160'000);
+  EXPECT_EQ(frame.Step(InCallScreen(), f, Health()).line.kind, LineKind::Timer);
+  f.playout_stuck = true;
+  const CallStatusLine line = frame.Step(InCallScreen(), f, Health()).line;
+  EXPECT_EQ(line.kind, LineKind::Words);
+  EXPECT_EQ(line.key, "call.status.cant_hear_peer");
+  f.playout_stuck = false;
+  EXPECT_EQ(frame.Step(InCallScreen(), f, Health()).line.kind, LineKind::Timer);
+}
+
+TEST(CallMediaFrameTest, AStuckPlayoutInAGroupReplacesTheHeadCountLine) {
+  CallMediaFrame frame;
+  CallScreen group = InCallScreen();
+  group.group = true;
+  CallMediaFacts f = LiveFacts(160'000);
+  f.playout_stuck = true;
+  EXPECT_EQ(frame.Step(group, f, Health()).line.key, "call.status.cant_hear_group");
+}
+
+TEST(CallMediaFrameTest, HoldsAndFailuresKeepTheirLineOverAStuckPlayout) {
+  CallMediaFrame frame;
+  CallMediaFacts f = LiveFacts(160'000);
+  f.playout_stuck = true;
+  f.peer_on_hold = true;
+  EXPECT_EQ(frame.Step(InCallScreen(), f, Health()).line.kind, LineKind::PeerOnHold);
+  f.peer_on_hold = false;
+  f.local_on_hold = true;
+  EXPECT_EQ(frame.Step(InCallScreen(), f, Health()).line.key, "call.status.on_hold_local");
+  f.local_on_hold = false;
+  f.media_status = CallMediaStatus::Reconnecting;
+  EXPECT_NE(frame.Step(InCallScreen(Status::Reconnecting), f, Health()).line.key, "call.status.cant_hear_peer");
+}
+
 } // namespace
 } // namespace pbr
