@@ -4,6 +4,7 @@
 data-class-settings-switch--on="auto_renew_registration == 'auto'"	2	-	profile	advanced	profile	10
 data-event-blur="on_profile_nickname_commit()"	1	profile	profile	-	profile	
 data-event-click="copy_profile_id()"	1	-	profile	-	profile	
+data-event-click="edit_profile_nickname()"	1	-	profile	-	profile	
 data-event-click="pick_profile_icon()"	2	-	profile	-	profile	
 data-event-click="register_profile()"	1	profile	profile	profile_show_register	profile	
 data-event-click="rotate_brief_llm_key()"	1	profile	advanced	advanced;;advanced;;advanced && profile_show_rotate	profile	10

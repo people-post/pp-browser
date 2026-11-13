@@ -77,7 +77,8 @@ TEST_F(SettingsProfilePhoneTest, ChangePhotoIsBlueAndGreyedWhileAPhotoUploads) {
 
 TEST_F(SettingsProfilePhoneTest, ThePhoneHasNoInputAndNoCopyRowAndTheDesktopKeepsBoth) {
   const std::string rml = ReadAsset("views/settings_section_profile.rml");
-  const size_t desktop_input = rml.find("<div class=\"group-card settings-desktop-only\">\n          <label class=\"settings-field");
+  const size_t desktop_input =
+      rml.find("<div class=\"group-card settings-desktop-only\">\n          <label class=\"settings-field");
   ASSERT_NE(desktop_input, std::string::npos) << "the desktop's nickname input is in a desktop-only card";
   EXPECT_NE(rml.find("data-event-blur=\"on_profile_nickname_commit()\"", desktop_input), std::string::npos);
   EXPECT_EQ(Count(rml, "<input"), 1u);
@@ -91,7 +92,8 @@ TEST_F(SettingsProfilePhoneTest, ThePhoneHasNoInputAndNoCopyRowAndTheDesktopKeep
 
 TEST_F(SettingsProfilePhoneTest, TheAccountGroupHoldsTheFiveRowsInOrderWithTodaysGates) {
   const std::string rml = ReadAsset("views/settings_section_profile.rml");
-  const size_t head = rml.find("<p class=\"text group-head settings-phone-only\">{{i18n:settings.profile.account_group}}</p>");
+  const size_t head =
+      rml.find("<p class=\"text group-head settings-phone-only\">{{i18n:settings.profile.account_group}}</p>");
   ASSERT_NE(head, std::string::npos);
   const size_t card = rml.find("<div class=\"group-card settings-phone-only\">", head);
   const size_t id = rml.find("{{i18n:settings.profile.id_row}}", card);
@@ -109,8 +111,7 @@ TEST_F(SettingsProfilePhoneTest, TheAccountGroupHoldsTheFiveRowsInOrderWithToday
   EXPECT_NE(rml.find("{{profile_registration_status}}", status), std::string::npos);
   // The renewal switch keeps its event and its state class.
   EXPECT_NE(rml.find("data-event-click=\"toggle_auto_renew_registration()\"", renew), std::string::npos);
-  EXPECT_NE(rml.find("data-class-settings-switch--on=\"auto_renew_registration == 'auto'\"", renew),
-            std::string::npos);
+  EXPECT_NE(rml.find("data-class-settings-switch--on=\"auto_renew_registration == 'auto'\"", renew), std::string::npos);
   // The register button is untouched: one place, behind its own binding, desktop and phone alike.
   EXPECT_EQ(Count(rml, "register_profile()"), 1u);
   EXPECT_EQ(Count(rml, "data-if=\"profile_show_register\""), 1u);

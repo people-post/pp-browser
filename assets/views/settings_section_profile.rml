@@ -34,11 +34,12 @@
         </div>
         </div>
         <div class="group-card settings-phone-only">
-          <div class="group-row group-row--static">
-            <span class="group-row-body">
-              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.nickname}}</span></span>
+          <div class="group-row group-row--q">
+            <button class="group-row-tap" type="button" data-event-click="edit_profile_nickname()">
+              <span class="group-row-text">{{i18n:settings.nickname}}</span>
               <span class="group-row-value">{{profile_nickname}}</span>
-            </span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </button>
           </div>
         </div>
         <div class="group-card settings-desktop-only">

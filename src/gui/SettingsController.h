@@ -377,6 +377,10 @@ private:
   bool FlushSection(const std::string& section_id, bool show_toast = true);
   /** Blur / leave-Me: flush nickname only when it differs from last loaded/saved. */
   void CommitProfileNickname(bool show_toast = false);
+  /** Phone profile page: the nickname row opens the rename dialog (`show_prompt`); nothing without that port. */
+  void EditProfileNickname();
+  /** The dialog's OK: saves through FlushSection; the page shows the new name only once it was saved. */
+  void ApplyProfileNicknameFromDialog(const std::string& value);
   void MaybeShowSaveToast(const std::string& section_id);
   void ReportFailure(const Error& err) override;
   void ReportFailure(const std::string& technical_message);

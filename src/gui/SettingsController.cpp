@@ -840,6 +840,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     // Persist on blur only when the field differs from last loaded/saved nickname.
     ctor.BindEventCallback("on_profile_nickname_commit",
                            DataEvent<>([this]() { CommitProfileNickname(/*show_toast=*/false); }));
+    ctor.BindEventCallback("edit_profile_nickname", DataEvent<>([this]() { EditProfileNickname(); }));
     ctor.BindEventCallback("add_mcp_server", DataEvent<>([this]() { OnAddMcpServer(); }));
     ctor.BindEventCallback("remove_mcp_server", DataEvent<int>([this](int index) { OnRemoveMcpServer(index); }));
   });
@@ -1277,6 +1278,50 @@ void SettingsController::CommitProfileNickname(bool show_toast) {
     return;
   }
   FlushSection("profile", show_toast);
+}
+
+void SettingsController::EditProfileNickname() {
+  if (!shell_feedback_.show_prompt) {
+    return;
+  }
+  // The saved name is what the dialog starts from; the binding only holds a name that was saved (or the desktop's
+  // unsaved typing, which the phone page does not have).
+  const std::string* baseline = UiEditSession::Instance().Baseline(kUiFieldProfileNickname);
+  const std::string current = baseline ? *baseline : std::string(bindings_.profile_nickname.c_str());
+  shell_feedback_.show_prompt(Tr("settings.nickname"), Tr("settings.profile.nickname_prompt"), current,
+                              [this](const bool ok, const std::string& value) {
+                                if (ok) {
+                                  ApplyProfileNicknameFromDialog(value);
+                                }
+                              });
+}
+
+void SettingsController::ApplyProfileNicknameFromDialog(const std::string& value) {
+  auto& edits = UiEditSession::Instance();
+  const std::string* baseline = edits.Baseline(kUiFieldProfileNickname);
+  if (baseline && value == *baseline) {
+    return;
+  }
+  // The same guards CommitProfileNickname has: it returns without a word, so ask first. Nothing is written to the
+  // binding when the save cannot run, and the page keeps showing the saved name.
+  if (!baseline || suppress_auto_save_ || edits.RemountBlocking()) {
+    UserFeedback::Fail(Tr("settings.profile.nickname_not_saved"));
+    return;
+  }
+  const std::string saved_name = *baseline;
+  bindings_.profile_nickname = value.c_str();
+  const bool flushed = FlushSection("profile", /*show_toast=*/true);
+  // A successful save moved the baseline to the stored name and pushed it to the page (FlushSection -> DirtyAll).
+  // Anything else leaves the unsaved name in the binding: put the saved one back. A failed flush has already told
+  // the user why (ReportFailure); a flush that returned true without saving gets our own line.
+  if (!flushed || edits.IsMidEdit(kUiFieldProfileNickname, bindings_.profile_nickname.c_str())) {
+    bindings_.profile_nickname = saved_name.c_str();
+    ui_state_.profile_nickname = saved_name;
+    DirtyAll();
+    if (flushed) {
+      UserFeedback::Fail(Tr("settings.profile.nickname_not_saved"));
+    }
+  }
 }
 
 void SettingsController::MaybeShowSaveToast(const std::string& section_id) {
