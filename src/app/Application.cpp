@@ -24,6 +24,7 @@
 #include "gui/onboarding/OnboardingController.h"
 #include "foundation/platform/os/OsThreadStackDump.h"
 #include "foundation/platform/PlatformShare.h"
+#include "foundation/platform/PlatformShareImage.h"
 #include <atomic>
 #include <condition_variable>
 #include <chrono>
@@ -1345,6 +1346,16 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   });
   contacts_->BindAccountPorts(ContactsAccountPorts{
       .load_identity = [&facade]() { return facade.LoadProfileIdentityView(); },
+      .share_image = PlatformCanShareImage() ? std::function<bool(const std::vector<uint8_t>&, ShareAnchor)>(
+                                                   [](const std::vector<uint8_t>& png, const ShareAnchor at) {
+                                                     return PlatformShareImage(Backend::GetWindow(), png, at);
+                                                   })
+                                             : std::function<bool(const std::vector<uint8_t>&, ShareAnchor)>(),
+      .save_image_kind = PlatformImageSaveKind(),
+      .save_image =
+          [](const std::string& name, std::vector<uint8_t> png, std::function<void(ImageSaveResult)> done) {
+            PlatformSaveImage(Backend::GetWindow(), name, std::move(png), std::move(done));
+          },
   });
   shell.BindScanAction([this]() { contacts_->OnScanQr(); });
   contacts_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "contacts_chrome"));

@@ -11364,6 +11364,18 @@ input.checkbox {
   text-align: center;
 }
 
+/* The two buttons under the code (share as a picture, save it): full width of the card, 44dp or taller. */
+.shell-layer-compact .qr-actions {
+  width: 260dp;
+  margin: 24dp 0 0 0;
+}
+
+.shell-layer-compact .qr-action {
+  display: block;
+  width: 100%;
+  margin: 0 0 12dp 0;
+}
+
 /* Phone "Blocked" list (Settings > Security; Kenneth 2026-11-04): a short note, a card of 60dp rows (avatar, name,
    a 44dp Unblock on the right); a tap on the avatar or name opens the person's page. The result line goes under it. */
 .blocked-page {

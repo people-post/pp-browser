@@ -633,6 +633,10 @@ bool ContactsController::RegisterModel(ui::Context* context) {
         ctor.Bind("my_avatar_letter", &controller.my_avatar_letter_);
         ctor.Bind("my_avatar_tone", &controller.my_avatar_tone_);
         ctor.Bind("my_qr_svg_rml", &controller.my_qr_svg_rml_);
+        ctor.Bind("qr_name", &controller.qr_name_);
+        ctor.Bind("qr_hint", &controller.qr_hint_);
+        ctor.Bind("qr_can_share", &controller.qr_can_share_);
+        ctor.Bind("qr_save_label", &controller.qr_save_label_);
         ctor.Bind("can_scan", &controller.can_scan_);
         ctor.Bind("can_new_group", &controller.can_new_group_);
         ctor.Bind("nc_sections", &controller.new_chat_sections_);
@@ -657,6 +661,9 @@ bool ContactsController::RegisterModel(ui::Context* context) {
         ctor.BindEventCallback("block_member", DataEvent<>([this]() { OnBlockMember(); }));
         ctor.BindEventCallback("copy_contact_id", &ContactsController::CopyIdCallback);
         ctor.BindEventCallback("share_contact", &ContactsController::ShareContactCallback);
+        ctor.BindEventCallback("share_qr_image",
+                               DataEventAt([this](ui::Event& ev) { OnShareQrImage(ShareAnchorFromEvent(ev)); }));
+        ctor.BindEventCallback("save_qr_image", DataEvent<>([this]() { OnSaveQrImage(); }));
         ctor.BindEventCallback("toggle_trust_friendly", &ContactsController::ToggleTrustFriendlyCallback);
         ctor.BindEventCallback("toggle_star", DataEvent<>([this]() { OnToggleStar(); }));
         ctor.BindEventCallback("block_contact", &ContactsController::BlockContactCallback);
@@ -2958,14 +2965,31 @@ void ContactsController::OpenMyQr() {
   OpenMyQrPage();
 }
 
-// My QR code: the invite locator as a QR in its own sheet (the Me > Profile "QR code" button shows it inline).
+// My QR code: the invite locator as a QR in its own sheet.
 void ContactsController::OpenMyQrPage() {
-  if (my_qr_open_ || !shell_navigation_.push_layer) {
-    return;
-  }
-  auto qr = QrSvgContent(my_locator_);
+  OpenQrPage(QrOwner::Mine, my_name_.c_str(), my_locator_, Tr("contacts.my_qr_hint"));
+}
+
+void ContactsController::OpenQrPage(const QrOwner owner, const std::string& name, const std::string& locator,
+                                    const std::string& hint) {
+  qr_owner_ = owner;
+  qr_locator_ = locator;
+  qr_name_ = name.c_str();
+  qr_hint_ = hint.c_str();
+  auto qr = QrSvgContent(locator);
   my_qr_svg_rml_ = qr ? qr.value().c_str() : "";
-  DataModelHost::Instance().Dirty("contacts", "my_qr_svg_rml");
+  qr_can_share_ = static_cast<bool>(account_ports_.share_image);
+  const ImageSaveKind kind = account_ports_.save_image ? account_ports_.save_image_kind : ImageSaveKind::None;
+  qr_save_label_ = kind == ImageSaveKind::Photos ? Tr("contacts.qr.save_photos").c_str()
+                   : kind == ImageSaveKind::File ? Tr("contacts.qr.save_file").c_str()
+                                                 : "";
+  auto& host = DataModelHost::Instance();
+  for (const char* var : {"my_qr_svg_rml", "qr_name", "qr_hint", "qr_can_share", "qr_save_label"}) {
+    host.Dirty("contacts", var);
+  }
+  if (my_qr_open_ || !shell_navigation_.push_layer) {
+    return; // already showing: what it shows is the new owner's now
+  }
   my_qr_open_ = true;
   PaneSpec spec;
   spec.key = "my_qr";
@@ -2973,6 +2997,54 @@ void ContactsController::OpenMyQrPage() {
   my_qr_layer_id_ = shell_navigation_.push_layer(spec);
   if (flow_coordinator_.begin_modal) {
     flow_coordinator_.begin_modal(my_qr_layer_id_, {}, [this]() { OnMyQrDismissed(); });
+  }
+}
+
+void ContactsController::OnShareQrImage(const ShareAnchor anchor) {
+  if (!account_ports_.share_image || qr_locator_.empty()) {
+    return;
+  }
+  auto png = QrPngBytes(qr_locator_);
+  if (!png) {
+    log().warning << "share QR image: " << png.error().message;
+    ShowToast(Tr("contacts.qr.share_failed"));
+    return;
+  }
+  if (!account_ports_.share_image(*png, anchor)) {
+    ShowToast(Tr("contacts.qr.share_failed"));
+  }
+}
+
+void ContactsController::OnSaveQrImage() {
+  if (!account_ports_.save_image || account_ports_.save_image_kind == ImageSaveKind::None || qr_locator_.empty()) {
+    return;
+  }
+  auto png = QrPngBytes(qr_locator_);
+  if (!png) {
+    log().warning << "save QR image: " << png.error().message;
+    ShowToast(Tr("contacts.qr.save_failed"));
+    return;
+  }
+  // The answer may come on any thread; the pill belongs on the UI thread.
+  account_ports_.save_image("pp-qr-code.png", std::move(*png), [](const ImageSaveResult result) {
+    AppRuntime::PostUI([result]() { ContactsController::Instance().OnQrImageSaved(result); });
+  });
+}
+
+void ContactsController::OnQrImageSaved(const ImageSaveResult result) {
+  switch (result) {
+    case ImageSaveResult::Saved:
+      ShowToast(Tr(account_ports_.save_image_kind == ImageSaveKind::Photos ? "contacts.qr.saved_photos"
+                                                                           : "contacts.qr.saved_file"));
+      break;
+    case ImageSaveResult::Denied:
+      ShowToast(Tr("contacts.qr.save_denied"), ToastDuration::Long);
+      break;
+    case ImageSaveResult::Failed:
+      ShowToast(Tr("contacts.qr.save_failed"));
+      break;
+    case ImageSaveResult::Cancelled:
+      break;
   }
 }
 

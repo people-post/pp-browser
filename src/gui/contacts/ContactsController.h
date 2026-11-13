@@ -304,6 +304,22 @@ public:
   void OnScanQr();
   /** My QR code in its own sheet (the phone scanner's button); a toast instead while there is no account. */
   void OpenMyQr();
+  /** Whose code the QR page shows. Set on every open, never kept from the one before. */
+  enum class QrOwner { Mine, Friend };
+  /** Shows the QR page for `owner`: sets what it shows now (also when it is already open), pushes it when it is not. */
+  void OpenQrPage(QrOwner owner, const std::string& name, const std::string& locator, const std::string& hint);
+  QrOwner QrPageOwner() const { return qr_owner_; }
+  /** What the page's code encodes, and the name under it. */
+  const std::string& QrPageLocator() const { return qr_locator_; }
+  std::string QrPageName() const { return qr_name_.c_str(); }
+  /** Which buttons the page shows (tests): the share button, and the save button's words (empty: hidden). */
+  bool QrPageCanShare() const { return qr_can_share_; }
+  std::string QrPageSaveLabel() const { return qr_save_label_.c_str(); }
+  /** The QR page's buttons: the picture through the system sheet, or saved (photos / a file). */
+  void OnShareQrImage(ShareAnchor anchor);
+  void OnSaveQrImage();
+  /** What a finished save says (UI thread): a pill for saved / not allowed / failed, nothing for a cancel. */
+  void OnQrImageSaved(ImageSaveResult result);
   /**
    * Share a contact into a chat: `share` sends the card. When it fails and `refresh_card` is set, the contact's
    * card is asked for once (its devices, then the directory — the path opening the contact uses) and, if one
@@ -520,6 +536,13 @@ private:
   bool can_scan_ = false;
   bool can_new_group_ = false;
   bool my_qr_open_ = false;
+  QrOwner qr_owner_ = QrOwner::Mine;
+  std::string qr_locator_;
+  ui::String qr_name_;
+  ui::String qr_hint_;
+  bool qr_can_share_ = false;
+  /** The second button's words ("Save to Photos", "Save image…"); empty: not shown. */
+  ui::String qr_save_label_;
   int my_qr_layer_id_ = -1;
   bool compact_layout_ = false;
   bool advanced_ = false;
