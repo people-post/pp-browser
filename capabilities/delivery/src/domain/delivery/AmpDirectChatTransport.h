@@ -49,7 +49,7 @@ public:
 
   bool IsPeerReachable(const std::string& peer_identity_value) const override;
   bool IsPeerConnected(const std::string& peer_key) const override;
-  void SendEnvelopeAsync(const std::string& peer_relay_user_id, const RelayEnvelope& envelope,
+  void SendEnvelopeAsync(const std::string& peer_account_id, const RelayEnvelope& envelope,
                          std::function<void(DirectSendRoe)> on_done) override;
 
   /** Opening the chat channel failed at the link: our code, the link's chain in `message`. */

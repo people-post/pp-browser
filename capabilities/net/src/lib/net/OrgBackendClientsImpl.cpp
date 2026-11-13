@@ -40,14 +40,14 @@ Roe<void> HttpPushDeviceClient::PostDevice(const char* path, const RelayApiOp op
     return Error("Relay base_url not configured");
   }
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildRelayApiDeviceSignBytes(op, registration.relay_user_id, registration.platform,
+  const auto sign_bytes = BuildRelayApiDeviceSignBytes(op, registration.account_id, registration.platform,
                                                        registration.device_id, registration.push_token, timestamp);
   auto signature = SignRelayApiBytes(sign_bytes);
   if (!signature) {
     return signature.error();
   }
   Object body;
-  body.set("relay_user_id", registration.relay_user_id);
+  body.set("account_id", registration.account_id);
   body.set("platform", registration.platform);
   body.set("device_id", registration.device_id);
   body.set("push_token", registration.push_token);
@@ -106,10 +106,6 @@ Roe<std::vector<mesh::DirectoryHit>> FailoverDirectoryClient::SearchPeople(const
   return FailoverTry(backends_, [&](mesh::IDirectoryClient& client) { return client.SearchPeople(query); });
 }
 
-Roe<mesh::DirectoryHit> FailoverDirectoryClient::LookupRelayUser(const std::string& relay_user_id) {
-  return FailoverTry(backends_, [&](mesh::IDirectoryClient& client) { return client.LookupRelayUser(relay_user_id); });
-}
-
 Roe<mesh::DirectoryHit> FailoverDirectoryClient::LookupByAccount(const std::string& account_id) {
   return FailoverTry(backends_, [&](mesh::IDirectoryClient& client) { return client.LookupByAccount(account_id); });
 }
@@ -146,29 +142,6 @@ Roe<std::vector<mesh::DirectoryHit>> HttpDirectoryClient::SearchPeople(const std
     hits.push_back(DirectoryHitFromJson(*item));
   }
   return hits;
-}
-
-Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupRelayUser(const std::string& relay_user_id) {
-  if (base_url_.empty()) {
-    return Error("Directory base_url not configured");
-  }
-  const std::string url = base_url_ + "/v1/users/" + relay_user_id;
-  const auto response = HttpClient::Get(url);
-  if (!response) {
-    return response.error();
-  }
-  if (response.value().status_code == 404) {
-    return Error("Relay user not found");
-  }
-  if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Directory lookup failed with status " + std::to_string(response.value().status_code));
-  }
-
-  auto root = TryParseObject(response.value().body);
-  if (!root || !root->contains("relay_user_id")) {
-    return Error("Invalid relay user lookup JSON");
-  }
-  return DirectoryHitFromJson(*root);
 }
 
 namespace {
@@ -238,15 +211,15 @@ Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& 
     return response.error();
   }
   if (response.value().status_code == 404) {
-    return Error("Account not found");
+    return Error("Account not found"); // `not_registered`: not on this relay, or expired
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
     return Error("Directory lookup failed with status " + std::to_string(response.value().status_code));
   }
 
   auto root = TryParseObject(response.value().body);
-  if (!root || !root->contains("relay_user_id")) {
-    return Error("Invalid account lookup JSON");
+  if (!root || root->getString("account_id").value_or("") != account_id) {
+    return Error("Invalid account lookup JSON"); // the row must be the account asked for
   }
   return DirectoryHitFromJson(*root);
 }
@@ -268,14 +241,11 @@ Roe<std::vector<mesh::MeshNodeHit>> MeshNodeHitsFromDirectoryJson(const std::str
       continue;
     }
     mesh::MeshNodeHit hit;
-    if (auto relay = obj->getString("relay_user_id")) {
-      hit.relay_user_id = *relay;
-    }
-    if (hit.relay_user_id.empty()) {
-      continue;
-    }
     if (auto account = obj->getString("account_id")) {
       hit.account_id = *account;
+    }
+    if (hit.account_id.empty()) {
+      continue;
     }
     if (auto nick = obj->getString("nickname")) {
       hit.nickname = *nick;
@@ -480,8 +450,8 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     if (auto success = root->getIf<bool>("success")) {
       result.success = *success;
     }
-    if (auto relay_user_id = root->getString("relay_user_id")) {
-      result.relay_user_id = *relay_user_id;
+    if (auto account_id = root->getString("account_id")) {
+      result.account_id = *account_id;
     }
     if (auto message = root->getString("message")) {
       result.message = *message;
@@ -503,12 +473,12 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
 
 Roe<RegistrationResult> HttpRegistrationClient::UpdateNickname(const std::string& new_nickname,
                                                                const std::string& signature, int64_t timestamp,
-                                                               const std::string& relay_user_id) {
+                                                               const std::string& account_id) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
   Object body;
-  body.set("relay_user_id", relay_user_id);
+  body.set("account_id", account_id);
   body.set("nickname", new_nickname);
   body.set("timestamp", timestamp);
   body.set("signature", signature);
@@ -523,13 +493,13 @@ Roe<RegistrationResult> HttpRegistrationClient::UpdateNickname(const std::string
   return RegistrationResult{.success = true, .message = "Nickname updated"};
 }
 
-Roe<void> HttpRegistrationClient::RevokeRegistration(const std::string& relay_user_id, const std::string& signature,
+Roe<void> HttpRegistrationClient::RevokeRegistration(const std::string& account_id, const std::string& signature,
                                                      const int64_t timestamp) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
   Object body;
-  body.set("relay_user_id", relay_user_id);
+  body.set("account_id", account_id);
   body.set("timestamp", timestamp);
   body.set("signature", signature);
   // Called on the way into a profile reset: keep a stuck network from holding the UI for long.

@@ -66,7 +66,7 @@ TEST(DirectoryHitRankTest, MatchRankStillBeatsAccountId) {
 
 TEST(NormalizeExactPeopleIdTest, PrefixedIdsAreKeptAndTrimmed) {
   EXPECT_EQ(NormalizeExactPeopleId("  account:abc \n").value(), "account:abc");
-  EXPECT_EQ(NormalizeExactPeopleId("relay:u1").value(), "relay:u1");
+  EXPECT_FALSE(NormalizeExactPeopleId("relay:u1")) << "no relay ids since MR001";
 }
 
 TEST(NormalizeExactPeopleIdTest, BareTokenGetsAccountPrefix) {
@@ -106,7 +106,7 @@ TEST(HitMatchesExactPeopleIdTest, OnlyTheHitCarryingTheTypedIdMatches) {
 
 TEST(HasExactIdPrefixTest, TypedPrefixOnly) {
   EXPECT_TRUE(HasExactIdPrefix("  account:abc"));
-  EXPECT_TRUE(HasExactIdPrefix("relay:u1"));
+  EXPECT_FALSE(HasExactIdPrefix("relay:u1")) << "no relay ids since MR001";
   EXPECT_FALSE(HasExactIdPrefix(std::string(43, 'a')));
 }
 

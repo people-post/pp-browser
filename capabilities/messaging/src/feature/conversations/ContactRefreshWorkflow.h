@@ -26,7 +26,7 @@ struct ContactRefreshResult {
     NotReached, // no device answered (offline, or what it gave did not hold)
   };
   enum class Directory {
-    NotAsked,    // no Account ID and no relay id to look up
+    NotAsked,    // no Account ID to look up
     Answered,    // our directory knows the account
     NotFound,    // our directory does not know it
     Unreachable, // our directory could not be asked (offline, a 5xx, none configured)
@@ -59,7 +59,7 @@ struct ContactRefreshInputs {
   std::optional<PeerCardRecord> card_after;
   /** A device answered now: its card's nickname is the account's own, fresh word. */
   bool card_fresh = false;
-  /** The directory's answer, once it is known to be for this contact's account (or for its relay id). */
+  /** The directory's answer, once it is known to be for this contact's account. */
   std::optional<mesh::DirectoryHit> hit;
   /** The answer's keys verified against its Account ID (and were kept): that Account ID may be adopted. */
   bool hit_keys_verified = false;
@@ -69,16 +69,16 @@ struct ContactRefreshInputs {
  * Folds a refresh into `contact` and says what changed. Keys and devices are the account's verified card's
  * (the key stores hold the keys; the card's devices become device rows); the nickname is a card's fetched
  * now from a device, else the directory's; the photo and the device addresses are the directory's. Ids:
- * the Account ID is adopted only from an answer whose keys verified; the relay id follows our directory's
- * answer for the same account. The user's own fields (remark, trust) are never touched.
+ * the Account ID is adopted only from an answer whose keys verified. The user's own fields (remark, trust) are
+ * never touched.
  */
 Contact MergeContactRefresh(Contact contact, const ContactRefreshInputs& inputs, int64_t now_ms,
                             ContactRefreshResult& result);
 
 /**
  * The contact page's Refresh (multi-relay R0): asks, in order of trust, the contact's devices over the mesh
- * for its account's card (a forced ask, ContactCardExchange::AskDevices), then our directory by Account ID —
- * by relay id only when the contact has one and no Account ID. Keys are kept only when they verify against
+ * for its account's card (a forced ask, ContactCardExchange::AskDevices), then our directory by Account ID (the
+ * only id it knows people by, multi-relay MR001). Keys are kept only when they verify against
  * the Account ID (the key stores refuse any other: AccountKeyResolver, VerifyKeyCard). The directory step
  * runs on the blocking lane; the merge, the write and `done` run on the UI lane. One run per contact at a
  * time.

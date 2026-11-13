@@ -101,7 +101,7 @@ Roe<std::optional<PendingCallInvite>> CallSessionWorkflow::TopPendingInvite() {
 Roe<void> CallSessionWorkflow::LeaveCallIfActiveExcept(const std::string& keep_call_id) {
   // One active call: leave every session this device is joined in but `keep_call_id` (normally at
   // most one) — whichever order the store lists them in.
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   if (!local) {
     return local.error();
   }
@@ -127,7 +127,7 @@ Roe<void> CallSessionWorkflow::LeaveCallIfActiveExcept(const std::string& keep_c
 
 Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread_id, const bool video_allowed,
                                                 const std::vector<std::string>& invitee_identities) {
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   if (!local) {
     return local.error();
   }
@@ -296,7 +296,7 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
 Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
                                                  const std::vector<std::string>& co_invitees,
                                                  const bool reply_to_join) {
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   if (!local) {
     return local.error();
   }
@@ -467,7 +467,7 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id, Initiati
   pending_accept_voice_only_ = false;
   log().info << "AcceptInvite start call_id=" << call_id
              << " charge=" << InitiationChargeDecisionToWire(charge_decision);
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   if (!local) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << local.error().message;
     return local.error();
@@ -540,6 +540,7 @@ Roe<void> CallSessionWorkflow::CommitAccept(const std::string& call_id, Initiati
   if (AcceptSuperseded(call_id)) {
     return Error("Accept superseded");
   }
+  GrantJoinedPeers(call_id, local_identity); // the caller and anyone in it already: their signaling is a contact's
   ArmMediaAfterAccept(row, inviter, *accept);
   PostRosterAfterAccept(call_id, inviter, local_identity);
   log().info << "AcceptInvite end call_id=" << call_id << " ok";
@@ -712,6 +713,26 @@ void CallSessionWorkflow::ArmMediaAfterAccept(CallSession& row, const std::strin
   reports_.Emit(workflow_report::InboxSyncFromWake{});
 }
 
+void CallSessionWorkflow::GrantCallPeers(std::vector<std::string> accounts) {
+  if (host_.wire.grant_call_peers && !accounts.empty()) {
+    host_.wire.grant_call_peers(std::move(accounts));
+  }
+}
+
+void CallSessionWorkflow::GrantJoinedPeers(const std::string& call_id, const std::string& local_identity) {
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!participants) {
+    return;
+  }
+  std::vector<std::string> joined;
+  for (const CallParticipant& participant : *participants) {
+    if (participant.state == CallParticipantState::Joined && participant.identity != local_identity) {
+      joined.push_back(participant.identity);
+    }
+  }
+  GrantCallPeers(std::move(joined));
+}
+
 void CallSessionWorkflow::PostRosterAfterAccept(const std::string& call_id, const std::string& inviter,
                                                 const std::string& local_identity) {
   // Roster / prefetch as the owner's next event, after Accept has reported (no Accept hang UX).
@@ -780,7 +801,7 @@ void CallSessionWorkflow::Handle(WorkflowEvent& event) {
 }
 
 Roe<void> CallSessionWorkflow::DeclineInvite(const std::string& call_id) {
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   if (!local) {
     return local.error();
   }
@@ -833,7 +854,7 @@ Roe<void> CallSessionWorkflow::DeclineInvite(const std::string& call_id) {
 }
 
 Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, const std::string& leaver_identity) {
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   if (!local) {
     return local.error();
   }
@@ -852,7 +873,7 @@ Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, c
 
 Roe<void> CallSessionWorkflow::RotateMediaKeyAmong(const std::string& call_id,
                                                    const std::vector<std::string>& remaining) {
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   if (!local) {
     return local.error();
   }
@@ -929,7 +950,7 @@ void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCall
   if (!session.origin_thread_id || !host_.wire.send_summary) {
     return;
   }
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   if (!local) {
     return;
   }
@@ -1046,7 +1067,7 @@ void CallSessionWorkflow::NoteParticipantLeft(const std::string& call_id, const 
 }
 
 bool CallSessionWorkflow::StillInCall(const std::string& call_id) const {
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   auto participants = sessions_.ListParticipants(call_id);
   if (!local || !participants) {
     return false;
@@ -1063,7 +1084,7 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveC
   if (pending_answerer_kick_call_id_ == call_id) {
     ClearPendingAnswererKick();
   }
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   if (!local) {
     return local.error();
   }
@@ -1169,7 +1190,7 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveC
 }
 
 void CallSessionWorkflow::SweepExpiredInvites() {
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   if (!local) {
     return;
   }
@@ -1230,7 +1251,7 @@ void CallSessionWorkflow::SweepExpiredInvites() {
 }
 
 void CallSessionWorkflow::AbandonOrphanedCallsAfterRestart() {
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   if (!local) {
     return;
   }
@@ -1712,6 +1733,7 @@ Roe<std::optional<CallSession>> CallSessionWorkflow::CommitRemoteJoin(const Call
 
 void CallSessionWorkflow::StartMediaAfterRemoteAccept(const CallAcceptDetail& accept, const std::string& identity,
                                                       const std::string& local_identity, const bool implicit) {
+  GrantCallPeers({identity}); // someone joined a call we are in (the lane's verified sender)
   (void)key_exchange_.SendCurrent(accept.call_id, identity);
   auto joined_after = sessions_.CountJoined(accept.call_id);
   const size_t n_joined = joined_after ? *joined_after : 0;
@@ -1749,7 +1771,7 @@ Roe<void> CallSessionWorkflow::HandleInboundDecline(const std::string& detail_js
   // CALLS: Decline clears offerer OutboundCalling / sticky Calling bar. End when no remote
   // remains Joined/Ringing/Invited (typical 1:1). Group multi-invitee keeps the call if others
   // still ring. EndCallLocal → RemoteEnded when lifecycle is bound to this call_id.
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   auto session = sessions_.LoadSession(decline->call_id);
   if (local && session && session->has_value() && (*session)->state != CallSessionState::Ended) {
     bool remote_interest = false;
@@ -1920,7 +1942,8 @@ void CallSessionWorkflow::EndForPeerBye(const workflow_event::PeerByeGraceOver& 
   pending_peer_byes_.erase(pending);
   auto session = sessions_.LoadSession(over.call_id);
   auto peer = sessions_.FindParticipant(over.call_id, over.peer);
-  auto local = host_.wire.local_relay_identity ? host_.wire.local_relay_identity() : Roe<std::string>(std::string());
+  auto local =
+      host_.wire.local_account_identity ? host_.wire.local_account_identity() : Roe<std::string>(std::string());
   if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended || !peer ||
       !peer->has_value() || (*peer)->state != CallParticipantState::Joined || !local) {
     return; // its call_leave came (or the call ended some other way)
@@ -1930,17 +1953,30 @@ void CallSessionWorkflow::EndForPeerBye(const workflow_event::PeerByeGraceOver& 
   (void)ParticipantGone(over.call_id, over.peer, *local);
 }
 
-Roe<void> CallSessionWorkflow::HandleInboundRoster(const std::string& detail_json) {
+Roe<void> CallSessionWorkflow::HandleInboundRoster(const std::string& detail_json, const std::string& sender_identity) {
   auto roster = CallControlCodec::DecodeRoster(detail_json);
   if (!roster) {
     return roster.error();
   }
-  auto local = host_.wire.local_relay_identity ? host_.wire.local_relay_identity() : Roe<std::string>(std::string());
+  auto local =
+      host_.wire.local_account_identity ? host_.wire.local_account_identity() : Roe<std::string>(std::string());
   if (auto session = sessions_.LoadSession(roster->call_id); session && session->has_value()) {
     DropRefusedGuests(**session, roster->participants, local ? *local : std::string());
   }
   if (auto applied = ApplyCallRosterToStore(sessions_, *roster, local ? *local : std::string()); !applied) {
     return applied.error();
+  }
+  // Someone who joined a call we are in says so itself: it gets our grant. Only the sender — a roster's other names
+  // are its word about third parties, which grants nobody.
+  if (local && !sender_identity.empty() && sender_identity != *local) {
+    const auto joined_in = [&roster](const std::string& who) {
+      return std::any_of(roster->participants.begin(), roster->participants.end(), [&who](const CallRosterEntry& e) {
+        return e.identity == who && e.state == CallParticipantState::Joined;
+      });
+    };
+    if (joined_in(sender_identity) && joined_in(*local)) {
+      GrantCallPeers({sender_identity});
+    }
   }
   // Mid-call invite: CallAccept only reaches the inviter; initiator SoftMigrates when roster
   // shows N≥3 (V021 sticky initiator / V022 payer).
@@ -2000,7 +2036,7 @@ Roe<void> CallSessionWorkflow::HandleInboundVideoRefresh(const std::string& deta
   if (!refresh) {
     return refresh.error();
   }
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   if (!local) {
     return local.error();
   }
@@ -2091,7 +2127,7 @@ void CallSessionWorkflow::MarkEveryoneLeft(const std::string& call_id, const std
 }
 
 Roe<CallSession> CallSessionWorkflow::JoinCall(const std::string& call_id) {
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   if (!local) {
     return local.error();
   }
@@ -2203,7 +2239,7 @@ void CallSessionWorkflow::DropRefusedGuests(const CallSession& session, std::vec
 }
 
 Roe<void> CallSessionWorkflow::RemoveFromCall(const std::string& call_id, const std::string& identity) {
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   if (!local) {
     return local.error();
   }
@@ -2300,7 +2336,7 @@ bool CallSessionWorkflow::KnownOutOfGroup(const std::string& group_id, const std
 }
 
 void CallSessionWorkflow::OnGroupMembersGone(const std::string& group_id, const std::optional<std::string>& identity) {
-  auto local = host_.wire.local_relay_identity();
+  auto local = host_.wire.local_account_identity();
   if (!local) {
     return;
   }

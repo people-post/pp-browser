@@ -78,7 +78,7 @@
 //   contacts                            the address book {contacts: [{account, remark}]}
 //   rename_contact {account, remark}    the user's remark for a contact
 //   remove_contact {account}            take the contact out of the address book
-//   locker_fetch {phrase}               the locker a recovery phrase opens: {found, relay_user_id, nickname,
+//   locker_fetch {phrase}               the locker a recovery phrase opens: {found, nickname,
 //                                       contacts: [account ids], groups: [group ids], card_floors}
 //   locker_export {path}                save the account's state as an exported locker file at path: {version}
 //   link_export                         Me → Security → Copy link payload: the link bundle {bundle}
@@ -720,7 +720,6 @@ public:
             if (*state) {
               out.setJsonUInt("version", (*state)->version);
               const AccountLockerState& s = (*state)->state;
-              out.set("relay_user_id", s.relay_user_id);
               out.set("nickname", s.nickname);
               std::vector<Value> contacts;
               for (const Contact& contact : s.contacts) {

@@ -3,7 +3,7 @@
 ## MR001 — Inboxes are keyed by Account ID
 
 **Date:** 2026-11-12
-**Status:** Accepted (Hongwei, 2026-11-12). Not built.
+**Status:** Accepted (Hongwei, 2026-11-12). Relays: R1 on `www` / `messenger` `feat/inbox-by-account`; app: R2 step 1 (unmerged). Shipped form: [SERVICE_ENDPOINTS](../../docs/contracts/SERVICE_ENDPOINTS.md).
 **Decision:** Relays address inboxes, senders and polls by Account ID. The per-relay `relay:` id goes away, in the relay and in the app (`ContactIdKind::RelayUser`, routes, envelopes).
 **Rationale:**
 - A `relay:` id is random per relay and means nothing elsewhere, so a user on several relays would have one per relay, and every contact would need a map from relay to id.
@@ -52,10 +52,11 @@
 ## MR005 — Strangers pay the receiver's price; contacts carry a grant
 
 **Date:** 2026-11-12
-**Status:** Accepted (Hongwei, 2026-11-12: "factor in our design in pricing project … more effective and efficient"). Not built. Amends [pricing P001](../pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet) item 7: the floor is published in the account card, not at directory registration.
+**Status:** Accepted (Hongwei, 2026-11-12: "factor in our design in pricing project … more effective and efficient"). Grants built (R2 step 1, unmerged; shipped form [ACCOUNT_CARD § Relay grants](../../docs/contracts/ACCOUNT_CARD.md#relay-grants)); the floor in the card not yet. Amends [pricing P001](../pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet) item 7: the floor is published in the account card, not at directory registration.
 **Decision:**
 - The receiver's `initiation_floor` is a field of the signed account card.
 - A recipient's app gives each accepted contact a grant: a signed statement that this sender may write to it, expiring in 30 days and renewed while they stay a contact. The sender attaches it to its sends, and a relay checks it with the recipient's key.
+- *Amended 2026-11-13 (the app lab's `call_grows_into_a_group`, Hongwei's session):* a call accepts its people too. Answering a call grants the caller; joining a call, or someone joining a call we are in, grants each pair of participants both ways. These grants are not renewed unless the peer is also a contact or group member, and a blocked account gets none. A call's signaling, and a call grown past contacts, would otherwise be held to the stranger quota.
 - **A send without a grant is a stranger's.** With a floor above 0, it must carry an opening offer of at least the floor; until payment rails exist, the relay refuses it with `payment_required`. With a floor of 0, it gets a small first-contact quota per recipient and raises no message alert.
 - **Safety limits apply to everyone:** per sender account, per client address for unverified senders (configurable), and the mailbox caps.
 **Rationale:**

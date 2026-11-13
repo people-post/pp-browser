@@ -17,7 +17,6 @@ public:
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string&) override {
     return std::vector<mesh::DirectoryHit>{Hit()};
   }
-  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string&) override { return Hit(); }
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string&) override { return Hit(); }
 
 private:
@@ -33,7 +32,6 @@ TEST(SwitchableDirectoryClientTest, WithNoBackendEveryLookupSaysNotConfigured) {
   SwitchableDirectoryClient directory;
   EXPECT_FALSE(directory.Configured());
   EXPECT_FALSE(directory.SearchPeople("alice"));
-  EXPECT_FALSE(directory.LookupRelayUser("relay:a"));
   EXPECT_FALSE(directory.LookupByAccount("account:a"));
   EXPECT_FALSE(directory.ListMeshNodes());
 }

@@ -21,15 +21,14 @@ struct ProfileIconCacheMeta {
   std::string local_filename;
 };
 
-/** Filesystem-safe cache directory segment (relay/account ids may contain `:`). */
+/** Filesystem-safe cache directory segment (account ids contain `:`). */
 std::string SanitizeProfileIconCacheKey(const std::string& key);
 
 std::string ProfileIconCacheKeyForHit(const mesh::DirectoryHit& hit);
 std::string ProfileIconCacheKeyForContact(const Contact& contact);
 
 /**
- * Cached photo of someone known only by an identity (a group row's sender can be an account or relay id, not a
- * contact id): the contact that owns the identity, else the cache entry keyed by the raw identity. Empty when none.
+ * Cached photo of someone known only by an identity (a group row's sender is an account, not a contact id): the contact that owns the identity, else the cache entry keyed by the raw identity. Empty when none.
  */
 std::string ProfileIconLocalPathForIdentity(const std::string& profile_dir, const IContactBook& contacts,
                                             const std::string& identity);

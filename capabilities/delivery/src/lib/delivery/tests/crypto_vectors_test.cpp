@@ -45,9 +45,9 @@ TEST(CryptoVectors, HkdfSessionKeyMatchesFixture) {
 TEST(CryptoVectors, AeadRoundTripWithFixedInputs) {
   AadFields fields;
   fields.channel = CryptoChannel::E2e;
-  fields.peer_contact_id = "relay:bob456";
+  fields.peer_contact_id = "account:bob456";
   fields.message_id = "660e8400-e29b-41d4-a716-446655440001";
-  fields.sender_contact_id = "relay:alice123";
+  fields.sender_contact_id = "account:alice123";
   fields.sender_seq = 42;
   fields.session_epoch = 1;
   fields.timestamp = 1719662400456;
@@ -77,9 +77,9 @@ TEST(CryptoVectors, AeadRoundTripWithFixedInputs) {
 TEST(CryptoVectors, AeadTamperFails) {
   AadFields fields;
   fields.channel = CryptoChannel::E2e;
-  fields.peer_contact_id = "relay:bob456";
+  fields.peer_contact_id = "account:bob456";
   fields.message_id = "660e8400-e29b-41d4-a716-446655440001";
-  fields.sender_contact_id = "relay:alice123";
+  fields.sender_contact_id = "account:alice123";
   fields.sender_seq = 42;
   fields.session_epoch = 1;
   fields.timestamp = 1719662400456;
@@ -97,9 +97,9 @@ TEST(CryptoVectors, AeadTamperFails) {
 TEST(CryptoVectors, WrongAadFailsDecrypt) {
   AadFields fields;
   fields.channel = CryptoChannel::E2e;
-  fields.peer_contact_id = "relay:bob456";
+  fields.peer_contact_id = "account:bob456";
   fields.message_id = "660e8400-e29b-41d4-a716-446655440001";
-  fields.sender_contact_id = "relay:alice123";
+  fields.sender_contact_id = "account:alice123";
   fields.sender_seq = 42;
   fields.session_epoch = 1;
   fields.timestamp = 1719662400456;
@@ -118,9 +118,9 @@ TEST(CryptoVectors, WrongAadFailsDecrypt) {
 TEST(CryptoVectors, CanonicalAadRoundTrip) {
   AadFields fields;
   fields.channel = CryptoChannel::E2e;
-  fields.peer_contact_id = "relay:bob456";
+  fields.peer_contact_id = "account:bob456";
   fields.message_id = "660e8400-e29b-41d4-a716-446655440001";
-  fields.sender_contact_id = "relay:alice123";
+  fields.sender_contact_id = "account:alice123";
   fields.sender_seq = 42;
   fields.session_epoch = 1;
   fields.timestamp = 1719662400456;

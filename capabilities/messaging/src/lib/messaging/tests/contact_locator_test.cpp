@@ -23,8 +23,8 @@ TEST(ContactLocatorTest, RoundTripsAndIsFoundInsideAnInviteLine) {
 TEST(ContactLocatorTest, ALocatorMustNameAnAccount) {
   EXPECT_FALSE(FindContactLocator("no locator here"));
   EXPECT_FALSE(FindContactLocator(std::string(kContactLocatorPrefix) + "!!!"));
-  const ContactLocator relay_only{.account_id = "relay:abc"};
-  EXPECT_FALSE(FindContactLocator(EncodeContactLocator(relay_only)));
+  const ContactLocator not_an_account{.account_id = "peer:abc"};
+  EXPECT_FALSE(FindContactLocator(EncodeContactLocator(not_an_account)));
 }
 
 TEST(Base64UrlTest, RoundTripsWithoutPadding) {

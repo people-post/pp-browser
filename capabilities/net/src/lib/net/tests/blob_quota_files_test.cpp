@@ -39,23 +39,23 @@ Error FullSpace(const uint64_t asked) {
  * planned id, upload once more; the second answer is final.
  */
 Roe<RelayFileUpload> UploadWithRecovery(MockBlobClient& blob, const std::string& body) {
-  auto first = UploadRelayFileBytes(blob, "relay:u1", body);
+  auto first = UploadRelayFileBytes(blob, "account:u1", body);
   if (first || !IsBlobQuotaError(first.error())) {
     return first;
   }
   if (!IsRelayFileQuotaError(first.error())) {
     return first.error();
   }
-  auto plan = PlanOldestRelayFileDeletion(blob, "relay:u1", RelayFileQuotaNeededBytes(first.error()));
+  auto plan = PlanOldestRelayFileDeletion(blob, "account:u1", RelayFileQuotaNeededBytes(first.error()));
   if (!plan) {
     return plan.error();
   }
   for (const std::string& id : plan->blob_ids_to_delete) {
-    if (auto deleted = DeleteRelayFile(blob, "relay:u1", id); !deleted) {
+    if (auto deleted = DeleteRelayFile(blob, "account:u1", id); !deleted) {
       return deleted.error();
     }
   }
-  return UploadRelayFileBytes(blob, "relay:u1", body);
+  return UploadRelayFileBytes(blob, "account:u1", body);
 }
 
 TEST(BlobQuotaFilesTest, TheFullSpaceCodeNamesTheFilesRelayAndTheSize) {
@@ -97,7 +97,7 @@ TEST(BlobQuotaFilesTest, TheOldestByCompletionGoesFirstEvenAmongFiveHundred) {
   listed.usage.bytes_used = 1000;
   listed.usage.quota_bytes = 1000;
   blob.SetFileListResult(listed);
-  auto plan = PlanOldestRelayFileDeletion(blob, "relay:u1", 1);
+  auto plan = PlanOldestRelayFileDeletion(blob, "account:u1", 1);
   ASSERT_TRUE(plan) << plan.error().message;
   ASSERT_EQ(plan->blob_ids_to_delete.size(), 1u);
   std::string oldest = listed.files.front().completed_at;
@@ -148,18 +148,18 @@ TEST(BlobQuotaFilesTest, StillFullAfterTheRecoveryIsTheFinalAnswer) {
 
 TEST(BlobQuotaFilesTest, AnEmptyListHasNothingToDelete) {
   MockBlobClient blob;
-  auto plan = PlanOldestRelayFileDeletion(blob, "relay:u1", 10);
+  auto plan = PlanOldestRelayFileDeletion(blob, "account:u1", 10);
   ASSERT_FALSE(plan);
   EXPECT_EQ(plan.error().code, static_cast<int32_t>(Err::Blob::NothingToDelete));
 }
 
 TEST(BlobQuotaFilesTest, DeleteRelayFileUsesTheFilesRelay) {
   MockBlobClient blob;
-  ASSERT_TRUE(DeleteRelayFile(blob, "relay:u1", "f1"));
+  ASSERT_TRUE(DeleteRelayFile(blob, "account:u1", "f1"));
   EXPECT_EQ(blob.DeletedFileIds(), (std::vector<std::string>{"f1"}));
   EXPECT_TRUE(blob.DeletedBlobIds().empty());
   EXPECT_FALSE(DeleteRelayFile(blob, "", "f1"));
-  EXPECT_FALSE(DeleteRelayFile(blob, "relay:u1", ""));
+  EXPECT_FALSE(DeleteRelayFile(blob, "account:u1", ""));
 }
 
 } // namespace

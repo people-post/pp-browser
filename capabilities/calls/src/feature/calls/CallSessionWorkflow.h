@@ -46,7 +46,7 @@ class CallSessionWorkflow : public Module, public ICallSessionNotes {
 public:
   /** Delivery / roster wire + chrome activity banners. */
   struct WirePorts {
-    std::function<Roe<std::string>()> local_relay_identity;
+    std::function<Roe<std::string>()> local_account_identity;
     std::function<Roe<void>(const std::string& peer, CallControlType type, const std::string& detail,
                             const std::string& display, bool urgent)>
         send_direct;
@@ -81,8 +81,10 @@ public:
      * roster for it (a guest's). Unset: guests are not checked (tools, tests).
      */
     CallGroupStandingFn group_standing;
+    /** The people of a call we answered or are in get our relay grant (CallDeliveryPorts). Unset: none. */
+    std::function<void(std::vector<std::string> accounts)> grant_call_peers;
 
-    bool IsBound() const { return static_cast<bool>(local_relay_identity); }
+    bool IsBound() const { return static_cast<bool>(local_account_identity); }
   };
 
   /** The 1:1 start the session workflow schedules. */
@@ -254,7 +256,8 @@ public:
   Roe<void> HandleInboundDecline(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundLeave(const std::string& detail_json, const std::string& sender_identity,
                                const std::string& local_identity);
-  Roe<void> HandleInboundRoster(const std::string& detail_json);
+  /** `sender_identity`: the lane's verified sender — joined, and in a call we are in, it gets our relay grant. */
+  Roe<void> HandleInboundRoster(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundSfuAttach(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
@@ -396,6 +399,10 @@ private:
                                        InitiationChargeDecision charge_decision);
   /** Joined in the store and on the LiveCall. */
   Roe<void> CommitLocalJoin(CallSession& row, const std::string& local_identity);
+  /** Our relay grant to everyone joined in `call_id` but us (we answered or joined it; MR005). */
+  void GrantJoinedPeers(const std::string& call_id, const std::string& local_identity);
+  /** Our relay grant to `accounts` (MR005), when a host is bound to give it. */
+  void GrantCallPeers(std::vector<std::string> accounts);
   /** Another accept / a leave moved on while our CallAccept was on the wire: leave this one. */
   bool AcceptSuperseded(const std::string& call_id);
   /** The call's `CallMedia` picks the path; a 1:1 call schedules the answerer's start. */

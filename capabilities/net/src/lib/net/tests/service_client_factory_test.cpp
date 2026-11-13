@@ -68,9 +68,6 @@ public:
     }
     return std::vector<pp::mesh::DirectoryHit>{};
   }
-  pbr::Roe<pp::mesh::DirectoryHit> LookupRelayUser(const std::string& /*relay_user_id*/) override {
-    return pbr::Error("unused");
-  }
   pbr::Roe<pp::mesh::DirectoryHit> LookupByAccount(const std::string& /*account_id*/) override {
     return pbr::Error("unused");
   }
@@ -80,7 +77,7 @@ public:
       return pbr::Error("scripted list fail");
     }
     pp::mesh::MeshNodeHit hit;
-    hit.relay_user_id = "relay:ok";
+    hit.account_id = "account:ok";
     return std::vector<pp::mesh::MeshNodeHit>{hit};
   }
 
@@ -103,6 +100,6 @@ TEST(OrgBackendClientFactoryTest, FailoverDirectoryClientUsesSecondBackend) {
   auto nodes = failover.ListMeshNodes();
   ASSERT_TRUE(static_cast<bool>(nodes));
   ASSERT_EQ(nodes->size(), 1u);
-  EXPECT_EQ(nodes->front().relay_user_id, "relay:ok");
+  EXPECT_EQ(nodes->front().account_id, "account:ok");
   EXPECT_EQ(second_ptr->list_calls, 1);
 }

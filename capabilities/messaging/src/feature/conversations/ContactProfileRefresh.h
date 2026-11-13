@@ -13,7 +13,7 @@ namespace pbr {
 
 /**
  * Keeps a contact's nickname and profile photo current (B142): a contact whose last directory answer is older
- * than `kStaleMs` is looked up again by its relay id and only `remote.nickname`, `remote.icon` and
+ * than `kStaleMs` is looked up again by its Account ID and only `remote.nickname`, `remote.icon` and
  * `remote.fetched_at` are updated (ContactsStore::ApplyProfileRefresh). Blocking: call it off the UI thread.
  */
 class ContactProfileRefresh {
@@ -30,7 +30,7 @@ public:
 
   ContactProfileRefresh(ContactsStore& contacts, mesh::IDirectoryClient& directory);
 
-  /** True when the contact is known, has a relay id and its last directory answer is stale at `now_ms`. */
+  /** True when the contact is known, has an Account ID and its last directory answer is stale at `now_ms`. */
   bool NeedsRefresh(const std::string& contact_id, int64_t now_ms) const;
   /** Looks the contact up and applies the answer when it is stale; a fresh or unknown contact costs no lookup. */
   Result RefreshIfStale(const std::string& contact_id, int64_t now_ms);

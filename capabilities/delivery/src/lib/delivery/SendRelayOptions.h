@@ -25,7 +25,7 @@ struct SendRelayOptions {
   /**
    * Route outbound send onto Critical workers (time-critical signaling: call control, charge_required).
    * Avoids Accept/MediaKey sitting behind PollInbox. Transport is still Amp-first when dialable,
-   * then Brief when a `relay:` route is known.
+   * then the Brief relay, to the peer's Account ID.
    */
   bool critical_lane = false;
   /**

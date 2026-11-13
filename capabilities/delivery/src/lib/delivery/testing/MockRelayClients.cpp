@@ -20,8 +20,7 @@ Roe<void> MockRelayClient::Send(const RelayEnvelope& envelope) {
   RelayEnvelope reply;
   reply.envelope_version = kRelayEnvelopeVersion;
   reply.message_id = util::GenerateUuid();
-  reply.sender_relay_id = next_reply_sender_id_.empty() ? "relay:mock-peer" : next_reply_sender_id_;
-  reply.sender_contact_id = reply.sender_relay_id;
+  reply.sender_contact_id = next_reply_sender_id_.empty() ? "account:mock-peer" : next_reply_sender_id_;
   reply.route.kind = "direct";
   reply.route.channel = envelope.route.channel;
   reply.body.e2e.payload_b64 = envelope.body.e2e.payload_b64;
@@ -49,7 +48,7 @@ Roe<void> MockRelayClient::Send(const RelayEnvelope& envelope) {
   return {};
 }
 
-Roe<RelayPollResult> MockRelayClient::PollInbox(const std::string& /*requester_contact_id*/,
+Roe<RelayPollResult> MockRelayClient::PollInbox(const std::string& /*requester_account_id*/,
                                                 const std::string& /*cursor*/) {
   std::lock_guard lock(mutex_);
   RelayPollResult result;
@@ -60,7 +59,7 @@ Roe<RelayPollResult> MockRelayClient::PollInbox(const std::string& /*requester_c
   return result;
 }
 
-Roe<RelayDeleteResult> MockRelayClient::AckInbox(const std::string& /*requester_contact_id*/,
+Roe<RelayDeleteResult> MockRelayClient::AckInbox(const std::string& /*requester_account_id*/,
                                                  const std::string& cursor) {
   std::lock_guard lock(mutex_);
   RelayDeleteResult result;
@@ -77,7 +76,7 @@ Roe<RelayDeleteResult> MockRelayClient::AckInbox(const std::string& /*requester_
   return result;
 }
 
-Roe<RelayDeleteResult> MockRelayClient::ClearInbox(const std::string& /*requester_contact_id*/,
+Roe<RelayDeleteResult> MockRelayClient::ClearInbox(const std::string& /*requester_account_id*/,
                                                    const std::string& /*before_created_at*/) {
   std::lock_guard lock(mutex_);
   RelayDeleteResult result;
@@ -96,9 +95,7 @@ bool EnvelopeMatchesHistoryRequest(const RelayEnvelope& envelope, const ChatHist
     if (envelope.stream_key != expected_stream) {
       return false;
     }
-  } else if (envelope.sender_contact_id != request.peer_identity_value &&
-             envelope.sender_relay_id != request.peer_identity_value) {
-    // Communicating identity may be Account ID while history peer is the Brief relay route (M010).
+  } else if (envelope.sender_contact_id != request.peer_identity_value) {
     return false;
   }
   const uint64_t order = envelope.order_key != 0 ? envelope.order_key : envelope.sender_seq;

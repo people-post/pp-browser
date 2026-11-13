@@ -21,8 +21,8 @@ TEST(GroupMembershipCodecTest, InviteRoundTrip) {
   GroupInvitePayload payload;
   payload.group_id = "group:test";
   payload.group_title = "Test Group";
-  payload.inviter_identity = "relay:alice";
-  payload.invitee_identity = "relay:bob";
+  payload.inviter_identity = "account:alice";
+  payload.invitee_identity = "account:bob";
   payload.invite_nonce = "nonce-1";
   payload.roster_epoch = 2;
   payload.actor_role = MemberRole::Owner;
@@ -48,7 +48,7 @@ TEST(GroupMembershipCodecTest, GroupPolicyRoundTrip) {
 TEST(GroupMembershipCodecTest, BuildInviteChatActions) {
   GroupInvitePayload payload;
   payload.invite_nonce = "nonce-abc";
-  payload.inviter_identity = "relay:alice";
+  payload.inviter_identity = "account:alice";
   const auto actions = GroupMembershipCodec::BuildInviteChatActions(payload);
   ASSERT_EQ(actions.size(), 3u);
   EXPECT_EQ(actions[0].label, "Accept");
@@ -97,12 +97,12 @@ TEST(GroupMembershipCodecTest, InviteRefusedCarriesItsReason) {
 }
 
 TEST(GroupMembershipCodecTest, OwnerTransferredLeavePreviousRoundTrip) {
-  auto encoded = GroupMembershipCodec::EncodeOwnerTransferred("group:g", "relay:bob", 4, true);
+  auto encoded = GroupMembershipCodec::EncodeOwnerTransferred("group:g", "account:bob", 4, true);
   ASSERT_TRUE(encoded);
   auto decoded = GroupMembershipCodec::DecodeOwnerTransferred(*encoded);
   ASSERT_TRUE(decoded);
   EXPECT_EQ(decoded->group_id, "group:g");
-  EXPECT_EQ(decoded->new_owner_identity, "relay:bob");
+  EXPECT_EQ(decoded->new_owner_identity, "account:bob");
   EXPECT_EQ(decoded->roster_epoch, 4u);
   EXPECT_TRUE(decoded->leave_previous);
 
@@ -115,28 +115,28 @@ TEST(GroupMembershipCodecTest, OwnerTransferredLeavePreviousRoundTrip) {
 }
 
 TEST(GroupMembershipCodecTest, DecodeMemberLeftAndRemoved) {
-  auto left_detail = GroupMembershipCodec::EncodeMemberLeft("group:g", "relay:bob", 3);
+  auto left_detail = GroupMembershipCodec::EncodeMemberLeft("group:g", "account:bob", 3);
   ASSERT_TRUE(left_detail);
   ThreadMessage left_msg;
   left_msg.content_type = ChatContentType::System;
   left_msg.payload_json = ControlPayload("member_left", *left_detail);
   auto left = GroupMembershipCodec::DecodeMemberLeftFromMessage(left_msg);
   ASSERT_TRUE(left);
-  EXPECT_EQ(left->member_identity, "relay:bob");
+  EXPECT_EQ(left->member_identity, "account:bob");
   EXPECT_EQ(left->roster_epoch, 3u);
 
-  auto removed_detail = GroupMembershipCodec::EncodeMemberRemoved("group:g", "relay:carol", 5);
+  auto removed_detail = GroupMembershipCodec::EncodeMemberRemoved("group:g", "account:carol", 5);
   ASSERT_TRUE(removed_detail);
   ThreadMessage removed_msg;
   removed_msg.content_type = ChatContentType::System;
   removed_msg.payload_json = ControlPayload("member_removed", *removed_detail);
   auto removed = GroupMembershipCodec::DecodeMemberRemovedFromMessage(removed_msg);
   ASSERT_TRUE(removed);
-  EXPECT_EQ(removed->member_identity, "relay:carol");
+  EXPECT_EQ(removed->member_identity, "account:carol");
 }
 
 TEST(GroupMembershipCodecTest, OwnerUnreachableActionsAndResolution) {
-  const auto actions = GroupMembershipCodec::BuildOwnerUnreachableChatActions("group:g", "relay:alice");
+  const auto actions = GroupMembershipCodec::BuildOwnerUnreachableChatActions("group:g", "account:alice");
   ASSERT_EQ(actions.size(), 3u);
   EXPECT_NE(actions[0].payload->find("fork_group"), std::string::npos);
   EXPECT_NE(actions[1].payload->find("message_group_owner"), std::string::npos);
@@ -158,7 +158,7 @@ TEST(GroupMembershipCodecTest, OwnerUnreachableActionsAndResolution) {
 TEST(GroupMembershipCodecTest, ApplyInviteResolutionClearsActions) {
   GroupInvitePayload invite;
   invite.invite_nonce = "nonce-r";
-  invite.inviter_identity = "relay:alice";
+  invite.inviter_identity = "account:alice";
   invite.group_title = "Hike";
   auto detail = GroupMembershipCodec::EncodeInvite(invite);
   ASSERT_TRUE(detail);

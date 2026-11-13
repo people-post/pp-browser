@@ -44,12 +44,12 @@ LockerRecord LockerRecordFromJson(const Object& json) {
   return record;
 }
 
-std::vector<uint8_t> BuildLockerPutSignBytes(const std::string& relay_user_id, const std::string& locker_id,
+std::vector<uint8_t> BuildLockerPutSignBytes(const std::string& account_id, const std::string& locker_id,
                                              const uint64_t version, const int64_t timestamp) {
   std::ostringstream oss;
   RelaySignAppendDomain(oss, kLockerPutDomain);
   RelaySignAppendU8(oss, kLockerPutSignVersion);
-  RelaySignAppendWireLenUtf8(oss, relay_user_id);
+  RelaySignAppendWireLenUtf8(oss, account_id);
   RelaySignAppendWireLenUtf8(oss, locker_id);
   RelaySignAppendU64(oss, version);
   RelaySignAppendI64(oss, timestamp);
@@ -58,7 +58,7 @@ std::vector<uint8_t> BuildLockerPutSignBytes(const std::string& relay_user_id, c
 
 HttpLockerClient::HttpLockerClient(std::string base_url) : base_url_(std::move(base_url)) {}
 
-Roe<void> HttpLockerClient::Put(const std::string& relay_user_id, const LockerRecord& record,
+Roe<void> HttpLockerClient::Put(const std::string& account_id, const LockerRecord& record,
                                 std::optional<LockerPutRefusal>* refused) {
   if (base_url_.empty()) {
     return Error("Locker base_url not configured");
@@ -67,12 +67,12 @@ Roe<void> HttpLockerClient::Put(const std::string& relay_user_id, const LockerRe
     return Error("Locker auth signer not configured");
   }
   const int64_t timestamp = util::NowUnixMs();
-  auto signature = auth_signer_(BuildLockerPutSignBytes(relay_user_id, record.locker_id, record.version, timestamp));
+  auto signature = auth_signer_(BuildLockerPutSignBytes(account_id, record.locker_id, record.version, timestamp));
   if (!signature) {
     return signature.error();
   }
   Object body;
-  body.set("relay_user_id", relay_user_id);
+  body.set("account_id", account_id);
   body.set("timestamp", timestamp);
   body.set("signature", *signature);
   body.set("locker", ObjectValue(LockerRecordToJson(record)));

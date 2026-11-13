@@ -61,7 +61,7 @@ protected:
       if (renew_fails_) {
         result.error = Error("renew failed");
       } else if (renew_due_) {
-        result.registration = RegistrationResult{.success = true, .relay_user_id = "relay:u1"};
+        result.registration = RegistrationResult{.success = true, .account_id = "account:u1"};
       }
       return result;
     };
@@ -70,7 +70,7 @@ protected:
       if (account != stored_account_) {
         return Error("another account"); // what PersistRenewal does (registration_client_test)
       }
-      persisted_.push_back("renew:" + registration.relay_user_id);
+      persisted_.push_back("renew:" + registration.account_id);
       return {};
     };
     ports.renew_hint = [this](const RenewResult& result, const bool auto_renew) {
@@ -185,7 +185,7 @@ TEST_F(MessagingReadyTasksTest, NetworkRunsInTheWorkerPartAndNothingIsStoredBefo
   while (!jobs_.empty()) {
     RunUiPart();
   }
-  EXPECT_EQ(persisted_, (std::vector<std::string>{"renew:relay:u1", "brief:brf_guest_new"}));
+  EXPECT_EQ(persisted_, (std::vector<std::string>{"renew:account:u1", "brief:brf_guest_new"}));
   ASSERT_EQ(hints_.size(), 1u);
   EXPECT_TRUE(hints_[0].renewed);
   EXPECT_EQ(brief_ends_, (std::vector<BriefKeyMintOutcome>{BriefKeyMintOutcome::Stored}));
@@ -218,7 +218,7 @@ TEST_F(MessagingReadyTasksTest, AResultOfAnOlderSessionWritesNothingAndFreesItsR
   RunAll();
   EXPECT_EQ(renew_calls_, 2) << "the run is free again";
   EXPECT_EQ(mint_calls_, 2);
-  EXPECT_EQ(persisted_, (std::vector<std::string>{"renew:relay:u1", "brief:brf_guest_new"}));
+  EXPECT_EQ(persisted_, (std::vector<std::string>{"renew:account:u1", "brief:brf_guest_new"}));
 }
 
 TEST_F(MessagingReadyTasksTest, MessagingNoLongerReadyWritesNothing) {
@@ -421,7 +421,7 @@ TEST_F(MessagingReadyTasksTest, ResultsCarryTheAccountTheyRanFor) {
   stored_account_ = "account:a";
   tasks_->RenewRegistration();
   RunAll();
-  EXPECT_EQ(persisted_, (std::vector<std::string>{"renew:relay:u1"}));
+  EXPECT_EQ(persisted_, (std::vector<std::string>{"renew:account:u1"}));
 }
 
 TEST(CoalescedRunTest, AStaleTicketChangesNothing) {

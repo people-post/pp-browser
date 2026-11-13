@@ -34,7 +34,9 @@ struct Fixture {
   pbr::NodeHeartbeatDeps Deps() {
     pbr::NodeHeartbeatDeps d;
     d.base_url = "https://relay.example/api";
-    d.identity = [this] { return registered ? pbr::HeartbeatIdentity{"relay:u1", "peer1"} : pbr::HeartbeatIdentity{}; };
+    d.identity = [this] {
+      return registered ? pbr::HeartbeatIdentity{"account:u1", "peer1"} : pbr::HeartbeatIdentity{};
+    };
     d.sign = [](const std::string&, const std::string&, const std::string& state, int64_t ts) -> pbr::Roe<std::string> {
       return "sig-" + state + "-" + std::to_string(ts);
     };
@@ -86,7 +88,7 @@ TEST(NodeHeartbeatTest, SendsSignedActiveHeartbeatToContractEndpoint) {
   ASSERT_EQ(f.sent.size(), 1u);
   EXPECT_EQ(f.sent[0].url, "https://relay.example/api/v1/mesh/heartbeat");
   EXPECT_EQ(f.sent[0].timeout_s, pbr::kHeartbeatTimeoutS);
-  EXPECT_EQ(f.sent[0].body.getString("relay_user_id").value_or(""), "relay:u1");
+  EXPECT_EQ(f.sent[0].body.getString("account_id").value_or(""), "account:u1");
   EXPECT_EQ(f.sent[0].body.getString("peer_id").value_or(""), "peer1");
   EXPECT_EQ(f.sent[0].body.getString("state").value_or(""), "active");
   EXPECT_EQ(f.sent[0].body.getString("signature").value_or(""), "sig-active-" + std::to_string(Ts(f.sent[0])));

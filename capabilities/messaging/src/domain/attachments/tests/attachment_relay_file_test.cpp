@@ -74,7 +74,6 @@ protected:
     ASSERT_TRUE(identity_->SetDek(TestDek()));
     ASSERT_TRUE(identity_->LoadOrCreate());
     LocalIdentity updated = *identity_->Get();
-    updated.relay_user_id = "relay:local";
     updated.registered = true;
     ASSERT_TRUE(identity_->Update(updated));
     store_ = std::make_unique<OutgoingAttachmentStore>(dir_.string(), "profile-1");
@@ -171,17 +170,17 @@ TEST_F(AttachmentRelayUploadTest, AStoreWriteFailureAfterCompleteDeletesTheFileA
 
 TEST(AttachmentUploadedCopyTest, DeletingTheServerCopyUsesTheLinksBlobId) {
   MockBlobClient blob;
-  EXPECT_TRUE(DeleteUploadedAttachmentCopy(blob, "relay:u1", "")) << "sent peer-direct: nothing to delete";
+  EXPECT_TRUE(DeleteUploadedAttachmentCopy(blob, "account:u1", "")) << "sent peer-direct: nothing to delete";
   EXPECT_TRUE(blob.DeletedFileIds().empty());
 
-  ASSERT_TRUE(DeleteUploadedAttachmentCopy(blob, "relay:u1",
+  ASSERT_TRUE(DeleteUploadedAttachmentCopy(blob, "account:u1",
                                            "https://www.brief.global/api/relay/v1/files/abc-123/download?t=tok"));
   EXPECT_EQ(blob.DeletedFileIds(), (std::vector<std::string>{"abc-123"}));
 }
 
 TEST(AttachmentUploadedCopyTest, AnOldCdnLinkHasNothingToDeleteAndIsSkipped) {
   MockBlobClient blob;
-  EXPECT_TRUE(DeleteUploadedAttachmentCopy(blob, "relay:u1", "https://cdn.example/pp/files/abc-123?sig=1"));
+  EXPECT_TRUE(DeleteUploadedAttachmentCopy(blob, "account:u1", "https://cdn.example/pp/files/abc-123?sig=1"));
   EXPECT_TRUE(blob.DeletedFileIds().empty());
   EXPECT_TRUE(blob.DeletedBlobIds().empty());
 }
@@ -198,19 +197,20 @@ private:
 
 TEST(AttachmentUploadedCopyTest, AFailedDeleteKeepsItsOwnErrorAndNamesTheBlob) {
   FailingDeleteBlob limited(AppError::Blob(Err::Blob::RateLimited, "HTTP 429: Rate limit exceeded"));
-  auto deleted = DeleteUploadedAttachmentCopy(limited, "relay:u1", "https://h/api/relay/v1/files/abc-1/download?t=tok");
+  auto deleted =
+      DeleteUploadedAttachmentCopy(limited, "account:u1", "https://h/api/relay/v1/files/abc-1/download?t=tok");
   ASSERT_FALSE(deleted);
   EXPECT_EQ(deleted.error().code, static_cast<int32_t>(Err::Blob::RateLimited));
   EXPECT_NE(deleted.error().message.find("blob=abc-1"), std::string::npos);
   EXPECT_EQ(deleted.error().message.find("t=tok"), std::string::npos);
 
   FailingDeleteBlob offline(AppError::Network(Err::Network::ConnectFailed, "HTTP request failed: no route"));
-  auto down = DeleteUploadedAttachmentCopy(offline, "relay:u1", "https://h/api/relay/v1/files/abc-1/download?t=tok");
+  auto down = DeleteUploadedAttachmentCopy(offline, "account:u1", "https://h/api/relay/v1/files/abc-1/download?t=tok");
   ASSERT_FALSE(down);
   EXPECT_EQ(down.error().code, static_cast<int32_t>(Err::Network::ConnectFailed));
 
   FailingDeleteBlob gone(AppError::Blob(Err::Blob::Expired, "HTTP 404 BLOB_NOT_FOUND: Blob not found"));
-  EXPECT_TRUE(DeleteUploadedAttachmentCopy(gone, "relay:u1", "https://h/api/relay/v1/files/abc-1/download?t=tok"))
+  EXPECT_TRUE(DeleteUploadedAttachmentCopy(gone, "account:u1", "https://h/api/relay/v1/files/abc-1/download?t=tok"))
       << "already gone is what was wanted";
 }
 

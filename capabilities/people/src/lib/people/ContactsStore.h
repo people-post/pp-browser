@@ -19,10 +19,12 @@ namespace pbr {
 class ContactsStore : public Module, public IContactBook, public IContactTrustAccess {
 public:
   /**
-   * Nested local/remote contact rows (+ empty overrides). A file of another version (older, newer or none) is
-   * refused: pre-release, no leftover contacts file is carried over (COMPATIBILITY.md § On-disk).
+   * Nested local/remote contact rows (+ empty overrides). 2 is stepped up on load: its `relay_user` ids are dropped
+   * (the relay addresses a person by the Account ID, multi-relay MR001). A file of another version (older than 2,
+   * newer, or none) is refused: pre-release, no leftover contacts file is carried over (COMPATIBILITY.md § On-disk).
    */
-  static constexpr int kSchemaVersion = 2;
+  static constexpr int kSchemaVersion = 3;
+  static constexpr int kFloorSchemaVersion = 2;
 
   explicit ContactsStore(std::string data_dir);
 

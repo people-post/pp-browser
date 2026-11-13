@@ -14,7 +14,6 @@
 
 namespace pbr {
 
-class ContactsStore;
 class InboxController;
 class AttachmentFetchWorkflow;
 class IChatHistoryPeerClient;
@@ -27,7 +26,7 @@ struct ChatSyncResult {
 /** D058 unified E2E backfill — peer-direct (D060) then relay (D027). */
 class ChatSyncWorkflow {
 public:
-  ChatSyncWorkflow(IThreadStore& store, IdentityStore& identity, ContactsStore& contacts, IRelayClient* relay,
+  ChatSyncWorkflow(IThreadStore& store, IdentityStore& identity, IRelayClient* relay,
                    RelayReceivePipeline& receive_pipeline, InboxController& inbox,
                    IChatHistoryPeerClient* peer_client = nullptr);
 
@@ -70,7 +69,6 @@ private:
 
   IThreadStore& store_;
   IdentityStore& identity_;
-  ContactsStore& contacts_;
   IRelayClient* relay_ = nullptr;
   IChatHistoryPeerClient* peer_client_ = nullptr;
   RelayReceivePipeline& receive_pipeline_;

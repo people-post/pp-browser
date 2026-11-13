@@ -15,7 +15,7 @@ TEST(BlobQuotaTest, IsBlobQuotaErrorDetectsQuotaExceeded) {
   EXPECT_FALSE(IsBlobQuotaError(AppError::Network(Err::Network::HttpError, "HTTP 500")));
 }
 
-TEST(BlobQuotaTest, EmptyRelayUserIdRejected) {
+TEST(BlobQuotaTest, EmptyAccountIdRejected) {
   MockBlobClient blob;
   auto plan = PlanOldestRelayFileDeletion(blob, "", 1);
   ASSERT_FALSE(static_cast<bool>(plan));
@@ -26,7 +26,7 @@ TEST(BlobQuotaTest, UploadRelayBlobBytesSurfacesQuotaErrorFromPresign) {
   MockBlobClient blob;
   blob.SetPresignError(AppError::Blob(Err::Blob::QuotaExceeded, "Small file quota exceeded"));
 
-  auto uploaded = UploadRelayBlobBytes(blob, "relay:u1", "application/octet-stream", BlobPurpose::File, "body");
+  auto uploaded = UploadRelayBlobBytes(blob, "account:u1", "application/octet-stream", BlobPurpose::File, "body");
   ASSERT_FALSE(static_cast<bool>(uploaded));
   EXPECT_TRUE(IsBlobQuotaError(uploaded.error()));
   EXPECT_EQ(blob.PresignCallCount(), 1u);

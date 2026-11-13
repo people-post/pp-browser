@@ -14,8 +14,8 @@ Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identit
       identity.account_signing_public_key_b64.empty()) {
     return Error("Local account identity unavailable");
   }
-  if (identity.relay_user_id.empty()) {
-    return Error("Local relay identity unavailable");
+  if (!identity.registered) {
+    return Error("Local account not registered on the relay");
   }
   if (dek.size() != kDataEncryptionKeySize) {
     return Error("Invalid DEK size");
@@ -34,7 +34,6 @@ Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identit
   bundle.account_kem_pk_b64 = identity.kem_public_key_b64;
   bundle.account_kem_sk_b64 = identity.kem_private_key_b64.Reveal();
   bundle.dek_b64 = Base64Encode(dek);
-  bundle.relay_user_id = identity.relay_user_id;
   bundle.nickname = identity.nickname;
   if (!identity.recovery_seed_b64.empty()) {
     bundle.recovery_seed_b64 = identity.recovery_seed_b64.Reveal(); // M023: the new device shows the same phrase
@@ -119,7 +118,6 @@ Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, 
   next.recovery_seed_b64 = parsed->recovery_seed_b64.value_or(std::string());
   next.kem_public_key_b64 = parsed->account_kem_pk_b64;
   next.kem_private_key_b64 = parsed->account_kem_sk_b64;
-  next.relay_user_id = parsed->relay_user_id;
   if (!parsed->nickname.empty()) {
     next.nickname = parsed->nickname;
   }

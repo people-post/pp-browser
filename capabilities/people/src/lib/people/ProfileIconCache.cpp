@@ -55,11 +55,6 @@ std::string SanitizeProfileIconCacheKey(const std::string& key) {
 }
 
 std::string ProfileIconCacheKeyForHit(const mesh::DirectoryHit& hit) {
-  for (const mesh::ContactId& id : hit.ids) {
-    if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
-      return SanitizeProfileIconCacheKey(id.value);
-    }
-  }
   if (hit.account_id && !hit.account_id->empty()) {
     return SanitizeProfileIconCacheKey(*hit.account_id);
   }
@@ -75,9 +70,6 @@ std::string ProfileIconCacheKeyForHit(const mesh::DirectoryHit& hit) {
 }
 
 std::string ProfileIconCacheKeyForContact(const Contact& contact) {
-  if (const std::string relay = PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser); !relay.empty()) {
-    return SanitizeProfileIconCacheKey(relay);
-  }
   if (const std::string account = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account); !account.empty()) {
     return SanitizeProfileIconCacheKey(account);
   }
@@ -89,11 +81,9 @@ std::string ProfileIconLocalPathForIdentity(const std::string& profile_dir, cons
   if (identity.empty()) {
     return {};
   }
-  for (const mesh::ContactIdKind kind : {mesh::ContactIdKind::Account, mesh::ContactIdKind::RelayUser}) {
-    if (auto found = contacts.FindByIdentity(identity, kind); found && found->has_value()) {
-      const std::string key = ProfileIconCacheKeyForContact(**found);
-      return key.empty() ? std::string() : ProfileIconLocalPath(profile_dir, key);
-    }
+  if (auto found = contacts.FindByIdentity(identity, mesh::ContactIdKind::Account); found && found->has_value()) {
+    const std::string key = ProfileIconCacheKeyForContact(**found);
+    return key.empty() ? std::string() : ProfileIconLocalPath(profile_dir, key);
   }
   return ProfileIconLocalPath(profile_dir, SanitizeProfileIconCacheKey(identity));
 }

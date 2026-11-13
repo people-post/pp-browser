@@ -48,14 +48,12 @@ struct ChatBlobRequester {
 class ChatBlobResponder {
 public:
   static Roe<std::vector<uint8_t>> ServeFetch(IThreadStore& store, const ChatBlobRequest& request,
-                                              const std::string& local_relay_user_id,
-                                              const std::string& profile_data_dir, const ChatBlobContentSource& content,
-                                              const ChatBlobRequester& requester);
+                                              const std::string& local_account_id, const std::string& profile_data_dir,
+                                              const ChatBlobContentSource& content, const ChatBlobRequester& requester);
 
-  static Roe<void> ServePush(IThreadStore& store, const ChatBlobRequest& request,
-                             const std::string& local_relay_user_id, const std::string& profile_data_dir,
-                             const std::vector<uint8_t>& ciphertext, const ChatBlobRequester& requester,
-                             const ChatBlobPushGate& push_gate = {});
+  static Roe<void> ServePush(IThreadStore& store, const ChatBlobRequest& request, const std::string& local_account_id,
+                             const std::string& profile_data_dir, const std::vector<uint8_t>& ciphertext,
+                             const ChatBlobRequester& requester, const ChatBlobPushGate& push_gate = {});
 };
 
 } // namespace pbr

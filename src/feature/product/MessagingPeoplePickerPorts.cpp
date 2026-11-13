@@ -10,7 +10,7 @@ MessagingPeoplePickerPorts MakeMessagingPeoplePickerPorts(ConversationsHub& hub)
   MessagingPeoplePickerPorts ports;
   ports.get_thread = [&hub](const std::string& thread_id) { return hub.Store().GetThread(thread_id); };
   ports.list_group_roster = [&hub](const std::string& group_id) { return hub.Groups().ListRoster(group_id); };
-  ports.local_relay_identity = [&hub]() -> std::optional<std::string> {
+  ports.local_account_identity = [&hub]() -> std::optional<std::string> {
     if (auto identity = hub.Identity().Get()) {
       if (!identity->account_id.empty()) {
         return identity->account_id;

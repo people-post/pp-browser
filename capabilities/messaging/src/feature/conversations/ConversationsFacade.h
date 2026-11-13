@@ -344,6 +344,8 @@ public:
   // --- Pricing (P001) -------------------------------------------------------
   /** True when peer initiation floor > 0, relationship not open, and payment rails unavailable. */
   bool IsInitiationOutboundBlocked(const std::string& peer_identity);
+  /** The peer's initiation floor as last heard (its directory row, a `payment_required`), pp_credit minor units. */
+  int64_t InitiationFloorOf(const std::string& peer_identity);
   Roe<void> SendChargeRequired(const std::string& peer_identity, std::optional<int64_t> floor_minor = std::nullopt);
 
   // --- Payment promises (P002 / P003) ----------------------------------------

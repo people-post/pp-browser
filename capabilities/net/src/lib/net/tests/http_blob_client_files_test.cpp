@@ -242,7 +242,7 @@ protected:
     return path;
   }
   Roe<RelayFileUpload> Upload(const size_t bytes) {
-    return UploadRelayFile(client_, "relay:u1", Staged(bytes), bytes, {});
+    return UploadRelayFile(client_, "account:u1", Staged(bytes), bytes, {});
   }
 
   std::filesystem::path dir_;
@@ -258,7 +258,7 @@ TEST_F(HttpBlobClientFilesTest, StartPutCompleteGivesTheShareLinkOnTheRelayOrigi
   const auto starts = relay_.Bodies("start");
   ASSERT_EQ(starts.size(), 1u);
   EXPECT_EQ(starts[0].getNonNegInt("byte_length").value_or(0), 5016u) << "the ciphertext length is reserved";
-  EXPECT_EQ(starts[0].getString("relay_user_id").value_or(""), "relay:u1");
+  EXPECT_EQ(starts[0].getString("account_id").value_or(""), "account:u1");
   EXPECT_EQ(starts[0].getString("signature").value_or(""), "sig");
   EXPECT_EQ(relay_.PutBytes(), 5016u);
   ASSERT_EQ(relay_.Bodies("complete").size(), 1u);
@@ -269,11 +269,11 @@ TEST_F(HttpBlobClientFilesTest, StartPutCompleteGivesTheShareLinkOnTheRelayOrigi
   // The signed bytes are the start domain's, for the timestamp the body carries.
   ASSERT_FALSE(signed_.empty());
   const auto ts = static_cast<int64_t>(starts[0].getNonNegInt("timestamp").value_or(0));
-  EXPECT_EQ(signed_.front(), BytesToHex(BuildFileStartSignBytes("relay:u1", 5016, ts)));
+  EXPECT_EQ(signed_.front(), BytesToHex(BuildFileStartSignBytes("account:u1", 5016, ts)));
 }
 
 TEST_F(HttpBlobClientFilesTest, BytesInMemoryGoTheSameWay) {
-  auto uploaded = UploadRelayFileBytes(client_, "relay:u1", std::string(77, 'z'));
+  auto uploaded = UploadRelayFileBytes(client_, "account:u1", std::string(77, 'z'));
   ASSERT_TRUE(uploaded) << uploaded.error().message;
   EXPECT_EQ(relay_.Bodies("start")[0].getNonNegInt("byte_length").value_or(0), 77u);
   EXPECT_EQ(relay_.PutBytes(), 77u);
@@ -282,7 +282,7 @@ TEST_F(HttpBlobClientFilesTest, BytesInMemoryGoTheSameWay) {
 TEST_F(HttpBlobClientFilesTest, AMultipartAnswerForBytesInMemoryIsAnErrorAndItsBlobIsDeleted) {
   relay_.start_mode = "multipart";
   relay_.part_bytes = 64;
-  auto uploaded = UploadRelayFileBytes(client_, "relay:u1", std::string(100, 'z'));
+  auto uploaded = UploadRelayFileBytes(client_, "account:u1", std::string(100, 'z'));
   ASSERT_FALSE(uploaded);
   EXPECT_EQ(relay_.PutBytes(), 0u);
   EXPECT_TRUE(relay_.Bodies("part").empty());
@@ -363,7 +363,7 @@ TEST_F(HttpBlobClientFilesTest, ListParsesFilesAndUsage) {
       "download_count":1,"max_downloads":10,"created_at":"2026-11-01T00:00:00.000Z",
       "completed_at":"2026-11-01T00:00:01.000Z","expires_at":"2026-11-08T00:00:01.000Z"}],
     "usage":{"bytes_used":12,"pending_count":0,"quota_bytes":1073741824,"max_pending":20}})";
-  auto listed = client_.FileList("relay:u1", "complete");
+  auto listed = client_.FileList("account:u1", "complete");
   ASSERT_TRUE(listed) << listed.error().message;
   ASSERT_EQ(listed->files.size(), 1u);
   EXPECT_EQ(listed->files[0].blob_id, "b1");
@@ -424,7 +424,7 @@ protected:
   }
   Roe<RelayFileUpload> UploadParts(const size_t bytes, const std::function<bool(uint64_t, uint64_t)>& progress = {}) {
     const std::string path = Source(bytes);
-    return UploadRelayFile(client_, "relay:u1", path, bytes, progress);
+    return UploadRelayFile(client_, "account:u1", path, bytes, progress);
   }
   std::vector<uint64_t> PartNumbersAsked() const {
     std::vector<uint64_t> out;
@@ -464,7 +464,7 @@ TEST_F(RelayFileMultipartTest, TwoFullPartsAndAShortOneThenComplete) {
   EXPECT_EQ(first.getString("blob_id").value_or(""), uploaded->blob_id);
   const auto ts = static_cast<int64_t>(first.getNonNegInt("timestamp").value_or(0));
   EXPECT_NE(std::find(signed_.begin(), signed_.end(),
-                      BytesToHex(BuildFilePartSignBytes("relay:u1", uploaded->blob_id, 1, ts))),
+                      BytesToHex(BuildFilePartSignBytes("account:u1", uploaded->blob_id, 1, ts))),
             signed_.end());
 }
 
@@ -513,7 +513,7 @@ TEST_F(RelayFileMultipartTest, AStagedFileCutShortMidPartFailsWithoutARetry) {
   const size_t bytes = 2 * kPart + 10;
   const std::string path = Source(bytes);
   bool cut = false;
-  auto uploaded = UploadRelayFile(client_, "relay:u1", path, bytes, [&](const uint64_t done, uint64_t) {
+  auto uploaded = UploadRelayFile(client_, "account:u1", path, bytes, [&](const uint64_t done, uint64_t) {
     if (!cut && done > 0) {
       std::filesystem::resize_file(path, kPart / 2); // the staged file changes under the upload
       cut = true;

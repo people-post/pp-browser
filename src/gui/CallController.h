@@ -81,7 +81,7 @@ public:
   bool CallJoinableInThread(const std::string& thread_id);
   /** The group chat's call bar ("A voice call is on · 3 people"); "" when there is no call to join. */
   std::string CallJoinBarText(const std::string& thread_id);
-  /** Start with explicit invitee relay identities (group / picker flow). */
+  /** Start with explicit invitee accounts (group / picker flow). */
   bool StartCallWithInvitees(const std::string& thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
   void OpenGroupCallPicker(const std::string& thread_id, bool video_allowed);

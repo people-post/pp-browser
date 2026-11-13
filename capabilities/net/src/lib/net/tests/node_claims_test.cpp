@@ -38,10 +38,10 @@ TEST(NodeClaimsTest, ARegistrationCarriesWhatTheNodeRunsOnlyWhenSet) {
 // A row says what its node runs, or nothing (a node or directory before N032): both parse.
 TEST(NodeClaimsTest, DirectoryRowsCarryWhatTheNodeSaysItRuns) {
   const std::string json = R"({"nodes": [
-    {"relay_user_id": "relay:new", "amp_wire": 2, "node_version": "4.1.0", "features": ["hop_data_lane"],
+    {"account_id": "account:new", "amp_wire": 2, "node_version": "4.1.0", "features": ["hop_data_lane"],
      "endpoints": [{"peer_id": "QmNew", "multiaddrs": []}]},
-    {"relay_user_id": "relay:old", "endpoints": [{"peer_id": "QmOld", "multiaddrs": []}]},
-    {"relay_user_id": "relay:junk", "amp_wire": 99}
+    {"account_id": "account:old", "endpoints": [{"peer_id": "QmOld", "multiaddrs": []}]},
+    {"account_id": "account:junk", "amp_wire": 99}
   ]})";
   auto hits = MeshNodeHitsFromDirectoryJson(json);
   ASSERT_TRUE(hits) << hits.error().message;

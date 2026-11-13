@@ -88,7 +88,7 @@ public:
   /**
    * An id (account, device, peer, relay user, thread, message) as 8 hex of a keyed hash. The key is random per
    * process and never written anywhere, so lines of one run can be joined and nothing else: not the id, not
-   * another run, not another device. A leading `account:` / `peer:` / `relay:` / `call:` is dropped first so
+   * another run, not another device. A leading `account:` / `peer:` / `call:` is dropped first so
    * both spellings of one id give the same ref. Empty id: `-`.
    */
   ShareableLine& Ref(ShareWord key, std::string_view id);

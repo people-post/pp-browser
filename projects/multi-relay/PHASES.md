@@ -21,12 +21,14 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 
 ## R2 — App: Account ID everywhere, the relay list, several relays
 
-- [ ] `ContactIdKind::RelayUser` and `relay:` ids removed (routes, envelopes, contacts, directory hits).
+- [x] `ContactIdKind::RelayUser` and `relay:` ids removed (routes, envelopes, contacts, directory hits, registration, history and stream ids, devices, blobs, files, lockers, profile, revoke, the node heartbeat, the contact refresh); stored ones mapped or dropped (`profile.db` 6, `thread.db` 4, `contacts.json` 3, `identity.enc` 4, `initiation_billing.json` 2).
 - [ ] The account card's `relays` field (sign, verify, bounds); a contact stores the newest list (a `profile.db` ladder step).
 - [ ] Clients per relay: register, poll (preferred at pace, others slower), push tokens on each.
-- [ ] MR005 in the app: `initiation_floor` in the account card; grants issued to accepted contacts, renewed, attached to sends, not renewed once blocked; `payment_required` shows the receiver's price.
-- [ ] Sending in list order with a per-relay health memory; `recipient_not_registered` fetches the card and retries once; a foreign send carries our key.
-- [ ] Contracts promoted: ACCOUNT_CARD, SERVICE_ENDPOINTS, WIRE_SCHEMAS, COMPATIBILITY rows.
+- [x] MR005 grants in the app: issued to contacts and group members (and, unrenewed, to the people of a call we answer or are in) over the control lane, acked, renewed, attached to sends, not renewed once blocked or removed; `grant_expired` / `invalid_grant` ask again and send once as a stranger; `payment_required` shows the receiver's price; `stranger_quota_exceeded` retried with backoff, and what it held back goes once the grant arrives.
+- [ ] MR005: `initiation_floor` in the account card.
+- [x] A send the relay answers `sender_key_required` goes again with our key; `recipient_not_registered` is a plain failure (then Amp, when the peer has a link).
+- [ ] Sending in list order with a per-relay health memory; `recipient_not_registered` fetches the card and retries once.
+- [ ] Contracts promoted: ACCOUNT_CARD, SERVICE_ENDPOINTS, WIRE_SCHEMAS, COMPATIBILITY rows (step 1 promoted: Account IDs, grants, the errors; the relay list follows).
 - [ ] Lab: two relays; users registered on different ones message and call each other; the preferred relay stopped mid-run.
 
 ## R3 — UI

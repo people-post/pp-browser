@@ -25,7 +25,7 @@ inline constexpr long kHeartbeatFinalTimeoutS = 3;
 
 /** Both empty until the node is registered. */
 struct HeartbeatIdentity {
-  std::string relay_user_id;
+  std::string account_id;
   std::string peer_id;
 };
 
@@ -34,7 +34,7 @@ struct NodeHeartbeatDeps {
   std::string base_url;
   std::function<HeartbeatIdentity()> identity;
   /** Account-key signature (base64) over the heartbeat sign bytes. */
-  std::function<Roe<std::string>(const std::string& relay_user_id, const std::string& peer_id, const std::string& state,
+  std::function<Roe<std::string>(const std::string& account_id, const std::string& peer_id, const std::string& state,
                                  int64_t timestamp)>
       sign;
   HttpPostFn post;

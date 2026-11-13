@@ -50,7 +50,7 @@ public:
    * Sync the account's state with its locker, both ways (M023 §7): note what changed here since the last sync (the
    * contact clock), take what changed on another device (newer registers win — contacts put in, edited or taken out
    * here), then store the merged state as a version newer than any seen — unless it is what the locker holds already
-   * (no write). Errors when the account has no recovery seed (minted before M023) or no relay id, and when the locker
+   * (no write). Errors when the account has no recovery seed (minted before M023) or is not registered on the relay, and when the locker
    * cannot be read (writing blind would drop another device's state). The version stored or found.
    */
   Roe<uint64_t> Publish();
@@ -78,6 +78,8 @@ public:
 
   /** The account state as it is here now (what Publish seals). */
   Roe<AccountLockerState> CurrentState();
+  /** Our Account ID once registered on the relay (it signs a locker write); an error before. */
+  Roe<std::string> RegisteredAccount();
 
 private:
   IdentityStore& identity_;

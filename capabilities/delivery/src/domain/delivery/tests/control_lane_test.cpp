@@ -2,7 +2,6 @@
 
 #include "domain/delivery/DeliveryOutbox.h"
 #include "domain/delivery/E2ePublicSessionKeys.h"
-#include "domain/delivery/PeerRouteBook.h"
 #include "domain/peers/AccountKeyResolver.h"
 #include "domain/peers/OwnCards.h"
 #include "lib/delivery/RelayClients.h"
@@ -40,7 +39,6 @@ ByteVector TestDek() {
 class NoDirectory : public mesh::IDirectoryClient {
 public:
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string&) override { return None(); }
-  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string&) override { return None(); }
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string&) override { return None(); }
 
 private:
@@ -65,7 +63,7 @@ class CountingRelay final : public IRelayClient {
 public:
   Roe<void> Send(const RelayEnvelope& envelope) override {
     std::lock_guard lock(mu_);
-    to_.push_back(envelope.recipient_contact_id.value_or(""));
+    to_.push_back(envelope.recipient_account_id.value_or(""));
     hints_.push_back(envelope.relay_wake_hint);
     sent_.push_back(envelope);
     return {};
@@ -109,7 +107,6 @@ protected:
     account_keys_ = std::make_unique<AccountKeyResolver>(signing_, kem_store_, *cards_, directory_);
     own_ = std::make_unique<OwnCards>(*identity_, *account_keys_);
     contacts_ = std::make_unique<ContactsStore>(dir_.string());
-    routes_ = std::make_unique<PeerRouteBook>(*contacts_);
     store_ = std::make_unique<InMemoryDeliveryStore>();
     psk_ = std::make_unique<InMemoryPeerSessions>(*store_);
     ASSERT_TRUE(static_cast<bool>(store_->SetDek(TestDek())));
@@ -118,8 +115,7 @@ protected:
     outbox_ = std::make_unique<DeliveryOutbox>([]() -> IDirectMessageClient* { return nullptr; });
     outbox_->SetRelayClient(&relay_);
     lane_ = std::make_unique<ControlLane>(
-        *identity_, *own_, *account_keys_, *contacts_, *routes_, *keys_,
-        []() -> IDirectMessageClient* { return nullptr; }, *outbox_);
+        *identity_, *own_, *account_keys_, *keys_, []() -> IDirectMessageClient* { return nullptr; }, *outbox_);
   }
 
   void TearDown() override {
@@ -130,7 +126,6 @@ protected:
     keys_.reset();
     psk_.reset();
     store_.reset();
-    routes_.reset();
     contacts_.reset();
     own_.reset();
     identity_.reset();
@@ -187,7 +182,6 @@ protected:
   std::unique_ptr<AccountKeyResolver> account_keys_;
   std::unique_ptr<OwnCards> own_;
   std::unique_ptr<ContactsStore> contacts_;
-  std::unique_ptr<PeerRouteBook> routes_;
   AnyPeerKem peer_kem_;
   std::unique_ptr<InMemoryDeliveryStore> store_;
   std::unique_ptr<InMemoryPeerSessions> psk_;
@@ -200,12 +194,10 @@ protected:
 // V058 2: a send to many seals each copy for its pair; one peer that cannot be reached does not hold up the
 // others, and the caller hears once, one result per peer in its order.
 TEST_F(ControlLaneTest, ASendToManyReportsEachPeerOnceInOrder) {
-  routes_->NoteAccountRoute("account:bob", "relay:bob");
-  routes_->NoteAccountRoute("account:dave", "relay:dave");
   std::mutex mu;
   int calls = 0;
   std::vector<ControlSendResult> got;
-  lane_->SendToMany({To("account:bob"), To("account:carol"), To("account:dave")},
+  lane_->SendToMany({To("account:bob"), To("carol-without-an-account"), To("account:dave")},
                     [&](std::vector<ControlSendResult> results) {
                       std::lock_guard lock(mu);
                       ++calls;
@@ -230,18 +222,17 @@ TEST_F(ControlLaneTest, ASendToManyReportsEachPeerOnceInOrder) {
   ASSERT_EQ(got.size(), 3u);
   EXPECT_EQ(got[0].peer_identity, "account:bob");
   EXPECT_TRUE(got[0].queued) << (got[0].queued ? "" : got[0].queued.error().message);
-  EXPECT_EQ(got[1].peer_identity, "account:carol");
-  EXPECT_FALSE(got[1].queued) << "no route to carol";
+  EXPECT_EQ(got[1].peer_identity, "carol-without-an-account");
+  EXPECT_FALSE(got[1].queued) << "no Account ID (the relay's address) and no link";
   EXPECT_EQ(got[2].peer_identity, "account:dave");
   EXPECT_TRUE(got[2].queued);
   auto to = relay_.To();
   std::sort(to.begin(), to.end());
-  EXPECT_EQ(to, (std::vector<std::string>{"relay:bob", "relay:dave"}));
+  EXPECT_EQ(to, (std::vector<std::string>{"account:bob", "account:dave"})) << "by Account ID (MR001)";
 }
 
 // An urgent invite carries its call_id as the push's wake hint; a quiet signal carries none.
 TEST_F(ControlLaneTest, AnUrgentInviteCarriesItsCallIdAsTheWakeHint) {
-  routes_->NoteAccountRoute("account:bob", "relay:bob");
   ControlSend invite = To("account:bob");
   invite.control.payload_json = R"({"control_type":"call_invite","detail":"{\"call_id\":\"call-123-abc\"}"})";
   invite.urgent = true;
@@ -267,7 +258,6 @@ TEST_F(ControlLaneTest, APeerWithACardGetsACopyPerDevice) {
       .keys = bob.Card(), .nickname = "bob", .devices = {bob.device.Entry(), tablet.Entry()}, .issued_at = 1};
   card = SignAccountCard(card, [&bob](const ByteVector& bytes) { return bob.Sign(bytes); }).value();
   ASSERT_TRUE(account_keys_->AddAccountCard(card, util::NowUnixMs(), "test"));
-  routes_->NoteAccountRoute(bob.account_id, "relay:bob");
 
   auto account_pair = keys_->Resolve(bob.account_id); // opened while we held no card for Bob (a first contact)
   ASSERT_TRUE(account_pair && account_pair->key_init_b64) << (account_pair ? "" : account_pair.error().message);
@@ -308,7 +298,6 @@ TEST_F(ControlLaneTest, APeerWithACardGetsACopyPerDevice) {
 // No card for the peer (a first contact): the account copy, carrying the account pair's opener while unconfirmed —
 // the one the session was opened with, not a second session.
 TEST_F(ControlLaneTest, APeerWithNoCardGetsTheAccountCopy) {
-  routes_->NoteAccountRoute("account:stranger", "relay:stranger");
   auto opened = keys_->Resolve("account:stranger");
   ASSERT_TRUE(opened && opened->key_init_b64);
   ControlSend first = To("account:stranger");
@@ -332,7 +321,6 @@ TEST_F(ControlLaneTest, ADeviceLinkedAfterWeToldTheAccountGetsOurCard) {
   const test::TestAccount bob = test::TestAccount::Make();
   const test::TestDevice laptop = test::TestDevice::Make();
   KeepCard(bob, {bob.device.Entry(), laptop.Entry()}, 1);
-  routes_->NoteAccountRoute(bob.account_id, "relay:bob");
   EXPECT_TRUE(SendQuiet(bob.account_id).body.e2e.sender_card) << "opens both device sessions";
   HeardUnderEverySession(bob.account_id);
   EXPECT_FALSE(SendQuiet(bob.account_id).body.e2e.sender_card) << "every device addressed was told: no card";

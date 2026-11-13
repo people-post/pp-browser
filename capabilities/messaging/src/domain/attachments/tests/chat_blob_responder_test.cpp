@@ -55,13 +55,12 @@ public:
     keys.Put("account", requester_account, key);
     {
       LocalIdentity updated = *identity.Get();
-      updated.relay_user_id = "relay:local";
       updated.registered = true;
       if (!identity.Update(updated)) {
         throw std::runtime_error("Failed to set test relay id");
       }
     }
-    local_relay_id = identity.Get()->relay_user_id;
+    local_relay_id = identity.Get()->account_id;
     profile_data_dir = data_dir.string();
     content = MakeInMemoryIndexedCasStore(profile_data_dir, "profile-a");
 
@@ -120,9 +119,9 @@ public:
   ChatBlobRequest MakeFetchRequest(const ChatAttachmentFields& fields) {
     ChatBlobRequest request;
     request.op = ChatBlobOp::Fetch;
-    request.requester_identity_kind = "relay_user";
-    request.requester_identity_value = "relay:peer";
-    request.peer_identity_kind = "relay_user";
+    request.requester_identity_kind = "account";
+    request.requester_identity_value = "account:peer";
+    request.peer_identity_kind = "account";
     request.peer_identity_value = local_relay_id;
     request.thread_id = thread.id;
     request.channel = ThreadChannel::E2e;
@@ -236,7 +235,7 @@ TEST(ChatBlobResponderTest, ServePushAsksTheGateAndAKeptPushIsOnlyWhatTheGateAdm
   auto refused = ChatBlobResponder::ServePush(harness.store, harness.MakePushRequest(fields), harness.local_relay_id,
                                               harness.profile_data_dir, ciphertext, harness.OnItsLink(), gate);
   ASSERT_FALSE(static_cast<bool>(refused)) << "over the receiver's limits: refused, the sender uses the server";
-  EXPECT_EQ(seen_sender, "relay:peer");
+  EXPECT_EQ(seen_sender, "account:peer");
   EXPECT_EQ(seen_bytes, ciphertext.size());
   EXPECT_FALSE(AttachmentPendingCiphertextExists(harness.profile_data_dir, harness.thread.id, fields.content_hash))
       << "a refused push leaves nothing on disk";

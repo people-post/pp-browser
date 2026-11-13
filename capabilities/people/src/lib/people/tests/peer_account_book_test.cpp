@@ -48,7 +48,7 @@ protected:
 };
 
 TEST_F(PeerAccountBookTest, LearnedPeerIdResolvesBothWaysWithoutAContact) {
-  EXPECT_FALSE(book_->Learn("relay:not-an-account", "12D3peer"));
+  EXPECT_FALSE(book_->Learn("peer:not-an-account", "12D3peer"));
   EXPECT_FALSE(book_->Learn("account:bob", ""));
   ASSERT_TRUE(book_->Learn("account:bob", "12D3bob"));
 

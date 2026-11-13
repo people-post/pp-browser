@@ -12,7 +12,7 @@ namespace pbr {
 
 struct DiagnosticsUploadDeps {
   std::string data_dir;
-  /** Own account id, device id, relay id and every contact's ids; empty entries are skipped. */
+  /** Own account id, device id and every contact's ids; empty entries are skipped. */
   std::vector<std::string> known_identifiers;
   /** The brief gateway Bearer (registered key, else guest key, requesting one when none). Runs on a worker. */
   std::function<Roe<std::string>()> bearer;

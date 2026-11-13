@@ -18,20 +18,20 @@ namespace pbr {
 
 class MockBlobClient : public IBlobClient {
 public:
-  Roe<BlobPresignResult> Presign(const std::string& relay_user_id, const std::string& content_type,
-                                 uint64_t byte_length, BlobPurpose purpose) override;
-  Roe<void> Retain(const std::string& relay_user_id, const std::string& blob_id) override;
-  Roe<void> Delete(const std::string& relay_user_id, const std::string& blob_id) override;
-  Roe<void> SetProfileIcon(const std::string& relay_user_id, const std::string& url, const std::string& blob_id,
+  Roe<BlobPresignResult> Presign(const std::string& account_id, const std::string& content_type, uint64_t byte_length,
+                                 BlobPurpose purpose) override;
+  Roe<void> Retain(const std::string& account_id, const std::string& blob_id) override;
+  Roe<void> Delete(const std::string& account_id, const std::string& blob_id) override;
+  Roe<void> SetProfileIcon(const std::string& account_id, const std::string& url, const std::string& blob_id,
                            const std::string& kind) override;
   Roe<void> PutUpload(const std::string& upload_url, const std::string& content_type, const std::string& body) override;
 
-  Roe<RelayFileStartResult> FileStart(const std::string& relay_user_id, uint64_t byte_length) override;
-  Roe<RelayFilePartResult> FilePart(const std::string& relay_user_id, const std::string& blob_id,
+  Roe<RelayFileStartResult> FileStart(const std::string& account_id, uint64_t byte_length) override;
+  Roe<RelayFilePartResult> FilePart(const std::string& account_id, const std::string& blob_id,
                                     uint64_t part_number) override;
-  Roe<RelayFileCompleteResult> FileComplete(const std::string& relay_user_id, const std::string& blob_id) override;
-  Roe<void> FileDelete(const std::string& relay_user_id, const std::string& blob_id) override;
-  Roe<RelayFileListResult> FileList(const std::string& relay_user_id, const std::string& status_filter) override;
+  Roe<RelayFileCompleteResult> FileComplete(const std::string& account_id, const std::string& blob_id) override;
+  Roe<void> FileDelete(const std::string& account_id, const std::string& blob_id) override;
+  Roe<RelayFileListResult> FileList(const std::string& account_id, const std::string& status_filter) override;
 
   void SetPresignError(Error error) { presign_error_ = std::move(error); }
   void ClearPresignError() { presign_error_ = std::nullopt; }
@@ -95,7 +95,6 @@ public:
   }
 
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& query) override;
-  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string& account_id) override;
 
 private:
@@ -119,9 +118,8 @@ public:
       const std::string& peer_id = "", const std::vector<std::string>& multiaddrs = {}, int64_t initiation_floor = 0,
       const RegistrationPublishOpts& publish = {}) override;
   Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
-                                         int64_t timestamp, const std::string& relay_user_id) override;
-  Roe<void> RevokeRegistration(const std::string& relay_user_id, const std::string& signature,
-                               int64_t timestamp) override;
+                                         int64_t timestamp, const std::string& account_id) override;
+  Roe<void> RevokeRegistration(const std::string& account_id, const std::string& signature, int64_t timestamp) override;
 
 private:
   std::string base_url_;

@@ -10,20 +10,20 @@ namespace {
 TEST(UnconfiguredClientsTest, RegistrationReportsAnErrorInsteadOfCrashing) {
   ConversationsHub hub;
   IRegistrationClient& registration = hub.Registration();
-  EXPECT_FALSE(registration.UpdateNickname("New name", "sig", 1, "relay:me"));
+  EXPECT_FALSE(registration.UpdateNickname("New name", "sig", 1, "account:me"));
   EXPECT_FALSE(registration.StartRegistration("pk", "name"));
   EXPECT_FALSE(registration.FinishRegistration("challenge", "pk", "name", "sig", 1));
-  EXPECT_FALSE(registration.RevokeRegistration("relay:me", "sig", 1));
+  EXPECT_FALSE(registration.RevokeRegistration("account:me", "sig", 1));
   EXPECT_EQ(&registration, &hub.Registration());
 }
 
 TEST(UnconfiguredClientsTest, BlobReportsAnErrorInsteadOfCrashing) {
   ConversationsHub hub;
   IBlobClient& blob = hub.Blob();
-  EXPECT_FALSE(blob.Presign("relay:me", "image/png", 10, BlobPurpose::File));
-  EXPECT_FALSE(blob.FileStart("relay:me", 10));
-  EXPECT_FALSE(blob.FileList("relay:me", ""));
-  EXPECT_FALSE(blob.Delete("relay:me", "blob"));
+  EXPECT_FALSE(blob.Presign("account:me", "image/png", 10, BlobPurpose::File));
+  EXPECT_FALSE(blob.FileStart("account:me", 10));
+  EXPECT_FALSE(blob.FileList("account:me", ""));
+  EXPECT_FALSE(blob.Delete("account:me", "blob"));
   EXPECT_EQ(&blob, &hub.Blob());
 }
 

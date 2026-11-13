@@ -32,9 +32,9 @@ public:
   void SetFetchHistoryError(std::string error) { fetch_history_error_ = std::move(error); }
 
   Roe<void> Send(const RelayEnvelope& envelope) override;
-  Roe<RelayPollResult> PollInbox(const std::string& requester_contact_id, const std::string& cursor) override;
-  Roe<RelayDeleteResult> AckInbox(const std::string& requester_contact_id, const std::string& cursor) override;
-  Roe<RelayDeleteResult> ClearInbox(const std::string& requester_contact_id,
+  Roe<RelayPollResult> PollInbox(const std::string& requester_account_id, const std::string& cursor) override;
+  Roe<RelayDeleteResult> AckInbox(const std::string& requester_account_id, const std::string& cursor) override;
+  Roe<RelayDeleteResult> ClearInbox(const std::string& requester_account_id,
                                     const std::string& before_created_at) override;
   Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) override;
 

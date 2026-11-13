@@ -197,14 +197,14 @@ pbr::NodeHeartbeatDeps MakeHeartbeatDeps(pbr::NodeBootstrapResult& boot) {
   deps.identity = [identity]() {
     pbr::HeartbeatIdentity out;
     if (auto loaded = identity->Get(); loaded && loaded->registered) {
-      out.relay_user_id = loaded->relay_user_id;
+      out.account_id = loaded->account_id;
       out.peer_id = loaded->peer_id;
     }
     return out;
   };
-  deps.sign = [identity](const std::string& relay_user_id, const std::string& peer_id, const std::string& state,
+  deps.sign = [identity](const std::string& account_id, const std::string& peer_id, const std::string& state,
                          int64_t timestamp) {
-    return identity->SignBytes(pbr::BuildRelayHeartbeatSignBytes(relay_user_id, peer_id, state, timestamp));
+    return identity->SignBytes(pbr::BuildRelayHeartbeatSignBytes(account_id, peer_id, state, timestamp));
   };
   deps.post = [](const std::string& url, const std::string& body, const std::map<std::string, std::string>& headers,
                  long timeout_s) {

@@ -39,8 +39,8 @@ std::string IsoUtcMs(const int64_t unix_ms) {
 }
 
 /** Delete this account's pending uploads started before the PUT URL lifetime; returns how many went. */
-size_t DeleteStalePendingFiles(IBlobClient& blob, const std::string& relay_user_id) {
-  auto listed = blob.FileList(relay_user_id, "pending");
+size_t DeleteStalePendingFiles(IBlobClient& blob, const std::string& account_id) {
+  auto listed = blob.FileList(account_id, "pending");
   if (!listed) {
     RelayFilesLog().warning << "relay file pending list failed code=" << RelayFileErrorCode(listed.error());
     return 0;
@@ -51,7 +51,7 @@ size_t DeleteStalePendingFiles(IBlobClient& blob, const std::string& relay_user_
     if (file.status != "pending" || file.created_at.empty() || cutoff.empty() || !(file.created_at < cutoff)) {
       continue;
     }
-    if (blob.FileDelete(relay_user_id, file.blob_id)) {
+    if (blob.FileDelete(account_id, file.blob_id)) {
       ++deleted;
     }
   }
@@ -59,23 +59,23 @@ size_t DeleteStalePendingFiles(IBlobClient& blob, const std::string& relay_user_
   return deleted;
 }
 
-Roe<RelayFileStartResult> StartRelayFile(IBlobClient& blob, const std::string& relay_user_id,
+Roe<RelayFileStartResult> StartRelayFile(IBlobClient& blob, const std::string& account_id,
                                          const uint64_t cipher_bytes) {
-  auto started = blob.FileStart(relay_user_id, cipher_bytes);
+  auto started = blob.FileStart(account_id, cipher_bytes);
   if (!started && RelayFileErrorCode(started.error()) == "QUOTA_PENDING_COUNT" &&
-      DeleteStalePendingFiles(blob, relay_user_id) > 0) {
-    started = blob.FileStart(relay_user_id, cipher_bytes);
+      DeleteStalePendingFiles(blob, account_id) > 0) {
+    started = blob.FileStart(account_id, cipher_bytes);
   }
   return started;
 }
 
 /** After start: delete the blob (best effort; its pending slot and reserved bytes go with it), keep `why`. */
-Error AbandonRelayFile(IBlobClient& blob, const std::string& relay_user_id, const std::string& blob_id,
-                       const char* step, Error why) {
+Error AbandonRelayFile(IBlobClient& blob, const std::string& account_id, const std::string& blob_id, const char* step,
+                       Error why) {
   const std::string code = RelayFileErrorCode(why);
   RelayFilesLog().info << "relay file abandon blob=" << blob_id << " step=" << step
                        << " code=" << (code.empty() ? "none" : code);
-  if (auto deleted = blob.FileDelete(relay_user_id, blob_id); !deleted) {
+  if (auto deleted = blob.FileDelete(account_id, blob_id); !deleted) {
     RelayFilesLog().warning << "relay file abandon delete failed blob=" << blob_id
                             << " code=" << RelayFileErrorCode(deleted.error());
   }
@@ -107,7 +107,7 @@ bool RetryableRelayFailure(const Error& err, const bool storage_put) {
  * one `/files/part` gives (checked against the plan). Progress is the part's start plus its bytes sent, never
  * going back on a retry.
  */
-Roe<void> PutRelayFileParts(IBlobClient& blob, const std::string& relay_user_id, const RelayFileStartResult& started,
+Roe<void> PutRelayFileParts(IBlobClient& blob, const std::string& account_id, const RelayFileStartResult& started,
                             const std::string& path, const uint64_t cipher_bytes,
                             const std::function<bool(uint64_t, uint64_t)>& progress) {
   const uint64_t part_bytes = started.part_bytes;
@@ -137,7 +137,7 @@ Roe<void> PutRelayFileParts(IBlobClient& blob, const std::string& relay_user_id,
       if (!report(offset)) {
         return Error("Upload cancelled");
       }
-      auto part = blob.FilePart(relay_user_id, started.blob_id, part_number);
+      auto part = blob.FilePart(account_id, started.blob_id, part_number);
       Roe<void> sent = Roe<void>{};
       bool storage_put = false;
       if (!part) {
@@ -169,10 +169,10 @@ Roe<void> PutRelayFileParts(IBlobClient& blob, const std::string& relay_user_id,
 }
 
 /** complete, tried again (at most twice) on no answer, a 5xx or UPLOAD_INCOMPLETE (the relay may still be assembling). */
-Roe<RelayFileCompleteResult> CompleteRelayFileWithRetry(IBlobClient& blob, const std::string& relay_user_id,
+Roe<RelayFileCompleteResult> CompleteRelayFileWithRetry(IBlobClient& blob, const std::string& account_id,
                                                         const std::string& blob_id) {
   for (int attempt = 0;; ++attempt) {
-    auto completed = blob.FileComplete(relay_user_id, blob_id);
+    auto completed = blob.FileComplete(account_id, blob_id);
     if (completed) {
       return completed;
     }
@@ -189,13 +189,12 @@ Roe<RelayFileCompleteResult> CompleteRelayFileWithRetry(IBlobClient& blob, const
 }
 
 /** start → `put(start answer)` → complete, abandoning the blob on any failure after start. */
-Roe<RelayFileUpload> UploadRelayFileWith(IBlobClient& blob, const std::string& relay_user_id,
-                                         const uint64_t cipher_bytes,
+Roe<RelayFileUpload> UploadRelayFileWith(IBlobClient& blob, const std::string& account_id, const uint64_t cipher_bytes,
                                          const std::function<Roe<void>(const RelayFileStartResult& started)>& put) {
-  if (relay_user_id.empty()) {
+  if (account_id.empty()) {
     return Error("Register on the network before using relay file storage");
   }
-  auto started = StartRelayFile(blob, relay_user_id, cipher_bytes);
+  auto started = StartRelayFile(blob, account_id, cipher_bytes);
   if (!started) {
     return started.error();
   }
@@ -205,19 +204,19 @@ Roe<RelayFileUpload> UploadRelayFileWith(IBlobClient& blob, const std::string& r
                        << " part_bytes=" << started->part_bytes;
   const bool multipart = started->mode == "multipart";
   if (!multipart && (started->mode != "single" || started->upload_url.empty())) {
-    return AbandonRelayFile(blob, relay_user_id, blob_id, "start",
+    return AbandonRelayFile(blob, account_id, blob_id, "start",
                             Error("Relay file upload mode is not supported: " + started->mode));
   }
   if (auto sent = put(*started); !sent) {
-    return AbandonRelayFile(blob, relay_user_id, blob_id, "put", sent.error());
+    return AbandonRelayFile(blob, account_id, blob_id, "put", sent.error());
   }
   auto completed =
-      multipart ? CompleteRelayFileWithRetry(blob, relay_user_id, blob_id) : blob.FileComplete(relay_user_id, blob_id);
+      multipart ? CompleteRelayFileWithRetry(blob, account_id, blob_id) : blob.FileComplete(account_id, blob_id);
   if (!completed) {
-    return AbandonRelayFile(blob, relay_user_id, blob_id, "complete", completed.error());
+    return AbandonRelayFile(blob, account_id, blob_id, "complete", completed.error());
   }
   if (completed->share_url.empty()) {
-    return AbandonRelayFile(blob, relay_user_id, blob_id, "complete", Error("Relay file complete gave no link"));
+    return AbandonRelayFile(blob, account_id, blob_id, "complete", Error("Relay file complete gave no link"));
   }
   RelayFilesLog().info << "relay file complete blob=" << blob_id;
   return RelayFileUpload{.blob_id = blob_id, .url = completed->share_url};
@@ -249,20 +248,19 @@ std::string RelayFileErrorCode(const Error& err) {
   return text.substr(begin, at - begin);
 }
 
-Roe<RelayFileUpload> UploadRelayFile(IBlobClient& blob, const std::string& relay_user_id, const std::string& path,
+Roe<RelayFileUpload> UploadRelayFile(IBlobClient& blob, const std::string& account_id, const std::string& path,
                                      const uint64_t cipher_bytes,
                                      const std::function<bool(uint64_t, uint64_t)>& progress) {
-  return UploadRelayFileWith(blob, relay_user_id, cipher_bytes, [&](const RelayFileStartResult& started) {
+  return UploadRelayFileWith(blob, account_id, cipher_bytes, [&](const RelayFileStartResult& started) {
     if (started.mode == "multipart") {
-      return PutRelayFileParts(blob, relay_user_id, started, path, cipher_bytes, progress);
+      return PutRelayFileParts(blob, account_id, started, path, cipher_bytes, progress);
     }
     return blob.PutUploadFile(started.upload_url, "application/octet-stream", path, progress);
   });
 }
 
-Roe<RelayFileUpload> UploadRelayFileBytes(IBlobClient& blob, const std::string& relay_user_id,
-                                          const std::string& body) {
-  return UploadRelayFileWith(blob, relay_user_id, body.size(), [&](const RelayFileStartResult& started) -> Roe<void> {
+Roe<RelayFileUpload> UploadRelayFileBytes(IBlobClient& blob, const std::string& account_id, const std::string& body) {
+  return UploadRelayFileWith(blob, account_id, body.size(), [&](const RelayFileStartResult& started) -> Roe<void> {
     if (started.mode != "single") {
       return Error("Relay file upload mode is not supported: " + started.mode);
     }
@@ -332,10 +330,10 @@ Roe<void> IBlobClient::PutUploadFileRange(const std::string& upload_url, const s
   return put;
 }
 
-Roe<BlobPresignResult> UploadRelayBlobBytes(IBlobClient& blob, const std::string& relay_user_id,
+Roe<BlobPresignResult> UploadRelayBlobBytes(IBlobClient& blob, const std::string& account_id,
                                             const std::string& content_type, const BlobPurpose purpose,
                                             const std::string& body) {
-  auto presign = blob.Presign(relay_user_id, content_type, body.size(), purpose);
+  auto presign = blob.Presign(account_id, content_type, body.size(), purpose);
   if (!presign) {
     return presign.error();
   }
@@ -343,7 +341,7 @@ Roe<BlobPresignResult> UploadRelayBlobBytes(IBlobClient& blob, const std::string
   if (!put) {
     return put.error();
   }
-  auto retain = blob.Retain(relay_user_id, presign.value().blob_id);
+  auto retain = blob.Retain(account_id, presign.value().blob_id);
   if (!retain) {
     return retain.error();
   }

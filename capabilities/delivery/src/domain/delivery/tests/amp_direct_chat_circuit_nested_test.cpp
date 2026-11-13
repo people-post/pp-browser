@@ -28,8 +28,7 @@ RelayEnvelope MakeTestEnvelope(const std::string& message_id, const std::string&
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = message_id;
-  envelope.sender_relay_id = "relay:sender";
-  envelope.sender_contact_id = "relay:sender";
+  envelope.sender_contact_id = "account:sender";
   envelope.sender_device = "QmTestDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;

@@ -157,10 +157,10 @@
             <span class="cd-row-value">{{selected.nickname}}</span>
           </span>
         </div>
-        <div class="cd-row" data-if="advanced && selected.relay_id != ''">
+        <div class="cd-row" data-if="advanced && selected.account_id != ''">
           <span class="cd-row-body">
-            <span class="cd-row-text">{{i18n:contacts.relay_id_label}}</span>
-            <span class="cd-row-value">{{selected.relay_id}}</span>
+            <span class="cd-row-text">{{i18n:contacts.account_id_label}}</span>
+            <span class="cd-row-value">{{selected.account_id}}</span>
           </span>
         </div>
         <div class="cd-row" data-if="advanced && selected.peer_id != ''">
@@ -226,11 +226,11 @@
       <p class="text muted me-profile-meta" data-if="selected.nickname != ''">
         {{i18n:contacts.nickname_label}} <span>{{selected.nickname}}</span>
       </p>
-      <p class="text muted me-profile-meta" data-if="selected.relay_id != ''">
-        {{i18n:contacts.relay_id_label}} <span>{{selected.relay_id}}</span>
+      <p class="text muted me-profile-meta" data-if="selected.account_id != ''">
+        {{i18n:contacts.account_id_label}} <span>{{selected.account_id}}</span>
       </p>
-      <p class="text muted me-profile-meta" data-if="selected.relay_id == ''">
-        {{i18n:contacts.relay_id_unlinked}}
+      <p class="text muted me-profile-meta" data-if="selected.account_id == ''">
+        {{i18n:contacts.account_id_unlinked}}
       </p>
       <p class="text muted me-profile-meta" data-if="advanced && selected.peer_id != ''">
         {{i18n:contacts.peer_id_label}} <span>{{selected.peer_id}}</span>

@@ -2904,12 +2904,16 @@ def scenario_a_device_asks_for_a_copy_it_missed(lab):
 
 def scenario_a_call_rings_every_device_and_stops_once_answered(lab):
     """A call rings every device of the account (M021 d5): Bob calls Alice; her phone and her laptop both ring.
-    The phone answers: the laptop stops ringing at once (no missed call there), and Bob and the phone talk."""
+    The phone answers: the laptop stops ringing at once (no missed call there), and Bob and the phone talk.
+    A caller rings the devices on the card it keeps (M024): Bob holds Alice's card from the start (her relay grant
+    brought it, multi-relay MR005), so he calls once her device list has told him of the laptop."""
     a, a_thread, b, b_thread = open_pair(lab)
     laptop = lab.linked_device(a, "alice-laptop")
     laptop.wait_mesh()
     laptop_id = laptop.cmd("whoami")["peer_id"]
     wait_for(lambda: laptop_id in a.cmd("devices")["devices"] or None, 40, "phone: the laptop on the list")
+    wait_for(lambda: laptop_id in b.cmd("kept_card", account=a.account)["devices"] or None, 40,
+             "bob: the laptop on alice's card")
     call_id = b.cmd("call", thread=b_thread)["call_id"]
     a.wait_surface("ringing", 40, call_id=call_id)
     laptop.wait_surface("ringing", 40, call_id=call_id)

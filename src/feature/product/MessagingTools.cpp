@@ -198,7 +198,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
                                }
                                Object out;
                                out.set("success", result->registered);
-                               out.set("relay_user_id", result->relay_user_id);
+                               out.set("account_id", result->account_id);
                                out.set("message", "Registered");
                                out.set("expires_at", result->registration_expires_at);
                                return DumpJson(out);

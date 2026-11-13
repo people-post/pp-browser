@@ -31,8 +31,8 @@
             </div>
             <div class="me-card-text">
               <p class="me-card-name">{{profile_nickname}}</p>
-              <p class="me-card-meta" data-if="profile_relay_id != ''">{{profile_relay_id}}</p>
-              <p class="me-card-meta" data-if="profile_relay_id == ''">{{i18n:settings.profile.relay_id_none}}</p>
+              <p class="me-card-meta" data-if="profile_account_id != ''">{{profile_account_id}}</p>
+              <p class="me-card-meta" data-if="profile_account_id == ''">{{i18n:settings.profile.account_id_none}}</p>
             </div>
           </button>
           <button class="cd-icon-btn" type="button" data-event-click="copy_profile_id()">

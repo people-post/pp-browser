@@ -84,13 +84,24 @@ AccountLockerWorkflow::AccountLockerWorkflow(IdentityStore& identity, ContactsSt
   redirectLogger("AccountLocker");
 }
 
+Roe<std::string> AccountLockerWorkflow::RegisteredAccount() {
+  auto identity = identity_.Get();
+  if (!identity) {
+    return identity.error();
+  }
+  // The relay keeps a locker for an account registered there (the Account ID signs the write, MR001).
+  if (!identity->registered || identity->account_id.empty()) {
+    return Error("Not registered with the relay yet");
+  }
+  return identity->account_id;
+}
+
 Roe<AccountLockerState> AccountLockerWorkflow::CurrentState() {
   auto identity = identity_.Get();
   if (!identity) {
     return identity.error();
   }
   AccountLockerState state;
-  state.relay_user_id = identity->relay_user_id;
   state.nickname = identity->nickname;
   auto contacts = contacts_.List();
   if (!contacts) {
@@ -258,8 +269,9 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
   if (!state) {
     return state.error();
   }
-  if (state->relay_user_id.empty()) {
-    return Error("Not registered with the relay yet");
+  auto registered = RegisteredAccount();
+  if (!registered) {
+    return registered.error();
   }
   {
     std::lock_guard lock(mutex_);
@@ -276,7 +288,7 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
     return snapshot.error();
   }
   std::optional<LockerPutRefusal> refused;
-  if (auto put = client_->Put(merged.relay_user_id, LockerRecordFromSnapshot(*snapshot), &refused); !put) {
+  if (auto put = client_->Put(*registered, LockerRecordFromSnapshot(*snapshot), &refused); !put) {
     return put.error();
   }
   RaiseHighestSeen(locker_id, version);
@@ -364,8 +376,9 @@ Roe<std::string> AccountLockerWorkflow::ExportFileJson() {
   if (!state) {
     return state.error();
   }
-  if (state->relay_user_id.empty()) {
-    return Error("Not registered with the relay yet");
+  auto registered = RegisteredAccount();
+  if (!registered) {
+    return registered.error();
   }
   {
     std::lock_guard lock(mutex_);

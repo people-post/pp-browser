@@ -92,14 +92,13 @@ struct AmpChatHistoryTransport::Impl {
       if (!local_identity) {
         return;
       }
-      const std::string local_account_id =
-          !local_identity->account_id.empty() ? local_identity->account_id : local_identity->relay_user_id;
+      const std::string& local_account_id = local_identity->account_id;
       auto local_device = DevicePeerIdFromKey(local_identity->public_key_b64);
       if (!local_device) {
         return;
       }
       auto response = ChatHistoryResponder::Serve(
-          store, psk_store, *request, local_identity->relay_user_id, local_account_id, *local_device,
+          store, psk_store, *request, local_account_id, *local_device,
           [this](const std::vector<uint8_t>& bytes) { return identity.SignDeviceBytes(bytes); }, remote_peer_id,
           signing_keys, util::NowUnixMs());
       if (!response) {
@@ -174,9 +173,8 @@ void AmpChatHistoryTransport::Stop() {
   impl_->deferred.Invalidate();
 }
 
-void AmpChatHistoryTransport::RegisterPeerEndpoint(const std::string& peer_relay_user_id,
-                                                   const std::string& multiaddr) {
-  (void)links_.RegisterEndpoint(peer_relay_user_id, multiaddr);
+void AmpChatHistoryTransport::RegisterPeerEndpoint(const std::string& peer_account_id, const std::string& multiaddr) {
+  (void)links_.RegisterEndpoint(peer_account_id, multiaddr);
 }
 
 bool AmpChatHistoryTransport::IsPeerReachable(const std::string& peer_identity_value) const {

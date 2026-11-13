@@ -66,7 +66,6 @@ TEST(ChatPayloadRichTypesTest, ContactCardRoundTrip) {
   ChatContactCardFields fields;
   fields.display_name = "Alice";
   fields.card_json = R"({"account_id":"account:alice","signing_public_key_b64":"c2ln"})";
-  fields.relay_user_id = "relay:alice";
 
   auto bytes = ChatPayloadCodec::EncodeContactCard(fields, "Alice");
   ASSERT_TRUE(static_cast<bool>(bytes));
@@ -78,7 +77,7 @@ TEST(ChatPayloadRichTypesTest, ContactCardRoundTrip) {
   auto decoded = ChatPayloadCodec::DecodeContactCardJson(message->payload_json);
   ASSERT_TRUE(decoded) << decoded.error().message;
   EXPECT_EQ(decoded->display_name, "Alice");
-  EXPECT_EQ(decoded->relay_user_id, "relay:alice");
+  EXPECT_EQ(message->payload_json.find("relay_user_id"), std::string::npos) << "sub_version 3: no relay route";
   EXPECT_NE(decoded->card_json.find("account:alice"), std::string::npos);
 
   ChatContactCardFields no_card = fields;

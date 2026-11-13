@@ -24,7 +24,7 @@ TEST(ContactReachabilityTest, PeerIdOnlyNotReachableWithoutMultiaddr) {
 
 TEST(ContactReachabilityTest, RelayContactReachableWhenRelayConfigured) {
   Contact c;
-  c.ids.push_back({mesh::ContactIdKind::RelayUser, "relay:alice", true});
+  c.ids.push_back({mesh::ContactIdKind::Account, "account:alice", true});
   EXPECT_TRUE(IsContactReachableForMessaging(c, true));
   EXPECT_FALSE(IsContactReachableForMessaging(c, false));
 }
@@ -33,9 +33,10 @@ TEST(ContactReachabilityTest, AnAccountWithKnownKeysIsReachable) {
   // #409: a contact added from a QR code has its Account ID and device ids, no relay id or address.
   Contact c = MakePeerOnlyContact("12D3KooWTest");
   c.ids.push_back({mesh::ContactIdKind::Account, "account:alice", true});
-  EXPECT_FALSE(IsContactReachableForMessaging(c, true)) << "no card yet: nothing to encrypt to";
-  EXPECT_TRUE(IsContactReachableForMessaging(c, true, /*account_keys_known=*/true));
-  EXPECT_FALSE(IsContactReachableForMessaging(MakePeerOnlyContact("12D3KooWTest"), true, true))
+  EXPECT_FALSE(IsContactReachableForMessaging(c, false)) << "no relay and no card yet: nothing to encrypt to";
+  EXPECT_TRUE(IsContactReachableForMessaging(c, true)) << "its Account ID is its relay inbox (MR001)";
+  EXPECT_TRUE(IsContactReachableForMessaging(c, false, /*account_keys_known=*/true));
+  EXPECT_FALSE(IsContactReachableForMessaging(MakePeerOnlyContact("12D3KooWTest"), false, true))
       << "keys of an account the contact does not name prove nothing";
   c.trust = TrustLevel::Blocked;
   EXPECT_FALSE(IsContactReachableForMessaging(c, true, true));

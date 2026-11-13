@@ -21,8 +21,7 @@ TEST(PeopleDiscoveryBlocksTest, DirectoryHitUsesIdentityAndPrimaryAdd) {
   hit.hit_id = "hit_alice";
   hit.display_name = "Alice Example";
   hit.nickname = "alice";
-  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:alice123456789", true},
-             {mesh::ContactIdKind::Account, "account:alice123", false}};
+  hit.ids = {{mesh::ContactIdKind::Account, "account:alice123", false}};
 
   const std::string blocks = BuildPeopleDiscoveryBlocksJson({hit}, {});
   EXPECT_NE(blocks.find("Alice Example"), std::string::npos);
@@ -97,16 +96,16 @@ TEST(PeopleDiscoveryBlocksTest, AlreadyContactPrefersMessageAndMeta) {
   hit.hit_id = "hit_bob";
   hit.display_name = "Bob";
   hit.nickname = "bob";
-  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:bob1", true}};
+  hit.ids = {{mesh::ContactIdKind::Account, "account:bob1", true}};
 
   PeopleDiscoveryContactView local;
   local.id = "c_bob";
   local.display_name = "Bob";
   local.server_nickname = "bob";
-  local.ids = {{mesh::ContactIdKind::RelayUser, "relay:bob1", true}};
+  local.ids = {{mesh::ContactIdKind::Account, "account:bob1", true}};
 
   PeopleDiscoveryBuildOptions options;
-  options.known_local_identity_values.insert("relay:bob1");
+  options.known_local_identity_values.insert("account:bob1");
 
   const std::string blocks = BuildPeopleDiscoveryBlocksJson({hit}, {local}, options);
   EXPECT_NE(blocks.find("In contacts"), std::string::npos);
@@ -148,7 +147,7 @@ std::vector<mesh::DirectoryHit> NumberedHits(const int count) {
     hit.hit_id = "hit_" + std::to_string(i);
     hit.display_name = "Person " + std::to_string(i);
     hit.nickname = "p" + std::to_string(i);
-    hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:p" + std::to_string(i), true}};
+    hit.ids = {{mesh::ContactIdKind::Account, "account:p" + std::to_string(i), true}};
     hits.push_back(std::move(hit));
   }
   return hits;
@@ -247,17 +246,16 @@ TEST(PeopleDiscoveryBlocksTest, DropsSelfIdentityHits) {
   self_hit.display_name = "Me";
   self_hit.nickname = "me";
   self_hit.account_id = "account:me";
-  self_hit.ids = {{mesh::ContactIdKind::Account, "account:me", true},
-                  {mesh::ContactIdKind::RelayUser, "relay:me", false}};
+  self_hit.ids = {{mesh::ContactIdKind::Account, "account:me", true}};
 
   mesh::DirectoryHit other;
   other.hit_id = "hit_other";
   other.display_name = "Other";
   other.nickname = "other";
-  other.ids = {{mesh::ContactIdKind::RelayUser, "relay:other", true}};
+  other.ids = {{mesh::ContactIdKind::Account, "account:other", true}};
 
   PeopleDiscoveryBuildOptions options;
-  options.self_identity_values = {"account:me", "relay:me"};
+  options.self_identity_values = {"account:me", "account:me"};
 
   const std::string blocks = BuildPeopleDiscoveryBlocksJson({self_hit, other}, {}, options);
   EXPECT_EQ(blocks.find("\"title\":\"Me\""), std::string::npos);
@@ -270,7 +268,7 @@ TEST(PeopleDiscoveryBlocksTest, NestedContactJsonAnnotatesAlreadyKnown) {
   hit.hit_id = "hit_nested";
   hit.display_name = "Nested";
   hit.nickname = "nested";
-  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:nested1", true}};
+  hit.ids = {{mesh::ContactIdKind::Account, "account:nested1", true}};
 
   const std::string contacts_json = R"([
     {
@@ -278,7 +276,7 @@ TEST(PeopleDiscoveryBlocksTest, NestedContactJsonAnnotatesAlreadyKnown) {
       "local": { "display_name": "Nested", "trust": "friendly" },
       "remote": {
         "nickname": "nested",
-        "ids": [{ "kind": "relay_user", "value": "relay:nested1", "primary": true }]
+        "ids": [{ "kind": "account", "value": "account:nested1", "primary": true }]
       },
       "overrides": {}
     }
@@ -289,11 +287,11 @@ TEST(PeopleDiscoveryBlocksTest, NestedContactJsonAnnotatesAlreadyKnown) {
   EXPECT_NE(blocks.find("Message"), std::string::npos);
 
   PeopleDiscoveryBuildOptions options;
-  options.known_local_identity_values.insert("relay:nested1");
+  options.known_local_identity_values.insert("account:nested1");
   PeopleDiscoveryContactView local;
   local.id = "c_nested";
   local.display_name = "Nested";
-  local.ids = {{mesh::ContactIdKind::RelayUser, "relay:nested1", true}};
+  local.ids = {{mesh::ContactIdKind::Account, "account:nested1", true}};
   const std::string annotated = BuildPeopleDiscoveryBlocksJson({hit}, {local}, options);
   EXPECT_NE(annotated.find("In contacts"), std::string::npos);
   EXPECT_EQ(annotated.find("Add contact"), std::string::npos);
@@ -312,8 +310,7 @@ TEST(PeopleDiscoveryBlocksTest, SeventeenKeyedHitsFitTheStoredMessage) {
     hit.display_name = "Person " + std::to_string(i);
     hit.nickname = "person" + std::to_string(i);
     hit.account_id = "account:" + std::string(43, 'A' + (i % 26));
-    hit.ids = {{mesh::ContactIdKind::Account, *hit.account_id, true},
-               {mesh::ContactIdKind::RelayUser, "relay:" + std::string(16, 'r'), false}};
+    hit.ids = {{mesh::ContactIdKind::Account, *hit.account_id, true}};
     hit.signing_public_key_b64 = std::string(2604, 'S'); // ML-DSA-65 public key, base64
     hit.kem_public_key_b64 = std::string(1580, 'K');     // ML-KEM-768 public key, base64
     hit.kem_binding_signature_b64 = std::string(4412, 'B');
@@ -335,8 +332,7 @@ TEST(PeopleDiscoveryBlocksTest, ThreeHundredKeyedHitsStayUnderTheStoreLimitAndOf
     hit.display_name = "Person " + std::to_string(i);
     hit.nickname = "person" + std::to_string(i);
     hit.account_id = "account:" + std::string(43, 'A' + (i % 26));
-    hit.ids = {{mesh::ContactIdKind::Account, *hit.account_id, true},
-               {mesh::ContactIdKind::RelayUser, "relay:" + std::string(16, 'r'), false}};
+    hit.ids = {{mesh::ContactIdKind::Account, *hit.account_id, true}};
     hit.signing_public_key_b64 = std::string(2604, 'S');
     hit.kem_public_key_b64 = std::string(1580, 'K');
     hit.kem_binding_signature_b64 = std::string(4412, 'B');

@@ -112,14 +112,14 @@ NodeHeartbeat::Outcome NodeHeartbeat::Send(const HeartbeatState state, const lon
   const int64_t timestamp = std::max(now_ms, last_timestamp_ + 1);
   last_timestamp_ = timestamp;
 
-  auto signature = deps_.sign(id.relay_user_id, id.peer_id, state_name, timestamp);
+  auto signature = deps_.sign(id.account_id, id.peer_id, state_name, timestamp);
   if (!signature) {
     log.error << "heartbeat sign failed: " << signature.error().message;
     RecordOutcome(Outcome::HttpError);
     return Outcome::HttpError;
   }
   Object body;
-  body.set("relay_user_id", id.relay_user_id);
+  body.set("account_id", id.account_id);
   body.set("peer_id", id.peer_id);
   body.set("state", state_name);
   body.set("timestamp", timestamp);
@@ -199,7 +199,7 @@ void NodeHeartbeat::Tick() {
     return;
   }
   const HeartbeatIdentity id = deps_.identity();
-  if (id.relay_user_id.empty() || id.peer_id.empty()) {
+  if (id.account_id.empty() || id.peer_id.empty()) {
     return;
   }
   attempted_state_ = state;
@@ -216,7 +216,7 @@ void NodeHeartbeat::Tick() {
 void NodeHeartbeat::SendFinal() {
   SetState(HeartbeatState::Retiring);
   const HeartbeatIdentity id = deps_.identity();
-  if (id.relay_user_id.empty() || id.peer_id.empty()) {
+  if (id.account_id.empty() || id.peer_id.empty()) {
     return;
   }
   Send(HeartbeatState::Retiring, kHeartbeatFinalTimeoutS);

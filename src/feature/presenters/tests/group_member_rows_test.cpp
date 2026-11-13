@@ -1,4 +1,4 @@
-#include "common/directory/ShortRelayId.h"
+#include "common/directory/ShortPersonId.h"
 #include "feature/presenters/ChatPresenter.h"
 
 #include <gtest/gtest.h>
@@ -40,7 +40,7 @@ TEST(GroupMemberRowTest, ServerNicknameWhenTheContactHasNoName) {
 TEST(GroupMemberRowTest, NonContactShowsTheShortIdAndIsNotAContact) {
   const std::string identity = "acct:0123456789abcdef0123456789abcdef";
   const GroupMemberRow row = BuildGroupMemberRow(Member(identity), std::nullopt, false);
-  EXPECT_EQ(row.title, ShortRelayId(identity));
+  EXPECT_EQ(row.title, ShortPersonId(identity));
   EXPECT_FALSE(row.title.empty());
   EXPECT_FALSE(row.IsContact());
   EXPECT_FALSE(row.is_owner);

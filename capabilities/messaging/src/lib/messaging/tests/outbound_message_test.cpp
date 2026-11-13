@@ -89,9 +89,9 @@ struct Device {
     if (!sealed) {
       return sealed.error();
     }
-    RelayEnvelope envelope = BuildDirectEnvelope(
-        *appended, EnvelopeSender{"relay:" + tag, keys.account_id, keys.device.peer_id}, thread.channel,
-        "relay:" + peer.tag, {AccountCopy(*appended, std::move(*sealed))}, NextRelayOrderKey());
+    RelayEnvelope envelope =
+        BuildDirectEnvelope(*appended, EnvelopeSender{keys.account_id, keys.device.peer_id}, thread.channel,
+                            "account:" + peer.tag, {AccountCopy(*appended, std::move(*sealed))}, NextRelayOrderKey());
     test::SignEnvelopeAs(keys, envelope);
     return envelope;
   }
@@ -128,10 +128,10 @@ TEST_F(OutboundMessageTest, AFirstPublicSendOpensTheSessionAndThePeerReadsIt) {
   EXPECT_TRUE(first->body.e2e.key_init_b64 && !first->body.e2e.key_init_b64->empty())
       << "the opening send carries its key_init";
   EXPECT_EQ(first->route.kind, "direct");
-  EXPECT_EQ(first->recipient_contact_id, "relay:bob");
-  EXPECT_EQ(first->stream_key, BuildDeviceRelayStreamKey("relay:alice", "relay:bob", ThreadChannel::E2ePublic,
-                                                         alice_->keys.device.peer_id))
-      << "the sending device's stream: an account's devices share its relay id (M022)";
+  EXPECT_EQ(first->recipient_account_id, "account:bob");
+  EXPECT_EQ(first->stream_key, BuildDeviceRelayStreamKey(alice_->keys.account_id, "account:bob",
+                                                         ThreadChannel::E2ePublic, alice_->keys.device.peer_id))
+      << "the sending device's stream: an account's devices share its Account ID (M022, MR001)";
   ASSERT_EQ(first->body.e2e.copies.size(), 1u) << "one account copy: Bob's devices are not known yet";
   EXPECT_TRUE(first->body.e2e.copies.front().recipient_device.empty());
 
@@ -341,7 +341,7 @@ TEST(OutboundSendRulesTest, AGroupMembersEnvelopeCarriesACopyPerDevice) {
   message.sender_seq = 7;
   message.session_epoch = 2;
   message.timestamp = 5;
-  const EnvelopeSender sender{"relay:a", "account:a", "QmA"};
+  const EnvelopeSender sender{"account:a", "QmA"};
   const RelayCopy phone{.recipient_device = "QmBPhone",
                         .session_epoch = 5,
                         .sender_seq = 9,
@@ -349,15 +349,14 @@ TEST(OutboundSendRulesTest, AGroupMembersEnvelopeCarriesACopyPerDevice) {
                         .payload_b64 = "cGF5bG9hZA=="};
   const RelayCopy laptop{
       .recipient_device = "QmBLaptop", .session_epoch = 1, .sender_seq = 3, .payload_b64 = "cGF5bG9hZDI="};
-  RelayEnvelope e = BuildGroupMemberEnvelope(message, sender, "group-1", "account:b", "relay:b", {phone, laptop}, 11);
+  RelayEnvelope e = BuildGroupMemberEnvelope(message, sender, "group-1", "account:b", {phone, laptop}, 11);
   EXPECT_EQ(e.route.kind, "group");
   EXPECT_EQ(e.body.e2e.copies, (std::vector<RelayCopy>{phone, laptop})) << "one record, each device's copy (M022)";
   EXPECT_EQ(e.order_key, 11u) << "the record's own relay index";
   EXPECT_EQ(e.stream_key, BuildGroupRelayStreamKey("group-1", "account:a", "account:b", "QmA"));
-  EXPECT_NE(BuildGroupMemberEnvelope(message, sender, "group-1", "account:c", "relay:c", {phone}, 12).stream_key,
-            e.stream_key)
+  EXPECT_NE(BuildGroupMemberEnvelope(message, sender, "group-1", "account:c", {phone}, 12).stream_key, e.stream_key)
       << "the relay keeps one row per sender, stream and index: each member's records have their own stream";
-  EXPECT_EQ(e.recipient_contact_id, "relay:b") << "the relay delivers to relay ids";
+  EXPECT_EQ(e.recipient_account_id, "account:b") << "the relay delivers to relay ids";
   EXPECT_EQ(e.relay_wake_hint, "m") << "a tap on the push is matched to this message by its id";
   // Each device reads its own copy, numbered in its own pair.
   auto on_laptop = SelectRelayCopy(e, "QmBLaptop");

@@ -23,7 +23,6 @@ public:
   bool Configured() const;
 
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& query) override;
-  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string& account_id) override;
   Roe<std::vector<mesh::MeshNodeHit>> ListMeshNodes() override;
 

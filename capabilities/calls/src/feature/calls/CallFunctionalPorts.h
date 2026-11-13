@@ -29,7 +29,7 @@ struct CallFunctionalPorts {
   std::function<Roe<std::optional<Contact>>(const std::string& identity, mesh::ContactIdKind kind)>
       find_contact_by_identity;
   std::function<std::string(const std::string& identity)> identity_icon_local_path;
-  std::function<std::optional<std::string>()> local_relay_identity;
+  std::function<std::optional<std::string>()> local_account_identity;
   /** Profile pref OR `--debug` CLI override (V032 call diagnostics). */
   std::function<bool()> call_diagnostics_enabled;
   /** G022: the invites to a group made in the call `call_id` still waiting here, oldest first (the call's banner). */

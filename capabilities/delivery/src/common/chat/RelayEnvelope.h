@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Value.h"
+#include "common/chat/RelayGrant.h"
 #include "common/thread/ThreadChannel.h"
 
 #include <cstdint>
@@ -12,8 +13,11 @@
 
 namespace pbr {
 
-/** 2: the sender and recipient devices, signed by the sending device (M021; sign v4: no group id, G018). */
-inline constexpr int kRelayEnvelopeVersion = 2;
+/**
+ * 3: no relay id — the sender's Account ID is its relay address (multi-relay MR001; sign v5). 2 brought the sender
+ * and recipient devices, signed by the sending device (M021); sign v4 dropped the group id (G018).
+ */
+inline constexpr int kRelayEnvelopeVersion = 3;
 
 /** Route kinds: a 1:1 chat stream, a group stream, the control lane (signaling off the stream). */
 inline constexpr const char* kRelayRouteDirect = "direct";
@@ -78,7 +82,7 @@ struct RelayMessageBody {
 struct RelayEnvelope {
   int envelope_version = kRelayEnvelopeVersion;
   std::string message_id;
-  std::string sender_relay_id;
+  /** The sender's Account ID: who sent it, and (on the relay) the sending account (multi-relay MR001). */
   std::string sender_contact_id;
   /** The sending device's PeerId (M021): its key signs the envelope; numbering is per sending device. */
   std::string sender_device;
@@ -98,8 +102,8 @@ struct RelayEnvelope {
   std::string stream_key;
   /** Per-sender monotonic key for relay range fetch (= sender_seq in v1). */
   uint64_t order_key = 0;
-  /** Delivery target — relay routing only (unsigned). */
-  std::optional<std::string> recipient_contact_id;
+  /** The recipient's Account ID, its relay inbox — relay routing only (unsigned). */
+  std::optional<std::string> recipient_account_id;
   /** Unix ms relay store time from inbox poll (unsigned transport metadata). */
   std::optional<int64_t> relay_created_at_ms;
   /** Unix ms relay clock from the poll response that delivered this envelope. */
@@ -176,10 +180,10 @@ inline RelayEnvelope WithSingleRelayCopy(RelayEnvelope envelope, RelayCopy copy)
   return ViewRelayCopy(std::move(envelope), copy);
 }
 
-/** Opaque relay HTTP wire record for send (routing + blob). */
+/** Opaque relay HTTP wire record for send (routing + blob): `POST /v1/messages`, by Account IDs (MR001). */
 struct RelayWireSendRecord {
-  std::string sender_contact_id;
-  std::string recipient_contact_id;
+  std::string sender_account_id;
+  std::string recipient_account_id;
   std::string stream_id;
   uint64_t index_key = 0;
   std::string blob_b64;
@@ -191,6 +195,13 @@ struct RelayWireSendRecord {
   int64_t ttl_s = 0;
   /** Opaque id the relay copies into the push (`wake_hint`; unsigned hint; empty: none). */
   std::string wake_hint;
+  /** The recipient's grant to us (MR005; unsigned by us, signed by the recipient): none — a stranger's send. */
+  std::optional<RelayGrant> grant;
+  /**
+   * Our account's ML-DSA public key (`sender_public_key_b64`), sent when the relay asked for it (`sender_key_required`:
+   * it does not hold our key — not registered there). Unsigned: it must hash to `sender_account_id`.
+   */
+  std::string sender_public_key_b64;
 };
 
 /** `id` if it is a valid wake hint (1..64 chars of [A-Za-z0-9-]), else empty; the relay drops anything else. */
@@ -209,7 +220,7 @@ inline std::string SanitizeWakeHint(const std::string& id) {
 
 /** Opaque relay HTTP wire record returned on poll/history. */
 struct RelayInboundRecord {
-  std::string sender_contact_id;
+  std::string sender_account_id;
   std::string stream_id;
   uint64_t index_key = 0;
   std::string blob_b64;

@@ -8,7 +8,7 @@ Design written ([DESIGN.md](DESIGN.md)); MR001–MR005 accepted.
 (phone row and desktop button; no longer behind *advanced* or a `relay:` id). It runs
 `ContactRefreshWorkflow` (`capabilities/messaging/src/feature/conversations/`): the contact's devices are asked
 for the account card even when one is kept (`ContactCardExchange::AskDevices`, at most once per account per
-15 s), then our directory by Account ID (by `relay:` id only for a contact with no Account ID) on a worker; the
+15 s), then our directory by Account ID (since R2 step 1 the only id it knows; a contact with none asks no one) on a worker; the
 merge and the write land on the UI thread (`AppRuntime::PostUI`), the button reads "Refreshing…" meanwhile, and
 a second press does nothing. Keys are kept only through `AccountKeyResolver` (`VerifyKeyCard` /
 `VerifyKemBinding`: the signing key hashes to the Account ID, the KEM key carries its binding); a directory
@@ -20,4 +20,16 @@ Not yet in R0's scope (later phases): the contact's own relays (R2's relay list)
 asked, and the page does not show the preferred relay (R3). DESIGN's "Where it stands" still describes the old
 button.
 
-Next: R1, relays keyed by Account ID (`www`, `messenger`).
+**R1 (relays):** on `www` / `messenger` branch `feat/inbox-by-account`, not merged or deployed.
+
+**R2 step 1 (app), built on `feat/account-inbox`, not merged:** one relay as before, addressed by Account ID
+everywhere (no `relay:` ids, relay API sign version 2); grants (MR005) issued, delivered over the control lane,
+renewed and attached; the relay's new errors handled. Contracts: [SERVICE_ENDPOINTS](../../docs/contracts/SERVICE_ENDPOINTS.md),
+[ACCOUNT_CARD § Relay grants](../../docs/contracts/ACCOUNT_CARD.md#relay-grants), [WIRE_SCHEMAS](../../docs/contracts/WIRE_SCHEMAS.md),
+[DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md), [COMPATIBILITY](../../docs/contracts/COMPATIBILITY.md#clean-cutovers-pre-release).
+Needs pp-cpp-mesh v9.0.0 (directory rows by Account ID).
+Calls grant their people (answering grants the caller; joining grants each pair both ways; not renewed for
+non-contacts). Not yet: the account card's `relays` and `initiation_floor`; clients per relay; the card at
+registration.
+
+Next: R1 and R2 step 1 merge and deploy together (clean cutover), then R2's relay list.

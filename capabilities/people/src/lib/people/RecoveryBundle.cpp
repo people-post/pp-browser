@@ -12,8 +12,7 @@
 
 namespace pbr {
 
-Roe<std::string> BuildRecoveryBundleJson(const ByteVector& seed, const std::string& relay_user_id,
-                                         const std::string& nickname, const int64_t now_ms) {
+Roe<std::string> BuildRecoveryBundleJson(const ByteVector& seed, const std::string& nickname, const int64_t now_ms) {
   auto keys = DeriveRecoveryKeys(seed);
   if (!keys) {
     return keys.error();
@@ -42,7 +41,6 @@ Roe<std::string> BuildRecoveryBundleJson(const ByteVector& seed, const std::stri
   bundle.account_kem_sk_b64 = Base64Encode(kem->private_key);
   bundle.dek_b64 = Base64Encode(dek);
   sodium_memzero(dek.data(), dek.size());
-  bundle.relay_user_id = relay_user_id;
   bundle.nickname = nickname;
   bundle.created_at_ms = now_ms;
   bundle.expires_at_ms = now_ms + kLinkDeviceDefaultTtlMs;

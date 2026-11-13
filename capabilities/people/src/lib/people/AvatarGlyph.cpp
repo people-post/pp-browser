@@ -93,13 +93,9 @@ uint32_t Fnv1a32(std::string_view s) {
 
 } // namespace
 
-std::string AvatarStableId(std::string_view account_id, std::string_view relay_id, std::string_view peer_id,
-                           std::string_view contact_id) {
+std::string AvatarStableId(std::string_view account_id, std::string_view peer_id, std::string_view contact_id) {
   if (!account_id.empty()) {
     return std::string(account_id);
-  }
-  if (!relay_id.empty()) {
-    return std::string(relay_id);
   }
   if (!peer_id.empty()) {
     return std::string(peer_id);

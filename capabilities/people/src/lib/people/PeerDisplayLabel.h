@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/directory/ShortRelayId.h" // re-exported: callers use it with the labels
+#include "common/directory/ShortPersonId.h" // re-exported: callers use it with the labels
 
 #include "lib/people/ContactTypes.h"
 #include "common/MeshAlias.h"
@@ -25,7 +25,7 @@ struct PeerDisplayLabel {
 /** Contact display title: display_name, else server_nickname. */
 std::string FormatContactTitle(const Contact& contact);
 
-/** Unverified directory nickname: "~nick @relay:…". Empty nickname → empty unless id present. */
+/** Unverified directory nickname: "~nick @account:…". Empty nickname → empty unless id present. */
 std::string FormatDirectoryTitle(const mesh::DirectoryHit& hit);
 
 } // namespace pbr

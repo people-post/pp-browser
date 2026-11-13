@@ -483,7 +483,7 @@ private:
   struct ReceiveGate {
     /** Cleared when the bridge goes: frames still in flight on I/O drop. */
     std::atomic<bool> open{true};
-    /** Inbound remote mixer stream; 0 = defer until the relay: identity is known (BeginSession). */
+    /** Inbound remote mixer stream; 0 = defer until the peer's account is known (BeginSession). */
     std::atomic<uint32_t> remote_stream{0};
     /** Steady-clock ms before which I/O does not ask for another rebind (one in flight / just failed). */
     std::atomic<int64_t> rebind_not_before_ms{0};

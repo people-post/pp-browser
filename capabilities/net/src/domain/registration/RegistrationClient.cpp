@@ -10,9 +10,6 @@ namespace pbr {
 
 void ApplyRegistrationResult(LocalIdentity& identity, const RegistrationResult& result) {
   identity.registered = result.success;
-  if (!result.relay_user_id.empty()) {
-    identity.relay_user_id = result.relay_user_id;
-  }
   if (!result.llm_api_key.empty()) {
     identity.brief_llm_api_key = result.llm_api_key;
     identity.brief_llm_guest_api_key.clear();
@@ -77,9 +74,14 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
   auto finished = registration.FinishRegistration(
       start->challenge, loaded->account_signing_public_key_b64, nickname, *signature, timestamp, start->signature_alg,
       loaded->kem_public_key_b64, *kem_binding, loaded->peer_id, multiaddrs, loaded->initiation_floor, publish);
-  if (finished) {
-    finished->registered_backend_url = NormalizeRegistrationBackend(registration.BaseUrl());
+  if (!finished) {
+    return finished;
   }
+  // The relay names the inbox it registered by the Account ID it derived from our key (MR001): it must be ours.
+  if (finished->success && finished->account_id != loaded->account_id) {
+    return Error("Registration answered for another account");
+  }
+  finished->registered_backend_url = NormalizeRegistrationBackend(registration.BaseUrl());
   return finished;
 }
 
@@ -172,12 +174,12 @@ Roe<RegistrationResult> UpdateRegisteredNickname(IRegistrationClient& registrati
   if (!loaded) {
     return loaded.error();
   }
-  if (loaded->relay_user_id.empty()) {
-    return Error("relay_user_id not set");
+  if (!loaded->registered || loaded->account_id.empty()) {
+    return Error("Not registered on the relay");
   }
 
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildProfileUpdateSignBytes(loaded->relay_user_id, nickname, timestamp);
+  const auto sign_bytes = BuildProfileUpdateSignBytes(loaded->account_id, nickname, timestamp);
   if (sign_bytes.empty()) {
     return Error("Failed to build profile sign bytes");
   }
@@ -187,7 +189,7 @@ Roe<RegistrationResult> UpdateRegisteredNickname(IRegistrationClient& registrati
     return signature.error();
   }
 
-  return registration.UpdateNickname(nickname, *signature, timestamp, loaded->relay_user_id);
+  return registration.UpdateNickname(nickname, *signature, timestamp, loaded->account_id);
 }
 
 Roe<void> RevokeRegistrationWithIdentity(IRegistrationClient& registration, IdentityStore& identity) {
@@ -195,16 +197,16 @@ Roe<void> RevokeRegistrationWithIdentity(IRegistrationClient& registration, Iden
   if (!loaded) {
     return loaded.error();
   }
-  if (!loaded->registered || loaded->relay_user_id.empty()) {
+  if (!loaded->registered || loaded->account_id.empty()) {
     return {};
   }
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildAccountRevokeSignBytes(loaded->relay_user_id, timestamp);
+  const auto sign_bytes = BuildAccountRevokeSignBytes(loaded->account_id, timestamp);
   auto signature = identity.SignBytes(sign_bytes);
   if (!signature) {
     return signature.error();
   }
-  return registration.RevokeRegistration(loaded->relay_user_id, *signature, timestamp);
+  return registration.RevokeRegistration(loaded->account_id, *signature, timestamp);
 }
 
 } // namespace pbr

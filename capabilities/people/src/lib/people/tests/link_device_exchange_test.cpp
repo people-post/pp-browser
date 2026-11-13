@@ -49,7 +49,7 @@ TEST_F(LinkDeviceExchangeTest, ImportKeepsDeviceKeysReplacesAccount) {
   auto old_id = old_store.LoadOrCreate();
   ASSERT_TRUE(old_id);
   LocalIdentity seeded = *old_id;
-  seeded.relay_user_id = "relay:alice";
+  seeded.registered = true;
   seeded.nickname = "alice";
   seeded.registered = true;
   auto saved = old_store.Update(seeded);
@@ -66,7 +66,7 @@ TEST_F(LinkDeviceExchangeTest, ImportKeepsDeviceKeysReplacesAccount) {
   auto imported = LinkDeviceExchange::Import(new_store, new_vault, *json, "link-pin-1234", kNow + 1000);
   ASSERT_TRUE(imported) << imported.error().message;
   EXPECT_EQ(imported->identity.account_id, old_account);
-  EXPECT_EQ(imported->identity.relay_user_id, "relay:alice");
+  EXPECT_TRUE(imported->identity.registered);
   EXPECT_NE(imported->identity.peer_id, old_peer);
   EXPECT_EQ(imported->identity.kem_public_key_b64, saved->kem_public_key_b64);
   EXPECT_EQ(imported->identity.kem_private_key_b64, saved->kem_private_key_b64);
@@ -88,7 +88,7 @@ TEST_F(LinkDeviceExchangeTest, ImportOntoExistingVaultKeepsNewDevicePeerId) {
   auto old_id = old_store.LoadOrCreate();
   ASSERT_TRUE(old_id);
   LocalIdentity seeded = *old_id;
-  seeded.relay_user_id = "relay:alice";
+  seeded.registered = true;
   seeded.nickname = "alice";
   seeded.registered = true;
   auto saved = old_store.Update(seeded);
@@ -117,7 +117,7 @@ TEST_F(LinkDeviceExchangeTest, ImportOntoExistingVaultKeepsNewDevicePeerId) {
   EXPECT_EQ(imported->identity.kem_public_key_b64, saved->kem_public_key_b64);
   EXPECT_EQ(imported->identity.kem_private_key_b64, saved->kem_private_key_b64);
   EXPECT_NE(imported->identity.kem_public_key_b64, new_id->kem_public_key_b64);
-  EXPECT_EQ(imported->identity.relay_user_id, "relay:alice");
+  EXPECT_TRUE(imported->identity.registered);
 
   DataKeyVault reopen(DataKeyVault::VaultPathForProfile(new_dir_.string()), "new");
   ASSERT_TRUE(reopen.Unlock("device-pin"));
@@ -134,7 +134,7 @@ TEST_F(LinkDeviceExchangeTest, ExportNeedsAnAccountCard) {
   IdentityStore store(old_dir_.string(), "old");
   ASSERT_TRUE(store.SetDek(MakeDek()));
   LocalIdentity identity = store.LoadOrCreate().value();
-  identity.relay_user_id = "relay:alice";
+  identity.registered = true;
   auto json = LinkDeviceExchange::ExportJson(identity, MakeDek(), "", 1'700'000'000'000);
   ASSERT_FALSE(json) << "the new device has no device list to sign itself into";
   EXPECT_NE(json.error().message.find("account card"), std::string::npos);
@@ -145,7 +145,7 @@ TEST_F(LinkDeviceExchangeTest, CaptureRejectsMissingAccountKem) {
   identity.account_id = "account:x";
   identity.account_signing_public_key_b64 = "pk";
   identity.account_signing_private_key_b64 = "sk";
-  identity.relay_user_id = "relay:x";
+  identity.registered = true;
   auto captured = LinkDeviceExchange::Capture(identity, MakeDek(), 1);
   ASSERT_FALSE(captured);
   EXPECT_NE(captured.error().message.find("account KEM"), std::string::npos);

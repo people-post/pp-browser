@@ -182,7 +182,7 @@ TEST_F(DiagnosticsBundleTest, ASelfCheckHitSendsNothing) {
   EXPECT_EQ(bundle.error().message, "self-check: hex_run");
 
   in.files = {Write("diag.log", Line("INFO", "Diag", "event=x relay=relay-eu-1"))};
-  in.known_identifiers = {"relay:relay-eu-1.example.net"};
+  in.known_identifiers = {"peer:relay-eu-1.example.net"};
   bundle = pbr::BuildDiagnosticsBundle(in);
   ASSERT_FALSE(static_cast<bool>(bundle));
   EXPECT_EQ(bundle.error().message, "self-check: known_identifier");

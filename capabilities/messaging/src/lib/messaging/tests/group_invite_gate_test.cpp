@@ -73,7 +73,7 @@ TEST_F(GroupInviteGateTest, ContactsOnlyAllowsKnownInviter) {
 
 TEST_F(GroupInviteGateTest, ContactsOnlyRejectsUnknownInviter) {
   gate_->SetInboundPolicy(GroupInvitePolicy::ContactsOnly);
-  auto allowed = gate_->AllowsInboundInvite(MakeInvite("relay:stranger"));
+  auto allowed = gate_->AllowsInboundInvite(MakeInvite("account:stranger"));
   ASSERT_TRUE(allowed);
   EXPECT_FALSE(*allowed);
 }
@@ -88,7 +88,7 @@ TEST_F(GroupInviteGateTest, NobodyRejectsAll) {
 
 TEST_F(GroupInviteGateTest, EveryoneAllowsUnknown) {
   gate_->SetInboundPolicy(GroupInvitePolicy::Everyone);
-  auto allowed = gate_->AllowsInboundInvite(MakeInvite("relay:stranger"));
+  auto allowed = gate_->AllowsInboundInvite(MakeInvite("account:stranger"));
   ASSERT_TRUE(allowed);
   EXPECT_TRUE(*allowed);
 }
