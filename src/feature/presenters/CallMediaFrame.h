@@ -62,6 +62,8 @@ struct CallMediaFacts {
   bool mic_blocked = false;
   /** Their audio arrives but nothing plays (CallPlayoutStuck, fed by CallPresenter; #605). */
   bool playout_stuck = false;
+  /** This device's hold has lasted too long to be a normal one (CallHoldStuck, fed by CallPresenter; B217). */
+  bool hold_stuck = false;
 
   // --- What the media health is evaluated from (EvaluateCallMediaHealth).
   MediaEngineHealth engine;

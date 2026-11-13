@@ -127,6 +127,7 @@ CallController::CallController()
                                      Tr("call.replace.action"));
   };
   callbacks.on_hold_here = [this]() { return local_hold_.OnHold(); };
+  callbacks.app_foreground = []() { return AppLifecycle::IsForeground(); };
   callbacks.show_current_call = [this]() {
     if (chrome_mode_ == CallChromeMode::Minimized) {
       RestoreChromeFromMinimized();

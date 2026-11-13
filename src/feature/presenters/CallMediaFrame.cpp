@@ -112,7 +112,10 @@ CallStatusLine DecideStatusLine(const CallScreen& screen, const CallMediaFacts& 
   if (d.on_hold && !d.couldnt_connect && !d.path_lost) {
     // Silence by design, not a broken path: the line says why (V060).
     if (d.local_hold) {
-      line = Words("call.status.on_hold_local");
+      // A hold that does not end: the one sentence says what helps (CallHoldStuck decides it, once).
+      line = Words(!facts.hold_stuck ? "call.status.on_hold_local"
+                   : screen.group    ? "call.status.hold_stuck_group"
+                                     : "call.status.hold_stuck_peer");
     } else {
       line = Words("call.status.on_hold_peer_named");
       line.kind = LineKind::PeerOnHold;

@@ -51,7 +51,8 @@ public:
       return {};
     }
     const bool gap = have_base_ && s.now_ms - last_ms_ > kMaxGapMs;
-    const bool backwards = have_base_ && (s.rx_frames < last_rx_ || s.underruns < last_underruns_ || s.now_ms < last_ms_);
+    const bool backwards =
+        have_base_ && (s.rx_frames < last_rx_ || s.underruns < last_underruns_ || s.now_ms < last_ms_);
     if (!have_base_ || gap || backwards) {
       Rebase(s);
       stuck_ = false;

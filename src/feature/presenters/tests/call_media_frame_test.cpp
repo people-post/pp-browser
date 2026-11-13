@@ -751,5 +751,41 @@ TEST(CallMediaFrameTest, HoldsAndFailuresKeepTheirLineOverAStuckPlayout) {
   EXPECT_NE(frame.Step(InCallScreen(Status::Reconnecting), f, Health()).line.key, "call.status.cant_hear_peer");
 }
 
+TEST(CallMediaFrameTest, AHoldThatDoesNotEndSaysWhatHelpsAndTheHoldLineComesBack) {
+  CallMediaFrame frame;
+  CallMediaFacts f = LiveFacts(160'000);
+  f.local_on_hold = true;
+  EXPECT_EQ(frame.Step(InCallScreen(), f, Health()).line.key, "call.status.on_hold_local");
+  f.hold_stuck = true;
+  const CallStatusLine line = frame.Step(InCallScreen(), f, Health()).line;
+  EXPECT_EQ(line.kind, LineKind::Words);
+  EXPECT_EQ(line.key, "call.status.hold_stuck_peer");
+  f.hold_stuck = false;
+  EXPECT_EQ(frame.Step(InCallScreen(), f, Health()).line.key, "call.status.on_hold_local");
+}
+
+TEST(CallMediaFrameTest, AHoldThatDoesNotEndInAGroupSaysLeaveAndJoinAgain) {
+  CallMediaFrame frame;
+  CallScreen group = InCallScreen();
+  group.group = true;
+  CallMediaFacts f = LiveFacts(160'000);
+  f.local_on_hold = true;
+  f.hold_stuck = true;
+  EXPECT_EQ(frame.Step(group, f, Health()).line.key, "call.status.hold_stuck_group");
+}
+
+TEST(CallMediaFrameTest, TheStuckHoldSentenceIsOnlyForAHoldHereAndNeverOverAFailure) {
+  CallMediaFrame frame;
+  CallMediaFacts f = LiveFacts(160'000);
+  f.hold_stuck = true; // not held here: no sentence
+  EXPECT_NE(frame.Step(InCallScreen(), f, Health()).line.key, "call.status.hold_stuck_peer");
+  f.peer_on_hold = true;
+  EXPECT_EQ(frame.Step(InCallScreen(), f, Health()).line.kind, LineKind::PeerOnHold);
+  f.peer_on_hold = false;
+  f.local_on_hold = true;
+  f.media_status = CallMediaStatus::Reconnecting;
+  EXPECT_NE(frame.Step(InCallScreen(Status::Reconnecting), f, Health()).line.key, "call.status.hold_stuck_peer");
+}
+
 } // namespace
 } // namespace pbr

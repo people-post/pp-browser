@@ -1484,6 +1484,8 @@
     "call.status.on_hold_peer_named": "{name} stepped away. Please wait.",
     "call.status.cant_hear_peer": "Can't hear them",
     "call.status.cant_hear_group": "Can't hear anyone",
+    "call.status.hold_stuck_peer": "Sound may have a problem. Hang up and call again",
+    "call.status.hold_stuck_group": "Sound may have a problem. Leave and join again",
     "call.status.connected": "Connected",
     "call.status.setting_up_group": "Setting up group call…",
     "call.status.finding_media_path": "Finding a way to connect…",

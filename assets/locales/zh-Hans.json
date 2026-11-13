@@ -1436,6 +1436,8 @@
     "call.status.on_hold_peer_named": "{name}暂时离开，请稍等",
     "call.status.cant_hear_peer": "听不到对方的声音",
     "call.status.cant_hear_group": "听不到大家的声音",
+    "call.status.hold_stuck_peer": "声音可能出现故障，请挂断后重新拨打",
+    "call.status.hold_stuck_group": "声音可能出现故障，请挂断后重新加入",
     "call.status.connected": "已连接",
     "call.status.setting_up_group": "正在设置群组通话…",
     "call.status.finding_media_path": "正在查找媒体路径…",
