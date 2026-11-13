@@ -284,6 +284,111 @@ TEST_F(SqliteMigrationsTest, AThreadDbBelowItsFloorLosesItsMessagesNotItsChat) {
   EXPECT_TRUE(TakeChatStoreResetNotice(data_dir_.string()));
 }
 
+// profile.db 5 → 6 (multi-relay MR001): nothing in profile.db maps a retired `relay:` id to an Account ID, so what is
+// keyed by one is dropped — a chat's session keys, roster rows, invites, owed sends, call rows, applied lane ids — and
+// a chat whose peer was one keeps its messages and loses its peer; everything keyed by an Account ID stays.
+TEST_F(SqliteMigrationsTest, AProfileDbAt5DropsWhatARelayIdKeys) {
+  WriteProfileWithAChat();
+  sqlite3* db = Db(ProfileDb());
+  Exec(db,
+       "INSERT INTO threads (id, kind, channel, peer_identity_kind, peer_identity_value, title, "
+       "participant_contact_ids, updated_at) VALUES ('thread-relay', 'direct', 'e2e_public', 'relay_user', "
+       "'relay:old', 'Old', '[]', 1), ('thread-account', 'direct', 'e2e_public', 'account', 'account:ann', "
+       "'Ann', '[]', 2);");
+  Exec(db,
+       "INSERT INTO chat_targets (peer_identity_kind, peer_identity_value, channel, local_thread_id) VALUES "
+       "('relay_user', 'relay:old', 'e2e_public', 'thread-relay'), "
+       "('account', 'account:ann', 'e2e_public', 'thread-account');");
+  Exec(db, "INSERT INTO group_rosters (group_id, member_identity) VALUES ('g', 'relay:old'), ('g', 'account:ann');");
+  Exec(db, "INSERT INTO call_participants (call_id, identity) VALUES ('c', 'relay:old'), ('c', 'account:ann');");
+  Exec(db, "PRAGMA user_version = 5;");
+  CloseDb();
+
+  {
+    auto threads = OpenStore().ListThreads(); // opens and migrates
+    ASSERT_TRUE(threads) << threads.error().message;
+    EXPECT_EQ(threads->size(), 3u) << "no chat is dropped";
+    CloseStore();
+  }
+  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion);
+  db = Db(ProfileDb());
+  const auto count = [&](const std::string& sql) {
+    sqlite3_stmt* stmt = nullptr;
+    EXPECT_EQ(sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr), SQLITE_OK) << sql;
+    const int n = sqlite3_step(stmt) == SQLITE_ROW ? sqlite3_column_int(stmt, 0) : -1;
+    sqlite3_finalize(stmt);
+    return n;
+  };
+  EXPECT_EQ(count("SELECT COUNT(*) FROM chat_targets WHERE peer_identity_value LIKE 'relay:%'"), 0);
+  EXPECT_EQ(count("SELECT COUNT(*) FROM chat_targets WHERE peer_identity_value = 'account:ann'"), 1);
+  EXPECT_EQ(count("SELECT COUNT(*) FROM threads WHERE id = 'thread-relay' AND peer_identity_value = ''"), 1)
+      << "the chat stays, without its peer";
+  EXPECT_EQ(count("SELECT COUNT(*) FROM threads WHERE peer_identity_value = 'account:ann'"), 1);
+  EXPECT_EQ(count("SELECT COUNT(*) FROM group_rosters"), 1);
+  EXPECT_EQ(count("SELECT COUNT(*) FROM call_participants"), 1);
+  CloseDb();
+}
+
+// thread.db 3 → 4 (multi-relay MR001): in a 1:1 chat, a message stored with a `relay:` sender is the peer's — it takes
+// the peer's Account ID; a history watermark keyed by a relay id is dropped.
+TEST_F(SqliteMigrationsTest, AThreadDbAt3NamesItsPeerByAccountId) {
+  SqliteThreadStore& store = OpenStore();
+  Thread thread;
+  thread.id = "thread-ann";
+  thread.kind = ThreadKind::Direct;
+  thread.channel = ThreadChannel::E2ePublic;
+  thread.peer_identity_kind = "account";
+  thread.peer_identity_value = "account:ann";
+  thread.title = "Ann";
+  thread.updated_at = 7;
+  ASSERT_TRUE(store.UpsertThread(thread));
+  ThreadMessage message;
+  message.id = "msg-from-ann";
+  message.thread_id = thread.id;
+  message.sender_contact_id = "relay:old";
+  message.text = "hi";
+  message.timestamp = 7;
+  ASSERT_TRUE(store.AppendMessage(message));
+  CloseStore();
+  const std::string thread_db = SqliteThreadDbFile(data_dir_.string(), "thread-ann");
+  sqlite3* db = Db(thread_db);
+  Exec(db,
+       "INSERT INTO sync_state (peer_identity_kind, peer_identity_value, session_epoch, state_json) VALUES "
+       "('relay_user', 'relay:old', 1, '{}');");
+  Exec(db, "PRAGMA user_version = 3;");
+  CloseDb();
+
+  SqliteThreadStore& reopened = OpenStore();
+  auto page = reopened.GetMessagesPage("thread-ann", std::nullopt, 10);
+  ASSERT_TRUE(page) << page.error().message;
+  ASSERT_EQ(page->size(), 1u);
+  EXPECT_EQ(page->front().sender_contact_id, "account:ann");
+  CloseStore();
+  EXPECT_EQ(Version(thread_db), kSqliteThreadUserVersion);
+  db = Db(thread_db);
+  sqlite3_stmt* stmt = nullptr;
+  ASSERT_EQ(sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM sync_state", -1, &stmt, nullptr), SQLITE_OK);
+  ASSERT_EQ(sqlite3_step(stmt), SQLITE_ROW);
+  EXPECT_EQ(sqlite3_column_int(stmt, 0), 0);
+  sqlite3_finalize(stmt);
+  CloseDb();
+}
+
+// In a chat with no 1:1 peer (a group's, here the AI's) who a `relay:` sender was cannot be told: the message is dropped.
+TEST_F(SqliteMigrationsTest, AThreadDbAt3WithoutAPeerDropsMessagesFromARelayId) {
+  WriteProfileWithAChat();
+  const std::string thread_db = SqliteThreadDbFile(data_dir_.string(), "thread-kept");
+  sqlite3* db = Db(thread_db);
+  Exec(db, "UPDATE messages SET id = 'msg-relay', sender_contact_id = 'relay:old';");
+  Exec(db, "PRAGMA user_version = 3;");
+  CloseDb();
+  SqliteThreadStore& store = OpenStore();
+  auto page = store.GetMessagesPage("thread-kept", std::nullopt, 10);
+  ASSERT_TRUE(page) << page.error().message;
+  EXPECT_TRUE(page->empty()) << "not a 1:1 chat: no peer to name it by";
+  CloseStore();
+}
+
 // Nothing opens, creates or migrates the chat store before the PIN is entered: the thread store holds profile.db
 // shut until it gets the data key, and the stores sharing the file are refused meanwhile.
 TEST_F(SqliteMigrationsTest, NothingIsOpenedOrMigratedBeforeUnlock) {
