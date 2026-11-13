@@ -24,12 +24,19 @@ std::string TruncateForLog(const std::string& text, const size_t max_chars) {
   return text.substr(0, max_chars) + "...";
 }
 
+/** Appended to a send's 404 detail when the relay's JSON `code` is "recipient_not_found". */
+constexpr const char* kRecipientNotFoundMarker = "[recipient_not_found]";
+
 Error RelayHttpStatusError(const ShareWord action, long status_code, const std::string& body,
                            const bool not_found_is_final = false) {
   DiagLine("relay.http_failed").Add("action", action).Add("status", status_code).Emit();
   std::string detail = std::string("Relay ") + action.c_str() + " failed with status " + std::to_string(status_code);
   std::string api_message;
+  bool recipient_not_found = false;
   if (auto json = TryParseObject(body)) {
+    if (const auto code = json->getString("code")) {
+      recipient_not_found = *code == "recipient_not_found";
+    }
     if (auto err = json->getString("error")) {
       api_message = *err;
     } else if (auto message = json->getString("message")) {
@@ -45,6 +52,9 @@ Error RelayHttpStatusError(const ShareWord action, long status_code, const std::
   // A 4xx (but a timeout or a rate limit) is the relay refusing this request: final, not a hiccup.
   const bool refused = status_code >= 400 && status_code < 500 && status_code != 408 && status_code != 429;
   if (not_found_is_final && status_code == 404) {
+    if (recipient_not_found) {
+      detail += std::string(" ") + kRecipientNotFoundMarker; // the relay said so itself (IsRelayRecipientNotFound)
+    }
     return AppError::Network(Err::Network::HttpNotFound, detail); // a send's 404: the recipient is unknown there
   }
   return AppError::Network(refused ? Err::Network::HttpRejected : Err::Network::HttpError, detail);
@@ -68,9 +78,29 @@ Error RelayPollHttpError(const long status_code, const std::string& body) {
   return error;
 }
 
+Error RelaySendHttpError(const long status_code, const std::string& body) {
+  Error error = RelayHttpStatusError("send", status_code, body, /*not_found_is_final=*/true);
+  if (status_code != 403) {
+    return error;
+  }
+  // The relay has no registration for us: told apart (as for a poll) so the chat can offer to update our card.
+  const auto json = TryParseObject(body);
+  const auto api_error = json ? json->getString("error") : std::nullopt;
+  if (api_error && *api_error == kRelayUserNotRegistered) {
+    return AppError::Auth(Err::Auth::NotRegistered, error.message);
+  }
+  return error;
+}
+
 bool IsRelayUserNotRegistered(const Error& error) {
   return AppError::CategoryOf(error) == ErrorCategory::Auth &&
          error.code == static_cast<int32_t>(Err::Auth::NotRegistered);
+}
+
+bool IsRelayRecipientNotFound(const Error& error) {
+  return AppError::CategoryOf(error) == ErrorCategory::Network &&
+         error.code == static_cast<int32_t>(Err::Network::HttpNotFound) &&
+         error.message.find(kRecipientNotFoundMarker) != std::string::npos;
 }
 
 Roe<std::string> HttpRelayClient::SignRelayApiBytes(const std::vector<uint8_t>& sign_bytes) const {
@@ -119,8 +149,7 @@ Roe<void> HttpRelayClient::Send(const RelayEnvelope& envelope) {
                                                   << " recipient=" << record->recipient_contact_id
                                                   << " route=" << envelope.route.kind
                                                   << " body=" << response.value().body.substr(0, 160);
-    return RelayHttpStatusError("send", response.value().status_code, response.value().body,
-                                /*not_found_is_final=*/true);
+    return RelaySendHttpError(response.value().status_code, response.value().body);
   }
   return {};
 }

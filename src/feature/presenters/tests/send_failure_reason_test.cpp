@@ -30,6 +30,13 @@ TEST(SendFailureReasonTest, TheStoredLinesReasonIsTold) {
   EXPECT_EQ(SendFailureReason(StoredLine(SendFailure::PeerNoAnswer), false), SendFailure::PeerNoAnswer);
 }
 
+TEST(SendFailureReasonTest, TheNewReasonsAreToldAndAnUnknownWordStaysGeneric) {
+  EXPECT_EQ(SendFailureReason(StoredLine(SendFailure::RecipientNotFound), false), SendFailure::RecipientNotFound);
+  EXPECT_EQ(SendFailureReason(StoredLine(SendFailure::SenderNotRegistered), false), SendFailure::SenderNotRegistered);
+  EXPECT_FALSE(SendFailureReason(StoredLine(SendFailure::RecipientNotFound), true)) << "a group has none";
+  EXPECT_FALSE(SendFailureReason(MakeSendFailureRow("t1", "m1", "recipient_not_found_v2", 1), false));
+}
+
 TEST(SendFailureReasonTest, WithoutAKnownReasonTheGenericSentence) {
   EXPECT_FALSE(SendFailureReason(std::nullopt, false)) << "no line: failed before it was sent, or a restart";
   ThreadMessage unknown = MakeSendFailureRow("t1", "m1", "no_such_reason", 1);
@@ -61,7 +68,12 @@ TEST(SendFailureReasonTest, BothLanguagesHaveTheWords) {
     LocalizationService::Instance().SetPreferredLanguage(language);
     for (const char* key :
          {"chat.send.not_sent", "chat.send.mark.queued", "chat.send.mark.failed", "chat.notice.send.relay_busy",
-          "chat.notice.send.relay_unreachable", "chat.notice.send.direct_unconfirmed"}) {
+          "chat.notice.send.relay_unreachable", "chat.notice.send.direct_unconfirmed",
+          "chat.notice.send.recipient_not_found", "chat.notice.send.recipient_not_found_update",
+          "chat.notice.send.recipient_not_found_resend", "chat.notice.send.sender_not_registered",
+          "chat.send.fix.title", "chat.send.fix.body", "chat.send.fix.update_and_resend",
+          "chat.send.fix.update_their_card", "chat.send.fix.updating", "chat.send.fix.updated_send_again",
+          "chat.send.fix.not_found"}) {
       const std::string text = Tr(key);
       EXPECT_FALSE(text.empty()) << language << " " << key;
       EXPECT_NE(text, key) << language << ": missing " << key;

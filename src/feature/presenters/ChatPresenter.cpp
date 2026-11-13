@@ -563,6 +563,50 @@ SendMark ChatPresenter::SendMarkOf(const ThreadMessage& message, const int64_t n
 }
 
 SendMarkTap ChatPresenter::TapSendMark(const std::string& thread_id, const std::string& message_id) {
+  return TapSendMarkWith(thread_id, message_id, /*offer_fix=*/true);
+}
+
+SendMarkTap ChatPresenter::ResendAfterCardUpdate(const std::string& thread_id, const std::string& message_id) {
+  return TapSendMarkWith(thread_id, message_id, /*offer_fix=*/false);
+}
+
+SendAdvice ChatPresenter::SendAdviceOf(const std::string& thread_id, const std::string& message_id) {
+  if (!facade_ || thread_id.empty() || message_id.empty()) {
+    return SendAdvice::None;
+  }
+  SendMarkTapFacts facts;
+  if (auto row = facade_->GetMessage(thread_id, message_id); row && *row) {
+    facts.row = **row;
+  }
+  if (auto thread = facade_->GetThread(thread_id); thread && *thread) {
+    facts.thread = **thread;
+  }
+  if (!facts.row || !facts.thread) {
+    return SendAdvice::None;
+  }
+  facts.started_ms = facade_->SendStartedMs(message_id);
+  facts.already_resent = resent_unremoved_.count(message_id) != 0;
+  facts.now_ms = util::NowUnixMs();
+  FillGuidanceFacts(thread_id, message_id, facts);
+  return AdviceOf(DecideSendMarkTap(facts));
+}
+
+void ChatPresenter::FillGuidanceFacts(const std::string& thread_id, const std::string& message_id,
+                                      SendMarkTapFacts& facts) {
+  if (!facts.thread || facts.thread->kind != ThreadKind::Direct) {
+    return;
+  }
+  facts.failure = SendFailureReasonOf(thread_id, message_id);
+  if (!facts.thread->participant_contact_ids.empty() && !facts.thread->participant_contact_ids.front().empty()) {
+    const std::string& contact_id = facts.thread->participant_contact_ids.front();
+    if (auto contact = facade_->GetContact(contact_id); contact && *contact) {
+      facts.peer_contact_id = contact_id;
+    }
+  }
+}
+
+SendMarkTap ChatPresenter::TapSendMarkWith(const std::string& thread_id, const std::string& message_id,
+                                           const bool offer_fix) {
   if (!facade_ || thread_id.empty() || message_id.empty()) {
     return {};
   }
@@ -599,6 +643,8 @@ SendMarkTap ChatPresenter::TapSendMark(const std::string& thread_id, const std::
   facts.started_ms = facade_->SendStartedMs(message_id);
   facts.already_resent = resent_unremoved_.count(message_id) != 0;
   facts.now_ms = util::NowUnixMs();
+  facts.offer_fix = offer_fix;
+  FillGuidanceFacts(thread_id, message_id, facts);
   if (const auto others = GroupOthersJoinedAt(thread_id)) {
     facts.no_recipients = !GroupRowHadRecipients(*others, facts.row->timestamp);
   }

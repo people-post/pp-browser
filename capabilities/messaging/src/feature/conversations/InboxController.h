@@ -106,6 +106,11 @@ struct TranscriptFacts {
   bool thread_is_group = false;
   /** The send mark on a message (none when unset). The GUI sets this. */
   std::function<SendMark(const ThreadMessage&)> send_mark;
+  /**
+   * The words of a "did not go out" line (a local send_failure row) when they depend on the message it is under (how a
+   * tap on its red mark goes on); none: the reason's own words. The GUI sets this.
+   */
+  std::function<std::optional<std::string>(const ThreadMessage& failure_row)> send_failure_line;
 };
 
 /** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */

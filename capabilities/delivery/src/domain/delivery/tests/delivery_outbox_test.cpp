@@ -1,3 +1,4 @@
+#include "lib/delivery/HttpRelayClient.h"
 #include "lib/delivery/RelayClients.h"
 #include "domain/delivery/DeliveryOutbox.h"
 
@@ -438,6 +439,65 @@ TEST_F(DeliveryOutboxTest, AnUnknownRecipientIsRetriedOnlyOncePerAttemptAndNotQu
   EXPECT_EQ(relay.SentCount(), 2u);
   EXPECT_EQ(asked, 1);
   EXPECT_FALSE(outbox->SendStartedMs("m1")) << "a 404 is final: nothing is queued";
+}
+
+// The relay's own words decide the reason, not the status: a 404 with code recipient_not_found stays RecipientNotFound
+// after the automatic route refresh (which still keys on any 404), any other 404 stays RelayRejected.
+TEST_F(DeliveryOutboxTest, AnUnknownRecipientTheRelaySaidSoOfStaysRecipientNotFoundAfterTheRefresh) {
+  FakeRelay relay(0, RelaySendHttpError(404, R"({"error":"Recipient not registered","code":"recipient_not_found"})"));
+  relay.RecipientDown("relay:old", true);
+  relay.RecipientDown("relay:new", true);
+  auto outbox = MakeOutbox(relay);
+  int asked = 0;
+  outbox->SetRouteRefresh([&](const std::string&) -> std::optional<std::string> {
+    ++asked;
+    return "relay:new";
+  });
+  DeliveryRequest request = ToRelay("t1", "m1");
+  request.envelope.recipient_contact_id = "relay:old";
+  request.route_account = "account:bob";
+  outbox->Send(std::move(request));
+  Drain();
+  ASSERT_EQ(Outcomes().size(), 1u);
+  EXPECT_FALSE(Outcomes()[0].ok);
+  EXPECT_EQ(Outcomes()[0].failure, SendFailure::RecipientNotFound);
+  EXPECT_EQ(relay.SentCount(), 2u);
+  EXPECT_EQ(asked, 1) << "#602's one refresh and re-send is unchanged";
+  EXPECT_FALSE(outbox->SendStartedMs("m1"));
+}
+
+TEST_F(DeliveryOutboxTest, A404WithoutTheRecipientNotFoundCodeStaysRelayRejectedAndStillRefreshes) {
+  FakeRelay relay(0, RelaySendHttpError(404, "<html>Not Found</html>"));
+  relay.RecipientDown("relay:old", true);
+  relay.RecipientDown("relay:new", true);
+  auto outbox = MakeOutbox(relay);
+  int asked = 0;
+  outbox->SetRouteRefresh([&](const std::string&) -> std::optional<std::string> {
+    ++asked;
+    return "relay:new";
+  });
+  DeliveryRequest request = ToRelay("t1", "m1");
+  request.envelope.recipient_contact_id = "relay:old";
+  request.route_account = "account:bob";
+  outbox->Send(std::move(request));
+  Drain();
+  ASSERT_EQ(Outcomes().size(), 1u);
+  EXPECT_EQ(Outcomes()[0].failure, SendFailure::RelayRejected);
+  EXPECT_EQ(relay.SentCount(), 2u);
+  EXPECT_EQ(asked, 1);
+}
+
+TEST_F(DeliveryOutboxTest, AnUnregisteredSendersRefusalEndsItAtOnceAsAnyRefusal) {
+  FakeRelay relay(1, RelaySendHttpError(403, R"({"error":"Relay user not registered"})"));
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(ToRelay("t1", "m1"));
+  Drain();
+  ASSERT_EQ(Outcomes().size(), 1u);
+  EXPECT_EQ(Outcomes()[0].failure, SendFailure::SenderNotRegistered);
+  EXPECT_FALSE(outbox->SendStartedMs("m1")) << "not queued: the same bytes would be refused again";
+  outbox->Retry();
+  Drain();
+  EXPECT_EQ(relay.SentCount(), 1u);
 }
 
 TEST_F(DeliveryOutboxTest, AnUnknownRecipientWithTheSameRouteOrNoneIsNotSentAgain) {

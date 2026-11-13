@@ -1354,7 +1354,8 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   chat_->BindOpenSettingsSection([this](const std::string& section_id) { settings_->OpenSection(section_id); });
   // B216: the chats list's reconnect row and alert register through Me → Profile's action; a registration the user
   // asks for never overlaps the automatic renewal (it waits for the one in flight).
-  chat_->BindReconnectAccount([this]() { settings_->ReconnectAccount(); });
+  chat_->BindReconnectAccount(
+      [this](std::function<void(bool ok)> done) { settings_->ReconnectAccount(std::move(done)); });
   settings_->BindRunWhenRegistrationIdle(
       [this](std::function<void()> run) { chat_->RunWhenRegistrationIdle(std::move(run)); });
   chat_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "chat_chrome"));
@@ -1372,6 +1373,8 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   chat_->BindMessagingUi(std::move(messaging_ui));
 
   contacts_->BindContactsPorts(MakeMessagingContactsPorts(messaging));
+  // A failed message's "update their card" is the contact page's refresh (the same hub call).
+  chat_->BindRefreshContact(MakeMessagingContactsPorts(messaging).refresh_contact);
   call_->BindCallPorts(MakeCallFunctionalPorts(*call_ui_, messaging, store_.IsInitialized() ? &store_ : nullptr));
   call_->BindShellCallChrome(MakeShellCallChromePorts(shell));
   call_->BindPeerLinkRefresh([this]() {
@@ -2212,6 +2215,7 @@ bool Application::MountPresenters(ui::Context* context) {
       contacts_shell_bridge_->Clear();
     }
     contacts_->BindContactsPorts({});
+    chat_->BindRefreshContact({});
     contacts_->BindSessionStore(nullptr);
     settings_->BindOpenHomeEdit({});
     chat_->BindShellNavigation({});

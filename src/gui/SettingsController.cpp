@@ -225,8 +225,8 @@ void SettingsController::BindOpenHomeEdit(std::function<void()> open) {
   open_home_edit_ = std::move(open);
 }
 
-void SettingsController::ReconnectAccount() {
-  profile_actions_.Register(/*quiet_success=*/true);
+void SettingsController::ReconnectAccount(std::function<void(bool ok)> done) {
+  profile_actions_.Register(/*quiet_success=*/true, std::move(done));
 }
 
 void SettingsController::BindRunWhenRegistrationIdle(std::function<void(std::function<void()>)> run) {

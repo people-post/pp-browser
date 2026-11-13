@@ -4,6 +4,7 @@
 #include "lib/delivery/E2ePublicSessionLogic.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "lib/delivery/ReactionTypes.h"
+#include "lib/delivery/RelayClients.h"
 #include "lib/delivery/RelayWirePayload.h"
 
 #include "common/chat/MessagingLimits.h"
@@ -352,6 +353,9 @@ namespace {
 
 /** The relay refused the request itself (#391): the same bytes would be refused again. */
 bool RelayRefused(const Error& failure) {
+  if (IsRelayUserNotRegistered(failure)) {
+    return true; // a send's 403 "Relay user not registered": a refusal as it was before it was told apart
+  }
   return AppError::CategoryOf(failure) == ErrorCategory::Network &&
          (static_cast<Err::Network>(failure.code) == Err::Network::HttpRejected ||
           static_cast<Err::Network>(failure.code) == Err::Network::HttpNotFound);

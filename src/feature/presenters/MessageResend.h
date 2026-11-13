@@ -2,6 +2,7 @@
 
 #include "common/Error.h"
 #include "common/thread/ThreadTypes.h"
+#include "lib/delivery/DeliveryNotice.h"
 #include "lib/delivery/TextSpans.h"
 
 #include <cstdint>
@@ -31,6 +32,13 @@ struct SendMarkTap {
     Resent,
     /** Sent again earlier, but its old row could not be taken away then, nor now: nothing is sent a third time. */
     RemovalFailed,
+    /**
+     * The server could not find the recipient (a 1:1 chat with a contact): update their card first (`contact_id`),
+     * and send this message again when it is resendable. Nothing is sent by the tap itself.
+     */
+    UpdateTheirCard,
+    /** The server does not know us (a 1:1 chat with a contact): update our own card first. Nothing is sent by the tap. */
+    UpdateMyCard,
   };
   /** Why ReasonOnly. */
   enum class Refusal {
@@ -47,7 +55,22 @@ struct SendMarkTap {
   bool old_removed = false;
   /** The store refused the removal (an error, not "delivered meanwhile"): the old row is red still. */
   bool removal_error = false;
+  /** UpdateTheirCard: the contact whose card is updated. */
+  std::string contact_id;
+  /** UpdateTheirCard / UpdateMyCard: a tap would send this message again by today's rules (else only its reason). */
+  bool resendable = false;
 };
+
+/** What the words for a failed message add to its reason: how a tap on its red mark goes on. */
+enum class SendAdvice {
+  None,
+  /** The tap offers to update their card, and the message is sent again after it. */
+  UpdateTheirCardAndResend,
+  /** The tap offers to update their card; the message is not sent again (the user sends it again). */
+  UpdateTheirCardOnly,
+  UpdateMyCard,
+};
+SendAdvice AdviceOf(const SendMarkTap& tap);
 
 /** What a tap is decided from. */
 struct SendMarkTapFacts {
@@ -61,6 +84,15 @@ struct SendMarkTapFacts {
   bool no_recipients = false;
   /** It was sent again already and only its removal failed: a tap retries the removal, never the send. */
   bool already_resent = false;
+  /** Why it did not go out, as its stored line says (a 1:1 chat only); none: not known. */
+  std::optional<SendFailure> failure;
+  /** The 1:1 chat's peer when it is a contact (its id); none: a group, or not a contact. */
+  std::optional<std::string> peer_contact_id;
+  /**
+   * False when the tap only re-sends (after the contact's or our own card was updated): the guidance branches
+   * (UpdateTheirCard, UpdateMyCard) are skipped.
+   */
+  bool offer_fix = true;
 };
 
 /** The decision alone: Nothing, StillTrying, ReasonOnly, or — kind Resent, nothing done yet — that it is re-sent. */

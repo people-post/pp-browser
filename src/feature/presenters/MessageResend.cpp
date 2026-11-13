@@ -7,7 +7,9 @@
 
 namespace pbr {
 
-SendMarkTap DecideSendMarkTap(const SendMarkTapFacts& facts) {
+namespace {
+
+SendMarkTap DecideResendOnly(const SendMarkTapFacts& facts) {
   SendMarkTap tap;
   if (!facts.row || !facts.thread || !MayShowSendMark(*facts.row)) {
     return tap;
@@ -38,6 +40,46 @@ SendMarkTap DecideSendMarkTap(const SendMarkTapFacts& facts) {
   }
   tap.kind = SendMarkTap::Kind::Resent;
   return tap;
+}
+
+} // namespace
+
+SendMarkTap DecideSendMarkTap(const SendMarkTapFacts& facts) {
+  SendMarkTap tap = DecideResendOnly(facts);
+  if (!facts.offer_fix || facts.already_resent || !facts.thread || facts.thread->kind != ThreadKind::Direct ||
+      !facts.peer_contact_id || !facts.failure) {
+    return tap;
+  }
+  // Only a message that is red now: not still trying, not gone.
+  if (tap.kind != SendMarkTap::Kind::Resent && tap.kind != SendMarkTap::Kind::ReasonOnly) {
+    return tap;
+  }
+  const bool resendable = tap.kind == SendMarkTap::Kind::Resent;
+  if (*facts.failure == SendFailure::RecipientNotFound) {
+    SendMarkTap fix;
+    fix.kind = SendMarkTap::Kind::UpdateTheirCard;
+    fix.contact_id = *facts.peer_contact_id;
+    fix.resendable = resendable;
+    return fix;
+  }
+  if (*facts.failure == SendFailure::SenderNotRegistered) {
+    SendMarkTap fix;
+    fix.kind = SendMarkTap::Kind::UpdateMyCard;
+    fix.resendable = resendable;
+    return fix;
+  }
+  return tap;
+}
+
+SendAdvice AdviceOf(const SendMarkTap& tap) {
+  switch (tap.kind) {
+    case SendMarkTap::Kind::UpdateTheirCard:
+      return tap.resendable ? SendAdvice::UpdateTheirCardAndResend : SendAdvice::UpdateTheirCardOnly;
+    case SendMarkTap::Kind::UpdateMyCard:
+      return SendAdvice::UpdateMyCard;
+    default:
+      return SendAdvice::None;
+  }
 }
 
 SendMarkTap ResendAfterTap(const SendMarkTapFacts& facts, const ResendPorts& ports) {

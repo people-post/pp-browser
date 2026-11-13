@@ -35,6 +35,12 @@ struct RelayDeleteResult {
  */
 bool IsRelayUserNotRegistered(const Error& error);
 
+/**
+ * A relay send answered 404 and its JSON `code` is "recipient_not_found": the server itself says it has no such
+ * recipient. Any other 404 (a wrong address or gateway) is not this.
+ */
+bool IsRelayRecipientNotFound(const Error& error);
+
 class IRelayClient {
 public:
   virtual ~IRelayClient() = default;

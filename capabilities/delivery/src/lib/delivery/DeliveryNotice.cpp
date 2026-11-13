@@ -2,6 +2,7 @@
 
 #include "common/ValueJson.h"
 #include "foundation/error/AppError.h"
+#include "lib/delivery/RelayClients.h"
 
 #include <array>
 
@@ -63,15 +64,19 @@ SendFailure SendFailureFromDirect(const DirectSendErr code) {
 SendFailure SendFailureFromRelay(const Error& error) {
   switch (AppError::CategoryOf(error)) {
     case ErrorCategory::Auth:
+      if (IsRelayUserNotRegistered(error)) {
+        return SendFailure::SenderNotRegistered;
+      }
       return static_cast<Err::Auth>(error.code) == Err::Auth::RateLimited ? SendFailure::RelayRateLimited
                                                                           : SendFailure::RelayRejected;
     case ErrorCategory::Config:
       return SendFailure::RelayNotConfigured;
     case ErrorCategory::Network:
       switch (static_cast<Err::Network>(error.code)) {
+        case Err::Network::HttpNotFound:
+          return IsRelayRecipientNotFound(error) ? SendFailure::RecipientNotFound : SendFailure::RelayRejected;
         case Err::Network::HttpError:
         case Err::Network::HttpRejected:
-        case Err::Network::HttpNotFound:
           return SendFailure::RelayRejected;
         default:
           return SendFailure::RelayUnreachable;
@@ -126,6 +131,10 @@ ShareWord SendFailureWord(const SendFailure failure) {
       return "relay_unreachable";
     case SendFailure::RelayRejected:
       return "relay_rejected";
+    case SendFailure::RecipientNotFound:
+      return "recipient_not_found";
+    case SendFailure::SenderNotRegistered:
+      return "sender_not_registered";
   }
   return "unknown";
 }
@@ -145,7 +154,7 @@ std::optional<SendFailure> SendFailureFromWire(const std::string& wire) {
       SendFailure::BackingOff,      SendFailure::DialBusy,          SendFailure::PeerNoAnswer,
       SendFailure::HandshakeFailed, SendFailure::DirectUnconfirmed, SendFailure::RelayNotConfigured,
       SendFailure::RelayBusy,       SendFailure::RelayRateLimited,  SendFailure::RelayUnreachable,
-      SendFailure::RelayRejected};
+      SendFailure::RelayRejected,   SendFailure::RecipientNotFound, SendFailure::SenderNotRegistered};
   for (const SendFailure failure : kAll) {
     if (wire == SendFailureWord(failure).view()) {
       return failure;
@@ -193,6 +202,22 @@ std::optional<std::string> SendFailureRowReason(const ThreadMessage& message) {
     return std::nullopt;
   }
   return detail->getString("reason").value_or("");
+}
+
+std::optional<std::string> SendFailureRowMessageId(const ThreadMessage& message) {
+  if (!SendFailureRowReason(message)) {
+    return std::nullopt;
+  }
+  auto payload = TryParseObject(message.payload_json);
+  auto detail = payload ? TryParseObject(payload->getString("detail").value_or("")) : std::nullopt;
+  if (!detail) {
+    return std::nullopt;
+  }
+  auto id = detail->getString("message_id");
+  if (!id || id->empty()) {
+    return std::nullopt;
+  }
+  return *id;
 }
 
 } // namespace pbr

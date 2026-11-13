@@ -16,6 +16,14 @@ namespace pbr {
  */
 Error RelayPollHttpError(long status_code, const std::string& body);
 
+/**
+ * The error for a relay send answered with a non-2xx `status_code` other than 429: a 404 is HttpNotFound (the recipient
+ * is unknown there), carrying "the relay said so" when its JSON `code` is "recipient_not_found"
+ * (IsRelayRecipientNotFound); a 403 whose JSON `error` is exactly "Relay user not registered" is Auth NotRegistered
+ * (IsRelayUserNotRegistered); a 4xx (but 408 / 429) is HttpRejected, the rest HttpError.
+ */
+Error RelaySendHttpError(long status_code, const std::string& body);
+
 /** The Brief relay's message API over HTTP: send, inbox poll / ack / clear, stream history (signed per call). */
 class HttpRelayClient : public IRelayClient {
 public:

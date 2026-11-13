@@ -148,9 +148,10 @@ public:
   void OpenSection(const std::string& section_id);
   /**
    * The chats list's "reconnect" row or alert (B216): register again, as Me → Profile's button does, without its
-   * "renewed" line ("Reconnected" comes when a poll gets through).
+   * "renewed" line ("Reconnected" comes when a poll gets through). `done(registered)` when it ends
+   * (SettingsProfileActions::Register).
    */
-  void ReconnectAccount();
+  void ReconnectAccount(std::function<void(bool ok)> done = {});
   /** A registration waits for the automatic renewal in flight (ChatController::RunWhenRegistrationIdle). */
   void BindRunWhenRegistrationIdle(std::function<void(std::function<void()>)> run);
   /** Refresh reachability Connection card via SettingsCommands ports. */

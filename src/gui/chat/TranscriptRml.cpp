@@ -152,13 +152,16 @@ std::optional<std::string> CallBlockedLine(const ThreadMessage& message) {
 }
 
 /** A local "this message did not go out" line under a message: worded from its payload, in the reader's language. */
-std::optional<std::string> SendFailureLine(const ThreadMessage& message) {
+std::optional<std::string> SendFailureLine(const ThreadMessage& message, const TranscriptFacts& facts) {
   const auto reason = SendFailureRowReason(message);
   if (!reason) {
     return std::nullopt;
   }
   if (*reason == kGroupMembersMissedWire) {
     return GroupMembersMissedText();
+  }
+  if (const auto line = facts.send_failure_line ? facts.send_failure_line(message) : std::nullopt) {
+    return line;
   }
   return SendFailureText(SendFailureFromWire(*reason).value_or(SendFailure::Unknown));
 }
@@ -308,7 +311,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   if (PskRotateCodec::IsPskRotateMessage(message) && message.sender_contact_id != kLocalSelfContactId) {
     return SystemLineRml(Tr("chat.psk_rotate_notice"));
   }
-  if (auto failure = SendFailureLine(message)) {
+  if (auto failure = SendFailureLine(message, facts)) {
     return SystemLineRml(*failure);
   }
   return SystemLineRml(StoredSystemText(message));

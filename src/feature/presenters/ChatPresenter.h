@@ -442,6 +442,16 @@ public:
    * nothing is sent and the result says what to tell. The composer's draft is not touched.
    */
   SendMarkTap TapSendMark(const std::string& thread_id, const std::string& message_id);
+  /**
+   * Sends the failed message again once the contact's or our own card was updated: as TapSendMark, but without the
+   * "update the card first" results (the update was just made).
+   */
+  SendMarkTap ResendAfterCardUpdate(const std::string& thread_id, const std::string& message_id);
+  /**
+   * How a tap on the red mark of `message_id` goes on, for the words that tell its reason (the line under the message,
+   * the pill): which card a tap offers to update. Reads only.
+   */
+  SendAdvice SendAdviceOf(const std::string& thread_id, const std::string& message_id);
   /** Back to the chats list (the Home tab): no chat is open, so new messages count as unread. */
   void ShowHome();
   /** The archived list's entry / back button. */
@@ -641,6 +651,10 @@ private:
   /** Reads, changes and writes one chat's settings, then refreshes; tells the renderer when refused. */
   void UpdatePrefs(const std::string& thread_id, const std::function<void(ThreadLocalPrefs&)>& change);
   void Changed();
+
+  SendMarkTap TapSendMarkWith(const std::string& thread_id, const std::string& message_id, bool offer_fix);
+  /** `facts.failure` and `facts.peer_contact_id` for a 1:1 chat (what the card-update results are decided from). */
+  void FillGuidanceFacts(const std::string& thread_id, const std::string& message_id, SendMarkTapFacts& facts);
 
   ConversationsFacade* facade_ = nullptr;
   Callbacks callbacks_;

@@ -23,6 +23,7 @@
 #include "gui/chat/ChatPictureTextures.h"
 #include "gui/chat/PreviewRedrawBatcher.h"
 #include "gui/chat/RegistrationRecovery.h"
+#include "gui/chat/SendFailureFix.h"
 #include "gui/chat/VoiceComposer.h"
 #include "gui/chat/VoicePlayback.h"
 #include "gui/chat/ChatMentionPicker.h"
@@ -218,7 +219,18 @@ public:
     open_settings_section_ = std::move(open);
   }
   /** The reconnect row and alert register again through Me → Profile's action (SettingsController::ReconnectAccount). */
-  void BindReconnectAccount(std::function<void()> reconnect) { reconnect_account_ = std::move(reconnect); }
+  void BindReconnectAccount(std::function<void(std::function<void(bool ok)> done)> reconnect) {
+    reconnect_account_ = std::move(reconnect);
+  }
+  /**
+   * A failed message's "update their card": the contact page's refresh (contacts_ports_.refresh_contact, one hub call),
+   * `done` once on the UI thread; false when one already runs for that contact.
+   */
+  void BindRefreshContact(
+      std::function<bool(const std::string& contact_id, std::function<void(const ContactRefreshResult&)> done)>
+          refresh) {
+    refresh_contact_ = std::move(refresh);
+  }
   /**
    * Runs `run` (a registration the user asked for) now, or, while the automatic renewal is out, once it ends
    * ("Reconnecting, please wait."), so the two never overlap. UI thread.
@@ -731,7 +743,11 @@ private:
   void MakeReadyTasks();
   /** B216: the relay does not know this account; register again, or ask the user (RegistrationRecovery). */
   RegistrationRecovery recovery_;
-  std::function<void()> reconnect_account_;
+  std::function<void(std::function<void(bool ok)> done)> reconnect_account_;
+  std::function<bool(const std::string&, std::function<void(const ContactRefreshResult&)>)> refresh_contact_;
+  /** The choice made on a failed message's red mark: update their card or ours, then send it again (in memory only). */
+  SendFailureFix send_fix_;
+  void MakeSendFixPorts();
   void OnRelayRegistrationSignal(RelayRegistrationSignal signal);
   /** A renewal ended (MessagingReadyTasks' renew_hint): tells the recovery how. */
   void OnRecoveryRenewal(const RenewResult& result, bool auto_renew);
@@ -764,6 +780,8 @@ private:
    * automatic sending has stopped, else the bottom pill says why (still trying, or why it did not go out).
    */
   void OnSendMarkTapped(const std::string& message_id);
+  /** What a tap (or a resend after a card update) came to, told as the composer says it. */
+  void ApplySendMarkTap(const std::string& thread_id, const std::string& message_id, const SendMarkTap& tap);
   /**
    * Step 0 of DEV/PLAN-chat-picture-previews.md, measurement only. Opening a chat (FinalizeThreadDisplay) arms
    * `armed`; the next display sync records its rows, pictures and build time and sets `layout_pending`; the next

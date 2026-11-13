@@ -41,6 +41,10 @@ enum class SendFailure {
   RelayUnreachable,
   /** The relay answered, and did not take the message. */
   RelayRejected,
+  /** The relay answered a send 404 "recipient_not_found": it has no registration for the contact. */
+  RecipientNotFound,
+  /** The relay has no registration for us (IsRelayUserNotRegistered). */
+  SenderNotRegistered,
 };
 
 /** `failure` as a word for a shareable line (common/Diag.h). */
@@ -122,5 +126,7 @@ ThreadMessage MakeSendFailureRow(const std::string& thread_id, const std::string
                                  const std::string& reason_wire, int64_t timestamp_ms);
 /** The reason of a send-failure row; none for any other message. */
 std::optional<std::string> SendFailureRowReason(const ThreadMessage& message);
+/** The message a send-failure row is about; none for any other message. */
+std::optional<std::string> SendFailureRowMessageId(const ThreadMessage& message);
 
 } // namespace pbr
