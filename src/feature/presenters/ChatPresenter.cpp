@@ -702,6 +702,15 @@ std::string ChatPresenter::GroupEventPreviewOr(const Thread& thread, const std::
       }
     }
   }
+  // A call summary's stored stand-in text ("Voice call"): the transcript's words. Only a System row maps.
+  if (IsStoredCallPreview(thread.preview)) {
+    auto page = facade_->GetMessagesPage(thread.id, std::nullopt, 1);
+    if (page && !page->empty()) {
+      if (auto line = StoredCallPreviewText(page->back())) {
+        return *line;
+      }
+    }
+  }
   // A group whose latest row is a membership line previews the same words as its transcript shows (the stored
   // preview is the English text). Only a preview that is such a text costs a read of the latest message.
   if (thread.kind != ThreadKind::Group || !IsStoredGroupEventText(thread.preview)) {

@@ -32,4 +32,14 @@ std::optional<std::string> StoredSystemLineText(const std::string& stored);
 /** Whether `preview` (a thread's stored preview) is the stored English text of a membership line. */
 bool IsStoredGroupEventText(const std::string& preview);
 
+/** Whether `preview` (a thread's stored preview) is the English stand-in text of a call summary. */
+bool IsStoredCallPreview(const std::string& preview);
+
+/**
+ * A call summary row's words for the chat list's preview, in the reader's language: the line the transcript's family
+ * draws (missed, declined, duration …), or the call's title when the record does not decode. None: not a System row
+ * holding the stand-in text — a person may type "Voice call", and that stays their message.
+ */
+std::optional<std::string> StoredCallPreviewText(const ThreadMessage& latest);
+
 } // namespace pbr

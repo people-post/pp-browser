@@ -1,6 +1,7 @@
 #include "feature/presenters/GroupEventText.h"
 
 #include "foundation/i18n/LocalizationService.h"
+#include "lib/calls/CallControlFamily.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 
 #include <string_view>
@@ -200,6 +201,20 @@ bool IsStoredGroupEventText(const std::string& preview) {
     }
   }
   return preview.rfind("Group renamed to ", 0) == 0;
+}
+
+bool IsStoredCallPreview(const std::string& preview) {
+  return preview == "Voice call" || preview == "Video call";
+}
+
+std::optional<std::string> StoredCallPreviewText(const ThreadMessage& latest) {
+  if (latest.content_type != ChatContentType::System || !IsStoredCallPreview(latest.text)) {
+    return std::nullopt;
+  }
+  if (auto line = CallSummaryLine(latest, SystemControlLabels{})) {
+    return line;
+  }
+  return Tr(latest.text == "Video call" ? "call.title.video" : "call.title.voice");
 }
 
 std::optional<std::string> StoredSystemLineText(const std::string& stored) {
