@@ -138,7 +138,7 @@ See [ui/UI_DESIGN_SYSTEM.md](../ui/UI_DESIGN_SYSTEM.md) for tokens and component
 
 ## In-app settings (Me tab)
 
-Open **Me** from the nav rail (person icon). The Me tab shows an **identity card** (nickname, relay ID, Copy ID / Share / Register) above a **Preferences** list → detail layout:
+Open **Me** from the nav rail (person icon). The Me tab shows an **identity card** (nickname, Account ID, Copy ID / Share / Register) above a **Preferences** list → detail layout:
 
 | Section | Persists to | Scope |
 |---------|-------------|-------|

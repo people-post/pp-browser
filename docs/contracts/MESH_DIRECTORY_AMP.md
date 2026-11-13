@@ -69,7 +69,7 @@ Response (success):
 }
 ```
 
-`MeshNodeHit` fields match HTTP `GET /v1/mesh/nodes` rows: `relay_user_id`, optional `account_id` / `nickname` / keys, `expires_at`, `entity_kind`, `seq`, `capabilities`, `endpoints[{peer_id, multiaddrs, updated_at}]`.
+`MeshNodeHit` fields match HTTP `GET /v1/mesh/nodes` rows: `account_id` (required: a row without one is refused), optional `nickname` / keys, `expires_at`, `entity_kind`, `seq`, `capabilities`, `endpoints[{peer_id, multiaddrs, updated_at}]`.
 
 Response (error):
 
@@ -79,7 +79,7 @@ Response (error):
 
 ### Person ops (v1)
 
-`search` / `lookup_account` / `lookup_relay_user` are **not** required on Amp v1. Amp `IDirectoryClient` adapters return failure for person lookups so failover reaches HTTP. Future wire ops may mirror Brief paths.
+`search` / `lookup_account` are **not** required on Amp v1. Amp `IDirectoryClient` adapters return failure for person lookups so failover reaches HTTP. Future wire ops may mirror Brief paths.
 
 ## Consumer integration
 

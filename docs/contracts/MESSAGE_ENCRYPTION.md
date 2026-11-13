@@ -66,7 +66,7 @@ session_key = HKDF-SHA256(
 
 ### Identity in AAD and wire (D079)
 
-- **`sender_contact_id`** on wire = sender's **communicating identity value** (e.g. `relay:abc123`).
+- **`sender_contact_id`** on wire = sender's **Account ID** (`account:…`; there are no `relay:` ids — multi-relay MR001).
 - **`peer_contact_id` in AAD** = recipient's communicating identity value (from sender's view).
 - **`Contact.id`** and **`local:self`** are never in AAD or relay envelope.
 - **`thread_id`** is never in AAD or relay envelope.
@@ -120,10 +120,9 @@ API: `crypto_aead_xchacha20poly1305_ietf_encrypt` / `_decrypt` with `npub` = non
 
 ```json
 {
-  "envelope_version": 1,
+  "envelope_version": 3,
   "message_id": "uuid",
-  "sender_relay_id": "relay:alice123",
-  "sender_contact_id": "relay:alice123",
+  "sender_contact_id": "account:alice…",
   "route": { "kind": "direct", "channel": "e2e" },
   "sender_seq": 42,
   "session_epoch": 1,
@@ -144,13 +143,13 @@ Reject envelopes with `thread_id`, `public_relay`, `body.content_b64`, or unknow
 
 Do **not** sign JSON dump. Build fixed binary bytes, then sign them with ML-DSA-65 (`EnvelopeSigner::BuildSignBytes`, `MlDsa::Sign`). String fields use **LenUtf8** (D088).
 
-**Domain prefix** (34 bytes): `"pp-browser:relay-envelope-sign-v4"` + NUL.
+**Domain prefix** (34 bytes): `"pp-browser:relay-envelope-sign-v5"` + NUL.
 
-Then: `sign_version=4`, `envelope_version=2`, `route_kind`, `channel`, `timestamp` (i64 BE), `message_id` LenUtf8, `sender_contact_id` LenUtf8, `sender_relay_id` LenUtf8, `sender_device` LenUtf8, the copy count (u64 BE), then for each copy in `recipient_device` byte order: `recipient_device` LenUtf8 (empty for the account copy), `session_epoch` (u32 BE), `sender_seq` (u64 BE), `key_init_b64` LenUtf8 (empty when none), its copy hash (32 bytes).
+Then: `sign_version=5`, `envelope_version=3`, `route_kind`, `channel`, `timestamp` (i64 BE), `message_id` LenUtf8, `sender_contact_id` LenUtf8, `sender_device` LenUtf8, the copy count (u64 BE), then for each copy in `recipient_device` byte order: `recipient_device` LenUtf8 (empty for the account copy), `session_epoch` (u32 BE), `sender_seq` (u64 BE), `key_init_b64` LenUtf8 (empty when none), its copy hash (32 bytes).
 
 **Signer:** the sending device's ML-DSA-65 key (its PeerId's), not the account's (M021). The receiver takes that key from the sender's account card — the carried `sender_card` when it proves itself and is newer than the one kept, else the kept one — and refuses a device the card does not list.
 
-Everything the receiver acts on is signed: the blob it decrypts (and, inside it, the group a group copy files into), the AutoKey session it may move to, the relay route it may learn for the sender (learned only from envelopes whose signature verified), and which device sent it and which device it is for.
+Everything the receiver acts on is signed: the blob it decrypts (and, inside it, the group a group copy files into), the AutoKey session it may move to, and which device sent it and which device it is for.
 
 **Body shape (M022):** every envelope carries 1–8 copies (one per recipient device, at most one account copy); no envelope names a group; the control lane carries a copy per device or the account copy, as a direct record (M024). A group copy is a pairwise `e2e_public` message at the copy's `session_epoch` — its device pair's epoch, not a group's (G011): read and kept as a 1:1 message is (`ReconcileE2ePublicSession`); a group never selects, opens or writes a pair's session by any other epoch. Signer and parser refuse anything else, and unknown route kinds.
 
@@ -196,6 +195,8 @@ messages and the at-rest store use is the base's (`capabilities/base/src/foundat
 Implementation: [projects/e2e-message-crypto/PHASES.md](../../projects/e2e-message-crypto/PHASES.md) phase c1.
 
 ## Frozen test vectors
+
+The envelope signing bytes of today (sign v5) are frozen by hash in `envelope_signer_test.cpp` (`a52a0d86…fc0f`); the `e2e` sign-bytes table below is the v1 layout, kept for its body hash. Identity strings in these vectors (`relay:alice123`, …) are test inputs only — any string works there.
 
 Regenerate: `projects/e2e-message-crypto/tools/gen_sign_vectors.py`, `gen_aead_vectors.py`, `chatpayload_codec.py`.
 

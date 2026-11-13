@@ -151,7 +151,7 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
 | Envelope hint | how new the sender's list is, `body.e2e.sender_card_at` | on every envelope (M021 d6): a receiver holding an older card asks the sending device for the newer one (`card_ask` → a `device_list` notice; unsigned, so it never stops a later ask — `CardAskGate`), so a device taken out stops getting copies from peers the main device's announcement did not reach (a group member who is not a contact) |
 | Link bundle | the linking device's account card | linking a device: the new one signs itself in (M021) |
 | Sibling notice | the account card, on the control lane to our own mailbox (M022) | when a device's list changes (it linked in, a sibling's newer list, the name), and once a start while it has siblings: they take it |
-| Contact card message | someone's account card (or key card, when that is all the sharer has), plus the sharer's name for them and their relay route | "Share" on a contact; *Add to contacts* on the card |
+| Contact card message | someone's account card (or key card, when that is all the sharer has), plus the sharer's name for them | "Share" on a contact; *Add to contacts* on the card |
 | Locator | account id, nickname, devices | QR code, invite link, onboarding share |
 | Card exchange over Amp | an account card or key card | on request, device to device |
 | Roster add (`member_joined`) | members' cards | from the group owner, so members key pairwise ([Groups](#groups)) |
@@ -186,8 +186,8 @@ for 10 minutes; one not reached (its link still coming up) is tried again after 
 **Refresh on the contact page.** The user's *Refresh account info* asks the contact's devices (the kept
 card's, then the contact's device rows) for the account's card even when one is kept
 (`ContactCardExchange::AskDevices`; at most once per account per 15 s, a press within that gets the last
-ask's outcome), then the relay directory by Account ID (by relay id only for a contact with no Account
-ID). Keys are kept only as above: the card or the directory's key card must verify against the Account
+ask's outcome), then the relay directory by Account ID (a contact with no Account ID asks no one: the
+directory knows people by it alone, multi-relay MR001). Keys are kept only as above: the card or the directory's key card must verify against the Account
 ID; a directory answer whose keys do not is used for its name and photo only, and one for another account
 not at all; the user is told either way. Name: the card's when a device answered, else the directory's;
 photo and device addresses: the directory's ([`ContactRefreshWorkflow`](../../capabilities/messaging/src/feature/conversations/ContactRefreshWorkflow.h)).
@@ -213,9 +213,67 @@ Members encrypt to and verify each other pairwise, and two members may never hav
 has every member's card from their invite chats — gives them out with the roster (`member_joined`,
 [group chat DESIGN](../../projects/group-chat/DESIGN.md#membership-event-wire-schema)): the existing
 members get the newcomer's card, the newcomer everyone's (the newest account card the owner keeps, else
-the key card; about 128 KB of cards at most, the rest keyed as before), each with the owner's relay route
-to that member. A receiver keeps a card only for the roster row it came in, once it proves itself, and
+the key card; about 128 KB of cards at most, the rest keyed as before). The relay reaches each member by
+its Account ID, so no route rides along. A receiver keeps a card only for the roster row it came in, once it proves itself, and
 stores the event without the cards; so does the owner's copy (`SendRelayOptions::stored_payload_json`). The invite carries none: an invitee who declines learns no one's keys.
+
+## Relay grants
+
+A relay cannot see contact lists. It takes a send as a **contact's** when it carries a **grant** from
+the recipient, else as a **stranger's**: the recipient's price, or a small free quota with no push
+([multi-relay MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)).
+The relay's side is [www `docs/relay-messages.md`](https://github.com/people-post/www); the send and
+its errors are in [SERVICE_ENDPOINTS § A send](SERVICE_ENDPOINTS.md#a-send-the-recipient-the-senders-key-the-grant).
+
+**The grant** (`RelayGrant`, JSON on the send's `grant` and in the lane notice):
+
+```json
+{ "recipient_account_id": "account:bob…", "sender_account_id": "account:alice…",
+  "issued_at": 1761235200000, "expires_at": 1763827200000, "signature": "<base64>" }
+```
+
+Signed by the **recipient's** account ML-DSA-65 key over
+
+```
+"pp-browser:relay-grant-v1" 0x00 | u8 1 | str recipient_account_id | str sender_account_id
+| i64be issued_at | i64be expires_at                       (str = u64be byte length ‖ UTF-8)
+```
+
+`expires_at − issued_at` is at most **30 days**. The relay checks the signature with the recipient's
+registered key; the app checks a grant it receives the same way, with the grantor's key resolved as
+[above](#resolving-keys) (`CheckRelayGrant`: the pair, the lifetime, not expired, the key hashes to the
+grantor's Account ID). Golden vector: `relay_message_sign_payload_test.cpp` (`RelayGrantSignBytesTest`),
+ported from the relay.
+
+**Who gets one.** Every contact not blocked (added; an opening offer accepted or waived adds the contact)
+and every member of a group we are in (`RelayGrantPeers`). Our own account needs none: a send to our own
+mailbox never carries a grant. Contacts and members we had before the cutover get theirs on the first
+run (the sweep finds no grant issued to them).
+
+**How it travels.** Over the control lane, peer to peer (`RelayGrantCoordinator`; family `relay_grant`):
+
+| `control_type` | `detail` | Meaning |
+|----------------|----------|---------|
+| `relay_grant` | the grant | a grant to the receiver; kept when it checks, newer replaces older |
+| `relay_grant_ack` | `{ "issued_at" }` | the grantee kept the grant issued then |
+| `relay_grant_ask` | `{}` | the sender holds no usable grant from the receiver |
+
+Lane records older than an hour are dropped, so a grant can be lost while its grantee is offline. An
+issued grant stays **unconfirmed** until acked and goes again when its grantee is next heard from (a
+verified envelope), at most once an hour; an ask is answered at once (at most every 10 min). A grantee
+lacking a usable grant from a peer it grants asks for one on a send or when heard from, at most every six
+hours (10 min after a refusal).
+
+**Renewal and stop.** A sweep on messaging ready, on each contacts or roster change and every six hours
+issues to each granted peer whose grant has less than **10 days** left. A blocked contact or a removed
+member is no longer granted: nothing is renewed, and the grant it holds runs out.
+
+**On a send.** The relay client attaches the recipient's grant when it is still usable (more than 10 min
+left). When the relay answers `grant_expired` or `invalid_grant`, the grant is dropped and asked for
+again, and the send goes **once** as a stranger's meanwhile.
+
+**Kept** in profile.db (`relay_grants`, [DATA_LAYOUT](DATA_LAYOUT.md)): the grants given to us, one per
+grantor, and the grants we issued, one per grantee, with whether it was confirmed.
 
 ## Storing cards
 
