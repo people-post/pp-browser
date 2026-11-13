@@ -5296,21 +5296,20 @@ select selectbox option {
   margin-right: 4dp;
 }
 
-/* The second paragraph with the help "?" at the end of its last line (the button is the settings one). */
+/* The second paragraph: the help "?" (the settings button) is an inline box right after its last word. Its 44dp
+   target is 20dp of icon plus 12dp padding; the negative margins keep the line height and leave a 4dp gap. */
 .ask-ai-intro-own {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
   margin-top: 12dp;
 }
 
-.ask-ai-intro-own-text {
-  flex: 0 1 auto;
+.settings-q-btn.ask-ai-intro-q {
+  display: inline-block;
+  width: 20dp;
+  height: 20dp;
   min-width: 0;
-}
-
-.ask-ai-intro-q {
-  margin: -10dp 0 -10dp -2dp;
+  padding: 12dp;
+  margin: -12dp -12dp -12dp -8dp;
+  vertical-align: middle;
 }
 
 .ask-ai-intro-ok {

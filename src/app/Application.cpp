@@ -1168,7 +1168,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   };
   settings_commands.open_support_chat = [this, &facade](const std::string& prefilled_text) -> Roe<void> {
     if (!support_discovery_ || !support_discovery_->enabled || support_discovery_->account_id.empty()) {
-      return Error(Tr("support.unavailable"));
+      return Error("Support is not available").WithUser(Tr("settings.support.unavailable"));
     }
     if (!facade.IsInitialized()) {
       return Error("Messaging is not ready");

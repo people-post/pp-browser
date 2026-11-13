@@ -430,17 +430,11 @@ void AskAiPanel::AskSupport() {
   if (question.empty()) {
     return;
   }
-  if (IsOpen()) {
-    host_.AskAiCloseSheet(layer_id_);
-  }
-  host_.AskAiSupport(question);
+  host_.AskAiSupport(question, [this] { Close(); });
 }
 
 void AskAiPanel::AskSupportOwnAi() {
-  if (IsOpen()) {
-    host_.AskAiCloseSheet(layer_id_);
-  }
-  host_.AskAiSupport(Tr("ask_ai.intro.support_question"));
+  host_.AskAiSupport(Tr("ask_ai.intro.support_question"), [this] { Close(); });
 }
 
 void AskAiPanel::OpenInChat() {
