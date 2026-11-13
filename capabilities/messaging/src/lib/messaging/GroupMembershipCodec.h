@@ -41,8 +41,6 @@ public:
      * lookup. Unchecked here: the receiver keeps it only for `member_identity`, once it proves itself.
      */
     std::optional<Object> card;
-    /** Where the owner reaches the member on the relay (`relay:`), as a contact card carries it. */
-    std::string relay_user_id;
   };
   struct MemberJoinedPayload {
     std::string group_id;

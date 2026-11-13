@@ -341,7 +341,6 @@ Object RelayEnvelopeToJson(const RelayEnvelope& envelope) {
   json.set("op", "envelope");
   json.set("envelope_version", static_cast<int64_t>(envelope.envelope_version));
   json.set("message_id", envelope.message_id);
-  json.set("sender_relay_id", envelope.sender_relay_id);
   json.set("sender_contact_id", envelope.sender_contact_id);
   json.set("sender_device", envelope.sender_device);
   json.set("route", BuildRouteObject(envelope));
@@ -350,8 +349,8 @@ Object RelayEnvelopeToJson(const RelayEnvelope& envelope) {
   json.set("signature", envelope.signature);
   json.set("stream_key", envelope.stream_key);
   json.setJsonUInt("order_key", envelope.order_key);
-  if (envelope.recipient_contact_id) {
-    json.set("recipient_contact_id", *envelope.recipient_contact_id);
+  if (envelope.recipient_account_id) {
+    json.set("recipient_account_id", *envelope.recipient_account_id);
   }
   return json;
 }
@@ -363,7 +362,6 @@ Object RelayEnvelopeToApplicationJson(const RelayEnvelope& envelope) {
   Object json;
   json.set("envelope_version", static_cast<int64_t>(envelope.envelope_version));
   json.set("message_id", envelope.message_id);
-  json.set("sender_relay_id", envelope.sender_relay_id);
   json.set("sender_contact_id", envelope.sender_contact_id);
   json.set("sender_device", envelope.sender_device);
   json.set("route", BuildRouteObject(envelope));
@@ -396,10 +394,6 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   }
   if (!IsSafeMessageId(*message_id)) {
     return Error("Unsafe message_id");
-  }
-  auto sender_relay_id = json.getString("sender_relay_id");
-  if (!sender_relay_id) {
-    return Error("Missing sender_relay_id");
   }
   auto sender_contact_id = json.getString("sender_contact_id");
   if (!sender_contact_id) {
@@ -447,7 +441,6 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   RelayEnvelope envelope;
   envelope.envelope_version = version;
   envelope.message_id = *message_id;
-  envelope.sender_relay_id = *sender_relay_id;
   envelope.sender_contact_id = *sender_contact_id;
   envelope.sender_device = *sender_device;
   bool introduces = false; // a session opener or an account copy: the sender's card may ride it
@@ -538,9 +531,7 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
     envelope.signature = *signature;
   }
   // Identities and ids are stored and bound as text: no control characters or NUL in them.
-  // sender_relay_id may be empty (no Brief route yet); the contact id may not.
-  if (!IsPlainIdentifier(envelope.sender_contact_id) ||
-      (!envelope.sender_relay_id.empty() && !IsPlainIdentifier(envelope.sender_relay_id))) {
+  if (!IsPlainIdentifier(envelope.sender_contact_id)) {
     return Error("Invalid identity in envelope");
   }
   if (auto stream_key = json.getString("stream_key")) {
@@ -549,19 +540,44 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (auto order_key = json.getNonNegInt("order_key")) {
     envelope.order_key = *order_key;
   }
-  if (auto recipient = json.getString("recipient_contact_id")) {
+  if (auto recipient = json.getString("recipient_account_id")) {
     if (!IsPlainIdentifier(*recipient)) {
       return Error("Invalid recipient in envelope");
     }
-    envelope.recipient_contact_id = *recipient;
+    envelope.recipient_account_id = *recipient;
   }
   return envelope;
 }
 
+Object RelayGrantToJson(const RelayGrant& grant) {
+  Object json;
+  json.set("recipient_account_id", grant.recipient_account_id);
+  json.set("sender_account_id", grant.sender_account_id);
+  json.set("issued_at", grant.issued_at);
+  json.set("expires_at", grant.expires_at);
+  json.set("signature", grant.signature);
+  return json;
+}
+
+Roe<RelayGrant> RelayGrantFromJson(const Object& json) {
+  RelayGrant grant;
+  grant.recipient_account_id = json.getString("recipient_account_id").value_or("");
+  grant.sender_account_id = json.getString("sender_account_id").value_or("");
+  grant.issued_at = json.getIf<int64_t>("issued_at").value_or(0);
+  grant.expires_at = json.getIf<int64_t>("expires_at").value_or(0);
+  grant.signature = json.getString("signature").value_or("");
+  if (grant.recipient_account_id.empty() || grant.sender_account_id.empty() || grant.issued_at <= 0 ||
+      grant.expires_at <= grant.issued_at || grant.signature.empty() ||
+      !IsPlainIdentifier(grant.recipient_account_id) || !IsPlainIdentifier(grant.sender_account_id)) {
+    return Error("Invalid relay grant");
+  }
+  return grant;
+}
+
 Object RelayWireSendRecordToJson(const RelayWireSendRecord& record) {
   Object json;
-  json.set("sender_contact_id", record.sender_contact_id);
-  json.set("recipient_contact_id", record.recipient_contact_id);
+  json.set("sender_account_id", record.sender_account_id);
+  json.set("recipient_account_id", record.recipient_account_id);
   json.set("stream_id", record.stream_id);
   json.setJsonUInt("index_key", record.index_key);
   json.set("blob_b64", record.blob_b64);
@@ -576,15 +592,21 @@ Object RelayWireSendRecordToJson(const RelayWireSendRecord& record) {
   if (!record.wake_hint.empty()) {
     json.set("wake_hint", record.wake_hint);
   }
+  if (record.grant) {
+    json.set("grant", RelayGrantToJson(*record.grant));
+  }
+  if (!record.sender_public_key_b64.empty()) {
+    json.set("sender_public_key_b64", record.sender_public_key_b64);
+  }
   return json;
 }
 
 Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& envelope) {
-  if (envelope.sender_relay_id.empty()) {
-    return Error("Missing sender_relay_id for relay send");
+  if (envelope.sender_contact_id.empty()) {
+    return Error("Missing sender account for relay send");
   }
-  if (!envelope.recipient_contact_id || envelope.recipient_contact_id->empty()) {
-    return Error("Missing recipient_contact_id for relay send");
+  if (!envelope.recipient_account_id || envelope.recipient_account_id->empty()) {
+    return Error("Missing recipient_account_id for relay send");
   }
   if (envelope.stream_key.empty()) {
     return Error("Missing stream_key for relay send");
@@ -593,10 +615,9 @@ Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& en
   const std::string serialized = DumpJson(RelayEnvelopeToApplicationJson(envelope));
   const ::pp::ByteVector bytes(serialized.begin(), serialized.end());
   RelayWireSendRecord record;
-  // HTTP routing / auth id is always the relay registration id (WIRE_SCHEMAS RelayWireRecord).
-  // Application blob keeps Account ID in envelope.sender_contact_id (D079).
-  record.sender_contact_id = envelope.sender_relay_id;
-  record.recipient_contact_id = *envelope.recipient_contact_id;
+  // The relay names both parties by Account ID (MR001): the sending account signs the record.
+  record.sender_account_id = envelope.sender_contact_id;
+  record.recipient_account_id = *envelope.recipient_account_id;
   record.stream_id = envelope.stream_key;
   record.index_key = index_key;
   record.blob_b64 = ::pp::Base64Encode(bytes);
@@ -607,9 +628,9 @@ Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& en
 }
 
 Roe<RelayInboundRecord> ParseRelayInboundRecord(const Object& json) {
-  auto sender = json.getString("sender_contact_id");
+  auto sender = json.getString("sender_account_id");
   if (!sender) {
-    return Error("Missing sender_contact_id");
+    return Error("Missing sender_account_id");
   }
   auto stream_id = json.getString("stream_id");
   if (!stream_id) {
@@ -624,7 +645,7 @@ Roe<RelayInboundRecord> ParseRelayInboundRecord(const Object& json) {
     return Error("Missing blob_b64");
   }
   RelayInboundRecord record;
-  record.sender_contact_id = *sender;
+  record.sender_account_id = *sender;
   record.stream_id = *stream_id;
   record.index_key = *index_key;
   record.blob_b64 = *blob_b64;
@@ -647,6 +668,10 @@ Roe<RelayEnvelope> RelayEnvelopeFromInboundRecord(const RelayInboundRecord& reco
   auto envelope = ParseRelayEnvelope(*app_json);
   if (!envelope) {
     return envelope.error();
+  }
+  // The relay checked the sending account's signature on the record: the envelope inside must name that account.
+  if (envelope->sender_contact_id != record.sender_account_id) {
+    return Error("Relay record sender is not the envelope's");
   }
   envelope->stream_key = record.stream_id;
   envelope->order_key = record.index_key;
@@ -733,8 +758,8 @@ std::string StreamHistoryRequestToQueryString(const ChatHistoryRequest& request)
     out << (first ? '?' : '&') << key << '=' << value;
     first = false;
   };
-  append("requester_contact_id", request.requester_identity_value);
-  append("sender_contact_id", request.peer_identity_value);
+  append("requester_account_id", request.requester_identity_value);
+  append("sender_account_id", request.peer_identity_value);
   append("stream_id", stream_key);
   append("limit", std::to_string(request.limit));
   append("order", request.order);
@@ -749,8 +774,8 @@ std::string StreamHistoryRequestToQueryString(const ChatHistoryRequest& request)
 
 Object ChatHistoryRequestToStreamHistoryJson(const ChatHistoryRequest& request) {
   Object json;
-  json.set("requester_contact_id", request.requester_identity_value);
-  json.set("sender_contact_id", request.peer_identity_value);
+  json.set("requester_account_id", request.requester_identity_value);
+  json.set("sender_account_id", request.peer_identity_value);
   json.set("stream_id", BuildCanonicalRelayStreamKey(request.requester_identity_value, request.peer_identity_value,
                                                      request.channel, request.session_epoch));
   json.setJsonUInt("limit", static_cast<uint64_t>(request.limit));
@@ -795,7 +820,7 @@ Object ChatHistoryResponseToJson(const ChatHistoryResponse& response) {
 Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const Object& json) {
   ChatHistoryResponse response;
   const bool stream_shape =
-      (json.contains("stream_id") || json.contains("stream_key")) && json.contains("sender_contact_id");
+      (json.contains("stream_id") || json.contains("stream_key")) && json.contains("sender_account_id");
   const bool chat_shape = json.contains("peer_identity_kind") && json.contains("peer_identity_value");
   if (!json.contains("messages") || !json.contains("has_more") || (!stream_shape && !chat_shape)) {
     return Error("Incomplete ChatHistoryResponse");
@@ -814,7 +839,7 @@ Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const Object& json) {
       response.session_epoch = static_cast<uint32_t>(*session_epoch);
     }
   } else {
-    if (auto sender = json.getString("sender_contact_id")) {
+    if (auto sender = json.getString("sender_account_id")) {
       response.peer_identity_value = *sender;
     }
   }

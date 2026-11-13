@@ -192,7 +192,7 @@ TEST_F(CallBlockedPresenterTest, ACallerTheUserBlockedLeavesNoTrace) {
 TEST_F(CallBlockedPresenterTest, OurOwnAccountLeavesNoTrace) {
   CallFunctionalPorts ports;
   ports.record_blocked_call = [this](const BlockedCallInvite& blocked) { recorded_.push_back(blocked); };
-  ports.local_relay_identity = []() -> std::optional<std::string> { return std::string("account:me"); };
+  ports.local_account_identity = []() -> std::optional<std::string> { return std::string("account:me"); };
   presenter_.BindPorts(std::move(ports));
   presenter_.OnInviteBlocked(Blocked("call-me", "account:me"), Clock::now());
   EXPECT_TRUE(pills_.empty());

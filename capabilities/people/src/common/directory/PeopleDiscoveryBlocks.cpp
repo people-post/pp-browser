@@ -39,50 +39,31 @@ std::string PrimaryIdentityValue(const std::vector<mesh::ContactId>& ids) {
       return id.value;
     }
   }
-  for (const mesh::ContactId& id : ids) {
-    if (id.kind == mesh::ContactIdKind::RelayUser && id.primary) {
-      return id.value;
-    }
-  }
-  for (const mesh::ContactId& id : ids) {
-    if (id.kind == mesh::ContactIdKind::RelayUser) {
-      return id.value;
-    }
-  }
   if (!ids.empty()) {
     return ids.front().value;
   }
   return {};
 }
 
-/** Mirrors PeerDisplayLabel::ShortRelayId — keep in sync. */
-std::string ShortIdentityId(const std::string& relay_or_peer_id) {
-  if (relay_or_peer_id.empty()) {
+/** Mirrors PeerDisplayLabel::ShortPersonId — keep in sync. */
+std::string ShortIdentityId(const std::string& account_or_peer_id) {
+  if (account_or_peer_id.empty()) {
     return {};
   }
   constexpr size_t kKeep = 12;
-  if (relay_or_peer_id.size() <= kKeep + 1) {
-    return relay_or_peer_id;
-  }
-  constexpr const char* kPrefix = "relay:";
-  constexpr size_t kPrefixLen = 6;
-  if (relay_or_peer_id.compare(0, kPrefixLen, kPrefix) == 0) {
-    const std::string rest = relay_or_peer_id.substr(kPrefixLen);
-    if (rest.size() <= 8) {
-      return relay_or_peer_id;
-    }
-    return std::string(kPrefix) + rest.substr(0, 8) + "…";
+  if (account_or_peer_id.size() <= kKeep + 1) {
+    return account_or_peer_id;
   }
   constexpr const char* kAccountPrefix = "account:";
   constexpr size_t kAccountPrefixLen = 8;
-  if (relay_or_peer_id.compare(0, kAccountPrefixLen, kAccountPrefix) == 0) {
-    const std::string rest = relay_or_peer_id.substr(kAccountPrefixLen);
+  if (account_or_peer_id.compare(0, kAccountPrefixLen, kAccountPrefix) == 0) {
+    const std::string rest = account_or_peer_id.substr(kAccountPrefixLen);
     if (rest.size() <= 10) {
-      return relay_or_peer_id;
+      return account_or_peer_id;
     }
     return std::string(kAccountPrefix) + rest.substr(0, 10) + "…";
   }
-  return relay_or_peer_id.substr(0, kKeep) + "…";
+  return account_or_peer_id.substr(0, kKeep) + "…";
 }
 
 std::string PreferPersonId(const mesh::DirectoryHit& hit) {
@@ -404,9 +385,6 @@ std::unordered_set<std::string> SelfIdentityValuesFromLocal(const LocalIdentity&
   std::unordered_set<std::string> out;
   if (!identity.account_id.empty()) {
     out.insert(identity.account_id);
-  }
-  if (!identity.relay_user_id.empty()) {
-    out.insert(identity.relay_user_id);
   }
   if (!identity.peer_id.empty()) {
     out.insert(identity.peer_id);

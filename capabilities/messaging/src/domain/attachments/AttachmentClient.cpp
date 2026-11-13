@@ -19,15 +19,15 @@ namespace pbr {
 
 namespace {
 
-Roe<std::string> RequireRegisteredRelayUserId(IdentityStore& identity) {
+Roe<std::string> RequireRegisteredAccountId(IdentityStore& identity) {
   auto loaded = identity.Get();
   if (!loaded) {
     return loaded.error();
   }
-  if (!loaded->registered || loaded->relay_user_id.empty()) {
+  if (!loaded->registered || loaded->account_id.empty()) {
     return Error("Register on the network before sending attachments");
   }
-  return loaded->relay_user_id;
+  return loaded->account_id;
 }
 
 void TryPeerPushAsync(const PreparedChatAttachment& prepared, IdentityStore& identity,
@@ -74,11 +74,11 @@ Error NoteDirectFailed(Error server_error) {
   return server_error;
 }
 
-Roe<ChatAttachmentFields> UploadPreparedToRelay(IBlobClient& blob, const std::string& relay_user_id,
+Roe<ChatAttachmentFields> UploadPreparedToRelay(IBlobClient& blob, const std::string& account_id,
                                                 const PreparedChatAttachment& prepared) {
   const BackgroundActivity background("attachment upload");
   const std::string body(reinterpret_cast<const char*>(prepared.ciphertext.data()), prepared.ciphertext.size());
-  auto uploaded = UploadRelayFileBytes(blob, relay_user_id, body);
+  auto uploaded = UploadRelayFileBytes(blob, account_id, body);
   if (!uploaded) {
     return uploaded.error();
   }
@@ -131,12 +131,12 @@ bool HonourCancel(IBlobClient& blob, const std::string& relay_id, ChatAttachment
 void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmentRecord record,
                    std::shared_ptr<PreparedChatAttachment> in_memory, ChatAttachmentUploadOptions options,
                    std::function<void(Roe<ChatAttachmentFields>)> finish, const bool resuming = false) {
-  auto relay_user_id = RequireRegisteredRelayUserId(identity);
-  if (!relay_user_id) {
-    finish(relay_user_id.error());
+  auto account_id = RequireRegisteredAccountId(identity);
+  if (!account_id) {
+    finish(account_id.error());
     return;
   }
-  const std::string relay_id = *relay_user_id;
+  const std::string relay_id = *account_id;
   OutgoingAttachmentStore* store = options.outgoing;
   const ByteVector dek = options.dek;
   if (record.delivered) {
@@ -208,7 +208,7 @@ void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmen
 
 } // namespace
 
-Roe<void> DeleteUploadedAttachmentCopy(IBlobClient& blob, const std::string& relay_user_id, const std::string& url) {
+Roe<void> DeleteUploadedAttachmentCopy(IBlobClient& blob, const std::string& account_id, const std::string& url) {
   if (url.empty()) {
     return {}; // sent peer-direct: nothing on the server
   }
@@ -218,7 +218,7 @@ Roe<void> DeleteUploadedAttachmentCopy(IBlobClient& blob, const std::string& rel
     logging::getLogger("AttachmentClient").info << "uploaded copy skipped: not a relay file link";
     return {};
   }
-  auto deleted = DeleteRelayFile(blob, relay_user_id, blob_id);
+  auto deleted = DeleteRelayFile(blob, account_id, blob_id);
   if (!deleted && !(AppError::CategoryOf(deleted.error()) == ErrorCategory::Blob &&
                     deleted.error().code == static_cast<int32_t>(Err::Blob::Expired))) {
     Error failed = deleted.error(); // its own code (network, rate limit, ...), with the id for the log
@@ -250,9 +250,9 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
     }
   };
 
-  auto relay_user_id = RequireRegisteredRelayUserId(identity);
-  if (!relay_user_id) {
-    finish(relay_user_id.error());
+  auto account_id = RequireRegisteredAccountId(identity);
+  if (!account_id) {
+    finish(account_id.error());
     return;
   }
 
@@ -290,13 +290,13 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
   }
 
   // Not staged (no profile key yet): the cancel is honoured here too, between the steps (nothing is sent after it).
-  if (HonourCancel(blob, *relay_user_id, options, nullptr, std::string(), finish)) {
+  if (HonourCancel(blob, *account_id, options, nullptr, std::string(), finish)) {
     return;
   }
   if (AttachmentTriesPeerDirect(options.thread, plaintext_size)) {
     // Shared, not moved into the callback: the push reads the prepared bytes in the same call that builds
     // the callback (a moved-from copy there once made every direct push fail on "invalid content hash").
-    const std::string relay_id = *relay_user_id;
+    const std::string relay_id = *account_id;
     const auto prepared_shared = std::make_shared<PreparedChatAttachment>(std::move(*prepared));
     TryPeerPushAsync(*prepared_shared, identity, options,
                      [&blob, relay_id, prepared_shared, finish](Roe<void> pushed) mutable {
@@ -323,7 +323,7 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
     return;
   }
 
-  finish(UploadPreparedToRelay(blob, *relay_user_id, *prepared));
+  finish(UploadPreparedToRelay(blob, *account_id, *prepared));
 }
 
 void ResumeChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const OutgoingAttachmentRecord& record,

@@ -1,6 +1,8 @@
 #include "lib/people/ContactJson.h"
 
 #include "common/PbrCompat.h"
+
+#include <vector>
 #include "common/MeshAlias.h"
 
 namespace pbr {
@@ -52,6 +54,13 @@ Object ContactToJson(const Contact& contact) {
   out.set("remote", remote);
   out.set("overrides", Object{});
   return out;
+}
+
+void DropRetiredRelayIds(Contact& contact) {
+  std::erase_if(contact.remote.ids, [](const mesh::ContactId& id) {
+    return id.kind == mesh::ContactIdKind::Custom && id.value.rfind("relay:", 0) == 0;
+  });
+  SyncContactMirrors(contact);
 }
 
 Contact ContactFromJson(const Object& json) {

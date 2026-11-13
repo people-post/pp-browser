@@ -13,8 +13,7 @@ RelayEnvelope MakeE2eVectorEnvelope() {
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "660e8400-e29b-41d4-a716-446655440001";
-  envelope.sender_relay_id = "relay:alice123";
-  envelope.sender_contact_id = "relay:alice123";
+  envelope.sender_contact_id = "account:alice123";
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
@@ -41,11 +40,10 @@ TEST(EnvelopeSignerTest, CopyHashMatchesFrozenVector) {
 // forgeries instead of "update" (docs/contracts/COMPATIBILITY.md, "Changing what is signed"; #555). If this hash
 // changes, bump such a version in the same change and update both expectations here.
 TEST(EnvelopeSignerTest, SignBytesMatchFrozenHash) {
-  EXPECT_EQ(kRelayEnvelopeVersion, 2) << "the version a receiver checks before it verifies";
+  EXPECT_EQ(kRelayEnvelopeVersion, 3) << "the version a receiver checks before it verifies";
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "8d7f6e5c-4b3a-4291-8f0e-1d2c3b4a5968";
-  envelope.sender_relay_id = "relay:alice123";
   envelope.sender_contact_id = "account:alice";
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = kRelayRouteDirect;
@@ -61,7 +59,7 @@ TEST(EnvelopeSignerTest, SignBytesMatchFrozenHash) {
   };
   auto bytes = EnvelopeSigner::BuildSignBytes(envelope);
   ASSERT_TRUE(bytes) << bytes.error().message;
-  EXPECT_EQ(BytesToHex(Blake2b256(*bytes)), "13290d86c3bcec43b3f5ceeff4f34a23b4c2c7ee55088391f7be5ccaf429f2fa");
+  EXPECT_EQ(BytesToHex(Blake2b256(*bytes)), "a52a0d86e03c26ad1888b106459fe011022d050d3faa9305d4c04dcdd5f0fc0f");
 }
 
 TEST(EnvelopeSignerTest, BuildSignBytesUsesE2eChannelZero) {
@@ -91,7 +89,7 @@ TEST(EnvelopeSignerTest, SignAndVerifyRoundTrip) {
 }
 
 // Everything that decides something on receipt is signed — the decrypted blob (and, inside it, a group copy's
-// group), the AutoKey key_init, the sender's relay id (v2) and the sending and recipient devices (v3).
+// group), the AutoKey key_init, the sending account and the sending and recipient devices (v3).
 TEST(EnvelopeSignerTest, SignBytesCoverEveryFieldTheReceiverActsOn) {
   const RelayEnvelope base = MakeE2eVectorEnvelope();
   auto base_bytes = EnvelopeSigner::BuildSignBytes(base);
@@ -122,8 +120,8 @@ TEST(EnvelopeSignerTest, SignBytesCoverEveryFieldTheReceiverActsOn) {
   other.recipient_device = "QmSomeDevice";
   EXPECT_TRUE(differs(with_copy(other))) << "the device the copy is for (M022)";
   RelayEnvelope changed = base;
-  changed.sender_relay_id = "relay:other";
-  EXPECT_TRUE(differs(changed)) << "sender_relay_id";
+  changed.sender_contact_id = "account:someone-else";
+  EXPECT_TRUE(differs(changed)) << "the sending account";
   changed = base;
   changed.sender_device = "QmOtherDevice";
   EXPECT_TRUE(differs(changed)) << "the sending device";
@@ -151,21 +149,22 @@ TEST(EnvelopeSignerTest, SignBytesCoverEveryFieldTheReceiverActsOn) {
   EXPECT_NE(*group_bytes, *base_bytes) << "the route kind";
 }
 
-// Sign v4 (group-chat G018 item 7): the bytes name no group — a group copy carries its group id inside its
-// ciphertext, bound there by the AEAD and by the copy hash these bytes sign.
-TEST(EnvelopeSignerTest, SignBytesAreV4AndNameNoGroup) {
+// Sign v5 (multi-relay MR001): the bytes name no relay id; v4 (group-chat G018 item 7) dropped the group — a group copy
+// carries its group id inside its ciphertext, bound there by the AEAD and by the copy hash these bytes sign.
+TEST(EnvelopeSignerTest, SignBytesAreV5AndNameNoGroupNorRelayId) {
   RelayEnvelope group = MakeE2eVectorEnvelope();
   group.route.kind = kRelayRouteGroup;
   auto bytes = EnvelopeSigner::BuildSignBytes(group);
   ASSERT_TRUE(bytes) << bytes.error().message;
-  const std::string domain = "pp-browser:relay-envelope-sign-v4";
+  const std::string domain = "pp-browser:relay-envelope-sign-v5";
   ASSERT_GE(bytes->size(), domain.size() + 6);
   EXPECT_EQ(std::string(bytes->begin(), bytes->begin() + static_cast<std::ptrdiff_t>(domain.size())), domain);
   EXPECT_EQ((*bytes)[domain.size()], 0u) << "NUL after the domain";
-  EXPECT_EQ((*bytes)[34], 4u) << "sign_version";
+  EXPECT_EQ((*bytes)[34], 5u) << "sign_version";
+  EXPECT_EQ((*bytes)[35], 3u) << "envelope_version";
   EXPECT_EQ((*bytes)[36], 1u) << "route kind group";
   EXPECT_EQ((*bytes)[37], 0xFFu) << "a group has no channel";
-  // After the timestamp: message_id, sender_contact_id, sender_relay_id, then straight to sender_device.
+  // After the timestamp: message_id, sender_contact_id, then straight to sender_device.
   const auto len_utf8 = [](const std::string& value) {
     std::vector<uint8_t> out(8, 0);
     const uint64_t size = value.size();
@@ -176,8 +175,7 @@ TEST(EnvelopeSignerTest, SignBytesAreV4AndNameNoGroup) {
     return out;
   };
   std::vector<uint8_t> expected;
-  for (const std::string* field :
-       {&group.message_id, &group.sender_contact_id, &group.sender_relay_id, &group.sender_device}) {
+  for (const std::string* field : {&group.message_id, &group.sender_contact_id, &group.sender_device}) {
     const std::vector<uint8_t> encoded = len_utf8(*field);
     expected.insert(expected.end(), encoded.begin(), encoded.end());
   }
@@ -185,7 +183,7 @@ TEST(EnvelopeSignerTest, SignBytesAreV4AndNameNoGroup) {
   EXPECT_EQ(
       std::vector<uint8_t>(bytes->begin() + 46, bytes->begin() + 46 + static_cast<std::ptrdiff_t>(expected.size())),
       expected)
-      << "no group id between the sender's relay id and its device";
+      << "no group id (G018) nor relay id (MR001) between the sender's account and its device";
 }
 
 // One body shape per route: the signer refuses (and so verification fails on) anything else.
@@ -234,7 +232,7 @@ TEST(PeerSigningKeyStoreTest, AKeyIsKeptOnlyUnderTheAccountItHashesTo) {
   PeerSigningKeyStore store;
   EXPECT_FALSE(store.Put("account", *other_account, record)) << "another account";
   EXPECT_FALSE(store.Get("account", *other_account));
-  EXPECT_FALSE(store.Put("relay_user", "relay:me", record)) << "not self-certifying";
+  EXPECT_FALSE(store.Put("custom", "custom:me", record)) << "not self-certifying";
   EXPECT_FALSE(store.Put("peer_id", "QmNotMine", record)) << "a PeerId it does not derive";
   EXPECT_TRUE(store.Put("account", *my_account, record));
   ASSERT_TRUE(store.Get("account", *my_account));

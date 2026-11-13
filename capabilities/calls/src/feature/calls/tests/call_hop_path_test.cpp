@@ -99,7 +99,7 @@ public:
       }
       return media;
     };
-    ports.local_relay_identity = [this]() -> Roe<std::string> {
+    ports.local_account_identity = [this]() -> Roe<std::string> {
       if (local_identity.empty()) {
         return Error("no local identity");
       }

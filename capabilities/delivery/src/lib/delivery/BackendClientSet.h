@@ -39,6 +39,8 @@ public:
   void Apply(const Endpoints& endpoints);
   /** Signs the relay, push-device, blob and locker requests (the profile's identity). */
   void SetSigner(RelayAuthSigner signer);
+  /** The relay sends' grants and our key (MR003 / MR005), for the relay client now and after a rebuild. */
+  void SetRelaySendHooks(RelaySendHooks hooks);
   /** Drops every client (the profile closes). */
   void Clear();
 
@@ -58,6 +60,7 @@ private:
   SwitchableDirectoryClient& directory_;
   Endpoints defaults_;
   RelayAuthSigner signer_;
+  RelaySendHooks send_hooks_;
   std::string relay_url_;
   std::string directory_fingerprint_;
   std::string registration_url_;

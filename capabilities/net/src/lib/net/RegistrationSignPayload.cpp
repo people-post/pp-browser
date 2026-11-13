@@ -45,32 +45,32 @@ std::vector<uint8_t> BuildRegistrationSignBytes(const std::string& challenge, co
   return RelaySignOssToBytes(oss);
 }
 
-std::vector<uint8_t> BuildProfileUpdateSignBytes(const std::string& relay_user_id, const std::string& nickname,
+std::vector<uint8_t> BuildProfileUpdateSignBytes(const std::string& account_id, const std::string& nickname,
                                                  const int64_t timestamp) {
   std::ostringstream oss;
   RelaySignAppendDomain(oss, kProfileDomain);
   RelaySignAppendU8(oss, kProfileSignVersion);
-  RelaySignAppendWireLenUtf8(oss, relay_user_id);
+  RelaySignAppendWireLenUtf8(oss, account_id);
   RelaySignAppendWireLenUtf8(oss, nickname);
   RelaySignAppendI64(oss, timestamp);
   return RelaySignOssToBytes(oss);
 }
 
-std::vector<uint8_t> BuildAccountRevokeSignBytes(const std::string& relay_user_id, const int64_t timestamp) {
+std::vector<uint8_t> BuildAccountRevokeSignBytes(const std::string& account_id, const int64_t timestamp) {
   std::ostringstream oss;
   RelaySignAppendDomain(oss, kRevokeDomain);
   RelaySignAppendU8(oss, kRevokeSignVersion);
-  RelaySignAppendWireLenUtf8(oss, relay_user_id);
+  RelaySignAppendWireLenUtf8(oss, account_id);
   RelaySignAppendI64(oss, timestamp);
   return RelaySignOssToBytes(oss);
 }
 
-std::vector<uint8_t> BuildRelayHeartbeatSignBytes(const std::string& relay_user_id, const std::string& peer_id,
+std::vector<uint8_t> BuildRelayHeartbeatSignBytes(const std::string& account_id, const std::string& peer_id,
                                                   const std::string& state, const int64_t timestamp) {
   std::ostringstream oss;
   RelaySignAppendDomain(oss, kHeartbeatDomain);
   RelaySignAppendU8(oss, kHeartbeatSignVersion);
-  RelaySignAppendWireLenUtf8(oss, relay_user_id);
+  RelaySignAppendWireLenUtf8(oss, account_id);
   RelaySignAppendWireLenUtf8(oss, peer_id);
   RelaySignAppendWireLenUtf8(oss, state);
   RelaySignAppendI64(oss, timestamp);

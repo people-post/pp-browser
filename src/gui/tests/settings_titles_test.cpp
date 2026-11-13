@@ -90,7 +90,7 @@ TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithAVersionLineAndTheAccountId) {
   ASSERT_NE(phone_end, std::string::npos);
   const std::string home = rml.substr(phone, phone_end - phone);
   EXPECT_EQ(home.find("group-icon"), std::string::npos);
-  EXPECT_NE(home.find("<p class=\"me-card-meta\" data-if=\"profile_relay_id != ''\">{{profile_relay_id}}</p>"),
+  EXPECT_NE(home.find("<p class=\"me-card-meta\" data-if=\"profile_account_id != ''\">{{profile_account_id}}</p>"),
             std::string::npos);
   EXPECT_NE(home.find("<p class=\"group-foot me-home-ver\">{{app_name}} {{app_version}}</p>"), std::string::npos);
   EXPECT_EQ(home.find("tap_version"), std::string::npos);

@@ -39,10 +39,17 @@ Roe<void> InitiationBillingStore::Load() {
   if (const Object* nested = root->getObject("peers")) {
     peers = nested;
   }
+  const uint64_t version = root->getNonNegInt("schema_version").value_or(1);
+  if (version > kSchemaVersion) {
+    return Error("Unsupported schema version " + std::to_string(version) + " in initiation_billing.json");
+  }
   for (const auto& [key, value] : peers->fields()) {
     const Object* row_obj = asObject(value);
     if (!row_obj) {
       continue;
+    }
+    if (version < 2 && key.rfind("relay:", 0) == 0) {
+      continue; // 1 → 2: a per-relay `relay:` key names no one now (multi-relay MR001); rows are by Account ID
     }
     InitiationPeerBilling row;
     row.state = InitiationBillingStateFromString(row_obj->getString("state").value_or("closed"));
@@ -65,7 +72,7 @@ Roe<void> InitiationBillingStore::SaveUnlocked() const {
     peers.set(peer, entry);
   }
   Object root;
-  root.setJsonUInt("schema_version", 1);
+  root.setJsonUInt("schema_version", kSchemaVersion);
   root.set("peers", peers);
   return AtomicFileWrite::Write(Path(), DumpJson(root, 2));
 }

@@ -71,6 +71,7 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
           return Localized("errors.auth.register_or_rotate");
         case Err::Auth::RateLimited:
         case Err::Auth::ServerBusy:
+        case Err::Auth::StrangerQuota:
           return Localized("errors.auth.busy");
         case Err::Auth::Generic:
         default:
@@ -88,7 +89,8 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
           return Localized("errors.network.tls");
         case Err::Network::HttpError:
         case Err::Network::HttpRejected:
-        case Err::Network::HttpNotFound:
+        case Err::Network::RecipientNotRegistered:
+        case Err::Network::PaymentRequired:
           return Localized("errors.network.http");
         case Err::Network::Unreachable:
         case Err::Network::Generic:

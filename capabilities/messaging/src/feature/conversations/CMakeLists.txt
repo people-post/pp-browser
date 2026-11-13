@@ -25,6 +25,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     MeshConnectivityWiring.cpp
     PushDeviceCoordinator.cpp
     MeshNetworkReaction.cpp
+    RelayGrantPeers.cpp
   PUBLIC_LIBS
     pp_domain_registration
     pp_domain_peers

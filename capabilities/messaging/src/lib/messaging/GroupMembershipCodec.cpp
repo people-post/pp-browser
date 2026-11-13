@@ -206,9 +206,6 @@ Roe<std::string> GroupMembershipCodec::EncodeMemberJoined(const MemberJoinedPayl
       if (entry.card) {
         row.set("card", ObjectValue(*entry.card));
       }
-      if (!entry.relay_user_id.empty()) {
-        row.set("relay_user_id", entry.relay_user_id);
-      }
       members.push_back(ObjectValue(std::move(row)));
     }
     json.set("members", ArrayValue(std::move(members)));
@@ -303,7 +300,6 @@ Roe<GroupMembershipCodec::MemberJoinedPayload> GroupMembershipCodec::DecodeMembe
       if (const Object* card = row->getObject("card")) {
         entry.card = *card;
       }
-      entry.relay_user_id = row->getString("relay_user_id").value_or("");
       payload.members.push_back(std::move(entry));
     }
   }

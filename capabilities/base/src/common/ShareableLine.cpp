@@ -11,7 +11,7 @@ namespace pbr {
 namespace {
 
 std::string_view WithoutScheme(std::string_view id) {
-  for (const std::string_view scheme : {"account:", "peer:", "relay:", "call:"}) {
+  for (const std::string_view scheme : {"account:", "peer:", "call:"}) {
     if (id.substr(0, scheme.size()) == scheme) {
       id.remove_prefix(scheme.size());
       break;

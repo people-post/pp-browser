@@ -19,18 +19,19 @@ TEST(PeerDisplayLabelTest, FormatsContactDirectoryAndShortId) {
 
   mesh::DirectoryHit hit;
   hit.nickname = "alice";
-  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:lHaEnkO4vSbVnl6A", true}};
-  EXPECT_EQ(FormatDirectoryTitle(hit), "~alice @relay:lHaEnkO4…");
+  hit.ids = {{mesh::ContactIdKind::Account, "account:lHaEnkO4vSbVnl6A", true}};
+  EXPECT_EQ(FormatDirectoryTitle(hit), "~alice @account:lHaE…");
 
   mesh::DirectoryHit nick_only;
   nick_only.nickname = "bob";
   EXPECT_EQ(FormatDirectoryTitle(nick_only), "~bob");
 
-  EXPECT_EQ(ShortRelayId("relay:lHaEnkO4vSbVnl6A"), "relay:lHaEnkO4…");
-  EXPECT_EQ(ShortRelayId("relay:short"), "relay:short");
+  EXPECT_EQ(ShortPersonId("account:lHaEnkO4vSbVnl6A"), "account:lHaE…");
+  EXPECT_EQ(ShortPersonId("account:abcd"), "account:abcd");
+  EXPECT_EQ(ShortPersonId("12D3KooWPeerIdOfADevice"), "12D3KooWPeer…");
 }
 
-TEST(ContactsStoreFindByIdentityTest, FindsExactRelayId) {
+TEST(ContactsStoreFindByIdentityTest, FindsExactAccountId) {
   const auto data_dir = std::filesystem::temp_directory_path() / "pp_browser_find_by_identity";
   std::filesystem::remove_all(data_dir);
   ContactsStore store(data_dir.string());
@@ -38,15 +39,15 @@ TEST(ContactsStoreFindByIdentityTest, FindsExactRelayId) {
   Contact contact;
   contact.id = "c1";
   contact.display_name = "Alice";
-  contact.ids = {{mesh::ContactIdKind::RelayUser, "relay:alice123", true}};
+  contact.ids = {{mesh::ContactIdKind::Account, "account:alice123", true}};
   ASSERT_TRUE(store.Upsert(contact));
 
-  auto found = store.FindByIdentity("relay:alice123", mesh::ContactIdKind::RelayUser);
+  auto found = store.FindByIdentity("account:alice123", mesh::ContactIdKind::Account);
   ASSERT_TRUE(found);
   ASSERT_TRUE(*found);
   EXPECT_EQ((*found)->id, "c1");
 
-  auto missing = store.FindByIdentity("relay:other", mesh::ContactIdKind::RelayUser);
+  auto missing = store.FindByIdentity("account:other", mesh::ContactIdKind::Account);
   ASSERT_TRUE(missing);
   EXPECT_FALSE(missing->has_value());
 

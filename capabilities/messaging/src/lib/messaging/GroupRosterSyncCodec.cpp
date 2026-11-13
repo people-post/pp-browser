@@ -50,9 +50,6 @@ std::string EncodeChange(const GroupChange& change, const std::optional<ChangeNe
     if (newcomer->card) {
       row.set("card", ObjectValue(*newcomer->card));
     }
-    if (!newcomer->relay_user_id.empty()) {
-      row.set("relay_user_id", newcomer->relay_user_id);
-    }
     detail.set("newcomer", ObjectValue(std::move(row)));
   }
   return DumpJson(detail);
@@ -72,7 +69,6 @@ std::optional<ChangeNewcomer> NewcomerIn(const std::string& detail_json) {
   if (const Object* card = row->getObject("card")) {
     newcomer.card = *card;
   }
-  newcomer.relay_user_id = row->getString("relay_user_id").value_or("");
   return newcomer;
 }
 

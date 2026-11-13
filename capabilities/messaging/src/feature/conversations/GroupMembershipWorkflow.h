@@ -125,7 +125,7 @@ public:
                                      const std::string& actor_identity);
 
   Roe<std::vector<GroupRosterMember>> ListRoster(const std::string& group_id) const;
-  /** True when local relay identity is the group metadata owner (authoritative for leave UI). */
+  /** True when our account is the group metadata owner (authoritative for leave UI). */
   Roe<bool> IsLocalOwner(const std::string& group_id) const;
   /** Metadata owner identity for the group. */
   Roe<std::string> OwnerIdentity(const std::string& group_id) const;
@@ -259,7 +259,7 @@ private:
   /** Ask again after kRosterReaskDelaysMs[attempt] unless answered, or a newer check (with its own timer) began. */
   void ScheduleRosterReask(const std::string& group_id, const std::string& request_id, size_t attempt);
   Roe<std::string> ResolveRelayIdentity(const std::string& contact_id) const;
-  Roe<std::string> LocalRelayIdentity() const;
+  Roe<std::string> LocalAccountIdentity() const;
   Roe<GroupMetadata> LoadMetadataOrError(const std::string& group_id) const;
   Roe<void> AppendMembershipSystemEvent(const std::string& thread_id, GroupMembershipControlType type,
                                         const std::string& text, const std::string& detail_json,

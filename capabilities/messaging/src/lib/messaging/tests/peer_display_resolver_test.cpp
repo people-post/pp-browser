@@ -48,8 +48,7 @@ TEST_F(PeerDisplayResolverTest, AvatarSeedIsTheAccountIdOnEverySurface) {
   Contact contact;
   contact.id = "c1";
   contact.display_name = "Alice Example";
-  contact.ids = {{mesh::ContactIdKind::RelayUser, "relay:lHaEnkO4vSbVnl6A", false},
-                 {mesh::ContactIdKind::Account, account, true}};
+  contact.ids = {{mesh::ContactIdKind::Account, account, true}};
   ASSERT_TRUE(contacts_->Upsert(contact));
   Thread thread;
   thread.kind = ThreadKind::Direct;
@@ -77,8 +76,7 @@ TEST_F(PeerDisplayResolverTest, PrefersContactThenDirectoryThenShortId) {
   mesh::DirectoryHit hit;
   hit.nickname = "alice";
   hit.account_id = thread.peer_identity_value;
-  hit.ids = {{mesh::ContactIdKind::Account, thread.peer_identity_value, true},
-             {mesh::ContactIdKind::RelayUser, "relay:lHaEnkO4vSbVnl6A", false}};
+  hit.ids = {{mesh::ContactIdKind::Account, thread.peer_identity_value, true}};
   directory_[thread.peer_identity_value] = hit;
   PeerDisplayLabel unverified = resolver_->ResolveThread(thread);
   EXPECT_EQ(unverified.trust, PeerLabelTrust::DirectoryUnverified);

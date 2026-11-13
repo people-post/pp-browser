@@ -55,8 +55,6 @@ struct LocalIdentity {
   std::string nickname;
   /** Device endpoint: mesh PeerId base58; derived in memory from device ML-DSA pubkey. */
   std::string peer_id;
-  /** Transport handle (route): relay-assigned; empty until registered (D082 / M006). */
-  std::string relay_user_id;
   /** Brief LLM API key (plaintext in memory; persisted inside identity.enc). Empty until registered. */
   SecretText brief_llm_api_key;
   /**
@@ -64,6 +62,7 @@ struct LocalIdentity {
    * Ignored when brief_llm_api_key is set. Cleared after successful register/finish.
    */
   SecretText brief_llm_guest_api_key;
+  /** Registered on the relay: its inbox is addressed by `account_id` (multi-relay MR001). */
   bool registered = false;
   /** ISO-8601 expiry from register/finish; empty until registered or if server omitted it. */
   std::string registration_expires_at;

@@ -122,8 +122,8 @@ public:
       if (auto success = root->getIf<bool>("success")) {
         result.success = *success;
       }
-      if (auto relay_user_id = root->getString("relay_user_id")) {
-        result.relay_user_id = *relay_user_id;
+      if (auto account_id = root->getString("account_id")) {
+        result.account_id = *account_id;
       }
       if (auto message = root->getString("message")) {
         result.message = *message;
@@ -140,11 +140,11 @@ public:
   }
 
   Roe<RegistrationResult> UpdateNickname(const std::string& /*new_nickname*/, const std::string& /*signature*/,
-                                         int64_t /*timestamp*/, const std::string& /*relay_user_id*/) override {
+                                         int64_t /*timestamp*/, const std::string& /*account_id*/) override {
     return Error("UpdateNickname not supported on pp-node thin client");
   }
 
-  Roe<void> RevokeRegistration(const std::string& /*relay_user_id*/, const std::string& /*signature*/,
+  Roe<void> RevokeRegistration(const std::string& /*account_id*/, const std::string& /*signature*/,
                                int64_t /*timestamp*/) override {
     return Error("RevokeRegistration not supported on pp-node thin client");
   }

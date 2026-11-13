@@ -14,8 +14,7 @@ TEST(MockRelayClientTest, FetchFiltersBySeqRange) {
     RelayEnvelope envelope;
     envelope.envelope_version = kRelayEnvelopeVersion;
     envelope.message_id = "hist-" + std::to_string(seq);
-    envelope.sender_relay_id = "relay:peer";
-    envelope.sender_contact_id = "relay:peer";
+    envelope.sender_contact_id = "account:peer";
     envelope.route.kind = "direct";
     envelope.route.channel = ThreadChannel::E2e;
     envelope.body.e2e.payload_b64 = "AQID";
@@ -23,8 +22,8 @@ TEST(MockRelayClientTest, FetchFiltersBySeqRange) {
     envelope.order_key = seq;
     envelope.session_epoch = 1;
     envelope.stream_key =
-        BuildCanonicalRelayStreamKey("relay:local", "relay:peer", ThreadChannel::E2e, envelope.session_epoch);
-    envelope.recipient_contact_id = "relay:local";
+        BuildCanonicalRelayStreamKey("account:local", "account:peer", ThreadChannel::E2e, envelope.session_epoch);
+    envelope.recipient_account_id = "account:local";
     envelope.timestamp = static_cast<int64_t>(seq);
     return envelope;
   };
@@ -33,10 +32,10 @@ TEST(MockRelayClientTest, FetchFiltersBySeqRange) {
   }
 
   ChatHistoryRequest request;
-  request.requester_identity_kind = "relay_user";
-  request.requester_identity_value = "relay:local";
-  request.peer_identity_kind = "relay_user";
-  request.peer_identity_value = "relay:peer";
+  request.requester_identity_kind = "account";
+  request.requester_identity_value = "account:local";
+  request.peer_identity_kind = "account";
+  request.peer_identity_value = "account:peer";
   request.channel = ThreadChannel::E2e;
   request.session_epoch = 1;
   request.min_sender_seq = 2;

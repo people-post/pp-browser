@@ -561,7 +561,6 @@ Roe<void> ProductStackHarness::SendCallControl(const std::string& peer_account, 
   const std::string json = DumpJson(body);
   RelayEnvelope env;
   env.message_id = msg.id;
-  env.sender_relay_id = local_peer_id_;
   env.sender_contact_id = local_account_;
   env.sender_device = local_peer_id_;
   env.timestamp = msg.timestamp;
@@ -607,7 +606,7 @@ Roe<void> ProductStackHarness::WriteSignal(const std::string& peer_account, cons
   std::filesystem::create_directories(inbox, ec);
   Object file;
   file.set("message_id", env.message_id);
-  file.set("sender_relay_id", env.sender_relay_id);
+  file.set("sender_device", env.sender_device);
   file.set("sender_contact_id", env.sender_contact_id);
   file.set("timestamp", static_cast<int64_t>(env.timestamp));
   file.set("payload_b64", env.body.e2e.payload_b64);
@@ -656,9 +655,8 @@ void ProductStackHarness::PollSignalInbox() {
     }
     RelayEnvelope env;
     env.message_id = obj->getString("message_id").value_or("");
-    env.sender_relay_id = obj->getString("sender_relay_id").value_or("");
     env.sender_contact_id = obj->getString("sender_contact_id").value_or("");
-    env.sender_device = env.sender_relay_id;
+    env.sender_device = obj->getString("sender_device").value_or("");
     env.timestamp = static_cast<int64_t>(obj->getNonNegInt("timestamp").value_or(0));
     env.body.e2e.payload_b64 = obj->getString("payload_b64").value_or("");
     // Relay inbox ingestion runs off the UI thread in the product — do the same.
@@ -717,7 +715,7 @@ void ProductStackHarness::OnChatInbound(RelayEnvelope env) {
   msg.text = obj->getString("text").value_or("");
   msg.payload_json = obj->getString("payload_json").value_or("");
   msg.timestamp = env.timestamp > 0 ? env.timestamp : util::NowUnixMs();
-  msg.sender_contact_id = env.sender_contact_id.empty() ? env.sender_relay_id : env.sender_contact_id;
+  msg.sender_contact_id = env.sender_contact_id;
   if (auto ct = obj->getNonNegInt("content_type")) {
     msg.content_type = static_cast<ChatContentType>(*ct);
   } else {
@@ -731,9 +729,7 @@ void ProductStackHarness::OnChatInbound(RelayEnvelope env) {
     if (auto payload = TryParseObject(msg.payload_json)) {
       const std::string detail = payload->getString("detail").value_or("");
       if (auto invite = CallControlCodec::DecodeInvite(detail); invite) {
-        const std::string account = invite->inviter_identity.empty()
-                                        ? (env.sender_contact_id.empty() ? env.sender_relay_id : env.sender_contact_id)
-                                        : invite->inviter_identity;
+        const std::string account = invite->inviter_identity.empty() ? env.sender_contact_id : invite->inviter_identity;
         if (!invite->libp2p_peer_id.empty()) {
           LearnAccountPeerId(account, invite->libp2p_peer_id);
         } else if (auto pid = PeerIdFromMa(invite->listen_multiaddrs.empty() ? "" : invite->listen_multiaddrs.front());
@@ -743,7 +739,7 @@ void ProductStackHarness::OnChatInbound(RelayEnvelope env) {
       }
     }
   }
-  const std::string sender = env.sender_contact_id.empty() ? env.sender_relay_id : env.sender_contact_id;
+  const std::string& sender = env.sender_contact_id;
   const auto family = controls_.Find(msg);
   if (!family || !family->apply) {
     return;

@@ -28,8 +28,8 @@ TEST(V6SchemaTest, OutboundMessagePersistsSenderSeqAndEpoch) {
   ASSERT_TRUE(store.SetDek(TestDek()));
 
   DirectChatTarget target;
-  target.peer_identity_kind = "relay_user";
-  target.peer_identity_value = "relay:alice";
+  target.peer_identity_kind = "account";
+  target.peer_identity_value = "account:alice";
   target.channel = ThreadChannel::E2e;
 
   auto thread = store.FindOrCreateDirectThread(target, "contact-alice", "Alice");
@@ -72,8 +72,8 @@ TEST(V6SchemaTest, GetMessagesBySeqRangeFiltersPeerStream) {
   ASSERT_TRUE(store.SetDek(TestDek()));
 
   DirectChatTarget target;
-  target.peer_identity_kind = "relay_user";
-  target.peer_identity_value = "relay:bob";
+  target.peer_identity_kind = "account";
+  target.peer_identity_value = "account:bob";
   target.channel = ThreadChannel::E2e;
 
   auto thread = store.FindOrCreateDirectThread(target, "contact-bob", "Bob");
@@ -121,8 +121,8 @@ TEST(V6SchemaTest, SyncStateInitializedForE2eDirectThread) {
   ASSERT_TRUE(store.SetDek(TestDek()));
 
   DirectChatTarget target;
-  target.peer_identity_kind = "relay_user";
-  target.peer_identity_value = "relay:carol";
+  target.peer_identity_kind = "account";
+  target.peer_identity_value = "account:carol";
   target.channel = ThreadChannel::E2e;
 
   auto thread = store.FindOrCreateDirectThread(target, "contact-carol", "Carol");
@@ -150,8 +150,7 @@ TEST(V6SchemaTest, RelayEnvelopeRoundTripPreservesSeqFields) {
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "msg-seq";
-  envelope.sender_relay_id = "relay:peer";
-  envelope.sender_contact_id = "relay:peer";
+  envelope.sender_contact_id = "account:peer";
   envelope.sender_device = "QmTestDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;

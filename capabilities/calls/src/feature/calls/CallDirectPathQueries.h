@@ -26,7 +26,7 @@ public:
   /** The call's first remote participant (a 1:1 call's peer). */
   virtual Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const = 0;
   /**
-   * Map inbound call-media mesh PeerId → call-roster `relay:` identity.
+   * Map inbound call-media mesh PeerId → call-roster account identity.
    * Do not use PeerIdentityForCall for this — that returns an arbitrary remote and
    * mis-keys PreferLocal 1:1 audio onto another peer's SFU stream_id.
    */

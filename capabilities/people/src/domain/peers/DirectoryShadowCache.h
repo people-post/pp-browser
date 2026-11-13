@@ -22,17 +22,17 @@ public:
   /** Fired when a hit is cached (lookup or Put) — used to refresh initiation floors (P001). */
   void SetOnHitCached(std::function<void(const mesh::DirectoryHit&)> callback);
 
-  /** Lookup by Account ID or `relay:` route id. */
+  /** Lookup by Account ID. */
   std::optional<mesh::DirectoryHit> Get(const std::string& identity) const;
 
   /**
    * Cache hit returns immediately. Otherwise schedules directory lookup on IO and refreshes UI.
-   * `account:…` → LookupByAccount; `relay:…` → LookupRelayUser.
+   * By Account ID (LookupByAccount); any other identity is not looked up.
    */
   void EnsureLookup(const std::string& identity);
 
   void Put(const mesh::DirectoryHit& hit);
-  /** Drops the entry for `identity` (an Account ID or `relay:` id) together with its other index key. */
+  /** Drops the entry for `identity` (an Account ID). */
   void Remove(const std::string& identity);
   /** Drops every cached hit. */
   void Clear();

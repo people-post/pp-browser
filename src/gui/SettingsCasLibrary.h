@@ -58,7 +58,7 @@ private:
   void FetchTip();
   void PerformShare(const std::string& content_id_hex);
   void PerformUnpublish(const std::string& content_id_hex);
-  void PerformFetchTip(const std::string& tip, const std::string& peer_relay_user_id);
+  void PerformFetchTip(const std::string& tip, const std::string& peer_account_id);
   const CasLibraryItemView* ItemAt(int index) const;
 
   const SettingsCommands& commands_;

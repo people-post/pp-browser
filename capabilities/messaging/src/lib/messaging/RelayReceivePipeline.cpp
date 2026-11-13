@@ -30,7 +30,7 @@
 #include "lib/messaging/GroupRosterVersion.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
-#include "common/directory/ShortRelayId.h"
+#include "common/directory/ShortPersonId.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/chat/RelayStreamKey.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
@@ -77,8 +77,7 @@ Roe<void> RejectIfAnnotationCapExceeded(IThreadStore& store, const ThreadMessage
 
 bool IsEnvelopeFromPeer(const Thread& thread, const RelayEnvelope& envelope) {
   if (!thread.peer_identity_value.empty()) {
-    return envelope.sender_contact_id == thread.peer_identity_value ||
-           envelope.sender_relay_id == thread.peer_identity_value;
+    return envelope.sender_contact_id == thread.peer_identity_value;
   }
   return false;
 }
@@ -268,9 +267,7 @@ void RelayReceivePipeline::KeepChangeNewcomer(ThreadMessage& message, const Grou
   auto in = group_roster_.IsMember(change.group_id, change.member);
   if (change.kind == GroupChangeKind::Add && newcomer->member_identity == change.member &&
       change.member != local_account && in && *in && on_roster_member_) {
-    on_roster_member_({.member_identity = newcomer->member_identity,
-                       .card = newcomer->card,
-                       .relay_user_id = newcomer->relay_user_id});
+    on_roster_member_({.member_identity = newcomer->member_identity, .card = newcomer->card});
   }
   // What is stored keeps the change, not the card (it is kept as a card).
   Object payload;
@@ -405,8 +402,7 @@ void RelayReceivePipeline::KeepBundleCards(ThreadMessage& message,
   for (const GroupMembershipCodec::MemberJoinedEntry& entry : joined.members) {
     carried_cards = carried_cards || entry.card.has_value();
     // Only for those the roster we computed lists: the inviter's word adds no one.
-    if (entry.member_identity != local_account && listed(entry.member_identity) &&
-        (entry.card || !entry.relay_user_id.empty()) && on_roster_member_) {
+    if (entry.member_identity != local_account && listed(entry.member_identity) && entry.card && on_roster_member_) {
       on_roster_member_(entry);
     }
   }
@@ -1159,7 +1155,7 @@ bool RelayReceivePipeline::SenderBlocked(const std::string& sender) const {
 }
 
 RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& received,
-                                                          const std::string& local_relay_user_id,
+                                                          const std::string& local_account_id,
                                                           const bool authorized_older_backfill,
                                                           const MessageTransport transport) {
   // The copy this device reads (M022): its own, else the account copy. With copies for our other devices
@@ -1170,14 +1166,14 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& r
   if (!selected) {
     outcome.decision = IngestDecision::SilentDiscard;
     const bool chat = received.route.kind == kRelayRouteGroup || received.route.kind == kRelayRouteDirect;
-    if (chat && self && !received.sender_contact_id.empty() && received.sender_contact_id != local_relay_user_id &&
+    if (chat && self && !received.sender_contact_id.empty() && received.sender_contact_id != local_account_id &&
         !received.sender_device.empty() && !received.message_id.empty()) {
       // A group record names no group (G018 item 7): its stream id, computed for the groups we share, tells.
       std::string group_id;
       if (received.route.kind == kRelayRouteGroup) {
-        group_id = GroupOfStream(received, GroupsSharedWith(received.sender_contact_id, local_relay_user_id),
-                                 local_relay_user_id)
-                       .value_or("");
+        group_id =
+            GroupOfStream(received, GroupsSharedWith(received.sender_contact_id, local_account_id), local_account_id)
+                .value_or("");
       }
       if (received.route.kind != kRelayRouteGroup || !group_id.empty()) {
         outcome.missing_copy = RelayReceiveOutcome::MissingCopy{.sender_account = received.sender_contact_id,
@@ -1187,14 +1183,14 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& r
       }
     }
     if (received.route.kind == kRelayRouteControl && self) {
-      NoteMissingControlCopy(received, local_relay_user_id, outcome);
+      NoteMissingControlCopy(received, local_account_id, outcome);
     }
   } else if (selected->route.kind == kRelayRouteGroup) {
-    outcome = ProcessGroupEnvelope(*selected, local_relay_user_id, authorized_older_backfill, transport);
+    outcome = ProcessGroupEnvelope(*selected, local_account_id, authorized_older_backfill, transport);
   } else if (selected->route.kind == kRelayRouteControl) {
-    outcome = ProcessControlEnvelope(*selected, local_relay_user_id);
+    outcome = ProcessControlEnvelope(*selected, local_account_id);
   } else {
-    outcome = ProcessDirectEnvelope(*selected, local_relay_user_id, authorized_older_backfill, transport);
+    outcome = ProcessDirectEnvelope(*selected, local_account_id, authorized_older_backfill, transport);
   }
   // A sender that verified has a card kept now: what of its waited for one may be checked (#555).
   if (outcome.sender_verified && HoldsControlFrom(received.sender_contact_id)) {
@@ -1209,7 +1205,7 @@ bool RelayReceivePipeline::HoldsControlFrom(const std::string& sender) const {
 }
 
 std::vector<RelayReceivePipeline::HeldControlReplay> RelayReceivePipeline::ReplayHeldControl(
-    const std::string& sender, const std::string& local_relay_user_id) {
+    const std::string& sender, const std::string& local_account_id) {
   const int64_t now_ms = util::NowUnixMs();
   std::vector<HeldControlEnvelope> held;
   ControlLaneHoldDrops drops;
@@ -1226,7 +1222,7 @@ std::vector<RelayReceivePipeline::HeldControlReplay> RelayReceivePipeline::Repla
   for (HeldControlEnvelope& entry : held) {
     log().info << "control lane: checking again message_id=" << entry.envelope.message_id << " sender=" << sender
                << " held_ms=" << (now_ms - entry.held_since_ms);
-    RelayReceiveOutcome outcome = ProcessControlEnvelope(entry.envelope, local_relay_user_id, entry.held_since_ms);
+    RelayReceiveOutcome outcome = ProcessControlEnvelope(entry.envelope, local_account_id, entry.held_since_ms);
     replayed.push_back(HeldControlReplay{std::move(entry.envelope), std::move(outcome)});
   }
   return replayed;
@@ -1246,7 +1242,7 @@ bool ControlLaneFresh(const RelayEnvelope& envelope, const int64_t max_age_ms, c
 }
 
 RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnvelope& received,
-                                                                 const std::string& local_relay_user_id,
+                                                                 const std::string& local_account_id,
                                                                  const std::optional<int64_t> held_since_ms) {
   // Checked again after a wait for the sender's card: the wait counts in its age (ControlLaneHold).
   std::optional<RelayEnvelope> aged;
@@ -1273,14 +1269,14 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
     return outcome;
   }
   const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
-  if (envelope.sender_contact_id == local_relay_user_id) {
+  if (envelope.sender_contact_id == local_account_id) {
     // A sibling's notice (M022): the account card it carries — the device list — is what counts, taken once
     // the envelope verifies with it (SetOnSenderCard). Nothing else to apply.
     outcome.sender_verified = CheckControlSender(received, inbound_target, held_since_ms, outcome);
     outcome.from_sibling = outcome.sender_verified;
     outcome.decision = IngestDecision::SilentDiscard;
     if (outcome.sender_verified) {
-      ApplySiblingNotice(envelope, local_relay_user_id, inbound_target, outcome);
+      ApplySiblingNotice(envelope, local_account_id, inbound_target, outcome);
     }
     return outcome;
   }
@@ -1288,7 +1284,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
     return outcome;
   }
   outcome.sender_verified = true;
-  if (local_relay_user_id.empty()) {
+  if (local_account_id.empty()) {
     return outcome;
   }
   auto kem_private = CopyKemPrivateKey(envelope);
@@ -1300,7 +1296,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
   const PeerSessionKey target_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
   AutoKeyRead read;
   auto decrypted =
-      E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key, psk_store_, *kem_private, &read);
+      E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_account_id, target_key, psk_store_, *kem_private, &read);
   if (!decrypted) {
     ReportUnreadableControl(envelope, target_key, decrypted.error(), outcome);
     return outcome;
@@ -1594,7 +1590,7 @@ void RelayReceivePipeline::FileSentCopy(const SentCopy& copy, const RelayEnvelop
     const DirectChatTarget target{.peer_identity_kind = "account",
                                   .peer_identity_value = copy.target.peer_account,
                                   .channel = ThreadChannel::E2ePublic};
-    const std::string title = ShortRelayId(copy.target.peer_account);
+    const std::string title = ShortPersonId(copy.target.peer_account);
     auto thread = store_.FindOrCreateDirectThread(target, "", title.empty() ? copy.target.peer_account : title);
     if (!thread) {
       log().warning << "sibling's sent copy: no chat: " << thread.error().message;
@@ -1637,7 +1633,7 @@ void RelayReceivePipeline::FileSentCopy(const SentCopy& copy, const RelayEnvelop
 }
 
 RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvelope& envelope,
-                                                                const std::string& local_relay_user_id,
+                                                                const std::string& local_account_id,
                                                                 const bool authorized_older_backfill,
                                                                 const MessageTransport transport) {
   RelayReceiveOutcome outcome;
@@ -1665,7 +1661,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   }
   // The shared mailbox (M013) holds every device's copies: another device's is not ours to read; our own
   // account's siblings do not write to us yet (M021 d3).
-  if (WhoseCopy(envelope) == CopyTo::Sibling || envelope.sender_contact_id == local_relay_user_id) {
+  if (WhoseCopy(envelope) == CopyTo::Sibling || envelope.sender_contact_id == local_account_id) {
     outcome.decision = IngestDecision::SilentDiscard;
     return outcome;
   }
@@ -1718,8 +1714,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
             local_kem_private_key = std::move(*kem_private);
           }
         }
-        if (auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key,
-                                                                   psk_store_, local_kem_private_key)) {
+        if (auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_account_id, target_key, psk_store_,
+                                                                   local_kem_private_key)) {
           if (AppliesOutOfOrder(*decrypted)) {
             ThreadMessage side = std::move(*decrypted);
             side.id = envelope.message_id;
@@ -1776,14 +1772,14 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
 
   ThreadMessage message;
   if (E2eRelayPayloadCodec::RequiresEncryption(envelope.route.channel)) {
-    if (local_relay_user_id.empty()) {
+    if (local_account_id.empty()) {
       outcome.decision = IngestDecision::HardReject;
       MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::MissingLocalIdentity,
                          "Local account identity unavailable for decrypt",
                          resolved_thread_id.empty() ? std::nullopt : std::optional(resolved_thread_id));
       return outcome;
     }
-    const std::string& local_aad_id = local_relay_user_id;
+    const std::string& local_aad_id = local_account_id;
 
     const PeerSessionKey& target_key = copy_key;
 
@@ -1860,7 +1856,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   }
 
   if (auto_create) {
-    const std::string fallback_title = ShortRelayId(envelope.sender_contact_id);
+    const std::string fallback_title = ShortPersonId(envelope.sender_contact_id);
     auto created = store_.FindOrCreateDirectThread(
         inbound_target, "", fallback_title.empty() ? envelope.sender_contact_id : fallback_title);
     if (!created) {
@@ -2134,11 +2130,11 @@ std::optional<std::string> RelayReceivePipeline::GroupOfStream(const RelayEnvelo
 }
 
 RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelope& envelope,
-                                                               const std::string& local_relay_user_id,
+                                                               const std::string& local_account_id,
                                                                const bool authorized_older_backfill,
                                                                const MessageTransport transport) {
   RelayReceiveOutcome outcome;
-  if (local_relay_user_id.empty()) {
+  if (local_account_id.empty()) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
@@ -2154,13 +2150,13 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
-  const std::vector<std::string> shared = GroupsSharedWith(envelope.sender_contact_id, local_relay_user_id);
+  const std::vector<std::string> shared = GroupsSharedWith(envelope.sender_contact_id, local_account_id);
   if (shared.empty()) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
   // Another device's copy in the shared mailbox (M013); our own account's siblings do not write yet (M021 d3).
-  if (WhoseCopy(envelope) == CopyTo::Sibling || envelope.sender_contact_id == local_relay_user_id) {
+  if (WhoseCopy(envelope) == CopyTo::Sibling || envelope.sender_contact_id == local_account_id) {
     outcome.decision = IngestDecision::SilentDiscard;
     return outcome;
   }
@@ -2195,12 +2191,12 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
 
   const PeerSessionKey pair_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
   AutoKeyRead read;
-  auto decrypted = GroupE2ePayloadCodec::DecryptForLocalMember(envelope, local_relay_user_id, pair_key, psk_store_,
+  auto decrypted = GroupE2ePayloadCodec::DecryptForLocalMember(envelope, local_account_id, pair_key, psk_store_,
                                                                *kem_private, &read);
   if (!decrypted) {
     outcome.decision = IngestDecision::HardReject;
     std::optional<std::string> tid; // the chat to tell, when the stream id shows which group (a hint, unsigned)
-    if (auto group_id = GroupOfStream(envelope, shared, local_relay_user_id)) {
+    if (auto group_id = GroupOfStream(envelope, shared, local_account_id)) {
       if (auto existing = store_.FindGroupThread(*group_id); existing && *existing) {
         tid = (**existing).id;
       }

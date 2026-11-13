@@ -66,6 +66,8 @@ private:
   Error RecordOpenFailure(ChatStoreProblem problem, std::string message) const;
   Roe<void> OpenProfileDbUnguarded() const;
   Roe<void> EnsureThreadDirectory(const std::string& thread_id) const;
+  /** The Account ID of a direct thread's peer in the catalog (a thread.db step's context); empty otherwise. */
+  std::string DirectPeerAccountOf(const std::string& thread_id) const;
   /** A chat's thread.db, opened and brought through its ladder (a file below the floor is reset first). */
   Roe<sqlite3*> OpenThreadDbFile(const std::string& thread_id) const;
   Roe<void> RepairOrphanThreadDirs() const;

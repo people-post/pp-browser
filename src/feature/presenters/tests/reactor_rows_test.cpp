@@ -25,7 +25,7 @@ PeerDisplayLabel Resolve(const std::string& sender) {
   if (sender == "account:nick") {
     return Named("~nick", PeerLabelTrust::DirectoryUnverified);
   }
-  return Named("relay:lHaEnkO4\xE2\x80\xA6", PeerLabelTrust::RawId);
+  return Named("account:lHaEnkO4\xE2\x80\xA6", PeerLabelTrust::RawId);
 }
 
 std::string NoIcon(const std::string&) {
@@ -66,7 +66,7 @@ TEST(ReactorRowsTest, AnUnknownSenderShowsTheFallbackNameNeverTheId) {
   const auto rows = BuildReactorRows({Chip("A", {"account:gone"})}, Resolve, NoIcon, "Group member");
   ASSERT_EQ(rows.size(), 1u);
   EXPECT_EQ(rows[0].title, "Group member");
-  EXPECT_EQ(rows[0].title.find("relay:"), std::string::npos);
+  EXPECT_EQ(rows[0].title.find("account:"), std::string::npos);
   EXPECT_EQ(rows[0].stable_id, "account:gone") << "the avatar colour still follows the person";
 }
 

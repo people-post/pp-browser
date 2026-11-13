@@ -189,13 +189,13 @@ void SettingsCasLibrary::FetchTip() {
                         });
 }
 
-void SettingsCasLibrary::PerformFetchTip(const std::string& tip, const std::string& peer_relay_user_id) {
+void SettingsCasLibrary::PerformFetchTip(const std::string& tip, const std::string& peer_account_id) {
   if (!commands_.fetch_cas_public_tip) {
     report_failure_(AppError::Storage(Err::Storage::Unavailable, "CAS tip fetch is not available"));
     return;
   }
   // Answered on the UI thread once the mesh fetch lands (the library outlives the request).
-  commands_.fetch_cas_public_tip(tip, peer_relay_user_id, [this](Roe<void> fetched) {
+  commands_.fetch_cas_public_tip(tip, peer_account_id, [this](Roe<void> fetched) {
     if (!fetched) {
       report_failure_(fetched.error());
       return;

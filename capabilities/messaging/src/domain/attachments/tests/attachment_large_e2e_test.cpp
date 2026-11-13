@@ -87,7 +87,6 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     ASSERT_TRUE(identity.SetDek(Dek()));
     ASSERT_TRUE(identity.LoadOrCreate());
     LocalIdentity local = *identity.Get();
-    local.relay_user_id = "relay:e2e";
     local.registered = true;
     ASSERT_TRUE(identity.Update(local));
     HttpBlobClient blob(url);

@@ -24,8 +24,7 @@ struct AvatarGlyph {
  */
 AvatarGlyph MakeAvatarGlyph(std::string_view display_name, std::string_view stable_id);
 
-/** Prefer account → relay → peer → contact local id for the color/letter seed. */
-std::string AvatarStableId(std::string_view account_id, std::string_view relay_id, std::string_view peer_id,
-                           std::string_view contact_id = {});
+/** Prefer account → peer → contact local id for the color/letter seed. */
+std::string AvatarStableId(std::string_view account_id, std::string_view peer_id, std::string_view contact_id = {});
 
 } // namespace pbr

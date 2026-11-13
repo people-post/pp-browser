@@ -142,7 +142,7 @@ protected:
     CallFunctionalPorts ports;
     ports.initialized = [this, &phone]() { return &phone == &a_ ? a_unlocked_ : true; };
     ports.backend = [this, &phone]() { return &phone == &a_ && a_backend_ ? a_backend_ : phone.side.ui.get(); };
-    ports.local_relay_identity = [&phone]() { return std::optional<std::string>(phone.side.local_identity); };
+    ports.local_account_identity = [&phone]() { return std::optional<std::string>(phone.side.local_identity); };
     ports.get_thread = [&phone](const std::string& id) { return phone.side.store->GetThread(id); };
     CallPresenter::Callbacks callbacks;
     callbacks.notify = [&phone](const CallNotice& notice) { phone.notices.push_back(notice); };

@@ -347,7 +347,7 @@ void CallHopPath::EjectParticipantAfterMigrateFailure(const std::string& call_id
   notes_.NoteParticipantLeft(call_id, identity);
 
   if (detail) {
-    auto local = host_.local_relay_identity();
+    auto local = host_.local_account_identity();
     if (local) {
       (void)host_.fan_out_joined(call_id, CallControlType::CallLeave, *detail, "Left the call", *local);
     }
@@ -356,7 +356,7 @@ void CallHopPath::EjectParticipantAfterMigrateFailure(const std::string& call_id
 }
 
 uint32_t CallHopPath::PublisherStreamIdForLocal() const {
-  auto local = host_.local_relay_identity();
+  auto local = host_.local_account_identity();
   if (!local) {
     return 1;
   }
@@ -426,7 +426,7 @@ std::vector<std::string> CallHopPath::JoinedRemoteIdentities(const std::string& 
 
 std::vector<std::string> CallHopPath::JoinedMembersOtherThan(const std::string& call_id,
                                                              const std::string& guest) const {
-  auto local = host_.local_relay_identity();
+  auto local = host_.local_account_identity();
   std::vector<std::string> out;
   for (std::string& identity : JoinedRemoteIdentities(call_id, local ? *local : std::string())) {
     if (identity != guest) {
@@ -437,7 +437,7 @@ std::vector<std::string> CallHopPath::JoinedMembersOtherThan(const std::string& 
 }
 
 bool CallHopPath::ResolveGroupHopForJoin(const std::string& call_id, const std::string& joiner_identity) {
-  auto local = host_.local_relay_identity();
+  auto local = host_.local_account_identity();
   const auto outcome = planning_.ResolveAtJoin(call_id, joiner_identity,
                                                JoinedRemoteIdentities(call_id, local ? *local : std::string()));
   if (outcome.adjusted_plan) {
@@ -516,7 +516,7 @@ void CallHopPath::FlushPendingHopPrefer(const std::string& call_id) {
   const std::string prefer = flight_.pending_hop_prefer;
   flight_.pending_hop_prefer.clear();
   if (!flight_.attached_hop_peer_id.empty() && prefer == flight_.attached_hop_peer_id) {
-    auto local = host_.local_relay_identity();
+    auto local = host_.local_account_identity();
     if (local) {
       FanOutSfuAttachForHop(call_id, prefer, *local);
     }
@@ -613,7 +613,7 @@ void CallHopPath::AnnounceLocalPublisher(const std::string& call_id, const CallS
   if (!sfu_.attached || channel_->LocalStreamId() == 0) {
     return;
   }
-  auto local = host_.local_relay_identity();
+  auto local = host_.local_account_identity();
   if (!local) {
     return;
   }
@@ -644,7 +644,7 @@ void CallHopPath::SyncSfuSubscriptions(const std::string& call_id) {
   int subscribed = 0;
   size_t announced = 0;
   if (participants) {
-    auto local = host_.local_relay_identity();
+    auto local = host_.local_account_identity();
     for (const CallParticipant& p : *participants) {
       if (p.state != CallParticipantState::Joined) {
         continue;
@@ -923,7 +923,7 @@ void CallHopPath::RefanOutHopForJoiner(const std::string& call_id, const std::st
     // On a remote hop the call's owner tells the joiner where the group is. Without it someone who
     // answered after the SoftMigrate fan-out was told nothing, waited out the attach wait and left with
     // no_media_relay_hop while the others saw one fewer (lab: group_fourth_answers_late). One sender.
-    auto local = host_.local_relay_identity();
+    auto local = host_.local_account_identity();
     if (!local || !sfu_.attached || !guest_.active_attach || !(guest_.active && call_id == call_id_) ||
         !IsStickyInitiator(call_id, *local)) {
       return;
@@ -933,7 +933,7 @@ void CallHopPath::RefanOutHopForJoiner(const std::string& call_id, const std::st
     return;
   }
   auto hop = relay_deps_.relay->LocalPeerIdBase58();
-  auto local = host_.local_relay_identity();
+  auto local = host_.local_account_identity();
   if (!hop || !local) {
     return;
   }
@@ -1009,7 +1009,7 @@ void CallHopPath::OnJoinedCountObserved(const std::string& call_id, size_t n_joi
     in.planned_hop = (*session)->planned_hop.has_value();
   }
   if (in.planned_hop) {
-    auto local = host_.local_relay_identity();
+    auto local = host_.local_account_identity();
     in.initiator_awaits_own_invitee =
         local && IsStickyInitiator(call_id, *local) && AwaitsOwnInviteeAccept(call_id, *local);
   }
@@ -1314,7 +1314,7 @@ void CallHopPath::ReportSfuAttachFailedToInitiator(const std::string& call_id, c
     log().debug << "ReportSfuAttachFailed deduped call_id=" << call_id << " hop=" << failed_hop;
     return;
   }
-  auto local = host_.local_relay_identity();
+  auto local = host_.local_account_identity();
   if (!local) {
     return;
   }
@@ -1455,7 +1455,7 @@ void CallHopPath::OnInboundSfuAttachFailed(const CallSfuAttachFailedDetail& deta
   if (!ForThisCall(detail.call_id, "OnInboundSfuAttachFailed")) {
     return;
   }
-  auto local = host_.local_relay_identity();
+  auto local = host_.local_account_identity();
   HopFailureInput in;
   in.sticky_initiator = local && IsStickyInitiator(detail.call_id, *local);
   if (!in.sticky_initiator) {
@@ -1582,7 +1582,7 @@ void CallHopPath::OnInboundHopRefuse(const CallHopRefuseDetail& detail) {
     log().info << "CallHopRefuse ignored (not active call) call_id=" << detail.call_id;
     return;
   }
-  auto local = host_.local_relay_identity();
+  auto local = host_.local_account_identity();
   if (!local) {
     return;
   }
@@ -1719,7 +1719,7 @@ void CallHopPath::RunSoftMigrate(const std::string& call_id, SoftMigrateTrigger 
     on_done(Error("media_relay not available"));
     return;
   }
-  auto local = host_.local_relay_identity();
+  auto local = host_.local_account_identity();
   if (!local) {
     on_done(local.error());
     return;
@@ -2524,7 +2524,7 @@ void CallHopPath::ReleaseDirectSettled(const hop_migrate_event::ReleaseDirectAft
     return;
   }
   if (release.self_hop && IsMigrateGenerationCurrent(release.migrate_generation)) {
-    if (auto local = host_.local_relay_identity()) {
+    if (auto local = host_.local_account_identity()) {
       if (auto encoded = CallControlCodec::EncodeSfuAttach(release.fanout)) {
         log().info << "AttachLocalToSfu delayed fan-out CallSfuAttach call_id=" << release.call_id;
         (void)host_.fan_out_joined(release.call_id, CallControlType::CallSfuAttach, *encoded, "Call SFU attach",

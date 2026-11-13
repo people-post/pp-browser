@@ -1,3 +1,4 @@
+#include "lib/delivery/OutboundMessage.h"
 #include "lib/delivery/RelayClients.h"
 #include "domain/delivery/DeliveryOutbox.h"
 
@@ -35,8 +36,8 @@ public:
   Roe<void> Send(const RelayEnvelope& envelope) override {
     std::lock_guard lock(mu_);
     sent.push_back(envelope.message_id);
-    recipients.push_back(envelope.recipient_contact_id.value_or(""));
-    if (envelope.recipient_contact_id && down_.count(*envelope.recipient_contact_id) != 0) {
+    recipients.push_back(envelope.recipient_account_id.value_or(""));
+    if (envelope.recipient_account_id && down_.count(*envelope.recipient_account_id) != 0) {
       return failure_;
     }
     if (failures_ > 0) {
@@ -174,7 +175,7 @@ protected:
     request.envelope.timestamp = util::NowUnixMs();
     request.thread_id = thread;
     request.message_id = message;
-    request.relay_route = "relay:bob";
+    request.relay_recipient = "account:bob";
     return request;
   }
 
@@ -183,7 +184,7 @@ protected:
     request.envelope.message_id = message;
     request.envelope.timestamp = util::NowUnixMs();
     request.message_id = message;
-    request.relay_route = "relay:bob";
+    request.relay_recipient = "account:bob";
     request.critical_lane = true;
     return request;
   }
@@ -232,7 +233,7 @@ TEST_F(DeliveryOutboxTest, CallControlAlsoGoesOverALiveLinkAtOnce) {
     control.envelope.timestamp = util::NowUnixMs();
     control.message_id = "ctl-1";
     control.amp_peer_key = "account:bob";
-    control.relay_route = "relay:bob";
+    control.relay_recipient = "account:bob";
     control.critical_lane = true;
     outbox.Send(control);
     // On the send itself, not a drain marker: the critical lane has more than one thread, so the marker can run
@@ -302,6 +303,26 @@ TEST_F(DeliveryOutboxTest, AFailedControlSendIsRetriedPromptlyWithoutAWake) {
   EXPECT_EQ(relay.SentCount(), 2u) << "nothing was left for the wake";
 }
 
+// A call invite refused for the stranger quota waits on its retry timer; if the recipient's grant arrives meanwhile,
+// it goes at once, before anything sent after it with the grant (its `call_ended`): the lab's redial storm rang the
+// callee for a call already over when the invite's timer fired after the end.
+TEST_F(DeliveryOutboxTest, AGrantSendsAQuotaHeldControlRetryAtOnceAndInOrder) {
+  FakeRelay relay(2, AppError::Auth(Err::Auth::StrangerQuota, "stranger_quota_exceeded"));
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(Control("invite"));
+  ASSERT_TRUE(WaitFor([&] { return Outcomes().size() == 1u; }, std::chrono::seconds(2))); // refused first
+  outbox->Send(Control("ringing"));
+  ASSERT_TRUE(WaitFor([&] { return Outcomes().size() == 2u; }, std::chrono::seconds(2)));
+  outbox->ReleaseHeldFor("account:carol");
+  EXPECT_EQ(relay.SentCount(), 2u) << "another recipient's grant releases nothing";
+  outbox->ReleaseHeldFor("account:bob");
+  ASSERT_EQ(relay.SentCount(), 4u) << "both at once, not on their timers";
+  EXPECT_EQ(relay.sent[2], "invite");
+  EXPECT_EQ(relay.sent[3], "ringing");
+  std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+  EXPECT_EQ(relay.SentCount(), 4u) << "their timers send nothing again";
+}
+
 TEST_F(DeliveryOutboxTest, CancelStopsAControlRetry) {
   FakeRelay relay(1);
   auto outbox = MakeOutbox(relay);
@@ -327,7 +348,7 @@ TEST_F(DeliveryOutboxTest, NoRouteAndNoDirectTransportFailsAsNoAddress) {
   FakeRelay relay(0);
   auto outbox = MakeOutbox(relay);
   DeliveryRequest request = ToRelay("t1", "m1");
-  request.relay_route.reset();
+  request.relay_recipient.reset();
   request.amp_peer_key = "account:bob";
   outbox->Send(std::move(request));
   Drain();
@@ -397,63 +418,81 @@ TEST_F(DeliveryOutboxTest, ARefusedSendEndsItAtOnce) {
   EXPECT_EQ(relay.SentCount(), 1u);
 }
 
-TEST_F(DeliveryOutboxTest, AnUnknownRecipientIsSentOnceMoreToItsCurrentRoute) {
-  FakeRelay relay(0, AppError::Network(Err::Network::HttpNotFound, "404"));
-  relay.RecipientDown("relay:old", true);
+// Multi-relay MR003: a recipient not registered on our relay is a final refusal, worded as such — no route to look
+// up again (the Account ID is the address), nothing queued.
+TEST_F(DeliveryOutboxTest, ARecipientNotOnTheRelayFailsAtOnceAndIsNotQueued) {
+  FakeRelay relay(1, AppError::Network(Err::Network::RecipientNotRegistered, "recipient_not_registered"));
   auto outbox = MakeOutbox(relay);
-  std::vector<std::string> asked;
-  outbox->SetRouteRefresh([&](const std::string& account) -> std::optional<std::string> {
-    asked.push_back(account);
-    return "relay:new";
-  });
-  DeliveryRequest request = ToRelay("t1", "m1");
-  request.envelope.recipient_contact_id = "relay:old";
-  request.route_account = "account:bob";
-  outbox->Send(std::move(request));
-  Drain();
-  ASSERT_EQ(Outcomes().size(), 1u);
-  EXPECT_TRUE(Outcomes()[0].ok);
-  EXPECT_EQ(relay.recipients, (std::vector<std::string>{"relay:old", "relay:new"}));
-  EXPECT_EQ(asked, (std::vector<std::string>{"account:bob"}));
-}
-
-TEST_F(DeliveryOutboxTest, AnUnknownRecipientIsRetriedOnlyOncePerAttemptAndNotQueued) {
-  FakeRelay relay(0, AppError::Network(Err::Network::HttpNotFound, "404"));
-  relay.RecipientDown("relay:old", true);
-  relay.RecipientDown("relay:new", true);
-  auto outbox = MakeOutbox(relay);
-  int asked = 0;
-  outbox->SetRouteRefresh([&](const std::string&) -> std::optional<std::string> {
-    ++asked;
-    return "relay:new";
-  });
-  DeliveryRequest request = ToRelay("t1", "m1");
-  request.envelope.recipient_contact_id = "relay:old";
-  request.route_account = "account:bob";
-  outbox->Send(std::move(request));
+  outbox->Send(ToRelay("t1", "m1"));
   Drain();
   ASSERT_EQ(Outcomes().size(), 1u);
   EXPECT_FALSE(Outcomes()[0].ok);
-  EXPECT_EQ(Outcomes()[0].failure, SendFailure::RelayRejected);
-  EXPECT_EQ(relay.SentCount(), 2u);
-  EXPECT_EQ(asked, 1);
-  EXPECT_FALSE(outbox->SendStartedMs("m1")) << "a 404 is final: nothing is queued";
+  EXPECT_EQ(Outcomes()[0].failure, SendFailure::RecipientNotOnRelay);
+  EXPECT_EQ(Outcomes()[0].relay_recipient, "account:bob");
+  EXPECT_FALSE(outbox->SendStartedMs("m1")) << "final: nothing is queued";
+  outbox->Retry();
+  Drain();
+  EXPECT_EQ(relay.SentCount(), 1u);
 }
 
-TEST_F(DeliveryOutboxTest, AnUnknownRecipientWithTheSameRouteOrNoneIsNotSentAgain) {
-  for (const std::optional<std::string>& fresh :
-       {std::optional<std::string>("relay:old"), std::optional<std::string>()}) {
-    FakeRelay relay(0, AppError::Network(Err::Network::HttpNotFound, "404"));
-    relay.RecipientDown("relay:old", true);
-    auto outbox = MakeOutbox(relay);
-    outbox->SetRouteRefresh([&](const std::string&) { return fresh; });
-    DeliveryRequest request = ToRelay("t1", "m1");
-    request.envelope.recipient_contact_id = "relay:old";
-    request.route_account = "account:bob";
-    outbox->Send(std::move(request));
-    Drain();
-    EXPECT_EQ(relay.SentCount(), 1u);
-  }
+// A record the relay should carry to every device names the peer as its Amp fallback: when the peer is not on our
+// relay, it goes over a link to it instead (a desktop reachable without the relay).
+TEST_F(DeliveryOutboxTest, ARecipientNotOnTheRelayIsReachedOverALinkWhenOneCanBeHad) {
+  FakeRelay relay(1, AppError::Network(Err::Network::RecipientNotRegistered, "recipient_not_registered"));
+  FakeDirect direct(false);
+  DeliveryOutbox outbox([&direct]() -> IDirectMessageClient* { return &direct; });
+  outbox.SetRelayClient(&relay);
+  outbox.SetOnOutcome([this](const DeliveryOutcome& outcome) {
+    std::lock_guard lock(mu_);
+    outcomes_.push_back(outcome);
+  });
+  DeliveryRequest request = ToRelay("t1", "m1");
+  request.amp_fallback_key = "account:bob";
+  outbox.Send(std::move(request));
+  ASSERT_TRUE(WaitFor([&] { return !Outcomes().empty(); }, std::chrono::seconds(5)));
+  EXPECT_TRUE(Outcomes()[0].ok);
+  EXPECT_EQ(Outcomes()[0].transport, MessageTransport::Direct);
+  EXPECT_EQ(direct.Sent(), (std::vector<std::string>{"m1"}));
+}
+
+// MR005: a stranger's send to a recipient that charges is refused with the price; final, and the outcome carries the
+// floor so the chat can show it (pricing P001).
+TEST_F(DeliveryOutboxTest, APaymentRequiredIsFinalAndCarriesTheFloor) {
+  FakeRelay relay(1, AppError::Network(Err::Network::PaymentRequired,
+                                       "Relay send: the recipient charges strangers initiation_floor=250"));
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(ToRelay("t1", "m1"));
+  Drain();
+  ASSERT_EQ(Outcomes().size(), 1u);
+  EXPECT_EQ(Outcomes()[0].failure, SendFailure::PaymentRequired);
+  EXPECT_EQ(Outcomes()[0].initiation_floor, 250);
+  EXPECT_EQ(Outcomes()[0].relay_recipient, "account:bob");
+  EXPECT_FALSE(outbox->SendStartedMs("m1"));
+}
+
+// MR005: a stranger's quota spent is worth trying again — later: a retry before its backoff does not send it.
+TEST_F(DeliveryOutboxTest, AStrangerQuotaRefusalWaitsOutItsBackoff) {
+  FakeRelay relay(1, AppError::Auth(Err::Auth::StrangerQuota, "stranger_quota_exceeded"));
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(ToRelay("t1", "m1"));
+  Drain();
+  ASSERT_EQ(Outcomes().size(), 1u);
+  EXPECT_EQ(Outcomes()[0].failure, SendFailure::RelayRateLimited);
+  EXPECT_TRUE(outbox->SendStartedMs("m1")) << "queued: still under way";
+  outbox->Retry();
+  Drain();
+  EXPECT_EQ(relay.SentCount(), 1u) << "not again before its backoff";
+  EXPECT_TRUE(outbox->SendStartedMs("m1"));
+  outbox->ReleaseHeldFor("account:carol");
+  Drain();
+  EXPECT_EQ(relay.SentCount(), 1u) << "another recipient's grant releases nothing";
+  outbox->ReleaseHeldFor("account:bob");
+  Drain();
+  EXPECT_EQ(relay.SentCount(), 2u) << "Bob's grant arrived: a contact's send now, at once";
+  EXPECT_FALSE(outbox->SendStartedMs("m1"));
+  EXPECT_EQ(StrangerQuotaRetryAfter(1), std::chrono::minutes(1));
+  EXPECT_EQ(StrangerQuotaRetryAfter(3), std::chrono::minutes(4));
+  EXPECT_EQ(StrangerQuotaRetryAfter(12), std::chrono::minutes(16));
 }
 
 TEST_F(DeliveryOutboxTest, ASendThatEndsAtOnceLeavesNothingActive) {
@@ -461,7 +500,7 @@ TEST_F(DeliveryOutboxTest, ASendThatEndsAtOnceLeavesNothingActive) {
   auto outbox = MakeOutbox(relay);
   outbox->Send(ToRelay("t1", "delivered"));
   DeliveryRequest no_route = ToRelay("t1", "no-route");
-  no_route.relay_route.reset();
+  no_route.relay_recipient.reset();
   outbox->Send(std::move(no_route));
   Drain();
   EXPECT_FALSE(outbox->SendStartedMs("delivered"));
@@ -538,7 +577,7 @@ TEST_F(DeliveryOutboxTest, AGroupMessageIsActiveUntilItsLastMemberRequestEnds) {
   auto member = [](const std::string& who) {
     DeliveryRequest request = ToRelay("group-thread", "m1");
     request.group_member = "account:" + who;
-    request.envelope.recipient_contact_id = who;
+    request.envelope.recipient_account_id = who;
     return request;
   };
   outbox->Send(member("bob"));

@@ -28,6 +28,7 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/HubParticipant.h"
 #include "feature/conversations/HubPolicyPrefs.h"
+#include "feature/conversations/RelayGrantPeers.h"
 #include "lib/messaging/ProfileStores.h"
 #include "lib/messaging/IThreadMentionsStore.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
@@ -529,6 +530,10 @@ private:
   void BindCopyAskFamily();
   /** M021 d6: answers another account's ask for our newer card. */
   void BindCardAskFamily();
+  /** The relay grants (MR005): their store, who is granted, the relay client's hooks, the lane family. */
+  void WireRelayGrants();
+  /** Issue or renew the grant of every granted peer that needs one; stop the blocked ones'. On a worker. */
+  void SweepRelayGrantsSoon();
   /** G021: join requests, previews, refusals and confirms by invite link, on the control lane. */
   void BindGroupLinkJoinFamily();
   /** Account signing keys through the directory resolver (promise signatures). */
@@ -544,8 +549,6 @@ private:
   /** Undo BuildMessagingStack / StartMesh without a full hub Shutdown (shutdown race). */
   void DiscardMessagingBringUp();
   void ApplyMeshAdmissionPolicies();
-  /** Drops cached peer routes when the identity registered at another backend than the one in use. */
-  void ForgetPeerRoutesOnBackendChange();
   /** Republish who may learn our address (setting + contacts; projects/privacy T1). UI thread. */
   void PublishAddressDisclosure();
   /** The audience in force: the setting, or everyone in the Node role (P004). */
@@ -627,6 +630,13 @@ private:
   PeerKemKeyStore kem_key_store_;
   std::unique_ptr<IPeerSessionStore> psk_store_;
   std::unique_ptr<IControlLaneSeenStore> control_lane_seen_;
+  /** The relay grants we hold and gave (MR005; profile.db). */
+  std::unique_ptr<IRelayGrantStore> relay_grants_;
+  /** Who we give a grant: contacts not blocked, members of our groups. */
+  std::unique_ptr<RelayGrantPeers> grant_peers_;
+  /** Renews the grants in time (and issues missing ones) while messaging runs. */
+  uint64_t relay_grant_timer_id_ = 0;
+  static constexpr int64_t kRelayGrantSweepIntervalMs = 6LL * 60 * 60 * 1000;
   /** The stores encrypted at rest (the profile's data key goes to them). */
   std::vector<IDekConsumer*> at_rest_;
   std::string profile_db_path_;

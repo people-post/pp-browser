@@ -24,8 +24,7 @@ std::string TruncateForLog(const std::string& text, const size_t max_chars) {
   return text.substr(0, max_chars) + "...";
 }
 
-Error RelayHttpStatusError(const ShareWord action, long status_code, const std::string& body,
-                           const bool not_found_is_final = false) {
+Error RelayHttpStatusError(const ShareWord action, long status_code, const std::string& body) {
   DiagLine("relay.http_failed").Add("action", action).Add("status", status_code).Emit();
   std::string detail = std::string("Relay ") + action.c_str() + " failed with status " + std::to_string(status_code);
   std::string api_message;
@@ -44,10 +43,37 @@ Error RelayHttpStatusError(const ShareWord action, long status_code, const std::
   logging::getLogger("HttpRelayClient").warning << detail;
   // A 4xx (but a timeout or a rate limit) is the relay refusing this request: final, not a hiccup.
   const bool refused = status_code >= 400 && status_code < 500 && status_code != 408 && status_code != 429;
-  if (not_found_is_final && status_code == 404) {
-    return AppError::Network(Err::Network::HttpNotFound, detail); // a send's 404: the recipient is unknown there
-  }
   return AppError::Network(refused ? Err::Network::HttpRejected : Err::Network::HttpError, detail);
+}
+
+/** The relay's machine-readable reason for a refusal (`code` beside `error`); empty when it gave none. */
+std::string RelayErrorCode(const std::string& body) {
+  if (auto json = TryParseObject(body)) {
+    return json->getString("code").value_or("");
+  }
+  return {};
+}
+
+/** A send's refusal the client meets itself (its key, its grant) or the caller handles by kind (MR003 / MR005). */
+Error RelaySendRefusal(const long status, const std::string& code, const std::string& body) {
+  if (status == 404 && code == "recipient_not_registered") {
+    return AppError::Network(Err::Network::RecipientNotRegistered, "Relay send: the recipient is not registered here");
+  }
+  if (status == 402 && code == "payment_required") {
+    int64_t floor = 0;
+    if (auto json = TryParseObject(body)) {
+      floor = json->getIf<int64_t>("initiation_floor").value_or(0);
+    }
+    return AppError::Network(Err::Network::PaymentRequired,
+                             "Relay send: the recipient charges strangers initiation_floor=" + std::to_string(floor));
+  }
+  if (status == 429 && code == "stranger_quota_exceeded") {
+    return AppError::Auth(Err::Auth::StrangerQuota, "Relay send: the recipient's quota for strangers is spent");
+  }
+  if (status == 429) {
+    return AppError::Auth(Err::Auth::RateLimited, "Relay rate limit exceeded");
+  }
+  return RelayHttpStatusError("send", status, body);
 }
 
 } // namespace
@@ -64,6 +90,53 @@ Roe<std::string> HttpRelayClient::SignRelayApiBytes(const std::vector<uint8_t>& 
 
 HttpRelayClient::HttpRelayClient(std::string base_url) : base_url_(std::move(base_url)) {}
 
+void HttpRelayClient::SetSendHooks(RelaySendHooks hooks) {
+  std::lock_guard lock(hooks_mutex_);
+  send_hooks_ = std::move(hooks);
+}
+
+RelaySendHooks HttpRelayClient::SendHooks() const {
+  std::lock_guard lock(hooks_mutex_);
+  return send_hooks_;
+}
+
+Roe<void> HttpRelayClient::PostSend(RelayWireSendRecord& record, const RelayEnvelope& envelope, SendRetry& retry) {
+  retry = SendRetry::None;
+  record.timestamp = util::NowUnixMs();
+  const auto sign_bytes = BuildRelayApiSendSignBytes(record, record.timestamp);
+  if (sign_bytes.empty()) {
+    return Error("Failed to build relay send sign bytes");
+  }
+  auto signature = SignRelayApiBytes(sign_bytes);
+  if (!signature) {
+    return signature.error();
+  }
+  record.signature = *signature;
+
+  const std::string url = base_url_ + "/v1/messages";
+  const auto response =
+      HttpClient::Post(url, DumpJson(RelayWireSendRecordToJson(record)), {{"Content-Type", "application/json"}});
+  if (!response) {
+    return response.error();
+  }
+  const long status = response.value().status_code;
+  if (status >= 200 && status < 300) {
+    return {};
+  }
+  const std::string& body = response.value().body;
+  const std::string code = RelayErrorCode(body);
+  // Which recipient the relay refused (a group fan-out sends one envelope per member).
+  logging::getLogger("HttpRelayClient").warning
+      << "relay send refused status=" << status << " code=" << code << " recipient=" << record.recipient_account_id
+      << " route=" << envelope.route.kind << " grant=" << (record.grant ? "yes" : "no");
+  if (status == 401 && code == "sender_key_required" && record.sender_public_key_b64.empty()) {
+    retry = SendRetry::WithKey; // the relay does not hold our key (we are not registered there): it hashes to us
+  } else if (status == 401 && (code == "grant_expired" || code == "invalid_grant") && record.grant) {
+    retry = SendRetry::WithoutGrant;
+  }
+  return RelaySendRefusal(status, code, body);
+}
+
 Roe<void> HttpRelayClient::Send(const RelayEnvelope& envelope) {
   if (base_url_.empty()) {
     return AppError::Config(Err::Config::MissingKey, "Relay base_url not configured");
@@ -72,44 +145,40 @@ Roe<void> HttpRelayClient::Send(const RelayEnvelope& envelope) {
   if (!record) {
     return record.error();
   }
-  record->timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildRelayApiSendSignBytes(*record, record->timestamp);
-  if (sign_bytes.empty()) {
-    return Error("Failed to build relay send sign bytes");
+  const RelaySendHooks hooks = SendHooks();
+  // A contact's send carries the recipient's grant (MR005); a send to our own mailbox needs none.
+  if (record->recipient_account_id != record->sender_account_id && hooks.grant_for) {
+    record->grant = hooks.grant_for(record->recipient_account_id);
   }
-  auto signature = SignRelayApiBytes(sign_bytes);
-  if (!signature) {
-    return signature.error();
+  // At most one change of each kind: our key once, the grant dropped once.
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    SendRetry retry = SendRetry::None;
+    auto sent = PostSend(*record, envelope, retry);
+    if (sent || retry == SendRetry::None) {
+      return sent;
+    }
+    if (retry == SendRetry::WithKey) {
+      record->sender_public_key_b64 = hooks.sender_public_key ? hooks.sender_public_key() : std::string();
+      if (record->sender_public_key_b64.empty()) {
+        return sent;
+      }
+    } else {
+      // A grant the relay does not take: ask for a new one, and send this once as a stranger meanwhile.
+      if (hooks.grant_refused) {
+        hooks.grant_refused(record->recipient_account_id);
+      }
+      record->grant.reset();
+    }
   }
-  record->signature = *signature;
-
-  const std::string url = base_url_ + "/v1/messages";
-  const auto response =
-      HttpClient::Post(url, DumpJson(RelayWireSendRecordToJson(*record)), {{"Content-Type", "application/json"}});
-  if (!response) {
-    return response.error();
-  }
-  if (response.value().status_code == 429) {
-    return AppError::Auth(Err::Auth::RateLimited, "Relay rate limit exceeded");
-  }
-  if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    // Which recipient the relay refused (a group fan-out sends one envelope per member).
-    logging::getLogger("HttpRelayClient").warning << "relay send rejected status=" << response.value().status_code
-                                                  << " recipient=" << record->recipient_contact_id
-                                                  << " route=" << envelope.route.kind
-                                                  << " body=" << response.value().body.substr(0, 160);
-    return RelayHttpStatusError("send", response.value().status_code, response.value().body,
-                                /*not_found_is_final=*/true);
-  }
-  return {};
+  return Error("Relay send: refused after its retries");
 }
 
-Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_contact_id, const std::string& cursor) {
+Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_account_id, const std::string& cursor) {
   if (base_url_.empty()) {
     return Error("Relay base_url not configured");
   }
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildRelayApiPollInboxSignBytes(requester_contact_id, cursor, timestamp);
+  const auto sign_bytes = BuildRelayApiPollInboxSignBytes(requester_account_id, cursor, timestamp);
   if (sign_bytes.empty()) {
     return Error("Failed to build relay poll sign bytes");
   }
@@ -119,7 +188,7 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
   }
 
   Object body;
-  body.set("requester_contact_id", requester_contact_id);
+  body.set("requester_account_id", requester_account_id);
   body.set("cursor", cursor);
   body.set("timestamp", timestamp);
   body.set("signature", *signature);
@@ -163,7 +232,7 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
         auto envelope = RelayEnvelopeFromInboundRecord(*inbound);
         if (!envelope) {
           // The cursor moves past it: an envelope we cannot read is never seen again.
-          logging::getLogger("HttpRelayClient").warning << "inbox record skipped sender=" << inbound->sender_contact_id
+          logging::getLogger("HttpRelayClient").warning << "inbox record skipped sender=" << inbound->sender_account_id
                                                         << " stream=" << inbound->stream_id << ": "
                                                         << envelope.error().message;
           continue;
@@ -186,7 +255,7 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
   return result;
 }
 
-Roe<RelayDeleteResult> HttpRelayClient::AckInbox(const std::string& requester_contact_id, const std::string& cursor) {
+Roe<RelayDeleteResult> HttpRelayClient::AckInbox(const std::string& requester_account_id, const std::string& cursor) {
   if (base_url_.empty()) {
     return Error("Relay base_url not configured");
   }
@@ -194,7 +263,7 @@ Roe<RelayDeleteResult> HttpRelayClient::AckInbox(const std::string& requester_co
     return Error("Missing inbox cursor");
   }
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildRelayApiAckInboxSignBytes(requester_contact_id, cursor, timestamp);
+  const auto sign_bytes = BuildRelayApiAckInboxSignBytes(requester_account_id, cursor, timestamp);
   if (sign_bytes.empty()) {
     return Error("Failed to build relay ack sign bytes");
   }
@@ -204,7 +273,7 @@ Roe<RelayDeleteResult> HttpRelayClient::AckInbox(const std::string& requester_co
   }
 
   Object body;
-  body.set("requester_contact_id", requester_contact_id);
+  body.set("requester_account_id", requester_account_id);
   body.set("cursor", cursor);
   body.set("timestamp", timestamp);
   body.set("signature", *signature);
@@ -228,7 +297,7 @@ Roe<RelayDeleteResult> HttpRelayClient::AckInbox(const std::string& requester_co
   return result;
 }
 
-Roe<RelayDeleteResult> HttpRelayClient::ClearInbox(const std::string& requester_contact_id,
+Roe<RelayDeleteResult> HttpRelayClient::ClearInbox(const std::string& requester_account_id,
                                                    const std::string& before_created_at) {
   if (base_url_.empty()) {
     return Error("Relay base_url not configured");
@@ -237,7 +306,7 @@ Roe<RelayDeleteResult> HttpRelayClient::ClearInbox(const std::string& requester_
     return Error("Missing before_created_at");
   }
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildRelayApiClearInboxSignBytes(requester_contact_id, before_created_at, timestamp);
+  const auto sign_bytes = BuildRelayApiClearInboxSignBytes(requester_account_id, before_created_at, timestamp);
   if (sign_bytes.empty()) {
     return Error("Failed to build relay clear sign bytes");
   }
@@ -247,7 +316,7 @@ Roe<RelayDeleteResult> HttpRelayClient::ClearInbox(const std::string& requester_
   }
 
   Object body;
-  body.set("requester_contact_id", requester_contact_id);
+  body.set("requester_account_id", requester_account_id);
   body.set("before_created_at", before_created_at);
   body.set("timestamp", timestamp);
   body.set("signature", *signature);

@@ -63,16 +63,24 @@ SendFailure SendFailureFromDirect(const DirectSendErr code) {
 SendFailure SendFailureFromRelay(const Error& error) {
   switch (AppError::CategoryOf(error)) {
     case ErrorCategory::Auth:
-      return static_cast<Err::Auth>(error.code) == Err::Auth::RateLimited ? SendFailure::RelayRateLimited
-                                                                          : SendFailure::RelayRejected;
+      switch (static_cast<Err::Auth>(error.code)) {
+        case Err::Auth::RateLimited:
+        case Err::Auth::StrangerQuota:
+          return SendFailure::RelayRateLimited;
+        default:
+          return SendFailure::RelayRejected;
+      }
     case ErrorCategory::Config:
       return SendFailure::RelayNotConfigured;
     case ErrorCategory::Network:
       switch (static_cast<Err::Network>(error.code)) {
         case Err::Network::HttpError:
         case Err::Network::HttpRejected:
-        case Err::Network::HttpNotFound:
           return SendFailure::RelayRejected;
+        case Err::Network::RecipientNotRegistered:
+          return SendFailure::RecipientNotOnRelay;
+        case Err::Network::PaymentRequired:
+          return SendFailure::PaymentRequired;
         default:
           return SendFailure::RelayUnreachable;
       }
@@ -126,6 +134,10 @@ ShareWord SendFailureWord(const SendFailure failure) {
       return "relay_unreachable";
     case SendFailure::RelayRejected:
       return "relay_rejected";
+    case SendFailure::RecipientNotOnRelay:
+      return "recipient_not_on_relay";
+    case SendFailure::PaymentRequired:
+      return "payment_required";
   }
   return "unknown";
 }
@@ -140,12 +152,21 @@ std::optional<ReceiveFailure> ReceiveFailureFromWire(const std::string& wire) {
 }
 
 std::optional<SendFailure> SendFailureFromWire(const std::string& wire) {
-  static constexpr SendFailure kAll[] = {
-      SendFailure::Unknown,         SendFailure::MeshOff,           SendFailure::NoAddress,
-      SendFailure::BackingOff,      SendFailure::DialBusy,          SendFailure::PeerNoAnswer,
-      SendFailure::HandshakeFailed, SendFailure::DirectUnconfirmed, SendFailure::RelayNotConfigured,
-      SendFailure::RelayBusy,       SendFailure::RelayRateLimited,  SendFailure::RelayUnreachable,
-      SendFailure::RelayRejected};
+  static constexpr SendFailure kAll[] = {SendFailure::Unknown,
+                                         SendFailure::MeshOff,
+                                         SendFailure::NoAddress,
+                                         SendFailure::BackingOff,
+                                         SendFailure::DialBusy,
+                                         SendFailure::PeerNoAnswer,
+                                         SendFailure::HandshakeFailed,
+                                         SendFailure::DirectUnconfirmed,
+                                         SendFailure::RelayNotConfigured,
+                                         SendFailure::RelayBusy,
+                                         SendFailure::RelayRateLimited,
+                                         SendFailure::RelayUnreachable,
+                                         SendFailure::RelayRejected,
+                                         SendFailure::RecipientNotOnRelay,
+                                         SendFailure::PaymentRequired};
   for (const SendFailure failure : kAll) {
     if (wire == SendFailureWord(failure).view()) {
       return failure;

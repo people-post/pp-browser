@@ -41,6 +41,10 @@ enum class SendFailure {
   RelayUnreachable,
   /** The relay answered, and did not take the message. */
   RelayRejected,
+  /** The recipient is not registered on our relay (it left it): nothing there to deliver to (MR003). */
+  RecipientNotOnRelay,
+  /** The recipient charges strangers to open a conversation, and payment is not available yet (P001 / MR005). */
+  PaymentRequired,
 };
 
 /** `failure` as a word for a shareable line (common/Diag.h). */
@@ -52,7 +56,8 @@ SendFailure SendFailureFromDirect(DirectSendErr code);
 
 /**
  * A relay send's failure, by its app error category and code (foundation/error/AppError). A rate
- * limit reads `RelayRateLimited`; `SendFailureForThread` turns it into `RelayBusy` for a trusted peer.
+ * limit (the stranger quota included) reads `RelayRateLimited`; `SendFailureForThread` turns it into `RelayBusy`
+ * for a trusted peer.
  */
 SendFailure SendFailureFromRelay(const Error& error);
 

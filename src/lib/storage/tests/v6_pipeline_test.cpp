@@ -27,8 +27,8 @@ TEST(V6PipelineTest, ClearHistorySetsHistoryFloorToLoadedMax) {
   ASSERT_TRUE(store.SetDek(TestDek()));
 
   DirectChatTarget target;
-  target.peer_identity_kind = "relay_user";
-  target.peer_identity_value = "relay:dana";
+  target.peer_identity_kind = "account";
+  target.peer_identity_value = "account:dana";
   target.channel = ThreadChannel::E2e;
 
   auto thread = store.FindOrCreateDirectThread(target, "contact-dana", "Dana");

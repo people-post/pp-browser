@@ -29,8 +29,8 @@ TEST(PskSessionCoordinatorTest, GenerateImportVerifyAndRotate) {
   PskSessionCoordinator coordinator(store, psk_store);
 
   DirectChatTarget target;
-  target.peer_identity_kind = "relay_user";
-  target.peer_identity_value = "relay:bob456";
+  target.peer_identity_kind = "account";
+  target.peer_identity_value = "account:bob456";
   target.channel = ThreadChannel::E2e;
   auto thread = store.FindOrCreateDirectThread(target, "contact-bob", "Bob");
   ASSERT_TRUE(static_cast<bool>(thread));

@@ -100,7 +100,6 @@ public:
     envelope.envelope_version = kRelayEnvelopeVersion;
     envelope.message_id = message_id;
     envelope.sender_contact_id = "account:peer";
-    envelope.sender_relay_id = "relay:peer";
     envelope.route.kind = "direct";
     envelope.route.channel = channel;
     envelope.sender_seq = seq;
@@ -170,7 +169,6 @@ public:
     envelope.envelope_version = kRelayEnvelopeVersion;
     envelope.message_id = message_id;
     envelope.sender_contact_id = "account:peer";
-    envelope.sender_relay_id = "relay:peer";
     envelope.route.kind = "direct";
     envelope.route.channel = ThreadChannel::E2e;
     envelope.sender_seq = seq;
@@ -215,9 +213,7 @@ public:
     }
     ControlLaneSendParams params;
     params.sender_account_id = "account:peer";
-    params.sender_relay_id = "relay:peer";
     params.peer_account_id = local_account_id;
-    params.route_party = "relay:local";
     params.copies = {ControlLaneCopy{
         .session_epoch = 1, .master_psk = lane_session->master_psk, .key_init_b64 = lane_session->key_init_b64}};
     params.order_key = 1;
@@ -457,7 +453,6 @@ TEST(MessagingCrossCuttingTest, FindOnlyRejectsUnknownSenderThread) {
 
   RelayEnvelope envelope = harness.MakeSignedEnvelope("unknown-peer-msg", 1, "hello", ThreadChannel::E2e);
   envelope.sender_contact_id = "account:stranger";
-  envelope.sender_relay_id = "relay:stranger";
 
   const RelayReceiveOutcome outcome = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);

@@ -23,7 +23,6 @@ ByteVector TestDek() {
 class NoDirectory : public mesh::IDirectoryClient {
 public:
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& /*query*/) override { return None(); }
-  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& /*relay_user_id*/) override { return None(); }
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string& /*account_id*/) override { return None(); }
 
 private:

@@ -50,7 +50,6 @@ vectors: `account_locker_test`, `http_locker_client_test` and www `__tests__/Acc
 
 | Key | Content |
 |-----|---------|
-| `relay_user_id` | the account's relay binding (restore needs it: no locker, no restore) |
 | `nickname` | the account's nickname |
 | `contacts` | address book rows (`ContactToJson`) |
 | `groups` | per group: metadata, roster as identities with roles, the owner-signed roster statement — no messages ([group-chat G013](../../projects/group-chat/DECISIONS.md)). A group the account is out of (left, or removed — the member check found it out) is a tombstone: `group_id`, `owner`, `roster_epoch`, `left: true`. A group the owner dissolved (group-chat G016) is a terminal tombstone: `left: true, dissolved: true` |
@@ -79,7 +78,7 @@ One sync (`AccountLockerWorkflow::Publish`), serialized per device:
    notice syncs 5 s later; since a sync with nothing new writes nothing, the exchange stops.
 
 Triggers: 5 s after a contact, group or card change, or a sibling's nudge; at each start; every 10 min.
-Only an account with a recovery seed and a relay id syncs.
+Only an account with a recovery seed and registered with the relay syncs (the relay keeps a locker for an account registered there, by its Account ID — multi-relay MR001).
 
 Limits: registers use device wall clocks, so only edits made **concurrently** on two devices are
 ordered by clock (an edit made after seeing another always wins). Tombstones (contacts and groups) are kept;
@@ -88,8 +87,8 @@ nothing prunes them yet.
 ## Restore
 
 On a fresh install, a typed phrase → seed → locker (fetched by id alone) → the link bundle the seed
-reconstructs (`RecoveryBundle`: derived account keys, the seed, a fresh DEK, the locker's relay id and
-nickname) imported under the PIN the user chooses → contacts written → once messaging is up: card floors
+reconstructs (`RecoveryBundle`: derived account keys, the seed, a fresh DEK, the locker's
+nickname; the account counts as registered) imported under the PIN the user chooses → contacts written → once messaging is up: card floors
 before anything is received, groups recreated (tombstones skipped) and checking their members, the device announced, the
 locker synced.
 

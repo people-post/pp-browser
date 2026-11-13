@@ -9,7 +9,6 @@ namespace {
 
 TEST(PeopleLookupFailureTest, NotFoundTexts) {
   EXPECT_EQ(ClassifyPeopleLookupError(Error("Account not found")), PeopleLookupFailure::NotFound);
-  EXPECT_EQ(ClassifyPeopleLookupError(Error("Relay user not found")), PeopleLookupFailure::NotFound);
 }
 
 TEST(PeopleLookupFailureTest, ServerErrorsAreUnreachable) {

@@ -32,11 +32,11 @@ public:
 
   void SetAuthSigner(RelayAuthSigner signer) { auth_signer_ = std::move(signer); }
 
-  Roe<BlobPresignResult> Presign(const std::string& relay_user_id, const std::string& content_type,
-                                 uint64_t byte_length, BlobPurpose purpose) override;
-  Roe<void> Retain(const std::string& relay_user_id, const std::string& blob_id) override;
-  Roe<void> Delete(const std::string& relay_user_id, const std::string& blob_id) override;
-  Roe<void> SetProfileIcon(const std::string& relay_user_id, const std::string& url, const std::string& blob_id,
+  Roe<BlobPresignResult> Presign(const std::string& account_id, const std::string& content_type, uint64_t byte_length,
+                                 BlobPurpose purpose) override;
+  Roe<void> Retain(const std::string& account_id, const std::string& blob_id) override;
+  Roe<void> Delete(const std::string& account_id, const std::string& blob_id) override;
+  Roe<void> SetProfileIcon(const std::string& account_id, const std::string& url, const std::string& blob_id,
                            const std::string& kind) override;
   Roe<void> PutUpload(const std::string& upload_url, const std::string& content_type, const std::string& body) override;
   Roe<void> PutUploadFile(const std::string& upload_url, const std::string& content_type, const std::string& path,
@@ -46,16 +46,16 @@ public:
                                uint64_t offset, uint64_t length,
                                const std::function<bool(uint64_t done, uint64_t total)>& progress) override;
 
-  Roe<RelayFileStartResult> FileStart(const std::string& relay_user_id, uint64_t byte_length) override;
-  Roe<RelayFilePartResult> FilePart(const std::string& relay_user_id, const std::string& blob_id,
+  Roe<RelayFileStartResult> FileStart(const std::string& account_id, uint64_t byte_length) override;
+  Roe<RelayFilePartResult> FilePart(const std::string& account_id, const std::string& blob_id,
                                     uint64_t part_number) override;
-  Roe<RelayFileCompleteResult> FileComplete(const std::string& relay_user_id, const std::string& blob_id) override;
-  Roe<void> FileDelete(const std::string& relay_user_id, const std::string& blob_id) override;
-  Roe<RelayFileListResult> FileList(const std::string& relay_user_id, const std::string& status_filter) override;
+  Roe<RelayFileCompleteResult> FileComplete(const std::string& account_id, const std::string& blob_id) override;
+  Roe<void> FileDelete(const std::string& account_id, const std::string& blob_id) override;
+  Roe<RelayFileListResult> FileList(const std::string& account_id, const std::string& status_filter) override;
 
 private:
-  /** POST a signed `/v1/files/<op>` body (relay_user_id, timestamp and signature are added here). */
-  Roe<HttpResponse> PostSignedFiles(const std::string& op, const std::string& relay_user_id, Object body,
+  /** POST a signed `/v1/files/<op>` body (account_id, timestamp and signature are added here). */
+  Roe<HttpResponse> PostSignedFiles(const std::string& op, const std::string& account_id, Object body,
                                     const std::vector<uint8_t>& sign_bytes, int64_t timestamp) const;
 
   Roe<std::string> SignBytes(const std::vector<uint8_t>& sign_bytes) const;

@@ -16,6 +16,7 @@ pp_browser_add_lib_library(pp_lib_storage
     SqlitePeerCardStore.cpp
     SqlitePeerSessionStore.cpp
     SqlitePostStore.cpp
+    SqliteRelayGrantStore.cpp
     SqliteThreadDb.cpp
     SqliteThreadLocalPrefsStore.cpp
     SqliteThreadMentionsStore.cpp

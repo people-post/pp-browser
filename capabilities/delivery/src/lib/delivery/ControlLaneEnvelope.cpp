@@ -76,8 +76,7 @@ Roe<RelayEnvelope> BuildControlLaneEnvelope(const ControlLaneSendParams& params,
   if (control.content_type != ChatContentType::System || control.id.empty()) {
     return Error("control lane carries identified system messages only");
   }
-  if (params.sender_account_id.empty() || params.sender_device.empty() || params.peer_account_id.empty() ||
-      params.route_party.empty() || !sign) {
+  if (params.sender_account_id.empty() || params.sender_device.empty() || params.peer_account_id.empty() || !sign) {
     return Error("control lane send missing a party");
   }
   if (params.copies.empty() || params.copies.size() > kMaxRelayCopies) {
@@ -100,7 +99,6 @@ Roe<RelayEnvelope> BuildControlLaneEnvelope(const ControlLaneSendParams& params,
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = control.id;
-  envelope.sender_relay_id = params.sender_relay_id;
   envelope.sender_contact_id = params.sender_account_id;
   envelope.sender_device = params.sender_device;
   envelope.route.kind = kRelayRouteControl;
@@ -118,11 +116,11 @@ Roe<RelayEnvelope> BuildControlLaneEnvelope(const ControlLaneSendParams& params,
     envelope.body.e2e.copies = std::move(copies);
   }
   envelope.order_key = params.order_key;
-  // Per sending device: an account's devices share its `relay:` id, and the relay keeps one row per sender,
+  // Per sending device: an account's devices share its Account ID, and the relay keeps one row per sender,
   // stream and index (M022).
   envelope.stream_key =
-      BuildControlRelayStreamKey(params.sender_relay_id, params.route_party) + ":from:" + params.sender_device;
-  envelope.recipient_contact_id = params.route_party;
+      BuildControlRelayStreamKey(params.sender_account_id, params.peer_account_id) + ":from:" + params.sender_device;
+  envelope.recipient_account_id = params.peer_account_id;
   envelope.timestamp = control.timestamp;
   auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
   if (!sign_bytes) {

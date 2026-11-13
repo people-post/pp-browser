@@ -60,14 +60,13 @@ protected:
     ASSERT_TRUE(identity_->SetDek(TestDek()));
     ASSERT_TRUE(identity_->LoadOrCreate());
     LocalIdentity updated = *identity_->Get();
-    updated.relay_user_id = "relay:local";
     updated.registered = true;
     ASSERT_TRUE(identity_->Update(updated));
 
     contacts_ = std::make_unique<ContactsStore>(dir_.string());
     Contact peer;
     peer.id = "contact-peer";
-    peer.remote.ids.push_back(mesh::ContactId{.kind = mesh::ContactIdKind::RelayUser, .value = "relay:peer"});
+    peer.remote.ids.push_back(mesh::ContactId{.kind = mesh::ContactIdKind::Account, .value = "account:peer"});
     peer.local.display_name = "Peer";
     SyncContactMirrors(peer);
     ASSERT_TRUE(contacts_->Upsert(peer));
@@ -77,7 +76,7 @@ protected:
     direct_.channel = ThreadChannel::E2e;
     direct_.participant_contact_ids = {"contact-peer"};
     direct_.peer_identity_kind = "account";
-    direct_.peer_identity_value = "account-peer";
+    direct_.peer_identity_value = "account:peer";
 
     group_ = direct_;
     group_.id = "thread-group";

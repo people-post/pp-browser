@@ -60,10 +60,7 @@ std::vector<std::string> DirectoryQueryKeys(const DirectoryConfig& directory, co
 /** A directory row as the twin lists it (a node it knows of). */
 mesh::MeshNodeHit NodeHitFromDirectoryRow(const mesh::MeshDirectoryNode& row) {
   mesh::MeshNodeHit hit;
-  hit.relay_user_id = row.account_id.empty() ? row.peer_id : row.account_id;
-  if (!row.account_id.empty()) {
-    hit.account_id = row.account_id;
-  }
+  hit.account_id = row.account_id;
   if (!row.nickname.empty()) {
     hit.nickname = row.nickname;
   }

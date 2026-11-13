@@ -15,11 +15,10 @@ TEST(FailoverDirectoryClientTest, FallsBackWhenTheFirstBackendFails) {
   class FakeHttpDirectory : public mesh::IDirectoryClient {
   public:
     Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string&) override { return Error("unused"); }
-    Roe<mesh::DirectoryHit> LookupRelayUser(const std::string&) override { return Error("unused"); }
     Roe<mesh::DirectoryHit> LookupByAccount(const std::string&) override { return Error("unused"); }
     Roe<std::vector<mesh::MeshNodeHit>> ListMeshNodes() override {
       mesh::MeshNodeHit hit;
-      hit.relay_user_id = "from-http";
+      hit.account_id = "account:ok";
       hit.entity_kind = "mesh_node";
       return std::vector<mesh::MeshNodeHit>{hit};
     }
@@ -30,7 +29,6 @@ TEST(FailoverDirectoryClientTest, FallsBackWhenTheFirstBackendFails) {
     Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string&) override {
       return Error("amp person unsupported");
     }
-    Roe<mesh::DirectoryHit> LookupRelayUser(const std::string&) override { return Error("amp person unsupported"); }
     Roe<mesh::DirectoryHit> LookupByAccount(const std::string&) override { return Error("amp person unsupported"); }
     Roe<std::vector<mesh::MeshNodeHit>> ListMeshNodes() override { return Error("amp unavailable"); }
   };
@@ -42,7 +40,7 @@ TEST(FailoverDirectoryClientTest, FallsBackWhenTheFirstBackendFails) {
   auto nodes = failover.ListMeshNodes();
   ASSERT_TRUE(static_cast<bool>(nodes)) << nodes.error().message;
   ASSERT_EQ(nodes->size(), 1u);
-  EXPECT_EQ(nodes->front().relay_user_id, "from-http");
+  EXPECT_EQ(nodes->front().account_id, "account:ok");
 }
 
 } // namespace

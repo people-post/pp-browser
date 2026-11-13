@@ -19,12 +19,12 @@ namespace pbr {
 void RankDirectoryHits(std::vector<mesh::DirectoryHit>& hits, const std::string& query);
 
 /**
- * Canonical exact-lookup id for a query: trims whitespace; "account:…" / "relay:…" kept as is; a bare
+ * Canonical exact-lookup id for a query: trims whitespace; "account:…" kept as is; a bare
  * 43-char base64url token (an account id without its prefix) becomes "account:" + token; else nullopt.
  */
 std::optional<std::string> NormalizeExactPeopleId(std::string_view query);
 
-/** True when the trimmed query starts with "account:" / "relay:" (typed by the user, not a synthesized bare token). */
+/** True when the trimmed query starts with "account:" (typed by the user, not a synthesized bare token). */
 bool HasExactIdPrefix(std::string_view query);
 
 /**

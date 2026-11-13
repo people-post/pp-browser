@@ -99,7 +99,17 @@ void BackendClientSet::SetSigner(RelayAuthSigner signer) {
   WireSigner();
 }
 
+void BackendClientSet::SetRelaySendHooks(RelaySendHooks hooks) {
+  send_hooks_ = std::move(hooks);
+  if (relay_) {
+    relay_->SetSendHooks(send_hooks_);
+  }
+}
+
 void BackendClientSet::WireSigner() {
+  if (relay_) {
+    relay_->SetSendHooks(send_hooks_);
+  }
   if (!signer_) {
     return;
   }

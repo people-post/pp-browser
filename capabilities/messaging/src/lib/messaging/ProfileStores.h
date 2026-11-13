@@ -4,6 +4,7 @@
 #include "foundation/crypto/IDekConsumer.h"
 #include "lib/delivery/IControlLaneSeenStore.h"
 #include "lib/delivery/IPeerSessionStore.h"
+#include "lib/delivery/IRelayGrantStore.h"
 #include "lib/messaging/IGroupInviteLinkStore.h"
 #include "lib/messaging/IGroupRosterStore.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
@@ -29,6 +30,8 @@ struct ProfileStores {
   std::unique_ptr<IThreadStore> threads;
   std::unique_ptr<IPeerSessionStore> peer_sessions;
   std::unique_ptr<IControlLaneSeenStore> control_lane_seen;
+  /** The relay grants we hold and gave (multi-relay MR005); none: sends go as a stranger's, none are issued. */
+  std::unique_ptr<IRelayGrantStore> relay_grants;
   std::unique_ptr<IGroupRosterStore> rosters;
   /** The invite links this device made, their secrets encrypted (G021); none: links are made but not shown again. */
   std::unique_ptr<IGroupInviteLinkStore> invite_links;

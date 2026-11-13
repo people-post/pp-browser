@@ -29,11 +29,15 @@ struct DeliveryRequest {
   std::string message_id;
   /** Amp dial key of the peer (its account); empty: relay only. */
   std::string amp_peer_key;
-  /** The peer's Brief `relay:` route; none: Amp only. */
-  std::optional<std::string> relay_route;
-  /** The account `relay_route` was resolved for; with a route refresh set, a relay that does not know the recipient is asked again. */
-  std::string route_account;
-  /** Time-critical signaling (a call's): the critical worker lane, and the relay first when a route is known. */
+  /** The peer's Account ID when the relay may carry it (its inbox, multi-relay MR001); none: Amp only. */
+  std::optional<std::string> relay_recipient;
+  /**
+   * The account to dial over Amp when the relay says it does not know the recipient (`recipient_not_registered`: a
+   * peer reachable without our relay); empty: none. A record the relay should carry to every device names it here,
+   * not in `amp_peer_key`.
+   */
+  std::string amp_fallback_key;
+  /** Time-critical signaling (a call's): the critical worker lane, and the relay first when it may carry it. */
   bool critical_lane = false;
   /** One member's copy of a group message (their account): its outcome is that member's, not the row's. */
   std::string group_member;
@@ -55,15 +59,20 @@ struct DeliveryOutcome {
   /** As the request's. */
   std::string group_member;
   std::string copy_device;
+  /** The relay recipient (an Account ID) the outcome is for; empty when the relay was not tried. */
+  std::string relay_recipient;
+  /** `failure` PaymentRequired: the recipient's initiation floor the relay named (pp_credit minor units). */
+  int64_t initiation_floor = 0;
 };
 
 /**
  * Gets envelopes to peers: Amp first when the peer is reachable that way (DirectSendTriesAmpFirst:
- * the critical lane prefers a known relay route, and also sends over a live link at once —
- * ControlAlsoGoesDirect), else — or after a direct failure — the Brief relay. A failed relay send is
- * queued and retried when the inbox syncs (OutboxRetryAgain), except on the control lane: signaling is
- * live, so it is sent again on a short backoff while it is fresh (ControlRetryAfter). Sends run on the
- * worker pool, never on the caller's thread.
+ * the critical lane prefers the relay, and also sends over a live link at once — ControlAlsoGoesDirect),
+ * else — or after a direct failure — the Brief relay, to the peer's Account ID. A failed relay send is
+ * queued and retried when the inbox syncs (OutboxRetryAgain; one refused for the recipient's stranger quota
+ * not before its backoff, StrangerQuotaRetryAfter), except on the control lane: signaling is live, so it is
+ * sent again on a short backoff while it is fresh (ControlRetryAfter). Sends run on the worker pool, never
+ * on the caller's thread.
  *
  * Thread-safe. The outcome handler runs on a worker: the owner updates its rows there, before it
  * tells the UI, so a retract or cancel cannot race the mark.
@@ -77,20 +86,18 @@ public:
 
   void SetRelayClient(IRelayClient* relay) { relay_ = relay; }
   void SetOnOutcome(std::function<void(const DeliveryOutcome&)> handler) { on_outcome_ = std::move(handler); }
-  /**
-   * Asks for the current `relay:` route of an account, dropping what is cached for it. When the relay answers a send
-   * with "no such recipient" (RelayRecipientUnknown) and the route has changed, the envelope is addressed to the new
-   * route and sent once more in that attempt.
-   */
-  void SetRouteRefresh(std::function<std::optional<std::string>(const std::string& account_id)> refresh) {
-    route_refresh_ = std::move(refresh);
-  }
   /** A thread whose sends are paused (e.g. its E2E session is compromised): its retries are dropped. */
   void SetThreadPaused(std::function<bool(const std::string& thread_id)> paused) { paused_ = std::move(paused); }
 
   void Send(DeliveryRequest request);
   /** Send what is queued again (when the inbox is synced: the relay is likely reachable). */
   void Retry();
+  /**
+   * `recipient`'s grant to us just arrived: what its stranger quota held back is due now (a contact's send) — the
+   * control-lane retries first, in the order they were refused (a call invite before its later `call_ended`), then
+   * the queue is sent again. Blocking (relay sends), so off the UI thread.
+   */
+  void ReleaseHeldFor(const std::string& recipient);
   /**
    * Drop a message's queued sends and its control-lane retries. A transcript row's requests sent until now start no
    * new attempt either (a first send on its way, an item a Retry holds): one that fails is not queued again, and
@@ -123,15 +130,21 @@ private:
     std::string amp_peer_key;
     std::string group_member;
     std::string copy_device;
-    std::string route_account;
+    /** The relay inbox it goes to (the request's relay_recipient). */
+    std::string relay_recipient;
+    /** Not tried again before this (Unix ms): a send refused for the recipient's stranger quota waits it out. */
+    int64_t not_before_ms = 0;
     /** Its request's (BeginActive): a Cancel after the Send stops it. */
     uint64_t serial = 0;
   };
 
-  /** A control-lane retry waiting on its timer. */
+  /** A control-lane retry waiting on its timer: the item it sends (taken by the timer, or by ReleaseHeldFor). */
   struct ControlRetry {
     uint64_t timer_id = 0;
     std::string message_id;
+    Pending item;
+    /** Refused for the recipient's stranger quota: its grant arriving sends it at once. */
+    bool quota_held = false;
   };
 
   /** An outcome after which the request goes on (failed, queued for a retry). */
@@ -149,8 +162,14 @@ private:
   /** Queued for a retry; false (and the request ended, nothing reported) when it was cancelled. */
   bool Enqueue(Pending pending);
   bool EnqueueLocked(Pending pending);
-  /** relay_->Send; on "no such recipient" the route is refreshed and, if it changed, `envelope` is re-addressed and sent once more. */
-  Roe<void> RelaySend(IRelayClient& relay, RelayEnvelope& envelope, const std::string& route_account);
+  /** The outcome of a failed relay send to `recipient`: its notice, and the floor a `payment_required` named. */
+  static DeliveryOutcome RelayFailureOutcome(DeliveryOutcome outcome, const std::string& recipient,
+                                             const Error& failure);
+  /**
+   * The relay does not know `request`'s recipient (`relay_failure`): its `amp_fallback_key` over a link, when one can
+   * be had — then true, and the outcome is reported when that send ends.
+   */
+  bool TryAmpFallback(const DeliveryRequest& request, uint64_t serial, const Error& relay_failure);
   /** Schedule the control-lane send again after `failure` (ControlRetryAfter); false: given up. */
   bool RetryControlLater(Pending item, const Error& failure);
   /** A control-lane retry's turn: over the relay, again later when that fails. */
@@ -161,7 +180,6 @@ private:
   IRelayClient* relay_ = nullptr;
   std::function<void(const DeliveryOutcome&)> on_outcome_;
   std::function<bool(const std::string&)> paused_;
-  std::function<std::optional<std::string>(const std::string&)> route_refresh_;
   /** A row's sends under way: when the first started, and how many requests have not ended. */
   struct ActiveSend {
     int64_t started_ms = 0;

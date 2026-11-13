@@ -78,7 +78,6 @@ Roe<ChatContactCardFields> ContactCardExchange::CardFor(const std::string& conta
     fields.display_name = account_id;
   }
   fields.card_json = DumpJson(CarriedCardJson(**kept));
-  fields.relay_user_id = IdOfKind(contact, mesh::ContactIdKind::RelayUser);
   return fields;
 }
 
@@ -99,7 +98,7 @@ Roe<Contact> ContactCardExchange::Add(const ChatContactCardFields& card, int64_t
     return existing.error();
   }
   if (*existing) {
-    return **existing; // known already: its keys are refreshed above, its route stays its own
+    return **existing; // known already: its keys are refreshed above
   }
   mesh::DirectoryHit hit;
   hit.hit_id = account_id;
@@ -107,9 +106,6 @@ Roe<Contact> ContactCardExchange::Add(const ChatContactCardFields& card, int64_t
   hit.display_name = card.display_name;
   hit.nickname = kept.nickname.empty() ? card.display_name : kept.nickname;
   hit.ids = {{mesh::ContactIdKind::Account, account_id, true}};
-  if (!card.relay_user_id.empty()) {
-    hit.ids.push_back({mesh::ContactIdKind::RelayUser, card.relay_user_id, false});
-  }
   for (const std::string& peer_id : kept.devices) {
     hit.endpoints.push_back(mesh::DirectoryEndpoint{.peer_id = peer_id});
   }

@@ -45,8 +45,8 @@ protected:
     return SignAccountCard(card, [&account](const ByteVector& bytes) { return account.Sign(bytes); }).value();
   }
 
-  ChatContactCardFields Shared(const std::string& card_json, const std::string& relay = "relay:bob") {
-    return ChatContactCardFields{.display_name = "Bob from work", .card_json = card_json, .relay_user_id = relay};
+  ChatContactCardFields Shared(const std::string& card_json) {
+    return ChatContactCardFields{.display_name = "Bob from work", .card_json = card_json};
   }
 
   std::filesystem::path dir_;
@@ -61,7 +61,7 @@ protected:
   test::TestAccount mallory_ = test::TestAccount::Make();
 };
 
-TEST_F(ContactCardExchangeTest, AddingASignedCardKeepsTheKeysDevicesAndRoute) {
+TEST_F(ContactCardExchangeTest, AddingASignedCardKeepsTheKeysAndDevices) {
   const AccountCard card = SignedCard(bob_, test::Devices({"QmBobPhone"}));
   auto contact = exchange_->Add(Shared(DumpJson(AccountCardToJson(card))), kNow);
   ASSERT_TRUE(contact) << contact.error().message;
@@ -78,8 +78,8 @@ TEST_F(ContactCardExchangeTest, AddingASignedCardKeepsTheKeysDevicesAndRoute) {
     }
     return false;
   };
-  EXPECT_TRUE(has(mesh::ContactIdKind::Account, bob_.account_id));
-  EXPECT_TRUE(has(mesh::ContactIdKind::RelayUser, "relay:bob"));
+  EXPECT_TRUE(has(mesh::ContactIdKind::Account, bob_.account_id)) << "its Account ID is its relay inbox (MR001)";
+  EXPECT_EQ(contact->remote.ids.size(), 2u) << "the account and its device, nothing else";
   const std::string kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   EXPECT_TRUE(kem_.Get(kind, bob_.account_id).has_value()) << "Bob can be written to with no directory";
   EXPECT_TRUE(signing_.Get(kind, bob_.account_id).has_value());
@@ -95,15 +95,6 @@ TEST_F(ContactCardExchangeTest, AForgedCardAddsNobody) {
   EXPECT_FALSE(contacts_->FindByIdentity(bob_.account_id, mesh::ContactIdKind::Account).value().has_value());
 }
 
-TEST_F(ContactCardExchangeTest, ASharersRelayHintDoesNotRerouteAKnownContact) {
-  ASSERT_TRUE(exchange_->Add(Shared(DumpJson(KeyCardToJson(bob_.Card())), "relay:bob"), kNow));
-  auto again = exchange_->Add(Shared(DumpJson(KeyCardToJson(bob_.Card())), "relay:mallory"), kNow);
-  ASSERT_TRUE(again);
-  for (const auto& id : again->remote.ids) {
-    EXPECT_NE(id.value, "relay:mallory");
-  }
-}
-
 TEST_F(ContactCardExchangeTest, AContactIsSharedWithItsAccountsNewestSignedCard) {
   const AccountCard card = SignedCard(bob_, test::Devices({"QmBobPhone"}));
   auto contact = exchange_->Add(Shared(DumpJson(AccountCardToJson(card))), kNow);
@@ -111,7 +102,6 @@ TEST_F(ContactCardExchangeTest, AContactIsSharedWithItsAccountsNewestSignedCard)
   auto shared = exchange_->CardFor(contact->id);
   ASSERT_TRUE(shared) << shared.error().message;
   EXPECT_EQ(shared->display_name, "bob") << "a card carries their nickname, never our remark";
-  EXPECT_EQ(shared->relay_user_id, "relay:bob");
   auto passed_on = AccountCardFromJson(*TryParseObject(shared->card_json));
   ASSERT_TRUE(passed_on) << "the signed card, passed on as received";
   EXPECT_TRUE(VerifyAccountCard(*passed_on, kNow));

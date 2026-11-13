@@ -63,7 +63,7 @@ protected:
     auto minted = identity_->LoadOrCreate();
     ASSERT_TRUE(minted);
     LocalIdentity registered = *minted;
-    registered.relay_user_id = "relay:alice";
+    registered.registered = true;
     registered.nickname = "alice";
     registered.registered = true;
     ASSERT_TRUE(identity_->Update(registered));
@@ -114,7 +114,6 @@ TEST_F(AccountLockerWorkflowTest, ASavedFileRestoresTheAccountWhenTheProviderHas
   auto restored = Restore({*file});
   ASSERT_TRUE(restored) << restored.error().message;
   ASSERT_TRUE(restored->has_value());
-  EXPECT_EQ((*restored)->state.relay_user_id, "relay:alice");
   EXPECT_EQ(BobsName(**restored), "Bob");
 }
 

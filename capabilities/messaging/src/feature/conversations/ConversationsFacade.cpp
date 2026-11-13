@@ -1021,6 +1021,11 @@ bool ConversationsFacade::IsInitiationOutboundBlocked(const std::string& peer_id
   return !CanPayAmount(offer);
 }
 
+int64_t ConversationsFacade::InitiationFloorOf(const std::string& peer_identity) {
+  auto* store = hub_.InitiationBilling();
+  return store && !peer_identity.empty() ? store->Get(peer_identity).floor_minor : 0;
+}
+
 Roe<void> ConversationsFacade::SendChargeRequired(const std::string& peer_identity,
                                                   const std::optional<int64_t> floor_minor) {
   return hub_.SendChargeRequired(peer_identity, floor_minor);

@@ -351,7 +351,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
                  out.set("ready", view.ready);
                  out.set("nickname", view.nickname);
                  out.set("peer_id", view.peer_id);
-                 out.set("relay_id", view.relay_id);
+                 out.set("account_id", view.account_id);
                  out.set("registered", view.registered);
                  out.set("registration_status", view.registration_status);
                  out.set("registration_expires", view.registration_expires);

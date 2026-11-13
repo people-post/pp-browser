@@ -8,6 +8,10 @@
 
 #include "common/chat/MessagingLimits.h"
 #include "common/chat/RelayStreamKey.h"
+
+#include <climits>
+#include <cstdint>
+#include <string_view>
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/error/AppError.h"
 
@@ -268,7 +272,6 @@ RelayEnvelope EnvelopeFrom(const ThreadMessage& message, const EnvelopeSender& s
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = message.id;
-  envelope.sender_relay_id = sender.relay_user_id;
   envelope.sender_contact_id = sender.account_id;
   envelope.sender_device = sender.device;
   envelope.order_key = order_key;
@@ -313,13 +316,13 @@ RelayCopy DeviceCopy(const std::string& device, PairCopy pair_copy) {
 }
 
 RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
-                                  const ThreadChannel channel, const std::string& route_party,
+                                  const ThreadChannel channel, const std::string& recipient,
                                   std::vector<RelayCopy> copies, const uint64_t order_key) {
   RelayEnvelope envelope = EnvelopeFrom(message, sender, std::move(copies), order_key);
   envelope.route.kind = "direct";
   envelope.route.channel = channel;
-  envelope.stream_key = BuildDeviceRelayStreamKey(sender.relay_user_id, route_party, channel, sender.device);
-  envelope.recipient_contact_id = route_party;
+  envelope.stream_key = BuildDeviceRelayStreamKey(sender.account_id, recipient, channel, sender.device);
+  envelope.recipient_account_id = recipient;
   envelope.relay_wake_hint = SanitizeWakeHint(envelope.message_id);
   return envelope;
 }
@@ -334,12 +337,11 @@ bool ControlAlsoGoesDirect(const bool peer_connected, const bool has_relay_route
 
 RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
                                        const std::string& group_id, const std::string& recipient,
-                                       const std::string& route_party, std::vector<RelayCopy> copies,
-                                       const uint64_t order_key) {
+                                       std::vector<RelayCopy> copies, const uint64_t order_key) {
   RelayEnvelope envelope = EnvelopeFrom(message, sender, std::move(copies), order_key);
   envelope.route.kind = "group";
   envelope.stream_key = BuildGroupRelayStreamKey(group_id, sender.account_id, recipient, sender.device);
-  envelope.recipient_contact_id = route_party;
+  envelope.recipient_account_id = recipient;
   envelope.relay_wake_hint = SanitizeWakeHint(envelope.message_id);
   return envelope;
 }
@@ -350,21 +352,61 @@ bool OutboxSendStillWanted(const bool control_lane, const int64_t age_ms, const 
 
 namespace {
 
+bool IsNetworkCode(const Error& failure, const Err::Network code) {
+  return AppError::CategoryOf(failure) == ErrorCategory::Network && static_cast<Err::Network>(failure.code) == code;
+}
+
 /** The relay refused the request itself (#391): the same bytes would be refused again. */
 bool RelayRefused(const Error& failure) {
-  return AppError::CategoryOf(failure) == ErrorCategory::Network &&
-         (static_cast<Err::Network>(failure.code) == Err::Network::HttpRejected ||
-          static_cast<Err::Network>(failure.code) == Err::Network::HttpNotFound);
+  return IsNetworkCode(failure, Err::Network::HttpRejected) ||
+         IsNetworkCode(failure, Err::Network::RecipientNotRegistered) ||
+         IsNetworkCode(failure, Err::Network::PaymentRequired);
 }
 
 } // namespace
 
-bool RelayRecipientUnknown(const Error& failure) {
-  return AppError::CategoryOf(failure) == ErrorCategory::Network &&
-         static_cast<Err::Network>(failure.code) == Err::Network::HttpNotFound;
+bool RelayRecipientNotRegistered(const Error& failure) {
+  return IsNetworkCode(failure, Err::Network::RecipientNotRegistered);
+}
+
+bool RelayPaymentRequired(const Error& failure) {
+  return IsNetworkCode(failure, Err::Network::PaymentRequired);
+}
+
+int64_t RelayPaymentRequiredFloor(const Error& failure) {
+  if (!RelayPaymentRequired(failure)) {
+    return 0;
+  }
+  constexpr std::string_view kKey = "initiation_floor=";
+  const size_t at = failure.message.rfind(kKey);
+  if (at == std::string::npos) {
+    return 0;
+  }
+  int64_t floor = 0;
+  for (size_t i = at + kKey.size(); i < failure.message.size(); ++i) {
+    const char c = failure.message[i];
+    if (c < '0' || c > '9' || floor > (INT64_MAX - 9) / 10) {
+      break;
+    }
+    floor = floor * 10 + (c - '0');
+  }
+  return floor;
+}
+
+bool RelayStrangerQuota(const Error& failure) {
+  return AppError::CategoryOf(failure) == ErrorCategory::Auth &&
+         static_cast<Err::Auth>(failure.code) == Err::Auth::StrangerQuota;
+}
+
+std::chrono::milliseconds StrangerQuotaRetryAfter(const int attempts) {
+  const int doublings = std::clamp(attempts - 1, 0, 4);
+  return std::chrono::minutes(1) * (1 << doublings);
 }
 
 bool OutboxRetryAgain(const int attempts, const Error& failure) {
+  if (RelayStrangerQuota(failure)) {
+    return attempts < kMaxStrangerQuotaAttempts;
+  }
   return !RelayRefused(failure) && attempts < kMaxOutboxRetryAttempts;
 }
 

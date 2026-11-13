@@ -189,7 +189,7 @@ struct Device {
     cards[account] = SignAccountCard(card, [this](const ByteVector& bytes) { return keys.Sign(bytes); }).value();
   }
 
-  EnvelopeSender Sender() const { return EnvelopeSender{"relay:" + tag, account, keys.device.peer_id}; }
+  EnvelopeSender Sender() const { return EnvelopeSender{account, keys.device.peer_id}; }
 
   Thread DirectThreadTo(const Device& peer, const ThreadChannel channel) {
     DirectChatTarget target;
@@ -214,7 +214,7 @@ struct Device {
     if (!sealed) {
       return sealed.error();
     }
-    RelayEnvelope envelope = BuildDirectEnvelope(*appended, Sender(), thread.channel, "relay:" + peer.tag,
+    RelayEnvelope envelope = BuildDirectEnvelope(*appended, Sender(), thread.channel, "account:" + peer.tag,
                                                  {AccountCopy(*appended, std::move(*sealed))}, NextRelayOrderKey());
     test::SignEnvelopeAs(keys, envelope);
     return envelope;
@@ -268,7 +268,7 @@ struct Device {
                          .key_init_b64 = encrypted->copies.front()->key_init_b64,
                          .payload_b64 = encrypted->copies.front()->payload_b64};
     RelayEnvelope envelope =
-        BuildGroupMemberEnvelope(message, Sender(), group_id, to.account, to.account, {copy}, NextRelayOrderKey());
+        BuildGroupMemberEnvelope(message, Sender(), group_id, to.account, {copy}, NextRelayOrderKey());
     test::SignEnvelopeAs(keys, envelope);
     return envelope;
   }
@@ -283,10 +283,8 @@ struct Device {
     EXPECT_TRUE(opened);
     ControlLaneSendParams params;
     params.sender_account_id = claimed_account.empty() ? account : claimed_account;
-    params.sender_relay_id = "relay:" + tag;
     params.sender_device = keys.device.peer_id;
     params.peer_account_id = to.account;
-    params.route_party = "relay:" + to.tag;
     params.copies = {
         ControlLaneCopy{.session_epoch = 1, .master_psk = opened->master_psk, .key_init_b64 = opened->key_init_b64}};
     params.order_key = NextRelayOrderKey();

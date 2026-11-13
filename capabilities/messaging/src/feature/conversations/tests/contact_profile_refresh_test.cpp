@@ -17,15 +17,14 @@ public:
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string&) override {
     return std::vector<mesh::DirectoryHit>{};
   }
-  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override {
+  Roe<mesh::DirectoryHit> LookupByAccount(const std::string& account_id) override {
     ++lookups;
-    last_relay_id = relay_user_id;
+    last_account_id = account_id;
     return answer;
   }
-  Roe<mesh::DirectoryHit> LookupByAccount(const std::string&) override { return Error("unused"); }
 
   int lookups = 0;
-  std::string last_relay_id;
+  std::string last_account_id;
   mesh::DirectoryHit answer;
 };
 
@@ -42,8 +41,7 @@ protected:
     mesh::DirectoryHit hit;
     hit.account_id = "account:ada";
     hit.nickname = "Ada";
-    hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true},
-               {mesh::ContactIdKind::RelayUser, "relay:ada", false}};
+    hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true}};
     hit.icon = mesh::ProfileIconRef{"https://cdn.example/avatars/old.png", "old", ""};
     auto added = contacts_->AddFromDirectoryHit(hit);
     ASSERT_TRUE(static_cast<bool>(added));
@@ -79,7 +77,7 @@ TEST_F(ContactProfileRefreshTest, AStaleContactTakesTheNewNicknameAndPhotoAndKee
   auto result = refresh_->RefreshIfStale(id_, kNow);
   EXPECT_TRUE(result.looked_up);
   EXPECT_EQ(directory_.lookups, 1);
-  EXPECT_EQ(directory_.last_relay_id, "relay:ada");
+  EXPECT_EQ(directory_.last_account_id, "account:ada") << "by Account ID (MR001)";
   ASSERT_TRUE(result.updated.has_value());
   EXPECT_EQ(result.updated->remote.nickname, "Ada L.");
   ASSERT_TRUE(result.updated->remote.icon.has_value());

@@ -15,6 +15,7 @@
 #include "common/thread/IThreadStore.h"
 #include "foundation/crypto/IDekConsumer.h"
 #include "lib/delivery/IControlLaneSeenStore.h"
+#include "lib/delivery/IRelayGrantStore.h"
 #include "lib/delivery/IPeerSessionStore.h"
 
 #include <functional>
@@ -196,6 +197,22 @@ public:
 private:
   std::mutex mutex_;
   std::set<std::pair<std::string, std::string>> seen_;
+};
+
+/** IRelayGrantStore in memory. */
+class InMemoryRelayGrantStore : public IRelayGrantStore {
+public:
+  Roe<std::optional<RelayGrant>> Received(const std::string& recipient_account_id) override;
+  Roe<void> PutReceived(const RelayGrant& grant) override;
+  Roe<void> DropReceived(const std::string& recipient_account_id) override;
+  Roe<std::optional<Issued>> IssuedTo(const std::string& sender_account_id) override;
+  Roe<void> PutIssued(const Issued& issued) override;
+  Roe<void> DropIssued(const std::string& sender_account_id) override;
+
+private:
+  std::mutex mutex_;
+  std::map<std::string, RelayGrant> received_;
+  std::map<std::string, Issued> issued_;
 };
 
 } // namespace pbr

@@ -15,11 +15,14 @@ namespace pbr {
 
 /**
  * What a step works with: the database, and the profile's data key (the ladder runs after unlock, so a step may
- * rewrite encrypted columns; none does yet). `dek` is null only where no key is given (a store's own tests).
+ * rewrite encrypted columns; none does yet). `dek` is null only where no key is given (a store's own tests). A
+ * thread.db's step also gets the Account ID of its chat's peer (`thread_peer_account`; empty for a group chat or a
+ * thread the catalog does not name one for).
  */
 struct SqliteMigrationContext {
   sqlite3* db = nullptr;
   const ByteVector* dek = nullptr;
+  std::string thread_peer_account;
 };
 
 /** One rung of a database's ladder: from `from` to `from + 1`. The runner wraps it in its own transaction. */
@@ -67,7 +70,7 @@ Roe<int> SqliteUserVersion(sqlite3* db);
  * deleted either way. Not safe against another connection writing meanwhile: run it before the stores open theirs.
  */
 Roe<SqliteLadderOutcome> RunSqliteLadder(sqlite3* db, const std::string& db_path, const SqliteSchemaLadder& ladder,
-                                         const ByteVector* dek = nullptr);
+                                         const ByteVector* dek = nullptr, std::string thread_peer_account = {});
 
 /** For steps: whether `table` exists, and whether it has `column`. */
 Roe<bool> SqliteTableExists(sqlite3* db, const std::string& table);

@@ -67,7 +67,7 @@ void GroupMembershipWorkflow::SetInboundPolicy(const GroupInvitePolicy policy) {
   invite_gate_.SetInboundPolicy(policy);
 }
 
-Roe<std::string> GroupMembershipWorkflow::LocalRelayIdentity() const {
+Roe<std::string> GroupMembershipWorkflow::LocalAccountIdentity() const {
   auto id = identity_.Get();
   if (!id) {
     return id.error();
@@ -148,7 +148,7 @@ Roe<void> GroupMembershipWorkflow::SendInviteDirectMessage(const GroupInvitePayl
   if (!detail) {
     return detail.error();
   }
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -173,7 +173,7 @@ Roe<void> GroupMembershipWorkflow::SendInviteDirectMessage(const GroupInvitePayl
 
 Roe<Thread> GroupMembershipWorkflow::StartGroup(const std::string& title, const std::vector<std::string>& participants,
                                                 const size_t invitee_count, const std::string& first_line_context) {
-  auto local_identity = LocalRelayIdentity();
+  auto local_identity = LocalAccountIdentity();
   if (!local_identity) {
     return local_identity.error();
   }
@@ -247,7 +247,7 @@ Roe<Thread> GroupMembershipWorkflow::CreateGroupFromCall(const std::string& titl
   if (call_id.empty()) {
     return Error("call_id required");
   }
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -315,7 +315,7 @@ Roe<void> GroupMembershipWorkflow::InviteIdentity(const std::string& group_id, c
   if (!metadata) {
     return metadata.error();
   }
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -416,7 +416,7 @@ Roe<void> GroupMembershipWorkflow::SendInviteResponseDirectMessage(const std::st
   if (!detail) {
     return detail.error();
   }
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -517,7 +517,7 @@ Roe<Thread> GroupMembershipWorkflow::EnterAcceptedGroup(const PendingGroupInvite
 Roe<Thread> GroupMembershipWorkflow::JoinByLink(const std::string& request_id, const std::string& group_id,
                                                 const std::string& title, const std::string& owner_identity,
                                                 const std::string& answerer) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -548,7 +548,7 @@ Roe<Thread> GroupMembershipWorkflow::AcceptInvite(const std::string& invite_nonc
     return Error(kGroupInviteExpiredError);
   }
 
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -583,7 +583,7 @@ Roe<void> GroupMembershipWorkflow::DeclineInvite(const std::string& invite_nonce
   if ((*pending)->status != InviteStatus::Pending) {
     return Error("Invite is not pending");
   }
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -606,7 +606,7 @@ Roe<void> GroupMembershipWorkflow::DismissLocalGroup(const std::string& group_id
   if (group_id.empty()) {
     return Error("group_id required");
   }
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (local) {
     (void)roster_.RemoveMember(group_id, *local);
   }
@@ -675,7 +675,7 @@ Roe<void> GroupMembershipWorkflow::SendMembershipDirectMessage(const std::string
   if (!thread) {
     return thread.error();
   }
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -739,7 +739,7 @@ Roe<void> GroupMembershipWorkflow::FanOutMembershipEvent(const std::string& grou
 
 Roe<void> GroupMembershipWorkflow::RemoveMemberInternal(const std::string& group_id,
                                                         const std::string& member_identity) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -780,7 +780,7 @@ Roe<void> GroupMembershipWorkflow::RemoveMemberInternal(const std::string& group
 
 Roe<void> GroupMembershipWorkflow::RemoveAsOwner(const std::string& group_id, const std::string& member_identity,
                                                  const std::optional<GroupChange>& removal) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -826,7 +826,7 @@ Roe<void> GroupMembershipWorkflow::RemoveAsOwner(const std::string& group_id, co
 }
 
 Roe<void> GroupMembershipWorkflow::RemoveAsAdmin(const std::string& group_id, const GroupChange& removal) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -869,7 +869,7 @@ Roe<void> GroupMembershipWorkflow::RemoveMemberByIdentity(const std::string& gro
 }
 
 Roe<void> GroupMembershipWorkflow::LeaveGroup(const std::string& group_id) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -924,7 +924,7 @@ Roe<GroupChange> GroupMembershipWorkflow::SignOwnChange(GroupChange draft) {
 void GroupMembershipWorkflow::FanOutChange(const std::string& group_id, const GroupChange& change,
                                            const std::string& removed,
                                            const std::optional<group_roster_sync_codec::ChangeNewcomer>& newcomer) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   auto members = roster_.ListMembers(group_id);
   if (!local || !members) {
     return;
@@ -952,7 +952,7 @@ void GroupMembershipWorkflow::FanOutChange(const std::string& group_id, const Gr
 }
 
 Roe<void> GroupMembershipWorkflow::LeaveAsOwner(const std::string& group_id, const std::string& new_owner_identity) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -1028,7 +1028,7 @@ void GroupMembershipWorkflow::AppendDissolvedLine(const std::string& group_id, c
 }
 
 void GroupMembershipWorkflow::OnGroupDissolvedElsewhere(const GroupDissolvedEnd& end) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return;
   }
@@ -1049,7 +1049,7 @@ void GroupMembershipWorkflow::OnGroupDissolvedElsewhere(const GroupDissolvedEnd&
 }
 
 void GroupMembershipWorkflow::EndDissolvedFromLocker(const AccountStateGroup& group) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return;
   }
@@ -1069,7 +1069,7 @@ GroupMembershipWorkflow::~GroupMembershipWorkflow() {
 }
 
 Roe<void> GroupMembershipWorkflow::DissolveGroup(const std::string& group_id) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -1201,7 +1201,7 @@ void GroupMembershipWorkflow::MarkMemberUnreachable(const std::string& group_id,
   }
   auto metadata = roster_.LoadMetadata(group_id);
   if (metadata && *metadata && (**metadata).owner_identity == member_identity) {
-    auto local = LocalRelayIdentity();
+    auto local = LocalAccountIdentity();
     if (local && *local != member_identity) {
       (void)EnsureOwnerUnreachableAdvisory(group_id);
     }
@@ -1346,7 +1346,7 @@ Roe<Thread> GroupMembershipWorkflow::OpenOwnerDirectMessage(const std::string& o
 
 Roe<Thread> GroupMembershipWorkflow::ForkGroup(const std::string& group_id, const std::string& new_title,
                                                const std::vector<std::string>& member_contact_ids) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -1374,7 +1374,7 @@ Roe<Thread> GroupMembershipWorkflow::ForkGroup(const std::string& group_id, cons
     return new_thread.error();
   }
 
-  auto local_identity = LocalRelayIdentity();
+  auto local_identity = LocalAccountIdentity();
   if (!local_identity) {
     return local_identity.error();
   }
@@ -1425,7 +1425,7 @@ Roe<void> GroupMembershipWorkflow::ChangeGroupSetting(
     const std::string& group_id, const GroupMembershipControlType type, const std::string& display,
     const std::function<Roe<bool>(GroupMetadata& metadata)>& apply,
     const std::function<Roe<std::string>(uint64_t roster_epoch)>& detail) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -1530,7 +1530,7 @@ Roe<void> GroupMembershipWorkflow::RenameGroupShared(const std::string& group_id
   if (!metadata) {
     return metadata.error();
   }
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -1588,7 +1588,7 @@ Roe<void> GroupMembershipWorkflow::RenameGroupShared(const std::string& group_id
 }
 
 Roe<void> GroupMembershipWorkflow::RenameAsMember(const std::string& group_id, const std::string& title) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   auto device = OwnDevice();
   if (!local || !device) {
     return !local ? local.error() : device.error();
@@ -1607,7 +1607,7 @@ Roe<void> GroupMembershipWorkflow::RenameAsMember(const std::string& group_id, c
 }
 
 std::optional<MemberRole> GroupMembershipWorkflow::LocalRole(const std::string& group_id) const {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   auto metadata = roster_.LoadMetadata(group_id);
   if (!local || !metadata || !*metadata) {
     return std::nullopt;
@@ -1643,7 +1643,7 @@ std::vector<std::string> GroupMembershipWorkflow::AccountsRemovedBy(const std::s
 }
 
 Roe<size_t> GroupMembershipWorkflow::RemoveEveryoneAddedBy(const std::string& group_id, const std::string& account) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -1715,7 +1715,7 @@ Roe<std::vector<GroupRosterMember>> GroupMembershipWorkflow::ListRoster(const st
 }
 
 Roe<bool> GroupMembershipWorkflow::IsLocalOwner(const std::string& group_id) const {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -1745,7 +1745,7 @@ std::optional<Object> GroupMembershipWorkflow::KeptCard(const std::string& accou
 Roe<std::string> GroupMembershipWorkflow::JoinBundleDetail(GroupMembershipCodec::MemberJoinedPayload joined,
                                                            const GroupRosterStatement& statement,
                                                            const std::string& first) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -1754,10 +1754,7 @@ Roe<std::string> GroupMembershipWorkflow::JoinBundleDetail(GroupMembershipCodec:
   size_t card_bytes = 0;
   for (GroupMembershipCodec::MemberJoinedEntry& entry : joined.members) {
     if (entry.member_identity == *local || entry.member_identity == joined.member_identity) {
-      continue; // the newcomer has our keys and route from the invite's chat
-    }
-    if (auto route = mesh_messaging_.RelayRouteOf(entry.member_identity)) {
-      entry.relay_user_id = *route;
+      continue; // the newcomer has our keys from the invite's chat
     }
     auto card = KeptCard(entry.member_identity);
     if (!card) {
@@ -1819,7 +1816,7 @@ Roe<void> GroupMembershipWorkflow::SendJoinBundle(const std::string& group_id, c
 
 Roe<void> GroupMembershipWorkflow::PublishMemberJoined(const std::string& group_id, const std::string& member_identity,
                                                        const uint64_t roster_epoch, const std::string& invite_nonce) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -1856,9 +1853,6 @@ Roe<void> GroupMembershipWorkflow::PublishMemberJoined(const std::string& group_
   for (GroupMembershipCodec::MemberJoinedEntry& entry : for_members.members) {
     if (entry.member_identity == *local) {
       continue;
-    }
-    if (auto route = mesh_messaging_.RelayRouteOf(entry.member_identity)) {
-      entry.relay_user_id = *route;
     }
     if (entry.member_identity == member_identity) {
       entry.card = KeptCard(member_identity);
@@ -1935,7 +1929,7 @@ Roe<void> GroupMembershipWorkflow::AdmitNewcomer(std::unique_lock<std::recursive
   const std::string& group_id = admission.group_id;
   const std::string& member_identity = admission.member;
   const bool by_invite = !admission.invite_nonce.empty();
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   auto device = OwnDevice();
   if (!local || !device) {
     return !local ? local.error() : device.error();
@@ -1975,10 +1969,8 @@ Roe<void> GroupMembershipWorkflow::AdmitNewcomer(std::unique_lock<std::recursive
   }
   (void)roster_.ExpireOutboundInvitesTo(group_id, member_identity);
   update.unlock(); // not across the sends below
-  group_roster_sync_codec::ChangeNewcomer newcomer{
-      .member_identity = member_identity,
-      .card = KeptCard(member_identity),
-      .relay_user_id = mesh_messaging_.RelayRouteOf(member_identity).value_or(std::string())};
+  group_roster_sync_codec::ChangeNewcomer newcomer{.member_identity = member_identity,
+                                                   .card = KeptCard(member_identity)};
   FanOutChange(group_id, *add, {}, newcomer);
   if (auto metadata = roster_.LoadMetadata(group_id); metadata && *metadata) {
     (void)group_change_lines::Append(store_, group_id, {*add}, (*metadata)->roster_epoch, *local);
@@ -1992,7 +1984,7 @@ Roe<void> GroupMembershipWorkflow::AdmitNewcomer(std::unique_lock<std::recursive
 }
 
 Roe<GroupChange> GroupMembershipWorkflow::CommitOwnChange(GroupChange draft) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -2122,7 +2114,7 @@ Roe<GroupRosterStatement> GroupMembershipWorkflow::SignRoster(const std::string&
 
 Roe<void> GroupMembershipWorkflow::SignAndSendRoster(const std::string& group_id,
                                                      const std::optional<GroupOwnerTransfer>& handed) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -2145,7 +2137,7 @@ Roe<void> GroupMembershipWorkflow::SignAndSendRoster(const std::string& group_id
 
 Roe<void> GroupMembershipWorkflow::AnswerRosterRequest(const group_roster_sync_codec::RosterRequest& request,
                                                        const std::string& asker) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -2227,7 +2219,7 @@ void GroupMembershipWorkflow::ScheduleFold(const std::string& group_id) {
 }
 
 Roe<bool> GroupMembershipWorkflow::FoldNow(const std::string& group_id) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -2260,7 +2252,7 @@ void GroupMembershipWorkflow::FoldHeldChanges() {
 
 Roe<void> GroupMembershipWorkflow::StartCatchUp(const std::string& group_id, const std::string& ask,
                                                 const std::string& after) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -2281,7 +2273,7 @@ Roe<void> GroupMembershipWorkflow::StartCatchUp(const std::string& group_id, con
 }
 
 void GroupMembershipWorkflow::OnChangesApplied(const std::string& group_id, const std::vector<GroupChange>& changes) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   auto metadata = roster_.LoadMetadata(group_id);
   if (!local || !metadata || !*metadata) {
     return;
@@ -2337,7 +2329,7 @@ void GroupMembershipWorkflow::ScheduleRosterReask(const std::string& group_id, c
 }
 
 Roe<void> GroupMembershipWorkflow::StartRosterCheckAttempt(const std::string& group_id, const size_t attempt) {
-  auto local = LocalRelayIdentity();
+  auto local = LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -2395,7 +2387,7 @@ Roe<std::vector<AccountStateGroup>> GroupMembershipWorkflow::StateGroups() const
   if (!ids) {
     return ids.error();
   }
-  const auto local = LocalRelayIdentity();
+  const auto local = LocalAccountIdentity();
   std::vector<AccountStateGroup> groups;
   for (const std::string& group_id : *ids) {
     auto metadata = roster_.LoadMetadata(group_id);

@@ -22,17 +22,16 @@ namespace pbr {
 namespace {
 
 Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const Thread& thread,
-                                             const std::string& local_relay_user_id,
-                                             const std::string& peer_relay_user_id, const std::string& local_account_id,
+                                             const std::string& peer_account_id, const std::string& local_account_id,
                                              const std::string& local_device, IPeerSessionStore& psk_store,
                                              const ChatHistoryResponder::SignBytesFn& sign_bytes) {
   if (!message.sender_seq || !message.session_epoch) {
     return Error("History row missing seq fields");
   }
 
-  const std::string sender_contact_id = !local_account_id.empty() ? local_account_id : local_relay_user_id;
+  const std::string& sender_contact_id = local_account_id;
   const std::string peer_communicating_id =
-      !thread.peer_identity_value.empty() ? thread.peer_identity_value : peer_relay_user_id;
+      !thread.peer_identity_value.empty() ? thread.peer_identity_value : peer_account_id;
 
   std::optional<std::string> payload_b64;
   if (E2eRelayPayloadCodec::RequiresEncryption(thread.channel)) {
@@ -84,7 +83,6 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = message.id;
-  envelope.sender_relay_id = local_relay_user_id;
   envelope.sender_contact_id = sender_contact_id;
   envelope.sender_device = local_device;
   envelope.route.kind = "direct";
@@ -96,8 +94,8 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
   envelope = WithSingleRelayCopy(std::move(envelope), std::move(copy));
   envelope.order_key = envelope.sender_seq;
   envelope.stream_key =
-      BuildCanonicalRelayStreamKey(local_relay_user_id, peer_relay_user_id, thread.channel, *message.session_epoch);
-  envelope.recipient_contact_id = peer_relay_user_id;
+      BuildCanonicalRelayStreamKey(local_account_id, peer_account_id, thread.channel, *message.session_epoch);
+  envelope.recipient_account_id = peer_account_id;
   envelope.timestamp = message.timestamp;
 
   auto sign_payload = EnvelopeSigner::BuildSignBytes(envelope);
@@ -119,15 +117,14 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
 
 Roe<ChatHistoryResponse> ChatHistoryResponder::Serve(IThreadStore& store, IPeerSessionStore& psk_store,
                                                      const ChatHistoryRequest& request,
-                                                     const std::string& local_relay_user_id,
                                                      const std::string& local_account_id,
                                                      const std::string& local_device, const SignBytesFn& sign_bytes,
                                                      const std::string& remote_peer_id,
                                                      IPeerSigningKeyResolver& signing_keys, const int64_t now_ms) {
-  if (local_relay_user_id.empty()) {
-    return Error("Local relay identity missing");
+  if (local_account_id.empty()) {
+    return Error("Local account identity missing");
   }
-  if (request.peer_identity_value != local_relay_user_id) {
+  if (request.peer_identity_value != local_account_id) {
     return Error("History request targets a different peer stream");
   }
   if (request.requester_identity_value.empty()) {
@@ -189,8 +186,8 @@ Roe<ChatHistoryResponse> ChatHistoryResponder::Serve(IThreadStore& store, IPeerS
       served.target_message_id = message.id;
       served.payload_json = BuildReactionPayloadJson(kAnnotationTypeRetract, message.id, "");
     }
-    auto envelope = OutboundMessageToEnvelope(served, **thread, local_relay_user_id, request.requester_identity_value,
-                                              local_account_id, local_device, psk_store, sign_bytes);
+    auto envelope = OutboundMessageToEnvelope(served, **thread, request.requester_identity_value, local_account_id,
+                                              local_device, psk_store, sign_bytes);
     if (!envelope) {
       if (served.content_type == ChatContentType::Annotation) {
         continue; // not servable on this channel: the requester closes the seq as empty

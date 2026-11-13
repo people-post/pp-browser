@@ -23,8 +23,8 @@ PushDeviceRegistration MakeRegistration(ConversationsHub& hub, const std::string
   reg.device_id = IPushDeviceRegistrar::Instance().DeviceId();
   reg.push_token = token;
   auto identity = hub.Identity().Get();
-  if (identity) {
-    reg.relay_user_id = identity->relay_user_id;
+  if (identity && identity->registered) {
+    reg.account_id = identity->account_id; // push tokens are registered per relay, by Account ID (MR001)
   }
   return reg;
 }
@@ -46,8 +46,8 @@ Roe<void> PushDeviceCoordinator::Register(ConversationsHub& hub) {
     return token.error();
   }
   PushDeviceRegistration reg = MakeRegistration(hub, *token);
-  if (reg.relay_user_id.empty()) {
-    return Error("Relay user not registered");
+  if (reg.account_id.empty()) {
+    return Error("Account not registered on the relay");
   }
   return client->RegisterDevice(reg);
 }
@@ -65,7 +65,7 @@ Roe<void> PushDeviceCoordinator::Unregister(ConversationsHub& hub) {
     return token.error();
   }
   PushDeviceRegistration reg = MakeRegistration(hub, *token);
-  if (reg.relay_user_id.empty()) {
+  if (reg.account_id.empty()) {
     return {};
   }
   return client->UnregisterDevice(reg);

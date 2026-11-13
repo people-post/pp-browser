@@ -452,12 +452,10 @@ TEST(GroupInviteWireTest, AChangeCarriesItsNewcomerAndTheBundleItsChanges) {
   Object card;
   card.set("account_id", "account:erin");
   const std::string detail = group_roster_sync_codec::EncodeChange(
-      add, group_roster_sync_codec::ChangeNewcomer{
-               .member_identity = "account:erin", .card = card, .relay_user_id = "relay:erin"});
+      add, group_roster_sync_codec::ChangeNewcomer{.member_identity = "account:erin", .card = card});
   auto newcomer = group_roster_sync_codec::NewcomerIn(detail);
   ASSERT_TRUE(newcomer);
   EXPECT_EQ(newcomer->member_identity, "account:erin");
-  EXPECT_EQ(newcomer->relay_user_id, "relay:erin");
   EXPECT_TRUE(newcomer->card);
   EXPECT_EQ(grc::Id(group_roster_sync_codec::DecodeChange(detail).value()), grc::Id(add));
   EXPECT_FALSE(group_roster_sync_codec::NewcomerIn(group_roster_sync_codec::EncodeChange(add)));

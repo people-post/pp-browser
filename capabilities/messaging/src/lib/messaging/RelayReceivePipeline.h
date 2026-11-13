@@ -40,7 +40,7 @@ class GroupInviteGate;
 struct RelayReceiveOutcome {
   bool persisted = false;
   bool thread_changed = false;
-  /** The sender's signature verified (only then may its signed claims, e.g. its relay route, be learned). */
+  /** The sender's signature verified (only then may its signed claims be acted on: its card, its grants). */
   bool sender_verified = false;
   IngestDecision decision = IngestDecision::HardReject;
   /** Set when `persisted` is true. */
@@ -243,7 +243,7 @@ public:
   }
   /**
    * Another member as the group owner's roster (member_joined) gives them: their card — keep it if it
-   * proves itself (docs/contracts/ACCOUNT_CARD.md) — and their relay route.
+   * proves itself (docs/contracts/ACCOUNT_CARD.md).
    */
   void SetOnRosterMember(std::function<void(const GroupMembershipCodec::MemberJoinedEntry&)> callback) {
     on_roster_member_ = std::move(callback);
@@ -270,7 +270,7 @@ public:
     cancel_pending_send_ = std::move(cancel);
   }
 
-  RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
+  RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope, const std::string& local_account_id,
                                       bool authorized_older_backfill = false,
                                       MessageTransport transport = MessageTransport::Relay);
 
@@ -284,7 +284,7 @@ public:
    * (`replay_held_from`, a card kept another way): each as on arrival — freshness counting its wait, first sight,
    * the family's own checks — oldest first. One still not checkable waits again until its time is up.
    */
-  std::vector<HeldControlReplay> ReplayHeldControl(const std::string& sender, const std::string& local_relay_user_id);
+  std::vector<HeldControlReplay> ReplayHeldControl(const std::string& sender, const std::string& local_account_id);
   /** Whether lane messages of `sender`'s wait for its card. */
   bool HoldsControlFrom(const std::string& sender) const;
 
@@ -318,13 +318,13 @@ private:
   std::function<int64_t(const std::string&)> account_card_floor_;
   std::function<void(const GroupMembershipCodec::MemberJoinedEntry&)> on_roster_member_;
 
-  RelayReceiveOutcome ProcessDirectEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
+  RelayReceiveOutcome ProcessDirectEnvelope(const RelayEnvelope& envelope, const std::string& local_account_id,
                                             bool authorized_older_backfill, MessageTransport transport);
   /**
    * The control lane: verified, decrypted under the pair's e2e_public session, handed to the family
    * that sends it on the lane while fresh and not seen before. Never stored.
    */
-  RelayReceiveOutcome ProcessControlEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
+  RelayReceiveOutcome ProcessControlEnvelope(const RelayEnvelope& envelope, const std::string& local_account_id,
                                              std::optional<int64_t> held_since_ms = std::nullopt);
   /**
    * The lane message's sender check (CheckSignature). When it fails, the warning and the `control.unverified` line
@@ -362,7 +362,7 @@ private:
   /** G014 invitee side: the owner refused our accept (the group was full) — drop the group we made on accept. */
   Roe<void> ApplyInviteRefused(const ThreadMessage& message, const std::string& actor_identity,
                                const std::string& local_account, RelayReceiveOutcome* outcome) const;
-  RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
+  RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_account_id,
                                            bool authorized_older_backfill, MessageTransport transport);
   /** The groups `sender` and we are both on this device's roster of (a group copy names its group only inside). */
   std::vector<std::string> GroupsSharedWith(const std::string& sender, const std::string& local_account) const;

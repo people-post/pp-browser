@@ -62,7 +62,7 @@ bool AttachmentTriesPeerDirect(const std::optional<Thread>& thread, uint64_t pla
  * peer-direct), a link that is not a relay file link (an old CDN link: nothing to delete, logged) and a copy
  * already gone are fine; a failed delete returns the delete's own error, its detail naming the blob id.
  */
-Roe<void> DeleteUploadedAttachmentCopy(IBlobClient& blob, const std::string& relay_user_id, const std::string& url);
+Roe<void> DeleteUploadedAttachmentCopy(IBlobClient& blob, const std::string& account_id, const std::string& url);
 
 /**
  * The bytes a quota recovery must free for the upload the files relay refused: the size the refused start asked

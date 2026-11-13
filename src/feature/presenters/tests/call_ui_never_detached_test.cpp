@@ -196,7 +196,7 @@ protected:
     CallFunctionalPorts ports;
     ports.initialized = []() { return true; };
     ports.backend = [this]() { return ui_.get(); };
-    ports.local_relay_identity = [this]() { return std::optional<std::string>(local_identity_); };
+    ports.local_account_identity = [this]() { return std::optional<std::string>(local_identity_); };
     CallPresenter::Callbacks callbacks;
     callbacks.notify = [this](const CallNotice& notice) { notices_.push_back(notice); };
     presenter_->BindCallbacks(std::move(callbacks));

@@ -501,7 +501,7 @@ Roe<bool> DemoDataSeeder::SeedOnce(const DemoSeedDeps& deps) {
   if (done_) {
     return false;
   }
-  if (!deps.own_relay_user_id.empty()) {
+  if (!deps.own_registered_account.empty()) {
     log().warning << "Demo data not written: this account is registered";
     done_ = true;
     return false;
@@ -741,7 +741,7 @@ Roe<DemoSeedDeps> MakeDemoSeedDeps(ConversationsHub& hub) {
                       hub.ProfileDataDir(),
                       hub.Attachments().CopyDek(),
                       hub.CurrentAttachmentLimits().max_receive_bytes,
-                      identity->relay_user_id,
+                      identity->registered ? identity->account_id : std::string(),
                       LocalMidnightMs(now_ms),
                       now_ms,
                       ReadDemoAsset,

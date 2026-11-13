@@ -49,7 +49,6 @@ TEST(RegistrationClientTest, ApplyRegistrationResultPersistsFields) {
   LocalIdentity identity;
   identity.brief_llm_guest_api_key = "brf_guest_old";
   RegistrationResult result{.success = true,
-                            .relay_user_id = "relay:abc",
                             .message = "ok",
                             .llm_api_key = "brf_llm_new",
                             .expires_at = "2099-12-31T23:59:59.000Z",
@@ -57,7 +56,6 @@ TEST(RegistrationClientTest, ApplyRegistrationResultPersistsFields) {
                             .initiation_floor_present = true};
   ApplyRegistrationResult(identity, result);
   EXPECT_TRUE(identity.registered);
-  EXPECT_EQ(identity.relay_user_id, "relay:abc");
   EXPECT_EQ(identity.brief_llm_api_key, "brf_llm_new");
   EXPECT_TRUE(identity.brief_llm_guest_api_key.empty());
   EXPECT_EQ(identity.registration_expires_at, "2099-12-31T23:59:59.000Z");
@@ -67,7 +65,7 @@ TEST(RegistrationClientTest, ApplyRegistrationResultPersistsFields) {
 TEST(RegistrationClientTest, ApplyRegistrationResultIgnoresMissingFloor) {
   LocalIdentity identity;
   identity.initiation_floor = 7;
-  RegistrationResult result{.success = true, .relay_user_id = "relay:x"};
+  RegistrationResult result{.success = true};
   ApplyRegistrationResult(identity, result);
   EXPECT_EQ(identity.initiation_floor, 7);
 }
@@ -106,10 +104,10 @@ TEST(RegistrationClientTest, ARegistrationAtAnotherOrUnrecordedBackendNeedsRenew
 TEST(RegistrationClientTest, ApplyRegistrationResultRecordsTheBackend) {
   LocalIdentity identity;
   identity.registered_backend_url = "https://old.example.test";
-  ApplyRegistrationResult(identity, RegistrationResult{.success = true, .relay_user_id = "relay:x"});
+  ApplyRegistrationResult(identity, RegistrationResult{.success = true});
   EXPECT_EQ(identity.registered_backend_url, "https://old.example.test") << "a result without one keeps the record";
 
-  RegistrationResult result{.success = true, .relay_user_id = "relay:x"};
+  RegistrationResult result{.success = true};
   result.registered_backend_url = "https://new.example.test";
   ApplyRegistrationResult(identity, result);
   EXPECT_EQ(identity.registered_backend_url, "https://new.example.test");
@@ -126,16 +124,16 @@ TEST(RegistrationClientTest, MarkRegistrationExpired) {
 // #328: records the revoke call; everything else is the mock's behaviour.
 class RecordingRegistrationClient : public MockRegistrationClient {
 public:
-  Roe<void> RevokeRegistration(const std::string& relay_user_id, const std::string& signature,
+  Roe<void> RevokeRegistration(const std::string& account_id, const std::string& signature,
                                const int64_t timestamp) override {
     ++revoke_calls;
-    last_relay_user_id = relay_user_id;
+    last_account_id = account_id;
     last_signature = signature;
     last_timestamp = timestamp;
     return {};
   }
   int revoke_calls = 0;
-  std::string last_relay_user_id;
+  std::string last_account_id;
   std::string last_signature;
   int64_t last_timestamp = 0;
 };
@@ -165,7 +163,6 @@ TEST_F(RevokeRegistrationTest, AutoRenewReRegistersAtTheCurrentBackendAndRecords
   auto identity = identity_->Get();
   ASSERT_TRUE(static_cast<bool>(identity));
   identity->registered = true;
-  identity->relay_user_id = "relay:u1";
   identity->registration_expires_at = "2099-01-01T00:00:00.000Z";
   identity->kem_binding_published = true;
   identity->registered_backend_url = "https://old.example.test";
@@ -198,13 +195,12 @@ TEST_F(RevokeRegistrationTest, RegisteredIdentitySignsAndCallsTheRelay) {
   auto identity = identity_->Get();
   ASSERT_TRUE(static_cast<bool>(identity));
   identity->registered = true;
-  identity->relay_user_id = "relay:u1";
   ASSERT_TRUE(static_cast<bool>(identity_->Update(*identity)));
 
   auto result = RevokeRegistrationWithIdentity(client_, *identity_);
   ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
   EXPECT_EQ(client_.revoke_calls, 1);
-  EXPECT_EQ(client_.last_relay_user_id, "relay:u1");
+  EXPECT_EQ(client_.last_account_id, identity->account_id) << "the relay's row by Account ID (MR001)";
   EXPECT_FALSE(client_.last_signature.empty());
   EXPECT_GT(client_.last_timestamp, 0);
   // The identity itself is untouched: the caller wipes it right after.
@@ -254,7 +250,6 @@ protected:
     // Registered before bindings existed, and far from expiry.
     LocalIdentity identity = *created;
     identity.registered = true;
-    identity.relay_user_id = "relay:u1";
     identity.registration_expires_at = "2099-01-01T00:00:00.000Z";
     ASSERT_TRUE(static_cast<bool>(identity_->Update(identity)));
   }
@@ -298,7 +293,6 @@ TEST_F(KemBindingPublishTest, ARelayThatDidNotStoreItLeavesItToPublishAgain) {
 // nothing; the store half reads the identity again, so a field written in between is kept.
 void ExpectSameRegistrationFields(const LocalIdentity& a, const LocalIdentity& b) {
   EXPECT_EQ(a.registered, b.registered);
-  EXPECT_EQ(a.relay_user_id, b.relay_user_id);
   EXPECT_EQ(a.brief_llm_api_key.Reveal(), b.brief_llm_api_key.Reveal());
   EXPECT_EQ(a.brief_llm_guest_api_key.Reveal(), b.brief_llm_guest_api_key.Reveal());
   EXPECT_EQ(a.registration_expires_at, b.registration_expires_at);
@@ -384,7 +378,7 @@ TEST_F(KemBindingPublishTest, ConcurrentRenewalAndGuestKeyWritesKeepBothFields) 
   std::thread renewals([&]() {
     for (int i = 0; i < kRounds; ++i) {
       RegistrationResult result{.success = true,
-                                .relay_user_id = "relay:u1",
+                                .account_id = account,
                                 .expires_at = "2099-01-01T00:00:" + std::to_string(10 + i) + ".000Z",
                                 .kem_bound = true};
       ASSERT_TRUE(static_cast<bool>(PersistRenewal(*identity_, result, account)));

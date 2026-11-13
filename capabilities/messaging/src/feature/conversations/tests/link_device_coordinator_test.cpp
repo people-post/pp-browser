@@ -61,7 +61,7 @@ TEST_F(LinkDeviceCoordinatorTest, TheBundleCarriesTheAccountAndItsCardButNoSessi
   auto old_id = old_identity.LoadOrCreate();
   ASSERT_TRUE(old_id);
   LocalIdentity seeded = *old_id;
-  seeded.relay_user_id = "relay:alice";
+  seeded.registered = true;
   seeded.nickname = "alice";
   seeded.registered = true;
   auto saved = old_identity.Update(seeded);
