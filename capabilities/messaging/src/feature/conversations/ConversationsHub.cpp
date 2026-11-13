@@ -3180,8 +3180,8 @@ Roe<void> ConversationsHub::RotateBriefLlmKey(const std::string& llm_base_url) {
     MarkRegistrationExpired(expired);
     (void)Identity().Update(expired);
     const char* renew_hint = response->status_code == 403
-                                 ? "Registration expired — use Renew registration in Me → Profile."
-                                 : "Brief API key rejected — renew registration in Me → Profile.";
+                                 ? "Registration expired — use Renew registration in Settings → Profile."
+                                 : "Brief API key rejected — renew registration in Settings → Profile.";
     return AppError::Auth(Err::Auth::Forbidden, "Brief key rotate HTTP " + std::to_string(response->status_code))
         .WithUser(renew_hint);
   }

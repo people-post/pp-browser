@@ -47,7 +47,7 @@ TEST(LocalizationServiceTest, SystemResolveAndInterpolation) {
   loc.SetPreferredLanguage("en");
   EXPECT_EQ(loc.Tr("errors.network.unreachable"), loc.Tr("errors.network.unreachable"));
   // Use a key with placeholder from catalog
-  EXPECT_NE(loc.Tr("nav.me").find("Me"), std::string::npos);
+  EXPECT_NE(loc.Tr("nav.me").find("Settings"), std::string::npos);
 
   const std::string localized = loc.LocalizeText("Hello {{i18n:nav.home}}!");
   EXPECT_EQ(localized, "Hello AI!");
