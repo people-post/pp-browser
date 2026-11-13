@@ -98,7 +98,8 @@ protected:
 
   AccountCard SignedCard(const test::TestAccount& account, const std::string& nickname,
                          std::vector<AccountCardDevice> devices, int64_t issued_at) {
-    AccountCard card{.keys = account.Card(), .nickname = nickname, .devices = std::move(devices), .issued_at = issued_at};
+    AccountCard card{
+        .keys = account.Card(), .nickname = nickname, .devices = std::move(devices), .issued_at = issued_at};
     return SignAccountCard(card, [&account](const ByteVector& bytes) { return account.Sign(bytes); }).value();
   }
 

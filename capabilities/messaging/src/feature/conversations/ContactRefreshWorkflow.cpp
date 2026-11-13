@@ -56,8 +56,8 @@ void MergeCardDevices(Contact& contact, const ContactRefreshInputs& inputs, Cont
   if (!inputs.card_before || !SameKeys(inputs.card_before->keys, after.keys)) {
     result.keys_changed = true;
   }
-  const std::vector<std::string> before_devices = inputs.card_before ? inputs.card_before->devices
-                                                                     : std::vector<std::string>{};
+  const std::vector<std::string> before_devices =
+      inputs.card_before ? inputs.card_before->devices : std::vector<std::string>{};
   if (!after.devices.empty() && AsSet(after.devices) != AsSet(before_devices)) {
     result.devices_changed = true;
   }
@@ -156,7 +156,10 @@ struct ContactRefreshWorkflow::Run {
 
 ContactRefreshWorkflow::ContactRefreshWorkflow(ContactsStore& contacts, AccountKeyResolver& keys,
                                                mesh::IDirectoryClient& directory, ContactCardExchange& cards)
-    : contacts_(contacts), keys_(keys), directory_(directory), cards_(cards),
+    : contacts_(contacts),
+      keys_(keys),
+      directory_(directory),
+      cards_(cards),
       post_blocking_([](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); }),
       post_ui_([](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); }) {}
 
@@ -201,15 +204,15 @@ bool ContactRefreshWorkflow::Start(const std::string& contact_id, std::function<
     }
     using Devices = ContactRefreshResult::Devices;
     switch (ask) {
-    case ContactCardExchange::DeviceAsk::NoDevice:
-      run->result.devices = Devices::NotAsked;
-      break;
-    case ContactCardExchange::DeviceAsk::Kept:
-      run->result.devices = Devices::Answered;
-      break;
-    case ContactCardExchange::DeviceAsk::NotReached:
-      run->result.devices = Devices::NotReached;
-      break;
+      case ContactCardExchange::DeviceAsk::NoDevice:
+        run->result.devices = Devices::NotAsked;
+        break;
+      case ContactCardExchange::DeviceAsk::Kept:
+        run->result.devices = Devices::Answered;
+        break;
+      case ContactCardExchange::DeviceAsk::NotReached:
+        run->result.devices = Devices::NotReached;
+        break;
     }
     post_blocking_([this, alive, run]() {
       if (!alive.expired()) {
