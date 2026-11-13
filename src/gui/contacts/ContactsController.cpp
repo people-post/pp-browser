@@ -679,6 +679,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
                                DataEventAt([this](ui::Event& ev) { OnShareQrImage(ShareAnchorFromEvent(ev)); }));
         ctor.BindEventCallback("save_qr_image", DataEvent<>([this]() { OnSaveQrImage(); }));
         ctor.BindEventCallback("toggle_trust_friendly", &ContactsController::ToggleTrustFriendlyCallback);
+        ctor.BindEventCallback("tap_contact_avatar", DataEvent<>([this]() { OnTapAvatar(); }));
         ctor.BindEventCallback("toggle_star", DataEvent<>([this]() { OnToggleStar(); }));
         ctor.BindEventCallback("block_contact", &ContactsController::BlockContactCallback);
         ctor.BindEventCallback("unblock_contact", &ContactsController::UnblockContactCallback);
@@ -2398,6 +2399,14 @@ bool ContactsController::SetContactTrust(const std::string& contact_id, const st
     return false;
   }
   return true;
+}
+
+void ContactsController::OnTapAvatar() {
+  const std::string src = selected_.icon_src.c_str();
+  if (!selected_.has_icon || src.empty() || !open_avatar_viewer_) {
+    return;
+  }
+  open_avatar_viewer_(src);
 }
 
 void ContactsController::OnToggleStar() {

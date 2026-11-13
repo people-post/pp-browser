@@ -7,7 +7,7 @@
 <div class="contact-detail-panel nav-bar-scroll stack" data-model="contacts">
   <div class="contacts-detail-header stack">
     <div class="contact-detail-avatar-row row">
-      <div class="contact-detail-avatar-frame"
+      <div class="contact-detail-avatar-frame" data-event-click="tap_contact_avatar()"
            data-class-avatar-tone-0="!selected.has_icon && selected.avatar_tone == 0"
            data-class-avatar-tone-1="!selected.has_icon && selected.avatar_tone == 1"
            data-class-avatar-tone-2="!selected.has_icon && selected.avatar_tone == 2"

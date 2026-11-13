@@ -94,6 +94,10 @@ public:
   void BindStrangerAdder(std::function<Roe<std::string>(const std::string& account_id)> add) {
     add_stranger_ = std::move(add);
   }
+  /** The contact page's photo opens large: the avatar viewer (`image_src` is the photo's local path). */
+  void BindAvatarViewer(std::function<void(const std::string& image_src)> open) {
+    open_avatar_viewer_ = std::move(open);
+  }
   /** Where the stars ("常用联系人") are kept: the profile's preferences (device-only). */
   void BindSessionStore(SessionStore* store);
 
@@ -270,6 +274,8 @@ public:
   void OnGroupAdminSetAdmin();
   void OnGroupAdminReinvite();
   void OnDetailDismissed();
+  /** The page's photo (the view's tap_contact_avatar, and tests): opens it large; a letter avatar does nothing. */
+  void OnTapAvatar();
   /** The page's star button (the view's toggle_star, and tests): stars or unstars the contact shown. */
   void OnToggleStar();
   /** The stored star order (ProfilePreferences::starred_contacts); empty without a store. */
@@ -577,6 +583,7 @@ private:
   std::function<bool(const std::string& text)> offer_group_join_;
   ContactsAccountPorts account_ports_;
   CallActionsPorts call_actions_;
+  std::function<void(const std::string& image_src)> open_avatar_viewer_;
   std::function<Roe<std::string>(const std::string& account_id)> block_stranger_;
   std::function<Roe<std::string>(const std::string& account_id)> add_stranger_;
   SessionStore* session_store_ = nullptr;

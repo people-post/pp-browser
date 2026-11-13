@@ -1337,6 +1337,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
 
   contacts_->BindShellNavigation(shell_navigation);
   contacts_->BindShellFeedback(shared_feedback);
+  contacts_->BindAvatarViewer([this](const std::string& image_src) { avatar_view_->Open(image_src); });
   qr_scan_->BindShellNavigation(shell_navigation);
   avatar_crop_->BindShellNavigation(shell_navigation);
   avatar_view_->BindShellNavigation(shell_navigation);
