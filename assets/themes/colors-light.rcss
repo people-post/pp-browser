@@ -3750,11 +3750,6 @@ input.checkbox:checked {
   color: #3c3c434c;
 }
 
-.me-profile-name--empty,
-.me-profile-caption {
-  color: #3c3c4399;
-}
-
 .avatar-view-bg {
   background-color: #000000;
 }

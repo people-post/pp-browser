@@ -342,6 +342,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.profile_registration_expires = bindings_.profile_registration_expires.c_str();
   ui_state_.profile_register_label = bindings_.profile_register_label.c_str();
   ui_state_.profile_show_register = bindings_.profile_show_register;
+  ui_state_.profile_register_primary = bindings_.profile_register_primary;
   ui_state_.profile_show_rotate = bindings_.profile_show_rotate;
   ui_state_.profile_icon_src = bindings_.profile_icon_src.c_str();
   ui_state_.profile_has_icon = bindings_.profile_has_icon;
@@ -442,6 +443,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_registration_expires = ui_state_.profile_registration_expires.c_str();
   bindings_.profile_register_label = ui_state_.profile_register_label.c_str();
   bindings_.profile_show_register = ui_state_.profile_show_register;
+  bindings_.profile_register_primary = ui_state_.profile_register_primary;
   profile_actions_.ShowInvite(ui_state_.profile_contact_locator);
   bindings_.profile_show_rotate = ui_state_.profile_show_rotate;
   bindings_.profile_icon_src = ui_state_.profile_icon_src.c_str();
@@ -657,6 +659,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("profile_registration_expires", &controller.bindings_.profile_registration_expires);
     ctor.Bind("profile_register_label", &controller.bindings_.profile_register_label);
     ctor.Bind("profile_show_register", &controller.bindings_.profile_show_register);
+    ctor.Bind("profile_register_primary", &controller.bindings_.profile_register_primary);
     profile_actions_.Bind(ctor);
     ctor.Bind("profile_show_rotate", &controller.bindings_.profile_show_rotate);
     ctor.Bind("profile_icon_src", &controller.bindings_.profile_icon_src);
@@ -904,6 +907,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "profile_registration_expires");
   host.Dirty("settings", "profile_register_label");
   host.Dirty("settings", "profile_show_register");
+  host.Dirty("settings", "profile_register_primary");
   host.Dirty("settings", "profile_show_rotate");
   host.Dirty("settings", "profile_icon_src");
   host.Dirty("settings", "profile_has_icon");

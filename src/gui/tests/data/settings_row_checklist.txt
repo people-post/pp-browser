@@ -7,6 +7,8 @@ data-event-click="copy_profile_id()"	1	-	profile	-	profile
 data-event-click="edit_profile_nickname()"	1	-	profile	-	profile	
 data-event-click="pick_profile_icon()"	2	-	profile	-	profile	
 data-event-click="register_profile()"	1	profile	profile	profile_show_register	profile	
+data-event-click="register_profile()"	1	-	profile	profile_show_register && profile_register_primary	profile	
+data-event-click="register_profile()"	1	-	profile	advanced && profile_show_register && !profile_register_primary	profile	
 data-event-click="rotate_brief_llm_key()"	1	profile	advanced	advanced;;advanced;;advanced && profile_show_rotate	profile	10
 data-event-click="share_profile()"	1	-	profile	-	profile	
 data-event-click="tap_profile_avatar()"	1	-	profile	-	profile	
@@ -19,7 +21,7 @@ data-value="profile_nickname"	1	profile	profile	-	profile
 {{i18n:settings.llm.rotate_brief_key}}	1	-	advanced	advanced;;advanced;;advanced && profile_show_rotate	profile	10
 {{i18n:settings.nickname}}	2	-	profile	-	profile	
 {{i18n:settings.profile.nickname_placeholder}}	1	-	profile	-	profile	
-{{i18n:settings.profile.nickname_placeholder}}	2	-	profile	profile_nickname == ''	profile	
+{{i18n:settings.profile.nickname_placeholder}}	1	-	profile	profile_nickname == ''	profile	
 {{i18n:settings.profile.peer_id_label}}	1	-	profile	advanced && profile_peer_id != ''	profile	
 {{i18n:settings.profile.photo_uploading}}	1	-	profile	profile_icon_uploading	profile	
 {{i18n:settings.profile.qr_help}}	1	-	profile	profile_show_qr && profile_qr_svg_rml != ''	profile	
@@ -31,6 +33,10 @@ data-value="profile_nickname"	1	profile	profile	-	profile
 {{profile_avatar_letter}}	1	-	profile	!profile_has_icon	profile	
 {{profile_peer_id}}	2	-	profile	advanced && profile_peer_id != ''	profile	
 {{profile_register_label}}	1	-	profile	profile_show_register	profile	
+{{profile_register_label}}	1	-	profile	profile_show_register && profile_register_primary	profile	
+{{i18n:settings.profile.update_now}}	1	-	profile	advanced && profile_show_register && !profile_register_primary	profile	
+{{i18n:settings.auto_renew_on_caption}}	1	-	profile	advanced;;auto_renew_registration == 'auto'	profile	
+{{i18n:settings.auto_renew_off_caption}}	1	-	profile	advanced;;auto_renew_registration != 'auto'	profile	
 {{profile_registration_expires}}	2	-	profile	advanced && profile_registration_expires != ''	profile	
 {{profile_registration_status}}	2	-	profile	-	profile	
 {{profile_relay_id}}	2	-	profile	profile_relay_id != ''	profile	
@@ -466,11 +472,9 @@ data-value="relay_base_url"	1	network	tester	advanced;;advanced;;backend_is_cust
 {{profile_label}}	1	-	tester	advanced;;advanced	storage	
 {{i18n:settings.profile.id_row}}	1	-	profile	-	profile	
 {{i18n:settings.profile.id_none}}	1	-	profile	profile_relay_id == ''	profile	
-{{i18n:settings.profile.id_foot}}	1	-	profile	-	profile	
 {{i18n:settings.profile.change_photo}}	1	-	profile	-	profile	
 {{i18n:settings.profile.name_caption}}	1	-	profile	-	profile	
 {{profile_nickname}}	1	-	profile	-	profile	
-{{profile_nickname}}	1	-	profile	profile_nickname != ''	profile	
 {{i18n:settings.profile.account_group}}	1	-	profile	-	profile	
 {{i18n:settings.profile.registration_row}}	1	-	profile	-	profile	
 {{i18n:settings.profile.expires_row}}	1	-	profile	advanced && profile_registration_expires != ''	profile	

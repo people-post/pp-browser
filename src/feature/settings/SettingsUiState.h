@@ -72,6 +72,8 @@ struct SettingsUiState {
   std::string profile_registration_expires;
   std::string profile_register_label = "Register on network";
   bool profile_show_register = true;
+  // Display only: true while the card needs action (the big blue button); false when it is fine.
+  bool profile_register_primary = true;
   bool profile_show_rotate = false;
   std::string profile_icon_src;
   bool profile_has_icon = false;

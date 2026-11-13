@@ -169,7 +169,7 @@ TEST(SettingsTitlesTest, TheProfilePageFollowsTheMockupAndKeepsItsAccountGates) 
   EXPECT_LT(d_share, d_qr);
   EXPECT_NE(rml.find("settings-desktop-only", d_qr - 300), std::string::npos);
   EXPECT_EQ(rml.find("group-id-btn"), std::string::npos);
-  EXPECT_NE(rml.find("{{i18n:settings.profile.id_foot}}"), std::string::npos);
+  EXPECT_EQ(rml.find("settings.profile.id_foot"), std::string::npos);
   EXPECT_EQ(rml.find("settings.profile.id_help"), std::string::npos);
   // The account group keeps today's gates: status for everyone, expiry and auto-renew behind the advanced flag,
   // the register button behind its own binding; nothing was un-gated.

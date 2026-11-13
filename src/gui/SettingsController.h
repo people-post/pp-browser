@@ -214,6 +214,7 @@ private:
     ui::String profile_registration_expires;
     ui::String profile_register_label = "Register on network";
     bool profile_show_register = true;
+    bool profile_register_primary = true;
     bool profile_show_rotate = false;
     ui::String profile_icon_src;
     bool profile_has_icon = false;

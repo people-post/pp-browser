@@ -3812,11 +3812,6 @@ input.checkbox:checked {
   color: #ebebf54c;
 }
 
-.me-profile-name--empty,
-.me-profile-caption {
-  color: #ebebf599;
-}
-
 .avatar-view-bg {
   background-color: #000000;
 }

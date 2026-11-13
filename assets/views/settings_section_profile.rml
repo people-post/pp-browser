@@ -28,15 +28,15 @@
         <div class="me-profile-phone-head settings-phone-only">
           <button class="me-profile-change" type="button" data-event-click="pick_profile_icon()"
                   data-attrif-disabled="profile_icon_uploading">{{i18n:settings.profile.change_photo}}</button>
-          <p class="me-profile-name" data-if="profile_nickname != ''">{{profile_nickname}}</p>
-          <p class="me-profile-name me-profile-name--empty" data-if="profile_nickname == ''">{{i18n:settings.profile.nickname_placeholder}}</p>
-          <p class="me-profile-caption">{{i18n:settings.profile.name_caption}}</p>
         </div>
         </div>
         <div class="group-card settings-phone-only">
           <div class="group-row group-row--q">
             <button class="group-row-tap" type="button" data-event-click="edit_profile_nickname()">
-              <span class="group-row-text">{{i18n:settings.nickname}}</span>
+              <span class="group-row-label">
+                <span class="group-row-text">{{i18n:settings.nickname}}</span>
+                <span class="group-row-sub">{{i18n:settings.profile.name_caption}}</span>
+              </span>
               <span class="group-row-value">{{profile_nickname}}</span>
               <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
             </button>
@@ -76,7 +76,11 @@
           </div>
           <div class="settings-toggle-row row group-row" data-if="advanced">
             <span class="group-row-body">
-              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.auto_renew}}</span>
+              <span class="group-row-label">
+                <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.auto_renew}}</span>
+                <span class="group-row-sub" data-if="auto_renew_registration == 'auto'">{{i18n:settings.auto_renew_on_caption}}</span>
+                <span class="group-row-sub" data-if="auto_renew_registration != 'auto'">{{i18n:settings.auto_renew_off_caption}}</span>
+              </span>
               <button class="settings-switch" type="button"
                       data-class-settings-switch--on="auto_renew_registration == 'auto'"
                       data-event-click="toggle_auto_renew_registration()">
@@ -84,6 +88,12 @@
               </button>
             </span>
           </div>
+          <button class="group-row" type="button" data-if="advanced && profile_show_register && !profile_register_primary"
+                  data-event-click="register_profile()">
+            <span class="group-row-body">
+              <span class="group-row-text">{{i18n:settings.profile.update_now}}</span>
+            </span>
+          </button>
           <div class="group-row group-row--static" data-if="advanced && profile_peer_id != ''">
             <span class="group-row-body">
               <span class="group-row-label"><span class="group-row-text">{{i18n:settings.profile.node_id_row}}</span></span>
@@ -91,7 +101,6 @@
             </span>
           </div>
         </div>
-        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.profile.id_foot}}</p>
         <div class="group-card group-card--pad settings-desktop-only">
         <p class="text muted me-profile-meta group-note" data-if="advanced && profile_peer_id != ''">
           {{i18n:settings.profile.peer_id_label}} <span>{{profile_peer_id}}</span>
@@ -133,8 +142,12 @@
           <button class="btn btn-secondary settings-desktop-only" type="button" data-if="profile_qr_svg_rml != ''"
                   data-class-btn-active="profile_show_qr"
                   data-event-click="toggle_profile_qr()">{{i18n:settings.profile.show_qr}}</button>
-          <button class="btn btn-primary" type="button" data-if="profile_show_register"
+          <button class="btn btn-primary settings-desktop-only" type="button" data-if="profile_show_register"
                   data-event-click="register_profile()"><span>{{profile_register_label}}</span></button>
+          <div class="settings-phone-only" data-if="profile_show_register && profile_register_primary">
+            <button class="btn btn-primary" type="button"
+                    data-event-click="register_profile()"><span>{{profile_register_label}}</span></button>
+          </div>
         </div>
         <div class="me-invite-qr settings-desktop-only" data-if="profile_show_qr && profile_qr_svg_rml != ''">
           <svg class="me-invite-qr-code" viewBox="0 0 100 100" width="200" height="200"

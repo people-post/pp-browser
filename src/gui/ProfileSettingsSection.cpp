@@ -14,6 +14,10 @@ void RefreshProfileAvatarGlyph(SettingsUiState& state) {
   state.profile_avatar_tone = glyph.tone;
 }
 
+bool ProfileRegisterIsPrimary(bool show_register, const std::string& status_label) {
+  return show_register && status_label != "active";
+}
+
 void ProfileSettingsSection::BindPorts(SettingsCommands* commands) {
   commands_ = commands;
 }
@@ -66,6 +70,7 @@ void ProfileSettingsSection::ApplyIdentityView(const ProfileIdentityView& view, 
   state.profile_registration_expires = view.registration_expires;
   state.profile_register_label = LocalizedRegisterLabel(view.register_label);
   state.profile_show_register = view.show_register;
+  state.profile_register_primary = ProfileRegisterIsPrimary(view.show_register, view.registration_status);
   state.profile_show_rotate = view.show_rotate;
   state.brief_llm_key_masked = view.brief_llm_key_masked;
   state.profile_icon_src = view.profile_icon_path;
