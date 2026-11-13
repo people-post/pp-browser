@@ -42,7 +42,7 @@
             </span>
           </label>
         </div>
-        <div class="settings-actions stack">
+        <div class="settings-actions stack" data-if="backend_is_custom">
           <button class="btn btn-secondary settings-action-bar" type="button"
                   data-event-click="reset_section('network')">{{i18n:common.reset_defaults}}</button>
         </div>

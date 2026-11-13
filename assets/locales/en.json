@@ -489,6 +489,7 @@
     "settings.storage.manage.delete_shared": "{count} of them are also used in another chat, so their space is not freed now.",
     "settings.reset_defaults_confirm_title": "Reset to defaults?",
     "settings.reset_defaults_confirm_message": "This restores this section's settings to their defaults.",
+    "settings.reset_defaults_confirm_message.network": "This restores the custom addresses and connection settings to their defaults, and the service goes back to Production.",
     "pin.set_pin": "Set a PIN",
     "pin.just_continue": "Just continue",
     "pin.not_now": "Not now",

@@ -55,7 +55,7 @@ const std::vector<SettingsPage>& SettingsPages() {
        "settings_section_tester",
        "settings.tester.title",
        3,
-       {"network", "appearance", "security", "storage", nullptr},
+       {"appearance", "security", "storage", nullptr},
        Bit(SettingsPageAction::RefreshCasLibrary),
        SettingsPageGate::Tester},
   };

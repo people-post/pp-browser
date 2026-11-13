@@ -484,6 +484,7 @@
     "settings.storage.manage.delete_shared": "其中 {count} 项别的聊天也在用，这次不会释放空间。",
     "settings.reset_defaults_confirm_title": "恢复默认？",
     "settings.reset_defaults_confirm_message": "这将把本节设置恢复为默认值。",
+    "settings.reset_defaults_confirm_message.network": "这将把自定义地址和连接设置恢复为默认值，服务也会改回正式。",
     "pin.set_pin": "设置 PIN",
     "pin.just_continue": "直接继续",
     "pin.not_now": "暂不",

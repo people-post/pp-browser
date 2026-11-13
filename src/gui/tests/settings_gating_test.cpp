@@ -149,7 +149,7 @@ TEST(SettingsGatingTest, TheServiceRowsMovedToAdvancedUnchangedAndAreGatedOnlyOn
     EXPECT_NE(rml.find(line), std::string::npos) << line;
   }
   EXPECT_EQ(CountOf(rml, "data-event-click=\"on_choose_backend()\""), 1u);
-  EXPECT_EQ(CountOf(rml, "data-if=\"backend_is_custom\""), 3u);
+  EXPECT_EQ(CountOf(rml, "data-if=\"backend_is_custom\""), 4u);
   // Gates around the Service card: the page root (advanced) and nothing else; the custom fields add the inner advanced.
   const size_t card = rml.find("data-if=\"show_backend_switch\"");
   ASSERT_NE(card, std::string::npos);

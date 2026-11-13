@@ -1368,15 +1368,17 @@ void SettingsController::OnResetSection(const std::string& section_id) {
   if (!shell_feedback_.show_confirm_destructive) {
     return;
   }
-  shell_feedback_.show_confirm_destructive(Tr("settings.reset_defaults_confirm_title"),
-                                           Tr("settings.reset_defaults_confirm_message"),
-                                           [this, section_id](const bool ok) {
-                                             if (!ok) {
-                                               return;
-                                             }
-                                             PerformResetSection(section_id);
-                                           },
-                                           {});
+  shell_feedback_.show_confirm_destructive(
+      Tr("settings.reset_defaults_confirm_title"),
+      Tr(section_id == "network" ? "settings.reset_defaults_confirm_message.network"
+                                 : "settings.reset_defaults_confirm_message"),
+      [this, section_id](const bool ok) {
+        if (!ok) {
+          return;
+        }
+        PerformResetSection(section_id);
+      },
+      {});
 }
 
 void SettingsController::PerformResetSection(const std::string& section_id) {

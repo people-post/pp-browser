@@ -342,7 +342,8 @@ data-value="server.url"	1	integrations	advanced	advanced;;advanced	integrations
 {{direct_connections_label}}	1	-	advanced	advanced	network	
 {{i18n:common.not_now}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'reachable'	network	
 {{i18n:common.remove}}	1	-	advanced	advanced;;advanced	integrations	
-{{i18n:common.reset_defaults}}	3	-	advanced	advanced;;advanced	appearance,integrations,llm,network	
+{{i18n:common.reset_defaults}}	2	-	advanced	advanced;;advanced	appearance,integrations,llm,network	
+{{i18n:common.reset_defaults}}	1	-	advanced	advanced;;advanced;;backend_is_custom	appearance,integrations,llm,network	
 {{i18n:settings.advanced.group.ai}}	1	-	advanced	advanced	-	
 {{i18n:settings.integrations.add_mcp}}	1	-	advanced	advanced;;advanced	integrations	
 {{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced	advanced;;advanced	integrations	
@@ -418,7 +419,7 @@ data-event-click="copy_cas_tip(item_index)"	1	storage	tester	tester;;tester;;ite
 data-event-click="fetch_cas_tip()"	1	storage	tester	tester;;tester	storage	
 data-event-click="on_choose_backend()"	1	network	advanced	advanced;;show_backend_switch	network	
 data-event-click="open_ui_perf_test()"	1	-	tester	tester;;dev_tools_available	about	
-data-event-click="reset_section('network')"	1	network	advanced	advanced;;advanced	network	
+data-event-click="reset_section('network')"	1	network	advanced	advanced;;advanced;;backend_is_custom	network	
 data-event-click="set_cas_library_filter('all')"	1	storage	tester	tester;;tester	storage	
 data-event-click="set_cas_library_filter('cache')"	1	storage	tester	tester;;tester	storage	
 data-event-click="set_cas_library_filter('private')"	1	storage	tester	tester;;tester	storage	
