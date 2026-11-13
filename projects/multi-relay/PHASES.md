@@ -11,13 +11,13 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 
 ## R1 — Relays: inboxes by Account ID, account-signed sends (relay first: `www`, `messenger`)
 
-- [ ] Registration keeps one row per Account ID, without a `relay:` id, and stores the verified account card.
-- [ ] `GET /users/by-account/{account_id}` returns the row and its card; `GET /users/{relay_user_id}` is removed.
-- [ ] `POST /messages` by Account IDs; the recipient must be registered (`recipient_not_registered`); a foreign sender carries its key, checked against its Account ID; a per-IP rate for foreign senders.
-- [ ] Polling, ack and clear by Account ID; push registration unchanged per relay.
-- [ ] MR005 at the relay: a grant on a send checked with the recipient's key; a stranger's send refused with `payment_required` when the recipient's card has a floor above 0, else within a first-contact quota per recipient and without a message alert; the per-address limit configurable.
-- [ ] `messenger` records keyed by Account ID.
-- [ ] Deploy with the app build from R2 (clean cutover).
+- [x] Registration keeps one row per Account ID, without a `relay:` id, and stores the verified account card.
+- [x] `GET /users/by-account/{account_id}` returns the row and its card; `GET /users/{relay_user_id}` is removed.
+- [x] `POST /messages` by Account IDs; the recipient must be registered (`recipient_not_registered`); a foreign sender carries its key, checked against its Account ID; a per-IP rate for foreign senders.
+- [x] Polling, ack and clear by Account ID; push registration unchanged per relay.
+- [x] MR005 at the relay: a grant on a send checked with the recipient's key; a stranger's send refused with `payment_required` when the recipient's card has a floor above 0, else within a first-contact quota per recipient and without a message alert; the per-address limit configurable.
+- [x] `messenger` records keyed by Account ID.
+- [ ] Deploy with the app build from R2 (clean cutover): merged (#252, #28), not deployed.
 
 ## R2 — App: Account ID everywhere, the relay list, several relays
 
