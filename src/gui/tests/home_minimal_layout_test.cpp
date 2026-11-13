@@ -274,9 +274,9 @@ TEST_F(HomeMinimalLayoutTest, BlockReturnsWhenTheKeyboardOrEmojiSheetGoesAway) {
   }
 }
 
-// The Chats header (sidebar.rml's .pane-nav) on a phone: a 56dp bar holding the compose button at the right and your
-// small avatar at the left, and the scroller's content under it starting with the large title row (the AI drawer's
-// "you" block: 56dp avatar, name, link status; 72dp high) and then the search box. Bindings stripped.
+// The Chats header (sidebar.rml's .pane-nav) on a phone: a fixed 56dp bar holding the compose button at the right (and
+// the centred small title once the list has scrolled), and the scroller starting at the very top with one 56dp title
+// row ("Chats", the link status as a dot and a word) in the band under the bar, then the search box. Bindings stripped.
 class ChatsHeaderTest : public HomeMinimalLayoutTest {
 protected:
   void LoadChats(const int top_inset_dp) {
@@ -292,7 +292,7 @@ protected:
     bar = std::regex_replace(bar, std::regex("<!--[\\s\\S]*?-->"), "");
     bar = std::regex_replace(bar, std::regex("\\s+data-[a-z-]+=\"[^\"]*\""), "");
     bar = std::regex_replace(bar, std::regex("\\{\\{[^}]*\\}\\}"), "C");
-    const size_t title_begin = sidebar.find("<div class=\"large-title\">");
+    const size_t title_begin = sidebar.find("<div class=\"large-title\" data-model=\"window\">");
     std::string title = sidebar.substr(title_begin, sidebar.find("<div class=\"chat-search\">") - title_begin);
     title = std::regex_replace(title, std::regex("<!--[\\s\\S]*?-->"), "");
     title = std::regex_replace(title, std::regex("\\s+data-[a-z-]+=\"[^\"]*\""), "");
@@ -320,106 +320,123 @@ protected:
   static ui::Vector2f SizeOf(ui::Element* e) { return e->GetBox().GetSize(ui::BoxArea::Border); }
 };
 
-TEST_F(ChatsHeaderTest, TitleRowIsTheYouBlockWithAvatarNameAndStatus) {
+TEST_F(ChatsHeaderTest, TitleRowIsOneRowWithTheTitleAndTheStatusDot) {
   const std::string rml = Asset("views/sidebar.rml");
   const size_t bar_end = rml.find("<div class=\"sidebar-header row\">");
   const std::string bar = rml.substr(0, bar_end);
-  for (const char* gone : {"pane-nav-avatar", "shell-circle-avatar", "profile_nickname", "chats_link_state",
-                           "pane-nav-plus", "pane-nav-title", "nav.sessions"}) {
-    EXPECT_EQ(bar.find(gone), std::string::npos) << gone;
-  }
-  EXPECT_NE(bar.find("open_new_session_menu()"), std::string::npos);
+  EXPECT_EQ(rml.find("pane-nav-me"), std::string::npos);
+  EXPECT_EQ(rml.find("chat-me"), std::string::npos);
+  EXPECT_EQ(rml.find("{{profile_nickname}}"), std::string::npos) << "no avatar, no name";
+  EXPECT_EQ(rml.find("open_settings_from_avatar"), std::string::npos);
+  EXPECT_NE(bar.find("<p class=\"pane-nav-title\">{{i18n:nav.sessions}}</p>"), std::string::npos)
+      << "the small bar's centred title fades in once the row has scrolled away";
+  EXPECT_NE(bar.find("open_new_session_menu()"), std::string::npos) << "the compose button is in the fixed bar";
   EXPECT_NE(bar.find("compose.svg"), std::string::npos);
+  EXPECT_NE(rml.find("open_new_session_menu()", bar_end), std::string::npos)
+      << "the desktop header keeps its own plus button";
 
-  const size_t title = rml.find("<div class=\"large-title\">", bar_end);
+  const size_t title = rml.find("<div class=\"large-title\" data-model=\"window\">", bar_end);
   const size_t search = rml.find("<div class=\"chat-search\">", bar_end);
   ASSERT_NE(title, std::string::npos);
   ASSERT_LT(title, search);
   const std::string row = rml.substr(title, search - title);
-  EXPECT_NE(row.find("<button class=\"chat-me\" type=\"button\" data-model=\"window\" "
-                     "data-event-click=\"open_settings_from_avatar()\">"),
-            std::string::npos)
-      << "the button is in the window model, where the event lives";
-  EXPECT_NE(row.find("class=\"ai-drawer-me-avatar\" data-model=\"settings\""), std::string::npos);
-  EXPECT_NE(row.find("profile_icon_src"), std::string::npos);
-  EXPECT_NE(row.find("profile_avatar_letter"), std::string::npos);
-  EXPECT_NE(row.find("class=\"ai-drawer-me-name\" data-model=\"settings\">{{profile_nickname}}"), std::string::npos);
-  EXPECT_NE(row.find("data-if=\"chats_link_state != ''\""), std::string::npos);
+  const size_t word = row.find("<p class=\"large-title-text\">{{i18n:nav.sessions}}</p>");
+  const size_t status = row.find("<p class=\"link-status\" data-if=\"chats_link_state != ''\">");
+  ASSERT_NE(word, std::string::npos);
+  ASSERT_NE(status, std::string::npos);
+  EXPECT_LT(word, status) << "the title first, the status after it on the same row";
   EXPECT_NE(row.find("{{chats_link_text}}"), std::string::npos);
-  for (const char* icon : {"cloud-ok.svg", "cloud-sync.svg", "cloud-off.svg"}) {
-    EXPECT_NE(row.find(icon), std::string::npos) << icon;
-  }
-  EXPECT_EQ(row.find("nav.sessions"), std::string::npos) << "no title words in the title row";
-  EXPECT_EQ(row.find("<p class=\"large-title\">"), std::string::npos);
-  EXPECT_NE(rml.find("collapse-at=\"72\""), std::string::npos) << "the row is 72dp, so the bar collapses at 72dp";
-  // The desktop header keeps its title and plus button.
-  const std::string desktop = rml.substr(bar_end, title - bar_end);
-  EXPECT_NE(desktop.find("{{i18n:nav.sessions}}"), std::string::npos);
-  EXPECT_NE(desktop.find("sidebar-new-chat"), std::string::npos);
+  EXPECT_NE(rml.find("<div id=\"sidebar-sessions\" class=\"sidebar-sessions root-scroll\" "
+                     "data-event-scroll=\"sessions_scroll()\">"),
+            std::string::npos)
+      << "the default collapse threshold";
+  EXPECT_EQ(rml.find("collapse-at"), std::string::npos);
+  EXPECT_EQ(row.find("<svg"), std::string::npos) << "no cloud icons: dots only";
 }
 
-TEST_F(ChatsHeaderTest, SmallBarHoldsTheAvatarNotTheTitle) {
+TEST_F(ChatsHeaderTest, TheThreeStatesAreThreeDotsWithTheirOwnColours) {
   const std::string rml = Asset("views/sidebar.rml");
-  const std::string bar = rml.substr(0, rml.find("<div class=\"sidebar-header row\">"));
-  EXPECT_NE(bar.find("<button class=\"pane-nav-me\" type=\"button\" data-model=\"window\" "
-                     "data-event-click=\"open_settings_from_avatar()\">"),
-            std::string::npos);
-  EXPECT_NE(bar.find("class=\"pane-nav-me-avatar\" data-model=\"settings\""), std::string::npos);
-  const std::string css = Asset("themes/components.rcss");
-  const size_t rule = css.find(".shell-layer-compact .pane-nav-me {");
-  ASSERT_NE(rule, std::string::npos);
-  const std::string block = css.substr(rule, css.find('}', rule) - rule);
-  EXPECT_NE(block.find("opacity: 0;"), std::string::npos);
-  EXPECT_NE(block.find("pointer-events: none;"), std::string::npos) << "not tappable while clear";
-  const size_t shown = css.find(".shell-nav-page.large-title-collapsed .pane-nav-me {");
-  ASSERT_NE(shown, std::string::npos);
-  const std::string shown_block = css.substr(shown, css.find('}', shown) - shown);
-  EXPECT_NE(shown_block.find("opacity: 1;"), std::string::npos);
-  EXPECT_NE(shown_block.find("pointer-events: auto;"), std::string::npos);
+  for (const auto& [state, cls] : {std::pair<const char*, const char*>{"ok", "link-dot--ok"},
+                                   {"connecting", "link-dot--connecting"},
+                                   {"offline", "link-dot--offline"}}) {
+    const std::string dot =
+        std::string("<span class=\"link-dot ") + cls + "\" data-if=\"chats_link_state == '" + state + "'\"></span>";
+    EXPECT_NE(rml.find(dot), std::string::npos) << dot;
+  }
+  EXPECT_NE(rml.find("<p class=\"link-status\" data-if=\"chats_link_state != ''\">"), std::string::npos)
+      << "an unknown state draws nothing";
+  // Colours come from the theme tokens (theme_tokens.tsv): in light and in dark.
+  for (const char* sheet : {"themes/colors-light.rcss", "themes/colors-dark.rcss"}) {
+    const std::string css = Asset(sheet);
+    for (const char* cls : {".link-dot--ok {", ".link-dot--connecting {", ".link-dot--offline {"}) {
+      EXPECT_NE(css.find(cls), std::string::npos) << sheet << " " << cls;
+    }
+    EXPECT_EQ(css.find("ai-drawer-me-link-icon"), std::string::npos);
+  }
+  const std::string tmpl = Asset("themes/colors.rcss.tmpl");
+  const auto token_of = [&](const char* cls) {
+    const size_t rule = tmpl.find(cls);
+    const size_t open = tmpl.find("{{", rule);
+    return tmpl.substr(open, tmpl.find("}}", open) + 2 - open);
+  };
+  EXPECT_EQ(token_of(".link-dot--ok {"), "{{success}}");
+  EXPECT_EQ(token_of(".link-dot--connecting {"), "{{warn}}");
+  EXPECT_EQ(token_of(".link-dot--offline {"), "{{gray}}");
 }
 
-TEST_F(ChatsHeaderTest, AvatarSizesAndPlaces) {
+TEST_F(ChatsHeaderTest, SmallBarHoldsTheTitleAndCompose) {
   LoadChats(0);
-  ui::Element* big = One("chat-me");
-  ui::Element* big_face = One("ai-drawer-me-avatar");
-  ui::Element* name = One("ai-drawer-me-name");
-  ui::Element* link = One("ai-drawer-me-link");
-  ui::Element* small = One("pane-nav-me");
-  ui::Element* small_face = One("pane-nav-me-avatar");
-  ASSERT_NE(big, nullptr);
-  ASSERT_NE(big_face, nullptr);
-  ASSERT_NE(name, nullptr);
-  ASSERT_NE(link, nullptr);
-  ASSERT_NE(small, nullptr);
-  ASSERT_NE(small_face, nullptr);
-  EXPECT_FLOAT_EQ(SizeOf(big).x, 390.f - 32.f) << "the whole block is the tap target";
-  EXPECT_FLOAT_EQ(SizeOf(big).y, 72.f);
-  EXPECT_FLOAT_EQ(SizeOf(big_face).x, 56.f) << "as big as the AI drawer's avatar";
-  EXPECT_FLOAT_EQ(SizeOf(big_face).y, 56.f);
-  EXPECT_FLOAT_EQ(big_face->GetAbsoluteOffset(ui::BoxArea::Border).x, 16.f) << "the avatar is on the 16dp margin";
-  EXPECT_FLOAT_EQ(name->GetAbsoluteOffset(ui::BoxArea::Border).x, 16.f + 56.f + 12.f) << "the name follows the avatar";
-  EXPECT_GT(link->GetAbsoluteOffset(ui::BoxArea::Border).y,
-            name->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(name).y - 0.5f)
-      << "the status line is under the name";
-  EXPECT_FLOAT_EQ(SizeOf(small).x, 44.f);
-  EXPECT_FLOAT_EQ(SizeOf(small).y, 44.f);
-  EXPECT_FLOAT_EQ(SizeOf(small_face).x, 28.f);
-  EXPECT_FLOAT_EQ(SizeOf(small_face).y, 28.f);
-  EXPECT_LT(small->GetAbsoluteOffset(ui::BoxArea::Border).x, 20.f) << "at the left of the bar";
-  EXPECT_EQ(small->GetComputedValues().opacity(), 0.f) << "clear until the large block has scrolled away";
+  ui::Element* title = One("pane-nav-title");
+  ui::Element* button = One("pane-nav-btn");
+  ASSERT_NE(title, nullptr);
+  ASSERT_NE(button, nullptr);
+  EXPECT_EQ(title->GetComputedValues().opacity(), 0.f) << "clear until the large title has scrolled away";
+  EXPECT_FLOAT_EQ(title->GetAbsoluteOffset(ui::BoxArea::Border).x, 96.f);
+  EXPECT_FLOAT_EQ(SizeOf(title).x, 390.f - 192.f) << "centred between the two 96dp margins";
 }
 
-TEST_F(ChatsHeaderTest, ComposeButtonSitsAtTheTopRight) {
+TEST_F(ChatsHeaderTest, TheFixedBarLetsTouchesThroughExceptOnItsButton) {
+  LoadChats(0);
+  for (const char* cls : {"pane-nav", "pane-nav-bg", "bar-fade", "pane-nav-title"}) {
+    ui::Element* e = One(cls);
+    ASSERT_NE(e, nullptr) << cls;
+    EXPECT_EQ(e->GetComputedValues().pointer_events(), ui::Style::PointerEvents::None)
+        << cls << ": a drag that starts on the title row must reach the list";
+  }
+  for (const char* cls : {"pane-nav-actions", "pane-nav-btn"}) {
+    ui::Element* e = One(cls);
+    ASSERT_NE(e, nullptr) << cls;
+    EXPECT_EQ(e->GetComputedValues().pointer_events(), ui::Style::PointerEvents::Auto) << cls;
+  }
+  // A press on the title row lands on the list (the scroller's own title row), not on the bar above it.
+  ui::Element* title = One("large-title");
+  ASSERT_NE(title, nullptr);
+  const ui::Vector2f at = title->GetAbsoluteOffset(ui::BoxArea::Border);
+  ui::Element* hit = context->GetElementAtPoint({at.x + 40.f, at.y + 28.f});
+  ASSERT_NE(hit, nullptr);
+  bool under_title_row = false;
+  for (ui::Element* node = hit; node; node = node->GetParentNode()) {
+    under_title_row = under_title_row || node == title;
+  }
+  EXPECT_TRUE(under_title_row) << "the touch went through the bar";
+}
+
+TEST_F(ChatsHeaderTest, ComposeButtonSitsAtTheTopRightAndDoesNotMoveWhenTheTitleCollapses) {
   LoadChats(0);
   ui::Element* button = One("pane-nav-btn");
   ASSERT_NE(button, nullptr);
   EXPECT_FLOAT_EQ(SizeOf(button).x, 44.f);
+  EXPECT_FLOAT_EQ(SizeOf(button).y, 44.f);
   const ui::Vector2f at = button->GetAbsoluteOffset(ui::BoxArea::Border);
   EXPECT_FLOAT_EQ(at.x + SizeOf(button).x, 390.f - 12.f) << "12dp from the right edge";
   EXPECT_LT(at.y, 56.f) << "inside the bar";
+  // The collapse only fades the bar's background and title in; nothing moves the button.
+  const std::string css = Asset("themes/components.rcss");
+  EXPECT_EQ(css.find(".large-title-collapsed .pane-nav-actions"), std::string::npos);
+  EXPECT_EQ(css.find(".large-title-collapsed .pane-nav-btn"), std::string::npos);
 }
 
-TEST_F(ChatsHeaderTest, BarIs56dpAndTheLargeTitleThenTheSearchBoxScrollUnderIt) {
+TEST_F(ChatsHeaderTest, TheTitleRowIsTheBandUnderTheBarAndTheSearchBoxFollowsIt) {
   for (const int inset : {0, 47}) {
     SCOPED_TRACE(inset);
     if (context) {
@@ -432,19 +449,39 @@ TEST_F(ChatsHeaderTest, BarIs56dpAndTheLargeTitleThenTheSearchBoxScrollUnderIt) 
     ui::Element* bar = One("pane-nav");
     ui::Element* scroller = One("sidebar-sessions");
     ui::Element* title = One("large-title");
+    ui::Element* word = One("large-title-text");
+    ui::Element* status = One("link-status");
     ui::Element* search = One("chat-search");
+    ui::Element* button = One("pane-nav-btn");
     ASSERT_NE(bar, nullptr);
     ASSERT_NE(scroller, nullptr);
     ASSERT_NE(title, nullptr);
+    ASSERT_NE(word, nullptr);
+    ASSERT_NE(status, nullptr);
     ASSERT_NE(search, nullptr);
+    ASSERT_NE(button, nullptr);
     EXPECT_FLOAT_EQ(SizeOf(bar).y, 56.f);
-    EXPECT_FLOAT_EQ(scroller->GetComputedValues().padding_top().value, 56.f) << "the list clears the bar";
-    const float bar_bottom = bar->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(bar).y;
-    EXPECT_GE(title->GetAbsoluteOffset(ui::BoxArea::Border).y, bar_bottom - 0.5f) << "the title starts below the bar";
-    EXPECT_FLOAT_EQ(SizeOf(title).y, 72.f) << "the title row holds the 56dp avatar (the collapse threshold is 72dp)";
+    EXPECT_FLOAT_EQ(scroller->GetComputedValues().padding_top().value, 0.f) << "the list starts at the top";
+    EXPECT_FLOAT_EQ(SizeOf(title).y, 56.f) << "one 56dp row: the same band as the bar";
+    EXPECT_FLOAT_EQ(title->GetAbsoluteOffset(ui::BoxArea::Border).y, bar->GetAbsoluteOffset(ui::BoxArea::Border).y);
+    EXPECT_FLOAT_EQ(word->GetAbsoluteOffset(ui::BoxArea::Border).x, 16.f);
+    EXPECT_GT(status->GetAbsoluteOffset(ui::BoxArea::Border).x,
+              word->GetAbsoluteOffset(ui::BoxArea::Border).x + SizeOf(word).x - 0.5f)
+        << "the status follows the title on the same row";
+    EXPECT_LE(status->GetAbsoluteOffset(ui::BoxArea::Border).x + SizeOf(status).x, 390.f - 56.f + 0.5f)
+        << "clear of the compose button's 56dp";
+    // The compose icon's centre is 28dp (2dp + half of 52dp); the title's line box is 41dp with 7dp under it in the
+    // 56dp row, so its centre is 56 - 7 - 20.5 = 28.5dp (the test has no font, so the box height cannot be measured).
+    EXPECT_FLOAT_EQ(word->GetComputedValues().margin_bottom().value, 7.f);
+    EXPECT_FLOAT_EQ(word->GetComputedValues().line_height().value, 41.f);
+    EXPECT_NEAR(56.f - 7.f - 41.f / 2.f,
+                button->GetAbsoluteOffset(ui::BoxArea::Border).y - bar->GetAbsoluteOffset(ui::BoxArea::Border).y +
+                    SizeOf(button).y / 2.f,
+                1.f)
+        << "the compose icon is centred on the title";
     EXPECT_GE(search->GetAbsoluteOffset(ui::BoxArea::Border).y,
               title->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(title).y - 0.5f)
-        << "the search box is under the title";
+        << "the search box is under the title row";
     EXPECT_FLOAT_EQ(SizeOf(search).y, 36.f);
     EXPECT_FLOAT_EQ(search->GetAbsoluteOffset(ui::BoxArea::Border).x, 20.f);
   }

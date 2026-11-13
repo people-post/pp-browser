@@ -4707,7 +4707,7 @@ select selectbox option {
   text-overflow: ellipsis;
 }
 
-/* A 14dp cloud (tick when online, slash when offline) and the word. */
+/* The link status: a coloured dot and the word (the chat list's title row and this row share them). */
 .ai-drawer-me-link {
   display: flex;
   flex-direction: row;
@@ -4718,11 +4718,30 @@ select selectbox option {
   line-height: 16dp;
 }
 
-.ai-drawer-me-link-icon {
+.link-dot {
   flex: none;
-  width: 14dp;
-  height: 14dp;
-  margin-right: 5dp;
+  display: block;
+  width: 8dp;
+  height: 8dp;
+  margin-right: 6dp;
+  border-radius: 4dp;
+}
+
+.link-status {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex: none;
+  height: 16dp;
+  margin: 0 0 13dp 10dp;
+  font-size: 12dp;
+  line-height: 16dp;
+  font-weight: normal;
+}
+
+.link-status-text {
+  display: block;
+  white-space: nowrap;
 }
 
 .ai-drawer-me-link-text {
@@ -8200,37 +8219,24 @@ input.checkbox {
   padding: 0 16dp;
 }
 
-/* Chats' large title row holds the same "you" block as the AI drawer's bottom row: avatar, name and, under it, the link
-   status. Its inner parts are the drawer's own classes (.ai-drawer-me-*), so sizes and colours are identical; this rule
-   only lays the button out (56dp avatar + 8dp above and below = a 72dp row; ShellLargeTitleScroll collapses at 72dp). */
+/* Chats' title row: "Chats" at the left, the link status (dot + word) right after it on the same line, in the 56dp
+   band the fixed bar's compose button sits in (the scroller starts at the top, under the bar, and the bar lets touches
+   through except on its button). The right 56dp is the compose button's: 12dp margin + 44dp. */
 .shell-layer-compact .sidebar-sessions .large-title {
-  height: 72dp;
-}
-
-.shell-layer-compact .sidebar-sessions .chat-me,
-.shell-layer-compact .sidebar-sessions .chat-me:hover,
-.shell-layer-compact .sidebar-sessions .chat-me:focus {
   display: flex;
   flex-direction: row;
-  align-items: center;
-  gap: 12dp;
+  align-items: flex-end;
   box-sizing: border-box;
-  width: 100%;
-  height: 72dp;
-  margin: 0;
-  padding: 8dp 0;
-  border: 0;
-  border-radius: 0;
-  background-color: transparent;
-  text-align: left;
-  cursor: pointer;
+  height: 56dp;
+  padding: 0 56dp 0 16dp;
 }
 
-.pane-nav-me-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
+.shell-layer-compact .sidebar-sessions .large-title-text {
+  flex: none;
+  margin: 0 0 7dp 0;
+  font-size: 34dp;
+  line-height: 41dp;
+  font-weight: bold;
 }
 
 .shell-layer-compact .chat-search {
@@ -15164,45 +15170,6 @@ textarea:composing ~ .prompt-composer-label,
   height: 52dp;
 }
 
-/* Chats' small bar: your 28dp avatar on the left (44dp tap area) fades in with the bar once the large one has scrolled
-   away; while clear it must not catch taps. */
-.shell-layer-compact .pane-nav-me {
-  position: absolute;
-  top: 6dp;
-  left: 12dp;
-  width: 44dp;
-  height: 44dp;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background-color: transparent;
-  cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s cubic-out;
-}
-
-.shell-nav-page.large-title-collapsed .pane-nav-me {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.pane-nav-me-avatar {
-  width: 28dp;
-  height: 28dp;
-  margin: 8dp;
-  border-radius: 14dp;
-}
-
-.pane-nav-me-image {
-  width: 28dp;
-  height: 28dp;
-}
-
-.pane-nav-me-avatar .avatar-letter {
-  font-size: 12dp;
-}
-
 .shell-layer-compact .pane-nav-back,
 .shell-layer-compact .settings-back-btn {
   top: 2dp;
@@ -15212,6 +15179,25 @@ textarea:composing ~ .prompt-composer-label,
 .shell-layer-compact .contacts-list-view,
 .shell-layer-compact .settings-list-view {
   padding-top: 56dp;
+}
+
+/* Chats starts at the very top: its title row is the band under the fixed bar. */
+.shell-layer-compact .sidebar-sessions {
+  padding-top: 0;
+}
+
+/* The fixed bar over the title row passes touches through (a drag that starts on the title scrolls the list); only its
+   compose button takes them. */
+.shell-layer-compact .sidebar-panel .pane-nav,
+.shell-layer-compact .sidebar-panel .pane-nav-bg,
+.shell-layer-compact .sidebar-panel .bar-fade,
+.shell-layer-compact .sidebar-panel .pane-nav-title {
+  pointer-events: none;
+}
+
+.shell-layer-compact .sidebar-panel .pane-nav-actions,
+.shell-layer-compact .sidebar-panel .pane-nav-btn {
+  pointer-events: auto;
 }
 
 .shell-layer-compact .home-scroll {

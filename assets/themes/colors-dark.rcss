@@ -3687,16 +3687,21 @@ input.checkbox:checked {
   color: #ffffff;
 }
 
-.ai-drawer-me-link-icon--ok {
-  image-color: #40c8e0;
+.link-dot--ok {
+  background-color: #30d158;
 }
 
-.ai-drawer-me-link-icon--connecting {
-  image-color: #ff9f0a;
+.link-dot--connecting {
+  background-color: #ff9f0a;
 }
 
-.ai-drawer-me-link-icon--offline {
-  image-color: #ff453a;
+/* Offline: grey (the owner's choice; red was the alternative). One line to change. */
+.link-dot--offline {
+  background-color: #8e8e93;
+}
+
+.link-status-text {
+  color: #ebebf599;
 }
 
 .ai-drawer-me-link-text {

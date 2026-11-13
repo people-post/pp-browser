@@ -81,8 +81,12 @@ TEST(RmlBindingGuardTest, TheAiDrawerMeRowResolvesItsNamesAndTheLinkStatus) {
   }
   EXPECT_NE(row.find("class=\"ai-drawer-me-link\" data-if=\"chats_link_state != ''\""), std::string::npos);
   EXPECT_NE(row.find("{{chats_link_text}}"), std::string::npos);
-  EXPECT_NE(row.find("cloud-ok.svg"), std::string::npos);
-  EXPECT_NE(row.find("cloud-off.svg"), std::string::npos);
+  for (const char* dot : {"link-dot--ok", "link-dot--connecting", "link-dot--offline"}) {
+    EXPECT_NE(row.find(dot), std::string::npos) << dot;
+  }
+  for (const char* gone : {"cloud-ok", "cloud-sync", "cloud-off", "ai-drawer-me-link-icon"}) {
+    EXPECT_EQ(row.find(gone), std::string::npos) << gone << ": the drawer's status is a dot now";
+  }
   const std::string host = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/shell/ShellHost.cpp");
   EXPECT_NE(host.find("ctor.Bind(\"chats_link_state\""), std::string::npos);
   EXPECT_NE(host.find("ctor.Bind(\"chats_link_text\""), std::string::npos);

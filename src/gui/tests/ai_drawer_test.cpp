@@ -524,7 +524,7 @@ TEST_F(ShellDrawerTest, TheRealViewMountsAndItsRowsSwipe) {
 }
 
 // The "you" row carries the device's link status under the nickname (ShellHost::SetChatsLink): nothing while unknown,
-// the teal cloud-tick icon and its word when online, the red cloud-slash icon and its word when offline.
+// a green dot and its word when online, an amber one while connecting, a grey one when offline.
 TEST_F(ShellDrawerTest, TheMeRowShowsTheLinkStatusUnderTheName) {
   host_.OpenAiDrawer();
   Settle();
@@ -545,25 +545,26 @@ TEST_F(ShellDrawerTest, TheMeRowShowsTheLinkStatusUnderTheName) {
   host_.SetChatsLink(true, true);
   Settle();
   EXPECT_TRUE(line->IsVisible());
-  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--ok"), 1);
-  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--offline"), 0);
+  EXPECT_EQ(count_visible("link-dot--ok"), 1);
+  EXPECT_EQ(count_visible("link-dot--offline"), 0);
   EXPECT_FALSE(host_.State().chats_link_text.empty());
   EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos) << "the word is rendered";
 
   host_.SetChatsLink(true, false);
   Settle();
   EXPECT_TRUE(line->IsVisible());
-  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--ok"), 0);
-  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--offline"), 1);
+  EXPECT_EQ(count_visible("link-dot--ok"), 0);
+  EXPECT_EQ(count_visible("link-dot--offline"), 1);
   EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos);
 
   host_.SetChatsLink(ChatsLink::Connecting);
   Settle();
   EXPECT_TRUE(line->IsVisible());
   EXPECT_EQ(host_.State().chats_link_state, "connecting");
-  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--ok"), 0);
-  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--offline"), 0);
-  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--connecting"), 1);
+  EXPECT_EQ(count_visible("link-dot--ok"), 0);
+  EXPECT_EQ(count_visible("link-dot--offline"), 0);
+  EXPECT_EQ(count_visible("link-dot--connecting"), 1);
+  EXPECT_EQ(count_visible("link-dot--connecting"), 1);
   EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos);
 
   host_.SetChatsLink(false, false);

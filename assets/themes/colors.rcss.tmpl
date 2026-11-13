@@ -3711,16 +3711,21 @@ input.checkbox:checked {
   color: {{label}};
 }
 
-.ai-drawer-me-link-icon--ok {
-  image-color: {{secure}};
+.link-dot--ok {
+  background-color: {{success}};
 }
 
-.ai-drawer-me-link-icon--connecting {
-  image-color: {{warn}};
+.link-dot--connecting {
+  background-color: {{warn}};
 }
 
-.ai-drawer-me-link-icon--offline {
-  image-color: {{danger}};
+/* Offline: grey (the owner's choice; red was the alternative). One line to change. */
+.link-dot--offline {
+  background-color: {{gray}};
+}
+
+.link-status-text {
+  color: {{label-2}};
 }
 
 .ai-drawer-me-link-text {

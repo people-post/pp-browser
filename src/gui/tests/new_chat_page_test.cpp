@@ -215,20 +215,21 @@ TEST(NewChatPageTest, PageIsTheGroupedLookWithTwoCardsAndRoundedGroups) {
   EXPECT_NE(rml.find("class=\"nc-group\""), std::string::npos);
 }
 
-// The Chats bar is the large-title layout with the "you" block (avatar, name, link status) in place of the words: the
-// small bar has your small avatar (shown once collapsed) and the compose button; no name on the small bar.
+// The Chats bar is the large-title layout: one title row ("Chats" and the link status dot) in the scroller, the small bar
+// with the centred title (shown once collapsed) and the compose button; no avatar and no name.
 TEST(NewChatPageTest, ChatsBarIsTheLargeTitleLayout) {
   const std::string rml = ReadAsset("views/sidebar.rml");
   const size_t bar_end = rml.find("<div class=\"sidebar-header row\">");
   const std::string bar = rml.substr(0, bar_end);
-  EXPECT_NE(bar.find("class=\"pane-nav-me\""), std::string::npos);
-  EXPECT_EQ(bar.find("class=\"pane-nav-title\""), std::string::npos);
+  EXPECT_EQ(bar.find("pane-nav-me"), std::string::npos);
+  EXPECT_NE(bar.find("class=\"pane-nav-title\""), std::string::npos);
   EXPECT_NE(bar.find("open_new_session_menu()"), std::string::npos);
   EXPECT_EQ(bar.find("pane-nav-avatar"), std::string::npos);
   EXPECT_EQ(bar.find("{{profile_nickname}}"), std::string::npos);
-  EXPECT_NE(rml.find("<div class=\"large-title\">"), std::string::npos);
-  EXPECT_NE(rml.find("class=\"chat-me\""), std::string::npos);
-  EXPECT_NE(rml.find("{{profile_nickname}}"), std::string::npos);
+  EXPECT_NE(rml.find("<div class=\"large-title\" data-model=\"window\">"), std::string::npos);
+  EXPECT_NE(rml.find("class=\"large-title-text\""), std::string::npos);
+  EXPECT_EQ(rml.find("class=\"chat-me\""), std::string::npos);
+  EXPECT_EQ(rml.find("{{profile_nickname}}"), std::string::npos);
   EXPECT_NE(rml.find("chats_link_state"), std::string::npos);
   EXPECT_EQ(rml.find("<p class=\"large-title\">"), std::string::npos);
 }
