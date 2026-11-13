@@ -285,6 +285,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_reconnect_ok", &host.state_.call_in_progress.reconnect_ok);
     ctor.Bind("call_in_progress_reconnect_fading", &host.state_.call_in_progress.reconnect_fading);
     ctor.Bind("call_in_progress_reconnect_dim", &host.state_.call_in_progress.reconnect_dim);
+    ctor.Bind("call_in_progress_subtitle_warning", &host.state_.call_in_progress.subtitle_warning);
     if (auto roster_handle = ctor.RegisterStruct<CallRosterParticipantState>()) {
       roster_handle.RegisterMember("name", &CallRosterParticipantState::name);
       roster_handle.RegisterMember("stream_id", &CallRosterParticipantState::stream_id);
@@ -1483,6 +1484,7 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_active");
   DataModelHost::Instance().Dirty("window", "call_in_progress_title");
   DataModelHost::Instance().Dirty("window", "call_in_progress_subtitle");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_subtitle_warning");
   DataModelHost::Instance().Dirty("window", "call_in_progress_on_hold");
   DataModelHost::Instance().Dirty("window", "call_in_progress_status_hint");
   for (const char* name : kCallLevelVariables) { // the same list LevelsOnly dirties
@@ -1559,7 +1561,8 @@ void ShellHost::DirtyCallChrome() {
                            "call_in_progress_reconnect_text",
                            "call_in_progress_reconnect_ok",
                            "call_in_progress_reconnect_fading",
-                           "call_in_progress_reconnect_dim"}) {
+                           "call_in_progress_reconnect_dim",
+                           "call_in_progress_subtitle_warning"}) {
     DataModelHost::Instance().Dirty("window", name);
   }
 }

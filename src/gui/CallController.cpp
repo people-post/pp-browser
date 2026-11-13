@@ -382,6 +382,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .ring_call_id = ring.call_id.c_str(),
       .in_call_id = in_call.call_id.c_str(),
       .in_call_subtitle = in_call.subtitle.c_str(),
+      .in_call_subtitle_warning = in_call.subtitle_warning,
       .ring_caller_label = ring.caller_label.c_str(),
       .ring_media_label = ring.media_label.c_str(),
       .ring_eyebrow = ring.eyebrow.c_str(),
@@ -1358,6 +1359,7 @@ void CallController::RenderFailedPage(const CallFailedPage& page, const int64_t 
   in_call.title = page.video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
   in_call.peer_label = CallerNameFor(page.peer_identity).label.c_str();
   in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
+  in_call.subtitle_warning = false;
   in_call.status_hint = StatusHintText(shown.hint, shown).c_str();
   in_call.quality_hint = "";
   in_call.show_retry = true; // the desktop bar's icon: Call again
@@ -1377,6 +1379,7 @@ void CallController::RenderAnswering(const CallScreen& screen, const CallMediaSc
   in_call_.active = true;
   in_call_.call_id = screen.ring_call_id;
   in_call_.subtitle = Tr("call.status.connecting").c_str();
+  in_call_.subtitle_warning = false;
   in_call_.title = screen.ring_video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
   in_call_.peer_label = CallerNameFor(screen.caller_identity).label.c_str();
   // Answered with video: switch to the video stage right away (see CallMediaFrame::kVideoStartMs).
@@ -1951,6 +1954,7 @@ void CallController::ApplyStatusLine(const CallScreen& screen, const CallMediaSc
   auto& in_call = in_call_;
   in_call.elapsed = FormatTimer(frame.timer_since_ms, now_ms).c_str();
   in_call.subtitle = StatusLineText(frame.line, screen, now_ms).c_str();
+  in_call.subtitle_warning = frame.line.warning;
   in_call.status_hint = StatusHintText(frame.line.hint, screen).c_str();
   // The middle line as the presenter decided (a 1:1 call: never; the pills say it — DEV/PLAN-call-failed-redial.md 9).
   in_call.quality_hint = frame.center_hint_key.empty() ? "" : Tr(frame.center_hint_key).c_str();

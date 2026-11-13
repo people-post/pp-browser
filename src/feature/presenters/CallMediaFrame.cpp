@@ -116,6 +116,7 @@ CallStatusLine DecideStatusLine(const CallScreen& screen, const CallMediaFacts& 
       line = Words(!facts.hold_stuck ? "call.status.on_hold_local"
                    : screen.group    ? "call.status.hold_stuck_group"
                                      : "call.status.hold_stuck_peer");
+      line.warning = facts.hold_stuck;
     } else {
       line = Words("call.status.on_hold_peer_named");
       line.kind = LineKind::PeerOnHold;
@@ -127,6 +128,7 @@ CallStatusLine DecideStatusLine(const CallScreen& screen, const CallMediaFacts& 
   if (facts.playout_stuck && (line.kind == LineKind::Timer || line.kind == LineKind::Participants) && !d.on_hold &&
       !d.couldnt_connect && !d.path_lost && !d.reconnect) {
     line = Words(screen.group ? "call.status.cant_hear_group" : "call.status.cant_hear_peer");
+    line.warning = true;
   }
   line.hint = screen.status == Status::CouldntConnect ? screen.hint : CallScreen::Hint::None;
   return line;

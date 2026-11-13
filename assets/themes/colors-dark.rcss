@@ -633,6 +633,11 @@ select selectbox option:hover {
   image-color: #ff9f0a;
 }
 
+/* The warning triangle before a broken call audio's status line (the words keep their colour). */
+.call-status-warn svg {
+  image-color: #ff9f0a;
+}
+
 .shell-call-quality-bar {
   background-color: #7878805c;
 }

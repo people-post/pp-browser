@@ -6416,6 +6416,49 @@ call-video-tile {
   text-align: center;
 }
 
+/* The status line as a row: an optional warning triangle (a broken call audio) before the words; the triangle stays on
+   the first line when the words wrap. Its box is one line tall, so the icon centres on that line. */
+.call-status-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.call-status-row p {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.call-status-warn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18dp;
+  height: 22dp;
+  margin-right: 6dp;
+}
+
+.call-status-row--sub .call-status-warn {
+  height: 20dp;
+}
+
+.call-status-row--bar {
+  justify-content: flex-start;
+}
+
+.call-status-row--bar .call-status-warn {
+  width: 14dp;
+  height: 16dp;
+  margin: 2dp 6dp 0 0;
+}
+
+.call-status-row--bar .call-status-warn svg {
+  width: 14dp;
+  height: 14dp;
+}
+
 .call-phone-debug {
   margin: 6dp 0 0 0;
   font-size: 12dp;

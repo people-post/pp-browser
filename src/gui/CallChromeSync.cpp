@@ -136,8 +136,9 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
   // The clock ticking ("0:05" → "0:06", a status kind change remounted above), the quality chip, and the phone's
   // result line / signal bar / top pill / speaking rings: each changed variable alone (B146).
   const bool parts_changed =
-      synced.in_call_subtitle != next.in_call_subtitle || synced.in_call_elapsed != next.in_call_elapsed ||
-      synced.in_call_quality_bars != next.in_call_quality_bars ||
+      synced.in_call_subtitle != next.in_call_subtitle ||
+      synced.in_call_subtitle_warning != next.in_call_subtitle_warning ||
+      synced.in_call_elapsed != next.in_call_elapsed || synced.in_call_quality_bars != next.in_call_quality_bars ||
       synced.in_call_quality_ok != next.in_call_quality_ok ||
       synced.in_call_quality_warn != next.in_call_quality_warn ||
       synced.in_call_quality_error != next.in_call_quality_error ||
@@ -205,6 +206,7 @@ std::vector<const char*> CallChromeChangedVariables(const CallInProgressState& b
   add(before.reconnect_text != after.reconnect_text, "call_in_progress_reconnect_text");
   add(before.reconnect_ok != after.reconnect_ok, "call_in_progress_reconnect_ok");
   add(before.reconnect_fading != after.reconnect_fading, "call_in_progress_reconnect_fading");
+  add(before.subtitle_warning != after.subtitle_warning, "call_in_progress_subtitle_warning");
   add(before.reconnect_dim != after.reconnect_dim, "call_in_progress_reconnect_dim");
   add(before.show_debug_subtitle != after.show_debug_subtitle, "call_in_progress_show_debug_subtitle");
   add(before.debug_subtitle != after.debug_subtitle, "call_in_progress_debug_subtitle");

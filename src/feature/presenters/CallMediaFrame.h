@@ -140,6 +140,8 @@ struct CallStatusLine {
   std::string path_key;
   /** Couldn't connect: what the line explains below itself. */
   CallScreen::Hint hint = CallScreen::Hint::None;
+  /** The audio is broken (nothing plays, or the system keeps it): the page puts a warning triangle before the words. */
+  bool warning = false;
 
   bool operator==(const CallStatusLine&) const = default;
 };

@@ -473,6 +473,8 @@ struct CallInProgressState {
   ui::String call_id;
   ui::String title;
   ui::String subtitle;
+  /** A warning triangle before the subtitle (the call audio is broken). Bound. */
+  bool subtitle_warning = false;
   /** Secondary tip under subtitle (Local Network / mic / firewall). */
   ui::String status_hint;
   ui::String elapsed;

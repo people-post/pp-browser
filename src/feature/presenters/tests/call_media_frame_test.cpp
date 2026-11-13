@@ -787,5 +787,31 @@ TEST(CallMediaFrameTest, TheStuckHoldSentenceIsOnlyForAHoldHereAndNeverOverAFail
   EXPECT_NE(frame.Step(InCallScreen(Status::Reconnecting), f, Health()).line.key, "call.status.hold_stuck_peer");
 }
 
+TEST(CallMediaFrameTest, OnlyTheTwoBrokenAudioLinesCarryTheWarningTriangle) {
+  CallMediaFrame frame;
+  CallScreen group = InCallScreen();
+  group.group = true;
+  CallMediaFacts f = LiveFacts(160'000);
+  EXPECT_FALSE(frame.Step(InCallScreen(), f, Health()).line.warning) << "the timer";
+  EXPECT_FALSE(frame.Step(group, f, Health()).line.warning) << "the head count";
+  f.playout_stuck = true;
+  EXPECT_TRUE(frame.Step(InCallScreen(), f, Health()).line.warning) << "nothing plays, 1:1";
+  EXPECT_TRUE(frame.Step(group, f, Health()).line.warning) << "nothing plays, group";
+  f.playout_stuck = false;
+  f.local_on_hold = true;
+  EXPECT_FALSE(frame.Step(InCallScreen(), f, Health()).line.warning) << "a normal hold here";
+  f.hold_stuck = true;
+  EXPECT_TRUE(frame.Step(InCallScreen(), f, Health()).line.warning) << "the system keeps the audio, 1:1";
+  EXPECT_TRUE(frame.Step(group, f, Health()).line.warning) << "the system keeps the audio, group";
+  f.local_on_hold = false;
+  f.hold_stuck = false;
+  f.peer_on_hold = true;
+  EXPECT_FALSE(frame.Step(InCallScreen(), f, Health()).line.warning) << "they are on hold";
+  f.peer_on_hold = false;
+  f.media_status = CallMediaStatus::Reconnecting;
+  EXPECT_FALSE(frame.Step(InCallScreen(Status::Reconnecting), f, Health()).line.warning) << "reconnecting";
+  EXPECT_FALSE(frame.Step(InCallScreen(Status::Connecting), LiveFacts(160'000), Health()).line.warning) << "connecting";
+}
+
 } // namespace
 } // namespace pbr
