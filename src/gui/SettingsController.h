@@ -163,6 +163,8 @@ public:
   void BindShowMyQr(std::function<void()> show);
   /** The rows "Service" offers now (prod, custom, and QA only with a QA build and the tester options on); `OnChooseBackend` shows exactly these. */
   std::vector<SettingsChoicePage::Option> BackendChoiceOptions() const;
+  /** Test seam: what the Service chooser does for a picked row id (a public forwarder; tests must not widen access with `#define private public`, which breaks the MSVC link). */
+  void ChooseBackendForTest(const std::string& id) { ApplyBackendChoice(id); }
   /** Refresh reachability Connection card via SettingsCommands ports. */
   void SyncReachability();
   /** Persist skip/ack for the Me → Network reachability nudge (condition-keyed). */
