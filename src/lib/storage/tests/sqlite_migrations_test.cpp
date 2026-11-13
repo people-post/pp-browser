@@ -329,6 +329,59 @@ TEST_F(SqliteMigrationsTest, AProfileDbAt5DropsWhatARelayIdKeys) {
   CloseDb();
 }
 
+// profile.db 6 → 7 (account card version 3): our own kept version 2 card takes the version 3 shape (OwnCards then
+// re-issues it with its device list); anyone else's goes, their keys kept as a key card.
+TEST_F(SqliteMigrationsTest, AProfileDbAt6StepsKeptCardsToVersion3) {
+  WriteProfileWithAChat();
+  sqlite3* db = Db(ProfileDb());
+  Exec(db,
+       "CREATE TABLE IF NOT EXISTS peer_cards (account_id TEXT PRIMARY KEY, record_json TEXT NOT NULL, "
+       "updated_at INTEGER NOT NULL);");
+  const std::string card =
+      R"({"card_version":2,"account_id":"account:x","devices":[{"peer_id":"QmA","signing_public_key_b64":"s",)"
+      R"("kem_public_key_b64":"k"}],"issued_at":5,"card_signature_b64":"sig"})";
+  const auto record = [&card](const std::string& account, const std::string& source) {
+    return R"({"account_id":")" + account + R"(","signing_public_key_b64":"s","kem_public_key_b64":"k",)" +
+           R"("kem_binding_signature_b64":"b","issued_at":5,"devices":["QmA"],"source":")" + source +
+           R"(","newest_card":)" + card + "}";
+  };
+  Exec(db, "INSERT INTO peer_cards VALUES ('account:me', '" + record("account:me", "self") +
+               "', 1), ('account:sib', '" + record("account:sib", "sibling") + "', 1), ('account:ann', '" +
+               record("account:ann", "envelope") + "', 1), ('account:bad', 'not json', 1);");
+  Exec(db, "PRAGMA user_version = 6;");
+  CloseDb();
+
+  ASSERT_TRUE(OpenStore().ListThreads()); // opens and migrates
+  CloseStore();
+  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion);
+  db = Db(ProfileDb());
+  const auto text = [&](const std::string& sql) {
+    sqlite3_stmt* stmt = nullptr;
+    EXPECT_EQ(sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr), SQLITE_OK) << sql;
+    std::string out = "<none>";
+    if (sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_type(stmt, 0) != SQLITE_NULL) {
+      out = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    }
+    sqlite3_finalize(stmt);
+    return out;
+  };
+  const auto field = [&](const std::string& account, const std::string& path) {
+    return text("SELECT json_extract(record_json, '" + path + "') FROM peer_cards WHERE account_id = '" + account +
+                "'");
+  };
+  for (const std::string own : {"account:me", "account:sib"}) {
+    EXPECT_EQ(field(own, "$.newest_card.card_version"), "3") << own;
+    EXPECT_EQ(field(own, "$.newest_card.relays"), "[]");
+    EXPECT_EQ(field(own, "$.newest_card.initiation_floor"), "0");
+    EXPECT_EQ(field(own, "$.newest_card.devices[0].peer_id"), "QmA") << "the device list is kept";
+    EXPECT_EQ(field(own, "$.newest_card.card_signature_b64"), "sig");
+  }
+  EXPECT_EQ(field("account:ann", "$.newest_card"), "<none>") << "another account's card goes";
+  EXPECT_EQ(field("account:ann", "$.kem_binding_signature_b64"), "b") << "its keys stay";
+  EXPECT_EQ(text("SELECT record_json FROM peer_cards WHERE account_id = 'account:bad'"), "not json");
+  CloseDb();
+}
+
 // thread.db 3 → 4 (multi-relay MR001): in a 1:1 chat, a message stored with a `relay:` sender is the peer's — it takes
 // the peer's Account ID; a history watermark keyed by a relay id is dropped.
 TEST_F(SqliteMigrationsTest, AThreadDbAt3NamesItsPeerByAccountId) {

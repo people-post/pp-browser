@@ -77,7 +77,7 @@ public:
                                              int64_t timestamp, const std::string& signature_alg,
                                              const std::string& kem_public_key_b64,
                                              const std::string& kem_binding_signature_b64, const std::string& peer_id,
-                                             const std::vector<std::string>& multiaddrs, int64_t initiation_floor,
+                                             const std::vector<std::string>& multiaddrs,
                                              const RegistrationPublishOpts& publish) override {
     if (base_url_.empty()) {
       return Error("Registration base_url not configured");
@@ -96,7 +96,6 @@ public:
     if (!kem_binding_signature_b64.empty()) {
       body.set("kem_binding_signature_b64", kem_binding_signature_b64);
     }
-    body.set("initiation_floor", initiation_floor);
     if (!peer_id.empty()) {
       body.set("peer_id", peer_id);
     }

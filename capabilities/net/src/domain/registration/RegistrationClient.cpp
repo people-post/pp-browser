@@ -8,6 +8,26 @@
 
 namespace pbr {
 
+namespace {
+
+int64_t CardIssuedAt(const RegistrationPublishOpts& publish) {
+  return publish.account_card ? publish.account_card->getIf<int64_t>("issued_at").value_or(0) : 0;
+}
+
+} // namespace
+
+RegistrationPublishOpts WithAccountCard(RegistrationPublishOpts publish, const Roe<AccountCard>& card) {
+  if (card) {
+    publish.account_card = AccountCardToJson(*card);
+  }
+  return publish;
+}
+
+bool ShouldPublishAccountCard(const LocalIdentity& identity, const RegistrationPublishOpts& publish) {
+  const int64_t issued_at = CardIssuedAt(publish);
+  return identity.registered && issued_at > 0 && issued_at != identity.registered_card_issued_at;
+}
+
 void ApplyRegistrationResult(LocalIdentity& identity, const RegistrationResult& result) {
   identity.registered = result.success;
   if (!result.llm_api_key.empty()) {
@@ -17,10 +37,10 @@ void ApplyRegistrationResult(LocalIdentity& identity, const RegistrationResult& 
   if (!result.expires_at.empty()) {
     identity.registration_expires_at = result.expires_at;
   }
-  if (result.initiation_floor_present) {
-    identity.initiation_floor = result.initiation_floor;
-  }
   if (result.success) {
+    if (result.account_card_issued_at > 0) {
+      identity.registered_card_issued_at = result.account_card_issued_at;
+    }
     identity.kem_binding_published = result.kem_bound;
     if (!result.registered_backend_url.empty()) {
       identity.registered_backend_url = result.registered_backend_url;
@@ -73,7 +93,7 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
 
   auto finished = registration.FinishRegistration(
       start->challenge, loaded->account_signing_public_key_b64, nickname, *signature, timestamp, start->signature_alg,
-      loaded->kem_public_key_b64, *kem_binding, loaded->peer_id, multiaddrs, loaded->initiation_floor, publish);
+      loaded->kem_public_key_b64, *kem_binding, loaded->peer_id, multiaddrs, publish);
   if (!finished) {
     return finished;
   }
@@ -82,6 +102,9 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
     return Error("Registration answered for another account");
   }
   finished->registered_backend_url = NormalizeRegistrationBackend(registration.BaseUrl());
+  if (!finished->account_card_status.empty()) {
+    finished->account_card_issued_at = CardIssuedAt(publish); // the relay holds it, or a newer one (stale)
+  }
   return finished;
 }
 
@@ -130,19 +153,21 @@ Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registratio
 }
 
 Roe<std::optional<RegistrationResult>> MaybeAutoRenewNetworkOnly(IRegistrationClient& registration,
-                                                                 IdentityStore& identity,
-                                                                 const bool auto_renew_enabled) {
+                                                                 IdentityStore& identity, const bool auto_renew_enabled,
+                                                                 const RegistrationPublishOpts& publish) {
   auto loaded = identity.Get();
   if (!loaded) {
     return loaded.error();
   }
   // A registration from before KEM key bindings publishes one now: peers take the KEM key only with it.
-  // A registration made at another backend (or by a build that did not record one) renews against this one.
+  // A registration made at another backend (or by a build that did not record one) renews against this one. A card
+  // newer than the one the relay took goes too: the relay reads our relays and floor from it (MR002 / MR005).
   const bool due = ShouldRenewRegistration(*loaded, 0, registration.BaseUrl());
-  if (!ShouldPublishKemBinding(*loaded) && (!due || !auto_renew_enabled)) {
+  if (!ShouldPublishKemBinding(*loaded) && !ShouldPublishAccountCard(*loaded, publish) &&
+      (!due || !auto_renew_enabled)) {
     return std::optional<RegistrationResult>{};
   }
-  auto result = RenewNetworkOnly(registration, identity, loaded->nickname);
+  auto result = RenewNetworkOnly(registration, identity, loaded->nickname, {}, publish);
   if (!result) {
     return result.error();
   }
@@ -150,12 +175,12 @@ Roe<std::optional<RegistrationResult>> MaybeAutoRenewNetworkOnly(IRegistrationCl
 }
 
 Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, IdentityStore& identity,
-                                     bool auto_renew_enabled) {
+                                     bool auto_renew_enabled, const RegistrationPublishOpts& publish) {
   auto loaded = identity.Get(); // the account the renewal runs for
   if (!loaded) {
     return loaded.error();
   }
-  auto result = MaybeAutoRenewNetworkOnly(registration, identity, auto_renew_enabled);
+  auto result = MaybeAutoRenewNetworkOnly(registration, identity, auto_renew_enabled, publish);
   if (!result) {
     return result.error();
   }

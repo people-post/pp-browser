@@ -29,9 +29,17 @@ struct RegistrationPublishOpts {
   int amp_wire = 0;
   std::string node_version;
   std::vector<std::string> features;
+  /**
+   * The account's signed account card (ACCOUNT_CARD.md), on register/finish only: the relay stores the newest and
+   * reads the account's relays and initiation floor from it (multi-relay MR002 / MR005). Unset: none sent (a pp-node).
+   */
+  std::optional<pp::common::Object> account_card;
 };
 
-/** register/finish's extras into `body`: entity_kind and capabilities (N027), what a mesh_node runs (N032). */
+/**
+ * register/start's and register/finish's shared extras into `body`: entity_kind and capabilities (N027), what a
+ * mesh_node runs (N032). Not the account card (finish only).
+ */
 void ApplyRegistrationPublishOpts(pp::common::Object& body, const RegistrationPublishOpts& publish);
 
 /** A `GET /v1/mesh/nodes` body's rows (N027), with what each node says it runs (N032) when it says it. */
@@ -45,9 +53,10 @@ struct RegistrationResult {
   SecretText llm_api_key;
   /** ISO-8601 registration expiry from register/finish. */
   std::string expires_at;
-  /** Echoed initiation floor when server supports it; missing → leave unset (0). */
-  int64_t initiation_floor = 0;
-  bool initiation_floor_present = false;
+  /** What the relay did with the account card sent (`stored`, `same`, `stale`); empty when none was sent. */
+  std::string account_card_status;
+  /** Set by the registration flow, not the wire: the `issued_at` of the card the relay answered for (0: none). */
+  int64_t account_card_issued_at = 0;
   /** The directory entry now carries the account's KEM key binding (the relay stored it). */
   bool kem_bound = false;
   /** Set by the registration flow, not the wire: the normalized base URL of the registry that finished it. */
@@ -71,12 +80,14 @@ public:
                                                          const std::string& peer_id = "",
                                                          const std::vector<std::string>& multiaddrs = {},
                                                          const RegistrationPublishOpts& publish = {}) = 0;
-  virtual Roe<RegistrationResult> FinishRegistration(
-      const std::string& challenge, const std::string& public_key_b64, const std::string& nickname,
-      const std::string& signature, int64_t timestamp, const std::string& signature_alg = "ml-dsa-65",
-      const std::string& kem_public_key_b64 = "", const std::string& kem_binding_signature_b64 = "",
-      const std::string& peer_id = "", const std::vector<std::string>& multiaddrs = {}, int64_t initiation_floor = 0,
-      const RegistrationPublishOpts& publish = {}) = 0;
+  virtual Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
+                                                     const std::string& nickname, const std::string& signature,
+                                                     int64_t timestamp, const std::string& signature_alg = "ml-dsa-65",
+                                                     const std::string& kem_public_key_b64 = "",
+                                                     const std::string& kem_binding_signature_b64 = "",
+                                                     const std::string& peer_id = "",
+                                                     const std::vector<std::string>& multiaddrs = {},
+                                                     const RegistrationPublishOpts& publish = {}) = 0;
   virtual Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
                                                  int64_t timestamp, const std::string& account_id) = 0;
   /** Remove this account's directory registration (#328; `BuildAccountRevokeSignBytes` + signature). */

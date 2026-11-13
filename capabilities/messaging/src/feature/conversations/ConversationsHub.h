@@ -267,6 +267,8 @@ public:
   DirectoryShadowCache& DirectoryShadows();
   PeerDisplayResolver& PeerLabels();
   IRegistrationClient& Registration();
+  /** register/finish's extras for this account: its current card (MR002 / MR005), when it has one to give. */
+  RegistrationPublishOpts RegistrationCard();
   IBlobClient& Blob();
   IPushDeviceClient* PushDevices();
   PushBindingGate& PushGate() { return push_gate_; }
@@ -540,6 +542,8 @@ private:
   AccountSigningKeyLookup AccountSigningKeys() const;
   void InstallOrgBackendClients(const HubSettings& settings);
   void UpdateOrgBackendClients(const HubSettings& settings);
+  /** Our card's relay list: the registration relay in use (OwnCards::SetRelays). */
+  void SetCardRelays();
   void WireRelayAuthSigner();
   Roe<void> StartMesh(const HubSettings& settings);
   void StopMesh();

@@ -55,6 +55,11 @@ struct PeerCardFloor {
   bool operator==(const PeerCardFloor&) const = default;
 };
 
+/** The account's relays, preferred first, as its newest kept card says (MR002); empty while only key cards are known. */
+std::vector<AccountCardRelay> KeptRelays(const PeerCardRecord& record);
+/** The account's initiation floor as its newest kept card says (MR005); none while only key cards are known. */
+std::optional<int64_t> KeptInitiationFloor(const PeerCardRecord& record);
+
 /** What a message carries for a kept account: its newest account card, else its key card. */
 Object CarriedCardJson(const PeerCardRecord& record);
 

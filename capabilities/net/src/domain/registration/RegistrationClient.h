@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/net/OrgBackendClients.h"
+#include "lib/people/AccountCard.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/people/RegistrationStatus.h"
 #include "common/directory/IdentityTypes.h"
@@ -12,6 +13,11 @@
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+/** `publish` carrying our account card for register/finish (MR002 / MR005); as it is when `card` is an error. */
+RegistrationPublishOpts WithAccountCard(RegistrationPublishOpts publish, const Roe<AccountCard>& card);
+/** Registered, and `publish` carries a card other than the one the relay last answered for: it goes again. */
+bool ShouldPublishAccountCard(const LocalIdentity& identity, const RegistrationPublishOpts& publish);
 
 /** Apply finish/rotate-style result onto identity fields (does not Update store). */
 void ApplyRegistrationResult(LocalIdentity& identity, const RegistrationResult& result);
@@ -47,17 +53,19 @@ Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registratio
 
 /**
  * If ShouldRenew (incl. registered at another backend than `registration`'s) and auto_renew_enabled, finish+persist registration.
- * Returns true if renewed, false if no renew needed or preference off.
+ * Also, whatever the preference, when the KEM binding or `publish`'s account card is not published yet
+ * (ShouldPublishKemBinding, ShouldPublishAccountCard). Returns true if renewed, false if nothing was due.
  */
 Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, IdentityStore& identity,
-                                     bool auto_renew_enabled);
+                                     bool auto_renew_enabled, const RegistrationPublishOpts& publish = {});
 
 /**
  * The network half of MaybeAutoRenewRegistration: nullopt when nothing is due (same rule), else the finished
  * registration for PersistRenewal. Nothing is stored.
  */
 Roe<std::optional<RegistrationResult>> MaybeAutoRenewNetworkOnly(IRegistrationClient& registration,
-                                                                 IdentityStore& identity, bool auto_renew_enabled);
+                                                                 IdentityStore& identity, bool auto_renew_enabled,
+                                                                 const RegistrationPublishOpts& publish = {});
 
 Roe<RegistrationResult> UpdateRegisteredNickname(IRegistrationClient& registration, IdentityStore& identity,
                                                  const std::string& nickname);

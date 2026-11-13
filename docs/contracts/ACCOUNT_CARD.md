@@ -53,7 +53,7 @@ A key card plus what the account says about itself, signed as a whole.
 
 ```json
 {
-  "card_version": 2,
+  "card_version": 3,
   "account_id": "account:…",
   "signing_public_key_b64": "…",
   "kem_public_key_b64": "…",
@@ -63,6 +63,10 @@ A key card plus what the account says about itself, signed as a whole.
     { "peer_id": "Qm…", "signing_public_key_b64": "…", "kem_public_key_b64": "…" },
     { "peer_id": "Qm…", "signing_public_key_b64": "…", "kem_public_key_b64": "…" }
   ],
+  "relays": [
+    { "origin": "https://www.brief.global/api/relay" }
+  ],
+  "initiation_floor": 0,
   "issued_at": 1761235200000,
   "card_signature_b64": "…"
 }
@@ -74,24 +78,45 @@ A key card plus what the account says about itself, signed as a whole.
   each device's PeerId, the device ML-DSA-65 key that PeerId is derived from, and the device's own
   ML-KEM-768 key. This is the account's standing statement that those devices speak for it; nothing else
   in the system makes it.
-- `issued_at` — ms since epoch; the list's version. A device issues a new card only when what it says
-  changes (a device joins, a device's keys, the nickname), always later than the newest it knows.
+- `relays` — **the relays the account receives on**, preferred first ([multi-relay MR002](../../projects/multi-relay/DECISIONS.md#mr002--the-relay-list-lives-in-the-account-card)):
+  each named by its origin, the HTTPS base URL a client uses. Required; an empty list means the account
+  receives over the mesh only. Bounds ([MR004](../../projects/multi-relay/DECISIONS.md#mr004--a-relay-list-is-small-and-bounded)):
+  at most 4 entries; each `origin` an absolute `https://` URL of at most 128 bytes with a host, and no query,
+  fragment, credentials, spaces or control characters; no two the same relay (scheme and host compared without
+  case, `:443` as no port, an empty path as `/`). Today the list holds the one relay the app registers on
+  (`OwnCards::SetRelays`, the registration base URL); an origin outside the bounds — an `http://` lab or dev
+  relay — is left off, so such a card says the mesh only. The list is the **main device's**: the others keep the
+  newest card's.
+- `initiation_floor` — the account's price for opening a chat or a call with it, in `pp_credit` minor units
+  ([pricing P001](../../projects/pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet),
+  [MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)):
+  required, an integer from 0 to 2^53 − 1 (the relay reads it as a JSON number). Every relay reads a stranger's price
+  from it; the identity's `initiation_floor` (dogfood: `AppConfig.initiation_floor`) is the account's, and a device
+  that takes a sibling's newer card takes its floor, as its nickname.
+- `issued_at` — ms since epoch; the card's version. A device issues a new card only when what it says
+  changes (a device joins, a device's keys, the nickname, the relays, the floor), always later than the newest it
+  knows.
 - No addresses: multiaddrs go stale and disclose IPs ([privacy](../../projects/privacy/DECISIONS.md));
   devices are reached through the mesh (below).
 
-**Card signature:** ML-DSA-65 with the account key over: domain `pp-browser:account-card-v2` + NUL,
-version u8 `2`, the raw account ML-DSA-65 key, the raw ML-KEM-768 key, `nickname` LenUtf8, device count
+**Card signature:** ML-DSA-65 with the account key over: domain `pp-browser:account-card-v3` + NUL,
+version u8 `3`, the raw account ML-DSA-65 key, the raw ML-KEM-768 key, `nickname` LenUtf8, device count
 u64 BE, then for each device in `peer_id` byte order: `peer_id` LenUtf8, the raw device ML-DSA-65 key, the
-raw device ML-KEM-768 key; then `issued_at` i64 BE (LenUtf8 / u64 BE as
-in [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088)).
+raw device ML-KEM-768 key; then relay count u64 BE and each relay's `origin` LenUtf8 **in list order** (the
+preferred relay is signed as the first); then `initiation_floor` i64 BE and `issued_at` i64 BE (LenUtf8 / u64 BE as
+in [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088)). Golden vector (SHA-256 of the bytes, 9674 of
+them): `AccountCardSignBytesTest.MatchTheGoldenVector` in `account_card_test.cpp`, the same in the relay's
+`AccountCard.test.ts`.
 
 An account card is valid when its key card is valid, `card_signature_b64` verifies with the signing key,
 `devices` holds 1–5 entries with no duplicate PeerId, every entry's keys decode to their sizes and its
-`peer_id` is the one its device ML-DSA key derives, and `issued_at` is not more than 5 minutes ahead of the
-receiver's clock. Version 1 cards (PeerIds only) are refused.
+`peer_id` is the one its device ML-DSA key derives, `relays` and `initiation_floor` are present and within their
+bounds, and `issued_at` is not more than 5 minutes ahead of the receiver's clock. A card breaking any bound is
+refused whole, by the app and the relay alike. Cards of any other `card_version` (1: PeerIds only; 2: no relays or
+floor) are refused.
 
-**Newest wins:** the newest valid card (`issued_at`) is the account's word on its keys, nickname and
-device list; an older card changes nothing. A restored install keeps no cards but knows each account's newest
+**Newest wins:** the newest valid card (`issued_at`) is the account's word on its keys, nickname,
+device list, relays and floor; an older card changes nothing. A restored install keeps no cards but knows each account's newest
 issue time from the account locker (`card_floors`, [ACCOUNT_LOCKER](ACCOUNT_LOCKER.md#state-json))
 and refuses older cards. A device takes the newest card's nickname as the account's.
 
@@ -146,7 +171,8 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
 
 | Carrier | What | When |
 |---------|------|------|
-| Relay directory | key card fields (+ endpoints) | when a directory is configured ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md)) |
+| Relay directory | key card fields (+ endpoints), and the account card it registered with (`GET /users/by-account`) | when a directory is configured ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md)) |
+| Relay registration | our account card (`register/finish` `account_card`) | every registration and renewal, and again when our card is newer than the one the relay last answered for; the relay reads our floor from it |
 | Envelope | sender's account card, `body.e2e.sender_card` | when a copy carries a `key_init` ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md#master-psk)), so a new device's first message to anyone brings its account's newer list. On the control lane (a copy per device of the peer's, or the account copy — M024), only when a device it addresses may not hold it (`ControlLaneCarriesCard`, told per device of the peer's: a device copy's device, every device on the peer's card for an account copy): the first lane record this device sends each such device after the card changed (or since it started — a device just linked to the peer's account has been told nothing, whatever its siblings were), once a record, and always a `device_list` notice (a restored device sends it to every contact), a card or copy ask, a group's member check (the asker may be a restored device), a ringing call invite. The card is ~13 KB + 4 KB per device: it used to ride every lane message, and the relay filled with them. A receiver that cannot check an envelope — no card kept, or the sending device not on it — asks that device for the card (`card_ask`, at most once per account per 10 min and 8 a minute in all: the envelope is unverified, and its `sender_card_at` counts for nothing — [WIRE_SCHEMAS § card_ask](WIRE_SCHEMAS.md)); a lane record waits for it in memory (≤ 2 min) and is checked again once a card of the sender's is kept ([P2P_MESSAGING § The control lane](../architecture/P2P_MESSAGING.md#the-control-lane)). A device that finds a verified lane record with no copy for it, or an account copy it cannot open, sends the sender its own card (`device_list`, at most once per account per 10 min) |
 | Envelope hint | how new the sender's list is, `body.e2e.sender_card_at` | on every envelope (M021 d6): a receiver holding an older card asks the sending device for the newer one (`card_ask` → a `device_list` notice; unsigned, so it never stops a later ask — `CardAskGate`), so a device taken out stops getting copies from peers the main device's announcement did not reach (a group member who is not a contact) |
 | Link bundle | the linking device's account card | linking a device: the new one signs itself in (M021) |
@@ -292,6 +318,10 @@ grantor, and the grants we issued, one per grantee, with whether it was confirme
   and KEM key stores are filled from it at unlock (`PeerSigningKeyStore`, `PeerKemKeyStore` refuse
   anything that does not prove itself).
 - A contact keeps its account's card; a stranger's card (from a first message) is kept with the thread.
+- The relays and floor an account's newest kept card says are read with `KeptRelays` / `KeptInitiationFloor`
+  (`PeerCards.h`): none while only a key card is known. Sending by the relay list is multi-relay R2 step 3.
+- Our own kept card is re-issued, its device list as it is, when it does not verify (`OwnCards`): the version 3
+  step of `profile.db` leaves our version 2 card in the version 3 shape with its old signature ([DATA_LAYOUT § Schema versions](DATA_LAYOUT.md#schema-versions)).
 
 ## Resolving keys
 

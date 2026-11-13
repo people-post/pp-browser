@@ -62,7 +62,7 @@ States only advance `active` → `draining` → `retiring`; `draining` → `acti
 
 JSON remains the durable seed profile (caps, budgets, pricing). Env is for secrets and per-instance overrides (Compose/Kubernetes). Implementation: `src/app/node/NodeEnvOverlay.*`.
 
-**Initiation floor (P001):** top-level `initiation_floor` (integer `pp_credit` minor units, default `0`) seeds `LocalIdentity.initiation_floor` when the identity value is still `0`. No Me UI yet — set in `config.json` for testing. Older directory/register servers that omit the field are treated as `0`.
+**Initiation floor (P001):** top-level `initiation_floor` (integer `pp_credit` minor units, default `0`) seeds `LocalIdentity.initiation_floor` when the identity value is still `0`. No Me UI yet — set in `config.json` for testing. It is published in the account card (version 3, [ACCOUNT_CARD.md](../contracts/ACCOUNT_CARD.md#account-card)), which the relay takes at registration and reads strangers' price from; a sibling device's newer card sets it too.
 
 ## Runtime session state
 

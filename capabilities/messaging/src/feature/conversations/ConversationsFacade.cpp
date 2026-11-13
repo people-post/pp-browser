@@ -69,12 +69,14 @@ std::string ConversationsFacade::RegistrationBackendUrl() {
 }
 
 Roe<bool> ConversationsFacade::MaybeAutoRenewRegistration(const bool auto_renew_registration) {
-  return pbr::MaybeAutoRenewRegistration(hub_.Registration(), hub_.Identity(), auto_renew_registration);
+  return pbr::MaybeAutoRenewRegistration(hub_.Registration(), hub_.Identity(), auto_renew_registration,
+                                         hub_.RegistrationCard());
 }
 
 Roe<std::optional<RegistrationResult>> ConversationsFacade::MaybeAutoRenewRegistrationNetworkOnly(
     const bool auto_renew_registration) {
-  return pbr::MaybeAutoRenewNetworkOnly(hub_.Registration(), hub_.Identity(), auto_renew_registration);
+  return pbr::MaybeAutoRenewNetworkOnly(hub_.Registration(), hub_.Identity(), auto_renew_registration,
+                                        hub_.RegistrationCard());
 }
 
 Roe<LocalIdentity> ConversationsFacade::PersistRegistrationRenewal(const RegistrationResult& result,
@@ -1428,7 +1430,7 @@ Roe<LocalIdentity> ConversationsFacade::ModifyLocalIdentity(
 }
 
 Roe<LocalIdentity> ConversationsFacade::FinishAndPersistRegistration(const std::string& nickname) {
-  return pbr::FinishAndPersistRegistration(hub_.Registration(), hub_.Identity(), nickname);
+  return pbr::FinishAndPersistRegistration(hub_.Registration(), hub_.Identity(), nickname, {}, hub_.RegistrationCard());
 }
 
 Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std::string& nickname) {

@@ -161,6 +161,31 @@ Roe<void> ProfileDbAccountIds(const SqliteMigrationContext& context) {
 }
 
 /**
+ * 6 → 7, account card version 3 (multi-relay MR002 / MR005: the card signs its relays and floor). A kept version 2
+ * card cannot be re-signed here:
+ * - our own (the record OwnCards writes, source `self` or `sibling`) takes the version 3 shape with no relays and floor
+ *   0, its old signature kept: it does not verify, so OwnCards re-issues it on its first use, its device list as it
+ *   was (a fresh list would sign out the account's other devices);
+ * - anyone else's goes, the verified keys staying as a key card: their next envelope asks for the newer card
+ *   (`sender_card_at`), as does the contact page's refresh.
+ * A record that is not JSON is left as it is (it does not read today either).
+ */
+Roe<void> ProfileDbCardV3(const SqliteMigrationContext& context) {
+  constexpr const char* kV2 = "json_valid(record_json) AND json_extract(record_json, '$.newest_card.card_version') = 2";
+  const std::string own =
+      std::string(
+          "UPDATE peer_cards SET record_json = json_set(record_json, '$.newest_card.card_version', 3, "
+          "'$.newest_card.relays', json('[]'), '$.newest_card.initiation_floor', 0) WHERE ") +
+      kV2 + " AND json_extract(record_json, '$.source') IN ('self', 'sibling')";
+  if (auto done = ExecIfTable(context.db, "peer_cards", own.c_str()); !done) {
+    return done;
+  }
+  const std::string others =
+      std::string("UPDATE peer_cards SET record_json = json_remove(record_json, '$.newest_card') WHERE ") + kV2;
+  return ExecIfTable(context.db, "peer_cards", others.c_str());
+}
+
+/**
  * 3 → 4, Account IDs (multi-relay MR001): a message whose sender (or numbering owner) is stored as a `relay:` id is
  * the peer's in a 1:1 chat — it becomes the peer's Account ID (`thread_peer_account`); in a group chat, or a chat
  * whose peer is not known, who sent it cannot be told, and it is dropped. A history watermark keyed by a relay id is
@@ -201,7 +226,7 @@ const SqliteSchemaLadder& ProfileDbLadder() {
       kSqliteThreadProfileFloorVersion,
       kSqliteThreadProfileUserVersion,
       CreateProfileDb,
-      {{4, ProfileDbBaseline}, {5, ProfileDbAccountIds}},
+      {{4, ProfileDbBaseline}, {5, ProfileDbAccountIds}, {6, ProfileDbCardV3}},
   };
   return ladder;
 }
