@@ -2,7 +2,7 @@
 # their own NAT gateways, so no two of them share a network or can reach each other directly.
 #
 #   user-a ── nat_a (10.119.1.0/24, internal) ── gw-a ──┐
-#   user-b ── nat_b (10.119.2.0/24, internal) ── gw-b ──┼── lab (198.51.100.0/24): hop, relay (www)
+#   user-b ── nat_b (10.119.2.0/24, internal) ── gw-b ──┼── lab (198.51.100.0/24): hop, relay
 #   user-c ── nat_c (10.119.3.0/24, internal) ── gw-c ──┤
 #   user-d ── nat_d (10.119.4.0/24, internal) ── gw-d ──┘
 #

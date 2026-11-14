@@ -1,7 +1,7 @@
 // App lab: TLS in front of a lab relay (docker-compose.app-lab.yml tls-a / tls-b), so its https:// origin can go on
 // account cards (multi-relay MR004 takes no http:// origin). Terminates TLS with the lab's certificate (signed by the
 // lab CA pp_local_test.sh makes; the probes trust it through PP_BROWSER_CA_BUNDLE) and passes each request through
-// to the relay's gateway as it came. The relay gone: 502.
+// to the relay (its local stack's listener) as it came. The relay gone: 502.
 //
 //   node proxy.js <listen port> <upstream host> <upstream port>   (certificate and key in /tls)
 "use strict";
