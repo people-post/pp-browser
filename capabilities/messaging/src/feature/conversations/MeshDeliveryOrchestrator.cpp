@@ -93,15 +93,16 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
 } // namespace
 
 MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
-    IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay, InboxController& inbox,
-    AccountKeyResolver& account_keys, IPeerSessionStore& psk_store, IGroupRosterStore& group_roster,
-    GroupInviteGate* invite_gate, mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
-    std::function<void(std::function<void()>)> amp_worker_post, std::function<void(std::function<void()>)> amp_post_io,
+    IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, std::shared_ptr<IRelayClient> relay,
+    InboxController& inbox, AccountKeyResolver& account_keys, IPeerSessionStore& psk_store,
+    IGroupRosterStore& group_roster, GroupInviteGate* invite_gate, mesh::IChatPeerLinks* amp_links,
+    std::function<void()> amp_io_pump, std::function<void(std::function<void()>)> amp_worker_post,
+    std::function<void(std::function<void()>)> amp_post_io,
     std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after)
     : store_(store),
       contacts_(contacts),
       identity_(identity),
-      relay_(relay),
+      relay_(std::move(relay)),
       inbox_(inbox),
       account_keys_(account_keys),
       psk_store_(psk_store),
@@ -228,7 +229,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
   });
   // Chat reaches an account over a live link to one of the devices its card lists.
   transports_.SetDevicesOf([this](const std::string& key) { return card_service_.DevicesOf(key); });
-  outbox_.SetRelayClient(relay_);
+  outbox_.SetRelayClient(relay_.get()); // until SetRelayClients gives the sender (stable for the hub's life)
   // On the worker that finished the send: the row is marked before the UI hears of it.
   outbox_.SetOnOutcome([this](const DeliveryOutcome& outcome) {
     if (!outcome.group_member.empty()) {
@@ -723,20 +724,22 @@ void MeshDeliveryOrchestrator::RegisterPeerKeysFromDirectory(const mesh::Directo
 }
 
 void MeshDeliveryOrchestrator::SetRelayClients(RelayClients clients) {
-  relay_ = clients.preferred;
-  IRelayClient* history = clients.history ? clients.history : clients.preferred;
-  outbox_.SetRelayClient(clients.sender ? clients.sender : clients.preferred);
+  {
+    std::lock_guard lock(relay_mu_);
+    relay_ = clients.preferred;
+  }
+  outbox_.SetRelayClient(clients.sender ? clients.sender : clients.preferred.get());
   inboxes_.SetInboxes(std::move(clients.inboxes), profile_data_dir_);
   if (chat_sync_) {
-    chat_sync_ = std::make_unique<ChatSyncWorkflow>(store_, identity_, history, *receive_pipeline_, inbox_,
-                                                    transports_.History());
-    chat_sync_->SetOnMessagesChanged([this]() {
-      if (on_messages_changed_) {
-        AppRuntime::PostUI([this]() { on_messages_changed_(); });
-      }
-    });
+    // The same workflow (its hooks and its attachment downloads stay); a sync in flight keeps the relay it asked.
+    chat_sync_->SetHistoryRelay(clients.history ? std::move(clients.history) : std::move(clients.preferred));
   }
   TailSyncActiveE2eThread();
+}
+
+std::shared_ptr<IRelayClient> MeshDeliveryOrchestrator::PreferredRelay() const {
+  std::lock_guard lock(relay_mu_);
+  return relay_;
 }
 
 void MeshDeliveryOrchestrator::SetOnInboxPolled(std::function<void(const std::string& origin, bool ok)> polled) {
@@ -1140,7 +1143,7 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
   }
   const std::string& peer = (*thread)->peer_identity_value;
   // The relay delivers to the peer's Account ID (MR001).
-  view.relay_available = relay_ != nullptr && IsAccountIdentityValue(peer);
+  view.relay_available = PreferredRelay() != nullptr && IsAccountIdentityValue(peer);
   mesh::IChatPeerLinks* links = transports_.Links();
   if (peer.empty() || !links) {
     view.path_kind = view.relay_available && !peer.empty() ? ThreadPeerPathKind::ViaRelay : ThreadPeerPathKind::Failed;
@@ -2210,7 +2213,8 @@ std::string FormatUnixMsIso8601Utc(const int64_t unix_ms) {
 } // namespace
 
 Roe<RelayDeleteResult> MeshDeliveryOrchestrator::ClearUndeliveredOlderThan(const int older_than_days) {
-  if (!relay_) {
+  const std::shared_ptr<IRelayClient> relay = PreferredRelay();
+  if (!relay) {
     return Error("Relay client unavailable");
   }
   if (older_than_days <= 0) {
@@ -2222,13 +2226,13 @@ Roe<RelayDeleteResult> MeshDeliveryOrchestrator::ClearUndeliveredOlderThan(const
   }
   const int64_t before_ms = util::NowUnixMs() - static_cast<int64_t>(older_than_days) * 24LL * 60 * 60 * 1000;
   const std::string before = FormatUnixMsIso8601Utc(before_ms);
-  auto cleared = relay_->ClearInbox(identity->account_id, before);
+  auto cleared = relay->ClearInbox(identity->account_id, before);
   if (!cleared) {
     return cleared;
   }
   // Our other relays' inboxes too (multi-relay R2), best effort: the preferred relay's answer is the one reported.
   for (const RelayInbox& inbox : inboxes_.Inboxes()) {
-    if (inbox.client.get() == relay_ || !InboxReady(inbox.origin)) {
+    if (inbox.client == relay || !InboxReady(inbox.origin)) {
       continue;
     }
     if (auto other = inbox.client->ClearInbox(identity->account_id, before)) {

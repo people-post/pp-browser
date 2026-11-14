@@ -268,7 +268,10 @@ void ConversationsHub::UpdateOrgBackendClients(const HubSettings& settings) {
   push_devices_ = clients_.PushDevices();
   client_compat_ = clients_.ClientCompat();
   registration_ = clients_.Registration();
-  blob_ = clients_.Blob();
+  {
+    std::lock_guard lock(blob_mu_);
+    blob_ = clients_.Blob();
+  }
   if (account_locker_) {
     account_locker_->SetClient(clients_.Locker());
   }
@@ -2345,10 +2348,11 @@ Roe<void> ConversationsHub::UploadProfileIcon(const PreparedProfileIcon& prepare
   if (!IsMessagingReady()) {
     return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change profile icon");
   }
-  if (!blob_) {
+  const std::shared_ptr<IBlobClient> blob = BlobClient();
+  if (!blob) {
     return Error("Blob client not configured");
   }
-  auto uploaded = UploadPreparedProfileIcon(*blob_, Identity(), data_dir_, prepared);
+  auto uploaded = UploadPreparedProfileIcon(*blob, Identity(), data_dir_, prepared);
   if (!uploaded) {
     return uploaded.error();
   }
@@ -2362,10 +2366,11 @@ Roe<void> ConversationsHub::ClearProfileIcon() {
   if (!IsMessagingReady()) {
     return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change profile icon");
   }
-  if (!blob_) {
+  const std::shared_ptr<IBlobClient> blob = BlobClient();
+  if (!blob) {
     return Error("Blob client not configured");
   }
-  return ClearHostedProfileIcon(*blob_, Identity(), data_dir_);
+  return ClearHostedProfileIcon(*blob, Identity(), data_dir_);
 }
 
 namespace {
@@ -2385,7 +2390,8 @@ Roe<BlobQuotaRecoveryPlan> ConversationsHub::PlanRelayQuotaRecovery(const Error&
   if (!IsMessagingReady()) {
     return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to manage relay blob storage");
   }
-  if (!blob_) {
+  const std::shared_ptr<IBlobClient> blob = BlobClient();
+  if (!blob) {
     return Error("Blob client not configured");
   }
   auto identity = Identity().Get();
@@ -2400,7 +2406,7 @@ Roe<BlobQuotaRecoveryPlan> ConversationsHub::PlanRelayQuotaRecovery(const Error&
     return quota_error;
   }
   // An attachment found the files relay full: free the oldest sent files until this one fits.
-  return PlanOldestRelayFileDeletion(*blob_, identity->account_id, AttachmentQuotaNeededBytes(quota_error));
+  return PlanOldestRelayFileDeletion(*blob, identity->account_id, AttachmentQuotaNeededBytes(quota_error));
 }
 
 Roe<void> ConversationsHub::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {
@@ -2505,7 +2511,8 @@ Roe<ThreadMessage> ConversationsHub::ResendEdit(const std::string& thread_id, co
 }
 
 void ConversationsHub::DeleteUploadedCopy(const ThreadMessage& message) {
-  if (message.content_type != ChatContentType::Attachment || !blob_) {
+  const std::shared_ptr<IBlobClient> blob = BlobClient();
+  if (message.content_type != ChatContentType::Attachment || !blob) {
     return;
   }
   auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
@@ -2516,7 +2523,7 @@ void ConversationsHub::DeleteUploadedCopy(const ThreadMessage& message) {
   if (!identity || identity->account_id.empty()) {
     return;
   }
-  if (auto removed = DeleteUploadedAttachmentCopy(*blob_, identity->account_id, fields->url); !removed) {
+  if (auto removed = DeleteUploadedAttachmentCopy(*blob, identity->account_id, fields->url); !removed) {
     // The copy expires on its own (7 days); the detail names the blob id, never the link.
     log().warning << "uploaded copy not deleted: " << AppError::Log(removed.error());
   }
@@ -2529,7 +2536,8 @@ Roe<void> ConversationsHub::DeleteRelayFileById(const std::string& blob_id) {
   if (!IsMessagingReady()) {
     return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to manage relay blob storage");
   }
-  if (!blob_) {
+  const std::shared_ptr<IBlobClient> blob = BlobClient();
+  if (!blob) {
     return Error("Blob client not configured");
   }
   auto identity = Identity().Get();
@@ -2539,7 +2547,7 @@ Roe<void> ConversationsHub::DeleteRelayFileById(const std::string& blob_id) {
   if (!identity->registered || identity->account_id.empty()) {
     return Error("Register on the network before using relay blob storage");
   }
-  return DeleteRelayFile(*blob_, identity->account_id, blob_id);
+  return DeleteRelayFile(*blob, identity->account_id, blob_id);
 }
 
 AttachmentLimits ConversationsHub::CurrentAttachmentLimits() const {
@@ -2594,7 +2602,8 @@ void ConversationsHub::PostRelayRegistrationSignal(const RelayRegistrationSignal
 }
 
 void ConversationsHub::CheckBlobSpace(const bool after_quota_error) {
-  if (!blob_space_monitor_.ShouldCheck(util::NowUnixMs(), after_quota_error) || !blob_) {
+  const std::shared_ptr<IBlobClient> blob = BlobClient();
+  if (!blob_space_monitor_.ShouldCheck(util::NowUnixMs(), after_quota_error) || !blob) {
     return;
   }
   auto identity = Identity().Get();
@@ -2602,7 +2611,7 @@ void ConversationsHub::CheckBlobSpace(const bool after_quota_error) {
     return;
   }
   // Attachments live on the files relay (#465): its byte quota is the space that fills.
-  auto listed = blob_->FileList(identity->account_id, "");
+  auto listed = blob->FileList(identity->account_id, "");
   if (!listed) {
     return;
   }
@@ -2629,7 +2638,7 @@ Roe<Thread> ConversationsHub::AttachmentTargetThread(const std::string& thread_i
   if (!IsMessagingReady()) {
     return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to send attachments");
   }
-  if (!blob_) {
+  if (!BlobClient()) {
     return Error("Blob client not configured");
   }
   if (thread_id.empty()) {
@@ -2707,9 +2716,10 @@ void ConversationsHub::SendAttachmentAsync(const std::string& thread_id, Outgoin
     };
   }
 
-  auto run = [this, job, finish, name = attachment.filename, mime = attachment.mime,
+  // The send keeps the client it starts with, wherever the preferred relay moves meanwhile (MR006).
+  auto run = [this, job, finish, blob = BlobClient(), name = attachment.filename, mime = attachment.mime,
               upload_opts = std::move(upload_opts)]() mutable {
-    UploadChatAttachmentAsync(*blob_, Identity(), *job->plaintext, name, mime, std::move(upload_opts),
+    UploadChatAttachmentAsync(std::move(blob), Identity(), *job->plaintext, name, mime, std::move(upload_opts),
                               [this, job, finish](Roe<ChatAttachmentFields> fields) mutable {
                                 auto continue_send = [this, job, finish = std::move(finish),
                                                       fields = std::move(fields)]() mutable {
@@ -2812,8 +2822,9 @@ void ConversationsHub::ResumeAttachmentNow(const std::string& thread_id, const s
   upload_opts.cancelled = std::move(cancelled);
   upload_opts.outgoing = store.get();
   upload_opts.dek = dek;
-  auto run = [this, job, finish, record = std::move(*record), upload_opts = std::move(upload_opts)]() mutable {
-    ResumeChatAttachmentAsync(*blob_, Identity(), record, std::move(upload_opts),
+  auto run = [this, job, finish, blob = BlobClient(), record = std::move(*record),
+              upload_opts = std::move(upload_opts)]() mutable {
+    ResumeChatAttachmentAsync(std::move(blob), Identity(), record, std::move(upload_opts),
                               [this, job, finish](Roe<ChatAttachmentFields> fields) mutable {
                                 auto continue_send = [this, job, finish = std::move(finish),
                                                       fields = std::move(fields)]() mutable {
@@ -3816,12 +3827,15 @@ void ConversationsHub::Shutdown() {
     mesh_owner_->StopDirectoryCache();
   }
   clients_.Clear();
-  relay_ = nullptr;
+  relay_.reset();
   push_devices_ = nullptr;
   client_compat_ = nullptr;
   directory_.SetBackend(nullptr);
   registration_ = nullptr;
-  blob_ = nullptr;
+  {
+    std::lock_guard lock(blob_mu_);
+    blob_.reset();
+  }
   relay_registrations_.reset();
   identity_.reset();
   if (contacts_) {
@@ -4196,8 +4210,8 @@ PeerDisplayResolver& ConversationsHub::PeerLabels() {
 
 namespace {
 
-// Registration() / Blob() hand out references, but a build with no backend address creates neither client (the UI
-// demo app, or a custom backend left blank). These stand in so a call reports an error instead of dereferencing null.
+// Registration() hands out a reference, but a build with no backend address creates no client (the UI demo app, or a
+// custom backend left blank). This stands in so a call reports an error instead of dereferencing null.
 class UnconfiguredRegistrationClient final : public IRegistrationClient {
 public:
   Roe<RegistrationStartResult> StartRegistration(const std::string&, const std::string&, const std::string&,
@@ -4221,27 +4235,6 @@ private:
   static Error Unavailable() { return Error("registration not configured"); }
 };
 
-class UnconfiguredBlobClient final : public IBlobClient {
-public:
-  Roe<BlobPresignResult> Presign(const std::string&, const std::string&, uint64_t, BlobPurpose) override {
-    return Unavailable();
-  }
-  Roe<void> Retain(const std::string&, const std::string&) override { return Unavailable(); }
-  Roe<void> Delete(const std::string&, const std::string&) override { return Unavailable(); }
-  Roe<void> SetProfileIcon(const std::string&, const std::string&, const std::string&, const std::string&) override {
-    return Unavailable();
-  }
-  Roe<void> PutUpload(const std::string&, const std::string&, const std::string&) override { return Unavailable(); }
-  Roe<RelayFileStartResult> FileStart(const std::string&, uint64_t) override { return Unavailable(); }
-  Roe<RelayFilePartResult> FilePart(const std::string&, const std::string&, uint64_t) override { return Unavailable(); }
-  Roe<RelayFileCompleteResult> FileComplete(const std::string&, const std::string&) override { return Unavailable(); }
-  Roe<void> FileDelete(const std::string&, const std::string&) override { return Unavailable(); }
-  Roe<RelayFileListResult> FileList(const std::string&, const std::string&) override { return Unavailable(); }
-
-private:
-  static Error Unavailable() { return Error("blob service not configured"); }
-};
-
 } // namespace
 
 IRegistrationClient& ConversationsHub::Registration() {
@@ -4256,9 +4249,9 @@ RegistrationPublishOpts ConversationsHub::RegistrationCard() {
   return WithAccountCard({}, mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs()));
 }
 
-IBlobClient& ConversationsHub::Blob() {
-  static UnconfiguredBlobClient unconfigured;
-  return blob_ ? *blob_ : unconfigured;
+std::shared_ptr<IBlobClient> ConversationsHub::BlobClient() const {
+  std::lock_guard lock(blob_mu_);
+  return blob_;
 }
 
 IPushDeviceClient* ConversationsHub::PushDevices() {

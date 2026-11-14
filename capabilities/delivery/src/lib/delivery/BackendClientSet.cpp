@@ -105,7 +105,7 @@ void BackendClientSet::ApplyPreferred(const std::string& url) {
   relay_ = std::make_shared<HttpRelayClient>(url);
   push_devices_ = std::make_shared<HttpPushDeviceClient>(url);
   registration_ = RegistrationFor(url);
-  blob_ = std::make_unique<HttpBlobClient>(url);
+  blob_ = std::make_shared<HttpBlobClient>(url);
   WireSigner();
 }
 
@@ -238,15 +238,15 @@ void BackendClientSet::ApplyExtraRelays(const std::vector<std::string>& origins,
   WireSigner();
 }
 
-IRelayClient* BackendClientSet::HistoryRelay() {
+std::shared_ptr<IRelayClient> BackendClientSet::HistoryRelay() const {
   if (!home_url_.empty()) {
     for (const Extra& extra : extras_) {
       if (SameRelay(extra.origin, home_url_)) {
-        return extra.relay.get();
+        return extra.relay;
       }
     }
   }
-  return relay_.get();
+  return relay_;
 }
 
 std::vector<BackendClientSet::OurRelay> BackendClientSet::OurRelays() const {

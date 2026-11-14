@@ -275,7 +275,6 @@ public:
   IRegistrationClient& Registration();
   /** register/finish's extras for this account: its current card (MR002 / MR005), when it has one to give. */
   RegistrationPublishOpts RegistrationCard();
-  IBlobClient& Blob();
   IPushDeviceClient* PushDevices();
   /** Our other relays that hold our registration, with their push-device clients (multi-relay R2). */
   std::vector<std::pair<std::string, IPushDeviceClient*>> OtherRelayPushDevices();
@@ -800,11 +799,14 @@ private:
                            std::function<void(Roe<ThreadMessage>)> on_done,
                            std::function<bool(uint64_t done, uint64_t total)> progress,
                            std::shared_ptr<const std::atomic<bool>> cancelled);
+  /** The preferred relay's blob client now (none: not configured); a send holds its copy until it ends. */
+  std::shared_ptr<IBlobClient> BlobClient() const;
   std::function<bool(uint64_t done, uint64_t total)> LaneAwareProgress(
       std::function<bool(uint64_t done, uint64_t total)> progress);
   void FinishAttachmentSend(const std::shared_ptr<AttachmentSendJob>& job, Roe<ChatAttachmentFields> fields,
                             const std::function<void(Roe<ThreadMessage>)>& finish);
-  IRelayClient* relay_ = nullptr;
+  /** The preferred relay's (shared: work in flight keeps the client it started with, MR006). */
+  std::shared_ptr<IRelayClient> relay_;
   IPushDeviceClient* push_devices_ = nullptr;
   PushBindingGate push_gate_;
   /** The one directory client everything keeps; its backend follows the configuration (none: not configured). */
@@ -814,7 +816,9 @@ private:
   /** The account locker (M023) on the backend's locker client (declared after the clients: goes first). */
   std::unique_ptr<AccountLockerWorkflow> account_locker_;
   IRegistrationClient* registration_ = nullptr;
-  IBlobClient* blob_ = nullptr;
+  /** The preferred relay's photos and files, replaced on the hub's thread: read it with BlobClient (any thread). */
+  std::shared_ptr<IBlobClient> blob_;
+  mutable std::mutex blob_mu_;
   IClientCompatClient* client_compat_ = nullptr;
   std::unique_ptr<MeshDeliveryOrchestrator> mesh_messaging_;
   std::unique_ptr<ContactActionDispatcher> actions_;

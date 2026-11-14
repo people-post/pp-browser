@@ -97,8 +97,9 @@ struct ThreadPeerLinkView {
 class MeshDeliveryOrchestrator : public Module {
 public:
   /** Amp single entry for chat / history / blob ([A020]); requires `amp_links`. */
-  MeshDeliveryOrchestrator(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
-                           InboxController& inbox, AccountKeyResolver& account_keys, IPeerSessionStore& psk_store,
+  MeshDeliveryOrchestrator(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
+                           std::shared_ptr<IRelayClient> relay, InboxController& inbox,
+                           AccountKeyResolver& account_keys, IPeerSessionStore& psk_store,
                            IGroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
                            mesh::IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
@@ -174,9 +175,9 @@ public:
   /** The relay clients (multi-relay R2). */
   struct RelayClients {
     /** The preferred relay's: clearing the inbox. */
-    IRelayClient* preferred = nullptr;
+    std::shared_ptr<IRelayClient> preferred;
     /** Where stream history is asked (multi-relay MR006: the relay that holds it); null: `preferred`. */
-    IRelayClient* history = nullptr;
+    std::shared_ptr<IRelayClient> history;
     /** Where the outbox sends: by the recipient's relay list (RelaySendCoordinator); null: `preferred`. */
     IRelayClient* sender = nullptr;
     /** Our inboxes, preferred first (polled). */
@@ -425,7 +426,10 @@ private:
   IThreadStore& store_;
   ContactsStore& contacts_;
   IdentityStore& identity_;
-  IRelayClient* relay_ = nullptr;
+  /** The preferred relay's, replaced by SetRelayClients: read it with PreferredRelay (any thread). */
+  std::shared_ptr<IRelayClient> PreferredRelay() const;
+  mutable std::mutex relay_mu_;
+  std::shared_ptr<IRelayClient> relay_;
   mutable std::mutex own_hooks_mu_;
   std::function<void(const std::string&, bool)> on_inbox_polled_;
   std::function<void(const AccountCard&)> on_own_card_changed_;

@@ -60,23 +60,23 @@ TEST(BackendClientSetTest, AnUnchangedEndpointKeepsItsClientsAndAChangedOneRebui
   SwitchableDirectoryClient directory;
   BackendClientSet clients(directory);
   clients.Apply(At("https://relay.example", "https://directory.example", "https://registration.example"));
-  IRelayClient* relay = clients.Relay();
+  IRelayClient* relay = clients.Relay().get();
   IRegistrationClient* registration = clients.Registration();
 
   clients.Apply(At("https://relay.example", "https://directory.example", "https://registration.example"));
-  EXPECT_EQ(clients.Relay(), relay) << "holders keep a client whose endpoint did not change";
+  EXPECT_EQ(clients.Relay().get(), relay) << "holders keep a client whose endpoint did not change";
   EXPECT_EQ(clients.Registration(), registration);
 
   ILockerClient* locker = clients.Locker();
   clients.Apply(At("https://relay.example", "https://directory.example", "https://registration.other"));
-  EXPECT_EQ(clients.Relay(), relay);
+  EXPECT_EQ(clients.Relay().get(), relay);
   EXPECT_EQ(clients.Registration(), registration) << "registration is the preferred relay's (MR006)";
   // The new client is made before the old one goes, so a rebuilt client never shares the old address.
   EXPECT_NE(clients.Locker(), locker) << "a changed endpoint gets a new client";
   EXPECT_NE(clients.Locker(), nullptr);
 
   clients.Apply(At("https://relay.other", "https://directory.example", "https://registration.other"));
-  EXPECT_NE(clients.Relay(), relay);
+  EXPECT_NE(clients.Relay().get(), relay);
   EXPECT_NE(clients.Registration(), registration);
 }
 
@@ -102,7 +102,7 @@ TEST(BackendClientSetTest, OurOtherRelaysGetClientsOfTheirOwnAfterThePreferredOn
   const auto& ours = clients.OurRelays();
   ASSERT_EQ(ours.size(), 4u) << "at most four in all; the preferred one listed again is left out";
   EXPECT_EQ(ours[0].origin, "https://a.example/api/relay");
-  EXPECT_EQ(ours[0].relay.get(), clients.Relay());
+  EXPECT_EQ(ours[0].relay, clients.Relay());
   EXPECT_EQ(ours[0].registration, nullptr) << "the preferred relay registers through Registration()";
   EXPECT_EQ(ours[1].origin, "https://b.example/api/relay");
   EXPECT_EQ(ours[3].origin, "https://d.example/api/relay");
@@ -213,9 +213,9 @@ TEST_F(BackendClientSetOriginTest, ByDefaultEveryServiceIsTheOrgsRelay) {
 
 TEST_F(BackendClientSetOriginTest, TheListGivenWholeIsTheDefaultsSame) {
   Apply({});
-  IRelayClient* relay = clients_.Relay();
+  IRelayClient* relay = clients_.Relay().get();
   Apply({OrgRelay()});
-  EXPECT_EQ(clients_.Relay(), relay) << "a list of the org's relay alone is the default: nothing rebuilt";
+  EXPECT_EQ(clients_.Relay().get(), relay) << "a list of the org's relay alone is the default: nothing rebuilt";
 }
 
 TEST_F(BackendClientSetOriginTest, RelayServicesFollowThePreferredRelayAndOrgServicesStay) {
@@ -223,9 +223,9 @@ TEST_F(BackendClientSetOriginTest, RelayServicesFollowThePreferredRelayAndOrgSer
   EXPECT_EQ(clients_.Registration()->BaseUrl(), OtherRelay()) << "registration is the preferred relay's";
   ASSERT_EQ(clients_.OurRelays().size(), 2u);
   EXPECT_EQ(clients_.OurRelays()[0].origin, OtherRelay());
-  EXPECT_EQ(clients_.OurRelays()[0].relay.get(), clients_.Relay()) << "messages and push: the preferred relay's";
+  EXPECT_EQ(clients_.OurRelays()[0].relay, clients_.Relay()) << "messages and push: the preferred relay's";
   EXPECT_EQ(clients_.OurRelays()[1].origin, OrgRelay());
-  EXPECT_EQ(clients_.HistoryRelay(), clients_.OurRelays()[1].relay.get())
+  EXPECT_EQ(clients_.HistoryRelay(), clients_.OurRelays()[1].relay)
       << "stream history stays on the relay that holds it";
   EXPECT_EQ(clients_.OrgRelay(), OrgRelay());
 
