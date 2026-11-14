@@ -1,6 +1,7 @@
 #include "domain/registration/RelayRegistrationsWorkflow.h"
 
 #include "domain/registration/RegistrationClient.h"
+#include "lib/net/RelayOrigins.h"
 #include "lib/people/RegistrationStatus.h"
 
 #include <algorithm>
@@ -44,6 +45,7 @@ void RelayRegistrationsWorkflow::SetRelays(std::vector<Relay> relays) {
       state.registered = true; // as it answered before this start: due again for a newer card or near its end
       state.expires_at = relay.last.expires_at;
       state.card_issued_at = relay.last.card_issued_at;
+      state.registration_id = relay.last.registration_id;
     }
     state.relay = std::move(relay);
     next.push_back(std::move(state));
@@ -116,6 +118,9 @@ void RelayRegistrationsWorkflow::Register(const Relay& relay, const std::string&
     const auto state = std::find_if(states_.begin(), states_.end(),
                                     [&relay](const State& s) { return s.relay.origin == relay.origin; });
     if (state == states_.end() || state->leaving) {
+      if (state != states_.end() && ok && !result->registration_id.empty()) {
+        state->registration_id = result->registration_id; // the one the revoke after this run removes
+      }
       log().info << "registration on " << NormalizeRegistrationBackend(relay.origin)
                  << " answered after it left our relays; dropped";
       return; // no longer ours: revoked there after this answer (Revoke waits for this run)
@@ -124,6 +129,9 @@ void RelayRegistrationsWorkflow::Register(const Relay& relay, const std::string&
       state->registered = true;
       state->expires_at = result->expires_at;
       state->card_issued_at = CardIssuedAt(publish);
+      if (!result->registration_id.empty()) {
+        state->registration_id = result->registration_id;
+      }
       state->backoff_ms = 0;
       state->next_try_ms = 0;
     } else {
@@ -136,6 +144,7 @@ void RelayRegistrationsWorkflow::Register(const Relay& relay, const std::string&
     on_result_(relay.origin, ok ? RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Registered,
                                                           .expires_at = result->expires_at,
                                                           .card_issued_at = CardIssuedAt(publish),
+                                                          .registration_id = result->registration_id,
                                                           .at_ms = now_ms}
                                 : RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Failed,
                                                           .reason = reason.empty() ? "refused" : reason,
@@ -171,6 +180,31 @@ void RelayRegistrationsWorkflow::KeepBriefLlmKey(const RegistrationResult& resul
   }
 }
 
+bool RelayRegistrationsWorkflow::Lost(const std::string& origin, const int64_t now_ms) {
+  std::lock_guard lock(mutex_);
+  const auto state = std::find_if(states_.begin(), states_.end(),
+                                  [&origin](const State& s) { return SameRelay(s.relay.origin, origin); });
+  if (state == states_.end() || state->leaving || !state->registered) {
+    return false;
+  }
+  state->registered = false;
+  state->next_try_ms = state->loss.Lost(now_ms);
+  log().warning << "registration on " << NormalizeRegistrationBackend(state->relay.origin) << " lost; registering again"
+                << (state->loss.backoff_ms > 0 ? " after a backoff" : "");
+  return true;
+}
+
+void RelayRegistrationsWorkflow::MakeDue(const std::string& origin) {
+  std::lock_guard lock(mutex_);
+  for (State& state : states_) {
+    if (SameRelay(state.relay.origin, origin) && !state.leaving) {
+      state.registered = false;
+      state.next_try_ms = 0;
+      state.backoff_ms = 0;
+    }
+  }
+}
+
 bool RelayRegistrationsWorkflow::Registered(const std::string& origin) const {
   std::lock_guard lock(mutex_);
   return std::any_of(states_.begin(), states_.end(),
@@ -190,6 +224,7 @@ std::vector<std::string> RelayRegistrationsWorkflow::RegisteredOrigins() const {
 
 Roe<void> RelayRegistrationsWorkflow::Revoke(const std::string& origin) {
   std::shared_ptr<IRegistrationClient> client;
+  std::string registration_id;
   {
     std::lock_guard lock(mutex_);
     const auto state =
@@ -201,20 +236,26 @@ Roe<void> RelayRegistrationsWorkflow::Revoke(const std::string& origin) {
     state->registered = false;
     state->leaving = true; // from now on: an answer in flight there is dropped
   }
-  // After a run in progress: its registration there, if any, is the one this removes.
+  // After a run in progress: its registration there, if any, is the one this removes (read its id after it).
   const std::lock_guard after_run(run_mutex_);
   if (closed_.load(std::memory_order_acquire)) {
     return Error("closed");
   }
-  return RevokeRegistrationWithIdentity(*client, identity_);
+  {
+    std::lock_guard lock(mutex_);
+    const auto state =
+        std::find_if(states_.begin(), states_.end(), [&origin](const State& s) { return s.relay.origin == origin; });
+    if (state != states_.end()) {
+      registration_id = state->registration_id;
+    }
+  }
+  return RevokeRegistrationWithIdentity(*client, identity_, registration_id);
 }
 
 void RelayRegistrationsWorkflow::RevokeAll() {
-  std::vector<Relay> relays;
   {
     std::lock_guard lock(mutex_);
     for (State& state : states_) {
-      relays.push_back(state.relay);
       state.registered = false;
       state.leaving = true;
     }
@@ -223,8 +264,15 @@ void RelayRegistrationsWorkflow::RevokeAll() {
   if (closed_.load(std::memory_order_acquire)) {
     return;
   }
-  for (const Relay& relay : relays) {
-    if (auto revoked = RevokeRegistrationWithIdentity(*relay.client, identity_); !revoked) {
+  std::vector<std::pair<Relay, std::string>> relays; // with the registration id each answered (after any run)
+  {
+    std::lock_guard lock(mutex_);
+    for (const State& state : states_) {
+      relays.emplace_back(state.relay, state.registration_id);
+    }
+  }
+  for (const auto& [relay, registration_id] : relays) {
+    if (auto revoked = RevokeRegistrationWithIdentity(*relay.client, identity_, registration_id); !revoked) {
       log().warning << "revoke on " << NormalizeRegistrationBackend(relay.origin)
                     << " failed: " << revoked.error().message;
     }

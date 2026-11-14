@@ -1,0 +1,117 @@
+#pragma once
+
+#include "common/Error.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <vector>
+#include "common/PbrCompat.h"
+
+namespace pbr {
+
+/**
+ * A relay origin pinned to the PeerId it presented (multi-relay MR007): the HTTPS stand-in for an Amp handshake's
+ * binding of a dial to a PeerId.
+ */
+struct RelayPin {
+  /** The relay base URL as relays are compared (RelayOriginKey). */
+  std::string origin;
+  std::string peer_id;
+  int64_t pinned_at_ms = 0;
+  /** Another PeerId the origin presented since (after a `wrong_audience`): set, the identity changed. */
+  std::string presented_peer_id;
+  int64_t presented_at_ms = 0;
+
+  /** The origin presented another identity, not accepted yet: nothing is signed for it. */
+  bool Changed() const { return !presented_peer_id.empty(); }
+  bool operator==(const RelayPin&) const = default;
+};
+
+/** What an identity answer did to the pins. */
+enum class PinOutcome {
+  /** First contact: pinned now. */
+  Pinned,
+  /** The PeerId it is pinned to. */
+  Same,
+  /** Another PeerId than its pin: the identity changed (kept as presented). */
+  Changed,
+  /** A PeerId another origin holds: refused, never pinned. */
+  Taken,
+};
+
+struct PinAnswer {
+  PinOutcome outcome = PinOutcome::Pinned;
+  /** Taken: the origin that holds the PeerId. */
+  std::string holder;
+};
+
+/** One `{origin, peer_id}` of our own account card (a linked device takes them as pins). */
+struct OwnCardRelay {
+  std::string origin;
+  std::string peer_id;
+};
+
+/**
+ * `relay_pins.json` in the profile directory (docs/contracts/DATA_LAYOUT.md): one PeerId per origin and one origin per
+ * PeerId, at most kMaxPins. A pin is written only from the origin's own identity answer (Present), or, on a linked
+ * device, from our own account's card (TakeOwnCard); a contact's card never writes one. A file of another
+ * `schema_version`, or not JSON, is refused and read as empty (logged): the relays are pinned again on first use.
+ * Thread-safe; every change is written at once (atomically).
+ */
+class RelayPinStore {
+public:
+  static constexpr size_t kMaxPins = 32;
+
+  /** `profile_data_dir` empty: in memory only (tests). */
+  explicit RelayPinStore(std::string profile_data_dir);
+
+  /** Reads the file (none: no pins). */
+  void Load();
+  /**
+   * Which pins must stay when the store is full: ours, the org's origin and kept contacts' locator relays. The oldest
+   * pin it does not keep goes first.
+   */
+  void SetKeep(std::function<bool(const std::string& origin)> keep);
+
+  std::optional<RelayPin> PinFor(const std::string& origin) const;
+  /** The origin `peer_id` is pinned to (none: no origin holds it). */
+  std::optional<std::string> HolderOf(const std::string& peer_id) const;
+  std::vector<RelayPin> All() const;
+
+  /** `origin` presented `peer_id` in its own identity answer at `now_ms`. */
+  PinAnswer Present(const std::string& origin, const std::string& peer_id, int64_t now_ms);
+  /**
+   * Pins `origin` to `peer_id` whatever it was pinned to (the person accepts a new identity, or adds a relay it saw
+   * with another one); refused (Taken) when another origin holds `peer_id`.
+   */
+  PinAnswer Repin(const std::string& origin, const std::string& peer_id, int64_t now_ms);
+  /**
+   * A newer card of our own account (a linked device, MR007): each entry becomes a pin, replacing one that disagrees
+   * and dropping another origin's pin of the same PeerId. True when a pin changed.
+   */
+  bool TakeOwnCard(const std::vector<OwnCardRelay>& relays, int64_t now_ms);
+  /** Drops `origin`'s pin (Remove…: a relay that claimed another's PeerId stops holding it). */
+  void Drop(const std::string& origin);
+
+private:
+  std::vector<RelayPin>::iterator FindLocked(const std::string& origin);
+  std::vector<RelayPin>::const_iterator FindLocked(const std::string& origin) const;
+  std::vector<RelayPin>::const_iterator HolderLocked(const std::string& peer_id) const;
+  void AddLocked(RelayPin pin);
+  void SaveLocked() const;
+
+  std::string profile_data_dir_;
+  mutable std::mutex mutex_;
+  std::vector<RelayPin> pins_;
+  std::function<bool(const std::string&)> keep_;
+};
+
+/** The file's text for `pins` (and back): tests and the store. Back: nullopt for another schema or not JSON. */
+std::string RelayPinsToJson(const std::vector<RelayPin>& pins);
+std::optional<std::vector<RelayPin>> RelayPinsFromJson(const std::string& text);
+
+} // namespace pbr

@@ -5,6 +5,7 @@
 #include "lib/people/IdentityStore.h"
 #include "common/Module.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -15,6 +16,27 @@
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+/**
+ * When a registration a relay answered lost (`not_registered` / `registration_expired` on a signed call while we held
+ * it, MR007 self-heal) is made again: at once, or — lost again within kMaxMs of the last loss — after a backoff from
+ * kFirstMs doubling to kMaxMs. Not thread-safe (its owner locks).
+ */
+struct RegistrationLossBackoff {
+  static constexpr int64_t kFirstMs = 60 * 1000;
+  static constexpr int64_t kMaxMs = 30 * 60 * 1000;
+
+  int64_t lost_at_ms = 0;
+  int64_t backoff_ms = 0;
+
+  /** Lost at `now_ms`: when to register again. */
+  int64_t Lost(int64_t now_ms) {
+    const bool again_soon = lost_at_ms > 0 && now_ms - lost_at_ms < kMaxMs;
+    backoff_ms = !again_soon ? 0 : (backoff_ms == 0 ? kFirstMs : std::min(backoff_ms * 2, kMaxMs));
+    lost_at_ms = now_ms;
+    return now_ms + backoff_ms;
+  }
+};
 
 /**
  * Our account on our other relays (multi-relay R2; docs/contracts/SERVICE_ENDPOINTS.md § Several relays): once the
@@ -58,6 +80,15 @@ public:
   std::vector<std::string> Due(int64_t now_ms);
   /** Registers on every relay due (one run at a time: a second call meanwhile does nothing). */
   void RunDue(int64_t now_ms);
+  /**
+   * A signed call to that relay answered `not_registered` / `registration_expired` while it held our registration
+   * (MR007 self-heal): it is lost and due now; lost again within kMaxRetryMs of the last loss, due after a backoff
+   * (kFirstRetryMs doubling to kMaxRetryMs). Nothing for a relay not ours, not registered here, or leaving. True when
+   * it was marked lost.
+   */
+  bool Lost(const std::string& origin, int64_t now_ms);
+  /** Due now, its backoff forgotten (the person accepted its new identity). */
+  void MakeDue(const std::string& origin);
   /** That relay holds our registration (this run). */
   bool Registered(const std::string& origin) const;
   /** Our relays (other than the preferred) that hold our registration. */
@@ -65,7 +96,8 @@ public:
   /** Removes our registration from each relay (profile reset, #328); best effort, as on the preferred. As Revoke. */
   void RevokeAll();
   /**
-   * Removes our registration from that relay of ours (it leaves the list; with it its push bindings). Blocks. The
+   * Removes our registration from that relay of ours (it leaves the list; with it its push bindings), by the
+   * registration id it answered (MR007 item 5; none kept: RevokeRegistrationWithIdentity renews first). Blocks. The
    * relay is leaving from the call on: not due again, not Registered, and what a registration in flight there answers
    * is dropped (not reported, its push not bound); the revoke waits for a RunDue in progress, so it comes after.
    */
@@ -82,8 +114,11 @@ private:
     bool registered = false;
     std::string expires_at;
     int64_t card_issued_at = 0;
+    std::string registration_id;
     int64_t next_try_ms = 0;
     int64_t backoff_ms = 0;
+    /** When a lost registration is made again (Lost). */
+    RegistrationLossBackoff loss;
     /** Revoked (it leaves our list): nothing more is asked or kept there. */
     bool leaving = false;
   };

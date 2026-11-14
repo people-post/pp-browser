@@ -9,8 +9,12 @@ pp_browser_add_lib_library(pp_lib_net
     HttpClient.cpp
     RelayApiSignPayload.cpp
     RelayBlobSignPayload.cpp
+    RelayAudience.cpp
+    RelayIdentity.cpp
     RelayInboxCursor.cpp
     RelayOrigins.cpp
+    RelayPins.cpp
+    RelayPinStore.cpp
     RelaySignBytes.cpp
     RegistrationSignPayload.cpp
     OrgBackendClientFactory.cpp

@@ -13,22 +13,27 @@ constexpr const char kBlobListDomain[] = "pp-browser:relay-blob-list-v1";
 constexpr const char kProfileIconDomain[] = "pp-browser:relay-profile-icon-v1";
 constexpr const char kFileStartDomain[] = "pp-browser:relay-file-start-v1";
 constexpr const char kFilePartDomain[] = "pp-browser:relay-file-part-v1";
+constexpr const char kFileStatusDomain[] = "pp-browser:relay-file-status-v1";
 constexpr const char kFileCompleteDomain[] = "pp-browser:relay-file-complete-v1";
 constexpr const char kFileDeleteDomain[] = "pp-browser:relay-file-delete-v1";
 constexpr const char kFileListDomain[] = "pp-browser:relay-file-list-v1";
-constexpr uint8_t kBlobSignVersion = 1;
+// 2 (multi-relay MR007): the audience after the version.
+constexpr uint8_t kBlobSignVersion = 2;
 
-std::vector<uint8_t> BuildDomainSignBytes(const char* domain, const auto& append_fields) {
+std::vector<uint8_t> BuildDomainSignBytes(const char* domain, const std::string& audience, const auto& append_fields) {
   std::ostringstream oss;
-  RelaySignAppendDomain(oss, domain);
-  RelaySignAppendU8(oss, kBlobSignVersion);
+  if (!RelaySignAppendCommandHeader(oss, domain, kBlobSignVersion, audience)) {
+    return {};
+  }
   append_fields(oss);
   return RelaySignOssToBytes(oss);
 }
 
-std::vector<uint8_t> BuildUserBlobSignBytes(const char* domain, const std::string& account_id, const std::string& text,
-                                            const int64_t timestamp) {
-  return BuildDomainSignBytes(domain, [&](std::ostringstream& oss) {
+/** The commonest layout: `account_id`, one more string, `timestamp`. */
+std::vector<uint8_t> BuildAccountTextSignBytes(const char* domain, const std::string& audience,
+                                               const std::string& account_id, const std::string& text,
+                                               const int64_t timestamp) {
+  return BuildDomainSignBytes(domain, audience, [&](std::ostringstream& oss) {
     RelaySignAppendWireLenUtf8(oss, account_id);
     RelaySignAppendWireLenUtf8(oss, text);
     RelaySignAppendI64(oss, timestamp);
@@ -37,10 +42,10 @@ std::vector<uint8_t> BuildUserBlobSignBytes(const char* domain, const std::strin
 
 } // namespace
 
-std::vector<uint8_t> BuildBlobPresignSignBytes(const std::string& account_id, const std::string& content_type,
-                                               const uint64_t byte_length, const std::string& purpose,
-                                               const int64_t timestamp) {
-  return BuildDomainSignBytes(kBlobPresignDomain, [&](std::ostringstream& oss) {
+std::vector<uint8_t> BuildBlobPresignSignBytes(const std::string& audience, const std::string& account_id,
+                                               const std::string& content_type, const uint64_t byte_length,
+                                               const std::string& purpose, const int64_t timestamp) {
+  return BuildDomainSignBytes(kBlobPresignDomain, audience, [&](std::ostringstream& oss) {
     RelaySignAppendWireLenUtf8(oss, account_id);
     RelaySignAppendWireLenUtf8(oss, content_type);
     RelaySignAppendU64(oss, byte_length);
@@ -49,37 +54,25 @@ std::vector<uint8_t> BuildBlobPresignSignBytes(const std::string& account_id, co
   });
 }
 
-std::vector<uint8_t> BuildBlobRetainSignBytes(const std::string& account_id, const std::string& blob_id,
-                                              const int64_t timestamp) {
-  return BuildDomainSignBytes(kBlobRetainDomain, [&](std::ostringstream& oss) {
-    RelaySignAppendWireLenUtf8(oss, account_id);
-    RelaySignAppendWireLenUtf8(oss, blob_id);
-    RelaySignAppendI64(oss, timestamp);
-  });
+std::vector<uint8_t> BuildBlobRetainSignBytes(const std::string& audience, const std::string& account_id,
+                                              const std::string& blob_id, const int64_t timestamp) {
+  return BuildAccountTextSignBytes(kBlobRetainDomain, audience, account_id, blob_id, timestamp);
 }
 
-std::vector<uint8_t> BuildBlobDeleteSignBytes(const std::string& account_id, const std::string& blob_id,
-                                              const int64_t timestamp) {
-  return BuildDomainSignBytes(kBlobDeleteDomain, [&](std::ostringstream& oss) {
-    RelaySignAppendWireLenUtf8(oss, account_id);
-    RelaySignAppendWireLenUtf8(oss, blob_id);
-    RelaySignAppendI64(oss, timestamp);
-  });
+std::vector<uint8_t> BuildBlobDeleteSignBytes(const std::string& audience, const std::string& account_id,
+                                              const std::string& blob_id, const int64_t timestamp) {
+  return BuildAccountTextSignBytes(kBlobDeleteDomain, audience, account_id, blob_id, timestamp);
 }
 
-std::vector<uint8_t> BuildBlobListSignBytes(const std::string& account_id, const std::string& status_filter,
-                                            const int64_t timestamp) {
-  return BuildDomainSignBytes(kBlobListDomain, [&](std::ostringstream& oss) {
-    RelaySignAppendWireLenUtf8(oss, account_id);
-    RelaySignAppendWireLenUtf8(oss, status_filter);
-    RelaySignAppendI64(oss, timestamp);
-  });
+std::vector<uint8_t> BuildBlobListSignBytes(const std::string& audience, const std::string& account_id,
+                                            const std::string& status_filter, const int64_t timestamp) {
+  return BuildAccountTextSignBytes(kBlobListDomain, audience, account_id, status_filter, timestamp);
 }
 
-std::vector<uint8_t> BuildProfileIconSignBytes(const std::string& account_id, const std::string& url,
-                                               const std::string& blob_id, const std::string& kind,
-                                               const int64_t timestamp) {
-  return BuildDomainSignBytes(kProfileIconDomain, [&](std::ostringstream& oss) {
+std::vector<uint8_t> BuildProfileIconSignBytes(const std::string& audience, const std::string& account_id,
+                                               const std::string& url, const std::string& blob_id,
+                                               const std::string& kind, const int64_t timestamp) {
+  return BuildDomainSignBytes(kProfileIconDomain, audience, [&](std::ostringstream& oss) {
     RelaySignAppendWireLenUtf8(oss, account_id);
     RelaySignAppendWireLenUtf8(oss, url);
     RelaySignAppendWireLenUtf8(oss, blob_id);
@@ -88,18 +81,19 @@ std::vector<uint8_t> BuildProfileIconSignBytes(const std::string& account_id, co
   });
 }
 
-std::vector<uint8_t> BuildFileStartSignBytes(const std::string& account_id, const uint64_t byte_length,
-                                             const int64_t timestamp) {
-  return BuildDomainSignBytes(kFileStartDomain, [&](std::ostringstream& oss) {
+std::vector<uint8_t> BuildFileStartSignBytes(const std::string& audience, const std::string& account_id,
+                                             const uint64_t byte_length, const int64_t timestamp) {
+  return BuildDomainSignBytes(kFileStartDomain, audience, [&](std::ostringstream& oss) {
     RelaySignAppendWireLenUtf8(oss, account_id);
     RelaySignAppendU64(oss, byte_length);
     RelaySignAppendI64(oss, timestamp);
   });
 }
 
-std::vector<uint8_t> BuildFilePartSignBytes(const std::string& account_id, const std::string& blob_id,
-                                            const uint64_t part_number, const int64_t timestamp) {
-  return BuildDomainSignBytes(kFilePartDomain, [&](std::ostringstream& oss) {
+std::vector<uint8_t> BuildFilePartSignBytes(const std::string& audience, const std::string& account_id,
+                                            const std::string& blob_id, const uint64_t part_number,
+                                            const int64_t timestamp) {
+  return BuildDomainSignBytes(kFilePartDomain, audience, [&](std::ostringstream& oss) {
     RelaySignAppendWireLenUtf8(oss, account_id);
     RelaySignAppendWireLenUtf8(oss, blob_id);
     RelaySignAppendU64(oss, part_number);
@@ -107,19 +101,24 @@ std::vector<uint8_t> BuildFilePartSignBytes(const std::string& account_id, const
   });
 }
 
-std::vector<uint8_t> BuildFileCompleteSignBytes(const std::string& account_id, const std::string& blob_id,
-                                                const int64_t timestamp) {
-  return BuildUserBlobSignBytes(kFileCompleteDomain, account_id, blob_id, timestamp);
+std::vector<uint8_t> BuildFileStatusSignBytes(const std::string& audience, const std::string& account_id,
+                                              const std::string& blob_id, const int64_t timestamp) {
+  return BuildAccountTextSignBytes(kFileStatusDomain, audience, account_id, blob_id, timestamp);
 }
 
-std::vector<uint8_t> BuildFileDeleteSignBytes(const std::string& account_id, const std::string& blob_id,
-                                              const int64_t timestamp) {
-  return BuildUserBlobSignBytes(kFileDeleteDomain, account_id, blob_id, timestamp);
+std::vector<uint8_t> BuildFileCompleteSignBytes(const std::string& audience, const std::string& account_id,
+                                                const std::string& blob_id, const int64_t timestamp) {
+  return BuildAccountTextSignBytes(kFileCompleteDomain, audience, account_id, blob_id, timestamp);
 }
 
-std::vector<uint8_t> BuildFileListSignBytes(const std::string& account_id, const std::string& status_filter,
-                                            const int64_t timestamp) {
-  return BuildUserBlobSignBytes(kFileListDomain, account_id, status_filter, timestamp);
+std::vector<uint8_t> BuildFileDeleteSignBytes(const std::string& audience, const std::string& account_id,
+                                              const std::string& blob_id, const int64_t timestamp) {
+  return BuildAccountTextSignBytes(kFileDeleteDomain, audience, account_id, blob_id, timestamp);
+}
+
+std::vector<uint8_t> BuildFileListSignBytes(const std::string& audience, const std::string& account_id,
+                                            const std::string& status_filter, const int64_t timestamp) {
+  return BuildAccountTextSignBytes(kFileListDomain, audience, account_id, status_filter, timestamp);
 }
 
 } // namespace pbr

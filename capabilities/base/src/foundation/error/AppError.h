@@ -36,6 +36,23 @@ enum class Auth : int32_t {
    * first-contact quota for strangers (multi-relay MR005). Worth sending again later, after a backoff.
    */
   StrangerQuota = 6,
+  /**
+   * HTTP 401 with code "wrong_audience": the relay is not the one the command was signed for (its PeerId is another
+   * than the command's `audience`, multi-relay MR007). The command is not sent again there as it is.
+   */
+  WrongAudience = 7,
+  /**
+   * No signed command goes to this relay: it presented another identity (PeerId) than the one pinned for its origin,
+   * and the person has not accepted the new one (MR007, Me → My relays).
+   */
+  RelayIdentityChanged = 8,
+  /** The relay claims a PeerId pinned to another origin (`relay_identity_taken`, MR007): never signed for. */
+  RelayIdentityTaken = 9,
+  /**
+   * HTTP 409 with code "registration_mismatch" / "binding_mismatch": the revoke or unregister named a registration
+   * or push binding the relay no longer holds (a newer one replaced it, MR007 item 5); nothing changed there.
+   */
+  ScopeMismatch = 10,
 };
 
 enum class Network : int32_t {
@@ -59,6 +76,12 @@ enum class Network : int32_t {
    * detail ends `initiation_floor=<minor units>` (RelayPaymentRequiredFloor).
    */
   PaymentRequired = 9,
+  /**
+   * The relay's identity is not known and could not be fetched (`GET /v1/relay-identity`: unreachable, `503
+   * relay_identity_unavailable`, or an answer that does not check out), so nothing can be signed for it yet
+   * (multi-relay MR007). Like a relay that is down: tried again later.
+   */
+  RelayIdentityUnavailable = 10,
 };
 
 enum class Pin : int32_t {

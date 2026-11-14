@@ -37,22 +37,23 @@ void RecipientRelays::SetDirectories(std::vector<std::string> origins) {
   directories_ = std::move(origins);
 }
 
-std::vector<std::string> RecipientRelays::Of(const std::string& account_id) {
+std::vector<AccountCardRelay> RecipientRelays::Of(const std::string& account_id) {
   auto kept = keys_.Kept(account_id);
   if (!kept || !*kept || !(*kept)->newest_card) {
-    // No account card yet (none, or keys only): the relays it started with, if any (a QR locator's origin).
+    // No account card yet (none, or keys only): the relays it started with, if any (a QR locator's origin), each
+    // signed for by its pin (no card names its PeerId, MR007).
     std::function<std::vector<std::string>(const std::string&)> starting;
     {
       std::lock_guard lock(mutex_);
       starting = starting_;
     }
-    return starting ? starting(account_id) : std::vector<std::string>{};
+    std::vector<AccountCardRelay> relays;
+    for (const std::string& origin : starting ? starting(account_id) : std::vector<std::string>{}) {
+      relays.push_back(AccountCardRelay{.origin = origin});
+    }
+    return relays;
   }
-  std::vector<std::string> origins;
-  for (const AccountCardRelay& relay : KeptRelays(**kept)) {
-    origins.push_back(relay.origin);
-  }
-  return origins;
+  return KeptRelays(**kept);
 }
 
 bool RecipientRelays::AskDevices(const std::string& account_id) {
@@ -97,7 +98,7 @@ void RecipientRelays::AskDirectories(const std::string& account_id) {
   }
 }
 
-std::vector<std::string> RecipientRelays::Refresh(const std::string& account_id) {
+std::vector<AccountCardRelay> RecipientRelays::Refresh(const std::string& account_id) {
   if (!AskDevices(account_id)) {
     AskDirectories(account_id);
   }

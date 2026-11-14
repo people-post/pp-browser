@@ -275,16 +275,153 @@ void ConversationsHub::UpdateOrgBackendClients(const HubSettings& settings) {
   if (account_locker_) {
     account_locker_->SetClient(clients_.Locker());
   }
-  SetCardRelays();
+  (void)SetCardRelays();
   WireOurRelays();
+  PinOurRelaysSoon();
 }
 
-void ConversationsHub::SetCardRelays() {
-  // Our card lists the relays we register on (multi-relay MR002), preferred first; OwnCards keeps the https ones.
-  if (!mesh_messaging_) {
+bool ConversationsHub::SetCardRelays() {
+  // Our card lists the relays we register on (multi-relay MR002), preferred first, each with its pinned PeerId
+  // (MR007: a relay not pinned yet, or whose identity changed, is left off); OwnCards keeps the https ones.
+  if (!mesh_messaging_ || !relay_pins_) {
+    return false;
+  }
+  return mesh_messaging_->OwnAccountCards().SetRelays(relay_pins_->PinnedRelays(OurRelayOrigins()));
+}
+
+void ConversationsHub::OpenRelayPins() {
+  CloseRelayPins();
+  relay_pins_ = std::make_shared<RelayPins>(data_dir_);
+  relay_pins_->SetKeep([this](const std::string& origin) { return KeepsPin(origin); });
+  relay_pins_->SetOnChanged([this](const std::string&) { OnRelayPinsChanged(); });
+  relay_pins_->SetOnNotRegistered([this](const std::string& origin) { HealRegistrationSoon(origin); });
+  clients_.SetPins(relay_pins_); // before the clients are built: each signs for its relay's pin
+}
+
+void ConversationsHub::CloseRelayPins() {
+  if (!relay_pins_) {
     return;
   }
-  mesh_messaging_->OwnAccountCards().SetRelays(OurRelayOrigins());
+  relay_pins_->SetKeep({});
+  relay_pins_->SetOnChanged({});
+  relay_pins_->SetOnNotRegistered({});
+  relay_pins_.reset();
+}
+
+bool ConversationsHub::KeepsPin(const std::string& origin) {
+  {
+    std::lock_guard lock(kept_pins_mu_);
+    if (std::any_of(kept_pins_.begin(), kept_pins_.end(),
+                    [&origin](const std::string& kept) { return SameRelay(kept, origin); })) {
+      return true;
+    }
+  }
+  if (!contacts_) {
+    return false;
+  }
+  auto contacts = contacts_->List(); // a kept contact's locator relay: its sends go there until its card arrives
+  return contacts && std::any_of(contacts->begin(), contacts->end(), [&origin](const Contact& contact) {
+           return !contact.remote.locator_relay.empty() && SameRelay(contact.remote.locator_relay, origin);
+         });
+}
+
+void ConversationsHub::OnRelayPinsChanged() {
+  AppRuntime::PostUI([this]() {
+    if (shutdown_requested_.load(std::memory_order_acquire) || !IsMessagingReady()) {
+      return;
+    }
+    if (SetCardRelays() && IsMainDevice()) {
+      // A relay pinned now (the first start after the upgrade, an Add) or one whose identity changed: our card
+      // lists it, or leaves it off, at once.
+      AppRuntime::PostWorkerNormal([this]() { ReissueAndAnnounceCard(); });
+    }
+    NotifyOurRelaysChanged();
+  });
+}
+
+void ConversationsHub::PinOurRelaysSoon() {
+  std::vector<std::string> origins = OurRelayOrigins();
+  for (const std::string& org : {clients_.OrgRelay(), clients_.LockerHome()}) {
+    if (!org.empty()) {
+      origins.push_back(org); // the org's origins are pinned whether or not they are ours (lockers, the LLM token)
+    }
+  }
+  {
+    std::lock_guard lock(kept_pins_mu_);
+    kept_pins_ = origins;
+  }
+  const std::shared_ptr<RelayPins> pins = relay_pins_;
+  if (!pins) {
+    return;
+  }
+  AppRuntime::PostWorkerNormal([this, pins, origins = std::move(origins)]() {
+    if (!shutdown_requested_.load(std::memory_order_acquire)) {
+      pins->EnsurePinned(origins); // each new pin reaches OnRelayPinsChanged
+    }
+  });
+}
+
+void ConversationsHub::HealRegistrationSoon(const std::string& origin) {
+  AppRuntime::PostWorkerNormal([this, origin]() {
+    if (shutdown_requested_.load(std::memory_order_acquire) || !IsMessagingReady()) {
+      return;
+    }
+    const std::vector<std::string> ours = OurRelayOrigins();
+    if (!ours.empty() && SameRelay(origin, ours.front())) {
+      HealPreferredRegistration(util::NowUnixMs());
+      return;
+    }
+    // Another relay of ours (a relay not ours, the org's origin alone, is not healed: nothing of ours is there).
+    if (const auto registrations = OtherRelayRegistrations();
+        registrations && registrations->Lost(origin, util::NowUnixMs())) {
+      RegisterOnOtherRelaysSoon();
+    }
+  });
+}
+
+void ConversationsHub::HealPreferredRegistration(const int64_t now_ms) {
+  auto identity = Identity().Get();
+  const std::shared_ptr<IRegistrationClient> registration = Registration();
+  // Only a registration we believe current: registered there and not expired (an expired one renews as it does).
+  const RegistrationStatus status =
+      identity ? ClassifyRegistration(*identity, now_ms, registration->BaseUrl()) : RegistrationStatus::Unregistered;
+  if (status != RegistrationStatus::Active && status != RegistrationStatus::ExpiringSoon) {
+    return;
+  }
+  {
+    std::lock_guard lock(preferred_loss_mu_);
+    if (preferred_heal_due_ms_ == 0) {
+      preferred_heal_due_ms_ = preferred_loss_.Lost(now_ms);
+    }
+    if (now_ms < preferred_heal_due_ms_) {
+      return; // lost again soon after the last heal: after its backoff
+    }
+    preferred_heal_due_ms_ = 0;
+  }
+  log().warning << "the preferred relay no longer holds our registration; registering again";
+  // Whatever the auto-renew preference: the person registered there already (MR007 self-heal).
+  auto renewed = FinishAndPersistRegistration(*registration, Identity(), identity->nickname, {}, RegistrationCard());
+  if (!renewed) {
+    log().warning << "registering again on the preferred relay failed: " << renewed.error().message;
+    return;
+  }
+  (void)PushDeviceCoordinator::Register(*this); // push binds again; polling resumes on its own
+}
+
+void ConversationsHub::ReissueAndAnnounceCard() {
+  if (shutdown_requested_.load(std::memory_order_acquire) || !mesh_messaging_ || !IsMessagingReady()) {
+    return; // the next start issues the card (and the registrations carry it)
+  }
+  // Issued now: siblings hear (OwnCards::SetOnChanged), then our contacts get it, and our relays take it.
+  if (auto card = mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs()); !card) {
+    log().warning << "account card not re-issued: " << card.error().message;
+    return;
+  }
+  AnnounceOwnDevicesToContacts();
+  RegisterOnOtherRelaysSoon();
+  if (auto published = MaybeAutoRenewRegistration(*Registration(), Identity(), false, RegistrationCard()); !published) {
+    log().info << "the re-issued card did not reach the preferred relay yet: " << published.error().message;
+  }
 }
 
 void ConversationsHub::WireOurRelays() {
@@ -1080,6 +1217,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   payment_promises_ = std::make_unique<PaymentPromiseStore>(data_dir_);
   (void)payment_promises_->Load();
 
+  OpenRelayPins(); // before the clients: each signs for its relay's pin (MR007)
   InstallOrgBackendClients(settings);
 
   // The account locker keeps every group (G013): republish it on any roster change.
@@ -1178,6 +1316,13 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
   contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, *contact_cards_);
   contact_refresh_->SetOurRelays(CardDirectories());
+  // The page's *identity doesn't match* (MR007): our pins disagree with the card, or a send found the PeerId refused.
+  contact_refresh_->SetIdentityMismatch(
+      [this](const std::string& account_id, const std::string& origin, const std::string& peer_id) {
+        const auto pins = relay_pins_;
+        return (pins && pins->CheckCardRelay(origin, peer_id) == CardRelayCheck::Mismatch) ||
+               clients_.Sender().AudienceMismatch(account_id, origin);
+      });
   contact_cards_->SetCardFetcher(
       [this](const std::string& peer_id, const std::string& account_id, std::function<void(Roe<PeerCardRecord>)> done) {
         // On the hub's thread, with the address book as it is now: a contact just added (a scanned QR code) is
@@ -1399,11 +1544,20 @@ void ConversationsHub::BuildMessagingObjects() {
   });
   mesh_messaging_->SetOnOwnCardChanged([this](const AccountCard& card) {
     std::vector<std::string> relays;
+    std::vector<OwnCardRelay> pins;
     for (const AccountCardRelay& relay : card.relays) {
       relays.push_back(relay.origin);
+      pins.push_back(OwnCardRelay{.origin = relay.origin, .peer_id = relay.peer_id});
     }
-    AppRuntime::PostWorkerNormal([this, relays = std::move(relays)]() {
-      if (const auto workflow = MyRelays(); workflow && !shutdown_requested_.load(std::memory_order_acquire)) {
+    AppRuntime::PostWorkerNormal([this, relays = std::move(relays), pins = std::move(pins)]() {
+      if (shutdown_requested_.load(std::memory_order_acquire) || IsMainDevice()) {
+        return; // the main device's list and pins are its own
+      }
+      // A linked device takes our own card's word on each relay's identity (MR007), then follows its list.
+      if (const auto relay_pins = relay_pins_) {
+        relay_pins->TakeOwnCard(pins);
+      }
+      if (const auto workflow = MyRelays()) {
         workflow->FollowCard(relays);
       }
     });
@@ -3844,6 +3998,7 @@ void ConversationsHub::Shutdown() {
     mesh_owner_->StopDirectoryCache();
   }
   clients_.Clear();
+  CloseRelayPins();
   relay_.reset();
   directory_.SetBackend(nullptr);
   {
@@ -4120,17 +4275,7 @@ MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {
     return PreferredRegistrationRecord();
   };
   ports.register_others = [this]() { RegisterOnOtherRelaysSoon(); };
-  ports.announce = [this]() {
-    if (shutdown_requested_.load(std::memory_order_acquire) || !mesh_messaging_ || !IsMessagingReady()) {
-      return; // the next start issues the card (and the registrations carry it)
-    }
-    // Issued now with the new list: siblings hear (OwnCards::SetOnChanged), then our contacts get it.
-    if (auto card = mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs()); !card) {
-      log().warning << "account card not re-issued for the relay list: " << card.error().message;
-      return;
-    }
-    AnnounceOwnDevicesToContacts();
-  };
+  ports.announce = [this]() { ReissueAndAnnounceCard(); };
   ports.changed = [this]() { NotifyOurRelaysChanged(); };
   return ports;
 }
@@ -4297,6 +4442,7 @@ namespace {
 // custom backend left blank). This stands in so a call reports an error instead of dereferencing null.
 class UnconfiguredRegistrationClient final : public IRegistrationClient {
 public:
+  IRelayAudience* Audience() const override { return nullptr; }
   Roe<RegistrationStartResult> StartRegistration(const std::string&, const std::string&, const std::string&,
                                                  const std::string&, const std::string&,
                                                  const std::vector<std::string>&,
@@ -4304,15 +4450,17 @@ public:
     return Unavailable();
   }
   Roe<RegistrationResult> FinishRegistration(const std::string&, const std::string&, const std::string&,
-                                             const std::string&, int64_t, const std::string&, const std::string&,
+                                             const SignedRelayCommand&, const std::string&, const std::string&,
                                              const std::string&, const std::string&, const std::vector<std::string>&,
                                              const RegistrationPublishOpts&) override {
     return Unavailable();
   }
-  Roe<RegistrationResult> UpdateNickname(const std::string&, const std::string&, int64_t, const std::string&) override {
+  Roe<RegistrationResult> UpdateNickname(const std::string&, const SignedRelayCommand&, const std::string&) override {
     return Unavailable();
   }
-  Roe<void> RevokeRegistration(const std::string&, const std::string&, int64_t) override { return Unavailable(); }
+  Roe<void> RevokeRegistration(const std::string&, const std::string&, const SignedRelayCommand&) override {
+    return Unavailable();
+  }
 
 private:
   static Error Unavailable() { return Error("registration not configured"); }

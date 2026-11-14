@@ -13,10 +13,12 @@ TEST(UnconfiguredClientsTest, RegistrationReportsAnErrorInsteadOfCrashing) {
   const std::shared_ptr<IRegistrationClient> held = hub.Registration();
   ASSERT_NE(held, nullptr);
   IRegistrationClient& registration = *held;
-  EXPECT_FALSE(registration.UpdateNickname("New name", "sig", 1, "account:me"));
+  const SignedRelayCommand signed_command{.audience = "QmRelay", .timestamp = 1, .signature = "sig"};
+  EXPECT_EQ(registration.Audience(), nullptr) << "nothing is signed for no relay";
+  EXPECT_FALSE(registration.UpdateNickname("New name", signed_command, "account:me"));
   EXPECT_FALSE(registration.StartRegistration("pk", "name"));
-  EXPECT_FALSE(registration.FinishRegistration("challenge", "pk", "name", "sig", 1));
-  EXPECT_FALSE(registration.RevokeRegistration("account:me", "sig", 1));
+  EXPECT_FALSE(registration.FinishRegistration("challenge", "pk", "name", signed_command));
+  EXPECT_FALSE(registration.RevokeRegistration("account:me", "reg-1", signed_command));
   EXPECT_EQ(held, hub.Registration());
 }
 

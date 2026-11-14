@@ -626,10 +626,11 @@ public:
                       : view.list == ContactRelayView::List::MeshOnly ? "mesh_only"
                                                                       : "not_known");
       out.set("origin", view.origin);
-      out.set("reach", view.reach == ContactRelayView::Reach::Reachable       ? "reachable"
-                       : view.reach == ContactRelayView::Reach::NotRegistered ? "not_registered"
-                       : view.reach == ContactRelayView::Reach::Unreachable   ? "unreachable"
-                                                                              : "not_known");
+      out.set("reach", view.reach == ContactRelayView::Reach::Reachable          ? "reachable"
+                       : view.reach == ContactRelayView::Reach::NotRegistered    ? "not_registered"
+                       : view.reach == ContactRelayView::Reach::Unreachable      ? "unreachable"
+                       : view.reach == ContactRelayView::Reach::IdentityMismatch ? "identity_mismatch"
+                                                                                 : "not_known");
       Emit(out);
     } else if (cmd == "held_grant") {
       // Whether we hold `account`'s relay grant to us (MR005): our sends to it count as a contact's.

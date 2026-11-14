@@ -114,6 +114,11 @@ void BackendClientSet::ApplyPreferred(const std::string& url) {
   push_devices_ = std::make_shared<HttpPushDeviceClient>(url);
   registration_ = std::make_shared<HttpRegistrationClient>(url);
   blob_ = std::make_shared<HttpBlobClient>(url);
+  const auto audience = AudienceOf(url); // set before the clients are handed out: never changed after
+  relay_->SetAudience(audience);
+  push_devices_->SetAudience(audience);
+  registration_->SetAudience(audience);
+  blob_->SetAudience(audience);
   WireSigner();
 }
 
@@ -220,6 +225,7 @@ void BackendClientSet::ApplyHome(const std::string& url) {
   }
   home_url_ = url;
   locker_ = std::make_shared<HttpLockerClient>(url);
+  locker_->SetAudience(AudienceOf(url)); // the org's origin (MR006), pinned whether or not it is one of ours
   WireSigner();
 }
 
@@ -233,10 +239,15 @@ void BackendClientSet::ApplyExtraRelays(const std::vector<std::string>& origins,
       next.push_back(*kept); // unchanged: holders keep their clients
       continue;
     }
-    next.push_back(Extra{.origin = origin,
-                         .relay = std::make_shared<HttpRelayClient>(origin),
-                         .push_devices = std::make_shared<HttpPushDeviceClient>(origin),
-                         .registration = std::make_shared<HttpRegistrationClient>(origin)});
+    Extra extra{.origin = origin,
+                .relay = std::make_shared<HttpRelayClient>(origin),
+                .push_devices = std::make_shared<HttpPushDeviceClient>(origin),
+                .registration = std::make_shared<HttpRegistrationClient>(origin)};
+    const auto audience = AudienceOf(origin);
+    extra.relay->SetAudience(audience);
+    extra.push_devices->SetAudience(audience);
+    extra.registration->SetAudience(audience);
+    next.push_back(std::move(extra));
   }
   if (!origins.empty() && origins.size() < asked) {
     log().warning << "our relays: " << (asked - origins.size())
@@ -285,20 +296,45 @@ void BackendClientSet::WireSender() {
     ours_ = std::move(ours);
   }
   sender_.SetOurRelays(std::move(sending));
-  // A relay not ours gets a client of its own, signed by us and with our send hooks (copies: set on this thread).
-  // Its origin came from a contact's card: held to a public host (IsPublicRelayOrigin), none is made for one outside it.
-  sender_.SetForeignClients([signer = signer_, hooks = send_hooks_](const std::string& origin) {
-    const bool lab = DevCaBundleActive();
-    if (!IsPublicRelayOrigin(origin, lab)) {
-      return std::shared_ptr<IRelayClient>();
-    }
-    auto client = std::make_shared<HttpRelayClient>(origin, !lab);
-    if (signer) {
-      client->SetAuthSigner(signer);
-    }
-    client->SetSendHooks(hooks);
-    return std::shared_ptr<IRelayClient>(std::move(client));
-  });
+  if (pins_) {
+    sender_.SetCardRelayCheck([pins = pins_](const std::string& origin, const std::string& peer_id) {
+      return pins->CheckCardRelay(origin, peer_id);
+    });
+  } else {
+    sender_.SetCardRelayCheck(nullptr);
+  }
+  // A relay not ours gets a client of its own, signed by us and with our send hooks (copies: set on this thread),
+  // for the PeerId the recipient's card names; none named (a locator's relay, no card yet): its pin by fetch (MR007).
+  // Its origin came from a contact: held to a public host (IsPublicRelayOrigin), none is made for one outside it, and
+  // its requests, the identity fetch included, go to public addresses only.
+  sender_.SetForeignClients(
+      [signer = signer_, hooks = send_hooks_, pins = pins_](const std::string& origin, const std::string& peer_id) {
+        const bool lab = DevCaBundleActive();
+        if (!IsPublicRelayOrigin(origin, lab)) {
+          return std::shared_ptr<IRelayClient>();
+        }
+        auto client = std::make_shared<HttpRelayClient>(origin, !lab);
+        if (signer) {
+          client->SetAuthSigner(signer);
+        }
+        client->SetSendHooks(hooks);
+        if (!peer_id.empty()) {
+          client->SetAudience(std::make_shared<FixedRelayAudience>(peer_id));
+        } else if (pins) {
+          client->SetAudience(pins->AudienceFor(origin, !lab));
+        }
+        return std::shared_ptr<IRelayClient>(std::move(client));
+      });
+}
+
+void BackendClientSet::SetPins(std::shared_ptr<RelayPins> pins) {
+  pins_ = std::move(pins);
+  // Clients keep the audience they were made with (work in flight reads it): the next Apply makes them anew.
+  Clear();
+}
+
+std::shared_ptr<IRelayAudience> BackendClientSet::AudienceOf(const std::string& url) const {
+  return pins_ && !url.empty() ? pins_->AudienceFor(url) : nullptr;
 }
 
 void BackendClientSet::SetSigner(RelayAuthSigner signer) {

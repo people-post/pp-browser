@@ -6,6 +6,7 @@
 #include "lib/net/HttpBlobClient.h"
 #include "lib/net/HttpLockerClient.h"
 #include "lib/net/OrgBackendClientsImpl.h"
+#include "lib/net/RelayPins.h"
 #include "lib/net/SwitchableDirectoryClient.h"
 #include "common/Module.h"
 #include "common/ServiceEndpoints.h"
@@ -33,8 +34,11 @@ namespace pbr {
  * Our other relays get a message, push-device and registration client each (OurRelays). The directory asks the
  * configured one and then each other relay of ours it does not name (OurRelaysDirectory): a name search all at once, a
  * lookup in order; the cards its lookups carry go to DirectoryCards. Sends go through one stable RelaySendCoordinator
- * (Sender): into the recipient's relays in list order, with a client of its own for a relay not ours. The owner's
- * thread.
+ * (Sender): into the recipient's relays in list order, with a client of its own for a relay not ours.
+ *
+ * Every signed call names its relay (multi-relay MR007): the clients of our relays and of the org's registration URL
+ * sign for the relay's pin (SetPins: RelayPins::AudienceFor), a relay not ours for the PeerId the recipient's card
+ * names (or, with none, its pin by fetch). The owner's thread.
  */
 class BackendClientSet : public Module {
 public:
@@ -73,6 +77,12 @@ public:
   void Apply(const Endpoints& endpoints);
   /** Signs the relay, push-device, blob and locker requests (the profile's identity). */
   void SetSigner(RelayAuthSigner signer);
+  /**
+   * The profile's relay pins: who each signed request is for (none: nothing can be signed). Before Apply: a client
+   * keeps the audience it was made with, so this drops the clients made so far (the next Apply makes them anew).
+   */
+  void SetPins(std::shared_ptr<RelayPins> pins);
+  const std::shared_ptr<RelayPins>& Pins() const { return pins_; }
   /** The relay sends' grants and our key (MR003 / MR005), for the relay client now and after a rebuild. */
   void SetRelaySendHooks(RelaySendHooks hooks);
   /** Where a name search asks our other relays' directories (a worker); none: in turn, on the searching thread. */
@@ -102,6 +112,8 @@ public:
   std::shared_ptr<IRelayClient> HistoryRelay() const;
   /** The org's relay base URL (normalized; empty when none). */
   const std::string& OrgRelay() const { return org_relay_url_; }
+  /** The org's registration URL, where the lockers are (empty when none). */
+  const std::string& LockerHome() const { return home_url_; }
 
 private:
   /** Ours, preferred first, for `endpoints` (BoundOurRelays). */
@@ -121,12 +133,15 @@ private:
   /** The directory client of our relay at `origin`, kept while it stays ours. */
   std::shared_ptr<mesh::IDirectoryClient> RelayDirectory(const std::string& origin);
   void WireSigner();
+  /** The audience of the relay at `url` (none without pins). */
+  std::shared_ptr<IRelayAudience> AudienceOf(const std::string& url) const;
   /** Ours for the sender (preferred first) and its factory for the others, after any change. */
   void WireSender();
 
   SwitchableDirectoryClient& directory_;
   Endpoints defaults_;
   RelayAuthSigner signer_;
+  std::shared_ptr<RelayPins> pins_;
   RelaySendHooks send_hooks_;
   std::string org_relay_url_;
   std::string relay_url_;

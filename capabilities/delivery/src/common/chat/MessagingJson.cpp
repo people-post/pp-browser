@@ -581,6 +581,7 @@ Object RelayWireSendRecordToJson(const RelayWireSendRecord& record) {
   json.set("stream_id", record.stream_id);
   json.setJsonUInt("index_key", record.index_key);
   json.set("blob_b64", record.blob_b64);
+  json.set("audience", record.audience);
   json.set("timestamp", record.timestamp);
   json.set("signature", record.signature);
   if (record.urgent) {

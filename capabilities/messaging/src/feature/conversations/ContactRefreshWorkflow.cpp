@@ -193,6 +193,11 @@ void ContactRefreshWorkflow::SetOurRelays(std::vector<std::string> origins) {
   our_relays_ = std::move(origins);
 }
 
+void ContactRefreshWorkflow::SetIdentityMismatch(IdentityMismatchFn mismatch) {
+  std::lock_guard lock(mutex_);
+  identity_mismatch_ = std::move(mismatch);
+}
+
 bool ContactRefreshWorkflow::Running(const std::string& contact_id) const {
   std::lock_guard lock(mutex_);
   return running_.count(contact_id) > 0;
@@ -387,6 +392,16 @@ ContactRelayView ContactRefreshWorkflow::PreferredRelay(const Contact& contact) 
   view.list = ContactRelayView::List::Listed;
   view.origin = list.origins.front();
   using Outcome = ContactRefreshResult::RelayAsk::Outcome;
+  IdentityMismatchFn mismatch;
+  {
+    std::lock_guard lock(mutex_);
+    mismatch = identity_mismatch_;
+  }
+  if (const std::string& peer_id = list.relays.front().peer_id;
+      !peer_id.empty() && mismatch && mismatch(account_id, view.origin, peer_id)) {
+    view.reach = ContactRelayView::Reach::IdentityMismatch;
+    return view;
+  }
   std::lock_guard lock(mutex_);
   if (auto it = reach_.find(account_id + "|" + RelayOriginKey(view.origin)); it != reach_.end()) {
     // A rejected answer reads as not reachable: what it said cannot be relied on.

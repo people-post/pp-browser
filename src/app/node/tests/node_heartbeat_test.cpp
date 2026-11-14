@@ -37,8 +37,9 @@ struct Fixture {
     d.identity = [this] {
       return registered ? pbr::HeartbeatIdentity{"account:u1", "peer1"} : pbr::HeartbeatIdentity{};
     };
-    d.sign = [](const std::string&, const std::string&, const std::string& state, int64_t ts) -> pbr::Roe<std::string> {
-      return "sig-" + state + "-" + std::to_string(ts);
+    d.sign = [](const std::string&, const std::string&, const std::string& state,
+                int64_t ts) -> pbr::Roe<pbr::HeartbeatSignature> {
+      return pbr::HeartbeatSignature{.audience = "QmRelay", .signature = "sig-" + state + "-" + std::to_string(ts)};
     };
     d.post = [this](const std::string& url, const std::string& body, const std::map<std::string, std::string>&,
                     long timeout_s) -> pbr::Roe<pbr::HttpResponse> {
@@ -92,6 +93,47 @@ TEST(NodeHeartbeatTest, SendsSignedActiveHeartbeatToContractEndpoint) {
   EXPECT_EQ(f.sent[0].body.getString("peer_id").value_or(""), "peer1");
   EXPECT_EQ(f.sent[0].body.getString("state").value_or(""), "active");
   EXPECT_EQ(f.sent[0].body.getString("signature").value_or(""), "sig-active-" + std::to_string(Ts(f.sent[0])));
+  // MR007-AUD: the body names the relay the heartbeat was signed for.
+  EXPECT_EQ(f.sent[0].body.getString("audience").value_or(""), "QmRelay");
+}
+
+// MR007-PIN (pp-node): a relay whose identity changed gets no heartbeat — the signer refuses — and the node keeps
+// running; once the pin is in force again, heartbeats go.
+TEST(NodeHeartbeatTest, NoHeartbeatWhileNothingMayBeSignedForTheRelay) {
+  Fixture f;
+  f.replies = {{200, kOk}};
+  bool changed = true;
+  pbr::NodeHeartbeatDeps deps = f.Deps();
+  auto sign = deps.sign;
+  deps.sign = [&changed, sign](const std::string& account, const std::string& peer, const std::string& state,
+                               int64_t ts) -> pbr::Roe<pbr::HeartbeatSignature> {
+    if (changed) {
+      return pbr::Error("relay identity changed: pinned QmA, presented QmB");
+    }
+    return sign(account, peer, state, ts);
+  };
+  pbr::NodeHeartbeat hb(deps);
+  hb.Tick();
+  f.Advance(kPeriod);
+  hb.Tick();
+  EXPECT_TRUE(f.sent.empty());
+  changed = false;
+  f.Advance(kPeriod);
+  hb.Tick();
+  EXPECT_EQ(f.sent.size(), 1u);
+}
+
+// MR007-PIN (pp-node): a heartbeat refused `wrong_audience` reaches the relay's audience (which asks its identity).
+TEST(NodeHeartbeatTest, AWrongAudienceRefusalIsReported) {
+  Fixture f;
+  f.replies = {{401, R"({"error":"Signed for another relay","code":"wrong_audience"})"}};
+  std::vector<std::string> refused;
+  pbr::NodeHeartbeatDeps deps = f.Deps();
+  deps.refused = [&refused](const std::string& code) { refused.push_back(code); };
+  pbr::NodeHeartbeat hb(deps);
+  hb.Tick();
+  EXPECT_EQ(refused, std::vector<std::string>{"wrong_audience"});
+  EXPECT_EQ(f.reregisters, 0);
 }
 
 TEST(NodeHeartbeatTest, WaitsForThePeriodBetweenSends) {
@@ -239,7 +281,16 @@ TEST(NodeHeartbeatTest, StaleTimestampSkipsToNextPeriod) {
   EXPECT_EQ(f.reregisters, 0);
 }
 
+/** The `pp_node_heartbeat_total{result=...}` count in the global registry (other tests count there too). */
+int64_t HeartbeatCount(const std::string& result) {
+  const std::string text = pbr::MetricsRegistry::Global().RenderPrometheus();
+  const std::string key = "pp_node_heartbeat_total{result=\"" + result + "\"} ";
+  const size_t at = text.find(key);
+  return at == std::string::npos ? -1 : std::stoll(text.substr(at + key.size()));
+}
+
 TEST(NodeHeartbeatTest, UnauthorizedIsCountedAndRetriedNextPeriod) {
+  const int64_t before = HeartbeatCount("auth");
   Fixture f;
   f.replies = {{401, R"({"error":"bad signature","server_time":1700000200000})"}}; // 200 s ahead
   pbr::NodeHeartbeat hb(f.Deps());
@@ -249,7 +300,7 @@ TEST(NodeHeartbeatTest, UnauthorizedIsCountedAndRetriedNextPeriod) {
   EXPECT_EQ(f.sent.size(), 1u);
   EXPECT_EQ(f.reregisters, 0);
   const std::string text = pbr::MetricsRegistry::Global().RenderPrometheus();
-  EXPECT_NE(text.find("pp_node_heartbeat_total{result=\"auth\"} 1"), std::string::npos) << text;
+  EXPECT_EQ(HeartbeatCount("auth"), std::max<int64_t>(before, 0) + 1) << text;
   EXPECT_NE(text.find("pp_node_heartbeat_clock_skew_seconds 200"), std::string::npos) << text;
 }
 

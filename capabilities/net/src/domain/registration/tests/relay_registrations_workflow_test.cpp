@@ -31,9 +31,8 @@ constexpr int64_t kNow = 1'704'067'200'000; // 2024-01-01T00:00:00Z
 class CardRecordingClient : public MockRegistrationClient {
 public:
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
-                                             const std::string& nickname, const std::string& signature,
-                                             int64_t timestamp, const std::string& signature_alg,
-                                             const std::string& kem_public_key_b64,
+                                             const std::string& nickname, const SignedRelayCommand& signed_finish,
+                                             const std::string& signature_alg, const std::string& kem_public_key_b64,
                                              const std::string& kem_binding_signature_b64, const std::string& peer_id,
                                              const std::vector<std::string>& multiaddrs,
                                              const RegistrationPublishOpts& publish) override {
@@ -46,20 +45,24 @@ public:
     if (fail) {
       return Error("relay down");
     }
-    auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signature, timestamp,
+    auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
                                                              signature_alg, kem_public_key_b64,
                                                              kem_binding_signature_b64, peer_id, multiaddrs, publish);
     if (result) {
       result->expires_at = expires_at;
       result->llm_api_key = llm_key;
+      result->registration_id = "reg-" + std::to_string(finish_calls);
     }
     return result;
   }
-  Roe<void> RevokeRegistration(const std::string&, const std::string&, int64_t) override {
+  Roe<void> RevokeRegistration(const std::string&, const std::string& registration_id,
+                               const SignedRelayCommand&) override {
     ++revoke_calls;
     events.push_back("revoke");
+    revoked_ids.push_back(registration_id);
     return {};
   }
+  std::vector<std::string> revoked_ids;
   bool fail = false;
   /** What the relay answers as the Brief LLM key (only the org's relay's client keeps one, MR006). */
   std::string llm_key;
@@ -75,7 +78,7 @@ public:
 
 RegistrationPublishOpts CardIssuedAt(int64_t issued_at) {
   Object card;
-  card.set("card_version", int64_t{3});
+  card.set("card_version", int64_t{4});
   card.set("issued_at", issued_at);
   return RegistrationPublishOpts{.account_card = card};
 }
@@ -180,7 +183,65 @@ TEST_F(RelayRegistrationsWorkflowTest, RevokeAllRemovesUsFromEachRelay) {
   workflow_->RunDue(kNow);
   workflow_->RevokeAll();
   EXPECT_EQ(client_->revoke_calls, 1);
+  EXPECT_EQ(client_->revoked_ids, std::vector<std::string>{"reg-1"}) << "the registration it answered (MR007-SCOPE)";
   EXPECT_FALSE(workflow_->Registered(kOther));
+}
+
+// MR007-SCOPE: a revoke names the registration the relay answered last — kept across a restart too.
+TEST_F(RelayRegistrationsWorkflowTest, ARevokeNamesTheRegistrationItRemoves) {
+  RegisterOnPreferred();
+  workflow_->RunDue(kNow);
+  card_ = CardIssuedAt(2000);
+  workflow_->RunDue(kNow + 1000); // renewed: the relay answers its id again
+  ASSERT_TRUE(static_cast<bool>(workflow_->Revoke(kOther)));
+  EXPECT_EQ(client_->revoked_ids, std::vector<std::string>{"reg-2"});
+
+  RelayRegistrationsWorkflow restarted(*identity_);
+  restarted.SetRelays({{kOther, client_,
+                        RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Registered,
+                                                .expires_at = "2099-01-01T00:00:00.000Z",
+                                                .card_issued_at = 2000,
+                                                .registration_id = "reg-kept"}}});
+  ASSERT_TRUE(static_cast<bool>(restarted.Revoke(kOther)));
+  EXPECT_EQ(client_->revoked_ids.back(), "reg-kept");
+}
+
+// MR007-HEAL: a relay of ours that answers not_registered while it held our registration is registered on again at
+// once; lost again soon after, after a backoff that doubles.
+TEST_F(RelayRegistrationsWorkflowTest, ALostRegistrationIsMadeAgainWithABackoff) {
+  RegisterOnPreferred();
+  workflow_->RunDue(kNow);
+  ASSERT_EQ(client_->finish_calls, 1);
+
+  ASSERT_TRUE(workflow_->Lost(kOther, kNow + 1000));
+  EXPECT_FALSE(workflow_->Registered(kOther));
+  workflow_->RunDue(kNow + 1000);
+  EXPECT_EQ(client_->finish_calls, 2) << "due at once";
+
+  ASSERT_TRUE(workflow_->Lost(kOther, kNow + 2000));
+  workflow_->RunDue(kNow + 2000 + RegistrationLossBackoff::kFirstMs - 1);
+  EXPECT_EQ(client_->finish_calls, 2) << "lost again soon after: after the backoff";
+  workflow_->RunDue(kNow + 2000 + RegistrationLossBackoff::kFirstMs);
+  EXPECT_EQ(client_->finish_calls, 3);
+
+  const int64_t third = kNow + 3000 + RegistrationLossBackoff::kFirstMs;
+  ASSERT_TRUE(workflow_->Lost(kOther, third));
+  workflow_->RunDue(third + 2 * RegistrationLossBackoff::kFirstMs - 1);
+  EXPECT_EQ(client_->finish_calls, 3) << "the backoff doubles";
+  workflow_->RunDue(third + 2 * RegistrationLossBackoff::kFirstMs);
+  EXPECT_EQ(client_->finish_calls, 4);
+}
+
+// MR007-HEAL: not for a relay leaving our list, nor one where we hold no registration.
+TEST_F(RelayRegistrationsWorkflowTest, NoHealForALeavingOrUnregisteredRelay) {
+  EXPECT_FALSE(workflow_->Lost(kOther, kNow)) << "never registered there";
+  RegisterOnPreferred();
+  workflow_->RunDue(kNow);
+  ASSERT_TRUE(static_cast<bool>(workflow_->Revoke(kOther)));
+  EXPECT_FALSE(workflow_->Lost(kOther, kNow + 1000)) << "leaving";
+  workflow_->RunDue(kNow + 1000);
+  EXPECT_EQ(client_->finish_calls, 1);
+  EXPECT_FALSE(workflow_->Lost("https://not-ours.example/api/relay", kNow + 1000));
 }
 
 TEST_F(RelayRegistrationsWorkflowTest, ARelayStillListedKeepsWhatItAnswered) {

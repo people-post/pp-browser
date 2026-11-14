@@ -74,10 +74,12 @@ public:
   /** This device's PeerId (its mesh identity, from the device key). */
   Roe<std::string> DevicePeerId();
   /**
-   * The relays this device registers on, preferred first (relay base URLs): the master's card lists the ones within
-   * MR004's bounds (an `http://` lab relay is left out), and its next Card() re-issues when they changed.
+   * The relays this device registers on, preferred first, each with the PeerId pinned for it (multi-relay MR007; the
+   * caller leaves out a relay not pinned yet or whose identity changed): the master's card lists the ones within
+   * MR004's and MR007's bounds (an `http://` lab relay is left out), and its next Card() re-issues when they changed.
+   * True when the card's relays changed.
    */
-  void SetRelays(const std::vector<std::string>& origins);
+  bool SetRelays(const std::vector<AccountCardRelay>& relays);
   /**
    * Runs when the account's card changed here — this device issued one, or took a sibling's newer one — so its
    * siblings hear of it and its own devices are reached; outside any lock.

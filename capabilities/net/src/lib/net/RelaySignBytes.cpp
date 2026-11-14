@@ -12,6 +12,17 @@ void RelaySignAppendDomain(std::ostringstream& oss, const char* domain_with_nul)
   oss.put('\0');
 }
 
+bool RelaySignAppendCommandHeader(std::ostringstream& oss, const char* domain, const uint8_t version,
+                                  const std::string& audience) {
+  if (audience.empty()) {
+    return false;
+  }
+  RelaySignAppendDomain(oss, domain);
+  RelaySignAppendU8(oss, version);
+  RelaySignAppendWireLenUtf8(oss, audience);
+  return true;
+}
+
 void RelaySignAppendU8(std::ostringstream& oss, const uint8_t value) {
   oss.write(reinterpret_cast<const char*>(&value), 1);
 }

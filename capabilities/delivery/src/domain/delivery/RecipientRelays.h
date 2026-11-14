@@ -51,10 +51,13 @@ public:
   /** Tests: how a stored card is fetched (default: over HTTP). */
   void SetStoredCardFetch(StoredCardFetch fetch) { fetch_stored_ = std::move(fetch); }
 
-  /** The relays of `account_id`'s kept card, preferred first (before one, its starting relays); empty: none known. */
-  std::vector<std::string> Of(const std::string& account_id);
+  /**
+   * The relays of `account_id`'s kept card, preferred first, each with the PeerId the card names (before one, its
+   * starting relays, no PeerId); empty: none known.
+   */
+  std::vector<AccountCardRelay> Of(const std::string& account_id);
   /** Fetch `account_id`'s newest card and give its relays (blocking, bounded). */
-  std::vector<std::string> Refresh(const std::string& account_id);
+  std::vector<AccountCardRelay> Refresh(const std::string& account_id);
   /** For the relay sends (RelaySendCoordinator::SetRoutes); valid while this lives. */
   RelayRoutes Routes();
 

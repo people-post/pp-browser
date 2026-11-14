@@ -20,19 +20,32 @@
 
 namespace pbr {
 
+/**
+ * This device's push binding on one relay. It keeps the `binding_id` its last register answered (in memory: the app
+ * registers at every start); an unregister names it, and one with none kept, or answered `binding_mismatch` (a newer
+ * binding there), registers first and unregisters with that answer, once (MR007 item 5).
+ */
 class HttpPushDeviceClient : public IPushDeviceClient {
 public:
   explicit HttpPushDeviceClient(std::string base_url);
   void SetAuthSigner(RelayAuthSigner signer) { auth_signer_ = std::move(signer); }
+  void SetAudience(std::shared_ptr<IRelayAudience> audience) { audience_ = std::move(audience); }
   Roe<void> RegisterDevice(const PushDeviceRegistration& registration) override;
   Roe<void> UnregisterDevice(const PushDeviceRegistration& registration) override;
 
 private:
-  Roe<std::string> SignRelayApiBytes(const std::vector<uint8_t>& sign_bytes) const;
-  Roe<void> PostDevice(const char* path, RelayApiOp op, const PushDeviceRegistration& registration);
+  /** One signed POST to `path` (its last field `last_key`); the answer's body on success. */
+  Roe<std::string> PostDevice(const char* path, const PushDeviceRegistration& registration, const char* last_key,
+                              const std::string& last, int64_t timestamp, const RelayCommandBytes& build);
+  Roe<void> UnregisterOnce(const PushDeviceRegistration& registration, const std::string& binding_id);
 
   std::string base_url_;
   RelayAuthSigner auth_signer_;
+  std::shared_ptr<IRelayAudience> audience_;
+  std::mutex binding_mutex_;
+  /** The newest binding_id this relay answered for us ("" none yet), by device id. */
+  std::string binding_id_;
+  std::string binding_device_id_;
 };
 
 /**
@@ -115,6 +128,9 @@ class HttpRegistrationClient : public IRegistrationClient {
 public:
   explicit HttpRegistrationClient(std::string base_url);
   std::string BaseUrl() const override { return base_url_; }
+  /** Who register/finish, the profile and the revoke are signed for (the relay's pin, MR007). */
+  void SetAudience(std::shared_ptr<IRelayAudience> audience) { audience_ = std::move(audience); }
+  IRelayAudience* Audience() const override { return audience_.get(); }
   /**
    * Whether this relay's `llm_api_key` is kept (default yes). The Brief LLM key is the org's (multi-relay MR006):
    * a relay other than the org's answers with a key its own gateway takes, not the org's, so it is left out.
@@ -127,19 +143,21 @@ public:
                                                  const std::vector<std::string>& multiaddrs = {},
                                                  const RegistrationPublishOpts& publish = {}) override;
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
-                                             const std::string& nickname, const std::string& signature,
-                                             int64_t timestamp, const std::string& signature_alg = "ml-dsa-65",
+                                             const std::string& nickname, const SignedRelayCommand& signed_finish,
+                                             const std::string& signature_alg = "ml-dsa-65",
                                              const std::string& kem_public_key_b64 = "",
                                              const std::string& kem_binding_signature_b64 = "",
                                              const std::string& peer_id = "",
                                              const std::vector<std::string>& multiaddrs = {},
                                              const RegistrationPublishOpts& publish = {}) override;
-  Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
-                                         int64_t timestamp, const std::string& account_id) override;
-  Roe<void> RevokeRegistration(const std::string& account_id, const std::string& signature, int64_t timestamp) override;
+  Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const SignedRelayCommand& signed_update,
+                                         const std::string& account_id) override;
+  Roe<void> RevokeRegistration(const std::string& account_id, const std::string& registration_id,
+                               const SignedRelayCommand& signed_revoke) override;
 
 private:
   std::string base_url_;
+  std::shared_ptr<IRelayAudience> audience_;
   /** Set on the owner's thread, read by a registration on a worker. */
   std::atomic<bool> takes_llm_key_{true};
 };

@@ -14,6 +14,7 @@
 #include "mesh/dht/AmpDhtProtocol.h"
 #include "lib/net/HttpClient.h"
 #include "lib/net/RegistrationSignPayload.h"
+#include "lib/net/RelayPins.h"
 #include "mesh/reachability/Reachability.h"
 #if defined(PP_BROWSER_HAS_LEDGER)
 #include "domain/node/NodeLedgerRole.h"
@@ -189,7 +190,28 @@ void ShutdownNode(pbr::NodeBootstrapResult& boot) {
   }
 }
 
-pbr::NodeHeartbeatDeps MakeHeartbeatDeps(pbr::NodeBootstrapResult& boot) {
+/**
+ * The node's relay pin (multi-relay MR007): `relay_pins.json` in its data directory, written only from the relay's own
+ * identity answer (no config key). A changed identity stops the relay calls (registration, heartbeat) — the mesh
+ * services keep running — and is logged once, until the operator clears the pin.
+ */
+std::shared_ptr<pbr::RelayPins> OpenNodeRelayPins(const pbr::NodeBootstrapResult& boot) {
+  auto pins = std::make_shared<pbr::RelayPins>(boot.profile_data_dir);
+  std::weak_ptr<pbr::RelayPins> weak = pins;
+  pins->SetOnChanged([weak](const std::string& origin) {
+    const auto held = weak.lock();
+    const auto pin = held ? held->PinFor(origin) : std::nullopt;
+    if (pin && pin->Changed()) {
+      pbr::logging::getLogger("pp-node").error << "relay identity changed: pinned " << pin->peer_id << ", presented "
+                                               << pin->presented_peer_id << " (" << origin
+                                               << "); relay calls stop until the pin is cleared (relay_pins.json)";
+    }
+  });
+  return pins;
+}
+
+pbr::NodeHeartbeatDeps MakeHeartbeatDeps(pbr::NodeBootstrapResult& boot,
+                                         std::shared_ptr<pbr::IRelayAudience> audience) {
   pbr::NodeHeartbeatDeps deps;
   deps.base_url = boot.config.registration.base_url;
   pbr::IdentityStore* identity = boot.identity.get();
@@ -202,16 +224,27 @@ pbr::NodeHeartbeatDeps MakeHeartbeatDeps(pbr::NodeBootstrapResult& boot) {
     }
     return out;
   };
-  deps.sign = [identity](const std::string& account_id, const std::string& peer_id, const std::string& state,
-                         int64_t timestamp) {
-    return identity->SignBytes(pbr::BuildRelayHeartbeatSignBytes(account_id, peer_id, state, timestamp));
+  deps.sign = [identity, audience](const std::string& account_id, const std::string& peer_id, const std::string& state,
+                                   int64_t timestamp) -> pbr::Roe<pbr::HeartbeatSignature> {
+    auto signed_heartbeat = pbr::SignRelayCommand(
+        audience.get(), [identity](const std::vector<uint8_t>& bytes) { return identity->SignBytes(bytes); }, timestamp,
+        [&](const std::string& peer) {
+          return pbr::BuildRelayHeartbeatSignBytes(peer, account_id, peer_id, state, timestamp);
+        });
+    if (!signed_heartbeat) {
+      return signed_heartbeat.error();
+    }
+    return pbr::HeartbeatSignature{.audience = signed_heartbeat->audience, .signature = signed_heartbeat->signature};
   };
+  deps.refused = [audience](const std::string& code) { audience->Refused(code); };
   deps.post = [](const std::string& url, const std::string& body, const std::map<std::string, std::string>& headers,
                  long timeout_s) {
     return pbr::HttpClient::Post(url, body, headers, 64 * 1024,
                                  pbr::HttpTimeout{.total_s = timeout_s, .connect_s = std::min(timeout_s, 5L)});
   };
-  deps.reregister = [node]() { return pbr::PublishOrRenewMeshNodeListing(node->config, *node->identity, ""); };
+  deps.reregister = [node, audience]() {
+    return pbr::PublishOrRenewMeshNodeListing(node->config, *node->identity, "", audience);
+  };
   deps.unix_ms = []() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
         .count();
@@ -347,6 +380,9 @@ int main(int argc, char** argv) {
     return 0;
   }
 
+  const std::shared_ptr<pbr::RelayPins> relay_pins = OpenNodeRelayPins(*boot);
+  const std::shared_ptr<pbr::IRelayAudience> relay_audience =
+      relay_pins->AudienceFor(boot->config.registration.base_url);
   // Operator metrics for /metrics (projects/node-monitoring); goes before the mesh stops.
   pbr::ScopedMetricsCollector node_metrics = pbr::RegisterNodeMetrics(*boot);
   // Heartbeat runs only where the operator turned it on and this node publishes itself to a mesh directory
@@ -354,7 +390,7 @@ int main(int argc, char** argv) {
   std::optional<pbr::NodeHeartbeat> heartbeat;
   if (boot->config.mesh.mesh_publish && boot->config.mesh.mesh_heartbeat &&
       !boot->config.registration.base_url.empty()) {
-    heartbeat.emplace(MakeHeartbeatDeps(*boot));
+    heartbeat.emplace(MakeHeartbeatDeps(*boot, relay_audience));
   }
   pbr::StatusHttpServer status_http;
   if (auto bind = pbr::ParseStatusHttpBind(status_addr_spec)) {
@@ -431,7 +467,8 @@ int main(int argc, char** argv) {
   std::chrono::steady_clock::duration publish_retry_delay = kPublishRetryInitial;
   auto publish_retry_due = std::chrono::steady_clock::now();
   bool publish_pending = false;
-  if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, ""); !published) {
+  if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, "", relay_audience);
+      !published) {
     root.warning << "mesh directory publish skipped/failed: " << published.error().message;
     publish_pending = true;
     publish_retry_due += publish_retry_delay;
@@ -454,7 +491,8 @@ int main(int argc, char** argv) {
       schedule_probe();
     }
     if (publish_pending && now >= publish_retry_due) {
-      if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, ""); published) {
+      if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, "", relay_audience);
+          published) {
         publish_pending = false;
         last_mesh_publish = now;
       } else {
@@ -468,7 +506,8 @@ int main(int argc, char** argv) {
     }
     if (now - last_mesh_publish > std::chrono::hours(12)) {
       last_mesh_publish = now;
-      if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, ""); !published) {
+      if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, "", relay_audience);
+          !published) {
         root.warning << "mesh directory renew failed: " << published.error().message;
       }
     }

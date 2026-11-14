@@ -21,6 +21,8 @@ struct RelayRegistrationRecord {
   std::string expires_at;
   /** Registered: the `issued_at` of the card it took (a newer card registers there again). */
   int64_t card_issued_at = 0;
+  /** Registered: the registration's id there (MR007: a revoke names it). */
+  std::string registration_id;
   /** When it answered (Unix ms). */
   int64_t at_ms = 0;
 

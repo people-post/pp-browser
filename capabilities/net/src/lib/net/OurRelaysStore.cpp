@@ -56,6 +56,9 @@ Object RecordToObject(const RelayRegistrationRecord& record) {
   if (record.card_issued_at > 0) {
     out.set("card_issued_at", record.card_issued_at);
   }
+  if (!record.registration_id.empty()) {
+    out.set("registration_id", record.registration_id);
+  }
   if (record.at_ms > 0) {
     out.set("at_ms", record.at_ms);
   }
@@ -67,6 +70,7 @@ RelayRegistrationRecord RecordFromObject(const Object& object) {
                                  .reason = object.getString("reason").value_or(""),
                                  .expires_at = object.getString("expires_at").value_or(""),
                                  .card_issued_at = object.getIf<int64_t>("card_issued_at").value_or(0),
+                                 .registration_id = object.getString("registration_id").value_or(""),
                                  .at_ms = object.getIf<int64_t>("at_ms").value_or(0)};
 }
 

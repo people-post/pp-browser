@@ -78,10 +78,11 @@ struct ContactRelayView {
     Listed,   // `origin` is its preferred relay
   };
   enum class Reach {
-    NotKnown,      // not asked since the app started
-    Reachable,     // at the last refresh it answered for the account, verifiably
-    NotRegistered, // at the last refresh it answered without the account (our copy of its list may be stale)
-    Unreachable,   // at the last refresh it could not be asked, or what it answered did not verify
+    NotKnown,         // not asked since the app started
+    Reachable,        // at the last refresh it answered for the account, verifiably
+    NotRegistered,    // at the last refresh it answered without the account (our copy of its list may be stale)
+    Unreachable,      // at the last refresh it could not be asked, or what it answered did not verify
+    IdentityMismatch, // the PeerId its card names is not the relay's by our pins, or the relay refused it (MR007)
   };
   List list = List::NotKnown;
   std::string origin;
@@ -148,6 +149,13 @@ public:
   void SetLookup(RelayLookup lookup);
   /** Our relays, preferred first, then our other directories: asked after the contact's own. Any thread. */
   void SetOurRelays(std::vector<std::string> origins);
+  /**
+   * Whether the contact's card entry `{origin, peer_id}` does not match the relay (our pins disagree, or a send found
+   * it refused, MR007): the page says *identity doesn't match*. None: never. Any thread.
+   */
+  using IdentityMismatchFn =
+      std::function<bool(const std::string& account_id, const std::string& origin, const std::string& peer_id)>;
+  void SetIdentityMismatch(IdentityMismatchFn mismatch);
 
   /**
    * Refreshes `contact_id`; `done` once, on the UI lane. False (and no `done`) when one already runs for it or
@@ -181,6 +189,7 @@ private:
   Post post_ui_;
   mutable std::mutex mutex_;
   RelayLookup lookup_;
+  IdentityMismatchFn identity_mismatch_;
   std::vector<std::string> our_relays_;
   std::set<std::string> running_;
   /** What each relay last answered, by account and relay (RelayOriginKey); insertion order for forgetting. */

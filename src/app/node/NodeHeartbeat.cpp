@@ -114,16 +114,21 @@ NodeHeartbeat::Outcome NodeHeartbeat::Send(const HeartbeatState state, const lon
 
   auto signature = deps_.sign(id.account_id, id.peer_id, state_name, timestamp);
   if (!signature) {
-    log.error << "heartbeat sign failed: " << signature.error().message;
+    if (signature.error().message != sign_failure_) {
+      sign_failure_ = signature.error().message; // e.g. the relay's identity changed: stopped until the pin is cleared
+      log.error << "heartbeat not sent: " << sign_failure_;
+    }
     RecordOutcome(Outcome::HttpError);
     return Outcome::HttpError;
   }
+  sign_failure_.clear();
   Object body;
   body.set("account_id", id.account_id);
   body.set("peer_id", id.peer_id);
   body.set("state", state_name);
+  body.set("audience", signature->audience);
   body.set("timestamp", timestamp);
-  body.set("signature", *signature);
+  body.set("signature", signature->signature);
 
   const auto response = deps_.post(deps_.base_url + "/v1/mesh/heartbeat", DumpJson(body),
                                    {{"Content-Type", "application/json"}}, timeout_s);
@@ -143,6 +148,9 @@ NodeHeartbeat::Outcome NodeHeartbeat::Send(const HeartbeatState state, const lon
         .Set(static_cast<double>(skew_ms) / 1000.0);
   }
 
+  if (status >= 400 && deps_.refused && !parsed.code.empty()) {
+    deps_.refused(parsed.code); // `wrong_audience`: the relay's identity is asked again (MR007)
+  }
   Outcome outcome = Outcome::HttpError;
   if (status >= 200 && status < 300) {
     outcome = Outcome::Ok;

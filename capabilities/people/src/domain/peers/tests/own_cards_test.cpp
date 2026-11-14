@@ -5,6 +5,8 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
 
+#include "lib/people/tests/TestAccount.h"
+
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -210,22 +212,30 @@ TEST_F(OwnCardsTest, ANonMasterRenameKeepsTheListAsItIs) {
   EXPECT_EQ(phone.identity.Get().value().nickname, "Alice L.") << "the account's name, on every device";
 }
 
-std::vector<AccountCardRelay> Relays(std::initializer_list<const char*> origins) {
+/** Each origin with the PeerId pinned for it in these tests (the n-th origin, the n-th fixture key). */
+std::vector<AccountCardRelay> Relays(std::initializer_list<const char*> origins, uint8_t fill = 0x20) {
   std::vector<AccountCardRelay> out;
   for (const char* origin : origins) {
-    out.push_back(AccountCardRelay{.origin = origin});
+    out.push_back(test::CardRelay(origin, fill++));
   }
   return out;
 }
 
-// MR002 / MR005: the card carries the relays we register on and our floor, re-issued when either changes.
+// MR002 / MR005 / MR007: the card carries the relays we register on, each with its pinned PeerId, and our floor,
+// re-issued when either changes.
 TEST_F(OwnCardsTest, TheCardCarriesOurRelaysAndFloorAndIsReissuedWhenEitherChanges) {
   Device phone(dir_ / "phone");
-  phone.own->SetRelays({"https://www.brief.global/api/relay", "http://127.0.0.1:8080/api/relay", "",
-                        "https://WWW.brief.global:443/api/relay"});
+  std::vector<AccountCardRelay> given = Relays({"https://www.brief.global/api/relay"});
+  given.push_back(test::CardRelay("http://127.0.0.1:8080/api/relay", 0x30));
+  given.push_back(test::CardRelay("", 0x31));
+  given.push_back(test::CardRelay("https://WWW.brief.global:443/api/relay", 0x32));
+  given.push_back(AccountCardRelay{.origin = "https://unpinned.example/api/relay"});
+  given.push_back(test::CardRelay("https://same-peer.example/api/relay", 0x20));
+  EXPECT_TRUE(phone.own->SetRelays(given));
+  EXPECT_FALSE(phone.own->SetRelays(given)) << "the same list: no change";
   const AccountCard card = phone.own->Card(kNow).value();
   EXPECT_EQ(card.relays, Relays({"https://www.brief.global/api/relay"}))
-      << "only origins within MR004's bounds: no http lab relay, no duplicate";
+      << "only relays within the bounds: no http lab relay, no duplicate origin or PeerId, none without a PeerId";
   EXPECT_EQ(card.initiation_floor, 0);
   EXPECT_TRUE(VerifyAccountCard(card, kNow));
   EXPECT_EQ(phone.own->Card(kNow + 10).value(), card) << "nothing changed";
@@ -236,7 +246,7 @@ TEST_F(OwnCardsTest, TheCardCarriesOurRelaysAndFloorAndIsReissuedWhenEitherChang
   EXPECT_GT(priced.issued_at, card.issued_at);
   EXPECT_TRUE(VerifyAccountCard(priced, kNow + 20));
 
-  phone.own->SetRelays({"https://relay.example.org/api/relay"});
+  phone.own->SetRelays(Relays({"https://relay.example.org/api/relay"}));
   const AccountCard moved = phone.own->Card(kNow + 30).value();
   EXPECT_EQ(moved.relays, Relays({"https://relay.example.org/api/relay"}));
   EXPECT_GT(moved.issued_at, priced.issued_at);
@@ -248,8 +258,8 @@ TEST_F(OwnCardsTest, TheCardCarriesOurRelaysAndFloorAndIsReissuedWhenEitherChang
 TEST_F(OwnCardsTest, ALinkedDeviceKeepsTheMastersRelaysAndTheFloorIsTheAccounts) {
   Device phone(dir_ / "phone");
   Device laptop(dir_ / "laptop");
-  phone.own->SetRelays({"https://a.example/api/relay"});
-  laptop.own->SetRelays({"https://b.example/api/relay"});
+  phone.own->SetRelays(Relays({"https://a.example/api/relay"}));
+  laptop.own->SetRelays(Relays({"https://b.example/api/relay"}));
   const AccountCard joined = LinkLaptop(phone, laptop, kNow);
   EXPECT_EQ(joined.relays, Relays({"https://a.example/api/relay"})) << "the laptop is not the master";
   EXPECT_EQ(laptop.own->Card(kNow + 40).value(), joined) << "no tug of war over the list";

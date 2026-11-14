@@ -110,8 +110,9 @@ protected:
                          std::vector<std::string> relays = {}) {
     AccountCard card{
         .keys = account.Card(), .nickname = nickname, .devices = std::move(devices), .issued_at = issued_at};
+    uint8_t fill = 0x50;
     for (std::string& origin : relays) {
-      card.relays.push_back(AccountCardRelay{.origin = std::move(origin)});
+      card.relays.push_back(test::CardRelay(origin, fill++));
     }
     return SignAccountCard(card, [&account](const ByteVector& bytes) { return account.Sign(bytes); }).value();
   }
@@ -348,7 +349,7 @@ TEST_F(ContactRefreshWorkflowTest, ARelaysCardThatDoesNotVerifyIsNotKept) {
   const std::string id = AddBobByQr();
   KeepBobsCard({kBobsA});
   AccountCard forged = SignedCard(bob_, "Bob R.", test::Devices({"QmBobPhone"}), kNow + 2000, {kBobsB});
-  forged.relays = {AccountCardRelay{.origin = "https://evil.example/api/relay"}}; // not what Bob signed
+  forged.relays = {test::CardRelay("https://evil.example/api/relay", 0x66)}; // not what Bob signed
   Answers(kBobsA, RelayBob(forged));
 
   const ContactRefreshResult result = Refresh(id);
@@ -475,6 +476,26 @@ TEST_F(ContactRefreshWorkflowTest, ThePreferredRelaysReachabilityIsWhatItLastAns
   relays_.erase(kBobsA);
   Refresh(id);
   EXPECT_EQ(PageRelay(id).reach, ContactRelayView::Reach::NotRegistered);
+}
+
+// MR007 § Pins (what the user sees): the page says *identity doesn't match* when the PeerId the contact's card names for
+// its preferred relay disagrees with our pins (or a send found it refused) — whatever the relay last answered.
+TEST_F(ContactRefreshWorkflowTest, APreferredRelayWhoseIdentityDoesNotMatchSaysSo) {
+  const std::string id = AddBobByQr();
+  KeepBobsCard({kBobsA, kBobsB});
+  std::vector<std::string> asked;
+  workflow_->SetIdentityMismatch(
+      [&asked](const std::string& account, const std::string& origin, const std::string& peer_id) {
+        asked.push_back(account + " " + origin + " " + peer_id);
+        return origin == kBobsA;
+      });
+  Answers(kBobsA, RelayBob());
+  Refresh(id);
+  EXPECT_EQ(PageRelay(id).reach, ContactRelayView::Reach::IdentityMismatch);
+  ASSERT_FALSE(asked.empty());
+  EXPECT_EQ(asked.back(), bob_.account_id + " " + kBobsA + " " + test::RelayPeerId(0x50)) << "the card's PeerId";
+  workflow_->SetIdentityMismatch(nullptr);
+  EXPECT_EQ(PageRelay(id).reach, ContactRelayView::Reach::Reachable);
 }
 
 TEST_F(ContactRefreshWorkflowTest, APageWithoutARelaySaysMeshOnlyOrNotKnown) {

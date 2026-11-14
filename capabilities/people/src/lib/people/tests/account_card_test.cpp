@@ -4,6 +4,7 @@
 
 #include "lib/people/tests/TestAccount.h"
 
+#include "common/ValueJson.h"
 #include "foundation/crypto/Sha256Hex.h"
 
 #include <gtest/gtest.h>
@@ -36,10 +37,12 @@ AccountCard Signed(const test::TestAccount& account, AccountCard card) {
   return SignAccountCard(std::move(card), [&account](const ByteVector& bytes) { return account.Sign(bytes); }).value();
 }
 
+/** Each origin with a PeerId of its own (the n-th fixture key's). */
 std::vector<AccountCardRelay> Relays(std::initializer_list<const char*> origins) {
   std::vector<AccountCardRelay> out;
+  uint8_t fill = 0x60;
   for (const char* origin : origins) {
-    out.push_back(AccountCardRelay{.origin = origin});
+    out.push_back(test::CardRelay(origin, fill++));
   }
   return out;
 }
@@ -48,10 +51,10 @@ std::string B64Fill(size_t size, uint8_t fill) {
   return Base64Encode(ByteVector(size, fill));
 }
 
-// Ported to the relay (www AccountCard.test.ts, "account card sign bytes"); computed independently with a struct
-// script: account key 1952 x 0x42, KEM 1184 x 0x43, devices (1952 x 0x01, 1184 x 0x02) and (1952 x 0x03,
-// 1184 x 0x04) listed out of PeerId order, nickname "alice", relays relay.example.org then www.brief.global (list
-// order), initiation_floor 250, issued_at 1761235200000.
+// MR007-CARD: version 4's bytes, computed independently with a struct script: account key 1952 x 0x42, KEM 1184 x
+// 0x43, devices (1952 x 0x01, 1184 x 0x02) and (1952 x 0x03, 1184 x 0x04) listed out of PeerId order, nickname
+// "alice", relays relay.example.org (PeerId of 1952 x 0x42) then www.brief.global (of 1952 x 0x01) in list order,
+// initiation_floor 250, issued_at 1761235200000. The relay checks the signed card of relay_sign_vectors.json.
 TEST(AccountCardSignBytesTest, MatchTheGoldenVector) {
   const AccountCard card{
       .keys = KeyCard{.signing_public_key_b64 = B64Fill(1952, 0x42), .kem_public_key_b64 = B64Fill(1184, 0x43)},
@@ -62,16 +65,20 @@ TEST(AccountCardSignBytesTest, MatchTheGoldenVector) {
                   {.peer_id = "QmbSD2vbEJTdL9PW5w5mr3pak9EYyoiYfiqCPJJ6AxJBig",
                    .signing_public_key_b64 = B64Fill(1952, 0x03),
                    .kem_public_key_b64 = B64Fill(1184, 0x04)}},
-      .relays = Relays({"https://relay.example.org/api/relay", "https://www.brief.global/api/relay"}),
+      .relays = {test::CardRelay("https://relay.example.org/api/relay", 0x42),
+                 test::CardRelay("https://www.brief.global/api/relay", 0x01)},
       .initiation_floor = 250,
       .issued_at = 1761235200000};
   const ByteVector bytes = AccountCardSignBytes(card);
-  ASSERT_EQ(bytes.size(), 9674u);
+  ASSERT_EQ(bytes.size(), 9782u);
   EXPECT_EQ(Sha256Hex(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size())),
-            "8dd1c36b17a5c72edebbd722d8736ca9656f1128b13d9bc01ec300e5c33afe77");
+            "0bf34bc8b427eb85ea709e3285076fbb85fa01efd0c7f6a8cc192c47338d9d1c");
   AccountCard swapped = card;
   std::swap(swapped.relays[0], swapped.relays[1]);
   EXPECT_NE(AccountCardSignBytes(swapped), bytes) << "the preferred relay is signed as the first";
+  AccountCard other_peer = card;
+  other_peer.relays[0].peer_id = test::RelayPeerId(0x07);
+  EXPECT_NE(AccountCardSignBytes(other_peer), bytes) << "each relay's PeerId is signed";
 }
 
 TEST(AccountCardTest, RelaysAndFloorAreSignedAndRoundTrip) {
@@ -99,14 +106,22 @@ TEST(AccountCardTest, RelaysAndFloorAreSignedAndRoundTrip) {
 TEST(AccountCardTest, AnotherVersionOrAMissingFieldIsRefused) {
   const test::TestAccount alice = test::TestAccount::Make();
   const Object json = AccountCardToJson(CardOf(alice, test::Devices({"QmPhone"}), kNow));
-  Object v2 = json;
-  v2.set("card_version", int64_t{2});
-  EXPECT_FALSE(AccountCardFromJson(v2)) << "version 2 is gone (no bridges)";
+  EXPECT_EQ(json.getIf<int64_t>("card_version"), 4);
+  for (const int64_t version : {2, 3, 5}) {
+    Object other = json;
+    other.set("card_version", version);
+    EXPECT_FALSE(AccountCardFromJson(other)) << "version " << version << " is refused (MR007-CARD: no bridges)";
+  }
   for (const char* field : {"relays", "initiation_floor"}) {
     Object missing = json;
     missing.erase(field);
     EXPECT_FALSE(AccountCardFromJson(missing)) << field;
   }
+  Object no_peer = json;
+  Object relay;
+  relay.set("origin", std::string("https://a.example"));
+  no_peer.set("relays", ArrayValue({ObjectValue(relay)}));
+  EXPECT_FALSE(AccountCardFromJson(no_peer)) << "a relay without its peer_id";
 }
 
 TEST(AccountCardTest, ACardBreakingARelayBoundIsRefusedWhole) {
@@ -124,12 +139,12 @@ TEST(AccountCardTest, ACardBreakingARelayBoundIsRefusedWhole) {
                                              "https://relay.example.org/api/relay", "https://[::1]:8443/r"})),
                                 kNow));
   const std::string longest = "https://" + std::string(kMaxCardRelayOriginBytes - 8, 'a');
-  EXPECT_TRUE(VerifyAccountCard(with({{.origin = longest}}), kNow));
+  EXPECT_TRUE(VerifyAccountCard(with({test::CardRelay(longest, 0x42)}), kNow));
 
   const std::vector<std::vector<AccountCardRelay>> refused = {
       Relays({"https://r0.example", "https://r1.example", "https://r2.example", "https://r3.example",
               "https://r4.example"}),
-      {{.origin = longest + "a"}},
+      {test::CardRelay(longest + "a", 0x42)},
       Relays({"http://a.example"}),
       Relays({"wss://a.example"}),
       Relays({"https:a.example"}),
@@ -143,6 +158,12 @@ TEST(AccountCardTest, ACardBreakingARelayBoundIsRefusedWhole) {
       Relays({"https://a.example:65536"}),
       Relays({"https://a.example/x", "https://A.example:443/x"}),
       Relays({"https://a.example", "https://a.example/"}),
+      // MR007-CARD: each relay names a PeerId of an ML-DSA key's form, and no two the same one.
+      {AccountCardRelay{.origin = "https://a.example"}},
+      {AccountCardRelay{.origin = "https://a.example",
+                        .peer_id = "12D3KooWD3eckifWpRn9wQpMG9R9hX3sD158z7EqHWmweQAJU5SA"}},
+      {AccountCardRelay{.origin = "https://a.example", .peer_id = test::RelayPeerId(0x42) + "x"}},
+      {test::CardRelay("https://a.example", 0x42), test::CardRelay("https://b.example", 0x42)},
   };
   for (const auto& relays : refused) {
     EXPECT_FALSE(VerifyAccountCard(with(relays), kNow)) << (relays.empty() ? "" : relays.back().origin);

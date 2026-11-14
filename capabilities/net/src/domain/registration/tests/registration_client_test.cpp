@@ -127,19 +127,44 @@ TEST(RegistrationClientTest, MarkRegistrationExpired) {
   EXPECT_EQ(ClassifyRegistration(identity, util::NowUnixMs()), RegistrationStatus::Expired);
 }
 
-// #328: records the revoke call; everything else is the mock's behaviour.
+// #328: records the revoke call; everything else is the mock's behaviour. The relay holds `held_id` (MR007 item 5): a
+// revoke of another id is refused as registration_mismatch, and a renewal answers the held one.
 class RecordingRegistrationClient : public MockRegistrationClient {
 public:
-  Roe<void> RevokeRegistration(const std::string& account_id, const std::string& signature,
-                               const int64_t timestamp) override {
+  Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
+                                             const std::string& nickname, const SignedRelayCommand& signed_finish,
+                                             const std::string& signature_alg, const std::string& kem_public_key_b64,
+                                             const std::string& kem_binding_signature_b64, const std::string& peer_id,
+                                             const std::vector<std::string>& multiaddrs,
+                                             const RegistrationPublishOpts& publish) override {
+    ++finish_calls;
+    auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
+                                                             signature_alg, kem_public_key_b64,
+                                                             kem_binding_signature_b64, peer_id, multiaddrs, publish);
+    if (result) {
+      result->registration_id = held_id;
+    }
+    return result;
+  }
+  Roe<void> RevokeRegistration(const std::string& account_id, const std::string& registration_id,
+                               const SignedRelayCommand& signed_revoke) override {
     ++revoke_calls;
     last_account_id = account_id;
-    last_signature = signature;
-    last_timestamp = timestamp;
+    revoked_ids.push_back(registration_id);
+    last_audience = signed_revoke.audience;
+    last_signature = signed_revoke.signature;
+    last_timestamp = signed_revoke.timestamp;
+    if (registration_id != held_id) {
+      return AppError::Auth(Err::Auth::ScopeMismatch, "registration_mismatch");
+    }
     return {};
   }
+  std::string held_id = "reg-now";
+  int finish_calls = 0;
   int revoke_calls = 0;
   std::string last_account_id;
+  std::vector<std::string> revoked_ids;
+  std::string last_audience;
   std::string last_signature;
   int64_t last_timestamp = 0;
 };
@@ -192,7 +217,7 @@ TEST_F(RevokeRegistrationTest, AutoRenewReRegistersAtTheCurrentBackendAndRecords
 }
 
 TEST_F(RevokeRegistrationTest, UnregisteredIdentityIsANoOp) {
-  auto result = RevokeRegistrationWithIdentity(client_, *identity_);
+  auto result = RevokeRegistrationWithIdentity(client_, *identity_, "reg-now");
   EXPECT_TRUE(static_cast<bool>(result));
   EXPECT_EQ(client_.revoke_calls, 0);
 }
@@ -203,25 +228,75 @@ TEST_F(RevokeRegistrationTest, RegisteredIdentitySignsAndCallsTheRelay) {
   identity->registered = true;
   ASSERT_TRUE(static_cast<bool>(identity_->Update(*identity)));
 
-  auto result = RevokeRegistrationWithIdentity(client_, *identity_);
+  auto result = RevokeRegistrationWithIdentity(client_, *identity_, "reg-now");
   ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
   EXPECT_EQ(client_.revoke_calls, 1);
   EXPECT_EQ(client_.last_account_id, identity->account_id) << "the relay's row by Account ID (MR001)";
+  EXPECT_EQ(client_.revoked_ids, std::vector<std::string>{"reg-now"}) << "the registration it removes (MR007-SCOPE)";
+  EXPECT_EQ(client_.last_audience, MockRegistrationClient::kAudience) << "signed for that relay (MR007-AUD)";
   EXPECT_FALSE(client_.last_signature.empty());
   EXPECT_GT(client_.last_timestamp, 0);
+  EXPECT_EQ(client_.finish_calls, 0);
   // The identity itself is untouched: the caller wipes it right after.
   auto after = identity_->Get();
   ASSERT_TRUE(static_cast<bool>(after));
   EXPECT_TRUE(after->registered);
 }
 
+// MR007-SCOPE: a stale id changes nothing at the relay (registration_mismatch); the revoke renews — its finish answers
+// the current id — and revokes that one, once.
+TEST_F(RevokeRegistrationTest, AStaleIdRenewsFirstThenRevokesTheCurrentOneOnce) {
+  auto identity = identity_->Get();
+  ASSERT_TRUE(static_cast<bool>(identity));
+  identity->registered = true;
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(*identity)));
+
+  auto result = RevokeRegistrationWithIdentity(client_, *identity_, "reg-before");
+  ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
+  EXPECT_EQ(client_.revoked_ids, (std::vector<std::string>{"reg-before", "reg-now"}));
+  EXPECT_EQ(client_.finish_calls, 1);
+}
+
+TEST_F(RevokeRegistrationTest, NoIdKeptRenewsFirst) {
+  auto identity = identity_->Get();
+  ASSERT_TRUE(static_cast<bool>(identity));
+  identity->registered = true;
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(*identity)));
+
+  ASSERT_TRUE(static_cast<bool>(RevokeRegistrationWithIdentity(client_, *identity_, "")));
+  EXPECT_EQ(client_.revoked_ids, std::vector<std::string>{"reg-now"});
+  EXPECT_EQ(client_.finish_calls, 1);
+}
+
+TEST_F(RevokeRegistrationTest, AMismatchAgainAfterTheRenewalIsTheAnswer) {
+  auto identity = identity_->Get();
+  ASSERT_TRUE(static_cast<bool>(identity));
+  identity->registered = true;
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(*identity)));
+  client_.held_id = ""; // the renewal answers no id: nothing more is tried
+
+  EXPECT_FALSE(static_cast<bool>(RevokeRegistrationWithIdentity(client_, *identity_, "reg-before")));
+  EXPECT_EQ(client_.revoke_calls, 1);
+}
+
+// MR007-AUD: no command is signed for a relay whose identity is not in force.
+TEST_F(RevokeRegistrationTest, NothingIsSignedWithoutAnAudience) {
+  auto identity = identity_->Get();
+  ASSERT_TRUE(static_cast<bool>(identity));
+  identity->registered = true;
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(*identity)));
+  client_.SetAudience(nullptr);
+
+  EXPECT_FALSE(static_cast<bool>(RevokeRegistrationWithIdentity(client_, *identity_, "reg-now")));
+  EXPECT_EQ(client_.revoke_calls, 0);
+}
+
 // Records what register/finish sent; the relay stores the binding when `relay_stores_binding`.
 class BindingRecordingClient : public MockRegistrationClient {
 public:
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
-                                             const std::string& nickname, const std::string& signature,
-                                             int64_t timestamp, const std::string& signature_alg,
-                                             const std::string& kem_public_key_b64,
+                                             const std::string& nickname, const SignedRelayCommand& signed_finish,
+                                             const std::string& signature_alg, const std::string& kem_public_key_b64,
                                              const std::string& kem_binding_signature_b64, const std::string& peer_id,
                                              const std::vector<std::string>& multiaddrs,
                                              const RegistrationPublishOpts& publish) override {
@@ -229,7 +304,8 @@ public:
     last_kem_public_key_b64 = kem_public_key_b64;
     last_binding = kem_binding_signature_b64;
     last_card = publish.account_card;
-    auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signature, timestamp,
+    last_audience = signed_finish.audience;
+    auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
                                                              signature_alg, kem_public_key_b64,
                                                              kem_binding_signature_b64, peer_id, multiaddrs, publish);
     if (result) {
@@ -241,6 +317,7 @@ public:
   int finish_calls = 0;
   std::string last_kem_public_key_b64;
   std::string last_binding;
+  std::string last_audience;
   std::optional<Object> last_card;
 };
 
@@ -282,6 +359,8 @@ TEST_F(KemBindingPublishTest, AnOlderRegistrationPublishesItsBindingOnceEvenWith
   EXPECT_TRUE(VerifyKemBinding(after.account_id, after.account_signing_public_key_b64, after.kem_public_key_b64,
                                client_.last_binding))
       << "register/finish carries the account's own binding";
+  EXPECT_EQ(client_.last_audience, MockRegistrationClient::kAudience) << "and is signed for that relay (MR007-AUD)";
+  EXPECT_EQ(after.registration_id, "mock-registration") << "the identity keeps the registration's id (MR007-SCOPE)";
 
   renewed = MaybeAutoRenewRegistration(client_, *identity_, /*auto_renew_enabled=*/false);
   ASSERT_TRUE(static_cast<bool>(renewed));
@@ -489,16 +568,15 @@ public:
                                                      peer_id, multiaddrs, publish);
   }
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
-                                             const std::string& nickname, const std::string& signature,
-                                             int64_t timestamp, const std::string& signature_alg,
-                                             const std::string& kem_public_key_b64,
+                                             const std::string& nickname, const SignedRelayCommand& signed_finish,
+                                             const std::string& signature_alg, const std::string& kem_public_key_b64,
                                              const std::string& kem_binding_signature_b64, const std::string& peer_id,
                                              const std::vector<std::string>& multiaddrs,
                                              const RegistrationPublishOpts& publish) override {
     sent.push_back(Record("finish", nickname, multiaddrs, peer_id, publish));
-    return MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signature, timestamp,
-                                                      signature_alg, kem_public_key_b64, kem_binding_signature_b64,
-                                                      peer_id, multiaddrs, publish);
+    return MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish, signature_alg,
+                                                      kem_public_key_b64, kem_binding_signature_b64, peer_id,
+                                                      multiaddrs, publish);
   }
   std::vector<Sent> sent;
 
@@ -637,9 +715,8 @@ public:
                                                      peer_id, multiaddrs, publish);
   }
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
-                                             const std::string& nickname, const std::string& signature,
-                                             int64_t timestamp, const std::string& signature_alg,
-                                             const std::string& kem_public_key_b64,
+                                             const std::string& nickname, const SignedRelayCommand& signed_finish,
+                                             const std::string& signature_alg, const std::string& kem_public_key_b64,
                                              const std::string& kem_binding_signature_b64, const std::string& peer_id,
                                              const std::vector<std::string>& multiaddrs,
                                              const RegistrationPublishOpts& publish) override {
@@ -647,9 +724,9 @@ public:
     if (fail_finish_with) {
       return *fail_finish_with;
     }
-    return MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signature, timestamp,
-                                                      signature_alg, kem_public_key_b64, kem_binding_signature_b64,
-                                                      peer_id, multiaddrs, publish);
+    return MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish, signature_alg,
+                                                      kem_public_key_b64, kem_binding_signature_b64, peer_id,
+                                                      multiaddrs, publish);
   }
   int start_calls = 0;
   int finish_calls = 0;

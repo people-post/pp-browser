@@ -100,10 +100,12 @@ bool IsRegistrationRefused(const Error& error);
 Roe<RegistrationResult> UpdateRegisteredNickname(IRegistrationClient& registration, IdentityStore& identity,
                                                  const std::string& nickname);
 /**
- * Remove this account's directory registration (#328). Nothing to do (success) when the identity never
- * registered; otherwise signs `BuildAccountRevokeSignBytes` with the account key and calls the relay.
- * Does not touch the local identity: the caller is about to wipe it.
+ * Remove this account's registration `registration_id` from `registration`'s relay (#328, MR007 item 5: the id its
+ * `register/finish` answered). Nothing to do (success) when the identity never registered. With no id kept, or one the
+ * relay answers `registration_mismatch` (a newer registration there), it renews first and revokes the id that renewal
+ * answers, once. Does not touch the local identity: the caller is about to wipe it, or the relay leaves our list.
  */
-Roe<void> RevokeRegistrationWithIdentity(IRegistrationClient& registration, IdentityStore& identity);
+Roe<void> RevokeRegistrationWithIdentity(IRegistrationClient& registration, IdentityStore& identity,
+                                         const std::string& registration_id);
 
 } // namespace pbr

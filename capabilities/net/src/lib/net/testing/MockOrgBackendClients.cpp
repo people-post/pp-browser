@@ -219,7 +219,7 @@ Roe<RegistrationStartResult> MockRegistrationClient::StartRegistration(
 
 Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(
     const std::string& /*challenge*/, const std::string& public_key_b64, const std::string& nickname,
-    const std::string& /*signature*/, int64_t /*timestamp*/, const std::string& /*signature_alg*/,
+    const SignedRelayCommand& /*signed_finish*/, const std::string& /*signature_alg*/,
     const std::string& /*kem_public_key_b64*/, const std::string& /*kem_binding_signature_b64*/,
     const std::string& /*peer_id*/, const std::vector<std::string>& /*multiaddrs*/,
     const RegistrationPublishOpts& publish) {
@@ -233,18 +233,20 @@ Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(
                             .message = "Registered as " + nickname,
                             .llm_api_key = "brf_llm_mock_key",
                             .expires_at = "2099-01-01T00:00:00.000Z",
+                            .registration_id = "mock-registration",
                             .account_card_status = publish.account_card ? "stored" : "",
                             .kem_bound = true};
 }
 
 Roe<RegistrationResult> MockRegistrationClient::UpdateNickname(const std::string& new_nickname,
-                                                               const std::string& /*signature*/, int64_t /*timestamp*/,
+                                                               const SignedRelayCommand& /*signed_update*/,
                                                                const std::string& /*account_id*/) {
   return RegistrationResult{.success = true, .message = "Nickname updated to " + new_nickname};
 }
 
 Roe<void> MockRegistrationClient::RevokeRegistration(const std::string& /*account_id*/,
-                                                     const std::string& /*signature*/, const int64_t /*timestamp*/) {
+                                                     const std::string& /*registration_id*/,
+                                                     const SignedRelayCommand& /*signed_revoke*/) {
   return {};
 }
 

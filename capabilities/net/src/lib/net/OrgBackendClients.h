@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Secret.h"
+#include "lib/net/RelayAudience.h"
 
 #include "mesh/types/DirectoryTypes.h"
 #include "common/Error.h"
@@ -16,8 +17,6 @@
 #include "common/MeshAlias.h"
 
 namespace pbr {
-
-using RelayAuthSigner = std::function<Roe<std::string>(const std::vector<uint8_t>&)>;
 
 /** Optional register/finish extras (N027 mesh_node publish). */
 struct RegistrationPublishOpts {
@@ -53,6 +52,11 @@ struct RegistrationResult {
   SecretText llm_api_key;
   /** ISO-8601 registration expiry from register/finish. */
   std::string expires_at;
+  /**
+   * The registration's id at that relay (`registration_id`, MR007 item 5): new for a fresh registration, the same
+   * across its renewals; a revoke names it. Empty when the relay gave none.
+   */
+  std::string registration_id;
   /** What the relay did with the account card sent (`stored`, `same`, `stale`); empty when none was sent. */
   std::string account_card_status;
   /** Set by the registration flow, not the wire: the `issued_at` of the card the relay answered for (0: none). */
@@ -69,30 +73,36 @@ struct RegistrationStartResult {
   std::string expires_at;
 };
 
+/** The relay's registry: register (start, finish), the nickname, revoke. The signed ones name the relay (MR007). */
 class IRegistrationClient {
 public:
   virtual ~IRegistrationClient() = default;
   /** The registry this client talks to; empty when unknown (the registration is then not bound to a backend). */
   virtual std::string BaseUrl() const { return {}; }
+  /** Who this relay's commands are signed for (its pin); none: nothing can be signed for it. */
+  virtual IRelayAudience* Audience() const = 0;
   virtual Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
                                                          const std::string& signature_alg = "ml-dsa-65",
                                                          const std::string& kem_public_key_b64 = "",
                                                          const std::string& peer_id = "",
                                                          const std::vector<std::string>& multiaddrs = {},
                                                          const RegistrationPublishOpts& publish = {}) = 0;
-  virtual Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
-                                                     const std::string& nickname, const std::string& signature,
-                                                     int64_t timestamp, const std::string& signature_alg = "ml-dsa-65",
-                                                     const std::string& kem_public_key_b64 = "",
-                                                     const std::string& kem_binding_signature_b64 = "",
-                                                     const std::string& peer_id = "",
-                                                     const std::vector<std::string>& multiaddrs = {},
-                                                     const RegistrationPublishOpts& publish = {}) = 0;
-  virtual Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
-                                                 int64_t timestamp, const std::string& account_id) = 0;
-  /** Remove this account's directory registration (#328; `BuildAccountRevokeSignBytes` + signature). */
-  virtual Roe<void> RevokeRegistration(const std::string& account_id, const std::string& signature,
-                                       int64_t timestamp) = 0;
+  /** `signed_finish`: the audience, timestamp and signature over BuildRegistrationSignBytes. */
+  virtual Roe<RegistrationResult> FinishRegistration(
+      const std::string& challenge, const std::string& public_key_b64, const std::string& nickname,
+      const SignedRelayCommand& signed_finish, const std::string& signature_alg = "ml-dsa-65",
+      const std::string& kem_public_key_b64 = "", const std::string& kem_binding_signature_b64 = "",
+      const std::string& peer_id = "", const std::vector<std::string>& multiaddrs = {},
+      const RegistrationPublishOpts& publish = {}) = 0;
+  virtual Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname,
+                                                 const SignedRelayCommand& signed_update,
+                                                 const std::string& account_id) = 0;
+  /**
+   * Removes this account's registration `registration_id` (#328, MR007; BuildAccountRevokeSignBytes). Another id held
+   * there now: Err::Auth::ScopeMismatch (`409 registration_mismatch`), nothing removed.
+   */
+  virtual Roe<void> RevokeRegistration(const std::string& account_id, const std::string& registration_id,
+                                       const SignedRelayCommand& signed_revoke) = 0;
 };
 
 } // namespace pbr

@@ -3,6 +3,8 @@
 #include "lib/people/ContactIdentity.h"
 #include "lib/people/ContactJson.h"
 
+#include "lib/people/tests/TestAccount.h"
+
 #include <gtest/gtest.h>
 
 #include <optional>
@@ -30,8 +32,9 @@ PeerCardRecord WithCard(std::vector<std::string> origins) {
   record.keys.account_id = "account:bob";
   AccountCard card;
   card.keys = record.keys;
+  uint8_t fill = 0x40;
   for (std::string& origin : origins) {
-    card.relays.push_back(AccountCardRelay{.origin = std::move(origin)});
+    card.relays.push_back(test::CardRelay(origin, fill++));
   }
   record.newest_card = card;
   return record;

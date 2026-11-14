@@ -187,6 +187,8 @@ struct RelayWireSendRecord {
   std::string stream_id;
   uint64_t index_key = 0;
   std::string blob_b64;
+  /** The PeerId of the relay the send is signed for (multi-relay MR007; set as it is signed). */
+  std::string audience;
   int64_t timestamp = 0;
   std::string signature;
   /** P012 — wake the recipient at once, the most urgent push (unsigned hint; older relays ignore it). */

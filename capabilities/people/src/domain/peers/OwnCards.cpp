@@ -87,16 +87,20 @@ bool Lists(const std::vector<AccountCardDevice>& devices, const std::string& pee
 
 } // namespace
 
-void OwnCards::SetRelays(const std::vector<std::string>& origins) {
+bool OwnCards::SetRelays(const std::vector<AccountCardRelay>& given) {
   std::vector<AccountCardRelay> relays;
-  for (const std::string& origin : origins) {
-    relays.push_back(AccountCardRelay{.origin = origin});
+  for (const AccountCardRelay& relay : given) {
+    relays.push_back(relay);
     if (!VerifyCardRelays(relays)) {
-      relays.pop_back(); // outside MR004's bounds (not https, too long, a duplicate, a fifth): not on the card
+      relays.pop_back(); // outside the bounds (not https, too long, no PeerId, a duplicate, a fifth): not on the card
     }
   }
   std::lock_guard lock(mutex_);
+  if (relays_ == relays) {
+    return false;
+  }
   relays_ = std::move(relays);
+  return true;
 }
 
 std::vector<AccountCardRelay> OwnCards::RelaysLocked(const std::vector<AccountCardDevice>& devices,

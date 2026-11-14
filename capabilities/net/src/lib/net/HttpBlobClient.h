@@ -3,6 +3,9 @@
 #include "common/net/HttpTransport.h"
 #include "lib/net/BlobClient.h"
 #include "lib/net/OrgBackendClients.h"
+#include "lib/net/RelayAudience.h"
+
+#include <memory>
 
 #include <functional>
 #include <string>
@@ -31,6 +34,8 @@ public:
   explicit HttpBlobClient(std::string base_url);
 
   void SetAuthSigner(RelayAuthSigner signer) { auth_signer_ = std::move(signer); }
+  /** Who the signed calls are for (the relay's pin, MR007); refusals about its identity or our registration go there. */
+  void SetAudience(std::shared_ptr<IRelayAudience> audience) { audience_ = std::move(audience); }
 
   Roe<BlobPresignResult> Presign(const std::string& account_id, const std::string& content_type, uint64_t byte_length,
                                  BlobPurpose purpose) override;
@@ -54,14 +59,17 @@ public:
   Roe<RelayFileListResult> FileList(const std::string& account_id, const std::string& status_filter) override;
 
 private:
-  /** POST a signed `/v1/files/<op>` body (account_id, timestamp and signature are added here). */
-  Roe<HttpResponse> PostSignedFiles(const std::string& op, const std::string& account_id, Object body,
-                                    const std::vector<uint8_t>& sign_bytes, int64_t timestamp) const;
-
-  Roe<std::string> SignBytes(const std::vector<uint8_t>& sign_bytes) const;
+  /**
+   * POST a signed body to `path` (`/v1/blobs/presign`, `/v1/files/start`, ...): the audience, timestamp and signature
+   * over the bytes `build` makes are added here. A refusal is the blob service's typed error (CheckBlobResponse); the
+   * audience hears the codes it acts on first.
+   */
+  Roe<HttpResponse> PostSigned(const std::string& path, Object body, int64_t timestamp,
+                               const RelayCommandBytes& build) const;
 
   std::string base_url_;
   RelayAuthSigner auth_signer_;
+  std::shared_ptr<IRelayAudience> audience_;
 };
 
 } // namespace pbr

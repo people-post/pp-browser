@@ -49,6 +49,26 @@ Error Price() {
 Error Quota() {
   return AppError::Auth(Err::Auth::StrangerQuota, "quota spent");
 }
+Error WrongAudience() {
+  return AppError::Auth(Err::Auth::WrongAudience, "Relay refused the command: signed for another relay");
+}
+Error IdentityChanged() {
+  return AppError::Auth(Err::Auth::RelayIdentityChanged, "presented another identity");
+}
+
+/** The PeerId a card names for `origin` in these tests (MR007). */
+std::string PeerIdOf(const std::string& origin) {
+  return "Qm:" + RelayOriginKey(origin);
+}
+
+/** A card's relay list: each origin with the PeerId the card names for it. */
+std::vector<AccountCardRelay> Card(const std::vector<std::string>& origins) {
+  std::vector<AccountCardRelay> relays;
+  for (const std::string& origin : origins) {
+    relays.push_back(AccountCardRelay{.origin = origin, .peer_id = PeerIdOf(origin)});
+  }
+  return relays;
+}
 
 /** One relay: answers each send with the next scripted result (then success), and says who it is to a shared log. */
 class FakeRelay : public IRelayClient {
@@ -110,18 +130,20 @@ protected:
   void SetUp() override {
     coordinator_.SetClock([this]() { return now_ms_; });
     coordinator_.SetOurRelays({{kOurs, Relay(kOurs)}, {kOurOther, Relay(kOurOther)}});
-    coordinator_.SetForeignClients([this](const std::string& origin) -> std::shared_ptr<IRelayClient> {
-      made_.push_back(origin);
-      return Relay(origin);
-    });
+    coordinator_.SetForeignClients(
+        [this](const std::string& origin, const std::string& peer_id) -> std::shared_ptr<IRelayClient> {
+          made_.push_back(origin);
+          made_for_.push_back(peer_id);
+          return Relay(origin);
+        });
     RelayRoutes routes;
     routes.relays_of = [this](const std::string& account) {
-      return account == kBob ? bobs_relays_ : std::vector<std::string>{};
+      return account == kBob ? Card(bobs_relays_) : std::vector<AccountCardRelay>{};
     };
     routes.refresh_relays_of = [this](const std::string& account) {
       refreshed_.push_back(account);
       bobs_relays_ = bobs_newest_relays_;
-      return bobs_relays_;
+      return Card(bobs_relays_);
     };
     coordinator_.SetRoutes(std::move(routes));
   }
@@ -144,6 +166,8 @@ protected:
   std::shared_ptr<std::vector<std::string>> log_ = std::make_shared<std::vector<std::string>>();
   std::map<std::string, std::shared_ptr<FakeRelay>> relays_;
   std::vector<std::string> made_;
+  /** The PeerId each client not ours was made to sign for. */
+  std::vector<std::string> made_for_;
   std::vector<std::string> refreshed_;
   std::vector<std::string> bobs_relays_;
   std::vector<std::string> bobs_newest_relays_;
@@ -262,7 +286,7 @@ TEST_F(RelaySendCoordinatorTest, ASendWhileTheCardIsBeingFetchedWaitsForThatFetc
   RelayRoutes routes;
   routes.relays_of = [this, &mu](const std::string&) {
     std::lock_guard lock(mu);
-    return bobs_relays_;
+    return Card(bobs_relays_);
   };
   routes.refresh_relays_of = [this, &mu, &cv, &fetching, &release](const std::string& account) {
     std::unique_lock lock(mu);
@@ -271,7 +295,7 @@ TEST_F(RelaySendCoordinatorTest, ASendWhileTheCardIsBeingFetchedWaitsForThatFetc
     cv.notify_all();
     cv.wait(lock, [&release] { return release; });
     bobs_relays_ = {kBobsB};
-    return bobs_relays_;
+    return Card(bobs_relays_);
   };
   coordinator_.SetRoutes(std::move(routes));
   Relay(kOurs)->AnswerAlways(NotHere());
@@ -317,6 +341,69 @@ TEST_F(RelaySendCoordinatorTest, ARelayOfOursOnAContactsListIsSentAsOurs) {
   EXPECT_TRUE(made_.empty()) << "the same relay, written differently: our registered client";
 }
 
+// MR007-SEND: a send into a contact's relay is signed for the PeerId its card names.
+TEST_F(RelaySendCoordinatorTest, AContactsRelayIsSignedForTheCardsPeerId) {
+  bobs_relays_ = {kBobsA};
+  ASSERT_TRUE(coordinator_.Send(EnvelopeTo(kBob)));
+  EXPECT_EQ(made_for_, std::vector<std::string>({PeerIdOf(kBobsA)}));
+}
+
+// MR007-SEND: a card entry our pins disagree with is skipped — the next relay of the list takes the send — and the
+// skipped relay is not marked unhealthy; the contact page hears of it.
+TEST_F(RelaySendCoordinatorTest, ACardEntryConflictingWithAPinIsSkipped) {
+  bobs_relays_ = {kBobsA, kBobsB};
+  coordinator_.SetCardRelayCheck([](const std::string& origin, const std::string&) {
+    return SameRelay(origin, kBobsA) ? CardRelayCheck::Mismatch : CardRelayCheck::Usable;
+  });
+  ASSERT_TRUE(coordinator_.Send(EnvelopeTo(kBob)));
+  EXPECT_EQ(Tried(), std::vector<std::string>({kBobsB}));
+  EXPECT_FALSE(coordinator_.Health().FailedRecently(kBobsA, now_ms_));
+  EXPECT_TRUE(coordinator_.AudienceMismatch(kBob, kBobsA));
+  EXPECT_FALSE(coordinator_.AudienceMismatch(kBob, kBobsB));
+  EXPECT_TRUE(refreshed_.empty()) << "a pin conflict is not a stale list";
+}
+
+// MR007-SEND: `wrong_audience` tries the next relay, counts like recipient_not_registered toward the newest-card
+// fetch, and leaves RelayHealth alone.
+TEST_F(RelaySendCoordinatorTest, AWrongAudienceTriesTheNextRelayWithoutAHealthMark) {
+  bobs_relays_ = {kBobsA, kBobsB};
+  Relay(kBobsA)->Answer({WrongAudience()});
+  ASSERT_TRUE(coordinator_.Send(EnvelopeTo(kBob)));
+  EXPECT_EQ(Tried(), std::vector<std::string>({kBobsA, kBobsB}));
+  EXPECT_FALSE(coordinator_.Health().FailedRecently(kBobsA, now_ms_));
+  EXPECT_TRUE(coordinator_.AudienceMismatch(kBob, kBobsA));
+}
+
+TEST_F(RelaySendCoordinatorTest, AWrongAudienceEverywhereFetchesTheNewestCard) {
+  bobs_relays_ = {kBobsA};
+  bobs_newest_relays_ = {kBobsB}; // its owner re-issued for the relay's new identity, or moved
+  Relay(kBobsA)->Answer({WrongAudience()});
+  ASSERT_TRUE(coordinator_.Send(EnvelopeTo(kBob)));
+  EXPECT_EQ(refreshed_, std::vector<std::string>({kBob}));
+  EXPECT_EQ(Tried(), std::vector<std::string>({kBobsA, kBobsB}));
+}
+
+TEST_F(RelaySendCoordinatorTest, ARefusedPeerIdIsSkippedForThatRecipientForFiveMinutes) {
+  bobs_relays_ = {kBobsA, kBobsB};
+  Relay(kBobsA)->Answer({WrongAudience()});
+  ASSERT_TRUE(coordinator_.Send(EnvelopeTo(kBob)));
+  Tried();
+  ASSERT_TRUE(coordinator_.Send(EnvelopeTo(kBob)));
+  EXPECT_EQ(Tried(), std::vector<std::string>({kBobsB})) << "the newest card still names the refused PeerId";
+  now_ms_ += RelaySendCoordinator::kAudienceRefusedMs;
+  ASSERT_TRUE(coordinator_.Send(EnvelopeTo(kBob)));
+  EXPECT_EQ(Tried(), std::vector<std::string>({kBobsA}));
+  EXPECT_FALSE(coordinator_.AudienceMismatch(kBob, kBobsA));
+}
+
+// A relay of ours whose identity changed (not accepted) signs nothing: the send goes on, the relay is not unhealthy.
+TEST_F(RelaySendCoordinatorTest, ARelayOfOursWhoseIdentityChangedIsSkipped) {
+  Relay(kOurs)->AnswerAlways(IdentityChanged());
+  ASSERT_TRUE(coordinator_.Send(EnvelopeTo(kMe)));
+  EXPECT_EQ(Tried(), std::vector<std::string>({kOurs, kOurOther}));
+  EXPECT_FALSE(coordinator_.Health().FailedRecently(kOurs, now_ms_));
+}
+
 TEST_F(RelaySendCoordinatorTest, TheInboxIsOurPreferredRelays) {
   ASSERT_TRUE(coordinator_.PollInbox(kMe, ""));
   EXPECT_TRUE(Relay(kOurs)->polled_);
@@ -349,15 +436,16 @@ TEST(RelaySendCoordinatorHttpTest, AForeignRelayGetsOurKeyWhenItAsksForIt) {
   RelaySendCoordinator coordinator;
   auto signer = [](const std::vector<uint8_t>&) -> Roe<std::string> { return std::string("c2ln"); };
   coordinator.SetOurRelays({{"http://127.0.0.1:9/api/relay", std::make_shared<HttpRelayClient>("")}});
-  coordinator.SetForeignClients([&](const std::string& origin) {
+  coordinator.SetForeignClients([&](const std::string& origin, const std::string& peer_id) {
     auto client = std::make_shared<HttpRelayClient>(origin);
     client->SetAuthSigner(signer);
+    client->SetAudience(std::make_shared<FixedRelayAudience>(peer_id));
     client->SetSendHooks(
         {.grant_for = {}, .grant_refused = {}, .sender_public_key = [] { return std::string("a2V5"); }});
     return client;
   });
-  coordinator.SetRoutes({.relays_of = [&](const std::string&) { return std::vector<std::string>{bobs_origin}; },
-                         .refresh_relays_of = {}});
+  coordinator.SetRoutes(
+      {.relays_of = [&](const std::string&) { return Card({bobs_origin}); }, .refresh_relays_of = {}});
   RelayEnvelope envelope = EnvelopeTo(kBob);
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "11111111-2222-3333-4444-555555555555";
@@ -372,6 +460,7 @@ TEST(RelaySendCoordinatorHttpTest, AForeignRelayGetsOurKeyWhenItAsksForIt) {
   ASSERT_EQ(bodies.size(), 2u);
   EXPECT_FALSE(bodies[0].contains("sender_public_key_b64"));
   EXPECT_EQ(bodies[1].getString("sender_public_key_b64").value_or(""), "a2V5");
+  EXPECT_EQ(bodies[1].getString("audience").value_or(""), PeerIdOf(bobs_origin)) << "the card's PeerId (MR007)";
 }
 
 } // namespace

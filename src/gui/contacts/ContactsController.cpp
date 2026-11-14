@@ -2551,6 +2551,9 @@ ContactRelayLine DescribeContactRelay(const ContactRelayView& view) {
     case ContactRelayView::Reach::Unreachable:
       line.reach = Tr("contacts.relay.reach.unreachable");
       break;
+    case ContactRelayView::Reach::IdentityMismatch:
+      line.reach = Tr("contacts.relay.reach.identity_mismatch");
+      break;
   }
   return line;
 }

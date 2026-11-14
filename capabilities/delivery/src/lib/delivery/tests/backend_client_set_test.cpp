@@ -12,6 +12,8 @@
 namespace pbr {
 namespace {
 
+const SignedRelayCommand kSignedFinish{.audience = "QmRelay", .timestamp = 1, .signature = "sig"};
+
 BackendClientSet::Endpoints At(const std::string& relay, const std::string& directory,
                                const std::string& registration) {
   BackendClientSet::Endpoints endpoints;
@@ -33,6 +35,27 @@ TEST(BackendClientSetTest, BuildsEveryClientForItsEndpoint) {
   EXPECT_NE(clients.Blob(), nullptr);
   EXPECT_NE(clients.Locker(), nullptr);
   EXPECT_TRUE(directory.Configured());
+}
+
+// MR007-PIN: every client of a relay signs for that relay's pin; the lockers at the org's registration URL for its.
+TEST(BackendClientSetTest, EachRelaysClientsSignForItsPin) {
+  SwitchableDirectoryClient directory;
+  BackendClientSet clients(directory);
+  auto pins = std::make_shared<RelayPins>("");
+  pins->SetFetch([](const std::string& origin, bool) -> Roe<RelayIdentity> {
+    return RelayIdentity{.peer_id = origin.find("relay.example") != std::string::npos ? "QmRelayA" : "QmRegistry"};
+  });
+  clients.SetPins(pins);
+  auto endpoints = At("https://relay.example/api/relay", "https://relay.example/api/relay",
+                      "https://registration.example/api/relay");
+  endpoints.extra_relays = {"https://b.example/api/relay"};
+  clients.Apply(endpoints);
+  ASSERT_NE(clients.Registration()->Audience(), nullptr);
+  EXPECT_EQ(clients.Registration()->Audience()->PeerId().valueOr(""), "QmRelayA");
+  ASSERT_EQ(clients.OurRelays().size(), 2u);
+  EXPECT_EQ(clients.OurRelays()[1].registration->Audience()->PeerId().valueOr(""), "QmRegistry")
+      << "another relay of ours: its own pin";
+  EXPECT_EQ(pins->PinnedPeerId("https://relay.example/api/relay").value_or(""), "QmRelayA") << "pinned on first use";
 }
 
 TEST(BackendClientSetTest, AnEmptyEndpointTakesTheAppsDefault) {
@@ -145,24 +168,25 @@ TEST(BackendClientSetTest, NoPreferredRelayMeansNoOtherRelaysEither) {
   EXPECT_TRUE(clients.OurRelays().empty());
 }
 
-// A relay a contact's card names gets a client only within the foreign-relay policy; ours are never held to it.
+// A relay a contact's card names gets a client only on a public host (IsPublicRelayOrigin); ours are never held to it.
 TEST(BackendClientSetTest, AForeignRelayOutsideThePolicyGetsNoClient) {
   SwitchableDirectoryClient directory;
   BackendClientSet clients(directory);
   clients.Apply(At("https://relay.example", "https://relay.example", "https://relay.example"));
   for (const char* origin : {"https://127.0.0.1", "https://localhost/api", "https://[::1]", "https://169.254.169.254",
                              "https://10.0.0.5:8443", "http://other.example", "https://intranet"}) {
-    EXPECT_EQ(clients.Sender().ClientFor(origin), nullptr) << origin;
+    EXPECT_EQ(clients.Sender().ClientFor({.origin = origin, .peer_id = "QmPeer"}), nullptr) << origin;
+    EXPECT_EQ(clients.Sender().ClientFor({.origin = origin}), nullptr) << origin << " (a locator's: no PeerId)";
   }
-  EXPECT_NE(clients.Sender().ClientFor("https://other.example/api/relay"), nullptr);
-  EXPECT_NE(clients.Sender().ClientFor("https://relay.example"), nullptr) << "our own relay";
+  EXPECT_NE(clients.Sender().ClientFor({.origin = "https://other.example/api/relay", .peer_id = "QmPeer"}), nullptr);
+  EXPECT_NE(clients.Sender().ClientFor({.origin = "https://relay.example"}), nullptr) << "our own relay";
 }
 
 TEST(BackendClientSetTest, OurOwnRelayOnAPrivateAddressKeepsItsClient) {
   SwitchableDirectoryClient directory;
   BackendClientSet clients(directory);
   clients.Apply(At("http://192.168.1.10:8080", "http://192.168.1.10:8080", "http://192.168.1.10:8080"));
-  EXPECT_NE(clients.Sender().ClientFor("http://192.168.1.10:8080"), nullptr);
+  EXPECT_NE(clients.Sender().ClientFor({.origin = "http://192.168.1.10:8080"}), nullptr);
 }
 
 // Relay services follow the preferred relay; org services stay on the org's origin (multi-relay MR006,
@@ -208,7 +232,7 @@ protected:
     return asked;
   }
   std::string FinishedKey() {
-    auto finished = clients_.Registration()->FinishRegistration("c", "pk", "me", "sig", 1, "ml-dsa-65", "kem");
+    auto finished = clients_.Registration()->FinishRegistration("c", "pk", "me", kSignedFinish, "ml-dsa-65", "kem");
     return finished ? finished->llm_api_key.Reveal() : "error: " + finished.error().message;
   }
 
@@ -260,7 +284,7 @@ TEST_F(BackendClientSetOriginTest, RelayServicesFollowThePreferredRelayAndOrgSer
 
   EXPECT_EQ(FinishedKey(), "") << "another relay's Brief LLM key is not the org's: not kept";
   auto org_key =
-      clients_.OurRelays()[1].registration->FinishRegistration("c", "pk", "me", "sig", 1, "ml-dsa-65", "kem");
+      clients_.OurRelays()[1].registration->FinishRegistration("c", "pk", "me", kSignedFinish, "ml-dsa-65", "kem");
   ASSERT_TRUE(org_key);
   EXPECT_EQ(org_key->llm_api_key.Reveal(), "brf_llm_x") << "the org's relay, now another of ours, still gives it";
 }
@@ -279,7 +303,7 @@ TEST_F(BackendClientSetOriginTest, TheBriefLlmKeyFollowsTheOrgsRelayWhenOnlyTheO
   EXPECT_EQ(FinishedKey(), "") << "no longer the org's relay: its key is not kept";
   ASSERT_EQ(clients_.OurRelays().size(), 2u);
   auto org_key =
-      clients_.OurRelays()[1].registration->FinishRegistration("c", "pk", "me", "sig", 1, "ml-dsa-65", "kem");
+      clients_.OurRelays()[1].registration->FinishRegistration("c", "pk", "me", kSignedFinish, "ml-dsa-65", "kem");
   ASSERT_TRUE(org_key) << org_key.error().message;
   EXPECT_EQ(org_key->llm_api_key.Reveal(), "brf_llm_x") << "the relay that is now the org's keeps it";
 }

@@ -1495,7 +1495,9 @@ Roe<void> ConversationsFacade::RevokeRegistration() {
   if (const auto others = hub_.OtherRelayRegistrations()) {
     others->RevokeAll();
   }
-  return pbr::RevokeRegistrationWithIdentity(*hub_.Registration(), hub_.Identity());
+  auto identity = hub_.Identity().Get();
+  const std::string registration_id = identity ? identity->registration_id : std::string();
+  return pbr::RevokeRegistrationWithIdentity(*hub_.Registration(), hub_.Identity(), registration_id);
 }
 
 } // namespace pbr

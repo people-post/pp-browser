@@ -55,6 +55,7 @@
 #include "lib/net/HttpBlobClient.h"
 #include "lib/net/OrgBackendClientsImpl.h"
 #include "lib/net/OurRelaysStore.h"
+#include "lib/net/RelayPins.h"
 #include "feature/conversations/MyRelaysWorkflow.h"
 #include "lib/net/SwitchableDirectoryClient.h"
 #include "lib/net/IPushDeviceClient.h"
@@ -285,6 +286,8 @@ public:
   std::vector<std::pair<std::string, std::shared_ptr<IPushDeviceClient>>> OtherRelayPushDevices();
   /** Our relays' origins, preferred first (multi-relay R2). */
   std::vector<std::string> OurRelayOrigins() const;
+  /** The profile's relay pins (MR007); none before the stores open and after Shutdown. */
+  std::shared_ptr<RelayPins> RelayIdentityPins() const { return relay_pins_; }
   /** Our account on our other relays (multi-relay R2); none before Initialize and after Shutdown. Any thread. */
   std::shared_ptr<RelayRegistrationsWorkflow> OtherRelayRegistrations() const;
   /** My relays changed (a relay answered our registration, the list changed): read them again. Runs on any thread. */
@@ -607,11 +610,14 @@ private:
   AccountSigningKeyLookup AccountSigningKeys() const;
   void InstallOrgBackendClients(const HubSettings& settings);
   void UpdateOrgBackendClients(const HubSettings& settings);
-  /** Our card's relay list: the registration relay in use, then our other relays (OwnCards::SetRelays). */
   /** The kept cards' readers: the directory's lookup cards kept, a stranger's price read from its card. */
   void WireCardReaders();
   void UnwireCardReaders();
-  void SetCardRelays();
+  /**
+   * Our card's relay list: our relays, preferred first, each pinned and in force (MR007; OwnCards::SetRelays). True
+   * when it changed.
+   */
+  bool SetCardRelays();
   /** Our relays to messaging: the inboxes it polls, the sender, the origins (multi-relay R2), and registration. */
   void WireOurRelays();
   /** Where an account's stored card is asked: our relays, preferred first, then our other http directories. */
@@ -723,6 +729,32 @@ private:
   void CloseRelayRegistrations();
   /** My relays (MR006): the profile's list and each relay's last registration. */
   std::unique_ptr<OurRelaysStore> our_relays_;
+  /**
+   * The profile's relay pins (multi-relay MR007): who every signed relay call is for. Opened with the stores, before
+   * the clients are built; its hooks are cleared at Shutdown (a client in flight may hold it longer).
+   */
+  std::shared_ptr<RelayPins> relay_pins_;
+  /** The relays whose pins stay when the pin store is full: ours and the org's origins (read on any thread). */
+  std::mutex kept_pins_mu_;
+  std::vector<std::string> kept_pins_;
+  /** The preferred relay's lost registration (MR007 self-heal): when it is made again. */
+  std::mutex preferred_loss_mu_;
+  RegistrationLossBackoff preferred_loss_;
+  int64_t preferred_heal_due_ms_ = 0;
+  void OpenRelayPins();
+  void CloseRelayPins();
+  /** A pin the store keeps when full: ours, the org's origins, a kept contact's locator relay. Any thread. */
+  bool KeepsPin(const std::string& origin);
+  /** A pin changed (any thread): our card's relays follow, the card goes out when it changed, the page reads again. */
+  void OnRelayPinsChanged();
+  /** Pins our relays and the org's origins not pinned yet, on a worker (they are pinned before anything is signed). */
+  void PinOurRelaysSoon();
+  /** A relay of ours answered `not_registered` / `registration_expired` (any thread): register there again. */
+  void HealRegistrationSoon(const std::string& origin);
+  /** The preferred relay's lost registration: made again whatever the auto-renew preference, with a backoff. */
+  void HealPreferredRegistration(int64_t now_ms);
+  /** Our card re-issued with what changed, sent to our contacts and siblings, and to our relays. Blocks (a worker). */
+  void ReissueAndAnnounceCard();
   std::mutex our_relays_changed_mu_;
   std::function<void()> on_our_relays_changed_;
   /** Read with MyRelays (any thread: the page's worker); Shutdown closes it before what its ports touch goes. */
