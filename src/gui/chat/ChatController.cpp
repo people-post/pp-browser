@@ -12,6 +12,7 @@
 #include "gui/chat/AttachMenuRules.h"
 
 #include "gui/chat/ActionNoticeText.h"
+#include "gui/chat/AiDrawerCount.h"
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
@@ -1654,6 +1655,12 @@ void ChatController::ApplySessionList() {
       ai_session_window_.Include(i);
       break;
     }
+  }
+  // The drawer's count line is the whole list's, whatever the search box has filtered out.
+  const ui::String ai_count_label = AiDrawerCountLabel(list.ai_rows.size()).c_str();
+  if (ai_count_label != shell_.ai_sessions_count_label) {
+    shell_.ai_sessions_count_label = ai_count_label;
+    DataModelHost::Instance().Dirty("shell", "ai_sessions_count_label");
   }
   const std::string ai_query = LowerAscii(shell_.ai_sessions_query.c_str());
   const size_t ai_visible = ai_query.empty() ? ai_session_window_.Visible(list.ai_rows.size()) : list.ai_rows.size();

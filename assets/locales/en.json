@@ -32,6 +32,8 @@
     "settings.title": "Settings",
     "ai_drawer.title": "Chat history",
     "ai_drawer.search_placeholder": "Search chats",
+    "ai_drawer.count": "{count} conversations",
+    "ai_drawer.count_one": "1 conversation",
     "shell.sidebar.collapse": "Collapse list",
     "shell.sidebar.expand": "Expand list",
     "shell.chats.link_online": "Online",

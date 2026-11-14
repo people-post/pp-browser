@@ -217,6 +217,8 @@ struct ChatShellState {
   ui::String sessions_query;
   /** The phone AI drawer's search box: the same match on the AI conversations (ai_sessions). */
   ui::String ai_sessions_query;
+  /** The drawer strip's count line ("23 conversations"): all conversations in the list, not the search's matches. */
+  ui::String ai_sessions_count_label;
   /**
    * Phone Today page (DESIGN-pp-ui 8.16, mockup 10-home-widgets): the date line and the widgets drawn, in the user's
    * order (home_widgets), each with its own data below. A widget shows only when it has something (Favorites always).

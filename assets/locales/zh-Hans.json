@@ -32,6 +32,8 @@
     "settings.title": "设置",
     "ai_drawer.title": "对话历史",
     "ai_drawer.search_placeholder": "搜索对话",
+    "ai_drawer.count": "共 {count} 个对话",
+    "ai_drawer.count_one": "共 1 个对话",
     "shell.sidebar.collapse": "收起列表",
     "shell.sidebar.expand": "展开列表",
     "shell.chats.link_online": "在线",

@@ -1,8 +1,10 @@
 // DEV/PLAN-minimal-nav.md B / C: the phone's AI conversation list is a drawer from the left on the AI page. Its open
 // paths, its close paths and resets, the drag that opens it, and (with the real view mounted) its rows' swipes.
 #include "common/runtime/AppRuntime.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/IAssetLocator.h"
 #include "gui/CallChromeSync.h"
+#include "gui/chat/AiDrawerCount.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/chat/ChatScreenState.h"
 #include "gui/shell/DataModelHost.h"
@@ -533,7 +535,7 @@ TEST_F(ShellDrawerTest, TheRealViewMountsAndItsRowsSwipe) {
 }
 
 // Owner 2026-11-14 (mockup 43, option 4): the phone drawer is the history list only. No avatar, name or link status
-// (Settings is the bottom bar's segment; the chat page shows the link status); the list is the last element.
+// (Settings is the bottom bar's segment; the chat page shows the link status); the list's end spacer ends the list.
 TEST_F(ShellDrawerTest, TheDrawerHasNoMeBlockAndTheListEndsIt) {
   host_.OpenAiDrawer();
   Settle();
@@ -557,6 +559,72 @@ TEST_F(ShellDrawerTest, TheDrawerHasNoMeBlockAndTheListEndsIt) {
   ASSERT_NE(spacer, std::string::npos);
   EXPECT_LT(list, spacer);
   EXPECT_EQ(rml.find("<button", spacer), std::string::npos) << "nothing after the list's end spacer but closers";
+}
+
+// Owner 2026-11-14 (mockup 44 section 10, suggestion 2, lower strip): a frosted strip at the drawer's bottom, 40dp plus
+// the home indicator, a hairline on top, the list scrolling under it, one small grey count line in it. Built like the
+// other frosted bars: a material element without children and a text sibling.
+TEST(AiDrawerStripTest, TheCountLineIsTheWholeListsNotTheSearchsAndEmptyWhenThereAreNone) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  for (const char* language : {"en", "zh-Hans"}) {
+    LocalizationService::Instance().SetPreferredLanguage(language);
+    const bool en = std::string(language) == "en";
+    EXPECT_EQ(AiDrawerCountLabel(0), "") << "empty history: nothing in the strip";
+    EXPECT_EQ(AiDrawerCountLabel(1), en ? "1 conversation" : "共 1 个对话");
+    EXPECT_EQ(AiDrawerCountLabel(23), en ? "23 conversations" : "共 23 个对话");
+  }
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  // A search narrows ai_sessions, not the count: ApplySessionList passes the unfiltered row count.
+  std::ifstream source(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/chat/ChatController.cpp");
+  std::stringstream text;
+  text << source.rdbuf();
+  const std::string controller = text.str();
+  const size_t count = controller.find("AiDrawerCountLabel(list.ai_rows.size())");
+  const size_t filter = controller.find("const std::string ai_query = LowerAscii(shell_.ai_sessions_query.c_str());");
+  ASSERT_NE(count, std::string::npos);
+  ASSERT_NE(filter, std::string::npos);
+  EXPECT_LT(count, filter) << "taken before any filtering";
+  EXPECT_EQ(controller.find("AiDrawerCountLabel(shell_.ai_sessions.size())"), std::string::npos);
+}
+
+TEST(AiDrawerStripTest, TheStripIsAChildlessMaterialWithATextSiblingAndNothingTappable) {
+  const std::string rml = ReadAsset("views/ai_drawer.rml");
+  const size_t list_end = rml.find("id=\"ai-drawer-list-end\"");
+  const size_t strip = rml.find("<div class=\"ai-drawer-strip\" id=\"ai-drawer-strip\"></div>");
+  const size_t count = rml.find("id=\"ai-drawer-count\"");
+  ASSERT_NE(strip, std::string::npos) << "the material element has no children (the engine draws no blur otherwise)";
+  ASSERT_NE(count, std::string::npos);
+  EXPECT_LT(list_end, strip);
+  EXPECT_LT(strip, count);
+  EXPECT_NE(rml.find("{{ai_sessions_count_label}}"), std::string::npos);
+  EXPECT_EQ(rml.find("data-event-click", strip), rml.find("data-event-click", count)) << "no event on the strip";
+  EXPECT_EQ(rml.find("data-event-click", count), std::string::npos);
+  EXPECT_FALSE(Has(rml, "\"you\"")) << "the stale comment about the removed row is gone";
+  const std::string css = ReadAsset("themes/components.rcss");
+  EXPECT_TRUE(Has(css, ".ai-drawer-strip {\n  position: absolute;"));
+  const std::string colors = ReadAsset("themes/colors.rcss.tmpl");
+  EXPECT_TRUE(Has(
+      colors,
+      ".shell-drawer--frost .ai-drawer-strip {\n  background-color: {{x-bar-blur}};\n  backdrop-filter: blur(20px);"))
+      << "the same frosted look as the top bar, following the Transparency setting";
+  EXPECT_TRUE(Has(colors, ".ai-drawer-strip {\n  background-color: {{x-bar}};\n  border-top: 1dp {{separator}};"))
+      << "solid with Transparency off, a hairline on top";
+}
+
+TEST_F(ShellDrawerTest, TheStripAndTheListsEndSpacerAreFortyDpPlusTheHomeIndicator) {
+  host_.State().safe_area_bottom_dp = 34;
+  host_.SyncLayout();
+  host_.OpenAiDrawer();
+  Settle();
+  ui::Element* strip = ById("ai-drawer-strip");
+  ui::Element* end = ById("ai-drawer-list-end");
+  ui::Element* count = ById("ai-drawer-count");
+  ASSERT_NE(strip, nullptr);
+  ASSERT_NE(end, nullptr);
+  ASSERT_NE(count, nullptr);
+  const float expected_strip = strip->GetBox().GetSize(ui::BoxArea::Border).y;
+  EXPECT_FLOAT_EQ(end->GetBox().GetSize(ui::BoxArea::Border).y, expected_strip) << "the last row scrolls clear";
+  EXPECT_GE(expected_strip, 40.f);
 }
 
 TEST_F(ShellDrawerTest, APickedConversationClosesTheDrawerAndOpensOverTheAiPage) {

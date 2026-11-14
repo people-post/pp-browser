@@ -3822,6 +3822,21 @@ input.checkbox:checked {
   backdrop-filter: blur(20px);
 }
 
+/* The drawer's bottom strip: the bar colour with a hairline on top, frosted with Transparency on (like the top bar). */
+.ai-drawer-strip {
+  background-color: #1a1a1c;
+  border-top: 1dp #54545899;
+}
+
+.shell-drawer--frost .ai-drawer-strip {
+  background-color: #1a1a1cc7;
+  backdrop-filter: blur(20px);
+}
+
+.ai-drawer-count-text {
+  color: #ebebf599;
+}
+
 /* On the camera the disc is a dark glass with a white chevron, in both themes. */
 .shell-layer-compact .qr-scan-back .shell-circle-btn-face,
 .shell-layer-compact .qr-scan-back:active .shell-circle-btn-face {

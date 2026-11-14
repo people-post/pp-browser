@@ -4,8 +4,9 @@
      same swipes, same archived entry; this list has its own id because that one stays in the DOM. No drag-to-close
      (the rows' swipes). -->
 <div class="ai-drawer" data-model="window">
-  <!-- The top bar (title, then the search field) and the bottom "you" row are frosted bars over the list, like the top
-       bars: the list scrolls under them and its padding keeps every row clear of them at rest (Kenneth 2026-11-07). -->
+  <!-- The top bar (title, then the search field) and the bottom strip (a count line) are frosted bars over the list, like
+       the top bars: the list scrolls under them; its top padding and its end spacer keep every row clear of them at rest
+       (Kenneth 2026-11-07; the bottom row of that version is replaced by the strip, 2026-11-14). -->
   <div class="ai-drawer-top">
     <div class="ai-drawer-head">
       <button class="shell-circle-btn ai-drawer-close" type="button" data-event-click="close_ai_drawer()">
@@ -90,5 +91,12 @@
     </div>
     <!-- Keeps the last row clear of the home indicator (its height, ShellHost). -->
     <div class="ai-drawer-list-end" id="ai-drawer-list-end"></div>
+  </div>
+  <!-- The bottom strip, built like the other frosted bars: a plain material element (it has no children, so its blur is
+       drawn) and a sibling for the text. Their heights / offset come from ShellHost::ApplySafeAreaLayout (40dp plus the
+       home indicator). The text is the whole list's count, shown only when there are conversations. -->
+  <div class="ai-drawer-strip" id="ai-drawer-strip"></div>
+  <div class="ai-drawer-count" id="ai-drawer-count" data-model="shell">
+    <p class="ai-drawer-count-text" data-if="ai_sessions_count_label != ''">{{ai_sessions_count_label}}</p>
   </div>
 </div>

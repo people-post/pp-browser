@@ -4560,6 +4560,9 @@ select selectbox option {
   right: 0;
   bottom: 0;
   box-sizing: border-box;
+  /* The panel's free (right) corner at the bottom is round; the screen-edge side is not. */
+  border-bottom-right-radius: 32dp;
+  overflow: hidden;
 }
 
 .ai-drawer {
@@ -4641,10 +4644,44 @@ select selectbox option {
   box-sizing: border-box;
 }
 
-/* Height set by ShellHost::ApplySafeAreaLayout (the home indicator). */
+/* Height set by ShellHost::ApplySafeAreaLayout: the strip below plus the home indicator. */
 .ai-drawer-list-end {
   display: block;
-  height: 0;
+  height: 40dp;
+}
+
+/* The bottom strip: 40dp (kAiDrawerStripDp in ShellHost) plus the home indicator, a frosted material over the list's end
+   (colors.rcss.tmpl). The material has no children (the engine draws no backdrop blur on an element with a z-index and
+   children, see .bar-material); the count text is its sibling, above it, in the 40dp over the indicator. Both heights /
+   the text's bottom offset are set by ShellHost::ApplySafeAreaLayout. */
+.ai-drawer-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 40dp;
+  z-index: 2;
+  border-bottom-right-radius: 32dp;
+  pointer-events: none;
+}
+
+.ai-drawer-count {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 40dp;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.ai-drawer-count-text {
+  margin: 0;
+  font-size: 13dp;
+  line-height: 40dp;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .link-dot {

@@ -87,7 +87,8 @@ constexpr int kPageSlideMs = 300;
 constexpr int64_t kSlowSyncLayoutMs = 30; // two 60 Hz frames
 /** Fallback emoji panel height when the OSK has never been shown this session. */
 constexpr int kDefaultEmojiKeyboardPanelDp = 280;
-/** The AI drawer's "you" row above the home indicator (.ai-drawer-me: min-height, bottom padding). */
+/** The AI drawer's bottom strip above the home indicator (.ai-drawer-strip / .ai-drawer-count height in components.rcss). */
+constexpr float kAiDrawerStripDp = 40.f;
 
 /** System back on the Settings home with no chat thread under it: true goes to the chat page; false leaves it to the
  *  platform (the app exits, as on the AI and chat root pages). Awaiting the owner's decision: flip this one line. */
@@ -2055,10 +2056,13 @@ void ShellHost::ApplySafeAreaLayout() {
          bottom_surface == CompactBottomSurface::Page ? strip_dp
          : ShellLayout::SettingsTabBarShown(state_)   ? layout.content_padding_bottom_dp
                                                       : 0.f);
-  // The AI drawer reaches the screen bottom over the tab bar; its list's end spacer keeps the last row clear of the
-  // home indicator (the engine leaves a scroller's bottom padding out of its scroll height).
+  // The AI drawer reaches the screen bottom over the tab bar. Its bottom strip is kAiDrawerStripDp plus the home
+  // indicator; the count text sits in the 40dp above the indicator; the list's end spacer is as tall as the strip so
+  // the last row scrolls clear of it (the engine leaves a scroller's bottom padding out of its scroll height).
   set_dp(doc->GetElementById("shell-ai-drawer-mount"), "padding-bottom", 0.f);
-  set_dp(doc->GetElementById("ai-drawer-list-end"), "height", strip_dp);
+  set_dp(doc->GetElementById("ai-drawer-list-end"), "height", strip_dp + kAiDrawerStripDp);
+  set_dp(doc->GetElementById("ai-drawer-strip"), "height", strip_dp + kAiDrawerStripDp);
+  set_dp(doc->GetElementById("ai-drawer-count"), "bottom", strip_dp);
   // Page sheets reach the screen bottom: their content clears the home indicator (not the keyboard: the body
   // already shrinks above it).
   // A sheet shows full height while the keyboard is up, and its own stop again once it is down.
