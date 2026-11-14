@@ -57,20 +57,19 @@ TEST(ForeignRelayOriginTest, APublicHttpsOriginIsAllowed) {
 }
 
 TEST(ForeignRelayOriginTest, AnotherSchemeOrUserinfoIsRefused) {
-  for (const char* origin : {"http://relay.example", "ftp://relay.example", "relay.example", "//relay.example",
-                             "https://", "https:///x", "https://user@relay.example", "https://user:pw@relay.example",
-                             "https://relay.example@evil.example", "https://relay.example\\@8.8.8.8",
-                             "https://relay .example", ""}) {
+  for (const char* origin :
+       {"http://relay.example", "ftp://relay.example", "relay.example", "//relay.example", "https://", "https:///x",
+        "https://user@relay.example", "https://user:pw@relay.example", "https://relay.example@evil.example",
+        "https://relay.example\\@8.8.8.8", "https://relay .example", ""}) {
     EXPECT_FALSE(IsForeignRelayOriginAllowed(origin)) << origin;
   }
 }
 
 TEST(ForeignRelayOriginTest, AnInternalIpv4LiteralIsRefused) {
-  for (const char* origin :
-       {"https://127.0.0.1", "https://127.1.2.3:8443/", "https://10.0.0.1", "https://172.16.0.1", "https://172.31.255.255",
-        "https://192.168.1.1", "https://169.254.169.254/latest", "https://0.0.0.0", "https://0.1.2.3",
-        "https://100.64.0.1", "https://100.127.255.255", "https://127.0.0.1.", "https://224.0.0.1",
-        "https://255.255.255.255"}) {
+  for (const char* origin : {"https://127.0.0.1", "https://127.1.2.3:8443/", "https://10.0.0.1", "https://172.16.0.1",
+                             "https://172.31.255.255", "https://192.168.1.1", "https://169.254.169.254/latest",
+                             "https://0.0.0.0", "https://0.1.2.3", "https://100.64.0.1", "https://100.127.255.255",
+                             "https://127.0.0.1.", "https://224.0.0.1", "https://255.255.255.255"}) {
     EXPECT_FALSE(IsForeignRelayOriginAllowed(origin)) << origin;
   }
 }
