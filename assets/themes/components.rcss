@@ -14715,17 +14715,17 @@ textarea:composing ~ .prompt-composer-label,
   border-radius: 22dp;
 }
 
-/* Animated home logo (Kenneth 2026-11-09; ShellHomeMascot): the AI dot's figure drawn at 120dp inside the logo box, which
+/* Animated home logo (Kenneth 2026-11-09; ShellHomeMascot): the AI dot's figure drawn at 96dp inside the logo box, which
    keeps room for the shadow the figure's SVGs draw round it. It sits still until tapped (the dot's keyframes). */
 .shell-layer-compact .home-landing--minimal .home-logo--mascot {
-  height: 140dp;
+  height: 116dp;
 }
 
 .shell-layer-compact .home-landing--minimal .home-logo--mascot .home-mascot.ai-dot {
   position: relative;
   display: block;
-  width: 120dp;
-  height: 120dp;
+  width: 96dp;
+  height: 96dp;
   margin: 10dp auto 0 auto;
 }
 
