@@ -562,7 +562,7 @@ TEST_F(ShellDrawerTest, TheDrawerHasNoMeBlockAndTheListEndsIt) {
 }
 
 // Owner 2026-11-14 (mockup 44 section 10, suggestion 2, lower strip): a frosted strip at the drawer's bottom, 40dp plus
-// the home indicator, a hairline on top, the list scrolling under it, one small grey count line in it. Built like the
+// the home indicator, no line on top, the list scrolling under it, one small grey count line in it. Built like the
 // other frosted bars: a material element without children and a text sibling.
 TEST(AiDrawerStripTest, TheCountLineIsTheWholeListsNotTheSearchsAndEmptyWhenThereAreNone) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
@@ -611,8 +611,8 @@ TEST(AiDrawerStripTest, TheStripIsAChildlessMaterialWithATextSiblingAndNothingTa
       colors,
       ".shell-drawer--frost .ai-drawer-strip {\n  background-color: {{x-bar-blur}};\n  backdrop-filter: blur(20px);"))
       << "the same frosted look as the top bar, following the Transparency setting";
-  EXPECT_TRUE(Has(colors, ".ai-drawer-strip {\n  background-color: {{x-bar}};\n  border-top: 1dp {{separator}};"))
-      << "solid with Transparency off, a hairline on top";
+  EXPECT_TRUE(Has(colors, ".ai-drawer-strip {\n  background-color: {{x-bar}};\n}"))
+      << "solid with Transparency off, no line on top";
 }
 
 TEST_F(ShellDrawerTest, TheStripAndTheListsEndSpacerAreFortyDpPlusTheHomeIndicator) {
