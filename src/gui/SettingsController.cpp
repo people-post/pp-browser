@@ -1869,7 +1869,7 @@ void SettingsController::ApplyCallInvitePolicyChoice(const std::string& policy) 
 void SettingsController::OnChooseUnlockGrace(ui::Event& ev) {
   const int current = bindings_.unlock_grace_minutes;
   std::vector<SettingsChoicePage::Option> options;
-  for (const int minutes : {0, 5, 15, 60, kUnlockGraceAlways}) {
+  for (const int minutes : OfferedUnlockGraceMinutes()) {
     options.push_back({std::to_string(minutes).c_str(), UnlockGraceDisplayLabel(minutes).c_str(), current == minutes});
   }
   ShowChoice(ev, "unlock_grace", Tr("settings.security.grace.title"), Tr("settings.security.grace.help"), {},
