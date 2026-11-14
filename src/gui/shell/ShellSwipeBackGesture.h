@@ -69,6 +69,8 @@ private:
   void BeginDrag(int x_px, int y_px, bool from_edge);
   void UpdateDrag(int x_px, int y_px, ui::Event& event);
   void EndDrag();
+  /** Gives back what this press took from the shared axis lock (see UpdateDrag's Vertical branch). */
+  void ReleaseAxisLock();
   void SetSurfaceOffset(float dx_dp, bool animate);
   void SetDocumentDragCapture(bool enabled);
   float PixelDeltaToDp(int delta_px) const;
@@ -86,6 +88,9 @@ private:
   bool tracking_ = false;
   bool dragging_ = false;
   bool from_edge_ = false;
+  /** This press moved the shared lock off None / set its prefer-horizontal flag; it releases them when it ends. */
+  bool owns_axis_lock_ = false;
+  bool armed_prefer_horizontal_ = false;
   /** Set when a drag ended on this surface: the click that follows the release is dropped. */
   bool swallow_click_ = false;
   std::chrono::steady_clock::time_point swallow_click_since_{};

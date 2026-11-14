@@ -79,6 +79,40 @@ protected:
     back_.Attach(page_, context_, std::move(options), [this]() { ++dismissed_; });
   }
 
+  /** The options of the settings detail / sub-page branches (anywhere on the page) or the home branch (edge only),
+   *  with the shared axis lock ShellHost passes to them (the older tests above pass none, which hid the leak). */
+  void AttachBackWithLock(const bool require_edge) {
+    ShellSwipeBackGesture::AttachOptions options;
+    options.require_edge = require_edge;
+    options.axis_lock = &axis_lock_;
+    options.edge_over_buttons = true;
+    back_.Attach(page_, context_, std::move(options), [this]() { ++dismissed_; });
+  }
+
+  void PressAt(const int x, const int y) {
+    context_->ProcessMouseMove(x, y, 0);
+    context_->ProcessMouseButtonDown(0, 0);
+  }
+
+  void MoveTo(const int x, const int y) {
+    context_->ProcessMouseMove(x, y, 0);
+    context_->Update();
+  }
+
+  void Release() {
+    context_->ProcessMouseButtonUp(0, 0);
+    context_->Update();
+  }
+
+  /** A scroll-like drag: straight up from (x, y). */
+  void VerticalDrag(const int x, const int y) {
+    PressAt(x, y);
+    for (int i = 1; i <= 10; ++i) {
+      MoveTo(x, y - 12 * i);
+    }
+    Release();
+  }
+
   float CentreY(const char* id) {
     ui::Element* e = document_->GetElementById(id);
     return e->GetAbsoluteOffset(ui::BoxArea::Border).y + e->GetBox().GetSize(ui::BoxArea::Border).y / 2.f;
@@ -101,6 +135,7 @@ protected:
   ui::ElementDocument* document_ = nullptr;
   ui::Element* page_ = nullptr;
   ShellSwipeBackGesture back_;
+  ShellGestureAxisLock axis_lock_;
   int dismissed_ = 0;
 };
 
@@ -155,6 +190,64 @@ TEST_F(SettingsSwipeBackTest, ALeftwardOrShortDragDoesNotGoBack) {
   AttachBack(true);
   Drag(8, 60, static_cast<int>(CentreY("row")));
   EXPECT_EQ(dismissed_, 0) << "short of the 30% threshold";
+}
+
+// The shared lock: a vertical scroll that this gesture gave up on used to leave it Vertical for good (the release is
+// never heard once the capture is gone), so every later edge swipe on the page was refused.
+TEST_F(SettingsSwipeBackTest, AVerticalScrollDoesNotKillTheNextEdgeSwipe) {
+  for (const bool require_edge : {false, true}) {
+    SCOPED_TRACE(require_edge ? "home (edge only)" : "detail / sub-page (anywhere)");
+    dismissed_ = 0;
+    AttachBackWithLock(require_edge);
+    VerticalDrag(require_edge ? 8 : 200, static_cast<int>(CentreY("text")));
+    EXPECT_EQ(axis_lock_.Get(), ShellGestureAxis::None) << "the scroll gave the lock back";
+    Drag(8, 320, static_cast<int>(CentreY("row")));
+    EXPECT_EQ(dismissed_, 1);
+  }
+}
+
+TEST_F(SettingsSwipeBackTest, SeveralScrollsInARowThenAnEdgeSwipeGoesBack) {
+  for (const bool require_edge : {false, true}) {
+    SCOPED_TRACE(require_edge ? "home (edge only)" : "detail / sub-page (anywhere)");
+    dismissed_ = 0;
+    AttachBackWithLock(require_edge);
+    const int x = require_edge ? 8 : 200;
+    VerticalDrag(x, static_cast<int>(CentreY("text")));
+    VerticalDrag(x, static_cast<int>(CentreY("text")));
+    Drag(8, 320, static_cast<int>(CentreY("text")));
+    EXPECT_EQ(dismissed_, 1);
+  }
+}
+
+TEST_F(SettingsSwipeBackTest, AVerticalDragInProgressNeverStartsTheBackGesture) {
+  AttachBackWithLock(false);
+  const int y = static_cast<int>(CentreY("text"));
+  PressAt(200, y);
+  for (int i = 1; i <= 10; ++i) {
+    MoveTo(200, y - 12 * i);
+  }
+  // The finger now drifts right while still scrolling: still a scroll, the page does not slide.
+  for (int i = 1; i <= 10; ++i) {
+    MoveTo(200 + 30 * i, y - 120);
+  }
+  Release();
+  EXPECT_EQ(dismissed_, 0);
+  EXPECT_EQ(axis_lock_.Get(), ShellGestureAxis::None);
+}
+
+TEST_F(SettingsSwipeBackTest, AHorizontalBackSwipeStillLocksOutVerticalScrollWhileItDrags) {
+  AttachBackWithLock(false);
+  const int y = static_cast<int>(CentreY("text"));
+  PressAt(8, y);
+  for (int i = 1; i <= 3; ++i) {
+    MoveTo(8 + 30 * i, y);
+  }
+  EXPECT_EQ(axis_lock_.Get(), ShellGestureAxis::Horizontal) << "a sheet dismiss competing for the lock loses";
+  Release();
+  EXPECT_EQ(axis_lock_.Get(), ShellGestureAxis::None);
+  EXPECT_EQ(dismissed_, 0) << "short of the threshold";
+  Drag(8, 320, y);
+  EXPECT_EQ(dismissed_, 1);
 }
 
 } // namespace

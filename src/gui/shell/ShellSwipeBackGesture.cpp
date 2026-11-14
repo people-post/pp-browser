@@ -64,6 +64,18 @@ void ShellSwipeBackGesture::Detach() {
   from_edge_ = false;
 }
 
+void ShellSwipeBackGesture::ReleaseAxisLock() {
+  if (options_.axis_lock) {
+    if (owns_axis_lock_) {
+      options_.axis_lock->Unlock();
+    } else if (armed_prefer_horizontal_ && options_.axis_lock->Get() == ShellGestureAxis::None) {
+      options_.axis_lock->SetPreferHorizontal(false);
+    }
+  }
+  owns_axis_lock_ = false;
+  armed_prefer_horizontal_ = false;
+}
+
 void ShellSwipeBackGesture::Abort() {
   if (!tracking_ && !dragging_) {
     SetDocumentDragCapture(false);
@@ -72,6 +84,7 @@ void ShellSwipeBackGesture::Abort() {
   tracking_ = false;
   dragging_ = false;
   from_edge_ = false;
+  ReleaseAxisLock();
   SetDocumentDragCapture(false);
   SetSurfaceOffset(0.f, true);
 }
@@ -211,8 +224,11 @@ void ShellSwipeBackGesture::BeginDrag(int x_px, int y_px, bool from_edge) {
   drag_start_y_px_ = y_px;
   drag_last_x_px_ = x_px;
   drag_last_y_px_ = y_px;
+  owns_axis_lock_ = false;
+  armed_prefer_horizontal_ = false;
   if (from_edge && options_.axis_lock) {
     options_.axis_lock->SetPreferHorizontal(true);
+    armed_prefer_horizontal_ = true;
   }
   SetDocumentDragCapture(true);
 }
@@ -227,15 +243,22 @@ void ShellSwipeBackGesture::UpdateDrag(int x_px, int y_px, ui::Event& event) {
   const int dy_px = y_px - drag_start_y_px_;
 
   if (options_.axis_lock) {
+    const bool was_unlocked = options_.axis_lock->Get() == ShellGestureAxis::None;
     const ShellGestureAxis axis = options_.axis_lock->Observe(dx_px, dy_px, kDragDeadzonePx);
     if (axis == ShellGestureAxis::None) {
       return;
     }
+    if (was_unlocked) {
+      owns_axis_lock_ = true;
+    }
     if (axis == ShellGestureAxis::Vertical) {
-      // Sheet dismiss won — release without unlocking (winner holds the lock).
+      // A vertical drag is not ours (the page scrolls, or a sheet dismiss that locked first holds the lock). Giving
+      // up also stops listening, so no mouseup will reach EndDrag: a lock this gesture took must be released here,
+      // or every later edge swipe finds it Vertical and exits.
       tracking_ = false;
       dragging_ = false;
       from_edge_ = false;
+      ReleaseAxisLock();
       SetDocumentDragCapture(false);
       SetSurfaceOffset(0.f, false);
       return;
@@ -287,6 +310,7 @@ void ShellSwipeBackGesture::EndDrag() {
   if (options_.axis_lock && options_.axis_lock->Get() == ShellGestureAxis::Horizontal) {
     options_.axis_lock->Unlock();
   }
+  ReleaseAxisLock();
   if (!was_dragging) {
     return;
   }
