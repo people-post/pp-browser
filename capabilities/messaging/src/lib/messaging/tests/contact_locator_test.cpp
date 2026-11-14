@@ -52,6 +52,45 @@ TEST(ContactLocatorTest, AContactWithoutAnAccountIdHasNoLocator) {
   EXPECT_TRUE(ContactShareLocator(devices_only).empty());
 }
 
+// Multi-relay R4 (MR004): the locator may carry the preferred relay's origin alone, within the card's bounds.
+TEST(ContactLocatorTest, CarriesThePreferredRelaysOrigin) {
+  const ContactLocator locator{.account_id = "account:abc",
+                               .nickname = "Bob",
+                               .devices = {"QmPhone"},
+                               .relay = "https://www.brief.global/api/relay"};
+  const std::string encoded = EncodeContactLocator(locator);
+  auto found = FindContactLocator(encoded);
+  ASSERT_TRUE(found) << found.error().message;
+  EXPECT_EQ(*found, locator);
+  const ContactLocator without{.account_id = "account:abc", .nickname = "Bob", .devices = {"QmPhone"}};
+  EXPECT_LE(encoded.size(), EncodeContactLocator(without).size() + 64) << "one origin of about 40 bytes";
+}
+
+TEST(ContactLocatorTest, ARelayOutsideTheBoundsIsLeftOut) {
+  const std::string too_long = "https://relay.example/" + std::string(120, 'a');
+  for (const std::string& relay : {std::string("http://10.0.0.2:8080/api/relay"), too_long,
+                                   std::string("https://relay.example/?x=1"), std::string("relay.example")}) {
+    const std::string encoded = EncodeContactLocator({.account_id = "account:abc", .relay = relay});
+    EXPECT_EQ(encoded, EncodeContactLocator({.account_id = "account:abc"})) << relay;
+  }
+  // One written by another app out of bounds: dropped, the locator still holds.
+  const std::string json = R"({"account_id":"account:abc","devices":[],"relay":"http://lab.example/api/relay"})";
+  auto found =
+      FindContactLocator(std::string(kContactLocatorPrefix) + Base64UrlEncode(ByteVector(json.begin(), json.end())));
+  ASSERT_TRUE(found) << found.error().message;
+  EXPECT_EQ(found->account_id, "account:abc");
+  EXPECT_TRUE(found->relay.empty());
+}
+
+TEST(ContactLocatorTest, ALocatorWithoutARelayReadsAsBefore) {
+  // As an app before R4 wrote it (no `relay`): the same locator, no relay.
+  const std::string json = R"({"account_id":"account:abc","nickname":"Bob","devices":["QmPhone"]})";
+  auto found =
+      FindContactLocator(std::string(kContactLocatorPrefix) + Base64UrlEncode(ByteVector(json.begin(), json.end())));
+  ASSERT_TRUE(found) << found.error().message;
+  EXPECT_EQ(*found, (ContactLocator{.account_id = "account:abc", .nickname = "Bob", .devices = {"QmPhone"}}));
+}
+
 TEST(Base64UrlTest, RoundTripsWithoutPadding) {
   const ByteVector bytes{0xfb, 0xff, 0x00, 0x10};
   const std::string encoded = Base64UrlEncode(bytes);

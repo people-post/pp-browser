@@ -151,6 +151,7 @@ void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::fun
     done(contact.error());
     return;
   }
+  KeepLocatorRelay(*contact, locator.relay);
   const auto finish = [this, account_id = locator.account_id, done](bool keys_known) {
     auto latest = contacts_.FindByIdentity(account_id, mesh::ContactIdKind::Account);
     if (!latest || !*latest) {
@@ -164,6 +165,19 @@ void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::fun
     return;
   }
   FetchCard(locator.account_id, locator.devices, finish);
+}
+
+void ContactCardExchange::KeepLocatorRelay(Contact& contact, const std::string& relay) {
+  // Its relay list until its card is kept (ContactRelays, multi-relay R4): a first message can go to its mailbox.
+  if (relay.empty() || contact.remote.locator_relay == relay) {
+    return;
+  }
+  contact.remote.locator_relay = relay;
+  if (auto stored = contacts_.Upsert(contact); stored) {
+    contact = std::move(stored.value());
+  } else {
+    log().warning << "the locator's relay not kept: " << stored.error().message;
+  }
 }
 
 void ContactCardExchange::FetchCard(const std::string& account_id, std::vector<std::string> devices,

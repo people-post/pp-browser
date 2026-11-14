@@ -23,6 +23,7 @@ namespace {
 constexpr const char kOurs[] = "https://ours.example/api/relay";
 constexpr const char kBobsOld[] = "https://old.example/api/relay";
 constexpr const char kBobsNew[] = "https://new.example/api/relay";
+constexpr const char kLocators[] = "https://qr.example/api/relay";
 
 class NoDirectory : public mesh::IDirectoryClient {
 public:
@@ -125,6 +126,50 @@ TEST_F(RecipientRelaysTest, TheRoutesAreTheseLookups) {
   EXPECT_EQ(routes.relays_of(bob_.account_id), Origins({kBobsOld}));
   EXPECT_EQ(routes.refresh_relays_of(bob_.account_id), Origins({kBobsNew}));
   EXPECT_EQ(routes.relays_of(bob_.account_id), Origins({kBobsNew}));
+}
+
+// Multi-relay R4: a contact added by QR starts with its locator's preferred origin, until a card of it is kept.
+TEST_F(RecipientRelaysTest, BeforeACardTheStartingRelaysAreTheList) {
+  relays_->SetStartingRelays(
+      [&](const std::string& account_id) { return account_id == bob_.account_id ? Origins({kLocators}) : Origins{}; });
+  EXPECT_EQ(relays_->Of(bob_.account_id), Origins({kLocators}));
+  ASSERT_TRUE(keys_->AddKeyCard(bob_.Card(), "directory"));
+  EXPECT_EQ(relays_->Of(bob_.account_id), Origins({kLocators})) << "keys alone list no relays";
+  ASSERT_TRUE(keys_->AddAccountCard(BobsCard(1000, {kBobsNew}), 10'000, "device"));
+  EXPECT_EQ(relays_->Of(bob_.account_id), Origins({kBobsNew})) << "the card's list from then on";
+}
+
+/** A relay that records the sends it takes. */
+class RecordingRelay : public IRelayClient {
+public:
+  explicit RecordingRelay(std::string origin, Origins& log) : origin_(std::move(origin)), log_(log) {}
+  Roe<void> Send(const RelayEnvelope&) override {
+    log_.push_back(origin_);
+    return {};
+  }
+  Roe<RelayPollResult> PollInbox(const std::string&, const std::string&) override { return RelayPollResult{}; }
+  Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override { return RelayDeleteResult{}; }
+  Roe<RelayDeleteResult> ClearInbox(const std::string&, const std::string&) override { return RelayDeleteResult{}; }
+  Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest&) override { return ChatHistoryResponse{}; }
+
+private:
+  std::string origin_;
+  Origins& log_;
+};
+
+TEST_F(RecipientRelaysTest, ASendToAContactAddedByQrGoesToTheLocatorsRelay) {
+  relays_->SetStartingRelays([](const std::string&) { return Origins({kLocators}); });
+  Origins sent_to;
+  RelaySendCoordinator sender;
+  sender.SetOurRelays({{.origin = kOurs, .client = std::make_shared<RecordingRelay>(kOurs, sent_to)}});
+  sender.SetForeignClients(
+      [&sent_to](const std::string& origin) { return std::make_shared<RecordingRelay>(origin, sent_to); });
+  sender.SetRoutes(relays_->Routes());
+  RelayEnvelope envelope;
+  envelope.sender_contact_id = "account:me";
+  envelope.recipient_account_id = bob_.account_id;
+  ASSERT_TRUE(sender.Send(envelope));
+  EXPECT_EQ(sent_to, Origins({kLocators})) << "its mailbox, not our preferred relay";
 }
 
 } // namespace

@@ -2,6 +2,7 @@
 
 #include "common/ValueJson.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "lib/people/AccountCard.h"
 #include "lib/people/ContactIdentity.h"
 
 #include <algorithm>
@@ -31,6 +32,9 @@ std::string EncodeContactLocator(const ContactLocator& locator) {
     devices.emplace_back(peer_id);
   }
   json.set("devices", ArrayValue(std::move(devices)));
+  if (IsCardRelayOrigin(locator.relay)) {
+    json.set("relay", locator.relay);
+  }
   const std::string text = DumpJson(json);
   return std::string(kContactLocatorPrefix) + Base64UrlEncode(ByteVector(text.begin(), text.end()));
 }
@@ -80,6 +84,9 @@ Roe<ContactLocator> FindContactLocator(const std::string& text) {
         locator.devices.push_back(*peer_id);
       }
     }
+  }
+  if (const std::string relay = json->getString("relay").value_or(""); IsCardRelayOrigin(relay)) {
+    locator.relay = relay; // the preferred relay's origin (R4); one out of bounds is no hint
   }
   return locator;
 }

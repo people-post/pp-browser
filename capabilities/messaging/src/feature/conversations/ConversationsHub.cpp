@@ -4143,6 +4143,9 @@ Roe<std::string> ConversationsHub::OwnContactLocator() {
     return Error("Account not set up");
   }
   ContactLocator locator{.account_id = identity->account_id, .nickname = identity->nickname};
+  // Our preferred relay (the one we register on), so a contact adding us can write before it has our card (R4); an
+  // `http://` lab relay is left out, as our card leaves it out.
+  locator.relay = NormalizeRegistrationBackend(Registration().BaseUrl());
   if (auto self = DevicePeerIdFromKey(identity->public_key_b64)) {
     locator.devices.push_back(*self);
   }

@@ -4,6 +4,7 @@
 #include "common/ValueJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/people/AccountCard.h"
+#include "lib/people/ContactIdentity.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "lib/net/SwitchableDirectoryClient.h"
 
@@ -145,6 +146,34 @@ TEST_F(ContactCardExchangeTest, AnInviteWithNoDeviceReachedStillAddsThePerson) {
   EXPECT_FALSE((*result)->keys_known);
   ASSERT_EQ((*result)->contact.remote.endpoints.size(), 1u);
   EXPECT_EQ((*result)->contact.remote.endpoints[0].peer_id, "QmBobPhone");
+}
+
+// Multi-relay R4: a contact added by QR starts with the locator's preferred relay as its relay list, until its card.
+TEST_F(ContactCardExchangeTest, AnInviteWithARelayStartsTheContactsRelayListWithIt) {
+  exchange_->SetCardFetcher([](const std::string&, const std::string&, std::function<void(Roe<PeerCardRecord>)> done) {
+    done(Error("not reached"));
+  });
+  exchange_->SetBlockingPost([](std::function<void()> task) { task(); });
+  std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
+  exchange_->AddFromLocator(
+      ContactLocator{
+          .account_id = bob_.account_id, .devices = {"QmBobPhone"}, .relay = "https://relay.example/api/relay"},
+      [&](Roe<ContactCardExchange::LocatorAdded> added) { result = std::move(added); });
+  ASSERT_TRUE(result.has_value());
+  ASSERT_TRUE(*result) << result->error().message;
+  EXPECT_FALSE((*result)->keys_known);
+  auto stored = contacts_->FindByIdentity(bob_.account_id, mesh::ContactIdKind::Account);
+  ASSERT_TRUE(stored && *stored);
+  const ContactRelayList relays = ContactRelays(**stored, std::nullopt);
+  EXPECT_EQ(relays.origins, (std::vector<std::string>{"https://relay.example/api/relay"}));
+  EXPECT_FALSE(relays.from_card);
+
+  // Its card arrives: the card's list is the contact's from then on.
+  const AccountCard card = SignedCard(bob_, test::Devices({"QmBobPhone"}));
+  ASSERT_TRUE(exchange_->Add(Shared(DumpJson(AccountCardToJson(card))), kNow));
+  auto kept = keys_->Kept(bob_.account_id);
+  ASSERT_TRUE(kept && *kept);
+  EXPECT_TRUE(ContactRelays(**stored, **kept).from_card);
 }
 
 TEST_F(ContactCardExchangeTest, ARefreshAsksTheDevicesEvenWhenACardIsKept) {

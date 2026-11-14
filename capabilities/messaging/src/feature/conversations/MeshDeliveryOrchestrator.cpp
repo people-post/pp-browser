@@ -1,4 +1,5 @@
 #include "lib/people/ContactTypes.h"
+#include "lib/people/ContactIdentity.h"
 #include "lib/delivery/LocalKeysFromIdentity.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
@@ -123,6 +124,11 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
                         }),
       inboxes_(InboxPorts()) {
   redirectLogger("MeshDeliveryOrchestrator");
+  // A contact added by QR is written to its locator's relay until its card is kept (multi-relay R4).
+  recipient_relays_.SetStartingRelays([this](const std::string& account_id) {
+    auto contact = contacts_.FindByIdentity(account_id, mesh::ContactIdKind::Account);
+    return contact && *contact ? ContactRelays(**contact, std::nullopt).origins : std::vector<std::string>{};
+  });
   relay_grants_.SetOnGrantReceived([this](const std::string& grantor) {
     AppRuntime::PostWorkerNormal([this, grantor]() { outbox_.ReleaseHeldFor(grantor); });
   });

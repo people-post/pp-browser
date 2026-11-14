@@ -35,8 +35,14 @@ void RecipientRelays::SetDirectories(std::vector<std::string> origins) {
 
 std::vector<std::string> RecipientRelays::Of(const std::string& account_id) {
   auto kept = keys_.Kept(account_id);
-  if (!kept || !*kept) {
-    return {};
+  if (!kept || !*kept || !(*kept)->newest_card) {
+    // No account card yet (none, or keys only): the relays it started with, if any (a QR locator's origin).
+    std::function<std::vector<std::string>(const std::string&)> starting;
+    {
+      std::lock_guard lock(mutex_);
+      starting = starting_;
+    }
+    return starting ? starting(account_id) : std::vector<std::string>{};
   }
   std::vector<std::string> origins;
   for (const AccountCardRelay& relay : KeptRelays(**kept)) {

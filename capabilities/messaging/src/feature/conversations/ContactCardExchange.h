@@ -50,7 +50,7 @@ public:
   };
   /**
    * Adds the person a locator names (QR code, invite line): the contact (its listed devices as endpoint
-   * rows), then the account's card — from a listed device over Amp, else the directory when one is
+   * rows, the locator's relay origin as its relay list until a card is kept), then the account's card — from a listed device over Amp, else the directory when one is
    * configured. Without keys yet the contact still stands; the person's first message brings them. `done`
    * once, on a worker or I/O thread.
    */
@@ -83,6 +83,8 @@ private:
                         std::function<void(bool kept)> done);
   /** The account's card from `devices`, else the directory: `done(kept)` once, off the I/O thread. */
   void FetchCard(const std::string& account_id, std::vector<std::string> devices, std::function<void(bool kept)> done);
+  /** The locator's relay origin onto the contact (stored; `contact` becomes the stored one). */
+  void KeepLocatorRelay(Contact& contact, const std::string& relay);
   std::mutex refetch_mutex_;
   std::unordered_map<std::string, int64_t> last_refetch_ms_;
   struct LastAsk {

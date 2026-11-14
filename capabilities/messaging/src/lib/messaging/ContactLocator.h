@@ -20,11 +20,17 @@ struct ContactLocator {
   std::string account_id;
   std::string nickname;
   std::vector<std::string> devices;
+  /**
+   * The account's preferred relay origin (multi-relay R4, MR004: an `https://` URL of at most 128 bytes, the card's
+   * bound), so a contact added this way can write before it has the card; empty: none. Optional: a locator without it
+   * reads as before, and an app that does not know it ignores it.
+   */
+  std::string relay;
 
   bool operator==(const ContactLocator&) const = default;
 };
 
-/** `pp-browser-contact-v1:<base64url-unpadded(JSON)>`. */
+/** `pp-browser-contact-v1:<base64url-unpadded(JSON)>`; a `relay` outside MR004's bounds is left out. */
 std::string EncodeContactLocator(const ContactLocator& locator);
 /**
  * What a user hands to someone else to find this contact: their Account ID, their OWN nickname (`remote.nickname`,
@@ -32,7 +38,10 @@ std::string EncodeContactLocator(const ContactLocator& locator);
  * contact has no Account ID.
  */
 std::string ContactShareLocator(const Contact& contact);
-/** The first locator in `text` (an invite line may wrap it in words); an error when there is none. */
+/**
+ * The first locator in `text` (an invite line may wrap it in words); an error when there is none. A `relay` outside
+ * MR004's bounds is dropped (the locator still holds).
+ */
 Roe<ContactLocator> FindContactLocator(const std::string& text);
 
 } // namespace pbr
