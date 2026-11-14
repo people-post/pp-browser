@@ -8,11 +8,14 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <condition_variable>
 #include <deque>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "common/PbrCompat.h"
@@ -247,6 +250,50 @@ TEST_F(RelaySendCoordinatorTest, TheRetryAfterARefreshIsOnlyOnce) {
   now_ms_ += RelaySendCoordinator::kRefreshAgainAfterMs;
   ASSERT_FALSE(coordinator_.Send(EnvelopeTo(kBob)));
   EXPECT_EQ(refreshed_.size(), 2u);
+}
+
+// A message and its control-lane record go out together: the second send to find the list stale waits for the
+// first's card fetch and takes its list, rather than giving up (the lab's users_on_two_relays_meet).
+TEST_F(RelaySendCoordinatorTest, ASendWhileTheCardIsBeingFetchedWaitsForThatFetch) {
+  std::mutex mu;
+  std::condition_variable cv;
+  bool fetching = false;
+  bool release = false;
+  RelayRoutes routes;
+  routes.relays_of = [this, &mu](const std::string&) {
+    std::lock_guard lock(mu);
+    return bobs_relays_;
+  };
+  routes.refresh_relays_of = [this, &mu, &cv, &fetching, &release](const std::string& account) {
+    std::unique_lock lock(mu);
+    refreshed_.push_back(account);
+    fetching = true;
+    cv.notify_all();
+    cv.wait(lock, [&release] { return release; });
+    bobs_relays_ = {kBobsB};
+    return bobs_relays_;
+  };
+  coordinator_.SetRoutes(std::move(routes));
+  Relay(kOurs)->AnswerAlways(NotHere());
+  Roe<void> first = Error("not sent");
+  std::thread one([&] { first = coordinator_.Send(EnvelopeTo(kBob)); });
+  {
+    std::unique_lock lock(mu);
+    cv.wait(lock, [&fetching] { return fetching; });
+  }
+  Roe<void> second = Error("not sent");
+  std::thread two([&] { second = coordinator_.Send(EnvelopeTo(kBob)); });
+  std::this_thread::sleep_for(std::chrono::milliseconds(50)); // the second is waiting for the fetch by now
+  {
+    std::lock_guard lock(mu);
+    release = true;
+  }
+  cv.notify_all();
+  one.join();
+  two.join();
+  EXPECT_TRUE(first);
+  EXPECT_TRUE(second) << "it took the first send's fetched list";
+  EXPECT_EQ(refreshed_.size(), 1u) << "one fetch for both";
 }
 
 TEST_F(RelaySendCoordinatorTest, NotRegisteredOnOurPreferredRelayFetchesTheCardOfAContactWithoutOne) {

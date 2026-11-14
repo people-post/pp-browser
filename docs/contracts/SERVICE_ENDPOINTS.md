@@ -135,8 +135,9 @@ Our account card lists the `https://` ones, preferred first ([ACCOUNT_CARD](ACCO
    failed, the transport failure is reported (the send is retried later), else `recipient_not_registered`.
 4. **A stale list:** `recipient_not_registered` on every relay tried fetches the recipient's newest card — its devices
    over the mesh (8 s at most), then the directories of our relays and of our other directory providers
-   (`GET /v1/users/by-account`'s `account_card`), kept only when it verifies (`RecipientRelays`) — and tries its list **once** more; at most one fetch per recipient a
-   minute.
+   (`GET /v1/users/by-account`'s `account_card`), kept only when it verifies (`RecipientRelays`) — and tries its list
+   **once** more when it names other relays. At most one fetch per recipient a minute; a send that finds the list
+   stale while another fetches it waits for that fetch (12 s at most) and takes its list.
 
 A relay of ours is sent to as a registered sender; any other relay gets a client of its own (at most 16 kept), and
 our key when it asks for it (`sender_key_required`). The grant is the recipient's, the same on every relay.

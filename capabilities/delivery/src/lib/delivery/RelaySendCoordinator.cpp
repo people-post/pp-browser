@@ -5,6 +5,7 @@
 #include "lib/delivery/RelayOrigins.h"
 
 #include <algorithm>
+#include <chrono>
 #include <utility>
 
 namespace pbr {
@@ -149,41 +150,57 @@ RelaySendCoordinator::Pass RelaySendCoordinator::SendAlong(const std::vector<std
   return pass;
 }
 
-bool RelaySendCoordinator::RefreshDue(const std::string& recipient, const int64_t now_ms) {
-  std::lock_guard lock(mutex_);
-  if (auto it = refreshed_at_.find(recipient);
-      it != refreshed_at_.end() && now_ms - it->second < kRefreshAgainAfterMs) {
-    return false;
+std::vector<std::string> RelaySendCoordinator::NewestListOf(const std::string& recipient) {
+  std::function<std::vector<std::string>(const std::string&)> refresh;
+  {
+    std::unique_lock lock(mutex_);
+    refresh = routes_.refresh_relays_of;
+    if (refreshing_.contains(recipient)) {
+      // Another send is fetching its card: that fetch's list is this send's too.
+      refreshed_.wait_for(lock, std::chrono::milliseconds(kRefreshWaitMs),
+                          [this, &recipient] { return !refreshing_.contains(recipient); });
+      refresh = nullptr;
+    } else if (auto it = refreshed_at_.find(recipient);
+               it != refreshed_at_.end() && Now() - it->second < kRefreshAgainAfterMs) {
+      refresh = nullptr; // fetched a moment ago: the card we keep is that fetch's
+    }
+    if (refresh) {
+      const int64_t now_ms = Now();
+      if (refreshed_at_.size() >= 256) {
+        std::erase_if(refreshed_at_,
+                      [now_ms](const auto& entry) { return now_ms - entry.second >= kRefreshAgainAfterMs; });
+      }
+      refreshed_at_[recipient] = now_ms;
+      refreshing_.insert(recipient);
+    }
   }
-  if (refreshed_at_.size() >= 256) {
-    std::erase_if(refreshed_at_, [now_ms](const auto& entry) { return now_ms - entry.second >= kRefreshAgainAfterMs; });
+  if (!refresh) {
+    return ListFor(recipient, false);
   }
-  refreshed_at_[recipient] = now_ms;
-  return true;
+  std::vector<std::string> fresh = refresh(recipient);
+  {
+    std::lock_guard lock(mutex_);
+    refreshing_.erase(recipient);
+  }
+  refreshed_.notify_all();
+  return fresh.empty() ? ListFor(recipient, false) : fresh;
 }
 
 Roe<void> RelaySendCoordinator::Send(const RelayEnvelope& envelope) {
   const std::string recipient = envelope.recipient_account_id.value_or("");
   const bool to_self = !recipient.empty() && recipient == envelope.sender_contact_id;
-  Pass first = SendAlong(ListFor(recipient, to_self), envelope);
-  if (!first.not_registered_everywhere || to_self || recipient.empty() || !RefreshDue(recipient, Now())) {
+  const std::vector<std::string> tried = ListFor(recipient, to_self);
+  Pass first = SendAlong(tried, envelope);
+  if (!first.not_registered_everywhere || to_self || recipient.empty()) {
     return std::move(first.result);
   }
-  std::function<std::vector<std::string>(const std::string&)> refresh;
-  {
-    std::lock_guard lock(mutex_);
-    refresh = routes_.refresh_relays_of;
-  }
-  if (!refresh) {
+  // Our copy of its list is stale (it moved): its newest card, and that list once more when it says other relays.
+  const std::vector<std::string> fresh = NewestListOf(recipient);
+  if (fresh == tried) {
     return std::move(first.result);
   }
-  // Our copy of its list is stale (it moved): its newest card, then that list once more.
-  std::vector<std::string> fresh = refresh(recipient);
-  log().info << "relay send: the recipient is on none of the " << (fresh.empty() ? "known" : "refreshed")
-             << " relays; trying its newest list (" << fresh.size() << ")";
-  if (fresh.empty()) {
-    fresh = ListFor(recipient, false);
-  }
+  log().info << "relay send: the recipient is on none of its known relays; trying its newest list (" << fresh.size()
+             << ")";
   return std::move(SendAlong(fresh, envelope).result);
 }
 

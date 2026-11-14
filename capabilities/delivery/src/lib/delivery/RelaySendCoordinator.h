@@ -7,7 +7,9 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <condition_variable>
 #include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -32,7 +34,8 @@ struct RelayRoutes {
  * account (a copy for our other devices): our relays. A relay that just failed (RelayHealth) goes after the healthy
  * ones. The next relay is tried on a transport failure or a 5xx; any other refusal (a price, a quota, a rate limit, a
  * bad request) is the answer. `recipient_not_registered` on every relay tried asks for the recipient's newest card
- * once (at most once per kRefreshAgainAfterMs per recipient) and tries its list once more. Our relays send as
+ * (at most once per kRefreshAgainAfterMs per recipient; a send meanwhile waits for that fetch, kRefreshWaitMs at most)
+ * and tries its list once more when it names other relays. Our relays send as
  * registered senders; another relay gets a client of its own (made by the factory, at most kMaxForeignClients), where
  * the relay asks for our key (HttpRelayClient). Grants are per recipient, the same on every relay.
  *
@@ -48,6 +51,8 @@ public:
 
   static constexpr size_t kMaxForeignClients = 16;
   static constexpr int64_t kRefreshAgainAfterMs = 60 * 1000;
+  /** How long a send waits for another's fetch of the same recipient's card. */
+  static constexpr int64_t kRefreshWaitMs = 12 * 1000;
 
   RelaySendCoordinator();
 
@@ -80,8 +85,11 @@ private:
   std::shared_ptr<IRelayClient> ClientFor(const std::string& origin);
   std::shared_ptr<IRelayClient> Preferred() const;
   std::vector<std::string> OurOrigins() const;
-  /** True (and noted) when the recipient's card may be fetched again now. */
-  bool RefreshDue(const std::string& recipient, int64_t now_ms);
+  /**
+   * The recipient's list after its newest card was asked for: fetched now, or by a send just before (waited for while
+   * it runs). The fallback (our preferred relay) when it lists none.
+   */
+  std::vector<std::string> NewestListOf(const std::string& recipient);
   int64_t Now() const;
 
   mutable std::mutex mutex_;
@@ -91,6 +99,9 @@ private:
   std::unordered_map<std::string, std::shared_ptr<IRelayClient>> foreign_;
   RelayRoutes routes_;
   std::unordered_map<std::string, int64_t> refreshed_at_;
+  /** Recipients whose card a send is fetching now; `refreshed_` wakes the sends that wait for it. */
+  std::set<std::string> refreshing_;
+  std::condition_variable refreshed_;
   RelayHealth health_;
   std::function<int64_t()> now_ms_;
 };
