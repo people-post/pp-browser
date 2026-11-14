@@ -55,6 +55,7 @@
 #include "lib/net/HttpBlobClient.h"
 #include "lib/net/OrgBackendClientsImpl.h"
 #include "lib/net/OurRelaysStore.h"
+#include "feature/conversations/MyRelaysWorkflow.h"
 #include "lib/net/SwitchableDirectoryClient.h"
 #include "lib/net/IPushDeviceClient.h"
 #include "feature/conversations/PushBindingGate.h"
@@ -320,6 +321,14 @@ public:
   Roe<void> RemoveOwnDevice(const std::string& peer_id);
   /** On the master: hand the role to another device of the account and tell siblings and contacts. */
   Roe<void> MakeMainDevice(const std::string& peer_id);
+  /** Me → Network → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
+  Roe<OurRelaysStatus> OurRelays();
+  /** Adds the relay the user typed (it must answer); blocks (HTTP): a worker. The error's message is a code. */
+  Roe<void> AddOurRelay(const std::string& typed, bool allow_http);
+  /** Removes a relay of ours (not the preferred one); blocks: a worker. */
+  Roe<void> RemoveOurRelay(const std::string& origin);
+  /** Makes a relay of ours the preferred one; blocks: a worker. */
+  Roe<void> MakeOurRelayPreferred(const std::string& origin);
   /** The master gave out a transfer code valid until `until_ms`: a device joining with it is kept (OwnCards). */
   void ExpectDeviceJoin(int64_t until_ms);
   /** The account locker (M023 s3): publish this account's state; fetch a seed's. Null until messaging is built. */
@@ -697,7 +706,15 @@ private:
   std::unique_ptr<OurRelaysStore> our_relays_;
   std::mutex our_relays_changed_mu_;
   std::function<void()> on_our_relays_changed_;
+  std::unique_ptr<MyRelaysWorkflow> my_relays_;
   void NotifyOurRelaysChanged();
+  MyRelaysWorkflow::Ports MyRelaysPorts();
+  /** This device is the account's main one (or the account has no card yet). */
+  bool IsMainDevice();
+  /** Runs `task` on the hub's thread (UI) and waits for it (at most 10 s); inline when already there. */
+  void RunOnHubThread(std::function<void()> task);
+  /** The identity's registration on the preferred relay, as a My relays record (none: not registered there). */
+  std::optional<RelayRegistrationRecord> PreferredRegistrationRecord();
   /** Checks which other relays are due a registration while messaging runs. */
   uint64_t relay_registration_timer_id_ = 0;
   static constexpr int64_t kRelayRegistrationCheckIntervalMs = 60 * 1000;

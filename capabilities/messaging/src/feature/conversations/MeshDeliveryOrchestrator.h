@@ -185,6 +185,10 @@ public:
   void SetRelayClients(RelayClients clients);
   /** Whether another relay of ours may be polled now (we are registered there); none: always. Any thread. */
   void SetInboxReady(std::function<bool(const std::string& origin)> ready);
+  /** Each poll of an inbox of ours (`ok`: it answered), on the poll lane (My relays' reachability). */
+  void SetOnInboxPolled(std::function<void(const std::string& origin, bool ok)> polled);
+  /** Our account card changed here (issued, or a sibling's newer one taken), outside any lock (My relays follow). */
+  void SetOnOwnCardChanged(std::function<void(const AccountCard& card)> changed);
   /** Whose directories a stale recipient's card is asked of: our relays, then our other directories (RecipientRelays). */
   void SetCardDirectories(std::vector<std::string> origins) { recipient_relays_.SetDirectories(std::move(origins)); }
   /** A recipient's relays for the sender, from the cards kept here (valid while this lives). */
@@ -422,6 +426,9 @@ private:
   ContactsStore& contacts_;
   IdentityStore& identity_;
   IRelayClient* relay_ = nullptr;
+  mutable std::mutex own_hooks_mu_;
+  std::function<void(const std::string&, bool)> on_inbox_polled_;
+  std::function<void(const AccountCard&)> on_own_card_changed_;
   InboxController& inbox_;
   AccountKeyResolver& account_keys_;
   IPeerSessionStore& psk_store_;

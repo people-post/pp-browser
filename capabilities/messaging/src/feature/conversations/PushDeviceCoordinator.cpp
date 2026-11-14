@@ -80,6 +80,27 @@ Roe<void> PushDeviceCoordinator::RegisterOn(ConversationsHub& hub, const std::st
   return {};
 }
 
+Roe<void> PushDeviceCoordinator::UnregisterOn(ConversationsHub& hub, const std::string& origin) {
+  if (!hub.IsMessagingReady() || !IPushDeviceRegistrar::Instance().IsSupported()) {
+    return {};
+  }
+  for (const auto& [other_origin, other] : hub.OtherRelayPushDevices()) {
+    if (other_origin != origin) {
+      continue;
+    }
+    auto token = IPushDeviceRegistrar::Instance().GetPushToken();
+    if (!token) {
+      return token.error();
+    }
+    PushDeviceRegistration reg = MakeRegistration(hub, *token);
+    if (reg.account_id.empty()) {
+      return {};
+    }
+    return other->UnregisterDevice(reg);
+  }
+  return {};
+}
+
 Roe<void> PushDeviceCoordinator::Unregister(ConversationsHub& hub) {
   IPushDeviceClient* client = hub.PushDevices();
   if (client == nullptr || !IPushDeviceRegistrar::Instance().IsSupported()) {

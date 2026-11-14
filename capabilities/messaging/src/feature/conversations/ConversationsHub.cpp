@@ -39,6 +39,7 @@
 #include "lib/people/PeerCards.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
+#include "lib/people/RegistrationStatus.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/error/AppError.h"
 #include "common/Localized.h"
@@ -83,6 +84,7 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <future>
 #include <chrono>
 #include <filesystem>
 #include <unordered_set>
@@ -810,6 +812,8 @@ void ConversationsHub::DiscardMessagingBringUp() {
     mesh_messaging_->SetGroupMembership(nullptr);
     mesh_messaging_->SetOnSiblingNotice(nullptr);
     mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(nullptr);
+    mesh_messaging_->SetOnInboxPolled(nullptr);
+    mesh_messaging_->SetOnOwnCardChanged(nullptr);
     mesh_messaging_->SetAttachmentDownloads(nullptr);
   }
   if (inbox_) {
@@ -1048,6 +1052,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
     }
     NotifyOurRelaysChanged();
   });
+  my_relays_ = std::make_unique<MyRelaysWorkflow>(*our_relays_, MyRelaysPorts());
   // A relay that took our registration takes our push token too (any relay holding mail can wake the phone).
   relay_registrations_->SetOnRegistered(
       [this](const std::string& origin) { (void)PushDeviceCoordinator::RegisterOn(*this, origin); });
@@ -1362,6 +1367,23 @@ void ConversationsHub::BuildMessagingObjects() {
   mesh_messaging_->OwnAccountCards().SetOnDeviceJoined([this](const AccountCard&) {
     AppRuntime::PostWorkerNormal([this]() { AnnounceOwnDevicesToContacts(); });
     PublishAccountLockerSoon();
+  });
+  // My relays: each poll says whether the relay answered; a linked device follows the main device's list.
+  mesh_messaging_->SetOnInboxPolled([this](const std::string& origin, const bool ok) {
+    if (my_relays_) {
+      my_relays_->NotePolled(origin, ok, util::NowUnixMs());
+    }
+  });
+  mesh_messaging_->SetOnOwnCardChanged([this](const AccountCard& card) {
+    std::vector<std::string> relays;
+    for (const AccountCardRelay& relay : card.relays) {
+      relays.push_back(relay.origin);
+    }
+    AppRuntime::PostWorkerNormal([this, relays = std::move(relays)]() {
+      if (my_relays_ && !shutdown_requested_.load(std::memory_order_acquire)) {
+        my_relays_->FollowCard(relays);
+      }
+    });
   });
   NotifyMessagingBuilt();
   actions_ =
@@ -3676,6 +3698,8 @@ void ConversationsHub::Shutdown() {
     mesh_messaging_->SetGroupMembership(nullptr);
     mesh_messaging_->SetOnSiblingNotice(nullptr);
     mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(nullptr);
+    mesh_messaging_->SetOnInboxPolled(nullptr);
+    mesh_messaging_->SetOnOwnCardChanged(nullptr);
   }
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);
@@ -3913,6 +3937,126 @@ Roe<void> ConversationsHub::MakeMainDevice(const std::string& peer_id) {
   log().info << "Main device handed to " << peer_id;
   AppRuntime::PostWorkerNormal([this]() { SyncLockerThenAnnounceOwnDevices(); });
   return {};
+}
+
+bool ConversationsHub::IsMainDevice() {
+  if (!mesh_messaging_) {
+    return true;
+  }
+  auto devices = mesh_messaging_->OwnAccountCards().Devices();
+  return !devices || devices->devices.empty() || devices->devices.front().peer_id == devices->self_peer_id;
+}
+
+void ConversationsHub::RunOnHubThread(std::function<void()> task) {
+  if (!AppRuntime::IsRunning() || AppRuntime::CurrentlyOnUI()) {
+    task();
+    return;
+  }
+  auto done = std::make_shared<std::promise<void>>();
+  std::future<void> finished = done->get_future();
+  AppRuntime::PostUI([task = std::move(task), done]() {
+    task();
+    done->set_value();
+  });
+  if (finished.wait_for(std::chrono::seconds(10)) != std::future_status::ready) {
+    log().warning << "the hub's thread did not take the relay list in 10 s; it follows when it runs";
+  }
+}
+
+std::optional<RelayRegistrationRecord> ConversationsHub::PreferredRegistrationRecord() {
+  auto identity = identity_ ? identity_->Get() : Roe<LocalIdentity>(Error("no identity"));
+  if (!identity || !identity->registered || !RegisteredAtBackend(*identity, Registration().BaseUrl())) {
+    return std::nullopt;
+  }
+  return RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Registered,
+                                 .expires_at = identity->registration_expires_at,
+                                 .card_issued_at = identity->registered_card_issued_at};
+}
+
+MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {
+  MyRelaysWorkflow::Ports ports;
+  ports.probe = [](const std::string& base_url) -> Roe<void> {
+    // The cheapest unauthenticated GET every relay answers (SERVICE_ENDPOINTS § Client compatibility discovery).
+    auto answered = HttpClientCompatClient(base_url).Fetch();
+    if (!answered) {
+      return answered.error();
+    }
+    return {};
+  };
+  ports.main_device = [this]() { return IsMainDevice(); };
+  ports.apply = [this]() {
+    RunOnHubThread([this]() {
+      if (!initialized_ || shutdown_requested_.load(std::memory_order_acquire)) {
+        return;
+      }
+      UpdateOrgBackendClients(config_); // clients, inboxes and the card's relays follow the list
+      if (actions_) {
+        actions_->SetRegistrationClient(registration_);
+      }
+    });
+  };
+  ports.leave = [this](const std::string& origin) -> Roe<void> {
+    if (auto unbound = PushDeviceCoordinator::UnregisterOn(*this, origin); !unbound) {
+      log().info << "push binding on " << origin << " not removed: " << unbound.error().message;
+    }
+    if (!relay_registrations_) {
+      return {};
+    }
+    return relay_registrations_->Revoke(origin); // with the account's push devices there
+  };
+  ports.register_preferred = [this]() -> Roe<void> {
+    // The card now lists the new order, so it goes whatever the auto-renew preference (ShouldPublishAccountCard),
+    // and the registration records the relay it was made at (#602's backend-switch path).
+    auto renewed = MaybeAutoRenewRegistration(Registration(), Identity(), true, RegistrationCard());
+    if (!renewed) {
+      return renewed.error();
+    }
+    (void)PushDeviceCoordinator::Register(*this); // the new preferred relay wakes the phone too
+    return {};
+  };
+  ports.preferred_registration = [this]() { return PreferredRegistrationRecord(); };
+  ports.register_others = [this]() { RegisterOnOtherRelaysSoon(); };
+  ports.announce = [this]() {
+    if (!mesh_messaging_ || !IsMessagingReady()) {
+      return; // the next start issues the card (and the registrations carry it)
+    }
+    // Issued now with the new list: siblings hear (OwnCards::SetOnChanged), then our contacts get it.
+    if (auto card = mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs()); !card) {
+      log().warning << "account card not re-issued for the relay list: " << card.error().message;
+      return;
+    }
+    AnnounceOwnDevicesToContacts();
+  };
+  ports.changed = [this]() { NotifyOurRelaysChanged(); };
+  return ports;
+}
+
+Roe<OurRelaysStatus> ConversationsHub::OurRelays() {
+  if (!my_relays_) {
+    return Error("Messaging is not ready");
+  }
+  return my_relays_->Status();
+}
+
+Roe<void> ConversationsHub::AddOurRelay(const std::string& typed, const bool allow_http) {
+  if (!my_relays_ || !IsMessagingReady()) {
+    return Error("Messaging is not ready");
+  }
+  return my_relays_->Add(typed, allow_http);
+}
+
+Roe<void> ConversationsHub::RemoveOurRelay(const std::string& origin) {
+  if (!my_relays_ || !IsMessagingReady()) {
+    return Error("Messaging is not ready");
+  }
+  return my_relays_->Remove(origin);
+}
+
+Roe<void> ConversationsHub::MakeOurRelayPreferred(const std::string& origin) {
+  if (!my_relays_ || !IsMessagingReady()) {
+    return Error("Messaging is not ready");
+  }
+  return my_relays_->MakePreferred(origin);
 }
 
 void ConversationsHub::SyncLockerThenAnnounceOwnDevices() {

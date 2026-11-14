@@ -186,6 +186,14 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
   own_cards_.SetOnChanged([this](const AccountCard& card) {
     log().info << "own account card now lists " << card.devices.size() << " device(s)";
     AppRuntime::PostWorkerNormal([this]() { NotifySiblings(); });
+    std::function<void(const AccountCard&)> changed;
+    {
+      std::lock_guard lock(own_hooks_mu_);
+      changed = on_own_card_changed_;
+    }
+    if (changed) {
+      changed(card);
+    }
   });
   receive_pipeline_->SetOnRosterMember([this](const GroupMembershipCodec::MemberJoinedEntry& member) {
     if (member.card) {
@@ -723,6 +731,16 @@ void MeshDeliveryOrchestrator::SetRelayClients(RelayClients clients) {
     });
   }
   TailSyncActiveE2eThread();
+}
+
+void MeshDeliveryOrchestrator::SetOnInboxPolled(std::function<void(const std::string& origin, bool ok)> polled) {
+  std::lock_guard lock(own_hooks_mu_);
+  on_inbox_polled_ = std::move(polled);
+}
+
+void MeshDeliveryOrchestrator::SetOnOwnCardChanged(std::function<void(const AccountCard& card)> changed) {
+  std::lock_guard lock(own_hooks_mu_);
+  on_own_card_changed_ = std::move(changed);
 }
 
 void MeshDeliveryOrchestrator::SetInboxReady(std::function<bool(const std::string& origin)> ready) {
@@ -2238,7 +2256,15 @@ RelayInboxCoordinator::Ports MeshDeliveryOrchestrator::InboxPorts() {
   ports.take = [this](const RelayInboxCoordinator::Batch& batch, const std::string& account_id) {
     TakeRelayBatch(batch, account_id);
   };
-  ports.polled = [this](const std::string&, const bool preferred, const Error* failure) {
+  ports.polled = [this](const std::string& origin, const bool preferred, const Error* failure) {
+    std::function<void(const std::string&, bool)> polled;
+    {
+      std::lock_guard lock(own_hooks_mu_);
+      polled = on_inbox_polled_;
+    }
+    if (polled) {
+      polled(origin, failure == nullptr);
+    }
     if (!preferred) {
       return; // another relay re-registers by itself (RelayRegistrationsWorkflow)
     }

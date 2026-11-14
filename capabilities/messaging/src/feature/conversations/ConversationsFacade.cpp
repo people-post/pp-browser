@@ -196,6 +196,26 @@ Roe<void> ConversationsFacade::MakeMainDevice(const std::string& peer_id) {
   return hub_.MakeMainDevice(peer_id);
 }
 
+Roe<OurRelaysStatus> ConversationsFacade::OurRelays() {
+  return hub_.OurRelays();
+}
+
+Roe<void> ConversationsFacade::AddOurRelay(const std::string& typed, const bool allow_http) {
+  return hub_.AddOurRelay(typed, allow_http);
+}
+
+Roe<void> ConversationsFacade::RemoveOurRelay(const std::string& origin) {
+  return hub_.RemoveOurRelay(origin);
+}
+
+Roe<void> ConversationsFacade::MakeOurRelayPreferred(const std::string& origin) {
+  return hub_.MakeOurRelayPreferred(origin);
+}
+
+void ConversationsFacade::SetOnOurRelaysChanged(std::function<void()> callback) {
+  hub_.SetOnOurRelaysChanged(std::move(callback));
+}
+
 Roe<std::string> ConversationsFacade::ExportAccountCopy() {
   AccountLockerWorkflow* locker = hub_.AccountLocker();
   if (!hub_.IsMessagingReady() || !locker) {
