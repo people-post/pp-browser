@@ -88,8 +88,10 @@ Contracts: [SERVICE_ENDPOINTS § Relay services and org services](../../docs/con
 [UI_DESIGN_SYSTEM § My relays](../../docs/ui/UI_DESIGN_SYSTEM.md).
 
 Not yet:
-- Account lockers stay at the org's registration URL; with the org's relay removed from the list, writing them fails
-  (logged). Stream history is read from the org's relay while it is one of ours, else from the preferred one.
+- Account lockers stay at the org's registration URL and are still written there; with the org's relay removed from
+  the list (our registration there revoked) those writes fail (logged), the restore's read still works. Stream history
+  is read from the org's relay while it is one of ours, else from the preferred one (the org relay's is then not
+  asked).
 - A custom `registration.base_url` that differs from `relay.base_url` now only sets where lockers live.
 - The list can never be empty (no mesh-only choice).
 - Only the main device edits the list. A linked device's page is read-only; it follows a newer card of ours, but

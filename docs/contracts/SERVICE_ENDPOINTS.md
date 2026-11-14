@@ -139,9 +139,11 @@ user changes the list.
   (`HttpRegistrationClient::SetTakesBriefLlmKey`); when the org's relay is another of ours, its registration
   (`RelayRegistrationsWorkflow`) gives the identity the key. Another relay's key is not kept.
 - **Not moved (yet):** account lockers stay at the org's registration URL ([HTTP account lockers](#http-account-lockers-multi-device-m023)),
-  where every locker so far was written and where a restoring device, which knows no list yet, looks; with the org's
-  relay removed from the list the locker writes there fail (logged) until a later step moves them. Stream history is
-  asked of the org's relay while it is one of ours (`HistoryRelay`), else of the preferred one.
+  where every locker so far was written and where a restoring device, which knows no list yet, looks. The app keeps
+  writing them there whatever the list; with the org's relay removed from it our registration there is revoked, so
+  those writes fail (logged: the relay takes a locker write from a registered account only) until a later step moves
+  them, while a restore still reads them (by locker id). Stream history is asked of the org's relay while it is one of
+  ours (`HistoryRelay`), else of the preferred one (what the org's relay holds is then not asked).
 
 ### Registering and receiving on each
 
