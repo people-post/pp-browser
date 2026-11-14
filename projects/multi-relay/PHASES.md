@@ -17,7 +17,7 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 - [x] Polling, ack and clear by Account ID; push registration unchanged per relay.
 - [x] MR005 at the relay: a grant on a send checked with the recipient's key; a stranger's send refused with `payment_required` when the recipient's card has a floor above 0, else within a first-contact quota per recipient and without a message alert; the per-address limit configurable.
 - [x] `messenger` records keyed by Account ID.
-- [ ] Deploy with the app build from R2 (clean cutover): merged (#252, #28), not deployed.
+- [x] Deploy with the app build from R2 (clean cutover): merged (#252, #28) and deployed.
 
 ## R2 — App: Account ID everywhere, the relay list, several relays
 
@@ -33,9 +33,10 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 
 ## R3 — UI
 
-- [ ] Me → Network → My relays: list, add, remove, mark preferred, each with its state.
-- [ ] Contact page: the preferred relay and its reachability; the refresh button's final form.
+- [x] My relays: list, add, remove, mark preferred, each with its state (Me → My relays, a page of its own; MR006 splits relay services from org services).
+- [x] Contact page: the preferred relay and its reachability; the refresh button's final form (devices, their relays, ours).
+- [x] Search asks every relay of ours; a stranger's price comes from its card.
 
 ## R4 — QR locator
 
-- [ ] The locator may carry the preferred relay's origin (MR004).
+- [x] The locator may carry the preferred relay's origin (MR004); a contact added from it starts with that relay.
