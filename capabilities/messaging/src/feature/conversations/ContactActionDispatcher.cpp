@@ -19,7 +19,8 @@ namespace pbr {
 
 ContactActionDispatcher::ContactActionDispatcher(InboxController& inbox, ContactsStore& contacts,
                                                  IdentityStore& identity, IThreadStore& store,
-                                                 GroupMembershipWorkflow* groups, IRegistrationClient* registration,
+                                                 GroupMembershipWorkflow* groups,
+                                                 std::shared_ptr<IRegistrationClient> registration,
                                                  MeshDeliveryOrchestrator* mesh_messaging,
                                                  mesh::IDirectoryClient* directory)
     : inbox_(inbox),
@@ -27,14 +28,20 @@ ContactActionDispatcher::ContactActionDispatcher(InboxController& inbox, Contact
       identity_(identity),
       store_(store),
       groups_(groups),
-      registration_(registration),
+      registration_(std::move(registration)),
       mesh_messaging_(mesh_messaging),
       directory_(directory) {
   redirectLogger("ContactActionDispatcher");
 }
 
-void ContactActionDispatcher::SetRegistrationClient(IRegistrationClient* registration) {
-  registration_ = registration;
+void ContactActionDispatcher::SetRegistrationClient(std::shared_ptr<IRegistrationClient> registration) {
+  std::lock_guard lock(registration_mu_);
+  registration_ = std::move(registration);
+}
+
+std::shared_ptr<IRegistrationClient> ContactActionDispatcher::RegistrationClient() const {
+  std::lock_guard lock(registration_mu_);
+  return registration_;
 }
 
 void ContactActionDispatcher::SetGroupMembership(GroupMembershipWorkflow* groups) {
@@ -236,14 +243,15 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
     if (!identity) {
       return identity.error();
     }
-    if (!registration_) {
+    const std::shared_ptr<IRegistrationClient> registration = RegistrationClient();
+    if (!registration) {
       return Error("Registration client not configured");
     }
 
     const RegistrationPublishOpts card =
         mesh_messaging_ ? WithAccountCard({}, mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs()))
                         : RegistrationPublishOpts{};
-    auto result = FinishAndPersistRegistration(*registration_, identity_, identity->nickname, {}, card);
+    auto result = FinishAndPersistRegistration(*registration, identity_, identity->nickname, {}, card);
     if (!result) {
       return result.error();
     }

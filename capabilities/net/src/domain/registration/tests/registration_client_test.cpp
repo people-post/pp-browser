@@ -517,6 +517,10 @@ private:
 // it stores are what FinishAndPersistRegistration sent and stored for the same inputs.
 class RegistrationJobTest : public KemBindingPublishTest {
 protected:
+  /** A client on the test's stack, handed to the job as the hub hands its shared one. */
+  static std::shared_ptr<IRegistrationClient> Unowned(IRegistrationClient& client) {
+    return std::shared_ptr<IRegistrationClient>(std::shared_ptr<void>(), &client);
+  }
   RegistrationPublishOpts Publish() const {
     Object card;
     card.set("card_version", int64_t{3});
@@ -538,7 +542,7 @@ TEST_F(RegistrationJobTest, TheJobSendsAndStoresWhatFinishAndPersistRegistration
   ASSERT_EQ(recording.sent.size(), 2u);
 
   ASSERT_TRUE(static_cast<bool>(identity_->Update(named))); // the same starting point again
-  const RegistrationJob job = MakeRegistrationJob(recording, *identity_, named, addrs, Publish());
+  const RegistrationJob job = MakeRegistrationJob(Unowned(recording), *identity_, named, addrs, Publish());
   EXPECT_EQ(job.account_id, named.account_id);
   EXPECT_EQ(job.nickname, "Nick");
   EXPECT_EQ(job.listen_addrs, addrs);
@@ -563,11 +567,22 @@ TEST_F(RegistrationJobTest, TheJobSendsAndStoresWhatFinishAndPersistRegistration
 TEST_F(RegistrationJobTest, ARegistrationForAnotherAccountIsNotStored) {
   FieldRecordingClient recording;
   const LocalIdentity before = identity_->Get().value();
-  RegistrationJob job = MakeRegistrationJob(recording, *identity_, before, {}, {});
+  RegistrationJob job = MakeRegistrationJob(Unowned(recording), *identity_, before, {}, {});
   auto result = RunRegistrationJob(job);
   ASSERT_TRUE(static_cast<bool>(result));
   EXPECT_FALSE(static_cast<bool>(PersistRenewal(*identity_, *result, "account:someone-else")));
   ExpectSameRegistrationFields(before, identity_->Get().value());
+}
+
+// A relay change that replaces the hub's registration client while a job runs leaves the job the client it began with.
+TEST_F(RegistrationJobTest, TheJobHoldsTheClientItBeganWith) {
+  auto client = std::make_shared<FieldRecordingClient>();
+  const std::weak_ptr<FieldRecordingClient> watched = client;
+  const RegistrationJob job = MakeRegistrationJob(client, *identity_, identity_->Get().value(), {}, {});
+  client.reset(); // the hub's copy replaced
+  ASSERT_FALSE(watched.expired()) << "the job keeps it";
+  ASSERT_TRUE(static_cast<bool>(RunRegistrationJob(job)));
+  EXPECT_EQ(watched.lock()->sent.size(), 2u);
 }
 
 TEST_F(RegistrationJobTest, ANetworkFailureComesBackAsAnErrorAndStoresNothing) {
@@ -581,7 +596,7 @@ TEST_F(RegistrationJobTest, ANetworkFailureComesBackAsAnErrorAndStoresNothing) {
     }
   } failing;
   const LocalIdentity before = identity_->Get().value();
-  auto result = RunRegistrationJob(MakeRegistrationJob(failing, *identity_, before, {}, {}));
+  auto result = RunRegistrationJob(MakeRegistrationJob(Unowned(failing), *identity_, before, {}, {}));
   ASSERT_FALSE(static_cast<bool>(result));
   EXPECT_EQ(result.error().code, static_cast<int32_t>(Err::Network::Timeout));
   ExpectSameRegistrationFields(before, identity_->Get().value());

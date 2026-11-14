@@ -90,11 +90,11 @@ void ClientCompatController::CheckAsync() {
   if (!compat_ports_.messaging_initialized || !compat_ports_.messaging_initialized()) {
     return;
   }
-  IClientCompatClient* client = compat_ports_.client_compat ? compat_ports_.client_compat() : nullptr;
+  std::shared_ptr<IClientCompatClient> client = compat_ports_.client_compat ? compat_ports_.client_compat() : nullptr;
   const std::string profile_dir = compat_ports_.profile_data_dir ? compat_ports_.profile_data_dir() : std::string{};
 
   AppRuntime::PostWorkerAndReplyOnUI<CompatResolveResult>(
-      WorkerLane::Normal, [client, profile_dir]() { return ResolveDocumentOnIO(client, profile_dir); },
+      WorkerLane::Normal, [client, profile_dir]() { return ResolveDocumentOnIO(client.get(), profile_dir); },
       [this](CompatResolveResult result) {
         if (!result.document) {
           if (!result.error.empty()) {

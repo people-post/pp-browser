@@ -7,6 +7,7 @@
 #include "common/directory/IdentityTypes.h"
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -47,20 +48,21 @@ Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationRes
 
 /**
  * What a registration the user asked for needs to run its network half off the UI thread: everything the UI thread read
- * (account, nickname, advertised addresses, the account card) by value, and the two stores it talks to. The pointers
- * must outlive the run (a teardown waits for running worker tasks before it destroys them).
+ * (account, nickname, advertised addresses, the account card) by value, and the two stores it talks to. The
+ * registration client is held shared, so a relay change that replaces it meanwhile leaves the run its own; the identity
+ * store must outlive the run (a teardown waits for running worker tasks before it destroys it).
  */
 struct RegistrationJob {
   std::string account_id;
   std::string nickname;
   std::vector<std::string> listen_addrs;
   RegistrationPublishOpts publish;
-  IRegistrationClient* registration = nullptr;
+  std::shared_ptr<IRegistrationClient> registration;
   IdentityStore* identity = nullptr;
 };
 
 /** The job for `identity` (the identity as stored once its new nickname was saved); the inputs as given. */
-RegistrationJob MakeRegistrationJob(IRegistrationClient& registration, IdentityStore& identity_store,
+RegistrationJob MakeRegistrationJob(std::shared_ptr<IRegistrationClient> registration, IdentityStore& identity_store,
                                     const LocalIdentity& identity, std::vector<std::string> listen_addrs,
                                     RegistrationPublishOpts publish);
 

@@ -80,7 +80,7 @@ void BackendClientSet::ApplyOrg(const std::string& url) {
     return;
   }
   org_relay_url_ = normalized;
-  client_compat_ = std::make_unique<HttpClientCompatClient>(url);
+  client_compat_ = std::make_shared<HttpClientCompatClient>(url);
 }
 
 void BackendClientSet::WireBriefLlmKey() {
@@ -219,7 +219,7 @@ void BackendClientSet::ApplyHome(const std::string& url) {
     return;
   }
   home_url_ = url;
-  locker_ = std::make_unique<HttpLockerClient>(url);
+  locker_ = std::make_shared<HttpLockerClient>(url);
   WireSigner();
 }
 

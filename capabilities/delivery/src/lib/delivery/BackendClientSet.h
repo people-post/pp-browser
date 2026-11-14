@@ -88,15 +88,16 @@ public:
   RelaySendCoordinator& Sender() { return sender_; }
   /** Ours, preferred first (none while no relay is configured). A copy: any thread (a push binding's worker). */
   std::vector<OurRelay> OurRelays() const;
-  IPushDeviceClient* PushDevices() { return push_devices_.get(); }
-  /** The org's (MR006). */
-  IClientCompatClient* ClientCompat() { return client_compat_.get(); }
-  /** The preferred relay's. */
-  IRegistrationClient* Registration() { return registration_.get(); }
+  /** The preferred relay's (shared, as Relay). */
+  std::shared_ptr<IPushDeviceClient> PushDevices() const { return push_devices_; }
+  /** The org's (MR006; shared, as Relay). */
+  std::shared_ptr<IClientCompatClient> ClientCompat() const { return client_compat_; }
+  /** The preferred relay's (shared, as Relay). */
+  std::shared_ptr<IRegistrationClient> Registration() const { return registration_; }
   /** The preferred relay's: profile photos and chat files (shared, as Relay). */
   std::shared_ptr<IBlobClient> Blob() const { return blob_; }
-  /** The org's registration URL's: lockers stay where they were written (MR006). */
-  ILockerClient* Locker() { return locker_.get(); }
+  /** The org's registration URL's: lockers stay where they were written (MR006; shared, as Relay). */
+  std::shared_ptr<ILockerClient> Locker() const { return locker_; }
   /** Stream history: the relay of ours at the org's registration URL, where it was kept; else the preferred one. */
   std::shared_ptr<IRelayClient> HistoryRelay() const;
   /** The org's relay base URL (normalized; empty when none). */
@@ -142,10 +143,10 @@ private:
   std::shared_ptr<DirectoryCardSink> directory_cards_ = std::make_shared<DirectoryCardSink>();
   std::shared_ptr<HttpRelayClient> relay_;
   std::shared_ptr<HttpPushDeviceClient> push_devices_;
-  std::unique_ptr<HttpClientCompatClient> client_compat_;
+  std::shared_ptr<HttpClientCompatClient> client_compat_;
   std::shared_ptr<HttpRegistrationClient> registration_;
   std::shared_ptr<HttpBlobClient> blob_;
-  std::unique_ptr<HttpLockerClient> locker_;
+  std::shared_ptr<HttpLockerClient> locker_;
   /** One other relay's clients (its origin as configured, bounded). */
   struct Extra {
     std::string origin;

@@ -37,7 +37,7 @@ Roe<void> PushDeviceCoordinator::Register(ConversationsHub& hub) {
   if (!hub.IsMessagingReady() || hub.PushGate().Suspended()) {
     return {};
   }
-  IPushDeviceClient* client = hub.PushDevices();
+  const std::shared_ptr<IPushDeviceClient> client = hub.PushDevices(); // held for the binding's call
   if (client == nullptr || !IPushDeviceRegistrar::Instance().IsSupported()) {
     return {};
   }
@@ -102,7 +102,7 @@ Roe<void> PushDeviceCoordinator::UnregisterOn(ConversationsHub& hub, const std::
 }
 
 Roe<void> PushDeviceCoordinator::Unregister(ConversationsHub& hub) {
-  IPushDeviceClient* client = hub.PushDevices();
+  const std::shared_ptr<IPushDeviceClient> client = hub.PushDevices(); // held for the binding's call
   if (client == nullptr || !IPushDeviceRegistrar::Instance().IsSupported()) {
     return {};
   }

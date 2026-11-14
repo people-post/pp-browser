@@ -265,11 +265,11 @@ void ConversationsHub::UpdateOrgBackendClients(const HubSettings& settings) {
                   .our_relays = our_relays_ ? our_relays_->List().Origins() : std::vector<std::string>{},
                   .extra_relays = settings.relay_extra_base_urls});
   relay_ = clients_.Relay();
-  push_devices_ = clients_.PushDevices();
-  client_compat_ = clients_.ClientCompat();
-  registration_ = clients_.Registration();
   {
-    std::lock_guard lock(blob_mu_);
+    std::lock_guard lock(clients_mu_);
+    push_devices_ = clients_.PushDevices();
+    client_compat_ = clients_.ClientCompat();
+    registration_ = clients_.Registration();
     blob_ = clients_.Blob();
   }
   if (account_locker_) {
@@ -369,12 +369,12 @@ std::vector<std::string> ConversationsHub::OurRelayOrigins() const {
   return origins;
 }
 
-std::vector<std::pair<std::string, IPushDeviceClient*>> ConversationsHub::OtherRelayPushDevices() {
-  std::vector<std::pair<std::string, IPushDeviceClient*>> out;
+std::vector<std::pair<std::string, std::shared_ptr<IPushDeviceClient>>> ConversationsHub::OtherRelayPushDevices() {
+  std::vector<std::pair<std::string, std::shared_ptr<IPushDeviceClient>>> out;
   const auto registrations = OtherRelayRegistrations();
   for (const BackendClientSet::OurRelay& relay : clients_.OurRelays()) {
     if (relay.registration && relay.push_devices && registrations && registrations->Registered(relay.origin)) {
-      out.emplace_back(relay.origin, relay.push_devices.get());
+      out.emplace_back(relay.origin, relay.push_devices); // shared: a binding in flight keeps it
     }
   }
   return out;
@@ -1411,7 +1411,7 @@ void ConversationsHub::BuildMessagingObjects() {
   NotifyMessagingBuilt();
   actions_ =
       std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_, group_membership_.get(),
-                                                registration_, mesh_messaging_.get(), &directory_);
+                                                Registration(), mesh_messaging_.get(), &directory_);
   group_invite_gate_->SetInboundPolicy(policy_.group_invite_policy);
   group_membership_->SetInboundPolicy(policy_.group_invite_policy);
   NotifyPolicyPrefs(policy_);
@@ -2072,7 +2072,7 @@ ProfileIdentityView ConversationsHub::LoadProfileIdentityView() {
   view.account_id = identity->account_id;
   view.contact_locator = OwnContactLocator().valueOr("");
   view.public_key_b64 = identity->account_signing_public_key_b64;
-  FillRegistrationFields(view, *identity, Registration().BaseUrl()); // the preferred relay's (MR006)
+  FillRegistrationFields(view, *identity, Registration()->BaseUrl()); // the preferred relay's (MR006)
   view.profile_icon_path = ProfileIconLocalPath(data_dir_);
   view.profile_has_icon = !view.profile_icon_path.empty();
   return view;
@@ -2103,7 +2103,7 @@ Roe<void> ConversationsHub::SaveProfileNickname(const std::string& nickname) {
   }
 
   if (identity->registered) {
-    auto result = UpdateRegisteredNickname(Registration(), Identity(), nickname);
+    auto result = UpdateRegisteredNickname(*Registration(), Identity(), nickname);
     if (!result) {
       return result.error();
     }
@@ -3616,7 +3616,7 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
   if (service_urls_changed) {
     UpdateOrgBackendClients(config_); // our relays to messaging too (WireOurRelays)
     if (actions_) {
-      actions_->SetRegistrationClient(registration_);
+      actions_->SetRegistrationClient(Registration());
     }
   }
   if (mesh_changed && messaging_ready_) {
@@ -3845,12 +3845,12 @@ void ConversationsHub::Shutdown() {
   }
   clients_.Clear();
   relay_.reset();
-  push_devices_ = nullptr;
-  client_compat_ = nullptr;
   directory_.SetBackend(nullptr);
-  registration_ = nullptr;
   {
-    std::lock_guard lock(blob_mu_);
+    std::lock_guard lock(clients_mu_);
+    push_devices_.reset();
+    client_compat_.reset();
+    registration_.reset();
     blob_.reset();
   }
   identity_.reset();
@@ -4054,7 +4054,7 @@ void ConversationsHub::CloseMyRelays() {
 
 std::optional<RelayRegistrationRecord> ConversationsHub::PreferredRegistrationRecord() {
   auto identity = identity_ ? identity_->Get() : Roe<LocalIdentity>(Error("no identity"));
-  if (!identity || !identity->registered || !RegisteredAtBackend(*identity, Registration().BaseUrl())) {
+  if (!identity || !identity->registered || !RegisteredAtBackend(*identity, Registration()->BaseUrl())) {
     return std::nullopt;
   }
   return RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Registered,
@@ -4081,7 +4081,7 @@ MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {
       }
       UpdateOrgBackendClients(config_); // clients, inboxes and the card's relays follow the list
       if (actions_) {
-        actions_->SetRegistrationClient(registration_);
+        actions_->SetRegistrationClient(Registration());
       }
       *applied = true;
     });
@@ -4106,7 +4106,7 @@ MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {
     }
     // The card now lists the new order, so it goes whatever the auto-renew preference (ShouldPublishAccountCard),
     // and the registration records the relay it was made at (#602's backend-switch path).
-    auto renewed = MaybeAutoRenewRegistration(Registration(), Identity(), true, RegistrationCard());
+    auto renewed = MaybeAutoRenewRegistration(*Registration(), Identity(), true, RegistrationCard());
     if (!renewed) {
       return renewed.error();
     }
@@ -4242,7 +4242,7 @@ Roe<std::string> ConversationsHub::OwnContactLocator() {
   ContactLocator locator{.account_id = identity->account_id, .nickname = identity->nickname};
   // Our preferred relay (the one we register on), so a contact adding us can write before it has our card (R4); an
   // `http://` lab relay is left out, as our card leaves it out.
-  locator.relay = NormalizeRegistrationBackend(Registration().BaseUrl());
+  locator.relay = NormalizeRegistrationBackend(Registration()->BaseUrl());
   if (auto self = DevicePeerIdFromKey(identity->public_key_b64)) {
     locator.devices.push_back(*self);
   }
@@ -4293,7 +4293,7 @@ PeerDisplayResolver& ConversationsHub::PeerLabels() {
 
 namespace {
 
-// Registration() hands out a reference, but a build with no backend address creates no client (the UI demo app, or a
+// Registration() never hands out null, but a build with no backend address creates no client (the UI demo app, or a
 // custom backend left blank). This stands in so a call reports an error instead of dereferencing null.
 class UnconfiguredRegistrationClient final : public IRegistrationClient {
 public:
@@ -4320,9 +4320,10 @@ private:
 
 } // namespace
 
-IRegistrationClient& ConversationsHub::Registration() {
-  static UnconfiguredRegistrationClient unconfigured;
-  return registration_ ? *registration_ : unconfigured;
+std::shared_ptr<IRegistrationClient> ConversationsHub::Registration() const {
+  static const auto unconfigured = std::make_shared<UnconfiguredRegistrationClient>();
+  std::lock_guard lock(clients_mu_);
+  return registration_ ? registration_ : unconfigured;
 }
 
 RegistrationPublishOpts ConversationsHub::RegistrationCard() {
@@ -4333,15 +4334,17 @@ RegistrationPublishOpts ConversationsHub::RegistrationCard() {
 }
 
 std::shared_ptr<IBlobClient> ConversationsHub::BlobClient() const {
-  std::lock_guard lock(blob_mu_);
+  std::lock_guard lock(clients_mu_);
   return blob_;
 }
 
-IPushDeviceClient* ConversationsHub::PushDevices() {
+std::shared_ptr<IPushDeviceClient> ConversationsHub::PushDevices() const {
+  std::lock_guard lock(clients_mu_);
   return push_devices_;
 }
 
-IClientCompatClient* ConversationsHub::ClientCompat() {
+std::shared_ptr<IClientCompatClient> ConversationsHub::ClientCompat() const {
+  std::lock_guard lock(clients_mu_);
   return client_compat_;
 }
 

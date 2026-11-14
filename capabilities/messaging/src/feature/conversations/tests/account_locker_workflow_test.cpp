@@ -72,7 +72,7 @@ protected:
     contacts_ = std::make_unique<ContactsStore>(dir_.string());
     ASSERT_TRUE(contacts_->Upsert(AccountContact("c1", "account:bob", "Bob")));
     workflow_ = std::make_unique<AccountLockerWorkflow>(*identity_, *contacts_, AccountLockerWorkflow::Sources{});
-    workflow_->SetClient(&provider_);
+    workflow_->SetClient(provider_);
     auto seed = identity_->RecoverySeed();
     ASSERT_TRUE(seed && *seed);
     seed_ = **seed;
@@ -89,7 +89,7 @@ protected:
   /** What a fresh install restoring from the phrase finds (a workflow of its own: nothing seen yet). */
   Roe<std::optional<AccountLockerWorkflow::Fetched>> Restore(const std::vector<std::string>& saved_copies) {
     AccountLockerWorkflow restoring(*identity_, *contacts_, AccountLockerWorkflow::Sources{});
-    restoring.SetClient(&provider_);
+    restoring.SetClient(provider_);
     return restoring.Fetch(seed_, saved_copies);
   }
 
@@ -97,7 +97,7 @@ protected:
   std::unique_ptr<IdentityStore> identity_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<AccountLockerWorkflow> workflow_;
-  FakeLockerProvider provider_;
+  std::shared_ptr<FakeLockerProvider> provider_ = std::make_shared<FakeLockerProvider>();
   ByteVector seed_;
 };
 
@@ -136,10 +136,22 @@ TEST_F(AccountLockerWorkflowTest, TheNewestCopyWinsWhetherFileOrProvider) {
   EXPECT_EQ(BobsName(**restored), "Bob (climbing)") << "the file is newer than the provider's copy";
 }
 
+TEST_F(AccountLockerWorkflowTest, TheProviderGivenIsTheWorkflowsOwnUntilReplaced) {
+  // The org's registration URL changes on the hub's thread while a sync runs on a worker: the sync keeps the client
+  // it took, not a pointer the change frees.
+  std::weak_ptr<FakeLockerProvider> given = provider_;
+  provider_.reset();
+  EXPECT_FALSE(given.expired()) << "held by the workflow";
+  ASSERT_TRUE(workflow_->Publish());
+  workflow_->SetClient(nullptr);
+  EXPECT_TRUE(given.expired()) << "and let go once replaced";
+  EXPECT_FALSE(workflow_->Publish()) << "no provider now";
+}
+
 TEST_F(AccountLockerWorkflowTest, AnUnreachableProviderIsNoErrorWithASavedFile) {
   auto file = workflow_->ExportFileJson();
   ASSERT_TRUE(file);
-  provider_.unreachable = true;
+  provider_->unreachable = true;
   EXPECT_FALSE(Restore({})) << "no file: the provider's error";
   auto restored = Restore({*file});
   ASSERT_TRUE(restored) << restored.error().message;
@@ -214,7 +226,7 @@ protected:
                                          return list;
                                        },
                                        .own_system_name = [raw]() { return raw->system_name; }});
-    device->workflow->SetClient(&provider_);
+    device->workflow->SetClient(provider_);
     device->workflow->SetOnWritten([raw]() { ++raw->writes; });
     return device;
   }
@@ -324,7 +336,7 @@ TEST_F(AccountLockerWorkflowNamesTest, ALockerWrittenWithoutTheKeyCostsNoLocalNa
   ASSERT_TRUE(keys);
   auto snapshot = account_locker::Seal(old_state, *keys, (**fetched).version + 10);
   ASSERT_TRUE(snapshot);
-  ASSERT_TRUE(provider_.Put("account", LockerRecordFromSnapshot(*snapshot), nullptr));
+  ASSERT_TRUE(provider_->Put("account", LockerRecordFromSnapshot(*snapshot), nullptr));
   EXPECT_EQ(NameOnProvider("peer:laptop"), "");
 
   ASSERT_TRUE(phone->workflow->Publish());

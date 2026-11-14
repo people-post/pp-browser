@@ -115,7 +115,7 @@ Roe<RegistrationResult> RenewNetworkOnly(IRegistrationClient& registration, Iden
   return FinishRegistrationWithIdentity(registration, identity, nickname, multiaddrs, publish);
 }
 
-RegistrationJob MakeRegistrationJob(IRegistrationClient& registration, IdentityStore& identity_store,
+RegistrationJob MakeRegistrationJob(std::shared_ptr<IRegistrationClient> registration, IdentityStore& identity_store,
                                     const LocalIdentity& identity, std::vector<std::string> listen_addrs,
                                     RegistrationPublishOpts publish) {
   RegistrationJob job;
@@ -123,7 +123,7 @@ RegistrationJob MakeRegistrationJob(IRegistrationClient& registration, IdentityS
   job.nickname = identity.nickname;
   job.listen_addrs = std::move(listen_addrs);
   job.publish = std::move(publish);
-  job.registration = &registration;
+  job.registration = std::move(registration);
   job.identity = &identity_store;
   return job;
 }

@@ -61,23 +61,43 @@ TEST(BackendClientSetTest, AnUnchangedEndpointKeepsItsClientsAndAChangedOneRebui
   BackendClientSet clients(directory);
   clients.Apply(At("https://relay.example", "https://directory.example", "https://registration.example"));
   IRelayClient* relay = clients.Relay().get();
-  IRegistrationClient* registration = clients.Registration();
+  IRegistrationClient* registration = clients.Registration().get();
 
   clients.Apply(At("https://relay.example", "https://directory.example", "https://registration.example"));
   EXPECT_EQ(clients.Relay().get(), relay) << "holders keep a client whose endpoint did not change";
-  EXPECT_EQ(clients.Registration(), registration);
+  EXPECT_EQ(clients.Registration().get(), registration);
 
-  ILockerClient* locker = clients.Locker();
+  ILockerClient* locker = clients.Locker().get();
   clients.Apply(At("https://relay.example", "https://directory.example", "https://registration.other"));
   EXPECT_EQ(clients.Relay().get(), relay);
-  EXPECT_EQ(clients.Registration(), registration) << "registration is the preferred relay's (MR006)";
+  EXPECT_EQ(clients.Registration().get(), registration) << "registration is the preferred relay's (MR006)";
   // The new client is made before the old one goes, so a rebuilt client never shares the old address.
-  EXPECT_NE(clients.Locker(), locker) << "a changed endpoint gets a new client";
+  EXPECT_NE(clients.Locker().get(), locker) << "a changed endpoint gets a new client";
   EXPECT_NE(clients.Locker(), nullptr);
 
   clients.Apply(At("https://relay.other", "https://directory.example", "https://registration.other"));
   EXPECT_NE(clients.Relay().get(), relay);
-  EXPECT_NE(clients.Registration(), registration);
+  EXPECT_NE(clients.Registration().get(), registration);
+}
+
+TEST(BackendClientSetTest, AClientTakenBeforeAChangeStaysUsableAfterIt) {
+  // A worker took the preferred relay's clients, then the preferred relay changed (MR006): what it holds is its own.
+  SwitchableDirectoryClient directory;
+  BackendClientSet clients(directory);
+  clients.Apply(At("https://relay.example", "https://directory.example", "https://registration.example"));
+  const std::shared_ptr<IRegistrationClient> registration = clients.Registration();
+  const std::shared_ptr<IPushDeviceClient> push = clients.PushDevices();
+  const std::shared_ptr<IClientCompatClient> compat = clients.ClientCompat();
+  const std::shared_ptr<ILockerClient> locker = clients.Locker();
+  const std::weak_ptr<IRegistrationClient> watched = registration;
+  clients.Apply(At("https://relay.other", "https://directory.example", "https://registration.other"));
+  EXPECT_NE(clients.Registration(), registration) << "rebuilt for the new relay";
+  EXPECT_EQ(registration->BaseUrl(), "https://relay.example") << "the old one still answers to its holder";
+  EXPECT_EQ(registration.use_count(), 1) << "held by the worker alone now";
+  EXPECT_NE(push, nullptr);
+  EXPECT_NE(compat, nullptr);
+  EXPECT_NE(locker, nullptr);
+  EXPECT_FALSE(watched.expired());
 }
 
 TEST(BackendClientSetTest, ClearDropsEveryClient) {
@@ -249,13 +269,13 @@ TEST_F(BackendClientSetOriginTest, TheBriefLlmKeyFollowsTheOrgsRelayWhenOnlyTheO
   // Our list stays (org's relay preferred, the other after it): their clients are kept, but the org's relay moves to
   // the other one. Which client keeps the key is decided again at every Apply, not when a client was built.
   Apply({OrgRelay(), OtherRelay()});
-  IRegistrationClient* preferred = clients_.Registration();
+  IRegistrationClient* preferred = clients_.Registration().get();
   ASSERT_EQ(FinishedKey(), "brf_llm_x");
 
   auto endpoints = At(OtherRelay(), OtherRelay(), OtherRelay());
   endpoints.our_relays = {OrgRelay(), OtherRelay()};
   clients_.Apply(endpoints);
-  ASSERT_EQ(clients_.Registration(), preferred) << "the preferred relay's client is kept";
+  ASSERT_EQ(clients_.Registration().get(), preferred) << "the preferred relay's client is kept";
   EXPECT_EQ(FinishedKey(), "") << "no longer the org's relay: its key is not kept";
   ASSERT_EQ(clients_.OurRelays().size(), 2u);
   auto org_key =

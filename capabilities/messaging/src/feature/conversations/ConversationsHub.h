@@ -272,12 +272,17 @@ public:
   bool HasDirectory() const { return directory_.Configured(); }
   DirectoryShadowCache& DirectoryShadows();
   PeerDisplayResolver& PeerLabels();
-  IRegistrationClient& Registration();
+  /**
+   * The preferred relay's registration client, shared: a registration in flight keeps the one it started with when a
+   * preferred change replaces it (MR006). Never null (a stand-in that refuses when none is configured). Any thread.
+   */
+  std::shared_ptr<IRegistrationClient> Registration() const;
   /** register/finish's extras for this account: its current card (MR002 / MR005), when it has one to give. */
   RegistrationPublishOpts RegistrationCard();
-  IPushDeviceClient* PushDevices();
+  /** The preferred relay's push-device client (shared, as Registration; none: not configured). Any thread. */
+  std::shared_ptr<IPushDeviceClient> PushDevices() const;
   /** Our other relays that hold our registration, with their push-device clients (multi-relay R2). */
-  std::vector<std::pair<std::string, IPushDeviceClient*>> OtherRelayPushDevices();
+  std::vector<std::pair<std::string, std::shared_ptr<IPushDeviceClient>>> OtherRelayPushDevices();
   /** Our relays' origins, preferred first (multi-relay R2). */
   std::vector<std::string> OurRelayOrigins() const;
   /** Our account on our other relays (multi-relay R2); none before Initialize and after Shutdown. Any thread. */
@@ -287,7 +292,8 @@ public:
   /** Registers on our other relays that are due, off the caller's thread (after the preferred one, on a timer). */
   void RegisterOnOtherRelaysSoon();
   PushBindingGate& PushGate() { return push_gate_; }
-  IClientCompatClient* ClientCompat();
+  /** The org's client-compat client (shared, as Registration; none: not configured). Any thread. */
+  std::shared_ptr<IClientCompatClient> ClientCompat() const;
   /** Profile data directory used for stores and client-compat cache. */
   const std::string& ProfileDataDir() const { return data_dir_; }
   /** Last mesh start failure (empty if ok). For Network settings UX. */
@@ -824,7 +830,6 @@ private:
                             const std::function<void(Roe<ThreadMessage>)>& finish);
   /** The preferred relay's (shared: work in flight keeps the client it started with, MR006). */
   std::shared_ptr<IRelayClient> relay_;
-  IPushDeviceClient* push_devices_ = nullptr;
   PushBindingGate push_gate_;
   /** The one directory client everything keeps; its backend follows the configuration (none: not configured). */
   SwitchableDirectoryClient directory_;
@@ -832,11 +837,15 @@ private:
   BackendClientSet clients_{directory_};
   /** The account locker (M023) on the backend's locker client (declared after the clients: goes first). */
   std::unique_ptr<AccountLockerWorkflow> account_locker_;
-  IRegistrationClient* registration_ = nullptr;
-  /** The preferred relay's photos and files, replaced on the hub's thread: read it with BlobClient (any thread). */
+  /**
+   * The clients the hub hands to workers, replaced on the hub's thread (UpdateOrgBackendClients): read them with
+   * Registration, PushDevices, ClientCompat and BlobClient (copies, under clients_mu_).
+   */
+  mutable std::mutex clients_mu_;
+  std::shared_ptr<IRegistrationClient> registration_;
+  std::shared_ptr<IPushDeviceClient> push_devices_;
+  std::shared_ptr<IClientCompatClient> client_compat_;
   std::shared_ptr<IBlobClient> blob_;
-  mutable std::mutex blob_mu_;
-  IClientCompatClient* client_compat_ = nullptr;
   std::unique_ptr<MeshDeliveryOrchestrator> mesh_messaging_;
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;

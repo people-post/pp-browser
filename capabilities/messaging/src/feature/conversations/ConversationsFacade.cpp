@@ -65,17 +65,17 @@ void ConversationsFacade::BindAgentInbound(AgentInboundPorts ports) {
 }
 
 std::string ConversationsFacade::RegistrationBackendUrl() {
-  return hub_.Registration().BaseUrl();
+  return hub_.Registration()->BaseUrl();
 }
 
 Roe<bool> ConversationsFacade::MaybeAutoRenewRegistration(const bool auto_renew_registration) {
-  return pbr::MaybeAutoRenewRegistration(hub_.Registration(), hub_.Identity(), auto_renew_registration,
+  return pbr::MaybeAutoRenewRegistration(*hub_.Registration(), hub_.Identity(), auto_renew_registration,
                                          hub_.RegistrationCard());
 }
 
 Roe<std::optional<RegistrationResult>> ConversationsFacade::MaybeAutoRenewRegistrationNetworkOnly(
     const bool auto_renew_registration) {
-  return pbr::MaybeAutoRenewNetworkOnly(hub_.Registration(), hub_.Identity(), auto_renew_registration,
+  return pbr::MaybeAutoRenewNetworkOnly(*hub_.Registration(), hub_.Identity(), auto_renew_registration,
                                         hub_.RegistrationCard());
 }
 
@@ -1479,7 +1479,7 @@ Roe<LocalIdentity> ConversationsFacade::ModifyLocalIdentity(
 
 Roe<LocalIdentity> ConversationsFacade::FinishAndPersistRegistration(const std::string& nickname) {
   auto registered =
-      pbr::FinishAndPersistRegistration(hub_.Registration(), hub_.Identity(), nickname, {}, hub_.RegistrationCard());
+      pbr::FinishAndPersistRegistration(*hub_.Registration(), hub_.Identity(), nickname, {}, hub_.RegistrationCard());
   if (registered) {
     hub_.RegisterOnOtherRelaysSoon(); // our other relays follow the preferred one (multi-relay R2)
   }
@@ -1487,7 +1487,7 @@ Roe<LocalIdentity> ConversationsFacade::FinishAndPersistRegistration(const std::
 }
 
 Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std::string& nickname) {
-  return pbr::UpdateRegisteredNickname(hub_.Registration(), hub_.Identity(), nickname);
+  return pbr::UpdateRegisteredNickname(*hub_.Registration(), hub_.Identity(), nickname);
 }
 
 Roe<void> ConversationsFacade::RevokeRegistration() {
@@ -1495,7 +1495,7 @@ Roe<void> ConversationsFacade::RevokeRegistration() {
   if (const auto others = hub_.OtherRelayRegistrations()) {
     others->RevokeAll();
   }
-  return pbr::RevokeRegistrationWithIdentity(hub_.Registration(), hub_.Identity());
+  return pbr::RevokeRegistrationWithIdentity(*hub_.Registration(), hub_.Identity());
 }
 
 } // namespace pbr
