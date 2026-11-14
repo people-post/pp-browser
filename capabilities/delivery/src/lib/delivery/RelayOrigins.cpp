@@ -50,6 +50,25 @@ bool NumericLastLabel(std::string_view host) {
                             (label.size() >= 2 && label[0] == '0' && (label[1] == 'x' || label[1] == 'X')));
 }
 
+/** A dotted quad in canonical form only: inet_pton differs on leading zeros (`0177.0.0.1`: refused by glibc, decimal on macOS) while the resolver may read them as octal. */
+bool IsCanonicalDottedQuad(std::string_view host) {
+  int parts = 0;
+  size_t start = 0;
+  while (start <= host.size()) {
+    size_t end = host.find('.', start);
+    if (end == std::string_view::npos) {
+      end = host.size();
+    }
+    const std::string_view part = host.substr(start, end - start);
+    if (part.empty() || part.size() > 3 || (part.size() > 1 && part[0] == '0') || std::stoi(std::string(part)) > 255) {
+      return false;
+    }
+    ++parts;
+    start = end + 1;
+  }
+  return parts == 4;
+}
+
 } // namespace
 
 bool IsForeignRelayOriginAllowed(const std::string& origin, const bool lab_relaxed) {
@@ -97,6 +116,11 @@ bool IsForeignRelayOriginAllowed(const std::string& origin, const bool lab_relax
   std::string lowered(host);
   for (char& c : lowered) {
     c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  const bool digits_and_dots =
+      std::all_of(lowered.begin(), lowered.end(), [](char c) { return c == '.' || (c >= '0' && c <= '9'); });
+  if (digits_and_dots && !IsCanonicalDottedQuad(lowered)) {
+    return false;
   }
   struct in_addr v4{};
   if (inet_pton(AF_INET, lowered.c_str(), &v4) == 1) {
