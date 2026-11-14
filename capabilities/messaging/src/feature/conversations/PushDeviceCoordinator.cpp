@@ -49,7 +49,35 @@ Roe<void> PushDeviceCoordinator::Register(ConversationsHub& hub) {
   if (reg.account_id.empty()) {
     return Error("Account not registered on the relay");
   }
+  // Every relay of ours that holds our registration may hold mail, and wakes the phone for it (multi-relay R2). The
+  // preferred relay's answer is the one reported; another's failure is logged and tried at the next sync.
+  for (const auto& [origin, other] : hub.OtherRelayPushDevices()) {
+    if (auto bound = other->RegisterDevice(reg); !bound) {
+      PushLog().warning << "Push binding on another relay failed: " << AppError::Log(bound.error());
+    }
+  }
   return client->RegisterDevice(reg);
+}
+
+Roe<void> PushDeviceCoordinator::RegisterOn(ConversationsHub& hub, const std::string& origin) {
+  if (!hub.IsMessagingReady() || hub.PushGate().Suspended() || !IPushDeviceRegistrar::Instance().IsSupported()) {
+    return {};
+  }
+  for (const auto& [other_origin, other] : hub.OtherRelayPushDevices()) {
+    if (other_origin != origin) {
+      continue;
+    }
+    auto token = IPushDeviceRegistrar::Instance().GetPushToken();
+    if (!token) {
+      return token.error();
+    }
+    PushDeviceRegistration reg = MakeRegistration(hub, *token);
+    if (reg.account_id.empty()) {
+      return {};
+    }
+    return other->RegisterDevice(reg);
+  }
+  return {};
 }
 
 Roe<void> PushDeviceCoordinator::Unregister(ConversationsHub& hub) {

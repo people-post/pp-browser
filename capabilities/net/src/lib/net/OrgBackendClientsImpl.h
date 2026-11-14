@@ -40,6 +40,14 @@ private:
   std::string base_url_;
 };
 
+/**
+ * The account card `account_id` registered with on the relay at `relay_base_url` (`GET /v1/users/by-account`'s
+ * `account_card`, multi-relay R2 step 2); none when the account is not registered there or gave none. Unchecked: the
+ * caller keeps it only once it verifies (AccountKeyResolver).
+ */
+Roe<std::optional<pp::common::Object>> FetchStoredAccountCard(const std::string& relay_base_url,
+                                                              const std::string& account_id);
+
 /** Try each backend in order until one succeeds (N029 nd3). */
 class FailoverDirectoryClient : public mesh::IDirectoryClient {
 public:

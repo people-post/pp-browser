@@ -48,7 +48,6 @@
 #include "lib/delivery/RelayWirePayload.h"
 #include "common/thread/SyncStateTypes.h"
 #include "mesh/host/MeshPorts.h"
-#include "lib/net/RelayInboxCursor.h"
 #include "lib/people/ContactIdentity.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "common/runtime/AppRuntime.h"
@@ -116,7 +115,13 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
       card_service_(identity, own_cards_, account_keys, contacts),
       control_lane_(
           identity, own_cards_, account_keys, session_keys_, [this]() { return transports_.DirectChat(); }, outbox_),
-      relay_grants_(identity, account_keys, control_lane_) {
+      relay_grants_(identity, account_keys, control_lane_),
+      recipient_relays_(account_keys,
+                        [this](const std::string& peer_id, const std::string& account_id,
+                               std::function<void(Roe<PeerCardRecord>)> done) {
+                          card_service_.Fetch(peer_id, account_id, std::move(done));
+                        }),
+      inboxes_(InboxPorts()) {
   redirectLogger("MeshDeliveryOrchestrator");
   relay_grants_.SetOnGrantReceived([this](const std::string& grantor) {
     AppRuntime::PostWorkerNormal([this, grantor]() { outbox_.ReleaseHeldFor(grantor); });
@@ -693,15 +698,10 @@ void MeshDeliveryOrchestrator::RegisterPeerKeysFromDirectory(const mesh::Directo
   }
 }
 
-void MeshDeliveryOrchestrator::SetRelayClient(IRelayClient* relay) {
-  relay_ = relay;
-  outbox_.SetRelayClient(relay);
-  relay_cursor_.clear();
-  poll_pending_ = false;
-  poll_again_ = false;
-  if (auto identity = identity_.Get()) {
-    LoadPersistedRelayCursor(identity->account_id);
-  }
+void MeshDeliveryOrchestrator::SetRelayClients(RelayClients clients) {
+  relay_ = clients.preferred;
+  outbox_.SetRelayClient(clients.sender ? clients.sender : clients.preferred);
+  inboxes_.SetInboxes(std::move(clients.inboxes), profile_data_dir_);
   if (chat_sync_) {
     chat_sync_ = std::make_unique<ChatSyncWorkflow>(store_, identity_, relay_, *receive_pipeline_, inbox_,
                                                     transports_.History());
@@ -712,6 +712,16 @@ void MeshDeliveryOrchestrator::SetRelayClient(IRelayClient* relay) {
     });
   }
   TailSyncActiveE2eThread();
+}
+
+void MeshDeliveryOrchestrator::SetInboxReady(std::function<bool(const std::string& origin)> ready) {
+  std::lock_guard lock(inbox_ready_mu_);
+  inbox_ready_ = std::move(ready);
+}
+
+bool MeshDeliveryOrchestrator::InboxReady(const std::string& origin) const {
+  std::lock_guard lock(inbox_ready_mu_);
+  return !inbox_ready_ || inbox_ready_(origin);
 }
 
 void MeshDeliveryOrchestrator::SetInitiationBillingStore(InitiationBillingStore* store) {
@@ -732,6 +742,7 @@ void MeshDeliveryOrchestrator::SetGroupMembership(GroupMembershipWorkflow* group
 void MeshDeliveryOrchestrator::SetProfileDataDir(std::string profile_data_dir) {
   profile_data_dir_ = std::move(profile_data_dir);
   transports_.SetProfileDataDir(profile_data_dir_);
+  inboxes_.SetInboxes(inboxes_.Inboxes(), profile_data_dir_); // the cursors live in the profile
 }
 
 void MeshDeliveryOrchestrator::SetContent(std::shared_ptr<CasStore> content) {
@@ -751,23 +762,6 @@ IChatBlobPeerClient* MeshDeliveryOrchestrator::PeerBlobClient() const {
 
 IChatBlobPeerService* MeshDeliveryOrchestrator::PeerBlobService() const {
   return transports_.BlobService();
-}
-
-void MeshDeliveryOrchestrator::LoadPersistedRelayCursor(const std::string& account_id) {
-  if (profile_data_dir_.empty()) {
-    return;
-  }
-  const std::string loaded = LoadRelayInboxCursor(profile_data_dir_, account_id);
-  if (!loaded.empty()) {
-    relay_cursor_ = loaded;
-  }
-}
-
-void MeshDeliveryOrchestrator::PersistRelayCursor(const std::string& account_id) {
-  if (profile_data_dir_.empty() || relay_cursor_.empty()) {
-    return;
-  }
-  SaveRelayInboxCursor(profile_data_dir_, account_id, relay_cursor_);
 }
 
 void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoint(const std::string& peer_account_id,
@@ -2187,176 +2181,152 @@ Roe<RelayDeleteResult> MeshDeliveryOrchestrator::ClearUndeliveredOlderThan(const
     return Error("Identity unavailable");
   }
   const int64_t before_ms = util::NowUnixMs() - static_cast<int64_t>(older_than_days) * 24LL * 60 * 60 * 1000;
-  return relay_->ClearInbox(identity->account_id, FormatUnixMsIso8601Utc(before_ms));
+  const std::string before = FormatUnixMsIso8601Utc(before_ms);
+  auto cleared = relay_->ClearInbox(identity->account_id, before);
+  if (!cleared) {
+    return cleared;
+  }
+  // Our other relays' inboxes too (multi-relay R2), best effort: the preferred relay's answer is the one reported.
+  for (const RelayInbox& inbox : inboxes_.Inboxes()) {
+    if (inbox.client.get() == relay_ || !InboxReady(inbox.origin)) {
+      continue;
+    }
+    if (auto other = inbox.client->ClearInbox(identity->account_id, before)) {
+      cleared->deleted += other->deleted;
+    } else {
+      log().warning << "clearing the inbox on another relay failed: " << other.error().message;
+    }
+  }
+  return cleared;
 }
 
-void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
+void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool force) {
   RetryFailedOutbound();
-
   last_relay_poll_ms_ = util::NowUnixMs();
-  // Always mark a poll request. If HTTP is already in flight (Accept Sync before MediaKey
-  // lands), coalesced callers used to no-op and drop — tablet then never saw CallMediaKey.
-  poll_again_.store(true);
+  auto identity = identity_.Get();
+  if (!identity) {
+    return;
+  }
+  // Every poll asked for is kept (RelayInboxCoordinator): one asked while another is in flight runs after it — a
+  // call's MediaKey may land meanwhile. HTTP polls never run on Browser IO (a 30 s curl wait starved AcceptInvite).
+  inboxes_.Sync(force, identity->account_id);
+}
 
-  // HTTP PollInbox must NOT run on Browser IO — a 30s curl wait starved AcceptInvite / N025
-  // Wire / MediaKey ingest on Samsung (PostAcceptInvite queued, never entered).
-  AppRuntime::PostWorkerBackground([this]() {
-    bool expected = false;
-    if (!poll_pending_.compare_exchange_strong(expected, true)) {
-      return;
+RelayInboxCoordinator::Ports MeshDeliveryOrchestrator::InboxPorts() {
+  RelayInboxCoordinator::Ports ports;
+  ports.poll = [](std::function<void()> fn) { AppRuntime::PostWorkerBackground(std::move(fn)); };
+  // Front of IO so ingest is not stuck behind other long work; HTTP already finished.
+  ports.ingest = [](std::function<void()> fn) { AppRuntime::PostWorkerCritical(std::move(fn)); };
+  // Ack off Browser IO — another HTTP round-trip must not stall the queue.
+  ports.ack = [](std::function<void()> fn) { AppRuntime::PostWorkerNormal(std::move(fn)); };
+  ports.take = [this](const RelayInboxCoordinator::Batch& batch, const std::string& account_id) {
+    TakeRelayBatch(batch, account_id);
+  };
+  ports.polled = [this](const std::string&, const bool preferred, const Error* failure) {
+    if (preferred) {
+      StoreBriefRelayHealth(failure ? BriefRelayHealthState::Failed : BriefRelayHealthState::Ok);
     }
-    struct PollGuard {
-      std::atomic<bool>& pending;
-      ~PollGuard() { pending = false; }
-    } guard{poll_pending_};
+  };
+  ports.ready = [this](const std::string& origin) { return InboxReady(origin); };
+  return ports;
+}
 
-    while (poll_again_.exchange(false)) {
-      if (!relay_) {
+void MeshDeliveryOrchestrator::TakeRelayBatch(const RelayInboxCoordinator::Batch& batch,
+                                              const std::string& local_account_id) {
+  RelayIngestNotes notes;
+  {
+    // Two relays may carry the same message: one batch at a time, so the second copy finds the first one stored.
+    std::lock_guard lock(relay_ingest_mu_);
+    for (const RelayEnvelope& envelope : batch.messages) {
+      IngestRelayEnvelope(envelope, local_account_id, notes);
+    }
+  }
+  PostRelayIngestNotes(std::move(notes));
+}
+
+void MeshDeliveryOrchestrator::IngestRelayEnvelope(const RelayEnvelope& envelope, const std::string& local_account_id,
+                                                   RelayIngestNotes& notes) {
+  const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
+  NoteVerifiedSender(envelope, outcome.sender_verified);
+  FollowUpMembershipAfterIngest(groups_, outcome);
+  if (outcome.from_sibling && on_sibling_notice_) {
+    on_sibling_notice_();
+  }
+  MaybeSurfaceReceiveFailure(outcome);
+  if (outcome.missing_copy) {
+    NoteMissingCopy(*outcome.missing_copy);
+  }
+  if (outcome.show_card_to) {
+    ShowCardTo(*outcome.show_card_to);
+  }
+  if (outcome.replay_held_from) {
+    ReplayHeldControl(*outcome.replay_held_from);
+  }
+  if (outcome.decision == IngestDecision::AcceptGap) {
+    auto thread = store_.FindDirectThread(InboundTargetFromEnvelope(envelope));
+    if (thread && *thread) {
+      MaybeRepairGap((*thread)->id, envelope);
+    }
+  }
+  if (auto notice = NoticeGroupDissolved(outcome)) {
+    notes.background_notices.push_back(std::move(*notice));
+  }
+  if (!outcome.persisted) {
+    return;
+  }
+  notes.changed = true;
+  if (outcome.thread_id.empty()) {
+    return;
+  }
+  if (outcome.suppress_inbox_chrome) {
+    // Call MediaKey / SFU / roster — apply side effects only; do not bump sidebar/unread. A sibling's sent attachment
+    // still has its bytes fetched, as a received one does.
+    if (outcome.sibling_copy) {
+      MaybeEnqueueAttachmentDownload(outcome);
+    }
+    if (auto notice = NoteEventAboutUs(outcome)) {
+      notes.background_notices.push_back(std::move(*notice));
+    }
+    return;
+  }
+  std::optional<std::string> preview;
+  if (outcome.persisted_message) {
+    preview = outcome.persisted_message->text;
+  }
+  inbox_.OnInboundMessagePersisted(outcome.thread_id, preview, AppLifecycle::IsUserAttentive());
+  for (auto& id : NoteInbound(envelope.message_id, outcome)) {
+    notes.inbound_messages.emplace_back(std::move(id), outcome.thread_id);
+  }
+  MaybeEnqueueAttachmentDownload(outcome);
+  NoteMention(outcome, local_account_id);
+  if (auto notice = BackgroundNoticeFor(outcome, local_account_id)) {
+    notes.background_notices.push_back(std::move(*notice));
+  }
+}
+
+void MeshDeliveryOrchestrator::PostRelayIngestNotes(RelayIngestNotes notes) {
+  if (notes.changed && on_messages_changed_) {
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
+  }
+  if (!notes.inbound_messages.empty()) {
+    // The handler is checked on the UI thread: it may be wired (after unlock) between here and there.
+    AppRuntime::PostUI([this, inbound = std::move(notes.inbound_messages)]() {
+      if (!on_inbound_message_) {
         return;
       }
-      auto identity = identity_.Get();
-      if (!identity) {
-        return;
+      for (const auto& [message_id, thread_id] : inbound) {
+        on_inbound_message_(message_id, thread_id);
       }
-      std::string cursor = relay_cursor_;
-      if (cursor.empty()) {
-        LoadPersistedRelayCursor(identity->account_id);
-        cursor = relay_cursor_;
+    });
+  }
+  if (!notes.background_notices.empty() && on_background_unread_) {
+    AppRuntime::PostUI([this, notices = std::move(notes.background_notices)]() mutable {
+      for (auto& notice : notices) {
+        on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id),
+                              notice.mentions_us);
       }
-      auto poll = relay_->PollInbox(identity->account_id, cursor);
-      if (!poll) {
-        log().warning << "PollInbox failed: " << poll.error().message;
-        DiagLine("relay.poll_failed").Fail("error", poll.error()).Emit();
-        StoreBriefRelayHealth(BriefRelayHealthState::Failed);
-        continue;
-      }
-      StoreBriefRelayHealth(BriefRelayHealthState::Ok);
-      std::string next_cursor = poll->next_cursor;
-      if (poll->messages.size() > kMaxPollBatchMessages) {
-        log().warning << "PollInbox batch too large n=" << poll->messages.size() << " — skip advance";
-        DiagLine("relay.poll_too_large").Add("n", poll->messages.size()).Emit();
-        continue;
-      }
-      // Advance cursor on the poll worker before re-poll so a follow-up HTTP does not
-      // re-fetch the same batch while ingest is still queued on Browser IO.
-      if (!next_cursor.empty()) {
-        relay_cursor_ = next_cursor;
-        PersistRelayCursor(identity->account_id);
-      }
-      auto messages = std::move(poll->messages);
-      const std::string local_account_id = identity->account_id;
-      if (!messages.empty()) {
-        log().info << "PollInbox ok n=" << messages.size() << " cursor_advanced=" << (next_cursor.empty() ? 0 : 1);
-      }
-
-      // Front of IO so ingest is not stuck behind other long work; HTTP already finished.
-      AppRuntime::PostWorkerCritical([this, local_account_id, messages = std::move(messages)]() mutable {
-        bool changed = false;
-        std::vector<BackgroundNotice> background_notices;
-        std::vector<std::pair<std::string, std::string>> inbound_messages;
-        for (const RelayEnvelope& envelope : messages) {
-          const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
-          NoteVerifiedSender(envelope, outcome.sender_verified);
-          FollowUpMembershipAfterIngest(groups_, outcome);
-          if (outcome.from_sibling && on_sibling_notice_) {
-            on_sibling_notice_();
-          }
-          MaybeSurfaceReceiveFailure(outcome);
-          if (outcome.missing_copy) {
-            NoteMissingCopy(*outcome.missing_copy);
-          }
-          if (outcome.show_card_to) {
-            ShowCardTo(*outcome.show_card_to);
-          }
-          if (outcome.replay_held_from) {
-            ReplayHeldControl(*outcome.replay_held_from);
-          }
-          if (outcome.decision == IngestDecision::AcceptGap) {
-            const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
-            auto thread = store_.FindDirectThread(inbound_target);
-            if (thread && *thread) {
-              MaybeRepairGap((*thread)->id, envelope);
-            }
-          }
-          if (auto notice = NoticeGroupDissolved(outcome)) {
-            background_notices.push_back(std::move(*notice));
-          }
-          if (!outcome.persisted) {
-            continue;
-          }
-          changed = true;
-          if (outcome.thread_id.empty()) {
-            continue;
-          }
-          const std::string& resolved_thread_id = outcome.thread_id;
-          if (outcome.suppress_inbox_chrome) {
-            // Call MediaKey / SFU / roster — apply side effects only; do not bump sidebar/unread. A sibling's sent
-            // attachment still has its bytes fetched, as a received one does.
-            if (outcome.sibling_copy) {
-              MaybeEnqueueAttachmentDownload(outcome);
-            }
-            if (auto notice = NoteEventAboutUs(outcome)) {
-              background_notices.push_back(std::move(*notice));
-            }
-            continue;
-          }
-          std::optional<std::string> preview;
-          if (outcome.persisted_message) {
-            preview = outcome.persisted_message->text;
-          }
-          inbox_.OnInboundMessagePersisted(resolved_thread_id, preview, AppLifecycle::IsUserAttentive());
-          for (auto& id : NoteInbound(envelope.message_id, outcome)) {
-            inbound_messages.emplace_back(std::move(id), resolved_thread_id);
-          }
-          MaybeEnqueueAttachmentDownload(outcome);
-          NoteMention(outcome, local_account_id);
-          if (auto notice = BackgroundNoticeFor(outcome, local_account_id)) {
-            background_notices.push_back(std::move(*notice));
-          }
-        }
-
-        if (!relay_cursor_.empty() && relay_) {
-          // Ack off Browser IO — another HTTP round-trip must not stall the queue.
-          const std::string ack_cursor = relay_cursor_;
-          const std::string ack_user = local_account_id;
-          IRelayClient* relay = relay_;
-          AppRuntime::PostWorkerNormal([relay, ack_user, ack_cursor]() {
-            if (!relay) {
-              return;
-            }
-            auto ack = relay->AckInbox(ack_user, ack_cursor);
-            if (!ack) {
-              logging::getLogger("MeshDeliveryOrchestrator").warning << "Relay inbox ack failed: "
-                                                                     << ack.error().message;
-            }
-          });
-        }
-
-        if (changed && on_messages_changed_) {
-          AppRuntime::PostUI([this]() { on_messages_changed_(); });
-        }
-        if (!inbound_messages.empty()) {
-          // The handler is checked on the UI thread: it may be wired (after unlock) between here and there.
-          AppRuntime::PostUI([this, inbound = std::move(inbound_messages)]() {
-            if (!on_inbound_message_) {
-              return;
-            }
-            for (const auto& [message_id, thread_id] : inbound) {
-              on_inbound_message_(message_id, thread_id);
-            }
-          });
-        }
-        if (!background_notices.empty() && on_background_unread_) {
-          AppRuntime::PostUI([this, notices = std::move(background_notices)]() mutable {
-            for (auto& notice : notices) {
-              on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id),
-                                    notice.mentions_us);
-            }
-          });
-        }
-      });
-    }
-  });
+    });
+  }
 }
 
 void MeshDeliveryOrchestrator::SetAttachmentDownloads(AttachmentFetchWorkflow* downloads) {

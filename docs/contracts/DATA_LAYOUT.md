@@ -42,7 +42,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   mesh_last_good_relays.json # relays that last carried this device's circuits (call-path-resilience K015; schema_version 1; relays: ≤3 PeerIds, most recent first);
                             # plaintext like the directory cache — read at mesh start, before any PIN unlock; local only, never sent; optional
   preferences.json
-  relay_inbox_cursor.json   # poll watermark {account_id, cursor}; delivery-queue ack progress
+  relay_inbox_cursor.json   # poll watermarks {account_id, cursor, relays?: {origin: cursor}}: the preferred relay's, then our others' (multi-relay R2)
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
   grace.bin                 # PIN grace window: DEK under K_grace, AAD "grace|{id}" (iOS, Android 9+; only within a window — AT_REST_ENCRYPTION § PIN grace window)
   biometric.bin             # Face ID / Touch ID unlock: DEK under K_bio, AAD "biometric|{id}" (iOS; only while the switch is on — AT_REST_ENCRYPTION § Face ID / Touch ID unlock)

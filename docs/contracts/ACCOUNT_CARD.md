@@ -83,10 +83,12 @@ A key card plus what the account says about itself, signed as a whole.
   receives over the mesh only. Bounds ([MR004](../../projects/multi-relay/DECISIONS.md#mr004--a-relay-list-is-small-and-bounded)):
   at most 4 entries; each `origin` an absolute `https://` URL of at most 128 bytes with a host, and no query,
   fragment, credentials, spaces or control characters; no two the same relay (scheme and host compared without
-  case, `:443` as no port, an empty path as `/`). Today the list holds the one relay the app registers on
-  (`OwnCards::SetRelays`, the registration base URL); an origin outside the bounds — an `http://` lab or dev
-  relay — is left off, so such a card says the mesh only. The list is the **main device's**: the others keep the
-  newest card's.
+  case, `:443` as no port, an empty path as `/`). The list holds the relays the app registers on
+  (`OwnCards::SetRelays`): the registration base URL first, then the other relays of `relay.extra_base_urls`
+  ([CONFIGURATION](../ops/CONFIGURATION.md), [SERVICE_ENDPOINTS § Several relays](SERVICE_ENDPOINTS.md#several-relays));
+  an origin outside the bounds — an `http://` dev relay — is left off, so a card of only such relays says the mesh
+  only. The list is the **main device's**: the others keep the newest card's. Senders deliver into the listed
+  relays in order ([SERVICE_ENDPOINTS § Sending by the list](SERVICE_ENDPOINTS.md#sending-by-the-list)).
 - `initiation_floor` — the account's price for opening a chat or a call with it, in `pp_credit` minor units
   ([pricing P001](../../projects/pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet),
   [MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)):
@@ -319,7 +321,11 @@ grantor, and the grants we issued, one per grantee, with whether it was confirme
   anything that does not prove itself).
 - A contact keeps its account's card; a stranger's card (from a first message) is kept with the thread.
 - The relays and floor an account's newest kept card says are read with `KeptRelays` / `KeptInitiationFloor`
-  (`PeerCards.h`): none while only a key card is known. Sending by the relay list is multi-relay R2 step 3.
+  (`PeerCards.h`): none while only a key card is known. A send to the account goes into those relays in order
+  (`RecipientRelays`, [SERVICE_ENDPOINTS § Sending by the list](SERVICE_ENDPOINTS.md#sending-by-the-list)); when
+  every one says the account is not registered there, its newest card is asked for — its devices over the mesh,
+  then the directories of our relays and our other directory providers (`GET /v1/users/by-account`'s
+  `account_card`), kept only once it verifies.
 - Our own kept card is re-issued, its device list as it is, when it does not verify (`OwnCards`): the version 3
   step of `profile.db` leaves our version 2 card in the version 3 shape with its old signature ([DATA_LAYOUT § Schema versions](DATA_LAYOUT.md#schema-versions)).
 

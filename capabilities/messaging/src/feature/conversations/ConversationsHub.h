@@ -66,6 +66,7 @@
 #include "feature/conversations/HubMeshOwner.h"
 #include "feature/conversations/HubSettings.h"
 #include "lib/delivery/BackendClientSet.h"
+#include "domain/registration/RelayRegistrationsWorkflow.h"
 #include "lib/net/ProfileIconClient.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "lib/pricing/PaymentPromiseStore.h"
@@ -271,6 +272,14 @@ public:
   RegistrationPublishOpts RegistrationCard();
   IBlobClient& Blob();
   IPushDeviceClient* PushDevices();
+  /** Our other relays that hold our registration, with their push-device clients (multi-relay R2). */
+  std::vector<std::pair<std::string, IPushDeviceClient*>> OtherRelayPushDevices();
+  /** Our relays' origins, preferred first (multi-relay R2). */
+  std::vector<std::string> OurRelayOrigins() const;
+  /** Our account on our other relays (multi-relay R2); none before Initialize. */
+  RelayRegistrationsWorkflow* OtherRelayRegistrations() { return relay_registrations_.get(); }
+  /** Registers on our other relays that are due, off the caller's thread (after the preferred one, on a timer). */
+  void RegisterOnOtherRelaysSoon();
   PushBindingGate& PushGate() { return push_gate_; }
   IClientCompatClient* ClientCompat();
   /** Profile data directory used for stores and client-compat cache. */
@@ -542,8 +551,10 @@ private:
   AccountSigningKeyLookup AccountSigningKeys() const;
   void InstallOrgBackendClients(const HubSettings& settings);
   void UpdateOrgBackendClients(const HubSettings& settings);
-  /** Our card's relay list: the registration relay in use (OwnCards::SetRelays). */
+  /** Our card's relay list: the registration relay in use, then our other relays (OwnCards::SetRelays). */
   void SetCardRelays();
+  /** Our relays to messaging: the inboxes it polls, the sender, the origins (multi-relay R2), and registration. */
+  void WireOurRelays();
   void WireRelayAuthSigner();
   Roe<void> StartMesh(const HubSettings& settings);
   void StopMesh();
@@ -641,6 +652,11 @@ private:
   /** Renews the grants in time (and issues missing ones) while messaging runs. */
   uint64_t relay_grant_timer_id_ = 0;
   static constexpr int64_t kRelayGrantSweepIntervalMs = 6LL * 60 * 60 * 1000;
+  /** Our account on our other relays (multi-relay R2); with the identity it signs with. */
+  std::unique_ptr<RelayRegistrationsWorkflow> relay_registrations_;
+  /** Checks which other relays are due a registration while messaging runs. */
+  uint64_t relay_registration_timer_id_ = 0;
+  static constexpr int64_t kRelayRegistrationCheckIntervalMs = 60 * 1000;
   /** The stores encrypted at rest (the profile's data key goes to them). */
   std::vector<IDekConsumer*> at_rest_;
   std::string profile_db_path_;

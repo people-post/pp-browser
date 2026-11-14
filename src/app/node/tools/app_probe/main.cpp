@@ -562,12 +562,47 @@ public:
         if (auto kept = cards.Kept(account); kept && *kept) {
           out.set("account_id", (*kept)->keys.account_id);
           out.set("source", (*kept)->source);
+          std::vector<Value> relays; // the account's relays, preferred first (multi-relay MR002)
+          for (const AccountCardRelay& relay : KeptRelays(**kept)) {
+            relays.emplace_back(relay.origin);
+          }
+          out.set("relays", ArrayValue(std::move(relays)));
         }
         for (const std::string& peer_id : cards.DevicesOf(account)) {
           devices.emplace_back(peer_id);
         }
       }
       out.set("devices", ArrayValue(std::move(devices)));
+      Emit(out);
+    } else if (cmd == "held_grant") {
+      // Whether we hold `account`'s relay grant to us (MR005): our sends to it count as a contact's.
+      Object out = Reply(id, true);
+      out.set("held", Hub().IsMessagingReady() &&
+                          Hub().MeshMessaging().RelayGrants().GrantFor(request->getString("account").value_or("")));
+      Emit(out);
+    } else if (cmd == "relays") {
+      // Our relays (multi-relay R2): preferred first, whether each other one holds our registration, and our card's.
+      Object out = Reply(id, true);
+      std::vector<Value> ours;
+      RelayRegistrationsWorkflow* others = Hub().OtherRelayRegistrations();
+      for (const std::string& origin : Hub().OurRelayOrigins()) {
+        Object row;
+        row.set("origin", origin);
+        row.set("preferred", ours.empty());
+        row.set("registered", ours.empty() ? Hub().Identity().Get().valueOr(LocalIdentity{}).registered
+                                           : others != nullptr && others->Registered(origin));
+        ours.push_back(ObjectValue(std::move(row)));
+      }
+      out.set("relays", ArrayValue(std::move(ours)));
+      std::vector<Value> card;
+      if (Hub().IsMessagingReady()) {
+        if (auto own = Hub().MeshMessaging().OwnAccountCards().Card(util::NowUnixMs())) {
+          for (const AccountCardRelay& relay : own->relays) {
+            card.emplace_back(relay.origin);
+          }
+        }
+      }
+      out.set("card_relays", ArrayValue(std::move(card)));
       Emit(out);
     } else if (cmd == "register") {
       const std::string nickname = request->getString("nickname").value_or("");

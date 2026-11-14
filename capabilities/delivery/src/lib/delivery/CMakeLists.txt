@@ -28,6 +28,9 @@ pp_browser_add_lib_library(pp_lib_delivery
     PskSessionCoordinator.cpp
     PublicPskLockCoordinator.cpp
     RelayGrantNotice.cpp
+    RelayHealth.cpp
+    RelayOrigins.cpp
+    RelaySendCoordinator.cpp
     RelayGrantSigner.cpp
     RelayMessageSignPayload.cpp
     RelayWirePayload.cpp
