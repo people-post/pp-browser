@@ -72,7 +72,21 @@ Roe<void> HttpPushDeviceClient::UnregisterDevice(const PushDeviceRegistration& r
   return PostDevice("/v1/devices/unregister", RelayApiOp::DeviceUnregister, registration);
 }
 
-HttpDirectoryClient::HttpDirectoryClient(std::string base_url) : base_url_(std::move(base_url)) {}
+void DirectoryCardSink::Set(Keep keep) {
+  std::lock_guard lock(mutex_);
+  keep_ = std::move(keep);
+}
+
+void DirectoryCardSink::Give(const std::string& account_id, const Object& card) const {
+  std::lock_guard lock(mutex_); // held while it keeps: clearing waits for a card being kept
+  if (keep_) {
+    keep_(account_id, card);
+  }
+}
+
+HttpDirectoryClient::HttpDirectoryClient(std::string base_url, const HttpTimeout timeout,
+                                         std::shared_ptr<const DirectoryCardSink> cards)
+    : base_url_(std::move(base_url)), timeout_(timeout), cards_(std::move(cards)) {}
 
 namespace {
 
@@ -119,7 +133,7 @@ Roe<std::vector<mesh::DirectoryHit>> HttpDirectoryClient::SearchPeople(const std
     return Error("Directory base_url not configured");
   }
   const std::string url = base_url_ + "/v1/search?q=" + EncodePathSegment(query); // free text from the user
-  const auto response = HttpClient::Get(url);
+  const auto response = HttpClient::Get(url, {}, kMaxHttpClientBodyBytes, timeout_);
   if (!response) {
     return response.error();
   }
@@ -206,7 +220,7 @@ Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& 
     return Error("account_id must start with account:");
   }
   const std::string url = base_url_ + "/v1/users/by-account/" + EncodePathSegment(account_id);
-  const auto response = HttpClient::Get(url);
+  const auto response = HttpClient::Get(url, {}, kMaxHttpClientBodyBytes, timeout_);
   if (!response) {
     return response.error();
   }
@@ -220,6 +234,9 @@ Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& 
   auto root = TryParseObject(response.value().body);
   if (!root || root->getString("account_id").value_or("") != account_id) {
     return Error("Invalid account lookup JSON"); // the row must be the account asked for
+  }
+  if (const Object* card = root->getObject("account_card"); card && cards_) {
+    cards_->Give(account_id, *card); // the account's own word on its relays and price, kept once it verifies
   }
   return DirectoryHitFromJson(*root);
 }

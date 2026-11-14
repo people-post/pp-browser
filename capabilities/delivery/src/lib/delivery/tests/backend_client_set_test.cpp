@@ -1,6 +1,12 @@
 #include "lib/delivery/BackendClientSet.h"
 
+#include "common/tests/ScriptedHttpServer.h"
+
 #include <gtest/gtest.h>
+
+#include <mutex>
+#include <string>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -131,6 +137,87 @@ TEST(BackendClientSetTest, OurOwnRelayOnAPrivateAddressKeepsItsClient) {
   BackendClientSet clients(directory);
   clients.Apply(At("http://192.168.1.10:8080", "http://192.168.1.10:8080", "http://192.168.1.10:8080"));
   EXPECT_NE(clients.Sender().ClientFor("http://192.168.1.10:8080"), nullptr);
+}
+
+// The directory asks our relays (multi-relay R2): a name search every one of them, merged, the preferred relay's
+// first; a lookup in order; the card a lookup answer carries goes to DirectoryCards.
+class BackendClientSetDirectoryTest : public ::testing::Test {
+protected:
+  using Reply = test::ScriptedHttpServer::Reply;
+
+  static Reply Hits(const std::string& json_hits) {
+    return Reply{.status = 200, .headers = {}, .body = R"({"hits":[)" + json_hits + "]}"};
+  }
+  static std::string Hit(const std::string& account, const std::string& nickname) {
+    return R"({"hit_id":")" + account + R"(","account_id":")" + account + R"(","nickname":")" + nickname + R"("})";
+  }
+  void Serve(test::ScriptedHttpServer& server, Reply search, Reply lookup) {
+    server.SetHandler([search, lookup](const test::ScriptedHttpServer::Request& request) {
+      if (request.target.rfind("/api/relay/v1/search", 0) == 0) {
+        return search;
+      }
+      if (request.target.rfind("/api/relay/v1/users/by-account/", 0) == 0) {
+        return lookup;
+      }
+      return Reply{.status = 404, .headers = {}, .body = "{}"};
+    });
+  }
+  void ApplyBoth() {
+    auto endpoints =
+        At(preferred_.Origin() + "/api/relay", preferred_.Origin() + "/api/relay", preferred_.Origin() + "/api/relay");
+    endpoints.extra_relays = {other_.Origin() + "/api/relay"};
+    clients_.Apply(endpoints);
+  }
+
+  test::ScriptedHttpServer preferred_;
+  test::ScriptedHttpServer other_;
+  SwitchableDirectoryClient directory_;
+  BackendClientSet clients_{directory_};
+};
+
+TEST_F(BackendClientSetDirectoryTest, ANameSearchAsksOurOtherRelaysTooThePreferredFirst) {
+  Serve(preferred_, Hits(Hit("account:bob", "bob")), Reply{.status = 404, .headers = {}, .body = "{}"});
+  Serve(other_, Hits(Hit("account:cat", "cat") + "," + Hit("account:bob", "bob")),
+        Reply{.status = 404, .headers = {}, .body = "{}"});
+  ApplyBoth();
+  auto hits = directory_.SearchPeople("b");
+  ASSERT_TRUE(hits) << hits.error().message;
+  ASSERT_EQ(hits->size(), 2u);
+  EXPECT_EQ(hits->at(0).nickname, "bob");
+  EXPECT_EQ(hits->at(1).nickname, "cat");
+
+  auto endpoints =
+      At(preferred_.Origin() + "/api/relay", preferred_.Origin() + "/api/relay", preferred_.Origin() + "/api/relay");
+  clients_.Apply(endpoints); // the other relay taken out of the config
+  hits = directory_.SearchPeople("b");
+  ASSERT_TRUE(hits);
+  EXPECT_EQ(hits->size(), 1u) << "only the relays of ours are asked";
+}
+
+TEST_F(BackendClientSetDirectoryTest, ALookupGoesOnToTheNextRelayAndItsCardIsGiven) {
+  Serve(preferred_, Hits(""), Reply{.status = 404, .headers = {}, .body = R"({"code":"not_registered"})"});
+  Serve(other_, Hits(""),
+        Reply{.status = 200,
+              .headers = {},
+              .body = R"({"account_id":"account:cat","nickname":"cat","account_card":{"issued_at":5}})"});
+  std::mutex mutex;
+  std::vector<std::string> given;
+  clients_.DirectoryCards().Set([&](const std::string& account_id, const Object& card) {
+    std::lock_guard lock(mutex);
+    given.push_back(account_id + "@" + std::to_string(card.getIf<int64_t>("issued_at").value_or(0)));
+  });
+  ApplyBoth();
+  auto hit = directory_.LookupByAccount("account:cat");
+  ASSERT_TRUE(hit) << hit.error().message;
+  EXPECT_EQ(hit->nickname, "cat");
+  {
+    std::lock_guard lock(mutex);
+    EXPECT_EQ(given, (std::vector<std::string>{"account:cat@5"})) << "kept by the owner once it verifies";
+  }
+  clients_.DirectoryCards().Set(nullptr);
+  ASSERT_TRUE(directory_.LookupByAccount("account:cat"));
+  std::lock_guard lock(mutex);
+  EXPECT_EQ(given.size(), 1u) << "cleared: no card given";
 }
 
 } // namespace

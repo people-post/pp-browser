@@ -25,6 +25,7 @@ void BackendClientSet::Apply(const Endpoints& endpoints) {
                                                             : endpoints.registration.base_url);
   ApplyExtraRelays(endpoints.extra_relays);
   WireSender();
+  WireDirectory();
 }
 
 void BackendClientSet::ApplyRelay(const std::string& url) {
@@ -49,12 +50,14 @@ void BackendClientSet::ApplyRelay(const std::string& url) {
 void BackendClientSet::ApplyDirectory(DirectoryConfig directory) {
   if (directory.base_url.empty() && directory.providers.empty()) {
     directory_fingerprint_.clear();
-    directory_.SetBackend(nullptr);
+    configured_directory_.reset();
+    directory_providers_.clear();
     log().warning << "directory.base_url is empty; directory client disabled";
     return;
   }
   NormalizeDirectoryConfig(directory);
   std::vector<std::unique_ptr<mesh::IDirectoryClient>> backends;
+  std::vector<std::string> providers;
   std::string fingerprint;
   for (const ServiceEndpointConfig& provider : EffectiveDirectoryProviders(directory)) {
     const std::string transport = provider.transport.empty() ? "http" : provider.transport;
@@ -63,23 +66,75 @@ void BackendClientSet::ApplyDirectory(DirectoryConfig directory) {
       continue;
     }
     fingerprint.append(provider.base_url).push_back('|');
-    backends.push_back(std::make_unique<HttpDirectoryClient>(provider.base_url));
+    providers.push_back(provider.base_url);
+    backends.push_back(std::make_unique<HttpDirectoryClient>(provider.base_url, HttpTimeout{}, directory_cards_));
   }
   if (backends.empty()) {
     directory_fingerprint_.clear();
-    directory_.SetBackend(nullptr);
+    configured_directory_.reset();
+    directory_providers_.clear();
     log().warning << "directory providers empty; directory client disabled";
     return;
   }
-  if (directory_.Configured() && directory_fingerprint_ == fingerprint) {
+  if (configured_directory_ && directory_fingerprint_ == fingerprint) {
     return;
   }
   directory_fingerprint_ = std::move(fingerprint);
+  directory_providers_ = std::move(providers);
   if (backends.size() == 1) {
-    directory_.SetBackend(std::shared_ptr<mesh::IDirectoryClient>(std::move(backends.front())));
+    configured_directory_ = std::shared_ptr<mesh::IDirectoryClient>(std::move(backends.front()));
   } else {
-    directory_.SetBackend(std::make_shared<FailoverDirectoryClient>(std::move(backends)));
+    configured_directory_ = std::make_shared<FailoverDirectoryClient>(std::move(backends));
   }
+}
+
+std::shared_ptr<mesh::IDirectoryClient> BackendClientSet::RelayDirectory(const std::string& origin) {
+  for (const auto& [known, client] : relay_directories_) {
+    if (known == origin) {
+      return client;
+    }
+  }
+  // Asked beside the configured one, so bounded tighter than its 30 s: a relay down must not hold a search long.
+  return std::make_shared<HttpDirectoryClient>(origin, HttpTimeout{.total_s = 10, .connect_s = 5}, directory_cards_);
+}
+
+void BackendClientSet::WireDirectory() {
+  if (!configured_directory_) {
+    wired_directory_.clear();
+    relay_directories_.clear();
+    directory_.SetBackend(nullptr);
+    return;
+  }
+  std::vector<OurRelaysDirectory::Source> sources{
+      {.origin = directory_providers_.front(), .client = configured_directory_}};
+  std::vector<std::pair<std::string, std::shared_ptr<mesh::IDirectoryClient>>> relays;
+  std::string fingerprint = directory_fingerprint_ + (directory_worker_ ? "#worker" : "#");
+  for (const OurRelay& relay : OurRelays()) {
+    const bool named = std::any_of(directory_providers_.begin(), directory_providers_.end(),
+                                   [&relay](const std::string& provider) { return SameRelay(provider, relay.origin); });
+    if (named) {
+      continue; // the configured directory asks it already
+    }
+    auto client = RelayDirectory(relay.origin);
+    relays.emplace_back(relay.origin, client);
+    sources.push_back({.origin = relay.origin, .client = std::move(client)});
+    fingerprint.append(relay.origin).push_back('|');
+  }
+  relay_directories_ = std::move(relays);
+  if (directory_.Configured() && wired_directory_ == fingerprint) {
+    return;
+  }
+  wired_directory_ = std::move(fingerprint);
+  if (sources.size() == 1) {
+    directory_.SetBackend(configured_directory_);
+    return;
+  }
+  directory_.SetBackend(std::make_shared<OurRelaysDirectory>(std::move(sources), directory_worker_));
+}
+
+void BackendClientSet::SetDirectoryWorker(OurRelaysDirectory::RunElsewhere run_elsewhere) {
+  directory_worker_ = std::move(run_elsewhere);
+  WireDirectory();
 }
 
 void BackendClientSet::ApplyRegistration(const std::string& url) {
@@ -224,8 +279,11 @@ void BackendClientSet::Clear() {
   extras_.clear();
   relay_url_.clear();
   directory_fingerprint_.clear();
+  configured_directory_.reset();
+  directory_providers_.clear();
   registration_url_.clear();
   WireSender();
+  WireDirectory();
 }
 
 } // namespace pbr

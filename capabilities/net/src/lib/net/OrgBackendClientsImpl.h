@@ -3,10 +3,14 @@
 #include "mesh/types/DirectoryTypes.h"
 #include "lib/net/BlobClient.h"
 #include "lib/net/ClientCompat.h"
+#include "lib/net/HttpClient.h"
 #include "lib/net/IPushDeviceClient.h"
 #include "lib/net/RelayApiSignPayload.h"
 #include "lib/net/OrgBackendClients.h"
 
+#include <functional>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -29,15 +33,36 @@ private:
   RelayAuthSigner auth_signer_;
 };
 
+/**
+ * Where the account cards that directory lookups carry go (`GET /v1/users/by-account`'s `account_card`, multi-relay
+ * R2): an account's relays and its price are its card's, so the owner keeps the card once it verifies. Unchecked here.
+ * Set and cleared by the owner; a card given while it is cleared is dropped. Thread-safe.
+ */
+class DirectoryCardSink {
+public:
+  using Keep = std::function<void(const std::string& account_id, const Object& card)>;
+
+  void Set(Keep keep);
+  void Give(const std::string& account_id, const Object& card) const;
+
+private:
+  mutable std::mutex mutex_;
+  Keep keep_;
+};
+
 class HttpDirectoryClient : public mesh::IDirectoryClient {
 public:
-  explicit HttpDirectoryClient(std::string base_url);
+  /** `timeout` bounds each request; `cards`, when given, gets the card a lookup answer carries. */
+  explicit HttpDirectoryClient(std::string base_url, HttpTimeout timeout = {},
+                               std::shared_ptr<const DirectoryCardSink> cards = nullptr);
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& query) override;
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string& account_id) override;
   Roe<std::vector<mesh::MeshNodeHit>> ListMeshNodes() override;
 
 private:
   std::string base_url_;
+  HttpTimeout timeout_;
+  std::shared_ptr<const DirectoryCardSink> cards_;
 };
 
 /**

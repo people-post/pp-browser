@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/delivery/HttpRelayClient.h"
+#include "lib/delivery/OurRelaysDirectory.h"
 #include "lib/delivery/RelaySendCoordinator.h"
 #include "lib/net/HttpBlobClient.h"
 #include "lib/net/HttpLockerClient.h"
@@ -25,7 +26,9 @@ namespace pbr {
  * registration URL). A client whose endpoint did not change is kept. Signed requests use the signer once set.
  *
  * Our other relays (multi-relay R2, `relay.extra_base_urls`) get a message, push-device and registration client each
- * (OurRelays); blobs, files, lockers, profile photos, stream history and the directory stay the preferred relay's.
+ * (OurRelays); blobs, files, lockers, profile photos and stream history stay the preferred relay's. The directory
+ * asks the configured one and then each relay of ours it does not name (OurRelaysDirectory): a name search all at
+ * once, a lookup in order; the cards its lookups carry go to DirectoryCards.
  * Sends go through one stable RelaySendCoordinator (Sender): into the recipient's relays in list order, with a client
  * of its own for a relay not ours. The owner's thread.
  */
@@ -59,6 +62,10 @@ public:
   void SetSigner(RelayAuthSigner signer);
   /** The relay sends' grants and our key (MR003 / MR005), for the relay client now and after a rebuild. */
   void SetRelaySendHooks(RelaySendHooks hooks);
+  /** Where a name search asks our other relays' directories (a worker); none: in turn, on the searching thread. */
+  void SetDirectoryWorker(OurRelaysDirectory::RunElsewhere run_elsewhere);
+  /** Gets the account cards the directory's lookups carry (stable for this set's life). */
+  DirectoryCardSink& DirectoryCards() { return *directory_cards_; }
   /** Drops every client (the profile closes). */
   void Clear();
 
@@ -78,6 +85,10 @@ private:
   void ApplyDirectory(DirectoryConfig directory);
   void ApplyRegistration(const std::string& url);
   void ApplyExtraRelays(const std::vector<std::string>& urls);
+  /** The directory the holders see: the configured one, then the directory of each relay of ours it does not name. */
+  void WireDirectory();
+  /** The directory client of our relay at `origin`, kept while it stays ours. */
+  std::shared_ptr<mesh::IDirectoryClient> RelayDirectory(const std::string& origin);
   void WireSigner();
   /** Ours for the sender (preferred first) and its factory for the others, after any change. */
   void WireSender();
@@ -88,6 +99,15 @@ private:
   RelaySendHooks send_hooks_;
   std::string relay_url_;
   std::string directory_fingerprint_;
+  /** The configured directory (its providers, failing over) and its providers' base URLs. */
+  std::shared_ptr<mesh::IDirectoryClient> configured_directory_;
+  std::vector<std::string> directory_providers_;
+  /** Our relays' own directories (those the configured one does not name), by origin. */
+  std::vector<std::pair<std::string, std::shared_ptr<mesh::IDirectoryClient>>> relay_directories_;
+  /** What the holders' directory was built from; unchanged: kept. */
+  std::string wired_directory_;
+  OurRelaysDirectory::RunElsewhere directory_worker_;
+  std::shared_ptr<DirectoryCardSink> directory_cards_ = std::make_shared<DirectoryCardSink>();
   std::string registration_url_;
   std::shared_ptr<HttpRelayClient> relay_;
   std::shared_ptr<HttpPushDeviceClient> push_devices_;

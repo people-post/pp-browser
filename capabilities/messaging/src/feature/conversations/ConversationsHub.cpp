@@ -130,6 +130,14 @@ void FillRegistrationFields(ProfileIdentityView& view, const LocalIdentity& iden
 
 ConversationsHub::ConversationsHub() {
   redirectLogger("ConversationsHub");
+  // A name search asks our other relays' directories on workers while it asks the first itself (multi-relay R2).
+  clients_.SetDirectoryWorker([](std::function<void()> task) {
+    if (!AppRuntime::IsRunning()) {
+      task(); // no pool (a test, start-up): in turn
+      return;
+    }
+    AppRuntime::PostWorkerNormal(std::move(task));
+  });
 }
 
 MeshConnectivityWiringInputs ConversationsHub::MeshInputs() {
@@ -1103,6 +1111,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   peer_cards_->SetOnNewerCard([this]() { PublishAccountLockerSoon(); });
   account_keys_ = std::make_unique<AccountKeyResolver>(signing_key_store_, kem_key_store_, *peer_cards_, directory_);
   kept_cards_loaded_ = false; // read at the first EnsureMessagingReady (the cards are in the chat store)
+  WireCardReaders();
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
   contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
   contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, directory_, *contact_cards_);
@@ -1130,6 +1139,24 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   }
   initialized_ = true;
   return {};
+}
+
+void ConversationsHub::WireCardReaders() {
+  // A directory lookup's card is the account's word on its relays and price (multi-relay R2): kept once it verifies.
+  // Not ours: our own card is OwnCards'.
+  clients_.DirectoryCards().Set([this](const std::string& account_id, const Object& card) {
+    auto identity = identity_ ? identity_->Get() : Roe<LocalIdentity>(Error("no identity"));
+    if (!account_keys_ || (identity && identity->account_id == account_id)) {
+      return;
+    }
+    if (auto kept = account_keys_->AddCarriedCard(card, util::NowUnixMs(), "directory", account_id); !kept) {
+      log().debug << "a directory's card for " << account_id << " not kept: " << kept.error().message;
+    }
+  });
+}
+
+void ConversationsHub::UnwireCardReaders() {
+  clients_.DirectoryCards().Set(nullptr);
 }
 
 void ConversationsHub::SetOnMessagingReady(std::function<void()> callback) {
@@ -3662,6 +3689,7 @@ void ConversationsHub::Shutdown() {
   contact_refresh_.reset();
   contact_cards_.reset();
   contact_profile_refresh_.reset();
+  UnwireCardReaders();
   account_keys_.reset();
   peer_cards_.reset();
   peer_card_rows_.reset();

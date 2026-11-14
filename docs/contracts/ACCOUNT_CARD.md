@@ -179,7 +179,7 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
 
 | Carrier | What | When |
 |---------|------|------|
-| Relay directory | key card fields (+ endpoints), and the account card it registered with (`GET /users/by-account`) | when a directory is configured ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md)) |
+| Relay directory | key card fields (+ endpoints), and the account card it registered with (`GET /users/by-account`) | when a directory is configured; a lookup's card is kept once it verifies ([SERVICE_ENDPOINTS § The directory on each](SERVICE_ENDPOINTS.md#the-directory-on-each)) |
 | Relay registration | our account card (`register/finish` `account_card`) | every registration and renewal, and again when our card is newer than the one the relay last answered for; the relay reads our floor from it |
 | Envelope | sender's account card, `body.e2e.sender_card` | when a copy carries a `key_init` ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md#master-psk)), so a new device's first message to anyone brings its account's newer list. On the control lane (a copy per device of the peer's, or the account copy — M024), only when a device it addresses may not hold it (`ControlLaneCarriesCard`, told per device of the peer's: a device copy's device, every device on the peer's card for an account copy): the first lane record this device sends each such device after the card changed (or since it started — a device just linked to the peer's account has been told nothing, whatever its siblings were), once a record, and always a `device_list` notice (a restored device sends it to every contact), a card or copy ask, a group's member check (the asker may be a restored device), a ringing call invite. The card is ~13 KB + 4 KB per device: it used to ride every lane message, and the relay filled with them. A receiver that cannot check an envelope — no card kept, or the sending device not on it — asks that device for the card (`card_ask`, at most once per account per 10 min and 8 a minute in all: the envelope is unverified, and its `sender_card_at` counts for nothing — [WIRE_SCHEMAS § card_ask](WIRE_SCHEMAS.md)); a lane record waits for it in memory (≤ 2 min) and is checked again once a card of the sender's is kept ([P2P_MESSAGING § The control lane](../architecture/P2P_MESSAGING.md#the-control-lane)). A device that finds a verified lane record with no copy for it, or an account copy it cannot open, sends the sender its own card (`device_list`, at most once per account per 10 min) |
 | Envelope hint | how new the sender's list is, `body.e2e.sender_card_at` | on every envelope (M021 d6): a receiver holding an older card asks the sending device for the newer one (`card_ask` → a `device_list` notice; unsigned, so it never stops a later ask — `CardAskGate`), so a device taken out stops getting copies from peers the main device's announcement did not reach (a group member who is not a contact) |
@@ -341,7 +341,8 @@ For an Account ID, signing and KEM keys come from, in order:
 
 1. the card store;
 2. a card fetched from one of the account's known devices over Amp (`get_card`);
-3. the relay directory, when one is configured;
+3. the relay directory, when one is configured: the configured one, then our other relays', in order, the first that
+   knows the account ([SERVICE_ENDPOINTS § The directory on each](SERVICE_ENDPOINTS.md#the-directory-on-each));
 4. `[later]` the chain name registry (N029 phase D, [E024](../../projects/e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007)).
 
 Every source goes through the same checks; none is trusted for more than carrying the bytes.

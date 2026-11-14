@@ -121,7 +121,32 @@ Our account card lists the `https://` ones, preferred first ([ACCOUNT_CARD](ACCO
   redelivery. One relay batch is taken in at a time.
 - **Push.** The push token is registered on each relay that holds our registration ([HTTP device push](#http-device-push-opaque-wake)).
 - **The preferred relay only:** profile photos and blobs, chat attachment files, account lockers, stream history,
-  the directory (search and lookups), client compatibility and the Brief LLM key.
+  client compatibility and the Brief LLM key.
+
+### The directory on each
+
+The directory the app asks (`OurRelaysDirectory`, built by `BackendClientSet`) is the configured one (`directory`:
+normally the preferred relay's, its `providers` failing over as before) and then the directory of each relay of ours
+it does not name, in our order ([DESIGN § Not in scope](../../projects/multi-relay/DESIGN.md#not-in-scope): a name
+search asks the relays the user has listed; there is no search across relays beyond them).
+
+- **A name search** (`GET /v1/search?q=`: the contacts page's *Add contact* and the assistant's `search_people`, both
+  on a worker) asks all of them at once: the first on the searching worker, the others on workers of their own, each
+  request bounded (10 s, 5 s to connect, on the other relays), and the search waits for them until **10 s** after it
+  started. The answers are merged (`MergeDirectoryAnswers`): the first directory's hits in its order, then each next
+  one's accounts not seen yet; an account is listed once, and when several answered for it, its entry is the one
+  whose keys verify (`DirectoryHitKeysVerify`: the signing key hashes to the Account ID, the KEM key carries its
+  binding), then the newer (its newest device endpoint), then the earlier directory's. The list is then ranked as
+  one (exact and prefix name matches first). A directory that fails or does not answer in time adds nothing and fails
+  nothing (it is logged); the search fails only when none answered, with the first one's error.
+- **A lookup by Account ID** (`GET /v1/users/by-account`: an exact-id search, *Add* / *Message* on a directory row,
+  key resolution, the contacts' directory shadows, every lookup of one account) asks them in order, a relay
+  that could not be reached in the last 5 minutes after the others (`RelayHealth`), and stops at the first that knows
+  the account. Not found where it could ask is not found; reaching none is the first failure.
+- **The card a lookup answer carries** (`account_card`) is kept once it verifies and is newer than ours
+  (`DirectoryCardSink` → `AccountKeyResolver::AddCarriedCard`, source `directory`; our own account's is left to
+  `OwnCards`), so a stranger found in the directory has its relays and its price before a first message.
+- **Mesh nodes** (`GET /v1/mesh/nodes`) are the first directory's.
 
 ### Sending by the list
 

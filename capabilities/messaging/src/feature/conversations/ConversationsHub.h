@@ -585,6 +585,9 @@ private:
   void InstallOrgBackendClients(const HubSettings& settings);
   void UpdateOrgBackendClients(const HubSettings& settings);
   /** Our card's relay list: the registration relay in use, then our other relays (OwnCards::SetRelays). */
+  /** The kept cards' readers: the directory's lookup cards kept. */
+  void WireCardReaders();
+  void UnwireCardReaders();
   void SetCardRelays();
   /** Our relays to messaging: the inboxes it polls, the sender, the origins (multi-relay R2), and registration. */
   void WireOurRelays();
