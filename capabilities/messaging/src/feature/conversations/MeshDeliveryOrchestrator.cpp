@@ -710,10 +710,11 @@ void MeshDeliveryOrchestrator::RegisterPeerKeysFromDirectory(const mesh::Directo
 
 void MeshDeliveryOrchestrator::SetRelayClients(RelayClients clients) {
   relay_ = clients.preferred;
+  IRelayClient* history = clients.history ? clients.history : clients.preferred;
   outbox_.SetRelayClient(clients.sender ? clients.sender : clients.preferred);
   inboxes_.SetInboxes(std::move(clients.inboxes), profile_data_dir_);
   if (chat_sync_) {
-    chat_sync_ = std::make_unique<ChatSyncWorkflow>(store_, identity_, relay_, *receive_pipeline_, inbox_,
+    chat_sync_ = std::make_unique<ChatSyncWorkflow>(store_, identity_, history, *receive_pipeline_, inbox_,
                                                     transports_.History());
     chat_sync_->SetOnMessagesChanged([this]() {
       if (on_messages_changed_) {

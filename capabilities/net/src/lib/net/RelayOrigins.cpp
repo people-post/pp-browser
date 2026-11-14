@@ -1,4 +1,4 @@
-#include "lib/delivery/RelayOrigins.h"
+#include "lib/net/RelayOrigins.h"
 
 #include "lib/people/RegistrationStatus.h"
 
@@ -6,16 +6,11 @@
 #include "mesh/types/PublicAddress.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdint>
+#include <optional>
 #include <string_view>
-
-#if defined(_WIN32)
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#include <arpa/inet.h>
-#endif
 
 namespace pbr {
 
@@ -50,8 +45,13 @@ bool NumericLastLabel(std::string_view host) {
                             (label.size() >= 2 && label[0] == '0' && (label[1] == 'x' || label[1] == 'X')));
 }
 
-/** A dotted quad in canonical form only: inet_pton differs on leading zeros (`0177.0.0.1`: refused by glibc, decimal on macOS) while the resolver may read them as octal. */
-bool IsCanonicalDottedQuad(std::string_view host) {
+/**
+ * `host` as a dotted quad in canonical form only (four parts of 0..255, no leading zeros), in host order; else none.
+ * The OS parsers differ on leading zeros (`0177.0.0.1`: refused by glibc, decimal on macOS) while the resolver may
+ * read them as octal, so no other spelling is an address here.
+ */
+std::optional<uint32_t> CanonicalDottedQuad(std::string_view host) {
+  uint32_t address = 0;
   int parts = 0;
   size_t start = 0;
   while (start <= host.size()) {
@@ -60,13 +60,78 @@ bool IsCanonicalDottedQuad(std::string_view host) {
       end = host.size();
     }
     const std::string_view part = host.substr(start, end - start);
-    if (part.empty() || part.size() > 3 || (part.size() > 1 && part[0] == '0') || std::stoi(std::string(part)) > 255) {
-      return false;
+    if (part.empty() || part.size() > 3 || (part.size() > 1 && part[0] == '0') ||
+        !std::all_of(part.begin(), part.end(), [](char c) { return c >= '0' && c <= '9'; })) {
+      return std::nullopt;
     }
-    ++parts;
+    const int value = std::stoi(std::string(part));
+    if (value > 255 || ++parts > 4) {
+      return std::nullopt;
+    }
+    address = (address << 8) | static_cast<uint32_t>(value);
     start = end + 1;
   }
-  return parts == 4;
+  return parts == 4 ? std::optional<uint32_t>(address) : std::nullopt;
+}
+
+/**
+ * `text` (inside the brackets) as an IPv6 address in network order: hex groups, one `::`, a canonical dotted quad as
+ * the last 32 bits; no zone. Else none.
+ */
+std::optional<std::array<uint8_t, 16>> Ipv6Literal(std::string_view text) {
+  std::array<uint16_t, 8> groups{};
+  size_t count = 0;
+  std::optional<size_t> gap;
+  if (text.starts_with("::")) {
+    gap = 0;
+    text.remove_prefix(2);
+  }
+  while (!text.empty()) {
+    const size_t colon = text.find(':');
+    const std::string_view group = text.substr(0, colon);
+    if (group.find('.') != std::string_view::npos) {
+      const auto v4 = colon == std::string_view::npos ? CanonicalDottedQuad(group) : std::nullopt;
+      if (!v4 || count > 6) {
+        return std::nullopt;
+      }
+      groups[count++] = static_cast<uint16_t>(*v4 >> 16);
+      groups[count++] = static_cast<uint16_t>(*v4 & 0xffff);
+      break;
+    }
+    if (group.empty() || group.size() > 4 || count == groups.size() ||
+        !std::all_of(group.begin(), group.end(), [](char c) { return std::isxdigit(static_cast<unsigned char>(c)); })) {
+      return std::nullopt;
+    }
+    groups[count++] = static_cast<uint16_t>(std::stoul(std::string(group), nullptr, 16));
+    if (colon == std::string_view::npos) {
+      break;
+    }
+    text.remove_prefix(colon + 1);
+    if (text.starts_with(":")) {
+      if (gap) {
+        return std::nullopt;
+      }
+      gap = count;
+      text.remove_prefix(1);
+    } else if (text.empty()) {
+      return std::nullopt; // a trailing lone `:`
+    }
+  }
+  if (gap ? count >= groups.size() : count != groups.size()) {
+    return std::nullopt;
+  }
+  std::array<uint16_t, 8> full{};
+  const size_t tail = gap ? count - *gap : 0;
+  for (size_t i = 0; i < count; ++i) {
+    const bool after_gap = gap && i >= *gap;
+    full[after_gap ? groups.size() - tail + (i - *gap) : i] = groups[i];
+  }
+  std::array<uint8_t, 16> bytes{};
+  for (size_t i = 0; i < full.size(); ++i) {
+    bytes[2 * i] = static_cast<uint8_t>(full[i] >> 8);
+    bytes[2 * i + 1] = static_cast<uint8_t>(full[i] & 0xff);
+  }
+  return bytes;
 }
 
 } // namespace
@@ -104,8 +169,8 @@ bool IsForeignRelayOriginAllowed(const std::string& origin, const bool lab_relax
     return !host.empty();
   }
   if (bracketed) {
-    uint8_t addr[16];
-    return inet_pton(AF_INET6, std::string(host).c_str(), addr) == 1 && mesh::IsPublicIPv6(addr);
+    const auto v6 = Ipv6Literal(host);
+    return v6 && mesh::IsPublicIPv6(v6->data());
   }
   while (host.ends_with('.')) {
     host.remove_suffix(1);
@@ -119,12 +184,9 @@ bool IsForeignRelayOriginAllowed(const std::string& origin, const bool lab_relax
   }
   const bool digits_and_dots =
       std::all_of(lowered.begin(), lowered.end(), [](char c) { return c == '.' || (c >= '0' && c <= '9'); });
-  if (digits_and_dots && !IsCanonicalDottedQuad(lowered)) {
-    return false;
-  }
-  struct in_addr v4{};
-  if (inet_pton(AF_INET, lowered.c_str(), &v4) == 1) {
-    return mesh::IsPublicIPv4(ntohl(v4.s_addr));
+  if (digits_and_dots) {
+    const auto v4 = CanonicalDottedQuad(lowered);
+    return v4 && mesh::IsPublicIPv4(*v4);
   }
   return !NumericLastLabel(lowered) && lowered != "localhost" && !HasSuffix(lowered, ".localhost") &&
          !HasSuffix(lowered, ".local") && !HasSuffix(lowered, ".internal");
@@ -169,6 +231,63 @@ std::vector<std::string> OurRelayOrigins(const std::string& preferred, const std
     }
   }
   return out;
+}
+
+std::vector<std::string> BoundOurRelays(const std::vector<std::string>& list) {
+  if (list.empty()) {
+    return {};
+  }
+  return OurRelayOrigins(list.front(), std::vector<std::string>(list.begin() + 1, list.end()));
+}
+
+namespace {
+
+constexpr std::string_view kRelayPath = "/api/relay";
+
+/** `host[:port]`: letters, digits, `.`, `-`, `[`/`]`/`:` (an IPv6 literal), a port of digits. */
+bool IsAuthority(const std::string_view authority) {
+  if (authority.empty() || authority.front() == '.' || authority.front() == ':') {
+    return false;
+  }
+  return std::all_of(authority.begin(), authority.end(), [](const char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '.' || c == '-' || c == ':' || c == '[' || c == ']';
+  });
+}
+
+} // namespace
+
+ParsedRelayOrigin ParseRelayOrigin(const std::string& text, const bool allow_http) {
+  std::string url = NormalizeRegistrationBackend(text); // trimmed, no trailing `/`, scheme and host lower case
+  if (url.empty()) {
+    return {.problem = RelayOriginProblem::Empty};
+  }
+  const size_t scheme_end = url.find("://");
+  if (scheme_end == std::string::npos) {
+    return {.problem = RelayOriginProblem::NotAUrl};
+  }
+  const std::string_view scheme = std::string_view(url).substr(0, scheme_end);
+  if (scheme != "https" && !(allow_http && scheme == "http")) {
+    return {.problem = scheme == "http" ? RelayOriginProblem::NotHttps : RelayOriginProblem::NotAUrl};
+  }
+  const std::string_view rest = std::string_view(url).substr(scheme_end + 3);
+  if (rest.find_first_of("?#") != std::string_view::npos) {
+    return {.problem = RelayOriginProblem::HasQuery};
+  }
+  const size_t path_start = std::min(rest.find('/'), rest.size());
+  const std::string_view authority = rest.substr(0, path_start);
+  const std::string_view path = rest.substr(path_start);
+  if (!IsAuthority(authority)) {
+    return {.problem = RelayOriginProblem::NotAUrl};
+  }
+  if (!path.empty() && path != kRelayPath) {
+    return {.problem = RelayOriginProblem::HasPath};
+  }
+  std::string base_url = url.substr(0, scheme_end + 3 + authority.size());
+  base_url += kRelayPath;
+  if (base_url.size() > kMaxRelayOriginBytes) {
+    return {.problem = RelayOriginProblem::TooLong};
+  }
+  return {.base_url = std::move(base_url)};
 }
 
 } // namespace pbr

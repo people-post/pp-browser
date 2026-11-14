@@ -4,7 +4,7 @@
 #include "common/tests/ScriptedHttpServer.h"
 #include "foundation/error/AppError.h"
 #include "lib/delivery/HttpRelayClient.h"
-#include "lib/delivery/RelayOrigins.h"
+#include "lib/net/RelayOrigins.h"
 
 #include <gtest/gtest.h>
 

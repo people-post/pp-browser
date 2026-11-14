@@ -173,8 +173,10 @@ public:
   void RetryFailedOutbound();
   /** The relay clients (multi-relay R2). */
   struct RelayClients {
-    /** The preferred relay's: stream history and clearing the inbox. */
+    /** The preferred relay's: clearing the inbox. */
     IRelayClient* preferred = nullptr;
+    /** Where stream history is asked (multi-relay MR006: the relay that holds it); null: `preferred`. */
+    IRelayClient* history = nullptr;
     /** Where the outbox sends: by the recipient's relay list (RelaySendCoordinator); null: `preferred`. */
     IRelayClient* sender = nullptr;
     /** Our inboxes, preferred first (polled). */

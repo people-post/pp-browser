@@ -36,4 +36,28 @@ bool IsForeignRelayOriginAllowed(const std::string& origin, bool lab_relaxed = f
  */
 std::vector<std::string> OurRelayOrigins(const std::string& preferred, const std::vector<std::string>& extras);
 
+/** Ours, preferred first, as a list given whole: OurRelayOrigins(list[0], the rest); empty: none. */
+std::vector<std::string> BoundOurRelays(const std::vector<std::string>& list);
+
+/** The longest relay base URL we list (MR004: the card's bound on an origin). */
+inline constexpr size_t kMaxRelayOriginBytes = 128;
+
+/** What is wrong with a relay the user typed (My relays' Add). */
+enum class RelayOriginProblem { None, Empty, NotAUrl, NotHttps, HasPath, HasQuery, TooLong };
+
+/** A relay the user typed: its base URL, or what is wrong with it. */
+struct ParsedRelayOrigin {
+  std::string base_url;
+  RelayOriginProblem problem = RelayOriginProblem::None;
+};
+
+/**
+ * A relay as the user types it (multi-relay R3, My relays): `https://host[:port]`, or that followed by `/api/relay`
+ * (the relay's base URL, as a card lists it). Spaces and trailing `/` are trimmed, scheme and host lower-cased; no
+ * user info, no other path, no query or fragment. The base URL is the origin and `/api/relay` (the deployment's
+ * convention, BriefRelayBaseUrlFor), at most kMaxRelayOriginBytes. `http://` only when `allow_http` (developer
+ * builds: the lab's plain relays; such a relay never goes on the card).
+ */
+ParsedRelayOrigin ParseRelayOrigin(const std::string& text, bool allow_http);
+
 } // namespace pbr

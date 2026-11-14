@@ -1,7 +1,7 @@
 #include "lib/delivery/BackendClientSet.h"
 
 #include "foundation/tls/CurlSsl.h"
-#include "lib/delivery/RelayOrigins.h"
+#include "lib/net/RelayOrigins.h"
 #include "lib/people/RegistrationStatus.h"
 
 #include <algorithm>
@@ -14,27 +14,88 @@ BackendClientSet::BackendClientSet(SwitchableDirectoryClient& directory) : direc
   redirectLogger("BackendClientSet");
 }
 
+namespace {
+
+std::string OrDefault(const std::string& value, const std::string& fallback) {
+  return value.empty() ? fallback : value;
+}
+
+/**
+ * The directory the holders see: one left at the org's relay (its default, MR006) follows our preferred relay; one
+ * configured apart from it stays.
+ */
+DirectoryConfig FollowingPreferred(DirectoryConfig directory, const std::string& org_relay,
+                                   const std::string& preferred) {
+  if (preferred.empty() || org_relay.empty()) {
+    return directory;
+  }
+  const std::vector<ServiceEndpointConfig> providers = EffectiveDirectoryProviders(directory);
+  const bool at_org = providers.size() == 1 && SameRelay(providers.front().base_url, org_relay) &&
+                      (providers.front().transport.empty() || providers.front().transport == "http");
+  if (!at_org) {
+    return directory;
+  }
+  DirectoryConfig following;
+  following.base_url = preferred;
+  following.transport = "http";
+  return following;
+}
+
+} // namespace
+
+std::vector<std::string> BackendClientSet::OursFor(const Endpoints& endpoints) const {
+  if (!endpoints.our_relays.empty()) {
+    return BoundOurRelays(endpoints.our_relays);
+  }
+  return OurRelayOrigins(OrDefault(endpoints.relay.base_url, defaults_.relay.base_url), endpoints.extra_relays);
+}
+
 void BackendClientSet::Apply(const Endpoints& endpoints) {
-  ApplyRelay(endpoints.relay.base_url.empty() ? defaults_.relay.base_url : endpoints.relay.base_url);
+  const std::string org_relay = OrDefault(endpoints.relay.base_url, defaults_.relay.base_url);
+  const std::vector<std::string> ours = OursFor(endpoints);
+  const std::string preferred = ours.empty() ? std::string() : ours.front();
+  ApplyOrg(org_relay);
+  ApplyPreferred(preferred);
   DirectoryConfig directory = endpoints.directory;
   if (directory.base_url.empty()) {
     directory.base_url = defaults_.directory.base_url;
   }
-  ApplyDirectory(std::move(directory));
-  ApplyRegistration(endpoints.registration.base_url.empty() ? defaults_.registration.base_url
-                                                            : endpoints.registration.base_url);
-  ApplyExtraRelays(endpoints.extra_relays);
+  ApplyDirectory(FollowingPreferred(std::move(directory), org_relay, preferred));
+  ApplyHome(OrDefault(endpoints.registration.base_url, defaults_.registration.base_url));
+  const size_t asked = endpoints.our_relays.empty() ? endpoints.extra_relays.size() + 1 : endpoints.our_relays.size();
+  ApplyExtraRelays(ours, asked);
   WireSender();
   WireDirectory();
 }
 
-void BackendClientSet::ApplyRelay(const std::string& url) {
+void BackendClientSet::ApplyOrg(const std::string& url) {
+  const std::string normalized = NormalizeRegistrationBackend(url);
+  if (normalized.empty()) {
+    client_compat_.reset();
+    org_relay_url_.clear();
+    return;
+  }
+  if (client_compat_ && org_relay_url_ == normalized) {
+    return;
+  }
+  org_relay_url_ = normalized;
+  client_compat_ = std::make_unique<HttpClientCompatClient>(url);
+}
+
+std::unique_ptr<HttpRegistrationClient> BackendClientSet::RegistrationFor(const std::string& url) const {
+  auto registration = std::make_unique<HttpRegistrationClient>(url);
+  registration->SetTakesBriefLlmKey(!org_relay_url_.empty() && SameRelay(url, org_relay_url_));
+  return registration;
+}
+
+void BackendClientSet::ApplyPreferred(const std::string& url) {
   if (url.empty()) {
     relay_.reset();
     push_devices_.reset();
-    client_compat_.reset();
+    registration_.reset();
+    blob_.reset();
     relay_url_.clear();
-    log().warning << "relay.base_url is empty; relay client disabled";
+    log().warning << "no relay of ours (relay.base_url is empty); relay clients disabled";
     return;
   }
   if (relay_ && relay_url_ == url) {
@@ -43,7 +104,8 @@ void BackendClientSet::ApplyRelay(const std::string& url) {
   relay_url_ = url;
   relay_ = std::make_shared<HttpRelayClient>(url);
   push_devices_ = std::make_shared<HttpPushDeviceClient>(url);
-  client_compat_ = std::make_unique<HttpClientCompatClient>(url);
+  registration_ = RegistrationFor(url);
+  blob_ = std::make_unique<HttpBlobClient>(url);
   WireSigner();
 }
 
@@ -139,27 +201,21 @@ void BackendClientSet::SetDirectoryWorker(OurRelaysDirectory::RunElsewhere run_e
   WireDirectory();
 }
 
-void BackendClientSet::ApplyRegistration(const std::string& url) {
+void BackendClientSet::ApplyHome(const std::string& url) {
   if (url.empty()) {
-    registration_.reset();
-    blob_.reset();
     locker_.reset();
-    registration_url_.clear();
-    log().warning << "registration.base_url is empty; registration client disabled";
+    home_url_.clear();
     return;
   }
-  if (registration_ && registration_url_ == url) {
+  if (locker_ && home_url_ == url) {
     return;
   }
-  registration_url_ = url;
-  registration_ = std::make_unique<HttpRegistrationClient>(url);
-  blob_ = std::make_unique<HttpBlobClient>(url);
+  home_url_ = url;
   locker_ = std::make_unique<HttpLockerClient>(url);
   WireSigner();
 }
 
-void BackendClientSet::ApplyExtraRelays(const std::vector<std::string>& urls) {
-  std::vector<std::string> origins = OurRelayOrigins(relay_url_, urls);
+void BackendClientSet::ApplyExtraRelays(const std::vector<std::string>& origins, const size_t asked) {
   std::vector<Extra> next;
   for (size_t i = 1; i < origins.size(); ++i) {
     const std::string& origin = origins[i];
@@ -172,14 +228,25 @@ void BackendClientSet::ApplyExtraRelays(const std::vector<std::string>& urls) {
     next.push_back(Extra{.origin = origin,
                          .relay = std::make_shared<HttpRelayClient>(origin),
                          .push_devices = std::make_shared<HttpPushDeviceClient>(origin),
-                         .registration = std::make_shared<HttpRegistrationClient>(origin)});
+                         .registration = RegistrationFor(origin)});
   }
-  if (next.size() < urls.size()) {
-    log().warning << "relay.extra_base_urls: " << (urls.size() - next.size())
+  if (!origins.empty() && origins.size() < asked) {
+    log().warning << "our relays: " << (asked - origins.size())
                   << " left out (not a URL, a relay listed already, or past " << kMaxOurRelays << " in all)";
   }
   extras_ = std::move(next);
   WireSigner();
+}
+
+IRelayClient* BackendClientSet::HistoryRelay() {
+  if (!home_url_.empty()) {
+    for (const Extra& extra : extras_) {
+      if (SameRelay(extra.origin, home_url_)) {
+        return extra.relay.get();
+      }
+    }
+  }
+  return relay_.get();
 }
 
 std::vector<BackendClientSet::OurRelay> BackendClientSet::OurRelays() const {
@@ -279,13 +346,14 @@ void BackendClientSet::Clear() {
   blob_.reset();
   locker_.reset();
   extras_.clear();
+  org_relay_url_.clear();
   relay_url_.clear();
+  home_url_.clear();
   directory_fingerprint_.clear();
   configured_directory_.reset();
   directory_providers_.clear();
   relay_directories_.clear();
   wired_directory_.clear(); // the holders' directory stays until the next Apply rebuilds it, as before
-  registration_url_.clear();
   WireSender();
 }
 

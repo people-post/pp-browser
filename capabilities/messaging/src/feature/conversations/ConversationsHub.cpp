@@ -54,7 +54,7 @@
 #include "lib/net/ProfileIconClient.h"
 #include "lib/net/ProfileIconFetch.h"
 #include "domain/registration/RegistrationClient.h"
-#include "lib/delivery/RelayOrigins.h"
+#include "lib/net/RelayOrigins.h"
 #include "lib/people/ProfileIconCache.h"
 #include "lib/people/ContactIdentity.h"
 #include "lib/people/ContactTypes.h"
@@ -257,7 +257,11 @@ void ConversationsHub::WireRelayAuthSigner() {
 }
 
 void ConversationsHub::UpdateOrgBackendClients(const HubSettings& settings) {
-  clients_.Apply({settings.relay, settings.directory, settings.registration, settings.relay_extra_base_urls});
+  clients_.Apply({.relay = settings.relay,
+                  .directory = settings.directory,
+                  .registration = settings.registration,
+                  .our_relays = {},
+                  .extra_relays = settings.relay_extra_base_urls});
   relay_ = clients_.Relay();
   push_devices_ = clients_.PushDevices();
   client_compat_ = clients_.ClientCompat();
@@ -275,13 +279,7 @@ void ConversationsHub::SetCardRelays() {
   if (!mesh_messaging_) {
     return;
   }
-  std::vector<std::string> origins{NormalizeRegistrationBackend(Registration().BaseUrl())};
-  for (const BackendClientSet::OurRelay& relay : clients_.OurRelays()) {
-    if (relay.registration) { // the other relays (the preferred one registers through Registration())
-      origins.push_back(relay.origin);
-    }
-  }
-  mesh_messaging_->OwnAccountCards().SetRelays(origins);
+  mesh_messaging_->OwnAccountCards().SetRelays(OurRelayOrigins());
 }
 
 void ConversationsHub::WireOurRelays() {
@@ -313,7 +311,10 @@ void ConversationsHub::WireOurRelays() {
     }
   }
   mesh_messaging_->SetCardDirectories(std::move(directories));
-  mesh_messaging_->SetRelayClients({.preferred = relay_, .sender = &clients_.Sender(), .inboxes = std::move(inboxes)});
+  mesh_messaging_->SetRelayClients({.preferred = relay_,
+                                    .history = clients_.HistoryRelay(),
+                                    .sender = &clients_.Sender(),
+                                    .inboxes = std::move(inboxes)});
 }
 
 void ConversationsHub::RegisterOnOtherRelaysSoon() {
@@ -1990,7 +1991,7 @@ ProfileIdentityView ConversationsHub::LoadProfileIdentityView() {
   view.account_id = identity->account_id;
   view.contact_locator = OwnContactLocator().valueOr("");
   view.public_key_b64 = identity->account_signing_public_key_b64;
-  FillRegistrationFields(view, *identity, config_.registration.base_url);
+  FillRegistrationFields(view, *identity, Registration().BaseUrl()); // the preferred relay's (MR006)
   view.profile_icon_path = ProfileIconLocalPath(data_dir_);
   view.profile_has_icon = !view.profile_icon_path.empty();
   return view;

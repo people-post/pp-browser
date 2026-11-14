@@ -1,7 +1,7 @@
 #include "lib/delivery/OurRelaysDirectory.h"
 
 #include "common/Utilities.h"
-#include "lib/delivery/RelayOrigins.h"
+#include "lib/net/RelayOrigins.h"
 #include "lib/people/DirectoryAnswers.h"
 #include "lib/people/PeopleLookupFailure.h"
 

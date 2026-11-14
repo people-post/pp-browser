@@ -2,7 +2,7 @@
 
 #include "common/Diag.h"
 #include "common/chat/MessagingLimits.h"
-#include "lib/delivery/RelayOrigins.h"
+#include "lib/net/RelayOrigins.h"
 
 #include <algorithm>
 #include <utility>

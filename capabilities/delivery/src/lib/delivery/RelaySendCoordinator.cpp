@@ -2,7 +2,7 @@
 
 #include "common/Utilities.h"
 #include "foundation/error/AppError.h"
-#include "lib/delivery/RelayOrigins.h"
+#include "lib/net/RelayOrigins.h"
 
 #include <algorithm>
 #include <chrono>

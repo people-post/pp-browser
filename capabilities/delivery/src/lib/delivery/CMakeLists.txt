@@ -30,7 +30,6 @@ pp_browser_add_lib_library(pp_lib_delivery
     PublicPskLockCoordinator.cpp
     RelayGrantNotice.cpp
     RelayHealth.cpp
-    RelayOrigins.cpp
     RelaySendCoordinator.cpp
     RelayGrantSigner.cpp
     RelayMessageSignPayload.cpp

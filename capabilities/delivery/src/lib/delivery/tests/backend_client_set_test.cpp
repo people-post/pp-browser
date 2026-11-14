@@ -67,11 +67,17 @@ TEST(BackendClientSetTest, AnUnchangedEndpointKeepsItsClientsAndAChangedOneRebui
   EXPECT_EQ(clients.Relay(), relay) << "holders keep a client whose endpoint did not change";
   EXPECT_EQ(clients.Registration(), registration);
 
+  ILockerClient* locker = clients.Locker();
   clients.Apply(At("https://relay.example", "https://directory.example", "https://registration.other"));
   EXPECT_EQ(clients.Relay(), relay);
+  EXPECT_EQ(clients.Registration(), registration) << "registration is the preferred relay's (MR006)";
   // The new client is made before the old one goes, so a rebuilt client never shares the old address.
-  EXPECT_NE(clients.Registration(), registration) << "a changed endpoint gets a new client";
-  EXPECT_NE(clients.Registration(), nullptr);
+  EXPECT_NE(clients.Locker(), locker) << "a changed endpoint gets a new client";
+  EXPECT_NE(clients.Locker(), nullptr);
+
+  clients.Apply(At("https://relay.other", "https://directory.example", "https://registration.other"));
+  EXPECT_NE(clients.Relay(), relay);
+  EXPECT_NE(clients.Registration(), registration);
 }
 
 TEST(BackendClientSetTest, ClearDropsEveryClient) {
@@ -137,6 +143,114 @@ TEST(BackendClientSetTest, OurOwnRelayOnAPrivateAddressKeepsItsClient) {
   BackendClientSet clients(directory);
   clients.Apply(At("http://192.168.1.10:8080", "http://192.168.1.10:8080", "http://192.168.1.10:8080"));
   EXPECT_NE(clients.Sender().ClientFor("http://192.168.1.10:8080"), nullptr);
+}
+
+// Relay services follow the preferred relay; org services stay on the org's origin (multi-relay MR006,
+// docs/contracts/SERVICE_ENDPOINTS.md § Relay services and org services).
+class BackendClientSetOriginTest : public ::testing::Test {
+protected:
+  using Reply = test::ScriptedHttpServer::Reply;
+
+  void SetUp() override {
+    for (test::ScriptedHttpServer* server : {&org_, &other_}) {
+      server->SetHandler([](const test::ScriptedHttpServer::Request& request) {
+        if (request.target.find("/v1/client-compat") != std::string::npos) {
+          return Reply{.status = 200, .headers = {}, .body = R"({"schema_version":1})"};
+        }
+        if (request.target.find("/v1/search") != std::string::npos) {
+          return Reply{.status = 200, .headers = {}, .body = R"({"hits":[]})"};
+        }
+        if (request.target.find("/v1/register/start") != std::string::npos) {
+          return Reply{.status = 200, .headers = {}, .body = R"({"challenge":"c","signature_alg":"ml-dsa-65"})"};
+        }
+        if (request.target.find("/v1/register/finish") != std::string::npos) {
+          return Reply{.status = 200,
+                       .headers = {},
+                       .body = R"({"success":true,"account_id":"account:me","llm_api_key":"brf_llm_x"})"};
+        }
+        return Reply{.status = 404, .headers = {}, .body = "{}"};
+      });
+    }
+  }
+  std::string OrgRelay() const { return org_.Origin() + "/api/relay"; }
+  std::string OtherRelay() const { return other_.Origin() + "/api/relay"; }
+  /** The org's config; ours `our_relays` (empty: the default). */
+  void Apply(std::vector<std::string> our_relays) {
+    auto endpoints = At(OrgRelay(), OrgRelay(), OrgRelay());
+    endpoints.our_relays = std::move(our_relays);
+    clients_.Apply(endpoints);
+  }
+  static size_t Asked(const test::ScriptedHttpServer& server, const std::string& path) {
+    size_t asked = 0;
+    for (const auto& request : server.Requests()) {
+      asked += request.target.find(path) != std::string::npos ? 1 : 0;
+    }
+    return asked;
+  }
+  std::string FinishedKey() {
+    auto finished = clients_.Registration()->FinishRegistration("c", "pk", "me", "sig", 1, "ml-dsa-65", "kem");
+    return finished ? finished->llm_api_key.Reveal() : "error: " + finished.error().message;
+  }
+
+  test::ScriptedHttpServer org_;
+  test::ScriptedHttpServer other_;
+  SwitchableDirectoryClient directory_;
+  BackendClientSet clients_{directory_};
+};
+
+TEST_F(BackendClientSetOriginTest, ByDefaultEveryServiceIsTheOrgsRelay) {
+  Apply({});
+  EXPECT_EQ(clients_.Registration()->BaseUrl(), OrgRelay());
+  EXPECT_EQ(clients_.HistoryRelay(), clients_.Relay());
+  ASSERT_EQ(clients_.OurRelays().size(), 1u);
+  EXPECT_EQ(clients_.OurRelays()[0].origin, OrgRelay());
+  ASSERT_TRUE(clients_.ClientCompat()->Fetch());
+  ASSERT_TRUE(directory_.SearchPeople("bob"));
+  EXPECT_EQ(Asked(org_, "/v1/client-compat"), 1u);
+  EXPECT_EQ(Asked(org_, "/v1/search"), 1u);
+  EXPECT_EQ(FinishedKey(), "brf_llm_x") << "the org's relay gives the Brief LLM key";
+}
+
+TEST_F(BackendClientSetOriginTest, TheListGivenWholeIsTheDefaultsSame) {
+  Apply({});
+  IRelayClient* relay = clients_.Relay();
+  Apply({OrgRelay()});
+  EXPECT_EQ(clients_.Relay(), relay) << "a list of the org's relay alone is the default: nothing rebuilt";
+}
+
+TEST_F(BackendClientSetOriginTest, RelayServicesFollowThePreferredRelayAndOrgServicesStay) {
+  Apply({OtherRelay(), OrgRelay()});
+  EXPECT_EQ(clients_.Registration()->BaseUrl(), OtherRelay()) << "registration is the preferred relay's";
+  ASSERT_EQ(clients_.OurRelays().size(), 2u);
+  EXPECT_EQ(clients_.OurRelays()[0].origin, OtherRelay());
+  EXPECT_EQ(clients_.OurRelays()[0].relay.get(), clients_.Relay()) << "messages and push: the preferred relay's";
+  EXPECT_EQ(clients_.OurRelays()[1].origin, OrgRelay());
+  EXPECT_EQ(clients_.HistoryRelay(), clients_.OurRelays()[1].relay.get())
+      << "stream history stays on the relay that holds it";
+  EXPECT_EQ(clients_.OrgRelay(), OrgRelay());
+
+  ASSERT_TRUE(clients_.ClientCompat()->Fetch());
+  EXPECT_EQ(Asked(org_, "/v1/client-compat"), 1u) << "client compatibility is the org's";
+  EXPECT_EQ(Asked(other_, "/v1/client-compat"), 0u);
+
+  auto hits = directory_.SearchPeople("bob");
+  ASSERT_TRUE(hits) << hits.error().message;
+  EXPECT_EQ(Asked(other_, "/v1/search"), 1u) << "the directory left at the org's relay follows the preferred one";
+  EXPECT_EQ(Asked(org_, "/v1/search"), 1u) << "and asks our other relay too";
+
+  EXPECT_EQ(FinishedKey(), "") << "another relay's Brief LLM key is not the org's: not kept";
+  auto org_key =
+      clients_.OurRelays()[1].registration->FinishRegistration("c", "pk", "me", "sig", 1, "ml-dsa-65", "kem");
+  ASSERT_TRUE(org_key);
+  EXPECT_EQ(org_key->llm_api_key.Reveal(), "brf_llm_x") << "the org's relay, now another of ours, still gives it";
+}
+
+TEST_F(BackendClientSetOriginTest, StreamHistoryFallsToThePreferredRelayOnceTheOrgsIsNotOurs) {
+  Apply({OtherRelay()});
+  EXPECT_EQ(clients_.HistoryRelay(), clients_.Relay());
+  EXPECT_NE(clients_.Locker(), nullptr) << "lockers stay at the org's registration URL";
+  ASSERT_TRUE(clients_.ClientCompat()->Fetch());
+  EXPECT_EQ(Asked(org_, "/v1/client-compat"), 1u);
 }
 
 // The directory asks our relays (multi-relay R2): a name search every one of them, merged, the preferred relay's
