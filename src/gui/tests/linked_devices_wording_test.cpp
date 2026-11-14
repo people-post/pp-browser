@@ -34,6 +34,9 @@ std::set<std::string> KeysWithValueContaining(const std::string& file, const std
   std::string line;
   std::string key;
   while (std::getline(in, line)) {
+    if (!line.empty() && line.back() == '\r') {
+      line.pop_back(); // a Windows checkout turns the locale files into CRLF
+    }
     std::string value = line;
     const size_t open = line.find_first_not_of(' ');
     if (open != std::string::npos && line[open] == '"') {
