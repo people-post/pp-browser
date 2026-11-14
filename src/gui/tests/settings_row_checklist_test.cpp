@@ -443,8 +443,10 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       // Devices: the transfer block is the desktop's inline copy here; phones open it as its own page.
       // (2026-11-14: the phone's top button, on the main device only; a linked phone shows nothing to tap.)
       {"devices", "open_security_page('transfer')", "!own_devices_not_main", 1, 0},
-      // The one "?" of the action, next to the top sentence, on the main device only.
-      {"devices", "ask_setting_help('settings.security.transfer_row')", "!own_devices_not_main", 1, 0},
+      // The "?" of the action: next to the top sentence on the main device, after the card's second line on a linked
+      // phone (2026-11-14, so details are one tap away), and the link page's note (in the hidden desktop wrapper here).
+      {"devices", "ask_setting_help('settings.security.transfer_row')",
+       "!own_devices_not_main@@own_devices_not_main && !own_devices_signed_out@@-", 2, 0},
       // Here the phone's button and "Copy again" sit in the transfer block's desktop wrapper (hidden): only the desktop
       // button shows. Their own page is checked in the next test.
       {"devices", "export_link_device()",
@@ -671,9 +673,11 @@ TEST(SettingsDevicesCaptionsTest, TheLinkButtonIsOnTheMainDeviceOnlyAndALinkedPh
   EXPECT_EQ(PhoneShown({tap}, MainFacts()), 1u);
   EXPECT_EQ(PhoneShown({help}, MainFacts()), 1u) << "one \"?\" for the action, in one place";
   // A linked phone: no element bound to any of the device actions, on the phone layout of this page or of the link page.
-  for (const char* event : {"open_security_page('transfer')", "export_link_device()",
-                            "open_own_device_actions(device_index)", "make_main_device(device_index)",
-                            "remove_own_device(device_index)", "ask_setting_help('settings.security.transfer_row')"}) {
+  // Its "?" (after the second line of the top card) only asks PP support: exactly one on the devices page.
+  EXPECT_EQ(PhoneShown({help}, LinkedFacts()), 1u);
+  for (const char* event :
+       {"open_security_page('transfer')", "export_link_device()", "open_own_device_actions(device_index)",
+        "make_main_device(device_index)", "remove_own_device(device_index)"}) {
     const std::string token = std::string("data-event-click=\"") + event + "\"";
     EXPECT_EQ(PhoneShown({token}, LinkedFacts()), 0u) << "devices page, linked phone: " << event;
     for (const Occurrence& o : Scan(ReadAsset("views/settings_security_transfer.rml"))) {
@@ -682,9 +686,9 @@ TEST(SettingsDevicesCaptionsTest, TheLinkButtonIsOnTheMainDeviceOnlyAndALinkedPh
       }
     }
   }
-  // Only the account copy row at the bottom (and the "?" of it) is tappable on a linked phone.
+  // Only the account copy row at the bottom (and the "?" of it) and the card's "?" are tappable on a linked phone.
   for (const std::string& token : PhoneTokens(LinkedFacts())) {
-    const bool account_copy = token == "data-event-click=\"save_account_copy()\"" ||
+    const bool account_copy = token == "data-event-click=\"save_account_copy()\"" || token == help ||
                               token == "data-event-click=\"ask_setting_help('settings.help.topic.account_copy')\"";
     EXPECT_TRUE(account_copy || token.find("data-event-") == std::string::npos)
         << "a linked phone's list is read only: " << token;

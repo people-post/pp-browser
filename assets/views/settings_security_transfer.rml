@@ -31,8 +31,9 @@
       <div class="settings-step"><span class="settings-step-num">2</span><p class="settings-step-text">{{i18n:settings.security.link_device.step2}}</p></div>
       <div class="settings-step"><span class="settings-step-num">3</span><p class="settings-step-text">{{i18n:settings.security.link_device.step3}}</p></div>
     </div>
-    <p class="text settings-transfer-pre">{{i18n:settings.security.link_device.precondition}}</p>
-    <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.send_hint}}</p>
-    <p class="text settings-transfer-lead">{{i18n:settings.security.link_device.change_phone}}</p>
+    <div class="settings-note-row">
+      <p class="text muted group-foot">{{i18n:settings.security.link_device.phone_note}}</p>
+      <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
+    </div>
   </div>
 </div>

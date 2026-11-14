@@ -43,7 +43,7 @@ TEST(TransferPageMarkupTest, TheNewStringsExistInBothLanguagesAndQuoteTheRealOne
                             "settings.security.link_device.lead", "settings.security.link_device.copied_valid",
                             "settings.security.link_device.steps_head", "settings.security.link_device.step1",
                             "settings.security.link_device.step2", "settings.security.link_device.step3",
-                            "settings.security.link_device.precondition"}) {
+                            "settings.security.link_device.phone_note"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
   }
@@ -51,16 +51,19 @@ TEST(TransferPageMarkupTest, TheNewStringsExistInBothLanguagesAndQuoteTheRealOne
   const std::string en = Asset("locales/en.json");
   // The steps quote the new device's real strings.
   EXPECT_NE(zh.find("\"pin.identity_link\": \"我在别的设备上已经有账号\""), std::string::npos);
-  EXPECT_NE(zh.find("选“我在别的设备上已经有账号”"), std::string::npos);
-  EXPECT_NE(zh.find("\"common.continue\": \"继续\""), std::string::npos);
-  EXPECT_NE(zh.find("点“继续”"), std::string::npos);
-  EXPECT_NE(zh.find("\"settings.storage.reset_profile\": \"重置我的资料…\""), std::string::npos);
-  EXPECT_NE(zh.find("“重置我的资料…”"), std::string::npos);
-  EXPECT_NE(zh.find("\"nav.me\": \"设置\""), std::string::npos);
-  EXPECT_NE(zh.find("\"settings.storage.title\": \"存储\""), std::string::npos);
-  EXPECT_NE(en.find("“I already have an account on another device”"), std::string::npos);
-  EXPECT_NE(en.find("tap “Continue”"), std::string::npos);
-  EXPECT_NE(en.find("“Reset my data…”"), std::string::npos);
+  EXPECT_NE(zh.find("选“我在别的设备上已经有账号”\""), std::string::npos);
+  EXPECT_NE(en.find("“I already have an account on another device”\""), std::string::npos);
+  // Three short steps, then one grey line; the old long paragraphs are gone.
+  EXPECT_NE(zh.find("\"settings.security.link_device.step2\": \"设一个 PIN\""), std::string::npos);
+  EXPECT_NE(zh.find("\"settings.security.link_device.step3\": \"粘贴关联码\""), std::string::npos);
+  EXPECT_NE(zh.find("\"新设备上看不到以前的聊天记录。已有别的账号的设备要先重置。\""), std::string::npos);
+  EXPECT_NE(en.find("\"Earlier chats do not appear on the new device. A device that already has another account must "
+                    "be reset first.\""),
+            std::string::npos);
+  for (const char* gone : {"link_device.precondition", "link_device.change_phone"}) {
+    EXPECT_EQ(zh.find(gone), std::string::npos) << gone;
+    EXPECT_EQ(en.find(gone), std::string::npos) << gone;
+  }
 }
 
 TEST(TransferPageMarkupTest, TheCopyButtonAndTheCopiedBoxFireTheOldEventAndTheOldTextIsGoneOnPhones) {
@@ -77,6 +80,17 @@ TEST(TransferPageMarkupTest, TheCopyButtonAndTheCopiedBoxFireTheOldEventAndTheOl
   }
   EXPECT_EQ(rml.find("{{recovery"), std::string::npos);
   EXPECT_EQ(rml.find("{{export"), std::string::npos);
+  // The phone page's end: the grey note with its one "?" (same event as the main device's hero), no precondition, no
+  // "one device at a time" line and no change-phones sentence; send_hint stays on the desktop only.
+  const size_t note = rml.find("{{i18n:settings.security.link_device.phone_note}}");
+  ASSERT_NE(note, std::string::npos);
+  EXPECT_NE(rml.find("ask_setting_help('settings.security.transfer_row')", note), std::string::npos);
+  EXPECT_EQ(rml.find("ask_setting_help", rml.find("ask_setting_help") + 1), std::string::npos) << "one \"?\"";
+  const size_t send = rml.find("link_device.send_hint");
+  ASSERT_NE(send, std::string::npos);
+  EXPECT_EQ(rml.find("link_device.send_hint", send + 1), std::string::npos) << "desktop only";
+  EXPECT_NE(rml.substr(rml.rfind("<p ", send), send - rml.rfind("<p ", send)).find("settings-desktop-only"),
+            std::string::npos);
 }
 
 // --- the "copied" flag --------------------------------------------------------------------------------------------
@@ -233,8 +247,7 @@ TEST_F(TransferCopiedFlagTest, TheValidityLinesCarryTheNumberOfMinutesOfTheCodes
   // Not bound yet, so read the strings the way the page does: the helper formats {minutes}.
   const std::string minutes = std::to_string(kLinkDeviceDefaultTtlMs / 60000);
   EXPECT_EQ(Tr("settings.security.link_device.copied_valid", {{"minutes", minutes}}), "Valid for 15 minutes");
-  EXPECT_EQ(Tr("settings.security.link_device.lead", {{"minutes", minutes}}),
-            "Use the same account on a new phone. The code is valid for 15 minutes.");
+  EXPECT_EQ(Tr("settings.security.link_device.lead", {{"minutes", minutes}}), "The link code is valid for 15 minutes.");
 }
 
 } // namespace

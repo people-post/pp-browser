@@ -35,13 +35,15 @@
           <p class="text muted group-foot" data-if="!own_has_other_devices">{{i18n:settings.security.devices.none}}</p>
           <p class="text muted group-foot" data-if="own_has_other_devices">{{i18n:settings.security.devices.tap_hint}}</p>
         </div>
-        <!-- Phones, linked (not main) device: one display-only sentence card, then a read-only list. Nothing here can be tapped:
-             linking and removing are done on the main device. -->
+        <!-- Phones, linked (not main) device: a card of two short lines (the second has the "?"), then a read-only list. The
+             "?" only asks PP support; nothing else here can be tapped: linking and removing are done on the main device. -->
         <div class="stack settings-phone-only" data-if="own_devices_not_main && !own_devices_signed_out">
           <div class="group-card settings-dev-note">
             <p class="text settings-dev-note-title">{{i18n:settings.security.devices.linked_note}}</p>
-            <p class="text muted settings-dev-note-line">{{i18n:settings.security.devices.linked_note_sub}}</p>
-            <p class="text muted settings-dev-note-line">{{i18n:settings.security.devices.linked_note_gone}}</p>
+            <div class="settings-note-row settings-dev-note-row">
+              <p class="text muted settings-dev-note-line">{{i18n:settings.security.devices.linked_note_sub}}</p>
+              <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
+            </div>
           </div>
           <p class="text group-head">{{i18n:settings.security.devices.view_head}}</p>
           <div class="group-card">

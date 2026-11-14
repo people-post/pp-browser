@@ -13768,16 +13768,20 @@ textarea:composing ~ .prompt-composer-label,
   line-height: 22dp;
 }
 
-.shell-layer-compact .settings-transfer-pre {
-  margin: 14dp 16dp 0 16dp;
-  padding: 12dp 16dp;
-  border-radius: 12dp;
-  font-size: 14dp;
-  line-height: 20dp;
+/* A grey line with its "?" right after it (the link page's note, a linked phone's card). */
+.shell-layer-compact .settings-note-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.shell-layer-compact .settings-note-row .text {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 /* Me > Linked devices (phones). The main device's top block: a quiet icon, one sentence with its "?", one grey line, then the
-   grouped-page 50dp button. A linked phone's top card: one sentence and two grey lines, nothing to tap. */
+   grouped-page 50dp button. A linked phone's top card: one sentence and one grey line with a "?". */
 .shell-layer-compact .settings-dev-hero {
   padding: 28dp 0 0 0;
   text-align: center;
@@ -13823,8 +13827,12 @@ textarea:composing ~ .prompt-composer-label,
   line-height: 23dp;
 }
 
-.shell-layer-compact .settings-dev-note-line {
+.shell-layer-compact .settings-dev-note-row {
   margin: 6dp 0 0 0;
+}
+
+.shell-layer-compact .settings-dev-note-line {
+  margin: 0;
   font-size: 14dp;
   line-height: 20dp;
 }

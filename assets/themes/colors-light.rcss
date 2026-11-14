@@ -3053,11 +3053,6 @@ input.checkbox:checked {
   color: #3c3c4399;
 }
 
-.shell-layer-compact .settings-transfer-pre {
-  background-color: #fff4e0;
-  color: #000000;
-}
-
 /* Linked devices: the quiet icon, the sentence, the grey lines. */
 .shell-layer-compact .settings-dev-ill {
   image-color: #3c3c434c;

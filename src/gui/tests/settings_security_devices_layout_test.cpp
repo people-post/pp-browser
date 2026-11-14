@@ -114,34 +114,27 @@ TEST(DevicesLayoutTest, TheMainDevicesButtonIsAPrimaryButtonWithTheOldEventAndTh
 
 TEST(DevicesLayoutTest, TheDeviceLimitInTheHeroLineIsTheOneTheAccountCardEnforces) {
   ASSERT_EQ(kMaxAccountCardDevices, 5u) << "hero_sub names the number";
-  EXPECT_NE(
-      ReadAsset("locales/zh-Hans.json").find("\"这个账号最多同时在 5 台设备上使用。新设备上看不到以前的聊天记录。\""),
-      std::string::npos);
-  EXPECT_NE(ReadAsset("locales/en.json")
-                .find("\"This account can be used on up to 5 devices at a time. Earlier chats do not appear on a new "
-                      "device.\""),
-            std::string::npos);
+  EXPECT_NE(ReadAsset("locales/zh-Hans.json").find("\"最多同时 5 台设备。\""), std::string::npos);
+  EXPECT_NE(ReadAsset("locales/en.json").find("\"Up to 5 devices at a time.\""), std::string::npos);
 }
 
 TEST(DevicesLayoutTest, TheNewStringsExistInBothLanguages) {
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     const std::string text = ReadAsset(locale);
-    for (const char* key :
-         {"settings.security.devices.none", "settings.security.devices.this_phone",
-          "settings.security.devices.this_phone_main", "settings.security.devices.this_phone_tag",
-          "settings.security.devices.hero", "settings.security.devices.hero_sub", "settings.security.devices.tap_hint",
-          "settings.security.devices.view_head", "settings.security.devices.linked_note",
-          "settings.security.devices.linked_note_sub", "settings.security.devices.linked_note_gone",
-          "settings.security.link_device.change_phone", "settings.security.grace.caption"}) {
+    for (const char* key : {"settings.security.devices.none", "settings.security.devices.this_phone",
+                            "settings.security.devices.this_phone_main", "settings.security.devices.this_phone_tag",
+                            "settings.security.devices.hero", "settings.security.devices.hero_sub",
+                            "settings.security.devices.tap_hint", "settings.security.devices.view_head",
+                            "settings.security.devices.linked_note", "settings.security.devices.linked_note_sub",
+                            "settings.security.link_device.phone_note", "settings.security.grace.caption"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
   }
   const std::string zh = ReadAsset("locales/zh-Hans.json");
   for (const char* line :
-       {"\"在其他设备上使用同一个账号\"", "\"本机 · 主设备\"", "\"点一台设备，可以移除它，或把它设为主设备。\"",
-        "\"这个账号的设备\"", "\"这台手机是关联到你账号上的设备。\"", "\"关联新设备、移除设备，要在主设备上操作。\"",
-        "\"如果主设备已经不在了，目前没办法在这台手机上移除设备。\"", "\"还没有关联其他设备。\"",
-        "\"换手机：先关联新手机，再把它设为主设备，最后在新手机上移除旧手机。\""}) {
+       {"\"在其他设备上使用同一个账号\"", "\"本机 · 主设备\"", "\"点一台设备可以移除，或设为主设备。\"",
+        "\"这个账号的设备\"", "\"这台手机已关联到你的账号。\"", "\"要管理设备，请到主设备上操作。\"",
+        "\"还没有关联其他设备。\"", "\"新设备上看不到以前的聊天记录。已有别的账号的设备要先重置。\""}) {
     EXPECT_NE(zh.find(line), std::string::npos) << line;
   }
 }

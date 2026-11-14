@@ -170,18 +170,36 @@ TEST_F(DevicesStyleTest, TheHeroButtonIs50dpTheHelpMarkIs44dpAndTheSentenceStays
   EXPECT_GE(document->GetElementById("r")->GetBox().GetSize(ui::BoxArea::Border).y, 50.f);
 }
 
+TEST_F(DevicesStyleTest, ALinkedPhonesCardIsTwoLinesAndTheHelpMarkStaysOnTheScreenAfterTheSecond) {
+  ui::ElementDocument* document = Load(
+      "<div class=\"shell-layer-compact\" style=\"position: absolute; left: 0dp; top: 0dp; width: 390dp;\">"
+      "<div class=\"settings-section settings-section--grouped settings-mock stack\">"
+      "<div class=\"group-card settings-dev-note\">"
+      "<p id=\"t\" class=\"text settings-dev-note-title\">This phone is linked to your account.</p>"
+      "<div class=\"settings-note-row settings-dev-note-row\">"
+      "<p id=\"l\" class=\"text muted settings-dev-note-line\">To manage devices, use your main device.</p>"
+      "<button id=\"q\" class=\"settings-q-btn\" type=\"button\"></button></div></div></div></div>");
+  ui::Element* q = document->GetElementById("q");
+  EXPECT_FLOAT_EQ(q->GetBox().GetSize(ui::BoxArea::Border).x, 44.f);
+  EXPECT_LE(q->GetAbsoluteOffset(ui::BoxArea::Border).x + 44.f, 390.f);
+  const float line_right = document->GetElementById("l")->GetAbsoluteOffset(ui::BoxArea::Border).x +
+                           document->GetElementById("l")->GetBox().GetSize(ui::BoxArea::Border).x;
+  EXPECT_LE(line_right, q->GetAbsoluteOffset(ui::BoxArea::Border).x + 6.f) << "the \"?\" sits right after the line";
+}
+
 // --- the markup ---------------------------------------------------------------------------------------------------
 
 TEST(DevicesTransferMarkupTest, TheNewCaptionsExistInBothLanguagesAndReadAsAgreed) {
   const std::string zh = Asset("locales/zh-Hans.json");
   const std::string en = Asset("locales/en.json");
-  EXPECT_NE(zh.find("\"关联新设备、移除设备，要在主设备上操作。\""), std::string::npos);
-  EXPECT_NE(en.find("\"Linking a new device or removing one is done on the main device.\""), std::string::npos);
+  EXPECT_NE(zh.find("\"这台手机已关联到你的账号。\""), std::string::npos);
+  EXPECT_NE(zh.find("\"要管理设备，请到主设备上操作。\""), std::string::npos);
+  EXPECT_NE(en.find("\"This phone is linked to your account.\""), std::string::npos);
+  EXPECT_NE(en.find("\"To manage devices, use your main device.\""), std::string::npos);
+  EXPECT_EQ(en.find("linked_note_gone"), std::string::npos);
+  EXPECT_EQ(zh.find("linked_note_gone"), std::string::npos);
   EXPECT_NE(en.find("\"Use the same account on other devices\""), std::string::npos);
   EXPECT_NE(en.find("\"No other devices linked yet.\""), std::string::npos);
-  EXPECT_NE(en.find("\"Changing phones: link the new phone, make it the main device, then remove the old phone from "
-                    "the new one.\""),
-            std::string::npos);
 }
 
 TEST(DevicesTransferMarkupTest, TheSaveCopyRowAndTheHeroSentenceCarryTheHelpMarkInline) {
@@ -193,13 +211,17 @@ TEST(DevicesTransferMarkupTest, TheSaveCopyRowAndTheHeroSentenceCarryTheHelpMark
   EXPECT_LT(at - label, 40u) << "the title is the first child of the inline label";
   EXPECT_NE(rml.find("class=\"settings-q-btn\"", at), std::string::npos);
   // The action's "?" follows the sentence directly and asks about the action's own title.
+  const std::string help = "ask_setting_help('settings.security.transfer_row')";
   const size_t sentence = rml.find("{{i18n:settings.security.devices.hero}}</span><button class=\"settings-q-btn\"");
   ASSERT_NE(sentence, std::string::npos);
-  EXPECT_NE(rml.find("ask_setting_help('settings.security.transfer_row')", sentence), std::string::npos);
-  EXPECT_EQ(rml.find("ask_setting_help('settings.security.transfer_row')",
-                     rml.find("ask_setting_help('settings.security.transfer_row')") + 1),
-            std::string::npos)
-      << "one \"?\" for the action";
+  const size_t first = rml.find(help, sentence);
+  ASSERT_NE(first, std::string::npos);
+  EXPECT_LT(first - sentence, 120u) << "right after the hero sentence";
+  // The only other one is the linked phone's, right after its second line (same event, nothing else asks).
+  const size_t second = rml.find(help, first + 1);
+  ASSERT_NE(second, std::string::npos);
+  EXPECT_GT(second, rml.find("{{i18n:settings.security.devices.linked_note_sub}}"));
+  EXPECT_EQ(rml.find(help, second + 1), std::string::npos) << "one \"?\" per state";
   EXPECT_EQ(rml.find("group-row-q"), std::string::npos) << "no absolutely positioned help mark any more";
   EXPECT_EQ(Asset("themes/components.rcss").find("group-row-q"), std::string::npos);
   EXPECT_EQ(rml.find("group-row-tap"), std::string::npos);
@@ -214,9 +236,21 @@ TEST(DevicesTransferMarkupTest, NoDisabledLinkRowIsLeftAndTheLinkedPhonesBlockHa
   const size_t to = rml.find("<div class=\"stack settings-actions\" data-if=\"own_devices_shown\">", from);
   ASSERT_NE(to, std::string::npos);
   const std::string block = rml.substr(from, to - from);
-  EXPECT_EQ(block.find("<button"), std::string::npos);
-  EXPECT_EQ(block.find("data-event-"), std::string::npos);
+  // Two text lines in the card, one "?" after the second; that button is the only element with an event.
+  const size_t card = block.find("settings-dev-note\">");
+  ASSERT_NE(card, std::string::npos);
+  const std::string note = block.substr(card, block.find("<p class=\"text group-head\"", card) - card);
+  size_t lines = 0;
+  for (size_t at = note.find("<p "); at != std::string::npos; at = note.find("<p ", at + 1)) {
+    ++lines;
+  }
+  EXPECT_EQ(lines, 2u);
+  EXPECT_EQ(block.find("<button"), block.rfind("<button")) << "one button in the block";
+  EXPECT_EQ(block.find("data-event-"), block.rfind("data-event-"));
+  EXPECT_NE(block.find("data-event-click=\"ask_setting_help('settings.security.transfer_row')\""), std::string::npos);
+  EXPECT_GT(block.find("<button"), block.find("{{i18n:settings.security.devices.linked_note_sub}}"));
   EXPECT_EQ(block.find("chevron"), std::string::npos);
+  EXPECT_EQ(block.find("linked_note_gone"), std::string::npos);
 }
 
 TEST(DevicesTransferMarkupTest, TheHelpQuestionOfTheLinkActionReadsRightWithTheNewTitle) {

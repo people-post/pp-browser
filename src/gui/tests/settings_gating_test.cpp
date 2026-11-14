@@ -181,8 +181,8 @@ TEST(SettingsGatingTest, TheServiceRowsMovedToAdvancedUnchangedAndAreGatedOnlyOn
   EXPECT_NE(rml.find("<div class=\"settings-warn-row settings-desktop-only\">"), std::string::npos);
   const std::string colors = ReadAsset("themes/colors.rcss.tmpl");
   EXPECT_EQ(CountOf(colors, ".settings-warn-icon svg {\n  image-color: {{warn}};"), 1u);
-  // The banner strip and (2026-11-14) the transfer page's reset note.
-  EXPECT_EQ(CountOf(colors, "background-color: {{warn-tint}};"), 2u);
+  // The banner strip.
+  EXPECT_EQ(CountOf(colors, "background-color: {{warn-tint}};"), 1u);
   // The Service rows come right after the technical-users note, above the connection rows.
   EXPECT_LT(rml.find("{{i18n:settings.advanced.intro}}"), card);
   EXPECT_LT(card, rml.find("{{i18n:settings.advanced.group.connection}}"));
