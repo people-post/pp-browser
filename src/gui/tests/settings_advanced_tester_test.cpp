@@ -7,6 +7,7 @@
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/UserPreferences.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/DeploymentProfile.h"
 #include "gui/SettingsController.h"
 #include "gui/SettingsHost.h"
 #include "gui/UserFeedback.h"
@@ -180,23 +181,44 @@ TEST_F(SettingsAdvancedTesterTest, FiveTapsOnTheVersionSwitchOnlyTheTesterOption
   EXPECT_EQ(toasts.back(), Tr("settings.help.tester_off"));
 }
 
-TEST_F(SettingsAdvancedTesterTest, TheSwitchesNeverMoveTheSavedServiceAwayFromQa) {
-  AppConfig config = store.Snapshot().config;
-  config.backend.env = "qa";
-  ASSERT_TRUE(static_cast<bool>(store.SaveConfig(config)));
-  host().UiState().backend_env = "qa";
-  host().UiState().backend_qa_available = true;
-  host().PushToView(false);
-  const bool pending = host().UiState().backend_restart_pending;
-  for (int round = 0; round < 2; ++round) {
-    Click("toggle_adv");
-    for (int i = 0; i < 5; ++i) {
-      Click("version");
+// Whatever service is saved, the two switches never change it or the restart-pending state.
+// "prod" and "custom" exist in every build; "qa" is saved as "prod" by a build without a QA
+// address, so its variant runs only where the build has one.
+class SettingsAdvancedTesterServiceTest : public SettingsAdvancedTesterTest {
+protected:
+  void ExpectSwitchesLeaveTheSavedServiceAlone(const char* env) {
+    AppConfig config = store.Snapshot().config;
+    config.backend.env = env;
+    ASSERT_TRUE(static_cast<bool>(store.SaveConfig(config)));
+    ASSERT_EQ(store.Snapshot().config.backend.env, env) << "the build keeps this choice as saved";
+    host().UiState().backend_env = env;
+    host().PushToView(false);
+    const bool pending = host().UiState().backend_restart_pending;
+    for (int round = 0; round < 2; ++round) {
+      Click("toggle_adv");
+      for (int i = 0; i < 5; ++i) {
+        Click("version");
+      }
     }
+    EXPECT_EQ(store.Snapshot().config.backend.env, env);
+    EXPECT_EQ(host().UiState().backend_env, env);
+    EXPECT_EQ(host().UiState().backend_restart_pending, pending);
   }
-  EXPECT_EQ(store.Snapshot().config.backend.env, "qa");
-  EXPECT_EQ(host().UiState().backend_env, "qa");
-  EXPECT_EQ(host().UiState().backend_restart_pending, pending);
+};
+
+TEST_F(SettingsAdvancedTesterServiceTest, TheSwitchesNeverMoveTheSavedServiceAwayFromProd) {
+  ExpectSwitchesLeaveTheSavedServiceAlone("prod");
+}
+
+TEST_F(SettingsAdvancedTesterServiceTest, TheSwitchesNeverMoveTheSavedServiceAwayFromCustom) {
+  ExpectSwitchesLeaveTheSavedServiceAlone("custom");
+}
+
+TEST_F(SettingsAdvancedTesterServiceTest, TheSwitchesNeverMoveTheSavedServiceAwayFromQa) {
+  if (!QaBackendAvailable()) {
+    GTEST_SKIP() << "this build has no QA address (-DPP_API_URL_QA), so a saved \"qa\" is read as \"prod\"";
+  }
+  ExpectSwitchesLeaveTheSavedServiceAlone("qa");
 }
 
 TEST_F(SettingsAdvancedTesterTest, PickingCustomWithTheTesterOptionsOffSavesExactlyCustom) {
