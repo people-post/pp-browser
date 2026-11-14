@@ -67,4 +67,31 @@ struct OwnDevicesView {
   bool this_is_main = false;
 };
 
+/** Me → Network → My relays (multi-relay R3, MR006): one relay of ours as the page shows it. */
+struct MyRelayRowView {
+  /** Its base URL (what the actions name). */
+  std::string origin;
+  /** Its host (and port), what the user reads. */
+  std::string label;
+  /** "Registered until …", "Registering…", "Couldn't register: …". */
+  std::string state;
+  /** `ok`, `pending` or `error`: the state's colour. */
+  std::string state_kind;
+  /** Its last poll: "Reachable" / "Couldn't reach it"; empty before the first. */
+  std::string reach;
+  bool reach_failed = false;
+  bool preferred = false;
+  bool can_make_preferred = false;
+  bool can_remove = false;
+};
+
+/** Ours, preferred first. */
+struct MyRelaysView {
+  std::vector<MyRelayRowView> relays;
+  /** This device changes the list (the main device). */
+  bool editable = false;
+  /** Room for another relay (MR004: at most 4). */
+  bool can_add = false;
+};
+
 } // namespace pbr

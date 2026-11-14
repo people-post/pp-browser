@@ -541,6 +541,9 @@ void SettingsController::SyncBindingsFromSession() {
     if (SettingsPageHas(*page, SettingsPageAction::RefreshDevices)) {
       own_devices_.Refresh();
     }
+    if (SettingsPageHas(*page, SettingsPageAction::RefreshRelays)) {
+      my_relays_.Refresh();
+    }
   }
 
   const BootstrapResult& bootstrap = Store().Snapshot();
@@ -754,6 +757,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("support_subtitle", &controller.bindings_.support_subtitle);
     security_actions_.Bind(ctor);
     own_devices_.Bind(ctor);
+    my_relays_.Bind(ctor);
     storage_manager_.Bind(ctor);
     ctor.Bind("status", &controller.status_);
     ctor.Bind("ai_dot_shown", &controller.ai_dot_shown_);

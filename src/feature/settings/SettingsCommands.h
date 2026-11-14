@@ -140,6 +140,16 @@ struct SettingsCommands {
   std::function<Roe<void>(const std::string& peer_id)> remove_own_device;
   /** On the main device: make another device the main one (this one can then no longer add or remove devices). */
   std::function<Roe<void>(const std::string& peer_id)> make_main_device;
+  /** Me → Network → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
+  std::function<Roe<MyRelaysView>()> my_relays;
+  /** Adds the relay the user typed (it must answer: HTTP, a worker). An error says why (MyRelaysFailureText). */
+  std::function<Roe<void>(const std::string& typed)> add_my_relay;
+  /** Removes a relay of ours (not the preferred one); a worker. */
+  std::function<Roe<void>(const std::string& origin)> remove_my_relay;
+  /** Makes a relay of ours the preferred one; a worker. */
+  std::function<Roe<void>(const std::string& origin)> make_relay_preferred;
+  /** Runs `changed` (on any thread) whenever the list or a relay's state changes; null stops. */
+  std::function<void(std::function<void()> changed)> watch_my_relays;
 
   /** Current app Support discovery (enabled + account_id); nullopt when off/unavailable. */
   std::function<std::optional<ClientCompatSupport>()> load_support_discovery;

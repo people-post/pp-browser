@@ -89,6 +89,7 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/settings/MyRelays.h"
 #include "feature/settings/OwnDevices.h"
 #include "feature/settings/CasLibraryCommands.h"
 #include "feature/settings/ReachabilityNudge.h"
@@ -363,6 +364,44 @@ Roe<void> RunOnUiAndWait(const std::function<Roe<void>()>& task) {
     return Error("UI thread did not run the task in time");
   }
   return std::move(*slot->result);
+}
+
+/** A plain `http://` relay may be added in developer builds only (the lab's): never on the card (MR004). */
+bool PlainHttpRelaysAllowed() {
+#ifdef NDEBUG
+  return kDevToolsBuild;
+#else
+  return true;
+#endif
+}
+
+/** Me → Network → My relays (multi-relay R3): the facade's relays, as the page shows them. */
+void WireMyRelaysCommands(SettingsCommands& commands, ConversationsFacade& facade) {
+  commands.my_relays = [&facade]() -> Roe<MyRelaysView> {
+    auto status = facade.OurRelays();
+    if (!status) {
+      return status.error();
+    }
+    std::vector<MyRelayFacts> relays;
+    for (const OurRelayStatus& relay : status->relays) {
+      relays.push_back(MyRelayFacts{.origin = relay.origin,
+                                    .registration = relay.registration,
+                                    .reach = relay.reach == OurRelayStatus::Reach::Ok ? MyRelayFacts::Reach::Ok
+                                             : relay.reach == OurRelayStatus::Reach::Failed
+                                                 ? MyRelayFacts::Reach::Failed
+                                                 : MyRelayFacts::Reach::Unknown,
+                                    .reach_at_ms = relay.reach_at_ms});
+    }
+    return MyRelaysViewFor(relays, status->editable);
+  };
+  commands.add_my_relay = [&facade](const std::string& typed) {
+    return facade.AddOurRelay(typed, PlainHttpRelaysAllowed());
+  };
+  commands.remove_my_relay = [&facade](const std::string& origin) { return facade.RemoveOurRelay(origin); };
+  commands.make_relay_preferred = [&facade](const std::string& origin) { return facade.MakeOurRelayPreferred(origin); };
+  commands.watch_my_relays = [&facade](std::function<void()> changed) {
+    facade.SetOnOurRelaysChanged(std::move(changed));
+  };
 }
 
 } // namespace
@@ -1204,6 +1243,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return facade.RemoveOwnDevice(peer_id);
   };
   settings_commands.make_main_device = [&facade](const std::string& peer_id) { return facade.MakeMainDevice(peer_id); };
+  WireMyRelaysCommands(settings_commands, facade);
   settings_commands.load_support_discovery = [this]() -> std::optional<ClientCompatSupport> {
     return support_discovery_;
   };

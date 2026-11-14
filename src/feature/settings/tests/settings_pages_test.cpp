@@ -42,6 +42,7 @@ TEST(SettingsPagesTest, OpeningAPageDoesWhatTheOldSectionDid) {
       {"privacy", static_cast<unsigned>(SettingsPageAction::RefreshBlockedCount)},
       {"security", 0},
       {"devices", static_cast<unsigned>(SettingsPageAction::RefreshDevices)},
+      {"relays", static_cast<unsigned>(SettingsPageAction::RefreshRelays)},
       {"notifications", static_cast<unsigned>(SettingsPageAction::RefreshBannerTip)},
       {"appearance", 0},
       {"storage", static_cast<unsigned>(SettingsPageAction::EnterStorage)},
@@ -116,7 +117,7 @@ std::vector<std::string> ListedIds(const bool advanced, const bool tester) {
 }
 
 TEST(SettingsPagesTest, AdvancedFollowsItsSwitchAndTestOptionsFollowTheTesterSwitch) {
-  const std::vector<std::string> base = {"profile",       "privacy",    "security", "devices",
+  const std::vector<std::string> base = {"profile",       "privacy",    "security", "devices", "relays",
                                          "notifications", "appearance", "storage",  "help"};
   EXPECT_EQ(ListedIds(false, false), base);
   auto with_advanced = base;

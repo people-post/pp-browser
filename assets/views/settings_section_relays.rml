@@ -1,0 +1,80 @@
+      <div class="settings-section settings-section--grouped stack">
+        <p class="text muted settings-help group-foot">{{i18n:settings.relays.intro}}</p>
+        <div class="stack settings-actions" data-if="my_relays_shown">
+          <div data-for="relay, relay_index : my_relay_rows" class="settings-device-row stack group-card">
+            <div class="settings-phone-only">
+              <div class="group-row group-row--static">
+                <span class="group-row-body">
+                  <span class="group-row-label">
+                    <span class="group-row-text">{{relay.label}}</span>
+                    <span class="group-row-sub" data-if="relay.state_kind != 'error'">{{relay.state}}</span>
+                    <span class="group-row-sub text error" data-if="relay.state_kind == 'error'">{{relay.state}}</span>
+                    <span class="group-row-sub" data-if="relay.reach != '' && !relay.reach_failed">{{relay.reach}}</span>
+                    <span class="group-row-sub text error" data-if="relay.reach_failed">{{relay.reach}}</span>
+                  </span>
+                  <span class="group-row-value" data-if="relay.preferred">{{i18n:settings.relays.preferred}}</span>
+                </span>
+              </div>
+              <div data-if="my_relays_editable && !my_relays_busy">
+                <button class="group-row" type="button" data-if="relay.can_make_preferred"
+                        data-event-click="make_relay_preferred(relay_index)">
+                  <span class="group-row-body">
+                    <span class="group-row-label"><span class="group-row-text">{{i18n:settings.relays.make_preferred}}</span></span>
+                  </span>
+                </button>
+                <button class="group-row group-row--danger" type="button" data-if="relay.can_remove"
+                        data-event-click="remove_my_relay(relay_index)">
+                  <span class="group-row-body">
+                    <span class="group-row-label"><span class="group-row-text">{{i18n:settings.relays.remove}}</span></span>
+                  </span>
+                </button>
+              </div>
+            </div>
+            <div class="stack settings-desktop-only">
+              <div class="row settings-device-title">
+                <p class="text">{{relay.label}}</p>
+                <span class="settings-device-badge" data-if="relay.preferred">{{i18n:settings.relays.preferred}}</span>
+              </div>
+              <p class="text muted" data-if="relay.state_kind != 'error'">{{relay.state}}</p>
+              <p class="text error" data-if="relay.state_kind == 'error'">{{relay.state}}</p>
+              <p class="text muted" data-if="relay.reach != '' && !relay.reach_failed">{{relay.reach}}</p>
+              <p class="text error" data-if="relay.reach_failed">{{relay.reach}}</p>
+              <div class="settings-device-actions row" data-if="my_relays_editable && !my_relays_busy && relay.can_remove">
+                <button class="btn btn-secondary" type="button"
+                        data-event-click="make_relay_preferred(relay_index)">{{i18n:settings.relays.make_preferred}}</button>
+                <button class="btn btn-secondary" type="button"
+                        data-event-click="remove_my_relay(relay_index)">{{i18n:settings.relays.remove}}</button>
+              </div>
+            </div>
+          </div>
+          <p class="text muted settings-help group-foot">{{i18n:settings.relays.help}}</p>
+          <p class="text muted settings-help group-foot" data-if="!my_relays_editable">{{i18n:settings.relays.not_main}}</p>
+        </div>
+        <div class="stack settings-actions" data-if="my_relays_shown && my_relays_can_add">
+          <div class="group-card" data-if="!my_relay_adding">
+            <button class="group-row" type="button" data-event-click="start_add_my_relay()">
+              <span class="group-row-body">
+                <span class="group-row-label"><span class="group-row-text">{{i18n:settings.relays.add}}</span></span>
+              </span>
+            </button>
+          </div>
+          <div class="stack" data-if="my_relay_adding">
+            <div class="group-card">
+              <label class="settings-field group-row group-row--field">
+                <span class="group-row-body group-row-body--field">
+                  <span class="settings-label group-row-text">{{i18n:settings.relays.add.field}}</span>
+                  <input class="field" type="text" data-value="my_relay_draft" placeholder="{{i18n:settings.relays.add.placeholder}}"/>
+                  <span class="group-field-hint" data-if="my_relay_draft == ''">{{i18n:settings.relays.add.placeholder}}</span>
+                </span>
+              </label>
+            </div>
+            <p class="text error group-foot" data-if="my_relay_add_error != ''">{{my_relay_add_error}}</p>
+            <p class="text muted group-foot" data-if="my_relays_busy">{{i18n:settings.relays.add.checking}}</p>
+            <div class="settings-actions row">
+              <button class="btn" type="button" data-if="!my_relays_busy" data-event-click="add_my_relay()">{{i18n:settings.relays.add.ok}}</button>
+              <button class="btn btn-secondary" type="button" data-if="!my_relays_busy" data-event-click="cancel_add_my_relay()">{{i18n:common.cancel}}</button>
+            </div>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot" data-if="!my_relays_shown">{{i18n:settings.relays.unavailable}}</p>
+      </div>

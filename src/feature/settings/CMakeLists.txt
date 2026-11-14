@@ -7,6 +7,7 @@ pp_browser_add_feature_library(pp_feature_settings
     IntegrationsSettingsSection.cpp
     LlmSettingsSection.cpp
     NetworkSettingsSection.cpp
+    MyRelays.cpp
     OwnDevices.cpp
     ReachabilityNudge.cpp
     SettingsLogic.cpp

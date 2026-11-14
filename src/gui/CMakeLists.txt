@@ -58,6 +58,7 @@ pp_browser_add_feature_library(pp_gui
     ProfileSettingsSection.cpp
     SecuritySettingsSection.cpp
     SettingsCasLibrary.cpp
+    SettingsMyRelays.cpp
     SettingsOwnDevices.cpp
     SettingsController.cpp
     SettingsProfileActions.cpp
