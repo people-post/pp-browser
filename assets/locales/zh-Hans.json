@@ -382,7 +382,7 @@
     "settings.security.devices.role_this_main": "本机（主设备）",
     "settings.security.devices.role_main_manage": "主设备（管理）",
     "settings.security.devices.role_other": "其他设备",
-    "settings.security.devices.unnamed": "未命名设备",
+    "settings.security.devices.unnamed": "未命名",
     "settings.security.devices.rename": "改名…",
     "settings.security.devices.rename_title": "设备名",
     "settings.security.devices.rename_prompt": "只有你自己的设备看得到",

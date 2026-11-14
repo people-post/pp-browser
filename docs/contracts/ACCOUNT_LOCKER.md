@@ -85,7 +85,7 @@ local table. Rows are kept sorted by `peer_id`, so equal states serialize equal.
 A name is only ever set to a non-empty value (an empty input is a cancel). A device may name itself; the **main device**
 (the own account card's first) may also name another device on the card — a client rule: the locker cannot tell which
 device wrote an entry, and a device taken off the account that still holds the seed can write too (it changes display
-only; which device is main is the card's). A device without an entry is shown as "Unnamed device".
+only; which device is main is the card's). A device without an entry is shown as "Unnamed".
 
 ## Sync between an account's devices
 
