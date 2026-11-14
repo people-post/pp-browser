@@ -142,8 +142,8 @@ Our account card lists the `https://` ones, preferred first ([ACCOUNT_CARD](ACCO
 ### The directory on each
 
 The directory the app asks (`OurRelaysDirectory`, built by `BackendClientSet`) is the configured one (`directory`:
-normally the preferred relay's, its `providers` failing over as before) and then the directory of each relay of ours
-it does not name, in our order ([DESIGN § Not in scope](../../projects/multi-relay/DESIGN.md#not-in-scope): a name
+by default the preferred relay's, its `providers` failing over as before; one configured apart replaces the preferred
+relay's) and then the directory of each other relay of ours (`relay.extra_base_urls`) it does not name, in our order ([DESIGN § Not in scope](../../projects/multi-relay/DESIGN.md#not-in-scope): a name
 search asks the relays the user has listed; there is no search across relays beyond them).
 
 - **A name search** (`GET /v1/search?q=`: the contacts page's *Add contact* and the assistant's `search_people`, both

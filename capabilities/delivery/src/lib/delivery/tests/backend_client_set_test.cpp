@@ -220,5 +220,17 @@ TEST_F(BackendClientSetDirectoryTest, ALookupGoesOnToTheNextRelayAndItsCardIsGiv
   EXPECT_EQ(given.size(), 1u) << "cleared: no card given";
 }
 
+TEST_F(BackendClientSetDirectoryTest, ADirectoryConfiguredApartReplacesThePreferredRelays) {
+  Serve(preferred_, Hits(Hit("account:bob", "bob")), Reply{.status = 404, .headers = {}, .body = "{}"});
+  Serve(other_, Hits(Hit("account:cat", "cat")), Reply{.status = 404, .headers = {}, .body = "{}"});
+  clients_.Apply(
+      At(preferred_.Origin() + "/api/relay", other_.Origin() + "/api/relay", preferred_.Origin() + "/api/relay"));
+  auto hits = directory_.SearchPeople("c");
+  ASSERT_TRUE(hits);
+  ASSERT_EQ(hits->size(), 1u);
+  EXPECT_EQ(hits->at(0).nickname, "cat");
+  EXPECT_TRUE(preferred_.Requests().empty()) << "the configured directory is asked instead of the preferred relay's";
+}
+
 } // namespace
 } // namespace pbr

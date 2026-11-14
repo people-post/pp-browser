@@ -112,8 +112,10 @@ void BackendClientSet::WireDirectory() {
   for (const OurRelay& relay : OurRelays()) {
     const bool named = std::any_of(directory_providers_.begin(), directory_providers_.end(),
                                    [&relay](const std::string& provider) { return SameRelay(provider, relay.origin); });
-    if (named) {
-      continue; // the configured directory asks it already
+    // The preferred relay's directory is the configured one (its default): a directory configured apart from it
+    // replaces it. Our other relays have no directory setting of their own: theirs is asked.
+    if (!relay.registration || named) {
+      continue;
     }
     auto client = RelayDirectory(relay.origin);
     relays.emplace_back(relay.origin, client);
@@ -281,9 +283,10 @@ void BackendClientSet::Clear() {
   directory_fingerprint_.clear();
   configured_directory_.reset();
   directory_providers_.clear();
+  relay_directories_.clear();
+  wired_directory_.clear(); // the holders' directory stays until the next Apply rebuilds it, as before
   registration_url_.clear();
   WireSender();
-  WireDirectory();
 }
 
 } // namespace pbr

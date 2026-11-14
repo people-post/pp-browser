@@ -27,8 +27,8 @@ namespace pbr {
  *
  * Our other relays (multi-relay R2, `relay.extra_base_urls`) get a message, push-device and registration client each
  * (OurRelays); blobs, files, lockers, profile photos and stream history stay the preferred relay's. The directory
- * asks the configured one and then each relay of ours it does not name (OurRelaysDirectory): a name search all at
- * once, a lookup in order; the cards its lookups carry go to DirectoryCards.
+ * asks the configured one (by default the preferred relay's) and then each other relay of ours it does not name
+ * (OurRelaysDirectory): a name search all at once, a lookup in order; the cards its lookups carry go to DirectoryCards.
  * Sends go through one stable RelaySendCoordinator (Sender): into the recipient's relays in list order, with a client
  * of its own for a relay not ours. The owner's thread.
  */
@@ -85,7 +85,7 @@ private:
   void ApplyDirectory(DirectoryConfig directory);
   void ApplyRegistration(const std::string& url);
   void ApplyExtraRelays(const std::vector<std::string>& urls);
-  /** The directory the holders see: the configured one, then the directory of each relay of ours it does not name. */
+  /** The directory the holders see: the configured one, then the directory of each other relay of ours it does not name. */
   void WireDirectory();
   /** The directory client of our relay at `origin`, kept while it stays ours. */
   std::shared_ptr<mesh::IDirectoryClient> RelayDirectory(const std::string& origin);

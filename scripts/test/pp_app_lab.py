@@ -1939,11 +1939,11 @@ def kept_relays(u, account):
 
 
 def scenario_users_on_two_relays_meet(lab):
-    """Multi-relay R2: Alice is on relay A, Bob on relay B, and Alice searches B's directory. Her first message finds
-    no card of Bob's, so it goes to her own relay, which does not know him (recipient_not_registered): his newest card
-    is fetched — from B's directory — and the message goes into B, a stranger's, within his first-contact quota. Bob
-    answers into A, by the card her message carried. They add each other (grants), write as contacts and call: the
-    call's signaling crosses the relays too."""
+    """Multi-relay R2: Alice is on relay A, Bob on relay B, and Alice searches B's directory. Its lookup answer carries
+    Bob's card, which she keeps (SERVICE_ENDPOINTS § The directory on each), so her first message goes into B, a
+    stranger's, within his first-contact quota. (Without that card it would go to her own relay, be refused there as
+    recipient_not_registered, and fetch his card — RecipientRelays.) Bob answers into A, by the card her message
+    carried. They add each other (grants), write as contacts and call: the call's signaling crosses the relays too."""
     a = lab.user("alice", relays=["a"], directories=["b"])
     b = lab.user("bob", relays=["b"])
     for u in (a, b):
