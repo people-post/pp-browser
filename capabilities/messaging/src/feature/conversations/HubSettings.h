@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace pbr {
 
@@ -17,6 +18,8 @@ struct HubSettings {
   /** The mesh slice, normalized (the app's seeds, else the deployment's). */
   MeshConfig mesh;
   ServiceEndpointConfig relay;
+  /** Our other relays' base URLs (`relay.extra_base_urls`, multi-relay R2), after `relay`'s; read at start. */
+  std::vector<std::string> relay_extra_base_urls;
   DirectoryConfig directory;
   ServiceEndpointConfig registration;
   /** Dogfood: the initiation floor seeded into the local identity while it is still 0 (P001). */

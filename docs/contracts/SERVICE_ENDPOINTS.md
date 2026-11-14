@@ -75,7 +75,7 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 
 | Answer | `code` | The client |
 |--------|--------|------------|
-| `404` | `recipient_not_registered` | Final: the recipient is not on this relay (`Err::Network::RecipientNotRegistered`; the notice "no longer on your message server"). A record that should reach every device names the peer as its Amp fallback: it goes over a link to it when one can be had. Trying the recipient's other relays is multi-relay R2 step 3 |
+| `404` | `recipient_not_registered` | Not on this relay (`Err::Network::RecipientNotRegistered`): the next relay of the recipient's list; on every relay of it, the recipient's newest card and its list once more ([Sending by the list](#sending-by-the-list)); then final (the notice "no longer on your message server"). A record that should reach every device names the peer as its Amp fallback: it goes over a link to it when one can be had |
 | `401` | `sender_key_required` | Sends once more with `sender_public_key_b64` |
 | `401` | `grant_expired`, `invalid_grant` | Drops the grant, asks the recipient for a new one (`relay_grant_ask`), and sends once more without it, as a stranger's |
 | `401` | `sender_key_mismatch`, other | Final (`HttpRejected`) |
@@ -93,6 +93,53 @@ Poll response extras (unix ms, relay clock):
 - poll body includes `server_time` (relay clock at response build; present on empty polls too)
 
 Call invite age uses `server_time - created_at` when both are present (caller create ≈ relay store).
+
+## Several relays
+
+An account may be on several relays (multi-relay R2; [DESIGN](../../projects/multi-relay/DESIGN.md#app)). Ours are the
+backend's relay (`relay.base_url`, the **preferred** one) and the other base URLs of `relay.extra_base_urls`, in that
+order, at most 4 in all, none twice ([CONFIGURATION](../ops/CONFIGURATION.md); `OurRelayOrigins`, `BackendClientSet`).
+Our account card lists the `https://` ones, preferred first ([ACCOUNT_CARD](ACCOUNT_CARD.md#account-card)).
+
+### Registering and receiving on each
+
+- **Registration.** The preferred relay's is the identity's, as above (the person registers; it renews there). Once it
+  is registered, the app registers on each other relay of ours too, with the same card at `register/finish`, and again
+  when the card is newer than the one that relay answered for, when its registration is within 14 days of its end, or
+  after a failure (1 min, doubling to 30 min) — `RelayRegistrationsWorkflow`, checked every minute while messaging
+  runs. What another relay answered is kept in memory only: each start registers there once more. Revoking (a profile
+  reset) revokes on each.
+- **Polling.** Each inbox has its own cursor (`relay_inbox_cursor.json`, [DATA_LAYOUT](DATA_LAYOUT.md)) and one poll
+  at a time (`RelayInboxCoordinator`). The preferred relay is polled at the app's pace
+  ([THREADING](../architecture/THREADING.md): ~2 s in the foreground); the others at every **4th** sync (~8 s), and
+  only once they hold our registration. A forced sync — a push or a wake — polls every relay: any of them may hold
+  the mail that woke us. A batch is acked on the relay it came from; `clear` clears every inbox.
+- **Twice.** A message that reaches us through two relays (a sender that tried a second after a timeout, a copy
+  for our other devices) is taken in twice: the receive pipeline drops the second by its message id, as any
+  redelivery. One relay batch is taken in at a time.
+- **Push.** The push token is registered on each relay that holds our registration ([HTTP device push](#http-device-push-opaque-wake)).
+- **The preferred relay only:** profile photos and blobs, chat attachment files, account lockers, stream history,
+  the directory (search and lookups), client compatibility and the Brief LLM key.
+
+### Sending by the list
+
+`RelaySendCoordinator` (the outbox's relay port) sends a record into its recipient's relays in their list order:
+
+1. **The list:** the relays of the newest card we keep for the recipient (`KeptRelays`); a recipient with no card, or
+   an empty list, goes to our preferred relay; a copy for our own other devices goes to our relays.
+2. **Health:** a relay a send could not reach (a transport failure, a timeout, a 5xx) is tried after the healthy
+   ones for **5 minutes** (`RelayHealth`); a send it takes clears it. An answer about the recipient (a price, a quota,
+   not registered) says nothing about the relay's health.
+3. **The next relay** is tried on a transport failure or a 5xx, and on `recipient_not_registered`. Any other refusal
+   (`payment_required`, `stranger_quota_exceeded`, `rate_limited`, another 4xx) is the send's answer. When every relay
+   failed, the transport failure is reported (the send is retried later), else `recipient_not_registered`.
+4. **A stale list:** `recipient_not_registered` on every relay tried fetches the recipient's newest card — its devices
+   over the mesh (8 s at most), then the directories of our relays and of our other directory providers
+   (`GET /v1/users/by-account`'s `account_card`), kept only when it verifies (`RecipientRelays`) — and tries its list **once** more; at most one fetch per recipient a
+   minute.
+
+A relay of ours is sent to as a registered sender; any other relay gets a client of its own (at most 16 kept), and
+our key when it asks for it (`sender_key_required`). The grant is the recipient's, the same on every relay.
 
 ## Directory and profile
 
@@ -273,7 +320,7 @@ Server should cluster by `fingerprint` (+ version), keep a sample, increment cou
 
 ## HTTP device push (opaque wake)
 
-Signed with `pp-browser:relay-api-v1` (sign version 2) ops `DeviceRegister=3` / `DeviceUnregister=4` over `(account_id, platform, device_id, push_token)`. Tokens are registered per relay, by Account ID: a relay holding mail for the account wakes its phone.
+Signed with `pp-browser:relay-api-v1` (sign version 2) ops `DeviceRegister=3` / `DeviceUnregister=4` over `(account_id, platform, device_id, push_token)`. Tokens are registered per relay, by Account ID, on every relay of ours that holds our registration ([Several relays](#several-relays)): a relay holding mail for the account wakes its phone. A backend switch unbinds the preferred relay's only.
 
 | HTTP | Purpose |
 |------|---------|

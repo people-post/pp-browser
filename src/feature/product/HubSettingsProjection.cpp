@@ -10,6 +10,7 @@ HubSettings HubSettingsFrom(const AppConfig& config, const ProfilePreferences& p
   HubSettings settings;
   settings.mesh = config.mesh;
   settings.relay = config.relay;
+  settings.relay_extra_base_urls = config.relay_extra_base_urls;
   settings.directory = config.directory;
   settings.registration = config.registration;
   settings.initiation_floor = config.initiation_floor;

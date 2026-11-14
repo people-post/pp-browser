@@ -670,6 +670,13 @@ Object AppConfigToObject(const AppConfig& config) {
   if (config.relay_content_sha256) {
     relay.set("content_sha256", true);
   }
+  if (!config.relay_extra_base_urls.empty()) {
+    std::vector<Value> extras;
+    for (const std::string& url : config.relay_extra_base_urls) {
+      extras.emplace_back(url);
+    }
+    relay.set("extra_base_urls", makeArray(std::move(extras)));
+  }
   object.set("relay", relay);
   object.set("directory", DirectoryConfigToObject(saved ? config.backend.saved_directory : config.directory));
   object.set("registration", ServiceEndpointToObject(saved ? config.backend.saved_registration : config.registration));
@@ -738,6 +745,14 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
     ServiceEndpointFromObject(*relay, config.relay);
     if (auto content_sha256 = relay->getIf<bool>("content_sha256")) {
       config.relay_content_sha256 = *content_sha256;
+    }
+    if (const Array* extras = relay->getArray("extra_base_urls")) {
+      config.relay_extra_base_urls.clear();
+      for (const Value& item : extras->elements) {
+        if (auto url = asString(item); url && !url->empty()) {
+          config.relay_extra_base_urls.push_back(*url);
+        }
+      }
     }
   }
   if (const Object* directory = object.getObject("directory")) {

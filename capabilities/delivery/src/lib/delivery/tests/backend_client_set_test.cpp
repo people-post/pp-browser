@@ -77,5 +77,41 @@ TEST(BackendClientSetTest, ClearDropsEveryClient) {
   EXPECT_EQ(clients.Blob(), nullptr);
 }
 
+// Our other relays (multi-relay R2): a message, push and registration client each, after the preferred relay; at
+// most four in all; the sends go through the one sender, which knows them.
+TEST(BackendClientSetTest, OurOtherRelaysGetClientsOfTheirOwnAfterThePreferredOne) {
+  SwitchableDirectoryClient directory;
+  BackendClientSet clients(directory);
+  auto endpoints = At("https://a.example/api/relay", "https://a.example/api/relay", "https://a.example/api/relay");
+  endpoints.extra_relays = {"https://b.example/api/relay/", "https://A.example/api/relay",
+                            "https://c.example/api/relay", "https://d.example/api/relay",
+                            "https://e.example/api/relay"};
+  clients.Apply(endpoints);
+  const auto& ours = clients.OurRelays();
+  ASSERT_EQ(ours.size(), 4u) << "at most four in all; the preferred one listed again is left out";
+  EXPECT_EQ(ours[0].origin, "https://a.example/api/relay");
+  EXPECT_EQ(ours[0].relay.get(), clients.Relay());
+  EXPECT_EQ(ours[0].registration, nullptr) << "the preferred relay registers through Registration()";
+  EXPECT_EQ(ours[1].origin, "https://b.example/api/relay");
+  EXPECT_EQ(ours[3].origin, "https://d.example/api/relay");
+  for (size_t i = 1; i < ours.size(); ++i) {
+    EXPECT_NE(ours[i].relay, nullptr);
+    EXPECT_NE(ours[i].push_devices, nullptr);
+    EXPECT_NE(ours[i].registration, nullptr);
+  }
+  IRelayClient* b = ours[1].relay.get();
+  clients.Apply(endpoints);
+  EXPECT_EQ(clients.OurRelays()[1].relay.get(), b) << "unchanged: kept";
+}
+
+TEST(BackendClientSetTest, NoPreferredRelayMeansNoOtherRelaysEither) {
+  SwitchableDirectoryClient directory;
+  BackendClientSet clients(directory);
+  auto endpoints = At("", "", "");
+  endpoints.extra_relays = {"https://b.example/api/relay"};
+  clients.Apply(endpoints);
+  EXPECT_TRUE(clients.OurRelays().empty());
+}
+
 } // namespace
 } // namespace pbr

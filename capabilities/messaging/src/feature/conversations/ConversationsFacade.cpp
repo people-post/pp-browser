@@ -1430,7 +1430,12 @@ Roe<LocalIdentity> ConversationsFacade::ModifyLocalIdentity(
 }
 
 Roe<LocalIdentity> ConversationsFacade::FinishAndPersistRegistration(const std::string& nickname) {
-  return pbr::FinishAndPersistRegistration(hub_.Registration(), hub_.Identity(), nickname, {}, hub_.RegistrationCard());
+  auto registered =
+      pbr::FinishAndPersistRegistration(hub_.Registration(), hub_.Identity(), nickname, {}, hub_.RegistrationCard());
+  if (registered) {
+    hub_.RegisterOnOtherRelaysSoon(); // our other relays follow the preferred one (multi-relay R2)
+  }
+  return registered;
 }
 
 Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std::string& nickname) {
@@ -1438,6 +1443,10 @@ Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std:
 }
 
 Roe<void> ConversationsFacade::RevokeRegistration() {
+  // Our other relays first (best effort, multi-relay R2), while the identity still says it is registered.
+  if (RelayRegistrationsWorkflow* others = hub_.OtherRelayRegistrations()) {
+    others->RevokeAll();
+  }
   return pbr::RevokeRegistrationWithIdentity(hub_.Registration(), hub_.Identity());
 }
 
