@@ -512,12 +512,24 @@ data-event-click="change_pin()"	1	-	security	show_change_pin && security_can_cha
 {{i18n:pin.forget_warning}}	1	-	security	show_change_pin && security_can_change_pin	security	
 {{i18n:settings.security.change_pin}}	1	-	security	show_change_pin && security_can_change_pin	security	
 {{i18n:settings.security.unlock_to_change}}	1	-	security	show_change_pin && !security_can_change_pin && !pin_protection_not_setup	security	
-data-event-click="export_link_device()"	2	-	devices	security_can_export_link && !own_devices_not_main	devices	
-{{i18n:settings.security.link_device.export}}	2	-	devices	security_can_export_link && !own_devices_not_main	devices	
+data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main	devices	
+{{i18n:settings.security.link_device.export}}	1	-	devices	security_can_export_link && !own_devices_not_main	devices	
 {{i18n:settings.security.link_device.help}}	1	-	devices	-	devices	
 {{i18n:settings.security.link_device.reset_hint}}	1	-	devices	-	devices	
-{{i18n:settings.security.link_device.send_hint}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.send_hint}}	2	-	devices	-	devices	
 {{i18n:settings.security.link_device}}	1	-	devices	-	devices	
+{{move_lead_label}}	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
+data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
+{{i18n:settings.security.link_device.copy_button}}	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
+{{i18n:settings.security.link_device.export_done}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
+{{move_valid_label}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
+data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
+{{i18n:settings.security.link_device.copy_again}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
+{{i18n:settings.security.link_device.steps_head}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.step1}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.step2}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.step3}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.precondition}}	1	-	devices	-	devices	
 {{i18n:settings.security.devices.help}}	1	-	devices	own_devices_shown;;!own_devices_not_main && !own_devices_signed_out	devices	
 {{i18n:settings.security.devices.not_main_phone}}	1	-	devices	own_devices_shown;;own_devices_not_main && !own_devices_signed_out	devices	
 data-event-click="open_security_page('transfer')"	1	-	devices	!own_devices_not_main	devices	

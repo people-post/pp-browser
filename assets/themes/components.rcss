@@ -13660,6 +13660,85 @@ textarea:composing ~ .prompt-composer-label,
   margin: 8dp 32dp 0 32dp;
 }
 
+/* Me > Devices & transfer > Move to a new device (phones): lead line, the 50dp copy button (the grouped-page .btn), the
+   framed "copied" box with its small "again" button, then the numbered steps and the reset note. */
+.shell-layer-compact .settings-transfer-lead {
+  margin: 20dp 32dp 0 32dp;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.shell-layer-compact .settings-copied-box {
+  margin: 16dp 16dp 0 16dp;
+  padding: 16dp 18dp 8dp 18dp;
+  border-width: 2dp;
+  border-style: solid;
+  border-radius: 14dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .settings-copied-title {
+  margin: 0;
+  font-size: 19dp;
+  line-height: 26dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .settings-copied-sub {
+  margin: 4dp 0 0 0;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-layer-compact .settings-copied-again {
+  display: block;
+  margin: 4dp -8dp 0 -8dp;
+  text-align: left;
+}
+
+.shell-layer-compact .settings-steps-card {
+  padding: 0 16dp 0 0;
+}
+
+.shell-layer-compact .settings-step {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  padding: 12dp 0;
+}
+
+.shell-layer-compact .settings-step:first-child {
+  border-top-width: 0;
+}
+
+.shell-layer-compact .settings-step-num {
+  flex: 0 0 26dp;
+  width: 26dp;
+  height: 26dp;
+  margin: 0 12dp 0 16dp;
+  border-radius: 13dp;
+  font-size: 14dp;
+  line-height: 26dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-layer-compact .settings-step-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16dp;
+  line-height: 22dp;
+}
+
+.shell-layer-compact .settings-transfer-pre {
+  margin: 14dp 16dp 0 16dp;
+  padding: 12dp 16dp;
+  border-radius: 12dp;
+  font-size: 14dp;
+  line-height: 20dp;
+}
+
 .shell-layer-compact .settings-section .settings-warn-row .group-foot {
   margin: 0;
 }

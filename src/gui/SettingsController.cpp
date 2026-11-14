@@ -1589,6 +1589,7 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
     return;
   }
   log().info << "OpenSecurityPage " << page;
+  security_actions_.ClearTransferCopied(); // a fresh visit starts on the button, not on an old "copied" box
   security_page_ = page.c_str();
   status_ = "";
   DirtyAll();
@@ -1617,6 +1618,7 @@ void SettingsController::ApplyCloseSecurityPage() {
   if (shell_navigation_.set_secret_page_open) {
     shell_navigation_.set_secret_page_open(false);
   }
+  security_actions_.ClearTransferCopied();
   security_page_ = "";
   security_page_title_ = "";
   choice_page_.Close();
@@ -1641,7 +1643,8 @@ void SettingsController::ResetSecurityPage() {
   if (shell_navigation_.set_secret_page_open) {
     shell_navigation_.set_secret_page_open(false);
   }
-  security_actions_.HideRecoveryPhrase(); // the phrase does not follow the user off the page
+  security_actions_.HideRecoveryPhrase();  // the phrase does not follow the user off the page
+  security_actions_.ClearTransferCopied(); // nor does the "copied" box
   if (security_page_.empty()) {
     return;
   }

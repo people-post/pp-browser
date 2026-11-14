@@ -16,6 +16,7 @@ accent-tint	#007aff1f	#0a84ff2e	§2.3
 secure	#30b0c7	#40c8e0	§2.3
 secure-tint	#30b0c71f	#40c8e02e	§2.3
 success	#34c759	#30d158	§2.3
+success-tint	#34c7591f	#30d1582e	the transfer page's "code copied" box: pale green fill
 danger	#ff3b30	#ff453a	§2.3
 warn	#ff9500	#ff9f0a	§2.3
 warn-tint	#fff4e0	#2e2210	the Advanced page banner: pale amber

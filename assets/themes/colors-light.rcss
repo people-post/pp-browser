@@ -3022,6 +3022,42 @@ input.checkbox:checked {
   color: #000000;
 }
 
+/* The transfer page: the "code copied" box (green edge, pale green fill), the numbered steps and the reset note. */
+.shell-layer-compact .settings-copied-box {
+  background-color: #34c7591f;
+  border-color: #34c759;
+}
+
+.shell-layer-compact .settings-copied-title {
+  color: #000000;
+}
+
+.shell-layer-compact .settings-copied-sub {
+  color: #3c3c4399;
+}
+
+.shell-layer-compact .settings-step-num {
+  background-color: #007aff;
+  color: #ffffff;
+}
+
+.shell-layer-compact .settings-step-text {
+  color: #000000;
+}
+
+.shell-layer-compact .settings-step {
+  border-top: 1dp #3c3c434a;
+}
+
+.shell-layer-compact .settings-transfer-lead {
+  color: #3c3c4399;
+}
+
+.shell-layer-compact .settings-transfer-pre {
+  background-color: #fff4e0;
+  color: #000000;
+}
+
 /* Plain action rows in a card: accent text on the card, a separator above each. */
 .shell-layer-compact .settings-section--grouped .group-card .btn.settings-action-row,
 .shell-layer-compact .settings-section--grouped .group-card .btn.settings-action-row:hover,

@@ -88,7 +88,6 @@ protected:
 
     commands.session_store = [this]() -> SessionStore& { return store; };
     settings.BindCommands(commands);
-    ShellFeedbackPorts ports;
     ports.show_toast = [this](const std::string& message, ToastDuration) { toasts.push_back(message); };
     settings.BindShellFeedback(ports);
     UserFeedback::BindPorts(ports);
@@ -114,7 +113,8 @@ protected:
         "<button id=\"sel_dev\" data-event-click=\"select_section('devices')\">x</button>"
         "<div id=\"xrow\" data-event-click=\"open_security_page('transfer')\">"
         "<button id=\"xq\" data-event-click=\"ask_setting_help('settings.security.transfer_row')\">x</button></div>"
-
+        "<button id=\"copy_code\" data-event-click=\"export_link_device()\">x</button>"
+        "<p id=\"copied\">{{transfer_code_copied}}</p>"
         "<button id=\"edit_llm\" data-event-click=\"on_llm_field_changed()\">x</button>"
         "<button id=\"edit_net\" data-event-click=\"on_network_field_changed()\">x</button>"
         "<button id=\"edit_int\" data-event-click=\"on_integrations_field_changed()\">x</button>"
@@ -153,6 +153,7 @@ protected:
   }
 
   NullRender render;
+  ShellFeedbackPorts ports;
   QuietSystem system;
   SessionStore store;
   SettingsCommands commands;
@@ -500,8 +501,8 @@ TEST_F(SettingsAdvancedSubpageTest, EverySubpageFileIsIncludedOnceInTheDesktopPa
 }
 
 } // namespace
-// Devices & transfer (2026-11-14): the "?" inside the transfer row stops its click. Driven through the real settings
-// model with the old events.
+// Devices & transfer (2026-11-14): the "?" inside the transfer row stops its click, and the "copied" flag of the transfer
+// page is cleared when the page is left. Driven through the real settings model with the old events.
 TEST_F(SettingsAdvancedSubpageTest, ATapOnTheHelpMarkInTheTransferRowDoesNotOpenThePage) {
   Click("sel_dev");
   ASSERT_EQ(Text("sp"), "");
@@ -509,6 +510,49 @@ TEST_F(SettingsAdvancedSubpageTest, ATapOnTheHelpMarkInTheTransferRowDoesNotOpen
   EXPECT_EQ(Text("sp"), "") << "the \"?\" asks; the row's own click never fires";
   Click("xrow");
   EXPECT_EQ(Text("sp"), "transfer") << "a tap on the row itself still opens the page";
+}
+
+TEST_F(SettingsAdvancedSubpageTest, TheCopiedFlagIsSetByTheExportAndClearedWhenThePageIsLeftOrReopened) {
+  AppRuntime::Initialize();
+  commands.export_link_device = []() -> Roe<std::string> { return std::string("code"); };
+  commands.load_pin_protection = []() { return PinProtectionView{.ready = true, .unlocked = true}; };
+  int confirms = 0;
+  bool accept = true;
+  ports.show_confirm = [&](const std::string&, const std::string&, std::function<void(bool)> on_result,
+                           const std::string&) {
+    ++confirms;
+    on_result(accept);
+  };
+  settings.BindShellFeedback(ports);
+  settings.BindCommands(commands);
+  ProfilePreferences prefs = store.Snapshot().profile_prefs;
+  prefs.pin_is_default = true; // the app's public PIN: the export only confirms (the PIN gate has its own tests)
+  ASSERT_TRUE(static_cast<bool>(store.SaveProfilePrefs(prefs)));
+  Click("sel_dev");
+  Click("xrow");
+  ASSERT_EQ(Text("sp"), "transfer");
+  EXPECT_EQ(Text("copied"), "0");
+
+  accept = false;
+  Click("copy_code");
+  AppRuntime::DrainWorkersThenUI();
+  AppRuntime::RunUITasks();
+  context->Update();
+  EXPECT_EQ(confirms, 1);
+  EXPECT_EQ(Text("copied"), "0") << "a cancelled confirm leaves the button";
+
+  accept = true;
+  Click("copy_code");
+  AppRuntime::DrainWorkersThenUI();
+  AppRuntime::RunUITasks();
+  context->Update();
+  EXPECT_EQ(Text("copied"), "1");
+
+  Click("close_sub");
+  AppRuntime::RunUITasks();
+  context->Update();
+  EXPECT_EQ(Text("copied"), "0") << "leaving the page clears it";
+  AppRuntime::Shutdown();
 }
 
 } // namespace pbr

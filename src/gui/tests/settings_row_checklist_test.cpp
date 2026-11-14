@@ -395,7 +395,13 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       // The "?" is on both variants of the row (main: enabled row; linked phone: disabled row).
       {"devices", "ask_setting_help('settings.security.transfer_row')", "!own_devices_not_main@@own_devices_not_main",
        2, 0},
-      {"devices", "export_link_device()", "security_can_export_link && !own_devices_not_main", 0, 1},
+      // Here the phone's button and "Copy again" sit in the transfer block's desktop wrapper (hidden): only the desktop
+      // button shows. Their own page is checked in the next test.
+      {"devices", "export_link_device()",
+       "security_can_export_link && !own_devices_not_main@@security_can_export_link && "
+       "!own_devices_not_main;;!transfer_code_copied@@security_can_export_link && "
+       "!own_devices_not_main;;transfer_code_copied",
+       0, 1},
       // The phone's device rows moved into a sheet (open_own_device_actions); its two actions run the same Remove /
       // MakeMain the desktop buttons' events run (SettingsOwnDevicesTest). The desktop keeps one element per event.
       {"devices", "make_main_device(device_index)", "own_devices_shown;;device.can_manage", 0, 1},
@@ -426,19 +432,28 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
   }
 }
 
-TEST(SettingsSensitiveActionsTest, TheTransferBlockOnItsOwnPageShowsOneExportRowPerLayout) {
-  // settings.rml includes the same file for the phone's own transfer page: there the phone row is the one that shows.
+TEST(SettingsSensitiveActionsTest, TheTransferBlockOnItsOwnPageFiresTheOneExportEventUnderTheOldGate) {
+  // settings.rml includes the same file for the phone's own transfer page. The phone has the primary button and, in the
+  // "copied" box, "Copy again": both fire export_link_device() under the old gate (the box only adds the view flag);
+  // the desktop keeps its one button.
   const std::string rml = ReadAsset("views/settings_security_transfer.rml");
+  const std::string gate = "security_can_export_link && !own_devices_not_main";
   size_t phone = 0;
   size_t desktop = 0;
   for (const Occurrence& o : Scan(rml)) {
     if (o.token == "data-event-click=\"export_link_device()\"") {
-      EXPECT_EQ(o.gates, "security_can_export_link && !own_devices_not_main");
+      EXPECT_EQ(o.gates.rfind(gate, 0), 0u) << "the old gate comes first: " << o.gates;
+      if (o.layouts == "desktop") {
+        EXPECT_EQ(o.gates, gate);
+      } else {
+        EXPECT_TRUE(o.gates == gate + ";;!transfer_code_copied" || o.gates == gate + ";;transfer_code_copied")
+            << o.gates;
+      }
       phone += (o.layouts == "phone" || o.layouts == "both") ? 1 : 0;
       desktop += (o.layouts == "desktop" || o.layouts == "both") ? 1 : 0;
     }
   }
-  EXPECT_EQ(phone, 1u);
+  EXPECT_EQ(phone, 2u);
   EXPECT_EQ(desktop, 1u);
 }
 

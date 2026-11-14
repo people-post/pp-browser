@@ -1,5 +1,6 @@
 #include "gui/SettingsSecurityActions.h"
 
+#include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/crypto/PinRules.h"
 #include "foundation/error/AppError.h"
@@ -50,6 +51,10 @@ SettingsSecurityActions::~SettingsSecurityActions() {
 void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("change_pin", DataEvent<>([this]() { ChangePin(); }));
   ctor.BindEventCallback("export_link_device", DataEvent<>([this]() { ExportLinkDevice(); }));
+  SetTransferLabels();
+  ctor.Bind("transfer_code_copied", &transfer_code_copied_);
+  ctor.Bind("move_lead_label", &move_lead_label_);
+  ctor.Bind("move_valid_label", &move_valid_label_);
   ctor.BindEventCallback("toggle_biometric", DataEvent<>([this]() { ToggleBiometric(); }));
   ctor.Bind("recovery_phrase", &recovery_phrase_);
   ctor.BindEventCallback("show_recovery_phrase", DataEvent<>([this]() { ShowRecoveryPhrase(); }));
@@ -293,11 +298,28 @@ void SettingsSecurityActions::ConfirmExportLinkDevice() {
                                  system->SetClipboardText(result.value().c_str());
                                }
                                UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
+                               transfer_code_copied_ = true; // the phone page's "copied" box
+                               DataModelHost::Instance().Dirty("settings", "transfer_code_copied");
                                host_.ShowStatus("");
                              });
                            });
                          },
                          {});
+}
+
+void SettingsSecurityActions::SetTransferLabels() {
+  const std::string minutes = std::to_string(kLinkDeviceDefaultTtlMs / 60000);
+  move_lead_label_ = Tr("settings.security.link_device.lead", {{"minutes", minutes}}).c_str();
+  move_valid_label_ = Tr("settings.security.link_device.copied_valid", {{"minutes", minutes}}).c_str();
+}
+
+void SettingsSecurityActions::ClearTransferCopied() {
+  transfer_code_copied_ = false;
+  SetTransferLabels();
+  DataModelHost& model = DataModelHost::Instance();
+  model.Dirty("settings", "transfer_code_copied");
+  model.Dirty("settings", "move_lead_label");
+  model.Dirty("settings", "move_valid_label");
 }
 
 void SettingsSecurityActions::ShowRecoveryPhrase() {
