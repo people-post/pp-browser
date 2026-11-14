@@ -99,10 +99,15 @@ A relay cannot read a message, and it does not know who a user's contacts are. I
 ## App
 
 - **My relays** (Me → Network):
-  - the list, preferred first;
-  - add a relay by origin, remove one, mark one preferred;
-  - each with its registration and reachability.
-  - Changing the list signs a new card, registers on new relays, publishes the card to every relay in the list and to contacts over the control lane, and drops the push registration on removed relays.
+  - the list, preferred first, kept in the profile (seeded once from the deployment's relay and `relay.extra_base_urls`);
+  - add a relay by origin (it must answer), remove one (not the preferred), mark one preferred;
+  - each with its registration (kept across restarts) and reachability (its last poll);
+  - only the main device changes it; a linked device follows the card's list.
+  - Changing the list signs a new card, registers on new relays, publishes the card to every relay in the list and to contacts over the control lane, and revokes the registration (with its push bindings) and drops the inbox cursor on removed relays.
+- **Relay services and org services** ([MR006](DECISIONS.md#mr006--the-preferred-relay-carries-the-users-relay-services-org-services-stay-on-the-orgs-origin)):
+  - the preferred relay carries the inbox, push, registration, the directory (first), profile photos and blobs, chat attachment files;
+  - the org's origin keeps the Brief LLM gateway and its key, Support, diagnostics, crash reports, client compatibility;
+  - account lockers and stream history stay on the deployment's relay (no migration yet).
 - **Registering and receiving:**
   - the app registers on each listed relay;
   - it polls the preferred relay at today's pace and the others more slowly (e.g. a quarter of that);

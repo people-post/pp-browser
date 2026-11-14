@@ -67,3 +67,23 @@
 - Rate limits alone (a new account costs nothing).
 - Uploading each user's allow-list to their relays (the relay learns the contact graph).
 - Treating foreign senders as suspect and local ones as trusted (abuse does not depend on where the sender registered).
+
+## MR006 — The preferred relay carries the user's relay services; org services stay on the org's origin
+
+**Date:** 2026-11-14
+**Status:** Accepted (Hongwei, 2026-11-14: "relay services follow the preferred relay; org services stay on the org's address"). Built with R3's *My relays* (Me → Network); shipped form [SERVICE_ENDPOINTS § Relay services and org services](../../docs/contracts/SERVICE_ENDPOINTS.md#relay-services-and-org-services).
+**Decision:**
+- **Two origins.** The **org's origin** is the deployment's: the compiled (or configured) backend origin, `relay` / `registration` in the config file. The **preferred relay** is the first of the user's own relay list (*My relays*, kept in the profile). Until the user changes the list the two are the same, and nothing behaves differently.
+- **Relay services follow the preferred relay** (and the list): the inbox (polled at the app's pace; the others more slowly), push, registration (the identity's), the directory (search and lookups: the preferred relay's first, then the others'), profile photos and blobs, chat attachment files.
+- **Org services stay on the org's origin, whichever relay is preferred:** the Brief LLM gateway and its key, Support (client compatibility's `support`), diagnostics, crash reports, client compatibility, the promoted MCP server. The Brief LLM key is the org's: only a registration at the org's relay gives one; another relay's answer is not kept.
+- **What stays where it is (no migration in this step):** account lockers and stream history stay on the deployment's relay, the relay that holds them: every locker and stream so far was written there, and a restoring device, which knows no list yet, looks there. Removing that relay from the list stops the locker writes (logged), not the restore's read.
+- **A preferred change** re-points the relay services, renews the identity's registration on the new preferred relay (the card is newer, so it goes whatever the auto-renew preference — the path #602 built for a backend switch, so the registration records the relay it was made at), and registers on the old one as on any other relay of ours.
+- **The list** is user data in the profile, seeded once from the deployment's relay and `relay.extra_base_urls`; afterwards config is only the default for a new profile. At most 4 (MR004), `https://` (an `http://` relay only in developer builds, and never on the card), not empty in this step (mesh-only is not offered), the preferred one not removable until another is preferred. Only the main device changes it (it signs the card's list, MR002); a linked device follows the newest card's list.
+- **Every change** re-signs our card with the new list (preferred first), registers on new relays, publishes the card to every listed relay (each registers again for a newer card) and to our contacts and siblings over the control lane (the device-list notice with the card), and polling and sending follow the new list. A relay added must answer `GET /v1/client-compat`; a relay removed is revoked there (its push bindings with it) and its inbox cursor dropped.
+**Rationale:**
+- The org runs services that are not a mailbox: its LLM gateway, its Support desk, its crash and diagnostics intake and its release policy. They belong to the org that built and ships the app, not to whichever relay a user prefers, and a third-party relay need not run them at all.
+- Mailbox services are what a relay is for: a user who prefers another relay wants their mail, photos and files there, and the directory they search first to be the one they chose.
+- Moving lockers and stream history needs a migration (re-sealing, rewriting on the new relay); a restore must still find them. Leaving them on the deployment's relay keeps both until a later step.
+**Alternatives rejected:**
+- Everything follows the preferred relay (an independent relay would have to run the org's LLM gateway and Support, and the org's key would be issued by someone else).
+- Everything stays on the org's origin except the inbox (the user's photos, files and directory would stay with a relay they moved away from).
