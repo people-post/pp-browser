@@ -35,6 +35,31 @@ TEST(DeviceNameTest, DropsControlCharactersAndNewlines) {
             "ab"); // U+2028
 }
 
+TEST(DeviceNameTest, DropsBidiControlsAndZeroWidthCharactersButKeepsTheEmojiJoiner) {
+  // Each of these alone between two letters vanishes: LRE/RLE/PDF/LRO/RLO, LRI/RLI/FSI/PDI, LRM, RLM, ALM, ZWSP,
+  // ZWNJ, BOM.
+  for (const char* mark : {"\xE2\x80\xAA", "\xE2\x80\xAB", "\xE2\x80\xAC", "\xE2\x80\xAD", "\xE2\x80\xAE",
+                           "\xE2\x81\xA6", "\xE2\x81\xA7", "\xE2\x81\xA8", "\xE2\x81\xA9", "\xE2\x80\x8E",
+                           "\xE2\x80\x8F", "\xD8\x9C", "\xE2\x80\x8B", "\xE2\x80\x8C", "\xEF\xBB\xBF"}) {
+    EXPECT_EQ(pbr::NormalizeDeviceName(std::string("a") + mark + "b"), "ab") << mark;
+  }
+  EXPECT_EQ(pbr::NormalizeDeviceName("\xE2\x80\xAEPhone\xE2\x80\xAC"), "Phone");
+  // U+200D stays: the family emoji is intact.
+  const std::string family = "\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9";
+  EXPECT_EQ(pbr::NormalizeDeviceName("a" + family), "a" + family);
+}
+
+TEST(DeviceNameTest, TheSpacesOfU2000ToU200ATrimLikeSpaces) {
+  EXPECT_EQ(pbr::NormalizeDeviceName("\xE2\x80\x80\xE2\x80\x83Mac\xE2\x80\x8A\xE2\x80\x89"),
+            "Mac"); // en quad, em space, hair, thin
+  EXPECT_EQ(pbr::NormalizeDeviceName("\xE2\x80\x82\xE2\x80\x8A"), "");
+}
+
+TEST(DeviceNameTest, ANameOfOnlyInvisibleCharactersIsNoName) {
+  EXPECT_EQ(pbr::NormalizeDeviceName("\xE2\x80\xAE\xE2\x80\x8B\xEF\xBB\xBF\xE2\x81\xA6\xE2\x80\x8F"), "");
+  EXPECT_EQ(pbr::NormalizeDeviceName(" \xE2\x80\x8B \xD8\x9C\xE2\x80\x8C"), "");
+}
+
 TEST(DeviceNameTest, NothingLeftMeansNoName) {
   EXPECT_EQ(pbr::NormalizeDeviceName(""), "");
   EXPECT_EQ(pbr::NormalizeDeviceName("   \n\t "), "");

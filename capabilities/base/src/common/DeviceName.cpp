@@ -67,11 +67,14 @@ void Append(std::string& out, const char32_t cp) {
 }
 
 bool IsControl(const char32_t cp) {
-  return cp < 0x20 || (cp >= 0x7F && cp <= 0x9F) || cp == 0x2028 || cp == 0x2029;
+  return cp < 0x20 || (cp >= 0x7F && cp <= 0x9F) || cp == 0x2028 || cp == 0x2029 ||
+         // Bidi controls and invisible joiners that can reorder or hide text (U+200D, the emoji joiner, stays).
+         (cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2066 && cp <= 0x2069) || cp == 0x200E || cp == 0x200F ||
+         cp == 0x061C || cp == 0x200B || cp == 0x200C || cp == 0xFEFF;
 }
 
 bool IsSpace(const char32_t cp) {
-  return cp == ' ' || cp == 0xA0 || cp == 0x3000;
+  return cp == ' ' || cp == 0xA0 || cp == 0x3000 || (cp >= 0x2000 && cp <= 0x200A);
 }
 
 void Trim(std::vector<char32_t>& cps) {
