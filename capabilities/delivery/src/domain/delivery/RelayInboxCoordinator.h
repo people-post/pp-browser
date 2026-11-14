@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -27,7 +28,7 @@ struct RelayInbox {
  * preferred relay at every sync (the app's pace, BackgroundSyncScheduler), the others at every
  * kOtherRelaysEverySyncs-th — and all of them on a forced sync (a push or a wake: any relay may hold the mail that
  * woke us). Another relay is polled only once we are registered there. Each inbox keeps its own cursor (persisted,
- * RelayInboxCursors) and one poll at a time; a batch is handed to `take` on the ingest lane, then acked on the relay
+ * RelayInboxCursors, by relay: a relay made preferred keeps its cursor, one no longer ours loses it) and one poll at a time; a batch is handed to `take` on the ingest lane, then acked on the relay
  * it came from. A message that arrives through two relays is taken twice: the receive pipeline drops the second by
  * its id. Thread-safe; the polls' HTTP runs on the `poll` lane.
  */
@@ -61,7 +62,10 @@ public:
 
   explicit RelayInboxCoordinator(Ports ports);
 
-  /** Ours, preferred first; `profile_data_dir` keeps the cursors (empty: in memory only). A poll under way ends. */
+  /**
+   * Ours, preferred first; `profile_data_dir` keeps the cursors (empty: in memory only). A poll under way ends. The
+   * cursor of a relay no longer listed is dropped (from the file too, once an account's cursors were read).
+   */
   void SetInboxes(std::vector<RelayInbox> inboxes, std::string profile_data_dir);
   /** A sync (scheduled, or `force`d by a wake) for `account_id`. */
   void Sync(bool force, const std::string& account_id);
@@ -82,13 +86,16 @@ private:
   std::string CursorOf(const Inbox& inbox, const std::string& account_id);
   void KeepCursor(const Inbox& inbox, const std::string& account_id, const std::string& cursor);
   void LoadCursorsLocked(const std::string& account_id);
+  /** Drops the cursors of relays not listed and writes the file (cursors read for an account). */
+  void SaveCursorsLocked();
 
   Ports ports_;
   mutable std::mutex mutex_;
   std::vector<std::shared_ptr<Inbox>> inboxes_;
   std::string profile_data_dir_;
   std::string cursors_account_;
-  RelayInboxCursors cursors_;
+  /** The cursors read, by relay (RelayOriginKey). */
+  std::map<std::string, std::string> cursors_;
   uint64_t syncs_ = 0;
 };
 

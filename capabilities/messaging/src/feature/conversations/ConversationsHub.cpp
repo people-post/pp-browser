@@ -260,7 +260,7 @@ void ConversationsHub::UpdateOrgBackendClients(const HubSettings& settings) {
   clients_.Apply({.relay = settings.relay,
                   .directory = settings.directory,
                   .registration = settings.registration,
-                  .our_relays = {},
+                  .our_relays = our_relays_ ? our_relays_->List().Origins() : std::vector<std::string>{},
                   .extra_relays = settings.relay_extra_base_urls});
   relay_ = clients_.Relay();
   push_devices_ = clients_.PushDevices();
@@ -286,11 +286,18 @@ void ConversationsHub::WireOurRelays() {
   std::vector<std::string> origins;
   std::vector<RelayInbox> inboxes;
   std::vector<RelayRegistrationsWorkflow::Relay> others;
+  const OurRelaysList kept = our_relays_ ? our_relays_->List() : OurRelaysList{};
   for (const BackendClientSet::OurRelay& relay : clients_.OurRelays()) {
     origins.push_back(relay.origin);
     inboxes.push_back(RelayInbox{.origin = relay.origin, .client = relay.relay});
     if (relay.registration) {
-      others.push_back({.origin = relay.origin, .client = relay.registration});
+      RelayRegistrationRecord last;
+      for (const OurRelayEntry& entry : kept.relays) {
+        if (SameRelay(entry.origin, relay.origin)) {
+          last = entry.registration; // what it answered before this start
+        }
+      }
+      others.push_back({.origin = relay.origin, .client = relay.registration, .last = std::move(last)});
     }
   }
   if (relay_registrations_) {
@@ -315,6 +322,22 @@ void ConversationsHub::WireOurRelays() {
                                     .history = clients_.HistoryRelay(),
                                     .sender = &clients_.Sender(),
                                     .inboxes = std::move(inboxes)});
+}
+
+void ConversationsHub::SetOnOurRelaysChanged(std::function<void()> callback) {
+  std::lock_guard lock(our_relays_changed_mu_);
+  on_our_relays_changed_ = std::move(callback);
+}
+
+void ConversationsHub::NotifyOurRelaysChanged() {
+  std::function<void()> callback;
+  {
+    std::lock_guard lock(our_relays_changed_mu_);
+    callback = on_our_relays_changed_;
+  }
+  if (callback) {
+    callback();
+  }
 }
 
 void ConversationsHub::RegisterOnOtherRelaysSoon() {
@@ -1014,8 +1037,17 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   });
   PublishAddressDisclosure();
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
+  // My relays (multi-relay R3, MR006): the profile's list, seeded once from the deployment's relay and config.
+  our_relays_ = std::make_unique<OurRelaysStore>(data_dir_);
+  our_relays_->LoadOrSeed(clients_.OrgRelayOf({.relay = settings.relay}), settings.relay_extra_base_urls);
   relay_registrations_ = std::make_unique<RelayRegistrationsWorkflow>(*identity_);
   relay_registrations_->SetCard([this]() { return RegistrationCard(); });
+  relay_registrations_->SetOnResult([this](const std::string& origin, const RelayRegistrationRecord& record) {
+    if (our_relays_) {
+      our_relays_->Record(origin, record);
+    }
+    NotifyOurRelaysChanged();
+  });
   // A relay that took our registration takes our push token too (any relay holding mail can wake the phone).
   relay_registrations_->SetOnRegistered(
       [this](const std::string& origin) { (void)PushDeviceCoordinator::RegisterOn(*this, origin); });

@@ -43,6 +43,7 @@ public:
                                                              kem_binding_signature_b64, peer_id, multiaddrs, publish);
     if (result) {
       result->expires_at = expires_at;
+      result->llm_api_key = llm_key;
     }
     return result;
   }
@@ -51,6 +52,8 @@ public:
     return {};
   }
   bool fail = false;
+  /** What the relay answers as the Brief LLM key (only the org's relay's client keeps one, MR006). */
+  std::string llm_key;
   std::string expires_at = "2099-01-01T00:00:00.000Z";
   int finish_calls = 0;
   int revoke_calls = 0;
@@ -173,6 +176,70 @@ TEST_F(RelayRegistrationsWorkflowTest, ARelayStillListedKeepsWhatItAnswered) {
   workflow_->SetRelays({{kOther, client_}, {"https://c.example/api/relay", std::make_shared<CardRecordingClient>()}});
   EXPECT_TRUE(workflow_->Registered(kOther));
   EXPECT_EQ(workflow_->Due(kNow + 1000), std::vector<std::string>({"https://c.example/api/relay"}));
+}
+
+// The Brief LLM key is the org's (MR006): when the org's relay is another of ours (the user prefers another), the key
+// it answers with is the identity's; another relay's client answers with none (HttpRegistrationClient).
+TEST_F(RelayRegistrationsWorkflowTest, TheOrgsRelayAsAnotherOfOursKeepsTheBriefLlmKey) {
+  RegisterOnPreferred();
+  client_->llm_key = "brf_llm_org";
+  workflow_->RunDue(kNow);
+  EXPECT_EQ(identity_->Get().value().brief_llm_api_key.Reveal(), "brf_llm_org");
+}
+
+TEST_F(RelayRegistrationsWorkflowTest, ARelayWithoutAKeyLeavesTheIdentitysAlone) {
+  RegisterOnPreferred();
+  LocalIdentity identity = identity_->Get().value();
+  identity.brief_llm_api_key = std::string("brf_llm_kept");
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(identity)));
+  workflow_->RunDue(kNow);
+  EXPECT_EQ(identity_->Get().value().brief_llm_api_key.Reveal(), "brf_llm_kept");
+}
+
+// What each relay answered is kept (My relays shows it after a restart) and given back at the next start: a relay
+// that holds our registration for the current card is not asked again.
+TEST_F(RelayRegistrationsWorkflowTest, EachAnswerIsReportedToKeep) {
+  RegisterOnPreferred();
+  std::vector<RelayRegistrationRecord> records;
+  workflow_->SetOnResult(
+      [&records](const std::string&, const RelayRegistrationRecord& record) { records.push_back(record); });
+  client_->fail = true;
+  workflow_->RunDue(kNow);
+  client_->fail = false;
+  workflow_->RunDue(kNow + RelayRegistrationsWorkflow::kFirstRetryMs);
+  ASSERT_EQ(records.size(), 2u);
+  EXPECT_EQ(records[0].state, RelayRegistrationRecord::State::Failed);
+  EXPECT_EQ(records[0].reason, "relay down");
+  EXPECT_EQ(records[1].state, RelayRegistrationRecord::State::Registered);
+  EXPECT_EQ(records[1].expires_at, "2099-01-01T00:00:00.000Z");
+  EXPECT_EQ(records[1].card_issued_at, 1000);
+}
+
+TEST_F(RelayRegistrationsWorkflowTest, ARegistrationKeptFromBeforeTheStartIsNotAskedAgain) {
+  RegisterOnPreferred();
+  RelayRegistrationsWorkflow restarted(*identity_);
+  restarted.SetCard([this]() { return card_; });
+  restarted.SetRelays({{.origin = kOther,
+                        .client = client_,
+                        .last = {.state = RelayRegistrationRecord::State::Registered,
+                                 .expires_at = "2099-01-01T00:00:00.000Z",
+                                 .card_issued_at = 1000}}});
+  EXPECT_TRUE(restarted.Registered(kOther)) << "its inbox is polled at once";
+  restarted.RunDue(kNow);
+  EXPECT_EQ(client_->finish_calls, 0);
+  card_ = CardIssuedAt(2000);
+  restarted.RunDue(kNow);
+  EXPECT_EQ(client_->finish_calls, 1) << "a newer card goes";
+}
+
+TEST_F(RelayRegistrationsWorkflowTest, ARelayLeavingTheListIsRevokedThere) {
+  RegisterOnPreferred();
+  workflow_->RunDue(kNow);
+  ASSERT_TRUE(workflow_->Registered(kOther));
+  ASSERT_TRUE(static_cast<bool>(workflow_->Revoke(kOther)));
+  EXPECT_EQ(client_->revoke_calls, 1);
+  EXPECT_FALSE(workflow_->Registered(kOther));
+  EXPECT_FALSE(static_cast<bool>(workflow_->Revoke("https://z.example/api/relay")));
 }
 
 } // namespace

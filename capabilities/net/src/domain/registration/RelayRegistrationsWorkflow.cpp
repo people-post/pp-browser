@@ -40,6 +40,10 @@ void RelayRegistrationsWorkflow::SetRelays(std::vector<Relay> relays) {
                                     [&relay](const State& s) { return s.relay.origin == relay.origin; });
     if (known != states_.end()) {
       state = *known;
+    } else if (relay.last.state == RelayRegistrationRecord::State::Registered) {
+      state.registered = true; // as it answered before this start: due again for a newer card or near its end
+      state.expires_at = relay.last.expires_at;
+      state.card_issued_at = relay.last.card_issued_at;
     }
     state.relay = std::move(relay);
     next.push_back(std::move(state));
@@ -125,14 +129,43 @@ void RelayRegistrationsWorkflow::Register(const Relay& relay, const std::string&
       state->next_try_ms = now_ms + state->backoff_ms;
     }
   }
+  const std::string reason = ok ? std::string() : (result ? result->message : result.error().message);
+  if (on_result_) {
+    on_result_(relay.origin, ok ? RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Registered,
+                                                          .expires_at = result->expires_at,
+                                                          .card_issued_at = CardIssuedAt(publish),
+                                                          .at_ms = now_ms}
+                                : RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Failed,
+                                                          .reason = reason.empty() ? "refused" : reason,
+                                                          .at_ms = now_ms});
+  }
   if (!ok) {
-    log().warning << "registration on " << NormalizeRegistrationBackend(relay.origin)
-                  << " failed: " << (result ? result->message : result.error().message);
+    log().warning << "registration on " << NormalizeRegistrationBackend(relay.origin) << " failed: " << reason;
     return;
   }
   log().info << "registered on " << NormalizeRegistrationBackend(relay.origin);
+  KeepBriefLlmKey(*result);
   if (on_registered_) {
     on_registered_(relay.origin);
+  }
+}
+
+void RelayRegistrationsWorkflow::KeepBriefLlmKey(const RegistrationResult& result) {
+  // Only the org's relay answers with one (HttpRegistrationClient::SetTakesBriefLlmKey, MR006): the key is the
+  // org's, wherever our preferred relay is.
+  if (result.llm_api_key.empty()) {
+    return;
+  }
+  if (auto kept = identity_.Modify([&result](LocalIdentity& identity) {
+        if (identity.brief_llm_api_key.Reveal() == result.llm_api_key.Reveal()) {
+          return false;
+        }
+        identity.brief_llm_api_key = result.llm_api_key;
+        identity.brief_llm_guest_api_key.clear();
+        return true;
+      });
+      !kept) {
+    log().warning << "Brief LLM key not kept: " << kept.error().message;
   }
 }
 
@@ -151,6 +184,21 @@ std::vector<std::string> RelayRegistrationsWorkflow::RegisteredOrigins() const {
     }
   }
   return out;
+}
+
+Roe<void> RelayRegistrationsWorkflow::Revoke(const std::string& origin) {
+  std::shared_ptr<IRegistrationClient> client;
+  {
+    std::lock_guard lock(mutex_);
+    const auto state =
+        std::find_if(states_.begin(), states_.end(), [&origin](const State& s) { return s.relay.origin == origin; });
+    if (state == states_.end()) {
+      return Error("not one of our other relays");
+    }
+    client = state->relay.client;
+    state->registered = false;
+  }
+  return RevokeRegistrationWithIdentity(*client, identity_);
 }
 
 void RelayRegistrationsWorkflow::RevokeAll() {

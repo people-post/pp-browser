@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/net/OrgBackendClients.h"
+#include "lib/net/OurRelaysStore.h"
 #include "lib/people/IdentityStore.h"
 #include "common/Module.h"
 
@@ -20,8 +21,11 @@ namespace pbr {
  * account is registered on its preferred relay (the person's act, kept in the identity), it registers on each other
  * relay of ours with the same card — and again when the card changes, when that registration nears its expiry (14
  * days, as the preferred one), or after a failure (a backoff from kFirstRetryMs doubling to kMaxRetryMs). What a
- * relay answered is kept in memory only: a start registers on each again. The preferred relay's registration stays
- * the identity's (RegistrationClient.h); nothing here writes the identity. Thread-safe; RunDue blocks (HTTP).
+ * relay answered is reported (SetOnResult: the owner keeps it, OurRelaysStore) and given back at the next start
+ * (Relay::last): a relay that holds a registration for our current card is not asked again. The preferred relay's
+ * registration stays
+ * the identity's (RegistrationClient.h); the identity takes only the Brief LLM key the org's relay answers with, when
+ * that relay is another of ours (MR006). Thread-safe; RunDue blocks (HTTP).
  */
 class RelayRegistrationsWorkflow : public Module {
 public:
@@ -31,6 +35,8 @@ public:
   struct Relay {
     std::string origin;
     std::shared_ptr<IRegistrationClient> client;
+    /** What it answered last (kept across restarts); a relay already known here keeps what it answered since. */
+    RelayRegistrationRecord last;
   };
 
   explicit RelayRegistrationsWorkflow(IdentityStore& identity);
@@ -39,6 +45,10 @@ public:
   void SetRelays(std::vector<Relay> relays);
   /** What register/finish carries: our account card (WithAccountCard). */
   void SetCard(std::function<RegistrationPublishOpts()> card) { card_ = std::move(card); }
+  /** Every answer (registered or failed), to keep. Called on RunDue's thread. */
+  void SetOnResult(std::function<void(const std::string& origin, const RelayRegistrationRecord& record)> on_result) {
+    on_result_ = std::move(on_result);
+  }
   /** A relay took our registration (its push binding may go now). Called on RunDue's thread. */
   void SetOnRegistered(std::function<void(const std::string& origin)> on_registered) {
     on_registered_ = std::move(on_registered);
@@ -54,6 +64,8 @@ public:
   std::vector<std::string> RegisteredOrigins() const;
   /** Removes our registration from each relay (profile reset, #328); best effort, as on the preferred. */
   void RevokeAll();
+  /** Removes our registration from that relay of ours (it leaves the list; with it its push bindings). Blocks. */
+  Roe<void> Revoke(const std::string& origin);
 
 private:
   struct State {
@@ -68,10 +80,13 @@ private:
   static bool DueLocked(const State& state, int64_t now_ms, int64_t card_issued_at);
   void Register(const Relay& relay, const std::string& nickname, const RegistrationPublishOpts& publish,
                 int64_t now_ms);
+  /** The org's relay answered with the Brief LLM key: the identity keeps it. */
+  void KeepBriefLlmKey(const RegistrationResult& result);
 
   IdentityStore& identity_;
   std::function<RegistrationPublishOpts()> card_;
   std::function<void(const std::string&)> on_registered_;
+  std::function<void(const std::string&, const RelayRegistrationRecord&)> on_result_;
   mutable std::mutex mutex_;
   std::vector<State> states_;
   std::atomic<bool> running_{false};

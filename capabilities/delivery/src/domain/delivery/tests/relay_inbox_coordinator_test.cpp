@@ -173,6 +173,46 @@ TEST_F(RelayInboxCoordinatorTest, ARelayThatFailsIsReportedAndTheOthersStillDeli
   EXPECT_EQ(taken_, std::vector<std::string>({std::string(kOther) + " m1"}));
 }
 
+// My relays (MR006): a relay made preferred polls on from its own cursor; a relay that leaves the list loses its
+// cursor, in the file too.
+TEST_F(RelayInboxCoordinatorTest, ARelayMadePreferredPollsOnFromItsOwnCursor) {
+  preferred_->Queue({"m1"}, "a-1");
+  other_->Queue({"m2"}, "b-1");
+  coordinator_->Sync(true, kMe);
+  coordinator_->SetInboxes({{kOther, other_}, {kPreferred, preferred_}}, dir_.string());
+  registered_ = {kPreferred};
+  coordinator_->Sync(true, kMe);
+  EXPECT_EQ(other_->polled_with.back(), "b-1");
+  EXPECT_EQ(preferred_->polled_with.back(), "a-1");
+
+  RelayInboxCoordinator again(Ports());
+  again.SetInboxes({{kOther, other_}, {kPreferred, preferred_}}, dir_.string());
+  again.Sync(true, kMe);
+  EXPECT_EQ(other_->polled_with.back(), "b-1") << "across a restart too";
+  EXPECT_EQ(preferred_->polled_with.back(), "a-1");
+  EXPECT_EQ(LoadRelayInboxCursors(dir_.string(), kMe).preferred_relay, "https://b.example/api/relay");
+}
+
+TEST_F(RelayInboxCoordinatorTest, ARelayLeavingTheListLosesItsCursor) {
+  other_->Queue({"m2"}, "b-1");
+  coordinator_->Sync(true, kMe);
+  ASSERT_EQ(LoadRelayInboxCursors(dir_.string(), kMe).others.size(), 1u);
+  coordinator_->SetInboxes({{kPreferred, preferred_}}, dir_.string());
+  EXPECT_TRUE(LoadRelayInboxCursors(dir_.string(), kMe).others.empty());
+  coordinator_->SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
+  coordinator_->Sync(true, kMe);
+  EXPECT_EQ(other_->polled_with.back(), "") << "added again: from its oldest message";
+}
+
+TEST_F(RelayInboxCoordinatorTest, ACursorFromBeforeMyRelaysIsThePreferredRelays) {
+  SaveRelayInboxCursors(dir_.string(), kMe,
+                        RelayInboxCursors{.preferred = "a-old", .preferred_relay = "", .others = {}});
+  RelayInboxCoordinator again(Ports());
+  again.SetInboxes({{kPreferred, preferred_}}, dir_.string());
+  again.Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "a-old");
+}
+
 TEST_F(RelayInboxCoordinatorTest, NoInboxesPollsNothing) {
   coordinator_->SetInboxes({}, dir_.string());
   coordinator_->Sync(true, kMe);

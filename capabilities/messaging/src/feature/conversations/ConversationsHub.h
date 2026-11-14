@@ -54,6 +54,7 @@
 #include "lib/net/BlobQuota.h"
 #include "lib/net/HttpBlobClient.h"
 #include "lib/net/OrgBackendClientsImpl.h"
+#include "lib/net/OurRelaysStore.h"
 #include "lib/net/SwitchableDirectoryClient.h"
 #include "lib/net/IPushDeviceClient.h"
 #include "feature/conversations/PushBindingGate.h"
@@ -280,6 +281,8 @@ public:
   std::vector<std::string> OurRelayOrigins() const;
   /** Our account on our other relays (multi-relay R2); none before Initialize. */
   RelayRegistrationsWorkflow* OtherRelayRegistrations() { return relay_registrations_.get(); }
+  /** My relays changed (a relay answered our registration, the list changed): read them again. Runs on any thread. */
+  void SetOnOurRelaysChanged(std::function<void()> callback);
   /** Registers on our other relays that are due, off the caller's thread (after the preferred one, on a timer). */
   void RegisterOnOtherRelaysSoon();
   PushBindingGate& PushGate() { return push_gate_; }
@@ -690,6 +693,11 @@ private:
   static constexpr int64_t kRelayGrantSweepIntervalMs = 6LL * 60 * 60 * 1000;
   /** Our account on our other relays (multi-relay R2); with the identity it signs with. */
   std::unique_ptr<RelayRegistrationsWorkflow> relay_registrations_;
+  /** My relays (MR006): the profile's list and each relay's last registration. */
+  std::unique_ptr<OurRelaysStore> our_relays_;
+  std::mutex our_relays_changed_mu_;
+  std::function<void()> on_our_relays_changed_;
+  void NotifyOurRelaysChanged();
   /** Checks which other relays are due a registration while messaging runs. */
   uint64_t relay_registration_timer_id_ = 0;
   static constexpr int64_t kRelayRegistrationCheckIntervalMs = 60 * 1000;

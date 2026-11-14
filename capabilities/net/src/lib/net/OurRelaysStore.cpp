@@ -1,0 +1,289 @@
+#include "lib/net/OurRelaysStore.h"
+
+#include "lib/net/RelayOrigins.h"
+
+#include "common/AtomicFileWrite.h"
+#include "common/BoundedRead.h"
+#include "common/PlatformLimits.h"
+#include "common/ValueJson.h"
+
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <utility>
+
+namespace pbr {
+
+namespace {
+
+constexpr int64_t kFileVersion = 1;
+
+std::filesystem::path ListPath(const std::string& profile_data_dir) {
+  return std::filesystem::path(profile_data_dir) / "our_relays.json";
+}
+
+const char* StateName(const RelayRegistrationRecord::State state) {
+  switch (state) {
+    case RelayRegistrationRecord::State::Registered:
+      return "registered";
+    case RelayRegistrationRecord::State::Failed:
+      return "failed";
+    case RelayRegistrationRecord::State::Unknown:
+      break;
+  }
+  return "unknown";
+}
+
+RelayRegistrationRecord::State StateFromName(const std::string& name) {
+  if (name == "registered") {
+    return RelayRegistrationRecord::State::Registered;
+  }
+  if (name == "failed") {
+    return RelayRegistrationRecord::State::Failed;
+  }
+  return RelayRegistrationRecord::State::Unknown;
+}
+
+Object RecordToObject(const RelayRegistrationRecord& record) {
+  Object out;
+  out.set("state", std::string(StateName(record.state)));
+  if (!record.reason.empty()) {
+    out.set("reason", record.reason);
+  }
+  if (!record.expires_at.empty()) {
+    out.set("expires_at", record.expires_at);
+  }
+  if (record.card_issued_at > 0) {
+    out.set("card_issued_at", record.card_issued_at);
+  }
+  if (record.at_ms > 0) {
+    out.set("at_ms", record.at_ms);
+  }
+  return out;
+}
+
+RelayRegistrationRecord RecordFromObject(const Object& object) {
+  return RelayRegistrationRecord{.state = StateFromName(object.getString("state").value_or("")),
+                                 .reason = object.getString("reason").value_or(""),
+                                 .expires_at = object.getString("expires_at").value_or(""),
+                                 .card_issued_at = object.getIf<int64_t>("card_issued_at").value_or(0),
+                                 .at_ms = object.getIf<int64_t>("at_ms").value_or(0)};
+}
+
+Error ListError(const RelayListProblem problem) {
+  return Error(RelayListProblemCode(problem));
+}
+
+std::vector<OurRelayEntry>::const_iterator Find(const OurRelaysList& list, const std::string& origin) {
+  return std::find_if(list.relays.begin(), list.relays.end(),
+                      [&origin](const OurRelayEntry& entry) { return SameRelay(entry.origin, origin); });
+}
+
+} // namespace
+
+std::vector<std::string> OurRelaysList::Origins() const {
+  std::vector<std::string> out;
+  out.reserve(relays.size());
+  for (const OurRelayEntry& entry : relays) {
+    out.push_back(entry.origin);
+  }
+  return out;
+}
+
+std::string OurRelaysList::Preferred() const {
+  return relays.empty() ? std::string() : relays.front().origin;
+}
+
+bool OurRelaysList::Lists(const std::string& origin) const {
+  return Find(*this, origin) != relays.end();
+}
+
+const char* RelayListProblemCode(const RelayListProblem problem) {
+  switch (problem) {
+    case RelayListProblem::AlreadyListed:
+      return "relay_already_listed";
+    case RelayListProblem::Full:
+      return "relay_list_full";
+    case RelayListProblem::NotListed:
+      return "relay_not_listed";
+    case RelayListProblem::PreferredNotRemovable:
+      return "relay_preferred_not_removable";
+    case RelayListProblem::LastRelay:
+      return "relay_list_last";
+    case RelayListProblem::NotMainDevice:
+      return "relay_list_not_main_device";
+    case RelayListProblem::None:
+      break;
+  }
+  return "";
+}
+
+RelayListProblem RelayListProblemFromCode(const std::string& code) {
+  for (const RelayListProblem problem :
+       {RelayListProblem::AlreadyListed, RelayListProblem::Full, RelayListProblem::NotListed,
+        RelayListProblem::PreferredNotRemovable, RelayListProblem::LastRelay, RelayListProblem::NotMainDevice}) {
+    if (code == RelayListProblemCode(problem)) {
+      return problem;
+    }
+  }
+  return RelayListProblem::None;
+}
+
+Roe<OurRelaysList> WithRelayAdded(const OurRelaysList& list, const std::string& base_url) {
+  if (list.Lists(base_url)) {
+    return ListError(RelayListProblem::AlreadyListed);
+  }
+  if (list.relays.size() >= kMaxOurRelays) {
+    return ListError(RelayListProblem::Full);
+  }
+  OurRelaysList next = list;
+  next.relays.push_back(OurRelayEntry{.origin = base_url});
+  return next;
+}
+
+Roe<OurRelaysList> WithRelayRemoved(const OurRelaysList& list, const std::string& origin) {
+  const auto found = Find(list, origin);
+  if (found == list.relays.end()) {
+    return ListError(RelayListProblem::NotListed);
+  }
+  if (list.relays.size() == 1) {
+    return ListError(RelayListProblem::LastRelay); // mesh-only is not offered in this step (MR006)
+  }
+  if (found == list.relays.begin()) {
+    return ListError(RelayListProblem::PreferredNotRemovable);
+  }
+  OurRelaysList next = list;
+  next.relays.erase(next.relays.begin() + (found - list.relays.begin()));
+  return next;
+}
+
+Roe<OurRelaysList> WithRelayPreferred(const OurRelaysList& list, const std::string& origin) {
+  const auto found = Find(list, origin);
+  if (found == list.relays.end()) {
+    return ListError(RelayListProblem::NotListed);
+  }
+  OurRelaysList next;
+  next.relays.push_back(*found);
+  for (const OurRelayEntry& entry : list.relays) {
+    if (!SameRelay(entry.origin, origin)) {
+      next.relays.push_back(entry);
+    }
+  }
+  return next;
+}
+
+std::string OurRelaysToJson(const OurRelaysList& list) {
+  Object root;
+  root.set("version", kFileVersion);
+  std::vector<Value> relays;
+  for (const OurRelayEntry& entry : list.relays) {
+    Object relay;
+    relay.set("origin", entry.origin);
+    relay.set("registration", ObjectValue(RecordToObject(entry.registration)));
+    relays.push_back(ObjectValue(std::move(relay)));
+  }
+  root.set("relays", makeArray(std::move(relays)));
+  return DumpJson(root);
+}
+
+std::optional<OurRelaysList> OurRelaysFromJson(const std::string& text) {
+  const auto root = TryParseObject(text);
+  if (!root || root->getIf<int64_t>("version").value_or(0) != kFileVersion) {
+    return std::nullopt; // not ours to read (a newer file, garbage): seeded again
+  }
+  const Array* relays = root->getArray("relays");
+  if (!relays) {
+    return std::nullopt;
+  }
+  OurRelaysList list;
+  for (const Value& item : relays->elements) {
+    const Object* relay = asObject(item);
+    const auto origin = relay ? relay->getString("origin") : std::nullopt;
+    if (!origin || origin->empty() || list.Lists(*origin) || list.relays.size() >= kMaxOurRelays) {
+      continue;
+    }
+    const Object* registration = relay->getObject("registration");
+    list.relays.push_back(OurRelayEntry{
+        .origin = *origin, .registration = registration ? RecordFromObject(*registration) : RelayRegistrationRecord{}});
+  }
+  if (list.relays.empty()) {
+    return std::nullopt;
+  }
+  return list;
+}
+
+OurRelaysStore::OurRelaysStore(std::string profile_data_dir) : profile_data_dir_(std::move(profile_data_dir)) {}
+
+OurRelaysList OurRelaysStore::LoadOrSeed(const std::string& org_relay, const std::vector<std::string>& extras) {
+  std::lock_guard lock(mutex_);
+  if (!profile_data_dir_.empty()) {
+    std::ifstream in(ListPath(profile_data_dir_));
+    if (in) {
+      // An oversized file reads as unparseable (PB-063).
+      const auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
+      if (auto kept = text ? OurRelaysFromJson(*text) : std::nullopt) {
+        list_ = std::move(*kept);
+        return list_;
+      }
+    }
+  }
+  list_ = {};
+  for (const std::string& origin : OurRelayOrigins(org_relay, extras)) {
+    list_.relays.push_back(OurRelayEntry{.origin = origin});
+  }
+  if (!list_.relays.empty()) {
+    (void)SaveLocked(); // the seed is the user's list from now on: config is only a new profile's default
+  }
+  return list_;
+}
+
+OurRelaysList OurRelaysStore::List() const {
+  std::lock_guard lock(mutex_);
+  return list_;
+}
+
+Roe<void> OurRelaysStore::Replace(const OurRelaysList& list) {
+  std::lock_guard lock(mutex_);
+  OurRelaysList next;
+  for (const std::string& origin : BoundOurRelays(list.Origins())) {
+    OurRelayEntry entry = *Find(list, origin);
+    entry.origin = origin;
+    if (entry.registration.state == RelayRegistrationRecord::State::Unknown) {
+      if (const auto known = Find(list_, origin); known != list_.relays.end()) {
+        entry.registration = known->registration;
+      }
+    }
+    next.relays.push_back(std::move(entry));
+  }
+  if (next.relays.empty()) {
+    return ListError(RelayListProblem::LastRelay);
+  }
+  const OurRelaysList previous = std::exchange(list_, std::move(next));
+  if (auto saved = SaveLocked(); !saved) {
+    list_ = previous;
+    return saved.error();
+  }
+  return {};
+}
+
+void OurRelaysStore::Record(const std::string& origin, const RelayRegistrationRecord& record) {
+  std::lock_guard lock(mutex_);
+  const auto found = std::find_if(list_.relays.begin(), list_.relays.end(),
+                                  [&origin](const OurRelayEntry& entry) { return SameRelay(entry.origin, origin); });
+  if (found == list_.relays.end() || found->registration == record) {
+    return;
+  }
+  found->registration = record;
+  (void)SaveLocked();
+}
+
+Roe<void> OurRelaysStore::SaveLocked() const {
+  if (profile_data_dir_.empty()) {
+    return {};
+  }
+  std::error_code ec;
+  std::filesystem::create_directories(profile_data_dir_, ec);
+  return AtomicFileWrite::Write(ListPath(profile_data_dir_).string(), OurRelaysToJson(list_));
+}
+
+} // namespace pbr

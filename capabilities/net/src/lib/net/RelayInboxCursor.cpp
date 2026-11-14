@@ -39,6 +39,7 @@ RelayInboxCursors LoadRelayInboxCursors(const std::string& profile_data_dir, con
     return cursors;
   }
   cursors.preferred = root->getString("cursor").value_or("");
+  cursors.preferred_relay = root->getString("cursor_relay").value_or("");
   if (const Object* relays = root->getObject("relays")) {
     for (const auto& [origin, value] : relays->entries()) {
       if (auto cursor = asString(value); cursor && !origin.empty() && !cursor->empty()) {
@@ -60,6 +61,9 @@ void SaveRelayInboxCursors(const std::string& profile_data_dir, const std::strin
   root.set("account_id", account_id);
   if (!cursors.preferred.empty()) {
     root.set("cursor", cursors.preferred);
+    if (!cursors.preferred_relay.empty()) {
+      root.set("cursor_relay", cursors.preferred_relay);
+    }
   }
   if (!cursors.others.empty()) {
     Object relays;

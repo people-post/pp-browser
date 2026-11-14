@@ -65,6 +65,10 @@ public:
 
   /** The endpoints an empty one falls back to (given by the app). */
   void SetDefaults(Endpoints defaults) { defaults_ = std::move(defaults); }
+  /** The org's relay base URL `endpoints` name (its default when empty). */
+  std::string OrgRelayOf(const Endpoints& endpoints) const {
+    return endpoints.relay.base_url.empty() ? defaults_.relay.base_url : endpoints.relay.base_url;
+  }
   /** Builds or rebuilds for `endpoints`; a missing endpoint leaves its clients out (null). */
   void Apply(const Endpoints& endpoints);
   /** Signs the relay, push-device, blob and locker requests (the profile's identity). */
