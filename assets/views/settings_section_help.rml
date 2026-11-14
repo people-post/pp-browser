@@ -27,20 +27,25 @@
               </button>
             </span>
           </div>
-          <button class="group-row settings-improve-send" type="button" data-if="show_diagnostics_send"
-                  data-attrif-disabled="diagnostics_sending" data-event-click="send_diagnostics()">
+          <!-- The row itself does nothing: the "?" sits right after the title and the small "Send" pill at the right end is the only
+               way to send (the whole row used to be one button, so the "?" could not be hit). -->
+          <div class="group-row group-row--static" data-if="show_diagnostics_send">
             <span class="group-row-body">
               <span class="group-row-label">
-                <span class="settings-q-label"><span class="group-row-text">{{diagnostics_send_label}}</span><button class="settings-q-btn" type="button" data-help-key="troubleshooting/send-diagnostics" data-event-click="open_diagnostics_help()"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
-                <span class="group-row-sub">{{i18n:settings.security.diagnostics.help}}</span>
+                <span class="settings-q-label"><span class="group-row-text">{{i18n:settings.security.diagnostics.send}}</span><button class="settings-q-btn" type="button" data-help-key="troubleshooting/send-diagnostics" data-event-click="open_diagnostics_help()"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
               </span>
+              <button class="settings-pill-btn" type="button" data-attrif-disabled="diagnostics_sending" data-event-click="send_diagnostics()">
+                <span class="settings-pill"><span data-if="!diagnostics_sending">{{i18n:settings.security.diagnostics.send_short}}</span><span data-if="diagnostics_sending">{{diagnostics_send_label}}</span></span>
+              </button>
+            </span>
+          </div>
+          <button class="group-row settings-improve-send" type="button" data-if="diagnostics_last_id != ''"
+                  data-event-click="copy_diagnostics_id()">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text settings-row-sentence">{{diagnostics_last_label}}</span></span>
             </span>
           </button>
         </div>
-        <button class="btn settings-phone-only" type="button" data-if="diagnostics_last_id != ''"
-                data-event-click="copy_diagnostics_id()">
-          {{diagnostics_last_label}}
-        </button>
         <p class="text group-head settings-desktop-only">{{i18n:settings.security.group.diagnostics}}</p>
         <div class="group-card settings-desktop-only">
           <div class="settings-toggle-row row group-row">

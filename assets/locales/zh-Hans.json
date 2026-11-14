@@ -403,6 +403,7 @@
     "settings.security.crash_reports.label": "闪退时自动发送报告",
     "settings.security.crash_reports.help": "只在闪退时发送，不含聊天内容。",
     "settings.security.diagnostics.send": "发送诊断",
+    "settings.security.diagnostics.send_short": "发送",
     "settings.security.diagnostics.sending": "发送中…",
     "settings.security.diagnostics.help": "遇到问题、客服请你发时用。",
     "settings.security.diagnostics.help_question": "「发送诊断」有什么用？",

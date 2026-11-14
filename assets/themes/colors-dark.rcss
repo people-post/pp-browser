@@ -3064,6 +3064,23 @@ input.checkbox:checked {
   background-color: #7878803d;
 }
 
+/* The small tinted pill at the right end of a row ("Send"); grey while the action runs. */
+.shell-layer-compact .settings-pill-btn,
+.shell-layer-compact .settings-pill-btn:hover,
+.shell-layer-compact .settings-pill-btn:focus {
+  background-color: transparent;
+}
+
+.shell-layer-compact .settings-pill {
+  background-color: #0a84ff2e;
+  color: #0a84ff;
+}
+
+.shell-layer-compact .settings-pill-btn:disabled .settings-pill {
+  background-color: #7878803d;
+  color: #ebebf599;
+}
+
 /* A row that does something rather than opens a page (About > Send problem logs): accent text, like iOS. */
 .shell-layer-compact .settings-improve-send .group-row-text {
   color: #0a84ff;

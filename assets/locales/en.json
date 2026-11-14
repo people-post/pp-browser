@@ -407,6 +407,7 @@
     "settings.security.crash_reports.label": "Send a report if PP crashes",
     "settings.security.crash_reports.help": "Only when PP crashes; no chat content.",
     "settings.security.diagnostics.send": "Send diagnostics",
+    "settings.security.diagnostics.send_short": "Send",
     "settings.security.diagnostics.sending": "Sending…",
     "settings.security.diagnostics.help": "Use when something goes wrong or Support asks.",
     "settings.security.diagnostics.help_question": "What does “Send diagnostics” do?",

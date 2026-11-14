@@ -159,6 +159,66 @@ TEST_F(SettingsHelpQuestionTest, WithoutThePanelSupportIsAsked) {
   EXPECT_EQ(to_support[0], "What does “Send a report if PP crashes” do?");
 }
 
+// Send diagnostics on a phone: the title with its own "?" (same call as before), the small "Send" pill at the right end
+// (same event, disabled while sending), the row body does nothing; the last-id line is a second row of the same card.
+TEST_F(SettingsHelpQuestionTest, TheSendDiagnosticsRowHasASeparateQuestionMarkAndSendPillAndNoRowEvent) {
+  const std::string rml = ReadAsset("views/settings_section_help.rml");
+  const std::string open_row = "<div class=\"group-row group-row--static\" data-if=\"show_diagnostics_send\">";
+  const size_t row = rml.find(open_row);
+  ASSERT_NE(row, std::string::npos);
+  const size_t last = rml.find(
+      "<button class=\"group-row settings-improve-send\" type=\"button\" "
+      "data-if=\"diagnostics_last_id != ''\"",
+      row);
+  ASSERT_NE(last, std::string::npos);
+  const std::string body = rml.substr(row, last - row);
+  // The row itself carries no event; it is not a button.
+  EXPECT_EQ(rml.substr(row, open_row.size()).find("data-event"), std::string::npos);
+  const size_t q = body.find("data-event-click=\"open_diagnostics_help()\"");
+  const size_t send = body.find("data-event-click=\"send_diagnostics()\"");
+  ASSERT_NE(q, std::string::npos);
+  ASSERT_NE(send, std::string::npos);
+  EXPECT_LT(q, send) << "the \"?\" follows the title, the pill is at the right end";
+  // Two distinct buttons, never nested; each event once.
+  EXPECT_EQ(body.find("data-event-click=\"open_diagnostics_help()\"", q + 1), std::string::npos);
+  EXPECT_EQ(body.find("data-event-click=\"send_diagnostics()\"", send + 1), std::string::npos);
+  const size_t first_close = body.find("</button>");
+  const size_t second_open = body.find("<button", body.find("<button") + 1);
+  ASSERT_NE(second_open, std::string::npos);
+  EXPECT_LT(first_close, second_open) << "the second button starts after the first ended";
+  EXPECT_EQ(body.find("<button", second_open + 1), std::string::npos) << "only two buttons in the row";
+  // The "?" sits in the title's own span, right after the title text, and keeps its help key.
+  EXPECT_NE(body.find("{{i18n:settings.security.diagnostics.send}}</span><button class=\"settings-q-btn\" "
+                      "type=\"button\" data-help-key=\"troubleshooting/send-diagnostics\" "
+                      "data-event-click=\"open_diagnostics_help()\">"),
+            std::string::npos);
+  // The pill: disabled while sending, label "Send" idle and the existing send label while it sends.
+  EXPECT_NE(
+      body.find("<button class=\"settings-pill-btn\" type=\"button\" data-attrif-disabled=\"diagnostics_sending\" "
+                "data-event-click=\"send_diagnostics()\">"),
+      std::string::npos);
+  EXPECT_NE(body.find("<span data-if=\"!diagnostics_sending\">{{i18n:settings.security.diagnostics.send_short}}</span>"
+                      "<span data-if=\"diagnostics_sending\">{{diagnostics_send_label}}</span>"),
+            std::string::npos);
+  // The explanation sentence is gone from the phone's row (the "?" explains); the last-id row is in the same card.
+  EXPECT_EQ(body.find("diagnostics.help}}"), std::string::npos);
+  const size_t card_end = rml.find("<p class=\"text group-head settings-desktop-only\">", last);
+  const size_t card_open = rml.rfind("<div class=\"group-card settings-phone-only\">", row);
+  EXPECT_EQ(rml.substr(card_open, row - card_open).find("<p class=\"text group-head"), std::string::npos)
+      << "no heading between the card's opening and the row";
+  EXPECT_NE(rml.find("data-event-click=\"copy_diagnostics_id()\"", last), std::string::npos);
+  EXPECT_LT(rml.find("data-event-click=\"copy_diagnostics_id()\"", last), card_end);
+  EXPECT_NE(rml.find("{{diagnostics_last_label}}", last), std::string::npos);
+  // The pill and the "?" are 44dp tap areas.
+  const std::string css = ReadAsset("themes/components.rcss");
+  const size_t pill = css.find(".shell-layer-compact .settings-pill-btn {");
+  ASSERT_NE(pill, std::string::npos);
+  EXPECT_NE(css.find("height: 44dp;", pill), std::string::npos);
+  EXPECT_EQ(Tr("settings.security.diagnostics.send_short"), "Send");
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("settings.security.diagnostics.send_short"), "发送");
+}
+
 // show_setting_note('<title key>','<text key>'): a "?" that explains a setting from the app's own text. It opens the
 // shell's alert with that title and text and sends nothing anywhere (no AI question, no support message).
 TEST_F(SettingsHelpQuestionTest, AShownNoteOpensAnAlertWithItsTitleAndTextAndAsksNobody) {

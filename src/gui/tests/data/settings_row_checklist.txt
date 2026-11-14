@@ -283,7 +283,8 @@ data-help-key="troubleshooting/send-diagnostics"	2	-	help	show_diagnostics_send	
 {{app_name}}	1	-	help	-	about	
 {{app_version}}	2	-	help	-	about	
 {{diagnostics_last_label}}	2	-	help	diagnostics_last_id != ''	about,security	
-{{diagnostics_send_label}}	2	-	help	show_diagnostics_send	about,security	
+{{diagnostics_send_label}}	1	-	help	show_diagnostics_send	about,security	
+{{diagnostics_send_label}}	1	-	help	show_diagnostics_send;;diagnostics_sending	about,security	
 {{i18n:settings.about.improve.title}}	1	-	help	-	about	
 {{i18n:settings.about.version}}	2	-	help	-	about	
 {{i18n:settings.help.privacy_policy}}	1	-	help	-	-	
@@ -292,7 +293,9 @@ data-help-key="troubleshooting/send-diagnostics"	2	-	help	show_diagnostics_send	
 {{i18n:settings.help.terms}}	1	-	help	-	-	
 {{i18n:settings.security.crash_reports.help}}	2	-	help	-	about,security	
 {{i18n:settings.security.crash_reports.label}}	2	-	help	-	about,security	
-{{i18n:settings.security.diagnostics.help}}	2	-	help	show_diagnostics_send	about,security	
+{{i18n:settings.security.diagnostics.help}}	1	-	help	show_diagnostics_send	security	
+{{i18n:settings.security.diagnostics.send}}	1	-	help	show_diagnostics_send		
+{{i18n:settings.security.diagnostics.send_short}}	1	-	help	show_diagnostics_send;;!diagnostics_sending		
 {{i18n:settings.security.group.diagnostics}}	1	-	help	-	security	
 {{support_display_name}}	1	-	help	support_visible	-	
 {{support_subtitle}}	1	-	help	support_visible	-	

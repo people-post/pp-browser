@@ -13768,6 +13768,30 @@ textarea:composing ~ .prompt-composer-label,
   display: none;
 }
 
+/* A small tinted pill at the right end of a row ("Send" under Send diagnostics): the button is a 44dp tap area, the pill
+   inside it 32dp tall. It greys out while the action runs. */
+.shell-layer-compact .settings-pill-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.shell-layer-compact .settings-pill {
+  height: 32dp;
+  padding: 0 16dp;
+  border-radius: 16dp;
+  font-family: LatoLatin;
+  font-size: 15dp;
+  line-height: 32dp;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
 /* The disabled Send problem logs row (while it sends) reads as waiting. */
 .shell-layer-compact .settings-improve-send:disabled {
   opacity: 0.5;
