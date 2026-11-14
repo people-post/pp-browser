@@ -84,9 +84,9 @@ TEST(DevicesLayoutTest, TheThisDeviceBlockIsDisplayOnly) {
 TEST(DevicesLayoutTest, TheNewStringsExistInBothLanguages) {
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     const std::string text = ReadAsset(locale);
-    for (const char* key : {"settings.security.devices.other", "settings.security.devices.identity",
-                            "settings.security.devices.linked", "settings.security.devices.none",
-                            "settings.devices.actions_help", "settings.security.grace.caption"}) {
+    for (const char* key :
+         {"settings.security.devices.other", "settings.security.devices.identity", "settings.security.devices.linked",
+          "settings.security.devices.none", "settings.devices.actions_help", "settings.security.grace.caption"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
   }

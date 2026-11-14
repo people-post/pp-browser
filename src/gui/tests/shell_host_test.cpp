@@ -447,7 +447,7 @@ void OpenChat(ShellHost& host) {
 // Settings is the third segment of the phone bar: a root page whose back (with no chat under it) lands on the chat list.
 TEST(ShellHostHiddenTabTest, BackFromSettingsWithNoChatUnderItGoesToTheChatList) {
   ShellHost& from_chats = PhoneHost(NavTab::Sessions);
-  from_chats.OpenSettingsFromAvatar();
+  from_chats.SelectNavTab(NavTab::Me);
   EXPECT_EQ(from_chats.State().nav_tab, NavTab::Me);
   EXPECT_EQ(from_chats.State().nav_bar_tab_str, "me") << "the bar highlights Settings itself";
   EXPECT_FALSE(ShellLayout::HiddenTabHasBack(from_chats.State())) << "a root page: no back arrow";
@@ -472,7 +472,7 @@ TEST(ShellHostHiddenTabTest, TheBottomSettingsSegmentOpensSettingsAsARootPage) {
   EXPECT_EQ(ShellLayout::CompactTabBarDp(host.State()), 48.f);
   // AI drawer's "me" row and the chat hints' deep link select Settings the same way.
   ShellHost& drawer = PhoneHost(NavTab::Home);
-  drawer.OpenSettingsFromAvatar();
+  drawer.SelectNavTab(NavTab::Me);
   EXPECT_EQ(drawer.State().nav_bar_tab_str, "me");
   // From Settings, Chats and AI land on the tapped page.
   host.OnNavTabClicked("sessions");
@@ -608,7 +608,7 @@ TEST(ShellHostHiddenTabTest, TheDesktopIsUnchangedByTheSettingsSegment) {
 // TODO #200: a tab in the bar on Settings (or a page pushed from it) leaves the whole stack and shows that tab.
 TEST(ShellHostHiddenTabTest, ATabTapOnSettingsLeavesTheWholeSettingsStack) {
   ShellHost& host = PhoneHost(NavTab::Sessions);
-  host.OpenSettingsFromAvatar();
+  host.SelectNavTab(NavTab::Me);
   EXPECT_EQ(host.State().nav_bar_tab_str, "me") << "the bar highlights Settings";
   host.PushTransient({.key = "contact_detail"});
   host.PushTransient({.key = "blocked_people"});
@@ -622,14 +622,14 @@ TEST(ShellHostHiddenTabTest, ATabTapOnSettingsLeavesTheWholeSettingsStack) {
 
   // From the AI page: back to the AI page, by the same tap.
   ShellHost& from_ai = PhoneHost(NavTab::Home);
-  from_ai.OpenSettingsFromAvatar();
+  from_ai.SelectNavTab(NavTab::Me);
   EXPECT_EQ(from_ai.State().nav_bar_tab_str, "me");
   from_ai.OnNavTabClicked("home");
   EXPECT_EQ(from_ai.State().nav_tab, NavTab::Home);
 
   // A secret page hides the bar until it closes; leaving Settings drops the flag too.
   ShellHost& secret = PhoneHost(NavTab::Home);
-  secret.OpenSettingsFromAvatar();
+  secret.SelectNavTab(NavTab::Me);
   secret.SetSecretPageOpen(true);
   EXPECT_EQ(ShellLayout::CompactTabBarDp(secret.State()), 0.f);
   secret.HiddenTabBack();
@@ -638,7 +638,7 @@ TEST(ShellHostHiddenTabTest, ATabTapOnSettingsLeavesTheWholeSettingsStack) {
 
 TEST(ShellHostHiddenTabTest, HiddenToHiddenKeepsTheTabBeforeTheFirst) {
   ShellHost& host = PhoneHost(NavTab::Home);
-  host.OpenSettingsFromAvatar();
+  host.SelectNavTab(NavTab::Me);
   host.SelectNavTab(NavTab::Contacts); // an invite opened from Settings
   host.HiddenTabBack();
   EXPECT_EQ(host.State().nav_tab, NavTab::Home) << "the tab before Me, not Me";
@@ -691,7 +691,7 @@ TEST(ShellHostHiddenTabTest, SettingsOpenedOverAnOpenChatReturnsToIt) {
 
   ShellHost& avatar = PhoneHost(NavTab::Home);
   OpenChat(avatar);
-  avatar.OpenSettingsFromAvatar();
+  avatar.SelectNavTab(NavTab::Me);
   EXPECT_TRUE(avatar.State().compact_chat_open);
   avatar.HiddenTabBack();
   EXPECT_EQ(avatar.State().nav_tab, NavTab::Home);
@@ -701,7 +701,7 @@ TEST(ShellHostHiddenTabTest, SettingsOpenedOverAnOpenChatReturnsToIt) {
 
 TEST(ShellHostHiddenTabTest, SystemBackOnAHiddenTabRootReturnsToThePreviousTab) {
   ShellHost& host = PhoneHost(NavTab::Sessions);
-  host.OpenSettingsFromAvatar();
+  host.SelectNavTab(NavTab::Me);
   // A settings page open: back closes it first, and Settings stays.
   bool page_closed = false;
   host.PushLocalBack("settings_detail", [&page_closed]() { page_closed = true; });
@@ -740,7 +740,7 @@ TEST(ShellHostHiddenTabTest, BackToAChatLeftOpenUnderAHiddenTabSaysItIsShownAgai
     ++shown_again;
     open_when_told = ShellLayout::WhichPanesVisible(host.State()).compact_chat_overlay;
   });
-  host.OpenSettingsFromAvatar();
+  host.SelectNavTab(NavTab::Me);
   host.SelectNavTab(NavTab::Contacts);
   EXPECT_EQ(shown_again, 0) << "still covered";
   host.HiddenTabBack();
@@ -750,7 +750,7 @@ TEST(ShellHostHiddenTabTest, BackToAChatLeftOpenUnderAHiddenTabSaysItIsShownAgai
   ShellHost& no_chat = PhoneHost(NavTab::Sessions);
   int told = 0;
   no_chat.SetOnCompactChatShownAgain([&told]() { ++told; });
-  no_chat.OpenSettingsFromAvatar();
+  no_chat.SelectNavTab(NavTab::Me);
   no_chat.HiddenTabBack();
   EXPECT_EQ(told, 0) << "no chat was left open";
 }

@@ -24,7 +24,9 @@
 
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -377,6 +379,13 @@ TEST(AiDrawerTest, TheDragIsOfferedOnlyOnTheBareAiPage) {
   EXPECT_FALSE(PhoneHost(NavTab::Sessions).HomeRootShown()) << "not the AI page";
 }
 
+std::string ReadAsset(const std::string& relative) {
+  std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / relative);
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  return buffer.str();
+}
+
 // --- the real shell and the real ai_drawer view -------------------------------------------------------------------
 
 class AssetsLocator : public IAssetLocator {
@@ -523,53 +532,31 @@ TEST_F(ShellDrawerTest, TheRealViewMountsAndItsRowsSwipe) {
   EXPECT_EQ(actions_, std::vector<std::string>{"ai1:" + std::to_string(static_cast<int>(SessionSwipeAction::More))});
 }
 
-// The "you" row carries the device's link status under the nickname (ShellHost::SetChatsLink): nothing while unknown,
-// a green dot and its word when online, an amber one while connecting, a grey one when offline.
-TEST_F(ShellDrawerTest, TheMeRowShowsTheLinkStatusUnderTheName) {
+// Owner 2026-11-14 (mockup 43, option 4): the phone drawer is the history list only. No avatar, name or link status
+// (Settings is the bottom bar's segment; the chat page shows the link status); the list is the last element.
+TEST_F(ShellDrawerTest, TheDrawerHasNoMeBlockAndTheListEndsIt) {
   host_.OpenAiDrawer();
   Settle();
-  ui::Element* line = ById("ai-drawer-me")->QuerySelector(".ai-drawer-me-link");
-  ASSERT_NE(line, nullptr);
-  EXPECT_FALSE(line->IsVisible()) << "unknown state shows nothing";
-
-  auto count_visible = [&](const char* cls) {
+  EXPECT_EQ(ById("ai-drawer-me"), nullptr);
+  ASSERT_NE(ById("ai-drawer-sessions"), nullptr);
+  ui::Element* mount = ById("shell-ai-drawer-mount");
+  ASSERT_NE(mount, nullptr);
+  for (const char* cls :
+       {"ai-drawer-me", "ai-drawer-me-avatar", "ai-drawer-me-name", "ai-drawer-me-link", "link-dot"}) {
     ui::ElementList found;
-    ById("ai-drawer-me")->GetElementsByClassName(found, cls);
-    int n = 0;
-    for (ui::Element* e : found) {
-      n += e->IsVisible() ? 1 : 0;
-    }
-    return n;
-  };
-
-  host_.SetChatsLink(true, true);
-  Settle();
-  EXPECT_TRUE(line->IsVisible());
-  EXPECT_EQ(count_visible("link-dot--ok"), 1);
-  EXPECT_EQ(count_visible("link-dot--offline"), 0);
-  EXPECT_FALSE(host_.State().chats_link_text.empty());
-  EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos) << "the word is rendered";
-
-  host_.SetChatsLink(true, false);
-  Settle();
-  EXPECT_TRUE(line->IsVisible());
-  EXPECT_EQ(count_visible("link-dot--ok"), 0);
-  EXPECT_EQ(count_visible("link-dot--offline"), 1);
-  EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos);
-
-  host_.SetChatsLink(ChatsLink::Connecting);
-  Settle();
-  EXPECT_TRUE(line->IsVisible());
-  EXPECT_EQ(host_.State().chats_link_state, "connecting");
-  EXPECT_EQ(count_visible("link-dot--ok"), 0);
-  EXPECT_EQ(count_visible("link-dot--offline"), 0);
-  EXPECT_EQ(count_visible("link-dot--connecting"), 1);
-  EXPECT_EQ(count_visible("link-dot--connecting"), 1);
-  EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos);
-
-  host_.SetChatsLink(false, false);
-  Settle();
-  EXPECT_FALSE(line->IsVisible());
+    mount->GetElementsByClassName(found, cls);
+    EXPECT_TRUE(found.empty()) << cls;
+  }
+  const std::string rml = ReadAsset("views/ai_drawer.rml");
+  EXPECT_FALSE(Has(rml, "ai-drawer-me"));
+  EXPECT_FALSE(Has(rml, "profile_nickname"));
+  EXPECT_FALSE(Has(rml, "chats_link_"));
+  const size_t list = rml.find("id=\"ai-drawer-sessions\"");
+  const size_t spacer = rml.find("id=\"ai-drawer-list-end\"");
+  ASSERT_NE(list, std::string::npos);
+  ASSERT_NE(spacer, std::string::npos);
+  EXPECT_LT(list, spacer);
+  EXPECT_EQ(rml.find("<button", spacer), std::string::npos) << "nothing after the list's end spacer but closers";
 }
 
 TEST_F(ShellDrawerTest, APickedConversationClosesTheDrawerAndOpensOverTheAiPage) {

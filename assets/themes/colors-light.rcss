@@ -3611,7 +3611,7 @@ input.checkbox:checked {
 }
 
 /* Phone AI drawer (DEV/PLAN-minimal-nav.md C): the page colour, a soft shadow fading out from its right edge, and the
-   bottom "you" row pressed like a list row. */
+   top bar. */
 .shell-drawer-body {
   background-color: #ffffff;
 }
@@ -3620,8 +3620,7 @@ input.checkbox:checked {
   decorator: linear-gradient(to right, #0000001f, #00000000);
 }
 
-.ai-drawer-title,
-.ai-drawer-me-name {
+.ai-drawer-title {
   color: #000000;
 }
 
@@ -3642,20 +3641,13 @@ input.checkbox:checked {
   color: #3c3c4399;
 }
 
-.ai-drawer-me-link-text {
-  color: #3c3c4399;
-}
-
 /* The ask-AI panel's input bar is clear (TODO #202): a floating pill and two round buttons over the bubbles. */
 .ask-ai-composer {
   background-color: transparent;
 }
 
-/* The drawer's top bar and "you" row: the bar colour, frosted with Transparency on (like .pane-nav-bg). */
-.ai-drawer-top,
-.ai-drawer-me,
-.ai-drawer-me:hover,
-.ai-drawer-me:focus {
+/* The drawer's top bar: the bar colour, frosted with Transparency on (like .pane-nav-bg). */
+.ai-drawer-top {
   background-color: #f2f2f7;
 }
 
@@ -3664,24 +3656,9 @@ input.checkbox:checked {
   background-color: #7878801f;
 }
 
-.shell-drawer--frost .ai-drawer-top,
-.shell-drawer--frost .ai-drawer-me,
-.shell-drawer--frost .ai-drawer-me:hover,
-.shell-drawer--frost .ai-drawer-me:focus {
+.shell-drawer--frost .ai-drawer-top {
   background-color: #f2f2f7c7;
   backdrop-filter: blur(20px);
-}
-
-.ai-drawer-me:active {
-  background-color: #7878801f;
-}
-
-.ai-drawer-me-avatar .avatar-letter {
-  color: #ffffff;
-}
-
-.ai-drawer-me-chevron {
-  image-color: #3c3c434c;
 }
 
 /* On the camera the disc is a dark glass with a white chevron, in both themes. */

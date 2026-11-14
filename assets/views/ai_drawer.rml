@@ -88,33 +88,7 @@
         </div>
       </div>
     </div>
-    <!-- Keeps the last row clear of the frosted "you" bar (its height: the row and the home indicator, ShellHost). -->
+    <!-- Keeps the last row clear of the home indicator (its height, ShellHost). -->
     <div class="ai-drawer-list-end" id="ai-drawer-list-end"></div>
   </div>
-  <!-- You: the avatar and name (as on Settings' card; the letter when there is no picture) → Settings. -->
-  <button class="ai-drawer-me" id="ai-drawer-me" type="button" data-event-click="open_settings_from_avatar()">
-    <div class="ai-drawer-me-avatar" data-model="settings"
-         data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
-         data-class-avatar-tone-1="!profile_has_icon && profile_avatar_tone == 1"
-         data-class-avatar-tone-2="!profile_has_icon && profile_avatar_tone == 2"
-         data-class-avatar-tone-3="!profile_has_icon && profile_avatar_tone == 3"
-         data-class-avatar-tone-4="!profile_has_icon && profile_avatar_tone == 4"
-         data-class-avatar-tone-5="!profile_has_icon && profile_avatar_tone == 5"
-         data-class-avatar-tone-6="!profile_has_icon && profile_avatar_tone == 6"
-         data-class-avatar-tone-7="!profile_has_icon && profile_avatar_tone == 7">
-      <img class="ai-drawer-me-image" data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
-      <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
-    </div>
-    <div class="ai-drawer-me-text">
-      <p class="ai-drawer-me-name" data-model="settings">{{profile_nickname}}</p>
-      <!-- The device's link to our service (ShellHost::SetChatsLink, event-driven): empty while unknown. -->
-      <p class="ai-drawer-me-link" data-if="chats_link_state != ''">
-        <span class="link-dot link-dot--ok" data-if="chats_link_state == 'ok'"></span>
-        <span class="link-dot link-dot--connecting" data-if="chats_link_state == 'connecting'"></span>
-        <span class="link-dot link-dot--offline" data-if="chats_link_state == 'offline'"></span>
-        <span class="ai-drawer-me-link-text">{{chats_link_text}}</span>
-      </p>
-    </div>
-    <svg class="ai-drawer-me-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
-  </button>
 </div>

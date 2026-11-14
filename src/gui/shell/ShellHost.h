@@ -148,8 +148,6 @@ public:
   void HiddenTabBack();
   /** Phone Settings: a secret page (Move to a new device) is shown over a section; the tab bar is off while it is. */
   void SetSecretPageOpen(bool open);
-  /** An avatar opens Settings (the Me tab) from anywhere. */
-  void OpenSettingsFromAvatar();
   /**
    * Phone AI page: the AI conversation list slides in from the left (DEV/PLAN-minimal-nav.md C). Opening first lets
    * go of the composer (keyboard down, its inset back to the home indicator's). No-op on the desktop. The drawer is

@@ -88,8 +88,6 @@ constexpr int64_t kSlowSyncLayoutMs = 30; // two 60 Hz frames
 /** Fallback emoji panel height when the OSK has never been shown this session. */
 constexpr int kDefaultEmojiKeyboardPanelDp = 280;
 /** The AI drawer's "you" row above the home indicator (.ai-drawer-me: min-height, bottom padding). */
-constexpr float kAiDrawerMeHeightDp = 76.f;
-constexpr float kAiDrawerMePaddingDp = 8.f;
 
 /** System back on the Settings home with no chat thread under it: true goes to the chat page; false leaves it to the
  *  platform (the app exits, as on the AI and chat root pages). Awaiting the owner's decision: flip this one line. */
@@ -350,7 +348,6 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
                              RequestDismiss(DismissStyle::Instant, DismissTarget::CompactChatOverlay);
                            }));
     ctor.BindEventCallback("hidden_tab_back", DataEvent<>([this]() { HiddenTabBack(); }));
-    ctor.BindEventCallback("open_settings_from_avatar", DataEvent<>([this]() { OpenSettingsFromAvatar(); }));
     ctor.BindEventCallback("open_ai_drawer", DataEvent<>([this]() { OpenAiDrawer(); }));
     ctor.BindEventCallback("close_ai_drawer", DataEvent<>([this]() { CloseAiDrawer(); }));
     ctor.BindEventCallback("open_scan_qr", DataEvent<>([this]() {
@@ -677,10 +674,6 @@ void ShellHost::HiddenTabBack() {
   }
   // Settings with no chat under it is a root page of the bar: its system back lands on the chat page.
   SelectNavTab(ShellLayout::HiddenTabHasBack(state_) ? tab_before_hidden_ : NavTab::Sessions);
-}
-
-void ShellHost::OpenSettingsFromAvatar() {
-  SelectNavTab(NavTab::Me);
 }
 
 void ShellHost::OpenAiDrawer() {
@@ -2062,12 +2055,10 @@ void ShellHost::ApplySafeAreaLayout() {
          bottom_surface == CompactBottomSurface::Page ? strip_dp
          : ShellLayout::SettingsTabBarShown(state_)   ? layout.content_padding_bottom_dp
                                                       : 0.f);
-  // The AI drawer reaches the screen bottom over the tab bar. Its frosted "you" row runs down to the screen bottom too
-  // (one bar, Kenneth 2026-11-07), its content above the home indicator; the list's end spacer keeps the last row
-  // clear of the whole bar (the engine leaves a scroller's bottom padding out of its scroll height).
+  // The AI drawer reaches the screen bottom over the tab bar; its list's end spacer keeps the last row clear of the
+  // home indicator (the engine leaves a scroller's bottom padding out of its scroll height).
   set_dp(doc->GetElementById("shell-ai-drawer-mount"), "padding-bottom", 0.f);
-  set_dp(doc->GetElementById("ai-drawer-me"), "padding-bottom", kAiDrawerMePaddingDp + strip_dp);
-  set_dp(doc->GetElementById("ai-drawer-list-end"), "height", kAiDrawerMeHeightDp + strip_dp);
+  set_dp(doc->GetElementById("ai-drawer-list-end"), "height", strip_dp);
   // Page sheets reach the screen bottom: their content clears the home indicator (not the keyboard: the body
   // already shrinks above it).
   // A sheet shows full height while the keyboard is up, and its own stop again once it is down.
