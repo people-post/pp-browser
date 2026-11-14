@@ -430,12 +430,14 @@ void ChatPresenter::Refresh() {
     row.from_stranger = IsStrangerChat(thread.kind, label);
     // The stored default AI title is English; the renderer shows it in the UI language.
     row.title_is_default_ai = thread.kind == ThreadKind::Ai && row.title == "New chat";
-    const std::string text = GroupEventPreviewOr(thread, local_account);
+    std::string preview_icon;
+    const std::string text = GroupEventPreviewOr(thread, local_account, preview_icon);
     // A new thread has no preview yet; an empty second line would collapse the row, so say so in words.
     SessionPreviewShown preview = ResolveSessionPreview(
         SessionPreviewLine(callbacks_.prose ? callbacks_.prose(text) : text), Tr("sidebar.preview_empty"));
     row.preview = std::move(preview.text);
     row.preview_empty = preview.placeholder;
+    row.preview_icon = std::move(preview_icon);
     row.kind = ChatSessionKindName(thread);
     row.unread_count = thread.unread_count;
     row.unread_dot = SessionShowsUnreadDot(thread.unread_count, thread_prefs.marked_unread);
@@ -563,6 +565,57 @@ SendMark ChatPresenter::SendMarkOf(const ThreadMessage& message, const int64_t n
 }
 
 SendMarkTap ChatPresenter::TapSendMark(const std::string& thread_id, const std::string& message_id) {
+  return TapSendMarkWith(thread_id, message_id, /*offer_fix=*/true);
+}
+
+SendMarkTap ChatPresenter::ResendAfterCardUpdate(const std::string& thread_id, const std::string& message_id) {
+  return TapSendMarkWith(thread_id, message_id, /*offer_fix=*/false);
+}
+
+SendAdvice ChatPresenter::SendAdviceOf(const std::string& thread_id, const std::string& message_id) {
+  if (!facade_ || thread_id.empty() || message_id.empty()) {
+    return SendAdvice::None;
+  }
+  SendMarkTapFacts facts;
+  if (auto row = facade_->GetMessage(thread_id, message_id); row && *row) {
+    facts.row = **row;
+  }
+  if (auto thread = facade_->GetThread(thread_id); thread && *thread) {
+    facts.thread = **thread;
+  }
+  if (!facts.row || !facts.thread) {
+    return SendAdvice::None;
+  }
+  if (TapSendsEdit(*facts.row, message_id)) {
+    return SendAdvice::None; // the tap resends the edit: it never offers a card update (same order as TapSendMarkWith)
+  }
+  facts.started_ms = facade_->SendStartedMs(message_id);
+  facts.already_resent = resent_unremoved_.count(message_id) != 0;
+  facts.now_ms = util::NowUnixMs();
+  FillGuidanceFacts(thread_id, message_id, facts);
+  return AdviceOf(DecideSendMarkTap(facts));
+}
+
+std::optional<std::string> ChatPresenter::TapSendsEdit(const ThreadMessage& row, const std::string& message_id) {
+  return EditResentByTap(row, facade_->SendStartedMs(message_id), util::NowUnixMs());
+}
+
+void ChatPresenter::FillGuidanceFacts(const std::string& thread_id, const std::string& message_id,
+                                      SendMarkTapFacts& facts) {
+  if (!facts.thread || facts.thread->kind != ThreadKind::Direct) {
+    return;
+  }
+  facts.failure = SendFailureReasonOf(thread_id, message_id);
+  if (!facts.thread->participant_contact_ids.empty() && !facts.thread->participant_contact_ids.front().empty()) {
+    const std::string& contact_id = facts.thread->participant_contact_ids.front();
+    if (auto contact = facade_->GetContact(contact_id); contact && *contact) {
+      facts.peer_contact_id = contact_id;
+    }
+  }
+}
+
+SendMarkTap ChatPresenter::TapSendMarkWith(const std::string& thread_id, const std::string& message_id,
+                                           const bool offer_fix) {
   if (!facade_ || thread_id.empty() || message_id.empty()) {
     return {};
   }
@@ -577,8 +630,7 @@ SendMarkTap ChatPresenter::TapSendMark(const std::string& thread_id, const std::
     return {}; // gone: a second tap after the row was taken away
   }
   // The mark of an edited message of ours is its edit's: a tap sends that edit again (same words, same send time).
-  if (const std::optional<std::string> edit_id = EditRowIdOf(*facts.row);
-      edit_id && MarkOf(*facts.row, facade_->SendStartedMs(message_id), util::NowUnixMs()) == SendMark::None) {
+  if (const std::optional<std::string> edit_id = TapSendsEdit(*facts.row, message_id)) {
     std::optional<ThreadMessage> edit_row;
     if (auto row = facade_->GetMessage(thread_id, *edit_id); row && *row) {
       edit_row = **row;
@@ -599,6 +651,8 @@ SendMarkTap ChatPresenter::TapSendMark(const std::string& thread_id, const std::
   facts.started_ms = facade_->SendStartedMs(message_id);
   facts.already_resent = resent_unremoved_.count(message_id) != 0;
   facts.now_ms = util::NowUnixMs();
+  facts.offer_fix = offer_fix;
+  FillGuidanceFacts(thread_id, message_id, facts);
   if (const auto others = GroupOthersJoinedAt(thread_id)) {
     facts.no_recipients = !GroupRowHadRecipients(*others, facts.row->timestamp);
   }
@@ -639,7 +693,8 @@ std::optional<SendFailure> ChatPresenter::SendFailureReasonOf(const std::string&
   return SendFailureReason(row ? *row : std::nullopt, group_thread);
 }
 
-std::string ChatPresenter::GroupEventPreviewOr(const Thread& thread, const std::string& local_account) {
+std::string ChatPresenter::GroupEventPreviewOr(const Thread& thread, const std::string& local_account,
+                                               std::string& icon) {
   // The latest row is a system line stored in English (a joined invitation, a blocked inviter, a rotate notice):
   // the same words as its transcript line, in the UI language. Only a System row: a person may type these words.
   if (StoredSystemLineText(thread.preview)) {
@@ -647,6 +702,16 @@ std::string ChatPresenter::GroupEventPreviewOr(const Thread& thread, const std::
     if (page && !page->empty() && page->back().content_type == ChatContentType::System) {
       if (auto line = StoredSystemLineText(page->back().text)) {
         return *line;
+      }
+    }
+  }
+  // A call summary's stored stand-in text ("Voice call"): the transcript's words. Only a System row maps.
+  if (IsStoredCallPreview(thread.preview)) {
+    auto page = facade_->GetMessagesPage(thread.id, std::nullopt, 1);
+    if (page && !page->empty()) {
+      if (auto call = StoredCallPreview(page->back())) {
+        icon = std::move(call->icon);
+        return std::move(call->text);
       }
     }
   }

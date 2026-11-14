@@ -12,6 +12,7 @@
 #include "gui/chat/AttachMenuRules.h"
 
 #include "gui/chat/ActionNoticeText.h"
+#include "gui/chat/AiDrawerCount.h"
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
@@ -565,13 +566,16 @@ void ChatController::MakeReadyTasks() {
     return {};
   };
   ports.renew_hint = [this](const RenewResult& result, const bool auto_renew) {
+    OnRecoveryRenewal(result, auto_renew);
     if (result.error) {
       log().warning << "Auto-renew registration failed: " << result.error->message;
     } else if (result.registration) {
       log().info << "Network registration auto-renewed";
     } else {
       const std::optional<LocalIdentity> identity = facade_ ? facade_->GetIdentity() : std::nullopt;
-      if (identity && ShouldRenewRegistration(*identity, 0, facade_->RegistrationBackendUrl()) && !auto_renew) {
+      // The reconnect row says it already when the relay does not know the account (B216).
+      if (identity && ShouldRenewRegistration(*identity, 0, facade_->RegistrationBackendUrl()) && !auto_renew &&
+          !recovery_.BannerVisible()) {
         UserFeedback::NeedsSetup(Tr("chat.hint.registration_expires"));
       }
     }
@@ -623,6 +627,151 @@ void ChatController::MakeReadyTasks() {
   ready_tasks_ = std::make_unique<MessagingReadyTasks>(std::move(ports), agent_.BriefKeyRun());
 }
 
+void ChatController::RunWhenRegistrationIdle(std::function<void()> run) {
+  if (!run) {
+    return;
+  }
+  if (ready_tasks_ && ready_tasks_->RenewInFlight()) {
+    log().info << "registration waits for the automatic renewal in flight";
+    UserFeedback::Note(Tr("chat.reconnect.please_wait"));
+    ready_tasks_->AfterRenewal(std::move(run));
+    return;
+  }
+  run();
+}
+
+void ChatController::OnRelayRegistrationSignal(const RelayRegistrationSignal signal) {
+  const bool call_live = facade_ && facade_->AnyCallLive();
+  switch (signal) {
+    case RelayRegistrationSignal::NotRegistered: {
+      const bool locked = !MessagingReady();
+      const bool auto_renew = Store().Snapshot().profile_prefs.auto_renew_registration;
+      const int64_t now_ms =
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+              .count();
+      HandleNotRegisteredSignal(recovery_, locked, auto_renew, call_live, now_ms, MakeRecoveryHooks());
+      break;
+    }
+    case RelayRegistrationSignal::PollOk: {
+      const bool recovering = recovery_.CurrentState() != RegistrationRecovery::State::Ok;
+      const RecoveryActions actions = recovery_.OnPollOk();
+      send_fix_.OnPollOk(); // the update a failed message asked for got through: it is sent again
+      if (recovering) {
+        log().info << "registration recovery: the relay answers again";
+        // The push binding sent at unlock went to a relay that did not know us: bind again, or the phone is not
+        // woken for messages and calls until the next start.
+        SyncPushDevices();
+      }
+      ApplyRecovery(actions);
+      break;
+    }
+  }
+}
+
+void ChatController::OnRecoveryRenewal(const RenewResult& result, const bool auto_renew) {
+  if (recovery_.CurrentState() == RegistrationRecovery::State::Ok) {
+    // The routine renewal after unlock (also a backend switch, #602): not the recovery's, but it is an attempt.
+    if (result.registration) {
+      recovery_.OnRoutineRenewed(SteadyNowMs());
+    }
+    return;
+  }
+  RenewalOutcome outcome = RenewalOutcome::NothingDue;
+  const char* result_name = "nothing_due";
+  if (result.error) {
+    const bool refused = IsRegistrationRefused(*result.error);
+    outcome = refused ? RenewalOutcome::Refused : RenewalOutcome::Transient;
+    result_name = refused ? "refused" : "transient";
+  } else if (result.registration) {
+    outcome = RenewalOutcome::Renewed;
+    result_name = "ok";
+  }
+  log().info << "registration recovery: renewal result=" << result_name;
+  switch (outcome) { // the metric takes words fixed at compile time only
+    case RenewalOutcome::Renewed:
+      MetricsLine("registration.reregister").Add("result", "ok").Emit();
+      break;
+    case RenewalOutcome::Refused:
+      MetricsLine("registration.reregister").Add("result", "refused").Emit();
+      break;
+    case RenewalOutcome::Transient:
+      MetricsLine("registration.reregister").Add("result", "transient").Emit();
+      break;
+    case RenewalOutcome::NothingDue:
+      break;
+  }
+  if (outcome == RenewalOutcome::Renewed && facade_) {
+    facade_->PublishAccountLockerSoon(); // as Me → Profile's register does: the locker keeps the relay binding
+  }
+  ApplyRecovery(recovery_.OnRenewal(outcome, auto_renew, facade_ && facade_->AnyCallLive()));
+}
+
+RecoveryHooks ChatController::MakeRecoveryHooks() {
+  RecoveryHooks hooks;
+  hooks.needs_user = [this]() {
+    log().info << "registration recovery: needs the user";
+    MetricsLine("registration.reregister").Add("result", "needs_user").Emit();
+  };
+  hooks.sync_banner = [this](const bool visible) {
+    if (shell_.show_reconnect_banner != visible) {
+      shell_.show_reconnect_banner = visible;
+      DataModelHost::Instance().Dirty("shell", "show_reconnect_banner");
+    }
+  };
+  hooks.mark_expired = [this]() {
+    if (!facade_ || !ready_tasks_) {
+      return false;
+    }
+    log().info << "registration recovery: the relay does not know this account; registering again";
+    // What a 403 from the key rotation does too: the renewal then finds the registration due and registers.
+    auto marked = facade_->ModifyLocalIdentity([](LocalIdentity& identity) {
+      MarkRegistrationExpired(identity);
+      return true;
+    });
+    if (!marked) {
+      log().warning << "registration recovery: could not mark the registration expired: " << marked.error().message;
+      return false;
+    }
+    return true;
+  };
+  hooks.run_renewal = [this]() { ready_tasks_->RenewRegistration(); };
+  hooks.show_alert = [this]() {
+    UserFeedback::Confirm(
+        Tr("chat.reconnect.alert_title"), Tr("chat.reconnect.alert_body"),
+        [this](const bool ok) {
+          if (ok) {
+            OnReconnectTapped();
+          }
+        },
+        Tr("chat.reconnect.alert_ok"));
+  };
+  hooks.toast_reconnected = [this]() { ShowToast(Tr("chat.reconnect.done")); };
+  return hooks;
+}
+
+void ChatController::ApplyRecovery(const RecoveryActions& actions) {
+  ApplyRecoveryActions(actions, recovery_, MakeRecoveryHooks());
+}
+
+void ChatController::OnReconnectTapped() {
+  if (!recovery_.OnUserTap()) {
+    return; // connected again meanwhile
+  }
+  log().info << "registration recovery: the user asked to reconnect";
+  if (reconnect_account_) {
+    reconnect_account_({});
+  }
+}
+
+void ChatController::ResetRecovery() {
+  send_fix_.Reset(); // a failed message's pending resends go with the session
+  recovery_.ResetSession();
+  if (shell_.show_reconnect_banner) {
+    shell_.show_reconnect_banner = false;
+    DataModelHost::Instance().Dirty("shell", "show_reconnect_banner");
+  }
+}
+
 void ChatController::SyncPushDevices() {
   if (ready_tasks_) {
     ready_tasks_->SyncPushDevices();
@@ -635,14 +784,45 @@ void ChatController::RetryBriefKeyMint() {
   }
 }
 
+void ChatController::MakeSendFixPorts() {
+  SendFailureFix::Ports ports;
+  ports.refresh_contact = [this](const std::string& contact_id, std::function<void(const ContactRefreshResult&)> done) {
+    return refresh_contact_ && refresh_contact_(contact_id, std::move(done));
+  };
+  ports.resend = [this](const std::string& thread_id, const std::string& message_id) {
+    if (!messaging_ready_ || !facade_) {
+      return;
+    }
+    ApplySendMarkTap(thread_id, message_id, presenter_.ResendAfterCardUpdate(thread_id, message_id));
+  };
+  ports.update_my_card = [this](std::function<void(bool ok)> done) {
+    if (!reconnect_account_) {
+      done(false);
+      return;
+    }
+    recovery_.OnUserTap(); // "Reconnected" is then said when the poll gets through, as for the row
+    reconnect_account_(std::move(done));
+  };
+  ports.poll_ok_pending = [this]() { return recovery_.CurrentState() != RegistrationRecovery::State::Ok; };
+  ports.now_ms = []() { return util::NowUnixMs(); };
+  ports.progress = [](const std::string& text) { UserFeedback::Note(text); };
+  ports.say = [this](const std::string& text) { ShowToast(text); };
+  send_fix_.SetPorts(std::move(ports));
+}
+
 void ChatController::BindConversationsFacade(ConversationsFacade* facade) {
   facade_ = facade;
+  send_fix_.Reset();
+  MakeSendFixPorts();
   MakeReadyTasks();
   if (facade_) {
     // The server space is filling up: a plain line, said once per level (the hub counts).
     facade_->SetOnBlobSpaceWarning([this](const int percent) {
       ShowToast(Tr("chat.attachment.space_warning", {{"percent", std::to_string(percent)}}));
     });
+    // The relay does not know this account (B216): register again, or ask (RegistrationRecovery).
+    facade_->SetOnRelayRegistrationSignal(
+        [this](const RelayRegistrationSignal signal) { OnRelayRegistrationSignal(signal); });
     // A picture's preview came (or cannot come): only the rows showing its placeholder are redrawn (B203).
     facade_->SetOnChatPreviewDone([this, alive = std::weak_ptr<int>(chat_window_alive_)](
                                       const std::string& thread_id, const std::vector<uint8_t>& hash, const bool made) {
@@ -1357,6 +1537,7 @@ void ChatController::OnProfileDataReset() {
   if (ready_tasks_) {
     ready_tasks_->OnMessagingTornDown(); // the teardown dropped work still queued: free its runs
   }
+  ResetRecovery();
   mesh_ready_ = false;
   // profile.db is recreated: nothing read from the old one may be written back into the new one.
   presenter_.ResetForNewProfile();
@@ -1409,6 +1590,7 @@ SessionDisplayRow ToSessionDisplayRow(const ChatSessionRow& from) {
   row.id = from.id.c_str();
   row.title = from.title_is_default_ai ? Tr("chat.new_chat").c_str() : from.title.c_str();
   row.preview = from.preview.c_str();
+  row.preview_icon = from.preview_icon.c_str();
   row.preview_empty = from.preview_empty;
   row.avatar_letter = from.avatar_letter.c_str();
   row.avatar_tone = from.avatar_tone;
@@ -1426,6 +1608,7 @@ SessionDisplayRow ToSessionDisplayRow(const ChatSessionRow& from) {
   row.blocked = from.blocked;
   if (from.blocked) {
     row.preview = Tr("sidebar.blocked_preview").c_str();
+    row.preview_icon = "";
   }
   return row;
 }
@@ -1473,6 +1656,12 @@ void ChatController::ApplySessionList() {
       break;
     }
   }
+  // The drawer's count line is the whole list's, whatever the search box has filtered out.
+  const ui::String ai_count_label = AiDrawerCountLabel(list.ai_rows.size(), list.showing_archived_ai).c_str();
+  if (ai_count_label != shell_.ai_sessions_count_label) {
+    shell_.ai_sessions_count_label = ai_count_label;
+    DataModelHost::Instance().Dirty("shell", "ai_sessions_count_label");
+  }
   const std::string ai_query = LowerAscii(shell_.ai_sessions_query.c_str());
   const size_t ai_visible = ai_query.empty() ? ai_session_window_.Visible(list.ai_rows.size()) : list.ai_rows.size();
   shell_.ai_sessions.clear();
@@ -1511,7 +1700,9 @@ void ChatController::ApplyHomeToday(const ChatListScreen& list) {
                                    : (home_summary_.mentions.title + " · " + home_summary_.mentions.preview).c_str();
   shell_.home_new_people = home_summary_.new_contacts;
   shell_.home_security_ok = session_store_ && Store().Snapshot().profile_prefs.recovery_phrase_seen;
-  shell_.home_show_dynamic = session_store_ && Store().Snapshot().profile_prefs.home_show_dynamic;
+  // The widgets page is off until it gets its own page: the stored preference is kept but never read here.
+  constexpr bool kWidgetsPageOnHome = false;
+  shell_.home_show_dynamic = kWidgetsPageOnHome && session_store_ && Store().Snapshot().profile_prefs.home_show_dynamic;
   if (layout.Kept(kHomeWidgetFavorites)) {
     ApplyHomeFavorites(list.rows);
   } else {
@@ -3270,6 +3461,16 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   std::optional<int64_t> next_mark_change;
   std::vector<std::string> red_ids;
   const std::optional<std::vector<int64_t>> group_others = presenter_.GroupOthersJoinedAt(thread_id);
+  facts.send_failure_line = [this, thread_id](const ThreadMessage& failure_row) -> std::optional<std::string> {
+    // "The server can't find them" says how a tap on the red mark goes on (update their card, and resend or not).
+    const auto reason = SendFailureRowReason(failure_row);
+    const auto message_id = SendFailureRowMessageId(failure_row);
+    const auto failure = reason ? SendFailureFromWire(*reason) : std::nullopt;
+    if (!message_id || (failure != SendFailure::RecipientNotOnRelay && failure != SendFailure::SenderNotRegistered)) {
+      return std::nullopt;
+    }
+    return SendFailureText(*failure, presenter_.SendAdviceOf(thread_id, *message_id));
+  };
   facts.send_mark = [this, now_ms, &next_mark_change, &group_others, &red_ids](const ThreadMessage& message) {
     const SendMark mark = presenter_.SendMarkOf(message, now_ms, next_mark_change, group_others);
     if (mark == SendMark::Failed) {
@@ -3295,7 +3496,8 @@ void ChatController::TellResentTurnedRed(const std::string& thread_id, const std
     return;
   }
   presenter_.ForgetResent(*resent);
-  ShowToast(SendFailureReasonText(presenter_.SendFailureReasonOf(thread_id, *resent)));
+  ShowToast(SendFailureReasonText(presenter_.SendFailureReasonOf(thread_id, *resent), SendMarkTap::Refusal::None,
+                                  presenter_.SendAdviceOf(thread_id, *resent)));
 }
 
 void ChatController::ArmSendMarkRedraw(const std::optional<int64_t> at_ms) {
@@ -3335,10 +3537,42 @@ void ChatController::OnSendMarkTapped(const std::string& message_id) {
     return;
   }
   const std::string thread_id = ActiveThreadId();
-  const SendMarkTap tap = presenter_.TapSendMark(thread_id, message_id);
+  ApplySendMarkTap(thread_id, message_id, presenter_.TapSendMark(thread_id, message_id));
+}
+
+void ChatController::ApplySendMarkTap(const std::string& thread_id, const std::string& message_id,
+                                      const SendMarkTap& tap) {
   switch (tap.kind) {
     case SendMarkTap::Kind::Nothing:
       return;
+    case SendMarkTap::Kind::UpdateTheirCard: {
+      // The server could not find them: update their card first, and send this again when it is resendable.
+      const SendFixDialog dialog = UpdateTheirCardDialog(tap.resendable);
+      UserFeedback::Confirm(
+          dialog.title, dialog.body,
+          [this, thread_id, message_id, contact_id = tap.contact_id, resendable = tap.resendable,
+           session = messaging_session_](const bool ok) {
+            // The answer of a dialog from before a lock / unlock belongs to no session now.
+            if (ok && messaging_ready_ && session == messaging_session_) {
+              send_fix_.UpdateTheirCard(thread_id, message_id, contact_id, resendable);
+            }
+          },
+          dialog.ok_label);
+      return;
+    }
+    case SendMarkTap::Kind::UpdateMyCard: {
+      const SendFixDialog dialog = UpdateMyCardDialog();
+      UserFeedback::Confirm(
+          dialog.title, dialog.body,
+          [this, thread_id, message_id, resendable = tap.resendable, session = messaging_session_](const bool ok) {
+            if (ok && messaging_ready_ && session == messaging_session_) {
+              // B216's action: it waits for an automatic renewal in flight (RunWhenRegistrationIdle) itself.
+              send_fix_.UpdateMyCard(thread_id, message_id, resendable);
+            }
+          },
+          dialog.ok_label);
+      return;
+    }
     case SendMarkTap::Kind::StillTrying:
       ShowToast(Tr("chat.send.still_trying"));
       return;
@@ -3355,7 +3589,9 @@ void ChatController::OnSendMarkTapped(const std::string& message_id) {
       return;
     case SendMarkTap::Kind::Resent:
       // The new message is at the bottom (the draft untouched); the old row is gone unless it was delivered meanwhile.
-      scroller_.RequestScrollToLatest();
+      if (thread_id == ActiveThreadId()) {
+        scroller_.RequestScrollToLatest(); // only the chat that is open (a resend after a card update may be another)
+      }
       RefreshFromMessaging();
       return;
   }
@@ -3388,7 +3624,8 @@ void ChatController::OpenGroupSender(const std::string& message_id) {
     // Not a contact: the same page in its member state (name, photo, Account ID, Add contact).
     const TranscriptFacts facts = facade_->TranscriptFactsFor();
     contacts_notify_.show_member_sheet(sender, facts.sender_label ? facts.sender_label(sender) : std::string(),
-                                       facts.sender_icon ? facts.sender_icon(sender) : std::string());
+                                       facts.sender_icon ? facts.sender_icon(sender) : std::string(),
+                                       /*from_dm=*/false);
   }
   // The group's owner finds the "Group admin" card at the bottom, as from the member list.
   if (people_picker_notify_.offer_group_admin) {
@@ -5466,6 +5703,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("ai_sessions_search",
                                DataEventAt([this](ui::Event& ev) { OnAiSessionsSearch(ev, /*submit=*/true); }));
         ctor.BindEventCallback("toggle_archived", DataEvent([this] { OnToggleArchived(); }));
+        ctor.BindEventCallback("reconnect_account", DataEvent([this] { OnReconnectTapped(); }));
         ctor.BindEventCallback("toggle_archived_ai", DataEvent([this] { OnToggleArchivedAi(); }));
         ctor.BindEventCallback("sessions_scroll", DataEvent([this] { OnSessionsScroll(); }));
         ctor.BindEventCallback("ai_sessions_scroll", DataEvent([this] { OnAiSessionsScroll(); }));
@@ -6070,6 +6308,7 @@ void ChatController::Shutdown() {
   if (ready_tasks_) {
     ready_tasks_->OnMessagingTornDown();
   }
+  ResetRecovery();
   mesh_ready_ = false;
   pending_reply_.reset();
   agent_.Reset();
@@ -6400,6 +6639,10 @@ void ChatController::OpenPeerSheet(ui::Event& ev) {
       return;
     }
   }
+  // Phones, a 1:1 chat: straight to their page (DEV/PLAN-fewer-taps-1.md 2); the menu stays elsewhere.
+  if (peer_sheet_.OpenPeerPage(AskAiCompact())) {
+    return;
+  }
   peer_sheet_.Open(ev);
 }
 
@@ -6627,14 +6870,18 @@ void ChatController::AskAiOpenInChat(const std::string& thread_id) {
   AppRuntime::PostUI([this, thread_id]() { ShowThreadInChat(thread_id); });
 }
 
-void ChatController::AskAiSupport(const std::string& question) {
-  AppRuntime::PostUI([this, question]() {
+void ChatController::AskAiSupport(const std::string& question, std::function<void()> on_opened) {
+  AppRuntime::PostUI([this, question, on_opened = std::move(on_opened)]() {
     if (!ask_support_) {
       UserFeedback::Fail(Tr("settings.support.unavailable"));
       return;
     }
     if (auto asked = ask_support_(question); !asked) {
       (void)UserFeedback::FailFrom(asked.error());
+      return;
+    }
+    if (on_opened) {
+      on_opened();
     }
   });
 }

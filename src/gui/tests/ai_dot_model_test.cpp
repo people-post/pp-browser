@@ -983,5 +983,23 @@ TEST(AiDotWindowMarkupTest, EveryActionHasItsClassAndEveryLookItsLayers) {
   EXPECT_EQ(rml.find("c-blush.svg"), std::string::npos) << "the cool look does not blush";
 }
 
+// The phone home mascot is 96dp (was 120dp) in a 116dp box; the small-screen rule stays 80dp and the desktop dot is not
+// sized by these rules. Every part of the figure is a percentage of the dot, so all looks scale with it.
+TEST(AiDotModelTest, PhoneHomeMascotIsNinetySixDp) {
+  std::ifstream in(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss");
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  const std::string rcss = buffer.str();
+  const auto box = rcss.find(".shell-layer-compact .home-landing--minimal .home-logo--mascot {");
+  ASSERT_NE(box, std::string::npos);
+  EXPECT_NE(rcss.substr(box, 120).find("height: 116dp;"), std::string::npos);
+  const auto dot = rcss.find(".home-logo--mascot .home-mascot.ai-dot {");
+  ASSERT_NE(dot, std::string::npos);
+  const std::string rule = rcss.substr(dot, 160);
+  EXPECT_NE(rule.find("width: 96dp;"), std::string::npos);
+  EXPECT_NE(rule.find("height: 96dp;"), std::string::npos);
+  EXPECT_NE(rcss.find("width: 80dp;", dot + 160), std::string::npos);
+}
+
 } // namespace
 } // namespace pbr

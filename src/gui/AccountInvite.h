@@ -26,6 +26,20 @@ inline std::string AccountInviteText(const std::string& nickname, const std::str
   return text;
 }
 
+/**
+ * The same for a friend's account (not the user's own): "{name}'s PP account (account ID {id}). …" and the friend's
+ * locator line. `nickname` is the friend's own name, never the remark the user keeps for them.
+ */
+inline std::string FriendInviteText(const std::string& nickname, const std::string& account_id,
+                                    const std::string& locator) {
+  std::string text =
+      Tr("contacts.share.friend_invite_text", {{"name", nickname.empty() ? account_id : nickname}, {"id", account_id}});
+  if (!locator.empty()) {
+    text += "\n" + Tr("settings.profile.invite_locator", {{"locator", locator}});
+  }
+  return text;
+}
+
 /** The clicked button's rectangle, so the share sheet points at it (window centre when unknown). */
 inline ShareAnchor ShareAnchorFromEvent(ui::Event& ev) {
   ui::Element* target = ev.GetCurrentElement();

@@ -4560,6 +4560,9 @@ select selectbox option {
   right: 0;
   bottom: 0;
   box-sizing: border-box;
+  /* The panel's free (right) corner at the bottom is round; the screen-edge side is not. */
+  border-bottom-right-radius: 32dp;
+  overflow: hidden;
 }
 
 .ai-drawer {
@@ -4629,7 +4632,7 @@ select selectbox option {
 
 /* The swipe buttons sit outside the row (SessionSwipeGesture), so the list clips sideways. It runs the drawer's full
    height under the two bars; its top padding keeps the first row clear of the top bar at rest, its end spacer
-   (.ai-drawer-list-end) the last row clear of the "you" bar. */
+   (.ai-drawer-list-end) the last row clear of the home indicator. */
 .ai-drawer-list {
   display: block;
   flex: 1 1 auto;
@@ -4641,99 +4644,70 @@ select selectbox option {
   box-sizing: border-box;
 }
 
-/* Height set by ShellHost::ApplySafeAreaLayout (the "you" row + the home indicator). */
+/* Height set by ShellHost::ApplySafeAreaLayout: the strip below plus the home indicator. */
 .ai-drawer-list-end {
   display: block;
-  height: 76dp;
+  height: 40dp;
 }
 
-.ai-drawer-me {
+/* The bottom strip: 40dp (kAiDrawerStripDp in ShellHost) plus the home indicator, a frosted material over the list's end
+   (colors.rcss.tmpl). The material has no children (the engine draws no backdrop blur on an element with a z-index and
+   children, see .bar-material); the count text is its sibling, above it, in the 40dp over the indicator. Both heights /
+   the text's bottom offset are set by ShellHost::ApplySafeAreaLayout. */
+.ai-drawer-strip {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
+  height: 40dp;
   z-index: 2;
-  box-sizing: border-box;
-  flex: none;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 12dp;
-  min-height: 76dp;
+  border-bottom-right-radius: 32dp;
+  pointer-events: none;
+}
+
+.ai-drawer-count {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 40dp;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.ai-drawer-count-text {
   margin: 0;
-  padding: 10dp 16dp;
-  border: 0;
-  border-radius: 0;
-  text-align: left;
-  cursor: pointer;
-}
-
-.ai-drawer-me-avatar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 56dp;
-  height: 56dp;
-  border-radius: 28dp;
-  overflow: hidden;
-}
-
-.ai-drawer-me-image {
-  width: 56dp;
-  height: 56dp;
-}
-
-.ai-drawer-me-avatar .avatar-letter {
-  font-size: 22dp;
-}
-
-/* The name and, under it, the device's link to our service (ShellHost::SetChatsLink). */
-.ai-drawer-me-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.ai-drawer-me-name {
-  margin: 0;
-  font-size: 24dp;
-  line-height: 30dp;
-  font-weight: bold;
+  font-size: 13dp;
+  line-height: 40dp;
+  text-align: center;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-/* A 14dp cloud (tick when online, slash when offline) and the word. */
-.ai-drawer-me-link {
+.link-dot {
+  flex: none;
+  display: block;
+  width: 8dp;
+  height: 8dp;
+  margin-right: 6dp;
+  border-radius: 4dp;
+}
+
+.link-status {
   display: flex;
   flex-direction: row;
   align-items: center;
-  margin: 6dp 0 0 0;
+  flex: none;
   height: 16dp;
+  margin: 0 0 13dp 10dp;
   font-size: 12dp;
   line-height: 16dp;
+  font-weight: normal;
 }
 
-.ai-drawer-me-link-icon {
-  flex: none;
-  width: 14dp;
-  height: 14dp;
-  margin-right: 5dp;
-}
-
-.ai-drawer-me-link-text {
+.link-status-text {
   display: block;
   white-space: nowrap;
-}
-
-.ai-drawer-me-chevron {
-  flex: none;
-  width: 16dp;
-  height: 16dp;
 }
 
 /* An AI conversation's bar: the new-conversation button on the right; the chat's own header row, lifted onto the bar,
@@ -5270,6 +5244,27 @@ select selectbox option {
   margin: 0;
   font-size: 15dp;
   line-height: 21dp;
+}
+
+.ask-ai-intro-lead {
+  font-weight: bold;
+  margin-right: 4dp;
+}
+
+/* The second paragraph: the help "?" (the settings button) is an inline box right after its last word. Its 44dp
+   target is 20dp of icon plus 12dp padding; the negative margins keep the line height and leave a 4dp gap. */
+.ask-ai-intro-own {
+  margin-top: 12dp;
+}
+
+.settings-q-btn.ask-ai-intro-q {
+  display: inline-block;
+  width: 20dp;
+  height: 20dp;
+  min-width: 0;
+  padding: 12dp;
+  margin: -12dp -12dp -12dp -8dp;
+  vertical-align: middle;
 }
 
 .ask-ai-intro-ok {
@@ -6392,6 +6387,49 @@ call-video-tile {
   font-size: 17dp;
   line-height: 22dp;
   text-align: center;
+}
+
+/* The status line as a row: an optional warning triangle (a broken call audio) before the words; the triangle stays on
+   the first line when the words wrap. Its box is one line tall, so the icon centres on that line. */
+.call-status-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.call-status-row p {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.call-status-warn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18dp;
+  height: 22dp;
+  margin-right: 6dp;
+}
+
+.call-status-row--sub .call-status-warn {
+  height: 20dp;
+}
+
+.call-status-row--bar {
+  justify-content: flex-start;
+}
+
+.call-status-row--bar .call-status-warn {
+  width: 14dp;
+  height: 16dp;
+  margin: 2dp 6dp 0 0;
+}
+
+.call-status-row--bar .call-status-warn svg {
+  width: 14dp;
+  height: 14dp;
 }
 
 .call-phone-debug {
@@ -7800,9 +7838,9 @@ input.checkbox {
 }
 
 .shell-chat-overlay .chat-call-row-icon {
-  width: 20dp;
-  height: 20dp;
-  margin-right: 8dp;
+  width: 24dp;
+  height: 24dp;
+  margin: -1dp 8dp -1dp 0;
 }
 
 /* A call record in a 1:1 chat: tap = call back. Group records do not get this class. */
@@ -7955,6 +7993,19 @@ input.checkbox {
   text-overflow: ellipsis;
 }
 
+/* A call record's state icon before its short words (ChatSessionRow::preview_icon); desktop and phone. */
+.chat-row-preview-icon {
+  display: block;
+  flex-shrink: 0;
+  width: 14dp;
+  height: 14dp;
+}
+
+.shell-layer-compact .chat-row-preview-icon {
+  width: 18dp;
+  height: 18dp;
+}
+
 .sidebar-session-icon {
   flex-shrink: 0;
   display: flex;
@@ -8015,6 +8066,26 @@ input.checkbox {
   margin-top: 0;
   margin-bottom: 0;
   font-size: 13dp;
+}
+
+/* B216: the relay does not know this account and only the user can fix it: a tap reconnects. A big target. */
+.sidebar-reconnect-entry {
+  align-items: center;
+  gap: 10dp;
+  min-height: 44dp;
+  margin-bottom: 4dp;
+  padding: 8dp 12dp;
+  border-radius: 10dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.sidebar-reconnect-label {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 15dp;
 }
 
 .sidebar-unread {
@@ -8102,6 +8173,26 @@ input.checkbox {
   padding: 0 16dp;
 }
 
+/* Chats' title row: "Chats" at the left, the link status (dot + word) right after it on the same line, in the 56dp
+   band the fixed bar's compose button sits in (the scroller starts at the top, under the bar, and the bar lets touches
+   through except on its button). The right 56dp is the compose button's: 12dp margin + 44dp. */
+.shell-layer-compact .sidebar-sessions .large-title {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  box-sizing: border-box;
+  height: 56dp;
+  padding: 0 56dp 0 16dp;
+}
+
+.shell-layer-compact .sidebar-sessions .large-title-text {
+  flex: none;
+  margin: 0 0 7dp 0;
+  font-size: 34dp;
+  line-height: 41dp;
+  font-weight: bold;
+}
+
 .shell-layer-compact .chat-search {
   position: relative;
   display: flex;
@@ -8153,8 +8244,13 @@ input.checkbox {
   pointer-events: none;
 }
 
-.shell-layer-compact .sidebar-archived-entry {
+.shell-layer-compact .sidebar-archived-entry,
+.shell-layer-compact .sidebar-reconnect-entry {
   margin: 0 16dp 4dp 16dp;
+}
+
+.shell-layer-compact .sidebar-reconnect-entry {
+  min-height: 50dp;
 }
 
 .shell-layer-compact .sidebar-sessions .text {
@@ -8695,9 +8791,19 @@ input.checkbox {
   justify-content: center;
   margin: 0;
   padding: 0;
+  cursor: pointer;
+}
+
+/* The visible round badge inside the (possibly larger) tap area. Colours: colors.rcss.tmpl. */
+.me-profile-avatar-badge-dot {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
   border-width: 2dp;
   border-radius: 12dp;
-  cursor: pointer;
 }
 
 .me-profile-avatar-badge svg {
@@ -8747,7 +8853,15 @@ input.checkbox {
   font-size: 15dp;
 }
 
+/* 44dp tap area around the 36dp visible dot; the offset keeps the dot where it was (right/bottom -2dp). */
 .shell-layer-compact .me-profile-avatar-badge {
+  right: -6dp;
+  bottom: -6dp;
+  width: 44dp;
+  height: 44dp;
+}
+
+.shell-layer-compact .me-profile-avatar-badge-dot {
   width: 36dp;
   height: 36dp;
   border-radius: 18dp;
@@ -11284,6 +11398,18 @@ input.checkbox {
   text-align: center;
 }
 
+/* The two buttons under the code (share as a picture, save it): full width of the card, 44dp or taller. */
+.shell-layer-compact .qr-actions {
+  width: 260dp;
+  margin: 24dp 0 0 0;
+}
+
+.shell-layer-compact .qr-action {
+  display: block;
+  width: 100%;
+  margin: 0 0 12dp 0;
+}
+
 /* Phone "Blocked" list (Settings > Security; Kenneth 2026-11-04): a short note, a card of 60dp rows (avatar, name,
    a 44dp Unblock on the right); a tap on the avatar or name opens the person's page. The result line goes under it. */
 .blocked-page {
@@ -11448,6 +11574,21 @@ input.checkbox {
   border-radius: 13dp;
   box-sizing: border-box;
   cursor: pointer;
+}
+
+/* The contact page's four tiles (Message, Voice call, Video call, Favorite): they share the row, 16dp from each
+   edge and 8dp apart, so 390 and 360dp screens both hold four; fewer tiles stay centred at a sane width. */
+.cd-acts--tiles {
+  gap: 8dp;
+  margin: 16dp 16dp 0 16dp;
+}
+
+.cd-acts--tiles .cd-act {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  max-width: 96dp;
+  height: 64dp;
 }
 
 .cd-act-icon {
@@ -13149,6 +13290,36 @@ input.checkbox {
   text-overflow: ellipsis;
 }
 
+/* A read-only row whose value may need two lines (the profile page's Status: "Active · Valid until ..."): the label
+   keeps its own width and the value takes the rest, right-aligned, wrapping instead of being cut. */
+.shell-layer-compact .group-row-label--fit {
+  flex: 0 0 auto;
+}
+
+.shell-layer-compact .group-row-value--wrap {
+  flex: 1 1 0;
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
+  text-align: right;
+}
+
+/* A small text button at the right end of a row ("Update now"): a 44dp tap area round a 15dp label, no fill. */
+.shell-layer-compact .settings-text-btn {
+  flex-shrink: 0;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0 -4dp 0 0;
+  padding: 0 8dp;
+  border: 0;
+  font-family: LatoLatin;
+  font-size: 15dp;
+  line-height: 44dp;
+  font-weight: bold;
+  text-align: center;
+  cursor: pointer;
+}
+
 .shell-layer-compact .group-chevron,
 .shell-layer-compact .group-row .settings-row-chevron {
   flex-shrink: 0;
@@ -13417,11 +13588,9 @@ textarea:composing ~ .prompt-composer-label,
   padding-right: 12dp;
 }
 
-/* The "?" sits over the right end of the row, left of the chevron, as its own button (not inside the row's button). */
-.shell-layer-compact .settings-mock .group-row--q .group-row-q {
-  position: absolute;
-  right: 36dp;
-  top: 16dp;
+/* A row that cannot be used here (Move to a new device on a linked phone): no tap feedback, no pointer; its "?" still works. */
+.shell-layer-compact .settings-mock .group-row--off {
+  cursor: default;
 }
 
 .shell-layer-compact .settings-mock .settings-device-row {
@@ -13454,8 +13623,8 @@ textarea:composing ~ .prompt-composer-label,
 
 .shell-layer-compact .settings-mock .me-profile-head {
   display: flex;
-  flex-direction: row;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
   margin: 8dp 16dp 0 16dp;
 }
 
@@ -13499,6 +13668,225 @@ textarea:composing ~ .prompt-composer-label,
 
 .shell-layer-compact .settings-mock .group-foot {
   margin: 8dp 32dp 0 32dp;
+}
+
+/* A note with a warning triangle before it (the Advanced page's technical-users line): the triangle stays on the first
+   line when the words wrap. On a phone the row carries the note's side margins, the note none of its own. */
+.settings-warn-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+.settings-warn-row .group-foot {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settings-warn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18dp;
+  height: 18dp;
+  margin-right: 6dp;
+}
+
+.shell-layer-compact .settings-warn-row {
+  margin: 8dp 32dp 0 32dp;
+}
+
+/* Me > Devices & transfer > Move to a new device (phones): lead line, the 50dp copy button (the grouped-page .btn), the
+   framed "copied" box with its small "again" button, then the numbered steps and the reset note. */
+.shell-layer-compact .settings-transfer-lead {
+  margin: 20dp 32dp 0 32dp;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.shell-layer-compact .settings-copied-box {
+  margin: 16dp 16dp 0 16dp;
+  padding: 16dp 18dp 8dp 18dp;
+  border-width: 2dp;
+  border-style: solid;
+  border-radius: 14dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .settings-copied-title {
+  margin: 0;
+  font-size: 19dp;
+  line-height: 26dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .settings-copied-sub {
+  margin: 4dp 0 0 0;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-layer-compact .settings-copied-again {
+  display: block;
+  margin: 4dp -8dp 0 -8dp;
+  text-align: left;
+}
+
+.shell-layer-compact .settings-steps-card {
+  padding: 0 16dp 0 0;
+}
+
+.shell-layer-compact .settings-step {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  padding: 12dp 0;
+}
+
+.shell-layer-compact .settings-step:first-child {
+  border-top-width: 0;
+}
+
+.shell-layer-compact .settings-step-num {
+  flex: 0 0 26dp;
+  width: 26dp;
+  height: 26dp;
+  margin: 0 12dp 0 16dp;
+  border-radius: 13dp;
+  font-size: 14dp;
+  line-height: 26dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-layer-compact .settings-step-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16dp;
+  line-height: 22dp;
+}
+
+/* A grey line with its "?" right after it (the link page's note, a linked phone's card). */
+.shell-layer-compact .settings-note-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.shell-layer-compact .settings-note-row .text {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* Me > Linked devices (phones). The main device's top block: a quiet icon, one sentence with its "?", one grey line, then the
+   grouped-page 50dp button. A linked phone's top card: one sentence and one grey line with a "?". */
+.shell-layer-compact .settings-dev-hero {
+  padding: 28dp 0 0 0;
+  text-align: center;
+}
+
+.shell-layer-compact .settings-dev-ill {
+  display: block;
+  width: 44dp;
+  height: 44dp;
+  margin: 0 auto;
+}
+
+.shell-layer-compact .settings-dev-sentence-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  margin: 10dp 20dp 0 32dp;
+}
+
+.shell-layer-compact .settings-dev-sentence {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 20dp;
+  line-height: 26dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .settings-dev-sub {
+  margin: 2dp 32dp 0 32dp;
+  font-size: 15dp;
+  line-height: 21dp;
+  text-align: center;
+}
+
+.shell-layer-compact .settings-dev-note {
+  padding: 14dp 16dp 16dp 16dp;
+}
+
+.shell-layer-compact .settings-dev-note-title {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 23dp;
+}
+
+.shell-layer-compact .settings-dev-note-row {
+  margin: 6dp 0 0 0;
+}
+
+.shell-layer-compact .settings-dev-note-line {
+  margin: 0;
+  font-size: 14dp;
+  line-height: 20dp;
+}
+
+.shell-layer-compact .settings-section .settings-warn-row .group-foot {
+  margin: 0;
+}
+
+/* The Advanced page's technical-users note on a phone: a full-width strip under the title bar, the triangle at the
+   left, the words in normal body size. */
+.shell-layer-compact .settings-banner.settings-phone-only {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  margin: 0;
+  padding: 12dp 16dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .settings-banner .settings-warn-icon {
+  width: 22dp;
+  height: 22dp;
+  margin-right: 12dp;
+}
+
+.settings-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+/* A "?" shown on phones only (the desktop keeps the sentence it replaces). */
+.shell-layer-compact .settings-q-btn.settings-phone-only {
+  display: flex;
+}
+
+/* A plain action row inside a card ("Regenerate AI access credential", "Reset ...", "Restore defaults..."): a 50dp
+   row, left-aligned, accent text; the same button is a normal full-width button on the desktop. */
+.shell-layer-compact .settings-section--grouped .group-card .btn.settings-action-row {
+  display: block;
+  flex: none;
+  width: 100%;
+  height: 50dp;
+  min-height: 50dp;
+  margin: -1dp 0 0 0;
+  padding: 0 16dp;
+  border-radius: 0;
+  box-sizing: border-box;
+  font-size: 17dp;
+  line-height: 50dp;
+  font-weight: normal;
+  text-align: left;
 }
 
 .shell-layer-compact .settings-mock .group-head {
@@ -13548,14 +13936,34 @@ textarea:composing ~ .prompt-composer-label,
   line-height: 26dp;
 }
 
-.shell-layer-compact .me-home .cd-icon-btn {
-  width: 44dp;
-  height: 44dp;
+/* The three share buttons at the right end of the card's one row: icon over a small word, no fill. */
+.shell-layer-compact .me-home .me-card-acts {
+  flex-shrink: 0;
+  align-items: center;
+  margin-right: 4dp;
 }
 
-.shell-layer-compact .me-home .me-home-ver {
-  margin: 32dp 32dp 0 32dp;
-  text-align: center;
+.shell-layer-compact .me-home .me-card-act {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 48dp;
+  height: 50dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.shell-layer-compact .me-home .me-card-meta {
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-layer-compact .me-home .me-card-act:active {
+  opacity: 0.6;
 }
 
 /* Buttons on settings pages (DESIGN-pp-ui 8.10): 50dp pill, full width. Inside a card they shrink to 36dp pills. */
@@ -13581,6 +13989,30 @@ textarea:composing ~ .prompt-composer-label,
 .shell-layer-compact .settings-section--grouped .btn.settings-desktop-only,
 .shell-layer-compact .settings-section--grouped .group-actions.settings-desktop-only {
   display: none;
+}
+
+/* A small tinted pill at the right end of a row ("Send" under Send diagnostics): the button is a 44dp tap area, the pill
+   inside it 32dp tall. It greys out while the action runs. */
+.shell-layer-compact .settings-pill-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.shell-layer-compact .settings-pill {
+  height: 32dp;
+  padding: 0 16dp;
+  border-radius: 16dp;
+  font-family: LatoLatin;
+  font-size: 15dp;
+  line-height: 32dp;
+  font-weight: bold;
+  white-space: nowrap;
 }
 
 /* The disabled Send problem logs row (while it sends) reads as waiting. */
@@ -13609,6 +14041,13 @@ textarea:composing ~ .prompt-composer-label,
   width: auto;
   margin: 16dp 16dp 0 16dp;
   gap: 8dp;
+}
+
+/* Desktop-only wins on phones whatever else the element carries: the rules above (.settings-actions, .me-profile-actions,
+   .group-actions, .btn) are as specific as the general "hide" and come later, so a desktop-only caption block
+   (class settings-actions) showed on phones. Keep this rule after them. */
+.shell-layer-compact .settings-section--grouped .settings-desktop-only {
+  display: none;
 }
 
 .shell-layer-compact .settings-section--grouped .group-card .btn,
@@ -14284,17 +14723,17 @@ textarea:composing ~ .prompt-composer-label,
   border-radius: 22dp;
 }
 
-/* Animated home logo (Kenneth 2026-11-09; ShellHomeMascot): the AI dot's figure drawn at 120dp inside the logo box, which
+/* Animated home logo (Kenneth 2026-11-09; ShellHomeMascot): the AI dot's figure drawn at 96dp inside the logo box, which
    keeps room for the shadow the figure's SVGs draw round it. It sits still until tapped (the dot's keyframes). */
 .shell-layer-compact .home-landing--minimal .home-logo--mascot {
-  height: 140dp;
+  height: 116dp;
 }
 
 .shell-layer-compact .home-landing--minimal .home-logo--mascot .home-mascot.ai-dot {
   position: relative;
   display: block;
-  width: 120dp;
-  height: 120dp;
+  width: 96dp;
+  height: 96dp;
   margin: 10dp auto 0 auto;
 }
 
@@ -14943,6 +15382,25 @@ textarea:composing ~ .prompt-composer-label,
   padding-top: 56dp;
 }
 
+/* Chats starts at the very top: its title row is the band under the fixed bar. */
+.shell-layer-compact .sidebar-sessions {
+  padding-top: 0;
+}
+
+/* The fixed bar over the title row passes touches through (a drag that starts on the title scrolls the list); only its
+   compose button takes them. */
+.shell-layer-compact .sidebar-panel .pane-nav,
+.shell-layer-compact .sidebar-panel .pane-nav-bg,
+.shell-layer-compact .sidebar-panel .bar-fade,
+.shell-layer-compact .sidebar-panel .pane-nav-title {
+  pointer-events: none;
+}
+
+.shell-layer-compact .sidebar-panel .pane-nav-actions,
+.shell-layer-compact .sidebar-panel .pane-nav-btn {
+  pointer-events: auto;
+}
+
 .shell-layer-compact .home-scroll {
   padding-top: 56dp;
 }
@@ -15090,6 +15548,47 @@ textarea:composing ~ .prompt-composer-label,
   height: 56dp;
   min-height: 56dp;
   padding: 0 0 0 12dp;
+}
+
+/* A left swipe on a contact row (SessionSwipeGesture, ContactRowSwipeConfig): four 60dp buttons ride just outside the
+   row, as on the Chats list; the group's rounded card clips them at its edge. The row moves with `left`, so its buttons
+   are hit where they are drawn. */
+.shell-layer-compact .nc-page .contacts-row {
+  position: relative;
+  transition: left 0.2s cubic-out;
+}
+
+.shell-layer-compact .nc-page .contacts-row.session-swipe-dragging {
+  transition: none;
+}
+
+.nc-swipe {
+  display: none;
+}
+
+.shell-layer-compact .nc-page .contacts-row.session-swipe-shown .nc-swipe {
+  display: flex;
+  flex-direction: row;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 100%;
+}
+
+.shell-layer-compact .nc-page .nc-swipe-btn {
+  width: 60dp;
+  min-height: 44dp;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.shell-layer-compact .nc-page .nc-swipe-label {
+  margin: 2dp 0 0 0;
+  font-size: 11dp;
+  text-align: center;
 }
 
 .shell-layer-compact .nc-page .contacts-row-avatar-frame {

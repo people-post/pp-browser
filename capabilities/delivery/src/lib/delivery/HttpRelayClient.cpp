@@ -78,6 +78,20 @@ Error RelaySendRefusal(const long status, const std::string& code, const std::st
 
 } // namespace
 
+Error RelayPollHttpError(const long status_code, const std::string& body) {
+  Error error = RelayHttpStatusError("poll", status_code, body);
+  // The relay has no (active) registration for our account: told apart so we register again.
+  if (status_code == 403 && RelayErrorCode(body) == "not_registered") {
+    return AppError::Auth(Err::Auth::NotRegistered, error.message);
+  }
+  return error;
+}
+
+bool IsRelayUserNotRegistered(const Error& error) {
+  return AppError::CategoryOf(error) == ErrorCategory::Auth &&
+         error.code == static_cast<int32_t>(Err::Auth::NotRegistered);
+}
+
 Roe<std::string> HttpRelayClient::SignRelayApiBytes(const std::vector<uint8_t>& sign_bytes) const {
   if (!auth_signer_) {
     return Error("Relay auth signer not configured");
@@ -202,7 +216,7 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_acc
     return response.error();
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return RelayHttpStatusError("poll", response.value().status_code, response.value().body);
+    return RelayPollHttpError(response.value().status_code, response.value().body);
   }
 
   auto root = TryParseObject(response.value().body);

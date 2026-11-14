@@ -5,6 +5,9 @@
 #include "gui/CallAudioFaultToastGate.h"
 #include "feature/presenters/CallLocalHold.h"
 #include "gui/CallMetricsTracker.h"
+#include "gui/ScreenAwakeSync.h"
+#include "foundation/platform/ProximityScreenOff.h"
+#include "foundation/platform/ScreenAwake.h"
 #include "gui/UiLatencyProbe.h"
 #include "common/media/CallMediaHealth.h"
 #include "lib/call_audio/CallRingtone.h"
@@ -15,6 +18,7 @@
 #include "feature/presenters/CallMediaFrame.h"
 #include "feature/presenters/CallPresenter.h"
 #include "feature/presenters/CallRingSteps.h"
+#include "feature/presenters/CallScreenAwake.h"
 #include "feature/presenters/CallSelfAvatarWatch.h"
 #include "feature/presenters/CallSystemUiBridge.h"
 #include "feature/presenters/CallUiAttachGuard.h"
@@ -267,6 +271,15 @@ private:
    * call, or the engine's open call the screen lost (DEV/PLAN-call-ui-never-detached.md 4).
    */
   void SyncOngoingCall();
+  /** B215: holds the screen on only while a call's video is up (CallWantsScreenOn); each tick, acts on a change. */
+  void SyncScreenAwake();
+  /**
+   * Voice call held to the ear: the proximity sensor blacks the screen (CallWantsProximityScreenOff). Acts on a change,
+   * and while `want` holds repeats the call every kProximityRecheckMs so the platform re-reads the output route.
+   */
+  void SyncProximityScreenOff(bool want);
+  /** Lets the screen sleep again (the call's end, teardown); also turns the proximity sensor off. */
+  void ReleaseScreenAwake(const char* reason);
   /** The engine's call, from one snapshot of the backend's state. */
   EngineCall EngineCallNow();
   /** EngineCallNow, not counted open while it is the call the user hung up (CallPresenter::LeavingCallId). */
@@ -372,6 +385,12 @@ private:
   uint64_t background_listener_ = 0;
   uint64_t foreground_listener_ = 0;
   bool ongoing_call_on_ = false;
+  /** The word the switch logs for the change in flight (SyncScreenAwake sets it just before). */
+  const char* screen_awake_reason_ = "ended";
+  ScreenAwakeSync screen_awake_{[this](const bool on) { ScreenAwake::SetKeepScreenOn(on, screen_awake_reason_); }};
+  static constexpr int64_t kProximityRecheckMs = 500;
+  bool proximity_wanted_ = false;
+  int64_t proximity_next_ms_ = 0;
   std::string ongoing_call_title_;
   CallUiAttachGuard ui_attach_guard_;
   /** Display rotation last pushed to the engine while the camera is on (-1: none). */

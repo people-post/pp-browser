@@ -2,6 +2,7 @@
 
 #include "common/ValueJson.h"
 #include "foundation/error/AppError.h"
+#include "lib/delivery/RelayClients.h"
 
 #include <array>
 
@@ -67,6 +68,8 @@ SendFailure SendFailureFromRelay(const Error& error) {
         case Err::Auth::RateLimited:
         case Err::Auth::StrangerQuota:
           return SendFailure::RelayRateLimited;
+        case Err::Auth::NotRegistered:
+          return SendFailure::SenderNotRegistered;
         default:
           return SendFailure::RelayRejected;
       }
@@ -138,6 +141,8 @@ ShareWord SendFailureWord(const SendFailure failure) {
       return "recipient_not_on_relay";
     case SendFailure::PaymentRequired:
       return "payment_required";
+    case SendFailure::SenderNotRegistered:
+      return "sender_not_registered";
   }
   return "unknown";
 }
@@ -166,7 +171,8 @@ std::optional<SendFailure> SendFailureFromWire(const std::string& wire) {
                                          SendFailure::RelayUnreachable,
                                          SendFailure::RelayRejected,
                                          SendFailure::RecipientNotOnRelay,
-                                         SendFailure::PaymentRequired};
+                                         SendFailure::PaymentRequired,
+                                         SendFailure::SenderNotRegistered};
   for (const SendFailure failure : kAll) {
     if (wire == SendFailureWord(failure).view()) {
       return failure;
@@ -214,6 +220,22 @@ std::optional<std::string> SendFailureRowReason(const ThreadMessage& message) {
     return std::nullopt;
   }
   return detail->getString("reason").value_or("");
+}
+
+std::optional<std::string> SendFailureRowMessageId(const ThreadMessage& message) {
+  if (!SendFailureRowReason(message)) {
+    return std::nullopt;
+  }
+  auto payload = TryParseObject(message.payload_json);
+  auto detail = payload ? TryParseObject(payload->getString("detail").value_or("")) : std::nullopt;
+  if (!detail) {
+    return std::nullopt;
+  }
+  auto id = detail->getString("message_id");
+  if (!id || id->empty()) {
+    return std::nullopt;
+  }
+  return *id;
 }
 
 } // namespace pbr

@@ -9,6 +9,7 @@
 #include "common/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
+#include "domain/registration/RegistrationClient.h"
 #include "gui/AccountInvite.h"
 #include "gui/BlobQuotaRecoveryFlow.h"
 #include "gui/UserFeedback.h"
@@ -61,6 +62,11 @@ SettingsProfileActions::SettingsProfileActions(SettingsHost& host, const Setting
 void SettingsProfileActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.Bind("profile_qr_svg_rml", &qr_svg_rml_);
   ctor.Bind("profile_show_qr", &show_qr_);
+  ctor.BindEventCallback("show_my_qr", DataEvent<>([this]() {
+                           if (show_my_qr_) {
+                             show_my_qr_();
+                           }
+                         }));
   ctor.BindEventCallback("register_profile", DataEvent<>([this]() { Register(); }));
   ctor.BindEventCallback("rotate_brief_llm_key", DataEvent<>([this]() { RotateBriefLlmKey(); }));
   ctor.BindEventCallback("copy_profile_id", DataEvent<>([this]() { CopyId(); }));
@@ -108,30 +114,92 @@ void SettingsProfileActions::Unlocked(const char* locked, std::function<void()> 
       });
 }
 
-void SettingsProfileActions::Register() {
-  host_.SaveProfileNickname();
-  host_.PullFromView();
-  const bool renewing = host_.UiState().profile_registered == "yes";
-  Unlocked("PIN required to register", [this, renewing]() {
-    if (!commands_.register_identity) {
-      host_.ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Registration is not available"));
-      return;
-    }
-    if (auto registered = commands_.register_identity({.nickname = host_.UiState().profile_nickname}); !registered) {
-      host_.ReportFailure(registered.error());
-      return;
-    }
+namespace {
+
+/** A reconnect that failed (B216), in words for its cause: the server refused it, or the network did not answer. */
+Error ReconnectFailure(Error error) {
+  if (AppError::CategoryOf(error) != ErrorCategory::Network) {
+    return error; // the PIN and the rest keep their own words
+  }
+  const bool refused = IsRegistrationRefused(error);
+  return std::move(error).WithUser(refused ? Tr("chat.reconnect.refused") : Tr("chat.reconnect.offline"));
+}
+
+} // namespace
+
+void SettingsProfileActions::BindRunWhenRegistrationIdle(std::function<void(std::function<void()>)> run) {
+  run_when_registration_idle_ = std::move(run);
+}
+
+void SettingsProfileActions::BindShowMyQr(std::function<void()> show) {
+  show_my_qr_ = std::move(show);
+}
+
+void SettingsProfileActions::Register(const bool quiet_success, std::function<void(bool ok)> done) {
+  // The reconnect (B216) never reads the settings page: it may never have been opened in this run, and what its
+  // fields hold is not the registration's to commit or send.
+  if (!quiet_success) {
+    host_.SaveProfileNickname();
+    host_.PullFromView();
+  }
+  const bool renewing = !quiet_success && host_.UiState().profile_registered == "yes";
+  auto finished = std::make_shared<std::function<void(bool)>>(std::move(done));
+  Unlocked(
+      "PIN required to register",
+      [this, renewing, quiet_success, finished]() {
+        // Never beside the automatic renewal (the one unlocking just started included): after it, when one is out.
+        auto run = [this, renewing, quiet_success, finished]() {
+          const bool registered = RegisterUnlocked(renewing, quiet_success);
+          if (*finished) {
+            (*finished)(registered);
+          }
+        };
+        if (run_when_registration_idle_) {
+          run_when_registration_idle_(std::move(run));
+        } else {
+          run();
+        }
+      },
+      [finished]() {
+        if (*finished) {
+          (*finished)(false); // the PIN was not given
+        }
+      });
+}
+
+bool SettingsProfileActions::RegisterUnlocked(const bool renewing, const bool quiet_success) {
+  if (!commands_.register_identity) {
+    host_.ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Registration is not available"));
+    return false;
+  }
+  // Reconnect: the stored nickname (as the automatic renewal does); "" keeps the stored one in the hub.
+  std::string nickname = host_.UiState().profile_nickname;
+  if (quiet_success) {
+    nickname.clear();
     if (commands_.load_profile_identity) {
-      const ProfileIdentityView view = commands_.load_profile_identity();
-      if (view.ready) {
-        UiEditSession::Instance().OnCommitted(kUiFieldProfileNickname, view.nickname);
+      if (const ProfileIdentityView view = commands_.load_profile_identity(); view.ready) {
+        nickname = view.nickname;
       }
     }
-    const std::string message = renewing ? Tr("settings.registration.renewed") : Tr("settings.registration.done");
-    host_.Resync();
-    host_.ShowStatus(message);
-    UserFeedback::Ok(message);
-  });
+  }
+  if (auto registered = commands_.register_identity({.nickname = nickname}); !registered) {
+    host_.ReportFailure(quiet_success ? ReconnectFailure(registered.error()) : registered.error());
+    return false;
+  }
+  if (!quiet_success && commands_.load_profile_identity) {
+    const ProfileIdentityView view = commands_.load_profile_identity();
+    if (view.ready) {
+      UiEditSession::Instance().OnCommitted(kUiFieldProfileNickname, view.nickname);
+    }
+  }
+  host_.Resync();
+  if (quiet_success) {
+    return true; // "Reconnected" is said when a poll gets through (ChatController)
+  }
+  const std::string message = renewing ? Tr("settings.registration.renewed") : Tr("settings.registration.done");
+  host_.ShowStatus(message);
+  UserFeedback::Ok(message);
+  return true;
 }
 
 void SettingsProfileActions::RotateBriefLlmKey() {

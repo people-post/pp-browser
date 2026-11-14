@@ -29,6 +29,12 @@ struct RelayDeleteResult {
   int64_t deleted = 0;
 };
 
+/**
+ * The relay answered a poll with 403 `not_registered`: it has no active registration for our account (a new server,
+ * or one that lost it). Registering again with the same account key fixes it (B216).
+ */
+bool IsRelayUserNotRegistered(const Error& error);
+
 class IRelayClient {
 public:
   virtual ~IRelayClient() = default;

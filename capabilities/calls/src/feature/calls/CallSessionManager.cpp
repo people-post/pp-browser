@@ -190,7 +190,7 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int displ
   return {};
 }
 
-Roe<void> CallSessionManager::SetLocalOnHold(const bool on_hold) {
+Roe<void> CallSessionManager::SetLocalOnHold(const bool on_hold, const std::optional<bool> muted) {
   auto local = control_.LocalAccountIdentity();
   if (!local) {
     return local.error();
@@ -201,6 +201,14 @@ Roe<void> CallSessionManager::SetLocalOnHold(const bool on_hold) {
   }
   CallSessionWorkflow::LocalMedia media;
   media.on_hold = on_hold;
+  if (muted) {
+    CallMedia* call_media = call_media_.Media(call_id);
+    if (!call_media) {
+      return Error("No active call media");
+    }
+    call_media->SetMuted(*muted);
+    media.audio_muted = *muted;
+  }
   return workflow_.PublishLocalMedia(call_id, *local, media);
 }
 

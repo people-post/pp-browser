@@ -3,33 +3,193 @@
 # One row per (view, token, gates); regenerate from the old views before each "delete the old block" commit.
 data-class-settings-switch--on="auto_renew_registration == 'auto'"	2	-	profile	advanced	profile	10
 data-event-blur="on_profile_nickname_commit()"	1	profile	profile	-	profile	
-data-event-click="copy_profile_id()"	2	-	profile	-	profile	
+data-event-click="copy_profile_id()"	1	-	profile	-	profile	
+data-event-click="edit_profile_nickname()"	1	-	profile	-	profile	
 data-event-click="pick_profile_icon()"	1	-	profile	-	profile	
 data-event-click="register_profile()"	1	profile	profile	profile_show_register	profile	
-data-event-click="rotate_brief_llm_key()"	1	profile	advanced	advanced;;advanced;;advanced && profile_show_rotate	profile	10
-data-event-click="share_profile()"	2	-	profile	-	profile	
+data-event-click="register_profile()"	1	-	profile	profile_show_register && profile_register_primary	profile	
+data-event-click="register_profile()"	1	-	profile	advanced && profile_show_register && !profile_register_primary	profile	
+data-class-settings-switch--on="circuit_relay_enabled == 'on'"	1	-	advanced	advanced;;advanced && show_circuit_relay_toggle	network	
+data-class-settings-switch--on="dht_enabled == 'on'"	1	-	advanced	advanced;;advanced && show_dht_toggle	network	
+data-class-settings-switch--on="media_relay_enabled == 'on'"	1	-	advanced	advanced;;advanced && show_media_relay_toggle	network	
+data-class-settings-switch--on="node_enabled == 'on'"	1	-	advanced	advanced;;advanced && show_node_toggle	network	
+data-class-settings-switch--on="prefer_contacts_for_routing == 'on'"	1	-	advanced	advanced;;advanced && show_prefer_contacts_toggle	network	
+data-class-settings-switch--on="reachable_without_relay == 'on'"	1	-	advanced	advanced;;show_node_toggle	network	
+data-class-settings-switch--on="trusted_relays_only == 'on'"	1	-	advanced	advanced	network	
+data-event-change="on_llm_preset_changed()"	1	llm	advanced	advanced;;advanced	llm	
+data-event-click="ask_setting_help('settings.network.circuit_relay')"	1	-	advanced	advanced;;advanced && show_circuit_relay_toggle	network	
+data-event-click="ask_setting_help('settings.network.dht')"	1	-	advanced	advanced;;advanced && show_dht_toggle	network	
+data-event-click="ask_setting_help('settings.network.direct_connections')"	1	-	advanced	advanced	network	
+data-event-click="ask_setting_help('settings.network.help_network')"	1	-	advanced	advanced;;advanced && show_node_toggle	network	
+data-event-click="ask_setting_help('settings.network.media_relay')"	1	-	advanced	advanced;;advanced && show_media_relay_toggle	network	
+data-event-click="ask_setting_help('settings.network.prefer_contacts')"	1	-	advanced	advanced;;advanced && show_prefer_contacts_toggle	network	
+data-event-click="ask_setting_help('settings.network.reachable_without_relay')"	1	-	advanced	advanced;;show_node_toggle	network	
+data-event-click="ask_setting_help('settings.network.trusted_relays')"	1	-	advanced	advanced	network	
+data-event-click="dismiss_reachability_help()"	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'blocked'	network	
+data-event-click="dismiss_reachability_help()"	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'outbound_only'	network	
+data-event-click="dismiss_reachability_help()"	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'reachable'	network	
+data-event-click="on_choose_backend()"	1	network	advanced	advanced;;show_backend_switch	network	
+data-event-click="on_choose_direct_connections()"	1	network	advanced	advanced	network	
+data-event-click="on_choose_llm_preset()"	1	-	advanced	advanced;;advanced	llm	
+data-event-click="open_security_page('ai_endpoint')"	1	-	advanced	advanced;;advanced		
+data-event-click="open_security_page('backend_custom')"	1	-	advanced	advanced;;show_backend_switch;;backend_is_custom		
+data-event-click="open_security_page('backend_custom')"	1	-	advanced	advanced;;backend_is_custom && !show_backend_switch		
+data-event-click="open_security_page('integrations')"	1	-	advanced	advanced;;advanced		
+data-event-click="reset_section('integrations')"	1	integrations	advanced	advanced;;advanced	integrations	
+data-event-click="reset_section('llm')"	1	llm	advanced	advanced;;advanced	llm	
+data-event-click="reset_tool_permissions()"	1	security	advanced	advanced;;advanced;;tool_permissions_has_saved	security	
+data-event-click="retest_reachability()"	1	-	advanced	advanced;;show_connection_card	network	
+data-event-click="rotate_brief_llm_key()"	1	profile	advanced	advanced;;advanced;;advanced && profile_show_rotate	profile	
+data-event-click="show_reachability_help()"	1	-	advanced	advanced;;show_connection_card	network	
+data-event-click="show_setting_note('settings.network.backend','settings.network.backend.help')"	1	-	advanced	advanced;;show_backend_switch		
+data-event-click="toggle_circuit_relay()"	1	network	advanced	advanced;;advanced && show_circuit_relay_toggle	network	
+data-event-click="toggle_dht()"	1	network	advanced	advanced;;advanced && show_dht_toggle	network	
+data-event-click="toggle_media_relay()"	1	network	advanced	advanced;;advanced && show_media_relay_toggle	network	
+data-event-click="toggle_node_enabled()"	1	network	advanced	advanced;;advanced && show_node_toggle	network	
+data-event-click="toggle_prefer_contacts()"	1	network	advanced	advanced;;advanced && show_prefer_contacts_toggle	network	
+data-event-click="toggle_reachable_without_relay()"	1	network	advanced	advanced;;show_node_toggle	network	
+data-event-click="toggle_trusted_relays()"	1	network	advanced	advanced	network	
+data-event-click="try_upnp_port()"	1	-	advanced	advanced;;show_connection_card	network	
+data-value="llm_preset"	1	llm	advanced	advanced;;advanced	llm	
+{{amp_listen_multiaddr}}	1	-	advanced	advanced;;advanced;;show_node_toggle && node_enabled == 'on'	network	
+{{backend_label}}	1	-	advanced	advanced;;show_backend_switch	network	
+{{direct_connections_label}}	1	-	advanced	advanced	network	
+{{llm_preset_label}}	1	-	advanced	advanced;;advanced	llm	
+{{i18n:common.not_now}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'reachable'	network	
+{{i18n:common.reset_defaults}}	2	-	advanced	advanced;;advanced	appearance,integrations,llm,network	
+{{i18n:settings.advanced.group.ai}}	1	-	advanced	advanced	-	
+{{i18n:settings.advanced.group.connection}}	1	-	advanced	advanced	-	
+{{i18n:settings.advanced.intro}}	2	-	advanced	advanced	-	
+{{i18n:settings.advanced.not_set}}	1	-	advanced	advanced;;advanced;;llm_model == ''		
+{{i18n:settings.integrations.page.title}}	1	-	advanced	advanced;;advanced		
+{{i18n:settings.integrations.title}}	1	-	advanced	advanced;;advanced	-	
+{{i18n:settings.llm.endpoint.title}}	1	-	advanced	advanced;;advanced		
+{{i18n:settings.llm.preset_brief}}	1	-	advanced	advanced;;advanced	llm	
+{{i18n:settings.llm.preset_cloud}}	1	-	advanced	advanced;;advanced	llm	
+{{i18n:settings.llm.preset_custom}}	1	-	advanced	advanced;;advanced	llm	
+{{i18n:settings.llm.preset_help}}	1	-	advanced	advanced;;advanced	llm	
+{{i18n:settings.llm.preset_ollama}}	1	-	advanced	advanced;;advanced	llm	
+{{i18n:settings.llm.preset}}	2	-	advanced	advanced;;advanced	llm	
+{{i18n:settings.llm.rotate_brief_key}}	1	-	advanced	advanced;;advanced;;advanced && profile_show_rotate	profile	
+{{i18n:settings.llm.summary}}	1	-	advanced	advanced;;!advanced	llm	
+{{i18n:settings.network.backend.custom_addresses}}	1	-	advanced	advanced;;show_backend_switch;;backend_is_custom		
+{{i18n:settings.network.backend.custom_addresses}}	1	-	advanced	advanced;;backend_is_custom && !show_backend_switch		
+{{i18n:settings.network.backend.help}}	1	-	advanced	advanced;;show_backend_switch	network	
+{{i18n:settings.network.backend.restart}}	1	-	advanced	advanced;;show_backend_switch && backend_restart_pending	network	
+{{i18n:settings.network.backend}}	1	-	advanced	advanced;;show_backend_switch	network	
+{{i18n:settings.network.circuit_relay_hint}}	1	-	advanced	advanced;;advanced && show_circuit_relay_toggle	network	
+{{i18n:settings.network.circuit_relay}}	1	-	advanced	advanced;;advanced && show_circuit_relay_toggle	network	
+{{i18n:settings.network.connection.learn}}	1	-	advanced	advanced;;show_connection_card	network	
+{{i18n:settings.network.connection.retest}}	1	-	advanced	advanced;;show_connection_card	network	
+{{i18n:settings.network.connection.title}}	1	-	advanced	advanced;;show_connection_card	network	
+{{i18n:settings.network.connection.try_upnp}}	1	-	advanced	advanced;;show_connection_card	network	
+{{i18n:settings.network.dht_hint}}	1	-	advanced	advanced;;advanced && show_dht_toggle	network	
+{{i18n:settings.network.dht}}	1	-	advanced	advanced;;advanced && show_dht_toggle	network	
+{{i18n:settings.network.direct_connections.help}}	1	-	advanced	advanced	network	
+{{i18n:settings.network.direct_connections}}	1	-	advanced	advanced	network	
+{{i18n:settings.network.help.ack_relay}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'blocked'	network	
+{{i18n:settings.network.help.ack_relay}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'outbound_only'	network	
+{{i18n:settings.network.help.blocked}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'blocked'	network	
+{{i18n:settings.network.help.outbound_only}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'outbound_only'	network	
+{{i18n:settings.network.help.reachable}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'reachable'	network	
+{{i18n:settings.network.help.skip_relay}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'blocked'	network	
+{{i18n:settings.network.help.skip_relay}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'outbound_only'	network	
+{{i18n:settings.network.help_network_hint}}	1	-	advanced	advanced;;advanced && show_node_toggle	network	
+{{i18n:settings.network.help_network}}	1	-	advanced	advanced;;advanced && show_node_toggle	network	
+{{i18n:settings.network.listen}}	1	-	advanced	advanced;;advanced;;show_node_toggle && node_enabled == 'on'	network	
+{{i18n:settings.network.media_relay_hint}}	1	-	advanced	advanced;;advanced && show_media_relay_toggle	network	
+{{i18n:settings.network.media_relay}}	1	-	advanced	advanced;;advanced && show_media_relay_toggle	network	
+{{i18n:settings.network.prefer_contacts_hint}}	1	-	advanced	advanced;;advanced && show_prefer_contacts_toggle	network	
+{{i18n:settings.network.prefer_contacts}}	1	-	advanced	advanced;;advanced && show_prefer_contacts_toggle	network	
+{{i18n:settings.network.reachable_without_relay.help}}	1	-	advanced	advanced;;show_node_toggle	network	
+{{i18n:settings.network.reachable_without_relay}}	1	-	advanced	advanced;;show_node_toggle	network	
+{{i18n:settings.network.trusted_relays.help}}	1	-	advanced	advanced	network	
+{{i18n:settings.network.trusted_relays}}	1	-	advanced	advanced	network	
+{{i18n:settings.security.tool_permissions.help}}	1	-	advanced	advanced;;advanced	security	
+{{i18n:settings.security.tool_permissions.reset}}	1	-	advanced	advanced;;advanced;;tool_permissions_has_saved	security	
+{{i18n:settings.security.tool_permissions}}	1	-	advanced	advanced;;advanced	security	
+{{llm_model}}	1	-	advanced	advanced;;advanced;;llm_model != ''		
+{{mesh_status_message}}	1	-	advanced	advanced;;advanced;;mesh_status_message != ''	network	
+{{reachability_status_label}}	1	-	advanced	advanced;;show_connection_card	network	
+{{reachability_summary}}	1	-	advanced	advanced;;show_connection_card	network	
+{{search_provider}}	1	-	advanced	advanced;;advanced;;search_provider != ''		
+{{tool_permissions_summary}}	1	-	advanced	advanced;;advanced	security	
+data-event-change="on_llm_field_changed()"	2	llm	advanced_endpoint	advanced;;advanced	llm	
+data-event-change="on_llm_field_changed()"	2	llm	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief'	llm	
+data-value="llm_api_key"	1	llm	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief'	llm	
+data-value="llm_api_key_env"	1	llm	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief'	llm	
+data-value="llm_base_url"	1	llm	advanced_endpoint	advanced;;advanced	llm	
+data-value="llm_model"	1	llm	advanced_endpoint	advanced;;advanced	llm	
+{{brief_llm_key_masked}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset == 'brief';;brief_llm_key_masked != ''	llm	
+{{i18n:settings.llm.api_key_env_placeholder}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief'	llm	
+{{i18n:settings.llm.api_key_env_placeholder}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief';;llm_api_key_env == ''	llm	
+{{i18n:settings.llm.api_key_env}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief'	llm	
+{{i18n:settings.llm.api_key_placeholder}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief'	llm	
+{{i18n:settings.llm.api_key_placeholder}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief';;llm_api_key == ''	llm	
+{{i18n:settings.llm.api_key}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief'	llm	
+{{i18n:settings.llm.base_url}}	1	-	advanced_endpoint	advanced;;advanced	llm	
+{{i18n:settings.llm.brief_key_auto}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset == 'brief';;brief_llm_key_masked == ''	llm	
+{{i18n:settings.llm.brief_key_rotate_hint}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset == 'brief';;brief_llm_key_masked != ''	llm	
+{{i18n:settings.llm.brief_key}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset == 'brief'	llm	
+{{i18n:settings.llm.endpoint.caption}}	1	-	advanced_endpoint	advanced;;advanced		
+{{i18n:settings.llm.model}}	1	-	advanced_endpoint	advanced;;advanced	llm	
+data-event-change="on_integrations_field_changed()"	6	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-event-click="add_mcp_server()"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-event-click="ask_setting_help('settings.help.topic.mcp')"	1	-	advanced_integrations	advanced;;advanced	integrations	
+data-event-click="remove_mcp_server(server_index)"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-value="promoted_mcp_url"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-value="search_provider"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-value="server.args_text"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-value="server.command"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-value="server.id"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-value="server.url"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:common.remove}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.add_mcp}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced_integrations	advanced;;advanced;;server.args_text == ''	integrations	
+{{i18n:settings.integrations.mcp_args}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.mcp_command}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.mcp_help}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.promoted_mcp_placeholder}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.promoted_mcp_placeholder}}	1	-	advanced_integrations	advanced;;advanced;;promoted_mcp_url == ''	integrations	
+{{i18n:settings.integrations.promoted_mcp}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.search}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.server_id}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.server_url}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+data-event-change="on_network_field_changed()"	3	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-event-click="reset_section('network')"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="directory_base_url"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="registration_base_url"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="relay_base_url"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:common.reset_defaults}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	appearance,integrations,llm,network	
+{{i18n:settings.network.backend.custom_caption}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom		
+{{i18n:settings.network.directory}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.registration}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.relay}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-event-click="share_profile()"	1	-	profile	-	profile	
 data-event-click="tap_profile_avatar()"	1	-	profile	-	profile	
 data-event-click="toggle_auto_renew_registration()"	2	profile	profile	advanced	profile	10
-data-event-click="toggle_profile_qr()"	2	-	profile	profile_qr_svg_rml != ''	profile	
+data-event-click="toggle_profile_qr()"	1	-	profile	profile_qr_svg_rml != ''	profile	
 data-value="profile_nickname"	1	profile	profile	-	profile	
-{{i18n:common.share}}	2	-	profile	-	profile	
-{{i18n:contacts.copy_id}}	2	-	profile	-	profile	
-{{i18n:settings.auto_renew}}	2	-	profile	advanced	profile	10
-{{i18n:settings.llm.rotate_brief_key}}	1	-	advanced	advanced;;advanced;;advanced && profile_show_rotate	profile	10
-{{i18n:settings.nickname}}	1	-	profile	-	profile	
+{{i18n:common.share}}	1	-	profile	-	profile	
+{{i18n:contacts.copy_id}}	1	-	profile	-	profile	
+{{i18n:settings.auto_renew}}	1	-	profile	advanced	profile	10
+{{i18n:settings.nickname}}	2	-	profile	-	profile	
 {{i18n:settings.profile.nickname_placeholder}}	1	-	profile	-	profile	
 {{i18n:settings.profile.nickname_placeholder}}	1	-	profile	profile_nickname == ''	profile	
 {{i18n:settings.profile.peer_id_label}}	1	-	profile	advanced && profile_peer_id != ''	profile	
 {{i18n:settings.profile.photo_uploading}}	1	-	profile	profile_icon_uploading	profile	
-{{i18n:settings.profile.qr_help}}	2	-	profile	profile_show_qr && profile_qr_svg_rml != ''	profile	
+{{i18n:settings.profile.qr_help}}	1	-	profile	profile_show_qr && profile_qr_svg_rml != ''	profile	
 {{i18n:settings.profile.account_id_label}}	1	-	profile	profile_account_id != ''	profile	
 {{i18n:settings.profile.account_id_none}}	1	-	profile	profile_account_id == ''	profile	
-{{i18n:settings.profile.show_qr}}	2	-	profile	profile_qr_svg_rml != ''	profile	
+{{i18n:settings.profile.show_qr}}	1	-	profile	profile_qr_svg_rml != ''	profile	
 {{i18n:settings.registration.expires}}	1	-	profile	advanced && profile_registration_expires != ''	profile	10
 {{i18n:settings.registration.label}}	1	-	profile	-	profile	
 {{profile_avatar_letter}}	1	-	profile	!profile_has_icon	profile	
 {{profile_peer_id}}	2	-	profile	advanced && profile_peer_id != ''	profile	
 {{profile_register_label}}	1	-	profile	profile_show_register	profile	
+{{profile_register_label}}	1	-	profile	profile_show_register && profile_register_primary	profile	
+{{i18n:settings.profile.update_now}}	1	-	profile	advanced && profile_show_register && !profile_register_primary	profile	
 {{profile_registration_expires}}	2	-	profile	advanced && profile_registration_expires != ''	profile	
 {{profile_registration_status}}	2	-	profile	-	profile	
 {{profile_account_id}}	2	-	profile	profile_account_id != ''	profile	
@@ -53,7 +213,7 @@ data-event-click="toggle_biometric()"	1	security	security	security_biometric_sho
 {{i18n:settings.security.biometric.help}}	1	-	security	security_biometric_shown	security	
 {{i18n:settings.security.change_pin}}	1	-	security	show_change_pin	security	
 {{i18n:settings.security.default_hint}}	1	-	security	pin_protection_is_default	security	
-{{i18n:settings.security.grace.help}}	1	-	security	security_grace_shown	security	
+{{i18n:settings.security.grace.caption}}	1	-	security	security_grace_shown	security	
 {{i18n:settings.security.grace.title}}	1	-	security	security_grace_shown	security	
 {{i18n:settings.security.recovery}}	1	-	security	!security_has_recovery_phrase	security	
 {{i18n:settings.security.recovery}}	1	-	security	security_has_recovery_phrase	security	
@@ -71,24 +231,59 @@ data-event-click="toggle_biometric()"	1	security	security	security_biometric_sho
 {{recovery_phrase}}	1	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
 {{security_biometric_label}}	1	-	security	security_biometric_shown	security	
 {{unlock_grace_label}}	1	-	security	security_grace_shown	security	
-{{i18n:settings.devices.transfer_help}}	1	-	devices	-	devices	
 data-event-click="ask_setting_help('settings.help.topic.account_copy')"	2	-	devices	security_has_recovery_phrase	security	
-data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	-	security	
-data-event-click="make_main_device(device_index)"	2	-	devices	own_devices_shown;;device.can_manage	security	
-data-event-click="open_security_page('transfer')"	1	-	devices	-	security	
-data-event-click="remove_own_device(device_index)"	2	-	devices	own_devices_shown;;device.can_manage	security	
+data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	!own_devices_not_main	devices	
+data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	-	devices	
+data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
+data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main	devices	
+data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
+data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
+data-event-click="make_main_device(device_index)"	1	-	devices	own_devices_shown;;device.can_manage	security	
+data-event-click="open_own_device_actions(device_index)"	1	-	devices	own_devices_shown && !own_devices_not_main;;device.can_manage	devices	
+data-event-click="open_security_page('transfer')"	1	-	devices	!own_devices_not_main	devices	
+data-event-click="remove_own_device(device_index)"	1	-	devices	own_devices_shown;;device.can_manage	security	
 data-event-click="save_account_copy()"	2	-	devices	security_has_recovery_phrase	security	
-{{device.label}}	2	-	devices	own_devices_shown	security	
+{{device.label}}	1	-	devices	own_devices_not_main && !own_devices_signed_out;;!device.is_this_device && !device.can_manage	security	
+{{device.label}}	1	-	devices	own_devices_shown	security	
+{{device.label}}	1	-	devices	own_devices_shown && !own_devices_not_main;;device.can_manage	security	
 {{i18n:settings.security.copy.help}}	1	-	devices	security_has_recovery_phrase	security	
 {{i18n:settings.security.copy.save}}	2	-	devices	security_has_recovery_phrase	security	
 {{i18n:settings.security.devices.help}}	1	-	devices	own_devices_shown	security	
-{{i18n:settings.security.devices.main}}	2	-	devices	own_devices_shown;;device.is_main	security	
-{{i18n:settings.security.devices.make_main}}	2	-	devices	own_devices_shown;;device.can_manage	security	
+{{i18n:settings.security.devices.hero_sub}}	1	-	devices	!own_devices_not_main	devices	
+{{i18n:settings.security.devices.hero}}	1	-	devices	!own_devices_not_main	devices	
+{{i18n:settings.security.devices.linked_note_sub}}	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
+{{i18n:settings.security.devices.linked_note}}	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
+{{i18n:settings.security.devices.main}}	1	-	devices	own_devices_not_main && !own_devices_signed_out;;!device.is_this_device && !device.can_manage;;device.is_main	security	
+{{i18n:settings.security.devices.main}}	1	-	devices	own_devices_shown;;device.is_main	security	
+{{i18n:settings.security.devices.make_main}}	1	-	devices	own_devices_shown;;device.can_manage	security	
+{{i18n:settings.security.devices.none}}	1	-	devices	own_devices_shown && !own_devices_not_main;;!own_has_other_devices	devices	
 {{i18n:settings.security.devices.not_main}}	1	-	devices	own_devices_shown;;own_devices_not_main && !own_devices_signed_out	security	
-{{i18n:settings.security.devices.remove}}	2	-	devices	own_devices_shown;;device.can_manage	security	
+{{i18n:settings.security.devices.remove}}	1	-	devices	own_devices_shown;;device.can_manage	security	
 {{i18n:settings.security.devices.signed_out}}	1	-	devices	own_devices_shown;;own_devices_signed_out	security	
+{{i18n:settings.security.devices.tap_hint}}	1	-	devices	own_devices_shown && !own_devices_not_main;;own_has_other_devices	devices	
+{{i18n:settings.security.devices.this_phone_main}}	1	-	devices	own_devices_shown && !own_devices_not_main	devices	
+{{i18n:settings.security.devices.this_phone_tag}}	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
+{{i18n:settings.security.devices.this_phone}}	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
+{{i18n:settings.security.devices.this_phone}}	1	-	devices	own_devices_shown && !own_devices_not_main	devices	
+{{i18n:settings.security.devices.view_head}}	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
 {{i18n:settings.security.devices}}	1	-	devices	own_devices_shown	security	
-{{i18n:settings.security.transfer_row}}	1	-	devices	-	security	
+{{i18n:settings.security.devices}}	1	-	devices	own_devices_shown && !own_devices_not_main	security	
+{{i18n:settings.security.link_device.copy_again}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
+{{i18n:settings.security.link_device.copy_button}}	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
+{{i18n:settings.security.link_device.export_done}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
+{{i18n:settings.security.link_device.export}}	1	-	devices	security_can_export_link && !own_devices_not_main	devices	
+{{i18n:settings.security.link_device.help}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.phone_note}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.reset_hint}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.send_hint}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.step1}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.step2}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.step3}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.steps_head}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device}}	1	-	devices	-	devices	
+{{i18n:settings.security.transfer_row}}	1	-	devices	!own_devices_not_main	devices	
+{{move_lead_label}}	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
+{{move_valid_label}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
 data-class-settings-switch--on="show_notification_preview == 'on'"	1	-	notifications	-	profile	
 data-class-settings-switch--on="show_notifications == 'on'"	1	-	notifications	-	profile	
 data-class-settings-switch--on="stay_connected == 'on'"	1	-	notifications	stay_connected_available	profile	
@@ -251,6 +446,7 @@ data-event-click="toggle_attachment_auto_wifi()"	1	storage	storage	storage_page 
 {{storage_tab_picture_label}}	1	-	storage	storage_page == 'items'	storage	
 {{storage_tab_video_label}}	1	-	storage	storage_page == 'items'	storage	
 {{storage_total_label}}	1	-	storage	storage_page == 'main';;storage_ready	storage	
+data-class-settings-switch--on="show_advanced_settings == 'on'"	1	-	help	-	-	
 data-class-settings-switch--on="crash_reports_enabled == 'on'"	2	-	help	-	about,security	
 data-event-click="ask_setting_help('settings.security.crash_reports.label')"	2	-	help	-	about,security	
 data-event-click="copy_diagnostics_id()"	2	-	help	diagnostics_last_id != ''	about,security	
@@ -260,224 +456,92 @@ data-event-click="open_support_chat()"	1	-	help	support_visible	-
 data-event-click="open_terms()"	1	-	help	-	-	
 data-event-click="send_diagnostics()"	2	-	help	show_diagnostics_send	about,security	
 data-event-click="tap_version()"	2	-	help	-	-	
+data-event-click="toggle_advanced_settings()"	1	about	help	-	-	
 data-event-click="toggle_crash_reports()"	2	security	help	-	about,security	
 data-help-key="troubleshooting/send-diagnostics"	2	-	help	show_diagnostics_send	about,security	
 {{app_name}}	1	-	help	-	about	
 {{app_version}}	2	-	help	-	about	
 {{diagnostics_last_label}}	2	-	help	diagnostics_last_id != ''	about,security	
-{{diagnostics_send_label}}	2	-	help	show_diagnostics_send	about,security	
+{{diagnostics_send_label}}	1	-	help	show_diagnostics_send	about,security	
+{{diagnostics_send_label}}	1	-	help	show_diagnostics_send;;diagnostics_sending	about,security	
 {{i18n:settings.about.improve.title}}	1	-	help	-	about	
 {{i18n:settings.about.version}}	2	-	help	-	about	
 {{i18n:settings.help.privacy_policy}}	1	-	help	-	-	
+{{i18n:settings.help.show_advanced.hint}}	1	-	help	-	-	
+{{i18n:settings.help.show_advanced}}	1	-	help	-	-	
 {{i18n:settings.help.terms}}	1	-	help	-	-	
 {{i18n:settings.security.crash_reports.help}}	2	-	help	-	about,security	
 {{i18n:settings.security.crash_reports.label}}	2	-	help	-	about,security	
-{{i18n:settings.security.diagnostics.help}}	2	-	help	show_diagnostics_send	about,security	
+{{i18n:settings.security.diagnostics.help}}	1	-	help	show_diagnostics_send	security	
+{{i18n:settings.security.diagnostics.send}}	1	-	help	show_diagnostics_send		
+{{i18n:settings.security.diagnostics.send_short}}	1	-	help	show_diagnostics_send;;!diagnostics_sending		
 {{i18n:settings.security.group.diagnostics}}	1	-	help	-	security	
 {{support_display_name}}	1	-	help	support_visible	-	
 {{support_subtitle}}	1	-	help	support_visible	-	
-data-class-settings-switch--on="circuit_relay_enabled == 'on'"	1	-	advanced	advanced;;advanced && show_circuit_relay_toggle	network	
-data-class-settings-switch--on="dht_enabled == 'on'"	1	-	advanced	advanced;;advanced && show_dht_toggle	network	
-data-class-settings-switch--on="media_relay_enabled == 'on'"	1	-	advanced	advanced;;advanced && show_media_relay_toggle	network	
-data-class-settings-switch--on="node_enabled == 'on'"	1	-	advanced	advanced;;advanced && show_node_toggle	network	
-data-class-settings-switch--on="prefer_contacts_for_routing == 'on'"	1	-	advanced	advanced;;advanced && show_prefer_contacts_toggle	network	
-data-class-settings-switch--on="reachable_without_relay == 'on'"	1	-	advanced	advanced;;show_node_toggle	network	
-data-class-settings-switch--on="trusted_relays_only == 'on'"	1	-	advanced	advanced	network	
-data-event-change="on_integrations_field_changed()"	6	integrations	advanced	advanced;;advanced	integrations	
-data-event-change="on_llm_field_changed()"	2	llm	advanced	advanced;;advanced	llm	
-data-event-change="on_llm_field_changed()"	2	llm	advanced	advanced;;advanced;;llm_preset != 'brief'	llm	
-data-event-change="on_llm_preset_changed()"	1	llm	advanced	advanced;;advanced	llm	
-data-event-click="add_mcp_server()"	1	integrations	advanced	advanced;;advanced	integrations	
-data-event-click="ask_setting_help('settings.help.topic.mcp')"	1	-	advanced	advanced;;advanced	integrations	
-data-event-click="ask_setting_help('settings.network.circuit_relay')"	1	-	advanced	advanced;;advanced && show_circuit_relay_toggle	network	
-data-event-click="ask_setting_help('settings.network.dht')"	1	-	advanced	advanced;;advanced && show_dht_toggle	network	
-data-event-click="ask_setting_help('settings.network.direct_connections')"	1	-	advanced	advanced	network	
-data-event-click="ask_setting_help('settings.network.help_network')"	1	-	advanced	advanced;;advanced && show_node_toggle	network	
-data-event-click="ask_setting_help('settings.network.media_relay')"	1	-	advanced	advanced;;advanced && show_media_relay_toggle	network	
-data-event-click="ask_setting_help('settings.network.prefer_contacts')"	1	-	advanced	advanced;;advanced && show_prefer_contacts_toggle	network	
-data-event-click="ask_setting_help('settings.network.reachable_without_relay')"	1	-	advanced	advanced;;show_node_toggle	network	
-data-event-click="ask_setting_help('settings.network.trusted_relays')"	1	-	advanced	advanced	network	
-data-event-click="dismiss_reachability_help()"	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'blocked'	network	
-data-event-click="dismiss_reachability_help()"	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'outbound_only'	network	
-data-event-click="dismiss_reachability_help()"	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'reachable'	network	
-data-event-click="on_choose_direct_connections()"	1	network	advanced	advanced	network	
-data-event-click="remove_mcp_server(server_index)"	1	integrations	advanced	advanced;;advanced	integrations	
-data-event-click="reset_section('integrations')"	1	integrations	advanced	advanced;;advanced	integrations	
-data-event-click="reset_section('llm')"	1	llm	advanced	advanced;;advanced	llm	
-data-event-click="reset_tool_permissions()"	1	security	advanced	advanced;;advanced;;tool_permissions_has_saved	security	
-data-event-click="retest_reachability()"	1	-	advanced	advanced;;show_connection_card	network	
-data-event-click="show_reachability_help()"	1	-	advanced	advanced;;show_connection_card	network	
-data-event-click="toggle_circuit_relay()"	1	network	advanced	advanced;;advanced && show_circuit_relay_toggle	network	
-data-event-click="toggle_dht()"	1	network	advanced	advanced;;advanced && show_dht_toggle	network	
-data-event-click="toggle_media_relay()"	1	network	advanced	advanced;;advanced && show_media_relay_toggle	network	
-data-event-click="toggle_node_enabled()"	1	network	advanced	advanced;;advanced && show_node_toggle	network	
-data-event-click="toggle_prefer_contacts()"	1	network	advanced	advanced;;advanced && show_prefer_contacts_toggle	network	
-data-event-click="toggle_reachable_without_relay()"	1	network	advanced	advanced;;show_node_toggle	network	
-data-event-click="toggle_trusted_relays()"	1	network	advanced	advanced	network	
-data-event-click="try_upnp_port()"	1	-	advanced	advanced;;show_connection_card	network	
-data-value="llm_api_key"	1	llm	advanced	advanced;;advanced;;llm_preset != 'brief'	llm	
-data-value="llm_api_key_env"	1	llm	advanced	advanced;;advanced;;llm_preset != 'brief'	llm	
-data-value="llm_base_url"	1	llm	advanced	advanced;;advanced	llm	
-data-value="llm_model"	1	llm	advanced	advanced;;advanced	llm	
-data-value="llm_preset"	1	llm	advanced	advanced;;advanced	llm	
-data-value="promoted_mcp_url"	1	integrations	advanced	advanced;;advanced	integrations	
-data-value="search_provider"	1	integrations	advanced	advanced;;advanced	integrations	
-data-value="server.args_text"	1	integrations	advanced	advanced;;advanced	integrations	
-data-value="server.command"	1	integrations	advanced	advanced;;advanced	integrations	
-data-value="server.id"	1	integrations	advanced	advanced;;advanced	integrations	
-data-value="server.url"	1	integrations	advanced	advanced;;advanced	integrations	
-{{amp_listen_multiaddr}}	1	-	advanced	advanced;;advanced;;show_node_toggle && node_enabled == 'on'	network	
-{{brief_llm_key_masked}}	1	-	advanced	advanced;;advanced;;llm_preset == 'brief';;brief_llm_key_masked != ''	llm	
-{{direct_connections_label}}	1	-	advanced	advanced	network	
-{{i18n:common.not_now}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'reachable'	network	
-{{i18n:common.remove}}	1	-	advanced	advanced;;advanced	integrations	
-{{i18n:common.reset_defaults}}	2	-	advanced	advanced;;advanced	appearance,integrations,llm,network	
-{{i18n:settings.advanced.group.ai}}	1	-	advanced	advanced	-	
-{{i18n:settings.integrations.add_mcp}}	1	-	advanced	advanced;;advanced	integrations	
-{{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced	advanced;;advanced	integrations	
-{{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced	advanced;;advanced;;server.args_text == ''	integrations	
-{{i18n:settings.integrations.mcp_args}}	1	-	advanced	advanced;;advanced	integrations	
-{{i18n:settings.integrations.mcp_command}}	1	-	advanced	advanced;;advanced	integrations	
-{{i18n:settings.integrations.mcp_help}}	1	-	advanced	advanced;;advanced	integrations	
-{{i18n:settings.integrations.promoted_mcp_placeholder}}	1	-	advanced	advanced;;advanced	integrations	
-{{i18n:settings.integrations.promoted_mcp_placeholder}}	1	-	advanced	advanced;;advanced;;promoted_mcp_url == ''	integrations	
-{{i18n:settings.integrations.promoted_mcp}}	1	-	advanced	advanced;;advanced	integrations	
-{{i18n:settings.integrations.search}}	1	-	advanced	advanced;;advanced	integrations	
-{{i18n:settings.integrations.server_id}}	1	-	advanced	advanced;;advanced	integrations	
-{{i18n:settings.integrations.server_url}}	1	-	advanced	advanced;;advanced	integrations	
-{{i18n:settings.integrations.title}}	1	-	advanced	advanced;;advanced	-	
-{{i18n:settings.llm.api_key_env_placeholder}}	1	-	advanced	advanced;;advanced;;llm_preset != 'brief'	llm	
-{{i18n:settings.llm.api_key_env_placeholder}}	1	-	advanced	advanced;;advanced;;llm_preset != 'brief';;llm_api_key_env == ''	llm	
-{{i18n:settings.llm.api_key_env}}	1	-	advanced	advanced;;advanced;;llm_preset != 'brief'	llm	
-{{i18n:settings.llm.api_key_placeholder}}	1	-	advanced	advanced;;advanced;;llm_preset != 'brief'	llm	
-{{i18n:settings.llm.api_key_placeholder}}	1	-	advanced	advanced;;advanced;;llm_preset != 'brief';;llm_api_key == ''	llm	
-{{i18n:settings.llm.api_key}}	1	-	advanced	advanced;;advanced;;llm_preset != 'brief'	llm	
-{{i18n:settings.llm.base_url}}	1	-	advanced	advanced;;advanced	llm	
-{{i18n:settings.llm.brief_key_auto}}	1	-	advanced	advanced;;advanced;;llm_preset == 'brief';;brief_llm_key_masked == ''	llm	
-{{i18n:settings.llm.brief_key_rotate_hint}}	1	-	advanced	advanced;;advanced;;llm_preset == 'brief';;brief_llm_key_masked != ''	llm	
-{{i18n:settings.llm.brief_key}}	1	-	advanced	advanced;;advanced;;llm_preset == 'brief'	llm	
-{{i18n:settings.llm.model}}	1	-	advanced	advanced;;advanced	llm	
-{{i18n:settings.llm.preset_brief}}	1	-	advanced	advanced;;advanced	llm	
-{{i18n:settings.llm.preset_cloud}}	1	-	advanced	advanced;;advanced	llm	
-{{i18n:settings.llm.preset_custom}}	1	-	advanced	advanced;;advanced	llm	
-{{i18n:settings.llm.preset_help}}	1	-	advanced	advanced;;advanced	llm	
-{{i18n:settings.llm.preset_ollama}}	1	-	advanced	advanced;;advanced	llm	
-{{i18n:settings.llm.preset}}	1	-	advanced	advanced;;advanced	llm	
-{{i18n:settings.llm.summary}}	1	-	advanced	advanced;;!advanced	llm	
-{{i18n:settings.network.circuit_relay_hint}}	1	-	advanced	advanced;;advanced && show_circuit_relay_toggle	network	
-{{i18n:settings.network.circuit_relay}}	1	-	advanced	advanced;;advanced && show_circuit_relay_toggle	network	
-{{i18n:settings.network.connection.learn}}	1	-	advanced	advanced;;show_connection_card	network	
-{{i18n:settings.network.connection.retest}}	1	-	advanced	advanced;;show_connection_card	network	
-{{i18n:settings.network.connection.title}}	1	-	advanced	advanced;;show_connection_card	network	
-{{i18n:settings.network.connection.try_upnp}}	1	-	advanced	advanced;;show_connection_card	network	
-{{i18n:settings.network.dht_hint}}	1	-	advanced	advanced;;advanced && show_dht_toggle	network	
-{{i18n:settings.network.dht}}	1	-	advanced	advanced;;advanced && show_dht_toggle	network	
-{{i18n:settings.network.direct_connections.help}}	1	-	advanced	advanced	network	
-{{i18n:settings.network.direct_connections}}	1	-	advanced	advanced	network	
-{{i18n:settings.network.help.ack_relay}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'blocked'	network	
-{{i18n:settings.network.help.ack_relay}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'outbound_only'	network	
-{{i18n:settings.network.help.blocked}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'blocked'	network	
-{{i18n:settings.network.help.outbound_only}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'outbound_only'	network	
-{{i18n:settings.network.help.reachable}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'reachable'	network	
-{{i18n:settings.network.help.skip_relay}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'blocked'	network	
-{{i18n:settings.network.help.skip_relay}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'outbound_only'	network	
-{{i18n:settings.network.help_network_hint}}	1	-	advanced	advanced;;advanced && show_node_toggle	network	
-{{i18n:settings.network.help_network}}	1	-	advanced	advanced;;advanced && show_node_toggle	network	
-{{i18n:settings.network.listen}}	1	-	advanced	advanced;;advanced;;show_node_toggle && node_enabled == 'on'	network	
-{{i18n:settings.network.media_relay_hint}}	1	-	advanced	advanced;;advanced && show_media_relay_toggle	network	
-{{i18n:settings.network.media_relay}}	1	-	advanced	advanced;;advanced && show_media_relay_toggle	network	
-{{i18n:settings.network.prefer_contacts_hint}}	1	-	advanced	advanced;;advanced && show_prefer_contacts_toggle	network	
-{{i18n:settings.network.prefer_contacts}}	1	-	advanced	advanced;;advanced && show_prefer_contacts_toggle	network	
-{{i18n:settings.network.reachable_without_relay.help}}	1	-	advanced	advanced;;show_node_toggle	network	
-{{i18n:settings.network.reachable_without_relay}}	1	-	advanced	advanced;;show_node_toggle	network	
-{{i18n:settings.advanced.group.connection}}	1	-	advanced	advanced	-	
-{{i18n:settings.network.trusted_relays.help}}	1	-	advanced	advanced	network	
-{{i18n:settings.network.trusted_relays}}	1	-	advanced	advanced	network	
-{{i18n:settings.security.tool_permissions.help}}	1	-	advanced	advanced;;advanced	security	
-{{i18n:settings.security.tool_permissions.reset}}	1	-	advanced	advanced;;advanced;;tool_permissions_has_saved	security	
-{{i18n:settings.security.tool_permissions}}	1	-	advanced	advanced;;advanced	security	
-{{mesh_status_message}}	1	-	advanced	advanced;;advanced;;mesh_status_message != ''	network	
-{{reachability_status_label}}	1	-	advanced	advanced;;show_connection_card	network	
-{{reachability_summary}}	1	-	advanced	advanced;;show_connection_card	network	
-{{tool_permissions_summary}}	1	-	advanced	advanced;;advanced	security	
-data-class-settings-switch--on="call_diagnostics == 'on'"	1	-	tester	advanced	appearance	
-data-event-change="on_network_field_changed()"	3	network	tester	advanced;;advanced;;backend_is_custom	network	
-data-event-click="clear_undelivered_older_than()"	1	security	tester	advanced;;advanced	security	
-data-event-click="copy_cas_tip(item_index)"	1	storage	tester	advanced;;advanced;;item.can_copy_tip	storage	
-data-event-click="fetch_cas_tip()"	1	storage	tester	advanced;;advanced	storage	
-data-event-click="on_choose_backend()"	1	network	tester	advanced;;show_backend_switch	network	
-data-event-click="open_ui_perf_test()"	1	-	tester	advanced;;dev_tools_available	about	
-data-event-click="reset_section('network')"	1	network	tester	advanced;;advanced	network	
-data-event-click="set_cas_library_filter('all')"	1	storage	tester	advanced;;advanced	storage	
-data-event-click="set_cas_library_filter('cache')"	1	storage	tester	advanced;;advanced	storage	
-data-event-click="set_cas_library_filter('private')"	1	storage	tester	advanced;;advanced	storage	
-data-event-click="set_cas_library_filter('public')"	1	storage	tester	advanced;;advanced	storage	
-data-event-click="share_cas_publicly(item_index)"	1	storage	tester	advanced;;advanced;;item.can_share_publicly	storage	
-data-event-click="simulate_chats_link_connecting()"	1	-	tester	advanced;;dev_tools_available	about	
-data-event-click="simulate_chats_link_offline()"	1	-	tester	advanced;;dev_tools_available	about	
-data-event-click="simulate_chats_link_online()"	1	-	tester	advanced;;dev_tools_available	about	
-data-event-click="toggle_call_diagnostics()"	1	appearance	tester	advanced	appearance	
-data-event-click="unpublish_cas(item_index)"	1	storage	tester	advanced;;advanced;;item.can_unpublish	storage	
-data-value="directory_base_url"	1	network	tester	advanced;;advanced;;backend_is_custom	network	
-data-value="registration_base_url"	1	network	tester	advanced;;advanced;;backend_is_custom	network	
-data-value="relay_base_url"	1	network	tester	advanced;;advanced;;backend_is_custom	network	
-{{backend_label}}	1	-	tester	advanced;;show_backend_switch	network	
-{{cas_library_empty_label}}	1	-	tester	advanced;;advanced;;cas_library_rows.size == 0	storage	
-{{config_dir}}	1	-	tester	advanced;;advanced	storage	
-{{data_dir}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:common.reset_defaults}}	1	-	tester	advanced;;advanced	appearance,integrations,llm,network	
-{{i18n:dev.link.sim_connecting}}	1	-	tester	advanced;;dev_tools_available	about	
-{{i18n:dev.link.sim_offline}}	1	-	tester	advanced;;dev_tools_available	about	
-{{i18n:dev.link.sim_online}}	1	-	tester	advanced;;dev_tools_available	about	
-{{i18n:dev.perf.row}}	1	-	tester	advanced;;dev_tools_available	about	
-{{i18n:settings.call_diagnostics.help}}	1	-	tester	advanced	appearance	
-{{i18n:settings.call_diagnostics.label}}	1	-	tester	advanced	appearance	
-{{i18n:settings.network.backend.help}}	1	-	tester	advanced;;show_backend_switch	network	
-{{i18n:settings.network.backend.restart}}	1	-	tester	advanced;;show_backend_switch && backend_restart_pending	network	
-{{i18n:settings.network.backend}}	1	-	tester	advanced;;show_backend_switch	network	
-{{i18n:settings.network.directory}}	1	-	tester	advanced;;advanced;;backend_is_custom	network	
-{{i18n:settings.network.registration}}	1	-	tester	advanced;;advanced;;backend_is_custom	network	
-{{i18n:settings.network.relay}}	1	-	tester	advanced;;advanced;;backend_is_custom	network	
-{{i18n:settings.security.clear_undelivered.help}}	1	-	tester	advanced;;advanced	security	
-{{i18n:settings.security.clear_undelivered}}	1	-	tester	advanced;;advanced	security	
-{{i18n:settings.security.group.diagnostics}}	1	-	tester	advanced;;advanced	security	
-{{i18n:settings.storage.config_label}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.data_label}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.copy_tip}}	1	-	tester	advanced;;advanced;;item.can_copy_tip	storage	
-{{i18n:settings.storage.library.fetch_tip}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.filter_all}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.filter_cache}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.filter_private}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.filter_public}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.help}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.share_publicly}}	1	-	tester	advanced;;advanced;;item.can_share_publicly	storage	
-{{i18n:settings.storage.library.title}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.library.unpublish}}	1	-	tester	advanced;;advanced;;item.can_unpublish	storage	
-{{i18n:settings.storage.profile_data_label}}	1	-	tester	advanced;;advanced	storage	
-{{i18n:settings.storage.profile_label}}	1	-	tester	advanced;;advanced	storage	
-{{item.detail}}	1	-	tester	advanced;;advanced	storage	
-{{item.pin_label}}	1	-	tester	advanced;;advanced	storage	
-{{item.realm_label}}	1	-	tester	advanced;;advanced	storage	
-{{item.title}}	1	-	tester	advanced;;advanced	storage	
-{{profile_dir}}	1	-	tester	advanced;;advanced	storage	
-{{profile_label}}	1	-	tester	advanced;;advanced	storage	
+data-class-settings-switch--on="call_diagnostics == 'on'"	1	-	tester	tester	appearance	
+data-event-click="clear_undelivered_older_than()"	1	security	tester	tester;;tester	security	
+data-event-click="copy_cas_tip(item_index)"	1	storage	tester	tester;;tester;;item.can_copy_tip	storage	
+data-event-click="fetch_cas_tip()"	1	storage	tester	tester;;tester	storage	
+data-event-click="open_ui_perf_test()"	1	-	tester	tester;;dev_tools_available	about	
+data-event-click="set_cas_library_filter('all')"	1	storage	tester	tester;;tester	storage	
+data-event-click="set_cas_library_filter('cache')"	1	storage	tester	tester;;tester	storage	
+data-event-click="set_cas_library_filter('private')"	1	storage	tester	tester;;tester	storage	
+data-event-click="set_cas_library_filter('public')"	1	storage	tester	tester;;tester	storage	
+data-event-click="share_cas_publicly(item_index)"	1	storage	tester	tester;;tester;;item.can_share_publicly	storage	
+data-event-click="show_ask_ai_intro_again()"	1	-	tester	tester	tester	
+data-event-click="simulate_chats_link_connecting()"	1	-	tester	tester;;dev_tools_available	about	
+data-event-click="simulate_chats_link_offline()"	1	-	tester	tester;;dev_tools_available	about	
+data-event-click="simulate_chats_link_online()"	1	-	tester	tester;;dev_tools_available	about	
+data-event-click="toggle_call_diagnostics()"	1	appearance	tester	tester	appearance	
+data-event-click="unpublish_cas(item_index)"	1	storage	tester	tester;;tester;;item.can_unpublish	storage	
+{{cas_library_empty_label}}	1	-	tester	tester;;tester;;cas_library_rows.size == 0	storage	
+{{config_dir}}	1	-	tester	tester;;tester	storage	
+{{data_dir}}	1	-	tester	tester;;tester	storage	
+{{i18n:dev.link.sim_connecting}}	1	-	tester	tester;;dev_tools_available	about	
+{{i18n:dev.link.sim_offline}}	1	-	tester	tester;;dev_tools_available	about	
+{{i18n:dev.link.sim_online}}	1	-	tester	tester;;dev_tools_available	about	
+{{i18n:settings.tester.show_ask_ai_intro}}	1	-	tester	tester	tester	
+{{i18n:dev.perf.row}}	1	-	tester	tester;;dev_tools_available	about	
+{{i18n:settings.call_diagnostics.help}}	1	-	tester	tester	appearance	
+{{i18n:settings.call_diagnostics.label}}	1	-	tester	tester	appearance	
+{{i18n:settings.security.clear_undelivered.help}}	1	-	tester	tester;;tester	security	
+{{i18n:settings.security.clear_undelivered}}	1	-	tester	tester;;tester	security	
+{{i18n:settings.security.group.diagnostics}}	1	-	tester	tester;;tester	security	
+{{i18n:settings.storage.config_label}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.data_label}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.copy_tip}}	1	-	tester	tester;;tester;;item.can_copy_tip	storage	
+{{i18n:settings.storage.library.fetch_tip}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.filter_all}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.filter_cache}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.filter_private}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.filter_public}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.help}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.share_publicly}}	1	-	tester	tester;;tester;;item.can_share_publicly	storage	
+{{i18n:settings.storage.library.title}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.library.unpublish}}	1	-	tester	tester;;tester;;item.can_unpublish	storage	
+{{i18n:settings.storage.profile_data_label}}	1	-	tester	tester;;tester	storage	
+{{i18n:settings.storage.profile_label}}	1	-	tester	tester;;tester	storage	
+{{item.detail}}	1	-	tester	tester;;tester	storage	
+{{item.pin_label}}	1	-	tester	tester;;tester	storage	
+{{item.realm_label}}	1	-	tester	tester;;tester	storage	
+{{item.title}}	1	-	tester	tester;;tester	storage	
+{{profile_dir}}	1	-	tester	tester;;tester	storage	
+{{profile_label}}	1	-	tester	tester;;tester	storage	
 {{i18n:settings.profile.id_row}}	1	-	profile	-	profile	
 {{i18n:settings.profile.id_none}}	1	-	profile	profile_account_id == ''	profile	
-{{i18n:settings.profile.id_help}}	1	-	profile	-	profile	
+{{i18n:settings.profile.name_caption}}	1	-	profile	-	profile	
+{{profile_nickname}}	1	-	profile	-	profile	
 {{i18n:settings.profile.account_group}}	1	-	profile	-	profile	
 {{i18n:settings.profile.registration_row}}	1	-	profile	-	profile	
 {{i18n:settings.profile.expires_row}}	1	-	profile	advanced && profile_registration_expires != ''	profile	
 {{i18n:settings.profile.node_id_row}}	1	-	profile	advanced && profile_peer_id != ''	profile	
+{{i18n:settings.profile.card_group}}	1	-	profile	-	profile	
+{{i18n:settings.security.devices.this_device}}	1	-	profile	advanced && profile_peer_id != ''	profile	
+{{i18n:settings.auto_renew.short}}	1	-	profile	advanced	profile	
+data-event-click="show_setting_note('settings.auto_renew.short','settings.auto_renew.note')"	1	-	profile	advanced	profile	
 data-event-click="change_pin()"	1	-	security	show_change_pin && security_can_change_pin	security	
 {{i18n:pin.forget_warning}}	1	-	security	show_change_pin && security_can_change_pin	security	
 {{i18n:settings.security.change_pin}}	1	-	security	show_change_pin && security_can_change_pin	security	
 {{i18n:settings.security.unlock_to_change}}	1	-	security	show_change_pin && !security_can_change_pin && !pin_protection_not_setup	security	
-data-event-click="export_link_device()"	2	-	devices	security_can_export_link && !own_devices_not_main	devices	
-{{i18n:settings.security.link_device.export}}	2	-	devices	security_can_export_link && !own_devices_not_main	devices	
-{{i18n:settings.security.link_device.help}}	1	-	devices	-	devices	
-{{i18n:settings.security.link_device.reset_hint}}	1	-	devices	-	devices	
-{{i18n:settings.security.link_device.send_hint}}	1	-	devices	-	devices	
-{{i18n:settings.security.link_device}}	1	-	devices	-	devices	
-{{i18n:settings.advanced.intro}}	1	-	advanced	advanced	-	
 {{i18n:settings.privacy.blocked_help}}	1	-	privacy	-	security	
-{{i18n:settings.tester.banner}}	1	-	tester	advanced	-	
+{{i18n:settings.tester.banner}}	1	-	tester	tester	-	

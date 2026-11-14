@@ -13,6 +13,13 @@
 
 namespace pbr {
 
+/**
+ * The error for a relay poll answered with a non-2xx `status_code`: a 4xx (but 408 / 429) is HttpRejected, the rest
+ * HttpError; a 403 whose JSON `code` is "not_registered" (the relay has no active registration for our account) is
+ * Auth NotRegistered instead (IsRelayUserNotRegistered).
+ */
+Error RelayPollHttpError(long status_code, const std::string& body);
+
 /** What a relay send adds for the relay's sender and contact checks (multi-relay MR003 / MR005). Any thread. */
 struct RelaySendHooks {
   /** The recipient's grant to us, attached to the send; none: a stranger's send. Never asked for a self-send. */

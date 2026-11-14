@@ -22,6 +22,8 @@
 #include "gui/chat/ChatOpenMetrics.h"
 #include "gui/chat/ChatPictureTextures.h"
 #include "gui/chat/PreviewRedrawBatcher.h"
+#include "gui/chat/RegistrationRecovery.h"
+#include "gui/chat/SendFailureFix.h"
 #include "gui/chat/VoiceComposer.h"
 #include "gui/chat/VoicePlayback.h"
 #include "gui/chat/ChatMentionPicker.h"
@@ -156,6 +158,12 @@ public:
   void BindBadgeNotify(BadgeNotifyPorts ports);
   void BindInputCoordinator(InputCoordinator& input);
   void BindCallActions(CallActionsPorts ports);
+  /** Messaging and the mesh are ready: the header's call button shows on exactly this (ChatThreadChrome). */
+  bool PeerCallsReady() const { return messaging_ready_ && mesh_ready_; }
+  /** Blocks someone who is not a contact: saved as a blocked contact; the new contact's id (or why not). */
+  Roe<std::string> BlockStranger(const std::string& account_id) { return presenter_.BlockStranger(account_id); }
+  /** Adds someone who is not a contact from the local directory copy and hands them the chat (the old menu's Add). */
+  Roe<std::string> AddStranger(const std::string& account_id) { return presenter_.AddPeerToContacts(account_id); }
   /** Refresh peer-link / "In call" header (Application wires from CallController). */
   void UpdatePeerLinkChrome();
   void BindUnlockEnsure(UnlockEnsurePorts ports);
@@ -216,6 +224,24 @@ public:
   void BindOpenSettingsSection(std::function<void(const std::string& section_id)> open) {
     open_settings_section_ = std::move(open);
   }
+  /** The reconnect row and alert register again through Me → Profile's action (SettingsController::ReconnectAccount). */
+  void BindReconnectAccount(std::function<void(std::function<void(bool ok)> done)> reconnect) {
+    reconnect_account_ = std::move(reconnect);
+  }
+  /**
+   * A failed message's "update their card": the contact page's refresh (contacts_ports_.refresh_contact, one hub call),
+   * `done` once on the UI thread; false when one already runs for that contact.
+   */
+  void BindRefreshContact(
+      std::function<bool(const std::string& contact_id, std::function<void(const ContactRefreshResult&)> done)>
+          refresh) {
+    refresh_contact_ = std::move(refresh);
+  }
+  /**
+   * Runs `run` (a registration the user asked for) now, or, while the automatic renewal is out, once it ends
+   * ("Reconnecting, please wait."), so the two never overlap. UI thread.
+   */
+  void RunWhenRegistrationIdle(std::function<void()> run);
   /** The panel's sheet is a modal layer: the coordinator says when the shell closed it. */
   void BindFlowCoordinator(FlowCoordinatorPorts ports) { flow_coordinator_ = std::move(ports); }
   // By value, not by reference: Home callers pass a reference into home_favorites_ / home_summary_, and selecting
@@ -603,7 +629,7 @@ private:
   int AskAiPushSheet(const PaneSpec& spec, std::function<void()> on_closed) override;
   void AskAiCloseSheet(int layer_id) override;
   void AskAiOpenInChat(const std::string& thread_id) override;
-  void AskAiSupport(const std::string& question) override;
+  void AskAiSupport(const std::string& question, std::function<void()> on_opened) override;
   void AskAiRunAction(const std::string& thread_id, const std::string& entry_id, int action_index) override;
   void AskAiOpenLink(const std::string& thread_id, const std::string& entry_id, int link_index) override {
     OpenChatLinkIn(thread_id, entry_id, link_index);
@@ -721,6 +747,22 @@ private:
   /** Push binding, registration renewal and the Brief key mint off the UI thread. Made in BindConversationsFacade. */
   std::unique_ptr<MessagingReadyTasks> ready_tasks_;
   void MakeReadyTasks();
+  /** B216: the relay does not know this account; register again, or ask the user (RegistrationRecovery). */
+  RegistrationRecovery recovery_;
+  std::function<void(std::function<void(bool ok)> done)> reconnect_account_;
+  std::function<bool(const std::string&, std::function<void(const ContactRefreshResult&)>)> refresh_contact_;
+  /** The choice made on a failed message's red mark: update their card or ours, then send it again (in memory only). */
+  SendFailureFix send_fix_;
+  void MakeSendFixPorts();
+  void OnRelayRegistrationSignal(RelayRegistrationSignal signal);
+  /** A renewal ended (MessagingReadyTasks' renew_hint): tells the recovery how. */
+  void OnRecoveryRenewal(const RenewResult& result, bool auto_renew);
+  void ApplyRecovery(const RecoveryActions& actions);
+  /** What each recovery action does here (the renewal: mark the registration expired, stored, then run the task). */
+  RecoveryHooks MakeRecoveryHooks();
+  void OnReconnectTapped();
+  /** After messaging went away: the recovery starts over (the row goes). */
+  void ResetRecovery();
   /** Its AppLifecycle background listener (removed at Shutdown). */
   uint64_t lifecycle_background_id_ = 0;
   /** Its AppLifecycle foreground listener: the send marks are worked out again (a clock may be over). */
@@ -744,6 +786,8 @@ private:
    * automatic sending has stopped, else the bottom pill says why (still trying, or why it did not go out).
    */
   void OnSendMarkTapped(const std::string& message_id);
+  /** What a tap (or a resend after a card update) came to, told as the composer says it. */
+  void ApplySendMarkTap(const std::string& thread_id, const std::string& message_id, const SendMarkTap& tap);
   /**
    * Step 0 of DEV/PLAN-chat-picture-previews.md, measurement only. Opening a chat (FinalizeThreadDisplay) arms
    * `armed`; the next display sync records its rows, pictures and build time and sets `layout_pending`; the next
@@ -810,8 +854,9 @@ private:
   std::function<void(const std::string& section_id)> open_settings_section_;
   FlowCoordinatorPorts flow_coordinator_;
   /** The screen's menus (long press / right-click, header buttons, pickers' fallbacks). */
-  ChatMenus menus_{*this,           presenter_,   chat_, working_set_, contacts_notify_, emoji_picker_notify_,
-                   shell_feedback_, call_actions_};
+  ChatMenus menus_{*this,           presenter_,       chat_,
+                   working_set_,    contacts_notify_, emoji_picker_notify_,
+                   shell_feedback_, call_actions_,    people_picker_notify_};
   ChatPeerSheet peer_sheet_{*this, presenter_, chat_, contacts_notify_, people_picker_notify_};
   /** The phone's group info sheet over a group chat (DEV/PLAN-ui-batch8-group-pages.md 1). */
   GroupInfoSheet group_info_{*this};

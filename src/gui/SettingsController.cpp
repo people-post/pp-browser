@@ -18,6 +18,7 @@
 #include "lib/ui/ContextMenuHost.h"
 #include "lib/ui/ViewCatalog.h"
 #include "feature/settings/AppearanceSettingsSection.h"
+#include "feature/settings/BackendChoices.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/StorageSettingsSection.h"
 #include "feature/settings/SettingsPages.h"
@@ -106,6 +107,12 @@ std::string ReachabilitySummary(const SettingsReachabilityView& view) {
 
 std::string BackendDisplayLabel(const std::string& env) {
   return Tr("settings.network.backend." + std::string(BackendEnvName(ParseBackendEnv(env))));
+}
+
+constexpr const char* kLlmPresetIds[] = {"brief", "cloud", "ollama", "custom"};
+
+std::string LlmPresetDisplayLabel(const std::string& preset) {
+  return Tr("settings.llm.preset_" + preset);
 }
 
 std::string DirectConnectionsDisplayLabel(const std::string& audience) {
@@ -225,6 +232,18 @@ void SettingsController::BindOpenHomeEdit(std::function<void()> open) {
   open_home_edit_ = std::move(open);
 }
 
+void SettingsController::ReconnectAccount(std::function<void(bool ok)> done) {
+  profile_actions_.Register(/*quiet_success=*/true, std::move(done));
+}
+
+void SettingsController::BindRunWhenRegistrationIdle(std::function<void(std::function<void()>)> run) {
+  profile_actions_.BindRunWhenRegistrationIdle(std::move(run));
+}
+
+void SettingsController::BindShowMyQr(std::function<void()> show) {
+  profile_actions_.BindShowMyQr(std::move(show));
+}
+
 void SettingsController::BindOpenUiPerfTest(std::function<void()> open) {
   open_ui_perf_test_ = std::move(open);
 }
@@ -279,8 +298,10 @@ const SettingsSectionHandler* SettingsController::FindHandler(const std::string&
 
 void SettingsController::InitSections() {
   sections_.clear();
-  // Advanced and Test options are listed (and so reachable) only while the flag is on: five taps on the version.
-  for (const SettingsPage* page : ListedSettingsPages(ui_state_.show_advanced_settings == "on")) {
+  // Advanced is listed (and so reachable) only while "show advanced settings" is on (Me → Help); Test options only
+  // while the tester switch is on (five taps on the version).
+  for (const SettingsPage* page :
+       ListedSettingsPages(ui_state_.show_advanced_settings == "on", ui_state_.show_tester_options == "on")) {
     sections_.push_back({.id = page->id,
                          .title = Tr(page->title_key).c_str(),
                          .subtitle = "",
@@ -330,6 +351,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.profile_registration_expires = bindings_.profile_registration_expires.c_str();
   ui_state_.profile_register_label = bindings_.profile_register_label.c_str();
   ui_state_.profile_show_register = bindings_.profile_show_register;
+  ui_state_.profile_register_primary = bindings_.profile_register_primary;
   ui_state_.profile_show_rotate = bindings_.profile_show_rotate;
   ui_state_.profile_icon_src = bindings_.profile_icon_src.c_str();
   ui_state_.profile_has_icon = bindings_.profile_has_icon;
@@ -352,6 +374,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.home_animated_logo = bindings_.home_animated_logo.c_str();
   ui_state_.crash_reports_enabled = bindings_.crash_reports_enabled.c_str();
   ui_state_.show_advanced_settings = bindings_.show_advanced_settings.c_str();
+  ui_state_.show_tester_options = bindings_.show_tester_options.c_str();
   ui_state_.pin_protection_status = bindings_.pin_protection_status.c_str();
   ui_state_.pin_protection_is_default = bindings_.pin_protection_is_default;
   ui_state_.pin_protection_not_setup = bindings_.pin_protection_not_setup;
@@ -388,6 +411,7 @@ void SettingsController::PullBindingsToUiState() {
 
 void SettingsController::PushUiStateToBindings() {
   bindings_.llm_preset = ui_state_.llm_preset.c_str();
+  bindings_.llm_preset_label = LlmPresetDisplayLabel(ui_state_.llm_preset).c_str();
   bindings_.llm_base_url = ui_state_.llm_base_url.c_str();
   bindings_.llm_model = ui_state_.llm_model.c_str();
   bindings_.llm_api_key = ui_state_.llm_api_key.c_str();
@@ -430,6 +454,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_registration_expires = ui_state_.profile_registration_expires.c_str();
   bindings_.profile_register_label = ui_state_.profile_register_label.c_str();
   bindings_.profile_show_register = ui_state_.profile_show_register;
+  bindings_.profile_register_primary = ui_state_.profile_register_primary;
   profile_actions_.ShowInvite(ui_state_.profile_contact_locator);
   bindings_.profile_show_rotate = ui_state_.profile_show_rotate;
   bindings_.profile_icon_src = ui_state_.profile_icon_src.c_str();
@@ -454,7 +479,9 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.home_animated_logo = ui_state_.home_animated_logo.c_str();
   bindings_.crash_reports_enabled = ui_state_.crash_reports_enabled.c_str();
   bindings_.show_advanced_settings = ui_state_.show_advanced_settings.c_str();
+  bindings_.show_tester_options = ui_state_.show_tester_options.c_str();
   bindings_.advanced = ui_state_.show_advanced_settings == "on";
+  bindings_.tester = ui_state_.show_tester_options == "on";
   bindings_.profile_label = ui_state_.profile_label.c_str();
   bindings_.config_dir = ui_state_.config_dir.c_str();
   bindings_.data_dir = ui_state_.data_dir.c_str();
@@ -493,6 +520,11 @@ void SettingsController::PushUiStateToBindings() {
                                      .command = row.command.c_str(),
                                      .args_text = row.args_text.c_str(),
                                      .enabled = row.enabled});
+  }
+  // The custom-address page has nothing left once the service is not Custom (a reset, a change of service): leave it
+  // for the Advanced page rather than show an empty page.
+  if (!bindings_.backend_is_custom && std::string(security_page_.c_str()) == "backend_custom") {
+    OnCloseSecurityPage();
   }
 }
 
@@ -601,6 +633,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("choice_help_topic", &controller.choice_help_topic_);
     ctor.Bind("blocked_count", &controller.blocked_count_);
     ctor.Bind("llm_preset", &controller.bindings_.llm_preset);
+    ctor.Bind("llm_preset_label", &controller.bindings_.llm_preset_label);
     ctor.Bind("llm_base_url", &controller.bindings_.llm_base_url);
     ctor.Bind("llm_model", &controller.bindings_.llm_model);
     ctor.Bind("llm_api_key", &controller.bindings_.llm_api_key);
@@ -645,6 +678,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("profile_registration_expires", &controller.bindings_.profile_registration_expires);
     ctor.Bind("profile_register_label", &controller.bindings_.profile_register_label);
     ctor.Bind("profile_show_register", &controller.bindings_.profile_show_register);
+    ctor.Bind("profile_register_primary", &controller.bindings_.profile_register_primary);
     profile_actions_.Bind(ctor);
     ctor.Bind("profile_show_rotate", &controller.bindings_.profile_show_rotate);
     ctor.Bind("profile_icon_src", &controller.bindings_.profile_icon_src);
@@ -681,6 +715,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("crash_reports_enabled", &controller.bindings_.crash_reports_enabled);
     ctor.Bind("show_advanced_settings", &controller.bindings_.show_advanced_settings);
     ctor.Bind("advanced", &controller.bindings_.advanced);
+    ctor.Bind("show_tester_options", &controller.bindings_.show_tester_options);
+    ctor.Bind("tester", &controller.bindings_.tester);
     ctor.Bind("profile_label", &controller.bindings_.profile_label);
     ctor.Bind("config_dir", &controller.bindings_.config_dir);
     ctor.Bind("data_dir", &controller.bindings_.data_dir);
@@ -739,6 +775,15 @@ bool SettingsController::RegisterModel(ui::Context* context) {
         OnAskSettingHelp(*key);
       }
     });
+    ctor.BindEventCallback(
+        "show_setting_note", [this](ui::DataModelHandle, ui::Event& ev, const ui::VariantList& args) {
+          ev.StopPropagation(); // like the "?" that asks: it can sit inside a row that toggles a switch
+          const auto title_key = data_event_detail::Arg<std::string>(args, 0);
+          const auto text_key = data_event_detail::Arg<std::string>(args, 1);
+          if (title_key && text_key) {
+            OnShowSettingNote(*title_key, *text_key);
+          }
+        });
     ctor.BindEventCallback("on_llm_field_changed", DataEvent<>([this]() { MarkSectionDirty("llm"); }));
     ctor.BindEventCallback("on_llm_preset_changed", DataEventAt([this](ui::Event& ev) { OnLlmPresetChanged(ev); }));
     ctor.BindEventCallback("on_choose_theme", DataEventAt([this](ui::Event& ev) { OnChooseTheme(ev); }));
@@ -749,6 +794,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("on_choose_call_invite_policy",
                            DataEventAt([this](ui::Event& ev) { OnChooseCallInvitePolicy(ev); }));
     ctor.BindEventCallback("on_choose_unlock_grace", DataEventAt([this](ui::Event& ev) { OnChooseUnlockGrace(ev); }));
+    ctor.BindEventCallback("on_choose_llm_preset", DataEventAt([this](ui::Event& ev) { OnChooseLlmPreset(ev); }));
     ctor.BindEventCallback("on_choose_backend", DataEventAt([this](ui::Event& ev) { OnChooseBackend(ev); }));
     ctor.BindEventCallback("on_choose_direct_connections",
                            DataEventAt([this](ui::Event& ev) { OnChooseDirectConnections(ev); }));
@@ -777,6 +823,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
                            }));
     ctor.BindEventCallback("toggle_transparency", DataEvent<>([this]() { ToggleTransparency(); }));
     ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
+    ctor.BindEventCallback("show_ask_ai_intro_again", DataEvent<>([this]() { ShowAskAiIntroAgain(); }));
     ctor.BindEventCallback("toggle_home_show_dynamic", DataEvent<>([this]() { ToggleHomeShowDynamic(); }));
     ctor.BindEventCallback("toggle_home_animated_logo", DataEvent<>([this]() { ToggleHomeAnimatedLogo(); }));
     ctor.BindEventCallback("open_ui_perf_test", DataEvent<>([this]() {
@@ -802,6 +849,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
                              }
                            }));
     ctor.BindEventCallback("tap_version", DataEvent<>([this]() { OnTapVersion(); }));
+    ctor.BindEventCallback("toggle_advanced_settings", DataEvent<>([this]() { ToggleShowAdvancedSettings(); }));
     ctor.BindEventCallback("open_terms", DataEvent<>([]() { UserFeedback::Ok(Tr("settings.help.coming_soon")); }));
     ctor.BindEventCallback("open_privacy_policy",
                            DataEvent<>([]() { UserFeedback::Ok(Tr("settings.help.coming_soon")); }));
@@ -827,6 +875,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     // Persist on blur only when the field differs from last loaded/saved nickname.
     ctor.BindEventCallback("on_profile_nickname_commit",
                            DataEvent<>([this]() { CommitProfileNickname(/*show_toast=*/false); }));
+    ctor.BindEventCallback("edit_profile_nickname", DataEvent<>([this]() { EditProfileNickname(); }));
     ctor.BindEventCallback("add_mcp_server", DataEvent<>([this]() { OnAddMcpServer(); }));
     ctor.BindEventCallback("remove_mcp_server", DataEvent<int>([this](int index) { OnRemoveMcpServer(index); }));
   });
@@ -847,6 +896,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "choice_foot");
   host.Dirty("settings", "choice_help_topic");
   host.Dirty("settings", "llm_preset");
+  host.Dirty("settings", "llm_preset_label");
   host.Dirty("settings", "llm_base_url");
   host.Dirty("settings", "llm_model");
   host.Dirty("settings", "llm_api_key");
@@ -890,6 +940,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "profile_registration_expires");
   host.Dirty("settings", "profile_register_label");
   host.Dirty("settings", "profile_show_register");
+  host.Dirty("settings", "profile_register_primary");
   host.Dirty("settings", "profile_show_rotate");
   host.Dirty("settings", "profile_icon_src");
   host.Dirty("settings", "profile_has_icon");
@@ -924,6 +975,8 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "ai_dot_look");
   host.Dirty("settings", "ai_dot_size_label");
   host.Dirty("settings", "advanced");
+  host.Dirty("settings", "show_tester_options");
+  host.Dirty("settings", "tester");
   host.Dirty("settings", "profile_label");
   host.Dirty("settings", "config_dir");
   host.Dirty("settings", "data_dir");
@@ -1266,6 +1319,50 @@ void SettingsController::CommitProfileNickname(bool show_toast) {
   FlushSection("profile", show_toast);
 }
 
+void SettingsController::EditProfileNickname() {
+  if (!shell_feedback_.show_prompt) {
+    return;
+  }
+  // The saved name is what the dialog starts from; the binding only holds a name that was saved (or the desktop's
+  // unsaved typing, which the phone page does not have).
+  const std::string* baseline = UiEditSession::Instance().Baseline(kUiFieldProfileNickname);
+  const std::string current = baseline ? *baseline : std::string(bindings_.profile_nickname.c_str());
+  shell_feedback_.show_prompt(Tr("settings.nickname"), Tr("settings.profile.nickname_prompt"), current,
+                              [this](const bool ok, const std::string& value) {
+                                if (ok) {
+                                  ApplyProfileNicknameFromDialog(value);
+                                }
+                              });
+}
+
+void SettingsController::ApplyProfileNicknameFromDialog(const std::string& value) {
+  auto& edits = UiEditSession::Instance();
+  const std::string* baseline = edits.Baseline(kUiFieldProfileNickname);
+  if (baseline && value == *baseline) {
+    return;
+  }
+  // The same guards CommitProfileNickname has: it returns without a word, so ask first. Nothing is written to the
+  // binding when the save cannot run, and the page keeps showing the saved name.
+  if (!baseline || suppress_auto_save_ || edits.RemountBlocking()) {
+    UserFeedback::Fail(Tr("settings.profile.nickname_not_saved"));
+    return;
+  }
+  const std::string saved_name = *baseline;
+  bindings_.profile_nickname = value.c_str();
+  const bool flushed = FlushSection("profile", /*show_toast=*/true);
+  // A successful save moved the baseline to the stored name and pushed it to the page (FlushSection -> DirtyAll).
+  // Anything else leaves the unsaved name in the binding: put the saved one back. A failed flush has already told
+  // the user why (ReportFailure); a flush that returned true without saving gets our own line.
+  if (!flushed || edits.IsMidEdit(kUiFieldProfileNickname, bindings_.profile_nickname.c_str())) {
+    bindings_.profile_nickname = saved_name.c_str();
+    ui_state_.profile_nickname = saved_name;
+    DirtyAll();
+    if (flushed) {
+      UserFeedback::Fail(Tr("settings.profile.nickname_not_saved"));
+    }
+  }
+}
+
 void SettingsController::MaybeShowSaveToast(const std::string& section_id) {
   const uint64_t now = SDL_GetTicks();
   if (last_toast_section_ == section_id && now - last_toast_at_ms_ < kToastSuppressMs) {
@@ -1295,15 +1392,17 @@ void SettingsController::OnResetSection(const std::string& section_id) {
   if (!shell_feedback_.show_confirm_destructive) {
     return;
   }
-  shell_feedback_.show_confirm_destructive(Tr("settings.reset_defaults_confirm_title"),
-                                           Tr("settings.reset_defaults_confirm_message"),
-                                           [this, section_id](const bool ok) {
-                                             if (!ok) {
-                                               return;
-                                             }
-                                             PerformResetSection(section_id);
-                                           },
-                                           {});
+  shell_feedback_.show_confirm_destructive(
+      Tr("settings.reset_defaults_confirm_title"),
+      Tr(section_id == "network" ? "settings.reset_defaults_confirm_message.network"
+                                 : "settings.reset_defaults_confirm_message"),
+      [this, section_id](const bool ok) {
+        if (!ok) {
+          return;
+        }
+        PerformResetSection(section_id);
+      },
+      {});
 }
 
 void SettingsController::PerformResetSection(const std::string& section_id) {
@@ -1487,15 +1586,25 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
     OpenChangePin(); // B2: the PIN gate's three steps, not a page of fields
     return;
   }
-  if (selected_id_ != "devices" || !show_detail_) {
-    return; // phones only: desktop shows both inline
-  }
-  if (page == "transfer") {
+  // Phones only: the desktop shows these inline. Devices has the transfer page; Advanced has the pages that hold its
+  // free-text fields (the custom endpoint, the integrations, the custom service addresses).
+  const bool on_devices = selected_id_ == "devices" && show_detail_;
+  const bool on_advanced = selected_id_ == "advanced" && show_detail_;
+  bool secret = false; // the transfer code is on it: no tab bar under it
+  if (on_devices && page == "transfer") {
     security_page_title_ = Tr("settings.security.transfer_row").c_str();
+    secret = true;
+  } else if (on_advanced && page == "ai_endpoint") {
+    security_page_title_ = Tr("settings.llm.endpoint.title").c_str();
+  } else if (on_advanced && page == "integrations") {
+    security_page_title_ = Tr("settings.integrations.page.title").c_str();
+  } else if (on_advanced && page == "backend_custom" && bindings_.backend_is_custom) {
+    security_page_title_ = Tr("settings.network.backend.custom_addresses").c_str();
   } else {
     return;
   }
   log().info << "OpenSecurityPage " << page;
+  security_actions_.ClearTransferCopied(); // a fresh visit starts on the button, not on an old "copied" box
   security_page_ = page.c_str();
   status_ = "";
   DirtyAll();
@@ -1505,8 +1614,8 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
   if (shell_navigation_.push_local_back) {
     shell_navigation_.push_local_back("settings_subpage", [this] { ApplyCloseSecurityPage(); });
   }
-  if (shell_navigation_.set_secret_page_open) {
-    shell_navigation_.set_secret_page_open(true); // the transfer code is on it: no tab bar under it
+  if (secret && shell_navigation_.set_secret_page_open) {
+    shell_navigation_.set_secret_page_open(true);
   }
 }
 
@@ -1524,6 +1633,7 @@ void SettingsController::ApplyCloseSecurityPage() {
   if (shell_navigation_.set_secret_page_open) {
     shell_navigation_.set_secret_page_open(false);
   }
+  security_actions_.ClearTransferCopied();
   security_page_ = "";
   security_page_title_ = "";
   choice_page_.Close();
@@ -1548,7 +1658,8 @@ void SettingsController::ResetSecurityPage() {
   if (shell_navigation_.set_secret_page_open) {
     shell_navigation_.set_secret_page_open(false);
   }
-  security_actions_.HideRecoveryPhrase(); // the phrase does not follow the user off the page
+  security_actions_.HideRecoveryPhrase();  // the phrase does not follow the user off the page
+  security_actions_.ClearTransferCopied(); // nor does the "copied" box
   if (security_page_.empty()) {
     return;
   }
@@ -1568,11 +1679,50 @@ void SettingsController::OnLlmPresetChanged(ui::Event& ev) {
   }
 
   const ui::String value = EventValue(ev);
+  if (!llm_preset_chosen_.empty()) {
+    // The phone's chooser already applied this preset; the hidden <select> only echoes the new value back (its binding
+    // changed), twice per pick. Any other value is a genuine pick in the select and ends the guard.
+    if (value == llm_preset_chosen_.c_str()) {
+      return;
+    }
+    llm_preset_chosen_.clear();
+  }
   if (!value.empty()) {
     bindings_.llm_preset = value;
   }
+  ApplyLlmPreset();
+}
 
+void SettingsController::OnChooseLlmPreset(ui::Event& ev) {
+  const std::string current = bindings_.llm_preset.c_str();
+  std::vector<SettingsChoicePage::Option> options;
+  for (const char* id : kLlmPresetIds) {
+    options.push_back({id, LlmPresetDisplayLabel(id).c_str(), current == id});
+  }
+  ShowChoice(ev, "llm_preset", Tr("settings.llm.preset"), Tr("settings.llm.preset_help"), {}, std::move(options),
+             [this](const std::string& id) { ApplyLlmPresetChoice(id); });
+}
+
+void SettingsController::ApplyLlmPresetChoice(const std::string& preset) {
+  if (suppress_auto_save_) {
+    return;
+  }
+  bool known = false;
+  for (const char* id : kLlmPresetIds) {
+    known = known || preset == id;
+  }
+  if (!known) {
+    return;
+  }
+  bindings_.llm_preset = preset.c_str();
+  llm_preset_chosen_ = preset;
+  ApplyLlmPreset();
+}
+
+void SettingsController::ApplyLlmPreset() {
+  ++llm_preset_applies_;
   PullBindingsToUiState();
+  bindings_.llm_preset_label = LlmPresetDisplayLabel(ui_state_.llm_preset).c_str();
   // Translate preset intent → precise default model before flush/normalize.
   const std::string preset = ui_state_.llm_preset;
   if (const std::string default_model = DefaultModelForPreset(preset); !default_model.empty()) {
@@ -1589,6 +1739,7 @@ void SettingsController::OnLlmPresetChanged(ui::Event& ev) {
   DataModelHost::Instance().Dirty("settings", "llm_model");
   DataModelHost::Instance().Dirty("settings", "llm_base_url");
   DataModelHost::Instance().Dirty("settings", "llm_preset");
+  DataModelHost::Instance().Dirty("settings", "llm_preset_label");
 
   const SettingsSectionHandler* handler = FindHandler("llm");
   if (!handler) {
@@ -1717,17 +1868,18 @@ void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {
   DirtyAll();
 }
 
-void SettingsController::OnChooseBackend(ui::Event& ev) {
+std::vector<SettingsChoicePage::Option> SettingsController::BackendChoiceOptions() const {
   const std::string current = bindings_.backend_env.c_str();
   std::vector<SettingsChoicePage::Option> options;
-  for (const char* id : {"prod", "qa", "custom"}) {
-    if (std::string_view(id) == "qa" && !ui_state_.backend_qa_available) {
-      continue;
-    }
+  for (const char* id : BackendChoicesOffered(ui_state_.backend_qa_available, ui_state_.show_tester_options == "on")) {
     options.push_back({id, BackendDisplayLabel(id).c_str(), current == id});
   }
-  ShowChoice(ev, "backend", Tr("settings.network.backend"), Tr("settings.network.backend.help"), {}, std::move(options),
-             [this](const std::string& id) { ApplyBackendChoice(id); });
+  return options;
+}
+
+void SettingsController::OnChooseBackend(ui::Event& ev) {
+  ShowChoice(ev, "backend", Tr("settings.network.backend"), Tr("settings.network.backend.help"), {},
+             BackendChoiceOptions(), [this](const std::string& id) { ApplyBackendChoice(id); });
 }
 
 void SettingsController::ApplyBackendChoice(const std::string& env) {
@@ -1793,7 +1945,7 @@ void SettingsController::ApplyCallInvitePolicyChoice(const std::string& policy) 
 void SettingsController::OnChooseUnlockGrace(ui::Event& ev) {
   const int current = bindings_.unlock_grace_minutes;
   std::vector<SettingsChoicePage::Option> options;
-  for (const int minutes : {0, 5, 15, 60, kUnlockGraceAlways}) {
+  for (const int minutes : OfferedUnlockGraceMinutes()) {
     options.push_back({std::to_string(minutes).c_str(), UnlockGraceDisplayLabel(minutes).c_str(), current == minutes});
   }
   ShowChoice(ev, "unlock_grace", Tr("settings.security.grace.title"), Tr("settings.security.grace.help"), {},
@@ -1940,6 +2092,24 @@ void SettingsController::OnAskSettingHelp(const std::string& label_key) {
   if (auto asked = commands_.ask_support(question); !asked) {
     ReportFailure(asked.error());
   }
+}
+
+void SettingsController::OnShowSettingNote(const std::string& title_key, const std::string& text_key) {
+  // Only this app's own settings strings; a key without text shows nothing rather than its own name.
+  const auto text_of = [](const std::string& key) {
+    if (key.rfind("settings.", 0) != 0) {
+      return std::string();
+    }
+    const std::string text = Tr(key);
+    return text == key ? std::string() : text;
+  };
+  const std::string title = text_of(title_key);
+  const std::string text = text_of(text_key);
+  if (title.empty() || text.empty() || !shell_feedback_.show_alert) {
+    return;
+  }
+  // The shell's alert: a titled card with the sentence and one OK. No network, no AI.
+  shell_feedback_.show_alert(title, text, {}, Tr("common.ok"));
 }
 
 void SettingsController::OpenNetworkSettings() {
@@ -2185,6 +2355,24 @@ void SettingsController::ToggleCallDiagnostics() {
   DirtyAll();
 }
 
+Roe<void> ClearAskAiIntroSeen(SessionStore& store) {
+  ProfilePreferences prefs = store.Snapshot().profile_prefs;
+  prefs.ai_panel_intro_seen = false;
+  prefs.schema_version = ProfilePreferences::kSchemaVersion;
+  return store.SaveProfilePrefs(prefs);
+}
+
+void SettingsController::ShowAskAiIntroAgain() {
+  if (!commands_.session_store) {
+    return;
+  }
+  if (auto saved = ClearAskAiIntroSeen(Store()); !saved) {
+    ReportFailure(saved.error());
+    return;
+  }
+  UserFeedback::Ok(Tr("settings.tester.show_ask_ai_intro.done"));
+}
+
 void SettingsController::ToggleHomeAnimatedLogo() {
   // Phones only (Me → AI assistant): on draws the AI Home's logo as the animated mascot (the look picked below it), off
   // keeps the static app icon. Saved at once, like the AI dot's switches: ConfigApplyBridge hands the pref to the shell,
@@ -2260,10 +2448,10 @@ void SettingsController::SaveAiDot(const bool shown, const std::string& look, co
 }
 
 void SettingsController::OnTapVersion() {
-  const bool was_on = bindings_.show_advanced_settings == "on";
+  const bool was_on = bindings_.show_tester_options == "on";
   const VersionTapCounter::Result tap = version_taps_.Tap(SDL_GetTicks());
   if (tap.action == VersionTapCounter::Action::Toggle) {
-    ToggleShowAdvancedSettings();
+    ToggleShowTesterOptions();
     UserFeedback::Ok(Tr(was_on ? "settings.help.tester_off" : "settings.help.tester_on"));
   } else if (tap.action == VersionTapCounter::Action::Hint) {
     UserFeedback::Ok(
@@ -2276,6 +2464,15 @@ void SettingsController::ToggleShowAdvancedSettings() {
   PullBindingsToUiState();
   MarkSectionDirty("about", /*show_toast=*/false);
   InitSections(); // the advanced-only sections appear or go
+  PushUiStateToBindings();
+  DirtyAll();
+}
+
+void SettingsController::ToggleShowTesterOptions() {
+  bindings_.show_tester_options = bindings_.show_tester_options == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("about", /*show_toast=*/false);
+  InitSections(); // the Test options page appears or goes
   PushUiStateToBindings();
   DirtyAll();
 }

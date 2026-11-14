@@ -8,6 +8,10 @@
 // chat.
 #include "gui/chat/AskAiPanel.h"
 #include "gui/chat/AgentTurnController.h"
+#include "gui/SettingsController.h"
+#include "gui/UserFeedback.h"
+#include "gui/shell/ShellFeedback.h"
+#include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/AiImagePrep.h"
@@ -15,6 +19,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <map>
@@ -96,6 +101,7 @@ public:
   int closes = 0;
   std::vector<std::string> opened_in_chat;
   std::vector<std::string> support;
+  bool support_opens = true; // false: opening the support chat failed (the host shows the reason)
   std::vector<std::string> toasts;
 
   bool AskAiCompact() const override { return compact; }
@@ -151,7 +157,12 @@ public:
     }
   }
   void AskAiOpenInChat(const std::string& thread_id) override { opened_in_chat.push_back(thread_id); }
-  void AskAiSupport(const std::string& question) override { support.push_back(question); }
+  void AskAiSupport(const std::string& question, std::function<void()> on_opened) override {
+    support.push_back(question);
+    if (support_opens && on_opened) {
+      on_opened();
+    }
+  }
   void AskAiRunAction(const std::string&, const std::string&, int) override {}
   void AskAiOpenLink(const std::string&, const std::string&, int) override {}
   void AskAiOpenUrl(const std::string&) override {}
@@ -626,6 +637,134 @@ TEST_F(AskAiPanelTest, ThePrivacyCardShowsOnlyUntilGotIt) {
   panel_host_.AskAiCloseSheet(0);
   ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
   EXPECT_FALSE(panel_.View().show_intro);
+}
+
+TEST_F(AskAiPanelTest, TheSheetStaysOpenWhenPPSupportCannotBeOpened) {
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  panel_host_.support_opens = false;
+  panel_.AskSupportOwnAi();
+  EXPECT_EQ(panel_host_.support.size(), 1u);
+  EXPECT_EQ(panel_host_.closes, 0) << "the failure pill shows over the open sheet";
+  EXPECT_TRUE(panel_.IsOpen());
+  panel_host_.support_opens = true;
+  panel_.AskSupportOwnAi();
+  EXPECT_EQ(panel_host_.closes, 1) << "closes once the support chat opened";
+}
+
+std::string ReadSource(const std::string& relative);
+
+TEST(AskAiPanelSourceTest, UnavailableSupportShowsOneSettingsWordingNotTheGenericPill) {
+  std::string shown;
+  ShellFeedbackPorts ports;
+  ports.show_toast = [&shown](const std::string& text, ToastDuration) { shown = text; };
+  UserFeedback::BindPorts(ports);
+  const std::string app = ReadSource("src/app/Application.cpp");
+  EXPECT_NE(app.find("Error(\"Support is not available\").WithUser(Tr(\"settings.support.unavailable\"))"),
+            std::string::npos);
+  EXPECT_EQ(app.find("Error(Tr(\"support.unavailable\"))"), std::string::npos);
+  (void)UserFeedback::FailFrom(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
+  UserFeedback::BindPorts({});
+  EXPECT_EQ(shown, Tr("settings.support.unavailable"));
+  EXPECT_NE(shown, Tr("error.generic"));
+}
+
+TEST_F(AskAiPanelTest, TheQuestionMarkClosesTheSheetAndAsksSupportOnceWithoutMarkingTheCardSeen) {
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  ASSERT_TRUE(panel_.View().show_intro);
+  panel_.AskSupportOwnAi();
+  EXPECT_EQ(panel_host_.closes, 1);
+  ASSERT_EQ(panel_host_.support.size(), 1u);
+  EXPECT_EQ(panel_host_.support[0], Tr("ask_ai.intro.support_question"));
+  EXPECT_FALSE(panel_host_.support[0].empty());
+  EXPECT_TRUE(panel_host_.sent.empty()) << "straight to PP Support, never to the AI";
+  EXPECT_EQ(panel_host_.intro_marks, 0);
+  EXPECT_FALSE(panel_host_.intro_seen);
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  EXPECT_TRUE(panel_.View().show_intro) << "only \"Got it\" marks it seen";
+}
+
+std::string ReadSource(const std::string& relative); // below
+
+TEST(AskAiPanelSourceTest, TheQuestionTextIsTheSameInBothLanguagesAndNeverEmpty) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("ask_ai.intro.support_question"), "怎么把 AI 换成我自己的？");
+  EXPECT_EQ(Tr("ask_ai.intro.lead"), "和朋友聊天是私密的。");
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  EXPECT_EQ(Tr("ask_ai.intro.support_question"), "How do I switch the AI to my own?");
+  EXPECT_EQ(Tr("ask_ai.intro.lead"), "Chats with friends are private.");
+}
+
+// The card: a bold first sentence, the rest, then its own paragraph with the settings pages' "?" button.
+TEST(AskAiPanelSourceTest, ThePrivacyCardHasABoldLeadTwoParagraphsAndAHelpQuestionMark) {
+  const std::string view = ReadSource("assets/views/ask_ai.rml");
+  const size_t card = view.find("<div class=\"ask-ai-intro\"");
+  ASSERT_NE(card, std::string::npos);
+  const std::string body = view.substr(card, view.find("ask-ai-intro-ok", card) - card);
+  EXPECT_NE(body.find("<span class=\"ask-ai-intro-lead\">{{i18n:ask_ai.intro.lead}}</span>"), std::string::npos);
+  EXPECT_NE(body.find("{{i18n:ask_ai.intro.body}}"), std::string::npos);
+  EXPECT_NE(body.find("{{i18n:ask_ai.intro.own_ai}}"), std::string::npos);
+  size_t paragraphs = 0;
+  for (size_t at = body.find("<p "); at != std::string::npos; at = body.find("<p ", at + 1)) {
+    ++paragraphs;
+  }
+  EXPECT_EQ(paragraphs, 2u);
+  // The "?" is inline inside the same <p> as the sentence (right after it), not in a separate container.
+  const size_t own_text = body.find("{{i18n:ask_ai.intro.own_ai}}");
+  const size_t own_p_end = body.find("</p>", own_text);
+  const size_t q_button = body.find("<button class=\"settings-q-btn ask-ai-intro-q\"");
+  ASSERT_NE(q_button, std::string::npos);
+  EXPECT_LT(q_button, own_p_end) << "inside the paragraph";
+  EXPECT_EQ(body.substr(own_text + std::string("{{i18n:ask_ai.intro.own_ai}}").size(),
+                        q_button - own_text - std::string("{{i18n:ask_ai.intro.own_ai}}").size()),
+            "")
+      << "directly after the text";
+  EXPECT_EQ(body.find("ask-ai-intro-own-text"), std::string::npos);
+  // Not bold: the second paragraph carries no lead span.
+  EXPECT_LT(body.find("ask-ai-intro-lead"), body.find("{{i18n:ask_ai.intro.own_ai}}"));
+  EXPECT_EQ(body.find("ask-ai-intro-lead", body.find("{{i18n:ask_ai.intro.own_ai}}")), std::string::npos);
+  const size_t button = body.find("<button class=\"settings-q-btn ask-ai-intro-q\"");
+  ASSERT_NE(button, std::string::npos);
+  EXPECT_GT(button, body.find("{{i18n:ask_ai.intro.own_ai}}")) << "after the paragraph, at its end";
+  const std::string tag = body.substr(button, body.find("</button>", button) - button);
+  EXPECT_NE(tag.find("data-event-click=\"ask_ai_own_ai_help()\""), std::string::npos);
+  EXPECT_NE(tag.find("class=\"settings-q-icon\" src=\"../icons/v2/help-circle.svg\""), std::string::npos);
+  EXPECT_EQ(body.find("ask_ai_support()"), std::string::npos) << "not the failed-answer button";
+  // The 44dp target and the small glyph are the settings button's own rules.
+  const std::string css = ReadSource("assets/themes/components.rcss");
+  EXPECT_NE(css.find(".settings-q-btn {\n  display: flex;"), std::string::npos);
+}
+
+TEST(AskAiPanelSourceTest, TheTesterPageCanShowThePrivacyCardAgain) {
+  const std::string tester = ReadSource("assets/views/settings_section_tester.rml");
+  EXPECT_NE(tester.find("data-event-click=\"show_ask_ai_intro_again()\""), std::string::npos);
+  EXPECT_NE(tester.find("{{i18n:settings.tester.show_ask_ai_intro}}"), std::string::npos);
+  const std::string controller = ReadSource("src/gui/SettingsController.cpp");
+  EXPECT_NE(controller.find("\"show_ask_ai_intro_again\""), std::string::npos);
+}
+
+TEST(AskAiPanelSourceTest, TheTesterRowClearsTheSeenFlag) {
+  namespace fs = std::filesystem;
+  const fs::path root =
+      fs::temp_directory_path() / ("pp_ask_ai_intro_" + std::to_string(reinterpret_cast<uintptr_t>(&root)));
+  fs::remove_all(root);
+  fs::create_directories(root / "profile");
+  BootstrapResult bootstrap{};
+  bootstrap.config = Config::DefaultAppConfig();
+  bootstrap.config_path = (root / "config.json").string();
+  bootstrap.data_dir = root.string();
+  bootstrap.profile_data_dir = (root / "profile").string();
+  bootstrap.profile_prefs = UserPreferences::DefaultProfile();
+  SessionStore store;
+  store.SetUiDemo(false);
+  store.Initialize(std::move(bootstrap));
+  ProfilePreferences prefs = store.Snapshot().profile_prefs;
+  prefs.ai_panel_intro_seen = true;
+  ASSERT_TRUE(static_cast<bool>(store.SaveProfilePrefs(prefs)));
+  ASSERT_TRUE(store.Snapshot().profile_prefs.ai_panel_intro_seen);
+  ASSERT_TRUE(static_cast<bool>(ClearAskAiIntroSeen(store)));
+  EXPECT_FALSE(store.Snapshot().profile_prefs.ai_panel_intro_seen);
+  fs::remove_all(root);
 }
 
 // --- the demo app's made-up answers ----------------------------------------------------------------------

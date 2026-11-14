@@ -260,6 +260,14 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   }
   detail.trust = TrustDisplayLabel(contact.trust).c_str();
   detail.trust_key = TrustLevelToString(contact.trust).c_str();
+  {
+    // "Share with others": the account text and the locator both name the Account ID, and carry the friend's own
+    // nickname, never the remark.
+    detail.share_account_id = ContactAccountId(contact).value_or("");
+    detail.share_locator = ContactShareLocator(contact);
+    detail.can_share_account = !detail.share_account_id.empty();
+    detail.can_share_qr = !detail.share_locator.empty();
+  }
   if (ports.contact_icon_local_path) {
     const std::string path = ports.contact_icon_local_path(contact);
     if (!path.empty()) {
@@ -379,7 +387,7 @@ void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const 
 } // namespace
 
 ContactsController::ContactDetail MemberPreviewDetail(const std::string& account_id, const std::string& name,
-                                                      const std::string& icon_src) {
+                                                      const std::string& icon_src, const bool from_dm) {
   ContactsController::ContactDetail detail;
   const std::string title = name.empty() ? Tr("people_picker.unnamed") : name;
   detail.title = title.c_str();
@@ -392,6 +400,8 @@ ContactsController::ContactDetail MemberPreviewDetail(const std::string& account
   detail.avatar_tone = glyph.tone;
   detail.member_preview = true;
   detail.member_account = account_id.c_str();
+  detail.member_from_dm = from_dm;
+  detail.can_message = from_dm; // opened from their own chat: they are being messaged right now
   return detail;
 }
 
@@ -458,6 +468,10 @@ void ContactsController::BindScanPorts(ScanPorts ports) {
 
 void ContactsController::BindAccountPorts(ContactsAccountPorts ports) {
   account_ports_ = std::move(ports);
+}
+
+void ContactsController::BindCallActions(CallActionsPorts ports) {
+  call_actions_ = std::move(ports);
 }
 
 void ContactsController::BindSessionStore(SessionStore* store) {
@@ -601,7 +615,10 @@ bool ContactsController::RegisterModel(ui::Context* context) {
           detail_handle.RegisterMember("identities", &ContactDetail::identities);
           detail_handle.RegisterMember("threads", &ContactDetail::threads);
           detail_handle.RegisterMember("member_preview", &ContactDetail::member_preview);
+          detail_handle.RegisterMember("member_from_dm", &ContactDetail::member_from_dm);
           detail_handle.RegisterMember("starred", &ContactDetail::starred);
+          detail_handle.RegisterMember("can_share_account", &ContactDetail::can_share_account);
+          detail_handle.RegisterMember("can_share_qr", &ContactDetail::can_share_qr);
         }
         ctor.Bind("contacts", &controller.contacts_);
         ctor.Bind("contact_sections", &controller.contact_sections_);
@@ -621,6 +638,10 @@ bool ContactsController::RegisterModel(ui::Context* context) {
         ctor.Bind("my_avatar_letter", &controller.my_avatar_letter_);
         ctor.Bind("my_avatar_tone", &controller.my_avatar_tone_);
         ctor.Bind("my_qr_svg_rml", &controller.my_qr_svg_rml_);
+        ctor.Bind("qr_name", &controller.qr_name_);
+        ctor.Bind("qr_hint", &controller.qr_hint_);
+        ctor.Bind("qr_can_share", &controller.qr_can_share_);
+        ctor.Bind("qr_save_label", &controller.qr_save_label_);
         ctor.Bind("can_scan", &controller.can_scan_);
         ctor.Bind("can_new_group", &controller.can_new_group_);
         ctor.Bind("nc_sections", &controller.new_chat_sections_);
@@ -638,9 +659,21 @@ bool ContactsController::RegisterModel(ui::Context* context) {
         ctor.BindEventCallback("add_member_contact", &ContactsController::AddMemberContactCallback);
         ctor.BindEventCallback("on_add_contact_menu", &ContactsController::AddContactMenuCallback);
         ctor.BindEventCallback("find_someone", &ContactsController::FindSomeoneCallback);
+        ctor.BindEventCallback("call_contact_voice",
+                               DataEvent<>([this]() { OnCallContact(selected_.id.c_str(), false); }));
+        ctor.BindEventCallback("call_contact_video",
+                               DataEvent<>([this]() { OnCallContact(selected_.id.c_str(), true); }));
+        ctor.BindEventCallback("block_member", DataEvent<>([this]() { OnBlockMember(); }));
         ctor.BindEventCallback("copy_contact_id", &ContactsController::CopyIdCallback);
         ctor.BindEventCallback("share_contact", &ContactsController::ShareContactCallback);
+        ctor.BindEventCallback("share_friend", [](ui::DataModelHandle, ui::Event& ev, const ui::VariantList&) {
+          Instance().OnShareFriend(MenuPositionBelowEvent(ev));
+        });
+        ctor.BindEventCallback("share_qr_image",
+                               DataEventAt([this](ui::Event& ev) { OnShareQrImage(ShareAnchorFromEvent(ev)); }));
+        ctor.BindEventCallback("save_qr_image", DataEvent<>([this]() { OnSaveQrImage(); }));
         ctor.BindEventCallback("toggle_trust_friendly", &ContactsController::ToggleTrustFriendlyCallback);
+        ctor.BindEventCallback("tap_contact_avatar", DataEvent<>([this]() { OnTapAvatar(); }));
         ctor.BindEventCallback("toggle_star", DataEvent<>([this]() { OnToggleStar(); }));
         ctor.BindEventCallback("block_contact", &ContactsController::BlockContactCallback);
         ctor.BindEventCallback("unblock_contact", &ContactsController::UnblockContactCallback);
@@ -962,9 +995,15 @@ void ContactsController::AddMemberContactCallback(ui::DataModelHandle /*model*/,
   // The usual add-by-Account-ID path (directory lookup, keys from it, never from the group); once added, the page
   // turns into the contact's own (AddContactFromHit selects it).
   ContactsController& controller = Instance();
-  if (controller.selected_.member_preview) {
-    controller.AddContactByQuery(controller.selected_.member_account.c_str());
+  if (!controller.selected_.member_preview) {
+    return;
   }
+  if (controller.selected_.member_from_dm && controller.add_stranger_) {
+    // From their 1:1 chat: the chat menu's own Add (the local directory copy; the chat goes to the new contact).
+    controller.OnAddMemberFromChat();
+    return;
+  }
+  controller.AddContactByQuery(controller.selected_.member_account.c_str());
 }
 
 void ContactsController::AddContactMenuCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
@@ -995,10 +1034,12 @@ void ContactsController::ToggleTrustFriendlyCallback(ui::DataModelHandle /*model
 
 void ContactsController::BlockContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
                                               const ui::VariantList& /*args*/) {
-  auto& controller = Instance();
-  const std::string name = controller.selected_.title.empty() ? Tr("contacts.this_contact")
-                                                              : std::string(controller.selected_.title.c_str());
-  controller.ShowConfirm(
+  Instance().OnBlockSelected();
+}
+
+void ContactsController::OnBlockSelected() {
+  const std::string name = selected_.title.empty() ? Tr("contacts.this_contact") : std::string(selected_.title.c_str());
+  ShowConfirm(
       Tr("contacts.block_confirm_title"), Tr("contacts.block_confirm_body", {{"name", name}}),
       [](const bool ok) {
         if (ok) {
@@ -1106,13 +1147,13 @@ void ContactsController::OnSelectContact(const std::string& contact_id) {
 }
 
 void ContactsController::OnShowMember(const std::string& account_id, const std::string& name,
-                                      const std::string& icon_src) {
+                                      const std::string& icon_src, const bool from_dm) {
   ClearGroupAdminCard();
   if (account_id.empty()) {
     return;
   }
   FlushPending();
-  selected_ = MemberPreviewDetail(account_id, name, icon_src);
+  selected_ = MemberPreviewDetail(account_id, name, icon_src, from_dm);
   OpenContactDetailPane();
   DirtyAll();
   NotifySurfaceChanged();
@@ -1155,10 +1196,10 @@ void ContactsController::OnSelectContactSheet(const std::string& contact_id) {
 }
 
 void ContactsController::OnShowMemberSheet(const std::string& account_id, const std::string& name,
-                                           const std::string& icon_src) {
+                                           const std::string& icon_src, const bool from_dm) {
   ClearGroupAdminCard();
   if (!DetailSheetAvailable()) {
-    OnShowMember(account_id, name, icon_src);
+    OnShowMember(account_id, name, icon_src, from_dm);
     return;
   }
   if (account_id.empty()) {
@@ -1169,7 +1210,7 @@ void ContactsController::OnShowMemberSheet(const std::string& account_id, const 
   if (!DetailSheetOpen()) {
     detail_under_sheet_ = selected_.member_preview ? std::string() : std::string(selected_.id.c_str());
   }
-  selected_ = MemberPreviewDetail(account_id, name, icon_src);
+  selected_ = MemberPreviewDetail(account_id, name, icon_src, from_dm);
   OpenContactDetailSheet();
   DirtyAll();
   NotifySurfaceChanged();
@@ -1551,6 +1592,94 @@ void ContactsController::OnNewChatPick(const std::string& contact_id) {
   OnStartChat();
   selected_ = {};
   DirtyAll();
+}
+
+void ContactsController::OnNewChatSwipeAction(const std::string& contact_id, const std::string& action) {
+  if (contact_id.empty()) {
+    return;
+  }
+  if (action == "info") {
+    OnSelectContact(contact_id);
+  } else if (action == "voice") {
+    OnCallContact(contact_id, false);
+  } else if (action == "video") {
+    OnCallContact(contact_id, true);
+  } else if (action == "more") {
+    std::string title;
+    std::vector<ContextMenuAction> actions = NewChatMoreActions(contact_id, &title);
+    if (!actions.empty()) {
+      // A bottom action sheet on phones: it ignores the position, as the Chats list's More does.
+      ContextMenuHost::Instance().ShowActions(ui::Vector2i(0, 0), std::move(actions), {}, title);
+    }
+  }
+}
+
+std::vector<std::string> ContactsController::NewChatRowIds() const {
+  std::vector<std::string> ids;
+  for (const NewChatSectionRow& section : new_chat_sections_) {
+    for (const ContactListRow& row : section.rows) {
+      ids.push_back(row.id.c_str());
+    }
+  }
+  return ids;
+}
+
+void ContactsController::WithContactSelected(const std::string& contact_id, const std::function<void()>& run) {
+  FlushPending();
+  ContactDetail previous = std::move(selected_);
+  LoadSelectedDetail(contact_id);
+  if (!selected_.id.empty()) {
+    run();
+  }
+  selected_ = std::move(previous); // another contact's page that was showing stays what it was
+  DirtyAll();
+}
+
+void ContactsController::OnBlockContactById(const std::string& contact_id) {
+  std::string name = Tr("contacts.this_contact");
+  WithContactSelected(contact_id, [this, &name]() {
+    if (!selected_.title.empty()) {
+      name = selected_.title.c_str();
+    }
+  });
+  ShowConfirm(
+      Tr("contacts.block_confirm_title"), Tr("contacts.block_confirm_body", {{"name", name}}),
+      [this, contact_id](const bool ok) {
+        if (ok) {
+          WithContactSelected(contact_id, [this]() { OnSetTrust("blocked"); });
+        }
+      },
+      true);
+}
+
+std::vector<ContextMenuAction> ContactsController::NewChatMoreActions(const std::string& contact_id,
+                                                                      std::string* title_out) {
+  bool found = false;
+  bool blocked = false;
+  WithContactSelected(contact_id, [&]() {
+    found = true;
+    blocked = selected_.trust_key == "blocked";
+    if (title_out) {
+      *title_out = selected_.title.c_str();
+    }
+  });
+  if (!found) {
+    return {};
+  }
+  // Each item works on this contact and puts back whatever page was showing (the existing flows read the selected one).
+  std::vector<ContextMenuAction> actions;
+  if (blocked) {
+    actions.push_back({"unblock", Tr("contacts.unblock"), nullptr,
+                       [this, contact_id]() { WithContactSelected(contact_id, [this]() { OnSetTrust("unknown"); }); },
+                       "../icons/v2/block.svg"});
+  } else {
+    actions.push_back({"block", Tr("contacts.block"), nullptr, [this, contact_id]() { OnBlockContactById(contact_id); },
+                       "../icons/v2/block.svg", /*danger=*/true});
+  }
+  actions.push_back({"remove", Tr("contacts.remove"), nullptr,
+                     [this, contact_id]() { WithContactSelected(contact_id, [this]() { OnRemoveContact(); }); },
+                     "../icons/trash.svg", /*danger=*/true});
+  return actions;
 }
 
 void ContactsController::OnNewChatAction(const std::string& action) {
@@ -1992,6 +2121,99 @@ void ContactsController::OnStartChat() {
   NavigateToChatSession();
 }
 
+void ContactsController::OnCallContact(const std::string& contact_id, const bool video) {
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || contact_id.empty() ||
+      !contacts_ports_.get_contact || !contacts_ports_.find_direct_thread_quietly || !call_actions_.start_call) {
+    return;
+  }
+  auto contact = contacts_ports_.get_contact(contact_id);
+  if (!contact || !*contact) {
+    return;
+  }
+  if ((*contact)->local.trust == TrustLevel::Blocked) {
+    ShowToast(Tr("contacts.call_blocked"));
+    return;
+  }
+  // The same "can this person be reached" read the page's Message button goes by.
+  ContactDetail eligibility;
+  ApplyMessagingEligibility(eligibility, **contact, contacts_ports_);
+  if (!eligibility.can_message) {
+    ShowToast(eligibility.message_hint.empty() ? Tr("contacts.cant_message_yet")
+                                               : std::string(eligibility.message_hint.c_str()));
+    return;
+  }
+  if (call_actions_.peer_calls_ready && !call_actions_.peer_calls_ready()) {
+    ShowToast(Tr("contacts.call_not_ready"));
+    return;
+  }
+  FlushPending();
+  if (contacts_ports_.register_contact_direct_endpoints) {
+    contacts_ports_.register_contact_direct_endpoints(**contact);
+  }
+  // The chat OnStartChat uses, found or made but not opened: a call must not make it the active chat or mark it read.
+  auto thread = contacts_ports_.find_direct_thread_quietly(contact_id, ThreadChannel::E2ePublic);
+  if (!thread) {
+    return;
+  }
+  if (contacts_ports_.warm_peer_for_thread) {
+    contacts_ports_.warm_peer_for_thread(thread->id);
+  }
+  (void)call_actions_.start_call(thread->id, video); // the call screen comes up by itself; the page stays
+}
+
+void ContactsController::ShowPersonPage(const std::string& contact_id) {
+  SyncFromStore();
+  if (DetailSheetOpen()) {
+    OnSelectContactSheet(contact_id);
+  } else {
+    OnSelectContact(contact_id);
+  }
+}
+
+void ContactsController::OnAddMemberFromChat() {
+  if (!selected_.member_preview || !selected_.member_from_dm || selected_.member_account.empty() || !add_stranger_) {
+    return;
+  }
+  auto added = add_stranger_(selected_.member_account.c_str());
+  if (!added) {
+    UserFeedback::Fail(Tr(added.error().message));
+    return;
+  }
+  ShowPersonPage(*added); // they are a contact now: the page turns into their own
+  NotifySurfaceChanged();
+}
+
+void ContactsController::OnBlockMember() {
+  // Only from a person's own 1:1 chat: a group member's page has no Block (it would make a 1:1 chat out of nothing).
+  if (!selected_.member_preview || !selected_.member_from_dm || selected_.member_account.empty() || !block_stranger_) {
+    return;
+  }
+  const std::string account = selected_.member_account.c_str();
+  const std::string name = selected_.title.empty() ? Tr("contacts.this_contact") : std::string(selected_.title.c_str());
+  ShowConfirm(
+      Tr("contacts.block_confirm_title"), Tr("contacts.block_confirm_body", {{"name", name}}),
+      [this, account, name](const bool ok) {
+        if (!ok || !selected_.member_preview || selected_.member_account != account.c_str()) {
+          return;
+        }
+        // The chat menu's own path (ChatPresenter::BlockStranger): the chat they are in is the one handed to the new
+        // contact; no other chat is made or opened.
+        auto blocked = block_stranger_(account);
+        if (!blocked) {
+          UserFeedback::Fail(Tr(blocked.error().message));
+          return;
+        }
+        // They are a (blocked) contact now: the page turns into their own.
+        ShowPersonPage(*blocked);
+        ShowToast(Tr("contacts.toast.blocked", {{"name", name}}));
+        if (contacts_ports_.notify_thread_changed) {
+          contacts_ports_.notify_thread_changed();
+        }
+        NotifySurfaceChanged();
+      },
+      true);
+}
+
 void ContactsController::OnSecureMessage() {
   if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || selected_.id.empty() ||
       !contacts_ports_.get_contact || !contacts_ports_.find_or_create_direct_thread) {
@@ -2042,6 +2264,9 @@ void ContactsController::OnFindSomeone() {
 void ContactsController::OnCopyId() {
   std::string value = selected_.account_id.c_str();
   std::string label = Tr("contacts.id_kind.account");
+  if (selected_.member_preview) {
+    value = selected_.member_account.c_str(); // a person who is not a contact: the account id the page looks up
+  }
   if (value.empty()) {
     value = selected_.peer_id.c_str();
     label = Tr("contacts.id_kind.peer");
@@ -2170,6 +2395,14 @@ bool ContactsController::SetContactTrust(const std::string& contact_id, const st
   return true;
 }
 
+void ContactsController::OnTapAvatar() {
+  const std::string src = selected_.icon_src.c_str();
+  if (!selected_.has_icon || src.empty() || !open_avatar_viewer_) {
+    return;
+  }
+  open_avatar_viewer_(src);
+}
+
 void ContactsController::OnToggleStar() {
   const std::string contact_id = selected_.id.c_str();
   if (!session_store_ || contact_id.empty() || selected_.member_preview) {
@@ -2201,6 +2434,10 @@ void ContactsController::OnSetTrust(const std::string& trust) {
   }
   LoadSelectedDetail(selected_.id.c_str());
   SyncFromStore();
+  if (new_chat_open_) {
+    SyncNewChat(); // New chat's list marks (or unmarks) the person at once
+    DirtyNewChat();
+  }
   if (blocked_open_) {
     SyncBlocked(); // unblocked on a contact page opened off the blocked list: gone from it on the way back
     DirtyBlocked();
@@ -2443,10 +2680,17 @@ void ContactsController::OnRemoveContact() {
           ShowToast(Tr("contacts.err.not_found"));
           return;
         }
-        if (!CloseContactDetailPane()) {
-          OnDetailDismissed();
+        // Another contact's page that is showing (a swiped row was removed) stays; the removed one's page goes.
+        if (selected_.id.empty() || selected_.id == contact_id.c_str()) {
+          if (!CloseContactDetailPane()) {
+            OnDetailDismissed();
+          }
         }
         SyncFromStore();
+        if (new_chat_open_) {
+          SyncNewChat(); // the person is gone from New chat's list at once
+          DirtyNewChat();
+        }
         DirtyAll();
         ShowToast(Tr("contacts.toast.removed"));
         if (contacts_ports_.notify_thread_changed) {
@@ -2735,14 +2979,31 @@ void ContactsController::OpenMyQr() {
   OpenMyQrPage();
 }
 
-// My QR code: the invite locator as a QR in its own sheet (the Me > Profile "QR code" button shows it inline).
+// My QR code: the invite locator as a QR in its own sheet.
 void ContactsController::OpenMyQrPage() {
-  if (my_qr_open_ || !shell_navigation_.push_layer) {
-    return;
-  }
-  auto qr = QrSvgContent(my_locator_);
+  OpenQrPage(QrOwner::Mine, my_name_.c_str(), my_locator_, Tr("contacts.my_qr_hint"));
+}
+
+void ContactsController::OpenQrPage(const QrOwner owner, const std::string& name, const std::string& locator,
+                                    const std::string& hint) {
+  qr_owner_ = owner;
+  qr_locator_ = locator;
+  qr_name_ = name.c_str();
+  qr_hint_ = hint.c_str();
+  auto qr = QrSvgContent(locator);
   my_qr_svg_rml_ = qr ? qr.value().c_str() : "";
-  DataModelHost::Instance().Dirty("contacts", "my_qr_svg_rml");
+  qr_can_share_ = static_cast<bool>(account_ports_.share_image);
+  const ImageSaveKind kind = account_ports_.save_image ? account_ports_.save_image_kind : ImageSaveKind::None;
+  qr_save_label_ = kind == ImageSaveKind::Photos ? Tr("contacts.qr.save_photos").c_str()
+                   : kind == ImageSaveKind::File ? Tr("contacts.qr.save_file").c_str()
+                                                 : "";
+  auto& host = DataModelHost::Instance();
+  for (const char* var : {"my_qr_svg_rml", "qr_name", "qr_hint", "qr_can_share", "qr_save_label"}) {
+    host.Dirty("contacts", var);
+  }
+  if (my_qr_open_ || !shell_navigation_.push_layer) {
+    return; // already showing: what it shows is the new owner's now
+  }
   my_qr_open_ = true;
   PaneSpec spec;
   spec.key = "my_qr";
@@ -2751,6 +3012,117 @@ void ContactsController::OpenMyQrPage() {
   if (flow_coordinator_.begin_modal) {
     flow_coordinator_.begin_modal(my_qr_layer_id_, {}, [this]() { OnMyQrDismissed(); });
   }
+}
+
+void ContactsController::OnShareQrImage(const ShareAnchor anchor) {
+  if (!account_ports_.share_image || qr_locator_.empty()) {
+    return;
+  }
+  auto png = QrPngBytes(qr_locator_);
+  if (!png) {
+    log().warning << "share QR image: " << png.error().message;
+    ShowToast(Tr("contacts.qr.share_failed"));
+    return;
+  }
+  if (!account_ports_.share_image(*png, anchor)) {
+    ShowToast(Tr("contacts.qr.share_failed"));
+  }
+}
+
+void ContactsController::OnSaveQrImage() {
+  if (!account_ports_.save_image || account_ports_.save_image_kind == ImageSaveKind::None || qr_locator_.empty()) {
+    return;
+  }
+  auto png = QrPngBytes(qr_locator_);
+  if (!png) {
+    log().warning << "save QR image: " << png.error().message;
+    ShowToast(Tr("contacts.qr.save_failed"));
+    return;
+  }
+  // The answer may come on any thread; the pill belongs on the UI thread.
+  account_ports_.save_image("pp-qr-code.png", std::move(*png), [](const ImageSaveResult result) {
+    AppRuntime::PostUI([result]() { ContactsController::Instance().OnQrImageSaved(result); });
+  });
+}
+
+void ContactsController::OnQrImageSaved(const ImageSaveResult result) {
+  switch (result) {
+    case ImageSaveResult::Saved:
+      ShowToast(Tr(account_ports_.save_image_kind == ImageSaveKind::Photos ? "contacts.qr.saved_photos"
+                                                                           : "contacts.qr.saved_file"));
+      break;
+    case ImageSaveResult::Denied:
+      ShowToast(Tr("contacts.qr.save_denied"), ToastDuration::Long);
+      break;
+    case ImageSaveResult::Failed:
+      ShowToast(Tr("contacts.qr.save_failed"));
+      break;
+    case ImageSaveResult::Cancelled:
+      break;
+  }
+}
+
+// A friend's QR code in the same sheet: his Account ID and his own nickname (never the remark), so a scan adds him.
+void ContactsController::OpenSelectedFriendQr() {
+  if (selected_.id.empty() || !selected_.can_share_qr) {
+    ShowToast(Tr("contacts.share.no_account"));
+    return;
+  }
+  const std::string name =
+      selected_.nickname.empty() ? std::string(selected_.short_id.c_str()) : std::string(selected_.nickname.c_str());
+  OpenQrPage(QrOwner::Friend, name, selected_.share_locator, Tr("contacts.friend_qr_hint"));
+}
+
+std::string ContactsController::FriendShareText() const {
+  return FriendInviteText(selected_.nickname.c_str(), selected_.share_account_id, selected_.share_locator);
+}
+
+void ContactsController::OnShareFriendAccount() {
+  if (!selected_.can_share_account) {
+    ShowToast(Tr("contacts.share.no_account"));
+    return;
+  }
+  ShareInviteOrCopy(
+      FriendShareText(),
+      [](const std::string& text, const ShareAnchor at) { return PlatformShareText(Backend::GetWindow(), text, at); },
+      {},
+      [](const std::string& text) {
+        if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+          system->SetClipboardText(text.c_str());
+        }
+      });
+}
+
+std::vector<ContextMenuAction> ContactsController::ShareFriendActions(const ui::Vector2i position) {
+  std::vector<ContextMenuAction> actions;
+  if (selected_.id.empty()) {
+    return actions;
+  }
+  if (selected_.can_share_account) {
+    actions.push_back({.id = "share_friend_account",
+                       .label = Tr("contacts.share_others.account"),
+                       .run = []() { ContactsController::Instance().OnShareFriendAccount(); },
+                       .detail = Tr("contacts.share_others.account_detail")});
+  }
+  actions.push_back({.id = "share_friend_card",
+                     .label = Tr("contacts.share_others.card"),
+                     .run = [position]() { ContactsController::Instance().OnShareContact(position); },
+                     .detail = Tr("contacts.share_others.card_detail")});
+  if (selected_.can_share_qr) {
+    actions.push_back({.id = "share_friend_qr",
+                       .label = Tr("contacts.share_others.qr"),
+                       .run = []() { ContactsController::Instance().OpenSelectedFriendQr(); },
+                       .detail = Tr("contacts.share_others.qr_detail")});
+  }
+  return actions;
+}
+
+void ContactsController::OnShareFriend(const ui::Vector2i position) {
+  std::vector<ContextMenuAction> actions = ShareFriendActions(position);
+  if (actions.empty()) {
+    return;
+  }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, Tr("contacts.share_others.title"));
 }
 
 void ContactsController::OnMyQrDismissed() {

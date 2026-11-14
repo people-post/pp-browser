@@ -473,6 +473,8 @@ struct CallInProgressState {
   ui::String call_id;
   ui::String title;
   ui::String subtitle;
+  /** A warning triangle before the subtitle (the call audio is broken). Bound. */
+  bool subtitle_warning = false;
   /** Secondary tip under subtitle (Local Network / mic / firewall). */
   ui::String status_hint;
   ui::String elapsed;
@@ -590,8 +592,8 @@ struct ShellState {
   ui::String layout_mode_str = "expanded";
   NavTab nav_tab = NavTab::Home;
   ui::String nav_tab_str = "home";
-  /** Phone tab bar: the tab it highlights. nav_tab, except under a hidden tab's page (Settings), where it is the tab
-   *  that page was entered from (ShellHost::SelectNavTab). */
+  /** Phone tab bar: the tab it highlights. nav_tab, except under Contacts (a hidden tab with no segment in the bar),
+   *  where it is the tab that page was entered from (ShellHost::SelectNavTab). Settings has its own segment. */
   ui::String nav_bar_tab_str = "home";
   /** Phone Settings: a secret page is pushed over a section (Security > Move to a new device). It keeps the tab bar
    *  off (SettingsController sets it through the navigation ports). */

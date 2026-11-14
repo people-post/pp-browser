@@ -1,8 +1,10 @@
 // DEV/PLAN-minimal-nav.md B / C: the phone's AI conversation list is a drawer from the left on the AI page. Its open
 // paths, its close paths and resets, the drag that opens it, and (with the real view mounted) its rows' swipes.
 #include "common/runtime/AppRuntime.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/IAssetLocator.h"
 #include "gui/CallChromeSync.h"
+#include "gui/chat/AiDrawerCount.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/chat/ChatScreenState.h"
 #include "gui/shell/DataModelHost.h"
@@ -24,7 +26,9 @@
 
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -377,6 +381,13 @@ TEST(AiDrawerTest, TheDragIsOfferedOnlyOnTheBareAiPage) {
   EXPECT_FALSE(PhoneHost(NavTab::Sessions).HomeRootShown()) << "not the AI page";
 }
 
+std::string ReadAsset(const std::string& relative) {
+  std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / relative);
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  return buffer.str();
+}
+
 // --- the real shell and the real ai_drawer view -------------------------------------------------------------------
 
 class AssetsLocator : public IAssetLocator {
@@ -523,52 +534,101 @@ TEST_F(ShellDrawerTest, TheRealViewMountsAndItsRowsSwipe) {
   EXPECT_EQ(actions_, std::vector<std::string>{"ai1:" + std::to_string(static_cast<int>(SessionSwipeAction::More))});
 }
 
-// The "you" row carries the device's link status under the nickname (ShellHost::SetChatsLink): nothing while unknown,
-// the teal cloud-tick icon and its word when online, the red cloud-slash icon and its word when offline.
-TEST_F(ShellDrawerTest, TheMeRowShowsTheLinkStatusUnderTheName) {
+// Owner 2026-11-14 (mockup 43, option 4): the phone drawer is the history list only. No avatar, name or link status
+// (Settings is the bottom bar's segment; the chat page shows the link status); the list's end spacer ends the list.
+TEST_F(ShellDrawerTest, TheDrawerHasNoMeBlockAndTheListEndsIt) {
   host_.OpenAiDrawer();
   Settle();
-  ui::Element* line = ById("ai-drawer-me")->QuerySelector(".ai-drawer-me-link");
-  ASSERT_NE(line, nullptr);
-  EXPECT_FALSE(line->IsVisible()) << "unknown state shows nothing";
-
-  auto count_visible = [&](const char* cls) {
+  EXPECT_EQ(ById("ai-drawer-me"), nullptr);
+  ASSERT_NE(ById("ai-drawer-sessions"), nullptr);
+  ui::Element* mount = ById("shell-ai-drawer-mount");
+  ASSERT_NE(mount, nullptr);
+  for (const char* cls :
+       {"ai-drawer-me", "ai-drawer-me-avatar", "ai-drawer-me-name", "ai-drawer-me-link", "link-dot"}) {
     ui::ElementList found;
-    ById("ai-drawer-me")->GetElementsByClassName(found, cls);
-    int n = 0;
-    for (ui::Element* e : found) {
-      n += e->IsVisible() ? 1 : 0;
-    }
-    return n;
-  };
+    mount->GetElementsByClassName(found, cls);
+    EXPECT_TRUE(found.empty()) << cls;
+  }
+  const std::string rml = ReadAsset("views/ai_drawer.rml");
+  EXPECT_FALSE(Has(rml, "ai-drawer-me"));
+  EXPECT_FALSE(Has(rml, "profile_nickname"));
+  EXPECT_FALSE(Has(rml, "chats_link_"));
+  const size_t list = rml.find("id=\"ai-drawer-sessions\"");
+  const size_t spacer = rml.find("id=\"ai-drawer-list-end\"");
+  ASSERT_NE(list, std::string::npos);
+  ASSERT_NE(spacer, std::string::npos);
+  EXPECT_LT(list, spacer);
+  EXPECT_EQ(rml.find("<button", spacer), std::string::npos) << "nothing after the list's end spacer but closers";
+}
 
-  host_.SetChatsLink(true, true);
-  Settle();
-  EXPECT_TRUE(line->IsVisible());
-  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--ok"), 1);
-  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--offline"), 0);
-  EXPECT_FALSE(host_.State().chats_link_text.empty());
-  EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos) << "the word is rendered";
+// Owner 2026-11-14 (mockup 44 section 10, suggestion 2, lower strip): a frosted strip at the drawer's bottom, 40dp plus
+// the home indicator, no line on top, the list scrolling under it, one small grey count line in it. Built like the
+// other frosted bars: a material element without children and a text sibling.
+TEST(AiDrawerStripTest, TheCountLineIsTheWholeListsNotTheSearchsAndEmptyWhenThereAreNone) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  for (const char* language : {"en", "zh-Hans"}) {
+    LocalizationService::Instance().SetPreferredLanguage(language);
+    const bool en = std::string(language) == "en";
+    EXPECT_EQ(AiDrawerCountLabel(0), "") << "empty history: nothing in the strip";
+    EXPECT_EQ(AiDrawerCountLabel(1), en ? "1 conversation" : "共 1 个对话");
+    EXPECT_EQ(AiDrawerCountLabel(23), en ? "23 conversations" : "共 23 个对话");
+    // The archived view says what it counts.
+    EXPECT_EQ(AiDrawerCountLabel(0, true), "");
+    EXPECT_EQ(AiDrawerCountLabel(1, true), en ? "1 archived conversation" : "共 1 个已归档对话");
+    EXPECT_EQ(AiDrawerCountLabel(23, true), en ? "23 archived conversations" : "共 23 个已归档对话");
+  }
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  // A search narrows ai_sessions, not the count: ApplySessionList passes the unfiltered row count.
+  std::ifstream source(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/chat/ChatController.cpp");
+  std::stringstream text;
+  text << source.rdbuf();
+  const std::string controller = text.str();
+  const size_t count = controller.find("AiDrawerCountLabel(list.ai_rows.size(), list.showing_archived_ai)");
+  const size_t filter = controller.find("const std::string ai_query = LowerAscii(shell_.ai_sessions_query.c_str());");
+  ASSERT_NE(count, std::string::npos);
+  ASSERT_NE(filter, std::string::npos);
+  EXPECT_LT(count, filter) << "taken before any filtering";
+  EXPECT_EQ(controller.find("AiDrawerCountLabel(shell_.ai_sessions.size())"), std::string::npos);
+}
 
-  host_.SetChatsLink(true, false);
-  Settle();
-  EXPECT_TRUE(line->IsVisible());
-  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--ok"), 0);
-  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--offline"), 1);
-  EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos);
+TEST(AiDrawerStripTest, TheStripIsAChildlessMaterialWithATextSiblingAndNothingTappable) {
+  const std::string rml = ReadAsset("views/ai_drawer.rml");
+  const size_t list_end = rml.find("id=\"ai-drawer-list-end\"");
+  const size_t strip = rml.find("<div class=\"ai-drawer-strip\" id=\"ai-drawer-strip\"></div>");
+  const size_t count = rml.find("id=\"ai-drawer-count\"");
+  ASSERT_NE(strip, std::string::npos) << "the material element has no children (the engine draws no blur otherwise)";
+  ASSERT_NE(count, std::string::npos);
+  EXPECT_LT(list_end, strip);
+  EXPECT_LT(strip, count);
+  EXPECT_NE(rml.find("{{ai_sessions_count_label}}"), std::string::npos);
+  EXPECT_EQ(rml.find("data-event-click", strip), rml.find("data-event-click", count)) << "no event on the strip";
+  EXPECT_EQ(rml.find("data-event-click", count), std::string::npos);
+  EXPECT_FALSE(Has(rml, "\"you\"")) << "the stale comment about the removed row is gone";
+  const std::string css = ReadAsset("themes/components.rcss");
+  EXPECT_TRUE(Has(css, ".ai-drawer-strip {\n  position: absolute;"));
+  const std::string colors = ReadAsset("themes/colors.rcss.tmpl");
+  EXPECT_TRUE(Has(
+      colors,
+      ".shell-drawer--frost .ai-drawer-strip {\n  background-color: {{x-bar-blur}};\n  backdrop-filter: blur(20px);"))
+      << "the same frosted look as the top bar, following the Transparency setting";
+  EXPECT_TRUE(Has(colors, ".ai-drawer-strip {\n  background-color: {{x-bar}};\n}"))
+      << "solid with Transparency off, no line on top";
+}
 
-  host_.SetChatsLink(ChatsLink::Connecting);
+TEST_F(ShellDrawerTest, TheStripAndTheListsEndSpacerAreFortyDpPlusTheHomeIndicator) {
+  host_.State().safe_area_bottom_dp = 34;
+  host_.SyncLayout();
+  host_.OpenAiDrawer();
   Settle();
-  EXPECT_TRUE(line->IsVisible());
-  EXPECT_EQ(host_.State().chats_link_state, "connecting");
-  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--ok"), 0);
-  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--offline"), 0);
-  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--connecting"), 1);
-  EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos);
-
-  host_.SetChatsLink(false, false);
-  Settle();
-  EXPECT_FALSE(line->IsVisible());
+  ui::Element* strip = ById("ai-drawer-strip");
+  ui::Element* end = ById("ai-drawer-list-end");
+  ui::Element* count = ById("ai-drawer-count");
+  ASSERT_NE(strip, nullptr);
+  ASSERT_NE(end, nullptr);
+  ASSERT_NE(count, nullptr);
+  const float expected_strip = strip->GetBox().GetSize(ui::BoxArea::Border).y;
+  EXPECT_FLOAT_EQ(end->GetBox().GetSize(ui::BoxArea::Border).y, expected_strip) << "the last row scrolls clear";
+  EXPECT_GE(expected_strip, 40.f);
 }
 
 TEST_F(ShellDrawerTest, APickedConversationClosesTheDrawerAndOpensOverTheAiPage) {

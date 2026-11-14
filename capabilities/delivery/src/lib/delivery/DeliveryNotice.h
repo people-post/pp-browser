@@ -45,6 +45,11 @@ enum class SendFailure {
   RecipientNotOnRelay,
   /** The recipient charges strangers to open a conversation, and payment is not available yet (P001 / MR005). */
   PaymentRequired,
+  /**
+   * The relay has no registration for us (IsRelayUserNotRegistered). Kept for the chat's "update my card" fix; a relay
+   * since multi-relay R1 takes a send from an account it does not know (as a foreign sender's), so no send fails so.
+   */
+  SenderNotRegistered,
 };
 
 /** `failure` as a word for a shareable line (common/Diag.h). */
@@ -127,5 +132,7 @@ ThreadMessage MakeSendFailureRow(const std::string& thread_id, const std::string
                                  const std::string& reason_wire, int64_t timestamp_ms);
 /** The reason of a send-failure row; none for any other message. */
 std::optional<std::string> SendFailureRowReason(const ThreadMessage& message);
+/** The message a send-failure row is about; none for any other message. */
+std::optional<std::string> SendFailureRowMessageId(const ThreadMessage& message);
 
 } // namespace pbr

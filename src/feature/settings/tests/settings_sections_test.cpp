@@ -104,6 +104,25 @@ TEST(SettingsSectionsTest, AdvancedSettingsSwitchAndAdvancedOnlySections) {
   EXPECT_TRUE(about.IsPersisted(state, bootstrap));
 }
 
+// The tester switch (five taps on the version) is its own pref: off by default, independent of the advanced switch.
+TEST(SettingsSectionsTest, TesterSwitchIsItsOwnPreferenceAndOffByDefault) {
+  pbr::BootstrapResult bootstrap;
+  pbr::SettingsUiState state;
+  pbr::AboutSettingsSection about;
+  about.SyncFromSession(bootstrap, state);
+  EXPECT_EQ(state.show_tester_options, "off");
+  EXPECT_FALSE(pbr::ProfilePreferences{}.show_tester_options);
+  state.show_tester_options = "on";
+  EXPECT_FALSE(about.IsPersisted(state, bootstrap));
+  EXPECT_EQ(state.show_advanced_settings, "off") << "the advanced switch does not follow";
+  bootstrap.profile_prefs.show_tester_options = true;
+  EXPECT_TRUE(about.IsPersisted(state, bootstrap));
+  pbr::SettingsUiState other;
+  about.SyncFromSession(bootstrap, other);
+  EXPECT_EQ(other.show_tester_options, "on");
+  EXPECT_EQ(other.show_advanced_settings, "off");
+}
+
 // Me → Storage → Auto-download: three choices; "everything" has a Wi-Fi and a mobile-network tick on phones only,
 // and unticking the last one falls back to the default choice.
 TEST(SettingsSectionsTest, AutoDownloadChoicesTicksAndFallback) {

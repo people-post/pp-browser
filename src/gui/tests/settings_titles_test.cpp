@@ -1,5 +1,5 @@
 // Settings titles (#155, phase 1 of DEV/PLAN-settings-reorg.md): every page has one title, centred in its bar; Home's
-// bar says "Me" and there is no large heading under it on phones.
+// bar says "Settings" and there is no large heading under it on phones.
 #include "foundation/i18n/LocalizationService.h"
 
 #include <gtest/gtest.h>
@@ -73,16 +73,16 @@ TEST(SettingsTitlesTest, TheTesterPagesStorageLibraryIsNotInsideTheGroupedSectio
   const size_t library = rml.find("{{i18n:settings.storage.library.title}}");
   ASSERT_NE(library, std::string::npos);
   const size_t own_section =
-      rml.rfind("<div class=\"settings-section stack storage-section\" data-if=\"advanced\">", library);
+      rml.rfind("<div class=\"settings-section stack storage-section\" data-if=\"tester\">", library);
   ASSERT_NE(own_section, std::string::npos);
   const size_t grouped_close =
-      rml.rfind("</div>\n      <div class=\"settings-section stack storage-section\" data-if=\"advanced\">", library);
+      rml.rfind("</div>\n      <div class=\"settings-section stack storage-section\" data-if=\"tester\">", library);
   EXPECT_NE(grouped_close, std::string::npos) << "the grouped section closes before the library section opens";
 }
 
-TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithAVersionLineAndTheAccountId) {
-  // Follows logs/mockups/settings-reorg-1110.html: no icon tiles on the entry rows, the id under the name, the app
-  // version at the end (not tappable here: the five taps stay on the help page's version row).
+TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithTheCardCaptionAndNoVersionLine) {
+  // Follows logs/mockups/settings-reorg-1110.html: no icon tiles on the entry rows, the card caption under the name, no app
+  // version line (the version and its five taps live on the help page).
   const std::string rml = ReadAsset("views/settings.rml");
   const size_t phone = rml.find("<div class=\"settings-phone-only me-home\">");
   ASSERT_NE(phone, std::string::npos);
@@ -90,9 +90,9 @@ TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithAVersionLineAndTheAccountId) {
   ASSERT_NE(phone_end, std::string::npos);
   const std::string home = rml.substr(phone, phone_end - phone);
   EXPECT_EQ(home.find("group-icon"), std::string::npos);
-  EXPECT_NE(home.find("<p class=\"me-card-meta\" data-if=\"profile_account_id != ''\">{{profile_account_id}}</p>"),
-            std::string::npos);
-  EXPECT_NE(home.find("<p class=\"group-foot me-home-ver\">{{app_name}} {{app_version}}</p>"), std::string::npos);
+  EXPECT_NE(home.find("<p class=\"me-card-meta\">{{i18n:settings.card.caption}}</p>"), std::string::npos);
+  EXPECT_EQ(home.find("me-home-ver"), std::string::npos) << "no version text at the bottom of the home page";
+  EXPECT_EQ(home.find("app_version"), std::string::npos);
   EXPECT_EQ(home.find("tap_version"), std::string::npos);
   const std::string css = ReadAsset("themes/components.rcss");
   EXPECT_NE(css.find(".shell-layer-compact .me-home .group-card,\n.shell-layer-compact .settings-mock .group-card {\n"
@@ -101,20 +101,77 @@ TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithAVersionLineAndTheAccountId) {
   EXPECT_NE(css.find(".shell-layer-compact .settings-mock .group-row-body {\n  min-height: 52dp;"), std::string::npos);
 }
 
+TEST(SettingsTitlesTest, TheMeCardHasThreeButtonsCopyShareAndQr) {
+  // At the right end of the card's single row, in this order, identical buttons, each with its event and short label.
+  const std::string rml = ReadAsset("views/settings.rml");
+  const size_t card = rml.find("<div class=\"me-card-row\">");
+  const size_t row = rml.find("<div class=\"me-card-acts row\">");
+  ASSERT_NE(card, std::string::npos);
+  ASSERT_NE(row, std::string::npos);
+  const size_t end = rml.find("</div>", row);
+  const std::string buttons = rml.substr(row, end - row);
+  const size_t copy = buttons.find("data-event-click=\"copy_profile_id()\"");
+  const size_t share = buttons.find("data-event-click=\"share_profile()\"");
+  const size_t qr = buttons.find("data-event-click=\"show_my_qr()\"");
+  ASSERT_NE(copy, std::string::npos);
+  ASSERT_NE(share, std::string::npos);
+  ASSERT_NE(qr, std::string::npos);
+  EXPECT_LT(copy, share);
+  EXPECT_LT(share, qr);
+  EXPECT_NE(buttons.find("{{i18n:settings.card.copy}}"), std::string::npos);
+  EXPECT_NE(buttons.find("{{i18n:settings.card.share}}"), std::string::npos);
+  EXPECT_NE(buttons.find("{{i18n:settings.card.qr}}"), std::string::npos);
+  size_t count = 0;
+  for (size_t at = buttons.find("class=\"me-card-act\""); at != std::string::npos;
+       at = buttons.find("class=\"me-card-act\"", at + 1)) {
+    ++count;
+  }
+  EXPECT_EQ(count, 3u);
+  // No account id under the name, no separate copy icon, no hidden share-card button: a caption line only.
+  const std::string card_markup = rml.substr(card, end - card);
+  EXPECT_EQ(card_markup.find("profile_relay_id"), std::string::npos);
+  EXPECT_EQ(card_markup.find("relay_id_none"), std::string::npos);
+  EXPECT_EQ(card_markup.find("cd-icon-btn"), std::string::npos);
+  EXPECT_EQ(card_markup.find("share_profile_card"), std::string::npos);
+  EXPECT_NE(card_markup.find("<p class=\"me-card-meta\">{{i18n:settings.card.caption}}</p>"), std::string::npos);
+}
+
+TEST(SettingsTitlesTest, TheMeCardTextIsLabelledInBothLanguages) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("settings.card.caption"), "我的名片");
+  EXPECT_EQ(Tr("settings.card.copy"), "复制");
+  EXPECT_EQ(Tr("settings.card.share"), "分享");
+  EXPECT_EQ(Tr("settings.card.qr"), "二维码");
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  EXPECT_EQ(Tr("settings.card.caption"), "My card");
+  EXPECT_EQ(Tr("settings.card.copy"), "Copy");
+  EXPECT_EQ(Tr("settings.card.share"), "Share");
+  EXPECT_EQ(Tr("settings.card.qr"), "QR code");
+}
+
 TEST(SettingsTitlesTest, TheProfilePageFollowsTheMockupAndKeepsItsAccountGates) {
   const std::string rml = ReadAsset("views/settings_section_profile.rml");
   EXPECT_NE(rml.find("settings-section--grouped settings-mock stack"), std::string::npos);
-  // The id group: the id, then Copy, Share and QR rows (the icon buttons are gone), the id help under it.
-  const size_t id = rml.find("{{i18n:settings.profile.id_row}}");
-  const size_t copy = rml.find("copy_profile_id()", id);
-  const size_t share = rml.find("share_profile()", copy);
-  const size_t qr = rml.find("toggle_profile_qr()", share);
-  ASSERT_NE(id, std::string::npos);
-  EXPECT_LT(id, copy);
-  EXPECT_LT(copy, share);
-  EXPECT_LT(share, qr);
+  // The phone's blocks have no Copy row any more (the Me card has Copy, Share and QR); the desktop's own button row
+  // keeps its Copy, Share and QR buttons.
+  const size_t desktop = rml.find("<div class=\"me-profile-actions row\">");
+  ASSERT_NE(desktop, std::string::npos);
+  const std::string phone_part = rml.substr(0, desktop);
+  EXPECT_EQ(phone_part.find("copy_profile_id()"), std::string::npos);
+  EXPECT_EQ(phone_part.find("share_profile()"), std::string::npos);
+  EXPECT_EQ(phone_part.find("toggle_profile_qr()"), std::string::npos);
+  EXPECT_EQ(phone_part.find("profile_qr_svg_rml"), std::string::npos) << "no inline QR on the phone page";
+  const size_t d_copy = rml.find("copy_profile_id()", desktop);
+  const size_t d_share = rml.find("share_profile()", d_copy);
+  const size_t d_qr = rml.find("toggle_profile_qr()", d_share);
+  ASSERT_NE(d_copy, std::string::npos);
+  EXPECT_LT(d_copy, d_share);
+  EXPECT_LT(d_share, d_qr);
+  EXPECT_NE(rml.find("settings-desktop-only", d_qr - 300), std::string::npos);
   EXPECT_EQ(rml.find("group-id-btn"), std::string::npos);
-  EXPECT_NE(rml.find("{{i18n:settings.profile.id_help}}"), std::string::npos);
+  EXPECT_EQ(rml.find("settings.profile.id_foot"), std::string::npos);
+  EXPECT_EQ(rml.find("settings.profile.id_help"), std::string::npos);
   // The account group keeps today's gates: status for everyone, expiry and auto-renew behind the advanced flag,
   // the register button behind its own binding; nothing was un-gated.
   EXPECT_NE(rml.find("data-if=\"advanced && profile_registration_expires != ''\""), std::string::npos);
@@ -151,12 +208,12 @@ TEST(SettingsTitlesTest, PrivacyFollowsTheMockupOrderAndWords) {
   EXPECT_EQ(Tr("settings.profile.peer_id_copied"), "Account ID copied");
 }
 
-TEST(SettingsTitlesTest, HomeTitleIsMe) {
+TEST(SettingsTitlesTest, HomeTitleIsSettings) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("en");
-  EXPECT_EQ(Tr("settings.title"), "Me");
+  EXPECT_EQ(Tr("settings.title"), "Settings");
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(Tr("settings.title"), "我");
+  EXPECT_EQ(Tr("settings.title"), "设置");
   LocalizationService::Instance().SetPreferredLanguage("en");
 }
 

@@ -62,61 +62,14 @@ TEST(RmlBindingGuardTest, DataRmlIsOnlyUsedForMarkupFields) {
                                     }();
 }
 
-// The AI drawer's "you" row binds the avatar and name from the settings model (each element declares it) and the status
-// line from two window-model fields (ShellHost::SetChatsLink), which show only while the state is non-empty.
-TEST(RmlBindingGuardTest, TheAiDrawerMeRowResolvesItsNamesAndTheLinkStatus) {
-  const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "ai_drawer.rml");
-  const size_t begin = rml.find("<button class=\"ai-drawer-me\"");
-  ASSERT_NE(begin, std::string::npos);
-  const std::string row = rml.substr(begin);
-  EXPECT_NE(row.find("<div class=\"ai-drawer-me-avatar\" data-model=\"settings\""), std::string::npos);
-  EXPECT_NE(row.find("<p class=\"ai-drawer-me-name\" data-model=\"settings\">{{profile_nickname}}</p>"),
-            std::string::npos);
-  const std::string settings = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/SettingsController.cpp");
-  for (const char* name :
-       {"profile_has_icon", "profile_avatar_tone", "profile_icon_src", "profile_avatar_letter", "profile_nickname"}) {
-    EXPECT_NE(row.find(name), std::string::npos) << name << " used by the row";
-    EXPECT_NE(settings.find(std::string("ctor.Bind(\"") + name + "\""), std::string::npos)
-        << name << " is bound in the settings model";
-  }
-  EXPECT_NE(row.find("class=\"ai-drawer-me-link\" data-if=\"chats_link_state != ''\""), std::string::npos);
-  EXPECT_NE(row.find("{{chats_link_text}}"), std::string::npos);
-  EXPECT_NE(row.find("cloud-ok.svg"), std::string::npos);
-  EXPECT_NE(row.find("cloud-off.svg"), std::string::npos);
+// The drawer has no "you" row any more (owner 2026-11-14); the link status is the chat list page's, bound from two
+// window-model fields (ShellHost::SetChatsLink).
+TEST(RmlBindingGuardTest, TheChatListLinkStatusStillResolves) {
+  const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "sidebar.rml");
+  EXPECT_NE(rml.find("{{chats_link_text}}"), std::string::npos);
   const std::string host = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/shell/ShellHost.cpp");
   EXPECT_NE(host.find("ctor.Bind(\"chats_link_state\""), std::string::npos);
   EXPECT_NE(host.find("ctor.Bind(\"chats_link_text\""), std::string::npos);
-}
-
-// The drawer's "you" row is 76dp: the stylesheet's row, the spacer under the list and ShellHost's constant agree.
-TEST(RmlBindingGuardTest, TheAiDrawerMeRowHeightIsOneNumber) {
-  const std::string css = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "themes" / "components.rcss");
-  const std::string host = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/shell/ShellHost.cpp");
-  EXPECT_NE(host.find("kAiDrawerMeHeightDp = 76.f"), std::string::npos);
-  const size_t row = css.find(".ai-drawer-me {");
-  const size_t spacer = css.find(".ai-drawer-list-end {");
-  ASSERT_NE(row, std::string::npos);
-  ASSERT_NE(spacer, std::string::npos);
-  EXPECT_NE(css.substr(row, 400).find("min-height: 76dp;"), std::string::npos);
-  EXPECT_NE(css.substr(spacer, 120).find("height: 76dp;"), std::string::npos);
-  const size_t avatar = css.find(".ai-drawer-me-avatar {");
-  ASSERT_NE(avatar, std::string::npos);
-  EXPECT_NE(css.substr(avatar, 260).find("width: 56dp;"), std::string::npos);
-}
-
-// The drawer's "you" row tap is the window model's event (ShellHost registers open_settings_from_avatar there; the
-// drawer is not inside the page's shell model).
-TEST(RmlBindingGuardTest, TheDrawerMeRowTapIsHandledByTheWindowModel) {
-  const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "ai_drawer.rml");
-  EXPECT_NE(rml.find("id=\"ai-drawer-me\" type=\"button\" data-event-click=\"open_settings_from_avatar()\""),
-            std::string::npos);
-  const std::string host = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/shell/ShellHost.cpp");
-  const size_t window_model = host.find("Register(context, \"window\"");
-  const size_t event = host.find("BindEventCallback(\"open_settings_from_avatar\"");
-  ASSERT_NE(window_model, std::string::npos);
-  ASSERT_NE(event, std::string::npos);
-  EXPECT_LT(window_model, event);
-  EXPECT_GT(host.find("Register(context, ", window_model + 1), event) << "inside the window model's constructor";
 }
 
 // The round back on New chat and Add contact is the shell's transient chrome (window model, transient_back), and the
@@ -142,25 +95,22 @@ TEST(RmlBindingGuardTest, NewChatAndAddContactBackReachTheShellsTransientBack) {
       << "the bar over the shell's back lets taps through";
 }
 
-// Kenneth 2026-11-07: the AI drawer's last row was hidden behind the "you" bar (the engine leaves a scroller's bottom
-// padding out of its scroll height): an end spacer, sized by ShellHost for the bar and the home indicator. The list
+// Kenneth 2026-11-07: the AI drawer's last row was hidden behind a bottom bar (the engine leaves a scroller's bottom
+// padding out of its scroll height): an end spacer, sized by ShellHost for the home indicator. The list
 // draws 20 conversations and 20 more near its end (SessionListWindow, like the chats list).
 TEST(RmlBindingGuardTest, TheAiDrawerListEndsWithASpacerAndGrowsOnScroll) {
   const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "ai_drawer.rml");
   const size_t list = rml.find("id=\"ai-drawer-sessions\"");
   const size_t rows = rml.find("data-for=\"session : ai_sessions\"");
   const size_t spacer = rml.find("id=\"ai-drawer-list-end\"");
-  const size_t me = rml.find("id=\"ai-drawer-me\"");
   ASSERT_NE(list, std::string::npos);
   ASSERT_NE(spacer, std::string::npos);
-  ASSERT_NE(me, std::string::npos);
   EXPECT_LT(rows, spacer);
-  EXPECT_LT(spacer, me) << "the spacer is the list's last child, before the bar";
+  EXPECT_EQ(rml.find("ai-drawer-me"), std::string::npos) << "no \"you\" bar: the spacer only clears the home indicator";
   EXPECT_NE(rml.substr(list, rml.find('>', list) - list).find("data-event-scroll=\"ai_sessions_scroll()\""),
             std::string::npos);
   const std::string host = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/shell/ShellHost.cpp");
   EXPECT_NE(host.find("GetElementById(\"ai-drawer-list-end\"), \"height\""), std::string::npos);
-  EXPECT_NE(host.find("GetElementById(\"ai-drawer-me\"), \"padding-bottom\""), std::string::npos);
   const std::string controller = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/chat/ChatController.cpp");
   EXPECT_NE(controller.find("BindEventCallback(\"ai_sessions_scroll\""), std::string::npos);
 }

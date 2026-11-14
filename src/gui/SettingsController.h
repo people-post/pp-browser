@@ -42,6 +42,11 @@ class Context;
 
 namespace pbr {
 
+/**
+ * Tester row: the Ask AI privacy card shows again on the next open (clears `ai_panel_intro_seen`). Saved at once.
+ */
+Roe<void> ClearAskAiIntroSeen(SessionStore& store);
+
 /** Me → Notifications shows the "set Banner Style to Persistent" row only for a banner that goes away by itself. */
 inline bool ShowCallBannerTip(BannerStyle style) {
   return style == BannerStyle::Temporary;
@@ -100,6 +105,11 @@ public:
    * too), the desktop asks PP 客服 (sends the question; the answer arrives in that chat).
    */
   void OnAskSettingHelp(const std::string& label_key);
+  /**
+   * A "?" that explains a setting from this app's own text: a small alert with `title_key`'s text as its title and
+   * `text_key`'s as its body (both `settings.*` locale keys) and one OK. Local only: no AI, no support chat, no network.
+   */
+  void OnShowSettingNote(const std::string& title_key, const std::string& text_key);
   /** Shell layout / navigation. Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);
   /** Toast / dialog feedback. Clear via BindShellFeedback({}). */
@@ -146,6 +156,24 @@ public:
   void OpenNetworkSettings();
   /** Me → `section_id` from elsewhere in the app (Home's Security widget opens "security"). */
   void OpenSection(const std::string& section_id);
+  /**
+   * The chats list's "reconnect" row or alert (B216): register again, as Me → Profile's button does, without its
+   * "renewed" line ("Reconnected" comes when a poll gets through). `done(registered)` when it ends
+   * (SettingsProfileActions::Register).
+   */
+  void ReconnectAccount(std::function<void(bool ok)> done = {});
+  /** A registration waits for the automatic renewal in flight (ChatController::RunWhenRegistrationIdle). */
+  void BindRunWhenRegistrationIdle(std::function<void(std::function<void()>)> run);
+  /** The Me card's "QR code" button opens the full-page My QR code. */
+  void BindShowMyQr(std::function<void()> show);
+  /** The rows "Service" offers now (prod, custom, and QA only with a QA build and the tester options on); `OnChooseBackend` shows exactly these. */
+  std::vector<SettingsChoicePage::Option> BackendChoiceOptions() const;
+  /** Test seam: what the Service chooser does for a picked row id (a public forwarder; tests must not widen access with `#define private public`, which breaks the MSVC link). */
+  void ChooseBackendForTest(const std::string& id) { ApplyBackendChoice(id); }
+  /** Test seam: the phone's Preset chooser, by preset id (as `ShowChoice` would call it). */
+  void ChooseLlmPresetForTest(const std::string& id) { ApplyLlmPresetChoice(id); }
+  /** Test seam: how many times the preset was applied (each pick must apply once). */
+  size_t LlmPresetAppliesForTest() const { return llm_preset_applies_; }
   /** Refresh reachability Connection card via SettingsCommands ports. */
   void SyncReachability();
   /** Persist skip/ack for the Me → Network reachability nudge (condition-keyed). */
@@ -154,6 +182,7 @@ public:
 private:
   struct SettingsBindings {
     ui::String llm_preset = "brief";
+    ui::String llm_preset_label;
     ui::String llm_base_url;
     ui::String llm_model;
     ui::String llm_api_key;
@@ -199,6 +228,7 @@ private:
     ui::String profile_registration_expires;
     ui::String profile_register_label = "Register on network";
     bool profile_show_register = true;
+    bool profile_register_primary = true;
     bool profile_show_rotate = false;
     ui::String profile_icon_src;
     bool profile_has_icon = false;
@@ -238,6 +268,9 @@ private:
     ui::String show_advanced_settings = "off";
     /** show_advanced_settings == "on"; templates gate technical rows on it. */
     bool advanced = false;
+    ui::String show_tester_options = "off";
+    /** show_tester_options == "on"; the Test options page gates on it. */
+    bool tester = false;
     ui::String profile_label;
     ui::String config_dir;
     ui::String data_dir;
@@ -277,6 +310,13 @@ private:
 
   // Data-model events with more to them than one call.
   void OnLlmPresetChanged(ui::Event& ev);
+  /** The phone's "Preset" row: the chooser page lists the same four presets as the desktop `<select>`. */
+  void OnChooseLlmPreset(ui::Event& ev);
+  /** What a pick in either control does once `bindings_.llm_preset` holds the new value (defaults, save). */
+  void ApplyLlmPreset();
+  /** The preset the phone chooser applied last: change events echoing it from the hidden <select> are ignored. */
+  std::string llm_preset_chosen_;
+  size_t llm_preset_applies_ = 0;
   void ToggleNodeEnabled();
   void RetestReachability();
   void TryUpnpPort();
@@ -302,9 +342,11 @@ private:
   void ToggleCallDiagnostics();
   void ToggleHomeShowDynamic();
   void ToggleShowAdvancedSettings();
+  void ToggleShowTesterOptions();
   void OnTapVersion();
   /** Me → AI assistant: the AI dot's switch, look (`a`–`d`) and size (`s` / `m` / `l`), saved to the profile prefs at once. */
   void ToggleHomeAnimatedLogo();
+  void ShowAskAiIntroAgain();
   void ToggleAiDot();
   void SetAiDotLook(const std::string& look);
   /** "Assistant size": the pushed choice page (phones) with small / medium / large. */
@@ -361,6 +403,10 @@ private:
   bool FlushSection(const std::string& section_id, bool show_toast = true);
   /** Blur / leave-Me: flush nickname only when it differs from last loaded/saved. */
   void CommitProfileNickname(bool show_toast = false);
+  /** Phone profile page: the nickname row opens the rename dialog (`show_prompt`); nothing without that port. */
+  void EditProfileNickname();
+  /** The dialog's OK: saves through FlushSection; the page shows the new name only once it was saved. */
+  void ApplyProfileNicknameFromDialog(const std::string& value);
   void MaybeShowSaveToast(const std::string& section_id);
   void ReportFailure(const Error& err) override;
   void ReportFailure(const std::string& technical_message);
@@ -389,6 +435,7 @@ private:
   void OnChooseUnlockGrace(ui::Event& ev);
   void ApplyUnlockGraceChoice(const std::string& minutes_id);
   void ApplyBackendChoice(const std::string& env);
+  void ApplyLlmPresetChoice(const std::string& preset);
   void ApplyDirectConnectionsChoice(const std::string& audience);
   void ApplyGroupInvitePolicyChoice(const std::string& policy);
   void ApplyAttachmentDownloadPolicyChoice(const std::string& policy);

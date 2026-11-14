@@ -138,6 +138,7 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
     session_handle.RegisterMember("id", &SessionDisplayRow::id);
     session_handle.RegisterMember("title", &SessionDisplayRow::title);
     session_handle.RegisterMember("preview", &SessionDisplayRow::preview);
+    session_handle.RegisterMember("preview_icon", &SessionDisplayRow::preview_icon);
     session_handle.RegisterMember("preview_empty", &SessionDisplayRow::preview_empty);
     session_handle.RegisterMember("kind", &SessionDisplayRow::kind);
     session_handle.RegisterMember("unread_count", &SessionDisplayRow::unread_count);
@@ -206,9 +207,11 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
   ctor.Bind("showing_archived_ai", &state.showing_archived_ai);
   ctor.Bind("archived_entry_label_ai", &state.archived_entry_label_ai);
   ctor.Bind("archived_entry_label", &state.archived_entry_label);
+  ctor.Bind("show_reconnect_banner", &state.show_reconnect_banner);
   ctor.Bind("sessions_more", &state.sessions_more);
   ctor.Bind("sessions_query", &state.sessions_query);
   ctor.Bind("ai_sessions_query", &state.ai_sessions_query);
+  ctor.Bind("ai_sessions_count_label", &state.ai_sessions_count_label);
   ctor.Bind("working_set_active", &state.working_set_active);
   ctor.Bind("working_set_title", &state.working_set_title);
   ctor.Bind("working_set_subtitle", &state.working_set_subtitle);
@@ -324,6 +327,7 @@ void DirtyChat() {
 void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "sessions");
   DataModelHost::Instance().Dirty("shell", "ai_sessions");
+  DataModelHost::Instance().Dirty("shell", "ai_sessions_count_label");
   DataModelHost::Instance().Dirty("shell", "home_date_label");
   for (const char* name :
        {"home_widgets", "home_favorites", "home_recent", "home_missed_calls", "home_calls_latest", "home_mentions",
@@ -337,6 +341,7 @@ void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "showing_archived_ai");
   DataModelHost::Instance().Dirty("shell", "archived_entry_label_ai");
   DataModelHost::Instance().Dirty("shell", "archived_entry_label");
+  DataModelHost::Instance().Dirty("shell", "show_reconnect_banner");
   DataModelHost::Instance().Dirty("shell", "sessions_more");
   DataModelHost::Instance().Dirty("shell", "working_set_active");
   DataModelHost::Instance().Dirty("shell", "working_set_title");

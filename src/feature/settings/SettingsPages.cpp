@@ -50,14 +50,14 @@ const std::vector<SettingsPage>& SettingsPages() {
        3,
        {"network", "llm", "integrations", "security", "profile", nullptr},
        0,
-       true},
+       SettingsPageGate::Advanced},
       {"tester",
        "settings_section_tester",
        "settings.tester.title",
        3,
-       {"network", "appearance", "security", "storage", nullptr},
+       {"appearance", "security", "storage", nullptr},
        Bit(SettingsPageAction::RefreshCasLibrary),
-       true},
+       SettingsPageGate::Tester},
   };
   return pages;
 }
@@ -75,10 +75,12 @@ bool SettingsPageHas(const SettingsPage& page, const SettingsPageAction action) 
   return (page.actions & Bit(action)) != 0;
 }
 
-std::vector<const SettingsPage*> ListedSettingsPages(const bool advanced) {
+std::vector<const SettingsPage*> ListedSettingsPages(const bool advanced, const bool tester) {
   std::vector<const SettingsPage*> listed;
   for (const SettingsPage& page : SettingsPages()) {
-    if (advanced || !page.advanced_only) {
+    const bool shown = page.gate == SettingsPageGate::None || (page.gate == SettingsPageGate::Advanced && advanced) ||
+                       (page.gate == SettingsPageGate::Tester && tester);
+    if (shown) {
       listed.push_back(&page);
     }
   }

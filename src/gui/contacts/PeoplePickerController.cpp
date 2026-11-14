@@ -1670,7 +1670,7 @@ void PeoplePickerController::OpenMemberProfile(const GroupMemberRow& row) {
     return;
   }
   if (contacts_notify_.show_member_sheet) {
-    contacts_notify_.show_member_sheet(row.identity, row.title, std::string());
+    contacts_notify_.show_member_sheet(row.identity, row.title, std::string(), /*from_dm=*/false);
   }
 }
 

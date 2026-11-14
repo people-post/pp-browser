@@ -67,6 +67,12 @@ Roe<std::optional<RegistrationResult>> MaybeAutoRenewNetworkOnly(IRegistrationCl
                                                                  IdentityStore& identity, bool auto_renew_enabled,
                                                                  const RegistrationPublishOpts& publish = {});
 
+/**
+ * The server refused the registration itself (RegistrationHttpStatusError: a 4xx but 408 / 429), as opposed to a
+ * failure that may pass (network, timeout, 5xx, 408, 429, or an untyped local error).
+ */
+bool IsRegistrationRefused(const Error& error);
+
 Roe<RegistrationResult> UpdateRegisteredNickname(IRegistrationClient& registration, IdentityStore& identity,
                                                  const std::string& nickname);
 /**

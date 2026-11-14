@@ -68,6 +68,36 @@ TEST(ChatRowAvatarTest, TheBlockMarkIsPhoneOnlyAndSitsBeforeThePreview) {
   EXPECT_NE(rml.find("data-if=\"session.blocked\"", mark), std::string::npos);
 }
 
+// Kenneth 2026-11-13: a call record's preview leads with its state icon (ChatSessionRow::preview_icon), bound once per
+// icon, before the preview text, on desktop and phone alike (the rule has no compact-only guard).
+TEST(ChatRowAvatarTest, ACallPreviewIconReachesTheRowAndTheTemplateBindsEachStateIcon) {
+  ChatSessionRow from;
+  from.id = "t5";
+  from.title = "Eve";
+  from.kind = "public";
+  from.preview = "1:05";
+  from.preview_icon = "phone-outgoing";
+  EXPECT_EQ(std::string(ToSessionDisplayRow(from).preview_icon.c_str()), "phone-outgoing");
+  from.blocked = true;
+  EXPECT_TRUE(std::string(ToSessionDisplayRow(from).preview_icon.c_str()).empty());
+
+  const std::string rml = ReadAsset("views/sidebar.rml");
+  const size_t preview = rml.find("<p class=\"sidebar-session-preview\"");
+  ASSERT_NE(preview, std::string::npos);
+  for (const char* icon :
+       {"phone-outgoing", "phone-incoming", "phone-x", "video-outgoing", "video-incoming", "video-x"}) {
+    const std::string bound = std::string("data-if=\"session.preview_icon == '") + icon + "'\"";
+    const size_t at = rml.find(bound);
+    ASSERT_NE(at, std::string::npos) << icon;
+    EXPECT_LT(at, preview) << icon;
+    EXPECT_NE(rml.find(std::string("../icons/v2/") + icon + ".svg"), std::string::npos) << icon;
+    EXPECT_TRUE(std::filesystem::exists(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "icons/v2" /
+                                        (std::string(icon) + ".svg")))
+        << icon;
+  }
+  EXPECT_NE(ReadAsset("themes/colors.rcss.tmpl").find(".chat-row-preview-icon"), std::string::npos);
+}
+
 // #169: an empty second line collapsed new rows. The placeholder (from the presenter) reaches the row marked, the row
 // carries a class for it, and the leading type icon (private / public / group / ai) is still in the template.
 TEST(ChatRowAvatarTest, APlaceholderPreviewMarksTheRowAndTheTemplateKeepsTheTypeIcons) {

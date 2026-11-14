@@ -134,6 +134,22 @@ TEST_F(SecuritySettingsGraceTest, AlwaysIsSavedShownAndHandedToTheApp) {
   EXPECT_NE(back.unlock_grace_label, UnlockGraceDisplayLabel(15));
 }
 
+TEST_F(SecuritySettingsGraceTest, PickingOneOfTheFourOverAStoredUntilRestartStoresExactlyThatAndDropsTheOldValue) {
+  SettingsUiState state = Synced();
+  state.unlock_grace_minutes = kUnlockGraceAlways;
+  ASSERT_TRUE(static_cast<bool>(section_.Flush(state, store_)));
+  for (const int minutes : OfferedUnlockGraceMinutes()) {
+    state = Synced();
+    EXPECT_EQ(state.unlock_grace_minutes, kUnlockGraceAlways) << "the stored value is kept until one is picked";
+    state.unlock_grace_minutes = minutes;
+    ASSERT_TRUE(static_cast<bool>(section_.Flush(state, store_)));
+    EXPECT_EQ(store_.Snapshot().profile_prefs.unlock_grace_minutes, minutes);
+    // back to the removed value for the next round
+    state.unlock_grace_minutes = kUnlockGraceAlways;
+    ASSERT_TRUE(static_cast<bool>(section_.Flush(state, store_)));
+  }
+}
+
 TEST_F(SecuritySettingsGraceTest, ChoosingEveryTimeTellsTheAppZeroAndAnHourSixty) {
   SettingsUiState state = Synced();
   state.unlock_grace_minutes = 0;
@@ -169,7 +185,7 @@ TEST_F(SecuritySettingsGraceTest, ThePageHasTheRowItsHelpAndBothLanguages) {
   EXPECT_NE(rml.find("data-if=\"security_grace_shown\""), std::string::npos);
   EXPECT_NE(rml.find("data-event-click=\"on_choose_unlock_grace()\""), std::string::npos);
   EXPECT_NE(rml.find("{{unlock_grace_label}}"), std::string::npos);
-  EXPECT_NE(rml.find("{{i18n:settings.security.grace.help}}"), std::string::npos);
+  EXPECT_NE(rml.find("{{i18n:settings.security.grace.caption}}"), std::string::npos);
   EXPECT_LT(rml.find("open_security_page('change_pin')"), rml.find("on_choose_unlock_grace")) << "under the PIN";
 
   // B2: no PIN field of their own any more; the PIN gate asks (its number pad for a digit PIN).
@@ -180,10 +196,11 @@ TEST_F(SecuritySettingsGraceTest, ThePageHasTheRowItsHelpAndBothLanguages) {
 
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     const std::string text = ReadAsset(locale);
-    for (const char* key : {"settings.security.grace.title", "settings.security.grace.now", "settings.security.grace.5",
-                            "settings.security.grace.15", "settings.security.grace.60",
-                            "settings.security.grace.always", "settings.security.grace.help",
-                            "pin.verify_export_message", "pin.verify_recovery_message", "pin.change_old_message"}) {
+    for (const char* key :
+         {"settings.security.grace.title", "settings.security.grace.now", "settings.security.grace.5",
+          "settings.security.grace.15", "settings.security.grace.60", "settings.security.grace.always",
+          "settings.security.grace.help", "settings.security.grace.caption", "pin.verify_export_message",
+          "pin.verify_recovery_message", "pin.change_old_message"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
   }

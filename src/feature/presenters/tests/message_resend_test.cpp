@@ -2,9 +2,15 @@
 // once its automatic sending has stopped, only in public chats; anything else just says why
 // (DEV/PLAN-message-resend.md). The ports run on the in-memory store, as the facade's run on the app's.
 #include "feature/presenters/DeliveryNoticePlan.h"
+#include "feature/presenters/MessageEdit.h"
 #include "feature/presenters/MessageResend.h"
 #include "feature/presenters/SendMark.h"
+#include "common/runtime/AppRuntime.h"
+#include "domain/delivery/DeliveryOutbox.h"
+#include "foundation/error/AppError.h"
 #include "lib/delivery/DeliveryNotice.h"
+#include "lib/delivery/HttpRelayClient.h"
+#include "lib/delivery/RelayClients.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 
 #include <gtest/gtest.h>
@@ -394,6 +400,202 @@ TEST_F(MessageResendTest, AFailedRemovalIsRetriedAndNothingIsSentAgain) {
   EXPECT_TRUE(tap.removal_error);
   EXPECT_EQ(sends_, 1);
   EXPECT_TRUE(Row("m3"));
+}
+
+// "Update their card first" / "update my card first" (DEV/PLAN-send-failure-guidance.md): which result a tap on a red
+// mark gets, decided from the stored reason, the chat and whether the peer is a contact.
+SendMarkTapFacts GuidedFacts(const SendMarkTapFacts& base, const std::optional<SendFailure> failure,
+                             const bool contact = true) {
+  SendMarkTapFacts facts = base;
+  facts.failure = failure;
+  if (contact) {
+    facts.peer_contact_id = "contact:bob";
+  }
+  return facts;
+}
+
+TEST_F(MessageResendTest, RecipientNotFoundInADirectChatWithAContactAsksToUpdateTheirCard) {
+  Add(Unsent("m1"));
+  const SendMarkTap tap = ResendAfterTap(GuidedFacts(Facts("m1"), SendFailure::RecipientNotOnRelay), Ports());
+  EXPECT_EQ(tap.kind, SendMarkTap::Kind::UpdateTheirCard);
+  EXPECT_EQ(tap.contact_id, "contact:bob");
+  EXPECT_TRUE(tap.resendable);
+  EXPECT_EQ(AdviceOf(tap), SendAdvice::UpdateTheirCardAndResend);
+  EXPECT_EQ(sends_, 0) << "the tap itself sends nothing";
+  EXPECT_TRUE(Row("m1")) << "and takes nothing away";
+}
+
+TEST_F(MessageResendTest, AMessageThatCannotBeResentSaysSoInTheFlag) {
+  ThreadMessage voice = Unsent("m1");
+  voice.content_type = ChatContentType::Attachment;
+  Add(voice);
+  SendMarkTap tap = ResendAfterTap(GuidedFacts(Facts("m1"), SendFailure::RecipientNotOnRelay), Ports());
+  EXPECT_EQ(tap.kind, SendMarkTap::Kind::UpdateTheirCard);
+  EXPECT_FALSE(tap.resendable);
+  EXPECT_EQ(AdviceOf(tap), SendAdvice::UpdateTheirCardOnly);
+
+  thread_.channel = ThreadChannel::E2e; // a private chat's message is not re-sent with a tap either
+  Add(Unsent("m2"));
+  tap = ResendAfterTap(GuidedFacts(Facts("m2"), SendFailure::RecipientNotOnRelay), Ports());
+  EXPECT_EQ(tap.kind, SendMarkTap::Kind::UpdateTheirCard);
+  EXPECT_FALSE(tap.resendable);
+  tap = ResendAfterTap(GuidedFacts(Facts("m2"), SendFailure::SenderNotRegistered), Ports());
+  EXPECT_EQ(tap.kind, SendMarkTap::Kind::UpdateMyCard);
+  EXPECT_FALSE(tap.resendable);
+}
+
+TEST_F(MessageResendTest, SenderNotRegisteredAsksToUpdateOurOwnCard) {
+  Add(Unsent("m1"));
+  const SendMarkTap tap = ResendAfterTap(GuidedFacts(Facts("m1"), SendFailure::SenderNotRegistered), Ports());
+  EXPECT_EQ(tap.kind, SendMarkTap::Kind::UpdateMyCard);
+  EXPECT_TRUE(tap.resendable);
+  EXPECT_EQ(AdviceOf(tap), SendAdvice::UpdateMyCard);
+  EXPECT_EQ(sends_, 0);
+  EXPECT_TRUE(Row("m1"));
+}
+
+TEST_F(MessageResendTest, GroupMessagesAndPeersWhoAreNotContactsNeverTakeTheNewBranches) {
+  Add(Unsent("m1"));
+  // A non-contact peer: the old path (a direct re-send).
+  SendMarkTap tap =
+      ResendAfterTap(GuidedFacts(Facts("m1"), SendFailure::RecipientNotOnRelay, /*contact=*/false), Ports());
+  EXPECT_EQ(tap.kind, SendMarkTap::Kind::Resent);
+  EXPECT_EQ(sends_, 1);
+
+  Add(Unsent("m2"));
+  tap = ResendAfterTap(GuidedFacts(Facts("m2"), SendFailure::SenderNotRegistered, /*contact=*/false), Ports());
+  EXPECT_EQ(tap.kind, SendMarkTap::Kind::Resent);
+
+  thread_ = PublicChat(ThreadKind::Group);
+  Add(Unsent("m3"));
+  SendMarkTapFacts group = GuidedFacts(Facts("m3"), SendFailure::RecipientNotOnRelay);
+  tap = ResendAfterTap(group, Ports());
+  EXPECT_EQ(tap.kind, SendMarkTap::Kind::Resent) << "a group message is re-sent as before";
+  group.failure = SendFailure::SenderNotRegistered;
+  Add(Unsent("m4"));
+  group.row = Row("m4");
+  EXPECT_EQ(ResendAfterTap(group, Ports()).kind, SendMarkTap::Kind::Resent);
+}
+
+TEST_F(MessageResendTest, EveryOtherReasonGoesTheOldWay) {
+  int n = 0;
+  for (const std::optional<SendFailure> failure :
+       {std::optional<SendFailure>(), std::optional<SendFailure>(SendFailure::RelayRejected),
+        std::optional<SendFailure>(SendFailure::RelayUnreachable),
+        std::optional<SendFailure>(SendFailure::PeerNoAnswer), std::optional<SendFailure>(SendFailure::RelayBusy)}) {
+    SendMarkTapFacts guided = GuidedFacts(Facts("none"), failure);
+    ThreadMessage row = Unsent("g" + std::to_string(++n));
+    Add(row);
+    guided.row = row;
+    SendMarkTapFacts plain = guided;
+    plain.failure.reset();
+    plain.peer_contact_id.reset();
+    EXPECT_EQ(DecideSendMarkTap(guided).kind, DecideSendMarkTap(plain).kind);
+    EXPECT_EQ(DecideSendMarkTap(guided).kind, SendMarkTap::Kind::Resent);
+    EXPECT_EQ(AdviceOf(DecideSendMarkTap(guided)), SendAdvice::None);
+  }
+  // Not-text with another reason: the old reason-only result.
+  ThreadMessage picture = Unsent("pic");
+  picture.content_type = ChatContentType::Attachment;
+  Add(picture);
+  const SendMarkTap tap = DecideSendMarkTap(GuidedFacts(Facts("pic"), SendFailure::RelayUnreachable));
+  EXPECT_EQ(tap.kind, SendMarkTap::Kind::ReasonOnly);
+  EXPECT_EQ(tap.refusal, SendMarkTap::Refusal::NotText);
+}
+
+TEST_F(MessageResendTest, AMessageStillTryingOrAlreadyResentIsNotGuided) {
+  Add(Unsent("m1"));
+  started_ms_ = kNow - 1000;
+  EXPECT_EQ(DecideSendMarkTap(GuidedFacts(Facts("m1"), SendFailure::RecipientNotOnRelay)).kind,
+            SendMarkTap::Kind::StillTrying);
+  started_ms_.reset();
+  SendMarkTapFacts again = GuidedFacts(Facts("m1"), SendFailure::RecipientNotOnRelay);
+  again.already_resent = true;
+  EXPECT_EQ(DecideSendMarkTap(again).kind, SendMarkTap::Kind::Resent) << "only its removal is retried";
+}
+
+TEST_F(MessageResendTest, AfterTheCardIsUpdatedTheMessageIsResentWithoutAskingAgain) {
+  Add(Unsent("m1"));
+  SendMarkTapFacts facts = GuidedFacts(Facts("m1"), SendFailure::RecipientNotOnRelay);
+  facts.offer_fix = false;
+  const SendMarkTap tap = ResendAfterTap(facts, Ports());
+  EXPECT_EQ(tap.kind, SendMarkTap::Kind::Resent);
+  EXPECT_EQ(sends_, 1);
+  EXPECT_FALSE(Row("m1"));
+}
+
+/** A relay that answers every send as HttpRelayClient does a 404 `recipient_not_registered` (no registration there). */
+class RecipientNotFoundRelay final : public IRelayClient {
+public:
+  Roe<void> Send(const RelayEnvelope&) override {
+    ++sends;
+    return AppError::Network(Err::Network::RecipientNotRegistered, "Relay send: the recipient is not registered here");
+  }
+  Roe<RelayPollResult> PollInbox(const std::string&, const std::string&) override { return Error("unused"); }
+  Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override { return Error("unused"); }
+  Roe<RelayDeleteResult> ClearInbox(const std::string&, const std::string&) override { return Error("unused"); }
+  Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest&) override { return Error("unused"); }
+  int sends = 0;
+};
+
+// The whole way a failed message takes, but for the orchestrator that joins the two halves (it has no test fixture):
+// a relay answering 404 recipient_not_registered -> the outbox's outcome -> the notice the orchestrator builds from it ->
+// the stored send_failure row -> the tap's decision.
+TEST_F(MessageResendTest, ARelayAnswering404RecipientNotRegisteredLeadsToUpdateTheirCardFirst) {
+  AppRuntime::Initialize(AppRuntimeConfig{});
+  RecipientNotFoundRelay relay;
+  std::vector<DeliveryOutcome> outcomes;
+  {
+    DeliveryOutbox outbox([]() -> IDirectMessageClient* { return nullptr; });
+    outbox.SetRelayClient(&relay);
+    outbox.SetOnOutcome([&outcomes](const DeliveryOutcome& outcome) { outcomes.push_back(outcome); });
+    DeliveryRequest request;
+    request.envelope.message_id = "m1";
+    request.envelope.timestamp = 1;
+    request.thread_id = "t1";
+    request.message_id = "m1";
+    request.relay_recipient = "account:bob";
+    outbox.Send(std::move(request));
+    ASSERT_TRUE(AppRuntime::DrainWorkersThenUI());
+  }
+  AppRuntime::Shutdown();
+  ASSERT_EQ(outcomes.size(), 1u);
+  EXPECT_FALSE(outcomes[0].ok);
+  ASSERT_EQ(outcomes[0].failure, SendFailure::RecipientNotOnRelay);
+
+  // What MeshDeliveryOrchestrator::NotifyDeliveryIssue builds, and ChatPresenter applies to the store.
+  Add(Unsent("m1"));
+  DeliveryNotice notice;
+  notice.kind = DeliveryNotice::Kind::SendFailed;
+  notice.thread_id = "t1";
+  notice.message_id = "m1";
+  notice.send = SendFailureForThread(outcomes[0].failure, /*trusted_peer=*/false);
+  EXPECT_EQ(ApplyDeliveryNoticeTo(&store_, notice, kNow), NoticeTell::Nothing);
+  auto line = store_.GetMessage("t1", SendFailureRowId("m1", ""));
+  ASSERT_TRUE(line && *line);
+  EXPECT_EQ(SendFailureRowReason(**line), "recipient_not_on_relay") << "the stored word";
+
+  const std::optional<SendFailure> reason = SendFailureReason(*line, /*group_thread=*/false);
+  ASSERT_TRUE(reason);
+  EXPECT_EQ(*reason, SendFailure::RecipientNotOnRelay);
+  const SendMarkTap tap = ResendAfterTap(GuidedFacts(Facts("m1"), reason), Ports());
+  EXPECT_EQ(tap.kind, SendMarkTap::Kind::UpdateTheirCard);
+  EXPECT_EQ(tap.contact_id, "contact:bob");
+}
+
+// The words that tell what a tap does and the tap itself share this decision (ChatPresenter::SendAdviceOf /
+// TapSendMarkWith): an edited message whose own mark is none resends its edit, never offers a card update.
+TEST_F(MessageResendTest, AnEditedMessageWithNoMarkOfItsOwnTakesTheEditBranchBeforeAnyCardUpdate) {
+  ThreadMessage edited = Unsent("m1");
+  edited.delivery = MessageDelivery::Relayed;
+  edited.payload_json = R"({"edited_at":1000500,"edited_by":"e1"})";
+  EXPECT_EQ(EditResentByTap(edited, std::nullopt, kNow), std::optional<std::string>("e1"));
+
+  ThreadMessage failed_itself = Unsent("m2"); // red by its own send: an ordinary tap, which may offer the fix
+  failed_itself.payload_json = edited.payload_json;
+  EXPECT_FALSE(EditResentByTap(failed_itself, std::nullopt, kNow));
+
+  EXPECT_FALSE(EditResentByTap(Unsent("m3"), std::nullopt, kNow)) << "never edited";
 }
 
 } // namespace

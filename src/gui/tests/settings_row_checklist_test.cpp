@@ -44,13 +44,22 @@ std::string ReadSource(const std::string& relative) {
 
 // A page view with its {{include:x}} sub-views spelled out in place (the desktop PIN and the transfer block live in
 // their own files), so the checks below see everything the page can show.
+//
+// The Advanced page's sub-pages (its free-text fields on phones) are listed under their own ids; the page itself does not
+// spell out the files it includes for the desktop, so no row is counted twice.
+const std::vector<std::string>& AdvancedSubpages() {
+  static const std::vector<std::string> ids = {"advanced_endpoint", "advanced_integrations", "advanced_backend"};
+  return ids;
+}
+
 std::string View(const std::string& id) {
   std::string text = ReadAsset("views/settings_section_" + id + ".rml");
   const std::string marker = "{{include:";
   for (size_t at = text.find(marker); at != std::string::npos; at = text.find(marker)) {
     const size_t end = text.find("}}", at);
     const std::string name = text.substr(at + marker.size(), end - at - marker.size());
-    text.replace(at, end + 2 - at, ReadAsset("views/" + name + ".rml"));
+    const bool subpage = name.rfind("settings_section_advanced_", 0) == 0;
+    text.replace(at, end + 2 - at, subpage ? std::string() : ReadAsset("views/" + name + ".rml"));
   }
   return text;
 }
@@ -196,6 +205,57 @@ std::vector<Occurrence> Scan(const std::string& raw) {
   return found;
 }
 
+// The gates around the place a sub-page file is included in a view, so a sub-page's rows carry their full chain (the page's
+// own `advanced` gate and the include site's wrappers, then the file's own conditions). `view` is the including file.
+std::string IncludeSiteGates(const std::string& view, const std::string& subpage_id) {
+  std::string text = ReadAsset("views/" + view + ".rml");
+  const std::string marker = "{{include:";
+  const std::string target = "settings_section_" + subpage_id;
+  size_t found = 0;
+  for (size_t at = text.find(marker); at != std::string::npos; at = text.find(marker, at)) {
+    const size_t end = text.find("}}", at);
+    const std::string name = text.substr(at + marker.size(), end - at - marker.size());
+    if (name == target) {
+      text.replace(at, end + 2 - at, "{{SITE}}");
+      ++found;
+    } else {
+      text.replace(at, end + 2 - at, std::string());
+    }
+  }
+  std::string gates = "-";
+  size_t sites = 0;
+  for (const Occurrence& occurrence : Scan(text)) {
+    if (occurrence.token == "{{SITE}}") {
+      gates = occurrence.gates;
+      ++sites;
+    }
+  }
+  EXPECT_EQ(found, 1u) << view << " must include " << target << " exactly once";
+  EXPECT_EQ(sites, 1u);
+  return gates;
+}
+
+std::string JoinChain(const std::string& outer, const std::string& inner) {
+  if (outer == "-") {
+    return inner;
+  }
+  return inner == "-" ? outer : outer + ";;" + inner;
+}
+
+// The occurrences of a page's rows. A sub-page of Advanced is scanned in its file and then placed in the chain of its
+// desktop include site in the Advanced page, so losing the `advanced` gate there, or a condition of its own, is a diff.
+std::vector<Occurrence> ScanPage(const std::string& page_id) {
+  std::vector<Occurrence> found = Scan(View(page_id));
+  const std::vector<std::string>& subpages = AdvancedSubpages();
+  if (std::find(subpages.begin(), subpages.end(), page_id) != subpages.end()) {
+    const std::string site = IncludeSiteGates("settings_section_advanced", page_id);
+    for (Occurrence& occurrence : found) {
+      occurrence.gates = JoinChain(site, occurrence.gates);
+    }
+  }
+  return found;
+}
+
 size_t CountOf(const std::string& text, const std::string& needle) {
   size_t count = 0;
   for (size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + needle.size())) {
@@ -305,26 +365,31 @@ TEST(SettingsRowChecklistTest, HomeEntriesAreAllInThePageTable) {
 TEST(SettingsRowChecklistTest, EveryRowOfEveryPageIsOnTheChecklistWithItsGates) {
   const std::vector<Row> rows = LoadChecklist();
   ASSERT_GT(rows.size(), 100u);
+  std::vector<std::string> ids;
   for (const SettingsPage& page : SettingsPages()) {
+    ids.push_back(page.id);
+  }
+  ids.insert(ids.end(), AdvancedSubpages().begin(), AdvancedSubpages().end());
+  for (const std::string& page_id : ids) {
     std::map<std::string, size_t> actual_total;
     std::map<std::pair<std::string, std::string>, size_t> actual_at;
-    for (const Occurrence& occurrence : Scan(View(page.id))) {
+    for (const Occurrence& occurrence : ScanPage(page_id)) {
       ++actual_total[occurrence.token];
       ++actual_at[{occurrence.token, occurrence.gates}];
     }
     std::map<std::string, size_t> expected_total;
     for (const Row& row : rows) {
-      if (row.view != page.id) {
+      if (row.view != page_id) {
         continue;
       }
       expected_total[row.token] += row.count;
       const bool gate_may_differ = row.phase != 0 && kPhase >= row.phase;
       if (!gate_may_differ) {
         const std::pair<std::string, std::string> key{row.token, row.gates};
-        EXPECT_EQ(actual_at[key], row.count) << page.id << ": " << row.token << " under [" << row.gates << "]";
+        EXPECT_EQ(actual_at[key], row.count) << page_id << ": " << row.token << " under [" << row.gates << "]";
       }
     }
-    EXPECT_EQ(actual_total, expected_total) << page.id << ": the view and the checklist disagree on what is in it";
+    EXPECT_EQ(actual_total, expected_total) << page_id << ": the view and the checklist disagree on what is in it";
   }
 }
 
@@ -376,11 +441,25 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       {"security", "hide_recovery_phrase()", "security_has_recovery_phrase;;recovery_phrase != ''", 1, 1},
       {"security", "ask_setting_help('settings.security.recovery')", "security_has_recovery_phrase", 1, 1},
       // Devices: the transfer block is the desktop's inline copy here; phones open it as its own page.
-      {"devices", "open_security_page('transfer')", "-", 1, 0},
-      {"devices", "ask_setting_help('settings.security.transfer_row')", "-", 1, 0},
-      {"devices", "export_link_device()", "security_can_export_link && !own_devices_not_main", 0, 1},
-      {"devices", "make_main_device(device_index)", "own_devices_shown;;device.can_manage", 1, 1},
-      {"devices", "remove_own_device(device_index)", "own_devices_shown;;device.can_manage", 1, 1},
+      // (2026-11-14: the phone's top button, on the main device only; a linked phone shows nothing to tap.)
+      {"devices", "open_security_page('transfer')", "!own_devices_not_main", 1, 0},
+      // The "?" of the action: next to the top sentence on the main device, after the card's second line on a linked
+      // phone (2026-11-14, so details are one tap away), and the link page's note (in the hidden desktop wrapper here).
+      {"devices", "ask_setting_help('settings.security.transfer_row')",
+       "!own_devices_not_main@@own_devices_not_main && !own_devices_signed_out@@-", 2, 0},
+      // Here the phone's button and "Copy again" sit in the transfer block's desktop wrapper (hidden): only the desktop
+      // button shows. Their own page is checked in the next test.
+      {"devices", "export_link_device()",
+       "security_can_export_link && !own_devices_not_main@@security_can_export_link && "
+       "!own_devices_not_main;;!transfer_code_copied@@security_can_export_link && "
+       "!own_devices_not_main;;transfer_code_copied",
+       0, 1},
+      // The phone's device rows moved into a sheet (open_own_device_actions); its two actions run the same Remove /
+      // MakeMain the desktop buttons' events run (SettingsOwnDevicesTest). The desktop keeps one element per event.
+      {"devices", "make_main_device(device_index)", "own_devices_shown;;device.can_manage", 0, 1},
+      {"devices", "remove_own_device(device_index)", "own_devices_shown;;device.can_manage", 0, 1},
+      {"devices", "open_own_device_actions(device_index)",
+       "own_devices_shown && !own_devices_not_main;;device.can_manage", 1, 0},
       {"devices", "save_account_copy()", "security_has_recovery_phrase", 1, 1},
       {"devices", "ask_setting_help('settings.help.topic.account_copy')", "security_has_recovery_phrase", 1, 1},
   };
@@ -392,7 +471,11 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       if (o.token != token) {
         continue;
       }
-      EXPECT_EQ(o.gates, e.gates) << e.page << ": " << e.event;
+      // "a@@b": the element may sit under either gate (two variants of one row).
+      const std::vector<std::string> alternatives = Split(e.gates, '@');
+      EXPECT_TRUE(std::find_if(alternatives.begin(), alternatives.end(),
+                               [&](const std::string& gate) { return gate == o.gates; }) != alternatives.end())
+          << e.page << ": " << e.event << " under [" << o.gates << "]";
       phone += (o.layouts == "phone" || o.layouts == "both") ? 1 : 0;
       desktop += (o.layouts == "desktop" || o.layouts == "both") ? 1 : 0;
     }
@@ -401,19 +484,28 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
   }
 }
 
-TEST(SettingsSensitiveActionsTest, TheTransferBlockOnItsOwnPageShowsOneExportRowPerLayout) {
-  // settings.rml includes the same file for the phone's own transfer page: there the phone row is the one that shows.
+TEST(SettingsSensitiveActionsTest, TheTransferBlockOnItsOwnPageFiresTheOneExportEventUnderTheOldGate) {
+  // settings.rml includes the same file for the phone's own transfer page. The phone has the primary button and, in the
+  // "copied" box, "Copy again": both fire export_link_device() under the old gate (the box only adds the view flag);
+  // the desktop keeps its one button.
   const std::string rml = ReadAsset("views/settings_security_transfer.rml");
+  const std::string gate = "security_can_export_link && !own_devices_not_main";
   size_t phone = 0;
   size_t desktop = 0;
   for (const Occurrence& o : Scan(rml)) {
     if (o.token == "data-event-click=\"export_link_device()\"") {
-      EXPECT_EQ(o.gates, "security_can_export_link && !own_devices_not_main");
+      EXPECT_EQ(o.gates.rfind(gate, 0), 0u) << "the old gate comes first: " << o.gates;
+      if (o.layouts == "desktop") {
+        EXPECT_EQ(o.gates, gate);
+      } else {
+        EXPECT_TRUE(o.gates == gate + ";;!transfer_code_copied" || o.gates == gate + ";;transfer_code_copied")
+            << o.gates;
+      }
       phone += (o.layouts == "phone" || o.layouts == "both") ? 1 : 0;
       desktop += (o.layouts == "desktop" || o.layouts == "both") ? 1 : 0;
     }
   }
-  EXPECT_EQ(phone, 1u);
+  EXPECT_EQ(phone, 2u);
   EXPECT_EQ(desktop, 1u);
 }
 
@@ -431,6 +523,241 @@ TEST(SettingsSensitiveActionsTest, NoHelpButtonSitsInsideAnotherButton) {
       }
     }
   }
+}
+
+// --- one caption per group on phones (Kenneth 2026-11-14) ---------------------------------------------------------
+
+namespace {
+
+// Evaluates a gate chain ("a;;!b && c") against a set of true facts: every chain element is an AND of (possibly negated)
+// names, all of which must hold. Names outside the facts are false.
+bool GateHolds(const std::string& chain, const std::set<std::string>& facts) {
+  if (chain == "-") {
+    return true;
+  }
+  std::vector<std::string> parts;
+  for (size_t start = 0, at; start <= chain.size(); start = at + 2) {
+    at = chain.find(";;", start);
+    if (at == std::string::npos) {
+      at = chain.size();
+    }
+    parts.push_back(chain.substr(start, at - start));
+    if (at == chain.size()) {
+      break;
+    }
+  }
+  for (const std::string& part : parts) {
+    for (size_t start = 0, at; start <= part.size(); start = at + 2) {
+      at = part.find("&&", start);
+      if (at == std::string::npos) {
+        at = part.size();
+      }
+      std::string name = part.substr(start, at - start);
+      name.erase(0, name.find_first_not_of(' '));
+      name.erase(name.find_last_not_of(' ') + 1);
+      const bool negated = !name.empty() && name[0] == '!';
+      if (negated) {
+        name.erase(0, 1);
+      }
+      if ((facts.count(name) > 0) == negated) {
+        return false;
+      }
+      if (at == part.size()) {
+        break;
+      }
+    }
+  }
+  return true;
+}
+
+// The phone-visible occurrences of the given tokens in the Devices page, under a state.
+size_t PhoneShown(const std::vector<std::string>& tokens, const std::set<std::string>& facts) {
+  size_t shown = 0;
+  for (const Occurrence& o : Scan(View("devices"))) {
+    if ((o.layouts == "phone" || o.layouts == "both") && GateHolds(o.gates, facts) &&
+        std::find(tokens.begin(), tokens.end(), o.token) != tokens.end()) {
+      ++shown;
+    }
+  }
+  return shown;
+}
+
+} // namespace
+
+namespace {
+
+// The phone-visible tokens of the Devices page under a state.
+std::set<std::string> PhoneTokens(const std::set<std::string>& facts) {
+  std::set<std::string> shown;
+  for (const Occurrence& o : Scan(View("devices"))) {
+    if ((o.layouts == "phone" || o.layouts == "both") && GateHolds(o.gates, facts)) {
+      shown.insert(o.token);
+    }
+  }
+  return shown;
+}
+
+const std::set<std::string>& MainFacts() {
+  static const std::set<std::string> facts = {"own_devices_shown", "device.can_manage", "security_can_export_link"};
+  return facts;
+}
+
+const std::set<std::string>& LinkedFacts() {
+  // Everything that could switch something on is true: the page must still offer nothing to tap.
+  static const std::set<std::string> facts = {
+      "own_devices_shown", "own_devices_not_main",     "own_has_other_devices",       "device.can_manage",
+      "device.is_main",    "security_can_export_link", "security_has_recovery_phrase"};
+  return facts;
+}
+
+const std::set<std::string>& SignedOutFacts() {
+  static const std::set<std::string> facts = {"own_devices_shown", "own_devices_signed_out", "own_devices_not_main"};
+  return facts;
+}
+
+} // namespace
+
+TEST(SettingsDevicesCaptionsTest, ThePhoneShowsAtMostOneCaptionUnderTheDeviceList) {
+  const std::vector<std::string> captions = {
+      "{{i18n:settings.security.devices.help}}", "{{i18n:settings.security.devices.not_main}}",
+      "{{i18n:settings.security.devices.tap_hint}}", "{{i18n:settings.security.devices.none}}",
+      "{{i18n:settings.security.devices.signed_out}}"};
+  std::set<std::string> main_with_others = {"own_devices_shown", "own_has_other_devices"};
+  const std::set<std::string> main_alone = {"own_devices_shown"};
+  EXPECT_EQ(PhoneShown(captions, main_with_others), 1u) << "main device with other devices: the tap hint";
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.tap_hint}}"}, main_with_others), 1u);
+  EXPECT_EQ(PhoneShown(captions, main_alone), 1u) << "main device alone: the grey line";
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.none}}"}, main_alone), 1u);
+  EXPECT_EQ(PhoneShown(captions, LinkedFacts()), 0u) << "a linked phone has its sentence card, no caption";
+  EXPECT_EQ(PhoneShown(captions, SignedOutFacts()), 1u) << "signed-out phone: its notice only";
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.signed_out}}"}, SignedOutFacts()), 1u);
+}
+
+TEST(SettingsDevicesCaptionsTest, TheDesktopKeepsItsCaptionsAsBefore) {
+  size_t help = 0;
+  size_t not_main = 0;
+  for (const Occurrence& o : Scan(View("devices"))) {
+    if (o.layouts == "desktop" && o.token == "{{i18n:settings.security.devices.help}}") {
+      EXPECT_EQ(o.gates, "own_devices_shown");
+      ++help;
+    }
+    if (o.layouts == "desktop" && o.token == "{{i18n:settings.security.devices.not_main}}") {
+      EXPECT_EQ(o.gates, "own_devices_shown;;own_devices_not_main && !own_devices_signed_out");
+      ++not_main;
+    }
+  }
+  EXPECT_EQ(help, 1u);
+  EXPECT_EQ(not_main, 1u);
+}
+
+TEST(SettingsDevicesCaptionsTest, ThePhoneShowsNoCaptionUnderTheAccountCopyRow) {
+  // The "?" of the row explains it; the old captions are gone, and the desktop-only copy.help is not a phone caption
+  // (the stylesheet hides it, see DevicesStyleTest).
+  const std::string rml = StripComments(View("devices"));
+  for (const char* gone : {"settings.devices.transfer_help", "settings.devices.actions_help",
+                           "settings.security.transfer_off", "settings.security.devices.not_main_phone"}) {
+    EXPECT_EQ(rml.find(gone), std::string::npos) << gone;
+  }
+  bool desktop_only = false;
+  for (const Occurrence& o : Scan(View("devices"))) {
+    if (o.token == "{{i18n:settings.security.copy.help}}") {
+      desktop_only = o.layouts == "desktop";
+    }
+  }
+  EXPECT_TRUE(desktop_only);
+}
+
+TEST(SettingsDevicesCaptionsTest, TheLinkButtonIsOnTheMainDeviceOnlyAndALinkedPhoneHasNothingToTap) {
+  const std::string tap = "data-event-click=\"open_security_page('transfer')\"";
+  const std::string help = "data-event-click=\"ask_setting_help('settings.security.transfer_row')\"";
+  EXPECT_EQ(PhoneShown({tap}, MainFacts()), 1u);
+  EXPECT_EQ(PhoneShown({help}, MainFacts()), 1u) << "one \"?\" for the action, in one place";
+  // A linked phone: no element bound to any of the device actions, on the phone layout of this page or of the link page.
+  // Its "?" (after the second line of the top card) only asks PP support: exactly one on the devices page.
+  EXPECT_EQ(PhoneShown({help}, LinkedFacts()), 1u);
+  for (const char* event :
+       {"open_security_page('transfer')", "export_link_device()", "open_own_device_actions(device_index)",
+        "make_main_device(device_index)", "remove_own_device(device_index)"}) {
+    const std::string token = std::string("data-event-click=\"") + event + "\"";
+    EXPECT_EQ(PhoneShown({token}, LinkedFacts()), 0u) << "devices page, linked phone: " << event;
+    for (const Occurrence& o : Scan(ReadAsset("views/settings_security_transfer.rml"))) {
+      if (o.token == token && (o.layouts == "phone" || o.layouts == "both")) {
+        EXPECT_FALSE(GateHolds(o.gates, LinkedFacts())) << "link page, linked phone: " << event;
+      }
+    }
+  }
+  // Only the account copy row at the bottom (and the "?" of it) and the card's "?" are tappable on a linked phone.
+  for (const std::string& token : PhoneTokens(LinkedFacts())) {
+    const bool account_copy = token == "data-event-click=\"save_account_copy()\"" || token == help ||
+                              token == "data-event-click=\"ask_setting_help('settings.help.topic.account_copy')\"";
+    EXPECT_TRUE(account_copy || token.find("data-event-") == std::string::npos)
+        << "a linked phone's list is read only: " << token;
+  }
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.linked_note}}"}, LinkedFacts()), 1u);
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.hero}}"}, LinkedFacts()), 0u);
+}
+
+TEST(SettingsDevicesCaptionsTest, TheSignedOutPhoneShowsItsNoticeOnlyAndTheAccountCopyRowAsBefore) {
+  EXPECT_EQ(PhoneTokens(SignedOutFacts()), std::set<std::string>({"{{i18n:settings.security.devices.signed_out}}"}));
+  std::set<std::string> with_phrase = SignedOutFacts();
+  with_phrase.insert("security_has_recovery_phrase");
+  const std::set<std::string> shown = PhoneTokens(with_phrase);
+  EXPECT_EQ(shown.count("data-event-click=\"save_account_copy()\""), 1u);
+  EXPECT_EQ(shown.count("{{i18n:settings.security.devices.signed_out}}"), 1u);
+  EXPECT_EQ(shown.size(), 4u) << "the notice, the row's title, its event and its \"?\"";
+}
+
+// --- the Advanced page's sub-pages keep their gates (Kenneth 2026-11-14) -------------------------------------------------
+
+// The checklist rows of the three sub-page files carry the whole chain; this also names it, so an input that loses the
+// `advanced` gate, or the custom service addresses their own condition, fails even if someone edits the checklist too.
+TEST(SettingsAdvancedGatesTest, EveryInputOfASubpageSitsUnderAdvancedOnTheDesktopAndItsOwnConditionForCustomAddresses) {
+  for (const std::string& id : AdvancedSubpages()) {
+    size_t inputs = 0;
+    for (const Occurrence& o : ScanPage(id)) {
+      EXPECT_EQ(o.gates.rfind("advanced;;advanced", 0), 0u) << id << ": " << o.token << " under [" << o.gates << "]";
+      if (id == "advanced_backend") {
+        EXPECT_NE(o.gates.find(";;backend_is_custom"), std::string::npos) << o.token << " under [" << o.gates << "]";
+      }
+      inputs += o.token.rfind("data-value=", 0) == 0 ? 1 : 0;
+    }
+    EXPECT_GT(inputs, 0u) << id << " has inputs";
+  }
+}
+
+TEST(SettingsAdvancedGatesTest, OnPhonesEachSubpageFileIsInItsOwnPageOfTheSubpageView) {
+  const struct {
+    const char* id;
+    const char* page;
+  } pages[] = {{"advanced_endpoint", "ai_endpoint"},
+               {"advanced_integrations", "integrations"},
+               {"advanced_backend", "backend_custom"}};
+  for (const auto& p : pages) {
+    EXPECT_EQ(IncludeSiteGates("settings", p.id),
+              std::string("show_detail && security_page != '';;security_page == '") + p.page + "'")
+        << p.id << ": the page opens only through open_security_page, which needs the Advanced page (controller guard)";
+  }
+}
+
+// "Custom addresses" is reachable wherever the old inline fields were: the Advanced page with the service on Custom,
+// whether or not the Service row is shown (the UI demo build hides it).
+TEST(SettingsAdvancedGatesTest, TheCustomAddressesEntryDoesNotDependOnTheServiceRow) {
+  const std::string entry = "data-event-click=\"open_security_page('backend_custom')\"";
+  const auto shown = [&](const std::set<std::string>& facts) {
+    size_t count = 0;
+    for (const Occurrence& o : Scan(View("advanced"))) {
+      if (o.token == entry && (o.layouts == "phone" || o.layouts == "both") && GateHolds(o.gates, facts)) {
+        ++count;
+      }
+    }
+    return count;
+  };
+  EXPECT_EQ(shown({"advanced", "backend_is_custom", "show_backend_switch"}), 1u) << "with the Service row";
+  EXPECT_EQ(shown({"advanced", "backend_is_custom"}), 1u) << "without the Service row (demo build)";
+  EXPECT_EQ(shown({"advanced", "show_backend_switch"}), 0u) << "the service is not Custom";
+  EXPECT_EQ(shown({"advanced"}), 0u);
+  EXPECT_EQ(shown({"backend_is_custom", "show_backend_switch"}), 0u) << "Advanced is off";
+  EXPECT_EQ(shown({"backend_is_custom"}), 0u);
 }
 
 } // namespace pbr

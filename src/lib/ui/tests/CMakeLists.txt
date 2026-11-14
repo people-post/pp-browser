@@ -6,3 +6,5 @@ pp_browser_add_lib_folder_tests(
 
 include(pp_lib_rmlui)
 pp_browser_link_rmlui_core(pp_browser_ui_test)
+
+target_link_libraries(pp_browser_ui_test PRIVATE qrcodegen)

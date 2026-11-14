@@ -1,6 +1,8 @@
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/ShellHost.h"
 #include "gui/shell/ShellLargeTitleScroll.h"
+#include "lib/ui/ShellInterruption.h"
+#include "lib/ui/ShellLayout.h"
 
 #include <ui/core/Core.h>
 #include <ui/dom/Context.h>
@@ -63,7 +65,8 @@ TEST(LargeTitleRules, CollapsesOnceTheWholeTitleIsScrolledAway) {
   EXPECT_FALSE(ShellState{}.large_title_collapsed);
 }
 
-// A scroller may carry `collapse-at` (dp) to replace the 52dp default threshold; the Chats page uses the default again.
+// A scroller may carry `collapse-at` (dp) to replace the 52dp default threshold; the Chats page keeps the default (its
+// title row is 56dp and sits in the bar's band).
 TEST(LargeTitleRules, ThresholdCanBeOverriddenPerScroller) {
   EXPECT_FALSE(ShellLargeTitleScroll::CollapsedAt(19.f, 1.f, 20.f));
   EXPECT_TRUE(ShellLargeTitleScroll::CollapsedAt(20.f, 1.f, 20.f));
@@ -73,7 +76,8 @@ TEST(LargeTitleRules, ThresholdCanBeOverriddenPerScroller) {
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   }();
   EXPECT_EQ(rml.find("collapse-at"), std::string::npos) << "Chats uses the default threshold";
-  EXPECT_NE(rml.find("<p class=\"large-title\">"), std::string::npos) << "Chats has a large title to collapse";
+  EXPECT_NE(rml.find("<div class=\"large-title\" data-model=\"window\">"), std::string::npos)
+      << "Chats has a large title row to collapse";
 }
 
 TEST_F(LargeTitleTest, ValueChangesAndTheNavPageFollows) {
@@ -97,6 +101,59 @@ TEST_F(LargeTitleTest, ValueChangesAndTheNavPageFollows) {
   host.SetLargeTitleCollapsed(false);
   context->Update();
   EXPECT_FALSE(page->IsClassSet("large-title-collapsed"));
+}
+
+// Settings' back arrow is bound to compact_chat_open: whichever way the chat thread opens or closes, the value the view
+// sees is the actual one (no separate field to forget to dirty).
+TEST_F(LargeTitleTest, TheSettingsBackArrowSeesTheChatThreadOnEveryPath) {
+  ShellHost host;
+  ASSERT_TRUE(host.RegisterWindowModel(context));
+  host.State().layout_mode = LayoutMode::Compact;
+  ShellLayout::SyncLayoutModeString(host.State());
+  host.RegisterPane({.key = "chat", .rml_path = "views/chat.rml", .provides_composer = true});
+  auto* document = context->LoadDocumentFromMemory(
+      "<rml><body><div data-model=\"window\"><p id=\"back\" style=\"width: 5px; height: 5px;\" "
+      "data-if=\"compact_chat_open\"></p></div></body></rml>");
+  ASSERT_NE(document, nullptr);
+  document->Show();
+  // Every one of these changes asks for a layout sync, which dirties the whole window model (DirtyWindow); the sync
+  // needs the full shell DOM, so the test stands in for it with DirtyNavChrome, which covers compact_chat_open.
+  const auto shown = [&]() {
+    host.DirtyNavChrome();
+    context->Update();
+    return document->GetElementById("back")->IsVisible();
+  };
+  const auto agrees = [&](const char* path) {
+    EXPECT_EQ(shown(), host.State().compact_chat_open) << path << ": the view and the state agree";
+  };
+  host.SelectNavTab(NavTab::Sessions);
+  agrees("start");
+  EXPECT_FALSE(shown());
+  host.SetPrimaryPane("chat");
+  host.OpenCompactChat();
+  host.SelectNavTab(NavTab::Me); // a hint in the chat opens Settings over it
+  EXPECT_TRUE(shown()) << "OpenCompactChat + SelectNavTab(Me)";
+  EXPECT_TRUE(ShellLayout::HiddenTabHasBack(host.State()));
+  host.HiddenTabBack(); // the arrow: the chat is shown again, no Settings page
+  agrees("back to the thread");
+  host.CloseCompactChat();
+  EXPECT_FALSE(shown()) << "CloseCompactChat";
+  host.SelectNavTab(NavTab::Me);
+  EXPECT_FALSE(shown()) << "Settings with no chat under it: no arrow";
+  EXPECT_FALSE(ShellLayout::HiddenTabHasBack(host.State()));
+  host.SelectNavTab(NavTab::Home); // ClearTabContext
+  host.OpenCompactChat();
+  host.SelectNavTab(NavTab::Me);
+  EXPECT_TRUE(shown());
+  host.SelectNavTab(NavTab::Sessions);
+  host.SelectNavTab(NavTab::Home); // leaving drops the chat (ClearTabContext)
+  EXPECT_FALSE(shown()) << "SelectNavTab to another tab closes the chat";
+  // ShellInterruption::DismissTop closes the chat directly in the state (ShellInterruption.cpp); no production caller
+  // goes through it without a layout sync, which dirties compact_chat_open (DirtyNavChrome).
+  host.OpenCompactChat();
+  ShellInterruption::DismissTop(host.State());
+  host.DirtyNavChrome();
+  EXPECT_FALSE(shown()) << "the interruption path, then the shell's sync";
 }
 
 // The Chats header's status line (SetChatsLink): unknown shows nothing, then online / offline come through the window

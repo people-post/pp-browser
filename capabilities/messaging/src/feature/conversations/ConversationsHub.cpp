@@ -770,6 +770,8 @@ void ConversationsHub::DiscardMessagingBringUp() {
   }
   if (mesh_messaging_) {
     mesh_messaging_->SetOnBriefRelayHealthChanged(nullptr);
+    mesh_messaging_->SetOnRelayNotRegistered(nullptr);
+    InvalidateRelayRegistrationSignals();
     mesh_messaging_->SetOnMessagesChanged(nullptr);
     mesh_messaging_->SetOnDeliveryNotice(nullptr);
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
@@ -1185,6 +1187,11 @@ void ConversationsHub::BuildMessagingObjects() {
   // The relay's poll results feed the status line (#175); a fresh orchestrator starts with no result.
   mesh_messaging_->SetOnBriefRelayHealthChanged(
       [this](const MeshDeliveryOrchestrator::BriefRelayHealthState health) { OnBriefRelayHealthChanged(health); });
+  // The relay does not know this account (B216): the UI decides whether to register again or to ask.
+  relay_not_registered_posted_->store(false); // a post a teardown dropped must not hold the next session's back
+  InvalidateRelayRegistrationSignals();
+  mesh_messaging_->SetOnRelayNotRegistered(
+      [this]() { PostRelayRegistrationSignal(RelayRegistrationSignal::NotRegistered); });
   {
     std::unique_lock lock(link_mu_);
     ResetLinkHealthLocked();
@@ -1642,6 +1649,9 @@ void ConversationsHub::OnLinkNetwork(const bool linked) {
 }
 
 void ConversationsHub::OnBriefRelayHealthChanged(const MeshDeliveryOrchestrator::BriefRelayHealthState health) {
+  if (health == MeshDeliveryOrchestrator::BriefRelayHealthState::Ok) {
+    PostRelayRegistrationSignal(RelayRegistrationSignal::PollOk); // the relay knows us (again)
+  }
   std::unique_lock lock(link_mu_);
   link_health_ = health;
   if (health != MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown) {
@@ -1757,23 +1767,25 @@ void ConversationsHub::EnsureContactIconCached(const Contact& contact) {
   ScheduleContactIconFetch(contact);
 }
 
-bool ConversationsHub::RefreshContactProfileNow(const std::string& contact_id) {
+bool ConversationsHub::RefreshContactProfileNow(const std::string& contact_id, const bool force) {
   if (!contact_profile_refresh_ || !AppRuntime::IsRunning() || shutdown_requested_.load(std::memory_order_acquire)) {
     return false;
   }
-  auto refreshed = contact_profile_refresh_->RefreshIfStale(contact_id, util::NowUnixMs());
+  auto refreshed = contact_profile_refresh_->RefreshIfStale(contact_id, util::NowUnixMs(), force);
   if (refreshed.updated) {
     EnsureContactIconCached(*refreshed.updated); // fetches the new photo and tells the screens when it is there
+    // A changed name or relay id shows on an open page even when no photo is fetched.
+    AppRuntime::PostUI([this]() { NotifyPeerIconsChanged(); });
   }
   return refreshed.looked_up;
 }
 
-void ConversationsHub::RefreshContactProfileIfStale(const std::string& contact_id) {
+void ConversationsHub::RefreshContactProfileIfStale(const std::string& contact_id, const bool force) {
   if (!contact_profile_refresh_ || !HasDirectory() || !AppRuntime::IsRunning() ||
-      !contact_profile_refresh_->NeedsRefresh(contact_id, util::NowUnixMs())) {
+      !contact_profile_refresh_->NeedsRefresh(contact_id, util::NowUnixMs(), force)) {
     return;
   }
-  AppRuntime::PostWorkerBackground([this, contact_id]() { RefreshContactProfileNow(contact_id); });
+  AppRuntime::PostWorkerBackground([this, contact_id, force]() { RefreshContactProfileNow(contact_id, force); });
 }
 
 bool ConversationsHub::RefreshContact(const std::string& contact_id,
@@ -2388,6 +2400,48 @@ AttachmentLimits ConversationsHub::CurrentAttachmentLimits() const {
 void ConversationsHub::SetOnBlobSpaceWarning(std::function<void(int percent)> callback) {
   std::lock_guard lock(blob_space_mutex_);
   on_blob_space_warning_ = std::move(callback);
+}
+
+void ConversationsHub::SetOnRelayRegistrationSignal(std::function<void(RelayRegistrationSignal)> callback) {
+  std::lock_guard lock(relay_registration_mu_);
+  on_relay_registration_signal_ = std::move(callback);
+}
+
+void ConversationsHub::InvalidateRelayRegistrationSignals() {
+  relay_registration_session_->fetch_add(1);
+}
+
+void ConversationsHub::PostRelayRegistrationSignal(const RelayRegistrationSignal signal) {
+  std::function<void(RelayRegistrationSignal)> callback;
+  {
+    std::lock_guard lock(relay_registration_mu_); // the poll worker vs. the UI binding it
+    callback = on_relay_registration_signal_;
+  }
+  if (!callback) {
+    return;
+  }
+  const uint64_t session = relay_registration_session_->load();
+  if (signal == RelayRegistrationSignal::PollOk) {
+    AppRuntime::PostUI([callback = std::move(callback), session, current = relay_registration_session_]() {
+      if (current->load() != session) {
+        return; // a poll of a session that is gone
+      }
+      callback(RelayRegistrationSignal::PollOk);
+    });
+    return;
+  }
+  // Every poll (~2 s) says it again: one waiting on the UI thread is enough. PostUI keeps the order of the two.
+  if (relay_not_registered_posted_->exchange(true)) {
+    return;
+  }
+  AppRuntime::PostUI([callback = std::move(callback), posted = relay_not_registered_posted_, session,
+                      current = relay_registration_session_]() {
+    posted->store(false); // cleared when the task starts, stale or not
+    if (current->load() != session) {
+      return; // a poll of a session that is gone: the new session decides for itself
+    }
+    callback(RelayRegistrationSignal::NotRegistered);
+  });
 }
 
 void ConversationsHub::CheckBlobSpace(const bool after_quota_error) {
@@ -3253,8 +3307,8 @@ Roe<void> ConversationsHub::RotateBriefLlmKey(const std::string& llm_base_url) {
     MarkRegistrationExpired(expired);
     (void)Identity().Update(expired);
     const char* renew_hint = response->status_code == 403
-                                 ? "Registration expired — use Renew registration in Me → Profile."
-                                 : "Brief API key rejected — renew registration in Me → Profile.";
+                                 ? "Registration expired — use Renew registration in Settings → Profile."
+                                 : "Brief API key rejected — renew registration in Settings → Profile.";
     return AppError::Auth(Err::Auth::Forbidden, "Brief key rotate HTTP " + std::to_string(response->status_code))
         .WithUser(renew_hint);
   }
@@ -3488,6 +3542,8 @@ void ConversationsHub::Shutdown() {
   }
   if (mesh_messaging_) {
     mesh_messaging_->SetOnBriefRelayHealthChanged(nullptr);
+    mesh_messaging_->SetOnRelayNotRegistered(nullptr);
+    InvalidateRelayRegistrationSignals();
     mesh_messaging_->SetOnMessagesChanged(nullptr);
     mesh_messaging_->SetOnDeliveryNotice(nullptr);
     mesh_messaging_->SetOnBackgroundUnread(nullptr);

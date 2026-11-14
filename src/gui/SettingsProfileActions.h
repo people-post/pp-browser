@@ -10,6 +10,7 @@
 #include <ui/base/Types.h>
 #include <ui/dom/Event.h>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -38,9 +39,24 @@ public:
   void Bind(ui::DataModelConstructor& ctor);
   /** The invite locator the profile shows now: its QR code follows (made again only when it changes). */
   void ShowInvite(const std::string& locator);
+  /**
+   * Register (or renew) the identity, unlocking first. `quiet_success`: no "registered" / "renewed" line (the
+   * reconnect row: "Reconnected" comes when a poll gets through), and a network failure says so in its own words.
+   * `done(registered)` when it ends (false: the PIN was not given, or the registration failed or was refused); not
+   * called when what it waited for is dropped by a teardown.
+   */
+  void Register(bool quiet_success = false, std::function<void(bool ok)> done = {});
+  /**
+   * How a registration waits for the automatic renewal in flight (ChatController::RunWhenRegistrationIdle): it calls
+   * its argument at once, or once that renewal ends. Unbound: at once.
+   */
+  void BindRunWhenRegistrationIdle(std::function<void(std::function<void()>)> run);
+  /** The "QR code" button on the Me card opens the full-page "My QR code" (ContactsController::OpenMyQr). */
+  void BindShowMyQr(std::function<void()> show);
 
 private:
-  void Register();
+  /** False when it did not register (the failure is reported). */
+  bool RegisterUnlocked(bool renewing, bool quiet_success);
   void RotateBriefLlmKey();
   void CopyId();
   /** The photo menu (camera, library, remove); where it has one choice only, that choice at once. */
@@ -68,6 +84,8 @@ private:
   const SettingsCommands& commands_;
   const UnlockEnsurePorts& unlock_;
 
+  std::function<void(std::function<void()>)> run_when_registration_idle_;
+  std::function<void()> show_my_qr_;
   std::string qr_locator_;
   ui::String qr_svg_rml_;
   bool show_qr_ = false;

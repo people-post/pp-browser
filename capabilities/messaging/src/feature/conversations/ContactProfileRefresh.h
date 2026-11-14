@@ -4,6 +4,7 @@
 #include "mesh/types/IDirectoryClient.h"
 
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -14,7 +15,9 @@ namespace pbr {
 /**
  * Keeps a contact's nickname and profile photo current (B142): a contact whose last directory answer is older
  * than `kStaleMs` is looked up again by its Account ID and only `remote.nickname`, `remote.icon` and
- * `remote.fetched_at` are updated (ContactsStore::ApplyProfileRefresh). Blocking: call it off the UI thread.
+ * `remote.fetched_at` are updated (ContactsStore::ApplyProfileRefresh). The scan itself asks once with `force`. A
+ * lookup is not repeated within `kStaleMs`, answered or not (kept in memory, from the moment it starts). Blocking:
+ * call it off the UI thread.
  */
 class ContactProfileRefresh {
 public:
@@ -30,16 +33,23 @@ public:
 
   ContactProfileRefresh(ContactsStore& contacts, mesh::IDirectoryClient& directory);
 
-  /** True when the contact is known, has an Account ID and its last directory answer is stale at `now_ms`. */
-  bool NeedsRefresh(const std::string& contact_id, int64_t now_ms) const;
-  /** Looks the contact up and applies the answer when it is stale; a fresh or unknown contact costs no lookup. */
-  Result RefreshIfStale(const std::string& contact_id, int64_t now_ms);
+  /**
+   * True when the contact is known, has an Account ID, and a lookup is due at `now_ms`: its last
+   * answer is stale, or `force` (a fresh QR scan) skips that check. A lookup made
+   * lately is never repeated, forced or not.
+   */
+  bool NeedsRefresh(const std::string& contact_id, int64_t now_ms, bool force = false) const;
+  /** Looks the contact up and applies the answer when it is due; a fresh or unknown contact costs no lookup. */
+  Result RefreshIfStale(const std::string& contact_id, int64_t now_ms, bool force = false);
 
 private:
+  bool Due(const Contact& contact, int64_t now_ms, bool force) const;
+
   ContactsStore& contacts_;
   mesh::IDirectoryClient& directory_;
-  std::mutex mutex_;
-  std::set<std::string> in_flight_; // one lookup per contact at a time (detail and chat opened together)
+  mutable std::mutex mutex_;
+  std::map<std::string, int64_t> last_attempt_ms_; // contact id -> when it was last looked up
+  std::set<std::string> in_flight_;                // one lookup per contact at a time (detail and chat opened together)
 };
 
 } // namespace pbr

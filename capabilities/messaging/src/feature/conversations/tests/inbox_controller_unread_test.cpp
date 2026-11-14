@@ -3,6 +3,7 @@
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/ContactsStore.h"
+#include "lib/people/ContactTypes.h"
 #include "domain/peers/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
 #include "lib/messaging/EditMessage.h"
@@ -653,6 +654,45 @@ TEST(InboxMessageEditTest, DeletingOurEditedMessageCancelsItsUnsentEdit) {
   ASSERT_TRUE(env.inbox->DeleteMessageForMe(chat.id, "m2"));
   EXPECT_EQ(cancelled, std::vector<std::string>{"e1"}) << "not ours: nothing to cancel";
   EXPECT_TRUE(EditTextOf(env.store->GetMessage(chat.id, "e1").value().value()).value().empty());
+}
+
+} // namespace
+} // namespace pbr
+
+namespace pbr {
+namespace {
+
+// A call from a contact's page looks the chat up without opening it: the active chat stays, the unread count stays;
+// opening it (the Message button) still clears the count and makes it active.
+TEST(InboxControllerUnreadTest, QuietDirectThreadLookupDoesNotActivateOrMarkRead) {
+  InboxTestEnv env("unread_quiet_lookup_test");
+  ASSERT_TRUE(env.inbox->ListThreads());
+
+  Contact ann;
+  ann.id = "contact-ann";
+  ann.display_name = "Ann";
+  ann.remote.ids = {{mesh::ContactIdKind::Account, "account:ann", true}};
+  SyncContactMirrors(ann);
+  ASSERT_TRUE(env.contacts->Upsert(ann));
+
+  auto first = env.inbox->FindOrCreateDirectThreadQuietly("contact-ann", ThreadChannel::E2ePublic);
+  ASSERT_TRUE(first);
+  EXPECT_FALSE(env.inbox->GetActiveThread()) << "making the chat for a call does not open it";
+
+  env.inbox->IncrementUnread(first->id);
+  env.inbox->IncrementUnread(first->id);
+  auto again = env.inbox->FindOrCreateDirectThreadQuietly("contact-ann", ThreadChannel::E2ePublic);
+  ASSERT_TRUE(again);
+  EXPECT_EQ(again->id, first->id) << "the same chat the Message button would open";
+  EXPECT_FALSE(env.inbox->GetActiveThread());
+  EXPECT_EQ(env.inbox->SumUnreadForContact("contact-ann"), 2) << "calling does not read their messages";
+
+  auto opened = env.inbox->FindOrCreateDirectThread("contact-ann", ThreadChannel::E2ePublic);
+  ASSERT_TRUE(opened);
+  EXPECT_EQ(opened->id, first->id);
+  ASSERT_TRUE(env.inbox->GetActiveThread());
+  EXPECT_EQ(env.inbox->GetActiveThread()->id, first->id);
+  EXPECT_EQ(env.inbox->SumUnreadForContact("contact-ann"), 0);
 }
 
 } // namespace

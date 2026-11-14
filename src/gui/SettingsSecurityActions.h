@@ -46,6 +46,10 @@ public:
    * (plan #21 ⑧); the app default PIN only confirms.
    */
   void ExportLinkDevice();
+  /** Phones' transfer page: the "code copied" box shows (set by the success path of ExportLinkDevice only). */
+  bool TransferCodeCopied() const { return transfer_code_copied_; }
+  /** Clears the "copied" state and re-reads the page's two validity lines (on opening and on leaving the page). */
+  void ClearTransferCopied();
   /**
    * Me → Security → Change PIN: the PIN gate's three steps (current, new, again), then the engine's change. On the app
    * default PIN the current-PIN step is skipped (that PIN is public): new, again.
@@ -62,6 +66,8 @@ private:
   void CheckPin(const SecretText& pin, std::function<void(Roe<void>)> done);
   /** The "copy transfer code?" confirm, then the code to the clipboard. */
   void ConfirmExportLinkDevice();
+  /** The transfer page's lead and "copied" lines, with the code's validity in minutes (from the code's own TTL). */
+  void SetTransferLabels();
   /** Me → Security → Show recovery phrase: the PIN again (unless the app default), then the 24 words for a while. */
   void ShowRecoveryPhrase();
   /** Me → Security → Save a copy of my account: the sealed account state to a file the user picks (M023). */
@@ -95,6 +101,10 @@ private:
   uint64_t background_listener_ = 0;
   /** How long the phrase stays on screen. */
   static constexpr int64_t kRecoveryPhraseShownMs = 2 * 60 * 1000;
+
+  bool transfer_code_copied_ = false;
+  ui::String move_lead_label_;
+  ui::String move_valid_label_;
 
   bool diagnostics_sending_ = false;
   /** Hidden in the UI demo app (it uploads nothing). */

@@ -3,6 +3,7 @@
 #include "common/Lifetime.h"
 #include "common/Module.h"
 #include "feature/conversations/MessagingContactsPorts.h"
+#include "gui/CallActionsPorts.h"
 #include "gui/ChatSessionPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/contacts/ContactsAccountPorts.h"
@@ -83,6 +84,20 @@ public:
    */
   void BindGroupJoinOffer(std::function<bool(const std::string& text)> offer) { offer_group_join_ = std::move(offer); }
   void BindAccountPorts(ContactsAccountPorts ports);
+  /** Calls: `start_call` and `peer_calls_ready` (the chat header's own call-button condition). */
+  void BindCallActions(CallActionsPorts ports);
+  /** Block someone who is not a contact (saves them as a blocked contact; their id back): the chat's stranger block. */
+  void BindStrangerBlocker(std::function<Roe<std::string>(const std::string& account_id)> block) {
+    block_stranger_ = std::move(block);
+  }
+  /** Add someone who is not a contact from the chat's local directory copy; the new contact's id (or why not). */
+  void BindStrangerAdder(std::function<Roe<std::string>(const std::string& account_id)> add) {
+    add_stranger_ = std::move(add);
+  }
+  /** The contact page's photo opens large: the avatar viewer (`image_src` is the photo's local path). */
+  void BindAvatarViewer(std::function<void(const std::string& image_src)> open) {
+    open_avatar_viewer_ = std::move(open);
+  }
   /** Where the stars ("常用联系人") are kept: the profile's preferences (device-only). */
   void BindSessionStore(SessionStore* store);
 
@@ -172,10 +187,22 @@ public:
     bool member_preview = false;
     /** That member's account id (what Add contact looks up). */
     ui::String member_account;
+    /**
+     * The page was opened from this person's own 1:1 chat (not from a group): the chat's Block, copy ID and Add show,
+     * the sheet says "Contact info", and they can be messaged (the chat is open).
+     */
+    bool member_from_dm = false;
     /** Starred as a favourite (the phone page's star button reads "Favorite" and is filled). */
     bool starred = false;
     /** Its Refresh runs (the button reads "Refreshing…" and a press does nothing). */
     bool refreshing = false;
+    /** "Share with others" (a friend's page): the id the account text names (relay, else account), the locator the
+     *  QR code and the text carry (empty without an Account ID), and which of the two choices exist. The friend's own
+     *  nickname goes into both, never the remark. */
+    std::string share_account_id;
+    std::string share_locator;
+    bool can_share_account = false;
+    bool can_share_qr = false;
   };
 
   bool RegisterModel(ui::Context* context);
@@ -187,9 +214,36 @@ public:
   void SetShowAdvanced(bool advanced);
   void Tick();
   void FlushPending();
+  /**
+   * The contact page's / a list row's voice or video call: opens (or finds) the chat with `contact_id` and calls from
+   * it, as the chat's call button does. Never reads the selected contact: the caller says whose it is. Says why (a
+   * pill) when the person is blocked, cannot be reached yet, or this device is not connected yet.
+   */
+  void OnCallContact(const std::string& contact_id, bool video);
+  /** A person who is not a contact, on the member page: asks, saves them as a blocked contact, shows their page. */
+  void OnBlockMember();
+  /** The page that is showing (tests read it to see that a swiped row never replaces it). */
+  const ContactDetail& Selected() const { return selected_; }
+  /** Add on a member page opened from a 1:1 chat: the chat menu's own add (local directory copy, the chat is adopted). */
+  void OnAddMemberFromChat();
+  /**
+   * A button of a swiped contact row on the phone New chat page (`action`: info, voice, video, more): that contact's page,
+   * a voice or video call, or the More sheet (block / unblock, remove). Every one works on `contact_id`, not on the
+   * selected contact.
+   */
+  void OnNewChatSwipeAction(const std::string& contact_id, const std::string& action);
+  /**
+   * The More sheet of a swiped New chat row: Block (red) or, for a blocked contact, Unblock; and Remove contact (red).
+   * Each runs the usual confirm and result pill on `contact_id`, then the New chat list is read again. Empty when there
+   * is no such contact.
+   */
+  std::vector<ContextMenuAction> NewChatMoreActions(const std::string& contact_id, std::string* title_out = nullptr);
+  /** The contact ids the New chat list shows now, in order (what its rows are built from). */
+  std::vector<std::string> NewChatRowIds() const;
   void OnSelectContact(const std::string& contact_id);
   /** A group member who is not a contact: their page in its member state, pushed like a contact's page. */
-  void OnShowMember(const std::string& account_id, const std::string& name, const std::string& icon_src);
+  void OnShowMember(const std::string& account_id, const std::string& name, const std::string& icon_src,
+                    bool from_dm = false);
   /**
    * Phones, from a group (a sender in the chat, the group info sheet, the member list): the contact's page as a 4/5
    * page sheet over where the user is (no tab or chat changes); swiped down, the user is back there. Elsewhere (the
@@ -197,7 +251,8 @@ public:
    */
   void OnSelectContactSheet(const std::string& contact_id);
   /** The same for a group member who is not a contact (its member state); elsewhere OnShowMember. */
-  void OnShowMemberSheet(const std::string& account_id, const std::string& name, const std::string& icon_src);
+  void OnShowMemberSheet(const std::string& account_id, const std::string& name, const std::string& icon_src,
+                         bool from_dm = false);
   /** A peer's photo arrived: an open member state shows the new one (`icon_for(account id)` is its photo path). */
   void RefreshMemberIcon(const std::function<std::string(const std::string&)>& icon_for);
   /** The contact page is open as a page sheet. */
@@ -219,6 +274,8 @@ public:
   void OnGroupAdminSetAdmin();
   void OnGroupAdminReinvite();
   void OnDetailDismissed();
+  /** The page's photo (the view's tap_contact_avatar, and tests): opens it large; a letter avatar does nothing. */
+  void OnTapAvatar();
   /** The page's star button (the view's toggle_star, and tests): stars or unstars the contact shown. */
   void OnToggleStar();
   /** The stored star order (ProfilePreferences::starred_contacts); empty without a store. */
@@ -260,6 +317,30 @@ public:
   void OnScanQr();
   /** My QR code in its own sheet (the phone scanner's button); a toast instead while there is no account. */
   void OpenMyQr();
+  /** Whose code the QR page shows. Set on every open, never kept from the one before. */
+  enum class QrOwner { Mine, Friend };
+  /** Shows the QR page for `owner`: sets what it shows now (also when it is already open), pushes it when it is not. */
+  void OpenQrPage(QrOwner owner, const std::string& name, const std::string& locator, const std::string& hint);
+  QrOwner QrPageOwner() const { return qr_owner_; }
+  /** What the page's code encodes, and the name under it. */
+  const std::string& QrPageLocator() const { return qr_locator_; }
+  std::string QrPageName() const { return qr_name_.c_str(); }
+  /** Which buttons the page shows (tests): the share button, and the save button's words (empty: hidden). */
+  bool QrPageCanShare() const { return qr_can_share_; }
+  std::string QrPageSaveLabel() const { return qr_save_label_.c_str(); }
+  /** The selected friend's QR code in the same page (his own nickname under it); a toast when he has no account. */
+  void OpenSelectedFriendQr();
+  /** The friend page's "Share with others" sheet: account text, card into a chat, QR code (each only when it can be). */
+  std::vector<ContextMenuAction> ShareFriendActions(ui::Vector2i position);
+  /** The text "Share account" hands over for the selected friend (his nickname and Account ID, never the remark). */
+  std::string FriendShareText() const;
+  /** Share it through the system sheet; copied with a pill where there is none. */
+  void OnShareFriendAccount();
+  /** The QR page's buttons: the picture through the system sheet, or saved (photos / a file). */
+  void OnShareQrImage(ShareAnchor anchor);
+  void OnSaveQrImage();
+  /** What a finished save says (UI thread): a pill for saved / not allowed / failed, nothing for a cancel. */
+  void OnQrImageSaved(ImageSaveResult result);
   /**
    * Share a contact into a chat: `share` sends the card. When it fails and `refresh_card` is set, the contact's
    * card is asked for once (its devices, then the directory — the path opening the contact uses) and, if one
@@ -302,6 +383,7 @@ private:
   void DirtyAddContact();
   void CloseAddContactPage();
   void OpenMyQrPage();
+  void OnShareFriend(ui::Vector2i position);
   void OnMyQrDismissed();
   /** A directory hit chosen (or the only hit of a typed query): already a contact, ask first, or add. */
   void OfferHit(const mesh::DirectoryHit& hit, const std::string& query);
@@ -369,6 +451,17 @@ private:
   /** "Add contact" with a pasted invite: the contact added, shown (UI thread). */
   void OnAddedFromInvite(const Roe<std::pair<std::string, bool>>& added);
   void OnSetTrust(const std::string& trust);
+  /** Block the selected contact, after the usual confirm. */
+  void OnBlockSelected();
+  /** The same confirm for `contact_id` (a list row), which need not be the selected contact. */
+  void OnBlockContactById(const std::string& contact_id);
+  /**
+   * Runs `run` with `contact_id` as the selected contact (the existing flows read it) and then puts the previously
+   * selected page back, so a swiped row never leaks into an open contact page. Nothing runs when the contact is gone.
+   */
+  void WithContactSelected(const std::string& contact_id, const std::function<void()>& run);
+  /** The new contact's own page replaces the member page (after Add or Block from it). */
+  void ShowPersonPage(const std::string& contact_id);
   /** Saves `trust` for the contact; false (and a failure shown) when it could not be saved. */
   bool SetContactTrust(const std::string& contact_id, const std::string& trust);
   void SyncBlocked();
@@ -465,6 +558,13 @@ private:
   bool can_scan_ = false;
   bool can_new_group_ = false;
   bool my_qr_open_ = false;
+  QrOwner qr_owner_ = QrOwner::Mine;
+  std::string qr_locator_;
+  ui::String qr_name_;
+  ui::String qr_hint_;
+  bool qr_can_share_ = false;
+  /** The second button's words ("Save to Photos", "Save image…"); empty: not shown. */
+  ui::String qr_save_label_;
   int my_qr_layer_id_ = -1;
   bool compact_layout_ = false;
   bool advanced_ = false;
@@ -482,6 +582,10 @@ private:
   ScanPorts scan_ports_;
   std::function<bool(const std::string& text)> offer_group_join_;
   ContactsAccountPorts account_ports_;
+  CallActionsPorts call_actions_;
+  std::function<void(const std::string& image_src)> open_avatar_viewer_;
+  std::function<Roe<std::string>(const std::string& account_id)> block_stranger_;
+  std::function<Roe<std::string>(const std::string& account_id)> add_stranger_;
   SessionStore* session_store_ = nullptr;
   /** Contacts whose Refresh runs. */
   std::set<std::string> refreshing_contacts_;
@@ -498,7 +602,7 @@ bool ContactMatchesQuery(const Contact& contact, const std::string& query);
 ContactsController::ContactDetail ToContactDetail(const Contact& contact, const MessagingContactsPorts& ports);
 /** The page of a group member who is not a contact: name (else "Unnamed"), photo, last six of the account id. */
 ContactsController::ContactDetail MemberPreviewDetail(const std::string& account_id, const std::string& name,
-                                                      const std::string& icon_src);
+                                                      const std::string& icon_src, bool from_dm = false);
 /** Apply the editable detail fields (the remark, capped at kMaxNicknameChars) to a copy of the contact. */
 Contact BuildContactFromDetail(const Contact& existing, const ContactsController::ContactDetail& detail);
 

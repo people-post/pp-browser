@@ -1,13 +1,13 @@
 <!-- In a page sheet (a person opened from a group, on phones) the sheets' title row stays above the page; the pushed
      page and the desktop pane hide it (they have their own title bar). -->
 <div class="sheet-header cd-sheet-header" data-model="contacts">
-  <p class="sheet-title" data-if="selected.member_preview">{{i18n:contacts.member_info}}</p>
-  <p class="sheet-title" data-if="!selected.member_preview">{{i18n:contacts.info}}</p>
+  <p class="sheet-title" data-if="selected.member_preview && !selected.member_from_dm">{{i18n:contacts.member_info}}</p>
+  <p class="sheet-title" data-if="!selected.member_preview || selected.member_from_dm">{{i18n:contacts.info}}</p>
 </div>
 <div class="contact-detail-panel nav-bar-scroll stack" data-model="contacts">
   <div class="contacts-detail-header stack">
     <div class="contact-detail-avatar-row row">
-      <div class="contact-detail-avatar-frame"
+      <div class="contact-detail-avatar-frame" data-event-click="tap_contact_avatar()"
            data-class-avatar-tone-0="!selected.has_icon && selected.avatar_tone == 0"
            data-class-avatar-tone-1="!selected.has_icon && selected.avatar_tone == 1"
            data-class-avatar-tone-2="!selected.has_icon && selected.avatar_tone == 2"
@@ -50,7 +50,8 @@
         </button>
       </div>
     </div>
-    <!-- A group member who is not a contact (opened from a group chat): only Add contact. -->
+    <!-- A group member who is not a contact (opened from a group chat): only Add contact. Opened from the person's own 1:1
+         chat (selected.member_from_dm) it also has copy ID and Block, the chat's old person menu. -->
     <div data-if="selected.member_preview">
       <div class="cd-acts row">
         <button class="cd-act" type="button" data-event-click="add_member_contact()">
@@ -58,20 +59,48 @@
           <p class="cd-act-label">{{i18n:contacts.add}}</p>
         </button>
       </div>
-      <div class="cd-acts row" data-if="selected.can_message">
+      <div class="cd-acts row" data-if="selected.can_message && !selected.member_from_dm">
         <button class="cd-act" type="button" data-event-click="start_chat()">
           <svg class="cd-act-icon" src="../icons/v2/tab-chats.svg" width="24" height="24"></svg>
           <p class="cd-act-label">{{i18n:contacts.message}}</p>
         </button>
       </div>
-      <p class="cd-footnote cd-footnote--center">{{i18n:contacts.member_not_contact}}</p>
+      <!-- Everything the chat's person menu had: copy the account ID, block (a stranger is saved as a blocked contact). -->
+      <div class="cd-card" data-if="selected.member_from_dm">
+        <div class="cd-row">
+          <span class="cd-row-body">
+            <span class="cd-row-text">{{i18n:contacts.account_short}}</span>
+            <span class="cd-row-value">{{selected.short_id}}</span>
+            <button class="cd-icon-btn" type="button" title="{{i18n:contacts.copy_id}}" data-event-click="copy_contact_id()">
+              <svg class="cd-icon" src="../icons/v2/copy.svg" width="20" height="20"></svg>
+            </button>
+          </span>
+        </div>
+        <button class="cd-row cd-row--danger" type="button" data-event-click="block_member()">
+          <span class="cd-row-body"><span class="cd-row-text">{{i18n:contacts.block}}</span></span>
+        </button>
+      </div>
+      <p class="cd-footnote cd-footnote--center" data-if="selected.member_from_dm">{{i18n:contacts.dm_not_contact}}</p>
+      <p class="cd-footnote cd-footnote--center" data-if="!selected.member_from_dm">{{i18n:contacts.member_not_contact}}</p>
       <p class="cd-footnote cd-footnote--center" data-if="!selected.can_message">{{i18n:contacts.cant_message_yet}}</p>
     </div>
     <div data-if="!selected.member_preview">
-      <div class="cd-acts row">
+      <!-- Message, Voice call, Video call, Favorite: four equal tiles; the call tiles go with Message, and not for a
+           blocked person (DEV/PLAN-fewer-taps-1.md 3). -->
+      <div class="cd-acts cd-acts--tiles row">
         <button class="cd-act" type="button" data-if="selected.can_message" data-event-click="start_chat()">
           <svg class="cd-act-icon" src="../icons/v2/tab-chats.svg" width="24" height="24"></svg>
           <p class="cd-act-label">{{i18n:contacts.message}}</p>
+        </button>
+        <button class="cd-act" type="button" data-if="selected.can_message && selected.trust_key != 'blocked'"
+                data-event-click="call_contact_voice()">
+          <svg class="cd-act-icon" src="../icons/v2/phone.svg" width="24" height="24"></svg>
+          <p class="cd-act-label">{{i18n:call.start.voice}}</p>
+        </button>
+        <button class="cd-act" type="button" data-if="selected.can_message && selected.trust_key != 'blocked'"
+                data-event-click="call_contact_video()">
+          <svg class="cd-act-icon" src="../icons/v2/video.svg" width="24" height="24"></svg>
+          <p class="cd-act-label">{{i18n:call.start.video}}</p>
         </button>
         <!-- 常用联系人 (Kenneth 2026-11-04): first on Home's Favorites and in New chat's frequent group; device-only. -->
         <button class="cd-act" type="button" data-event-click="toggle_star()">
@@ -126,9 +155,9 @@
             </button>
           </span>
         </div>
-        <button class="cd-row" type="button" data-event-click="share_contact()">
+        <button class="cd-row" type="button" data-event-click="share_friend()">
           <span class="cd-row-body">
-            <span class="cd-row-text">{{i18n:common.share}}</span>
+            <span class="cd-row-text">{{i18n:contacts.share_others.row}}</span>
             <svg class="cd-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
           </span>
         </button>

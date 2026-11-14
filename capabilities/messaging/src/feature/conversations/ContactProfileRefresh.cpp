@@ -9,27 +9,38 @@ namespace pbr {
 ContactProfileRefresh::ContactProfileRefresh(ContactsStore& contacts, mesh::IDirectoryClient& directory)
     : contacts_(contacts), directory_(directory) {}
 
-bool ContactProfileRefresh::NeedsRefresh(const std::string& contact_id, const int64_t now_ms) const {
-  auto found = contacts_.Get(contact_id);
-  if (!found || !found->has_value()) {
-    return false;
-  }
-  const Contact& contact = **found;
+bool ContactProfileRefresh::Due(const Contact& contact, const int64_t now_ms, const bool force) const {
   if (!ContactAccountId(contact)) {
     return false;
   }
-  return now_ms - contact.remote.fetched_at >= kStaleMs;
+  {
+    // A lookup made lately (answered or not) is not repeated until `kStaleMs` has passed.
+    std::lock_guard lock(mutex_);
+    const auto attempt = last_attempt_ms_.find(contact.id);
+    if (attempt != last_attempt_ms_.end() && now_ms - attempt->second < kStaleMs) {
+      return false;
+    }
+  }
+  return force || now_ms - contact.remote.fetched_at >= kStaleMs;
 }
 
-ContactProfileRefresh::Result ContactProfileRefresh::RefreshIfStale(const std::string& contact_id,
-                                                                    const int64_t now_ms) {
-  Result result;
+bool ContactProfileRefresh::NeedsRefresh(const std::string& contact_id, const int64_t now_ms, const bool force) const {
   auto found = contacts_.Get(contact_id);
   if (!found || !found->has_value()) {
+    return false;
+  }
+  return Due(**found, now_ms, force);
+}
+
+ContactProfileRefresh::Result ContactProfileRefresh::RefreshIfStale(const std::string& contact_id, const int64_t now_ms,
+                                                                    const bool force) {
+  Result result;
+  auto found = contacts_.Get(contact_id);
+  if (!found || !found->has_value() || !Due(**found, now_ms, force)) {
     return result;
   }
   const auto account_id = ContactAccountId(**found);
-  if (!account_id || now_ms - (*found)->remote.fetched_at < kStaleMs) {
+  if (!account_id) {
     return result;
   }
   {
@@ -37,11 +48,13 @@ ContactProfileRefresh::Result ContactProfileRefresh::RefreshIfStale(const std::s
     if (!in_flight_.insert(contact_id).second) {
       return result;
     }
+    last_attempt_ms_[contact_id] = now_ms; // recorded as the lookup starts, answered or not
   }
   result.looked_up = true;
   auto hit = directory_.LookupByAccount(*account_id);
   if (hit) {
-    auto applied = contacts_.ApplyProfileRefresh(contact_id, *hit, now_ms);
+    // Nickname and photo are updated (never its devices, addresses or ids).
+    auto applied = contacts_.ApplyProfileRefresh(contact_id, *hit, now_ms, account_id);
     if (applied) {
       result.updated = std::move(*applied);
     } else {

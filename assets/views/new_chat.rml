@@ -4,7 +4,7 @@
   <div class="pane-nav nc-bar">
     <p class="pane-nav-title nc-bar-title">{{i18n:new_chat.title}}</p>
   </div>
-  <div class="nc-scroll nav-bar-scroll">
+  <div class="nc-scroll nav-bar-scroll" id="new-chat-list">
     <div class="chat-search nc-search">
       <svg class="chat-search-icon" src="../icons/v2/search.svg" width="16" height="16"></svg>
       <input class="chat-search-input" type="text" data-value="nc_query"
@@ -30,7 +30,10 @@
     <div data-for="section : nc_sections">
       <p class="nc-section-header">{{section.letter}}</p>
       <div class="nc-group">
+        <!-- A left swipe (SessionSwipeGesture, ContactRowSwipeConfig) shows Info / Voice / Video / More; `contact-id`, not
+             `session-id`, so the Chats swipe and its long-press menu never take a contact for a chat. -->
         <div data-for="contact : section.rows" class="contacts-row"
+             data-attr-contact-id="contact.id"
              data-event-click="new_chat_pick(contact.id)">
           <div class="contacts-row-avatar-frame"
                data-class-avatar-tone-0="!contact.has_icon && contact.avatar_tone == 0"
@@ -46,6 +49,24 @@
           </div>
           <div class="contacts-row-body">
             <p class="contacts-row-title">{{contact.title}}</p>
+          </div>
+          <div class="nc-swipe">
+            <div class="nc-swipe-btn nc-swipe-btn--info" swipe-action="info">
+              <svg src="../icons/v2/info.svg" width="22" height="22"></svg>
+              <p class="nc-swipe-label">{{i18n:new_chat.swipe.info}}</p>
+            </div>
+            <div class="nc-swipe-btn nc-swipe-btn--voice" swipe-action="voice">
+              <svg src="../icons/v2/phone.svg" width="22" height="22"></svg>
+              <p class="nc-swipe-label">{{i18n:new_chat.swipe.voice}}</p>
+            </div>
+            <div class="nc-swipe-btn nc-swipe-btn--video" swipe-action="video">
+              <svg src="../icons/v2/video.svg" width="22" height="22"></svg>
+              <p class="nc-swipe-label">{{i18n:new_chat.swipe.video}}</p>
+            </div>
+            <div class="nc-swipe-btn nc-swipe-btn--more" swipe-action="more">
+              <svg src="../icons/v2/more.svg" width="22" height="22"></svg>
+              <p class="nc-swipe-label">{{i18n:sidebar.swipe.more}}</p>
+            </div>
           </div>
         </div>
       </div>

@@ -36,6 +36,7 @@ set(_pp_platform_gui_sources
   NetworkConnectivity.cpp
   NetworkMonitor.cpp
   PlatformEarlyInit.cpp
+  ScreenAwake.cpp
   AiImagePrep.cpp
   ImageEncode.cpp
   ImageSampleAffine.cpp
@@ -121,6 +122,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     VideoPosterExtractor_Win32.cpp
     ImageThumbnail_Default.cpp
     PlatformShare_Default.cpp
+    PlatformShareImage_Default.cpp
     NativeFileDialog_Default.cpp
     CameraCapture_Default.cpp
     PlatformOpenFile.cpp
@@ -128,6 +130,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     PlatformAppBadge_Default.cpp
     DeviceScreenState_Default.cpp
     DeviceRinger_Default.cpp
+    ProximityScreenOff_Default.cpp
   )
 elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_core_sources
@@ -150,14 +153,17 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   )
   if(NOT PP_BROWSER_IS_IOS)
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm PlatformShare_Darwin.mm
+         PlatformShareImage_Darwin.mm
          NativeFileDialog_Default.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp
          PlatformNotificationSettings_Default.cpp PlatformAppBadge_Darwin.mm DeviceScreenState_Default.cpp
-         DeviceRinger_Default.cpp)
+         DeviceRinger_Default.cpp ProximityScreenOff_Default.cpp)
   else()
     # SDL3 has no iOS file dialog (its dummy backend answers "nothing picked" at once).
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp PlatformShare_Ios.mm
+         PlatformShareImage_Ios.mm
          NativeFileDialog_Ios.mm CameraCapture_Ios.mm PlatformOpenFile_Ios.mm PlatformNotificationSettings_Ios.mm
-         PlatformAppBadge_Ios.mm DeviceScreenState_Default.cpp DeviceRinger_Default.cpp)
+         PlatformAppBadge_Ios.mm DeviceScreenState_Default.cpp DeviceRinger_Default.cpp
+         ProximityScreenOff_Ios.mm)
   endif()
 else()
   list(APPEND _pp_platform_core_sources
@@ -172,7 +178,9 @@ else()
     ImageThumbnail_Default.cpp
     VideoPosterExtractor_Default.cpp
     PlatformShare_Default.cpp
+    PlatformShareImage_Default.cpp
     NativeFileDialog_Default.cpp
+    ProximityScreenOff_Default.cpp
   )
   if(PP_BROWSER_IS_ANDROID)
     list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp)
@@ -361,7 +369,9 @@ if(PP_BROWSER_IS_IOS)
   target_link_libraries(pp_foundation_platform PUBLIC
     "-framework UserNotifications"
     "-framework UIKit"
+    "-framework AVFoundation"
     "-framework PhotosUI"
+    "-framework Photos"
     "-framework QuickLook"
     "-framework UniformTypeIdentifiers")
 endif()

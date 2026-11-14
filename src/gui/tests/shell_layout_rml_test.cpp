@@ -48,7 +48,7 @@ TEST(ShellLayoutRmlTest, AnExpandedWindowHasTheRailTheListAndThePrimaryPane) {
   EXPECT_TRUE(Has(rml, "id=\"pane-composer-chat\"")) << "the chat pane carries the composer";
 }
 
-TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndMeIsAHiddenTab) {
+TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndSettingsIsItsThirdSegment) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = false;
   const std::string chats = ShellLayoutRml(state, false, "").ShellRoot();
@@ -56,10 +56,10 @@ TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndMeIsAHiddenTab) {
   EXPECT_TRUE(Has(chats,
                   "<div class=\"shell-nav-rail shell-nav-rail--compact shell-nav-rail--text\" "
                   "id=\"shell-nav-rail-mount\">"))
-      << "the two-word tab bar mounts here";
+      << "the three-word tab bar mounts here";
   EXPECT_FALSE(Has(chats, "shell-nav-page--hidden-tab"));
 
-  // DEV/PLAN-minimal-nav.md A: Settings (Me) fills the screen with its own back; TODO #200: the tab bar stays.
+  // Settings (Me) fills the screen above the tab bar (TODO #200), as a root page of the bar.
   state.nav_tab = NavTab::Me;
   const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
   EXPECT_TRUE(Has(rml, "id=\"shell-bottom-chrome\""));
@@ -70,8 +70,8 @@ TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndMeIsAHiddenTab) {
   EXPECT_FALSE(Has(rml, "close_account_sheet"));
 }
 
-// DEV/PLAN-minimal-nav.md A: the phone bar is two words (AI, Chats) and no icons; the desktop rail keeps its four tabs.
-TEST(ShellLayoutRmlTest, ThePhoneTabBarHasTwoWordsAndTheDesktopRailFourTabs) {
+// The phone bar is three words (AI, Chats, Settings) and no icons; the desktop rail keeps its four tabs.
+TEST(ShellLayoutRmlTest, ThePhoneTabBarHasThreeWordsAndTheDesktopRailFourTabs) {
   const std::string rail = ReadAsset("views/nav_rail.rml");
   const size_t desktop = rail.find("<div class=\"shell-nav-rail-inner\" data-if=\"layout_mode != 'compact'\">");
   ASSERT_NE(desktop, std::string::npos);
@@ -80,12 +80,16 @@ TEST(ShellLayoutRmlTest, ThePhoneTabBarHasTwoWordsAndTheDesktopRailFourTabs) {
   ASSERT_LT(phone, desktop);
   const std::string phone_bar = rail.substr(phone, desktop - phone);
   const std::string desktop_rail = rail.substr(desktop);
-  EXPECT_EQ(Count(phone_bar, "class=\"shell-nav-tab shell-nav-tab--text\""), 2u);
-  EXPECT_EQ(Count(phone_bar, "select_nav_tab("), 2u);
+  EXPECT_EQ(Count(phone_bar, "class=\"shell-nav-tab shell-nav-tab--text\""), 3u);
+  EXPECT_EQ(Count(phone_bar, "select_nav_tab("), 3u);
   EXPECT_TRUE(Has(phone_bar, "select_nav_tab('home')"));
   EXPECT_TRUE(Has(phone_bar, "select_nav_tab('sessions')"));
+  EXPECT_TRUE(Has(phone_bar, "select_nav_tab('me')"));
+  EXPECT_TRUE(Has(phone_bar, "data-class-shell-nav-tab--active=\"nav_bar_tab == 'me'\""));
   EXPECT_TRUE(Has(phone_bar, "{{i18n:nav.home}}"));
   EXPECT_TRUE(Has(phone_bar, "{{i18n:nav.sessions}}"));
+  EXPECT_TRUE(Has(phone_bar, "{{i18n:nav.me}}"));
+  EXPECT_LT(phone_bar.find("select_nav_tab('sessions')"), phone_bar.find("select_nav_tab('me')")) << "Settings is last";
   EXPECT_FALSE(Has(phone_bar, "<svg")) << "no icons";
   EXPECT_TRUE(Has(phone_bar, "nav_sessions_unread > 0")) << "the Chats unread count stays";
   EXPECT_EQ(Count(desktop_rail, "select_nav_tab("), 4u);
@@ -220,7 +224,8 @@ TEST(ShellLayoutRmlTest, ThePhoneBacksAreRoundButtons) {
   EXPECT_EQ(Count(settings, "class=\"settings-back-btn shell-circle-btn\""), 2u);
   EXPECT_TRUE(Has(settings,
                   "class=\"pane-nav-back shell-circle-btn\" type=\"button\" data-model=\"window\" "
-                  "data-event-click=\"hidden_tab_back()\""));
+                  "data-if=\"compact_chat_open\" data-event-click=\"hidden_tab_back()\""))
+      << "Settings' arrow shows only while a chat thread is open under it";
   EXPECT_TRUE(Has(settings, "{{i18n:settings.title}}"));
   EXPECT_TRUE(Has(ReadAsset("views/contacts.rml"),
                   "class=\"pane-nav-back shell-circle-btn\" type=\"button\" "
@@ -246,7 +251,7 @@ TEST(ShellLayoutRmlTest, ThePhoneBacksAreRoundButtons) {
 
 // Kenneth 2026-11-03: on Home the dock and the tab bar read as two hard lines; there they are one bottom area.
 TEST(ShellLayoutRmlTest, ThePhoneTabBarIs48dpWith16dpWords) {
-  // DEV/PLAN-minimal-nav.md A (Kenneth 2026-11-07): two words, the chosen one bold.
+  // (Kenneth 2026-11-07): one word per segment, the chosen one bold; every segment flexes to an equal share.
   const std::string css = ReadAsset("themes/components.rcss");
   const size_t bar = css.find(
       ".shell-nav-rail--text,\n.shell-nav-rail--text .shell-nav-rail-inner,\n"

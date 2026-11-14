@@ -4,6 +4,7 @@
 
 #include <exception>
 #include <utility>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -77,6 +78,8 @@ struct MessagingReadyTasks::State {
   std::shared_ptr<CoalescedRun> renew_run = std::make_shared<CoalescedRun>();
   std::shared_ptr<CoalescedRun> brief_key_run;
   std::string brief_key_base_url; // the last MintBriefKey's, for a run asked again
+  /** AfterRenewal's: run once the renewal in flight ends. */
+  std::vector<std::function<void()>> after_renewal;
 };
 
 namespace {
@@ -184,8 +187,16 @@ void RenewRegistrationOn(const std::shared_ptr<State>& state) {
       state, state->renew_run, *ticket,
       [renew_network = state->ports.renew_network, auto_renew]() { return renew_network(auto_renew); },
       [state, auto_renew](Box<RenewResult>& box, const bool live) -> std::function<void()> {
+        std::vector<std::function<void()>> waiting = std::exchange(state->after_renewal, {});
+        const auto run_waiting = [](std::vector<std::function<void()>>& list) {
+          for (std::function<void()>& then : list) {
+            then();
+          }
+        };
         if (!live) {
-          log().info << "registration renewal result dropped: the messaging session changed";
+          // A waiting registration was asked for in the old session: it does not run in a new one.
+          log().info << "registration renewal result dropped: the messaging session changed; waiting registrations "
+                     << waiting.size() << " dropped";
           return {};
         }
         RenewResult result = box.value ? std::move(*box.value) : RenewResult{.error = Error("renewal threw")};
@@ -200,13 +211,15 @@ void RenewRegistrationOn(const std::shared_ptr<State>& state) {
             result.error = saved.error();
           }
         }
-        return [state, result = std::move(result), auto_renew, stored]() {
+        return [state, result = std::move(result), auto_renew, stored, waiting = std::move(waiting),
+                run_waiting]() mutable {
           if (stored && state->ports.after_identity_changed) {
             state->ports.after_identity_changed();
           }
           if (state->ports.renew_hint) {
             state->ports.renew_hint(result, auto_renew);
           }
+          run_waiting(waiting);
         };
       },
       &RenewRegistrationOn);
@@ -272,6 +285,7 @@ MessagingReadyTasks::~MessagingReadyTasks() {
   // A result still on its way finishes its run and touches nothing else: the ports point into the owner.
   state_->closed = true;
   state_->ports = {};
+  state_->after_renewal.clear();
 }
 
 void MessagingReadyTasks::SyncPushDevices() {
@@ -297,6 +311,10 @@ void MessagingReadyTasks::OnMessagingTornDown() {
   state_->push_run->Reset();
   state_->renew_run->Reset();
   state_->brief_key_run->Reset();
+  if (!state_->after_renewal.empty()) {
+    log().info << "registration waiting for the renewal dropped: messaging was torn down";
+    state_->after_renewal.clear();
+  }
 }
 
 bool MessagingReadyTasks::PushInFlight() const {
@@ -305,6 +323,17 @@ bool MessagingReadyTasks::PushInFlight() const {
 
 bool MessagingReadyTasks::RenewInFlight() const {
   return state_->renew_run->InFlight();
+}
+
+void MessagingReadyTasks::AfterRenewal(std::function<void()> then) {
+  if (!then) {
+    return;
+  }
+  if (!state_->renew_run->InFlight()) {
+    then();
+    return;
+  }
+  state_->after_renewal.push_back(std::move(then));
 }
 
 } // namespace pbr

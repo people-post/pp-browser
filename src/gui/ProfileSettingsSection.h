@@ -4,10 +4,25 @@
 #include "feature/settings/SettingsSectionHandler.h"
 #include "common/PbrCompat.h"
 
+#include <string>
+
 namespace pbr {
 
 /** Recompute letter + tone from nickname and stable ids already on `state`. */
 void RefreshProfileAvatarGlyph(SettingsUiState& state);
+
+/**
+ * Display only. True when the card needs action, so the big blue register button is shown; false when the card is
+ * fine and the plain "Update now" row is enough. `status_label` is the identity view's fixed English label
+ * (RegistrationStatusLabel). Only "active" is fine; every other or unknown label needs action.
+ */
+bool ProfileRegisterIsPrimary(bool show_register, const std::string& status_label);
+
+/**
+ * The date the Status row may append (" · Valid until <date>", with "Show advanced settings" on): the card's expiry,
+ * except for a card that is not registered (an old date explains nothing there). `status_label` is the raw label.
+ */
+std::string ProfileExpiryToShow(const std::string& status_label, const std::string& expires);
 
 /** Me → Profile section. Identity I/O via SettingsCommands ports — no ConversationsHub. */
 class ProfileSettingsSection : public SettingsSectionHandler {

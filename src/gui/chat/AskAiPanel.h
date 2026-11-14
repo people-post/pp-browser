@@ -98,8 +98,9 @@ public:
   virtual void AskAiCloseSheet(int layer_id) = 0;
   /** Shows the thread in the full chat page (the panel is closed first). */
   virtual void AskAiOpenInChat(const std::string& thread_id) = 0;
-  /** The same question to PP 客服 (settings' ask_support): the person-to-person support chat opens. */
-  virtual void AskAiSupport(const std::string& question) = 0;
+  /** The same question to PP 客服 (settings' ask_support): the person-to-person support chat opens. `on_opened`
+   *  runs only when it did (the panel closes then); on failure the host shows the reason and the panel stays. */
+  virtual void AskAiSupport(const std::string& question, std::function<void()> on_opened) = 0;
   /** A button of a stored answer (a permission card, a link button): `action_index` of that message. */
   virtual void AskAiRunAction(const std::string& thread_id, const std::string& entry_id, int action_index) = 0;
   /** Link `link_index` of a stored answer of the thread. */
@@ -149,6 +150,8 @@ public:
   void Send();
   void DismissIntro();
   void AskSupport();
+  /** The intro card's "?": closes the sheet and asks PP Support how to use one's own AI. The card stays unseen. */
+  void AskSupportOwnAi();
   void OpenInChat();
   /** Closes the sheet (the draft stays; a running answer goes on). */
   void Close();

@@ -1,6 +1,8 @@
 #include "lib/people/ContactsStore.h"
 #include "lib/people/ContactTypes.h"
+#include "lib/people/ContactIdentity.h"
 #include "lib/people/ContactJson.h"
+#include "common/directory/DirectoryJson.h"
 #include "lib/people/SupportContact.h"
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
@@ -343,6 +345,252 @@ TEST_F(ContactsStoreTest, ProfileRefreshFromAnotherAccountChangesNothing) {
   EXPECT_EQ((*after)->remote.nickname, "Ada");
   EXPECT_EQ((*after)->remote.fetched_at, added->remote.fetched_at);
   EXPECT_FALSE((*after)->remote.icon.has_value());
+}
+
+// A contact added from a QR code: Account ID, a nickname and one device.
+class RemoteSnapshotTest : public ContactsStoreTest {
+protected:
+  Contact AddScanned(ContactsStore& store, const bool with_chain = false) {
+    mesh::DirectoryHit hit;
+    hit.account_id = "account:ada";
+    hit.nickname = "Ada";
+    hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true},
+               {mesh::ContactIdKind::PeerId, "12D3KooWOld", false}};
+    if (with_chain) {
+      hit.ids.push_back({mesh::ContactIdKind::Blockchain, "0xada", false});
+    }
+    hit.endpoints = {mesh::DirectoryEndpoint{.peer_id = "12D3KooWOld"}};
+    hit.multiaddrs = {"/ip4/10.0.0.1/tcp/1/p2p/12D3KooWOld"};
+    auto added = store.AddFromDirectoryHit(hit);
+    EXPECT_TRUE(static_cast<bool>(added));
+    return *added;
+  }
+  static bool HasId(const Contact& contact, const mesh::ContactIdKind kind, const std::string& value) {
+    for (const mesh::ContactId& id : contact.remote.ids) {
+      if (id.kind == kind && id.value == value) {
+        return true;
+      }
+    }
+    return false;
+  }
+  static mesh::DirectoryHit Answer() {
+    mesh::DirectoryHit hit;
+    hit.account_id = "account:ada";
+    hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true}};
+    return hit;
+  }
+};
+
+TEST_F(RemoteSnapshotTest, AnotherAccountIsRefusedAndNothingChanges) {
+  ContactsStore store(data_dir_.string());
+  const Contact before = AddScanned(store);
+  mesh::DirectoryHit other = Answer();
+  other.account_id = "account:mallory";
+  other.ids = {{mesh::ContactIdKind::Account, "account:mallory", true},
+               {mesh::ContactIdKind::Blockchain, "0xm", false}};
+  other.nickname = "Mallory";
+  auto applied = store.ApplyRemoteSnapshot(before.id, other, 999, std::string("account:ada"));
+  ASSERT_FALSE(static_cast<bool>(applied));
+  EXPECT_EQ(applied.error().message, "Directory hit is for another account");
+  const Contact after = **store.Get(before.id);
+  EXPECT_EQ(after.remote.nickname, "Ada");
+  EXPECT_FALSE(HasId(after, mesh::ContactIdKind::Blockchain, "0xm"));
+  EXPECT_EQ(after.remote.fetched_at, before.remote.fetched_at);
+}
+
+TEST_F(RemoteSnapshotTest, AnIdOfAnotherKindIsFilledInAndTheDeviceStays) {
+  ContactsStore store(data_dir_.string());
+  const Contact before = AddScanned(store);
+  mesh::DirectoryHit hit = Answer();
+  hit.ids.push_back({mesh::ContactIdKind::Blockchain, "0xada", false});
+  auto applied = store.ApplyRemoteSnapshot(before.id, hit, 5000);
+  ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
+  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::Blockchain, "0xada"));
+  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::PeerId, "12D3KooWOld"));
+  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::Account, "account:ada"));
+  EXPECT_EQ(applied->remote.endpoints.size(), 1u);
+  EXPECT_EQ(applied->remote.multiaddrs, before.remote.multiaddrs);
+  EXPECT_EQ(applied->remote.nickname, "Ada") << "an empty nickname keeps the known one";
+  EXPECT_EQ(applied->remote.fetched_at, 5000);
+}
+
+TEST_F(RemoteSnapshotTest, ANewDeviceReplacesTheOldOneWithItsAddresses) {
+  ContactsStore store(data_dir_.string());
+  const Contact before = AddScanned(store);
+  mesh::DirectoryHit hit = Answer();
+  hit.ids.push_back({mesh::ContactIdKind::PeerId, "12D3KooWNew", false});
+  hit.endpoints = {mesh::DirectoryEndpoint{.peer_id = "12D3KooWNew", .multiaddrs = {"/ip4/9.9.9.9/tcp/9"}}};
+  hit.multiaddrs = {"/ip4/9.9.9.9/tcp/9"};
+  auto applied = store.ApplyRemoteSnapshot(before.id, hit, 5000);
+  ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
+  EXPECT_FALSE(HasId(*applied, mesh::ContactIdKind::PeerId, "12D3KooWOld"));
+  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::PeerId, "12D3KooWNew"));
+  ASSERT_EQ(applied->remote.endpoints.size(), 1u);
+  EXPECT_EQ(applied->remote.endpoints[0].peer_id, "12D3KooWNew");
+  EXPECT_EQ(applied->remote.multiaddrs, hit.multiaddrs);
+}
+
+TEST_F(RemoteSnapshotTest, ANewDeviceWithoutAddressesClearsTheOldAddresses) {
+  ContactsStore store(data_dir_.string());
+  const Contact before = AddScanned(store);
+  mesh::DirectoryHit hit = Answer();
+  hit.ids.push_back({mesh::ContactIdKind::PeerId, "12D3KooWNew", false});
+  auto applied = store.ApplyRemoteSnapshot(before.id, hit, 5000);
+  ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
+  EXPECT_FALSE(HasId(*applied, mesh::ContactIdKind::PeerId, "12D3KooWOld"));
+  EXPECT_TRUE(applied->remote.endpoints.empty());
+  EXPECT_TRUE(applied->remote.multiaddrs.empty());
+}
+
+TEST_F(RemoteSnapshotTest, AnEmptyAnswerKeepsOtherIdsNicknameDeviceAndAddresses) {
+  ContactsStore store(data_dir_.string());
+  const Contact before = AddScanned(store, true);
+  auto applied = store.ApplyRemoteSnapshot(before.id, Answer(), 5000);
+  ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
+  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::Blockchain, "0xada"));
+  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::PeerId, "12D3KooWOld"));
+  EXPECT_EQ(applied->remote.nickname, "Ada");
+  EXPECT_EQ(applied->remote.endpoints.size(), before.remote.endpoints.size());
+  EXPECT_EQ(applied->remote.multiaddrs, before.remote.multiaddrs);
+}
+
+TEST_F(RemoteSnapshotTest, AContactWithoutAnAccountIdIsOverwrittenAsAWhole) {
+  ContactsStore store(data_dir_.string());
+  mesh::DirectoryHit old_hit;
+  old_hit.nickname = "Old";
+  old_hit.ids = {{mesh::ContactIdKind::Blockchain, "0xold", true}, {mesh::ContactIdKind::PeerId, "12D3KooWOld", false}};
+  old_hit.multiaddrs = {"/ip4/10.0.0.1/tcp/1"};
+  Contact contact;
+  contact.id = "c-no-account";
+  contact.remote.ids = old_hit.ids;
+  contact.remote.nickname = "Old";
+  contact.remote.multiaddrs = old_hit.multiaddrs;
+  ASSERT_TRUE(static_cast<bool>(store.Upsert(contact)));
+
+  mesh::DirectoryHit fresh;
+  fresh.ids = {{mesh::ContactIdKind::Blockchain, "0xold", true}, {mesh::ContactIdKind::PeerId, "12D3KooWNew", false}};
+  auto applied = store.ApplyRemoteSnapshot(contact.id, fresh, 5000);
+  ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
+  EXPECT_FALSE(HasId(*applied, mesh::ContactIdKind::PeerId, "12D3KooWOld"));
+  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::PeerId, "12D3KooWNew"));
+  EXPECT_TRUE(applied->remote.nickname.empty());
+  EXPECT_TRUE(applied->remote.multiaddrs.empty());
+}
+
+TEST_F(RemoteSnapshotTest, AnAnswerWithoutAnAccountIdIsAcceptedOnlyForAByAccountLookup) {
+  ContactsStore store(data_dir_.string());
+  const Contact before = AddScanned(store);
+  mesh::DirectoryHit hit;
+  hit.ids = {{mesh::ContactIdKind::Blockchain, "0xada", true}};
+  EXPECT_FALSE(static_cast<bool>(store.ApplyRemoteSnapshot(before.id, hit, 5000)));
+  EXPECT_FALSE(HasId(**store.Get(before.id), mesh::ContactIdKind::Blockchain, "0xada"));
+  auto applied = store.ApplyRemoteSnapshot(before.id, hit, 5000, std::string("account:ada"));
+  ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
+  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::Blockchain, "0xada"));
+  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::Account, "account:ada")) << "the account id stays";
+  EXPECT_FALSE(static_cast<bool>(store.ApplyRemoteSnapshot(before.id, hit, 5000, std::string("account:other"))));
+}
+
+TEST_F(RemoteSnapshotTest, AForeignAccountIdInTheAnswerIsNotStored) {
+  ContactsStore store(data_dir_.string());
+  const Contact before = AddScanned(store);
+  mesh::DirectoryHit hit = Answer();
+  hit.ids = {{mesh::ContactIdKind::Account, "account:mallory", true}};
+  auto applied = store.ApplyRemoteSnapshot(before.id, hit, 5000, std::string("account:ada"));
+  ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
+  EXPECT_FALSE(HasId(*applied, mesh::ContactIdKind::Account, "account:mallory"));
+  EXPECT_EQ(ContactAccountId(*applied), std::optional<std::string>("account:ada"));
+  auto found = store.FindByIdentity("account:mallory", mesh::ContactIdKind::Account);
+  ASSERT_TRUE(static_cast<bool>(found));
+  EXPECT_FALSE(found->has_value());
+
+  mesh::DirectoryHit both = Answer();
+  both.ids = {{mesh::ContactIdKind::Account, "account:mallory", true},
+              {mesh::ContactIdKind::Account, "account:ada", false}};
+  applied = store.ApplyRemoteSnapshot(before.id, both, 6000, std::string("account:ada"));
+  ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
+  EXPECT_FALSE(HasId(*applied, mesh::ContactIdKind::Account, "account:mallory"));
+  ASSERT_FALSE(applied->remote.ids.empty());
+  EXPECT_EQ(applied->remote.ids.front().kind, mesh::ContactIdKind::Account);
+  EXPECT_EQ(applied->remote.ids.front().value, "account:ada");
+  EXPECT_TRUE(applied->remote.ids.front().primary);
+  size_t accounts = 0;
+  for (const mesh::ContactId& id : applied->remote.ids) {
+    accounts += id.kind == mesh::ContactIdKind::Account ? 1 : 0;
+  }
+  EXPECT_EQ(accounts, 1u);
+  found = store.FindByIdentity("account:mallory", mesh::ContactIdKind::Account);
+  ASSERT_TRUE(static_cast<bool>(found));
+  EXPECT_FALSE(found->has_value());
+}
+
+TEST_F(RemoteSnapshotTest, KeptIdsKeepTheirPrimaryFlagAndOtherKindsStay) {
+  ContactsStore store(data_dir_.string());
+  Contact contact;
+  contact.id = "c-primary";
+  contact.remote.nickname = "Ada";
+  contact.remote.ids = {{mesh::ContactIdKind::Account, "account:ada", true},
+                        {mesh::ContactIdKind::PeerId, "12D3KooWOld", true},
+                        {mesh::ContactIdKind::Blockchain, "0xada", true}};
+  auto added = store.Upsert(contact);
+  ASSERT_TRUE(static_cast<bool>(added)) << added.error().message;
+  auto applied = store.ApplyRemoteSnapshot(added->id, Answer(), 5000, std::string("account:ada"));
+  ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
+  bool saw_peer = false;
+  bool saw_chain = false;
+  for (const mesh::ContactId& id : applied->remote.ids) {
+    if (id.kind == mesh::ContactIdKind::PeerId && id.value == "12D3KooWOld") {
+      saw_peer = true;
+      EXPECT_TRUE(id.primary);
+    }
+    if (id.kind == mesh::ContactIdKind::Blockchain && id.value == "0xada") {
+      saw_chain = true;
+      EXPECT_TRUE(id.primary);
+    }
+  }
+  EXPECT_TRUE(saw_peer);
+  EXPECT_TRUE(saw_chain);
+
+  // An answer that has its own primary of that kind wins; the kept one is demoted.
+  mesh::DirectoryHit with_chain = Answer();
+  with_chain.ids.push_back({mesh::ContactIdKind::Blockchain, "0xnew", true});
+  applied = store.ApplyRemoteSnapshot(added->id, with_chain, 6000, std::string("account:ada"));
+  ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
+  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::Blockchain, "0xnew"));
+  EXPECT_FALSE(HasId(*applied, mesh::ContactIdKind::Blockchain, "0xada")) << "the answer has that kind";
+}
+
+TEST_F(ContactsStoreTest, ProfileRefreshTakesNoIdsDevicesOrAddresses) {
+  ContactsStore store(data_dir_.string());
+  mesh::DirectoryHit hit;
+  hit.account_id = "account:ada";
+  hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true}, {mesh::ContactIdKind::PeerId, "12D3KooWOld", false}};
+  auto added = store.AddFromDirectoryHit(hit);
+  ASSERT_TRUE(static_cast<bool>(added));
+  mesh::DirectoryHit answer;
+  answer.ids = {{mesh::ContactIdKind::PeerId, "12D3KooWNew", false}};
+  answer.multiaddrs = {"/ip4/9.9.9.9/tcp/9"};
+  auto refreshed = store.ApplyProfileRefresh(added->id, answer, 100, std::string("account:ada"));
+  ASSERT_TRUE(static_cast<bool>(refreshed)) << refreshed.error().message;
+  ASSERT_EQ(refreshed->remote.ids.size(), added->remote.ids.size());
+  for (size_t i = 0; i < added->remote.ids.size(); ++i) {
+    EXPECT_EQ(refreshed->remote.ids[i].kind, added->remote.ids[i].kind);
+    EXPECT_EQ(refreshed->remote.ids[i].value, added->remote.ids[i].value);
+  }
+  EXPECT_TRUE(refreshed->remote.multiaddrs.empty());
+}
+
+// A by-account answer shaped as docs/contracts/SERVICE_ENDPOINTS.md describes it.
+TEST_F(RemoteSnapshotTest, AParsedByAccountAnswerKeepsTheDevice) {
+  ContactsStore store(data_dir_.string());
+  const Contact before = AddScanned(store);
+  auto json = TryParseObject(R"({"account_id": "account:ada", "nickname": "Ada", "signature_alg": "ml-dsa-65"})");
+  ASSERT_TRUE(json.has_value());
+  const mesh::DirectoryHit hit = DirectoryHitFromJson(*json);
+  auto applied = store.ApplyRemoteSnapshot(before.id, hit, 5000, std::string("account:ada"));
+  ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
+  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::PeerId, "12D3KooWOld"));
+  EXPECT_EQ(ContactAccountId(*applied), std::optional<std::string>("account:ada"));
 }
 
 TEST_F(ContactsStoreTest, AddingAContactLeavesTheRemarkEmpty) {

@@ -13,6 +13,18 @@ namespace pbr {
 
 namespace {
 
+/**
+ * The call's status line: the words, and before them a small amber warning triangle while the call audio is broken
+ * (`call_in_progress_subtitle_warning`). The row is one group that the parent centres or aligns; `row_class` sizes
+ * the triangle to the line's height, `p_class` / `p_attrs` are the words' own.
+ */
+void AppendStatusLine(std::ostringstream& out, const char* row_class, const char* p_class, const char* p_attrs) {
+  out << "<div class=\"call-status-row " << row_class << "\">"
+      << "<span class=\"call-status-warn\" data-if=\"call_in_progress_subtitle_warning\">"
+      << "<svg src=\"../icons/v2/alert-triangle.svg\" width=\"18\" height=\"18\"></svg></span>"
+      << "<p class=\"" << p_class << "\" " << p_attrs << ">{{call_in_progress_subtitle}}</p></div>";
+}
+
 /** V060: "On hold" with a pause icon, while `when` (a data expression) holds. */
 void AppendHoldPill(std::ostringstream& out, const char* when, const char* extra_class) {
   out << "<div class=\"call-hold-pill" << extra_class << "\" data-if=\"" << when << "\">"
@@ -654,8 +666,9 @@ std::string CallPhoneRml(const ShellState& state) {
   if (group) {
     out << "<div class=\"call-phone-head\">";
     out << "<p class=\"call-phone-group-name\">{{call_in_progress_phone_title}}</p>";
-    out << "<div class=\"call-phone-sub-row\"><p class=\"call-phone-sub\" "
-           "data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\">{{call_in_progress_subtitle}}</p>";
+    out << "<div class=\"call-phone-sub-row\">";
+    AppendStatusLine(out, "call-status-row--sub", "call-phone-sub",
+                     "data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\"");
     AppendSignalSlot(out, "call-phone-signal--compact");
     out << "</div>";
     AppendHints(out);
@@ -694,8 +707,8 @@ std::string CallPhoneRml(const ShellState& state) {
     out << "<div class=\"call-phone-video-body\"><div class=\"call-phone-who\">";
     out << "<p class=\"call-phone-who-name\">{{call_in_progress_phone_title}}</p>";
     AppendHoldPill(out, "call_in_progress_on_hold", " call-hold-pill--who");
-    out << "<p class=\"call-phone-who-status\" "
-           "data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\">{{call_in_progress_subtitle}}</p>";
+    AppendStatusLine(out, "call-status-row--sub", "call-phone-who-status",
+                     "data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\"");
     AppendResult(out);
     AppendSignalSlot(out, "call-phone-signal--compact");
     AppendHints(out);
@@ -721,8 +734,8 @@ std::string CallPhoneRml(const ShellState& state) {
                  call.peer_avatar_letter.c_str(), call.peer_avatar_tone, call.peer_unknown);
     out << "<p class=\"call-phone-name\">{{call_in_progress_phone_title}}</p>";
     AppendHoldPill(out, "call_in_progress_on_hold", " call-hold-pill--hero");
-    out << "<p class=\"call-phone-status\" data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\">"
-           "{{call_in_progress_subtitle}}</p>";
+    AppendStatusLine(out, "call-status-row--hero", "call-phone-status",
+                     "data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\"");
     AppendResult(out);
     AppendSignalSlot(out, "");
     AppendHints(out);
@@ -982,7 +995,7 @@ std::string CallInProgressRml(const ShellState& state) {
     out << "<div class=\"shell-call-bar-row row\">";
     out << "<div class=\"shell-call-bar-main\">";
     out << "<p class=\"text-sm shell-call-bar-title\">{{call_in_progress_title}}</p>";
-    out << "<p class=\"text-sm shell-call-bar-subtitle\">{{call_in_progress_subtitle}}</p>";
+    AppendStatusLine(out, "call-status-row--bar", "text-sm shell-call-bar-subtitle", "");
     out << "<p class=\"text-xs shell-call-debug-subtitle\" data-if=\"call_in_progress_show_debug_subtitle\" "
            ">{{call_in_progress_debug_subtitle}}</p>";
     out << "<p class=\"text-xs shell-call-quality-hint\" data-if=\"call_in_progress_quality_hint != ''\" "
@@ -1045,7 +1058,7 @@ std::string CallInProgressRml(const ShellState& state) {
   out << "<div class=\"shell-call-bar-row row\">";
   out << "<div class=\"shell-call-bar-main\">";
   out << "<p class=\"text-sm shell-call-bar-title\">{{call_in_progress_title}}</p>";
-  out << "<p class=\"text-sm shell-call-bar-subtitle\">{{call_in_progress_subtitle}}</p>";
+  AppendStatusLine(out, "call-status-row--bar", "text-sm shell-call-bar-subtitle", "");
   out << "<p class=\"text-xs shell-call-debug-subtitle\" data-if=\"call_in_progress_show_debug_subtitle\" "
          ">{{call_in_progress_debug_subtitle}}</p>";
   out << "<p class=\"text-xs shell-call-quality-hint\" data-if=\"call_in_progress_quality_hint != ''\" "

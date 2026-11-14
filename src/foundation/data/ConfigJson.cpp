@@ -827,6 +827,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("attachment_auto_on_wifi", prefs.attachment_auto_on_wifi);
   object.set("attachment_auto_on_cellular", prefs.attachment_auto_on_cellular);
   object.set("show_advanced_settings", prefs.show_advanced_settings);
+  object.set("show_tester_options", prefs.show_tester_options);
   object.set("onboarding_completed", prefs.onboarding_completed);
   object.set("ai_panel_intro_seen", prefs.ai_panel_intro_seen);
   object.set("ai_dot_shown", prefs.ai_dot_shown);
@@ -945,6 +946,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
     prefs.attachment_download_policy = "smart";
   }
   prefs.show_advanced_settings = object.getIf<bool>("show_advanced_settings").value_or(false);
+  prefs.show_tester_options = object.getIf<bool>("show_tester_options").value_or(false);
   prefs.onboarding_completed = object.getIf<bool>("onboarding_completed").value_or(false);
   prefs.ai_panel_intro_seen = object.getIf<bool>("ai_panel_intro_seen").value_or(false);
   prefs.ai_dot_shown = object.getIf<bool>("ai_dot_shown").value_or(true);

@@ -11,6 +11,7 @@
 #include "lib/messaging/OutgoingAttachment.h"
 #include "lib/messaging/GroupTypes.h"
 #include "feature/conversations/GroupInviteLinkWorkflow.h"
+#include "feature/conversations/RelayRegistrationSignal.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
@@ -430,6 +431,8 @@ public:
   AttachmentLimits CurrentAttachmentLimits() const;
   /** The server space is filling up: called on the UI thread with the percent used (said once per 80 / 90). */
   void SetOnBlobSpaceWarning(std::function<void(int percent)> callback);
+  /** What the relay's polls say about this account's registration (B216): called on the UI thread. */
+  void SetOnRelayRegistrationSignal(std::function<void(RelayRegistrationSignal)> callback);
   void EnsureThreadAttachments(const std::string& thread_id);
   void RetryAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   struct AttachmentInfo {
@@ -468,6 +471,8 @@ public:
   Roe<std::vector<Contact>> SearchLocalContacts(const std::string& query);
   Roe<LocalIdentity> GetLocalIdentity();
   Roe<LocalIdentity> UpdateLocalIdentity(const LocalIdentity& identity);
+  /** Publish the account locker soon (it keeps the relay binding), as a registration from Me → Profile does. */
+  void PublishAccountLockerSoon();
   /** One read-modify-write under the identity store's lock (IdentityStore::Modify); for writers off the UI thread. */
   Roe<LocalIdentity> ModifyLocalIdentity(const std::function<bool(LocalIdentity& identity)>& change);
   Roe<LocalIdentity> FinishAndPersistRegistration(const std::string& nickname);

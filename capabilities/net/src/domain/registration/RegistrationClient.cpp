@@ -1,6 +1,7 @@
 #include "domain/registration/RegistrationClient.h"
 
 #include "foundation/crypto/KemKeyBinding.h"
+#include "foundation/error/AppError.h"
 #include "lib/net/RegistrationSignPayload.h"
 #include "common/Utilities.h"
 
@@ -191,6 +192,11 @@ Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, Identity
     return applied.error();
   }
   return true;
+}
+
+bool IsRegistrationRefused(const Error& error) {
+  return AppError::CategoryOf(error) == ErrorCategory::Network &&
+         error.code == static_cast<int32_t>(Err::Network::HttpRejected);
 }
 
 Roe<RegistrationResult> UpdateRegisteredNickname(IRegistrationClient& registration, IdentityStore& identity,

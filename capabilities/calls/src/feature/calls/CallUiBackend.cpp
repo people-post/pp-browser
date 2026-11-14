@@ -196,10 +196,10 @@ void CallUiBackend::SetLocalVideoEnabled(bool enabled, std::function<void(Roe<vo
   });
 }
 
-void CallUiBackend::SetLocalOnHold(bool on_hold, std::function<void(Roe<void>)> on_done) {
+void CallUiBackend::SetLocalOnHold(bool on_hold, std::optional<bool> muted, std::function<void(Roe<void>)> on_done) {
   auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
-  stack_.PostToSessions([on_hold, reply](CallSessionManager* calls) {
-    reply(calls ? calls->SetLocalOnHold(on_hold) : Roe<void>(UnavailableError()));
+  stack_.PostToSessions([on_hold, muted, reply](CallSessionManager* calls) {
+    reply(calls ? calls->SetLocalOnHold(on_hold, muted) : Roe<void>(UnavailableError()));
   });
 }
 

@@ -90,6 +90,10 @@ public:
         pressed_ = false; // the list scrolls; this row never opens
         return {};
       }
+      if (config_.start_buttons == 0 && base_dp_ >= 0.f && dx > 0) {
+        pressed_ = false; // nothing to reveal on this side: a rightward drag on a closed row is not ours (swipe back)
+        return {};
+      }
       dragging_ = true;
     }
     const float ratio = dpr > 0.f ? dpr : 1.f;

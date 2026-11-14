@@ -633,6 +633,16 @@ select selectbox option:hover {
   image-color: #ff9f0a;
 }
 
+/* The warning triangle before a broken call audio's status line (the words keep their colour). */
+.call-status-warn svg {
+  image-color: #ff9f0a;
+}
+
+/* The warning triangle before the technical-users note at the top of the Advanced page (the words keep their colour). */
+.settings-warn-icon svg {
+  image-color: #ff9f0a;
+}
+
 .shell-call-quality-bar {
   background-color: #7878805c;
 }
@@ -1544,6 +1554,31 @@ input.checkbox:checked {
   color: #ffffff;
 }
 
+/* New chat's contact swipe buttons (same material as the Chats ones). */
+.nc-swipe-btn--info {
+  background-color: #0a84ff;
+}
+
+.nc-swipe-btn--voice {
+  background-color: #30d158;
+}
+
+.nc-swipe-btn--video {
+  background-color: #40c8e0;
+}
+
+.nc-swipe-btn--more {
+  background-color: #8e8e93;
+}
+
+.nc-swipe-btn svg {
+  image-color: #ffffff;
+}
+
+.nc-swipe-label {
+  color: #ffffff;
+}
+
 .sidebar-session-active {
   background-color: #0a84ff2e;
   border-color: #0a84ff2e;
@@ -1603,6 +1638,18 @@ input.checkbox:checked {
 
 .sidebar-archived-entry:hover {
   background-color: #7878803d;
+}
+
+.sidebar-reconnect-entry {
+  background-color: #7878803d;
+}
+
+.sidebar-reconnect-entry svg {
+  image-color: #ff453a;
+}
+
+.sidebar-reconnect-label {
+  color: #ff453a;
 }
 
 .sidebar-session-mention {
@@ -1692,7 +1739,8 @@ input.checkbox:checked {
   image-color: #ebebf54c;
 }
 
-.chat-row-blocked {
+.chat-row-blocked,
+.chat-row-preview-icon {
   image-color: #ebebf599;
 }
 
@@ -2976,6 +3024,15 @@ input.checkbox:checked {
   background-color: #7878803d;
 }
 
+/* A row that cannot be used here: grey title, no press fill (its "?" keeps its own). */
+.shell-layer-compact .group-row--off:active {
+  background-color: transparent;
+}
+
+.shell-layer-compact .group-row--off .group-row-text {
+  color: #ebebf54c;
+}
+
 /* Separator above each row but the first (see the 1dp overlap in components.rcss). */
 .shell-layer-compact .group-row-body {
   border-top: 1dp #54545899;
@@ -3002,6 +3059,106 @@ input.checkbox:checked {
 
 .shell-layer-compact .settings-label.group-row-text {
   color: #ffffff;
+}
+
+/* A small text button at the right end of a row ("Update now"). */
+.shell-layer-compact .settings-text-btn,
+.shell-layer-compact .settings-text-btn:hover,
+.shell-layer-compact .settings-text-btn:focus {
+  background-color: transparent;
+  color: #0a84ff;
+}
+
+.shell-layer-compact .settings-text-btn:active {
+  background-color: #7878803d;
+}
+
+/* The Advanced page's banner strip: pale amber with a warn-coloured edge; the words stay in the normal text colour. */
+.shell-layer-compact .settings-banner {
+  background-color: #2e2210;
+  border-top: 1dp solid #ff9f0a4d;
+  border-bottom: 1dp solid #ff9f0a4d;
+}
+
+.settings-banner-text {
+  color: #ffffff;
+}
+
+/* The transfer page: the "code copied" box (green edge, pale green fill), the numbered steps and the reset note. */
+.shell-layer-compact .settings-copied-box {
+  background-color: #30d1582e;
+  border-color: #30d158;
+}
+
+.shell-layer-compact .settings-copied-title {
+  color: #ffffff;
+}
+
+.shell-layer-compact .settings-copied-sub {
+  color: #ebebf599;
+}
+
+.shell-layer-compact .settings-step-num {
+  background-color: #0a84ff;
+  color: #ffffff;
+}
+
+.shell-layer-compact .settings-step-text {
+  color: #ffffff;
+}
+
+.shell-layer-compact .settings-step {
+  border-top: 1dp #54545899;
+}
+
+.shell-layer-compact .settings-transfer-lead {
+  color: #ebebf599;
+}
+
+/* Linked devices: the quiet icon, the sentence, the grey lines. */
+.shell-layer-compact .settings-dev-ill {
+  image-color: #ebebf54c;
+}
+
+.shell-layer-compact .settings-dev-sentence,
+.shell-layer-compact .settings-dev-note-title {
+  color: #ffffff;
+}
+
+.shell-layer-compact .settings-dev-sub,
+.shell-layer-compact .settings-dev-note-line {
+  color: #ebebf599;
+}
+
+/* Plain action rows in a card: accent text on the card, a separator above each. */
+.shell-layer-compact .settings-section--grouped .group-card .btn.settings-action-row,
+.shell-layer-compact .settings-section--grouped .group-card .btn.settings-action-row:hover,
+.shell-layer-compact .settings-section--grouped .group-card .btn.settings-action-row:focus {
+  background-color: transparent;
+  color: #0a84ff;
+  border: 0;
+  border-top: 1dp solid #54545899;
+}
+
+.shell-layer-compact .settings-section--grouped .group-card .btn.settings-action-row:active {
+  background-color: #7878803d;
+}
+
+/* The small tinted pill at the right end of a row ("Send"); grey while the action runs. */
+.shell-layer-compact .settings-pill-btn,
+.shell-layer-compact .settings-pill-btn:hover,
+.shell-layer-compact .settings-pill-btn:focus {
+  background-color: transparent;
+}
+
+.shell-layer-compact .settings-pill {
+  background-color: #0a84ff2e;
+  color: #0a84ff;
+}
+
+.shell-layer-compact .settings-pill-btn:disabled .settings-pill {
+  background-color: #7878803d;
+  color: #ebebf599;
 }
 
 /* A row that does something rather than opens a page (About > Send problem logs): accent text, like iOS. */
@@ -3625,7 +3782,7 @@ input.checkbox:checked {
 }
 
 /* Phone AI drawer (DEV/PLAN-minimal-nav.md C): the page colour, a soft shadow fading out from its right edge, and the
-   bottom "you" row pressed like a list row. */
+   top bar. */
 .shell-drawer-body {
   background-color: #000000;
 }
@@ -3634,24 +3791,24 @@ input.checkbox:checked {
   decorator: linear-gradient(to right, #00000066, #00000000);
 }
 
-.ai-drawer-title,
-.ai-drawer-me-name {
+.ai-drawer-title {
   color: #ffffff;
 }
 
-.ai-drawer-me-link-icon--ok {
-  image-color: #40c8e0;
+.link-dot--ok {
+  background-color: #30d158;
 }
 
-.ai-drawer-me-link-icon--connecting {
-  image-color: #ff9f0a;
+.link-dot--connecting {
+  background-color: #ff9f0a;
 }
 
-.ai-drawer-me-link-icon--offline {
-  image-color: #ff453a;
+/* Offline: grey (the owner's choice; red was the alternative). One line to change. */
+.link-dot--offline {
+  background-color: #8e8e93;
 }
 
-.ai-drawer-me-link-text {
+.link-status-text {
   color: #ebebf599;
 }
 
@@ -3660,11 +3817,8 @@ input.checkbox:checked {
   background-color: transparent;
 }
 
-/* The drawer's top bar and "you" row: the bar colour, frosted with Transparency on (like .pane-nav-bg). */
-.ai-drawer-top,
-.ai-drawer-me,
-.ai-drawer-me:hover,
-.ai-drawer-me:focus {
+/* The drawer's top bar: the bar colour, frosted with Transparency on (like .pane-nav-bg). */
+.ai-drawer-top {
   background-color: #1a1a1c;
 }
 
@@ -3673,24 +3827,23 @@ input.checkbox:checked {
   background-color: #7878803d;
 }
 
-.shell-drawer--frost .ai-drawer-top,
-.shell-drawer--frost .ai-drawer-me,
-.shell-drawer--frost .ai-drawer-me:hover,
-.shell-drawer--frost .ai-drawer-me:focus {
+.shell-drawer--frost .ai-drawer-top {
   background-color: #1a1a1cc7;
   backdrop-filter: blur(20px);
 }
 
-.ai-drawer-me:active {
-  background-color: #7878803d;
+/* The drawer's bottom strip: just the bar colour, no line, frosted with Transparency on (like the top bar). */
+.ai-drawer-strip {
+  background-color: #1a1a1c;
 }
 
-.ai-drawer-me-avatar .avatar-letter {
-  color: #ffffff;
+.shell-drawer--frost .ai-drawer-strip {
+  background-color: #1a1a1cc7;
+  backdrop-filter: blur(20px);
 }
 
-.ai-drawer-me-chevron {
-  image-color: #ebebf54c;
+.ai-drawer-count-text {
+  color: #ebebf599;
 }
 
 /* On the camera the disc is a dark glass with a white chevron, in both themes. */
@@ -3753,7 +3906,7 @@ input.checkbox:checked {
 }
 
 /* Profile page camera badge and the photo viewer. */
-.me-profile-avatar-badge {
+.me-profile-avatar-badge-dot {
   background-color: #0a84ff;
   border-color: #1c1c1e;
 }
