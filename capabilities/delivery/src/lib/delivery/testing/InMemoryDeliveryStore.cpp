@@ -697,4 +697,43 @@ void InMemoryControlLaneSeenStore::Forget(const std::string& sender, const std::
   seen_.erase({sender, control_id});
 }
 
+Roe<std::optional<RelayGrant>> InMemoryRelayGrantStore::Received(const std::string& recipient_account_id) {
+  std::lock_guard lock(mutex_);
+  const auto it = received_.find(recipient_account_id);
+  return it == received_.end() ? std::optional<RelayGrant>() : std::optional<RelayGrant>(it->second);
+}
+
+Roe<void> InMemoryRelayGrantStore::PutReceived(const RelayGrant& grant) {
+  std::lock_guard lock(mutex_);
+  auto [it, added] = received_.try_emplace(grant.recipient_account_id, grant);
+  if (!added && grant.issued_at > it->second.issued_at) {
+    it->second = grant;
+  }
+  return {};
+}
+
+Roe<void> InMemoryRelayGrantStore::DropReceived(const std::string& recipient_account_id) {
+  std::lock_guard lock(mutex_);
+  received_.erase(recipient_account_id);
+  return {};
+}
+
+Roe<std::optional<IRelayGrantStore::Issued>> InMemoryRelayGrantStore::IssuedTo(const std::string& sender_account_id) {
+  std::lock_guard lock(mutex_);
+  const auto it = issued_.find(sender_account_id);
+  return it == issued_.end() ? std::optional<Issued>() : std::optional<Issued>(it->second);
+}
+
+Roe<void> InMemoryRelayGrantStore::PutIssued(const Issued& issued) {
+  std::lock_guard lock(mutex_);
+  issued_[issued.grant.sender_account_id] = issued;
+  return {};
+}
+
+Roe<void> InMemoryRelayGrantStore::DropIssued(const std::string& sender_account_id) {
+  std::lock_guard lock(mutex_);
+  issued_.erase(sender_account_id);
+  return {};
+}
+
 } // namespace pbr

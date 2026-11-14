@@ -223,7 +223,7 @@ void SettingsProfileActions::RotateBriefLlmKey() {
 void SettingsProfileActions::CopyId() {
   host_.PullFromView();
   // The account ID: what the row shows, what Share sends and what a friend types into Add contact.
-  const std::string& account_id = host_.UiState().profile_relay_id;
+  const std::string& account_id = host_.UiState().profile_account_id;
   if (account_id.empty()) {
     UserFeedback::Fail(Tr("settings.profile.no_peer_id"));
     return;
@@ -440,12 +440,12 @@ void SettingsProfileActions::Share(const ShareAnchor anchor) {
   // The account id is what friends type to find you; without one there is nothing to share yet.
   host_.PullFromView();
   const SettingsUiState& state = host_.UiState();
-  if (state.profile_relay_id.empty()) {
+  if (state.profile_account_id.empty()) {
     UserFeedback::Fail(Tr("settings.profile.no_peer_id"));
     return;
   }
   ShareInviteOrCopy(
-      AccountInviteText(state.profile_nickname, state.profile_relay_id, state.profile_contact_locator),
+      AccountInviteText(state.profile_nickname, state.profile_account_id, state.profile_contact_locator),
       [](const std::string& text, const ShareAnchor at) { return PlatformShareText(Backend::GetWindow(), text, at); },
       anchor,
       [](const std::string& text) {

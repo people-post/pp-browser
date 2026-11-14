@@ -40,10 +40,10 @@ class ILockerClient {
 public:
   virtual ~ILockerClient() = default;
   /**
-   * Store `record` as `relay_user_id` (the relay checks the request is that user's, and the snapshot is the locker
+   * Store `record` as `account_id` (the relay checks the request is that user's, and the snapshot is the locker
    * owner's). An error carries a LockerPutRefusal in `refused` when the provider said why.
    */
-  virtual Roe<void> Put(const std::string& relay_user_id, const LockerRecord& record,
+  virtual Roe<void> Put(const std::string& account_id, const LockerRecord& record,
                         std::optional<LockerPutRefusal>* refused = nullptr) = 0;
   /** The stored snapshot of `locker_id` (hex), by id alone; nullopt when the provider holds none. */
   virtual Roe<std::optional<LockerRecord>> Get(const std::string& locker_id) = 0;

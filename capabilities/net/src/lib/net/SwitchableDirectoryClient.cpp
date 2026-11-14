@@ -34,14 +34,6 @@ Roe<std::vector<mesh::DirectoryHit>> SwitchableDirectoryClient::SearchPeople(con
   return backend->SearchPeople(query);
 }
 
-Roe<mesh::DirectoryHit> SwitchableDirectoryClient::LookupRelayUser(const std::string& relay_user_id) {
-  const auto backend = Backend();
-  if (!backend) {
-    return NotConfigured();
-  }
-  return backend->LookupRelayUser(relay_user_id);
-}
-
 Roe<mesh::DirectoryHit> SwitchableDirectoryClient::LookupByAccount(const std::string& account_id) {
   const auto backend = Backend();
   if (!backend) {

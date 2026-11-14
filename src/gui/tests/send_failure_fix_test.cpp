@@ -370,25 +370,25 @@ TEST_F(SendFailureFixTest, TheDialogsSayWhatThePlanSays) {
 
 TEST_F(SendFailureFixTest, TheReasonWordsFollowHowATapGoesOn) {
   EXPECT_EQ(
-      SendFailureText(SendFailure::RecipientNotFound, SendAdvice::UpdateTheirCardAndResend),
+      SendFailureText(SendFailure::RecipientNotOnRelay, SendAdvice::UpdateTheirCardAndResend),
       "The server can't find them, so this message wasn't sent. Tap the red mark to update their card and resend.");
-  EXPECT_EQ(SendFailureText(SendFailure::RecipientNotFound, SendAdvice::UpdateTheirCardOnly),
+  EXPECT_EQ(SendFailureText(SendFailure::RecipientNotOnRelay, SendAdvice::UpdateTheirCardOnly),
             "The server can't find them, so this message wasn't sent. Tap the red mark to update their card.");
-  EXPECT_EQ(SendFailureText(SendFailure::RecipientNotFound),
+  EXPECT_EQ(SendFailureText(SendFailure::RecipientNotOnRelay),
             "The server can't find them, so this message wasn't sent.");
   EXPECT_EQ(SendFailureText(SendFailure::SenderNotRegistered, SendAdvice::UpdateMyCard),
             "People can't find you right now, so this message wasn't sent. Update your card first.");
   EXPECT_EQ(SendFailureText(SendFailure::SenderNotRegistered),
             "People can't find you right now, so this message wasn't sent.");
-  EXPECT_EQ(SendFailureReasonText(SendFailure::RecipientNotFound, SendMarkTap::Refusal::None,
+  EXPECT_EQ(SendFailureReasonText(SendFailure::RecipientNotOnRelay, SendMarkTap::Refusal::None,
                                   SendAdvice::UpdateTheirCardAndResend),
-            SendFailureText(SendFailure::RecipientNotFound, SendAdvice::UpdateTheirCardAndResend));
+            SendFailureText(SendFailure::RecipientNotOnRelay, SendAdvice::UpdateTheirCardAndResend));
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(SendFailureText(SendFailure::RecipientNotFound, SendAdvice::UpdateTheirCardAndResend),
+  EXPECT_EQ(SendFailureText(SendFailure::RecipientNotOnRelay, SendAdvice::UpdateTheirCardAndResend),
             "服务器上找不到对方，这条消息没有发出去。点红色叹号可以更新对方的名片并重发。");
-  EXPECT_EQ(SendFailureText(SendFailure::RecipientNotFound, SendAdvice::UpdateTheirCardOnly),
+  EXPECT_EQ(SendFailureText(SendFailure::RecipientNotOnRelay, SendAdvice::UpdateTheirCardOnly),
             "服务器上找不到对方，这条消息没有发出去。点红色叹号可以更新对方的名片。");
-  EXPECT_EQ(SendFailureText(SendFailure::RecipientNotFound), "服务器上找不到对方，这条消息没有发出去。");
+  EXPECT_EQ(SendFailureText(SendFailure::RecipientNotOnRelay), "服务器上找不到对方，这条消息没有发出去。");
   EXPECT_EQ(SendFailureText(SendFailure::SenderNotRegistered, SendAdvice::UpdateMyCard),
             "别人现在找不到你，这条消息没有发出去。请先更新你的名片。");
   EXPECT_EQ(SendFailureText(SendFailure::SenderNotRegistered), "别人现在找不到你，这条消息没有发出去。");

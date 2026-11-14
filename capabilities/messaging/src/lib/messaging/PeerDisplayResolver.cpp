@@ -49,7 +49,7 @@ PeerDisplayLabel PeerDisplayResolver::ResolveDirectPeer(const std::string& peer_
     }
   }
 
-  label.title = ShortRelayId(peer_identity_value);
+  label.title = ShortPersonId(peer_identity_value);
   label.trust = PeerLabelTrust::RawId;
   return label;
 }
@@ -96,7 +96,7 @@ PeerDisplayLabel PeerDisplayResolver::ResolveThread(const Thread& thread) const 
   PeerDisplayLabel label = ResolveDirectPeer(thread.peer_identity_kind, thread.peer_identity_value);
   if (label.title.empty() && !thread.title.empty()) {
     // Prefer short form of stored title when identity is empty.
-    label.title = ShortRelayId(thread.title);
+    label.title = ShortPersonId(thread.title);
   }
   return label;
 }

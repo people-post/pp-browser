@@ -100,8 +100,8 @@ void OnboardingController::LoadIdentityFields() {
   if (nickname_.empty() || !view.nickname.empty()) {
     nickname_ = view.nickname.c_str();
   }
-  // The id friends type: the same "account ID" Me → Profile shows and shares (relay id; M002 id as fallback).
-  account_id_ = (!view.relay_id.empty() ? view.relay_id : view.account_id).c_str();
+  // The id friends type: the same Account ID Me → Profile shows and shares (M002; the relay's inbox too, MR001).
+  account_id_ = view.account_id.c_str();
   contact_locator_ = view.contact_locator;
 }
 

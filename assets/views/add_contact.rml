@@ -39,7 +39,7 @@
         <div class="ac-account-body">
           <p class="ac-account-name">{{my_name}}</p>
           <p class="ac-account-id" data-if="my_has_account">{{my_account_id_shown}}</p>
-          <p class="ac-account-id" data-if="!my_has_account">{{i18n:settings.profile.relay_id_none}}</p>
+          <p class="ac-account-id" data-if="!my_has_account">{{i18n:settings.profile.account_id_none}}</p>
         </div>
         <button class="ac-icon-btn" type="button" data-if="my_has_account" data-event-click="add_copy_id()">
           <svg src="../icons/v2/copy.svg" width="22" height="22"></svg>

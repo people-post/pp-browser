@@ -34,10 +34,12 @@
 #include "lib/delivery/E2ePublicSessionLogic.h"
 #include "common/chat/SystemControl.h"
 #include "lib/delivery/IControlLaneSeenStore.h"
-#include "domain/delivery/PeerRouteBook.h"
+#include "domain/delivery/RelayGrantCoordinator.h"
 #include "domain/delivery/ControlLane.h"
 #include "domain/delivery/DeliveryOutbox.h"
 #include "domain/delivery/E2ePublicSessionKeys.h"
+#include "domain/delivery/RecipientRelays.h"
+#include "domain/delivery/RelayInboxCoordinator.h"
 #include "feature/conversations/PeerTransports.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/GroupInviteGate.h"
@@ -87,7 +89,7 @@ struct ThreadPeerLinkView {
   bool show_retry = false;
   int backoff_seconds = 0;
   bool has_direct_endpoint = false;
-  /** Messages can go via the Brief relay (a route to the peer is known and a relay is configured). */
+  /** Messages can go via the Brief relay (the peer has an Account ID, its inbox, and a relay is configured). */
   bool relay_available = false;
   bool carrier_backed = false;
 };
@@ -134,7 +136,10 @@ public:
   Roe<ThreadMessage> ClearReaction(const std::string& thread_id, const std::string& target_message_id,
                                    const std::string& emoji);
   void PollAndMerge();
-  /** Same ingest as PollAndMerge; `force` bypasses foreground rate limit. */
+  /**
+   * Polls our relay inboxes (RelayInboxCoordinator): the preferred one at every sync, the others at every fourth;
+   * `force` (a push, a wake) polls every one.
+   */
   void SyncInboxFromWake(bool force = true);
   /** Last HTTP Brief/relay poll outcome for ambient status chrome. */
   enum class BriefRelayHealthState {
@@ -158,7 +163,7 @@ public:
   }
   void SetOnBriefRelayHealthChanged(std::function<void(BriefRelayHealthState)> callback);
   /**
-   * The relay answered a poll "Relay user not registered" (IsRelayUserNotRegistered), after the health is marked
+   * Our preferred relay answered a poll `not_registered` (IsRelayUserNotRegistered), after the health is marked
    * Failed: called on the poll worker on every such poll (each ~2 s in the foreground), so keep it short and
    * thread-safe. Set before messaging runs; pass nullptr to clear (any thread).
    */
@@ -166,7 +171,22 @@ public:
   /** Me recovery: delete undelivered relay rows older than `older_than_days` (does not clear local chat). */
   Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);
   void RetryFailedOutbound();
-  void SetRelayClient(IRelayClient* relay);
+  /** The relay clients (multi-relay R2). */
+  struct RelayClients {
+    /** The preferred relay's: stream history and clearing the inbox. */
+    IRelayClient* preferred = nullptr;
+    /** Where the outbox sends: by the recipient's relay list (RelaySendCoordinator); null: `preferred`. */
+    IRelayClient* sender = nullptr;
+    /** Our inboxes, preferred first (polled). */
+    std::vector<RelayInbox> inboxes;
+  };
+  void SetRelayClients(RelayClients clients);
+  /** Whether another relay of ours may be polled now (we are registered there); none: always. Any thread. */
+  void SetInboxReady(std::function<bool(const std::string& origin)> ready);
+  /** Whose directories a stale recipient's card is asked of: our relays, then our other directories (RecipientRelays). */
+  void SetCardDirectories(std::vector<std::string> origins) { recipient_relays_.SetDirectories(std::move(origins)); }
+  /** A recipient's relays for the sender, from the cards kept here (valid while this lives). */
+  RelayRoutes RecipientRelayRoutes() { return recipient_relays_.Routes(); }
   /** The system-control families features bind (call control, …); passed on to the receive path. Not owned. */
   void SetSystemControls(const SystemControlRegistry* controls);
   void SetGroupMembership(GroupMembershipWorkflow* groups);
@@ -198,8 +218,14 @@ public:
     card_service_.SetAudienceEveryone(
         [gate]() { return gate && gate->Snapshot()->audience == mesh::DirectAudience::Everyone; });
   }
-  /** Where an account is reached on the relay, from what is known here (no lookup). */
-  std::optional<std::string> RelayRouteOf(const std::string& account_id) const;
+  /** The relay recipient for `account_id`: the Account ID itself (its inbox, MR001); none for another kind of id. */
+  static std::optional<std::string> RelayRecipientFor(const std::string& account_id);
+  /** This account's relay grants: issued to who we accept, held from who accepted us (MR005). */
+  RelayGrantCoordinator& RelayGrants() { return relay_grants_; }
+  /** Where the relay grants are kept (the profile's store); none: none are issued or attached. */
+  void SetRelayGrantStore(IRelayGrantStore* store);
+  /** The participants of a call we answered or are in get our relay grant (MR005), off the caller's thread. */
+  void GrantCallPeers(std::vector<std::string> accounts);
   /** Account cards between devices (the card exchange over Amp). */
   AccountCardService& AccountCards() { return card_service_; }
   /** This account's own key card and device list (M021). */
@@ -302,20 +328,11 @@ public:
   Roe<void> ImportPskRawBase64(const std::string& thread_id, const std::string& raw_b64);
   Roe<void> ImportPskBundleJson(const std::string& thread_id, const std::string& bundle_json);
   Roe<void> MarkPskVerified(const std::string& thread_id);
-  void RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr);
+  void RegisterPeerDirectEndpoint(const std::string& peer_account_id, const std::string& multiaddr);
   /** B28: best-first candidate list (RankAmpDialMultiaddrs order) via Amp RegisterEndpoints. */
-  void RegisterPeerDirectEndpoints(const std::string& peer_relay_user_id, const std::vector<std::string>& multiaddrs);
-  /** Register all multiaddrs from a contact (keyed by relay id). */
+  void RegisterPeerDirectEndpoints(const std::string& peer_account_id, const std::vector<std::string>& multiaddrs);
+  /** Register all multiaddrs from a contact (keyed by its Account ID). */
   void RegisterContactDirectEndpoints(const Contact& contact);
-  /**
-   * Brief route sources for Account→`relay:` (P001 strangers / non-contact calls).
-   * Shadows: cached directory hits; directory: sync LookupByAccount on send miss.
-   */
-  void SetPeerRouteSources(DirectoryShadowCache* shadows, mesh::IDirectoryClient* directory);
-  /** The backend changed: every cached relay id is from the old registry (PeerRouteBook::ForgetAll). */
-  void ForgetPeerRoutes();
-  /** Learn Account→`relay:` from inbound `sender_contact_id` + `sender_relay_id`. */
-  void NoteAccountRelayRoute(const std::string& account_id, const std::string& relay_user_id);
   /** D052 — fetch one older-history page when scrolled to top. */
   void ScrollBackfill(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_complete = {});
   void TailSyncActiveE2eThread();
@@ -331,7 +348,7 @@ public:
   /**
    * Send `control` (an identified system message) to `peer_identity` on the control lane
    * (kRelayRouteControl): a copy per device on the peer's card, each E2E under that device pair's e2e_public
-   * session (the account copy for a peer with no card, M024), not sequenced, never stored. Queued on the critical lane — relay when a route is known (retried
+   * session (the account copy for a peer with no card, M024), not sequenced, never stored. Queued on the critical lane — the relay first (retried
    * while fresh), else Amp. Our card rides it when the peer may not hold it; `with_card` when the caller knows it
    * may hold none of ours (ControlLane::Send).
    */
@@ -389,8 +406,10 @@ private:
   Roe<ThreadMessage> SendPublicPskRotate(const std::string& thread_id, PublicPskRotateKind kind);
   void PurgeRetryQueueForThread(const std::string& thread_id);
   void HandleDirectInbound(RelayEnvelope envelope, const std::string& from_peer_id);
-  void LoadPersistedRelayCursor(const std::string& relay_user_id);
-  void PersistRelayCursor(const std::string& relay_user_id);
+  /** The relay refused a stranger's send to `recipient` for its price (MR005): the chat shows it (P001). */
+  void NotePaymentRequired(const std::string& recipient, int64_t floor);
+  /** After an inbound envelope: a verified sender is online (its grants, MR005). */
+  void NoteVerifiedSender(const RelayEnvelope& envelope, bool sender_verified);
 
   static constexpr int64_t kReceiveFailureNoticeCooldownMs = 5 * 60 * 1000;
 
@@ -420,7 +439,6 @@ private:
   PublicPskLockCoordinator public_lock_;
   const SystemControlRegistry* controls_ = nullptr;
   std::string support_account_id_;
-  std::string relay_cursor_;
   std::function<void()> on_messages_changed_;
   std::function<void(const DeliveryNotice&)> on_delivery_notice_;
   std::function<void(std::string, std::string, std::string, bool)> on_background_unread_;
@@ -439,6 +457,18 @@ private:
     std::string thread_id;
     bool mentions_us = false;
   };
+  /** What the ingest of one relay batch leaves for the UI. */
+  struct RelayIngestNotes {
+    bool changed = false;
+    std::vector<BackgroundNotice> background_notices;
+    std::vector<std::pair<std::string, std::string>> inbound_messages;
+  };
+  /** A poll's batch from one of our relays, through the receive pipeline (the critical worker). */
+  void TakeRelayBatch(const RelayInboxCoordinator::Batch& batch, const std::string& local_account_id);
+  void IngestRelayEnvelope(const RelayEnvelope& envelope, const std::string& local_account_id, RelayIngestNotes& notes);
+  void PostRelayIngestNotes(RelayIngestNotes notes);
+  RelayInboxCoordinator::Ports InboxPorts();
+  bool InboxReady(const std::string& origin) const;
   std::optional<BackgroundNotice> BackgroundNoticeFor(const RelayReceiveOutcome& outcome,
                                                       const std::string& local_account);
   /**
@@ -512,8 +542,6 @@ private:
   std::atomic<int64_t> siblings_told_card_at_{0};
   /** A link to device `peer_id` is up (its copy goes over it, M022). */
   bool LinkedTo(const std::string& peer_id) const;
-  /** Where each peer is reached on the relay (contacts, learned routes, the directory). */
-  PeerRouteBook routes_;
   /** The pair's e2e_public sessions (the control lane, call media-key wraps). */
   E2ePublicSessionKeys session_keys_;
   /** Our cards: the key card carried with every key_init, the account card served to who asks. */
@@ -523,16 +551,23 @@ private:
   AccountCardService card_service_;
   /** Identified system messages to a peer (call signaling): E2E, unsequenced, never stored. */
   ControlLane control_lane_;
+  /** Relay grants issued and held (MR005); after the control lane, which carries them. */
+  RelayGrantCoordinator relay_grants_;
+  /** A recipient's relays from its kept card, and its newest card fetched when they are stale (multi-relay R2). */
+  RecipientRelays recipient_relays_;
   uint64_t last_relay_poll_ms_ = 0;
   /** 0 = Unknown, 1 = Ok, 2 = Failed — see BriefRelayHealthState. */
   std::atomic<int> brief_relay_health_{0};
   void StoreBriefRelayHealth(BriefRelayHealthState state);
   std::mutex brief_relay_health_cb_mu_;
   std::function<void(BriefRelayHealthState)> on_brief_relay_health_changed_;
+  mutable std::mutex inbox_ready_mu_;
+  std::function<bool(const std::string&)> inbox_ready_;
+  /** One relay batch through the pipeline at a time (two relays may carry the same message). */
+  std::mutex relay_ingest_mu_;
+  /** Our relay inboxes, polled (last: its posted polls capture this, and it reads the members above). */
+  RelayInboxCoordinator inboxes_;
   std::function<void()> on_relay_not_registered_; // under brief_relay_health_cb_mu_
-  std::atomic<bool> poll_pending_{false};
-  /** Set when SyncInbox is requested while a poll is already in flight — worker re-polls. */
-  std::atomic<bool> poll_again_{false};
   std::atomic<bool> sync_pending_{false};
 };
 

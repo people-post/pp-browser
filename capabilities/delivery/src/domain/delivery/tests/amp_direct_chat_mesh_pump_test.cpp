@@ -88,8 +88,7 @@ RelayEnvelope MakeEnvelope() {
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "m-pump";
-  envelope.sender_relay_id = "relay:a";
-  envelope.sender_contact_id = "relay:a";
+  envelope.sender_contact_id = "account:a";
   envelope.sender_device = "QmTestDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;

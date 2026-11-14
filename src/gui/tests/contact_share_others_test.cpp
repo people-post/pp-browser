@@ -36,16 +36,15 @@ protected:
     full.local.display_name = "Mom (private remark)";
     full.remote.nickname = "Alice";
     full.remote.ids = {{mesh::ContactIdKind::Account, "account:abc", true},
-                       {mesh::ContactIdKind::RelayUser, "relay:alice", true},
                        {mesh::ContactIdKind::PeerId, "QmPhone", true}};
     SyncContactMirrors(full);
     contacts_["c-full"] = full;
-    Contact relay_only;
-    relay_only.id = "c-relay";
-    relay_only.remote.nickname = "Bob";
-    relay_only.remote.ids = {{mesh::ContactIdKind::RelayUser, "relay:bob", true}};
-    SyncContactMirrors(relay_only);
-    contacts_["c-relay"] = relay_only;
+    Contact device_only;
+    device_only.id = "c-device";
+    device_only.remote.nickname = "Bob";
+    device_only.remote.ids = {{mesh::ContactIdKind::PeerId, "QmBob", true}};
+    SyncContactMirrors(device_only);
+    contacts_["c-device"] = device_only;
     Contact bare;
     bare.id = "c-bare";
     bare.local.display_name = "Nobody";
@@ -74,7 +73,7 @@ protected:
     account.load_identity = []() {
       ProfileIdentityView view;
       view.ready = true;
-      view.relay_id = "relay:me";
+      view.account_id = "account:me";
       view.nickname = "Me";
       view.contact_locator = "mine-locator";
       return view;
@@ -100,7 +99,7 @@ TEST_F(ContactShareOthersTest, TheAccountTextNamesTheFriendByHisOwnNicknameNever
   controller_.OnSelectContact("c-full");
   const std::string text = controller_.FriendShareText();
   EXPECT_NE(text.find("Alice"), std::string::npos);
-  EXPECT_NE(text.find("relay:alice"), std::string::npos);
+  EXPECT_NE(text.find("account:abc"), std::string::npos);
   EXPECT_NE(text.find("Alice's PP account"), std::string::npos) << "says whose account it is, not 'my'";
   EXPECT_EQ(text.find("Mom"), std::string::npos);
   EXPECT_EQ(text.find("My PP account"), std::string::npos);
@@ -115,9 +114,8 @@ TEST_F(ContactShareOthersTest, TheSheetOffersOnlyWhatCanWork) {
   controller_.OnSelectContact("c-full");
   EXPECT_EQ(Ids(controller_.ShareFriendActions({})),
             (std::vector<std::string>{"share_friend_account", "share_friend_card", "share_friend_qr"}));
-  controller_.OnSelectContact("c-relay"); // an id to type, but no Account ID to build a code from
-  EXPECT_EQ(Ids(controller_.ShareFriendActions({})),
-            (std::vector<std::string>{"share_friend_account", "share_friend_card"}));
+  controller_.OnSelectContact("c-device"); // no Account ID: nothing to type, nothing to build a code from
+  EXPECT_EQ(Ids(controller_.ShareFriendActions({})), std::vector<std::string>{"share_friend_card"});
   controller_.OnSelectContact("c-bare"); // nothing to say about the account: only the card (which explains itself)
   EXPECT_EQ(Ids(controller_.ShareFriendActions({})), std::vector<std::string>{"share_friend_card"});
 }
@@ -139,7 +137,7 @@ TEST_F(ContactShareOthersTest, TheQrChoiceOpensTheFriendsCodeAndMineAfterItShows
 }
 
 TEST_F(ContactShareOthersTest, AFriendWithoutAnAccountIdOpensNoCode) {
-  controller_.OnSelectContact("c-relay");
+  controller_.OnSelectContact("c-device");
   controller_.OpenSelectedFriendQr();
   EXPECT_EQ(pushed_, 0);
   ASSERT_EQ(toasts_.size(), 1u);

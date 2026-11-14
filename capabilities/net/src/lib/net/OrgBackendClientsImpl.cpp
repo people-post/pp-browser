@@ -40,14 +40,14 @@ Roe<void> HttpPushDeviceClient::PostDevice(const char* path, const RelayApiOp op
     return Error("Relay base_url not configured");
   }
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildRelayApiDeviceSignBytes(op, registration.relay_user_id, registration.platform,
+  const auto sign_bytes = BuildRelayApiDeviceSignBytes(op, registration.account_id, registration.platform,
                                                        registration.device_id, registration.push_token, timestamp);
   auto signature = SignRelayApiBytes(sign_bytes);
   if (!signature) {
     return signature.error();
   }
   Object body;
-  body.set("relay_user_id", registration.relay_user_id);
+  body.set("account_id", registration.account_id);
   body.set("platform", registration.platform);
   body.set("device_id", registration.device_id);
   body.set("push_token", registration.push_token);
@@ -106,10 +106,6 @@ Roe<std::vector<mesh::DirectoryHit>> FailoverDirectoryClient::SearchPeople(const
   return FailoverTry(backends_, [&](mesh::IDirectoryClient& client) { return client.SearchPeople(query); });
 }
 
-Roe<mesh::DirectoryHit> FailoverDirectoryClient::LookupRelayUser(const std::string& relay_user_id) {
-  return FailoverTry(backends_, [&](mesh::IDirectoryClient& client) { return client.LookupRelayUser(relay_user_id); });
-}
-
 Roe<mesh::DirectoryHit> FailoverDirectoryClient::LookupByAccount(const std::string& account_id) {
   return FailoverTry(backends_, [&](mesh::IDirectoryClient& client) { return client.LookupByAccount(account_id); });
 }
@@ -146,29 +142,6 @@ Roe<std::vector<mesh::DirectoryHit>> HttpDirectoryClient::SearchPeople(const std
     hits.push_back(DirectoryHitFromJson(*item));
   }
   return hits;
-}
-
-Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupRelayUser(const std::string& relay_user_id) {
-  if (base_url_.empty()) {
-    return Error("Directory base_url not configured");
-  }
-  const std::string url = base_url_ + "/v1/users/" + relay_user_id;
-  const auto response = HttpClient::Get(url);
-  if (!response) {
-    return response.error();
-  }
-  if (response.value().status_code == 404) {
-    return Error("Relay user not found");
-  }
-  if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Directory lookup failed with status " + std::to_string(response.value().status_code));
-  }
-
-  auto root = TryParseObject(response.value().body);
-  if (!root || !root->contains("relay_user_id")) {
-    return Error("Invalid relay user lookup JSON");
-  }
-  return DirectoryHitFromJson(*root);
 }
 
 namespace {
@@ -238,17 +211,39 @@ Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& 
     return response.error();
   }
   if (response.value().status_code == 404) {
-    return Error("Account not found");
+    return Error("Account not found"); // `not_registered`: not on this relay, or expired
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
     return Error("Directory lookup failed with status " + std::to_string(response.value().status_code));
   }
 
   auto root = TryParseObject(response.value().body);
-  if (!root || !root->contains("relay_user_id")) {
-    return Error("Invalid account lookup JSON");
+  if (!root || root->getString("account_id").value_or("") != account_id) {
+    return Error("Invalid account lookup JSON"); // the row must be the account asked for
   }
   return DirectoryHitFromJson(*root);
+}
+
+Roe<std::optional<Object>> FetchStoredAccountCard(const std::string& relay_base_url, const std::string& account_id) {
+  if (relay_base_url.empty() || account_id.rfind("account:", 0) != 0) {
+    return Error("Stored card lookup: no relay or no Account ID");
+  }
+  const auto response = HttpClient::Get(relay_base_url + "/v1/users/by-account/" + EncodePathSegment(account_id));
+  if (!response) {
+    return response.error();
+  }
+  if (response.value().status_code == 404) {
+    return std::optional<Object>{}; // not registered there
+  }
+  if (response.value().status_code < 200 || response.value().status_code >= 300) {
+    return Error("Stored card lookup failed with status " + std::to_string(response.value().status_code));
+  }
+  auto root = TryParseObject(response.value().body);
+  if (!root || root->getString("account_id").value_or("") != account_id) {
+    return Error("Invalid account lookup JSON"); // the row must be the account asked for
+  }
+  const Object* card = root->getObject("account_card");
+  return card ? std::optional<Object>(*card) : std::optional<Object>{};
 }
 
 Roe<std::vector<mesh::MeshNodeHit>> MeshNodeHitsFromDirectoryJson(const std::string& json) {
@@ -268,14 +263,11 @@ Roe<std::vector<mesh::MeshNodeHit>> MeshNodeHitsFromDirectoryJson(const std::str
       continue;
     }
     mesh::MeshNodeHit hit;
-    if (auto relay = obj->getString("relay_user_id")) {
-      hit.relay_user_id = *relay;
-    }
-    if (hit.relay_user_id.empty()) {
-      continue;
-    }
     if (auto account = obj->getString("account_id")) {
       hit.account_id = *account;
+    }
+    if (hit.account_id.empty()) {
+      continue;
     }
     if (auto nick = obj->getString("nickname")) {
       hit.nickname = *nick;
@@ -440,7 +432,7 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     const std::string& challenge, const std::string& public_key_b64, const std::string& nickname,
     const std::string& signature, int64_t timestamp, const std::string& signature_alg,
     const std::string& kem_public_key_b64, const std::string& kem_binding_signature_b64, const std::string& peer_id,
-    const std::vector<std::string>& multiaddrs, int64_t initiation_floor, const RegistrationPublishOpts& publish) {
+    const std::vector<std::string>& multiaddrs, const RegistrationPublishOpts& publish) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
@@ -455,7 +447,6 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
   if (!kem_binding_signature_b64.empty()) {
     body.set("kem_binding_signature_b64", kem_binding_signature_b64);
   }
-  body.set("initiation_floor", initiation_floor);
   if (kem_public_key_b64.empty()) {
     return Error("kem_public_key_b64 is required");
   }
@@ -471,6 +462,9 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     body.set("multiaddrs", ArrayValue(std::move(addrs)));
   }
   ApplyRegistrationPublishOpts(body, publish);
+  if (publish.account_card) {
+    body.set("account_card", *publish.account_card);
+  }
   const auto response =
       HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
@@ -486,8 +480,8 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     if (auto success = root->getIf<bool>("success")) {
       result.success = *success;
     }
-    if (auto relay_user_id = root->getString("relay_user_id")) {
-      result.relay_user_id = *relay_user_id;
+    if (auto account_id = root->getString("account_id")) {
+      result.account_id = *account_id;
     }
     if (auto message = root->getString("message")) {
       result.message = *message;
@@ -498,10 +492,7 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     if (auto expires_at = root->getString("expires_at")) {
       result.expires_at = *expires_at;
     }
-    if (auto floor = root->getIf<int64_t>("initiation_floor")) {
-      result.initiation_floor = *floor;
-      result.initiation_floor_present = true;
-    }
+    result.account_card_status = root->getString("account_card_status").value_or("");
     result.kem_bound = root->getIf<bool>("kem_bound").value_or(false);
   }
   return result;
@@ -509,12 +500,12 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
 
 Roe<RegistrationResult> HttpRegistrationClient::UpdateNickname(const std::string& new_nickname,
                                                                const std::string& signature, int64_t timestamp,
-                                                               const std::string& relay_user_id) {
+                                                               const std::string& account_id) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
   Object body;
-  body.set("relay_user_id", relay_user_id);
+  body.set("account_id", account_id);
   body.set("nickname", new_nickname);
   body.set("timestamp", timestamp);
   body.set("signature", signature);
@@ -529,13 +520,13 @@ Roe<RegistrationResult> HttpRegistrationClient::UpdateNickname(const std::string
   return RegistrationResult{.success = true, .message = "Nickname updated"};
 }
 
-Roe<void> HttpRegistrationClient::RevokeRegistration(const std::string& relay_user_id, const std::string& signature,
+Roe<void> HttpRegistrationClient::RevokeRegistration(const std::string& account_id, const std::string& signature,
                                                      const int64_t timestamp) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
   Object body;
-  body.set("relay_user_id", relay_user_id);
+  body.set("account_id", account_id);
   body.set("timestamp", timestamp);
   body.set("signature", signature);
   // Called on the way into a profile reset: keep a stuck network from holding the UI for long.

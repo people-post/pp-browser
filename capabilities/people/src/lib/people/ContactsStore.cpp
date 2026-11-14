@@ -91,7 +91,7 @@ Roe<void> ContactsStore::EnsureLoaded() const {
       if (!version) {
         return Error("Missing or invalid schema_version in contacts.json; delete the data directory and restart");
       }
-      if (*version != kSchemaVersion) {
+      if (*version < kFloorSchemaVersion || *version > kSchemaVersion) {
         return Error("Unsupported schema version " + std::to_string(*version) +
                      " in contacts.json; delete the data directory and restart");
       }
@@ -103,8 +103,12 @@ Roe<void> ContactsStore::EnsureLoaded() const {
             continue;
           }
           contacts_.push_back(ContactFromJson(*item));
+          if (*version == 2) {
+            DropRetiredRelayIds(contacts_.back());
+          }
         }
       }
+      dirty_ = *version != kSchemaVersion; // a stepped-up file is written back at the current version
     }
   }
 
@@ -325,7 +329,7 @@ Roe<Contact> ContactsStore::ApplyRemoteSnapshotUnnotified(const std::string& con
   Contact contact = **loaded;
   const auto known = ContactAccountId(contact);
   if (known) {
-    // A by-account lookup is for that account even when the answer does not name it; a by-relay one must say so.
+    // A by-account lookup is for that account even when the answer does not name it.
     auto offered = PrimaryAccountIdFromHit(hit);
     if (!offered) {
       offered = requested_account_id;
@@ -335,7 +339,6 @@ Roe<Contact> ContactsStore::ApplyRemoteSnapshotUnnotified(const std::string& con
     }
   }
   const std::vector<mesh::ContactId> old_ids = contact.remote.ids;
-  const bool hit_has_relay = PrimaryRelayIdFromHit(hit).has_value();
   const bool hit_has_device = !hit.endpoints.empty() || !hit.multiaddrs.empty() ||
                               std::any_of(hit.ids.begin(), hit.ids.end(), [](const mesh::ContactId& id) {
                                 return id.kind == mesh::ContactIdKind::PeerId;
@@ -349,7 +352,7 @@ Roe<Contact> ContactsStore::ApplyRemoteSnapshotUnnotified(const std::string& con
                                return id.kind == mesh::ContactIdKind::Account && id.value != *known;
                              }),
               ids.end());
-    // What the answer leaves out is kept: the route, the devices as one group with their addresses, and ids of
+    // What the answer leaves out is kept: the devices as one group with their addresses, and ids of
     // other kinds. A kept id keeps its primary flag unless the answer already has a primary of that kind.
     const auto answer_has_kind = [&hit](const mesh::ContactIdKind kind) {
       return std::any_of(hit.ids.begin(), hit.ids.end(), [kind](const mesh::ContactId& id) { return id.kind == kind; });
@@ -358,9 +361,6 @@ Roe<Contact> ContactsStore::ApplyRemoteSnapshotUnnotified(const std::string& con
       bool keep = false;
       switch (id.kind) {
         case mesh::ContactIdKind::Account:
-          break;
-        case mesh::ContactIdKind::RelayUser:
-          keep = !hit_has_relay;
           break;
         case mesh::ContactIdKind::PeerId:
           keep = !hit_has_device;
@@ -399,8 +399,7 @@ Roe<Contact> ContactsStore::ApplyRemoteSnapshotUnnotified(const std::string& con
 
 Roe<Contact> ContactsStore::ApplyProfileRefreshUnnotified(const std::string& contact_id, const mesh::DirectoryHit& hit,
                                                           const int64_t fetched_at_ms,
-                                                          const std::optional<std::string>& requested_account_id,
-                                                          const bool adopt_relay_id) {
+                                                          const std::optional<std::string>& requested_account_id) {
   auto loaded = Get(contact_id);
   if (!loaded) {
     return loaded.error();
@@ -416,12 +415,6 @@ Roe<Contact> ContactsStore::ApplyProfileRefreshUnnotified(const std::string& con
   }
   if (!known || !offered || *known != *offered) {
     return Error("Directory hit is for another account");
-  }
-  if (adopt_relay_id && !ContactRelayUserId(contact)) {
-    // The one thing taken beyond the profile: the route a QR-added contact lacks. Devices and addresses stay.
-    if (const auto relay = PrimaryRelayIdFromHit(hit)) {
-      contact.remote.ids.push_back({mesh::ContactIdKind::RelayUser, *relay, true});
-    }
   }
   if (!hit.nickname.empty()) {
     contact.remote.nickname = hit.nickname;
@@ -519,9 +512,8 @@ Roe<Contact> ContactsStore::ApplyRemoteSnapshot(const std::string& contact_id, c
 
 Roe<Contact> ContactsStore::ApplyProfileRefresh(const std::string& contact_id, const mesh::DirectoryHit& hit,
                                                 const int64_t fetched_at_ms,
-                                                const std::optional<std::string>& requested_account_id,
-                                                const bool adopt_relay_id) {
-  auto result = ApplyProfileRefreshUnnotified(contact_id, hit, fetched_at_ms, requested_account_id, adopt_relay_id);
+                                                const std::optional<std::string>& requested_account_id) {
+  auto result = ApplyProfileRefreshUnnotified(contact_id, hit, fetched_at_ms, requested_account_id);
   if (result) {
     NotifyChanged();
   }

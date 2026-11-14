@@ -56,13 +56,13 @@ Roe<void> UnpublishCasForSettings(CasStore& content, const std::string& public_c
 }
 
 void FetchCasPublicTipForSettingsAsync(std::shared_ptr<CasStore> content, IChatBlobPeerClient& blob,
-                                       const std::string& local_relay_user_id, const std::string& tip,
-                                       const std::string& peer_relay_user_id, std::function<void(Roe<void>)> on_done) {
+                                       const std::string& local_account_id, const std::string& tip,
+                                       const std::string& peer_account_id, std::function<void(Roe<void>)> on_done) {
   if (!content) {
     on_done(Error("The content store is not open"));
     return;
   }
-  if (!blob.IsPeerReachable(peer_relay_user_id)) {
+  if (!blob.IsPeerReachable(peer_account_id)) {
     on_done(Error("Peer is not reachable for CAS tip fetch"));
     return;
   }
@@ -71,16 +71,16 @@ void FetchCasPublicTipForSettingsAsync(std::shared_ptr<CasStore> content, IChatB
     on_done(content_id.error());
     return;
   }
-  if (local_relay_user_id.empty()) {
-    on_done(Error("Local relay identity missing"));
+  if (local_account_id.empty()) {
+    on_done(Error("Local account identity missing"));
     return;
   }
   ChatBlobRequest request;
   request.op = ChatBlobOp::FetchPublic;
-  request.requester_identity_kind = ContactIdKindToString(mesh::ContactIdKind::RelayUser);
-  request.requester_identity_value = local_relay_user_id;
-  request.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::RelayUser);
-  request.peer_identity_value = peer_relay_user_id;
+  request.requester_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+  request.requester_identity_value = local_account_id;
+  request.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+  request.peer_identity_value = peer_account_id;
   request.content_hash_hex = BytesToHex(*content_id);
   request.channel = ThreadChannel::E2e;
   blob.FetchChatBlobAsync(request, [content = std::move(content), content_id = *content_id,

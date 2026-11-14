@@ -27,7 +27,7 @@ TEST(P2pRelayWireTest, RejectsLegacyThreadIdEnvelope) {
   const Object legacy = TryParseObject(R"({
     "thread_id": "t1",
     "message_id": "m1",
-    "sender_relay_id": "relay:a",
+    "sender_contact_id": "account:a",
     "body": {"text": "hi"},
     "timestamp": 1
   })")
@@ -44,8 +44,7 @@ TEST(P2pRelayWireTest, RelayEnvelopeRoundTripAndPayloadCodec) {
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "550e8400-e29b-41d4-a716-446655440000";
-  envelope.sender_relay_id = "relay:alice123";
-  envelope.sender_contact_id = "relay:alice123";
+  envelope.sender_contact_id = "account:alice123";
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
@@ -70,7 +69,6 @@ TEST(P2pRelayWireTest, TheSendersCardRidesWithAKeyInitAndTheDevicesAreSigned) {
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "550e8400-e29b-41d4-a716-446655440001";
-  envelope.sender_relay_id = "relay:alice123";
   envelope.sender_contact_id = "account:alice";
   envelope.sender_device = "QmAlicePhone";
   envelope.recipient_device = "QmBobLaptop";
@@ -83,7 +81,7 @@ TEST(P2pRelayWireTest, TheSendersCardRidesWithAKeyInitAndTheDevicesAreSigned) {
   const auto unsigned_bytes = EnvelopeSigner::BuildSignBytes(envelope);
   Object card;
   card.set("account_id", "account:alice");
-  card.set("card_version", int64_t{2});
+  card.set("card_version", int64_t{3});
   envelope.body.e2e.sender_card = card;
   ASSERT_TRUE(unsigned_bytes);
   EXPECT_EQ(EnvelopeSigner::BuildSignBytes(envelope).value(), *unsigned_bytes)
@@ -130,7 +128,6 @@ TEST(P2pRelayWireTest, EveryEnvelopeMaySayHowNewItsSendersListIs) {
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "550e8400-e29b-41d4-a716-446655440002";
-  envelope.sender_relay_id = "relay:alice123";
   envelope.sender_contact_id = "account:alice";
   envelope.sender_device = "QmAlicePhone";
   envelope.recipient_device = "QmBobLaptop";
@@ -157,8 +154,7 @@ TEST(P2pRelayWireTest, RejectsUnsafeMessageId) {
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = R"(x');evil('&quot; onmouseover=&quot;alert(1))";
-  envelope.sender_relay_id = "relay:alice123";
-  envelope.sender_contact_id = "relay:alice123";
+  envelope.sender_contact_id = "account:alice123";
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
@@ -179,8 +175,7 @@ TEST(P2pRelayWireTest, ChatHistoryResponseSkipsOneBadMessageInsteadOfFailingTheP
   RelayEnvelope good;
   good.envelope_version = kRelayEnvelopeVersion;
   good.message_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-  good.sender_relay_id = "relay:alice123";
-  good.sender_contact_id = "relay:alice123";
+  good.sender_contact_id = "account:alice123";
   good.sender_device = "QmAliceDevice";
   good.route.kind = "direct";
   good.route.channel = ThreadChannel::E2e;
@@ -194,8 +189,8 @@ TEST(P2pRelayWireTest, ChatHistoryResponseSkipsOneBadMessageInsteadOfFailingTheP
   bad.set("message_id", R"(bad"id)");
 
   Object response;
-  response.set("peer_identity_kind", "relay_user");
-  response.set("peer_identity_value", "relay:alice123");
+  response.set("peer_identity_kind", "account");
+  response.set("peer_identity_value", "account:alice123");
   response.set("has_more", false);
   response.set("messages", makeArray(std::vector<Value>{
                                std::make_shared<Object>(RelayEnvelopeToJson(good)),
@@ -214,8 +209,7 @@ TEST(P2pRelayWireTest, RelayWireRecordRoundTrip) {
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "550e8400-e29b-41d4-a716-446655440000";
-  envelope.sender_relay_id = "relay:alice123";
-  envelope.sender_contact_id = "relay:alice123";
+  envelope.sender_contact_id = "account:alice123";
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
@@ -225,8 +219,8 @@ TEST(P2pRelayWireTest, RelayWireRecordRoundTrip) {
   envelope.session_epoch = 1;
   envelope.timestamp = 1719662400123;
   envelope.signature = "sig";
-  envelope.stream_key = "v1:e2e:1:relay:alice123:relay:bob456";
-  envelope.recipient_contact_id = "relay:bob456";
+  envelope.stream_key = "v1:e2e:1:account:alice123:account:bob456";
+  envelope.recipient_account_id = "account:bob456";
 
   const auto wire = RelayWireSendRecordFromEnvelope(envelope);
   ASSERT_TRUE(static_cast<bool>(wire));
@@ -234,7 +228,7 @@ TEST(P2pRelayWireTest, RelayWireRecordRoundTrip) {
   EXPECT_EQ(wire.value().index_key, 7u);
 
   RelayInboundRecord inbound;
-  inbound.sender_contact_id = wire.value().sender_contact_id;
+  inbound.sender_account_id = wire.value().sender_account_id;
   inbound.stream_id = wire.value().stream_id;
   inbound.index_key = wire.value().index_key;
   inbound.blob_b64 = wire.value().blob_b64;
@@ -244,16 +238,19 @@ TEST(P2pRelayWireTest, RelayWireRecordRoundTrip) {
   EXPECT_EQ(restored.value().message_id, envelope.message_id);
   EXPECT_EQ(restored.value().stream_key, envelope.stream_key);
   EXPECT_EQ(restored.value().order_key, envelope.order_key);
-  EXPECT_FALSE(restored.value().recipient_contact_id.has_value());
+  EXPECT_FALSE(restored.value().recipient_account_id.has_value());
+
+  // The relay checked the sending account's signature on the record: an envelope inside naming another is refused.
+  inbound.sender_account_id = "account:mallory";
+  EXPECT_FALSE(RelayEnvelopeFromInboundRecord(inbound));
 }
 
-TEST(P2pRelayWireTest, RelayWireRecordUsesSenderRelayIdForHttpAuth) {
+TEST(P2pRelayWireTest, RelayWireRecordNamesBothAccounts) {
   using namespace pbr;
 
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "550e8400-e29b-41d4-a716-446655440000";
-  envelope.sender_relay_id = "relay:alice123";
   envelope.sender_contact_id = "account:aliceAccountId";
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
@@ -264,13 +261,18 @@ TEST(P2pRelayWireTest, RelayWireRecordUsesSenderRelayIdForHttpAuth) {
   envelope.session_epoch = 1;
   envelope.timestamp = 1719662400123;
   envelope.signature = "sig";
-  envelope.stream_key = "v1:e2e:1:relay:alice123:relay:bob456";
-  envelope.recipient_contact_id = "relay:bob456";
+  envelope.stream_key = "v1:e2e:1:account:alice123:account:bob456";
+  envelope.recipient_account_id = "account:bob456";
 
   const auto wire = RelayWireSendRecordFromEnvelope(envelope);
   ASSERT_TRUE(static_cast<bool>(wire));
-  EXPECT_EQ(wire.value().sender_contact_id, "relay:alice123");
-  EXPECT_EQ(wire.value().recipient_contact_id, "relay:bob456");
+  EXPECT_EQ(wire.value().sender_account_id, "account:aliceAccountId") << "the sending account (MR001)";
+  EXPECT_EQ(wire.value().recipient_account_id, "account:bob456");
+  const Object json = RelayWireSendRecordToJson(wire.value());
+  EXPECT_EQ(json.getString("sender_account_id"), std::optional<std::string>("account:aliceAccountId"));
+  EXPECT_EQ(json.getString("recipient_account_id"), std::optional<std::string>("account:bob456"));
+  EXPECT_FALSE(json.contains("sender_contact_id"));
+  EXPECT_FALSE(json.contains("grant")) << "none held: a stranger's send";
 
   auto blob = Base64Decode(wire.value().blob_b64);
   ASSERT_TRUE(static_cast<bool>(blob));
@@ -278,7 +280,7 @@ TEST(P2pRelayWireTest, RelayWireRecordUsesSenderRelayIdForHttpAuth) {
   auto app = TryParseObject(serialized);
   ASSERT_TRUE(app.has_value());
   EXPECT_EQ(app->getString("sender_contact_id"), std::optional<std::string>("account:aliceAccountId"));
-  EXPECT_EQ(app->getString("sender_relay_id"), std::optional<std::string>("relay:alice123"));
+  EXPECT_FALSE(app->contains("sender_relay_id")) << "no relay id in the envelope (sign v5)";
 }
 
 TEST(P2pRelayWireTest, UrgentWakeIsARelayHintOutsideTheEnvelope) {
@@ -287,8 +289,7 @@ TEST(P2pRelayWireTest, UrgentWakeIsARelayHintOutsideTheEnvelope) {
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "550e8400-e29b-41d4-a716-446655440000";
-  envelope.sender_relay_id = "relay:alice123";
-  envelope.sender_contact_id = "relay:alice123";
+  envelope.sender_contact_id = "account:alice123";
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
@@ -298,8 +299,8 @@ TEST(P2pRelayWireTest, UrgentWakeIsARelayHintOutsideTheEnvelope) {
   envelope.session_epoch = 1;
   envelope.timestamp = 1719662400123;
   envelope.signature = "sig";
-  envelope.stream_key = "v1:e2e:1:relay:alice123:relay:bob456";
-  envelope.recipient_contact_id = "relay:bob456";
+  envelope.stream_key = "v1:e2e:1:account:alice123:account:bob456";
+  envelope.recipient_account_id = "account:bob456";
 
   const auto plain = RelayWireSendRecordFromEnvelope(envelope);
   ASSERT_TRUE(static_cast<bool>(plain));
@@ -321,8 +322,7 @@ TEST(P2pRelayWireTest, HowLongTheRelayKeepsARecordIsAHintOutsideTheEnvelope) {
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "550e8400-e29b-41d4-a716-446655440001";
-  envelope.sender_relay_id = "relay:alice123";
-  envelope.sender_contact_id = "relay:alice123";
+  envelope.sender_contact_id = "account:alice123";
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "control";
   envelope.route.channel = ThreadChannel::E2ePublic;
@@ -330,8 +330,8 @@ TEST(P2pRelayWireTest, HowLongTheRelayKeepsARecordIsAHintOutsideTheEnvelope) {
   envelope.order_key = 9;
   envelope.timestamp = 1719662400123;
   envelope.signature = "sig";
-  envelope.stream_key = "v1:control:relay:alice123:relay:bob456";
-  envelope.recipient_contact_id = "relay:bob456";
+  envelope.stream_key = "v1:control:account:alice123:account:bob456";
+  envelope.recipient_account_id = "account:bob456";
 
   const auto kept = RelayWireSendRecordFromEnvelope(envelope);
   ASSERT_TRUE(static_cast<bool>(kept));
@@ -350,8 +350,7 @@ TEST(P2pRelayWireTest, WakeHintIsARelayHintOutsideTheEnvelope) {
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "550e8400-e29b-41d4-a716-446655440002";
-  envelope.sender_relay_id = "relay:alice123";
-  envelope.sender_contact_id = "relay:alice123";
+  envelope.sender_contact_id = "account:alice123";
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
@@ -361,8 +360,8 @@ TEST(P2pRelayWireTest, WakeHintIsARelayHintOutsideTheEnvelope) {
   envelope.session_epoch = 1;
   envelope.timestamp = 1719662400123;
   envelope.signature = "sig";
-  envelope.stream_key = "v1:e2e:1:relay:alice123:relay:bob456";
-  envelope.recipient_contact_id = "relay:bob456";
+  envelope.stream_key = "v1:e2e:1:account:alice123:account:bob456";
+  envelope.recipient_account_id = "account:bob456";
 
   const auto none = RelayWireSendRecordFromEnvelope(envelope);
   ASSERT_TRUE(static_cast<bool>(none));
@@ -401,8 +400,8 @@ TEST(P2pRelayWireTest, DirectTargetRoutingAndOutboxReconcile) {
   ASSERT_TRUE(store.SetDek(TestDek()));
 
   DirectChatTarget target;
-  target.peer_identity_kind = "relay_user";
-  target.peer_identity_value = "relay:bob456";
+  target.peer_identity_kind = "account";
+  target.peer_identity_value = "account:bob456";
   target.channel = ThreadChannel::E2e;
 
   auto created = store.FindOrCreateDirectThread(target, "contact-bob", "Bob");

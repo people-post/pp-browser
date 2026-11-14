@@ -69,12 +69,14 @@ std::string ConversationsFacade::RegistrationBackendUrl() {
 }
 
 Roe<bool> ConversationsFacade::MaybeAutoRenewRegistration(const bool auto_renew_registration) {
-  return pbr::MaybeAutoRenewRegistration(hub_.Registration(), hub_.Identity(), auto_renew_registration);
+  return pbr::MaybeAutoRenewRegistration(hub_.Registration(), hub_.Identity(), auto_renew_registration,
+                                         hub_.RegistrationCard());
 }
 
 Roe<std::optional<RegistrationResult>> ConversationsFacade::MaybeAutoRenewRegistrationNetworkOnly(
     const bool auto_renew_registration) {
-  return pbr::MaybeAutoRenewNetworkOnly(hub_.Registration(), hub_.Identity(), auto_renew_registration);
+  return pbr::MaybeAutoRenewNetworkOnly(hub_.Registration(), hub_.Identity(), auto_renew_registration,
+                                        hub_.RegistrationCard());
 }
 
 Roe<LocalIdentity> ConversationsFacade::PersistRegistrationRenewal(const RegistrationResult& result,
@@ -1021,6 +1023,11 @@ bool ConversationsFacade::IsInitiationOutboundBlocked(const std::string& peer_id
   return !CanPayAmount(offer);
 }
 
+int64_t ConversationsFacade::InitiationFloorOf(const std::string& peer_identity) {
+  auto* store = hub_.InitiationBilling();
+  return store && !peer_identity.empty() ? store->Get(peer_identity).floor_minor : 0;
+}
+
 Roe<void> ConversationsFacade::SendChargeRequired(const std::string& peer_identity,
                                                   const std::optional<int64_t> floor_minor) {
   return hub_.SendChargeRequired(peer_identity, floor_minor);
@@ -1431,7 +1438,12 @@ Roe<LocalIdentity> ConversationsFacade::ModifyLocalIdentity(
 }
 
 Roe<LocalIdentity> ConversationsFacade::FinishAndPersistRegistration(const std::string& nickname) {
-  return pbr::FinishAndPersistRegistration(hub_.Registration(), hub_.Identity(), nickname);
+  auto registered =
+      pbr::FinishAndPersistRegistration(hub_.Registration(), hub_.Identity(), nickname, {}, hub_.RegistrationCard());
+  if (registered) {
+    hub_.RegisterOnOtherRelaysSoon(); // our other relays follow the preferred one (multi-relay R2)
+  }
+  return registered;
 }
 
 Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std::string& nickname) {
@@ -1439,6 +1451,10 @@ Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std:
 }
 
 Roe<void> ConversationsFacade::RevokeRegistration() {
+  // Our other relays first (best effort, multi-relay R2), while the identity still says it is registered.
+  if (RelayRegistrationsWorkflow* others = hub_.OtherRelayRegistrations()) {
+    others->RevokeAll();
+  }
   return pbr::RevokeRegistrationWithIdentity(hub_.Registration(), hub_.Identity());
 }
 

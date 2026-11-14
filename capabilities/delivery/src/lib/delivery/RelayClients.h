@@ -30,24 +30,18 @@ struct RelayDeleteResult {
 };
 
 /**
- * The relay answered a poll with 403 "Relay user not registered": it has no registration for this user (a new server,
+ * The relay answered a poll with 403 `not_registered`: it has no active registration for our account (a new server,
  * or one that lost it). Registering again with the same account key fixes it (B216).
  */
 bool IsRelayUserNotRegistered(const Error& error);
-
-/**
- * A relay send answered 404 and its JSON `code` is "recipient_not_found": the server itself says it has no such
- * recipient. Any other 404 (a wrong address or gateway) is not this.
- */
-bool IsRelayRecipientNotFound(const Error& error);
 
 class IRelayClient {
 public:
   virtual ~IRelayClient() = default;
   virtual Roe<void> Send(const RelayEnvelope& envelope) = 0;
-  virtual Roe<RelayPollResult> PollInbox(const std::string& requester_contact_id, const std::string& cursor) = 0;
-  virtual Roe<RelayDeleteResult> AckInbox(const std::string& requester_contact_id, const std::string& cursor) = 0;
-  virtual Roe<RelayDeleteResult> ClearInbox(const std::string& requester_contact_id,
+  virtual Roe<RelayPollResult> PollInbox(const std::string& requester_account_id, const std::string& cursor) = 0;
+  virtual Roe<RelayDeleteResult> AckInbox(const std::string& requester_account_id, const std::string& cursor) = 0;
+  virtual Roe<RelayDeleteResult> ClearInbox(const std::string& requester_account_id,
                                             const std::string& before_created_at) = 0;
   virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
 };

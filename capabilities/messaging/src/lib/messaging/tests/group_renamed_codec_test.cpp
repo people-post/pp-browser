@@ -20,7 +20,7 @@ TEST(GroupRenamedCodecTest, DecodeFromSystemMessage) {
   auto detail = GroupMembershipCodec::EncodeGroupRenamed("group:2", "Crew", 1, 1);
   ASSERT_TRUE(detail);
   auto message = GroupMembershipCodec::BuildSystemMessage("thread-1", GroupMembershipControlType::GroupRenamed,
-                                                          "Group renamed to Crew", *detail, "relay:owner");
+                                                          "Group renamed to Crew", *detail, "account:owner");
   ASSERT_TRUE(message);
   auto decoded = GroupMembershipCodec::DecodeGroupRenamedFromMessage(*message);
   ASSERT_TRUE(decoded) << decoded.error().message;

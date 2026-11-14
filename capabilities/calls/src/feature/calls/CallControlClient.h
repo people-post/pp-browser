@@ -27,7 +27,7 @@ public:
   CallControlClient(IThreadTranscript& transcript, const ILocalAccount& account, const ICallSessionReader& sessions,
                     const CallDeliveryPorts& delivery);
 
-  Roe<std::string> LocalRelayIdentity() const;
+  Roe<std::string> LocalAccountIdentity() const;
   /** Signaling to `peer_identity` on the control lane. `urgent=false` keeps a CallInvite from waking the peer. */
   Roe<void> SendDirect(const std::string& peer_identity, CallControlType type, const std::string& detail_json,
                        const std::string& display, bool urgent = true);

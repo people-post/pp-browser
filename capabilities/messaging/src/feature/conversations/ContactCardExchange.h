@@ -27,7 +27,7 @@ class ContactCardExchange : public Module {
 public:
   ContactCardExchange(ContactsStore& contacts, AccountKeyResolver& keys);
 
-  /** The contact card for `contact_id` (its name, its account's card, its relay route when known). */
+  /** The contact card for `contact_id` (its name and its account's card). */
   Roe<ChatContactCardFields> CardFor(const std::string& contact_id);
   /**
    * Checks a received card and keeps it: the account's keys and devices, and a contact — added, or the

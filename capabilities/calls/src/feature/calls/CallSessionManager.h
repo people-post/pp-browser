@@ -120,7 +120,7 @@ private:
   Roe<void> HandleInboundDecline(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundLeave(const std::string& detail_json, const std::string& sender_identity,
                                const std::string& local_identity);
-  Roe<void> HandleInboundRoster(const std::string& detail_json);
+  Roe<void> HandleInboundRoster(const std::string& detail_json, const std::string& sender_identity);
   /** A peer's CallMediaKey: its key taken, the workflow moves the call to its epoch. */
   Roe<void> HandleInboundMediaKey(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundSfuAttach(const std::string& detail_json, const std::string& sender_identity);

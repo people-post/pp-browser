@@ -31,7 +31,6 @@ public:
     }
     return std::vector<mesh::DirectoryHit>{hit};
   }
-  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& /*relay_user_id*/) override { return Answer(); }
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string& /*account_id*/) override {
     ++lookups;
     return Answer();

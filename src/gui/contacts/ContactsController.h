@@ -167,7 +167,7 @@ public:
     ui::String name_placeholder;
     /** "Their nickname: X" under the remark field; empty when the contact has no nickname. */
     ui::String their_nickname;
-    ui::String relay_id;
+    ui::String account_id;
     ui::String peer_id;
     ui::String multiaddrs_text;
     ui::String multiaddrs_summary;

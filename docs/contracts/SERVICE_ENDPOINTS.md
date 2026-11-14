@@ -44,27 +44,46 @@ When `registration.base_url` is set (e.g. `https://host/api/relay`), `HttpRegist
 | Step | HTTP | Request body | Response |
 |------|------|--------------|----------|
 | Start | `POST /v1/register/start` | `{ public_key, kem_public_key_b64, nickname?, signature_alg? }` | `{ challenge, signature_alg, expires_at }` |
-| Finish | `POST /v1/register/finish` | `{ challenge, public_key, kem_public_key_b64, kem_binding_signature_b64?, signature, timestamp, nickname?, signature_alg?, initiation_floor? }` | `{ success, relay_user_id, message, expires_at, llm_api_key, initiation_floor?, kem_bound }` |
+| Finish | `POST /v1/register/finish` | `{ challenge, public_key, kem_public_key_b64, kem_binding_signature_b64?, signature, timestamp, nickname?, signature_alg?, account_card? }` | `{ success, account_id, message, expires_at, llm_api_key, kem_bound, account_card_status? }` |
 
 Finish signs canonical bytes: domain `pp-browser:relay-register-v1\0`, `sign_version=2`, challenge (len-prefixed UTF-8), **1952-byte raw ML-DSA-65** account public key, **1184-byte raw ML-KEM-768** **account** public key (`kem_public_key_b64` — person encapsulate-to, **M015**; not per-device), `signature_alg` u8 (`1=ml-dsa-65`), `timestamp` i64 BE. Pre-release hard cut: Ed25519 register/API auth removed; wipe legacy relay_users.
 
-Brief derives and stores `account_id = account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` and binds **at most one** `relay_user_id` per Account ID (M006). Directory / user lookup include `account_id`, `signature_alg=ml-dsa-65`, and the **account** `kem_public_key_b64` (same key on every linked device) with `kem_binding_signature_b64`: the account's signature binding that KEM key to it ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md), `pp-browser:kem-binding-v1`). Finish verifies a binding it is sent and stores it with the KEM key, replacing both (none sent, none kept); `kem_bound` says the entry now carries one. Clients take a directory KEM key only with a valid binding, and a registration from before bindings re-registers once to publish one.
+Brief derives `account_id = account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` and keeps **one row per Account ID** (M006): the Account ID is the row's key and the account's inbox address — the relay issues no ids of its own ([multi-relay MR001](../../projects/multi-relay/DECISIONS.md#mr001--inboxes-are-keyed-by-account-id)). Finish answers with it (`account_id`), and the client refuses a registration answered for another account. It carries the account's signed card (`account_card`, version 3, [ACCOUNT_CARD.md](ACCOUNT_CARD.md); a pp-node sends none): the relay checks it as the app does — a card that does not verify, is another account's, or breaks a bound refuses the registration (`400` `invalid_account_card` / `account_card_mismatch` / `account_card_too_large` / `invalid_card_relays`) — keeps the newest and serves it with the directory row (`account_card_status`: `stored` / `same` / `stale`). The relay reads the account's **initiation floor** from it (the stranger check below); there is no registration field for the floor ([pricing P001](../../projects/pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet) item 7 as amended by [multi-relay MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)). The app registers again, whatever the auto-renew preference, when its card is newer than the one the relay last answered for (`registered_card_issued_at` in the identity; `ShouldPublishAccountCard`), so a changed floor, relay list or device list reaches the relay on the next start. An id of another shape is refused everywhere with `400 invalid_account_id`. Directory / user lookup include `account_id`, `signature_alg=ml-dsa-65`, and the **account** `kem_public_key_b64` (same key on every linked device) with `kem_binding_signature_b64`: the account's signature binding that KEM key to it ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md), `pp-browser:kem-binding-v1`). Finish verifies a binding it is sent and stores it with the KEM key, replacing both (none sent, none kept); `kem_bound` says the entry now carries one. Clients take a directory KEM key only with a valid binding, and a registration from before bindings re-registers once to publish one.
 
 ## HTTP relay API auth (per-request sign bytes)
 
-All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api-v1\0` canonical bytes.
+All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api-v1\0` canonical bytes, **sign version 2** (`u8 2`, then `u8 op`, `i64 timestamp`, the fields; strings `u64be(len) | utf8`): every party is an **Account ID** (multi-relay MR001; version 1, by the relay's own per-relay ids, is gone). The account key signs; a call by an account not registered here (or expired) is `403 not_registered` / `registration_expired` — except a send, below. Golden vectors: `relay_message_sign_payload_test.cpp`, shared with the relay's `SignatureVerifier.test.ts`.
 
-| Op | HTTP | Signed fields |
-|----|------|----------------|
-| send | `POST /v1/messages` | sender, recipient, stream_id, index_key |
-| poll_inbox | `POST /v1/inbox/poll` | requester_contact_id, cursor |
-| ack_inbox | `POST /v1/inbox/ack` | requester_contact_id, cursor |
-| clear_inbox | `POST /v1/inbox/clear` | requester_contact_id, before_created_at (ISO-8601) |
-| stream_history | `POST /v1/streams/messages/query` | requester, sender, stream_id, optional index range, limit, order |
-| device_register | `POST /v1/devices/register` | relay_user_id, platform, device_id, push_token |
-| device_unregister | `POST /v1/devices/unregister` | relay_user_id, platform, device_id, push_token |
+| Op | HTTP | Body ids | Signed fields |
+|----|------|----------|----------------|
+| send (0) | `POST /v1/messages` | `sender_account_id`, `recipient_account_id` | sender_account_id, recipient_account_id, stream_id, index_key |
+| poll_inbox (1) | `POST /v1/inbox/poll` | `requester_account_id` | requester_account_id, cursor (`""` when none) |
+| stream_history (2) | `POST /v1/streams/messages/query` | `requester_account_id`, `sender_account_id` | requester, sender, stream_id, optional index range, limit, order |
+| device_register (3) | `POST /v1/devices/register` | `account_id` | account_id, platform, device_id, push_token |
+| device_unregister (4) | `POST /v1/devices/unregister` | `account_id` | account_id, platform, device_id, push_token |
+| ack_inbox (5) | `POST /v1/inbox/ack` | `requester_account_id` | requester_account_id, cursor |
+| clear_inbox (6) | `POST /v1/inbox/clear` | `requester_account_id` | requester_account_id, before_created_at (ISO-8601) |
 
-`blob_b64` is **not** included in transport auth (E014 envelope signature covers message integrity inside the blob).
+`blob_b64` is **not** included in transport auth (E014 envelope signature covers message integrity inside the blob). Records come back as `{ sender_account_id, stream_id, index_key, blob_b64, created_at }`; the envelope inside must name that same sender (`sender_contact_id`), else the record is skipped.
+
+### A send: the recipient, the sender's key, the grant
+
+`POST /v1/messages` `{ sender_account_id, recipient_account_id, stream_id, index_key, blob_b64, ttl_s?, urgent?, wake_hint?, timestamp, signature, sender_public_key_b64?, grant? }` (`HttpRelayClient::Send`, [MR003](../../projects/multi-relay/DECISIONS.md#mr003--cross-relay-delivery-is-an-account-signed-send) / [MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)). Neither the key nor the grant is signed by the sender: the key must hash to `sender_account_id`, the grant carries the recipient's signature.
+
+- **`grant`** — the recipient's grant to us ([ACCOUNT_CARD § Relay grants](ACCOUNT_CARD.md#relay-grants)), attached when we hold a usable one; never on a send to our own mailbox. With it the send is a contact's; without it, a stranger's.
+- **`sender_public_key_b64`** — our account's ML-DSA key, sent only when the relay asked for it (`401 sender_key_required`: it holds no key of ours — we are not registered there); the client sends once more with it.
+
+| Answer | `code` | The client |
+|--------|--------|------------|
+| `404` | `recipient_not_registered` | Not on this relay (`Err::Network::RecipientNotRegistered`): the next relay of the recipient's list; on every relay of it, the recipient's newest card and its list once more ([Sending by the list](#sending-by-the-list)); then final (the notice "no longer on your message server"). A record that should reach every device names the peer as its Amp fallback: it goes over a link to it when one can be had |
+| `401` | `sender_key_required` | Sends once more with `sender_public_key_b64` |
+| `401` | `grant_expired`, `invalid_grant` | Drops the grant, asks the recipient for a new one (`relay_grant_ask`), and sends once more without it, as a stranger's |
+| `401` | `sender_key_mismatch`, other | Final (`HttpRejected`) |
+| `402` | `payment_required` (`initiation_floor`) | Final until paid (`Err::Network::PaymentRequired`, the floor in its detail): the floor is recorded for the recipient ([pricing P001](../../projects/pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet)) — the chat shows the price and holds sends while no payment can be made |
+| `429` | `stranger_quota_exceeded` | Queued and sent again after a backoff (1 min, doubling to 16; at most 8 tries, `StrangerQuotaRetryAfter`) |
+| `429` | `rate_limited` | Queued, retried when the inbox syncs (as any rate limit) |
+
+The recipient's floor is the `initiation_floor` of the card it registered with (0 when it sent none). A stranger's send to a recipient whose floor is 0 is accepted within a first-contact quota (3 an hour per pair, 30 an hour per recipient) and raises **no push** on the recipient's devices (an `urgent` one still rings, within the per-pair call-wake limit).
 
 A poll from a user the relay has no registration for is answered **403** `{"error":"Relay user not registered"}` (observed on the 2026-11 production server for accounts registered on the old one). The client types exactly that answer as `Err::Auth::NotRegistered` (`IsRelayUserNotRegistered`), marks its registration expired and registers again with the same account key (same Account ID; the relay may give a new `relay_user_id`), at most every 5 minutes, when "renew automatically" is on; otherwise it asks the user (B216). Any other 403 stays `HttpRejected`.
 
@@ -77,18 +96,65 @@ Poll response extras (unix ms, relay clock):
 
 Call invite age uses `server_time - created_at` when both are present (caller create ≈ relay store).
 
+## Several relays
+
+An account may be on several relays (multi-relay R2; [DESIGN](../../projects/multi-relay/DESIGN.md#app)). Ours are the
+backend's relay (`relay.base_url`, the **preferred** one) and the other base URLs of `relay.extra_base_urls`, in that
+order, at most 4 in all, none twice ([CONFIGURATION](../ops/CONFIGURATION.md); `OurRelayOrigins`, `BackendClientSet`).
+Our account card lists the `https://` ones, preferred first ([ACCOUNT_CARD](ACCOUNT_CARD.md#account-card)).
+
+### Registering and receiving on each
+
+- **Registration.** The preferred relay's is the identity's, as above (the person registers; it renews there). Once it
+  is registered, the app registers on each other relay of ours too, with the same card at `register/finish`, and again
+  when the card is newer than the one that relay answered for, when its registration is within 14 days of its end, or
+  after a failure (1 min, doubling to 30 min) — `RelayRegistrationsWorkflow`, checked every minute while messaging
+  runs. What another relay answered is kept in memory only: each start registers there once more. Revoking (a profile
+  reset) revokes on each.
+- **Polling.** Each inbox has its own cursor (`relay_inbox_cursor.json`, [DATA_LAYOUT](DATA_LAYOUT.md)) and one poll
+  at a time (`RelayInboxCoordinator`). The preferred relay is polled at the app's pace
+  ([THREADING](../architecture/THREADING.md): ~2 s in the foreground); the others at every **4th** sync (~8 s), and
+  only once they hold our registration. A forced sync — a push or a wake — polls every relay: any of them may hold
+  the mail that woke us. A batch is acked on the relay it came from; `clear` clears every inbox.
+- **Twice.** A message that reaches us through two relays (a sender that tried a second after a timeout, a copy
+  for our other devices) is taken in twice: the receive pipeline drops the second by its message id, as any
+  redelivery. One relay batch is taken in at a time.
+- **Push.** The push token is registered on each relay that holds our registration ([HTTP device push](#http-device-push-opaque-wake)).
+- **The preferred relay only:** profile photos and blobs, chat attachment files, account lockers, stream history,
+  the directory (search and lookups), client compatibility and the Brief LLM key.
+
+### Sending by the list
+
+`RelaySendCoordinator` (the outbox's relay port) sends a record into its recipient's relays in their list order:
+
+1. **The list:** the relays of the newest card we keep for the recipient (`KeptRelays`); a recipient with no card, or
+   an empty list, goes to our preferred relay; a copy for our own other devices goes to our relays.
+2. **Health:** a relay a send could not reach (a transport failure, a timeout, a 5xx) is tried after the healthy
+   ones for **5 minutes** (`RelayHealth`); a send it takes clears it. An answer about the recipient (a price, a quota,
+   not registered) says nothing about the relay's health.
+3. **The next relay** is tried on a transport failure or a 5xx, and on `recipient_not_registered`. Any other refusal
+   (`payment_required`, `stranger_quota_exceeded`, `rate_limited`, another 4xx) is the send's answer. When every relay
+   failed, the transport failure is reported (the send is retried later), else `recipient_not_registered`.
+4. **A stale list:** `recipient_not_registered` on every relay tried fetches the recipient's newest card — its devices
+   over the mesh (8 s at most), then the directories of our relays and of our other directory providers
+   (`GET /v1/users/by-account`'s `account_card`), kept only when it verifies (`RecipientRelays`) — and tries its list
+   **once** more when it names other relays. At most one fetch per recipient a minute; a send that finds the list
+   stale while another fetches it waits for that fetch (12 s at most) and takes its list.
+
+A relay of ours is sent to as a registered sender; any other relay gets a client of its own (at most 16 kept), and
+our key when it asks for it (`sender_key_required`). The grant is the recipient's, the same on every relay.
+
 ## Directory and profile
 
 | HTTP | Purpose |
 |------|---------|
-| `GET /v1/search?q=` | Search **people** only (`entity_kind` person / missing). Matches nickname, `relay:`, Account ID. Hits include `endpoints[]`, keys, optional `entity_kind`. **Excludes** `mesh_node` ([N027](../../projects/p2p-mesh/DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory)) |
-| `GET /v1/mesh/nodes` | List non-expired **`mesh_node`** infra listings: `account_id`, `relay_user_id`, `nickname`, `endpoints[]`, `capabilities` (`circuit_relay` / `media_relay`), `expires_at`, keys; and, when the node registered them, what it runs: `amp_wire`, `node_version`, `features[]` (N032, below) |
-| `GET /v1/users/by-account/:account_id` | Lookup by Account ID (any kind): keys, `relay_user_id`, `signature_alg`, nickname, expires_at, **`endpoints[]`**, optional `entity_kind` / `capabilities` |
-| `GET /v1/users/:relay_user_id` | **Route** lookup by `relay:` id (same fields; **`account_id` required** when bound) |
+| `GET /v1/search?q=` | Search **people** only (`entity_kind` person / missing). Matches nickname (case-insensitive) or Account ID (exact). Each hit's `hit_id` and `account_id` are the Account ID; `ids` list it (`kind: account`, primary) and the endpoints' `peer_id`s. Hits include `endpoints[]`, keys, optional `entity_kind`. **Excludes** `mesh_node` ([N027](../../projects/p2p-mesh/DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory)) |
+| `GET /v1/mesh/nodes` | List non-expired **`mesh_node`** infra listings: `account_id` (the row's key), `nickname`, `endpoints[]`, `capabilities` (`circuit_relay` / `media_relay`), `expires_at`, keys; and, when the node registered them, what it runs: `amp_wire`, `node_version`, `features[]` (N032, below). A row without an `account_id` is skipped |
+| `GET /v1/users/by-account/:account_id` | Lookup by Account ID (any kind): `account_id`, keys, `signature_alg`, nickname, expires_at, **`endpoints[]`**, optional `entity_kind` / `capabilities`, and the newest `account_card` the account registered with. `404 not_registered`: not on this relay (or expired). The client takes a row only for the account it asked for. There is no lookup by any other id |
 | `POST /v1/profile/nickname` | Update nickname (`relay-profile-v1` sign bytes + signature) |
 | `POST /v1/register/start` | Start registration (`public_key`, `kem_public_key_b64`, optional `nickname`, `peer_id`, `multiaddrs`, optional `entity_kind` / `capabilities`) |
 | `POST /v1/register/finish` | Finish/renew (`entity_kind` default `person`; `mesh_node` for pp-node). Upserts `endpoints[]` by Peer ID; persists capabilities for mesh nodes, and the node's `amp_wire` (int), `node_version` (string) and `features` (string[]) when sent (N032); echoes **`account_id`** |
-| `POST /v1/register/revoke` | Remove this account's registration and its push devices (profile reset / delete account, #328). Body `{ relay_user_id, timestamp, signature }`; signature over `pp-browser:relay-revoke-v1\0`, `u8 1`, `relay_user_id` (len-prefixed UTF-8), `i64 timestamp`, by the account key. Best effort on the client: a failure does not block the local reset |
+| `POST /v1/register/revoke` | Remove this account's registration and its push devices (profile reset / delete account, #328). Body `{ account_id, timestamp, signature }`; signature over `pp-browser:relay-revoke-v1\0`, `u8 1`, `account_id` (len-prefixed UTF-8), `i64 timestamp`, by the account key. Best effort on the client: a failure does not block the local reset |
 
 **Directory providers:** Brief HTTP is the default (`directory.base_url`). Clients should treat directory as pluggable (N027); bootstrap peers remain L0 cold-start / emergency dial, not the long-term sole mesh-service discovery path.
 
@@ -102,11 +168,11 @@ Auth: separate sign domains (not `relay-api-v1`). Canonical bytes via `RelayBlob
 
 | Domain | Signed fields |
 |--------|-----------------|
-| `pp-browser:relay-blob-presign-v1` | `relay_user_id`, `content_type`, `byte_length` (u64), `purpose`, `timestamp` (i64) |
-| `pp-browser:relay-blob-retain-v1` | `relay_user_id`, `blob_id`, `timestamp` |
-| `pp-browser:relay-blob-delete-v1` | `relay_user_id`, `blob_id`, `timestamp` |
-| `pp-browser:relay-blob-list-v1` | `relay_user_id`, `status_filter` (empty if none), `timestamp` |
-| `pp-browser:relay-profile-icon-v1` | `relay_user_id`, `url`, `blob_id`, `kind`, `timestamp` (empty strings when unused) |
+| `pp-browser:relay-blob-presign-v1` | `account_id`, `content_type`, `byte_length` (u64), `purpose`, `timestamp` (i64) |
+| `pp-browser:relay-blob-retain-v1` | `account_id`, `blob_id`, `timestamp` |
+| `pp-browser:relay-blob-delete-v1` | `account_id`, `blob_id`, `timestamp` |
+| `pp-browser:relay-blob-list-v1` | `account_id`, `status_filter` (empty if none), `timestamp` |
+| `pp-browser:relay-profile-icon-v1` | `account_id`, `url`, `blob_id`, `kind`, `timestamp` (empty strings when unused) |
 
 | HTTP | Purpose |
 |------|---------|
@@ -127,7 +193,7 @@ Failure statuses and the client's typed error (`CheckBlobResponse` → `Classify
 |---|---|---|---|
 | 503 `Blob upload is not configured` (an older gateway: 400, same text) | every `/v1/blobs/*` route, and `/v1/profile/icon` with a hosted blob, when the relay has no upload bucket (external https icons and clearing are unaffected) | `UploadNotConfigured` | failure line "server hasn't enabled uploads" |
 | 403 `Blob not owned by caller`, `Relay user not registered`, `Relay registration expired`; also a 403 from the storage PUT (expired or mismatched signed URL) | retain / delete, request auth, S3 | `UploadRejected` | failure line, retry later |
-| 404 `Blob not found` | retain / delete (e.g. the pending upload expired); presign for an unknown relay user | `Expired` | failure line; a CDN 404 on download is not an API answer (typed in the download step) |
+| 404 `Blob not found` | retain / delete (e.g. the pending upload expired); presign for an account not registered here | `Expired` | failure line; a CDN 404 on download is not an API answer (typed in the download step) |
 | 400 `File exceeds size limit` (also 413 if a proxy sends it; the relay itself never answers 413) | presign above `largeMaxBytes` | `TooLarge` | not retried |
 | 429 `Small file quota exceeded` / `Large file storage quota exceeded` | presign | `QuotaExceeded` | Shown as the failure. The client presigns profile photos only, which have their own limit, so it does not plan a recovery on `/blobs` (it no longer lists or frees the small / large tiers) |
 | any other 429: `Rate limit exceeded` (120 per user per minute), `Too many pending uploads`, an empty or proxy / WAF body | every blobs route / presign | `RateLimited` | "sending too fast", no delete offered |
@@ -144,17 +210,17 @@ Chat attachment **file bytes** prefer peer-direct `/pp/blob/1.0.0` then CDN ([R0
 
 The encrypted-file relay (app-static-api `docs/relay-files.md`, routes `app/src/r_relay.ts`), same base path. Client: `IBlobClient::FileStart` / `FilePart` / `FileComplete` / `FileDelete` / `FileList` (`HttpBlobClient`), `UploadRelayFile` / `UploadRelayFileBytes` (`lib/net/BlobClient.h`). The server stores opaque ciphertext in a private bucket.
 
-Signed calls (`POST`, JSON body with `relay_user_id`, `timestamp` (epoch ms), `signature`): sign bytes are `domain 0x00 | u8(1) | fields | i64be timestamp`, strings `u64be(len) | utf8`, integers `u64be` (`RelayBlobSignPayload`; golden vectors from the server's `RelayFiles.test.ts` in `relay_file_sign_payload_test.cpp`).
+Signed calls (`POST`, JSON body with `account_id`, `timestamp` (epoch ms), `signature`): sign bytes are `domain 0x00 | u8(1) | fields | i64be timestamp`, strings `u64be(len) | utf8`, integers `u64be` (`RelayBlobSignPayload`; golden vectors from the server's `RelayFiles.test.ts` in `relay_file_sign_payload_test.cpp`; the account by its Account ID since multi-relay MR001).
 
 | HTTP | Domain | Signed fields | Answer |
 |------|--------|---------------|--------|
-| `POST /v1/files/start` (`byte_length`) | `pp-browser:relay-file-start-v1` | `relay_user_id`, `byte_length` (u64) | `{ blob_id, mode, part_bytes, part_count, upload_url?, expires_in, pending_expires_at }` |
+| `POST /v1/files/start` (`byte_length`) | `pp-browser:relay-file-start-v1` | `account_id`, `byte_length` (u64) | `{ blob_id, mode, part_bytes, part_count, upload_url?, expires_in, pending_expires_at }` |
 | `PUT {upload_url}` | — | — | `mode=single`: the ciphertext, exactly `byte_length` bytes (`Content-Length` is signed into the URL; valid 15 min) |
-| `POST /v1/files/part` (`blob_id`, `part_number`) | `pp-browser:relay-file-part-v1` | `relay_user_id`, `blob_id`, `part_number` (u64, 1-based) | `{ upload_url, part_bytes, expires_in }`: a PUT URL for that part (valid 1 h); `part_bytes` is **this part's** size (the plan's `part_bytes` except the last, which is the remainder); 400 `INVALID_PART_NUMBER` outside 1..`part_count` |
+| `POST /v1/files/part` (`blob_id`, `part_number`) | `pp-browser:relay-file-part-v1` | `account_id`, `blob_id`, `part_number` (u64, 1-based) | `{ upload_url, part_bytes, expires_in }`: a PUT URL for that part (valid 1 h); `part_bytes` is **this part's** size (the plan's `part_bytes` except the last, which is the remainder); 400 `INVALID_PART_NUMBER` outside 1..`part_count` |
 | `PUT {part upload_url}` | — | — | `mode=multipart`: bytes `(n-1)·part_bytes` … of the ciphertext, exactly that part's size, no `Content-Range`; the relay assembles the parts at `complete` (no ETags kept) |
-| `POST /v1/files/complete` (`blob_id`) | `pp-browser:relay-file-complete-v1` | `relay_user_id`, `blob_id` | `{ blob_id, token, share_path, expires_at }`, **once**: a repeat is 400 `BLOB_NOT_PENDING` |
-| `POST /v1/files/delete` (`blob_id`) | `pp-browser:relay-file-delete-v1` | `relay_user_id`, `blob_id` | `{ success: true }`; frees the quota, the link stops working |
-| `POST /v1/files/list` (`status?` `pending` / `complete`) | `pp-browser:relay-file-list-v1` | `relay_user_id`, `status` (`""` when omitted) | `{ files: [{ blob_id, status, byte_length, created_at, completed_at, expires_at, pending_expires_at, … }], usage: { bytes_used, pending_count, quota_bytes, max_pending } }`, newest first, at most 500, no tokens |
+| `POST /v1/files/complete` (`blob_id`) | `pp-browser:relay-file-complete-v1` | `account_id`, `blob_id` | `{ blob_id, token, share_path, expires_at }`, **once**: a repeat is 400 `BLOB_NOT_PENDING` |
+| `POST /v1/files/delete` (`blob_id`) | `pp-browser:relay-file-delete-v1` | `account_id`, `blob_id` | `{ success: true }`; frees the quota, the link stops working |
+| `POST /v1/files/list` (`status?` `pending` / `complete`) | `pp-browser:relay-file-list-v1` | `account_id`, `status` (`""` when omitted) | `{ files: [{ blob_id, status, byte_length, created_at, completed_at, expires_at, pending_expires_at, … }], usage: { bytes_used, pending_count, quota_bytes, max_pending } }`, newest first, at most 500, no tokens |
 | `GET /v1/files/<blob_id>/download?t=<token>` | unsigned | — | **302** to a 60-second storage URL (`Cache-Control: no-store`); every failure (unknown, expired, used up, deleted) is the same **404** `{"error":"Not found"}` |
 
 `share_path` is `/api/relay/v1/files/<blob_id>/download?t=<token>`; the message's `url` is the relay origin (the relay base URL without `/api/relay`) plus it. **The token is the download credential**: logs, errors and metrics carry the blob id, status codes and `RelayFileUrl::Redacted` (no query) only, and the redirect target is never logged.
@@ -183,14 +249,14 @@ Same base path as the blobs. Client: `HttpLockerClient` / `ILockerClient`; seale
 
 | HTTP | Purpose |
 |------|---------|
-| `POST /v1/lockers/put` | `{ relay_user_id, timestamp, signature, locker: { locker_id, version, signing_public_key_b64, sealed_b64, signature_b64 } }` → `200 { locker_id, version }`; **409** when the stored version is the same or newer (also when two writers race); **403** `Locker quota reached` past 4 lockers per relay user; body ≤ 2 MiB |
+| `POST /v1/lockers/put` | `{ account_id, timestamp, signature, locker: { locker_id, version, signing_public_key_b64, sealed_b64, signature_b64 } }` → `200 { locker_id, version }`; **409** when the stored version is the same or newer (also when two writers race); **403** `Locker quota reached` past 4 lockers per account; body ≤ 2 MiB |
 | `GET /v1/lockers/:locker_id` | `200 { locker: {…} }` or **404**. By id alone — a restoring device is not registered yet; rate-limited per IP |
 
 Two signatures on a write:
 
 | Half | Signed by | Bytes |
 |------|-----------|-------|
-| Relay (quota) | the relay user's account key | `pp-browser:relay-locker-put-v1` ‖ 0 ‖ u8 1 ‖ LenUtf8 `relay_user_id` ‖ LenUtf8 `locker_id` ‖ u64 `version` ‖ i64 `timestamp` |
+| Relay (quota) | the account key | `pp-browser:relay-locker-put-v1` ‖ 0 ‖ u8 1 ‖ LenUtf8 `account_id` ‖ LenUtf8 `locker_id` ‖ u64 `version` ‖ i64 `timestamp` |
 | Locker (owner) | the locker ML-DSA-65 key; `locker_id` = lowercase hex of BLAKE2b-256(its public key) | `pp-browser:account-locker-v1` ‖ 0 ‖ u8 1 ‖ LenBytes(locker id) ‖ u64 `version` ‖ LenBytes(sealed) |
 
 The snapshot (`sealed`, the owner signature, rollback protection) and the state inside it: [ACCOUNT_LOCKER.md](ACCOUNT_LOCKER.md). Golden vectors for both sign-byte layouts are shared between `account_locker_test` / `http_locker_client_test` and www `__tests__/AccountLocker.test.ts`. The relay learns which registered user writes which locker (the write is authenticated for its quota); reads carry no identity.
@@ -257,11 +323,11 @@ Server should cluster by `fingerprint` (+ version), keep a sample, increment cou
 
 ## HTTP device push (opaque wake)
 
-Signed with `pp-browser:relay-api-v1` ops `DeviceRegister=3` / `DeviceUnregister=4` over `(relay_user_id, platform, device_id, push_token)`.
+Signed with `pp-browser:relay-api-v1` (sign version 2) ops `DeviceRegister=3` / `DeviceUnregister=4` over `(account_id, platform, device_id, push_token)`. Tokens are registered per relay, by Account ID, on every relay of ours that holds our registration ([Several relays](#several-relays)): a relay holding mail for the account wakes its phone. A backend switch unbinds the preferred relay's only.
 
 | HTTP | Purpose |
 |------|---------|
-| `POST /v1/devices/register` | Bind push token `{ platform, device_id, push_token, relay_user_id, timestamp, signature }` (`platform` is `android` or `ios`) |
+| `POST /v1/devices/register` | Bind push token `{ platform, device_id, push_token, account_id, timestamp, signature }` (`platform` is `android` or `ios`) |
 | `POST /v1/devices/unregister` | Remove device binding (the client keeps its binding with alerts off — P005 amended; account revoke removes all of them) |
 
 `ios_voip` bindings (`device_id` `<ios device id>.voip`) are legacy from P016's PushKit token: the app no longer registers them (P019), and the relay should drop them.

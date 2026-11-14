@@ -89,7 +89,7 @@ void MergeDirectoryEndpoints(Contact& contact, const mesh::DirectoryHit& hit, Co
   }
 }
 
-/** The Account ID from an answer whose keys verified; the relay id our directory gives for the account. */
+/** The Account ID from an answer whose keys verified (it is the relay's address too, multi-relay MR001). */
 void MergeDirectoryIds(Contact& contact, const ContactRefreshInputs& inputs, ContactRefreshResult& result) {
   const mesh::DirectoryHit& hit = *inputs.hit;
   const auto offered_account = PrimaryAccountIdFromHit(hit);
@@ -101,14 +101,6 @@ void MergeDirectoryIds(Contact& contact, const ContactRefreshInputs& inputs, Con
                               mesh::ContactId{mesh::ContactIdKind::Account, *offered_account, true});
     result.other_changed = true;
   }
-  const auto offered_relay = PrimaryRelayIdFromHit(hit);
-  if (!offered_relay || ContactRelayUserId(contact) == offered_relay) {
-    return;
-  }
-  std::erase_if(contact.remote.ids,
-                [](const mesh::ContactId& id) { return id.kind == mesh::ContactIdKind::RelayUser; });
-  contact.remote.ids.push_back(mesh::ContactId{mesh::ContactIdKind::RelayUser, *offered_relay, false});
-  result.other_changed = true;
 }
 
 void MergeNickname(Contact& contact, const ContactRefreshInputs& inputs, ContactRefreshResult& result) {
@@ -146,7 +138,6 @@ Contact MergeContactRefresh(Contact contact, const ContactRefreshInputs& inputs,
 struct ContactRefreshWorkflow::Run {
   std::string contact_id;
   std::string account_id;
-  std::string relay_id;
   std::optional<PeerCardRecord> card_before;
   std::optional<mesh::DirectoryHit> hit;
   bool hit_keys_verified = false;
@@ -190,7 +181,6 @@ bool ContactRefreshWorkflow::Start(const std::string& contact_id, std::function<
   auto run = std::make_shared<Run>();
   run->contact_id = contact_id;
   run->account_id = ContactAccountId(contact).value_or("");
-  run->relay_id = ContactRelayUserId(contact).value_or("");
   run->done = std::move(done);
   if (!run->account_id.empty()) {
     if (auto kept = keys_.Kept(run->account_id); kept && *kept) {
@@ -226,9 +216,7 @@ bool ContactRefreshWorkflow::Start(const std::string& contact_id, std::function<
 void ContactRefreshWorkflow::AskDirectory(const std::shared_ptr<Run>& run) {
   std::optional<Roe<mesh::DirectoryHit>> answer;
   if (!run->account_id.empty()) {
-    answer = directory_.LookupByAccount(run->account_id);
-  } else if (!run->relay_id.empty()) {
-    answer = directory_.LookupRelayUser(run->relay_id); // a contact known only by its relay id
+    answer = directory_.LookupByAccount(run->account_id); // the directory knows people by Account ID only
   }
   using Directory = ContactRefreshResult::Directory;
   if (!answer) {

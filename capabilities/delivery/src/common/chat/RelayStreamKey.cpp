@@ -20,29 +20,29 @@ constexpr size_t kGroupStreamHashBytes = 16; // BLAKE2b-128
 
 } // namespace
 
-std::string BuildCanonicalRelayStreamKey(const std::string& contact_id_a, const std::string& contact_id_b,
+std::string BuildCanonicalRelayStreamKey(const std::string& account_a, const std::string& account_b,
                                          ThreadChannel channel, uint32_t session_epoch) {
-  std::string lo = contact_id_a;
-  std::string hi = contact_id_b;
+  std::string lo = account_a;
+  std::string hi = account_b;
   if (lo > hi) {
     std::swap(lo, hi);
   }
   return "v1:" + ThreadChannelToString(channel) + ":" + std::to_string(session_epoch) + ":" + lo + ":" + hi;
 }
 
-std::string BuildControlRelayStreamKey(const std::string& contact_id_a, const std::string& contact_id_b) {
-  std::string lo = contact_id_a;
-  std::string hi = contact_id_b;
+std::string BuildControlRelayStreamKey(const std::string& account_a, const std::string& account_b) {
+  std::string lo = account_a;
+  std::string hi = account_b;
   if (lo > hi) {
     std::swap(lo, hi);
   }
   return "v1:control:" + lo + ":" + hi;
 }
 
-std::string BuildDeviceRelayStreamKey(const std::string& contact_id_a, const std::string& contact_id_b,
+std::string BuildDeviceRelayStreamKey(const std::string& account_a, const std::string& account_b,
                                       const ThreadChannel channel, const std::string& sender_device) {
-  std::string lo = contact_id_a;
-  std::string hi = contact_id_b;
+  std::string lo = account_a;
+  std::string hi = account_b;
   if (lo > hi) {
     std::swap(lo, hi);
   }

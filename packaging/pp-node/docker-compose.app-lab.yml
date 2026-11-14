@@ -7,6 +7,13 @@
 # No fixed container names and no Mongo host port: it never collides with a developer's own relay
 # stack (its own db and gateway containers). The gateway is published on 127.0.0.1:${PP_APP_LAB_RELAY_PORT:-18719}.
 #
+# A second, independent relay stack (www2 + messenger2 + relay-db2, gateway on 127.0.0.1:${PP_APP_LAB_RELAY2_PORT:-18729})
+# is for the multi-relay scenarios: users on different relays, one user on both, the preferred one stopped. Each
+# relay also has TLS in front (tls-a on 127.0.0.1:${PP_APP_LAB_TLS_A_PORT:-18743}, tls-b on
+# 127.0.0.1:${PP_APP_LAB_TLS_B_PORT:-18744}): account cards list https:// relays only (MR004). Its certificate is
+# signed by a lab CA that pp_local_test.sh makes in PP_APP_LAB_TLS_DIR; the probes trust it through
+# PP_BROWSER_CA_BUNDLE.
+#
 # The lab's own mesh seed (pp-node, image pp-node:local as staged by pp_local_test.sh) sits on a
 # TEST-NET-2 network: the product dials seeds only on public addresses, and 198.51.100.0/24 reads
 # as one while the host still routes to it. Its /status is on 127.0.0.1:${PP_APP_LAB_HOP_STATUS_PORT:-18718}.
@@ -120,6 +127,84 @@ services:
         condition: service_healthy
       messenger:
         condition: service_started
+
+  # TLS in front of the first relay: https://127.0.0.1:${PP_APP_LAB_TLS_A_PORT:-18743}/api/relay.
+  tls-a:
+    image: node:lts-alpine
+    command: ["node", "/proxy/proxy.js", "443", "www", "9097"]
+    volumes:
+      - ./app-lab-tls/proxy.js:/proxy/proxy.js:ro
+      - ${PP_APP_LAB_TLS_DIR:-/tmp/pp-app-lab-tls}:/tls:ro
+    networks:
+      lab:
+        ipv4_address: 198.51.100.21
+    ports:
+      - "127.0.0.1:${PP_APP_LAB_TLS_A_PORT:-18743}:443"
+    depends_on: [www]
+
+  # The second relay: a stack of its own (its own Mongo), as another operator's would be.
+  relay-db2:
+    image: mongo:8-noble
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: brief
+      MONGO_INITDB_ROOT_PASSWORD: brief
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    ulimits:
+      nofile:
+        soft: 64000
+        hard: 64000
+    networks: [lab]
+
+  messenger2:
+    build:
+      context: ${PP_WEB2_ROOT:-../../../../web2}/messenger
+    environment:
+      BRF_MESSENGER_HOST: "::"
+      BRF_MESSENGER_PORT: 9098
+      BRF_MESSENGER_MONGO_URI: "mongodb://brief:brief@relay-db2:27017/messenger?authSource=admin"
+    networks: [lab]
+    depends_on:
+      relay-db2:
+        condition: service_healthy
+
+  www2:
+    build:
+      context: ${PP_WEB2_ROOT:-../../../../web2}/www
+    environment:
+      BRF_WWW_HOST: "::"
+      BRF_WWW_PORT: 9097
+      BRF_WWW_MONGO_URI: "mongodb://brief:brief@relay-db2:27017/brief?authSource=admin"
+      BRF_WWW_MESSENGER_URI: "http://messenger2:9098"
+      BRF_WWW_DOMAINS: '[{"id":"lab2","origin":"http://lab2.invalid"}]'
+    networks:
+      lab:
+        ipv4_address: 198.51.100.23
+    ports:
+      - "127.0.0.1:${PP_APP_LAB_RELAY2_PORT:-18729}:9097"
+    depends_on:
+      relay-db2:
+        condition: service_healthy
+      messenger2:
+        condition: service_started
+
+  # TLS in front of the second relay: https://127.0.0.1:${PP_APP_LAB_TLS_B_PORT:-18744}/api/relay.
+  tls-b:
+    image: node:lts-alpine
+    command: ["node", "/proxy/proxy.js", "443", "www2", "9097"]
+    volumes:
+      - ./app-lab-tls/proxy.js:/proxy/proxy.js:ro
+      - ${PP_APP_LAB_TLS_DIR:-/tmp/pp-app-lab-tls}:/tls:ro
+    networks:
+      lab:
+        ipv4_address: 198.51.100.22
+    ports:
+      - "127.0.0.1:${PP_APP_LAB_TLS_B_PORT:-18744}:443"
+    depends_on: [www2]
 
 networks:
   lab:

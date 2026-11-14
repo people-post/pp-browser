@@ -11,7 +11,7 @@
 
 **Three tiers (D089/D090):** Direct chat uses **`e2e`** and **`e2e_public` only** — both E2E via **`body.e2e.payload_b64`**. Reject **`public_relay`** and **`body.content_b64`**.
 
-**Identity (D079 / M009–M010):** Wire **`sender_contact_id`** is the sender **Account ID** (`peer_identity_kind = account`, value `account:…`) — not local `Contact.id`, not `relay:`. Brief inbox/API auth, `sender_relay_id`, recipient, and stream parties stay **`relay:`**.
+**Identity (D079 / M009–M010, [multi-relay MR001](../../projects/multi-relay/DECISIONS.md#mr001--inboxes-are-keyed-by-account-id)):** Wire **`sender_contact_id`** is the sender **Account ID** (`peer_identity_kind = account`, value `account:…`) — not local `Contact.id`. The Account ID is also the relay's address: the inbox, the sending account, the stream parties and the history requester are all Account IDs. There are no per-relay ids (the `relay:` ids, `relay_user` kind and `sender_relay_id` are gone: a clean cutover).
 
 ---
 
@@ -62,20 +62,21 @@ The relay **never parses** application envelopes. pp-browser wraps the signed `R
 
 ```json
 {
-  "sender_contact_id": "relay:alice123",
-  "recipient_contact_id": "relay:bob456",
-  "stream_id": "v1:e2e:1:relay:alice123:relay:bob456",
+  "sender_account_id": "account:alice…",
+  "recipient_account_id": "account:bob…",
+  "stream_id": "v2:e2e_public:account:alice…:account:bob…:from:12D3Koo…",
   "index_key": 42,
-  "blob_b64": "base64-of-application-envelope-json"
+  "blob_b64": "base64-of-application-envelope-json",
+  "grant": { "recipient_account_id": "account:bob…", "sender_account_id": "account:alice…", "issued_at": 1761235200000, "expires_at": 1763827200000, "signature": "…" }
 }
 ```
 
-**Poll / history** returns `RelayInboundRecord[]` (no `recipient_contact_id`):
+**Poll / history** returns `RelayInboundRecord[]` (no `recipient_account_id`):
 
 ```json
 {
-  "sender_contact_id": "relay:alice123",
-  "stream_id": "v1:e2e:1:relay:alice123:relay:bob456",
+  "sender_account_id": "account:alice…",
+  "stream_id": "v2:e2e_public:account:alice…:account:bob…:from:12D3Koo…",
   "index_key": 42,
   "blob_b64": "…"
 }
@@ -83,29 +84,30 @@ The relay **never parses** application envelopes. pp-browser wraps the signed `R
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `sender_contact_id` | string | yes | Sender relay id |
-| `recipient_contact_id` | string | send only | Inbox owner |
+| `sender_account_id` | string | yes | The sending account (it signs the record, relay API sign version 2). Inbound: the envelope inside must name the same `sender_contact_id`, else the record is skipped |
+| `recipient_account_id` | string | send only | The inbox owner's Account ID |
+| `grant` | object | send only, optional | The recipient's grant to the sender ([ACCOUNT_CARD § Relay grants](ACCOUNT_CARD.md#relay-grants)): a contact's send. Absent: a stranger's. Never on a send to our own mailbox |
+| `sender_public_key_b64` | string | send only, optional | Our account's ML-DSA key, sent once the relay asked for it (`sender_key_required`: we are not registered there). Must hash to `sender_account_id` |
 | `stream_id` | string | yes | Opaque conversation scope (pp-browser: canonical `v1:…` stream key) |
 | `index_key` | integer (u64) | yes | Monotonic per-sender per-stream; **v1:** equals `sender_seq` |
 | `blob_b64` | string | yes | RFC 4648 base64 of application envelope JSON (unsigned routing fields omitted) |
 | `urgent` | bool | send only, optional | P012: wake the recipient at once (an incoming call's push). Unsigned hint |
 | `ttl_s` | integer | send only, optional | How long the relay keeps the record, in seconds (it clamps to 60 s – 90 days); absent: its full window. The control lane sends 3660 (`kControlLaneRelayTtlMs`: no family takes a lane message older than an hour), except sent copies and the device list to our own devices, which wait for a device that is off for days. Unsigned hint |
 
-**Dedup:** relay unique key `(sender_contact_id, stream_id, index_key)`. **Signature verification:** client-side only (`RelayReceivePipeline`).
+**Dedup:** relay unique key `(sender_account_id, stream_id, index_key)`. **Signature verification:** client-side only (`RelayReceivePipeline`).
 
 **Codec:** `RelayWireSendRecordFromEnvelope` / `RelayEnvelopeFromInboundRecord` in `common/chat/MessagingJson.*`.
 
 ---
 
-## `RelayEnvelope` (v2 — `envelope_version: 2`)
+## `RelayEnvelope` (v3 — `envelope_version: 3`)
 
 Signed application wrapper **inside `blob_b64`**. **No `thread_id`.** See [DESIGN § Relay envelope](../../projects/chat-storage-and-memory/DESIGN.md#relay--direct-envelope-d056-d063).
 
 ```json
 {
-  "envelope_version": 2,
+  "envelope_version": 3,
   "message_id": "550e8400-e29b-41d4-a716-446655440000",
-  "sender_relay_id": "relay:alice123",
   "sender_contact_id": "account:…",
   "sender_device": "12D3Koo…",
   "route": {
@@ -137,17 +139,16 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 | Topic | v1 rule |
 |-------|---------|
 | Sign bytes | Fixed binary: domain prefix + `sign_version` + fields — full layout in [e2e DESIGN § Ed25519 signing](../../projects/e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes) |
-| Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `sender_relay_id`, `route` (kind / channel as enums), `timestamp`, `sender_device`, and every copy: `recipient_device`, `session_epoch`, `sender_seq`, `key_init_b64`, its payload hash (sign v4 — [MESSAGE_ENCRYPTION](MESSAGE_ENCRYPTION.md); a group copy's group is inside its payload) |
+| Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `route` (kind / channel as enums), `timestamp`, `sender_device`, and every copy: `recipient_device`, `session_epoch`, `sender_seq`, `key_init_b64`, its payload hash (sign v5 — [MESSAGE_ENCRYPTION](MESSAGE_ENCRYPTION.md); a group copy's group is inside its payload) |
 | Direct channel enum | `0` = `e2e`, `1` = `e2e_public` (D090) |
 | Copy hash | BLAKE2b-256 over exactly what that device decrypts: `0x02` ‖ LenBytes(payload) — no `0x01` public path |
-| Not signed | `thread_id`, `recipient_contact_id`, `stream_key`, `order_key`, `signature`, `body.e2e.sender_card` (signed by its account), `body.e2e.sender_card_at` (a hint), relay metadata, unknown keys |
+| Not signed | `thread_id`, `recipient_account_id`, `stream_key`, `order_key`, `signature`, `body.e2e.sender_card` (signed by its account), `body.e2e.sender_card_at` (a hint), relay metadata, unknown keys |
 | `signature` encoding | Standard **base64** (RFC 4648, padded) only in v1 |
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `envelope_version` | integer | yes | **2** (devices, M021; 1 is refused). Signed (D072). Bump independently of `ChatPayload.payload_version`. |
+| `envelope_version` | integer | yes | **3** (no relay id, multi-relay MR001; 2 named the sender's `relay:` id and is refused, as 1 is). Signed (D072). Bump independently of `ChatPayload.payload_version`. |
 | `message_id` | string, 1–96 chars of `[A-Za-z0-9_-]` (a UUID in practice) | yes | Dedup key (D034). Inbound envelopes with any other character or length are rejected: the id lands in generated RML and as a SQLite key |
-| `sender_relay_id` | string | yes | Relay registration id; **v1:** same string as `sender_contact_id` (D082) |
 | `sender_contact_id` | string | yes | Sender **communicating identity value** (D079) — the Account ID |
 | `sender_device` | string | yes | The sending device's PeerId; its key signs the envelope (M021) |
 | `route` | object | yes | See `Route` below |
@@ -162,8 +163,8 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 
 | Field | Type | Required on send | Notes |
 |-------|------|------------------|-------|
-| `recipient_contact_id` | string | yes | Inbox owner — relay delivery target |
-| `stream_id` | string | yes | Opaque conversation scope, per sending device (an account's devices share its `relay:` id): `v2:{channel}:{id_lo}:{id_hi}:from:{sender_device}` (direct, sorted relay ids), `v1:g:{hash}:from:{sender_device}` (group, below), the control lane's `v1:control:{lo}:{hi}:from:{sender_device}` |
+| `recipient_account_id` | string | yes | The inbox owner's Account ID — relay delivery target |
+| `stream_id` | string | yes | Opaque conversation scope, per sending device (an account's devices share its Account ID): `v2:{channel}:{id_lo}:{id_hi}:from:{sender_device}` (direct, the pair's sorted Account IDs), `v1:g:{hash}:from:{sender_device}` (group, below), the control lane's `v1:control:{lo}:{hi}:from:{sender_device}` |
 | `index_key` | integer (u64) | yes | Unique and rising per sending device (ms × 1000 + a counter): one per record — a message can be several records (a device's copy over a link that failed, then the relay) |
 
 **Client builders:** `common/chat/RelayStreamKey.*` (delivery) maps to wire `stream_id`.
@@ -256,8 +257,8 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 
 - `roster_statement`: `{ group_id, roster_epoch, members[{ identity, role, joined_at, added_by? }], preset, title?, title_version?, removed[{ identity, removal, by }]?, links[{ link_id, secret_hash, maker, expires_at, max_uses?, uses? }]?, folded[{ id, base_epoch }]?, change_floor_epoch?, owner, owner_public_key, owner_chain[]?, owner_signature }` (the optional fields omitted when empty or 0). `members` sorted by identity, exactly one `role: owner`, who is `owner`; any number `role: admin` (G017); the rest `member`; `added_by` who brought them in (G019: the signer of the `add` folded). `preset` is `open` or `managed` (G017: who brings people in and renames). `removed`: accounts removed and not re-admitted, `removal` the id of the `remove` that took them out (what a re-admit names, G018 R2). `links`: live invite links (G021, o5, below): `uses` how many joined by it in the changes the owner folded (0 omitted). `folded`: every change the owner folded into this statement or an earlier one whose `base_epoch` is not below `change_floor_epoch` — a device drops a change it names; a change whose own `base_epoch` is below the floor is dropped as too old. `owner_signature` is ML-DSA-65 by the owner's **account** key (`owner_public_key`, base64; `AccountIdFromMlDsaPublicKey(owner_public_key)` must equal `owner`) over the **v3** bytes: the tag `pp-browser:group-roster-statement-v3`, `group_id`, `roster_epoch`, `owner`, the member count then per member `identity`, `role`, `joined_at`, `added_by`; `preset`; `title`, `title_version`; the removed count then per entry `identity`, `removal`, `by`; the link count then per link `link_id`, `secret_hash`, `maker`, `expires_at`, `max_uses` (0: none), `uses`; the folded count then per entry `id`, `base_epoch`; `change_floor_epoch` — every string a u32 BE length then its bytes, every integer u64 BE, every list sorted (members and removed by identity, links by `link_id`, folded by `id`). Verify also refuses a removed account that is a member, a repeated removed account, link id or folded id, a folded entry below the floor and a floor above the epoch. (v2 and earlier are no longer read: a clean cutover.) A receiver takes the roles and the preset of the statement it keeps; its roster is that statement plus the changes it holds (below).
 - **Changes on top of the statement (G018).** `group_change` (a stored DM, from the signer's device to each member, and for a `remove` to the removed account too — the members first, G020) `detail`: `{ group_id, change }`, `change` a signed roster change: `{ group_id, base_epoch, signer, signer_device, signer_card?, at, change, body, signature }` — `change` one of `add`, `leave`, `remove`, `rename`, `link_add`, `link_revoke` with its `body` ([group chat DESIGN § Change](../../projects/group-chat/DESIGN.md#change-g018): fields, sign bytes `pp-browser:group-roster-change-v1`, the change id = hex BLAKE2b-256 of the sign bytes). `signature` is ML-DSA-65 by the **device** key of `signer_device`, which the signer's account card must list (G018 item 9); `signer_card` (not signed: it proves itself) rides the first send of a change. A receiver in the group, from the signer or a member handing it on, keeps a change that proves itself — or one no card it has lists the device of (it asks the device for its card, and the change counts once it arrives); a forged one is refused. Its roster is then recomputed: the latest statement plus every held change by R1–R6 ([DESIGN § Change](../../projects/group-chat/DESIGN.md#change-g018)); a change that counts gets its line in the group's chat, once. Built producers (o2): **`leave`** — a member's leave is its signed change (it names the adds that brought the leaver in and its own unfolded changes); `member_left` is no longer sent, and one received changes nothing. **`remove` by an admin** — admins remove members (not admins, not the owner); the removed account's chat goes read-only (`sync_state` `removed`), saying who removed it. The owner's own removal stays `member_removed` with the statement re-signed at once (its own `remove`, signed and folded into that statement, is the `removal` the `removed` entry names). **`add` by a member or admin** (o4, G019, below) — the inviter's device signs it once the invitee accepts. **`rename` by a member or admin** (o4, G017) — whoever the preset lets rename (Open: any member; Managed: admins) signs `rename` with `title_version` one past the highest the roster holds, fans it out, and the group's chat reads "{signer} renamed the group to …" (the owner still sends `group_renamed`); the chat's shared title follows the rename that counts (R4). **`link_add` / `link_revoke`** (o5, G021, below) — a link's maker, per the preset, and its revoke by the maker, an admin or the owner.
-- **Members invite (G019, o4).** Who may invite is `GroupAllows(Invite, role, preset)`: Open any member, Managed the owner and admins. The `group_invite` DM goes from the inviter as before, with `owner_identity` (the group's owner, omitted when the inviter is the owner) and `member_count` (how many are in the group; never who — the member list and cards reach only someone who joined), both additive; `actor_role` is the inviter's role. A member may not invite an account on the group's removed list (refused locally; such an add is void anyway, R2); the owner's or an admin's invite of one is a re-admit. The invitee's `group_invite_accept` goes back to the **inviter**, whose device checks its own pending invite (this group, this invitee, not expired, room left — else `group_invite_refused` `group_full`) and that it may still invite under the preset and its role now (else `group_invite_refused` with `reason: "not_allowed"`; the invitee's line reads "You were not added to the group"). The owner then adds them itself (`member_joined` with its re-signed statement, as before, now with `added_by`). A member or admin instead signs an **`add`** (`member`, `invite_nonce`, and `readmits` = the `removal` of the account's `removed` entry — the statement's, else the held removal that counts — when it brings back someone removed), holds it, recomputes, and — only if the add counts there (R5: else the invitee is refused `group_full` and the add goes nowhere) — sends `group_change` to every member but the newcomer with **`newcomer`** in `detail` (`{ member_identity, card?, relay_user_id? }`: the newcomer's account card as the inviter keeps it and its relay route, unsigned, kept by a member only once the add counts there), then the newcomer's join bundle. The owner folds the add into its next statement (`added_by` the signer) when its device is online.
-- **The join bundle (G018 item 6, G019 2):** what the inviter — the owner or a member — sends the newcomer is `member_joined` naming the newcomer, with `invite_nonce` (the invite it answers), `added_by`, `members[]` (each with the inviter's relay route and kept card, within 128 KB of cards), `roster_statement` (the owner's: freshly signed by the owner, the one it holds from a member) and `changes[]` (every change the inviter holds, the add first, each signer's card once; at most 64 and about 96 KB, `more: true` when cut — the newcomer then asks the inviter, as a catch-up, for the rest). The newcomer takes it only from the inviter of an invite of its own it accepted (an owner that names none: the owner it knows) and trusts nothing in it: the statement must verify for the owner the invite named (or one its chain hands the group to), and the roster the statement and the changes give (each change proving itself) must list the newcomer — checked before anything is kept, so a bundle that does not prove the join leaves the group as accepting left it. Only then is the statement kept, the changes held (no lines: they came before the join), the roster written, and the cards and routes kept for those it lists. The members' `member_joined` from the owner carries `added_by` too; the lines read "Alice added Carol" (G019 5).
+- **Members invite (G019, o4).** Who may invite is `GroupAllows(Invite, role, preset)`: Open any member, Managed the owner and admins. The `group_invite` DM goes from the inviter as before, with `owner_identity` (the group's owner, omitted when the inviter is the owner) and `member_count` (how many are in the group; never who — the member list and cards reach only someone who joined), both additive; `actor_role` is the inviter's role. A member may not invite an account on the group's removed list (refused locally; such an add is void anyway, R2); the owner's or an admin's invite of one is a re-admit. The invitee's `group_invite_accept` goes back to the **inviter**, whose device checks its own pending invite (this group, this invitee, not expired, room left — else `group_invite_refused` `group_full`) and that it may still invite under the preset and its role now (else `group_invite_refused` with `reason: "not_allowed"`; the invitee's line reads "You were not added to the group"). The owner then adds them itself (`member_joined` with its re-signed statement, as before, now with `added_by`). A member or admin instead signs an **`add`** (`member`, `invite_nonce`, and `readmits` = the `removal` of the account's `removed` entry — the statement's, else the held removal that counts — when it brings back someone removed), holds it, recomputes, and — only if the add counts there (R5: else the invitee is refused `group_full` and the add goes nowhere) — sends `group_change` to every member but the newcomer with **`newcomer`** in `detail` (`{ member_identity, card? }`: the newcomer's account card as the inviter keeps it, kept by a member only once the add counts there; the relay reaches the newcomer by its Account ID, so no route rides along), then the newcomer's join bundle. The owner folds the add into its next statement (`added_by` the signer) when its device is online.
+- **The join bundle (G018 item 6, G019 2):** what the inviter — the owner or a member — sends the newcomer is `member_joined` naming the newcomer, with `invite_nonce` (the invite it answers), `added_by`, `members[]` (each with the inviter's kept card, within 128 KB of cards), `roster_statement` (the owner's: freshly signed by the owner, the one it holds from a member) and `changes[]` (every change the inviter holds, the add first, each signer's card once; at most 64 and about 96 KB, `more: true` when cut — the newcomer then asks the inviter, as a catch-up, for the rest). The newcomer takes it only from the inviter of an invite of its own it accepted (an owner that names none: the owner it knows) and trusts nothing in it: the statement must verify for the owner the invite named (or one its chain hands the group to), and the roster the statement and the changes give (each change proving itself) must list the newcomer — checked before anything is kept, so a bundle that does not prove the join leaves the group as accepting left it. Only then is the statement kept, the changes held (no lines: they came before the join), the roster written, and the cards and routes kept for those it lists. The members' `member_joined` from the owner carries `added_by` too; the lines read "Alice added Carol" (G019 5).
 - **Invite links (G021, o5).** A link is text, `pp://join/` + base64url (unpadded) of `link_id` (16 random bytes) ‖ `secret` (16 random bytes) ‖ `expires_at` (u64 BE, Unix ms) ‖ the maker's account id (UTF-8, the rest; at most 128 bytes, `account:…`) — nothing of the group, its name or its members. Its maker (whoever the preset lets: `GroupAllows(MakeInviteLink…)`, Open any member, Managed the owner and admins) signs a **`link_add`** (`link_id` the 16 bytes as lowercase hex, `secret_hash`, `expires_at`, `max_uses`, 0 for no limit; default lifetime 7 days) and fans it out as `group_change`; `secret_hash` = lowercase hex BLAKE2b-256 over the tag `pp-browser:group-link-secret-v1`, the link id (hex) and the secret, each a u32 BE length then its bytes — the secret itself never enters the roster. A **`link_revoke`** (`link_id`) by its maker, an admin or the owner ends it. A link is live while not revoked, not expired and its maker is in the group (a maker who left or was removed takes their links with them, whatever the expiry; a `link_add` that no longer counts because its signer is out is such a link too). Its **uses** are the adds carrying its `link_id` that took someone in — the statement's `uses` plus the held ones; the owner's fold adds them in. The engine does not void an add over `max_uses`: the answerer refuses it (below).
 - **Joining by a link (G021, o5)** rides the **control lane** under its own family (`group join`: the joiner is a stranger, not a member; account copies carrying the sender's card, never stored, applied once within 10 min), `control_type` / `detail`:
   - `group_join_request` (joiner → the link's maker's account: every device of it may answer) `{ request_id, link_id, secret }` (`secret` lowercase hex).
@@ -337,10 +338,9 @@ Example (logical): `text = "Hi @Li Wei, all set"`, one mention of `acc-li` over 
 
 | Field | Encoding | Notes |
 |-------|----------|-------|
-| `sub_version` | `u8` = **`2`** | `1` (local `contact_id`, `relay_user_id`, `avatar_url`, never sent) is retired |
+| `sub_version` | `u8` = **`3`** | `2` (with a trailing `relay_user_id`) and `1` (local `contact_id`, `relay_user_id`, `avatar_url`, never sent) are retired: the relay reaches the person by the card's Account ID (multi-relay MR001) |
 | `display_name` | **LenUtf8** | the sharer's name for the person — a label, not an identity |
 | `card` | **LenUtf8** | the person's account card, or their key card when the sharer has none (JSON); checked before *Add* |
-| `relay_user_id` | **LenUtf8** | where the relay delivers to the person, when the sharer knows it (empty when not) — the sharer's word, unsigned: taken for a new contact only, never to reroute a known one |
 
 **`content_type = annotation`:**
 
@@ -414,16 +414,16 @@ Regenerate: [`chatpayload_codec.py`](../../projects/e2e-message-crypto/tools/cha
 
 ## `ChatHistoryRequest` (shared — libp2p D060; relay maps via `stream_key`)
 
-Single request shape for **`FetchChatTargetMessages`** (D058) in pp-browser. **libp2p (D060):** UTF-8 JSON body on stream using the chat-shaped fields below. **HTTP relay (D027):** generic `GET /api/relay/v1/streams/messages` — the client maps this struct to relay query params (`requester_contact_id`, `sender_contact_id`, `stream_key`, `min_order_key`, `max_order_key`, `limit`, `order`). See [Stream history (HTTP relay)](#stream-history-http-relay) below.
+Single request shape for **`FetchChatTargetMessages`** (D058) in pp-browser. **libp2p (D060):** UTF-8 JSON body on stream using the chat-shaped fields below. **HTTP relay (D027):** generic `GET /api/relay/v1/streams/messages` — the client maps this struct to relay query params (`requester_account_id`, `sender_account_id`, `stream_key`, `min_order_key`, `max_order_key`, `limit`, `order`). See [Stream history (HTTP relay)](#stream-history-http-relay) below.
 
 Example libp2p / client JSON:
 
 ```json
 {
-  "requester_identity_kind": "relay_user",
-  "requester_identity_value": "relay:local",
-  "peer_identity_kind": "relay_user",
-  "peer_identity_value": "relay:peer",
+  "requester_identity_kind": "account",
+  "requester_identity_value": "account:local…",
+  "peer_identity_kind": "account",
+  "peer_identity_value": "account:peer…",
   "channel": "e2e",
   "session_epoch": 1,
   "min_sender_seq": 10,
@@ -457,14 +457,14 @@ Example libp2p / client JSON:
 Relay is **chat-agnostic**. History is scoped by opaque `stream_id` + `index_key` (not `channel` / `session_epoch` on the wire).
 
 ```
-GET /api/relay/v1/streams/messages?requester_contact_id=relay%3Abob&sender_contact_id=relay%3Aalice&stream_id=v1%3Ae2e%3A1%3Arelay%3Aalice%3Arelay%3Abob&min_index_key=10&max_index_key=42&limit=50&order=asc
+GET /api/relay/v1/streams/messages?requester_account_id=account%3Abob…&sender_account_id=account%3Aalice…&stream_id=v2%3Ae2e%3Aaccount%3Aalice…%3Aaccount%3Abob…%3Afrom%3A12D3Koo…&min_index_key=10&max_index_key=42&limit=50&order=asc
 ```
 
 | Query param | Type | Required | Notes |
 |-------------|------|----------|-------|
-| `requester_contact_id` | string | yes | Inbox owner (must differ from `sender_contact_id`) |
-| `sender_contact_id` | string | yes | Stream sender whose messages are fetched |
-| `stream_id` | string | yes | Opaque stream id (v1 canonical form above) |
+| `requester_account_id` | string | yes | Inbox owner's Account ID (must differ from `sender_account_id`); signs the request (relay API sign version 2) |
+| `sender_account_id` | string | yes | Stream sender whose messages are fetched |
+| `stream_id` | string | yes | Opaque stream id (the `RelayEnvelope.stream_id` form above) |
 | `min_index_key` | integer | no | Inclusive lower bound |
 | `max_index_key` | integer | no | Inclusive upper bound |
 | `limit` | integer | no | Default **50**, max **100** |
@@ -482,8 +482,8 @@ Stream-shaped relay response:
 
 ```json
 {
-  "stream_id": "v1:e2e:1:relay:alice:relay:bob",
-  "sender_contact_id": "relay:peer",
+  "stream_id": "v2:e2e:account:alice…:account:bob…:from:12D3Koo…",
+  "sender_account_id": "account:alice…",
   "messages": [],
   "has_more": false,
   "cursor": {
@@ -495,8 +495,8 @@ Stream-shaped relay response:
 
 Chat-shaped response (libp2p / documentation):
 
- "peer_identity_kind": "relay_user",
- "peer_identity_value": "relay:peer",
+ "peer_identity_kind": "account",
+ "peer_identity_value": "account:peer…",
  "channel": "e2e",
  "session_epoch": 1,
  "messages": [],

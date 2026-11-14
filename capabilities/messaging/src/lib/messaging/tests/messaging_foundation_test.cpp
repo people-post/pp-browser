@@ -41,8 +41,7 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "m1";
-  envelope.sender_relay_id = "relay:x";
-  envelope.sender_contact_id = "relay:x";
+  envelope.sender_contact_id = "account:x";
   envelope.sender_device = "QmTestDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
@@ -60,7 +59,7 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   hit.hit_id = "hit_alice";
   hit.display_name = "Alice Example";
   hit.nickname = "alice";
-  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:alice123", true}};
+  hit.ids = {{mesh::ContactIdKind::Account, "account:alice123", true}};
   const std::string blocks = BuildPeopleDiscoveryBlocksJson({hit}, std::vector<PeopleDiscoveryContactView>{});
   EXPECT_NE(blocks.find("long_list"), std::string::npos);
   EXPECT_NE(blocks.find("Alice Example"), std::string::npos);
@@ -141,7 +140,6 @@ namespace pbr {
 TEST(MessagingFoundationTest, RelayEnvelopeParserRefusesMixedShapes) {
   RelayEnvelope direct;
   direct.message_id = "m1";
-  direct.sender_relay_id = "relay:a";
   direct.sender_contact_id = "account:a";
   direct.sender_device = "QmTestDevice";
   direct.route.kind = kRelayRouteDirect;
@@ -205,7 +203,6 @@ TEST(MessagingFoundationTest, RelayEnvelopeParserRefusesMixedShapes) {
 TEST(MessagingFoundationTest, RelayEnvelopeParserRejectsOutOfRangeFields) {
   RelayEnvelope direct;
   direct.message_id = "m1";
-  direct.sender_relay_id = "relay:a";
   direct.sender_contact_id = "account:a";
   direct.sender_device = "QmTestDevice";
   direct.route.kind = kRelayRouteDirect;
@@ -232,9 +229,7 @@ TEST(MessagingFoundationTest, RelayEnvelopeParserRejectsOutOfRangeFields) {
       << "version that only matches once narrowed";
   EXPECT_FALSE(with([](Object& json) { json.set("sender_contact_id", std::string("account:a\nx")); }));
   EXPECT_FALSE(with([](Object& json) { json.set("sender_contact_id", std::string("account:a\0x", 11)); }));
-  EXPECT_FALSE(with([](Object& json) { json.set("recipient_contact_id", std::string("account:b\tx")); }));
-  EXPECT_TRUE(with([](Object& json) { json.set("sender_relay_id", std::string()); }))
-      << "no Brief route yet is allowed";
+  EXPECT_FALSE(with([](Object& json) { json.set("recipient_account_id", std::string("account:b\tx")); }));
 }
 
 // The store keeps an account's KEM key only under that account's own binding.
@@ -259,7 +254,7 @@ TEST(MessagingFoundationTest, PeerKemKeyStoreKeepsOnlyKeysTheAccountBound) {
                                      .binding_signature_b64 = mallory.KemBindingB64(),
                                      .source = "test"};
   EXPECT_FALSE(store.Put(account, alice.account_id, mallory_own)) << "Mallory's own binding, claimed for Alice";
-  EXPECT_FALSE(store.Put("relay_user", alice.account_id, bound)) << "accounts only";
+  EXPECT_FALSE(store.Put("peer_id", alice.account_id, bound)) << "accounts only";
   EXPECT_FALSE(store.Get(account, alice.account_id).has_value());
 
   EXPECT_TRUE(store.Put(account, alice.account_id, bound));

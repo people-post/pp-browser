@@ -33,7 +33,6 @@ class HttpDirectoryClient : public mesh::IDirectoryClient {
 public:
   explicit HttpDirectoryClient(std::string base_url);
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& query) override;
-  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string& account_id) override;
   Roe<std::vector<mesh::MeshNodeHit>> ListMeshNodes() override;
 
@@ -41,12 +40,19 @@ private:
   std::string base_url_;
 };
 
+/**
+ * The account card `account_id` registered with on the relay at `relay_base_url` (`GET /v1/users/by-account`'s
+ * `account_card`, multi-relay R2 step 2); none when the account is not registered there or gave none. Unchecked: the
+ * caller keeps it only once it verifies (AccountKeyResolver).
+ */
+Roe<std::optional<pp::common::Object>> FetchStoredAccountCard(const std::string& relay_base_url,
+                                                              const std::string& account_id);
+
 /** Try each backend in order until one succeeds (N029 nd3). */
 class FailoverDirectoryClient : public mesh::IDirectoryClient {
 public:
   explicit FailoverDirectoryClient(std::vector<std::unique_ptr<mesh::IDirectoryClient>> backends);
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& query) override;
-  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string& account_id) override;
   Roe<std::vector<mesh::MeshNodeHit>> ListMeshNodes() override;
 
@@ -71,16 +77,17 @@ public:
                                                  const std::string& peer_id = "",
                                                  const std::vector<std::string>& multiaddrs = {},
                                                  const RegistrationPublishOpts& publish = {}) override;
-  Roe<RegistrationResult> FinishRegistration(
-      const std::string& challenge, const std::string& public_key_b64, const std::string& nickname,
-      const std::string& signature, int64_t timestamp, const std::string& signature_alg = "ml-dsa-65",
-      const std::string& kem_public_key_b64 = "", const std::string& kem_binding_signature_b64 = "",
-      const std::string& peer_id = "", const std::vector<std::string>& multiaddrs = {}, int64_t initiation_floor = 0,
-      const RegistrationPublishOpts& publish = {}) override;
+  Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
+                                             const std::string& nickname, const std::string& signature,
+                                             int64_t timestamp, const std::string& signature_alg = "ml-dsa-65",
+                                             const std::string& kem_public_key_b64 = "",
+                                             const std::string& kem_binding_signature_b64 = "",
+                                             const std::string& peer_id = "",
+                                             const std::vector<std::string>& multiaddrs = {},
+                                             const RegistrationPublishOpts& publish = {}) override;
   Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
-                                         int64_t timestamp, const std::string& relay_user_id) override;
-  Roe<void> RevokeRegistration(const std::string& relay_user_id, const std::string& signature,
-                               int64_t timestamp) override;
+                                         int64_t timestamp, const std::string& account_id) override;
+  Roe<void> RevokeRegistration(const std::string& account_id, const std::string& signature, int64_t timestamp) override;
 
 private:
   std::string base_url_;

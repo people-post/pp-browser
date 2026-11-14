@@ -24,20 +24,11 @@ std::string PrimaryIdOfKind(const Contact& contact, const mesh::ContactIdKind ki
 
 std::string ContactAvatarStableId(const Contact& contact) {
   return AvatarStableId(PrimaryIdOfKind(contact, mesh::ContactIdKind::Account),
-                        PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser),
                         PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId), contact.id);
 }
 
 std::optional<std::string> ContactAccountId(const Contact& contact) {
   const std::string value = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account);
-  if (value.empty()) {
-    return std::nullopt;
-  }
-  return value;
-}
-
-std::optional<std::string> ContactRelayUserId(const Contact& contact) {
-  const std::string value = PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser);
   if (value.empty()) {
     return std::nullopt;
   }
@@ -67,10 +58,6 @@ std::optional<std::string> PrimaryAccountIdFromHit(const mesh::DirectoryHit& hit
     return *hit.account_id;
   }
   return PrimaryIdFromHit(hit, mesh::ContactIdKind::Account);
-}
-
-std::optional<std::string> PrimaryRelayIdFromHit(const mesh::DirectoryHit& hit) {
-  return PrimaryIdFromHit(hit, mesh::ContactIdKind::RelayUser);
 }
 
 } // namespace pbr

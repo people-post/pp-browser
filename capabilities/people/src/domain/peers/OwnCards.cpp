@@ -87,17 +87,51 @@ bool Lists(const std::vector<AccountCardDevice>& devices, const std::string& pee
 
 } // namespace
 
-Roe<AccountCard> OwnCards::IssueLocked(const std::optional<AccountCard>& base, std::vector<AccountCardDevice> devices,
-                                       const std::string& nickname, const int64_t now_ms, bool& issued) {
+void OwnCards::SetRelays(const std::vector<std::string>& origins) {
+  std::vector<AccountCardRelay> relays;
+  for (const std::string& origin : origins) {
+    relays.push_back(AccountCardRelay{.origin = origin});
+    if (!VerifyCardRelays(relays)) {
+      relays.pop_back(); // outside MR004's bounds (not https, too long, a duplicate, a fifth): not on the card
+    }
+  }
+  std::lock_guard lock(mutex_);
+  relays_ = std::move(relays);
+}
+
+std::vector<AccountCardRelay> OwnCards::RelaysLocked(const std::vector<AccountCardDevice>& devices,
+                                                     const std::string& self,
+                                                     const std::optional<AccountCard>& newest) const {
+  const bool master = !devices.empty() && devices.front().peer_id == self;
+  return master || !newest ? relays_ : newest->relays;
+}
+
+bool OwnCards::VerifiedLocked(const AccountCard& base, const int64_t now_ms) {
+  if (!base.card_signature_b64.empty() && base.card_signature_b64 == verified_signature_) {
+    return true;
+  }
+  // A kept card whose signature is over other bytes (one stepped up from version 2 by the profile.db ladder) is
+  // re-issued, its list as it is.
+  if (!VerifyAccountCard(base, std::max(now_ms, base.issued_at))) {
+    return false;
+  }
+  verified_signature_ = base.card_signature_b64;
+  return true;
+}
+
+Roe<AccountCard> OwnCards::IssueLocked(const std::optional<AccountCard>& base, CardContent content,
+                                       const int64_t now_ms, bool& issued) {
   issued = false;
   auto keys = Keys();
   if (!keys) {
     return keys.error();
   }
-  if (devices.size() > kMaxAccountCardDevices) {
+  if (content.devices.size() > kMaxAccountCardDevices) {
     return Error("This account already has " + std::to_string(kMaxAccountCardDevices) + " devices");
   }
-  if (base && SameKeys(base->keys, *keys) && base->nickname == nickname && base->devices == devices) {
+  if (base && SameKeys(base->keys, *keys) && base->nickname == content.nickname && base->devices == content.devices &&
+      base->relays == content.relays && base->initiation_floor == content.initiation_floor &&
+      VerifiedLocked(*base, now_ms)) {
     return *base; // it says it all: the card stands
   }
   // Newer than any card of the account this device knows (or knew before a restore: the floor), whatever its
@@ -109,15 +143,20 @@ Roe<AccountCard> OwnCards::IssueLocked(const std::optional<AccountCard>& base, s
   if (const int64_t floor = cards_.CardFloor(keys->account_id); floor > 0) {
     issued_at = std::max(issued_at, floor + 1);
   }
-  auto signed_card = SignAccountCard(
-      AccountCard{.keys = *keys, .nickname = nickname, .devices = std::move(devices), .issued_at = issued_at},
-      [this](const ByteVector& bytes) { return identity_.SignBytes(bytes); });
+  auto signed_card = SignAccountCard(AccountCard{.keys = *keys,
+                                                 .nickname = std::move(content.nickname),
+                                                 .devices = std::move(content.devices),
+                                                 .relays = std::move(content.relays),
+                                                 .initiation_floor = content.initiation_floor,
+                                                 .issued_at = issued_at},
+                                     [this](const ByteVector& bytes) { return identity_.SignBytes(bytes); });
   if (!signed_card) {
     return signed_card.error();
   }
   if (auto kept = cards_.AddAccountCard(*signed_card, std::max(now_ms, issued_at), "self"); !kept) {
     return kept.error();
   }
+  verified_signature_ = signed_card->card_signature_b64;
   issued = true;
   return signed_card;
 }
@@ -153,7 +192,13 @@ Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
       return Error(kSignedOutMessage);
     }
     intent_done = !identity->card_intent.empty();
-    return IssueLocked(*newest, std::move(devices), identity->nickname, now_ms, issued);
+    std::vector<AccountCardRelay> relays = RelaysLocked(devices, self->peer_id, *newest);
+    return IssueLocked(*newest,
+                       CardContent{.devices = std::move(devices),
+                                   .nickname = identity->nickname,
+                                   .relays = std::move(relays),
+                                   .initiation_floor = identity->initiation_floor},
+                       now_ms, issued);
   }();
   if (card && intent_done) {
     LocalIdentity done = *identity;
@@ -222,14 +267,22 @@ Roe<AccountCard> OwnCards::Learn(const AccountCard& card, const int64_t now_ms) 
         }
       }
     }
-    return IssueLocked(newest_card, std::move(devices), newest_card.nickname, now_ms, issued);
+    // The nickname, relays and floor are the account's: the newest card's stand (the master's next Card() brings
+    // the relays to its own).
+    return IssueLocked(newest_card,
+                       CardContent{.devices = std::move(devices),
+                                   .nickname = newest_card.nickname,
+                                   .relays = newest_card.relays,
+                                   .initiation_floor = newest_card.initiation_floor},
+                       now_ms, issued);
   }();
   if (!result) {
     return result;
   }
-  if (identity->nickname != result->nickname) {
+  if (identity->nickname != result->nickname || identity->initiation_floor != result->initiation_floor) {
     LocalIdentity renamed = *identity;
     renamed.nickname = result->nickname;
+    renamed.initiation_floor = result->initiation_floor;
     if (auto updated = identity_.Update(renamed); !updated) {
       return updated.error();
     }
@@ -307,7 +360,13 @@ Roe<AccountCard> OwnCards::ChangeList(const std::string& peer_id, const bool mak
     } else {
       devices.erase(target);
     }
-    return IssueLocked(*newest, std::move(devices), (*newest)->nickname, now_ms, issued);
+    std::vector<AccountCardRelay> relays = RelaysLocked(devices, self->peer_id, *newest);
+    return IssueLocked(*newest,
+                       CardContent{.devices = std::move(devices),
+                                   .nickname = (*newest)->nickname,
+                                   .relays = std::move(relays),
+                                   .initiation_floor = (*newest)->initiation_floor},
+                       now_ms, issued);
   }();
   if (card && issued && on_changed_) {
     on_changed_(*card);

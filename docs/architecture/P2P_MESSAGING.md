@@ -12,16 +12,16 @@ The conversations hub (`ConversationsHub`) holds the backend's clients (`lib/del
 
 Native messaging code (`MeshDeliveryOrchestrator`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`, never an implementation. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 
-**Relay inbox (delivery queue):** Offline ingest uses signed `POST …/v1/inbox/poll`. Non-empty pages always return `next_cursor`; the client persists that watermark under the profile (`relay_inbox_cursor.json`) and must not clear it on empty polls. After ingest, the client still calls `POST …/v1/inbox/ack` (soft-ack **M013**: validates cursor, **does not delete** shared mailbox rows so sibling devices under one `relay:` are not starved). Messenger TTL-expires rows after **90 days** and also applies a **soft per-recipient FIFO cap** (trim toward **1000** when a mailbox exceeds **~1200**; sampled on send). Me → Security offers **Clear undelivered older than 7 days** (`POST …/v1/inbox/clear`) for recovery — account-wide, unrelated to thread **Clear history** (`history_floor_seq`). Chat truth remains local SQLite + stream/P2P history sync.
+**Relay inbox (delivery queue):** Offline ingest uses signed `POST …/v1/inbox/poll`. Non-empty pages always return `next_cursor`; the client persists that watermark under the profile (`relay_inbox_cursor.json`, one per relay of ours) and must not clear it on empty polls. After ingest, the client still calls `POST …/v1/inbox/ack` on the relay the batch came from (soft-ack **M013**: validates cursor, **does not delete** shared mailbox rows so sibling devices of the account are not starved). An account on several relays polls each — the preferred one at the app's pace, the others more slowly — and sends into a recipient's relays in its card's order ([SERVICE_ENDPOINTS § Several relays](../contracts/SERVICE_ENDPOINTS.md#several-relays)). Messenger TTL-expires rows after **90 days** and also applies a **soft per-recipient FIFO cap** (trim toward **1000** when a mailbox exceeds **~1200**; sampled on send). Me → Security offers **Clear undelivered older than 7 days** (`POST …/v1/inbox/clear`) for recovery — account-wide, unrelated to thread **Clear history** (`history_floor_seq`). Chat truth remains local SQLite + stream/P2P history sync.
 
 **Relay history (D027):** `IRelayClient::FetchChatHistory` — `HttpRelayClient` uses signed `POST …/v1/streams/messages/query`. Unit tests may construct `MockRelayClient` directly. See [WIRE_SCHEMAS § Stream history](../contracts/WIRE_SCHEMAS.md#stream-history-http-relay). Live integration tests ([D093](../../projects/chat-storage-and-memory/DECISIONS.md#d093--relay-backend-for-v6-sync-d027)) run when these env vars are set:
 
 | Variable | Purpose |
 |----------|---------|
 | `PP_BROWSER_RELAY_INTEGRATION_URL` | Relay base URL |
-| `PP_BROWSER_RELAY_INTEGRATION_REQUESTER` | Requester `relay_user_id` |
-| `PP_BROWSER_RELAY_INTEGRATION_PEER` | Peer `relay_user_id` for history query |
-| `PP_BROWSER_RELAY_INTEGRATION_SIGN_KEY_HEX` | Ed25519 seed (hex) for relay API signing |
+| `PP_BROWSER_RELAY_INTEGRATION_REQUESTER` | Requester Account ID |
+| `PP_BROWSER_RELAY_INTEGRATION_PEER` | Peer Account ID for history query |
+| `PP_BROWSER_RELAY_INTEGRATION_SIGN_KEY_HEX` | The requester's ML-DSA-65 account secret key (hex) for relay API signing |
 
 CI constructs `MockRelayClient` (`lib/delivery/testing`) in unit tests; `pp_browser_relay_live_integration_test` skips when env is unset.
 
@@ -43,7 +43,7 @@ CI constructs `MockRelayClient` (`lib/delivery/testing`) in unit tests; `pp_brow
 
 | Field | Description |
 |-------|-------------|
-| `sender_contact_id` | **Local rows:** `local:self`, `ai:assistant`. **Wire / peer rows:** communicating identity value (D079, D082), e.g. `relay:abc123` |
+| `sender_contact_id` | **Local rows:** `local:self`, `ai:assistant`. **Wire / peer rows:** the sender's Account ID (D079, D082), `account:…` |
 | `content_rml` | Rendered assistant blocks (optional; **local AI only** — never from wire, D030) |
 | `relay_visible` | `false` for `@ai` assist (never relayed) |
 | `delivery` | `local`, `pending`, `relayed`, `failed` |
@@ -81,14 +81,13 @@ Platform defaults use the Brief URLs above. Empty `base_url` values coalesce to 
 
 **No `thread_id` on the wire.** All direct tiers use **`body.e2e.payload_b64`** (AEAD ciphertext). Reject `public_relay`, `body.content_b64`, flat `body.text`, and legacy `thread_id`.
 
-Full spec: [WIRE_SCHEMAS § RelayEnvelope](../contracts/WIRE_SCHEMAS.md#relayenvelope-v1--envelope_version-1).
+Full spec: [WIRE_SCHEMAS § RelayEnvelope](../contracts/WIRE_SCHEMAS.md#relayenvelope-v3--envelope_version-3).
 
 ```json
 {
-  "envelope_version": 1,
+  "envelope_version": 3,
   "message_id": "550e8400-e29b-41d4-a716-446655440000",
-  "sender_relay_id": "relay:alice123",
-  "sender_contact_id": "relay:alice123",
+  "sender_contact_id": "account:alice…",
   "route": {
     "kind": "direct",
     "channel": "e2e"
@@ -109,7 +108,7 @@ Full spec: [WIRE_SCHEMAS § RelayEnvelope](../contracts/WIRE_SCHEMAS.md#relayenv
 
 Inbound routing: `PeerSessionKey { peer_identity_kind, peer_identity_value: sender_contact_id, channel }` → local thread lookup (**private `e2e`:** find-only, D062; **`e2e_public`:** auto-create after decrypt, D080).
 
-**Signature verify (E014, E016):** Inbound messages are verified with **`EnvelopeSigner::Verify`** using the sender's Ed25519 public key from **`PeerSigningKeyStore`** (directory at add-contact; lazy `GET /v1/users/{relay_user_id}` on cache miss). See [e2e DECISIONS E016](../../projects/e2e-message-crypto/DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add).
+**Signature verify (E014, E016):** Inbound messages are verified with **`EnvelopeSigner::Verify`** using the sender's Ed25519 public key from **`PeerSigningKeyStore`** (the sender's account card; lazy `GET /v1/users/by-account/{account_id}` on cache miss). See [e2e DECISIONS E016](../../projects/e2e-message-crypto/DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add).
 
 **Wire cutover (D063):** v2a-p2p ships this final envelope shape. v4 adds ChatPayload **validation** only — no second wire break. See [DESIGN § Wire cutover phasing](../../projects/chat-storage-and-memory/DESIGN.md#wire-cutover-phasing-d063).
 
@@ -142,17 +141,18 @@ Per-message **Direct / Relay / Local** badges read the persisted `transport` col
 
 ## Identity model
 
-Account ID = person; Peer ID = one of its devices; `relay:` = an optional route
+Account ID = person and its relay address; Peer ID = one of its devices (there are no per-relay ids —
+[multi-relay MR001](../../projects/multi-relay/DECISIONS.md#mr001--inboxes-are-keyed-by-account-id))
 ([D099](../../projects/chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device), [multi-device-account](../../projects/multi-device-account/)).
 
 | Role | Example | Use |
 |------|---------|-----|
 | **Who** (person) | `account:…` (hash of the account ML-DSA key) | thread target, envelope sender, keys |
 | **Device** (endpoint) | Peer ID `Qm…` (hash of the device key) | dial, Amp links, mesh records |
-| **Find** (lookup) | nickname, `relay:…`, CAIP-10 `[later]` | search → Account ID |
-| **Route** (optional) | `relay:…` | relay inbox when the peer is offline |
+| **Find** (lookup) | nickname, Account ID, CAIP-10 `[later]` | search → Account ID |
+| **Relay inbox** | the Account ID, on the relays its card lists (in order; ours when it has none) | when the peer is offline; a send carries the peer's grant to count as a contact's ([ACCOUNT_CARD § Relay grants](../contracts/ACCOUNT_CARD.md#relay-grants), [SERVICE_ENDPOINTS § Sending by the list](../contracts/SERVICE_ENDPOINTS.md#sending-by-the-list)) |
 
-**Local contact book:** `Contact.id` is a stable UUID (local only). `Contact.ids[]` holds external handles (`account`, `relay_user`, `peer_id`, …); a contact keeps its account's card ([ACCOUNT_CARD.md](../contracts/ACCOUNT_CARD.md)). Threads link via `participant_contact_ids` → `Contact.id`.
+**Local contact book:** `Contact.id` is a stable UUID (local only). `Contact.ids[]` holds external handles (`account`, `peer_id`, …); a contact keeps its account's card ([ACCOUNT_CARD.md](../contracts/ACCOUNT_CARD.md)). Threads link via `participant_contact_ids` → `Contact.id`.
 
 **Thread target from contact** (`DirectChatTargetFromContact`): the Account ID. A contact without one cannot be messaged.
 
@@ -161,7 +161,7 @@ Account ID = person; Peer ID = one of its devices; `relay:` = an optional route
 Two different jobs, with different answers ([E028](../../projects/e2e-message-crypto/DECISIONS.md#e028--account-cards-keys-that-prove-themselves-relay-optional)):
 
 **Finding someone new** (name → Account ID) is the phone book's job: the relay directory now (search by
-nickname, `relay:` or Account ID), the chain name registry later
+nickname or Account ID), the chain name registry later
 ([N029](../../projects/p2p-mesh/NAME_DIRECTORY_NORTH_STAR.md)). The mesh does not do it: the DHT never
 holds names (N029), client devices do not walk it (lookups tell strangers whom you are looking for —
 [DHT D2](https://github.com/people-post/pp-cpp-mesh/blob/develop/docs/DHT.md)), and phones cannot hold
@@ -191,18 +191,18 @@ reach.
 
 ## Messaging UX
 
-- **Me tab** — nickname, **Peer ID** (primary), Relay ID (secondary / after register), Copy ID / Share (Peer ID), Register / Rotate Brief API key; preference rows (Assistant, Network, …) stay one tap away.
+- **Me tab** — nickname, **Peer ID** (primary), Account ID (secondary / after register), Copy ID / Share (Peer ID), Register / Rotate Brief API key; preference rows (Assistant, Network, …) stay one tap away.
 - Sessions header **`+`** opens a menu:
   - **Chat with AI** — new AI thread
   - **Message a contact** — switch to Contacts to pick a peer (then Secure / Public on contact detail)
   - **Find someone** — new AI thread with draft prefilled for directory discovery
 - Home is a prompt-first landing (no sticky AI thread). First send/suggestion creates a new AI session and switches to Sessions. Home chips are AI intents (find someone, headlines, articles, get started, capabilities); messaging entry points live on Sessions / Contacts.
 - **Contacts tab** header **`+`** opens a menu:
-  - **Add contact** — create an empty contact (`ContactsStore::AddEmpty`), open detail (**You**: display name + trust; **Directory**: nickname / relay / peer / multiaddrs as meta text; **Refresh account info** on every contact: off the UI thread, asks its devices for its account card, then the directory by Account ID; keys only when they verify against the Account ID — [ACCOUNT_CARD § Refresh](../contracts/ACCOUNT_CARD.md#card-exchange-over-amp))
-  - Directory add merges by `relay_user` id (`AddFromDirectoryHit` updates remote, preserves local annotations)
-  - `contacts.json` shape: `{ schema_version: 2, contacts: [{ local, remote, overrides{} }] }` — unversioned/flat legacy migrates on load
+  - **Add contact** — create an empty contact (`ContactsStore::AddEmpty`), open detail (**You**: display name + trust; **Directory**: nickname / Account ID / peer / multiaddrs as meta text; **Refresh account info** on every contact: off the UI thread, asks its devices for its account card, then the directory by Account ID; keys only when they verify against the Account ID — [ACCOUNT_CARD § Refresh](../contracts/ACCOUNT_CARD.md#card-exchange-over-amp))
+  - Directory add merges by Account ID (`AddFromDirectoryHit` updates remote, preserves local annotations)
+  - `contacts.json` shape: `{ schema_version: 3, contacts: [{ local, remote, overrides{} }] }` — [DATA_LAYOUT](../contracts/DATA_LAYOUT.md#schema-versions)
   - **Find someone** — same as Sessions find flow
-- Secure / Public on contact detail are enabled when the contact is **routable** (relay ID, or peer ID + multiaddr). Otherwise a short hint is shown.
+- Secure / Public on contact detail are enabled when the contact is **routable** (an Account ID with the relay configured or its keys known, or peer ID + multiaddr). Otherwise a short hint is shown.
 - **Peer link status** (direct threads) — chat header shows live link state (`Connecting…` / `Direct` / `Via relay` / backoff countdown). Soft banner + **Retry connection** on dial backoff; toast when a send falls back to relay after a direct attempt.
 - Directory discovery still uses agent tools: `search_people`, `list_contacts`, `list_conversations`, `open_conversation`, `start_conversation`.
 - Results render as `long_list` blocks with identity-first rows (title / ~nick · @shortId / optional “In contacts”) and primary **Add contact** or **Message** chips (`send_chat_action` + JSON `payload`).

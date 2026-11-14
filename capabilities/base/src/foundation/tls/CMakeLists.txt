@@ -14,6 +14,12 @@ pp_browser_add_foundation_library(pp_foundation_tls
   SOURCES ${_pp_tls_sources}
   PUBLIC_LIBS CURL::libcurl)
 
+# PP_BROWSER_CA_BUNDLE (the app lab's TLS relays) swaps curl's trust roots, so only Debug desktop builds read it:
+# a release build must not let its environment choose whom it trusts.
+if(NOT PP_BROWSER_IS_ANDROID AND NOT PP_BROWSER_IS_IOS)
+  target_compile_definitions(pp_foundation_tls PRIVATE $<$<CONFIG:Debug>:PP_BROWSER_DEV_CA_BUNDLE=1>)
+endif()
+
 # iOS: the SecTrust verify callback compiles against BoringSSL's headers (B8).
 if(PP_BROWSER_IS_IOS)
   target_link_libraries(pp_foundation_tls PUBLIC

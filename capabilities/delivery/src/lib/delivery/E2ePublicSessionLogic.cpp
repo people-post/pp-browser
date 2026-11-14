@@ -6,6 +6,8 @@
 #include <sodium.h>
 
 #include <array>
+#include <mutex>
+#include <optional>
 
 namespace pbr {
 
@@ -19,35 +21,70 @@ Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_st
                                   [&peer_kem_public]() -> Roe<ByteVector> { return peer_kem_public; });
 }
 
+namespace {
+
+/**
+ * A pair's session row is read, changed and written back by sends (opening a session) and receives (moving to the
+ * peer's) on several worker lanes at once: two sends that both found none would each open one, the later write
+ * dropping the session the earlier one's key_init named — the peer then follows an opener this side no longer holds,
+ * and nothing it sends opens here. One lock for every pair; nothing slow is done under it (no lookup, no KEM).
+ */
+std::mutex& SessionRowMutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+/** The pair's stored session at `session_epoch` (its opener while unconfirmed), if there is one. Under the lock. */
+Roe<std::optional<E2ePublicPskEnsureResult>> StoredSession(IPeerSessionStore& psk_store,
+                                                           const PeerSessionKey& target_key,
+                                                           const uint32_t session_epoch,
+                                                           std::optional<PeerSessionRecord>& loaded_row) {
+  auto loaded = psk_store.Load(target_key);
+  if (!loaded) {
+    return loaded.error();
+  }
+  loaded_row = *loaded;
+  auto existing = psk_store.ResolveMasterPskForEpoch(target_key, session_epoch);
+  if (!existing) {
+    return existing.error();
+  }
+  if (!existing->has_value()) {
+    return std::optional<E2ePublicPskEnsureResult>{};
+  }
+  auto decoded = Base64Decode(**existing);
+  if (!decoded) {
+    return decoded.error();
+  }
+  E2ePublicPskEnsureResult out;
+  out.master_psk = std::move(*decoded);
+  out.created = false;
+  if (loaded->has_value() && (*loaded)->session_epoch == session_epoch) {
+    out.key_init_b64 = (*loaded)->auto_key_init_pending; // not confirmed yet: keep attaching it
+  }
+  return std::optional<E2ePublicPskEnsureResult>(std::move(out));
+}
+
+} // namespace
+
 Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_store, const PeerSessionKey& target_key,
                                                        const uint32_t session_epoch,
                                                        const std::function<Roe<ByteVector>()>& peer_kem_public) {
   if (target_key.channel != CryptoChannel::E2ePublic) {
     return Error("EnsureE2ePublicMasterPsk requires e2e_public");
   }
-
-  auto loaded = psk_store.Load(target_key);
-  if (!loaded) {
-    return loaded.error();
-  }
-  auto existing = psk_store.ResolveMasterPskForEpoch(target_key, session_epoch);
-  if (!existing) {
-    return existing.error();
-  }
-  if (existing->has_value()) {
-    auto decoded = Base64Decode(**existing);
-    if (!decoded) {
-      return decoded.error();
+  std::optional<PeerSessionRecord> loaded;
+  {
+    std::lock_guard lock(SessionRowMutex());
+    auto stored = StoredSession(psk_store, target_key, session_epoch, loaded);
+    if (!stored) {
+      return stored.error();
     }
-    E2ePublicPskEnsureResult out;
-    out.master_psk = std::move(*decoded);
-    out.created = false;
-    if (loaded->has_value() && (*loaded)->session_epoch == session_epoch) {
-      out.key_init_b64 = (*loaded)->auto_key_init_pending; // not confirmed yet: keep attaching it
+    if (stored->has_value()) {
+      return std::move(**stored);
     }
-    return out;
   }
 
+  // None yet: the peer's key (perhaps a lookup) and the encapsulation outside the lock.
   auto peer_public = peer_kem_public();
   if (!peer_public) {
     return peer_public.error();
@@ -59,9 +96,19 @@ Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_st
   if (!established) {
     return established.error();
   }
+
+  std::lock_guard lock(SessionRowMutex());
+  // Another send (or the peer's opener, read meanwhile) may have set the pair's session: that one stands.
+  auto stored = StoredSession(psk_store, target_key, session_epoch, loaded);
+  if (!stored) {
+    return stored.error();
+  }
+  if (stored->has_value()) {
+    return std::move(**stored);
+  }
   PeerSessionRecord record;
-  if (loaded->has_value()) {
-    record = **loaded; // keep what the row holds besides the session (retired epochs, scope …)
+  if (loaded.has_value()) {
+    record = *loaded; // keep what the row holds besides the session (retired epochs, scope …)
   }
   record.key = target_key;
   record.session_epoch = session_epoch;
@@ -106,6 +153,7 @@ Roe<void> ReconcileE2ePublicSession(IPeerSessionStore& psk_store, const PeerSess
                                     const uint32_t session_epoch, const AutoKeyRead& read,
                                     const std::optional<std::string>& envelope_key_init_b64,
                                     const int64_t envelope_timestamp_ms) {
+  std::lock_guard lock(SessionRowMutex());
   auto loaded = psk_store.Load(target_key);
   if (!loaded) {
     return loaded.error();
@@ -183,6 +231,7 @@ Roe<void> ReconcileE2ePublicSession(IPeerSessionStore& psk_store, const PeerSess
 
 Roe<void> RestartE2ePublicSession(IPeerSessionStore& psk_store, const PeerSessionKey& target_key,
                                   const uint32_t old_epoch, const uint32_t new_epoch, const int64_t now_ms) {
+  std::lock_guard lock(SessionRowMutex());
   auto loaded = psk_store.Load(target_key);
   if (!loaded) {
     return loaded.error();

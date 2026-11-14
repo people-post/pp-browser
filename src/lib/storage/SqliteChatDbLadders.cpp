@@ -5,9 +5,14 @@
 #include "lib/storage/SqliteThreadLocalPrefsStore.h"
 #include "lib/storage/SqliteThreadSchema.h"
 
+#include <sqlite3.h>
+
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace pbr {
 
@@ -92,6 +97,123 @@ Roe<void> ThreadDbBaseline(const SqliteMigrationContext& context) {
   return AddColumnsIfMissing(context.db, {{"messages", "sender_device", "TEXT"}});
 }
 
+/** `sql` on `db` with `text` bound to every `?1`, when `table` exists (a store makes its table when it first opens). */
+Roe<void> ExecIfTable(sqlite3* db, const char* table, const char* sql, const std::string& text = {}) {
+  auto exists = SqliteTableExists(db, table);
+  if (!exists) {
+    return exists.error();
+  }
+  if (!*exists) {
+    return {};
+  }
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    const std::string message = sqlite3_errmsg(db);
+    sqlite3_finalize(stmt);
+    return Error(std::string(table) + ": " + message);
+  }
+  if (sqlite3_bind_parameter_count(stmt) > 0) {
+    sqlite3_bind_text(stmt, 1, text.c_str(), -1, SQLITE_TRANSIENT);
+  }
+  const int rc = sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  if (rc != SQLITE_DONE) {
+    return Error(std::string(table) + ": " + sqlite3_errmsg(db));
+  }
+  return {};
+}
+
+/** A stored id from before multi-relay MR001: the relay's per-relay `relay:` id (or its `relay_user` kind). */
+constexpr const char* kRelayIdMatch = "LIKE 'relay:%'";
+
+/**
+ * 5 → 6, Account IDs (multi-relay MR001): the relay's `relay:` ids are gone, and nothing in profile.db can turn one
+ * into an Account ID — so what is keyed by one is dropped: a chat's session keys (a new session opens on the next
+ * send), group roster rows, invites and owed sends naming one, call participants and invites, applied control-lane
+ * ids. A thread whose peer was one keeps its messages and loses its peer (it cannot be sent to). Everything else is
+ * keyed by Account ID already and stays.
+ */
+Roe<void> ProfileDbAccountIds(const SqliteMigrationContext& context) {
+  sqlite3* db = context.db;
+  const std::string relay = kRelayIdMatch;
+  const std::vector<std::pair<const char*, std::string>> statements = {
+      {"chat_targets",
+       "DELETE FROM chat_targets WHERE peer_identity_kind = 'relay_user' OR peer_identity_value " + relay},
+      {"threads",
+       "UPDATE threads SET peer_identity_kind = '', peer_identity_value = '' WHERE peer_identity_kind = "
+       "'relay_user' OR peer_identity_value " +
+           relay},
+      {"group_rosters", "DELETE FROM group_rosters WHERE member_identity " + relay},
+      {"group_pending_sends", "DELETE FROM group_pending_sends WHERE recipient " + relay},
+      {"pending_group_invites",
+       "DELETE FROM pending_group_invites WHERE inviter_identity " + relay + " OR invitee_identity " + relay},
+      {"call_participants", "DELETE FROM call_participants WHERE identity " + relay},
+      {"pending_call_invites",
+       "DELETE FROM pending_call_invites WHERE invitee_identity " + relay + " OR inviter_identity " + relay},
+      {"control_lane_seen", "DELETE FROM control_lane_seen WHERE sender " + relay},
+  };
+  for (const auto& [table, sql] : statements) {
+    if (auto done = ExecIfTable(db, table, sql.c_str()); !done) {
+      return done;
+    }
+  }
+  return {};
+}
+
+/**
+ * 6 → 7, account card version 3 (multi-relay MR002 / MR005: the card signs its relays and floor). A kept version 2
+ * card cannot be re-signed here:
+ * - our own (the record OwnCards writes, source `self` or `sibling`) takes the version 3 shape with no relays and floor
+ *   0, its old signature kept: it does not verify, so OwnCards re-issues it on its first use, its device list as it
+ *   was (a fresh list would sign out the account's other devices);
+ * - anyone else's goes, the verified keys staying as a key card: their next envelope asks for the newer card
+ *   (`sender_card_at`), as does the contact page's refresh.
+ * A record that is not JSON is left as it is (it does not read today either).
+ */
+Roe<void> ProfileDbCardV3(const SqliteMigrationContext& context) {
+  constexpr const char* kV2 = "json_valid(record_json) AND json_extract(record_json, '$.newest_card.card_version') = 2";
+  const std::string own =
+      std::string(
+          "UPDATE peer_cards SET record_json = json_set(record_json, '$.newest_card.card_version', 3, "
+          "'$.newest_card.relays', json('[]'), '$.newest_card.initiation_floor', 0) WHERE ") +
+      kV2 + " AND json_extract(record_json, '$.source') IN ('self', 'sibling')";
+  if (auto done = ExecIfTable(context.db, "peer_cards", own.c_str()); !done) {
+    return done;
+  }
+  const std::string others =
+      std::string("UPDATE peer_cards SET record_json = json_remove(record_json, '$.newest_card') WHERE ") + kV2;
+  return ExecIfTable(context.db, "peer_cards", others.c_str());
+}
+
+/**
+ * 3 → 4, Account IDs (multi-relay MR001): a message whose sender (or numbering owner) is stored as a `relay:` id is
+ * the peer's in a 1:1 chat — it becomes the peer's Account ID (`thread_peer_account`); in a group chat, or a chat
+ * whose peer is not known, who sent it cannot be told, and it is dropped. A history watermark keyed by a relay id is
+ * dropped (history sync starts that peer over).
+ */
+Roe<void> ThreadDbAccountIds(const SqliteMigrationContext& context) {
+  sqlite3* db = context.db;
+  const std::string relay = kRelayIdMatch;
+  const std::string& peer = context.thread_peer_account;
+  if (!peer.empty()) {
+    for (const char* column : {"sender_contact_id", "seq_owner_contact_id"}) {
+      const std::string sql = std::string("UPDATE messages SET ") + column + " = ?1 WHERE " + column + " " + relay;
+      if (auto done = ExecIfTable(db, "messages", sql.c_str(), peer); !done) {
+        return done;
+      }
+    }
+  } else {
+    const std::string sql =
+        "DELETE FROM messages WHERE sender_contact_id " + relay + " OR seq_owner_contact_id " + relay;
+    if (auto done = ExecIfTable(db, "messages", sql.c_str()); !done) {
+      return done;
+    }
+  }
+  const std::string sync =
+      "DELETE FROM sync_state WHERE peer_identity_kind = 'relay_user' OR peer_identity_value " + relay;
+  return ExecIfTable(db, "sync_state", sync.c_str());
+}
+
 std::filesystem::path ResetNotePath(const std::string& profile_data_dir) {
   return std::filesystem::path(profile_data_dir) / "chat_store_reset";
 }
@@ -100,8 +222,11 @@ std::filesystem::path ResetNotePath(const std::string& profile_data_dir) {
 
 const SqliteSchemaLadder& ProfileDbLadder() {
   static const SqliteSchemaLadder ladder{
-      "profile.db",    kSqliteThreadProfileFloorVersion, kSqliteThreadProfileUserVersion,
-      CreateProfileDb, {{4, ProfileDbBaseline}},
+      "profile.db",
+      kSqliteThreadProfileFloorVersion,
+      kSqliteThreadProfileUserVersion,
+      CreateProfileDb,
+      {{4, ProfileDbBaseline}, {5, ProfileDbAccountIds}, {6, ProfileDbCardV3}},
   };
   return ladder;
 }
@@ -112,7 +237,7 @@ const SqliteSchemaLadder& ThreadDbLadder() {
       kSqliteThreadFloorVersion,
       kSqliteThreadUserVersion,
       [](const SqliteMigrationContext& context) { return SqliteThreadExecSql(context.db, kSqliteThreadSchemaV2); },
-      {{2, ThreadDbBaseline}},
+      {{2, ThreadDbBaseline}, {3, ThreadDbAccountIds}},
   };
   return ladder;
 }

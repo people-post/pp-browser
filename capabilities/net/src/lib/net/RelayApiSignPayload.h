@@ -19,12 +19,13 @@ enum class RelayApiOp : uint8_t {
 };
 
 /**
- * The relay API's signed header: domain `pp-browser:relay-api-v1`, version, `op`, `timestamp`. Each call's
+ * The relay API's signed header: domain `pp-browser:relay-api-v1`, version 2 (Account IDs), `op`,
+ * `timestamp`. Each call's
  * fields follow it (messaging's: lib/messaging/RelayMessageSignPayload.h; push devices': below).
  */
 void AppendRelayApiHeader(std::ostringstream& oss, RelayApiOp op, int64_t timestamp);
 
-std::vector<uint8_t> BuildRelayApiDeviceSignBytes(RelayApiOp op, const std::string& relay_user_id,
+std::vector<uint8_t> BuildRelayApiDeviceSignBytes(RelayApiOp op, const std::string& account_id,
                                                   const std::string& platform, const std::string& device_id,
                                                   const std::string& push_token, int64_t timestamp);
 

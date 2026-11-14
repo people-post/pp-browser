@@ -32,7 +32,6 @@ LinkDeviceBundleV1 MakeValidBundle() {
   bundle.account_kem_pk_b64 = Base64Encode(kem->public_key);
   bundle.account_kem_sk_b64 = Base64Encode(kem->private_key);
   bundle.dek_b64 = Base64Encode(TestDek());
-  bundle.relay_user_id = "relay:alice";
   bundle.nickname = "alice";
   bundle.created_at_ms = 1'700'000'000'000;
   bundle.expires_at_ms = bundle.created_at_ms + kLinkDeviceDefaultTtlMs;
@@ -51,8 +50,8 @@ TEST(LinkDeviceCodecTest, SerializeParseRoundTrip) {
   EXPECT_EQ(parsed->account_id, bundle.account_id);
   EXPECT_EQ(parsed->account_kem_pk_b64, bundle.account_kem_pk_b64);
   EXPECT_EQ(parsed->dek_b64, bundle.dek_b64);
-  EXPECT_EQ(parsed->relay_user_id, "relay:alice");
   EXPECT_EQ(parsed->nickname, "alice");
+  EXPECT_EQ(json->find("relay_user_id"), std::string::npos) << "the Account ID is the relay's address (MR001)";
 }
 
 TEST(LinkDeviceCodecTest, KeysItDoesNotKnowAreIgnored) {
@@ -61,7 +60,7 @@ TEST(LinkDeviceCodecTest, KeysItDoesNotKnowAreIgnored) {
   const std::string older = json.substr(0, json.size() - 1) + R"(,"public_psks":[{"channel":"e2e"}]})";
   auto parsed = LinkDeviceCodec::Parse(older);
   ASSERT_TRUE(parsed) << parsed.error().message;
-  EXPECT_EQ(parsed->relay_user_id, "relay:alice");
+  EXPECT_EQ(parsed->nickname, "alice");
 }
 
 TEST(LinkDeviceCodecTest, TheIssuersAccountCardRidesAlongWhenGiven) {
@@ -69,7 +68,7 @@ TEST(LinkDeviceCodecTest, TheIssuersAccountCardRidesAlongWhenGiven) {
   auto without = LinkDeviceCodec::Parse(LinkDeviceCodec::Serialize(bundle).value());
   ASSERT_TRUE(without);
   EXPECT_FALSE(without->account_card_json.has_value()) << "a recovery bundle carries none";
-  bundle.account_card_json = R"({"card_version":2})";
+  bundle.account_card_json = R"({"card_version":3})";
   auto with = LinkDeviceCodec::Parse(LinkDeviceCodec::Serialize(bundle).value());
   ASSERT_TRUE(with);
   EXPECT_EQ(with->account_card_json, bundle.account_card_json) << "as given: the card checks itself on import";

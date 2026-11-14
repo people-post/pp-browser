@@ -47,7 +47,7 @@ protected:
     ports.load_identity = []() {
       ProfileIdentityView view;
       view.ready = true;
-      view.relay_id = "relay:me";
+      view.account_id = "account:me";
       view.nickname = "Me Myself";
       view.contact_locator = "mine-locator";
       return view;

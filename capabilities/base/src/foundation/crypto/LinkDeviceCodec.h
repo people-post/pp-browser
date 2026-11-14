@@ -12,7 +12,7 @@
 namespace pbr {
 
 /**
- * QR / paste payload `pp-browser-link-device-v1` (M012): the account keys, the shared DEK, the relay binding,
+ * QR / paste payload `pp-browser-link-device-v1` (M012): the account keys, the shared DEK,
  * the nickname, the issuer's account card and the recovery seed. No sessions: each device opens its own, per
  * device pair (M021). Keys the parser does not know (an older build's `public_psks`) are ignored.
  */
@@ -24,7 +24,6 @@ struct LinkDeviceBundleV1 {
   std::string account_kem_pk_b64;
   SecretText account_kem_sk_b64;
   SecretText dek_b64;
-  std::string relay_user_id;
   std::string nickname;
   int64_t created_at_ms = 0;
   int64_t expires_at_ms = 0;

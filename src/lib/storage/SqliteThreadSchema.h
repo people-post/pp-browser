@@ -16,9 +16,9 @@ namespace pbr {
  * D104; DATA_LAYOUT § Schema versions). A change to a table's shape is a step of the ladder
  * (SqliteChatDbLadders.h): bump the version, add the step, keep the floor unless a milestone moves it.
  */
-inline constexpr int kSqliteThreadProfileUserVersion = 5;
+inline constexpr int kSqliteThreadProfileUserVersion = 7;
 inline constexpr int kSqliteThreadProfileFloorVersion = 4;
-inline constexpr int kSqliteThreadUserVersion = 3;
+inline constexpr int kSqliteThreadUserVersion = 4;
 inline constexpr int kSqliteThreadFloorVersion = 2;
 
 inline constexpr const char* kSqliteThreadMessageSelectColumns =

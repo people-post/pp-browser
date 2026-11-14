@@ -40,7 +40,7 @@ TEST_F(ContactsStoreTest, RemoveDeletesContactAndPersists) {
   contact.id = "contact-alice";
   contact.display_name = "Alice";
   contact.server_nickname = "alice";
-  contact.ids = {{mesh::ContactIdKind::RelayUser, "relay:alice123", true}};
+  contact.ids = {{mesh::ContactIdKind::Account, "account:alice123", true}};
   contact.trust = TrustLevel::Unknown;
 
   ASSERT_TRUE(static_cast<bool>(store.Upsert(contact))) << "upsert failed";
@@ -116,11 +116,11 @@ TEST_F(ContactsStoreTest, AddFromDirectoryHitMergesByAccountAndPreservesLocal) {
   ContactsStore store(data_dir_.string());
 
   mesh::DirectoryHit hit;
-  hit.hit_id = "relay:bob";
+  hit.hit_id = "account:bob";
   hit.display_name = "Bob";
   hit.nickname = "bob";
   hit.account_id = "account:bob";
-  hit.ids = {{mesh::ContactIdKind::Account, "account:bob", true}, {mesh::ContactIdKind::RelayUser, "relay:bob", false}};
+  hit.ids = {{mesh::ContactIdKind::Account, "account:bob", true}};
   hit.multiaddrs = {"/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWBob"};
 
   auto first = store.AddFromDirectoryHit(hit);
@@ -147,9 +147,9 @@ TEST_F(ContactsStoreTest, AddFromDirectoryHitMergesByAccountAndPreservesLocal) {
 TEST_F(ContactsStoreTest, AddFromDirectoryHitRequiresAccountId) {
   ContactsStore store(data_dir_.string());
   mesh::DirectoryHit hit;
-  hit.hit_id = "relay:bob";
+  hit.hit_id = "bob";
   hit.nickname = "bob";
-  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:bob", true}};
+  hit.ids = {{mesh::ContactIdKind::PeerId, "12D3KooWBob", true}};
   auto result = store.AddFromDirectoryHit(hit);
   ASSERT_FALSE(static_cast<bool>(result));
   EXPECT_NE(result.error().message.find("Account ID"), std::string::npos);
@@ -176,6 +176,38 @@ TEST_F(ContactsStoreTest, RejectsAnOlderOrUnversionedFile) {
     ASSERT_FALSE(static_cast<bool>(listed));
     EXPECT_NE(listed.error().message.find("schema"), std::string::npos) << listed.error().message;
   }
+}
+
+// contacts.json 2 → 3 (multi-relay MR001): a contact's `relay_user` id is dropped — its Account ID is its relay inbox —
+// and the file is written back at 3; everything else about the contact stays.
+TEST_F(ContactsStoreTest, AVersion2FileDropsItsRelayIdsAndIsWrittenBackAt3) {
+  const auto path = data_dir_ / "contacts.json";
+  std::filesystem::create_directories(data_dir_);
+  {
+    std::ofstream out(path);
+    ASSERT_TRUE(static_cast<bool>(out));
+    out << R"({"schema_version":2,"contacts":[{"id":"c1","local":{"display_name":"Ann","trust":"friendly"},
+      "remote":{"nickname":"ann","ids":[{"kind":"account","value":"account:ann","primary":true},
+      {"kind":"relay_user","value":"relay:ann","primary":false},{"kind":"peer_id","value":"12D3KooWAnn",
+      "primary":false}],"endpoints":[],"multiaddrs":[]},"overrides":{}}]})";
+  }
+  {
+    ContactsStore store(data_dir_.string());
+    auto listed = store.List();
+    ASSERT_TRUE(static_cast<bool>(listed)) << listed.error().message;
+    ASSERT_EQ(listed->size(), 1u);
+    const Contact& ann = listed->front();
+    EXPECT_EQ(ann.local.display_name, "Ann");
+    EXPECT_EQ(ann.trust, TrustLevel::Friendly);
+    ASSERT_EQ(ann.remote.ids.size(), 2u);
+    EXPECT_EQ(ann.remote.ids[0].value, "account:ann");
+    EXPECT_EQ(ann.remote.ids[1].value, "12D3KooWAnn");
+    store.Flush();
+  }
+  std::ifstream in(path);
+  const std::string written((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  EXPECT_NE(written.find("\"schema_version\": 3"), std::string::npos) << written;
+  EXPECT_EQ(written.find("relay:ann"), std::string::npos);
 }
 
 TEST_F(ContactsStoreTest, RejectsNewerSchemaVersion) {
@@ -262,7 +294,7 @@ TEST_F(ContactsStoreTest, ProfileRefreshChangesOnlyNicknameIconAndFetchTime) {
   mesh::DirectoryHit hit;
   hit.account_id = "account:ada";
   hit.nickname = "Ada";
-  hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true}, {mesh::ContactIdKind::RelayUser, "relay:ada", false}};
+  hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true}};
   hit.multiaddrs = {"/ip4/10.0.0.1/tcp/1/p2p/QmAda"};
   hit.icon = mesh::ProfileIconRef{"https://cdn.example/avatars/old.png", "old", ""};
   auto added = store.AddFromDirectoryHit(hit);
@@ -271,8 +303,7 @@ TEST_F(ContactsStoreTest, ProfileRefreshChangesOnlyNicknameIconAndFetchTime) {
   mesh::DirectoryHit fresh;
   fresh.account_id = "account:ada";
   fresh.nickname = "Ada L.";
-  fresh.ids = {{mesh::ContactIdKind::Account, "account:ada", true},
-               {mesh::ContactIdKind::RelayUser, "relay:other", false}};
+  fresh.ids = {{mesh::ContactIdKind::Account, "account:ada", true}};
   fresh.multiaddrs = {"/ip4/9.9.9.9/tcp/9/p2p/QmElse"};
   fresh.icon = mesh::ProfileIconRef{"https://cdn.example/avatars/new.png", "new", ""};
   auto refreshed = store.ApplyProfileRefresh(added->id, fresh, 12345);
@@ -316,7 +347,7 @@ TEST_F(ContactsStoreTest, ProfileRefreshFromAnotherAccountChangesNothing) {
   EXPECT_FALSE((*after)->remote.icon.has_value());
 }
 
-// A contact added from a QR code: Account ID, a nickname and one device, no relay id.
+// A contact added from a QR code: Account ID, a nickname and one device.
 class RemoteSnapshotTest : public ContactsStoreTest {
 protected:
   Contact AddScanned(ContactsStore& store, const bool with_chain = false) {
@@ -326,7 +357,7 @@ protected:
     hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true},
                {mesh::ContactIdKind::PeerId, "12D3KooWOld", false}};
     if (with_chain) {
-      hit.ids.push_back({mesh::ContactIdKind::RelayUser, "relay:ada", false});
+      hit.ids.push_back({mesh::ContactIdKind::Blockchain, "0xada", false});
     }
     hit.endpoints = {mesh::DirectoryEndpoint{.peer_id = "12D3KooWOld"}};
     hit.multiaddrs = {"/ip4/10.0.0.1/tcp/1/p2p/12D3KooWOld"};
@@ -356,25 +387,25 @@ TEST_F(RemoteSnapshotTest, AnotherAccountIsRefusedAndNothingChanges) {
   mesh::DirectoryHit other = Answer();
   other.account_id = "account:mallory";
   other.ids = {{mesh::ContactIdKind::Account, "account:mallory", true},
-               {mesh::ContactIdKind::RelayUser, "relay:m", false}};
+               {mesh::ContactIdKind::Blockchain, "0xm", false}};
   other.nickname = "Mallory";
   auto applied = store.ApplyRemoteSnapshot(before.id, other, 999, std::string("account:ada"));
   ASSERT_FALSE(static_cast<bool>(applied));
   EXPECT_EQ(applied.error().message, "Directory hit is for another account");
   const Contact after = **store.Get(before.id);
   EXPECT_EQ(after.remote.nickname, "Ada");
-  EXPECT_FALSE(HasId(after, mesh::ContactIdKind::RelayUser, "relay:m"));
+  EXPECT_FALSE(HasId(after, mesh::ContactIdKind::Blockchain, "0xm"));
   EXPECT_EQ(after.remote.fetched_at, before.remote.fetched_at);
 }
 
-TEST_F(RemoteSnapshotTest, TheRelayIdIsFilledInAndTheDeviceStays) {
+TEST_F(RemoteSnapshotTest, AnIdOfAnotherKindIsFilledInAndTheDeviceStays) {
   ContactsStore store(data_dir_.string());
   const Contact before = AddScanned(store);
   mesh::DirectoryHit hit = Answer();
-  hit.ids.push_back({mesh::ContactIdKind::RelayUser, "relay:ada", false});
+  hit.ids.push_back({mesh::ContactIdKind::Blockchain, "0xada", false});
   auto applied = store.ApplyRemoteSnapshot(before.id, hit, 5000);
   ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
-  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::RelayUser, "relay:ada"));
+  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::Blockchain, "0xada"));
   EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::PeerId, "12D3KooWOld"));
   EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::Account, "account:ada"));
   EXPECT_EQ(applied->remote.endpoints.size(), 1u);
@@ -411,35 +442,33 @@ TEST_F(RemoteSnapshotTest, ANewDeviceWithoutAddressesClearsTheOldAddresses) {
   EXPECT_TRUE(applied->remote.multiaddrs.empty());
 }
 
-TEST_F(RemoteSnapshotTest, AnEmptyAnswerKeepsRouteNicknameDeviceAndAddresses) {
+TEST_F(RemoteSnapshotTest, AnEmptyAnswerKeepsOtherIdsNicknameDeviceAndAddresses) {
   ContactsStore store(data_dir_.string());
   const Contact before = AddScanned(store, true);
   auto applied = store.ApplyRemoteSnapshot(before.id, Answer(), 5000);
   ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
-  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::RelayUser, "relay:ada"));
+  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::Blockchain, "0xada"));
   EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::PeerId, "12D3KooWOld"));
   EXPECT_EQ(applied->remote.nickname, "Ada");
   EXPECT_EQ(applied->remote.endpoints.size(), before.remote.endpoints.size());
   EXPECT_EQ(applied->remote.multiaddrs, before.remote.multiaddrs);
 }
 
-TEST_F(RemoteSnapshotTest, ARelayOnlyContactIsOverwrittenAsAWhole) {
+TEST_F(RemoteSnapshotTest, AContactWithoutAnAccountIdIsOverwrittenAsAWhole) {
   ContactsStore store(data_dir_.string());
   mesh::DirectoryHit old_hit;
   old_hit.nickname = "Old";
-  old_hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:old", true},
-                 {mesh::ContactIdKind::PeerId, "12D3KooWOld", false}};
+  old_hit.ids = {{mesh::ContactIdKind::Blockchain, "0xold", true}, {mesh::ContactIdKind::PeerId, "12D3KooWOld", false}};
   old_hit.multiaddrs = {"/ip4/10.0.0.1/tcp/1"};
   Contact contact;
-  contact.id = "c-relay-only";
+  contact.id = "c-no-account";
   contact.remote.ids = old_hit.ids;
   contact.remote.nickname = "Old";
   contact.remote.multiaddrs = old_hit.multiaddrs;
   ASSERT_TRUE(static_cast<bool>(store.Upsert(contact)));
 
   mesh::DirectoryHit fresh;
-  fresh.ids = {{mesh::ContactIdKind::RelayUser, "relay:old", true},
-               {mesh::ContactIdKind::PeerId, "12D3KooWNew", false}};
+  fresh.ids = {{mesh::ContactIdKind::Blockchain, "0xold", true}, {mesh::ContactIdKind::PeerId, "12D3KooWNew", false}};
   auto applied = store.ApplyRemoteSnapshot(contact.id, fresh, 5000);
   ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
   EXPECT_FALSE(HasId(*applied, mesh::ContactIdKind::PeerId, "12D3KooWOld"));
@@ -452,12 +481,12 @@ TEST_F(RemoteSnapshotTest, AnAnswerWithoutAnAccountIdIsAcceptedOnlyForAByAccount
   ContactsStore store(data_dir_.string());
   const Contact before = AddScanned(store);
   mesh::DirectoryHit hit;
-  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:ada", true}};
+  hit.ids = {{mesh::ContactIdKind::Blockchain, "0xada", true}};
   EXPECT_FALSE(static_cast<bool>(store.ApplyRemoteSnapshot(before.id, hit, 5000)));
-  EXPECT_FALSE(HasId(**store.Get(before.id), mesh::ContactIdKind::RelayUser, "relay:ada"));
+  EXPECT_FALSE(HasId(**store.Get(before.id), mesh::ContactIdKind::Blockchain, "0xada"));
   auto applied = store.ApplyRemoteSnapshot(before.id, hit, 5000, std::string("account:ada"));
   ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
-  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::RelayUser, "relay:ada"));
+  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::Blockchain, "0xada"));
   EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::Account, "account:ada")) << "the account id stays";
   EXPECT_FALSE(static_cast<bool>(store.ApplyRemoteSnapshot(before.id, hit, 5000, std::string("account:other"))));
 }
@@ -531,7 +560,7 @@ TEST_F(RemoteSnapshotTest, KeptIdsKeepTheirPrimaryFlagAndOtherKindsStay) {
   EXPECT_FALSE(HasId(*applied, mesh::ContactIdKind::Blockchain, "0xada")) << "the answer has that kind";
 }
 
-TEST_F(ContactsStoreTest, ProfileRefreshAdoptsOnlyTheRelayIdWhenAsked) {
+TEST_F(ContactsStoreTest, ProfileRefreshTakesNoIdsDevicesOrAddresses) {
   ContactsStore store(data_dir_.string());
   mesh::DirectoryHit hit;
   hit.account_id = "account:ada";
@@ -539,34 +568,20 @@ TEST_F(ContactsStoreTest, ProfileRefreshAdoptsOnlyTheRelayIdWhenAsked) {
   auto added = store.AddFromDirectoryHit(hit);
   ASSERT_TRUE(static_cast<bool>(added));
   mesh::DirectoryHit answer;
-  answer.ids = {{mesh::ContactIdKind::RelayUser, "relay:ada", false},
-                {mesh::ContactIdKind::PeerId, "12D3KooWNew", false}};
+  answer.ids = {{mesh::ContactIdKind::PeerId, "12D3KooWNew", false}};
   answer.multiaddrs = {"/ip4/9.9.9.9/tcp/9"};
-  auto plain = store.ApplyProfileRefresh(added->id, answer, 100, std::string("account:ada"));
-  ASSERT_TRUE(static_cast<bool>(plain)) << plain.error().message;
-  EXPECT_FALSE(ContactRelayUserId(*plain).has_value());
-  auto adopted = store.ApplyProfileRefresh(added->id, answer, 200, std::string("account:ada"), true);
-  ASSERT_TRUE(static_cast<bool>(adopted)) << adopted.error().message;
-  EXPECT_EQ(ContactRelayUserId(*adopted), std::optional<std::string>("relay:ada"));
-  EXPECT_EQ(adopted->remote.ids.size(), added->remote.ids.size() + 1);
-  EXPECT_TRUE(adopted->remote.multiaddrs.empty());
+  auto refreshed = store.ApplyProfileRefresh(added->id, answer, 100, std::string("account:ada"));
+  ASSERT_TRUE(static_cast<bool>(refreshed)) << refreshed.error().message;
+  ASSERT_EQ(refreshed->remote.ids.size(), added->remote.ids.size());
+  for (size_t i = 0; i < added->remote.ids.size(); ++i) {
+    EXPECT_EQ(refreshed->remote.ids[i].kind, added->remote.ids[i].kind);
+    EXPECT_EQ(refreshed->remote.ids[i].value, added->remote.ids[i].value);
+  }
+  EXPECT_TRUE(refreshed->remote.multiaddrs.empty());
 }
 
-// By-account answers shaped as docs/contracts/SERVICE_ENDPOINTS.md describes them.
-TEST_F(RemoteSnapshotTest, AParsedByAccountAnswerWithARelayIdFillsItIn) {
-  ContactsStore store(data_dir_.string());
-  const Contact before = AddScanned(store);
-  auto json = TryParseObject(R"({"account_id": "account:ada", "relay_user_id": "relay:ada", "nickname": "Ada",
-                                 "signature_alg": "ml-dsa-65", "endpoints": []})");
-  ASSERT_TRUE(json.has_value());
-  const mesh::DirectoryHit hit = DirectoryHitFromJson(*json);
-  auto applied = store.ApplyRemoteSnapshot(before.id, hit, 5000, std::string("account:ada"));
-  ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
-  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::RelayUser, "relay:ada"));
-  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::PeerId, "12D3KooWOld"));
-}
-
-TEST_F(RemoteSnapshotTest, AParsedByAccountAnswerWithoutARelayIdLeavesTheRouteEmpty) {
+// A by-account answer shaped as docs/contracts/SERVICE_ENDPOINTS.md describes it.
+TEST_F(RemoteSnapshotTest, AParsedByAccountAnswerKeepsTheDevice) {
   ContactsStore store(data_dir_.string());
   const Contact before = AddScanned(store);
   auto json = TryParseObject(R"({"account_id": "account:ada", "nickname": "Ada", "signature_alg": "ml-dsa-65"})");
@@ -574,9 +589,8 @@ TEST_F(RemoteSnapshotTest, AParsedByAccountAnswerWithoutARelayIdLeavesTheRouteEm
   const mesh::DirectoryHit hit = DirectoryHitFromJson(*json);
   auto applied = store.ApplyRemoteSnapshot(before.id, hit, 5000, std::string("account:ada"));
   ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
-  for (const mesh::ContactId& id : applied->remote.ids) {
-    EXPECT_NE(id.kind, mesh::ContactIdKind::RelayUser);
-  }
+  EXPECT_TRUE(HasId(*applied, mesh::ContactIdKind::PeerId, "12D3KooWOld"));
+  EXPECT_EQ(ContactAccountId(*applied), std::optional<std::string>("account:ada"));
 }
 
 TEST_F(ContactsStoreTest, AddingAContactLeavesTheRemarkEmpty) {

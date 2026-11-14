@@ -59,7 +59,7 @@ public:
               return account == "account:peer" ? std::optional<AccountCard>(peer.DeviceCard()) : std::nullopt;
             },
             psk_store, LocalKeysFromIdentity(identity), roster_store),
-        sync(store, identity, contacts, &relay, receive_pipeline, inbox, &peer_history) {
+        sync(store, identity, &relay, receive_pipeline, inbox, &peer_history) {
     std::filesystem::remove_all(data_dir);
     if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
@@ -67,8 +67,7 @@ public:
 
     Contact peer_contact;
     peer_contact.id = "contact-peer";
-    peer_contact.remote.ids = {{mesh::ContactIdKind::Account, "account:peer", true},
-                               {mesh::ContactIdKind::RelayUser, "relay:peer", false}};
+    peer_contact.remote.ids = {{mesh::ContactIdKind::Account, "account:peer", true}};
     SyncContactMirrors(peer_contact);
     if (!contacts.Upsert(peer_contact)) {
       throw std::runtime_error("Failed to upsert peer contact");
@@ -90,13 +89,11 @@ public:
     }
     {
       LocalIdentity updated = *identity.Get();
-      updated.relay_user_id = "relay:local";
       updated.registered = true;
       if (!identity.Update(updated)) {
         throw std::runtime_error("Failed to set test relay id");
       }
     }
-    local_relay_id = identity.Get()->relay_user_id;
     local_account_id = identity.Get()->account_id;
 
     PeerSessionRecord psk;
@@ -117,7 +114,6 @@ public:
     RelayEnvelope envelope;
     envelope.envelope_version = kRelayEnvelopeVersion;
     envelope.message_id = "peer-msg-" + std::to_string(seq);
-    envelope.sender_relay_id = "relay:peer";
     envelope.sender_contact_id = "account:peer";
     envelope.route.kind = "direct";
     envelope.route.channel = ThreadChannel::E2e;
@@ -144,7 +140,7 @@ public:
     envelope.session_epoch = 1;
     envelope.timestamp = static_cast<int64_t>(seq);
     envelope.stream_key =
-        BuildCanonicalRelayStreamKey(local_relay_id, "relay:peer", ThreadChannel::E2e, envelope.session_epoch);
+        BuildCanonicalRelayStreamKey(local_account_id, "account:peer", ThreadChannel::E2e, envelope.session_epoch);
     test::SignEnvelopeAs(peer, envelope);
     return envelope;
   }
@@ -191,7 +187,6 @@ public:
   RelayReceivePipeline receive_pipeline;
   ChatSyncWorkflow sync;
   Thread thread;
-  std::string local_relay_id;
   std::string local_account_id;
 };
 
@@ -202,10 +197,10 @@ TEST(ChatSyncTest, MockFetchReturnsInjectedEnvelope) {
   harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));
 
   ChatHistoryRequest request;
-  request.requester_identity_kind = "relay_user";
-  request.requester_identity_value = "relay:local";
-  request.peer_identity_kind = "relay_user";
-  request.peer_identity_value = "relay:peer";
+  request.requester_identity_kind = "account";
+  request.requester_identity_value = harness.local_account_id;
+  request.peer_identity_kind = "account";
+  request.peer_identity_value = "account:peer";
   request.channel = ThreadChannel::E2e;
   request.session_epoch = 1;
   request.min_sender_seq = 2;
@@ -340,7 +335,7 @@ TEST(ChatSyncTest, PeerDirectPreferredOverRelay) {
   SyncTestHarness harness("peer_first");
   harness.SeedPeerSeq(1, "one");
 
-  harness.peer_history.SetPeerReachable("relay:peer");
+  harness.peer_history.SetPeerReachable("account:peer");
   harness.peer_history.AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "via-direct"));
 
   auto result = harness.sync.RepairGap(harness.thread.id, 2, 2);
@@ -451,10 +446,10 @@ TEST(ChatSyncTest, RelayFetch403ForNonPartyReturnsError) {
   harness.relay.SetFetchHistoryError("Relay history fetch failed with status 403");
 
   ChatHistoryRequest request;
-  request.requester_identity_kind = "relay_user";
+  request.requester_identity_kind = "account";
   request.requester_identity_value = harness.local_account_id;
-  request.peer_identity_kind = "relay_user";
-  request.peer_identity_value = "relay:peer";
+  request.peer_identity_kind = "account";
+  request.peer_identity_value = "account:peer";
   request.channel = ThreadChannel::E2e;
   request.session_epoch = 1;
   request.min_sender_seq = 2;

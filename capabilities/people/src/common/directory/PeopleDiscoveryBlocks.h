@@ -52,7 +52,7 @@ struct PeopleDiscoveryLabels {
 /** Optional knobs when building people-discovery long_list blocks. */
 struct PeopleDiscoveryBuildOptions {
   PeopleDiscoveryLabels labels;
-  /** Identity values (account / relay / peer ids) already in local contacts. */
+  /** Identity values (account / peer ids) already in local contacts. */
   std::unordered_set<std::string> known_local_identity_values;
   /** Local user identities — matching directory hits are omitted entirely. */
   std::unordered_set<std::string> self_identity_values;
@@ -69,7 +69,7 @@ struct PeopleDiscoveryBuildOptions {
  */
 inline constexpr const char* kShowMoreRowsActionType = "show_more_rows";
 
-/** account_id / relay_user_id / peer_id from local identity (non-empty only). */
+/** account_id / peer_id from local identity (non-empty only). */
 std::unordered_set<std::string> SelfIdentityValuesFromLocal(const LocalIdentity& identity);
 
 /** True when hit account/ids intersect `identities`. */

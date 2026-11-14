@@ -31,9 +31,6 @@ Roe<void> LinkDeviceCodec::Validate(const LinkDeviceBundleV1& bundle, const int6
   if (bundle.account_id.rfind("account:", 0) != 0) {
     return Error("Link bundle missing Account ID");
   }
-  if (bundle.relay_user_id.rfind("relay:", 0) != 0) {
-    return Error("Link bundle missing relay user id");
-  }
   if (bundle.created_at_ms <= 0 || bundle.expires_at_ms <= bundle.created_at_ms) {
     return Error("Link bundle has invalid expiry");
   }
@@ -97,7 +94,6 @@ Roe<std::string> LinkDeviceCodec::Serialize(const LinkDeviceBundleV1& bundle) {
   json.set("account_kem_pk_b64", bundle.account_kem_pk_b64);
   json.set("account_kem_sk_b64", bundle.account_kem_sk_b64.Reveal());
   json.set("dek_b64", bundle.dek_b64.Reveal());
-  json.set("relay_user_id", bundle.relay_user_id);
   json.set("nickname", bundle.nickname);
   json.set("created_at", bundle.created_at_ms);
   json.set("expires_at", bundle.expires_at_ms);
@@ -133,7 +129,6 @@ Roe<LinkDeviceBundleV1> LinkDeviceCodec::Parse(const std::string& json) {
   bundle.account_kem_pk_b64 = parsed->getString("account_kem_pk_b64").value_or(std::string{});
   bundle.account_kem_sk_b64 = parsed->getString("account_kem_sk_b64").value_or(std::string{});
   bundle.dek_b64 = parsed->getString("dek_b64").value_or(std::string{});
-  bundle.relay_user_id = parsed->getString("relay_user_id").value_or(std::string{});
   bundle.nickname = parsed->getString("nickname").value_or(std::string{});
   bundle.created_at_ms = parsed->getIf<int64_t>("created_at").value_or(0);
   bundle.expires_at_ms = parsed->getIf<int64_t>("expires_at").value_or(0);

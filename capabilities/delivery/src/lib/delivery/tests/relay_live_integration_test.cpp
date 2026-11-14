@@ -65,9 +65,9 @@ TEST(RelayLiveIntegrationTest, FetchChatHistoryAgainstLiveRelayWhenConfigured) {
   });
 
   ChatHistoryRequest request;
-  request.requester_identity_kind = "relay_user";
+  request.requester_identity_kind = "account";
   request.requester_identity_value = requester;
-  request.peer_identity_kind = "relay_user";
+  request.peer_identity_kind = "account";
   request.peer_identity_value = peer;
   request.channel = ThreadChannel::E2e;
   request.session_epoch = 1;
@@ -81,10 +81,10 @@ TEST(RelayLiveIntegrationTest, FetchChatHistoryAgainstLiveRelayWhenConfigured) {
 TEST(RelayLiveIntegrationTest, HttpRelayRequiresAuthSigner) {
   HttpRelayClient relay("https://relay.example.test");
   ChatHistoryRequest request;
-  request.requester_identity_kind = "relay_user";
-  request.requester_identity_value = "relay:local";
-  request.peer_identity_kind = "relay_user";
-  request.peer_identity_value = "relay:peer";
+  request.requester_identity_kind = "account";
+  request.requester_identity_value = "account:local";
+  request.peer_identity_kind = "account";
+  request.peer_identity_value = "account:peer";
   request.channel = ThreadChannel::E2e;
   request.session_epoch = 1;
   request.limit = 1;

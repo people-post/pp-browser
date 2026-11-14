@@ -27,7 +27,7 @@ class ConversationsHub;
  * ready callback calls it, and only when kUiDemoBuild.
  *
  * Fixed ids and upserts: each start puts back the same data. Nothing is ever written as Pending (no outbox row); the
- * contacts carry no relay user id, peer id or address, and the direct chats no peer identity, so a send is refused
+ * contacts carry no Account ID, peer id or address, and the direct chats no peer identity, so a send is refused
  * before it is stored.
  */
 
@@ -44,8 +44,8 @@ struct DemoSeedDeps {
   /** The attachment key of the unlocked profile (AttachmentFetchWorkflow::CopyDek). */
   ByteVector attachment_dek;
   uint64_t max_receive_bytes = 0;
-  /** A non-empty relay user id means a real account: the seeder then writes nothing. */
-  std::string own_relay_user_id;
+  /** A registered account (its Account ID; empty: none yet): the seeder then writes nothing. */
+  std::string own_registered_account;
   /** Every message time is a fixed offset from this (today 00:00 local). */
   int64_t today_midnight_ms = 0;
   /** `remote.fetched_at` of the contacts. */

@@ -37,9 +37,11 @@ PIN = "246810"
 # Answer → audio both ways on one machine is ~2 s; past this the call "isn't getting through" for a
 # person, who hangs up and calls again.
 MAX_ANSWER_TO_AUDIO_S = 8.0
-# The relay allows 10 registrations per client IP per hour (in memory); every probe is 127.0.0.1.
+# The relay allows 10 registrations per client IP per hour (in memory); every probe is 127.0.0.1. By gateway: "a" is
+# the lab relay's (also behind TLS for the multi-relay scenarios), "b" the second relay's. Unknown at start: the first
+# user restarts the gateway.
 REGISTRATIONS_PER_RELAY_START = 10
-registrations = REGISTRATIONS_PER_RELAY_START  # unknown at start: the first user restarts the gateway
+registrations = {"a": REGISTRATIONS_PER_RELAY_START, "b": REGISTRATIONS_PER_RELAY_START}
 
 
 class ProbeError(Exception):
@@ -53,15 +55,20 @@ NO_DIRECTORY = "http://127.0.0.1:9/api/relay"
 class User:
     """One person with the app: a pp-app-probe process over a profile dir that outlives it."""
 
-    def __init__(self, lab, name, container=None, directory=True, reachable=False, seeds=None):
+    def __init__(self, lab, name, container=None, directory=True, reachable=False, seeds=None, relays=None,
+                 directories=None):
         self.lab = lab
         self.name = name
         self.container = container  # --nat: the user's own NAT'd container (None: a host process)
         self.dir = os.path.join(lab.root, name)
         os.makedirs(self.dir, exist_ok=True)
         self.config = os.path.join(self.dir, "config.json")
+        self.relays = relays or []  # the TLS relays it is on ("a" / "b"), preferred first; none: the lab relay
+        config = lab.config_for(self.dir, directory, reachable, seeds)
+        if self.relays:
+            lab.on_tls_relays(config, self.relays, directories or self.relays)
         with open(self.config, "w") as f:
-            json.dump(lab.config_for(self.dir, directory, reachable, seeds), f, indent=2)
+            json.dump(config, f, indent=2)
         self.proc = None
         self.next_id = 1
         self.replies = {}
@@ -92,8 +99,12 @@ class User:
                    self.container, "sh", "-c", script, self.pidfile()] + argv
         else:
             cmd = [self.lab.probe] + argv
+        env = None
+        if self.relays:
+            # The TLS relays' certificate is the lab CA's: the system's bundle plus that CA (PP_BROWSER_CA_BUNDLE).
+            env = dict(os.environ, PP_BROWSER_CA_BUNDLE=os.path.join(self.lab.tls_dir, "bundle.pem"))
         self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                     stderr=subprocess.DEVNULL, text=True, bufsize=1)
+                                     stderr=subprocess.DEVNULL, text=True, bufsize=1, env=env)
         threading.Thread(target=self._read, daemon=True).start()
         self.wait_event(lambda e: e.get("event") in ("booted", "boot_failed"), 60, "boot")
         if self.last_event.get("event") == "boot_failed":
@@ -322,10 +333,19 @@ class Lab:
             self.networks[container] = (address, gw)
         self.keep = args.keep
         self.relay_container = args.relay_container
+        # The multi-relay scenarios' relays, each behind TLS (https:// origins go on account cards, MR004).
+        self.tls_dir = args.tls_dir
+        self.tls_relays = {
+            "a": {"origin": args.relay_tls.rstrip("/"), "health": self.relay.split("/api/")[0] + "/healthz",
+                  "containers": [args.relay_container, args.relay_tls_container]},
+            "b": {"origin": args.relay2_tls.rstrip("/"), "health": args.relay2.rstrip("/").split("/api/")[0] + "/healthz",
+                  "containers": [args.relay2_container, args.relay2_tls_container]},
+        }
         self.hop_container = args.hop_container
         self.hop_status = args.hop_status
         # Video scenarios set it before their users start: the probes take SyntheticVideo's camera and codec.
         self.synthetic_video = False
+        self.stopped_relays = set()
         self.users = []
 
     def config_for(self, data_dir, directory=True, reachable=False, seeds=None):
@@ -350,6 +370,51 @@ class Lab:
             },
         }
 
+    def on_tls_relays(self, config, relays, directories):
+        """`config` on the TLS relays `relays` ("a" / "b"), the first preferred, the others `relay.extra_base_urls`
+        (multi-relay R2); its directory the first of `directories`, the others its failover providers."""
+        origins = [self.tls_relays[r]["origin"] for r in relays]
+        config["relay"] = {"base_url": origins[0], "extra_base_urls": origins[1:]}
+        config["registration"] = {"base_url": origins[0]}
+        found = [self.tls_relays[r]["origin"] for r in directories]
+        config["directory"] = {"base_url": found[0],
+                               "providers": [{"base_url": o, "transport": "http"} for o in found]}
+
+    def tls_relay_up(self, relay, timeout=60):
+        health = [self.tls_relays[relay]["health"],
+                  self.tls_relays[relay]["origin"].split("/api/")[0] + "/healthz"]
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if all(subprocess.run(["curl", "-fsS", "-m", "2", "--cacert", os.path.join(self.tls_dir, "ca.crt"), url],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+                   for url in health):
+                return
+            time.sleep(0.5)
+        raise ProbeError("TLS relay %s did not come up" % relay)
+
+    def stop_tls_relay(self, relay):
+        """The relay goes away: its gateway and its TLS front (connections refused). Back when the scenario ends."""
+        self.stopped_relays.add(relay)
+        for container in reversed(self.tls_relays[relay]["containers"]):
+            subprocess.run(["docker", "stop", "-t", "2", container], check=True, stdout=subprocess.DEVNULL)
+
+    def start_tls_relay(self, relay):
+        for container in self.tls_relays[relay]["containers"]:
+            subprocess.run(["docker", "start", container], check=True, stdout=subprocess.DEVNULL)
+        self.tls_relay_up(relay)
+        self.stopped_relays.discard(relay)
+
+    def fresh_tls_registrations(self, relays):
+        """Room for one user's registrations on each of `relays`: a gateway that used up its allowance restarts."""
+        # A user on a relay may register there twice (its registration, then again when its card changes).
+        for relay in relays:
+            if registrations[relay] + 2 > REGISTRATIONS_PER_RELAY_START:
+                gateway = self.tls_relays[relay]["containers"][0]
+                subprocess.run(["docker", "restart", gateway], check=True, stdout=subprocess.DEVNULL)
+                self.tls_relay_up(relay)
+                registrations[relay] = 0
+            registrations[relay] += 2
+
     def wait_hop(self, timeout=60):
         deadline = time.time() + timeout
         while time.time() < deadline:
@@ -361,9 +426,8 @@ class Lab:
 
     def fresh_registration(self):
         """Restart the lab relay's gateway when this run has used up its registration allowance."""
-        global registrations
-        if registrations < REGISTRATIONS_PER_RELAY_START:
-            registrations += 1
+        if registrations["a"] < REGISTRATIONS_PER_RELAY_START:
+            registrations["a"] += 1
             return
         if not self.relay_container:
             raise ProbeError("relay registration allowance used up (pass --relay-container)")
@@ -374,24 +438,29 @@ class Lab:
             try:
                 if subprocess.run(["curl", "-fsS", "-m", "2", health], stdout=subprocess.DEVNULL,
                                   stderr=subprocess.DEVNULL).returncode == 0:
-                    registrations = 1
+                    registrations["a"] = 1
                     return
             except OSError:
                 pass
             time.sleep(0.5)
         raise ProbeError("relay did not come back after restart")
 
-    def user(self, name, directory=True, reachable=False, beside=None, seeds=None):
+    def user(self, name, directory=True, reachable=False, beside=None, seeds=None, relays=None, directories=None):
         """A registered user; directory=False: one whose directory never answers; reachable=True: one that
         stays reachable without the relay (parked on the lab's seed); beside=<user>: --nat, on that user's
         network (the same Wi-Fi), not behind a NAT of its own; seeds=[...]: the seeds it bootstraps from
-        (default the lab hop alone)."""
-        self.fresh_registration()
+        (default the lab hop alone); relays=["a", "b"]: on the TLS relays (multi-relay R2), preferred first,
+        registered on each, its directory `directories` (default its relays)."""
+        if relays:
+            self.fresh_tls_registrations(relays)
+        else:
+            self.fresh_registration()
         if beside is not None:
             container = beside.container
         else:
             container = self.containers[len(self.users) % len(self.containers)] if self.containers else None
-        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), container, directory, reachable, seeds)
+        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), container, directory, reachable, seeds, relays,
+                 directories)
         self.users.append(u)
         u.start()
         u.wait_ready()
@@ -399,6 +468,9 @@ class Lab:
         u.account = u.cmd("whoami")["account"]
         if not u.account:
             raise ProbeError("%s: no account after register" % u.name)
+        if relays:
+            wait_for(lambda: all(r["registered"] for r in u.cmd("relays")["relays"]) or None, 30,
+                     "%s: registered on each of its relays" % u.name)
         return u
 
     def linked_device(self, of, name, bundle=None):
@@ -426,6 +498,8 @@ class Lab:
                 u.crash()
         for container, (address, gw) in self.networks.items():
             restore_network(container, address, gw)
+        for relay in list(self.stopped_relays):
+            self.start_tls_relay(relay)
         if ok and not self.keep:
             shutil.rmtree(self.root, ignore_errors=True)
         self.users = []
@@ -1867,6 +1941,89 @@ def scenario_strangers_meet_by_invite(lab):
     wait_for(lambda: transcript_row(a, a_thread, reply), 30, "alice: bob's answer")
 
 
+def card_relays(u):
+    """The relays `u`'s own account card lists, preferred first."""
+    return u.cmd("relays")["card_relays"]
+
+
+def kept_relays(u, account):
+    """The relays the card `u` keeps for `account` lists (none known: None)."""
+    return u.cmd("kept_card", account=account).get("relays") or None
+
+
+def scenario_users_on_two_relays_meet(lab):
+    """Multi-relay R2: Alice is on relay A, Bob on relay B, and Alice searches B's directory. Her first message finds
+    no card of Bob's, so it goes to her own relay, which does not know him (recipient_not_registered): his newest card
+    is fetched — from B's directory — and the message goes into B, a stranger's, within his first-contact quota. Bob
+    answers into A, by the card her message carried. They add each other (grants), write as contacts and call: the
+    call's signaling crosses the relays too."""
+    a = lab.user("alice", relays=["a"], directories=["b"])
+    b = lab.user("bob", relays=["b"])
+    for u in (a, b):
+        u.wait_mesh()
+    relay_a, relay_b = lab.tls_relays["a"]["origin"], lab.tls_relays["b"]["origin"]
+    if card_relays(a) != [relay_a] or card_relays(b) != [relay_b]:
+        raise ProbeError("cards: alice %s, bob %s" % (card_relays(a), card_relays(b)))
+    a_thread = a.cmd("open_chat", account=b.account)["thread"]
+    first = a.cmd("send", thread=a_thread, text="hi bob, from relay A")["message_id"]
+    b_thread = wait_for(lambda: thread_with(b, a.account), 40, "bob: alice's chat")
+    row = wait_for(lambda: transcript_row(b, b_thread, first), 30, "bob: alice's first message")
+    if kept_relays(a, b.account) != [relay_b]:
+        raise ProbeError("alice: bob's card says %s, not relay B" % kept_relays(a, b.account))
+    reply = b.cmd("send", thread=b_thread, text="hi alice, from relay B")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, reply), 30, "alice: bob's answer")
+    if kept_relays(b, a.account) != [relay_a]:
+        raise ProbeError("bob: alice's card says %s, not relay A" % kept_relays(b, a.account))
+    b.cmd("add_to_contacts", thread=b_thread)  # Alice added Bob when she opened the chat
+    wait_for(lambda: a.cmd("held_grant", account=b.account)["held"] or None, 30, "alice: bob's grant")
+    wait_for(lambda: b.cmd("held_grant", account=a.account)["held"] or None, 30, "bob: alice's grant")
+    for i in range(2):
+        m = a.cmd("send", thread=a_thread, text="as contacts %d" % i)["message_id"]
+        wait_for(lambda: transcript_row(b, b_thread, m), 30, "bob: alice's message %d as a contact" % i)
+        m = b.cmd("send", thread=b_thread, text="back %d" % i)["message_id"]
+        wait_for(lambda: transcript_row(a, a_thread, m), 30, "alice: bob's message %d as a contact" % i)
+    call_id, timing = connect(a, a_thread, b)
+    a.cmd("leave")
+    assert_idle(a, b)
+    timing.update(call_id=call_id, first_transport=row.get("transport"))
+    return timing
+
+
+def scenario_preferred_relay_down_mail_still_arrives(lab):
+    """Multi-relay R2: Bob is on both relays, A preferred — registered and polled on each, his card lists both in
+    order. Alice, on B, writes to him; once she holds his card her messages go into A, his preferred. Then A stops:
+    her next messages fail there and go into B, where Bob polls them; his answers still reach her."""
+    b = lab.user("bob", relays=["a", "b"])
+    a = lab.user("alice", relays=["b"])
+    for u in (a, b):
+        u.wait_mesh()
+    relay_a, relay_b = lab.tls_relays["a"]["origin"], lab.tls_relays["b"]["origin"]
+    if card_relays(b) != [relay_a, relay_b]:
+        raise ProbeError("bob's card lists %s" % card_relays(b))
+    a_thread = a.cmd("open_chat", account=b.account)["thread"]
+    first = a.cmd("send", thread=a_thread, text="hi bob")["message_id"]
+    b_thread = wait_for(lambda: thread_with(b, a.account), 40, "bob: alice's chat")
+    wait_for(lambda: transcript_row(b, b_thread, first), 30, "bob: alice's first message")
+    b.cmd("add_to_contacts", thread=b_thread)  # her sends to him are a contact's now, not held to the stranger quota
+    reply = b.cmd("send", thread=b_thread, text="hi alice")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, reply), 30, "alice: bob's answer")
+    wait_for(lambda: kept_relays(a, b.account) == [relay_a, relay_b] or None, 20, "alice: bob's two relays")
+    wait_for(lambda: a.cmd("held_grant", account=b.account)["held"] or None, 30, "alice: bob's grant")
+    to_a = a.cmd("send", thread=a_thread, text="into your preferred relay")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, to_a), 30, "bob: alice's message through relay A")
+
+    lab.stop_tls_relay("a")
+    stopped = time.time()
+    sent = [a.cmd("send", thread=a_thread, text="relay A is down %d" % i)["message_id"] for i in range(3)]
+    rows = [wait_for(lambda m=m: transcript_row(b, b_thread, m), 60, "bob: a message after relay A stopped")
+            for m in sent]
+    took = round(time.time() - stopped, 1)
+    back = b.cmd("send", thread=b_thread, text="still here")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, back), 30, "alice: bob's answer with relay A down")
+    lab.start_tls_relay("a")
+    return {"down_to_delivered_s": took, "transports": [r.get("transport") for r in rows]}
+
+
 def scenario_group_members_key_each_other(lab):
     """Bob and Carol have no directory and have never met. Alice (who has one) writes to each, and each
     adds her from her invite line (group invites come from contacts only); she makes a group of the three:
@@ -2904,12 +3061,16 @@ def scenario_a_device_asks_for_a_copy_it_missed(lab):
 
 def scenario_a_call_rings_every_device_and_stops_once_answered(lab):
     """A call rings every device of the account (M021 d5): Bob calls Alice; her phone and her laptop both ring.
-    The phone answers: the laptop stops ringing at once (no missed call there), and Bob and the phone talk."""
+    The phone answers: the laptop stops ringing at once (no missed call there), and Bob and the phone talk.
+    A caller rings the devices on the card it keeps (M024): Bob holds Alice's card from the start (her relay grant
+    brought it, multi-relay MR005), so he calls once her device list has told him of the laptop."""
     a, a_thread, b, b_thread = open_pair(lab)
     laptop = lab.linked_device(a, "alice-laptop")
     laptop.wait_mesh()
     laptop_id = laptop.cmd("whoami")["peer_id"]
     wait_for(lambda: laptop_id in a.cmd("devices")["devices"] or None, 40, "phone: the laptop on the list")
+    wait_for(lambda: laptop_id in b.cmd("kept_card", account=a.account)["devices"] or None, 40,
+             "bob: the laptop on alice's card")
     call_id = b.cmd("call", thread=b_thread)["call_id"]
     a.wait_surface("ringing", 40, call_id=call_id)
     laptop.wait_surface("ringing", 40, call_id=call_id)
@@ -3992,6 +4153,8 @@ SCENARIOS = [
     ("friend_shares_a_contact", scenario_friend_shares_a_contact),
     ("devices_hand_over_their_cards", scenario_devices_hand_over_their_cards),
     ("strangers_meet_by_invite", scenario_strangers_meet_by_invite),
+    ("users_on_two_relays_meet", scenario_users_on_two_relays_meet),
+    ("preferred_relay_down_mail_still_arrives", scenario_preferred_relay_down_mail_still_arrives),
     ("group_members_key_each_other", scenario_group_members_key_each_other),
     ("group_after_member_removed", scenario_group_after_member_removed),
     ("restored_device_is_heard", scenario_restored_device_is_heard),
@@ -4092,6 +4255,9 @@ NEEDS_DIRECT_PATH = {"seed_down", "seed_dies_in_use", "group_hop_down_mid_call"}
 # stays warm for 10 min after it (#577), so the seed link carrying that nested link keeps its keepalive tier
 # (pp-cpp-amp v5.5.0) and never drops. With --nat they run only when named.
 NEEDS_COLD_SEED_LINK = {"call_during_seed_churn"}
+# Scenarios on the TLS relays (multi-relay R2): host users only — the relays' certificate names their host ports,
+# and a user behind a NAT takes no CA bundle. With --nat they do not run.
+NEEDS_TLS_RELAYS = {"users_on_two_relays_meet", "preferred_relay_down_mail_still_arrives"}
 # Scenarios that change a user's network: they need a container per user (--nat).
 NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
              "group_one_way_network_drops", "group_two_join_through_drops", "group_call_on_the_road",
@@ -4112,6 +4278,14 @@ def main():
     ap.add_argument("--hop-ip", default="198.51.100.10", help="the lab hop's address on the lab network")
     ap.add_argument("--relay-container", default="pp-app-lab-www-1",
                     help="lab relay gateway container, restarted when registrations run out")
+    ap.add_argument("--relay2", default="http://127.0.0.1:18729/api/relay", help="the second lab relay (its health)")
+    ap.add_argument("--relay2-container", default="pp-app-lab-www2-1", help="the second relay's gateway container")
+    ap.add_argument("--relay-tls", default="https://127.0.0.1:18743/api/relay", help="the lab relay behind TLS")
+    ap.add_argument("--relay2-tls", default="https://127.0.0.1:18744/api/relay", help="the second relay behind TLS")
+    ap.add_argument("--relay-tls-container", default="pp-app-lab-tls-a-1")
+    ap.add_argument("--relay2-tls-container", default="pp-app-lab-tls-b-1")
+    ap.add_argument("--tls-dir", default=os.environ.get("PP_APP_LAB_TLS_DIR", "/tmp/pp-app-lab-tls"),
+                    help="the lab CA, the relays' certificate and the probes' CA bundle (pp_local_test.sh makes them)")
     ap.add_argument("--hop-container", default="pp-app-lab-hop-1", help="the lab seed (seed_down stops it)")
     ap.add_argument("--nat", action="store_true",
                     help="each user in its own container behind its own NAT (docker-compose.app-lab-nat.yml)")
@@ -4136,7 +4310,7 @@ def main():
         except OSError:
             args.hop2 = None  # a lab without the second seed: the two-hop rows fail, the rest run
 
-    skipped = OPT_IN | (NEEDS_DIRECT_PATH | NEEDS_COLD_SEED_LINK if args.nat else NEEDS_NAT)
+    skipped = OPT_IN | (NEEDS_DIRECT_PATH | NEEDS_COLD_SEED_LINK | NEEDS_TLS_RELAYS if args.nat else NEEDS_NAT)
     selected = [(n, f) for n, f in SCENARIOS if n in args.only or (not args.only and n not in skipped)]
     if not selected:
         sys.exit("no scenario matches %s" % args.only)

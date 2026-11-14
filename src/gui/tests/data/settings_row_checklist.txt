@@ -180,8 +180,8 @@ data-value="profile_nickname"	1	profile	profile	-	profile
 {{i18n:settings.profile.peer_id_label}}	1	-	profile	advanced && profile_peer_id != ''	profile	
 {{i18n:settings.profile.photo_uploading}}	1	-	profile	profile_icon_uploading	profile	
 {{i18n:settings.profile.qr_help}}	1	-	profile	profile_show_qr && profile_qr_svg_rml != ''	profile	
-{{i18n:settings.profile.relay_id_label}}	1	-	profile	profile_relay_id != ''	profile	
-{{i18n:settings.profile.relay_id_none}}	1	-	profile	profile_relay_id == ''	profile	
+{{i18n:settings.profile.account_id_label}}	1	-	profile	profile_account_id != ''	profile	
+{{i18n:settings.profile.account_id_none}}	1	-	profile	profile_account_id == ''	profile	
 {{i18n:settings.profile.show_qr}}	1	-	profile	profile_qr_svg_rml != ''	profile	
 {{i18n:settings.registration.expires}}	1	-	profile	advanced && profile_registration_expires != ''	profile	10
 {{i18n:settings.registration.label}}	1	-	profile	-	profile	
@@ -192,7 +192,7 @@ data-value="profile_nickname"	1	profile	profile	-	profile
 {{i18n:settings.profile.update_now}}	1	-	profile	advanced && profile_show_register && !profile_register_primary	profile	
 {{profile_registration_expires}}	2	-	profile	advanced && profile_registration_expires != ''	profile	
 {{profile_registration_status}}	2	-	profile	-	profile	
-{{profile_relay_id}}	2	-	profile	profile_relay_id != ''	profile	
+{{profile_account_id}}	2	-	profile	profile_account_id != ''	profile	
 data-event-click="on_choose_call_invite_policy()"	1	security	privacy	-	security	
 data-event-click="on_choose_group_invite_policy()"	1	security	privacy	-	security	
 data-event-click="open_blocked_people()"	1	-	privacy	-	security	
@@ -528,7 +528,7 @@ data-event-click="unpublish_cas(item_index)"	1	storage	tester	tester;;tester;;it
 {{profile_dir}}	1	-	tester	tester;;tester	storage	
 {{profile_label}}	1	-	tester	tester;;tester	storage	
 {{i18n:settings.profile.id_row}}	1	-	profile	-	profile	
-{{i18n:settings.profile.id_none}}	1	-	profile	profile_relay_id == ''	profile	
+{{i18n:settings.profile.id_none}}	1	-	profile	profile_account_id == ''	profile	
 {{i18n:settings.profile.name_caption}}	1	-	profile	-	profile	
 {{profile_nickname}}	1	-	profile	-	profile	
 {{i18n:settings.profile.account_group}}	1	-	profile	-	profile	

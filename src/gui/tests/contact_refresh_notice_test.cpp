@@ -67,8 +67,8 @@ TEST_F(ContactRefreshNoticeTest, EveryContactsPageHasTheButton) {
   std::ostringstream ss;
   ss << in.rdbuf();
   const std::string rml = ss.str();
-  EXPECT_EQ(rml.find("has_relay_id"), std::string::npos) << "not only contacts with a relay id";
-  EXPECT_EQ(rml.find("advanced && selected.has_relay_id"), std::string::npos);
+  EXPECT_EQ(rml.find("has_relay_id"), std::string::npos) << "not only contacts with an id";
+  EXPECT_EQ(rml.find("has_account_id"), std::string::npos);
   EXPECT_NE(rml.find("refresh_contact()"), std::string::npos);
   EXPECT_NE(rml.find("selected.refreshing"), std::string::npos) << "a busy state while it runs";
 }

@@ -72,6 +72,7 @@ Environment:
   PP_HARD_COMPOSE_FILE / PP_HARD_STATUS_URL (default http://127.0.0.1:18618)
   PP_LEDGER_ROOT / PP_LEDGER_BUILD_DIR (--suite ledger: a pp-ledger checkout with its apps built)
   PP_WEB2_ROOT (--suite app: a web2 checkout; default ../web2 beside web3) / PP_APP_LAB_ARGS
+  PP_APP_LAB_TLS_DIR (--suite app: the lab relays' CA and certificate; default /tmp/pp-app-lab-tls)
   PP_APP_LAB_WWW_IMAGE + PP_APP_LAB_MESSENGER_IMAGE (--suite app: the relay from these images instead)
 
 Examples:
@@ -330,7 +331,33 @@ app_lab_compose() {
   fi
   PP_WEB2_ROOT="${PP_WEB2_ROOT:-$(cd "${ROOT}/../.." && pwd)/web2}" \
     PP_APP_LAB_PROBE_DIR="${BUILD_DIR}/src/app/node" PP_APP_LAB_NAT_SHARE="${PP_APP_LAB_NAT_SHARE:-/tmp/pp-app-lab-nat}" \
+    PP_APP_LAB_TLS_DIR="${APP_LAB_TLS_DIR}" \
     docker compose -p pp-app-lab "${files[@]}" "$@"
+}
+
+# The lab relays' TLS (tls-a / tls-b): a lab CA, a certificate it signs for both relays' addresses, and the bundle
+# the probes trust (the system's plus that CA, PP_BROWSER_CA_BUNDLE). Made once and kept for 20 days.
+APP_LAB_TLS_DIR="${PP_APP_LAB_TLS_DIR:-/tmp/pp-app-lab-tls}"
+
+app_lab_tls() {
+  need_cmd openssl
+  local dir="${APP_LAB_TLS_DIR}"
+  if [[ -s "${dir}/server.crt" && -s "${dir}/bundle.pem" && -z "$(find "${dir}/server.crt" -mtime +20 2>/dev/null)" ]]; then
+    return 0
+  fi
+  mkdir -p "${dir}"
+  local system_bundle=/etc/ssl/certs/ca-certificates.crt
+  [[ -s "${system_bundle}" ]] || die "no system CA bundle at ${system_bundle}"
+  openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=pp app lab CA" \
+    -keyout "${dir}/ca.key" -out "${dir}/ca.crt" >/dev/null 2>&1 || die "lab CA"
+  openssl req -newkey rsa:2048 -nodes -subj "/CN=pp app lab relay" \
+    -keyout "${dir}/server.key" -out "${dir}/server.csr" >/dev/null 2>&1 || die "lab relay key"
+  printf '%s\n' "subjectAltName=IP:127.0.0.1,IP:198.51.100.21,IP:198.51.100.22" "basicConstraints=CA:FALSE" \
+    "keyUsage=digitalSignature,keyEncipherment" "extendedKeyUsage=serverAuth" >"${dir}/server.ext"
+  openssl x509 -req -days 30 -in "${dir}/server.csr" -CA "${dir}/ca.crt" -CAkey "${dir}/ca.key" -CAcreateserial \
+    -extfile "${dir}/server.ext" -out "${dir}/server.crt" >/dev/null 2>&1 || die "lab relay certificate"
+  chmod 644 "${dir}/server.key" # read by the proxies' node user
+  cat "${system_bundle}" "${dir}/ca.crt" >"${dir}/bundle.pem"
 }
 
 # The lab seeds' addresses in the lab directory: each carries its seed's PeerId (#385).
@@ -377,10 +404,14 @@ run_app() {
     mkdir -p "${PP_APP_LAB_NAT_SHARE:-/tmp/pp-app-lab-nat}"
     app_lab_compose build gw-a user-a  # the gateway and user images (cached when unchanged)
   fi
+  app_lab_tls
   app_lab_compose "${args[@]}"
   local i
   for i in $(seq 1 60); do
-    curl -fsS -m 2 http://127.0.0.1:18719/healthz >/dev/null 2>&1 && break
+    curl -fsS -m 2 http://127.0.0.1:18719/healthz >/dev/null 2>&1 &&
+      curl -fsS -m 2 http://127.0.0.1:18729/healthz >/dev/null 2>&1 &&
+      curl -fsS -m 2 --cacert "${APP_LAB_TLS_DIR}/ca.crt" https://127.0.0.1:18743/healthz >/dev/null 2>&1 &&
+      curl -fsS -m 2 --cacert "${APP_LAB_TLS_DIR}/ca.crt" https://127.0.0.1:18744/healthz >/dev/null 2>&1 && break
     sleep 1
   done
   wait_lab_seeds
@@ -399,7 +430,7 @@ run_app() {
   fi
   # shellcheck disable=SC2086 # PP_APP_LAB_ARGS is a word list (e.g. "--only redial_storm --repeat 3")
   python3 "${ROOT}/scripts/test/pp_app_lab.py" --probe "${BUILD_DIR}/src/app/node/pp-app-probe" \
-    ${nat_args[@]+"${nat_args[@]}"} ${PP_APP_LAB_ARGS:-}
+    --tls-dir "${APP_LAB_TLS_DIR}" ${nat_args[@]+"${nat_args[@]}"} ${PP_APP_LAB_ARGS:-}
 }
 
 run_ledger() {

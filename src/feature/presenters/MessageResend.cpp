@@ -55,7 +55,7 @@ SendMarkTap DecideSendMarkTap(const SendMarkTapFacts& facts) {
     return tap;
   }
   const bool resendable = tap.kind == SendMarkTap::Kind::Resent;
-  if (*facts.failure == SendFailure::RecipientNotFound) {
+  if (*facts.failure == SendFailure::RecipientNotOnRelay) {
     SendMarkTap fix;
     fix.kind = SendMarkTap::Kind::UpdateTheirCard;
     fix.contact_id = *facts.peer_contact_id;

@@ -61,7 +61,7 @@ GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::o
     row.title = card_nickname;
   }
   if (row.title.empty()) {
-    row.title = ShortRelayId(member.member_identity);
+    row.title = ShortPersonId(member.member_identity);
   }
   return row;
 }
@@ -114,7 +114,7 @@ void FillGroupAccountability(std::vector<GroupMemberRow>& rows, const std::vecto
     if (auto adder = adder_of.find(row.identity); adder != adder_of.end()) {
       row.added_by = adder->second;
       auto title = titles.find(adder->second);
-      row.added_by_title = title != titles.end() ? title->second : ShortRelayId(adder->second);
+      row.added_by_title = title != titles.end() ? title->second : ShortPersonId(adder->second);
     }
     if (auto count = added.find(row.identity); count != added.end()) {
       row.added_count = count->second;
@@ -216,7 +216,7 @@ GroupInfoScreen BuildGroupInfoScreen(const GroupInfoFacts& facts) {
         facts.links,
         [&names](const std::string& account) {
           auto found = names.find(account);
-          return found != names.end() ? found->second : ShortRelayId(account);
+          return found != names.end() ? found->second : ShortPersonId(account);
         },
         facts.self_identity, facts.now_ms);
     screen.show_links = true;
@@ -795,7 +795,7 @@ Roe<std::string> ChatPresenter::AddPeerToContacts(const std::string& peer_id) {
       hit.account_id = peer_id;
       hit.ids = {{mesh::ContactIdKind::Account, peer_id, true}};
     } else {
-      hit.ids = {{mesh::ContactIdKind::RelayUser, peer_id, false}};
+      hit.ids = {{mesh::ContactIdKind::PeerId, peer_id, false}};
     }
   }
   auto created = facade_->AddContactFromDirectoryHit(hit);
@@ -1503,7 +1503,7 @@ OwnerLeaveSheet BuildOwnerLeaveSheet(const std::string& thread_id, const CloseCh
   sheet.group_id = plan.group_id;
   for (const std::string& identity : plan.successors) {
     std::string name = name_of ? name_of(identity) : std::string();
-    sheet.candidates.push_back({identity, name.empty() ? ShortRelayId(identity) : name});
+    sheet.candidates.push_back({identity, name.empty() ? ShortPersonId(identity) : name});
   }
   std::stable_sort(sheet.candidates.begin(), sheet.candidates.end(),
                    [](const OwnerLeaveCandidate& a, const OwnerLeaveCandidate& b) { return a.name < b.name; });

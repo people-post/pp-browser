@@ -10,7 +10,7 @@ ContactProfileRefresh::ContactProfileRefresh(ContactsStore& contacts, mesh::IDir
     : contacts_(contacts), directory_(directory) {}
 
 bool ContactProfileRefresh::Due(const Contact& contact, const int64_t now_ms, const bool force) const {
-  if (!ContactAccountId(contact) && !ContactRelayUserId(contact)) {
+  if (!ContactAccountId(contact)) {
     return false;
   }
   {
@@ -40,7 +40,9 @@ ContactProfileRefresh::Result ContactProfileRefresh::RefreshIfStale(const std::s
     return result;
   }
   const auto account_id = ContactAccountId(**found);
-  const auto relay_id = ContactRelayUserId(**found);
+  if (!account_id) {
+    return result;
+  }
   {
     std::lock_guard lock(mutex_);
     if (!in_flight_.insert(contact_id).second) {
@@ -49,11 +51,10 @@ ContactProfileRefresh::Result ContactProfileRefresh::RefreshIfStale(const std::s
     last_attempt_ms_[contact_id] = now_ms; // recorded as the lookup starts, answered or not
   }
   result.looked_up = true;
-  auto hit = account_id ? directory_.LookupByAccount(*account_id) : directory_.LookupRelayUser(*relay_id);
+  auto hit = directory_.LookupByAccount(*account_id);
   if (hit) {
-    // Nickname and photo are updated; a contact without a relay id also takes the relay id from the answer
-    // (never its devices, addresses or other ids).
-    auto applied = contacts_.ApplyProfileRefresh(contact_id, *hit, now_ms, account_id, !relay_id);
+    // Nickname and photo are updated (never its devices, addresses or ids).
+    auto applied = contacts_.ApplyProfileRefresh(contact_id, *hit, now_ms, account_id);
     if (applied) {
       result.updated = std::move(*applied);
     } else {

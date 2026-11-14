@@ -153,7 +153,7 @@ void CallSessionManager::ClickLeave(const std::string& call_id_arg) {
 }
 
 Roe<void> CallSessionManager::SetLocalAudioMuted(bool muted) {
-  auto local = control_.LocalRelayIdentity();
+  auto local = control_.LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -168,7 +168,7 @@ Roe<void> CallSessionManager::SetLocalAudioMuted(bool muted) {
 }
 
 Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int display_rotation_degrees) {
-  auto local = control_.LocalRelayIdentity();
+  auto local = control_.LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -191,7 +191,7 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int displ
 }
 
 Roe<void> CallSessionManager::SetLocalOnHold(const bool on_hold, const std::optional<bool> muted) {
-  auto local = control_.LocalRelayIdentity();
+  auto local = control_.LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -213,7 +213,7 @@ Roe<void> CallSessionManager::SetLocalOnHold(const bool on_hold, const std::opti
 }
 
 Roe<void> CallSessionManager::SetLocalVideoPaused(const bool paused, const int display_rotation_degrees) {
-  auto local = control_.LocalRelayIdentity();
+  auto local = control_.LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -246,7 +246,7 @@ Roe<void> CallSessionManager::SetLocalVideoPaused(const bool paused, const int d
 }
 
 Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id, const std::string& publisher_identity) {
-  auto local = control_.LocalRelayIdentity();
+  auto local = control_.LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -428,8 +428,8 @@ Roe<void> CallSessionManager::HandleInboundMediaKey(const std::string& detail_js
   return {};
 }
 
-Roe<void> CallSessionManager::HandleInboundRoster(const std::string& detail_json) {
-  return workflow_.HandleInboundRoster(detail_json);
+Roe<void> CallSessionManager::HandleInboundRoster(const std::string& detail_json, const std::string& sender_identity) {
+  return workflow_.HandleInboundRoster(detail_json, sender_identity);
 }
 
 Roe<void> CallSessionManager::HandleInboundSfuAttach(const std::string& detail_json,
@@ -558,7 +558,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     return Error("Call control missing detail");
   }
   const std::string detail_json = *detail;
-  auto local = control_.LocalRelayIdentity();
+  auto local = control_.LocalAccountIdentity();
   if (!local) {
     return local.error();
   }
@@ -585,7 +585,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     case CallControlType::CallLeave:
       return HandleInboundLeave(detail_json, sender_identity, *local);
     case CallControlType::CallRoster:
-      return HandleInboundRoster(detail_json);
+      return HandleInboundRoster(detail_json, sender_identity);
     case CallControlType::CallMediaKey:
       return HandleInboundMediaKey(detail_json, sender_identity);
     case CallControlType::CallSfuAttach:

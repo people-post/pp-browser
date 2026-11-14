@@ -141,7 +141,11 @@ TEST(DevicesLayoutTest, TheNewStringsExistInBothLanguages) {
 
 class SettingsOwnDevicesTest : public ::testing::Test {
 protected:
+  // Each test can run alone (ctest runs one per process): load the words it compares against.
+  static void SetUpTestSuite() { ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR)); }
+
   void SetUp() override {
+    LocalizationService::Instance().SetPreferredLanguage("en");
     AppRuntime::Initialize();
     commands_.remove_own_device = [this](const std::string& peer_id) -> Roe<void> {
       removed_.push_back(peer_id);

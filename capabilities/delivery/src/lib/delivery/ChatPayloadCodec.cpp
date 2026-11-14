@@ -66,7 +66,8 @@ constexpr uint8_t kContentTypeAttachment = 5;
 constexpr uint8_t kContentTypeTextSpans = 6;
 
 constexpr uint8_t kSubVersion = 1;
-constexpr uint8_t kContactCardSubVersion = 2;
+// 3: no relay route (multi-relay MR001 — the card's Account ID is the person's relay inbox); 2 carried one.
+constexpr uint8_t kContactCardSubVersion = 3;
 
 void WriteLenUtf8(OutputArchive& ar, const std::string& value) {
   WireLenUtf8 field{value};
@@ -237,7 +238,6 @@ Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeContactCard(const ChatContactC
     ar & kContactCardSubVersion;
     WriteLenUtf8(ar, fields.display_name);
     WriteLenUtf8(ar, fields.card_json);
-    WriteLenUtf8(ar, fields.relay_user_id);
   });
 }
 
@@ -380,7 +380,7 @@ Roe<void> ChatPayloadCodec::ApplyRowToMessage(const std::vector<uint8_t>& chat_p
 
   uint8_t sub_version = 0;
   ar & sub_version;
-  // A contact card is sub_version 2 (its 1, never sent, is retired); every other type is 1.
+  // A contact card is sub_version 3 (2 named a relay route; its 1, never sent, is retired); every other type is 1.
   const uint8_t expected_sub_version = content_type == kContentTypeContactCard ? kContactCardSubVersion : kSubVersion;
   if (ar.failed() || sub_version != expected_sub_version) {
     return Error("Unsupported ChatPayload sub-version");
@@ -418,7 +418,6 @@ Roe<void> ChatPayloadCodec::ApplyRowToMessage(const std::vector<uint8_t>& chat_p
     ChatContactCardFields fields;
     fields.display_name = ReadLenUtf8(ar);
     fields.card_json = ReadLenUtf8(ar);
-    fields.relay_user_id = ReadLenUtf8(ar);
     message.payload_json = ContactCardFieldsToJson(fields);
     return ReadExactEnd(ar);
   }
@@ -490,7 +489,6 @@ Roe<ChatContactCardFields> ChatPayloadCodec::DecodeContactCardJson(const std::st
   if (const Object* card = json->getObject("card")) {
     fields.card_json = DumpJson(*card);
   }
-  fields.relay_user_id = json->getString("relay_user_id").value_or("");
   if (fields.display_name.empty() || fields.card_json.empty()) {
     return Error("Invalid contact_card payload");
   }
@@ -502,9 +500,6 @@ std::string ChatPayloadCodec::ContactCardFieldsToJson(const ChatContactCardField
   payload.set("display_name", fields.display_name);
   if (auto card = TryParseObject(fields.card_json)) {
     payload.set("card", ObjectValue(std::move(*card)));
-  }
-  if (!fields.relay_user_id.empty()) {
-    payload.set("relay_user_id", fields.relay_user_id);
   }
   return DumpJson(payload);
 }

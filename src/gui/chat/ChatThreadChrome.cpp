@@ -344,7 +344,10 @@ void ChatThreadChrome::Update() {
         facade_ && facade_->IsInitiationOutboundBlocked(thread->peer_identity_value)) {
       view_.compose_disabled = true;
       if (view_.status.empty()) {
-        view_.status = Tr("call.error.payment_unavailable").c_str();
+        // The receiver's price (P001 / MR005): no payment can be made yet, so the alternative is to be added.
+        const int64_t floor = facade_->InitiationFloorOf(thread->peer_identity_value);
+        view_.status = floor > 0 ? Tr("chat.payment_required.status", {{"price", std::to_string(floor)}}).c_str()
+                                 : Tr("call.error.payment_unavailable").c_str();
       }
     }
     // The phone header shows no second line, except a group's member count; the full subtitle stays for the desktop.

@@ -31,9 +31,9 @@ TEST(SendFailureReasonTest, TheStoredLinesReasonIsTold) {
 }
 
 TEST(SendFailureReasonTest, TheNewReasonsAreToldAndAnUnknownWordStaysGeneric) {
-  EXPECT_EQ(SendFailureReason(StoredLine(SendFailure::RecipientNotFound), false), SendFailure::RecipientNotFound);
+  EXPECT_EQ(SendFailureReason(StoredLine(SendFailure::RecipientNotOnRelay), false), SendFailure::RecipientNotOnRelay);
   EXPECT_EQ(SendFailureReason(StoredLine(SendFailure::SenderNotRegistered), false), SendFailure::SenderNotRegistered);
-  EXPECT_FALSE(SendFailureReason(StoredLine(SendFailure::RecipientNotFound), true)) << "a group has none";
+  EXPECT_FALSE(SendFailureReason(StoredLine(SendFailure::RecipientNotOnRelay), true)) << "a group has none";
   EXPECT_FALSE(SendFailureReason(MakeSendFailureRow("t1", "m1", "recipient_not_found_v2", 1), false));
 }
 

@@ -8,8 +8,10 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <thread>
 
 namespace {
 
@@ -119,6 +121,37 @@ TEST_F(E2ePublicSessionLogicTest, CreatesOnceAndAnnouncesUntilConfirmed) {
   auto opened = AutoKeyEstablishment::DeriveMasterPskFromKeyInit(bob->private_key, *first->key_init_b64);
   ASSERT_TRUE(static_cast<bool>(opened));
   EXPECT_EQ(*opened, first->master_psk);
+}
+
+// Two sends to one device pair at once (a relay grant on one worker lane, a call invite on another) that both find no
+// session: one opens it, and the other uses that one. Before, each opened its own and the later write dropped the
+// earlier — whose key_init the peer then followed, and nothing it sent opened here again (the lab's lost call accept).
+TEST_F(E2ePublicSessionLogicTest, SendsOpeningAPairAtOnceShareOneSession) {
+  auto bob = HybridKem::GenerateKeyPair();
+  ASSERT_TRUE(static_cast<bool>(bob));
+  PeerSessionKey key{"account", "account:bob", CryptoChannel::E2ePublic};
+  key.peer_device = "QmBobPhone";
+  std::atomic<int> waiting{0};
+  const auto slow_key = [&]() -> Roe<ByteVector> {
+    ++waiting;
+    while (waiting.load() < 2) { // both are past their "none yet" before either opens
+      std::this_thread::yield();
+    }
+    return bob->public_key;
+  };
+  Roe<E2ePublicPskEnsureResult> first = Error("not run");
+  Roe<E2ePublicPskEnsureResult> second = Error("not run");
+  std::thread a([&] { first = EnsureE2ePublicMasterPsk(*psk_, key, 1, slow_key); });
+  std::thread b([&] { second = EnsureE2ePublicMasterPsk(*psk_, key, 1, slow_key); });
+  a.join();
+  b.join();
+  ASSERT_TRUE(first && second);
+  EXPECT_EQ(first->master_psk, second->master_psk) << "one session";
+  EXPECT_EQ(first->key_init_b64, second->key_init_b64) << "one opener, the stored one";
+  EXPECT_NE(first->created, second->created);
+  auto stored = psk_->ResolveMasterPskForEpoch(key, 1);
+  ASSERT_TRUE(stored && stored->has_value());
+  EXPECT_EQ(Base64Decode(**stored).value(), first->master_psk);
 }
 
 /** Both sides of a pair opening a session at the same time: each keeps or moves, and they agree. */

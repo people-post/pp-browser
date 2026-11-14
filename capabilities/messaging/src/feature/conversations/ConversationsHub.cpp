@@ -54,6 +54,7 @@
 #include "lib/net/ProfileIconClient.h"
 #include "lib/net/ProfileIconFetch.h"
 #include "domain/registration/RegistrationClient.h"
+#include "lib/delivery/RelayOrigins.h"
 #include "lib/people/ProfileIconCache.h"
 #include "lib/people/ContactIdentity.h"
 #include "lib/people/ContactTypes.h"
@@ -248,7 +249,7 @@ void ConversationsHub::WireRelayAuthSigner() {
 }
 
 void ConversationsHub::UpdateOrgBackendClients(const HubSettings& settings) {
-  clients_.Apply({settings.relay, settings.directory, settings.registration});
+  clients_.Apply({settings.relay, settings.directory, settings.registration, settings.relay_extra_base_urls});
   relay_ = clients_.Relay();
   push_devices_ = clients_.PushDevices();
   client_compat_ = clients_.ClientCompat();
@@ -257,6 +258,82 @@ void ConversationsHub::UpdateOrgBackendClients(const HubSettings& settings) {
   if (account_locker_) {
     account_locker_->SetClient(clients_.Locker());
   }
+  SetCardRelays();
+  WireOurRelays();
+}
+
+void ConversationsHub::SetCardRelays() {
+  // Our card lists the relays we register on (multi-relay MR002), preferred first; OwnCards keeps the https ones.
+  if (!mesh_messaging_) {
+    return;
+  }
+  std::vector<std::string> origins{NormalizeRegistrationBackend(Registration().BaseUrl())};
+  for (const BackendClientSet::OurRelay& relay : clients_.OurRelays()) {
+    if (relay.registration) { // the other relays (the preferred one registers through Registration())
+      origins.push_back(relay.origin);
+    }
+  }
+  mesh_messaging_->OwnAccountCards().SetRelays(origins);
+}
+
+void ConversationsHub::WireOurRelays() {
+  std::vector<std::string> origins;
+  std::vector<RelayInbox> inboxes;
+  std::vector<RelayRegistrationsWorkflow::Relay> others;
+  for (const BackendClientSet::OurRelay& relay : clients_.OurRelays()) {
+    origins.push_back(relay.origin);
+    inboxes.push_back(RelayInbox{.origin = relay.origin, .client = relay.relay});
+    if (relay.registration) {
+      others.push_back({.origin = relay.origin, .client = relay.registration});
+    }
+  }
+  if (relay_registrations_) {
+    relay_registrations_->SetRelays(std::move(others));
+  }
+  if (!mesh_messaging_) {
+    return;
+  }
+  // A stale recipient's card is asked of our relays' directories, then of the other directories we search.
+  std::vector<std::string> directories = origins;
+  for (const ServiceEndpointConfig& provider : EffectiveDirectoryProviders(config_.directory)) {
+    const bool http = provider.transport.empty() || provider.transport == "http";
+    const bool listed = std::any_of(directories.begin(), directories.end(), [&provider](const std::string& known) {
+      return SameRelay(known, provider.base_url);
+    });
+    if (http && !provider.base_url.empty() && !listed) {
+      directories.push_back(provider.base_url);
+    }
+  }
+  mesh_messaging_->SetCardDirectories(std::move(directories));
+  mesh_messaging_->SetRelayClients({.preferred = relay_, .sender = &clients_.Sender(), .inboxes = std::move(inboxes)});
+}
+
+void ConversationsHub::RegisterOnOtherRelaysSoon() {
+  AppRuntime::PostWorkerNormal([this]() {
+    if (!relay_registrations_ || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
+      return;
+    }
+    relay_registrations_->RunDue(util::NowUnixMs());
+  });
+}
+
+std::vector<std::string> ConversationsHub::OurRelayOrigins() const {
+  std::vector<std::string> origins;
+  for (const BackendClientSet::OurRelay& relay : clients_.OurRelays()) {
+    origins.push_back(relay.origin);
+  }
+  return origins;
+}
+
+std::vector<std::pair<std::string, IPushDeviceClient*>> ConversationsHub::OtherRelayPushDevices() {
+  std::vector<std::pair<std::string, IPushDeviceClient*>> out;
+  for (const BackendClientSet::OurRelay& relay : clients_.OurRelays()) {
+    if (relay.registration && relay.push_devices && relay_registrations_ &&
+        relay_registrations_->Registered(relay.origin)) {
+      out.emplace_back(relay.origin, relay.push_devices.get());
+    }
+  }
+  return out;
 }
 
 void ConversationsHub::InstallOrgBackendClients(const HubSettings& settings) {
@@ -712,6 +789,9 @@ void ConversationsHub::DiscardMessagingBringUp() {
   system_controls_.Unbind(kCopyAskFamily);
   system_controls_.Unbind(kCardAskFamily);
   system_controls_.Unbind(kGroupLinkJoinFamily);
+  system_controls_.Unbind(relay_grant::kFamily);
+  clients_.SetRelaySendHooks({});
+  clients_.Sender().SetRoutes({});
   account_locker_.reset();
   group_links_.reset();
   group_membership_.reset();
@@ -847,13 +927,6 @@ void ConversationsHub::PrefetchPeerReachability(const std::string& identity) {
       }
     }
     if (peer_id.empty()) {
-      if (auto hit = contacts_->FindByIdentity(identity, mesh::ContactIdKind::RelayUser)) {
-        if (hit->has_value()) {
-          peer_id = PeerIdFromContact(**hit);
-        }
-      }
-    }
-    if (peer_id.empty()) {
       if (auto hit = contacts_->FindByIdentity(identity, mesh::ContactIdKind::PeerId)) {
         if (hit->has_value()) {
           peer_id = PeerIdFromContact(**hit);
@@ -906,6 +979,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   store_ = std::move(opened_stores->threads);
   psk_store_ = std::move(opened_stores->peer_sessions);
   control_lane_seen_ = std::move(opened_stores->control_lane_seen);
+  relay_grants_ = std::move(opened_stores->relay_grants);
   group_roster_ = std::move(opened_stores->rosters);
   invite_links_ = std::move(opened_stores->invite_links);
   thread_prefs_ = std::move(opened_stores->thread_prefs);
@@ -924,9 +998,15 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
       }
     });
     PublishAccountLockerSoon();
+    SweepRelayGrantsSoon(); // a contact added gets a grant; one blocked, none renewed
   });
   PublishAddressDisclosure();
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
+  relay_registrations_ = std::make_unique<RelayRegistrationsWorkflow>(*identity_);
+  relay_registrations_->SetCard([this]() { return RegistrationCard(); });
+  // A relay that took our registration takes our push token too (any relay holding mail can wake the phone).
+  relay_registrations_->SetOnRegistered(
+      [this](const std::string& origin) { (void)PushDeviceCoordinator::RegisterOn(*this, origin); });
   initiation_billing_ = std::make_unique<InitiationBillingStore>(data_dir_);
   (void)initiation_billing_->Load();
   payment_promises_ = std::make_unique<PaymentPromiseStore>(data_dir_);
@@ -937,6 +1017,10 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   // The account locker keeps every group (G013): republish it on any roster change.
   group_roster_->SetOnChanged([this](const GroupRosterChange& change) {
     PublishAccountLockerSoon();
+    if (!change.member_gone.empty() && mesh_messaging_ && grant_peers_ && !grant_peers_->Granted(change.member_gone)) {
+      mesh_messaging_->RelayGrants().Stop(change.member_gone); // removed, and no other reason to grant them
+    }
+    SweepRelayGrantsSoon(); // a member who joined gets a grant
     if (mesh_messaging_) {
       mesh_messaging_->DecideHeldMentions(change.group_id); // G015: a check that settled decides its held mentions
     }
@@ -977,20 +1061,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
     if (!initiation_billing_) {
       return;
     }
-    std::string person_id;
-    if (auto account = PrimaryAccountIdFromHit(hit)) {
-      person_id = *account;
-    } else {
-      for (const mesh::ContactId& id : hit.ids) {
-        if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
-          person_id = id.value;
-          break;
-        }
-      }
-      if (person_id.empty()) {
-        person_id = hit.hit_id;
-      }
-    }
+    const std::string person_id = PrimaryAccountIdFromHit(hit).value_or(std::string());
     if (!person_id.empty()) {
       (void)initiation_billing_->SetFloor(person_id, hit.initiation_floor);
     }
@@ -1108,6 +1179,10 @@ void ConversationsHub::BuildMessagingObjects() {
   mesh_messaging_ =
       std::make_unique<MeshDeliveryOrchestrator>(*store_, *contacts_, *identity_, relay_, *inbox_, *account_keys_,
                                                  *psk_store_, *group_roster_, group_invite_gate_.get());
+  SetCardRelays(); // before the first card is asked for
+  // Another relay of ours is polled once it holds our registration.
+  mesh_messaging_->SetInboxReady(
+      [this](const std::string& origin) { return relay_registrations_ && relay_registrations_->Registered(origin); });
   mesh_messaging_->SetSystemControls(&system_controls_);
   // The relay's poll results feed the status line (#175); a fresh orchestrator starts with no result.
   mesh_messaging_->SetOnBriefRelayHealthChanged(
@@ -1141,12 +1216,11 @@ void ConversationsHub::BuildMessagingObjects() {
     });
   });
   mesh_messaging_->SetProfileDataDir(data_dir_);
+  WireOurRelays(); // the inboxes keep their cursors in the profile
   mesh_messaging_->SetContent(content_);
   mesh_messaging_->SetControlLaneSeen(control_lane_seen_.get());
   mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
-  mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), &directory_);
-  ForgetPeerRoutesOnBackendChange();
   WireAttachmentDownloads();
   CleanStaleAttachmentFiles(); // once per start: staged sends older than a day, half-finished downloads
   group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
@@ -1162,6 +1236,7 @@ void ConversationsHub::BuildMessagingObjects() {
   BindGroupRosterSyncFamily();
   BindCopyAskFamily();
   BindCardAskFamily();
+  WireRelayGrants();
   group_links_ = std::make_unique<GroupInviteLinkWorkflow>(*group_roster_, invite_links_.get(), *group_membership_,
                                                            *mesh_messaging_, *identity_);
   BindGroupLinkJoinFamily();
@@ -1384,6 +1459,7 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
     ResumeGroupRosterChecks();
     AnnounceRestoredDevice();
   });
+  SweepRelayGrantsSoon(); // the cutover's too: contacts and members from before MR005 get grants on first run
   RefreshStaleContactProfiles();
   return {};
 }
@@ -1464,6 +1540,16 @@ void ConversationsHub::StartCoordinatorTimers() {
   if (hub_policy_timer_id_ == 0) {
     hub_policy_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(kHubPolicyTimerInterval, [this]() { TickMesh(); });
   }
+  if (relay_grant_timer_id_ == 0) {
+    relay_grant_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(
+        std::chrono::milliseconds(kRelayGrantSweepIntervalMs), [this]() { SweepRelayGrantsSoon(); });
+  }
+  if (relay_registration_timer_id_ == 0) {
+    // Our other relays: registered once the preferred one is, again for a newer card or near the expiry.
+    relay_registration_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(
+        std::chrono::milliseconds(kRelayRegistrationCheckIntervalMs), [this]() { RegisterOnOtherRelaysSoon(); });
+    RegisterOnOtherRelaysSoon();
+  }
   if (locker_sync_timer_id_ == 0) {
     // What another device of the account changed (a contact removed, a remark) arrives through the locker.
     locker_sync_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(std::chrono::milliseconds(kLockerSyncIntervalMs),
@@ -1488,6 +1574,14 @@ void ConversationsHub::StartCoordinatorTimers() {
 }
 
 void ConversationsHub::StopCoordinatorTimers() {
+  if (relay_grant_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(relay_grant_timer_id_);
+    relay_grant_timer_id_ = 0;
+  }
+  if (relay_registration_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(relay_registration_timer_id_);
+    relay_registration_timer_id_ = 0;
+  }
   if (locker_sync_timer_id_ != 0) {
     AppRuntime::CancelCoordinatorTimer(locker_sync_timer_id_);
     locker_sync_timer_id_ = 0;
@@ -1834,7 +1928,6 @@ ProfileIdentityView ConversationsHub::LoadProfileIdentityView() {
   view.ready = true;
   view.nickname = identity->nickname;
   view.peer_id = identity->peer_id;
-  view.relay_id = identity->relay_user_id;
   view.account_id = identity->account_id;
   view.contact_locator = OwnContactLocator().valueOr("");
   view.public_key_b64 = identity->account_signing_public_key_b64;
@@ -1912,11 +2005,13 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
       listen_addrs.push_back(mesh_->AmpListenMultiaddr());
     }
   }
-  auto applied = FinishAndPersistRegistration(Registration(), Identity(), identity->nickname, listen_addrs);
+  auto applied =
+      FinishAndPersistRegistration(Registration(), Identity(), identity->nickname, listen_addrs, RegistrationCard());
   if (!applied) {
     return applied.error();
   }
-  PublishAccountLockerSoon(); // the locker keeps the relay binding: a phrase restore needs it
+  PublishAccountLockerSoon();  // the locker keeps the relay binding: a phrase restore needs it
+  RegisterOnOtherRelaysSoon(); // and our other relays follow the preferred one
   return {};
 }
 
@@ -1939,7 +2034,7 @@ Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const SecretText& phrase, 
   }
   AccountLockerState& state = (*fetched)->state;
   const int64_t now_ms = util::NowUnixMs();
-  auto bundle = BuildRecoveryBundleJson(*seed, state.relay_user_id, state.nickname, now_ms);
+  auto bundle = BuildRecoveryBundleJson(*seed, state.nickname, now_ms);
   if (!bundle) {
     return Error("Account restore failed: " + bundle.error().message);
   }
@@ -1995,7 +2090,7 @@ void ConversationsHub::PublishAccountLockerSoon() {
       }
       auto seed = Identity().RecoverySeed();
       auto identity = Identity().Get();
-      if (!seed || !*seed || !identity || identity->relay_user_id.empty()) {
+      if (!seed || !*seed || !identity || !identity->registered) {
         return; // an account from before M023, or not registered yet: nothing to publish
       }
       if (mesh_messaging_ && mesh_messaging_->OwnAccountCards().SignedOut()) {
@@ -2148,7 +2243,7 @@ Roe<BlobQuotaRecoveryPlan> ConversationsHub::PlanRelayQuotaRecovery(const Error&
   if (!identity) {
     return identity.error();
   }
-  if (!identity->registered || identity->relay_user_id.empty()) {
+  if (!identity->registered || identity->account_id.empty()) {
     return Error("Register on the network before using relay blob storage");
   }
   if (!IsRelayFileQuotaError(quota_error)) {
@@ -2156,7 +2251,7 @@ Roe<BlobQuotaRecoveryPlan> ConversationsHub::PlanRelayQuotaRecovery(const Error&
     return quota_error;
   }
   // An attachment found the files relay full: free the oldest sent files until this one fits.
-  return PlanOldestRelayFileDeletion(*blob_, identity->relay_user_id, AttachmentQuotaNeededBytes(quota_error));
+  return PlanOldestRelayFileDeletion(*blob_, identity->account_id, AttachmentQuotaNeededBytes(quota_error));
 }
 
 Roe<void> ConversationsHub::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {
@@ -2269,10 +2364,10 @@ void ConversationsHub::DeleteUploadedCopy(const ThreadMessage& message) {
     return; // sent peer-direct: nothing on the relay
   }
   auto identity = Identity().Get();
-  if (!identity || identity->relay_user_id.empty()) {
+  if (!identity || identity->account_id.empty()) {
     return;
   }
-  if (auto removed = DeleteUploadedAttachmentCopy(*blob_, identity->relay_user_id, fields->url); !removed) {
+  if (auto removed = DeleteUploadedAttachmentCopy(*blob_, identity->account_id, fields->url); !removed) {
     // The copy expires on its own (7 days); the detail names the blob id, never the link.
     log().warning << "uploaded copy not deleted: " << AppError::Log(removed.error());
   }
@@ -2292,10 +2387,10 @@ Roe<void> ConversationsHub::DeleteRelayFileById(const std::string& blob_id) {
   if (!identity) {
     return identity.error();
   }
-  if (!identity->registered || identity->relay_user_id.empty()) {
+  if (!identity->registered || identity->account_id.empty()) {
     return Error("Register on the network before using relay blob storage");
   }
-  return DeleteRelayFile(*blob_, identity->relay_user_id, blob_id);
+  return DeleteRelayFile(*blob_, identity->account_id, blob_id);
 }
 
 AttachmentLimits ConversationsHub::CurrentAttachmentLimits() const {
@@ -2354,11 +2449,11 @@ void ConversationsHub::CheckBlobSpace(const bool after_quota_error) {
     return;
   }
   auto identity = Identity().Get();
-  if (!identity || !identity->registered || identity->relay_user_id.empty()) {
+  if (!identity || !identity->registered || identity->account_id.empty()) {
     return;
   }
   // Attachments live on the files relay (#465): its byte quota is the space that fills.
-  auto listed = blob_->FileList(identity->relay_user_id, "");
+  auto listed = blob_->FileList(identity->account_id, "");
   if (!listed) {
     return;
   }
@@ -2902,6 +2997,38 @@ AccountSigningKeyLookup ConversationsHub::AccountSigningKeys() const {
   };
 }
 
+void ConversationsHub::WireRelayGrants() {
+  if (!mesh_messaging_ || !contacts_ || !group_roster_) {
+    return;
+  }
+  grant_peers_ = std::make_unique<RelayGrantPeers>(*contacts_, *group_roster_, [this]() {
+    auto identity = identity_ ? identity_->Get() : Roe<LocalIdentity>(Error("no identity"));
+    return identity ? identity->account_id : std::string();
+  });
+  RelayGrantCoordinator& grants = mesh_messaging_->RelayGrants();
+  mesh_messaging_->SetRelayGrantStore(relay_grants_.get());
+  grants.SetGrantedPeer([peers = grant_peers_.get()](const std::string& account) { return peers->Granted(account); });
+  grants.SetBlockedPeer([peers = grant_peers_.get()](const std::string& account) { return peers->IsBlocked(account); });
+  clients_.SetRelaySendHooks(grants.SendHooks());
+  // Sends go into the recipient's relays, as its kept card lists them (multi-relay R2).
+  clients_.Sender().SetRoutes(mesh_messaging_->RecipientRelayRoutes());
+  system_controls_.Bind(grants.Family());
+}
+
+void ConversationsHub::SweepRelayGrantsSoon() {
+  AppRuntime::PostWorkerNormal([this]() {
+    if (!mesh_messaging_ || !grant_peers_ || !IsMessagingReady() ||
+        shutdown_requested_.load(std::memory_order_acquire)) {
+      return;
+    }
+    RelayGrantCoordinator& grants = mesh_messaging_->RelayGrants();
+    for (const std::string& blocked : grant_peers_->Blocked()) {
+      grants.Stop(blocked); // blocking stops renewal; the grant they hold runs out (MR005)
+    }
+    grants.EnsureGranted(grant_peers_->All());
+  });
+}
+
 void ConversationsHub::BindCardAskFamily() {
   // M021 d6: another account was told our list is newer than the one it keeps — it asks; we send the card.
   system_controls_.Bind(card_ask::MakeFamily([this](std::string to_device, std::string asker) {
@@ -3273,16 +3400,6 @@ void ConversationsHub::RefreshMeshCapabilities(const MeshConfig& mesh) {
   SyncMobileEphemeralListen();
 }
 
-void ConversationsHub::ForgetPeerRoutesOnBackendChange() {
-  if (!mesh_messaging_ || !identity_) {
-    return;
-  }
-  auto identity = identity_->Get();
-  if (identity && identity->registered && !RegisteredAtBackend(*identity, config_.registration.base_url)) {
-    mesh_messaging_->ForgetPeerRoutes();
-  }
-}
-
 void ConversationsHub::Apply(const NetworkConfig& next) {
   if (!initialized_) {
     return;
@@ -3314,14 +3431,10 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
   SyncStayReachable(); // republishes who may learn our address too
 
   if (service_urls_changed) {
-    UpdateOrgBackendClients(config_);
-    if (mesh_messaging_) {
-      mesh_messaging_->SetRelayClient(relay_);
-    }
+    UpdateOrgBackendClients(config_); // our relays to messaging too (WireOurRelays)
     if (actions_) {
       actions_->SetRegistrationClient(registration_);
     }
-    ForgetPeerRoutesOnBackendChange();
   }
   if (mesh_changed && messaging_ready_) {
     RefreshMeshCapabilities(next.mesh);
@@ -3485,6 +3598,11 @@ void ConversationsHub::Shutdown() {
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnMessagingDropped();
   }
+  // The relay client and the lane let go of the grants before they go with the orchestrator (and the sender, of the
+  // cards it reads relays from).
+  clients_.SetRelaySendHooks({});
+  clients_.Sender().SetRoutes({});
+  system_controls_.Unbind(relay_grant::kFamily);
   // Destroy P2P before groups — P2P held a non-owning Groups pointer.
   mesh_messaging_.reset();
   // Nothing receives any more: the pricing families may let go of their stores.
@@ -3497,6 +3615,8 @@ void ConversationsHub::Shutdown() {
   account_locker_.reset();
   group_links_.reset();
   group_membership_.reset();
+  grant_peers_.reset();
+  relay_grants_.reset();
   group_invite_gate_.reset();
   group_roster_.reset();
   invite_links_.reset();
@@ -3537,6 +3657,7 @@ void ConversationsHub::Shutdown() {
   directory_.SetBackend(nullptr);
   registration_ = nullptr;
   blob_ = nullptr;
+  relay_registrations_.reset();
   identity_.reset();
   if (contacts_) {
     contacts_->SetOnChanged({});
@@ -3775,7 +3896,7 @@ public:
   Roe<RegistrationResult> FinishRegistration(const std::string&, const std::string&, const std::string&,
                                              const std::string&, int64_t, const std::string&, const std::string&,
                                              const std::string&, const std::string&, const std::vector<std::string>&,
-                                             int64_t, const RegistrationPublishOpts&) override {
+                                             const RegistrationPublishOpts&) override {
     return Unavailable();
   }
   Roe<RegistrationResult> UpdateNickname(const std::string&, const std::string&, int64_t, const std::string&) override {
@@ -3813,6 +3934,13 @@ private:
 IRegistrationClient& ConversationsHub::Registration() {
   static UnconfiguredRegistrationClient unconfigured;
   return registration_ ? *registration_ : unconfigured;
+}
+
+RegistrationPublishOpts ConversationsHub::RegistrationCard() {
+  if (!mesh_messaging_) {
+    return {};
+  }
+  return WithAccountCard({}, mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs()));
 }
 
 IBlobClient& ConversationsHub::Blob() {

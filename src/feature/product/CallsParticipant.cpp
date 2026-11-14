@@ -126,6 +126,11 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
       IGroupRosterStore* rosters = hub.GroupRosterOrNull();
       return rosters ? CallStandingFromRoster(*rosters, group_id, account) : std::nullopt;
     };
+    deps.delivery.grant_call_peers = [&hub](std::vector<std::string> accounts) {
+      if (auto* messaging = hub.MeshMessagingOrNull()) {
+        messaging->GrantCallPeers(std::move(accounts));
+      }
+    };
     deps.delivery.sync_inbox_from_wake = [&hub](bool force) {
       if (auto* messaging = hub.MeshMessagingOrNull()) {
         messaging->SyncInboxFromWake(force);

@@ -161,7 +161,7 @@ std::optional<std::string> SelfCheck(std::string_view text, const std::vector<st
   // Most specific first: a known id is also a long token.
   for (const std::string& raw : known) {
     std::string_view id = raw;
-    for (const std::string_view scheme : {"account:", "relay:", "peer:", "call:"}) {
+    for (const std::string_view scheme : {"account:", "peer:", "call:"}) {
       if (id.substr(0, scheme.size()) == scheme) {
         id.remove_prefix(scheme.size());
         break;

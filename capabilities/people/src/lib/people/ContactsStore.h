@@ -19,10 +19,12 @@ namespace pbr {
 class ContactsStore : public Module, public IContactBook, public IContactTrustAccess {
 public:
   /**
-   * Nested local/remote contact rows (+ empty overrides). A file of another version (older, newer or none) is
-   * refused: pre-release, no leftover contacts file is carried over (COMPATIBILITY.md § On-disk).
+   * Nested local/remote contact rows (+ empty overrides). 2 is stepped up on load: its `relay_user` ids are dropped
+   * (the relay addresses a person by the Account ID, multi-relay MR001). A file of another version (older than 2,
+   * newer, or none) is refused: pre-release, no leftover contacts file is carried over (COMPATIBILITY.md § On-disk).
    */
-  static constexpr int kSchemaVersion = 2;
+  static constexpr int kSchemaVersion = 3;
+  static constexpr int kFloorSchemaVersion = 2;
 
   explicit ContactsStore(std::string data_dir);
 
@@ -48,12 +50,10 @@ public:
    * Profile refresh from a directory hit of the SAME account: only `remote.nickname` (when the hit's is not
    * empty), `remote.icon` and `remote.fetched_at` change; ids, keys and endpoints never do. A hit for another
    * account (or without one) is refused and nothing is written; `requested_account_id` is the account a
-   * by-account lookup asked for, taken as the hit's when it names none. With `adopt_relay_id`, a contact that
-   * has no relay id also takes the hit's (nothing else: no devices, endpoints or other ids).
+   * by-account lookup asked for, taken as the hit's when it names none.
    */
   Roe<Contact> ApplyProfileRefresh(const std::string& contact_id, const mesh::DirectoryHit& hit, int64_t fetched_at_ms,
-                                   const std::optional<std::string>& requested_account_id = std::nullopt,
-                                   bool adopt_relay_id = false);
+                                   const std::optional<std::string>& requested_account_id = std::nullopt);
   Roe<Contact> AddEmpty();
   void Flush();
   /**
@@ -74,8 +74,7 @@ private:
                                              const std::optional<std::string>& requested_account_id);
   Roe<Contact> ApplyProfileRefreshUnnotified(const std::string& contact_id, const mesh::DirectoryHit& hit,
                                              int64_t fetched_at_ms,
-                                             const std::optional<std::string>& requested_account_id,
-                                             bool adopt_relay_id);
+                                             const std::optional<std::string>& requested_account_id);
   Roe<Contact> AddEmptyUnnotified();
   Roe<void> BlockAccountIfPresentUnnotified(const std::string& account_id);
   void NotifyChanged() const;

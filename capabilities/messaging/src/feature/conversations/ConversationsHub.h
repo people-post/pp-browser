@@ -28,6 +28,7 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/HubParticipant.h"
 #include "feature/conversations/HubPolicyPrefs.h"
+#include "feature/conversations/RelayGrantPeers.h"
 #include "lib/messaging/ProfileStores.h"
 #include "lib/messaging/IThreadMentionsStore.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
@@ -66,6 +67,7 @@
 #include "feature/conversations/HubMeshOwner.h"
 #include "feature/conversations/HubSettings.h"
 #include "lib/delivery/BackendClientSet.h"
+#include "domain/registration/RelayRegistrationsWorkflow.h"
 #include "lib/net/ProfileIconClient.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "lib/pricing/PaymentPromiseStore.h"
@@ -267,8 +269,18 @@ public:
   DirectoryShadowCache& DirectoryShadows();
   PeerDisplayResolver& PeerLabels();
   IRegistrationClient& Registration();
+  /** register/finish's extras for this account: its current card (MR002 / MR005), when it has one to give. */
+  RegistrationPublishOpts RegistrationCard();
   IBlobClient& Blob();
   IPushDeviceClient* PushDevices();
+  /** Our other relays that hold our registration, with their push-device clients (multi-relay R2). */
+  std::vector<std::pair<std::string, IPushDeviceClient*>> OtherRelayPushDevices();
+  /** Our relays' origins, preferred first (multi-relay R2). */
+  std::vector<std::string> OurRelayOrigins() const;
+  /** Our account on our other relays (multi-relay R2); none before Initialize. */
+  RelayRegistrationsWorkflow* OtherRelayRegistrations() { return relay_registrations_.get(); }
+  /** Registers on our other relays that are due, off the caller's thread (after the preferred one, on a timer). */
+  void RegisterOnOtherRelaysSoon();
   PushBindingGate& PushGate() { return push_gate_; }
   IClientCompatClient* ClientCompat();
   /** Profile data directory used for stores and client-compat cache. */
@@ -538,12 +550,20 @@ private:
   void BindCopyAskFamily();
   /** M021 d6: answers another account's ask for our newer card. */
   void BindCardAskFamily();
+  /** The relay grants (MR005): their store, who is granted, the relay client's hooks, the lane family. */
+  void WireRelayGrants();
+  /** Issue or renew the grant of every granted peer that needs one; stop the blocked ones'. On a worker. */
+  void SweepRelayGrantsSoon();
   /** G021: join requests, previews, refusals and confirms by invite link, on the control lane. */
   void BindGroupLinkJoinFamily();
   /** Account signing keys through the directory resolver (promise signatures). */
   AccountSigningKeyLookup AccountSigningKeys() const;
   void InstallOrgBackendClients(const HubSettings& settings);
   void UpdateOrgBackendClients(const HubSettings& settings);
+  /** Our card's relay list: the registration relay in use, then our other relays (OwnCards::SetRelays). */
+  void SetCardRelays();
+  /** Our relays to messaging: the inboxes it polls, the sender, the origins (multi-relay R2), and registration. */
+  void WireOurRelays();
   void WireRelayAuthSigner();
   Roe<void> StartMesh(const HubSettings& settings);
   void StopMesh();
@@ -553,8 +573,6 @@ private:
   /** Undo BuildMessagingStack / StartMesh without a full hub Shutdown (shutdown race). */
   void DiscardMessagingBringUp();
   void ApplyMeshAdmissionPolicies();
-  /** Drops cached peer routes when the identity registered at another backend than the one in use. */
-  void ForgetPeerRoutesOnBackendChange();
   /** Republish who may learn our address (setting + contacts; projects/privacy T1). UI thread. */
   void PublishAddressDisclosure();
   /** The audience in force: the setting, or everyone in the Node role (P004). */
@@ -636,6 +654,18 @@ private:
   PeerKemKeyStore kem_key_store_;
   std::unique_ptr<IPeerSessionStore> psk_store_;
   std::unique_ptr<IControlLaneSeenStore> control_lane_seen_;
+  /** The relay grants we hold and gave (MR005; profile.db). */
+  std::unique_ptr<IRelayGrantStore> relay_grants_;
+  /** Who we give a grant: contacts not blocked, members of our groups. */
+  std::unique_ptr<RelayGrantPeers> grant_peers_;
+  /** Renews the grants in time (and issues missing ones) while messaging runs. */
+  uint64_t relay_grant_timer_id_ = 0;
+  static constexpr int64_t kRelayGrantSweepIntervalMs = 6LL * 60 * 60 * 1000;
+  /** Our account on our other relays (multi-relay R2); with the identity it signs with. */
+  std::unique_ptr<RelayRegistrationsWorkflow> relay_registrations_;
+  /** Checks which other relays are due a registration while messaging runs. */
+  uint64_t relay_registration_timer_id_ = 0;
+  static constexpr int64_t kRelayRegistrationCheckIntervalMs = 60 * 1000;
   /** The stores encrypted at rest (the profile's data key goes to them). */
   std::vector<IDekConsumer*> at_rest_;
   std::string profile_db_path_;

@@ -116,16 +116,16 @@ protected:
 };
 
 TEST_F(SettingsProfileCopyTest, CopiesTheDisplayedAccountIdAndNotTheNodeId) {
-  host.state.profile_relay_id = "relay:AccountId123";
+  host.state.profile_account_id = "account:AccountId123";
   host.state.profile_peer_id = "QmNodeIdNotTheAccount";
   document->GetElementById("copy")->DispatchEvent(ui::EventId::Click, {});
-  EXPECT_EQ(system.clipboard, "relay:AccountId123");
+  EXPECT_EQ(system.clipboard, "account:AccountId123");
   ASSERT_EQ(toasts.size(), 1u);
   EXPECT_EQ(toasts[0], "账号 ID 已复制");
 }
 
 TEST_F(SettingsProfileCopyTest, WithoutAnAccountNothingIsCopiedAndTheUserIsToldToSetOneUp) {
-  host.state.profile_relay_id = "";
+  host.state.profile_account_id = "";
   host.state.profile_peer_id = "QmNodeIdNotTheAccount";
   document->GetElementById("copy")->DispatchEvent(ui::EventId::Click, {});
   EXPECT_EQ(system.clipboard, "") << "the node ID is never put on the clipboard in its place";

@@ -152,7 +152,7 @@ Each agent turn produces a [`TurnPlan`](../../src/lib/ai/TurnPlan.h):
 | `general` | Fallback | Blocks that best serve the ask |
 
 **Finding or adding a friend:** a request containing a person's ID, name, or nickname uses
-`search_people` and shows the existing people list. Full `account:…` / `relay:…` IDs use exact
+`search_people` and shows the existing people list. Full `account:…` IDs use exact
 directory lookup; names and nicknames use directory search. People-only discovery plans (including
 those with a default `general` goal) render as `people_list`; explicit question/summary plans keep
 their synthesis. A real result offers **Add contact**; an existing contact offers **Message/View**;

@@ -31,9 +31,8 @@ std::optional<std::string> MockPeerKemPublicKeyB64() {
 
 } // namespace
 
-Roe<BlobPresignResult> MockBlobClient::Presign(const std::string& /*relay_user_id*/,
-                                               const std::string& /*content_type*/, const uint64_t byte_length,
-                                               const BlobPurpose /*purpose*/) {
+Roe<BlobPresignResult> MockBlobClient::Presign(const std::string& /*account_id*/, const std::string& /*content_type*/,
+                                               const uint64_t byte_length, const BlobPurpose /*purpose*/) {
   ++presign_call_count_;
   if (presign_error_) {
     return presign_error_.value();
@@ -46,17 +45,17 @@ Roe<BlobPresignResult> MockBlobClient::Presign(const std::string& /*relay_user_i
   return result;
 }
 
-Roe<void> MockBlobClient::Retain(const std::string& /*relay_user_id*/, const std::string& blob_id) {
+Roe<void> MockBlobClient::Retain(const std::string& /*account_id*/, const std::string& blob_id) {
   retained_blob_ids_.push_back(blob_id);
   return Roe<void>{};
 }
 
-Roe<void> MockBlobClient::Delete(const std::string& /*relay_user_id*/, const std::string& blob_id) {
+Roe<void> MockBlobClient::Delete(const std::string& /*account_id*/, const std::string& blob_id) {
   deleted_blob_ids_.push_back(blob_id);
   return Roe<void>{};
 }
 
-Roe<void> MockBlobClient::SetProfileIcon(const std::string& /*relay_user_id*/, const std::string& /*url*/,
+Roe<void> MockBlobClient::SetProfileIcon(const std::string& /*account_id*/, const std::string& /*url*/,
                                          const std::string& /*blob_id*/, const std::string& /*kind*/) {
   return Roe<void>{};
 }
@@ -70,7 +69,7 @@ Roe<void> MockBlobClient::PutUpload(const std::string& /*upload_url*/, const std
   return Roe<void>{};
 }
 
-Roe<RelayFileStartResult> MockBlobClient::FileStart(const std::string& /*relay_user_id*/, const uint64_t byte_length) {
+Roe<RelayFileStartResult> MockBlobClient::FileStart(const std::string& /*account_id*/, const uint64_t byte_length) {
   file_start_byte_lengths_.push_back(byte_length);
   if (file_start_error_) {
     Error error = *file_start_error_;
@@ -93,7 +92,7 @@ Roe<RelayFileStartResult> MockBlobClient::FileStart(const std::string& /*relay_u
   return result;
 }
 
-Roe<RelayFilePartResult> MockBlobClient::FilePart(const std::string& /*relay_user_id*/, const std::string& blob_id,
+Roe<RelayFilePartResult> MockBlobClient::FilePart(const std::string& /*account_id*/, const std::string& blob_id,
                                                   const uint64_t part_number) {
   const auto found = file_byte_lengths_.find(blob_id);
   const uint64_t byte_length = found == file_byte_lengths_.end() ? 0 : found->second;
@@ -108,7 +107,7 @@ Roe<RelayFilePartResult> MockBlobClient::FilePart(const std::string& /*relay_use
   return result;
 }
 
-Roe<RelayFileCompleteResult> MockBlobClient::FileComplete(const std::string& /*relay_user_id*/,
+Roe<RelayFileCompleteResult> MockBlobClient::FileComplete(const std::string& /*account_id*/,
                                                           const std::string& blob_id) {
   if (on_file_complete_) {
     on_file_complete_(blob_id);
@@ -127,13 +126,12 @@ Roe<RelayFileCompleteResult> MockBlobClient::FileComplete(const std::string& /*r
   return result;
 }
 
-Roe<void> MockBlobClient::FileDelete(const std::string& /*relay_user_id*/, const std::string& blob_id) {
+Roe<void> MockBlobClient::FileDelete(const std::string& /*account_id*/, const std::string& blob_id) {
   deleted_file_ids_.push_back(blob_id);
   return Roe<void>{};
 }
 
-Roe<RelayFileListResult> MockBlobClient::FileList(const std::string& /*relay_user_id*/,
-                                                  const std::string& status_filter) {
+Roe<RelayFileListResult> MockBlobClient::FileList(const std::string& /*account_id*/, const std::string& status_filter) {
   file_list_filters_.push_back(status_filter);
   RelayFileListResult result = file_list_result_.value_or(RelayFileListResult{});
   if (!status_filter.empty()) {
@@ -148,8 +146,7 @@ Roe<std::vector<mesh::DirectoryHit>> MockDirectoryClient::SearchPeople(const std
   alice.display_name = "Alice Example";
   alice.nickname = "alice";
   alice.account_id = "account:alice_acct";
-  alice.ids = {{mesh::ContactIdKind::Account, "account:alice_acct", true},
-               {mesh::ContactIdKind::RelayUser, "relay:alice123", false}};
+  alice.ids = {{mesh::ContactIdKind::Account, "account:alice_acct", true}};
   alice.signing_public_key_b64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
   if (auto kem = MockPeerKemPublicKeyB64()) {
     alice.kem_public_key_b64 = *kem;
@@ -162,8 +159,7 @@ Roe<std::vector<mesh::DirectoryHit>> MockDirectoryClient::SearchPeople(const std
   bob.display_name = "Bob Builder";
   bob.nickname = "bob";
   bob.account_id = "account:bob_acct";
-  bob.ids = {{mesh::ContactIdKind::Account, "account:bob_acct", true},
-             {mesh::ContactIdKind::RelayUser, "relay:bob456", false}};
+  bob.ids = {{mesh::ContactIdKind::Account, "account:bob_acct", true}};
   bob.signing_public_key_b64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
   if (auto kem = MockPeerKemPublicKeyB64()) {
     bob.kem_public_key_b64 = *kem;
@@ -193,21 +189,6 @@ Roe<std::vector<mesh::DirectoryHit>> MockDirectoryClient::SearchPeople(const std
     }
   }
   return out;
-}
-
-Roe<mesh::DirectoryHit> MockDirectoryClient::LookupRelayUser(const std::string& relay_user_id) {
-  auto hits = SearchPeople("");
-  if (!hits) {
-    return hits.error();
-  }
-  for (const mesh::DirectoryHit& hit : *hits) {
-    for (const mesh::ContactId& id : hit.ids) {
-      if (id.kind == mesh::ContactIdKind::RelayUser && id.value == relay_user_id) {
-        return hit;
-      }
-    }
-  }
-  return Error("Relay user not found");
 }
 
 Roe<mesh::DirectoryHit> MockDirectoryClient::LookupByAccount(const std::string& account_id) {
@@ -240,25 +221,29 @@ Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(
     const std::string& /*challenge*/, const std::string& public_key_b64, const std::string& nickname,
     const std::string& /*signature*/, int64_t /*timestamp*/, const std::string& /*signature_alg*/,
     const std::string& /*kem_public_key_b64*/, const std::string& /*kem_binding_signature_b64*/,
-    const std::string& /*peer_id*/, const std::vector<std::string>& /*multiaddrs*/, int64_t initiation_floor,
-    const RegistrationPublishOpts& /*publish*/) {
+    const std::string& /*peer_id*/, const std::vector<std::string>& /*multiaddrs*/,
+    const RegistrationPublishOpts& publish) {
+  // The relay names the inbox by the Account ID of the key that registered (MR001).
+  std::string account_id;
+  if (auto key = Base64Decode(public_key_b64)) {
+    account_id = AccountIdFromMlDsaPublicKey(*key).valueOr("");
+  }
   return RegistrationResult{.success = true,
-                            .relay_user_id = "relay:" + public_key_b64.substr(0, 12),
+                            .account_id = account_id,
                             .message = "Registered as " + nickname,
                             .llm_api_key = "brf_llm_mock_key",
                             .expires_at = "2099-01-01T00:00:00.000Z",
-                            .initiation_floor = initiation_floor,
-                            .initiation_floor_present = true,
+                            .account_card_status = publish.account_card ? "stored" : "",
                             .kem_bound = true};
 }
 
 Roe<RegistrationResult> MockRegistrationClient::UpdateNickname(const std::string& new_nickname,
                                                                const std::string& /*signature*/, int64_t /*timestamp*/,
-                                                               const std::string& /*relay_user_id*/) {
+                                                               const std::string& /*account_id*/) {
   return RegistrationResult{.success = true, .message = "Nickname updated to " + new_nickname};
 }
 
-Roe<void> MockRegistrationClient::RevokeRegistration(const std::string& /*relay_user_id*/,
+Roe<void> MockRegistrationClient::RevokeRegistration(const std::string& /*account_id*/,
                                                      const std::string& /*signature*/, const int64_t /*timestamp*/) {
   return {};
 }

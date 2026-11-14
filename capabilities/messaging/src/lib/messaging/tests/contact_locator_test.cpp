@@ -23,8 +23,8 @@ TEST(ContactLocatorTest, RoundTripsAndIsFoundInsideAnInviteLine) {
 TEST(ContactLocatorTest, ALocatorMustNameAnAccount) {
   EXPECT_FALSE(FindContactLocator("no locator here"));
   EXPECT_FALSE(FindContactLocator(std::string(kContactLocatorPrefix) + "!!!"));
-  const ContactLocator relay_only{.account_id = "relay:abc"};
-  EXPECT_FALSE(FindContactLocator(EncodeContactLocator(relay_only)));
+  const ContactLocator not_an_account{.account_id = "peer:abc"};
+  EXPECT_FALSE(FindContactLocator(EncodeContactLocator(not_an_account)));
 }
 
 TEST(ContactLocatorTest, AFriendsLocatorCarriesHisOwnNicknameNotTheRemarkAndHisDevices) {
@@ -33,7 +33,6 @@ TEST(ContactLocatorTest, AFriendsLocatorCarriesHisOwnNicknameNotTheRemarkAndHisD
   friend_contact.local.display_name = "Mom (private remark)";
   friend_contact.remote.nickname = "Alice";
   friend_contact.remote.ids = {{mesh::ContactIdKind::Account, "account:abc", true},
-                               {mesh::ContactIdKind::RelayUser, "relay:xyz", true},
                                {mesh::ContactIdKind::PeerId, "QmPhone", true},
                                {mesh::ContactIdKind::PeerId, "QmLaptop", false}};
   SyncContactMirrors(friend_contact);
@@ -47,10 +46,10 @@ TEST(ContactLocatorTest, AFriendsLocatorCarriesHisOwnNicknameNotTheRemarkAndHisD
 }
 
 TEST(ContactLocatorTest, AContactWithoutAnAccountIdHasNoLocator) {
-  Contact relay_only;
-  relay_only.remote.ids = {{mesh::ContactIdKind::RelayUser, "relay:xyz", true}};
-  SyncContactMirrors(relay_only);
-  EXPECT_TRUE(ContactShareLocator(relay_only).empty());
+  Contact devices_only;
+  devices_only.remote.ids = {{mesh::ContactIdKind::PeerId, "QmPhone", true}};
+  SyncContactMirrors(devices_only);
+  EXPECT_TRUE(ContactShareLocator(devices_only).empty());
 }
 
 TEST(Base64UrlTest, RoundTripsWithoutPadding) {

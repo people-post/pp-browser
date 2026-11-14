@@ -59,18 +59,13 @@ bool ContactIsSelectable(const Contact& contact, const MessagingContactsPorts* p
 
 std::string ContactSubtitle(const Contact& contact) {
   for (const mesh::ContactId& id : contact.ids) {
-    if (id.kind == mesh::ContactIdKind::RelayUser && id.primary) {
-      return ShortRelayId(id.value);
-    }
-  }
-  for (const mesh::ContactId& id : contact.ids) {
-    if (id.kind == mesh::ContactIdKind::RelayUser) {
-      return ShortRelayId(id.value);
+    if (id.kind == mesh::ContactIdKind::Account && id.primary) {
+      return ShortPersonId(id.value);
     }
   }
   for (const mesh::ContactId& id : contact.ids) {
     if (id.kind == mesh::ContactIdKind::PeerId) {
-      return ShortRelayId(id.value);
+      return ShortPersonId(id.value);
     }
   }
   if (!contact.server_nickname.empty() && contact.server_nickname != contact.display_name) {
@@ -620,8 +615,8 @@ void PeoplePickerController::SyncGroupCallRows() {
     return;
   }
   std::string local_identity;
-  if (picker_ports_.local_relay_identity) {
-    if (auto identity = picker_ports_.local_relay_identity()) {
+  if (picker_ports_.local_account_identity) {
+    if (auto identity = picker_ports_.local_account_identity()) {
       local_identity = *identity;
     }
   }
@@ -666,7 +661,7 @@ void PeoplePickerController::SyncGroupCallRows() {
         continue;
       }
     } else {
-      candidate.title = ShortRelayId(identity);
+      candidate.title = ShortPersonId(identity);
       if (!MatchesIdentityQuery(candidate.title, identity, query)) {
         continue;
       }
@@ -720,8 +715,8 @@ void PeoplePickerController::SyncGroupMemberRows() {
   }
   group_roster_count_ = static_cast<int>(roster->size());
   std::string local_identity;
-  if (picker_ports_.local_relay_identity) {
-    if (auto identity = picker_ports_.local_relay_identity()) {
+  if (picker_ports_.local_account_identity) {
+    if (auto identity = picker_ports_.local_account_identity()) {
       local_identity = *identity;
     }
   }
@@ -862,8 +857,8 @@ void PeoplePickerController::SyncGroupAddRows() {
   }
   group_roster_count_ = static_cast<int>(roster->size());
   std::string local_identity;
-  if (picker_ports_.local_relay_identity) {
-    if (auto identity = picker_ports_.local_relay_identity()) {
+  if (picker_ports_.local_account_identity) {
+    if (auto identity = picker_ports_.local_account_identity()) {
       local_identity = *identity;
     }
   }
@@ -1007,8 +1002,8 @@ void PeoplePickerController::SyncCallMakeGroupRows() {
     }
   }
   std::string self;
-  if (picker_ports_.local_relay_identity) {
-    self = picker_ports_.local_relay_identity().value_or("");
+  if (picker_ports_.local_account_identity) {
+    self = picker_ports_.local_account_identity().value_or("");
   }
   std::string query = search_query_.c_str();
   std::transform(query.begin(), query.end(), query.begin(),
@@ -1531,8 +1526,8 @@ std::optional<PeoplePickerController::MemberInGroup> PeoplePickerController::Fin
   }
   const std::string& identity = member->member_identity;
   std::string local_identity;
-  if (picker_ports_.local_relay_identity) {
-    if (auto local = picker_ports_.local_relay_identity()) {
+  if (picker_ports_.local_account_identity) {
+    if (auto local = picker_ports_.local_account_identity()) {
       local_identity = *local;
     }
   }
@@ -1614,8 +1609,8 @@ void PeoplePickerController::OfferAdminCard(const GroupMemberTap& tap, const std
                       : row.is_admin ? "people_picker.badge_admin"
                                      : "contacts.group_role_member");
   std::string local_identity;
-  if (picker_ports_.local_relay_identity) {
-    if (auto identity = picker_ports_.local_relay_identity()) {
+  if (picker_ports_.local_account_identity) {
+    if (auto identity = picker_ports_.local_account_identity()) {
       local_identity = *identity;
     }
   }

@@ -62,6 +62,12 @@ struct AppConfig {
    * is not shadowed by a saved false.
    */
   bool relay_content_sha256 = false;
+  /**
+   * `relay.extra_base_urls`: our other relays, after the backend's (multi-relay R2): the app registers, receives and
+   * pushes on each, and lists the `https://` ones in its account card. At most 3 (4 relays in all, MR004). No settings
+   * UI yet (R3); kept whatever `backend.env` says, written to the file only when set.
+   */
+  std::vector<std::string> relay_extra_base_urls;
   DirectoryConfig directory;
   ServiceEndpointConfig registration;
   MeshConfig mesh;

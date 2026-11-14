@@ -14,7 +14,7 @@
 #include "lib/delivery/DirectChatTargetFromContact.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
-#include "common/directory/ShortRelayId.h"
+#include "common/directory/ShortPersonId.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "gui/AccountInvite.h"
 #include "lib/ui/QrSvg.h"
@@ -102,8 +102,6 @@ std::string IdentityKindLabel(const mesh::ContactIdKind kind) {
   switch (kind) {
     case mesh::ContactIdKind::Account:
       return Tr("contacts.id_kind.account");
-    case mesh::ContactIdKind::RelayUser:
-      return Tr("contacts.id_kind.relay");
     case mesh::ContactIdKind::PeerId:
       return Tr("contacts.id_kind.peer");
     case mesh::ContactIdKind::Blockchain:
@@ -129,9 +127,6 @@ std::string TrustDisplayLabel(const TrustLevel level) {
 std::string PrimaryIdentityValue(const Contact& contact) {
   if (const std::string account = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account); !account.empty()) {
     return account;
-  }
-  if (const std::string relay = PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser); !relay.empty()) {
-    return relay;
   }
   if (const std::string peer = PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId); !peer.empty()) {
     return peer;
@@ -252,12 +247,12 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   if (!contact.remote.nickname.empty()) {
     detail.their_nickname = Tr("contacts.remark.their_nickname", {{"nickname", contact.remote.nickname}}).c_str();
   }
-  detail.relay_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser).c_str();
+  detail.account_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account).c_str();
   detail.peer_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId).c_str();
-  if (!detail.relay_id.empty()) {
-    detail.subtitle = ShortRelayId(detail.relay_id.c_str()).c_str();
+  if (!detail.account_id.empty()) {
+    detail.subtitle = ShortPersonId(detail.account_id.c_str()).c_str();
   } else if (!detail.peer_id.empty()) {
-    detail.subtitle = ShortRelayId(detail.peer_id.c_str()).c_str();
+    detail.subtitle = ShortPersonId(detail.peer_id.c_str()).c_str();
   }
   {
     const std::string primary = PrimaryIdentityValue(contact);
@@ -266,10 +261,9 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   detail.trust = TrustDisplayLabel(contact.trust).c_str();
   detail.trust_key = TrustLevelToString(contact.trust).c_str();
   {
-    // "Share with others": the id the account text names is the relay id like the user's own invite (else the account
-    // id); the locator needs the Account ID. Both carry the friend's own nickname, never the remark.
-    const std::string relay_id = detail.relay_id.c_str();
-    detail.share_account_id = !relay_id.empty() ? relay_id : ContactAccountId(contact).value_or("");
+    // "Share with others": the account text and the locator both name the Account ID, and carry the friend's own
+    // nickname, never the remark.
+    detail.share_account_id = ContactAccountId(contact).value_or("");
     detail.share_locator = ContactShareLocator(contact);
     detail.can_share_account = !detail.share_account_id.empty();
     detail.can_share_qr = !detail.share_locator.empty();
@@ -602,7 +596,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
           detail_handle.RegisterMember("display_name", &ContactDetail::display_name);
           detail_handle.RegisterMember("nickname", &ContactDetail::nickname);
           detail_handle.RegisterMember("their_nickname", &ContactDetail::their_nickname);
-          detail_handle.RegisterMember("relay_id", &ContactDetail::relay_id);
+          detail_handle.RegisterMember("account_id", &ContactDetail::account_id);
           detail_handle.RegisterMember("peer_id", &ContactDetail::peer_id);
           detail_handle.RegisterMember("multiaddrs_text", &ContactDetail::multiaddrs_text);
           detail_handle.RegisterMember("multiaddrs_summary", &ContactDetail::multiaddrs_summary);
@@ -2028,8 +2022,8 @@ void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vec
     const std::string name = !hit.display_name.empty()
                                  ? hit.display_name
                                  : (!hit.nickname.empty() ? hit.nickname : Tr("people.result.unknown_person"));
-    const std::string id = PrimaryAccountIdFromHit(hit).value_or(PrimaryRelayIdFromHit(hit).value_or(""));
-    const std::string label = id.empty() ? name : name + " · " + ShortRelayId(id);
+    const std::string id = PrimaryAccountIdFromHit(hit).value_or("");
+    const std::string label = id.empty() ? name : name + " · " + ShortPersonId(id);
     actions.push_back({"add_hit_" + hit.hit_id, label, nullptr,
                        [hit]() {
                          ContactsController& self = ContactsController::Instance();
@@ -2050,8 +2044,8 @@ void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vec
 
 void ContactsController::OfferHit(const mesh::DirectoryHit& hit, const std::string& query) {
   const std::string account = PrimaryAccountIdFromHit(hit).value_or("");
-  // A relay-only hit has no account id: show its relay id in the dialog and skip the known-contact check.
-  const std::string shown_id = !account.empty() ? account : PrimaryRelayIdFromHit(hit).value_or("");
+  // A hit without an Account ID shows its hit id in the dialog and skips the known-contact check.
+  const std::string shown_id = !account.empty() ? account : hit.hit_id;
   std::optional<Contact> known = account.empty() ? std::nullopt : FindContactByAccount(account);
   switch (DecideAddFromSearch(HitMatchesExactPeopleId(hit, query), known.has_value())) {
     case AddFromSearchDecision::AlreadyContact:
@@ -2060,7 +2054,7 @@ void ContactsController::OfferHit(const mesh::DirectoryHit& hit, const std::stri
     case AddFromSearchDecision::ConfirmByName: {
       const std::string name = !hit.display_name.empty() ? hit.display_name : hit.nickname;
       ShowConfirm(Tr("contacts.confirm_add_title"),
-                  Tr("contacts.confirm_add_body", {{"name", name}, {"account", ShortRelayId(shown_id)}}),
+                  Tr("contacts.confirm_add_body", {{"name", name}, {"account", ShortPersonId(shown_id)}}),
                   [hit](const bool ok) {
                     if (ok) {
                       ContactsController::Instance().AddContactFromHit(hit);
@@ -2268,8 +2262,8 @@ void ContactsController::OnFindSomeone() {
 }
 
 void ContactsController::OnCopyId() {
-  std::string value = selected_.relay_id.c_str();
-  std::string label = Tr("contacts.id_kind.relay");
+  std::string value = selected_.account_id.c_str();
+  std::string label = Tr("contacts.id_kind.account");
   if (selected_.member_preview) {
     value = selected_.member_account.c_str(); // a person who is not a contact: the account id the page looks up
   }
@@ -2816,24 +2810,21 @@ void ContactsController::DirtyAddContact() {
 void ContactsController::LoadMyAccount() {
   const ProfileIdentityView view =
       account_ports_.load_identity ? account_ports_.load_identity() : ProfileIdentityView{};
-  my_has_account_ = view.ready && !view.relay_id.empty();
+  my_has_account_ = view.ready && !view.account_id.empty();
   my_nickname_ = view.nickname;
   my_locator_ = view.contact_locator;
   const std::string name = view.nickname.empty() ? Tr("people_picker.unnamed") : view.nickname;
   my_name_ = name.c_str();
-  my_account_id_ = view.relay_id.c_str();
-  // Shown without the internal "relay:" / "account:" kind prefix; copy and share keep the full id.
-  std::string shown_id = view.relay_id;
-  for (const char* prefix : {"relay:", "account:"}) {
-    if (shown_id.rfind(prefix, 0) == 0) {
-      shown_id.erase(0, std::char_traits<char>::length(prefix));
-      break;
-    }
+  my_account_id_ = view.account_id.c_str();
+  // Shown without the internal "account:" kind prefix; copy and share keep the full id.
+  std::string shown_id = view.account_id;
+  if (constexpr std::string_view kPrefix = "account:"; shown_id.rfind(kPrefix, 0) == 0) {
+    shown_id.erase(0, kPrefix.size());
   }
   my_account_id_shown_ = shown_id.c_str();
   my_has_icon_ = view.profile_has_icon && !view.profile_icon_path.empty();
   my_icon_src_ = view.profile_icon_path.c_str();
-  const AvatarGlyph glyph = MakeAvatarGlyph(name, AvatarStableId(view.account_id, view.relay_id, view.peer_id));
+  const AvatarGlyph glyph = MakeAvatarGlyph(name, AvatarStableId(view.account_id, view.peer_id));
   my_avatar_letter_ = glyph.letter.c_str();
   my_avatar_tone_ = glyph.tone;
 }
@@ -2902,11 +2893,11 @@ void ContactsController::OnAddSearched(const std::string& /*query*/, const uint6
     const std::string name = !hit.display_name.empty()
                                  ? hit.display_name
                                  : (!hit.nickname.empty() ? hit.nickname : Tr("people.result.unknown_person"));
-    const std::string id = PrimaryAccountIdFromHit(hit).value_or(PrimaryRelayIdFromHit(hit).value_or(""));
+    const std::string id = PrimaryAccountIdFromHit(hit).value_or("");
     AddHitRow row;
     row.index = std::to_string(add_hits_.size()).c_str();
     row.title = name.c_str();
-    row.short_id = ShortRelayId(id).c_str();
+    row.short_id = ShortPersonId(id).c_str();
     const AvatarGlyph glyph = MakeAvatarGlyph(name, id);
     row.avatar_letter = glyph.letter.c_str();
     row.avatar_tone = glyph.tone;

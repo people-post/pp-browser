@@ -6,6 +6,10 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+#include <utility>
+#include <vector>
+
 namespace pbr {
 namespace {
 
@@ -30,69 +34,44 @@ TEST(DeliveryNoticeTest, SendFailuresFromTheRelaysAppErrorCode) {
   EXPECT_EQ(SendFailureFromRelay(Error("text only")), SendFailure::Unknown) << "no code, no guess from text";
 }
 
-constexpr const char* kRecipientNotFoundBody = R"({"error":"Recipient not registered","code":"recipient_not_found"})";
-
-TEST(DeliveryNoticeTest, A404WithTheRelaysRecipientNotFoundCodeReadsAsRecipientNotFound) {
-  const Error error = RelaySendHttpError(404, kRecipientNotFoundBody);
-  EXPECT_TRUE(IsRelayRecipientNotFound(error));
-  EXPECT_EQ(AppError::CategoryOf(error), ErrorCategory::Network);
-  EXPECT_EQ(error.code, static_cast<int32_t>(Err::Network::HttpNotFound)) << "#602's auto retry still sees a 404";
-  EXPECT_EQ(SendFailureFromRelay(error), SendFailure::RecipientNotFound);
+TEST(DeliveryNoticeTest, ARecipientTheRelayDoesNotKnowReadsAsNotOnTheRelay) {
+  EXPECT_EQ(SendFailureFromRelay(AppError::Network(Err::Network::RecipientNotRegistered, "x")),
+            SendFailure::RecipientNotOnRelay);
 }
 
-TEST(DeliveryNoticeTest, A404WithoutThatCodeStaysRejected) {
-  for (const char* body : {"", "<html>Not Found</html>", R"({"error":"Recipient not registered"})",
-                           R"({"code":"route_not_found"})", R"({"code":""})", R"({"code":7})", "not json"}) {
-    const Error error = RelaySendHttpError(404, body);
-    EXPECT_FALSE(IsRelayRecipientNotFound(error)) << body;
-    EXPECT_EQ(error.code, static_cast<int32_t>(Err::Network::HttpNotFound)) << body;
-    EXPECT_EQ(SendFailureFromRelay(error), SendFailure::RelayRejected) << body;
-  }
-  // The code on another status is not "no such recipient".
-  EXPECT_FALSE(IsRelayRecipientNotFound(RelaySendHttpError(400, kRecipientNotFoundBody)));
-  EXPECT_EQ(SendFailureFromRelay(RelaySendHttpError(400, kRecipientNotFoundBody)), SendFailure::RelayRejected);
-  EXPECT_FALSE(IsRelayRecipientNotFound(AppError::Network(Err::Network::HttpNotFound, "404")));
-}
-
-TEST(DeliveryNoticeTest, TheMarkerInsideTheServersOwnTextIsNotTheRelaysCode) {
-  // Server-controlled text may contain the marker anywhere; only the one appended last counts.
-  const Error error =
-      RelaySendHttpError(404, R"({"error":"gone [recipient_not_found] for now","code":"route_not_found"})");
-  EXPECT_FALSE(IsRelayRecipientNotFound(error));
-  EXPECT_EQ(SendFailureFromRelay(error), SendFailure::RelayRejected);
-  EXPECT_TRUE(IsRelayRecipientNotFound(
-      RelaySendHttpError(404, R"({"error":"gone [recipient_not_found] for now","code":"recipient_not_found"})")));
-}
-
-TEST(DeliveryNoticeTest, AnUnregisteredSenderReadsAsSenderNotRegistered) {
-  const Error error = RelaySendHttpError(403, R"({"error":"Relay user not registered"})");
+TEST(DeliveryNoticeTest, APollsNotRegisteredReadsAsOurRegistrationGone) {
+  const Error error = RelayPollHttpError(403, R"({"error":"Account not registered","code":"not_registered"})");
   EXPECT_TRUE(IsRelayUserNotRegistered(error));
   EXPECT_EQ(SendFailureFromRelay(error), SendFailure::SenderNotRegistered);
-  EXPECT_EQ(SendFailureFromRelay(AppError::Auth(Err::Auth::NotRegistered, "x")), SendFailure::SenderNotRegistered);
-  // Another 403 is a plain refusal, as before.
-  const Error other = RelaySendHttpError(403, R"({"error":"Relay registration expired"})");
-  EXPECT_FALSE(IsRelayUserNotRegistered(other));
-  EXPECT_EQ(SendFailureFromRelay(other), SendFailure::RelayRejected);
+  // Another 403, or that code on another status, is a plain refusal.
+  for (const auto& [status, body] : std::vector<std::pair<long, std::string>>{
+           {403, R"({"error":"Relay user not registered"})"},
+           {403, R"({"error":"Registration expired","code":"registration_expired"})"},
+           {404, R"({"error":"Account not registered","code":"not_registered"})"},
+           {403, "not json"}}) {
+    const Error other = RelayPollHttpError(status, body);
+    EXPECT_FALSE(IsRelayUserNotRegistered(other)) << status << " " << body;
+    EXPECT_EQ(SendFailureFromRelay(other), SendFailure::RelayRejected) << status << " " << body;
+  }
 }
 
 TEST(DeliveryNoticeTest, OtherRelayFailuresAreClassifiedAsBefore) {
-  EXPECT_EQ(SendFailureFromRelay(RelaySendHttpError(400, "")), SendFailure::RelayRejected);
-  EXPECT_EQ(SendFailureFromRelay(RelaySendHttpError(401, "")), SendFailure::RelayRejected);
-  EXPECT_EQ(SendFailureFromRelay(RelaySendHttpError(500, "")), SendFailure::RelayRejected);
-  EXPECT_EQ(SendFailureFromRelay(RelaySendHttpError(503, kRecipientNotFoundBody)), SendFailure::RelayRejected);
+  EXPECT_EQ(SendFailureFromRelay(RelayPollHttpError(400, "")), SendFailure::RelayRejected);
+  EXPECT_EQ(SendFailureFromRelay(RelayPollHttpError(401, "")), SendFailure::RelayRejected);
+  EXPECT_EQ(SendFailureFromRelay(RelayPollHttpError(500, "")), SendFailure::RelayRejected);
   EXPECT_EQ(SendFailureFromRelay(AppError::Auth(Err::Auth::Forbidden, "x")), SendFailure::RelayRejected);
   EXPECT_EQ(SendFailureFromRelay(AppError::Network(Err::Network::HttpRejected, "x")), SendFailure::RelayRejected);
   EXPECT_EQ(SendFailureFromRelay(AppError::Network(Err::Network::ConnectFailed, "x")), SendFailure::RelayUnreachable);
 }
 
 TEST(DeliveryNoticeTest, TheNewReasonsRoundTripAndAnUnknownWordIsNotAReason) {
-  for (const SendFailure failure : {SendFailure::RecipientNotFound, SendFailure::SenderNotRegistered}) {
+  for (const SendFailure failure : {SendFailure::RecipientNotOnRelay, SendFailure::SenderNotRegistered}) {
     const ThreadMessage row = MakeSendFailureRow("t1", "m1", SendFailureWord(failure).c_str(), 5);
     const auto reason = SendFailureRowReason(row);
     ASSERT_TRUE(reason);
     EXPECT_EQ(SendFailureFromWire(*reason), failure);
   }
-  EXPECT_EQ(SendFailureWord(SendFailure::RecipientNotFound).view(), "recipient_not_found");
+  EXPECT_EQ(SendFailureWord(SendFailure::RecipientNotOnRelay).view(), "recipient_not_on_relay");
   EXPECT_EQ(SendFailureWord(SendFailure::SenderNotRegistered).view(), "sender_not_registered");
   // A reader that does not know a word (an older app, or a future one) falls back to the generic reason.
   EXPECT_FALSE(SendFailureFromWire("recipient_gone_from_the_future"));

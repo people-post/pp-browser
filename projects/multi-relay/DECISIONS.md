@@ -3,7 +3,7 @@
 ## MR001 — Inboxes are keyed by Account ID
 
 **Date:** 2026-11-12
-**Status:** Accepted (Hongwei, 2026-11-12). Not built.
+**Status:** Accepted (Hongwei, 2026-11-12). Relays: R1 (`www` #252); app: R2 step 1 (#609). Shipped form: [SERVICE_ENDPOINTS](../../docs/contracts/SERVICE_ENDPOINTS.md).
 **Decision:** Relays address inboxes, senders and polls by Account ID. The per-relay `relay:` id goes away, in the relay and in the app (`ContactIdKind::RelayUser`, routes, envelopes).
 **Rationale:**
 - A `relay:` id is random per relay and means nothing elsewhere, so a user on several relays would have one per relay, and every contact would need a map from relay to id.
@@ -14,7 +14,7 @@
 ## MR002 — The relay list lives in the account card
 
 **Date:** 2026-11-12
-**Status:** Accepted (Hongwei, 2026-11-12). Not built.
+**Status:** Accepted (Hongwei, 2026-11-12). The field built (R2 step 2: card version 3, kept per contact; the relay stores and serves it); sending by it built (R2 step 3). Shipped form: [ACCOUNT_CARD § Account card](../../docs/contracts/ACCOUNT_CARD.md#account-card), [SERVICE_ENDPOINTS § Sending by the list](../../docs/contracts/SERVICE_ENDPOINTS.md#sending-by-the-list).
 **Decision:** An account's relays, preferred first, are a field of its signed account card (`relays`). The newest card wins, as for its devices.
 **Rationale:**
 - The card is already signed by the account key, versioned by `issued_at`, and carried everywhere a contact needs it: the card exchange, contact cards, group bundles and the directory.
@@ -24,7 +24,7 @@
 ## MR003 — Cross-relay delivery is an account-signed send
 
 **Date:** 2026-11-12
-**Status:** Accepted (Hongwei, 2026-11-12). Not built.
+**Status:** Accepted (Hongwei, 2026-11-12). Built: the relay takes a foreign sender's key (R1, `www` #252), the app sends into a recipient's relays, as a foreign sender where it is not registered (R2 step 3). Shipped form: [SERVICE_ENDPOINTS § A send](../../docs/contracts/SERVICE_ENDPOINTS.md#a-send-the-recipient-the-senders-key-the-grant), [§ Sending by the list](../../docs/contracts/SERVICE_ENDPOINTS.md#sending-by-the-list).
 **Decision:**
 - A sender posts straight into the recipient's relay.
 - A relay accepts a sender that is not registered on it when the message carries the sender's ML-DSA key, the key hashes to the sender's Account ID, and the signature verifies.
@@ -38,7 +38,7 @@
 ## MR004 — A relay list is small and bounded
 
 **Date:** 2026-11-12
-**Status:** Accepted (Hongwei asked whether the card could overflow, 2026-11-12). Not built.
+**Status:** Accepted (Hongwei asked whether the card could overflow, 2026-11-12). The card's bounds built (R2 step 2, app and relay alike, [ACCOUNT_CARD § Account card](../../docs/contracts/ACCOUNT_CARD.md#account-card)); our own relays bounded the same (at most 4, R2 step 3, [SERVICE_ENDPOINTS § Several relays](../../docs/contracts/SERVICE_ENDPOINTS.md#several-relays)); the QR locator's origin not yet (R4).
 **Decision:**
 - At most 4 relays.
 - Each origin is an absolute `https://` URL of at most 128 bytes, with no query or fragment.
@@ -52,10 +52,11 @@
 ## MR005 — Strangers pay the receiver's price; contacts carry a grant
 
 **Date:** 2026-11-12
-**Status:** Accepted (Hongwei, 2026-11-12: "factor in our design in pricing project … more effective and efficient"). Not built. Amends [pricing P001](../pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet) item 7: the floor is published in the account card, not at directory registration.
+**Status:** Accepted (Hongwei, 2026-11-12: "factor in our design in pricing project … more effective and efficient"). Grants built (R2 step 1; shipped form [ACCOUNT_CARD § Relay grants](../../docs/contracts/ACCOUNT_CARD.md#relay-grants)); the floor in the card built (R2 step 2: card version 3, sent at registration, read by the relay for strangers — [SERVICE_ENDPOINTS](../../docs/contracts/SERVICE_ENDPOINTS.md)). Amends [pricing P001](../pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet) item 7: the floor is published in the account card, not at directory registration.
 **Decision:**
 - The receiver's `initiation_floor` is a field of the signed account card.
 - A recipient's app gives each accepted contact a grant: a signed statement that this sender may write to it, expiring in 30 days and renewed while they stay a contact. The sender attaches it to its sends, and a relay checks it with the recipient's key.
+- *Amended 2026-11-13 (the app lab's `call_grows_into_a_group`, Hongwei's session):* a call accepts its people too. Answering a call grants the caller; joining a call, or someone joining a call we are in, grants each pair of participants both ways. These grants are not renewed unless the peer is also a contact or group member, and a blocked account gets none. A call's signaling, and a call grown past contacts, would otherwise be held to the stranger quota.
 - **A send without a grant is a stranger's.** With a floor above 0, it must carry an opening offer of at least the floor; until payment rails exist, the relay refuses it with `payment_required`. With a floor of 0, it gets a small first-contact quota per recipient and raises no message alert.
 - **Safety limits apply to everyone:** per sender account, per client address for unverified senders (configurable), and the mailbox caps.
 **Rationale:**

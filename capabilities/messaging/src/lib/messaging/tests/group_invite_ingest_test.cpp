@@ -134,7 +134,7 @@ struct PartyHarness {
 
   static std::string RelayForAccount(const std::string& account_id) {
     if (account_id.rfind("account:", 0) == 0) {
-      return "relay:" + account_id.substr(std::string("account:").size());
+      return "account:" + account_id.substr(std::string("account:").size());
     }
     return account_id;
   }
@@ -159,7 +159,6 @@ struct PartyHarness {
     envelope.envelope_version = kRelayEnvelopeVersion;
     envelope.message_id = util::GenerateUuid();
     envelope.sender_contact_id = peer_account;
-    envelope.sender_relay_id = peer_relay;
     envelope.route.kind = "direct";
     envelope.route.channel = channel;
     envelope.sender_seq = seq;
@@ -683,13 +682,8 @@ TEST(GroupInviteIngestTest, InboundMemberJoinedAddsPeerToRoster) {
 TEST(GroupInviteIngestTest, InboundMemberJoinedHandsOverTheOwnersCardsAndStoresNone) {
   PartyHarness member("joined_cards", "account:carol", "account:alice");
   std::vector<std::string> handed;
-  std::string bob_route;
-  member.pipeline.SetOnRosterMember([&](const GroupMembershipCodec::MemberJoinedEntry& entry) {
-    handed.push_back(entry.member_identity);
-    if (entry.member_identity == "account:bob") {
-      bob_route = entry.relay_user_id;
-    }
-  });
+  member.pipeline.SetOnRosterMember(
+      [&](const GroupMembershipCodec::MemberJoinedEntry& entry) { handed.push_back(entry.member_identity); });
 
   GroupMetadata metadata;
   metadata.group_id = "group:hike";
@@ -707,7 +701,7 @@ TEST(GroupInviteIngestTest, InboundMemberJoinedHandsOverTheOwnersCardsAndStoresN
   GroupMembershipCodec::MemberJoinedPayload payload{
       .group_id = "group:hike", .member_identity = "account:carol", .roster_epoch = 2};
   payload.members = {{.member_identity = "account:alice", .role = MemberRole::Owner},
-                     {.member_identity = "account:bob", .card = card, .relay_user_id = "relay:bob"},
+                     {.member_identity = "account:bob", .card = card},
                      {.member_identity = "account:carol", .card = card}};
   auto detail = GroupMembershipCodec::EncodeMemberJoined(payload);
   ASSERT_TRUE(detail);
@@ -716,7 +710,6 @@ TEST(GroupInviteIngestTest, InboundMemberJoinedHandsOverTheOwnersCardsAndStoresN
   ASSERT_TRUE(outcome.persisted) << "decision=" << static_cast<int>(outcome.decision);
 
   EXPECT_EQ(handed, std::vector<std::string>{"account:bob"}) << "each other member the owner says something of";
-  EXPECT_EQ(bob_route, "relay:bob");
   ASSERT_TRUE(outcome.persisted_message.has_value());
   auto stored = GroupMembershipCodec::DecodeMemberJoinedFromMessage(*outcome.persisted_message);
   ASSERT_TRUE(stored) << stored.error().message;
@@ -724,7 +717,6 @@ TEST(GroupInviteIngestTest, InboundMemberJoinedHandsOverTheOwnersCardsAndStoresN
   for (const auto& entry : stored->members) {
     EXPECT_FALSE(entry.card.has_value()) << entry.member_identity;
   }
-  EXPECT_EQ(stored->members[1].relay_user_id, "relay:bob");
 }
 
 // G019 / G018 item 6: the newcomer joins from a member's bundle — the owner's statement, the member's signed add, the
@@ -787,7 +779,7 @@ protected:
     card.set("account_id", "a card");
     joined.members = {{.member_identity = alice.Id(), .role = MemberRole::Owner, .card = card},
                       {.member_identity = bob.Id()},
-                      {.member_identity = carol.Id(), .card = card, .relay_user_id = "relay:carol"},
+                      {.member_identity = carol.Id(), .card = card},
                       {.member_identity = frank.Id(), .card = card}};
     std::string detail = GroupMembershipCodec::EncodeMemberJoined(joined).value();
     detail = group_roster_sync_codec::WithStatement(detail, statement).value();
@@ -985,7 +977,6 @@ TEST(GroupInviteIngestTest, GroupEnvelopeHardRejectsClosedThreadEvenIfStillMembe
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = util::GenerateUuid();
   envelope.sender_contact_id = "account:alice";
-  envelope.sender_relay_id = "relay:alice";
   envelope.route.kind = "group";
   envelope.stream_key = BuildGroupRelayStreamKey("group:hike", "account:alice", "account:bob", "");
   envelope.sender_seq = 1;
@@ -1018,7 +1009,6 @@ TEST(GroupInviteIngestTest, GroupEnvelopeHardRejectsNonMember) {
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = util::GenerateUuid();
   envelope.sender_contact_id = "account:alice";
-  envelope.sender_relay_id = "relay:alice";
   envelope.route.kind = "group";
   envelope.stream_key = BuildGroupRelayStreamKey("group:hike", "account:alice", "account:bob", "");
   envelope.sender_seq = 1;
@@ -1037,7 +1027,6 @@ RelayEnvelope GroupEnvelopeFrom(const std::string& sender, const std::string& gr
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = util::GenerateUuid();
   envelope.sender_contact_id = sender;
-  envelope.sender_relay_id = PartyHarness::RelayForAccount(sender);
   envelope.route.kind = "group";
   envelope.stream_key = BuildGroupRelayStreamKey(group_id, sender, to, "");
   envelope.sender_seq = 1;

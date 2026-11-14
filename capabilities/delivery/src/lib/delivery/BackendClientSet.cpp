@@ -1,5 +1,9 @@
 #include "lib/delivery/BackendClientSet.h"
 
+#include "lib/delivery/RelayOrigins.h"
+#include "lib/people/RegistrationStatus.h"
+
+#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -18,6 +22,8 @@ void BackendClientSet::Apply(const Endpoints& endpoints) {
   ApplyDirectory(std::move(directory));
   ApplyRegistration(endpoints.registration.base_url.empty() ? defaults_.registration.base_url
                                                             : endpoints.registration.base_url);
+  ApplyExtraRelays(endpoints.extra_relays);
+  WireSender();
 }
 
 void BackendClientSet::ApplyRelay(const std::string& url) {
@@ -33,8 +39,8 @@ void BackendClientSet::ApplyRelay(const std::string& url) {
     return;
   }
   relay_url_ = url;
-  relay_ = std::make_unique<HttpRelayClient>(url);
-  push_devices_ = std::make_unique<HttpPushDeviceClient>(url);
+  relay_ = std::make_shared<HttpRelayClient>(url);
+  push_devices_ = std::make_shared<HttpPushDeviceClient>(url);
   client_compat_ = std::make_unique<HttpClientCompatClient>(url);
   WireSigner();
 }
@@ -94,12 +100,97 @@ void BackendClientSet::ApplyRegistration(const std::string& url) {
   WireSigner();
 }
 
-void BackendClientSet::SetSigner(RelayAuthSigner signer) {
-  signer_ = std::move(signer);
+void BackendClientSet::ApplyExtraRelays(const std::vector<std::string>& urls) {
+  std::vector<std::string> origins = OurRelayOrigins(relay_url_, urls);
+  std::vector<Extra> next;
+  for (size_t i = 1; i < origins.size(); ++i) {
+    const std::string& origin = origins[i];
+    const auto kept =
+        std::find_if(extras_.begin(), extras_.end(), [&origin](const Extra& e) { return e.origin == origin; });
+    if (kept != extras_.end()) {
+      next.push_back(*kept); // unchanged: holders keep their clients
+      continue;
+    }
+    next.push_back(Extra{.origin = origin,
+                         .relay = std::make_shared<HttpRelayClient>(origin),
+                         .push_devices = std::make_shared<HttpPushDeviceClient>(origin),
+                         .registration = std::make_shared<HttpRegistrationClient>(origin)});
+  }
+  if (next.size() < urls.size()) {
+    log().warning << "relay.extra_base_urls: " << (urls.size() - next.size())
+                  << " left out (not a URL, a relay listed already, or past " << kMaxOurRelays << " in all)";
+  }
+  extras_ = std::move(next);
   WireSigner();
 }
 
+std::vector<BackendClientSet::OurRelay> BackendClientSet::OurRelays() const {
+  std::lock_guard lock(ours_mutex_);
+  return ours_;
+}
+
+void BackendClientSet::WireSender() {
+  std::vector<OurRelay> ours;
+  if (relay_) {
+    ours.push_back(OurRelay{.origin = NormalizeRegistrationBackend(relay_url_),
+                            .relay = relay_,
+                            .push_devices = push_devices_,
+                            .registration = nullptr});
+    for (const Extra& extra : extras_) {
+      ours.push_back(OurRelay{.origin = extra.origin,
+                              .relay = extra.relay,
+                              .push_devices = extra.push_devices,
+                              .registration = extra.registration});
+    }
+  }
+  std::vector<RelaySendCoordinator::OurRelay> sending;
+  for (const OurRelay& relay : ours) {
+    sending.push_back({.origin = relay.origin, .client = relay.relay});
+  }
+  {
+    std::lock_guard lock(ours_mutex_);
+    ours_ = std::move(ours);
+  }
+  sender_.SetOurRelays(std::move(sending));
+  // A relay not ours gets a client of its own, signed by us and with our send hooks (copies: set on this thread).
+  sender_.SetForeignClients([signer = signer_, hooks = send_hooks_](const std::string& origin) {
+    auto client = std::make_shared<HttpRelayClient>(origin);
+    if (signer) {
+      client->SetAuthSigner(signer);
+    }
+    client->SetSendHooks(hooks);
+    return std::shared_ptr<IRelayClient>(std::move(client));
+  });
+}
+
+void BackendClientSet::SetSigner(RelayAuthSigner signer) {
+  signer_ = std::move(signer);
+  WireSigner();
+  WireSender();
+}
+
+void BackendClientSet::SetRelaySendHooks(RelaySendHooks hooks) {
+  send_hooks_ = std::move(hooks);
+  if (relay_) {
+    relay_->SetSendHooks(send_hooks_);
+  }
+  for (const Extra& extra : extras_) {
+    extra.relay->SetSendHooks(send_hooks_);
+  }
+  WireSender();
+}
+
 void BackendClientSet::WireSigner() {
+  if (relay_) {
+    relay_->SetSendHooks(send_hooks_);
+  }
+  for (const Extra& extra : extras_) {
+    extra.relay->SetSendHooks(send_hooks_);
+    if (signer_) {
+      extra.relay->SetAuthSigner(signer_);
+      extra.push_devices->SetAuthSigner(signer_);
+    }
+  }
   if (!signer_) {
     return;
   }
@@ -124,9 +215,11 @@ void BackendClientSet::Clear() {
   registration_.reset();
   blob_.reset();
   locker_.reset();
+  extras_.clear();
   relay_url_.clear();
   directory_fingerprint_.clear();
   registration_url_.clear();
+  WireSender();
 }
 
 } // namespace pbr

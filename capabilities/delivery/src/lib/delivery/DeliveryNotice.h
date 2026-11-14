@@ -41,9 +41,14 @@ enum class SendFailure {
   RelayUnreachable,
   /** The relay answered, and did not take the message. */
   RelayRejected,
-  /** The relay answered a send 404 "recipient_not_found": it has no registration for the contact. */
-  RecipientNotFound,
-  /** The relay has no registration for us (IsRelayUserNotRegistered). */
+  /** The recipient is not registered on our relay (it left it): nothing there to deliver to (MR003). */
+  RecipientNotOnRelay,
+  /** The recipient charges strangers to open a conversation, and payment is not available yet (P001 / MR005). */
+  PaymentRequired,
+  /**
+   * The relay has no registration for us (IsRelayUserNotRegistered). Kept for the chat's "update my card" fix; a relay
+   * since multi-relay R1 takes a send from an account it does not know (as a foreign sender's), so no send fails so.
+   */
   SenderNotRegistered,
 };
 
@@ -56,7 +61,8 @@ SendFailure SendFailureFromDirect(DirectSendErr code);
 
 /**
  * A relay send's failure, by its app error category and code (foundation/error/AppError). A rate
- * limit reads `RelayRateLimited`; `SendFailureForThread` turns it into `RelayBusy` for a trusted peer.
+ * limit (the stranger quota included) reads `RelayRateLimited`; `SendFailureForThread` turns it into `RelayBusy`
+ * for a trusted peer.
  */
 SendFailure SendFailureFromRelay(const Error& error);
 

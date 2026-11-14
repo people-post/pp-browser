@@ -958,7 +958,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return UnpublishCasForSettings(*content, public_content_id_hex);
   };
 
-  settings_commands.fetch_cas_public_tip = [this](const std::string& tip, const std::string& peer_relay_user_id,
+  settings_commands.fetch_cas_public_tip = [this](const std::string& tip, const std::string& peer_account_id,
                                                   std::function<void(Roe<void>)> on_done) {
     if (!secrets_ || !secrets_->IsInitialized()) {
       on_done(Error("Profile secrets are not ready"));
@@ -979,7 +979,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       return;
     }
     // The fetch rides the mesh (never parks UI); its answer comes back to UI.
-    FetchCasPublicTipForSettingsAsync(messaging_->Content(), *blob, local->relay_user_id, tip, peer_relay_user_id,
+    FetchCasPublicTipForSettingsAsync(messaging_->Content(), *blob, local->account_id, tip, peer_account_id,
                                       [on_done = std::move(on_done)](Roe<void> fetched) {
                                         AppRuntime::PostUI([on_done, fetched]() { on_done(fetched); });
                                       });
@@ -1245,11 +1245,11 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     deps.data_dir = store_.Snapshot().data_dir;
     // The bundle's self-check refuses to send when any of these appears in it (a line that got past the shareable rule).
     if (auto identity = facade.GetIdentity()) {
-      deps.known_identifiers = {identity->account_id, identity->peer_id, identity->relay_user_id};
+      deps.known_identifiers = {identity->account_id, identity->peer_id};
     }
     // The self-check strips a leading scheme itself; the bare ids are passed too so either form is caught.
     auto add_bare = [&deps](const std::string& id) {
-      for (const char* scheme : {"account:", "relay:", "peer:", "call:"}) {
+      for (const char* scheme : {"account:", "peer:", "call:"}) {
         const std::string prefix = scheme;
         if (id.compare(0, prefix.size(), prefix) == 0 && id.size() > prefix.size()) {
           deps.known_identifiers.push_back(id.substr(prefix.size()));

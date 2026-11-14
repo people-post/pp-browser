@@ -193,9 +193,6 @@ LocalIdentity IdentityFromJson(const Object& root) {
   if (auto v = root.getString("nickname")) {
     identity.nickname = *v;
   }
-  if (auto v = root.getString("relay_user_id")) {
-    identity.relay_user_id = *v;
-  }
   if (auto v = root.getString("brief_llm_api_key")) {
     identity.brief_llm_api_key = *v;
   }
@@ -235,6 +232,9 @@ LocalIdentity IdentityFromJson(const Object& root) {
   if (auto v = root.getIf<bool>("kem_binding_published")) {
     identity.kem_binding_published = *v;
   }
+  if (auto v = root.getIf<int64_t>("registered_card_issued_at")) {
+    identity.registered_card_issued_at = *v;
+  }
   return identity;
 }
 
@@ -257,7 +257,6 @@ Object IdentityToJson(const LocalIdentity& identity) {
     root.set("card_intent", identity.card_intent);
   }
   root.set("nickname", identity.nickname);
-  root.set("relay_user_id", identity.relay_user_id);
   root.set("brief_llm_api_key", identity.brief_llm_api_key.Reveal());
   root.set("brief_llm_guest_api_key", identity.brief_llm_guest_api_key.Reveal());
   root.set("registered", identity.registered);
@@ -265,6 +264,9 @@ Object IdentityToJson(const LocalIdentity& identity) {
   root.set("registered_backend_url", identity.registered_backend_url);
   root.set("initiation_floor", identity.initiation_floor);
   root.set("kem_binding_published", identity.kem_binding_published);
+  if (identity.registered_card_issued_at > 0) {
+    root.set("registered_card_issued_at", identity.registered_card_issued_at);
+  }
   return root;
 }
 
@@ -372,12 +374,12 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     identity_.public_key_b64 = Base64Encode(keys->public_key);
     identity_.private_key_b64 = Base64Encode(keys->secret_key);
     identity_.nickname = "user";
-    identity_.relay_user_id.clear();
     identity_.brief_llm_api_key.clear();
     identity_.brief_llm_guest_api_key.clear();
     identity_.registered = false;
     identity_.registration_expires_at.clear();
     identity_.registered_backend_url.clear();
+    identity_.registered_card_issued_at = 0;
     if (auto peer = DerivePeerId(identity_); !peer) {
       return peer.error();
     }
@@ -461,10 +463,16 @@ Roe<void> IdentityStore::EnsureLoaded() const {
       return checked.error();
     }
   }
-  if (version < kSchemaVersion) {
+  if (version < kFloorSchemaVersion) {
     return Error(
         "identity.enc schema is pre-PQ device key (Ed25519); wipe profile data and recreate "
         "(libp2p-pq-transport hard cut)");
+  }
+  const bool stepped = version == 3;
+  if (stepped) {
+    // 3 → 4: the relay's per-relay id is gone (MR001); the registration itself stands, keyed by the Account ID.
+    root->erase("relay_user_id");
+    root->set("schema_version", static_cast<int64_t>(kSchemaVersion));
   }
 
   identity_ = IdentityFromJson(*root);
@@ -495,6 +503,7 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     }
   }
   loaded_ = true;
+  dirty_ = stepped; // a stepped-up file is written back at the current version on the next flush
   return {};
 }
 

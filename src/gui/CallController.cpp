@@ -1209,7 +1209,8 @@ void CallController::ShowNotice(const CallNotice& notice) {
     }
     case CallNotice::Kind::GuestJoined: {
       const std::string name = CallerNameFor(notice.identity).label;
-      const std::string local = call_ports_.local_relay_identity ? call_ports_.local_relay_identity().value_or("") : "";
+      const std::string local =
+          call_ports_.local_account_identity ? call_ports_.local_account_identity().value_or("") : "";
       if (!local.empty() && notice.brought_by == local) {
         UserFeedback::Ok(Tr("call.guest.joined_yours", {{"name", name}}));
         return;
@@ -1654,7 +1655,7 @@ void CallController::PutOffGroupInvite() {
 
 void CallController::FillGuestActions(CallInProgressState& in_call, const CallScreen& screen) {
   in_call.guest_actions.clear();
-  const std::string local = call_ports_.local_relay_identity ? call_ports_.local_relay_identity().value_or("") : "";
+  const std::string local = call_ports_.local_account_identity ? call_ports_.local_account_identity().value_or("") : "";
   for (const CallScreen::Member& member : screen.members) {
     if (!member.guest || (!member.can_remove && !member.can_add_to_group)) {
       continue;
@@ -2352,7 +2353,8 @@ void CallController::FillRingSteps(const bool awaiting_invite, const std::string
 }
 
 std::string CallController::LocalIdentity() const {
-  return call_ports_.local_relay_identity ? call_ports_.local_relay_identity().value_or(std::string{}) : std::string{};
+  return call_ports_.local_account_identity ? call_ports_.local_account_identity().value_or(std::string{})
+                                            : std::string{};
 }
 
 void CallController::FillRingSelfAvatar() {
@@ -2412,8 +2414,8 @@ void CallController::FillSelfAvatar(const CallScreen& screen, const int64_t now_
       self = member.identity;
     }
   }
-  if (self.empty() && call_ports_.local_relay_identity) {
-    self = call_ports_.local_relay_identity().value_or(std::string{});
+  if (self.empty() && call_ports_.local_account_identity) {
+    self = call_ports_.local_account_identity().value_or(std::string{});
   }
   SetSelfAvatar(in_call_, MakeAvatarGlyph(Tr("call.label.you"), self),
                 roster_cache_.Icon(self, now_ms, RosterLookups()));

@@ -77,7 +77,7 @@ public:
                                              int64_t timestamp, const std::string& signature_alg,
                                              const std::string& kem_public_key_b64,
                                              const std::string& kem_binding_signature_b64, const std::string& peer_id,
-                                             const std::vector<std::string>& multiaddrs, int64_t initiation_floor,
+                                             const std::vector<std::string>& multiaddrs,
                                              const RegistrationPublishOpts& publish) override {
     if (base_url_.empty()) {
       return Error("Registration base_url not configured");
@@ -96,7 +96,6 @@ public:
     if (!kem_binding_signature_b64.empty()) {
       body.set("kem_binding_signature_b64", kem_binding_signature_b64);
     }
-    body.set("initiation_floor", initiation_floor);
     if (!peer_id.empty()) {
       body.set("peer_id", peer_id);
     }
@@ -122,8 +121,8 @@ public:
       if (auto success = root->getIf<bool>("success")) {
         result.success = *success;
       }
-      if (auto relay_user_id = root->getString("relay_user_id")) {
-        result.relay_user_id = *relay_user_id;
+      if (auto account_id = root->getString("account_id")) {
+        result.account_id = *account_id;
       }
       if (auto message = root->getString("message")) {
         result.message = *message;
@@ -140,11 +139,11 @@ public:
   }
 
   Roe<RegistrationResult> UpdateNickname(const std::string& /*new_nickname*/, const std::string& /*signature*/,
-                                         int64_t /*timestamp*/, const std::string& /*relay_user_id*/) override {
+                                         int64_t /*timestamp*/, const std::string& /*account_id*/) override {
     return Error("UpdateNickname not supported on pp-node thin client");
   }
 
-  Roe<void> RevokeRegistration(const std::string& /*relay_user_id*/, const std::string& /*signature*/,
+  Roe<void> RevokeRegistration(const std::string& /*account_id*/, const std::string& /*signature*/,
                                int64_t /*timestamp*/) override {
     return Error("RevokeRegistration not supported on pp-node thin client");
   }

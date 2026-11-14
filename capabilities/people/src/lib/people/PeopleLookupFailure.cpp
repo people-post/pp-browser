@@ -10,7 +10,6 @@ namespace {
 
 // OrgBackendClientsImpl.cpp builds these as plain-text Errors without a category/code.
 constexpr const char* kAccountNotFound = "Account not found";
-constexpr const char* kRelayUserNotFound = "Relay user not found";
 constexpr const char* kStatusMarker = " failed with status ";
 
 bool IsServerErrorStatusText(const std::string& message) {
@@ -29,7 +28,7 @@ PeopleLookupFailure ClassifyPeopleLookupError(const Error& error) {
   if (AppError::CategoryOf(error) == ErrorCategory::Network) {
     return PeopleLookupFailure::DirectoryUnreachable;
   }
-  if (error.message == kAccountNotFound || error.message == kRelayUserNotFound) {
+  if (error.message == kAccountNotFound) {
     return PeopleLookupFailure::NotFound;
   }
   if (IsServerErrorStatusText(error.message)) {

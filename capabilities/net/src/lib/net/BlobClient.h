@@ -104,11 +104,11 @@ class IBlobClient {
 public:
   virtual ~IBlobClient() = default;
 
-  virtual Roe<BlobPresignResult> Presign(const std::string& relay_user_id, const std::string& content_type,
+  virtual Roe<BlobPresignResult> Presign(const std::string& account_id, const std::string& content_type,
                                          uint64_t byte_length, BlobPurpose purpose) = 0;
-  virtual Roe<void> Retain(const std::string& relay_user_id, const std::string& blob_id) = 0;
-  virtual Roe<void> Delete(const std::string& relay_user_id, const std::string& blob_id) = 0;
-  virtual Roe<void> SetProfileIcon(const std::string& relay_user_id, const std::string& url, const std::string& blob_id,
+  virtual Roe<void> Retain(const std::string& account_id, const std::string& blob_id) = 0;
+  virtual Roe<void> Delete(const std::string& account_id, const std::string& blob_id) = 0;
+  virtual Roe<void> SetProfileIcon(const std::string& account_id, const std::string& url, const std::string& blob_id,
                                    const std::string& kind) = 0;
   virtual Roe<void> PutUpload(const std::string& upload_url, const std::string& content_type,
                               const std::string& body) = 0;
@@ -131,14 +131,14 @@ public:
                                        const std::function<bool(uint64_t done, uint64_t total)>& progress);
 
   // The encrypted-file relay (`/files/*`), for chat attachments; the `/blobs` calls above stay for profile photos.
-  virtual Roe<RelayFileStartResult> FileStart(const std::string& relay_user_id, uint64_t byte_length) = 0;
+  virtual Roe<RelayFileStartResult> FileStart(const std::string& account_id, uint64_t byte_length) = 0;
   /** A fresh PUT URL for part `part_number` (1-based) of a multipart upload. */
-  virtual Roe<RelayFilePartResult> FilePart(const std::string& relay_user_id, const std::string& blob_id,
+  virtual Roe<RelayFilePartResult> FilePart(const std::string& account_id, const std::string& blob_id,
                                             uint64_t part_number) = 0;
-  virtual Roe<RelayFileCompleteResult> FileComplete(const std::string& relay_user_id, const std::string& blob_id) = 0;
-  virtual Roe<void> FileDelete(const std::string& relay_user_id, const std::string& blob_id) = 0;
+  virtual Roe<RelayFileCompleteResult> FileComplete(const std::string& account_id, const std::string& blob_id) = 0;
+  virtual Roe<void> FileDelete(const std::string& account_id, const std::string& blob_id) = 0;
   /** `status_filter` "" (pending and complete), "pending" or "complete". */
-  virtual Roe<RelayFileListResult> FileList(const std::string& relay_user_id, const std::string& status_filter) = 0;
+  virtual Roe<RelayFileListResult> FileList(const std::string& account_id, const std::string& status_filter) = 0;
 };
 
 /** The relay error code (`QUOTA_FILE_BYTES`, `BLOB_NOT_PENDING`, ...) a failed `/files` call carried, or "". */
@@ -154,15 +154,15 @@ std::string RelayFileErrorCode(const Error& err);
  * account. A start refused for too many pending uploads first deletes this account's pending uploads started over
  * an hour ago (never newer ones: another device may still be uploading) and starts once more.
  */
-Roe<RelayFileUpload> UploadRelayFile(IBlobClient& blob, const std::string& relay_user_id, const std::string& path,
+Roe<RelayFileUpload> UploadRelayFile(IBlobClient& blob, const std::string& account_id, const std::string& path,
                                      uint64_t cipher_bytes,
                                      const std::function<bool(uint64_t done, uint64_t total)>& progress);
 
 /** The same for ciphertext held in memory (single PUT only: a `multipart` answer is an error). */
-Roe<RelayFileUpload> UploadRelayFileBytes(IBlobClient& blob, const std::string& relay_user_id, const std::string& body);
+Roe<RelayFileUpload> UploadRelayFileBytes(IBlobClient& blob, const std::string& account_id, const std::string& body);
 
 /** presign → PUT → retain; returns public URL metadata. */
-Roe<BlobPresignResult> UploadRelayBlobBytes(IBlobClient& blob, const std::string& relay_user_id,
+Roe<BlobPresignResult> UploadRelayBlobBytes(IBlobClient& blob, const std::string& account_id,
                                             const std::string& content_type, BlobPurpose purpose,
                                             const std::string& body);
 

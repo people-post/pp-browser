@@ -41,6 +41,8 @@
 #include "feature/calls/tests/call_direct_driver_fake.h"
 
 #include <gtest/gtest.h>
+
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <thread>
@@ -233,6 +235,9 @@ protected:
     };
     delivery.resolve_peer_thread = [](const std::string& peer) -> Roe<std::string> { return "dm:" + peer; };
     delivery.sync_inbox_from_wake = [this](bool /*force*/) { ++inbox_syncs_; };
+    delivery.grant_call_peers = [this](std::vector<std::string> accounts) {
+      granted_.insert(granted_.end(), accounts.begin(), accounts.end());
+    };
     if (with_group_standing_) {
       // V062: the group's roster as this device holds it (`holds_roster_` false: a guest's device, none held).
       delivery.group_standing = [this](const std::string&,
@@ -487,6 +492,8 @@ protected:
   /** The last CallAccept on the wire (the answerer start may send more after it). */
   std::string last_sent_accept_payload_;
   int sent_rosters_ = 0;
+  /** Who the calls asked to get our relay grant (multi-relay MR005), in order. */
+  std::vector<std::string> granted_;
   /** CallEnded put on the wire. */
   int sent_ended_ = 0;
   /** `urgent` of every CallInvite put on the wire, in order. */
@@ -959,6 +966,67 @@ TEST_F(CallSessionInboundComposeTest, AcceptFansOutTheRoster) {
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->AcceptInvite(call_id); }));
   DrainUntil([&] { return sent_rosters_ > 0; }, 500);
   EXPECT_GT(sent_rosters_, 0);
+}
+
+// Multi-relay MR005: answering a call grants the caller (and anyone joined in it), so its signaling to us is a
+// contact's on our relay, not a stranger's held to 3 an hour (the lab's stranger calls, grown calls).
+TEST_F(CallSessionInboundComposeTest, AnsweringACallGrantsTheCaller) {
+  const std::string call_id = "call:grant-on-answer";
+  auto msg = MakeInviteMessage(call_id);
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+  EXPECT_TRUE(granted_.empty()) << "ringing grants nobody: the call is not answered yet";
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->AcceptInvite(call_id); }));
+  EXPECT_NE(std::find(granted_.begin(), granted_.end(), "account:peer"), granted_.end());
+  EXPECT_EQ(std::find(granted_.begin(), granted_.end(), local_identity_), granted_.end()) << "never ourselves";
+}
+
+// MR005: someone joining a call we are in is granted — its own accept, or its own roster saying it joined; a
+// roster's word about third parties grants nobody.
+TEST_F(CallSessionInboundComposeTest, SomeoneJoiningACallWeAreInIsGrantedByItsOwnWordOnly) {
+  const std::string call_id = "call:grant-on-join";
+  SeedOffererRingingCall(call_id);
+  test::NullDirectDriver null_driver; // the 1:1 start goes nowhere: only the grants are looked at
+  OnCallsOwner([&] { device_->SetDirectPathFactoryForTest(test::ForwardTo(null_driver)); });
+  OnCallsOwner([&] { device_->LiveCallsForTest().NoteOutboundStarted(call_id); });
+  CallAcceptDetail accept;
+  accept.call_id = call_id;
+  accept.identity = "account:peer";
+  accept.libp2p_peer_id = "12D3KooWPeer";
+  auto accept_detail = CallControlCodec::EncodeAccept(accept);
+  ASSERT_TRUE(accept_detail);
+  auto accepted = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallAccept, "Accepted",
+                                                       *accept_detail, "account:peer");
+  ASSERT_TRUE(accepted);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*accepted, "account:peer"); }));
+  EXPECT_EQ(granted_, std::vector<std::string>{"account:peer"}) << "the callee answered our call";
+
+  // Someone in the call invited Carol (their roster made her a ringing participant here); she joined, and her
+  // roster, sent by her, names her and us joined, and Dave.
+  CallParticipant carol;
+  carol.call_id = call_id;
+  carol.identity = "account:carol";
+  carol.state = CallParticipantState::Ringing;
+  ASSERT_TRUE(sessions_->UpsertParticipant(carol));
+  CallRosterDetail roster;
+  roster.call_id = call_id;
+  for (const std::string& who :
+       {local_identity_, std::string("account:peer"), std::string("account:carol"), std::string("account:dave")}) {
+    CallRosterEntry entry;
+    entry.identity = who;
+    entry.state = CallParticipantState::Joined;
+    roster.participants.push_back(entry);
+  }
+  auto detail = CallControlCodec::EncodeRoster(roster);
+  ASSERT_TRUE(detail);
+  auto from_carol = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallRoster, "Call roster",
+                                                         *detail, "account:carol");
+  ASSERT_TRUE(from_carol);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*from_carol, "account:carol"); }));
+  EXPECT_EQ(granted_, (std::vector<std::string>{"account:peer", "account:carol"}))
+      << "Carol, by her own roster; not Dave, whom only her roster names";
+  OnCallsOwner([&] { device_->SetDirectPathFactoryForTest({}); });
 }
 
 // PR #216 follow-up: DropFollowUps (hub teardown, before the store and delivery go) drops a

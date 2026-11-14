@@ -3466,7 +3466,7 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
     const auto reason = SendFailureRowReason(failure_row);
     const auto message_id = SendFailureRowMessageId(failure_row);
     const auto failure = reason ? SendFailureFromWire(*reason) : std::nullopt;
-    if (!message_id || (failure != SendFailure::RecipientNotFound && failure != SendFailure::SenderNotRegistered)) {
+    if (!message_id || (failure != SendFailure::RecipientNotOnRelay && failure != SendFailure::SenderNotRegistered)) {
       return std::nullopt;
     }
     return SendFailureText(*failure, presenter_.SendAdviceOf(thread_id, *message_id));

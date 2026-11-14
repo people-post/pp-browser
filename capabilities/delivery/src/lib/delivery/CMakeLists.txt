@@ -23,11 +23,15 @@ pp_browser_add_lib_library(pp_lib_delivery
     HttpRelayClient.cpp
     OutboundMessage.cpp
     PairwiseFanoutLogic.cpp
-    PeerBriefRoute.cpp
     PeerRequestAuth.cpp
     PskRotateCodec.cpp
     PskSessionCoordinator.cpp
     PublicPskLockCoordinator.cpp
+    RelayGrantNotice.cpp
+    RelayHealth.cpp
+    RelayOrigins.cpp
+    RelaySendCoordinator.cpp
+    RelayGrantSigner.cpp
     RelayMessageSignPayload.cpp
     RelayWirePayload.cpp
     IPeerSessionStore.cpp

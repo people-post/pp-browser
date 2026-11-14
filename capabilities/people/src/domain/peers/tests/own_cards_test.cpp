@@ -23,7 +23,6 @@ ByteVector TestDek() {
 class NoDirectory : public mesh::IDirectoryClient {
 public:
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& /*query*/) override { return None(); }
-  Roe<mesh::DirectoryHit> LookupRelayUser(const std::string& /*relay_user_id*/) override { return None(); }
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string& /*account_id*/) override { return None(); }
 
 private:
@@ -36,7 +35,7 @@ struct Device {
     std::filesystem::create_directories(dir);
     EXPECT_TRUE(identity.SetDek(TestDek()));
     EXPECT_TRUE(identity.LoadOrCreate());
-    cards = std::make_unique<InMemoryPeerCards>();
+    cards = std::make_unique<PeerCards>(rows);
     keys = std::make_unique<AccountKeyResolver>(signing, kem, *cards, directory);
     own = std::make_unique<OwnCards>(identity, *keys);
   }
@@ -65,13 +64,20 @@ struct Device {
     ASSERT_TRUE(identity.Update(mine));
   }
 
+  void SetFloor(int64_t floor) {
+    LocalIdentity mine = identity.Get().value();
+    mine.initiation_floor = floor;
+    ASSERT_TRUE(identity.Update(mine));
+  }
+
   std::string PeerId() { return own->DevicePeerId().value(); }
 
   IdentityStore identity;
   PeerSigningKeyStore signing;
   PeerKemKeyStore kem;
   NoDirectory directory;
-  std::unique_ptr<InMemoryPeerCards> cards;
+  InMemoryPeerCardStore rows; // the kept rows, as the app's storage holds them
+  std::unique_ptr<PeerCards> cards;
   std::unique_ptr<AccountKeyResolver> keys;
   std::unique_ptr<OwnCards> own;
 };
@@ -202,6 +208,77 @@ TEST_F(OwnCardsTest, ANonMasterRenameKeepsTheListAsItIs) {
   auto on_phone = phone.own->Learn(*renamed, kNow + 60);
   ASSERT_TRUE(on_phone);
   EXPECT_EQ(phone.identity.Get().value().nickname, "Alice L.") << "the account's name, on every device";
+}
+
+std::vector<AccountCardRelay> Relays(std::initializer_list<const char*> origins) {
+  std::vector<AccountCardRelay> out;
+  for (const char* origin : origins) {
+    out.push_back(AccountCardRelay{.origin = origin});
+  }
+  return out;
+}
+
+// MR002 / MR005: the card carries the relays we register on and our floor, re-issued when either changes.
+TEST_F(OwnCardsTest, TheCardCarriesOurRelaysAndFloorAndIsReissuedWhenEitherChanges) {
+  Device phone(dir_ / "phone");
+  phone.own->SetRelays({"https://www.brief.global/api/relay", "http://127.0.0.1:8080/api/relay", "",
+                        "https://WWW.brief.global:443/api/relay"});
+  const AccountCard card = phone.own->Card(kNow).value();
+  EXPECT_EQ(card.relays, Relays({"https://www.brief.global/api/relay"}))
+      << "only origins within MR004's bounds: no http lab relay, no duplicate";
+  EXPECT_EQ(card.initiation_floor, 0);
+  EXPECT_TRUE(VerifyAccountCard(card, kNow));
+  EXPECT_EQ(phone.own->Card(kNow + 10).value(), card) << "nothing changed";
+
+  phone.SetFloor(250);
+  const AccountCard priced = phone.own->Card(kNow + 20).value();
+  EXPECT_EQ(priced.initiation_floor, 250);
+  EXPECT_GT(priced.issued_at, card.issued_at);
+  EXPECT_TRUE(VerifyAccountCard(priced, kNow + 20));
+
+  phone.own->SetRelays({"https://relay.example.org/api/relay"});
+  const AccountCard moved = phone.own->Card(kNow + 30).value();
+  EXPECT_EQ(moved.relays, Relays({"https://relay.example.org/api/relay"}));
+  EXPECT_GT(moved.issued_at, priced.issued_at);
+  phone.own->SetRelays({});
+  EXPECT_TRUE(phone.own->Card(kNow + 40).value().relays.empty()) << "no relay: the mesh only";
+}
+
+// The relay list is the master's (like the device list); the floor is the account's, like the nickname.
+TEST_F(OwnCardsTest, ALinkedDeviceKeepsTheMastersRelaysAndTheFloorIsTheAccounts) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  phone.own->SetRelays({"https://a.example/api/relay"});
+  laptop.own->SetRelays({"https://b.example/api/relay"});
+  const AccountCard joined = LinkLaptop(phone, laptop, kNow);
+  EXPECT_EQ(joined.relays, Relays({"https://a.example/api/relay"})) << "the laptop is not the master";
+  EXPECT_EQ(laptop.own->Card(kNow + 40).value(), joined) << "no tug of war over the list";
+  EXPECT_EQ(phone.own->Card(kNow + 40).value(), joined);
+
+  laptop.SetFloor(300);
+  const AccountCard priced = laptop.own->Card(kNow + 50).value();
+  EXPECT_EQ(priced.initiation_floor, 300);
+  EXPECT_EQ(priced.relays, joined.relays);
+  ASSERT_TRUE(phone.own->Learn(priced, kNow + 60));
+  EXPECT_EQ(phone.identity.Get().value().initiation_floor, 300) << "the account's price, on every device";
+  EXPECT_EQ(phone.own->Card(kNow + 70).value(), priced);
+}
+
+// profile.db 6 → 7 kept our version 2 card in the version 3 shape, its signature over the old bytes: the first card
+// asked for is a new one with the same device list, so no sibling is signed out by the cutover.
+TEST_F(OwnCardsTest, AKeptCardThatDoesNotVerifyIsReissuedWithItsList) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  const AccountCard joined = LinkLaptop(phone, laptop, kNow);
+  PeerCardRecord stepped = phone.rows.Get(joined.keys.account_id).value().value();
+  stepped.newest_card->card_signature_b64 = laptop.own->Card(kNow + 40).value().keys.kem_binding_signature_b64;
+  ASSERT_TRUE(phone.rows.Put(stepped));
+
+  const AccountCard reissued = phone.own->Card(kNow + 50).value();
+  EXPECT_TRUE(VerifyAccountCard(reissued, kNow + 50));
+  EXPECT_GT(reissued.issued_at, joined.issued_at);
+  EXPECT_EQ(reissued.devices, joined.devices) << "the laptop stays on the list";
+  EXPECT_EQ(phone.own->Card(kNow + 60).value(), reissued);
 }
 
 TEST_F(OwnCardsTest, ARestoredDeviceStartsAFreshListAndTheOthersAreSignedOut) {

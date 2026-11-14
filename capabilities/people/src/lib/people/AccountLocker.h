@@ -21,7 +21,6 @@ namespace pbr {
  * private material or messages.
  */
 struct AccountLockerState {
-  std::string relay_user_id;
   std::string nickname;
   std::vector<Contact> contacts;
   /** Groups (with the latest owner-signed roster statement) and card floors. */

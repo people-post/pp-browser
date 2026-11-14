@@ -42,13 +42,12 @@ protected:
   std::filesystem::path data_dir_;
 };
 
-TEST_F(IdentityStoreTest, CreateHasPeerIdAndEmptyRelay) {
+TEST_F(IdentityStoreTest, CreateHasPeerIdAndIsNotRegistered) {
   IdentityStore store(data_dir_.string(), "test-profile");
   ASSERT_TRUE(store.SetDek(MakeTestDek()));
   auto identity = store.LoadOrCreate();
   ASSERT_TRUE(static_cast<bool>(identity)) << identity.error().message;
   EXPECT_FALSE(identity->peer_id.empty());
-  EXPECT_TRUE(identity->relay_user_id.empty());
   EXPECT_FALSE(identity->registered);
   EXPECT_FALSE(identity->account_id.empty());
   EXPECT_EQ(identity->account_id.rfind("account:", 0), 0u);
@@ -107,20 +106,19 @@ TEST_F(IdentityStoreTest, DerivesSamePeerIdAcrossReload) {
   ASSERT_TRUE(static_cast<bool>(identity));
   EXPECT_EQ(identity->peer_id, peer_id);
   EXPECT_EQ(identity->account_id, account_id);
-  EXPECT_TRUE(identity->relay_user_id.empty());
   auto got_account = reloaded.GetAccountId();
   ASSERT_TRUE(static_cast<bool>(got_account));
   EXPECT_EQ(*got_account, account_id);
 }
 
-TEST_F(IdentityStoreTest, KeepsRegisteredRelayId) {
+TEST_F(IdentityStoreTest, KeepsTheRegistration) {
   IdentityStore store(data_dir_.string(), "test-profile");
   ASSERT_TRUE(store.SetDek(MakeTestDek()));
   auto created = store.LoadOrCreate();
   ASSERT_TRUE(static_cast<bool>(created));
   LocalIdentity identity = *created;
   identity.nickname = "alice";
-  identity.relay_user_id = "relay:alice123";
+  identity.registered = true;
   identity.brief_llm_api_key = "brf_llm_testkeyABCDEFGHIJKLMNOP";
   identity.brief_llm_guest_api_key = "brf_guest_testkeyABCDEFGHIJKLMNOP";
   identity.registered = true;
@@ -133,7 +131,6 @@ TEST_F(IdentityStoreTest, KeepsRegisteredRelayId) {
   ASSERT_TRUE(reloaded.SetDek(MakeTestDek()));
   auto loaded = reloaded.LoadOrCreate();
   ASSERT_TRUE(static_cast<bool>(loaded)) << loaded.error().message;
-  EXPECT_EQ(loaded->relay_user_id, "relay:alice123");
   EXPECT_EQ(loaded->brief_llm_api_key, "brf_llm_testkeyABCDEFGHIJKLMNOP");
   EXPECT_EQ(loaded->brief_llm_guest_api_key, "brf_guest_testkeyABCDEFGHIJKLMNOP");
   EXPECT_TRUE(loaded->registered);
@@ -198,6 +195,49 @@ TEST_F(IdentityStoreTest, WritesSchemaVersionOnCreate) {
   ASSERT_TRUE(static_cast<bool>(root));
   ASSERT_TRUE(root->contains("schema_version"));
   EXPECT_EQ(static_cast<int>(root->getIf<int64_t>("schema_version").value_or(-1)), IdentityStore::kSchemaVersion);
+}
+
+// identity.enc 3 → 4 (multi-relay MR001): the relay's per-relay id is dropped; the registration stands (the relay keeps
+// the account's row by its Account ID), and the next save writes 4.
+TEST_F(IdentityStoreTest, AVersion3FileDropsItsRelayIdAndKeepsTheRegistration) {
+  const ByteVector dek = MakeTestDek();
+  const std::string aad = FileCipher::BuildAad("identity", "test-profile");
+  std::string account_id;
+  {
+    IdentityStore created(data_dir_.string(), "test-profile");
+    ASSERT_TRUE(created.SetDek(dek));
+    auto identity = created.LoadOrCreate();
+    ASSERT_TRUE(static_cast<bool>(identity));
+    account_id = identity->account_id;
+  }
+  const auto read_root = [&]() {
+    std::ifstream in(data_dir_ / "identity.enc", std::ios::binary);
+    ByteVector blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    auto plain = FileCipher::Decrypt(dek, blob, aad);
+    return TryParseObject(std::string(plain->begin(), plain->end())).value();
+  };
+  Object v3 = read_root();
+  v3.set("schema_version", static_cast<int64_t>(3));
+  v3.set("relay_user_id", "relay:retired");
+  v3.set("registered", true);
+  {
+    const std::string json = DumpJson(v3, 2);
+    auto ciphertext = FileCipher::Encrypt(dek, ByteVector(json.begin(), json.end()), aad);
+    ASSERT_TRUE(static_cast<bool>(ciphertext));
+    std::ofstream out(data_dir_ / "identity.enc", std::ios::binary | std::ios::trunc);
+    out.write(reinterpret_cast<const char*>(ciphertext->data()), static_cast<std::streamsize>(ciphertext->size()));
+  }
+
+  IdentityStore store(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(store.SetDek(dek));
+  auto identity = store.Get();
+  ASSERT_TRUE(static_cast<bool>(identity)) << identity.error().message;
+  EXPECT_TRUE(identity->registered);
+  EXPECT_EQ(identity->account_id, account_id);
+  store.Flush();
+  const Object v4 = read_root();
+  EXPECT_EQ(v4.getIf<int64_t>("schema_version").value_or(0), 4);
+  EXPECT_FALSE(v4.contains("relay_user_id"));
 }
 
 TEST_F(IdentityStoreTest, RejectsNewerSchemaVersion) {

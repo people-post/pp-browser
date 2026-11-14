@@ -6,6 +6,7 @@ pp_browser_add_domain_library(pp_domain_registration
   SOURCES
     RegistrationClient.cpp
     BriefLlmKeyRenewal.cpp
+    RelayRegistrationsWorkflow.cpp
   PUBLIC_LIBS
     pp_lib_net
     pp_lib_people)

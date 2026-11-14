@@ -15,3 +15,11 @@ services:
   www:
     build: !reset null
     image: ${PP_APP_LAB_WWW_IMAGE:?set PP_APP_LAB_WWW_IMAGE}
+
+  messenger2:
+    build: !reset null
+    image: ${PP_APP_LAB_MESSENGER_IMAGE:?set PP_APP_LAB_MESSENGER_IMAGE}
+
+  www2:
+    build: !reset null
+    image: ${PP_APP_LAB_WWW_IMAGE:?set PP_APP_LAB_WWW_IMAGE}
