@@ -178,7 +178,7 @@ void SettingsMyRelays::MakePreferred(const int index) {
   if (!row || !row->can_make_preferred) {
     return;
   }
-  Change(index, commands_.make_relay_preferred, Tr("settings.relays.made_preferred"));
+  Change(row->origin, commands_.make_relay_preferred, Tr("settings.relays.made_preferred"));
 }
 
 void SettingsMyRelays::Remove(const int index) {
@@ -190,18 +190,18 @@ void SettingsMyRelays::Remove(const int index) {
       feedback_.show_confirm_destructive ? feedback_.show_confirm_destructive : feedback_.show_confirm;
   show_confirm(
       Tr("settings.relays.remove_confirm_title"), Tr("settings.relays.remove_confirm_message", {{"relay", row->label}}),
-      [this, index](const bool ok) {
+      // The origin, not the row: the list may be read again (and reordered) while the dialog is open.
+      [this, origin = row->origin](const bool ok) {
         if (ok) {
-          Change(index, commands_.remove_my_relay, Tr("settings.relays.removed"));
+          Change(origin, commands_.remove_my_relay, Tr("settings.relays.removed"));
         }
       },
       Tr("settings.relays.remove_confirm_ok"));
 }
 
-void SettingsMyRelays::Change(const int index, std::function<Roe<void>(const std::string& origin)> change,
+void SettingsMyRelays::Change(const std::string& origin, std::function<Roe<void>(const std::string& origin)> change,
                               const std::string& done) {
-  const MyRelayRowView* row = RowAt(index);
-  if (!row || busy_) {
+  if (origin.empty() || busy_) {
     return;
   }
   if (!change) {
@@ -211,7 +211,7 @@ void SettingsMyRelays::Change(const int index, std::function<Roe<void>(const std
   busy_ = true;
   DirtyAll();
   std::weak_ptr<bool> alive = alive_;
-  AppRuntime::PostWorkerNormal([this, alive, origin = row->origin, change = std::move(change), done]() {
+  AppRuntime::PostWorkerNormal([this, alive, origin, change = std::move(change), done]() {
     Roe<void> changed = change(origin);
     AppRuntime::PostUI([this, alive, changed = std::move(changed), done]() {
       if (auto live = alive.lock(); !live || !*live) {

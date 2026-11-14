@@ -57,8 +57,9 @@ private:
   void Add();
   void MakePreferred(int index);
   void Remove(int index);
-  /** Runs `change` for the relay at `index` on a worker; then the list again and `done`. */
-  void Change(int index, std::function<Roe<void>(const std::string& origin)> change, const std::string& done);
+  /** Runs `change` for the relay `origin` names on a worker (none while one runs); then the list again and `done`. */
+  void Change(const std::string& origin, std::function<Roe<void>(const std::string& origin)> change,
+              const std::string& done);
   const MyRelayRowView* RowAt(int index) const;
   void DirtyAll();
 
