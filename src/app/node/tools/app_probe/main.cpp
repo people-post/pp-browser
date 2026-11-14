@@ -116,6 +116,7 @@
 #include "lib/messaging/MentionAlert.h"
 #include "lib/delivery/PeerRequestAuth.h"
 #include "feature/conversations/ContactCardExchange.h"
+#include "feature/conversations/ContactRefreshWorkflow.h"
 #include "common/chat/MessagingJson.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/media/IMediaView.h"
@@ -190,6 +191,29 @@ void ReplyError(int64_t id, const std::string& message) {
   Object out = Reply(id, false);
   out.set("error", message);
   Emit(out);
+}
+
+/** A contact refresh as the lab reads it: the devices' outcome, each relay asked in order, what changed. */
+Object RefreshReply(int64_t id, const ContactRefreshResult& result) {
+  using Ask = ContactRefreshResult::RelayAsk;
+  Object out = Reply(id, true);
+  out.set("devices", result.devices == ContactRefreshResult::Devices::Answered     ? "answered"
+                     : result.devices == ContactRefreshResult::Devices::NotReached ? "not_reached"
+                                                                                   : "not_asked");
+  std::vector<Value> relays;
+  for (const Ask& ask : result.relays) {
+    Object row;
+    row.set("origin", ask.origin);
+    row.set("whose", ask.whose == Ask::Whose::Theirs ? "theirs" : "ours");
+    row.set("outcome", ask.outcome == Ask::Outcome::Answered   ? "answered"
+                       : ask.outcome == Ask::Outcome::NotFound ? "not_found"
+                                                               : "unreachable");
+    relays.push_back(ObjectValue(std::move(row)));
+  }
+  out.set("relays", ArrayValue(std::move(relays)));
+  out.set("changed", result.Changed());
+  out.set("keys_rejected", result.relay_keys_rejected);
+  return out;
 }
 
 const char* NoticeKindName(CallNotice::Kind kind) {
@@ -573,6 +597,38 @@ public:
         }
       }
       out.set("devices", ArrayValue(std::move(devices)));
+      Emit(out);
+    } else if (cmd == "refresh_contact") {
+      // The contact page's *Refresh account info* for contact `account` (multi-relay R3): who was asked, and how.
+      auto contact =
+          facade_->FindContactByIdentity(request->getString("account").value_or(""), mesh::ContactIdKind::Account);
+      if (!contact || !*contact) {
+        ReplyError(id, "no such contact");
+        return;
+      }
+      const bool started = Hub().RefreshContact(
+          (*contact)->id, [id](const ContactRefreshResult& result) { Emit(RefreshReply(id, result)); });
+      if (!started) {
+        ReplyError(id, "a refresh runs already, or messaging is not up");
+      }
+    } else if (cmd == "contact_relay") {
+      // The contact page's relay line for contact `account`: its preferred relay and what it last answered (R3).
+      auto contact =
+          facade_->FindContactByIdentity(request->getString("account").value_or(""), mesh::ContactIdKind::Account);
+      if (!contact || !*contact) {
+        ReplyError(id, "no such contact");
+        return;
+      }
+      const ContactRelayView view = Hub().ContactRelay(**contact);
+      Object out = Reply(id, true);
+      out.set("list", view.list == ContactRelayView::List::Listed     ? "listed"
+                      : view.list == ContactRelayView::List::MeshOnly ? "mesh_only"
+                                                                      : "not_known");
+      out.set("origin", view.origin);
+      out.set("reach", view.reach == ContactRelayView::Reach::Reachable       ? "reachable"
+                       : view.reach == ContactRelayView::Reach::NotRegistered ? "not_registered"
+                       : view.reach == ContactRelayView::Reach::Unreachable   ? "unreachable"
+                                                                              : "not_known");
       Emit(out);
     } else if (cmd == "held_grant") {
       // Whether we hold `account`'s relay grant to us (MR005): our sends to it count as a contact's.

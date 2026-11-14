@@ -1976,6 +1976,46 @@ def scenario_users_on_two_relays_meet(lab):
     return timing
 
 
+def locator_relay(locator):
+    """The preferred relay origin a contact locator carries (multi-relay R4), or None."""
+    data = locator.split("pp-browser-contact-v1:", 1)[1]
+    body = json.loads(base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)))
+    return body.get("relay")
+
+
+def scenario_invite_names_their_relay(lab):
+    """Multi-relay R3/R4: Bob is on relay B and sends Alice, on relay A (whose directory does not know him), his
+    invite line: it names B. She adds him: the card comes from his device, or else from B, and her first message goes
+    into B. Her contact page's Refresh asks his relays first (B answers), and the page then shows B as reachable."""
+    a = lab.user("alice", relays=["a"])
+    b = lab.user("bob", relays=["b"])
+    for u in (a, b):
+        u.wait_mesh()
+    relay_b = lab.tls_relays["b"]["origin"]
+    locator = b.cmd("locator")["locator"]
+    if locator_relay(locator) != relay_b:
+        raise ProbeError("bob's locator names %s, not relay B" % locator_relay(locator))
+    added = a.cmd("add_from_locator", text="Add me on PP: " + locator, timeout=60)
+    if not added["keys_known"]:
+        raise ProbeError("alice: no card of bob's from his device or his relay (%s)" % added)
+    source = a.cmd("kept_card", account=b.account).get("source")
+    a_thread = a.cmd("chat_with", account=b.account)["thread"]
+    first = a.cmd("send", thread=a_thread, text="hi bob, from your invite")["message_id"]
+    b_thread = wait_for(lambda: thread_with(b, a.account), 40, "bob: alice's chat")
+    row = wait_for(lambda: transcript_row(b, b_thread, first), 30, "bob: alice's first message")
+    before = a.cmd("contact_relay", account=b.account)
+    if before["origin"] != relay_b:
+        raise ProbeError("alice: bob's page names %s, not relay B" % before)
+    refreshed = a.cmd("refresh_contact", account=b.account, timeout=60)
+    asked = [(r["origin"], r["whose"], r["outcome"]) for r in refreshed["relays"]]
+    if not asked or asked[0] != (relay_b, "theirs", "answered"):
+        raise ProbeError("alice: the refresh asked %s, not relay B first" % asked)
+    after = a.cmd("contact_relay", account=b.account)
+    if after["reach"] != "reachable":
+        raise ProbeError("alice: bob's page says %s after the refresh" % after)
+    return {"card_from": source, "first_transport": row.get("transport"), "reach_before": before["reach"]}
+
+
 def scenario_preferred_relay_down_mail_still_arrives(lab):
     """Multi-relay R2: Bob is on both relays, A preferred — registered and polled on each, his card lists both in
     order. Alice, on B, writes to him; once she holds his card her messages go into A, his preferred. Then A stops:
@@ -4198,6 +4238,7 @@ SCENARIOS = [
     ("users_on_two_relays_meet", scenario_users_on_two_relays_meet),
     ("preferred_relay_down_mail_still_arrives", scenario_preferred_relay_down_mail_still_arrives),
     ("preferred_relay_switched_mail_still_arrives", scenario_preferred_relay_switched_mail_still_arrives),
+    ("invite_names_their_relay", scenario_invite_names_their_relay),
     ("group_members_key_each_other", scenario_group_members_key_each_other),
     ("group_after_member_removed", scenario_group_after_member_removed),
     ("restored_device_is_heard", scenario_restored_device_is_heard),
@@ -4301,7 +4342,7 @@ NEEDS_COLD_SEED_LINK = {"call_during_seed_churn"}
 # Scenarios on the TLS relays (multi-relay R2): host users only — the relays' certificate names their host ports,
 # and a user behind a NAT takes no CA bundle. With --nat they do not run.
 NEEDS_TLS_RELAYS = {"users_on_two_relays_meet", "preferred_relay_down_mail_still_arrives",
-                    "preferred_relay_switched_mail_still_arrives"}
+                    "preferred_relay_switched_mail_still_arrives", "invite_names_their_relay"}
 # Scenarios that change a user's network: they need a container per user (--nat).
 NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
              "group_one_way_network_drops", "group_two_join_through_drops", "group_call_on_the_road",
