@@ -69,7 +69,7 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 - [ ] Contracts promoted in the same PR: SERVICE_ENDPOINTS (identity endpoint, the audience rule and table, `wrong_audience`, the scoped commands, self-heal), ACCOUNT_CARD (version 4), DATA_LAYOUT (`relay_pins.json`, `our_relays.json` `registration_id`, `profile.db` 8), COMPATIBILITY (the cutover rows), UI_DESIGN_SYSTEM (My relays states); MR007's Status updated.
 
 **pp-node**
-- [ ] Registration, heartbeat and revoke carry the audience: `registration.relay_peer_id` from config when set, else fetched and pinned in the data directory; a changed identity logs and stops relay calls.
+- [ ] Registration, heartbeat and revoke carry the audience: the relay's PeerId fetched and pinned in the data directory (no config key); a changed identity logs and stops relay calls.
 - [ ] Released with the app (the fleet on it in the prod window).
 
 **Lab**
