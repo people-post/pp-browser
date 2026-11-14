@@ -285,12 +285,10 @@ void ConversationsHub::SetCardRelays() {
 }
 
 void ConversationsHub::WireOurRelays() {
-  std::vector<std::string> origins;
   std::vector<RelayInbox> inboxes;
   std::vector<RelayRegistrationsWorkflow::Relay> others;
   const OurRelaysList kept = our_relays_ ? our_relays_->List() : OurRelaysList{};
   for (const BackendClientSet::OurRelay& relay : clients_.OurRelays()) {
-    origins.push_back(relay.origin);
     inboxes.push_back(RelayInbox{.origin = relay.origin, .client = relay.relay});
     if (relay.registration) {
       RelayRegistrationRecord last;
@@ -305,11 +303,22 @@ void ConversationsHub::WireOurRelays() {
   if (relay_registrations_) {
     relay_registrations_->SetRelays(std::move(others));
   }
+  if (contact_refresh_) {
+    contact_refresh_->SetOurRelays(CardDirectories()); // the Refresh asks them after the contact's own relays
+  }
   if (!mesh_messaging_) {
     return;
   }
-  // A stale recipient's card is asked of our relays' directories, then of the other directories we search.
-  std::vector<std::string> directories = origins;
+  mesh_messaging_->SetCardDirectories(CardDirectories());
+  mesh_messaging_->SetRelayClients({.preferred = relay_,
+                                    .history = clients_.HistoryRelay(),
+                                    .sender = &clients_.Sender(),
+                                    .inboxes = std::move(inboxes)});
+}
+
+std::vector<std::string> ConversationsHub::CardDirectories() const {
+  // Our relays' directories, then the other directories we search (http ones: the mesh's are its own).
+  std::vector<std::string> directories = OurRelayOrigins();
   for (const ServiceEndpointConfig& provider : EffectiveDirectoryProviders(config_.directory)) {
     const bool http = provider.transport.empty() || provider.transport == "http";
     const bool listed = std::any_of(directories.begin(), directories.end(), [&provider](const std::string& known) {
@@ -319,11 +328,7 @@ void ConversationsHub::WireOurRelays() {
       directories.push_back(provider.base_url);
     }
   }
-  mesh_messaging_->SetCardDirectories(std::move(directories));
-  mesh_messaging_->SetRelayClients({.preferred = relay_,
-                                    .history = clients_.HistoryRelay(),
-                                    .sender = &clients_.Sender(),
-                                    .inboxes = std::move(inboxes)});
+  return directories;
 }
 
 void ConversationsHub::SetOnOurRelaysChanged(std::function<void()> callback) {
@@ -1157,7 +1162,8 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   WireCardReaders();
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
   contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
-  contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, directory_, *contact_cards_);
+  contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, *contact_cards_);
+  contact_refresh_->SetOurRelays(CardDirectories());
   contact_cards_->SetCardFetcher(
       [this](const std::string& peer_id, const std::string& account_id, std::function<void(Roe<PeerCardRecord>)> done) {
         // On the hub's thread, with the address book as it is now: a contact just added (a scanned QR code) is
@@ -1901,6 +1907,10 @@ void ConversationsHub::RefreshContactProfileIfStale(const std::string& contact_i
     return;
   }
   AppRuntime::PostWorkerBackground([this, contact_id, force]() { RefreshContactProfileNow(contact_id, force); });
+}
+
+ContactRelayView ConversationsHub::ContactRelay(const Contact& contact) {
+  return contact_refresh_ ? contact_refresh_->PreferredRelay(contact) : ContactRelayView{};
 }
 
 bool ConversationsHub::RefreshContact(const std::string& contact_id,

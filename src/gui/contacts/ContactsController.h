@@ -203,6 +203,10 @@ public:
     std::string share_locator;
     bool can_share_account = false;
     bool can_share_qr = false;
+    /** Its preferred relay's host, else "Mesh only" or "Not known yet"; empty on a member's page (multi-relay R3). */
+    ui::String relay_host;
+    /** Whether that relay answered for it at the last refresh; empty when no relay is listed. */
+    ui::String relay_reach;
   };
 
   bool RegisterModel(ui::Context* context);
@@ -611,8 +615,19 @@ struct ContactRefreshNotice {
   bool ok = false;
   std::string text;
 };
-/** Words for a refresh's outcome: what changed, else up to date, else which source could not be reached. */
+/**
+ * Words for a refresh's outcome: what changed and who said so, else up to date and who said so, else which sources
+ * could not be reached or did not know the account.
+ */
 ContactRefreshNotice DescribeContactRefresh(const ContactRefreshResult& result);
+
+/** The contact page's relay rows (multi-relay R3): the preferred relay by host, and its reachability. */
+struct ContactRelayLine {
+  std::string relay;
+  /** Empty when no relay is listed (the mesh only, or none known yet). */
+  std::string reach;
+};
+ContactRelayLine DescribeContactRelay(const ContactRelayView& view);
 
 /** The blocked ones of `contacts`, sorted by name as the Contacts list sorts them. */
 std::vector<Contact> BlockedContactsByName(const std::vector<Contact>& contacts);

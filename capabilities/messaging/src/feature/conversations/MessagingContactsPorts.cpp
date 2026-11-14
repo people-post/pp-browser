@@ -89,6 +89,7 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
   ports.refresh_contact = [&hub](const std::string& contact_id, std::function<void(const ContactRefreshResult&)> done) {
     return hub.RefreshContact(contact_id, std::move(done));
   };
+  ports.contact_relay = [&hub](const Contact& contact) { return hub.ContactRelay(contact); };
   return ports;
 }
 

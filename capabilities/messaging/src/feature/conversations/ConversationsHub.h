@@ -99,6 +99,7 @@ class ContactCardExchange;
 class ContactProfileRefresh;
 class ContactRefreshWorkflow;
 struct ContactRefreshResult;
+struct ContactRelayView;
 class PeerCards;
 
 /**
@@ -448,11 +449,13 @@ public:
   /** The same for every contact, one lookup at a time, at most one every half second; fresh ones cost nothing. */
   void RefreshStaleContactProfiles();
   /**
-   * The contact page's Refresh (ContactRefreshWorkflow): its devices, then our directory; the new routes are
+   * The contact page's Refresh (ContactRefreshWorkflow): its devices, then its relays, then ours; the new routes are
    * registered and the photo fetched before `done`, on the UI thread. False (no `done`) when one already runs
    * for that contact or messaging is not up. UI thread.
    */
   bool RefreshContact(const std::string& contact_id, std::function<void(const ContactRefreshResult&)> done);
+  /** The contact page's relay line: its preferred relay and what it answered at the last refresh (multi-relay R3). */
+  ContactRelayView ContactRelay(const Contact& contact);
   void SetOnPeerIconsChanged(std::function<void()> callback);
   /** Rotates the Brief LLM key at the service `llm_base_url` names (the app's: its preset and deployment). */
   Roe<void> RotateBriefLlmKey(const std::string& llm_base_url);
@@ -603,6 +606,8 @@ private:
   void SetCardRelays();
   /** Our relays to messaging: the inboxes it polls, the sender, the origins (multi-relay R2), and registration. */
   void WireOurRelays();
+  /** Where an account's stored card is asked: our relays, preferred first, then our other http directories. */
+  std::vector<std::string> CardDirectories() const;
   void WireRelayAuthSigner();
   Roe<void> StartMesh(const HubSettings& settings);
   void StopMesh();
