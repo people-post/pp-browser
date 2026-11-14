@@ -204,7 +204,8 @@ search asks the relays the user has listed; there is no search across relays bey
   started. The answers are merged (`MergeDirectoryAnswers`): the first directory's hits in its order, then each next
   one's accounts not seen yet; an account is listed once, and when several answered for it, its entry is the one
   whose keys verify (`DirectoryHitKeysVerify`: the signing key hashes to the Account ID, the KEM key carries its
-  binding), then the newer (its newest device endpoint), then the earlier directory's. The list is then ranked as
+  binding), else the earlier directory's (the preferred relay's first): an entry's endpoint times are its relay's
+  unsigned word, so another relay of ours cannot override the name, photo or addresses by claiming newer ones. The list is then ranked as
   one (exact and prefix name matches first). A directory that fails or does not answer in time adds nothing and fails
   nothing (it is logged); the search fails only when none answered, with the first one's error.
 - **A lookup by Account ID** (`GET /v1/users/by-account`: an exact-id search, *Add* / *Message* on a directory row,

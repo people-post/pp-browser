@@ -3,22 +3,11 @@
 #include "lib/people/AccountCard.h"
 #include "lib/people/ContactIdentity.h"
 
-#include <algorithm>
-#include <cstdint>
 #include <unordered_map>
 
 namespace pbr {
 
 namespace {
-
-/** How new an entry is: its newest device endpoint (a search hit carries no card). */
-int64_t NewestEndpointAt(const mesh::DirectoryHit& hit) {
-  int64_t newest = 0;
-  for (const mesh::DirectoryEndpoint& endpoint : hit.endpoints) {
-    newest = std::max(newest, endpoint.updated_at);
-  }
-  return newest;
-}
 
 /** One listed entry and whether its keys verify (asked only once another directory answered for it too). */
 struct Listed {
@@ -33,12 +22,13 @@ struct Listed {
   }
 };
 
-/** A later directory's entry replaces the listed one: its keys verify and the listed one's do not, else it is newer. */
-bool Replaces(const mesh::DirectoryHit& later, bool later_verifies, Listed& listed) {
-  if (later_verifies != listed.Verifies()) {
-    return later_verifies;
-  }
-  return NewestEndpointAt(later) > NewestEndpointAt(listed.hit); // a tie keeps the earlier directory's
+/**
+ * A later directory's entry replaces the listed one only when its keys verify and the listed one's do not. Otherwise
+ * the earlier directory's (preferred first) stays: what else an entry says (its endpoints' times) is the relay's
+ * unsigned word, so a later relay cannot override the name, photo or addresses by claiming newer ones.
+ */
+bool Replaces(bool later_verifies, Listed& listed) {
+  return later_verifies && !listed.Verifies();
 }
 
 std::string MergeKey(const mesh::DirectoryHit& hit) {
@@ -78,7 +68,7 @@ std::vector<mesh::DirectoryHit> MergeDirectoryAnswers(const std::vector<Director
       }
       Listed& entry = listed[known->second];
       const bool verifies = DirectoryHitKeysVerify(hit);
-      if (Replaces(hit, verifies, entry)) {
+      if (Replaces(verifies, entry)) {
         entry = Listed{.hit = hit, .verifies = verifies};
       }
     }

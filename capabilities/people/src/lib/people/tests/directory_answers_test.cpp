@@ -86,12 +86,14 @@ TEST(DirectoryAnswersTest, AnEntryWhoseKeysVerifyWinsOverOneWhoseDoNot) {
   EXPECT_EQ(merged[0].nickname, "alice") << "a newer entry with keys that do not verify replaces nothing";
 }
 
-TEST(DirectoryAnswersTest, BothVerifyingTheNewerEntryWinsAndATieKeepsThePreferredRelays) {
+TEST(DirectoryAnswersTest, BothVerifyingTheEarlierRelaysEntryStaysWhateverItsEndpointsSay) {
+  // An endpoint's updated_at is the relay's word, not signed: a later relay of ours claiming newer endpoints does not
+  // replace the preferred relay's name, photo and addresses.
   const test::TestAccount alice = test::TestAccount::Make();
-  auto merged = MergeDirectoryAnswers({Answered("https://a.example", {EntryFor(alice, "alice-old", 1)}),
-                                       Answered("https://b.example", {EntryFor(alice, "alice-new", 5)})});
+  auto merged = MergeDirectoryAnswers({Answered("https://a.example", {EntryFor(alice, "alice-a", 1)}),
+                                       Answered("https://b.example", {EntryFor(alice, "alice-b", 5)})});
   ASSERT_EQ(merged.size(), 1u);
-  EXPECT_EQ(merged[0].nickname, "alice-new") << "its newest device endpoint is newer";
+  EXPECT_EQ(merged[0].nickname, "alice-a") << "the earlier (preferred-first) directory's";
 
   merged = MergeDirectoryAnswers({Answered("https://a.example", {EntryFor(alice, "alice-a", 3)}),
                                   Answered("https://b.example", {EntryFor(alice, "alice-b", 3)})});
