@@ -12,6 +12,7 @@ pp_browser_add_domain_library(pp_domain_delivery
     E2ePublicSessionKeys.cpp
     ControlLane.cpp
     RelayGrantCoordinator.cpp
+    RecipientRelays.cpp
   PUBLIC_LIBS
     pp_domain_peers
     pp_lib_delivery

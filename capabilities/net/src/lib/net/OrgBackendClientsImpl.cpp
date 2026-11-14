@@ -224,6 +224,28 @@ Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& 
   return DirectoryHitFromJson(*root);
 }
 
+Roe<std::optional<Object>> FetchStoredAccountCard(const std::string& relay_base_url, const std::string& account_id) {
+  if (relay_base_url.empty() || account_id.rfind("account:", 0) != 0) {
+    return Error("Stored card lookup: no relay or no Account ID");
+  }
+  const auto response = HttpClient::Get(relay_base_url + "/v1/users/by-account/" + EncodePathSegment(account_id));
+  if (!response) {
+    return response.error();
+  }
+  if (response.value().status_code == 404) {
+    return std::optional<Object>{}; // not registered there
+  }
+  if (response.value().status_code < 200 || response.value().status_code >= 300) {
+    return Error("Stored card lookup failed with status " + std::to_string(response.value().status_code));
+  }
+  auto root = TryParseObject(response.value().body);
+  if (!root || root->getString("account_id").value_or("") != account_id) {
+    return Error("Invalid account lookup JSON"); // the row must be the account asked for
+  }
+  const Object* card = root->getObject("account_card");
+  return card ? std::optional<Object>(*card) : std::optional<Object>{};
+}
+
 Roe<std::vector<mesh::MeshNodeHit>> MeshNodeHitsFromDirectoryJson(const std::string& json) {
   auto root = TryParseObject(json);
   if (!root) {
