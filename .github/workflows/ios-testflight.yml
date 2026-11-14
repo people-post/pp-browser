@@ -122,12 +122,19 @@ jobs:
           done
           mkdir -p "$CCACHE_DIR"
 
+      - name: Runner image (ccache key)
+        shell: bash
+        # ccache misses everything after a compiler change, so a new runner image starts its own cache
+        # (falling back to the newest one); a self-hosted runner has no image version.
+        run: echo "PP_RUNNER_IMAGE=${ImageOS:-self-hosted}-${ImageVersion:-none}" >> "$GITHUB_ENV"
+
       - name: Restore ccache
         uses: actions/cache@v6
         with:
           path: .cache/ccache
-          key: ${{ runner.os }}-ios-testflight-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/ios-testflight.yml') }}
+          key: ${{ runner.os }}-ios-testflight-ccache-v1-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/ios-testflight.yml') }}
           restore-keys: |
+            ${{ runner.os }}-ios-testflight-ccache-v1-${{ env.PP_RUNNER_IMAGE }}-
             ${{ runner.os }}-ios-testflight-ccache-v1-
             ${{ runner.os }}-ios-ccache-v1-
 

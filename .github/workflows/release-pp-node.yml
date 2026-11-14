@@ -63,12 +63,19 @@ jobs:
           mkdir -p "$CCACHE_DIR"
           echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"
 
+      - name: Runner image (ccache key)
+        shell: bash
+        # ccache misses everything after a compiler change, so a new runner image starts its own cache
+        # (falling back to the newest one); a self-hosted runner has no image version.
+        run: echo "PP_RUNNER_IMAGE=${ImageOS:-self-hosted}-${ImageVersion:-none}" >> "$GITHUB_ENV"
+
       - name: Restore ccache
         uses: actions/cache@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: linux-pp-node-ubuntu2404-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release-pp-node.yml', 'scripts/platform/pp_node_package_linux.sh') }}
+          key: linux-pp-node-ubuntu2404-ccache-v1-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release-pp-node.yml', 'scripts/platform/pp_node_package_linux.sh') }}
           restore-keys: |
+            linux-pp-node-ubuntu2404-ccache-v1-${{ env.PP_RUNNER_IMAGE }}-
             linux-pp-node-ubuntu2404-ccache-v1-
 
       - name: ccache stats (pre-build)
