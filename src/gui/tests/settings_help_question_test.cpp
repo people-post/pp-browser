@@ -70,7 +70,7 @@ TEST_F(SettingsHelpQuestionTest, TheHardSettingsHaveOneBesideThem) {
       {"settings_section_advanced.rml", "settings.network.direct_connections"},
       {"settings_section_advanced.rml", "settings.network.reachable_without_relay"},
       {"settings_section_notifications.rml", "settings.stay_connected"},
-      {"settings_section_advanced.rml", "settings.help.topic.mcp"},
+      {"settings_section_advanced_integrations.rml", "settings.help.topic.mcp"},
   };
   for (const auto& item : expected) {
     const std::string rml = ReadAsset(std::string("views/") + item.view);

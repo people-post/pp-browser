@@ -44,13 +44,22 @@ std::string ReadSource(const std::string& relative) {
 
 // A page view with its {{include:x}} sub-views spelled out in place (the desktop PIN and the transfer block live in
 // their own files), so the checks below see everything the page can show.
+//
+// The Advanced page's sub-pages (its free-text fields on phones) are listed under their own ids; the page itself does not
+// spell out the files it includes for the desktop, so no row is counted twice.
+const std::vector<std::string>& AdvancedSubpages() {
+  static const std::vector<std::string> ids = {"advanced_endpoint", "advanced_integrations", "advanced_backend"};
+  return ids;
+}
+
 std::string View(const std::string& id) {
   std::string text = ReadAsset("views/settings_section_" + id + ".rml");
   const std::string marker = "{{include:";
   for (size_t at = text.find(marker); at != std::string::npos; at = text.find(marker)) {
     const size_t end = text.find("}}", at);
     const std::string name = text.substr(at + marker.size(), end - at - marker.size());
-    text.replace(at, end + 2 - at, ReadAsset("views/" + name + ".rml"));
+    const bool subpage = name.rfind("settings_section_advanced_", 0) == 0;
+    text.replace(at, end + 2 - at, subpage ? std::string() : ReadAsset("views/" + name + ".rml"));
   }
   return text;
 }
@@ -305,26 +314,31 @@ TEST(SettingsRowChecklistTest, HomeEntriesAreAllInThePageTable) {
 TEST(SettingsRowChecklistTest, EveryRowOfEveryPageIsOnTheChecklistWithItsGates) {
   const std::vector<Row> rows = LoadChecklist();
   ASSERT_GT(rows.size(), 100u);
+  std::vector<std::string> ids;
   for (const SettingsPage& page : SettingsPages()) {
+    ids.push_back(page.id);
+  }
+  ids.insert(ids.end(), AdvancedSubpages().begin(), AdvancedSubpages().end());
+  for (const std::string& page_id : ids) {
     std::map<std::string, size_t> actual_total;
     std::map<std::pair<std::string, std::string>, size_t> actual_at;
-    for (const Occurrence& occurrence : Scan(View(page.id))) {
+    for (const Occurrence& occurrence : Scan(View(page_id))) {
       ++actual_total[occurrence.token];
       ++actual_at[{occurrence.token, occurrence.gates}];
     }
     std::map<std::string, size_t> expected_total;
     for (const Row& row : rows) {
-      if (row.view != page.id) {
+      if (row.view != page_id) {
         continue;
       }
       expected_total[row.token] += row.count;
       const bool gate_may_differ = row.phase != 0 && kPhase >= row.phase;
       if (!gate_may_differ) {
         const std::pair<std::string, std::string> key{row.token, row.gates};
-        EXPECT_EQ(actual_at[key], row.count) << page.id << ": " << row.token << " under [" << row.gates << "]";
+        EXPECT_EQ(actual_at[key], row.count) << page_id << ": " << row.token << " under [" << row.gates << "]";
       }
     }
-    EXPECT_EQ(actual_total, expected_total) << page.id << ": the view and the checklist disagree on what is in it";
+    EXPECT_EQ(actual_total, expected_total) << page_id << ": the view and the checklist disagree on what is in it";
   }
 }
 

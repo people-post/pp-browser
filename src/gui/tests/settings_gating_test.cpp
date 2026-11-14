@@ -131,40 +131,57 @@ TEST(SettingsGatingTest, TheTestOptionsPageFollowsOnlyTheTesterSwitchAndHasNoSer
 // but `advanced`, so they show with advanced on and the tester switch off.
 TEST(SettingsGatingTest, TheServiceRowsMovedToAdvancedUnchangedAndAreGatedOnlyOnAdvanced) {
   const std::string rml = ReadAsset("views/settings_section_advanced.rml");
+  // The custom addresses live in their own file (a page of their own on phones, inline on the desktop).
+  const std::string backend = ReadAsset("views/settings_section_advanced_backend.rml");
   for (const char* line : {
            "<div class=\"group-card\" data-if=\"show_backend_switch\">",
            "data-event-click=\"on_choose_backend()\"",
-           "{{i18n:settings.network.backend}}</span>",
+           "{{i18n:settings.network.backend}}</span><button class=\"settings-q-btn settings-phone-only\"",
            "<span class=\"settings-choice-value-text\">{{backend_label}}</span>",
-           "<p class=\"text muted settings-help group-foot\" data-if=\"show_backend_switch\">"
+           "<p class=\"text muted settings-help group-foot settings-desktop-only\" data-if=\"show_backend_switch\">"
            "{{i18n:settings.network.backend.help}}</p>",
            "<p class=\"text settings-help group-foot\" data-if=\"show_backend_switch && backend_restart_pending\">"
            "{{i18n:settings.network.backend.restart}}</p>",
-           "<div class=\"group-card\" data-if=\"backend_is_custom\">",
+       }) {
+    EXPECT_NE(rml.find(line), std::string::npos) << line;
+  }
+  for (const char* line : {
+           "<div class=\"stack\" data-if=\"backend_is_custom\">",
            "data-value=\"relay_base_url\" data-event-change=\"on_network_field_changed()\"",
            "data-value=\"directory_base_url\" data-event-change=\"on_network_field_changed()\"",
            "data-value=\"registration_base_url\" data-event-change=\"on_network_field_changed()\"",
            "data-event-click=\"reset_section('network')\">{{i18n:common.reset_defaults}}</button>",
        }) {
-    EXPECT_NE(rml.find(line), std::string::npos) << line;
+    EXPECT_NE(backend.find(line), std::string::npos) << line;
   }
   EXPECT_EQ(CountOf(rml, "data-event-click=\"on_choose_backend()\""), 1u);
-  EXPECT_EQ(CountOf(rml, "data-if=\"backend_is_custom\""), 4u);
-  // Gates around the Service card: the page root (advanced) and nothing else; the custom fields add the inner advanced.
+  EXPECT_EQ(CountOf(rml, "data-if=\"backend_is_custom\""), 1u) << "only the entry row of the custom addresses page";
+  EXPECT_EQ(CountOf(backend, "data-if=\"backend_is_custom\""), 1u) << "the whole file is behind the old gate";
+  // Gates around the Service card: the page root (advanced) and nothing else; the banner has none.
   const size_t card = rml.find("data-if=\"show_backend_switch\"");
   ASSERT_NE(card, std::string::npos);
   const std::string before = rml.substr(0, card);
   EXPECT_EQ(CountOf(before, "data-if="), 1u) << "only the page root's data-if comes before the Service card";
   EXPECT_NE(before.find("data-if=\"advanced\""), std::string::npos);
-  // The technical-users note has the warning triangle before it, tinted by the warn token (no colour in the markup).
-  const size_t intro = rml.find("{{i18n:settings.advanced.intro}}");
-  const size_t triangle = rml.find("icons/v2/alert-triangle.svg");
-  ASSERT_NE(triangle, std::string::npos);
-  EXPECT_LT(rml.find("settings-warn-row"), triangle);
-  EXPECT_LT(triangle, intro);
-  EXPECT_EQ(CountOf(rml, "alert-triangle.svg"), 1u) << "only this one line carries the icon";
-  EXPECT_EQ(rml.find("#", triangle), std::string::npos) << "no hard-coded colour";
-  EXPECT_EQ(CountOf(ReadAsset("themes/colors.rcss.tmpl"), ".settings-warn-icon svg {\n  image-color: {{warn}};"), 1u);
+  // The technical-users note: a banner strip on phones and the triangle line on the desktop, both with the warning
+  // triangle before the words, tinted by tokens (no colour in the markup).
+  EXPECT_EQ(CountOf(rml, "{{i18n:settings.advanced.intro}}"), 2u);
+  EXPECT_EQ(CountOf(rml, "alert-triangle.svg"), 2u) << "one per layout";
+  size_t triangle = rml.find("icons/v2/alert-triangle.svg");
+  for (size_t at = rml.find("{{i18n:settings.advanced.intro}}"); at != std::string::npos;
+       at = rml.find("{{i18n:settings.advanced.intro}}", at + 1)) {
+    ASSERT_NE(triangle, std::string::npos);
+    EXPECT_LT(triangle, at);
+    triangle = rml.find("icons/v2/alert-triangle.svg", triangle + 1);
+  }
+  EXPECT_EQ(rml.find('#'), std::string::npos) << "no hard-coded colour";
+  const size_t banner = rml.find("<div class=\"settings-banner settings-phone-only\">");
+  ASSERT_NE(banner, std::string::npos);
+  EXPECT_LT(banner, card) << "the banner is the first thing on the page";
+  EXPECT_NE(rml.find("<div class=\"settings-warn-row settings-desktop-only\">"), std::string::npos);
+  const std::string colors = ReadAsset("themes/colors.rcss.tmpl");
+  EXPECT_EQ(CountOf(colors, ".settings-warn-icon svg {\n  image-color: {{warn}};"), 1u);
+  EXPECT_EQ(CountOf(colors, "background-color: {{warn-tint}};"), 1u);
   // The Service rows come right after the technical-users note, above the connection rows.
   EXPECT_LT(rml.find("{{i18n:settings.advanced.intro}}"), card);
   EXPECT_LT(card, rml.find("{{i18n:settings.advanced.group.connection}}"));

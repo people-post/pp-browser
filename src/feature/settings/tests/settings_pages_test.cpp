@@ -91,7 +91,9 @@ TEST(SettingsPagesTest, EveryChecklistRowSavesThroughAHandlerItsPageOwns) {
     fields.push_back(line.substr(start));
     ASSERT_EQ(fields.size(), 7u) << line;
     const std::string& handler = fields[2];
-    const std::string& view = fields[3];
+    // The Advanced page's phone sub-pages (advanced_endpoint, ...) are listed under their own ids; their rows belong
+    // to the Advanced page.
+    const std::string view = fields[3].rfind("advanced_", 0) == 0 ? "advanced" : fields[3];
     ASSERT_NE(FindSettingsPage(view), nullptr) << view;
     if (handler == "-") {
       continue;

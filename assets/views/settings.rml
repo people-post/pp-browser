@@ -191,6 +191,17 @@
       <div class="settings-section settings-section--grouped settings-mock stack" data-if="security_page == 'transfer'">
 {{include:settings_security_transfer}}
       </div>
+      <!-- Advanced: the pages that hold its free-text fields. Their inputs keep their own bindings and change events; the
+           desktop shows the same files inline in the Advanced page. -->
+      <div class="settings-section settings-section--grouped settings-mock stack" data-if="security_page == 'ai_endpoint'">
+{{include:settings_section_advanced_endpoint}}
+      </div>
+      <div class="settings-section settings-section--grouped settings-mock stack" data-if="security_page == 'integrations'">
+{{include:settings_section_advanced_integrations}}
+      </div>
+      <div class="settings-section settings-section--grouped settings-mock stack" data-if="security_page == 'backend_custom'">
+{{include:settings_section_advanced_backend}}
+      </div>
       <!-- Pick one value (theme, language, who can call...): one row each, the current one checked; a tap applies it
            and the page goes back (SettingsChoicePage). -->
       <div class="settings-section settings-section--grouped stack settings-choice-page" data-if="security_page == 'choice'">

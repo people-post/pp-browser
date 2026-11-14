@@ -18,6 +18,8 @@ secure-tint	#30b0c71f	#40c8e02e	§2.3
 success	#34c759	#30d158	§2.3
 danger	#ff3b30	#ff453a	§2.3
 warn	#ff9500	#ff9f0a	§2.3
+warn-tint	#fff4e0	#2e2210	the Advanced page banner: pale amber
+warn-line	#ff950040	#ff9f0a4d	the Advanced page banner edges
 mention	#5856d6	#5e5ce6	§2.3
 mention-row	#fff4e0	#3a2e14	§2.3 (left bar = warn)
 separator	#3c3c434a	#54545899	§2.4

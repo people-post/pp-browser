@@ -2,6 +2,7 @@
 // shows the Advanced page and the technical rows, the second the Test options page and the QA entry of the Service row
 // (DEV/PLAN-advanced-switch-and-tester-mode.md). Driven through the real model: events dispatched on a small document
 // bound to the settings model, the session store on a temporary profile.
+#include "common/runtime/AppRuntime.h"
 #include "feature/settings/SettingsCommands.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
@@ -104,6 +105,15 @@ protected:
         "<p id=\"adv\">{{advanced}}</p><p id=\"tst\">{{tester}}</p><p id=\"lbl\">{{backend_label}}</p>"
         "<button id=\"toggle_adv\" data-event-click=\"toggle_advanced_settings()\">x</button>"
         "<button id=\"version\" data-event-click=\"tap_version()\">x</button>"
+        "<p id=\"sp\">{{security_page}}</p><p id=\"spt\">{{security_page_title}}</p>"
+        "<button id=\"sel_adv\" data-event-click=\"select_section('advanced')\">x</button>"
+        "<button id=\"open_ep\" data-event-click=\"open_security_page('ai_endpoint')\">x</button>"
+        "<button id=\"open_int\" data-event-click=\"open_security_page('integrations')\">x</button>"
+        "<button id=\"open_be\" data-event-click=\"open_security_page('backend_custom')\">x</button>"
+        "<button id=\"close_sub\" data-event-click=\"close_security_page()\">x</button>"
+        "<button id=\"edit_llm\" data-event-click=\"on_llm_field_changed()\">x</button>"
+        "<button id=\"edit_net\" data-event-click=\"on_network_field_changed()\">x</button>"
+        "<button id=\"edit_int\" data-event-click=\"on_integrations_field_changed()\">x</button>"
         "</div></body></rml>");
     ASSERT_NE(document, nullptr);
     document->Show();
@@ -238,7 +248,7 @@ TEST_F(SettingsAdvancedTesterTest, PickingCustomWithTheTesterOptionsOffSavesExac
 }
 
 TEST_F(SettingsAdvancedTesterTest, TheNetworkResetButtonIsBoundOnlyUnderTheCustomAddressCondition) {
-  const std::string rml = ReadAsset("views/settings_section_advanced.rml");
+  const std::string rml = ReadAsset("views/settings_section_advanced_backend.rml");
   const size_t button = rml.find("data-event-click=\"reset_section('network')\"");
   ASSERT_NE(button, std::string::npos);
   const size_t gate = rml.rfind("data-if=", button);
@@ -324,6 +334,165 @@ TEST_F(SettingsAdvancedTesterTest, TheHelpPageHasTheSwitchRowInBothLayoutsWithIt
   EXPECT_EQ(Tr("settings.help.show_advanced"), "显示高级设置");
   EXPECT_EQ(Tr("settings.help.show_advanced.hint"), "打开后可以看到连接、名片有效期等更多参数。一般不用打开。");
   LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
+// The Advanced page's free-text fields live on second-level pages on phones (custom endpoint, integration settings,
+// custom addresses) and inline on the desktop; the same files serve both, so the inputs keep their bindings and events.
+class SettingsAdvancedSubpageTest : public SettingsAdvancedTesterTest {
+protected:
+  void SetUp() override {
+    AppRuntime::ShutdownUI(); // a fresh UI queue; this page's own posted tasks are dropped in TearDown
+    AppRuntime::InitializeUI();
+    SettingsAdvancedTesterTest::SetUp();
+    ShellNavigationPorts nav;
+    nav.snapshot = []() {
+      ShellChromeSnapshot chrome;
+      chrome.layout_mode = LayoutMode::Compact;
+      chrome.nav_tab = NavTab::Me;
+      return chrome;
+    };
+    nav.push_local_back = [this](const std::string& id, std::function<void()> commit) {
+      pushed.push_back(id);
+      back_stack.push_back({id, std::move(commit)});
+    };
+    nav.has_local_back = [this](const std::string& id) {
+      for (const auto& entry : back_stack) {
+        if (entry.first == id) {
+          return true;
+        }
+      }
+      return false;
+    };
+    nav.clear_local_back = [this](const std::string& id) {
+      for (size_t i = back_stack.size(); i-- > 0;) {
+        if (back_stack[i].first == id) {
+          back_stack.erase(back_stack.begin() + static_cast<long>(i));
+        }
+      }
+    };
+    // The arrow, the system back and the edge swipe all end here: the top entry's commit.
+    nav.request_dismiss_instant = [this]() {
+      if (back_stack.empty()) {
+        return false;
+      }
+      auto commit = std::move(back_stack.back().second);
+      back_stack.pop_back();
+      commit();
+      return true;
+    };
+    settings.BindShellNavigation(std::move(nav));
+    Click("toggle_adv");
+    Click("sel_adv"); // the Advanced page, as a phone opens it
+    pushed.clear();
+  }
+  void TearDown() override {
+    settings.BindShellNavigation({});
+    SettingsAdvancedTesterTest::TearDown();
+    AppRuntime::ShutdownUI(); // tasks left queued hold this controller, which is gone
+    AppRuntime::InitializeUI();
+  }
+  std::vector<std::string> pushed;
+  std::vector<std::pair<std::string, std::function<void()>>> back_stack;
+};
+
+TEST_F(SettingsAdvancedSubpageTest, EachEntryOpensItsPageOnTheLocalBackStackAndBackClosesIt) {
+  AppConfig config = store.Snapshot().config;
+  config.backend.env = "custom";
+  ASSERT_TRUE(static_cast<bool>(store.SaveConfig(config)));
+  host().UiState().backend_env = "custom";
+  host().PushToView(false);
+  const struct {
+    const char* button;
+    const char* page;
+    const char* en;
+    const char* zh;
+  } entries[] = {{"open_ep", "ai_endpoint", "Custom endpoint", "自定义接口"},
+                 {"open_int", "integrations", "Integration settings", "集成设置"},
+                 {"open_be", "backend_custom", "Custom addresses", "自定义地址"}};
+  for (const char* language : {"en", "zh-Hans"}) {
+    LocalizationService::Instance().SetPreferredLanguage(language);
+    for (const auto& entry : entries) {
+      pushed.clear();
+      Click(entry.button);
+      EXPECT_EQ(Text("sp"), entry.page) << entry.button;
+      EXPECT_EQ(Text("spt"), std::string(language) == "en" ? entry.en : entry.zh);
+      // One level on the same back stack entry the transfer and choice pages use, so the arrow, the system back and
+      // the edge swipe (ShellHost::HiddenTabBack / BackTarget, pinned in shell_host_test) close it.
+      ASSERT_EQ(pushed.size(), 1u);
+      EXPECT_EQ(pushed[0], "settings_subpage");
+      Click("close_sub");       // the arrow: goes through the back stack
+      AppRuntime::RunUITasks(); // the page's redraw is posted
+      context->Update();
+      ASSERT_EQ(back_stack.size(), 1u) << "only the section page itself is left";
+      EXPECT_EQ(back_stack.back().first, "settings_detail");
+      EXPECT_EQ(Text("sp"), "") << "the page is closed";
+    }
+  }
+  // The custom addresses page only opens while the service is Custom.
+  host().UiState().backend_env = "prod";
+  host().PushToView(false);
+  pushed.clear();
+  Click("open_be");
+  EXPECT_TRUE(pushed.empty());
+  EXPECT_EQ(Text("sp"), "");
+}
+
+TEST_F(SettingsAdvancedSubpageTest, EditingOnASubpageSavesThroughTheSameHandlerAndLeavingLosesNothing) {
+  // LLM field: the sub-page's inputs carry on_llm_field_changed() (pinned by the row checklist); the event saves it.
+  host().UiState().llm_model = "model-from-subpage";
+  host().PushToView(false);
+  Click("open_ep");
+  ASSERT_EQ(Text("sp"), "ai_endpoint");
+  Click("edit_llm");
+  Click("close_sub"); // leave before the debounce fires
+  context->Update();
+  settings.OnMeSurfaceClosed(); // leaving Me flushes whatever is dirty
+  EXPECT_EQ(store.Snapshot().config.llm.model, "model-from-subpage");
+  // Integrations field.
+  host().UiState().search_provider = "example-search";
+  host().PushToView(false);
+  Click("open_int");
+  ASSERT_EQ(Text("sp"), "integrations");
+  Click("edit_int");
+  Click("close_sub");
+  context->Update();
+  settings.OnMeSurfaceClosed(); // leaving Me flushes whatever is dirty
+  EXPECT_EQ(store.Snapshot().config.search.provider, "example-search");
+}
+
+TEST_F(SettingsAdvancedSubpageTest, EverySubpageFileIsIncludedOnceInTheDesktopPageAndOnceInItsPhonePage) {
+  const std::string advanced = ReadAsset("views/settings_section_advanced.rml");
+  const std::string settings_rml = ReadAsset("views/settings.rml");
+  const std::string catalog = [] {
+    std::ifstream in(std::filesystem::path(PP_SOURCE_DIR) / "src/lib/ui/ViewCatalog.cpp");
+    std::stringstream buffer;
+    buffer << in.rdbuf();
+    return buffer.str();
+  }();
+  const struct {
+    const char* file;
+    const char* page;
+  } files[] = {{"settings_section_advanced_endpoint", "ai_endpoint"},
+               {"settings_section_advanced_integrations", "integrations"},
+               {"settings_section_advanced_backend", "backend_custom"}};
+  const auto count = [](const std::string& text, const std::string& needle) {
+    size_t n = 0;
+    for (size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + 1)) {
+      ++n;
+    }
+    return n;
+  };
+  for (const auto& f : files) {
+    const std::string include = std::string("{{include:") + f.file + "}}";
+    EXPECT_EQ(count(advanced, include), 1u) << f.file;
+    // The desktop copy is hidden on phones; the phone entry row is hidden on the desktop.
+    const size_t at = advanced.find(include);
+    EXPECT_NE(advanced.rfind("settings-desktop-only", at), std::string::npos);
+    EXPECT_EQ(count(settings_rml, include), 1u) << f.file;
+    EXPECT_NE(settings_rml.find(std::string("data-if=\"security_page == '") + f.page + "'\""), std::string::npos);
+    EXPECT_EQ(count(advanced, std::string("data-event-click=\"open_security_page('") + f.page + "')\""), 1u);
+    EXPECT_NE(catalog.find(std::string("{\"") + f.file + "\", \"views/" + f.file + ".rml\"}"), std::string::npos);
+  }
 }
 
 } // namespace

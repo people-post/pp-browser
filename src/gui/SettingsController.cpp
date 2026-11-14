@@ -1571,11 +1571,20 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
     OpenChangePin(); // B2: the PIN gate's three steps, not a page of fields
     return;
   }
-  if (selected_id_ != "devices" || !show_detail_) {
-    return; // phones only: desktop shows both inline
-  }
-  if (page == "transfer") {
+  // Phones only: the desktop shows these inline. Devices has the transfer page; Advanced has the pages that hold its
+  // free-text fields (the custom endpoint, the integrations, the custom service addresses).
+  const bool on_devices = selected_id_ == "devices" && show_detail_;
+  const bool on_advanced = selected_id_ == "advanced" && show_detail_;
+  bool secret = false; // the transfer code is on it: no tab bar under it
+  if (on_devices && page == "transfer") {
     security_page_title_ = Tr("settings.security.transfer_row").c_str();
+    secret = true;
+  } else if (on_advanced && page == "ai_endpoint") {
+    security_page_title_ = Tr("settings.llm.endpoint.title").c_str();
+  } else if (on_advanced && page == "integrations") {
+    security_page_title_ = Tr("settings.integrations.page.title").c_str();
+  } else if (on_advanced && page == "backend_custom" && bindings_.backend_is_custom) {
+    security_page_title_ = Tr("settings.network.backend.custom_addresses").c_str();
   } else {
     return;
   }
@@ -1589,8 +1598,8 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
   if (shell_navigation_.push_local_back) {
     shell_navigation_.push_local_back("settings_subpage", [this] { ApplyCloseSecurityPage(); });
   }
-  if (shell_navigation_.set_secret_page_open) {
-    shell_navigation_.set_secret_page_open(true); // the transfer code is on it: no tab bar under it
+  if (secret && shell_navigation_.set_secret_page_open) {
+    shell_navigation_.set_secret_page_open(true);
   }
 }
 

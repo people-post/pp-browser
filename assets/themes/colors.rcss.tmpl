@@ -3083,6 +3083,31 @@ input.checkbox:checked {
   background-color: {{fill-2}};
 }
 
+/* The Advanced page's banner strip: pale amber with a warn-coloured edge; the words stay in the normal text colour. */
+.shell-layer-compact .settings-banner {
+  background-color: {{warn-tint}};
+  border-top: 1dp solid {{warn-line}};
+  border-bottom: 1dp solid {{warn-line}};
+}
+
+.settings-banner-text {
+  color: {{label}};
+}
+
+/* Plain action rows in a card: accent text on the card, a separator above each. */
+.shell-layer-compact .settings-section--grouped .group-card .btn.settings-action-row,
+.shell-layer-compact .settings-section--grouped .group-card .btn.settings-action-row:hover,
+.shell-layer-compact .settings-section--grouped .group-card .btn.settings-action-row:focus {
+  background-color: transparent;
+  color: {{accent}};
+  border: 0;
+  border-top: 1dp solid {{separator}};
+}
+
+.shell-layer-compact .settings-section--grouped .group-card .btn.settings-action-row:active {
+  background-color: {{fill-2}};
+}
+
 /* The small tinted pill at the right end of a row ("Send"); grey while the action runs. */
 .shell-layer-compact .settings-pill-btn,
 .shell-layer-compact .settings-pill-btn:hover,
