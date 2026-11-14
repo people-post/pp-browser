@@ -472,6 +472,19 @@ TEST_F(SettingsOwnDevicesTest, ADeviceThatVanishesWhileTheConfirmIsOpenIsNotTouc
   EXPECT_EQ(notes_.size(), 2U);
 }
 
+TEST_F(SettingsOwnDevicesTest, ADeviceThatVanishesWhileTheRenameDialogIsOpenIsNotRenamed) {
+  devices_->Show(View());
+  devices_->DeviceActions(2)[0].run(); // rename other-peer-bbbbbb
+  ASSERT_EQ(prompts_.size(), 1U);
+  devices_->Show(OwnDevicesViewFor({"self-peer", "other-peer-aaaaaa"}, "self-peer", false));
+  on_prompt_(true, "Too late");
+  Settle();
+  EXPECT_TRUE(renamed_.empty());
+  EXPECT_EQ(failures_, 0) << "no raw error";
+  ASSERT_EQ(notes_.size(), 1U);
+  EXPECT_EQ(notes_[0], Tr("settings.security.devices.list_changed"));
+}
+
 TEST_F(SettingsOwnDevicesTest, CancellingEitherConfirmIssuesNothing) {
   devices_->Show(View());
   auto actions = devices_->DeviceActions(1);

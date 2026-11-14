@@ -1191,9 +1191,11 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
     std::map<std::string, std::string> names;
     for (const DeviceNameEntry& entry : facade.OwnDeviceNames()) {
-      names[entry.peer_id] = entry.name;
+      if (!entry.removed) { // a removal tombstone is no name
+        names[entry.peer_id] = entry.name;
+      }
     }
-    return OwnDevicesViewFor(peer_ids, list->self_peer_id, list->signed_out, names);
+    return OwnDevicesViewFor(peer_ids, list->self_peer_id, list->signed_out, names, StartupSystemDeviceName());
   };
   settings_commands.rename_device = [&facade](const std::string& peer_id, const std::string& name) {
     return facade.RenameOwnDevice(peer_id, name);

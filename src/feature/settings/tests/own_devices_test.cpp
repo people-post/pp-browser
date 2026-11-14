@@ -77,6 +77,24 @@ TEST(OwnDevicesTest, ANameIsCleanedAgainAndAnEmptyOneIsNoName) {
   EXPECT_EQ(view.devices[2].name, "Name {device} {id}") << "a name is a value, not a template";
 }
 
+TEST(OwnDevicesTest, WithoutAnEntryThisDeviceShowsTheCachedSystemNameAndOthersStayNew) {
+  LoadLocales();
+  const pbr::OwnDevicesView view =
+      pbr::OwnDevicesViewFor({"main", "self"}, "self", false, {{"main", "Home iPhone"}}, "  Kenneth's Mac ");
+  EXPECT_EQ(view.devices[1].name, "Kenneth's Mac");
+  EXPECT_TRUE(view.devices[1].named) << "the rename dialog starts from it";
+  EXPECT_EQ(view.devices[0].name, "Home iPhone");
+  // The system name is for this device only.
+  const pbr::OwnDevicesView others = pbr::OwnDevicesViewFor({"main", "self"}, "self", false, {}, "Mac");
+  EXPECT_EQ(others.devices[0].name, "New device");
+  EXPECT_EQ(others.devices[1].name, "Mac");
+  // An entry beats the fallback; no system name either: "New device".
+  EXPECT_EQ(pbr::OwnDevicesViewFor({"self"}, "self", false, {{"self", "Mine"}}, "Mac").devices[0].name, "Mine");
+  const pbr::OwnDevicesView none = pbr::OwnDevicesViewFor({"self"}, "self", false, {}, " \n ");
+  EXPECT_EQ(none.devices[0].name, "New device");
+  EXPECT_FALSE(none.devices[0].named);
+}
+
 TEST(OwnDevicesTest, ALinkedDeviceSeesTheMainDevicesName) {
   LoadLocales();
   const pbr::OwnDevicesView view =

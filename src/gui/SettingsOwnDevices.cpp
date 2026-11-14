@@ -158,6 +158,11 @@ void SettingsOwnDevices::RenameById(const std::string& peer_id) {
                           if (!ok || name.empty()) {
                             return;
                           }
+                          // The list may have changed while the dialog was open: look the device up again.
+                          if (!RenameableById(peer_id)) {
+                            UserFeedback::Note(Tr("settings.security.devices.list_changed"));
+                            return;
+                          }
                           if (!commands_.rename_device) {
                             report_failure_(Error("Messaging is not ready"));
                             return;

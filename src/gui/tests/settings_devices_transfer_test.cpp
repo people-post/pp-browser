@@ -225,22 +225,20 @@ TEST(DevicesTransferMarkupTest, TheSaveCopyRowAndTheHeroSentenceCarryTheHelpMark
   const size_t first = rml.find(help, sentence);
   ASSERT_NE(first, std::string::npos);
   EXPECT_LT(first - sentence, 120u) << "right after the hero sentence";
-  // The linked phone has two: right after the card's second line, and right after the "Main device (manage)" label of
-  // its list (same event, nothing else asks).
+  // The linked phone has one: right after the "Main device (manage)" label of its list (the card's second line has
+  // none; same event, nothing else asks).
   const size_t second = rml.find(help, first + 1);
   ASSERT_NE(second, std::string::npos);
   EXPECT_GT(second, rml.find("{{i18n:settings.security.devices.linked_note_sub}}"));
-  const size_t third = rml.find(help, second + 1);
-  ASSERT_NE(third, std::string::npos);
-  EXPECT_GT(third, rml.find("{{i18n:settings.security.devices.role_main_manage}}"));
-  EXPECT_LT(third - rml.find("{{i18n:settings.security.devices.role_main_manage}}"), 160u) << "right after the label";
-  EXPECT_EQ(rml.find(help, third + 1), std::string::npos) << "no other \"?\" asks about the action";
+  EXPECT_GT(second, rml.find("{{i18n:settings.security.devices.role_main_manage}}"));
+  EXPECT_LT(second - rml.find("{{i18n:settings.security.devices.role_main_manage}}"), 160u) << "right after the label";
+  EXPECT_EQ(rml.find(help, second + 1), std::string::npos) << "no other \"?\" asks about the action";
   EXPECT_EQ(rml.find("group-row-q"), std::string::npos) << "no absolutely positioned help mark any more";
   EXPECT_EQ(Asset("themes/components.rcss").find("group-row-q"), std::string::npos);
   EXPECT_EQ(rml.find("group-row-tap"), std::string::npos);
 }
 
-TEST(DevicesTransferMarkupTest, NoDisabledLinkRowIsLeftAndTheLinkedPhonesBlockTapsOnlyRenameAndTheTwoHelpMarks) {
+TEST(DevicesTransferMarkupTest, NoDisabledLinkRowIsLeftAndTheLinkedPhonesBlockTapsOnlyRenameAndTheOneHelpMark) {
   const std::string rml = Asset("views/settings_section_devices.rml");
   EXPECT_EQ(rml.find("settings.security.transfer_off"), std::string::npos);
   EXPECT_EQ(rml.find("group-row--off\" data-if"), std::string::npos);
@@ -249,8 +247,8 @@ TEST(DevicesTransferMarkupTest, NoDisabledLinkRowIsLeftAndTheLinkedPhonesBlockTa
   const size_t to = rml.find("<div class=\"stack settings-actions\" data-if=\"own_devices_shown\">", from);
   ASSERT_NE(to, std::string::npos);
   const std::string block = rml.substr(from, to - from);
-  // Two text lines in the card (the second is the main device's name once it has one, else the old sentence), one
-  // "?" after it; below, the list: this device's row opens the rename dialog, the main device's row has a "?".
+  // Two text lines in the card (the second is the main device's name once it has one, else the old sentence), no
+  // "?"; below, the list: this device's row opens the rename dialog, the main device's row has the one "?".
   const size_t card = block.find("settings-dev-note\">");
   ASSERT_NE(card, std::string::npos);
   const std::string note = block.substr(card, block.find("<p class=\"text group-head\"", card) - card);
@@ -260,10 +258,10 @@ TEST(DevicesTransferMarkupTest, NoDisabledLinkRowIsLeftAndTheLinkedPhonesBlockTa
   }
   EXPECT_EQ(lines, 3u) << "the title, and the second line in its two variants";
   EXPECT_NE(note.find("{{own_main_note}}"), std::string::npos);
-  EXPECT_EQ(CountOf(note, "<button"), 1u) << "one \"?\" in the card";
-  EXPECT_EQ(CountOf(block, "<button"), 3u) << "the card's \"?\", this device's row, the main device's \"?\"";
-  EXPECT_EQ(CountOf(block, "data-event-"), 3u);
-  EXPECT_EQ(CountOf(block, "data-event-click=\"ask_setting_help('settings.security.transfer_row')\""), 2u);
+  EXPECT_EQ(CountOf(note, "<button"), 0u) << "no \"?\" in the card";
+  EXPECT_EQ(CountOf(block, "<button"), 2u) << "this device's row and the main device's \"?\"";
+  EXPECT_EQ(CountOf(block, "data-event-"), 2u);
+  EXPECT_EQ(CountOf(block, "data-event-click=\"ask_setting_help('settings.security.transfer_row')\""), 1u);
   EXPECT_EQ(CountOf(block, "data-event-click=\"rename_own_device(device_index)\""), 1u);
   EXPECT_GT(block.find("<button"), block.find("{{i18n:settings.security.devices.linked_note_sub}}"));
   EXPECT_EQ(CountOf(block, "group-chevron"), 1u) << "only this device's row opens something";

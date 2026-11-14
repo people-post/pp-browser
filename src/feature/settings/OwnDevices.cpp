@@ -8,7 +8,8 @@
 namespace pbr {
 
 OwnDevicesView OwnDevicesViewFor(const std::vector<std::string>& peer_ids, const std::string& self_peer_id,
-                                 const bool signed_out, const std::map<std::string, std::string>& names) {
+                                 const bool signed_out, const std::map<std::string, std::string>& names,
+                                 const std::string& own_system_name) {
   OwnDevicesView view;
   view.signed_out = signed_out;
   // No list yet: this device's first card will start one with itself first (the backend lets it add a device).
@@ -22,6 +23,9 @@ OwnDevicesView OwnDevicesViewFor(const std::vector<std::string>& peer_ids, const
     device.can_manage = view.this_is_main && !device.is_this_device;
     const auto given = names.find(device.peer_id);
     device.name = given == names.end() ? std::string() : NormalizeDeviceName(given->second);
+    if (device.name.empty() && device.is_this_device) {
+      device.name = NormalizeDeviceName(own_system_name);
+    }
     device.named = !device.name.empty();
     if (!device.named) {
       device.name = Tr("settings.security.devices.unnamed");

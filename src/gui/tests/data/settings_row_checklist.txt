@@ -237,7 +237,6 @@ data-event-click="toggle_biometric()"	1	security	security	security_biometric_sho
 data-event-click="ask_setting_help('settings.help.topic.account_copy')"	2	-	devices	security_has_recovery_phrase	security	
 data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	!own_devices_not_main	devices	
 data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	-	devices	
-data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
 data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	own_devices_not_main && !own_devices_signed_out;;!device.is_this_device && device.is_main	devices	
 data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main	devices	
 data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	

@@ -443,13 +443,12 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       // Devices: the transfer block is the desktop's inline copy here; phones open it as its own page.
       // (2026-11-14: the phone's top button, on the main device only; a linked phone shows nothing to tap.)
       {"devices", "open_security_page('transfer')", "!own_devices_not_main", 1, 0},
-      // The "?" of the action: next to the top sentence on the main device, after the card's second line on a linked
-      // phone (2026-11-14, so details are one tap away) and after its "Main device (manage)" label, and the link page's
-      // note (in the hidden desktop wrapper here).
+      // The "?" of the action: next to the top sentence on the main device, after a linked phone's "Main device
+      // (manage)" label (the card's second line has none), and the link page's note (in the hidden desktop wrapper here).
       {"devices", "ask_setting_help('settings.security.transfer_row')",
-       "!own_devices_not_main@@own_devices_not_main && !own_devices_signed_out@@own_devices_not_main && "
-       "!own_devices_signed_out;;!device.is_this_device && device.is_main@@-",
-       3, 0},
+       "!own_devices_not_main@@own_devices_not_main && !own_devices_signed_out;;!device.is_this_device && "
+       "device.is_main@@-",
+       2, 0},
       // Here the phone's button and "Copy again" sit in the transfer block's desktop wrapper (hidden): only the desktop
       // button shows. Their own page is checked in the next test.
       {"devices", "export_link_device()",
@@ -677,15 +676,15 @@ TEST(SettingsDevicesCaptionsTest, ThePhoneShowsNoCaptionUnderTheAccountCopyRow) 
   EXPECT_TRUE(desktop_only);
 }
 
-TEST(SettingsDevicesCaptionsTest, TheLinkButtonIsOnTheMainDeviceOnlyAndALinkedPhoneTapsOnlyRenameAndTheHelpMarks) {
+TEST(SettingsDevicesCaptionsTest, TheLinkButtonIsOnTheMainDeviceOnlyAndALinkedPhoneTapsOnlyRenameAndTheHelpMark) {
   const std::string tap = "data-event-click=\"open_security_page('transfer')\"";
   const std::string help = "data-event-click=\"ask_setting_help('settings.security.transfer_row')\"";
   EXPECT_EQ(PhoneShown({tap}, MainFacts()), 1u);
   EXPECT_EQ(PhoneShown({help}, MainFacts()), 1u) << "one \"?\" for the action, in one place";
   // A linked phone: no element bound to any of the device actions, on the phone layout of this page or of the link page.
-  // Its "?" marks (after the second line of the top card, and after the "Main device (manage)" label) only ask PP
-  // support: exactly two on the devices page. The one other thing it can tap is its own row, to rename itself.
-  EXPECT_EQ(PhoneShown({help}, LinkedFacts()), 2u);
+  // Its one "?" (after the "Main device (manage)" label; the top card's second line has none) only asks PP support:
+  // exactly one on the devices page. The one other thing it can tap is its own row, to rename itself.
+  EXPECT_EQ(PhoneShown({help}, LinkedFacts()), 1u);
   const std::string rename = "data-event-click=\"rename_own_device(device_index)\"";
   std::set<std::string> linked_this_row = LinkedFacts();
   linked_this_row.insert("device.is_this_device");
