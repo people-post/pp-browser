@@ -255,6 +255,21 @@ See [WINDOW_SHELL.md](WINDOW_SHELL.md) for layout geometry (content scrolls unde
 
 Preference rows use a disclosure **card** pattern: full-width button with elevated surface, `border-subtle`, and 10dp radius; title/subtitle on the left, `chevron-right.svg` on the right; active row uses the same indigo tint as contacts selection (no accent rail). Binary on/off prefs use an iOS-style switch (`.settings-switch` with sliding `.settings-switch-knob`; on state via `data-class-settings-switch--on`). Limited-choice prefs (Theme, Language, Group invites) use `.settings-choice-row`: label left, muted current value + chevron right; tap opens `ContextMenuHost` (float on expanded, action sheet on compact). Preference labels use `.settings-toggle-label` (15dp); helper copy under rows uses `.settings-help` (12dp muted). Expanded Me uses secondary list + primary detail; compact Me uses the account bottom sheet (nested detail + swipe dismiss). The Me index keeps identity + Support content-sized (target ≲⅓ of pane height); photo/nickname/register live in **Profile** detail; only the Preferences list grows and scrolls.
 
+### My relays
+
+Me → **My relays** (`settings_section_relays.rml`, page `relays`, Home group 1 after My devices; multi-relay R3,
+[SERVICE_ENDPOINTS § My relays](../contracts/SERVICE_ENDPOINTS.md#my-relays)). The presenter (`MyRelaysViewFor`)
+decides, `SettingsMyRelays` renders. One card per relay, preferred first: the host (`relay.example.org`), a
+**Preferred** badge on the first, its registration (`Registered until <date>` / `Registering…` /
+`Couldn't register: <reason>`, the last in the error colour) and its last poll (`Reachable` / `Couldn't reach it`, the
+latter in the error colour; nothing before the first poll). On the main device the other relays have **Make preferred**
+(immediate) and **Remove…** (a destructive confirm naming the relay); phones show them as rows under the relay
+(Remove in the danger row), desktops as secondary buttons. **Add relay…** (while there are fewer than 4) opens an
+address field with **Add** and **Cancel**; Add checks the relay (`Checking the relay…`), and a refusal is worded under
+the field (`MyRelaysFailureText`: not https, a path, already listed, did not answer, …). A linked device shows the list
+with "Only your main device can change your relays." Before messaging is up the page says the relays show once
+connected.
+
 ## RCSS file layout
 
 ```

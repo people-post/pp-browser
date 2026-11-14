@@ -115,9 +115,33 @@ Call invite age uses `server_time - created_at` when both are present (caller cr
 ## Several relays
 
 An account may be on several relays (multi-relay R2; [DESIGN](../../projects/multi-relay/DESIGN.md#app)). Ours are the
-backend's relay (`relay.base_url`, the **preferred** one) and the other base URLs of `relay.extra_base_urls`, in that
-order, at most 4 in all, none twice ([CONFIGURATION](../ops/CONFIGURATION.md); `OurRelayOrigins`, `BackendClientSet`).
-Our account card lists the `https://` ones, preferred first ([ACCOUNT_CARD](ACCOUNT_CARD.md#account-card)).
+profile's list, **My relays** (`our_relays.json`, [DATA_LAYOUT](DATA_LAYOUT.md); Me → My relays, [below](#my-relays)),
+preferred first, at most 4, none twice. A new profile's list is seeded once from the deployment's relay
+(`relay.base_url`, the preferred one) and the other base URLs of `relay.extra_base_urls`, in that order
+([CONFIGURATION](../ops/CONFIGURATION.md); `OurRelaysStore`, `OurRelayOrigins`, `BackendClientSet`); afterwards the
+config is only a new profile's default. Our account card lists the `https://` ones, preferred first
+([ACCOUNT_CARD](ACCOUNT_CARD.md#account-card)).
+
+### Relay services and org services
+
+Two origins ([multi-relay MR006](../../projects/multi-relay/DECISIONS.md#mr006--the-preferred-relay-carries-the-users-relay-services-org-services-stay-on-the-orgs-origin);
+`BackendClientSet`): the **org's** (the deployment's origin: the compiled one for `prod` / `qa`, the config's
+`relay` / `registration` for `custom`) and **the preferred relay** (the first of My relays). They are the same until the
+user changes the list.
+
+| Follows the preferred relay | Stays on the org's origin |
+|---|---|
+| The inbox (polled at pace; the others more slowly), push tokens, registration (the identity's) | Client compatibility (`/v1/client-compat`) and with it Support (`support`) and the crash-report URL it may give |
+| The directory: search and lookups ask the preferred relay's first, then our other relays' ([below](#the-directory-on-each)) — unless `directory` is configured apart from the org's relay | Crash reports (`/v1/crash-reports`), diagnostics (`/api/support/diagnostics`) |
+| Profile photos and blobs ([HTTP relay blobs](#http-relay-blobs-profile-photos)), chat attachment files ([HTTP relay files](#http-relay-files-chat-attachments)) | The Brief LLM gateway (`/api/llm/v1`) and its key, the promoted MCP server (`/mcp`) |
+
+- **The Brief LLM key is the org's:** only a registration at the org's relay keeps the `llm_api_key` it answers with
+  (`HttpRegistrationClient::SetTakesBriefLlmKey`); when the org's relay is another of ours, its registration
+  (`RelayRegistrationsWorkflow`) gives the identity the key. Another relay's key is not kept.
+- **Not moved (yet):** account lockers stay at the org's registration URL ([HTTP account lockers](#http-account-lockers-multi-device-m023)),
+  where every locker so far was written and where a restoring device, which knows no list yet, looks; with the org's
+  relay removed from the list the locker writes there fail (logged) until a later step moves them. Stream history is
+  asked of the org's relay while it is one of ours (`HistoryRelay`), else of the preferred one.
 
 ### Registering and receiving on each
 
@@ -125,8 +149,9 @@ Our account card lists the `https://` ones, preferred first ([ACCOUNT_CARD](ACCO
   is registered, the app registers on each other relay of ours too, with the same card at `register/finish`, and again
   when the card is newer than the one that relay answered for, when its registration is within 14 days of its end, or
   after a failure (1 min, doubling to 30 min) — `RelayRegistrationsWorkflow`, checked every minute while messaging
-  runs. What another relay answered is kept in memory only: each start registers there once more. Revoking (a profile
-  reset) revokes on each.
+  runs. What each relay answered (registered until, or failed and why) is kept with the list (`our_relays.json`) and
+  given back at the next start: a relay that holds our registration for the current card is not asked again, and its
+  inbox is polled at once. Revoking (a profile reset) revokes on each.
 - **Polling.** Each inbox has its own cursor (`relay_inbox_cursor.json`, [DATA_LAYOUT](DATA_LAYOUT.md)) and one poll
   at a time (`RelayInboxCoordinator`). The preferred relay is polled at the app's pace
   ([THREADING](../architecture/THREADING.md): ~2 s in the foreground); the others at every **4th** sync (~8 s), and
@@ -136,14 +161,38 @@ Our account card lists the `https://` ones, preferred first ([ACCOUNT_CARD](ACCO
   for our other devices) is taken in twice: the receive pipeline drops the second by its message id, as any
   redelivery. One relay batch is taken in at a time.
 - **Push.** The push token is registered on each relay that holds our registration ([HTTP device push](#http-device-push-opaque-wake)).
-- **The preferred relay only:** profile photos and blobs, chat attachment files, account lockers, stream history,
-  client compatibility and the Brief LLM key.
+- **Each inbox's cursor is its relay's** (`cursor_relay` names the preferred one's): a relay made preferred polls on
+  from its own, and a relay that leaves the list loses its cursor.
+- **The preferred relay only:** profile photos and blobs, chat attachment files ([Relay services and org services](#relay-services-and-org-services)).
+
+### My relays
+
+Me → My relays changes the list (`MyRelaysWorkflow`; the page in [UI_DESIGN_SYSTEM § My relays](../ui/UI_DESIGN_SYSTEM.md#my-relays)).
+Only the account's main device changes it (it signs the card's list, MR002); a linked device follows the newest card
+of ours (its list becomes the card's). Every change is kept first, then:
+
+1. the clients, the inboxes and the card's relays follow the new list (on the hub's thread);
+2. what is new is registered on (each other relay again for the newer card, as above);
+3. the card is re-issued with the new list (our other devices hear through our mailbox) and sent to every contact
+   with the device-list notice over the control lane (`AnnounceOwnDevicesToContacts`), so senders deliver by the new
+   order; a contact that still holds the old card writes into a relay of the old list, which we still poll while it
+   is ours.
+
+| Change | Rules | Also |
+|---|---|---|
+| **Add** | An origin `https://host[:port]`, or that and `/api/relay` (no other path, query, fragment or user info; at most 128 bytes); `http://` only in developer builds (never on the card). It must answer `GET <base>/v1/client-compat` (the cheapest unauthenticated GET every relay serves). At most 4. | Added last |
+| **Remove** | Not the preferred relay (make another preferred first), never the last (mesh-only is not offered in this step) | Our push binding (`/v1/devices/unregister`) and our registration (`/v1/register/revoke`, which also drops the account's push devices there) go first, best effort; its inbox cursor goes |
+| **Make preferred** | A relay of ours | The identity's registration renews there at once (the card is newer, so it goes whatever the auto-renew preference; the registration records the relay it was made at, so the Me page reads it as the current one); push binds there; the old preferred relay is registered on as another of ours |
+
+A refused change answers with a code the page words (`relay_origin_not_https`, `relay_unreachable`,
+`relay_already_listed`, `relay_list_full`, `relay_preferred_not_removable`, `relay_list_last`,
+`relay_list_not_main_device`, …).
 
 ### The directory on each
 
 The directory the app asks (`OurRelaysDirectory`, built by `BackendClientSet`) is the configured one (`directory`:
 by default the preferred relay's, its `providers` failing over as before; one configured apart replaces the preferred
-relay's) and then the directory of each other relay of ours (`relay.extra_base_urls`) it does not name, in our order ([DESIGN § Not in scope](../../projects/multi-relay/DESIGN.md#not-in-scope): a name
+relay's) and then the directory of each other relay of ours (My relays) it does not name, in our order ([DESIGN § Not in scope](../../projects/multi-relay/DESIGN.md#not-in-scope): a name
 search asks the relays the user has listed; there is no search across relays beyond them).
 
 - **A name search** (`GET /v1/search?q=`: the contacts page's *Add contact* and the assistant's `search_people`, both
@@ -203,7 +252,7 @@ our key when it asks for it (`sender_key_required`). The grant is the recipient'
 
 ## HTTP relay blobs (profile photos)
 
-Base path under the same `{registration.base_url}` / `{relay.base_url}` (e.g. `https://backend.example.test/api/relay/v1`). Client: `HttpBlobClient` / `IBlobClient` ([relay-blob-upload](../../projects/relay-blob-upload/)). **Only profile photos use these routes now** (`purpose=icon`, then `/v1/profile/icon`); chat attachments go through [HTTP relay files](#http-relay-files-chat-attachments) and never call `/v1/blobs/presign`. The `purpose=file` rows below describe what the relay still accepts; the client no longer sends them.
+Base path under the preferred relay's base URL ([Relay services and org services](#relay-services-and-org-services); e.g. `https://backend.example.test/api/relay/v1`). Client: `HttpBlobClient` / `IBlobClient` ([relay-blob-upload](../../projects/relay-blob-upload/)). **Only profile photos use these routes now** (`purpose=icon`, then `/v1/profile/icon`); chat attachments go through [HTTP relay files](#http-relay-files-chat-attachments) and never call `/v1/blobs/presign`. The `purpose=file` rows below describe what the relay still accepts; the client no longer sends them.
 
 Auth: separate sign domains (not `relay-api-v1`). Canonical bytes via `RelayBlobSignPayload` — domain + u8 version=`1`, then length-prefixed UTF-8 / BE integers matching www `SignatureVerifier`.
 
@@ -286,7 +335,7 @@ Failure codes (`{ error, code }`; `ClassifyBlobFailure` takes the `code` first, 
 
 ## HTTP account lockers (multi-device M023)
 
-Same base path as the blobs. Client: `HttpLockerClient` / `ILockerClient`; sealed and checked by `lib/people/AccountLocker` ([M023](../../projects/multi-device-account/DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold) §4–5). The relay is one locker provider among several: it cannot read a snapshot, and keeps only the newest version.
+Base path under the org's `registration.base_url` (not the preferred relay's: lockers are not moved yet, [Relay services and org services](#relay-services-and-org-services)). Client: `HttpLockerClient` / `ILockerClient`; sealed and checked by `lib/people/AccountLocker` ([M023](../../projects/multi-device-account/DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold) §4–5). The relay is one locker provider among several: it cannot read a snapshot, and keeps only the newest version.
 
 | HTTP | Purpose |
 |------|---------|
@@ -306,7 +355,7 @@ The snapshot (`sealed`, the owner signature, rollback protection) and the state 
 
 Unauthenticated public GET (directory-style; no identity unlock required):
 
-`GET {relay.base_url}/v1/client-compat`
+`GET {relay.base_url}/v1/client-compat` — the org's relay (the config's `relay`), whichever relay is preferred ([Relay services and org services](#relay-services-and-org-services))
 
 ```json
 {
@@ -336,7 +385,7 @@ Unknown keys are ignored. Network failure: fail open (no gate); use last good pr
 
 Unauthenticated public POST (same org backend family as client-compat; no vault unlock required). Client only sends when Me → Security **Send crash reports** is on.
 
-`POST {relay.base_url}/v1/crash-reports`  
+`POST {relay.base_url}/v1/crash-reports` (the org's relay, as client compatibility)  
 (or absolute https `crash_reports_url` from a fresh client-compat cache)
 
 ```json
@@ -364,7 +413,7 @@ Server should cluster by `fingerprint` (+ version), keep a sample, increment cou
 
 ## HTTP device push (opaque wake)
 
-Signed with `pp-browser:relay-api-v1` (sign version 2) ops `DeviceRegister=3` / `DeviceUnregister=4` over `(account_id, platform, device_id, push_token)`. Tokens are registered per relay, by Account ID, on every relay of ours that holds our registration ([Several relays](#several-relays)): a relay holding mail for the account wakes its phone. A backend switch unbinds the preferred relay's only.
+Signed with `pp-browser:relay-api-v1` (sign version 2) ops `DeviceRegister=3` / `DeviceUnregister=4` over `(account_id, platform, device_id, push_token)`. Tokens are registered per relay, by Account ID, on every relay of ours that holds our registration ([Several relays](#several-relays)): a relay holding mail for the account wakes its phone. A backend switch unbinds the preferred relay's only; a relay removed from My relays is unbound there ([My relays](#my-relays)).
 
 | HTTP | Purpose |
 |------|---------|

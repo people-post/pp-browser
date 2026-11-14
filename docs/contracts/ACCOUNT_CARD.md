@@ -84,8 +84,10 @@ A key card plus what the account says about itself, signed as a whole.
   at most 4 entries; each `origin` an absolute `https://` URL of at most 128 bytes with a host, and no query,
   fragment, credentials, spaces or control characters; no two the same relay (scheme and host compared without
   case, `:443` as no port, an empty path as `/`). The list holds the relays the app registers on
-  (`OwnCards::SetRelays`): the registration base URL first, then the other relays of `relay.extra_base_urls`
-  ([CONFIGURATION](../ops/CONFIGURATION.md), [SERVICE_ENDPOINTS § Several relays](SERVICE_ENDPOINTS.md#several-relays));
+  (`OwnCards::SetRelays`): My relays in their order, the preferred first (the profile's list, seeded from the
+  deployment's relay and `relay.extra_base_urls` — [CONFIGURATION](../ops/CONFIGURATION.md),
+  [SERVICE_ENDPOINTS § Several relays](SERVICE_ENDPOINTS.md#several-relays)). A change to the list re-issues the card at
+  once and announces it to our devices and contacts ([§ My relays](SERVICE_ENDPOINTS.md#my-relays));
   an origin outside the bounds — an `http://` dev relay — is left off, so a card of only such relays says the mesh
   only. The list is the **main device's**: the others keep the newest card's. Senders deliver into the listed
   relays in order ([SERVICE_ENDPOINTS § Sending by the list](SERVICE_ENDPOINTS.md#sending-by-the-list)).
