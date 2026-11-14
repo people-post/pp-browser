@@ -3,7 +3,7 @@
 {{include:settings_security_transfer}}
         </div>
         <div class="stack settings-actions" data-if="own_devices_shown">
-          <div class="stack settings-phone-only">
+          <div class="stack settings-phone-only" data-if="!own_devices_signed_out">
             <!-- Phones: this device (display only), the other devices (rows open the action sheet on the main device), then the actions below. -->
             <p class="text group-head">{{i18n:settings.security.devices.this_device}}</p>
             <div class="group-card">

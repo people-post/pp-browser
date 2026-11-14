@@ -93,33 +93,56 @@ const OwnDeviceView* SettingsOwnDevices::ManageableAt(const int index) const {
   return device.can_manage ? &device : nullptr;
 }
 
+const OwnDeviceView* SettingsOwnDevices::ManageableById(const std::string& peer_id) const {
+  for (const OwnDeviceView& device : view_.devices) {
+    if (device.peer_id == peer_id) {
+      return device.can_manage ? &device : nullptr;
+    }
+  }
+  return nullptr;
+}
+
 void SettingsOwnDevices::Remove(const int index) {
-  ConfirmChange(index, Tr("settings.security.devices.remove_confirm_title"),
-                Tr("settings.security.devices.remove_confirm_message"),
-                Tr("settings.security.devices.remove_confirm_ok"), commands_.remove_own_device,
-                Tr("settings.security.devices.removed"), true);
+  if (const OwnDeviceView* device = ManageableAt(index)) {
+    RemoveById(device->peer_id);
+  }
 }
 
 void SettingsOwnDevices::MakeMain(const int index) {
-  ConfirmChange(index, Tr("settings.security.devices.make_main_confirm_title"),
-                Tr("settings.security.devices.make_main_confirm_message"),
+  if (const OwnDeviceView* device = ManageableAt(index)) {
+    MakeMainById(device->peer_id);
+  }
+}
+
+void SettingsOwnDevices::RemoveById(const std::string& peer_id) {
+  ConfirmChange(peer_id, Tr("settings.security.devices.remove_confirm_title"),
+                "settings.security.devices.remove_confirm_message", Tr("settings.security.devices.remove_confirm_ok"),
+                commands_.remove_own_device, Tr("settings.security.devices.removed"), true);
+}
+
+void SettingsOwnDevices::MakeMainById(const std::string& peer_id) {
+  ConfirmChange(peer_id, Tr("settings.security.devices.make_main_confirm_title"),
+                "settings.security.devices.make_main_confirm_message",
                 Tr("settings.security.devices.make_main_confirm_ok"), commands_.make_main_device,
                 Tr("settings.security.devices.made_main"));
 }
 
 std::vector<ContextMenuAction> SettingsOwnDevices::DeviceActions(const int index) {
   std::vector<ContextMenuAction> actions;
-  if (!ManageableAt(index)) {
+  const OwnDeviceView* device = ManageableAt(index);
+  if (!device) {
     return actions;
   }
+  // The sheet acts on the device it was opened for, not on a list position the list may have left by then.
+  const std::string peer_id = device->peer_id;
   actions.push_back({.id = "own_device_make_main",
                      .label = Tr("settings.security.devices.make_main"),
                      .enabled = {},
-                     .run = [this, index]() { MakeMain(index); }});
+                     .run = [this, peer_id]() { MakeMainById(peer_id); }});
   ContextMenuAction remove{.id = "own_device_remove",
                            .label = Tr("settings.security.devices.remove"),
                            .enabled = {},
-                           .run = [this, index]() { Remove(index); }};
+                           .run = [this, peer_id]() { RemoveById(peer_id); }};
   remove.danger = true;
   actions.push_back(std::move(remove));
   ContextMenuAction cancel{"own_device_cancel", Tr("common.cancel"), nullptr, []() {}};
@@ -137,24 +160,34 @@ void SettingsOwnDevices::ShowDeviceActions(ui::Event& ev, const int index) {
                                           view_.devices[static_cast<size_t>(index)].label);
 }
 
-void SettingsOwnDevices::ConfirmChange(const int index, const std::string& title, const std::string& message,
+void SettingsOwnDevices::ConfirmChange(const std::string& peer_id, const std::string& title, const char* message_key,
                                        const std::string& ok_label,
                                        std::function<Roe<void>(const std::string& peer_id)> change,
                                        const std::string& done, const bool destructive) {
-  const OwnDeviceView* device = ManageableAt(index);
-  if (!device || !feedback_.show_confirm) {
+  const OwnDeviceView* device = ManageableById(peer_id);
+  if (!device) {
+    UserFeedback::Note(Tr("settings.security.devices.list_changed"));
+    return;
+  }
+  if (!feedback_.show_confirm) {
     return;
   }
   if (!change) {
     report_failure_(Error("Messaging is not ready"));
     return;
   }
+  const std::string message = Tr(message_key, {{"device", device->label}});
   const auto& show_confirm =
       destructive && feedback_.show_confirm_destructive ? feedback_.show_confirm_destructive : feedback_.show_confirm;
   show_confirm(
       title, message,
-      [this, peer_id = device->peer_id, change = std::move(change), done](const bool ok) {
+      [this, peer_id, change = std::move(change), done](const bool ok) {
         if (!ok) {
+          return;
+        }
+        // The list may have changed while the dialog was open: look the device up again.
+        if (!ManageableById(peer_id)) {
+          UserFeedback::Note(Tr("settings.security.devices.list_changed"));
           return;
         }
         AppRuntime::PostWorkerNormal([this, peer_id, change, done]() {

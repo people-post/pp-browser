@@ -384,7 +384,7 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       {"devices", "make_main_device(device_index)", "own_devices_shown;;device.can_manage", 0, 1},
       {"devices", "remove_own_device(device_index)", "own_devices_shown;;device.can_manage", 0, 1},
       {"devices", "open_own_device_actions(device_index)",
-       "own_devices_shown;;own_has_other_devices;;device.can_manage", 1, 0},
+       "own_devices_shown;;!own_devices_signed_out;;own_has_other_devices;;device.can_manage", 1, 0},
       {"devices", "save_account_copy()", "security_has_recovery_phrase", 1, 1},
       {"devices", "ask_setting_help('settings.help.topic.account_copy')", "security_has_recovery_phrase", 1, 1},
   };

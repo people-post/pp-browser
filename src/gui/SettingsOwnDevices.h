@@ -54,13 +54,18 @@ public:
 private:
   void Remove(int index);
   void MakeMain(int index);
+  /** By identity (the device's peer id), looked up again when the action runs and when the confirm is answered. */
+  void RemoveById(const std::string& peer_id);
+  void MakeMainById(const std::string& peer_id);
   /** Phones: the sheet of the two actions for the device at `index` (each runs Remove / MakeMain, which ask first). */
   void ShowDeviceActions(ui::Event& ev, int index);
-  /** Runs `change` for the device at `index` on a worker once confirmed; then the list again and `done`. */
-  void ConfirmChange(int index, const std::string& title, const std::string& message, const std::string& ok_label,
-                     std::function<Roe<void>(const std::string& peer_id)> change, const std::string& done,
-                     bool destructive = false);
+  /** Asks (the message names the device), then runs `change` for `peer_id` on a worker; then the list again and
+   *  `done`. A device gone from the list or no longer manageable: a note, nothing else. */
+  void ConfirmChange(const std::string& peer_id, const std::string& title, const char* message_key,
+                     const std::string& ok_label, std::function<Roe<void>(const std::string& peer_id)> change,
+                     const std::string& done, bool destructive = false);
   const OwnDeviceView* ManageableAt(int index) const;
+  const OwnDeviceView* ManageableById(const std::string& peer_id) const;
 
   const SettingsCommands& commands_;
   const ShellFeedbackPorts& feedback_;

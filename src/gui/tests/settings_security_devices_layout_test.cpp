@@ -3,6 +3,7 @@
 // confirm dialog.
 #include "gui/SecuritySettingsSection.h"
 #include "gui/SettingsOwnDevices.h"
+#include "gui/UserFeedback.h"
 
 #include "common/runtime/AppRuntime.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -107,17 +108,21 @@ protected:
     commands_.own_devices = [this]() -> Roe<OwnDevicesView> { return View(); };
     feedback_.show_confirm = [this](const std::string& title, const std::string& message,
                                     std::function<void(bool)> on_result, const std::string& ok_label) {
-      confirms_.push_back({title, ok_label, false});
+      confirms_.push_back({title, ok_label, false, message});
       on_result_ = std::move(on_result);
     };
     feedback_.show_confirm_destructive = [this](const std::string& title, const std::string& message,
                                                 std::function<void(bool)> on_result, const std::string& ok_label) {
-      confirms_.push_back({title, ok_label, true});
+      confirms_.push_back({title, ok_label, true, message});
       on_result_ = std::move(on_result);
     };
+    ShellFeedbackPorts shared;
+    shared.show_toast = [this](const std::string& text, ToastDuration) { notes_.push_back(text); };
+    UserFeedback::BindPorts(shared);
     devices_ = std::make_unique<SettingsOwnDevices>(commands_, feedback_, [this](const Error&) { ++failures_; });
   }
   void TearDown() override {
+    UserFeedback::BindPorts({});
     devices_.reset();
     AppRuntime::Shutdown();
   }
@@ -135,6 +140,7 @@ protected:
     std::string title;
     std::string ok_label;
     bool destructive;
+    std::string message;
   };
   SettingsCommands commands_;
   ShellFeedbackPorts feedback_;
@@ -142,6 +148,7 @@ protected:
   std::vector<std::string> removed_;
   std::vector<std::string> made_main_;
   std::vector<Confirm> confirms_;
+  std::vector<std::string> notes_;
   std::function<void(bool)> on_result_;
   int failures_ = 0;
 };
@@ -194,6 +201,96 @@ TEST_F(SettingsOwnDevicesTest, RemoveInTheSheetAsksTheOldQuestionAndCallsTheOldC
   Settle();
   EXPECT_EQ(removed_, std::vector<std::string>{"other-peer-aaaaaa"});
   EXPECT_TRUE(made_main_.empty());
+}
+
+TEST_F(SettingsOwnDevicesTest, ConfirmNamesTheDeviceForBothActions) {
+  devices_->Show(View());
+  const std::string label = View().devices[2].label;
+  ASSERT_FALSE(label.empty());
+  devices_->DeviceActions(2)[0].run();
+  devices_->DeviceActions(2)[1].run();
+  ASSERT_EQ(confirms_.size(), 2U);
+  EXPECT_NE(confirms_[0].message.find(label), std::string::npos) << confirms_[0].message;
+  EXPECT_NE(confirms_[1].message.find(label), std::string::npos) << confirms_[1].message;
+}
+
+TEST_F(SettingsOwnDevicesTest, ASheetActsOnItsDeviceAfterTheListShiftsUnderIt) {
+  devices_->Show(View());
+  auto actions = devices_->DeviceActions(2); // B = other-peer-bbbbbb, position 2
+  // A was removed: B is now at position 1.
+  devices_->Show(OwnDevicesViewFor({"self-peer", "other-peer-bbbbbb"}, "self-peer", false));
+  actions[1].run();
+  ASSERT_EQ(confirms_.size(), 1U);
+  on_result_(true);
+  Settle();
+  EXPECT_EQ(removed_, std::vector<std::string>{"other-peer-bbbbbb"});
+  actions[0].run();
+  on_result_(true);
+  Settle();
+  EXPECT_EQ(made_main_, std::vector<std::string>{"other-peer-bbbbbb"});
+  for (const std::string& note : notes_) {
+    EXPECT_NE(note, Tr("settings.security.devices.list_changed"));
+  }
+}
+
+TEST_F(SettingsOwnDevicesTest, ASheetForAGoneDeviceDoesNothingButSayTheListChanged) {
+  devices_->Show(View());
+  auto actions = devices_->DeviceActions(2);
+  devices_->Show(OwnDevicesViewFor({"self-peer", "other-peer-aaaaaa"}, "self-peer", false));
+  actions[1].run();
+  actions[0].run();
+  EXPECT_TRUE(confirms_.empty());
+  EXPECT_EQ(notes_, (std::vector<std::string>{Tr("settings.security.devices.list_changed"),
+                                              Tr("settings.security.devices.list_changed")}));
+  Settle();
+  EXPECT_TRUE(removed_.empty());
+  EXPECT_TRUE(made_main_.empty());
+}
+
+TEST_F(SettingsOwnDevicesTest, ADeviceThatVanishesWhileTheConfirmIsOpenIsNotTouched) {
+  devices_->Show(View());
+  auto actions = devices_->DeviceActions(2);
+  actions[1].run();
+  ASSERT_EQ(confirms_.size(), 1U);
+  devices_->Show(OwnDevicesViewFor({"self-peer", "other-peer-aaaaaa"}, "self-peer", false));
+  on_result_(true);
+  Settle();
+  EXPECT_TRUE(removed_.empty());
+  EXPECT_EQ(notes_.size(), 1U);
+  // Same for make main.
+  devices_->Show(View());
+  actions = devices_->DeviceActions(2);
+  actions[0].run();
+  devices_->Show(OwnDevicesViewFor({"self-peer", "other-peer-aaaaaa"}, "self-peer", false));
+  on_result_(true);
+  Settle();
+  EXPECT_TRUE(made_main_.empty());
+  EXPECT_EQ(notes_.size(), 2U);
+}
+
+TEST_F(SettingsOwnDevicesTest, CancellingEitherConfirmIssuesNothing) {
+  devices_->Show(View());
+  auto actions = devices_->DeviceActions(1);
+  actions[1].run();
+  on_result_(false);
+  actions[0].run();
+  on_result_(false);
+  Settle();
+  EXPECT_TRUE(removed_.empty());
+  EXPECT_TRUE(made_main_.empty());
+  EXPECT_TRUE(notes_.empty());
+}
+
+TEST(DevicesLayoutTest, ASignedOutDeviceShowsNeitherTheIdentityBlockNorTheEmptyState) {
+  const std::string rml = ReadAsset("views/settings_section_devices.rml");
+  const size_t phone = rml.find("<div class=\"stack settings-phone-only\"");
+  ASSERT_NE(phone, std::string::npos);
+  const size_t tag_end = rml.find('>', phone);
+  EXPECT_NE(rml.substr(phone, tag_end - phone).find("data-if=\"!own_devices_signed_out\""), std::string::npos);
+  EXPECT_GT(rml.find("{{i18n:settings.security.devices.this_device}}"), tag_end);
+  EXPECT_GT(rml.find("{{i18n:settings.security.devices.none}}"), tag_end);
+  // The signed-out notice stays outside that block.
+  EXPECT_GT(rml.find("data-if=\"own_devices_signed_out\""), rml.find("{{i18n:settings.security.devices.none}}"));
 }
 
 } // namespace
