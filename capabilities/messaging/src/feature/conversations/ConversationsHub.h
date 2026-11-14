@@ -13,6 +13,7 @@
 #include "feature/conversations/AccountLockerWorkflow.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
+#include "domain/registration/RegistrationClient.h"
 #include "lib/people/ProfileIdentityView.h"
 #include "common/Module.h"
 #include "feature/conversations/ContactActionDispatcher.h"
@@ -322,7 +323,23 @@ public:
   AccountLockerWorkflow* AccountLocker() { return account_locker_.get(); }
   /** Publish the account locker (M023) once a burst of changes settles; no-op before messaging or without a seed. */
   void PublishAccountLockerSoon();
+  /**
+   * Register (or renew) this account: BeginRegistration, RunRegistration, FinishRegistration in a row. Asynchronous
+   * callers split them: Begin and Finish on the UI thread, Run on a worker.
+   */
   Roe<void> RegisterIdentity(const std::string& nickname);
+  /**
+   * UI thread: saves a non-empty `nickname`, reads the addresses to advertise and the account card, and returns what
+   * RunRegistration needs. Refused when not ready (PIN).
+   */
+  Roe<RegistrationJob> BeginRegistration(const std::string& nickname);
+  /** Worker: the registration's two requests; touches neither the hub nor the stored identity. */
+  static Roe<RegistrationResult> RunRegistration(const RegistrationJob& job);
+  /**
+   * UI thread: stores what RunRegistration brought (the registration fields only, refused when the stored account is
+   * not `account_id`), then publishes the account locker and registers on the other relays.
+   */
+  Roe<void> FinishRegistration(const RegistrationResult& result, const std::string& account_id);
   /** Uploads an icon the app prepared (decoded, sized, encoded: PrepareProfileIconFromFile). */
   Roe<void> UploadProfileIcon(const PreparedProfileIcon& icon);
   Roe<void> ClearProfileIcon();

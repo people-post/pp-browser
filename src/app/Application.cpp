@@ -472,6 +472,14 @@ void Application::ShutdownMessaging() {
     StartupPhase phase("Shutdown::ConversationsHub");
     messaging_->Shutdown();
   }
+  // Torn down for good: a registration reply the teardown dropped never comes, so what waited for it lets go now (the
+  // update button, the renewal slot), whether or not the re-initialization below succeeds.
+  if (settings_) {
+    settings_->OnMessagingTornDown();
+  }
+  if (chat_) {
+    chat_->OnMessagingTornDownForRegistration();
+  }
   if (secrets_ && secrets_->IsInitialized()) {
     StartupPhase phase("Shutdown::ProfileSecrets");
     secrets_->Shutdown();
@@ -652,6 +660,14 @@ Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
   } else if (messaging_ && messaging_->IsInitialized()) {
     StartupPhase phase("Shutdown::ConversationsHub");
     messaging_->Shutdown();
+  }
+  // Torn down for good: a registration reply the teardown dropped never comes, so what waited for it lets go now (the
+  // update button, the renewal slot), whether or not the re-initialization below succeeds.
+  if (settings_) {
+    settings_->OnMessagingTornDown();
+  }
+  if (chat_) {
+    chat_->OnMessagingTornDownForRegistration();
   }
   // The data is gone (both variants): the new inbox starts empty and its first Refresh() sends the true value.
   // Not in ShutdownMessaging: a normal quit keeps the icon number while the messages are still unread.
@@ -984,12 +1000,34 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
                                         AppRuntime::PostUI([on_done, fetched]() { on_done(fetched); });
                                       });
   };
-  settings_commands.register_identity = [this, &facade](const RegisterIdentityArgs& args) {
-    auto result = facade.RegisterIdentity(args.nickname);
-    if (result) {
-      chat_->ReloadAgentConfig();
+  // The two requests run on a worker; what reads or writes the hub and the UI's state (Begin, Finish, the agent config)
+  // stays on the UI thread. `done` always comes back unless a teardown drops the worker task (the settings page's
+  // OnMessagingTornDown covers that).
+  settings_commands.register_identity = [this, &facade](const RegisterIdentityArgs& args,
+                                                        std::function<void(Roe<void>)> done) {
+    auto job = facade.BeginRegistration(args.nickname);
+    if (!job) {
+      done(job.error());
+      return;
     }
-    return result;
+    const std::string account_id = job->account_id;
+    auto work = [job = std::move(*job)]() -> Roe<RegistrationResult> {
+      try {
+        return ConversationsFacade::RunRegistration(job);
+      } catch (const std::exception& e) {
+        return Error(std::string("Registration threw: ") + e.what());
+      } catch (...) {
+        return Error("Registration threw");
+      }
+    };
+    auto reply = [this, &facade, account_id, done = std::move(done)](Roe<RegistrationResult> result) {
+      Roe<void> finished = result ? facade.FinishRegistration(*result, account_id) : Roe<void>(result.error());
+      if (finished && chat_) {
+        chat_->ReloadAgentConfig();
+      }
+      done(std::move(finished));
+    };
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<RegistrationResult>>(WorkerLane::Normal, std::move(work), std::move(reply));
   };
   settings_commands.rotate_brief_llm_key = [this, &facade]() {
     auto result = facade.RotateBriefLlmKey(BriefLlmServiceBaseUrl(store_.Snapshot().config));
@@ -1380,8 +1418,9 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   // asks for never overlaps the automatic renewal (it waits for the one in flight).
   chat_->BindReconnectAccount(
       [this](std::function<void(bool ok)> done) { settings_->ReconnectAccount(std::move(done)); });
-  settings_->BindRunWhenRegistrationIdle(
-      [this](std::function<void()> run) { chat_->RunWhenRegistrationIdle(std::move(run)); });
+  settings_->BindRunWhenRegistrationIdle([this](std::function<void(std::function<void()> release)> run) {
+    chat_->RunWhenRegistrationIdle(std::move(run));
+  });
   chat_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "chat_chrome"));
   chat_->BindSurfaceNotify(ChatSurfaceNotifyPorts{
       .push_surface = [this](const ChatSurfaceSnapshot& snap) { chat_shell_bridge_->OnSurface(snap); },

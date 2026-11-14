@@ -313,8 +313,12 @@ TEST_F(SettingsProfilePhoneTest, TheUpdateNowButtonKeepsTheOldRowsGateAndEventAn
   EXPECT_EQ(Count(rml, "data-event-click=\"register_profile()\""), 3u) << "desktop button, phone button, Update now";
   const std::string button =
       "<button class=\"settings-pill-btn\" type=\"button\" data-if=\"advanced && profile_show_register && "
-      "!profile_register_primary\"\n                      data-event-click=\"register_profile()\">\n"
-      "                <span class=\"settings-pill\">{{i18n:settings.profile.update_now}}</span>\n"
+      "!profile_register_primary\"\n                      data-attrif-disabled=\"profile_registering\" "
+      "data-class-settings-registering=\"profile_registering\"\n                      "
+      "data-event-click=\"register_profile()\">\n"
+      "                <span class=\"settings-pill\"><span data-if=\"!profile_registering\">"
+      "{{i18n:settings.profile.update_now}}</span><span data-if=\"profile_registering\">"
+      "{{i18n:settings.profile.updating}}</span></span>\n"
       "              </button>";
   ASSERT_EQ(Count(rml, button), 1u);
   // It sits in the Status row, after the value, so it is at the right end.

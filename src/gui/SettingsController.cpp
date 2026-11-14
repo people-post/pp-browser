@@ -236,8 +236,13 @@ void SettingsController::ReconnectAccount(std::function<void(bool ok)> done) {
   profile_actions_.Register(/*quiet_success=*/true, std::move(done));
 }
 
-void SettingsController::BindRunWhenRegistrationIdle(std::function<void(std::function<void()>)> run) {
+void SettingsController::BindRunWhenRegistrationIdle(
+    std::function<void(SettingsProfileActions::RegistrationSlotRun)> run) {
   profile_actions_.BindRunWhenRegistrationIdle(std::move(run));
+}
+
+void SettingsController::OnMessagingTornDown() {
+  profile_actions_.OnMessagingTornDown();
 }
 
 void SettingsController::BindShowMyQr(std::function<void()> show) {
@@ -1309,7 +1314,8 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
 }
 
 void SettingsController::CommitProfileNickname(bool show_toast) {
-  if (suppress_auto_save_ || UiEditSession::Instance().RemountBlocking()) {
+  // An update of the card is out (it took the nickname already): saving another one now would interleave with it.
+  if (suppress_auto_save_ || UiEditSession::Instance().RemountBlocking() || profile_actions_.RegistrationStarted()) {
     return;
   }
   const std::string live = bindings_.profile_nickname.c_str();
@@ -1339,6 +1345,10 @@ void SettingsController::ApplyProfileNicknameFromDialog(const std::string& value
   auto& edits = UiEditSession::Instance();
   const std::string* baseline = edits.Baseline(kUiFieldProfileNickname);
   if (baseline && value == *baseline) {
+    return;
+  }
+  if (profile_actions_.RegistrationStarted()) {
+    UserFeedback::Fail(Tr("chat.reconnect.please_wait")); // not saved: the update in flight sends the saved name
     return;
   }
   // The same guards CommitProfileNickname has: it returns without a word, so ask first. Nothing is written to the

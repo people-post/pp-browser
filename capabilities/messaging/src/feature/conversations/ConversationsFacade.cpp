@@ -1117,6 +1117,18 @@ Roe<void> ConversationsFacade::RegisterIdentity(const std::string& nickname) {
   return hub_.RegisterIdentity(nickname);
 }
 
+Roe<RegistrationJob> ConversationsFacade::BeginRegistration(const std::string& nickname) {
+  return hub_.BeginRegistration(nickname);
+}
+
+Roe<RegistrationResult> ConversationsFacade::RunRegistration(const RegistrationJob& job) {
+  return ConversationsHub::RunRegistration(job);
+}
+
+Roe<void> ConversationsFacade::FinishRegistration(const RegistrationResult& result, const std::string& account_id) {
+  return hub_.FinishRegistration(result, account_id);
+}
+
 Roe<void> ConversationsFacade::UploadProfileIcon(const PreparedProfileIcon& icon) {
   return hub_.UploadProfileIcon(icon);
 }

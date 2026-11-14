@@ -1981,7 +1981,7 @@ Roe<void> ConversationsHub::SaveProfileNickname(const std::string& nickname) {
   return {};
 }
 
-Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
+Roe<RegistrationJob> ConversationsHub::BeginRegistration(const std::string& nickname) {
   if (!IsInitialized()) {
     return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
   }
@@ -2015,14 +2015,38 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
       listen_addrs.push_back(mesh_->AmpListenMultiaddr());
     }
   }
-  auto applied =
-      FinishAndPersistRegistration(Registration(), Identity(), identity->nickname, listen_addrs, RegistrationCard());
-  if (!applied) {
+  return MakeRegistrationJob(Registration(), Identity(), *identity, std::move(listen_addrs), RegistrationCard());
+}
+
+Roe<RegistrationResult> ConversationsHub::RunRegistration(const RegistrationJob& job) {
+  return RunRegistrationJob(job);
+}
+
+Roe<void> ConversationsHub::FinishRegistration(const RegistrationResult& result, const std::string& account_id) {
+  if (!IsInitialized()) {
+    return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
+  }
+  if (!IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to register");
+  }
+  if (auto applied = PersistRenewal(Identity(), result, account_id); !applied) {
     return applied.error();
   }
   PublishAccountLockerSoon();  // the locker keeps the relay binding: a phrase restore needs it
   RegisterOnOtherRelaysSoon(); // and our other relays follow the preferred one
   return {};
+}
+
+Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
+  auto job = BeginRegistration(nickname);
+  if (!job) {
+    return job.error();
+  }
+  auto result = RunRegistration(*job);
+  if (!result) {
+    return result.error();
+  }
+  return FinishRegistration(*result, job->account_id);
 }
 
 Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const SecretText& phrase, const SecretText& pin,

@@ -115,6 +115,26 @@ Roe<RegistrationResult> RenewNetworkOnly(IRegistrationClient& registration, Iden
   return FinishRegistrationWithIdentity(registration, identity, nickname, multiaddrs, publish);
 }
 
+RegistrationJob MakeRegistrationJob(IRegistrationClient& registration, IdentityStore& identity_store,
+                                    const LocalIdentity& identity, std::vector<std::string> listen_addrs,
+                                    RegistrationPublishOpts publish) {
+  RegistrationJob job;
+  job.account_id = identity.account_id;
+  job.nickname = identity.nickname;
+  job.listen_addrs = std::move(listen_addrs);
+  job.publish = std::move(publish);
+  job.registration = &registration;
+  job.identity = &identity_store;
+  return job;
+}
+
+Roe<RegistrationResult> RunRegistrationJob(const RegistrationJob& job) {
+  if (job.registration == nullptr || job.identity == nullptr) {
+    return Error("Registration job has no client");
+  }
+  return RenewNetworkOnly(*job.registration, *job.identity, job.nickname, job.listen_addrs, job.publish);
+}
+
 Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationResult& result,
                                   const std::string& expected_account_id) {
   // Read again, under the lock: the network half took a while, and only the registration fields are ours to change.

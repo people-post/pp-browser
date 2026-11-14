@@ -225,6 +225,42 @@ void RenewRegistrationOn(const std::shared_ptr<State>& state) {
       &RenewRegistrationOn);
 }
 
+/** Runs queued registrations while the renewal slot is free (a hold released with another still waiting). */
+void RunWaitingWhileIdle(const std::shared_ptr<State>& state) {
+  while (!state->closed && !state->renew_run->InFlight() && !state->after_renewal.empty()) {
+    std::vector<std::function<void()>> waiting = std::exchange(state->after_renewal, {});
+    for (std::function<void()>& then : waiting) {
+      then();
+    }
+  }
+}
+
+void HoldRenewalOn(const std::shared_ptr<State>& state, std::function<void(std::function<void()> release)> then) {
+  if (state->closed) {
+    return;
+  }
+  const std::optional<CoalescedRun::Ticket> ticket = state->renew_run->TryStart(/*queue_again=*/false);
+  if (!ticket) {
+    // After the renewal in flight (its hint is said, a run asked for meanwhile not started yet): try again then.
+    state->after_renewal.push_back(
+        [state, then = std::move(then)]() mutable { HoldRenewalOn(state, std::move(then)); });
+    return;
+  }
+  auto released = std::make_shared<bool>(false);
+  // Touches only `state`: safe to call after the one who held the slot is gone. A ticket the teardown reset is stale.
+  auto release = [state, ticket = *ticket, released]() {
+    if (*released) {
+      return;
+    }
+    *released = true;
+    if (state->renew_run->Finish(ticket) && !state->closed) {
+      RenewRegistrationOn(state); // a renewal came due while the registration held the slot
+    }
+    RunWaitingWhileIdle(state);
+  };
+  then(std::move(release));
+}
+
 void MintBriefKeyOn(const std::shared_ptr<State>& state) {
   if (state->closed || !state->ports.mint_brief_key_network || !state->brief_key_run) {
     return;
@@ -315,6 +351,13 @@ void MessagingReadyTasks::OnMessagingTornDown() {
     log().info << "registration waiting for the renewal dropped: messaging was torn down";
     state_->after_renewal.clear();
   }
+}
+
+void MessagingReadyTasks::HoldRenewal(std::function<void(std::function<void()> release)> then) {
+  if (!then) {
+    return;
+  }
+  HoldRenewalOn(state_, std::move(then));
 }
 
 bool MessagingReadyTasks::PushInFlight() const {

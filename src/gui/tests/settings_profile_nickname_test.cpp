@@ -238,5 +238,43 @@ TEST_F(SettingsProfileNicknameTest, ThePhoneRowIsAWholeRowButtonAtLeast52dpAndTh
   LocalizationService::Instance().SetPreferredLanguage("en");
 }
 
+// While the card is being updated the update took the nickname already: saving another one now would interleave with it
+// (DEV/PLAN-register-async.md). Both ways in are refused; the same actions work again once it ends.
+TEST_F(SettingsProfileNicknameTest, WhileTheCardIsUpdatingNoNicknameIsSavedAndTheDialogSaysPleaseWait) {
+  std::vector<std::function<void(Roe<void>)>> parked;
+  commands.register_identity = [&](const RegisterIdentityArgs&, std::function<void(Roe<void>)> done) {
+    parked.push_back(std::move(done));
+  };
+  settings.BindCommands(commands);
+  UnlockEnsurePorts unlock;
+  unlock.ensure_unlocked = [](std::function<void(bool)> then) { then(true); };
+  settings.BindUnlockEnsure(unlock);
+
+  settings.ReconnectAccount({});
+  ASSERT_EQ(parked.size(), 1u);
+  toasts.clear();
+
+  // The nickname dialog's OK.
+  TapNicknameRowAndAnswer(true, "New");
+  EXPECT_TRUE(saved_with.empty());
+  EXPECT_EQ(BoundName(), "Old");
+  EXPECT_EQ(ShownName(), "Old");
+  EXPECT_EQ(toasts, (std::vector<std::string>{Tr("chat.reconnect.please_wait")}));
+
+  // The page's own field (blur / leaving the page / the update button itself): nothing saved, nothing said.
+  host().UiState().profile_nickname = "Typed";
+  host().PushToView(true);
+  toasts.clear();
+  host().SaveProfileNickname();
+  EXPECT_TRUE(saved_with.empty());
+  EXPECT_TRUE(toasts.empty());
+
+  parked[0]({}); // the update ends (and the page is read again from the stored identity)
+  host().UiState().profile_nickname = "Typed";
+  host().PushToView(true);
+  host().SaveProfileNickname();
+  EXPECT_EQ(saved_with, (std::vector<std::string>{"Typed"})) << "saved as usual once it ended";
+}
+
 } // namespace
 } // namespace pbr

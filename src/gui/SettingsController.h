@@ -163,7 +163,9 @@ public:
    */
   void ReconnectAccount(std::function<void(bool ok)> done = {});
   /** A registration waits for the automatic renewal in flight (ChatController::RunWhenRegistrationIdle). */
-  void BindRunWhenRegistrationIdle(std::function<void(std::function<void()>)> run);
+  void BindRunWhenRegistrationIdle(std::function<void(SettingsProfileActions::RegistrationSlotRun)> run);
+  /** Messaging was torn down (profile reset): the update button and the callers waiting for a registration let go. */
+  void OnMessagingTornDown();
   /** The Me card's "QR code" button opens the full-page My QR code. */
   void BindShowMyQr(std::function<void()> show);
   /** The rows "Service" offers now (prod, custom, and QA only with a QA build and the tester options on); `OnChooseBackend` shows exactly these. */

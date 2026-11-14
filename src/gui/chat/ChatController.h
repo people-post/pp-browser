@@ -239,9 +239,12 @@ public:
   }
   /**
    * Runs `run` (a registration the user asked for) now, or, while the automatic renewal is out, once it ends
-   * ("Reconnecting, please wait."), so the two never overlap. UI thread.
+   * ("Reconnecting, please wait."), so the two never overlap. `run` holds the renewal's slot until it calls the
+   * `release` it is given, once, on every way out. UI thread.
    */
-  void RunWhenRegistrationIdle(std::function<void()> run);
+  void RunWhenRegistrationIdle(std::function<void(std::function<void()> release)> run);
+  /** Messaging was torn down (reset): frees the renewal slot a registration still holds. Application calls it. */
+  void OnMessagingTornDownForRegistration();
   /** The panel's sheet is a modal layer: the coordinator says when the shell closed it. */
   void BindFlowCoordinator(FlowCoordinatorPorts ports) { flow_coordinator_ = std::move(ports); }
   // By value, not by reference: Home callers pass a reference into home_favorites_ / home_summary_, and selecting

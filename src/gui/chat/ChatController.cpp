@@ -627,17 +627,25 @@ void ChatController::MakeReadyTasks() {
   ready_tasks_ = std::make_unique<MessagingReadyTasks>(std::move(ports), agent_.BriefKeyRun());
 }
 
-void ChatController::RunWhenRegistrationIdle(std::function<void()> run) {
+void ChatController::RunWhenRegistrationIdle(std::function<void(std::function<void()> release)> run) {
   if (!run) {
     return;
   }
-  if (ready_tasks_ && ready_tasks_->RenewInFlight()) {
-    log().info << "registration waits for the automatic renewal in flight";
-    UserFeedback::Note(Tr("chat.reconnect.please_wait"));
-    ready_tasks_->AfterRenewal(std::move(run));
+  if (!ready_tasks_) {
+    run([]() {});
     return;
   }
-  run();
+  if (ready_tasks_->RenewInFlight()) {
+    log().info << "registration waits for the automatic renewal in flight";
+    UserFeedback::Note(Tr("chat.reconnect.please_wait"));
+  }
+  ready_tasks_->HoldRenewal(std::move(run));
+}
+
+void ChatController::OnMessagingTornDownForRegistration() {
+  if (ready_tasks_) {
+    ready_tasks_->OnMessagingTornDown();
+  }
 }
 
 void ChatController::OnRelayRegistrationSignal(const RelayRegistrationSignal signal) {

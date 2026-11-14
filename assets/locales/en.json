@@ -195,6 +195,7 @@
     "settings.profile.expires_row": "Valid until",
     "settings.profile.node_id_row": "Node ID",
     "settings.profile.update_now": "Update now",
+    "settings.profile.updating": "Updating…",
     "settings.register_network": "Set up account",
     "settings.auto_renew": "Update my card automatically",
     "settings.auto_renew.short": "Auto-update",

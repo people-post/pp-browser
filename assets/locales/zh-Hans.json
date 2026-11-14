@@ -194,6 +194,7 @@
     "settings.profile.expires_row": "有效期至",
     "settings.profile.node_id_row": "节点 ID",
     "settings.profile.update_now": "立即更新",
+    "settings.profile.updating": "更新中…",
     "settings.register_network": "开通账号",
     "settings.auto_renew": "自动更新我的名片",
     "settings.auto_renew.short": "自动更新",

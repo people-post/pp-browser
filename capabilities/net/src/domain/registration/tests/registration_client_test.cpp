@@ -464,6 +464,131 @@ TEST_F(KemBindingPublishTest, PersistRenewalRefusesAnotherAccount) {
   EXPECT_TRUE(identity_->Get().value().kem_binding_published);
 }
 
+// What the registration sends, as the relay sees it: the asynchronous job must send the same as the one call did.
+class FieldRecordingClient : public MockRegistrationClient {
+public:
+  struct Sent {
+    std::string call; // "start" / "finish"
+    std::string nickname;
+    std::vector<std::string> multiaddrs;
+    std::string peer_id;
+    std::string entity_kind;
+    std::optional<int64_t> card_issued_at;
+    bool operator==(const Sent& other) const {
+      return call == other.call && nickname == other.nickname && multiaddrs == other.multiaddrs &&
+             peer_id == other.peer_id && entity_kind == other.entity_kind && card_issued_at == other.card_issued_at;
+    }
+  };
+  Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
+                                                 const std::string& signature_alg,
+                                                 const std::string& kem_public_key_b64, const std::string& peer_id,
+                                                 const std::vector<std::string>& multiaddrs,
+                                                 const RegistrationPublishOpts& publish) override {
+    sent.push_back(Record("start", nickname, multiaddrs, peer_id, publish));
+    return MockRegistrationClient::StartRegistration(public_key_b64, nickname, signature_alg, kem_public_key_b64,
+                                                     peer_id, multiaddrs, publish);
+  }
+  Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
+                                             const std::string& nickname, const std::string& signature,
+                                             int64_t timestamp, const std::string& signature_alg,
+                                             const std::string& kem_public_key_b64,
+                                             const std::string& kem_binding_signature_b64, const std::string& peer_id,
+                                             const std::vector<std::string>& multiaddrs,
+                                             const RegistrationPublishOpts& publish) override {
+    sent.push_back(Record("finish", nickname, multiaddrs, peer_id, publish));
+    return MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signature, timestamp,
+                                                      signature_alg, kem_public_key_b64, kem_binding_signature_b64,
+                                                      peer_id, multiaddrs, publish);
+  }
+  std::vector<Sent> sent;
+
+private:
+  static Sent Record(const char* call, const std::string& nickname, const std::vector<std::string>& multiaddrs,
+                     const std::string& peer_id, const RegistrationPublishOpts& publish) {
+    Sent one{call, nickname, multiaddrs, peer_id, publish.entity_kind, std::nullopt};
+    if (publish.account_card) {
+      one.card_issued_at = publish.account_card->getIf<int64_t>("issued_at");
+    }
+    return one;
+  }
+};
+
+// The registration the user asked for runs as a job off the UI thread (DEV/PLAN-register-async.md): what it sends and what
+// it stores are what FinishAndPersistRegistration sent and stored for the same inputs.
+class RegistrationJobTest : public KemBindingPublishTest {
+protected:
+  RegistrationPublishOpts Publish() const {
+    Object card;
+    card.set("card_version", int64_t{3});
+    card.set("issued_at", int64_t{1000});
+    return RegistrationPublishOpts{.account_card = card};
+  }
+};
+
+TEST_F(RegistrationJobTest, TheJobSendsAndStoresWhatFinishAndPersistRegistrationDid) {
+  FieldRecordingClient recording;
+  LocalIdentity named = identity_->Get().value();
+  named.nickname = "Nick"; // saved by the UI half first, as BeginRegistration does
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(named)));
+  const std::vector<std::string> addrs{"/ip4/192.0.2.7/tcp/4001", "/ip6/2001:db8::7/tcp/4001"};
+
+  auto one_call = FinishAndPersistRegistration(recording, *identity_, named.nickname, addrs, Publish());
+  ASSERT_TRUE(static_cast<bool>(one_call)) << one_call.error().message;
+  const LocalIdentity stored_by_one_call = identity_->Get().value();
+  ASSERT_EQ(recording.sent.size(), 2u);
+
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(named))); // the same starting point again
+  const RegistrationJob job = MakeRegistrationJob(recording, *identity_, named, addrs, Publish());
+  EXPECT_EQ(job.account_id, named.account_id);
+  EXPECT_EQ(job.nickname, "Nick");
+  EXPECT_EQ(job.listen_addrs, addrs);
+  auto result = RunRegistrationJob(job);
+  ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
+  ASSERT_EQ(recording.sent.size(), 4u);
+  EXPECT_EQ(recording.sent[2], recording.sent[0]) << "the same first request";
+  EXPECT_EQ(recording.sent[3], recording.sent[1]) << "the same second request";
+  EXPECT_EQ(recording.sent[1].nickname, "Nick");
+  EXPECT_EQ(recording.sent[1].multiaddrs, addrs);
+  EXPECT_EQ(recording.sent[1].card_issued_at, 1000);
+  ExpectSameRegistrationFields(named, identity_->Get().value()); // the run stored nothing
+
+  auto applied = PersistRenewal(*identity_, *result, job.account_id);
+  ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
+  const LocalIdentity stored_by_job = identity_->Get().value();
+  ExpectSameRegistrationFields(stored_by_one_call, stored_by_job);
+  EXPECT_EQ(stored_by_job.registered_card_issued_at, stored_by_one_call.registered_card_issued_at);
+  EXPECT_EQ(stored_by_job.registered_backend_url, stored_by_one_call.registered_backend_url);
+}
+
+TEST_F(RegistrationJobTest, ARegistrationForAnotherAccountIsNotStored) {
+  FieldRecordingClient recording;
+  const LocalIdentity before = identity_->Get().value();
+  RegistrationJob job = MakeRegistrationJob(recording, *identity_, before, {}, {});
+  auto result = RunRegistrationJob(job);
+  ASSERT_TRUE(static_cast<bool>(result));
+  EXPECT_FALSE(static_cast<bool>(PersistRenewal(*identity_, *result, "account:someone-else")));
+  ExpectSameRegistrationFields(before, identity_->Get().value());
+}
+
+TEST_F(RegistrationJobTest, ANetworkFailureComesBackAsAnErrorAndStoresNothing) {
+  class Failing : public MockRegistrationClient {
+  public:
+    Roe<RegistrationStartResult> StartRegistration(const std::string&, const std::string&, const std::string&,
+                                                   const std::string&, const std::string&,
+                                                   const std::vector<std::string>&,
+                                                   const RegistrationPublishOpts&) override {
+      return AppError::Network(Err::Network::Timeout, "timed out");
+    }
+  } failing;
+  const LocalIdentity before = identity_->Get().value();
+  auto result = RunRegistrationJob(MakeRegistrationJob(failing, *identity_, before, {}, {}));
+  ASSERT_FALSE(static_cast<bool>(result));
+  EXPECT_EQ(result.error().code, static_cast<int32_t>(Err::Network::Timeout));
+  ExpectSameRegistrationFields(before, identity_->Get().value());
+  RegistrationJob empty;
+  EXPECT_FALSE(static_cast<bool>(RunRegistrationJob(empty)));
+}
+
 // B216: the server's refusal of a registration is told apart from a failure that may pass (the recovery asks the user
 // after a refusal, and only waits after the rest).
 TEST(RegistrationErrorTest, A4xxButTimeoutAndRateLimitIsARefusal) {

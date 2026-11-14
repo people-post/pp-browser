@@ -71,8 +71,9 @@
               <span class="group-row-label group-row-label--fit"><span class="group-row-text">{{i18n:settings.profile.registration_row}}</span></span>
               <span class="group-row-value group-row-value--wrap">{{profile_registration_status}}<span class="group-row-sub" data-if="advanced && profile_registration_expires != ''">{{i18n:settings.profile.expires_row}} {{profile_registration_expires}}</span></span>
               <button class="settings-pill-btn" type="button" data-if="advanced && profile_show_register && !profile_register_primary"
+                      data-attrif-disabled="profile_registering" data-class-settings-registering="profile_registering"
                       data-event-click="register_profile()">
-                <span class="settings-pill">{{i18n:settings.profile.update_now}}</span>
+                <span class="settings-pill"><span data-if="!profile_registering">{{i18n:settings.profile.update_now}}</span><span data-if="profile_registering">{{i18n:settings.profile.updating}}</span></span>
               </button>
             </span>
           </div>
@@ -138,10 +139,12 @@
                   data-class-btn-active="profile_show_qr"
                   data-event-click="toggle_profile_qr()">{{i18n:settings.profile.show_qr}}</button>
           <button class="btn btn-primary settings-desktop-only" type="button" data-if="profile_show_register"
-                  data-event-click="register_profile()"><span>{{profile_register_label}}</span></button>
+                  data-attrif-disabled="profile_registering" data-class-settings-registering="profile_registering"
+                  data-event-click="register_profile()"><span data-if="!profile_registering">{{profile_register_label}}</span><span data-if="profile_registering">{{i18n:settings.profile.updating}}</span></button>
           <div class="settings-phone-only" data-if="profile_show_register && profile_register_primary">
             <button class="btn btn-primary" type="button"
-                    data-event-click="register_profile()"><span>{{profile_register_label}}</span></button>
+                    data-attrif-disabled="profile_registering" data-class-settings-registering="profile_registering"
+                    data-event-click="register_profile()"><span data-if="!profile_registering">{{profile_register_label}}</span><span data-if="profile_registering">{{i18n:settings.profile.updating}}</span></button>
           </div>
         </div>
         <div class="me-invite-qr settings-desktop-only" data-if="profile_show_qr && profile_qr_svg_rml != ''">

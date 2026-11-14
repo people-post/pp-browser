@@ -152,6 +152,14 @@ public:
    * what still waits. UI thread.
    */
   void AfterRenewal(std::function<void()> then);
+  /**
+   * Like AfterRenewal, but `then` also holds the renewal's slot until it calls `release` (the registration the user
+   * asked for runs on a worker: a renewal that comes due meanwhile is asked for again and runs when it is released).
+   * `release` is idempotent, and touches only this object's state, so it is safe after the caller is gone; a teardown
+   * (OnMessagingTornDown) frees the slot itself and makes a late `release` change nothing. Exactly one call of it
+   * per `then`, on every way out, is the caller's. UI thread.
+   */
+  void HoldRenewal(std::function<void(std::function<void()> release)> then);
 
   struct State;
 

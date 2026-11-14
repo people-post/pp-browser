@@ -286,6 +286,33 @@ TEST_F(SendFailureFixTest, AnUpdateThatNeverRegisteredAndTimedOutIsDroppedSilent
   EXPECT_EQ(resent, (std::vector<std::string>{"t1/m2"}));
 }
 
+// The update now runs off the UI thread and can answer after the limit with nobody having judged the timeout yet
+// (DEV/PLAN-register-async.md): the answer is still sent once, and the same answer twice sends nothing more.
+TEST_F(SendFailureFixTest, ALateAnswerNobodyHasJudgedAndNothingToPollResendsOnceAndNeverTwice) {
+  recovering = false;
+  fix.UpdateMyCard("t1", "m1", true);
+  ASSERT_EQ(my_card_done.size(), 1u);
+  const std::function<void(bool)> done = my_card_done.front();
+  now_ms += SendFailureFix::kReleaseLimitMs + 1; // no tap, no poll: nothing judged the timeout
+  done(true);
+  EXPECT_EQ(resent, (std::vector<std::string>{"t1/m1"}));
+  done(true);
+  EXPECT_EQ(resent.size(), 1u) << "the same answer again sends nothing more";
+}
+
+TEST_F(SendFailureFixTest, ALateAnswerWithAPollStillToComeSendsNothingAndSaysSendAgain) {
+  recovering = true;
+  fix.UpdateMyCard("t1", "m1", true);
+  ASSERT_EQ(my_card_done.size(), 1u);
+  const std::function<void(bool)> done = my_card_done.front();
+  now_ms += SendFailureFix::kReleaseLimitMs + 1;
+  done(true);
+  EXPECT_TRUE(resent.empty());
+  fix.OnPollOk();
+  EXPECT_TRUE(resent.empty());
+  EXPECT_EQ(said, (std::vector<std::string>{"Updated. Please send it again."}));
+}
+
 TEST_F(SendFailureFixTest, AMessageThatCannotBeResentOnlyGetsTheSendItAgainWords) {
   fix.UpdateMyCard("t1", "voice", false);
   MyCardEnds(true);

@@ -488,6 +488,137 @@ TEST_F(MessagingReadyTasksTest, ATeardownDropsWhatWaitsForTheRenewal) {
   EXPECT_EQ(ran, 0) << "dropped, not run by the next session's renewal";
 }
 
+// A registration the user asked for holds the renewal's slot while its worker part runs (DEV/PLAN-register-async.md).
+TEST_F(MessagingReadyTasksTest, HoldRenewalRunsAtOnceWhenFreeAndHoldsTheSlotUntilReleased) {
+  std::function<void()> release;
+  int ran = 0;
+  tasks_->HoldRenewal([&](std::function<void()> r) {
+    ++ran;
+    release = std::move(r);
+  });
+  EXPECT_EQ(ran, 1);
+  EXPECT_TRUE(tasks_->RenewInFlight());
+  release();
+  EXPECT_FALSE(tasks_->RenewInFlight());
+  release(); // twice counts once
+  EXPECT_FALSE(tasks_->RenewInFlight());
+  EXPECT_TRUE(jobs_.empty());
+  tasks_->RenewRegistration();
+  EXPECT_EQ(jobs_.size(), 1u) << "the slot is free for the next renewal";
+}
+
+TEST_F(MessagingReadyTasksTest, ASecondReleaseNeverFreesALaterHolder) {
+  std::function<void()> first;
+  tasks_->HoldRenewal([&](std::function<void()> r) { first = std::move(r); });
+  first();
+  std::function<void()> second;
+  tasks_->HoldRenewal([&](std::function<void()> r) { second = std::move(r); });
+  first();
+  EXPECT_TRUE(tasks_->RenewInFlight()) << "the first holder's second call changes nothing";
+  second();
+  EXPECT_FALSE(tasks_->RenewInFlight());
+}
+
+TEST_F(MessagingReadyTasksTest, HoldRenewalWaitsForTheRenewalInFlightAndThenHoldsTheSlot) {
+  std::function<void()> release;
+  std::vector<std::string> order;
+  tasks_->RenewRegistration();
+  tasks_->HoldRenewal([&](std::function<void()> r) {
+    EXPECT_EQ(hints_.size(), 1u) << "after the renewal's hint";
+    order.push_back("manual");
+    release = std::move(r);
+  });
+  EXPECT_TRUE(order.empty());
+  RunNext(); // the renewal ends: stored, hint, then the waiting registration takes the slot
+  EXPECT_EQ(order, (std::vector<std::string>{"manual"}));
+  EXPECT_TRUE(tasks_->RenewInFlight()) << "held by the registration now";
+  release();
+  EXPECT_FALSE(tasks_->RenewInFlight());
+  EXPECT_EQ(renew_calls_, 1);
+}
+
+TEST_F(MessagingReadyTasksTest, HoldRenewalWaitsAlsoWhenTheRenewalFails) {
+  int ran = 0;
+  renew_fails_ = true;
+  tasks_->RenewRegistration();
+  tasks_->HoldRenewal([&](std::function<void()>) { ++ran; });
+  RunAll();
+  EXPECT_EQ(ran, 1);
+}
+
+TEST_F(MessagingReadyTasksTest, ARenewalDueWhileARegistrationHoldsTheSlotRunsOnceAfterItsRelease) {
+  std::function<void()> release;
+  tasks_->HoldRenewal([&](std::function<void()> r) { release = std::move(r); });
+  tasks_->RenewRegistration();
+  tasks_->RenewRegistration();
+  EXPECT_TRUE(jobs_.empty()) << "no network task beside the registration";
+  EXPECT_EQ(renew_calls_, 0);
+  release();
+  ASSERT_EQ(jobs_.size(), 1u) << "exactly one more run";
+  RunAll();
+  EXPECT_EQ(renew_calls_, 1);
+}
+
+TEST_F(MessagingReadyTasksTest, ATeardownDropsAQueuedHoldAndFreesAHeldSlot) {
+  int ran = 0;
+  tasks_->RenewRegistration();
+  tasks_->HoldRenewal([&](std::function<void()>) { ++ran; });
+  jobs_.clear(); // the teardown dropped the renewal's work
+  ++session_;
+  tasks_->OnMessagingTornDown();
+  EXPECT_EQ(ran, 0);
+  EXPECT_FALSE(tasks_->RenewInFlight());
+  tasks_->RenewRegistration();
+  RunAll();
+  EXPECT_EQ(ran, 0) << "dropped, not run by the next session's renewal";
+}
+
+// The reply of a registration whose worker task the teardown dropped never comes: the slot is free at once, and a release
+// that does come late changes nothing (the old ticket is stale).
+TEST_F(MessagingReadyTasksTest, ATeardownFreesTheSlotAHeldRegistrationNeverReleasedAndALateReleaseChangesNothing) {
+  std::function<void()> release;
+  tasks_->HoldRenewal([&](std::function<void()> r) { release = std::move(r); });
+  ASSERT_TRUE(tasks_->RenewInFlight());
+  tasks_->OnMessagingTornDown(); // only this, as StopMessagingForReset does (no OnProfileDataReset)
+  EXPECT_FALSE(tasks_->RenewInFlight());
+  tasks_->RenewRegistration();
+  EXPECT_EQ(jobs_.size(), 1u) << "the next renewal runs";
+  release();
+  EXPECT_TRUE(tasks_->RenewInFlight()) << "the stale release does not free the new run";
+  EXPECT_EQ(jobs_.size(), 1u) << "and starts no extra one";
+  RunAll();
+  EXPECT_EQ(renew_calls_, 1);
+}
+
+TEST_F(MessagingReadyTasksTest, ReleaseAfterTheOwnerIsGoneIsSafe) {
+  std::function<void()> release;
+  tasks_->HoldRenewal([&](std::function<void()> r) { release = std::move(r); });
+  tasks_.reset();
+  release();
+  SUCCEED();
+}
+
+TEST_F(MessagingReadyTasksTest, TwoQueuedHoldsRunOneAfterTheOther) {
+  std::vector<std::string> order;
+  std::function<void()> release_a;
+  std::function<void()> release_b;
+  tasks_->RenewRegistration();
+  tasks_->HoldRenewal([&](std::function<void()> r) {
+    order.push_back("a");
+    release_a = std::move(r);
+  });
+  tasks_->HoldRenewal([&](std::function<void()> r) {
+    order.push_back("b");
+    release_b = std::move(r);
+  });
+  RunAll();
+  EXPECT_EQ(order, (std::vector<std::string>{"a"}));
+  release_a();
+  EXPECT_EQ(order, (std::vector<std::string>{"a", "b"})) << "the one waiting is not stranded";
+  release_b();
+  EXPECT_FALSE(tasks_->RenewInFlight());
+}
+
 TEST(CoalescedRunTest, AStaleTicketChangesNothing) {
   CoalescedRun run;
   auto first = run.TryStart();

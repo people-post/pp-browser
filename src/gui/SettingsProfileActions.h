@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace ui {
@@ -34,29 +35,49 @@ struct AvatarCropFinish;
 class SettingsProfileActions {
 public:
   SettingsProfileActions(SettingsHost& host, const SettingsCommands& commands, const UnlockEnsurePorts& unlock);
+  ~SettingsProfileActions();
 
   /** Its fields and events in the settings model. */
   void Bind(ui::DataModelConstructor& ctor);
   /** The invite locator the profile shows now: its QR code follows (made again only when it changes). */
   void ShowInvite(const std::string& locator);
   /**
-   * Register (or renew) the identity, unlocking first. `quiet_success`: no "registered" / "renewed" line (the
-   * reconnect row: "Reconnected" comes when a poll gets through), and a network failure says so in its own words.
-   * `done(registered)` when it ends (false: the PIN was not given, or the registration failed or was refused); not
-   * called when what it waited for is dropped by a teardown.
+   * Register (or renew) the identity, unlocking first; the two requests run on a worker, the page stays usable and
+   * the update button shows "Updating…" meanwhile. `quiet_success`: no "registered" / "renewed" line (the reconnect
+   * row: "Reconnected" comes when a poll gets through), and a network failure says so in its own words.
+   * `done(registered)` when it ends (false: the PIN was not given, or the registration failed or was refused, or a
+   * messaging teardown (OnMessagingTornDown) ended it); exactly once.
+   * One registration at a time, from the first tap on (the PIN step included): another button tap meanwhile does
+   * nothing; a quiet caller meanwhile joins the one running and gets its outcome.
    */
   void Register(bool quiet_success = false, std::function<void(bool ok)> done = {});
+  /** What a registration asks to hold the automatic renewal's slot: `run` gets the `release` it must call, once. */
+  using RegistrationSlotRun = std::function<void(std::function<void()> release)>;
   /**
    * How a registration waits for the automatic renewal in flight (ChatController::RunWhenRegistrationIdle): it calls
-   * its argument at once, or once that renewal ends. Unbound: at once.
+   * its argument at once, or once that renewal ends, handing it the slot to release. Unbound: at once, nothing to
+   * release.
    */
-  void BindRunWhenRegistrationIdle(std::function<void(std::function<void()>)> run);
+  void BindRunWhenRegistrationIdle(std::function<void(RegistrationSlotRun)> run);
+  /** True from a registration's first tap until it ends (Me → Profile's nickname is not saved meanwhile). */
+  bool RegistrationStarted() const { return started_; }
+  /**
+   * Messaging was torn down (profile reset): a reply the teardown dropped never comes, so what waited for it lets go:
+   * the update button works again, every caller waiting for the outcome is answered false, and a late reply or a
+   * start still queued behind the renewal does nothing.
+   */
+  void OnMessagingTornDown();
   /** The "QR code" button on the Me card opens the full-page "My QR code" (ContactsController::OpenMyQr). */
   void BindShowMyQr(std::function<void()> show);
 
 private:
-  /** False when it did not register (the failure is reported). */
-  bool RegisterUnlocked(bool renewing, bool quiet_success);
+  /** Holding the renewal's slot (`release` it on every way out): the request, then its reply (OnRegistered). */
+  void RegisterUnlocked(bool renewing, bool quiet_success, std::function<void()> release);
+  /** The reply: says the result once (the failure, or "updated"), then ends the registration. */
+  void OnRegistered(const Roe<void>& registered, bool renewing);
+  /** Ends the registration: the flags are cleared, then every caller waiting is answered with `result`. */
+  void Conclude(const Roe<void>& result);
+  void SetRegistering(bool registering);
   void RotateBriefLlmKey();
   void CopyId();
   /** The photo menu (camera, library, remove); where it has one choice only, that choice at once. */
@@ -84,7 +105,21 @@ private:
   const SettingsCommands& commands_;
   const UnlockEnsurePorts& unlock_;
 
-  std::function<void(std::function<void()>)> run_when_registration_idle_;
+  /** Everyone waiting for the registration running (the first is the one that started it): quiet-ness and `done`. */
+  struct Waiter {
+    bool quiet = false;
+    std::function<void(Roe<void>)> done;
+  };
+
+  std::function<void(RegistrationSlotRun)> run_when_registration_idle_;
+  /** A registration is running, from the first tap (the PIN step included); C++ only. */
+  bool started_ = false;
+  /** Shown on the page: the update button reads "Updating…" and is greyed (from the PIN given until it ends). */
+  bool registering_ = false;
+  std::vector<Waiter> waiters_;
+  /** Cleared when this goes, and counted up by a teardown: a reply that comes after either touches nothing. */
+  std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
+  uint64_t generation_ = 0;
   std::function<void()> show_my_qr_;
   std::string qr_locator_;
   ui::String qr_svg_rml_;

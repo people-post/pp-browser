@@ -19,6 +19,7 @@
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "lib/net/OrgBackendClients.h"
+#include "domain/registration/RegistrationClient.h"
 #include "lib/net/BlobQuota.h"
 #include "lib/net/ProfileIconClient.h"
 #include "lib/people/ContactTypes.h"
@@ -384,6 +385,10 @@ public:
   ProfileIdentityView LoadProfileIdentityView();
   Roe<void> SaveProfileNickname(const std::string& nickname);
   Roe<void> RegisterIdentity(const std::string& nickname);
+  /** The asynchronous registration's three steps (ConversationsHub): Begin and Finish on UI, Run on a worker. */
+  Roe<RegistrationJob> BeginRegistration(const std::string& nickname);
+  static Roe<RegistrationResult> RunRegistration(const RegistrationJob& job);
+  Roe<void> FinishRegistration(const RegistrationResult& result, const std::string& account_id);
   Roe<void> UploadProfileIcon(const PreparedProfileIcon& icon);
   Roe<void> ClearProfileIcon();
   Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);

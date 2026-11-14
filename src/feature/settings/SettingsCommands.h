@@ -61,7 +61,11 @@ struct SettingsCommands {
   std::function<void(const std::string& tip, const std::string& peer_account_id,
                      std::function<void(Roe<void>)> on_done)>
       fetch_cas_public_tip;
-  std::function<Roe<void>(const RegisterIdentityArgs& args)> register_identity;
+  /**
+   * Asynchronous (two HTTP requests off the UI thread): `done` runs on UI with the outcome, once, unless a messaging
+   * teardown drops the work in flight (SettingsProfileActions::OnMessagingTornDown covers that).
+   */
+  std::function<void(const RegisterIdentityArgs& args, std::function<void(Roe<void>)> done)> register_identity;
   std::function<Roe<void>()> rotate_brief_llm_key;
   std::function<Roe<void>(int older_than_days)> clear_undelivered_older_than;
   std::function<void(bool try_upnp)> run_reachability_probe;

@@ -12606,6 +12606,12 @@ input.checkbox {
   cursor: pointer;
 }
 
+/* Me → Profile's update buttons while the card is updating (profile_registering): in place, greyed. A bound class, not
+   :disabled, for the same reason as below. What stops a second tap is the C++ side (SettingsProfileActions). */
+.settings-registering {
+  opacity: 0.4;
+}
+
 /* The plus, the camera and the microphone while an attachment is preparing or uploading (attach_disabled): in place,
    greyed. A class bound to attach_disabled, not :disabled: this engine's <button> is a plain element, so the disabled
    attribute never sets the :disabled pseudo-class (the iPhone showed the microphone at full strength). */
