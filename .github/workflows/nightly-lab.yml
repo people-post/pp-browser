@@ -90,7 +90,7 @@ jobs:
           if [ ! -f "$PP_LOCAL_BUILD_DIR/CMakeCache.txt" ]; then
             cmake -S . -B "$PP_LOCAL_BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release -DPP_BROWSER_COMPILER_CACHE=ON
           fi
-          cmake --build "$PP_LOCAL_BUILD_DIR" --target pp-app-probe pp-node -j "$(nproc)"
+          cmake --build "$PP_LOCAL_BUILD_DIR" --target pp-app-probe pp-node pp-node-load -j "$(nproc)"
 
       - name: Run the suites
         env:

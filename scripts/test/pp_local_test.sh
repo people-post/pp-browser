@@ -403,7 +403,7 @@ run_app() {
   ensure_docker_context
   lab_hop_advertise  # a seed already running keeps its address (no recreate)
   stage_hop_binary_if_newer
-  cmake --build "${BUILD_DIR}" --target pp-app-probe -j
+  cmake --build "${BUILD_DIR}" --target pp-app-probe pp-node-load -j  # pp-node-load: the full-seed scenarios
   local args=(up -d)
   if [[ "${COMPOSE_BUILD}" -eq 1 || "${HOP_NEEDS_REBUILD}" -eq 1 ]]; then
     args+=(--build)
