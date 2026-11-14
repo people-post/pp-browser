@@ -17,8 +17,8 @@ namespace pbr {
 
 /**
  * A recipient's relays, for sending in list order (multi-relay R2): the list of the newest card we keep for its
- * account (KeptRelays, MR002) — before any card, the relays it started with (a QR locator's origin, R4) — and — when every relay on it said the recipient is not registered there — its newest
- * card fetched: from its devices over the mesh (the card exchange, bounded by kDeviceAskTimeoutMs), then from the
+ * account (KeptRelays, MR002; before any card, the relays it started with: a QR locator's origin, R4), and — when
+ * every relay on it said the recipient is not registered there — its newest card fetched: from its devices over the mesh (the card exchange, bounded by kDeviceAskTimeoutMs), then from the
  * directories of our relays and our other directory providers, which keep the card each account registered with. A card is kept only once it verifies
  * against the Account ID (AccountKeyResolver). Refresh blocks: a worker's (the send's).
  */

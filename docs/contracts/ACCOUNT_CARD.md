@@ -176,7 +176,8 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
   with the locator line, so pasting the whole message works.
 - **Adding:** *Add contact* finds a locator anywhere in pasted text (`FindContactLocator`). The person is
   added at once under the locator's nickname; the card is fetched from the listed devices (each reached
-  through the mesh if no link is up), then the directory. With neither answering the contact stays and
+  through the mesh if no link is up), then from the locator's `relay` (the card the account registered there,
+  `GET /users/by-account`), then the directory. With neither answering the contact stays and
   the user is told they can write once a device is reachable; keys are then resolved as below.
 - **QR code:** *Me → Profile → QR code* shows the locator as a QR code on Mac, iOS and Android
   (`lib/ui/QrSvg`, vendored qrcodegen; dark on white whatever the theme).

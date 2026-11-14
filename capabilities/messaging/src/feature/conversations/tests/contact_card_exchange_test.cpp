@@ -154,6 +154,8 @@ TEST_F(ContactCardExchangeTest, AnInviteWithARelayStartsTheContactsRelayListWith
     done(Error("not reached"));
   });
   exchange_->SetBlockingPost([](std::function<void()> task) { task(); });
+  exchange_->SetStoredCardFetch(
+      [](const std::string&, const std::string&) -> Roe<std::optional<Object>> { return Error("relay down"); });
   std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
   exchange_->AddFromLocator(
       ContactLocator{
@@ -174,6 +176,30 @@ TEST_F(ContactCardExchangeTest, AnInviteWithARelayStartsTheContactsRelayListWith
   auto kept = keys_->Kept(bob_.account_id);
   ASSERT_TRUE(kept && *kept);
   EXPECT_TRUE(ContactRelays(**stored, **kept).from_card);
+}
+
+TEST_F(ContactCardExchangeTest, NoDeviceReachedTheLocatorsRelayGivesTheCard) {
+  const AccountCard card = SignedCard(bob_, test::Devices({"QmBobPhone"}));
+  exchange_->SetCardFetcher([](const std::string&, const std::string&, std::function<void(Roe<PeerCardRecord>)> done) {
+    done(Error("not reached"));
+  });
+  exchange_->SetBlockingPost([](std::function<void()> task) { task(); });
+  std::vector<std::string> asked;
+  exchange_->SetStoredCardFetch(
+      [&](const std::string& origin, const std::string& account_id) -> Roe<std::optional<Object>> {
+        asked.push_back(origin);
+        EXPECT_EQ(account_id, bob_.account_id);
+        return std::optional<Object>(AccountCardToJson(card));
+      });
+  std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
+  exchange_->AddFromLocator(
+      ContactLocator{
+          .account_id = bob_.account_id, .devices = {"QmBobPhone"}, .relay = "https://relay.example/api/relay"},
+      [&](Roe<ContactCardExchange::LocatorAdded> added) { result = std::move(added); });
+  ASSERT_TRUE(result.has_value());
+  ASSERT_TRUE(*result) << result->error().message;
+  EXPECT_TRUE((*result)->keys_known) << "the card Bob registered on his relay";
+  EXPECT_EQ(asked, (std::vector<std::string>{"https://relay.example/api/relay"}));
 }
 
 TEST_F(ContactCardExchangeTest, ARefreshAsksTheDevicesEvenWhenACardIsKept) {

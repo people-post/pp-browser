@@ -2,6 +2,7 @@
 
 #include "common/ValueJson.h"
 #include "common/directory/DirectoryJson.h"
+#include "lib/net/OrgBackendClientsImpl.h"
 #include "lib/people/AccountCard.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
@@ -46,6 +47,7 @@ void AppendMissing(std::vector<std::string>& into, const std::vector<std::string
 
 ContactCardExchange::ContactCardExchange(ContactsStore& contacts, AccountKeyResolver& keys)
     : contacts_(contacts), keys_(keys) {
+  fetch_stored_ = &FetchStoredAccountCard;
   redirectLogger("ContactCardExchange");
 }
 
@@ -164,7 +166,7 @@ void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::fun
     finish(true);
     return;
   }
-  FetchCard(locator.account_id, locator.devices, finish);
+  FetchCard(locator.account_id, locator.devices, locator.relay, finish);
 }
 
 void ContactCardExchange::KeepLocatorRelay(Contact& contact, const std::string& relay) {
@@ -180,16 +182,36 @@ void ContactCardExchange::KeepLocatorRelay(Contact& contact, const std::string& 
   }
 }
 
+bool ContactCardExchange::FetchFromRelay(const std::string& relay, const std::string& account_id) {
+  if (relay.empty() || !fetch_stored_) {
+    return false;
+  }
+  auto stored = fetch_stored_(relay, account_id);
+  if (!stored || !*stored) {
+    return false;
+  }
+  // The card the account registered there: kept only when it verifies against the Account ID.
+  auto kept = keys_.AddCarriedCard(**stored, util::NowUnixMs(), "relay", account_id);
+  if (!kept) {
+    log().warning << "the locator's relay gave a card that does not hold: " << kept.error().message;
+  }
+  return static_cast<bool>(kept);
+}
+
 void ContactCardExchange::FetchCard(const std::string& account_id, std::vector<std::string> devices,
-                                    std::function<void(bool kept)> done) {
-  FetchFromDevices(std::move(devices), account_id, [this, account_id, done](bool kept) {
+                                    const std::string& relay, std::function<void(bool kept)> done) {
+  FetchFromDevices(std::move(devices), account_id, [this, account_id, relay, done](bool kept) {
     if (kept) {
       done(true);
       return;
     }
-    // No listed device answered: the directory, when there is one, has the keys too (an HTTP call: off
-    // the I/O thread this callback may be on).
-    auto task = [this, account_id, done]() {
+    // No listed device answered: the locator's relay keeps the card it registered with, and the directory, when there
+    // is one, has the keys too (HTTP calls: off the I/O thread this callback may be on).
+    auto task = [this, account_id, relay, done]() {
+      if (FetchFromRelay(relay, account_id)) {
+        done(true);
+        return;
+      }
       auto resolved = keys_.Resolve(account_id);
       if (!resolved) {
         log().info << "no card for " << account_id
@@ -223,7 +245,7 @@ void ContactCardExchange::RefreshIfMissing(const Contact& contact, std::function
   }
   std::vector<std::string> devices = ContactDevices(contact);
   log().info << "asking again for the card of " << account_id << " (" << devices.size() << " device(s))";
-  FetchCard(account_id, std::move(devices), std::move(done));
+  FetchCard(account_id, std::move(devices), contact.remote.locator_relay, std::move(done));
 }
 
 void ContactCardExchange::AskDevices(const Contact& contact, std::function<void(DeviceAsk)> done) {
