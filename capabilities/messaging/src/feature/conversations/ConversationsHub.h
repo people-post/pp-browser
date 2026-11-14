@@ -585,7 +585,7 @@ private:
   void InstallOrgBackendClients(const HubSettings& settings);
   void UpdateOrgBackendClients(const HubSettings& settings);
   /** Our card's relay list: the registration relay in use, then our other relays (OwnCards::SetRelays). */
-  /** The kept cards' readers: the directory's lookup cards kept. */
+  /** The kept cards' readers: the directory's lookup cards kept, a stranger's price read from its card. */
   void WireCardReaders();
   void UnwireCardReaders();
   void SetCardRelays();

@@ -1072,6 +1072,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
     if (!initiation_billing_) {
       return;
     }
+    // The entry's floor counts only while no card of the account is known (its card's speaks over it, MR005).
     const std::string person_id = PrimaryAccountIdFromHit(hit).value_or(std::string());
     if (!person_id.empty()) {
       (void)initiation_billing_->SetFloor(person_id, hit.initiation_floor);
@@ -1156,10 +1157,28 @@ void ConversationsHub::WireCardReaders() {
       log().debug << "a directory's card for " << account_id << " not kept: " << kept.error().message;
     }
   });
+  // A stranger's price is its newest kept card's (MR005), read when the chat or a call decides it.
+  initiation_billing_->SetCardFloors([this](const std::string& peer) -> std::optional<InitiationCardFloor> {
+    if (!account_keys_ || !IsAccountIdentityValue(peer)) {
+      return std::nullopt;
+    }
+    auto kept = account_keys_->Kept(peer);
+    if (!kept || !*kept) {
+      return std::nullopt;
+    }
+    const std::optional<int64_t> floor = KeptInitiationFloor(**kept);
+    if (!floor) {
+      return std::nullopt; // only a key card known
+    }
+    return InitiationCardFloor{.floor_minor = *floor, .issued_at = (*kept)->issued_at};
+  });
 }
 
 void ConversationsHub::UnwireCardReaders() {
   clients_.DirectoryCards().Set(nullptr);
+  if (initiation_billing_) {
+    initiation_billing_->SetCardFloors(nullptr);
+  }
 }
 
 void ConversationsHub::SetOnMessagingReady(std::function<void()> callback) {

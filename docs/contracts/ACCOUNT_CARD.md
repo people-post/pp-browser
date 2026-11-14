@@ -99,7 +99,8 @@ A key card plus what the account says about itself, signed as a whole.
   ([pricing P001](../../projects/pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet),
   [MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)):
   required, an integer from 0 to 2^53 − 1 (the relay reads it as a JSON number). Every relay reads a stranger's price
-  from it; the identity's `initiation_floor` (dogfood: `AppConfig.initiation_floor`) is the account's, and a device
+  from it, and so does the app before a first message or call, the relay's `payment_required` over a card it came
+  after ([SERVICE_ENDPOINTS § The stranger's price](SERVICE_ENDPOINTS.md#the-strangers-price)); the identity's `initiation_floor` (dogfood: `AppConfig.initiation_floor`) is the account's, and a device
   that takes a sibling's newer card takes its floor, as its nickname.
 - `issued_at` — ms since epoch; the card's version. A device issues a new card only when what it says
   changes (a device joins, a device's keys, the nickname, the relays, the floor), always later than the newest it

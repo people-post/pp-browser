@@ -48,7 +48,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   biometric.bin             # Face ID / Touch ID unlock: DEK under K_bio, AAD "biometric|{id}" (iOS; only while the switch is on — AT_REST_ENCRYPTION § Face ID / Touch ID unlock)
   identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 4 — 3 steps up, dropping relay_user_id; device ML-DSA-65 + account ML-DSA + account KEM; pre-v3 wipe; optional initiation_floor; optional registered_card_issued_at — the account card the relay last answered for at register/finish, SERVICE_ENDPOINTS; optional recovery_seed_b64 — M023, AT_REST_ENCRYPTION § Identity plaintext)
   secrets.enc               # typed model API key (llm_api_key) under DEK AEAD, AAD purpose "config-secrets", schema_version 1; absent when there are none (PB-034)
-  initiation_billing.json   # per-peer initiation billing state (P001; schema_version 2 — 1 steps up, dropping `relay:` keys)
+  initiation_billing.json   # per-peer initiation billing state (P001; schema_version 2 — 1 steps up, dropping `relay:` keys; additive relay_floor_minor / relay_floor_card_issued_at: a relay's payment_required floor and the kept card it came after — SERVICE_ENDPOINTS § The stranger's price)
   account_locker.json       # account locker sync state: highest_version_by_locker, contact_clock, device_names (plaintext; ACCOUNT_LOCKER.md § On disk)
   contacts.json             # address book (schema_version 3: local + remote + overrides{}; 2 steps up, dropping `relay:` ids from each
                             # contact's ids — the contact stays); another version, or none, is refused

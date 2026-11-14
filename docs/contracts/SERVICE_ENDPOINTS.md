@@ -79,11 +79,27 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 | `401` | `sender_key_required` | Sends once more with `sender_public_key_b64` |
 | `401` | `grant_expired`, `invalid_grant` | Drops the grant, asks the recipient for a new one (`relay_grant_ask`), and sends once more without it, as a stranger's |
 | `401` | `sender_key_mismatch`, other | Final (`HttpRejected`) |
-| `402` | `payment_required` (`initiation_floor`) | Final until paid (`Err::Network::PaymentRequired`, the floor in its detail): the floor is recorded for the recipient ([pricing P001](../../projects/pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet)) — the chat shows the price and holds sends while no payment can be made |
+| `402` | `payment_required` (`initiation_floor`) | Final until paid (`Err::Network::PaymentRequired`, the floor in its detail): the floor is recorded for the recipient ([pricing P001](../../projects/pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet)) — the chat shows the price and holds sends while no payment can be made. The relay's price is the authority: it is shown over the recipient's kept card until a newer card is kept, and when that card says another price, or none is kept, the card is fetched again — its devices, then the directories ([The stranger's price](#the-strangers-price)) |
 | `429` | `stranger_quota_exceeded` | Queued and sent again after a backoff (1 min, doubling to 16; at most 8 tries, `StrangerQuotaRetryAfter`) |
 | `429` | `rate_limited` | Queued, retried when the inbox syncs (as any rate limit) |
 
-The recipient's floor is the `initiation_floor` of the card it registered with (0 when it sent none). A stranger's send to a recipient whose floor is 0 is accepted within a first-contact quota (3 an hour per pair, 30 an hour per recipient) and raises **no push** on the recipient's devices (an `urgent` one still rings, within the per-pair call-wake limit).
+The recipient's floor is the `initiation_floor` of the card it registered with (0 when it sent none).
+
+### The stranger's price
+
+The app decides a stranger's price before a first message or call (the chat's compose gate and its "price" line, the
+outbound gate, a call's invite offer; `InitiationBillingStore::Get`, `PeerInitiationFloor`) from, in order:
+
+1. the relay's `payment_required` floor, when it came after the newest card we keep for the account (`SetRelayFloor`;
+   the relay reads the card the account registered, which may be newer than ours);
+2. else the `initiation_floor` of that newest kept card (`KeptInitiationFloor`): one the account sent, a contact card,
+   the card a directory lookup carries ([The directory on each](#the-directory-on-each));
+3. else, with no card known, the floor heard otherwise: a directory search hit's `initiation_floor` (relays no longer
+   send one: 0) or the peer's `charge_required`.
+
+Kept per account in `initiation_billing.json` (the relay's floor beside the others, [DATA_LAYOUT](DATA_LAYOUT.md)).
+
+A stranger's send to a recipient whose floor is 0 is accepted within a first-contact quota (3 an hour per pair, 30 an hour per recipient) and raises **no push** on the recipient's devices (an `urgent` one still rings, within the per-pair call-wake limit).
 
 A poll from a user the relay has no registration for is answered **403** `{"error":"Relay user not registered"}` (observed on the 2026-11 production server for accounts registered on the old one). The client types exactly that answer as `Err::Auth::NotRegistered` (`IsRelayUserNotRegistered`), marks its registration expired and registers again with the same account key (same Account ID; the relay may give a new `relay_user_id`), at most every 5 minutes, when "renew automatically" is on; otherwise it asks the user (B216). Any other 403 stays `HttpRejected`.
 

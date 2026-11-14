@@ -266,9 +266,19 @@ void MeshDeliveryOrchestrator::NotePaymentRequired(const std::string& recipient,
   }
   // The relay refused a stranger's send to a recipient that charges (MR005): its price, as P001's charge_required
   // would say it — the chat shows it, and the outbound gate holds sends while no payment can be made.
+  // The relay's answer is the authority (it reads the card the recipient registered): when our kept card says another
+  // price, or we keep none, the card is fetched again — its devices, then the directories (RecipientRelays).
   log().info << "relay refused a stranger's send: " << recipient << " charges floor=" << floor;
-  (void)initiation_billing_->SetFloor(recipient, floor);
+  auto stale_card = initiation_billing_->SetRelayFloor(recipient, floor);
   (void)initiation_billing_->MarkClosed(recipient);
+  if (stale_card && *stale_card) {
+    AppRuntime::PostWorkerNormal([this, recipient]() {
+      (void)recipient_relays_.Refresh(recipient);
+      if (on_messages_changed_) {
+        AppRuntime::PostUI([this]() { on_messages_changed_(); });
+      }
+    });
+  }
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }

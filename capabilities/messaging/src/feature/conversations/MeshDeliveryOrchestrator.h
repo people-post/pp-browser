@@ -406,7 +406,10 @@ private:
   Roe<ThreadMessage> SendPublicPskRotate(const std::string& thread_id, PublicPskRotateKind kind);
   void PurgeRetryQueueForThread(const std::string& thread_id);
   void HandleDirectInbound(RelayEnvelope envelope, const std::string& from_peer_id);
-  /** The relay refused a stranger's send to `recipient` for its price (MR005): the chat shows it (P001). */
+  /**
+   * The relay refused a stranger's send to `recipient` for its price (MR005): the chat shows it (P001), over our kept
+   * card until a newer one; a card that says another price, or none, is fetched again (RecipientRelays::Refresh).
+   */
   void NotePaymentRequired(const std::string& recipient, int64_t floor);
   /** After an inbound envelope: a verified sender is online (its grants, MR005). */
   void NoteVerifiedSender(const RelayEnvelope& envelope, bool sender_verified);
