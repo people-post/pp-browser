@@ -5,6 +5,7 @@
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/crypto/MlDsa.h"
 
+#include "common/DeviceName.h"
 #include "common/ValueJson.h"
 
 #include <algorithm>
@@ -103,6 +104,7 @@ std::string StateToJson(const AccountLockerState& state) {
   }
   root.set("providers", ArrayValue(std::move(providers)));
   root.set("contact_clock", ContactClock::EntriesToJson(state.contact_clock));
+  root.set("device_names", DeviceNamesToJson(state.device_names));
   return DumpJson(root);
 }
 
@@ -150,7 +152,39 @@ Roe<AccountLockerState> StateFromJson(const std::string& json) {
   if (const Array* clock = root->getArray("contact_clock")) {
     state.contact_clock = ContactClock::EntriesFromJson(*clock);
   }
+  if (const Array* names = root->getArray("device_names")) {
+    state.device_names = DeviceNamesFromJson(*names);
+  }
   return state;
+}
+
+Value DeviceNamesToJson(const std::vector<DeviceNameEntry>& entries) {
+  std::vector<Value> rows;
+  for (const DeviceNameEntry& entry : entries) {
+    Object row;
+    row.set("peer_id", entry.peer_id);
+    row.set("name", entry.name);
+    row.set("at", entry.at);
+    rows.push_back(ObjectValue(std::move(row)));
+  }
+  return ArrayValue(std::move(rows));
+}
+
+std::vector<DeviceNameEntry> DeviceNamesFromJson(const Array& rows) {
+  std::vector<DeviceNameEntry> entries;
+  for (const Value& item : rows.elements) {
+    const Object* row = asObject(item);
+    if (!row) {
+      continue;
+    }
+    DeviceNameEntry entry{row->getString("peer_id").value_or(""),
+                          NormalizeDeviceName(row->getString("name").value_or("")),
+                          row->getIf<int64_t>("at").value_or(0)};
+    if (!entry.peer_id.empty() && !entry.name.empty()) {
+      entries.push_back(std::move(entry));
+    }
+  }
+  return CapDeviceNames(MergeDeviceNames({}, entries), {});
 }
 
 Roe<LockerSnapshot> Seal(const AccountLockerState& state, const LockerKeys& keys, const uint64_t version) {
@@ -278,9 +312,57 @@ void MergeContacts(const AccountLockerState& ours, const AccountLockerState& sto
   }
 }
 
-AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored) {
+std::vector<DeviceNameEntry> MergeDeviceNames(const std::vector<DeviceNameEntry>& local,
+                                              const std::vector<DeviceNameEntry>& remote) {
+  std::map<std::string, DeviceNameEntry> by_peer;
+  for (const DeviceNameEntry& entry : local) {
+    auto [slot, inserted] = by_peer.try_emplace(entry.peer_id, entry);
+    if (!inserted && entry.at > slot->second.at) {
+      slot->second = entry;
+    }
+  }
+  for (const DeviceNameEntry& entry : remote) {
+    auto [slot, inserted] = by_peer.try_emplace(entry.peer_id, entry);
+    if (!inserted && entry.at >= slot->second.at) {
+      slot->second = entry; // a tie: the stored copy stands
+    }
+  }
+  std::vector<DeviceNameEntry> merged;
+  merged.reserve(by_peer.size());
+  for (auto& [peer_id, entry] : by_peer) {
+    merged.push_back(std::move(entry));
+  }
+  return merged;
+}
+
+std::vector<DeviceNameEntry> CapDeviceNames(std::vector<DeviceNameEntry> entries,
+                                            const std::vector<std::string>& card_peer_ids) {
+  const auto on_card = [&](const DeviceNameEntry& entry) {
+    return std::find(card_peer_ids.begin(), card_peer_ids.end(), entry.peer_id) != card_peer_ids.end();
+  };
+  if (entries.size() > kMaxDeviceNameEntries) {
+    // Keepers first: on the card (when we know the card), then the newest; the peer_id breaks a tie so every
+    // device keeps the same ones.
+    std::sort(entries.begin(), entries.end(), [&](const DeviceNameEntry& a, const DeviceNameEntry& b) {
+      const bool a_on = card_peer_ids.empty() || on_card(a);
+      const bool b_on = card_peer_ids.empty() || on_card(b);
+      if (a_on != b_on) {
+        return a_on;
+      }
+      return a.at != b.at ? a.at > b.at : a.peer_id < b.peer_id;
+    });
+    entries.resize(kMaxDeviceNameEntries);
+  }
+  std::sort(entries.begin(), entries.end(),
+            [](const DeviceNameEntry& a, const DeviceNameEntry& b) { return a.peer_id < b.peer_id; });
+  return entries;
+}
+
+AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored,
+                                   const std::vector<std::string>& card_peer_ids) {
   AccountLockerState merged = ours;
   MergeContacts(ours, stored, merged);
+  merged.device_names = CapDeviceNames(MergeDeviceNames(ours.device_names, stored.device_names), card_peer_ids);
   for (const AccountStateGroup& theirs : stored.extras.groups) {
     auto mine = std::find_if(merged.extras.groups.begin(), merged.extras.groups.end(),
                              [&](const AccountStateGroup& g) { return g.group_id == theirs.group_id; });

@@ -107,6 +107,10 @@ public:
   Roe<std::string> ExportAccountCopy();
   /** The account's devices (M021 d4): the newest list, its first the main device; whether this one is signed out. */
   Roe<OwnDeviceList> OwnDevices();
+  /** The account's device names (locker `device_names`), unfiltered: show only those on OwnDevices(). */
+  std::vector<DeviceNameEntry> OwnDeviceNames();
+  /** Name this device, or (on the main device) another one; empty after normalising = cancel (Ok, nothing written). */
+  Roe<void> RenameOwnDevice(const std::string& peer_id, const std::string& name);
   /** On the main device: take another device off the account. */
   Roe<void> RemoveOwnDevice(const std::string& peer_id);
   /** On the main device: make another device the main one. */

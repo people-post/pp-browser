@@ -180,6 +180,14 @@ Roe<OwnDeviceList> ConversationsFacade::OwnDevices() {
   return hub_.OwnDevices();
 }
 
+std::vector<DeviceNameEntry> ConversationsFacade::OwnDeviceNames() {
+  return hub_.OwnDeviceNames();
+}
+
+Roe<void> ConversationsFacade::RenameOwnDevice(const std::string& peer_id, const std::string& name) {
+  return hub_.RenameOwnDevice(peer_id, name);
+}
+
 Roe<void> ConversationsFacade::RemoveOwnDevice(const std::string& peer_id) {
   return hub_.RemoveOwnDevice(peer_id);
 }

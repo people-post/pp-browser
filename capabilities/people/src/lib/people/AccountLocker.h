@@ -16,6 +16,20 @@
 
 namespace pbr {
 
+/** Most device names a locker keeps: the card lists at most kMaxAccountCardDevices, the rest is room to spare. */
+inline constexpr size_t kMaxDeviceNameEntries = 8;
+
+/** One device's display name inside the locker (never in the account card, a log or a metric). */
+struct DeviceNameEntry {
+  std::string peer_id;
+  /** Never empty, always through NormalizeDeviceName. */
+  std::string name;
+  /** Unix ms; per peer_id the larger `at` wins, whoever wrote it. */
+  int64_t at = 0;
+
+  bool operator==(const DeviceNameEntry&) const = default;
+};
+
 /**
  * What the account locker holds (multi-device M023 §4): account-level state only — never device keys, sessions,
  * private material or messages.
@@ -29,6 +43,8 @@ struct AccountLockerState {
   std::vector<std::string> providers;
   /** Each contact's sync register (M023 §7): the newest wins per account, a removal is a tombstone. */
   std::vector<ContactClockEntry> contact_clock;
+  /** Display names of the account's devices (key `device_names`), sorted by peer_id; absent in older snapshots. */
+  std::vector<DeviceNameEntry> device_names;
 };
 
 /**
@@ -87,7 +103,30 @@ std::optional<LockerSnapshot> PickNewest(const std::vector<LockerSnapshot>& snap
  * side has a register for is kept from either), groups by id (the higher roster epoch wins, ours on a tie), card
  * floors (the newest per account), providers (union).
  */
-AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored);
+AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored,
+                                   const std::vector<std::string>& card_peer_ids = {});
+
+/**
+ * Device names of two copies by peer_id: the larger `at` wins whoever wrote it, `remote` on a tie (a sync with
+ * nothing newer changes nothing); a copy without a key never erases the other's. Sorted by peer_id.
+ */
+std::vector<DeviceNameEntry> MergeDeviceNames(const std::vector<DeviceNameEntry>& local,
+                                              const std::vector<DeviceNameEntry>& remote);
+
+/**
+ * At most kMaxDeviceNameEntries, sorted by peer_id: over the limit, entries of devices not on `card_peer_ids` go
+ * first (only when it is not empty), then the smallest `at`. Never prunes below the limit.
+ */
+std::vector<DeviceNameEntry> CapDeviceNames(std::vector<DeviceNameEntry> entries,
+                                            const std::vector<std::string>& card_peer_ids);
+
+/** `device_names` as JSON (an array of {peer_id, name, at}). */
+Value DeviceNamesToJson(const std::vector<DeviceNameEntry>& entries);
+/**
+ * Read an untrusted `device_names` array: each name through NormalizeDeviceName (an empty one drops the entry),
+ * unknown fields ignored, one entry per peer_id (the larger `at`), capped like CapDeviceNames without a card.
+ */
+std::vector<DeviceNameEntry> DeviceNamesFromJson(const Array& rows);
 
 /**
  * The bytes signed for a snapshot: `pp-browser:account-locker-v1` and a zero byte, version byte 1, LenBytes(locker

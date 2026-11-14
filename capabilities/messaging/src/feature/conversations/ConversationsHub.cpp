@@ -1258,7 +1258,14 @@ void ConversationsHub::BuildMessagingObjects() {
                     group_membership_->EndDissolvedFromLocker(group);
                   }
                 }
-              }});
+              },
+          .own_devices = [this]() -> Roe<OwnDeviceList> {
+            if (!mesh_messaging_) {
+              return Error("Messaging is not ready");
+            }
+            return mesh_messaging_->OwnAccountCards().Devices();
+          },
+          .own_system_name = [this]() { return config_.system_device_name; }});
   account_locker_->SetClient(clients_.Locker());
   account_locker_->SetDataDir(data_dir_);
   // The account's devices keep one address book: a write here nudges the others; a nudge from one syncs here.
@@ -1268,9 +1275,12 @@ void ConversationsHub::BuildMessagingObjects() {
     }
   });
   mesh_messaging_->SetOnSiblingNotice([this]() { PublishAccountLockerSoon(); });
-  // A device just joined our list (we are the master): our contacts hear of it, so their next message reaches it.
-  mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(
-      [this](const AccountCard&) { AppRuntime::PostWorkerNormal([this]() { AnnounceOwnDevicesToContacts(); }); });
+  // A device just joined our list (we are the master): our contacts hear of it, so their next message reaches it;
+  // the locker is read now, so the new device's name is here without waiting for the 10-minute round.
+  mesh_messaging_->OwnAccountCards().SetOnDeviceJoined([this](const AccountCard&) {
+    AppRuntime::PostWorkerNormal([this]() { AnnounceOwnDevicesToContacts(); });
+    PublishAccountLockerSoon();
+  });
   NotifyMessagingBuilt();
   actions_ =
       std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_, group_membership_.get(),
@@ -3732,6 +3742,28 @@ Roe<OwnDeviceList> ConversationsHub::OwnDevices() {
   return mesh_messaging_->OwnAccountCards().Devices();
 }
 
+std::vector<DeviceNameEntry> ConversationsHub::OwnDeviceNames() {
+  return account_locker_ ? account_locker_->DeviceNames() : std::vector<DeviceNameEntry>{};
+}
+
+Roe<void> ConversationsHub::RenameOwnDevice(const std::string& peer_id, const std::string& name) {
+  if (!IsMessagingReady() || !mesh_messaging_ || !account_locker_) {
+    return Error("Messaging is not ready");
+  }
+  auto list = mesh_messaging_->OwnAccountCards().Devices();
+  if (!list) {
+    return list.error();
+  }
+  if (auto allowed = CanRenameDevice(*list, peer_id); !allowed) {
+    return allowed.error();
+  }
+  // An empty name (after NormalizeDeviceName) is a cancel: nothing is written, nothing is said.
+  if (account_locker_->SetDeviceName(peer_id, name, util::NowUnixMs())) {
+    PublishAccountLockerSoon();
+  }
+  return {};
+}
+
 Roe<void> ConversationsHub::RemoveOwnDevice(const std::string& peer_id) {
   if (!IsMessagingReady() || !mesh_messaging_) {
     return Error("Messaging is not ready");
@@ -3742,6 +3774,9 @@ Roe<void> ConversationsHub::RemoveOwnDevice(const std::string& peer_id) {
   }
   // Siblings hear through our own mailbox (OwnCards::SetOnChanged) — the removed device too, which then stops;
   // contacts stop sending to it once they hold this card (M021 limit 4: eventual).
+  if (account_locker_) {
+    account_locker_->ForgetDeviceName(peer_id);
+  }
   log().info << "Device " << peer_id << " taken off the account; " << card->devices.size() << " left";
   AppRuntime::PostWorkerNormal([this]() { SyncLockerThenAnnounceOwnDevices(); });
   return {};

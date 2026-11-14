@@ -5,6 +5,7 @@
 #include "lib/people/AccountLocker.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
+#include "domain/peers/OwnCards.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -14,6 +15,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include "common/PbrCompat.h"
 
@@ -35,6 +37,13 @@ public:
      * a device that missed the dissolve (it was off) ends the group too. Null: not taken.
      */
     std::function<void(const std::vector<AccountStateGroup>&)> take_dissolved;
+    /**
+     * The account's devices as this device knows them (its card's list, this device's PeerId): which names to keep
+     * and which device the default name is for. Null or an error: the card is unknown, no default name is added.
+     */
+    std::function<Roe<OwnDeviceList>()> own_devices;
+    /** The system's name for this device, read once at startup (the hub's copy); empty: unknown. */
+    std::function<std::string()> own_system_name;
   };
 
   AccountLockerWorkflow(IdentityStore& identity, ContactsStore& contacts, Sources sources);
@@ -45,6 +54,21 @@ public:
   void SetOnWritten(std::function<void()> callback) { on_written_ = std::move(callback); }
   /** Where the highest version this device has seen of each locker is kept (`account_locker.json`; empty: memory). */
   void SetDataDir(std::string data_dir);
+
+  /**
+   * The device names as this device has them: the last merge with the locker, plus its own edits not yet
+   * published. Also kept in `account_locker.json`. Never logged.
+   */
+  std::vector<DeviceNameEntry> DeviceNames() const;
+  /**
+   * Give a device a name (its own, or by the main device another's — who may is the caller's rule): through
+   * NormalizeDeviceName, then stored with `at = max(now_ms, its old at + 1)`. False, nothing written, when the name
+   * is empty after that or is the name the device has already (`at` moves only when the name changes). The caller
+   * publishes.
+   */
+  bool SetDeviceName(const std::string& peer_id, const std::string& name, int64_t now_ms);
+  /** A device was taken off the account: its entry goes from this table and from the next publish. */
+  void ForgetDeviceName(const std::string& peer_id);
 
   /**
    * Sync the account's state with its locker, both ways (M023 §7): note what changed here since the last sync (the
@@ -86,8 +110,10 @@ private:
   ContactsStore& contacts_;
   Sources sources_;
   void RaiseHighestSeen(const std::string& locker_id_hex, uint64_t version);
-  /** `account_locker.json`: the highest versions seen and the contact clock. */
+  /** `account_locker.json`: the highest versions seen, the contact clock and the device names. */
   void Save();
+  /** The locker's device names into the local table (the larger `at` wins; a missing key erases nothing). */
+  void TakeRemoteDeviceNames(const std::vector<DeviceNameEntry>& remote);
   /** The remote registers that win, applied to the address book. */
   Roe<void> TakeRemoteContacts(const std::vector<Contact>& local, const AccountLockerState& stored);
 
@@ -100,7 +126,18 @@ private:
   ContactClock clock_;
   /** Per locker (hex id): a provider serving an older copy of one locker says nothing about another. */
   std::map<std::string, uint64_t> highest_seen_;
+  /** Device names by peer_id order; see DeviceNames(). */
+  std::vector<DeviceNameEntry> device_names_;
+  /** Devices taken off the account whose entry the next publish must leave out (until a write succeeds). */
+  std::set<std::string> removed_devices_;
 };
+
+/**
+ * Whether this device may name `peer_id` (a client rule: the locker cannot tell who wrote an entry): itself always;
+ * another only the main device (the card's first, or a device with no list yet) and only one on the list. A
+ * signed-out device names nothing.
+ */
+Roe<void> CanRenameDevice(const OwnDeviceList& list, const std::string& peer_id);
 
 /** Provider text ↔ snapshot bytes (hex id, base64 fields). */
 LockerRecord LockerRecordFromSnapshot(const LockerSnapshot& snapshot);

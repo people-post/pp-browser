@@ -305,6 +305,13 @@ public:
                                       const std::vector<std::string>& saved_copies = {});
   /** The account's devices as this device knows them (M021 d4); the first is the master. */
   Roe<OwnDeviceList> OwnDevices();
+  /** The account's device names as this device has them (locker `device_names`); filter by OwnDevices() to show. */
+  std::vector<DeviceNameEntry> OwnDeviceNames();
+  /**
+   * Name a device of the account: this one, or — on the main device — another on the list; any other asker is
+   * refused. An empty name (after NormalizeDeviceName) is a cancel: Ok, nothing written. Publishes to the locker.
+   */
+  Roe<void> RenameOwnDevice(const std::string& peer_id, const std::string& name);
   /** On the master: take another device off the account (revoke) and tell siblings and contacts. */
   Roe<void> RemoveOwnDevice(const std::string& peer_id);
   /** On the master: hand the role to another device of the account and tell siblings and contacts. */

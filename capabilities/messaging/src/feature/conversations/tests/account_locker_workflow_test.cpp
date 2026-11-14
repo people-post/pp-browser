@@ -4,12 +4,14 @@
 #include "foundation/crypto/RecoverySeed.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
+#include "common/Logger.h"
 #include "common/Utilities.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include "common/PbrCompat.h"
 
@@ -162,6 +164,260 @@ TEST_F(AccountLockerWorkflowTest, AnExportedVersionKeepsTheProvidersNextWriteAbo
   auto written = workflow_->Publish();
   ASSERT_TRUE(written) << written.error().message;
   EXPECT_GT(*written, record->version);
+}
+
+// --- Device names ------------------------------------------------------------------------------------------
+
+/** A device of the account for the names tests: its PeerId, the card's list as it knows it, the system's name. */
+struct NamedDevice {
+  std::string self;
+  std::vector<std::string> card;
+  std::string system_name;
+  int writes = 0;
+  std::unique_ptr<AccountLockerWorkflow> workflow;
+};
+
+/** Collects every line of the loggers it is added to (handlers cannot be removed: kept for the process). */
+struct Lines : logging::Handler {
+  void emit(logging::Level, const std::string&, const std::string& message) override {
+    std::lock_guard lock(mu);
+    all += message + "\n";
+  }
+  std::string Text() {
+    std::lock_guard lock(mu);
+    return all;
+  }
+  std::mutex mu;
+  std::string all;
+};
+
+class AccountLockerWorkflowNamesTest : public AccountLockerWorkflowTest {
+protected:
+  /** Another device of the same account: same seed, address book and provider; its own table and card. */
+  std::unique_ptr<NamedDevice> Device(const std::string& self, std::vector<std::string> card,
+                                      const std::string& system_name) {
+    auto device = std::make_unique<NamedDevice>();
+    device->self = self;
+    device->card = std::move(card);
+    device->system_name = system_name;
+    NamedDevice* raw = device.get();
+    device->workflow = std::make_unique<AccountLockerWorkflow>(
+        *identity_, *contacts_,
+        AccountLockerWorkflow::Sources{.own_devices = [raw]() -> Roe<OwnDeviceList> {
+                                         OwnDeviceList list;
+                                         list.self_peer_id = raw->self;
+                                         for (const std::string& peer : raw->card) {
+                                           AccountCardDevice listed;
+                                           listed.peer_id = peer;
+                                           list.devices.push_back(listed);
+                                         }
+                                         return list;
+                                       },
+                                       .own_system_name = [raw]() { return raw->system_name; }});
+    device->workflow->SetClient(&provider_);
+    device->workflow->SetOnWritten([raw]() { ++raw->writes; });
+    return device;
+  }
+
+  std::string NameIn(const std::vector<DeviceNameEntry>& names, const std::string& peer) {
+    for (const DeviceNameEntry& entry : names) {
+      if (entry.peer_id == peer) {
+        return entry.name;
+      }
+    }
+    return "";
+  }
+
+  std::string NameOnProvider(const std::string& peer) {
+    auto fetched = Restore({});
+    EXPECT_TRUE(fetched && fetched->has_value());
+    return fetched && fetched->has_value() ? NameIn((**fetched).state.device_names, peer) : std::string{};
+  }
+};
+
+TEST_F(AccountLockerWorkflowNamesTest, TwoPublishesWithNothingChangedWriteOnceAndNudgeOnce) {
+  auto phone = Device("peer:phone", {"peer:phone"}, "iPhone");
+  ASSERT_TRUE(phone->workflow->Publish());
+  EXPECT_EQ(phone->writes, 1);
+  EXPECT_EQ(NameOnProvider("peer:phone"), "iPhone");
+  ASSERT_TRUE(phone->workflow->Publish());
+  EXPECT_EQ(phone->writes, 1) << "nothing changed: no write, no sibling nudge";
+  auto laptop = Device("peer:laptop", {"peer:phone", "peer:laptop"}, "MacBook");
+  ASSERT_TRUE(laptop->workflow->Publish());
+  EXPECT_EQ(laptop->writes, 1) << "its own name is new";
+  ASSERT_TRUE(laptop->workflow->Publish());
+  ASSERT_TRUE(phone->workflow->Publish());
+  ASSERT_TRUE(laptop->workflow->Publish());
+  ASSERT_TRUE(phone->workflow->Publish());
+  EXPECT_EQ(laptop->writes, 1);
+  EXPECT_EQ(phone->writes, 1) << "the phone took the laptop's name without rewriting the locker";
+  EXPECT_EQ(NameIn(phone->workflow->DeviceNames(), "peer:laptop"), "MacBook");
+  EXPECT_EQ(NameIn(laptop->workflow->DeviceNames(), "peer:phone"), "iPhone");
+}
+
+TEST_F(AccountLockerWorkflowNamesTest, TheMainDevicesNameForAnotherSticksAndTheSystemNameNeverOverwritesIt) {
+  auto phone = Device("peer:phone", {"peer:phone", "peer:laptop"}, "iPhone");
+  ASSERT_TRUE(phone->workflow->Publish());
+  // The main device names the laptop before the laptop has ever published.
+  ASSERT_TRUE(phone->workflow->SetDeviceName("peer:laptop", "Office Mac", util::NowUnixMs()));
+  ASSERT_TRUE(phone->workflow->Publish());
+  auto laptop = Device("peer:laptop", {"peer:phone", "peer:laptop"}, "MacBook");
+  ASSERT_TRUE(laptop->workflow->Publish());
+  EXPECT_EQ(NameIn(laptop->workflow->DeviceNames(), "peer:laptop"), "Office Mac") << "no default over a given name";
+  laptop->system_name = "Renamed in the system";
+  ASSERT_TRUE(laptop->workflow->Publish());
+  EXPECT_EQ(NameOnProvider("peer:laptop"), "Office Mac");
+  // And the laptop renaming itself reaches the phone, which keeps it through its own publishes.
+  ASSERT_TRUE(laptop->workflow->SetDeviceName("peer:laptop", "Mac Bureau", util::NowUnixMs() + 10));
+  ASSERT_TRUE(laptop->workflow->Publish());
+  ASSERT_TRUE(phone->workflow->Publish());
+  EXPECT_EQ(NameIn(phone->workflow->DeviceNames(), "peer:laptop"), "Mac Bureau");
+  ASSERT_TRUE(phone->workflow->Publish());
+  EXPECT_EQ(NameOnProvider("peer:laptop"), "Mac Bureau");
+}
+
+TEST_F(AccountLockerWorkflowNamesTest, ANewlyLinkedDeviceGetsEveryNameOnItsFirstSync) {
+  auto phone = Device("peer:phone", {"peer:phone"}, "iPhone");
+  ASSERT_TRUE(phone->workflow->Publish());
+  auto tablet = Device("peer:tablet", {"peer:phone", "peer:tablet"}, "iPad");
+  ASSERT_TRUE(tablet->workflow->Publish());
+  EXPECT_EQ(NameIn(tablet->workflow->DeviceNames(), "peer:phone"), "iPhone");
+  EXPECT_EQ(NameIn(tablet->workflow->DeviceNames(), "peer:tablet"), "iPad");
+  ASSERT_TRUE(phone->workflow->Publish());
+  EXPECT_EQ(NameIn(phone->workflow->DeviceNames(), "peer:tablet"), "iPad");
+}
+
+TEST_F(AccountLockerWorkflowNamesTest, AnEntryMadeEmptyOrUnchangedWritesNothing) {
+  auto phone = Device("peer:phone", {"peer:phone"}, "iPhone");
+  ASSERT_TRUE(phone->workflow->Publish());
+  const auto before = phone->workflow->DeviceNames();
+  EXPECT_FALSE(phone->workflow->SetDeviceName("peer:phone", "  \n ", util::NowUnixMs())) << "empty input is a cancel";
+  EXPECT_FALSE(phone->workflow->SetDeviceName("peer:phone", "iPhone", util::NowUnixMs() + 99)) << "same name: at stays";
+  EXPECT_EQ(phone->workflow->DeviceNames(), before);
+}
+
+TEST_F(AccountLockerWorkflowNamesTest, ASlowClockCannotBeOverwrittenByTheOldEntry) {
+  auto phone = Device("peer:phone", {"peer:phone"}, "iPhone");
+  const int64_t hour = 3'600'000;
+  const int64_t now = util::NowUnixMs();
+  ASSERT_TRUE(phone->workflow->SetDeviceName("peer:phone", "First", now + hour));
+  ASSERT_TRUE(phone->workflow->SetDeviceName("peer:phone", "Second", now)); // this clock is an hour behind
+  const auto names = phone->workflow->DeviceNames();
+  ASSERT_EQ(names.size(), 1u);
+  EXPECT_EQ(names[0].name, "Second");
+  EXPECT_EQ(names[0].at, now + hour + 1);
+}
+
+TEST_F(AccountLockerWorkflowNamesTest, ALockerWrittenWithoutTheKeyCostsNoLocalNameAndIsRepaired) {
+  auto phone = Device("peer:phone", {"peer:phone", "peer:laptop"}, "iPhone");
+  ASSERT_TRUE(phone->workflow->Publish());
+  ASSERT_TRUE(phone->workflow->SetDeviceName("peer:laptop", "Office Mac", util::NowUnixMs()));
+  ASSERT_TRUE(phone->workflow->Publish());
+  // An older version rewrites the locker: its state has no device_names.
+  auto fetched = Restore({});
+  ASSERT_TRUE(fetched && fetched->has_value());
+  AccountLockerState old_state = (**fetched).state;
+  old_state.device_names.clear();
+  auto recovery = DeriveRecoveryKeys(seed_);
+  ASSERT_TRUE(recovery);
+  auto keys = account_locker::KeysFrom(*recovery);
+  ASSERT_TRUE(keys);
+  auto snapshot = account_locker::Seal(old_state, *keys, (**fetched).version + 10);
+  ASSERT_TRUE(snapshot);
+  ASSERT_TRUE(provider_.Put("account", LockerRecordFromSnapshot(*snapshot), nullptr));
+  EXPECT_EQ(NameOnProvider("peer:laptop"), "");
+
+  ASSERT_TRUE(phone->workflow->Publish());
+  EXPECT_EQ(NameOnProvider("peer:laptop"), "Office Mac") << "the table kept here went back in";
+  EXPECT_EQ(NameOnProvider("peer:phone"), "iPhone");
+}
+
+TEST_F(AccountLockerWorkflowNamesTest, AnOlderCardNeverCostsTheNewDevicesNameAndTheRoundSettles) {
+  auto phone = Device("peer:phone", {"peer:phone", "peer:tablet"}, "iPhone");
+  ASSERT_TRUE(phone->workflow->Publish());
+  ASSERT_TRUE(phone->workflow->SetDeviceName("peer:tablet", "Tablet by phone", util::NowUnixMs()));
+  ASSERT_TRUE(phone->workflow->Publish());
+  // The laptop's card is older: it does not list the tablet.
+  auto laptop = Device("peer:laptop", {"peer:phone", "peer:laptop"}, "MacBook");
+  ASSERT_TRUE(laptop->workflow->Publish());
+  EXPECT_EQ(NameOnProvider("peer:tablet"), "Tablet by phone") << "not pruned by the laptop's card";
+  ASSERT_TRUE(phone->workflow->Publish());
+  const int phone_writes = phone->writes;
+  const int laptop_writes = laptop->writes;
+  for (int i = 0; i < 2; ++i) {
+    ASSERT_TRUE(laptop->workflow->Publish());
+    ASSERT_TRUE(phone->workflow->Publish());
+  }
+  EXPECT_EQ(phone->writes, phone_writes) << "no more rewriting";
+  EXPECT_EQ(laptop->writes, laptop_writes) << "no more rewriting";
+  EXPECT_EQ(NameOnProvider("peer:tablet"), "Tablet by phone");
+}
+
+TEST_F(AccountLockerWorkflowNamesTest, ARemovedDevicesNameLeavesTheNextPublishAndNoOtherEntryDoes) {
+  auto phone = Device("peer:phone", {"peer:phone", "peer:laptop", "peer:tablet"}, "iPhone");
+  ASSERT_TRUE(phone->workflow->SetDeviceName("peer:laptop", "Mac", util::NowUnixMs()));
+  ASSERT_TRUE(phone->workflow->SetDeviceName("peer:tablet", "iPad", util::NowUnixMs()));
+  ASSERT_TRUE(phone->workflow->Publish());
+  phone->card = {"peer:phone", "peer:tablet"};
+  phone->workflow->ForgetDeviceName("peer:laptop");
+  ASSERT_TRUE(phone->workflow->Publish());
+  EXPECT_EQ(NameOnProvider("peer:laptop"), "");
+  EXPECT_EQ(NameOnProvider("peer:tablet"), "iPad");
+  EXPECT_EQ(NameOnProvider("peer:phone"), "iPhone");
+  EXPECT_EQ(NameIn(phone->workflow->DeviceNames(), "peer:laptop"), "");
+}
+
+TEST_F(AccountLockerWorkflowNamesTest, OnlyTheMainDeviceNamesAnotherAndOnlyOneOnTheList) {
+  const auto list = [](const std::string& self, const std::vector<std::string>& peers) {
+    OwnDeviceList out;
+    out.self_peer_id = self;
+    for (const std::string& peer : peers) {
+      AccountCardDevice device;
+      device.peer_id = peer;
+      out.devices.push_back(device);
+    }
+    return out;
+  };
+  const OwnDeviceList main_view = list("peer:phone", {"peer:phone", "peer:laptop"});
+  EXPECT_TRUE(CanRenameDevice(main_view, "peer:phone"));
+  EXPECT_TRUE(CanRenameDevice(main_view, "peer:laptop"));
+  EXPECT_FALSE(CanRenameDevice(main_view, "peer:stranger"));
+  const OwnDeviceList other_view = list("peer:laptop", {"peer:phone", "peer:laptop"});
+  EXPECT_TRUE(CanRenameDevice(other_view, "peer:laptop"));
+  EXPECT_FALSE(CanRenameDevice(other_view, "peer:phone")) << "not the main device: only its own name";
+  EXPECT_TRUE(CanRenameDevice(list("peer:solo", {}), "peer:solo"));
+  OwnDeviceList out = main_view;
+  out.signed_out = true;
+  EXPECT_FALSE(CanRenameDevice(out, "peer:phone"));
+}
+
+TEST_F(AccountLockerWorkflowNamesTest, NamesStayOutOfLogsAndMetrics) {
+  auto capture = std::make_shared<Lines>();
+  for (const char* channel : {"AccountLocker", "Metrics", "ConversationsHub"}) {
+    logging::getLogger(channel).addHandler(capture);
+  }
+  const std::string marker = "ZZ-NAME-MARKER";
+  auto phone = Device("peer:phone", {"peer:phone", "peer:laptop"}, marker + " system");
+  ASSERT_TRUE(phone->workflow->Publish());
+  ASSERT_TRUE(phone->workflow->SetDeviceName("peer:laptop", marker + " laptop", util::NowUnixMs()));
+  ASSERT_TRUE(phone->workflow->Publish());
+  auto laptop = Device("peer:laptop", {"peer:phone", "peer:laptop"}, "MacBook");
+  ASSERT_TRUE(laptop->workflow->Publish());
+  ASSERT_TRUE(phone->workflow->Publish());
+  phone->workflow->ForgetDeviceName("peer:laptop");
+  ASSERT_TRUE(phone->workflow->Publish());
+  EXPECT_FALSE(capture->Text().empty()) << "the capture saw the publish lines";
+  EXPECT_EQ(capture->Text().find(marker), std::string::npos);
+}
+
+TEST_F(AccountLockerWorkflowNamesTest, TheTableSurvivesARestartInAccountLockerJson) {
+  workflow_.reset();
+  auto phone = Device("peer:phone", {"peer:phone"}, "iPhone");
+  phone->workflow->SetDataDir(dir_.string());
+  ASSERT_TRUE(phone->workflow->SetDeviceName("peer:phone", "Mine", util::NowUnixMs()));
+  auto again = Device("peer:phone", {"peer:phone"}, "iPhone");
+  again->workflow->SetDataDir(dir_.string());
+  EXPECT_EQ(NameIn(again->workflow->DeviceNames(), "peer:phone"), "Mine");
 }
 
 } // namespace
