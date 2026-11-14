@@ -113,5 +113,25 @@ TEST(BackendClientSetTest, NoPreferredRelayMeansNoOtherRelaysEither) {
   EXPECT_TRUE(clients.OurRelays().empty());
 }
 
+// A relay a contact's card names gets a client only within the foreign-relay policy; ours are never held to it.
+TEST(BackendClientSetTest, AForeignRelayOutsideThePolicyGetsNoClient) {
+  SwitchableDirectoryClient directory;
+  BackendClientSet clients(directory);
+  clients.Apply(At("https://relay.example", "https://relay.example", "https://relay.example"));
+  for (const char* origin : {"https://127.0.0.1", "https://localhost/api", "https://[::1]", "https://169.254.169.254",
+                             "https://10.0.0.5:8443", "http://other.example", "https://intranet"}) {
+    EXPECT_EQ(clients.Sender().ClientFor(origin), nullptr) << origin;
+  }
+  EXPECT_NE(clients.Sender().ClientFor("https://other.example/api/relay"), nullptr);
+  EXPECT_NE(clients.Sender().ClientFor("https://relay.example"), nullptr) << "our own relay";
+}
+
+TEST(BackendClientSetTest, OurOwnRelayOnAPrivateAddressKeepsItsClient) {
+  SwitchableDirectoryClient directory;
+  BackendClientSet clients(directory);
+  clients.Apply(At("http://192.168.1.10:8080", "http://192.168.1.10:8080", "http://192.168.1.10:8080"));
+  EXPECT_NE(clients.Sender().ClientFor("http://192.168.1.10:8080"), nullptr);
+}
+
 } // namespace
 } // namespace pbr

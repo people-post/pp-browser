@@ -2,8 +2,20 @@
 
 #include "lib/people/RegistrationStatus.h"
 
+#include "common/MeshAlias.h"
+#include "mesh/types/PublicAddress.h"
+
 #include <algorithm>
+#include <cctype>
+#include <cstdint>
 #include <string_view>
+
+#if defined(_WIN32)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#endif
 
 namespace pbr {
 
@@ -21,7 +33,78 @@ bool IsHttpUrl(const std::string& url) {
   return false;
 }
 
+bool EqualsIgnoreCase(std::string_view text, std::string_view lower) {
+  return text.size() == lower.size() && std::equal(text.begin(), text.end(), lower.begin(), [](char a, char b) {
+           return std::tolower(static_cast<unsigned char>(a)) == b;
+         });
+}
+
+bool HasSuffix(std::string_view host, std::string_view suffix) {
+  return host.size() > suffix.size() && host.ends_with(suffix);
+}
+
+/** The last label of a DNS name is never numeric (`0x7f.1`, `127.1` and the like are address spellings). */
+bool NumericLastLabel(std::string_view host) {
+  const std::string_view label = host.substr(host.rfind('.') == std::string_view::npos ? 0 : host.rfind('.') + 1);
+  return !label.empty() && (std::all_of(label.begin(), label.end(), [](char c) { return c >= '0' && c <= '9'; }) ||
+                            (label.size() >= 2 && label[0] == '0' && (label[1] == 'x' || label[1] == 'X')));
+}
+
 } // namespace
+
+bool IsForeignRelayOriginAllowed(const std::string& origin, const bool lab_relaxed) {
+  const std::string_view view(origin);
+  std::string_view rest;
+  if (view.size() > 8 && EqualsIgnoreCase(view.substr(0, 8), "https://")) {
+    rest = view.substr(8);
+  } else if (lab_relaxed && view.size() > 7 && EqualsIgnoreCase(view.substr(0, 7), "http://")) {
+    rest = view.substr(7);
+  } else {
+    return false;
+  }
+  const std::string_view authority = rest.substr(0, rest.find_first_of("/?#"));
+  if (authority.empty() || authority.find('@') != std::string_view::npos ||
+      std::any_of(authority.begin(), authority.end(), [](char c) {
+        const auto byte = static_cast<unsigned char>(c);
+        return byte <= 0x20 || byte == 0x7f || c == '\\';
+      })) {
+    return false;
+  }
+  std::string_view host = authority;
+  const bool bracketed = authority.front() == '[';
+  if (bracketed) {
+    const size_t close = authority.find(']');
+    if (close == std::string_view::npos || close < 2) {
+      return false;
+    }
+    host = authority.substr(1, close - 1);
+  } else if (const size_t colon = authority.find(':'); colon != std::string_view::npos) {
+    host = authority.substr(0, colon);
+  }
+  if (lab_relaxed) {
+    return !host.empty();
+  }
+  if (bracketed) {
+    uint8_t addr[16];
+    return inet_pton(AF_INET6, std::string(host).c_str(), addr) == 1 && mesh::IsPublicIPv6(addr);
+  }
+  while (host.ends_with('.')) {
+    host.remove_suffix(1);
+  }
+  if (host.empty() || host.find('.') == std::string_view::npos || host.find(':') != std::string_view::npos) {
+    return false; // empty, a single-label name, or a stray colon
+  }
+  std::string lowered(host);
+  for (char& c : lowered) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  struct in_addr v4{};
+  if (inet_pton(AF_INET, lowered.c_str(), &v4) == 1) {
+    return mesh::IsPublicIPv4(ntohl(v4.s_addr));
+  }
+  return !NumericLastLabel(lowered) && lowered != "localhost" && !HasSuffix(lowered, ".localhost") &&
+         !HasSuffix(lowered, ".local") && !HasSuffix(lowered, ".internal");
+}
 
 std::string RelayOriginKey(const std::string& origin) {
   std::string key = NormalizeRegistrationBackend(origin); // trimmed, no trailing `/`, scheme and host lower case

@@ -35,7 +35,11 @@ struct RelaySendHooks {
  */
 class HttpRelayClient : public IRelayClient {
 public:
-  explicit HttpRelayClient(std::string base_url);
+  /**
+   * `public_only`: for a relay a contact's card named, not one of ours. Every request is https to a public address
+   * only (checked after DNS, no proxy), and a redirect is never followed.
+   */
+  explicit HttpRelayClient(std::string base_url, bool public_only = false);
   void SetAuthSigner(RelayAuthSigner signer) { auth_signer_ = std::move(signer); }
   /** Any thread: a send under way keeps the hooks it started with. */
   void SetSendHooks(RelaySendHooks hooks);
@@ -57,6 +61,7 @@ private:
   RelaySendHooks SendHooks() const;
 
   std::string base_url_;
+  bool public_only_ = false;
   RelayAuthSigner auth_signer_;
   mutable std::mutex hooks_mutex_;
   RelaySendHooks send_hooks_;

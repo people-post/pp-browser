@@ -89,6 +89,12 @@ A key card plus what the account says about itself, signed as a whole.
   an origin outside the bounds — an `http://` dev relay — is left off, so a card of only such relays says the mesh
   only. The list is the **main device's**: the others keep the newest card's. Senders deliver into the listed
   relays in order ([SERVICE_ENDPOINTS § Sending by the list](SERVICE_ENDPOINTS.md#sending-by-the-list)).
+  **Foreign-relay policy:** the origins come from a contact, so a sender makes a client only for one with a public
+  host (`IsForeignRelayOriginAllowed`): no loopback, private, link-local, CGNAT or reserved IP literal, no `localhost`,
+  `*.localhost`, `*.local`, `*.internal` or single-label name; an origin outside it is skipped like an unreachable
+  relay. Its requests also refuse any address that resolves non-public (checked after DNS), use no proxy and follow no
+  redirect. The card, its signature and the list's bounds are unchanged, and our own relays are exempt. A Debug build
+  with `PP_BROWSER_CA_BUNDLE` set (the lab) lifts the policy.
 - `initiation_floor` — the account's price for opening a chat or a call with it, in `pp_credit` minor units
   ([pricing P001](../../projects/pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet),
   [MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)):
