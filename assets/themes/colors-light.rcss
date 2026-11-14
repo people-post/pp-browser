@@ -2962,6 +2962,15 @@ input.checkbox:checked {
   background-color: #7878801f;
 }
 
+/* A row that cannot be used here: grey title, no press fill (its "?" keeps its own). */
+.shell-layer-compact .group-row--off:active {
+  background-color: transparent;
+}
+
+.shell-layer-compact .group-row--off .group-row-text {
+  color: #3c3c434c;
+}
+
 /* Separator above each row but the first (see the 1dp overlap in components.rcss). */
 .shell-layer-compact .group-row-body {
   border-top: 1dp #3c3c434a;

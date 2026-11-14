@@ -13551,11 +13551,9 @@ textarea:composing ~ .prompt-composer-label,
   padding-right: 12dp;
 }
 
-/* The "?" sits over the right end of the row, left of the chevron, as its own button (not inside the row's button). */
-.shell-layer-compact .settings-mock .group-row--q .group-row-q {
-  position: absolute;
-  right: 36dp;
-  top: 16dp;
+/* A row that cannot be used here (Move to a new device on a linked phone): no tap feedback, no pointer; its "?" still works. */
+.shell-layer-compact .settings-mock .group-row--off {
+  cursor: default;
 }
 
 .shell-layer-compact .settings-mock .settings-device-row {
@@ -13866,6 +13864,13 @@ textarea:composing ~ .prompt-composer-label,
   width: auto;
   margin: 16dp 16dp 0 16dp;
   gap: 8dp;
+}
+
+/* Desktop-only wins on phones whatever else the element carries: the rules above (.settings-actions, .me-profile-actions,
+   .group-actions, .btn) are as specific as the general "hide" and come later, so a desktop-only caption block
+   (class settings-actions) showed on phones. Keep this rule after them. */
+.shell-layer-compact .settings-section--grouped .settings-desktop-only {
+  display: none;
 }
 
 .shell-layer-compact .settings-section--grouped .group-card .btn,

@@ -53,29 +53,40 @@
               </div>
             </div>
           </div>
-          <p class="text muted settings-help group-foot">{{i18n:settings.security.devices.help}}</p>
+          <!-- Desktop: both captions as before. Phones: exactly one caption (main / linked / signed out are exclusive). -->
+          <p class="text muted settings-help group-foot settings-desktop-only">{{i18n:settings.security.devices.help}}</p>
+          <p class="text muted settings-help group-foot settings-phone-only" data-if="!own_devices_not_main && !own_devices_signed_out">{{i18n:settings.security.devices.help}}</p>
           <p class="text error group-foot" data-if="own_devices_signed_out">{{i18n:settings.security.devices.signed_out}}</p>
-          <p class="text muted settings-help group-foot" data-if="own_devices_not_main && !own_devices_signed_out">
+          <p class="text muted settings-help group-foot settings-desktop-only" data-if="own_devices_not_main && !own_devices_signed_out">
             {{i18n:settings.security.devices.not_main}}
+          </p>
+          <p class="text muted settings-help group-foot settings-phone-only" data-if="own_devices_not_main && !own_devices_signed_out">
+            {{i18n:settings.security.devices.not_main_phone}}
           </p>
         </div>
         <!-- Phones: the actions as one group, one caption. -->
         <div class="stack settings-phone-only">
           <div class="group-card">
-            <div class="group-row group-row--q">
-              <button class="group-row-tap" type="button" data-event-click="open_security_page('transfer')">
-                <span class="group-row-text">{{i18n:settings.security.transfer_row}}</span>
+            <!-- The "?" follows the title (its own 44dp target, it stops the click); the rest of the row opens the page.
+                 On a linked (non-main) phone the row is shown disabled: the page has nothing to tap there. -->
+            <div class="group-row" data-if="!own_devices_not_main" data-event-click="open_security_page('transfer')">
+              <span class="group-row-body">
+                <span class="settings-q-label"><span class="group-row-text">{{i18n:settings.security.transfer_row}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
                 <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
-              </button>
-              <button class="settings-q-btn group-row-q" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
+              </span>
+            </div>
+            <div class="group-row group-row--off" data-if="own_devices_not_main">
+              <span class="group-row-body">
+                <span class="group-row-label">
+                  <span class="settings-q-label"><span class="group-row-text">{{i18n:settings.security.transfer_row}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
+                  <span class="group-row-sub">{{i18n:settings.security.transfer_off}}</span>
+                </span>
+              </span>
             </div>
             <div data-if="security_has_recovery_phrase">
-              <div class="group-row">
+              <div class="group-row" data-event-click="save_account_copy()">
                 <span class="group-row-body">
-                  <button class="group-row-tap" type="button" data-event-click="save_account_copy()">
-                    <span class="group-row-text">{{i18n:settings.security.copy.save}}</span>
-                  </button>
-                  <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.account_copy')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
+                  <span class="settings-q-label"><span class="group-row-text">{{i18n:settings.security.copy.save}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.account_copy')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
                 </span>
               </div>
             </div>

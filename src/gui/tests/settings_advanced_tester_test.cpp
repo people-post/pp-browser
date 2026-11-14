@@ -111,6 +111,10 @@ protected:
         "<button id=\"open_int\" data-event-click=\"open_security_page('integrations')\">x</button>"
         "<button id=\"open_be\" data-event-click=\"open_security_page('backend_custom')\">x</button>"
         "<button id=\"close_sub\" data-event-click=\"close_security_page()\">x</button>"
+        "<button id=\"sel_dev\" data-event-click=\"select_section('devices')\">x</button>"
+        "<div id=\"xrow\" data-event-click=\"open_security_page('transfer')\">"
+        "<button id=\"xq\" data-event-click=\"ask_setting_help('settings.security.transfer_row')\">x</button></div>"
+
         "<button id=\"edit_llm\" data-event-click=\"on_llm_field_changed()\">x</button>"
         "<button id=\"edit_net\" data-event-click=\"on_network_field_changed()\">x</button>"
         "<button id=\"edit_int\" data-event-click=\"on_integrations_field_changed()\">x</button>"
@@ -496,4 +500,15 @@ TEST_F(SettingsAdvancedSubpageTest, EverySubpageFileIsIncludedOnceInTheDesktopPa
 }
 
 } // namespace
+// Devices & transfer (2026-11-14): the "?" inside the transfer row stops its click. Driven through the real settings
+// model with the old events.
+TEST_F(SettingsAdvancedSubpageTest, ATapOnTheHelpMarkInTheTransferRowDoesNotOpenThePage) {
+  Click("sel_dev");
+  ASSERT_EQ(Text("sp"), "");
+  Click("xq");
+  EXPECT_EQ(Text("sp"), "") << "the \"?\" asks; the row's own click never fires";
+  Click("xrow");
+  EXPECT_EQ(Text("sp"), "transfer") << "a tap on the row itself still opens the page";
+}
+
 } // namespace pbr

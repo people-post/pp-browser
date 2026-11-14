@@ -397,6 +397,8 @@
     "settings.security.devices.removed": "Device removed",
     "settings.security.devices.made_main": "Main device changed",
     "settings.security.devices.not_main": "Only your main device can add or remove devices.",
+    "settings.security.devices.not_main_phone": "Devices are added and removed on your main device.",
+    "settings.security.transfer_off": "Transfers are started on your main device.",
     "settings.security.devices.signed_out": "This device was signed out. Link it again from your main device.",
     "settings.security.recovery": "Recovery phrase",
     "settings.security.recovery.help": "After a new phone or a reinstall, these 24 words bring your account back. Anyone who has them can take over the account — write them on paper and keep them safe.",

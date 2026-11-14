@@ -393,6 +393,8 @@
     "settings.security.devices.removed": "设备已移除",
     "settings.security.devices.made_main": "主设备已更换",
     "settings.security.devices.not_main": "只有主设备能添加或移除设备。",
+    "settings.security.devices.not_main_phone": "添加、移除设备要在主设备上操作。",
+    "settings.security.transfer_off": "转移要在主设备上操作。",
     "settings.security.devices.signed_out": "这台设备已退出，请从主设备重新关联。",
     "settings.security.recovery": "恢复短语",
     "settings.security.recovery.help": "换手机或重装后，用这 24 个词找回账号。谁拿到都能接管账号，请抄在纸上保管好。",

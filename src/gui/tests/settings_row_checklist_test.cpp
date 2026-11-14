@@ -390,8 +390,11 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       {"security", "hide_recovery_phrase()", "security_has_recovery_phrase;;recovery_phrase != ''", 1, 1},
       {"security", "ask_setting_help('settings.security.recovery')", "security_has_recovery_phrase", 1, 1},
       // Devices: the transfer block is the desktop's inline copy here; phones open it as its own page.
-      {"devices", "open_security_page('transfer')", "-", 1, 0},
-      {"devices", "ask_setting_help('settings.security.transfer_row')", "-", 1, 0},
+      // (2026-11-14: the row is not tappable on a linked phone, whose transfer page has nothing to tap.)
+      {"devices", "open_security_page('transfer')", "!own_devices_not_main", 1, 0},
+      // The "?" is on both variants of the row (main: enabled row; linked phone: disabled row).
+      {"devices", "ask_setting_help('settings.security.transfer_row')", "!own_devices_not_main@@own_devices_not_main",
+       2, 0},
       {"devices", "export_link_device()", "security_can_export_link && !own_devices_not_main", 0, 1},
       // The phone's device rows moved into a sheet (open_own_device_actions); its two actions run the same Remove /
       // MakeMain the desktop buttons' events run (SettingsOwnDevicesTest). The desktop keeps one element per event.
@@ -410,7 +413,11 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       if (o.token != token) {
         continue;
       }
-      EXPECT_EQ(o.gates, e.gates) << e.page << ": " << e.event;
+      // "a@@b": the element may sit under either gate (two variants of one row).
+      const std::vector<std::string> alternatives = Split(e.gates, '@');
+      EXPECT_TRUE(std::find_if(alternatives.begin(), alternatives.end(),
+                               [&](const std::string& gate) { return gate == o.gates; }) != alternatives.end())
+          << e.page << ": " << e.event << " under [" << o.gates << "]";
       phone += (o.layouts == "phone" || o.layouts == "both") ? 1 : 0;
       desktop += (o.layouts == "desktop" || o.layouts == "both") ? 1 : 0;
     }
@@ -449,6 +456,139 @@ TEST(SettingsSensitiveActionsTest, NoHelpButtonSitsInsideAnotherButton) {
       }
     }
   }
+}
+
+// --- one caption per group on phones (Kenneth 2026-11-14) ---------------------------------------------------------
+
+namespace {
+
+// Evaluates a gate chain ("a;;!b && c") against a set of true facts: every chain element is an AND of (possibly negated)
+// names, all of which must hold. Names outside the facts are false.
+bool GateHolds(const std::string& chain, const std::set<std::string>& facts) {
+  if (chain == "-") {
+    return true;
+  }
+  std::vector<std::string> parts;
+  for (size_t start = 0, at; start <= chain.size(); start = at + 2) {
+    at = chain.find(";;", start);
+    if (at == std::string::npos) {
+      at = chain.size();
+    }
+    parts.push_back(chain.substr(start, at - start));
+    if (at == chain.size()) {
+      break;
+    }
+  }
+  for (const std::string& part : parts) {
+    for (size_t start = 0, at; start <= part.size(); start = at + 2) {
+      at = part.find("&&", start);
+      if (at == std::string::npos) {
+        at = part.size();
+      }
+      std::string name = part.substr(start, at - start);
+      name.erase(0, name.find_first_not_of(' '));
+      name.erase(name.find_last_not_of(' ') + 1);
+      const bool negated = !name.empty() && name[0] == '!';
+      if (negated) {
+        name.erase(0, 1);
+      }
+      if ((facts.count(name) > 0) == negated) {
+        return false;
+      }
+      if (at == part.size()) {
+        break;
+      }
+    }
+  }
+  return true;
+}
+
+// The phone-visible occurrences of the given tokens in the Devices page, under a state.
+size_t PhoneShown(const std::vector<std::string>& tokens, const std::set<std::string>& facts) {
+  size_t shown = 0;
+  for (const Occurrence& o : Scan(View("devices"))) {
+    if ((o.layouts == "phone" || o.layouts == "both") && GateHolds(o.gates, facts) &&
+        std::find(tokens.begin(), tokens.end(), o.token) != tokens.end()) {
+      ++shown;
+    }
+  }
+  return shown;
+}
+
+} // namespace
+
+TEST(SettingsDevicesCaptionsTest, ThePhoneShowsExactlyOneCaptionUnderTheDeviceListOnEveryDevice) {
+  const std::vector<std::string> captions = {
+      "{{i18n:settings.security.devices.help}}", "{{i18n:settings.security.devices.not_main}}",
+      "{{i18n:settings.security.devices.not_main_phone}}", "{{i18n:settings.security.devices.signed_out}}"};
+  const std::set<std::string> main_device = {"own_devices_shown"};
+  const std::set<std::string> linked = {"own_devices_shown", "own_devices_not_main"};
+  const std::set<std::string> signed_out = {"own_devices_shown", "own_devices_signed_out", "own_devices_not_main"};
+  const std::set<std::string> signed_out_main_flag = {"own_devices_shown", "own_devices_signed_out"};
+  EXPECT_EQ(PhoneShown(captions, main_device), 1u) << "main device";
+  EXPECT_EQ(PhoneShown(captions, linked), 1u) << "linked (non-main) phone";
+  EXPECT_EQ(PhoneShown(captions, signed_out), 1u) << "signed-out phone";
+  EXPECT_EQ(PhoneShown(captions, signed_out_main_flag), 1u) << "signed-out phone, whatever the main flag says";
+  // On a linked phone it is the one plain sentence, not the main device's.
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.not_main_phone}}"}, linked), 1u);
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.help}}"}, linked), 0u);
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.help}}"}, main_device), 1u);
+}
+
+TEST(SettingsDevicesCaptionsTest, TheDesktopKeepsItsCaptionsAsBefore) {
+  size_t help = 0;
+  size_t not_main = 0;
+  for (const Occurrence& o : Scan(View("devices"))) {
+    if (o.layouts == "desktop" && o.token == "{{i18n:settings.security.devices.help}}") {
+      EXPECT_EQ(o.gates, "own_devices_shown");
+      ++help;
+    }
+    if (o.layouts == "desktop" && o.token == "{{i18n:settings.security.devices.not_main}}") {
+      EXPECT_EQ(o.gates, "own_devices_shown;;own_devices_not_main && !own_devices_signed_out");
+      ++not_main;
+    }
+  }
+  EXPECT_EQ(help, 1u);
+  EXPECT_EQ(not_main, 1u);
+}
+
+TEST(SettingsDevicesCaptionsTest, ThePhoneShowsExactlyOneCaptionUnderTheActionsGroup) {
+  // The desktop-only copy.help is not a phone caption (the stylesheet hides it, see DevicesStyleTest).
+  const std::vector<std::string> captions = {"{{i18n:settings.devices.transfer_help}}",
+                                             "{{i18n:settings.devices.actions_help}}",
+                                             "{{i18n:settings.security.copy.help}}"};
+  for (const bool phrase : {false, true}) {
+    for (const bool not_main : {false, true}) {
+      std::set<std::string> facts = {"own_devices_shown"};
+      if (phrase) {
+        facts.insert("security_has_recovery_phrase");
+      }
+      if (not_main) {
+        facts.insert("own_devices_not_main");
+      }
+      EXPECT_EQ(PhoneShown(captions, facts), 1u) << "phrase=" << phrase << " not_main=" << not_main;
+    }
+  }
+  bool desktop_only = false;
+  for (const Occurrence& o : Scan(View("devices"))) {
+    if (o.token == "{{i18n:settings.security.copy.help}}") {
+      desktop_only = o.layouts == "desktop";
+    }
+  }
+  EXPECT_TRUE(desktop_only);
+}
+
+TEST(SettingsDevicesCaptionsTest, TheTransferRowIsTappableOnTheMainDeviceAndDisabledOnALinkedOne) {
+  const std::string tap = "data-event-click=\"open_security_page('transfer')\"";
+  const std::string help = "data-event-click=\"ask_setting_help('settings.security.transfer_row')\"";
+  const std::set<std::string> main_device = {"own_devices_shown"};
+  const std::set<std::string> linked = {"own_devices_shown", "own_devices_not_main"};
+  EXPECT_EQ(PhoneShown({tap}, main_device), 1u);
+  EXPECT_EQ(PhoneShown({tap}, linked), 0u) << "no event on a linked phone";
+  EXPECT_EQ(PhoneShown({help}, main_device), 1u);
+  EXPECT_EQ(PhoneShown({help}, linked), 1u) << "the \"?\" stays tappable";
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.transfer_off}}"}, main_device), 0u);
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.transfer_off}}"}, linked), 1u);
 }
 
 } // namespace pbr
