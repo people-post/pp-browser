@@ -702,6 +702,151 @@ TEST_F(SettingsRealViewTest, TheHelpMarksOfTheServiceRowAndTheAutoUpdateRowOnlyS
   EXPECT_NE(knob->IsClassSet("settings-switch--on"), before) << "control: the switch itself still moves";
 }
 
+// Settings -> Advanced -> AI model and endpoint -> "Preset": the desktop keeps its <select>, a phone gets the app's own
+// chooser page (same four presets, same order). A pick goes through the select's own handler, so the resulting state is
+// identical; dismissing the chooser writes nothing; one pick saves once and never reaches the select's change event.
+TEST_F(SettingsRealViewTest, ThePhonePresetChooserListsTheSelectsOptionsAndAppliesThroughTheSameHandler) {
+  settings.SyncLayoutMode(); // a phone
+  Click("toggle_adv");
+  ui::ElementList selects;
+  real->QuerySelectorAll(selects, "select[data-value=\"llm_preset\"]");
+  ASSERT_EQ(selects.size(), 1u) << "the desktop's select, once";
+  // The select's <option>s live inside the widget, not the DOM: read them from the view's source.
+  struct SelectOption {
+    std::string value;
+    std::string label;
+  };
+  std::vector<SelectOption> select_options;
+  {
+    const std::string rml = ReadAsset("views/settings_section_advanced.rml");
+    const size_t begin = rml.find("<select class=\"field\" data-value=\"llm_preset\"");
+    const size_t end = rml.find("</select>", begin);
+    ASSERT_NE(begin, std::string::npos);
+    for (size_t at = rml.find("<option value=\"", begin); at != std::string::npos && at < end;
+         at = rml.find("<option value=\"", at + 1)) {
+      const size_t value_end = rml.find('"', at + 15);
+      const size_t key_begin = rml.find("{{i18n:", value_end) + 7;
+      const size_t key_end = rml.find("}}", key_begin);
+      select_options.push_back(
+          {rml.substr(at + 15, value_end - at - 15), Tr(rml.substr(key_begin, key_end - key_begin))});
+    }
+  }
+  ASSERT_EQ(select_options.size(), 4u);
+  ui::ElementList rows;
+  real->QuerySelectorAll(rows, "[data-event-click=\"on_choose_llm_preset()\"]");
+  ASSERT_EQ(rows.size(), 1u) << "the phone's row, once";
+
+  const auto open_chooser = [&]() {
+    RealClick(ClickTarget("", "on_choose_llm_preset()"));
+    ASSERT_EQ(Text("sp"), "choice");
+  };
+  const auto chooser_rows = [&]() {
+    ui::ElementList found;
+    real->QuerySelectorAll(found, "#settings-subpage-view .settings-choice-option");
+    ui::ElementList rows_with_content; // the data-for template element stays behind empty
+    for (ui::Element* row : found) {
+      if (row->GetNumChildren() > 0) {
+        rows_with_content.push_back(row);
+      }
+    }
+    return rows_with_content;
+  };
+  const auto close_chooser = [&]() {
+    Click("close_sub");
+    AppRuntime::RunUITasks();
+    context->Update();
+  };
+  const auto value_label = [&]() {
+    ui::ElementList found;
+    real->QuerySelectorAll(found, "[data-event-click=\"on_choose_llm_preset()\"] .settings-choice-value-text");
+    return found.empty() ? std::string() : std::string(found[0]->GetInnerRML().c_str());
+  };
+
+  // The offered list equals the select's options, in order, and the current one is ticked.
+  open_chooser();
+  ui::ElementList offered = chooser_rows();
+  ASSERT_EQ(offered.size(), select_options.size());
+  for (size_t i = 0; i < offered.size(); ++i) {
+    ui::ElementList text;
+    offered[i]->QuerySelectorAll(text, ".group-row-text");
+    ASSERT_EQ(text.size(), 1u);
+    EXPECT_EQ(std::string(text[0]->GetInnerRML().c_str()), select_options[i].label) << "label " << i;
+    ui::ElementList ticks;
+    offered[i]->QuerySelectorAll(ticks, ".settings-choice-check");
+    ASSERT_EQ(ticks.size(), 1u);
+    const bool shown = std::string(offered[i]->GetInnerRML().c_str()).find("display: none") ==
+                       std::string::npos; // data-if hides with display:none
+    EXPECT_EQ(shown, i == 0) << "only the current preset (brief, first) is ticked";
+  }
+  EXPECT_EQ(value_label(), select_options[0].label);
+
+  // Dismissing writes nothing.
+  toasts.clear();
+  const std::string model_before = host().UiState().llm_model;
+  close_chooser();
+  settings.OnMeSurfaceClosed();
+  EXPECT_EQ(host().UiState().llm_preset, "brief");
+  EXPECT_EQ(host().UiState().llm_model, model_before);
+  EXPECT_EQ(store.Snapshot().config.llm.base_url, Config::DefaultAppConfig().llm.base_url);
+  EXPECT_EQ(std::count(toasts.begin(), toasts.end(), Tr("settings.saved")), 0);
+
+  // Both paths, the same sequence from the same start: brief -> cloud -> ollama. The bound state after each step matches.
+  struct Snapshot {
+    std::string preset;
+    std::string base_url;
+    std::string model;
+    std::string saved_base_url;
+    std::string saved_model;
+    std::string label;
+  };
+  const auto snapshot = [&]() {
+    const SettingsUiState& state = host().UiState();
+    const AppConfig config = store.Snapshot().config;
+    return Snapshot{state.llm_preset,    state.llm_base_url, state.llm_model,
+                    config.llm.base_url, config.llm.model,   value_label()};
+  };
+  const auto same = [](const Snapshot& a, const Snapshot& b) {
+    return a.preset == b.preset && a.base_url == b.base_url && a.model == b.model &&
+           a.saved_base_url == b.saved_base_url && a.saved_model == b.saved_model && a.label == b.label;
+  };
+  const char* steps[] = {"cloud", "ollama"};
+  std::vector<Snapshot> via_select;
+  for (const char* preset : steps) {
+    ui::Dictionary parameters;
+    parameters["value"] = ui::String(preset);
+    selects[0]->DispatchEvent(ui::EventId::Change, parameters);
+    context->Update();
+    settings.OnMeSurfaceClosed();
+    via_select.push_back(snapshot());
+    EXPECT_EQ(via_select.back().preset, preset);
+  }
+  // Back to the start through the select, then the same sequence through the chooser.
+  {
+    ui::Dictionary parameters;
+    parameters["value"] = ui::String("brief");
+    selects[0]->DispatchEvent(ui::EventId::Change, parameters);
+    context->Update();
+    settings.OnMeSurfaceClosed();
+  }
+  ASSERT_EQ(host().UiState().llm_preset, "brief");
+  for (size_t step = 0; step < 2; ++step) {
+    const size_t applies_before = settings.LlmPresetAppliesForTest();
+    open_chooser();
+    offered = chooser_rows();
+    ASSERT_EQ(offered.size(), 4u);
+    const size_t index = step == 0 ? 1 : 2; // cloud, ollama: the select's own order
+    ASSERT_EQ(select_options[index].value, steps[step]);
+    RealClick(offered[index]);
+    settings.OnMeSurfaceClosed();
+    AppRuntime::RunUITasks();
+    context->Update();
+    EXPECT_TRUE(same(snapshot(), via_select[step])) << "step " << step << ": same bound and saved state as the select";
+    EXPECT_EQ(settings.LlmPresetAppliesForTest() - applies_before, 1u)
+        << "one apply per pick: the hidden select's echoes do not apply again";
+    close_chooser();
+  }
+}
+
 // Each free-text field exists twice (the phone's sub-page and the desktop's inline copy of the same file). Typing into the
 // visible one fires one change, on that input only, and the value is saved once.
 TEST_F(SettingsRealViewTest, TypingIntoATwinInputFiresTheChangeHandlerOnceAndSavesOnce) {

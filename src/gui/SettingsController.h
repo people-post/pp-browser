@@ -170,6 +170,10 @@ public:
   std::vector<SettingsChoicePage::Option> BackendChoiceOptions() const;
   /** Test seam: what the Service chooser does for a picked row id (a public forwarder; tests must not widen access with `#define private public`, which breaks the MSVC link). */
   void ChooseBackendForTest(const std::string& id) { ApplyBackendChoice(id); }
+  /** Test seam: the phone's Preset chooser, by preset id (as `ShowChoice` would call it). */
+  void ChooseLlmPresetForTest(const std::string& id) { ApplyLlmPresetChoice(id); }
+  /** Test seam: how many times the preset was applied (each pick must apply once). */
+  size_t LlmPresetAppliesForTest() const { return llm_preset_applies_; }
   /** Refresh reachability Connection card via SettingsCommands ports. */
   void SyncReachability();
   /** Persist skip/ack for the Me → Network reachability nudge (condition-keyed). */
@@ -178,6 +182,7 @@ public:
 private:
   struct SettingsBindings {
     ui::String llm_preset = "brief";
+    ui::String llm_preset_label;
     ui::String llm_base_url;
     ui::String llm_model;
     ui::String llm_api_key;
@@ -305,6 +310,13 @@ private:
 
   // Data-model events with more to them than one call.
   void OnLlmPresetChanged(ui::Event& ev);
+  /** The phone's "Preset" row: the chooser page lists the same four presets as the desktop `<select>`. */
+  void OnChooseLlmPreset(ui::Event& ev);
+  /** What a pick in either control does once `bindings_.llm_preset` holds the new value (defaults, save). */
+  void ApplyLlmPreset();
+  /** The preset the phone chooser applied last: change events echoing it from the hidden <select> are ignored. */
+  std::string llm_preset_chosen_;
+  size_t llm_preset_applies_ = 0;
   void ToggleNodeEnabled();
   void RetestReachability();
   void TryUpnpPort();
@@ -423,6 +435,7 @@ private:
   void OnChooseUnlockGrace(ui::Event& ev);
   void ApplyUnlockGraceChoice(const std::string& minutes_id);
   void ApplyBackendChoice(const std::string& env);
+  void ApplyLlmPresetChoice(const std::string& preset);
   void ApplyDirectConnectionsChoice(const std::string& audience);
   void ApplyGroupInvitePolicyChoice(const std::string& policy);
   void ApplyAttachmentDownloadPolicyChoice(const std::string& policy);

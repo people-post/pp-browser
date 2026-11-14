@@ -109,6 +109,12 @@ std::string BackendDisplayLabel(const std::string& env) {
   return Tr("settings.network.backend." + std::string(BackendEnvName(ParseBackendEnv(env))));
 }
 
+constexpr const char* kLlmPresetIds[] = {"brief", "cloud", "ollama", "custom"};
+
+std::string LlmPresetDisplayLabel(const std::string& preset) {
+  return Tr("settings.llm.preset_" + preset);
+}
+
 std::string DirectConnectionsDisplayLabel(const std::string& audience) {
   const auto parsed = mesh::DirectAudienceFromName(audience);
   return Tr(std::string("settings.network.direct_connections.") +
@@ -405,6 +411,7 @@ void SettingsController::PullBindingsToUiState() {
 
 void SettingsController::PushUiStateToBindings() {
   bindings_.llm_preset = ui_state_.llm_preset.c_str();
+  bindings_.llm_preset_label = LlmPresetDisplayLabel(ui_state_.llm_preset).c_str();
   bindings_.llm_base_url = ui_state_.llm_base_url.c_str();
   bindings_.llm_model = ui_state_.llm_model.c_str();
   bindings_.llm_api_key = ui_state_.llm_api_key.c_str();
@@ -626,6 +633,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("choice_help_topic", &controller.choice_help_topic_);
     ctor.Bind("blocked_count", &controller.blocked_count_);
     ctor.Bind("llm_preset", &controller.bindings_.llm_preset);
+    ctor.Bind("llm_preset_label", &controller.bindings_.llm_preset_label);
     ctor.Bind("llm_base_url", &controller.bindings_.llm_base_url);
     ctor.Bind("llm_model", &controller.bindings_.llm_model);
     ctor.Bind("llm_api_key", &controller.bindings_.llm_api_key);
@@ -786,6 +794,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("on_choose_call_invite_policy",
                            DataEventAt([this](ui::Event& ev) { OnChooseCallInvitePolicy(ev); }));
     ctor.BindEventCallback("on_choose_unlock_grace", DataEventAt([this](ui::Event& ev) { OnChooseUnlockGrace(ev); }));
+    ctor.BindEventCallback("on_choose_llm_preset", DataEventAt([this](ui::Event& ev) { OnChooseLlmPreset(ev); }));
     ctor.BindEventCallback("on_choose_backend", DataEventAt([this](ui::Event& ev) { OnChooseBackend(ev); }));
     ctor.BindEventCallback("on_choose_direct_connections",
                            DataEventAt([this](ui::Event& ev) { OnChooseDirectConnections(ev); }));
@@ -887,6 +896,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "choice_foot");
   host.Dirty("settings", "choice_help_topic");
   host.Dirty("settings", "llm_preset");
+  host.Dirty("settings", "llm_preset_label");
   host.Dirty("settings", "llm_base_url");
   host.Dirty("settings", "llm_model");
   host.Dirty("settings", "llm_api_key");
@@ -1669,11 +1679,50 @@ void SettingsController::OnLlmPresetChanged(ui::Event& ev) {
   }
 
   const ui::String value = EventValue(ev);
+  if (!llm_preset_chosen_.empty()) {
+    // The phone's chooser already applied this preset; the hidden <select> only echoes the new value back (its binding
+    // changed), twice per pick. Any other value is a genuine pick in the select and ends the guard.
+    if (value == llm_preset_chosen_.c_str()) {
+      return;
+    }
+    llm_preset_chosen_.clear();
+  }
   if (!value.empty()) {
     bindings_.llm_preset = value;
   }
+  ApplyLlmPreset();
+}
 
+void SettingsController::OnChooseLlmPreset(ui::Event& ev) {
+  const std::string current = bindings_.llm_preset.c_str();
+  std::vector<SettingsChoicePage::Option> options;
+  for (const char* id : kLlmPresetIds) {
+    options.push_back({id, LlmPresetDisplayLabel(id).c_str(), current == id});
+  }
+  ShowChoice(ev, "llm_preset", Tr("settings.llm.preset"), Tr("settings.llm.preset_help"), {}, std::move(options),
+             [this](const std::string& id) { ApplyLlmPresetChoice(id); });
+}
+
+void SettingsController::ApplyLlmPresetChoice(const std::string& preset) {
+  if (suppress_auto_save_) {
+    return;
+  }
+  bool known = false;
+  for (const char* id : kLlmPresetIds) {
+    known = known || preset == id;
+  }
+  if (!known) {
+    return;
+  }
+  bindings_.llm_preset = preset.c_str();
+  llm_preset_chosen_ = preset;
+  ApplyLlmPreset();
+}
+
+void SettingsController::ApplyLlmPreset() {
+  ++llm_preset_applies_;
   PullBindingsToUiState();
+  bindings_.llm_preset_label = LlmPresetDisplayLabel(ui_state_.llm_preset).c_str();
   // Translate preset intent → precise default model before flush/normalize.
   const std::string preset = ui_state_.llm_preset;
   if (const std::string default_model = DefaultModelForPreset(preset); !default_model.empty()) {
@@ -1690,6 +1739,7 @@ void SettingsController::OnLlmPresetChanged(ui::Event& ev) {
   DataModelHost::Instance().Dirty("settings", "llm_model");
   DataModelHost::Instance().Dirty("settings", "llm_base_url");
   DataModelHost::Instance().Dirty("settings", "llm_preset");
+  DataModelHost::Instance().Dirty("settings", "llm_preset_label");
 
   const SettingsSectionHandler* handler = FindHandler("llm");
   if (!handler) {

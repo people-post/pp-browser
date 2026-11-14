@@ -184,7 +184,17 @@
         <p class="text group-foot group-foot--lead" data-if="!advanced">{{i18n:settings.llm.summary}}</p>
         <div class="stack" data-if="advanced">
         <div class="group-card">
-          <label class="settings-field group-row group-row--field">
+          <button class="settings-toggle-row settings-choice-row row group-row settings-phone-only" type="button"
+                  data-event-click="on_choose_llm_preset()">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.llm.preset}}</span>
+              <span class="settings-choice-value row">
+                <span class="settings-choice-value-text">{{llm_preset_label}}</span>
+                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+              </span>
+            </span>
+          </button>
+          <label class="settings-field group-row group-row--field settings-desktop-only">
             <span class="group-row-body group-row-body--field">
               <span class="settings-label group-row-text">{{i18n:settings.llm.preset}}</span>
               <select class="field" data-value="llm_preset" data-event-change="on_llm_preset_changed()">
