@@ -241,14 +241,16 @@ for 10 minutes; one not reached (its link still coming up) is tried again after 
    (`GET /users/by-account/{account_id}`, public: asked without signing, whether or not we are registered there);
 3. our relays, preferred first, then our other directories, skipping any asked in step 2.
 
-The relays are asked up to the first that keeps the account; one down, or one that does not know it, gives way to
-the next. A contact with no Account ID asks no one (relays know people by it alone, multi-relay MR001). Keys are kept
-only as above: the relay's stored card and its row's key card must verify against the Account ID; an answer whose
-keys or card do not is used for its name and photo only, and one for another account not at all; the user is told
-either way. A stored card that verifies is kept as any other (newest wins), so its device and relay lists come in
-too. Name: the newest kept card's when a device answered or a relay's card was kept, else the relay row's; photo and
-device addresses: the relay row's. The toast says what changed and who answered (their devices, their relay, your
-relay), or which could not be reached. What each relay answered is kept in memory for the contact page, which shows
+The relays are asked up to the first whose answer for the account verifies; one down, one that does not know it, or
+one whose answer does not verify gives way to the next. A contact with no Account ID asks no one (relays know people
+by it alone, multi-relay MR001). An answer verifies when it is for the contact's Account ID and its row's key card
+verifies against it (and its stored card, when it carries one that is not older than one this account had), or it
+carries no keys but a stored card that verifies. **An unverified relay answer contributes nothing** — no keys, card,
+name, photo or addresses: the relay is shown as not reachable on the contact page, and the user is told. A stored card
+that verifies is kept as any other (newest wins), so its device and relay lists come in too. Name: the newest kept
+card's when a device answered or a relay's card was kept, else the verified relay row's; photo and device addresses:
+the verified relay row's. The toast says, in the plain *card* wording, what changed ("Got their latest card"), that it
+is already up to date, or that nothing could be reached or found; it names no source. What each relay answered is kept in memory for the contact page, which shows
 the preferred relay by host with its reachability at the last refresh (*Not known yet* before one asked it; *Mesh
 only* when the card lists no relay) ([`ContactRefreshWorkflow`](../../capabilities/messaging/src/feature/conversations/ContactRefreshWorkflow.h)).
 

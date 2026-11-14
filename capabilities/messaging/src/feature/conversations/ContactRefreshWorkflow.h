@@ -35,9 +35,10 @@ struct ContactRefreshResult {
       Ours,   // one of our relays (or our other directories)
     };
     enum class Outcome {
-      Answered,    // it keeps the account: its answer was used
+      Answered,    // it keeps the account, and its answer verified: it was used
       NotFound,    // it answered, and does not know the account (not registered there)
       Unreachable, // it could not be asked (offline, a 5xx, a bad answer)
+      Rejected,    // it answered, but not verifiably for this account: nothing of it was used, the next was asked
     };
     std::string origin;
     Whose whose = Whose::Theirs;
@@ -46,7 +47,7 @@ struct ContactRefreshResult {
     bool operator==(const RelayAsk&) const = default;
   };
   Devices devices = Devices::NotAsked;
-  /** The relays asked, in order: the contact's in list order, then ours, up to the first that knew the account. */
+  /** The relays asked, in order: the contact's in list order, then ours, up to the first whose answer verified. */
   std::vector<RelayAsk> relays;
   bool name_changed = false;
   bool photo_changed = false;
@@ -55,8 +56,8 @@ struct ContactRefreshResult {
   /** Something else stored changed (a route, an address). */
   bool other_changed = false;
   /**
-   * The relay's answer carried keys (or a card) that do not verify against the contact's Account ID, or answered
-   * for another account: its keys were not used (and an answer for another account not at all).
+   * A relay's answer did not verify: it was for another account, or its keys (or its card) do not verify against the
+   * contact's Account ID, or it carried neither. Nothing of it was used (Outcome::Rejected).
    */
   bool relay_keys_rejected = false;
   /** The contact as stored after the refresh; empty when it is gone. */
@@ -78,9 +79,9 @@ struct ContactRelayView {
   };
   enum class Reach {
     NotKnown,      // not asked since the app started
-    Reachable,     // at the last refresh it answered, keeping the account
+    Reachable,     // at the last refresh it answered for the account, verifiably
     NotRegistered, // at the last refresh it answered without the account (our copy of its list may be stale)
-    Unreachable,   // at the last refresh it could not be asked
+    Unreachable,   // at the last refresh it could not be asked, or what it answered did not verify
   };
   List list = List::NotKnown;
   std::string origin;
@@ -96,9 +97,12 @@ struct ContactRefreshInputs {
   std::optional<PeerCardRecord> card_after;
   /** A device answered now, or a relay's stored card was kept: the kept card's nickname is the newest word. */
   bool card_fresh = false;
-  /** The answering relay's row, once it is known to be for this contact's account. */
+  /** The answering relay's row; merged only when its answer verified (`hit_keys_verified`). */
   std::optional<mesh::DirectoryHit> hit;
-  /** The answer's keys verified against its Account ID (and were kept): that Account ID may be adopted. */
+  /**
+   * The answer verified against the contact's Account ID (its keys, or the card it carried, were kept): only then is
+   * the row used at all — its name, photo, addresses and Account ID. An unverified relay answer contributes nothing.
+   */
   bool hit_keys_verified = false;
 };
 
@@ -106,8 +110,8 @@ struct ContactRefreshInputs {
  * Folds a refresh into `contact` and says what changed. Keys and devices are the account's verified card's
  * (the key stores hold the keys; the card's devices become device rows); the nickname is the kept card's when a
  * card came in now (from a device or a relay), else the relay row's; the photo and the device addresses are the
- * relay row's. Ids: the Account ID is adopted only from an answer whose keys verified. The user's own fields (remark,
- * trust) are never touched.
+ * relay row's — a row only from an answer that verified (else none of it is used), whose Account ID may then be
+ * adopted. The user's own fields (remark, trust) are never touched.
  */
 Contact MergeContactRefresh(Contact contact, const ContactRefreshInputs& inputs, int64_t now_ms,
                             ContactRefreshResult& result);
@@ -116,10 +120,11 @@ Contact MergeContactRefresh(Contact contact, const ContactRefreshInputs& inputs,
  * The contact page's Refresh (multi-relay R0, R3): asks, in order of trust, the contact's devices over the mesh for
  * its account's card (a forced ask, ContactCardExchange::AskDevices); then the contact's relays in list order
  * (ContactRelays: its kept card's, else its QR locator's origin), by Account ID (`GET /users/by-account`, public);
- * then our relays (SetOurRelays) not asked already — up to the first relay that keeps the account. A relay's stored
- * card and its row's keys are kept only when they verify against the Account ID (AccountKeyResolver: VerifyAccountCard,
- * VerifyKeyCard); its name and photo count either way. What each relay answered is remembered for the contact page
- * (PreferredRelay). The relay steps run on the blocking lane; the merge, the write and `done` run on the UI lane. One
+ * then our relays (SetOurRelays) not asked already — up to the first relay whose answer for the account verifies: it
+ * is for that Account ID, and its row's keys (and its stored card, if it carries one) verify against it
+ * (AccountKeyResolver: VerifyAccountCard, VerifyKeyCard). An answer that does not verify contributes nothing — no keys,
+ * card, name, photo or addresses — and the next relay is asked (Outcome::Rejected). What each relay answered is
+ * remembered for the contact page (PreferredRelay). The relay steps run on the blocking lane; the merge, the write and `done` run on the UI lane. One
  * run per contact at a time.
  */
 class ContactRefreshWorkflow {
@@ -156,10 +161,12 @@ private:
   void AskRelays(const std::shared_ptr<Run>& run);
   /** The contact's relays in list order, then ours not asked yet, up to the first that knows the account. */
   void AskRelaysInOrder(Run& run);
-  /** Asks one relay; true when it answered for the account (its answer taken). */
+  /** Asks one relay; true when it answered for the account, verifiably (its answer taken). */
   bool AskRelay(Run& run, const std::string& origin, ContactRefreshResult::RelayAsk::Whose whose);
-  void TakeRelayAnswer(Run& run, StoredAccountRow row);
-  void TakeRelayCard(Run& run, const Object& card);
+  /** Takes a relay's row when it verifies for the run's account; false (nothing taken): rejected. */
+  bool TakeRelayAnswer(Run& run, StoredAccountRow row);
+  enum class CardTaken { Kept, Stale, Rejected };
+  CardTaken TakeRelayCard(Run& run, const Object& card);
   void Remember(const std::string& account_id, const std::string& origin,
                 ContactRefreshResult::RelayAsk::Outcome outcome);
   void Finish(const std::shared_ptr<Run>& run);

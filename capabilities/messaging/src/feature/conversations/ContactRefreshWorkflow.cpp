@@ -5,6 +5,7 @@
 #include "lib/people/AccountCard.h"
 #include "common/runtime/AppRuntime.h"
 #include "lib/people/ContactIdentity.h"
+#include "lib/people/DirectoryAnswers.h"
 #include "lib/people/PeopleLookupFailure.h"
 
 #include "common/Logger.h"
@@ -91,11 +92,10 @@ void MergeDirectoryEndpoints(Contact& contact, const mesh::DirectoryHit& hit, Co
   }
 }
 
-/** The Account ID from an answer whose keys verified (it is the relay's address too, multi-relay MR001). */
-void MergeDirectoryIds(Contact& contact, const ContactRefreshInputs& inputs, ContactRefreshResult& result) {
-  const mesh::DirectoryHit& hit = *inputs.hit;
+/** The Account ID from an answer that verified (it is the relay's address too, multi-relay MR001). */
+void MergeDirectoryIds(Contact& contact, const mesh::DirectoryHit& hit, ContactRefreshResult& result) {
   const auto offered_account = PrimaryAccountIdFromHit(hit);
-  if (!ContactAccountId(contact) && offered_account && inputs.hit_keys_verified) {
+  if (!ContactAccountId(contact) && offered_account) {
     for (mesh::ContactId& id : contact.remote.ids) {
       id.primary = false;
     }
@@ -105,12 +105,18 @@ void MergeDirectoryIds(Contact& contact, const ContactRefreshInputs& inputs, Con
   }
 }
 
+/** The relay's row, when its answer verified: an unverified relay answer contributes nothing. */
+const mesh::DirectoryHit* VerifiedHit(const ContactRefreshInputs& inputs) {
+  return inputs.hit && inputs.hit_keys_verified ? &*inputs.hit : nullptr;
+}
+
 void MergeNickname(Contact& contact, const ContactRefreshInputs& inputs, ContactRefreshResult& result) {
   std::string nickname;
+  const mesh::DirectoryHit* hit = VerifiedHit(inputs);
   if (inputs.card_fresh && inputs.card_after && !inputs.card_after->nickname.empty()) {
     nickname = inputs.card_after->nickname; // signed by the account, fetched now
-  } else if (inputs.hit && !inputs.hit->nickname.empty()) {
-    nickname = inputs.hit->nickname;
+  } else if (hit && !hit->nickname.empty()) {
+    nickname = hit->nickname;
   }
   if (!nickname.empty() && nickname != contact.remote.nickname) {
     contact.remote.nickname = nickname;
@@ -124,13 +130,13 @@ Contact MergeContactRefresh(Contact contact, const ContactRefreshInputs& inputs,
                             ContactRefreshResult& result) {
   MergeCardDevices(contact, inputs, result);
   MergeNickname(contact, inputs, result);
-  if (inputs.hit) {
-    if (!SameIcon(contact.remote.icon, inputs.hit->icon)) {
-      contact.remote.icon = inputs.hit->icon;
+  if (const mesh::DirectoryHit* hit = VerifiedHit(inputs)) {
+    if (!SameIcon(contact.remote.icon, hit->icon)) {
+      contact.remote.icon = hit->icon;
       result.photo_changed = true;
     }
-    MergeDirectoryEndpoints(contact, *inputs.hit, result);
-    MergeDirectoryIds(contact, inputs, result);
+    MergeDirectoryEndpoints(contact, *hit, result);
+    MergeDirectoryIds(contact, *hit, result);
     contact.remote.fetched_at = now_ms;
   }
   SyncContactMirrors(contact);
@@ -289,55 +295,60 @@ bool ContactRefreshWorkflow::AskRelay(Run& run, const std::string& origin,
     Log().info << "refresh: " << RelayOriginKey(origin) << " not reached: " << answer.error().message;
   } else if (!*answer) {
     outcome = Outcome::NotFound;
+  } else if (!TakeRelayAnswer(run, std::move(**answer))) {
+    outcome = Outcome::Rejected; // nothing of it used: the next relay is asked
   }
   run.result.relays.push_back({.origin = origin, .whose = whose, .outcome = outcome});
   Remember(run.account_id, origin, outcome);
-  if (outcome != Outcome::Answered) {
+  return outcome == Outcome::Answered;
+}
+
+bool ContactRefreshWorkflow::TakeRelayAnswer(Run& run, StoredAccountRow row) {
+  const auto reject = [&run](const std::string& why) {
+    run.result.relay_keys_rejected = true;
+    Log().warning << "refresh: a relay's answer is not used: " << why;
     return false;
+  };
+  mesh::DirectoryHit& hit = row.hit;
+  if (PrimaryAccountIdFromHit(hit) != run.account_id) {
+    return reject("it is for another account"); // asked for one account, answered for another (or for none)
   }
-  TakeRelayAnswer(run, std::move(**answer));
+  // Checked before anything is kept: an answer whose keys do not verify gives nothing, not even its card.
+  const bool carries_keys = NonEmpty(hit.signing_public_key_b64) || NonEmpty(hit.kem_public_key_b64) ||
+                            NonEmpty(hit.kem_binding_signature_b64);
+  if (carries_keys && !DirectoryHitKeysVerify(hit)) {
+    return reject("its keys do not verify against the Account ID");
+  }
+  const CardTaken card = row.card ? TakeRelayCard(run, *row.card) : CardTaken::Stale;
+  if (card == CardTaken::Rejected) {
+    return reject("its card does not verify");
+  }
+  if (carries_keys) {
+    // Kept only when the signing key hashes to the Account ID and the KEM binding verifies (VerifyKeyCard).
+    if (auto kept = keys_.AddDirectoryHit(hit); !kept) {
+      return reject("its keys were not kept: " + kept.error().message);
+    }
+  } else if (card != CardTaken::Kept) {
+    return reject("it carries no keys and no card that verifies");
+  }
+  run.relay_card_kept = run.relay_card_kept || card == CardTaken::Kept;
+  run.hit_keys_verified = true;
+  run.hit = std::move(hit);
   return true;
 }
 
-void ContactRefreshWorkflow::TakeRelayAnswer(Run& run, StoredAccountRow row) {
-  mesh::DirectoryHit& hit = row.hit;
-  if (PrimaryAccountIdFromHit(hit) != run.account_id) {
-    // Asked for one account, answered for another (or for none): nothing in it is this contact's.
-    run.result.relay_keys_rejected = true;
-    Log().warning << "refresh: a relay answered for another account; not used";
-    return;
-  }
-  if (row.card) {
-    TakeRelayCard(run, *row.card);
-  }
-  const bool carries_keys = NonEmpty(hit.signing_public_key_b64) || NonEmpty(hit.kem_public_key_b64) ||
-                            NonEmpty(hit.kem_binding_signature_b64);
-  if (carries_keys) {
-    // Kept only when the signing key hashes to the Account ID and the KEM binding verifies (VerifyKeyCard).
-    if (auto kept = keys_.AddDirectoryHit(hit); kept) {
-      run.hit_keys_verified = true;
-    } else {
-      run.result.relay_keys_rejected = true;
-      Log().warning << "refresh: a relay's keys do not verify; not used: " << kept.error().message;
-    }
-  }
-  run.hit = std::move(hit);
-}
-
-void ContactRefreshWorkflow::TakeRelayCard(Run& run, const Object& card) {
+ContactRefreshWorkflow::CardTaken ContactRefreshWorkflow::TakeRelayCard(Run& run, const Object& card) {
   // The card the account registered there (multi-relay R2): kept when it verifies; the newest card wins.
   auto kept = keys_.AddCarriedCard(card, util::NowUnixMs(), "relay", run.account_id);
   if (kept) {
-    run.relay_card_kept = true;
-    run.hit_keys_verified = true;
-    return;
+    return CardTaken::Kept;
   }
   auto parsed = AccountCardFromJson(card);
   if (parsed && parsed->keys.account_id == run.account_id && parsed->issued_at < keys_.CardFloor(run.account_id)) {
-    return; // older than one this account had: stale, not forged
+    return CardTaken::Stale; // older than one this account had: stale, not forged
   }
-  run.result.relay_keys_rejected = true;
-  Log().warning << "refresh: a relay's card does not verify; not used: " << kept.error().message;
+  Log().warning << "refresh: a relay's card does not verify: " << kept.error().message;
+  return CardTaken::Rejected;
 }
 
 void ContactRefreshWorkflow::Remember(const std::string& account_id, const std::string& origin,
@@ -372,6 +383,7 @@ ContactRelayView ContactRefreshWorkflow::PreferredRelay(const Contact& contact) 
   using Outcome = ContactRefreshResult::RelayAsk::Outcome;
   std::lock_guard lock(mutex_);
   if (auto it = reach_.find(account_id + "|" + RelayOriginKey(view.origin)); it != reach_.end()) {
+    // A rejected answer reads as not reachable: what it said cannot be relied on.
     view.reach = it->second == Outcome::Answered   ? ContactRelayView::Reach::Reachable
                  : it->second == Outcome::NotFound ? ContactRelayView::Reach::NotRegistered
                                                    : ContactRelayView::Reach::Unreachable;

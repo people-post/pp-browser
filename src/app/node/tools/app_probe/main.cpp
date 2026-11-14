@@ -207,6 +207,7 @@ Object RefreshReply(int64_t id, const ContactRefreshResult& result) {
     row.set("whose", ask.whose == Ask::Whose::Theirs ? "theirs" : "ours");
     row.set("outcome", ask.outcome == Ask::Outcome::Answered   ? "answered"
                        : ask.outcome == Ask::Outcome::NotFound ? "not_found"
+                       : ask.outcome == Ask::Outcome::Rejected ? "rejected"
                                                                : "unreachable");
     relays.push_back(ObjectValue(std::move(row)));
   }

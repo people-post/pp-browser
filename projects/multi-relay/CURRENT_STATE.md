@@ -11,10 +11,10 @@ for the account card even when one is kept (`ContactCardExchange::AskDevices`, a
 15 s), then our directory by Account ID (since R2 step 1 the only id it knows; a contact with none asks no one) on a worker; the
 merge and the write land on the UI thread (`AppRuntime::PostUI`), the button reads "Refreshing…" meanwhile, and
 a second press does nothing. Keys are kept only through `AccountKeyResolver` (`VerifyKeyCard` /
-`VerifyKemBinding`: the signing key hashes to the Account ID, the KEM key carries its binding); a directory
-answer whose keys do not verify is used for name and photo only, one for another account not at all, and the
-user is told. The toast says what changed (name, photo, keys, devices), "Already up to date", or which source
-could not be reached. Contract text: [ACCOUNT_CARD § Card exchange](../../docs/contracts/ACCOUNT_CARD.md#card-exchange-over-amp).
+`VerifyKemBinding`: the signing key hashes to the Account ID, the KEM key carries its binding); a relay answer
+that does not verify (its keys or card, or it is for another account) contributes nothing and gives way to the next
+relay, and the user is told. The toast says what changed (name, photo, keys, devices), that their card is already up to date,
+or that nothing could be reached or found. Contract text: [ACCOUNT_CARD § Card exchange](../../docs/contracts/ACCOUNT_CARD.md#card-exchange-over-amp).
 
 R3 extends the Refresh with the contact's relays and ours (below).
 

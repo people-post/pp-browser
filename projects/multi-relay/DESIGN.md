@@ -119,8 +119,8 @@ A relay cannot read a message, and it does not know who a user's contacts are. I
   1. the contact's devices over the mesh (the card exchange);
   2. the contact's relays in list order, by Account ID;
   3. our own relays.
-  - The relays are asked up to the first that keeps the account (a relay down, or one without the account, gives way to the next); one asked as the contact's is not asked again as ours.
-  - Keys are accepted only when they verify against the Account ID (the relay's stored card and its row's keys alike); name and photo come from the newest answer: the newest kept card's name when a device or a relay's card brought one, else the relay row's; the photo is the row's.
+  - The relays are asked up to the first whose answer for the account verifies (a relay down, one without the account, or one whose answer does not verify gives way to the next); one asked as the contact's is not asked again as ours.
+  - An answer is used only when it verifies against the Account ID (the relay's stored card and its row's keys alike); an unverified one contributes nothing (no keys, name, photo or addresses) and the page shows that relay as not reachable. Name and photo come from the newest verified answer: the newest kept card's name when a device or a relay's card brought one, else the relay row's; the photo is the row's.
   - It runs on a worker, shows for every contact, says what changed, or that nothing could be reached or found (the plain *card* wording; no source named), and shows the preferred relay with its reachability: what that relay answered at the last refresh (in memory; "not known yet" before one asked it), so no probe runs on its own.
 - **Our own sends:** the sender signs with its account key. A send to a relay we are registered on goes as a registered sender; to any other relay, as a foreign sender with its key.
 - **Grants:** the app issues one to each accepted contact, renews it before it expires, keeps the grants it was given, attaches the matching one to each send, and stops renewing a blocked contact's. A send that gets `payment_required` shows the receiver's price (P001's pay-or-alternatives UI).

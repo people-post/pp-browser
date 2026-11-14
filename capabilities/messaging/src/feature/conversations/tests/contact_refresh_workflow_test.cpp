@@ -294,23 +294,48 @@ TEST_F(ContactRefreshWorkflowTest, ARelaysStoredCardIsKeptAndBringsItsRelayList)
   EXPECT_EQ(PageRelay(id).origin, kBobsB) << "his newest list's preferred relay";
 }
 
-TEST_F(ContactRefreshWorkflowTest, RelayKeysThatDoNotMatchTheAccountIdAreNotKeptButTheNameAndPhotoCount) {
+TEST_F(ContactRefreshWorkflowTest, RelayKeysThatDoNotMatchTheAccountIdContributeNothingAndTheNextRelayIsAsked) {
   const std::string id = AddBobByQr();
   StoredAccountRow forged = RelayBob();
-  // Mallory's keys under Bob's Account ID: they do not hash to it.
+  // Mallory's keys under Bob's Account ID: they do not hash to it. The rest of the row is hers too.
   forged.hit.signing_public_key_b64 = mallory_.SigningPublicB64();
   forged.hit.kem_public_key_b64 = mallory_.KemPublicB64();
   forged.hit.kem_binding_signature_b64 = mallory_.KemBindingB64();
+  forged.hit.nickname = "Mallory";
+  forged.hit.icon = mesh::ProfileIconRef{"https://evil.example/mallory.png", "mallory-photo", ""};
   Answers(kOurs, forged);
+
+  const ContactRefreshResult alone = Refresh(id);
+  EXPECT_TRUE(alone.relay_keys_rejected);
+  EXPECT_EQ(alone.relays, (std::vector<Ask>{{kOurs, Ask::Whose::Ours, Ask::Outcome::Rejected},
+                                            {kOurOther, Ask::Whose::Ours, Ask::Outcome::NotFound}}))
+      << "a rejected answer is not an answer: the walk goes on";
+  EXPECT_TRUE(alone.NothingAnswered());
+  EXPECT_FALSE(alone.Changed());
+  EXPECT_FALSE(HasKemKey(bob_.account_id)) << "no key kept for Bob";
+  EXPECT_FALSE(keys_->Kept(bob_.account_id).value().has_value());
+  EXPECT_EQ(Stored(id).remote.nickname, "bob") << "not the forged row's name";
+  EXPECT_FALSE(Stored(id).remote.icon.has_value() && !Stored(id).remote.icon->empty()) << "nor its photo";
+
+  Answers(kOurOther, RelayBob());
+  const ContactRefreshResult then = Refresh(id);
+  ASSERT_NE(then.AnsweredBy(), nullptr);
+  EXPECT_EQ(then.AnsweredBy()->origin, kOurOther) << "the next relay's verified answer is the one used";
+  EXPECT_EQ(Stored(id).remote.nickname, "Bob D.");
+  EXPECT_EQ(Stored(id).remote.icon->url, "https://cdn.example/avatars/bob.png");
+}
+
+TEST_F(ContactRefreshWorkflowTest, TheirRelayAnsweringUnverifiablyShowsAsNotReachable) {
+  const std::string id = AddBobByQr();
+  KeepBobsCard({kBobsA});
+  StoredAccountRow forged = RelayBob();
+  forged.hit.signing_public_key_b64 = mallory_.SigningPublicB64();
+  Answers(kBobsA, forged);
 
   const ContactRefreshResult result = Refresh(id);
 
-  EXPECT_TRUE(result.relay_keys_rejected);
-  EXPECT_FALSE(result.keys_changed);
-  EXPECT_FALSE(HasKemKey(bob_.account_id)) << "no key kept for Bob";
-  EXPECT_FALSE(keys_->Kept(bob_.account_id).value().has_value());
-  EXPECT_EQ(Stored(id).remote.nickname, "Bob D.");
-  EXPECT_TRUE(result.photo_changed);
+  EXPECT_EQ(result.relays.front(), (Ask{kBobsA, Ask::Whose::Theirs, Ask::Outcome::Rejected}));
+  EXPECT_EQ(PageRelay(id).reach, ContactRelayView::Reach::Unreachable) << "not Reachable on an answer that lies";
 }
 
 TEST_F(ContactRefreshWorkflowTest, ARelaysCardThatDoesNotVerifyIsNotKept) {
@@ -323,7 +348,9 @@ TEST_F(ContactRefreshWorkflowTest, ARelaysCardThatDoesNotVerifyIsNotKept) {
   const ContactRefreshResult result = Refresh(id);
 
   EXPECT_TRUE(result.relay_keys_rejected);
+  EXPECT_EQ(result.relays.front().outcome, Ask::Outcome::Rejected);
   EXPECT_EQ(PageRelay(id).origin, kBobsA) << "his list stays the one he signed";
+  EXPECT_EQ(Stored(id).remote.nickname, "bob") << "an answer with a forged card contributes nothing";
 }
 
 TEST_F(ContactRefreshWorkflowTest, AKemKeyTheAccountDidNotBindIsNotKept) {
@@ -352,6 +379,8 @@ TEST_F(ContactRefreshWorkflowTest, AnAnswerForAnotherAccountIsNotUsedAtAll) {
 
   EXPECT_TRUE(result.relay_keys_rejected);
   EXPECT_FALSE(result.Changed());
+  EXPECT_EQ(result.relays.front(), (Ask{kOurs, Ask::Whose::Ours, Ask::Outcome::Rejected}));
+  EXPECT_EQ(result.relays.size(), 2u) << "our other relay is asked next";
   EXPECT_EQ(Stored(id).remote.nickname, "bob");
   EXPECT_FALSE(HasKemKey(mallory_.account_id)) << "keys for an account we did not ask about are not kept";
 }
@@ -462,11 +491,29 @@ TEST(MergeContactRefreshTest, TheUsersOwnFieldsAreNeverTouched) {
   hit.account_id = "account:bob";
   hit.nickname = "Bob D.";
   ContactRefreshResult result;
-  const Contact merged = MergeContactRefresh(contact, ContactRefreshInputs{.hit = hit}, kNow, result);
+  const Contact merged =
+      MergeContactRefresh(contact, ContactRefreshInputs{.hit = hit, .hit_keys_verified = true}, kNow, result);
   EXPECT_EQ(merged.local.display_name, "My Bob");
   EXPECT_EQ(merged.local.trust, TrustLevel::Friendly);
   EXPECT_EQ(merged.remote.nickname, "Bob D.");
   EXPECT_TRUE(result.name_changed);
+}
+
+TEST(MergeContactRefreshTest, AnUnverifiedRelayRowContributesNothing) {
+  Contact contact;
+  contact.id = "c1";
+  contact.remote.nickname = "bob";
+  contact.remote.ids = {{mesh::ContactIdKind::Account, "account:bob", true}};
+  mesh::DirectoryHit hit;
+  hit.account_id = "account:bob";
+  hit.nickname = "Mallory";
+  hit.icon = mesh::ProfileIconRef{"https://evil.example/m.png", "m", ""};
+  hit.endpoints = {mesh::DirectoryEndpoint{.peer_id = "QmMallory", .multiaddrs = {"/ip4/192.0.2.9/udp/1/quic-v1"}}};
+  ContactRefreshResult result;
+  const Contact merged = MergeContactRefresh(contact, ContactRefreshInputs{.hit = hit}, kNow, result);
+  EXPECT_EQ(merged.remote.nickname, "bob");
+  EXPECT_TRUE(merged.remote.endpoints.empty());
+  EXPECT_FALSE(result.Changed());
 }
 
 } // namespace
