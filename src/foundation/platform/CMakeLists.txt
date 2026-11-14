@@ -110,6 +110,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     os/OsThreadName_Win32.cpp
     os/OsProcess_Win32.cpp
     os/OsLocale_Win32.cpp
+    os/OsDeviceName_Win32.cpp
     os/OsExecutablePath_Win32.cpp
     os/OsDownloadMark_Win32.cpp
     os/OsProcessStats_Default.cpp
@@ -136,6 +137,7 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_core_sources
     os/OsExecutablePath_Darwin.cpp
     os/OsLocale_Darwin.mm
+    os/OsDeviceName_Darwin.mm
     os/OsProcessStats_Default.cpp
     os/OsThreadStackDump_Darwin.cpp
     desktop/PathProvider_Darwin.cpp
@@ -183,9 +185,9 @@ else()
     ProximityScreenOff_Default.cpp
   )
   if(PP_BROWSER_IS_ANDROID)
-    list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp)
+    list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp os/OsDeviceName_Android.cpp)
   else()
-    list(APPEND _pp_platform_core_sources os/OsLocale_Posix.cpp)
+    list(APPEND _pp_platform_core_sources os/OsLocale_Posix.cpp os/OsDeviceName_Posix.cpp)
   endif()
   if(NOT PP_BROWSER_IS_ANDROID)
     list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp
@@ -338,7 +340,8 @@ endif()
 
 # macOS: OsLocale_Darwin.mm (platform_core, also linked by pp-node) needs Foundation; iOS adds it above.
 if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN" AND NOT PP_BROWSER_IS_IOS)
-  target_link_libraries(pp_foundation_platform_core PUBLIC "-framework Foundation")
+  # SystemConfiguration: OsDeviceName_Darwin.mm's computer name (non-blocking, unlike NSHost).
+  target_link_libraries(pp_foundation_platform_core PUBLIC "-framework Foundation" "-framework SystemConfiguration")
 endif()
 
 # Android: ApplyPlatformCurlSsl sets CURLOPT_CAPATH via curl.

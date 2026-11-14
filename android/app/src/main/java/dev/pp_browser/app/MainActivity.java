@@ -504,6 +504,26 @@ public class MainActivity extends SDLActivity {
         return PpNotificationHealth.open(blobContext(), target);
     }
 
+    /**
+     * Called from native (OsDeviceName_Android.cpp, once at startup): the name the user gave the device
+     * (Settings.Global.DEVICE_NAME, API 25+, may be empty), else the maker and model. No permission needed.
+     */
+    public static String deviceName() {
+        final Context context = blobContext();
+        String name = null;
+        if (context != null) {
+            try {
+                name = Settings.Global.getString(context.getContentResolver(), "device_name");
+            } catch (Exception e) {
+                name = null;
+            }
+        }
+        if (name == null || name.trim().isEmpty()) {
+            name = Build.MANUFACTURER + " " + Build.MODEL;
+        }
+        return name;
+    }
+
     /** Called from native (OsProtectedData_Android.cpp): Settings.Global.BOOT_COUNT, -1 when it cannot be read. */
     public static int bootCount() {
         final Context context = blobContext();

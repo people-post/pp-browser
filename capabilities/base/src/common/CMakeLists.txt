@@ -10,6 +10,7 @@ add_library(pp_pbr_common STATIC
   ServiceEndpoints.cpp
   BoundedRead.cpp
   LengthPrefixedCodec.cpp
+  DeviceName.cpp
   ShareableLine.cpp
 )
 target_include_directories(pp_pbr_common PUBLIC ${PP_BROWSER_CAPABILITY_SRC})

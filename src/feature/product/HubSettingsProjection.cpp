@@ -1,10 +1,16 @@
 #include "feature/product/HubSettingsProjection.h"
 
 #include "foundation/data/AppPaths.h"
+#include "foundation/platform/os/OsDeviceName.h"
 #include "lib/messaging/AttachmentDownloadPolicy.h"
 #include "lib/messaging/GroupTypes.h"
 
 namespace pbr {
+
+const std::string& StartupSystemDeviceName() {
+  static const std::string name = os::SystemDeviceName();
+  return name;
+}
 
 HubSettings HubSettingsFrom(const AppConfig& config, const ProfilePreferences& prefs) {
   HubSettings settings;
@@ -16,6 +22,7 @@ HubSettings HubSettingsFrom(const AppConfig& config, const ProfilePreferences& p
   settings.initiation_floor = config.initiation_floor;
   settings.app_data_dir = AppPaths::DataDir(config.data_dir);
   settings.policy = ProjectPolicy(prefs);
+  settings.system_device_name = StartupSystemDeviceName();
   return settings;
 }
 
