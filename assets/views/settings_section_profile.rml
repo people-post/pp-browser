@@ -69,7 +69,7 @@
           <div class="group-row group-row--static">
             <span class="group-row-body">
               <span class="group-row-label group-row-label--fit"><span class="group-row-text">{{i18n:settings.profile.registration_row}}</span></span>
-              <span class="group-row-value group-row-value--wrap">{{profile_registration_status}}<span class="group-row-sub" data-if="advanced && profile_registration_expires != ''">{{i18n:settings.profile.expires_row}} {{profile_registration_expires}}</span></span>
+              <span class="group-row-value group-row-value--wrap"><span class="group-row-text">{{profile_registration_status}}</span><span class="group-row-sub" data-if="advanced && profile_registration_expires != ''">{{i18n:settings.profile.expires_row}} {{profile_registration_expires}}</span></span>
               <button class="settings-pill-btn" type="button" data-if="advanced && profile_show_register && !profile_register_primary"
                       data-attrif-disabled="profile_registering" data-class-settings-registering="profile_registering"
                       data-event-click="register_profile()">

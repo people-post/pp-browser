@@ -13310,6 +13310,16 @@ input.checkbox {
   text-align: right;
 }
 
+/* The expiry line under the Status: smaller than the status (15dp, primary colour) and in the muted row-value colour. */
+.shell-layer-compact .group-row-value--wrap .group-row-sub {
+  display: block;
+  font-size: 13dp;
+  line-height: 18dp;
+  margin-top: 2dp;
+  white-space: normal;
+  overflow: visible;
+}
+
 /* A small text button at the right end of a row ("Update now"): a 44dp tap area round a 15dp label, no fill. */
 .shell-layer-compact .settings-text-btn {
   flex-shrink: 0;

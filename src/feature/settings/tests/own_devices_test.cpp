@@ -36,17 +36,17 @@ TEST(OwnDevicesTest, MainDeviceManagesTheOthers) {
   EXPECT_TRUE(view.devices[0].is_main);
   EXPECT_TRUE(view.devices[0].is_this_device);
   EXPECT_FALSE(view.devices[0].can_manage); // never itself
-  EXPECT_EQ(view.devices[0].name, "New device") << "no name yet";
+  EXPECT_EQ(view.devices[0].name, "Unnamed device") << "no name yet";
   EXPECT_FALSE(view.devices[0].named);
 
   EXPECT_FALSE(view.devices[1].is_main);
   EXPECT_FALSE(view.devices[1].is_this_device);
   EXPECT_TRUE(view.devices[1].can_manage);
   EXPECT_EQ(view.devices[1].peer_id, "12D3KooOtherABCDEF");
-  EXPECT_EQ(view.devices[1].name, "New device");
+  EXPECT_EQ(view.devices[1].name, "Unnamed device");
 
   EXPECT_TRUE(view.devices[2].can_manage);
-  EXPECT_EQ(view.devices[2].name, "New device");
+  EXPECT_EQ(view.devices[2].name, "Unnamed device");
 }
 
 TEST(OwnDevicesTest, DevicesShowTheirNamesAndNeverAPieceOfAnId) {
@@ -58,7 +58,7 @@ TEST(OwnDevicesTest, DevicesShowTheirNamesAndNeverAPieceOfAnId) {
   EXPECT_EQ(view.devices[0].name, "My iPhone");
   EXPECT_TRUE(view.devices[0].named);
   EXPECT_EQ(view.devices[1].name, "Office Mac");
-  EXPECT_EQ(view.devices[2].name, "New device");
+  EXPECT_EQ(view.devices[2].name, "Unnamed device");
   EXPECT_FALSE(view.devices[2].named);
   for (const pbr::OwnDeviceView& device : view.devices) {
     EXPECT_EQ(device.name.find("ABCDEF"), std::string::npos);
@@ -73,7 +73,7 @@ TEST(OwnDevicesTest, ANameIsCleanedAgainAndAnEmptyOneIsNoName) {
       pbr::OwnDevicesViewFor({"self", "other", "third"}, "self", false,
                              {{"self", "  Phone\n(old) "}, {"other", " \t\n "}, {"third", "Name {device} {id}"}});
   EXPECT_EQ(view.devices[0].name, "Phone(old)");
-  EXPECT_EQ(view.devices[1].name, "New device");
+  EXPECT_EQ(view.devices[1].name, "Unnamed device");
   EXPECT_EQ(view.devices[2].name, "Name {device} {id}") << "a name is a value, not a template";
 }
 
@@ -86,12 +86,12 @@ TEST(OwnDevicesTest, WithoutAnEntryThisDeviceShowsTheCachedSystemNameAndOthersSt
   EXPECT_EQ(view.devices[0].name, "Home iPhone");
   // The system name is for this device only.
   const pbr::OwnDevicesView others = pbr::OwnDevicesViewFor({"main", "self"}, "self", false, {}, "Mac");
-  EXPECT_EQ(others.devices[0].name, "New device");
+  EXPECT_EQ(others.devices[0].name, "Unnamed device");
   EXPECT_EQ(others.devices[1].name, "Mac");
-  // An entry beats the fallback; no system name either: "New device".
+  // An entry beats the fallback; no system name either: "Unnamed device".
   EXPECT_EQ(pbr::OwnDevicesViewFor({"self"}, "self", false, {{"self", "Mine"}}, "Mac").devices[0].name, "Mine");
   const pbr::OwnDevicesView none = pbr::OwnDevicesViewFor({"self"}, "self", false, {}, " \n ");
-  EXPECT_EQ(none.devices[0].name, "New device");
+  EXPECT_EQ(none.devices[0].name, "Unnamed device");
   EXPECT_FALSE(none.devices[0].named);
 }
 

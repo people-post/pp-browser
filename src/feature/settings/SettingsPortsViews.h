@@ -47,7 +47,7 @@ struct CasLibraryItemView {
 /** Me → Security → Your devices: one of the account's devices (M021 d4), with the name it was given. */
 struct OwnDeviceView {
   std::string peer_id;
-  /** The device's name; "New device" when it has none (never a piece of its PeerId). */
+  /** The device's name; "Unnamed device" when it has none (never a piece of its PeerId). */
   std::string name;
   /** The device has a name (the rename dialog starts from it; empty otherwise). */
   bool named = false;

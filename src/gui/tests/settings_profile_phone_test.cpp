@@ -166,7 +166,8 @@ TEST_F(SettingsProfilePhoneTest, TheAccountGroupsHoldTheRowsInOrderWithTodaysGat
 TEST_F(SettingsProfilePhoneTest, TheStatusValueMergesStatusAndExpiryUnderTheOldExpiryGate) {
   const std::string rml = ReadAsset("views/settings_section_profile.rml");
   const std::string value_open =
-      "<span class=\"group-row-value group-row-value--wrap\">{{profile_registration_status}}"
+      "<span class=\"group-row-value group-row-value--wrap\">"
+      "<span class=\"group-row-text\">{{profile_registration_status}}</span>"
       "<span class=\"group-row-sub\" data-if=\"advanced && profile_registration_expires != ''\">"
       "{{i18n:settings.profile.expires_row}} {{profile_registration_expires}}</span></span>";
   ASSERT_EQ(Count(rml, value_open), 1u);

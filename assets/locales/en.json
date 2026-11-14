@@ -385,7 +385,7 @@
     "settings.security.devices.role_this_main": "This device (main)",
     "settings.security.devices.role_main_manage": "Main device (manage)",
     "settings.security.devices.role_other": "Other device",
-    "settings.security.devices.unnamed": "New device",
+    "settings.security.devices.unnamed": "Unnamed device",
     "settings.security.devices.rename": "Rename…",
     "settings.security.devices.rename_title": "Device name",
     "settings.security.devices.rename_prompt": "Only your own devices can see this",
