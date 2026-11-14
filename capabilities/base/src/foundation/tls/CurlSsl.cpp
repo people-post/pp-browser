@@ -27,6 +27,14 @@ const std::string& CaBundleOverride() {
 
 } // namespace
 
+bool DevCaBundleActive() {
+#if defined(PP_BROWSER_DEV_CA_BUNDLE)
+  return !CaBundleOverride().empty();
+#else
+  return false;
+#endif
+}
+
 void ApplyCurlSslDefaults(CURL* curl) {
   if (!curl) {
     return;

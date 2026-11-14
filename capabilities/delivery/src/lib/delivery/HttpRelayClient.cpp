@@ -102,7 +102,8 @@ Roe<std::string> HttpRelayClient::SignRelayApiBytes(const std::vector<uint8_t>& 
   return auth_signer_(sign_bytes);
 }
 
-HttpRelayClient::HttpRelayClient(std::string base_url) : base_url_(std::move(base_url)) {}
+HttpRelayClient::HttpRelayClient(std::string base_url, bool public_only)
+    : base_url_(std::move(base_url)), public_only_(public_only) {}
 
 void HttpRelayClient::SetSendHooks(RelaySendHooks hooks) {
   std::lock_guard lock(hooks_mutex_);
@@ -129,7 +130,8 @@ Roe<void> HttpRelayClient::PostSend(RelayWireSendRecord& record, const RelayEnve
 
   const std::string url = base_url_ + "/v1/messages";
   const auto response =
-      HttpClient::Post(url, DumpJson(RelayWireSendRecordToJson(record)), {{"Content-Type", "application/json"}});
+      HttpClient::Post(url, DumpJson(RelayWireSendRecordToJson(record)), {{"Content-Type", "application/json"}},
+                       kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -211,7 +213,7 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_acc
   // Other relay HTTP keeps default HttpTimeout{30}. Not an env knob.
   constexpr HttpTimeout kRelayPollTimeout{.total_s = 10, .connect_s = 5};
   const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}},
-                                         kMaxHttpClientBodyBytes, kRelayPollTimeout);
+                                         kMaxHttpClientBodyBytes, kRelayPollTimeout, public_only_);
   if (!response) {
     return response.error();
   }
@@ -292,7 +294,8 @@ Roe<RelayDeleteResult> HttpRelayClient::AckInbox(const std::string& requester_ac
   body.set("timestamp", timestamp);
   body.set("signature", *signature);
   const std::string url = base_url_ + "/v1/inbox/ack";
-  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}});
+  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}},
+                                         kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -335,7 +338,8 @@ Roe<RelayDeleteResult> HttpRelayClient::ClearInbox(const std::string& requester_
   body.set("timestamp", timestamp);
   body.set("signature", *signature);
   const std::string url = base_url_ + "/v1/inbox/clear";
-  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}});
+  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}},
+                                         kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -373,7 +377,8 @@ Roe<ChatHistoryResponse> HttpRelayClient::FetchChatHistory(const ChatHistoryRequ
   body.set("signature", *signature);
 
   const std::string url = base_url_ + "/v1/streams/messages/query";
-  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}});
+  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}},
+                                         kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
