@@ -213,8 +213,11 @@ TEST(ConfigRelayExtraBaseUrlsTest, AreReadOnAnyBackendAndWrittenBackOnlyWhenSet)
 
   pbr::AppConfig none = pbr::Config::DefaultAppConfig();
   ASSERT_TRUE(static_cast<bool>(pbr::Config::SaveToFile(out, none)));
-  std::ifstream in(out);
-  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  std::string text;
+  {
+    std::ifstream in(out); // closed before the remove: Windows refuses to delete an open file
+    text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
   EXPECT_EQ(text.find("extra_base_urls"), std::string::npos);
   std::filesystem::remove(path);
   std::filesystem::remove(out);
