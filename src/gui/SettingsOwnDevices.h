@@ -3,6 +3,7 @@
 #include "feature/settings/SettingsCommands.h"
 #include "feature/settings/SettingsPortsViews.h"
 #include "gui/shell/ShellFeedbackPorts.h"
+#include "lib/ui/ContextMenuHost.h"
 #include "common/Error.h"
 
 #include <ui/base/Types.h>
@@ -15,7 +16,8 @@
 
 namespace ui {
 class DataModelConstructor;
-}
+class Event;
+} // namespace ui
 
 namespace pbr {
 
@@ -43,11 +45,17 @@ public:
   void Bind(ui::DataModelConstructor& ctor);
   /** Reads the list again and shows it. */
   void Refresh();
+  /** Shows a list that was read already (Refresh's answer). */
+  void Show(Roe<OwnDevicesView> listed);
+  /** The sheet's actions for the device at `index` (none unless it can be managed): make main, remove (danger),
+   *  cancel. Each runs the same Remove / MakeMain as the desktop buttons' events, which ask first. */
+  std::vector<ContextMenuAction> DeviceActions(int index);
 
 private:
-  void Show(Roe<OwnDevicesView> listed);
   void Remove(int index);
   void MakeMain(int index);
+  /** Phones: the sheet of the two actions for the device at `index` (each runs Remove / MakeMain, which ask first). */
+  void ShowDeviceActions(ui::Event& ev, int index);
   /** Runs `change` for the device at `index` on a worker once confirmed; then the list again and `done`. */
   void ConfirmChange(int index, const std::string& title, const std::string& message, const std::string& ok_label,
                      std::function<Roe<void>(const std::string& peer_id)> change, const std::string& done,
@@ -63,6 +71,8 @@ private:
   /** Whether the section shows (a list or a signed-out device; not while messaging is down). */
   bool shown_ = false;
   bool signed_out_ = false;
+  /** Some listed device is not this one (the phone's "Other devices" block has rows, or says there are none). */
+  bool has_others_ = false;
   /** Shown, and this device is not the main one: it neither adds nor removes devices. */
   bool not_main_ = false;
   /** Bumped per read: only the latest read's answer is shown. */

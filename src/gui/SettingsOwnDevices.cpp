@@ -30,8 +30,15 @@ void SettingsOwnDevices::Bind(ui::DataModelConstructor& ctor) {
   ctor.Bind("own_devices_shown", &shown_);
   ctor.Bind("own_devices_signed_out", &signed_out_);
   ctor.Bind("own_devices_not_main", &not_main_);
+  ctor.Bind("own_has_other_devices", &has_others_);
   ctor.BindEventCallback("remove_own_device", DataEvent<int>([this](const int index) { Remove(index); }));
   ctor.BindEventCallback("make_main_device", DataEvent<int>([this](const int index) { MakeMain(index); }));
+  ctor.BindEventCallback("open_own_device_actions",
+                         [this](ui::DataModelHandle /*model*/, ui::Event& ev, const ui::VariantList& args) {
+                           if (const auto index = EventArgAsInt(args, 0)) {
+                             ShowDeviceActions(ev, *index);
+                           }
+                         });
 }
 
 void SettingsOwnDevices::Refresh() {
@@ -66,11 +73,16 @@ void SettingsOwnDevices::Show(Roe<OwnDevicesView> listed) {
   shown_ = !rows_.empty() || view_.signed_out;
   signed_out_ = view_.signed_out;
   not_main_ = shown_ && !view_.this_is_main;
+  has_others_ = false;
+  for (const OwnDeviceView& device : view_.devices) {
+    has_others_ = has_others_ || !device.is_this_device;
+  }
   DataModelHost& host = DataModelHost::Instance();
   host.Dirty("settings", "own_device_rows");
   host.Dirty("settings", "own_devices_shown");
   host.Dirty("settings", "own_devices_signed_out");
   host.Dirty("settings", "own_devices_not_main");
+  host.Dirty("settings", "own_has_other_devices");
 }
 
 const OwnDeviceView* SettingsOwnDevices::ManageableAt(const int index) const {
@@ -93,6 +105,36 @@ void SettingsOwnDevices::MakeMain(const int index) {
                 Tr("settings.security.devices.make_main_confirm_message"),
                 Tr("settings.security.devices.make_main_confirm_ok"), commands_.make_main_device,
                 Tr("settings.security.devices.made_main"));
+}
+
+std::vector<ContextMenuAction> SettingsOwnDevices::DeviceActions(const int index) {
+  std::vector<ContextMenuAction> actions;
+  if (!ManageableAt(index)) {
+    return actions;
+  }
+  actions.push_back({.id = "own_device_make_main",
+                     .label = Tr("settings.security.devices.make_main"),
+                     .enabled = {},
+                     .run = [this, index]() { MakeMain(index); }});
+  ContextMenuAction remove{.id = "own_device_remove",
+                           .label = Tr("settings.security.devices.remove"),
+                           .enabled = {},
+                           .run = [this, index]() { Remove(index); }};
+  remove.danger = true;
+  actions.push_back(std::move(remove));
+  ContextMenuAction cancel{"own_device_cancel", Tr("common.cancel"), nullptr, []() {}};
+  cancel.cancel = true;
+  actions.push_back(std::move(cancel));
+  return actions;
+}
+
+void SettingsOwnDevices::ShowDeviceActions(ui::Event& ev, const int index) {
+  std::vector<ContextMenuAction> actions = DeviceActions(index);
+  if (actions.empty()) {
+    return;
+  }
+  ContextMenuHost::Instance().ShowActions(MenuPositionBelowEvent(ev), std::move(actions), {},
+                                          view_.devices[static_cast<size_t>(index)].label);
 }
 
 void SettingsOwnDevices::ConfirmChange(const int index, const std::string& title, const std::string& message,

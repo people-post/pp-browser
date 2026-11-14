@@ -379,8 +379,12 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       {"devices", "open_security_page('transfer')", "-", 1, 0},
       {"devices", "ask_setting_help('settings.security.transfer_row')", "-", 1, 0},
       {"devices", "export_link_device()", "security_can_export_link && !own_devices_not_main", 0, 1},
-      {"devices", "make_main_device(device_index)", "own_devices_shown;;device.can_manage", 1, 1},
-      {"devices", "remove_own_device(device_index)", "own_devices_shown;;device.can_manage", 1, 1},
+      // The phone's device rows moved into a sheet (open_own_device_actions); its two actions run the same Remove /
+      // MakeMain the desktop buttons' events run (SettingsOwnDevicesTest). The desktop keeps one element per event.
+      {"devices", "make_main_device(device_index)", "own_devices_shown;;device.can_manage", 0, 1},
+      {"devices", "remove_own_device(device_index)", "own_devices_shown;;device.can_manage", 0, 1},
+      {"devices", "open_own_device_actions(device_index)",
+       "own_devices_shown;;own_has_other_devices;;device.can_manage", 1, 0},
       {"devices", "save_account_copy()", "security_has_recovery_phrase", 1, 1},
       {"devices", "ask_setting_help('settings.help.topic.account_copy')", "security_has_recovery_phrase", 1, 1},
   };

@@ -1,43 +1,46 @@
       <div class="settings-section settings-section--grouped settings-mock stack">
-        <div class="group-card settings-phone-only">
-          <div class="group-row group-row--q">
-            <button class="group-row-tap" type="button" data-event-click="open_security_page('transfer')">
-              <span class="group-row-text">{{i18n:settings.security.transfer_row}}</span>
-              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
-            </button>
-            <button class="settings-q-btn group-row-q" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
-          </div>
-        </div>
-        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.devices.transfer_help}}</p>
         <div class="settings-desktop-only">
 {{include:settings_security_transfer}}
         </div>
         <div class="stack settings-actions" data-if="own_devices_shown">
-          <p class="text group-head">{{i18n:settings.security.devices}}</p>
-          <div data-for="device, device_index : own_device_rows" class="settings-device-row stack group-card">
-            <div class="settings-phone-only">
+          <div class="stack settings-phone-only">
+            <!-- Phones: this device (display only), the other devices (rows open the action sheet on the main device), then the actions below. -->
+            <p class="text group-head">{{i18n:settings.security.devices.this_device}}</p>
+            <div class="group-card">
               <div class="group-row group-row--static">
                 <span class="group-row-body">
-                  <span class="group-row-label"><span class="group-row-text">{{device.label}}</span></span>
-                  <span class="group-row-value" data-if="device.is_main">{{i18n:settings.security.devices.main}}</span>
+                  <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.devices.identity}}</span></span>
+                  <span class="group-row-value" data-if="!own_devices_not_main">{{i18n:settings.security.devices.main}}</span>
+                  <span class="group-row-value" data-if="own_devices_not_main">{{i18n:settings.security.devices.linked}}</span>
                 </span>
               </div>
-              <div data-if="device.can_manage">
-                <button class="group-row" type="button"
-                        data-event-click="make_main_device(device_index)">
-                  <span class="group-row-body">
-                    <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.devices.make_main}}</span></span>
-                  </span>
-                </button>
-                <button class="group-row group-row--danger" type="button"
-                        data-event-click="remove_own_device(device_index)">
-                  <span class="group-row-body">
-                    <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.devices.remove}}</span></span>
-                  </span>
-                </button>
+            </div>
+            <p class="text group-head">{{i18n:settings.security.devices.other}}</p>
+            <div class="group-card" data-if="own_has_other_devices">
+              <div data-for="device, device_index : own_device_rows">
+                <div data-if="!device.is_this_device && !device.can_manage">
+                  <div class="group-row group-row--static">
+                    <span class="group-row-body">
+                      <span class="group-row-label"><span class="group-row-text">{{device.label}}</span></span>
+                      <span class="group-row-value" data-if="device.is_main">{{i18n:settings.security.devices.main}}</span>
+                    </span>
+                  </div>
+                </div>
+                <div data-if="device.can_manage">
+                  <button class="group-row" type="button" data-event-click="open_own_device_actions(device_index)">
+                    <span class="group-row-body">
+                      <span class="group-row-label"><span class="group-row-text">{{device.label}}</span></span>
+                      <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
-            <div class="stack settings-desktop-only">
+            <p class="text muted group-foot" data-if="!own_has_other_devices">{{i18n:settings.security.devices.none}}</p>
+          </div>
+          <p class="text group-head settings-desktop-only">{{i18n:settings.security.devices}}</p>
+          <div data-for="device, device_index : own_device_rows" class="settings-device-row stack group-card settings-desktop-only">
+            <div class="stack">
               <div class="row settings-device-title">
                 <p class="text">{{device.label}}</p>
                 <span class="settings-device-badge" data-if="device.is_main">{{i18n:settings.security.devices.main}}</span>
@@ -56,17 +59,31 @@
             {{i18n:settings.security.devices.not_main}}
           </p>
         </div>
-        <div class="stack settings-actions" data-if="security_has_recovery_phrase">
-          <div class="group-card settings-phone-only">
-            <div class="group-row">
-              <span class="group-row-body">
-                <button class="group-row-tap" type="button" data-event-click="save_account_copy()">
-                  <span class="group-row-text">{{i18n:settings.security.copy.save}}</span>
-                </button>
-                <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.account_copy')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
-              </span>
+        <!-- Phones: the actions as one group, one caption. -->
+        <div class="stack settings-phone-only">
+          <div class="group-card">
+            <div class="group-row group-row--q">
+              <button class="group-row-tap" type="button" data-event-click="open_security_page('transfer')">
+                <span class="group-row-text">{{i18n:settings.security.transfer_row}}</span>
+                <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+              </button>
+              <button class="settings-q-btn group-row-q" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
+            </div>
+            <div data-if="security_has_recovery_phrase">
+              <div class="group-row">
+                <span class="group-row-body">
+                  <button class="group-row-tap" type="button" data-event-click="save_account_copy()">
+                    <span class="group-row-text">{{i18n:settings.security.copy.save}}</span>
+                  </button>
+                  <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.account_copy')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
+                </span>
+              </div>
             </div>
           </div>
+          <p class="text muted settings-help group-foot" data-if="!security_has_recovery_phrase">{{i18n:settings.devices.transfer_help}}</p>
+          <p class="text muted settings-help group-foot" data-if="security_has_recovery_phrase">{{i18n:settings.devices.actions_help}}</p>
+        </div>
+        <div class="stack settings-actions settings-desktop-only" data-if="security_has_recovery_phrase">
           <p class="text muted settings-help group-foot">{{i18n:settings.security.copy.help}}</p>
           <div class="settings-toggle-row row group-actions settings-desktop-only">
             <button class="btn" type="button" data-event-click="save_account_copy()">

@@ -78,24 +78,35 @@ data-event-click="toggle_biometric()"	1	security	security	security_biometric_sho
 {{recovery_phrase}}	1	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
 {{security_biometric_label}}	1	-	security	security_biometric_shown	security	
 {{unlock_grace_label}}	1	-	security	security_grace_shown	security	
-{{i18n:settings.devices.transfer_help}}	1	-	devices	-	devices	
 data-event-click="ask_setting_help('settings.help.topic.account_copy')"	2	-	devices	security_has_recovery_phrase	security	
 data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	-	security	
-data-event-click="make_main_device(device_index)"	2	-	devices	own_devices_shown;;device.can_manage	security	
+data-event-click="make_main_device(device_index)"	1	-	devices	own_devices_shown;;device.can_manage	security	
 data-event-click="open_security_page('transfer')"	1	-	devices	-	security	
-data-event-click="remove_own_device(device_index)"	2	-	devices	own_devices_shown;;device.can_manage	security	
+data-event-click="remove_own_device(device_index)"	1	-	devices	own_devices_shown;;device.can_manage	security	
 data-event-click="save_account_copy()"	2	-	devices	security_has_recovery_phrase	security	
-{{device.label}}	2	-	devices	own_devices_shown	security	
+{{device.label}}	1	-	devices	own_devices_shown	security	
+{{device.label}}	1	-	devices	own_devices_shown;;own_has_other_devices;;device.can_manage	devices	
+{{device.label}}	1	-	devices	own_devices_shown;;own_has_other_devices;;!device.is_this_device && !device.can_manage	devices	
 {{i18n:settings.security.copy.help}}	1	-	devices	security_has_recovery_phrase	security	
 {{i18n:settings.security.copy.save}}	2	-	devices	security_has_recovery_phrase	security	
 {{i18n:settings.security.devices.help}}	1	-	devices	own_devices_shown	security	
-{{i18n:settings.security.devices.main}}	2	-	devices	own_devices_shown;;device.is_main	security	
-{{i18n:settings.security.devices.make_main}}	2	-	devices	own_devices_shown;;device.can_manage	security	
+{{i18n:settings.security.devices.main}}	1	-	devices	own_devices_shown;;device.is_main	security	
+{{i18n:settings.security.devices.main}}	1	-	devices	own_devices_shown;;!own_devices_not_main	devices	
+{{i18n:settings.security.devices.main}}	1	-	devices	own_devices_shown;;own_has_other_devices;;!device.is_this_device && !device.can_manage;;device.is_main	devices	
+{{i18n:settings.security.devices.make_main}}	1	-	devices	own_devices_shown;;device.can_manage	security	
 {{i18n:settings.security.devices.not_main}}	1	-	devices	own_devices_shown;;own_devices_not_main && !own_devices_signed_out	security	
-{{i18n:settings.security.devices.remove}}	2	-	devices	own_devices_shown;;device.can_manage	security	
+{{i18n:settings.security.devices.remove}}	1	-	devices	own_devices_shown;;device.can_manage	security	
 {{i18n:settings.security.devices.signed_out}}	1	-	devices	own_devices_shown;;own_devices_signed_out	security	
 {{i18n:settings.security.devices}}	1	-	devices	own_devices_shown	security	
 {{i18n:settings.security.transfer_row}}	1	-	devices	-	security	
+data-event-click="open_own_device_actions(device_index)"	1	-	devices	own_devices_shown;;own_has_other_devices;;device.can_manage	devices	
+{{i18n:settings.devices.actions_help}}	1	-	devices	security_has_recovery_phrase	devices	
+{{i18n:settings.devices.transfer_help}}	1	-	devices	!security_has_recovery_phrase	security	
+{{i18n:settings.security.devices.identity}}	1	-	devices	own_devices_shown	devices	
+{{i18n:settings.security.devices.linked}}	1	-	devices	own_devices_shown;;own_devices_not_main	devices	
+{{i18n:settings.security.devices.none}}	1	-	devices	own_devices_shown;;!own_has_other_devices	devices	
+{{i18n:settings.security.devices.other}}	1	-	devices	own_devices_shown	devices	
+{{i18n:settings.security.devices.this_device}}	1	-	devices	own_devices_shown	devices	
 data-class-settings-switch--on="show_notification_preview == 'on'"	1	-	notifications	-	profile	
 data-class-settings-switch--on="show_notifications == 'on'"	1	-	notifications	-	profile	
 data-class-settings-switch--on="stay_connected == 'on'"	1	-	notifications	stay_connected_available	profile	
