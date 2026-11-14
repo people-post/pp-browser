@@ -179,7 +179,8 @@ TEST(DevicesTransferMarkupTest, TheNewCaptionsExistInBothLanguagesAndReadAsAgree
   EXPECT_NE(en.find("\"Linking a new device or removing one is done on the main device.\""), std::string::npos);
   EXPECT_NE(en.find("\"Use the same account on other devices\""), std::string::npos);
   EXPECT_NE(en.find("\"No other devices linked yet.\""), std::string::npos);
-  EXPECT_NE(en.find("\"Changing phones: link the new phone, make it the main device, then remove the old one.\""),
+  EXPECT_NE(en.find("\"Changing phones: link the new phone, make it the main device, then remove the old phone from "
+                    "the new one.\""),
             std::string::npos);
 }
 

@@ -1657,7 +1657,7 @@ void ChatController::ApplySessionList() {
     }
   }
   // The drawer's count line is the whole list's, whatever the search box has filtered out.
-  const ui::String ai_count_label = AiDrawerCountLabel(list.ai_rows.size()).c_str();
+  const ui::String ai_count_label = AiDrawerCountLabel(list.ai_rows.size(), list.showing_archived_ai).c_str();
   if (ai_count_label != shell_.ai_sessions_count_label) {
     shell_.ai_sessions_count_label = ai_count_label;
     DataModelHost::Instance().Dirty("shell", "ai_sessions_count_label");

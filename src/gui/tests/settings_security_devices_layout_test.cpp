@@ -114,8 +114,12 @@ TEST(DevicesLayoutTest, TheMainDevicesButtonIsAPrimaryButtonWithTheOldEventAndTh
 
 TEST(DevicesLayoutTest, TheDeviceLimitInTheHeroLineIsTheOneTheAccountCardEnforces) {
   ASSERT_EQ(kMaxAccountCardDevices, 5u) << "hero_sub names the number";
-  EXPECT_NE(ReadAsset("locales/zh-Hans.json").find("\"最多 5 台。新设备上看不到以前的聊天记录。\""), std::string::npos);
-  EXPECT_NE(ReadAsset("locales/en.json").find("\"Up to 5 devices. Earlier chats do not appear on a new device.\""),
+  EXPECT_NE(
+      ReadAsset("locales/zh-Hans.json").find("\"这个账号最多同时在 5 台设备上使用。新设备上看不到以前的聊天记录。\""),
+      std::string::npos);
+  EXPECT_NE(ReadAsset("locales/en.json")
+                .find("\"This account can be used on up to 5 devices at a time. Earlier chats do not appear on a new "
+                      "device.\""),
             std::string::npos);
 }
 
@@ -137,7 +141,7 @@ TEST(DevicesLayoutTest, TheNewStringsExistInBothLanguages) {
        {"\"在其他设备上使用同一个账号\"", "\"本机 · 主设备\"", "\"点一台设备，可以移除它，或把它设为主设备。\"",
         "\"这个账号的设备\"", "\"这台手机是关联到你账号上的设备。\"", "\"关联新设备、移除设备，要在主设备上操作。\"",
         "\"如果主设备已经不在了，目前没办法在这台手机上移除设备。\"", "\"还没有关联其他设备。\"",
-        "\"换手机：先关联新手机，再把它设为主设备，最后移除旧手机。\""}) {
+        "\"换手机：先关联新手机，再把它设为主设备，最后在新手机上移除旧手机。\""}) {
     EXPECT_NE(zh.find(line), std::string::npos) << line;
   }
 }

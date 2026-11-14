@@ -64,6 +64,26 @@ TEST(LinkedDevicesWordingTest, OnlyTheGroupOwnerStringMayStillSayTransferInEngli
   EXPECT_EQ(KeysWithValueContaining(Asset("locales/en.json"), "transfer", true), allowed);
 }
 
+// 2026-11-14 review: the feature is "linking" (关联), not "moving" (搬) the account. These are the strings that describe
+// it: the first-run fork, the reset dialog that points back to it, and the "linked" toast. No 搬 may come back in them.
+TEST(LinkedDevicesWordingTest, TheLinkingStringsNeverSayMoveInChinese) {
+  const std::string zh = Asset("locales/zh-Hans.json");
+  EXPECT_TRUE(KeysWithValueContaining(zh, "搬", false).empty()) << "no 搬 anywhere in the Chinese strings";
+  for (const char* key : {"pin.link_imported", "pin.identity_fork_message", "settings.storage.reset_confirm_message"}) {
+    EXPECT_EQ(KeysWithValueContaining(zh, "关联", false).count(key), 1u) << key << " says 关联";
+  }
+  EXPECT_NE(zh.find("\"pin.link_imported\": \"已关联到这台设备\""), std::string::npos);
+}
+
+TEST(LinkedDevicesWordingTest, TheLinkingStringsSayLinkInEnglish) {
+  const std::string en = Asset("locales/en.json");
+  EXPECT_NE(en.find("\"pin.link_imported\": \"Linked to this device\""), std::string::npos);
+  for (const char* key : {"pin.identity_fork_message", "settings.storage.reset_confirm_message"}) {
+    EXPECT_EQ(KeysWithValueContaining(en, "link this device", true).count(key), 1u) << key;
+    EXPECT_EQ(KeysWithValueContaining(en, "bring", true).count(key), 0u) << key << " no longer says bring";
+  }
+}
+
 TEST(LinkedDevicesWordingTest, TheTitlesAndTheCodeUseTheAgreedWords) {
   const std::string zh = Asset("locales/zh-Hans.json");
   const std::string en = Asset("locales/en.json");

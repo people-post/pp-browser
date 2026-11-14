@@ -572,6 +572,10 @@ TEST(AiDrawerStripTest, TheCountLineIsTheWholeListsNotTheSearchsAndEmptyWhenTher
     EXPECT_EQ(AiDrawerCountLabel(0), "") << "empty history: nothing in the strip";
     EXPECT_EQ(AiDrawerCountLabel(1), en ? "1 conversation" : "共 1 个对话");
     EXPECT_EQ(AiDrawerCountLabel(23), en ? "23 conversations" : "共 23 个对话");
+    // The archived view says what it counts.
+    EXPECT_EQ(AiDrawerCountLabel(0, true), "");
+    EXPECT_EQ(AiDrawerCountLabel(1, true), en ? "1 archived conversation" : "共 1 个已归档对话");
+    EXPECT_EQ(AiDrawerCountLabel(23, true), en ? "23 archived conversations" : "共 23 个已归档对话");
   }
   LocalizationService::Instance().SetPreferredLanguage("en");
   // A search narrows ai_sessions, not the count: ApplySessionList passes the unfiltered row count.
@@ -579,7 +583,7 @@ TEST(AiDrawerStripTest, TheCountLineIsTheWholeListsNotTheSearchsAndEmptyWhenTher
   std::stringstream text;
   text << source.rdbuf();
   const std::string controller = text.str();
-  const size_t count = controller.find("AiDrawerCountLabel(list.ai_rows.size())");
+  const size_t count = controller.find("AiDrawerCountLabel(list.ai_rows.size(), list.showing_archived_ai)");
   const size_t filter = controller.find("const std::string ai_query = LowerAscii(shell_.ai_sessions_query.c_str());");
   ASSERT_NE(count, std::string::npos);
   ASSERT_NE(filter, std::string::npos);
