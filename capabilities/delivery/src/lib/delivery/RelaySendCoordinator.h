@@ -64,6 +64,8 @@ public:
   /** Tests: the clock (Unix ms). */
   void SetClock(std::function<int64_t()> now_ms) { now_ms_ = std::move(now_ms); }
   RelayHealth& Health() { return health_; }
+  /** The client for an origin (ours, else a foreign one the factory accepts); null when none. */
+  std::shared_ptr<IRelayClient> ClientFor(const std::string& origin);
 
   Roe<void> Send(const RelayEnvelope& envelope) override;
   Roe<RelayPollResult> PollInbox(const std::string& requester_account_id, const std::string& cursor) override;
@@ -82,7 +84,6 @@ private:
 
   std::vector<std::string> ListFor(const std::string& recipient, bool to_self);
   Pass SendAlong(const std::vector<std::string>& origins, const RelayEnvelope& envelope);
-  std::shared_ptr<IRelayClient> ClientFor(const std::string& origin);
   std::shared_ptr<IRelayClient> Preferred() const;
   std::vector<std::string> OurOrigins() const;
   /**
