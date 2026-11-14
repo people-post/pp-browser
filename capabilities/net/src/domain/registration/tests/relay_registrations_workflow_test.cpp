@@ -286,5 +286,32 @@ TEST_F(RelayRegistrationsWorkflowTest, ARelayRemovedWhileItRegistersIsRevokedAft
   EXPECT_TRUE(workflow_->Due(kNow + 2000).empty()) << "a relay leaving is not registered on again";
 }
 
+TEST_F(RelayRegistrationsWorkflowTest, CloseWaitsForARunInProgressAndNothingRunsAfter) {
+  // The profile closes (Shutdown, a reset) while the timer's run registers: Close returns once that run ended, and a
+  // run queued before it then does nothing — the identity it would read is about to go.
+  RegisterOnPreferred();
+  std::promise<void> entered;
+  std::promise<void> release;
+  std::shared_future<void> released = release.get_future().share();
+  client_->on_finish = [&entered, released]() {
+    entered.set_value();
+    released.wait();
+  };
+  std::thread run([this]() { workflow_->RunDue(kNow); });
+  entered.get_future().wait();
+  auto closed = std::async(std::launch::async, [this]() { workflow_->Close(); });
+  EXPECT_EQ(closed.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout) << "Close waits for the run";
+  release.set_value();
+  run.join();
+  closed.get();
+  client_->on_finish = nullptr;
+  card_ = CardIssuedAt(2000);
+  EXPECT_TRUE(workflow_->Due(kNow).empty());
+  workflow_->RunDue(kNow + 1000);
+  workflow_->RevokeAll();
+  EXPECT_FALSE(static_cast<bool>(workflow_->Revoke(kOther)));
+  EXPECT_EQ(client_->events, (std::vector<std::string>{"finish"})) << "nothing is asked once closed";
+}
+
 } // namespace
 } // namespace pbr

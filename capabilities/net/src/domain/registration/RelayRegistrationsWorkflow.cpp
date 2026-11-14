@@ -60,6 +60,9 @@ bool RelayRegistrationsWorkflow::DueLocked(const State& state, const int64_t now
 }
 
 std::vector<std::string> RelayRegistrationsWorkflow::Due(const int64_t now_ms) {
+  if (closed_.load(std::memory_order_acquire)) {
+    return {};
+  }
   auto identity = identity_.Get();
   if (!identity || !identity->registered || identity->account_id.empty()) {
     return {}; // registering is the person's act, on the preferred relay first
@@ -77,7 +80,7 @@ std::vector<std::string> RelayRegistrationsWorkflow::Due(const int64_t now_ms) {
 
 void RelayRegistrationsWorkflow::RunDue(const int64_t now_ms) {
   const std::unique_lock running(run_mutex_, std::try_to_lock);
-  if (!running.owns_lock()) {
+  if (!running.owns_lock() || closed_.load(std::memory_order_acquire)) {
     return;
   }
   const std::vector<std::string> due = Due(now_ms);
@@ -200,6 +203,9 @@ Roe<void> RelayRegistrationsWorkflow::Revoke(const std::string& origin) {
   }
   // After a run in progress: its registration there, if any, is the one this removes.
   const std::lock_guard after_run(run_mutex_);
+  if (closed_.load(std::memory_order_acquire)) {
+    return Error("closed");
+  }
   return RevokeRegistrationWithIdentity(*client, identity_);
 }
 
@@ -214,12 +220,20 @@ void RelayRegistrationsWorkflow::RevokeAll() {
     }
   }
   const std::lock_guard after_run(run_mutex_);
+  if (closed_.load(std::memory_order_acquire)) {
+    return;
+  }
   for (const Relay& relay : relays) {
     if (auto revoked = RevokeRegistrationWithIdentity(*relay.client, identity_); !revoked) {
       log().warning << "revoke on " << NormalizeRegistrationBackend(relay.origin)
                     << " failed: " << revoked.error().message;
     }
   }
+}
+
+void RelayRegistrationsWorkflow::Close() {
+  closed_.store(true, std::memory_order_release);
+  const std::lock_guard after_run(run_mutex_); // a run or a revoke in progress ends first
 }
 
 } // namespace pbr

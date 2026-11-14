@@ -303,8 +303,8 @@ void ConversationsHub::WireOurRelays() {
       others.push_back({.origin = relay.origin, .client = relay.registration, .last = std::move(last)});
     }
   }
-  if (relay_registrations_) {
-    relay_registrations_->SetRelays(std::move(others));
+  if (const auto registrations = OtherRelayRegistrations()) {
+    registrations->SetRelays(std::move(others));
   }
   if (contact_refresh_) {
     contact_refresh_->SetOurRelays(CardDirectories()); // the Refresh asks them after the contact's own relays
@@ -352,10 +352,12 @@ void ConversationsHub::NotifyOurRelaysChanged() {
 
 void ConversationsHub::RegisterOnOtherRelaysSoon() {
   AppRuntime::PostWorkerNormal([this]() {
-    if (!relay_registrations_ || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
+    // A copy: Shutdown may take the workflow meanwhile; once it is closed this run does nothing.
+    const auto registrations = OtherRelayRegistrations();
+    if (!registrations || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
       return;
     }
-    relay_registrations_->RunDue(util::NowUnixMs());
+    registrations->RunDue(util::NowUnixMs());
   });
 }
 
@@ -369,9 +371,9 @@ std::vector<std::string> ConversationsHub::OurRelayOrigins() const {
 
 std::vector<std::pair<std::string, IPushDeviceClient*>> ConversationsHub::OtherRelayPushDevices() {
   std::vector<std::pair<std::string, IPushDeviceClient*>> out;
+  const auto registrations = OtherRelayRegistrations();
   for (const BackendClientSet::OurRelay& relay : clients_.OurRelays()) {
-    if (relay.registration && relay.push_devices && relay_registrations_ &&
-        relay_registrations_->Registered(relay.origin)) {
+    if (relay.registration && relay.push_devices && registrations && registrations->Registered(relay.origin)) {
       out.emplace_back(relay.origin, relay.push_devices.get());
     }
   }
@@ -1053,9 +1055,10 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   CloseMyRelays(); // a profile reset: the old workflow (closed at Shutdown) goes before the store it changes
   our_relays_ = std::make_unique<OurRelaysStore>(data_dir_);
   our_relays_->LoadOrSeed(clients_.OrgRelayOf({.relay = settings.relay}), settings.relay_extra_base_urls);
-  relay_registrations_ = std::make_unique<RelayRegistrationsWorkflow>(*identity_);
-  relay_registrations_->SetCard([this]() { return RegistrationCard(); });
-  relay_registrations_->SetOnResult([this](const std::string& origin, const RelayRegistrationRecord& record) {
+  CloseRelayRegistrations(); // a reset: closed at Shutdown already
+  auto registrations = std::make_shared<RelayRegistrationsWorkflow>(*identity_);
+  registrations->SetCard([this]() { return RegistrationCard(); });
+  registrations->SetOnResult([this](const std::string& origin, const RelayRegistrationRecord& record) {
     if (our_relays_) {
       our_relays_->Record(origin, record);
     }
@@ -1066,8 +1069,12 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
     my_relays_ = std::make_shared<MyRelaysWorkflow>(*our_relays_, MyRelaysPorts());
   }
   // A relay that took our registration takes our push token too (any relay holding mail can wake the phone).
-  relay_registrations_->SetOnRegistered(
+  registrations->SetOnRegistered(
       [this](const std::string& origin) { (void)PushDeviceCoordinator::RegisterOn(*this, origin); });
+  {
+    std::lock_guard lock(relay_registrations_mu_);
+    relay_registrations_ = std::move(registrations);
+  }
   initiation_billing_ = std::make_unique<InitiationBillingStore>(data_dir_);
   (void)initiation_billing_->Load();
   payment_promises_ = std::make_unique<PaymentPromiseStore>(data_dir_);
@@ -1282,8 +1289,10 @@ void ConversationsHub::BuildMessagingObjects() {
                                                  *psk_store_, *group_roster_, group_invite_gate_.get());
   SetCardRelays(); // before the first card is asked for
   // Another relay of ours is polled once it holds our registration.
-  mesh_messaging_->SetInboxReady(
-      [this](const std::string& origin) { return relay_registrations_ && relay_registrations_->Registered(origin); });
+  mesh_messaging_->SetInboxReady([this](const std::string& origin) {
+    const auto registrations = OtherRelayRegistrations();
+    return registrations && registrations->Registered(origin);
+  });
   mesh_messaging_->SetSystemControls(&system_controls_);
   // The relay's poll results feed the status line (#175); a fresh orchestrator starts with no result.
   mesh_messaging_->SetOnBriefRelayHealthChanged(
@@ -3684,8 +3693,10 @@ void ConversationsHub::Shutdown() {
   }
 
   shutdown_requested_.store(true, std::memory_order_release);
-  // My relays first: a change in progress ends (its ports stop here) before anything it touches goes.
+  // My relays first: a change in progress ends (its ports stop here) before anything it touches goes; then the
+  // other relays' registrations (a queued run, a revoke), before the identity they sign with.
   CloseMyRelays();
+  CloseRelayRegistrations();
   // The unknown-network timer (and its UI post) of this run never reach the hub again; a later run arms its own.
   attachment_network_lifetime_.InvalidateAndWait();
   attachment_network_timer_armed_.store(false);
@@ -3842,7 +3853,6 @@ void ConversationsHub::Shutdown() {
     std::lock_guard lock(blob_mu_);
     blob_.reset();
   }
-  relay_registrations_.reset();
   identity_.reset();
   if (contacts_) {
     contacts_->SetOnChanged({});
@@ -4010,6 +4020,22 @@ bool ConversationsHub::RunOnHubThread(std::function<void()> task) {
   return true;
 }
 
+std::shared_ptr<RelayRegistrationsWorkflow> ConversationsHub::OtherRelayRegistrations() const {
+  std::lock_guard lock(relay_registrations_mu_);
+  return relay_registrations_;
+}
+
+void ConversationsHub::CloseRelayRegistrations() {
+  std::shared_ptr<RelayRegistrationsWorkflow> closing;
+  {
+    std::lock_guard lock(relay_registrations_mu_);
+    closing = std::move(relay_registrations_);
+  }
+  if (closing) {
+    closing->Close();
+  }
+}
+
 std::shared_ptr<MyRelaysWorkflow> ConversationsHub::MyRelays() const {
   std::lock_guard lock(my_relays_mu_);
   return my_relays_;
@@ -4068,10 +4094,11 @@ MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {
     if (auto unbound = PushDeviceCoordinator::UnregisterOn(*this, origin); !unbound) {
       log().info << "push binding on " << origin << " not removed: " << unbound.error().message;
     }
-    if (!relay_registrations_) {
+    const auto registrations = OtherRelayRegistrations();
+    if (!registrations) {
       return {};
     }
-    return relay_registrations_->Revoke(origin); // with the account's push devices there
+    return registrations->Revoke(origin); // with the account's push devices there
   };
   ports.register_preferred = [this]() -> Roe<void> {
     if (shutdown_requested_.load(std::memory_order_acquire)) {

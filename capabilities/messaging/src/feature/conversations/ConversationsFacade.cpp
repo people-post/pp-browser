@@ -1492,7 +1492,7 @@ Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std:
 
 Roe<void> ConversationsFacade::RevokeRegistration() {
   // Our other relays first (best effort, multi-relay R2), while the identity still says it is registered.
-  if (RelayRegistrationsWorkflow* others = hub_.OtherRelayRegistrations()) {
+  if (const auto others = hub_.OtherRelayRegistrations()) {
     others->RevokeAll();
   }
   return pbr::RevokeRegistrationWithIdentity(hub_.Registration(), hub_.Identity());

@@ -641,7 +641,7 @@ public:
       // Our relays (multi-relay R2): preferred first, whether each other one holds our registration, and our card's.
       Object out = Reply(id, true);
       std::vector<Value> ours;
-      RelayRegistrationsWorkflow* others = Hub().OtherRelayRegistrations();
+      const auto others = Hub().OtherRelayRegistrations();
       for (const std::string& origin : Hub().OurRelayOrigins()) {
         Object row;
         row.set("origin", origin);

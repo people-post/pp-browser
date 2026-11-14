@@ -5,6 +5,7 @@
 #include "lib/people/IdentityStore.h"
 #include "common/Module.h"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -69,6 +70,11 @@ public:
    * is dropped (not reported, its push not bound); the revoke waits for a RunDue in progress, so it comes after.
    */
   Roe<void> Revoke(const std::string& origin);
+  /**
+   * The profile closes: from now on nothing is due, RunDue and the revokes do nothing (and touch neither the identity
+   * nor the hooks), and once this returns no run or revoke is in progress (it waits for one).
+   */
+  void Close();
 
 private:
   struct State {
@@ -94,8 +100,9 @@ private:
   std::function<void(const std::string&, const RelayRegistrationRecord&)> on_result_;
   mutable std::mutex mutex_;
   std::vector<State> states_;
-  /** Held by a RunDue for its whole run (a second one skips); a revoke waits for it. */
+  /** Held by a RunDue for its whole run (a second one skips); a revoke and Close wait for it. */
   std::mutex run_mutex_;
+  std::atomic<bool> closed_{false};
 };
 
 } // namespace pbr
