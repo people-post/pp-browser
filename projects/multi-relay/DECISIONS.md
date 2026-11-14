@@ -14,7 +14,7 @@
 ## MR002 — The relay list lives in the account card
 
 **Date:** 2026-11-12
-**Status:** Accepted (Hongwei, 2026-11-12). The field built (R2 step 2: card version 3, kept per contact; the relay stores and serves it); sending by it not yet (R2 step 3). Shipped form: [ACCOUNT_CARD § Account card](../../docs/contracts/ACCOUNT_CARD.md#account-card).
+**Status:** Accepted (Hongwei, 2026-11-12). The field built (R2 step 2: card version 3, kept per contact; the relay stores and serves it); sending by it built (R2 step 3). Shipped form: [ACCOUNT_CARD § Account card](../../docs/contracts/ACCOUNT_CARD.md#account-card), [SERVICE_ENDPOINTS § Sending by the list](../../docs/contracts/SERVICE_ENDPOINTS.md#sending-by-the-list).
 **Decision:** An account's relays, preferred first, are a field of its signed account card (`relays`). The newest card wins, as for its devices.
 **Rationale:**
 - The card is already signed by the account key, versioned by `issued_at`, and carried everywhere a contact needs it: the card exchange, contact cards, group bundles and the directory.
@@ -24,7 +24,7 @@
 ## MR003 — Cross-relay delivery is an account-signed send
 
 **Date:** 2026-11-12
-**Status:** Accepted (Hongwei, 2026-11-12). Not built.
+**Status:** Accepted (Hongwei, 2026-11-12). Built: the relay takes a foreign sender's key (R1, `www` #252), the app sends into a recipient's relays, as a foreign sender where it is not registered (R2 step 3). Shipped form: [SERVICE_ENDPOINTS § A send](../../docs/contracts/SERVICE_ENDPOINTS.md#a-send-the-recipient-the-senders-key-the-grant), [§ Sending by the list](../../docs/contracts/SERVICE_ENDPOINTS.md#sending-by-the-list).
 **Decision:**
 - A sender posts straight into the recipient's relay.
 - A relay accepts a sender that is not registered on it when the message carries the sender's ML-DSA key, the key hashes to the sender's Account ID, and the signature verifies.
@@ -38,7 +38,7 @@
 ## MR004 — A relay list is small and bounded
 
 **Date:** 2026-11-12
-**Status:** Accepted (Hongwei asked whether the card could overflow, 2026-11-12). The card's bounds built (R2 step 2, app and relay alike, [ACCOUNT_CARD § Account card](../../docs/contracts/ACCOUNT_CARD.md#account-card)); the QR locator's origin not yet (R4).
+**Status:** Accepted (Hongwei asked whether the card could overflow, 2026-11-12). The card's bounds built (R2 step 2, app and relay alike, [ACCOUNT_CARD § Account card](../../docs/contracts/ACCOUNT_CARD.md#account-card)); our own relays bounded the same (at most 4, R2 step 3, [SERVICE_ENDPOINTS § Several relays](../../docs/contracts/SERVICE_ENDPOINTS.md#several-relays)); the QR locator's origin not yet (R4).
 **Decision:**
 - At most 4 relays.
 - Each origin is an absolute `https://` URL of at most 128 bytes, with no query or fragment.

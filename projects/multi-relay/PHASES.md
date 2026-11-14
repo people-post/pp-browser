@@ -23,13 +23,13 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 
 - [x] `ContactIdKind::RelayUser` and `relay:` ids removed (routes, envelopes, contacts, directory hits, registration, history and stream ids, devices, blobs, files, lockers, profile, revoke, the node heartbeat, the contact refresh); stored ones mapped or dropped (`profile.db` 6, `thread.db` 4, `contacts.json` 3, `identity.enc` 4, `initiation_billing.json` 2).
 - [x] The account card's `relays` field (sign, verify, bounds; card version 3, app and relay); a contact keeps the newest list with its card (`KeptRelays`), the kept version 2 cards stepped (`profile.db` 7); ours lists the relay we register on and goes at `register/finish`.
-- [ ] Clients per relay: register, poll (preferred at pace, others slower), push tokens on each.
+- [x] Clients per relay: register, poll (preferred at pace, others every 4th sync and on every wake), push tokens on each; our other relays from `relay.extra_base_urls` until R3 (step 3).
 - [x] MR005 grants in the app: issued to contacts and group members (and, unrenewed, to the people of a call we answer or are in) over the control lane, acked, renewed, attached to sends, not renewed once blocked or removed; `grant_expired` / `invalid_grant` ask again and send once as a stranger; `payment_required` shows the receiver's price; `stranger_quota_exceeded` retried with backoff, and what it held back goes once the grant arrives.
 - [x] MR005: `initiation_floor` in the account card (`KeptInitiationFloor`); the relay reads a stranger's price from the card it registered with; no floor field at registration.
 - [x] A send the relay answers `sender_key_required` goes again with our key; `recipient_not_registered` is a plain failure (then Amp, when the peer has a link).
-- [ ] Sending in list order with a per-relay health memory; `recipient_not_registered` fetches the card and retries once.
-- [ ] Contracts promoted: ACCOUNT_CARD, SERVICE_ENDPOINTS, WIRE_SCHEMAS, COMPATIBILITY rows (steps 1 and 2 promoted: Account IDs, grants, the errors, card version 3; sending by the list follows).
-- [ ] Lab: two relays; users registered on different ones message and call each other; the preferred relay stopped mid-run.
+- [x] Sending in list order with a per-relay health memory; `recipient_not_registered` fetches the card and retries once (step 3).
+- [x] Contracts promoted: ACCOUNT_CARD, SERVICE_ENDPOINTS, WIRE_SCHEMAS, COMPATIBILITY rows (steps 1 and 2: Account IDs, grants, the errors, card version 3; step 3: SERVICE_ENDPOINTS § Several relays and § Sending by the list, no wire change).
+- [x] Lab: two relays behind TLS; users registered on different ones message and call each other; the preferred relay stopped mid-run (`users_on_two_relays_meet`, `preferred_relay_down_mail_still_arrives`).
 
 ## R3 — UI
 
