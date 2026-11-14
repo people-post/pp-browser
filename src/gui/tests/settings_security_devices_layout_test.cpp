@@ -10,6 +10,7 @@
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "feature/settings/OwnDevices.h"
+#include "lib/people/AccountCard.h"
 
 #include <gtest/gtest.h>
 
@@ -69,27 +70,75 @@ TEST(SecurityLayoutTest, TheRecoveryRowIsOneButtonWithTheOldEventAndAChevron) {
   EXPECT_NE(row.find("group-chevron"), std::string::npos);
 }
 
-TEST(DevicesLayoutTest, TheThisDeviceBlockIsDisplayOnly) {
+// The row of "This phone": display only, no event, no chevron, no button, no press style (group-row--static).
+std::string RowOf(const std::string& rml, const std::string& title_token) {
+  const size_t at = rml.find(title_token);
+  EXPECT_NE(at, std::string::npos) << title_token;
+  const size_t from = rml.rfind("<div class=\"group-row", at);
+  const size_t to = rml.find("</div>", at);
+  return rml.substr(from, to - from);
+}
+
+TEST(DevicesLayoutTest, TheThisPhoneRowsAreDisplayOnlyOnBothPages) {
   const std::string rml = ReadAsset("views/settings_section_devices.rml");
-  const size_t from = rml.find("{{i18n:settings.security.devices.this_device}}</p>");
-  const size_t to = rml.find("{{i18n:settings.security.devices.other}}</p>");
-  ASSERT_NE(from, std::string::npos);
-  ASSERT_GT(to, from);
-  const std::string block = rml.substr(from, to - from);
-  EXPECT_EQ(block.find("<button"), std::string::npos);
-  EXPECT_EQ(block.find("data-event-"), std::string::npos);
-  EXPECT_EQ(block.find("chevron"), std::string::npos);
-  EXPECT_NE(block.find("group-row--static"), std::string::npos);
+  size_t seen = 0;
+  for (const char* tag :
+       {"{{i18n:settings.security.devices.this_phone_main}}", "{{i18n:settings.security.devices.this_phone_tag}}"}) {
+    const std::string row = RowOf(rml, tag);
+    EXPECT_NE(row.find("{{i18n:settings.security.devices.this_phone}}"), std::string::npos) << tag;
+    EXPECT_NE(row.find("group-row--static"), std::string::npos) << tag;
+    EXPECT_EQ(row.find("<button"), std::string::npos) << tag;
+    EXPECT_EQ(row.find("data-event-"), std::string::npos) << tag;
+    EXPECT_EQ(row.find("chevron"), std::string::npos) << tag;
+    ++seen;
+  }
+  EXPECT_EQ(seen, 2u);
+}
+
+TEST(DevicesLayoutTest, TheMainDevicesButtonIsAPrimaryButtonWithTheOldEventAndTheHeroSitsOnPhonesOnly) {
+  const std::string rml = ReadAsset("views/settings_section_devices.rml");
+  const std::string event = "data-event-click=\"open_security_page('transfer')\"";
+  const size_t at = rml.find(event);
+  ASSERT_NE(at, std::string::npos);
+  EXPECT_EQ(rml.find(event, at + 1), std::string::npos) << "one element";
+  const size_t tag = rml.rfind("<button", at);
+  const size_t end = rml.find("</button>", at);
+  const std::string button = rml.substr(tag, end - tag);
+  EXPECT_NE(button.find("class=\"btn btn-primary\""), std::string::npos);
+  EXPECT_NE(button.find("{{i18n:settings.security.transfer_row}}"), std::string::npos);
+  const size_t hero =
+      rml.rfind("<div class=\"settings-phone-only settings-dev-hero\" data-if=\"!own_devices_not_main\">", at);
+  ASSERT_NE(hero, std::string::npos) << "same gate as the row it replaces";
+  EXPECT_LT(at - hero, 1400u);
+}
+
+TEST(DevicesLayoutTest, TheDeviceLimitInTheHeroLineIsTheOneTheAccountCardEnforces) {
+  ASSERT_EQ(kMaxAccountCardDevices, 5u) << "hero_sub names the number";
+  EXPECT_NE(ReadAsset("locales/zh-Hans.json").find("\"最多 5 台。新设备上看不到以前的聊天记录。\""), std::string::npos);
+  EXPECT_NE(ReadAsset("locales/en.json").find("\"Up to 5 devices. Earlier chats do not appear on a new device.\""),
+            std::string::npos);
 }
 
 TEST(DevicesLayoutTest, TheNewStringsExistInBothLanguages) {
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     const std::string text = ReadAsset(locale);
     for (const char* key :
-         {"settings.security.devices.other", "settings.security.devices.identity", "settings.security.devices.linked",
-          "settings.security.devices.none", "settings.devices.actions_help", "settings.security.grace.caption"}) {
+         {"settings.security.devices.none", "settings.security.devices.this_phone",
+          "settings.security.devices.this_phone_main", "settings.security.devices.this_phone_tag",
+          "settings.security.devices.hero", "settings.security.devices.hero_sub", "settings.security.devices.tap_hint",
+          "settings.security.devices.view_head", "settings.security.devices.linked_note",
+          "settings.security.devices.linked_note_sub", "settings.security.devices.linked_note_gone",
+          "settings.security.link_device.change_phone", "settings.security.grace.caption"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
+  }
+  const std::string zh = ReadAsset("locales/zh-Hans.json");
+  for (const char* line :
+       {"\"在其他设备上使用同一个账号\"", "\"本机 · 主设备\"", "\"点一台设备，可以移除它，或把它设为主设备。\"",
+        "\"这个账号的设备\"", "\"这台手机是关联到你账号上的设备。\"", "\"关联新设备、移除设备，要在主设备上操作。\"",
+        "\"如果主设备已经不在了，目前没办法在这台手机上移除设备。\"", "\"还没有关联其他设备。\"",
+        "\"换手机：先关联新手机，再把它设为主设备，最后移除旧手机。\""}) {
+    EXPECT_NE(zh.find(line), std::string::npos) << line;
   }
 }
 
@@ -281,15 +330,14 @@ TEST_F(SettingsOwnDevicesTest, CancellingEitherConfirmIssuesNothing) {
   EXPECT_TRUE(notes_.empty());
 }
 
-TEST(DevicesLayoutTest, ASignedOutDeviceShowsNeitherTheIdentityBlockNorTheEmptyState) {
+TEST(DevicesLayoutTest, ASignedOutDeviceShowsOnlyItsNoticeAmongTheDeviceBlocks) {
   const std::string rml = ReadAsset("views/settings_section_devices.rml");
-  const size_t phone = rml.find("<div class=\"stack settings-phone-only\"");
-  ASSERT_NE(phone, std::string::npos);
-  const size_t tag_end = rml.find('>', phone);
-  EXPECT_NE(rml.substr(phone, tag_end - phone).find("data-if=\"!own_devices_signed_out\""), std::string::npos);
-  EXPECT_GT(rml.find("{{i18n:settings.security.devices.this_device}}"), tag_end);
-  EXPECT_GT(rml.find("{{i18n:settings.security.devices.none}}"), tag_end);
-  // The signed-out notice stays outside that block.
+  // Every phone block of the list carries a gate that excludes a signed-out device (which is also "not main").
+  for (const char* gate : {"data-if=\"own_devices_shown && !own_devices_not_main\"",
+                           "data-if=\"own_devices_not_main && !own_devices_signed_out\""}) {
+    EXPECT_NE(rml.find(gate), std::string::npos) << gate;
+  }
+  EXPECT_NE(rml.find("data-if=\"own_devices_signed_out\""), std::string::npos);
   EXPECT_GT(rml.find("data-if=\"own_devices_signed_out\""), rml.find("{{i18n:settings.security.devices.none}}"));
 }
 

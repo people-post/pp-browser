@@ -3120,6 +3120,21 @@ input.checkbox:checked {
   color: #ffffff;
 }
 
+/* Linked devices: the quiet icon, the sentence, the grey lines. */
+.shell-layer-compact .settings-dev-ill {
+  image-color: #ebebf54c;
+}
+
+.shell-layer-compact .settings-dev-sentence,
+.shell-layer-compact .settings-dev-note-title {
+  color: #ffffff;
+}
+
+.shell-layer-compact .settings-dev-sub,
+.shell-layer-compact .settings-dev-note-line {
+  color: #ebebf599;
+}
+
 /* Plain action rows in a card: accent text on the card, a separator above each. */
 .shell-layer-compact .settings-section--grouped .group-card .btn.settings-action-row,
 .shell-layer-compact .settings-section--grouped .group-card .btn.settings-action-row:hover,

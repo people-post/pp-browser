@@ -33,5 +33,6 @@
     </div>
     <p class="text settings-transfer-pre">{{i18n:settings.security.link_device.precondition}}</p>
     <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.send_hint}}</p>
+    <p class="text settings-transfer-lead">{{i18n:settings.security.link_device.change_phone}}</p>
   </div>
 </div>

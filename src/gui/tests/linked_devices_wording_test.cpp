@@ -73,7 +73,6 @@ TEST(LinkedDevicesWordingTest, TheTitlesAndTheCodeUseTheAgreedWords) {
   EXPECT_NE(zh.find("\"settings.security.link_device.export_done\": \"关联码已复制\""), std::string::npos);
   EXPECT_NE(zh.find("\"settings.security.link_device.export_confirm_title\": \"复制关联码？\""), std::string::npos);
   EXPECT_NE(zh.find("\"pin.link_paste_title\": \"粘贴关联码\""), std::string::npos);
-  EXPECT_NE(zh.find("\"settings.security.transfer_off\": \"关联新设备要在主设备上操作。\""), std::string::npos);
   EXPECT_NE(en.find("\"settings.devices.title\": \"Linked devices\""), std::string::npos);
   EXPECT_NE(en.find("\"settings.security.transfer_row\": \"Link a new device\""), std::string::npos);
   EXPECT_NE(en.find("\"settings.security.link_device.copy_button\": \"Copy link code\""), std::string::npos);

@@ -441,11 +441,10 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       {"security", "hide_recovery_phrase()", "security_has_recovery_phrase;;recovery_phrase != ''", 1, 1},
       {"security", "ask_setting_help('settings.security.recovery')", "security_has_recovery_phrase", 1, 1},
       // Devices: the transfer block is the desktop's inline copy here; phones open it as its own page.
-      // (2026-11-14: the row is not tappable on a linked phone, whose transfer page has nothing to tap.)
+      // (2026-11-14: the phone's top button, on the main device only; a linked phone shows nothing to tap.)
       {"devices", "open_security_page('transfer')", "!own_devices_not_main", 1, 0},
-      // The "?" is on both variants of the row (main: enabled row; linked phone: disabled row).
-      {"devices", "ask_setting_help('settings.security.transfer_row')", "!own_devices_not_main@@own_devices_not_main",
-       2, 0},
+      // The one "?" of the action, next to the top sentence, on the main device only.
+      {"devices", "ask_setting_help('settings.security.transfer_row')", "!own_devices_not_main", 1, 0},
       // Here the phone's button and "Copy again" sit in the transfer block's desktop wrapper (hidden): only the desktop
       // button shows. Their own page is checked in the next test.
       {"devices", "export_link_device()",
@@ -458,7 +457,7 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       {"devices", "make_main_device(device_index)", "own_devices_shown;;device.can_manage", 0, 1},
       {"devices", "remove_own_device(device_index)", "own_devices_shown;;device.can_manage", 0, 1},
       {"devices", "open_own_device_actions(device_index)",
-       "own_devices_shown;;!own_devices_signed_out;;own_has_other_devices;;device.can_manage", 1, 0},
+       "own_devices_shown && !own_devices_not_main;;device.can_manage", 1, 0},
       {"devices", "save_account_copy()", "security_has_recovery_phrase", 1, 1},
       {"devices", "ask_setting_help('settings.help.topic.account_copy')", "security_has_recovery_phrase", 1, 1},
   };
@@ -583,22 +582,53 @@ size_t PhoneShown(const std::vector<std::string>& tokens, const std::set<std::st
 
 } // namespace
 
-TEST(SettingsDevicesCaptionsTest, ThePhoneShowsExactlyOneCaptionUnderTheDeviceListOnEveryDevice) {
+namespace {
+
+// The phone-visible tokens of the Devices page under a state.
+std::set<std::string> PhoneTokens(const std::set<std::string>& facts) {
+  std::set<std::string> shown;
+  for (const Occurrence& o : Scan(View("devices"))) {
+    if ((o.layouts == "phone" || o.layouts == "both") && GateHolds(o.gates, facts)) {
+      shown.insert(o.token);
+    }
+  }
+  return shown;
+}
+
+const std::set<std::string>& MainFacts() {
+  static const std::set<std::string> facts = {"own_devices_shown", "device.can_manage", "security_can_export_link"};
+  return facts;
+}
+
+const std::set<std::string>& LinkedFacts() {
+  // Everything that could switch something on is true: the page must still offer nothing to tap.
+  static const std::set<std::string> facts = {
+      "own_devices_shown", "own_devices_not_main",     "own_has_other_devices",       "device.can_manage",
+      "device.is_main",    "security_can_export_link", "security_has_recovery_phrase"};
+  return facts;
+}
+
+const std::set<std::string>& SignedOutFacts() {
+  static const std::set<std::string> facts = {"own_devices_shown", "own_devices_signed_out", "own_devices_not_main"};
+  return facts;
+}
+
+} // namespace
+
+TEST(SettingsDevicesCaptionsTest, ThePhoneShowsAtMostOneCaptionUnderTheDeviceList) {
   const std::vector<std::string> captions = {
       "{{i18n:settings.security.devices.help}}", "{{i18n:settings.security.devices.not_main}}",
-      "{{i18n:settings.security.devices.not_main_phone}}", "{{i18n:settings.security.devices.signed_out}}"};
-  const std::set<std::string> main_device = {"own_devices_shown"};
-  const std::set<std::string> linked = {"own_devices_shown", "own_devices_not_main"};
-  const std::set<std::string> signed_out = {"own_devices_shown", "own_devices_signed_out", "own_devices_not_main"};
-  const std::set<std::string> signed_out_main_flag = {"own_devices_shown", "own_devices_signed_out"};
-  EXPECT_EQ(PhoneShown(captions, main_device), 1u) << "main device";
-  EXPECT_EQ(PhoneShown(captions, linked), 1u) << "linked (non-main) phone";
-  EXPECT_EQ(PhoneShown(captions, signed_out), 1u) << "signed-out phone";
-  EXPECT_EQ(PhoneShown(captions, signed_out_main_flag), 1u) << "signed-out phone, whatever the main flag says";
-  // On a linked phone it is the one plain sentence, not the main device's.
-  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.not_main_phone}}"}, linked), 1u);
-  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.help}}"}, linked), 0u);
-  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.help}}"}, main_device), 1u);
+      "{{i18n:settings.security.devices.tap_hint}}", "{{i18n:settings.security.devices.none}}",
+      "{{i18n:settings.security.devices.signed_out}}"};
+  std::set<std::string> main_with_others = {"own_devices_shown", "own_has_other_devices"};
+  const std::set<std::string> main_alone = {"own_devices_shown"};
+  EXPECT_EQ(PhoneShown(captions, main_with_others), 1u) << "main device with other devices: the tap hint";
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.tap_hint}}"}, main_with_others), 1u);
+  EXPECT_EQ(PhoneShown(captions, main_alone), 1u) << "main device alone: the grey line";
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.none}}"}, main_alone), 1u);
+  EXPECT_EQ(PhoneShown(captions, LinkedFacts()), 0u) << "a linked phone has its sentence card, no caption";
+  EXPECT_EQ(PhoneShown(captions, SignedOutFacts()), 1u) << "signed-out phone: its notice only";
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.signed_out}}"}, SignedOutFacts()), 1u);
 }
 
 TEST(SettingsDevicesCaptionsTest, TheDesktopKeepsItsCaptionsAsBefore) {
@@ -618,22 +648,13 @@ TEST(SettingsDevicesCaptionsTest, TheDesktopKeepsItsCaptionsAsBefore) {
   EXPECT_EQ(not_main, 1u);
 }
 
-TEST(SettingsDevicesCaptionsTest, ThePhoneShowsExactlyOneCaptionUnderTheActionsGroup) {
-  // The desktop-only copy.help is not a phone caption (the stylesheet hides it, see DevicesStyleTest).
-  const std::vector<std::string> captions = {"{{i18n:settings.devices.transfer_help}}",
-                                             "{{i18n:settings.devices.actions_help}}",
-                                             "{{i18n:settings.security.copy.help}}"};
-  for (const bool phrase : {false, true}) {
-    for (const bool not_main : {false, true}) {
-      std::set<std::string> facts = {"own_devices_shown"};
-      if (phrase) {
-        facts.insert("security_has_recovery_phrase");
-      }
-      if (not_main) {
-        facts.insert("own_devices_not_main");
-      }
-      EXPECT_EQ(PhoneShown(captions, facts), 1u) << "phrase=" << phrase << " not_main=" << not_main;
-    }
+TEST(SettingsDevicesCaptionsTest, ThePhoneShowsNoCaptionUnderTheAccountCopyRow) {
+  // The "?" of the row explains it; the old captions are gone, and the desktop-only copy.help is not a phone caption
+  // (the stylesheet hides it, see DevicesStyleTest).
+  const std::string rml = StripComments(View("devices"));
+  for (const char* gone : {"settings.devices.transfer_help", "settings.devices.actions_help",
+                           "settings.security.transfer_off", "settings.security.devices.not_main_phone"}) {
+    EXPECT_EQ(rml.find(gone), std::string::npos) << gone;
   }
   bool desktop_only = false;
   for (const Occurrence& o : Scan(View("devices"))) {
@@ -644,17 +665,42 @@ TEST(SettingsDevicesCaptionsTest, ThePhoneShowsExactlyOneCaptionUnderTheActionsG
   EXPECT_TRUE(desktop_only);
 }
 
-TEST(SettingsDevicesCaptionsTest, TheTransferRowIsTappableOnTheMainDeviceAndDisabledOnALinkedOne) {
+TEST(SettingsDevicesCaptionsTest, TheLinkButtonIsOnTheMainDeviceOnlyAndALinkedPhoneHasNothingToTap) {
   const std::string tap = "data-event-click=\"open_security_page('transfer')\"";
   const std::string help = "data-event-click=\"ask_setting_help('settings.security.transfer_row')\"";
-  const std::set<std::string> main_device = {"own_devices_shown"};
-  const std::set<std::string> linked = {"own_devices_shown", "own_devices_not_main"};
-  EXPECT_EQ(PhoneShown({tap}, main_device), 1u);
-  EXPECT_EQ(PhoneShown({tap}, linked), 0u) << "no event on a linked phone";
-  EXPECT_EQ(PhoneShown({help}, main_device), 1u);
-  EXPECT_EQ(PhoneShown({help}, linked), 1u) << "the \"?\" stays tappable";
-  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.transfer_off}}"}, main_device), 0u);
-  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.transfer_off}}"}, linked), 1u);
+  EXPECT_EQ(PhoneShown({tap}, MainFacts()), 1u);
+  EXPECT_EQ(PhoneShown({help}, MainFacts()), 1u) << "one \"?\" for the action, in one place";
+  // A linked phone: no element bound to any of the device actions, on the phone layout of this page or of the link page.
+  for (const char* event : {"open_security_page('transfer')", "export_link_device()",
+                            "open_own_device_actions(device_index)", "make_main_device(device_index)",
+                            "remove_own_device(device_index)", "ask_setting_help('settings.security.transfer_row')"}) {
+    const std::string token = std::string("data-event-click=\"") + event + "\"";
+    EXPECT_EQ(PhoneShown({token}, LinkedFacts()), 0u) << "devices page, linked phone: " << event;
+    for (const Occurrence& o : Scan(ReadAsset("views/settings_security_transfer.rml"))) {
+      if (o.token == token && (o.layouts == "phone" || o.layouts == "both")) {
+        EXPECT_FALSE(GateHolds(o.gates, LinkedFacts())) << "link page, linked phone: " << event;
+      }
+    }
+  }
+  // Only the account copy row at the bottom (and the "?" of it) is tappable on a linked phone.
+  for (const std::string& token : PhoneTokens(LinkedFacts())) {
+    const bool account_copy = token == "data-event-click=\"save_account_copy()\"" ||
+                              token == "data-event-click=\"ask_setting_help('settings.help.topic.account_copy')\"";
+    EXPECT_TRUE(account_copy || token.find("data-event-") == std::string::npos)
+        << "a linked phone's list is read only: " << token;
+  }
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.linked_note}}"}, LinkedFacts()), 1u);
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.hero}}"}, LinkedFacts()), 0u);
+}
+
+TEST(SettingsDevicesCaptionsTest, TheSignedOutPhoneShowsItsNoticeOnlyAndTheAccountCopyRowAsBefore) {
+  EXPECT_EQ(PhoneTokens(SignedOutFacts()), std::set<std::string>({"{{i18n:settings.security.devices.signed_out}}"}));
+  std::set<std::string> with_phrase = SignedOutFacts();
+  with_phrase.insert("security_has_recovery_phrase");
+  const std::set<std::string> shown = PhoneTokens(with_phrase);
+  EXPECT_EQ(shown.count("data-event-click=\"save_account_copy()\""), 1u);
+  EXPECT_EQ(shown.count("{{i18n:settings.security.devices.signed_out}}"), 1u);
+  EXPECT_EQ(shown.size(), 4u) << "the notice, the row's title, its event and its \"?\"";
 }
 
 // --- the Advanced page's sub-pages keep their gates (Kenneth 2026-11-14) -------------------------------------------------

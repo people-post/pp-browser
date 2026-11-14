@@ -146,55 +146,85 @@ TEST_F(DevicesStyleTest, AGroupedPagePrimaryButtonIsFullWidthAnd50dp) {
   EXPECT_FLOAT_EQ(size.x, 390.f - 32.f) << "16dp gutters";
 }
 
+TEST_F(DevicesStyleTest, TheHeroButtonIs50dpTheHelpMarkIs44dpAndTheSentenceStaysOnTheScreen) {
+  ui::ElementDocument* document = Load(
+      "<div class=\"shell-layer-compact\" style=\"position: absolute; left: 0dp; top: 0dp; width: 390dp;\">"
+      "<div class=\"settings-section settings-section--grouped settings-mock stack\">"
+      "<div class=\"settings-phone-only settings-dev-hero\">"
+      "<div id=\"row\" class=\"settings-dev-sentence-row\"><span id=\"s\" "
+      "class=\"settings-dev-sentence\">在其他设备上使用同一个账号</span>"
+      "<button id=\"q\" class=\"settings-q-btn\" type=\"button\"></button></div>"
+      "<p class=\"text muted settings-dev-sub\">最多 5 台。新设备上看不到以前的聊天记录。</p>"
+      "<button id=\"b\" class=\"btn btn-primary\" type=\"button\">关联新设备</button></div>"
+      "<div class=\"group-card\"><div id=\"r\" class=\"group-row group-row--static\"><span class=\"group-row-body\">"
+      "<span class=\"group-row-label\"><span class=\"group-row-text\">这台手机</span></span>"
+      "<span class=\"group-row-value\">本机 · 主设备</span></span></div></div></div></div>");
+  const ui::Vector2f button = document->GetElementById("b")->GetBox().GetSize(ui::BoxArea::Border);
+  EXPECT_FLOAT_EQ(button.y, 50.f);
+  EXPECT_FLOAT_EQ(button.x, 390.f - 32.f);
+  const ui::Vector2f q = document->GetElementById("q")->GetBox().GetSize(ui::BoxArea::Border);
+  EXPECT_FLOAT_EQ(q.x, 44.f);
+  EXPECT_FLOAT_EQ(q.y, 44.f);
+  ui::Element* q_element = document->GetElementById("q");
+  EXPECT_LE(q_element->GetAbsoluteOffset(ui::BoxArea::Border).x + 44.f, 390.f);
+  EXPECT_GE(document->GetElementById("r")->GetBox().GetSize(ui::BoxArea::Border).y, 50.f);
+}
+
 // --- the markup ---------------------------------------------------------------------------------------------------
 
 TEST(DevicesTransferMarkupTest, TheNewCaptionsExistInBothLanguagesAndReadAsAgreed) {
-  for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
-    const std::string text = Asset(locale);
-    for (const char* key : {"settings.security.devices.not_main_phone", "settings.security.transfer_off"}) {
-      EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
-    }
-  }
   const std::string zh = Asset("locales/zh-Hans.json");
-  EXPECT_NE(zh.find("\"添加、移除设备要在主设备上操作。\""), std::string::npos);
-  EXPECT_NE(zh.find("\"关联新设备要在主设备上操作。\""), std::string::npos);
   const std::string en = Asset("locales/en.json");
-  EXPECT_NE(en.find("\"Devices are added and removed on your main device.\""), std::string::npos);
-  EXPECT_NE(en.find("\"Linking a new device is done on your main device.\""), std::string::npos);
+  EXPECT_NE(zh.find("\"关联新设备、移除设备，要在主设备上操作。\""), std::string::npos);
+  EXPECT_NE(en.find("\"Linking a new device or removing one is done on the main device.\""), std::string::npos);
+  EXPECT_NE(en.find("\"Use the same account on other devices\""), std::string::npos);
+  EXPECT_NE(en.find("\"No other devices linked yet.\""), std::string::npos);
+  EXPECT_NE(en.find("\"Changing phones: link the new phone, make it the main device, then remove the old one.\""),
+            std::string::npos);
 }
 
-TEST(DevicesTransferMarkupTest, TheTransferRowAndTheSaveCopyRowCarryTheHelpMarkInlineAfterTheirTitle) {
+TEST(DevicesTransferMarkupTest, TheSaveCopyRowAndTheHeroSentenceCarryTheHelpMarkInline) {
   const std::string rml = Asset("views/settings_section_devices.rml");
-  for (const char* title : {"{{i18n:settings.security.transfer_row}}", "{{i18n:settings.security.copy.save}}"}) {
-    const size_t at = rml.find(std::string("<span class=\"group-row-text\">") + title);
-    ASSERT_NE(at, std::string::npos) << title;
-    const size_t label = rml.rfind("<span class=\"settings-q-label\">", at);
-    ASSERT_NE(label, std::string::npos);
-    EXPECT_LT(at - label, 40u) << "the title is the first child of the inline label";
-    EXPECT_NE(rml.find("class=\"settings-q-btn\"", at), std::string::npos);
-  }
+  const size_t at = rml.find("<span class=\"group-row-text\">{{i18n:settings.security.copy.save}}");
+  ASSERT_NE(at, std::string::npos);
+  const size_t label = rml.rfind("<span class=\"settings-q-label\">", at);
+  ASSERT_NE(label, std::string::npos);
+  EXPECT_LT(at - label, 40u) << "the title is the first child of the inline label";
+  EXPECT_NE(rml.find("class=\"settings-q-btn\"", at), std::string::npos);
+  // The action's "?" follows the sentence directly and asks about the action's own title.
+  const size_t sentence = rml.find("{{i18n:settings.security.devices.hero}}</span><button class=\"settings-q-btn\"");
+  ASSERT_NE(sentence, std::string::npos);
+  EXPECT_NE(rml.find("ask_setting_help('settings.security.transfer_row')", sentence), std::string::npos);
+  EXPECT_EQ(rml.find("ask_setting_help('settings.security.transfer_row')",
+                     rml.find("ask_setting_help('settings.security.transfer_row')") + 1),
+            std::string::npos)
+      << "one \"?\" for the action";
   EXPECT_EQ(rml.find("group-row-q"), std::string::npos) << "no absolutely positioned help mark any more";
   EXPECT_EQ(Asset("themes/components.rcss").find("group-row-q"), std::string::npos);
   EXPECT_EQ(rml.find("group-row-tap"), std::string::npos);
 }
 
-TEST(DevicesTransferMarkupTest, TheDisabledTransferRowHasNoEventAndNoChevronButKeepsItsHelpMark) {
+TEST(DevicesTransferMarkupTest, NoDisabledLinkRowIsLeftAndTheLinkedPhonesBlockHasNothingToTap) {
   const std::string rml = Asset("views/settings_section_devices.rml");
-  const size_t off = rml.find("<div class=\"group-row group-row--off\" data-if=\"own_devices_not_main\">");
-  ASSERT_NE(off, std::string::npos);
-  const size_t end = rml.find("            <div data-if=\"security_has_recovery_phrase\">", off);
-  const std::string row = rml.substr(off, end - off);
-  EXPECT_EQ(row.find("open_security_page"), std::string::npos);
-  EXPECT_EQ(row.find("data-event-click=\"open"), std::string::npos);
-  EXPECT_EQ(row.find("chevron"), std::string::npos);
-  EXPECT_NE(row.find("ask_setting_help('settings.security.transfer_row')"), std::string::npos);
-  EXPECT_NE(row.find("{{i18n:settings.security.transfer_off}}"), std::string::npos);
-  // The enabled row is the other variant, same title, same event as before, on the main device only.
-  const size_t on = rml.find(
-      "<div class=\"group-row\" data-if=\"!own_devices_not_main\" "
-      "data-event-click=\"open_security_page('transfer')\">");
-  ASSERT_NE(on, std::string::npos);
-  EXPECT_LT(on, off);
+  EXPECT_EQ(rml.find("settings.security.transfer_off"), std::string::npos);
+  EXPECT_EQ(rml.find("group-row--off\" data-if"), std::string::npos);
+  const size_t from = rml.find("data-if=\"own_devices_not_main && !own_devices_signed_out\"");
+  ASSERT_NE(from, std::string::npos);
+  const size_t to = rml.find("<div class=\"stack settings-actions\" data-if=\"own_devices_shown\">", from);
+  ASSERT_NE(to, std::string::npos);
+  const std::string block = rml.substr(from, to - from);
+  EXPECT_EQ(block.find("<button"), std::string::npos);
+  EXPECT_EQ(block.find("data-event-"), std::string::npos);
+  EXPECT_EQ(block.find("chevron"), std::string::npos);
+}
+
+TEST(DevicesTransferMarkupTest, TheHelpQuestionOfTheLinkActionReadsRightWithTheNewTitle) {
+  const std::string zh = Asset("locales/zh-Hans.json");
+  const std::string en = Asset("locales/en.json");
+  EXPECT_NE(zh.find("\"settings.help.question\": \"「{title}」是什么意思？\""), std::string::npos);
+  EXPECT_NE(zh.find("\"settings.security.transfer_row\": \"关联新设备\""), std::string::npos);
+  EXPECT_NE(en.find("\"settings.help.question\": \"What does “{title}” do?\""), std::string::npos);
+  EXPECT_NE(en.find("\"settings.security.transfer_row\": \"Link a new device\""), std::string::npos);
 }
 
 } // namespace

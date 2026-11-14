@@ -13776,6 +13776,59 @@ textarea:composing ~ .prompt-composer-label,
   line-height: 20dp;
 }
 
+/* Me > Linked devices (phones). The main device's top block: a quiet icon, one sentence with its "?", one grey line, then the
+   grouped-page 50dp button. A linked phone's top card: one sentence and two grey lines, nothing to tap. */
+.shell-layer-compact .settings-dev-hero {
+  padding: 28dp 0 0 0;
+  text-align: center;
+}
+
+.shell-layer-compact .settings-dev-ill {
+  display: block;
+  width: 44dp;
+  height: 44dp;
+  margin: 0 auto;
+}
+
+.shell-layer-compact .settings-dev-sentence-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  margin: 10dp 20dp 0 32dp;
+}
+
+.shell-layer-compact .settings-dev-sentence {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 20dp;
+  line-height: 26dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .settings-dev-sub {
+  margin: 2dp 32dp 0 32dp;
+  font-size: 15dp;
+  line-height: 21dp;
+  text-align: center;
+}
+
+.shell-layer-compact .settings-dev-note {
+  padding: 14dp 16dp 16dp 16dp;
+}
+
+.shell-layer-compact .settings-dev-note-title {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 23dp;
+}
+
+.shell-layer-compact .settings-dev-note-line {
+  margin: 6dp 0 0 0;
+  font-size: 14dp;
+  line-height: 20dp;
+}
+
 .shell-layer-compact .settings-section .settings-warn-row .group-foot {
   margin: 0;
 }

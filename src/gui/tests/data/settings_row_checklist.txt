@@ -230,31 +230,58 @@ data-event-click="toggle_biometric()"	1	security	security	security_biometric_sho
 {{security_biometric_label}}	1	-	security	security_biometric_shown	security	
 {{unlock_grace_label}}	1	-	security	security_grace_shown	security	
 data-event-click="ask_setting_help('settings.help.topic.account_copy')"	2	-	devices	security_has_recovery_phrase	security	
+data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	!own_devices_not_main	devices	
+data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main	devices	
+data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
+data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
 data-event-click="make_main_device(device_index)"	1	-	devices	own_devices_shown;;device.can_manage	security	
+data-event-click="open_own_device_actions(device_index)"	1	-	devices	own_devices_shown && !own_devices_not_main;;device.can_manage	devices	
+data-event-click="open_security_page('transfer')"	1	-	devices	!own_devices_not_main	devices	
 data-event-click="remove_own_device(device_index)"	1	-	devices	own_devices_shown;;device.can_manage	security	
 data-event-click="save_account_copy()"	2	-	devices	security_has_recovery_phrase	security	
+{{device.label}}	1	-	devices	own_devices_not_main && !own_devices_signed_out;;!device.is_this_device && !device.can_manage	security	
 {{device.label}}	1	-	devices	own_devices_shown	security	
-{{device.label}}	1	-	devices	own_devices_shown;;!own_devices_signed_out;;own_has_other_devices;;device.can_manage	devices	
-{{device.label}}	1	-	devices	own_devices_shown;;!own_devices_signed_out;;own_has_other_devices;;!device.is_this_device && !device.can_manage	devices	
+{{device.label}}	1	-	devices	own_devices_shown && !own_devices_not_main;;device.can_manage	security	
 {{i18n:settings.security.copy.help}}	1	-	devices	security_has_recovery_phrase	security	
 {{i18n:settings.security.copy.save}}	2	-	devices	security_has_recovery_phrase	security	
 {{i18n:settings.security.devices.help}}	1	-	devices	own_devices_shown	security	
+{{i18n:settings.security.devices.hero_sub}}	1	-	devices	!own_devices_not_main	devices	
+{{i18n:settings.security.devices.hero}}	1	-	devices	!own_devices_not_main	devices	
+{{i18n:settings.security.devices.linked_note_gone}}	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
+{{i18n:settings.security.devices.linked_note_sub}}	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
+{{i18n:settings.security.devices.linked_note}}	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
+{{i18n:settings.security.devices.main}}	1	-	devices	own_devices_not_main && !own_devices_signed_out;;!device.is_this_device && !device.can_manage;;device.is_main	security	
 {{i18n:settings.security.devices.main}}	1	-	devices	own_devices_shown;;device.is_main	security	
-{{i18n:settings.security.devices.main}}	1	-	devices	own_devices_shown;;!own_devices_signed_out;;!own_devices_not_main	devices	
-{{i18n:settings.security.devices.main}}	1	-	devices	own_devices_shown;;!own_devices_signed_out;;own_has_other_devices;;!device.is_this_device && !device.can_manage;;device.is_main	devices	
 {{i18n:settings.security.devices.make_main}}	1	-	devices	own_devices_shown;;device.can_manage	security	
+{{i18n:settings.security.devices.none}}	1	-	devices	own_devices_shown && !own_devices_not_main;;!own_has_other_devices	devices	
 {{i18n:settings.security.devices.not_main}}	1	-	devices	own_devices_shown;;own_devices_not_main && !own_devices_signed_out	security	
 {{i18n:settings.security.devices.remove}}	1	-	devices	own_devices_shown;;device.can_manage	security	
 {{i18n:settings.security.devices.signed_out}}	1	-	devices	own_devices_shown;;own_devices_signed_out	security	
+{{i18n:settings.security.devices.tap_hint}}	1	-	devices	own_devices_shown && !own_devices_not_main;;own_has_other_devices	devices	
+{{i18n:settings.security.devices.this_phone_main}}	1	-	devices	own_devices_shown && !own_devices_not_main	devices	
+{{i18n:settings.security.devices.this_phone_tag}}	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
+{{i18n:settings.security.devices.this_phone}}	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
+{{i18n:settings.security.devices.this_phone}}	1	-	devices	own_devices_shown && !own_devices_not_main	devices	
+{{i18n:settings.security.devices.view_head}}	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
 {{i18n:settings.security.devices}}	1	-	devices	own_devices_shown	security	
-data-event-click="open_own_device_actions(device_index)"	1	-	devices	own_devices_shown;;!own_devices_signed_out;;own_has_other_devices;;device.can_manage	devices	
-{{i18n:settings.devices.actions_help}}	1	-	devices	security_has_recovery_phrase	devices	
-{{i18n:settings.devices.transfer_help}}	1	-	devices	!security_has_recovery_phrase	security	
-{{i18n:settings.security.devices.identity}}	1	-	devices	own_devices_shown;;!own_devices_signed_out	devices	
-{{i18n:settings.security.devices.linked}}	1	-	devices	own_devices_shown;;!own_devices_signed_out;;own_devices_not_main	devices	
-{{i18n:settings.security.devices.none}}	1	-	devices	own_devices_shown;;!own_devices_signed_out;;!own_has_other_devices	devices	
-{{i18n:settings.security.devices.other}}	1	-	devices	own_devices_shown;;!own_devices_signed_out	devices	
-{{i18n:settings.security.devices.this_device}}	1	-	devices	own_devices_shown;;!own_devices_signed_out	devices	
+{{i18n:settings.security.devices}}	1	-	devices	own_devices_shown && !own_devices_not_main	security	
+{{i18n:settings.security.link_device.change_phone}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.copy_again}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
+{{i18n:settings.security.link_device.copy_button}}	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
+{{i18n:settings.security.link_device.export_done}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
+{{i18n:settings.security.link_device.export}}	1	-	devices	security_can_export_link && !own_devices_not_main	devices	
+{{i18n:settings.security.link_device.help}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.precondition}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.reset_hint}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.send_hint}}	2	-	devices	-	devices	
+{{i18n:settings.security.link_device.step1}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.step2}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.step3}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.steps_head}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device}}	1	-	devices	-	devices	
+{{i18n:settings.security.transfer_row}}	1	-	devices	!own_devices_not_main	devices	
+{{move_lead_label}}	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
+{{move_valid_label}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
 data-class-settings-switch--on="show_notification_preview == 'on'"	1	-	notifications	-	profile	
 data-class-settings-switch--on="show_notifications == 'on'"	1	-	notifications	-	profile	
 data-class-settings-switch--on="stay_connected == 'on'"	1	-	notifications	stay_connected_available	profile	
@@ -514,31 +541,5 @@ data-event-click="change_pin()"	1	-	security	show_change_pin && security_can_cha
 {{i18n:pin.forget_warning}}	1	-	security	show_change_pin && security_can_change_pin	security	
 {{i18n:settings.security.change_pin}}	1	-	security	show_change_pin && security_can_change_pin	security	
 {{i18n:settings.security.unlock_to_change}}	1	-	security	show_change_pin && !security_can_change_pin && !pin_protection_not_setup	security	
-data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main	devices	
-{{i18n:settings.security.link_device.export}}	1	-	devices	security_can_export_link && !own_devices_not_main	devices	
-{{i18n:settings.security.link_device.help}}	1	-	devices	-	devices	
-{{i18n:settings.security.link_device.reset_hint}}	1	-	devices	-	devices	
-{{i18n:settings.security.link_device.send_hint}}	2	-	devices	-	devices	
-{{i18n:settings.security.link_device}}	1	-	devices	-	devices	
-{{move_lead_label}}	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
-data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
-{{i18n:settings.security.link_device.copy_button}}	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
-{{i18n:settings.security.link_device.export_done}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
-{{move_valid_label}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
-data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
-{{i18n:settings.security.link_device.copy_again}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
-{{i18n:settings.security.link_device.steps_head}}	1	-	devices	-	devices	
-{{i18n:settings.security.link_device.step1}}	1	-	devices	-	devices	
-{{i18n:settings.security.link_device.step2}}	1	-	devices	-	devices	
-{{i18n:settings.security.link_device.step3}}	1	-	devices	-	devices	
-{{i18n:settings.security.link_device.precondition}}	1	-	devices	-	devices	
-{{i18n:settings.security.devices.help}}	1	-	devices	own_devices_shown;;!own_devices_not_main && !own_devices_signed_out	devices	
-{{i18n:settings.security.devices.not_main_phone}}	1	-	devices	own_devices_shown;;own_devices_not_main && !own_devices_signed_out	devices	
-data-event-click="open_security_page('transfer')"	1	-	devices	!own_devices_not_main	devices	
-{{i18n:settings.security.transfer_row}}	1	-	devices	!own_devices_not_main	devices	
-data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	!own_devices_not_main	devices	
-{{i18n:settings.security.transfer_row}}	1	-	devices	own_devices_not_main	devices	
-data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	own_devices_not_main	devices	
-{{i18n:settings.security.transfer_off}}	1	-	devices	own_devices_not_main	devices	
 {{i18n:settings.privacy.blocked_help}}	1	-	privacy	-	security	
 {{i18n:settings.tester.banner}}	1	-	tester	tester	-	

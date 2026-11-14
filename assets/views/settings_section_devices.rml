@@ -2,42 +2,68 @@
         <div class="settings-desktop-only">
 {{include:settings_security_transfer}}
         </div>
-        <div class="stack settings-actions" data-if="own_devices_shown">
-          <div class="stack settings-phone-only" data-if="!own_devices_signed_out">
-            <!-- Phones: this device (display only), the other devices (rows open the action sheet on the main device), then the actions below. -->
-            <p class="text group-head">{{i18n:settings.security.devices.this_device}}</p>
-            <div class="group-card">
-              <div class="group-row group-row--static">
-                <span class="group-row-body">
-                  <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.devices.identity}}</span></span>
-                  <span class="group-row-value" data-if="!own_devices_not_main">{{i18n:settings.security.devices.main}}</span>
-                  <span class="group-row-value" data-if="own_devices_not_main">{{i18n:settings.security.devices.linked}}</span>
-                </span>
-              </div>
-            </div>
-            <p class="text group-head">{{i18n:settings.security.devices.other}}</p>
-            <div class="group-card" data-if="own_has_other_devices">
-              <div data-for="device, device_index : own_device_rows">
-                <div data-if="!device.is_this_device && !device.can_manage">
-                  <div class="group-row group-row--static">
-                    <span class="group-row-body">
-                      <span class="group-row-label"><span class="group-row-text">{{device.label}}</span></span>
-                      <span class="group-row-value" data-if="device.is_main">{{i18n:settings.security.devices.main}}</span>
-                    </span>
-                  </div>
-                </div>
-                <div data-if="device.can_manage">
-                  <button class="group-row" type="button" data-event-click="open_own_device_actions(device_index)">
-                    <span class="group-row-body">
-                      <span class="group-row-label"><span class="group-row-text">{{device.label}}</span></span>
-                      <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
-                    </span>
-                  </button>
-                </div>
-              </div>
-            </div>
-            <p class="text muted group-foot" data-if="!own_has_other_devices">{{i18n:settings.security.devices.none}}</p>
+        <!-- Phones, main device: the hero (a quiet icon, one sentence, one grey line, the one button that opens the link page),
+             then the list. The "?" is next to the sentence; it asks about the same row title as before. -->
+        <div class="settings-phone-only settings-dev-hero" data-if="!own_devices_not_main">
+          <svg class="settings-dev-ill" src="../icons/v2/phone.svg" width="44" height="44"></svg>
+          <div class="settings-dev-sentence-row">
+            <span class="settings-dev-sentence">{{i18n:settings.security.devices.hero}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
           </div>
+          <p class="text muted settings-dev-sub">{{i18n:settings.security.devices.hero_sub}}</p>
+          <button class="btn btn-primary" type="button" data-event-click="open_security_page('transfer')">{{i18n:settings.security.transfer_row}}</button>
+        </div>
+        <div class="stack settings-phone-only" data-if="own_devices_shown && !own_devices_not_main">
+          <p class="text group-head">{{i18n:settings.security.devices}}</p>
+          <div class="group-card">
+            <div class="group-row group-row--static">
+              <span class="group-row-body">
+                <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.devices.this_phone}}</span></span>
+                <span class="group-row-value">{{i18n:settings.security.devices.this_phone_main}}</span>
+              </span>
+            </div>
+            <div data-for="device, device_index : own_device_rows">
+              <div data-if="device.can_manage">
+                <button class="group-row" type="button" data-event-click="open_own_device_actions(device_index)">
+                  <span class="group-row-body">
+                    <span class="group-row-label"><span class="group-row-text">{{device.label}}</span></span>
+                    <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <p class="text muted group-foot" data-if="!own_has_other_devices">{{i18n:settings.security.devices.none}}</p>
+          <p class="text muted group-foot" data-if="own_has_other_devices">{{i18n:settings.security.devices.tap_hint}}</p>
+        </div>
+        <!-- Phones, linked (not main) device: one display-only sentence card, then a read-only list. Nothing here can be tapped:
+             linking and removing are done on the main device. -->
+        <div class="stack settings-phone-only" data-if="own_devices_not_main && !own_devices_signed_out">
+          <div class="group-card settings-dev-note">
+            <p class="text settings-dev-note-title">{{i18n:settings.security.devices.linked_note}}</p>
+            <p class="text muted settings-dev-note-line">{{i18n:settings.security.devices.linked_note_sub}}</p>
+            <p class="text muted settings-dev-note-line">{{i18n:settings.security.devices.linked_note_gone}}</p>
+          </div>
+          <p class="text group-head">{{i18n:settings.security.devices.view_head}}</p>
+          <div class="group-card">
+            <div class="group-row group-row--static">
+              <span class="group-row-body">
+                <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.devices.this_phone}}</span></span>
+                <span class="group-row-value">{{i18n:settings.security.devices.this_phone_tag}}</span>
+              </span>
+            </div>
+            <div data-for="device : own_device_rows">
+              <div data-if="!device.is_this_device && !device.can_manage">
+                <div class="group-row group-row--static group-row--off">
+                  <span class="group-row-body">
+                    <span class="group-row-label"><span class="group-row-text">{{device.label}}</span></span>
+                    <span class="group-row-value" data-if="device.is_main">{{i18n:settings.security.devices.main}}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="stack settings-actions" data-if="own_devices_shown">
           <p class="text group-head settings-desktop-only">{{i18n:settings.security.devices}}</p>
           <div data-for="device, device_index : own_device_rows" class="settings-device-row stack group-card settings-desktop-only">
             <div class="stack">
@@ -53,46 +79,22 @@
               </div>
             </div>
           </div>
-          <!-- Desktop: both captions as before. Phones: exactly one caption (main / linked / signed out are exclusive). -->
+          <!-- Desktop: both captions as before. Phones have their own sentences above. -->
           <p class="text muted settings-help group-foot settings-desktop-only">{{i18n:settings.security.devices.help}}</p>
-          <p class="text muted settings-help group-foot settings-phone-only" data-if="!own_devices_not_main && !own_devices_signed_out">{{i18n:settings.security.devices.help}}</p>
           <p class="text error group-foot" data-if="own_devices_signed_out">{{i18n:settings.security.devices.signed_out}}</p>
           <p class="text muted settings-help group-foot settings-desktop-only" data-if="own_devices_not_main && !own_devices_signed_out">
             {{i18n:settings.security.devices.not_main}}
           </p>
-          <p class="text muted settings-help group-foot settings-phone-only" data-if="own_devices_not_main && !own_devices_signed_out">
-            {{i18n:settings.security.devices.not_main_phone}}
-          </p>
         </div>
-        <!-- Phones: the actions as one group, one caption. -->
-        <div class="stack settings-phone-only">
+        <!-- Phones: the account copy row (its "?" explains it, so no caption). -->
+        <div class="stack settings-phone-only" data-if="security_has_recovery_phrase">
           <div class="group-card">
-            <!-- The "?" follows the title (its own 44dp target, it stops the click); the rest of the row opens the page.
-                 On a linked (non-main) phone the row is shown disabled: the page has nothing to tap there. -->
-            <div class="group-row" data-if="!own_devices_not_main" data-event-click="open_security_page('transfer')">
+            <div class="group-row" data-event-click="save_account_copy()">
               <span class="group-row-body">
-                <span class="settings-q-label"><span class="group-row-text">{{i18n:settings.security.transfer_row}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
-                <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+                <span class="settings-q-label"><span class="group-row-text">{{i18n:settings.security.copy.save}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.account_copy')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
               </span>
-            </div>
-            <div class="group-row group-row--off" data-if="own_devices_not_main">
-              <span class="group-row-body">
-                <span class="group-row-label">
-                  <span class="settings-q-label"><span class="group-row-text">{{i18n:settings.security.transfer_row}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
-                  <span class="group-row-sub">{{i18n:settings.security.transfer_off}}</span>
-                </span>
-              </span>
-            </div>
-            <div data-if="security_has_recovery_phrase">
-              <div class="group-row" data-event-click="save_account_copy()">
-                <span class="group-row-body">
-                  <span class="settings-q-label"><span class="group-row-text">{{i18n:settings.security.copy.save}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.account_copy')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
-                </span>
-              </div>
             </div>
           </div>
-          <p class="text muted settings-help group-foot" data-if="!security_has_recovery_phrase">{{i18n:settings.devices.transfer_help}}</p>
-          <p class="text muted settings-help group-foot" data-if="security_has_recovery_phrase">{{i18n:settings.devices.actions_help}}</p>
         </div>
         <div class="stack settings-actions settings-desktop-only" data-if="security_has_recovery_phrase">
           <p class="text muted settings-help group-foot">{{i18n:settings.security.copy.help}}</p>
