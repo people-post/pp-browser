@@ -107,7 +107,7 @@ Install the tool first:
 
 On Windows, Debug and RelWithDebInfo builds use embedded debug info (`/Z7`) so sccache can cache MSVC compiles. Release builds are unaffected.
 
-CI uses ccache (Linux/macOS) and sccache (Windows) automatically via `-DPP_BROWSER_COMPILER_CACHE=ON`.
+CI uses ccache on every platform automatically via `-DPP_BROWSER_COMPILER_CACHE=ON`. Its Actions cache key includes the runner image (`ImageOS`-`ImageVersion`): ccache misses every object after a compiler change, so a new image starts its own cache, restoring the newest one meanwhile.
 
 ## Run
 

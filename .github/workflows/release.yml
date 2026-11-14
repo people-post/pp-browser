@@ -50,12 +50,19 @@ jobs:
           mkdir -p .cache/ccache
           echo "CCACHE_DIR=${{ github.workspace }}/.cache/ccache" >> "$GITHUB_ENV"
 
+      - name: Runner image (ccache key)
+        shell: bash
+        # ccache misses everything after a compiler change, so a new runner image starts its own cache
+        # (falling back to the newest one); a self-hosted runner has no image version.
+        run: echo "PP_RUNNER_IMAGE=${ImageOS:-self-hosted}-${ImageVersion:-none}" >> "$GITHUB_ENV"
+
       - name: Restore ccache
         uses: actions/cache@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: macOS-ccache-v2-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release.yml') }}
+          key: macOS-ccache-v2-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release.yml') }}
           restore-keys: |
+            macOS-ccache-v2-${{ env.PP_RUNNER_IMAGE }}-
             macOS-ccache-v2-
 
       - name: ccache stats (pre-build)
@@ -217,12 +224,19 @@ jobs:
           mkdir -p .cache/ccache
           echo "CCACHE_DIR=${{ github.workspace }}/.cache/ccache" >> "$GITHUB_ENV"
 
+      - name: Runner image (ccache key)
+        shell: bash
+        # ccache misses everything after a compiler change, so a new runner image starts its own cache
+        # (falling back to the newest one); a self-hosted runner has no image version.
+        run: echo "PP_RUNNER_IMAGE=${ImageOS:-self-hosted}-${ImageVersion:-none}" >> "$GITHUB_ENV"
+
       - name: Restore ccache
         uses: actions/cache@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: Windows-ccache-v2-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release.yml') }}
+          key: Windows-ccache-v2-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release.yml') }}
           restore-keys: |
+            Windows-ccache-v2-${{ env.PP_RUNNER_IMAGE }}-
             Windows-ccache-v2-
 
       - name: ccache stats (pre-build)
@@ -365,12 +379,19 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-android-gradle-v3-
 
+      - name: Runner image (ccache key)
+        shell: bash
+        # ccache misses everything after a compiler change, so a new runner image starts its own cache
+        # (falling back to the newest one); a self-hosted runner has no image version.
+        run: echo "PP_RUNNER_IMAGE=${ImageOS:-self-hosted}-${ImageVersion:-none}" >> "$GITHUB_ENV"
+
       - name: Restore Android ccache
         uses: actions/cache@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-android-ccache-v5-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}
+          key: ${{ runner.os }}-android-ccache-v5-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}
           restore-keys: |
+            ${{ runner.os }}-android-ccache-v5-${{ env.PP_RUNNER_IMAGE }}-
             ${{ runner.os }}-android-ccache-v5-
 
       - name: Disk usage (pre-build)
