@@ -159,6 +159,8 @@ void SettingsProfileActions::Register(const bool quiet_success, std::function<vo
   if (started_) {
     if (quiet_success) {
       waiters_.push_back({.quiet = true, .done = std::move(answer)});
+    } else if (answer) {
+      answer(Error("A registration is already running")); // the answer a caller of `done` is owed; no message shown
     }
     return;
   }

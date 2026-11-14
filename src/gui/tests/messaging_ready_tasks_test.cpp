@@ -452,18 +452,42 @@ TEST_F(MessagingReadyTasksTest, AfterRenewalWaitsForTheRenewalInFlightThenRunsBe
   EXPECT_EQ(order.size(), 1u) << "run once";
 }
 
-TEST_F(MessagingReadyTasksTest, AfterRenewalDoesNotRunWhenTheSessionChangedBeforeTheRenewalEnded) {
+// The result is not stored for another session, but a waiting caller is still answered: its start callback runs
+// (it checks its own session), and the slot is free by then.
+TEST_F(MessagingReadyTasksTest, AfterRenewalStillRunsWhenTheSessionChangedBeforeTheRenewalEnded) {
   int ran = 0;
   tasks_->RenewRegistration();
   tasks_->AfterRenewal([&] { ++ran; });
   RunWorkerPart();
   ++session_;
   RunUiPart();
-  EXPECT_EQ(ran, 0) << "asked for in the old session: dropped, not run in the new one";
-  EXPECT_TRUE(hints_.empty());
+  EXPECT_EQ(ran, 1) << "the waiting callback runs";
+  EXPECT_TRUE(hints_.empty()) << "the stale result says nothing";
+  EXPECT_TRUE(persisted_.empty());
   EXPECT_FALSE(tasks_->RenewInFlight());
   tasks_->AfterRenewal([&] { ++ran; });
-  EXPECT_EQ(ran, 1) << "a later request is not blocked";
+  EXPECT_EQ(ran, 2) << "a later request is not blocked";
+}
+
+// A manual card update queued behind the automatic renewal is not lost when the session changes meanwhile: its hold
+// callback still runs and gets the slot, and releasing it frees the slot.
+TEST_F(MessagingReadyTasksTest, AHoldQueuedBehindARenewalStillRunsWhenTheSessionChanged) {
+  std::function<void()> release;
+  int ran = 0;
+  tasks_->RenewRegistration();
+  tasks_->HoldRenewal([&](std::function<void()> r) {
+    ++ran;
+    release = std::move(r);
+  });
+  EXPECT_EQ(ran, 0);
+  RunWorkerPart();
+  ++session_;
+  RunUiPart();
+  EXPECT_EQ(ran, 1) << "the queued hold is not dropped";
+  EXPECT_TRUE(hints_.empty());
+  EXPECT_TRUE(tasks_->RenewInFlight()) << "held by the registration now";
+  release();
+  EXPECT_FALSE(tasks_->RenewInFlight());
 }
 
 TEST_F(MessagingReadyTasksTest, AfterRenewalRunsWhenTheRenewalFails) {

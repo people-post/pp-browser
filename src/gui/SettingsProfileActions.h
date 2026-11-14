@@ -48,7 +48,8 @@ public:
    * `done(registered)` when it ends (false: the PIN was not given, or the registration failed or was refused, or a
    * messaging teardown (OnMessagingTornDown) ended it); exactly once.
    * One registration at a time, from the first tap on (the PIN step included): another button tap meanwhile does
-   * nothing; a quiet caller meanwhile joins the one running and gets its outcome.
+   * nothing (a `done` it passed is answered false at once, with no message); a quiet caller meanwhile joins the one
+   * running and gets its outcome.
    */
   void Register(bool quiet_success = false, std::function<void(bool ok)> done = {});
   /** What a registration asks to hold the automatic renewal's slot: `run` gets the `release` it must call, once. */

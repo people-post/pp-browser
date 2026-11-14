@@ -194,10 +194,15 @@ void RenewRegistrationOn(const std::shared_ptr<State>& state) {
           }
         };
         if (!live) {
-          // A waiting registration was asked for in the old session: it does not run in a new one.
+          // The result is not stored (another session). What waits is not dropped: a queued registration's start
+          // callback must run to answer its caller (the slot is free: End finished the ticket), and it checks the
+          // session it was asked in itself.
           log().info << "registration renewal result dropped: the messaging session changed; waiting registrations "
-                     << waiting.size() << " dropped";
-          return {};
+                     << waiting.size() << " still run";
+          if (waiting.empty()) {
+            return {};
+          }
+          return [waiting = std::move(waiting), run_waiting]() mutable { run_waiting(waiting); };
         }
         RenewResult result = box.value ? std::move(*box.value) : RenewResult{.error = Error("renewal threw")};
         bool stored = false;

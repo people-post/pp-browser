@@ -261,6 +261,31 @@ TEST_F(SettingsProfileCopyTest, ReconnectAnswersFalseWhenTheRegistrationFailsAnd
   EXPECT_EQ(answers, (std::vector<bool>{false, true}));
 }
 
+// A button tap's `done` arriving while an update is out is answered once, false, with no message; the running update
+// is untouched.
+TEST_F(SettingsProfileCopyTest, ASecondRegisterWithDoneWhileOneIsRunningIsAnsweredFalseOnceAndSaysNothing) {
+  unlock.ensure_unlocked = [](std::function<void(bool)> then) { then(true); };
+  std::function<void(Roe<void>)> reply;
+  int registrations = 0;
+  commands.register_identity = [&](const RegisterIdentityArgs&, std::function<void(Roe<void>)> done) {
+    ++registrations;
+    reply = std::move(done);
+  };
+  std::vector<bool> first;
+  std::vector<bool> second;
+  actions->Register(/*quiet_success=*/false, [&](const bool ok) { first.push_back(ok); });
+  ASSERT_TRUE(reply);
+  toasts.clear();
+  actions->Register(/*quiet_success=*/false, [&](const bool ok) { second.push_back(ok); });
+  EXPECT_EQ(second, (std::vector<bool>{false}));
+  EXPECT_TRUE(toasts.empty()) << "no message";
+  EXPECT_EQ(registrations, 1);
+  EXPECT_TRUE(first.empty());
+  reply({});
+  EXPECT_EQ(first, (std::vector<bool>{true}));
+  EXPECT_EQ(second, (std::vector<bool>{false})) << "answered once";
+}
+
 TEST_F(SettingsProfileCopyTest, TheSettingsButtonStillCommitsAndSendsThePagesNickname) {
   host.state.profile_nickname = "Typed";
   unlock.ensure_unlocked = [](std::function<void(bool)> then) { then(true); };
