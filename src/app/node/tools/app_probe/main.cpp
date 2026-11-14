@@ -604,6 +604,41 @@ public:
       }
       out.set("card_relays", ArrayValue(std::move(card)));
       Emit(out);
+    } else if (cmd == "my_relays") {
+      // My relays (multi-relay R3) as the settings page reads them: preferred first, each one's registration.
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<OurRelaysStatus>>(
+          WorkerLane::Normal, [this]() { return facade_->OurRelays(); },
+          [id](Roe<OurRelaysStatus> status) {
+            if (!status) {
+              ReplyError(id, status.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            std::vector<Value> relays;
+            for (const OurRelayStatus& relay : status->relays) {
+              Object row;
+              row.set("origin", relay.origin);
+              row.set("preferred", relay.preferred);
+              row.set("registered", relay.registration.state == RelayRegistrationRecord::State::Registered);
+              row.set("reason", relay.registration.reason);
+              relays.push_back(ObjectValue(std::move(row)));
+            }
+            out.set("relays", ArrayValue(std::move(relays)));
+            out.set("editable", status->editable);
+            Emit(out);
+          });
+    } else if (cmd == "add_relay" || cmd == "remove_relay" || cmd == "make_relay_preferred") {
+      // Me → My relays' actions: `text` as typed (add), or a relay's `origin` (remove, make preferred).
+      const std::string text = request->getString(cmd == "add_relay" ? "text" : "origin").value_or("");
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
+          WorkerLane::Normal,
+          [this, cmd, text]() {
+            if (cmd == "add_relay") {
+              return facade_->AddOurRelay(text, true);
+            }
+            return cmd == "remove_relay" ? facade_->RemoveOurRelay(text) : facade_->MakeOurRelayPreferred(text);
+          },
+          [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
     } else if (cmd == "register") {
       const std::string nickname = request->getString("nickname").value_or("");
       AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(

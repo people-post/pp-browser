@@ -1042,6 +1042,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   PublishAddressDisclosure();
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
   // My relays (multi-relay R3, MR006): the profile's list, seeded once from the deployment's relay and config.
+  my_relays_.reset(); // a profile reset: the old workflow goes before the store it changes
   our_relays_ = std::make_unique<OurRelaysStore>(data_dir_);
   our_relays_->LoadOrSeed(clients_.OrgRelayOf({.relay = settings.relay}), settings.relay_extra_base_urls);
   relay_registrations_ = std::make_unique<RelayRegistrationsWorkflow>(*identity_);

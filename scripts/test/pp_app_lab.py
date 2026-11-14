@@ -2011,6 +2011,61 @@ def scenario_preferred_relay_down_mail_still_arrives(lab):
     return {"down_to_delivered_s": took, "transports": [r.get("transport") for r in rows]}
 
 
+def scenario_preferred_relay_switched_mail_still_arrives(lab):
+    """Multi-relay R3 (MR006): Bob is on relay A alone, and Alice, on B (asking A's directory too), is his contact: she
+    holds his card listing A.
+    Bob adds relay B in My relays and makes it preferred: his identity registers on B, A stays his as another relay,
+    and his card, re-issued as [B, A], goes to Alice. Her message sent at once still reaches him (into A, by the card
+    she held, or into B once the new one landed); once she keeps the new card her messages go into B, and with A
+    stopped they still arrive, while his answers reach her."""
+    b = lab.user("bob", relays=["a"])
+    a = lab.user("alice", relays=["b"], directories=["b", "a"])  # her inbox stays up while A is stopped
+    for u in (a, b):
+        u.wait_mesh()
+    relay_a, relay_b = lab.tls_relays["a"]["origin"], lab.tls_relays["b"]["origin"]
+    a_thread = a.cmd("open_chat", account=b.account)["thread"]
+    first = a.cmd("send", thread=a_thread, text="hi bob")["message_id"]
+    b_thread = wait_for(lambda: thread_with(b, a.account), 40, "bob: alice's chat")
+    wait_for(lambda: transcript_row(b, b_thread, first), 30, "bob: alice's first message")
+    b.cmd("add_to_contacts", thread=b_thread)
+    reply = b.cmd("send", thread=b_thread, text="hi alice")["message_id"]
+    wait_for(lambda: transcript_row(a, a_thread, reply), 30, "alice: bob's answer")
+    wait_for(lambda: kept_relays(a, b.account) == [relay_a] or None, 20, "alice: bob's card with relay A")
+    wait_for(lambda: a.cmd("held_grant", account=b.account)["held"] or None, 30, "alice: bob's grant")
+
+    lab.fresh_tls_registrations(["a", "b"])  # B: an added relay, then the preferred one; A again as another relay
+    b.cmd("add_relay", text=relay_b.split("/api/")[0], timeout=60)
+    wait_for(lambda: [r["origin"] for r in b.cmd("my_relays")["relays"]] == [relay_a, relay_b] or None, 10,
+             "bob: relay B listed")
+    wait_for(lambda: all(r["registered"] for r in b.cmd("my_relays")["relays"]) or None, 60,
+             "bob: registered on both relays after the add")
+    # The add renewed him on A for his newer card; the switch renews him on both again. A relay takes one renewal per
+    # account in 10 s, so the lab gives the switch room as a person's pause between the two would.
+    lab.fresh_tls_registrations(["a", "b"])
+    b.cmd("make_relay_preferred", origin=relay_b, timeout=90)
+    mine = wait_for(lambda: (lambda rows: rows if all(r["registered"] for r in rows) else None)(
+        b.cmd("my_relays")["relays"]), 90, "bob: registered on both relays")
+    if [r["origin"] for r in mine] != [relay_b, relay_a] or not mine[0]["preferred"]:
+        raise ProbeError("bob's relays are %s" % mine)
+    if card_relays(b) != [relay_b, relay_a]:
+        raise ProbeError("bob's card lists %s" % card_relays(b))
+    at_once = a.cmd("send", thread=a_thread, text="right after your switch")["message_id"]
+    at_once_row = wait_for(lambda: transcript_row(b, b_thread, at_once), 60, "bob: alice's message right after")
+    wait_for(lambda: kept_relays(a, b.account) == [relay_b, relay_a] or None, 60, "alice: bob's new card")
+    into_b = a.cmd("send", thread=a_thread, text="into your new preferred relay")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, into_b), 30, "bob: alice's message into B")
+
+    lab.stop_tls_relay("a")
+    try:
+        down = a.cmd("send", thread=a_thread, text="relay A is down")["message_id"]
+        down_row = wait_for(lambda: transcript_row(b, b_thread, down), 60, "bob: a message with relay A down")
+        back = b.cmd("send", thread=b_thread, text="still here")["message_id"]
+        wait_for(lambda: transcript_row(a, a_thread, back), 60, "alice: bob's answer with relay A down")
+    finally:
+        lab.start_tls_relay("a")
+    return {"right_after": at_once_row.get("transport"), "relay_a_down": down_row.get("transport")}
+
+
 def scenario_group_members_key_each_other(lab):
     """Bob and Carol have no directory and have never met. Alice (who has one) writes to each, and each
     adds her from her invite line (group invites come from contacts only); she makes a group of the three:
@@ -4142,6 +4197,7 @@ SCENARIOS = [
     ("strangers_meet_by_invite", scenario_strangers_meet_by_invite),
     ("users_on_two_relays_meet", scenario_users_on_two_relays_meet),
     ("preferred_relay_down_mail_still_arrives", scenario_preferred_relay_down_mail_still_arrives),
+    ("preferred_relay_switched_mail_still_arrives", scenario_preferred_relay_switched_mail_still_arrives),
     ("group_members_key_each_other", scenario_group_members_key_each_other),
     ("group_after_member_removed", scenario_group_after_member_removed),
     ("restored_device_is_heard", scenario_restored_device_is_heard),
@@ -4244,7 +4300,8 @@ NEEDS_DIRECT_PATH = {"seed_down", "seed_dies_in_use", "group_hop_down_mid_call"}
 NEEDS_COLD_SEED_LINK = {"call_during_seed_churn"}
 # Scenarios on the TLS relays (multi-relay R2): host users only — the relays' certificate names their host ports,
 # and a user behind a NAT takes no CA bundle. With --nat they do not run.
-NEEDS_TLS_RELAYS = {"users_on_two_relays_meet", "preferred_relay_down_mail_still_arrives"}
+NEEDS_TLS_RELAYS = {"users_on_two_relays_meet", "preferred_relay_down_mail_still_arrives",
+                    "preferred_relay_switched_mail_still_arrives"}
 # Scenarios that change a user's network: they need a container per user (--nat).
 NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
              "group_one_way_network_drops", "group_two_join_through_drops", "group_call_on_the_road",
