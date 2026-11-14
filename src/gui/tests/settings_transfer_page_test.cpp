@@ -1,4 +1,4 @@
-// The "Move to a new device" page, layout and wording only (Kenneth 2026-11-14): the copy button, the "copied" state and
+// The "Link a new device" page, layout and wording only (Kenneth 2026-11-14): the copy button, the "copied" state and
 // the steps. The export itself (PIN gate, confirm, copy, toast) is unchanged; here the view flag its success path sets is
 // pinned (set by success only, cleared when the page is left).
 #include "gui/SettingsHost.h"
@@ -234,7 +234,7 @@ TEST_F(TransferCopiedFlagTest, TheValidityLinesCarryTheNumberOfMinutesOfTheCodes
   const std::string minutes = std::to_string(kLinkDeviceDefaultTtlMs / 60000);
   EXPECT_EQ(Tr("settings.security.link_device.copied_valid", {{"minutes", minutes}}), "Valid for 15 minutes");
   EXPECT_EQ(Tr("settings.security.link_device.lead", {{"minutes", minutes}}),
-            "Move your account to a new phone. The code is valid for 15 minutes.");
+            "Use the same account on a new phone. The code is valid for 15 minutes.");
 }
 
 } // namespace

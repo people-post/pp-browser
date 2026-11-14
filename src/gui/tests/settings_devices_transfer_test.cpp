@@ -109,7 +109,7 @@ TEST_F(DevicesStyleTest, ADesktopOnlyBlockStaysHiddenOnPhonesWhateverElseItCarri
 }
 
 TEST_F(DevicesStyleTest, TheHelpMarkFollowsTheTitleAndHasA44dpTarget) {
-  const std::string title = "Move to a new device";
+  const std::string title = "Link a new device";
   ui::ElementDocument* document = Load(
       "<div class=\"shell-layer-compact\" style=\"position: absolute; left: 0dp; top: 0dp; width: 390dp;\">"
       "<div class=\"settings-section settings-section--grouped settings-mock stack\"><div class=\"group-card\">"
@@ -138,7 +138,7 @@ TEST_F(DevicesStyleTest, AGroupedPagePrimaryButtonIsFullWidthAnd50dp) {
   ui::ElementDocument* document = Load(
       "<div class=\"shell-layer-compact\" style=\"position: absolute; left: 0dp; top: 0dp; width: 390dp;\">"
       "<div class=\"settings-section settings-section--grouped settings-mock stack\">"
-      "<button id=\"b\" class=\"btn btn-primary settings-page-btn\" type=\"button\">Copy transfer code</button>"
+      "<button id=\"b\" class=\"btn btn-primary settings-page-btn\" type=\"button\">Copy link code</button>"
       "</div></div>");
   ui::Element* button = document->GetElementById("b");
   const ui::Vector2f size = button->GetBox().GetSize(ui::BoxArea::Border);
@@ -157,10 +157,10 @@ TEST(DevicesTransferMarkupTest, TheNewCaptionsExistInBothLanguagesAndReadAsAgree
   }
   const std::string zh = Asset("locales/zh-Hans.json");
   EXPECT_NE(zh.find("\"添加、移除设备要在主设备上操作。\""), std::string::npos);
-  EXPECT_NE(zh.find("\"转移要在主设备上操作。\""), std::string::npos);
+  EXPECT_NE(zh.find("\"关联新设备要在主设备上操作。\""), std::string::npos);
   const std::string en = Asset("locales/en.json");
   EXPECT_NE(en.find("\"Devices are added and removed on your main device.\""), std::string::npos);
-  EXPECT_NE(en.find("\"Transfers are started on your main device.\""), std::string::npos);
+  EXPECT_NE(en.find("\"Linking a new device is done on your main device.\""), std::string::npos);
 }
 
 TEST(DevicesTransferMarkupTest, TheTransferRowAndTheSaveCopyRowCarryTheHelpMarkInlineAfterTheirTitle) {
