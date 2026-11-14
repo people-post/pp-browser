@@ -4,6 +4,7 @@
 // gate like Change PIN (DEV/PLAN-pin-gate-redesign.md B2).
 #include "gui/SecuritySettingsSection.h"
 #include "gui/SettingsSecurityActions.h"
+#include "gui/UserFeedback.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/PinDefaults.h"
@@ -38,7 +39,7 @@ public:
   explicit FakeSettingsHost(SessionStore& store) : store_(store) {}
   SessionStore& Store() override { return store_; }
   void ReportFailure(const Error&) override { ++failures; }
-  void ShowStatus(const std::string&) override {}
+  void ShowStatus(const std::string& status) override { statuses.push_back(status); }
   void Resync(bool) override {}
   SettingsUiState& UiState() override { return state_; }
   void PullFromView() override {}
@@ -50,6 +51,7 @@ public:
 
   int failures = 0;
   int pushes = 0;
+  std::vector<std::string> statuses;
 
 private:
   SessionStore& store_;
@@ -301,6 +303,24 @@ TEST_F(TransferCodePinTest, ChangePinGoesThroughTheGateAndKeepsTheNewKind) {
   ASSERT_TRUE(ok.has_value());
   EXPECT_FALSE(*ok) << "the gate shows the failure";
   EXPECT_EQ(store_.Snapshot().profile_prefs.pin_digits, 0) << "nothing written";
+}
+
+// The result is the bottom white pill; the persistent status line under the page stays empty.
+TEST_F(TransferCodePinTest, ChangePinSaysUpdatedInThePillAndLeavesNoStatusLine) {
+  std::vector<std::string> pills;
+  ShellFeedbackPorts ports;
+  ports.show_toast = [&pills](const std::string& message, ToastDuration) { pills.push_back(message); };
+  UserFeedback::BindPorts(ports);
+  FakeSettingsHost host(store_);
+  SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
+  actions.ChangePin();
+  ASSERT_TRUE(change_);
+  change_("4321", "135790", [](Roe<void>) {});
+  UserFeedback::BindPorts({});
+  EXPECT_EQ(pills, std::vector<std::string>{Tr("settings.security.pin_updated")});
+  for (const std::string& status : host.statuses) {
+    EXPECT_EQ(status, "") << "no persistent success line";
+  }
 }
 
 // Kenneth 2026-11-07: Change PIN on the app default PIN (public anyway) skips the "current PIN" step; the change uses

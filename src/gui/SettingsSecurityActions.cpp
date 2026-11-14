@@ -204,7 +204,7 @@ void SettingsSecurityActions::ChangePin() {
             return;
           }
           host_.Resync(true);
-          host_.ShowStatus(Tr("settings.security.pin_updated"));
+          host_.ShowStatus(""); // the white pill below is the result; no line left on the page
           UserFeedback::Ok(Tr("settings.security.pin_updated"));
         },
         std::move(current_pin));

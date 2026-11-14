@@ -197,7 +197,7 @@ bool SettingsProfileActions::RegisterUnlocked(const bool renewing, const bool qu
     return true; // "Reconnected" is said when a poll gets through (ChatController)
   }
   const std::string message = renewing ? Tr("settings.registration.renewed") : Tr("settings.registration.done");
-  host_.ShowStatus(message);
+  host_.ShowStatus(""); // the white pill below is the result; no line left on the page
   UserFeedback::Ok(message);
   return true;
 }
@@ -215,7 +215,7 @@ void SettingsProfileActions::RotateBriefLlmKey() {
       return;
     }
     host_.Resync();
-    host_.ShowStatus(Tr("settings.llm.brief_key_rotated"));
+    host_.ShowStatus(""); // the white pill below is the result; no line left on the page
     UserFeedback::Ok(Tr("settings.llm.brief_key_rotated"));
   });
 }

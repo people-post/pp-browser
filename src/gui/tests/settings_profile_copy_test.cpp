@@ -45,7 +45,7 @@ class StubHost : public SettingsHost {
 public:
   SessionStore& Store() override { return store; }
   void ReportFailure(const Error&) override {}
-  void ShowStatus(const std::string&) override {}
+  void ShowStatus(const std::string& status) override { statuses.push_back(status); }
   void Resync(bool) override {}
   SettingsUiState& UiState() override { return state; }
   void PullFromView() override { ++pulls; }
@@ -58,6 +58,7 @@ public:
   SettingsUiState state;
   int saves = 0;
   int pulls = 0;
+  std::vector<std::string> statuses; // every ShowStatus call, in order
 };
 
 constexpr const char* kContext = "settings-profile-copy-test";
@@ -80,6 +81,7 @@ protected:
         "<rml><body><div data-model=\"settings\"><button id=\"copy\" "
         "data-event-click=\"copy_profile_id()\">x</button>"
         "<button id=\"qr\" data-event-click=\"show_my_qr()\">x</button>"
+        "<button id=\"rotate\" data-event-click=\"rotate_brief_llm_key()\">x</button>"
         "</div></body></rml>");
     ASSERT_NE(document, nullptr);
     document->Show();
@@ -209,6 +211,38 @@ TEST_F(SettingsProfileCopyTest, TheSettingsButtonStillCommitsAndSendsThePagesNic
   EXPECT_EQ(registered_with, (std::vector<std::string>{"Typed"}));
   EXPECT_EQ(host.saves, 1);
   EXPECT_EQ(host.pulls, 1);
+}
+
+// A success is said once, in the bottom white pill. The persistent status line under the page (it stays until the page is
+// left) must not carry it too: every ShowStatus call after a success leaves the line empty.
+TEST_F(SettingsProfileCopyTest, ARegistrationSaysDoneInThePillAndLeavesNoStatusLine) {
+  unlock.ensure_unlocked = [](std::function<void(bool)> then) { then(true); };
+  commands.register_identity = [](const RegisterIdentityArgs&) -> Roe<void> { return {}; };
+  actions->Register();
+  ASSERT_EQ(toasts.size(), 1u);
+  EXPECT_EQ(toasts[0], Tr("settings.registration.done"));
+  for (const std::string& status : host.statuses) {
+    EXPECT_EQ(status, "") << "no persistent success line";
+  }
+  host.state.profile_registered = "yes";
+  toasts.clear();
+  actions->Register();
+  ASSERT_EQ(toasts.size(), 1u);
+  EXPECT_EQ(toasts[0], Tr("settings.registration.renewed"));
+  for (const std::string& status : host.statuses) {
+    EXPECT_EQ(status, "");
+  }
+}
+
+TEST_F(SettingsProfileCopyTest, ARotatedKeySaysSoInThePillAndLeavesNoStatusLine) {
+  unlock.ensure_unlocked = [](std::function<void(bool)> then) { then(true); };
+  commands.rotate_brief_llm_key = []() -> Roe<void> { return {}; };
+  document->GetElementById("rotate")->DispatchEvent(ui::EventId::Click, {});
+  ASSERT_EQ(toasts.size(), 1u);
+  EXPECT_EQ(toasts[0], Tr("settings.llm.brief_key_rotated"));
+  for (const std::string& status : host.statuses) {
+    EXPECT_EQ(status, "");
+  }
 }
 
 } // namespace

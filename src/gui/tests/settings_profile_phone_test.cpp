@@ -167,7 +167,7 @@ TEST_F(SettingsProfilePhoneTest, TheStatusValueMergesStatusAndExpiryUnderTheOldE
   const std::string rml = ReadAsset("views/settings_section_profile.rml");
   const std::string value_open =
       "<span class=\"group-row-value group-row-value--wrap\">{{profile_registration_status}}"
-      "<span data-if=\"advanced && profile_registration_expires != ''\"> · "
+      "<span class=\"group-row-sub\" data-if=\"advanced && profile_registration_expires != ''\">"
       "{{i18n:settings.profile.expires_row}} {{profile_registration_expires}}</span></span>";
   ASSERT_EQ(Count(rml, value_open), 1u);
   // Today's gate of the expiry row, verbatim (from the checklist before this change).
@@ -191,13 +191,13 @@ TEST_F(SettingsProfilePhoneTest, TheStatusValueMergesStatusAndExpiryUnderTheOldE
       for (const bool advanced : {false, true}) {
         std::string value = state.profile_registration_status;
         if (advanced && !state.profile_registration_expires.empty()) {
-          value += " · " + Tr("settings.profile.expires_row") + " " + state.profile_registration_expires;
+          value += "\n" + Tr("settings.profile.expires_row") + " " + state.profile_registration_expires;
         }
         if (!advanced || std::string(c.expires).empty()) {
           EXPECT_EQ(value, state.profile_registration_status) << "no expiry part: advanced off or no expiry";
         } else {
           EXPECT_EQ(value,
-                    state.profile_registration_status + " · " + Tr("settings.profile.expires_row") + " " + c.expires);
+                    state.profile_registration_status + "\n" + Tr("settings.profile.expires_row") + " " + c.expires);
         }
       }
     }
@@ -306,15 +306,16 @@ TEST_F(SettingsProfilePhoneTest, EveryRegistrationStatusIsWordedInBothLanguages)
   LocalizationService::Instance().SetPreferredLanguage("en");
 }
 
-// "Update now" is a small text button at the right end of the Status row, under exactly the gate of the row it
+// "Update now" is the small tinted pill at the right end of the Status row, under exactly the gate of the row it
 // replaced; the auto-update switch has a "?" after its title (a local note) and no caption.
 TEST_F(SettingsProfilePhoneTest, TheUpdateNowButtonKeepsTheOldRowsGateAndEventAndTheSwitchHasNoCaption) {
   const std::string rml = ReadAsset("views/settings_section_profile.rml");
   EXPECT_EQ(Count(rml, "data-event-click=\"register_profile()\""), 3u) << "desktop button, phone button, Update now";
   const std::string button =
-      "<button class=\"settings-text-btn\" type=\"button\" data-if=\"advanced && profile_show_register && "
-      "!profile_register_primary\"\n                      data-event-click=\"register_profile()\">"
-      "{{i18n:settings.profile.update_now}}</button>";
+      "<button class=\"settings-pill-btn\" type=\"button\" data-if=\"advanced && profile_show_register && "
+      "!profile_register_primary\"\n                      data-event-click=\"register_profile()\">\n"
+      "                <span class=\"settings-pill\">{{i18n:settings.profile.update_now}}</span>\n"
+      "              </button>";
   ASSERT_EQ(Count(rml, button), 1u);
   // It sits in the Status row, after the value, so it is at the right end.
   const size_t status = rml.find("{{i18n:settings.profile.registration_row}}");
@@ -348,11 +349,13 @@ TEST_F(SettingsProfilePhoneTest, TheUpdateNowButtonKeepsTheOldRowsGateAndEventAn
   EXPECT_NE(rml.find("data-event-click=\"register_profile()\"", phone_button), std::string::npos);
   EXPECT_NE(rml.find("btn btn-primary settings-desktop-only\" type=\"button\" data-if=\"profile_show_register\""),
             std::string::npos);
-  // The text button is a 44dp tap area.
+  // The same tinted pill as Help's Send: a 44dp tap area round a 32dp pill; no text-link button is left on the row.
   const std::string css = ReadAsset("themes/components.rcss");
-  const std::string rule = RuleBody(css, ".shell-layer-compact .settings-text-btn");
-  EXPECT_NE(rule.find("height: 44dp"), std::string::npos);
-  EXPECT_NE(rule.find("min-width: 44dp"), std::string::npos);
+  EXPECT_NE(RuleBody(css, ".shell-layer-compact .settings-pill-btn").find("height: 44dp"), std::string::npos);
+  EXPECT_NE(RuleBody(css, ".shell-layer-compact .settings-pill").find("height: 32dp"), std::string::npos);
+  const size_t status_row = rml.find("{{i18n:settings.profile.registration_row}}");
+  EXPECT_EQ(rml.substr(status_row, rml.find("toggle_auto_renew_registration()") - status_row).find("settings-text-btn"),
+            std::string::npos);
 }
 
 // The date after the status: only for a card that is registered (active, expiring soon, expired, wrong service), never for
@@ -376,15 +379,15 @@ TEST_F(SettingsProfilePhoneTest, TheStatusRowAppendsAnExpiryOnlyForARegisteredCa
           view.registration_status = RegistrationStatusLabel(st.status);
           view.registration_expires = has_date ? "2027-02-11" : "";
           const SettingsUiState state = Synced(view);
-          // The page: the status, then " · Valid until <date>" under `advanced && expires != ''`.
+          // The page: the status, then a grey second line "Valid until <date>" under `advanced && expires != ''`.
           std::string text = state.profile_registration_status;
           if (advanced && !state.profile_registration_expires.empty()) {
-            text += " · " + Tr("settings.profile.expires_row") + " " + state.profile_registration_expires;
+            text += "\n" + Tr("settings.profile.expires_row") + " " + state.profile_registration_expires;
           }
           const bool expect_date = advanced && has_date && st.registered;
           const std::string want =
               state.profile_registration_status +
-              (expect_date ? " · " + Tr("settings.profile.expires_row") + " 2027-02-11" : std::string());
+              (expect_date ? "\n" + Tr("settings.profile.expires_row") + " 2027-02-11" : std::string());
           EXPECT_EQ(text, want) << view.registration_status << " advanced=" << advanced << " has_date=" << has_date;
         }
       }
