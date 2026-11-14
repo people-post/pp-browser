@@ -28,6 +28,8 @@ struct HubSettings {
   std::string app_data_dir;
   /** The profile's policies as they stand at start (later changes arrive through Apply). */
   HubPolicyPrefs policy;
+  /** The system's name for this device, read once at startup on the main thread (empty: unknown). */
+  std::string system_device_name;
 };
 
 } // namespace pbr

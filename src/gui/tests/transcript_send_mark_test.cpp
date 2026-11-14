@@ -159,7 +159,7 @@ TEST_F(TranscriptSendMarkTest, NoReasonPromisesARetryAnyMore) {
   };
   for (const char* language : {"en", "zh-Hans"}) {
     LocalizationService::Instance().SetPreferredLanguage(language);
-    for (int i = static_cast<int>(SendFailure::Unknown); i <= static_cast<int>(SendFailure::RelayRejected); ++i) {
+    for (int i = static_cast<int>(SendFailure::Unknown); i <= static_cast<int>(SendFailure::SenderNotRegistered); ++i) {
       const auto failure = static_cast<SendFailure>(i);
       const std::string text = lower(SendFailureText(failure));
       const std::string what = std::string(language) + " " + SendFailureWord(failure).c_str() + ": " + text;

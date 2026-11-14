@@ -127,6 +127,7 @@ CallController::CallController()
                                      Tr("call.replace.action"));
   };
   callbacks.on_hold_here = [this]() { return local_hold_.OnHold(); };
+  callbacks.app_foreground = []() { return AppLifecycle::IsForeground(); };
   callbacks.show_current_call = [this]() {
     if (chrome_mode_ == CallChromeMode::Minimized) {
       RestoreChromeFromMinimized();
@@ -146,6 +147,7 @@ CallController::CallController()
 }
 
 CallController::~CallController() {
+  ReleaseScreenAwake("ended");
   AppRuntime::CancelCoordinatorTimer(ring_timer_);
   OngoingCallService::SetHangUpHandler({});
   AppLifecycle::RemoveListener(background_listener_);
@@ -182,6 +184,67 @@ void CallController::SyncOngoingCall() {
   OngoingCallService::SetOngoingCall(on, title);
 }
 
+namespace {
+constexpr ShareWord kScreenAwakeReasons[] = {"video_call", "ended", "hold", "no_video"};
+} // namespace
+
+void CallController::SyncScreenAwake() {
+  const CallScreen& screen = presenter_.Screen();
+  const std::string& call_id = presenter_.ActiveCallId();
+  auto* backend = Backend();
+  CallScreenAwakeFacts facts;
+  facts.has_call = !call_id.empty() && call_id != presenter_.LeavingCallId();
+  // A failed call's page stays up; a camera preview there must not hold the screen.
+  facts.failed =
+      screen.status == CallScreen::Status::CouldntConnect || screen.status == CallScreen::Status::Disconnected;
+  // Not yet live: calling out / connecting.
+  facts.connected = screen.status != CallScreen::Status::Calling && screen.status != CallScreen::Status::Connecting &&
+                    screen.status != CallScreen::Status::SettingUpGroup &&
+                    screen.status != CallScreen::Status::WaitingForMediaPath;
+  facts.video_mode = screen.video;
+  facts.camera_on = backend && backend->Available() && backend->Media().IsCameraEnabled();
+  // A peer's picture on screen: a group's tiles (their live streams), else the 1:1 stage (the presenter's decision).
+  facts.remote_video = in_call_.remote_video;
+  if (in_call_.show_roster) {
+    facts.remote_video = std::any_of(in_call_.roster.begin(), in_call_.roster.end(),
+                                     [](const CallRosterParticipantState& row) { return row.has_remote_video; });
+  }
+  facts.on_hold = local_hold_.OnHold();
+  // Ringing: an incoming call on screen, also over a live call (then the page is looked at, not held to the ear).
+  facts.ringing = screen.kind == CallScreen::Kind::Ringing;
+  facts.placed_here = screen.kind == CallScreen::Kind::InCall && screen.placed_here;
+  SyncProximityScreenOff(CallWantsProximityScreenOff(facts));
+  screen_awake_reason_ = CallScreenAwakeReason(facts);
+  if (screen_awake_.Set(CallWantsScreenOn(facts), util::NowUnixMs())) {
+    MetricsLine("screen.keep_on")
+        .Add("on", screen_awake_.On())
+        .Pick("reason", screen_awake_reason_, kScreenAwakeReasons)
+        .Emit();
+  }
+}
+
+void CallController::SyncProximityScreenOff(const bool want) {
+  const int64_t now = util::NowUnixMs();
+  if (want != proximity_wanted_) {
+    proximity_wanted_ = want;
+    proximity_next_ms_ = now + kProximityRecheckMs;
+    SetProximityScreenOff(want);
+  } else if (want && now >= proximity_next_ms_) {
+    // The output route may have changed (headphones, Bluetooth): the platform re-reads it, and writes only on a change.
+    proximity_next_ms_ = now + kProximityRecheckMs;
+    SetProximityScreenOff(true);
+  }
+}
+
+void CallController::ReleaseScreenAwake(const char* reason) {
+  proximity_wanted_ = false;
+  SetProximityScreenOff(false); // no call, no sensor: whatever path ends the call or the window passes here
+  screen_awake_reason_ = reason;
+  if (screen_awake_.ForceOff()) {
+    MetricsLine("screen.keep_on").Add("on", false).Pick("reason", reason, kScreenAwakeReasons).Emit();
+  }
+}
+
 CallLocalHold::Ports CallController::LocalHoldPorts() {
   CallLocalHold::Ports ports;
   ports.mic_muted = [this]() {
@@ -192,13 +255,13 @@ CallLocalHold::Ports CallController::LocalHoldPorts() {
     auto* backend = Backend();
     return backend && backend->Available() && backend->Media().IsCameraEnabled();
   };
-  ports.publish_hold = [this](const bool on_hold, std::function<void(Roe<void>)> done) {
+  ports.publish_hold = [this](const bool on_hold, const std::optional<bool> mute, std::function<void(Roe<void>)> done) {
     auto* backend = Backend();
     if (!backend || !backend->Available()) {
       done(Error("calls unavailable"));
       return;
     }
-    backend->SetLocalOnHold(on_hold, std::move(done));
+    backend->SetLocalOnHold(on_hold, mute, std::move(done));
   };
   ports.set_mic_muted = [this](const bool muted) {
     if (auto* backend = Backend(); backend && backend->Available()) {
@@ -237,6 +300,8 @@ void CallController::OnAppBackground() {
 
 void CallController::OnAppForeground() {
   local_hold_.OnAppForeground();
+  // The call may have ended while in the background: write the current wanted value once, whatever was compared last.
+  SetProximityScreenOff(proximity_wanted_);
   // Back in front with the phone's call screen ringing for us: its settle time counts from now (the timer hands over).
   system_call_screen_.Reevaluate(AppLifecycle::IsVisible());
 }
@@ -317,6 +382,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .ring_call_id = ring.call_id.c_str(),
       .in_call_id = in_call.call_id.c_str(),
       .in_call_subtitle = in_call.subtitle.c_str(),
+      .in_call_subtitle_warning = in_call.subtitle_warning,
       .ring_caller_label = ring.caller_label.c_str(),
       .ring_media_label = ring.media_label.c_str(),
       .ring_eyebrow = ring.eyebrow.c_str(),
@@ -568,6 +634,7 @@ void CallController::Tick() {
   SyncRingtone();
   SyncLocalHold();
   SyncOngoingCall();
+  SyncScreenAwake();
   EndDisconnectedCall(now);
   if (metrics_.Tracking()) {
     auto* backend = Backend();
@@ -763,6 +830,7 @@ void CallController::ClearRing() {
 }
 
 void CallController::PrepareForShutdown() {
+  ReleaseScreenAwake("ended"); // the window is still up: the OS's sleep comes back before SDL quits
   if (!AppRuntime::CurrentlyOnUI()) {
     log().warning << "PrepareForShutdown off UI thread";
   }
@@ -1292,6 +1360,7 @@ void CallController::RenderFailedPage(const CallFailedPage& page, const int64_t 
   in_call.title = page.video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
   in_call.peer_label = CallerNameFor(page.peer_identity).label.c_str();
   in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
+  in_call.subtitle_warning = false;
   in_call.status_hint = StatusHintText(shown.hint, shown).c_str();
   in_call.quality_hint = "";
   in_call.show_retry = true; // the desktop bar's icon: Call again
@@ -1311,6 +1380,7 @@ void CallController::RenderAnswering(const CallScreen& screen, const CallMediaSc
   in_call_.active = true;
   in_call_.call_id = screen.ring_call_id;
   in_call_.subtitle = Tr("call.status.connecting").c_str();
+  in_call_.subtitle_warning = false;
   in_call_.title = screen.ring_video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
   in_call_.peer_label = CallerNameFor(screen.caller_identity).label.c_str();
   // Answered with video: switch to the video stage right away (see CallMediaFrame::kVideoStartMs).
@@ -1885,6 +1955,7 @@ void CallController::ApplyStatusLine(const CallScreen& screen, const CallMediaSc
   auto& in_call = in_call_;
   in_call.elapsed = FormatTimer(frame.timer_since_ms, now_ms).c_str();
   in_call.subtitle = StatusLineText(frame.line, screen, now_ms).c_str();
+  in_call.subtitle_warning = frame.line.warning;
   in_call.status_hint = StatusHintText(frame.line.hint, screen).c_str();
   // The middle line as the presenter decided (a 1:1 call: never; the pills say it — DEV/PLAN-call-failed-redial.md 9).
   in_call.quality_hint = frame.center_hint_key.empty() ? "" : Tr(frame.center_hint_key).c_str();

@@ -45,6 +45,28 @@ Roe<RegistrationResult> RenewNetworkOnly(IRegistrationClient& registration, Iden
 Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationResult& result,
                                   const std::string& expected_account_id);
 
+/**
+ * What a registration the user asked for needs to run its network half off the UI thread: everything the UI thread read
+ * (account, nickname, advertised addresses, the account card) by value, and the two stores it talks to. The pointers
+ * must outlive the run (a teardown waits for running worker tasks before it destroys them).
+ */
+struct RegistrationJob {
+  std::string account_id;
+  std::string nickname;
+  std::vector<std::string> listen_addrs;
+  RegistrationPublishOpts publish;
+  IRegistrationClient* registration = nullptr;
+  IdentityStore* identity = nullptr;
+};
+
+/** The job for `identity` (the identity as stored once its new nickname was saved); the inputs as given. */
+RegistrationJob MakeRegistrationJob(IRegistrationClient& registration, IdentityStore& identity_store,
+                                    const LocalIdentity& identity, std::vector<std::string> listen_addrs,
+                                    RegistrationPublishOpts publish);
+
+/** The job's network half (RenewNetworkOnly with its inputs); nothing is stored. May run off the UI thread. */
+Roe<RegistrationResult> RunRegistrationJob(const RegistrationJob& job);
+
 /** Finish registration + Identity.Update with ApplyRegistrationResult: RenewNetworkOnly, then PersistRenewal. */
 Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,
                                                 const std::string& nickname,
@@ -66,6 +88,12 @@ Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, Identity
 Roe<std::optional<RegistrationResult>> MaybeAutoRenewNetworkOnly(IRegistrationClient& registration,
                                                                  IdentityStore& identity, bool auto_renew_enabled,
                                                                  const RegistrationPublishOpts& publish = {});
+
+/**
+ * The server refused the registration itself (RegistrationHttpStatusError: a 4xx but 408 / 429), as opposed to a
+ * failure that may pass (network, timeout, 5xx, 408, 429, or an untyped local error).
+ */
+bool IsRegistrationRefused(const Error& error);
 
 Roe<RegistrationResult> UpdateRegisteredNickname(IRegistrationClient& registration, IdentityStore& identity,
                                                  const std::string& nickname);

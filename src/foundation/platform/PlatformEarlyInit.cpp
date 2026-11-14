@@ -39,6 +39,10 @@ bool SDLCALL AppLifecycleWatch(void* /*userdata*/, SDL_Event* event) {
 } // namespace
 
 bool Platform::EarlyInit() {
+  // B215: SDL reads this only in SDL_VideoInit and, finding it unset, turns the OS's screen sleep off for good. On
+  // phones ResolveMobileWindowSize starts video before BrowserHost does, so the hint is set here: main() calls this
+  // before anything else touches SDL (the arg loop and logging above it use no SDL), on every platform.
+  SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1");
 #if defined(__ANDROID__)
   // B126: something closes a file descriptor it does not own (another unique_fd's) during group video; fdsan's
   // default for apps aborts the process. Until it is found, warn once instead: Android still logs the offending

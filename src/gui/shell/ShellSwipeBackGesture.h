@@ -42,6 +42,16 @@ public:
      * Useful when listening on a parent that also hosts non-drill-down chrome.
      */
     ui::Element* content_root = nullptr;
+    /**
+     * Optional: a press this says true for never starts the swipe-back. A list row's own swipe that is open claims the
+     * drags that start on it (the New chat contact rows), so the page must not slide at the same time.
+     */
+    std::function<bool(ui::Element* target)> ignore_press;
+    /**
+     * A press that starts in the left edge strip may begin the swipe even on a button. Settings pages are made of
+     * buttons (cards, rows, choices), and a button anywhere else still keeps its press: only the edge strip is ours.
+     */
+    bool edge_over_buttons = false;
   };
 
   void Attach(ui::Element* listen_surface, ui::Context* context, AttachOptions options, DismissCallback on_dismiss);
@@ -51,7 +61,7 @@ public:
   void ProcessEvent(ui::Event& event) override;
 
 private:
-  bool ShouldIgnoreTarget(ui::Element* target) const;
+  bool ShouldIgnoreTarget(ui::Element* target, int x_px) const;
   bool ShouldStartSwipe(ui::Element* target, int x_px) const;
   bool IsChromeRegion(ui::Element* target) const;
   bool IsUnder(ui::Element* ancestor, ui::Element* target) const;
@@ -59,6 +69,8 @@ private:
   void BeginDrag(int x_px, int y_px, bool from_edge);
   void UpdateDrag(int x_px, int y_px, ui::Event& event);
   void EndDrag();
+  /** Gives back what this press took from the shared axis lock (see UpdateDrag's Vertical branch). */
+  void ReleaseAxisLock();
   void SetSurfaceOffset(float dx_dp, bool animate);
   void SetDocumentDragCapture(bool enabled);
   float PixelDeltaToDp(int delta_px) const;
@@ -76,6 +88,9 @@ private:
   bool tracking_ = false;
   bool dragging_ = false;
   bool from_edge_ = false;
+  /** This press moved the shared lock off None / set its prefer-horizontal flag; it releases them when it ends. */
+  bool owns_axis_lock_ = false;
+  bool armed_prefer_horizontal_ = false;
   /** Set when a drag ended on this surface: the click that follows the release is dropped. */
   bool swallow_click_ = false;
   std::chrono::steady_clock::time_point swallow_click_since_{};

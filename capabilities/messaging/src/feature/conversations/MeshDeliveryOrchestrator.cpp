@@ -2135,6 +2135,11 @@ void MeshDeliveryOrchestrator::SetOnBriefRelayHealthChanged(std::function<void(B
   on_brief_relay_health_changed_ = std::move(callback);
 }
 
+void MeshDeliveryOrchestrator::SetOnRelayNotRegistered(std::function<void()> callback) {
+  std::lock_guard lock(brief_relay_health_cb_mu_);
+  on_relay_not_registered_ = std::move(callback);
+}
+
 void MeshDeliveryOrchestrator::StoreBriefRelayHealth(const BriefRelayHealthState state) {
   if (brief_relay_health_.exchange(static_cast<int>(state), std::memory_order_relaxed) == static_cast<int>(state)) {
     return;
@@ -2223,8 +2228,19 @@ RelayInboxCoordinator::Ports MeshDeliveryOrchestrator::InboxPorts() {
     TakeRelayBatch(batch, account_id);
   };
   ports.polled = [this](const std::string&, const bool preferred, const Error* failure) {
-    if (preferred) {
-      StoreBriefRelayHealth(failure ? BriefRelayHealthState::Failed : BriefRelayHealthState::Ok);
+    if (!preferred) {
+      return; // another relay re-registers by itself (RelayRegistrationsWorkflow)
+    }
+    StoreBriefRelayHealth(failure ? BriefRelayHealthState::Failed : BriefRelayHealthState::Ok);
+    if (failure && IsRelayUserNotRegistered(*failure)) {
+      std::function<void()> callback;
+      {
+        std::lock_guard lock(brief_relay_health_cb_mu_); // the poll worker vs. the owner's reset
+        callback = on_relay_not_registered_;
+      }
+      if (callback) {
+        callback();
+      }
     }
   };
   ports.ready = [this](const std::string& origin) { return InboxReady(origin); };

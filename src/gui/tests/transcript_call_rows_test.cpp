@@ -11,6 +11,7 @@
 #include "gui/chat/TranscriptRml.h"
 #include "common/Utilities.h"
 #include "common/chat/SystemControl.h"
+#include "foundation/i18n/LocalizationService.h"
 
 #include <filesystem>
 #include <fstream>
@@ -106,18 +107,20 @@ TEST_F(TranscriptCallRowsTest, OurVoiceCallIsAPillOnOurSideWithThePhoneIcon) {
   const std::string rml = row.content_rml.c_str();
   EXPECT_EQ(std::string(row.row_class.c_str()), "message-row-user");
   EXPECT_NE(rml.find("chat-call-row"), std::string::npos) << rml;
-  EXPECT_NE(rml.find("../icons/phone.svg"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("../icons/v2/phone-outgoing.svg"), std::string::npos) << rml;
   EXPECT_NE(rml.find("1:11"), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("通话"), std::string::npos) << rml;
   EXPECT_EQ(rml.find("chat-system-line"), std::string::npos) << rml;
   EXPECT_EQ(rml.find("muted"), std::string::npos) << rml;
 }
 
-TEST_F(TranscriptCallRowsTest, TheirVideoCallSitsOnTheirSideWithTheCameraIcon) {
+TEST_F(TranscriptCallRowsTest, TheirVideoCallSitsOnTheirSideWithTheIncomingCamera) {
   const MessageDisplayRow row = Row("account:peer", CallMediaMode::Video, CallOutcome::Completed, 56'000);
   const std::string rml = row.content_rml.c_str();
   EXPECT_EQ(std::string(row.row_class.c_str()), "message-row-peer");
-  EXPECT_NE(rml.find("../icons/video.svg"), std::string::npos) << rml;
-  EXPECT_NE(rml.find("0:56"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("../icons/v2/video-incoming.svg"), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("phone-"), std::string::npos) << rml;
+  EXPECT_NE(rml.find(">0:56<"), std::string::npos) << rml;
 }
 
 TEST_F(TranscriptCallRowsTest, AGroupCallSomeoneElseStartedSitsOnTheirSide) {
@@ -133,6 +136,7 @@ TEST_F(TranscriptCallRowsTest, AGroupCallSomeoneElseStartedSitsOnTheirSide) {
 TEST_F(TranscriptCallRowsTest, AMissedCallIsMutedAndHasNoDuration) {
   const MessageDisplayRow row = Row("account:peer", CallMediaMode::Voice, CallOutcome::Missed, std::nullopt);
   const std::string rml = row.content_rml.c_str();
+  EXPECT_NE(rml.find("../icons/v2/phone-x.svg"), std::string::npos) << rml;
   EXPECT_NE(rml.find("chat-call-row muted"), std::string::npos) << rml;
   EXPECT_EQ(rml.find(':'), std::string::npos) << rml;
 }

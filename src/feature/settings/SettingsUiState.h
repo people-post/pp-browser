@@ -16,6 +16,8 @@ struct McpServerUiState {
 struct SettingsUiState {
   /** UI switch value: "on" or "off" (Me → About). Hides ids, endpoints, MCP and paths when off. */
   std::string show_advanced_settings = "off";
+  /** UI switch value: "on" or "off" (Me → Help, five taps on the version). Shows the Test options page and the QA service. */
+  std::string show_tester_options = "off";
   std::string llm_preset = "brief";
   std::string llm_base_url;
   std::string llm_model;
@@ -71,6 +73,8 @@ struct SettingsUiState {
   std::string profile_registration_expires;
   std::string profile_register_label = "Register on network";
   bool profile_show_register = true;
+  // Display only: true while the card needs action (the big blue button); false when it is fine.
+  bool profile_register_primary = true;
   bool profile_show_rotate = false;
   std::string profile_icon_src;
   bool profile_has_icon = false;

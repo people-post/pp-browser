@@ -57,6 +57,10 @@ std::string UnlockGraceDisplayLabel(const int minutes) {
   return Tr("settings.security.grace.15");
 }
 
+std::vector<int> OfferedUnlockGraceMinutes() {
+  return {0, 5, 15, 60};
+}
+
 std::string BiometricSwitchLabel(const std::string& kind) {
   if (kind == "touch") {
     return Tr("settings.security.biometric.touch");

@@ -1,0 +1,26 @@
+<!-- The custom service addresses: inline in the Advanced page on the desktop, the page "Custom addresses" on phones. -->
+        <div class="stack" data-if="backend_is_custom">
+        <div class="group-card">
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.network.relay}}</span>
+              <input class="field" type="text" data-value="relay_base_url" data-event-change="on_network_field_changed()"/>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.network.directory}}</span>
+              <input class="field" type="text" data-value="directory_base_url" data-event-change="on_network_field_changed()"/>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.network.registration}}</span>
+              <input class="field" type="text" data-value="registration_base_url" data-event-change="on_network_field_changed()"/>
+            </span>
+          </label>
+          <button class="btn btn-secondary settings-action-bar settings-action-row" type="button"
+                  data-event-click="reset_section('network')">{{i18n:common.reset_defaults}}</button>
+        </div>
+        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.network.backend.custom_caption}}</p>
+        </div>

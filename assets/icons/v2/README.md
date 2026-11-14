@@ -37,6 +37,9 @@ Old icons with no v2 counterpart (not in any mockup): more, pin, play/stop/pause
 | paperclip | 07-SetPrivacyHelp; §8.5 | drawn | `attach.svg` |
 | phone | 01-chat, 03-home-edit, 04-contact-detail, 05-WideChats (+9 more); §8.12 / 8.6 | drawn | `phone.svg` |
 | phone-hangup-fill | 06-CallGroupRing, 06-CallGroupVideo, 06-CallGroupVoice, 06-CallRing (+2 more); §8.12 | drawn | `phone-hangup.svg` |
+| phone-incoming | chat transcript call record + chat list preview (voice call you received) | drawn | - |
+| phone-outgoing | chat transcript call record + chat list preview (voice call you made) | drawn | - |
+| phone-x | chat transcript call record + chat list preview (voice call missed / declined / did not connect) | drawn | - |
 | play-fill | 01-chat, 05-WideChats, WideChats | drawn | `play.svg` |
 | plus | 01-chat, 04-contacts, 04-contacts-add, 05-WideChats (+10 more); §8.5 / 8.1 | drawn | `plus.svg` |
 | qr-code | 07-Me | drawn | `qr-scan.svg` |
@@ -56,6 +59,9 @@ Old icons with no v2 counterpart (not in any mockup): more, pin, play/stop/pause
 | tab-me | 02-chatlist, 03-home, 04-contacts, 04-contacts-add (+7 more); §8.2 | drawn | `me.svg` |
 | user | 03-home-edit | drawn | - |
 | user-plus | 04-contacts, 04-contacts-add, 05-WideContacts, WideContacts | drawn | - |
+| video-incoming | chat transcript call record + chat list preview (video call you received) | drawn | - |
+| video-outgoing | chat transcript call record + chat list preview (video call you made) | drawn | - |
+| video-x | chat transcript call record + chat list preview (video call missed / declined / did not connect) | drawn | - |
 | video | 01-chat, 04-contact-detail, 05-WideChats, 05-WideContacts (+11 more); §8.12 | drawn | `video.svg` |
 | archive | phone context menus (chat row Archive / Unarchive) | drawn | `archive.svg` |
 | block | phone context menus (chat row Block / Unblock) | drawn | - |

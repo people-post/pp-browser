@@ -34,6 +34,7 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
                                     ProfileSecretsEngine& secrets) {
   PlatformHooks::Register();
   InstallPlatformLogSink();
+  (void)StartupSystemDeviceName(); // read once, here on the main thread; every later use is the kept value
 
   auto config = Config::Load(options.argc, options.argv);
   if (!config) {

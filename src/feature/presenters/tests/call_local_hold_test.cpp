@@ -17,6 +17,9 @@ struct FakeCall {
   /** Publishes are answered when the test says (SetLocalOnHold replies later, on UI). */
   std::vector<std::pair<bool, std::function<void(Roe<void>)>>> publishes;
   std::vector<bool> told;
+  /** B221: every roster that would leave, in order: what the others see of {muted, on_hold} after it. */
+  std::vector<std::pair<bool, bool>> rosters; // {muted, on_hold}
+  bool on_hold_row = false;
   std::vector<bool> camera_pauses;
   std::vector<std::string> notes;
 
@@ -24,10 +27,18 @@ struct FakeCall {
     CallLocalHold::Ports ports;
     ports.mic_muted = [this]() { return muted; };
     ports.camera_on = [this]() { return camera; };
-    ports.publish_hold = [this](bool on_hold, std::function<void(Roe<void>)> done) {
+    ports.publish_hold = [this](bool on_hold, std::optional<bool> mute, std::function<void(Roe<void>)> done) {
+      if (mute) {
+        muted = *mute; // the call applies the mic change and the hold, then sends ONE roster
+      }
+      on_hold_row = on_hold;
+      rosters.emplace_back(muted, on_hold_row);
       publishes.emplace_back(on_hold, std::move(done));
     };
-    ports.set_mic_muted = [this](bool m) { muted = m; };
+    ports.set_mic_muted = [this](bool m) {
+      muted = m; // SetLocalAudioMuted: its own roster, with the hold as the store has it now
+      rosters.emplace_back(muted, on_hold_row);
+    };
     ports.set_camera_paused = [this](bool paused) { camera_pauses.push_back(paused); };
     ports.note = [this](const std::string& key) { notes.push_back(key); };
     return ports;
@@ -71,6 +82,57 @@ TEST(CallLocalHoldTest, TheOthersAreToldWhenTheHoldBeginsAndEnds) {
   call.Tell();
   EXPECT_EQ(call.told, (std::vector<bool>{true, false}));
   EXPECT_EQ(call.notes, (std::vector<std::string>{"call.status.on_hold_local", "call.status.on_hold_ended"}));
+}
+
+// B221: the end of a hold reaches the others as one roster carrying the final state of both fields; never the stale
+// pair (mic open, still on hold) that could land last and keep the peer on "away".
+TEST(CallLocalHoldTest, TheEndOfAHoldIsOneRosterWithTheFinalState) {
+  FakeCall call;
+  CallLocalHold hold(call.Ports());
+  hold.Sync(In("c1", false, 0));
+  hold.Sync(In("c1", true, 10));
+  ASSERT_EQ(call.rosters.size(), 1u) << "start: mute + hold in one roster";
+  EXPECT_EQ(call.rosters.back(), (std::pair<bool, bool>{true, true}));
+  call.Tell();
+  call.rosters.clear();
+  hold.Sync(In("c1", false, 30));
+  ASSERT_EQ(call.rosters.size(), 1u) << "end: mic open + hold over in one roster";
+  EXPECT_EQ(call.rosters.back(), (std::pair<bool, bool>{false, false}));
+  EXPECT_FALSE(call.muted);
+  call.Tell();
+  for (const auto& r : call.rosters) {
+    EXPECT_FALSE(r.second) << "no roster after the end says on_hold";
+    EXPECT_FALSE(r.first == false && r.second == true);
+  }
+}
+
+// The user muted before the hold: the hold changes nothing about the mic, and the end stays muted.
+TEST(CallLocalHoldTest, AMuteTheUserMadeBeforeTheHoldStaysThroughTheEnd) {
+  FakeCall call;
+  call.muted = true;
+  CallLocalHold hold(call.Ports());
+  hold.Sync(In("c1", true, 10));
+  call.Tell();
+  hold.Sync(In("c1", false, 30));
+  call.Tell();
+  EXPECT_TRUE(call.muted);
+  EXPECT_EQ(call.told, (std::vector<bool>{true, false}));
+  for (const auto& r : call.rosters) {
+    EXPECT_TRUE(r.first);
+  }
+  EXPECT_FALSE(call.rosters.back().second);
+}
+
+// The end rides on the publish; if that publish fails (no media yet) the retry still tells the hold.
+TEST(CallLocalHoldTest, AFailedPublishWithTheMuteIsStillRetried) {
+  FakeCall call;
+  CallLocalHold hold(call.Ports());
+  hold.Sync(In("c1", true, 0));
+  call.Refuse();
+  hold.Sync(In("c1", true, CallLocalHold::kPublishRetryMs));
+  ASSERT_EQ(call.publishes.size(), 1u);
+  call.Tell();
+  EXPECT_EQ(call.told, std::vector<bool>{true});
 }
 
 // A hold that begins while the call rings out (no call media yet) is told once the media is up — not lost.

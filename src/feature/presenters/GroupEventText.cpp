@@ -1,6 +1,7 @@
 #include "feature/presenters/GroupEventText.h"
 
 #include "foundation/i18n/LocalizationService.h"
+#include "lib/calls/CallControlFamily.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 
 #include <string_view>
@@ -200,6 +201,65 @@ bool IsStoredGroupEventText(const std::string& preview) {
     }
   }
   return preview.rfind("Group renamed to ", 0) == 0;
+}
+
+bool IsStoredCallPreview(const std::string& preview) {
+  return preview == "Voice call" || preview == "Video call";
+}
+
+CallRowLook CallRowLookOf(const CallSummaryRow& row) {
+  using Outcome = CallSummaryRow::Outcome;
+  CallRowLook look;
+  std::string outcome;
+  switch (row.outcome) {
+    case Outcome::Connected:
+      look.icon = row.ours ? "phone-outgoing" : "phone-incoming";
+      outcome = row.duration;
+      break;
+    case Outcome::NoAnswer:
+      look.icon = "phone-outgoing";
+      outcome = Tr("call.row.no_answer");
+      break;
+    case Outcome::Cancelled:
+      look.icon = "phone-outgoing";
+      outcome = Tr("call.row.cancelled");
+      break;
+    case Outcome::Missed:
+      look.icon = "phone-x";
+      outcome = Tr("call.row.missed");
+      break;
+    case Outcome::Declined:
+      look.icon = "phone-x";
+      outcome = Tr("call.row.declined");
+      break;
+    case Outcome::DeclinedByPeer:
+      look.icon = "phone-x";
+      outcome = Tr("call.row.declined_by_peer");
+      break;
+    case Outcome::Failed:
+      look.icon = "phone-x";
+      outcome = Tr("call.row.failed");
+      break;
+  }
+  look.text = outcome;
+  if (row.video) {
+    look.icon.replace(0, 5, "video"); // the camera family mirrors the phone family: video-outgoing / -incoming / -x
+  }
+  if (row.group) {
+    look.text = Tr("call.row.group") + " · " + look.text;
+  }
+  return look;
+}
+
+std::optional<CallPreview> StoredCallPreview(const ThreadMessage& latest) {
+  if (latest.content_type != ChatContentType::System || !IsStoredCallPreview(latest.text)) {
+    return std::nullopt;
+  }
+  if (const auto row = CallSummaryRowOf(latest)) {
+    const CallRowLook look = CallRowLookOf(*row);
+    return CallPreview{look.text, look.icon};
+  }
+  return CallPreview{Tr(latest.text == "Video call" ? "call.title.video" : "call.title.voice"), std::string()};
 }
 
 std::optional<std::string> StoredSystemLineText(const std::string& stored) {

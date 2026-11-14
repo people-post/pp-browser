@@ -49,7 +49,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 4 — 3 steps up, dropping relay_user_id; device ML-DSA-65 + account ML-DSA + account KEM; pre-v3 wipe; optional initiation_floor; optional registered_card_issued_at — the account card the relay last answered for at register/finish, SERVICE_ENDPOINTS; optional recovery_seed_b64 — M023, AT_REST_ENCRYPTION § Identity plaintext)
   secrets.enc               # typed model API key (llm_api_key) under DEK AEAD, AAD purpose "config-secrets", schema_version 1; absent when there are none (PB-034)
   initiation_billing.json   # per-peer initiation billing state (P001; schema_version 2 — 1 steps up, dropping `relay:` keys)
-  account_locker.json       # account locker sync state: highest_version_by_locker, contact_clock (plaintext; ACCOUNT_LOCKER.md § On disk)
+  account_locker.json       # account locker sync state: highest_version_by_locker, contact_clock, device_names (plaintext; ACCOUNT_LOCKER.md § On disk)
   contacts.json             # address book (schema_version 3: local + remote + overrides{}; 2 steps up, dropping `relay:` ids from each
                             # contact's ids — the contact stays); another version, or none, is refused
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)
@@ -121,7 +121,8 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # them from the payload): payload_json {control_type: "receive_failure"|"send_failure", detail: <JSON string>}.
                             # `send_failure` (#182): a message of ours did not go out, one row per message, id "send-failure-<message_id>"
                             # (+ "-group" for a partial group send); detail {reason, message_id}, reason = a SendFailureWord
-                            # (mesh_off, no_address, ..., relay_rejected) or "group_members_missed". It does not touch the thread's preview/order.
+                            # (mesh_off, no_address, ..., relay_rejected, recipient_not_found, sender_not_registered) or "group_members_missed";
+                            # a reader that does not know a word shows the generic reason. It does not touch the thread's preview/order.
                             # `call_blocked`: 1:1 calls "who can call me" dropped, one row per caller in the DM, id "call-blocked:<caller>",
                             # rewritten in place per call (its time never moves back); detail {count, setting ("contacts_only"|"nobody"),
                             # call_ids (last 20 counted)}; text = the words at write time, a preview stand-in (the transcript words the payload);

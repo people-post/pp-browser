@@ -1,0 +1,2 @@
+/* Shown when PP first asks to add a picture (the QR code) to Photos. */
+"NSPhotoLibraryAddUsageDescription" = "Save your QR code to Photos.";

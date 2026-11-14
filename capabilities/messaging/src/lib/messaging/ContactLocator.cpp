@@ -2,7 +2,9 @@
 
 #include "common/ValueJson.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "lib/people/ContactIdentity.h"
 
+#include <algorithm>
 #include <cctype>
 #include <utility>
 
@@ -31,6 +33,21 @@ std::string EncodeContactLocator(const ContactLocator& locator) {
   json.set("devices", ArrayValue(std::move(devices)));
   const std::string text = DumpJson(json);
   return std::string(kContactLocatorPrefix) + Base64UrlEncode(ByteVector(text.begin(), text.end()));
+}
+
+std::string ContactShareLocator(const Contact& contact) {
+  const std::optional<std::string> account = ContactAccountId(contact);
+  if (!account || account->empty()) {
+    return {};
+  }
+  ContactLocator locator{.account_id = *account, .nickname = contact.remote.nickname};
+  for (const mesh::ContactId& id : contact.ids) {
+    if (id.kind == mesh::ContactIdKind::PeerId && !id.value.empty() && locator.devices.size() < kMaxLocatorDevices &&
+        std::find(locator.devices.begin(), locator.devices.end(), id.value) == locator.devices.end()) {
+      locator.devices.push_back(id.value);
+    }
+  }
+  return EncodeContactLocator(locator);
 }
 
 Roe<ContactLocator> FindContactLocator(const std::string& text) {

@@ -11,6 +11,7 @@
 #include "lib/messaging/OutgoingAttachment.h"
 #include "lib/messaging/GroupTypes.h"
 #include "feature/conversations/GroupInviteLinkWorkflow.h"
+#include "feature/conversations/RelayRegistrationSignal.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
@@ -18,6 +19,7 @@
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "lib/net/OrgBackendClients.h"
+#include "domain/registration/RegistrationClient.h"
 #include "lib/net/BlobQuota.h"
 #include "lib/net/ProfileIconClient.h"
 #include "lib/people/ContactTypes.h"
@@ -106,6 +108,10 @@ public:
   Roe<std::string> ExportAccountCopy();
   /** The account's devices (M021 d4): the newest list, its first the main device; whether this one is signed out. */
   Roe<OwnDeviceList> OwnDevices();
+  /** The account's device names (locker `device_names`), unfiltered: show only those on OwnDevices(). */
+  std::vector<DeviceNameEntry> OwnDeviceNames();
+  /** Name this device, or (on the main device) another one; empty after normalising = cancel (Ok, nothing written). */
+  Roe<void> RenameOwnDevice(const std::string& peer_id, const std::string& name);
   /** On the main device: take another device off the account. */
   Roe<void> RemoveOwnDevice(const std::string& peer_id);
   /** On the main device: make another device the main one. */
@@ -379,6 +385,10 @@ public:
   ProfileIdentityView LoadProfileIdentityView();
   Roe<void> SaveProfileNickname(const std::string& nickname);
   Roe<void> RegisterIdentity(const std::string& nickname);
+  /** The asynchronous registration's three steps (ConversationsHub): Begin and Finish on UI, Run on a worker. */
+  Roe<RegistrationJob> BeginRegistration(const std::string& nickname);
+  static Roe<RegistrationResult> RunRegistration(const RegistrationJob& job);
+  Roe<void> FinishRegistration(const RegistrationResult& result, const std::string& account_id);
   Roe<void> UploadProfileIcon(const PreparedProfileIcon& icon);
   Roe<void> ClearProfileIcon();
   Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
@@ -430,6 +440,8 @@ public:
   AttachmentLimits CurrentAttachmentLimits() const;
   /** The server space is filling up: called on the UI thread with the percent used (said once per 80 / 90). */
   void SetOnBlobSpaceWarning(std::function<void(int percent)> callback);
+  /** What the relay's polls say about this account's registration (B216): called on the UI thread. */
+  void SetOnRelayRegistrationSignal(std::function<void(RelayRegistrationSignal)> callback);
   void EnsureThreadAttachments(const std::string& thread_id);
   void RetryAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   struct AttachmentInfo {
@@ -468,6 +480,8 @@ public:
   Roe<std::vector<Contact>> SearchLocalContacts(const std::string& query);
   Roe<LocalIdentity> GetLocalIdentity();
   Roe<LocalIdentity> UpdateLocalIdentity(const LocalIdentity& identity);
+  /** Publish the account locker soon (it keeps the relay binding), as a registration from Me → Profile does. */
+  void PublishAccountLockerSoon();
   /** One read-modify-write under the identity store's lock (IdentityStore::Modify); for writers off the UI thread. */
   Roe<LocalIdentity> ModifyLocalIdentity(const std::function<bool(LocalIdentity& identity)>& change);
   Roe<LocalIdentity> FinishAndPersistRegistration(const std::string& nickname);

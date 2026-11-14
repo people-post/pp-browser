@@ -162,6 +162,12 @@ public:
     brief_relay_health_.store(static_cast<int>(BriefRelayHealthState::Unknown), std::memory_order_relaxed);
   }
   void SetOnBriefRelayHealthChanged(std::function<void(BriefRelayHealthState)> callback);
+  /**
+   * Our preferred relay answered a poll `not_registered` (IsRelayUserNotRegistered), after the health is marked
+   * Failed: called on the poll worker on every such poll (each ~2 s in the foreground), so keep it short and
+   * thread-safe. Set before messaging runs; pass nullptr to clear (any thread).
+   */
+  void SetOnRelayNotRegistered(std::function<void()> callback);
   /** Me recovery: delete undelivered relay rows older than `older_than_days` (does not clear local chat). */
   Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);
   void RetryFailedOutbound();
@@ -561,6 +567,7 @@ private:
   std::mutex relay_ingest_mu_;
   /** Our relay inboxes, polled (last: its posted polls capture this, and it reads the members above). */
   RelayInboxCoordinator inboxes_;
+  std::function<void()> on_relay_not_registered_; // under brief_relay_health_cb_mu_
   std::atomic<bool> sync_pending_{false};
 };
 

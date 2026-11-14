@@ -57,9 +57,10 @@ public:
   Roe<void> SetLocalVideoEnabled(bool enabled, int display_rotation_degrees);
   /**
    * The OS took (true) or gave back (false) this device's call audio — a phone call, Siri, another app's call: the
-   * roster tells the others the call is on hold here. The media goes on (silence) either way.
+   * roster tells the others the call is on hold here. The media goes on (silence) either way. `muted`: the hold's mic
+   * change, published in the same roster as the hold (one roster, not two that can cross).
    */
-  Roe<void> SetLocalOnHold(bool on_hold);
+  Roe<void> SetLocalOnHold(bool on_hold, std::optional<bool> muted = std::nullopt);
   /**
    * The app went to the background (true) or came back (false). A camera that was on goes off meanwhile, and the
    * roster says why (video_paused); it comes back on with the app. `display_rotation_degrees` as for the camera.

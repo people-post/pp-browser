@@ -5,6 +5,7 @@
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/crypto/MlDsa.h"
 
+#include "common/DeviceName.h"
 #include "common/ValueJson.h"
 
 #include <algorithm>
@@ -103,6 +104,7 @@ std::string StateToJson(const AccountLockerState& state) {
   }
   root.set("providers", ArrayValue(std::move(providers)));
   root.set("contact_clock", ContactClock::EntriesToJson(state.contact_clock));
+  root.set("device_names", DeviceNamesToJson(state.device_names));
   return DumpJson(root);
 }
 
@@ -150,7 +152,47 @@ Roe<AccountLockerState> StateFromJson(const std::string& json) {
   if (const Array* clock = root->getArray("contact_clock")) {
     state.contact_clock = ContactClock::EntriesFromJson(*clock);
   }
+  if (const Array* names = root->getArray("device_names")) {
+    state.device_names = DeviceNamesFromJson(*names);
+  }
   return state;
+}
+
+Value DeviceNamesToJson(const std::vector<DeviceNameEntry>& entries) {
+  std::vector<Value> rows;
+  for (const DeviceNameEntry& entry : entries) {
+    Object row;
+    row.set("peer_id", entry.peer_id);
+    if (entry.removed) {
+      row.set("removed", true);
+    } else {
+      row.set("name", entry.name);
+    }
+    row.set("at", entry.at);
+    rows.push_back(ObjectValue(std::move(row)));
+  }
+  return ArrayValue(std::move(rows));
+}
+
+std::vector<DeviceNameEntry> DeviceNamesFromJson(const Array& rows) {
+  std::vector<DeviceNameEntry> entries;
+  for (const Value& item : rows.elements) {
+    const Object* row = asObject(item);
+    if (!row) {
+      continue;
+    }
+    DeviceNameEntry entry;
+    entry.peer_id = row->getString("peer_id").value_or("");
+    entry.at = std::clamp<int64_t>(row->getIf<int64_t>("at").value_or(0), 0, kMaxDeviceNameAt);
+    entry.removed = row->getIf<bool>("removed").value_or(false);
+    if (!entry.removed) {
+      entry.name = NormalizeDeviceName(row->getString("name").value_or(""));
+    }
+    if (!entry.peer_id.empty() && (entry.removed || !entry.name.empty())) {
+      entries.push_back(std::move(entry));
+    }
+  }
+  return CapDeviceNames(MergeDeviceNames({}, entries));
 }
 
 Roe<LockerSnapshot> Seal(const AccountLockerState& state, const LockerKeys& keys, const uint64_t version) {
@@ -278,9 +320,49 @@ void MergeContacts(const AccountLockerState& ours, const AccountLockerState& sto
   }
 }
 
+std::vector<DeviceNameEntry> MergeDeviceNames(const std::vector<DeviceNameEntry>& local,
+                                              const std::vector<DeviceNameEntry>& remote) {
+  std::map<std::string, DeviceNameEntry> by_peer;
+  for (const DeviceNameEntry& entry : local) {
+    auto [slot, inserted] = by_peer.try_emplace(entry.peer_id, entry);
+    if (!inserted && entry.at > slot->second.at) {
+      slot->second = entry;
+    }
+  }
+  for (const DeviceNameEntry& entry : remote) {
+    auto [slot, inserted] = by_peer.try_emplace(entry.peer_id, entry);
+    if (!inserted && entry.at >= slot->second.at) {
+      slot->second = entry; // a tie: the stored copy stands
+    }
+  }
+  std::vector<DeviceNameEntry> merged;
+  merged.reserve(by_peer.size());
+  for (auto& [peer_id, entry] : by_peer) {
+    merged.push_back(std::move(entry));
+  }
+  return merged;
+}
+
+std::vector<DeviceNameEntry> CapDeviceNames(std::vector<DeviceNameEntry> entries) {
+  if (entries.size() > kMaxDeviceNameEntries) {
+    // Keepers first: live entries before tombstones, the newest first within each, the smaller peer_id on a tie.
+    std::sort(entries.begin(), entries.end(), [](const DeviceNameEntry& a, const DeviceNameEntry& b) {
+      if (a.removed != b.removed) {
+        return !a.removed;
+      }
+      return a.at != b.at ? a.at > b.at : a.peer_id < b.peer_id;
+    });
+    entries.resize(kMaxDeviceNameEntries);
+  }
+  std::sort(entries.begin(), entries.end(),
+            [](const DeviceNameEntry& x, const DeviceNameEntry& y) { return x.peer_id < y.peer_id; });
+  return entries;
+}
+
 AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored) {
   AccountLockerState merged = ours;
   MergeContacts(ours, stored, merged);
+  merged.device_names = CapDeviceNames(MergeDeviceNames(ours.device_names, stored.device_names));
   for (const AccountStateGroup& theirs : stored.extras.groups) {
     auto mine = std::find_if(merged.extras.groups.begin(), merged.extras.groups.end(),
                              [&](const AccountStateGroup& g) { return g.group_id == theirs.group_id; });

@@ -44,7 +44,7 @@
             </span>
           </button>
         </div>
-        <p class="text muted settings-help group-foot" data-if="security_grace_shown">{{i18n:settings.security.grace.help}}</p>
+        <p class="text muted settings-help group-foot" data-if="security_grace_shown">{{i18n:settings.security.grace.caption}}</p>
         <p class="text muted group-foot" data-if="pin_protection_is_default">
           {{i18n:settings.security.default_hint}}
         </p>
@@ -66,6 +66,7 @@
               <button class="group-row" type="button" data-event-click="show_recovery_phrase()">
                 <span class="group-row-body">
                   <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.recovery.show}}</span></span>
+                  <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
                 </span>
               </button>
             </div>

@@ -25,10 +25,10 @@ TEST_F(ContactRefreshNoticeTest, SaysWhatChanged) {
   result.devices_changed = true;
   const ContactRefreshNotice notice = DescribeContactRefresh(result);
   EXPECT_TRUE(notice.ok);
-  EXPECT_EQ(notice.text, "Updated: name, devices");
+  EXPECT_EQ(notice.text, "Got their latest card (name, devices)");
 
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(DescribeContactRefresh(result).text, "已更新：名字、设备");
+  EXPECT_EQ(DescribeContactRefresh(result).text, "已拿到对方最新的名片（名字、设备）");
 }
 
 TEST_F(ContactRefreshNoticeTest, AnAnswerThatChangedNothingIsUpToDate) {
@@ -36,7 +36,7 @@ TEST_F(ContactRefreshNoticeTest, AnAnswerThatChangedNothingIsUpToDate) {
   result.directory = ContactRefreshResult::Directory::Answered;
   const ContactRefreshNotice notice = DescribeContactRefresh(result);
   EXPECT_TRUE(notice.ok);
-  EXPECT_EQ(notice.text, "Already up to date");
+  EXPECT_EQ(notice.text, "Their card is already up to date");
 }
 
 TEST_F(ContactRefreshNoticeTest, SaysWhichSourceCouldNotBeReached) {
@@ -44,12 +44,12 @@ TEST_F(ContactRefreshNoticeTest, SaysWhichSourceCouldNotBeReached) {
   result.devices = ContactRefreshResult::Devices::NotReached;
   result.directory = ContactRefreshResult::Directory::Unreachable;
   EXPECT_FALSE(DescribeContactRefresh(result).ok);
-  EXPECT_EQ(DescribeContactRefresh(result).text, "Couldn't reach their devices or the directory. Try again later.");
+  EXPECT_EQ(DescribeContactRefresh(result).text, "Can't connect right now. Try again later.");
   result.directory = ContactRefreshResult::Directory::NotFound;
   EXPECT_EQ(DescribeContactRefresh(result).text,
-            "Their devices are offline, and the directory doesn't know this account.");
+            "Couldn't find their card. They may not have updated PP yet — let them know another way.");
   result.directory = ContactRefreshResult::Directory::NotAsked;
-  EXPECT_EQ(DescribeContactRefresh(result).text, "Their devices are offline. Try again later.");
+  EXPECT_EQ(DescribeContactRefresh(result).text, "They're offline right now. Try again later.");
 }
 
 TEST_F(ContactRefreshNoticeTest, KeysThatDidNotCheckOutAreSaidEvenWhenTheRestUpdated) {

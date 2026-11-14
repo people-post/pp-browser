@@ -8,6 +8,8 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/presenters/CallBackOffer.h"
 #include "feature/presenters/CallMediaFrame.h"
+#include "feature/presenters/CallHoldStuck.h"
+#include "feature/presenters/CallPlayoutStuck.h"
 #include "feature/presenters/CallSpeakerButton.h"
 #include "feature/presenters/CallUiAttachGuard.h"
 #include "feature/presenters/CallWakePlaceholder.h"
@@ -167,6 +169,8 @@ public:
     std::function<void()> show_current_call;
     /** V060: the OS has this device's call audio (the GUI's CallLocalHold); none: never on hold here. */
     std::function<bool()> on_hold_here;
+    /** The app is in front (AppLifecycle::IsForeground; CallHoldStuck counts only then); none: always in front. */
+    std::function<bool()> app_foreground;
   };
   using StartDone = std::function<void(const CallStartResult&)>;
 
@@ -327,6 +331,13 @@ public:
   /** The camera did not come on (or went off): tell the user in plain words; the detail is logged only. */
   void ReportCameraFailure(const CameraFailure& failure);
 
+  /**
+   * Feeds CallHoldStuck from the facts (held here, the app in front, not reconnecting); sets `facts.hold_stuck`, and
+   * writes the `call.hold_stuck` metric once when a spell that was shown ends (the hold ends, or the call). Public so a
+   * test can drive it with real Callbacks.
+   */
+  void TrackHoldStuck(CallMediaFacts& facts, const CallScreen& s);
+
 private:
   /**
    * A call button while a call is up: another chat's call asks first (then leaves it and runs `place` again), the
@@ -370,6 +381,11 @@ private:
   void StepMedia(CallUiBackend& backend, const CallScreen& next, int64_t now);
   /** One tick's media facts for the call on `s`, after the engine's video upkeep. */
   CallMediaFacts ReadMediaFacts(CallUiBackend& backend, const CallScreen& s, int64_t now);
+  /** Writes the `call.hold_stuck` metric for a spell that ended (nothing for any other result). */
+  void EmitHoldStuckEnd(const CallHoldStuck::Result& result, bool group);
+  /** Feeds CallPlayoutStuck from the facts (counts only while connected, not on hold, not reconnecting); sets
+   *  `facts.playout_stuck`, and writes the `call.playout_stuck` metric once when it turns true. */
+  void TrackPlayoutStuck(CallMediaFacts& facts, const CallScreen& s);
   /** What the frame asks of the call: the camera's failure told, a narrowed call's camera off, a dropped picture. */
   void ActOnMedia(CallUiBackend& backend, const CallMediaScreen& frame);
   /** The peer's camera (roster / frames) and the story's new moments, each change logged once. */
@@ -441,6 +457,13 @@ private:
   std::string answered_call_id_;
   CallBackOffer call_back_;
   CallMediaFrame media_frame_;
+  /** Their audio arrives but nothing plays (#605): fed each in-call tick by TrackPlayoutStuck, for `playout_call_id_`. */
+  CallPlayoutStuck playout_stuck_;
+  std::string playout_call_id_;
+  /** The hold that does not end (B217): fed each in-call tick by TrackHoldStuck, for `hold_call_id_` (`hold_group_`). */
+  CallHoldStuck hold_stuck_;
+  std::string hold_call_id_;
+  bool hold_group_ = false;
   /** What LogMedia last logged: the peer's camera ("roster/frames"), and the story's moments of `story_logged_call_`. */
   std::string peer_video_log_key_;
   std::string story_logged_call_;

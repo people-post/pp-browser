@@ -37,14 +37,23 @@ public:
   Roe<bool> Remove(const std::string& contact_id);
   Roe<std::vector<Contact>> SearchLocal(const std::string& query) const;
   Roe<Contact> AddFromDirectoryHit(const mesh::DirectoryHit& hit);
-  /** Refresh remote snapshot from a directory hit; preserves local annotations. */
-  Roe<Contact> ApplyRemoteSnapshot(const std::string& contact_id, const mesh::DirectoryHit& hit, int64_t fetched_at_ms);
+  /**
+   * Refresh remote snapshot from a directory hit; preserves local annotations. A contact with an Account ID
+   * only takes a hit for that same account (else "Directory hit is for another account", nothing written);
+   * `requested_account_id` is the account a by-account lookup asked for, taken as the hit's when it names none.
+   * For such a contact what the hit leaves out stays: the relay id, the nickname, and the devices (PeerId ids,
+   * endpoints, multiaddrs) as one group. A contact without an Account ID is overwritten as a whole.
+   */
+  Roe<Contact> ApplyRemoteSnapshot(const std::string& contact_id, const mesh::DirectoryHit& hit, int64_t fetched_at_ms,
+                                   const std::optional<std::string>& requested_account_id = std::nullopt);
   /**
    * Profile refresh from a directory hit of the SAME account: only `remote.nickname` (when the hit's is not
    * empty), `remote.icon` and `remote.fetched_at` change; ids, keys and endpoints never do. A hit for another
-   * account (or without one) is refused and nothing is written.
+   * account (or without one) is refused and nothing is written; `requested_account_id` is the account a
+   * by-account lookup asked for, taken as the hit's when it names none.
    */
-  Roe<Contact> ApplyProfileRefresh(const std::string& contact_id, const mesh::DirectoryHit& hit, int64_t fetched_at_ms);
+  Roe<Contact> ApplyProfileRefresh(const std::string& contact_id, const mesh::DirectoryHit& hit, int64_t fetched_at_ms,
+                                   const std::optional<std::string>& requested_account_id = std::nullopt);
   Roe<Contact> AddEmpty();
   void Flush();
   /**
@@ -61,9 +70,11 @@ private:
   Roe<bool> RemoveUnnotified(const std::string& contact_id);
   Roe<Contact> AddFromDirectoryHitUnnotified(const mesh::DirectoryHit& hit);
   Roe<Contact> ApplyRemoteSnapshotUnnotified(const std::string& contact_id, const mesh::DirectoryHit& hit,
-                                             int64_t fetched_at_ms);
+                                             int64_t fetched_at_ms,
+                                             const std::optional<std::string>& requested_account_id);
   Roe<Contact> ApplyProfileRefreshUnnotified(const std::string& contact_id, const mesh::DirectoryHit& hit,
-                                             int64_t fetched_at_ms);
+                                             int64_t fetched_at_ms,
+                                             const std::optional<std::string>& requested_account_id);
   Roe<Contact> AddEmptyUnnotified();
   Roe<void> BlockAccountIfPresentUnnotified(const std::string& account_id);
   void NotifyChanged() const;

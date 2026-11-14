@@ -4,6 +4,7 @@
 #include "lib/delivery/E2ePublicSessionLogic.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "lib/delivery/ReactionTypes.h"
+#include "lib/delivery/RelayClients.h"
 #include "lib/delivery/RelayWirePayload.h"
 
 #include "common/chat/MessagingLimits.h"

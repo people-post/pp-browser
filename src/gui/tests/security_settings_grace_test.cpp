@@ -4,6 +4,7 @@
 // gate like Change PIN (DEV/PLAN-pin-gate-redesign.md B2).
 #include "gui/SecuritySettingsSection.h"
 #include "gui/SettingsSecurityActions.h"
+#include "gui/UserFeedback.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/PinDefaults.h"
@@ -38,7 +39,7 @@ public:
   explicit FakeSettingsHost(SessionStore& store) : store_(store) {}
   SessionStore& Store() override { return store_; }
   void ReportFailure(const Error&) override { ++failures; }
-  void ShowStatus(const std::string&) override {}
+  void ShowStatus(const std::string& status) override { statuses.push_back(status); }
   void Resync(bool) override {}
   SettingsUiState& UiState() override { return state_; }
   void PullFromView() override {}
@@ -50,6 +51,7 @@ public:
 
   int failures = 0;
   int pushes = 0;
+  std::vector<std::string> statuses;
 
 private:
   SessionStore& store_;
@@ -134,6 +136,22 @@ TEST_F(SecuritySettingsGraceTest, AlwaysIsSavedShownAndHandedToTheApp) {
   EXPECT_NE(back.unlock_grace_label, UnlockGraceDisplayLabel(15));
 }
 
+TEST_F(SecuritySettingsGraceTest, PickingOneOfTheFourOverAStoredUntilRestartStoresExactlyThatAndDropsTheOldValue) {
+  SettingsUiState state = Synced();
+  state.unlock_grace_minutes = kUnlockGraceAlways;
+  ASSERT_TRUE(static_cast<bool>(section_.Flush(state, store_)));
+  for (const int minutes : OfferedUnlockGraceMinutes()) {
+    state = Synced();
+    EXPECT_EQ(state.unlock_grace_minutes, kUnlockGraceAlways) << "the stored value is kept until one is picked";
+    state.unlock_grace_minutes = minutes;
+    ASSERT_TRUE(static_cast<bool>(section_.Flush(state, store_)));
+    EXPECT_EQ(store_.Snapshot().profile_prefs.unlock_grace_minutes, minutes);
+    // back to the removed value for the next round
+    state.unlock_grace_minutes = kUnlockGraceAlways;
+    ASSERT_TRUE(static_cast<bool>(section_.Flush(state, store_)));
+  }
+}
+
 TEST_F(SecuritySettingsGraceTest, ChoosingEveryTimeTellsTheAppZeroAndAnHourSixty) {
   SettingsUiState state = Synced();
   state.unlock_grace_minutes = 0;
@@ -169,7 +187,7 @@ TEST_F(SecuritySettingsGraceTest, ThePageHasTheRowItsHelpAndBothLanguages) {
   EXPECT_NE(rml.find("data-if=\"security_grace_shown\""), std::string::npos);
   EXPECT_NE(rml.find("data-event-click=\"on_choose_unlock_grace()\""), std::string::npos);
   EXPECT_NE(rml.find("{{unlock_grace_label}}"), std::string::npos);
-  EXPECT_NE(rml.find("{{i18n:settings.security.grace.help}}"), std::string::npos);
+  EXPECT_NE(rml.find("{{i18n:settings.security.grace.caption}}"), std::string::npos);
   EXPECT_LT(rml.find("open_security_page('change_pin')"), rml.find("on_choose_unlock_grace")) << "under the PIN";
 
   // B2: no PIN field of their own any more; the PIN gate asks (its number pad for a digit PIN).
@@ -180,10 +198,11 @@ TEST_F(SecuritySettingsGraceTest, ThePageHasTheRowItsHelpAndBothLanguages) {
 
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     const std::string text = ReadAsset(locale);
-    for (const char* key : {"settings.security.grace.title", "settings.security.grace.now", "settings.security.grace.5",
-                            "settings.security.grace.15", "settings.security.grace.60",
-                            "settings.security.grace.always", "settings.security.grace.help",
-                            "pin.verify_export_message", "pin.verify_recovery_message", "pin.change_old_message"}) {
+    for (const char* key :
+         {"settings.security.grace.title", "settings.security.grace.now", "settings.security.grace.5",
+          "settings.security.grace.15", "settings.security.grace.60", "settings.security.grace.always",
+          "settings.security.grace.help", "settings.security.grace.caption", "pin.verify_export_message",
+          "pin.verify_recovery_message", "pin.change_old_message"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
   }
@@ -284,6 +303,24 @@ TEST_F(TransferCodePinTest, ChangePinGoesThroughTheGateAndKeepsTheNewKind) {
   ASSERT_TRUE(ok.has_value());
   EXPECT_FALSE(*ok) << "the gate shows the failure";
   EXPECT_EQ(store_.Snapshot().profile_prefs.pin_digits, 0) << "nothing written";
+}
+
+// The result is the bottom white pill; the persistent status line under the page stays empty.
+TEST_F(TransferCodePinTest, ChangePinSaysUpdatedInThePillAndLeavesNoStatusLine) {
+  std::vector<std::string> pills;
+  ShellFeedbackPorts ports;
+  ports.show_toast = [&pills](const std::string& message, ToastDuration) { pills.push_back(message); };
+  UserFeedback::BindPorts(ports);
+  FakeSettingsHost host(store_);
+  SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
+  actions.ChangePin();
+  ASSERT_TRUE(change_);
+  change_("4321", "135790", [](Roe<void>) {});
+  UserFeedback::BindPorts({});
+  EXPECT_EQ(pills, std::vector<std::string>{Tr("settings.security.pin_updated")});
+  for (const std::string& status : host.statuses) {
+    EXPECT_EQ(status, "") << "no persistent success line";
+  }
 }
 
 // Kenneth 2026-11-07: Change PIN on the app default PIN (public anyway) skips the "current PIN" step; the change uses

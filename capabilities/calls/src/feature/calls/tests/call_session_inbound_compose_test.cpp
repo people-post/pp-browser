@@ -2015,6 +2015,19 @@ TEST_F(CallSessionInboundComposeTest, MuteAndVideoControlsOnActiveMedia) {
   EXPECT_GT(sent_control_messages_, before_hold) << "hold should fan-out CallRoster";
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalOnHold(false); }));
   EXPECT_FALSE(sessions_->FindParticipant(call_id, local_identity_).value()->media.on_hold);
+  // B221: the hold's mic change goes out with the hold in ONE roster, and both land in the roster's own row.
+  const int before_both = sent_control_messages_;
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalOnHold(true, true); }));
+  EXPECT_EQ(sent_control_messages_ - before_both, 1) << "mute + hold = one roster, not two";
+  EXPECT_TRUE(media_->IsMuted());
+  EXPECT_TRUE(sessions_->FindParticipant(call_id, local_identity_).value()->media.on_hold);
+  EXPECT_TRUE(sessions_->FindParticipant(call_id, local_identity_).value()->media.audio_muted);
+  const int before_both_end = sent_control_messages_;
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalOnHold(false, false); }));
+  EXPECT_EQ(sent_control_messages_ - before_both_end, 1);
+  EXPECT_FALSE(media_->IsMuted());
+  EXPECT_FALSE(sessions_->FindParticipant(call_id, local_identity_).value()->media.on_hold);
+  EXPECT_FALSE(sessions_->FindParticipant(call_id, local_identity_).value()->media.audio_muted);
   // No camera on: the background pauses nothing (and says nothing).
   const int before_pause = sent_control_messages_;
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalVideoPaused(true, 0); }));

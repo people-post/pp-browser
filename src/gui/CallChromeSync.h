@@ -27,6 +27,7 @@ struct CallChromeLayer {
   std::string ring_call_id;
   std::string in_call_id;
   std::string in_call_subtitle;
+  bool in_call_subtitle_warning = false;
   std::string ring_caller_label;
   std::string ring_media_label;
   std::string ring_eyebrow;

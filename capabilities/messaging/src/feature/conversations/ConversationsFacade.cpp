@@ -180,6 +180,14 @@ Roe<OwnDeviceList> ConversationsFacade::OwnDevices() {
   return hub_.OwnDevices();
 }
 
+std::vector<DeviceNameEntry> ConversationsFacade::OwnDeviceNames() {
+  return hub_.OwnDeviceNames();
+}
+
+Roe<void> ConversationsFacade::RenameOwnDevice(const std::string& peer_id, const std::string& name) {
+  return hub_.RenameOwnDevice(peer_id, name);
+}
+
 Roe<void> ConversationsFacade::RemoveOwnDevice(const std::string& peer_id) {
   return hub_.RemoveOwnDevice(peer_id);
 }
@@ -1109,6 +1117,18 @@ Roe<void> ConversationsFacade::RegisterIdentity(const std::string& nickname) {
   return hub_.RegisterIdentity(nickname);
 }
 
+Roe<RegistrationJob> ConversationsFacade::BeginRegistration(const std::string& nickname) {
+  return hub_.BeginRegistration(nickname);
+}
+
+Roe<RegistrationResult> ConversationsFacade::RunRegistration(const RegistrationJob& job) {
+  return ConversationsHub::RunRegistration(job);
+}
+
+Roe<void> ConversationsFacade::FinishRegistration(const RegistrationResult& result, const std::string& account_id) {
+  return hub_.FinishRegistration(result, account_id);
+}
+
 Roe<void> ConversationsFacade::UploadProfileIcon(const PreparedProfileIcon& icon) {
   return hub_.UploadProfileIcon(icon);
 }
@@ -1264,6 +1284,14 @@ AttachmentLimits ConversationsFacade::CurrentAttachmentLimits() const {
 
 void ConversationsFacade::SetOnBlobSpaceWarning(std::function<void(int percent)> callback) {
   hub_.SetOnBlobSpaceWarning(std::move(callback));
+}
+
+void ConversationsFacade::SetOnRelayRegistrationSignal(std::function<void(RelayRegistrationSignal)> callback) {
+  hub_.SetOnRelayRegistrationSignal(std::move(callback));
+}
+
+void ConversationsFacade::PublishAccountLockerSoon() {
+  hub_.PublishAccountLockerSoon();
 }
 
 void ConversationsFacade::EnsureThreadAttachments(const std::string& thread_id) {

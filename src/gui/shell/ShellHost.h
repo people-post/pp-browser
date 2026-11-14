@@ -148,8 +148,6 @@ public:
   void HiddenTabBack();
   /** Phone Settings: a secret page (Move to a new device) is shown over a section; the tab bar is off while it is. */
   void SetSecretPageOpen(bool open);
-  /** An avatar opens Settings (the Me tab) from anywhere. */
-  void OpenSettingsFromAvatar();
   /**
    * Phone AI page: the AI conversation list slides in from the left (DEV/PLAN-minimal-nav.md C). Opening first lets
    * go of the composer (keyboard down, its inset back to the home indicator's). No-op on the desktop. The drawer is
@@ -166,6 +164,10 @@ public:
   bool HomeRootShown() const;
   /** Phone layout: the hidden tab's own root page is on top (nothing pushed over it, no settings page open). */
   bool HiddenTabRootShown() const;
+  /** What a back (edge swipe, system back, the arrow) closes now: the one resolver they all go through. */
+  DismissTarget BackTarget() const { return ResolveDismissTarget(); }
+  /** Phone Settings home with no chat thread under it: a root page of the tab bar (no back arrow, no edge swipe). */
+  bool SettingsHomeRootShown() const;
   /** Phone root pages: flips the large-title state; dirties the model only when it changes. */
   void SetLargeTitleCollapsed(bool collapsed);
   /** Chats header status line, event-driven (never polled): known=false shows nothing; else online/offline. Dirties only on change. */
@@ -261,6 +263,8 @@ public:
   void SetOnSyncLayoutMeasured(std::function<void(int64_t ms)> callback);
   /** Phone Chats list: a swipe-row button (or a full swipe) was used on `thread_id`. */
   void SetOnSessionSwipeAction(SessionSwipeGesture::ActionCallback callback);
+  /** Phone New chat page: a swipe-row button (`swipe-action` text as in new_chat.rml) was used on `contact_id`. */
+  void SetOnNewChatSwipeAction(SessionSwipeGesture::NamedActionCallback callback);
 
   /** Seed safe-area insets from machine.json (used when SDL reports zero). */
   void SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp);
@@ -513,9 +517,12 @@ private:
   SessionSwipeGesture session_swipe_;
   /** The AI drawer's list (#ai-drawer-sessions): attached while the drawer is mounted, released when it closes. */
   SessionSwipeGesture drawer_session_swipe_;
+  /** The New chat page's contact list (#new-chat-list): attached while that page is the top one, released with it. */
+  SessionSwipeGesture new_chat_swipe_{ContactRowSwipeConfig()};
   ShellDrawerOpenGesture drawer_open_gesture_;
   std::function<void()> on_compact_chat_shown_again_;
   SessionSwipeGesture::ActionCallback on_session_swipe_action_;
+  SessionSwipeGesture::NamedActionCallback on_new_chat_swipe_action_;
   std::function<void(const std::string&)> on_before_transient_mount_;
   std::function<void(const std::string&)> on_transient_mounted_;
   std::function<void(const std::string&)> on_transient_popped_;

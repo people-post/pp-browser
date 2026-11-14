@@ -91,7 +91,9 @@ TEST(SettingsPagesTest, EveryChecklistRowSavesThroughAHandlerItsPageOwns) {
     fields.push_back(line.substr(start));
     ASSERT_EQ(fields.size(), 7u) << line;
     const std::string& handler = fields[2];
-    const std::string& view = fields[3];
+    // The Advanced page's phone sub-pages (advanced_endpoint, ...) are listed under their own ids; their rows belong
+    // to the Advanced page.
+    const std::string view = fields[3].rfind("advanced_", 0) == 0 ? "advanced" : fields[3];
     ASSERT_NE(FindSettingsPage(view), nullptr) << view;
     if (handler == "-") {
       continue;
@@ -103,34 +105,56 @@ TEST(SettingsPagesTest, EveryChecklistRowSavesThroughAHandlerItsPageOwns) {
   EXPECT_GT(checked, 40u);
 }
 
-// Phase 2: Advanced and Test options are listed only while the advanced flag is on; a page that is not listed cannot be
-// opened (SettingsController::OnSelectSection finds pages in the listed rows only).
-TEST(SettingsPagesTest, AdvancedAndTestOptionsAreListedOnlyWhileTheFlagIsOn) {
-  std::vector<std::string> off;
-  for (const SettingsPage* page : ListedSettingsPages(false)) {
-    off.push_back(page->id);
+// Advanced is listed only while "show advanced settings" is on, Test options only while the tester switch is on; a page
+// that is not listed cannot be opened (SettingsController::OnSelectSection finds pages in the listed rows only).
+std::vector<std::string> ListedIds(const bool advanced, const bool tester) {
+  std::vector<std::string> ids;
+  for (const SettingsPage* page : ListedSettingsPages(advanced, tester)) {
+    ids.push_back(page->id);
   }
-  const std::vector<std::string> expected_off = {"profile",       "privacy",    "security", "devices",
-                                                 "notifications", "appearance", "storage",  "help"};
-  EXPECT_EQ(off, expected_off);
-
-  std::vector<std::string> on;
-  for (const SettingsPage* page : ListedSettingsPages(true)) {
-    on.push_back(page->id);
-  }
-  ASSERT_EQ(on.size(), 10u);
-  EXPECT_EQ(on[8], "advanced");
-  EXPECT_EQ(on[9], "tester");
-  EXPECT_TRUE(Page("advanced").advanced_only);
-  EXPECT_TRUE(Page("tester").advanced_only);
-  EXPECT_FALSE(Page("help").advanced_only);
+  return ids;
 }
 
-// The Test options entry (the last row of Home's third group) selects page "tester": with the advanced flag on the
+TEST(SettingsPagesTest, AdvancedFollowsItsSwitchAndTestOptionsFollowTheTesterSwitch) {
+  const std::vector<std::string> base = {"profile",       "privacy",    "security", "devices",
+                                         "notifications", "appearance", "storage",  "help"};
+  EXPECT_EQ(ListedIds(false, false), base);
+  auto with_advanced = base;
+  with_advanced.push_back("advanced");
+  EXPECT_EQ(ListedIds(true, false), with_advanced);
+  auto with_tester = base;
+  with_tester.push_back("tester");
+  EXPECT_EQ(ListedIds(false, true), with_tester);
+  auto both = with_advanced;
+  both.push_back("tester");
+  EXPECT_EQ(ListedIds(true, true), both);
+  EXPECT_EQ(Page("advanced").gate, SettingsPageGate::Advanced);
+  EXPECT_EQ(Page("tester").gate, SettingsPageGate::Tester);
+  EXPECT_EQ(Page("help").gate, SettingsPageGate::None);
+}
+
+// The Service row and its custom-address fields sit on the Advanced page: their handler is the network one, and that page
+// lists it, so a change there is saved.
+TEST(SettingsPagesTest, TheServiceRowsBelongToTheAdvancedPage) {
+  EXPECT_EQ(HandlerIdsOf(Page("advanced")).count("network"), 1u);
+  std::ifstream in(std::string(PP_SOURCE_DIR) + "/src/gui/tests/data/settings_row_checklist.txt");
+  ASSERT_TRUE(in.good());
+  std::string line;
+  size_t service_rows = 0;
+  while (std::getline(in, line)) {
+    if (line.find("on_choose_backend()") != std::string::npos || line.find("{{backend_label}}") != std::string::npos) {
+      EXPECT_NE(line.find("\tadvanced\t"), std::string::npos) << line;
+      ++service_rows;
+    }
+  }
+  EXPECT_EQ(service_rows, 2u);
+}
+
+// The Test options entry (the last row of Home's third group) selects page "tester": with the tester switch on the
 // page is listed and its view is the one registered for it; with the flag off nothing lists it, so selecting it opens
 // nothing (SettingsController::OnSelectSection returns when the id is not among the listed rows).
 TEST(SettingsPagesTest, SelectingTheTesterEntryOpensItsViewOnlyWhileTheFlagIsOn) {
-  const std::vector<const SettingsPage*> on = ListedSettingsPages(true);
+  const std::vector<const SettingsPage*> on = ListedSettingsPages(true, true);
   ASSERT_FALSE(on.empty());
   EXPECT_STREQ(on.back()->id, "tester") << "last row of the list, so last in the third group";
   EXPECT_EQ(on.back()->home_group, 3);
@@ -140,7 +164,10 @@ TEST(SettingsPagesTest, SelectingTheTesterEntryOpensItsViewOnlyWhileTheFlagIsOn)
   EXPECT_STREQ(page->view_key, "settings_section_tester");
   EXPECT_TRUE(std::filesystem::exists(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" /
                                       (std::string(page->view_key) + ".rml")));
-  for (const SettingsPage* listed : ListedSettingsPages(false)) {
+  for (const SettingsPage* listed : ListedSettingsPages(true, false)) {
+    EXPECT_STRNE(listed->id, "tester") << "the advanced switch does not list it";
+  }
+  for (const SettingsPage* listed : ListedSettingsPages(false, false)) {
     EXPECT_STRNE(listed->id, "tester");
   }
 }

@@ -7,7 +7,13 @@
       <svg class="me-invite-qr-code qr-code" viewBox="0 0 100 100" width="240" height="240"
            data-rml="my_qr_svg_rml"></svg>
     </div>
-    <p class="qr-name">{{my_name}}</p>
-    <p class="qr-hint">{{i18n:contacts.my_qr_hint}}</p>
+    <p class="qr-name">{{qr_name}}</p>
+    <p class="qr-hint">{{qr_hint}}</p>
+    <div class="qr-actions" data-if="qr_can_share || qr_save_label != ''">
+      <button class="btn btn-primary qr-action" type="button" data-if="qr_can_share"
+              data-event-click="share_qr_image()">{{i18n:contacts.qr.share}}</button>
+      <button class="btn btn-secondary qr-action" type="button" data-if="qr_save_label != ''"
+              data-event-click="save_qr_image()">{{qr_save_label}}</button>
+    </div>
   </div>
 </div>

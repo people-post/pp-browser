@@ -106,6 +106,11 @@ struct TranscriptFacts {
   bool thread_is_group = false;
   /** The send mark on a message (none when unset). The GUI sets this. */
   std::function<SendMark(const ThreadMessage&)> send_mark;
+  /**
+   * The words of a "did not go out" line (a local send_failure row) when they depend on the message it is under (how a
+   * tap on its red mark goes on); none: the reason's own words. The GUI sets this.
+   */
+  std::function<std::optional<std::string>(const ThreadMessage& failure_row)> send_failure_line;
 };
 
 /** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */
@@ -143,6 +148,11 @@ public:
   Roe<Thread> CreateDirectThread(const std::string& contact_id, ThreadChannel channel);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id, ThreadChannel channel);
+  /**
+   * The same chat FindOrCreateDirectThread finds or makes, but not opened: it does not become the active thread, is not
+   * marked read and is not listed on its own (a call from a contact's page reads the thread id and nothing else).
+   */
+  Roe<Thread> FindOrCreateDirectThreadQuietly(const std::string& contact_id, ThreadChannel channel);
   Roe<Thread> CreateGroup(const std::string& title, const std::vector<std::string>& member_contact_ids);
   Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
   /**
