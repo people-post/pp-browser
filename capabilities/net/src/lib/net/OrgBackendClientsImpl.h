@@ -9,6 +9,7 @@
 #include "lib/net/OrgBackendClients.h"
 
 #include <functional>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -116,7 +117,7 @@ public:
    * Whether this relay's `llm_api_key` is kept (default yes). The Brief LLM key is the org's (multi-relay MR006):
    * a relay other than the org's answers with a key its own gateway takes, not the org's, so it is left out.
    */
-  void SetTakesBriefLlmKey(bool takes) { takes_llm_key_ = takes; }
+  void SetTakesBriefLlmKey(bool takes) { takes_llm_key_.store(takes, std::memory_order_relaxed); }
   Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
                                                  const std::string& signature_alg = "ml-dsa-65",
                                                  const std::string& kem_public_key_b64 = "",
@@ -137,7 +138,8 @@ public:
 
 private:
   std::string base_url_;
-  bool takes_llm_key_ = true;
+  /** Set on the owner's thread, read by a registration on a worker. */
+  std::atomic<bool> takes_llm_key_{true};
 };
 
 class HttpClientCompatClient : public IClientCompatClient {

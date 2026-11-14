@@ -515,7 +515,8 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     if (auto message = root->getString("message")) {
       result.message = *message;
     }
-    if (auto llm_api_key = root->getString("llm_api_key"); llm_api_key && takes_llm_key_) {
+    if (auto llm_api_key = root->getString("llm_api_key");
+        llm_api_key && takes_llm_key_.load(std::memory_order_relaxed)) {
       result.llm_api_key = *llm_api_key;
     }
     if (auto expires_at = root->getString("expires_at")) {

@@ -245,6 +245,25 @@ TEST_F(BackendClientSetOriginTest, RelayServicesFollowThePreferredRelayAndOrgSer
   EXPECT_EQ(org_key->llm_api_key.Reveal(), "brf_llm_x") << "the org's relay, now another of ours, still gives it";
 }
 
+TEST_F(BackendClientSetOriginTest, TheBriefLlmKeyFollowsTheOrgsRelayWhenOnlyTheOrgChanges) {
+  // Our list stays (org's relay preferred, the other after it): their clients are kept, but the org's relay moves to
+  // the other one. Which client keeps the key is decided again at every Apply, not when a client was built.
+  Apply({OrgRelay(), OtherRelay()});
+  IRegistrationClient* preferred = clients_.Registration();
+  ASSERT_EQ(FinishedKey(), "brf_llm_x");
+
+  auto endpoints = At(OtherRelay(), OtherRelay(), OtherRelay());
+  endpoints.our_relays = {OrgRelay(), OtherRelay()};
+  clients_.Apply(endpoints);
+  ASSERT_EQ(clients_.Registration(), preferred) << "the preferred relay's client is kept";
+  EXPECT_EQ(FinishedKey(), "") << "no longer the org's relay: its key is not kept";
+  ASSERT_EQ(clients_.OurRelays().size(), 2u);
+  auto org_key =
+      clients_.OurRelays()[1].registration->FinishRegistration("c", "pk", "me", "sig", 1, "ml-dsa-65", "kem");
+  ASSERT_TRUE(org_key) << org_key.error().message;
+  EXPECT_EQ(org_key->llm_api_key.Reveal(), "brf_llm_x") << "the relay that is now the org's keeps it";
+}
+
 TEST_F(BackendClientSetOriginTest, StreamHistoryFallsToThePreferredRelayOnceTheOrgsIsNotOurs) {
   Apply({OtherRelay()});
   EXPECT_EQ(clients_.HistoryRelay(), clients_.Relay());

@@ -113,8 +113,8 @@ private:
   /** The org's registration URL: lockers. */
   void ApplyHome(const std::string& url);
   void ApplyExtraRelays(const std::vector<std::string>& origins, size_t asked);
-  /** A registration client for `url`: it keeps the Brief LLM key only on the org's relay. */
-  std::unique_ptr<HttpRegistrationClient> RegistrationFor(const std::string& url) const;
+  /** Each registration client of ours keeps the Brief LLM key only when its relay is the org's (every Apply). */
+  void WireBriefLlmKey();
   /** The directory the holders see: the configured one, then the directory of each other relay of ours it does not name. */
   void WireDirectory();
   /** The directory client of our relay at `origin`, kept while it stays ours. */

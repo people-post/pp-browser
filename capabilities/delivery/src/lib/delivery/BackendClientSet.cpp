@@ -64,6 +64,7 @@ void BackendClientSet::Apply(const Endpoints& endpoints) {
   ApplyHome(OrDefault(endpoints.registration.base_url, defaults_.registration.base_url));
   const size_t asked = endpoints.our_relays.empty() ? endpoints.extra_relays.size() + 1 : endpoints.our_relays.size();
   ApplyExtraRelays(ours, asked);
+  WireBriefLlmKey();
   WireSender();
   WireDirectory();
 }
@@ -82,10 +83,17 @@ void BackendClientSet::ApplyOrg(const std::string& url) {
   client_compat_ = std::make_unique<HttpClientCompatClient>(url);
 }
 
-std::unique_ptr<HttpRegistrationClient> BackendClientSet::RegistrationFor(const std::string& url) const {
-  auto registration = std::make_unique<HttpRegistrationClient>(url);
-  registration->SetTakesBriefLlmKey(!org_relay_url_.empty() && SameRelay(url, org_relay_url_));
-  return registration;
+void BackendClientSet::WireBriefLlmKey() {
+  // On every Apply: the org's relay may change while a registration client is kept (its relay's endpoint did not).
+  const auto takes = [this](const std::string& url) {
+    return !org_relay_url_.empty() && !url.empty() && SameRelay(url, org_relay_url_);
+  };
+  if (registration_) {
+    registration_->SetTakesBriefLlmKey(takes(relay_url_));
+  }
+  for (const Extra& extra : extras_) {
+    extra.registration->SetTakesBriefLlmKey(takes(extra.origin));
+  }
 }
 
 void BackendClientSet::ApplyPreferred(const std::string& url) {
@@ -104,7 +112,7 @@ void BackendClientSet::ApplyPreferred(const std::string& url) {
   relay_url_ = url;
   relay_ = std::make_shared<HttpRelayClient>(url);
   push_devices_ = std::make_shared<HttpPushDeviceClient>(url);
-  registration_ = RegistrationFor(url);
+  registration_ = std::make_shared<HttpRegistrationClient>(url);
   blob_ = std::make_shared<HttpBlobClient>(url);
   WireSigner();
 }
@@ -228,7 +236,7 @@ void BackendClientSet::ApplyExtraRelays(const std::vector<std::string>& origins,
     next.push_back(Extra{.origin = origin,
                          .relay = std::make_shared<HttpRelayClient>(origin),
                          .push_devices = std::make_shared<HttpPushDeviceClient>(origin),
-                         .registration = RegistrationFor(origin)});
+                         .registration = std::make_shared<HttpRegistrationClient>(origin)});
   }
   if (!origins.empty() && origins.size() < asked) {
     log().warning << "our relays: " << (asked - origins.size())
