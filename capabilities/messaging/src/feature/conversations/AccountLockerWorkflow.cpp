@@ -173,31 +173,40 @@ bool AccountLockerWorkflow::SetDeviceName(const std::string& peer_id, const std:
     std::lock_guard lock(mutex_);
     auto found = std::find_if(device_names_.begin(), device_names_.end(),
                               [&](const DeviceNameEntry& e) { return e.peer_id == peer_id; });
-    if (found != device_names_.end() && found->name == clean) {
-      return false;
+    if (found != device_names_.end() && (found->removed || found->name == clean)) {
+      return false; // a removed device is not renamed; the same name keeps its `at`
     }
-    const int64_t at = found == device_names_.end() ? now_ms : std::max<int64_t>(now_ms, found->at + 1);
-    removed_devices_.erase(peer_id);
-    device_names_ = account_locker::MergeDeviceNames(device_names_, {DeviceNameEntry{peer_id, clean, at}});
+    const int64_t at = std::clamp<int64_t>(
+        found == device_names_.end() ? now_ms : std::max<int64_t>(now_ms, found->at + 1), 0, kMaxDeviceNameAt);
+    device_names_ = account_locker::CapDeviceNames(
+        account_locker::MergeDeviceNames(device_names_, {DeviceNameEntry{peer_id, clean, at, false}}));
   }
   Save();
   return true;
 }
 
-void AccountLockerWorkflow::ForgetDeviceName(const std::string& peer_id) {
+void AccountLockerWorkflow::ForgetDeviceName(const std::string& peer_id, const int64_t now_ms) {
+  if (peer_id.empty()) {
+    return;
+  }
   {
     std::lock_guard lock(mutex_);
-    std::erase_if(device_names_, [&](const DeviceNameEntry& e) { return e.peer_id == peer_id; });
-    removed_devices_.insert(peer_id);
+    auto found = std::find_if(device_names_.begin(), device_names_.end(),
+                              [&](const DeviceNameEntry& e) { return e.peer_id == peer_id; });
+    if (found != device_names_.end() && found->removed) {
+      return;
+    }
+    const int64_t at = std::clamp<int64_t>(
+        found == device_names_.end() ? now_ms : std::max<int64_t>(now_ms, found->at + 1), 0, kMaxDeviceNameAt);
+    device_names_ = account_locker::CapDeviceNames(
+        account_locker::MergeDeviceNames(device_names_, {DeviceNameEntry{peer_id, "", at, true}}));
   }
   Save();
 }
 
 void AccountLockerWorkflow::TakeRemoteDeviceNames(const std::vector<DeviceNameEntry>& remote) {
   std::lock_guard lock(mutex_);
-  std::vector<DeviceNameEntry> merged = account_locker::MergeDeviceNames(device_names_, remote);
-  std::erase_if(merged, [&](const DeviceNameEntry& e) { return removed_devices_.count(e.peer_id) > 0; });
-  device_names_ = std::move(merged);
+  device_names_ = account_locker::CapDeviceNames(account_locker::MergeDeviceNames(device_names_, remote));
 }
 
 uint64_t AccountLockerWorkflow::HighestSeen(const std::string& locker_id_hex) const {
@@ -219,6 +228,8 @@ void AccountLockerWorkflow::RaiseHighestSeen(const std::string& locker_id_hex, c
 }
 
 void AccountLockerWorkflow::Save() {
+  // One writer from snapshot to file, so an older snapshot cannot land after a newer one; I/O stays off mutex_.
+  std::lock_guard save(save_mutex_);
   Object json;
   {
     std::lock_guard lock(mutex_);
@@ -314,20 +325,21 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
   if (*stored) {
     TakeRemoteDeviceNames((*stored)->state.device_names);
   }
-  std::vector<std::string> card_peer_ids;
   if (auto own = sources_.own_devices ? sources_.own_devices() : Roe<OwnDeviceList>(Error("no card source"));
       own && !own->signed_out && !own->self_peer_id.empty()) {
-    for (const AccountCardDevice& device : own->devices) {
-      card_peer_ids.push_back(device.peer_id);
-    }
     const std::string system_name = sources_.own_system_name ? NormalizeDeviceName(sources_.own_system_name()) : "";
     if (!system_name.empty()) {
       std::lock_guard lock(mutex_);
-      const bool has_entry = std::any_of(device_names_.begin(), device_names_.end(),
-                                         [&](const DeviceNameEntry& e) { return e.peer_id == own->self_peer_id; });
-      if (!has_entry) {
-        device_names_ = account_locker::MergeDeviceNames(
-            device_names_, {DeviceNameEntry{own->self_peer_id, system_name, util::NowUnixMs()}});
+      // A tombstone is no entry: a device still on the card that finds itself removed names itself anew, newer.
+      const auto own_entry = std::find_if(device_names_.begin(), device_names_.end(),
+                                          [&](const DeviceNameEntry& e) { return e.peer_id == own->self_peer_id; });
+      if (own_entry == device_names_.end() || own_entry->removed) {
+        const int64_t at = std::clamp<int64_t>(own_entry == device_names_.end()
+                                                   ? util::NowUnixMs()
+                                                   : std::max<int64_t>(util::NowUnixMs(), own_entry->at + 1),
+                                               0, kMaxDeviceNameAt);
+        device_names_ = account_locker::CapDeviceNames(account_locker::MergeDeviceNames(
+            device_names_, {DeviceNameEntry{own->self_peer_id, system_name, at, false}}));
       }
     }
   }
@@ -341,27 +353,22 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
   if (!registered) {
     return registered.error();
   }
-  std::set<std::string> removed;
   {
     std::lock_guard lock(mutex_);
     state->contact_clock = clock_.Entries();
     state->device_names = device_names_;
-    removed = removed_devices_;
   }
-  AccountLockerState merged =
-      *stored ? account_locker::MergeForPublish(*state, (*stored)->state, card_peer_ids) : *state;
+  AccountLockerState merged = *stored ? account_locker::MergeForPublish(*state, (*stored)->state) : *state;
   if (!*stored) {
-    merged.device_names = account_locker::CapDeviceNames(merged.device_names, card_peer_ids);
+    merged.device_names = account_locker::CapDeviceNames(merged.device_names);
   }
-  std::erase_if(merged.device_names, [&](const DeviceNameEntry& e) { return removed.count(e.peer_id) > 0; });
-  // Whatever the outcome below, what this publish settled is the table here (an edit made meanwhile survives).
+  // Whatever the outcome below, what this publish settled is the table here (an edit made meanwhile survives; an
+  // entry the cap cut is not put back by the older table: the cap runs again over the two).
   const auto settle_names = [&]() {
     {
       std::lock_guard lock(mutex_);
-      device_names_ = account_locker::MergeDeviceNames(merged.device_names, device_names_);
-      for (const std::string& peer_id : removed) {
-        removed_devices_.erase(peer_id);
-      }
+      device_names_ =
+          account_locker::CapDeviceNames(account_locker::MergeDeviceNames(merged.device_names, device_names_));
     }
     Save();
   };

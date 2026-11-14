@@ -16,16 +16,24 @@
 
 namespace pbr {
 
-/** Most device names a locker keeps: the card lists at most kMaxAccountCardDevices, the rest is room to spare. */
+/**
+ * Most entries (live names and removal tombstones together) a locker keeps: the card lists at most
+ * kMaxAccountCardDevices, the rest is room for tombstones. One limit, applied the same way on every device.
+ */
 inline constexpr size_t kMaxDeviceNameEntries = 8;
+
+/** The furthest `at` read from a locker or file (Unix ms, the year 2100): anything beyond is cut back to it. */
+inline constexpr int64_t kMaxDeviceNameAt = 4102444800000;
 
 /** One device's display name inside the locker (never in the account card, a log or a metric). */
 struct DeviceNameEntry {
   std::string peer_id;
-  /** Never empty, always through NormalizeDeviceName. */
+  /** Never empty for a live entry, always through NormalizeDeviceName; empty for a tombstone. */
   std::string name;
-  /** Unix ms; per peer_id the larger `at` wins, whoever wrote it. */
+  /** Unix ms, within [0, kMaxDeviceNameAt]; per peer_id the larger `at` wins, whoever wrote it (a tombstone too). */
   int64_t at = 0;
+  /** A removal tombstone: the device was taken off the account. Carries no name; shown nowhere. */
+  bool removed = false;
 
   bool operator==(const DeviceNameEntry&) const = default;
 };
@@ -103,8 +111,7 @@ std::optional<LockerSnapshot> PickNewest(const std::vector<LockerSnapshot>& snap
  * side has a register for is kept from either), groups by id (the higher roster epoch wins, ours on a tie), card
  * floors (the newest per account), providers (union).
  */
-AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored,
-                                   const std::vector<std::string>& card_peer_ids = {});
+AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored);
 
 /**
  * Device names of two copies by peer_id: the larger `at` wins whoever wrote it, `remote` on a tie (a sync with
@@ -114,17 +121,18 @@ std::vector<DeviceNameEntry> MergeDeviceNames(const std::vector<DeviceNameEntry>
                                               const std::vector<DeviceNameEntry>& remote);
 
 /**
- * At most kMaxDeviceNameEntries, sorted by peer_id: over the limit, entries of devices not on `card_peer_ids` go
- * first (only when it is not empty), then the smallest `at`. Never prunes below the limit.
+ * At most kMaxDeviceNameEntries, sorted by peer_id. Pure — no card, no "own" exception — so every device cuts the
+ * same entries: over the limit, tombstones go first (the oldest `at` first), then live entries (the smallest `at`
+ * first); the larger peer_id goes first on a tie. Never prunes below the limit.
  */
-std::vector<DeviceNameEntry> CapDeviceNames(std::vector<DeviceNameEntry> entries,
-                                            const std::vector<std::string>& card_peer_ids);
+std::vector<DeviceNameEntry> CapDeviceNames(std::vector<DeviceNameEntry> entries);
 
-/** `device_names` as JSON (an array of {peer_id, name, at}). */
+/** `device_names` as JSON (an array of {peer_id, name, at}; a tombstone is {peer_id, at, removed: true}). */
 Value DeviceNamesToJson(const std::vector<DeviceNameEntry>& entries);
 /**
- * Read an untrusted `device_names` array: each name through NormalizeDeviceName (an empty one drops the entry),
- * unknown fields ignored, one entry per peer_id (the larger `at`), capped like CapDeviceNames without a card.
+ * Read an untrusted `device_names` array: each live name through NormalizeDeviceName (an empty one drops the
+ * entry; a tombstone's name is ignored), `at` clamped to [0, kMaxDeviceNameAt], unknown fields ignored, one entry
+ * per peer_id (the larger `at`), capped by CapDeviceNames. Tombstones are kept.
  */
 std::vector<DeviceNameEntry> DeviceNamesFromJson(const Array& rows);
 

@@ -163,7 +163,11 @@ Value DeviceNamesToJson(const std::vector<DeviceNameEntry>& entries) {
   for (const DeviceNameEntry& entry : entries) {
     Object row;
     row.set("peer_id", entry.peer_id);
-    row.set("name", entry.name);
+    if (entry.removed) {
+      row.set("removed", true);
+    } else {
+      row.set("name", entry.name);
+    }
     row.set("at", entry.at);
     rows.push_back(ObjectValue(std::move(row)));
   }
@@ -177,14 +181,18 @@ std::vector<DeviceNameEntry> DeviceNamesFromJson(const Array& rows) {
     if (!row) {
       continue;
     }
-    DeviceNameEntry entry{row->getString("peer_id").value_or(""),
-                          NormalizeDeviceName(row->getString("name").value_or("")),
-                          row->getIf<int64_t>("at").value_or(0)};
-    if (!entry.peer_id.empty() && !entry.name.empty()) {
+    DeviceNameEntry entry;
+    entry.peer_id = row->getString("peer_id").value_or("");
+    entry.at = std::clamp<int64_t>(row->getIf<int64_t>("at").value_or(0), 0, kMaxDeviceNameAt);
+    entry.removed = row->getIf<bool>("removed").value_or(false);
+    if (!entry.removed) {
+      entry.name = NormalizeDeviceName(row->getString("name").value_or(""));
+    }
+    if (!entry.peer_id.empty() && (entry.removed || !entry.name.empty())) {
       entries.push_back(std::move(entry));
     }
   }
-  return CapDeviceNames(MergeDeviceNames({}, entries), {});
+  return CapDeviceNames(MergeDeviceNames({}, entries));
 }
 
 Roe<LockerSnapshot> Seal(const AccountLockerState& state, const LockerKeys& keys, const uint64_t version) {
@@ -335,34 +343,26 @@ std::vector<DeviceNameEntry> MergeDeviceNames(const std::vector<DeviceNameEntry>
   return merged;
 }
 
-std::vector<DeviceNameEntry> CapDeviceNames(std::vector<DeviceNameEntry> entries,
-                                            const std::vector<std::string>& card_peer_ids) {
-  const auto on_card = [&](const DeviceNameEntry& entry) {
-    return std::find(card_peer_ids.begin(), card_peer_ids.end(), entry.peer_id) != card_peer_ids.end();
-  };
+std::vector<DeviceNameEntry> CapDeviceNames(std::vector<DeviceNameEntry> entries) {
   if (entries.size() > kMaxDeviceNameEntries) {
-    // Keepers first: on the card (when we know the card), then the newest; the peer_id breaks a tie so every
-    // device keeps the same ones.
-    std::sort(entries.begin(), entries.end(), [&](const DeviceNameEntry& a, const DeviceNameEntry& b) {
-      const bool a_on = card_peer_ids.empty() || on_card(a);
-      const bool b_on = card_peer_ids.empty() || on_card(b);
-      if (a_on != b_on) {
-        return a_on;
+    // Keepers first: live entries before tombstones, the newest first within each, the smaller peer_id on a tie.
+    std::sort(entries.begin(), entries.end(), [](const DeviceNameEntry& a, const DeviceNameEntry& b) {
+      if (a.removed != b.removed) {
+        return !a.removed;
       }
       return a.at != b.at ? a.at > b.at : a.peer_id < b.peer_id;
     });
     entries.resize(kMaxDeviceNameEntries);
   }
   std::sort(entries.begin(), entries.end(),
-            [](const DeviceNameEntry& a, const DeviceNameEntry& b) { return a.peer_id < b.peer_id; });
+            [](const DeviceNameEntry& x, const DeviceNameEntry& y) { return x.peer_id < y.peer_id; });
   return entries;
 }
 
-AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored,
-                                   const std::vector<std::string>& card_peer_ids) {
+AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored) {
   AccountLockerState merged = ours;
   MergeContacts(ours, stored, merged);
-  merged.device_names = CapDeviceNames(MergeDeviceNames(ours.device_names, stored.device_names), card_peer_ids);
+  merged.device_names = CapDeviceNames(MergeDeviceNames(ours.device_names, stored.device_names));
   for (const AccountStateGroup& theirs : stored.extras.groups) {
     auto mine = std::find_if(merged.extras.groups.begin(), merged.extras.groups.end(),
                              [&](const AccountStateGroup& g) { return g.group_id == theirs.group_id; });

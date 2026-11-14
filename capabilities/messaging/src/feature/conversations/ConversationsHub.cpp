@@ -3799,7 +3799,7 @@ Roe<void> ConversationsHub::RemoveOwnDevice(const std::string& peer_id) {
   // Siblings hear through our own mailbox (OwnCards::SetOnChanged) — the removed device too, which then stops;
   // contacts stop sending to it once they hold this card (M021 limit 4: eventual).
   if (account_locker_) {
-    account_locker_->ForgetDeviceName(peer_id);
+    account_locker_->ForgetDeviceName(peer_id, util::NowUnixMs());
   }
   log().info << "Device " << peer_id << " taken off the account; " << card->devices.size() << " left";
   AppRuntime::PostWorkerNormal([this]() { SyncLockerThenAnnounceOwnDevices(); });

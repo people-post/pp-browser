@@ -57,18 +57,22 @@ public:
 
   /**
    * The device names as this device has them: the last merge with the locker, plus its own edits not yet
-   * published. Also kept in `account_locker.json`. Never logged.
+   * published. Also kept in `account_locker.json`. Never logged. Removal tombstones are in it (`removed`, no name):
+   * the caller shows only the live ones.
    */
   std::vector<DeviceNameEntry> DeviceNames() const;
   /**
    * Give a device a name (its own, or by the main device another's — who may is the caller's rule): through
    * NormalizeDeviceName, then stored with `at = max(now_ms, its old at + 1)`. False, nothing written, when the name
-   * is empty after that or is the name the device has already (`at` moves only when the name changes). The caller
-   * publishes.
+   * is empty after that, is the name the device has already (`at` moves only when the name changes) or the device
+   * was removed (a tombstone: not renamed). The caller publishes.
    */
   bool SetDeviceName(const std::string& peer_id, const std::string& name, int64_t now_ms);
-  /** A device was taken off the account: its entry goes from this table and from the next publish. */
-  void ForgetDeviceName(const std::string& peer_id);
+  /**
+   * A device was taken off the account: its entry becomes a removal tombstone (`at = max(now_ms, its old at + 1)`),
+   * which wins over its older name on every device and is published like any entry. The caller publishes.
+   */
+  void ForgetDeviceName(const std::string& peer_id, int64_t now_ms);
 
   /**
    * Sync the account's state with its locker, both ways (M023 §7): note what changed here since the last sync (the
@@ -123,13 +127,13 @@ private:
   mutable std::mutex mutex_;
   /** Serializes Publish (read, merge, write). */
   std::mutex sync_mutex_;
+  /** Held by Save() from the snapshot to the file write (never together with I/O under mutex_). */
+  std::mutex save_mutex_;
   ContactClock clock_;
   /** Per locker (hex id): a provider serving an older copy of one locker says nothing about another. */
   std::map<std::string, uint64_t> highest_seen_;
   /** Device names by peer_id order; see DeviceNames(). */
   std::vector<DeviceNameEntry> device_names_;
-  /** Devices taken off the account whose entry the next publish must leave out (until a write succeeds). */
-  std::set<std::string> removed_devices_;
 };
 
 /**
