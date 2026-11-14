@@ -3052,6 +3052,18 @@ input.checkbox:checked {
   color: #ffffff;
 }
 
+/* A small text button at the right end of a row ("Update now"). */
+.shell-layer-compact .settings-text-btn,
+.shell-layer-compact .settings-text-btn:hover,
+.shell-layer-compact .settings-text-btn:focus {
+  background-color: transparent;
+  color: #0a84ff;
+}
+
+.shell-layer-compact .settings-text-btn:active {
+  background-color: #7878803d;
+}
+
 /* A row that does something rather than opens a page (About > Send problem logs): accent text, like iOS. */
 .shell-layer-compact .settings-improve-send .group-row-text {
   color: #0a84ff;

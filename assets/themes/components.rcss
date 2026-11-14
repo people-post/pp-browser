@@ -13253,6 +13253,36 @@ input.checkbox {
   text-overflow: ellipsis;
 }
 
+/* A read-only row whose value may need two lines (the profile page's Status: "Active · Valid until ..."): the label
+   keeps its own width and the value takes the rest, right-aligned, wrapping instead of being cut. */
+.shell-layer-compact .group-row-label--fit {
+  flex: 0 0 auto;
+}
+
+.shell-layer-compact .group-row-value--wrap {
+  flex: 1 1 0;
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
+  text-align: right;
+}
+
+/* A small text button at the right end of a row ("Update now"): a 44dp tap area round a 15dp label, no fill. */
+.shell-layer-compact .settings-text-btn {
+  flex-shrink: 0;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0 -4dp 0 0;
+  padding: 0 8dp;
+  border: 0;
+  font-family: LatoLatin;
+  font-size: 15dp;
+  line-height: 44dp;
+  font-weight: bold;
+  text-align: center;
+  cursor: pointer;
+}
+
 .shell-layer-compact .group-chevron,
 .shell-layer-compact .group-row .settings-row-chevron {
   flex-shrink: 0;

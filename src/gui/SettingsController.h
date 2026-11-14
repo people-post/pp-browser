@@ -105,6 +105,11 @@ public:
    * too), the desktop asks PP 客服 (sends the question; the answer arrives in that chat).
    */
   void OnAskSettingHelp(const std::string& label_key);
+  /**
+   * A "?" that explains a setting from this app's own text: a small alert with `title_key`'s text as its title and
+   * `text_key`'s as its body (both `settings.*` locale keys) and one OK. Local only: no AI, no support chat, no network.
+   */
+  void OnShowSettingNote(const std::string& title_key, const std::string& text_key);
   /** Shell layout / navigation. Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);
   /** Toast / dialog feedback. Clear via BindShellFeedback({}). */

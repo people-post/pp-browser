@@ -159,5 +159,50 @@ TEST_F(SettingsHelpQuestionTest, WithoutThePanelSupportIsAsked) {
   EXPECT_EQ(to_support[0], "What does “Send a report if PP crashes” do?");
 }
 
+// show_setting_note('<title key>','<text key>'): a "?" that explains a setting from the app's own text. It opens the
+// shell's alert with that title and text and sends nothing anywhere (no AI question, no support message).
+TEST_F(SettingsHelpQuestionTest, AShownNoteOpensAnAlertWithItsTitleAndTextAndAsksNobody) {
+  struct Alert {
+    std::string title;
+    std::string message;
+    std::string ok;
+  };
+  std::vector<Alert> alerts;
+  int sent = 0;
+  SettingsCommands commands;
+  commands.ask_ai_once = [&sent](const std::string&) {
+    ++sent;
+    return true;
+  };
+  commands.ask_support = [&sent](const std::string&) -> Roe<void> {
+    ++sent;
+    return {};
+  };
+  ShellFeedbackPorts feedback;
+  feedback.show_alert = [&alerts](const std::string& title, const std::string& message, std::function<void()>,
+                                  const std::string& ok) { alerts.push_back({title, message, ok}); };
+  feedback.show_toast = [&sent](const std::string&, ToastDuration) { ++sent; };
+  SettingsController settings;
+  settings.BindCommands(commands);
+  settings.BindShellFeedback(feedback);
+  settings.OnShowSettingNote("settings.auto_renew.short", "settings.auto_renew.note");
+  ASSERT_EQ(alerts.size(), 1u);
+  EXPECT_EQ(alerts[0].title, "Auto-update");
+  EXPECT_EQ(alerts[0].message, Tr("settings.auto_renew.note"));
+  EXPECT_EQ(alerts[0].ok, "OK");
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  settings.OnShowSettingNote("settings.auto_renew.short", "settings.auto_renew.note");
+  ASSERT_EQ(alerts.size(), 2u);
+  EXPECT_EQ(alerts[1].title, "自动更新");
+  EXPECT_EQ(alerts[1].message,
+            "打开后，名片快到期时会自动更新，一般不用手动操作。关闭后，到期前需要你自己点“立即更新”。");
+  // Not a settings string, or a key without text: nothing opens.
+  settings.OnShowSettingNote("chat.menu.block", "settings.auto_renew.note");
+  settings.OnShowSettingNote("settings.auto_renew.short", "settings.no_such_key");
+  settings.OnShowSettingNote("", "");
+  EXPECT_EQ(alerts.size(), 2u);
+  EXPECT_EQ(sent, 0) << "a note never asks the AI, never messages support, never toasts";
+}
+
 } // namespace
 } // namespace pbr

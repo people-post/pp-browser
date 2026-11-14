@@ -762,6 +762,15 @@ bool SettingsController::RegisterModel(ui::Context* context) {
         OnAskSettingHelp(*key);
       }
     });
+    ctor.BindEventCallback(
+        "show_setting_note", [this](ui::DataModelHandle, ui::Event& ev, const ui::VariantList& args) {
+          ev.StopPropagation(); // like the "?" that asks: it can sit inside a row that toggles a switch
+          const auto title_key = data_event_detail::Arg<std::string>(args, 0);
+          const auto text_key = data_event_detail::Arg<std::string>(args, 1);
+          if (title_key && text_key) {
+            OnShowSettingNote(*title_key, *text_key);
+          }
+        });
     ctor.BindEventCallback("on_llm_field_changed", DataEvent<>([this]() { MarkSectionDirty("llm"); }));
     ctor.BindEventCallback("on_llm_preset_changed", DataEventAt([this](ui::Event& ev) { OnLlmPresetChanged(ev); }));
     ctor.BindEventCallback("on_choose_theme", DataEventAt([this](ui::Event& ev) { OnChooseTheme(ev); }));
@@ -2016,6 +2025,24 @@ void SettingsController::OnAskSettingHelp(const std::string& label_key) {
   if (auto asked = commands_.ask_support(question); !asked) {
     ReportFailure(asked.error());
   }
+}
+
+void SettingsController::OnShowSettingNote(const std::string& title_key, const std::string& text_key) {
+  // Only this app's own settings strings; a key without text shows nothing rather than its own name.
+  const auto text_of = [](const std::string& key) {
+    if (key.rfind("settings.", 0) != 0) {
+      return std::string();
+    }
+    const std::string text = Tr(key);
+    return text == key ? std::string() : text;
+  };
+  const std::string title = text_of(title_key);
+  const std::string text = text_of(text_key);
+  if (title.empty() || text.empty() || !shell_feedback_.show_alert) {
+    return;
+  }
+  // The shell's alert: a titled card with the sentence and one OK. No network, no AI.
+  shell_feedback_.show_alert(title, text, {}, Tr("common.ok"));
 }
 
 void SettingsController::OpenNetworkSettings() {

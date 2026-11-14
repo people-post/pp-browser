@@ -42,6 +42,8 @@ protected:
   void TearDown() override { LocalizationService::Instance().SetPreferredLanguage("en"); }
 };
 
+SettingsUiState Synced(const ProfileIdentityView& view); // below
+
 TEST_F(SettingsProfilePhoneTest, TheHeadIsJustThePhotoWithItsBadge) {
   const std::string rml = ReadAsset("views/settings_section_profile.rml");
   const size_t frame = rml.find("class=\"me-profile-avatar-frame\" data-event-click=\"tap_profile_avatar()\"");
@@ -113,50 +115,120 @@ TEST_F(SettingsProfilePhoneTest, ThePhoneHasNoInputAndNoCopyRowAndTheDesktopKeep
   EXPECT_NE(rml.find("settings-desktop-only", actions), std::string::npos);
 }
 
-TEST_F(SettingsProfilePhoneTest, TheAccountGroupHoldsTheRowsInOrderWithTodaysGates) {
+// The phone's identity rows in three groups (DEV/ui-mockups/44, "建议 2"): the Account ID alone, "My card" (Status with
+// "Update now" at its right end, and the auto-update switch with its "?"), and the Node ID under "This device".
+TEST_F(SettingsProfilePhoneTest, TheAccountGroupsHoldTheRowsInOrderWithTodaysGates) {
   const std::string rml = ReadAsset("views/settings_section_profile.rml");
   const size_t head =
       rml.find("<p class=\"text group-head settings-phone-only\">{{i18n:settings.profile.account_group}}</p>");
   ASSERT_NE(head, std::string::npos);
-  const size_t card = rml.find("<div class=\"group-card settings-phone-only\">", head);
-  const size_t id = rml.find("{{i18n:settings.profile.id_row}}", card);
-  const size_t status = rml.find("{{i18n:settings.profile.registration_row}}", id);
-  const size_t expires = rml.find("data-if=\"advanced && profile_registration_expires != ''\"", status);
-  const size_t renew = rml.find("<div class=\"settings-toggle-row row group-row\" data-if=\"advanced\">", expires);
-  const size_t node = rml.find("data-if=\"advanced && profile_peer_id != ''\"", renew);
-  for (const size_t at : {card, id, status, expires, renew, node}) {
+  const size_t id_card = rml.find("<div class=\"group-card settings-phone-only\">", head);
+  const size_t id = rml.find("{{i18n:settings.profile.id_row}}", id_card);
+  const size_t card_head =
+      rml.find("<p class=\"text group-head settings-phone-only\">{{i18n:settings.profile.card_group}}</p>", id);
+  const size_t status = rml.find("{{i18n:settings.profile.registration_row}}", card_head);
+  const size_t renew = rml.find("<div class=\"settings-toggle-row row group-row\" data-if=\"advanced\">", status);
+  const size_t device_head = rml.find(
+      "<p class=\"text group-head settings-phone-only\" data-if=\"advanced && profile_peer_id != ''\">"
+      "{{i18n:settings.security.devices.this_device}}</p>",
+      renew);
+  const size_t node = rml.find("{{i18n:settings.profile.node_id_row}}", device_head);
+  for (const size_t at : {id_card, id, card_head, status, renew, device_head, node}) {
     ASSERT_NE(at, std::string::npos);
   }
-  // The status row has no gate; it shows what the page showed before: the registration status.
+  // The Account ID is a group of its own: its card closes before the "My card" heading.
+  EXPECT_EQ(rml.substr(id_card, card_head - id_card).find("registration_row"), std::string::npos);
+  // The Node ID card keeps the gate it had as a row.
+  EXPECT_NE(rml.find("<div class=\"group-card settings-phone-only\" data-if=\"advanced && profile_peer_id != ''\">",
+                     device_head),
+            std::string::npos);
+  EXPECT_NE(rml.find("{{profile_peer_id}}", node), std::string::npos);
+  // The Status row has no gate of its own; it shows the registration status.
   const size_t status_row = rml.rfind("<div class=\"group-row group-row--static\"", status);
   EXPECT_EQ(rml.substr(status_row, status - status_row).find("data-if"), std::string::npos);
-  EXPECT_NE(rml.find("{{profile_registration_status}}", status), std::string::npos);
-  // The renewal switch keeps its event and its state class.
+  // The renewal switch keeps its event and its state class; it has no caption any more.
   EXPECT_NE(rml.find("data-event-click=\"toggle_auto_renew_registration()\"", renew), std::string::npos);
   EXPECT_NE(rml.find("data-class-settings-switch--on=\"auto_renew_registration == 'auto'\"", renew), std::string::npos);
-  // No footer sentence under the group.
+  EXPECT_EQ(rml.find("auto_renew_on_caption"), std::string::npos);
+  EXPECT_EQ(rml.find("auto_renew_off_caption"), std::string::npos);
+  // The old Valid until row is gone as a row: its text lives inside the Status value.
+  EXPECT_EQ(Count(rml, "{{i18n:settings.profile.expires_row}}"), 1u);
+  // No footer sentence under the groups.
   EXPECT_EQ(rml.find("id_foot"), std::string::npos);
   EXPECT_EQ(rml.find("group-foot settings-phone-only"), std::string::npos);
-  // The desktop register button keeps its binding; the phone shows it only when the card needs action.
+  // The desktop register button keeps its binding; the phone shows the big one only when the card needs action.
   EXPECT_EQ(Count(rml, "data-if=\"profile_show_register\""), 1u);
   EXPECT_EQ(Count(rml, "data-if=\"profile_show_register && profile_register_primary\""), 1u);
   EXPECT_EQ(Count(rml, "toggle_auto_renew_registration()"), 2u) << "one on the phone, one on the desktop";
 }
 
+// The one read-only Status row: the status, and the expiry after it only where the old Valid until row showed.
+TEST_F(SettingsProfilePhoneTest, TheStatusValueMergesStatusAndExpiryUnderTheOldExpiryGate) {
+  const std::string rml = ReadAsset("views/settings_section_profile.rml");
+  const std::string value_open =
+      "<span class=\"group-row-value group-row-value--wrap\">{{profile_registration_status}}"
+      "<span data-if=\"advanced && profile_registration_expires != ''\"> · "
+      "{{i18n:settings.profile.expires_row}} {{profile_registration_expires}}</span></span>";
+  ASSERT_EQ(Count(rml, value_open), 1u);
+  // Today's gate of the expiry row, verbatim (from the checklist before this change).
+  EXPECT_EQ(Count(rml, "data-if=\"advanced && profile_registration_expires != ''\""), 2u)
+      << "the phone's merged value and the desktop's line";
+  // Evaluate the value the way the page does, for every registration state with advanced on and off.
+  const struct {
+    RegistrationStatus status;
+    const char* expires;
+  } cases[] = {{RegistrationStatus::Unregistered, ""},           {RegistrationStatus::Active, "2027-02-11"},
+               {RegistrationStatus::ExpiringSoon, "2026-11-20"}, {RegistrationStatus::Expired, "2026-10-01"},
+               {RegistrationStatus::WrongBackend, "2027-02-11"}, {RegistrationStatus::Active, ""}};
+  for (const char* language : {"en", "zh-Hans"}) {
+    LocalizationService::Instance().SetPreferredLanguage(language);
+    for (const auto& c : cases) {
+      ProfileIdentityView view;
+      view.ready = true;
+      view.registration_status = RegistrationStatusLabel(c.status);
+      view.registration_expires = c.expires;
+      const SettingsUiState state = Synced(view);
+      for (const bool advanced : {false, true}) {
+        std::string value = state.profile_registration_status;
+        if (advanced && !state.profile_registration_expires.empty()) {
+          value += " · " + Tr("settings.profile.expires_row") + " " + state.profile_registration_expires;
+        }
+        if (!advanced || std::string(c.expires).empty()) {
+          EXPECT_EQ(value, state.profile_registration_status) << "no expiry part: advanced off or no expiry";
+        } else {
+          EXPECT_EQ(value,
+                    state.profile_registration_status + " · " + Tr("settings.profile.expires_row") + " " + c.expires);
+        }
+      }
+    }
+  }
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("settings.profile.registration_row") + "|" + Tr("settings.profile.expires_row"), "状态|有效期至");
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  EXPECT_EQ(Tr("settings.profile.registration_row") + "|" + Tr("settings.profile.expires_row"), "Status|Valid until");
+}
+
 TEST_F(SettingsProfilePhoneTest, TheCardStatusRowAndTheNewLinesAreWordedInBothLanguages) {
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(Tr("settings.profile.registration_row"), "名片状态");
+  EXPECT_EQ(Tr("settings.profile.registration_row"), "状态");
+  EXPECT_EQ(Tr("settings.profile.card_group"), "我的名片");
   EXPECT_EQ(Tr("settings.profile.name_caption"), "好友搜这个名字就能加你");
-  EXPECT_EQ(Tr("settings.profile.update_now"), "立即更新一次");
-  EXPECT_EQ(Tr("settings.auto_renew_on_caption"), "已打开：名片会自动保持最新，一般不用手动更新");
-  EXPECT_EQ(Tr("settings.auto_renew_off_caption"), "已关闭：名片到期前需要你手动更新");
+  EXPECT_EQ(Tr("settings.profile.update_now"), "立即更新");
+  EXPECT_EQ(Tr("settings.auto_renew.short"), "自动更新");
+  EXPECT_EQ(Tr("settings.auto_renew.note"),
+            "打开后，名片快到期时会自动更新，一般不用手动操作。关闭后，到期前需要你自己点“立即更新”。");
+  EXPECT_EQ(Tr("settings.auto_renew"), "自动更新我的名片") << "the desktop keeps its long label";
   LocalizationService::Instance().SetPreferredLanguage("en");
-  EXPECT_EQ(Tr("settings.profile.registration_row"), "Card status");
+  EXPECT_EQ(Tr("settings.profile.registration_row"), "Status");
+  EXPECT_EQ(Tr("settings.profile.card_group"), "My card");
   EXPECT_EQ(Tr("settings.profile.name_caption"), "Friends can find you by this name");
   EXPECT_EQ(Tr("settings.profile.update_now"), "Update now");
-  EXPECT_EQ(Tr("settings.auto_renew_on_caption"), "On: your card stays up to date by itself");
-  EXPECT_EQ(Tr("settings.auto_renew_off_caption"), "Off: update your card yourself before it expires");
+  EXPECT_EQ(Tr("settings.auto_renew.short"), "Auto-update");
+  EXPECT_EQ(Tr("settings.auto_renew"), "Update my card automatically");
+  EXPECT_NE(Tr("settings.auto_renew.note").find("Update now"), std::string::npos);
   EXPECT_EQ(Tr("settings.profile.id_foot"), "settings.profile.id_foot") << "the footer key is gone";
+  EXPECT_EQ(Tr("settings.auto_renew_on_caption"), "settings.auto_renew_on_caption") << "the captions are gone";
+  EXPECT_EQ(Tr("settings.auto_renew_off_caption"), "settings.auto_renew_off_caption");
 }
 
 // The page's real path: the section reads the identity view through its port (SyncFromSession), which ends in
@@ -234,34 +306,53 @@ TEST_F(SettingsProfilePhoneTest, EveryRegistrationStatusIsWordedInBothLanguages)
   LocalizationService::Instance().SetPreferredLanguage("en");
 }
 
-TEST_F(SettingsProfilePhoneTest, TheUpdateNowRowAndTheBigButtonBothFireRegisterProfileAndTheSwitchHasCaptions) {
+// "Update now" is a small text button at the right end of the Status row, under exactly the gate of the row it
+// replaced; the auto-update switch has a "?" after its title (a local note) and no caption.
+TEST_F(SettingsProfilePhoneTest, TheUpdateNowButtonKeepsTheOldRowsGateAndEventAndTheSwitchHasNoCaption) {
   const std::string rml = ReadAsset("views/settings_section_profile.rml");
   EXPECT_EQ(Count(rml, "data-event-click=\"register_profile()\""), 3u) << "desktop button, phone button, Update now";
-  const size_t card = rml.find("<p class=\"text group-head settings-phone-only\">");
-  const size_t toggle = rml.find("<div class=\"settings-toggle-row row group-row\" data-if=\"advanced\">", card);
-  const size_t on =
-      rml.find("data-if=\"auto_renew_registration == 'auto'\">{{i18n:settings.auto_renew_on_caption}}", toggle);
-  const size_t off =
-      rml.find("data-if=\"auto_renew_registration != 'auto'\">{{i18n:settings.auto_renew_off_caption}}", on);
-  const size_t switch_event = rml.find("data-event-click=\"toggle_auto_renew_registration()\"", off);
-  const size_t plain =
-      rml.find("data-if=\"advanced && profile_show_register && !profile_register_primary\"", switch_event);
-  ASSERT_NE(toggle, std::string::npos);
-  for (const size_t at : {on, off, switch_event, plain}) {
-    ASSERT_NE(at, std::string::npos);
+  const std::string button =
+      "<button class=\"settings-text-btn\" type=\"button\" data-if=\"advanced && profile_show_register && "
+      "!profile_register_primary\"\n                      data-event-click=\"register_profile()\">"
+      "{{i18n:settings.profile.update_now}}</button>";
+  ASSERT_EQ(Count(rml, button), 1u);
+  // It sits in the Status row, after the value, so it is at the right end.
+  const size_t status = rml.find("{{i18n:settings.profile.registration_row}}");
+  EXPECT_LT(status, rml.find(button));
+  EXPECT_LT(rml.find("{{profile_registration_status}}"), rml.find(button));
+  EXPECT_LT(rml.find(button), rml.find("toggle_auto_renew_registration()"));
+  // Visibility: the old row's table, for every status and both advanced states.
+  for (const RegistrationStatus status_value :
+       {RegistrationStatus::Unregistered, RegistrationStatus::Active, RegistrationStatus::ExpiringSoon,
+        RegistrationStatus::Expired, RegistrationStatus::WrongBackend}) {
+    for (const bool advanced : {false, true}) {
+      for (const bool show_register : {false, true}) {
+        const bool primary = ProfileRegisterIsPrimary(show_register, RegistrationStatusLabel(status_value));
+        const bool old_row = advanced && show_register && !primary;
+        const bool new_button = advanced && show_register && !primary; // the same expression, evaluated
+        EXPECT_EQ(new_button, old_row);
+        EXPECT_EQ(new_button, advanced && show_register && status_value == RegistrationStatus::Active)
+            << "only a healthy card with the register button on offers Update now";
+      }
+    }
   }
-  const size_t plain_event = rml.find("data-event-click=\"register_profile()\"", plain);
-  const size_t plain_label = rml.find("{{i18n:settings.profile.update_now}}", plain);
-  ASSERT_NE(plain_event, std::string::npos);
-  EXPECT_LT(plain_event, plain_label);
-  // The plain row sits in the account group right after the switch row, before the Node ID row.
-  EXPECT_LT(plain, rml.find("{{i18n:settings.profile.node_id_row}}", plain));
+  // The switch: "?" right after its title, a local note, no caption.
+  const std::string title =
+      "{{i18n:settings.auto_renew.short}}</span><button class=\"settings-q-btn\" type=\"button\" "
+      "data-event-click=\"show_setting_note('settings.auto_renew.short','settings.auto_renew.note')\">";
+  EXPECT_EQ(Count(rml, title), 1u);
+  EXPECT_EQ(rml.find("ask_setting_help"), std::string::npos) << "the auto-update note is local, not the AI";
   // The phone's big button is gated by the new predicate; the desktop's is not.
   const size_t phone_button = rml.find("data-if=\"profile_show_register && profile_register_primary\"");
   ASSERT_NE(phone_button, std::string::npos);
   EXPECT_NE(rml.find("data-event-click=\"register_profile()\"", phone_button), std::string::npos);
   EXPECT_NE(rml.find("btn btn-primary settings-desktop-only\" type=\"button\" data-if=\"profile_show_register\""),
             std::string::npos);
+  // The text button is a 44dp tap area.
+  const std::string css = ReadAsset("themes/components.rcss");
+  const std::string rule = RuleBody(css, ".shell-layer-compact .settings-text-btn");
+  EXPECT_NE(rule.find("height: 44dp"), std::string::npos);
+  EXPECT_NE(rule.find("min-width: 44dp"), std::string::npos);
 }
 
 } // namespace
