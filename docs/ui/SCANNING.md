@@ -4,7 +4,9 @@ The **Scan QR code** action beside Me opens an in-app camera preview: in compact
 beside the Home header's Me button; in expanded layout it is beside Me in the navigation rail.
 Point it at a friend's PP
 QR code; after one successful scan the scanner closes and the existing contact-invite
-confirmation shows the person's name and Account ID. Only confirmation saves the contact.
+confirmation shows the person's name and Account ID. Only confirmation saves the contact. The
+locator may carry the person's preferred relay ([ACCOUNT_CARD § Locator](../contracts/ACCOUNT_CARD.md#locator-qr-code-invite-link)):
+the new contact keeps it as its relay until their card arrives, so a first message can reach their mailbox.
 A group's **invite link** (`pp://join/…`, [group-chat G021](../../projects/group-chat/DECISIONS.md#g021--invite-links))
 is the other kind it reads: the chats' join prompt asks the link's maker, then shows the group's name and
 member count with Join / Cancel; only Join joins. Other QR contents, including ordinary URLs, produce an

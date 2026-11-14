@@ -217,8 +217,10 @@ search asks the relays the user has listed; there is no search across relays bey
 
 `RelaySendCoordinator` (the outbox's relay port) sends a record into its recipient's relays in their list order:
 
-1. **The list:** the relays of the newest card we keep for the recipient (`KeptRelays`); a recipient with no card, or
-   an empty list, goes to our preferred relay; a copy for our own other devices goes to our relays.
+1. **The list:** the relays of the newest card we keep for the recipient (`KeptRelays`); before any card, a contact
+   added by QR code has its locator's preferred origin ([ACCOUNT_CARD § Locator](ACCOUNT_CARD.md#locator-qr-code-invite-link),
+   multi-relay R4); a recipient with neither, or an empty list, goes to our preferred relay; a copy for our own other
+   devices goes to our relays.
 2. **Health:** a relay a send could not reach (a transport failure, a timeout, a 5xx) is tried after the healthy
    ones for **5 minutes** (`RelayHealth`); a send it takes clears it. An answer about the recipient (a price, a quota,
    not registered) says nothing about the relay's health.
@@ -233,6 +235,15 @@ search asks the relays the user has listed; there is no search across relays bey
 
 A relay of ours is sent to as a registered sender; any other relay gets a client of its own (at most 16 kept), and
 our key when it asks for it (`sender_key_required`). The grant is the recipient's, the same on every relay.
+
+### A contact's relays, by Account ID
+
+The contact page's *Refresh account info* (after the contact's devices) asks the contact's relays in list order, then
+ours, by `GET /v1/users/by-account/{account_id}` — unsigned, so a relay we are not registered on answers as any
+other — up to the first that keeps the account; a transport failure, a 5xx or a `404` gives way to the next. The
+row's keys and its `account_card` are kept only when they verify against the Account ID
+([ACCOUNT_CARD § Refresh on the contact page](ACCOUNT_CARD.md#card-exchange-over-amp)); what each relay answered
+is the reachability the page shows for the contact's preferred relay (in memory, until the next refresh).
 
 ## Directory and profile
 

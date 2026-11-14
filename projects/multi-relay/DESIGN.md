@@ -4,20 +4,14 @@
 
 ## Where it stands
 
-- **An app talks to one relay:**
-  - it registers there and polls its inbox there;
-  - it looks people up in that relay's directory (several directories only as first-answer failover);
-  - it sends to recipients' inboxes there.
-- **A `relay:` id is local to the relay that issued it.** Ids are random per relay, the send signature covers them, and nothing records which relay an id belongs to. The app treats every `relay:` id as its own relay's (`PeerRouteBook::ForgetAll` on a backend change).
-- **A relay accepts mail only from senders registered on it** (`www` `verifySend`). It does not check that the recipient exists.
-- **Finding someone by Account ID already works on any relay:**
-  - `GET /api/relay/v1/users/by-account/{account_id}` is public;
-  - it returns keys, nickname, icon and device endpoints;
-  - the keys prove themselves: the Account ID is BLAKE2b-256 of the account's ML-DSA key, and the KEM key carries the account's binding signature.
-- **The contact page's sync button** (`ContactsController::OnSyncRemote`):
-  - it asks only our directory, by the contact's `relay:` id;
-  - it runs a blocking HTTP call on the UI thread, with a 30 s timeout;
-  - it fails for a contact added by QR code, which has no `relay:` id.
+What holds now is in the contracts ([SERVICE_ENDPOINTS § Several relays](../../docs/contracts/SERVICE_ENDPOINTS.md#several-relays), [ACCOUNT_CARD](../../docs/contracts/ACCOUNT_CARD.md#account-card)); phase status is in [CURRENT_STATE.md](CURRENT_STATE.md). In short:
+
+- **Inboxes, sends and polls are addressed by Account ID** on every relay; there are no `relay:` ids. A relay takes a foreign sender's send when its key hashes to its Account ID, and holds strangers to the receiver's price (grants for contacts, MR005).
+- **The account card lists the account's relays**, preferred first, and its floor (card version 3). A contact keeps the newest list with its card (`KeptRelays`); a contact added by QR code starts with the locator's preferred origin until the card arrives (`ContactRelays`).
+- **An app registers and polls on up to four relays of its own** (the preferred one, then `relay.extra_base_urls`), and **sends into the recipient's relays in list order**, with a per-relay health memory and one retry on a stale list.
+- **The contact page's refresh button** asks the contact's devices, then its relays in list order, then ours, by Account ID, on a worker; keys are kept only when they verify. The page shows the preferred relay by host with whether it answered at the last refresh.
+- **The QR locator carries the preferred relay's origin** (optional, within MR004's bounds) and no card.
+- **Not yet:** Me → Network → My relays (our other relays come from config); photos, blobs, files, lockers, stream history, search and the Brief LLM key stay on the preferred relay.
 
 ## Model
 
@@ -124,8 +118,9 @@ A relay cannot read a message, and it does not know who a user's contacts are. I
   1. the contact's devices over the mesh (the card exchange);
   2. the contact's relays in list order, by Account ID;
   3. our own relays.
-  - Keys are accepted only when they verify against the Account ID; name and photo come from the newest answer.
-  - It runs on a worker, shows for every contact, says what changed and what could not be reached, and shows the preferred relay with its reachability.
+  - The relays are asked up to the first that keeps the account (a relay down, or one without the account, gives way to the next); one asked as the contact's is not asked again as ours.
+  - Keys are accepted only when they verify against the Account ID (the relay's stored card and its row's keys alike); name and photo come from the newest answer: the newest kept card's name when a device or a relay's card brought one, else the relay row's; the photo is the row's.
+  - It runs on a worker, shows for every contact, says what changed, or that nothing could be reached or found (the plain *card* wording; no source named), and shows the preferred relay with its reachability: what that relay answered at the last refresh (in memory; "not known yet" before one asked it), so no probe runs on its own.
 - **Our own sends:** the sender signs with its account key. A send to a relay we are registered on goes as a registered sender; to any other relay, as a foreign sender with its key.
 - **Grants:** the app issues one to each accepted contact, renews it before it expires, keeps the grants it was given, attaches the matching one to each send, and stops renewing a blocked contact's. A send that gets `payment_required` shows the receiver's price (P001's pay-or-alternatives UI).
 

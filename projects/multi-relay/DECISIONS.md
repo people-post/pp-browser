@@ -38,7 +38,7 @@
 ## MR004 — A relay list is small and bounded
 
 **Date:** 2026-11-12
-**Status:** Accepted (Hongwei asked whether the card could overflow, 2026-11-12). The card's bounds built (R2 step 2, app and relay alike, [ACCOUNT_CARD § Account card](../../docs/contracts/ACCOUNT_CARD.md#account-card)); our own relays bounded the same (at most 4, R2 step 3, [SERVICE_ENDPOINTS § Several relays](../../docs/contracts/SERVICE_ENDPOINTS.md#several-relays)); the QR locator's origin not yet (R4).
+**Status:** Accepted (Hongwei asked whether the card could overflow, 2026-11-12). The card's bounds built (R2 step 2, app and relay alike, [ACCOUNT_CARD § Account card](../../docs/contracts/ACCOUNT_CARD.md#account-card)); our own relays bounded the same (at most 4, R2 step 3, [SERVICE_ENDPOINTS § Several relays](../../docs/contracts/SERVICE_ENDPOINTS.md#several-relays)); the QR locator's origin built (R4: an optional `relay`, the card's bounds, [ACCOUNT_CARD § Locator](../../docs/contracts/ACCOUNT_CARD.md#locator-qr-code-invite-link)).
 **Decision:**
 - At most 4 relays.
 - Each origin is an absolute `https://` URL of at most 128 bytes, with no query or fragment.

@@ -154,12 +154,23 @@ What fits in a QR code: who to look for and where.
 
 ```
 pp-browser-contact-v1:<base64url-unpadded(JSON)>
-{ "account_id": "account:…", "nickname": "alice", "devices": ["Qm…", "Qm…"] }
+{ "account_id": "account:…", "nickname": "alice", "devices": ["Qm…", "Qm…"],
+  "relay": "https://www.brief.global/api/relay" }
 ```
 
 Unsigned: the Account ID is what the person showed or sent. The receiver fetches the account's card
 from a listed device ([card exchange](#card-exchange-over-amp)) or, when one is configured, from the
 relay directory, and accepts it only for that `account_id`. Listed devices are hints; the card decides.
+
+- **`relay`** (optional; multi-relay R4, [MR004](../../projects/multi-relay/DECISIONS.md#mr004--a-relay-list-is-small-and-bounded)):
+  the account's preferred relay origin — the relay the app registers on, about 40 bytes — and nothing else of the
+  card's list. Within the card's bounds: an absolute `https://` URL of at most 128 bytes with no query or fragment;
+  one outside them is left out when writing and dropped when reading (the locator still holds), so a lab's `http://`
+  relay is never on it, as it is never on the card. It is optional, not a new version: an app that does not know it
+  ignores it, and a locator without it reads as before.
+- A contact added from a locator keeps that origin (`contacts.json` `remote.locator_relay`) as its relay list until
+  its account's card is kept: a first message goes into that relay, and the contact page names it. From then on the
+  card's list is the contact's ([`ContactRelays`](../../capabilities/people/src/lib/people/ContactIdentity.h)).
 
 - **Sharing:** the invite text (*Me → Profile → Invite*, and the share at the end of onboarding) ends
   with the locator line, so pasting the whole message works.
@@ -189,7 +200,7 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
 | Link bundle | the linking device's account card | linking a device: the new one signs itself in (M021) |
 | Sibling notice | the account card, on the control lane to our own mailbox (M022) | when a device's list changes (it linked in, a sibling's newer list, the name), and once a start while it has siblings: they take it |
 | Contact card message | someone's account card (or key card, when that is all the sharer has), plus the sharer's name for them | "Share" on a contact; *Add to contacts* on the card |
-| Locator | account id, nickname, devices | QR code, invite link, onboarding share |
+| Locator | account id, nickname, devices, the preferred relay's origin (no card) | QR code, invite link, onboarding share |
 | Card exchange over Amp | an account card or key card | on request, device to device |
 | Roster add (`member_joined`) | members' cards | from the group owner, so members key pairwise ([Groups](#groups)) |
 
@@ -220,14 +231,25 @@ this device asks it for the card — over its own link first, then the account's
 not the call or the message, ties the device to the account. A device that answered is not asked again
 for 10 minutes; one not reached (its link still coming up) is tried again after 15 s, up to 3 times.
 
-**Refresh on the contact page.** The user's *Refresh account info* asks the contact's devices (the kept
-card's, then the contact's device rows) for the account's card even when one is kept
-(`ContactCardExchange::AskDevices`; at most once per account per 15 s, a press within that gets the last
-ask's outcome), then the relay directory by Account ID (a contact with no Account ID asks no one: the
-directory knows people by it alone, multi-relay MR001). Keys are kept only as above: the card or the directory's key card must verify against the Account
-ID; a directory answer whose keys do not is used for its name and photo only, and one for another account
-not at all; the user is told either way. Name: the card's when a device answered, else the directory's;
-photo and device addresses: the directory's ([`ContactRefreshWorkflow`](../../capabilities/messaging/src/feature/conversations/ContactRefreshWorkflow.h)).
+**Refresh on the contact page.** The user's *Refresh account info* asks, in order of trust (multi-relay R3):
+
+1. the contact's devices (the kept card's, then the contact's device rows) for the account's card even when one is
+   kept (`ContactCardExchange::AskDevices`; at most once per account per 15 s, a press within that gets the last
+   ask's outcome);
+2. the contact's relays in list order (its newest kept card's, else its locator's origin), by Account ID
+   (`GET /users/by-account/{account_id}`, public: asked without signing, whether or not we are registered there);
+3. our relays, preferred first, then our other directories, skipping any asked in step 2.
+
+The relays are asked up to the first that keeps the account; one down, or one that does not know it, gives way to
+the next. A contact with no Account ID asks no one (relays know people by it alone, multi-relay MR001). Keys are kept
+only as above: the relay's stored card and its row's key card must verify against the Account ID; an answer whose
+keys or card do not is used for its name and photo only, and one for another account not at all; the user is told
+either way. A stored card that verifies is kept as any other (newest wins), so its device and relay lists come in
+too. Name: the newest kept card's when a device answered or a relay's card was kept, else the relay row's; photo and
+device addresses: the relay row's. The toast says what changed and who answered (their devices, their relay, your
+relay), or which could not be reached. What each relay answered is kept in memory for the contact page, which shows
+the preferred relay by host with its reachability at the last refresh (*Not known yet* before one asked it; *Mesh
+only* when the card lists no relay) ([`ContactRefreshWorkflow`](../../capabilities/messaging/src/feature/conversations/ContactRefreshWorkflow.h)).
 
 **Using the devices.** A send to an account goes over a live link to any device its kept card lists
 (`AmpDirectChatTransport::ReachableKey`); the contact's endpoint rows follow the card, so dials to those
