@@ -43,6 +43,9 @@ Object ContactToJson(const Contact& contact) {
   if (mirrored.remote.icon && !mirrored.remote.icon->empty()) {
     remote.set("icon", ProfileIconRefToJson(*mirrored.remote.icon));
   }
+  if (!mirrored.remote.locator_relay.empty()) {
+    remote.set("locator_relay", mirrored.remote.locator_relay);
+  }
 
   Object local;
   local.set("display_name", mirrored.local.display_name);
@@ -93,6 +96,7 @@ Contact ContactFromJson(const Object& json) {
       if (const Object* icon = remote->getObject("icon")) {
         contact.remote.icon = ProfileIconRefFromJson(*icon);
       }
+      contact.remote.locator_relay = remote->getString("locator_relay").value_or("");
     }
     SyncContactMirrors(contact);
     return contact;

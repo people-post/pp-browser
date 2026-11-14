@@ -26,6 +26,11 @@ struct ContactRemote {
   /** Unix ms when remote was last refreshed; 0 = never synced. */
   int64_t fetched_at = 0;
   std::optional<mesh::ProfileIconRef> icon;
+  /**
+   * The preferred relay origin the QR locator gave when the contact was added that way (multi-relay R4); its relay
+   * list until its account's card is kept (ContactRelays). Empty: none given.
+   */
+  std::string locator_relay;
 };
 
 /**
