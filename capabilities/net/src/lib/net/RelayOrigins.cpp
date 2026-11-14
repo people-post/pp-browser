@@ -212,6 +212,20 @@ bool SameRelay(const std::string& a, const std::string& b) {
   return RelayOriginKey(a) == RelayOriginKey(b);
 }
 
+std::string RelayOriginHost(const std::string& origin) {
+  const std::string key = RelayOriginKey(origin);
+  const size_t scheme_end = key.find("://");
+  if (scheme_end == std::string::npos) {
+    return {};
+  }
+  const size_t host_start = scheme_end + 3;
+  std::string host = key.substr(host_start, std::min(key.find('/', host_start), key.size()) - host_start);
+  if (const size_t at = host.rfind('@'); at != std::string::npos) {
+    host.erase(0, at + 1); // credentials are no part of the name
+  }
+  return host;
+}
+
 std::vector<std::string> OurRelayOrigins(const std::string& preferred, const std::vector<std::string>& extras) {
   std::vector<std::string> out;
   const std::string first = NormalizeRegistrationBackend(preferred);

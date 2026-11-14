@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -65,10 +66,25 @@ private:
   std::shared_ptr<const DirectoryCardSink> cards_;
 };
 
+/** What a relay keeps for an account (`GET /v1/users/by-account/{account_id}`): its row, and the card it registered. */
+struct StoredAccountRow {
+  /** The row: keys, nickname, photo, device endpoints (as a directory hit). */
+  mesh::DirectoryHit hit;
+  /** The account card it registered with (`account_card`, multi-relay R2 step 2); none when it gave none. */
+  std::optional<pp::common::Object> card;
+};
+
 /**
- * The account card `account_id` registered with on the relay at `relay_base_url` (`GET /v1/users/by-account`'s
- * `account_card`, multi-relay R2 step 2); none when the account is not registered there or gave none. Unchecked: the
- * caller keeps it only once it verifies (AccountKeyResolver).
+ * The row the relay at `relay_base_url` keeps for `account_id`, unauthenticated (the lookup is public); none when the
+ * account is not registered there (404). A row for another account is an error. Unchecked: the caller keeps keys and
+ * card only once they verify (AccountKeyResolver).
+ */
+Roe<std::optional<StoredAccountRow>> LookupStoredAccount(const std::string& relay_base_url,
+                                                         const std::string& account_id);
+
+/**
+ * The account card `account_id` registered with on the relay at `relay_base_url` (LookupStoredAccount's `card`);
+ * none when the account is not registered there or gave none.
  */
 Roe<std::optional<pp::common::Object>> FetchStoredAccountCard(const std::string& relay_base_url,
                                                               const std::string& account_id);

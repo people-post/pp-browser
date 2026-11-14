@@ -34,6 +34,15 @@ TEST(RelayOriginsTest, ARelayListedTwiceOrNotAUrlIsLeftOut) {
             Origins({"https://a.example/api/relay", "https://b.example/api/relay"}));
 }
 
+// The contact page names a relay by its host (multi-relay R3), not by its URL.
+TEST(RelayOriginsTest, ARelayIsNamedByItsHost) {
+  EXPECT_EQ(RelayOriginHost("https://www.Brief.global/api/relay"), "www.brief.global");
+  EXPECT_EQ(RelayOriginHost("https://relay.example:443/"), "relay.example");
+  EXPECT_EQ(RelayOriginHost("https://relay.example:8443/api/relay"), "relay.example:8443");
+  EXPECT_EQ(RelayOriginHost("http://10.0.0.2:8080/api/relay"), "10.0.0.2:8080");
+  EXPECT_EQ(RelayOriginHost("relay.example"), "");
+}
+
 TEST(RelayOriginsTest, NoPreferredRelayMeansNone) {
   EXPECT_TRUE(OurRelayOrigins("", {"https://b.example"}).empty());
 }

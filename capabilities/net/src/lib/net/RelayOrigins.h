@@ -30,6 +30,12 @@ bool SameRelay(const std::string& a, const std::string& b);
 bool IsForeignRelayOriginAllowed(const std::string& origin, bool lab_relaxed = false);
 
 /**
+ * The relay's host as a person reads it (the contact page): the authority of `origin` without scheme, path or a
+ * default port, lower case (`https://www.brief.global/api/relay` → `www.brief.global`); empty when it is no URL.
+ */
+std::string RelayOriginHost(const std::string& origin);
+
+/**
  * Our relays, preferred first (multi-relay R2): the backend's relay, then `extras` (config `relay.extra_base_urls`)
  * in their order. An extra that is not an absolute http(s) URL, names a relay already listed, or comes after the
  * fourth is left out. Each is trimmed of spaces and trailing `/`. An empty preferred: none at all.
