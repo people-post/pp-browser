@@ -67,6 +67,7 @@ Normative shapes: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md). Crypto: [MESSAGE_ENCRYPTIO
 | Known `content_type` payload | Ignore unknown keys inside typed payload (when applicable) |
 | `ChatHistoryRequest` / `Response` | Reject unknown top-level keys |
 | Signature / AAD | Unknown envelope keys are **not** signed; AEAD/sign failures are **hard** |
+| Account locker state JSON | Unknown keys and row fields are ignored. `device_names` (display names, [ACCOUNT_LOCKER § Device names](ACCOUNT_LOCKER.md#device-names)) was added as an optional key: an older build ignores it on read and drops it on write; devices that know it show "New device" until the next sync puts it back |
 
 ### Target behavior (forward-compat)
 
