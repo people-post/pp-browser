@@ -44,15 +44,17 @@ struct CasLibraryItemView {
   bool can_copy_tip = false;
 };
 
-/** Me → Security → Your devices: one of the account's devices (M021 d4). There are no device names. */
+/** Me → Security → Your devices: one of the account's devices (M021 d4), with the name it was given. */
 struct OwnDeviceView {
   std::string peer_id;
-  /** "This device", or "Device " and the end of its PeerId. */
-  std::string label;
+  /** The device's name; "New device" when it has none (never a piece of its PeerId). */
+  std::string name;
+  /** The device has a name (the rename dialog starts from it; empty otherwise). */
+  bool named = false;
   bool is_this_device = false;
   /** The account's main device: the first on the list, the only one that adds or removes devices. */
   bool is_main = false;
-  /** This device may take it off the account or make it the main one (this is the main device; it is another). */
+  /** This device may take it off the account, make it the main one or rename it (this is the main device; it is another). */
   bool can_manage = false;
 };
 

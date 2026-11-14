@@ -444,9 +444,12 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       // (2026-11-14: the phone's top button, on the main device only; a linked phone shows nothing to tap.)
       {"devices", "open_security_page('transfer')", "!own_devices_not_main", 1, 0},
       // The "?" of the action: next to the top sentence on the main device, after the card's second line on a linked
-      // phone (2026-11-14, so details are one tap away), and the link page's note (in the hidden desktop wrapper here).
+      // phone (2026-11-14, so details are one tap away) and after its "Main device (manage)" label, and the link page's
+      // note (in the hidden desktop wrapper here).
       {"devices", "ask_setting_help('settings.security.transfer_row')",
-       "!own_devices_not_main@@own_devices_not_main && !own_devices_signed_out@@-", 2, 0},
+       "!own_devices_not_main@@own_devices_not_main && !own_devices_signed_out@@own_devices_not_main && "
+       "!own_devices_signed_out;;!device.is_this_device && device.is_main@@-",
+       3, 0},
       // Here the phone's button and "Copy again" sit in the transfer block's desktop wrapper (hidden): only the desktop
       // button shows. Their own page is checked in the next test.
       {"devices", "export_link_device()",
@@ -459,7 +462,14 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       {"devices", "make_main_device(device_index)", "own_devices_shown;;device.can_manage", 0, 1},
       {"devices", "remove_own_device(device_index)", "own_devices_shown;;device.can_manage", 0, 1},
       {"devices", "open_own_device_actions(device_index)",
-       "own_devices_shown && !own_devices_not_main;;device.can_manage", 1, 0},
+       "own_devices_shown && !own_devices_not_main;;!device.is_this_device && device.can_manage", 1, 0},
+      // Device names (2026-11-14): this device's own row on both phone pages, and on the desktop its card's button and,
+      // on the main device, the button of each other device.
+      {"devices", "rename_own_device(device_index)",
+       "own_devices_shown && !own_devices_not_main;;device.is_this_device@@own_devices_not_main && "
+       "!own_devices_signed_out;;device.is_this_device@@own_devices_shown;;device.is_this_device@@own_devices_shown;;"
+       "device.can_manage",
+       2, 2},
       {"devices", "save_account_copy()", "security_has_recovery_phrase", 1, 1},
       {"devices", "ask_setting_help('settings.help.topic.account_copy')", "security_has_recovery_phrase", 1, 1},
   };
@@ -667,14 +677,20 @@ TEST(SettingsDevicesCaptionsTest, ThePhoneShowsNoCaptionUnderTheAccountCopyRow) 
   EXPECT_TRUE(desktop_only);
 }
 
-TEST(SettingsDevicesCaptionsTest, TheLinkButtonIsOnTheMainDeviceOnlyAndALinkedPhoneHasNothingToTap) {
+TEST(SettingsDevicesCaptionsTest, TheLinkButtonIsOnTheMainDeviceOnlyAndALinkedPhoneTapsOnlyRenameAndTheHelpMarks) {
   const std::string tap = "data-event-click=\"open_security_page('transfer')\"";
   const std::string help = "data-event-click=\"ask_setting_help('settings.security.transfer_row')\"";
   EXPECT_EQ(PhoneShown({tap}, MainFacts()), 1u);
   EXPECT_EQ(PhoneShown({help}, MainFacts()), 1u) << "one \"?\" for the action, in one place";
   // A linked phone: no element bound to any of the device actions, on the phone layout of this page or of the link page.
-  // Its "?" (after the second line of the top card) only asks PP support: exactly one on the devices page.
-  EXPECT_EQ(PhoneShown({help}, LinkedFacts()), 1u);
+  // Its "?" marks (after the second line of the top card, and after the "Main device (manage)" label) only ask PP
+  // support: exactly two on the devices page. The one other thing it can tap is its own row, to rename itself.
+  EXPECT_EQ(PhoneShown({help}, LinkedFacts()), 2u);
+  const std::string rename = "data-event-click=\"rename_own_device(device_index)\"";
+  std::set<std::string> linked_this_row = LinkedFacts();
+  linked_this_row.insert("device.is_this_device");
+  EXPECT_EQ(PhoneShown({rename}, linked_this_row), 1u);
+  EXPECT_EQ(PhoneShown({rename}, LinkedFacts()), 0u) << "no other row renames";
   for (const char* event :
        {"open_security_page('transfer')", "export_link_device()", "open_own_device_actions(device_index)",
         "make_main_device(device_index)", "remove_own_device(device_index)"}) {
@@ -686,7 +702,8 @@ TEST(SettingsDevicesCaptionsTest, TheLinkButtonIsOnTheMainDeviceOnlyAndALinkedPh
       }
     }
   }
-  // Only the account copy row at the bottom (and the "?" of it) and the card's "?" are tappable on a linked phone.
+  // Only the account copy row at the bottom (and the "?" of it) and the "?" marks are tappable on a linked phone (and
+  // its own row, checked above).
   for (const std::string& token : PhoneTokens(LinkedFacts())) {
     const bool account_copy = token == "data-event-click=\"save_account_copy()\"" || token == help ||
                               token == "data-event-click=\"ask_setting_help('settings.help.topic.account_copy')\"";

@@ -127,6 +127,11 @@ struct SettingsCommands {
   std::function<Roe<std::string>()> export_account_copy;
   /** The account's devices (M021 d4): the main device first; whether this one is signed out. */
   std::function<Roe<OwnDevicesView>()> own_devices;
+  /**
+   * Name a device of the account: this one, or — on the main device — another on the list. An empty name is a cancel
+   * (Ok, nothing written). Blocking (the locker table is kept at once; publishing follows in the background).
+   */
+  std::function<Roe<void>(const std::string& peer_id, const std::string& name)> rename_device;
   /** On the main device: take another device off the account (it stops working until linked again). */
   std::function<Roe<void>(const std::string& peer_id)> remove_own_device;
   /** On the main device: make another device the main one (this one can then no longer add or remove devices). */

@@ -22,9 +22,9 @@ class Event;
 namespace pbr {
 
 /**
- * Me → Security → Your devices (M021 d4): the account's devices, the main one first. On the main device each
- * other device can be taken off the account or made the main one (each asks first); elsewhere the list only
- * shows. Its rows are fields of the settings model. The ports are the controller's, read when used.
+ * Me → Security → Your devices (M021 d4): the account's devices, the main one first, each with its name. Any device
+ * renames itself; on the main device each other device can be renamed, taken off the account or made the main one
+ * (the last two ask first); elsewhere the others only show. Its rows are fields of the settings model. The ports are the controller's, read when used.
  *
  * UI thread (the list is read and changed on a worker).
  */
@@ -32,7 +32,7 @@ class SettingsOwnDevices {
 public:
   struct Row {
     ui::String peer_id;
-    ui::String label;
+    ui::String name;
     bool is_this_device = false;
     bool is_main = false;
     bool can_manage = false;
@@ -47,13 +47,17 @@ public:
   void Refresh();
   /** Shows a list that was read already (Refresh's answer). */
   void Show(Roe<OwnDevicesView> listed);
-  /** The sheet's actions for the device at `index` (none unless it can be managed): make main, remove (danger),
-   *  cancel. Each runs the same Remove / MakeMain as the desktop buttons' events, which ask first. */
+  /** The sheet's actions for the device at `index` (none unless it can be managed): rename, make main, remove
+   *  (danger), cancel. Make main and remove run the same Remove / MakeMain as the desktop buttons' events, which
+   *  ask first. */
   std::vector<ContextMenuAction> DeviceActions(int index);
+  /** The rename dialog for the device at `index` (this one, or — on the main device — another; a note for others). */
+  void Rename(int index);
 
 private:
   void Remove(int index);
   void MakeMain(int index);
+  void RenameById(const std::string& peer_id);
   /** By identity (the device's peer id), looked up again when the action runs and when the confirm is answered. */
   void RemoveById(const std::string& peer_id);
   void MakeMainById(const std::string& peer_id);
@@ -65,6 +69,8 @@ private:
                      const std::string& ok_label, std::function<Roe<void>(const std::string& peer_id)> change,
                      const std::string& done, bool destructive = false);
   const OwnDeviceView* ManageableAt(int index) const;
+  /** This device or a manageable one: the devices this device may rename. */
+  const OwnDeviceView* RenameableById(const std::string& peer_id) const;
   const OwnDeviceView* ManageableById(const std::string& peer_id) const;
 
   const SettingsCommands& commands_;
@@ -80,6 +86,8 @@ private:
   bool has_others_ = false;
   /** Shown, and this device is not the main one: it neither adds nor removes devices. */
   bool not_main_ = false;
+  /** On a linked device whose main device has a name: "The main device is “…”. Manage devices there."; else empty. */
+  ui::String main_note_;
   /** Bumped per read: only the latest read's answer is shown. */
   uint64_t refresh_count_ = 0;
 };

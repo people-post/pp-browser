@@ -15,17 +15,21 @@
         <div class="stack settings-phone-only" data-if="own_devices_shown && !own_devices_not_main">
           <p class="text group-head">{{i18n:settings.security.devices}}</p>
           <div class="group-card">
-            <div class="group-row group-row--static">
-              <span class="group-row-body">
-                <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.devices.this_phone}}</span></span>
-                <span class="group-row-value">{{i18n:settings.security.devices.this_phone_main}}</span>
-              </span>
-            </div>
             <div data-for="device, device_index : own_device_rows">
-              <div data-if="device.can_manage">
+              <div data-if="device.is_this_device">
+                <button class="group-row" type="button" data-event-click="rename_own_device(device_index)">
+                  <span class="group-row-body">
+                    <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.devices.role_this_main}}</span></span>
+                    <span class="group-row-value">{{device.name}}</span>
+                    <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+                  </span>
+                </button>
+              </div>
+              <div data-if="!device.is_this_device && device.can_manage">
                 <button class="group-row" type="button" data-event-click="open_own_device_actions(device_index)">
                   <span class="group-row-body">
-                    <span class="group-row-label"><span class="group-row-text">{{device.label}}</span></span>
+                    <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.devices.role_other}}</span></span>
+                    <span class="group-row-value">{{device.name}}</span>
                     <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
                   </span>
                 </button>
@@ -41,24 +45,40 @@
           <div class="group-card settings-dev-note">
             <p class="text settings-dev-note-title">{{i18n:settings.security.devices.linked_note}}</p>
             <div class="settings-note-row settings-dev-note-row">
-              <p class="text muted settings-dev-note-line">{{i18n:settings.security.devices.linked_note_sub}}</p>
+              <p class="text muted settings-dev-note-line" data-if="own_main_note == ''">{{i18n:settings.security.devices.linked_note_sub}}</p>
+              <p class="text muted settings-dev-note-line" data-if="own_main_note != ''">{{own_main_note}}</p>
               <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
             </div>
           </div>
           <p class="text group-head">{{i18n:settings.security.devices.view_head}}</p>
           <div class="group-card">
-            <div class="group-row group-row--static">
-              <span class="group-row-body">
-                <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.devices.this_phone}}</span></span>
-                <span class="group-row-value">{{i18n:settings.security.devices.this_phone_tag}}</span>
-              </span>
+            <div data-for="device, device_index : own_device_rows">
+              <div data-if="device.is_this_device">
+                <button class="group-row" type="button" data-event-click="rename_own_device(device_index)">
+                  <span class="group-row-body">
+                    <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.devices.role_this}}</span></span>
+                    <span class="group-row-value">{{device.name}}</span>
+                    <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+                  </span>
+                </button>
+              </div>
             </div>
             <div data-for="device : own_device_rows">
-              <div data-if="!device.is_this_device && !device.can_manage">
-                <div class="group-row group-row--static group-row--off">
+              <div data-if="!device.is_this_device && device.is_main">
+                <div class="group-row group-row--static">
                   <span class="group-row-body">
-                    <span class="group-row-label"><span class="group-row-text">{{device.label}}</span></span>
-                    <span class="group-row-value" data-if="device.is_main">{{i18n:settings.security.devices.main}}</span>
+                    <span class="settings-q-label"><span class="group-row-text">{{i18n:settings.security.devices.role_main_manage}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
+                    <span class="group-row-value">{{device.name}}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div data-for="device : own_device_rows">
+              <div data-if="!device.is_this_device && !device.is_main">
+                <div class="group-row group-row--static">
+                  <span class="group-row-body">
+                    <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.devices.role_other}}</span></span>
+                    <span class="group-row-value">{{device.name}}</span>
                   </span>
                 </div>
               </div>
@@ -70,10 +90,18 @@
           <div data-for="device, device_index : own_device_rows" class="settings-device-row stack group-card settings-desktop-only">
             <div class="stack">
               <div class="row settings-device-title">
-                <p class="text">{{device.label}}</p>
-                <span class="settings-device-badge" data-if="device.is_main">{{i18n:settings.security.devices.main}}</span>
+                <p class="text">{{device.name}}</p>
+                <span class="settings-device-badge" data-if="device.is_this_device && device.is_main">{{i18n:settings.security.devices.role_this_main}}</span>
+                <span class="settings-device-badge" data-if="device.is_this_device && !device.is_main">{{i18n:settings.security.devices.role_this}}</span>
+                <span class="settings-device-badge" data-if="!device.is_this_device && device.is_main">{{i18n:settings.security.devices.main}}</span>
+              </div>
+              <div class="settings-device-actions row" data-if="device.is_this_device">
+                <button class="btn btn-secondary" type="button"
+                        data-event-click="rename_own_device(device_index)">{{i18n:settings.security.devices.rename}}</button>
               </div>
               <div class="settings-device-actions row" data-if="device.can_manage">
+                <button class="btn btn-secondary" type="button"
+                        data-event-click="rename_own_device(device_index)">{{i18n:settings.security.devices.rename}}</button>
                 <button class="btn btn-secondary" type="button"
                         data-event-click="make_main_device(device_index)">{{i18n:settings.security.devices.make_main}}</button>
                 <button class="btn btn-secondary" type="button"

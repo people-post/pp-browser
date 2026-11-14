@@ -5,6 +5,8 @@
 #include "gui/SettingsOwnDevices.h"
 #include "gui/UserFeedback.h"
 
+#include "common/Logger.h"
+#include "common/Metrics.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/data/SessionStore.h"
@@ -16,7 +18,9 @@
 
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -70,29 +74,57 @@ TEST(SecurityLayoutTest, TheRecoveryRowIsOneButtonWithTheOldEventAndAChevron) {
   EXPECT_NE(row.find("group-chevron"), std::string::npos);
 }
 
-// The row of "This phone": display only, no event, no chevron, no button, no press style (group-row--static).
+// The row holding `token` (its row div or button, up to the end of that element's first closing tag of its kind).
 std::string RowOf(const std::string& rml, const std::string& title_token) {
   const size_t at = rml.find(title_token);
   EXPECT_NE(at, std::string::npos) << title_token;
-  const size_t from = rml.rfind("<div class=\"group-row", at);
-  const size_t to = rml.find("</div>", at);
+  const size_t div_from = rml.rfind("<div class=\"group-row", at);
+  const size_t button_from = rml.rfind("<button class=\"group-row\"", at);
+  const bool is_button = button_from != std::string::npos && (div_from == std::string::npos || button_from > div_from);
+  const size_t from = is_button ? button_from : div_from;
+  const size_t to = rml.find(is_button ? "</button>" : "</div>", at);
   return rml.substr(from, to - from);
 }
 
-TEST(DevicesLayoutTest, TheThisPhoneRowsAreDisplayOnlyOnBothPages) {
+// Role on the left, name on the right ("This device | Mac >"): this device's row opens the rename dialog on both pages;
+// the main device is a display-only row with a "?" right after its label; other devices show only on a linked device.
+TEST(DevicesLayoutTest, EachRowIsARoleAtTheLeftAndTheDevicesNameAtTheRight) {
   const std::string rml = ReadAsset("views/settings_section_devices.rml");
-  size_t seen = 0;
-  for (const char* tag :
-       {"{{i18n:settings.security.devices.this_phone_main}}", "{{i18n:settings.security.devices.this_phone_tag}}"}) {
-    const std::string row = RowOf(rml, tag);
-    EXPECT_NE(row.find("{{i18n:settings.security.devices.this_phone}}"), std::string::npos) << tag;
-    EXPECT_NE(row.find("group-row--static"), std::string::npos) << tag;
-    EXPECT_EQ(row.find("<button"), std::string::npos) << tag;
-    EXPECT_EQ(row.find("data-event-"), std::string::npos) << tag;
-    EXPECT_EQ(row.find("chevron"), std::string::npos) << tag;
-    ++seen;
+  for (const char* role :
+       {"{{i18n:settings.security.devices.role_this_main}}", "{{i18n:settings.security.devices.role_this}}"}) {
+    const std::string row = RowOf(rml, std::string(role) + "</span>");
+    EXPECT_NE(row.find("<button"), std::string::npos) << role;
+    EXPECT_NE(row.find("data-event-click=\"rename_own_device(device_index)\""), std::string::npos) << role;
+    EXPECT_NE(row.find("chevron"), std::string::npos) << role;
+    EXPECT_LT(row.find(role), row.find("{{device.name}}")) << role << ": the role comes first";
   }
-  EXPECT_EQ(seen, 2u);
+  const std::string main_row = RowOf(rml, "{{i18n:settings.security.devices.role_main_manage}}");
+  EXPECT_NE(main_row.find("group-row--static"), std::string::npos);
+  EXPECT_EQ(main_row.find("chevron"), std::string::npos);
+  EXPECT_EQ(main_row.find("rename_own_device"), std::string::npos) << "only the main device's own page renames others";
+  EXPECT_LT(main_row.find("{{i18n:settings.security.devices.role_main_manage}}"),
+            main_row.find("ask_setting_help('settings.security.transfer_row')"));
+  EXPECT_LT(main_row.find("ask_setting_help('settings.security.transfer_row')"), main_row.find("{{device.name}}"))
+      << "the \"?\" is right after the label, before the name";
+  const std::string other_view_row =
+      RowOf(rml.substr(rml.find("data-if=\"!device.is_this_device && !device.is_main\"")),
+            "{{i18n:settings.security.devices.role_other}}");
+  EXPECT_NE(other_view_row.find("group-row--static"), std::string::npos);
+  EXPECT_EQ(other_view_row.find("data-event-"), std::string::npos);
+  EXPECT_EQ(other_view_row.find("chevron"), std::string::npos);
+  EXPECT_EQ(rml.find("{{device.label}}"), std::string::npos) << "devices have names now";
+  EXPECT_EQ(rml.find("this_phone"), std::string::npos);
+}
+
+TEST(DevicesLayoutTest, OnTheMainDeviceAnotherDeviceRowOpensTheActionSheetWithItsNameAtTheRight) {
+  const std::string rml = ReadAsset("views/settings_section_devices.rml");
+  const size_t gate = rml.find("data-if=\"!device.is_this_device && device.can_manage\"");
+  ASSERT_NE(gate, std::string::npos);
+  const std::string row = rml.substr(gate, rml.find("</button>", gate) - gate);
+  EXPECT_NE(row.find("open_own_device_actions(device_index)"), std::string::npos);
+  EXPECT_NE(row.find("{{i18n:settings.security.devices.role_other}}"), std::string::npos);
+  EXPECT_NE(row.find("{{device.name}}"), std::string::npos);
+  EXPECT_NE(row.find("chevron"), std::string::npos);
 }
 
 TEST(DevicesLayoutTest, TheMainDevicesButtonIsAPrimaryButtonWithTheOldEventAndTheHeroSitsOnPhonesOnly) {
@@ -121,23 +153,38 @@ TEST(DevicesLayoutTest, TheDeviceLimitInTheHeroLineIsTheOneTheAccountCardEnforce
 TEST(DevicesLayoutTest, TheNewStringsExistInBothLanguages) {
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     const std::string text = ReadAsset(locale);
-    for (const char* key : {"settings.security.devices.none", "settings.security.devices.this_phone",
-                            "settings.security.devices.this_phone_main", "settings.security.devices.this_phone_tag",
-                            "settings.security.devices.hero", "settings.security.devices.hero_sub",
-                            "settings.security.devices.tap_hint", "settings.security.devices.view_head",
-                            "settings.security.devices.linked_note", "settings.security.devices.linked_note_sub",
-                            "settings.security.link_device.phone_note", "settings.security.grace.caption"}) {
+    for (const char* key :
+         {"settings.security.devices.none", "settings.security.devices.role_this",
+          "settings.security.devices.role_this_main", "settings.security.devices.role_main_manage",
+          "settings.security.devices.role_other", "settings.security.devices.unnamed",
+          "settings.security.devices.rename", "settings.security.devices.rename_title",
+          "settings.security.devices.rename_prompt", "settings.security.devices.renamed",
+          "settings.security.devices.main_is", "settings.security.devices.hero", "settings.security.devices.hero_sub",
+          "settings.security.devices.tap_hint", "settings.security.devices.view_head",
+          "settings.security.devices.linked_note", "settings.security.devices.linked_note_sub",
+          "settings.security.link_device.phone_note", "settings.security.grace.caption"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
   }
   const std::string zh = ReadAsset("locales/zh-Hans.json");
   for (const char* line :
-       {"\"在其他设备上使用同一个账号\"", "\"本机 · 主设备\"", "\"点一台设备可以移除，或设为主设备。\"",
-        "\"这个账号的设备\"", "\"这台手机已关联到你的账号。\"", "\"要管理设备，请到主设备上操作。\"",
-        "\"还没有关联其他设备。\"", "\"新设备上看不到以前的聊天记录。已有别的账号的设备要先重置。\""}) {
+       {"\"在其他设备上使用同一个账号\"", "\"本机（主设备）\"", "\"主设备（管理）\"", "\"其他设备\"", "\"新设备\"",
+        "\"主设备是「{name}」，请到那台设备上管理。\"", "\"设备名\"", "\"只有你自己的设备看得到\"", "\"已改名\"",
+        "\"点一台设备可以移除，或设为主设备。\"", "\"这个账号的设备\"", "\"这台手机已关联到你的账号。\"",
+        "\"要管理设备，请到主设备上操作。\"", "\"还没有关联其他设备。\"",
+        "\"新设备上看不到以前的聊天记录。已有别的账号的设备要先重置。\""}) {
     EXPECT_NE(zh.find(line), std::string::npos) << line;
   }
 }
+
+struct Collect : logging::Handler {
+  void emit(logging::Level, const std::string&, const std::string& message) override {
+    std::lock_guard lock(mu);
+    text += message + "\n";
+  }
+  std::mutex mu;
+  std::string text;
+};
 
 class SettingsOwnDevicesTest : public ::testing::Test {
 protected:
@@ -155,7 +202,19 @@ protected:
       made_main_.push_back(peer_id);
       return {};
     };
+    commands_.rename_device = [this](const std::string& peer_id, const std::string& name) -> Roe<void> {
+      if (rename_fails_) {
+        return Error("not allowed");
+      }
+      renamed_.push_back({peer_id, name});
+      return {};
+    };
     commands_.own_devices = [this]() -> Roe<OwnDevicesView> { return View(); };
+    feedback_.show_prompt = [this](const std::string& title, const std::string& message,
+                                   const std::string& default_value, std::function<void(bool, std::string)> on_result) {
+      prompts_.push_back({title, message, default_value});
+      on_prompt_ = std::move(on_result);
+    };
     feedback_.show_confirm = [this](const std::string& title, const std::string& message,
                                     std::function<void(bool)> on_result, const std::string& ok_label) {
       confirms_.push_back({title, ok_label, false, message});
@@ -179,13 +238,18 @@ protected:
 
   OwnDevicesView View() const {
     // This device (main) first, then two others.
-    return OwnDevicesViewFor({"self-peer", "other-peer-aaaaaa", "other-peer-bbbbbb"}, "self-peer", false);
+    return OwnDevicesViewFor({"self-peer", "other-peer-aaaaaa", "other-peer-bbbbbb"}, "self-peer", false, names_);
   }
   void Settle() {
     AppRuntime::DrainWorkersThenUI();
     AppRuntime::RunUITasks();
   }
 
+  struct Prompt {
+    std::string title;
+    std::string message;
+    std::string default_value;
+  };
   struct Confirm {
     std::string title;
     std::string ok_label;
@@ -195,24 +259,30 @@ protected:
   SettingsCommands commands_;
   ShellFeedbackPorts feedback_;
   std::unique_ptr<SettingsOwnDevices> devices_;
+  std::map<std::string, std::string> names_;
   std::vector<std::string> removed_;
   std::vector<std::string> made_main_;
+  std::vector<std::pair<std::string, std::string>> renamed_;
+  std::vector<Prompt> prompts_;
+  std::function<void(bool, std::string)> on_prompt_;
+  bool rename_fails_ = false;
   std::vector<Confirm> confirms_;
   std::vector<std::string> notes_;
   std::function<void(bool)> on_result_;
   int failures_ = 0;
 };
 
-TEST_F(SettingsOwnDevicesTest, TheSheetOffersTheTwoActionsOnlyForADeviceTheMainOneManages) {
+TEST_F(SettingsOwnDevicesTest, TheSheetOffersTheThreeActionsOnlyForADeviceTheMainOneManages) {
   devices_->Show(View());
   EXPECT_TRUE(devices_->DeviceActions(0).empty()) << "this device";
   EXPECT_TRUE(devices_->DeviceActions(7).empty());
   const auto actions = devices_->DeviceActions(1);
-  ASSERT_EQ(actions.size(), 3U);
-  EXPECT_EQ(actions[0].label, Tr("settings.security.devices.make_main"));
-  EXPECT_EQ(actions[1].label, Tr("settings.security.devices.remove"));
-  EXPECT_TRUE(actions[1].danger);
-  EXPECT_TRUE(actions[2].cancel);
+  ASSERT_EQ(actions.size(), 4U);
+  EXPECT_EQ(actions[0].label, Tr("settings.security.devices.rename"));
+  EXPECT_EQ(actions[1].label, Tr("settings.security.devices.make_main"));
+  EXPECT_EQ(actions[2].label, Tr("settings.security.devices.remove"));
+  EXPECT_TRUE(actions[2].danger);
+  EXPECT_TRUE(actions[3].cancel);
 
   // A linked device (not main) manages nothing: no sheet, as the buttons were hidden before.
   devices_->Show(OwnDevicesViewFor({"main-peer", "self-peer", "other-peer-cccccc"}, "self-peer", false));
@@ -223,7 +293,7 @@ TEST_F(SettingsOwnDevicesTest, TheSheetOffersTheTwoActionsOnlyForADeviceTheMainO
 TEST_F(SettingsOwnDevicesTest, MakeMainInTheSheetAsksTheOldQuestionAndCallsTheOldCommand) {
   devices_->Show(View());
   auto actions = devices_->DeviceActions(2);
-  actions[0].run();
+  actions[1].run();
   ASSERT_EQ(confirms_.size(), 1U);
   EXPECT_EQ(confirms_[0].title, Tr("settings.security.devices.make_main_confirm_title"));
   EXPECT_EQ(confirms_[0].ok_label, Tr("settings.security.devices.make_main_confirm_ok"));
@@ -232,7 +302,7 @@ TEST_F(SettingsOwnDevicesTest, MakeMainInTheSheetAsksTheOldQuestionAndCallsTheOl
   on_result_(false);
   Settle();
   EXPECT_TRUE(made_main_.empty());
-  actions[0].run();
+  actions[1].run();
   on_result_(true);
   Settle();
   EXPECT_EQ(made_main_, std::vector<std::string>{"other-peer-bbbbbb"});
@@ -242,7 +312,7 @@ TEST_F(SettingsOwnDevicesTest, MakeMainInTheSheetAsksTheOldQuestionAndCallsTheOl
 TEST_F(SettingsOwnDevicesTest, RemoveInTheSheetAsksTheOldQuestionAndCallsTheOldCommand) {
   devices_->Show(View());
   auto actions = devices_->DeviceActions(1);
-  actions[1].run();
+  actions[2].run();
   ASSERT_EQ(confirms_.size(), 1U);
   EXPECT_EQ(confirms_[0].title, Tr("settings.security.devices.remove_confirm_title"));
   EXPECT_EQ(confirms_[0].ok_label, Tr("settings.security.devices.remove_confirm_ok"));
@@ -253,15 +323,99 @@ TEST_F(SettingsOwnDevicesTest, RemoveInTheSheetAsksTheOldQuestionAndCallsTheOldC
   EXPECT_TRUE(made_main_.empty());
 }
 
-TEST_F(SettingsOwnDevicesTest, ConfirmNamesTheDeviceForBothActions) {
+TEST_F(SettingsOwnDevicesTest, ConfirmNamesTheDeviceForBothActionsAndTheNameIsNotATemplate) {
+  names_["other-peer-bbbbbb"] = "Office {device} Mac";
   devices_->Show(View());
-  const std::string label = View().devices[2].label;
-  ASSERT_FALSE(label.empty());
-  devices_->DeviceActions(2)[0].run();
+  const std::string name = View().devices[2].name;
+  ASSERT_EQ(name, "Office {device} Mac");
   devices_->DeviceActions(2)[1].run();
+  devices_->DeviceActions(2)[2].run();
   ASSERT_EQ(confirms_.size(), 2U);
-  EXPECT_NE(confirms_[0].message.find(label), std::string::npos) << confirms_[0].message;
-  EXPECT_NE(confirms_[1].message.find(label), std::string::npos) << confirms_[1].message;
+  EXPECT_NE(confirms_[0].message.find("\"Office {device} Mac\""), std::string::npos) << confirms_[0].message;
+  EXPECT_NE(confirms_[1].message.find("\"Office {device} Mac\""), std::string::npos) << confirms_[1].message;
+}
+
+TEST_F(SettingsOwnDevicesTest, ThisDeviceRenamesItselfFromItsRowAndTheRowShowsTheNameAfterwards) {
+  names_["self-peer"] = "My iPhone";
+  devices_->Show(View());
+  devices_->Rename(0);
+  ASSERT_EQ(prompts_.size(), 1U);
+  EXPECT_EQ(prompts_[0].title, Tr("settings.security.devices.rename_title"));
+  EXPECT_EQ(prompts_[0].message, Tr("settings.security.devices.rename_prompt"));
+  EXPECT_EQ(prompts_[0].default_value, "My iPhone") << "starts from the name it has";
+  on_prompt_(true, "  Phone\n 2 ");
+  Settle();
+  ASSERT_EQ(renamed_.size(), 1U);
+  EXPECT_EQ(renamed_[0], (std::pair<std::string, std::string>{"self-peer", "Phone 2"})) << "cleaned before it is sent";
+  EXPECT_EQ(notes_.back(), Tr("settings.security.devices.renamed"));
+  EXPECT_EQ(failures_, 0);
+}
+
+TEST_F(SettingsOwnDevicesTest, AnUnnamedDeviceStartsTheDialogEmpty) {
+  devices_->Show(View());
+  devices_->Rename(1);
+  ASSERT_EQ(prompts_.size(), 1U);
+  EXPECT_EQ(prompts_[0].default_value, "") << "not the words \"New device\"";
+}
+
+TEST_F(SettingsOwnDevicesTest, AnEmptyNameOrACancelWritesNothingAndSaysNothing) {
+  devices_->Show(View());
+  devices_->Rename(0);
+  on_prompt_(true, "  \n\t ");
+  Settle();
+  devices_->Rename(0);
+  on_prompt_(false, "Anything");
+  Settle();
+  EXPECT_TRUE(renamed_.empty());
+  EXPECT_TRUE(notes_.empty());
+  EXPECT_EQ(failures_, 0);
+}
+
+TEST_F(SettingsOwnDevicesTest, TheMainDeviceRenamesAnotherFromTheSheetAndAFailureIsReported) {
+  devices_->Show(View());
+  devices_->DeviceActions(1)[0].run();
+  ASSERT_EQ(prompts_.size(), 1U);
+  on_prompt_(true, "Mac Bureau");
+  Settle();
+  ASSERT_EQ(renamed_.size(), 1U);
+  EXPECT_EQ(renamed_[0].first, "other-peer-aaaaaa");
+  rename_fails_ = true;
+  devices_->DeviceActions(1)[0].run();
+  on_prompt_(true, "Other");
+  Settle();
+  EXPECT_EQ(failures_, 1);
+  EXPECT_EQ(renamed_.size(), 1U);
+}
+
+TEST_F(SettingsOwnDevicesTest, ALinkedDeviceRenamesOnlyItselfAndHasNoSheetForTheOthers) {
+  devices_->Show(OwnDevicesViewFor({"main-peer", "self-peer", "other-peer-cccccc"}, "self-peer", false));
+  devices_->Rename(0); // the main device's row
+  devices_->Rename(2);
+  EXPECT_TRUE(prompts_.empty());
+  EXPECT_EQ(notes_.size(), 2U) << "the list changed, nothing opened";
+  devices_->Rename(1);
+  EXPECT_EQ(prompts_.size(), 1U);
+  EXPECT_TRUE(devices_->DeviceActions(0).empty());
+  EXPECT_TRUE(devices_->DeviceActions(2).empty());
+}
+
+TEST_F(SettingsOwnDevicesTest, ANameNeverReachesTheLogsOrMetricsThroughTheDialogsAndSheet) {
+  auto capture = std::make_shared<Collect>();
+  for (const char* channel : {"Metrics", "Settings", "AccountLocker", "ConversationsHub", "SettingsOwnDevices"}) {
+    logging::getLogger(channel).addHandler(capture);
+  }
+  names_["self-peer"] = "ZZ-NAME-MARKER";
+  names_["other-peer-aaaaaa"] = "ZZ-NAME-MARKER other";
+  devices_->Show(View());
+  devices_->DeviceActions(1)[0].run();
+  on_prompt_(true, "ZZ-NAME-MARKER renamed");
+  devices_->DeviceActions(1)[1].run();
+  devices_->DeviceActions(1)[2].run();
+  Settle();
+  MetricsLine("settings.devices_checked").Add("devices", 2).Emit();
+  std::lock_guard lock(capture->mu);
+  EXPECT_NE(capture->text.find("settings.devices_checked"), std::string::npos) << "the capture is wired";
+  EXPECT_EQ(capture->text.find("ZZ-NAME-MARKER"), std::string::npos);
 }
 
 TEST_F(SettingsOwnDevicesTest, ASheetActsOnItsDeviceAfterTheListShiftsUnderIt) {
@@ -269,12 +423,12 @@ TEST_F(SettingsOwnDevicesTest, ASheetActsOnItsDeviceAfterTheListShiftsUnderIt) {
   auto actions = devices_->DeviceActions(2); // B = other-peer-bbbbbb, position 2
   // A was removed: B is now at position 1.
   devices_->Show(OwnDevicesViewFor({"self-peer", "other-peer-bbbbbb"}, "self-peer", false));
-  actions[1].run();
+  actions[2].run();
   ASSERT_EQ(confirms_.size(), 1U);
   on_result_(true);
   Settle();
   EXPECT_EQ(removed_, std::vector<std::string>{"other-peer-bbbbbb"});
-  actions[0].run();
+  actions[1].run();
   on_result_(true);
   Settle();
   EXPECT_EQ(made_main_, std::vector<std::string>{"other-peer-bbbbbb"});
@@ -287,8 +441,8 @@ TEST_F(SettingsOwnDevicesTest, ASheetForAGoneDeviceDoesNothingButSayTheListChang
   devices_->Show(View());
   auto actions = devices_->DeviceActions(2);
   devices_->Show(OwnDevicesViewFor({"self-peer", "other-peer-aaaaaa"}, "self-peer", false));
+  actions[2].run();
   actions[1].run();
-  actions[0].run();
   EXPECT_TRUE(confirms_.empty());
   EXPECT_EQ(notes_, (std::vector<std::string>{Tr("settings.security.devices.list_changed"),
                                               Tr("settings.security.devices.list_changed")}));
@@ -300,7 +454,7 @@ TEST_F(SettingsOwnDevicesTest, ASheetForAGoneDeviceDoesNothingButSayTheListChang
 TEST_F(SettingsOwnDevicesTest, ADeviceThatVanishesWhileTheConfirmIsOpenIsNotTouched) {
   devices_->Show(View());
   auto actions = devices_->DeviceActions(2);
-  actions[1].run();
+  actions[2].run();
   ASSERT_EQ(confirms_.size(), 1U);
   devices_->Show(OwnDevicesViewFor({"self-peer", "other-peer-aaaaaa"}, "self-peer", false));
   on_result_(true);
@@ -310,7 +464,7 @@ TEST_F(SettingsOwnDevicesTest, ADeviceThatVanishesWhileTheConfirmIsOpenIsNotTouc
   // Same for make main.
   devices_->Show(View());
   actions = devices_->DeviceActions(2);
-  actions[0].run();
+  actions[1].run();
   devices_->Show(OwnDevicesViewFor({"self-peer", "other-peer-aaaaaa"}, "self-peer", false));
   on_result_(true);
   Settle();
@@ -321,9 +475,9 @@ TEST_F(SettingsOwnDevicesTest, ADeviceThatVanishesWhileTheConfirmIsOpenIsNotTouc
 TEST_F(SettingsOwnDevicesTest, CancellingEitherConfirmIssuesNothing) {
   devices_->Show(View());
   auto actions = devices_->DeviceActions(1);
-  actions[1].run();
+  actions[2].run();
   on_result_(false);
-  actions[0].run();
+  actions[1].run();
   on_result_(false);
   Settle();
   EXPECT_TRUE(removed_.empty());

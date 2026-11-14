@@ -1151,7 +1151,14 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     for (const AccountCardDevice& device : list->devices) {
       peer_ids.push_back(device.peer_id);
     }
-    return OwnDevicesViewFor(peer_ids, list->self_peer_id, list->signed_out);
+    std::map<std::string, std::string> names;
+    for (const DeviceNameEntry& entry : facade.OwnDeviceNames()) {
+      names[entry.peer_id] = entry.name;
+    }
+    return OwnDevicesViewFor(peer_ids, list->self_peer_id, list->signed_out, names);
+  };
+  settings_commands.rename_device = [&facade](const std::string& peer_id, const std::string& name) {
+    return facade.RenameOwnDevice(peer_id, name);
   };
   settings_commands.remove_own_device = [&facade](const std::string& peer_id) {
     return facade.RemoveOwnDevice(peer_id);
