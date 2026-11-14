@@ -710,13 +710,21 @@ private:
   std::unique_ptr<OurRelaysStore> our_relays_;
   std::mutex our_relays_changed_mu_;
   std::function<void()> on_our_relays_changed_;
-  std::unique_ptr<MyRelaysWorkflow> my_relays_;
+  /** Read with MyRelays (any thread: the page's worker); Shutdown closes it before what its ports touch goes. */
+  std::shared_ptr<MyRelaysWorkflow> my_relays_;
+  mutable std::mutex my_relays_mu_;
+  std::shared_ptr<MyRelaysWorkflow> MyRelays() const;
+  /** Takes my_relays_ away and closes it (waits for a change in progress; its ports stop at shutdown_requested_). */
+  void CloseMyRelays();
   void NotifyOurRelaysChanged();
   MyRelaysWorkflow::Ports MyRelaysPorts();
   /** This device is the account's main one (or the account has no card yet). */
   bool IsMainDevice();
-  /** Runs `task` on the hub's thread (UI) and waits for it (at most 10 s); inline when already there. */
-  void RunOnHubThread(std::function<void()> task);
+  /**
+   * Runs `task` on the hub's thread (UI) and waits for it; inline when already there. False when it was not taken
+   * within 10 s, or before the hub shuts down: it then never runs.
+   */
+  bool RunOnHubThread(std::function<void()> task);
   /** The identity's registration on the preferred relay, as a My relays record (none: not registered there). */
   std::optional<RelayRegistrationRecord> PreferredRegistrationRecord();
   /** Checks which other relays are due a registration while messaging runs. */

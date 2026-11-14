@@ -171,7 +171,9 @@ Me → My relays changes the list (`MyRelaysWorkflow`; the page in [UI_DESIGN_SY
 Only the account's main device changes it (it signs the card's list, MR002); a linked device follows the newest card
 of ours (its list becomes the card's). Every change is kept first, then:
 
-1. the clients, the inboxes and the card's relays follow the new list (on the hub's thread);
+1. the clients, the inboxes and the card's relays follow the new list (on the hub's thread; when it does not take the
+   list within 10 s, or the profile closes meanwhile, the change is undone and refused with `relay_list_not_applied`:
+   nothing is registered or announced for it);
 2. what is new is registered on (each other relay again for the newer card, as above);
 3. the card is re-issued with the new list (our other devices hear through our mailbox) and sent to every contact
    with the device-list notice over the control lane (`AnnounceOwnDevicesToContacts`), so senders deliver by the new
@@ -186,7 +188,8 @@ of ours (its list becomes the card's). Every change is kept first, then:
 
 A refused change answers with a code the page words (`relay_origin_not_https`, `relay_unreachable`,
 `relay_already_listed`, `relay_list_full`, `relay_preferred_not_removable`, `relay_list_last`,
-`relay_list_not_main_device`, …).
+`relay_list_not_main_device`, `relay_list_not_applied`, …). A profile closing (a reset, the app stopping) waits for a
+change in progress and refuses any after it.
 
 ### The directory on each
 

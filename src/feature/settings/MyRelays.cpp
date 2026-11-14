@@ -88,6 +88,7 @@ std::string MyRelaysFailureText(const Error& error) {
       {"relay_preferred_not_removable", "settings.relays.error.preferred"},
       {"relay_list_last", "settings.relays.error.last"},
       {"relay_list_not_main_device", "settings.relays.not_main"},
+      {"relay_list_not_applied", "settings.relays.error.not_applied"},
   };
   const auto key = kKeys.find(error.message);
   return key == kKeys.end() ? error.message : Tr(key->second);

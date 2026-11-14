@@ -1050,7 +1050,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   PublishAddressDisclosure();
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
   // My relays (multi-relay R3, MR006): the profile's list, seeded once from the deployment's relay and config.
-  my_relays_.reset(); // a profile reset: the old workflow goes before the store it changes
+  CloseMyRelays(); // a profile reset: the old workflow (closed at Shutdown) goes before the store it changes
   our_relays_ = std::make_unique<OurRelaysStore>(data_dir_);
   our_relays_->LoadOrSeed(clients_.OrgRelayOf({.relay = settings.relay}), settings.relay_extra_base_urls);
   relay_registrations_ = std::make_unique<RelayRegistrationsWorkflow>(*identity_);
@@ -1061,7 +1061,10 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
     }
     NotifyOurRelaysChanged();
   });
-  my_relays_ = std::make_unique<MyRelaysWorkflow>(*our_relays_, MyRelaysPorts());
+  {
+    std::lock_guard lock(my_relays_mu_);
+    my_relays_ = std::make_shared<MyRelaysWorkflow>(*our_relays_, MyRelaysPorts());
+  }
   // A relay that took our registration takes our push token too (any relay holding mail can wake the phone).
   relay_registrations_->SetOnRegistered(
       [this](const std::string& origin) { (void)PushDeviceCoordinator::RegisterOn(*this, origin); });
@@ -1380,8 +1383,8 @@ void ConversationsHub::BuildMessagingObjects() {
   });
   // My relays: each poll says whether the relay answered; a linked device follows the main device's list.
   mesh_messaging_->SetOnInboxPolled([this](const std::string& origin, const bool ok) {
-    if (my_relays_) {
-      my_relays_->NotePolled(origin, ok, util::NowUnixMs());
+    if (const auto relays = MyRelays()) {
+      relays->NotePolled(origin, ok, util::NowUnixMs());
     }
   });
   mesh_messaging_->SetOnOwnCardChanged([this](const AccountCard& card) {
@@ -1390,8 +1393,8 @@ void ConversationsHub::BuildMessagingObjects() {
       relays.push_back(relay.origin);
     }
     AppRuntime::PostWorkerNormal([this, relays = std::move(relays)]() {
-      if (my_relays_ && !shutdown_requested_.load(std::memory_order_acquire)) {
-        my_relays_->FollowCard(relays);
+      if (const auto workflow = MyRelays(); workflow && !shutdown_requested_.load(std::memory_order_acquire)) {
+        workflow->FollowCard(relays);
       }
     });
   });
@@ -3680,6 +3683,8 @@ void ConversationsHub::Shutdown() {
   }
 
   shutdown_requested_.store(true, std::memory_order_release);
+  // My relays first: a change in progress ends (its ports stop here) before anything it touches goes.
+  CloseMyRelays();
   // The unknown-network timer (and its UI post) of this run never reach the hub again; a later run arms its own.
   attachment_network_lifetime_.InvalidateAndWait();
   attachment_network_timer_armed_.store(false);
@@ -3972,19 +3977,51 @@ bool ConversationsHub::IsMainDevice() {
   return !devices || devices->devices.empty() || devices->devices.front().peer_id == devices->self_peer_id;
 }
 
-void ConversationsHub::RunOnHubThread(std::function<void()> task) {
+bool ConversationsHub::RunOnHubThread(std::function<void()> task) {
   if (!AppRuntime::IsRunning() || AppRuntime::CurrentlyOnUI()) {
     task();
-    return;
+    return true;
   }
+  enum : int { kWaiting, kTaken, kGivenUp };
+  auto state = std::make_shared<std::atomic<int>>(kWaiting);
   auto done = std::make_shared<std::promise<void>>();
   std::future<void> finished = done->get_future();
-  AppRuntime::PostUI([task = std::move(task), done]() {
-    task();
+  AppRuntime::PostUI([task = std::move(task), state, done]() {
+    int waiting = kWaiting;
+    if (state->compare_exchange_strong(waiting, kTaken)) {
+      task();
+    }
     done->set_value();
   });
-  if (finished.wait_for(std::chrono::seconds(10)) != std::future_status::ready) {
-    log().warning << "the hub's thread did not take the relay list in 10 s; it follows when it runs";
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  while (finished.wait_for(std::chrono::milliseconds(50)) != std::future_status::ready) {
+    if (!shutdown_requested_.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
+      continue;
+    }
+    int waiting = kWaiting;
+    if (state->compare_exchange_strong(waiting, kGivenUp)) {
+      log().warning << "the hub's thread did not take the task (10 s, or the hub stops); it does not run";
+      return false;
+    }
+    finished.wait(); // taken already: it ends on the hub's thread
+    return true;
+  }
+  return true;
+}
+
+std::shared_ptr<MyRelaysWorkflow> ConversationsHub::MyRelays() const {
+  std::lock_guard lock(my_relays_mu_);
+  return my_relays_;
+}
+
+void ConversationsHub::CloseMyRelays() {
+  std::shared_ptr<MyRelaysWorkflow> closing;
+  {
+    std::lock_guard lock(my_relays_mu_);
+    closing = std::move(my_relays_);
+  }
+  if (closing) {
+    closing->Close();
   }
 }
 
@@ -4010,7 +4047,8 @@ MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {
   };
   ports.main_device = [this]() { return IsMainDevice(); };
   ports.apply = [this]() {
-    RunOnHubThread([this]() {
+    auto applied = std::make_shared<bool>(false);
+    const bool ran = RunOnHubThread([this, applied]() {
       if (!initialized_ || shutdown_requested_.load(std::memory_order_acquire)) {
         return;
       }
@@ -4018,9 +4056,14 @@ MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {
       if (actions_) {
         actions_->SetRegistrationClient(registration_);
       }
+      *applied = true;
     });
+    return ran && *applied;
   };
   ports.leave = [this](const std::string& origin) -> Roe<void> {
+    if (shutdown_requested_.load(std::memory_order_acquire)) {
+      return Error(MyRelaysWorkflow::kClosed);
+    }
     if (auto unbound = PushDeviceCoordinator::UnregisterOn(*this, origin); !unbound) {
       log().info << "push binding on " << origin << " not removed: " << unbound.error().message;
     }
@@ -4030,6 +4073,9 @@ MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {
     return relay_registrations_->Revoke(origin); // with the account's push devices there
   };
   ports.register_preferred = [this]() -> Roe<void> {
+    if (shutdown_requested_.load(std::memory_order_acquire)) {
+      return Error(MyRelaysWorkflow::kClosed);
+    }
     // The card now lists the new order, so it goes whatever the auto-renew preference (ShouldPublishAccountCard),
     // and the registration records the relay it was made at (#602's backend-switch path).
     auto renewed = MaybeAutoRenewRegistration(Registration(), Identity(), true, RegistrationCard());
@@ -4039,10 +4085,15 @@ MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {
     (void)PushDeviceCoordinator::Register(*this); // the new preferred relay wakes the phone too
     return {};
   };
-  ports.preferred_registration = [this]() { return PreferredRegistrationRecord(); };
+  ports.preferred_registration = [this]() -> std::optional<RelayRegistrationRecord> {
+    if (shutdown_requested_.load(std::memory_order_acquire)) {
+      return std::nullopt;
+    }
+    return PreferredRegistrationRecord();
+  };
   ports.register_others = [this]() { RegisterOnOtherRelaysSoon(); };
   ports.announce = [this]() {
-    if (!mesh_messaging_ || !IsMessagingReady()) {
+    if (shutdown_requested_.load(std::memory_order_acquire) || !mesh_messaging_ || !IsMessagingReady()) {
       return; // the next start issues the card (and the registrations carry it)
     }
     // Issued now with the new list: siblings hear (OwnCards::SetOnChanged), then our contacts get it.
@@ -4057,31 +4108,35 @@ MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {
 }
 
 Roe<OurRelaysStatus> ConversationsHub::OurRelays() {
-  if (!my_relays_) {
-    return Error("Messaging is not ready");
+  const auto relays = MyRelays();
+  if (!relays) {
+    return Error(MyRelaysWorkflow::kClosed);
   }
-  return my_relays_->Status();
+  return relays->Status();
 }
 
 Roe<void> ConversationsHub::AddOurRelay(const std::string& typed, const bool allow_http) {
-  if (!my_relays_ || !IsMessagingReady()) {
-    return Error("Messaging is not ready");
+  const auto relays = MyRelays();
+  if (!relays || !IsMessagingReady()) {
+    return Error(MyRelaysWorkflow::kClosed);
   }
-  return my_relays_->Add(typed, allow_http);
+  return relays->Add(typed, allow_http);
 }
 
 Roe<void> ConversationsHub::RemoveOurRelay(const std::string& origin) {
-  if (!my_relays_ || !IsMessagingReady()) {
-    return Error("Messaging is not ready");
+  const auto relays = MyRelays();
+  if (!relays || !IsMessagingReady()) {
+    return Error(MyRelaysWorkflow::kClosed);
   }
-  return my_relays_->Remove(origin);
+  return relays->Remove(origin);
 }
 
 Roe<void> ConversationsHub::MakeOurRelayPreferred(const std::string& origin) {
-  if (!my_relays_ || !IsMessagingReady()) {
-    return Error("Messaging is not ready");
+  const auto relays = MyRelays();
+  if (!relays || !IsMessagingReady()) {
+    return Error(MyRelaysWorkflow::kClosed);
   }
-  return my_relays_->MakePreferred(origin);
+  return relays->MakePreferred(origin);
 }
 
 void ConversationsHub::SyncLockerThenAnnounceOwnDevices() {

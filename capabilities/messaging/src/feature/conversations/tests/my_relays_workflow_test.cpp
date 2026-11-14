@@ -2,7 +2,10 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <filesystem>
+#include <functional>
+#include <future>
 #include <memory>
 #include <optional>
 #include <string>
@@ -51,7 +54,13 @@ protected:
       return {};
     };
     ports.main_device = [this]() { return main_device_; };
-    ports.apply = [this]() { steps_.push_back("apply " + Join(store_->List().Origins())); };
+    ports.apply = [this]() {
+      steps_.push_back("apply " + Join(store_->List().Origins()));
+      if (on_apply_) {
+        on_apply_();
+      }
+      return apply_ok_;
+    };
     ports.leave = [this](const std::string& origin) -> Roe<void> {
       steps_.push_back("leave " + origin);
       if (!leave_ok_) {
@@ -95,6 +104,8 @@ protected:
   bool main_device_ = true;
   bool leave_ok_ = true;
   bool preferred_ok_ = true;
+  bool apply_ok_ = true;
+  std::function<void()> on_apply_;
   std::string registered_at_ = kA;
   int changed_ = 0;
 };
@@ -165,6 +176,43 @@ TEST_F(MyRelaysWorkflowTest, APreferredRelayThatRefusesStaysPreferredAndSaysWhy)
   const OurRelaysStatus status = workflow_->Status();
   EXPECT_EQ(status.relays[0].registration.state, RelayRegistrationRecord::State::Failed);
   EXPECT_EQ(status.relays[0].registration.reason, "HTTP 503");
+}
+
+TEST_F(MyRelaysWorkflowTest, AChangeTheServicesDoNotFollowIsUndoneAndRefused) {
+  // The hub's thread did not take the list in time (or the profile closes): the old clients stay, so does the list,
+  // and nothing is registered or announced for a list nobody uses.
+  apply_ok_ = false;
+  EXPECT_EQ(ErrorOf(workflow_->MakePreferred(kB)), MyRelaysWorkflow::kNotApplied);
+  EXPECT_EQ(steps_, Steps({"apply b,a"}));
+  EXPECT_EQ(store_->List().Origins(), Origins({kA, kB}));
+  EXPECT_EQ(changed_, 1) << "the page reads the list again";
+  OurRelaysStore reread(dir_.string());
+  EXPECT_EQ(reread.LoadOrSeed(kA, {}).Origins(), Origins({kA, kB})) << "undone in the profile too";
+}
+
+TEST_F(MyRelaysWorkflowTest, CloseWaitsForTheChangeInProgressAndRefusesWhatComesAfter) {
+  std::promise<void> applying;
+  std::promise<void> release;
+  std::shared_future<void> released = release.get_future().share();
+  on_apply_ = [&applying, released]() {
+    applying.set_value();
+    released.wait();
+  };
+  auto change = std::async(std::launch::async, [this]() { return workflow_->Remove(kB); });
+  applying.get_future().wait();
+  auto closed = std::async(std::launch::async, [this]() { workflow_->Close(); });
+  EXPECT_EQ(closed.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout)
+      << "Close waits while a change runs";
+  release.set_value();
+  EXPECT_EQ(ErrorOf(change.get()), "ok") << "the change in progress finishes";
+  closed.get();
+  steps_.clear();
+  EXPECT_EQ(ErrorOf(workflow_->Add("https://c.example", false)), MyRelaysWorkflow::kClosed);
+  EXPECT_EQ(ErrorOf(workflow_->MakePreferred(kA)), MyRelaysWorkflow::kClosed);
+  workflow_->FollowCard({kC});
+  workflow_->NotePolled(kA, true, 1);
+  EXPECT_TRUE(workflow_->Status().relays.empty());
+  EXPECT_TRUE(steps_.empty()) << "no port is called once closed";
 }
 
 TEST_F(MyRelaysWorkflowTest, OnlyTheMainDeviceChangesTheList) {

@@ -457,6 +457,7 @@
     "settings.relays.error.full": "You already have 4 relays. Remove one first.",
     "settings.relays.error.preferred": "Make another relay preferred before removing this one.",
     "settings.relays.error.last": "You need at least one relay.",
+    "settings.relays.error.not_applied": "The app was busy and didn't change your relays. Your list is as it was; try again.",
     "settings.security.recovery": "Recovery phrase",
     "settings.security.recovery.help": "After a new phone or a reinstall, these 24 words bring your account back. Anyone who has them can take over the account — write them on paper and keep them safe.",
     "settings.security.recovery.show": "View recovery phrase",

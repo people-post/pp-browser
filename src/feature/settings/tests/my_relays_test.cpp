@@ -89,5 +89,7 @@ TEST(MyRelaysTest, ARefusedChangeSaysWhyInWords) {
             "That relay didn't answer. Check the address and try again.");
   EXPECT_EQ(pbr::MyRelaysFailureText(pp::Error("relay_preferred_not_removable")),
             "Make another relay preferred before removing this one.");
+  EXPECT_EQ(pbr::MyRelaysFailureText(pp::Error("relay_list_not_applied")),
+            "The app was busy and didn't change your relays. Your list is as it was; try again.");
   EXPECT_EQ(pbr::MyRelaysFailureText(pp::Error("Messaging is not ready")), "Messaging is not ready");
 }

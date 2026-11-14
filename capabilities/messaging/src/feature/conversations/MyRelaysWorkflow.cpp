@@ -8,6 +8,33 @@ MyRelaysWorkflow::MyRelaysWorkflow(OurRelaysStore& store, Ports ports) : store_(
   redirectLogger("MyRelays");
 }
 
+MyRelaysWorkflow::Entered::Entered(const MyRelaysWorkflow& workflow)
+    : open([&workflow]() {
+        std::lock_guard lock(workflow.gate_mutex_);
+        if (workflow.closed_) {
+          return false;
+        }
+        ++workflow.inside_;
+        return true;
+      }()),
+      workflow_(workflow) {}
+
+MyRelaysWorkflow::Entered::~Entered() {
+  if (!open) {
+    return;
+  }
+  std::lock_guard lock(workflow_.gate_mutex_);
+  if (--workflow_.inside_ == 0) {
+    workflow_.gate_cv_.notify_all();
+  }
+}
+
+void MyRelaysWorkflow::Close() {
+  std::unique_lock lock(gate_mutex_);
+  closed_ = true;
+  gate_cv_.wait(lock, [this]() { return inside_ == 0; });
+}
+
 std::string MyRelaysWorkflow::OriginProblemCode(const RelayOriginProblem problem) {
   switch (problem) {
     case RelayOriginProblem::Empty:
@@ -36,6 +63,10 @@ Roe<void> MyRelaysWorkflow::RequireMainDevice() const {
 }
 
 Roe<void> MyRelaysWorkflow::Add(const std::string& typed, const bool allow_http) {
+  const Entered entered(*this);
+  if (!entered.open) {
+    return Error(kClosed);
+  }
   std::lock_guard lock(change_mutex_);
   if (auto main = RequireMainDevice(); !main) {
     return main;
@@ -59,6 +90,10 @@ Roe<void> MyRelaysWorkflow::Add(const std::string& typed, const bool allow_http)
 }
 
 Roe<void> MyRelaysWorkflow::Remove(const std::string& origin) {
+  const Entered entered(*this);
+  if (!entered.open) {
+    return Error(kClosed);
+  }
   std::lock_guard lock(change_mutex_);
   if (auto main = RequireMainDevice(); !main) {
     return main;
@@ -78,6 +113,10 @@ Roe<void> MyRelaysWorkflow::Remove(const std::string& origin) {
 }
 
 Roe<void> MyRelaysWorkflow::MakePreferred(const std::string& origin) {
+  const Entered entered(*this);
+  if (!entered.open) {
+    return Error(kClosed);
+  }
   std::lock_guard lock(change_mutex_);
   if (auto main = RequireMainDevice(); !main) {
     return main;
@@ -95,6 +134,10 @@ Roe<void> MyRelaysWorkflow::MakePreferred(const std::string& origin) {
 }
 
 void MyRelaysWorkflow::FollowCard(const std::vector<std::string>& card_relays) {
+  const Entered entered(*this);
+  if (!entered.open) {
+    return;
+  }
   std::lock_guard lock(change_mutex_);
   if (card_relays.empty() || (ports_.main_device && ports_.main_device())) {
     return; // the main device's list is its own; an empty card list (mesh only) is not followed in this step
@@ -112,11 +155,20 @@ void MyRelaysWorkflow::FollowCard(const std::vector<std::string>& card_relays) {
 }
 
 Roe<void> MyRelaysWorkflow::Commit(const OurRelaysList& next, const bool preferred_changed) {
+  const OurRelaysList before = store_.List();
   if (auto kept = store_.Replace(next); !kept) {
     return kept.error();
   }
-  if (ports_.apply) {
-    ports_.apply();
+  if (ports_.apply && !ports_.apply()) {
+    // The services stay on the old list: so does the list (nothing was registered or announced for the new one).
+    if (auto undone = store_.Replace(before); !undone) {
+      log().warning << "relay list not restored after the services did not follow: " << undone.error().message;
+    }
+    log().warning << "the relay list change was undone: the services did not follow it";
+    if (ports_.changed) {
+      ports_.changed();
+    }
+    return Error(kNotApplied);
   }
   if (preferred_changed) {
     RegisterPreferred(store_.List().Preferred());
@@ -153,6 +205,10 @@ void MyRelaysWorkflow::RegisterPreferred(const std::string& preferred) {
 }
 
 void MyRelaysWorkflow::NotePolled(const std::string& origin, const bool ok, const int64_t now_ms) {
+  const Entered entered(*this);
+  if (!entered.open) {
+    return;
+  }
   bool flipped = false;
   {
     std::lock_guard lock(reach_mutex_);
@@ -168,6 +224,10 @@ void MyRelaysWorkflow::NotePolled(const std::string& origin, const bool ok, cons
 
 OurRelaysStatus MyRelaysWorkflow::Status() const {
   OurRelaysStatus status;
+  const Entered entered(*this);
+  if (!entered.open) {
+    return status;
+  }
   status.editable = !ports_.main_device || ports_.main_device();
   const OurRelaysList list = store_.List();
   std::optional<RelayRegistrationRecord> preferred;

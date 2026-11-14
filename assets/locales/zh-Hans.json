@@ -453,6 +453,7 @@
     "settings.relays.error.full": "你已经有 4 个中继，请先移除一个。",
     "settings.relays.error.preferred": "移除前，请先把另一个中继设为首选。",
     "settings.relays.error.last": "你至少需要一个中继。",
+    "settings.relays.error.not_applied": "应用正忙，没有更改你的中继。列表保持原样，请重试。",
     "settings.security.recovery": "恢复短语",
     "settings.security.recovery.help": "换手机或重装后，用这 24 个词找回账号。谁拿到都能接管账号，请抄在纸上保管好。",
     "settings.security.recovery.show": "查看恢复短语",
