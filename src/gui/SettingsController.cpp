@@ -514,6 +514,11 @@ void SettingsController::PushUiStateToBindings() {
                                      .args_text = row.args_text.c_str(),
                                      .enabled = row.enabled});
   }
+  // The custom-address page has nothing left once the service is not Custom (a reset, a change of service): leave it
+  // for the Advanced page rather than show an empty page.
+  if (!bindings_.backend_is_custom && std::string(security_page_.c_str()) == "backend_custom") {
+    OnCloseSecurityPage();
+  }
 }
 
 void SettingsController::SyncBindingsFromSession() {

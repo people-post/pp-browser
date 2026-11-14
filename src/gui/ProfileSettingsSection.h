@@ -18,6 +18,12 @@ void RefreshProfileAvatarGlyph(SettingsUiState& state);
  */
 bool ProfileRegisterIsPrimary(bool show_register, const std::string& status_label);
 
+/**
+ * The date the Status row may append (" · Valid until <date>", with "Show advanced settings" on): the card's expiry,
+ * except for a card that is not registered (an old date explains nothing there). `status_label` is the raw label.
+ */
+std::string ProfileExpiryToShow(const std::string& status_label, const std::string& expires);
+
 /** Me → Profile section. Identity I/O via SettingsCommands ports — no ConversationsHub. */
 class ProfileSettingsSection : public SettingsSectionHandler {
 public:

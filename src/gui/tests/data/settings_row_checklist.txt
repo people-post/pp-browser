@@ -32,6 +32,7 @@ data-event-click="on_choose_backend()"	1	network	advanced	advanced;;show_backend
 data-event-click="on_choose_direct_connections()"	1	network	advanced	advanced	network	
 data-event-click="open_security_page('ai_endpoint')"	1	-	advanced	advanced;;advanced		
 data-event-click="open_security_page('backend_custom')"	1	-	advanced	advanced;;show_backend_switch;;backend_is_custom		
+data-event-click="open_security_page('backend_custom')"	1	-	advanced	advanced;;backend_is_custom && !show_backend_switch		
 data-event-click="open_security_page('integrations')"	1	-	advanced	advanced;;advanced		
 data-event-click="reset_section('integrations')"	1	integrations	advanced	advanced;;advanced	integrations	
 data-event-click="reset_section('llm')"	1	llm	advanced	advanced;;advanced	llm	
@@ -70,6 +71,7 @@ data-value="llm_preset"	1	llm	advanced	advanced;;advanced	llm
 {{i18n:settings.llm.rotate_brief_key}}	1	-	advanced	advanced;;advanced;;advanced && profile_show_rotate	profile	
 {{i18n:settings.llm.summary}}	1	-	advanced	advanced;;!advanced	llm	
 {{i18n:settings.network.backend.custom_addresses}}	1	-	advanced	advanced;;show_backend_switch;;backend_is_custom		
+{{i18n:settings.network.backend.custom_addresses}}	1	-	advanced	advanced;;backend_is_custom && !show_backend_switch		
 {{i18n:settings.network.backend.help}}	1	-	advanced	advanced;;show_backend_switch	network	
 {{i18n:settings.network.backend.restart}}	1	-	advanced	advanced;;show_backend_switch && backend_restart_pending	network	
 {{i18n:settings.network.backend}}	1	-	advanced	advanced;;show_backend_switch	network	
@@ -110,58 +112,58 @@ data-value="llm_preset"	1	llm	advanced	advanced;;advanced	llm
 {{reachability_summary}}	1	-	advanced	advanced;;show_connection_card	network	
 {{search_provider}}	1	-	advanced	advanced;;advanced;;search_provider != ''		
 {{tool_permissions_summary}}	1	-	advanced	advanced;;advanced	security	
-data-event-change="on_llm_field_changed()"	2	llm	advanced_endpoint	-	llm	
-data-event-change="on_llm_field_changed()"	2	llm	advanced_endpoint	llm_preset != 'brief'	llm	
-data-value="llm_api_key"	1	llm	advanced_endpoint	llm_preset != 'brief'	llm	
-data-value="llm_api_key_env"	1	llm	advanced_endpoint	llm_preset != 'brief'	llm	
-data-value="llm_base_url"	1	llm	advanced_endpoint	-	llm	
-data-value="llm_model"	1	llm	advanced_endpoint	-	llm	
-{{brief_llm_key_masked}}	1	-	advanced_endpoint	llm_preset == 'brief';;brief_llm_key_masked != ''	llm	
-{{i18n:settings.llm.api_key_env_placeholder}}	1	-	advanced_endpoint	llm_preset != 'brief'	llm	
-{{i18n:settings.llm.api_key_env_placeholder}}	1	-	advanced_endpoint	llm_preset != 'brief';;llm_api_key_env == ''	llm	
-{{i18n:settings.llm.api_key_env}}	1	-	advanced_endpoint	llm_preset != 'brief'	llm	
-{{i18n:settings.llm.api_key_placeholder}}	1	-	advanced_endpoint	llm_preset != 'brief'	llm	
-{{i18n:settings.llm.api_key_placeholder}}	1	-	advanced_endpoint	llm_preset != 'brief';;llm_api_key == ''	llm	
-{{i18n:settings.llm.api_key}}	1	-	advanced_endpoint	llm_preset != 'brief'	llm	
-{{i18n:settings.llm.base_url}}	1	-	advanced_endpoint	-	llm	
-{{i18n:settings.llm.brief_key_auto}}	1	-	advanced_endpoint	llm_preset == 'brief';;brief_llm_key_masked == ''	llm	
-{{i18n:settings.llm.brief_key_rotate_hint}}	1	-	advanced_endpoint	llm_preset == 'brief';;brief_llm_key_masked != ''	llm	
-{{i18n:settings.llm.brief_key}}	1	-	advanced_endpoint	llm_preset == 'brief'	llm	
-{{i18n:settings.llm.endpoint.caption}}	1	-	advanced_endpoint	-		
-{{i18n:settings.llm.model}}	1	-	advanced_endpoint	-	llm	
-data-event-change="on_integrations_field_changed()"	6	integrations	advanced_integrations	-	integrations	
-data-event-click="add_mcp_server()"	1	integrations	advanced_integrations	-	integrations	
-data-event-click="ask_setting_help('settings.help.topic.mcp')"	1	-	advanced_integrations	-	integrations	
-data-event-click="remove_mcp_server(server_index)"	1	integrations	advanced_integrations	-	integrations	
-data-value="promoted_mcp_url"	1	integrations	advanced_integrations	-	integrations	
-data-value="search_provider"	1	integrations	advanced_integrations	-	integrations	
-data-value="server.args_text"	1	integrations	advanced_integrations	-	integrations	
-data-value="server.command"	1	integrations	advanced_integrations	-	integrations	
-data-value="server.id"	1	integrations	advanced_integrations	-	integrations	
-data-value="server.url"	1	integrations	advanced_integrations	-	integrations	
-{{i18n:common.remove}}	1	-	advanced_integrations	-	integrations	
-{{i18n:settings.integrations.add_mcp}}	1	-	advanced_integrations	-	integrations	
-{{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced_integrations	-	integrations	
-{{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced_integrations	server.args_text == ''	integrations	
-{{i18n:settings.integrations.mcp_args}}	1	-	advanced_integrations	-	integrations	
-{{i18n:settings.integrations.mcp_command}}	1	-	advanced_integrations	-	integrations	
-{{i18n:settings.integrations.mcp_help}}	1	-	advanced_integrations	-	integrations	
-{{i18n:settings.integrations.promoted_mcp_placeholder}}	1	-	advanced_integrations	-	integrations	
-{{i18n:settings.integrations.promoted_mcp_placeholder}}	1	-	advanced_integrations	promoted_mcp_url == ''	integrations	
-{{i18n:settings.integrations.promoted_mcp}}	1	-	advanced_integrations	-	integrations	
-{{i18n:settings.integrations.search}}	1	-	advanced_integrations	-	integrations	
-{{i18n:settings.integrations.server_id}}	1	-	advanced_integrations	-	integrations	
-{{i18n:settings.integrations.server_url}}	1	-	advanced_integrations	-	integrations	
-data-event-change="on_network_field_changed()"	3	network	advanced_backend	backend_is_custom	network	
-data-event-click="reset_section('network')"	1	network	advanced_backend	backend_is_custom	network	
-data-value="directory_base_url"	1	network	advanced_backend	backend_is_custom	network	
-data-value="registration_base_url"	1	network	advanced_backend	backend_is_custom	network	
-data-value="relay_base_url"	1	network	advanced_backend	backend_is_custom	network	
-{{i18n:common.reset_defaults}}	1	-	advanced_backend	backend_is_custom	appearance,integrations,llm,network	
-{{i18n:settings.network.backend.custom_caption}}	1	-	advanced_backend	backend_is_custom		
-{{i18n:settings.network.directory}}	1	-	advanced_backend	backend_is_custom	network	
-{{i18n:settings.network.registration}}	1	-	advanced_backend	backend_is_custom	network	
-{{i18n:settings.network.relay}}	1	-	advanced_backend	backend_is_custom	network	
+data-event-change="on_llm_field_changed()"	2	llm	advanced_endpoint	advanced;;advanced	llm	
+data-event-change="on_llm_field_changed()"	2	llm	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief'	llm	
+data-value="llm_api_key"	1	llm	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief'	llm	
+data-value="llm_api_key_env"	1	llm	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief'	llm	
+data-value="llm_base_url"	1	llm	advanced_endpoint	advanced;;advanced	llm	
+data-value="llm_model"	1	llm	advanced_endpoint	advanced;;advanced	llm	
+{{brief_llm_key_masked}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset == 'brief';;brief_llm_key_masked != ''	llm	
+{{i18n:settings.llm.api_key_env_placeholder}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief'	llm	
+{{i18n:settings.llm.api_key_env_placeholder}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief';;llm_api_key_env == ''	llm	
+{{i18n:settings.llm.api_key_env}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief'	llm	
+{{i18n:settings.llm.api_key_placeholder}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief'	llm	
+{{i18n:settings.llm.api_key_placeholder}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief';;llm_api_key == ''	llm	
+{{i18n:settings.llm.api_key}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset != 'brief'	llm	
+{{i18n:settings.llm.base_url}}	1	-	advanced_endpoint	advanced;;advanced	llm	
+{{i18n:settings.llm.brief_key_auto}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset == 'brief';;brief_llm_key_masked == ''	llm	
+{{i18n:settings.llm.brief_key_rotate_hint}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset == 'brief';;brief_llm_key_masked != ''	llm	
+{{i18n:settings.llm.brief_key}}	1	-	advanced_endpoint	advanced;;advanced;;llm_preset == 'brief'	llm	
+{{i18n:settings.llm.endpoint.caption}}	1	-	advanced_endpoint	advanced;;advanced		
+{{i18n:settings.llm.model}}	1	-	advanced_endpoint	advanced;;advanced	llm	
+data-event-change="on_integrations_field_changed()"	6	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-event-click="add_mcp_server()"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-event-click="ask_setting_help('settings.help.topic.mcp')"	1	-	advanced_integrations	advanced;;advanced	integrations	
+data-event-click="remove_mcp_server(server_index)"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-value="promoted_mcp_url"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-value="search_provider"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-value="server.args_text"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-value="server.command"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-value="server.id"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+data-value="server.url"	1	integrations	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:common.remove}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.add_mcp}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced_integrations	advanced;;advanced;;server.args_text == ''	integrations	
+{{i18n:settings.integrations.mcp_args}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.mcp_command}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.mcp_help}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.promoted_mcp_placeholder}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.promoted_mcp_placeholder}}	1	-	advanced_integrations	advanced;;advanced;;promoted_mcp_url == ''	integrations	
+{{i18n:settings.integrations.promoted_mcp}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.search}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.server_id}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+{{i18n:settings.integrations.server_url}}	1	-	advanced_integrations	advanced;;advanced	integrations	
+data-event-change="on_network_field_changed()"	3	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-event-click="reset_section('network')"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="directory_base_url"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="registration_base_url"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="relay_base_url"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:common.reset_defaults}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	appearance,integrations,llm,network	
+{{i18n:settings.network.backend.custom_caption}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom		
+{{i18n:settings.network.directory}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.registration}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.relay}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
 data-event-click="share_profile()"	1	-	profile	-	profile	
 data-event-click="tap_profile_avatar()"	1	-	profile	-	profile	
 data-event-click="toggle_auto_renew_registration()"	2	profile	profile	advanced	profile	10

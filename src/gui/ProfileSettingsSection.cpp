@@ -18,6 +18,10 @@ bool ProfileRegisterIsPrimary(bool show_register, const std::string& status_labe
   return show_register && status_label != "active";
 }
 
+std::string ProfileExpiryToShow(const std::string& status_label, const std::string& expires) {
+  return status_label == "not registered" ? std::string() : expires;
+}
+
 void ProfileSettingsSection::BindPorts(SettingsCommands* commands) {
   commands_ = commands;
 }
@@ -70,7 +74,7 @@ void ProfileSettingsSection::ApplyIdentityView(const ProfileIdentityView& view, 
   state.profile_account_id = view.account_id;
   state.profile_registered = view.registered;
   state.profile_registration_status = LocalizedRegistrationStatus(view.registration_status);
-  state.profile_registration_expires = view.registration_expires;
+  state.profile_registration_expires = ProfileExpiryToShow(view.registration_status, view.registration_expires);
   state.profile_register_label = LocalizedRegisterLabel(view.register_label);
   state.profile_show_register = view.show_register;
   state.profile_register_primary = ProfileRegisterIsPrimary(view.show_register, view.registration_status);

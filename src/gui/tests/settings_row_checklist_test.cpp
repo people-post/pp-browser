@@ -205,6 +205,57 @@ std::vector<Occurrence> Scan(const std::string& raw) {
   return found;
 }
 
+// The gates around the place a sub-page file is included in a view, so a sub-page's rows carry their full chain (the page's
+// own `advanced` gate and the include site's wrappers, then the file's own conditions). `view` is the including file.
+std::string IncludeSiteGates(const std::string& view, const std::string& subpage_id) {
+  std::string text = ReadAsset("views/" + view + ".rml");
+  const std::string marker = "{{include:";
+  const std::string target = "settings_section_" + subpage_id;
+  size_t found = 0;
+  for (size_t at = text.find(marker); at != std::string::npos; at = text.find(marker, at)) {
+    const size_t end = text.find("}}", at);
+    const std::string name = text.substr(at + marker.size(), end - at - marker.size());
+    if (name == target) {
+      text.replace(at, end + 2 - at, "{{SITE}}");
+      ++found;
+    } else {
+      text.replace(at, end + 2 - at, std::string());
+    }
+  }
+  std::string gates = "-";
+  size_t sites = 0;
+  for (const Occurrence& occurrence : Scan(text)) {
+    if (occurrence.token == "{{SITE}}") {
+      gates = occurrence.gates;
+      ++sites;
+    }
+  }
+  EXPECT_EQ(found, 1u) << view << " must include " << target << " exactly once";
+  EXPECT_EQ(sites, 1u);
+  return gates;
+}
+
+std::string JoinChain(const std::string& outer, const std::string& inner) {
+  if (outer == "-") {
+    return inner;
+  }
+  return inner == "-" ? outer : outer + ";;" + inner;
+}
+
+// The occurrences of a page's rows. A sub-page of Advanced is scanned in its file and then placed in the chain of its
+// desktop include site in the Advanced page, so losing the `advanced` gate there, or a condition of its own, is a diff.
+std::vector<Occurrence> ScanPage(const std::string& page_id) {
+  std::vector<Occurrence> found = Scan(View(page_id));
+  const std::vector<std::string>& subpages = AdvancedSubpages();
+  if (std::find(subpages.begin(), subpages.end(), page_id) != subpages.end()) {
+    const std::string site = IncludeSiteGates("settings_section_advanced", page_id);
+    for (Occurrence& occurrence : found) {
+      occurrence.gates = JoinChain(site, occurrence.gates);
+    }
+  }
+  return found;
+}
+
 size_t CountOf(const std::string& text, const std::string& needle) {
   size_t count = 0;
   for (size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + needle.size())) {
@@ -322,7 +373,7 @@ TEST(SettingsRowChecklistTest, EveryRowOfEveryPageIsOnTheChecklistWithItsGates) 
   for (const std::string& page_id : ids) {
     std::map<std::string, size_t> actual_total;
     std::map<std::pair<std::string, std::string>, size_t> actual_at;
-    for (const Occurrence& occurrence : Scan(View(page_id))) {
+    for (const Occurrence& occurrence : ScanPage(page_id)) {
       ++actual_total[occurrence.token];
       ++actual_at[{occurrence.token, occurrence.gates}];
     }
@@ -604,6 +655,59 @@ TEST(SettingsDevicesCaptionsTest, TheTransferRowIsTappableOnTheMainDeviceAndDisa
   EXPECT_EQ(PhoneShown({help}, linked), 1u) << "the \"?\" stays tappable";
   EXPECT_EQ(PhoneShown({"{{i18n:settings.security.transfer_off}}"}, main_device), 0u);
   EXPECT_EQ(PhoneShown({"{{i18n:settings.security.transfer_off}}"}, linked), 1u);
+}
+
+// --- the Advanced page's sub-pages keep their gates (Kenneth 2026-11-14) -------------------------------------------------
+
+// The checklist rows of the three sub-page files carry the whole chain; this also names it, so an input that loses the
+// `advanced` gate, or the custom service addresses their own condition, fails even if someone edits the checklist too.
+TEST(SettingsAdvancedGatesTest, EveryInputOfASubpageSitsUnderAdvancedOnTheDesktopAndItsOwnConditionForCustomAddresses) {
+  for (const std::string& id : AdvancedSubpages()) {
+    size_t inputs = 0;
+    for (const Occurrence& o : ScanPage(id)) {
+      EXPECT_EQ(o.gates.rfind("advanced;;advanced", 0), 0u) << id << ": " << o.token << " under [" << o.gates << "]";
+      if (id == "advanced_backend") {
+        EXPECT_NE(o.gates.find(";;backend_is_custom"), std::string::npos) << o.token << " under [" << o.gates << "]";
+      }
+      inputs += o.token.rfind("data-value=", 0) == 0 ? 1 : 0;
+    }
+    EXPECT_GT(inputs, 0u) << id << " has inputs";
+  }
+}
+
+TEST(SettingsAdvancedGatesTest, OnPhonesEachSubpageFileIsInItsOwnPageOfTheSubpageView) {
+  const struct {
+    const char* id;
+    const char* page;
+  } pages[] = {{"advanced_endpoint", "ai_endpoint"},
+               {"advanced_integrations", "integrations"},
+               {"advanced_backend", "backend_custom"}};
+  for (const auto& p : pages) {
+    EXPECT_EQ(IncludeSiteGates("settings", p.id),
+              std::string("show_detail && security_page != '';;security_page == '") + p.page + "'")
+        << p.id << ": the page opens only through open_security_page, which needs the Advanced page (controller guard)";
+  }
+}
+
+// "Custom addresses" is reachable wherever the old inline fields were: the Advanced page with the service on Custom,
+// whether or not the Service row is shown (the UI demo build hides it).
+TEST(SettingsAdvancedGatesTest, TheCustomAddressesEntryDoesNotDependOnTheServiceRow) {
+  const std::string entry = "data-event-click=\"open_security_page('backend_custom')\"";
+  const auto shown = [&](const std::set<std::string>& facts) {
+    size_t count = 0;
+    for (const Occurrence& o : Scan(View("advanced"))) {
+      if (o.token == entry && (o.layouts == "phone" || o.layouts == "both") && GateHolds(o.gates, facts)) {
+        ++count;
+      }
+    }
+    return count;
+  };
+  EXPECT_EQ(shown({"advanced", "backend_is_custom", "show_backend_switch"}), 1u) << "with the Service row";
+  EXPECT_EQ(shown({"advanced", "backend_is_custom"}), 1u) << "without the Service row (demo build)";
+  EXPECT_EQ(shown({"advanced", "show_backend_switch"}), 0u) << "the service is not Custom";
+  EXPECT_EQ(shown({"advanced"}), 0u);
+  EXPECT_EQ(shown({"backend_is_custom", "show_backend_switch"}), 0u) << "Advanced is off";
+  EXPECT_EQ(shown({"backend_is_custom"}), 0u);
 }
 
 } // namespace pbr

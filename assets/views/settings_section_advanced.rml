@@ -28,6 +28,15 @@
             </button>
           </div>
         </div>
+        <!-- Where the Service row is not shown (the UI demo build) the entry still has to be reachable: its own card, under the old fields' gate. -->
+        <div class="group-card settings-phone-only" data-if="backend_is_custom && !show_backend_switch">
+          <button class="group-row" type="button" data-event-click="open_security_page('backend_custom')">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.network.backend.custom_addresses}}</span></span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+        </div>
         <p class="text muted settings-help group-foot settings-desktop-only" data-if="show_backend_switch">{{i18n:settings.network.backend.help}}</p>
         <p class="text settings-help group-foot" data-if="show_backend_switch && backend_restart_pending">{{i18n:settings.network.backend.restart}}</p>
         <div class="stack settings-desktop-only" data-if="advanced">

@@ -18,12 +18,17 @@
 #include <ui/base/SystemInterface.h>
 #include <ui/core/Core.h>
 #include <ui/dom/Context.h>
+#include <ui/dom/Element.h>
 #include <ui/dom/ElementDocument.h>
+#include <ui/dom/Event.h>
+#include <ui/dom/EventListener.h>
 #include <ui/paint/RenderInterface.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -495,7 +500,9 @@ TEST_F(SettingsAdvancedSubpageTest, EverySubpageFileIsIncludedOnceInTheDesktopPa
     EXPECT_NE(advanced.rfind("settings-desktop-only", at), std::string::npos);
     EXPECT_EQ(count(settings_rml, include), 1u) << f.file;
     EXPECT_NE(settings_rml.find(std::string("data-if=\"security_page == '") + f.page + "'\""), std::string::npos);
-    EXPECT_EQ(count(advanced, std::string("data-event-click=\"open_security_page('") + f.page + "')\""), 1u);
+    // The custom addresses have a second entry for builds without the Service row (the demo build).
+    EXPECT_EQ(count(advanced, std::string("data-event-click=\"open_security_page('") + f.page + "')\""),
+              std::string(f.page) == "backend_custom" ? 2u : 1u);
     EXPECT_NE(catalog.find(std::string("{\"") + f.file + "\", \"views/" + f.file + ".rml\"}"), std::string::npos);
   }
 }
@@ -553,6 +560,196 @@ TEST_F(SettingsAdvancedSubpageTest, TheCopiedFlagIsSetByTheExportAndClearedWhenT
   context->Update();
   EXPECT_EQ(Text("copied"), "0") << "leaving the page clears it";
   AppRuntime::Shutdown();
+}
+
+// --- the real views, real clicks (Kenneth 2026-11-14 review) ---------------------------------------------------------------
+
+namespace {
+
+// A view the way the app loads it: localized, its {{include:x}} files spelled out.
+std::string ExpandedView(const std::string& key, int depth = 0) {
+  std::string text = LocalizationService::Instance().LocalizeText(ReadAsset("views/" + key + ".rml"));
+  const std::string marker = "{{include:";
+  for (size_t at = text.find(marker); at != std::string::npos && depth < 8; at = text.find(marker)) {
+    const size_t end = text.find("}}", at);
+    const std::string name = text.substr(at + marker.size(), end - at - marker.size());
+    text.replace(at, end + 2 - at, ExpandedView(name, depth + 1));
+  }
+  return text;
+}
+
+// Counts the "change" events that reach an input, by the binding it carries.
+class ChangeCounter : public ui::EventListener {
+public:
+  void ProcessEvent(ui::Event& ev) override {
+    if (const ui::Element* target = ev.GetTargetElement()) {
+      const ui::String binding = target->GetAttribute<ui::String>("data-value", "");
+      if (!binding.empty()) {
+        ++by_target[target];
+        ++by_binding[std::string(binding.c_str())];
+      }
+    }
+  }
+  std::map<const ui::Element*, int> by_target;
+  std::map<std::string, int> by_binding;
+};
+
+} // namespace
+
+class SettingsRealViewTest : public SettingsAdvancedSubpageTest {
+protected:
+  void SetUp() override {
+    SettingsAdvancedSubpageTest::SetUp();
+    // The phone's settings view with the sections beside it, both bound to the settings model.
+    real = context->LoadDocumentFromMemory("<rml><body>" + ExpandedView("settings") + "<div data-model=\"settings\">" +
+                                           ExpandedView("settings_sections") + "</div></body></rml>");
+    ASSERT_NE(real, nullptr);
+    real->Show();
+    context->Update();
+  }
+  void TearDown() override {
+    if (real) {
+      real->Close();
+      real = nullptr;
+    }
+    SettingsAdvancedSubpageTest::TearDown();
+  }
+  // The `n`th element whose data-event-click starts with `event` under `root` (a CSS selector scope).
+  ui::Element* ClickTarget(const std::string& scope, const std::string& event, size_t n = 0) {
+    ui::ElementList found;
+    real->QuerySelectorAll(found, scope + " [data-event-click^=\"" + event + "\"]");
+    return n < found.size() ? found[n] : nullptr;
+  }
+  void RealClick(ui::Element* element) {
+    ASSERT_NE(element, nullptr);
+    element->DispatchEvent(ui::EventId::Click, {});
+    context->Update();
+    AppRuntime::RunUITasks();
+    context->Update();
+  }
+  void UseCustomService() {
+    AppConfig config = store.Snapshot().config;
+    config.backend.env = "custom";
+    ASSERT_TRUE(static_cast<bool>(store.SaveConfig(config)));
+    host().UiState().backend_env = "custom";
+    host().PushToView(false);
+  }
+  ui::ElementDocument* real = nullptr;
+};
+
+// The "Custom addresses" page is empty once the service stops being Custom: a confirmed reset closes it (the Advanced page,
+// where the restart line shows, is what is left); a cancelled one leaves it.
+TEST_F(SettingsRealViewTest, ResettingTheCustomAddressesClosesThePageAndCancellingLeavesIt) {
+  UseCustomService();
+  std::function<void(bool)> answer;
+  ports.show_confirm_destructive = [&answer](const std::string&, const std::string&,
+                                             std::function<void(bool)> on_result,
+                                             const std::string&) { answer = std::move(on_result); };
+  settings.BindShellFeedback(ports);
+
+  Click("open_be");
+  ASSERT_EQ(Text("sp"), "backend_custom");
+  ASSERT_EQ(back_stack.size(), 2u) << "the section page and the sub-page";
+  RealClick(ClickTarget("#settings-subpage-view", "reset_section('network')"));
+  ASSERT_TRUE(static_cast<bool>(answer)) << "the reset asks first";
+
+  answer(false);
+  AppRuntime::RunUITasks();
+  context->Update();
+  EXPECT_EQ(Text("sp"), "backend_custom") << "cancelled: still on the sub-page";
+  EXPECT_EQ(back_stack.size(), 2u);
+  EXPECT_EQ(store.Snapshot().config.backend.env, "custom");
+
+  answer(true);
+  AppRuntime::RunUITasks();
+  context->Update();
+  EXPECT_EQ(Text("sp"), "") << "no longer Custom: the page is closed";
+  ASSERT_EQ(back_stack.size(), 1u);
+  EXPECT_EQ(back_stack.back().first, "settings_detail") << "the Advanced page is current";
+  EXPECT_NE(store.Snapshot().config.backend.env, "custom");
+}
+
+// A "?" inside a row that opens a page or toggles a switch only shows its note.
+TEST_F(SettingsRealViewTest, TheHelpMarksOfTheServiceRowAndTheAutoUpdateRowOnlyShowTheirNote) {
+  std::vector<std::string> alerts;
+  ports.show_alert = [&alerts](const std::string& title, const std::string&, std::function<void()>,
+                               const std::string&) { alerts.push_back(title); };
+  settings.BindShellFeedback(ports);
+  settings.SyncLayoutMode(); // a phone: the Service row opens its chooser as a page
+
+  // Service: the "?" sits inside the row's own button.
+  ui::Element* service_q = ClickTarget("", "show_setting_note('settings.network.backend'");
+  ASSERT_NE(service_q, nullptr);
+  RealClick(service_q);
+  ASSERT_EQ(alerts.size(), 1u);
+  EXPECT_EQ(alerts[0], "Service");
+  EXPECT_EQ(Text("sp"), "") << "the Service chooser did not open";
+  RealClick(ClickTarget("", "on_choose_backend()"));
+  EXPECT_EQ(Text("sp"), "choice") << "control: a tap on the row itself still opens it";
+  Click("close_sub");
+  AppRuntime::RunUITasks();
+  context->Update();
+
+  // Auto-update: the "?" never flips the switch.
+  ui::Element* knob = ClickTarget("", "toggle_auto_renew_registration()");
+  ASSERT_NE(knob, nullptr);
+  const bool before = knob->IsClassSet("settings-switch--on");
+  RealClick(ClickTarget("", "show_setting_note('settings.auto_renew.short'"));
+  ASSERT_EQ(alerts.size(), 2u);
+  EXPECT_EQ(alerts[1], "Auto-update");
+  EXPECT_EQ(knob->IsClassSet("settings-switch--on"), before) << "the switch did not move";
+  RealClick(knob);
+  EXPECT_NE(knob->IsClassSet("settings-switch--on"), before) << "control: the switch itself still moves";
+}
+
+// Each free-text field exists twice (the phone's sub-page and the desktop's inline copy of the same file). Typing into the
+// visible one fires one change, on that input only, and the value is saved once.
+TEST_F(SettingsRealViewTest, TypingIntoATwinInputFiresTheChangeHandlerOnceAndSavesOnce) {
+  UseCustomService();
+  ChangeCounter counter;
+  real->AddEventListener(ui::EventId::Change, &counter, true);
+  const struct {
+    const char* entry;
+    const char* page;
+    const char* binding;
+  } fields[] = {{"open_ep", "ai_endpoint", "llm_model"}, {"open_be", "backend_custom", "relay_base_url"}};
+  for (const auto& field : fields) {
+    SCOPED_TRACE(field.binding);
+    counter.by_target.clear();
+    counter.by_binding.clear();
+    toasts.clear();
+    Click(field.entry);
+    ASSERT_EQ(Text("sp"), field.page);
+    const std::string selector = std::string("input[data-value=\"") + field.binding + "\"]";
+    ui::ElementList all;
+    real->QuerySelectorAll(all, selector);
+    ASSERT_EQ(all.size(), 2u) << "the phone's page and the desktop's inline copy";
+    ui::Element* phone_copy = nullptr;
+    ui::ElementList in_page;
+    real->QuerySelectorAll(in_page, "#settings-subpage-view " + selector);
+    ASSERT_EQ(in_page.size(), 1u);
+    phone_copy = in_page[0];
+    ASSERT_TRUE(phone_copy->Focus());
+    context->Update();
+    context->ProcessTextInput("x");
+    context->Update();
+    phone_copy->Blur();
+    context->Update();
+    EXPECT_EQ(counter.by_binding[field.binding], 1) << "one change event for the binding, not one per copy";
+    EXPECT_EQ(counter.by_target[phone_copy], 1);
+    for (ui::Element* copy : all) {
+      if (copy != phone_copy) {
+        EXPECT_EQ(counter.by_target[copy], 0) << "the other copy is not touched";
+      }
+    }
+    settings.OnMeSurfaceClosed(); // leaving Me flushes whatever is dirty
+    EXPECT_EQ(std::count(toasts.begin(), toasts.end(), Tr("settings.saved")), 1) << "saved once";
+    Click("close_sub");
+    AppRuntime::RunUITasks();
+    context->Update();
+  }
+  EXPECT_NE(store.Snapshot().config.llm.model.find('x'), std::string::npos);
+  real->RemoveEventListener(ui::EventId::Change, &counter, true);
 }
 
 } // namespace pbr

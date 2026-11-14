@@ -355,5 +355,46 @@ TEST_F(SettingsProfilePhoneTest, TheUpdateNowButtonKeepsTheOldRowsGateAndEventAn
   EXPECT_NE(rule.find("min-width: 44dp"), std::string::npos);
 }
 
+// The date after the status: only for a card that is registered (active, expiring soon, expired, wrong service), never for
+// "not registered", and only with "Show advanced settings" on (the span's gate, pinned above).
+TEST_F(SettingsProfilePhoneTest, TheStatusRowAppendsAnExpiryOnlyForARegisteredCard) {
+  const struct {
+    RegistrationStatus status;
+    bool registered; // the date is meaningful
+  } states[] = {{RegistrationStatus::Unregistered, false},
+                {RegistrationStatus::Active, true},
+                {RegistrationStatus::ExpiringSoon, true},
+                {RegistrationStatus::Expired, true},
+                {RegistrationStatus::WrongBackend, true}};
+  for (const char* language : {"en", "zh-Hans"}) {
+    LocalizationService::Instance().SetPreferredLanguage(language);
+    for (const auto& st : states) {
+      for (const bool advanced : {false, true}) {
+        for (const bool has_date : {false, true}) {
+          ProfileIdentityView view;
+          view.ready = true;
+          view.registration_status = RegistrationStatusLabel(st.status);
+          view.registration_expires = has_date ? "2027-02-11" : "";
+          const SettingsUiState state = Synced(view);
+          // The page: the status, then " · Valid until <date>" under `advanced && expires != ''`.
+          std::string text = state.profile_registration_status;
+          if (advanced && !state.profile_registration_expires.empty()) {
+            text += " · " + Tr("settings.profile.expires_row") + " " + state.profile_registration_expires;
+          }
+          const bool expect_date = advanced && has_date && st.registered;
+          const std::string want =
+              state.profile_registration_status +
+              (expect_date ? " · " + Tr("settings.profile.expires_row") + " 2027-02-11" : std::string());
+          EXPECT_EQ(text, want) << view.registration_status << " advanced=" << advanced << " has_date=" << has_date;
+        }
+      }
+    }
+  }
+  EXPECT_EQ(ProfileExpiryToShow("not registered", "2026-01-01"), "");
+  EXPECT_EQ(ProfileExpiryToShow("active", "2027-02-11"), "2027-02-11");
+  EXPECT_EQ(ProfileExpiryToShow("active", ""), "");
+  LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
 } // namespace
 } // namespace pbr
