@@ -52,7 +52,7 @@ void RelayRegistrationsWorkflow::SetRelays(std::vector<Relay> relays) {
 }
 
 bool RelayRegistrationsWorkflow::DueLocked(const State& state, const int64_t now_ms, const int64_t card_issued_at) {
-  if (now_ms < state.next_try_ms) {
+  if (state.leaving || now_ms < state.next_try_ms) {
     return false;
   }
   return !state.registered || NearsItsEnd(state.expires_at, now_ms) ||
@@ -76,13 +76,10 @@ std::vector<std::string> RelayRegistrationsWorkflow::Due(const int64_t now_ms) {
 }
 
 void RelayRegistrationsWorkflow::RunDue(const int64_t now_ms) {
-  if (running_.exchange(true)) {
+  const std::unique_lock running(run_mutex_, std::try_to_lock);
+  if (!running.owns_lock()) {
     return;
   }
-  struct Running {
-    std::atomic<bool>& flag;
-    ~Running() { flag = false; }
-  } running{running_};
   const std::vector<std::string> due = Due(now_ms);
   if (due.empty()) {
     return;
@@ -115,8 +112,10 @@ void RelayRegistrationsWorkflow::Register(const Relay& relay, const std::string&
     std::lock_guard lock(mutex_);
     const auto state = std::find_if(states_.begin(), states_.end(),
                                     [&relay](const State& s) { return s.relay.origin == relay.origin; });
-    if (state == states_.end()) {
-      return; // no longer ours
+    if (state == states_.end() || state->leaving) {
+      log().info << "registration on " << NormalizeRegistrationBackend(relay.origin)
+                 << " answered after it left our relays; dropped";
+      return; // no longer ours: revoked there after this answer (Revoke waits for this run)
     }
     if (ok) {
       state->registered = true;
@@ -172,14 +171,14 @@ void RelayRegistrationsWorkflow::KeepBriefLlmKey(const RegistrationResult& resul
 bool RelayRegistrationsWorkflow::Registered(const std::string& origin) const {
   std::lock_guard lock(mutex_);
   return std::any_of(states_.begin(), states_.end(),
-                     [&origin](const State& s) { return s.registered && s.relay.origin == origin; });
+                     [&origin](const State& s) { return s.registered && !s.leaving && s.relay.origin == origin; });
 }
 
 std::vector<std::string> RelayRegistrationsWorkflow::RegisteredOrigins() const {
   std::lock_guard lock(mutex_);
   std::vector<std::string> out;
   for (const State& state : states_) {
-    if (state.registered) {
+    if (state.registered && !state.leaving) {
       out.push_back(state.relay.origin);
     }
   }
@@ -197,7 +196,10 @@ Roe<void> RelayRegistrationsWorkflow::Revoke(const std::string& origin) {
     }
     client = state->relay.client;
     state->registered = false;
+    state->leaving = true; // from now on: an answer in flight there is dropped
   }
+  // After a run in progress: its registration there, if any, is the one this removes.
+  const std::lock_guard after_run(run_mutex_);
   return RevokeRegistrationWithIdentity(*client, identity_);
 }
 
@@ -208,8 +210,10 @@ void RelayRegistrationsWorkflow::RevokeAll() {
     for (State& state : states_) {
       relays.push_back(state.relay);
       state.registered = false;
+      state.leaving = true;
     }
   }
+  const std::lock_guard after_run(run_mutex_);
   for (const Relay& relay : relays) {
     if (auto revoked = RevokeRegistrationWithIdentity(*relay.client, identity_); !revoked) {
       log().warning << "revoke on " << NormalizeRegistrationBackend(relay.origin)

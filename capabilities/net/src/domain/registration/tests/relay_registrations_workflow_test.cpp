@@ -6,10 +6,14 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <filesystem>
+#include <functional>
+#include <future>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "common/PbrCompat.h"
@@ -34,7 +38,11 @@ public:
                                              const std::vector<std::string>& multiaddrs,
                                              const RegistrationPublishOpts& publish) override {
     ++finish_calls;
+    events.push_back("finish");
     last_card = publish.account_card;
+    if (on_finish) {
+      on_finish();
+    }
     if (fail) {
       return Error("relay down");
     }
@@ -49,6 +57,7 @@ public:
   }
   Roe<void> RevokeRegistration(const std::string&, const std::string&, int64_t) override {
     ++revoke_calls;
+    events.push_back("revoke");
     return {};
   }
   bool fail = false;
@@ -57,6 +66,10 @@ public:
   std::string expires_at = "2099-01-01T00:00:00.000Z";
   int finish_calls = 0;
   int revoke_calls = 0;
+  /** finish / revoke, in the order the relay saw them. */
+  std::vector<std::string> events;
+  /** Runs inside register/finish (a relay that answers slowly). */
+  std::function<void()> on_finish;
   std::optional<Object> last_card;
 };
 
@@ -240,6 +253,37 @@ TEST_F(RelayRegistrationsWorkflowTest, ARelayLeavingTheListIsRevokedThere) {
   EXPECT_EQ(client_->revoke_calls, 1);
   EXPECT_FALSE(workflow_->Registered(kOther));
   EXPECT_FALSE(static_cast<bool>(workflow_->Revoke("https://z.example/api/relay")));
+}
+
+TEST_F(RelayRegistrationsWorkflowTest, ARelayRemovedWhileItRegistersIsRevokedAfterAndItsAnswerDropped) {
+  // My relays' Remove while the timer's run registers there for a newer card: the answer is dropped (no push bound
+  // there) and the revoke reaches the relay after the registration, so ours does not outlive the removal.
+  RegisterOnPreferred();
+  workflow_->RunDue(kNow);
+  ASSERT_TRUE(workflow_->Registered(kOther));
+  card_ = CardIssuedAt(2000);
+  std::promise<void> entered;
+  std::promise<void> release;
+  std::shared_future<void> released = release.get_future().share();
+  client_->on_finish = [&entered, released]() {
+    entered.set_value();
+    released.wait();
+  };
+  std::thread run([this]() { workflow_->RunDue(kNow + 1000); });
+  entered.get_future().wait();
+  auto revoke = std::async(std::launch::async, [this]() { return workflow_->Revoke(kOther); });
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  while (workflow_->Registered(kOther) && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  EXPECT_FALSE(workflow_->Registered(kOther)) << "leaving from the call on";
+  release.set_value();
+  run.join();
+  ASSERT_TRUE(static_cast<bool>(revoke.get()));
+  EXPECT_EQ(client_->events, (std::vector<std::string>{"finish", "finish", "revoke"}));
+  EXPECT_EQ(registered_on_, std::vector<std::string>({kOther})) << "only the first registration binds push there";
+  EXPECT_FALSE(workflow_->Registered(kOther));
+  EXPECT_TRUE(workflow_->Due(kNow + 2000).empty()) << "a relay leaving is not registered on again";
 }
 
 } // namespace

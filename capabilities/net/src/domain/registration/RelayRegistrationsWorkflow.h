@@ -5,7 +5,6 @@
 #include "lib/people/IdentityStore.h"
 #include "common/Module.h"
 
-#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -62,9 +61,13 @@ public:
   bool Registered(const std::string& origin) const;
   /** Our relays (other than the preferred) that hold our registration. */
   std::vector<std::string> RegisteredOrigins() const;
-  /** Removes our registration from each relay (profile reset, #328); best effort, as on the preferred. */
+  /** Removes our registration from each relay (profile reset, #328); best effort, as on the preferred. As Revoke. */
   void RevokeAll();
-  /** Removes our registration from that relay of ours (it leaves the list; with it its push bindings). Blocks. */
+  /**
+   * Removes our registration from that relay of ours (it leaves the list; with it its push bindings). Blocks. The
+   * relay is leaving from the call on: not due again, not Registered, and what a registration in flight there answers
+   * is dropped (not reported, its push not bound); the revoke waits for a RunDue in progress, so it comes after.
+   */
   Roe<void> Revoke(const std::string& origin);
 
 private:
@@ -75,6 +78,8 @@ private:
     int64_t card_issued_at = 0;
     int64_t next_try_ms = 0;
     int64_t backoff_ms = 0;
+    /** Revoked (it leaves our list): nothing more is asked or kept there. */
+    bool leaving = false;
   };
 
   static bool DueLocked(const State& state, int64_t now_ms, int64_t card_issued_at);
@@ -89,7 +94,8 @@ private:
   std::function<void(const std::string&, const RelayRegistrationRecord&)> on_result_;
   mutable std::mutex mutex_;
   std::vector<State> states_;
-  std::atomic<bool> running_{false};
+  /** Held by a RunDue for its whole run (a second one skips); a revoke waits for it. */
+  std::mutex run_mutex_;
 };
 
 } // namespace pbr
