@@ -103,6 +103,11 @@ public:
    */
   Roe<void> Revoke(const std::string& origin);
   /**
+   * A relay Revoke left stays ours after all (the list change it was for did not go through): no longer leaving, and
+   * due now (registered on again, its push with it).
+   */
+  void Rejoin(const std::string& origin);
+  /**
    * The profile closes: from now on nothing is due, RunDue and the revokes do nothing (and touch neither the identity
    * nor the hooks), and once this returns no run or revoke is in progress (it waits for one).
    */

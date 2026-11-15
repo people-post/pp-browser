@@ -316,6 +316,21 @@ TEST_F(RelayRegistrationsWorkflowTest, ARelayLeavingTheListIsRevokedThere) {
   EXPECT_FALSE(static_cast<bool>(workflow_->Revoke("https://z.example/api/relay")));
 }
 
+// T3: a Remove the services did not follow leaves the relay ours: it is registered on again, its push with it.
+TEST_F(RelayRegistrationsWorkflowTest, ARelayRejoinedAfterARevokeIsRegisteredOnAgain) {
+  RegisterOnPreferred();
+  workflow_->RunDue(kNow);
+  ASSERT_TRUE(static_cast<bool>(workflow_->Revoke(kOther)));
+  workflow_->SetRelays({{kOther, client_}}); // the old list, kept: still leaving
+  EXPECT_TRUE(workflow_->Due(kNow).empty());
+  workflow_->Rejoin(kOther);
+  EXPECT_EQ(workflow_->Due(kNow), std::vector<std::string>({kOther}));
+  registered_on_.clear();
+  workflow_->RunDue(kNow);
+  EXPECT_TRUE(workflow_->Registered(kOther));
+  EXPECT_EQ(registered_on_, std::vector<std::string>({kOther}));
+}
+
 TEST_F(RelayRegistrationsWorkflowTest, ARelayRemovedWhileItRegistersIsRevokedAfterAndItsAnswerDropped) {
   // My relays' Remove while the timer's run registers there for a newer card: the answer is dropped (no push bound
   // there) and the revoke reaches the relay after the registration, so ours does not outlive the removal.

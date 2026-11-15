@@ -252,6 +252,18 @@ Roe<void> RelayRegistrationsWorkflow::Revoke(const std::string& origin) {
   return RevokeRegistrationWithIdentity(*client, identity_, registration_id);
 }
 
+void RelayRegistrationsWorkflow::Rejoin(const std::string& origin) {
+  std::lock_guard lock(mutex_);
+  for (State& state : states_) {
+    if (SameRelay(state.relay.origin, origin) && state.leaving) {
+      state.leaving = false;
+      state.registered = false;
+      state.next_try_ms = 0;
+      state.backoff_ms = 0;
+    }
+  }
+}
+
 void RelayRegistrationsWorkflow::RevokeAll() {
   {
     std::lock_guard lock(mutex_);

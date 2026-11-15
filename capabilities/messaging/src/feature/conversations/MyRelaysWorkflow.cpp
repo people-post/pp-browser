@@ -132,18 +132,27 @@ Roe<void> MyRelaysWorkflow::Remove(const std::string& origin) {
     return next.error();
   }
   const bool changed = ports_.identity_changed && ports_.identity_changed(origin);
-  if (ports_.leave && !changed) {
+  const bool leaving = ports_.leave && !changed;
+  if (leaving) {
     // Best effort: a relay that is down keeps our row until it expires, but it is no longer ours. A relay whose
     // identity changed gets no revoke (nothing is signed for it): its old registration expires there.
     if (auto left = ports_.leave(origin); !left) {
       log().warning << "registration on " << origin << " not revoked: " << left.error().message;
     }
   }
+  if (auto committed = Commit(*next, false); !committed) {
+    if (leaving && ports_.rejoin) {
+      ports_.rejoin(origin); // still ours: registered on again (its push with it)
+    }
+    return committed;
+  }
   if (ports_.drop_pin) {
-    ports_.drop_pin(origin); // after its revoke: a relay that claimed another's PeerId no longer holds it
+    // Once the services left it: a relay that claimed another's PeerId no longer holds it (one the org's services
+    // still use keeps its pin, the port's call).
+    ports_.drop_pin(origin);
   }
   log().info << "relay " << origin << " removed";
-  return Commit(*next, false);
+  return {};
 }
 
 Roe<void> MyRelaysWorkflow::MakePreferred(const std::string& origin) {

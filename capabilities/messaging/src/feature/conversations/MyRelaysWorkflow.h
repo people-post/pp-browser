@@ -57,7 +57,8 @@ struct OurRelaysStatus {
  *   confirms, `accept_changed`); it is added last and registered on like any other relay of ours.
  * - **Remove:** never the preferred one nor the last; our registration there is revoked first (`leave`: with its push
  *   bindings; best effort — a relay that is down does not keep us on it; none for a relay whose identity changed: we
- *   never sign for it), its pin goes (`drop_pin`), and its inbox cursor goes with the inbox.
+ *   never sign for it); once the services left it its pin goes (`drop_pin`; kept while the org's services use that
+ *   origin), and its inbox cursor goes with the inbox. Undone (kNotApplied): we `rejoin` it.
  * - **Accept new identity:** the relay (or the org's origin) is re-pinned to what it presented (`accept_identity`);
  *   ours is then registered on again (the preferred one as the identity's) and our card re-issued with it.
  * - **Make preferred:** the relay moves first; the identity's registration renews there (`register_preferred`: the
@@ -94,8 +95,10 @@ public:
     std::function<AddIdentityCheck(const std::string& base_url)> check_identity;
     /** Pins `base_url` to `peer_id` (the person confirmed a relay seen before with another identity). */
     std::function<Roe<void>(const std::string& base_url, const std::string& peer_id)> repin;
-    /** `origin`'s pin goes (Remove…). */
+    /** `origin`'s pin goes (Remove…, once the services left it), unless the org's services still use it. */
     std::function<void(const std::string& origin)> drop_pin;
+    /** A Remove the services did not follow: `origin`, left already, is ours again (registered on again soon). */
+    std::function<void(const std::string& origin)> rejoin;
     /** `origin` presented another identity, not accepted yet. */
     std::function<bool(const std::string& origin)> identity_changed;
     /** `origin` is re-pinned to the identity it presented. */

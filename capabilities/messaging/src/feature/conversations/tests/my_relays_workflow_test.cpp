@@ -94,6 +94,7 @@ protected:
       return {};
     };
     ports.drop_pin = [this](const std::string& origin) { steps_.push_back("drop_pin " + origin); };
+    ports.rejoin = [this](const std::string& origin) { steps_.push_back("rejoin " + origin); };
     ports.identity_changed = [this](const std::string& origin) { return changed_identity_ == origin; };
     ports.accept_identity = [this](const std::string& origin) -> Roe<void> {
       steps_.push_back("accept " + origin);
@@ -167,16 +168,18 @@ TEST_F(MyRelaysWorkflowTest, ARelaySeenWithAnotherIdentityIsAddedOnlyOnConfirmAn
   EXPECT_EQ(store_->List().Origins(), Origins({kA, kB, kC}));
 }
 
-// MR007: Remove… drops the pin after the revoke; a relay whose identity changed gets no revoke (never signed for).
+// MR007: Remove… drops the pin once the services left the relay; a relay whose identity changed gets no revoke
+// (never signed for).
 TEST_F(MyRelaysWorkflowTest, RemoveDropsThePinAndRevokesNothingForAChangedIdentity) {
   ASSERT_EQ(ErrorOf(workflow_->Remove(kB)), "ok");
-  EXPECT_EQ(Steps(steps_.begin(), steps_.begin() + 2),
-            Steps({"leave " + std::string(kB), "drop_pin " + std::string(kB)}));
+  EXPECT_EQ(steps_.front(), "leave " + std::string(kB));
+  EXPECT_EQ(steps_.back(), "drop_pin " + std::string(kB)) << "after the services left it: none re-pins it";
   ASSERT_EQ(ErrorOf(workflow_->Add("https://c.example", false)), "ok");
   steps_.clear();
   changed_identity_ = kC;
   ASSERT_EQ(ErrorOf(workflow_->Remove(kC)), "ok");
-  EXPECT_EQ(steps_.front(), "drop_pin " + std::string(kC));
+  EXPECT_EQ(steps_.front(), "apply a") << "no revoke";
+  EXPECT_EQ(steps_.back(), "drop_pin " + std::string(kC));
 }
 
 // MR007: Accept re-pins, registers there again (the preferred one as the identity's) and re-issues the card.
@@ -228,8 +231,8 @@ TEST_F(MyRelaysWorkflowTest, ARelayAtALocalAddressIsRefusedOutsideDeveloperBuild
 
 TEST_F(MyRelaysWorkflowTest, ARelayRemovedIsLeftFirstThenTheServicesFollow) {
   ASSERT_EQ(ErrorOf(workflow_->Remove(kB)), "ok");
-  EXPECT_EQ(steps_, Steps({"leave " + std::string(kB), "drop_pin " + std::string(kB), "apply a", "register_others",
-                           "announce"}));
+  EXPECT_EQ(steps_, Steps({"leave " + std::string(kB), "apply a", "register_others", "announce",
+                           "drop_pin " + std::string(kB)}));
   EXPECT_EQ(store_->List().Origins(), Origins({kA}));
 }
 
@@ -280,6 +283,14 @@ TEST_F(MyRelaysWorkflowTest, AChangeTheServicesDoNotFollowIsUndoneAndRefused) {
   EXPECT_EQ(changed_, 1) << "the page reads the list again";
   OurRelaysStore reread(dir_.string());
   EXPECT_EQ(reread.LoadOrSeed(kA, {}).Origins(), Origins({kA, kB})) << "undone in the profile too";
+}
+
+// T3: a Remove the services did not follow is undone: the relay, left already, is ours again and keeps its pin.
+TEST_F(MyRelaysWorkflowTest, ARemoveTheServicesDoNotFollowIsUndoneAndTheRelayRejoined) {
+  apply_ok_ = false;
+  EXPECT_EQ(ErrorOf(workflow_->Remove(kB)), MyRelaysWorkflow::kNotApplied);
+  EXPECT_EQ(steps_, Steps({"leave " + std::string(kB), "apply a", "rejoin " + std::string(kB)}));
+  EXPECT_EQ(store_->List().Origins(), Origins({kA, kB}));
 }
 
 TEST_F(MyRelaysWorkflowTest, CloseWaitsForTheChangeInProgressAndRefusesWhatComesAfter) {

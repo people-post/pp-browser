@@ -4340,9 +4340,17 @@ void ConversationsHub::WireMyRelaysIdentityPorts(MyRelaysWorkflow::Ports& ports)
     return pins ? pins->Repin(base_url, peer_id) : Roe<void>(Error(MyRelaysWorkflow::kClosed));
   };
   ports.drop_pin = [this](const std::string& origin) {
-    if (const auto pins = relay_pins_) {
+    // After the services left it (PinOurRelaysSoon named what stays): the org's origin keeps its pin, so a changed
+    // identity there is never taken on trust again.
+    if (const auto pins = relay_pins_; pins && !KeepsPin(origin)) {
       pins->Drop(origin);
     }
+  };
+  ports.rejoin = [this](const std::string& origin) {
+    if (const auto registrations = OtherRelayRegistrations()) {
+      registrations->Rejoin(origin);
+    }
+    RegisterOnOtherRelaysSoon();
   };
   ports.identity_changed = [this](const std::string& origin) {
     const auto pins = relay_pins_;
