@@ -291,6 +291,16 @@ TEST(CallChromeSyncTest, CameraFacingDirtiesOnly) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
 }
 
+// B225: "Restoring video…" in the small picture's place only re-binds a data-if.
+TEST(CallChromeSyncTest, CameraResumingDirtiesOnly) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_camera_resuming = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+}
+
 TEST(CallChromeSyncTest, StagePresenceRemounts) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;

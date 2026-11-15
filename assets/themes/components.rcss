@@ -5694,6 +5694,20 @@ call-video-tile {
   overflow: hidden;
 }
 
+.shell-call-pip--resuming,
+.call-phone-pip--resuming {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 6dp;
+}
+
+.shell-call-pip-note {
+  margin: 0;
+}
+
 .shell-call-leave {
   min-width: 44dp;
 }

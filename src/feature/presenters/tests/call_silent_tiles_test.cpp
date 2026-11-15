@@ -59,8 +59,8 @@ struct Rig {
 Rig Heard(const std::string& id = "alice") {
   Rig r;
   r.Add(id);
-  r.Tick();        // the join reading: references only
-  r.Audio(id);     // a first packet
+  r.Tick();    // the join reading: references only
+  r.Audio(id); // a first packet
   return r;
 }
 

@@ -430,6 +430,8 @@ struct CallInProgressState {
   bool on_hold = false;
   bool muted = false;
   bool camera_on = false;
+  /** 1:1: the camera is wanted but not on yet (waiting its turn / resting after the background): the pip says so. */
+  bool camera_resuming = false;
   /** The camera on is the front one: the flip button is lit (#83). */
   bool camera_front = false;
   /** Speakerphone on (true) vs earpiece (false). UI: same icon, contrast encodes status. */

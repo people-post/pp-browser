@@ -270,6 +270,8 @@ private:
   /** The real edges (PlatformLifecycleEvents): the camera rests at once / a real return is on its way. */
   void OnDidEnterBackground();
   void OnWillEnterForeground();
+  /** Active (every time: AppLifecycle's foreground listeners are skipped when it never saw a background). */
+  void OnDidEnterForeground();
   /**
    * The call this device is in, as last told to the OS (OngoingCallService: Android's call service): the screen's
    * call, or the engine's open call the screen lost (DEV/PLAN-call-ui-never-detached.md 4).
@@ -390,6 +392,7 @@ private:
   uint64_t foreground_listener_ = 0;
   uint64_t entered_background_listener_ = 0;
   uint64_t will_enter_foreground_listener_ = 0;
+  uint64_t did_enter_foreground_listener_ = 0;
   /** The engine's camera is open (physical truth: flip button, orientation sensors, energy sampling); the button's
    *  `camera_on` is the user's wish instead (B225). */
   bool camera_engine_on_ = false;

@@ -21,6 +21,7 @@ struct Listener {
 std::mutex g_mu;
 std::vector<Listener> g_entered_background;
 std::vector<Listener> g_will_enter_foreground;
+std::vector<Listener> g_did_enter_foreground;
 PlatformLifecycleEvents::ListenerId g_next_id = 1;
 
 PlatformLifecycleEvents::ListenerId Add(std::vector<Listener>& listeners, std::function<void()> fn) {
@@ -53,12 +54,17 @@ PlatformLifecycleEvents::ListenerId PlatformLifecycleEvents::AddWillEnterForegro
   return Add(g_will_enter_foreground, std::move(listener));
 }
 
+PlatformLifecycleEvents::ListenerId PlatformLifecycleEvents::AddDidEnterForegroundListener(
+    std::function<void()> listener) {
+  return Add(g_did_enter_foreground, std::move(listener));
+}
+
 void PlatformLifecycleEvents::RemoveListener(const ListenerId id) {
   if (id == 0) {
     return;
   }
   std::lock_guard lock(g_mu);
-  for (auto* listeners : {&g_entered_background, &g_will_enter_foreground}) {
+  for (auto* listeners : {&g_entered_background, &g_will_enter_foreground, &g_did_enter_foreground}) {
     std::erase_if(*listeners, [id](const Listener& listener) { return listener.id == id; });
   }
 }
@@ -79,6 +85,9 @@ void PlatformLifecycleEvents::OnWillEnterForeground() {
 
 void PlatformLifecycleEvents::OnDidEnterForeground() {
   AppLifecycle::logger().info << "Did enter foreground mono_ms=" << MonoMs();
+  for (const auto& listener : Snapshot(g_did_enter_foreground)) {
+    listener();
+  }
 }
 
 int64_t PlatformLifecycleEvents::MonoMs() {

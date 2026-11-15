@@ -67,6 +67,12 @@ public:
     /** The app is active now / its screen is up (AppLifecycle::IsForeground / IsVisible): only where a call starts. */
     bool foreground = true;
     bool visible = true;
+    /**
+     * An open request is sent only while the app is active (iOS: it delivers will-enter-background first and a lone
+     * "active" in the middle of it). Android may deliver will-enter-background without a later did-enter-foreground,
+     * so there the camera keeps opening without it.
+     */
+    bool open_needs_active = true;
     /** Wall clock: the publish retry only. */
     int64_t now_ms = 0;
     /** Monotonic: every gate and settle time. */
@@ -103,20 +109,27 @@ public:
    */
   void OnMuteTapped();
   /**
-   * The camera button: toggles the wish (during a hold the first tap takes the hold's rest off and keeps the wish on).
-   * While the app is active, it is the way out when the real-return signal never came.
+   * The camera button: toggles what it shows (during a hold's rest it shows off, and the tap takes the rest off and
+   * wants the camera). While the app is active but the state is not settled (the real-return signal never came), a tap
+   * is "resume", not "off".
    */
   void OnCameraTapped(int64_t mono_ms);
   /** A video call's automatic camera-on at setup is the user's intent: the wish is set, the device waits for the gate. */
   void OnAutoCameraOn(int64_t mono_ms);
-  /** The engine closed the camera itself (permission denied, open failed): not our close, the user may retry at once. */
-  void OnCameraClosedByEngine();
+  /**
+   * The engine closed the camera itself (permission denied, open failed, a give-up path that closed a device that was
+   * streaming): the wish goes with it, and a reopen waits kCameraSettleMs from now like after any close.
+   */
+  void OnCameraClosedByEngine(int64_t mono_ms);
   /** We closed it by policy (narrowed to voice): our close, the gate counts from now. */
   void OnCameraClosedByUs(int64_t mono_ms);
 
   bool OnHold() const { return on_hold_; }
-  /** What the user wants: the camera button shows it (not the engine, which moves later). */
-  bool WantsCameraOn() const { return wants_; }
+  /**
+   * What the camera button shows (not the engine, which moves later): the user's wish, except while the camera only
+   * rests for a hold, when it shows off (a tap there brings it back, like any tap on an off button).
+   */
+  bool WantsCameraOn() const { return wants_ && !(on_hold_ && !hold_lifted_); }
   /** Wanted but not on (waiting for the gate / the settle, or resting in the background): "Restoring video…". */
   bool CameraResuming() const { return wants_ && !asked_on_ && !(on_hold_ && !hold_lifted_); }
 
@@ -130,6 +143,8 @@ private:
   void Reconcile(int64_t mono_ms);
   void SetWanted(int64_t mono_ms, bool user);
   bool Settled(int64_t mono_ms) const { return !bg_seen_ && mono_ms >= settle_until_; }
+  /** The tap that resumes: the real-return signal was lost, the app is active and the user is looking at it. */
+  void ResumeByTap(int64_t mono_ms);
   void ReadBack(int64_t mono_ms);
 
   static constexpr int64_t kNever = INT64_MAX;
@@ -158,16 +173,21 @@ private:
   bool asked_on_ = false;
   /** When we last asked it (an open still in flight until kEngineReadBackMs has passed). */
   int64_t asked_mono_ = kLongAgo;
-  /** When WE last closed it (the 2.5 s gate for the next open); an engine-side close does not move it. */
+  /** When it was last closed, by us or by the engine (the 2.5 s gate for the next open). */
   int64_t closed_mono_ = kLongAgo;
   /** We told the others "paused" and have not told them anything since: a later close must clear it. */
   bool paused_sent_ = false;
-  /** 0: settled; kNever: in the background, or inactive and not yet active again; else when the settle ends. */
+  /**
+   * 0: settled; kNever: in the background, or inactive and not yet active again, or a call begun while the app was not
+   * shown and not yet active; else when the settle ends.
+   */
   int64_t settle_until_ = 0;
   /** A real background was seen and no real return yet. */
   bool bg_seen_ = false;
-  /** The app is active (the read-back runs only then). */
+  /** The app is active (the read-back runs only then; on iOS no open is sent otherwise). */
   bool active_ = true;
+  /** Facts::open_needs_active as of the last tick. */
+  bool open_needs_active_ = true;
   /** During a hold the user tapped the camera: the hold no longer rests it. Cleared when the hold begins / ends. */
   bool hold_lifted_ = false;
   /** The wish was set by a tap (a refused open is then said to the user), not by the automatic start. */

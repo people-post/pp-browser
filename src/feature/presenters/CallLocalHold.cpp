@@ -10,6 +10,7 @@ CallLocalHold::CallLocalHold(Ports ports) : ports_(std::move(ports)) {
 }
 
 void CallLocalHold::Sync(const Facts& facts) {
+  open_needs_active_ = facts.open_needs_active;
   if (facts.call_id != call_id_) {
     BeginCall(facts);
   }
@@ -38,19 +39,27 @@ void CallLocalHold::BeginCall(const Facts& facts) {
   told_on_hold_ = false; // this call has been told nothing: a hold that goes on into it is told afresh
   publishing_ = false;
   next_publish_ms_ = 0;
-  // The camera: nothing wished, nothing asked, no close on record. The engine is NOT read here: an automatic camera-on
-  // may be in flight, and a read now would turn it into "off" (B225).
+  // The camera: nothing wished, nothing asked, no close on record. The engine is NOT read here for "off": an
+  // automatic camera-on may be in flight, and a read now would turn it into "off" (B225). A camera that IS on is
+  // adopted: the call id may flicker (c1 -> "" -> c1) while the device keeps streaming, and the button must say so.
   wants_ = false;
   asked_on_ = false;
   asked_mono_ = kLongAgo;
+  if (!facts.call_id.empty() && ports_.engine_camera_on && ports_.engine_camera_on()) {
+    wants_ = true;
+    asked_on_ = true;
+    asked_mono_ = facts.mono_ms;
+  }
   closed_mono_ = kLongAgo;
   paused_sent_ = false;
   hold_lifted_ = false;
   open_by_user_ = false;
   ++request_seq_;
   active_ = facts.foreground;
-  bg_seen_ = !facts.visible;
-  settle_until_ = (bg_seen_ || !facts.foreground) ? kNever : 0;
+  // Begun while the app is not shown (launched by a push, locked): no real background was seen, but nothing opens until
+  // the app has become active and stayed so.
+  bg_seen_ = false;
+  settle_until_ = (!facts.visible || !facts.foreground) ? kNever : 0;
 }
 
 void CallLocalHold::WatchUserUnmute() {
@@ -154,7 +163,7 @@ void CallLocalHold::OnActive(const int64_t mono_ms) {
     log().info << "camera resume ignored: active without foreground";
     return;
   }
-  if (settle_until_ != 0) {
+  if (settle_until_ == kNever) { // a repeated "active" does not push a running settle later
     settle_until_ = mono_ms + kCameraSettleMs;
     log().info << "camera resume scheduled: the app must stay active for " << kCameraSettleMs << " ms";
   }
@@ -170,13 +179,17 @@ void CallLocalHold::OnMuteTapped() {
 void CallLocalHold::SetWanted(const int64_t mono_ms, const bool user) {
   wants_ = true;
   open_by_user_ = user;
-  if (user && bg_seen_ && active_) {
-    // The way out when the real-return signal never came: the app is active and the user is looking at it. The open
-    // still waits kCameraSettleMs from this tap (and from our last close).
-    log().info << "camera resume: tap while active, no real return seen";
-    bg_seen_ = false;
-    settle_until_ = mono_ms + kCameraSettleMs;
+  if (user && active_ && !Settled(mono_ms)) {
+    ResumeByTap(mono_ms); // the real-return signal may never have come
   }
+}
+
+void CallLocalHold::ResumeByTap(const int64_t mono_ms) {
+  // The app is active and the user is looking at it. The open still waits kCameraSettleMs from this tap (and from our
+  // last close).
+  log().info << "camera resume: tap while active, no real return seen";
+  bg_seen_ = false;
+  settle_until_ = mono_ms + kCameraSettleMs;
 }
 
 void CallLocalHold::OnCameraTapped(const int64_t mono_ms) {
@@ -184,6 +197,9 @@ void CallLocalHold::OnCameraTapped(const int64_t mono_ms) {
     // The hold only rested the camera: a tap takes the rest off and the user keeps it from here.
     hold_lifted_ = true;
     SetWanted(mono_ms, true);
+  } else if (wants_ && active_ && (bg_seen_ || settle_until_ == kNever)) {
+    // Wanted, but resting for a background whose return we never heard of: the button says on, so a tap is "resume".
+    ResumeByTap(mono_ms);
   } else if (wants_) {
     wants_ = false;
   } else {
@@ -201,12 +217,12 @@ void CallLocalHold::OnAutoCameraOn(const int64_t mono_ms) {
   }
 }
 
-void CallLocalHold::OnCameraClosedByEngine() {
+void CallLocalHold::OnCameraClosedByEngine(const int64_t mono_ms) {
   wants_ = false;
   asked_on_ = false;
   paused_sent_ = false;
+  closed_mono_ = mono_ms; // a give-up path closes a device that was really streaming: the next open waits too
   ++request_seq_;
-  // closed_mono_ stays: the engine closed it, not us, so the user may open it again at once.
 }
 
 void CallLocalHold::OnCameraClosedByUs(const int64_t mono_ms) {
@@ -252,17 +268,22 @@ void CallLocalHold::Reconcile(const int64_t mono_ms) {
   }
   const bool want_open = !(on_hold_ && !hold_lifted_) && Settled(mono_ms);
   if (want_open && !asked_on_) {
+    if (open_needs_active_ && !active_) {
+      return; // no open request while inactive: OnActive reconciles again
+    }
     if (mono_ms - closed_mono_ < kCameraSettleMs) {
       return; // only opening is gated: CameraResuming() says so
     }
     const bool back = paused_sent_;
+    const bool by_user = open_by_user_; // the tap that asked for this open, not a later automatic reopen
+    open_by_user_ = false;
     const uint64_t seq = ++request_seq_;
     asked_on_ = true;
     asked_mono_ = mono_ms;
     paused_sent_ = false;
     log().info << (back ? "camera back: the app has settled" : "camera on");
     ports_.set_camera_enabled(
-        true, [this, weak = std::weak_ptr<int>(alive_), gen = call_gen_, seq, back](Roe<void> done) {
+        true, [this, weak = std::weak_ptr<int>(alive_), gen = call_gen_, seq, back, by_user](Roe<void> done) {
           if (done || !weak.lock() || gen != call_gen_ || seq != request_seq_) {
             return;
           }
@@ -270,7 +291,7 @@ void CallLocalHold::Reconcile(const int64_t mono_ms) {
           wants_ = false;
           asked_on_ = false;
           paused_sent_ = back; // the others still read "paused": the close that follows (wish off) clears it
-          if (open_by_user_ && ports_.camera_open_failed) {
+          if (by_user && ports_.camera_open_failed) {
             ports_.camera_open_failed();
           }
         });

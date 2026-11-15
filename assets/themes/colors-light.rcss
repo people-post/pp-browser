@@ -1450,7 +1450,8 @@ input.checkbox:checked {
   background-color: #1f2937;
 }
 
-.shell-call-remote-placeholder {
+.shell-call-remote-placeholder,
+.shell-call-pip-note {
   color: #3c3c4399;
 }
 
@@ -3496,7 +3497,8 @@ input.checkbox:checked {
   background-color: #161819f7;
 }
 
-.call-phone-tile {
+.call-phone-tile,
+.call-phone-pip--resuming {
   background-color: #ffffff17;
 }
 

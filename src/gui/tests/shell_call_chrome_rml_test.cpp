@@ -658,7 +658,9 @@ TEST(ShellCallChromeRmlTest, PhoneGroupTilesShowWhoIsOnHoldAndWhoseCameraIsPause
   const std::string rml = CallInProgressRml(PhoneGroupCall());
   EXPECT_TRUE(Has(rml, "<div class=\"call-hold-pill call-hold-pill--tile\" data-if=\"p.on_hold\">"));
   EXPECT_TRUE(Has(rml, "data-class-call-phone-tile--on-hold=\"p.on_hold\""));
-  EXPECT_TRUE(Has(rml, "data-if=\"p.video_paused && !p.on_hold && !p.silent\""));
+  // Our own tile never says "camera paused" (it says "Restoring video…" below, or nothing): never both lines.
+  EXPECT_TRUE(Has(rml, "data-if=\"p.video_paused && !p.is_local && !p.on_hold && !p.silent\""));
+  EXPECT_FALSE(Has(rml, "data-if=\"p.video_paused && !p.on_hold && !p.silent\""));
   // B225: our own tile says "Restoring video…" while the camera is wanted but not on yet.
   EXPECT_TRUE(Has(rml, "data-if=\"p.is_local && p.camera_resuming\""));
 }
@@ -722,6 +724,33 @@ TEST(ShellCallChromeRmlTest, PhoneVideoCallSwapsOnATapOnTheSmallPicture) {
                   "class=\"call-phone-pip\" tile=\"remote\" "
                   "data-if=\"call_in_progress_local_preview\" data-event-click=\"call_spotlight('22')\""));
   EXPECT_FALSE(Has(swapped, "call_spotlight_grid()"));
+}
+
+// B225, 1:1: while our camera is on its way back (no preview yet) the small picture's place is a dark box with the words.
+TEST(ShellCallChromeRmlTest, PhoneVideoCallShowsAPlaceholderWhereOurPictureWillBe) {
+  ShellState state = PhoneGroupCall();
+  state.call_in_progress.show_roster = false;
+  state.call_in_progress.stage_visible = true;
+  const std::string rml = CallInProgressRml(state);
+  EXPECT_TRUE(Has(rml,
+                  "<div class=\"call-phone-pip call-phone-pip--resuming\" "
+                  "data-if=\"!call_in_progress_local_preview && call_in_progress_camera_resuming\">"
+                  "<p class=\"call-phone-tile-note\">" +
+                      Tr("call.placeholder.camera_resuming") + "</p></div>"));
+}
+
+TEST(ShellCallChromeRmlTest, DesktopCallShowsAPlaceholderWhereOurPictureWillBe) {
+  ShellState state;
+  state.layout_mode = LayoutMode::Expanded;
+  state.call_in_progress.active = true;
+  state.call_in_progress.stage_visible = true;
+  state.call_in_progress.mode = CallChromeMode::Expanded;
+  const std::string rml = CallInProgressRml(state);
+  EXPECT_TRUE(Has(rml,
+                  "<div class=\"shell-call-pip shell-call-pip--resuming\" "
+                  "data-if=\"!call_in_progress_local_preview && call_in_progress_camera_resuming\">"
+                  "<p class=\"text-xs shell-call-pip-note\">" +
+                      Tr("call.placeholder.camera_resuming") + "</p></div>"));
 }
 
 // #83: the flip button is lit while the front camera is in use and plain on the rear one (a bound class, no animation).

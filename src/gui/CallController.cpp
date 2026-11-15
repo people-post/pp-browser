@@ -31,6 +31,7 @@
 #include "foundation/platform/OngoingCallService.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/PlatformLifecycleEvents.h"
+#include "foundation/platform/os/OsAppState.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/PendingNotificationTap.h"
 #include "gui/CallStatusHint.h"
@@ -135,7 +136,9 @@ CallController::CallController()
     SyncLocalHold(); // the hold must know this call before it takes the wish
     local_hold_.OnAutoCameraOn(PlatformLifecycleEvents::MonoMs());
   };
-  callbacks.camera_closed_by_engine = [this]() { local_hold_.OnCameraClosedByEngine(); };
+  callbacks.camera_closed_by_engine = [this]() {
+    local_hold_.OnCameraClosedByEngine(PlatformLifecycleEvents::MonoMs());
+  };
   callbacks.camera_closed_by_policy = [this]() { local_hold_.OnCameraClosedByUs(PlatformLifecycleEvents::MonoMs()); };
   callbacks.show_current_call = [this]() {
     if (chrome_mode_ == CallChromeMode::Minimized) {
@@ -150,6 +153,8 @@ CallController::CallController()
       PlatformLifecycleEvents::AddEnteredBackgroundListener([this]() { OnDidEnterBackground(); });
   will_enter_foreground_listener_ =
       PlatformLifecycleEvents::AddWillEnterForegroundListener([this]() { OnWillEnterForeground(); });
+  did_enter_foreground_listener_ =
+      PlatformLifecycleEvents::AddDidEnterForegroundListener([this]() { OnDidEnterForeground(); });
   OngoingCallService::SetHangUpHandler([this]() {
     // The screen's call, or the engine's call the screen lost: Leave takes the engine's id when it has none.
     if (OngoingCallWanted(!presenter_.ActiveCallId().empty(), EngineCallNotLeft().open)) {
@@ -167,6 +172,7 @@ CallController::~CallController() {
   AppLifecycle::RemoveListener(foreground_listener_);
   PlatformLifecycleEvents::RemoveListener(entered_background_listener_);
   PlatformLifecycleEvents::RemoveListener(will_enter_foreground_listener_);
+  PlatformLifecycleEvents::RemoveListener(did_enter_foreground_listener_);
 }
 
 EngineCall CallController::EngineCallNow() {
@@ -315,7 +321,10 @@ void CallController::SyncLocalHold() {
   local_hold_.Sync({.call_id = in_call ? presenter_.ActiveCallId() : std::string(),
                     .audio_taken = in_call && AudioSession::IsInterrupted(),
                     .foreground = !mobile || AppLifecycle::IsForeground(),
-                    .visible = !mobile || AppLifecycle::IsVisible(),
+                    // AppLifecycle starts visible and iOS sends no did-enter-background to a app launched in the
+                    // background (a VoIP push while locked): the OS's own answer is the other half.
+                    .visible = !mobile || (AppLifecycle::IsVisible() && os::AppShownNow()),
+                    .open_needs_active = Platform::Detect() == PlatformKind::IOS,
                     .now_ms = util::NowUnixMs(),
                     .mono_ms = PlatformLifecycleEvents::MonoMs()});
 }
@@ -331,9 +340,6 @@ void CallController::OnAppBackground() {
 }
 
 void CallController::OnAppForeground() {
-  if (Platform::IsMobile()) {
-    local_hold_.OnActive(PlatformLifecycleEvents::MonoMs());
-  }
   // The call may have ended while in the background: write the current wanted value once, whatever was compared last.
   SetProximityScreenOff(proximity_wanted_);
   // Back in front with the phone's call screen ringing for us: its settle time counts from now (the timer hands over).
@@ -345,13 +351,20 @@ void CallController::OnDidEnterBackground() {
     return;
   }
   // The callback is the one place that runs in the background: the camera rests here, not at a later tick.
-  SyncLocalHold();
+  // The background flag first: a tick that read the gate as expired would open the device on the way out.
   local_hold_.OnEnteredBackground(PlatformLifecycleEvents::MonoMs());
+  SyncLocalHold();
 }
 
 void CallController::OnWillEnterForeground() {
   if (Platform::IsMobile()) {
     local_hold_.OnWillEnterForeground();
+  }
+}
+
+void CallController::OnDidEnterForeground() {
+  if (Platform::IsMobile()) {
+    local_hold_.OnActive(PlatformLifecycleEvents::MonoMs());
   }
 }
 
@@ -422,6 +435,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_muted = in_call.muted,
       .in_call_camera_on = in_call.camera_on,
       .in_call_camera_front = in_call.camera_front,
+      .in_call_camera_resuming = in_call.camera_resuming,
       .in_call_speaker_on = in_call.speaker_on,
       .in_call_stage_visible = in_call.stage_visible,
       .in_call_remote_video = in_call.remote_video,
@@ -1908,6 +1922,7 @@ void CallController::ApplyLocalMedia(IMediaView& media, const CallMediaScreen& f
   camera_engine_on_ = media.IsCameraEnabled();
   // Wanted but not on (waiting its turn, or resting in the background): our own tile says so.
   const bool resuming = local_hold_.CameraResuming();
+  in_call.camera_resuming = resuming;
   for (auto* rows : {&in_call.roster, &in_call.spotlight_rows, &in_call.strip_rows}) {
     for (CallRosterParticipantState& row : *rows) {
       row.camera_resuming = row.is_local && resuming;
