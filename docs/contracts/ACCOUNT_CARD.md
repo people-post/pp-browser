@@ -53,7 +53,7 @@ A key card plus what the account says about itself, signed as a whole.
 
 ```json
 {
-  "card_version": 3,
+  "card_version": 4,
   "account_id": "account:…",
   "signing_public_key_b64": "…",
   "kem_public_key_b64": "…",
@@ -64,7 +64,7 @@ A key card plus what the account says about itself, signed as a whole.
     { "peer_id": "Qm…", "signing_public_key_b64": "…", "kem_public_key_b64": "…" }
   ],
   "relays": [
-    { "origin": "https://www.brief.global/api/relay" }
+    { "origin": "https://www.brief.global/api/relay", "peer_id": "Qm…" }
   ],
   "initiation_floor": 0,
   "issued_at": 1761235200000,
@@ -79,14 +79,24 @@ A key card plus what the account says about itself, signed as a whole.
   ML-KEM-768 key. This is the account's standing statement that those devices speak for it; nothing else
   in the system makes it.
 - `relays` — **the relays the account receives on**, preferred first ([multi-relay MR002](../../projects/multi-relay/DECISIONS.md#mr002--the-relay-list-lives-in-the-account-card)):
-  each named by its origin, the HTTPS base URL a client uses. Required; an empty list means the account
+  each named by its origin, the HTTPS base URL a client uses, and by its **PeerId** (`peer_id`,
+  [MR007](../../projects/multi-relay/DECISIONS.md#mr007--relays-have-a-node-style-identity-every-signed-relay-command-names-it-as-its-audience)):
+  the audience a sender signs its send into that relay for ([SERVICE_ENDPOINTS § The audience](SERVICE_ENDPOINTS.md#the-audience-every-signed-command-names-its-relay)).
+  Required; an empty list means the account
   receives over the mesh only. Bounds ([MR004](../../projects/multi-relay/DECISIONS.md#mr004--a-relay-list-is-small-and-bounded)):
   at most 4 entries; each `origin` an absolute `https://` URL of at most 128 bytes with a host, and no query,
-  fragment, credentials, spaces or control characters; no two the same relay (scheme and host compared without
-  case, `:443` as no port, an empty path as `/`). The list holds the relays the app registers on
-  (`OwnCards::SetRelays`): My relays in their order, the preferred first (the profile's list, seeded from the
+  fragment, credentials, spaces or control characters; each `peer_id` required, a string of an ML-DSA PeerId's form
+  (base58btc decoding to exactly `0x12 0x20 ‖ 32 bytes` and re-encoding to itself: 46 characters, `Qm…`,
+  `IsMlDsaPeerIdForm`); no two the same relay by origin (scheme and host compared without
+  case, `:443` as no port, an empty path as `/`) or by `peer_id`. The card cannot show that a relay's key derives its
+  PeerId (it carries no relay key): the relay itself refuses a wrong one (`wrong_audience`). The list holds the relays
+  the app registers on whose pin is in force (`OwnCards::SetRelays` from `RelayPins::PinnedRelays`: a relay not pinned
+  yet, or whose identity changed, is left off and the card re-issued once it is): My relays in their order, the
+  preferred first, each with its pinned PeerId. A card from anyone else never writes a pin
+  ([SERVICE_ENDPOINTS § Pins](SERVICE_ENDPOINTS.md#pins)); a linked device takes our own newer card's entries as
+  pins. My relays is the profile's list, seeded from the
   deployment's relay and `relay.extra_base_urls` — [CONFIGURATION](../ops/CONFIGURATION.md),
-  [SERVICE_ENDPOINTS § Several relays](SERVICE_ENDPOINTS.md#several-relays)). A change to the list re-issues the card at
+  [SERVICE_ENDPOINTS § Several relays](SERVICE_ENDPOINTS.md#several-relays). A change to the list re-issues the card at
   once and announces it to our devices and contacts ([§ My relays](SERVICE_ENDPOINTS.md#my-relays));
   an origin outside the bounds — an `http://` dev relay — is left off, so a card of only such relays says the mesh
   only. The list is the **main device's**: the others keep the newest card's. Senders deliver into the listed
@@ -112,21 +122,25 @@ A key card plus what the account says about itself, signed as a whole.
 - No addresses: multiaddrs go stale and disclose IPs ([privacy](../../projects/privacy/DECISIONS.md));
   devices are reached through the mesh (below).
 
-**Card signature:** ML-DSA-65 with the account key over: domain `pp-browser:account-card-v3` + NUL,
-version u8 `3`, the raw account ML-DSA-65 key, the raw ML-KEM-768 key, `nickname` LenUtf8, device count
+**Card signature:** ML-DSA-65 with the account key over: domain `pp-browser:account-card-v4` + NUL,
+version u8 `4`, the raw account ML-DSA-65 key, the raw ML-KEM-768 key, `nickname` LenUtf8, device count
 u64 BE, then for each device in `peer_id` byte order: `peer_id` LenUtf8, the raw device ML-DSA-65 key, the
-raw device ML-KEM-768 key; then relay count u64 BE and each relay's `origin` LenUtf8 **in list order** (the
-preferred relay is signed as the first); then `initiation_floor` i64 BE and `issued_at` i64 BE (LenUtf8 / u64 BE as
-in [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088)). Golden vector (SHA-256 of the bytes, 9674 of
-them): `AccountCardSignBytesTest.MatchTheGoldenVector` in `account_card_test.cpp`, the same in the relay's
-`AccountCard.test.ts`.
+raw device ML-KEM-768 key; then relay count u64 BE and each relay's `origin` LenUtf8 and `peer_id` LenUtf8 **in list
+order** (the preferred relay is signed as the first); then `initiation_floor` i64 BE and `issued_at` i64 BE (LenUtf8 /
+u64 BE as in [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088)). Golden vectors: the SHA-256 of a card's
+bytes (9782 of them) in `AccountCardSignBytesTest.MatchTheGoldenVector` (`account_card_test.cpp`), and a signed card
+with the cards that must be refused in `relay_sign_vectors.json`
+([SERVICE_ENDPOINTS § The audience](SERVICE_ENDPOINTS.md#the-audience-every-signed-command-names-its-relay)), which the
+relay's `account-card.test.ts` reads.
 
 An account card is valid when its key card is valid, `card_signature_b64` verifies with the signing key,
 `devices` holds 1–5 entries with no duplicate PeerId, every entry's keys decode to their sizes and its
 `peer_id` is the one its device ML-DSA key derives, `relays` and `initiation_floor` are present and within their
 bounds, and `issued_at` is not more than 5 minutes ahead of the receiver's clock. A card breaking any bound is
-refused whole, by the app and the relay alike. Cards of any other `card_version` (1: PeerIds only; 2: no relays or
-floor) are refused.
+refused whole, by the app and the relay alike (`invalid_card_relays` at the relay). Cards of any other `card_version`
+(1: PeerIds only; 2: no relays or floor; 3: relays by origin only) are refused everywhere — registration
+(`invalid_account_card`), directory answers, the card exchange, envelopes, group bundles, contact cards — and a relay
+does not serve a stored version 3 card.
 
 **Newest wins:** the newest valid card (`issued_at`) is the account's word on its keys, nickname,
 device list, relays and floor; an older card changes nothing. A restored install keeps no cards but knows each account's newest
@@ -367,8 +381,8 @@ grantor, and the grants we issued, one per grantee, with whether it was confirme
   every one says the account is not registered there, its newest card is asked for — its devices over the mesh,
   then the directories of our relays and our other directory providers (`GET /v1/users/by-account`'s
   `account_card`), kept only once it verifies.
-- Our own kept card is re-issued, its device list as it is, when it does not verify (`OwnCards`): the version 3
-  step of `profile.db` leaves our version 2 card in the version 3 shape with its old signature ([DATA_LAYOUT § Schema versions](DATA_LAYOUT.md#schema-versions)).
+- Our own kept card is re-issued, its device list as it is, when it does not verify (`OwnCards`): the `profile.db`
+  steps to card versions 3 and 4 leave our older card in the newer shape with its old signature ([DATA_LAYOUT § Schema versions](DATA_LAYOUT.md#schema-versions)).
 
 ## Resolving keys
 

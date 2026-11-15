@@ -58,24 +58,24 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 - [ ] A key per environment (`qa`, `prod`) from the keygen script: the seed in Secrets Manager, the public key and PeerId recorded in the repo; the variables on the functions and `GetSecretValue` for the registry. In place before the relay deploys.
 
 **App (pp-browser)**
-- [ ] Builders for every domain at its new version with the audience (registration, revoke, profile, icon, heartbeat, LLM token, locker put, blobs, files incl. status, relay API v3 incl. unregister's `binding_id`); `relay_sign_vectors_test.cpp` writes and checks `relay_sign_vectors.json`.
-- [ ] `relay_pins.json` and the pin rules (fetch, one PeerId per origin and one origin per PeerId, never from others' cards, our own card on a linked device, 32 at most); pinned before the first signed call on each relay of ours and on the org's origin; first start after the upgrade pins them all.
-- [ ] Every HTTP client sends its origin's pinned audience; `wrong_audience` fetches the identity once and sets *identity changed* when it differs.
-- [ ] Card version 4: `relays: [{origin, peer_id}]` signed, verified, bounded; version 3 refused everywhere; `KeptRelays` with PeerIds; `profile.db` 7 → 8; ours lists only pinned relays and is re-issued and announced after the upgrade.
-- [ ] Sending: a contact's card entry names the audience; a pin conflict or `wrong_audience` skips the relay (stale-list fetch, no health mark); a locator-only contact pins by fetch.
-- [ ] Revoke with `registration_id` (kept per registration; `registration_mismatch` → renew, revoke once); unregister with `binding_id` (in memory; `binding_mismatch` → register, unregister once).
-- [ ] Self-heal: `not_registered` / `registration_expired` from a relay of ours where we believe we are registered re-registers (the preferred one whatever auto-renew), with backoff.
-- [ ] My relays: Add's identity errors and the re-pin confirm; *Identity changed — not used* with **Accept new identity…**; a changed relay left off the card; the org origin's line; the contact page's *identity doesn't match*.
-- [ ] Contracts promoted in the same PR: SERVICE_ENDPOINTS (identity endpoint, the audience rule and table, `wrong_audience`, the scoped commands, self-heal), ACCOUNT_CARD (version 4), DATA_LAYOUT (`relay_pins.json`, `our_relays.json` `registration_id`, `profile.db` 8), COMPATIBILITY (the cutover rows), UI_DESIGN_SYSTEM (My relays states); MR007's Status updated.
+- [x] Builders for every domain at its new version with the audience (registration, revoke, profile, icon, heartbeat, LLM token, locker put, blobs, files incl. status, relay API v3 incl. unregister's `binding_id`); `relay_sign_vectors_test.cpp` writes and checks `relay_sign_vectors.json`.
+- [x] `relay_pins.json` and the pin rules (fetch, one PeerId per origin and one origin per PeerId, never from others' cards, our own card on a linked device, 32 at most); pinned before the first signed call on each relay of ours and on the org's origin; first start after the upgrade pins them all.
+- [x] Every HTTP client sends its origin's pinned audience; `wrong_audience` fetches the identity once and sets *identity changed* when it differs.
+- [x] Card version 4: `relays: [{origin, peer_id}]` signed, verified, bounded; version 3 refused everywhere; `KeptRelays` with PeerIds; `profile.db` 7 → 8; ours lists only pinned relays and is re-issued and announced after the upgrade.
+- [x] Sending: a contact's card entry names the audience; a pin conflict or `wrong_audience` skips the relay (stale-list fetch, no health mark); a locator-only contact pins by fetch.
+- [x] Revoke with `registration_id` (kept per registration; `registration_mismatch` → renew, revoke once); unregister with `binding_id` (in memory; `binding_mismatch` → register, unregister once).
+- [x] Self-heal: `not_registered` / `registration_expired` from a relay of ours where we believe we are registered re-registers (the preferred one whatever auto-renew), with backoff.
+- [x] My relays: Add's identity errors and the re-pin confirm; *Identity changed — not used* with **Accept new identity…**; a changed relay left off the card; the org origin's line; the contact page's *identity doesn't match*.
+- [x] Contracts promoted in the same PR: SERVICE_ENDPOINTS (identity endpoint, the audience rule and table, `wrong_audience`, the scoped commands, self-heal), ACCOUNT_CARD (version 4), DATA_LAYOUT (`relay_pins.json`, `our_relays.json` `registration_id`, `profile.db` 8), COMPATIBILITY (the cutover rows), UI_DESIGN_SYSTEM (My relays states); MR007's Status updated.
 
 **pp-node**
-- [ ] Registration, heartbeat and revoke carry the audience: the relay's PeerId fetched and pinned in the data directory (no config key); a changed identity logs and stops relay calls.
+- [x] Registration, heartbeat and revoke carry the audience: the relay's PeerId fetched and pinned in the data directory (no config key); a changed identity logs and stops relay calls.
 - [ ] Released with the app (the fleet on it in the prod window).
 
 **Lab**
-- [ ] The local pp-relay-apis stacks A and B with their own identity keys; the TLS front's request recording (lab-only).
-- [ ] Probe: pause and resume sync, clear with an explicit `before`, remove a relay (exists), read the relay identity.
-- [ ] `replayed_calls_refused_at_other_relay` (B-RELAY-AUDIENCE) green; the multi-relay scenarios (`users_on_two_relays_meet`, `preferred_relay_down_mail_still_arrives`, `preferred_relay_switched_mail_still_arrives`, `invite_names_their_relay`) green on the new stacks.
+- [x] The local pp-relay-apis stacks A and B with their own identity keys; the TLS front's request recording (lab-only).
+- [x] Probe: pause and resume sync (`hold_sync`), clear with an explicit `before`, remove a relay (exists), read the relay identity.
+- [x] `replayed_calls_refused_at_other_relay` (B-RELAY-AUDIENCE) written (and the TLS fronts' recording); green; the multi-relay scenarios (`users_on_two_relays_meet`, `preferred_relay_down_mail_still_arrives`, `preferred_relay_switched_mail_still_arrives`, `invite_names_their_relay`) green on the new stacks.
 
 **Deploy**
 - [ ] Relay to `qa` (after infra); app and pp-node branch builds tested against it.

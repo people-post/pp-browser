@@ -270,6 +270,22 @@ the field (`MyRelaysFailureText`: not https, a path, already listed, did not ans
 with "Only your main device can change your relays." Before messaging is up the page says the relays show once
 connected.
 
+**Relay identity states** (multi-relay MR007, [SERVICE_ENDPOINTS § Pins](../contracts/SERVICE_ENDPOINTS.md#pins)):
+
+- A relay whose identity changed reads **Identity changed — not used** in the error colour (no registration or poll
+  line: it is not polled, registered on or sent to, and left off the card) and cannot be made preferred; on the main
+  device it offers **Accept new identity…** beside Remove… (Remove revokes nothing there). Accept's confirm: "Accept
+  this relay's new identity?" / "{relay} now shows a different identity. Accept it only if the relay's operator
+  announced a change; otherwise remove the relay." with **Accept**; then "New identity accepted".
+- The org's origin, when it is not on the list and its identity changed: one error line, "Your app's service server
+  changed identity ({host})", with **Accept new identity…** on any device (lockers stop until then).
+- Add's identity refusals, under the field: "This server doesn't identify itself as a relay.", "This relay is already
+  on your list as {host}.", "This relay is already known as {host}." A relay seen before with another identity asks
+  first: "Add it anyway?" / "This relay shows a different identity than when it was last seen. Add it only if you
+  trust it." with **Add**.
+- The contact page's relay line reads **Identity doesn't match** when the PeerId the contact's card names for its
+  preferred relay disagrees with our pins, or a send found it refused (`ContactRelayView::Reach::IdentityMismatch`).
+
 ## RCSS file layout
 
 ```

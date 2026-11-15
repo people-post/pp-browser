@@ -1,6 +1,6 @@
 # Multi-relay — current state
 
-**As of:** 2026-11-14 (R3 and R4 built)
+**As of:** 2026-11-14 (R3 and R4 built; R5 built on branches, not run in the lab or deployed)
 
 Design written ([DESIGN.md](DESIGN.md)); MR001–MR006 accepted.
 
@@ -86,6 +86,21 @@ Contracts: [SERVICE_ENDPOINTS § Relay services and org services](../../docs/con
 [ACCOUNT_CARD](../../docs/contracts/ACCOUNT_CARD.md), [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md),
 [CONFIGURATION](../../docs/ops/CONFIGURATION.md), [SCANNING](../../docs/ui/SCANNING.md),
 [UI_DESIGN_SYSTEM § My relays](../../docs/ui/UI_DESIGN_SYSTEM.md).
+
+**R5 (MR007, branch `feat/relay-audience`; the relay on pp-relay-apis `feat/relay-identity-audience`), built, not
+merged; a clean cutover with the relay:** every signed relay command names its relay's PeerId (the audience) at a new
+sign version; the app pins each origin to the PeerId its own `GET /v1/relay-identity` answered (`relay_pins.json`) before
+it signs for it, treats another PeerId after `wrong_audience` as *identity changed* (nothing signed until the person
+accepts it in My relays), and signs a send into a contact's relay for the PeerId its card (version 4, `profile.db` 8)
+names; revoke and unregister name the registration and binding they remove; `not_registered` from a relay of ours
+registers there again. pp-node pins its relay the same way. The golden vectors (`relay_sign_vectors.json`, written by
+`relay_sign_vectors_test.cpp`) pass pp-relay-apis' own vector and card tests. Contracts:
+[SERVICE_ENDPOINTS § Relay identity and the audience](../../docs/contracts/SERVICE_ENDPOINTS.md#relay-identity-and-the-audience-multi-relay-mr007),
+[ACCOUNT_CARD](../../docs/contracts/ACCOUNT_CARD.md#account-card), [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md#relay_pinsjson),
+[COMPATIBILITY](../../docs/contracts/COMPATIBILITY.md#clean-cutovers-pre-release),
+[UI_DESIGN_SYSTEM § My relays](../../docs/ui/UI_DESIGN_SYSTEM.md#my-relays). The lab scenario
+`replayed_calls_refused_at_other_relay` runs green on the lab's pp-relay-apis local stacks with MR007 (pp-relay-apis
+`feat/relay-identity-audience`, each stack its own identity), as do the other multi-relay scenarios.
 
 Not yet:
 - Account lockers stay at the org's registration URL and are still written there; with the org's relay removed from
