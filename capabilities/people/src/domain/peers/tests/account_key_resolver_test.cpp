@@ -148,5 +148,21 @@ TEST_F(AccountKeyResolverTest, KeepsACarriedCardOnlyForTheAccountItWasCarriedFor
   EXPECT_TRUE(resolver_->Kem().Resolve(kind_, alice_.account_id));
 }
 
+// D1: our own account's card is our own devices' word (OwnCards: `self`, `sibling`). One carried back by a contact, a
+// directory or a relay is refused, so it never relabels our record (which profile.db's steps and the device list read).
+TEST_F(AccountKeyResolverTest, OurOwnCardCarriedBackByAnyoneElseIsRefused) {
+  directory_.reachable = false;
+  resolver_->SetOwnAccount([this]() { return alice_.account_id; });
+  const Object card = KeyCardToJson(alice_.Card());
+  for (const char* source : {"contact_card", "relay", "directory", "group_roster", "device", "envelope"}) {
+    EXPECT_FALSE(resolver_->AddCarriedCard(card, 0, source)) << source;
+  }
+  EXPECT_FALSE(cards_->Get(alice_.account_id).value().has_value());
+  auto ours = resolver_->AddKeyCard(alice_.Card(), "sibling");
+  ASSERT_TRUE(ours) << ours.error().message;
+  EXPECT_EQ(ours->source, "sibling");
+  EXPECT_TRUE(resolver_->AddCarriedCard(KeyCardToJson(mallory_.Card()), 0, "contact_card")) << "anyone else's";
+}
+
 } // namespace
 } // namespace pbr

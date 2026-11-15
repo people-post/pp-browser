@@ -23,6 +23,8 @@ struct SqliteMigrationContext {
   sqlite3* db = nullptr;
   const ByteVector* dek = nullptr;
   std::string thread_peer_account;
+  /** profile.db: the profile's own Account ID (a step that must tell our own card from others'); empty: not known. */
+  std::string own_account_id;
 };
 
 /** One rung of a database's ladder: from `from` to `from + 1`. The runner wraps it in its own transaction. */
@@ -70,7 +72,8 @@ Roe<int> SqliteUserVersion(sqlite3* db);
  * deleted either way. Not safe against another connection writing meanwhile: run it before the stores open theirs.
  */
 Roe<SqliteLadderOutcome> RunSqliteLadder(sqlite3* db, const std::string& db_path, const SqliteSchemaLadder& ladder,
-                                         const ByteVector* dek = nullptr, std::string thread_peer_account = {});
+                                         const ByteVector* dek = nullptr, std::string thread_peer_account = {},
+                                         std::string own_account_id = {});
 
 /** For steps: whether `table` exists, and whether it has `column`. */
 Roe<bool> SqliteTableExists(sqlite3* db, const std::string& table);

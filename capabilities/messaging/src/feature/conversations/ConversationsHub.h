@@ -278,6 +278,8 @@ public:
    * preferred change replaces it (MR006). Never null (a stand-in that refuses when none is configured). Any thread.
    */
   std::shared_ptr<IRegistrationClient> Registration() const;
+  /** The profile's Account ID (empty before the identity reads). Any thread. */
+  std::string OwnAccountId() const;
   /** Where the identity's registration belongs when a result is stored: the preferred relay now (PersistRenewal). */
   RegistrationHome PreferredRegistrationHome() const;
   /** register/finish's extras for this account: its current card (MR002 / MR005), when it has one to give. */

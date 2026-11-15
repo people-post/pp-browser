@@ -280,17 +280,19 @@ Everything else was keyed by Account ID already and stays. The JSON stores step 
 
 | Kept version 2 card | Becomes |
 |---------------------|---------|
-| Our own (the record `OwnCards` writes: source `self` or `sibling`) | the version 3 shape, no relays, floor 0, its old signature: it does not verify, so the first card asked for is a new one with the same device list (a fresh list would sign the account's other devices out) |
+| Our own (the record of the profile's Account ID, given to the step; its `source` only when that is not known) | the version 3 shape, no relays, floor 0, its old signature: it does not verify, so the first card asked for is a new one with the same device list (a fresh list would sign the account's other devices out) |
 | Anyone else's | dropped from the record; the checked keys stay as a key card, and the account's next envelope asks for its newer card (`sender_card_at`), as the contact page's refresh does |
 
-A record that is not JSON is left as it is. Nothing else in `profile.db` holds a card for later use.
+A record that is not JSON is left as it is. Nothing else in `profile.db` holds a card for later use. A card of our own
+account is kept only from our own devices (`self`, `sibling`): one carried back by a contact, a directory or a relay
+is refused (`AccountKeyResolver`), so nothing relabels our record.
 
 **Account card version 4 (multi-relay MR007), `profile.db` 7 → 8.** Each relay on the card now names its PeerId
 (`relays: [{origin, peer_id}]`), and a version 3 card is refused; in `peer_cards`, the same way:
 
 | Kept version 3 card | Becomes |
 |---------------------|---------|
-| Our own (source `self` or `sibling`) | the version 4 shape without relays (no PeerId is known for the old entries), its floor and device list kept, its old signature: it does not verify, so it is re-issued with the same device list and our pinned relays |
+| Our own (as in 6 → 7: the profile's Account ID's record) | the version 4 shape without relays (no PeerId is known for the old entries), its floor and device list kept, its old signature: it does not verify, so it is re-issued with the same device list and our pinned relays |
 | Anyone else's | dropped from the record; the checked keys stay as a key card, and the card is asked for again (the next envelope's `sender_card_at`, or the contact page's refresh) |
 
 `contacts.json` `remote.locator_relay` stays an origin (the locator carries no PeerId).

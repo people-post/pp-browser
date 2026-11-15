@@ -6,6 +6,7 @@
 #include "lib/storage/SqliteChatStoreGate.h"
 #include "common/Module.h"
 
+#include <functional>
 #include <list>
 #include <mutex>
 #include <optional>
@@ -29,6 +30,8 @@ public:
 
   Roe<void> SetDek(ByteVector dek);
   void ClearDek();
+  /** The profile's own Account ID, read when profile.db's ladder runs (its own-card steps); before SetDek. */
+  void SetOwnAccount(std::function<std::string()> own_account);
   Roe<void> RequireDek() const;
   /** Copy under dek_mutex — for TranscriptCipher calls. */
   ByteVector CopyDek() const;
@@ -78,6 +81,7 @@ private:
   std::string profile_id_;
   ByteVector dek_;
   mutable std::mutex dek_mutex_;
+  std::function<std::string()> own_account_; // under dek_mutex_
   mutable std::mutex profile_mutex_;
   mutable sqlite3* profile_db_ = nullptr;
   mutable std::mutex thread_cache_mutex_;

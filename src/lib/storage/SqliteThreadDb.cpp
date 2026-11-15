@@ -43,6 +43,11 @@ SqliteThreadDb::~SqliteThreadDb() {
   }
 }
 
+void SqliteThreadDb::SetOwnAccount(std::function<std::string()> own_account) {
+  std::lock_guard lock(dek_mutex_);
+  own_account_ = std::move(own_account);
+}
+
 Roe<void> SqliteThreadDb::SetDek(ByteVector dek) {
   if (dek.size() != 32u) {
     return Error("Invalid DEK size");
@@ -150,7 +155,12 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
     return cfg.error();
   }
   const ByteVector dek = CopyDek();
-  auto outcome = RunSqliteLadder(profile_db_, path, ProfileDbLadder(), &dek);
+  std::function<std::string()> own_account;
+  {
+    std::lock_guard lock(dek_mutex_);
+    own_account = own_account_;
+  }
+  auto outcome = RunSqliteLadder(profile_db_, path, ProfileDbLadder(), &dek, {}, own_account ? own_account() : "");
   if (const auto problem = ChatStoreProblemFor(outcome)) {
     return RecordOpenFailure(*problem, *problem == ChatStoreProblem::Newer
                                            ? "Incompatible profile.db: it is from a newer version of the app "

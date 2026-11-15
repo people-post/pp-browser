@@ -161,9 +161,17 @@ Roe<void> ProfileDbAccountIds(const SqliteMigrationContext& context) {
 }
 
 /**
+ * Our own account's record in `peer_cards`: the row of the profile's Account ID (?1). The record's `source` drifts (a
+ * card of ours carried back by a contact, a directory or a relay relabels it), so it decides only when the Account
+ * ID is not known.
+ */
+constexpr const char* kOwnRecord =
+    "(account_id = ?1 OR (?1 = '' AND json_extract(record_json, '$.source') IN ('self', 'sibling')))";
+
+/**
  * 6 → 7, account card version 3 (multi-relay MR002 / MR005: the card signs its relays and floor). A kept version 2
  * card cannot be re-signed here:
- * - our own (the record OwnCards writes, source `self` or `sibling`) takes the version 3 shape with no relays and floor
+ * - our own (the profile's Account ID's record, kOwnRecord) takes the version 3 shape with no relays and floor
  *   0, its old signature kept: it does not verify, so OwnCards re-issues it on its first use, its device list as it
  *   was (a fresh list would sign out the account's other devices);
  * - anyone else's goes, the verified keys staying as a key card: their next envelope asks for the newer card
@@ -176,8 +184,8 @@ Roe<void> ProfileDbCardV3(const SqliteMigrationContext& context) {
       std::string(
           "UPDATE peer_cards SET record_json = json_set(record_json, '$.newest_card.card_version', 3, "
           "'$.newest_card.relays', json('[]'), '$.newest_card.initiation_floor', 0) WHERE ") +
-      kV2 + " AND json_extract(record_json, '$.source') IN ('self', 'sibling')";
-  if (auto done = ExecIfTable(context.db, "peer_cards", own.c_str()); !done) {
+      kV2 + " AND " + kOwnRecord;
+  if (auto done = ExecIfTable(context.db, "peer_cards", own.c_str(), context.own_account_id); !done) {
     return done;
   }
   const std::string others =
@@ -188,7 +196,7 @@ Roe<void> ProfileDbCardV3(const SqliteMigrationContext& context) {
 /**
  * 7 → 8, account card version 4 (multi-relay MR007: each relay on the card names its PeerId). A kept version 3 card
  * cannot be re-signed here (the step 6 → 7 pattern):
- * - our own (source `self` or `sibling`) takes the version 4 shape with no relays, its old signature kept: it does not
+ * - our own (the profile's Account ID's record, kOwnRecord) takes the version 4 shape with no relays, its old signature kept: it does not
  *   verify, so OwnCards re-issues it on its first use with its device list (and our pinned relays);
  * - anyone else's goes, the verified keys staying as a key card: it is asked for again (the next envelope's
  *   `sender_card_at`, or the contact page's refresh).
@@ -199,8 +207,8 @@ Roe<void> ProfileDbCardV4(const SqliteMigrationContext& context) {
   const std::string own = std::string(
                               "UPDATE peer_cards SET record_json = json_set(record_json, "
                               "'$.newest_card.card_version', 4, '$.newest_card.relays', json('[]')) WHERE ") +
-                          kV3 + " AND json_extract(record_json, '$.source') IN ('self', 'sibling')";
-  if (auto done = ExecIfTable(context.db, "peer_cards", own.c_str()); !done) {
+                          kV3 + " AND " + kOwnRecord;
+  if (auto done = ExecIfTable(context.db, "peer_cards", own.c_str(), context.own_account_id); !done) {
     return done;
   }
   const std::string others =

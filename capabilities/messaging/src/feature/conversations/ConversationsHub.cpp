@@ -1185,6 +1185,9 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   if (!opened_stores) {
     return opened_stores.error();
   }
+  if (opened_stores->set_own_account) {
+    opened_stores->set_own_account([this]() { return OwnAccountId(); }); // profile.db's steps tell our card by it
+  }
   store_ = std::move(opened_stores->threads);
   psk_store_ = std::move(opened_stores->peer_sessions);
   control_lane_seen_ = std::move(opened_stores->control_lane_seen);
@@ -1333,6 +1336,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   // The account locker keeps how new each account's newest card is (a restored device refuses older ones).
   peer_cards_->SetOnNewerCard([this]() { PublishAccountLockerSoon(); });
   account_keys_ = std::make_unique<AccountKeyResolver>(signing_key_store_, kem_key_store_, *peer_cards_, directory_);
+  account_keys_->SetOwnAccount([this]() { return OwnAccountId(); }); // our own card is our devices' only
   kept_cards_loaded_ = false; // read at the first EnsureMessagingReady (the cards are in the chat store)
   WireCardReaders();
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
@@ -4614,6 +4618,11 @@ std::shared_ptr<IRegistrationClient> ConversationsHub::Registration() const {
   static const auto unconfigured = std::make_shared<UnconfiguredRegistrationClient>();
   std::lock_guard lock(clients_mu_);
   return registration_ ? registration_ : unconfigured;
+}
+
+std::string ConversationsHub::OwnAccountId() const {
+  auto identity = identity_ ? identity_->Get() : Roe<LocalIdentity>(Error("no identity"));
+  return identity ? identity->account_id : std::string();
 }
 
 RegistrationHome ConversationsHub::PreferredRegistrationHome() const {
