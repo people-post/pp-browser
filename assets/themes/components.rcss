@@ -7524,6 +7524,25 @@ input.checkbox {
   margin-top: 12dp;
 }
 
+/* The default-PIN line with its "?" (dialog and PIN gate): small, centred, below the content. */
+.shell-note-line {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8dp;
+}
+
+.shell-note-line .text {
+  font-size: 13dp;
+}
+
+.shell-note-text {
+  margin-top: 4dp;
+  font-size: 13dp;
+  text-align: center;
+}
+
 .shell-pin-gate-error {
   min-height: 1.2em;
   margin-bottom: 8dp;

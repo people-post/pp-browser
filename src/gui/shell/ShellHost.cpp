@@ -156,6 +156,9 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("dialog_checkbox_checked", &host.state_.dialog.checkbox_checked);
     ctor.Bind("dialog_show_prompt", &host.state_.dialog.show_prompt);
     ctor.Bind("dialog_prompt_value", &host.state_.dialog.prompt_value);
+    ctor.Bind("dialog_note_line", &host.state_.dialog.note_line);
+    ctor.Bind("dialog_note_text", &host.state_.dialog.note_text);
+    ctor.Bind("dialog_note_open", &host.state_.dialog.note_open);
     ctor.Bind("pin_gate_active", &host.state_.pin_gate.active);
     ctor.Bind("pin_gate_identity_fork_mode", &host.state_.pin_gate.identity_fork_mode);
     ctor.Bind("pin_gate_chooser_mode", &host.state_.pin_gate.chooser_mode);
@@ -187,6 +190,9 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_pin", &host.state_.pin_gate.pin);
     ctor.Bind("pin_gate_pin_confirm", &host.state_.pin_gate.pin_confirm);
     ctor.Bind("pin_gate_link_payload", &host.state_.pin_gate.link_payload);
+    ctor.Bind("pin_gate_default_note_line", &host.state_.pin_gate.default_note_line);
+    ctor.Bind("pin_gate_default_note_text", &host.state_.pin_gate.default_note_text);
+    ctor.Bind("pin_gate_default_note_open", &host.state_.pin_gate.default_note_open);
     ctor.Bind("call_ring_active", &host.state_.call_ring.active);
     ctor.Bind("call_ring_pulse", &host.state_.call_ring.pulse);
     ctor.Bind("call_ring_awaiting_invite", &host.state_.call_ring.awaiting_invite);
@@ -375,6 +381,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("dialog_ok", DataEvent<>([this]() { DialogOk(); }));
     ctor.BindEventCallback("dialog_cancel", DataEvent<>([this]() { DialogCancel(); }));
     ctor.BindEventCallback("dialog_toggle_checkbox", DataEvent<>([this]() { DialogToggleCheckbox(); }));
+    ctor.BindEventCallback("dialog_toggle_note", DataEvent<>([this]() { DialogToggleNote(); }));
+    ctor.BindEventCallback("pin_gate_note_toggle", DataEvent<>([this]() { PinGateNoteToggle(); }));
     ctor.BindEventCallback("pin_gate_submit", DataEvent<>([this]() { PinGateSubmit(); }));
     ctor.BindEventCallback("pin_gate_paste", DataEvent<>([this]() { PinGatePaste(); }));
     ctor.BindEventCallback("pin_gate_clear_payload", DataEvent<>([this]() { PinGateClearPayload(); }));
@@ -1344,6 +1352,9 @@ void ShellHost::DirtyFeedback() {
   DataModelHost::Instance().Dirty("window", "dialog_checkbox_checked");
   DataModelHost::Instance().Dirty("window", "dialog_show_prompt");
   DataModelHost::Instance().Dirty("window", "dialog_prompt_value");
+  DataModelHost::Instance().Dirty("window", "dialog_note_line");
+  DataModelHost::Instance().Dirty("window", "dialog_note_text");
+  DataModelHost::Instance().Dirty("window", "dialog_note_open");
 }
 
 void ShellHost::DirtyPinGate() {
@@ -1377,6 +1388,9 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_pin");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_payload");
+  DataModelHost::Instance().Dirty("window", "pin_gate_default_note_line");
+  DataModelHost::Instance().Dirty("window", "pin_gate_default_note_text");
+  DataModelHost::Instance().Dirty("window", "pin_gate_default_note_open");
   DataModelHost::Instance().Dirty("window", "unlock_in_progress");
   DataModelHost::Instance().Dirty("window", "startup_cover_visible");
 }
@@ -3388,6 +3402,17 @@ void ShellHost::DialogCancel() {
 void ShellHost::DialogToggleCheckbox() {
   state_.dialog.checkbox_checked = !state_.dialog.checkbox_checked;
   DirtyFeedback();
+}
+
+void ShellHost::DialogToggleNote() {
+  ShellFeedback::ToggleDialogNote(state_);
+  DirtyFeedback();
+}
+
+void ShellHost::PinGateNoteToggle() {
+  if (pin_gate_actions_.on_note_toggle) {
+    pin_gate_actions_.on_note_toggle();
+  }
 }
 
 void ShellHost::PinGateSubmit() {

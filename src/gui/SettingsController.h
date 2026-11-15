@@ -110,6 +110,8 @@ public:
    * `text_key`'s as its body (both `settings.*` locale keys) and one OK. Local only: no AI, no support chat, no network.
    */
   void OnShowSettingNote(const std::string& title_key, const std::string& text_key);
+  /** The "?" after the default-PIN line on Security: a local note that tells the default PIN. */
+  void OnShowDefaultPinNote();
   /** Shell layout / navigation. Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);
   /** Toast / dialog feedback. Clear via BindShellFeedback({}). */

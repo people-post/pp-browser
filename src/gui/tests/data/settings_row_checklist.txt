@@ -211,6 +211,7 @@ data-event-click="ask_setting_help('settings.security.recovery')"	1	-	security	s
 data-event-click="hide_recovery_phrase()"	2	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
 data-event-click="on_choose_unlock_grace()"	1	security	security	security_grace_shown	security	
 data-event-click="open_security_page('change_pin')"	1	-	security	show_change_pin	security	
+data-event-click="show_default_pin_note()"	1	-	security	pin_protection_is_default	security	
 data-event-click="show_recovery_phrase()"	2	-	security	security_has_recovery_phrase;;recovery_phrase == ''	security	
 data-event-click="toggle_biometric()"	1	security	security	security_biometric_shown	security	
 {{i18n:settings.security.biometric.help}}	1	-	security	security_biometric_shown	security	

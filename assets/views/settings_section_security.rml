@@ -45,9 +45,7 @@
           </button>
         </div>
         <p class="text muted settings-help group-foot" data-if="security_grace_shown">{{i18n:settings.security.grace.caption}}</p>
-        <p class="text muted group-foot" data-if="pin_protection_is_default">
-          {{i18n:settings.security.default_hint}}
-        </p>
+        <div class="settings-q-head row" data-if="pin_protection_is_default"><p class="text muted group-foot">{{i18n:settings.security.default_hint}}</p><button class="settings-q-btn" type="button" data-event-click="show_default_pin_note()"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
         <p class="text muted group-foot" data-if="pin_protection_not_setup">
           {{i18n:settings.security.not_setup_hint}}
         </p>

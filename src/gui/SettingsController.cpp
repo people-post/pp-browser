@@ -25,6 +25,7 @@
 #include "feature/settings/SettingsPortsViews.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/MascotLook.h"
+#include "gui/DefaultPinNote.h"
 #include "gui/ProfileSettingsSection.h"
 #include "gui/shell/RmlMount.h"
 #include "gui/UnlockEnsurePorts.h"
@@ -789,6 +790,10 @@ bool SettingsController::RegisterModel(ui::Context* context) {
             OnShowSettingNote(*title_key, *text_key);
           }
         });
+    ctor.BindEventCallback("show_default_pin_note", [this](ui::DataModelHandle, ui::Event& ev, const ui::VariantList&) {
+      ev.StopPropagation();
+      OnShowDefaultPinNote();
+    });
     ctor.BindEventCallback("on_llm_field_changed", DataEvent<>([this]() { MarkSectionDirty("llm"); }));
     ctor.BindEventCallback("on_llm_preset_changed", DataEventAt([this](ui::Event& ev) { OnLlmPresetChanged(ev); }));
     ctor.BindEventCallback("on_choose_theme", DataEventAt([this](ui::Event& ev) { OnChooseTheme(ev); }));
@@ -2120,6 +2125,14 @@ void SettingsController::OnShowSettingNote(const std::string& title_key, const s
   }
   // The shell's alert: a titled card with the sentence and one OK. No network, no AI.
   shell_feedback_.show_alert(title, text, {}, Tr("common.ok"));
+}
+
+void SettingsController::OnShowDefaultPinNote() {
+  // Only for people on the app's default PIN; the digits are filled in from the constant, a local note, no AI.
+  if (!ui_state_.pin_protection_is_default || !shell_feedback_.show_alert) {
+    return;
+  }
+  shell_feedback_.show_alert(Tr("settings.security.default_hint.title"), DefaultPinNoteText(), {}, Tr("common.ok"));
 }
 
 void SettingsController::OpenNetworkSettings() {

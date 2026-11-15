@@ -20,6 +20,8 @@ struct PinGateActionPorts {
   /** The phrase page's "Use a saved copy…". */
   std::function<void()> on_use_saved_copy;
   std::function<void()> on_forgot_toggle;
+  /** The "?" after the default-PIN line opens / closes its note. */
+  std::function<void()> on_note_toggle;
   /** "Enter PIN instead" while the unlock screen waits for the phone's unlock (PIN grace window). */
   std::function<void()> on_use_pin_instead;
   /** The number pad (DEV/PLAN-pin-gate-redesign.md B): a digit, backspace, a new PIN's "OK", and the two links. */
