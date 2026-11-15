@@ -292,7 +292,7 @@ std::vector<CallSpec> StorageCalls(const VectorKeys& keys) {
   calls.push_back(AccountTextCall("blobs.delete", "pp-browser:relay-blob-delete-v1", "/v1/blobs/delete", account,
                                   "blob_id", kBlobId, BuildBlobDeleteSignBytes));
   calls.push_back(AccountTextCall("blobs.list", "pp-browser:relay-blob-list-v1", "/v1/blobs/list", account, "status",
-                                  "complete", BuildBlobListSignBytes));
+                                  "retained", BuildBlobListSignBytes));
   calls.push_back(AccountTextCall("files.status", "pp-browser:relay-file-status-v1", "/v1/files/status", account,
                                   "blob_id", kBlobId, BuildFileStatusSignBytes));
   calls.push_back(AccountTextCall("files.complete", "pp-browser:relay-file-complete-v1", "/v1/files/complete", account,

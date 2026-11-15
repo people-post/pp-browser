@@ -20,7 +20,7 @@ std::vector<uint8_t> BuildBlobRetainSignBytes(const std::string& audience, const
 std::vector<uint8_t> BuildBlobDeleteSignBytes(const std::string& audience, const std::string& account_id,
                                               const std::string& blob_id, int64_t timestamp);
 
-/** `status_filter` "" (all), "pending" or "complete" (the app does not list blobs yet). */
+/** `status_filter` "" (all), "pending" or "retained" (the app does not list blobs yet). */
 std::vector<uint8_t> BuildBlobListSignBytes(const std::string& audience, const std::string& account_id,
                                             const std::string& status_filter, int64_t timestamp);
 
