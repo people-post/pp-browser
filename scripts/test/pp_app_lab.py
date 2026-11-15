@@ -3378,8 +3378,11 @@ def scenario_a_newer_device_list_follows_the_messages(lab):
     """Every envelope says how new its sender's device list is (M021 d6): Carol shares a group with Bob but is
     not his contact, so what his main device announces never reaches her. Bob links a laptop: his next group
     message brings Carol his newer list (with the laptop: his first copy to her opens their pair, carrying his
-    card). He takes the laptop off: his next message only says his list is newer, Carol asks his device for it
-    through the relay (his privacy gate refuses her a direct link), and she stops writing to the laptop."""
+    card) — unless the laptop told her first: finding Carol's lane records with no copy for it, it shows her its
+    card (MESSAGE_ENCRYPTION § control lane), which may beat his message; either way the list came from a message
+    path, never from nowhere. He takes the laptop off: his next message only says his list is newer, Carol asks his
+    device for it through the relay (his privacy gate refuses her a direct link), and she stops writing to the
+    laptop."""
     users, threads = open_group(lab, 3)
     a, b, c = users
     # Bob and Carol talk first: Bob learns Carol's devices from her message, and his answer opens their device
@@ -3394,12 +3397,13 @@ def scenario_a_newer_device_list_follows_the_messages(lab):
     laptop.wait_mesh()
     laptop_id = laptop.cmd("whoami")["peer_id"]
     wait_for(lambda: laptop_id in b.cmd("devices")["devices"] or None, 40, "bob: the laptop on his list")
-    if laptop_id in c.cmd("kept_card", account=b.account)["devices"]:
+    shown_by_laptop = "card shown to %s" % c.account
+    if laptop_id in c.cmd("kept_card", account=b.account)["devices"] and shown_by_laptop not in laptop.log_text():
         raise ProbeError("carol: knew bob's laptop before any message said so")
     b.cmd("show_chat", thread=threads[b.name])
     b.cmd("compose_send", text="now on two devices")
     wait_for(lambda: laptop_id in c.cmd("kept_card", account=b.account)["devices"] or None, 60,
-             "carol: bob's list with the laptop, from his message")
+             "carol: bob's list with the laptop, from his message or the laptop's card")
     b.cmd("remove_device", peer_id=laptop_id)
     b.cmd("compose_send", text="back to one")
     wait_for(lambda: laptop_id not in c.cmd("kept_card", account=b.account)["devices"] or None, 60,
