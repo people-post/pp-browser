@@ -380,6 +380,12 @@ public:
   void RetryPeerDial(const std::string& thread_id);
 
 private:
+  /** The constructor's steps: card and grant hooks (our card's changes, a grant received, a locator's relay). */
+  void WireCardHooks();
+  /** The receive pipeline and what its cards, edits and retractions reach. */
+  void WireReceivePipeline(GroupInviteGate* invite_gate);
+  /** The outbox's relay, outcomes and pauses, and the transports' inbound and device lookups. */
+  void WireOutbox();
   /** A message to or from a peer over its link: its warm mark lasts (PeerWarmMarks::Touch). */
   void NoteMessageActivity(const std::string& thread_id, const std::string& device_peer_id);
   TrustLevel ResolveThreadTrust(const Thread& thread) const;

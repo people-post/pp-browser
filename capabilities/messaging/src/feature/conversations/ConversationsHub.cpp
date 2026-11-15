@@ -1163,6 +1163,64 @@ void ConversationsHub::PrefetchPeerReachability(const std::string& identity) {
   }
 }
 
+void ConversationsHub::OpenOurRelays(const HubSettings& settings) {
+  // Before My relays (its ports read them) and the clients (each signs for its relay's pin, MR007).
+  pinning_passes_.store(0, std::memory_order_release); // a reset: a pass dropped at Shutdown holds no card back
+  OpenRelayPins();
+  // My relays (multi-relay R3, MR006): the profile's list, seeded once from the deployment's relay and config.
+  CloseMyRelays(); // a profile reset: the old workflow (closed at Shutdown) goes before the store it changes
+  our_relays_ = std::make_unique<OurRelaysStore>(data_dir_);
+  our_relays_->LoadOrSeed(clients_.OrgRelayOf({.relay = settings.relay}), settings.relay_extra_base_urls);
+  CloseRelayRegistrations(); // a reset: closed at Shutdown already
+  auto registrations = std::make_shared<RelayRegistrationsWorkflow>(*identity_);
+  registrations->SetCard([this]() { return RegistrationCard(); });
+  registrations->SetOnResult([this](const std::string& origin, const RelayRegistrationRecord& record) {
+    if (our_relays_) {
+      our_relays_->Record(origin, record);
+    }
+    NotifyOurRelaysChanged();
+  });
+  {
+    std::lock_guard lock(my_relays_mu_);
+    my_relays_ = std::make_shared<MyRelaysWorkflow>(*our_relays_, MyRelaysPorts());
+  }
+  // A relay that took our registration takes our push token too (any relay holding mail can wake the phone).
+  registrations->SetOnRegistered(
+      [this](const std::string& origin) { (void)PushDeviceCoordinator::RegisterOn(*this, origin); });
+  {
+    std::lock_guard lock(relay_registrations_mu_);
+    relay_registrations_ = std::move(registrations);
+  }
+}
+
+void ConversationsHub::OpenContactCards() {
+  contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
+  contact_cards_->SetLocalRelaysAllowed(config_.developer_relays); // a QR code's relay not on a public host: the lab's
+  contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
+  contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, *contact_cards_);
+  contact_refresh_->SetOurRelays(CardDirectories());
+  // The page's *identity doesn't match* (MR007): our pins disagree with the card, or a send found the PeerId refused.
+  contact_refresh_->SetIdentityMismatch(
+      [this](const std::string& account_id, const std::string& origin, const std::string& peer_id) {
+        const auto pins = RelayIdentityPins();
+        return (pins && pins->CheckCardRelay(origin, peer_id) == CardRelayCheck::Mismatch) ||
+               clients_.Sender().AudienceMismatch(account_id, origin);
+      });
+  contact_cards_->SetCardFetcher(
+      [this](const std::string& peer_id, const std::string& account_id, std::function<void(Roe<PeerCardRecord>)> done) {
+        // On the hub's thread, with the address book as it is now: a contact just added (a scanned QR code) is
+        // one we may dial — the republish its add posted may not have run yet (#409).
+        AppRuntime::PostUI([this, peer_id, account_id, done = std::move(done)]() mutable {
+          if (!mesh_messaging_ || shutdown_requested_.load(std::memory_order_acquire)) {
+            done(Error("Messaging not ready"));
+            return;
+          }
+          PublishAddressDisclosure();
+          mesh_messaging_->AccountCards().Fetch(peer_id, account_id, std::move(done));
+        });
+      });
+}
+
 Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::string& profile_data_dir) {
   if (initialized_) {
     return {};
@@ -1219,33 +1277,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   });
   PublishAddressDisclosure();
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
-  // Before My relays (its ports read them) and the clients (each signs for its relay's pin, MR007).
-  pinning_passes_.store(0, std::memory_order_release); // a reset: a pass dropped at Shutdown holds no card back
-  OpenRelayPins();
-  // My relays (multi-relay R3, MR006): the profile's list, seeded once from the deployment's relay and config.
-  CloseMyRelays(); // a profile reset: the old workflow (closed at Shutdown) goes before the store it changes
-  our_relays_ = std::make_unique<OurRelaysStore>(data_dir_);
-  our_relays_->LoadOrSeed(clients_.OrgRelayOf({.relay = settings.relay}), settings.relay_extra_base_urls);
-  CloseRelayRegistrations(); // a reset: closed at Shutdown already
-  auto registrations = std::make_shared<RelayRegistrationsWorkflow>(*identity_);
-  registrations->SetCard([this]() { return RegistrationCard(); });
-  registrations->SetOnResult([this](const std::string& origin, const RelayRegistrationRecord& record) {
-    if (our_relays_) {
-      our_relays_->Record(origin, record);
-    }
-    NotifyOurRelaysChanged();
-  });
-  {
-    std::lock_guard lock(my_relays_mu_);
-    my_relays_ = std::make_shared<MyRelaysWorkflow>(*our_relays_, MyRelaysPorts());
-  }
-  // A relay that took our registration takes our push token too (any relay holding mail can wake the phone).
-  registrations->SetOnRegistered(
-      [this](const std::string& origin) { (void)PushDeviceCoordinator::RegisterOn(*this, origin); });
-  {
-    std::lock_guard lock(relay_registrations_mu_);
-    relay_registrations_ = std::move(registrations);
-  }
+  OpenOurRelays(settings);
   initiation_billing_ = std::make_unique<InitiationBillingStore>(data_dir_);
   (void)initiation_billing_->Load();
   payment_promises_ = std::make_unique<PaymentPromiseStore>(data_dir_);
@@ -1345,31 +1377,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   account_keys_->SetOwnAccount([this]() { return OwnAccountId(); }); // our own card is our devices' only
   kept_cards_loaded_ = false; // read at the first EnsureMessagingReady (the cards are in the chat store)
   WireCardReaders();
-  contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
-  contact_cards_->SetLocalRelaysAllowed(config_.developer_relays); // a QR code's relay not on a public host: the lab's
-  contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
-  contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, *contact_cards_);
-  contact_refresh_->SetOurRelays(CardDirectories());
-  // The page's *identity doesn't match* (MR007): our pins disagree with the card, or a send found the PeerId refused.
-  contact_refresh_->SetIdentityMismatch(
-      [this](const std::string& account_id, const std::string& origin, const std::string& peer_id) {
-        const auto pins = RelayIdentityPins();
-        return (pins && pins->CheckCardRelay(origin, peer_id) == CardRelayCheck::Mismatch) ||
-               clients_.Sender().AudienceMismatch(account_id, origin);
-      });
-  contact_cards_->SetCardFetcher(
-      [this](const std::string& peer_id, const std::string& account_id, std::function<void(Roe<PeerCardRecord>)> done) {
-        // On the hub's thread, with the address book as it is now: a contact just added (a scanned QR code) is
-        // one we may dial — the republish its add posted may not have run yet (#409).
-        AppRuntime::PostUI([this, peer_id, account_id, done = std::move(done)]() mutable {
-          if (!mesh_messaging_ || shutdown_requested_.load(std::memory_order_acquire)) {
-            done(Error("Messaging not ready"));
-            return;
-          }
-          PublishAddressDisclosure();
-          mesh_messaging_->AccountCards().Fetch(peer_id, account_id, std::move(done));
-        });
-      });
+  OpenContactCards();
 
   // The messaging stack, relay-capable once the profile unlocks (no Amp until the mesh is up).
   BuildMessagingObjects();
@@ -1462,6 +1470,82 @@ void ConversationsHub::NotifyMeshReady() {
   });
 }
 
+AccountLockerWorkflow::Sources ConversationsHub::LockerSources() {
+  return AccountLockerWorkflow::Sources{
+      .groups = [this]() -> Roe<std::vector<AccountStateGroup>> {
+        return group_membership_ ? group_membership_->StateGroups()
+                                 : Roe<std::vector<AccountStateGroup>>(std::vector<AccountStateGroup>{});
+      },
+      .card_floors = [this]() -> Roe<std::vector<PeerCardFloor>> {
+        return peer_cards_ ? peer_cards_->NewestKnown() : Roe<std::vector<PeerCardFloor>>(std::vector<PeerCardFloor>{});
+      },
+      .take_dissolved =
+          [this](const std::vector<AccountStateGroup>& groups) {
+            if (group_membership_) {
+              for (const AccountStateGroup& group : groups) {
+                group_membership_->EndDissolvedFromLocker(group);
+              }
+            }
+          },
+      .grants = [this]() -> Roe<std::vector<AccountStateGrant>> {
+        if (!mesh_messaging_) {
+          return std::vector<AccountStateGrant>{};
+        }
+        auto held = mesh_messaging_->RelayGrants().ReceivedForLocker();
+        if (!held) {
+          return held.error();
+        }
+        std::vector<AccountStateGrant> grants;
+        for (const RelayGrant& grant : *held) {
+          grants.push_back(AccountStateGrant{.grantor_account_id = grant.recipient_account_id,
+                                             .grantee_account_id = grant.sender_account_id,
+                                             .issued_at = grant.issued_at,
+                                             .expires_at = grant.expires_at,
+                                             .signature = grant.signature});
+        }
+        return grants;
+      },
+      // A sync: kept keys only (it runs under the locker's lock; a grantor not kept yet is taken at the next).
+      .take_grants = [this](const std::vector<AccountStateGrant>& grants) { TakeLockerGrants(grants, false); },
+      .own_devices = [this]() -> Roe<OwnDeviceList> {
+        if (!mesh_messaging_) {
+          return Error("Messaging is not ready");
+        }
+        return mesh_messaging_->OwnAccountCards().Devices();
+      },
+      .own_system_name = [this]() { return config_.system_device_name; },
+      .relays = [this]() { return LockerRelays(); }};
+}
+
+void ConversationsHub::WireMyRelaysHooks() {
+  // My relays: each poll says whether the relay answered; a linked device follows the main device's list.
+  mesh_messaging_->SetOnInboxPolled([this](const std::string& origin, const bool ok) {
+    if (const auto relays = MyRelays()) {
+      relays->NotePolled(origin, ok, util::NowUnixMs());
+    }
+  });
+  mesh_messaging_->SetOnOwnCardChanged([this](const AccountCard& card) {
+    std::vector<std::string> relays;
+    std::vector<OwnCardRelay> pins;
+    for (const AccountCardRelay& relay : card.relays) {
+      relays.push_back(relay.origin);
+      pins.push_back(OwnCardRelay{.origin = relay.origin, .peer_id = relay.peer_id});
+    }
+    AppRuntime::PostWorkerNormal([this, relays = std::move(relays), pins = std::move(pins)]() {
+      if (shutdown_requested_.load(std::memory_order_acquire) || IsMainDevice()) {
+        return; // the main device's list and pins are its own
+      }
+      // A linked device takes our own card's word on each relay's identity (MR007), then follows its list.
+      if (const auto relay_pins = RelayIdentityPins()) {
+        relay_pins->TakeOwnCard(pins);
+      }
+      if (const auto workflow = MyRelays()) {
+        workflow->FollowCard(relays);
+      }
+    });
+  });
+}
+
 void ConversationsHub::BuildMessagingObjects() {
   mesh_messaging_ =
       std::make_unique<MeshDeliveryOrchestrator>(*store_, *contacts_, *identity_, relay_, *inbox_, *account_keys_,
@@ -1529,53 +1613,7 @@ void ConversationsHub::BuildMessagingObjects() {
   group_links_ = std::make_unique<GroupInviteLinkWorkflow>(*group_roster_, invite_links_.get(), *group_membership_,
                                                            *mesh_messaging_, *identity_);
   BindGroupLinkJoinFamily();
-  account_locker_ = std::make_unique<AccountLockerWorkflow>(
-      *identity_, *contacts_,
-      AccountLockerWorkflow::Sources{
-          .groups = [this]() -> Roe<std::vector<AccountStateGroup>> {
-            return group_membership_ ? group_membership_->StateGroups()
-                                     : Roe<std::vector<AccountStateGroup>>(std::vector<AccountStateGroup>{});
-          },
-          .card_floors = [this]() -> Roe<std::vector<PeerCardFloor>> {
-            return peer_cards_ ? peer_cards_->NewestKnown()
-                               : Roe<std::vector<PeerCardFloor>>(std::vector<PeerCardFloor>{});
-          },
-          .take_dissolved =
-              [this](const std::vector<AccountStateGroup>& groups) {
-                if (group_membership_) {
-                  for (const AccountStateGroup& group : groups) {
-                    group_membership_->EndDissolvedFromLocker(group);
-                  }
-                }
-              },
-          .grants = [this]() -> Roe<std::vector<AccountStateGrant>> {
-            if (!mesh_messaging_) {
-              return std::vector<AccountStateGrant>{};
-            }
-            auto held = mesh_messaging_->RelayGrants().ReceivedForLocker();
-            if (!held) {
-              return held.error();
-            }
-            std::vector<AccountStateGrant> grants;
-            for (const RelayGrant& grant : *held) {
-              grants.push_back(AccountStateGrant{.grantor_account_id = grant.recipient_account_id,
-                                                 .grantee_account_id = grant.sender_account_id,
-                                                 .issued_at = grant.issued_at,
-                                                 .expires_at = grant.expires_at,
-                                                 .signature = grant.signature});
-            }
-            return grants;
-          },
-          // A sync: kept keys only (it runs under the locker's lock; a grantor not kept yet is taken at the next).
-          .take_grants = [this](const std::vector<AccountStateGrant>& grants) { TakeLockerGrants(grants, false); },
-          .own_devices = [this]() -> Roe<OwnDeviceList> {
-            if (!mesh_messaging_) {
-              return Error("Messaging is not ready");
-            }
-            return mesh_messaging_->OwnAccountCards().Devices();
-          },
-          .own_system_name = [this]() { return config_.system_device_name; },
-          .relays = [this]() { return LockerRelays(); }});
+  account_locker_ = std::make_unique<AccountLockerWorkflow>(*identity_, *contacts_, LockerSources());
   account_locker_->SetClient(clients_.Locker());
   account_locker_->SetDataDir(data_dir_);
   // The account's devices keep one address book: a write here nudges the others; a nudge from one syncs here.
@@ -1591,32 +1629,7 @@ void ConversationsHub::BuildMessagingObjects() {
     AppRuntime::PostWorkerNormal([this]() { AnnounceOwnDevicesToContacts(); });
     PublishAccountLockerSoon();
   });
-  // My relays: each poll says whether the relay answered; a linked device follows the main device's list.
-  mesh_messaging_->SetOnInboxPolled([this](const std::string& origin, const bool ok) {
-    if (const auto relays = MyRelays()) {
-      relays->NotePolled(origin, ok, util::NowUnixMs());
-    }
-  });
-  mesh_messaging_->SetOnOwnCardChanged([this](const AccountCard& card) {
-    std::vector<std::string> relays;
-    std::vector<OwnCardRelay> pins;
-    for (const AccountCardRelay& relay : card.relays) {
-      relays.push_back(relay.origin);
-      pins.push_back(OwnCardRelay{.origin = relay.origin, .peer_id = relay.peer_id});
-    }
-    AppRuntime::PostWorkerNormal([this, relays = std::move(relays), pins = std::move(pins)]() {
-      if (shutdown_requested_.load(std::memory_order_acquire) || IsMainDevice()) {
-        return; // the main device's list and pins are its own
-      }
-      // A linked device takes our own card's word on each relay's identity (MR007), then follows its list.
-      if (const auto relay_pins = RelayIdentityPins()) {
-        relay_pins->TakeOwnCard(pins);
-      }
-      if (const auto workflow = MyRelays()) {
-        workflow->FollowCard(relays);
-      }
-    });
-  });
+  WireMyRelaysHooks();
   NotifyMessagingBuilt();
   actions_ =
       std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_, group_membership_.get(),
@@ -3942,6 +3955,50 @@ void ConversationsHub::FlushForExit() {
   }
 }
 
+void ConversationsHub::UnhookMessaging() {
+  if (mesh_messaging_) {
+    mesh_messaging_->SetOnBriefRelayHealthChanged(nullptr);
+    mesh_messaging_->SetOnRelayNotRegistered(nullptr);
+    InvalidateRelayRegistrationSignals();
+    mesh_messaging_->SetOnMessagesChanged(nullptr);
+    mesh_messaging_->SetOnDeliveryNotice(nullptr);
+    mesh_messaging_->SetOnBackgroundUnread(nullptr);
+    mesh_messaging_->SetGroupMembership(nullptr);
+    mesh_messaging_->SetOnSiblingNotice(nullptr);
+    mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(nullptr);
+    mesh_messaging_->SetOnInboxPolled(nullptr);
+    mesh_messaging_->SetOnOwnCardChanged(nullptr);
+  }
+  if (inbox_) {
+    inbox_->SetGroupMembership(nullptr);
+    inbox_->SetCancelPendingSend(nullptr);
+  }
+}
+
+void ConversationsHub::UnregisterDekConsumers() {
+  if (secrets_ != nullptr) {
+    if (attachment_downloads_) {
+      secrets_->UnregisterDekConsumer(attachment_downloads_.get());
+    }
+    if (mesh_messaging_) {
+      if (auto* peer_blob = mesh_messaging_->PeerBlobService()) {
+        secrets_->UnregisterDekConsumer(peer_blob);
+      }
+    }
+    if (identity_) {
+      secrets_->UnregisterDekConsumer(identity_.get());
+    }
+    for (IDekConsumer* at_rest : at_rest_) {
+      secrets_->UnregisterDekConsumer(at_rest);
+    }
+    for (HubParticipant* participant : ParticipantsDown()) {
+      for (IDekConsumer* consumer : participant->DekConsumers()) {
+        secrets_->UnregisterDekConsumer(consumer);
+      }
+    }
+  }
+}
+
 void ConversationsHub::Shutdown() {
   if (!initialized_) {
     return;
@@ -3982,23 +4039,7 @@ void ConversationsHub::Shutdown() {
   if (inbox_) {
     inbox_->SetOnThreadChanged(nullptr);
   }
-  if (mesh_messaging_) {
-    mesh_messaging_->SetOnBriefRelayHealthChanged(nullptr);
-    mesh_messaging_->SetOnRelayNotRegistered(nullptr);
-    InvalidateRelayRegistrationSignals();
-    mesh_messaging_->SetOnMessagesChanged(nullptr);
-    mesh_messaging_->SetOnDeliveryNotice(nullptr);
-    mesh_messaging_->SetOnBackgroundUnread(nullptr);
-    mesh_messaging_->SetGroupMembership(nullptr);
-    mesh_messaging_->SetOnSiblingNotice(nullptr);
-    mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(nullptr);
-    mesh_messaging_->SetOnInboxPolled(nullptr);
-    mesh_messaging_->SetOnOwnCardChanged(nullptr);
-  }
-  if (inbox_) {
-    inbox_->SetGroupMembership(nullptr);
-    inbox_->SetCancelPendingSend(nullptr);
-  }
+  UnhookMessaging();
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnTeardownStarting();
   }
@@ -4015,27 +4056,7 @@ void ConversationsHub::Shutdown() {
   actions_.reset();
   // Unregister DEK consumers before StopMesh → DetachAmpTransports destroys peer_blob
   // (otherwise ProfileSecretsEngine::Shutdown ClearDek UAFs the stale pointer).
-  if (secrets_ != nullptr) {
-    if (attachment_downloads_) {
-      secrets_->UnregisterDekConsumer(attachment_downloads_.get());
-    }
-    if (mesh_messaging_) {
-      if (auto* peer_blob = mesh_messaging_->PeerBlobService()) {
-        secrets_->UnregisterDekConsumer(peer_blob);
-      }
-    }
-    if (identity_) {
-      secrets_->UnregisterDekConsumer(identity_.get());
-    }
-    for (IDekConsumer* at_rest : at_rest_) {
-      secrets_->UnregisterDekConsumer(at_rest);
-    }
-    for (HubParticipant* participant : ParticipantsDown()) {
-      for (IDekConsumer* consumer : participant->DekConsumers()) {
-        secrets_->UnregisterDekConsumer(consumer);
-      }
-    }
-  }
+  UnregisterDekConsumers();
   // Stop mesh (joins MeshPump) before dropping session façade.
   StopMesh();
   // Participants let go of messaging before it goes (the call sessions deliver through it).

@@ -17,6 +17,7 @@
 #include "lib/people/ProfileIdentityView.h"
 #include "common/Module.h"
 #include "feature/conversations/ContactActionDispatcher.h"
+#include "feature/conversations/ContactRefreshWorkflow.h"
 #include "domain/peers/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
@@ -95,13 +96,7 @@ namespace pbr {
 
 class IPeerSessionStore;
 class ProfileSecretsEngine;
-class AccountKeyResolver;
-class ContactCardExchange;
 class ContactProfileRefresh;
-class ContactRefreshWorkflow;
-struct ContactRefreshResult;
-struct ContactRelayView;
-class PeerCards;
 
 /**
  * App-only messaging composition root (also known as ConversationsCore).
@@ -768,6 +763,16 @@ private:
   std::atomic<int> pinning_passes_{0};
   /** Pins our relays and the org's origins not pinned yet, on a worker (they are pinned before anything is signed). */
   void PinOurRelaysSoon();
+  /** Initialize's step: the pins, My relays (its list, seeded once) and our other relays' registrations. */
+  void OpenOurRelays(const HubSettings& settings);
+  /** Initialize's step: the contact cards, the profile refresh and the contact page's Refresh, and their hooks. */
+  void OpenContactCards();
+  /** BuildMessagingObjects' steps: what the account locker reads and takes, and My relays' hooks on the orchestrator. */
+  AccountLockerWorkflow::Sources LockerSources();
+  void WireMyRelaysHooks();
+  /** Shutdown's steps: the orchestrator's and the inbox's hooks into the hub go; the DEK consumers are unregistered. */
+  void UnhookMessaging();
+  void UnregisterDekConsumers();
   /** PinOurRelaysSoon from any thread (the network back, the app in front): whatever a failed fetch's backoff. */
   void RepinOurRelaysSoon();
   /** A relay of ours answered `not_registered` / `registration_expired` (any thread): register there again. */

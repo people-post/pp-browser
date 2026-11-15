@@ -125,6 +125,26 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
                         }),
       inboxes_(InboxPorts()) {
   redirectLogger("MeshDeliveryOrchestrator");
+  WireCardHooks();
+  WireReceivePipeline(invite_gate);
+  WireOutbox();
+  // Blob + chat/history: Amp single entry ([A020] / D10). May also AttachAmpTransports later.
+  if (amp_links) {
+    AttachAmpTransports(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io),
+                        std::move(amp_post_after));
+  } else {
+    log().warning << "direct chat/history/blob unavailable (Amp required)";
+  }
+  chat_sync_ =
+      std::make_unique<ChatSyncWorkflow>(store_, identity_, relay_, *receive_pipeline_, inbox_, transports_.History());
+  chat_sync_->SetOnMessagesChanged([this]() {
+    if (on_messages_changed_) {
+      AppRuntime::PostUI([this]() { on_messages_changed_(); });
+    }
+  });
+}
+
+void MeshDeliveryOrchestrator::WireCardHooks() {
   // A contact added by QR is written to its locator's relay until its card is kept (multi-relay R4).
   recipient_relays_.SetStartingRelays([this](const std::string& account_id) {
     auto contact = contacts_.FindByIdentity(account_id, mesh::ContactIdKind::Account);
@@ -133,6 +153,23 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
   relay_grants_.SetOnGrantReceived([this](const std::string& grantor) {
     AppRuntime::PostWorkerNormal([this, grantor]() { outbox_.ReleaseHeldFor(grantor); });
   });
+  // Our device list changed here (a device linked in, a sibling's newer list, the nickname): our other devices
+  // hear, through our own mailbox (M022).
+  own_cards_.SetOnChanged([this](const AccountCard& card) {
+    log().info << "own account card now lists " << card.devices.size() << " device(s)";
+    AppRuntime::PostWorkerNormal([this]() { NotifySiblings(); });
+    std::function<void(const AccountCard&)> changed;
+    {
+      std::lock_guard lock(own_hooks_mu_);
+      changed = on_own_card_changed_;
+    }
+    if (changed) {
+      changed(card);
+    }
+  });
+}
+
+void MeshDeliveryOrchestrator::WireReceivePipeline(GroupInviteGate* invite_gate) {
   receive_pipeline_ = std::make_unique<RelayReceivePipeline>(
       store_,
       [this](const std::string& account_id) -> std::optional<AccountCard> {
@@ -188,20 +225,6 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
       });
   receive_pipeline_->SetAccountCardFloor(
       [this](const std::string& account_id) { return account_keys_.CardFloor(account_id); });
-  // Our device list changed here (a device linked in, a sibling's newer list, the nickname): our other devices
-  // hear, through our own mailbox (M022).
-  own_cards_.SetOnChanged([this](const AccountCard& card) {
-    log().info << "own account card now lists " << card.devices.size() << " device(s)";
-    AppRuntime::PostWorkerNormal([this]() { NotifySiblings(); });
-    std::function<void(const AccountCard&)> changed;
-    {
-      std::lock_guard lock(own_hooks_mu_);
-      changed = on_own_card_changed_;
-    }
-    if (changed) {
-      changed(card);
-    }
-  });
   receive_pipeline_->SetOnRosterMember([this](const GroupMembershipCodec::MemberJoinedEntry& member) {
     if (member.card) {
       if (auto kept =
@@ -224,6 +247,9 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
       [this](const std::string& thread_id, const ThreadMessage& before, const ThreadMessage& after) {
         inbox_.AfterMessageEdited(thread_id, before, after);
       });
+}
+
+void MeshDeliveryOrchestrator::WireOutbox() {
   transports_.SetInboundHandler([this](RelayEnvelope envelope, std::string from_peer_id) {
     HandleDirectInbound(std::move(envelope), from_peer_id);
   });
@@ -250,20 +276,6 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
     }
   });
   outbox_.SetThreadPaused([this](const std::string& thread_id) { return IsThreadCompromised(thread_id); });
-  // Blob + chat/history: Amp single entry ([A020] / D10). May also AttachAmpTransports later.
-  if (amp_links) {
-    AttachAmpTransports(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io),
-                        std::move(amp_post_after));
-  } else {
-    log().warning << "direct chat/history/blob unavailable (Amp required)";
-  }
-  chat_sync_ =
-      std::make_unique<ChatSyncWorkflow>(store_, identity_, relay_, *receive_pipeline_, inbox_, transports_.History());
-  chat_sync_->SetOnMessagesChanged([this]() {
-    if (on_messages_changed_) {
-      AppRuntime::PostUI([this]() { on_messages_changed_(); });
-    }
-  });
 }
 
 std::optional<std::string> MeshDeliveryOrchestrator::RelayRecipientFor(const std::string& account_id) {
