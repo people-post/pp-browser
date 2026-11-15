@@ -35,6 +35,7 @@ if(WIN32)
     DeviceVitals_Default.cpp
     ThreadCpu_Default.cpp
     MediaThreadName_Default.cpp
+    AutoreleasePool_Default.cpp
     AudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
     SdlAudioBootstrap_Default.cpp
@@ -44,7 +45,8 @@ if(WIN32)
   target_link_libraries(pp_lib_media PRIVATE mfplat mf mfuuid)
 elseif(APPLE)
   target_sources(pp_lib_media PRIVATE VideoCodec_Darwin.cpp DeviceVitals_Darwin.mm MicPermission_Darwin.mm
-    ThreadCpu_Darwin.mm MediaThreadName_Darwin.mm)
+    ThreadCpu_Darwin.mm MediaThreadName_Darwin.mm
+    AutoreleasePool_Darwin.mm)
   target_link_libraries(pp_lib_media PRIVATE
     "-framework Foundation"
     "-framework VideoToolbox"
@@ -77,6 +79,7 @@ elseif(ANDROID)
     DeviceVitals_Android.cpp
     ThreadCpu_Default.cpp
     MediaThreadName_Default.cpp
+    AutoreleasePool_Default.cpp
     AudioSession_Android.cpp
     CameraCaptureOrientation_Android.cpp
     SdlAudioBootstrap_Default.cpp
@@ -91,6 +94,7 @@ else()
     DeviceVitals_Default.cpp
     ThreadCpu_Default.cpp
     MediaThreadName_Default.cpp
+    AutoreleasePool_Default.cpp
     AudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
     SdlAudioBootstrap_Linux.cpp

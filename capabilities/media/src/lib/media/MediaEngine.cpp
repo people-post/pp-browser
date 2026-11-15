@@ -1,4 +1,5 @@
 #include "lib/media/MediaEngine.h"
+#include "lib/media/AutoreleasePool.h"
 #include "lib/media/MediaThreadName.h"
 
 #include "mesh/types/MediaChannel.h"
@@ -1962,6 +1963,7 @@ struct MediaEngine::Impl {
           std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count());
     };
     while (video_running.load()) {
+      AutoreleasePoolScope pool; // this thread has no pool of its own: drain per turn (frame read, encode)
       if (video_need_keyframe.exchange(false, std::memory_order_acq_rel)) {
         need_keyframe = true;
       }
