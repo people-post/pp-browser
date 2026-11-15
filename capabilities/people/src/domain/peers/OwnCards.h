@@ -20,6 +20,8 @@ namespace pbr {
 /** What a device that its account's newest list leaves out is told (M021 d4). */
 inline constexpr const char kSignedOutMessage[] =
     "This device was signed out of your account. Link it again from your main device to use it.";
+/** A linked device whose kept card does not verify (stepped up on disk): the main device's newer card comes first. */
+inline constexpr const char kAwaitingMainCardMessage[] = "account card: waiting for the main device's card";
 
 /** The account's devices as this device knows them (M021 d4): the newest card's list; its first is the master. */
 struct OwnDeviceList {
@@ -46,7 +48,9 @@ public:
   Roe<KeyCard> Keys();
   /**
    * The account card: the newest this device knows, re-issued when this device's entry or the nickname changed
-   * (or to join / start fresh, per `card_intent`). An error (kSignedOutMessage) when this device is signed out.
+   * (or to join / start fresh, per `card_intent`). An error (kSignedOutMessage) when this device is signed out, and
+   * (kAwaitingMainCardMessage) on a linked device whose kept card does not verify: only the main device re-issues it
+   * (its relays are the main device's to give).
    */
   Roe<AccountCard> Card(int64_t now_ms);
   /**

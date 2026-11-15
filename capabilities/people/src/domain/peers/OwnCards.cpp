@@ -196,6 +196,12 @@ Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
       return Error(kSignedOutMessage);
     }
     intent_done = !identity->card_intent.empty();
+    const bool master = devices.front().peer_id == self->peer_id;
+    if (!master && *newest && !VerifiedLocked(**newest, now_ms)) {
+      // A card stepped up on disk (profile.db 7 → 8: its relays gone, its signature over the old bytes): its relays
+      // are the main device's to give, so this device waits for the main device's card instead of re-issuing it.
+      return Error(kAwaitingMainCardMessage);
+    }
     std::vector<AccountCardRelay> relays = RelaysLocked(devices, self->peer_id, *newest);
     return IssueLocked(*newest,
                        CardContent{.devices = std::move(devices),

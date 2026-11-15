@@ -291,6 +291,31 @@ TEST_F(OwnCardsTest, AKeptCardThatDoesNotVerifyIsReissuedWithItsList) {
   EXPECT_EQ(phone.own->Card(kNow + 60).value(), reissued);
 }
 
+// D5: on a linked device the stepped card (its relays gone with the step) is not re-issued: its relays are the main
+// device's to give, so the linked device waits for the main device's card, then takes it.
+TEST_F(OwnCardsTest, ALinkedDeviceDoesNotReissueAKeptCardThatDoesNotVerify) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  phone.own->SetRelays(Relays({"https://a.example/api/relay"}));
+  const AccountCard joined = LinkLaptop(phone, laptop, kNow);
+  PeerCardRecord stepped = laptop.rows.Get(joined.keys.account_id).value().value();
+  stepped.newest_card->relays.clear();
+  stepped.newest_card->card_signature_b64 = joined.keys.kem_binding_signature_b64;
+  ASSERT_TRUE(laptop.rows.Put(stepped));
+
+  auto waiting = laptop.own->Card(kNow + 50);
+  ASSERT_FALSE(waiting);
+  EXPECT_EQ(waiting.error().message, kAwaitingMainCardMessage);
+  EXPECT_EQ(laptop.rows.Get(joined.keys.account_id).value()->newest_card->issued_at, joined.issued_at)
+      << "nothing issued";
+
+  const AccountCard mains = phone.own->Card(kNow + 60).value(); // the phone's own copy verifies: as it was
+  ASSERT_TRUE(laptop.own->Learn(phone.own->Card(kNow + 70).value(), kNow + 70));
+  const AccountCard taken = laptop.own->Card(kNow + 80).value();
+  EXPECT_EQ(taken.relays, Relays({"https://a.example/api/relay"})) << "the main device's relays";
+  EXPECT_EQ(taken, mains);
+}
+
 TEST_F(OwnCardsTest, ARestoredDeviceStartsAFreshListAndTheOthersAreSignedOut) {
   Device phone(dir_ / "phone");
   Device laptop(dir_ / "laptop");

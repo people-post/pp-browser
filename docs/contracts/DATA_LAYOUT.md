@@ -292,7 +292,7 @@ is refused (`AccountKeyResolver`), so nothing relabels our record.
 
 | Kept version 3 card | Becomes |
 |---------------------|---------|
-| Our own (as in 6 → 7: the profile's Account ID's record) | the version 4 shape without relays (no PeerId is known for the old entries), its floor and device list kept, its old signature: it does not verify, so it is re-issued with the same device list and our pinned relays |
+| Our own (as in 6 → 7: the profile's Account ID's record) | the version 4 shape without relays (no PeerId is known for the old entries), its floor and device list kept, its old signature: it does not verify, so the main device re-issues it with the same device list and our pinned relays; a linked device does not (the relays are the main device's to give): it waits for the main device's card |
 | Anyone else's | dropped from the record; the checked keys stay as a key card, and the card is asked for again (the next envelope's `sender_card_at`, or the contact page's refresh) |
 
 `contacts.json` `remote.locator_relay` stays an origin (the locator carries no PeerId).
