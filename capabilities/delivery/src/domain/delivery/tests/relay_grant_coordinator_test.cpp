@@ -42,7 +42,11 @@ ByteVector TestDek() {
 class NoDirectory : public mesh::IDirectoryClient {
 public:
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string&) override { return Error("none"); }
-  Roe<mesh::DirectoryHit> LookupByAccount(const std::string&) override { return Error("none"); }
+  Roe<mesh::DirectoryHit> LookupByAccount(const std::string&) override {
+    ++lookups;
+    return Error("none");
+  }
+  int lookups = 0;
 };
 
 class AnyPeerKem final : public IPeerKemKeyResolver {
@@ -338,21 +342,39 @@ TEST_F(RelayGrantCoordinatorTest, AGrantTheLockerCarriedIsKeptOnlyWhenItProvesIt
       IssueRelayGrant(bob_.account_id, "account:carol", now_.load(), [this](const std::vector<uint8_t>& bytes) {
         return bob_.Sign(bytes);
       }).value();
-  grants_->TakeFromLocker({forged, to_carol});
+  grants_->TakeFromLocker({forged, to_carol}, true);
   EXPECT_FALSE(grant_store_.Received(bob_.account_id).value()) << "not Bob's signature, or not for us";
   EXPECT_TRUE(released.empty());
 
   const RelayGrant grant = BobsGrant(now_.load());
-  grants_->TakeFromLocker({grant});
+  grants_->TakeFromLocker({grant}, true);
   EXPECT_EQ(grant_store_.Received(bob_.account_id).value(), grant);
   EXPECT_EQ(grants_->SendHooks().grant_for(bob_.account_id), grant) << "it rides our first send to Bob";
   EXPECT_EQ(released, std::vector<std::string>{bob_.account_id});
   EXPECT_EQ(Settled(bob_.account_id), 0) << "no ack: Bob acked it when our other device got it";
 
-  grants_->TakeFromLocker({BobsGrant(now_.load() - kDayMs)});
+  grants_->TakeFromLocker({BobsGrant(now_.load() - kDayMs)}, true);
   EXPECT_EQ(grant_store_.Received(bob_.account_id).value(), grant) << "an older one does not replace it";
   EXPECT_EQ(released.size(), 1u);
   EXPECT_EQ(grants_->ReceivedForLocker().value(), std::vector<RelayGrant>{grant}) << "and the locker gets it back";
+}
+
+// D8: a locker sync (under the locker's lock, every few minutes) checks a grant against kept keys only; a restore,
+// which keeps no key yet, looks its grantor up.
+TEST_F(RelayGrantCoordinatorTest, ALockerSyncChecksGrantsAgainstKeptKeysOnlyARestoreLooksThemUp) {
+  const test::TestAccount carol = test::TestAccount::Make(); // a grantor whose key is not kept
+  const RelayGrant from_carol =
+      IssueRelayGrant(carol.account_id, me_, now_.load(), [&carol](const std::vector<uint8_t>& bytes) {
+        return carol.Sign(bytes);
+      }).value();
+  directory_.lookups = 0;
+  grants_->TakeFromLocker({from_carol}, false);
+  EXPECT_EQ(directory_.lookups, 0) << "a sync asks no one";
+  EXPECT_FALSE(grant_store_.Received(carol.account_id).value());
+  grants_->TakeFromLocker({from_carol}, true);
+  EXPECT_GT(directory_.lookups, 0) << "a restore looks the grantor up";
+  grants_->TakeFromLocker({BobsGrant(now_.load())}, false);
+  EXPECT_TRUE(grant_store_.Received(bob_.account_id).value()) << "a kept grantor's grant is taken at a sync";
 }
 
 TEST_F(RelayGrantCoordinatorTest, ARefusedGrantIsDroppedAndAskedForAgain) {

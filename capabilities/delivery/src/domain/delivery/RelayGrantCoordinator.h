@@ -91,10 +91,11 @@ public:
   Roe<std::vector<RelayGrant>> ReceivedForLocker();
   /**
    * Grants the account locker carried from another device of ours: each is kept only when it is to us, newer than
-   * the one held from its grantor, and checks against the grantor's account key (resolved, so blocking: a worker);
-   * then sends its stranger quota held back go, as on a grant received. The rest is dropped (logged).
+   * the one held from its grantor, and checks against the grantor's account key; then sends its stranger quota held
+   * back go, as on a grant received. The rest is dropped (logged). `look_up_keys`: a grantor whose key is not kept is
+   * looked up (a restore: nothing is kept yet; blocking, a worker); else kept keys only (a locker sync, under its lock).
    */
-  void TakeFromLocker(const std::vector<RelayGrant>& grants);
+  void TakeFromLocker(const std::vector<RelayGrant>& grants, bool look_up_keys);
   /** A notice from `sender` (the lane's verified sender). Family's `apply`. */
   Roe<void> OnNotice(const relay_grant::Notice& notice, const std::string& sender);
 

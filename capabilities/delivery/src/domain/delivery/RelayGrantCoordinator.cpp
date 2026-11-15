@@ -305,7 +305,7 @@ Roe<std::vector<RelayGrant>> RelayGrantCoordinator::ReceivedForLocker() {
   return store ? store->AllReceived() : Roe<std::vector<RelayGrant>>(std::vector<RelayGrant>{});
 }
 
-void RelayGrantCoordinator::TakeFromLocker(const std::vector<RelayGrant>& grants) {
+void RelayGrantCoordinator::TakeFromLocker(const std::vector<RelayGrant>& grants, const bool look_up_keys) {
   IRelayGrantStore* store = nullptr;
   std::function<void(const std::string&)> on_received;
   {
@@ -326,7 +326,8 @@ void RelayGrantCoordinator::TakeFromLocker(const std::vector<RelayGrant>& grants
     if (held && *held && (*held)->issued_at >= grant.issued_at) {
       continue;
     }
-    auto key = peer_keys_.Signing().Resolve("account", grantor);
+    auto key = look_up_keys ? peer_keys_.Signing().Resolve("account", grantor)
+                            : peer_keys_.KeptSigning().Resolve("account", grantor);
     if (!key) {
       log().warning << "relay grant from the locker not kept: no key for its grantor (" << key.error().message << ")";
       continue;
