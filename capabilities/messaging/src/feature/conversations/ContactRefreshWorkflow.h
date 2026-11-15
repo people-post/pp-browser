@@ -129,9 +129,12 @@ Contact MergeContactRefresh(Contact contact, const ContactRefreshInputs& inputs,
  */
 class ContactRefreshWorkflow {
 public:
-  /** One relay's row for an account, unauthenticated; none: not registered there (LookupStoredAccount). */
-  using RelayLookup =
-      std::function<Roe<std::optional<StoredAccountRow>>(const std::string& origin, const std::string& account_id)>;
+  /**
+   * One relay's row for an account, unauthenticated; none: not registered there (LookupStoredAccount). `public_only`:
+   * one of the contact's relays, held to a public host outside the lab (DevCaBundleActive).
+   */
+  using RelayLookup = std::function<Roe<std::optional<StoredAccountRow>>(
+      const std::string& origin, const std::string& account_id, bool public_only)>;
   /** Relays remembered at most for the contact page (the oldest forgotten first). */
   static constexpr size_t kMaxRemembered = 512;
 

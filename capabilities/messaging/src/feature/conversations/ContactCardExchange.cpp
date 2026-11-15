@@ -48,7 +48,9 @@ void AppendMissing(std::vector<std::string>& into, const std::vector<std::string
 
 ContactCardExchange::ContactCardExchange(ContactsStore& contacts, AccountKeyResolver& keys)
     : contacts_(contacts), keys_(keys) {
-  fetch_stored_ = &FetchStoredAccountCard;
+  fetch_stored_ = [](const std::string& relay_origin, const std::string& account_id, const bool public_only) {
+    return FetchStoredAccountCard(relay_origin, account_id, public_only);
+  };
   redirectLogger("ContactCardExchange");
 }
 
@@ -197,7 +199,8 @@ bool ContactCardExchange::FetchFromRelay(const std::string& relay, const std::st
   if (relay.empty() || !fetch_stored_) {
     return false;
   }
-  auto stored = fetch_stored_(relay, account_id);
+  // The locator's relay is not ours: asked over https to a public address only, outside developer builds.
+  auto stored = fetch_stored_(relay, account_id, !local_relays_allowed_.load(std::memory_order_relaxed));
   if (!stored || !*stored) {
     return false;
   }

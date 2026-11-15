@@ -1,6 +1,7 @@
 #include "feature/conversations/ContactRefreshWorkflow.h"
 
 #include "common/directory/KeyCard.h"
+#include "foundation/tls/CurlSsl.h"
 #include "lib/net/RelayOrigins.h"
 #include "lib/people/AccountCard.h"
 #include "common/runtime/AppRuntime.h"
@@ -171,7 +172,9 @@ ContactRefreshWorkflow::ContactRefreshWorkflow(ContactsStore& contacts, AccountK
       cards_(cards),
       post_blocking_([](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); }),
       post_ui_([](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); }),
-      lookup_(&LookupStoredAccount) {}
+      lookup_([](const std::string& origin, const std::string& account_id, const bool public_only) {
+        return LookupStoredAccount(origin, account_id, public_only);
+      }) {}
 
 ContactRefreshWorkflow::~ContactRefreshWorkflow() = default;
 
@@ -288,7 +291,10 @@ bool ContactRefreshWorkflow::AskRelay(Run& run, const std::string& origin,
     std::lock_guard lock(mutex_);
     lookup = lookup_;
   }
-  auto answer = lookup ? lookup(origin, run.account_id) : Roe<std::optional<StoredAccountRow>>(Error("no lookup"));
+  // A contact's relay came from its card or QR code: held to a public host, as the relays its messages go to.
+  const bool public_only = whose == ContactRefreshResult::RelayAsk::Whose::Theirs && !DevCaBundleActive();
+  auto answer =
+      lookup ? lookup(origin, run.account_id, public_only) : Roe<std::optional<StoredAccountRow>>(Error("no lookup"));
   Outcome outcome = Outcome::Answered;
   if (!answer) {
     outcome = Outcome::Unreachable;

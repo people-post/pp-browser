@@ -78,17 +78,19 @@ struct StoredAccountRow {
 /**
  * The row the relay at `relay_base_url` keeps for `account_id`, unauthenticated (the lookup is public); none when the
  * account is not registered there (404). A row for another account is an error. Unchecked: the caller keeps keys and
- * card only once they verify (AccountKeyResolver).
+ * card only once they verify (AccountKeyResolver). `public_only`: a relay not ours (a contact's card or QR code named
+ * it): an origin outside IsPublicRelayOrigin is not asked at all, and the request goes over https to a public address
+ * only (no proxy, no redirect), as a contact's relay client's do.
  */
 Roe<std::optional<StoredAccountRow>> LookupStoredAccount(const std::string& relay_base_url,
-                                                         const std::string& account_id);
+                                                         const std::string& account_id, bool public_only = false);
 
 /**
  * The account card `account_id` registered with on the relay at `relay_base_url` (LookupStoredAccount's `card`);
- * none when the account is not registered there or gave none.
+ * none when the account is not registered there or gave none. `public_only` as there.
  */
 Roe<std::optional<pp::common::Object>> FetchStoredAccountCard(const std::string& relay_base_url,
-                                                              const std::string& account_id);
+                                                              const std::string& account_id, bool public_only = false);
 
 /** Try each backend in order until one succeeds (N029 nd3). */
 class FailoverDirectoryClient : public mesh::IDirectoryClient {

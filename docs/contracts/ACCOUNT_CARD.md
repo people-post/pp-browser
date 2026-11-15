@@ -96,7 +96,8 @@ A key card plus what the account says about itself, signed as a whole.
   one typed in My relays): no loopback, private, link-local, CGNAT or reserved IP literal, no `localhost`,
   `*.localhost`, `*.local`, `*.internal` or single-label name; an origin outside it is skipped like an unreachable
   relay. Its requests also refuse any address that resolves non-public (checked after DNS), use no proxy and follow no
-  redirect. The card, its signature and the list's bounds are unchanged, and our own relays are exempt. A Debug build
+  redirect — the sends, and the stored card a Refresh or a QR contact asks a contact's relay for
+  (`LookupStoredAccount` with `public_only`). The card, its signature and the list's bounds are unchanged, and our own relays are exempt. A Debug build
   with `PP_BROWSER_CA_BUNDLE` set (the lab) lifts the policy.
 - `initiation_floor` — the account's price for opening a chat or a call with it, in `pp_credit` minor units
   ([pricing P001](../../projects/pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet),

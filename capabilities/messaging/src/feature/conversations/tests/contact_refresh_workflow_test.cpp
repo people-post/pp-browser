@@ -67,9 +67,10 @@ protected:
     workflow_->SetPosts([this](std::function<void()> task) { blocking_.push_back(std::move(task)); },
                         [this](std::function<void()> task) { ui_.push_back(std::move(task)); });
     // A relay answers as the test scripted it; one not scripted does not know the account.
-    workflow_->SetLookup([this](const std::string& origin,
-                                const std::string& account_id) -> Roe<std::optional<StoredAccountRow>> {
+    workflow_->SetLookup([this](const std::string& origin, const std::string& account_id,
+                                const bool public_only) -> Roe<std::optional<StoredAccountRow>> {
       asked_.push_back("relay:" + origin);
+      public_only_[origin] = public_only;
       EXPECT_EQ(account_id, bob_.account_id) << "relays are asked by Account ID";
       auto it = relays_.find(origin);
       return it == relays_.end() ? Roe<std::optional<StoredAccountRow>>(std::optional<StoredAccountRow>{}) : it->second;
@@ -175,6 +176,8 @@ protected:
 
   std::filesystem::path dir_;
   Asked asked_;
+  /** Per relay asked: whether it was asked over a public address only. */
+  std::map<std::string, bool> public_only_;
   std::map<std::string, Roe<std::optional<StoredAccountRow>>> relays_;
   NoDirectory directory_;
   PeerSigningKeyStore signing_;
@@ -211,6 +214,9 @@ TEST_F(ContactRefreshWorkflowTest, AsksTheDevicesThenTheirRelaysInOrderThenOurs)
   ASSERT_NE(result.AnsweredBy(), nullptr);
   EXPECT_EQ(result.AnsweredBy()->origin, kOurOther);
   EXPECT_EQ(Stored(id).remote.nickname, "Bob D.");
+  // His relays came from his card: asked over https to public addresses only (the lab's CA bundle is not set here).
+  EXPECT_EQ(public_only_,
+            (std::map<std::string, bool>{{kBobsA, true}, {kBobsB, true}, {kOurs, true}, {kOurOther, false}}));
 }
 
 TEST_F(ContactRefreshWorkflowTest, ARelayDownMeansTheNextOneAndTheFirstThatKnowsThemEndsIt) {

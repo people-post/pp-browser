@@ -155,7 +155,7 @@ TEST_F(ContactCardExchangeTest, AnInviteWithARelayStartsTheContactsRelayListWith
   });
   exchange_->SetBlockingPost([](std::function<void()> task) { task(); });
   exchange_->SetStoredCardFetch(
-      [](const std::string&, const std::string&) -> Roe<std::optional<Object>> { return Error("relay down"); });
+      [](const std::string&, const std::string&, bool) -> Roe<std::optional<Object>> { return Error("relay down"); });
   std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
   exchange_->AddFromLocator(
       ContactLocator{
@@ -185,10 +185,13 @@ TEST_F(ContactCardExchangeTest, ALocatorsRelayAtALocalAddressIsLeftOutUnlessADev
   });
   exchange_->SetBlockingPost([](std::function<void()> task) { task(); });
   std::vector<std::string> asked;
-  exchange_->SetStoredCardFetch([&](const std::string& origin, const std::string&) -> Roe<std::optional<Object>> {
-    asked.push_back(origin);
-    return std::optional<Object>{};
-  });
+  std::vector<bool> public_only;
+  exchange_->SetStoredCardFetch(
+      [&](const std::string& origin, const std::string&, const bool only_public) -> Roe<std::optional<Object>> {
+        asked.push_back(origin);
+        public_only.push_back(only_public);
+        return std::optional<Object>{};
+      });
   const auto add = [this](const std::string& relay) {
     std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
     exchange_->AddFromLocator(ContactLocator{.account_id = bob_.account_id, .devices = {"QmBobPhone"}, .relay = relay},
@@ -203,6 +206,11 @@ TEST_F(ContactCardExchangeTest, ALocatorsRelayAtALocalAddressIsLeftOutUnlessADev
   exchange_->SetLocalRelaysAllowed(true);
   EXPECT_EQ(add("https://192.168.1.5/api/relay"), "https://192.168.1.5/api/relay");
   EXPECT_EQ(asked, (std::vector<std::string>{"https://192.168.1.5/api/relay"}));
+  EXPECT_EQ(public_only, (std::vector<bool>{false})) << "the lab's: asked wherever it is";
+
+  exchange_->SetLocalRelaysAllowed(false);
+  EXPECT_EQ(add("https://relay.example/api/relay"), "https://relay.example/api/relay");
+  EXPECT_EQ(public_only, (std::vector<bool>{false, true})) << "a release build asks it over a public address only";
 }
 
 TEST_F(ContactCardExchangeTest, NoDeviceReachedTheLocatorsRelayGivesTheCard) {
@@ -213,7 +221,7 @@ TEST_F(ContactCardExchangeTest, NoDeviceReachedTheLocatorsRelayGivesTheCard) {
   exchange_->SetBlockingPost([](std::function<void()> task) { task(); });
   std::vector<std::string> asked;
   exchange_->SetStoredCardFetch(
-      [&](const std::string& origin, const std::string& account_id) -> Roe<std::optional<Object>> {
+      [&](const std::string& origin, const std::string& account_id, bool) -> Roe<std::optional<Object>> {
         asked.push_back(origin);
         EXPECT_EQ(account_id, bob_.account_id);
         return std::optional<Object>(AccountCardToJson(card));

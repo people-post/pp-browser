@@ -24,7 +24,11 @@ struct DeviceAnswer {
 } // namespace
 
 RecipientRelays::RecipientRelays(AccountKeyResolver& keys, DeviceAsk ask_device)
-    : keys_(keys), ask_device_(std::move(ask_device)), fetch_stored_(&FetchStoredAccountCard) {
+    : keys_(keys),
+      ask_device_(std::move(ask_device)),
+      fetch_stored_([](const std::string& relay_origin, const std::string& account_id) {
+        return FetchStoredAccountCard(relay_origin, account_id); // our directories: not held to a public host
+      }) {
   redirectLogger("RecipientRelays");
 }
 

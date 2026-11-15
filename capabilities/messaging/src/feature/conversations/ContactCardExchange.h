@@ -44,9 +44,12 @@ public:
   void SetCardFetcher(CardFetcher fetcher) { fetch_card_ = std::move(fetcher); }
   /** Where a blocking step (a directory lookup) runs; the background worker unless a test says otherwise. */
   void SetBlockingPost(std::function<void(std::function<void()>)> post) { post_blocking_ = std::move(post); }
-  /** The card a relay keeps for an account (FetchStoredAccountCard); none: none kept there. Blocking. */
-  using StoredCardFetch =
-      std::function<Roe<std::optional<Object>>(const std::string& relay_origin, const std::string& account_id)>;
+  /**
+   * The card a relay keeps for an account (FetchStoredAccountCard); none: none kept there. Blocking. `public_only`: the
+   * locator's relay outside developer builds (SetLocalRelaysAllowed off).
+   */
+  using StoredCardFetch = std::function<Roe<std::optional<Object>>(const std::string& relay_origin,
+                                                                   const std::string& account_id, bool public_only)>;
   /** Tests: how a relay's stored card is fetched (default: over HTTP). */
   void SetStoredCardFetch(StoredCardFetch fetch) { fetch_stored_ = std::move(fetch); }
   /**

@@ -1,5 +1,7 @@
 #include "lib/net/OrgBackendClientsImpl.h"
 
+#include "lib/net/RelayOrigins.h"
+
 #include "common/Diag.h"
 #include "common/Utilities.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -242,11 +244,15 @@ Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& 
 }
 
 Roe<std::optional<StoredAccountRow>> LookupStoredAccount(const std::string& relay_base_url,
-                                                         const std::string& account_id) {
+                                                         const std::string& account_id, const bool public_only) {
   if (relay_base_url.empty() || account_id.rfind("account:", 0) != 0) {
     return Error("Stored account lookup: no relay or no Account ID");
   }
-  const auto response = HttpClient::Get(relay_base_url + "/v1/users/by-account/" + EncodePathSegment(account_id));
+  if (public_only && !IsPublicRelayOrigin(relay_base_url)) {
+    return Error("Stored account lookup: the relay is not on a public host");
+  }
+  const auto response = HttpClient::Get(relay_base_url + "/v1/users/by-account/" + EncodePathSegment(account_id), {},
+                                        kMaxHttpClientBodyBytes, {}, public_only);
   if (!response) {
     return response.error();
   }
@@ -267,8 +273,9 @@ Roe<std::optional<StoredAccountRow>> LookupStoredAccount(const std::string& rela
   return std::optional<StoredAccountRow>(std::move(row));
 }
 
-Roe<std::optional<Object>> FetchStoredAccountCard(const std::string& relay_base_url, const std::string& account_id) {
-  auto row = LookupStoredAccount(relay_base_url, account_id);
+Roe<std::optional<Object>> FetchStoredAccountCard(const std::string& relay_base_url, const std::string& account_id,
+                                                  const bool public_only) {
+  auto row = LookupStoredAccount(relay_base_url, account_id, public_only);
   if (!row) {
     return row.error();
   }
