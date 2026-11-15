@@ -11,7 +11,7 @@ namespace pbr {
  */
 bool WatchScreenKeyboard(std::function<void()> on_change);
 
-/** Height the on-screen keyboard covers at the bottom of the screen, in window points; 0 when hidden. */
+/** Height the on-screen keyboard covers at the bottom of our window, in window points; 0 when hidden or floating. */
 int ScreenKeyboardHeight();
 
 } // namespace pbr
