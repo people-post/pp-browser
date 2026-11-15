@@ -5,7 +5,7 @@
     <string name="channel_calls_description">Rings when someone calls you</string>
     <!-- A message push while the app is not running: generic by design, never names the sender or the content. -->
     <string name="message_incoming_title">New message</string>
-    <string name="message_incoming_body">You have a new message</string>
+    <string name="message_incoming_body">Encrypted message</string>
     <!-- Incoming-call notification buttons where the system's call style is not available. -->
     <string name="call_answer">Answer</string>
     <string name="call_decline">Decline</string>
