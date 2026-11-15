@@ -171,6 +171,17 @@ public:
     std::function<bool()> on_hold_here;
     /** The app is in front (AppLifecycle::IsForeground; CallHoldStuck counts only then); none: always in front. */
     std::function<bool()> app_foreground;
+    /**
+     * The user's camera wish (the GUI's CallLocalHold): the button, our own tile and "narrow to voice" follow it, not
+     * the engine, which moves later (B225). None: the engine's state.
+     */
+    std::function<bool()> camera_wanted;
+    /** A video call's automatic camera-on at setup: the wish is set; the device opens when the gate lets it. */
+    std::function<void()> auto_camera_on;
+    /** The engine closed the camera itself (permission denied, open failed): the wish goes with it. */
+    std::function<void()> camera_closed_by_engine;
+    /** The call narrowed to voice and turns the camera off: our close. */
+    std::function<void()> camera_closed_by_policy;
   };
   using StartDone = std::function<void(const CallStartResult&)>;
 
@@ -311,7 +322,13 @@ public:
    */
   void Redial();
   void ToggleMute();
-  void ToggleCamera();
+  /**
+   * The camera button's checks before the GUI turns the wish on (turning it off needs none): false, with the reason
+   * shown, when the camera cannot be turned on now.
+   */
+  bool CanTurnCameraOn();
+  /** The call refused the camera the user asked for: the plain sentence. */
+  void ReportCameraToggleFailed();
   /** Phones: front / rear camera while it is on. */
   void FlipCamera();
   void ToggleSpeaker();

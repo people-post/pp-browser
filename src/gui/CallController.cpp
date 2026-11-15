@@ -30,6 +30,7 @@
 #include "foundation/platform/IAssetLocator.h"
 #include "foundation/platform/OngoingCallService.h"
 #include "foundation/platform/Platform.h"
+#include "foundation/platform/PlatformLifecycleEvents.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/PendingNotificationTap.h"
 #include "gui/CallStatusHint.h"
@@ -128,15 +129,27 @@ CallController::CallController()
   };
   callbacks.on_hold_here = [this]() { return local_hold_.OnHold(); };
   callbacks.app_foreground = []() { return AppLifecycle::IsForeground(); };
+  // The camera: the user's wish lives in the hold; the presenter only reads it and reports what closed the camera.
+  callbacks.camera_wanted = [this]() { return local_hold_.WantsCameraOn(); };
+  callbacks.auto_camera_on = [this]() {
+    SyncLocalHold(); // the hold must know this call before it takes the wish
+    local_hold_.OnAutoCameraOn(PlatformLifecycleEvents::MonoMs());
+  };
+  callbacks.camera_closed_by_engine = [this]() { local_hold_.OnCameraClosedByEngine(); };
+  callbacks.camera_closed_by_policy = [this]() { local_hold_.OnCameraClosedByUs(PlatformLifecycleEvents::MonoMs()); };
   callbacks.show_current_call = [this]() {
     if (chrome_mode_ == CallChromeMode::Minimized) {
       RestoreChromeFromMinimized();
     }
   };
   presenter_.BindCallbacks(std::move(callbacks));
-  // Mobile: in the background the OS stops the camera; the call turns it off and says so (video_paused).
+  // Mobile: the camera's rest and return follow the real background / return edges (CallLocalHold, B225).
   background_listener_ = AppLifecycle::AddBackgroundListener([this]() { OnAppBackground(); });
   foreground_listener_ = AppLifecycle::AddForegroundListener([this]() { OnAppForeground(); });
+  entered_background_listener_ =
+      PlatformLifecycleEvents::AddEnteredBackgroundListener([this]() { OnDidEnterBackground(); });
+  will_enter_foreground_listener_ =
+      PlatformLifecycleEvents::AddWillEnterForegroundListener([this]() { OnWillEnterForeground(); });
   OngoingCallService::SetHangUpHandler([this]() {
     // The screen's call, or the engine's call the screen lost: Leave takes the engine's id when it has none.
     if (OngoingCallWanted(!presenter_.ActiveCallId().empty(), EngineCallNotLeft().open)) {
@@ -152,6 +165,8 @@ CallController::~CallController() {
   OngoingCallService::SetHangUpHandler({});
   AppLifecycle::RemoveListener(background_listener_);
   AppLifecycle::RemoveListener(foreground_listener_);
+  PlatformLifecycleEvents::RemoveListener(entered_background_listener_);
+  PlatformLifecycleEvents::RemoveListener(will_enter_foreground_listener_);
 }
 
 EngineCall CallController::EngineCallNow() {
@@ -202,7 +217,9 @@ void CallController::SyncScreenAwake() {
                     screen.status != CallScreen::Status::SettingUpGroup &&
                     screen.status != CallScreen::Status::WaitingForMediaPath;
   facts.video_mode = screen.video;
-  facts.camera_on = backend && backend->Available() && backend->Media().IsCameraEnabled();
+  // The wish, not the device: while the camera waits its turn the user has already "turned it on" and the screen
+  // must not go dark first (B225).
+  facts.camera_on = backend && backend->Available() && local_hold_.WantsCameraOn();
   // A peer's picture on screen: a group's tiles (their live streams), else the 1:1 stage (the presenter's decision).
   facts.remote_video = in_call_.remote_video;
   if (in_call_.show_roster) {
@@ -251,7 +268,7 @@ CallLocalHold::Ports CallController::LocalHoldPorts() {
     auto* backend = Backend();
     return backend && backend->Available() && backend->Media().IsMuted();
   };
-  ports.camera_on = [this]() {
+  ports.engine_camera_on = [this]() {
     auto* backend = Backend();
     return backend && backend->Available() && backend->Media().IsCameraEnabled();
   };
@@ -268,11 +285,23 @@ CallLocalHold::Ports CallController::LocalHoldPorts() {
       backend->SetLocalAudioMuted(muted);
     }
   };
-  ports.set_camera_paused = [this](const bool paused) {
+  ports.set_camera_enabled = [this](const bool enabled, std::function<void(Roe<void>)> done) {
+    auto* backend = Backend();
+    if (!backend || !backend->Available()) {
+      if (done) {
+        done(Error("calls unavailable"));
+      }
+      return;
+    }
+    backend->SetLocalVideoEnabled(enabled, std::move(done));
+  };
+  ports.pause_camera = [this]() {
     if (auto* backend = Backend(); backend && backend->Available()) {
-      backend->SetLocalVideoPaused(paused);
+      backend->SetLocalVideoPaused(true);
     }
   };
+  // The backend's reason is English technical text (the hold logged it): the user sees a plain sentence.
+  ports.camera_open_failed = [this]() { presenter_.ReportCameraToggleFailed(); };
   ports.note = [](const std::string& key) { UserFeedback::Note(Tr(key)); };
   return ports;
 }
@@ -280,10 +309,15 @@ CallLocalHold::Ports CallController::LocalHoldPorts() {
 void CallController::SyncLocalHold() {
   auto* backend = Backend();
   const bool in_call = backend && backend->Available() && !presenter_.ActiveCallId().empty();
+  // Only phones have an inactive / background app that moves the camera; a desktop is always settled (its restore and
+  // focus events are not lifecycle edges).
+  const bool mobile = Platform::IsMobile();
   local_hold_.Sync({.call_id = in_call ? presenter_.ActiveCallId() : std::string(),
                     .audio_taken = in_call && AudioSession::IsInterrupted(),
-                    .foreground = AppLifecycle::IsForeground(),
-                    .now_ms = util::NowUnixMs()});
+                    .foreground = !mobile || AppLifecycle::IsForeground(),
+                    .visible = !mobile || AppLifecycle::IsVisible(),
+                    .now_ms = util::NowUnixMs(),
+                    .mono_ms = PlatformLifecycleEvents::MonoMs()});
 }
 
 void CallController::OnAppBackground() {
@@ -291,19 +325,34 @@ void CallController::OnAppBackground() {
   // UI thread paused in the background never runs it). Not IsVisible(): it clears only after this listener (Android
   // sends both at onPause, and only Android has the phone's call screen).
   system_call_screen_.Reevaluate(false);
-  auto* backend = Backend();
-  if (!Platform::IsMobile() || !backend || !backend->Available() || presenter_.ActiveCallId().empty()) {
-    return;
+  if (Platform::IsMobile()) {
+    local_hold_.OnInactive(); // lock-screen flicker, Control Center, a banner, Face ID: the camera stays as it is
   }
-  local_hold_.OnAppBackground();
 }
 
 void CallController::OnAppForeground() {
-  local_hold_.OnAppForeground();
+  if (Platform::IsMobile()) {
+    local_hold_.OnActive(PlatformLifecycleEvents::MonoMs());
+  }
   // The call may have ended while in the background: write the current wanted value once, whatever was compared last.
   SetProximityScreenOff(proximity_wanted_);
   // Back in front with the phone's call screen ringing for us: its settle time counts from now (the timer hands over).
   system_call_screen_.Reevaluate(AppLifecycle::IsVisible());
+}
+
+void CallController::OnDidEnterBackground() {
+  if (!Platform::IsMobile()) {
+    return;
+  }
+  // The callback is the one place that runs in the background: the camera rests here, not at a later tick.
+  SyncLocalHold();
+  local_hold_.OnEnteredBackground(PlatformLifecycleEvents::MonoMs());
+}
+
+void CallController::OnWillEnterForeground() {
+  if (Platform::IsMobile()) {
+    local_hold_.OnWillEnterForeground();
+  }
 }
 
 namespace {
@@ -337,7 +386,8 @@ std::string RosterKey(const std::vector<CallRosterParticipantState>& roster) {
   for (const CallRosterParticipantState& p : roster) {
     key += std::string(p.name.c_str()) + "|" + p.stream_id.c_str() + "|" + (p.audio_muted ? "m" : "-") +
            (p.video_enabled ? "v" : "-") + (p.has_remote_video ? "r" : "-") + (p.on_hold ? "h" : "-") +
-           (p.video_paused ? "p" : "-") + (p.guest ? "g" : "-") + (p.avatar_unknown ? "u" : "-") +
+           (p.video_paused ? "p" : "-") + (p.camera_resuming ? "w" : "-") + (p.guest ? "g" : "-") +
+           (p.avatar_unknown ? "u" : "-") +
            AvatarKey(false, p.has_avatar, p.avatar_src, p.avatar_letter, p.avatar_tone) + ";";
   }
   return key;
@@ -713,7 +763,7 @@ void CallController::EmitPerfThreads(const int64_t now_ms) {
       .Add("thermal", vitals.thermal)
       .Add("battery", vitals.battery_pct)
       .Add("charging", vitals.charging)
-      .Add("video_on", in_call_.camera_on)
+      .Add("video_on", camera_engine_on_)
       .Add("remote_video", in_call_.remote_video)
       .Add("frames", frames.frames)
       .Add("layout_ms", static_cast<double>(frames.layout_us) / 1000.0)
@@ -1766,10 +1816,14 @@ void CallController::ToggleMute() {
 }
 
 void CallController::ToggleCamera() {
-  if (local_hold_.TakeCameraTap()) {
+  // Turning it off needs no check; turning it on asks whether the call allows video. The wish flips at once (the
+  // button shows it); the device follows through CallLocalHold's gate (B225).
+  if (!local_hold_.WantsCameraOn() && !presenter_.CanTurnCameraOn()) {
     return;
   }
-  presenter_.ToggleCamera();
+  SyncLocalHold();
+  local_hold_.OnCameraTapped(PlatformLifecycleEvents::MonoMs());
+  presenter_.Refresh();
 }
 
 void CallController::FlipCamera() {
@@ -1849,27 +1903,36 @@ void CallController::GuardCallUiAttach() {
 void CallController::ApplyLocalMedia(IMediaView& media, const CallMediaScreen& frame) {
   auto& in_call = in_call_;
   in_call.muted = media.IsMuted();
-  in_call.camera_on = media.IsCameraEnabled();
+  // The button is the user's wish (B225); the flip button, the sensors and the energy sample are about the device.
+  in_call.camera_on = local_hold_.WantsCameraOn();
+  camera_engine_on_ = media.IsCameraEnabled();
+  // Wanted but not on (waiting its turn, or resting in the background): our own tile says so.
+  const bool resuming = local_hold_.CameraResuming();
+  for (auto* rows : {&in_call.roster, &in_call.spotlight_rows, &in_call.strip_rows}) {
+    for (CallRosterParticipantState& row : *rows) {
+      row.camera_resuming = row.is_local && resuming;
+    }
+  }
   // The facing actually open (it changes when the other camera has opened, not on the tap): the flip button is lit
   // while the front camera is in use (#83).
-  in_call.camera_front = in_call.camera_on && media.CameraFrontFacing();
-  SyncCameraRotation(media);
+  in_call.camera_front = camera_engine_on_ && media.CameraFrontFacing();
+  SyncCameraRotation(media, camera_engine_on_);
   in_call.show_speaker = AudioSession::SupportsSpeakerToggle();
   in_call.speaker_on = presenter_.SpeakerShownOn();
   in_call.show_camera = frame.media.show_camera;
-  in_call.show_flip = ShowsCameraFlip(Platform::IsMobile(), in_call.show_camera, in_call.camera_on);
+  in_call.show_flip = ShowsCameraFlip(Platform::IsMobile(), in_call.show_camera, camera_engine_on_);
   in_call.on_hold = frame.media.on_hold;
 }
 
-void CallController::SyncCameraRotation(IMediaView& media) {
-  if (in_call_.camera_on && CameraRotationFollowsDevice()) {
+void CallController::SyncCameraRotation(IMediaView& media, const bool camera_open) {
+  if (camera_open && CameraRotationFollowsDevice()) {
     // iOS: video follows the phone's physical orientation (read on UI, per tick).
     const int rotation = CameraDisplayRotationDegrees();
     if (rotation != pushed_camera_rotation_) {
       media.UpdateCameraDisplayRotation(rotation);
       pushed_camera_rotation_ = rotation;
     }
-  } else if (!in_call_.camera_on && pushed_camera_rotation_ != -1) {
+  } else if (!camera_open && pushed_camera_rotation_ != -1) {
     StopCameraOrientationTracking(); // camera off: don't keep the motion sensors running
     pushed_camera_rotation_ = -1;
   }

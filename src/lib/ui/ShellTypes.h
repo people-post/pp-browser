@@ -378,6 +378,9 @@ struct CallRosterParticipantState {
   bool on_hold = false;
   /** V060: their camera is off because their app is in the background: the tile reads "Camera paused". */
   bool video_paused = false;
+  /** Only this device's own row: the camera is wanted but not on yet (waiting its turn, or resting in the background):
+   * the tile reads "Restoring video…" (B225). */
+  bool camera_resuming = false;
   /** V062: a guest in the group's call: the tile reads "Guest". */
   bool guest = false;
 };

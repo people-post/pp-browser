@@ -754,15 +754,11 @@ void CallPresenter::MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s)
   auto allowed = backend.VideoAllowedForCall(active_call_id_);
   if (allowed && allowed->has_value() && **allowed && camera_offerable && answer_known) {
     auto_camera_pending_ = false;
-    if (!backend.Media().IsCameraEnabled()) {
+    // The user's intent, not an engine call: where the camera may open (not in the background, not before the app has
+    // settled) is CallLocalHold's rule (B225).
+    if (callbacks_.auto_camera_on && !(callbacks_.camera_wanted && callbacks_.camera_wanted())) {
       log().info << "auto camera on call_id=" << active_call_id_;
-      backend.SetLocalVideoEnabled(true, WhileAlive([call_id = active_call_id_](Roe<void> cam) {
-                                     if (!cam) {
-                                       logging::getLogger("CallPresenter").warning
-                                           << "auto camera on failed call_id=" << call_id << ": "
-                                           << cam.error().message;
-                                     }
-                                   }));
+      callbacks_.auto_camera_on();
     }
   } else if (allowed && allowed->has_value() && !**allowed) {
     // Narrowed to voice-only before we got here: drop the intent (the renderer's camera-off sync
@@ -780,6 +776,9 @@ void CallPresenter::StepMedia(CallUiBackend& backend, const CallScreen& next, co
         // the roster already advertised.
         ReportCameraFailure(*failure);
         if (!backend.Media().CameraWaitingForDevice()) {
+          if (callbacks_.camera_closed_by_engine) {
+            callbacks_.camera_closed_by_engine(); // not our close: the user may open it again at once
+          }
           backend.SetLocalVideoEnabled(false);
         }
       }
@@ -839,7 +838,8 @@ CallMediaFacts CallPresenter::ReadMediaFacts(CallUiBackend& backend, const CallS
     f.peer_video_paused = (*peer)->video_paused;
   }
   f.media_active = media.IsActive();
-  f.camera_on = media.IsCameraEnabled();
+  // What the user wants, not what the engine has opened yet (B225).
+  f.camera_on = callbacks_.camera_wanted ? callbacks_.camera_wanted() : media.IsCameraEnabled();
   f.encoder_available = media.VideoEncoderAvailable();
   f.path_allows_video = CallMediaAdaptation::CameraPathAllowsVideo(media.PathPressure(), media.UplinkBudget());
   f.has_remote_video = media.HasRemoteVideo();
@@ -929,6 +929,9 @@ void CallPresenter::ActOnMedia(CallUiBackend& backend, const CallMediaScreen& fr
   if (frame.media.narrow_camera) {
     // V035: narrowed to voice with the camera on — off through the normal path, once.
     log().info << "camera off (video_allowed=false) call_id=" << frame.call_id;
+    if (callbacks_.camera_closed_by_policy) {
+      callbacks_.camera_closed_by_policy();
+    }
     backend.SetLocalVideoEnabled(false, WhileAlive([this](Roe<void> cam) {
                                    if (!cam) {
                                      FailText(cam.error().message);
@@ -1663,32 +1666,28 @@ void CallPresenter::ToggleMute() {
   }));
 }
 
-void CallPresenter::ToggleCamera() {
+bool CallPresenter::CanTurnCameraOn() {
   BindToMessaging();
   auto* backend = Backend();
   if (!backend || !backend->Available() || !backend->Media().IsActive()) {
-    return;
+    return false;
   }
   if (active_call_id_.empty()) {
     if (auto active = backend->ActiveLocalCall(); active && active->has_value()) {
       active_call_id_ = (*active)->call_id;
     }
   }
-  const bool next = !backend->Media().IsCameraEnabled();
-  if (next && !active_call_id_.empty()) {
+  if (!active_call_id_.empty()) {
     if (auto allowed = backend->VideoAllowedForCall(active_call_id_); !allowed || !allowed->has_value() || !**allowed) {
       Fail("call.error.video_not_allowed");
-      return;
+      return false;
     }
   }
-  backend->SetLocalVideoEnabled(next, WhileAlive([this](Roe<void> cam) {
-                                  if (!cam) {
-                                    // The backend's reason is English technical text: the log keeps it, the user sees a plain sentence.
-                                    log().info << "camera toggle failed: " << cam.error().message;
-                                    Fail("call.error.camera_failed");
-                                  }
-                                  Refresh();
-                                }));
+  return true;
+}
+
+void CallPresenter::ReportCameraToggleFailed() {
+  Fail("call.error.camera_failed");
 }
 
 void CallPresenter::FlipCamera() {

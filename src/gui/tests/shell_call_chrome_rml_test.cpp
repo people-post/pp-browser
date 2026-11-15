@@ -659,6 +659,8 @@ TEST(ShellCallChromeRmlTest, PhoneGroupTilesShowWhoIsOnHoldAndWhoseCameraIsPause
   EXPECT_TRUE(Has(rml, "<div class=\"call-hold-pill call-hold-pill--tile\" data-if=\"p.on_hold\">"));
   EXPECT_TRUE(Has(rml, "data-class-call-phone-tile--on-hold=\"p.on_hold\""));
   EXPECT_TRUE(Has(rml, "data-if=\"p.video_paused && !p.on_hold\""));
+  // B225: our own tile says "Restoring video…" while the camera is wanted but not on yet.
+  EXPECT_TRUE(Has(rml, "data-if=\"p.is_local && p.camera_resuming\""));
 }
 
 // V060: the 1:1 voice page shows "On hold" under the name while the call is on hold on either side.

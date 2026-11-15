@@ -2035,6 +2035,27 @@ TEST_F(CallSessionInboundComposeTest, MuteAndVideoControlsOnActiveMedia) {
   EXPECT_EQ(sent_control_messages_, before_pause);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalVideoPaused(false, 0); }));
 
+  // B225: SetLocalVideoEnabled, open or close, ends any "paused" (the roster row and the manager's own mark): the
+  // others are never left on "Camera paused" by a user's close, nor by an open that did not come through the pause's
+  // own undo.
+  for (const bool enabled : {false, true}) {
+    auto row = sessions_->FindParticipant(call_id, local_identity_);
+    ASSERT_TRUE(row && row->has_value());
+    (*row)->media.video_paused = true;
+    ASSERT_TRUE(sessions_->UpsertParticipant(**row));
+    auto set = OnCallsOwner([&] { return csm_->SetLocalVideoEnabled(enabled, 0); });
+    if (!set) {
+      EXPECT_TRUE(enabled) << "a close always succeeds; only a headless camera open may fail";
+      continue;
+    }
+    EXPECT_FALSE(sessions_->FindParticipant(call_id, local_identity_).value()->media.video_paused)
+        << "SetLocalVideoEnabled(" << enabled << ") clears video_paused";
+    // The manager's mark is gone too: the undo of a pause that is no longer in force opens nothing.
+    ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalVideoEnabled(false, 0); }));
+    ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalVideoPaused(false, 0); }));
+    EXPECT_FALSE(media_->IsCameraEnabled());
+  }
+
   // Camera may fail headless — gate must still accept video_allowed before device open.
   auto enable = OnCallsOwner([&] { return csm_->SetLocalVideoEnabled(true, 0); });
   if (enable) {

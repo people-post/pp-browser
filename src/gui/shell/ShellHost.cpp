@@ -304,6 +304,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
       roster_handle.RegisterMember("speaking", &CallRosterParticipantState::speaking);
       roster_handle.RegisterMember("on_hold", &CallRosterParticipantState::on_hold);
       roster_handle.RegisterMember("video_paused", &CallRosterParticipantState::video_paused);
+      roster_handle.RegisterMember("camera_resuming", &CallRosterParticipantState::camera_resuming);
       roster_handle.RegisterMember("guest", &CallRosterParticipantState::guest);
     }
     ctor.RegisterArray<std::vector<CallRosterParticipantState>>();

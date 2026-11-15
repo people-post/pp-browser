@@ -180,7 +180,7 @@ private:
   void FillRingPhoneFields(const CallScreen& screen, const std::string& caller_label, int64_t now_ms);
   /** Mute, camera (its buttons, rotation), speaker and the hold, from the engine and the frame. */
   void ApplyLocalMedia(IMediaView& media, const CallMediaScreen& frame);
-  void SyncCameraRotation(IMediaView& media);
+  void SyncCameraRotation(IMediaView& media, bool camera_open);
   /** The video stage, its placeholder and the tiles' pictures; key frames asked for a stalled picture. */
   void ApplyVideo(IMediaView& media, CallUiBackend& backend, const CallMediaScreen& frame, int64_t now_ms);
   void SubmitVideoTiles(IMediaView& media, int64_t now_ms);
@@ -264,8 +264,12 @@ private:
   CallLocalHold::Ports LocalHoldPorts();
   /** Hands the hold the OS's facts (each tick). */
   void SyncLocalHold();
+  /** The app resigned active / became active (AppLifecycle's listeners): the hold only tracks it. */
   void OnAppBackground();
   void OnAppForeground();
+  /** The real edges (PlatformLifecycleEvents): the camera rests at once / a real return is on its way. */
+  void OnDidEnterBackground();
+  void OnWillEnterForeground();
   /**
    * The call this device is in, as last told to the OS (OngoingCallService: Android's call service): the screen's
    * call, or the engine's open call the screen lost (DEV/PLAN-call-ui-never-detached.md 4).
@@ -384,6 +388,11 @@ private:
   CallLocalHold local_hold_;
   uint64_t background_listener_ = 0;
   uint64_t foreground_listener_ = 0;
+  uint64_t entered_background_listener_ = 0;
+  uint64_t will_enter_foreground_listener_ = 0;
+  /** The engine's camera is open (physical truth: flip button, orientation sensors, energy sampling); the button's
+   *  `camera_on` is the user's wish instead (B225). */
+  bool camera_engine_on_ = false;
   bool ongoing_call_on_ = false;
   /** The word the switch logs for the change in flight (SyncScreenAwake sets it just before). */
   const char* screen_awake_reason_ = "ended";

@@ -68,6 +68,8 @@ void AppendRosterCards(std::ostringstream& out, const char* rows, const char* ca
   AppendHoldPill(out, "p.on_hold", "");
   out << "<p class=\"text-xs shell-call-peer-stall\" data-if=\"p.video_paused && !p.on_hold\">"
       << Tr("call.placeholder.camera_paused") << "</p>";
+  out << "<p class=\"text-xs shell-call-peer-stall\" data-if=\"p.is_local && p.camera_resuming\">"
+      << Tr("call.placeholder.camera_resuming") << "</p>";
   out << "<div class=\"shell-call-peer-badges row\">";
   out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"14\" height=\"14\" "
          "crop-to-content=\"true\"></svg>";
@@ -453,6 +455,8 @@ void AppendPhoneTiles(std::ostringstream& out, const char* rows, const char* ext
   AppendHoldPill(out, "p.on_hold", " call-hold-pill--tile");
   out << "<p class=\"call-phone-tile-note\" data-if=\"p.video_paused && !p.on_hold\">"
       << Tr("call.placeholder.camera_paused") << "</p>";
+  out << "<p class=\"call-phone-tile-note\" data-if=\"p.is_local && p.camera_resuming\">"
+      << Tr("call.placeholder.camera_resuming") << "</p>";
   out << "<div class=\"call-phone-tile-label\"><svg data-if=\"p.audio_muted\" src=\"../icons/v2/mic-off.svg\" "
          "width=\"14\" height=\"14\"></svg><span class=\"call-phone-tile-name\">{{p.name}}</span>"
       << "<span class=\"call-phone-tile-name\" data-if=\"p.guest\">· " << Tr("call.guest.label") << "</span></div>";

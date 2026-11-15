@@ -1685,6 +1685,7 @@
     "call.notify.body_stranger": "Stranger is calling you",
     "call.placeholder.camera_off": "Camera off",
     "call.placeholder.camera_paused": "They left the app. Video paused.",
+    "call.placeholder.camera_resuming": "Restoring video…",
     "call.placeholder.on_hold": "Stepped away",
     "call.label.you": "You",
     "call.label.them": "Them",
