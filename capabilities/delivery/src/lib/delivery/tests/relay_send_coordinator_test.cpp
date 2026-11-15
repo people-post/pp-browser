@@ -361,6 +361,11 @@ TEST_F(RelaySendCoordinatorTest, ACardEntryConflictingWithAPinIsSkipped) {
   EXPECT_TRUE(coordinator_.AudienceMismatch(kBob, kBobsA));
   EXPECT_FALSE(coordinator_.AudienceMismatch(kBob, kBobsB));
   EXPECT_TRUE(refreshed_.empty()) << "a pin conflict is not a stale list";
+
+  bobs_relays_ = {kBobsA};
+  auto sent = coordinator_.Send(EnvelopeTo(kBob));
+  ASSERT_FALSE(sent) << "his only relay does not match";
+  EXPECT_EQ(static_cast<Err::Auth>(sent.error().code), Err::Auth::WrongAudience);
 }
 
 // MR007-SEND: `wrong_audience` tries the next relay, counts like recipient_not_registered toward the newest-card

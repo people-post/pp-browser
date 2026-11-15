@@ -414,9 +414,7 @@ std::vector<CallSpec> AllCalls(const VectorKeys& keys) {
 
 Object Expect(const std::string& at_a, const std::string& at_b) {
   Object expect;
-  if (!at_a.empty()) {
-    expect.set("a", at_a);
-  }
+  expect.set("a", at_a);
   expect.set("b", at_b);
   return expect;
 }
@@ -449,9 +447,8 @@ Object CallRow(const VectorKeys& keys, const CallSpec& spec, const std::string& 
 Array CallRows(const VectorKeys& keys) {
   Array rows;
   for (const CallSpec& spec : AllCalls(keys)) {
-    // register/finish: `b` refuses the audience before the challenge (the relay's handler tests use their own).
-    Object expect = spec.name == "register.finish" ? Expect("", "wrong_audience") : Expect("ok", "wrong_audience");
-    rows.elements.push_back(ObjectValue(CallRow(keys, spec, spec.name, keys.peer_a, std::move(expect))));
+    // register/finish: checked by its builder and the audience check (its handler tests use their own challenges).
+    rows.elements.push_back(ObjectValue(CallRow(keys, spec, spec.name, keys.peer_a, Expect("ok", "wrong_audience"))));
     if (spec.name == "relay-api.poll_inbox") {
       rows.elements.push_back(
           ObjectValue(CallRow(keys, spec, spec.name + ".no_audience", "", Expect("wrong_audience", "wrong_audience"))));

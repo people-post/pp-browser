@@ -219,7 +219,14 @@ RelaySendCoordinator::Pass RelaySendCoordinator::SendAlong(const std::vector<Acc
   for (const std::string& origin : health_.Order(origins, Now())) {
     const auto relay =
         std::find_if(relays.begin(), relays.end(), [&origin](const AccountCardRelay& r) { return r.origin == origin; });
-    if (relay == relays.end() || Unusable(recipient, *relay)) {
+    if (relay == relays.end()) {
+      continue;
+    }
+    if (Unusable(recipient, *relay)) {
+      if (tried == 0) {
+        pass.result = AppError::Auth(Err::Auth::WrongAudience,
+                                     "relay send: the recipient's relay does not match the identity its card names");
+      }
       continue;
     }
     Roe<void> sent = Roe<void>{};
