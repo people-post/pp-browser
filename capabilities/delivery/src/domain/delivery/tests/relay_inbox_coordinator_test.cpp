@@ -6,12 +6,14 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <random>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "common/PbrCompat.h"
@@ -45,6 +47,9 @@ public:
 
   Roe<void> Send(const RelayEnvelope&) override { return {}; }
   Roe<RelayPollResult> PollInbox(const std::string&, const std::string& cursor) override {
+    if (auto hook = std::exchange(on_poll, nullptr)) {
+      hook(); // once, while the poll is under way (before it answers)
+    }
     std::lock_guard lock(mutex_);
     polled_with.push_back(cursor);
     if (fail_) {
@@ -67,6 +72,7 @@ public:
 
   std::vector<std::string> polled_with;
   std::vector<std::string> acked;
+  std::function<void()> on_poll;
 
 private:
   std::mutex mutex_;
@@ -202,6 +208,20 @@ TEST_F(RelayInboxCoordinatorTest, ARelayLeavingTheListLosesItsCursor) {
   coordinator_->SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
   coordinator_->Sync(true, kMe);
   EXPECT_EQ(other_->polled_with.back(), "") << "added again: from its oldest message";
+}
+
+// T7: a list change that leaves an inbox as it was keeps it: a poll under way there keeps the cursor it brings back.
+TEST_F(RelayInboxCoordinatorTest, AnUnchangedInboxKeepsItsPollUnderWayAcrossAListChange) {
+  preferred_->Queue({"m1"}, "a-1");
+  auto third = std::make_shared<FakeInbox>();
+  preferred_->on_poll = [this, third]() {
+    coordinator_->SetInboxes({{kPreferred, preferred_}, {kOther, other_}, {"https://c.example/api/relay", third}},
+                             dir_.string());
+  };
+  coordinator_->Sync(false, kMe);
+  coordinator_->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "a-1") << "the cursor the poll under way brought back is kept";
+  EXPECT_EQ(LoadRelayInboxCursors(dir_.string(), kMe).preferred, "a-1");
 }
 
 TEST_F(RelayInboxCoordinatorTest, ACursorFromBeforeMyRelaysIsThePreferredRelays) {

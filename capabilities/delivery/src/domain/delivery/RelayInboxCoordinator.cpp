@@ -13,29 +13,51 @@ RelayInboxCoordinator::RelayInboxCoordinator(Ports ports) : ports_(std::move(por
   redirectLogger("RelayInboxCoordinator");
 }
 
+std::shared_ptr<RelayInboxCoordinator::Inbox> RelayInboxCoordinator::KeptLocked(const RelayInbox& relay,
+                                                                                const bool preferred) const {
+  const auto kept = std::find_if(inboxes_.begin(), inboxes_.end(), [&](const std::shared_ptr<Inbox>& inbox) {
+    return inbox->relay.client == relay.client && inbox->preferred == preferred &&
+           RelayOriginKey(inbox->relay.origin) == RelayOriginKey(relay.origin);
+  });
+  return kept == inboxes_.end() ? nullptr : *kept;
+}
+
 void RelayInboxCoordinator::SetInboxes(std::vector<RelayInbox> inboxes, std::string profile_data_dir) {
-  std::vector<std::shared_ptr<Inbox>> next;
-  for (RelayInbox& relay : inboxes) {
-    if (!relay.client) {
-      continue;
+  bool save = false;
+  {
+    std::lock_guard lock(mutex_);
+    std::vector<std::shared_ptr<Inbox>> next;
+    for (RelayInbox& relay : inboxes) {
+      if (!relay.client) {
+        continue;
+      }
+      if (auto kept = KeptLocked(relay, next.empty())) {
+        next.push_back(std::move(kept)); // unchanged: a poll under way keeps its cursor and its follow-up
+        continue;
+      }
+      auto inbox = std::make_shared<Inbox>();
+      inbox->preferred = next.empty();
+      inbox->relay = std::move(relay);
+      next.push_back(std::move(inbox));
     }
-    auto inbox = std::make_shared<Inbox>();
-    inbox->preferred = next.empty();
-    inbox->relay = std::move(relay);
-    next.push_back(std::move(inbox));
+    for (const auto& old : inboxes_) {
+      if (std::find(next.begin(), next.end(), old) == next.end()) {
+        old->again = false; // a poll under way polls once more at most, into its own (old) inbox
+      }
+    }
+    const bool changed = next != inboxes_;
+    inboxes_ = std::move(next);
+    if (!cursors_account_.empty() && profile_data_dir_ == profile_data_dir) {
+      save = changed; // a relay no longer ours keeps no cursor; the one made preferred keeps its own
+    } else {
+      profile_data_dir_ = std::move(profile_data_dir);
+      cursors_account_.clear(); // read again for the next sync
+      cursors_.clear();
+    }
   }
-  std::lock_guard lock(mutex_);
-  for (const auto& old : inboxes_) {
-    old->again = false; // a poll under way polls once more at most, into its own (old) inbox
+  if (save) {
+    SaveCursorsSoon();
   }
-  inboxes_ = std::move(next);
-  if (!cursors_account_.empty() && profile_data_dir_ == profile_data_dir) {
-    SaveCursorsLocked(); // a relay no longer ours keeps no cursor; the one made preferred keeps its own
-    return;
-  }
-  profile_data_dir_ = std::move(profile_data_dir);
-  cursors_account_.clear(); // read again for the next sync
-  cursors_.clear();
 }
 
 std::vector<RelayInbox> RelayInboxCoordinator::Inboxes() const {
@@ -160,6 +182,19 @@ void RelayInboxCoordinator::LoadCursorsLocked(const std::string& account_id) {
       cursors_[relay] = kept.preferred;
     }
   }
+}
+
+void RelayInboxCoordinator::SaveCursorsSoon() {
+  // Off the caller's thread (the hub's): a file write, under the lock a poll holds for its own.
+  const auto save = [this]() {
+    std::lock_guard lock(mutex_);
+    SaveCursorsLocked();
+  };
+  if (ports_.ack) {
+    ports_.ack(save);
+    return;
+  }
+  save();
 }
 
 void RelayInboxCoordinator::SaveCursorsLocked() {

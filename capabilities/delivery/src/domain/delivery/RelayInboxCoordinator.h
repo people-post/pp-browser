@@ -63,8 +63,10 @@ public:
   explicit RelayInboxCoordinator(Ports ports);
 
   /**
-   * Ours, preferred first; `profile_data_dir` keeps the cursors (empty: in memory only). A poll under way ends. The
-   * cursor of a relay no longer listed is dropped (from the file too, once an account's cursors were read).
+   * Ours, preferred first; `profile_data_dir` keeps the cursors (empty: in memory only). An inbox whose relay, client
+   * and place did not change is kept (a poll under way there goes on, its cursor kept); another's poll under way ends.
+   * The cursor of a relay no longer listed is dropped (from the file too, once an account's cursors were read: written
+   * on the ack lane, not the caller's thread).
    */
   void SetInboxes(std::vector<RelayInbox> inboxes, std::string profile_data_dir);
   /** A sync (scheduled, or `force`d by a wake) for `account_id`. */
@@ -88,6 +90,10 @@ private:
   void LoadCursorsLocked(const std::string& account_id);
   /** Drops the cursors of relays not listed and writes the file (cursors read for an account). */
   void SaveCursorsLocked();
+  /** SaveCursorsLocked on the ack lane (called without the lock; the task takes it). */
+  void SaveCursorsSoon();
+  /** The inbox kept for `relay` at that place (same origin, client and role); none: it changed. */
+  std::shared_ptr<Inbox> KeptLocked(const RelayInbox& relay, bool preferred) const;
 
   Ports ports_;
   mutable std::mutex mutex_;
