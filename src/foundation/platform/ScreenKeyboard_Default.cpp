@@ -10,4 +10,8 @@ int ScreenKeyboardHeight() {
   return 0;
 }
 
+std::string DescribeScreenKeyboard() {
+  return {};
+}
+
 } // namespace pbr

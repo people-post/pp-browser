@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <string>
 
 namespace pbr {
 
@@ -13,5 +14,8 @@ bool WatchScreenKeyboard(std::function<void()> on_change);
 
 /** Height the on-screen keyboard covers at the bottom of our window, in window points; 0 when hidden or floating. */
 int ScreenKeyboardHeight();
+
+/** One line for the log: the keyboard frame as reported, as placed in our window, and our window (iOS); "" elsewhere. */
+std::string DescribeScreenKeyboard();
 
 } // namespace pbr

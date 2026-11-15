@@ -1860,9 +1860,11 @@ ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
   // iPadOS 26+ in a window: the window controls sit in the top-left corner, outside SDL's safe area.
   const int top_win = std::max({0, safe.y, WindowControlsTopInset(window)});
   // iOS leaves the on-screen keyboard out of the safe area; it is reported separately (0 elsewhere).
-  const int bottom_win = std::max({0, win_h - (safe.y + safe.h), ScreenKeyboardHeight()});
+  insets.keyboard_win = std::max(0, ScreenKeyboardHeight());
+  const int bottom_win = std::max({0, win_h - (safe.y + safe.h), insets.keyboard_win});
   insets.top_dp = static_cast<int>(static_cast<float>(top_win) * window_to_dp + 0.5f);
   insets.bottom_dp = static_cast<int>(static_cast<float>(bottom_win) * window_to_dp + 0.5f);
+  insets.keyboard_dp = static_cast<int>(static_cast<float>(insets.keyboard_win) * window_to_dp + 0.5f);
 #endif
   return insets;
 }
@@ -1870,6 +1872,13 @@ ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
 void ShellHost::RefreshSafeAreaInsets(ui::Context* context) {
   (void)context;
   const SafeAreaFromSdl sdl = ReadSafeAreaFromSdl();
+  if (sdl.keyboard_dp != logged_keyboard_dp_ && (sdl.keyboard_dp > 0 || logged_keyboard_dp_ > 0)) {
+    // One line per change of the on-screen keyboard's cover (iOS), for the iPad window cases.
+    log().info << "keyboard inset pt=" << sdl.keyboard_win << " dp=" << sdl.keyboard_dp
+               << " bottom_dp=" << sdl.bottom_dp << " latch=" << (sdl.bottom_dp >= kImeLatchMinDp)
+               << " layout=" << ShellLayout::LayoutModeString(state_.layout_mode) << " " << DescribeScreenKeyboard();
+  }
+  logged_keyboard_dp_ = sdl.keyboard_dp;
   if (sdl.bottom_dp >= kImeLatchMinDp) {
     last_ime_bottom_dp_ = sdl.bottom_dp;
     if (bottom_chrome_open_ && !bottom_chrome_fixed_height_) {
