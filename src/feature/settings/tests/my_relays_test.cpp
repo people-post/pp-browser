@@ -118,7 +118,7 @@ TEST(MyRelaysTest, ARefusedChangeSaysWhyInWords) {
   EXPECT_EQ(pbr::MyRelaysFailureText(pp::Error("Messaging is not ready")), "Messaging is not ready");
 }
 
-// MR007 § Pins (what the user sees): a relay whose identity changed reads "Identity changed — not used", is not made
+// MR007 § Pins (what the user sees): a relay whose identity changed says it is not used, is not made
 // preferred, may be removed or its identity accepted on the main device; the org's origin's line shows on any device.
 TEST(MyRelaysTest, ARelayWhoseIdentityChangedSaysItIsNotUsed) {
   LoadLocales();
@@ -128,7 +128,7 @@ TEST(MyRelaysTest, ARelayWhoseIdentityChangedSaysItIsNotUsed) {
       pbr::MyRelaysViewFor({Relay("a.example"), changed}, true, "https://org.example/api/relay");
   ASSERT_EQ(view.relays.size(), 2u);
   const pbr::MyRelayRowView& row = view.relays[1];
-  EXPECT_EQ(row.state, "Identity changed — not used");
+  EXPECT_EQ(row.state, "Not used: this relay changed its identity");
   EXPECT_EQ(row.state_kind, "error");
   EXPECT_TRUE(row.reach.empty()) << "it is not polled";
   EXPECT_TRUE(row.can_accept_identity);

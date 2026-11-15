@@ -353,7 +353,7 @@ search asks the relays the user has listed; there is no search across relays bey
    PeerId it presents, never pinned ([§ Pins](#pins)). A card
    entry our pins disagree with — our pin for that origin is another PeerId, or that PeerId is pinned to another
    origin — is skipped for that recipient (logged once per entry; the card is still kept; the contact page reads
-   *identity doesn't match*). A relay that answers `wrong_audience` is skipped for this send, counts like
+   *Not used: it doesn't match this contact's card*). A relay that answers `wrong_audience` is skipped for this send, counts like
    `recipient_not_registered` toward the stale-list fetch (step 5: the contact may have re-issued its card), and,
    while the newest card still names the refused PeerId, is skipped for that recipient for 5 minutes. Neither marks
    the relay unhealthy; a relay of ours whose identity changed is skipped alike.

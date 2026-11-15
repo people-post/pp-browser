@@ -632,9 +632,9 @@ public:
       }
       const ContactRelayView view = Hub().ContactRelay(**contact);
       Object out = Reply(id, true);
-      out.set("list", view.list == ContactRelayView::List::Listed     ? "listed"
-                      : view.list == ContactRelayView::List::MeshOnly ? "mesh_only"
-                                                                      : "not_known");
+      out.set("list", view.list == ContactRelayView::List::Listed       ? "listed"
+                      : view.list == ContactRelayView::List::NoneListed ? "none_listed"
+                                                                        : "not_known");
       out.set("origin", view.origin);
       out.set("reach", view.reach == ContactRelayView::Reach::Reachable          ? "reachable"
                        : view.reach == ContactRelayView::Reach::NotRegistered    ? "not_registered"

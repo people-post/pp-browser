@@ -82,8 +82,8 @@ A key card plus what the account says about itself, signed as a whole.
   each named by its origin, the HTTPS base URL a client uses, and by its **PeerId** (`peer_id`,
   [MR007](../../projects/multi-relay/DECISIONS.md#mr007--relays-have-a-node-style-identity-every-signed-relay-command-names-it-as-its-audience)):
   the audience a sender signs its send into that relay for ([SERVICE_ENDPOINTS § The audience](SERVICE_ENDPOINTS.md#the-audience-every-signed-command-names-its-relay)).
-  Required; an empty list means the account
-  receives over the mesh only. Bounds ([MR004](../../projects/multi-relay/DECISIONS.md#mr004--a-relay-list-is-small-and-bounded)):
+  Required; an empty list names no relay
+  (the account's mailboxes are not known: a sender sends through its own preferred relay, [SERVICE_ENDPOINTS § Sending by the list](SERVICE_ENDPOINTS.md#sending-by-the-list)). Bounds ([MR004](../../projects/multi-relay/DECISIONS.md#mr004--a-relay-list-is-small-and-bounded)):
   at most 4 entries; each `origin` an absolute `https://` URL of at most 128 bytes with a host, and no query,
   fragment, credentials, spaces or control characters; each `peer_id` required, a string of an ML-DSA PeerId's form
   (base58btc decoding to exactly `0x12 0x20 ‖ 32 bytes` and re-encoding to itself: 46 characters, `Qm…`,

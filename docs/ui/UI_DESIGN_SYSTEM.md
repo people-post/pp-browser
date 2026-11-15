@@ -267,7 +267,7 @@ registered. Set up your account in My profile to get mail here.`, the others the
 relay`; failures, an ended registration and the preferred relay's missing one in the error colour) and its last poll (`Reachable` / `Couldn't reach it`, the
 latter in the error colour; nothing before the first poll). On the main device the other relays have **Make preferred**
 (immediate) and **Remove…** (a destructive confirm naming the relay); phones show them as rows under the relay
-(Remove in the danger row), desktops as secondary buttons. **Add relay…** (while there are fewer than 4) opens an
+(Remove in the danger row), desktops as secondary buttons, each shown by its own flag. **Add relay…** (while there are fewer than 4) opens an
 address field with **Add** and **Cancel**; Add checks the relay (`Checking the relay…`), and a refusal is worded under
 the field (`MyRelaysFailureText`: not https, a path, already listed, did not answer, …). A linked device shows the list
 with "Only your main device can change your relays." Before messaging is up the page says the relays show once
@@ -275,19 +275,22 @@ connected.
 
 **Relay identity states** (multi-relay MR007, [SERVICE_ENDPOINTS § Pins](../contracts/SERVICE_ENDPOINTS.md#pins)):
 
-- A relay whose identity changed reads **Identity changed — not used** in the error colour (no registration or poll
+- A relay whose identity changed reads **Not used: this relay changed its identity** in the error colour (no registration or poll
   line: it is not polled, registered on or sent to, and left off the card) and cannot be made preferred; on the main
   device it offers **Accept new identity…** beside Remove… (Remove revokes nothing there). Accept's confirm: "Accept
   this relay's new identity?" / "{relay} now shows a different identity. Accept it only if the relay's operator
   announced a change; otherwise remove the relay." with **Accept**; then "New identity accepted".
-- The org's origin, when it is not on the list and its identity changed: one error line, "Your app's service server
-  changed identity ({host})", with **Accept new identity…** on any device (lockers stop until then).
+- The org's origin, when it is not on the list and its identity changed: one error line, "Brief's server at {host}
+  changed its identity. Your account copy and the assistant are paused until you accept it." (one string, the host in
+  its place), with **Accept new identity…** on any device (lockers stop until then).
 - Add's identity refusals, under the field: "This server doesn't identify itself as a relay.", "This relay is already
   on your list as {host}.", "This relay is already known as {host}." A relay seen before with another identity asks
   first: "Add it anyway?" / "This relay shows a different identity than when it was last seen. Add it only if you
   trust it." with **Add**.
-- The contact page's relay line reads **Identity doesn't match** when the PeerId the contact's card names for its
-  preferred relay disagrees with our pins, or a send found it refused (`ContactRelayView::Reach::IdentityMismatch`).
+- The contact page's relay line reads **Not used: it doesn't match this contact's card** when the PeerId the contact's
+  card names for its preferred relay disagrees with our pins, or a send found it refused
+  (`ContactRelayView::Reach::IdentityMismatch`). A card that lists no relay reads **None listed. Mail goes through
+  your relay.** (our sends to it go through our preferred relay).
 
 ## RCSS file layout
 

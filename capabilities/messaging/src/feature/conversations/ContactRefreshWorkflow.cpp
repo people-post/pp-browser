@@ -386,7 +386,7 @@ ContactRelayView ContactRefreshWorkflow::PreferredRelay(const Contact& contact) 
   }
   const ContactRelayList list = ContactRelays(contact, kept);
   if (list.origins.empty()) {
-    view.list = list.from_card ? ContactRelayView::List::MeshOnly : ContactRelayView::List::NotKnown;
+    view.list = list.from_card ? ContactRelayView::List::NoneListed : ContactRelayView::List::NotKnown;
     return view;
   }
   view.list = ContactRelayView::List::Listed;

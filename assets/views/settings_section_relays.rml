@@ -46,7 +46,7 @@
               <p class="text muted" data-if="relay.reach != '' && !relay.reach_failed">{{relay.reach}}</p>
               <p class="text error" data-if="relay.reach_failed">{{relay.reach}}</p>
               <div class="settings-device-actions row"
-                   data-if="my_relays_editable && !my_relays_busy && (relay.can_remove || relay.can_accept_identity)">
+                   data-if="my_relays_editable && !my_relays_busy && (relay.can_make_preferred || relay.can_remove || relay.can_accept_identity)">
                 <button class="btn btn-secondary" type="button" data-if="relay.can_make_preferred"
                         data-event-click="make_relay_preferred(relay_index)">{{i18n:settings.relays.make_preferred}}</button>
                 <button class="btn btn-secondary" type="button" data-if="relay.can_accept_identity"
@@ -57,7 +57,7 @@
             </div>
           </div>
           <div class="stack group-card" data-if="my_relays_org_changed != ''">
-            <p class="text error group-foot">{{i18n:settings.relays.org_identity_changed}} ({{my_relays_org_changed}})</p>
+            <p class="text error group-foot">{{my_relays_org_changed}}</p>
             <div class="settings-actions row" data-if="!my_relays_busy">
               <button class="btn btn-secondary" type="button"
                       data-event-click="accept_org_identity()">{{i18n:settings.relays.accept_identity}}</button>

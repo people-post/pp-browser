@@ -108,7 +108,11 @@ void SettingsMyRelays::Show(Roe<MyRelaysView> listed) {
                      .can_remove = relay.can_remove,
                      .can_accept_identity = relay.can_accept_identity});
   }
-  org_identity_changed_ = MyRelayLabel(view_.org_identity_changed).c_str();
+  // The whole line, its host in its place (the RML cannot put one into a string).
+  org_identity_changed_ =
+      view_.org_identity_changed.empty()
+          ? ""
+          : Tr("settings.relays.org_identity_changed", {{"host", MyRelayLabel(view_.org_identity_changed)}}).c_str();
   shown_ = !rows_.empty();
   editable_ = view_.editable;
   can_add_ = view_.can_add;

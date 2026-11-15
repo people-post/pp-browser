@@ -88,15 +88,15 @@ TEST_F(ContactRefreshNoticeTest, ThePageShowsThePreferredRelayByHostWithItsReach
   view.reach = ContactRelayView::Reach::NotRegistered;
   EXPECT_EQ(DescribeContactRelay(view).reach, "Doesn't have this account");
 
-  line = DescribeContactRelay({.list = ContactRelayView::List::MeshOnly});
-  EXPECT_EQ(line.relay, "Mesh only");
+  line = DescribeContactRelay({.list = ContactRelayView::List::NoneListed});
+  EXPECT_EQ(line.relay, "None listed. Mail goes through your relay.") << "our sends go through our relay, not the mesh";
   EXPECT_TRUE(line.reach.empty());
   line = DescribeContactRelay({.list = ContactRelayView::List::NotKnown});
   EXPECT_EQ(line.relay, "Not known yet");
   EXPECT_TRUE(line.reach.empty());
 
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(DescribeContactRelay({.list = ContactRelayView::List::MeshOnly}).relay, "仅直连");
+  EXPECT_EQ(DescribeContactRelay({.list = ContactRelayView::List::NoneListed}).relay, "未列出。消息经由你的中继发送。");
 }
 
 TEST_F(ContactRefreshNoticeTest, EveryContactsPageHasTheButton) {

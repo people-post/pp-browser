@@ -498,13 +498,13 @@ TEST_F(ContactRefreshWorkflowTest, APreferredRelayWhoseIdentityDoesNotMatchSaysS
   EXPECT_EQ(PageRelay(id).reach, ContactRelayView::Reach::Reachable);
 }
 
-TEST_F(ContactRefreshWorkflowTest, APageWithoutARelaySaysMeshOnlyOrNotKnown) {
+TEST_F(ContactRefreshWorkflowTest, APageWithoutARelaySaysNoneListedOrNotKnown) {
   const std::string id = AddBobByQr();
   EXPECT_EQ(PageRelay(id).list, ContactRelayView::List::NotKnown) << "no card yet";
   const std::string by_qr = AddBobByQr(kBobsB);
   EXPECT_EQ(PageRelay(by_qr).origin, kBobsB) << "the locator's relay until the card";
   KeepBobsCard({});
-  EXPECT_EQ(PageRelay(id).list, ContactRelayView::List::MeshOnly) << "his card lists no relay";
+  EXPECT_EQ(PageRelay(id).list, ContactRelayView::List::NoneListed) << "his card lists no relay";
 }
 
 TEST(MergeContactRefreshTest, TheUsersOwnFieldsAreNeverTouched) {

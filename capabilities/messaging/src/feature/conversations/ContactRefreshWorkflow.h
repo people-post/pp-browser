@@ -73,9 +73,9 @@ struct ContactRefreshResult {
 /** The contact page's relay line (multi-relay R3): the contact's preferred relay, and whether it answered for it. */
 struct ContactRelayView {
   enum class List {
-    NotKnown, // no card kept yet, and no locator gave a relay
-    MeshOnly, // its card lists no relay: it receives over the mesh only
-    Listed,   // `origin` is its preferred relay
+    NotKnown,   // no card kept yet, and no locator gave a relay
+    NoneListed, // its card lists no relay: our sends to it go through our preferred relay
+    Listed,     // `origin` is its preferred relay
   };
   enum class Reach {
     NotKnown,         // not asked since the app started

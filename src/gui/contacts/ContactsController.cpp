@@ -2528,8 +2528,8 @@ ContactRelayLine DescribeContactRelay(const ContactRelayView& view) {
   switch (view.list) {
     case ContactRelayView::List::NotKnown:
       return {.relay = Tr("contacts.relay.not_known")};
-    case ContactRelayView::List::MeshOnly:
-      return {.relay = Tr("contacts.relay.mesh_only")};
+    case ContactRelayView::List::NoneListed:
+      return {.relay = Tr("contacts.relay.none_listed")};
     case ContactRelayView::List::Listed:
       break;
   }
