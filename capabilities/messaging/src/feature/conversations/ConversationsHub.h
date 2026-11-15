@@ -334,9 +334,12 @@ public:
   Roe<OurRelaysStatus> OurRelays();
   /**
    * Adds the relay the user typed (it must answer; plain http:// or a host that is not public only with the settings'
-   * developer_relays); blocks (HTTP): a worker. The error's message is a code.
+   * developer_relays) and identify itself (MR007; `accept_changed_identity`: the person confirmed one seen before
+   * with another identity); blocks (HTTP): a worker. The error's message is a code.
    */
-  Roe<void> AddOurRelay(const std::string& typed);
+  Roe<void> AddOurRelay(const std::string& typed, bool accept_changed_identity = false);
+  /** Accepts the new identity a relay of ours (or the org's origin) presented (MR007); blocks: a worker. */
+  Roe<void> AcceptRelayIdentity(const std::string& origin);
   /** Removes a relay of ours (not the preferred one); blocks: a worker. */
   Roe<void> RemoveOurRelay(const std::string& origin);
   /** Makes a relay of ours the preferred one; blocks: a worker. */
@@ -765,6 +768,8 @@ private:
   void CloseMyRelays();
   void NotifyOurRelaysChanged();
   MyRelaysWorkflow::Ports MyRelaysPorts();
+  /** My relays' identity ports (MR007): Add's check, re-pin, Remove's pin, Accept, the org origin's state. */
+  void WireMyRelaysIdentityPorts(MyRelaysWorkflow::Ports& ports);
   /** This device is the account's main one (or the account has no card yet). */
   bool IsMainDevice();
   /**

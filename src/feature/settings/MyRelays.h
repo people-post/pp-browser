@@ -18,14 +18,19 @@ struct MyRelayFacts {
   RelayRegistrationRecord registration;
   Reach reach = Reach::Unknown;
   int64_t reach_at_ms = 0;
+  /** It presented another identity than its pin, not accepted yet (MR007). */
+  bool identity_changed = false;
 };
 
 /**
- * Me → Network → My relays (multi-relay R3, MR006): `relays` preferred first, each with its registration and its
- * last poll. On the main device (`editable`) every relay but the preferred one may be made preferred or removed, and
- * another added while there are fewer than four; elsewhere the list only shows.
+ * Me → Network → My relays (multi-relay R3, MR006, MR007): `relays` preferred first, each with its registration and its
+ * last poll — or, when its identity changed, "Identity changed — not used". On the main device (`editable`) every relay
+ * but the preferred one may be made preferred (not a changed one) or removed, a changed one's identity accepted, and
+ * another added while there are fewer than four; elsewhere the list only shows. `org_identity_changed`: the org's
+ * origin, not on the list, whose identity changed (its line shows on every device).
  */
-MyRelaysView MyRelaysViewFor(const std::vector<MyRelayFacts>& relays, bool editable);
+MyRelaysView MyRelaysViewFor(const std::vector<MyRelayFacts>& relays, bool editable,
+                             const std::string& org_identity_changed = "");
 
 /** A relay's host (and port) from its base URL: `https://relay.example.org/api/relay` → `relay.example.org`. */
 std::string MyRelayLabel(const std::string& origin);

@@ -142,8 +142,13 @@ struct SettingsCommands {
   std::function<Roe<void>(const std::string& peer_id)> make_main_device;
   /** Me → Network → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
   std::function<Roe<MyRelaysView>()> my_relays;
-  /** Adds the relay the user typed (it must answer: HTTP, a worker). An error says why (MyRelaysFailureText). */
-  std::function<Roe<void>(const std::string& typed)> add_my_relay;
+  /**
+   * Adds the relay the user typed (it must answer and identify itself: HTTP, a worker). An error says why
+   * (MyRelaysFailureText); `relay_identity_changed_since_seen` asks the person, then Add with `accept_changed_identity`.
+   */
+  std::function<Roe<void>(const std::string& typed, bool accept_changed_identity)> add_my_relay;
+  /** Accepts the new identity a relay of ours, or the org's origin, presented (MR007); a worker. */
+  std::function<Roe<void>(const std::string& origin)> accept_relay_identity;
   /** Removes a relay of ours (not the preferred one); a worker. */
   std::function<Roe<void>(const std::string& origin)> remove_my_relay;
   /** Makes a relay of ours the preferred one; a worker. */

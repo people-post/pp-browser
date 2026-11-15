@@ -58,16 +58,26 @@ std::string MyRelayLabel(const std::string& origin) {
   return std::string(rest.substr(0, rest.find('/')));
 }
 
-MyRelaysView MyRelaysViewFor(const std::vector<MyRelayFacts>& relays, const bool editable) {
+MyRelaysView MyRelaysViewFor(const std::vector<MyRelayFacts>& relays, const bool editable,
+                             const std::string& org_identity_changed) {
   MyRelaysView view;
   view.editable = editable;
   view.can_add = editable && relays.size() < kMaxOurRelays;
+  view.org_identity_changed = org_identity_changed;
   for (size_t i = 0; i < relays.size(); ++i) {
     const MyRelayFacts& facts = relays[i];
     MyRelayRowView row{.origin = facts.origin, .label = MyRelayLabel(facts.origin), .preferred = i == 0};
-    FillState(row, facts.registration);
-    FillReach(row, facts);
-    row.can_make_preferred = editable && i > 0;
+    if (facts.identity_changed) {
+      // Not used until accepted (MR007): not polled, registered on or sent to, so no registration or poll to show.
+      row.state_kind = "error";
+      row.state = Tr("settings.relays.state.identity_changed");
+      row.identity_changed = true;
+      row.can_accept_identity = editable;
+    } else {
+      FillState(row, facts.registration);
+      FillReach(row, facts);
+    }
+    row.can_make_preferred = editable && i > 0 && !facts.identity_changed;
     row.can_remove = editable && i > 0; // the preferred one stays until another is preferred; never the last
     view.relays.push_back(std::move(row));
   }
@@ -75,6 +85,17 @@ MyRelaysView MyRelaysViewFor(const std::vector<MyRelayFacts>& relays, const bool
 }
 
 std::string MyRelaysFailureText(const Error& error) {
+  // relay_identity_taken|<host>: the host that holds the PeerId the relay claims (MR007).
+  if (const size_t bar = error.message.find('|'); bar != std::string::npos) {
+    const std::string code = error.message.substr(0, bar);
+    const std::string host = error.message.substr(bar + 1);
+    if (code == "relay_identity_taken") {
+      return Tr("settings.relays.error.identity_taken", {{"host", host}});
+    }
+    if (code == "relay_identity_taken_known") {
+      return Tr("settings.relays.error.identity_taken_known", {{"host", host}});
+    }
+  }
   static const std::map<std::string, std::string> kKeys = {
       {"relay_origin_empty", "settings.relays.error.empty"},
       {"relay_origin_not_a_url", "settings.relays.error.not_a_url"},
@@ -90,6 +111,9 @@ std::string MyRelaysFailureText(const Error& error) {
       {"relay_list_last", "settings.relays.error.last"},
       {"relay_list_not_main_device", "settings.relays.not_main"},
       {"relay_list_not_applied", "settings.relays.error.not_applied"},
+      {"relay_identity_unavailable", "settings.relays.error.identity_unavailable"},
+      {"relay_identity_changed_since_seen", "settings.relays.add.identity_changed_message"},
+      {"relay_identity_not_changed", "settings.relays.error.identity_not_changed"},
   };
   const auto key = kKeys.find(error.message);
   return key == kKeys.end() ? error.message : Tr(key->second);

@@ -85,6 +85,23 @@ protected:
     ports.register_others = [this]() { steps_.push_back("register_others"); };
     ports.announce = [this]() { steps_.push_back("announce"); };
     ports.changed = [this]() { ++changed_; };
+    ports.check_identity = [this](const std::string& base_url) {
+      steps_.push_back("identity " + base_url);
+      return identity_check_;
+    };
+    ports.repin = [this](const std::string& base_url, const std::string& peer_id) -> Roe<void> {
+      steps_.push_back("repin " + base_url + " " + peer_id);
+      return {};
+    };
+    ports.drop_pin = [this](const std::string& origin) { steps_.push_back("drop_pin " + origin); };
+    ports.identity_changed = [this](const std::string& origin) { return changed_identity_ == origin; };
+    ports.accept_identity = [this](const std::string& origin) -> Roe<void> {
+      steps_.push_back("accept " + origin);
+      changed_identity_.clear();
+      return {};
+    };
+    ports.register_now = [this](const std::string& origin) { steps_.push_back("register_now " + origin); };
+    ports.org_identity_changed = [this]() { return org_changed_; };
     return ports;
   }
   static std::string Join(const Origins& origins) {
@@ -108,15 +125,80 @@ protected:
   std::function<void()> on_apply_;
   std::string registered_at_ = kA;
   int changed_ = 0;
+  AddIdentityCheck identity_check_;
+  std::string changed_identity_;
+  std::string org_changed_;
 };
 
 TEST_F(MyRelaysWorkflowTest, ARelayAddedAnswersIsKeptLastAndRegisteredOnAndTheCardGoes) {
   ASSERT_EQ(ErrorOf(workflow_->Add("https://C.example", false)), "ok");
-  EXPECT_EQ(steps_, Steps({"probe " + std::string(kC), "apply a,b,c", "register_others", "announce"}));
+  EXPECT_EQ(steps_, Steps({"probe " + std::string(kC), "identity " + std::string(kC), "apply a,b,c", "register_others",
+                           "announce"}))
+      << "pinned before anything is signed for it (MR007-PIN)";
   EXPECT_EQ(store_->List().Origins(), Origins({kA, kB, kC}));
   EXPECT_EQ(changed_, 1);
   OurRelaysStore reread(dir_.string());
   EXPECT_EQ(reread.LoadOrSeed(kA, {}).Origins(), Origins({kA, kB, kC})) << "kept in the profile";
+}
+
+// MR007-PIN (what the user sees): Add's identity refusals; nothing is kept for a relay we could not pin.
+TEST_F(MyRelaysWorkflowTest, ARelayThatDoesNotIdentifyItselfOrClaimsAnotherIdentityIsNotAdded) {
+  identity_check_ = AddIdentityCheck{.result = AddIdentityCheck::Result::Unavailable};
+  EXPECT_EQ(ErrorOf(workflow_->Add("https://c.example", false)), MyRelaysWorkflow::kIdentityUnavailable);
+  identity_check_ = AddIdentityCheck{.result = AddIdentityCheck::Result::Taken, .holder = kB};
+  EXPECT_EQ(ErrorOf(workflow_->Add("https://c.example", false)),
+            std::string(MyRelaysWorkflow::kIdentityTaken) + "|b.example")
+      << "the relay on our list that holds it";
+  identity_check_ =
+      AddIdentityCheck{.result = AddIdentityCheck::Result::Taken, .holder = "https://d.example/api/relay"};
+  EXPECT_EQ(ErrorOf(workflow_->Add("https://c.example", false)),
+            std::string(MyRelaysWorkflow::kIdentityTakenKnown) + "|d.example")
+      << "a relay we know (a contact's)";
+  EXPECT_EQ(store_->List().Origins(), Origins({kA, kB}));
+}
+
+TEST_F(MyRelaysWorkflowTest, ARelaySeenWithAnotherIdentityIsAddedOnlyOnConfirmAndRepinned) {
+  identity_check_ = AddIdentityCheck{.result = AddIdentityCheck::Result::ChangedSinceSeen, .peer_id = "QmNew"};
+  EXPECT_EQ(ErrorOf(workflow_->Add("https://c.example", false)), MyRelaysWorkflow::kIdentityChangedSinceSeen);
+  EXPECT_EQ(store_->List().Origins(), Origins({kA, kB}));
+  steps_.clear();
+  ASSERT_EQ(ErrorOf(workflow_->Add("https://c.example", false, true)), "ok");
+  EXPECT_EQ(steps_[2], "repin " + std::string(kC) + " QmNew");
+  EXPECT_EQ(store_->List().Origins(), Origins({kA, kB, kC}));
+}
+
+// MR007: Remove… drops the pin after the revoke; a relay whose identity changed gets no revoke (never signed for).
+TEST_F(MyRelaysWorkflowTest, RemoveDropsThePinAndRevokesNothingForAChangedIdentity) {
+  ASSERT_EQ(ErrorOf(workflow_->Remove(kB)), "ok");
+  EXPECT_EQ(Steps(steps_.begin(), steps_.begin() + 2),
+            Steps({"leave " + std::string(kB), "drop_pin " + std::string(kB)}));
+  ASSERT_EQ(ErrorOf(workflow_->Add("https://c.example", false)), "ok");
+  steps_.clear();
+  changed_identity_ = kC;
+  ASSERT_EQ(ErrorOf(workflow_->Remove(kC)), "ok");
+  EXPECT_EQ(steps_.front(), "drop_pin " + std::string(kC));
+}
+
+// MR007: Accept re-pins, registers there again (the preferred one as the identity's) and re-issues the card.
+TEST_F(MyRelaysWorkflowTest, AcceptingANewIdentityRepinsRegistersAndAnnounces) {
+  changed_identity_ = kB;
+  const OurRelaysStatus before = workflow_->Status();
+  EXPECT_TRUE(before.relays[1].identity_changed);
+  EXPECT_FALSE(before.relays[0].identity_changed);
+  ASSERT_EQ(ErrorOf(workflow_->AcceptIdentity(kB)), "ok");
+  EXPECT_EQ(steps_, Steps({"accept " + std::string(kB), "register_now " + std::string(kB), "announce"}));
+  steps_.clear();
+  changed_identity_ = kA;
+  ASSERT_EQ(ErrorOf(workflow_->AcceptIdentity(kA)), "ok");
+  EXPECT_EQ(steps_, Steps({"accept " + std::string(kA), "register_preferred " + std::string(kA), "announce"}));
+
+  main_device_ = false;
+  EXPECT_EQ(ErrorOf(workflow_->AcceptIdentity(kB)), "relay_list_not_main_device") << "ours: the main device's";
+  steps_.clear();
+  org_changed_ = "https://org.example/api/relay";
+  EXPECT_EQ(workflow_->Status().org_identity_changed, org_changed_);
+  ASSERT_EQ(ErrorOf(workflow_->AcceptIdentity(org_changed_)), "ok") << "the org's origin: any device";
+  EXPECT_EQ(steps_, Steps({"accept " + org_changed_})) << "not ours: nothing registered or announced";
 }
 
 TEST_F(MyRelaysWorkflowTest, ARelayThatDoesNotAnswerIsNotAdded) {
@@ -146,7 +228,8 @@ TEST_F(MyRelaysWorkflowTest, ARelayAtALocalAddressIsRefusedOutsideDeveloperBuild
 
 TEST_F(MyRelaysWorkflowTest, ARelayRemovedIsLeftFirstThenTheServicesFollow) {
   ASSERT_EQ(ErrorOf(workflow_->Remove(kB)), "ok");
-  EXPECT_EQ(steps_, Steps({"leave " + std::string(kB), "apply a", "register_others", "announce"}));
+  EXPECT_EQ(steps_, Steps({"leave " + std::string(kB), "drop_pin " + std::string(kB), "apply a", "register_others",
+                           "announce"}));
   EXPECT_EQ(store_->List().Origins(), Origins({kA}));
 }
 

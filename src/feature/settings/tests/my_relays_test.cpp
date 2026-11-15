@@ -95,3 +95,35 @@ TEST(MyRelaysTest, ARefusedChangeSaysWhyInWords) {
             "The app was busy and didn't change your relays. Your list is as it was; try again.");
   EXPECT_EQ(pbr::MyRelaysFailureText(pp::Error("Messaging is not ready")), "Messaging is not ready");
 }
+
+// MR007 § Pins (what the user sees): a relay whose identity changed reads "Identity changed — not used", is not made
+// preferred, may be removed or its identity accepted on the main device; the org's origin's line shows on any device.
+TEST(MyRelaysTest, ARelayWhoseIdentityChangedSaysItIsNotUsed) {
+  LoadLocales();
+  MyRelayFacts changed = Relay("b.example", Registered("2099-01-01T00:00:00Z"), MyRelayFacts::Reach::Failed);
+  changed.identity_changed = true;
+  const pbr::MyRelaysView view =
+      pbr::MyRelaysViewFor({Relay("a.example"), changed}, true, "https://org.example/api/relay");
+  ASSERT_EQ(view.relays.size(), 2u);
+  const pbr::MyRelayRowView& row = view.relays[1];
+  EXPECT_EQ(row.state, "Identity changed — not used");
+  EXPECT_EQ(row.state_kind, "error");
+  EXPECT_TRUE(row.reach.empty()) << "it is not polled";
+  EXPECT_TRUE(row.can_accept_identity);
+  EXPECT_TRUE(row.can_remove);
+  EXPECT_FALSE(row.can_make_preferred);
+  EXPECT_FALSE(view.relays[0].can_accept_identity);
+  EXPECT_EQ(view.org_identity_changed, "https://org.example/api/relay");
+  EXPECT_FALSE(pbr::MyRelaysViewFor({Relay("a.example"), changed}, false).relays[1].can_accept_identity)
+      << "a linked device shows it only";
+}
+
+TEST(MyRelaysTest, AddsIdentityRefusalsAreWorded) {
+  LoadLocales();
+  EXPECT_EQ(pbr::MyRelaysFailureText(pbr::Error("relay_identity_unavailable")),
+            "This server doesn't identify itself as a relay.");
+  EXPECT_EQ(pbr::MyRelaysFailureText(pbr::Error("relay_identity_taken|b.example")),
+            "This relay is already on your list as b.example.");
+  EXPECT_EQ(pbr::MyRelaysFailureText(pbr::Error("relay_identity_taken_known|c.example")),
+            "This relay is already known as c.example.");
+}

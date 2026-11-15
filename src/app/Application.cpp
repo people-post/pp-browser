@@ -381,13 +381,16 @@ void WireMyRelaysCommands(SettingsCommands& commands, ConversationsFacade& facad
                                              : relay.reach == OurRelayStatus::Reach::Failed
                                                  ? MyRelayFacts::Reach::Failed
                                                  : MyRelayFacts::Reach::Unknown,
-                                    .reach_at_ms = relay.reach_at_ms});
+                                    .reach_at_ms = relay.reach_at_ms,
+                                    .identity_changed = relay.identity_changed});
     }
-    return MyRelaysViewFor(relays, status->editable);
+    return MyRelaysViewFor(relays, status->editable, status->org_identity_changed);
   };
-  commands.add_my_relay = [&facade](const std::string& typed) {
-    return facade.AddOurRelay(typed); // plain http:// and local addresses: developer builds (HubSettings)
+  commands.add_my_relay = [&facade](const std::string& typed, const bool accept_changed_identity) {
+    // plain http:// and local addresses: developer builds (HubSettings)
+    return facade.AddOurRelay(typed, accept_changed_identity);
   };
+  commands.accept_relay_identity = [&facade](const std::string& origin) { return facade.AcceptRelayIdentity(origin); };
   commands.remove_my_relay = [&facade](const std::string& origin) { return facade.RemoveOurRelay(origin); };
   commands.make_relay_preferred = [&facade](const std::string& origin) { return facade.MakeOurRelayPreferred(origin); };
   commands.watch_my_relays = [&facade](std::function<void()> changed) {

@@ -4277,7 +4277,56 @@ MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {
   ports.register_others = [this]() { RegisterOnOtherRelaysSoon(); };
   ports.announce = [this]() { ReissueAndAnnounceCard(); };
   ports.changed = [this]() { NotifyOurRelaysChanged(); };
+  WireMyRelaysIdentityPorts(ports);
   return ports;
+}
+
+void ConversationsHub::WireMyRelaysIdentityPorts(MyRelaysWorkflow::Ports& ports) {
+  // Each takes the profile's pins as they are when it runs (none once the profile closes).
+  ports.check_identity = [this](const std::string& base_url) {
+    const auto pins = relay_pins_;
+    return pins ? pins->CheckForAdd(base_url) : AddIdentityCheck{.result = AddIdentityCheck::Result::Unavailable};
+  };
+  ports.repin = [this](const std::string& base_url, const std::string& peer_id) -> Roe<void> {
+    const auto pins = relay_pins_;
+    return pins ? pins->Repin(base_url, peer_id) : Roe<void>(Error(MyRelaysWorkflow::kClosed));
+  };
+  ports.drop_pin = [this](const std::string& origin) {
+    if (const auto pins = relay_pins_) {
+      pins->Drop(origin);
+    }
+  };
+  ports.identity_changed = [this](const std::string& origin) {
+    const auto pins = relay_pins_;
+    return pins && pins->IdentityChanged(origin);
+  };
+  ports.accept_identity = [this](const std::string& origin) -> Roe<void> {
+    const auto pins = relay_pins_;
+    return pins ? pins->Accept(origin) : Roe<void>(Error(MyRelaysWorkflow::kClosed));
+  };
+  ports.register_now = [this](const std::string& origin) {
+    if (const auto registrations = OtherRelayRegistrations()) {
+      registrations->MakeDue(origin);
+    }
+    RegisterOnOtherRelaysSoon();
+  };
+  ports.org_identity_changed = [this]() -> std::string {
+    const auto pins = relay_pins_;
+    std::vector<std::string> org;
+    {
+      std::lock_guard lock(kept_pins_mu_);
+      org = kept_pins_; // ours, then the org's origins
+    }
+    const std::vector<std::string> ours = OurRelayOrigins();
+    for (const std::string& origin : org) {
+      const bool is_ours = std::any_of(ours.begin(), ours.end(),
+                                       [&origin](const std::string& relay) { return SameRelay(relay, origin); });
+      if (pins && !is_ours && pins->IdentityChanged(origin)) {
+        return origin;
+      }
+    }
+    return {};
+  };
 }
 
 Roe<OurRelaysStatus> ConversationsHub::OurRelays() {
@@ -4288,12 +4337,20 @@ Roe<OurRelaysStatus> ConversationsHub::OurRelays() {
   return relays->Status();
 }
 
-Roe<void> ConversationsHub::AddOurRelay(const std::string& typed) {
+Roe<void> ConversationsHub::AddOurRelay(const std::string& typed, const bool accept_changed_identity) {
   const auto relays = MyRelays();
   if (!relays || !IsMessagingReady()) {
     return Error(MyRelaysWorkflow::kClosed);
   }
-  return relays->Add(typed, config_.developer_relays);
+  return relays->Add(typed, config_.developer_relays, accept_changed_identity);
+}
+
+Roe<void> ConversationsHub::AcceptRelayIdentity(const std::string& origin) {
+  const auto relays = MyRelays();
+  if (!relays || !IsMessagingReady()) {
+    return Error(MyRelaysWorkflow::kClosed);
+  }
+  return relays->AcceptIdentity(origin);
 }
 
 Roe<void> ConversationsHub::RemoveOurRelay(const std::string& origin) {

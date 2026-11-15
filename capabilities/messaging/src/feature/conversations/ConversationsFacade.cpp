@@ -200,8 +200,12 @@ Roe<OurRelaysStatus> ConversationsFacade::OurRelays() {
   return hub_.OurRelays();
 }
 
-Roe<void> ConversationsFacade::AddOurRelay(const std::string& typed) {
-  return hub_.AddOurRelay(typed);
+Roe<void> ConversationsFacade::AddOurRelay(const std::string& typed, const bool accept_changed_identity) {
+  return hub_.AddOurRelay(typed, accept_changed_identity);
+}
+
+Roe<void> ConversationsFacade::AcceptRelayIdentity(const std::string& origin) {
+  return hub_.AcceptRelayIdentity(origin);
 }
 
 Roe<void> ConversationsFacade::RemoveOurRelay(const std::string& origin) {
