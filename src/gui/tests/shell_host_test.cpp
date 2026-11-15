@@ -20,6 +20,11 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_EQ(ShellLayout::FromWidth(767.f), LayoutMode::Compact);
   EXPECT_EQ(ShellLayout::FromWidth(768.f), LayoutMode::Expanded);
   EXPECT_EQ(ShellLayout::FromWidth(1280.f), LayoutMode::Expanded);
+  EXPECT_EQ(ShellLayout::ForDevice(500.f, true), LayoutMode::Expanded);
+  EXPECT_EQ(ShellLayout::ForDevice(500.f, false), LayoutMode::Compact);
+  EXPECT_EQ(ShellLayout::ForDevice(767.f, false), LayoutMode::Compact);
+  EXPECT_EQ(ShellLayout::ForDevice(1280.f, false), LayoutMode::Expanded);
+  EXPECT_EQ(ShellLayout::ForDevice(1280.f, true), LayoutMode::Expanded);
   EXPECT_EQ(ShellLayout::NavTabString(NavTab::Home), std::string("home"));
   EXPECT_EQ(ShellLayout::NavContentKey(NavTab::Home), nullptr);
   EXPECT_FALSE(ShellLayout::TabHasSecondary(NavTab::Home));

@@ -6,6 +6,8 @@ namespace pbr {
 
 struct ShellLayout {
   static LayoutMode FromWidth(float width_dp, float breakpoint = ShellConfig{}.compact_breakpoint_dp);
+  /** Like FromWidth, but a tablet (iPad) never gets the phone layout, whatever width arrives. */
+  static LayoutMode ForDevice(float width_dp, bool is_tablet, float breakpoint = ShellConfig{}.compact_breakpoint_dp);
   static const char* LayoutModeString(LayoutMode mode);
   static const char* NavTabString(NavTab tab);
   static void SyncLayoutModeString(ShellState& state);

@@ -1801,7 +1801,7 @@ void ShellHost::ApplyLayoutModeFromContext(ui::Context* context) {
   const float dp_ratio = context->GetDensityIndependentPixelRatio();
   const float width_dp = static_cast<float>(context->GetDimensions().x) / dp_ratio;
   state_.shell_width_dp = width_dp;
-  state_.layout_mode = ShellLayout::FromWidth(width_dp, config_.compact_breakpoint_dp);
+  state_.layout_mode = ShellLayout::ForDevice(width_dp, IsIpadDevice(), config_.compact_breakpoint_dp);
   ShellLayout::SyncLayoutModeString(state_);
   ContextMenuHost::Instance().SetCompactLayout(state_.layout_mode == LayoutMode::Compact);
 }

@@ -39,7 +39,29 @@ const char* OrientationName(UIInterfaceOrientation o) {
   }
 }
 
+// iPad: the window can be resized by the user (iPadOS 27 windowing); never let it go below the wide layout. Sets
+// only on change, so calling it every frame is cheap. Needs the scene to exist; iPhone is left alone.
+void ApplyIpadMinimumWindowSize(UIWindow* uiwindow) {
+  if (!IsIpadDevice()) {
+    return;
+  }
+  if (@available(iOS 16.0, *)) {
+    UISceneSizeRestrictions* restrictions = uiwindow.windowScene.sizeRestrictions;
+    if (!restrictions) {
+      return;
+    }
+    const CGSize want = CGSizeMake(kIpadMinWindowWidthPt, kIpadMinWindowHeightPt);
+    if (!CGSizeEqualToSize(restrictions.minimumSize, want)) {
+      restrictions.minimumSize = want;
+    }
+  }
+}
+
 } // namespace
+
+bool IsIpadDevice() {
+  return UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad;
+}
 
 UikitGeometryFix SyncUikitWindowGeometry(SDL_Window* window) {
   UIWindow* uiwindow = WindowOf(window);
@@ -47,6 +69,7 @@ UikitGeometryFix SyncUikitWindowGeometry(SDL_Window* window) {
   if (!uiwindow || !view) {
     return {};
   }
+  ApplyIpadMinimumWindowSize(uiwindow);
   UikitViewGeometry g;
   g.window_w = uiwindow.bounds.size.width;
   g.window_h = uiwindow.bounds.size.height;

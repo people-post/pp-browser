@@ -10,6 +10,10 @@ int WindowControlsTopInset(SDL_Window* /*window*/) {
   return 0;
 }
 
+bool IsIpadDevice() {
+  return false;
+}
+
 std::string DescribeUikitWindowGeometry(SDL_Window* /*window*/) {
   return {};
 }

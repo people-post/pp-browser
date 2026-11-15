@@ -9,9 +9,9 @@ namespace pbr {
 
 /** What UIKit says about SDL's window, in points (sizes) and points-to-pixels factors (scales). */
 struct UikitViewGeometry {
-  double window_w = 0;     // the UIWindow's bounds
+  double window_w = 0; // the UIWindow's bounds
   double window_h = 0;
-  double view_w = 0;       // SDL's root view (the GL view) bounds
+  double view_w = 0; // SDL's root view (the GL view) bounds
   double view_h = 0;
   double view_scale = 0;   // the view's contentScaleFactor: the GL drawable is view bounds x this
   double screen_scale = 0; // the window's screen nativeScale: SDL reports pixels as view bounds x this
@@ -50,6 +50,15 @@ UikitGeometryFix SyncUikitWindowGeometry(SDL_Window* window);
  * full screen) in the top-left corner when the app runs in a window; at least the plain top safe area. 0 elsewhere.
  */
 int WindowControlsTopInset(SDL_Window* window);
+
+/** The smallest window the iPad app is given, in UIKit points (= our dp on iOS: SDL's display scale is the screen's
+ *  nativeScale, so dp = pixels / nativeScale = points). Width is the phone-layout breakpoint (768 dp) so the wide
+ *  layout always fits; height keeps a 4:3 window usable (nav rail, a 200 dp sidebar and the chat). */
+inline constexpr double kIpadMinWindowWidthPt = 768;
+inline constexpr double kIpadMinWindowHeightPt = 576;
+
+/** iOS: the device is an iPad (UIDevice idiom). false elsewhere, and on iPhone. */
+bool IsIpadDevice();
 
 /** iOS: one line with the scene / window / view sizes, scales and interface orientation, for the log. "" elsewhere. */
 std::string DescribeUikitWindowGeometry(SDL_Window* window);

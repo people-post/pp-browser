@@ -61,6 +61,7 @@ TEST(UikitWindowGeometryTest, DesktopHelpersAreNoOps) {
   EXPECT_FALSE(SyncUikitWindowGeometry(nullptr).Any());
   EXPECT_EQ(WindowControlsTopInset(nullptr), 0);
   EXPECT_TRUE(DescribeUikitWindowGeometry(nullptr).empty());
+  EXPECT_FALSE(IsIpadDevice());
 }
 
 } // namespace
