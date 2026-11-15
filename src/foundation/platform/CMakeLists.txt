@@ -380,6 +380,13 @@ if(PP_BROWSER_IS_IOS)
     "-framework UniformTypeIdentifiers")
 endif()
 
+# Orientations the window may take (SDL_HINT_ORIENTATIONS): iOS asks the device idiom (iPad rotates, iPhone portrait).
+if(PP_BROWSER_IS_IOS)
+  target_sources(pp_foundation_platform PRIVATE MobileOrientation_Ios.mm)
+else()
+  target_sources(pp_foundation_platform PRIVATE MobileOrientation_Default.cpp)
+endif()
+
 # On-screen keyboard height: only iOS needs it (its safe area leaves the keyboard out).
 if(PP_BROWSER_IS_IOS)
   target_sources(pp_foundation_platform PRIVATE ScreenKeyboard_Ios.mm)

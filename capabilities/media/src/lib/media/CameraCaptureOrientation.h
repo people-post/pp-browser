@@ -49,11 +49,25 @@ int CameraFrameRotateCw(const CameraCaptureTransform& opened, int current_displa
 
 /**
  * Clockwise rotation for the LOCAL preview, which is drawn on the device's own screen: upright
- * relative to the screen, not the world. iOS (portrait-locked UI): the portrait rotation, so the
- * preview stays head-up on the screen while the sent frame follows the phone's physical
- * orientation. Android / desktop: same as the sent frame (`opened.rotate_cw`). Any thread.
+ * relative to the screen, not the world. iOS: the rotation of the app's interface (portrait on an
+ * iPhone; an iPad's landscape too), so the preview stays head-up on the screen while the sent frame
+ * follows the phone's physical orientation. Android / desktop: same as the sent frame
+ * (`opened.rotate_cw`). Any thread.
  */
 int CameraPreviewRotateCw(const CameraCaptureTransform& opened);
+
+/**
+ * Size of the local preview for a rotation: the camera's frame is landscape, so a quarter turn (90 / 270) gives the
+ * portrait shape of the encode size and no turn (0 / 180) the landscape one. The sent frame keeps the shape chosen at
+ * open; the preview follows the screen.
+ */
+inline void CameraPreviewSize(const CameraCaptureTransform& opened, int preview_rotate_cw, int& width, int& height) {
+  const int longer = opened.encode_width > opened.encode_height ? opened.encode_width : opened.encode_height;
+  const int shorter = opened.encode_width > opened.encode_height ? opened.encode_height : opened.encode_width;
+  const bool quarter_turn = (((preview_rotate_cw % 360) + 360) % 180) == 90;
+  width = quarter_turn ? shorter : longer;
+  height = quarter_turn ? longer : shorter;
+}
 
 /**
  * iOS: clockwise degrees to make a CoreMedia camera buffer upright, from camera facing and the

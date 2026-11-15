@@ -302,7 +302,7 @@ stamp_xcode_build_keys() {
 
   # ASC requires CFBundleIconName when shipping an Assets.car AppIcon catalog.
   plist_set_string "$plist" CFBundleIconName AppIcon
-  # Portrait-only product: opt out of iPad multitasking (all-orientation rule).
+  # Opt out of iPad multitasking (Split View / Stage Manager); the iPad still rotates (Info.plist).
   /usr/libexec/PlistBuddy -c "Set :UIRequiresFullScreen true" "$plist" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c "Add :UIRequiresFullScreen bool true" "$plist" 2>/dev/null \
     || plutil -replace UIRequiresFullScreen -bool true "$plist"

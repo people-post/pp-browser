@@ -1,4 +1,5 @@
 #include "foundation/platform/ui/RmlUi_Backend.h"
+#include "foundation/platform/MobileOrientation.h"
 #include "foundation/platform/ScreenAwake.h"
 #include "foundation/platform/ScreenKeyboard.h"
 #include "common/runtime/AppRuntime.h"
@@ -244,12 +245,11 @@ static bool SDLCALL LiveResizeEventWatch(void* /*userdata*/, SDL_Event* event) {
 bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize, bool borderless) {
   UI_ASSERT(!data);
 
-  // Mobile: lock UI to portrait so rotation does not tear down EGL / reshape the
-  // shell mid-frame (and so in-call video avoids orientation-related crashes).
-  // Must be set before SDL_Init. Desktop window resize is unaffected.
-#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
-  SDL_SetHint(SDL_HINT_ORIENTATIONS, "Portrait");
-#endif
+  // Mobile: the phone stays in portrait so rotation does not reshape the shell mid-call (and in-call video avoids
+  // orientation-related crashes); an iPad rotates (the layout follows the width). Must be set before SDL_Init.
+  // Desktop window resize is unaffected (no hint).
+  if (const char* orientations = pbr::MobileOrientationsHint())
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, orientations);
 
   // SDL turns the OS's screen sleep off at video init unless told otherwise (B215: PP kept a charging phone lit all
   // night). Platform::EarlyInit sets the hint before any SDL init; the explicit enable below does not depend on who

@@ -1866,13 +1866,18 @@ struct MediaEngine::Impl {
                                         .encode_height = geometry.encode_height,
                                         .front_facing = geometry.front_facing};
     const int rotate_cw = CameraFrameRotateCw(opened, camera_display_rotation.load(std::memory_order_relaxed));
-    // The local preview is drawn on this device's screen, which turns with the phone: keep it
-    // upright relative to the screen (only differs from the sent frame when the phone is turned).
+    // The local preview is drawn on this device's screen: upright relative to the screen's own orientation (iOS: the
+    // interface, which an iPad turns to landscape), in the shape that orientation gives. It is a frame of its own when
+    // it differs from the sent one (the phone turned under a locked screen, or an iPad in landscape).
     const int preview_rotate_cw = CameraPreviewRotateCw(opened);
-    if (preview_rotate_cw != rotate_cw) {
+    int preview_w = geometry.encode_width;
+    int preview_h = geometry.encode_height;
+    CameraPreviewSize(opened, preview_rotate_cw, preview_w, preview_h);
+    const bool preview_apart =
+        preview_rotate_cw != rotate_cw || preview_w != geometry.encode_width || preview_h != geometry.encode_height;
+    if (preview_apart) {
       VideoFrameRgba preview_fitted;
-      if (ScaleCenterCropRgba(OrientFrame(captured, preview_rotate_cw), geometry.encode_width, geometry.encode_height,
-                              preview_fitted)) {
+      if (ScaleCenterCropRgba(OrientFrame(captured, preview_rotate_cw), preview_w, preview_h, preview_fitted)) {
         PublishLocalPreview(preview_fitted, geometry.mirror_preview);
         preview_frames.fetch_add(1, std::memory_order_relaxed);
       }
@@ -1882,7 +1887,7 @@ struct MediaEngine::Impl {
     if (!ScaleCenterCropRgba(oriented, geometry.encode_width, geometry.encode_height, fitted)) {
       return;
     }
-    if (preview_rotate_cw == rotate_cw) {
+    if (!preview_apart) {
       PublishLocalPreview(fitted, geometry.mirror_preview);
       preview_frames.fetch_add(1, std::memory_order_relaxed);
     }
