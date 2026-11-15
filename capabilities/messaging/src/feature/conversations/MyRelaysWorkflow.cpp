@@ -1,5 +1,7 @@
 #include "feature/conversations/MyRelaysWorkflow.h"
 
+#include "common/Utilities.h"
+
 #include <utility>
 
 namespace pbr {
@@ -283,11 +285,13 @@ void MyRelaysWorkflow::RegisterPreferred(const std::string& preferred) {
   if (auto registered = ports_.register_preferred(); !registered) {
     log().warning << "registration on the preferred relay " << preferred << " failed: " << registered.error().message;
     store_.Record(preferred, RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Failed,
-                                                     .reason = registered.error().message});
+                                                     .reason = registered.error().message,
+                                                     .at_ms = util::NowUnixMs()});
     return;
   }
   if (ports_.preferred_registration) {
     if (auto record = ports_.preferred_registration()) {
+      record->at_ms = util::NowUnixMs();
       store_.Record(preferred, *record);
     }
   }

@@ -86,6 +86,7 @@ RelayPinStore::RelayPinStore(std::string profile_data_dir) : profile_data_dir_(s
 void RelayPinStore::Load() {
   std::lock_guard lock(mutex_);
   pins_.clear();
+  newer_file_ = false;
   if (profile_data_dir_.empty()) {
     return;
   }
@@ -96,7 +97,12 @@ void RelayPinStore::Load() {
   const auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
   auto pins = text ? RelayPinsFromJson(*text) : std::nullopt;
   if (!pins) {
-    PinLog().error << "relay_pins.json refused (another schema_version, or not JSON): the relays are pinned again";
+    const auto root = text ? TryParseObject(*text) : std::nullopt;
+    newer_file_ = root && root->getIf<int64_t>("schema_version").value_or(0) > kSchemaVersion;
+    PinLog().error << "relay_pins.json refused ("
+                   << (newer_file_ ? "a newer schema_version: kept as it is, pins held in memory only"
+                                   : "another schema_version, or not JSON")
+                   << "): the relays are pinned again";
     return;
   }
   pins_ = std::move(*pins);
@@ -240,8 +246,8 @@ void RelayPinStore::Drop(const std::string& origin) {
 }
 
 void RelayPinStore::SaveLocked() const {
-  if (profile_data_dir_.empty()) {
-    return;
+  if (profile_data_dir_.empty() || newer_file_) {
+    return; // a newer app's file is never overwritten
   }
   std::error_code ec;
   std::filesystem::create_directories(profile_data_dir_, ec);

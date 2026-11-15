@@ -4,6 +4,7 @@
 
 #include "common/AtomicFileWrite.h"
 #include "common/BoundedRead.h"
+#include "common/Logger.h"
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
 
@@ -178,7 +179,7 @@ Roe<OurRelaysList> WithRelayPreferred(const OurRelaysList& list, const std::stri
 
 std::string OurRelaysToJson(const OurRelaysList& list) {
   Object root;
-  root.set("version", kFileVersion);
+  root.set("schema_version", kFileVersion);
   std::vector<Value> relays;
   for (const OurRelayEntry& entry : list.relays) {
     Object relay;
@@ -192,8 +193,8 @@ std::string OurRelaysToJson(const OurRelaysList& list) {
 
 std::optional<OurRelaysList> OurRelaysFromJson(const std::string& text) {
   const auto root = TryParseObject(text);
-  if (!root || root->getIf<int64_t>("version").value_or(0) != kFileVersion) {
-    return std::nullopt; // not ours to read (a newer file, garbage): seeded again
+  if (!root || root->getIf<int64_t>("schema_version").value_or(0) != kFileVersion) {
+    return std::nullopt; // not ours to read (another schema, garbage)
   }
   const Array* relays = root->getArray("relays");
   if (!relays) {
@@ -218,8 +219,14 @@ std::optional<OurRelaysList> OurRelaysFromJson(const std::string& text) {
 
 OurRelaysStore::OurRelaysStore(std::string profile_data_dir) : profile_data_dir_(std::move(profile_data_dir)) {}
 
+bool OurRelaysFileIsNewer(const std::string& text) {
+  const auto root = TryParseObject(text);
+  return root && root->getIf<int64_t>("schema_version").value_or(0) > kFileVersion;
+}
+
 OurRelaysList OurRelaysStore::LoadOrSeed(const std::string& org_relay, const std::vector<std::string>& extras) {
   std::lock_guard lock(mutex_);
+  newer_file_ = false;
   if (!profile_data_dir_.empty()) {
     std::ifstream in(ListPath(profile_data_dir_));
     if (in) {
@@ -229,6 +236,11 @@ OurRelaysList OurRelaysStore::LoadOrSeed(const std::string& org_relay, const std
         list_ = std::move(*kept);
         return list_;
       }
+      // A newer app's list is the user's: never overwritten (this run uses the seed, and changes nothing).
+      newer_file_ = text && OurRelaysFileIsNewer(*text);
+      logging::getLogger("OurRelays").error << "our_relays.json refused ("
+                                            << (newer_file_ ? "a newer schema_version: kept as it is" : "not readable")
+                                            << "); the deployment's relays are used";
     }
   }
   list_ = {};
@@ -252,8 +264,10 @@ Roe<void> OurRelaysStore::Replace(const OurRelaysList& list) {
   for (const std::string& origin : BoundOurRelays(list.Origins())) {
     OurRelayEntry entry = *Find(list, origin);
     entry.origin = origin;
-    if (entry.registration.state == RelayRegistrationRecord::State::Unknown) {
-      if (const auto known = Find(list_, origin); known != list_.relays.end()) {
+    if (const auto known = Find(list_, origin); known != list_.relays.end()) {
+      // `list` is a snapshot taken a while ago (a change in progress): an answer kept since is newer than its record.
+      const bool newer = known->registration.at_ms > entry.registration.at_ms;
+      if (entry.registration.state == RelayRegistrationRecord::State::Unknown || newer) {
         entry.registration = known->registration;
       }
     }
@@ -282,6 +296,9 @@ void OurRelaysStore::Record(const std::string& origin, const RelayRegistrationRe
 }
 
 Roe<void> OurRelaysStore::SaveLocked() const {
+  if (newer_file_) {
+    return Error("our_relays.json is a newer app's: not changed");
+  }
   if (profile_data_dir_.empty()) {
     return {};
   }

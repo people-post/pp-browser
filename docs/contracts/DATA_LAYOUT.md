@@ -41,10 +41,10 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   mesh_node_reputation.json # mesh nodes and operators this profile demoted for a contradicted claim (N032; schema_version 1; demoted_until_ms / last_strike_ms / strikes); local only, never sent
   mesh_last_good_relays.json # relays that last carried this device's circuits (call-path-resilience K015; schema_version 1; relays: ≤3 PeerIds, most recent first);
                             # plaintext like the directory cache — read at mesh start, before any PIN unlock; local only, never sent; optional
-  our_relays.json           # My relays (multi-relay R3, MR006): {version: 1, relays: [{origin, registration: {state registered|failed|unknown,
+  our_relays.json           # My relays (multi-relay R3, MR006): {schema_version: 1, relays: [{origin, registration: {state registered|failed|unknown,
                             # reason?, expires_at?, card_issued_at?, registration_id? (MR007: the one a revoke names, additive),
                             # at_ms?}}]}, preferred first, ≤4; user data, seeded once from the
-                            # deployment's relay + relay.extra_base_urls (an unreadable or newer file is seeded again); plaintext like the
+                            # deployment's relay + relay.extra_base_urls (an unreadable file is seeded again; a newer one is refused and never written: the seed in memory, changes refused); plaintext like the
                             # cursors (the card already names these relays); written atomically on every change and every registration answer
   preferences.json
   relay_pins.json           # relay origin ↔ PeerId pins (multi-relay MR007, § relay_pins.json below); plaintext, written atomically
@@ -247,7 +247,7 @@ directory, the same format.
   when full, the oldest pin that is neither one of our relays nor the org's origins (one removed from My relays since)
   goes.
 - Another `schema_version`, or a file that is not JSON, is refused and read as empty (logged as an error): the relays
-  are pinned again on first use.
+  are pinned again on first use. A newer one is never overwritten: that run's pins are kept in memory only.
 
 ## Schema versions
 

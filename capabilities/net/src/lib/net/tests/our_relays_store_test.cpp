@@ -6,6 +6,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <vector>
@@ -74,9 +75,36 @@ TEST_F(OurRelaysStoreTest, NoDeploymentRelaySeedsNothingAndKeepsNoFile) {
 }
 
 TEST_F(OurRelaysStoreTest, AnUnreadableFileIsSeededAgain) {
-  std::ofstream(dir_ / "our_relays.json") << R"({"version": 9, "relays": []})";
+  std::ofstream(dir_ / "our_relays.json") << "not json";
   OurRelaysStore store(dir_.string());
   EXPECT_EQ(store.LoadOrSeed(kA, {}).Origins(), Origins({kA}));
+  OurRelaysStore again(dir_.string());
+  EXPECT_EQ(again.LoadOrSeed(kB, {}).Origins(), Origins({kA})) << "the seed was kept";
+}
+
+// D9 (DATA_LAYOUT: a newer file is refused): a newer app's list is never overwritten, and nothing changes it.
+TEST_F(OurRelaysStoreTest, ANewerAppsFileIsRefusedAndNeverWritten) {
+  const std::string newer = R"({"schema_version": 9, "relays": [{"origin": "https://z.example/api/relay"}]})";
+  std::ofstream(dir_ / "our_relays.json") << newer;
+  OurRelaysStore store(dir_.string());
+  EXPECT_EQ(store.LoadOrSeed(kA, {}).Origins(), Origins({kA})) << "this run uses the deployment's";
+  EXPECT_FALSE(static_cast<bool>(store.Replace(ListOf({kA, kB})))) << "changes are refused";
+  store.Record(kA, RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Registered, .at_ms = 1});
+  std::ifstream in(dir_ / "our_relays.json");
+  const std::string kept((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  EXPECT_EQ(kept, newer);
+}
+
+// T8: a change works from a snapshot taken before it: a registration answer kept meanwhile is not undone by it.
+TEST_F(OurRelaysStoreTest, AListTakenBeforeARecordNeverUndoesThatRecord) {
+  OurRelaysStore store(dir_.string());
+  store.LoadOrSeed(kA, {kB});
+  store.Record(kB, RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Failed, .at_ms = 1});
+  const OurRelaysList snapshot = store.List();
+  const RelayRegistrationRecord answered{.state = RelayRegistrationRecord::State::Registered, .at_ms = 2};
+  store.Record(kB, answered); // a registration answered while the change ran
+  ASSERT_TRUE(static_cast<bool>(store.Replace(snapshot)));
+  EXPECT_EQ(store.List().relays[1].registration, answered);
 }
 
 TEST_F(OurRelaysStoreTest, EachRelaysLastRegistrationIsKeptAcrossARestart) {

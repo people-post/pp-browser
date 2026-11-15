@@ -11,7 +11,7 @@
 
 namespace pbr {
 
-/** What a relay of ours last answered our registration with (kept: Me → Network → My relays shows it after a restart). */
+/** What a relay of ours last answered our registration with (kept: Me → My relays shows it after a restart). */
 struct RelayRegistrationRecord {
   enum class State { Unknown, Registered, Failed };
   State state = State::Unknown;
@@ -71,10 +71,17 @@ class OurRelaysStore {
 public:
   explicit OurRelaysStore(std::string profile_data_dir);
 
-  /** The kept list; with none kept (a new profile, or one from before R3), `org_relay` then `extras`, saved. */
+  /**
+   * The kept list; with none kept (a new profile), or one not readable, `org_relay` then `extras`, saved. A newer
+   * app's file (a newer `schema_version`) is refused and never written: the seed is used in memory and changes are
+   * refused.
+   */
   OurRelaysList LoadOrSeed(const std::string& org_relay, const std::vector<std::string>& extras);
   OurRelaysList List() const;
-  /** Keeps `list` (bounded: BoundOurRelays); a relay listed before keeps its record unless `list` gives one. */
+  /**
+   * Keeps `list` (bounded: BoundOurRelays); a relay listed before keeps its record unless `list` gives a newer one (by
+   * `at_ms`): a list taken before a Record landed never undoes that Record.
+   */
   Roe<void> Replace(const OurRelaysList& list);
   /** Keeps what `origin` answered (nothing when it is no longer ours). */
   void Record(const std::string& origin, const RelayRegistrationRecord& record);
@@ -85,6 +92,8 @@ private:
   std::string profile_data_dir_;
   mutable std::mutex mutex_;
   OurRelaysList list_;
+  /** The file is a newer app's (a newer schema_version): refused, and never written (changes are refused). */
+  bool newer_file_ = false;
 };
 
 /** The file's text for `list` (and back): tests and the store. */

@@ -13,6 +13,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <string>
@@ -354,10 +355,16 @@ TEST(RelayPinStoreTest, ANewerSchemaOrNotJsonIsRefusedAndReadAsEmpty) {
 
   const auto dir = std::filesystem::temp_directory_path() / "pp_relay_pins_schema";
   std::filesystem::create_directories(dir);
-  std::ofstream(dir / "relay_pins.json") << R"({"schema_version":9,"pins":[{"origin":"x","peer_id":"y"}]})";
+  const std::string newer = R"({"schema_version":9,"pins":[{"origin":"x","peer_id":"y"}]})";
+  std::ofstream(dir / "relay_pins.json") << newer;
   RelayPinStore store(dir.string());
   store.Load();
   EXPECT_TRUE(store.All().empty()) << "pinned again on first use (TOFU once more)";
+  ASSERT_EQ(store.Present("https://a.example/api/relay", kPeerA, 1).outcome, PinOutcome::Pinned);
+  EXPECT_TRUE(store.PinFor("https://a.example/api/relay")) << "held in memory";
+  std::ifstream in(dir / "relay_pins.json");
+  EXPECT_EQ(std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>()), newer)
+      << "a newer app's file is never overwritten";
   std::filesystem::remove_all(dir);
 }
 

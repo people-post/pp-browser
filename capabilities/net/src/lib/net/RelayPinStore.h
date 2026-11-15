@@ -62,7 +62,8 @@ struct OwnCardRelay {
  * PeerId, at most kMaxPins. A pin is written only for a relay of ours or the org's origin, from the origin's own
  * identity answer (Present), or, on a linked device, from our own account's card (TakeOwnCard); a contact's card or
  * QR code never writes one (RelayPins::ForeignAudienceFor). A file of another
- * `schema_version`, or not JSON, is refused and read as empty (logged): the relays are pinned again on first use.
+ * `schema_version`, or not JSON, is refused and read as empty (logged): the relays are pinned again on first use; a
+ * newer one is never overwritten (the pins of this run are kept in memory only).
  * Thread-safe; every change is written at once (atomically).
  */
 class RelayPinStore {
@@ -112,6 +113,8 @@ private:
   mutable std::mutex mutex_;
   std::vector<RelayPin> pins_;
   std::function<bool(const std::string&)> keep_;
+  /** The file is a newer app's: never written (this run's pins are in memory only). */
+  bool newer_file_ = false;
 };
 
 /** The file's text for `pins` (and back): tests and the store. Back: nullopt for another schema or not JSON. */
