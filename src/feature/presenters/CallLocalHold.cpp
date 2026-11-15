@@ -57,8 +57,7 @@ void CallLocalHold::BeginCall(const Facts& facts) {
   ++request_seq_;
   active_ = facts.foreground;
   // Begun while the app is not shown (launched by a push, locked): no real background was seen, but nothing opens until
-  // the app has become active and stayed so.
-  bg_seen_ = false;
+  // the app has become active and stayed so. `bg_seen_` is about the APP, not this call: it is left alone here.
   settle_until_ = (!facts.visible || !facts.foreground) ? kNever : 0;
 }
 
@@ -150,6 +149,9 @@ void CallLocalHold::OnInactive() {
   active_ = false;
   if (settle_until_ != 0 && settle_until_ != kNever) {
     log().info << "camera resume postponed: inactive before the settle ended";
+    settle_until_ = kNever;
+  } else if (open_needs_active_ && wants_ && !asked_on_) {
+    // An open that was waiting only for the gate: a lone "active" after it (the lock transition) must not fire it.
     settle_until_ = kNever;
   }
   // Nothing else moves: an inactive app keeps its camera.
@@ -244,6 +246,7 @@ void CallLocalHold::ReadBack(const int64_t mono_ms) {
   wants_ = false;
   asked_on_ = false;
   paused_sent_ = false;
+  closed_mono_ = mono_ms;
   ++request_seq_;
 }
 

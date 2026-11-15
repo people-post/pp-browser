@@ -470,6 +470,8 @@ private:
   std::string silent_call_id_;
   int own_path_logged_[4] = {-1, -1, -1, -1};
   int64_t own_path_log_ms_ = 0;
+  /** When the signals first differed from the last line (-1: they do not). */
+  int64_t own_path_changed_ms_ = -1;
   int64_t no_media_checked_ms_ = 0;
   /** Last CallSessionManager identity the ring callbacks were installed on. */
   const void* bound_calls_ = nullptr;

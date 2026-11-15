@@ -626,9 +626,9 @@ TEST(CallLocalHoldTest, ARequestInFlightIsNotReadBackAsOff) {
   EXPECT_TRUE(inactive.hold.WantsCameraOn());
 }
 
-// The read-back safety net (a camera the engine closed without a word) does not gate the next open; an engine-side close
-// that was reported (OnCameraClosedByEngine) does, see below.
-TEST(CallLocalHoldTest, AnEngineSideCloseDoesNotGateTheNextOpen) {
+// The read-back safety net (a camera the engine closed without a word) is a close like any other: the next open waits
+// kCameraSettleMs from the moment it was seen.
+TEST(CallLocalHoldTest, AnEngineSideSilentCloseGatesTheNextOpen) {
   Rig r;
   r.CameraOn(0);
   r.call.engine_camera = false; // silently closed
@@ -637,9 +637,13 @@ TEST(CallLocalHoldTest, AnEngineSideCloseDoesNotGateTheNextOpen) {
   r.Tick(3000);
   EXPECT_FALSE(r.hold.WantsCameraOn()) << "the button reads off";
   r.Tap(3100);
-  EXPECT_EQ(r.call.Count('E'), 2) << "opened at once";
-  EXPECT_EQ(r.call.requests.back().first, 3100);
-  EXPECT_FALSE(r.hold.CameraResuming());
+  EXPECT_TRUE(r.hold.WantsCameraOn());
+  EXPECT_TRUE(r.hold.CameraResuming()) << "waiting for the gate";
+  r.Run(3200, 5400);
+  EXPECT_EQ(r.call.Count('E'), 1) << "not before 2.5 s after the read-back close";
+  r.Tick(5500);
+  EXPECT_EQ(r.call.Count('E'), 2);
+  EXPECT_EQ(r.call.requests.back().first, 5500);
 }
 
 // A call answered under the lock screen: the automatic camera-on is the user's intent, and no device opens until a
@@ -1051,6 +1055,77 @@ TEST(CallLocalHoldTest, NoOpenIsSentWhileInactive) {
   f.now_ms = f.mono_ms = 2700;
   hold.Sync(f);
   EXPECT_EQ(call.Count('E'), 2) << "Android: open without 'active'";
+}
+
+// An open that was only waiting for the 2.5 s gate does not fire on a lone "active" after the gate expired while the
+// app was inactive (the lock transition).
+TEST(CallLocalHoldTest, ALoneActiveAfterTheGateDoesNotOpen) {
+  Rig r;
+  r.CameraOn(0);
+  r.Tap(100); // off: our close at 100, the gate ends at 2600
+  r.Tick(200);
+  r.Tap(2000); // on again, waiting for the gate
+  r.Inactive(2400);
+  r.Active(2450);
+  r.Inactive(2460);
+  r.Tick(2600); // the gate has expired, the app is inactive
+  r.Tick(2700);
+  r.Active(2650); // the lone active of the lock transition
+  r.Bg(2710);
+  r.call.Pump();
+  r.Run(2800, 30000);
+  EXPECT_EQ(r.call.Count('E'), 1) << "zero opens";
+  r.WillFg();
+  r.Active(31000);
+  r.Run(31100, 33400);
+  EXPECT_EQ(r.call.Count('E'), 1) << "2.4 s after the real return";
+  r.Tick(33500);
+  EXPECT_EQ(r.call.Count('E'), 2) << "exactly one open after the real return and 2.5 s";
+
+  // Android (open_needs_active false): untouched, the open does not wait for active.
+  FakeCall call;
+  CallLocalHold hold(call.Ports());
+  hold.Sync(In("c1", false, 0));
+  hold.OnCameraTapped(0);
+  hold.OnCameraTapped(100);
+  hold.OnCameraTapped(2000);
+  CallLocalHold::Facts f = In("c1", false, 2100);
+  f.open_needs_active = false; // every tick carries it, so it is known before the inactive
+  hold.Sync(f);
+  hold.OnInactive();
+  f.now_ms = f.mono_ms = 2700;
+  hold.Sync(f);
+  EXPECT_EQ(call.Count('E'), 2) << "Android: open without 'active'";
+}
+
+// The background flag is about the app, not a call: it outlives a call and a call-id flicker in the background.
+TEST(CallLocalHoldTest, TheBackgroundFlagOutlivesACall) {
+  FakeCall call;
+  CallLocalHold hold(call.Ports());
+  hold.Sync(In("c1", false, 0));
+  hold.OnEnteredBackground(1000); // a true background
+  hold.Sync(In("", false, 1100, true, false));
+  hold.Sync(In("c2", false, 1200, true, false)); // a new call begins while not visible
+  call.now = 1300;
+  hold.OnAutoCameraOn(1300);
+  EXPECT_TRUE(hold.WantsCameraOn());
+  hold.OnActive(1400); // the lone active
+  for (int64_t t = 1500; t <= 61400; t += 100) {
+    call.now = t;
+    call.Pump();
+    hold.Sync(In("c2", false, t, true, false));
+  }
+  EXPECT_EQ(call.Count('E'), 0) << "zero open requests";
+  hold.OnWillEnterForeground();
+  hold.OnActive(62000);
+  for (int64_t t = 62100; t < 64500; t += 100) {
+    call.now = t;
+    hold.Sync(In("c2", false, t));
+  }
+  EXPECT_EQ(call.Count('E'), 0) << "2.4 s after the real return";
+  call.now = 64500;
+  hold.Sync(In("c2", false, 64500));
+  EXPECT_EQ(call.Count('E'), 1) << "exactly one open";
 }
 
 // The inactive wait is not an inactive pause: a camera that is on stays on, and the open goes out after active.

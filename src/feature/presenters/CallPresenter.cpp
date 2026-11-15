@@ -691,6 +691,7 @@ void CallPresenter::StepSilentTiles(CallScreen& s, CallUiBackend& backend, const
     if (silent_call_id_ != s.call_id) {
       silent_call_id_ = s.call_id;
       std::fill(std::begin(own_path_logged_), std::end(own_path_logged_), -1);
+      own_path_changed_ms_ = -1;
     }
     if (roster_read) {
       ApplySilentTiles(s);
@@ -700,21 +701,30 @@ void CallPresenter::StepSilentTiles(CallScreen& s, CallUiBackend& backend, const
   if (silent_call_id_ != s.call_id) {
     silent_call_id_ = s.call_id;
     std::fill(std::begin(own_path_logged_), std::end(own_path_logged_), -1);
+    own_path_changed_ms_ = -1;
   }
   const MediaEngineHealth health = backend.Media().HealthSnapshot();
   // Our own engine stopped (a stalled local audio rebuild) is not a reason to dim everyone either.
   const bool online = OwnMediaPathOnline(s, backend) && EngineAlive(health);
   // TEMPORARY measurement for the device check (remove after it, see DEV/TODO-未做清单.md): when the signals behind
-  // "our own path is online" flip (monotonic ms, no ids), at most one line a second.
+  // "our own path is online" flip (monotonic ms, no ids), at most one line a second. A line the rate limit delays
+  // carries the time the change was FIRST seen (`changed_t`), not the time of writing (`t`).
   const int signals[4] = {s.media_connected ? 1 : 0, backend.Recovery() != CallRecovery::None ? 1 : 0,
                           s.status == CallScreen::Status::Reconnecting ? 1 : 0, EngineAlive(health) ? 1 : 0};
-  if (!std::equal(std::begin(signals), std::end(signals), std::begin(own_path_logged_)) &&
-      (own_path_log_ms_ == 0 || now - own_path_log_ms_ >= 1'000)) {
-    std::copy(std::begin(signals), std::end(signals), std::begin(own_path_logged_));
-    own_path_log_ms_ = now;
-    log().info << "own media path signals media_connected=" << signals[0] << " recovering=" << signals[1]
-               << " reconnecting=" << signals[2] << " engine=" << signals[3] << " online=" << (online ? 1 : 0)
-               << " t=" << now;
+  if (std::equal(std::begin(signals), std::end(signals), std::begin(own_path_logged_))) {
+    own_path_changed_ms_ = -1; // flipped back before it was written: nothing to say
+  } else {
+    if (own_path_changed_ms_ < 0) {
+      own_path_changed_ms_ = now;
+    }
+    if (own_path_log_ms_ == 0 || now - own_path_log_ms_ >= 1'000) {
+      std::copy(std::begin(signals), std::end(signals), std::begin(own_path_logged_));
+      own_path_log_ms_ = now;
+      log().info << "own media path signals media_connected=" << signals[0] << " recovering=" << signals[1]
+                 << " reconnecting=" << signals[2] << " engine=" << signals[3] << " online=" << (online ? 1 : 0)
+                 << " changed_t=" << own_path_changed_ms_ << " t=" << now;
+      own_path_changed_ms_ = -1;
+    }
   }
   silent_tiles_.Step(now, online, SilentPeopleFrom(s.members, health));
   ApplySilentTiles(s);
