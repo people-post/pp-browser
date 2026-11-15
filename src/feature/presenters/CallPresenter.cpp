@@ -623,7 +623,7 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   if (auto participants = backend.ListJoinedParticipants(call_id); participants) {
     roster_read = true;
     joined = static_cast<int>(participants->size());
-    s.group = joined > 2 || group_call;
+    s.group = group_look_.Observe(call_id, group_call, joined);
     s.members.reserve(participants->size());
     for (const CallParticipant& row : *participants) {
       CallScreen::Member member;
@@ -636,7 +636,10 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
       s.members.push_back(std::move(member));
     }
   }
-  if (auto peer = backend.PeerIdentityForCall(call_id); peer && peer->has_value()) {
+  // The 1:1 name comes from the people joined now; the store's first remote row may be someone who left.
+  if (const CallScreen::Member* remote = FirstJoinedRemote(s.members)) {
+    s.peer_identity = remote->identity;
+  } else if (auto peer = backend.PeerIdentityForCall(call_id); peer && peer->has_value()) {
     s.peer_identity = **peer;
   }
 
@@ -897,7 +900,12 @@ CallMediaFacts CallPresenter::ReadMediaFacts(CallUiBackend& backend, const CallS
   f.awaiting_sfu_recovery = backend.IsAwaitingSfuRecovery();
   f.on_hop = backend.MediaPath() == CallMediaPath::Hop;
   f.live_since_ms = backend.LiveSinceMs(s.call_id);
-  if (auto peer = backend.PeerMediaForCall(s.call_id); peer && peer->has_value()) {
+  if (const CallScreen::Member* remote = FirstJoinedRemote(s.members)) {
+    f.have_peer_row = true;
+    f.peer_camera_on = remote->video_enabled;
+    f.peer_on_hold = remote->on_hold;
+    f.peer_video_paused = remote->video_paused;
+  } else if (auto peer = backend.PeerMediaForCall(s.call_id); peer && peer->has_value()) {
     f.have_peer_row = true;
     f.peer_camera_on = (*peer)->video_enabled;
     f.peer_on_hold = (*peer)->on_hold;

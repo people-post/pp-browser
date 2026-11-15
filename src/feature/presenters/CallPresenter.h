@@ -10,6 +10,7 @@
 #include "feature/presenters/CallMediaFrame.h"
 #include "feature/presenters/CallHoldStuck.h"
 #include "feature/presenters/CallPlayoutStuck.h"
+#include "feature/presenters/CallGroupLook.h"
 #include "feature/presenters/CallSilentTiles.h"
 #include "feature/presenters/CallSpeakerButton.h"
 #include "feature/presenters/CallUiAttachGuard.h"
@@ -465,6 +466,7 @@ private:
   /** The last 1:1 call shown that this device was in and that had not connected (KeepsFailedPage's kind). */
   std::string unconnected_call_id_;
   NoMediaWatch no_media_watch_;
+  CallGroupLook group_look_;
   CallSilentTiles silent_tiles_{[this](const std::string& line) { log().info << line; }};
   /** The call silent_tiles_ is for, and the own-path signals last logged (-1: none yet). */
   std::string silent_call_id_;
