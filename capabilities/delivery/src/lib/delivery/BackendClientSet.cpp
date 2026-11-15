@@ -132,12 +132,16 @@ void BackendClientSet::ApplyPreferred(const std::string& url) {
   push_devices_ = std::make_shared<HttpPushDeviceClient>(url, public_only);
   registration_ = std::make_shared<HttpRegistrationClient>(url, public_only);
   blob_ = std::make_shared<HttpBlobClient>(url, public_only);
-  const auto audience = AudienceOf(url); // set before the clients are handed out: never changed after
+  // Set before the clients are handed out, never after: work in flight reads them unlocked.
+  const auto audience = AudienceOf(url);
   relay_->SetAudience(audience);
   push_devices_->SetAudience(audience);
   registration_->SetAudience(audience);
   blob_->SetAudience(audience);
-  WireSigner();
+  relay_->SetAuthSigner(Signer());
+  push_devices_->SetAuthSigner(Signer());
+  blob_->SetAuthSigner(Signer());
+  relay_->SetSendHooks(send_hooks_);
 }
 
 void BackendClientSet::ApplyDirectory(DirectoryConfig directory) {
@@ -246,7 +250,7 @@ void BackendClientSet::ApplyHome(const std::string& url) {
   home_url_ = url;
   locker_ = std::make_shared<HttpLockerClient>(url);
   locker_->SetAudience(AudienceOf(url)); // the org's origin (MR006), pinned whether or not it is one of ours
-  WireSigner();
+  locker_->SetAuthSigner(Signer());      // before it is handed out, never after
 }
 
 void BackendClientSet::ApplyExtraRelays(const std::vector<std::string>& origins, const size_t asked) {
@@ -264,10 +268,13 @@ void BackendClientSet::ApplyExtraRelays(const std::vector<std::string>& origins,
                 .relay = std::make_shared<HttpRelayClient>(origin, public_only),
                 .push_devices = std::make_shared<HttpPushDeviceClient>(origin, public_only),
                 .registration = std::make_shared<HttpRegistrationClient>(origin, public_only)};
-    const auto audience = AudienceOf(origin);
+    const auto audience = AudienceOf(origin); // all set before it is handed out, never after
     extra.relay->SetAudience(audience);
     extra.push_devices->SetAudience(audience);
     extra.registration->SetAudience(audience);
+    extra.relay->SetAuthSigner(Signer());
+    extra.push_devices->SetAuthSigner(Signer());
+    extra.relay->SetSendHooks(send_hooks_);
     next.push_back(std::move(extra));
   }
   if (!origins.empty() && origins.size() < asked) {
@@ -275,7 +282,6 @@ void BackendClientSet::ApplyExtraRelays(const std::vector<std::string>& origins,
                   << " left out (not a URL, a relay listed already, or past " << kMaxOurRelays << " in all)";
   }
   extras_ = std::move(next);
-  WireSigner();
 }
 
 std::shared_ptr<IRelayClient> BackendClientSet::HistoryRelay() const {
@@ -330,15 +336,13 @@ void BackendClientSet::WireSender() {
   // Its origin came from a contact: held to a public host (IsPublicRelayOrigin), none is made for one outside it, and
   // its requests, the identity fetch included, go to public addresses only.
   sender_.SetForeignClients(
-      [signer = signer_, hooks = send_hooks_, pins = pins_](const std::string& origin, const std::string& peer_id) {
+      [signer = Signer(), hooks = send_hooks_, pins = pins_](const std::string& origin, const std::string& peer_id) {
         const bool lab = DevCaBundleActive();
         if (!IsPublicRelayOrigin(origin, lab)) {
           return std::shared_ptr<IRelayClient>();
         }
         auto client = std::make_shared<HttpRelayClient>(origin, !lab);
-        if (signer) {
-          client->SetAuthSigner(signer);
-        }
+        client->SetAuthSigner(signer);
         client->SetSendHooks(hooks);
         if (!peer_id.empty()) {
           client->SetAudience(std::make_shared<FixedRelayAudience>(peer_id));
@@ -360,9 +364,23 @@ std::shared_ptr<IRelayAudience> BackendClientSet::AudienceOf(const std::string& 
 }
 
 void BackendClientSet::SetSigner(RelayAuthSigner signer) {
-  signer_ = std::move(signer);
-  WireSigner();
-  WireSender();
+  // The slot every client signs through: its signer is set once, when it is made (a client in use is never written).
+  std::lock_guard lock(signer_slot_->mutex);
+  signer_slot_->signer = std::move(signer);
+}
+
+RelayAuthSigner BackendClientSet::Signer() const {
+  return [slot = signer_slot_](const std::vector<uint8_t>& bytes) -> Roe<std::string> {
+    RelayAuthSigner signer;
+    {
+      std::lock_guard lock(slot->mutex);
+      signer = slot->signer;
+    }
+    if (!signer) {
+      return Error("Relay auth signer not configured");
+    }
+    return signer(bytes);
+  };
 }
 
 void BackendClientSet::SetRelaySendHooks(RelaySendHooks hooks) {
@@ -374,34 +392,6 @@ void BackendClientSet::SetRelaySendHooks(RelaySendHooks hooks) {
     extra.relay->SetSendHooks(send_hooks_);
   }
   WireSender();
-}
-
-void BackendClientSet::WireSigner() {
-  if (relay_) {
-    relay_->SetSendHooks(send_hooks_);
-  }
-  for (const Extra& extra : extras_) {
-    extra.relay->SetSendHooks(send_hooks_);
-    if (signer_) {
-      extra.relay->SetAuthSigner(signer_);
-      extra.push_devices->SetAuthSigner(signer_);
-    }
-  }
-  if (!signer_) {
-    return;
-  }
-  if (relay_) {
-    relay_->SetAuthSigner(signer_);
-  }
-  if (push_devices_) {
-    push_devices_->SetAuthSigner(signer_);
-  }
-  if (blob_) {
-    blob_->SetAuthSigner(signer_);
-  }
-  if (locker_) {
-    locker_->SetAuthSigner(signer_);
-  }
 }
 
 void BackendClientSet::Clear() {

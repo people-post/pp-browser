@@ -81,7 +81,7 @@ public:
   }
   /** Builds or rebuilds for `endpoints`; a missing endpoint leaves its clients out (null). */
   void Apply(const Endpoints& endpoints);
-  /** Signs the relay, push-device, blob and locker requests (the profile's identity). */
+  /** Signs the relay, push-device, blob and locker requests (the profile's identity). Any client, made before or after. */
   void SetSigner(RelayAuthSigner signer);
   /**
    * The profile's relay pins: who each signed request is for (none: nothing can be signed). Before Apply: a client
@@ -138,7 +138,8 @@ private:
   void WireDirectory();
   /** The directory client of our relay at `origin`, kept while it stays ours. */
   std::shared_ptr<mesh::IDirectoryClient> RelayDirectory(const std::string& origin);
-  void WireSigner();
+  /** What every client signs with: the slot SetSigner fills (set on a client once, before it is handed out). */
+  RelayAuthSigner Signer() const;
   /** A relay the person added (not one the deployment configures), outside developer builds: public addresses only. */
   bool PublicOnly(const std::string& origin) const;
   /** The audience of the relay at `url` (none without pins). */
@@ -151,7 +152,12 @@ private:
   /** The relays the deployment configures (the last Apply's): the org's relay and registration URL, extra relays. */
   std::vector<std::string> configured_;
   bool local_relays_allowed_ = false;
-  RelayAuthSigner signer_;
+  /** The profile's signer, read under its lock by every client's Signer() (any thread). */
+  struct SignerSlot {
+    std::mutex mutex;
+    RelayAuthSigner signer;
+  };
+  std::shared_ptr<SignerSlot> signer_slot_ = std::make_shared<SignerSlot>();
   std::shared_ptr<RelayPins> pins_;
   RelaySendHooks send_hooks_;
   std::string org_relay_url_;

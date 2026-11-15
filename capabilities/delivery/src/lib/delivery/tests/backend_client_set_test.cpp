@@ -317,6 +317,30 @@ TEST_F(BackendClientSetOriginTest, ARelayThePersonAddedIsHeldToPublicAddressesOu
   EXPECT_EQ(Asked(other_, "/v1/"), 0u);
 }
 
+// T1: a client in use is never written: it signs through the set's one signer slot, set before it is handed out, so
+// a signer given later reaches it and an Apply that keeps it changes nothing on it.
+TEST_F(BackendClientSetOriginTest, AClientTakenBeforeTheSignerSignsWithItAndApplyNeverRewritesIt) {
+  auto pins = std::make_shared<RelayPins>("");
+  pins->SetFetch([](const std::string&, bool) -> Roe<RelayIdentity> { return RelayIdentity{.peer_id = "QmOrg"}; });
+  clients_.SetPins(pins);
+  Apply({OrgRelay()});
+  const std::shared_ptr<IRelayClient> relay = clients_.Relay();
+  EXPECT_FALSE(relay->PollInbox("account:me", ""));
+  EXPECT_EQ(Asked(org_, "/v1/inbox/poll"), 0u) << "nothing goes unsigned";
+  int signed_calls = 0;
+  clients_.SetSigner([&signed_calls](const std::vector<uint8_t>&) -> Roe<std::string> {
+    ++signed_calls;
+    return std::string("sig");
+  });
+  (void)relay->PollInbox("account:me", "");
+  EXPECT_EQ(signed_calls, 1) << "the client taken before signs with the signer given after";
+  EXPECT_EQ(Asked(org_, "/v1/inbox/poll"), 1u);
+  Apply({OrgRelay(), OtherRelay()});
+  EXPECT_EQ(clients_.Relay(), relay) << "kept";
+  (void)relay->PollInbox("account:me", "");
+  EXPECT_EQ(signed_calls, 2);
+}
+
 TEST_F(BackendClientSetOriginTest, TheBriefLlmKeyFollowsTheOrgsRelayWhenOnlyTheOrgChanges) {
   // Our list stays (org's relay preferred, the other after it): their clients are kept, but the org's relay moves to
   // the other one. Which client keeps the key is decided again at every Apply, not when a client was built.
