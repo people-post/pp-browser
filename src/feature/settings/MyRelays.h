@@ -23,8 +23,8 @@ struct MyRelayFacts {
 };
 
 /**
- * Me → Network → My relays (multi-relay R3, MR006, MR007): `relays` preferred first, each with its registration and its
- * last poll — or, when its identity changed, "Identity changed — not used". On the main device (`editable`) every relay
+ * Me → My relays (multi-relay R3, MR006, MR007): `relays` preferred first, each with its registration and its
+ * last poll — or, when its identity changed, that it is not used. On the main device (`editable`) every relay
  * but the preferred one may be made preferred (not a changed one) or removed, a changed one's identity accepted, and
  * another added while there are fewer than four; elsewhere the list only shows. `org_identity_changed`: the org's
  * origin, not on the list, whose identity changed (its line shows on every device).

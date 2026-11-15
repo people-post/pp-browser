@@ -21,8 +21,8 @@ class DataModelConstructor;
 namespace pbr {
 
 /**
- * Me → Network → My relays (multi-relay R3, MR006, MR007): the relays of ours, preferred first, each with its
- * registration and reachability, or *Identity changed — not used* (MyRelaysViewFor decides; this renders). On the main
+ * Me → My relays (multi-relay R3, MR006, MR007): the relays of ours, preferred first, each with its
+ * registration and reachability, or that it is not used (its identity changed; MyRelaysViewFor decides; this renders). On the main
  * device: Add relay… (an origin field, its problem shown under it; a relay seen before with another identity asks
  * first), Make preferred, Remove… (asks first), Accept new identity… (asks first); the org's origin's changed
  * identity on any device. Its rows are fields of the settings model; the ports are the controller's, read when used.

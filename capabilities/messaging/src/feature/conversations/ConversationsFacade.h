@@ -116,7 +116,7 @@ public:
   Roe<void> RemoveOwnDevice(const std::string& peer_id);
   /** On the main device: make another device the main one. */
   Roe<void> MakeMainDevice(const std::string& peer_id);
-  /** Me → Network → My relays (multi-relay R3): ours with their state; the changes block (call on a worker). */
+  /** Me → My relays (multi-relay R3): ours with their state; the changes block (call on a worker). */
   Roe<OurRelaysStatus> OurRelays();
   Roe<void> AddOurRelay(const std::string& typed, bool accept_changed_identity = false);
   /** Accepts the new identity a relay of ours (or the org's origin) presented (MR007). */

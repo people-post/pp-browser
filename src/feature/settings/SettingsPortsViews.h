@@ -67,7 +67,7 @@ struct OwnDevicesView {
   bool this_is_main = false;
 };
 
-/** Me → Network → My relays (multi-relay R3, MR006): one relay of ours as the page shows it. */
+/** Me → My relays (multi-relay R3, MR006): one relay of ours as the page shows it. */
 struct MyRelayRowView {
   /** Its base URL (what the actions name). */
   std::string origin;
@@ -83,7 +83,7 @@ struct MyRelayRowView {
   bool preferred = false;
   bool can_make_preferred = false;
   bool can_remove = false;
-  /** It presented another identity than its pin (MR007): "Identity changed — not used". */
+  /** It presented another identity than its pin (MR007): shown as not used. */
   bool identity_changed = false;
   /** Accept new identity… (the main device, a changed relay). */
   bool can_accept_identity = false;

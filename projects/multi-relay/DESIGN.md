@@ -7,7 +7,7 @@
 What holds now is in the contracts ([SERVICE_ENDPOINTS § Several relays](../../docs/contracts/SERVICE_ENDPOINTS.md#several-relays), [ACCOUNT_CARD](../../docs/contracts/ACCOUNT_CARD.md#account-card)); phase status is in [CURRENT_STATE.md](CURRENT_STATE.md). In short:
 
 - **Inboxes, sends and polls are addressed by Account ID** on every relay; there are no `relay:` ids. A relay takes a foreign sender's send when its key hashes to its Account ID, and holds strangers to the receiver's price (grants for contacts, MR005).
-- **The account card lists the account's relays**, preferred first, and its floor (card version 3). A contact keeps the newest list with its card (`KeptRelays`); a contact added by QR code starts with the locator's preferred origin until the card arrives (`ContactRelays`).
+- **The account card lists the account's relays**, preferred first, each with its relay's PeerId, and its floor (card version 4). A contact keeps the newest list with its card (`KeptRelays`); a contact added by QR code starts with the locator's preferred origin until the card arrives (`ContactRelays`).
 - **An app registers and polls on up to four relays of its own**, the user's list in Me → My relays (seeded from the deployment's relay and `relay.extra_base_urls`), and **sends into the recipient's relays in list order**, with a per-relay health memory and one retry on a stale list. The user's relay services follow the preferred relay; org services stay on the org's origin ([MR006](DECISIONS.md#mr006--the-preferred-relay-carries-the-users-relay-services-org-services-stay-on-the-orgs-origin)).
 - **A name search asks every relay of ours**; a stranger's price is its card's floor.
 - **The contact page's refresh button** asks the contact's devices, then its relays in list order, then ours, by Account ID, on a worker; keys are kept only when they verify. The page shows the preferred relay by host with whether it answered at the last refresh.
@@ -94,7 +94,7 @@ A relay cannot read a message, and it does not know who a user's contacts are. I
 
 ## App
 
-- **My relays** (Me → Network):
+- **My relays** (Me → My relays):
   - the list, preferred first, kept in the profile (seeded once from the deployment's relay and `relay.extra_base_urls`);
   - add a relay by origin (it must answer), remove one (not the preferred), mark one preferred;
   - each with its registration (kept across restarts) and reachability (its last poll);

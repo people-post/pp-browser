@@ -1,6 +1,6 @@
 # Multi-relay — current state
 
-**As of:** 2026-11-14 (R3 and R4 built; R5 built on branches, not run in the lab or deployed)
+**As of:** 2026-11-15 (R3, R4 and R5 built and run in the app lab on two local pp-relay-apis stacks; not merged or deployed)
 
 Design written ([DESIGN.md](DESIGN.md)); MR001–MR006 accepted.
 

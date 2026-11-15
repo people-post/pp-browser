@@ -140,7 +140,7 @@ struct SettingsCommands {
   std::function<Roe<void>(const std::string& peer_id)> remove_own_device;
   /** On the main device: make another device the main one (this one can then no longer add or remove devices). */
   std::function<Roe<void>(const std::string& peer_id)> make_main_device;
-  /** Me → Network → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
+  /** Me → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
   std::function<Roe<MyRelaysView>()> my_relays;
   /**
    * Adds the relay the user typed (it must answer and identify itself: HTTP, a worker). An error says why

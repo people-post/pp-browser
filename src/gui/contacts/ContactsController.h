@@ -616,8 +616,8 @@ struct ContactRefreshNotice {
   std::string text;
 };
 /**
- * Words for a refresh's outcome: what changed and who said so, else up to date and who said so, else which sources
- * could not be reached or did not know the account.
+ * Words for a refresh's outcome: that a relay's answer did not verify, else what changed, else up to date, else which
+ * sources could not be reached or did not know the account.
  */
 ContactRefreshNotice DescribeContactRefresh(const ContactRefreshResult& result);
 

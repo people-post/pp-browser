@@ -366,7 +366,7 @@ Roe<void> RunOnUiAndWait(const std::function<Roe<void>()>& task) {
   return std::move(*slot->result);
 }
 
-/** Me → Network → My relays (multi-relay R3): the facade's relays, as the page shows them. */
+/** Me → My relays (multi-relay R3): the facade's relays, as the page shows them. */
 void WireMyRelaysCommands(SettingsCommands& commands, ConversationsFacade& facade) {
   commands.my_relays = [&facade]() -> Roe<MyRelaysView> {
     auto status = facade.OurRelays();

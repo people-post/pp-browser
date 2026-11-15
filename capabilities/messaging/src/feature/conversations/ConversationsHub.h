@@ -339,7 +339,7 @@ public:
   Roe<void> RemoveOwnDevice(const std::string& peer_id);
   /** On the master: hand the role to another device of the account and tell siblings and contacts. */
   Roe<void> MakeMainDevice(const std::string& peer_id);
-  /** Me → Network → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
+  /** Me → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
   Roe<OurRelaysStatus> OurRelays();
   /**
    * Adds the relay the user typed (it must answer; plain http:// or a host that is not public only with the settings'
