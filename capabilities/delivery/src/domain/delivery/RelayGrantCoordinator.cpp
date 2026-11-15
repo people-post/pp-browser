@@ -296,6 +296,59 @@ void RelayGrantCoordinator::Ask(const std::string& account, const bool refused) 
   lane_.SendToMany({ControlSend{.peer_identity = account, .control = std::move(*ask)}}, {}, WorkerLane::Normal);
 }
 
+Roe<std::vector<RelayGrant>> RelayGrantCoordinator::ReceivedForLocker() {
+  IRelayGrantStore* store = nullptr;
+  {
+    std::lock_guard lock(mutex_);
+    store = store_;
+  }
+  return store ? store->AllReceived() : Roe<std::vector<RelayGrant>>(std::vector<RelayGrant>{});
+}
+
+void RelayGrantCoordinator::TakeFromLocker(const std::vector<RelayGrant>& grants) {
+  IRelayGrantStore* store = nullptr;
+  std::function<void(const std::string&)> on_received;
+  {
+    std::lock_guard lock(mutex_);
+    store = store_;
+    on_received = on_grant_received_;
+  }
+  const std::string own = OwnAccount();
+  if (!store || own.empty()) {
+    return;
+  }
+  for (const RelayGrant& grant : grants) {
+    const std::string& grantor = grant.recipient_account_id;
+    if (grant.sender_account_id != own || grantor == own) {
+      continue; // another account's (a copy from before a profile reset): not ours to use
+    }
+    auto held = store->Received(grantor);
+    if (held && *held && (*held)->issued_at >= grant.issued_at) {
+      continue;
+    }
+    auto key = peer_keys_.Signing().Resolve("account", grantor);
+    if (!key) {
+      log().warning << "relay grant from the locker not kept: no key for its grantor (" << key.error().message << ")";
+      continue;
+    }
+    if (auto checked = CheckRelayGrant(grant, grantor, own, key->signing_public_key_b64, Now()); !checked) {
+      log().warning << "relay grant from the locker not kept: " << checked.error().message;
+      continue;
+    }
+    if (auto kept = store->PutReceived(grant); !kept) {
+      log().warning << "relay grant from the locker not kept: " << kept.error().message;
+      continue;
+    }
+    {
+      std::lock_guard lock(mutex_);
+      lacking_since_.erase(grantor);
+    }
+    if (on_received) {
+      on_received(grantor); // what its stranger quota held back goes now, as on a grant received
+    }
+  }
+}
+
 Roe<void> RelayGrantCoordinator::OnNotice(const relay_grant::Notice& notice, const std::string& sender) {
   IRelayGrantStore* store = nullptr;
   {

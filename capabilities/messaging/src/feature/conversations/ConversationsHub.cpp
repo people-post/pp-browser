@@ -1523,6 +1523,25 @@ void ConversationsHub::BuildMessagingObjects() {
                   }
                 }
               },
+          .grants = [this]() -> Roe<std::vector<AccountStateGrant>> {
+            if (!mesh_messaging_) {
+              return std::vector<AccountStateGrant>{};
+            }
+            auto held = mesh_messaging_->RelayGrants().ReceivedForLocker();
+            if (!held) {
+              return held.error();
+            }
+            std::vector<AccountStateGrant> grants;
+            for (const RelayGrant& grant : *held) {
+              grants.push_back(AccountStateGrant{.grantor_account_id = grant.recipient_account_id,
+                                                 .grantee_account_id = grant.sender_account_id,
+                                                 .issued_at = grant.issued_at,
+                                                 .expires_at = grant.expires_at,
+                                                 .signature = grant.signature});
+            }
+            return grants;
+          },
+          .take_grants = [this](const std::vector<AccountStateGrant>& grants) { TakeLockerGrants(grants); },
           .own_devices = [this]() -> Roe<OwnDeviceList> {
             if (!mesh_messaging_) {
               return Error("Messaging is not ready");
@@ -1757,6 +1776,7 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
   ScheduleMeshBringUp();
   AppRuntime::PostWorkerNormal([this]() {
     ResumeGroupRosterChecks();
+    ApplyRestoredGrants(); // before the announce: the restored phone's first sends carry its grants
     AnnounceRestoredDevice();
   });
   SweepRelayGrantsSoon(); // the cutover's too: contacts and members from before MR005 get grants on first run
@@ -2391,15 +2411,44 @@ void ConversationsHub::QueueRestoredState(AccountStateExtras extras) {
     for (AccountCardFloor& floor : extras.card_floors) {
       restored_.card_floors.push_back(std::move(floor));
     }
+    for (AccountStateGrant& grant : extras.grants) {
+      restored_.grants.push_back(std::move(grant));
+    }
     restored_.announce = true;
   }
   if (IsMessagingReady()) {
     ApplyRestoredCardFloors();
     AppRuntime::PostWorkerNormal([this]() {
       ResumeGroupRosterChecks();
+      ApplyRestoredGrants();
       AnnounceRestoredDevice();
     });
   }
+}
+
+void ConversationsHub::ApplyRestoredGrants() {
+  std::vector<AccountStateGrant> restored;
+  {
+    std::lock_guard lock(restored_mutex_);
+    restored.swap(restored_.grants);
+  }
+  TakeLockerGrants(restored);
+}
+
+void ConversationsHub::TakeLockerGrants(const std::vector<AccountStateGrant>& grants) {
+  if (grants.empty() || !mesh_messaging_ || shutdown_requested_.load(std::memory_order_acquire)) {
+    return;
+  }
+  std::vector<RelayGrant> taken;
+  taken.reserve(grants.size());
+  for (const AccountStateGrant& grant : grants) {
+    taken.push_back(RelayGrant{.recipient_account_id = grant.grantor_account_id,
+                               .sender_account_id = grant.grantee_account_id,
+                               .issued_at = grant.issued_at,
+                               .expires_at = grant.expires_at,
+                               .signature = grant.signature});
+  }
+  mesh_messaging_->RelayGrants().TakeFromLocker(taken);
 }
 
 void ConversationsHub::PublishAccountLockerSoon() {

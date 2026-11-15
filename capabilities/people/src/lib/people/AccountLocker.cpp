@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <set>
+#include <tuple>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -77,6 +79,27 @@ ByteVector SignBytes(const ByteVector& locker_id, const uint64_t version, const 
   return out;
 }
 
+namespace {
+
+/** One `grants` row of an untrusted copy: every field present and within bounds, else none. */
+std::optional<AccountStateGrant> GrantFromJson(const Object& row) {
+  AccountStateGrant grant{.grantor_account_id = row.getString("recipient_account_id").value_or(""),
+                          .grantee_account_id = row.getString("sender_account_id").value_or(""),
+                          .issued_at = row.getIf<int64_t>("issued_at").value_or(0),
+                          .expires_at = row.getIf<int64_t>("expires_at").value_or(0),
+                          .signature = row.getString("signature").value_or("")};
+  const auto fits = [](const std::string& field) {
+    return !field.empty() && field.size() <= kMaxLockerGrantFieldBytes;
+  };
+  if (!fits(grant.grantor_account_id) || !fits(grant.grantee_account_id) || !fits(grant.signature) ||
+      grant.issued_at <= 0 || grant.expires_at <= grant.issued_at) {
+    return std::nullopt;
+  }
+  return grant;
+}
+
+} // namespace
+
 std::string StateToJson(const AccountLockerState& state) {
   Object root;
   root.set("nickname", state.nickname);
@@ -98,6 +121,17 @@ std::string StateToJson(const AccountLockerState& state) {
     floors.push_back(ObjectValue(std::move(row)));
   }
   root.set("card_floors", ArrayValue(std::move(floors)));
+  std::vector<Value> grants;
+  for (const AccountStateGrant& grant : state.extras.grants) {
+    Object row;
+    row.set("recipient_account_id", grant.grantor_account_id);
+    row.set("sender_account_id", grant.grantee_account_id);
+    row.set("issued_at", grant.issued_at);
+    row.set("expires_at", grant.expires_at);
+    row.set("signature", grant.signature);
+    grants.push_back(ObjectValue(std::move(row)));
+  }
+  root.set("grants", ArrayValue(std::move(grants)));
   std::vector<Value> providers;
   for (const std::string& provider : state.providers) {
     providers.emplace_back(provider);
@@ -138,6 +172,15 @@ Roe<AccountLockerState> StateFromJson(const std::string& json) {
         AccountCardFloor floor{row->getString("account_id").value_or(""), row->getIf<int64_t>("issued_at").value_or(0)};
         if (!floor.account_id.empty() && floor.issued_at > 0) {
           state.extras.card_floors.push_back(std::move(floor));
+        }
+      }
+    }
+  }
+  if (const Array* grants = root->getArray("grants")) {
+    for (const Value& item : grants->elements) {
+      if (const Object* row = asObject(item)) {
+        if (auto grant = GrantFromJson(*row)) {
+          state.extras.grants.push_back(std::move(*grant));
         }
       }
     }
@@ -359,6 +402,30 @@ std::vector<DeviceNameEntry> CapDeviceNames(std::vector<DeviceNameEntry> entries
   return entries;
 }
 
+std::vector<AccountStateGrant> CapGrants(std::vector<AccountStateGrant> grants, const int64_t now_ms) {
+  std::erase_if(grants, [now_ms](const AccountStateGrant& g) { return g.expires_at <= now_ms; });
+  // Per grantor the latest issued first (the larger signature on a tie: the same one on every device), then one each.
+  std::sort(grants.begin(), grants.end(), [](const AccountStateGrant& a, const AccountStateGrant& b) {
+    return std::tie(a.grantor_account_id, b.issued_at, b.signature) <
+           std::tie(b.grantor_account_id, a.issued_at, a.signature);
+  });
+  grants.erase(std::unique(grants.begin(), grants.end(),
+                           [](const AccountStateGrant& a, const AccountStateGrant& b) {
+                             return a.grantor_account_id == b.grantor_account_id;
+                           }),
+               grants.end());
+  if (grants.size() > kMaxLockerGrants) {
+    std::sort(grants.begin(), grants.end(), [](const AccountStateGrant& a, const AccountStateGrant& b) {
+      return std::tie(b.issued_at, a.grantor_account_id) < std::tie(a.issued_at, b.grantor_account_id);
+    });
+    grants.resize(kMaxLockerGrants);
+    std::sort(grants.begin(), grants.end(), [](const AccountStateGrant& a, const AccountStateGrant& b) {
+      return a.grantor_account_id < b.grantor_account_id;
+    });
+  }
+  return grants;
+}
+
 AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored) {
   AccountLockerState merged = ours;
   MergeContacts(ours, stored, merged);
@@ -389,6 +456,7 @@ AccountLockerState MergeForPublish(const AccountLockerState& ours, const Account
       mine->issued_at = std::max(mine->issued_at, theirs.issued_at);
     }
   }
+  merged.extras.grants.insert(merged.extras.grants.end(), stored.extras.grants.begin(), stored.extras.grants.end());
   for (const std::string& provider : stored.providers) {
     if (std::find(merged.providers.begin(), merged.providers.end(), provider) == merged.providers.end()) {
       merged.providers.push_back(provider);

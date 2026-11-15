@@ -23,6 +23,7 @@ public:
   Roe<std::optional<RelayGrant>> Received(const std::string& recipient_account_id) override;
   Roe<void> PutReceived(const RelayGrant& grant) override;
   Roe<void> DropReceived(const std::string& recipient_account_id) override;
+  Roe<std::vector<RelayGrant>> AllReceived() override;
   Roe<std::optional<Issued>> IssuedTo(const std::string& sender_account_id) override;
   Roe<void> PutIssued(const Issued& issued) override;
   Roe<void> DropIssued(const std::string& sender_account_id) override;

@@ -9,6 +9,8 @@
 
 #include <filesystem>
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace pbr {
 namespace {
@@ -56,6 +58,18 @@ TEST_P(RelayGrantStoreContractTest, AReceivedGrantIsOnePerGrantorAndTheNewestWin
   EXPECT_EQ(store_->Received("account:bob").value(), Grant("account:bob", "account:me", 30));
   ASSERT_TRUE(store_->DropReceived("account:bob"));
   EXPECT_FALSE(store_->Received("account:bob").value());
+}
+
+// The account locker carries the grants given to us (ACCOUNT_LOCKER § State JSON `grants`): all of them, one per
+// grantor, never one we gave.
+TEST_P(RelayGrantStoreContractTest, EveryReceivedGrantIsListedByGrantor) {
+  EXPECT_TRUE(store_->AllReceived().value().empty());
+  ASSERT_TRUE(store_->PutReceived(Grant("account:carol", "account:me", 5)));
+  ASSERT_TRUE(store_->PutReceived(Grant("account:bob", "account:me", 20)));
+  ASSERT_TRUE(store_->PutReceived(Grant("account:bob", "account:me", 30)));
+  ASSERT_TRUE(store_->PutIssued({.grant = Grant("account:me", "account:dave", 9)}));
+  EXPECT_EQ(store_->AllReceived().value(),
+            (std::vector<RelayGrant>{Grant("account:bob", "account:me", 30), Grant("account:carol", "account:me", 5)}));
 }
 
 TEST_P(RelayGrantStoreContractTest, AnIssuedGrantIsOnePerGranteeWithItsConfirmation) {

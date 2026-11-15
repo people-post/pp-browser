@@ -110,6 +110,46 @@ std::string BobsName(const AccountLockerWorkflow::Fetched& fetched) {
   return {};
 }
 
+// The grants given to the account (multi-relay MR005) go into the locker from the device holding them and are
+// handed to another device at its sync and to a restore, so their first sends to the grantors are not a stranger's.
+TEST_F(AccountLockerWorkflowTest, GrantsGoIntoTheLockerAndAnotherDeviceTakesThemAtItsSync) {
+  const int64_t now = util::NowUnixMs();
+  const AccountStateGrant bobs{.grantor_account_id = "account:bob",
+                               .grantee_account_id = "account:alice",
+                               .issued_at = now,
+                               .expires_at = now + 86'400'000,
+                               .signature = "c2ln"};
+  const AccountStateGrant expired{.grantor_account_id = "account:carol",
+                                  .grantee_account_id = "account:alice",
+                                  .issued_at = now - 2'000,
+                                  .expires_at = now - 1'000,
+                                  .signature = "c2ln"};
+  AccountLockerWorkflow holder(*identity_, *contacts_,
+                               AccountLockerWorkflow::Sources{.grants = [&]() -> Roe<std::vector<AccountStateGrant>> {
+                                 return std::vector<AccountStateGrant>{bobs, expired};
+                               }});
+  holder.SetClient(provider_);
+  ASSERT_TRUE(holder.Publish());
+
+  auto restored = Restore({});
+  ASSERT_TRUE(restored && restored->has_value());
+  EXPECT_EQ((**restored).state.extras.grants, std::vector<AccountStateGrant>{bobs})
+      << "a restore brings it, not the expired";
+
+  std::vector<AccountStateGrant> taken;
+  AccountLockerWorkflow linked(
+      *identity_, *contacts_,
+      AccountLockerWorkflow::Sources{
+          .take_grants = [&](const std::vector<AccountStateGrant>& grants) { taken = grants; }});
+  linked.SetClient(provider_);
+  ASSERT_TRUE(linked.Publish());
+  EXPECT_EQ(taken, std::vector<AccountStateGrant>{bobs}) << "another device takes it at its sync";
+  auto after = Restore({});
+  ASSERT_TRUE(after && after->has_value());
+  EXPECT_EQ((**after).state.extras.grants, std::vector<AccountStateGrant>{bobs})
+      << "a device holding none does not drop it from the locker";
+}
+
 TEST_F(AccountLockerWorkflowTest, ASavedFileRestoresTheAccountWhenTheProviderHasNone) {
   auto file = workflow_->ExportFileJson();
   ASSERT_TRUE(file) << file.error().message;

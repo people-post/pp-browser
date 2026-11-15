@@ -446,6 +446,64 @@ TEST(AccountLockerTest, MoreEntriesThanTheLimitAreDroppedOnRead) {
   EXPECT_EQ(read->device_names.size(), kMaxDeviceNameEntries);
 }
 
+// Grants given to the account (multi-relay MR005) ride the locker, so a restored or linked device's first sends to
+// its grantors are not a stranger's (ACCOUNT_LOCKER § State JSON `grants`).
+AccountStateGrant GrantFrom(const std::string& grantor, int64_t issued_at, int64_t expires_at = 0,
+                            const std::string& signature = "c2ln") {
+  return AccountStateGrant{.grantor_account_id = grantor,
+                           .grantee_account_id = "account:alice",
+                           .issued_at = issued_at,
+                           .expires_at = expires_at ? expires_at : issued_at + 1'000'000,
+                           .signature = signature};
+}
+
+TEST(AccountLockerTest, GrantsRoundTripAndABrokenRowIsDropped) {
+  AccountLockerState state = SampleState();
+  state.extras.grants = {GrantFrom("account:bob", 100), GrantFrom("account:carol", 200)};
+  const LockerKeys keys = KeysOf(0x11);
+  auto opened = account_locker::Open(account_locker::Seal(state, keys, 1).value(), keys);
+  ASSERT_TRUE(opened) << opened.error().message;
+  EXPECT_EQ(opened->extras.grants, state.extras.grants);
+
+  auto read = account_locker::StateFromJson(
+      R"({"grants":[{"recipient_account_id":"account:bob","sender_account_id":"account:alice","issued_at":5,)"
+      R"("expires_at":9,"signature":"c2ln","future":1},)"
+      R"({"recipient_account_id":"account:carol","sender_account_id":"account:alice","issued_at":5,"expires_at":9},)"
+      R"({"recipient_account_id":"account:dave","sender_account_id":"account:alice","issued_at":9,"expires_at":5,)"
+      R"("signature":"c2ln"}]})");
+  ASSERT_TRUE(read);
+  EXPECT_EQ(read->extras.grants, (std::vector<AccountStateGrant>{GrantFrom("account:bob", 5, 9)}))
+      << "no signature, or expiring before it was issued: dropped";
+  EXPECT_TRUE(account_locker::StateFromJson(R"({"nickname":"a"})")->extras.grants.empty()) << "an older snapshot";
+}
+
+TEST(AccountLockerTest, GrantsMergeToTheLatestPerGrantorWithoutTheExpired) {
+  AccountLockerState ours;
+  ours.extras.grants = {GrantFrom("account:bob", 300), GrantFrom("account:carol", 100, 150)};
+  AccountLockerState stored;
+  stored.extras.grants = {GrantFrom("account:bob", 200), GrantFrom("account:dave", 50)};
+  const AccountLockerState merged = account_locker::MergeForPublish(ours, stored);
+  EXPECT_EQ(account_locker::CapGrants(merged.extras.grants, 160),
+            (std::vector<AccountStateGrant>{GrantFrom("account:bob", 300), GrantFrom("account:dave", 50)}))
+      << "Bob's later one; Carol's ran out at 150; Dave's from the other device";
+  EXPECT_EQ(
+      account_locker::CapGrants({GrantFrom("account:bob", 300, 0, "YQ"), GrantFrom("account:bob", 300, 0, "Yg")}, 0),
+      (std::vector<AccountStateGrant>{GrantFrom("account:bob", 300, 0, "Yg")}))
+      << "a tie keeps the same one on every device";
+}
+
+TEST(AccountLockerTest, OverTheCapTheLatestIssuedGrantsStay) {
+  std::vector<AccountStateGrant> grants;
+  for (size_t i = 0; i < kMaxLockerGrants + 3; ++i) {
+    grants.push_back(GrantFrom("account:g" + std::to_string(100 + i), static_cast<int64_t>(1000 + i)));
+  }
+  const std::vector<AccountStateGrant> capped = account_locker::CapGrants(grants, 0);
+  ASSERT_EQ(capped.size(), kMaxLockerGrants);
+  EXPECT_EQ(capped.front().grantor_account_id, "account:g103") << "the three issued first went";
+  EXPECT_TRUE(std::is_sorted(capped.begin(), capped.end(),
+                             [](const auto& a, const auto& b) { return a.grantor_account_id < b.grantor_account_id; }));
+}
+
 TEST(AccountLockerTest, SignBytesMatchTheRelaysGoldenVector) {
   // Shared with the relay (web2 www __tests__/AccountLocker.test.ts): what a provider verifies.
   ByteVector locker_id(32);

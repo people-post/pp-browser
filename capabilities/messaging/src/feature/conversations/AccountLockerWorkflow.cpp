@@ -125,6 +125,13 @@ Roe<AccountLockerState> AccountLockerWorkflow::CurrentState() {
       log().warning << "Locker without card floors: " << floors.error().message;
     }
   }
+  if (sources_.grants) {
+    if (auto grants = sources_.grants()) {
+      state.extras.grants = account_locker::CapGrants(std::move(*grants), util::NowUnixMs());
+    } else {
+      log().warning << "Locker without grants: " << grants.error().message;
+    }
+  }
   return state;
 }
 
@@ -330,6 +337,9 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
         sources_.take_dissolved(dissolved);
       }
     }
+    if (sources_.take_grants && !(*stored)->state.extras.grants.empty()) {
+      sources_.take_grants((*stored)->state.extras.grants);
+    }
   }
   // 3. Device names: the locker's into ours (the larger `at` wins; a locker without the key erases nothing), then
   // this device's default name, only when no entry for it exists anywhere — never over one it was given.
@@ -370,6 +380,7 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
     state->device_names = device_names_;
   }
   AccountLockerState merged = *stored ? account_locker::MergeForPublish(*state, (*stored)->state) : *state;
+  merged.extras.grants = account_locker::CapGrants(std::move(merged.extras.grants), util::NowUnixMs());
   if (!*stored) {
     merged.device_names = account_locker::CapDeviceNames(merged.device_names);
   }

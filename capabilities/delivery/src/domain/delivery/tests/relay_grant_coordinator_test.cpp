@@ -325,6 +325,36 @@ TEST_F(RelayGrantCoordinatorTest, AGrantArrivingReleasesWhatItsGrantorsStrangerQ
   EXPECT_EQ(released.size(), 1u) << "a refused grant releases nothing";
 }
 
+// A restored or linked device takes the grants given to the account from its locker (ACCOUNT_LOCKER § State JSON
+// `grants`): each still proves itself against its grantor's key, and once kept it frees what the quota held back.
+TEST_F(RelayGrantCoordinatorTest, AGrantTheLockerCarriedIsKeptOnlyWhenItProvesItselfAndReleasesWhatWasHeld) {
+  std::vector<std::string> released;
+  grants_->SetOnGrantReceived([&released](const std::string& grantor) { released.push_back(grantor); });
+  const test::TestAccount mallory = test::TestAccount::Make();
+  const RelayGrant forged = IssueRelayGrant(bob_.account_id, me_, now_.load(), [&](const std::vector<uint8_t>& bytes) {
+                              return mallory.Sign(bytes);
+                            }).value();
+  const RelayGrant to_carol =
+      IssueRelayGrant(bob_.account_id, "account:carol", now_.load(), [this](const std::vector<uint8_t>& bytes) {
+        return bob_.Sign(bytes);
+      }).value();
+  grants_->TakeFromLocker({forged, to_carol});
+  EXPECT_FALSE(grant_store_.Received(bob_.account_id).value()) << "not Bob's signature, or not for us";
+  EXPECT_TRUE(released.empty());
+
+  const RelayGrant grant = BobsGrant(now_.load());
+  grants_->TakeFromLocker({grant});
+  EXPECT_EQ(grant_store_.Received(bob_.account_id).value(), grant);
+  EXPECT_EQ(grants_->SendHooks().grant_for(bob_.account_id), grant) << "it rides our first send to Bob";
+  EXPECT_EQ(released, std::vector<std::string>{bob_.account_id});
+  EXPECT_EQ(Settled(bob_.account_id), 0) << "no ack: Bob acked it when our other device got it";
+
+  grants_->TakeFromLocker({BobsGrant(now_.load() - kDayMs)});
+  EXPECT_EQ(grant_store_.Received(bob_.account_id).value(), grant) << "an older one does not replace it";
+  EXPECT_EQ(released.size(), 1u);
+  EXPECT_EQ(grants_->ReceivedForLocker().value(), std::vector<RelayGrant>{grant}) << "and the locker gets it back";
+}
+
 TEST_F(RelayGrantCoordinatorTest, ARefusedGrantIsDroppedAndAskedForAgain) {
   Grant(bob_.account_id);
   ASSERT_TRUE(grant_store_.PutReceived(BobsGrant(now_.load())));

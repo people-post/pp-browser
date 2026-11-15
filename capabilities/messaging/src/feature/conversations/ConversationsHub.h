@@ -951,6 +951,8 @@ private:
   struct PendingRestore {
     std::vector<AccountStateGroup> groups;
     std::vector<AccountCardFloor> card_floors;
+    /** The grants given to the account (MR005): taken before the announce below, so its sends carry them. */
+    std::vector<AccountStateGrant> grants;
     /** Tell the contacts this device's card (the restored phone is a new device of the account). */
     bool announce = false;
   };
@@ -958,6 +960,10 @@ private:
   PendingRestore restored_;
   /** What a restore brought back beyond the account: applied now, or once messaging is up. */
   void QueueRestoredState(AccountStateExtras extras);
+  /** The restored grants into the grant store (blocking: each is checked against its grantor's key). Worker. */
+  void ApplyRestoredGrants();
+  /** Grants the locker carried (a sync, a restore) into the grant store, each checked. Worker. */
+  void TakeLockerGrants(const std::vector<AccountStateGrant>& grants);
   static constexpr int64_t kLockerPublishDelayMs = 5 * 1000;
   /** How often the locker is synced while running (another device's contact edits arrive this way). */
   static constexpr int64_t kLockerSyncIntervalMs = 10 * 60 * 1000;

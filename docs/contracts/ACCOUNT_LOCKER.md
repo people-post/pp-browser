@@ -54,6 +54,7 @@ vectors: `account_locker_test`, `http_locker_client_test` and www `__tests__/Acc
 | `contacts` | address book rows (`ContactToJson`) |
 | `groups` | per group: metadata, roster as identities with roles, the owner-signed roster statement — no messages ([group-chat G013](../../projects/group-chat/DECISIONS.md)). A group the account is out of (left, or removed — the member check found it out) is a tombstone: `group_id`, `owner`, `roster_epoch`, `left: true`. A group the owner dissolved (group-chat G016) is a terminal tombstone: `left: true, dissolved: true` |
 | `card_floors` | `{account_id, issued_at}`: the newest account card issue time seen per account — a restored device refuses older cards ([ACCOUNT_CARD § Newest wins](ACCOUNT_CARD.md)) |
+| `grants` | the relay grants other accounts gave this one ([ACCOUNT_CARD § Relay grants](ACCOUNT_CARD.md#relay-grants), multi-relay MR005), each as received: `{recipient_account_id, sender_account_id, issued_at, expires_at, signature}` (the grantor, this account, Unix ms, the grantor's signature). A restored or linked device takes them so its first sends to a grantor are not a stranger's (below). Absent in older snapshots |
 | `providers` | provider list (reserved; empty until a second relay exists). pp-nodes are never providers: they keep caches only (M023 §6 amendment) |
 | `contact_clock` | one register per contact account: `{account_id, at, present, digest}` (below) |
 | `device_names` | the display names of the account's devices: `[{peer_id, name, at}]`, or `{peer_id, at, removed: true}` for a removed device (below). Never in the account card, a log or a metric |
@@ -61,6 +62,18 @@ vectors: `account_locker_test`, `http_locker_client_test` and www `__tests__/Acc
 Every key is optional on read; unknown keys (and unknown fields inside a row) are ignored. An older build reads a snapshot
 without `device_names` as having no names, and when it writes the locker it drops the key (the next device that knows it
 puts its table back).
+
+### Grants
+
+A grant is the grantor's signed statement, so it proves itself: a device keeps one from the locker only when it is to this
+account, newer than the one it holds from that grantor, and checks against the grantor's account key (resolved by its
+Account ID, as a grant received over the control lane is — `RelayGrantCoordinator::TakeFromLocker`); the seal says only
+that one of the account's devices wrote it. Kept, it frees what the grantor's stranger quota held back, as a grant
+received does. **Merge and cap** (`CapGrants`, the same on every device): none expired, one per grantor (the later
+`issued_at`; the larger `signature` on a tie), at most 32 (`kMaxLockerGrants`; the latest issued stay: about 4.6 KB
+each, so the snapshot stays in a small size bucket), sorted by grantor. A row with a field missing, longer than 8 KiB, or
+expiring before it was issued is dropped on read. A grantor cut by the cap still grants a restored device once it hears of
+it (its grantee's card lists a new device).
 
 ### Device names
 
@@ -104,7 +117,8 @@ One sync (`AccountLockerWorkflow::Publish`), serialized per device:
    **this device's system name is added only while no live entry for it exists anywhere**, never over a given name; `at`
    moves only when a name actually changes), the same whichever device merges (at a tie the stored register, row and group stand —
    rows hold each device's own local fields; lists sorted): contacts by register; groups by the higher `roster_epoch`; card floors by
-   the higher `issued_at`; providers by union. Groups: the higher `roster_epoch` wins; at the same epoch a tombstone wins, so an older copy where the account was a member does not bring a left group back, while a later re-invite (a higher epoch) does. A `dissolved` tombstone is terminal: it wins over any copy of the group whatever its epoch (a dissolved group is never re-invited), a restore skips it, and a device that is still in the group ends it at its next sync (the locker is the account's own state). **Nothing new → no write.**
+   the higher `issued_at`; grants by `CapGrants` over both copies (the stored ones are first taken here, each checked);
+   providers by union. Groups: the higher `roster_epoch` wins; at the same epoch a tombstone wins, so an older copy where the account was a member does not bring a left group back, while a later re-invite (a higher epoch) does. A `dissolved` tombstone is terminal: it wins over any copy of the group whatever its epoch (a dissolved group is never re-invited), a restore skips it, and a device that is still in the group ends it at its next sync (the locker is the account's own state). **Nothing new → no write.**
 5. After a write, nudge the siblings: a `device_list` control-lane notice to the account's own mailbox,
    only when the own account card lists more than one device. A device that receives a verified sibling
    notice syncs 5 s later; since a sync with nothing new writes nothing, the exchange stops.
@@ -121,8 +135,8 @@ nothing prunes them yet.
 On a fresh install, a typed phrase → seed → locker (fetched by id alone) → the link bundle the seed
 reconstructs (`RecoveryBundle`: derived account keys, the seed, a fresh DEK, the locker's
 nickname; the account counts as registered) imported under the PIN the user chooses → contacts written → once messaging is up: card floors
-before anything is received, groups recreated (tombstones skipped) and checking their members, the device announced, the
-locker synced.
+before anything is received, groups recreated (tombstones skipped) and checking their members, the grants taken (each
+checked, before the announce, so its sends carry them), the device announced, the locker synced.
 
 ## Saved copy (exported locker file)
 

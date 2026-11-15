@@ -87,6 +87,14 @@ public:
   std::optional<RelayGrant> GrantFor(const std::string& recipient);
   /** The relay refused the grant `recipient` gave us. SendHooks' `grant_refused`. */
   void GrantRefused(const std::string& recipient);
+  /** The grants given to us that we hold, for the account locker (our other and restored devices take them). */
+  Roe<std::vector<RelayGrant>> ReceivedForLocker();
+  /**
+   * Grants the account locker carried from another device of ours: each is kept only when it is to us, newer than
+   * the one held from its grantor, and checks against the grantor's account key (resolved, so blocking: a worker);
+   * then sends its stranger quota held back go, as on a grant received. The rest is dropped (logged).
+   */
+  void TakeFromLocker(const std::vector<RelayGrant>& grants);
   /** A notice from `sender` (the lane's verified sender). Family's `apply`. */
   Roe<void> OnNotice(const relay_grant::Notice& notice, const std::string& sender);
 

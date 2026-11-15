@@ -28,7 +28,7 @@ namespace pbr {
  */
 class AccountLockerWorkflow : public Module {
 public:
-  /** Where the groups and card floors come from (null-safe: missing ones are left out). */
+  /** Where the groups, card floors and grants come from (null-safe: missing ones are left out). */
   struct Sources {
     std::function<Roe<std::vector<AccountStateGroup>>()> groups;
     std::function<Roe<std::vector<PeerCardFloor>>()> card_floors;
@@ -37,6 +37,13 @@ public:
      * a device that missed the dissolve (it was off) ends the group too. Null: not taken.
      */
     std::function<void(const std::vector<AccountStateGroup>&)> take_dissolved;
+    /** The grants given to us that this device holds (multi-relay MR005), for the locker. Null: none published. */
+    std::function<Roe<std::vector<AccountStateGrant>>()> grants;
+    /**
+     * The grants the locker holds, taken here at a sync: another device of the account received them, and this one
+     * (a restored or linked device) needs them for its own sends. The taker checks each. Null: not taken.
+     */
+    std::function<void(const std::vector<AccountStateGrant>&)> take_grants;
     /**
      * The account's devices as this device knows them (its card's list, this device's PeerId): which names to keep
      * and which device the default name is for. Null or an error: the card is unknown, no default name is added.

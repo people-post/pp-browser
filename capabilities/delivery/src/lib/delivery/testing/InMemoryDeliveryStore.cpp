@@ -718,6 +718,15 @@ Roe<void> InMemoryRelayGrantStore::DropReceived(const std::string& recipient_acc
   return {};
 }
 
+Roe<std::vector<RelayGrant>> InMemoryRelayGrantStore::AllReceived() {
+  std::lock_guard lock(mutex_);
+  std::vector<RelayGrant> all;
+  for (const auto& [grantor, grant] : received_) {
+    all.push_back(grant);
+  }
+  return all;
+}
+
 Roe<std::optional<IRelayGrantStore::Issued>> InMemoryRelayGrantStore::IssuedTo(const std::string& sender_account_id) {
   std::lock_guard lock(mutex_);
   const auto it = issued_.find(sender_account_id);

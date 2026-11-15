@@ -60,10 +60,30 @@ struct AccountCardFloor {
   bool operator==(const AccountCardFloor&) const = default;
 };
 
-/** Account state the locker keeps beyond the contacts: the groups and the card floors. */
+/**
+ * A grant another account gave this one, as received (multi-relay MR005: it lets this account write to the grantor's
+ * relay inboxes past the stranger rules). Signed by the grantor's account key, so it proves itself: a device checks
+ * it against the grantor's key before it keeps one (the locker's seal says only that one of our devices wrote it).
+ */
+struct AccountStateGrant {
+  /** Who granted: the account whose inboxes it opens. */
+  std::string grantor_account_id;
+  /** Who it was given to: this account. */
+  std::string grantee_account_id;
+  /** Unix ms. */
+  int64_t issued_at = 0;
+  int64_t expires_at = 0;
+  /** The grantor's ML-DSA-65 signature, standard base64. */
+  std::string signature;
+
+  bool operator==(const AccountStateGrant&) const = default;
+};
+
+/** Account state the locker keeps beyond the contacts: the groups, the card floors and the grants given to us. */
 struct AccountStateExtras {
   std::vector<AccountStateGroup> groups;
   std::vector<AccountCardFloor> card_floors;
+  std::vector<AccountStateGrant> grants;
 };
 
 /** JSON for one group of the account state, as the account locker's `groups` carry it. */
