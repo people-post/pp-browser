@@ -140,7 +140,7 @@ std::vector<RelayPin> RelayPinStore::All() const {
 
 void RelayPinStore::AddLocked(RelayPin pin) {
   if (pins_.size() >= kMaxPins) {
-    // The oldest pin of a relay no one keeps (a contact's relay we saw): its next use pins it again by fetch.
+    // The oldest pin of a relay no one keeps (removed from our list since): pinned again by fetch if it comes back.
     auto oldest = pins_.end();
     for (auto it = pins_.begin(); it != pins_.end(); ++it) {
       if ((!keep_ || !keep_(it->origin)) && (oldest == pins_.end() || it->pinned_at_ms < oldest->pinned_at_ms)) {

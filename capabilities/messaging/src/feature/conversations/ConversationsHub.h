@@ -748,7 +748,7 @@ private:
   int64_t preferred_heal_due_ms_ = 0;
   void OpenRelayPins();
   void CloseRelayPins();
-  /** A pin the store keeps when full: ours, the org's origins, a kept contact's locator relay. Any thread. */
+  /** A pin the store keeps when full: ours and the org's origins (the only ones pinned). Any thread. */
   bool KeepsPin(const std::string& origin);
   /** A pin changed (any thread): our card's relays follow, the card goes out when it changed, the page reads again. */
   void OnRelayPinsChanged();

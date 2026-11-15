@@ -38,7 +38,7 @@ namespace pbr {
  *
  * Every signed call names its relay (multi-relay MR007): the clients of our relays and of the org's registration URL
  * sign for the relay's pin (SetPins: RelayPins::AudienceFor), a relay not ours for the PeerId the recipient's card
- * names (or, with none, its pin by fetch). The owner's thread.
+ * names (or, with none, the PeerId it presents, never pinned: RelayPins::ForeignAudienceFor). The owner's thread.
  */
 class BackendClientSet : public Module {
 public:

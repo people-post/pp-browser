@@ -125,16 +125,43 @@ TEST_F(RelayPinsTest, TheFirstFetchPinsBeforeAnythingIsSigned) {
 }
 
 // A relay not ours (a QR locator's) is asked for its identity as its client asks it: https to a public address only.
-TEST_F(RelayPinsTest, ARelayNotOursIsAskedOverAPublicAddressOnly) {
+TEST_F(RelayPinsTest, ARelayNotOursIsAskedOverAPublicAddressOnlyAndNeverPinned) {
   presents_[kA] = kPeerA;
   presents_[kB] = kPeerB;
   auto ours = pins_->AudienceFor(kA);
-  auto theirs = pins_->AudienceFor(kB, true);
-  EXPECT_NE(theirs, pins_->AudienceFor(kB)) << "one audience per relay and policy";
+  auto theirs = pins_->ForeignAudienceFor(kB, true);
   EXPECT_EQ(ours->PeerId().valueOr(""), kPeerA);
   EXPECT_EQ(theirs->PeerId().valueOr(""), kPeerB);
   EXPECT_EQ(fetched_, (std::vector<std::string>{kA, kB}));
   EXPECT_EQ(public_only_, (std::vector<bool>{false, true}));
+  EXPECT_FALSE(pins_->PinFor(kB)) << "what a relay not ours presents is never pinned";
+  EXPECT_EQ(changed_, std::vector<std::string>{kA});
+  EXPECT_EQ(theirs->PeerId().valueOr(""), kPeerB);
+  EXPECT_EQ(fetched_.size(), 2u) << "kept in memory for its sends";
+
+  presents_[kB] = kPeerC;
+  theirs->Refused("wrong_audience");
+  EXPECT_EQ(theirs->PeerId().valueOr(""), kPeerC) << "a wrong_audience asks again";
+  theirs->Refused("not_registered");
+  EXPECT_TRUE(lost_.empty()) << "our registration at a relay not ours is not ours to heal";
+}
+
+// S1: a QR code's relay that presents our relay's PeerId before ours is pinned takes nothing from ours.
+TEST_F(RelayPinsTest, ALocatorsRelayClaimingOurPeerIdNeverBlocksOurRelay) {
+  presents_[kB] = kPeerA; // the invite's relay claims A's identity
+  presents_[kA] = kPeerA;
+  ASSERT_TRUE(pins_->ForeignAudienceFor(kB, true)->PeerId()) << "nothing of ours holds kPeerA yet";
+  EXPECT_FALSE(pins_->PinFor(kB));
+  EXPECT_EQ(pins_->CheckCardRelay(kA, kPeerA), CardRelayCheck::Usable) << "contacts on the real relay stay usable";
+  EXPECT_EQ(pins_->CheckForAdd(kA).result, AddIdentityCheck::Result::Ok) << "Add of the real relay goes through";
+  EXPECT_EQ(pins_->AudienceFor(kA)->PeerId().valueOr(""), kPeerA);
+
+  auto squatter = pins_->ForeignAudienceFor(kB, true)->PeerId();
+  ASSERT_FALSE(squatter) << "once ours holds it, the squatter gets no call signed for it";
+  EXPECT_EQ(static_cast<Err::Auth>(squatter.error().code), Err::Auth::RelayIdentityTaken);
+
+  EXPECT_EQ(pins_->ForeignAudienceFor(kA, true)->PeerId().valueOr(""), kPeerA)
+      << "a locator naming a relay of ours signs for its pin";
 }
 
 TEST_F(RelayPinsTest, AnAnswerThatDoesNotCheckOutPinsNothingAndIsAskedAgainAfterABackoff) {
@@ -204,7 +231,7 @@ TEST_F(RelayPinsTest, APeerIdHeldByAnotherOriginIsRefusedAndNeverPinned) {
 
 TEST_F(RelayPinsTest, AddAsksAgainForARelaySeenWithAnotherIdentity) {
   presents_[kA] = kPeerA;
-  ASSERT_TRUE(pins_->AudienceFor(kA)->PeerId()); // a contact's relay we sent to
+  ASSERT_TRUE(pins_->AudienceFor(kA)->PeerId()); // the org's origin, or a relay of ours removed since
   presents_[kA] = kPeerB;
   const AddIdentityCheck add = pins_->CheckForAdd(kA);
   EXPECT_EQ(add.result, AddIdentityCheck::Result::ChangedSinceSeen);

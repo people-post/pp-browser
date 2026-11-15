@@ -75,13 +75,17 @@ answer is **not signed** on purpose: what stops a relay from borrowing another's
 
 The app signs for a PeerId at one origin only (`RelayPins` over `RelayPinStore`, `relay_pins.json`
 [DATA_LAYOUT](DATA_LAYOUT.md#relay_pinsjson)): one PeerId per origin, one origin per PeerId, at most 32 (the oldest pin
-that is neither ours, the org's origins nor a kept contact's locator relay goes first).
+that is neither ours nor the org's origins goes first). Only a relay of ours and the org's origins are pinned.
 
 - **Where a pin comes from:** only the origin's own identity answer — fetched before the first command is signed for
-  that relay (at start for every relay of ours and the org's origins, `relay` / `registration`; at Add; at the first
-  send to a locator-only contact's relay) — or, on a linked device, our own account's newer card (its `{origin,
-  peer_id}` entries replace a pin that disagrees and drop another origin's pin of that PeerId). A contact's card never
-  writes a pin. A fetch that fails pins nothing; nothing is signed for that origin until a fetch succeeds (asked again
+  that relay (at start for every relay of ours and the org's origins, `relay` / `registration`; at Add) — or, on a
+  linked device, our own account's newer card (its `{origin, peer_id}` entries replace a pin that disagrees and drop
+  another origin's pin of that PeerId). A contact's card or QR code never writes a pin: a relay not ours that no card
+  names a PeerId for (a locator-only contact's) is asked for its identity at its first send, over https to a public
+  address only, and what it presents is kept **in memory** for its sends (`RelayPins::ForeignAudienceFor`) — never
+  pinned, so it can neither take a PeerId from a relay of ours nor make a card entry naming one *identity doesn't
+  match*. One presenting a PeerId pinned to another origin gets nothing signed for it; a `wrong_audience` asks it
+  again (at most once per 5 min). A fetch that fails pins nothing; nothing is signed for that origin until a fetch succeeds (asked again
   after 1 min, doubling to 30 min).
 - **An origin presenting a PeerId pinned to another origin** is refused (`relay_identity_taken`) and never pinned.
 - **`401 wrong_audience` from a relay of ours or the org's origin** asks its identity again (at most once per origin per
@@ -295,7 +299,7 @@ of ours (its list becomes the card's). Every change is kept first, then:
 
 | Change | Rules | Also |
 |---|---|---|
-| **Add** | An origin `https://host[:port]`, or that and `/api/relay` (no other path, query, fragment or user info; at most 128 bytes); `http://`, and a host that is not public (on this device or a private network: `IsPublicRelayOrigin`, the card relays' policy, [ACCOUNT_CARD](ACCOUNT_CARD.md); refused with `relay_origin_local` before it is asked), only in developer builds (never on the card). It must answer `GET <base>/v1/client-compat` (the cheapest unauthenticated GET every relay serves) and identify itself (`GET <base>/v1/relay-identity`, pinned now, MR007): no identity is `relay_identity_unavailable`; a PeerId another origin holds is `relay_identity_taken` (that origin on our list) or `relay_identity_taken_known` (a relay we saw); an origin pinned before with another PeerId (a contact's relay we saw) is `relay_identity_changed_since_seen`, and added, re-pinned, once the person confirms. At most 4. | Added last |
+| **Add** | An origin `https://host[:port]`, or that and `/api/relay` (no other path, query, fragment or user info; at most 128 bytes); `http://`, and a host that is not public (on this device or a private network: `IsPublicRelayOrigin`, the card relays' policy, [ACCOUNT_CARD](ACCOUNT_CARD.md); refused with `relay_origin_local` before it is asked), only in developer builds (never on the card). It must answer `GET <base>/v1/client-compat` (the cheapest unauthenticated GET every relay serves) and identify itself (`GET <base>/v1/relay-identity`, pinned now, MR007): no identity is `relay_identity_unavailable`; a PeerId another origin holds is `relay_identity_taken` (that origin on our list) or `relay_identity_taken_known` (the org's origin, or a relay of ours removed since); an origin pinned before with another PeerId (the org's origin, a relay removed since) is `relay_identity_changed_since_seen`, and added, re-pinned, once the person confirms. At most 4. | Added last |
 | **Remove** | Not the preferred relay (make another preferred first), never the last (mesh-only is not offered in this step) | Our push binding (`/v1/devices/unregister`) and our registration (`/v1/register/revoke`, which also drops the account's push devices there) go first, best effort — none for a relay whose identity changed (nothing is signed for it; its registration expires there); then its pin goes (a relay that claimed another's PeerId no longer holds it); its inbox cursor goes |
 | **Accept new identity** | A relay of ours whose identity changed (the main device), or the org's origin (any device) | Re-pinned to the PeerId it presented; ours is registered on again (the preferred one as the identity's, push bound), and our card re-issued with it and announced |
 | **Make preferred** | A relay of ours | The identity's registration renews there at once (the card is newer, so it goes whatever the auto-renew preference; the registration records the relay it was made at, so the Me page reads it as the current one); push binds there; the old preferred relay is registered on as another of ours |
@@ -343,8 +347,9 @@ search asks the relays the user has listed; there is no search across relays bey
 2. **Health:** a relay a send could not reach (a transport failure, a timeout, a 5xx) is tried after the healthy
    ones for **5 minutes** (`RelayHealth`); a send it takes clears it. An answer about the recipient (a price, a quota,
    not registered) says nothing about the relay's health.
-3. **The audience** (MR007) is the `peer_id` the recipient's card names for that relay; a relay with none named (a
-   locator's, our preferred relay for a recipient without a card) is signed for by its pin, fetched then. A card
+3. **The audience** (MR007) is the `peer_id` the recipient's card names for that relay; a relay with none named is signed
+   for by its pin when it is ours (our preferred relay for a recipient without a card), else (a locator's) for the
+   PeerId it presents, never pinned ([§ Pins](#pins)). A card
    entry our pins disagree with — our pin for that origin is another PeerId, or that PeerId is pinned to another
    origin — is skipped for that recipient (logged once per entry; the card is still kept; the contact page reads
    *identity doesn't match*). A relay that answers `wrong_audience` is skipped for this send, counts like

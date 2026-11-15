@@ -26,6 +26,28 @@ private:
   bool public_only_ = false;
 };
 
+/**
+ * The audience of a relay not ours (a QR locator's): what it presents, never pinned (RelayPins::ForeignAudienceFor).
+ * Its refusals of our registration there are not ours to heal: only `wrong_audience` is heard.
+ */
+class ForeignRelayAudience : public IRelayAudience {
+public:
+  ForeignRelayAudience(std::shared_ptr<RelayPins> pins, std::string origin, const bool public_only)
+      : pins_(std::move(pins)), origin_(std::move(origin)), public_only_(public_only) {}
+  Roe<std::string> PeerId() override { return pins_->ForeignAudience(origin_, public_only_); }
+  void Refused(const std::string& code) override { pins_->ForeignRefused(origin_, code); }
+
+private:
+  std::shared_ptr<RelayPins> pins_;
+  std::string origin_;
+  bool public_only_ = true;
+};
+
+/** Where a relay not ours keeps its fetch state: apart from the same origin's as ours (an Add pins it at once). */
+std::string ForeignSlot(const std::string& key) {
+  return key + "|foreign";
+}
+
 Error IdentityChangedError(const std::string& origin) {
   return AppError::Auth(Err::Auth::RelayIdentityChanged,
                         "relay " + origin + " presented another identity; not accepted yet");
@@ -101,6 +123,11 @@ std::shared_ptr<IRelayAudience> RelayPins::AudienceFor(const std::string& origin
   auto audience = std::make_shared<PinnedRelayAudience>(shared_from_this(), key, public_only);
   audiences_[slot] = audience;
   return audience;
+}
+
+std::shared_ptr<IRelayAudience> RelayPins::ForeignAudienceFor(const std::string& origin, const bool public_only) {
+  // One per client (the sender keeps a client per relay it sends into): what it presented is the engine's.
+  return std::make_shared<ForeignRelayAudience>(shared_from_this(), RelayOriginKey(origin), public_only);
 }
 
 std::optional<std::string> RelayPins::PinnedPeerId(const std::string& origin) const {
@@ -261,6 +288,72 @@ void RelayPins::Refused(const std::string& origin, const std::string& code, cons
                   << ", presented " << presented << "; nothing is signed for it until accepted";
   }
   Changed(key);
+}
+
+Roe<std::string> RelayPins::ForeignAudience(const std::string& origin, const bool public_only) {
+  const std::string key = RelayOriginKey(origin);
+  if (store_.PinFor(key)) {
+    return Audience(key, public_only); // a relay of ours (or the org's) the locator names: its pin
+  }
+  const std::string slot = ForeignSlot(key);
+  std::string kept;
+  {
+    const int64_t now = Now();
+    std::lock_guard lock(mutex_);
+    if (const auto it = foreign_.find(key); it != foreign_.end()) {
+      kept = it->second;
+    } else if (const auto state = fetches_.find(slot); state != fetches_.end() && now < state->second.next_try_ms) {
+      return AppError::Network(Err::Network::RelayIdentityUnavailable,
+                               "relay " + key + " named no identity at the last ask; asked again later");
+    }
+  }
+  if (kept.empty()) {
+    Fetch fetch;
+    {
+      std::lock_guard lock(hooks_mutex_);
+      fetch = fetch_;
+    }
+    auto identity = fetch ? fetch(key, public_only) : Roe<RelayIdentity>(Error("no relay identity fetch"));
+    if (!identity) {
+      NoteFetchFailed(slot);
+      log().info << "relay " << key << " (not ours) names no identity: " << identity.error().message;
+      return identity.error();
+    }
+    kept = identity->peer_id;
+  }
+  // Checked at every use: a pin of ours taken since wins over what a relay not ours presented.
+  if (const auto holder = store_.HolderOf(kept); holder && *holder != key) {
+    NoteFetchFailed(slot);
+    std::lock_guard lock(mutex_);
+    foreign_.erase(key);
+    log().warning << "relay " << key << " (not ours) claims the PeerId of " << *holder << "; never signed for";
+    return IdentityTakenError(key, *holder);
+  }
+  std::lock_guard lock(mutex_);
+  if (!foreign_.contains(key) && foreign_.size() >= kMaxForeign) {
+    foreign_.erase(foreign_.begin()); // any one: asked again at its next send
+  }
+  foreign_[key] = kept;
+  if (const auto state = fetches_.find(slot); state != fetches_.end()) {
+    state->second.backoff_ms = 0; // answered: no backoff (its wrong_audience throttle stays)
+    state->second.next_try_ms = 0;
+  }
+  return kept;
+}
+
+void RelayPins::ForeignRefused(const std::string& origin, const std::string& code) {
+  if (code != kWrongAudienceCode) {
+    return; // our registration at a relay not ours is not ours to heal
+  }
+  const std::string key = RelayOriginKey(origin);
+  const int64_t now = Now();
+  std::lock_guard lock(mutex_);
+  FetchState& state = fetches_[ForeignSlot(key)];
+  if (state.wrong_audience_at_ms > 0 && now - state.wrong_audience_at_ms < kWrongAudienceRefetchMs) {
+    return; // forgotten a moment ago
+  }
+  state.wrong_audience_at_ms = now;
+  foreign_.erase(key); // asked again at the next send
 }
 
 AddIdentityCheck RelayPins::CheckForAdd(const std::string& origin) {

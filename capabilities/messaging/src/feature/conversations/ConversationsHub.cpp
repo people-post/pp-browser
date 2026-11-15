@@ -309,20 +309,10 @@ void ConversationsHub::CloseRelayPins() {
 }
 
 bool ConversationsHub::KeepsPin(const std::string& origin) {
-  {
-    std::lock_guard lock(kept_pins_mu_);
-    if (std::any_of(kept_pins_.begin(), kept_pins_.end(),
-                    [&origin](const std::string& kept) { return SameRelay(kept, origin); })) {
-      return true;
-    }
-  }
-  if (!contacts_) {
-    return false;
-  }
-  auto contacts = contacts_->List(); // a kept contact's locator relay: its sends go there until its card arrives
-  return contacts && std::any_of(contacts->begin(), contacts->end(), [&origin](const Contact& contact) {
-           return !contact.remote.locator_relay.empty() && SameRelay(contact.remote.locator_relay, origin);
-         });
+  // Ours and the org's origins (a relay not ours is never pinned, MR007).
+  std::lock_guard lock(kept_pins_mu_);
+  return std::any_of(kept_pins_.begin(), kept_pins_.end(),
+                     [&origin](const std::string& kept) { return SameRelay(kept, origin); });
 }
 
 void ConversationsHub::OnRelayPinsChanged() {

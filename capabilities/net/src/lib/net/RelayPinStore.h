@@ -57,8 +57,9 @@ struct OwnCardRelay {
 
 /**
  * `relay_pins.json` in the profile directory (docs/contracts/DATA_LAYOUT.md): one PeerId per origin and one origin per
- * PeerId, at most kMaxPins. A pin is written only from the origin's own identity answer (Present), or, on a linked
- * device, from our own account's card (TakeOwnCard); a contact's card never writes one. A file of another
+ * PeerId, at most kMaxPins. A pin is written only for a relay of ours or the org's origin, from the origin's own
+ * identity answer (Present), or, on a linked device, from our own account's card (TakeOwnCard); a contact's card or
+ * QR code never writes one (RelayPins::ForeignAudienceFor). A file of another
  * `schema_version`, or not JSON, is refused and read as empty (logged): the relays are pinned again on first use.
  * Thread-safe; every change is written at once (atomically).
  */
@@ -72,8 +73,8 @@ public:
   /** Reads the file (none: no pins). */
   void Load();
   /**
-   * Which pins must stay when the store is full: ours, the org's origin and kept contacts' locator relays. The oldest
-   * pin it does not keep goes first.
+   * Which pins must stay when the store is full: ours and the org's origins. The oldest pin it does not keep (a relay
+   * removed from our list, or one an Add that did not go through pinned) goes first.
    */
   void SetKeep(std::function<bool(const std::string& origin)> keep);
 

@@ -37,7 +37,7 @@ struct AddIdentityCheck {
     Unavailable,
     /** It presents a PeerId pinned to another origin (`holder`). */
     Taken,
-    /** Pinned before (a contact's relay we saw) with another PeerId: Add asks the person, then Repin. */
+    /** Pinned before (the org's origin, or a relay removed since) with another PeerId: Add asks the person, then Repin. */
     ChangedSinceSeen,
   };
   Result result = Result::Ok;
@@ -47,9 +47,11 @@ struct AddIdentityCheck {
 
 /**
  * The app's (or pp-node's) relay pins (multi-relay MR007; docs/contracts/SERVICE_ENDPOINTS.md § Relay identity): the
- * engine over RelayPinStore. Hands every client of a relay its audience (AudienceFor): the pinned PeerId, asked of
- * the origin itself and pinned before the first command is signed for it (a fetch that fails pins nothing and is
- * tried again after a backoff, kFirstRetryMs doubling to kMaxRetryMs). A `wrong_audience` asks the identity again (at
+ * engine over RelayPinStore. Hands every client of a relay of ours (or of the org's origin) its audience (AudienceFor):
+ * the pinned PeerId, asked of the origin itself and pinned before the first command is signed for it (a fetch that
+ * fails pins nothing and is tried again after a backoff, kFirstRetryMs doubling to kMaxRetryMs). A relay not ours (a
+ * QR locator's, its card not kept yet) is never pinned (ForeignAudienceFor): what it presents is kept in memory for
+ * its sends only, so no one else's relay can take a PeerId or an origin from ours. A `wrong_audience` asks the identity again (at
  * most once per origin per kWrongAudienceRefetchMs): another PeerId than the pin is an *identity changed* — nothing
  * is signed for that relay until the person accepts it (Accept); the same PeerId is a relay misbehaving (logged).
  * `not_registered` / `registration_expired` go to SetOnNotRegistered. Owned by a shared_ptr (the audiences it hands out
@@ -60,6 +62,8 @@ public:
   static constexpr int64_t kFirstRetryMs = 60 * 1000;
   static constexpr int64_t kMaxRetryMs = 30 * 60 * 1000;
   static constexpr int64_t kWrongAudienceRefetchMs = 5 * 60 * 1000;
+  /** Relays not ours whose presented PeerId is kept in memory (ForeignAudienceFor). */
+  static constexpr size_t kMaxForeign = 64;
 
   /** `public_only`: the origin is not ours (FetchRelayIdentity). */
   using Fetch = std::function<Roe<RelayIdentity>(const std::string& base_url, bool public_only)>;
@@ -78,11 +82,18 @@ public:
   void SetOnNotRegistered(std::function<void(const std::string& origin)> on_not_registered);
 
   /**
-   * The audience every client of the relay at `origin` signs for (shared; the same object per origin). `public_only`:
-   * a relay not ours (a QR locator's, its card not kept yet): its identity is asked over https to a public address
-   * only, as its client asks.
+   * The audience every client of the relay of ours (or the org's origin) at `origin` signs for (shared; the same object
+   * per origin and policy); its first answer is pinned. `public_only`: its identity is asked over https to a public
+   * address only, as its clients ask.
    */
   std::shared_ptr<IRelayAudience> AudienceFor(const std::string& origin, bool public_only = false);
+  /**
+   * The audience of a relay not ours that no card names a PeerId for (a QR locator's): the PeerId it presents, asked
+   * over https to a public address only when `public_only`, kept in memory (at most kMaxForeign relays) and never
+   * pinned. One that presents a PeerId pinned to another origin is refused (Err::Auth::RelayIdentityTaken); an origin
+   * we pin (a locator naming a relay of ours) signs for its pin. Never makes another origin's card entry Mismatch.
+   */
+  std::shared_ptr<IRelayAudience> ForeignAudienceFor(const std::string& origin, bool public_only);
 
   /** The PeerId pinned for `origin` and in force (not changed); none: not pinned, or its identity changed. */
   std::optional<std::string> PinnedPeerId(const std::string& origin) const;
@@ -107,6 +118,10 @@ public:
   bool EnsurePinned(const std::vector<std::string>& origins);
   /** The relay at `origin` refused a signed command with `code` (IRelayAudience::Refused). */
   void Refused(const std::string& origin, const std::string& code, bool public_only = false);
+  /** ForeignAudienceFor's: the PeerId to sign for at a relay not ours (asked when none is kept; blocks). */
+  Roe<std::string> ForeignAudience(const std::string& origin, bool public_only);
+  /** ForeignAudienceFor's: `wrong_audience` forgets what it presented (asked again, at most every kWrongAudienceRefetchMs). */
+  void ForeignRefused(const std::string& origin, const std::string& code);
 
   /** Add: asks `origin` for its identity now (no backoff) and pins it when nothing stands against it. Blocks. */
   AddIdentityCheck CheckForAdd(const std::string& origin);
@@ -144,6 +159,8 @@ private:
   mutable std::mutex mutex_;
   std::map<std::string, FetchState> fetches_;
   std::map<std::string, std::weak_ptr<IRelayAudience>> audiences_;
+  /** Relays not ours: the PeerId each presented last (memory only, never pinned), by RelayOriginKey. */
+  std::map<std::string, std::string> foreign_;
 };
 
 } // namespace pbr

@@ -243,8 +243,9 @@ directory, the same format.
   dropped, no trailing `/`). One pin per origin and one origin per PeerId (a second of either is dropped on read).
 - `presented_peer_id` / `presented_at_ms`: optional — another PeerId the origin presented after a `wrong_audience`;
   present, the relay's identity changed and nothing is signed for it until the person accepts it.
-- At most 32 pins; when full, the oldest pin that is neither one of our relays, nor the org's origins, nor a kept
-  contact's locator relay goes.
+- Only our relays and the org's origins are pinned (a contact's card or QR code never writes a pin). At most 32;
+  when full, the oldest pin that is neither one of our relays nor the org's origins (one removed from My relays since)
+  goes.
 - Another `schema_version`, or a file that is not JSON, is refused and read as empty (logged as an error): the relays
   are pinned again on first use.
 
