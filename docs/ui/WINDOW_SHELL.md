@@ -95,7 +95,7 @@ In expanded layout a splitter (`#shell-pane-splitter`, 6dp hit area straddling t
 
 - **Auxiliary pane resize:** while the auxiliary pane is open a second splitter (`#shell-aux-splitter`, same 6dp straddling trick) sits on the pane's LEFT edge. It uses the same `ShellSplitterDrag` with `Edge::Left` (dragging left widens: width is `start width - Δmouse_x / dp ratio`) and its own clamp, 280–640 dp (`ShellLayout::ClampAuxiliaryWidthDp`); the pane may shrink to its 280dp `min-width`. `SerializeExpandedBase` emits the splitter before the pane and the pane with inline `flex: 0 1 <N>dp`. No collapse (the pane has a close button). Compact layout shows the auxiliary pane as a sheet and gets neither splitter nor inline style. Persisted as `ProfilePreferences::auxiliary_width_dp` (default 320) via `ShellHost::SetAuxiliaryWidthPref` / `SetOnAuxiliaryWidthChanged`.
 
-Layout mode switches at **768dp** width (`ShellConfig::compact_breakpoint_dp`).
+Layout mode switches at **768dp** width (`ShellConfig::compact_breakpoint_dp`); on iPad at **900dp** (`ShellLayout::kTabletExpandedBreakpointDp`), with the window never smaller than 375x500 pt.
 
 **Team UI review mock:** open [`shell_layout_review.html`](shell_layout_review.html) in a browser for side-by-side expanded vs compact page compositions (static HTML facsimile of the RML shell — not a live render).
 

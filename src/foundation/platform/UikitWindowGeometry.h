@@ -52,10 +52,11 @@ UikitGeometryFix SyncUikitWindowGeometry(SDL_Window* window);
 int WindowControlsTopInset(SDL_Window* window);
 
 /** The smallest window the iPad app is given, in UIKit points (= our dp on iOS: SDL's display scale is the screen's
- *  nativeScale, so dp = pixels / nativeScale = points). Width is the phone-layout breakpoint (768 dp) so the wide
- *  layout always fits; height keeps a 4:3 window usable (nav rail, a 200 dp sidebar and the chat). */
-inline constexpr double kIpadMinWindowWidthPt = 768;
-inline constexpr double kIpadMinWindowHeightPt = 576;
+ *  nativeScale, so dp = pixels / nativeScale = points). Width: no narrower than an iPhone (375); below 900 dp the app
+ *  shows the phone layout (ShellLayout::kTabletExpandedBreakpointDp). Height: 500 keeps the phone layout usable (status
+ *  bar, a chat with its composer, the tab bar) with room left when the on-screen keyboard is up. */
+inline constexpr double kIpadMinWindowWidthPt = 375;
+inline constexpr double kIpadMinWindowHeightPt = 500;
 
 /** iOS: the device is an iPad (UIDevice idiom). false elsewhere, and on iPhone. */
 bool IsIpadDevice();

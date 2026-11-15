@@ -6,7 +6,10 @@ namespace pbr {
 
 struct ShellLayout {
   static LayoutMode FromWidth(float width_dp, float breakpoint = ShellConfig{}.compact_breakpoint_dp);
-  /** Like FromWidth, but a tablet (iPad) never gets the phone layout, whatever width arrives. */
+  /** A tablet (iPad) window is wider than a phone, so it switches at its own, larger breakpoint: below it the phone
+   *  layout (split view half, a narrow window), from it the wide one. */
+  static constexpr float kTabletExpandedBreakpointDp = 900.f;
+  /** Like FromWidth, but a tablet uses kTabletExpandedBreakpointDp; `breakpoint` applies to every other device. */
   static LayoutMode ForDevice(float width_dp, bool is_tablet, float breakpoint = ShellConfig{}.compact_breakpoint_dp);
   static const char* LayoutModeString(LayoutMode mode);
   static const char* NavTabString(NavTab tab);

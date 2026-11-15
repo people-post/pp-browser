@@ -9,7 +9,7 @@ LayoutMode ShellLayout::FromWidth(float width_dp, float breakpoint) {
 }
 
 LayoutMode ShellLayout::ForDevice(float width_dp, bool is_tablet, float breakpoint) {
-  return is_tablet ? LayoutMode::Expanded : FromWidth(width_dp, breakpoint);
+  return FromWidth(width_dp, is_tablet ? kTabletExpandedBreakpointDp : breakpoint);
 }
 
 const char* ShellLayout::LayoutModeString(LayoutMode mode) {

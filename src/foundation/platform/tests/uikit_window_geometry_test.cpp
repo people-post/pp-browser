@@ -64,5 +64,10 @@ TEST(UikitWindowGeometryTest, DesktopHelpersAreNoOps) {
   EXPECT_FALSE(IsIpadDevice());
 }
 
+TEST(UikitWindowGeometryTest, IpadMinimumWindowIsNoNarrowerThanAnIphone) {
+  EXPECT_EQ(kIpadMinWindowWidthPt, 375);
+  EXPECT_EQ(kIpadMinWindowHeightPt, 500);
+}
+
 } // namespace
 } // namespace pbr
