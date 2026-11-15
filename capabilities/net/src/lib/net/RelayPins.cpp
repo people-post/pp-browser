@@ -116,6 +116,9 @@ std::shared_ptr<IRelayAudience> RelayPins::AudienceFor(const std::string& origin
   const std::string key = RelayOriginKey(origin);
   const std::string slot = public_only ? key + "|public" : key;
   std::lock_guard lock(mutex_);
+  if (public_only) {
+    public_only_.insert(key);
+  }
   if (auto kept = audiences_[slot].lock()) {
     return kept;
   }
@@ -175,13 +178,22 @@ void RelayPins::NoteFetchFailed(const std::string& slot, const int64_t max_ms) {
   state.next_try_ms = now + state.backoff_ms;
 }
 
+bool RelayPins::PublicOnly(const std::string& key, const bool asked) const {
+  if (asked) {
+    return true;
+  }
+  std::lock_guard lock(mutex_);
+  return public_only_.contains(key);
+}
+
 Roe<PinAnswer> RelayPins::AskAndPresent(const std::string& origin, std::string& presented, const bool public_only) {
   Fetch fetch;
   {
     std::lock_guard lock(hooks_mutex_);
     fetch = fetch_;
   }
-  auto identity = fetch ? fetch(origin, public_only) : Roe<RelayIdentity>(Error("no relay identity fetch"));
+  auto identity = fetch ? fetch(origin, PublicOnly(RelayOriginKey(origin), public_only))
+                        : Roe<RelayIdentity>(Error("no relay identity fetch"));
   if (!identity) {
     return identity.error();
   }
@@ -365,14 +377,14 @@ void RelayPins::ForeignRefused(const std::string& origin, const std::string& cod
   foreign_.erase(key); // asked again at the next send
 }
 
-AddIdentityCheck RelayPins::CheckForAdd(const std::string& origin) {
+AddIdentityCheck RelayPins::CheckForAdd(const std::string& origin, const bool public_only) {
   const std::string key = RelayOriginKey(origin);
   Fetch fetch;
   {
     std::lock_guard lock(hooks_mutex_);
     fetch = fetch_;
   }
-  auto identity = fetch ? fetch(key, false) : Roe<RelayIdentity>(Error("no relay identity fetch"));
+  auto identity = fetch ? fetch(key, public_only) : Roe<RelayIdentity>(Error("no relay identity fetch"));
   if (!identity) {
     log().info << "relay " << key << " names no identity: " << identity.error().message;
     return AddIdentityCheck{.result = AddIdentityCheck::Result::Unavailable};

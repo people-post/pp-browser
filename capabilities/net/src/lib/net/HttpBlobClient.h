@@ -31,7 +31,8 @@ std::string RelayOriginOf(const std::string& relay_base_url);
 
 class HttpBlobClient : public IBlobClient {
 public:
-  explicit HttpBlobClient(std::string base_url);
+  /** `public_only`: the relay's own calls go over https to a public address only (a relay the person added). */
+  explicit HttpBlobClient(std::string base_url, bool public_only = false);
 
   void SetAuthSigner(RelayAuthSigner signer) { auth_signer_ = std::move(signer); }
   /** Who the signed calls are for (the relay's pin, MR007); refusals about its identity or our registration go there. */
@@ -68,6 +69,7 @@ private:
                                const RelayCommandBytes& build) const;
 
   std::string base_url_;
+  bool public_only_ = false;
   RelayAuthSigner auth_signer_;
   std::shared_ptr<IRelayAudience> audience_;
 };

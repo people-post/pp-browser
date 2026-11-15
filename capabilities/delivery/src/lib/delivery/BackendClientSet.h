@@ -29,7 +29,8 @@ namespace pbr {
  * preferred relay carries the relay services: messages and push (Relay, PushDevices), registration, profile photos,
  * blobs and chat files (Blob); the directory asks it first unless one is configured apart. The org's keeps client
  * compatibility (ClientCompat) and the home of what is not moved yet: account lockers (Locker) and stream history
- * (HistoryRelay, while that relay is ours). A registration client keeps the Brief LLM key only on the org's relay.
+ * (HistoryRelay, while that relay is ours). A relay of ours the deployment does not configure (one the person added)
+ * is spoken to over https to public addresses only, outside developer builds (PublicOnly). A registration client keeps the Brief LLM key only on the org's relay.
  *
  * Our other relays get a message, push-device and registration client each (OurRelays). The directory asks the
  * configured one and then each other relay of ours it does not name (OurRelaysDirectory): a name search all at once, a
@@ -67,6 +68,11 @@ public:
 
   explicit BackendClientSet(SwitchableDirectoryClient& directory);
 
+  /**
+   * A developer build (HubSettings::developer_relays): a relay the person added may be on a private address. Off: its
+   * clients go over https to public addresses only. Before Apply (a client keeps what it was made with).
+   */
+  void SetLocalRelaysAllowed(bool allowed) { local_relays_allowed_ = allowed; }
   /** The endpoints an empty one falls back to (given by the app). */
   void SetDefaults(Endpoints defaults) { defaults_ = std::move(defaults); }
   /** The org's relay base URL `endpoints` name (its default when empty). */
@@ -133,6 +139,8 @@ private:
   /** The directory client of our relay at `origin`, kept while it stays ours. */
   std::shared_ptr<mesh::IDirectoryClient> RelayDirectory(const std::string& origin);
   void WireSigner();
+  /** A relay the person added (not one the deployment configures), outside developer builds: public addresses only. */
+  bool PublicOnly(const std::string& origin) const;
   /** The audience of the relay at `url` (none without pins). */
   std::shared_ptr<IRelayAudience> AudienceOf(const std::string& url) const;
   /** Ours for the sender (preferred first) and its factory for the others, after any change. */
@@ -140,6 +148,9 @@ private:
 
   SwitchableDirectoryClient& directory_;
   Endpoints defaults_;
+  /** The relays the deployment configures (the last Apply's): the org's relay and registration URL, extra relays. */
+  std::vector<std::string> configured_;
+  bool local_relays_allowed_ = false;
   RelayAuthSigner signer_;
   std::shared_ptr<RelayPins> pins_;
   RelaySendHooks send_hooks_;

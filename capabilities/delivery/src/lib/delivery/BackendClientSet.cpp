@@ -50,8 +50,25 @@ std::vector<std::string> BackendClientSet::OursFor(const Endpoints& endpoints) c
   return OurRelayOrigins(OrDefault(endpoints.relay.base_url, defaults_.relay.base_url), endpoints.extra_relays);
 }
 
+bool BackendClientSet::PublicOnly(const std::string& origin) const {
+  if (local_relays_allowed_) {
+    return false; // a developer build's (the lab's relays are on private addresses)
+  }
+  return std::none_of(configured_.begin(), configured_.end(),
+                      [&origin](const std::string& configured) { return SameRelay(configured, origin); });
+}
+
 void BackendClientSet::Apply(const Endpoints& endpoints) {
   const std::string org_relay = OrDefault(endpoints.relay.base_url, defaults_.relay.base_url);
+  // What the deployment configures; any other relay of ours is one the person added (Add held it to a public host):
+  // its clients stay on public addresses (a name that resolves inside later is refused at connect time).
+  configured_ = endpoints.extra_relays;
+  for (const std::string& url :
+       {org_relay, OrDefault(endpoints.registration.base_url, defaults_.registration.base_url)}) {
+    if (!url.empty()) {
+      configured_.push_back(url);
+    }
+  }
   const std::vector<std::string> ours = OursFor(endpoints);
   const std::string preferred = ours.empty() ? std::string() : ours.front();
   ApplyOrg(org_relay);
@@ -110,10 +127,11 @@ void BackendClientSet::ApplyPreferred(const std::string& url) {
     return;
   }
   relay_url_ = url;
-  relay_ = std::make_shared<HttpRelayClient>(url);
-  push_devices_ = std::make_shared<HttpPushDeviceClient>(url);
-  registration_ = std::make_shared<HttpRegistrationClient>(url);
-  blob_ = std::make_shared<HttpBlobClient>(url);
+  const bool public_only = PublicOnly(url);
+  relay_ = std::make_shared<HttpRelayClient>(url, public_only);
+  push_devices_ = std::make_shared<HttpPushDeviceClient>(url, public_only);
+  registration_ = std::make_shared<HttpRegistrationClient>(url, public_only);
+  blob_ = std::make_shared<HttpBlobClient>(url, public_only);
   const auto audience = AudienceOf(url); // set before the clients are handed out: never changed after
   relay_->SetAudience(audience);
   push_devices_->SetAudience(audience);
@@ -142,7 +160,8 @@ void BackendClientSet::ApplyDirectory(DirectoryConfig directory) {
     }
     fingerprint.append(provider.base_url).push_back('|');
     providers.push_back(provider.base_url);
-    backends.push_back(std::make_unique<HttpDirectoryClient>(provider.base_url, HttpTimeout{}, directory_cards_));
+    backends.push_back(std::make_unique<HttpDirectoryClient>(provider.base_url, HttpTimeout{}, directory_cards_,
+                                                             PublicOnly(provider.base_url)));
   }
   if (backends.empty()) {
     directory_fingerprint_.clear();
@@ -170,7 +189,8 @@ std::shared_ptr<mesh::IDirectoryClient> BackendClientSet::RelayDirectory(const s
     }
   }
   // Asked beside the configured one, so bounded tighter than its 30 s: a relay down must not hold a search long.
-  return std::make_shared<HttpDirectoryClient>(origin, HttpTimeout{.total_s = 10, .connect_s = 5}, directory_cards_);
+  return std::make_shared<HttpDirectoryClient>(origin, HttpTimeout{.total_s = 10, .connect_s = 5}, directory_cards_,
+                                               PublicOnly(origin));
 }
 
 void BackendClientSet::WireDirectory() {
@@ -239,10 +259,11 @@ void BackendClientSet::ApplyExtraRelays(const std::vector<std::string>& origins,
       next.push_back(*kept); // unchanged: holders keep their clients
       continue;
     }
+    const bool public_only = PublicOnly(origin);
     Extra extra{.origin = origin,
-                .relay = std::make_shared<HttpRelayClient>(origin),
-                .push_devices = std::make_shared<HttpPushDeviceClient>(origin),
-                .registration = std::make_shared<HttpRegistrationClient>(origin)};
+                .relay = std::make_shared<HttpRelayClient>(origin, public_only),
+                .push_devices = std::make_shared<HttpPushDeviceClient>(origin, public_only),
+                .registration = std::make_shared<HttpRegistrationClient>(origin, public_only)};
     const auto audience = AudienceOf(origin);
     extra.relay->SetAudience(audience);
     extra.push_devices->SetAudience(audience);
@@ -335,7 +356,7 @@ void BackendClientSet::SetPins(std::shared_ptr<RelayPins> pins) {
 }
 
 std::shared_ptr<IRelayAudience> BackendClientSet::AudienceOf(const std::string& url) const {
-  return pins_ && !url.empty() ? pins_->AudienceFor(url) : nullptr;
+  return pins_ && !url.empty() ? pins_->AudienceFor(url, PublicOnly(url)) : nullptr;
 }
 
 void BackendClientSet::SetSigner(RelayAuthSigner signer) {

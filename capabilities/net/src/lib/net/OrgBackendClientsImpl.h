@@ -27,7 +27,8 @@ namespace pbr {
  */
 class HttpPushDeviceClient : public IPushDeviceClient {
 public:
-  explicit HttpPushDeviceClient(std::string base_url);
+  /** `public_only`: a relay the person added (not configured): https to a public address only, as a contact's. */
+  explicit HttpPushDeviceClient(std::string base_url, bool public_only = false);
   void SetAuthSigner(RelayAuthSigner signer) { auth_signer_ = std::move(signer); }
   void SetAudience(std::shared_ptr<IRelayAudience> audience) { audience_ = std::move(audience); }
   Roe<void> RegisterDevice(const PushDeviceRegistration& registration) override;
@@ -40,6 +41,7 @@ private:
   Roe<void> UnregisterOnce(const PushDeviceRegistration& registration, const std::string& binding_id);
 
   std::string base_url_;
+  bool public_only_ = false;
   RelayAuthSigner auth_signer_;
   std::shared_ptr<IRelayAudience> audience_;
   std::mutex binding_mutex_;
@@ -67,9 +69,12 @@ private:
 
 class HttpDirectoryClient : public mesh::IDirectoryClient {
 public:
-  /** `timeout` bounds each request; `cards`, when given, gets the card a lookup answer carries. */
+  /**
+   * `timeout` bounds each request; `cards`, when given, gets the card a lookup answer carries; `public_only`: https to
+   * a public address only (a relay the person added).
+   */
   explicit HttpDirectoryClient(std::string base_url, HttpTimeout timeout = {},
-                               std::shared_ptr<const DirectoryCardSink> cards = nullptr);
+                               std::shared_ptr<const DirectoryCardSink> cards = nullptr, bool public_only = false);
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& query) override;
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string& account_id) override;
   Roe<std::vector<mesh::MeshNodeHit>> ListMeshNodes() override;
@@ -78,6 +83,7 @@ private:
   std::string base_url_;
   HttpTimeout timeout_;
   std::shared_ptr<const DirectoryCardSink> cards_;
+  bool public_only_ = false;
 };
 
 /** What a relay keeps for an account (`GET /v1/users/by-account/{account_id}`): its row, and the card it registered. */
@@ -126,7 +132,8 @@ Error RegistrationHttpStatusError(const std::string& step, long status_code);
 
 class HttpRegistrationClient : public IRegistrationClient {
 public:
-  explicit HttpRegistrationClient(std::string base_url);
+  /** `public_only` as HttpPushDeviceClient's. */
+  explicit HttpRegistrationClient(std::string base_url, bool public_only = false);
   std::string BaseUrl() const override { return base_url_; }
   /** Who register/finish, the profile and the revoke are signed for (the relay's pin, MR007). */
   void SetAudience(std::shared_ptr<IRelayAudience> audience) { audience_ = std::move(audience); }
@@ -157,6 +164,7 @@ public:
 
 private:
   std::string base_url_;
+  bool public_only_ = false;
   std::shared_ptr<IRelayAudience> audience_;
   /** Set on the owner's thread, read by a registration on a worker. */
   std::atomic<bool> takes_llm_key_{true};
@@ -164,11 +172,13 @@ private:
 
 class HttpClientCompatClient : public IClientCompatClient {
 public:
-  explicit HttpClientCompatClient(std::string base_url);
+  /** `public_only`: https to a public address only (Add's probe of a relay the person typed). */
+  explicit HttpClientCompatClient(std::string base_url, bool public_only = false);
   Roe<ClientCompatDocument> Fetch() override;
 
 private:
   std::string base_url_;
+  bool public_only_ = false;
 };
 
 } // namespace pbr

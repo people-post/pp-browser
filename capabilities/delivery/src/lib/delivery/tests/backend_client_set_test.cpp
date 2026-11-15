@@ -240,6 +240,11 @@ protected:
   test::ScriptedHttpServer other_;
   SwitchableDirectoryClient directory_;
   BackendClientSet clients_{directory_};
+  // The scripted relays are on loopback: as a developer build, which may add one there.
+  bool local_allowed_ = [this]() {
+    clients_.SetLocalRelaysAllowed(true);
+    return true;
+  }();
 };
 
 TEST_F(BackendClientSetOriginTest, ByDefaultEveryServiceIsTheOrgsRelay) {
@@ -287,6 +292,29 @@ TEST_F(BackendClientSetOriginTest, RelayServicesFollowThePreferredRelayAndOrgSer
       clients_.OurRelays()[1].registration->FinishRegistration("c", "pk", "me", kSignedFinish, "ml-dsa-65", "kem");
   ASSERT_TRUE(org_key);
   EXPECT_EQ(org_key->llm_api_key.Reveal(), "brf_llm_x") << "the org's relay, now another of ours, still gives it";
+}
+
+// S4: a relay the person added (not configured) is spoken to on public addresses only, outside developer builds: a
+// name that resolves to this device or a private network later is refused at connect time. The configured stay.
+TEST_F(BackendClientSetOriginTest, ARelayThePersonAddedIsHeldToPublicAddressesOutsideDeveloperBuilds) {
+  clients_.SetLocalRelaysAllowed(false);
+  Apply({OrgRelay(), OtherRelay()});
+  ASSERT_EQ(clients_.OurRelays().size(), 2u);
+  EXPECT_FALSE(
+      clients_.OurRelays()[1].registration->FinishRegistration("c", "pk", "me", kSignedFinish, "ml-dsa-65", "kem"))
+      << "the added relay on loopback is refused";
+  EXPECT_EQ(FinishedKey(), "brf_llm_x") << "the configured relay is reached as configured";
+
+  BackendClientSet preferring(directory_);
+  preferring.Apply([this]() {
+    auto endpoints = At(OrgRelay(), OrgRelay(), OrgRelay());
+    endpoints.our_relays = {OtherRelay(), OrgRelay()};
+    return endpoints;
+  }());
+  EXPECT_FALSE(preferring.Registration()->FinishRegistration("c", "pk", "me", kSignedFinish, "ml-dsa-65", "kem"))
+      << "preferred, it is held alike";
+  EXPECT_FALSE(preferring.Relay()->PollInbox("account:me", ""));
+  EXPECT_EQ(Asked(other_, "/v1/"), 0u);
 }
 
 TEST_F(BackendClientSetOriginTest, TheBriefLlmKeyFollowsTheOrgsRelayWhenOnlyTheOrgChanges) {
@@ -350,6 +378,10 @@ protected:
   test::ScriptedHttpServer other_;
   SwitchableDirectoryClient directory_;
   BackendClientSet clients_{directory_};
+  bool local_allowed_ = [this]() {
+    clients_.SetLocalRelaysAllowed(true); // the scripted relays are on loopback
+    return true;
+  }();
 };
 
 TEST_F(BackendClientSetDirectoryTest, ANameSearchAsksOurOtherRelaysTooThePreferredFirst) {

@@ -525,6 +525,7 @@ std::vector<std::pair<std::string, std::shared_ptr<IPushDeviceClient>>> Conversa
 }
 
 void ConversationsHub::InstallOrgBackendClients(const HubSettings& settings) {
+  clients_.SetLocalRelaysAllowed(settings.developer_relays); // a relay the person added: public addresses otherwise
   UpdateOrgBackendClients(settings);
 }
 
@@ -4279,9 +4280,10 @@ std::optional<RelayRegistrationRecord> ConversationsHub::PreferredRegistrationRe
 
 MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {
   MyRelaysWorkflow::Ports ports;
-  ports.probe = [](const std::string& base_url) -> Roe<void> {
-    // The cheapest unauthenticated GET every relay answers (SERVICE_ENDPOINTS § Client compatibility discovery).
-    auto answered = HttpClientCompatClient(base_url).Fetch();
+  ports.probe = [this](const std::string& base_url) -> Roe<void> {
+    // The cheapest unauthenticated GET every relay answers (SERVICE_ENDPOINTS § Client compatibility discovery); a
+    // public address only outside developer builds (a name that resolves inside is refused at connect time).
+    auto answered = HttpClientCompatClient(base_url, !config_.developer_relays).Fetch();
     if (!answered) {
       return answered.error();
     }
@@ -4345,7 +4347,8 @@ void ConversationsHub::WireMyRelaysIdentityPorts(MyRelaysWorkflow::Ports& ports)
   // Each takes the profile's pins as they are when it runs (none once the profile closes).
   ports.check_identity = [this](const std::string& base_url) {
     const auto pins = relay_pins_;
-    return pins ? pins->CheckForAdd(base_url) : AddIdentityCheck{.result = AddIdentityCheck::Result::Unavailable};
+    return pins ? pins->CheckForAdd(base_url, !config_.developer_relays)
+                : AddIdentityCheck{.result = AddIdentityCheck::Result::Unavailable};
   };
   ports.repin = [this](const std::string& base_url, const std::string& peer_id) -> Roe<void> {
     const auto pins = relay_pins_;

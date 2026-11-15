@@ -149,7 +149,8 @@ std::string RelayOriginOf(const std::string& relay_base_url) {
   return path == std::string::npos ? base : base.substr(0, path);
 }
 
-HttpBlobClient::HttpBlobClient(std::string base_url) : base_url_(std::move(base_url)) {}
+HttpBlobClient::HttpBlobClient(std::string base_url, const bool public_only)
+    : base_url_(std::move(base_url)), public_only_(public_only) {}
 
 Roe<HttpResponse> HttpBlobClient::PostSigned(const std::string& path, Object body, const int64_t timestamp,
                                              const RelayCommandBytes& build) const {
@@ -161,7 +162,8 @@ Roe<HttpResponse> HttpBlobClient::PostSigned(const std::string& path, Object bod
     return signed_call.error();
   }
   PutSignedRelayCommand(body, *signed_call);
-  auto response = HttpClient::Post(base_url_ + path, DumpJson(body), {{"Content-Type", "application/json"}});
+  auto response = HttpClient::Post(base_url_ + path, DumpJson(body), {{"Content-Type", "application/json"}},
+                                   kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }

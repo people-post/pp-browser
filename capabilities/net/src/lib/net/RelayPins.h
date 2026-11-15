@@ -14,6 +14,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -89,8 +90,8 @@ public:
 
   /**
    * The audience every client of the relay of ours (or the org's origin) at `origin` signs for (shared; the same object
-   * per origin and policy); its first answer is pinned. `public_only`: its identity is asked over https to a public
-   * address only, as its clients ask.
+   * per origin and policy); its first answer is pinned. `public_only` (a relay the person added): its identity is
+   * asked over https to a public address only, as its clients ask — from then on, whoever asks (EnsurePinned too).
    */
   std::shared_ptr<IRelayAudience> AudienceFor(const std::string& origin, bool public_only = false);
   /**
@@ -132,8 +133,11 @@ public:
   /** ForeignAudienceFor's: `wrong_audience` forgets what it presented (asked again, at most every kWrongAudienceRefetchMs). */
   void ForeignRefused(const std::string& origin, const std::string& code);
 
-  /** Add: asks `origin` for its identity now (no backoff) and pins it when nothing stands against it. Blocks. */
-  AddIdentityCheck CheckForAdd(const std::string& origin);
+  /**
+   * Add: asks `origin` for its identity now (no backoff; `public_only`: over https to a public address only, outside
+   * developer builds) and pins it when nothing stands against it. Blocks.
+   */
+  AddIdentityCheck CheckForAdd(const std::string& origin, bool public_only = false);
   /** The person accepts the identity `origin` presented: re-pinned to it. An error when there is none to accept. */
   Roe<void> Accept(const std::string& origin);
   /** Pins `origin` to `peer_id` whatever it was pinned to (Add's confirm); an error when another origin holds it. */
@@ -158,6 +162,8 @@ private:
   Roe<std::string> AudienceAsking(const std::string& origin, bool public_only, bool within_backoff);
   /** A fetch for `slot` failed: its next try after the backoff, doubling up to `max_ms`. */
   void NoteFetchFailed(const std::string& slot, int64_t max_ms);
+  /** `asked`, or an audience of `key` was made public-only. */
+  bool PublicOnly(const std::string& key, bool asked) const;
   void Changed(const std::string& origin) const;
 
   RelayPinStore store_;
@@ -171,6 +177,8 @@ private:
   mutable std::mutex mutex_;
   std::map<std::string, FetchState> fetches_;
   std::map<std::string, std::weak_ptr<IRelayAudience>> audiences_;
+  /** Origins whose identity is asked over a public address only (AudienceFor's `public_only`), by RelayOriginKey. */
+  std::set<std::string> public_only_;
   /** Relays not ours: the PeerId each presented last (memory only, never pinned), by RelayOriginKey. */
   std::map<std::string, std::string> foreign_;
 };

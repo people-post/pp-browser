@@ -24,7 +24,8 @@ std::string EncodePathSegment(const std::string& value);
 
 namespace pbr {
 
-HttpPushDeviceClient::HttpPushDeviceClient(std::string base_url) : base_url_(std::move(base_url)) {}
+HttpPushDeviceClient::HttpPushDeviceClient(std::string base_url, const bool public_only)
+    : base_url_(std::move(base_url)), public_only_(public_only) {}
 
 namespace {
 
@@ -58,7 +59,8 @@ Roe<std::string> HttpPushDeviceClient::PostDevice(const char* path, const PushDe
   body.set("device_id", registration.device_id);
   body.set(last_key, last);
   PutSignedRelayCommand(body, *signed_call);
-  const auto response = HttpClient::Post(base_url_ + path, DumpJson(body), {{"Content-Type", "application/json"}});
+  const auto response = HttpClient::Post(base_url_ + path, DumpJson(body), {{"Content-Type", "application/json"}},
+                                         kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -149,8 +151,8 @@ void DirectoryCardSink::Give(const std::string& account_id, const Object& card) 
 }
 
 HttpDirectoryClient::HttpDirectoryClient(std::string base_url, const HttpTimeout timeout,
-                                         std::shared_ptr<const DirectoryCardSink> cards)
-    : base_url_(std::move(base_url)), timeout_(timeout), cards_(std::move(cards)) {}
+                                         std::shared_ptr<const DirectoryCardSink> cards, const bool public_only)
+    : base_url_(std::move(base_url)), timeout_(timeout), cards_(std::move(cards)), public_only_(public_only) {}
 
 namespace {
 
@@ -197,7 +199,7 @@ Roe<std::vector<mesh::DirectoryHit>> HttpDirectoryClient::SearchPeople(const std
     return Error("Directory base_url not configured");
   }
   const std::string url = base_url_ + "/v1/search?q=" + EncodePathSegment(query); // free text from the user
-  const auto response = HttpClient::Get(url, {}, kMaxHttpClientBodyBytes, timeout_);
+  const auto response = HttpClient::Get(url, {}, kMaxHttpClientBodyBytes, timeout_, public_only_);
   if (!response) {
     return response.error();
   }
@@ -284,7 +286,7 @@ Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& 
     return Error("account_id must start with account:");
   }
   const std::string url = base_url_ + "/v1/users/by-account/" + EncodePathSegment(account_id);
-  const auto response = HttpClient::Get(url, {}, kMaxHttpClientBodyBytes, timeout_);
+  const auto response = HttpClient::Get(url, {}, kMaxHttpClientBodyBytes, timeout_, public_only_);
   if (!response) {
     return response.error();
   }
@@ -453,7 +455,7 @@ Roe<std::vector<mesh::MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
   if (base_url_.empty()) {
     return Error("Directory base_url not configured");
   }
-  const auto response = HttpClient::Get(base_url_ + "/v1/mesh/nodes");
+  const auto response = HttpClient::Get(base_url_ + "/v1/mesh/nodes", {}, kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -469,7 +471,8 @@ Error RegistrationHttpStatusError(const std::string& step, const long status_cod
                            "Registration " + step + " failed with status " + std::to_string(status_code));
 }
 
-HttpRegistrationClient::HttpRegistrationClient(std::string base_url) : base_url_(std::move(base_url)) {}
+HttpRegistrationClient::HttpRegistrationClient(std::string base_url, const bool public_only)
+    : base_url_(std::move(base_url)), public_only_(public_only) {}
 
 Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(
     const std::string& public_key_b64, const std::string& nickname, const std::string& signature_alg,
@@ -499,7 +502,8 @@ Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(
   }
   ApplyRegistrationPublishOpts(body, publish);
   const auto response =
-      HttpClient::Post(base_url_ + "/v1/register/start", DumpJson(body), {{"Content-Type", "application/json"}});
+      HttpClient::Post(base_url_ + "/v1/register/start", DumpJson(body), {{"Content-Type", "application/json"}},
+                       kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -563,7 +567,8 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     body.set("account_card", *publish.account_card);
   }
   const auto response =
-      HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body), {{"Content-Type", "application/json"}});
+      HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body), {{"Content-Type", "application/json"}},
+                       kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -612,7 +617,8 @@ Roe<RegistrationResult> HttpRegistrationClient::UpdateNickname(const std::string
   body.set("nickname", new_nickname);
   PutSignedRelayCommand(body, signed_update);
   const auto response =
-      HttpClient::Post(base_url_ + "/v1/profile/nickname", DumpJson(body), {{"Content-Type", "application/json"}});
+      HttpClient::Post(base_url_ + "/v1/profile/nickname", DumpJson(body), {{"Content-Type", "application/json"}},
+                       kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -634,7 +640,7 @@ Roe<void> HttpRegistrationClient::RevokeRegistration(const std::string& account_
   // Called on the way into a profile reset: keep a stuck network from holding the UI for long.
   const auto response =
       HttpClient::Post(base_url_ + "/v1/register/revoke", DumpJson(body), {{"Content-Type", "application/json"}},
-                       kMaxHttpClientBodyBytes, HttpTimeout{.total_s = 10, .connect_s = 5});
+                       kMaxHttpClientBodyBytes, HttpTimeout{.total_s = 10, .connect_s = 5}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -644,13 +650,14 @@ Roe<void> HttpRegistrationClient::RevokeRegistration(const std::string& account_
   return {};
 }
 
-HttpClientCompatClient::HttpClientCompatClient(std::string base_url) : base_url_(std::move(base_url)) {}
+HttpClientCompatClient::HttpClientCompatClient(std::string base_url, const bool public_only)
+    : base_url_(std::move(base_url)), public_only_(public_only) {}
 
 Roe<ClientCompatDocument> HttpClientCompatClient::Fetch() {
   if (base_url_.empty()) {
     return Error("client-compat base_url not configured");
   }
-  const auto response = HttpClient::Get(base_url_ + "/v1/client-compat");
+  const auto response = HttpClient::Get(base_url_ + "/v1/client-compat", {}, kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
