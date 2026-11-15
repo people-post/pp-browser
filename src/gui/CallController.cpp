@@ -2094,6 +2094,21 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend& backend,
   if (now_ms - last_media_health_log_ms_ >= 2000) {
     last_media_health_log_ms_ = now_ms;
     log().info << FormatMediaHealthLogLine(view, now_ms, presenter_.ActiveCallId());
+    // Same 2 s point as the line above, which also runs while the app is in the background: a video thread stuck in
+    // the camera's frame fetch (B225) is told once per spell, whatever the app is doing.
+    const bool stuck = VideoThreadStuck(view.engine.video_fetch_ms);
+    if (stuck && !video_thread_stuck_) {
+      static constexpr ShareWord kStages[] = {"idle",          "wait_camera",  "open_camera", "configure_encoder",
+                                              "reset_encoder", "close_camera", "set_bitrate", "wait_frame",
+                                              "convert",       "encode",       "send",        "sleep"};
+      log().warning << "video thread stuck stage=" << view.engine.video_stage
+                    << " stage_ms=" << view.engine.video_stage_ms << " fetch_ms=" << view.engine.video_fetch_ms;
+      MetricsLine("call.video_thread_stuck")
+          .Pick("stage", view.engine.video_stage, kStages)
+          .Add("stuck_ms", view.engine.video_fetch_ms)
+          .Emit();
+    }
+    video_thread_stuck_ = stuck;
   }
   // Toast only real, lasting audio faults (Kenneth 2026-09-28: the old toasts fired on every dip — "Poor" on a jitter
   // spike, "can't hear the other side" in the second before the first audio arrived). Network quality stays visible

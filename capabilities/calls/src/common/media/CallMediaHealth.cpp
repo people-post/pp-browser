@@ -210,7 +210,9 @@ std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_m
       << " asymmetry=" << static_cast<int>(v.asymmetry) << " streams=" << v.engine.stream_count
       << " rx_frames=" << v.engine.rx_audio_frames << " tx_frames=" << v.engine.tx_audio_frames
       << " rx_video=" << v.engine.rx_video_frames << " tx_video=" << v.engine.tx_video_frames
-      << " preview=" << v.engine.preview_frames << " enc_ms=" << static_cast<int64_t>(v.engine.encode_ms_avg) << "/"
+      << " preview=" << v.engine.preview_frames << " vstage=" << v.engine.video_stage
+      << " vstage_ms=" << v.engine.video_stage_ms << " vfetch_ms=" << v.engine.video_fetch_ms
+      << " enc_ms=" << static_cast<int64_t>(v.engine.encode_ms_avg) << "/"
       << static_cast<int64_t>(v.engine.encode_ms_max) << " video_bps=" << v.engine.video_target_bps
       << " underrun=" << v.engine.playout_underruns << " plc=" << v.engine.plc_frames << " fec=" << v.engine.fec_frames
       << " audio_io=" << v.engine.audio_io << " io_underrun=" << v.engine.io_underruns

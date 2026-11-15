@@ -566,6 +566,11 @@ struct MediaEngine::Impl {
   MediaThreadStageTracker capture_stage;
   MediaThreadStageTracker playout_stage;
   MediaThreadStageTracker video_stage;
+  /**
+   * Steady ms at which the video thread entered the camera's frame fetch (0: not inside one). The stage tracker cannot
+   * tell "stuck in NextFrame" from "no frame, slept 5 ms, asked again": it keeps the first time for a repeated stage.
+   */
+  std::atomic<int64_t> video_fetch_since_ms{0};
   /** Capture worker closes+reopens SDL devices (speaker route / SoftMigrate). */
   std::atomic<bool> audio_reopen_requested{false};
   /**
@@ -2038,7 +2043,9 @@ struct MediaEngine::Impl {
         continue;
       }
       video_stage.Set(MediaThreadStage::WaitFrame);
+      video_fetch_since_ms.store(SteadyNowMs(), std::memory_order_relaxed);
       auto frame = camera->NextFrame();
+      video_fetch_since_ms.store(0, std::memory_order_relaxed);
       if (!frame) {
         if (camera->PermissionDenied()) {
           // No frame will ever come: say so, with where to allow it, instead of a camera that is
@@ -2687,6 +2694,13 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
   h.rx_video_frames = impl->rx_video_frames.load(std::memory_order_relaxed);
   h.tx_video_frames = impl->tx_video_frames.load(std::memory_order_relaxed);
   h.preview_frames = impl->preview_frames.load(std::memory_order_relaxed);
+  if (impl->video_running.load(std::memory_order_relaxed)) {
+    h.video_stage = impl->video_stage.Name();
+    h.video_stage_ms = impl->video_stage.MsInStage();
+    if (const int64_t since = impl->video_fetch_since_ms.load(std::memory_order_relaxed); since > 0) {
+      h.video_fetch_ms = SteadyNowMs() - since;
+    }
+  }
   if (const uint64_t n = impl->encodes.load(std::memory_order_relaxed); n > 0) {
     h.encode_ms_avg =
         static_cast<double>(impl->encode_us_total.load(std::memory_order_relaxed)) / 1000.0 / static_cast<double>(n);
@@ -2946,6 +2960,7 @@ void MediaEngine::RefreshRemoteVideoHealth() {
   uint32_t newest_stream = 0;
   for (auto it = impl->last_video_ms_by_stream.begin(); it != impl->last_video_ms_by_stream.end();) {
     if (it->second > 0 && (now - it->second) >= kRemoteVideoStallHardMs) {
+      EngineLog().debug << "remote video cleared stream_age_ms=" << (now - it->second);
       impl->remote_video_by_stream.erase(it->first);
       it = impl->last_video_ms_by_stream.erase(it);
       continue;

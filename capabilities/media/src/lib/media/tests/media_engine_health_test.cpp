@@ -19,8 +19,27 @@ TEST(MediaEngineHealthTest, SkipDeviceOpenReportsNoAudioIo) {
   const auto health = engine.HealthSnapshot();
   EXPECT_EQ(health.audio_io, "none");
   EXPECT_EQ(health.io_underruns, 0u);
+  // No video thread is running: no stage clock and no fetch in progress.
+  EXPECT_EQ(health.video_stage, "idle");
+  EXPECT_EQ(health.video_stage_ms, 0);
+  EXPECT_EQ(health.video_fetch_ms, 0);
 
   engine.Stop();
+}
+
+// A frame fetch inside the capture stack for longer than 2 s is a stuck thread; 0 means "not inside one".
+TEST(MediaEngineHealthTest, VideoThreadStuckIsAFetchPastTwoSeconds) {
+  EXPECT_FALSE(VideoThreadStuck(0));
+  EXPECT_FALSE(VideoThreadStuck(1999));
+  EXPECT_FALSE(VideoThreadStuck(kVideoThreadStuckMs));
+  EXPECT_TRUE(VideoThreadStuck(2001));
+}
+
+TEST(MediaEngineHealthTest, VideoFieldsStartAtRest) {
+  const MediaEngineHealth fresh;
+  EXPECT_EQ(fresh.video_stage, "idle");
+  EXPECT_EQ(fresh.video_stage_ms, 0);
+  EXPECT_EQ(fresh.video_fetch_ms, 0);
 }
 
 } // namespace

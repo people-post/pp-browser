@@ -180,6 +180,16 @@ TEST(CallMediaHealthTest, LogLineCarriesFecCounter) {
   EXPECT_NE(line.find(" io_underrun="), std::string::npos) << line;
 }
 
+// B225: where the video thread is and how long it has been inside one frame fetch, at a glance.
+TEST(CallMediaHealthTest, LogLineCarriesTheVideoThreadStage) {
+  CallMediaHealthView v;
+  v.engine.video_stage = "wait_frame";
+  v.engine.video_stage_ms = 4200;
+  v.engine.video_fetch_ms = 4100;
+  const std::string line = FormatMediaHealthLogLine(v, /*now_ms=*/1000, "call:x");
+  EXPECT_NE(line.find(" vstage=wait_frame vstage_ms=4200 vfetch_ms=4100 "), std::string::npos) << line;
+}
+
 // #605: a stream whose every packet comes after its slot shows in the log at a glance.
 TEST(CallMediaHealthTest, LogLineCarriesLateDrops) {
   CallMediaHealthView v;

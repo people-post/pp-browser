@@ -46,6 +46,14 @@ struct MediaStreamHealth {
   float peak_level = 0.f;
 };
 
+/** A camera frame fetch that has run longer than this is a thread stuck in the capture stack (SDL), not a quiet camera. */
+inline constexpr int64_t kVideoThreadStuckMs = 2000;
+
+/** True when the video thread has been inside one frame fetch for longer than kVideoThreadStuckMs (0 = not inside). */
+inline bool VideoThreadStuck(const int64_t video_fetch_ms) {
+  return video_fetch_ms > kVideoThreadStuckMs;
+}
+
 struct MediaEngineHealth {
   bool active = false;
   bool packet_mode = false;
@@ -89,6 +97,15 @@ struct MediaEngineHealth {
   uint64_t tx_video_frames = 0;
   /** Frames shown in the self-view (the camera's rate, ~30 fps; video is sent at half of it). */
   uint64_t preview_frames = 0;
+  /**
+   * The video thread's current stage (a fixed word: "idle", "wait_camera", "wait_frame", ...) and how long it has been
+   * in it (0 while the thread is not running). A stage that repeats (no frame, sleep 5 ms, again) does not move its
+   * clock, so a thread stuck inside the camera's frame fetch is told apart by `video_fetch_ms`.
+   */
+  std::string video_stage = "idle";
+  int64_t video_stage_ms = 0;
+  /** How long the current camera frame fetch has been running (0: not inside one). */
+  int64_t video_fetch_ms = 0;
   /** The encoder's time per frame this session: average and slowest (ms). */
   double encode_ms_avg = 0;
   double encode_ms_max = 0;

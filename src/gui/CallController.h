@@ -416,6 +416,8 @@ private:
   UiLatencyProbe ui_probe_;
   int64_t last_metrics_media_ms_ = 0;
   int64_t last_media_health_log_ms_ = 0;
+  /** The video thread is inside one frame fetch for too long (reported once per stuck spell). */
+  bool video_thread_stuck_ = false;
   DeviceVitals vitals_;
   int64_t vitals_read_ms_ = 0;
   int64_t perf_sample_ms_ = 0;
