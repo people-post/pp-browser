@@ -62,13 +62,15 @@ Roe<void> MyRelaysWorkflow::RequireMainDevice() const {
   return {};
 }
 
-Roe<void> MyRelaysWorkflow::CheckIdentity(const std::string& base_url, const bool accept_changed) {
+Roe<void> MyRelaysWorkflow::CheckIdentity(const std::string& base_url, const bool accept_changed, bool& pinned_now) {
+  pinned_now = false;
   if (!ports_.check_identity) {
     return {};
   }
   const AddIdentityCheck check = ports_.check_identity(base_url);
   switch (check.result) {
     case AddIdentityCheck::Result::Ok:
+      pinned_now = check.pinned_now;
       return {};
     case AddIdentityCheck::Result::Unavailable:
       return Error(kIdentityUnavailable);
@@ -111,11 +113,19 @@ Roe<void> MyRelaysWorkflow::Add(const std::string& typed, const bool developer_b
       return Error(kUnreachable);
     }
   }
-  if (auto identified = CheckIdentity(parsed.base_url, accept_changed); !identified) {
+  bool pinned_now = false;
+  if (auto identified = CheckIdentity(parsed.base_url, accept_changed, pinned_now); !identified) {
     return identified; // nothing is signed for a relay we have not pinned
   }
+  auto committed = Commit(*next, false);
+  if (!committed) {
+    if (pinned_now && ports_.drop_pin) {
+      ports_.drop_pin(parsed.base_url); // not ours after all: a relay not ours is never pinned (MR007)
+    }
+    return committed;
+  }
   log().info << "relay " << parsed.base_url << " added";
-  return Commit(*next, false);
+  return {};
 }
 
 Roe<void> MyRelaysWorkflow::Remove(const std::string& origin) {

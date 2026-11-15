@@ -41,6 +41,8 @@ enum class PinOutcome {
   Changed,
   /** A PeerId another origin holds: refused, never pinned. */
   Taken,
+  /** First contact, but every pin is one the store keeps (SetKeep): not pinned. */
+  Full,
 };
 
 struct PinAnswer {
@@ -102,7 +104,8 @@ private:
   std::vector<RelayPin>::iterator FindLocked(const std::string& origin);
   std::vector<RelayPin>::const_iterator FindLocked(const std::string& origin) const;
   std::vector<RelayPin>::const_iterator HolderLocked(const std::string& peer_id) const;
-  void AddLocked(RelayPin pin);
+  /** False when the store is full of kept pins (nothing added). */
+  bool AddLocked(RelayPin pin);
   void SaveLocked() const;
 
   std::string profile_data_dir_;

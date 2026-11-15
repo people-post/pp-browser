@@ -293,6 +293,18 @@ TEST_F(MyRelaysWorkflowTest, ARemoveTheServicesDoNotFollowIsUndoneAndTheRelayRej
   EXPECT_EQ(store_->List().Origins(), Origins({kA, kB}));
 }
 
+// An Add the services did not follow drops the pin it wrote: a relay not ours is never pinned (MR007).
+TEST_F(MyRelaysWorkflowTest, AnAddTheServicesDoNotFollowDropsThePinItWrote) {
+  apply_ok_ = false;
+  identity_check_ = AddIdentityCheck{.result = AddIdentityCheck::Result::Ok, .pinned_now = true};
+  EXPECT_EQ(ErrorOf(workflow_->Add("https://c.example", false)), MyRelaysWorkflow::kNotApplied);
+  EXPECT_EQ(steps_.back(), "drop_pin " + std::string(kC));
+  steps_.clear();
+  identity_check_ = AddIdentityCheck{.result = AddIdentityCheck::Result::Ok, .pinned_now = false};
+  EXPECT_EQ(ErrorOf(workflow_->Add("https://c.example", false)), MyRelaysWorkflow::kNotApplied);
+  EXPECT_EQ(steps_.back(), "apply a,b,c") << "a pin it found stays";
+}
+
 TEST_F(MyRelaysWorkflowTest, CloseWaitsForTheChangeInProgressAndRefusesWhatComesAfter) {
   std::promise<void> applying;
   std::promise<void> release;

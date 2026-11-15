@@ -174,8 +174,8 @@ private:
   };
 
   Roe<void> RequireMainDevice() const;
-  /** Add's identity step for `base_url` (pinned, or why not). */
-  Roe<void> CheckIdentity(const std::string& base_url, bool accept_changed);
+  /** Add's identity step for `base_url` (pinned, or why not); `pinned_now`: this step wrote the pin. */
+  Roe<void> CheckIdentity(const std::string& base_url, bool accept_changed, bool& pinned_now);
   /** Keeps `next`, the services follow, the registrations and the card go. */
   Roe<void> Commit(const OurRelaysList& next, bool preferred_changed);
   void RegisterPreferred(const std::string& preferred);

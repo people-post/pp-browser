@@ -301,6 +301,31 @@ TEST(RelayPinStoreTest, TheBoundKeepsOursAndDropsTheOldestOther) {
   EXPECT_TRUE(store.PinFor("https://new.example/api/relay"));
 }
 
+// S5: a store full of kept pins pins nothing, and says so: Add reads it as no identity, never as pinned.
+TEST_F(RelayPinsTest, PinsFullOfKeptRelaysPinNothingAndAddIsRefused) {
+  pins_->SetKeep([](const std::string&) { return true; });
+  for (size_t i = 0; i < RelayPinStore::kMaxPins; ++i) {
+    const std::string origin = "https://kept" + std::to_string(i) + ".example/api/relay";
+    presents_[origin] = "QmKept" + std::to_string(i);
+    ASSERT_TRUE(pins_->AudienceFor(origin)->PeerId());
+  }
+  presents_[kA] = kPeerA;
+  EXPECT_EQ(pins_->CheckForAdd(kA).result, AddIdentityCheck::Result::Unavailable);
+  EXPECT_FALSE(pins_->PinFor(kA));
+  auto audience = pins_->AudienceFor(kA)->PeerId();
+  ASSERT_FALSE(audience) << "nothing signed for a relay not pinned";
+  EXPECT_EQ(static_cast<Err::Network>(audience.error().code), Err::Network::RelayIdentityUnavailable);
+  EXPECT_FALSE(pins_->Repin(kA, kPeerA));
+}
+
+TEST_F(RelayPinsTest, AddSaysWhetherItPinnedTheRelay) {
+  presents_[kA] = kPeerA;
+  const AddIdentityCheck first = pins_->CheckForAdd(kA);
+  EXPECT_EQ(first.result, AddIdentityCheck::Result::Ok);
+  EXPECT_TRUE(first.pinned_now);
+  EXPECT_FALSE(pins_->CheckForAdd(kA).pinned_now) << "pinned already";
+}
+
 TEST(RelayPinStoreTest, ANewerSchemaOrNotJsonIsRefusedAndReadAsEmpty) {
   EXPECT_FALSE(RelayPinsFromJson(R"({"schema_version":2,"pins":[]})"));
   EXPECT_FALSE(RelayPinsFromJson("not json"));

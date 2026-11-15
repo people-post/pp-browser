@@ -230,6 +230,10 @@ Roe<std::string> RelayPins::Audience(const std::string& origin, const bool publi
       NoteFetchFailed(key);
       log().warning << "relay " << key << " claims the PeerId of " << answer->holder << "; never signed for";
       return IdentityTakenError(key, answer->holder);
+    case PinOutcome::Full:
+      NoteFetchFailed(key);
+      return AppError::Network(Err::Network::RelayIdentityUnavailable,
+                               "relay " + key + " not pinned: the pins are full of kept relays");
   }
   return IdentityChangedError(key);
 }
@@ -376,10 +380,21 @@ AddIdentityCheck RelayPins::CheckForAdd(const std::string& origin) {
     return AddIdentityCheck{.result = AddIdentityCheck::Result::ChangedSinceSeen, .peer_id = peer_id};
   }
   const PinAnswer answer = store_.Present(key, peer_id, Now());
-  if (answer.outcome == PinOutcome::Pinned) {
-    Changed(key);
+  switch (answer.outcome) {
+    case PinOutcome::Pinned:
+      Changed(key);
+      return AddIdentityCheck{.result = AddIdentityCheck::Result::Ok, .peer_id = peer_id, .pinned_now = true};
+    case PinOutcome::Same:
+      return AddIdentityCheck{.result = AddIdentityCheck::Result::Ok, .peer_id = peer_id};
+    case PinOutcome::Changed: // pinned with another between the checks above and now
+      return AddIdentityCheck{.result = AddIdentityCheck::Result::ChangedSinceSeen, .peer_id = peer_id};
+    case PinOutcome::Taken:
+      return AddIdentityCheck{.result = AddIdentityCheck::Result::Taken, .peer_id = peer_id, .holder = answer.holder};
+    case PinOutcome::Full:
+      break;
   }
-  return AddIdentityCheck{.result = AddIdentityCheck::Result::Ok, .peer_id = peer_id};
+  log().warning << "relay " << key << " not added: the pins are full of kept relays";
+  return AddIdentityCheck{.result = AddIdentityCheck::Result::Unavailable};
 }
 
 Roe<void> RelayPins::Accept(const std::string& origin) {
@@ -398,6 +413,10 @@ Roe<void> RelayPins::Repin(const std::string& origin, const std::string& peer_id
   const PinAnswer answer = store_.Repin(origin, peer_id, Now());
   if (answer.outcome == PinOutcome::Taken) {
     return IdentityTakenError(RelayOriginKey(origin), answer.holder);
+  }
+  if (answer.outcome == PinOutcome::Full) {
+    return AppError::Network(Err::Network::RelayIdentityUnavailable,
+                             "relay " + RelayOriginKey(origin) + " not pinned: the pins are full of kept relays");
   }
   {
     std::lock_guard lock(mutex_);

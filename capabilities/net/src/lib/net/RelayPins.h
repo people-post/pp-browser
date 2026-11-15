@@ -43,6 +43,8 @@ struct AddIdentityCheck {
   Result result = Result::Ok;
   std::string peer_id;
   std::string holder;
+  /** Ok: pinned by this check (an Add that does not go through drops it again). */
+  bool pinned_now = false;
 };
 
 /**

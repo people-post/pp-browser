@@ -138,7 +138,7 @@ std::vector<RelayPin> RelayPinStore::All() const {
   return pins_;
 }
 
-void RelayPinStore::AddLocked(RelayPin pin) {
+bool RelayPinStore::AddLocked(RelayPin pin) {
   if (pins_.size() >= kMaxPins) {
     // The oldest pin of a relay no one keeps (removed from our list since): pinned again by fetch if it comes back.
     auto oldest = pins_.end();
@@ -149,11 +149,12 @@ void RelayPinStore::AddLocked(RelayPin pin) {
     }
     if (oldest == pins_.end()) {
       PinLog().warning << "relay pins full of kept relays; " << pin.origin << " not pinned";
-      return;
+      return false;
     }
     pins_.erase(oldest);
   }
   pins_.push_back(std::move(pin));
+  return true;
 }
 
 PinAnswer RelayPinStore::Present(const std::string& origin, const std::string& peer_id, const int64_t now_ms) {
@@ -164,7 +165,9 @@ PinAnswer RelayPinStore::Present(const std::string& origin, const std::string& p
   }
   const auto found = FindLocked(key);
   if (found == pins_.end()) {
-    AddLocked(RelayPin{.origin = key, .peer_id = peer_id, .pinned_at_ms = now_ms});
+    if (!AddLocked(RelayPin{.origin = key, .peer_id = peer_id, .pinned_at_ms = now_ms})) {
+      return PinAnswer{.outcome = PinOutcome::Full};
+    }
     SaveLocked();
     return PinAnswer{.outcome = PinOutcome::Pinned};
   }
@@ -193,7 +196,9 @@ PinAnswer RelayPinStore::Repin(const std::string& origin, const std::string& pee
   }
   const auto found = FindLocked(key);
   if (found == pins_.end()) {
-    AddLocked(RelayPin{.origin = key, .peer_id = peer_id, .pinned_at_ms = now_ms});
+    if (!AddLocked(RelayPin{.origin = key, .peer_id = peer_id, .pinned_at_ms = now_ms})) {
+      return PinAnswer{.outcome = PinOutcome::Full};
+    }
   } else {
     *found = RelayPin{.origin = key, .peer_id = peer_id, .pinned_at_ms = now_ms};
   }
@@ -215,8 +220,8 @@ bool RelayPinStore::TakeOwnCard(const std::vector<OwnCardRelay>& relays, const i
     }
     // Our own account's word: another origin's pin of this PeerId goes, and this origin's pin follows the card.
     std::erase_if(pins_, [&](const RelayPin& pin) { return pin.origin == key || pin.peer_id == relay.peer_id; });
-    AddLocked(RelayPin{.origin = key, .peer_id = relay.peer_id, .pinned_at_ms = now_ms});
-    changed = true;
+    changed = true; // a pin that disagreed went, whether or not this one fits
+    (void)AddLocked(RelayPin{.origin = key, .peer_id = relay.peer_id, .pinned_at_ms = now_ms});
   }
   if (changed) {
     SaveLocked();
