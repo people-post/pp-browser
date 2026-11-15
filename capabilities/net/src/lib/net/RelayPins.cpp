@@ -167,11 +167,11 @@ CardRelayCheck RelayPins::CheckCardRelay(const std::string& origin, const std::s
   return CardRelayCheck::Usable;
 }
 
-void RelayPins::NoteFetchFailed(const std::string& key) {
+void RelayPins::NoteFetchFailed(const std::string& slot, const int64_t max_ms) {
   const int64_t now = Now();
   std::lock_guard lock(mutex_);
-  FetchState& state = fetches_[key];
-  state.backoff_ms = state.backoff_ms == 0 ? kFirstRetryMs : std::min(state.backoff_ms * 2, kMaxRetryMs);
+  FetchState& state = fetches_[slot];
+  state.backoff_ms = state.backoff_ms == 0 ? std::min(kFirstRetryMs, max_ms) : std::min(state.backoff_ms * 2, max_ms);
   state.next_try_ms = now + state.backoff_ms;
 }
 
@@ -190,6 +190,11 @@ Roe<PinAnswer> RelayPins::AskAndPresent(const std::string& origin, std::string& 
 }
 
 Roe<std::string> RelayPins::Audience(const std::string& origin, const bool public_only) {
+  return AudienceAsking(origin, public_only, true);
+}
+
+Roe<std::string> RelayPins::AudienceAsking(const std::string& origin, const bool public_only,
+                                           const bool within_backoff) {
   const std::string key = RelayOriginKey(origin);
   if (const auto pin = store_.PinFor(key)) {
     if (pin->Changed()) {
@@ -197,7 +202,7 @@ Roe<std::string> RelayPins::Audience(const std::string& origin, const bool publi
     }
     return pin->peer_id;
   }
-  {
+  if (within_backoff) {
     const int64_t now = Now();
     std::lock_guard lock(mutex_);
     if (const auto it = fetches_.find(key); it != fetches_.end() && now < it->second.next_try_ms) {
@@ -208,7 +213,7 @@ Roe<std::string> RelayPins::Audience(const std::string& origin, const bool publi
   std::string presented;
   auto answer = AskAndPresent(key, presented, public_only);
   if (!answer) {
-    NoteFetchFailed(key);
+    NoteFetchFailed(key, kMaxOursRetryMs);
     log().warning << "relay " << key << " not pinned: " << answer.error().message;
     return answer.error();
   }
@@ -227,11 +232,11 @@ Roe<std::string> RelayPins::Audience(const std::string& origin, const bool publi
       Changed(key);
       return IdentityChangedError(key);
     case PinOutcome::Taken:
-      NoteFetchFailed(key);
+      NoteFetchFailed(key, kMaxOursRetryMs);
       log().warning << "relay " << key << " claims the PeerId of " << answer->holder << "; never signed for";
       return IdentityTakenError(key, answer->holder);
     case PinOutcome::Full:
-      NoteFetchFailed(key);
+      NoteFetchFailed(key, kMaxOursRetryMs);
       return AppError::Network(Err::Network::RelayIdentityUnavailable,
                                "relay " + key + " not pinned: the pins are full of kept relays");
   }
@@ -244,7 +249,7 @@ bool RelayPins::EnsurePinned(const std::vector<std::string>& origins) {
     if (store_.PinFor(origin)) {
       continue;
     }
-    pinned = Audience(origin).isOk() || pinned;
+    pinned = AudienceAsking(origin, false, false).isOk() || pinned;
   }
   return pinned;
 }
@@ -319,7 +324,7 @@ Roe<std::string> RelayPins::ForeignAudience(const std::string& origin, const boo
     }
     auto identity = fetch ? fetch(key, public_only) : Roe<RelayIdentity>(Error("no relay identity fetch"));
     if (!identity) {
-      NoteFetchFailed(slot);
+      NoteFetchFailed(slot, kMaxRetryMs);
       log().info << "relay " << key << " (not ours) names no identity: " << identity.error().message;
       return identity.error();
     }
@@ -327,7 +332,7 @@ Roe<std::string> RelayPins::ForeignAudience(const std::string& origin, const boo
   }
   // Checked at every use: a pin of ours taken since wins over what a relay not ours presented.
   if (const auto holder = store_.HolderOf(kept); holder && *holder != key) {
-    NoteFetchFailed(slot);
+    NoteFetchFailed(slot, kMaxRetryMs);
     std::lock_guard lock(mutex_);
     foreign_.erase(key);
     log().warning << "relay " << key << " (not ours) claims the PeerId of " << *holder << "; never signed for";

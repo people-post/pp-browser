@@ -51,7 +51,8 @@ struct AddIdentityCheck {
  * The app's (or pp-node's) relay pins (multi-relay MR007; docs/contracts/SERVICE_ENDPOINTS.md § Relay identity): the
  * engine over RelayPinStore. Hands every client of a relay of ours (or of the org's origin) its audience (AudienceFor):
  * the pinned PeerId, asked of the origin itself and pinned before the first command is signed for it (a fetch that
- * fails pins nothing and is tried again after a backoff, kFirstRetryMs doubling to kMaxRetryMs). A relay not ours (a
+ * fails pins nothing and is tried again after a backoff, kFirstRetryMs doubling to kMaxOursRetryMs: our own relays
+ * must not stay unsigned for long once the network is back; EnsurePinned asks whatever the backoff). A relay not ours (a
  * QR locator's, its card not kept yet) is never pinned (ForeignAudienceFor): what it presents is kept in memory for
  * its sends only, so no one else's relay can take a PeerId or an origin from ours. A `wrong_audience` asks the identity again (at
  * most once per origin per kWrongAudienceRefetchMs): another PeerId than the pin is an *identity changed* — nothing
@@ -62,6 +63,9 @@ struct AddIdentityCheck {
 class RelayPins : public Module, public std::enable_shared_from_this<RelayPins> {
 public:
   static constexpr int64_t kFirstRetryMs = 60 * 1000;
+  /** The backoff's cap for a relay of ours or the org's origin (AudienceFor). */
+  static constexpr int64_t kMaxOursRetryMs = 2 * 60 * 1000;
+  /** The backoff's cap for a relay not ours (ForeignAudienceFor). */
   static constexpr int64_t kMaxRetryMs = 30 * 60 * 1000;
   static constexpr int64_t kWrongAudienceRefetchMs = 5 * 60 * 1000;
   /** Relays not ours whose presented PeerId is kept in memory (ForeignAudienceFor). */
@@ -116,7 +120,10 @@ public:
    * fetch failed within the backoff. Errors as IRelayAudience::PeerId.
    */
   Roe<std::string> Audience(const std::string& origin, bool public_only = false);
-  /** Pins each origin not pinned yet (asked in turn; blocks). True when a pin was written. */
+  /**
+   * Pins each origin not pinned yet (asked in turn, whatever the backoff: at start, a list change, the network back or
+   * the app in front; blocks). True when a pin was written.
+   */
   bool EnsurePinned(const std::vector<std::string>& origins);
   /** The relay at `origin` refused a signed command with `code` (IRelayAudience::Refused). */
   void Refused(const std::string& origin, const std::string& code, bool public_only = false);
@@ -147,7 +154,10 @@ private:
   int64_t Now() const;
   /** Asks `origin` and applies the answer to the pins; the answer's outcome, or the fetch's error. */
   Roe<PinAnswer> AskAndPresent(const std::string& origin, std::string& presented, bool public_only);
-  void NoteFetchFailed(const std::string& key);
+  /** Audience's, `within_backoff` false: asked whatever the backoff (EnsurePinned). */
+  Roe<std::string> AudienceAsking(const std::string& origin, bool public_only, bool within_backoff);
+  /** A fetch for `slot` failed: its next try after the backoff, doubling up to `max_ms`. */
+  void NoteFetchFailed(const std::string& slot, int64_t max_ms);
   void Changed(const std::string& origin) const;
 
   RelayPinStore store_;

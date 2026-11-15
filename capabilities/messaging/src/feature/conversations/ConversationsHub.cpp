@@ -351,6 +351,14 @@ void ConversationsHub::PinOurRelaysSoon() {
   });
 }
 
+void ConversationsHub::RepinOurRelaysSoon() {
+  AppRuntime::PostUI([this]() {
+    if (!shutdown_requested_.load(std::memory_order_acquire) && IsMessagingReady()) {
+      PinOurRelaysSoon(); // on the hub's thread: it reads the clients
+    }
+  });
+}
+
 void ConversationsHub::HealRegistrationSoon(const std::string& origin) {
   AppRuntime::PostWorkerNormal([this, origin]() {
     if (shutdown_requested_.load(std::memory_order_acquire) || !IsMessagingReady()) {
@@ -655,6 +663,9 @@ void ConversationsHub::OnLocalNetworkChanged(const NetworkChange& change) {
     const int online = linked ? 1 : 0;
     if (network_online_.exchange(online) != online) {
       OnLinkNetwork(linked);
+      if (linked) {
+        RepinOurRelaysSoon(); // a relay of ours not pinned while offline is asked now, not after its backoff
+      }
     }
   }
   // Offline or an unknown link keeps the last known kind of network.
@@ -3873,6 +3884,7 @@ void ConversationsHub::OnAppForeground() {
   if (!messaging_ready_ || !mesh_messaging_ || !inbox_) {
     return;
   }
+  RepinOurRelaysSoon(); // a relay of ours not pinned yet is asked now (it may have failed while suspended)
   if (const std::string active = inbox_->ActiveThreadId(); !active.empty()) {
     mesh_messaging_->WarmPeerForThread(active);
   }

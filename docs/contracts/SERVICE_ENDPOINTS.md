@@ -86,7 +86,8 @@ that is neither ours nor the org's origins goes first). Only a relay of ours and
   pinned, so it can neither take a PeerId from a relay of ours nor make a card entry naming one *identity doesn't
   match*. One presenting a PeerId pinned to another origin gets nothing signed for it; a `wrong_audience` asks it
   again (at most once per 5 min). A fetch that fails pins nothing; nothing is signed for that origin until a fetch succeeds (asked again
-  after 1 min, doubling to 30 min).
+  after 1 min, doubling to 2 min for a relay of ours or the org's origins and to 30 min for one not ours; ours are
+  asked again at once when the network comes back, the app comes to the front or the list changes).
 - **An origin presenting a PeerId pinned to another origin** is refused (`relay_identity_taken`) and never pinned.
 - **`401 wrong_audience` from a relay of ours or the org's origin** asks its identity again (at most once per origin per
   5 min). Another PeerId than the pin: *identity changed* — kept as `presented_peer_id`; nothing is signed for that

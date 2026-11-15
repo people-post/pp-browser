@@ -754,6 +754,8 @@ private:
   void OnRelayPinsChanged();
   /** Pins our relays and the org's origins not pinned yet, on a worker (they are pinned before anything is signed). */
   void PinOurRelaysSoon();
+  /** PinOurRelaysSoon from any thread (the network back, the app in front): whatever a failed fetch's backoff. */
+  void RepinOurRelaysSoon();
   /** A relay of ours answered `not_registered` / `registration_expired` (any thread): register there again. */
   void HealRegistrationSoon(const std::string& origin);
   /** The preferred relay's lost registration: made again whatever the auto-renew preference, with a backoff. */

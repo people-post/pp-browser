@@ -176,6 +176,22 @@ TEST_F(RelayPinsTest, AnAnswerThatDoesNotCheckOutPinsNothingAndIsAskedAgainAfter
   EXPECT_EQ(fetched_.size(), 2u);
 }
 
+// S6: our own relays are not left unsigned for long once the network is back: a short cap, and EnsurePinned (the
+// network back, the app in front, a list change) asks whatever the backoff.
+TEST_F(RelayPinsTest, OurRelaysBackoffIsShortAndEnsurePinnedAsksWhateverIt) {
+  auto audience = pins_->AudienceFor(kA);
+  for (int i = 0; i < 6; ++i) {
+    ASSERT_FALSE(audience->PeerId());
+    now_ms_ += RelayPins::kMaxOursRetryMs;
+  }
+  EXPECT_EQ(fetched_.size(), 6u) << "asked again at least every kMaxOursRetryMs";
+  ASSERT_FALSE(audience->PeerId());
+  presents_[kA] = kPeerA;
+  EXPECT_FALSE(audience->PeerId()) << "within the backoff";
+  EXPECT_TRUE(pins_->EnsurePinned({kA})) << "asked now, whatever the backoff";
+  EXPECT_EQ(audience->PeerId().valueOr(""), kPeerA);
+}
+
 TEST_F(RelayPinsTest, AnotherPeerIdAfterWrongAudienceIsAnIdentityChangeUntilAccepted) {
   presents_[kA] = kPeerA;
   auto audience = pins_->AudienceFor(kA);
