@@ -3,6 +3,7 @@
 #include "foundation/crypto/KemKeyBinding.h"
 #include "foundation/error/AppError.h"
 #include "lib/net/RegistrationSignPayload.h"
+#include "lib/net/RelayOrigins.h"
 #include "common/Utilities.h"
 
 #include "common/PbrCompat.h"
@@ -162,10 +163,17 @@ Roe<RegistrationResult> RunRegistrationJob(const RegistrationJob& job) {
 }
 
 Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationResult& result,
-                                  const std::string& expected_account_id) {
+                                  const std::string& expected_account_id, const RegistrationHome& home) {
   // Read again, under the lock: the network half took a while, and only the registration fields are ours to change.
   if (expected_account_id.empty()) {
     return Error("Registration renewal not stored: no account to store it for");
+  }
+  if (const std::string preferred = home ? home() : std::string();
+      !preferred.empty() && !result.registered_backend_url.empty() &&
+      !SameRelay(preferred, result.registered_backend_url)) {
+    // Made at the relay that was preferred when it began: the identity's registration is the new one's now.
+    return Error("Registration renewal not stored: made at " +
+                 NormalizeRegistrationBackend(result.registered_backend_url) + ", no longer the preferred relay");
   }
   bool other_account = false;
   auto applied = identity.Modify([&](LocalIdentity& stored) {
@@ -187,7 +195,7 @@ Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationRes
 
 Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,
                                                 const std::string& nickname, const std::vector<std::string>& multiaddrs,
-                                                const RegistrationPublishOpts& publish) {
+                                                const RegistrationPublishOpts& publish, const RegistrationHome& home) {
   auto loaded = identity.Get(); // the account the registration runs for
   if (!loaded) {
     return loaded.error();
@@ -196,7 +204,7 @@ Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registratio
   if (!result) {
     return result.error();
   }
-  return PersistRenewal(identity, *result, loaded->account_id);
+  return PersistRenewal(identity, *result, loaded->account_id, home);
 }
 
 Roe<std::optional<RegistrationResult>> MaybeAutoRenewNetworkOnly(IRegistrationClient& registration,
@@ -222,7 +230,8 @@ Roe<std::optional<RegistrationResult>> MaybeAutoRenewNetworkOnly(IRegistrationCl
 }
 
 Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, IdentityStore& identity,
-                                     bool auto_renew_enabled, const RegistrationPublishOpts& publish) {
+                                     bool auto_renew_enabled, const RegistrationPublishOpts& publish,
+                                     const RegistrationHome& home) {
   auto loaded = identity.Get(); // the account the renewal runs for
   if (!loaded) {
     return loaded.error();
@@ -234,7 +243,7 @@ Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, Identity
   if (!*result) {
     return false;
   }
-  if (auto applied = PersistRenewal(identity, **result, loaded->account_id); !applied) {
+  if (auto applied = PersistRenewal(identity, **result, loaded->account_id, home); !applied) {
     return applied.error();
   }
   return true;

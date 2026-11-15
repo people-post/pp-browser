@@ -398,7 +398,8 @@ void ConversationsHub::HealPreferredRegistration(const int64_t now_ms) {
   }
   log().warning << "the preferred relay no longer holds our registration; registering again";
   // Whatever the auto-renew preference: the person registered there already (MR007 self-heal).
-  auto renewed = FinishAndPersistRegistration(*registration, Identity(), identity->nickname, {}, RegistrationCard());
+  auto renewed = FinishAndPersistRegistration(*registration, Identity(), identity->nickname, {}, RegistrationCard(),
+                                              PreferredRegistrationHome());
   if (!renewed) {
     log().warning << "registering again on the preferred relay failed: " << renewed.error().message;
     return;
@@ -417,7 +418,9 @@ void ConversationsHub::ReissueAndAnnounceCard() {
   }
   AnnounceOwnDevicesToContacts();
   RegisterOnOtherRelaysSoon();
-  if (auto published = MaybeAutoRenewRegistration(*Registration(), Identity(), false, RegistrationCard()); !published) {
+  if (auto published = MaybeAutoRenewRegistration(*Registration(), Identity(), false, RegistrationCard(),
+                                                  PreferredRegistrationHome());
+      !published) {
     log().info << "the re-issued card did not reach the preferred relay yet: " << published.error().message;
   }
 }
@@ -2345,7 +2348,7 @@ Roe<void> ConversationsHub::FinishRegistration(const RegistrationResult& result,
   if (!IsMessagingReady()) {
     return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to register");
   }
-  if (auto applied = PersistRenewal(Identity(), result, account_id); !applied) {
+  if (auto applied = PersistRenewal(Identity(), result, account_id, PreferredRegistrationHome()); !applied) {
     return applied.error();
   }
   PublishAccountLockerSoon();  // the locker keeps the relay binding: a phrase restore needs it
@@ -4323,7 +4326,8 @@ MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {
     }
     // The card now lists the new order, so it goes whatever the auto-renew preference (ShouldPublishAccountCard),
     // and the registration records the relay it was made at (#602's backend-switch path).
-    auto renewed = MaybeAutoRenewRegistration(*Registration(), Identity(), true, RegistrationCard());
+    auto renewed =
+        MaybeAutoRenewRegistration(*Registration(), Identity(), true, RegistrationCard(), PreferredRegistrationHome());
     if (!renewed) {
       return renewed.error();
     }
@@ -4600,6 +4604,10 @@ std::shared_ptr<IRegistrationClient> ConversationsHub::Registration() const {
   static const auto unconfigured = std::make_shared<UnconfiguredRegistrationClient>();
   std::lock_guard lock(clients_mu_);
   return registration_ ? registration_ : unconfigured;
+}
+
+RegistrationHome ConversationsHub::PreferredRegistrationHome() const {
+  return [this]() { return Registration()->BaseUrl(); };
 }
 
 RegistrationPublishOpts ConversationsHub::RegistrationCard() {

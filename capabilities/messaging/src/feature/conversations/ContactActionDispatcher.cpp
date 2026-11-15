@@ -251,7 +251,11 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
     const RegistrationPublishOpts card =
         mesh_messaging_ ? WithAccountCard({}, mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs()))
                         : RegistrationPublishOpts{};
-    auto result = FinishAndPersistRegistration(*registration, identity_, identity->nickname, {}, card);
+    auto result =
+        FinishAndPersistRegistration(*registration, identity_, identity->nickname, {}, card, [this]() -> std::string {
+          const auto preferred = RegistrationClient();
+          return preferred ? preferred->BaseUrl() : std::string();
+        });
     if (!result) {
       return result.error();
     }

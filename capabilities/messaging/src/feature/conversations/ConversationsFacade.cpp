@@ -70,7 +70,7 @@ std::string ConversationsFacade::RegistrationBackendUrl() {
 
 Roe<bool> ConversationsFacade::MaybeAutoRenewRegistration(const bool auto_renew_registration) {
   return pbr::MaybeAutoRenewRegistration(*hub_.Registration(), hub_.Identity(), auto_renew_registration,
-                                         hub_.RegistrationCard());
+                                         hub_.RegistrationCard(), hub_.PreferredRegistrationHome());
 }
 
 Roe<std::optional<RegistrationResult>> ConversationsFacade::MaybeAutoRenewRegistrationNetworkOnly(
@@ -81,7 +81,7 @@ Roe<std::optional<RegistrationResult>> ConversationsFacade::MaybeAutoRenewRegist
 
 Roe<LocalIdentity> ConversationsFacade::PersistRegistrationRenewal(const RegistrationResult& result,
                                                                    const std::string& expected_account_id) {
-  return pbr::PersistRenewal(hub_.Identity(), result, expected_account_id);
+  return pbr::PersistRenewal(hub_.Identity(), result, expected_account_id, hub_.PreferredRegistrationHome());
 }
 
 Roe<void> ConversationsFacade::SyncPushDevices() {
@@ -1482,8 +1482,8 @@ Roe<LocalIdentity> ConversationsFacade::ModifyLocalIdentity(
 }
 
 Roe<LocalIdentity> ConversationsFacade::FinishAndPersistRegistration(const std::string& nickname) {
-  auto registered =
-      pbr::FinishAndPersistRegistration(*hub_.Registration(), hub_.Identity(), nickname, {}, hub_.RegistrationCard());
+  auto registered = pbr::FinishAndPersistRegistration(*hub_.Registration(), hub_.Identity(), nickname, {},
+                                                      hub_.RegistrationCard(), hub_.PreferredRegistrationHome());
   if (registered) {
     hub_.RegisterOnOtherRelaysSoon(); // our other relays follow the preferred one (multi-relay R2)
   }

@@ -530,6 +530,23 @@ TEST_F(KemBindingPublishTest, ConcurrentRenewalAndGuestKeyWritesKeepBothFields) 
   EXPECT_EQ(*kept, "brf_guest_" + std::to_string(kRounds - 1));
 }
 
+// T2: a renewal made at the relay that was preferred when it began, stored after Make preferred moved the identity to
+// another, is dropped: it never rewinds the identity's registration to the old relay.
+TEST_F(KemBindingPublishTest, PersistRenewalDropsAResultForARelayNoLongerPreferred) {
+  client_.SetBaseUrl("https://a.example/api/relay");
+  auto result = RenewNetworkOnly(client_, *identity_, identity_->Get().value().nickname);
+  ASSERT_TRUE(static_cast<bool>(result));
+  ASSERT_FALSE(result->registered_backend_url.empty());
+  const LocalIdentity before = identity_->Get().value();
+  std::string preferred = "https://b.example/api/relay";
+  const RegistrationHome home = [&preferred]() { return preferred; };
+  EXPECT_FALSE(static_cast<bool>(PersistRenewal(*identity_, *result, before.account_id, home)));
+  ExpectSameRegistrationFields(before, identity_->Get().value());
+  preferred = result->registered_backend_url;
+  EXPECT_TRUE(static_cast<bool>(PersistRenewal(*identity_, *result, before.account_id, home)))
+      << "the relay it was made at is still the preferred one";
+}
+
 // Hardening: a renewal that ran for one account is not stored into another (the profile changed meanwhile).
 TEST_F(KemBindingPublishTest, PersistRenewalRefusesAnotherAccount) {
   auto result = RenewNetworkOnly(client_, *identity_, identity_->Get().value().nickname);

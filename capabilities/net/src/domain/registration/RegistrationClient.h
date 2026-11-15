@@ -7,6 +7,7 @@
 #include "common/directory/IdentityTypes.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -37,14 +38,19 @@ Roe<RegistrationResult> RenewNetworkOnly(IRegistrationClient& registration, Iden
                                          const std::string& nickname, const std::vector<std::string>& multiaddrs = {},
                                          const RegistrationPublishOpts& publish = {});
 
+/** Where the identity's registration belongs now: the preferred relay's base URL (empty: no rule), read at store time. */
+using RegistrationHome = std::function<std::string()>;
+
 /**
  * The storing half: in one read-modify-write under the store's lock (IdentityStore::Modify), applies only the
  * registration fields of `result` (ApplyRegistrationResult) to the identity as stored now. `expected_account_id`:
  * the account the network half ran for; another account stored now (the profile changed meanwhile), or an empty
- * `expected_account_id`, is refused and nothing is written. Returns the applied identity.
+ * `expected_account_id`, is refused and nothing is written. `home`, when given: a result made at another relay than
+ * the preferred one now (a renewal that finished after Make preferred moved it) is refused and nothing is written, so
+ * it never rewinds the identity to the old relay. Returns the applied identity.
  */
 Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationResult& result,
-                                  const std::string& expected_account_id);
+                                  const std::string& expected_account_id, const RegistrationHome& home = {});
 
 /**
  * What a registration the user asked for needs to run its network half off the UI thread: everything the UI thread read
@@ -73,7 +79,8 @@ Roe<RegistrationResult> RunRegistrationJob(const RegistrationJob& job);
 Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,
                                                 const std::string& nickname,
                                                 const std::vector<std::string>& multiaddrs = {},
-                                                const RegistrationPublishOpts& publish = {});
+                                                const RegistrationPublishOpts& publish = {},
+                                                const RegistrationHome& home = {});
 
 /**
  * If ShouldRenew (incl. registered at another backend than `registration`'s) and auto_renew_enabled, finish+persist registration.
@@ -81,7 +88,8 @@ Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registratio
  * (ShouldPublishKemBinding, ShouldPublishAccountCard). Returns true if renewed, false if nothing was due.
  */
 Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, IdentityStore& identity,
-                                     bool auto_renew_enabled, const RegistrationPublishOpts& publish = {});
+                                     bool auto_renew_enabled, const RegistrationPublishOpts& publish = {},
+                                     const RegistrationHome& home = {});
 
 /**
  * The network half of MaybeAutoRenewRegistration: nullopt when nothing is due (same rule), else the finished
