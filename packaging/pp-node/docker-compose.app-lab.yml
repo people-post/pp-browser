@@ -1,22 +1,30 @@
-# App lab: the real relay stack (www gateway + messenger inbox + Mongo) for pp-app-probe runs —
-# the product's messaging, control lane and AutoKey sessions over the relay the app uses in production.
-# Builds from a checkout of the relay server sources: PP_WEB2_ROOT (default ../../../../web2).
+# App lab: the real relay for pp-app-probe runs — the relay backend (pp-relay-apis: the registry, messenger, storage
+# and push functions, the LLM gateway) as its local stack, the paths and checks of its CDN in front — and the lab's
+# own mesh seed: the product's messaging, control lane and AutoKey sessions over the relay the app uses in production.
+# The relay services extend pp-relay-apis's local-stack/compose.yaml and its image builds from that checkout:
+# PP_RELAY_APIS_ROOT (default ../pp-relay-apis beside this repository; pp_local_test.sh finds it beside the main
+# checkout, so a worktree needs nothing set).
 #
-#   PP_WEB2_ROOT=/path/to/relay-server-checkout docker compose -f docker-compose.app-lab.yml -p pp-app-lab up -d --build
+#   PP_RELAY_APIS_ROOT=/path/to/pp-relay-apis docker compose -f docker-compose.app-lab.yml -p pp-app-lab up -d --build
 #
-# No fixed container names and no Mongo host port: it never collides with a developer's own relay
-# stack (its own db and gateway containers). The gateway is published on 127.0.0.1:${PP_APP_LAB_RELAY_PORT:-18719}.
+# No fixed container names and no database host ports: it never collides with a developer's own relay stack. The
+# relay (its API, its presigned object URLs and the harness's /healthz and /_local/*) is published on
+# 127.0.0.1:${PP_APP_LAB_RELAY_PORT:-18719}; its DynamoDB and S3 servers are private to it. Stopping the relay
+# container stops everything the relay serves.
 #
-# A second, independent relay stack (www2 + messenger2 + relay-db2, gateway on 127.0.0.1:${PP_APP_LAB_RELAY2_PORT:-18729})
+# A second, independent relay stack (relay2 + relay2-dynamodb + relay2-s3, on 127.0.0.1:${PP_APP_LAB_RELAY2_PORT:-18729})
 # is for the multi-relay scenarios: users on different relays, one user on both, the preferred one stopped. Each
 # relay also has TLS in front (tls-a on 127.0.0.1:${PP_APP_LAB_TLS_A_PORT:-18743}, tls-b on
 # 127.0.0.1:${PP_APP_LAB_TLS_B_PORT:-18744}): account cards list https:// relays only (MR004). Its certificate is
 # signed by a lab CA that pp_local_test.sh makes in PP_APP_LAB_TLS_DIR; the probes trust it through
-# PP_BROWSER_CA_BUNDLE.
+# PP_BROWSER_CA_BUNDLE. The fronts also serve each relay's icon CDN (https://198.51.100.21/_local/cdn, …22).
 #
 # The lab's own mesh seed (pp-node, image pp-node:local as staged by pp_local_test.sh) sits on a
 # TEST-NET-2 network: the product dials seeds only on public addresses, and 198.51.100.0/24 reads
 # as one while the host still routes to it. Its /status is on 127.0.0.1:${PP_APP_LAB_HOP_STATUS_PORT:-18718}.
+x-relay-stack: &relay-stack
+  file: ${PP_RELAY_APIS_ROOT:-../../../pp-relay-apis}/local-stack/compose.yaml
+
 services:
   hop:
     build:
@@ -42,6 +50,8 @@ services:
       PP_NODE_ADVERTISE_MULTIADDRS: ${PP_APP_LAB_HOP_ADVERTISE:-}
       PP_NODE_MESH_PUBLISH: ${PP_APP_LAB_HOP_PUBLISH:-false}
       PP_NODE_REGISTRATION_BASE_URL: http://198.51.100.20:9097/api/relay
+      # As the fleet runs it: the relay's CDN refuses a POST without x-amz-content-sha256.
+      PP_NODE_RELAY_CONTENT_SHA256: "true"
       PP_NODE_LOG_LEVEL: ${PP_APP_LAB_HOP_LOG_LEVEL:-info}
       # Never the production seeds (the default when none is set): a lab hop probing them loads
       # them, and their dial-backs fill its pending-handshake slots. TEST-NET-3: nothing answers.
@@ -68,6 +78,8 @@ services:
       PP_NODE_ADVERTISE_MULTIADDRS: ${PP_APP_LAB_HOP2_ADVERTISE:-}
       PP_NODE_MESH_PUBLISH: ${PP_APP_LAB_HOP2_PUBLISH:-false}
       PP_NODE_REGISTRATION_BASE_URL: http://198.51.100.20:9097/api/relay
+      # As the fleet runs it: the relay's CDN refuses a POST without x-amz-content-sha256.
+      PP_NODE_RELAY_CONTENT_SHA256: "true"
       PP_NODE_LOG_LEVEL: ${PP_APP_LAB_HOP_LOG_LEVEL:-info}
       PP_NODE_BOOTSTRAP_PEERS: /ip4/203.0.113.1/udp/443/adp/2/p2p/QmW6e19wEv2FozTzQXxCee7USqQLE7HAvcF77es4brdSWd
     networks:
@@ -77,61 +89,37 @@ services:
       - "127.0.0.1:${PP_APP_LAB_HOP2_STATUS_PORT:-18728}:18518"
     depends_on: [hop]
 
-  relay-db:
-    image: mongo:8-noble
+  # The first relay. Its address is fixed: users behind the NAT overlay (docker-compose.app-lab-nat.yml) reach it
+  # there, and it is the S3 endpoint of its functions, so presigned URLs name it (the host routes to it too).
+  relay:
+    extends: { <<: *relay-stack, service: relay }
     environment:
-      MONGO_INITDB_ROOT_USERNAME: brief
-      MONGO_INITDB_ROOT_PASSWORD: brief
-    healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
-      interval: 3s
-      timeout: 3s
-      retries: 20
-      start_period: 5s
-    ulimits:
-      nofile:
-        soft: 64000
-        hard: 64000
-    networks: [lab]
-
-  messenger:
-    build:
-      context: ${PP_WEB2_ROOT:-../../../../web2}/messenger
-    environment:
-      BRF_MESSENGER_HOST: "::"
-      BRF_MESSENGER_PORT: 9098
-      BRF_MESSENGER_MONGO_URI: "mongodb://brief:brief@relay-db:27017/messenger?authSource=admin"
-    networks: [lab]
-    depends_on:
-      relay-db:
-        condition: service_healthy
-
-  www:
-    build:
-      context: ${PP_WEB2_ROOT:-../../../../web2}/www
-    environment:
-      BRF_WWW_HOST: "::"
-      BRF_WWW_PORT: 9097
-      BRF_WWW_MONGO_URI: "mongodb://brief:brief@relay-db:27017/brief?authSource=admin"
-      BRF_WWW_MESSENGER_URI: "http://messenger:9098"
-      # Required by the config; the relay routes never look at it.
-      BRF_WWW_DOMAINS: '[{"id":"lab","origin":"http://lab.invalid"}]'
+      LOCAL_PORT: 9097
+      LOCAL_PUBLIC_URL: http://198.51.100.20:9097
+      LOCAL_CDN_ORIGIN: https://198.51.100.21/_local/cdn
+      LOCAL_DYNAMODB_ENDPOINT: http://relay-dynamodb:8000
+      LOCAL_S3_ENDPOINT: http://relay-s3:7070
     networks:
       lab:
-        # Fixed: users behind the NAT overlay (docker-compose.app-lab-nat.yml) reach it by address.
         ipv4_address: 198.51.100.20
-    ports:
+    ports: !override
       - "127.0.0.1:${PP_APP_LAB_RELAY_PORT:-18719}:9097"
-    depends_on:
-      relay-db:
-        condition: service_healthy
-      messenger:
-        condition: service_started
+    depends_on: !override
+      relay-dynamodb: { condition: service_started, restart: true }
+      relay-s3: { condition: service_started, restart: true }
+
+  relay-dynamodb:
+    extends: { <<: *relay-stack, service: dynamodb }
+    networks: [lab]
+
+  relay-s3:
+    extends: { <<: *relay-stack, service: s3 }
+    networks: [lab]
 
   # TLS in front of the first relay: https://127.0.0.1:${PP_APP_LAB_TLS_A_PORT:-18743}/api/relay.
   tls-a:
     image: node:lts-alpine
-    command: ["node", "/proxy/proxy.js", "443", "www", "9097"]
+    command: ["node", "/proxy/proxy.js", "443", "relay", "9097"]
     volumes:
       - ./app-lab-tls/proxy.js:/proxy/proxy.js:ro
       - ${PP_APP_LAB_TLS_DIR:-/tmp/pp-app-lab-tls}:/tls:ro
@@ -140,62 +128,38 @@ services:
         ipv4_address: 198.51.100.21
     ports:
       - "127.0.0.1:${PP_APP_LAB_TLS_A_PORT:-18743}:443"
-    depends_on: [www]
+    depends_on: [relay]
 
-  # The second relay: a stack of its own (its own Mongo), as another operator's would be.
-  relay-db2:
-    image: mongo:8-noble
+  # The second relay: a stack of its own (its own tables and objects), as another operator's would be.
+  relay2:
+    extends: { <<: *relay-stack, service: relay }
     environment:
-      MONGO_INITDB_ROOT_USERNAME: brief
-      MONGO_INITDB_ROOT_PASSWORD: brief
-    healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
-      interval: 3s
-      timeout: 3s
-      retries: 20
-      start_period: 5s
-    ulimits:
-      nofile:
-        soft: 64000
-        hard: 64000
-    networks: [lab]
-
-  messenger2:
-    build:
-      context: ${PP_WEB2_ROOT:-../../../../web2}/messenger
-    environment:
-      BRF_MESSENGER_HOST: "::"
-      BRF_MESSENGER_PORT: 9098
-      BRF_MESSENGER_MONGO_URI: "mongodb://brief:brief@relay-db2:27017/messenger?authSource=admin"
-    networks: [lab]
-    depends_on:
-      relay-db2:
-        condition: service_healthy
-
-  www2:
-    build:
-      context: ${PP_WEB2_ROOT:-../../../../web2}/www
-    environment:
-      BRF_WWW_HOST: "::"
-      BRF_WWW_PORT: 9097
-      BRF_WWW_MONGO_URI: "mongodb://brief:brief@relay-db2:27017/brief?authSource=admin"
-      BRF_WWW_MESSENGER_URI: "http://messenger2:9098"
-      BRF_WWW_DOMAINS: '[{"id":"lab2","origin":"http://lab2.invalid"}]'
+      LOCAL_PORT: 9097
+      LOCAL_PUBLIC_URL: http://198.51.100.23:9097
+      LOCAL_CDN_ORIGIN: https://198.51.100.22/_local/cdn
+      LOCAL_DYNAMODB_ENDPOINT: http://relay2-dynamodb:8000
+      LOCAL_S3_ENDPOINT: http://relay2-s3:7070
     networks:
       lab:
         ipv4_address: 198.51.100.23
-    ports:
+    ports: !override
       - "127.0.0.1:${PP_APP_LAB_RELAY2_PORT:-18729}:9097"
-    depends_on:
-      relay-db2:
-        condition: service_healthy
-      messenger2:
-        condition: service_started
+    depends_on: !override
+      relay2-dynamodb: { condition: service_started, restart: true }
+      relay2-s3: { condition: service_started, restart: true }
+
+  relay2-dynamodb:
+    extends: { <<: *relay-stack, service: dynamodb }
+    networks: [lab]
+
+  relay2-s3:
+    extends: { <<: *relay-stack, service: s3 }
+    networks: [lab]
 
   # TLS in front of the second relay: https://127.0.0.1:${PP_APP_LAB_TLS_B_PORT:-18744}/api/relay.
   tls-b:
     image: node:lts-alpine
-    command: ["node", "/proxy/proxy.js", "443", "www2", "9097"]
+    command: ["node", "/proxy/proxy.js", "443", "relay2", "9097"]
     volumes:
       - ./app-lab-tls/proxy.js:/proxy/proxy.js:ro
       - ${PP_APP_LAB_TLS_DIR:-/tmp/pp-app-lab-tls}:/tls:ro
@@ -204,7 +168,7 @@ services:
         ipv4_address: 198.51.100.22
     ports:
       - "127.0.0.1:${PP_APP_LAB_TLS_B_PORT:-18744}:443"
-    depends_on: [www2]
+    depends_on: [relay2]
 
 networks:
   lab:

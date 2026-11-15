@@ -37,15 +37,25 @@ PIN = "246810"
 # Answer → audio both ways on one machine is ~2 s; past this the call "isn't getting through" for a
 # person, who hangs up and calls again.
 MAX_ANSWER_TO_AUDIO_S = 8.0
-# The relay allows 10 registrations per client IP per hour (in memory); every probe is 127.0.0.1. By gateway: "a" is
-# the lab relay's (also behind TLS for the multi-relay scenarios), "b" the second relay's. Unknown at start: the first
-# user restarts the gateway.
-REGISTRATIONS_PER_RELAY_START = 10
-registrations = {"a": REGISTRATIONS_PER_RELAY_START, "b": REGISTRATIONS_PER_RELAY_START}
+# The relay limits new registrations per client address (one per 10 s, 10 starts an hour); every lab user registers
+# from the host's address (or one gateway's), which no two real users share. The relays are pp-relay-apis's local
+# stack, so the lab clears those counters before each user registers (POST /_local/limits/clear?scope=register:).
+REGISTRATION_LIMITS = "/_local/limits/clear?scope=register:"
 
 
 class ProbeError(Exception):
     pass
+
+
+def clear_registration_limits(origin):
+    """Drops the relay at `origin`'s per-address registration counters (REGISTRATION_LIMITS)."""
+    import urllib.request
+    req = urllib.request.Request(origin + REGISTRATION_LIMITS, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            r.read()
+    except OSError as e:
+        raise ProbeError("relay %s: clearing its registration limits failed: %s" % (origin, e))
 
 
 # A directory nobody answers (the discard port): lookups fail at once.
@@ -332,7 +342,6 @@ class Lab:
                 restore_network(container, address, gw)
             self.networks[container] = (address, gw)
         self.keep = args.keep
-        self.relay_container = args.relay_container
         # The multi-relay scenarios' relays, each behind TLS (https:// origins go on account cards, MR004).
         self.tls_dir = args.tls_dir
         self.tls_relays = {
@@ -354,7 +363,8 @@ class Lab:
             "data_dir": data_dir,
             # The lab relay is a backend of its own: say so (a config without `backend` is on the default one).
             "backend": {"env": "custom"},
-            "relay": {"base_url": self.user_relay},
+            # As deployed builds set it (PP_RELAY_CONTENT_SHA256): the relay's CDN refuses a POST without it.
+            "relay": {"base_url": self.user_relay, "content_sha256": True},
             # directory=False: a directory nobody answers (an empty one means the built-in default).
             "directory": {"base_url": self.user_relay if directory else NO_DIRECTORY},
             "registration": {"base_url": self.user_relay},
@@ -374,7 +384,7 @@ class Lab:
         """`config` on the TLS relays `relays` ("a" / "b"), the first preferred, the others `relay.extra_base_urls`
         (multi-relay R2); its directory the first of `directories`, the others its failover providers."""
         origins = [self.tls_relays[r]["origin"] for r in relays]
-        config["relay"] = {"base_url": origins[0], "extra_base_urls": origins[1:]}
+        config["relay"] = {"base_url": origins[0], "extra_base_urls": origins[1:], "content_sha256": True}
         config["registration"] = {"base_url": origins[0]}
         found = [self.tls_relays[r]["origin"] for r in directories]
         config["directory"] = {"base_url": found[0],
@@ -393,7 +403,7 @@ class Lab:
         raise ProbeError("TLS relay %s did not come up" % relay)
 
     def stop_tls_relay(self, relay):
-        """The relay goes away: its gateway and its TLS front (connections refused). Back when the scenario ends."""
+        """The relay goes away: its relay server and TLS front (connections refused). Back when the scenario ends."""
         self.stopped_relays.add(relay)
         for container in reversed(self.tls_relays[relay]["containers"]):
             subprocess.run(["docker", "stop", "-t", "2", container], check=True, stdout=subprocess.DEVNULL)
@@ -405,15 +415,9 @@ class Lab:
         self.stopped_relays.discard(relay)
 
     def fresh_tls_registrations(self, relays):
-        """Room for one user's registrations on each of `relays`: a gateway that used up its allowance restarts."""
-        # A user on a relay may register there twice (its registration, then again when its card changes).
+        """Room for one user's registrations on each of `relays`."""
         for relay in relays:
-            if registrations[relay] + 2 > REGISTRATIONS_PER_RELAY_START:
-                gateway = self.tls_relays[relay]["containers"][0]
-                subprocess.run(["docker", "restart", gateway], check=True, stdout=subprocess.DEVNULL)
-                self.tls_relay_up(relay)
-                registrations[relay] = 0
-            registrations[relay] += 2
+            clear_registration_limits(self.tls_relays[relay]["health"].rsplit("/healthz", 1)[0])
 
     def wait_hop(self, timeout=60):
         deadline = time.time() + timeout
@@ -425,25 +429,8 @@ class Lab:
         raise ProbeError("lab hop did not come back")
 
     def fresh_registration(self):
-        """Restart the lab relay's gateway when this run has used up its registration allowance."""
-        if registrations["a"] < REGISTRATIONS_PER_RELAY_START:
-            registrations["a"] += 1
-            return
-        if not self.relay_container:
-            raise ProbeError("relay registration allowance used up (pass --relay-container)")
-        subprocess.run(["docker", "restart", self.relay_container], check=True, stdout=subprocess.DEVNULL)
-        health = self.relay.split("/api/")[0] + "/healthz"
-        deadline = time.time() + 60
-        while time.time() < deadline:
-            try:
-                if subprocess.run(["curl", "-fsS", "-m", "2", health], stdout=subprocess.DEVNULL,
-                                  stderr=subprocess.DEVNULL).returncode == 0:
-                    registrations["a"] = 1
-                    return
-            except OSError:
-                pass
-            time.sleep(0.5)
-        raise ProbeError("relay did not come back after restart")
+        """Room for one user's registration on the lab relay."""
+        clear_registration_limits(self.relay.split("/api/")[0])
 
     def user(self, name, directory=True, reachable=False, beside=None, seeds=None, relays=None, directories=None):
         """A registered user; directory=False: one whose directory never answers; reachable=True: one that
@@ -4276,10 +4263,10 @@ def main():
     ap.add_argument("--hop2-status", default="http://127.0.0.1:18728")
     ap.add_argument("--hop2-ip", default="198.51.100.30", help="the second seed's address on the lab network")
     ap.add_argument("--hop-ip", default="198.51.100.10", help="the lab hop's address on the lab network")
-    ap.add_argument("--relay-container", default="pp-app-lab-www-1",
-                    help="lab relay gateway container, restarted when registrations run out")
+    ap.add_argument("--relay-container", default="pp-app-lab-relay-1",
+                    help="the lab relay's container (its local stack's server; the multi-relay scenarios stop it)")
     ap.add_argument("--relay2", default="http://127.0.0.1:18729/api/relay", help="the second lab relay (its health)")
-    ap.add_argument("--relay2-container", default="pp-app-lab-www2-1", help="the second relay's gateway container")
+    ap.add_argument("--relay2-container", default="pp-app-lab-relay2-1", help="the second relay's container")
     ap.add_argument("--relay-tls", default="https://127.0.0.1:18743/api/relay", help="the lab relay behind TLS")
     ap.add_argument("--relay2-tls", default="https://127.0.0.1:18744/api/relay", help="the second relay behind TLS")
     ap.add_argument("--relay-tls-container", default="pp-app-lab-tls-a-1")
