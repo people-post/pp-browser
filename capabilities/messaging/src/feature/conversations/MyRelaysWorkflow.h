@@ -18,7 +18,7 @@
 
 namespace pbr {
 
-/** One relay of ours as Me → Network → My relays shows it. */
+/** One relay of ours as Me → My relays shows it. */
 struct OurRelayStatus {
   enum class Reach { Unknown, Ok, Failed };
   std::string origin;
@@ -85,7 +85,10 @@ public:
     std::function<Roe<void>(const std::string& origin)> leave;
     /** The identity registers on the (new) preferred relay. */
     std::function<Roe<void>()> register_preferred;
-    /** The identity's registration on the preferred relay, as the identity holds it (none: not registered there). */
+    /**
+     * The identity's registration on the preferred relay, as the identity holds it: Registered, Expired or
+     * NotRegistered (none: the profile is closing).
+     */
     std::function<std::optional<RelayRegistrationRecord>()> preferred_registration;
     /** Our other relays are registered on when due (soon, on a worker). */
     std::function<void()> register_others;
@@ -109,6 +112,8 @@ public:
     std::function<std::string()> org_identity_changed;
     /** The page reads the list again. */
     std::function<void()> changed;
+    /** Tests: the clock (Unix ms) a registration's end is read against. */
+    std::function<int64_t()> now_ms;
   };
 
   MyRelaysWorkflow(OurRelaysStore& store, Ports ports);
@@ -174,6 +179,14 @@ private:
   };
 
   Roe<void> RequireMainDevice() const;
+  /**
+   * What the page shows for one relay's registration: the preferred one's is the identity's (`preferred`; a failure
+   * kept shows while the identity holds none there); another's as it answered, Expired once its end passed, and
+   * NotRegistered while the preferred relay holds none (it registers after it).
+   */
+  static RelayRegistrationRecord ShownRegistration(const RelayRegistrationRecord& kept, bool is_preferred,
+                                                   const std::optional<RelayRegistrationRecord>& preferred,
+                                                   int64_t now_ms);
   /** Add's identity step for `base_url` (pinned, or why not); `pinned_now`: this step wrote the pin. */
   Roe<void> CheckIdentity(const std::string& base_url, bool accept_changed, bool& pinned_now);
   /** Keeps `next`, the services follow, the registrations and the card go. */

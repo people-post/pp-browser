@@ -4282,12 +4282,26 @@ void ConversationsHub::CloseMyRelays() {
 
 std::optional<RelayRegistrationRecord> ConversationsHub::PreferredRegistrationRecord() {
   auto identity = identity_ ? identity_->Get() : Roe<LocalIdentity>(Error("no identity"));
-  if (!identity || !identity->registered || !RegisteredAtBackend(*identity, Registration()->BaseUrl())) {
+  if (!identity) {
     return std::nullopt;
   }
-  return RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Registered,
-                                 .expires_at = identity->registration_expires_at,
+  RelayRegistrationRecord record{.expires_at = identity->registration_expires_at,
                                  .card_issued_at = identity->registered_card_issued_at};
+  switch (ClassifyRegistration(*identity, util::NowUnixMs(), Registration()->BaseUrl())) {
+    case RegistrationStatus::Active:
+    case RegistrationStatus::ExpiringSoon:
+      record.state = RelayRegistrationRecord::State::Registered;
+      break;
+    case RegistrationStatus::Expired:
+      record.state = RelayRegistrationRecord::State::Expired;
+      break;
+    case RegistrationStatus::Unregistered:
+    case RegistrationStatus::WrongBackend:
+      // Never registered, or registered at the relay preferred before (a Make preferred whose renewal failed).
+      record = RelayRegistrationRecord{.state = RelayRegistrationRecord::State::NotRegistered};
+      break;
+  }
+  return record;
 }
 
 MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {

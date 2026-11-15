@@ -15,6 +15,17 @@ std::string Day(const std::string& iso) {
   return iso.size() >= 10 ? iso.substr(0, 10) : iso;
 }
 
+/** A failed registration's reason code (RelayRegistrationFailureCode), in the person's words. */
+std::string FailedText(const std::string& reason) {
+  static const std::map<std::string, std::string> kKeys = {
+      {kRegistrationUnreachable, "settings.relays.state.failed.unreachable"},
+      {kRegistrationRefused, "settings.relays.state.failed.refused"},
+      {kRegistrationIdentity, "settings.relays.state.failed.identity"},
+  };
+  const auto key = kKeys.find(reason);
+  return Tr(key == kKeys.end() ? "settings.relays.state.failed" : key->second);
+}
+
 void FillState(MyRelayRowView& row, const RelayRegistrationRecord& registration) {
   switch (registration.state) {
     case RelayRegistrationRecord::State::Registered:
@@ -25,7 +36,15 @@ void FillState(MyRelayRowView& row, const RelayRegistrationRecord& registration)
       return;
     case RelayRegistrationRecord::State::Failed:
       row.state_kind = "error";
-      row.state = Tr("settings.relays.state.failed", {{"reason", registration.reason}});
+      row.state = FailedText(registration.reason);
+      return;
+    case RelayRegistrationRecord::State::Expired:
+      row.state_kind = "error";
+      row.state = Tr("settings.relays.state.expired", {{"date", Day(registration.expires_at)}});
+      return;
+    case RelayRegistrationRecord::State::NotRegistered:
+      row.state_kind = row.preferred ? "error" : "pending";
+      row.state = Tr(row.preferred ? "settings.relays.state.not_registered" : "settings.relays.state.after_preferred");
       return;
     case RelayRegistrationRecord::State::Unknown:
       break;

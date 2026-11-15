@@ -7,6 +7,7 @@
 #include "common/Logger.h"
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
+#include "foundation/error/AppError.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -29,6 +30,10 @@ const char* StateName(const RelayRegistrationRecord::State state) {
       return "registered";
     case RelayRegistrationRecord::State::Failed:
       return "failed";
+    case RelayRegistrationRecord::State::NotRegistered:
+      return "not_registered";
+    case RelayRegistrationRecord::State::Expired:
+      return "expired";
     case RelayRegistrationRecord::State::Unknown:
       break;
   }
@@ -41,6 +46,12 @@ RelayRegistrationRecord::State StateFromName(const std::string& name) {
   }
   if (name == "failed") {
     return RelayRegistrationRecord::State::Failed;
+  }
+  if (name == "not_registered") {
+    return RelayRegistrationRecord::State::NotRegistered;
+  }
+  if (name == "expired") {
+    return RelayRegistrationRecord::State::Expired;
   }
   return RelayRegistrationRecord::State::Unknown;
 }
@@ -215,6 +226,26 @@ std::optional<OurRelaysList> OurRelaysFromJson(const std::string& text) {
     return std::nullopt;
   }
   return list;
+}
+
+std::string RelayRegistrationFailureCode(const Error& error) {
+  const ErrorCategory category = AppError::CategoryOf(error);
+  if (category == ErrorCategory::Auth) {
+    const auto code = static_cast<Err::Auth>(error.code);
+    if (code == Err::Auth::RelayIdentityChanged || code == Err::Auth::RelayIdentityTaken ||
+        code == Err::Auth::WrongAudience) {
+      return kRegistrationIdentity;
+    }
+    return kRegistrationRefused;
+  }
+  if (category == ErrorCategory::Network) {
+    const auto code = static_cast<Err::Network>(error.code);
+    if (code == Err::Network::RelayIdentityUnavailable) {
+      return kRegistrationIdentity;
+    }
+    return code == Err::Network::HttpRejected ? kRegistrationRefused : kRegistrationUnreachable;
+  }
+  return kRegistrationOther;
 }
 
 OurRelaysStore::OurRelaysStore(std::string profile_data_dir) : profile_data_dir_(std::move(profile_data_dir)) {}

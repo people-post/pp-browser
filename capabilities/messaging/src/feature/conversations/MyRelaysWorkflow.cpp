@@ -1,6 +1,7 @@
 #include "feature/conversations/MyRelaysWorkflow.h"
 
 #include "common/Utilities.h"
+#include "lib/people/RegistrationStatus.h"
 
 #include <utility>
 
@@ -285,7 +286,7 @@ void MyRelaysWorkflow::RegisterPreferred(const std::string& preferred) {
   if (auto registered = ports_.register_preferred(); !registered) {
     log().warning << "registration on the preferred relay " << preferred << " failed: " << registered.error().message;
     store_.Record(preferred, RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Failed,
-                                                     .reason = registered.error().message,
+                                                     .reason = RelayRegistrationFailureCode(registered.error()),
                                                      .at_ms = util::NowUnixMs()});
     return;
   }
@@ -315,6 +316,32 @@ void MyRelaysWorkflow::NotePolled(const std::string& origin, const bool ok, cons
   }
 }
 
+RelayRegistrationRecord MyRelaysWorkflow::ShownRegistration(const RelayRegistrationRecord& kept,
+                                                            const bool is_preferred,
+                                                            const std::optional<RelayRegistrationRecord>& preferred,
+                                                            const int64_t now_ms) {
+  using State = RelayRegistrationRecord::State;
+  if (is_preferred) {
+    // The identity's; a failed registration there shows until the identity holds one.
+    const bool failed_shows = kept.state == State::Failed && (!preferred || preferred->state == State::NotRegistered);
+    return preferred && !failed_shows ? *preferred : kept;
+  }
+  if (kept.state == State::Registered && !kept.expires_at.empty()) {
+    LocalIdentity probe;
+    probe.registered = true;
+    probe.registration_expires_at = kept.expires_at;
+    if (ClassifyRegistration(probe, now_ms) == RegistrationStatus::Expired) {
+      return RelayRegistrationRecord{.state = State::Expired, .expires_at = kept.expires_at, .at_ms = kept.at_ms};
+    }
+  }
+  const bool preferred_holds_none =
+      preferred && (preferred->state == State::NotRegistered || preferred->state == State::Expired);
+  if (kept.state == State::Unknown && preferred_holds_none) {
+    return RelayRegistrationRecord{.state = State::NotRegistered}; // registers once the preferred relay does
+  }
+  return kept;
+}
+
 OurRelaysStatus MyRelaysWorkflow::Status() const {
   OurRelaysStatus status;
   const Entered entered(*this);
@@ -330,14 +357,13 @@ OurRelaysStatus MyRelaysWorkflow::Status() const {
   if (!list.relays.empty() && ports_.preferred_registration) {
     preferred = ports_.preferred_registration();
   }
+  const int64_t now_ms = ports_.now_ms ? ports_.now_ms() : util::NowUnixMs();
   std::lock_guard lock(reach_mutex_);
   for (size_t i = 0; i < list.relays.size(); ++i) {
     const OurRelayEntry& entry = list.relays[i];
     OurRelayStatus relay{.origin = entry.origin, .preferred = i == 0, .registration = entry.registration};
     relay.identity_changed = ports_.identity_changed && ports_.identity_changed(entry.origin);
-    if (i == 0 && preferred) {
-      relay.registration = *preferred; // the identity's; a failed renewal shows until the identity holds one here
-    }
+    relay.registration = ShownRegistration(entry.registration, i == 0, preferred, now_ms);
     if (const auto reach = reach_.find(RelayOriginKey(entry.origin)); reach != reach_.end()) {
       relay.reach = reach->second.first ? OurRelayStatus::Reach::Ok : OurRelayStatus::Reach::Failed;
       relay.reach_at_ms = reach->second.second;

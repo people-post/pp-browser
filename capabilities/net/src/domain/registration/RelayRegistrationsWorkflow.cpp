@@ -140,15 +140,18 @@ void RelayRegistrationsWorkflow::Register(const Relay& relay, const std::string&
     }
   }
   const std::string reason = ok ? std::string() : (result ? result->message : result.error().message);
+  // The page words the code; the log keeps what the relay or the network said.
+  const std::string code =
+      ok ? std::string() : (result ? kRegistrationRefused : RelayRegistrationFailureCode(result.error()));
   if (on_result_) {
-    on_result_(relay.origin, ok ? RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Registered,
-                                                          .expires_at = result->expires_at,
-                                                          .card_issued_at = CardIssuedAt(publish),
-                                                          .registration_id = result->registration_id,
-                                                          .at_ms = now_ms}
-                                : RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Failed,
-                                                          .reason = reason.empty() ? "refused" : reason,
-                                                          .at_ms = now_ms});
+    on_result_(
+        relay.origin,
+        ok ? RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Registered,
+                                     .expires_at = result->expires_at,
+                                     .card_issued_at = CardIssuedAt(publish),
+                                     .registration_id = result->registration_id,
+                                     .at_ms = now_ms}
+           : RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Failed, .reason = code, .at_ms = now_ms});
   }
   if (!ok) {
     log().warning << "registration on " << NormalizeRegistrationBackend(relay.origin) << " failed: " << reason;

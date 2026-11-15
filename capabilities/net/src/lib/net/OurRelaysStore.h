@@ -13,9 +13,13 @@ namespace pbr {
 
 /** What a relay of ours last answered our registration with (kept: Me → My relays shows it after a restart). */
 struct RelayRegistrationRecord {
-  enum class State { Unknown, Registered, Failed };
+  /**
+   * Unknown: not asked yet (registering). NotRegistered: the identity holds no registration there (the preferred
+   * relay: the person has not registered, or registered elsewhere). Expired: registered until a time now past.
+   */
+  enum class State { Unknown, Registered, Failed, NotRegistered, Expired };
   State state = State::Unknown;
-  /** Failed: what went wrong, as the error said it (one line). */
+  /** Failed: why, as a code (RelayRegistrationFailureCode: unreachable, refused, identity, other). */
   std::string reason;
   /** Registered: until when (ISO-8601, the relay's `expires_at`). */
   std::string expires_at;
@@ -36,6 +40,17 @@ struct OurRelayEntry {
 
   bool operator==(const OurRelayEntry&) const = default;
 };
+
+/** The codes a failed registration's `reason` holds. */
+inline constexpr const char kRegistrationUnreachable[] = "unreachable";
+inline constexpr const char kRegistrationRefused[] = "refused";
+inline constexpr const char kRegistrationIdentity[] = "identity";
+inline constexpr const char kRegistrationOther[] = "other";
+/**
+ * Why a registration failed, as a code the page words: unreachable (no answer: a transport failure, a timeout, a
+ * 5xx), refused (the relay answered no), identity (its identity is not in force: changed, taken or not given), other.
+ */
+std::string RelayRegistrationFailureCode(const Error& error);
 
 /** My relays (multi-relay R3, MR006): ours, preferred first. */
 struct OurRelaysList {

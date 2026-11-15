@@ -260,8 +260,11 @@ Preference rows use a disclosure **card** pattern: full-width button with elevat
 Me → **My relays** (`settings_section_relays.rml`, page `relays`, Home group 1 after My devices; multi-relay R3,
 [SERVICE_ENDPOINTS § My relays](../contracts/SERVICE_ENDPOINTS.md#my-relays)). The presenter (`MyRelaysViewFor`)
 decides, `SettingsMyRelays` renders. One card per relay, preferred first: the host (`relay.example.org`), a
-**Preferred** badge on the first, its registration (`Registered until <date>` / `Registering…` /
-`Couldn't register: <reason>`, the last in the error colour) and its last poll (`Reachable` / `Couldn't reach it`, the
+**Preferred** badge on the first, its registration (`Registered until <date>` / `Registering…` / `Couldn't register`
+and why in words — `the relay didn't answer`, `the relay said no`, `the relay's identity couldn't be checked`, never an
+error's text / `Registration ended <date>` / on the preferred relay when the account holds no registration there `Not
+registered. Set up your account in My profile to get mail here.`, the others then `Registers after your preferred
+relay`; failures, an ended registration and the preferred relay's missing one in the error colour) and its last poll (`Reachable` / `Couldn't reach it`, the
 latter in the error colour; nothing before the first poll). On the main device the other relays have **Make preferred**
 (immediate) and **Remove…** (a destructive confirm naming the relay); phones show them as rows under the relay
 (Remove in the danger row), desktops as secondary buttons. **Add relay…** (while there are fewer than 4) opens an

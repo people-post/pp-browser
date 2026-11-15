@@ -1,5 +1,7 @@
 #include "feature/conversations/MyRelaysWorkflow.h"
 
+#include "foundation/error/AppError.h"
+
 #include <gtest/gtest.h>
 
 #include <chrono>
@@ -71,14 +73,14 @@ protected:
     ports.register_preferred = [this]() -> Roe<void> {
       steps_.push_back("register_preferred " + store_->List().Preferred());
       if (!preferred_ok_) {
-        return Error("HTTP 503");
+        return AppError::Network(Err::Network::HttpError, "HTTP 503");
       }
       registered_at_ = store_->List().Preferred();
       return {};
     };
     ports.preferred_registration = [this]() -> std::optional<RelayRegistrationRecord> {
       if (registered_at_ != store_->List().Preferred()) {
-        return std::nullopt;
+        return RelayRegistrationRecord{.state = RelayRegistrationRecord::State::NotRegistered};
       }
       return RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Registered, .expires_at = "2099"};
     };
@@ -103,6 +105,7 @@ protected:
     };
     ports.register_now = [this](const std::string& origin) { steps_.push_back("register_now " + origin); };
     ports.org_identity_changed = [this]() { return org_changed_; };
+    ports.now_ms = []() { return int64_t{1'761'235'200'000}; }; // 2025-10-23
     return ports;
   }
   static std::string Join(const Origins& origins) {
@@ -270,7 +273,7 @@ TEST_F(MyRelaysWorkflowTest, APreferredRelayThatRefusesStaysPreferredAndSaysWhy)
   EXPECT_EQ(store_->List().Preferred(), kB);
   const OurRelaysStatus status = workflow_->Status();
   EXPECT_EQ(status.relays[0].registration.state, RelayRegistrationRecord::State::Failed);
-  EXPECT_EQ(status.relays[0].registration.reason, "HTTP 503");
+  EXPECT_EQ(status.relays[0].registration.reason, "unreachable") << "a code the page words (D3)";
 }
 
 TEST_F(MyRelaysWorkflowTest, AChangeTheServicesDoNotFollowIsUndoneAndRefused) {
@@ -363,6 +366,29 @@ TEST_F(MyRelaysWorkflowTest, EachRelaysReachabilityIsItsLastPoll) {
   EXPECT_EQ(status.relays[1].reach, OurRelayStatus::Reach::Failed);
   EXPECT_EQ(status.relays[1].reach_at_ms, 20);
   EXPECT_EQ(changed_, 2) << "the page reads again on a change of state, not on every poll";
+}
+
+// D4: never "Registering…" forever: a preferred relay the identity holds no registration on reads NotRegistered and
+// the others wait for it; another relay's registration whose end passed reads Expired.
+TEST_F(MyRelaysWorkflowTest, ARegistrationMissingOrEndedSaysSo) {
+  registered_at_.clear();
+  OurRelaysStatus status = workflow_->Status();
+  EXPECT_EQ(status.relays[0].registration.state, RelayRegistrationRecord::State::NotRegistered);
+  EXPECT_EQ(status.relays[1].registration.state, RelayRegistrationRecord::State::NotRegistered)
+      << "it registers after the preferred relay";
+
+  registered_at_ = kA;
+  store_->Record(kB, RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Registered,
+                                             .expires_at = "2025-01-01T00:00:00.000Z",
+                                             .at_ms = 1});
+  status = workflow_->Status();
+  EXPECT_EQ(status.relays[0].registration.state, RelayRegistrationRecord::State::Registered);
+  EXPECT_EQ(status.relays[1].registration.state, RelayRegistrationRecord::State::Expired);
+
+  registered_at_.clear();
+  store_->Record(kA, RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Failed, .reason = "refused"});
+  EXPECT_EQ(workflow_->Status().relays[0].registration.state, RelayRegistrationRecord::State::Failed)
+      << "a failure shows while the identity holds none there";
 }
 
 TEST_F(MyRelaysWorkflowTest, AnotherRelaysLastRegistrationShowsAsItAnswered) {

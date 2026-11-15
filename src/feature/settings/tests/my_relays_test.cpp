@@ -1,4 +1,4 @@
-// Me → Network → My relays (multi-relay R3, MR006): the list preferred first, each relay with its registration and
+// Me → My relays (multi-relay R3, MR006): the list preferred first, each relay with its registration and
 // its last poll; on the main device every relay but the preferred one may be made preferred or removed, and another
 // added while there are fewer than four.
 #include "feature/settings/MyRelays.h"
@@ -39,7 +39,7 @@ TEST(MyRelaysTest, EachRelaySaysItsRegistrationAndItsLastPoll) {
   LoadLocales();
   const pbr::MyRelaysView view = pbr::MyRelaysViewFor(
       {Relay("a.example", Registered("2026-12-01T00:00:00.000Z"), MyRelayFacts::Reach::Ok), Relay("b.example:8443"),
-       Relay("c.example", Failed("HTTP 503"), MyRelayFacts::Reach::Failed)},
+       Relay("c.example", Failed("unreachable"), MyRelayFacts::Reach::Failed)},
       true);
   ASSERT_EQ(view.relays.size(), 3u);
   EXPECT_EQ(view.relays[0].label, "a.example");
@@ -54,9 +54,31 @@ TEST(MyRelaysTest, EachRelaySaysItsRegistrationAndItsLastPoll) {
   EXPECT_EQ(view.relays[1].state_kind, "pending");
   EXPECT_EQ(view.relays[1].reach, "") << "not polled yet";
 
-  EXPECT_EQ(view.relays[2].state, "Couldn't register: HTTP 503");
+  EXPECT_EQ(view.relays[2].state, "Couldn't register: the relay didn't answer") << "in words, not the error's";
   EXPECT_EQ(view.relays[2].state_kind, "error");
   EXPECT_TRUE(view.relays[2].reach_failed);
+}
+
+// D3 / D4: a failure says why in the person's words (its code, never the error's English); a preferred relay the
+// identity holds no registration on says so (and where to set it up), the others wait for it; an ended one says when.
+TEST(MyRelaysTest, ARegistrationSaysWhyItFailedWhetherItEndedAndWhenOneIsMissing) {
+  LoadLocales();
+  const pbr::MyRelaysView view = pbr::MyRelaysViewFor(
+      {Relay("a.example", {.state = RelayRegistrationRecord::State::NotRegistered}),
+       Relay("b.example", {.state = RelayRegistrationRecord::State::NotRegistered}),
+       Relay("c.example", {.state = RelayRegistrationRecord::State::Expired, .expires_at = "2026-01-02T00:00:00Z"}),
+       Relay("d.example", Failed("refused"))},
+      true);
+  EXPECT_EQ(view.relays[0].state, "Not registered. Set up your account in My profile to get mail here.");
+  EXPECT_EQ(view.relays[0].state_kind, "error");
+  EXPECT_EQ(view.relays[1].state, "Registers after your preferred relay");
+  EXPECT_EQ(view.relays[1].state_kind, "pending");
+  EXPECT_EQ(view.relays[2].state, "Registration ended 2026-01-02");
+  EXPECT_EQ(view.relays[2].state_kind, "error");
+  EXPECT_EQ(view.relays[3].state, "Couldn't register: the relay said no");
+  EXPECT_EQ(pbr::MyRelaysViewFor({Relay("a.example", Failed("Connection refused (curl 7)"))}, true).relays[0].state,
+            "Couldn't register")
+      << "a reason that is not a code is not shown";
 }
 
 TEST(MyRelaysTest, OnTheMainDeviceThePreferredRelayStaysAndTheOthersMayChange) {

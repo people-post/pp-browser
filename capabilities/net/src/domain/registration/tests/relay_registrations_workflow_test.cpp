@@ -1,5 +1,7 @@
 #include "domain/registration/RelayRegistrationsWorkflow.h"
 
+#include "foundation/error/AppError.h"
+
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/IdentityStore.h"
@@ -43,7 +45,7 @@ public:
       on_finish();
     }
     if (fail) {
-      return Error("relay down");
+      return AppError::Network(Err::Network::ConnectFailed, "relay down");
     }
     auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
                                                              signature_alg, kem_public_key_b64,
@@ -283,7 +285,7 @@ TEST_F(RelayRegistrationsWorkflowTest, EachAnswerIsReportedToKeep) {
   workflow_->RunDue(kNow + RelayRegistrationsWorkflow::kFirstRetryMs);
   ASSERT_EQ(records.size(), 2u);
   EXPECT_EQ(records[0].state, RelayRegistrationRecord::State::Failed);
-  EXPECT_EQ(records[0].reason, "relay down");
+  EXPECT_EQ(records[0].reason, kRegistrationUnreachable) << "a code the page words, not the error's text";
   EXPECT_EQ(records[1].state, RelayRegistrationRecord::State::Registered);
   EXPECT_EQ(records[1].expires_at, "2099-01-01T00:00:00.000Z");
   EXPECT_EQ(records[1].card_issued_at, 1000);
