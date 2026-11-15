@@ -329,9 +329,10 @@ void ConversationsHub::OnRelayPinsChanged() {
     if (shutdown_requested_.load(std::memory_order_acquire) || !IsMessagingReady()) {
       return;
     }
-    if (SetCardRelays() && IsMainDevice()) {
-      // A relay pinned now (the first start after the upgrade, an Add) or one whose identity changed: our card
-      // lists it, or leaves it off, at once.
+    // While a pass pins our relays (the first start after the upgrade pins them all), the card waits for its end: one
+    // card with every relay it could pin, not one per pin, which a linked device would follow and then follow back.
+    if (pinning_passes_.load(std::memory_order_acquire) == 0 && SetCardRelays() && IsMainDevice()) {
+      // A relay pinned now (an Add) or one whose identity changed: our card lists it, or leaves it off, at once.
       AppRuntime::PostWorkerNormal([this]() { ReissueAndAnnounceCard(); });
     }
     NotifyOurRelaysChanged();
@@ -353,9 +354,13 @@ void ConversationsHub::PinOurRelaysSoon() {
   if (!pins) {
     return;
   }
+  pinning_passes_.fetch_add(1, std::memory_order_acq_rel);
   AppRuntime::PostWorkerNormal([this, pins, origins = std::move(origins)]() {
     if (!shutdown_requested_.load(std::memory_order_acquire)) {
-      pins->EnsurePinned(origins); // each new pin reaches OnRelayPinsChanged
+      pins->EnsurePinned(origins); // each new pin reaches OnRelayPinsChanged (the page; the card waits)
+    }
+    if (pinning_passes_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+      OnRelayPinsChanged(); // the pass is over: the card takes what it pinned, once
     }
   });
 }
@@ -1215,6 +1220,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   PublishAddressDisclosure();
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
   // Before My relays (its ports read them) and the clients (each signs for its relay's pin, MR007).
+  pinning_passes_.store(0, std::memory_order_release); // a reset: a pass dropped at Shutdown holds no card back
   OpenRelayPins();
   // My relays (multi-relay R3, MR006): the profile's list, seeded once from the deployment's relay and config.
   CloseMyRelays(); // a profile reset: the old workflow (closed at Shutdown) goes before the store it changes

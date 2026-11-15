@@ -759,8 +759,13 @@ private:
   void CloseRelayPins();
   /** A pin the store keeps when full: ours and the org's origins (the only ones pinned). Any thread. */
   bool KeepsPin(const std::string& origin);
-  /** A pin changed (any thread): our card's relays follow, the card goes out when it changed, the page reads again. */
+  /**
+   * A pin changed (any thread): our card's relays follow, the card goes out when it changed (once a pinning pass in
+   * progress ends), the page reads again.
+   */
   void OnRelayPinsChanged();
+  /** PinOurRelaysSoon passes queued or running (the card waits for them). */
+  std::atomic<int> pinning_passes_{0};
   /** Pins our relays and the org's origins not pinned yet, on a worker (they are pinned before anything is signed). */
   void PinOurRelaysSoon();
   /** PinOurRelaysSoon from any thread (the network back, the app in front): whatever a failed fetch's backoff. */
