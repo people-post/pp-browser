@@ -73,6 +73,15 @@
 //   warm_seeds                          connect the bootstrap seeds now (what reconnects an idle app to
 //                                       them in the field, #382)
 //   recovery_phrase {pin}               Me → Security → Show recovery phrase: {phrase} (24 words; "" when none)
+//   hold_sync {held}                    hold every inbox poll (held true) or let them run again (MR007 lab: mail
+//                                       waits on the relays meanwhile)
+//   poll_relay {origin}                 one signed poll of that relay of ours, nothing taken {messages, next_cursor}
+//   clear_relay {origin, before}        clear that relay's inbox of rows older than `before` (ISO-8601; a lab-only
+//                                       argument: the product clears only mail a day old) {deleted}
+//   relay_identity {origin}             the relay's own identity answer and our pin {peer_id, pinned, changed}
+//   add_relay {text, accept_changed?}   Me → My relays → Add (accept_changed: the confirm of a relay seen before
+//                                       with another identity); remove_relay / make_relay_preferred {origin};
+//                                       accept_relay_identity {origin} (Accept new identity…)
 //   locker_publish                      sync this account's state with its locker at the relay: take what another
 //                                       device changed, store what changed here {version} (M023)
 //   contacts                            the address book {contacts: [{account, remark}]}
@@ -115,6 +124,7 @@
 #include "lib/delivery/TextSpans.h"
 #include "lib/messaging/MentionAlert.h"
 #include "lib/delivery/PeerRequestAuth.h"
+#include "lib/net/RelayIdentity.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "feature/conversations/ContactRefreshWorkflow.h"
 #include "common/chat/MessagingJson.h"
@@ -679,24 +689,32 @@ public:
               row.set("preferred", relay.preferred);
               row.set("registered", relay.registration.state == RelayRegistrationRecord::State::Registered);
               row.set("reason", relay.registration.reason);
+              row.set("identity_changed", relay.identity_changed);
               relays.push_back(ObjectValue(std::move(row)));
             }
             out.set("relays", ArrayValue(std::move(relays)));
             out.set("editable", status->editable);
             Emit(out);
           });
-    } else if (cmd == "add_relay" || cmd == "remove_relay" || cmd == "make_relay_preferred") {
-      // Me → My relays' actions: `text` as typed (add), or a relay's `origin` (remove, make preferred).
+    } else if (cmd == "add_relay" || cmd == "remove_relay" || cmd == "make_relay_preferred" ||
+               cmd == "accept_relay_identity") {
+      // Me → My relays' actions: `text` as typed (add), or a relay's `origin` (remove, make preferred, accept).
       const std::string text = request->getString(cmd == "add_relay" ? "text" : "origin").value_or("");
+      const bool accept_changed = request->getIf<bool>("accept_changed").value_or(false);
       AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
           WorkerLane::Normal,
-          [this, cmd, text]() {
+          [this, cmd, text, accept_changed]() {
             if (cmd == "add_relay") {
-              return facade_->AddOurRelay(text);
+              return facade_->AddOurRelay(text, accept_changed);
+            }
+            if (cmd == "accept_relay_identity") {
+              return facade_->AcceptRelayIdentity(text);
             }
             return cmd == "remove_relay" ? facade_->RemoveOurRelay(text) : facade_->MakeOurRelayPreferred(text);
           },
           [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
+    } else if (cmd == "hold_sync" || cmd == "poll_relay" || cmd == "clear_relay" || cmd == "relay_identity") {
+      RelayLabCommand(id, cmd, *request);
     } else if (cmd == "register") {
       const std::string nickname = request->getString("nickname").value_or("");
       AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
@@ -1347,6 +1365,70 @@ public:
   }
 
 private:
+  /**
+   * The relay lab's commands (multi-relay MR007, `replayed_calls_refused_at_other_relay`): hold the inbox polls, poll
+   * or clear one relay of ours directly (signed for it as the product signs), read a relay's identity and our pin.
+   */
+  void RelayLabCommand(const int64_t id, const std::string& cmd, const Object& request) {
+    if (cmd == "hold_sync") {
+      Hub().MeshMessaging().HoldInboxSync(request.getIf<bool>("held").value_or(true));
+      Emit(Reply(id, true));
+      return;
+    }
+    const std::string origin = request.getString("origin").value_or("");
+    if (cmd == "relay_identity") {
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<RelayIdentity>>(
+          WorkerLane::Normal, [origin]() { return FetchRelayIdentity(origin); },
+          [this, id, origin](Roe<RelayIdentity> identity) {
+            if (!identity) {
+              ReplyError(id, identity.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.set("peer_id", identity->peer_id);
+            const auto pins = Hub().RelayIdentityPins();
+            const auto pin = pins ? pins->PinFor(origin) : std::nullopt;
+            out.set("pinned", pin ? pin->peer_id : std::string());
+            out.set("changed", pin && pin->Changed());
+            Emit(out);
+          });
+      return;
+    }
+    const std::shared_ptr<IRelayClient> relay = Hub().OurRelayClient(origin);
+    const std::string account = Hub().Identity().Get().valueOr(LocalIdentity{}).account_id;
+    if (!relay || account.empty()) {
+      ReplyError(id, "not a relay of ours, or no account");
+      return;
+    }
+    if (cmd == "poll_relay") {
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<RelayPollResult>>(
+          WorkerLane::Normal, [relay, account]() { return relay->PollInbox(account, ""); },
+          [id](Roe<RelayPollResult> polled) {
+            if (!polled) {
+              ReplyError(id, polled.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.set("messages", static_cast<int64_t>(polled->messages.size()));
+            out.set("next_cursor", polled->next_cursor);
+            Emit(out);
+          });
+      return;
+    }
+    const std::string before = request.getString("before").value_or("");
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<RelayDeleteResult>>(
+        WorkerLane::Normal, [relay, account, before]() { return relay->ClearInbox(account, before); },
+        [id](Roe<RelayDeleteResult> cleared) {
+          if (!cleared) {
+            ReplyError(id, cleared.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          out.set("deleted", cleared->deleted);
+          Emit(out);
+        });
+  }
+
   /** People search → tap the person → chat opens (ContactActionDispatcher start_conversation). */
   void OpenChat(int64_t id, const std::string& account) {
     if (account.empty()) {

@@ -142,6 +142,11 @@ public:
    * `force` (a push, a wake) polls every one.
    */
   void SyncInboxFromWake(bool force = true);
+  /**
+   * Holds every inbox poll (none goes until released): mail waits on the relays. The app lab's probe uses it to keep
+   * messages on a relay while it replays requests (multi-relay MR007); nothing in the product holds. Any thread.
+   */
+  void HoldInboxSync(bool held) { inbox_sync_held_.store(held, std::memory_order_release); }
   /** Last HTTP Brief/relay poll outcome for ambient status chrome. */
   enum class BriefRelayHealthState {
     Unknown = 0,
@@ -572,6 +577,7 @@ private:
   /** A recipient's relays from its kept card, and its newest card fetched when they are stale (multi-relay R2). */
   RecipientRelays recipient_relays_;
   uint64_t last_relay_poll_ms_ = 0;
+  std::atomic<bool> inbox_sync_held_{false};
   /** 0 = Unknown, 1 = Ok, 2 = Failed — see BriefRelayHealthState. */
   std::atomic<int> brief_relay_health_{0};
   void StoreBriefRelayHealth(BriefRelayHealthState state);

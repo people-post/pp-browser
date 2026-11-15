@@ -339,17 +339,21 @@ app_lab_compose() {
     die "no pp-relay-apis local stack at ${relay_apis} (set PP_RELAY_APIS_ROOT to a pp-relay-apis checkout)"
   PP_RELAY_APIS_ROOT="${relay_apis}" \
     PP_APP_LAB_PROBE_DIR="${BUILD_DIR}/src/app/node" PP_APP_LAB_NAT_SHARE="${PP_APP_LAB_NAT_SHARE:-/tmp/pp-app-lab-nat}" \
-    PP_APP_LAB_TLS_DIR="${APP_LAB_TLS_DIR}" \
+    PP_APP_LAB_TLS_DIR="${APP_LAB_TLS_DIR}" PP_APP_LAB_TLS_RECORD_DIR="${APP_LAB_TLS_RECORD_DIR}" \
     docker compose -p pp-app-lab "${files[@]}" "$@"
 }
 
 # The lab relays' TLS (tls-a / tls-b): a lab CA, a certificate it signs for both relays' addresses, and the bundle
 # the probes trust (the system's plus that CA, PP_BROWSER_CA_BUNDLE). Made once and kept for 20 days.
 APP_LAB_TLS_DIR="${PP_APP_LAB_TLS_DIR:-/tmp/pp-app-lab-tls}"
+# Where the TLS fronts record request bodies while a scenario asks them to (lab-only, MR007's replay scenario).
+APP_LAB_TLS_RECORD_DIR="${PP_APP_LAB_TLS_RECORD_DIR:-/tmp/pp-app-lab-tls-record}"
 
 app_lab_tls() {
   need_cmd openssl
   local dir="${APP_LAB_TLS_DIR}"
+  mkdir -p "${APP_LAB_TLS_RECORD_DIR}/a" "${APP_LAB_TLS_RECORD_DIR}/b"
+  chmod 777 "${APP_LAB_TLS_RECORD_DIR}/a" "${APP_LAB_TLS_RECORD_DIR}/b" # written by the proxies' node user
   if [[ -s "${dir}/server.crt" && -s "${dir}/bundle.pem" && -z "$(find "${dir}/server.crt" -mtime +20 2>/dev/null)" ]]; then
     return 0
   fi
@@ -438,7 +442,7 @@ run_app() {
   fi
   # shellcheck disable=SC2086 # PP_APP_LAB_ARGS is a word list (e.g. "--only redial_storm --repeat 3")
   python3 "${ROOT}/scripts/test/pp_app_lab.py" --probe "${BUILD_DIR}/src/app/node/pp-app-probe" \
-    --tls-dir "${APP_LAB_TLS_DIR}" ${nat_args[@]+"${nat_args[@]}"} ${PP_APP_LAB_ARGS:-}
+    --tls-dir "${APP_LAB_TLS_DIR}" --tls-record-dir "${APP_LAB_TLS_RECORD_DIR}" ${nat_args[@]+"${nat_args[@]}"} ${PP_APP_LAB_ARGS:-}
 }
 
 run_ledger() {

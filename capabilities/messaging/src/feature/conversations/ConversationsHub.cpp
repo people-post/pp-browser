@@ -506,6 +506,15 @@ std::vector<std::string> ConversationsHub::OurRelayOrigins() const {
   return origins;
 }
 
+std::shared_ptr<IRelayClient> ConversationsHub::OurRelayClient(const std::string& origin) const {
+  for (const BackendClientSet::OurRelay& relay : clients_.OurRelays()) {
+    if (SameRelay(relay.origin, origin)) {
+      return relay.relay;
+    }
+  }
+  return nullptr;
+}
+
 std::vector<std::pair<std::string, std::shared_ptr<IPushDeviceClient>>> ConversationsHub::OtherRelayPushDevices() {
   std::vector<std::pair<std::string, std::shared_ptr<IPushDeviceClient>>> out;
   const auto registrations = OtherRelayRegistrations();

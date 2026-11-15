@@ -286,6 +286,8 @@ public:
   std::vector<std::pair<std::string, std::shared_ptr<IPushDeviceClient>>> OtherRelayPushDevices();
   /** Our relays' origins, preferred first (multi-relay R2). */
   std::vector<std::string> OurRelayOrigins() const;
+  /** The message client of our relay at `origin` (shared; none when it is not ours). The app lab's probe. */
+  std::shared_ptr<IRelayClient> OurRelayClient(const std::string& origin) const;
   /** The profile's relay pins (MR007); none before the stores open and after Shutdown. */
   std::shared_ptr<RelayPins> RelayIdentityPins() const { return relay_pins_; }
   /** Our account on our other relays (multi-relay R2); none before Initialize and after Shutdown. Any thread. */

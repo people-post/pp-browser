@@ -19,18 +19,23 @@ between them goes through the hop. `pp_local_test.sh run --suite app-nat` brings
 import argparse
 import base64
 import contextlib
+import hashlib
 import json
 import os
 import queue
 import random
 import re
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
 import threading
 import time
 import traceback
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 
 PIN = "246810"
@@ -344,6 +349,7 @@ class Lab:
         self.keep = args.keep
         # The multi-relay scenarios' relays, each behind TLS (https:// origins go on account cards, MR004).
         self.tls_dir = args.tls_dir
+        self.tls_record_dir = args.tls_record_dir  # the TLS fronts' lab-only request recording (MR007)
         self.tls_relays = {
             "a": {"origin": args.relay_tls.rstrip("/"), "health": self.relay.split("/api/")[0] + "/healthz",
                   "containers": [args.relay_container, args.relay_tls_container]},
@@ -389,6 +395,52 @@ class Lab:
         found = [self.tls_relays[r]["origin"] for r in directories]
         config["directory"] = {"base_url": found[0],
                                "providers": [{"base_url": o, "transport": "http"} for o in found]}
+
+    @contextlib.contextmanager
+    def recording(self, relay):
+        """The TLS front of `relay` records every request while the block runs (lab-only, proxy.js); yields the
+        list the recorded requests ({method, path, body}) are in once it ends."""
+        folder = os.path.join(self.tls_record_dir, relay)
+        log = os.path.join(folder, "requests.jsonl")
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(log)
+        open(os.path.join(folder, "on"), "w").close()
+        recorded = []
+        try:
+            yield recorded
+        finally:
+            time.sleep(0.5)  # the last request's body is written as it ends
+            os.remove(os.path.join(folder, "on"))
+            with contextlib.suppress(FileNotFoundError), open(log) as f:
+                recorded.extend(json.loads(line) for line in f if line.strip())
+
+    def relay_post(self, relay, path, body):
+        """POST `body` (text) to `path` (as the front saw it, `/api/relay/v1/...`) at `relay`'s TLS front, verbatim,
+        with the body's SHA-256 as every client sends it (the local stack's CDN refuses a body without it):
+        (status, answer object)."""
+        origin = self.tls_relays[relay]["origin"].split("/api/")[0]
+        context = ssl.create_default_context(cafile=os.path.join(self.tls_dir, "ca.crt"))
+        data = body.encode()
+        request = urllib.request.Request(origin + path, data=data, method="POST",
+                                         headers={"Content-Type": "application/json",
+                                                  "x-amz-content-sha256": hashlib.sha256(data).hexdigest()})
+        try:
+            with urllib.request.urlopen(request, context=context, timeout=10) as answer:
+                return answer.status, json.loads(answer.read() or b"{}")
+        except urllib.error.HTTPError as refused:
+            try:
+                return refused.code, json.loads(refused.read() or b"{}")
+            except ValueError:
+                return refused.code, {}
+
+    def relay_get(self, relay, path):
+        """GET `path` under `relay`'s base URL at its TLS front: (status, answer object)."""
+        context = ssl.create_default_context(cafile=os.path.join(self.tls_dir, "ca.crt"))
+        try:
+            with urllib.request.urlopen(self.tls_relays[relay]["origin"] + path, context=context, timeout=10) as answer:
+                return answer.status, json.loads(answer.read() or b"{}")
+        except urllib.error.HTTPError as refused:
+            return refused.code, {}
 
     def tls_relay_up(self, relay, timeout=60):
         health = [self.tls_relays[relay]["health"],
@@ -2104,6 +2156,103 @@ def scenario_preferred_relay_switched_mail_still_arrives(lab):
     finally:
         lab.start_tls_relay("a")
     return {"right_after": at_once_row.get("transport"), "relay_a_down": down_row.get("transport")}
+
+
+def iso_now():
+    """The current UTC time as the relay writes it (ISO-8601 with milliseconds)."""
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + ".%03dZ" % (int(time.time() * 1000) % 1000)
+
+
+def scenario_replayed_calls_refused_at_other_relay(lab):
+    """Multi-relay MR007 (B-RELAY-AUDIENCE): a relay refuses signed calls our app made for another relay. Alice is on
+    A and B (A preferred, both pinned); Bob, on A, is her contact and writes to her three times while her app holds
+    its polls, so the mail waits on A. B's TLS front records what her app sends B — a poll, a clear of everything
+    before now (a lab-only argument: the product clears only mail a day old), the revoke when she removes B — each
+    naming B's PeerId. Posted verbatim at A within the 5-minute window, every one is refused `wrong_audience`; the poll with its
+    audience rewritten to A's PeerId fails the signature there; a poll recorded on its way to A, replayed at A, is
+    taken (the replay works, so the refusals are the audience's). Alice is still registered on A, receives Bob's three
+    messages from it, and they still write to each other."""
+    a = lab.user("alice", relays=["a", "b"])
+    b = lab.user("bob", relays=["a"])
+    for u in (a, b):
+        u.wait_mesh()
+    relay_a, relay_b = lab.tls_relays["a"]["origin"], lab.tls_relays["b"]["origin"]
+    peers = {}
+    for name, origin in (("a", relay_a), ("b", relay_b)):
+        status, identity = lab.relay_get(name, "/v1/relay-identity")
+        if status != 200 or not identity.get("peer_id"):
+            raise ProbeError("relay %s names no identity (%s)" % (name, status))
+        peers[name] = identity["peer_id"]
+        seen = wait_for(lambda origin=origin: (lambda r: r if r["pinned"] else None)(
+            a.cmd("relay_identity", origin=origin)), 30, "alice: relay %s pinned" % name)
+        if seen["pinned"] != peers[name]:
+            raise ProbeError("alice pinned %s to %s, it says %s" % (name, seen["pinned"], peers[name]))
+    if peers["a"] == peers["b"]:
+        raise ProbeError("the two lab relays share one identity key")
+    wait_for(lambda: all(r["registered"] for r in a.cmd("my_relays")["relays"]) or None, 90,
+             "alice: registered on both relays")
+
+    # Contacts first, each holding the other's grant: Bob's three messages are a contact's, not held to the relay's
+    # stranger quota (3 an hour per pair).
+    a_thread = a.cmd("open_chat", account=b.account)["thread"]
+    hello = a.cmd("send", thread=a_thread, text="hi bob")["message_id"]
+    b_thread = wait_for(lambda: thread_with(b, a.account), 40, "bob: alice's chat")
+    wait_for(lambda: transcript_row(b, b_thread, hello), 30, "bob: alice's first message")
+    b.cmd("add_to_contacts", thread=b_thread)  # Alice added Bob when she opened the chat
+    wait_for(lambda: a.cmd("held_grant", account=b.account)["held"] or None, 30, "alice: bob's grant")
+    wait_for(lambda: b.cmd("held_grant", account=a.account)["held"] or None, 30, "bob: alice's grant")
+
+    a.cmd("hold_sync", held=True)
+    sent = [b.cmd("send", thread=b_thread, text="waiting on relay A %d" % i)["message_id"] for i in range(3)]
+    wait_for(lambda: a.cmd("poll_relay", origin=relay_a)["messages"] >= 3 or None, 60,
+             "bob's three messages waiting in alice's inbox on A")
+
+    with lab.recording("b") as to_b:
+        a.cmd("poll_relay", origin=relay_b)
+        a.cmd("clear_relay", origin=relay_b, before=iso_now())
+        a.cmd("remove_relay", origin=relay_b, timeout=60)
+    bodies = {}
+    for request in to_b:
+        if request["method"] == "POST" and request["body"]:
+            bodies.setdefault(request["path"].split("/api/relay")[-1], request)
+    for path in ("/v1/inbox/poll", "/v1/inbox/clear", "/v1/register/revoke"):
+        if path not in bodies:
+            raise ProbeError("B's front recorded no %s (%s)" % (path, sorted(bodies)))
+    for path, request in bodies.items():
+        audience = json.loads(request["body"]).get("audience")
+        if audience != peers["b"]:
+            raise ProbeError("%s to B was signed for %s, not B's PeerId" % (path, audience))
+
+    refused = {}
+    for path, request in bodies.items():
+        status, answer = lab.relay_post("a", request["path"], request["body"])
+        refused[path] = (status, answer.get("code"))
+        if (status, answer.get("code")) != (401, "wrong_audience"):
+            raise ProbeError("A took %s signed for B: %s %s" % (path, status, answer))
+    swapped = json.loads(bodies["/v1/inbox/poll"]["body"])
+    swapped["audience"] = peers["a"]
+    swapped_status, answer = lab.relay_post("a", bodies["/v1/inbox/poll"]["path"], json.dumps(swapped))
+    if swapped_status != 401 or answer.get("code") == "wrong_audience":
+        raise ProbeError("A took a poll whose audience was rewritten to it: %s %s" % (swapped_status, answer))
+
+    with lab.recording("a") as to_a:
+        a.cmd("poll_relay", origin=relay_a)
+    polls = [r for r in to_a if r["path"].endswith("/v1/inbox/poll") and r["body"]]
+    if not polls:
+        raise ProbeError("A's front recorded no poll")
+    status, answer = lab.relay_post("a", polls[0]["path"], polls[0]["body"])
+    if status != 200:
+        raise ProbeError("the control replay at A was refused: %s %s" % (status, answer))
+
+    status, _ = lab.relay_get("a", "/v1/users/by-account/" + urllib.parse.quote(a.account, safe=""))
+    if status != 200:
+        raise ProbeError("alice is no longer registered on A (%s)" % status)
+    a.cmd("hold_sync", held=False)
+    for m in sent:
+        wait_for(lambda m=m: transcript_row(a, a_thread, m), 60, "alice: bob's message from A")
+    reply = a.cmd("send", thread=a_thread, text="all three arrived")["message_id"]
+    wait_for(lambda: transcript_row(b, b_thread, reply), 30, "bob: alice's answer")
+    return {"refused": {path: list(code) for path, code in refused.items()}, "swapped_status": swapped_status}
 
 
 def scenario_group_members_key_each_other(lab):
@@ -4239,6 +4388,7 @@ SCENARIOS = [
     ("preferred_relay_down_mail_still_arrives", scenario_preferred_relay_down_mail_still_arrives),
     ("preferred_relay_switched_mail_still_arrives", scenario_preferred_relay_switched_mail_still_arrives),
     ("invite_names_their_relay", scenario_invite_names_their_relay),
+    ("replayed_calls_refused_at_other_relay", scenario_replayed_calls_refused_at_other_relay),
     ("group_members_key_each_other", scenario_group_members_key_each_other),
     ("group_after_member_removed", scenario_group_after_member_removed),
     ("restored_device_is_heard", scenario_restored_device_is_heard),
@@ -4342,7 +4492,8 @@ NEEDS_COLD_SEED_LINK = {"call_during_seed_churn"}
 # Scenarios on the TLS relays (multi-relay R2): host users only — the relays' certificate names their host ports,
 # and a user behind a NAT takes no CA bundle. With --nat they do not run.
 NEEDS_TLS_RELAYS = {"users_on_two_relays_meet", "preferred_relay_down_mail_still_arrives",
-                    "preferred_relay_switched_mail_still_arrives", "invite_names_their_relay"}
+                    "preferred_relay_switched_mail_still_arrives", "invite_names_their_relay",
+                    "replayed_calls_refused_at_other_relay"}
 # Scenarios that change a user's network: they need a container per user (--nat).
 NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
              "group_one_way_network_drops", "group_two_join_through_drops", "group_call_on_the_road",
@@ -4371,6 +4522,8 @@ def main():
     ap.add_argument("--relay2-tls-container", default="pp-app-lab-tls-b-1")
     ap.add_argument("--tls-dir", default=os.environ.get("PP_APP_LAB_TLS_DIR", "/tmp/pp-app-lab-tls"),
                     help="the lab CA, the relays' certificate and the probes' CA bundle (pp_local_test.sh makes them)")
+    ap.add_argument("--tls-record-dir", default=os.environ.get("PP_APP_LAB_TLS_RECORD_DIR", "/tmp/pp-app-lab-tls-record"),
+                    help="where the TLS fronts record requests while a scenario asks them to (MR007, lab-only)")
     ap.add_argument("--hop-container", default="pp-app-lab-hop-1", help="the lab seed (seed_down stops it)")
     ap.add_argument("--nat", action="store_true",
                     help="each user in its own container behind its own NAT (docker-compose.app-lab-nat.yml)")

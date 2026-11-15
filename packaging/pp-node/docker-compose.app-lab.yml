@@ -123,6 +123,10 @@ services:
     volumes:
       - ./app-lab-tls/proxy.js:/proxy/proxy.js:ro
       - ${PP_APP_LAB_TLS_DIR:-/tmp/pp-app-lab-tls}:/tls:ro
+      # Lab-only request recording (MR007's replay scenario): on while ${PP_APP_LAB_TLS_RECORD_DIR}/a/on exists.
+      - ${PP_APP_LAB_TLS_RECORD_DIR:-/tmp/pp-app-lab-tls-record}:/record
+    environment:
+      RECORD_DIR: /record/a
     networks:
       lab:
         ipv4_address: 198.51.100.21
@@ -163,6 +167,10 @@ services:
     volumes:
       - ./app-lab-tls/proxy.js:/proxy/proxy.js:ro
       - ${PP_APP_LAB_TLS_DIR:-/tmp/pp-app-lab-tls}:/tls:ro
+      # Lab-only request recording (MR007's replay scenario): on while ${PP_APP_LAB_TLS_RECORD_DIR}/b/on exists.
+      - ${PP_APP_LAB_TLS_RECORD_DIR:-/tmp/pp-app-lab-tls-record}:/record
+    environment:
+      RECORD_DIR: /record/b
     networks:
       lab:
         ipv4_address: 198.51.100.22

@@ -2246,6 +2246,9 @@ Roe<RelayDeleteResult> MeshDeliveryOrchestrator::ClearUndeliveredOlderThan(const
 
 void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool force) {
   RetryFailedOutbound();
+  if (inbox_sync_held_.load(std::memory_order_acquire)) {
+    return;
+  }
   last_relay_poll_ms_ = util::NowUnixMs();
   auto identity = identity_.Get();
   if (!identity) {
