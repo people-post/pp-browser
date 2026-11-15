@@ -291,7 +291,10 @@ public:
   /** The message client of our relay at `origin` (shared; none when it is not ours). The app lab's probe. */
   std::shared_ptr<IRelayClient> OurRelayClient(const std::string& origin) const;
   /** The profile's relay pins (MR007); none before the stores open and after Shutdown. */
-  std::shared_ptr<RelayPins> RelayIdentityPins() const { return relay_pins_; }
+  std::shared_ptr<RelayPins> RelayIdentityPins() const {
+    std::lock_guard lock(relay_pins_mu_);
+    return relay_pins_;
+  }
   /** Our account on our other relays (multi-relay R2); none before Initialize and after Shutdown. Any thread. */
   std::shared_ptr<RelayRegistrationsWorkflow> OtherRelayRegistrations() const;
   /** My relays changed (a relay answered our registration, the list changed): read them again. Runs on any thread. */
@@ -740,6 +743,8 @@ private:
    * The profile's relay pins (multi-relay MR007): who every signed relay call is for. Opened with the stores, before
    * the clients are built; its hooks are cleared at Shutdown (a client in flight may hold it longer).
    */
+  /** Read by workers (the My relays ports, the contact page): set and read under relay_pins_mu_. */
+  mutable std::mutex relay_pins_mu_;
   std::shared_ptr<RelayPins> relay_pins_;
   /** The relays whose pins stay when the pin store is full: ours and the org's origins (read on any thread). */
   std::mutex kept_pins_mu_;
