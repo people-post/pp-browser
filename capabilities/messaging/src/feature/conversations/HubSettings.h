@@ -30,6 +30,11 @@ struct HubSettings {
   HubPolicyPrefs policy;
   /** The system's name for this device, read once at startup on the main thread (empty: unknown). */
   std::string system_device_name;
+  /**
+   * A developer build: a relay a person adds or a QR code names may be a plain `http://` one or not on a public
+   * host (IsPublicRelayOrigin; the lab's). Release builds: neither.
+   */
+  bool developer_relays = false;
 };
 
 } // namespace pbr

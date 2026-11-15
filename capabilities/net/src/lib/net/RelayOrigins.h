@@ -20,14 +20,16 @@ std::string RelayOriginKey(const std::string& origin);
 bool SameRelay(const std::string& a, const std::string& b);
 
 /**
- * Whether a relay origin taken from a contact's account card may get a client: https only, no userinfo, and a host
- * that is a public name or a public IP literal (no loopback, private, link-local, CGNAT, multicast or reserved
- * literal, IPv4-mapped forms included; no `localhost`, `*.localhost`, `*.local`, `*.internal`, single-label or
- * numeric-looking names). Ports are not restricted. `lab_relaxed` (a lab build's own opt-in, DevCaBundleActive())
- * accepts any http(s) origin. Never applied to our own relays. A name that resolves inside is refused at connect
- * time (HttpRelayClient's `public_only`), not here.
+ * Whether a relay origin that is not ours by configuration may be used: a relay a contact's account card names, a QR
+ * locator's relay, one a person types in My relays. https only, no userinfo, and a host that is a public name or a
+ * public IP literal (no loopback, private, link-local, CGNAT, multicast or reserved literal, IPv4-mapped forms
+ * included; no `localhost`, `*.localhost`, `*.local`, `*.internal`, single-label or numeric-looking names, a dotted
+ * quad only in canonical form). Ports are not restricted. `lab_relaxed` (the lab's: DevCaBundleActive() for a card's
+ * relays, a developer build for a typed or scanned one) accepts any http(s) origin. Never applied to the relays the
+ * configuration names. A name that resolves inside is refused at connect time (HttpRelayClient's `public_only`), not
+ * here.
  */
-bool IsForeignRelayOriginAllowed(const std::string& origin, bool lab_relaxed = false);
+bool IsPublicRelayOrigin(const std::string& origin, bool lab_relaxed = false);
 
 /**
  * The relay's host as a person reads it (the contact page): the authority of `origin` without scheme, path or a

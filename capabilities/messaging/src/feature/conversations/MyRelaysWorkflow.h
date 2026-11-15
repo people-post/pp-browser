@@ -40,8 +40,8 @@ struct OurRelaysStatus {
  * list (OurRelaysStore), then the services follow it (`apply`: clients, inboxes, the card's relays), our registration
  * goes where it is new, and the card, re-signed with the new list, is announced to our contacts and siblings:
  *
- * - **Add:** the origin must parse (ParseRelayOrigin) and the relay must answer (`probe`); it is added last and
- *   registered on like any other relay of ours.
+ * - **Add:** the origin must parse (ParseRelayOrigin), be on a public host (IsPublicRelayOrigin) outside developer builds, and the
+ *   relay must answer (`probe`); it is added last and registered on like any other relay of ours.
  * - **Remove:** never the preferred one nor the last; our registration there is revoked first (`leave`: with its push
  *   bindings; best effort — a relay that is down does not keep us on it), and its inbox cursor goes with the inbox.
  * - **Make preferred:** the relay moves first; the identity's registration renews there (`register_preferred`: the
@@ -80,8 +80,11 @@ public:
 
   MyRelaysWorkflow(OurRelaysStore& store, Ports ports);
 
-  /** Adds the relay `typed` names (`allow_http`: developer builds). The error's message is a code (below). */
-  Roe<void> Add(const std::string& typed, bool allow_http);
+  /**
+   * Adds the relay `typed` names. `developer_build`: a plain `http://` relay, or one not on a public host
+   * (IsPublicRelayOrigin), may be added (the lab's); else neither. The error's message is a code (below).
+   */
+  Roe<void> Add(const std::string& typed, bool developer_build);
   Roe<void> Remove(const std::string& origin);
   Roe<void> MakePreferred(const std::string& origin);
   /** A linked device: the card's list (preferred first) becomes ours when it differs. */
@@ -98,6 +101,8 @@ public:
 
   /** The error codes besides RelayListProblemCode's. */
   static constexpr const char* kUnreachable = "relay_unreachable";
+  /** A release build takes no relay on this device or a private network. */
+  static constexpr const char* kLocal = "relay_origin_local";
   /** The services did not follow the change (it was undone). */
   static constexpr const char* kNotApplied = "relay_list_not_applied";
   /** The profile is closing. */

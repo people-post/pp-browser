@@ -135,6 +135,15 @@ TEST_F(MyRelaysWorkflowTest, WhatIsNotAnHttpsOriginIsRefusedBeforeAnythingIsAske
   EXPECT_EQ(ErrorOf(workflow_->Add("http://c.example", true)), "ok") << "a developer build's plain relay";
 }
 
+TEST_F(MyRelaysWorkflowTest, ARelayAtALocalAddressIsRefusedOutsideDeveloperBuilds) {
+  for (const char* local : {"https://localhost", "https://127.0.0.1:8443", "https://192.168.1.5", "https://[::1]",
+                            "https://10.0.0.2/api/relay"}) {
+    EXPECT_EQ(ErrorOf(workflow_->Add(local, false)), MyRelaysWorkflow::kLocal) << local;
+  }
+  EXPECT_TRUE(steps_.empty()) << "nothing is asked of it";
+  EXPECT_EQ(ErrorOf(workflow_->Add("https://192.168.1.5", true)), "ok") << "a developer build's (the lab's)";
+}
+
 TEST_F(MyRelaysWorkflowTest, ARelayRemovedIsLeftFirstThenTheServicesFollow) {
   ASSERT_EQ(ErrorOf(workflow_->Remove(kB)), "ok");
   EXPECT_EQ(steps_, Steps({"leave " + std::string(kB), "apply a", "register_others", "announce"}));

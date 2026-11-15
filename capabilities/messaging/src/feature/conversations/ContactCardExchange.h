@@ -8,6 +8,7 @@
 #include "common/Error.h"
 #include "common/Module.h"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -48,6 +49,11 @@ public:
       std::function<Roe<std::optional<Object>>(const std::string& relay_origin, const std::string& account_id)>;
   /** Tests: how a relay's stored card is fetched (default: over HTTP). */
   void SetStoredCardFetch(StoredCardFetch fetch) { fetch_stored_ = std::move(fetch); }
+  /**
+   * A locator may name a relay that is not a public host (IsPublicRelayOrigin): developer builds only (the lab's). Off (the
+   * default, release builds): such a relay is left out of the locator, which still holds.
+   */
+  void SetLocalRelaysAllowed(bool allowed) { local_relays_allowed_.store(allowed, std::memory_order_relaxed); }
 
   /** What adding from a locator came to: the contact, and whether its keys are known yet. */
   struct LocatorAdded {
@@ -56,7 +62,8 @@ public:
   };
   /**
    * Adds the person a locator names (QR code, invite line): the contact (its listed devices as endpoint
-   * rows, the locator's relay origin as its relay list until a card is kept), then the account's card — from a
+   * rows, the locator's relay origin as its relay list until a card is kept — one not on a public host only where
+   * SetLocalRelaysAllowed allows it), then the account's card — from a
    * listed device over Amp, else the card the locator's relay keeps for it (multi-relay R4), else the directory
    * when one is configured. Without keys yet the contact still stands; the person's first message brings them.
    * `done` once, on a worker or I/O thread.
@@ -98,6 +105,8 @@ private:
   bool FetchFromRelay(const std::string& relay, const std::string& account_id);
   /** The locator's relay origin onto the contact (stored; `contact` becomes the stored one). */
   void KeepLocatorRelay(Contact& contact, const std::string& relay);
+  /** The locator's relay as it may be used here: empty when it is not on a public host and that is not allowed. */
+  std::string UsableLocatorRelay(const std::string& relay);
   std::mutex refetch_mutex_;
   std::unordered_map<std::string, int64_t> last_refetch_ms_;
   struct LastAsk {
@@ -108,6 +117,7 @@ private:
   CardFetcher fetch_card_;
   StoredCardFetch fetch_stored_;
   std::function<void(std::function<void()>)> post_blocking_;
+  std::atomic<bool> local_relays_allowed_{false};
   ContactsStore& contacts_;
   AccountKeyResolver& keys_;
 };

@@ -178,6 +178,33 @@ TEST_F(ContactCardExchangeTest, AnInviteWithARelayStartsTheContactsRelayListWith
   EXPECT_TRUE(ContactRelays(**stored, **kept).from_card);
 }
 
+// A QR code naming a relay on this device or a private network: a release build neither keeps nor asks it.
+TEST_F(ContactCardExchangeTest, ALocatorsRelayAtALocalAddressIsLeftOutUnlessADeveloperBuildAllowsIt) {
+  exchange_->SetCardFetcher([](const std::string&, const std::string&, std::function<void(Roe<PeerCardRecord>)> done) {
+    done(Error("not reached"));
+  });
+  exchange_->SetBlockingPost([](std::function<void()> task) { task(); });
+  std::vector<std::string> asked;
+  exchange_->SetStoredCardFetch([&](const std::string& origin, const std::string&) -> Roe<std::optional<Object>> {
+    asked.push_back(origin);
+    return std::optional<Object>{};
+  });
+  const auto add = [this](const std::string& relay) {
+    std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
+    exchange_->AddFromLocator(ContactLocator{.account_id = bob_.account_id, .devices = {"QmBobPhone"}, .relay = relay},
+                              [&](Roe<ContactCardExchange::LocatorAdded> added) { result = std::move(added); });
+    EXPECT_TRUE(result.has_value() && *result);
+    auto stored = contacts_->FindByIdentity(bob_.account_id, mesh::ContactIdKind::Account);
+    return stored && *stored ? (*stored)->remote.locator_relay : std::string("missing");
+  };
+  EXPECT_EQ(add("https://192.168.1.5/api/relay"), "") << "the person is added, the relay left out";
+  EXPECT_TRUE(asked.empty()) << "and not asked for the card";
+
+  exchange_->SetLocalRelaysAllowed(true);
+  EXPECT_EQ(add("https://192.168.1.5/api/relay"), "https://192.168.1.5/api/relay");
+  EXPECT_EQ(asked, (std::vector<std::string>{"https://192.168.1.5/api/relay"}));
+}
+
 TEST_F(ContactCardExchangeTest, NoDeviceReachedTheLocatorsRelayGivesTheCard) {
   const AccountCard card = SignedCard(bob_, test::Devices({"QmBobPhone"}));
   exchange_->SetCardFetcher([](const std::string&, const std::string&, std::function<void(Roe<PeerCardRecord>)> done) {

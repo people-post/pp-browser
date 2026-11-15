@@ -691,7 +691,7 @@ public:
           WorkerLane::Normal,
           [this, cmd, text]() {
             if (cmd == "add_relay") {
-              return facade_->AddOurRelay(text, true);
+              return facade_->AddOurRelay(text);
             }
             return cmd == "remove_relay" ? facade_->RemoveOurRelay(text) : facade_->MakeOurRelayPreferred(text);
           },

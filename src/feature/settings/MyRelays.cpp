@@ -82,6 +82,7 @@ std::string MyRelaysFailureText(const Error& error) {
       {"relay_origin_has_path", "settings.relays.error.has_path"},
       {"relay_origin_has_query", "settings.relays.error.has_path"},
       {"relay_origin_too_long", "settings.relays.error.too_long"},
+      {"relay_origin_local", "settings.relays.error.local"},
       {"relay_unreachable", "settings.relays.error.unreachable"},
       {"relay_already_listed", "settings.relays.error.already_listed"},
       {"relay_list_full", "settings.relays.error.full"},

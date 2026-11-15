@@ -366,15 +366,6 @@ Roe<void> RunOnUiAndWait(const std::function<Roe<void>()>& task) {
   return std::move(*slot->result);
 }
 
-/** A plain `http://` relay may be added in developer builds only (the lab's): never on the card (MR004). */
-bool PlainHttpRelaysAllowed() {
-#ifdef NDEBUG
-  return kDevToolsBuild;
-#else
-  return true;
-#endif
-}
-
 /** Me → Network → My relays (multi-relay R3): the facade's relays, as the page shows them. */
 void WireMyRelaysCommands(SettingsCommands& commands, ConversationsFacade& facade) {
   commands.my_relays = [&facade]() -> Roe<MyRelaysView> {
@@ -395,7 +386,7 @@ void WireMyRelaysCommands(SettingsCommands& commands, ConversationsFacade& facad
     return MyRelaysViewFor(relays, status->editable);
   };
   commands.add_my_relay = [&facade](const std::string& typed) {
-    return facade.AddOurRelay(typed, PlainHttpRelaysAllowed());
+    return facade.AddOurRelay(typed); // plain http:// and local addresses: developer builds (HubSettings)
   };
   commands.remove_my_relay = [&facade](const std::string& origin) { return facade.RemoveOurRelay(origin); };
   commands.make_relay_preferred = [&facade](const std::string& origin) { return facade.MakeOurRelayPreferred(origin); };

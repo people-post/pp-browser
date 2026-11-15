@@ -286,10 +286,10 @@ void BackendClientSet::WireSender() {
   }
   sender_.SetOurRelays(std::move(sending));
   // A relay not ours gets a client of its own, signed by us and with our send hooks (copies: set on this thread).
-  // Its origin came from a contact's card: held to the foreign-relay policy, none is made for one outside it.
+  // Its origin came from a contact's card: held to a public host (IsPublicRelayOrigin), none is made for one outside it.
   sender_.SetForeignClients([signer = signer_, hooks = send_hooks_](const std::string& origin) {
     const bool lab = DevCaBundleActive();
-    if (!IsForeignRelayOriginAllowed(origin, lab)) {
+    if (!IsPublicRelayOrigin(origin, lab)) {
       return std::shared_ptr<IRelayClient>();
     }
     auto client = std::make_shared<HttpRelayClient>(origin, !lab);

@@ -136,7 +136,7 @@ std::optional<std::array<uint8_t, 16>> Ipv6Literal(std::string_view text) {
 
 } // namespace
 
-bool IsForeignRelayOriginAllowed(const std::string& origin, const bool lab_relaxed) {
+bool IsPublicRelayOrigin(const std::string& origin, const bool lab_relaxed) {
   const std::string_view view(origin);
   std::string_view rest;
   if (view.size() > 8 && EqualsIgnoreCase(view.substr(0, 8), "https://")) {

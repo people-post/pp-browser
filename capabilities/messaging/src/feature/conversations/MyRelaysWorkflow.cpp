@@ -62,7 +62,7 @@ Roe<void> MyRelaysWorkflow::RequireMainDevice() const {
   return {};
 }
 
-Roe<void> MyRelaysWorkflow::Add(const std::string& typed, const bool allow_http) {
+Roe<void> MyRelaysWorkflow::Add(const std::string& typed, const bool developer_build) {
   const Entered entered(*this);
   if (!entered.open) {
     return Error(kClosed);
@@ -71,9 +71,12 @@ Roe<void> MyRelaysWorkflow::Add(const std::string& typed, const bool allow_http)
   if (auto main = RequireMainDevice(); !main) {
     return main;
   }
-  const ParsedRelayOrigin parsed = ParseRelayOrigin(typed, allow_http);
+  const ParsedRelayOrigin parsed = ParseRelayOrigin(typed, developer_build);
   if (parsed.problem != RelayOriginProblem::None) {
     return Error(OriginProblemCode(parsed.problem));
+  }
+  if (!IsPublicRelayOrigin(parsed.base_url, developer_build)) {
+    return Error(kLocal); // before it is asked: the probe would reach into this device's network
   }
   auto next = WithRelayAdded(store_.List(), parsed.base_url);
   if (!next) {

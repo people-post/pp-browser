@@ -200,8 +200,8 @@ Roe<OurRelaysStatus> ConversationsFacade::OurRelays() {
   return hub_.OurRelays();
 }
 
-Roe<void> ConversationsFacade::AddOurRelay(const std::string& typed, const bool allow_http) {
-  return hub_.AddOurRelay(typed, allow_http);
+Roe<void> ConversationsFacade::AddOurRelay(const std::string& typed) {
+  return hub_.AddOurRelay(typed);
 }
 
 Roe<void> ConversationsFacade::RemoveOurRelay(const std::string& origin) {

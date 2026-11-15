@@ -448,6 +448,7 @@
     "settings.relays.error.not_https": "地址必须以 https:// 开头。",
     "settings.relays.error.has_path": "只需输入中继地址，不要带路径或查询参数。",
     "settings.relays.error.too_long": "这个地址太长了。",
+    "settings.relays.error.local": "这个地址在本设备或私有网络中。请输入中继的公网地址。",
     "settings.relays.error.unreachable": "这个中继没有响应。请检查地址后重试。",
     "settings.relays.error.already_listed": "这个中继已在你的列表中。",
     "settings.relays.error.full": "你已经有 4 个中继，请先移除一个。",

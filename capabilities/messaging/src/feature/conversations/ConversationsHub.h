@@ -323,8 +323,11 @@ public:
   Roe<void> MakeMainDevice(const std::string& peer_id);
   /** Me → Network → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
   Roe<OurRelaysStatus> OurRelays();
-  /** Adds the relay the user typed (it must answer); blocks (HTTP): a worker. The error's message is a code. */
-  Roe<void> AddOurRelay(const std::string& typed, bool allow_http);
+  /**
+   * Adds the relay the user typed (it must answer; plain http:// or a host that is not public only with the settings'
+   * developer_relays); blocks (HTTP): a worker. The error's message is a code.
+   */
+  Roe<void> AddOurRelay(const std::string& typed);
   /** Removes a relay of ours (not the preferred one); blocks: a worker. */
   Roe<void> RemoveOurRelay(const std::string& origin);
   /** Makes a relay of ours the preferred one; blocks: a worker. */

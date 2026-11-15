@@ -3,6 +3,7 @@
 #include "common/ValueJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/net/OrgBackendClientsImpl.h"
+#include "lib/net/RelayOrigins.h"
 #include "lib/people/AccountCard.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
@@ -153,7 +154,8 @@ void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::fun
     done(contact.error());
     return;
   }
-  KeepLocatorRelay(*contact, locator.relay);
+  const std::string relay = UsableLocatorRelay(locator.relay);
+  KeepLocatorRelay(*contact, relay);
   const auto finish = [this, account_id = locator.account_id, done](bool keys_known) {
     auto latest = contacts_.FindByIdentity(account_id, mesh::ContactIdKind::Account);
     if (!latest || !*latest) {
@@ -166,7 +168,16 @@ void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::fun
     finish(true);
     return;
   }
-  FetchCard(locator.account_id, locator.devices, locator.relay, finish);
+  FetchCard(locator.account_id, locator.devices, relay, finish);
+}
+
+std::string ContactCardExchange::UsableLocatorRelay(const std::string& relay) {
+  if (relay.empty() || IsPublicRelayOrigin(relay, local_relays_allowed_.load(std::memory_order_relaxed))) {
+    return relay;
+  }
+  // A QR code names a relay on this device or a private network: not a relay a release build writes to or asks.
+  log().warning << "the locator's relay is not on a public host; left out";
+  return {};
 }
 
 void ContactCardExchange::KeepLocatorRelay(Contact& contact, const std::string& relay) {

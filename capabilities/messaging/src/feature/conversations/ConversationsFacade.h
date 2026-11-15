@@ -118,7 +118,7 @@ public:
   Roe<void> MakeMainDevice(const std::string& peer_id);
   /** Me → Network → My relays (multi-relay R3): ours with their state; the changes block (call on a worker). */
   Roe<OurRelaysStatus> OurRelays();
-  Roe<void> AddOurRelay(const std::string& typed, bool allow_http);
+  Roe<void> AddOurRelay(const std::string& typed);
   Roe<void> RemoveOurRelay(const std::string& origin);
   Roe<void> MakeOurRelayPreferred(const std::string& origin);
   /** My relays changed (read them again); runs on any thread. */

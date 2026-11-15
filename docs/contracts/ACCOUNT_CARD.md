@@ -91,8 +91,9 @@ A key card plus what the account says about itself, signed as a whole.
   an origin outside the bounds — an `http://` dev relay — is left off, so a card of only such relays says the mesh
   only. The list is the **main device's**: the others keep the newest card's. Senders deliver into the listed
   relays in order ([SERVICE_ENDPOINTS § Sending by the list](SERVICE_ENDPOINTS.md#sending-by-the-list)).
-  **Foreign-relay policy:** the origins come from a contact, so a sender makes a client only for one with a public
-  host (`IsForeignRelayOriginAllowed`): no loopback, private, link-local, CGNAT or reserved IP literal, no `localhost`,
+  **Public-relay policy:** the origins come from a contact, so a sender makes a client only for one with a public
+  host (`IsPublicRelayOrigin`, the one check for every relay not ours by configuration — a card's, a QR locator's,
+  one typed in My relays): no loopback, private, link-local, CGNAT or reserved IP literal, no `localhost`,
   `*.localhost`, `*.local`, `*.internal` or single-label name; an origin outside it is skipped like an unreachable
   relay. Its requests also refuse any address that resolves non-public (checked after DNS), use no proxy and follow no
   redirect. The card, its signature and the list's bounds are unchanged, and our own relays are exempt. A Debug build
@@ -171,6 +172,9 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
 - A contact added from a locator keeps that origin (`contacts.json` `remote.locator_relay`) as its relay list until
   its account's card is kept: a first message goes into that relay, and the contact page names it. From then on the
   card's list is the contact's ([`ContactRelays`](../../capabilities/people/src/lib/people/ContactIdentity.h)).
+  A release build leaves out a `relay` outside the public-relay policy above (`IsPublicRelayOrigin`: on this device
+  or a private network): it is neither kept nor asked for the card (developer builds take it, for the lab). The
+  person is still added.
 
 - **Sharing:** the invite text (*Me → Profile → Invite*, and the share at the end of onboarding) ends
   with the locator line, so pasting the whole message works.

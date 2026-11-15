@@ -1167,6 +1167,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   kept_cards_loaded_ = false; // read at the first EnsureMessagingReady (the cards are in the chat store)
   WireCardReaders();
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
+  contact_cards_->SetLocalRelaysAllowed(config_.developer_relays); // a QR code's relay not on a public host: the lab's
   contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
   contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, *contact_cards_);
   contact_refresh_->SetOurRelays(CardDirectories());
@@ -4115,12 +4116,12 @@ Roe<OurRelaysStatus> ConversationsHub::OurRelays() {
   return relays->Status();
 }
 
-Roe<void> ConversationsHub::AddOurRelay(const std::string& typed, const bool allow_http) {
+Roe<void> ConversationsHub::AddOurRelay(const std::string& typed) {
   const auto relays = MyRelays();
   if (!relays || !IsMessagingReady()) {
     return Error(MyRelaysWorkflow::kClosed);
   }
-  return relays->Add(typed, allow_http);
+  return relays->Add(typed, config_.developer_relays);
 }
 
 Roe<void> ConversationsHub::RemoveOurRelay(const std::string& origin) {

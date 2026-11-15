@@ -2,6 +2,7 @@
 
 #include "foundation/data/AppPaths.h"
 #include "foundation/platform/os/OsDeviceName.h"
+#include "foundation/product/DevTools.h"
 #include "lib/messaging/AttachmentDownloadPolicy.h"
 #include "lib/messaging/GroupTypes.h"
 
@@ -23,6 +24,7 @@ HubSettings HubSettingsFrom(const AppConfig& config, const ProfilePreferences& p
   settings.app_data_dir = AppPaths::DataDir(config.data_dir);
   settings.policy = ProjectPolicy(prefs);
   settings.system_device_name = StartupSystemDeviceName();
+  settings.developer_relays = kDeveloperRelaysAllowed;
   return settings;
 }
 

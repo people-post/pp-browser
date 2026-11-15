@@ -452,6 +452,7 @@
     "settings.relays.error.not_https": "The address must start with https://.",
     "settings.relays.error.has_path": "Enter the relay's address only, without a path or query.",
     "settings.relays.error.too_long": "That address is too long.",
+    "settings.relays.error.local": "That address is on this device or a private network. Enter a relay's public address.",
     "settings.relays.error.unreachable": "That relay didn't answer. Check the address and try again.",
     "settings.relays.error.already_listed": "That relay is already on your list.",
     "settings.relays.error.full": "You already have 4 relays. Remove one first.",

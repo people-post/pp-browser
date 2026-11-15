@@ -182,11 +182,11 @@ of ours (its list becomes the card's). Every change is kept first, then:
 
 | Change | Rules | Also |
 |---|---|---|
-| **Add** | An origin `https://host[:port]`, or that and `/api/relay` (no other path, query, fragment or user info; at most 128 bytes); `http://` only in developer builds (never on the card). It must answer `GET <base>/v1/client-compat` (the cheapest unauthenticated GET every relay serves). At most 4. | Added last |
+| **Add** | An origin `https://host[:port]`, or that and `/api/relay` (no other path, query, fragment or user info; at most 128 bytes); `http://`, and a host that is not public (on this device or a private network: `IsPublicRelayOrigin`, the card relays' policy, [ACCOUNT_CARD](ACCOUNT_CARD.md); refused with `relay_origin_local` before it is asked), only in developer builds (never on the card). It must answer `GET <base>/v1/client-compat` (the cheapest unauthenticated GET every relay serves). At most 4. | Added last |
 | **Remove** | Not the preferred relay (make another preferred first), never the last (mesh-only is not offered in this step) | Our push binding (`/v1/devices/unregister`) and our registration (`/v1/register/revoke`, which also drops the account's push devices there) go first, best effort; its inbox cursor goes |
 | **Make preferred** | A relay of ours | The identity's registration renews there at once (the card is newer, so it goes whatever the auto-renew preference; the registration records the relay it was made at, so the Me page reads it as the current one); push binds there; the old preferred relay is registered on as another of ours |
 
-A refused change answers with a code the page words (`relay_origin_not_https`, `relay_unreachable`,
+A refused change answers with a code the page words (`relay_origin_not_https`, `relay_origin_local`, `relay_unreachable`,
 `relay_already_listed`, `relay_list_full`, `relay_preferred_not_removable`, `relay_list_last`,
 `relay_list_not_main_device`, `relay_list_not_applied`, …). A profile closing (a reset, the app stopping) waits for a
 change in progress and refuses any after it.
