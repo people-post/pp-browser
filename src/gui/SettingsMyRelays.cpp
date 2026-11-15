@@ -80,8 +80,9 @@ void SettingsMyRelays::Refresh() {
   Watch();
   const uint64_t count = ++refresh_count_;
   std::weak_ptr<bool> alive = alive_;
-  AppRuntime::PostWorkerNormal([this, count, alive]() {
-    auto listed = commands_.my_relays ? commands_.my_relays() : Roe<MyRelaysView>(Error("Messaging is not ready"));
+  // The port copied here, on the UI thread: the commands are bound anew (a quit, a profile reset) on this thread only.
+  AppRuntime::PostWorkerNormal([this, count, alive, list = commands_.my_relays]() {
+    auto listed = list();
     AppRuntime::PostUI([this, count, alive, listed = std::move(listed)]() mutable {
       if (auto live = alive.lock(); live && *live && count == refresh_count_) {
         Show(std::move(listed));

@@ -50,9 +50,9 @@ void SettingsOwnDevices::Refresh() {
     return;
   }
   const uint64_t count = ++refresh_count_;
-  AppRuntime::PostWorkerNormal([this, count]() {
-    auto listed =
-        commands_.own_devices ? commands_.own_devices() : Roe<OwnDevicesView>(Error("Messaging is not ready"));
+  // The port copied here, on the UI thread: the commands are bound anew (a quit, a profile reset) on this thread only.
+  AppRuntime::PostWorkerNormal([this, count, list = commands_.own_devices]() {
+    auto listed = list();
     AppRuntime::PostUI([this, count, listed = std::move(listed)]() mutable {
       if (count == refresh_count_) {
         Show(std::move(listed));
@@ -167,8 +167,8 @@ void SettingsOwnDevices::RenameById(const std::string& peer_id) {
                             report_failure_(Error("Messaging is not ready"));
                             return;
                           }
-                          AppRuntime::PostWorkerNormal([this, peer_id, name]() {
-                            Roe<void> renamed = commands_.rename_device(peer_id, name);
+                          AppRuntime::PostWorkerNormal([this, peer_id, name, rename = commands_.rename_device]() {
+                            Roe<void> renamed = rename(peer_id, name);
                             AppRuntime::PostUI([this, renamed = std::move(renamed)]() {
                               Refresh();
                               if (!renamed) {
