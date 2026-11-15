@@ -9,4 +9,7 @@ namespace pbr::os {
  */
 bool AppShownNow();
 
+/** TEMPORARY (lifecycle.probe): iOS UIApplication.applicationState as "active" / "inactive" / "background"; "n/a" elsewhere. */
+const char* AppStateName();
+
 } // namespace pbr::os

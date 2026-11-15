@@ -1,6 +1,8 @@
 #include "app/Application.h"
 #include "foundation/platform/ui/PlatformNavigation.h"
 #include "foundation/platform/CallSystemUi.h"
+#include "foundation/platform/LifecycleProbe.h"
+#include "foundation/platform/os/OsAppState.h"
 #include "foundation/platform/PendingNotificationTap.h"
 #include "common/ValueJson.h"
 #include <map>
@@ -2772,6 +2774,15 @@ void Application::Run() {
     {
       UiCostTimer timer(&UiCostCounters::AddCallTickUs);
       call_->Tick();
+    }
+    // TEMPORARY (lifecycle.probe): does the UI loop keep ticking the call, foreground and background?
+    {
+      static lifecycle_probe::TickMeter tick_meter;
+      if (AppLifecycle::LiveSessionOn()) {
+        tick_meter.OnTick(os::AppStateName());
+      } else {
+        tick_meter.Reset();
+      }
     }
     qr_scan_->Tick();
     avatar_crop_->Tick();
