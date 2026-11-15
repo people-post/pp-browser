@@ -492,6 +492,34 @@ TEST(AccountLockerTest, GrantsMergeToTheLatestPerGrantorWithoutTheExpired) {
       << "a tie keeps the same one on every device";
 }
 
+// D2 (ACCOUNT_LOCKER § State JSON `relays`): the locker carries our relays, so a restore keeps the person's list; the
+// copy from the newer card wins a merge, and an untrusted copy is bounded.
+TEST(AccountLockerTest, OurRelaysRoundTripAndTheNewerCardsListWinsAMerge) {
+  AccountLockerState state = SampleState();
+  state.extras.relays = {.origins = {"https://b.example/api/relay", "https://a.example/api/relay"},
+                         .card_issued_at = 500};
+  const LockerKeys keys = KeysOf(0x11);
+  auto opened = account_locker::Open(account_locker::Seal(state, keys, 1).value(), keys);
+  ASSERT_TRUE(opened) << opened.error().message;
+  EXPECT_EQ(opened->extras.relays, state.extras.relays);
+
+  AccountLockerState older = state;
+  older.extras.relays = {.origins = {"https://a.example/api/relay"}, .card_issued_at = 400};
+  EXPECT_EQ(account_locker::MergeForPublish(older, state).extras.relays, state.extras.relays)
+      << "the stored list came with a newer card";
+  EXPECT_EQ(account_locker::MergeForPublish(state, older).extras.relays, state.extras.relays) << "ours is newer";
+
+  auto read = account_locker::StateFromJson(
+      R"({"relays":{"origins":["https://a.example","https://a.example","","https://b.example","https://c.example",)"
+      R"("https://d.example","https://e.example"],"card_issued_at":7}})");
+  ASSERT_TRUE(read);
+  EXPECT_EQ(read->extras.relays.origins, (std::vector<std::string>{"https://a.example", "https://b.example",
+                                                                   "https://c.example", "https://d.example"}))
+      << "each once, none empty, at most four";
+  EXPECT_TRUE(account_locker::StateFromJson(R"({"nickname":"a"})")->extras.relays.origins.empty())
+      << "an older snapshot: none";
+}
+
 TEST(AccountLockerTest, OverTheCapTheLatestIssuedGrantsStay) {
   std::vector<AccountStateGrant> grants;
   for (size_t i = 0; i < kMaxLockerGrants + 3; ++i) {

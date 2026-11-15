@@ -51,6 +51,8 @@ public:
     std::function<Roe<OwnDeviceList>()> own_devices;
     /** The system's name for this device, read once at startup (the hub's copy); empty: unknown. */
     std::function<std::string()> own_system_name;
+    /** Our relays as our newest card lists them (My relays), for the locker; null or empty: none published. */
+    std::function<AccountStateRelays()> relays;
   };
 
   AccountLockerWorkflow(IdentityStore& identity, ContactsStore& contacts, Sources sources);

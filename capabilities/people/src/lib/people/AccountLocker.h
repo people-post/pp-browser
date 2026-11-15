@@ -28,6 +28,8 @@ inline constexpr size_t kMaxDeviceNameEntries = 8;
  * still writes to us renews, and one cut here grants a restored device again once it hears of it.
  */
 inline constexpr size_t kMaxLockerGrants = 32;
+/** The relays a locker's `relays` carries at most (a fifth and on are dropped on read; MR004 bounds a list to 4). */
+inline constexpr size_t kMaxLockerRelays = 4;
 /** Longest grant field read from a locker (an Account ID, a base64 ML-DSA-65 signature fits): longer drops the grant. */
 inline constexpr size_t kMaxLockerGrantFieldBytes = 8192;
 
@@ -118,7 +120,8 @@ std::optional<LockerSnapshot> PickNewest(const std::vector<LockerSnapshot>& snap
  * What to publish when the locker already holds `stored` (another device of the account wrote it): contacts by their
  * clocks (the newer register per account wins, ours on a tie; a removal is a tombstone and carries; a contact neither
  * side has a register for is kept from either), groups by id (the higher roster epoch wins, ours on a tie), card
- * floors (the newest per account), grants (both copies' — the publisher runs CapGrants), providers (union).
+ * floors (the newest per account), grants (both copies' — the publisher runs CapGrants), relays (the copy from the
+ * newer card; ours on a tie), providers (union).
  */
 AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored);
 

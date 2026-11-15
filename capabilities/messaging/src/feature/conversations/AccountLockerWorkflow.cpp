@@ -132,6 +132,9 @@ Roe<AccountLockerState> AccountLockerWorkflow::CurrentState() {
       log().warning << "Locker without grants: " << grants.error().message;
     }
   }
+  if (sources_.relays) {
+    state.extras.relays = sources_.relays();
+  }
   return state;
 }
 

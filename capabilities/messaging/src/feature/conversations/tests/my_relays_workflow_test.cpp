@@ -357,6 +357,18 @@ TEST_F(MyRelaysWorkflowTest, ALinkedDeviceFollowsTheCardsList) {
   EXPECT_EQ(store_->List().Origins(), Origins({kC, kA})) << "the main device's list is its own";
 }
 
+// D2: a restore from the locker brings the person's list back on any device (the restored one is the main device
+// with no card yet); registering and the announce are the restore's own steps.
+TEST_F(MyRelaysWorkflowTest, ARestoreTakesTheLockersList) {
+  main_device_ = false;
+  workflow_->Restore({kC, kA});
+  EXPECT_EQ(store_->List().Origins(), Origins({kC, kA}));
+  EXPECT_EQ(steps_, Steps({"apply c,a", "register_others"})) << "no announce, no preferred registration of its own";
+  steps_.clear();
+  workflow_->Restore({kC, kA});
+  EXPECT_TRUE(steps_.empty()) << "the same list: nothing";
+}
+
 TEST_F(MyRelaysWorkflowTest, EachRelaysReachabilityIsItsLastPoll) {
   workflow_->NotePolled(kB, false, 10);
   workflow_->NotePolled(kB, false, 20);

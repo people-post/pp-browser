@@ -1574,7 +1574,8 @@ void ConversationsHub::BuildMessagingObjects() {
             }
             return mesh_messaging_->OwnAccountCards().Devices();
           },
-          .own_system_name = [this]() { return config_.system_device_name; }});
+          .own_system_name = [this]() { return config_.system_device_name; },
+          .relays = [this]() { return LockerRelays(); }});
   account_locker_->SetClient(clients_.Locker());
   account_locker_->SetDataDir(data_dir_);
   // The account's devices keep one address book: a write here nudges the others; a nudge from one syncs here.
@@ -2420,11 +2421,32 @@ Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const SecretText& phrase, 
       return Error("Account restore failed: " + upserted.error().message);
     }
   }
+  RestoreOurRelays(state.extras.relays); // before the first card: it lists them, not the deployment's default
   log().info << "Account restored from its recovery phrase: locker version " << (*fetched)->version << ", "
              << state.contacts.size() << " contact(s); " << state.extras.groups.size() << " group(s) and "
              << state.extras.card_floors.size() << " card floor(s) once messaging is up";
   QueueRestoredState(std::move(state.extras));
   return {};
+}
+
+AccountStateRelays ConversationsHub::LockerRelays() const {
+  AccountStateRelays relays{.origins = OurRelayOrigins()};
+  const std::string own = OwnAccountId();
+  if (account_keys_ && !own.empty()) {
+    if (auto kept = account_keys_->Kept(own); kept && *kept) {
+      relays.card_issued_at = (*kept)->issued_at; // the card that lists them: the newer card's list wins a merge
+    }
+  }
+  return relays;
+}
+
+void ConversationsHub::RestoreOurRelays(const AccountStateRelays& relays) {
+  if (relays.origins.empty()) {
+    return; // a locker from before My relays: the deployment's default stays
+  }
+  if (const auto workflow = MyRelays()) {
+    workflow->Restore(relays.origins);
+  }
 }
 
 void ConversationsHub::QueueRestoredState(AccountStateExtras extras) {

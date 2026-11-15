@@ -55,6 +55,7 @@ vectors: `account_locker_test`, `http_locker_client_test` and www `__tests__/Acc
 | `groups` | per group: metadata, roster as identities with roles, the owner-signed roster statement — no messages ([group-chat G013](../../projects/group-chat/DECISIONS.md)). A group the account is out of (left, or removed — the member check found it out) is a tombstone: `group_id`, `owner`, `roster_epoch`, `left: true`. A group the owner dissolved (group-chat G016) is a terminal tombstone: `left: true, dissolved: true` |
 | `card_floors` | `{account_id, issued_at}`: the newest account card issue time seen per account — a restored device refuses older cards ([ACCOUNT_CARD § Newest wins](ACCOUNT_CARD.md)) |
 | `grants` | the relay grants other accounts gave this one ([ACCOUNT_CARD § Relay grants](ACCOUNT_CARD.md#relay-grants), multi-relay MR005), each as received: `{recipient_account_id, sender_account_id, issued_at, expires_at, signature}` (the grantor, this account, Unix ms, the grantor's signature). A restored or linked device takes them so its first sends to a grantor are not a stranger's (below). Absent in older snapshots |
+| `relays` | our relays (My relays, multi-relay MR006): `{origins: [base URL, …], card_issued_at}`, preferred first, as the account card issued at `card_issued_at` lists them; at most 4 origins, each once (more are dropped on read). A restored device takes them before its first card, so a restore keeps the person's list instead of the deployment's default. Absent when none, and in older snapshots |
 | `providers` | provider list (reserved; empty until a second relay exists). pp-nodes are never providers: they keep caches only (M023 §6 amendment) |
 | `contact_clock` | one register per contact account: `{account_id, at, present, digest}` (below) |
 | `device_names` | the display names of the account's devices: `[{peer_id, name, at}]`, or `{peer_id, at, removed: true}` for a removed device (below). Never in the account card, a log or a metric |
@@ -118,7 +119,7 @@ One sync (`AccountLockerWorkflow::Publish`), serialized per device:
    moves only when a name actually changes), the same whichever device merges (at a tie the stored register, row and group stand —
    rows hold each device's own local fields; lists sorted): contacts by register; groups by the higher `roster_epoch`; card floors by
    the higher `issued_at`; grants by `CapGrants` over both copies (the stored ones are first taken here, each checked);
-   providers by union. Groups: the higher `roster_epoch` wins; at the same epoch a tombstone wins, so an older copy where the account was a member does not bring a left group back, while a later re-invite (a higher epoch) does. A `dissolved` tombstone is terminal: it wins over any copy of the group whatever its epoch (a dissolved group is never re-invited), a restore skips it, and a device that is still in the group ends it at its next sync (the locker is the account's own state). **Nothing new → no write.**
+   relays from the copy with the higher `card_issued_at` (ours on a tie); providers by union. Groups: the higher `roster_epoch` wins; at the same epoch a tombstone wins, so an older copy where the account was a member does not bring a left group back, while a later re-invite (a higher epoch) does. A `dissolved` tombstone is terminal: it wins over any copy of the group whatever its epoch (a dissolved group is never re-invited), a restore skips it, and a device that is still in the group ends it at its next sync (the locker is the account's own state). **Nothing new → no write.**
 5. After a write, nudge the siblings: a `device_list` control-lane notice to the account's own mailbox,
    only when the own account card lists more than one device. A device that receives a verified sibling
    notice syncs 5 s later; since a sync with nothing new writes nothing, the exchange stops.
@@ -134,7 +135,8 @@ nothing prunes them yet.
 
 On a fresh install, a typed phrase → seed → locker (fetched by id alone) → the link bundle the seed
 reconstructs (`RecoveryBundle`: derived account keys, the seed, a fresh DEK, the locker's
-nickname; the account counts as registered) imported under the PIN the user chooses → contacts written → once messaging is up: card floors
+nickname; the account counts as registered) imported under the PIN the user chooses → contacts written → our relays
+(`relays`) become My relays, before the restored device issues its first card → once messaging is up: card floors
 before anything is received, groups recreated (tombstones skipped) and checking their members, the grants taken (each
 checked, before the announce, so its sends carry them), the device announced, the locker synced.
 

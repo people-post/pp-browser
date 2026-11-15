@@ -79,11 +79,26 @@ struct AccountStateGrant {
   bool operator==(const AccountStateGrant&) const = default;
 };
 
-/** Account state the locker keeps beyond the contacts: the groups, the card floors and the grants given to us. */
+/**
+ * The account's relays (My relays, multi-relay MR006), preferred first, as its card issued at `card_issued_at` lists
+ * them: a restored device takes them before its first card, instead of the deployment's default. Empty: none kept.
+ */
+struct AccountStateRelays {
+  std::vector<std::string> origins;
+  int64_t card_issued_at = 0;
+
+  bool operator==(const AccountStateRelays&) const = default;
+};
+
+/**
+ * Account state the locker keeps beyond the contacts: the groups, the card floors, the grants given to us and our
+ * relays.
+ */
 struct AccountStateExtras {
   std::vector<AccountStateGroup> groups;
   std::vector<AccountCardFloor> card_floors;
   std::vector<AccountStateGrant> grants;
+  AccountStateRelays relays;
 };
 
 /** JSON for one group of the account state, as the account locker's `groups` carry it. */

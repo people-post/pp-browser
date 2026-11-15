@@ -976,6 +976,10 @@ private:
   PendingRestore restored_;
   /** What a restore brought back beyond the account: applied now, or once messaging is up. */
   void QueueRestoredState(AccountStateExtras extras);
+  /** Our relays for the account locker, with the issue time of the card that lists them. Any thread. */
+  AccountStateRelays LockerRelays() const;
+  /** A restore: the locker's relays become ours (My relays) before the restored device issues its first card. */
+  void RestoreOurRelays(const AccountStateRelays& relays);
   /**
    * The restored grants into the grant store (blocking: each is checked against its grantor's key), then, after a
    * restore, each contact hears this device's card on the control lane, so its next message opens a session with this

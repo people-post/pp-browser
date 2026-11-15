@@ -246,6 +246,35 @@ void MyRelaysWorkflow::FollowCard(const std::vector<std::string>& card_relays) {
   (void)Commit(next, list.Preferred() != next.Preferred());
 }
 
+void MyRelaysWorkflow::Restore(const std::vector<std::string>& relays) {
+  const Entered entered(*this);
+  if (!entered.open || relays.empty()) {
+    return;
+  }
+  std::lock_guard lock(change_mutex_);
+  OurRelaysList next;
+  for (const std::string& origin : BoundOurRelays(relays)) {
+    next.relays.push_back(OurRelayEntry{.origin = origin});
+  }
+  if (next.relays.empty() || next.Origins() == store_.List().Origins()) {
+    return;
+  }
+  if (auto kept = store_.Replace(next); !kept) {
+    log().warning << "the locker's relays not kept: " << kept.error().message;
+    return;
+  }
+  log().info << "relays restored from the account locker (" << next.relays.size() << ")";
+  if (ports_.apply && !ports_.apply()) {
+    log().info << "the services follow the restored relays at the next start";
+  }
+  if (ports_.register_others) {
+    ports_.register_others();
+  }
+  if (ports_.changed) {
+    ports_.changed();
+  }
+}
+
 Roe<void> MyRelaysWorkflow::Commit(const OurRelaysList& next, const bool preferred_changed) {
   const OurRelaysList before = store_.List();
   if (auto kept = store_.Replace(next); !kept) {

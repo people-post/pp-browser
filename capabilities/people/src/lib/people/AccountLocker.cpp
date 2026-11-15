@@ -100,6 +100,26 @@ std::optional<AccountStateGrant> GrantFromJson(const Object& row) {
 
 } // namespace
 
+namespace {
+
+/** The `relays` of an untrusted copy: at most kMaxLockerRelays non-empty origins, each once. */
+AccountStateRelays RelaysFromJson(const Object& json) {
+  AccountStateRelays relays;
+  relays.card_issued_at = json.getIf<int64_t>("card_issued_at").value_or(0);
+  if (const Array* origins = json.getArray("origins")) {
+    for (const Value& item : origins->elements) {
+      const auto origin = asString(item);
+      if (origin && !origin->empty() && origin->size() <= 256 && relays.origins.size() < kMaxLockerRelays &&
+          std::find(relays.origins.begin(), relays.origins.end(), *origin) == relays.origins.end()) {
+        relays.origins.push_back(*origin);
+      }
+    }
+  }
+  return relays;
+}
+
+} // namespace
+
 std::string StateToJson(const AccountLockerState& state) {
   Object root;
   root.set("nickname", state.nickname);
@@ -132,6 +152,16 @@ std::string StateToJson(const AccountLockerState& state) {
     grants.push_back(ObjectValue(std::move(row)));
   }
   root.set("grants", ArrayValue(std::move(grants)));
+  if (!state.extras.relays.origins.empty()) {
+    std::vector<Value> origins;
+    for (const std::string& origin : state.extras.relays.origins) {
+      origins.emplace_back(origin);
+    }
+    Object relays;
+    relays.set("origins", ArrayValue(std::move(origins)));
+    relays.set("card_issued_at", state.extras.relays.card_issued_at);
+    root.set("relays", ObjectValue(std::move(relays)));
+  }
   std::vector<Value> providers;
   for (const std::string& provider : state.providers) {
     providers.emplace_back(provider);
@@ -184,6 +214,9 @@ Roe<AccountLockerState> StateFromJson(const std::string& json) {
         }
       }
     }
+  }
+  if (const Object* relays = root->getObject("relays")) {
+    state.extras.relays = RelaysFromJson(*relays);
   }
   if (const Array* providers = root->getArray("providers")) {
     for (const Value& item : providers->elements) {
@@ -457,6 +490,9 @@ AccountLockerState MergeForPublish(const AccountLockerState& ours, const Account
     }
   }
   merged.extras.grants.insert(merged.extras.grants.end(), stored.extras.grants.begin(), stored.extras.grants.end());
+  if (stored.extras.relays.card_issued_at > merged.extras.relays.card_issued_at) {
+    merged.extras.relays = stored.extras.relays; // the list a newer card of ours gave
+  }
   for (const std::string& provider : stored.providers) {
     if (std::find(merged.providers.begin(), merged.providers.end(), provider) == merged.providers.end()) {
       merged.providers.push_back(provider);

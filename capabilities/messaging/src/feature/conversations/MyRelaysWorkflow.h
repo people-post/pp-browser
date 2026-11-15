@@ -134,6 +134,12 @@ public:
   Roe<void> MakePreferred(const std::string& origin);
   /** A linked device: the card's list (preferred first) becomes ours when it differs. */
   void FollowCard(const std::vector<std::string>& card_relays);
+  /**
+   * A restore from the account locker (any device: it is the account's own list): `relays` (preferred first) become
+   * ours and the services follow; registering and the announce are the restore's own steps. Kept even when the
+   * services do not follow now (the next start builds them from it).
+   */
+  void Restore(const std::vector<std::string>& relays);
   /** An inbox of ours was polled. Any thread. */
   void NotePolled(const std::string& origin, bool ok, int64_t now_ms);
   /** The list as the page shows it; empty once closed. */
