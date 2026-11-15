@@ -3,6 +3,8 @@
 // the class has no wall clock to jump.
 #include "feature/presenters/CallSilentTiles.h"
 
+#include "common/media/MediaRelayStream.h"
+
 #include <gtest/gtest.h>
 
 #include <string>
@@ -292,7 +294,13 @@ TEST(CallSilentTilesTest, OnHoldIsNotDimmedAndOnlyOnePillShows) {
   EXPECT_FALSE(r.Silent("alice")) << "the on-hold pill is the one";
   r.P("alice").on_hold = false;
   r.Tick();
-  EXPECT_TRUE(r.Silent("alice")) << "back from hold with no packet: dimmed";
+  EXPECT_FALSE(r.Silent("alice")) << "back from hold: a fresh baseline, no flash of 'connection lost'";
+  r.Run(14);
+  EXPECT_FALSE(r.Silent("alice"));
+  r.Tick();
+  EXPECT_FALSE(r.Silent("alice")) << "14.5 s after the hold ended";
+  r.Tick();
+  EXPECT_TRUE(r.Silent("alice")) << "15 s after the hold ended and no packet: dimmed";
   r.P("alice").on_hold = true;
   r.Tick();
   EXPECT_FALSE(r.Silent("alice"));
@@ -435,6 +443,172 @@ TEST(CallSilentTilesTest, FallbackNeedsTwoPeopleToCompare) {
   r.Audio("alice");
   r.Run(16);
   EXPECT_TRUE(r.Silent("alice")) << "with one other person only the own-path signals can protect";
+}
+
+// ---- the call's tracking (review 2026-11-15) ---------------------------------------------------------------------------
+
+/** A group call's refreshes as the presenter makes them: BeginRefresh, then Step when it says so. */
+struct Refresher {
+  CallSilentTiles tiles;
+  int64_t now = 1'000'000;
+  std::vector<Person> people;
+  int steps = 0;
+  /** One refresh `ms` later; returns whether it stepped. */
+  bool Refresh(const int64_t ms, const std::string& call_id = "c1", const bool roster_read = true,
+               const bool group = true) {
+    now += ms;
+    if (!tiles.BeginRefresh(call_id, roster_read, group, now)) {
+      return false;
+    }
+    tiles.Step(now, true, people);
+    ++steps;
+    return true;
+  }
+  void Run(const int64_t seconds, const int64_t every = 250) {
+    for (int64_t t = 0; t < seconds * 1000; t += every) {
+      Refresh(every);
+    }
+  }
+  Person& P(const std::string& id) {
+    for (Person& p : people) {
+      if (p.identity == id) {
+        return p;
+      }
+    }
+    return people.emplace_back(Person{.identity = id});
+  }
+};
+
+/** Alice heard once, then silent: dimmed after 15 s. */
+Refresher DimmedAlice() {
+  Refresher r;
+  r.P("alice");
+  r.Refresh(250);
+  ++r.P("alice").audio;
+  r.Refresh(250);
+  r.Run(16);
+  return r;
+}
+
+// A roster that could not be read for one refresh forgets nobody: a dimmed person stays dimmed and blocked.
+TEST(CallSilentTilesTest, ARosterReadFailureKeepsADimmedPersonDimmed) {
+  Refresher r = DimmedAlice();
+  ASSERT_TRUE(r.tiles.TileOf("alice").silent);
+  EXPECT_FALSE(r.Refresh(250, "c1", /*roster_read=*/false, /*group=*/false)) << "the failed read steps nothing";
+  EXPECT_TRUE(r.tiles.TileOf("alice").silent);
+  EXPECT_TRUE(r.tiles.TileOf("alice").video_blocked);
+  r.Refresh(250);
+  EXPECT_TRUE(r.tiles.TileOf("alice").silent) << "and the next good read finds the state as it was";
+}
+
+// The joined count may dip to two (group = false) and come back: the call is tracked for the rest of its time.
+TEST(CallSilentTilesTest, ACallThatWasAGroupIsTrackedThroughADipInTheJoinedCount) {
+  Refresher r = DimmedAlice();
+  r.Refresh(250, "c1", true, /*group=*/false);
+  EXPECT_TRUE(r.tiles.TileOf("alice").silent) << "not forgotten at the dip";
+  const int steps = r.steps;
+  r.Refresh(250, "c1", true, false);
+  EXPECT_GT(r.steps + 1, steps) << "still stepping";
+  r.Refresh(250, "c1", true, true);
+  EXPECT_TRUE(r.tiles.TileOf("alice").silent);
+  ++r.P("alice").audio;
+  r.Refresh(250);
+  EXPECT_FALSE(r.tiles.TileOf("alice").silent) << "and a packet still restores it";
+}
+
+// A call that never was a group call is not tracked; another call id forgets everything.
+TEST(CallSilentTilesTest, OneToOneIsNotTrackedAndAnotherCallForgets) {
+  Refresher one;
+  one.P("bob");
+  EXPECT_FALSE(one.Refresh(250, "c1", true, false));
+  EXPECT_EQ(one.steps, 0);
+
+  Refresher r = DimmedAlice();
+  r.Refresh(250, "c2"); // a different call
+  EXPECT_FALSE(r.tiles.TileOf("alice").silent) << "a fresh call: a fresh join";
+  EXPECT_FALSE(r.tiles.TileOf("alice").video_blocked);
+}
+
+// The counters are read at most every 250 ms; the 15 s rule is still exact on the steps that happen.
+TEST(CallSilentTilesTest, TheCountersAreReadAtMostEveryQuarterSecond) {
+  Refresher r;
+  r.P("alice");
+  EXPECT_TRUE(r.Refresh(33));
+  EXPECT_FALSE(r.Refresh(33));
+  EXPECT_FALSE(r.Refresh(33));
+  EXPECT_FALSE(r.Refresh(150)) << "216 ms since the step";
+  EXPECT_TRUE(r.Refresh(34)) << "250 ms";
+  // ~33 Hz refreshes for 20 s: about four steps a second, never more.
+  const int before = r.steps;
+  for (int i = 0; i < 600; ++i) {
+    r.Refresh(33);
+  }
+  EXPECT_LE(r.steps - before, 20 * 4 + 1);
+  EXPECT_GE(r.steps - before, 20 * 3);
+
+  // Exactness: heard at t0, steps every 250 ms: still not dimmed at 14.75 s, dimmed at exactly 15 s.
+  Refresher e;
+  e.P("alice");
+  e.Refresh(250);
+  ++e.P("alice").audio;
+  e.Refresh(250); // t0: the packet
+  for (int ms = 250; ms < 15'000; ms += 250) {
+    e.Refresh(250);
+  }
+  EXPECT_FALSE(e.tiles.TileOf("alice").silent) << "14.75 s";
+  e.Refresh(250);
+  EXPECT_TRUE(e.tiles.TileOf("alice").silent) << "15 s";
+}
+
+// Roster members + the engine's counters become the people a step reads: us excluded, streams mapped by identity.
+TEST(CallSilentTilesTest, PeopleAreTheRosterWithoutUsWithTheirStreamsCounters) {
+  CallScreen::Member me;
+  me.identity = "me";
+  me.is_local = true;
+  CallScreen::Member alice;
+  alice.identity = "alice";
+  CallScreen::Member bob;
+  bob.identity = "bob";
+  bob.on_hold = true;
+  const uint32_t alice_stream = PublisherStreamIdForIdentity("alice");
+  const uint32_t bob_stream = PublisherStreamIdForIdentity("bob");
+  ASSERT_NE(alice_stream, bob_stream);
+  MediaEngineHealth health;
+  MediaStreamHealth a;
+  a.stream_id = alice_stream;
+  a.rx_frames = 7;
+  MediaStreamHealth mine;
+  mine.stream_id = PublisherStreamIdForIdentity("me");
+  mine.rx_frames = 99;
+  health.streams = {mine, a};
+  VideoStreamArrival b_video;
+  b_video.stream_id = bob_stream;
+  b_video.arrival.frames = 3;
+  health.video_arrivals = {b_video};
+
+  const std::vector<Person> people = SilentPeopleFrom({me, alice, bob}, health);
+  ASSERT_EQ(people.size(), 2u) << "our own tile is not a person";
+  EXPECT_EQ(people[0].identity, "alice");
+  EXPECT_EQ(people[0].audio, 7u);
+  EXPECT_EQ(people[0].video, 0u);
+  EXPECT_FALSE(people[0].on_hold);
+  EXPECT_EQ(people[1].identity, "bob");
+  EXPECT_EQ(people[1].audio, 0u);
+  EXPECT_EQ(people[1].video, 3u);
+  EXPECT_TRUE(people[1].on_hold);
+  EXPECT_TRUE(SilentPeopleFrom({me}, health).empty());
+}
+
+// Our own engine stopped: not online (a stalled local rebuild must not dim everyone).
+TEST(CallSilentTilesTest, OurOwnEngineMustBeRunningForThePathToCountAsOnline) {
+  MediaEngineHealth health;
+  EXPECT_FALSE(EngineAlive(health));
+  health.active = true;
+  EXPECT_FALSE(EngineAlive(health)) << "session up, engine not running";
+  health.engine_running = true;
+  EXPECT_TRUE(EngineAlive(health));
+  health.active = false;
+  EXPECT_FALSE(EngineAlive(health));
 }
 
 } // namespace

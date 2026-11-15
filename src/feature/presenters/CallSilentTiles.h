@@ -1,5 +1,8 @@
 #pragma once
 
+#include "common/media_engine/MediaEngineHealth.h"
+#include "lib/calls/CallScreen.h"
+
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -8,6 +11,18 @@
 #include <vector>
 
 namespace pbr {
+
+/**
+ * Outside the class on purpose: a nested type with default member initializers used in the constructor's default
+ * argument is rejected by GCC ("default member initializer required before the end of its enclosing class").
+ */
+struct CallSilentTilesOptions {
+  /**
+   * Fallback for an own-path signal that flips too slowly: when two or more people we have received from are all
+   * silent for kSilentTileMs, it is us, and nobody new is dimmed. Off until the signals are measured.
+   */
+  bool all_stop_fallback = false;
+};
 
 /**
  * Group call: a participant we have received from, and from whom neither audio nor video has arrived for 15 s, has a
@@ -22,20 +37,21 @@ namespace pbr {
  * never received from is never dimmed. The join baseline is taken when a person appears in the list and dropped when
  * they leave. While our own media path is offline nobody new is dimmed; the baseline restarts when it comes back and
  * when two steps are further apart than kTickGapResetMs (the UI was suspended). A dimmed tile stays dimmed until a
- * packet from that person arrives, and shows a picture again only once the video counter has increased since.
+ * packet from that person arrives, and shows a picture again only once the video counter has increased since. A
+ * person coming back from hold gets a fresh baseline (their media needs a moment to resume).
+ *
+ * Once a call has been a group call it is tracked for the rest of that call (the joined count may dip to 2), and a
+ * refresh whose roster could not be read changes nothing (BeginRefresh).
  */
 class CallSilentTiles {
 public:
   static constexpr int64_t kSilentTileMs = 15'000;
   static constexpr int64_t kTickGapResetMs = 3'000;
 
-  struct Options {
-    /**
-     * Fallback for an own-path signal that flips too slowly: when two or more people we have received from are all
-     * silent for kSilentTileMs, it is us, and nobody new is dimmed. Off until the signals are measured.
-     */
-    bool all_stop_fallback = false;
-  };
+  /** The counters are read (the engine's lock) at most this often; the rules are insensitive to it. */
+  static constexpr int64_t kCounterReadMs = 250;
+
+  using Options = CallSilentTilesOptions;
 
   /** One other person in the joined list, with the engine's counters for their streams (0 when absent). */
   struct Person {
@@ -55,7 +71,14 @@ public:
   /** Receives one developer log line per transition. */
   using LogFn = std::function<void(const std::string&)>;
 
-  explicit CallSilentTiles(LogFn log = {}, Options options = Options{.all_stop_fallback = false});
+  explicit CallSilentTiles(LogFn log = {}, CallSilentTilesOptions options = {});
+
+  /**
+   * One UI refresh of `call_id`: whether to read the counters and Step now. A different call forgets everything first;
+   * a roster that could not be read, a call that never was a group call, and a refresh less than kCounterReadMs after
+   * the last Step all answer false and leave the state as it is.
+   */
+  bool BeginRefresh(const std::string& call_id, bool roster_read, bool group, int64_t now_ms);
 
   /** One UI tick. `others` is everyone joined but us, in any order. */
   void Step(int64_t now_ms, bool own_online, const std::vector<Person>& others);
@@ -90,11 +113,23 @@ private:
   void Emit(const char* what, const Silence& silence) const;
 
   LogFn log_;
-  Options options_;
+  CallSilentTilesOptions options_;
+  std::string call_id_;
+  /** This call has been a group call (the joined count may later dip to 2). */
+  bool was_group_ = false;
   std::map<std::string, State> people_;
   int64_t own_baseline_ms_ = 0;
   int64_t last_step_ms_ = 0;
   bool was_online_ = false;
 };
+
+/** The people a step reads: every roster member but us, with the engine's receive counters for their streams. */
+std::vector<CallSilentTiles::Person> SilentPeopleFrom(const std::vector<CallScreen::Member>& members,
+                                                      const MediaEngineHealth& health);
+
+/** Our own engine is running (a stalled local audio rebuild is not a reason to dim everyone). */
+inline bool EngineAlive(const MediaEngineHealth& health) {
+  return health.active && health.engine_running;
+}
 
 } // namespace pbr

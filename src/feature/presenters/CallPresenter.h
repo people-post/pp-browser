@@ -385,10 +385,12 @@ private:
   void WatchForNoMedia(CallUiBackend& backend, const CallScreen& s, int64_t now);
   /**
    * A group call's tiles of people who stopped sending (DEV/PLAN-call-silent-tile.md): steps CallSilentTiles from the
-   * engine's receive counters and writes `silent_dimmed` / `video_blocked` on `s`'s members. Also writes the one line
-   * per flip of the signals that say our own media path is online (to be measured).
+   * engine's receive counters and writes `silent_dimmed` / `video_blocked` on `s`'s members. `roster_read` is false when
+   * the joined list could not be read this refresh (nothing changes then). Also writes, at most once a second, the
+   * line for a flip of the signals that say our own media path is online (TEMPORARY, to be measured on devices).
    */
-  void StepSilentTiles(CallScreen& s, CallUiBackend& backend);
+  void StepSilentTiles(CallScreen& s, CallUiBackend& backend, bool roster_read);
+  void ApplySilentTiles(CallScreen& s);
   /** G022: the group banner of the call on `s` (the waiting invites read at most once a second). */
   void FillGroupInvite(CallScreen& s, int64_t now);
   /** V062: who is a guest in the group's call on `s`, what this device may do about them, and Add people. */
@@ -466,7 +468,8 @@ private:
   CallSilentTiles silent_tiles_{[this](const std::string& line) { log().info << line; }};
   /** The call silent_tiles_ is for, and the own-path signals last logged (-1: none yet). */
   std::string silent_call_id_;
-  int own_path_logged_[3] = {-1, -1, -1};
+  int own_path_logged_[4] = {-1, -1, -1, -1};
+  int64_t own_path_log_ms_ = 0;
   int64_t no_media_checked_ms_ = 0;
   /** Last CallSessionManager identity the ring callbacks were installed on. */
   const void* bound_calls_ = nullptr;

@@ -619,7 +619,9 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
     local_identity = ports_.local_account_identity().value_or(std::string{});
   }
   int joined = 0;
+  bool roster_read = false;
   if (auto participants = backend.ListJoinedParticipants(call_id); participants) {
+    roster_read = true;
     joined = static_cast<int>(participants->size());
     s.group = joined > 2 || group_call;
     s.members.reserve(participants->size());
@@ -677,57 +679,48 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   if (decided.show_elapsed || ShowsParticipantCount(s)) {
     s.connected_at_ms = live_since_ms; // the call's, not the current path's
   }
-  StepSilentTiles(s, backend);
+  StepSilentTiles(s, backend, roster_read);
 }
 
-void CallPresenter::StepSilentTiles(CallScreen& s, CallUiBackend& backend) {
-  // Only a group call's tiles; a 1:1 call is untouched.
-  if (!s.group) {
-    silent_tiles_.Reset();
-    silent_call_id_.clear();
-    std::fill(std::begin(own_path_logged_), std::end(own_path_logged_), -1);
+void CallPresenter::StepSilentTiles(CallScreen& s, CallUiBackend& backend, const bool roster_read) {
+  const int64_t now = steady_ms_();
+  // Only a group call's tiles (once a call has been one, for the rest of it); a refresh that could not read the roster
+  // changes nothing; the counters are read at most four times a second (the engine's lock is shared with the inbound
+  // packet path).
+  if (!silent_tiles_.BeginRefresh(s.call_id, roster_read, s.group, now)) {
+    if (silent_call_id_ != s.call_id) {
+      silent_call_id_ = s.call_id;
+      std::fill(std::begin(own_path_logged_), std::end(own_path_logged_), -1);
+    }
+    if (roster_read) {
+      ApplySilentTiles(s);
+    }
     return;
   }
   if (silent_call_id_ != s.call_id) {
-    silent_tiles_.Reset();
     silent_call_id_ = s.call_id;
     std::fill(std::begin(own_path_logged_), std::end(own_path_logged_), -1);
   }
-  const int64_t now = steady_ms_();
-  const bool online = OwnMediaPathOnline(s, backend);
-  // Measurement for the device check: when the signals behind "our own path is online" flip (monotonic ms, no ids).
-  const int signals[3] = {s.media_connected ? 1 : 0, backend.Recovery() != CallRecovery::None ? 1 : 0,
-                          s.status == CallScreen::Status::Reconnecting ? 1 : 0};
-  if (!std::equal(std::begin(signals), std::end(signals), std::begin(own_path_logged_))) {
+  const MediaEngineHealth health = backend.Media().HealthSnapshot();
+  // Our own engine stopped (a stalled local audio rebuild) is not a reason to dim everyone either.
+  const bool online = OwnMediaPathOnline(s, backend) && EngineAlive(health);
+  // TEMPORARY measurement for the device check (remove after it, see DEV/TODO-未做清单.md): when the signals behind
+  // "our own path is online" flip (monotonic ms, no ids), at most one line a second.
+  const int signals[4] = {s.media_connected ? 1 : 0, backend.Recovery() != CallRecovery::None ? 1 : 0,
+                          s.status == CallScreen::Status::Reconnecting ? 1 : 0, EngineAlive(health) ? 1 : 0};
+  if (!std::equal(std::begin(signals), std::end(signals), std::begin(own_path_logged_)) &&
+      (own_path_log_ms_ == 0 || now - own_path_log_ms_ >= 1'000)) {
     std::copy(std::begin(signals), std::end(signals), std::begin(own_path_logged_));
+    own_path_log_ms_ = now;
     log().info << "own media path signals media_connected=" << signals[0] << " recovering=" << signals[1]
-               << " reconnecting=" << signals[2] << " online=" << (online ? 1 : 0) << " t=" << now;
+               << " reconnecting=" << signals[2] << " engine=" << signals[3] << " online=" << (online ? 1 : 0)
+               << " t=" << now;
   }
-  std::vector<CallSilentTiles::Person> others;
-  for (const CallScreen::Member& m : s.members) {
-    if (!m.is_local) {
-      others.push_back({.identity = m.identity, .on_hold = m.on_hold});
-    }
-  }
-  if (!others.empty()) {
-    const MediaEngineHealth health = backend.Media().HealthSnapshot();
-    for (CallSilentTiles::Person& p : others) {
-      const uint32_t stream = PublisherStreamIdForIdentity(p.identity);
-      for (const MediaStreamHealth& audio : health.streams) {
-        if (audio.stream_id == stream) {
-          p.audio = audio.rx_frames;
-          break;
-        }
-      }
-      for (const VideoStreamArrival& video : health.video_arrivals) {
-        if (video.stream_id == stream) {
-          p.video = video.arrival.frames;
-          break;
-        }
-      }
-    }
-  }
-  silent_tiles_.Step(now, online, others);
+  silent_tiles_.Step(now, online, SilentPeopleFrom(s.members, health));
+  ApplySilentTiles(s);
+}
+
+void CallPresenter::ApplySilentTiles(CallScreen& s) {
   for (CallScreen::Member& m : s.members) {
     if (!m.is_local) {
       const CallSilentTiles::Tile tile = silent_tiles_.TileOf(m.identity);

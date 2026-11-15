@@ -1,14 +1,33 @@
 #include "feature/presenters/CallSilentTiles.h"
 
+#include "common/media/MediaRelayStream.h"
+
 #include <algorithm>
 #include <set>
 #include <utility>
 
 namespace pbr {
 
-CallSilentTiles::CallSilentTiles(LogFn log, Options options) : log_(std::move(log)), options_(options) {}
+CallSilentTiles::CallSilentTiles(LogFn log, CallSilentTilesOptions options) : log_(std::move(log)), options_(options) {}
+
+bool CallSilentTiles::BeginRefresh(const std::string& call_id, const bool roster_read, const bool group,
+                                   const int64_t now_ms) {
+  if (call_id != call_id_) {
+    Reset();
+    call_id_ = call_id;
+  }
+  if (!roster_read) {
+    return false; // no list this refresh: nobody is forgotten
+  }
+  was_group_ = was_group_ || group;
+  if (!was_group_) {
+    return false;
+  }
+  return last_step_ms_ == 0 || now_ms - last_step_ms_ >= kCounterReadMs;
+}
 
 void CallSilentTiles::Reset() {
+  was_group_ = false;
   people_.clear();
   own_baseline_ms_ = 0;
   last_step_ms_ = 0;
@@ -101,6 +120,9 @@ void CallSilentTiles::Step(const int64_t now_ms, const bool own_online, const st
     if (fresh) {
       s.join_baseline_ms = now_ms; // the first readings are only the references
     }
+    if (s.on_hold && !p.on_hold) {
+      s.join_baseline_ms = now_ms; // back from hold: their media resumes only now
+    }
     s.on_hold = p.on_hold;
     const bool audio_up = s.audio_ref && p.audio > *s.audio_ref;
     const bool video_up = s.video_ref && p.video > *s.video_ref;
@@ -149,6 +171,32 @@ void CallSilentTiles::Step(const int64_t now_ms, const bool own_online, const st
       Emit("dimmed", silence);
     }
   }
+}
+
+std::vector<CallSilentTiles::Person> SilentPeopleFrom(const std::vector<CallScreen::Member>& members,
+                                                      const MediaEngineHealth& health) {
+  std::vector<CallSilentTiles::Person> others;
+  for (const CallScreen::Member& m : members) {
+    if (m.is_local) {
+      continue;
+    }
+    CallSilentTiles::Person p{.identity = m.identity, .on_hold = m.on_hold};
+    const uint32_t stream = PublisherStreamIdForIdentity(p.identity);
+    for (const MediaStreamHealth& audio : health.streams) {
+      if (audio.stream_id == stream) {
+        p.audio = audio.rx_frames;
+        break;
+      }
+    }
+    for (const VideoStreamArrival& video : health.video_arrivals) {
+      if (video.stream_id == stream) {
+        p.video = video.arrival.frames;
+        break;
+      }
+    }
+    others.push_back(std::move(p));
+  }
+  return others;
 }
 
 } // namespace pbr

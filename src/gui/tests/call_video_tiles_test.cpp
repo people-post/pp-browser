@@ -63,6 +63,26 @@ protected:
   FakeMedia media;
 };
 
+// Group call, desktop stage: a blocked person's old frame never fills the big stage; live video from someone else does.
+TEST_F(CallVideoTilesTest, TheStageNeverTakesABlockedPersonsFrame) {
+  CallRosterParticipantState blocked = Row(11);
+  blocked.video_blocked = true;
+  const CallRosterParticipantState live = Row(22);
+  const CallRosterParticipantState self = Row(33, /*local=*/true);
+  media.streams[11] = 5; // the blocked person's cached frame is the only video there is
+  EXPECT_FALSE(StageMayShowRemote(media, true, /*group=*/true, {self, blocked, live}))
+      << "nobody else has video: the stage would show the blocked one's old frame";
+  media.streams[22] = 6;
+  EXPECT_TRUE(StageMayShowRemote(media, true, true, {self, blocked, live})) << "someone has live video";
+  EXPECT_TRUE(StageMayShowRemote(media, true, true, {self, live})) << "nobody blocked: unchanged";
+  EXPECT_TRUE(StageMayShowRemote(media, true, false, {self, blocked})) << "1:1 is untouched";
+  EXPECT_FALSE(StageMayShowRemote(media, false, true, {self, blocked, live})) << "no remote video stays none";
+  const CallRosterParticipantState self_live = Row(33, true);
+  media.streams[33] = 9; // our own stream is never "someone else"
+  media.streams.erase(22);
+  EXPECT_FALSE(StageMayShowRemote(media, true, true, {self_live, blocked, live}));
+}
+
 TEST_F(CallVideoTilesTest, NoPictureShowsNoSelfView) {
   const CallVideoTilesShown shown = SubmitCallVideoTiles(media, tiles, /*remote_video=*/true);
   EXPECT_FALSE(shown.local_preview);

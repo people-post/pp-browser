@@ -1956,7 +1956,7 @@ void CallController::SyncCameraRotation(IMediaView& media, const bool camera_ope
 void CallController::ApplyVideo(IMediaView& media, CallUiBackend& backend, const CallMediaScreen& frame,
                                 const int64_t now_ms) {
   auto& in_call = in_call_;
-  in_call.remote_video = frame.media.remote_video;
+  in_call.remote_video = StageMayShowRemote(media, frame.media.remote_video, in_call.show_roster, in_call.roster);
   if (!in_call.remote_video) {
     CallVideoTileRenderer::Instance().ClearRemote();
   }
