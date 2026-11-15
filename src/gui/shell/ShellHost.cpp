@@ -15,6 +15,7 @@
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/ScreenKeyboard.h"
+#include "foundation/platform/UikitWindowGeometry.h"
 #include "foundation/platform/SecureScreen.h"
 #include "foundation/platform/ui/PlatformNavigation.h"
 #include "lib/ui/ContextMenuHost.h"
@@ -1856,7 +1857,8 @@ ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
   const float display_scale = SDL_GetWindowDisplayScale(window);
   // context_px = window_units * density; dp = context_px / display_scale
   const float window_to_dp = (display_scale > 0.f) ? ((density > 0.f ? density : 1.f) / display_scale) : 1.f;
-  const int top_win = std::max(0, safe.y);
+  // iPadOS 26+ in a window: the window controls sit in the top-left corner, outside SDL's safe area.
+  const int top_win = std::max({0, safe.y, WindowControlsTopInset(window)});
   // iOS leaves the on-screen keyboard out of the safe area; it is reported separately (0 elsewhere).
   const int bottom_win = std::max({0, win_h - (safe.y + safe.h), ScreenKeyboardHeight()});
   insets.top_dp = static_cast<int>(static_cast<float>(top_win) * window_to_dp + 0.5f);

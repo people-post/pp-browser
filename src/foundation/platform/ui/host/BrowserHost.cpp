@@ -2,6 +2,7 @@
 #include "foundation/platform/MobileOrientation.h"
 #include "foundation/platform/ScreenAwake.h"
 #include "foundation/platform/ScreenKeyboard.h"
+#include "foundation/platform/UikitWindowGeometry.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "foundation/runtime/FramePacing.h"
@@ -399,8 +400,22 @@ void Backend::SyncContext(ui::Context* context) {
   context->SetDensityIndependentPixelRatio(SDL_GetWindowDisplayScale(data->window));
   data->render_interface.SetViewport(pixel_w, pixel_h);
   EventLoopWake::MarkFrame();
-  ui::Log::Message(ui::Log::LT_DEBUG, "SyncContext: %dx%d scale=%.3f", pixel_w, pixel_h,
-                   SDL_GetWindowDisplayScale(data->window));
+  // One line per new size (iPad windows resize and rotate): the sizes the context took and, on iOS, UIKit's view.
+  static int s_logged_w = -1;
+  static int s_logged_h = -1;
+  static float s_logged_scale = -1.f;
+  const float scale = SDL_GetWindowDisplayScale(data->window);
+  if (pixel_w != s_logged_w || pixel_h != s_logged_h || scale != s_logged_scale) {
+    s_logged_w = pixel_w;
+    s_logged_h = pixel_h;
+    s_logged_scale = scale;
+    int win_w = 0;
+    int win_h = 0;
+    SDL_GetWindowSize(data->window, &win_w, &win_h);
+    ::pp::logging::getLogger("Window").info << "context px=" << pixel_w << "x" << pixel_h << " scale=" << scale
+                                            << " sdl_window=" << win_w << "x" << win_h << " "
+                                            << pbr::DescribeUikitWindowGeometry(data->window);
+  }
 #else
   (void)context;
 #endif
@@ -572,6 +587,16 @@ bool Backend::ProcessEvents(ui::Context* context, KeyDownCallback key_down_callb
     }
     timeout_ms = static_cast<int>(delay_sec * 1000.0);
   }
+#if SDL_MAJOR_VERSION >= 3
+  // iOS: keep SDL's view and drawable the size and scale of the window before waiting (the resize events it
+  // causes are then handled below). A no-op elsewhere.
+  const pbr::UikitGeometryFix geometry_fix = pbr::SyncUikitWindowGeometry(data->window);
+  if (geometry_fix.Any()) {
+    ::pp::logging::getLogger("Window").info << "view resynced to window resize=" << geometry_fix.resize_view
+                                            << " rescale=" << geometry_fix.rescale_view;
+    timeout_ms = 0;
+  }
+#endif
   // One wake (flag + its wake event) ends one wait: both are taken here together (EventLoopWake.h).
   has_event = EventLoopWake::TakeFirstEvent(&ev, power_save, timeout_ms);
 

@@ -394,6 +394,13 @@ else()
   target_sources(pp_foundation_platform PRIVATE ScreenKeyboard_Default.cpp)
 endif()
 
+# SDL's UIKit view vs its window (iPadOS 27 resizes the window) and the window-controls corner: only iOS.
+if(PP_BROWSER_IS_IOS)
+  target_sources(pp_foundation_platform PRIVATE UikitWindowGeometry_Ios.mm)
+else()
+  target_sources(pp_foundation_platform PRIVATE UikitWindowGeometry_Default.cpp)
+endif()
+
 # Desktop macOS: UNUserNotificationCenter for local banners.
 if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN" AND NOT PP_BROWSER_IS_IOS)
   target_link_libraries(pp_foundation_platform PUBLIC
