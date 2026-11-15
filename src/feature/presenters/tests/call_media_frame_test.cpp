@@ -253,6 +253,22 @@ TEST(CallMediaFrameTest, AGroupWaitingAloneCountsDown) {
   EXPECT_EQ(v.line.until_ms, 200'000);
 }
 
+// The media is still live while the group waits alone: the countdown stays, no timer / head count / path word.
+TEST(CallMediaFrameTest, AGroupLeftAloneKeepsTheCountdownWhileItsMediaIsStillLive) {
+  CallMediaFrame frame;
+  CallScreen screen = InCallScreen(Status::WaitingForOthers);
+  screen.group = true;
+  screen.alone_until_ms = 200'000;
+  screen.members = {{.identity = "me", .is_local = true}};
+  CallMediaFacts f = LiveFacts(160'000);
+  f.have_peer_row = false;
+  const CallMediaScreen v = frame.Step(screen, f, Health("media_relay"));
+  EXPECT_EQ(v.line.kind, LineKind::Countdown);
+  EXPECT_EQ(v.line.key, "call.status.waiting_for_others");
+  EXPECT_EQ(v.line.until_ms, 200'000);
+  EXPECT_TRUE(v.line.path_key.empty());
+}
+
 // Kenneth 2026-09-29: a video call shows its stage from the answer with "Starting video…" until the first frame, at most
 // kVideoStartMs after connect, and never while it still rings out.
 TEST(CallMediaFrameTest, AVideoCallSaysStartingVideoUntilTheFirstFrameAtMostTenSeconds) {
