@@ -49,9 +49,28 @@ struct MediaStreamHealth {
 /** A camera frame fetch that has run longer than this is a thread stuck in the capture stack (SDL), not a quiet camera. */
 inline constexpr int64_t kVideoThreadStuckMs = 2000;
 
-/** True when the video thread has been inside one frame fetch for longer than kVideoThreadStuckMs (0 = not inside). */
-inline bool VideoThreadStuck(const int64_t video_fetch_ms) {
-  return video_fetch_ms > kVideoThreadStuckMs;
+/** Opening or closing the camera device that takes longer than this is stuck too (the stage names which). */
+inline constexpr int64_t kVideoCameraStageStuckMs = 5000;
+
+/**
+ * How long the video thread has been stuck, 0 when it is not: inside one frame fetch for longer than
+ * kVideoThreadStuckMs (`video_fetch_ms`, 0 = not inside one), or in the open_camera / close_camera stage for longer
+ * than kVideoCameraStageStuckMs. Pure: the caller keeps the once-per-spell edge.
+ */
+inline int64_t VideoThreadStuckMs(const int64_t video_fetch_ms, const std::string& video_stage,
+                                  const int64_t video_stage_ms) {
+  if (video_fetch_ms > kVideoThreadStuckMs) {
+    return video_fetch_ms;
+  }
+  if ((video_stage == "open_camera" || video_stage == "close_camera") && video_stage_ms > kVideoCameraStageStuckMs) {
+    return video_stage_ms;
+  }
+  return 0;
+}
+
+inline bool VideoThreadStuck(const int64_t video_fetch_ms, const std::string& video_stage,
+                             const int64_t video_stage_ms) {
+  return VideoThreadStuckMs(video_fetch_ms, video_stage, video_stage_ms) > 0;
 }
 
 struct MediaEngineHealth {

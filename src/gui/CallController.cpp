@@ -2111,7 +2111,9 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend& backend,
     log().info << FormatMediaHealthLogLine(view, now_ms, presenter_.ActiveCallId());
     // Same 2 s point as the line above, which also runs while the app is in the background: a video thread stuck in
     // the camera's frame fetch (B225) is told once per spell, whatever the app is doing.
-    const bool stuck = VideoThreadStuck(view.engine.video_fetch_ms);
+    const int64_t stuck_ms =
+        VideoThreadStuckMs(view.engine.video_fetch_ms, view.engine.video_stage, view.engine.video_stage_ms);
+    const bool stuck = stuck_ms > 0;
     if (stuck && !video_thread_stuck_) {
       static constexpr ShareWord kStages[] = {"idle",          "wait_camera",  "open_camera", "configure_encoder",
                                               "reset_encoder", "close_camera", "set_bitrate", "wait_frame",
@@ -2120,7 +2122,7 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend& backend,
                     << " stage_ms=" << view.engine.video_stage_ms << " fetch_ms=" << view.engine.video_fetch_ms;
       MetricsLine("call.video_thread_stuck")
           .Pick("stage", view.engine.video_stage, kStages)
-          .Add("stuck_ms", view.engine.video_fetch_ms)
+          .Add("stuck_ms", stuck_ms)
           .Emit();
     }
     video_thread_stuck_ = stuck;

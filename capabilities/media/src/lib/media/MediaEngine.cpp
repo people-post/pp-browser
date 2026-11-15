@@ -18,7 +18,6 @@
 #include "lib/media/NoiseSuppressor.h"
 #include "lib/media/VideoYuv.h"
 #include "common/Utilities.h"
-#include "foundation/runtime/AppLifecycle.h"
 
 #include <SDL3/SDL.h>
 #include <opus.h>
@@ -133,13 +132,15 @@ logging::Logger& EngineLog() {
   return log;
 }
 
-/** TEMPORARY (lifecycle.probe): monotonic ms plus whether the app was foreground / visible at that moment. */
+/**
+ * TEMPORARY (lifecycle.probe): monotonic ms of a camera request / result. The lifecycle events (PlatformLifecycleEvents)
+ * carry the app's foreground / visible state with the same clock; pp_lib_media does not link the runtime library.
+ */
 std::string ProbeCameraState() {
   const auto mono =
       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
           .count();
-  return "mono_ms=" + std::to_string(mono) + " fg=" + (AppLifecycle::IsForeground() ? "1" : "0") +
-         " vis=" + (AppLifecycle::IsVisible() ? "1" : "0");
+  return "mono_ms=" + std::to_string(mono);
 }
 
 int64_t MsSince(std::chrono::steady_clock::time_point since) {
