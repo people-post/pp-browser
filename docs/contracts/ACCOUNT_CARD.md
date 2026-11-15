@@ -302,7 +302,9 @@ finds no grant issued to them).
 
 Lane records older than an hour are dropped, so a grant can be lost while its grantee is offline. An
 issued grant stays **unconfirmed** until acked and goes again when its grantee is next heard from (a
-verified envelope), at most once an hour; an ask is answered at once (at most every 10 min). An ask is
+verified envelope), at most once an hour; an ask is answered at once (at most every 10 min). A grant goes
+again, confirmed or not, when its grantee's kept card comes to list a device the one before did not (a device it
+linked or restored, which no earlier copy reached), at most once a minute. An ask is
 itself a stranger's send, and the relay allows a stranger few (3 an hour per pair), so a send never asks:
 a device asks a peer it grants only when it hears from that peer after lacking its grant for a few minutes
 (a peer that just added us sends its grant unasked), at most every six hours, and 10 min after a refusal.

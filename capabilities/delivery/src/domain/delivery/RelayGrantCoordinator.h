@@ -31,7 +31,8 @@ class IdentityStore;
  *   grant, 30 days long, renewed once less than kRelayGrantRenewBeforeMs is left; none for a peer no longer granted
  *   (Stop: blocked, removed). It goes over the control lane, peer to peer; the grantee confirms it (`relay_grant_ack`).
  *   One not confirmed goes again when its grantee is heard from (it is online then), at most once an hour; one
- *   asked for (`relay_grant_ask`) goes at once.
+ *   asked for (`relay_grant_ask`) goes at once; a current one goes again when the grantee's card lists a new device
+ *   (NoteNewDevices).
  * - **Hold:** grants given to us, checked with the grantor's account key, attached to each relay send to its inbox
  *   (SendHooks); one the relay refuses is dropped and asked for again, the send going once as a stranger's meanwhile.
  *   A granted peer we have held no usable grant from for a few minutes is asked for one when heard from, at most
@@ -76,6 +77,12 @@ public:
   /** An envelope from `account` verified: it is online, so an unconfirmed grant goes again and a missing one is asked for. */
   void NoteHeardFrom(const std::string& account);
 
+  /**
+   * `account`'s card lists a device it did not before (one it linked, or restored): the grant we issued it, while it
+   * lasts, goes again (to every device its card lists now), so the new device holds it too; at most every few
+   * minutes per account. Blocking.
+   */
+  void NoteNewDevices(const std::string& account);
   /** The usable grant `recipient` gave us, if any. SendHooks' `grant_for`. */
   std::optional<RelayGrant> GrantFor(const std::string& recipient);
   /** The relay refused the grant `recipient` gave us. SendHooks' `grant_refused`. */
@@ -110,6 +117,8 @@ private:
   /** Per account: when we last asked it for a grant, sent it ours again, looked at it on hearing from it. */
   std::unordered_map<std::string, int64_t> asked_at_;
   std::unordered_map<std::string, int64_t> resent_at_;
+  /** Per grantee: when its grant last went again for a new device (NoteNewDevices). */
+  std::unordered_map<std::string, int64_t> new_device_at_;
   std::unordered_map<std::string, int64_t> heard_at_;
   /** Per granted peer: since when we have held no usable grant from it (noted when heard from). */
   std::unordered_map<std::string, int64_t> lacking_since_;

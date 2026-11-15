@@ -800,6 +800,9 @@ void ConversationsHub::DiscardMessagingBringUp() {
   system_controls_.Unbind(relay_grant::kFamily);
   clients_.SetRelaySendHooks({});
   clients_.Sender().SetRoutes({});
+  if (peer_cards_) {
+    peer_cards_->SetOnDevicesAdded(nullptr);
+  }
   account_locker_.reset();
   group_links_.reset();
   group_membership_.reset();
@@ -3074,6 +3077,16 @@ void ConversationsHub::WireRelayGrants() {
   // Sends go into the recipient's relays, as its kept card lists them (multi-relay R2).
   clients_.Sender().SetRoutes(mesh_messaging_->RecipientRelayRoutes());
   system_controls_.Bind(grants.Family());
+  // A grantee's card names a new device (a linked or restored one): our grant goes to it too (MR005).
+  if (peer_cards_) {
+    peer_cards_->SetOnDevicesAdded([this](const std::string& account) {
+      AppRuntime::PostWorkerNormal([this, account]() {
+        if (mesh_messaging_ && IsMessagingReady() && !shutdown_requested_.load(std::memory_order_acquire)) {
+          mesh_messaging_->RelayGrants().NoteNewDevices(account);
+        }
+      });
+    });
+  }
 }
 
 void ConversationsHub::SweepRelayGrantsSoon() {
@@ -3664,6 +3677,9 @@ void ConversationsHub::Shutdown() {
   clients_.SetRelaySendHooks({});
   clients_.Sender().SetRoutes({});
   system_controls_.Unbind(relay_grant::kFamily);
+  if (peer_cards_) {
+    peer_cards_->SetOnDevicesAdded(nullptr);
+  }
   // Destroy P2P before groups — P2P held a non-owning Groups pointer.
   mesh_messaging_.reset();
   // Nothing receives any more: the pricing families may let go of their stores.

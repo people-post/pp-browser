@@ -115,6 +115,7 @@ Roe<PeerCardRecord> PeerCards::AddAccountCard(const AccountCard& card, int64_t n
     return checked.error();
   }
   std::function<void()> notify;
+  std::function<void(const std::string&)> devices_added;
   PeerCardRecord merged;
   {
     std::lock_guard lock(mutex_);
@@ -130,9 +131,17 @@ Roe<PeerCardRecord> PeerCards::AddAccountCard(const AccountCard& card, int64_t n
       return known.error();
     }
     const int64_t before = known.value() ? known.value()->issued_at : 0;
+    const std::vector<std::string> listed_before = known.value() ? known.value()->devices : std::vector<std::string>{};
+    const bool was_known = known.value().has_value();
     merged = MergeAccountCard(std::move(known.value()), card, source);
     if (merged.issued_at > before) {
       notify = on_newer_card_;
+    }
+    const bool added = std::any_of(merged.devices.begin(), merged.devices.end(), [&](const std::string& device) {
+      return std::find(listed_before.begin(), listed_before.end(), device) == listed_before.end();
+    });
+    if (was_known && added) {
+      devices_added = on_devices_added_;
     }
     if (auto put = store_.Put(merged); !put) {
       return put.error();
@@ -140,6 +149,9 @@ Roe<PeerCardRecord> PeerCards::AddAccountCard(const AccountCard& card, int64_t n
   }
   if (notify) {
     notify();
+  }
+  if (devices_added) {
+    devices_added(card.keys.account_id);
   }
   return merged;
 }
@@ -197,6 +209,11 @@ Roe<std::vector<PeerCardFloor>> PeerCards::NewestKnown() const {
     }
   }
   return out;
+}
+
+void PeerCards::SetOnDevicesAdded(std::function<void(const std::string& account_id)> callback) {
+  std::lock_guard lock(mutex_);
+  on_devices_added_ = std::move(callback);
 }
 
 void PeerCards::SetOnNewerCard(std::function<void()> callback) {

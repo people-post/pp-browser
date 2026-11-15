@@ -18,6 +18,8 @@ constexpr int64_t kAskAfterRefusalMs = 10LL * 60 * 1000;
 /** An unconfirmed grant goes again at most this often (when its grantee is heard from, or asks). */
 constexpr int64_t kResendEveryMs = 60LL * 60 * 1000;
 constexpr int64_t kResendOnAskMs = 10LL * 60 * 1000;
+/** A grantee's new device: its grant goes again at once, then not more often than this (a burst of card updates). */
+constexpr int64_t kResendOnNewDeviceMs = 60LL * 1000;
 /** Hearing from a peer is looked at at most this often (every inbound envelope reports it). */
 constexpr int64_t kHeardEveryMs = 10LL * 60 * 1000;
 /**
@@ -231,6 +233,24 @@ void RelayGrantCoordinator::NoteHeardFrom(const std::string& account) {
   if (lacking_long) {
     Ask(account, false);
   }
+}
+
+void RelayGrantCoordinator::NoteNewDevices(const std::string& account) {
+  IRelayGrantStore* store = nullptr;
+  {
+    std::lock_guard lock(mutex_);
+    store = store_;
+  }
+  if (!store || account.empty() || account == OwnAccount() || Blocked(account)) {
+    return;
+  }
+  auto issued = store->IssuedTo(account);
+  if (!issued || !*issued || (*issued)->grant.expires_at <= Now() ||
+      !Due(new_device_at_, account, kResendOnNewDeviceMs)) {
+    return;
+  }
+  log().info << "relay grant to " << account << " goes again: its card lists a new device";
+  SendGrants({(*issued)->grant});
 }
 
 std::optional<RelayGrant> RelayGrantCoordinator::GrantFor(const std::string& recipient) {

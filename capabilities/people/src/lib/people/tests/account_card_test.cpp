@@ -301,6 +301,26 @@ TEST(PeerCardsTest, KeepsOnlyCheckedCardsAndTheNewest) {
   EXPECT_EQ(reopened.List().value().size(), 1u);
 }
 
+// A card that names a device the kept one did not (a device linked or restored since) says so, with the account: what
+// was sent to the old list (a grant among it) never reached that device.
+TEST(PeerCardsTest, ANewerCardWithANewDeviceSaysWhichAccountGainedOne) {
+  InMemoryPeerCards cards;
+  PeerCards& store = cards;
+  const test::TestAccount alice = test::TestAccount::Make();
+  std::vector<std::string> gained;
+  store.SetOnDevicesAdded([&gained](const std::string& account) { gained.push_back(account); });
+  ASSERT_TRUE(store.AddAccountCard(CardOf(alice, test::Devices({"QmPhone"}), kNow), kNow + 10, "envelope"));
+  EXPECT_TRUE(gained.empty()) << "the first card: nothing was sent to any list of it yet";
+  ASSERT_TRUE(store.AddAccountCard(CardOf(alice, test::Devices({"QmPhone"}), kNow + 1), kNow + 10, "envelope"));
+  EXPECT_TRUE(gained.empty()) << "newer, the same devices";
+  ASSERT_TRUE(
+      store.AddAccountCard(CardOf(alice, test::Devices({"QmPhone", "QmLaptop"}), kNow + 2), kNow + 10, "envelope"));
+  EXPECT_EQ(gained, (std::vector<std::string>{alice.account_id}));
+  ASSERT_TRUE(store.AddAccountCard(CardOf(alice, test::Devices({"QmLaptop"}), kNow + 3), kNow + 10, "envelope"));
+  EXPECT_EQ(gained.size(), 1u) << "a device gone is no new device";
+  store.SetOnDevicesAdded(nullptr);
+}
+
 TEST(PeerCardsTest, ARestoredFloorRefusesOlderCardsAndIsBackedUp) {
   InMemoryPeerCards cards; // that the cards survive a restart is the app storage's (peer_card_store_contract_test)
   const test::TestAccount alice = test::TestAccount::Make();
