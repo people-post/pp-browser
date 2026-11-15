@@ -971,10 +971,15 @@ private:
   PendingRestore restored_;
   /** What a restore brought back beyond the account: applied now, or once messaging is up. */
   void QueueRestoredState(AccountStateExtras extras);
-  /** The restored grants into the grant store (blocking: each is checked against its grantor's key). Worker. */
-  void ApplyRestoredGrants();
-  /** Grants the locker carried (a sync, a restore) into the grant store, each checked. Worker. */
-  void TakeLockerGrants(const std::vector<AccountStateGrant>& grants);
+  /**
+   * The restored grants into the grant store (blocking: each is checked against its grantor's key), then, after a
+   * restore, each contact hears this device's card on the control lane, so its next message opens a session with this
+   * device (carrying its own card) instead of going to the account's earlier device. Both are taken under one lock: a
+   * second run finds neither. Worker.
+   */
+  void ApplyRestoredGrantsThenAnnounce();
+  /** Grants the locker carried (a sync, a restore) into the grant store, each checked (RelayGrantCoordinator). Worker. */
+  void TakeLockerGrants(const std::vector<AccountStateGrant>& grants, bool look_up_keys);
   static constexpr int64_t kLockerPublishDelayMs = 5 * 1000;
   /** How often the locker is synced while running (another device's contact edits arrive this way). */
   static constexpr int64_t kLockerSyncIntervalMs = 10 * 60 * 1000;
@@ -984,11 +989,6 @@ private:
   void ApplyRestoredCardFloors();
   /** Recreate the groups a restore brought back, then check the members of every group still checking. */
   void ResumeGroupRosterChecks();
-  /**
-   * After a restore: each contact hears this device's card on the control lane, so its next message opens a
-   * session with this device (carrying its own card) instead of going to the account's earlier device.
-   */
-  void AnnounceRestoredDevice();
   /** Our newest card to every contact (the control lane's device_list notice): after a restore, a revoke. */
   void AnnounceOwnDevicesToContacts();
   /** After the list changed here: sync the account locker (it brings the contacts), then announce to them. */

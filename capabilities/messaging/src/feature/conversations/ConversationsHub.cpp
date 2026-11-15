@@ -1560,7 +1560,8 @@ void ConversationsHub::BuildMessagingObjects() {
             }
             return grants;
           },
-          .take_grants = [this](const std::vector<AccountStateGrant>& grants) { TakeLockerGrants(grants); },
+          // A sync: kept keys only (it runs under the locker's lock; a grantor not kept yet is taken at the next).
+          .take_grants = [this](const std::vector<AccountStateGrant>& grants) { TakeLockerGrants(grants, false); },
           .own_devices = [this]() -> Roe<OwnDeviceList> {
             if (!mesh_messaging_) {
               return Error("Messaging is not ready");
@@ -1795,8 +1796,7 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
   ScheduleMeshBringUp();
   AppRuntime::PostWorkerNormal([this]() {
     ResumeGroupRosterChecks();
-    ApplyRestoredGrants(); // before the announce: the restored phone's first sends carry its grants
-    AnnounceRestoredDevice();
+    ApplyRestoredGrantsThenAnnounce(); // the restored phone's first sends carry its grants
   });
   SweepRelayGrantsSoon(); // the cutover's too: contacts and members from before MR005 get grants on first run
   RefreshStaleContactProfiles();
@@ -2439,22 +2439,28 @@ void ConversationsHub::QueueRestoredState(AccountStateExtras extras) {
     ApplyRestoredCardFloors();
     AppRuntime::PostWorkerNormal([this]() {
       ResumeGroupRosterChecks();
-      ApplyRestoredGrants();
-      AnnounceRestoredDevice();
+      ApplyRestoredGrantsThenAnnounce();
     });
   }
 }
 
-void ConversationsHub::ApplyRestoredGrants() {
+void ConversationsHub::ApplyRestoredGrantsThenAnnounce() {
+  // Both taken in one step: a second run (the restore's and messaging's, racing) finds neither, so the announce never
+  // goes before the grants another run is still checking.
   std::vector<AccountStateGrant> restored;
+  bool announce = false;
   {
     std::lock_guard lock(restored_mutex_);
     restored.swap(restored_.grants);
+    announce = std::exchange(restored_.announce, false);
   }
-  TakeLockerGrants(restored);
+  TakeLockerGrants(restored, true); // a restore keeps no key yet: each grantor's is looked up
+  if (announce) {
+    AnnounceOwnDevicesToContacts();
+  }
 }
 
-void ConversationsHub::TakeLockerGrants(const std::vector<AccountStateGrant>& grants) {
+void ConversationsHub::TakeLockerGrants(const std::vector<AccountStateGrant>& grants, const bool look_up_keys) {
   if (grants.empty() || !mesh_messaging_ || shutdown_requested_.load(std::memory_order_acquire)) {
     return;
   }
@@ -2467,7 +2473,7 @@ void ConversationsHub::TakeLockerGrants(const std::vector<AccountStateGrant>& gr
                                .expires_at = grant.expires_at,
                                .signature = grant.signature});
   }
-  mesh_messaging_->RelayGrants().TakeFromLocker(taken);
+  mesh_messaging_->RelayGrants().TakeFromLocker(taken, look_up_keys);
 }
 
 void ConversationsHub::PublishAccountLockerSoon() {
@@ -2516,17 +2522,6 @@ void ConversationsHub::ApplyRestoredCardFloors() {
   if (auto raised = peer_cards_->RaiseFloors(floors); !raised) {
     log().warning << "Card floors not restored: " << raised.error().message;
   }
-}
-
-void ConversationsHub::AnnounceRestoredDevice() {
-  {
-    std::lock_guard lock(restored_mutex_);
-    if (!restored_.announce) {
-      return;
-    }
-    restored_.announce = false;
-  }
-  AnnounceOwnDevicesToContacts();
 }
 
 void ConversationsHub::AnnounceOwnDevicesToContacts() {
