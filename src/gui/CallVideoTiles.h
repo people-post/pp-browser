@@ -82,7 +82,8 @@ std::vector<uint32_t> SubmitCallRosterTiles(Media& media, CallVideoTileRenderer&
       continue;
     }
     const uint32_t stream = RowStream(row);
-    row.has_remote_video = stream != 0 && media.HasRemoteVideoForStream(stream);
+    // A blocked row (silent, or restored with no video packet since) shows the avatar, never a cached picture.
+    row.has_remote_video = stream != 0 && !row.video_blocked && media.HasRemoteVideoForStream(stream);
     if (!row.has_remote_video) {
       continue;
     }

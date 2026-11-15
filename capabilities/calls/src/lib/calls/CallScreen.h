@@ -60,6 +60,10 @@ struct CallScreen {
     /** V060: the roster row's (the OS has their audio / their camera paused in the background). */
     bool on_hold = false;
     bool video_paused = false;
+    /** Group call: nothing has arrived from them for 15 s (CallSilentTiles): the tile is dimmed and says so. */
+    bool silent_dimmed = false;
+    /** Group call: the tile may not show a picture (dimmed, or restored with no video packet since): the avatar. */
+    bool video_blocked = false;
     /** V062: a guest in the group's call (the tile reads "Guest"), and the member who brought them. */
     bool guest = false;
     std::string brought_by;

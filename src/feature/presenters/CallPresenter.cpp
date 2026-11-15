@@ -15,6 +15,7 @@
 #include "lib/pricing/PricingTypes.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
+#include "common/media/MediaRelayStream.h"
 
 #include <algorithm>
 #include <chrono>
@@ -40,6 +41,11 @@ int64_t SteadyMs(const PendingNotificationTap::Clock::time_point at) {
  */
 bool TapMayBeFor(const std::string& hint, const std::string& call_id) {
   return hint.empty() || hint == call_id;
+}
+
+/** Our own media path carries media: the call's, not one person's (B97's count and the silent tiles share it). */
+bool OwnMediaPathOnline(const CallScreen& s, const CallUiBackend& backend) {
+  return s.media_connected && backend.Recovery() == CallRecovery::None && s.status != CallScreen::Status::Reconnecting;
 }
 
 } // namespace
@@ -671,6 +677,64 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   if (decided.show_elapsed || ShowsParticipantCount(s)) {
     s.connected_at_ms = live_since_ms; // the call's, not the current path's
   }
+  StepSilentTiles(s, backend);
+}
+
+void CallPresenter::StepSilentTiles(CallScreen& s, CallUiBackend& backend) {
+  // Only a group call's tiles; a 1:1 call is untouched.
+  if (!s.group) {
+    silent_tiles_.Reset();
+    silent_call_id_.clear();
+    std::fill(std::begin(own_path_logged_), std::end(own_path_logged_), -1);
+    return;
+  }
+  if (silent_call_id_ != s.call_id) {
+    silent_tiles_.Reset();
+    silent_call_id_ = s.call_id;
+    std::fill(std::begin(own_path_logged_), std::end(own_path_logged_), -1);
+  }
+  const int64_t now = steady_ms_();
+  const bool online = OwnMediaPathOnline(s, backend);
+  // Measurement for the device check: when the signals behind "our own path is online" flip (monotonic ms, no ids).
+  const int signals[3] = {s.media_connected ? 1 : 0, backend.Recovery() != CallRecovery::None ? 1 : 0,
+                          s.status == CallScreen::Status::Reconnecting ? 1 : 0};
+  if (!std::equal(std::begin(signals), std::end(signals), std::begin(own_path_logged_))) {
+    std::copy(std::begin(signals), std::end(signals), std::begin(own_path_logged_));
+    log().info << "own media path signals media_connected=" << signals[0] << " recovering=" << signals[1]
+               << " reconnecting=" << signals[2] << " online=" << (online ? 1 : 0) << " t=" << now;
+  }
+  std::vector<CallSilentTiles::Person> others;
+  for (const CallScreen::Member& m : s.members) {
+    if (!m.is_local) {
+      others.push_back({.identity = m.identity, .on_hold = m.on_hold});
+    }
+  }
+  if (!others.empty()) {
+    const MediaEngineHealth health = backend.Media().HealthSnapshot();
+    for (CallSilentTiles::Person& p : others) {
+      const uint32_t stream = PublisherStreamIdForIdentity(p.identity);
+      for (const MediaStreamHealth& audio : health.streams) {
+        if (audio.stream_id == stream) {
+          p.audio = audio.rx_frames;
+          break;
+        }
+      }
+      for (const VideoStreamArrival& video : health.video_arrivals) {
+        if (video.stream_id == stream) {
+          p.video = video.arrival.frames;
+          break;
+        }
+      }
+    }
+  }
+  silent_tiles_.Step(now, online, others);
+  for (CallScreen::Member& m : s.members) {
+    if (!m.is_local) {
+      const CallSilentTiles::Tile tile = silent_tiles_.TileOf(m.identity);
+      m.silent_dimmed = tile.silent;
+      m.video_blocked = tile.video_blocked;
+    }
+  }
 }
 
 void CallPresenter::FillGroupInvite(CallScreen& s, const int64_t now) {
@@ -706,8 +770,7 @@ void CallPresenter::WatchForNoMedia(CallUiBackend& backend, const CallScreen& s,
     sample.call_id = s.call_id;
     sample.group = s.group;
     // A hop reattach keeps the seat "live" while nothing flows: recovering pauses the count too.
-    sample.media_live =
-        s.media_connected && backend.Recovery() == CallRecovery::None && s.status != CallScreen::Status::Reconnecting;
+    sample.media_live = OwnMediaPathOnline(s, backend);
     sample.others_joined = static_cast<size_t>(
         std::count_if(s.members.begin(), s.members.end(), [](const CallScreen::Member& m) { return !m.is_local; }));
     sample.last_rx_ms = std::max(health.last_rx_audio_ms, health.last_rx_video_ms);

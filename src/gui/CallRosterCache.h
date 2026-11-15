@@ -112,6 +112,8 @@ inline void FillCallRoster(std::vector<CallRosterParticipantState>& roster,
     entry.video_enabled = member.video_enabled;
     entry.on_hold = member.on_hold;
     entry.video_paused = member.video_paused;
+    entry.silent = member.silent_dimmed;
+    entry.video_blocked = member.video_blocked;
     entry.guest = member.guest;
     roster.push_back(std::move(entry));
   }

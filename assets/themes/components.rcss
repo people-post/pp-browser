@@ -6972,9 +6972,14 @@ call-video-tile {
 
 .call-phone-tile--on-hold .call-phone-avatar,
 .call-phone-tile--on-hold call-video-tile,
+.call-phone-tile--silent .call-phone-avatar,
+.call-phone-tile--silent call-video-tile,
 .shell-call-peer-card--on-hold .shell-call-peer-avatar,
 .shell-call-peer-card--on-hold .shell-call-peer-avatar-image,
-.shell-call-peer-card--on-hold call-video-tile {
+.shell-call-peer-card--on-hold call-video-tile,
+.shell-call-peer-card--silent .shell-call-peer-avatar,
+.shell-call-peer-card--silent .shell-call-peer-avatar-image,
+.shell-call-peer-card--silent call-video-tile {
   opacity: 0.45;
 }
 

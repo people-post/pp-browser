@@ -386,8 +386,8 @@ std::string RosterKey(const std::vector<CallRosterParticipantState>& roster) {
   for (const CallRosterParticipantState& p : roster) {
     key += std::string(p.name.c_str()) + "|" + p.stream_id.c_str() + "|" + (p.audio_muted ? "m" : "-") +
            (p.video_enabled ? "v" : "-") + (p.has_remote_video ? "r" : "-") + (p.on_hold ? "h" : "-") +
-           (p.video_paused ? "p" : "-") + (p.camera_resuming ? "w" : "-") + (p.guest ? "g" : "-") +
-           (p.avatar_unknown ? "u" : "-") +
+           (p.video_paused ? "p" : "-") + (p.silent ? "s" : "-") + (p.camera_resuming ? "w" : "-") +
+           (p.guest ? "g" : "-") + (p.avatar_unknown ? "u" : "-") +
            AvatarKey(false, p.has_avatar, p.avatar_src, p.avatar_letter, p.avatar_tone) + ";";
   }
   return key;

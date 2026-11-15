@@ -159,8 +159,13 @@ TEST(CallRosterCacheTest, TheCallStateFieldsAreTheScreensEveryFrame) {
   members[1].on_hold = true;
   members[1].video_paused = true;
   members[1].guest = true;
+  members[1].silent_dimmed = true;
+  members[1].video_blocked = true;
   members[0].audio_muted = true;
   f.Fill(members, kT0 + 16);
+  EXPECT_TRUE(f.roster[1].silent);
+  EXPECT_TRUE(f.roster[1].video_blocked);
+  EXPECT_FALSE(f.roster[0].silent);
   EXPECT_TRUE(f.roster[1].audio_muted);
   EXPECT_TRUE(f.roster[1].video_enabled);
   EXPECT_TRUE(f.roster[1].on_hold);

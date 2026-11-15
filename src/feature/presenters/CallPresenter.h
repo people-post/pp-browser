@@ -10,6 +10,7 @@
 #include "feature/presenters/CallMediaFrame.h"
 #include "feature/presenters/CallHoldStuck.h"
 #include "feature/presenters/CallPlayoutStuck.h"
+#include "feature/presenters/CallSilentTiles.h"
 #include "feature/presenters/CallSpeakerButton.h"
 #include "feature/presenters/CallUiAttachGuard.h"
 #include "feature/presenters/CallWakePlaceholder.h"
@@ -382,6 +383,12 @@ private:
   void MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s);
   /** B97: a live group call where nothing arrives from anyone for 30 s is left (once told). */
   void WatchForNoMedia(CallUiBackend& backend, const CallScreen& s, int64_t now);
+  /**
+   * A group call's tiles of people who stopped sending (DEV/PLAN-call-silent-tile.md): steps CallSilentTiles from the
+   * engine's receive counters and writes `silent_dimmed` / `video_blocked` on `s`'s members. Also writes the one line
+   * per flip of the signals that say our own media path is online (to be measured).
+   */
+  void StepSilentTiles(CallScreen& s, CallUiBackend& backend);
   /** G022: the group banner of the call on `s` (the waiting invites read at most once a second). */
   void FillGroupInvite(CallScreen& s, int64_t now);
   /** V062: who is a guest in the group's call on `s`, what this device may do about them, and Add people. */
@@ -456,6 +463,10 @@ private:
   /** The last 1:1 call shown that this device was in and that had not connected (KeepsFailedPage's kind). */
   std::string unconnected_call_id_;
   NoMediaWatch no_media_watch_;
+  CallSilentTiles silent_tiles_{[this](const std::string& line) { log().info << line; }};
+  /** The call silent_tiles_ is for, and the own-path signals last logged (-1: none yet). */
+  std::string silent_call_id_;
+  int own_path_logged_[3] = {-1, -1, -1};
   int64_t no_media_checked_ms_ = 0;
   /** Last CallSessionManager identity the ring callbacks were installed on. */
   const void* bound_calls_ = nullptr;

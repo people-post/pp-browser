@@ -32,6 +32,13 @@ void AppendHoldPill(std::ostringstream& out, const char* when, const char* extra
       << "<span class=\"call-hold-pill-text\">" << Tr("call.placeholder.on_hold") << "</span></div>";
 }
 
+/** The tile of someone nothing has arrived from for 15 s: "Connection lost…" with a warning icon (`when` as above). */
+void AppendSilentPill(std::ostringstream& out, const char* when, const char* extra_class) {
+  out << "<div class=\"call-hold-pill" << extra_class << "\" data-if=\"" << when << "\">"
+      << "<svg src=\"../icons/v2/alert-triangle.svg\" width=\"14\" height=\"14\" crop-to-content=\"true\"></svg>"
+      << "<span class=\"call-hold-pill-text\">" << Tr("call.placeholder.connection_lost") << "</span></div>";
+}
+
 /**
  * One card per row of the bound array `rows` (data-for), with `events` on the card and its tile drawn `tile_fit`
  * ("fit": the whole frame; "fill": cover the tile, cropped).
@@ -39,7 +46,8 @@ void AppendHoldPill(std::ostringstream& out, const char* when, const char* extra
 void AppendRosterCards(std::ostringstream& out, const char* rows, const char* card_class, const char* events,
                        const char* tile_fit) {
   out << "<div data-for=\"p : " << rows << "\" class=\"shell-call-peer-card " << card_class
-      << "\" data-class-shell-call-peer-card--on-hold=\"p.on_hold\" " << events << ">";
+      << "\" data-class-shell-call-peer-card--on-hold=\"p.on_hold\""
+      << " data-class-shell-call-peer-card--silent=\"p.silent\" " << events << ">";
   out << "<call-video-tile class=\"shell-call-peer-tile\" tile=\"local\" fit=\"" << tile_fit
       << "\" "
          "data-if=\"p.is_local && call_in_progress_local_preview\"></call-video-tile>";
@@ -63,10 +71,11 @@ void AppendRosterCards(std::ostringstream& out, const char* rows, const char* ca
   out << "<p class=\"text-sm shell-call-peer-name\">{{p.name}}</p>";
   out << "<p class=\"text-xs shell-call-peer-stall\" data-if=\"p.guest\">" << Tr("call.guest.label") << "</p>";
   out << "<p class=\"text-xs shell-call-peer-stall\" "
-         "data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video\" "
+         "data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video && !p.silent\" "
          ">{{call_in_progress_remote_placeholder}}</p>";
   AppendHoldPill(out, "p.on_hold", "");
-  out << "<p class=\"text-xs shell-call-peer-stall\" data-if=\"p.video_paused && !p.on_hold\">"
+  AppendSilentPill(out, "p.silent && !p.on_hold", "");
+  out << "<p class=\"text-xs shell-call-peer-stall\" data-if=\"p.video_paused && !p.on_hold && !p.silent\">"
       << Tr("call.placeholder.camera_paused") << "</p>";
   out << "<p class=\"text-xs shell-call-peer-stall\" data-if=\"p.is_local && p.camera_resuming\">"
       << Tr("call.placeholder.camera_resuming") << "</p>";
@@ -429,7 +438,7 @@ void AppendStorySheet(std::ostringstream& out, const CallInProgressState& call) 
 void AppendPhoneTiles(std::ostringstream& out, const char* rows, const char* extra_class, const char* events,
                       const char* fit, const bool rings) {
   out << "<div data-for=\"p : " << rows << "\" class=\"call-phone-tile" << extra_class << "\""
-      << " data-class-call-phone-tile--on-hold=\"p.on_hold\"";
+      << " data-class-call-phone-tile--on-hold=\"p.on_hold\" data-class-call-phone-tile--silent=\"p.silent\"";
   if (rings) {
     out << " data-class-call-phone-tile--speaking=\"p.speaking\"";
   }
@@ -450,10 +459,12 @@ void AppendPhoneTiles(std::ostringstream& out, const char* rows, const char* ext
   out << "><p class=\"avatar-letter\">{{p.avatar_letter}}</p></div>";
   out << "<img class=\"call-phone-avatar call-phone-avatar--tile\" data-if=\"p.has_avatar && " << no_video
       << "\" data-attr-src=\"p.avatar_src\"/>";
-  out << "<p class=\"call-phone-tile-note\" data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video\">"
+  out << "<p class=\"call-phone-tile-note\" data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video && "
+         "!p.silent\">"
          "{{call_in_progress_remote_placeholder}}</p>";
   AppendHoldPill(out, "p.on_hold", " call-hold-pill--tile");
-  out << "<p class=\"call-phone-tile-note\" data-if=\"p.video_paused && !p.on_hold\">"
+  AppendSilentPill(out, "p.silent && !p.on_hold", " call-hold-pill--tile");
+  out << "<p class=\"call-phone-tile-note\" data-if=\"p.video_paused && !p.on_hold && !p.silent\">"
       << Tr("call.placeholder.camera_paused") << "</p>";
   out << "<p class=\"call-phone-tile-note\" data-if=\"p.is_local && p.camera_resuming\">"
       << Tr("call.placeholder.camera_resuming") << "</p>";
