@@ -5,7 +5,8 @@
 namespace pbr {
 
 const char* MobileOrientationsHint() {
-  return UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad ? TabletOrientationsHint() : PhoneOrientationsHint();
+  return UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad ? TabletOrientationsHint()
+                                                                              : PhoneOrientationsHint();
 }
 
 } // namespace pbr

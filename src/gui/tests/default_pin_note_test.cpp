@@ -35,9 +35,7 @@ std::string ReadSource(const std::string& relative) {
 
 class DefaultPinNoteTest : public ::testing::Test {
 protected:
-  static void SetUpTestSuite() {
-    ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
-  }
+  static void SetUpTestSuite() { ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR)); }
   void SetUp() override { LocalizationService::Instance().SetPreferredLanguage("en"); }
   void TearDown() override { LocalizationService::Instance().SetPreferredLanguage("en"); }
 };
@@ -62,7 +60,8 @@ TEST_F(DefaultPinNoteTest, NoLocaleOrViewStringContainsTheDefaultPinDigits) {
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     EXPECT_EQ(ReadAsset(locale).find(digits), std::string::npos) << locale;
   }
-  for (const auto& entry : std::filesystem::directory_iterator(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views")) {
+  for (const auto& entry :
+       std::filesystem::directory_iterator(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views")) {
     if (entry.path().extension() == ".rml") {
       EXPECT_EQ(ReadAsset("views/" + entry.path().filename().string()).find(digits), std::string::npos)
           << entry.path().filename();
