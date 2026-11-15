@@ -338,7 +338,7 @@
     "settings.security.grace.5": "5 分钟后",
     "settings.security.grace.15": "15 分钟后",
     "settings.security.grace.60": "1 小时后",
-    "settings.security.grace.always": "直到重启",
+    "settings.security.grace.always": "从不",
     "settings.security.grace.help": "时间越长，拿到你已解锁手机的人越容易打开 PP。",
     "settings.security.grace.caption": "离开 PP 超过这个时间，再打开时要输入 PIN。",
     "settings.security.biometric.face": "用面容 ID 解锁",

@@ -37,27 +37,24 @@ std::string ReadAsset(const std::string& relative) {
   return buffer.str();
 }
 
-TEST(SecurityLayoutTest, AutoLockOffersTheFourOldValuesInTheOldOrderAndNotUntilRestart) {
-  // Before this change the chooser listed {0, 5, 15, 60, kUnlockGraceAlways}.
-  const std::vector<int> before{0, 5, 15, 60, kUnlockGraceAlways};
-  std::vector<int> expected = before;
-  expected.pop_back();
+TEST(SecurityLayoutTest, AutoLockOffersTheFiveValuesWithUntilRestartLast) {
+  const std::vector<int> expected{0, 5, 15, 60, kUnlockGraceAlways};
   EXPECT_EQ(OfferedUnlockGraceMinutes(), expected);
-  for (const int minutes : OfferedUnlockGraceMinutes()) {
-    EXPECT_NE(minutes, kUnlockGraceAlways);
-  }
+  EXPECT_EQ(kUnlockGraceAlways, -1);
 }
 
-TEST(SecurityLayoutTest, AStoredUntilRestartStillShowsItsLabelButNothingInTheChooserIsTicked) {
+TEST(SecurityLayoutTest, UntilRestartIsOfferedLabelledAndTickedWhenStored) {
   const std::string label = UnlockGraceDisplayLabel(kUnlockGraceAlways);
   EXPECT_FALSE(label.empty());
   EXPECT_NE(label, UnlockGraceDisplayLabel(15));
+  EXPECT_EQ(ReadAsset("locales/en.json").find("\"settings.security.grace.always\": \"Never\""),
+            ReadAsset("locales/en.json").find("\"settings.security.grace.always\""));
+  EXPECT_NE(ReadAsset("locales/zh-Hans.json").find("\"settings.security.grace.always\": \"从不\""), std::string::npos);
   int ticked = 0;
   for (const int minutes : OfferedUnlockGraceMinutes()) {
     ticked += minutes == kUnlockGraceAlways ? 1 : 0; // what the chooser does: current == minutes
   }
-  EXPECT_EQ(ticked, 0);
-  // Both languages carry the label of the value that is no longer offered.
+  EXPECT_EQ(ticked, 1);
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     EXPECT_NE(ReadAsset(locale).find("\"settings.security.grace.always\""), std::string::npos) << locale;
   }

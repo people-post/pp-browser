@@ -136,7 +136,7 @@ TEST_F(SecuritySettingsGraceTest, AlwaysIsSavedShownAndHandedToTheApp) {
   EXPECT_NE(back.unlock_grace_label, UnlockGraceDisplayLabel(15));
 }
 
-TEST_F(SecuritySettingsGraceTest, PickingOneOfTheFourOverAStoredUntilRestartStoresExactlyThatAndDropsTheOldValue) {
+TEST_F(SecuritySettingsGraceTest, PickingAnyOfferedChoiceOverAStoredUntilRestartStoresExactlyThat) {
   SettingsUiState state = Synced();
   state.unlock_grace_minutes = kUnlockGraceAlways;
   ASSERT_TRUE(static_cast<bool>(section_.Flush(state, store_)));

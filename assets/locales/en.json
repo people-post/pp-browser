@@ -341,7 +341,7 @@
     "settings.security.grace.5": "After 5 minutes",
     "settings.security.grace.15": "After 15 minutes",
     "settings.security.grace.60": "After 1 hour",
-    "settings.security.grace.always": "Until restart",
+    "settings.security.grace.always": "Never",
     "settings.security.grace.help": "The longer it is, the easier it is for someone holding your unlocked phone to open PP.",
     "settings.security.grace.caption": "After this long away from PP, you enter your PIN to open it again.",
     "settings.security.biometric.face": "Unlock with Face ID",
