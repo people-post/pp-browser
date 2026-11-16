@@ -332,6 +332,7 @@ void ConversationsHub::OpenRelayPins() {
   pins->SetFirstUse([this](const std::string& origin) { return FirstUseAllowed(origin); });
   pins->SetOnChanged([this](const std::string&) { OnRelayPinsChanged(); });
   pins->SetOnNotRegistered([this](const std::string& origin) { HealRegistrationSoon(origin); });
+  pins->SetOnUpgradeRequired([this](const std::string& origin) { OnRelayRequiresUpgrade(origin); });
   {
     std::lock_guard lock(relay_pins_mu_);
     relay_pins_ = pins;
@@ -352,6 +353,7 @@ void ConversationsHub::CloseRelayPins() {
   closing->SetFirstUse({});
   closing->SetOnChanged({});
   closing->SetOnNotRegistered({});
+  closing->SetOnUpgradeRequired({});
 }
 
 bool ConversationsHub::KeepsPin(const std::string& origin) {
@@ -378,9 +380,10 @@ bool ConversationsHub::FirstUseAllowed(const std::string& origin) {
   if (config_.developer_relays) {
     return KeepsPin(origin);
   }
-  if (!config_.org_first_use) {
-    return false;
-  }
+  return config_.org_first_use && IsOrgOrigin(origin);
+}
+
+bool ConversationsHub::IsOrgOrigin(const std::string& origin) {
   std::lock_guard lock(kept_pins_mu_);
   return std::any_of(org_origins_.begin(), org_origins_.end(),
                      [&origin](const std::string& org) { return SameRelay(org, origin); });
@@ -454,6 +457,43 @@ void ConversationsHub::HealRegistrationSoon(const std::string& origin) {
       RegisterOnOtherRelaysSoon();
     }
   });
+}
+
+void ConversationsHub::OnRelayRequiresUpgrade(const std::string& origin) {
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    return;
+  }
+  if (IsOrgOrigin(origin)) {
+    std::function<void()> callback;
+    {
+      std::lock_guard lock(org_upgrade_mu_);
+      callback = on_org_upgrade_required_;
+    }
+    if (callback) {
+      callback(); // the relay refusing us is the authority: the update screen, whatever client-compat says
+    }
+  }
+  // A relay of ours (the org's too when it is one) says why on its row; nothing else is blocked.
+  if (!our_relays_) {
+    return;
+  }
+  for (const OurRelayEntry& entry : our_relays_->List().relays) {
+    if (!SameRelay(entry.origin, origin)) {
+      continue;
+    }
+    if (entry.registration.state == RelayRegistrationRecord::State::Failed &&
+        entry.registration.reason == kRegistrationUpgrade) {
+      return; // said so already
+    }
+    log().warning << "relay " << origin << " needs a newer version of this app (426 client_upgrade_required)";
+    RelayRegistrationRecord record = entry.registration; // its registration id stays (a revoke names it)
+    record.state = RelayRegistrationRecord::State::Failed;
+    record.reason = kRegistrationUpgrade;
+    record.at_ms = util::NowUnixMs();
+    our_relays_->Record(entry.origin, record);
+    NotifyOurRelaysChanged();
+    return;
+  }
 }
 
 void ConversationsHub::HealPreferredRegistration(const int64_t now_ms) {
@@ -554,6 +594,11 @@ std::vector<std::string> ConversationsHub::CardDirectories() const {
 void ConversationsHub::SetOnOurRelaysChanged(std::function<void()> callback) {
   std::lock_guard lock(our_relays_changed_mu_);
   on_our_relays_changed_ = std::move(callback);
+}
+
+void ConversationsHub::SetOnOrgRelayRequiresUpgrade(std::function<void()> callback) {
+  std::lock_guard lock(org_upgrade_mu_);
+  on_org_upgrade_required_ = std::move(callback);
 }
 
 void ConversationsHub::NotifyOurRelaysChanged() {

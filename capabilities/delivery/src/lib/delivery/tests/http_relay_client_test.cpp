@@ -167,6 +167,32 @@ TEST_F(HttpRelayClientTest, AWrongAudienceIsReportedToTheAudience) {
   EXPECT_EQ(Bodies().size(), 1u) << "not sent again as it is";
 }
 
+// A relay newer than this app answers 426 `client_upgrade_required`: its own typed refusal, heard by the audience (the
+// org's relay: the update screen; another of ours: its row), and not sent again.
+TEST_F(HttpRelayClientTest, AnUpgradeRequiredIsReportedToTheAudience) {
+  Script(
+      {Reply{.status = 426,
+             .headers = {},
+             .body = R"({"error":"This app is too old for this relay; update it","code":"client_upgrade_required"})"}});
+  auto sent = client_.Send(EnvelopeTo(kBob));
+  ASSERT_FALSE(sent);
+  EXPECT_TRUE(IsClientUpgradeRequired(sent.error()));
+  EXPECT_EQ(audience_->refused, std::vector<std::string>{"client_upgrade_required"});
+  EXPECT_EQ(Bodies().size(), 1u) << "not sent again as it is";
+  server_.SetHandler([](const ScriptedHttpServer::Request&) {
+    return Reply{.status = 426, .headers = {}, .body = R"({"error":"x","code":"client_upgrade_required"})"};
+  });
+  auto polled = client_.PollInbox(kMe, "");
+  ASSERT_FALSE(polled);
+  EXPECT_TRUE(IsClientUpgradeRequired(polled.error()));
+  server_.SetHandler([](const ScriptedHttpServer::Request&) {
+    return Reply{.status = 426, .headers = {}, .body = R"({"error":"Upgrade Required"})"};
+  });
+  auto uncoded = client_.PollInbox(kMe, "");
+  ASSERT_FALSE(uncoded);
+  EXPECT_FALSE(IsClientUpgradeRequired(uncoded.error())) << "only the relay's code says so";
+}
+
 // MR007-HEAL: a poll answered not_registered reports the lost registration.
 TEST_F(HttpRelayClientTest, APollAnsweredNotRegisteredIsReportedToTheAudience) {
   server_.SetHandler([](const ScriptedHttpServer::Request&) {

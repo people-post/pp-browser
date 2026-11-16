@@ -67,7 +67,7 @@ TEST(MyRelaysTest, ARegistrationSaysWhyItFailedWhetherItEndedAndWhenOneIsMissing
       {Relay("a.example", {.state = RelayRegistrationRecord::State::NotRegistered}),
        Relay("b.example", {.state = RelayRegistrationRecord::State::NotRegistered}),
        Relay("c.example", {.state = RelayRegistrationRecord::State::Expired, .expires_at = "2026-01-02T00:00:00Z"}),
-       Relay("d.example", Failed("refused"))},
+       Relay("d.example", Failed("refused")), Relay("e.example", Failed("upgrade"))},
       true);
   EXPECT_EQ(view.relays[0].state, "Not registered. Set up your account in My profile to get mail here.");
   EXPECT_EQ(view.relays[0].state_kind, "error");
@@ -76,6 +76,8 @@ TEST(MyRelaysTest, ARegistrationSaysWhyItFailedWhetherItEndedAndWhenOneIsMissing
   EXPECT_EQ(view.relays[2].state, "Registration ended 2026-01-02");
   EXPECT_EQ(view.relays[2].state_kind, "error");
   EXPECT_EQ(view.relays[3].state, "Couldn't register: the relay said no");
+  EXPECT_EQ(view.relays[4].state, "Needs a newer version of the app") << "426 client_upgrade_required there";
+  EXPECT_EQ(view.relays[4].state_kind, "error");
   EXPECT_EQ(pbr::MyRelaysViewFor({Relay("a.example", Failed("Connection refused (curl 7)"))}, true).relays[0].state,
             "Couldn't register")
       << "a reason that is not a code is not shown";

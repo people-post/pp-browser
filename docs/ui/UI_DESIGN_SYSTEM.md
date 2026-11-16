@@ -272,7 +272,9 @@ Me → **My relays** (`settings_section_relays.rml`, page `relays`, Home group 1
 decides, `SettingsMyRelays` renders. One card per relay, preferred first: the host (`relay.example.org`), a
 **Preferred** badge on the first, its registration (`Registered until <date>` / `Registering…` / `Couldn't register`
 and why in words — `the relay didn't answer`, `the relay said no`, `the relay's ID couldn't be checked`, never an
-error's text / `Registration ended <date>` / on the preferred relay when the account holds no registration there `Not
+error's text / `Needs a newer version of the app` (the relay answered 426 `client_upgrade_required`, to a registration
+or any other call there: nothing else is blocked; the org's relay saying so shows the update screen instead,
+[SERVICE_ENDPOINTS § Client compatibility](../contracts/SERVICE_ENDPOINTS.md#client-compatibility-discovery)) / `Registration ended <date>` / on the preferred relay when the account holds no registration there `Not
 registered. Set up your account in My profile to get mail here.`, the others then `Registers after your preferred
 relay`; failures, an ended registration and the preferred relay's missing one in the error colour) and its last poll (`Reachable` / `Couldn't reach it`, the
 latter in the error colour; nothing before the first poll). On the main device the other relays have **Make preferred**

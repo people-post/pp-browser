@@ -19,7 +19,7 @@ struct RelayRegistrationRecord {
    */
   enum class State { Unknown, Registered, Failed, NotRegistered, Expired };
   State state = State::Unknown;
-  /** Failed: why, as a code (RelayRegistrationFailureCode: unreachable, refused, identity, other). */
+  /** Failed: why, as a code (RelayRegistrationFailureCode: unreachable, refused, identity, upgrade, other). */
   std::string reason;
   /** Registered: until when (ISO-8601, the relay's `expires_at`). */
   std::string expires_at;
@@ -52,9 +52,11 @@ inline constexpr const char kRegistrationUnreachable[] = "unreachable";
 inline constexpr const char kRegistrationRefused[] = "refused";
 inline constexpr const char kRegistrationIdentity[] = "identity";
 inline constexpr const char kRegistrationOther[] = "other";
+inline constexpr const char kRegistrationUpgrade[] = "upgrade";
 /**
  * Why a registration failed, as a code the page words: unreachable (no answer: a transport failure, a timeout, a
- * 5xx), refused (the relay answered no), identity (its identity is not in force: changed, taken or not given), other.
+ * 5xx), refused (the relay answered no), identity (its identity is not in force: changed, taken or not given), upgrade
+ * (the relay needs a newer version of this app: 426 `client_upgrade_required`), other.
  */
 std::string RelayRegistrationFailureCode(const Error& error);
 

@@ -47,6 +47,9 @@ public:
     if (fail) {
       return AppError::Network(Err::Network::ConnectFailed, "relay down");
     }
+    if (too_old) {
+      return AppError::Auth(Err::Auth::ClientUpgradeRequired, "client_upgrade_required");
+    }
     auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
                                                              signature_alg, kem_public_key_b64,
                                                              kem_binding_signature_b64, peer_id, multiaddrs, publish);
@@ -66,6 +69,8 @@ public:
   }
   std::vector<std::string> revoked_ids;
   bool fail = false;
+  /** The relay answers 426 `client_upgrade_required` (this app is too old for it). */
+  bool too_old = false;
   /** What the relay answers as the Brief LLM key (only the org's relay's client keeps one, MR006). */
   std::string llm_key;
   std::string expires_at = "2099-01-01T00:00:00.000Z";
@@ -289,6 +294,21 @@ TEST_F(RelayRegistrationsWorkflowTest, EachAnswerIsReportedToKeep) {
   EXPECT_EQ(records[1].state, RelayRegistrationRecord::State::Registered);
   EXPECT_EQ(records[1].expires_at, "2099-01-01T00:00:00.000Z");
   EXPECT_EQ(records[1].card_issued_at, 1000);
+}
+
+// Another relay of ours newer than this app (426 `client_upgrade_required`): its row says it needs a newer version of
+// the app, in a code the page words; nothing else is blocked.
+TEST_F(RelayRegistrationsWorkflowTest, ARelayNeedingANewerAppSaysSo) {
+  RegisterOnPreferred();
+  std::vector<RelayRegistrationRecord> records;
+  workflow_->SetOnResult(
+      [&records](const std::string&, const RelayRegistrationRecord& record) { records.push_back(record); });
+  client_->too_old = true;
+  workflow_->RunDue(kNow);
+  ASSERT_EQ(records.size(), 1u);
+  EXPECT_EQ(records[0].state, RelayRegistrationRecord::State::Failed);
+  EXPECT_EQ(records[0].reason, kRegistrationUpgrade);
+  EXPECT_TRUE(registered_on_.empty());
 }
 
 TEST_F(RelayRegistrationsWorkflowTest, ARegistrationKeptFromBeforeTheStartIsNotAskedAgain) {

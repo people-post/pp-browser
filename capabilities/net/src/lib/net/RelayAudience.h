@@ -33,7 +33,8 @@ public:
   virtual Roe<std::string> PeerId() = 0;
   /**
    * The relay refused a command signed for PeerId() with this `code`: `wrong_audience` (its identity is asked again),
-   * `not_registered` / `registration_expired` (our registration there is lost). Any other code is ignored.
+   * `not_registered` / `registration_expired` (our registration there is lost), `client_upgrade_required` (this app
+   * is too old for that relay). Any other code is ignored.
    */
   virtual void Refused(const std::string& code) = 0;
 };
@@ -87,10 +88,14 @@ std::string RelayRefusalCode(const std::string& body);
 
 /**
  * A relay refused a signed command with HTTP `status` and `body`: the audience hears the codes it acts on
- * (IRelayAudience::Refused), and the typed error comes back for `401 wrong_audience` (Err::Auth::WrongAudience) and
- * `403/404 not_registered` / `registration_expired` (Err::Auth::NotRegistered); nullopt for any other refusal (the
- * caller words it as before).
+ * (IRelayAudience::Refused), and the typed error comes back for `401 wrong_audience` (Err::Auth::WrongAudience),
+ * `403/404 not_registered` / `registration_expired` (Err::Auth::NotRegistered) and `426 client_upgrade_required`
+ * (Err::Auth::ClientUpgradeRequired); nullopt for any other refusal (the caller words it as before). Every relay
+ * client (relay, registration, blob, locker, push) reads its refusals through this one.
  */
 std::optional<Error> NoteRelayRefusal(IRelayAudience* audience, long status, const std::string& body);
+
+/** `error` is a relay's `426 client_upgrade_required` (NoteRelayRefusal). */
+bool IsClientUpgradeRequired(const Error& error);
 
 } // namespace pbr

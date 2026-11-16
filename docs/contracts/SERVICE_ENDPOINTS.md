@@ -253,6 +253,7 @@ All relay API calls require `sign_version` (3), `audience`, `timestamp` and `sig
 | `402` | `payment_required` (`initiation_floor`) | Final until paid (`Err::Network::PaymentRequired`, the floor in its detail): the floor is recorded for the recipient ([pricing P001](../../projects/pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet)) — the chat shows the price and holds sends while no payment can be made. The relay's price is the authority: it is shown over the recipient's kept card until a newer card is kept, and when that card says another price, or none is kept, the card is fetched again — its devices, then the directories ([The stranger's price](#the-strangers-price)) |
 | `429` | `stranger_quota_exceeded` | Queued and sent again after a backoff (1 min, doubling to 16; at most 8 tries, `StrangerQuotaRetryAfter`) |
 | `429` | `rate_limited` | Queued, retried when the inbox syncs (as any rate limit) |
+| `426` | `client_upgrade_required` | Final (`Err::Auth::ClientUpgradeRequired`): this app is too old for that relay ([Client compatibility](#client-compatibility-discovery)) |
 
 The recipient's floor is the `initiation_floor` of the card it registered with (0 when it sent none).
 

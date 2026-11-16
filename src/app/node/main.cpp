@@ -3,6 +3,7 @@
 #include "app/node/NodeHeartbeat.h"
 #include "app/node/NodeMetrics.h"
 #include "app/node/NodeMeshPublish.h"
+#include "app/node/NodeUpgradeNotice.h"
 #include "app/node/StatusHttpProtocol.h"
 #include "app/node/StatusHttpServer.h"
 
@@ -203,6 +204,9 @@ void ShutdownNode(pbr::NodeBootstrapResult& boot) {
  */
 std::shared_ptr<pbr::RelayPins> OpenNodeRelayPins(const pbr::NodeBootstrapResult& boot) {
   auto pins = std::make_shared<pbr::RelayPins>(boot.profile_data_dir);
+  // A heartbeat or registration answered 426: one clear ERROR per relay, not a failure each period.
+  pins->SetOnUpgradeRequired(
+      [notice = std::make_shared<pbr::NodeUpgradeNotice>()](const std::string& origin) { notice->Note(origin); });
   const pbr::ServiceEndpointConfig& registration = boot.config.registration;
   std::weak_ptr<pbr::RelayPins> weak = pins;
   pins->SetOnChanged([weak](const std::string& origin) {
@@ -496,7 +500,9 @@ int main(int argc, char** argv) {
   bool publish_pending = false;
   if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, "", relay_audience);
       !published) {
-    root.warning << "mesh directory publish skipped/failed: " << published.error().message;
+    if (!pbr::IsClientUpgradeRequired(published.error())) { // told once (NodeUpgradeNotice)
+      root.warning << "mesh directory publish skipped/failed: " << published.error().message;
+    }
     publish_pending = true;
     publish_retry_due += publish_retry_delay;
   }
@@ -523,7 +529,9 @@ int main(int argc, char** argv) {
         publish_pending = false;
         last_mesh_publish = now;
       } else {
-        root.warning << "mesh directory publish retry failed: " << published.error().message;
+        if (!pbr::IsClientUpgradeRequired(published.error())) {
+          root.warning << "mesh directory publish retry failed: " << published.error().message;
+        }
         publish_retry_delay = std::min<std::chrono::steady_clock::duration>(publish_retry_delay * 2, kPublishRetryMax);
         publish_retry_due = now + publish_retry_delay;
       }
@@ -535,7 +543,9 @@ int main(int argc, char** argv) {
       last_mesh_publish = now;
       if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, "", relay_audience);
           !published) {
-        root.warning << "mesh directory renew failed: " << published.error().message;
+        if (!pbr::IsClientUpgradeRequired(published.error())) {
+          root.warning << "mesh directory renew failed: " << published.error().message;
+        }
       }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(250));

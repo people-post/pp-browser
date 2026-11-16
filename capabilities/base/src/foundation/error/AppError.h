@@ -53,6 +53,11 @@ enum class Auth : int32_t {
    * or push binding the relay no longer holds (a newer one replaced it, MR007 item 5); nothing changed there.
    */
   ScopeMismatch = 10,
+  /**
+   * HTTP 426 with code "client_upgrade_required": this app is older than the relay speaks (a sign version or account
+   * card it no longer takes). Final until the app is updated; the org's relay saying so shows the update screen.
+   */
+  ClientUpgradeRequired = 11,
 };
 
 enum class Network : int32_t {

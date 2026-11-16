@@ -49,7 +49,10 @@ struct NodeHeartbeatDeps {
   std::function<Roe<HeartbeatSignature>(const std::string& account_id, const std::string& peer_id,
                                         const std::string& state, int64_t timestamp)>
       sign;
-  /** The relay refused a heartbeat with this `code` (`wrong_audience`: its identity is asked again). May be empty. */
+  /**
+   * The relay refused a heartbeat with this `code` (`wrong_audience`: its identity is asked again;
+   * `client_upgrade_required`: this pp-node is too old for it, NodeUpgradeNotice). May be empty.
+   */
   std::function<void(const std::string& code)> refused;
   HttpPostFn post;
   /** The same entry point as startup / periodic registration renewal. */

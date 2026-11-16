@@ -60,7 +60,8 @@ struct AddIdentityCheck {
  * developer build's bare origin; the org's relay in a build that ships no PeerId, with a warning): its first answer is
  * pinned (a fetch that fails pins nothing and is tried again after a backoff, kFirstRetryMs doubling to
  * kMaxOursRetryMs). A contact's card or QR code never writes a pin (CheckCardRelay: their entries are signed for as
- * they name them). `not_registered` / `registration_expired` go to SetOnNotRegistered. Owned by a shared_ptr (the
+ * they name them). `not_registered` / `registration_expired` go to SetOnNotRegistered, `client_upgrade_required` to
+ * SetOnUpgradeRequired. Owned by a shared_ptr (the
  * audiences it hands out hold it). Thread-safe; fetches block (HTTP), outside the lock.
  */
 class RelayPins : public Module, public std::enable_shared_from_this<RelayPins> {
@@ -90,6 +91,8 @@ public:
   void SetOnChanged(std::function<void(const std::string& origin)> on_changed);
   /** A relay answered a command signed for its pin `not_registered` / `registration_expired` (any thread). */
   void SetOnNotRegistered(std::function<void(const std::string& origin)> on_not_registered);
+  /** A relay answered a command `426 client_upgrade_required`: this app is too old for it (any thread; each time). */
+  void SetOnUpgradeRequired(std::function<void(const std::string& origin)> on_upgrade_required);
 
   /**
    * The audience every client of the relay of ours (or the org's origin) at `origin` signs for (shared; the same object
@@ -174,6 +177,7 @@ private:
   std::function<bool(const std::string&)> first_use_;
   std::function<void(const std::string&)> on_changed_;
   std::function<void(const std::string&)> on_not_registered_;
+  std::function<void(const std::string&)> on_upgrade_required_;
   /** Fetch states and audiences; never held while a hook or a fetch runs. */
   mutable std::mutex mutex_;
   std::map<std::string, FetchState> fetches_;

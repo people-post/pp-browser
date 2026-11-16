@@ -66,6 +66,13 @@ std::optional<Error> NoteRelayRefusal(IRelayAudience* audience, const long statu
     }
     return AppError::Auth(Err::Auth::WrongAudience, "Relay refused the command: signed for another relay");
   }
+  if (status == 426 && code == kClientUpgradeRequiredCode) {
+    if (audience) {
+      audience->Refused(code);
+    }
+    return AppError::Auth(Err::Auth::ClientUpgradeRequired,
+                          "Relay refused the command: this app is too old for it (client_upgrade_required)");
+  }
   if ((status == 403 || status == 404) && (code == kNotRegisteredCode || code == kRegistrationExpiredCode)) {
     if (audience) {
       audience->Refused(code);
@@ -73,6 +80,11 @@ std::optional<Error> NoteRelayRefusal(IRelayAudience* audience, const long statu
     return AppError::Auth(Err::Auth::NotRegistered, "Relay refused the command: " + code);
   }
   return std::nullopt;
+}
+
+bool IsClientUpgradeRequired(const Error& error) {
+  return AppError::CategoryOf(error) == ErrorCategory::Auth &&
+         static_cast<Err::Auth>(error.code) == Err::Auth::ClientUpgradeRequired;
 }
 
 } // namespace pbr

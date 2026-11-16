@@ -74,7 +74,9 @@ no PeerId for its registration URL **does not register** (nor send heartbeats): 
 the mesh keeps running. A developer build (Debug, or `PP_BROWSER_DEV_TOOLS`) pins the relay's first identity answer
 instead and logs a warning. A relay whose identity answer names another PeerId (after a `wrong_audience`) gets
 no relay call (logged as an ERROR, `relay identity mismatch`) until it answers to its address again or `peer_id` names
-its new key; the mesh keeps running. The pin is kept in the data directory (`relay_pins.json`).
+its new key; the mesh keeps running. The pin is kept in the data directory (`relay_pins.json`). A relay newer than the
+node answers its registration or heartbeat `426 client_upgrade_required`: one ERROR per relay per run, `this pp-node is
+too old for the relay at <origin>: upgrade it` (no generic failure each period); upgrade the node.
 
 **Draining the node itself** ([N033](../../projects/p2p-mesh/DECISIONS.md#n033--nodes-say-how-busy-they-are-per-service-clients-act-on-the-level)): on a loopback status bind the same `POST /control/state` works with or without the heartbeat. `draining` (or `retiring`) makes every service take nothing new and say `draining` in its replies: phones park elsewhere, new calls go to other nodes, and what the node already serves goes on until it stops. `active` lifts it (unless the heartbeat has reached `retiring`). Use it before a planned restart.
 

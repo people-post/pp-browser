@@ -138,6 +138,22 @@ TEST(NodeHeartbeatTest, AWrongAudienceRefusalIsReported) {
   EXPECT_EQ(f.reregisters, 0);
 }
 
+// A relay newer than this pp-node answers 426 `client_upgrade_required`: it reaches the relay's audience (whose pins
+// tell the operator once, NodeUpgradeNotice), nothing re-registers, and the heartbeat waits for its period.
+TEST(NodeHeartbeatTest, AnUpgradeRequiredRefusalIsReportedAndNothingReregisters) {
+  Fixture f;
+  f.replies = {{426, R"({"error":"This app is too old for this relay; update it","code":"client_upgrade_required"})"}};
+  std::vector<std::string> refused;
+  pbr::NodeHeartbeatDeps deps = f.Deps();
+  deps.refused = [&refused](const std::string& code) { refused.push_back(code); };
+  pbr::NodeHeartbeat hb(deps);
+  hb.Tick();
+  hb.Tick();
+  EXPECT_EQ(refused, std::vector<std::string>{"client_upgrade_required"});
+  EXPECT_EQ(f.reregisters, 0);
+  EXPECT_EQ(f.sent.size(), 1u);
+}
+
 TEST(NodeHeartbeatTest, WaitsForThePeriodBetweenSends) {
   Fixture f;
   f.replies = {{200, kOk}};

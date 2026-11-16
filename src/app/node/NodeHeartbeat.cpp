@@ -174,6 +174,8 @@ NodeHeartbeat::Outcome NodeHeartbeat::Send(const HeartbeatState state, const lon
   } else if (status == 404 && parsed.code == "unknown_peer") {
     outcome = Outcome::UnknownPeer;
     log.warning << "heartbeat: peer_id is not an endpoint of this registration; will retry";
+  } else if (status == 426) {
+    outcome = Outcome::Rejected; // `client_upgrade_required`: `refused` above told the pins (one ERROR per relay)
   } else if (status == 400 || status == 403) {
     outcome = Outcome::Rejected;
     log.error << "heartbeat refused (" << status << "): " << parsed.code;

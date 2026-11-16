@@ -102,6 +102,7 @@ protected:
     pins_->SetFirstUse([this](const std::string& origin) { return first_use_.contains(origin); });
     pins_->SetOnChanged([this](const std::string& origin) { changed_.push_back(origin); });
     pins_->SetOnNotRegistered([this](const std::string& origin) { lost_.push_back(origin); });
+    pins_->SetOnUpgradeRequired([this](const std::string& origin) { too_old_.push_back(origin); });
   }
 
   std::filesystem::path dir_;
@@ -112,6 +113,7 @@ protected:
   std::vector<bool> public_only_;
   std::vector<std::string> changed_;
   std::vector<std::string> lost_;
+  std::vector<std::string> too_old_;
   std::shared_ptr<RelayPins> pins_;
 };
 
@@ -306,6 +308,19 @@ TEST_F(RelayPinsTest, NotRegisteredGoesToTheOwnerAndWrongAudienceDoesNot) {
   audience->Refused("registration_expired");
   audience->Refused("something_else");
   EXPECT_EQ(lost_, (std::vector<std::string>{kA, kA}));
+  EXPECT_TRUE(too_old_.empty());
+}
+
+// 426 `client_upgrade_required`: this app is too old for that relay — told to the owner each time (the org's relay:
+// the update screen; another of ours: its row), never taken for a lost registration or an identity question.
+TEST_F(RelayPinsTest, UpgradeRequiredGoesToTheOwnerEachTime) {
+  ASSERT_TRUE(pins_->Expect(kA, kPeerA));
+  auto audience = pins_->AudienceFor(kA);
+  audience->Refused("client_upgrade_required");
+  audience->Refused("client_upgrade_required");
+  EXPECT_EQ(too_old_, (std::vector<std::string>{kA, kA}));
+  EXPECT_TRUE(lost_.empty());
+  EXPECT_TRUE(fetched_.empty()) << "its identity is not asked again";
 }
 
 TEST_F(RelayPinsTest, OurCardsRelaysArePinnedOnesInForceInOrder) {

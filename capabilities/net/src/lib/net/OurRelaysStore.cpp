@@ -243,6 +243,9 @@ std::string RelayRegistrationFailureCode(const Error& error) {
   const ErrorCategory category = AppError::CategoryOf(error);
   if (category == ErrorCategory::Auth) {
     const auto code = static_cast<Err::Auth>(error.code);
+    if (code == Err::Auth::ClientUpgradeRequired) {
+      return kRegistrationUpgrade;
+    }
     if (code == Err::Auth::RelayIdentityMismatch || code == Err::Auth::RelayIdentityTaken ||
         code == Err::Auth::WrongAudience) {
       return kRegistrationIdentity;

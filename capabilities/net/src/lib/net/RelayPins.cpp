@@ -86,6 +86,11 @@ void RelayPins::SetOnNotRegistered(std::function<void(const std::string& origin)
   on_not_registered_ = std::move(on_not_registered);
 }
 
+void RelayPins::SetOnUpgradeRequired(std::function<void(const std::string& origin)> on_upgrade_required) {
+  std::lock_guard lock(hooks_mutex_);
+  on_upgrade_required_ = std::move(on_upgrade_required);
+}
+
 int64_t RelayPins::Now() const {
   std::function<int64_t()> clock;
   {
@@ -348,11 +353,12 @@ bool RelayPins::CheckIdentities(const std::vector<std::string>& origins) {
 
 void RelayPins::Refused(const std::string& origin, const std::string& code, const bool public_only) {
   const std::string key = RelayOriginKey(origin);
-  if (code == kNotRegisteredCode || code == kRegistrationExpiredCode) {
+  const bool lost = code == kNotRegisteredCode || code == kRegistrationExpiredCode;
+  if (lost || code == kClientUpgradeRequiredCode) {
     std::function<void(const std::string&)> callback;
     {
       std::lock_guard lock(hooks_mutex_);
-      callback = on_not_registered_;
+      callback = lost ? on_not_registered_ : on_upgrade_required_;
     }
     if (callback) {
       callback(key);

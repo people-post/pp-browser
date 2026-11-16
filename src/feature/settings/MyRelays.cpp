@@ -21,6 +21,7 @@ std::string FailedText(const std::string& reason) {
       {kRegistrationUnreachable, "settings.relays.state.failed.unreachable"},
       {kRegistrationRefused, "settings.relays.state.failed.refused"},
       {kRegistrationIdentity, "settings.relays.state.failed.identity"},
+      {kRegistrationUpgrade, "settings.relays.state.failed.upgrade"},
   };
   const auto key = kKeys.find(reason);
   return Tr(key == kKeys.end() ? "settings.relays.state.failed" : key->second);

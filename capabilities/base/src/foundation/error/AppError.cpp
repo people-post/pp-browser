@@ -77,6 +77,8 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
         case Err::Auth::RelayIdentityMismatch:
         case Err::Auth::RelayIdentityTaken:
           return Localized("errors.auth.relay_identity");
+        case Err::Auth::ClientUpgradeRequired:
+          return Localized("errors.auth.upgrade_required");
         case Err::Auth::Generic:
         default:
           return Localized("errors.auth.failed");

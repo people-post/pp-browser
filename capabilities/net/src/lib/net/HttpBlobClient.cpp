@@ -168,7 +168,12 @@ Roe<HttpResponse> HttpBlobClient::PostSigned(const std::string& path, Object bod
     return response.error();
   }
   if (response->status_code < 200 || response->status_code >= 300) {
-    (void)NoteRelayRefusal(audience_.get(), response->status_code, response->body); // wrong_audience, not_registered
+    // wrong_audience, not_registered: the audience hears them, the blob error says the rest as before; an app too old
+    // for the relay is told so.
+    if (auto typed = NoteRelayRefusal(audience_.get(), response->status_code, response->body);
+        typed && IsClientUpgradeRequired(*typed)) {
+      return *typed;
+    }
   }
   if (const auto ok = CheckBlobResponse(response.value()); !ok) {
     return ok.error();

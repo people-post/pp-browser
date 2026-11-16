@@ -296,6 +296,11 @@ public:
   std::shared_ptr<RelayRegistrationsWorkflow> OtherRelayRegistrations() const;
   /** My relays changed (a relay answered our registration, the list changed): read them again. Runs on any thread. */
   void SetOnOurRelaysChanged(std::function<void()> callback);
+  /**
+   * The org's relay (its origins: the relay, the locker home) answered a call `426 client_upgrade_required`: this app
+   * is too old for it (ClientCompatController shows the update screen). Each time; any thread. nullptr: none.
+   */
+  void SetOnOrgRelayRequiresUpgrade(std::function<void()> callback);
   /** Registers on our other relays that are due, off the caller's thread (after the preferred one, on a timer). */
   void RegisterOnOtherRelaysSoon();
   PushBindingGate& PushGate() { return push_gate_; }
@@ -801,6 +806,15 @@ private:
   void RecheckRelayIdentitiesSoon();
   /** A relay of ours answered `not_registered` / `registration_expired` (any thread): register there again. */
   void HealRegistrationSoon(const std::string& origin);
+  /**
+   * A relay answered `426 client_upgrade_required` (any thread): the org's tells the app (SetOnOrgRelayRequiresUpgrade);
+   * another relay of ours keeps it on its row (Me → My relays: needs a newer version of the app), blocking nothing.
+   */
+  void OnRelayRequiresUpgrade(const std::string& origin);
+  /** `origin` is one of the org's (the relay, the locker home). Any thread. */
+  bool IsOrgOrigin(const std::string& origin);
+  std::mutex org_upgrade_mu_;
+  std::function<void()> on_org_upgrade_required_;
   /** The preferred relay's lost registration: made again whatever the auto-renew preference, with a backoff. */
   void HealPreferredRegistration(int64_t now_ms);
   /** Our card re-issued with what changed, sent to our contacts and siblings, and to our relays. Blocks (a worker). */
