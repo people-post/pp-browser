@@ -194,7 +194,7 @@ Every ring raises the "Incoming call" notice (`CallPresenter`), however its invi
 ## P021 — The relay pushes by `wake_hint` and `urgent`; no message class is sent
 
 **Status:** Accepted.  
-**Decision:** a send record carries an unsigned `wake_hint` only when a chat message raises a push (text, attachment, contact card, crypto tx, a system line without a `control_type`); annotations, system-control rows and the control lane carry none. The relay pushes a call alert for `urgent`, a new-message alert for a non-urgent record with a `wake_hint`, and stays silent for neither. No `kind` is sent. Retention is the unsigned `ttl_s`, a fixed tier by family: 120 s for call signaling, 86400 s for the device list, an hour for other control-lane records, none for chat.
+**Decision:** a send record carries an unsigned `wake_hint` only when a chat message raises a push (text, attachment, contact card, crypto tx, a system line without a `control_type`); annotations, system-control rows and the control lane carry none. The relay pushes a call alert for `urgent`, a new-message alert for a non-urgent record with a `wake_hint`, and stays silent for neither. No `kind` is sent. Retention is the unsigned `ttl_s`, a fixed tier by family: 120 s for call signaling, 604800 s (7 days) for the device list, an hour for other control-lane records, none for chat.
 - **Source:** `RaisesWakePush` decides the chat hint; the control lane sets a hint (the call id) only for an urgent invite.
 
 **Rationale:** the relay cannot read the blob, so without a signal every record, including reactions and sync traffic, wakes the recipient; a plaintext class field would show the relay what each record is, while a hint's presence reveals only that it may push.  

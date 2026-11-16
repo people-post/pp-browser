@@ -38,7 +38,7 @@ inline constexpr int64_t kControlLaneRelayTtlMs = 61 * 60 * 1000;
  * exact value would fingerprint the sender. Call signaling is stale after two minutes; a device list waits a day.
  */
 inline constexpr int64_t kCallSignalRelayTtlS = 120;
-inline constexpr int64_t kDeviceListRelayTtlS = 24 * 60 * 60;
+inline constexpr int64_t kDeviceListRelayTtlS = 7 * 24 * 60 * 60;
 
 /**
  * A family of system-control messages a feature owns (call control, billing, …): system messages

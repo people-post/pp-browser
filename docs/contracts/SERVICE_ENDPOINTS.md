@@ -70,7 +70,7 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 
 `POST /v1/messages` `{ sender_account_id, recipient_account_id, stream_id, index_key, blob_b64, ttl_s?, urgent?, wake_hint?, timestamp, signature, sender_public_key_b64?, grant? }` (`HttpRelayClient::Send`, [MR003](../../projects/multi-relay/DECISIONS.md#mr003--cross-relay-delivery-is-an-account-signed-send) / [MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)). Neither the key nor the grant is signed by the sender: the key must hash to `sender_account_id`, the grant carries the recipient's signature.
 
-- **`ttl_s`** — an unsigned retention hint in fixed tiers, never an exact value: 120 for call signaling, 86400 for the device list, 3660 for other control-lane records, absent for chat and relay grants (the relay's full window).
+- **`ttl_s`** — an unsigned retention hint in fixed tiers, never an exact value: 120 for call signaling, 604800 for the device list, 3660 for other control-lane records, absent for chat and relay grants (the relay's full window).
 - **`grant`** — the recipient's grant to us ([ACCOUNT_CARD § Relay grants](ACCOUNT_CARD.md#relay-grants)), attached when we hold a usable one; never on a send to our own mailbox. With it the send is a contact's; without it, a stranger's.
 - **`sender_public_key_b64`** — our account's ML-DSA key, sent only when the relay asked for it (`401 sender_key_required`: it holds no key of ours — we are not registered there); the client sends once more with it.
 
