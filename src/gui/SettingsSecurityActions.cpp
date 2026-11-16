@@ -196,7 +196,7 @@ void SettingsSecurityActions::ChangePin() {
             return;
           }
           auto saved = RecordPinChanged(new_pin, false); // 123456 chosen here stays an own PIN: the gate still asks
-          done({}); // the PIN is changed: the gate closes either way
+          done({});                                      // the PIN is changed: the gate closes either way
           if (!saved) {
             host_.ReportFailure(saved.error());
             return;

@@ -493,13 +493,12 @@ TEST_F(SecuritySettingsBiometricTest, ThePageHasTheSwitchItsHelpAndBothLanguages
 
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     const std::string text = ReadAsset(locale);
-    for (const char* key :
-         {"settings.security.biometric.face", "settings.security.biometric.touch",
-          "settings.security.biometric.fingerprint", "settings.security.biometric.help",
-          "settings.security.biometric.enabled", "pin.biometric_link.face", "pin.biometric_link.touch",
-          "pin.biometric_link.fingerprint", "pin.biometric_prompt", "pin.biometric_reset_hint",
-          "settings.security.remove_pin", "settings.security.pin_removed",
-          "settings.security.biometric.needs_own_pin", "pin.verify_remove_message"}) {
+    for (const char* key : {"settings.security.biometric.face", "settings.security.biometric.touch",
+                            "settings.security.biometric.fingerprint", "settings.security.biometric.help",
+                            "settings.security.biometric.enabled", "pin.biometric_link.face",
+                            "pin.biometric_link.touch", "pin.biometric_link.fingerprint", "pin.biometric_prompt",
+                            "pin.biometric_reset_hint", "settings.security.remove_pin", "settings.security.pin_removed",
+                            "settings.security.biometric.needs_own_pin", "pin.verify_remove_message"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
   }
