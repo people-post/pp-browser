@@ -380,6 +380,43 @@ TEST(P2pRelayWireTest, WakeHintIsARelayHintOutsideTheEnvelope) {
   EXPECT_FALSE(RelayWireSendRecordToJson(bad.value()).contains("wake_hint")) << "an invalid hint is dropped";
 }
 
+TEST(P2pRelayWireTest, KindIsAnOptionalRelayHint) {
+  using namespace pbr;
+
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = "550e8400-e29b-41d4-a716-446655440003";
+  envelope.sender_contact_id = "account:alice123";
+  envelope.sender_device = "QmAliceDevice";
+  envelope.route.kind = "direct";
+  envelope.route.channel = ThreadChannel::E2e;
+  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.sender_seq = 7;
+  envelope.order_key = 7;
+  envelope.session_epoch = 1;
+  envelope.timestamp = 1719662400123;
+  envelope.signature = "sig";
+  envelope.stream_key = "v1:e2e:1:account:alice123:account:bob456";
+  envelope.recipient_account_id = "account:bob456";
+
+  const auto none = RelayWireSendRecordFromEnvelope(envelope);
+  ASSERT_TRUE(static_cast<bool>(none));
+  EXPECT_FALSE(RelayWireSendRecordToJson(none.value()).contains("kind")) << "empty: the old behavior";
+
+  for (const char* kind : {kRelayKindMsg, kRelayKindCallInvite, kRelayKindCtl}) {
+    envelope.relay_kind = kind;
+    const auto sent = RelayWireSendRecordFromEnvelope(envelope);
+    ASSERT_TRUE(static_cast<bool>(sent));
+    EXPECT_EQ(RelayWireSendRecordToJson(sent.value()).getIf<std::string>("kind"), std::optional<std::string>(kind));
+    EXPECT_EQ(sent.value().blob_b64, none.value().blob_b64) << "not part of what the recipient gets";
+  }
+
+  envelope.relay_kind = "bogus";
+  const auto bad = RelayWireSendRecordFromEnvelope(envelope);
+  ASSERT_TRUE(static_cast<bool>(bad));
+  EXPECT_FALSE(RelayWireSendRecordToJson(bad.value()).contains("kind")) << "an unknown kind is dropped";
+}
+
 TEST(P2pRelayWireTest, WakeHintAcceptsOnlyShortPlainIds) {
   using namespace pbr;
 

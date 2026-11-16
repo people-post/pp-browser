@@ -190,3 +190,13 @@ Every ring raises the "Incoming call" notice (`CallPresenter`), however its invi
 **Rationale:** P019 removed CallKit because a PIN-locked background had no key, so a CallKit call answered on the lock screen never connected. The default PIN has no secret to wait for, so the vault opens silently and CallKit's ring (full screen, AirPods / CarPlay answer, the ringer's tone) is safe there; a custom PIN keeps the alert.  
 **Consequences:** a stranger's call posts CallKit's ring from the push, before anything is decrypted, as the alert did (P019). A late push (under 65 s) of a call already over rings until the wait runs out: nothing tells the bridge the call is over (P017's "its call is over" feed is not returned).  
 **Cross-link:** `CallSystemUi_Ios.mm`, `PushDeviceCoordinator` (`push_device_coordinator_test.cpp`), `CallSystemUiBridge` (`call_system_ui_bridge_test.cpp`), `CallPushAge` (`call_push_age_test.cpp`), `Application::OnPinModeChanged`; `docs/contracts/SERVICE_ENDPOINTS.md`, `docs/architecture/CALLS.md`.
+
+## P021 — Relay sends carry a plaintext `kind` hint; the relay pushes only `msg` and `call.invite`
+
+**Status:** Accepted.  
+**Decision:** every relay send record carries `kind`: `msg` for a chat message the transcript shows as new (text, attachment, contact card, crypto tx, a plain system line), `call.invite` for the urgent CallInvite, `ctl` for everything else (annotations, call summary and other call signaling, relay grants, device-list and group control, key negotiation). The relay pushes only `msg` and `call.invite`; a record without `kind` is handled as before.
+- **Source:** chat routes map by content type and a system row's `control_type` (`RelayKindOfChatMessage`); the control lane is `ctl` unless the send is urgent.
+
+**Rationale:** the relay cannot read the blob, so without a hint every record, including reactions and sync traffic, wakes the recipient.  
+**Consequences:** `kind` is unsigned and visible to the relay; a sender can only withhold or force a push for its own record.  
+**Cross-link:** `RelayEnvelope::relay_kind`, `p2p_relay_wire_test.cpp`, `outbound_message_test.cpp`; `docs/contracts/SERVICE_ENDPOINTS.md`.

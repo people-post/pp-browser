@@ -186,6 +186,7 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
   }
   RelayEnvelope envelope = std::move(*built);
   envelope.relay_wake_urgent = urgent;
+  envelope.relay_kind = urgent ? kRelayKindCallInvite : kRelayKindCtl;
   if (urgent) {
     envelope.relay_wake_hint = SanitizeWakeHint(CallIdOf(control));
   }
