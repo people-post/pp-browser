@@ -174,8 +174,17 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
   if (*outcome != SqliteLadderOutcome::BelowFloor) {
     return {};
   }
+  return ResetBelowFloor();
+}
+
+Roe<void> SqliteThreadDb::ResetBelowFloor() const {
   // Older than the floor: too old to upgrade. The whole chat store goes (its thread.db files belong to this
-  // catalog), as Me → Storage → Reset chats does; the account, contacts and settings live beside it.
+  // catalog), as Me → Storage → Reset chats does — the public sessions kept, as it keeps them (D014, #378); the
+  // account, contacts and settings live beside it.
+  auto kept = ReadSessionsKeptBelowFloor(profile_db_);
+  if (!kept) {
+    log().warning << "chat store reset: public sessions not kept: " << kept.error().message;
+  }
   sqlite3_close(profile_db_);
   profile_db_ = nullptr;
   log().error << "profile.db is from a version too old to upgrade (below schema " << kSqliteThreadProfileFloorVersion
@@ -187,7 +196,15 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
   }
   std::filesystem::create_directories(SqliteThreadsRoot(data_dir_), ec);
   NoteChatStoreReset(data_dir_, "profile.db");
-  return OpenProfileDbUnguarded(); // a new, empty file: created at the current schema
+  if (auto created = OpenProfileDbUnguarded(); !created) { // a new, empty file: created at the current schema
+    return created;
+  }
+  if (kept && !kept->empty()) {
+    if (auto written = WriteSessionsKeptBelowFloor(profile_db_, *kept); !written) {
+      log().warning << "chat store reset: public sessions not kept: " << written.error().message;
+    }
+  }
+  return {};
 }
 
 Roe<void> SqliteThreadDb::EnsureThreadDirectory(const std::string& thread_id) const {

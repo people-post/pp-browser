@@ -2,6 +2,7 @@
 
 #include "lib/storage/SqliteCallSessionStore.h"
 #include "lib/storage/SqliteGroupRosterStore.h"
+#include "lib/storage/SqlitePeerSessionStore.h"
 #include "lib/storage/SqliteThreadLocalPrefsStore.h"
 #include "lib/storage/SqliteThreadSchema.h"
 
@@ -43,6 +44,9 @@ Roe<void> CreateProfileDb(const SqliteMigrationContext& context) {
   }
   if (auto prefs = SqliteThreadLocalPrefsStore::EnsureSchema(db); !prefs) {
     return prefs.error();
+  }
+  if (auto sessions = SqlitePeerSessionStore::EnsureSchema(db); !sessions) {
+    return sessions.error();
   }
   return SqliteCallSessionStore::EnsureSchema(db);
 }
@@ -125,6 +129,11 @@ Roe<void> ExecIfTable(sqlite3* db, const char* table, const char* sql, const std
 
 /** A stored id from before multi-relay MR001: the relay's per-relay `relay:` id (or its `relay_user` kind). */
 constexpr const char* kRelayIdMatch = "LIKE 'relay:%'";
+
+/** kRelayIdMatch, on a session read from a file older than the step that drops them. */
+bool KeyedByRelayId(const PeerSessionRecord& session) {
+  return session.key.peer_identity_kind == "relay_user" || session.key.peer_identity_value.rfind("relay:", 0) == 0;
+}
 
 /**
  * 5 → 6, Account IDs (multi-relay MR001): the relay's `relay:` ids are gone, and nothing in profile.db can turn one
@@ -271,6 +280,34 @@ const SqliteSchemaLadder& ThreadDbLadder() {
       {{2, ThreadDbBaseline}, {3, ThreadDbAccountIds}},
   };
   return ladder;
+}
+
+Roe<std::vector<PeerSessionRecord>> ReadSessionsKeptBelowFloor(sqlite3* old_db) {
+  auto stored = SqlitePeerSessionStore::ReadStored(old_db);
+  if (!stored) {
+    return stored.error();
+  }
+  std::vector<PeerSessionRecord> kept = SessionsAChatResetKeeps(std::move(*stored));
+  // What a step above the file's version drops from the sessions stays dropped (5 → 6: the relay's ids).
+  std::erase_if(kept, KeyedByRelayId);
+  return kept;
+}
+
+Roe<void> WriteSessionsKeptBelowFloor(sqlite3* new_db, const std::vector<PeerSessionRecord>& kept) {
+  if (auto begun = SqliteThreadExecSql(new_db, "BEGIN IMMEDIATE;"); !begun) {
+    return begun.error();
+  }
+  for (const PeerSessionRecord& sealed : kept) {
+    if (auto written = SqlitePeerSessionStore::WriteStored(new_db, sealed); !written) {
+      (void)SqliteThreadExecSql(new_db, "ROLLBACK;");
+      return written.error();
+    }
+  }
+  if (auto committed = SqliteThreadExecSql(new_db, "COMMIT;"); !committed) {
+    (void)SqliteThreadExecSql(new_db, "ROLLBACK;");
+    return committed.error();
+  }
+  return {};
 }
 
 std::optional<ChatStoreProblem> ChatStoreProblemFor(const Roe<SqliteLadderOutcome>& outcome) {

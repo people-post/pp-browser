@@ -54,9 +54,9 @@ struct PeerSessionRecord {
    */
   std::optional<int64_t> auto_key_peer_heard_ms;
   /**
-   * This device's numbering in the pair was lost (the session was kept through *Reset chats*, which
-   * deletes the threads): the next send starts the pair's next epoch at seq 1 rather than rewinding in
-   * this one (D014, #378).
+   * This device's numbering in the pair was lost (the session was kept through a reset of the chat store,
+   * which deletes the threads — SessionsAChatResetKeeps): the next send starts the pair's next epoch at
+   * seq 1 rather than rewinding in this one (D014, #378).
    */
   bool restart_pending = false;
 };
@@ -90,5 +90,13 @@ public:
   /** Adopts the bundle's key (unverified), merging its retired tail into the session's and keeping its KEM state. */
   Roe<void> ImportPskBundle(const PeerSessionKey& key, const PskBundleV1& bundle);
 };
+
+/**
+ * Of `sessions`, the ones a reset of the chat store keeps — the public sessions with a key, Reset chats' and the one
+ * below a schema floor alike — each marked to restart: their epoch is what lets each pair start its next one instead
+ * of this device rewinding its numbering where the peer still holds the old messages (D014, #378). Sealed or not:
+ * the rule reads only the channel and whether a key is there.
+ */
+std::vector<PeerSessionRecord> SessionsAChatResetKeeps(std::vector<PeerSessionRecord> sessions);
 
 } // namespace pbr

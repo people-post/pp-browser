@@ -68,6 +68,7 @@ private:
   /** Keeps the chat store shut after a failed open (until it is reset): logged, the gate told, every call refused. */
   Error RecordOpenFailure(ChatStoreProblem problem, std::string message) const;
   Roe<void> OpenProfileDbUnguarded() const;
+  Roe<void> ResetBelowFloor() const;
   Roe<void> EnsureThreadDirectory(const std::string& thread_id) const;
   /** The Account ID of a direct thread's peer in the catalog (a thread.db step's context); empty otherwise. */
   std::string DirectPeerAccountOf(const std::string& thread_id) const;

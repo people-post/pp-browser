@@ -5,6 +5,7 @@
 #include "lib/storage/SqliteChatStoreGate.h"
 #include "lib/storage/SqliteThreadLocalPrefsStore.h"
 #include "lib/storage/SqliteMigrations.h"
+#include "lib/storage/SqlitePeerSessionStore.h"
 #include "lib/storage/SqliteThreadSchema.h"
 #include "lib/storage/SqliteThreadStore.h"
 
@@ -73,6 +74,7 @@ protected:
   }
 
   void TearDown() override {
+    sessions_.reset();
     store_.reset();
     CloseDb();
     std::filesystem::remove_all(data_dir_);
@@ -152,6 +154,75 @@ protected:
     CloseDb();
   }
 
+  /** The profile's session store, unlocked (the chat store must be open: OpenStore). */
+  SqlitePeerSessionStore& Sessions() {
+    sessions_ = std::make_unique<SqlitePeerSessionStore>(ProfileDb(), "profile");
+    EXPECT_TRUE(sessions_->SetDek(TestDek()));
+    return *sessions_;
+  }
+
+  static PeerSessionRecord Session(const std::string& account, const CryptoChannel channel, const uint32_t epoch,
+                                   const std::string& device = {}) {
+    PeerSessionRecord record;
+    record.key = PeerSessionKey{
+        .peer_identity_kind = "account", .peer_identity_value = account, .channel = channel, .peer_device = device};
+    record.session_epoch = epoch;
+    record.master_psk_b64 = kTestPsk;
+    return record;
+  }
+
+  /**
+   * A chat and the sessions a reset tells apart, at today's schema: public ones with a key (an account's and a
+   * device pair's), and what a reset drops — a private session, a public one with only a retired key, one keyed by a
+   * relay's retired id.
+   */
+  void WriteProfileWithSessions() {
+    WriteProfileWithAChat();
+    OpenStore();
+    SqlitePeerSessionStore& sessions = Sessions();
+    ASSERT_TRUE(sessions.Save(Session("account:ann", CryptoChannel::E2ePublic, 7)));
+    ASSERT_TRUE(sessions.Save(Session("account:ann", CryptoChannel::E2ePublic, 3, "QmAnnPhone")));
+    ASSERT_TRUE(sessions.Save(Session("account:bob", CryptoChannel::E2e, 4)));
+    PeerSessionRecord retired_only = Session("account:cat", CryptoChannel::E2ePublic, 2);
+    retired_only.master_psk_b64.reset();
+    retired_only.retired_psks = {RetiredPskEntry{.epoch = 1, .master_psk_b64 = kTestPsk, .retired_at = 1}};
+    ASSERT_TRUE(sessions.Save(retired_only));
+    PeerSessionRecord relay = Session("relay:old", CryptoChannel::E2ePublic, 5);
+    relay.key.peer_identity_kind = "relay_user";
+    ASSERT_TRUE(sessions.Save(relay));
+    ASSERT_EQ(sessions.List().value().size(), 5u);
+    sessions_.reset();
+    CloseStore();
+  }
+
+  void SetProfileBelowTheFloor() {
+    Exec(Db(ProfileDb()), "PRAGMA user_version = " + std::to_string(kSqliteThreadProfileFloorVersion - 1) + ";");
+    CloseDb();
+  }
+
+  /** After the reset: the chats are gone, and the sessions left are `expected` (key → epoch), each to restart. */
+  void ExpectResetKeeping(const std::vector<std::pair<PeerSessionKey, uint32_t>>& expected) {
+    SqliteThreadStore& store = OpenStore();
+    ASSERT_TRUE(store.ListThreads().value().empty()) << "the chats were reset";
+    EXPECT_TRUE(TakeChatStoreResetNotice(data_dir_.string()));
+    auto listed = Sessions().List();
+    ASSERT_TRUE(listed) << listed.error().message;
+    ASSERT_EQ(listed->size(), expected.size());
+    for (const auto& [key, epoch] : expected) {
+      auto loaded = sessions_->Load(key);
+      ASSERT_TRUE(loaded) << loaded.error().message;
+      ASSERT_TRUE(*loaded) << key.peer_identity_value << " " << key.peer_device << " is kept";
+      EXPECT_EQ((*loaded)->session_epoch, epoch) << "its epoch is kept";
+      EXPECT_EQ((*loaded)->master_psk_b64, std::optional<std::string>(kTestPsk)) << "its key reads under the DEK";
+      EXPECT_TRUE((*loaded)->restart_pending) << "the pair starts its next epoch";
+    }
+    sessions_.reset();
+    CloseStore();
+    EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion);
+  }
+
+  static constexpr const char* kTestPsk = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+
   void ExpectTheChatIsKept() {
     SqliteThreadStore& store = OpenStore();
     auto threads = store.ListThreads();
@@ -167,6 +238,7 @@ protected:
 
   std::filesystem::path data_dir_;
   std::unique_ptr<SqliteThreadStore> store_;
+  std::unique_ptr<SqlitePeerSessionStore> sessions_;
   sqlite3* db_ = nullptr;
 };
 
@@ -275,6 +347,48 @@ TEST_F(SqliteMigrationsTest, BelowTheFloorTheResetLeavesOurCardBesideTheIdentity
   ASSERT_TRUE(kept) << kept.error().message;
   ASSERT_TRUE(*kept) << "our card outlived the reset";
   EXPECT_EQ((*kept)->issued_at, 1'761'235'200'000);
+}
+
+// A reset below the floor keeps what Me → Storage → Reset chats keeps: the public sessions with a key, each pair to
+// restart in its next epoch — else this device numbers from 1 again in an epoch the peer holds messages of, and the
+// peer drops them (D014, #378). Read from the old file as it is; what a later step drops (relay ids) stays dropped.
+TEST_F(SqliteMigrationsTest, BelowTheFloorTheResetKeepsThePublicSessions) {
+  WriteProfileWithSessions();
+  SetProfileBelowTheFloor();
+
+  const PeerSessionKey account{"account", "account:ann", CryptoChannel::E2ePublic, ""};
+  const PeerSessionKey device{"account", "account:ann", CryptoChannel::E2ePublic, "QmAnnPhone"};
+  ExpectResetKeeping({{account, 7}, {device, 3}});
+  OpenStore();
+  auto seq = Sessions().AllocateSenderSeq(device);
+  ASSERT_TRUE(seq) << seq.error().message;
+  EXPECT_EQ(*seq, 1u) << "the device pair's numbering starts over (in the next epoch, restart_pending)";
+}
+
+// A file from before some of today's session columns: what it has is kept, the rest reads as the store's default.
+TEST_F(SqliteMigrationsTest, BelowTheFloorAnOlderSessionTableStillKeepsItsPublicSessions) {
+  WriteProfileWithSessions();
+  sqlite3* db = Db(ProfileDb());
+  for (const char* column : {"auto_key_session_id", "auto_key_init_pending", "auto_key_peer_heard_ms",
+                             "restart_pending", "key_scope", "thread_kem_pk_b64", "psk_fingerprint"}) {
+    Exec(db, std::string("ALTER TABLE chat_targets DROP COLUMN ") + column + ";");
+  }
+  Exec(db, "DROP TABLE device_sessions;");
+  CloseDb();
+  SetProfileBelowTheFloor();
+
+  ExpectResetKeeping({{PeerSessionKey{"account", "account:ann", CryptoChannel::E2ePublic, ""}, 7}});
+}
+
+TEST_F(SqliteMigrationsTest, BelowTheFloorAFileWithoutSessionTablesResetsCleanly) {
+  WriteProfileWithSessions();
+  sqlite3* db = Db(ProfileDb());
+  Exec(db, "DROP TABLE chat_targets;");
+  Exec(db, "DROP TABLE device_sessions;");
+  CloseDb();
+  SetProfileBelowTheFloor();
+
+  ExpectResetKeeping({});
 }
 
 TEST_F(SqliteMigrationsTest, ANewerDatabaseIsRefusedAndLeftAlone) {
