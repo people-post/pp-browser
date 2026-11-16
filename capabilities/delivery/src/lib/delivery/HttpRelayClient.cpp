@@ -121,6 +121,7 @@ Roe<void> HttpRelayClient::PostSend(RelayWireSendRecord& record, const RelayEnve
   if (!signed_send) {
     return signed_send.error();
   }
+  record.sign_version = signed_send->sign_version;
   record.audience = signed_send->audience;
   record.timestamp = signed_send->timestamp;
   record.signature = signed_send->signature;

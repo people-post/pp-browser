@@ -31,6 +31,8 @@ struct HeartbeatIdentity {
 
 /** A signed heartbeat: the relay it is for (its PeerId, multi-relay MR007) and the account key's signature over it. */
 struct HeartbeatSignature {
+  /** The version byte the heartbeat was signed with (`sign_version`). */
+  int sign_version = 0;
   std::string audience;
   std::string signature;
 };

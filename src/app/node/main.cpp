@@ -259,7 +259,9 @@ pbr::NodeHeartbeatDeps MakeHeartbeatDeps(pbr::NodeBootstrapResult& boot,
     if (!signed_heartbeat) {
       return signed_heartbeat.error();
     }
-    return pbr::HeartbeatSignature{.audience = signed_heartbeat->audience, .signature = signed_heartbeat->signature};
+    return pbr::HeartbeatSignature{.sign_version = signed_heartbeat->sign_version,
+                                   .audience = signed_heartbeat->audience,
+                                   .signature = signed_heartbeat->signature};
   };
   deps.refused = [audience](const std::string& code) { audience->Refused(code); };
   deps.post = [](const std::string& url, const std::string& body, const std::map<std::string, std::string>& headers,

@@ -23,6 +23,15 @@ bool RelaySignAppendCommandHeader(std::ostringstream& oss, const char* domain, c
   return true;
 }
 
+int RelaySignVersionOf(const std::vector<uint8_t>& bytes) {
+  for (size_t i = 0; i + 1 < bytes.size(); ++i) {
+    if (bytes[i] == 0) {
+      return i == 0 ? -1 : bytes[i + 1]; // a domain is never empty
+    }
+  }
+  return -1;
+}
+
 void RelaySignAppendU8(std::ostringstream& oss, const uint8_t value) {
   oss.write(reinterpret_cast<const char*>(&value), 1);
 }

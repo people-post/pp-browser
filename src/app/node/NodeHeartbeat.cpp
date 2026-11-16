@@ -127,6 +127,7 @@ NodeHeartbeat::Outcome NodeHeartbeat::Send(const HeartbeatState state, const lon
   body.set("account_id", id.account_id);
   body.set("peer_id", id.peer_id);
   body.set("state", state_name);
+  body.set("sign_version", static_cast<int64_t>(signature->sign_version));
   body.set("audience", signature->audience);
   body.set("timestamp", timestamp);
   body.set("signature", signature->signature);

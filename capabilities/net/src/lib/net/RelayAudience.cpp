@@ -2,6 +2,7 @@
 
 #include "common/ValueJson.h"
 #include "foundation/error/AppError.h"
+#include "lib/net/RelaySignBytes.h"
 
 namespace pbr {
 
@@ -31,17 +32,20 @@ Roe<SignedRelayCommand> SignRelayCommand(IRelayAudience* audience, const RelayAu
     return peer_id.error();
   }
   const std::vector<uint8_t> bytes = build(*peer_id);
-  if (bytes.empty()) {
+  const int sign_version = RelaySignVersionOf(bytes);
+  if (bytes.empty() || sign_version < 0) {
     return Error("Failed to build relay command sign bytes");
   }
   auto signature = signer(bytes);
   if (!signature) {
     return signature.error();
   }
-  return SignedRelayCommand{.audience = std::move(*peer_id), .timestamp = timestamp, .signature = *signature};
+  return SignedRelayCommand{
+      .sign_version = sign_version, .audience = std::move(*peer_id), .timestamp = timestamp, .signature = *signature};
 }
 
 void PutSignedRelayCommand(Object& body, const SignedRelayCommand& command) {
+  body.set("sign_version", static_cast<int64_t>(command.sign_version));
   body.set("audience", command.audience);
   body.set("timestamp", command.timestamp);
   body.set("signature", command.signature);

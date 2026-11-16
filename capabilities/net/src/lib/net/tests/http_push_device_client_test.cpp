@@ -65,6 +65,7 @@ TEST_F(PushDeviceClientTest, AnUnregisterNamesTheBindingTheRegisterMade) {
   ASSERT_EQ(bodies_.size(), 2u);
   EXPECT_EQ(bodies_[0].getString("push_token").value_or(""), "tok");
   EXPECT_EQ(bodies_[0].getString("audience").value_or(""), kAudience);
+  EXPECT_EQ(bodies_[0].getIf<int64_t>("sign_version"), 3) << "relay-api-v1's version byte";
   EXPECT_EQ(bodies_[1].getString("binding_id").value_or(""), "bind-1");
   EXPECT_FALSE(bodies_[1].contains("push_token")) << "the token is no part of a removal";
   EXPECT_TRUE(held_.empty());

@@ -143,6 +143,7 @@ TEST_F(HttpRelayClientTest, ASendNamesItsRelayInBodyAndBytes) {
   const auto bodies = Bodies();
   ASSERT_EQ(bodies.size(), 1u);
   EXPECT_EQ(bodies[0].getString("audience").value_or(""), kAudience);
+  EXPECT_EQ(bodies[0].getIf<int64_t>("sign_version"), 3) << "the version byte its bytes carry";
   RelayWireSendRecord record;
   record.sender_account_id = kMe;
   record.recipient_account_id = kBob;

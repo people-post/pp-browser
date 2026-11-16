@@ -263,6 +263,7 @@ TEST_F(HttpBlobClientFilesTest, StartPutCompleteGivesTheShareLinkOnTheRelayOrigi
   EXPECT_EQ(starts[0].getString("account_id").value_or(""), "account:u1");
   EXPECT_EQ(starts[0].getString("signature").value_or(""), "sig");
   EXPECT_EQ(starts[0].getString("audience").value_or(""), kAudience) << "the relay it is signed for (MR007-AUD)";
+  EXPECT_EQ(starts[0].getIf<int64_t>("sign_version"), 2) << "the version byte its bytes carry";
   EXPECT_EQ(relay_.PutBytes(), 5016u);
   ASSERT_EQ(relay_.Bodies("complete").size(), 1u);
   EXPECT_EQ(relay_.Bodies("complete")[0].getString("blob_id").value_or(""), uploaded->blob_id);

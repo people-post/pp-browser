@@ -15,6 +15,11 @@ void RelaySignAppendDomain(std::ostringstream& oss, const char* domain_with_nul)
  */
 bool RelaySignAppendCommandHeader(std::ostringstream& oss, const char* domain, uint8_t version,
                                   const std::string& audience);
+/**
+ * The version byte of a signed relay command's bytes (the byte after the domain's NUL), which the command's body
+ * names as `sign_version` (a relay answers an older one 426 `client_upgrade_required`); -1 when `bytes` has none.
+ */
+int RelaySignVersionOf(const std::vector<uint8_t>& bytes);
 void RelaySignAppendU8(std::ostringstream& oss, uint8_t value);
 void RelaySignAppendI64(std::ostringstream& oss, int64_t value);
 void RelaySignAppendU64(std::ostringstream& oss, uint64_t value);

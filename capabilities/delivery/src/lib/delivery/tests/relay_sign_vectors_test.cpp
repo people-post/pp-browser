@@ -20,6 +20,7 @@
 #include "lib/net/RegistrationSignPayload.h"
 #include "lib/net/RelayApiSignPayload.h"
 #include "lib/net/RelayBlobSignPayload.h"
+#include "lib/net/RelaySignBytes.h"
 #include "lib/people/AccountCard.h"
 #include "lib/people/AccountLocker.h"
 
@@ -30,6 +31,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <functional>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
@@ -47,6 +49,7 @@ constexpr char kFormat[] = "pp-browser relay sign vectors v1";
 constexpr char kOriginA[] = "https://relay-a.example/api/relay";
 constexpr char kOriginB[] = "https://relay-b.example/api/relay";
 constexpr char kBlobId[] = "00000000-0000-4000-8000-000000000001";
+constexpr char kClientUpgradeRequired[] = "client_upgrade_required";
 
 /** Every key of the vectors, from fixed seeds. */
 struct VectorKeys {
@@ -339,7 +342,7 @@ std::vector<CallSpec> MessageCalls(const VectorKeys& keys) {
   send.index_key = 7;
   send.blob_b64 = "AA==";
   Object send_fields = RelayWireSendRecordToJson(send);
-  for (const char* signed_key : {"audience", "timestamp", "signature"}) {
+  for (const char* signed_key : {"sign_version", "audience", "timestamp", "signature"}) {
     send_fields.erase(signed_key);
   }
   const auto reader = [account](const char* cursor_key, const std::string& cursor) {
@@ -419,12 +422,18 @@ Object Expect(const std::string& at_a, const std::string& at_b) {
   return expect;
 }
 
-/** One `calls` row: the command signed by the account for relay `a` (bytes), sent with `body_audience`. */
+/**
+ * One `calls` row: the command signed by the account for relay `a` (bytes), sent with `body_audience` and naming
+ * `sign_version` (the spec's version unless given; -1: none, as an app from before the field sent).
+ */
 Object CallRow(const VectorKeys& keys, const CallSpec& spec, const std::string& name, const std::string& body_audience,
-               Object expect) {
+               Object expect, const std::optional<int64_t> sign_version = std::nullopt) {
   Object body = spec.fields;
   body.set("timestamp", kNowMs);
   const ByteVector bytes = spec.bytes(body, keys.peer_a);
+  if (const int64_t version = sign_version.value_or(spec.version); version >= 0) {
+    body.set("sign_version", version);
+  }
   if (!body_audience.empty()) {
     body.set("audience", body_audience);
   }
@@ -454,6 +463,17 @@ Array CallRows(const VectorKeys& keys) {
           ObjectValue(CallRow(keys, spec, spec.name + ".no_audience", "", Expect("wrong_audience", "wrong_audience"))));
       rows.elements.push_back(ObjectValue(CallRow(keys, spec, spec.name + ".audience_swapped", keys.peer_b,
                                                   Expect("wrong_audience", "bad_signature"))));
+    }
+    // An app older than the relay is told to update (426), before its audience is looked at: an older version, or
+    // none named (an app from before the field).
+    if (spec.name == "relay-api.poll_inbox" || spec.name == "register.revoke" || spec.name == "register.finish" ||
+        spec.name == "mesh.heartbeat") {
+      const Object upgrade = Expect(kClientUpgradeRequired, kClientUpgradeRequired);
+      rows.elements.push_back(
+          ObjectValue(CallRow(keys, spec, spec.name + ".old_sign_version", keys.peer_a, upgrade, spec.version - 1)));
+      if (spec.name == "relay-api.poll_inbox") {
+        rows.elements.push_back(ObjectValue(CallRow(keys, spec, spec.name + ".no_sign_version", "", upgrade, -1)));
+      }
     }
   }
   return rows;
@@ -667,6 +687,8 @@ TEST(RelaySignVectorsTest, EveryCallsBytesAreItsBodysAndSigned) {
     EXPECT_EQ(Timestamp(*body), kNowMs) << name;
     if (name == spec->name) {
       EXPECT_EQ(Str(*body, "audience"), keys.peer_a) << name;
+      EXPECT_EQ(body->getIf<int64_t>("sign_version"), spec->version) << name << ": the version its bytes carry";
+      EXPECT_EQ(RelaySignVersionOf(bytes), spec->version) << name;
     }
     domains.insert(Str(*row, "domain") + " v" + std::to_string(row->getIf<int64_t>("version").value_or(0)));
     if (auto op = row->getIf<int64_t>("op")) {

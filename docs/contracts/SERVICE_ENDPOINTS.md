@@ -53,8 +53,8 @@ When `registration.base_url` is set (e.g. `https://host/api/relay`), `HttpRegist
 | Step | HTTP | Request body | Response |
 |------|------|--------------|----------|
 | Start | `POST /v1/register/start` | `{ public_key, kem_public_key_b64, nickname?, signature_alg? }` | `{ challenge, signature_alg, expires_at }` |
-| Finish | `POST /v1/register/finish` | `{ challenge, public_key, kem_public_key_b64, kem_binding_signature_b64?, audience, signature, timestamp, nickname?, signature_alg?, account_card? }` | `{ success, account_id, registration_id, message, expires_at, llm_api_key, kem_bound, account_card_status? }` |
-| Revoke | `POST /v1/register/revoke` | `{ account_id, registration_id, audience, timestamp, signature }` | `200`; `409 registration_mismatch` when another registration is held now (nothing removed) |
+| Finish | `POST /v1/register/finish` | `{ challenge, public_key, kem_public_key_b64, kem_binding_signature_b64?, sign_version, audience, signature, timestamp, nickname?, signature_alg?, account_card? }` | `{ success, account_id, registration_id, message, expires_at, llm_api_key, kem_bound, account_card_status? }`; `426 client_upgrade_required` for an older sign version or account card ([Client compatibility](#client-compatibility-discovery)) |
+| Revoke | `POST /v1/register/revoke` | `{ account_id, registration_id, sign_version, audience, timestamp, signature }` | `200`; `409 registration_mismatch` when another registration is held now (nothing removed) |
 
 Finish signs canonical bytes: domain `pp-browser:relay-register-v1\0`, `sign_version=3`, the relay's PeerId (`audience`, len-prefixed UTF-8, [§ The audience](#the-audience-every-signed-command-names-its-relay)), challenge (len-prefixed UTF-8), **1952-byte raw ML-DSA-65** account public key, **1184-byte raw ML-KEM-768** **account** public key (`kem_public_key_b64` — person encapsulate-to, **M015**; not per-device), `signature_alg` u8 (`1=ml-dsa-65`), `timestamp` i64 BE. Pre-release hard cut: Ed25519 register/API auth removed; wipe legacy relay_users.
 
@@ -148,10 +148,15 @@ to the relay's key (Amp, MR007 item 6).
 
 Each command's sign bytes are `domain ‖ 0x00 ‖ u8 version ‖ LenUtf8(audience) ‖ …its fields…`, the audience the
 relay's PeerId string (`LenUtf8` = `u64be(len) ‖ utf8`, as every string here; integers big-endian). The JSON body
-carries it as a top-level `"audience"` beside `timestamp` and `signature`. The relay refuses an `audience` that is
-absent or not byte-equal to its own PeerId with `401 { "code": "wrong_audience" }` **first** (before the window, the
-account lookup, the signature, and for `register/finish` before the challenge is spent), then verifies the signature
-over bytes built with its own PeerId: a body whose `audience` was rewritten fails the signature.
+carries it as a top-level `"audience"` beside `sign_version` (the version byte the bytes carry; `SignRelayCommand`
+reads it from them, `PutSignedRelayCommand` writes it), `timestamp` and `signature`. The relay checks the sign version
+**first**, from the body alone: none, or one older than the table's, answers `426 { "code": "client_upgrade_required" }`
+([Client compatibility](#client-compatibility-discovery): this app is too old for that relay), a newer or malformed one
+`400 unsupported_sign_version`. It then refuses an `audience` that is absent or not byte-equal to its own PeerId with
+`401 { "code": "wrong_audience" }` (before the window, the account lookup, the signature, and for `register/finish`
+before the challenge is spent), then verifies the signature over bytes built with its own PeerId: a body whose
+`audience` was rewritten fails the signature. `register/finish` answers `426 client_upgrade_required` to a person's
+account card older than version 4 as well, before anything is spent.
 
 | Domain | Version | Fields after the audience |
 |---|---|---|
@@ -172,7 +177,9 @@ over bytes built with its own PeerId: a body whose `audience` was rewritten fail
 | `pp-browser:relay-api-v1` | 3 | `op` u8, `timestamp` i64, then the op's fields ([below](#http-relay-api-auth-per-request-sign-bytes)) |
 
 Domain names keep their `-v1` suffix (the u8 is the version). No other version is accepted (a clean cutover,
-[COMPATIBILITY](COMPATIBILITY.md#clean-cutovers-pre-release)). **Statements verified anywhere carry no audience:** the
+[COMPATIBILITY](COMPATIBILITY.md#clean-cutovers-pre-release)): an older one, or none named, is `426
+client_upgrade_required`, so an app the relay has moved past says "update the app" rather than failing as a bad
+signature. **Statements verified anywhere carry no audience:** the
 KEM binding, the account card, grants, the account locker's owner signature, and everything end to end inside a
 message.
 
@@ -184,8 +191,9 @@ a send into a contact's relay the `peer_id` its newest card (or its QR locator) 
 
 **Golden vectors:** `capabilities/delivery/src/lib/delivery/tests/data/relay_sign_vectors.json`, written by
 `relay_sign_vectors_test.cpp` (`PP_WRITE_RELAY_SIGN_VECTORS=<path>`) and checked there: every domain and relay API op
-signed by one account for relay `a`, with what `a` and `b` answer (`ok`, `wrong_audience`, `bad_signature`), a poll
-without `audience` and one whose `audience` names `b`, the relays' keys and PeerIds, MESH_IDENTITY's two fixtures, a
+signed by one account for relay `a`, with what `a` and `b` answer (`ok`, `wrong_audience`, `bad_signature`,
+`client_upgrade_required`), a poll without `audience` and one whose `audience` names `b`, a poll, a registration, a
+revoke and a heartbeat naming an older `sign_version` and a poll naming none, the relays' keys and PeerIds, MESH_IDENTITY's two fixtures, a
 version 4 account card and five cards that must be refused. pp-relay-apis copies the file byte for byte
 (`relay-sign-vectors.json`); a change to either side's bytes changes it here first.
 
@@ -215,7 +223,7 @@ address.
 
 ## HTTP relay API auth (per-request sign bytes)
 
-All relay API calls require `audience`, `timestamp` and `signature` over `pp-browser:relay-api-v1\0` canonical bytes, **sign version 3** (`u8 3`, the relay's PeerId as LenUtf8 ([§ The audience](#the-audience-every-signed-command-names-its-relay)), then `u8 op`, `i64 timestamp`, the fields; strings `u64be(len) | utf8`): every party is an **Account ID** (multi-relay MR001). The account key signs; a call by an account not registered here (or expired) is `403 not_registered` / `registration_expired` — except a send, below. Golden vectors: `relay_sign_vectors.json` (above) and `relay_message_sign_payload_test.cpp`.
+All relay API calls require `sign_version` (3), `audience`, `timestamp` and `signature` over `pp-browser:relay-api-v1\0` canonical bytes, **sign version 3** (`u8 3`, the relay's PeerId as LenUtf8 ([§ The audience](#the-audience-every-signed-command-names-its-relay)), then `u8 op`, `i64 timestamp`, the fields; strings `u64be(len) | utf8`): every party is an **Account ID** (multi-relay MR001). The account key signs; a call by an account not registered here (or expired) is `403 not_registered` / `registration_expired` — except a send, below. Golden vectors: `relay_sign_vectors.json` (above) and `relay_message_sign_payload_test.cpp`.
 
 | Op | HTTP | Body ids | Signed fields |
 |----|------|----------|----------------|
@@ -231,7 +239,7 @@ All relay API calls require `audience`, `timestamp` and `signature` over `pp-bro
 
 ### A send: the recipient, the sender's key, the grant
 
-`POST /v1/messages` `{ sender_account_id, recipient_account_id, stream_id, index_key, blob_b64, ttl_s?, urgent?, wake_hint?, timestamp, signature, sender_public_key_b64?, grant? }` (`HttpRelayClient::Send`, [MR003](../../projects/multi-relay/DECISIONS.md#mr003--cross-relay-delivery-is-an-account-signed-send) / [MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)). Neither the key nor the grant is signed by the sender: the key must hash to `sender_account_id`, the grant carries the recipient's signature.
+`POST /v1/messages` `{ sender_account_id, recipient_account_id, stream_id, index_key, blob_b64, ttl_s?, urgent?, wake_hint?, sign_version, audience, timestamp, signature, sender_public_key_b64?, grant? }` (`HttpRelayClient::Send`, [MR003](../../projects/multi-relay/DECISIONS.md#mr003--cross-relay-delivery-is-an-account-signed-send) / [MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)). Neither the key nor the grant is signed by the sender: the key must hash to `sender_account_id`, the grant carries the recipient's signature.
 
 - **`grant`** — the recipient's grant to us ([ACCOUNT_CARD § Relay grants](ACCOUNT_CARD.md#relay-grants)), attached when we hold a usable one; never on a send to our own mailbox. With it the send is a contact's; without it, a stranger's.
 - **`sender_public_key_b64`** — our account's ML-DSA key, sent only when the relay asked for it (`401 sender_key_required`: it holds no key of ours — we are not registered there); the client sends once more with it.

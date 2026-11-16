@@ -55,9 +55,15 @@ private:
 inline constexpr const char kWrongAudienceCode[] = "wrong_audience";
 inline constexpr const char kNotRegisteredCode[] = "not_registered";
 inline constexpr const char kRegistrationExpiredCode[] = "registration_expired";
+/** HTTP 426: this app is older than the relay speaks (docs/contracts/SERVICE_ENDPOINTS.md § Client compatibility). */
+inline constexpr const char kClientUpgradeRequiredCode[] = "client_upgrade_required";
 
-/** What a signed command's JSON body carries beside its fields: the audience, the timestamp and the signature. */
+/**
+ * What a signed command's JSON body carries beside its fields: the version byte it was signed with (`sign_version`),
+ * the audience, the timestamp and the signature.
+ */
 struct SignedRelayCommand {
+  int sign_version = 0;
   std::string audience;
   int64_t timestamp = 0;
   std::string signature;
@@ -73,7 +79,7 @@ using RelayCommandBytes = std::function<std::vector<uint8_t>(const std::string& 
 Roe<SignedRelayCommand> SignRelayCommand(IRelayAudience* audience, const RelayAuthSigner& signer, int64_t timestamp,
                                          const RelayCommandBytes& build);
 
-/** Puts `audience`, `timestamp` and `signature` into `body` (top level, beside the command's fields). */
+/** Puts `sign_version`, `audience`, `timestamp` and `signature` into `body` (top level, beside the command's fields). */
 void PutSignedRelayCommand(Object& body, const SignedRelayCommand& command);
 
 /** The relay's machine-readable reason (`code` beside `error`) in an answer body; empty when none. */
