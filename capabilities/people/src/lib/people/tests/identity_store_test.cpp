@@ -447,8 +447,12 @@ TEST_F(IdentityStoreTest, OurCardIsSealedBesideTheIdentityAndOnlyANewerOneReplac
 
   const AccountCard card = OwnCardOf(store, "alice-sealed", 100);
   ASSERT_TRUE(store.KeepOwnCard(card));
-  std::ifstream in(data_dir_ / "own_card.enc", std::ios::binary);
-  const std::string raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  std::string raw;
+  {
+    // Closed before the file is replaced below: Windows refuses to replace an open file.
+    std::ifstream in(data_dir_ / "own_card.enc", std::ios::binary);
+    raw.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
   EXPECT_FALSE(raw.empty());
   EXPECT_EQ(raw.find("alice-sealed"), std::string::npos) << "under the DEK, not plaintext";
 

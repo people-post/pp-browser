@@ -387,9 +387,12 @@ TEST(RelayPinStoreTest, AnotherSchemaOrNotJsonIsRefusedAndReadAsEmpty) {
   EXPECT_TRUE(store.All().empty()) << "expected again from their addresses";
   ASSERT_EQ(store.Expect("https://a.example/api/relay", kPeerA, 1).outcome, PinOutcome::Pinned);
   EXPECT_TRUE(store.PinFor("https://a.example/api/relay")) << "held in memory";
-  std::ifstream in(dir / "relay_pins.json");
-  EXPECT_EQ(std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>()), newer)
-      << "a newer app's file is never overwritten";
+  std::string on_disk;
+  {
+    std::ifstream in(dir / "relay_pins.json"); // closed before the remove: Windows refuses to delete an open file
+    on_disk.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
+  EXPECT_EQ(on_disk, newer) << "a newer app's file is never overwritten";
   std::filesystem::remove_all(dir);
 }
 
