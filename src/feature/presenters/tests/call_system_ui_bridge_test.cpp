@@ -82,9 +82,9 @@ protected:
                         },
                     .screen_state = [this]() { return screen; },
                     .pin_locked = [this]() { return pin_locked; },
-                    .audio_managed = [this](const bool managed) { did.push_back(managed ? "managed" : "unmanaged"); },
+                    .audio_managed = [this](const bool managed) { audio.push_back(managed ? "managed" : "unmanaged"); },
                     .audio_activated =
-                        [this](const bool active) { did.push_back(active ? "audio active" : "audio inactive"); },
+                        [this](const bool active) { audio.push_back(active ? "audio active" : "audio inactive"); },
                 }) {}
 
   static CallScreen Ring(const std::string& call_id, bool video = false) {
@@ -117,6 +117,7 @@ protected:
 
   FakeCallSystemUi ui_;
   std::vector<std::string> did;
+  std::vector<std::string> audio; // audio-session ownership events, apart from the user choices in `did`
   std::vector<std::string> accepted_ids;
   std::function<void()> on_accept;
   std::function<void()> on_ring_moved;
@@ -712,18 +713,20 @@ TEST_F(CallSystemUiBridgeTest, ARingOverACallInTheBackgroundIsNotMarkedSeen) {
 TEST_F(CallSystemUiBridgeTest, ACallAnsweredOnTheSystemScreenOwnsItsAudioSessionUntilTheSystemReleasesIt) {
   bridge_.Sync(Ring("c1"), "", false);
   ui_.callbacks_.answer("c1");
-  EXPECT_EQ(did, (std::vector<std::string>{"managed", "accept"})) << "managed before the accept: its audio waits";
+  EXPECT_EQ(did, std::vector<std::string>{"accept"});
+  EXPECT_EQ(audio, std::vector<std::string>{"managed"}) << "its audio waits for the system";
   ui_.callbacks_.audio_session(true);
   ui_.callbacks_.audio_session(false);
-  EXPECT_EQ(did, (std::vector<std::string>{"managed", "accept", "audio active", "audio inactive", "unmanaged"}));
+  EXPECT_EQ(audio, (std::vector<std::string>{"managed", "audio active", "audio inactive", "unmanaged"}));
 }
 
 TEST_F(CallSystemUiBridgeTest, ThePushsCallGoingWithoutARingLeavesNoManagedAudio) {
   ui_.pending_push = true;
   ui_.callbacks_.answer(""); // answered before its ring was known: nothing is managed yet
   EXPECT_TRUE(did.empty());
+  EXPECT_TRUE(audio.empty());
   ui_.callbacks_.pending_gone();
-  EXPECT_EQ(did, (std::vector<std::string>{"unmanaged"}));
+  EXPECT_EQ(audio, (std::vector<std::string>{"unmanaged"}));
 }
 
 TEST_F(CallSystemUiBridgeTest, MutingOnTheSystemScreenTogglesTheCallsMute) {
