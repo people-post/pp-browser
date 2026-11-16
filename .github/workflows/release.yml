@@ -106,10 +106,10 @@ jobs:
             -DPP_RELAY_CONTENT_SHA256="${PP_RELAY_CONTENT_SHA256:-OFF}"
 
       - name: Build
-        run: cmake --build build --config Release -j 4
+        run: cmake --build build --config Release -j "$(cmake -P cmake/HostCores.cmake)"
 
       - name: Test
-        run: ctest --test-dir build -C Release -j 4 --output-on-failure
+        run: ctest --test-dir build -C Release -j --output-on-failure
 
       - name: Install
         run: cmake --install build
@@ -282,10 +282,10 @@ jobs:
             -DPP_RELAY_CONTENT_SHA256="${PP_RELAY_CONTENT_SHA256:-OFF}"
 
       - name: Build
-        run: cmake --build build --config Release -j 4
+        run: cmake --build build --config Release -j "$(cmake -P cmake/HostCores.cmake)"
 
       - name: Test
-        run: ctest --test-dir build -C Release -j 4 --output-on-failure
+        run: ctest --test-dir build -C Release -j --output-on-failure
 
       - name: Install
         run: cmake --install build
