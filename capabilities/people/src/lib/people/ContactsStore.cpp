@@ -317,27 +317,8 @@ Roe<Contact> ContactsStore::AddFromDirectoryHitUnnotified(const mesh::DirectoryH
 }
 
 Roe<Contact> ContactsStore::ApplyRemoteSnapshotUnnotified(const std::string& contact_id, const mesh::DirectoryHit& hit,
-                                                          const int64_t fetched_at_ms) {
-  auto loaded = Get(contact_id);
-  if (!loaded) {
-    return loaded.error();
-  }
-  if (!loaded->has_value()) {
-    return Error("Contact not found");
-  }
-  Contact contact = **loaded;
-  contact.remote.nickname = hit.nickname;
-  contact.remote.ids = hit.ids;
-  contact.remote.endpoints = hit.endpoints;
-  contact.remote.multiaddrs = hit.multiaddrs;
-  contact.remote.icon = hit.icon;
-  contact.remote.fetched_at = fetched_at_ms > 0 ? fetched_at_ms : util::NowUnixMs();
-  SyncContactMirrors(contact);
-  return UpsertUnnotified(contact);
-}
-
-Roe<Contact> ContactsStore::ApplyProfileRefreshUnnotified(const std::string& contact_id, const mesh::DirectoryHit& hit,
-                                                          const int64_t fetched_at_ms) {
+                                                          const int64_t fetched_at_ms,
+                                                          const std::optional<std::string>& requested_account_id) {
   auto loaded = Get(contact_id);
   if (!loaded) {
     return loaded.error();
@@ -347,7 +328,91 @@ Roe<Contact> ContactsStore::ApplyProfileRefreshUnnotified(const std::string& con
   }
   Contact contact = **loaded;
   const auto known = ContactAccountId(contact);
-  const auto offered = PrimaryAccountIdFromHit(hit);
+  if (known) {
+    // A by-account lookup is for that account even when the answer does not name it.
+    auto offered = PrimaryAccountIdFromHit(hit);
+    if (!offered) {
+      offered = requested_account_id;
+    }
+    if (!offered || *offered != *known) {
+      return Error("Directory hit is for another account");
+    }
+  }
+  const std::vector<mesh::ContactId> old_ids = contact.remote.ids;
+  const bool hit_has_device = !hit.endpoints.empty() || !hit.multiaddrs.empty() ||
+                              std::any_of(hit.ids.begin(), hit.ids.end(), [](const mesh::ContactId& id) {
+                                return id.kind == mesh::ContactIdKind::PeerId;
+                              });
+  contact.remote.ids = hit.ids;
+  if (known) {
+    // The answer is for the contact's own account: an Account id of any other value is not stored.
+    auto& ids = contact.remote.ids;
+    ids.erase(std::remove_if(ids.begin(), ids.end(),
+                             [&known](const mesh::ContactId& id) {
+                               return id.kind == mesh::ContactIdKind::Account && id.value != *known;
+                             }),
+              ids.end());
+    // What the answer leaves out is kept: the devices as one group with their addresses, and ids of
+    // other kinds. A kept id keeps its primary flag unless the answer already has a primary of that kind.
+    const auto answer_has_kind = [&hit](const mesh::ContactIdKind kind) {
+      return std::any_of(hit.ids.begin(), hit.ids.end(), [kind](const mesh::ContactId& id) { return id.kind == kind; });
+    };
+    for (const mesh::ContactId& id : old_ids) {
+      bool keep = false;
+      switch (id.kind) {
+        case mesh::ContactIdKind::Account:
+          break;
+        case mesh::ContactIdKind::PeerId:
+          keep = !hit_has_device;
+          break;
+        default:
+          keep = !answer_has_kind(id.kind);
+          break;
+      }
+      if (keep) {
+        mesh::ContactId kept = id;
+        const bool primary_taken = std::any_of(ids.begin(), ids.end(), [&id](const mesh::ContactId& other) {
+          return other.kind == id.kind && other.primary;
+        });
+        kept.primary = id.primary && !primary_taken;
+        ids.push_back(std::move(kept));
+      }
+    }
+    // The known account is present, first, and the only (primary) Account entry.
+    ids.erase(std::remove_if(ids.begin(), ids.end(),
+                             [](const mesh::ContactId& id) { return id.kind == mesh::ContactIdKind::Account; }),
+              ids.end());
+    ids.insert(ids.begin(), {mesh::ContactIdKind::Account, *known, true});
+  }
+  if (!known || hit_has_device) {
+    contact.remote.endpoints = hit.endpoints;
+    contact.remote.multiaddrs = hit.multiaddrs;
+  }
+  if (!known || !hit.nickname.empty()) {
+    contact.remote.nickname = hit.nickname;
+  }
+  contact.remote.icon = hit.icon;
+  contact.remote.fetched_at = fetched_at_ms > 0 ? fetched_at_ms : util::NowUnixMs();
+  SyncContactMirrors(contact);
+  return UpsertUnnotified(contact);
+}
+
+Roe<Contact> ContactsStore::ApplyProfileRefreshUnnotified(const std::string& contact_id, const mesh::DirectoryHit& hit,
+                                                          const int64_t fetched_at_ms,
+                                                          const std::optional<std::string>& requested_account_id) {
+  auto loaded = Get(contact_id);
+  if (!loaded) {
+    return loaded.error();
+  }
+  if (!loaded->has_value()) {
+    return Error("Contact not found");
+  }
+  Contact contact = **loaded;
+  const auto known = ContactAccountId(contact);
+  auto offered = PrimaryAccountIdFromHit(hit);
+  if (!offered) {
+    offered = requested_account_id; // a by-account lookup is for that account even when the answer names none
+  }
   if (!known || !offered || *known != *offered) {
     return Error("Directory hit is for another account");
   }
@@ -436,8 +501,9 @@ Roe<Contact> ContactsStore::AddFromDirectoryHit(const mesh::DirectoryHit& hit) {
 }
 
 Roe<Contact> ContactsStore::ApplyRemoteSnapshot(const std::string& contact_id, const mesh::DirectoryHit& hit,
-                                                const int64_t fetched_at_ms) {
-  auto result = ApplyRemoteSnapshotUnnotified(contact_id, hit, fetched_at_ms);
+                                                const int64_t fetched_at_ms,
+                                                const std::optional<std::string>& requested_account_id) {
+  auto result = ApplyRemoteSnapshotUnnotified(contact_id, hit, fetched_at_ms, requested_account_id);
   if (result) {
     NotifyChanged();
   }
@@ -445,8 +511,9 @@ Roe<Contact> ContactsStore::ApplyRemoteSnapshot(const std::string& contact_id, c
 }
 
 Roe<Contact> ContactsStore::ApplyProfileRefresh(const std::string& contact_id, const mesh::DirectoryHit& hit,
-                                                const int64_t fetched_at_ms) {
-  auto result = ApplyProfileRefreshUnnotified(contact_id, hit, fetched_at_ms);
+                                                const int64_t fetched_at_ms,
+                                                const std::optional<std::string>& requested_account_id) {
+  auto result = ApplyProfileRefreshUnnotified(contact_id, hit, fetched_at_ms, requested_account_id);
   if (result) {
     NotifyChanged();
   }

@@ -2,10 +2,12 @@ pp_browser_add_feature_library(pp_feature_settings
   SOURCES
     AboutSettingsSection.cpp
     AppearanceSettingsSection.cpp
+    BackendChoices.cpp
     CasLibraryCommands.cpp
     IntegrationsSettingsSection.cpp
     LlmSettingsSection.cpp
     NetworkSettingsSection.cpp
+    MyRelays.cpp
     OwnDevices.cpp
     ReachabilityNudge.cpp
     SettingsLogic.cpp

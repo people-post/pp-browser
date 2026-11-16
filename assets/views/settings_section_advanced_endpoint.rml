@@ -1,0 +1,43 @@
+<!-- The AI custom endpoint fields: inline in the Advanced page on the desktop, the page "Custom endpoint" on phones. -->
+        <div class="stack">
+        <div class="group-card">
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.llm.base_url}}</span>
+              <input class="field" type="text" data-value="llm_base_url" data-event-change="on_llm_field_changed()"/>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.llm.model}}</span>
+              <input class="field" type="text" data-value="llm_model" data-event-change="on_llm_field_changed()"/>
+            </span>
+          </label>
+        </div>
+        <div class="settings-field stack" data-if="llm_preset == 'brief'">
+          <span class="settings-label group-head">{{i18n:settings.llm.brief_key}}</span>
+          <p class="text muted group-foot" data-if="brief_llm_key_masked != ''">
+            <span>{{brief_llm_key_masked}}</span> {{i18n:settings.llm.brief_key_rotate_hint}}
+          </p>
+          <p class="text muted group-foot" data-if="brief_llm_key_masked == ''">
+            {{i18n:settings.llm.brief_key_auto}}
+          </p>
+        </div>
+        <div class="group-card" data-if="llm_preset != 'brief'">
+          <label class="settings-field group-row group-row--field" >
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.llm.api_key}}</span>
+              <input class="field" type="password" data-value="llm_api_key" data-event-change="on_llm_field_changed()" placeholder="{{i18n:settings.llm.api_key_placeholder}}"/>
+              <span class="group-field-hint" data-if="llm_api_key == ''">{{i18n:settings.llm.api_key_placeholder}}</span>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field" >
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.llm.api_key_env}}</span>
+              <input class="field" type="text" data-value="llm_api_key_env" data-event-change="on_llm_field_changed()" placeholder="{{i18n:settings.llm.api_key_env_placeholder}}"/>
+              <span class="group-field-hint" data-if="llm_api_key_env == ''">{{i18n:settings.llm.api_key_env_placeholder}}</span>
+            </span>
+          </label>
+        </div>
+        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.llm.endpoint.caption}}</p>
+        </div>

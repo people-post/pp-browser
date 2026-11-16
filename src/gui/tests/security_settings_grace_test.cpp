@@ -4,6 +4,7 @@
 // gate like Change PIN (DEV/PLAN-pin-gate-redesign.md B2).
 #include "gui/SecuritySettingsSection.h"
 #include "gui/SettingsSecurityActions.h"
+#include "gui/UserFeedback.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/PinDefaults.h"
@@ -38,7 +39,7 @@ public:
   explicit FakeSettingsHost(SessionStore& store) : store_(store) {}
   SessionStore& Store() override { return store_; }
   void ReportFailure(const Error&) override { ++failures; }
-  void ShowStatus(const std::string&) override {}
+  void ShowStatus(const std::string& status) override { statuses.push_back(status); }
   void Resync(bool) override {}
   SettingsUiState& UiState() override { return state_; }
   void PullFromView() override {}
@@ -50,6 +51,7 @@ public:
 
   int failures = 0;
   int pushes = 0;
+  std::vector<std::string> statuses;
 
 private:
   SessionStore& store_;
@@ -134,6 +136,22 @@ TEST_F(SecuritySettingsGraceTest, AlwaysIsSavedShownAndHandedToTheApp) {
   EXPECT_NE(back.unlock_grace_label, UnlockGraceDisplayLabel(15));
 }
 
+TEST_F(SecuritySettingsGraceTest, PickingOneOfTheFourOverAStoredUntilRestartStoresExactlyThatAndDropsTheOldValue) {
+  SettingsUiState state = Synced();
+  state.unlock_grace_minutes = kUnlockGraceAlways;
+  ASSERT_TRUE(static_cast<bool>(section_.Flush(state, store_)));
+  for (const int minutes : OfferedUnlockGraceMinutes()) {
+    state = Synced();
+    EXPECT_EQ(state.unlock_grace_minutes, kUnlockGraceAlways) << "the stored value is kept until one is picked";
+    state.unlock_grace_minutes = minutes;
+    ASSERT_TRUE(static_cast<bool>(section_.Flush(state, store_)));
+    EXPECT_EQ(store_.Snapshot().profile_prefs.unlock_grace_minutes, minutes);
+    // back to the removed value for the next round
+    state.unlock_grace_minutes = kUnlockGraceAlways;
+    ASSERT_TRUE(static_cast<bool>(section_.Flush(state, store_)));
+  }
+}
+
 TEST_F(SecuritySettingsGraceTest, ChoosingEveryTimeTellsTheAppZeroAndAnHourSixty) {
   SettingsUiState state = Synced();
   state.unlock_grace_minutes = 0;
@@ -169,7 +187,7 @@ TEST_F(SecuritySettingsGraceTest, ThePageHasTheRowItsHelpAndBothLanguages) {
   EXPECT_NE(rml.find("data-if=\"security_grace_shown\""), std::string::npos);
   EXPECT_NE(rml.find("data-event-click=\"on_choose_unlock_grace()\""), std::string::npos);
   EXPECT_NE(rml.find("{{unlock_grace_label}}"), std::string::npos);
-  EXPECT_NE(rml.find("{{i18n:settings.security.grace.help}}"), std::string::npos);
+  EXPECT_NE(rml.find("{{i18n:settings.security.grace.caption}}"), std::string::npos);
   EXPECT_LT(rml.find("open_security_page('change_pin')"), rml.find("on_choose_unlock_grace")) << "under the PIN";
 
   // B2: no PIN field of their own any more; the PIN gate asks (its number pad for a digit PIN).
@@ -180,10 +198,11 @@ TEST_F(SecuritySettingsGraceTest, ThePageHasTheRowItsHelpAndBothLanguages) {
 
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     const std::string text = ReadAsset(locale);
-    for (const char* key : {"settings.security.grace.title", "settings.security.grace.now", "settings.security.grace.5",
-                            "settings.security.grace.15", "settings.security.grace.60",
-                            "settings.security.grace.always", "settings.security.grace.help",
-                            "pin.verify_export_message", "pin.verify_recovery_message", "pin.change_old_message"}) {
+    for (const char* key :
+         {"settings.security.grace.title", "settings.security.grace.now", "settings.security.grace.5",
+          "settings.security.grace.15", "settings.security.grace.60", "settings.security.grace.always",
+          "settings.security.grace.help", "settings.security.grace.caption", "pin.verify_export_message",
+          "pin.verify_recovery_message", "pin.change_old_message"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
   }
@@ -286,6 +305,24 @@ TEST_F(TransferCodePinTest, ChangePinGoesThroughTheGateAndKeepsTheNewKind) {
   EXPECT_EQ(store_.Snapshot().profile_prefs.pin_digits, 0) << "nothing written";
 }
 
+// The result is the bottom white pill; the persistent status line under the page stays empty.
+TEST_F(TransferCodePinTest, ChangePinSaysUpdatedInThePillAndLeavesNoStatusLine) {
+  std::vector<std::string> pills;
+  ShellFeedbackPorts ports;
+  ports.show_toast = [&pills](const std::string& message, ToastDuration) { pills.push_back(message); };
+  UserFeedback::BindPorts(ports);
+  FakeSettingsHost host(store_);
+  SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
+  actions.ChangePin();
+  ASSERT_TRUE(change_);
+  change_("4321", "135790", [](Roe<void>) {});
+  UserFeedback::BindPorts({});
+  EXPECT_EQ(pills, std::vector<std::string>{Tr("settings.security.pin_updated")});
+  for (const std::string& status : host.statuses) {
+    EXPECT_EQ(status, "") << "no persistent success line";
+  }
+}
+
 // Kenneth 2026-11-07: Change PIN on the app default PIN (public anyway) skips the "current PIN" step; the change uses
 // the default PIN as the old one. An own PIN still starts with it.
 TEST_F(TransferCodePinTest, ChangePinOnTheDefaultPinSkipsTheCurrentPin) {
@@ -325,7 +362,7 @@ protected:
 
 TEST_F(SecuritySettingsBiometricTest, TheSwitchShowsWithAnOwnPinOnADeviceWithTheSensor) {
   SettingsUiState state = Synced();
-  EXPECT_TRUE(state.security_biometric_shown) << "supported + a PIN set + not the default";
+  EXPECT_TRUE(state.security_biometric_shown) << "supported + a PIN set";
   EXPECT_FALSE(state.security_biometric_on);
   EXPECT_EQ(state.security_biometric_label, Tr("settings.security.biometric.face"));
   enabled_ = true;
@@ -337,8 +374,7 @@ TEST_F(SecuritySettingsBiometricTest, TheSwitchShowsWithAnOwnPinOnADeviceWithThe
   EXPECT_EQ(Synced().security_biometric_label, Tr("settings.security.biometric.fingerprint"));
 
   SetPinIsDefault(true);
-  EXPECT_FALSE(Synced().security_biometric_shown) << "the app default PIN";
-  EXPECT_FALSE(Synced().security_biometric_on);
+  EXPECT_TRUE(Synced().security_biometric_shown) << "the app default PIN: shown, the tap explains";
   SetPinIsDefault(false);
 
   kind_.clear();
@@ -378,23 +414,91 @@ TEST_F(SecuritySettingsBiometricTest, OnAsksForThePinFirstOffDoesNot) {
   EXPECT_FALSE(host.UiState().security_biometric_on);
 }
 
+TEST_F(SecuritySettingsBiometricTest, ChoosingTheDefaultValueAsAnOwnPinKeepsItAnOwnPin) {
+  std::vector<bool> modes;
+  commands_.on_pin_mode_changed = [&modes](const bool is_default) { modes.push_back(is_default); };
+  enabled_ = true;
+  FakeSettingsHost host(store_);
+  SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
+  actions.ChangePin();
+  ASSERT_TRUE(change_);
+
+  change_("4321", std::string(kDefaultProfilePin), [](Roe<void>) {});
+  EXPECT_FALSE(store_.Snapshot().profile_prefs.pin_is_default) << "the gate still asks for it";
+  EXPECT_EQ(store_.Snapshot().profile_prefs.pin_digits, 6);
+  EXPECT_EQ(disables_, 0);
+  EXPECT_TRUE(enabled_);
+  EXPECT_TRUE(modes.empty()) << "own to own is no mode change";
+}
+
+TEST_F(SecuritySettingsBiometricTest, RemovePinChecksTheCurrentPinThenGoesBackToTheDefault) {
+  std::vector<std::string> pills;
+  ShellFeedbackPorts ports;
+  ports.show_toast = [&pills](const std::string& message, ToastDuration) { pills.push_back(message); };
+  UserFeedback::BindPorts(ports);
+  std::vector<bool> modes;
+  commands_.on_pin_mode_changed = [&modes](const bool is_default) { modes.push_back(is_default); };
+  enabled_ = true;
+  FakeSettingsHost host(store_);
+  host.UiState() = Synced();
+  SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
+
+  actions.RemovePin();
+  ASSERT_EQ(purposes_, std::vector<PinVerifyPurpose>{PinVerifyPurpose::RemovePin}) << "the current PIN first";
+  EXPECT_FALSE(store_.Snapshot().profile_prefs.pin_is_default) << "not before the PIN";
+  ASSERT_TRUE(on_ok_);
+  on_ok_(); // the gate's check ran change_pin(current, default) and closed
+  UserFeedback::BindPorts({});
+
+  EXPECT_TRUE(store_.Snapshot().profile_prefs.pin_is_default);
+  EXPECT_FALSE(store_.Snapshot().profile_prefs.pin_digits.has_value());
+  EXPECT_EQ(disables_, 1);
+  EXPECT_FALSE(host.UiState().security_biometric_on);
+  EXPECT_EQ(modes, std::vector<bool>{true});
+  EXPECT_EQ(pills, std::vector<std::string>{Tr("settings.security.pin_removed")});
+
+  actions.RemovePin();
+  EXPECT_EQ(purposes_.size(), 1U) << "nothing to remove on the app default PIN";
+}
+
+TEST_F(SecuritySettingsBiometricTest, TurningOnWithTheDefaultPinIsRefusedWithAHint) {
+  std::vector<std::string> pills;
+  ShellFeedbackPorts ports;
+  ports.show_toast = [&pills](const std::string& message, ToastDuration) { pills.push_back(message); };
+  UserFeedback::BindPorts(ports);
+  SetPinIsDefault(true);
+  FakeSettingsHost host(store_);
+  host.UiState() = Synced();
+  SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
+
+  actions.ToggleBiometric();
+  UserFeedback::BindPorts({});
+  EXPECT_TRUE(purposes_.empty()) << "no PIN prompt";
+  EXPECT_FALSE(host.UiState().security_biometric_on);
+  EXPECT_EQ(pills, std::vector<std::string>{Tr("settings.security.biometric.needs_own_pin")});
+  EXPECT_EQ(host.failures, 0);
+}
+
 TEST_F(SecuritySettingsBiometricTest, ThePageHasTheSwitchItsHelpAndBothLanguages) {
   const std::string rml = ReadAsset("views/settings_section_security.rml");
   EXPECT_NE(rml.find("data-if=\"security_biometric_shown\""), std::string::npos);
   EXPECT_NE(rml.find("data-event-click=\"toggle_biometric()\""), std::string::npos);
   EXPECT_NE(rml.find("data-class-settings-switch--on=\"security_biometric_on\""), std::string::npos);
   EXPECT_NE(rml.find("{{security_biometric_label}}"), std::string::npos);
+  EXPECT_NE(rml.find("remove_pin()"), std::string::npos);
+  EXPECT_NE(ReadAsset("views/settings_security_pin.rml").find("remove_pin()"), std::string::npos);
   EXPECT_NE(rml.find("{{i18n:settings.security.biometric.help}}"), std::string::npos);
   EXPECT_EQ(rml.find("biometric toggle row goes here"), std::string::npos);
   EXPECT_LT(rml.find("toggle_biometric()"), rml.find("on_choose_unlock_grace()")) << "first in the Unlock group";
 
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     const std::string text = ReadAsset(locale);
-    for (const char* key :
-         {"settings.security.biometric.face", "settings.security.biometric.touch",
-          "settings.security.biometric.fingerprint", "settings.security.biometric.help",
-          "settings.security.biometric.enabled", "pin.biometric_link.face", "pin.biometric_link.touch",
-          "pin.biometric_link.fingerprint", "pin.biometric_prompt", "pin.biometric_reset_hint"}) {
+    for (const char* key : {"settings.security.biometric.face", "settings.security.biometric.touch",
+                            "settings.security.biometric.fingerprint", "settings.security.biometric.help",
+                            "settings.security.biometric.enabled", "pin.biometric_link.face",
+                            "pin.biometric_link.touch", "pin.biometric_link.fingerprint", "pin.biometric_prompt",
+                            "pin.biometric_reset_hint", "settings.security.remove_pin", "settings.security.pin_removed",
+                            "settings.security.biometric.needs_own_pin", "pin.verify_remove_message"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
   }

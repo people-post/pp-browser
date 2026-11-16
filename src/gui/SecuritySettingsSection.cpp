@@ -57,6 +57,10 @@ std::string UnlockGraceDisplayLabel(const int minutes) {
   return Tr("settings.security.grace.15");
 }
 
+std::vector<int> OfferedUnlockGraceMinutes() {
+  return {0, 5, 15, 60};
+}
+
 std::string BiometricSwitchLabel(const std::string& kind) {
   if (kind == "touch") {
     return Tr("settings.security.biometric.touch");
@@ -128,10 +132,10 @@ void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, 
   // The app default PIN opens silently anyway; a platform with no secure store keeps no grace window.
   state.security_grace_shown = !bootstrap.profile_prefs.pin_is_default && commands_ && commands_->grace_supported &&
                                commands_->grace_supported();
-  // Face / fingerprint unlock (A014): a device with the sensor, an own PIN (the app default opens silently anyway).
+  // Face / fingerprint unlock (A014): a device with the sensor. On the app default PIN the switch shows but asks for an own PIN.
   const std::string biometric_kind =
       commands_ && commands_->biometric_kind ? commands_->biometric_kind() : std::string();
-  state.security_biometric_shown = !biometric_kind.empty() && !bootstrap.profile_prefs.pin_is_default;
+  state.security_biometric_shown = !biometric_kind.empty();
   state.security_biometric_on =
       state.security_biometric_shown && commands_->biometric_enabled && commands_->biometric_enabled();
   state.security_biometric_label = BiometricSwitchLabel(biometric_kind);

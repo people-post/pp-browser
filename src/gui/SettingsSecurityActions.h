@@ -46,11 +46,17 @@ public:
    * (plan #21 ⑧); the app default PIN only confirms.
    */
   void ExportLinkDevice();
+  /** Phones' transfer page: the "code copied" box shows (set by the success path of ExportLinkDevice only). */
+  bool TransferCodeCopied() const { return transfer_code_copied_; }
+  /** Clears the "copied" state and re-reads the page's two validity lines (on opening and on leaving the page). */
+  void ClearTransferCopied();
   /**
    * Me → Security → Change PIN: the PIN gate's three steps (current, new, again), then the engine's change. On the app
    * default PIN the current-PIN step is skipped (that PIN is public): new, again.
    */
   void ChangePin();
+  /** Me → Security → Remove PIN: the current PIN on the gate, then the vault goes back to the app default PIN. */
+  void RemovePin();
   /**
    * Me → Security → "Unlock with Face ID" switch (at-rest A014): on asks for the PIN on the gate first (the engine
    * seals the DEK with it, off the UI thread), then "Turned on"; off needs no PIN.
@@ -60,8 +66,15 @@ public:
 private:
   /** The PIN opens the vault again (on a worker); `done` on the UI thread. */
   void CheckPin(const SecretText& pin, std::function<void(Roe<void>)> done);
+  /**
+   * Saves the PIN mode and kind for `new_pin`, turns Face / fingerprint unlock off (its sealed DEK is only for a custom
+   * PIN) when the PIN became the default, and tells the app.
+   */
+  Roe<void> RecordPinChanged(const SecretText& new_pin, bool to_default);
   /** The "copy transfer code?" confirm, then the code to the clipboard. */
   void ConfirmExportLinkDevice();
+  /** The transfer page's lead and "copied" lines, with the code's validity in minutes (from the code's own TTL). */
+  void SetTransferLabels();
   /** Me → Security → Show recovery phrase: the PIN again (unless the app default), then the 24 words for a while. */
   void ShowRecoveryPhrase();
   /** Me → Security → Save a copy of my account: the sealed account state to a file the user picks (M023). */
@@ -95,6 +108,10 @@ private:
   uint64_t background_listener_ = 0;
   /** How long the phrase stays on screen. */
   static constexpr int64_t kRecoveryPhraseShownMs = 2 * 60 * 1000;
+
+  bool transfer_code_copied_ = false;
+  ui::String move_lead_label_;
+  ui::String move_valid_label_;
 
   bool diagnostics_sending_ = false;
   /** Hidden in the UI demo app (it uploads nothing). */

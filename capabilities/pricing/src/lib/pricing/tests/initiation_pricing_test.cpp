@@ -6,6 +6,10 @@
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <map>
+#include <memory>
+#include <optional>
+#include <string>
 
 namespace {
 
@@ -125,6 +129,83 @@ TEST(InitiationBillingStoreTest, AVersion1FileDropsItsRelayKeyedRows) {
   EXPECT_TRUE(store.IsOpen("account:ann"));
   EXPECT_EQ(store.Get("account:ann").floor_minor, 4);
   std::filesystem::remove_all(dir);
+}
+
+// A stranger's price is its card's (multi-relay MR005): the newest kept card says it; the relay's payment_required
+// speaks over a card it came after; the directory's entry and charge_required count only while no card is known.
+class PeerFloorTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    dir_ = std::filesystem::temp_directory_path() /
+           ("pp_initiation_card_floor_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) + "_" +
+            ::testing::UnitTest::GetInstance()->current_test_info()->name());
+    std::filesystem::remove_all(dir_);
+    std::filesystem::create_directories(dir_);
+    store_ = std::make_unique<InitiationBillingStore>(dir_.string());
+    ASSERT_TRUE(store_->Load());
+    store_->SetCardFloors([this](const std::string& peer) -> std::optional<InitiationCardFloor> {
+      const auto found = cards_.find(peer);
+      return found == cards_.end() ? std::nullopt : std::optional<InitiationCardFloor>(found->second);
+    });
+  }
+  void TearDown() override {
+    store_.reset();
+    std::filesystem::remove_all(dir_);
+  }
+
+  std::filesystem::path dir_;
+  std::map<std::string, InitiationCardFloor> cards_;
+  std::unique_ptr<InitiationBillingStore> store_;
+};
+
+TEST_F(PeerFloorTest, TheCardsFloorOverTheDirectorysAndChargeRequireds) {
+  ASSERT_TRUE(store_->SetFloor("account:bob", 0)); // the directory's entry says nothing (relays read the card)
+  EXPECT_EQ(store_->Get("account:bob").floor_minor, 0) << "no card known: the directory's";
+  cards_["account:bob"] = {.floor_minor = 7, .issued_at = 100};
+  EXPECT_EQ(store_->Get("account:bob").floor_minor, 7) << "a kept card: its floor";
+  ASSERT_TRUE(store_->SetFloor("account:bob", 3)); // a charge_required, an older directory entry
+  EXPECT_EQ(store_->Get("account:bob").floor_minor, 7) << "only without a card";
+  cards_["account:bob"] = {.floor_minor = 0, .issued_at = 200};
+  EXPECT_EQ(store_->Get("account:bob").floor_minor, 0) << "the newest card: free again";
+}
+
+TEST_F(PeerFloorTest, TheRelaysPriceSpeaksUntilANewerCardIsKept) {
+  cards_["account:bob"] = {.floor_minor = 0, .issued_at = 100};
+  auto refresh = store_->SetRelayFloor("account:bob", 9);
+  ASSERT_TRUE(refresh);
+  EXPECT_TRUE(*refresh) << "the relay says another price than our card: refresh the card";
+  EXPECT_EQ(store_->Get("account:bob").floor_minor, 9) << "the relay reads the card the peer registered";
+
+  cards_["account:bob"] = {.floor_minor = 0, .issued_at = 100}; // the refresh found no newer card
+  EXPECT_EQ(store_->Get("account:bob").floor_minor, 9);
+  cards_["account:bob"] = {.floor_minor = 9, .issued_at = 150};
+  EXPECT_EQ(store_->Get("account:bob").floor_minor, 9) << "the newer card agrees";
+  cards_["account:bob"] = {.floor_minor = 4, .issued_at = 300};
+  EXPECT_EQ(store_->Get("account:bob").floor_minor, 4) << "a card newer than the relay's answer speaks over it";
+
+  refresh = store_->SetRelayFloor("account:bob", 4);
+  ASSERT_TRUE(refresh);
+  EXPECT_FALSE(*refresh) << "the relay agrees with our card: nothing to refresh";
+}
+
+TEST_F(PeerFloorTest, WithNoCardTheRelaysPriceOverTheDirectorysAndItIsKept) {
+  ASSERT_TRUE(store_->SetFloor("account:carol", 0));
+  auto refresh = store_->SetRelayFloor("account:carol", 5);
+  ASSERT_TRUE(refresh);
+  EXPECT_TRUE(*refresh) << "no card known: worth fetching";
+  EXPECT_EQ(store_->Get("account:carol").floor_minor, 5);
+  ASSERT_TRUE(store_->SetFloor("account:carol", 0)); // the directory's entry again
+  EXPECT_EQ(store_->Get("account:carol").floor_minor, 5) << "the relay's answer is the authority";
+
+  InitiationBillingStore reopened(dir_.string());
+  ASSERT_TRUE(reopened.Load());
+  EXPECT_EQ(reopened.Get("account:carol").floor_minor, 5) << "kept across a restart";
+  cards_["account:carol"] = {.floor_minor = 2, .issued_at = 50};
+  reopened.SetCardFloors([this](const std::string& peer) -> std::optional<InitiationCardFloor> {
+    const auto found = cards_.find(peer);
+    return found == cards_.end() ? std::nullopt : std::optional<InitiationCardFloor>(found->second);
+  });
+  EXPECT_EQ(reopened.Get("account:carol").floor_minor, 2) << "any card kept after the relay's answer is newer";
 }
 
 } // namespace

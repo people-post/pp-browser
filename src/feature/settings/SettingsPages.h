@@ -14,6 +14,14 @@ enum class SettingsPageAction : unsigned {
   EnterStorage = 1u << 3,
   RefreshDevices = 1u << 4,
   RefreshCasLibrary = 1u << 5,
+  RefreshRelays = 1u << 6,
+};
+
+/** Which switch lists a page on Home: none, "show advanced settings" (Me → Help), or the tester switch (five taps on the version). */
+enum class SettingsPageGate {
+  None,
+  Advanced,
+  Tester,
 };
 
 /**
@@ -30,8 +38,8 @@ struct SettingsPage {
   /** Handler ids the rows on the page save through (nullptr ends the list). */
   const char* handler_ids[6];
   unsigned actions;
-  /** Listed on Home (and the desktop list) only while "show advanced settings" is on (five taps on the version). */
-  bool advanced_only;
+  /** Listed on Home (and the desktop list) only while its switch is on. */
+  SettingsPageGate gate = SettingsPageGate::None;
 };
 
 /** All pages in list order (the desktop list reads it as is). */
@@ -41,7 +49,7 @@ const SettingsPage* FindSettingsPage(std::string_view id);
 
 bool SettingsPageHas(const SettingsPage& page, SettingsPageAction action);
 
-/** The pages Home lists: all of them, or all but the advanced-only ones. A page that is not listed cannot be opened. */
-std::vector<const SettingsPage*> ListedSettingsPages(bool advanced);
+/** The pages Home lists: the Advanced page needs `advanced`, the Test options page needs `tester`. A page that is not listed cannot be opened. */
+std::vector<const SettingsPage*> ListedSettingsPages(bool advanced, bool tester);
 
 } // namespace pbr

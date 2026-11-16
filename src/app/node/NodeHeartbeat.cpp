@@ -114,16 +114,23 @@ NodeHeartbeat::Outcome NodeHeartbeat::Send(const HeartbeatState state, const lon
 
   auto signature = deps_.sign(id.account_id, id.peer_id, state_name, timestamp);
   if (!signature) {
-    log.error << "heartbeat sign failed: " << signature.error().message;
+    if (signature.error().message != sign_failure_) {
+      sign_failure_ =
+          signature.error().message; // e.g. the relay does not match its address (MR008): stopped until it does
+      log.error << "heartbeat not sent: " << sign_failure_;
+    }
     RecordOutcome(Outcome::HttpError);
     return Outcome::HttpError;
   }
+  sign_failure_.clear();
   Object body;
   body.set("account_id", id.account_id);
   body.set("peer_id", id.peer_id);
   body.set("state", state_name);
+  body.set("sign_version", static_cast<int64_t>(signature->sign_version));
+  body.set("audience", signature->audience);
   body.set("timestamp", timestamp);
-  body.set("signature", *signature);
+  body.set("signature", signature->signature);
 
   const auto response = deps_.post(deps_.base_url + "/v1/mesh/heartbeat", DumpJson(body),
                                    {{"Content-Type", "application/json"}}, timeout_s);
@@ -143,6 +150,9 @@ NodeHeartbeat::Outcome NodeHeartbeat::Send(const HeartbeatState state, const lon
         .Set(static_cast<double>(skew_ms) / 1000.0);
   }
 
+  if (status >= 400 && deps_.refused && !parsed.code.empty()) {
+    deps_.refused(parsed.code); // `wrong_audience`: the relay's identity is asked again (MR007)
+  }
   Outcome outcome = Outcome::HttpError;
   if (status >= 200 && status < 300) {
     outcome = Outcome::Ok;
@@ -164,6 +174,8 @@ NodeHeartbeat::Outcome NodeHeartbeat::Send(const HeartbeatState state, const lon
   } else if (status == 404 && parsed.code == "unknown_peer") {
     outcome = Outcome::UnknownPeer;
     log.warning << "heartbeat: peer_id is not an endpoint of this registration; will retry";
+  } else if (status == 426) {
+    outcome = Outcome::Rejected; // `client_upgrade_required`: `refused` above told the pins (one ERROR per relay)
   } else if (status == 400 || status == 403) {
     outcome = Outcome::Rejected;
     log.error << "heartbeat refused (" << status << "): " << parsed.code;

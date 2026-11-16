@@ -9,6 +9,7 @@
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "gui/UserFeedback.h"
+#include "gui/chat/ChatPeerSheet.h"
 #include "lib/delivery/SendRelayOptions.h"
 
 #include <ui/base/SystemInterface.h>
@@ -86,7 +87,7 @@ void RunBlockFlow(ChatMenusHost& host, ChatPresenter& presenter, const ContactsN
 ChatMenus::ChatMenus(ChatMenusHost& host, ChatPresenter& presenter, const ChatScreenState& chat,
                      WorkingSetController& working_set, const ContactsNotifyPorts& contacts_notify,
                      const EmojiPickerNotifyPorts& emoji_picker_notify, const ShellFeedbackPorts& shell_feedback,
-                     const CallActionsPorts& call_actions)
+                     const CallActionsPorts& call_actions, const PeoplePickerNotifyPorts& people_picker_notify)
     : host_(host),
       presenter_(presenter),
       chat_(chat),
@@ -94,7 +95,8 @@ ChatMenus::ChatMenus(ChatMenusHost& host, ChatPresenter& presenter, const ChatSc
       contacts_notify_(contacts_notify),
       emoji_picker_notify_(emoji_picker_notify),
       shell_feedback_(shell_feedback),
-      call_actions_(call_actions) {}
+      call_actions_(call_actions),
+      people_picker_notify_(people_picker_notify) {}
 
 void InsertEditAction(std::vector<ContextMenuAction>& actions, std::function<void()> start_edit) {
   ContextMenuAction edit{"edit_message", Tr("chat.menu.edit"), nullptr, std::move(start_edit),
@@ -546,6 +548,28 @@ void ChatMenus::OpenThreadActions(ui::Event& ev) {
   const ui::Vector2i position = MenuPositionBelowRightAlignedEvent(ev);
 
   std::vector<ContextMenuAction> actions;
+  // Phones, a 1:1 chat with a contact: the header opens their page, so the menu it used to open gives up its first
+  // item here (DEV/PLAN-fewer-taps-1.md 2).
+  if (ConversationsFacade* peer_facade = host_.Facade();
+      peer_facade && host_.MessagingIsReady() && chat_.show_peer_sheet && !chat_.thread_is_ai) {
+    if (auto thread = peer_facade->GetActiveThread(); thread && thread->kind == ThreadKind::Direct) {
+      if (const auto contact_id = DirectPeerContactId(*peer_facade, *thread);
+          ChooseChatPeerTarget(host_.AskAiPanelAvailable(), thread->kind, contact_id.has_value(),
+                               /*peer_is_account=*/false) == ChatPeerTarget::ContactPage) {
+        actions.push_back({
+            "add_people",
+            Tr("chat.menu.add_people"),
+            nullptr,
+            [this, id = *contact_id]() {
+              if (people_picker_notify_.open_from_dm) {
+                people_picker_notify_.open_from_dm(id);
+              }
+            },
+            "../icons/group.svg",
+        });
+      }
+    }
+  }
   // Not while a voice message is being recorded (its bar holds the composer's place).
   if (chat_.show_search && !chat_.voice_recording) {
     actions.push_back({

@@ -30,6 +30,8 @@ pp_browser_add_feature_library(pp_gui
     chat/MessagingReadyTasks.cpp
     chat/OutgoingAttachmentPrep.cpp
     chat/PendingUploadRows.cpp
+    chat/RegistrationRecovery.cpp
+    chat/SendFailureFix.cpp
     chat/TranscriptRml.cpp
     chat/VoiceBubble.cpp
     chat/VoiceComposer.cpp
@@ -56,6 +58,7 @@ pp_browser_add_feature_library(pp_gui
     ProfileSettingsSection.cpp
     SecuritySettingsSection.cpp
     SettingsCasLibrary.cpp
+    SettingsMyRelays.cpp
     SettingsOwnDevices.cpp
     SettingsController.cpp
     SettingsProfileActions.cpp

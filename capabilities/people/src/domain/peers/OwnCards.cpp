@@ -4,8 +4,29 @@
 #include "foundation/crypto/KemKeyBinding.h"
 
 #include <algorithm>
+#include <chrono>
 
 namespace pbr {
+
+namespace {
+
+int64_t NowMs() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+      .count();
+}
+
+} // namespace
+
+OwnCards::OwnCards(IdentityStore& identity, AccountKeyResolver& cards)
+    : identity_(identity), cards_(cards), life_(std::make_shared<Life>()) {
+  redirectLogger("OwnCards");
+  life_->owner = this;
+}
+
+OwnCards::~OwnCards() {
+  std::lock_guard guard(life_->mutex); // an answer being taken in finishes first; a later one finds no owner
+  life_->owner = nullptr;
+}
 
 Roe<KeyCard> OwnCards::Keys() {
   auto identity = identity_.Get();
@@ -63,7 +84,7 @@ Roe<AccountCardDevice> OwnCards::Self() {
                            .kem_public_key_b64 = identity->device_kem_public_key_b64};
 }
 
-Roe<std::optional<AccountCard>> OwnCards::NewestLocked() {
+Roe<std::optional<AccountCard>> OwnCards::NewestLocked(const int64_t now_ms) {
   auto identity = identity_.Get();
   if (!identity) {
     return identity.error();
@@ -72,10 +93,39 @@ Roe<std::optional<AccountCard>> OwnCards::NewestLocked() {
   if (!kept) {
     return kept.error();
   }
-  if (!kept->has_value() || !(*kept)->newest_card) {
-    return std::optional<AccountCard>{};
+  std::optional<AccountCard> in_store;
+  if (kept->has_value() && (*kept)->newest_card) {
+    in_store = (*kept)->newest_card;
   }
-  return std::optional<AccountCard>((*kept)->newest_card);
+  auto beside = identity_.OwnCard();
+  if (!beside) {
+    log().warning << "own card beside the identity unreadable: " << beside.error().message;
+  }
+  const std::optional<AccountCard> own = beside ? *beside : std::nullopt;
+  if (own && (!in_store || own->issued_at > in_store->issued_at)) {
+    // The chat store lost it (Reset chats, the start-up recovery's, a store too old to upgrade): our card goes back
+    // into peer_cards, where everything else reads cards. Checked there as every card is.
+    auto back = cards_.AddAccountCard(*own, std::max(now_ms, own->issued_at), "self");
+    if (back && back->newest_card) {
+      return std::optional<AccountCard>(back->newest_card);
+    }
+    log().warning << "own card not put back into the kept cards: "
+                  << (back ? std::string("not taken") : back.error().message);
+    return in_store;
+  }
+  if (in_store && (!own || in_store->issued_at > own->issued_at) && VerifiedLocked(*in_store, now_ms)) {
+    // Newer here (issued, a sibling's, a linked device's, a restore's — or the first start of a build that keeps it
+    // beside the identity): kept there too.
+    if (auto beside_kept = identity_.KeepOwnCard(*in_store); !beside_kept) {
+      log().warning << "own card not kept beside the identity: " << beside_kept.error().message;
+    }
+  }
+  return in_store;
+}
+
+void OwnCards::Reconcile(const int64_t now_ms) {
+  std::lock_guard lock(mutex_);
+  (void)NewestLocked(now_ms);
 }
 
 namespace {
@@ -87,16 +137,20 @@ bool Lists(const std::vector<AccountCardDevice>& devices, const std::string& pee
 
 } // namespace
 
-void OwnCards::SetRelays(const std::vector<std::string>& origins) {
+bool OwnCards::SetRelays(const std::vector<AccountCardRelay>& given) {
   std::vector<AccountCardRelay> relays;
-  for (const std::string& origin : origins) {
-    relays.push_back(AccountCardRelay{.origin = origin});
+  for (const AccountCardRelay& relay : given) {
+    relays.push_back(relay);
     if (!VerifyCardRelays(relays)) {
-      relays.pop_back(); // outside MR004's bounds (not https, too long, a duplicate, a fifth): not on the card
+      relays.pop_back(); // outside the bounds (not https, too long, no PeerId, a duplicate, a fifth): not on the card
     }
   }
   std::lock_guard lock(mutex_);
+  if (relays_ == relays) {
+    return false;
+  }
   relays_ = std::move(relays);
+  return true;
 }
 
 std::vector<AccountCardRelay> OwnCards::RelaysLocked(const std::vector<AccountCardDevice>& devices,
@@ -156,6 +210,9 @@ Roe<AccountCard> OwnCards::IssueLocked(const std::optional<AccountCard>& base, C
   if (auto kept = cards_.AddAccountCard(*signed_card, std::max(now_ms, issued_at), "self"); !kept) {
     return kept.error();
   }
+  if (auto beside = identity_.KeepOwnCard(*signed_card); !beside) {
+    log().warning << "own card not kept beside the identity: " << beside.error().message; // the next read retries
+  }
   verified_signature_ = signed_card->card_signature_b64;
   issued = true;
   return signed_card;
@@ -168,9 +225,11 @@ Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
   }
   bool issued = false;
   bool intent_done = false;
+  bool ask = false;
+  bool recovery_changed = false;
   Roe<AccountCard> card = [&]() -> Roe<AccountCard> {
     std::lock_guard lock(mutex_);
-    auto newest = NewestLocked();
+    auto newest = NewestLocked(now_ms);
     if (!newest) {
       return newest.error();
     }
@@ -179,8 +238,18 @@ Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
       return self.error();
     }
     std::vector<AccountCardDevice> devices;
-    if (identity->card_intent == kCardIntentFresh || !*newest) {
-      devices = {*self}; // a new account, or restored: a fresh list, this device its master
+    if (identity->card_intent == kCardIntentFresh) {
+      devices = {*self}; // a new account, restored, or the person chose a new list: this device its master
+    } else if (!*newest) {
+      // Our card is not kept here (none beside the identity either): it is asked of our relays, never replaced by a
+      // fresh list — that would sign out every other device of the account.
+      recovery_changed = recovery_ == OwnCardRecovery::None;
+      if (recovery_changed) {
+        recovery_ = OwnCardRecovery::Getting;
+      }
+      ask = RecoveryDueLocked(now_ms);
+      recovery_in_flight_ = recovery_in_flight_ || ask;
+      return Error(recovery_ == OwnCardRecovery::NotFound ? kNoOwnCardMessage : kAwaitingOwnCardMessage);
     } else if (Lists((*newest)->devices, self->peer_id)) {
       for (const AccountCardDevice& device : (*newest)->devices) {
         devices.push_back(device.peer_id == self->peer_id ? *self : device); // the list as it is, this entry now
@@ -191,7 +260,14 @@ Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
     } else {
       return Error(kSignedOutMessage);
     }
+    recovery_ = OwnCardRecovery::None;
     intent_done = !identity->card_intent.empty();
+    const bool master = devices.front().peer_id == self->peer_id;
+    if (!master && *newest && !VerifiedLocked(**newest, now_ms)) {
+      // A card stepped up on disk (profile.db 7 → 8: its relays gone, its signature over the old bytes): its relays
+      // are the main device's to give, so this device waits for the main device's card instead of re-issuing it.
+      return Error(kAwaitingMainCardMessage);
+    }
     std::vector<AccountCardRelay> relays = RelaysLocked(devices, self->peer_id, *newest);
     return IssueLocked(*newest,
                        CardContent{.devices = std::move(devices),
@@ -200,6 +276,12 @@ Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
                                    .initiation_floor = identity->initiation_floor},
                        now_ms, issued);
   }();
+  if (recovery_changed) {
+    NotifyRecoveryChanged();
+  }
+  if (ask) {
+    StartRecovery(identity->account_id);
+  }
   if (card && intent_done) {
     LocalIdentity done = *identity;
     done.card_intent.clear();
@@ -211,6 +293,164 @@ Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
     on_changed_(*card);
   }
   return card;
+}
+
+Roe<AccountCard> OwnCards::StartFreshList(const int64_t now_ms) {
+  {
+    std::lock_guard lock(mutex_);
+    auto newest = NewestLocked(now_ms);
+    if (!newest) {
+      return newest.error();
+    }
+    if (*newest) {
+      return Error("This device already has your device list");
+    }
+    if (recovery_ != OwnCardRecovery::NotFound) {
+      // Only once every relay answered without our card: a relay that did not may still keep it.
+      return Error("Your device list may still be found: try again when all your relays answer");
+    }
+  }
+  auto marked = identity_.Modify([](LocalIdentity& identity) {
+    identity.card_intent = kCardIntentFresh;
+    return true;
+  });
+  if (!marked) {
+    return marked.error();
+  }
+  auto card = Card(now_ms);
+  NotifyRecoveryChanged();
+  return card;
+}
+
+void OwnCards::SetOwnCardLookup(OwnCardLookup lookup) {
+  std::lock_guard lock(mutex_);
+  lookup_ = std::move(lookup);
+}
+
+void OwnCards::SetOnRecoveryChanged(std::function<void()> changed) {
+  std::lock_guard lock(mutex_);
+  on_recovery_changed_ = std::move(changed);
+}
+
+void OwnCards::NotifyRecoveryChanged() {
+  std::function<void()> changed;
+  {
+    std::lock_guard lock(mutex_);
+    changed = on_recovery_changed_;
+  }
+  if (changed) {
+    changed();
+  }
+}
+
+bool OwnCards::RecoveryDueLocked(const int64_t now_ms) const {
+  return lookup_ && !recovery_in_flight_ && recovery_ != OwnCardRecovery::NotFound && now_ms >= recovery_retry_at_ms_;
+}
+
+void OwnCards::RetryRecovery(const int64_t now_ms) {
+  {
+    std::lock_guard lock(mutex_);
+    if (recovery_ == OwnCardRecovery::None || recovery_in_flight_) {
+      return; // a card is kept, or the question is out already
+    }
+    recovery_retry_at_ms_ = 0;
+    if (recovery_ == OwnCardRecovery::NotFound) {
+      recovery_ = OwnCardRecovery::Getting;
+    }
+  }
+  (void)Card(now_ms);
+}
+
+void OwnCards::StartRecovery(const std::string& account_id) {
+  OwnCardLookup lookup;
+  {
+    std::lock_guard lock(mutex_);
+    lookup = lookup_;
+  }
+  if (!lookup) {
+    std::lock_guard lock(mutex_);
+    recovery_in_flight_ = false;
+    return;
+  }
+  log().info << "no card of our own kept: asking our relays for it";
+  lookup(account_id, [life = life_](const OwnCardAnswers& answers) {
+    std::lock_guard guard(life->mutex);
+    if (life->owner) {
+      life->owner->OnRecoveryAnswers(answers, NowMs());
+    }
+  });
+}
+
+std::optional<AccountCard> OwnCards::OursAmong(const OwnCardAnswers& answers, const int64_t now_ms) {
+  auto identity = identity_.Get();
+  if (!identity) {
+    return std::nullopt;
+  }
+  const KeyCard ours{.account_id = identity->account_id,
+                     .signing_public_key_b64 = identity->account_signing_public_key_b64,
+                     .kem_public_key_b64 = identity->kem_public_key_b64};
+  std::optional<AccountCard> best;
+  for (const Object& json : answers.cards) {
+    auto card = AccountCardFromJson(json);
+    if (!card) {
+      log().warning << "a relay's card of ours does not read: " << card.error().message;
+      continue;
+    }
+    // Ours: our Account ID and our account keys, signed by our account key. Anything else is refused.
+    if (!SameKeys(card->keys, ours)) {
+      log().warning << "a relay served a card of another account (or other keys) as ours: refused";
+      continue;
+    }
+    if (auto checked = VerifyAccountCard(*card, now_ms); !checked) {
+      log().warning << "a relay's card of ours does not verify: " << checked.error().message;
+      continue;
+    }
+    if (!best || card->issued_at > best->issued_at) {
+      best = std::move(*card);
+    }
+  }
+  return best;
+}
+
+void OwnCards::OnRecoveryAnswers(const OwnCardAnswers& answers, const int64_t now_ms) {
+  const std::optional<AccountCard> found = OursAmong(answers, now_ms);
+  bool recovered = false;
+  {
+    std::lock_guard lock(mutex_);
+    recovery_in_flight_ = false;
+    if (found) {
+      auto kept = cards_.AddAccountCard(*found, std::max(now_ms, found->issued_at), kOwnCardRecoveredSource);
+      if (kept) {
+        (void)NewestLocked(now_ms); // beside the identity too
+        recovered = true;
+      } else {
+        log().warning << "our card from a relay not kept: " << kept.error().message;
+      }
+    }
+    if (recovered) {
+      recovery_ = OwnCardRecovery::None;
+      recovery_backoff_ms_ = 0;
+      recovery_retry_at_ms_ = 0;
+    } else if (answers.answered > 0 && answers.unreached == 0 && !found) {
+      recovery_ = OwnCardRecovery::NotFound; // every relay answered, none keeps it: the person decides (StartFreshList)
+    } else {
+      // Not every relay reached, or the card found was refused (older than a floor we know): asked again later.
+      recovery_backoff_ms_ =
+          recovery_backoff_ms_ == 0 ? kRecoveryFirstRetryMs : std::min(recovery_backoff_ms_ * 2, kRecoveryMaxRetryMs);
+      recovery_retry_at_ms_ = now_ms + recovery_backoff_ms_;
+      recovery_ = OwnCardRecovery::Getting;
+    }
+  }
+  log().info << "our card from our relays: "
+             << (recovered ? "recovered"
+                 : found   ? "not kept"
+                           : "none")
+             << " (" << answers.answered << " answered, " << answers.unreached << " unreached)";
+  if (recovered) {
+    // On as usual: listed, its entry brought up to date; left out, signed out (this device was taken off).
+    (void)Card(now_ms);
+  }
+  NotifyRecoveryChanged();
 }
 
 Roe<AccountCard> OwnCards::Learn(const AccountCard& card, const int64_t now_ms) {
@@ -228,7 +468,7 @@ Roe<AccountCard> OwnCards::Learn(const AccountCard& card, const int64_t now_ms) 
   std::optional<AccountCard> ours;
   Roe<AccountCard> result = [&]() -> Roe<AccountCard> {
     std::lock_guard lock(mutex_);
-    auto newest = NewestLocked();
+    auto newest = NewestLocked(now_ms);
     if (!newest) {
       return newest.error();
     }
@@ -236,7 +476,7 @@ Roe<AccountCard> OwnCards::Learn(const AccountCard& card, const int64_t now_ms) 
     if (auto kept = cards_.AddAccountCard(card, now_ms, "sibling"); !kept) {
       return kept.error();
     }
-    auto now_newest = NewestLocked();
+    auto now_newest = NewestLocked(now_ms);
     if (!now_newest) {
       return now_newest.error();
     }
@@ -311,17 +551,32 @@ Roe<OwnDeviceList> OwnCards::Devices() {
   if (!self) {
     return self.error();
   }
-  std::lock_guard lock(mutex_);
-  auto newest = NewestLocked();
-  if (!newest) {
-    return newest.error();
-  }
+  const int64_t now_ms = NowMs();
+  bool ask = false;
   OwnDeviceList list;
-  list.self_peer_id = self->peer_id;
-  if (*newest) {
-    list.devices = (*newest)->devices;
+  {
+    std::lock_guard lock(mutex_);
+    auto newest = NewestLocked(now_ms);
+    if (!newest) {
+      return newest.error();
+    }
+    list.self_peer_id = self->peer_id;
+    if (*newest) {
+      list.devices = (*newest)->devices;
+    } else if (identity->card_intent != kCardIntentFresh) {
+      // Asked for while it is being got back (Me → My devices): the question goes now when it is due.
+      list.recovery = recovery_ == OwnCardRecovery::NotFound ? OwnCardRecovery::NotFound : OwnCardRecovery::Getting;
+      ask = RecoveryDueLocked(now_ms);
+      recovery_in_flight_ = recovery_in_flight_ || ask;
+      if (recovery_ == OwnCardRecovery::None) {
+        recovery_ = OwnCardRecovery::Getting;
+      }
+    }
+    list.signed_out = identity->card_intent.empty() && *newest && !Lists(list.devices, self->peer_id);
   }
-  list.signed_out = identity->card_intent.empty() && *newest && !Lists(list.devices, self->peer_id);
+  if (ask) {
+    StartRecovery(identity->account_id);
+  }
   return list;
 }
 
@@ -338,7 +593,7 @@ Roe<AccountCard> OwnCards::ChangeList(const std::string& peer_id, const bool mak
   bool issued = false;
   Roe<AccountCard> card = [&]() -> Roe<AccountCard> {
     std::lock_guard lock(mutex_);
-    auto newest = NewestLocked();
+    auto newest = NewestLocked(now_ms);
     if (!newest) {
       return newest.error();
     }

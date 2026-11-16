@@ -2,7 +2,9 @@
 
 #include "common/Error.h"
 
+#include <cstdint>
 #include <string>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -16,5 +18,14 @@ inline constexpr int kQrSvgViewBox = 100;
  * white whatever the theme, which every scanner reads.
  */
 Roe<std::string> QrSvgContent(const std::string& text);
+
+/** The longest edge, in pixels, QrPngBytes aims for. */
+inline constexpr int kQrPngTargetPx = 1024;
+
+/**
+ * The same QR code as a PNG (black modules on white, the same quiet zone) for sharing as a picture: every module is
+ * a whole number of pixels square, as many as fit in about `target_px`, so the edges stay sharp.
+ */
+Roe<std::vector<uint8_t>> QrPngBytes(const std::string& text, int target_px = kQrPngTargetPx);
 
 } // namespace pbr

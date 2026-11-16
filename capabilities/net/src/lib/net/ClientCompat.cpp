@@ -62,6 +62,27 @@ SemverCore ParseSemverCoreImpl(std::string_view version) {
   return out;
 }
 
+/** The platforms `upgrade_urls` may name (Platform::OsName()). */
+constexpr const char* kUpgradePlatforms[] = {"ios", "android", "macos", "windows", "linux"};
+
+/** Shown as an "update now" link: never anything but https (as `upgrade_url`). */
+bool IsHttpsLink(const std::string& url) {
+  return url.rfind("https://", 0) == 0 && url.size() > 8 && url.find_first_of(" \t\r\n") == std::string::npos;
+}
+
+std::map<std::string, std::string> ParseUpgradeUrls(const Object* urls) {
+  std::map<std::string, std::string> out;
+  if (!urls) {
+    return out;
+  }
+  for (const char* platform : kUpgradePlatforms) {
+    if (auto url = urls->getString(platform); url && IsHttpsLink(*url)) {
+      out[platform] = *url;
+    }
+  }
+  return out;
+}
+
 std::filesystem::path CachePath(const std::string& profile_data_dir) {
   return std::filesystem::path(profile_data_dir) / "client_compat.json";
 }
@@ -73,6 +94,13 @@ Object ClientCompatDocumentToObject(const ClientCompatDocument& doc) {
   document.set("latest_client_version", doc.latest_client_version);
   document.set("min_protocol_gen", static_cast<int64_t>(doc.min_protocol_gen));
   document.set("upgrade_url", doc.upgrade_url);
+  if (!doc.upgrade_urls.empty()) {
+    Object urls;
+    for (const auto& [platform, url] : doc.upgrade_urls) {
+      urls.set(platform, url);
+    }
+    document.set("upgrade_urls", urls);
+  }
   document.set("message", doc.message);
   if (!doc.crash_reports_url.empty()) {
     document.set("crash_reports_url", doc.crash_reports_url);
@@ -159,6 +187,7 @@ Roe<ClientCompatDocument> ParseClientCompatDocument(std::string_view json_text) 
       doc.upgrade_url = *v;
     }
   }
+  doc.upgrade_urls = ParseUpgradeUrls(root->getObject("upgrade_urls")); // not an object: none
   if (auto v = root->getString("message")) {
     doc.message = *v;
   }
@@ -191,7 +220,11 @@ Roe<ClientCompatDocument> ParseClientCompatDocument(std::string_view json_text) 
   return doc;
 }
 
-std::string ResolvedUpgradeUrl(const ClientCompatDocument& doc, const std::string& fallback) {
+std::string ResolvedUpgradeUrl(const ClientCompatDocument& doc, const std::string& fallback,
+                               const std::string& platform) {
+  if (const auto own = doc.upgrade_urls.find(platform); own != doc.upgrade_urls.end() && !own->second.empty()) {
+    return own->second;
+  }
   if (!doc.upgrade_url.empty()) {
     return doc.upgrade_url;
   }
@@ -206,6 +239,11 @@ CompatUiAction DecideCompatUiAction(std::string_view local_version, const Client
     return CompatUiAction::SoftUpdateAvailable;
   }
   return CompatUiAction::None;
+}
+
+CompatUiAction DecideCompatUiAction(std::string_view local_version, const ClientCompatDocument& doc,
+                                    const bool relay_requires_upgrade) {
+  return relay_requires_upgrade ? CompatUiAction::UpdateRequired : DecideCompatUiAction(local_version, doc);
 }
 
 Roe<ClientCompatCacheEntry> LoadClientCompatCache(const std::string& profile_data_dir) {
@@ -264,6 +302,47 @@ bool ClientCompatCacheFresh(const ClientCompatCacheEntry& entry, int64_t now_uni
     return false;
   }
   return (now_unix - entry.fetched_at_unix) < ttl_seconds;
+}
+
+namespace {
+
+/** The cached copy, whatever its age (a failed or impossible fetch: fail open). */
+ClientCompatResolution FromCache(const std::string& profile_data_dir, std::string error) {
+  ClientCompatResolution out;
+  out.error = std::move(error);
+  if (auto cached = LoadClientCompatCache(profile_data_dir)) {
+    out.document = std::move(cached->document);
+    out.fetched_at_unix = cached->fetched_at_unix;
+  }
+  return out;
+}
+
+} // namespace
+
+ClientCompatResolution ResolveClientCompat(IClientCompatClient* client, const std::string& profile_data_dir,
+                                           const int64_t now_unix, const CompatCheck mode) {
+  if (mode == CompatCheck::CacheFirst) {
+    if (auto cached = LoadClientCompatCache(profile_data_dir); cached && ClientCompatCacheFresh(*cached, now_unix)) {
+      return ClientCompatResolution{.document = std::move(cached->document),
+                                    .fetched_at_unix = cached->fetched_at_unix};
+    }
+  }
+  if (!client) {
+    return FromCache(profile_data_dir, "client-compat client unavailable");
+  }
+  auto fetched = client->Fetch();
+  if (!fetched) {
+    return FromCache(profile_data_dir, fetched.error().message);
+  }
+  ClientCompatResolution out{.document = *fetched, .fetched_at_unix = now_unix, .fetched = true};
+  if (auto saved = SaveClientCompatCache(profile_data_dir, ClientCompatCacheEntry{now_unix, *fetched}); !saved) {
+    out.error = "Failed to cache client-compat: " + saved.error().message; // the document still applies
+  }
+  return out;
+}
+
+bool ClientCompatRecheckDue(const int64_t fetched_at_unix, const int64_t now_unix, const int64_t recheck_seconds) {
+  return fetched_at_unix <= 0 || now_unix < fetched_at_unix || now_unix - fetched_at_unix >= recheck_seconds;
 }
 
 } // namespace pbr

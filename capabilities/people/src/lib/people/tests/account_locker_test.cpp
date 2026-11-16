@@ -217,6 +217,332 @@ TEST(AccountLockerTest, ADissolvedGroupStaysDissolvedWhateverTheOtherCopySays) {
   EXPECT_EQ(merged.extras.groups[0].roster_epoch, 6u);
 }
 
+// --- Device names (key `device_names`) ---------------------------------------------------------------------
+
+DeviceNameEntry Named(const std::string& peer, const std::string& name, const int64_t at) {
+  return DeviceNameEntry{peer, name, at};
+}
+
+std::string Rep(const std::string& unit, const size_t times) {
+  std::string out;
+  for (size_t i = 0; i < times; ++i) {
+    out += unit;
+  }
+  return out;
+}
+
+/** What a state with just these names reads back as. */
+std::vector<DeviceNameEntry> ReadBack(const std::vector<DeviceNameEntry>& entries) {
+  AccountLockerState state;
+  state.device_names = entries;
+  auto read = account_locker::StateFromJson(account_locker::StateToJson(state));
+  EXPECT_TRUE(read);
+  return read ? read->device_names : std::vector<DeviceNameEntry>{};
+}
+
+TEST(AccountLockerTest, DeviceNamesRoundTripWhateverTheyHold) {
+  const std::vector<DeviceNameEntry> names = {Named("peer:a", "\xE6\x88\x91\xE7\x9A\x84 iPhone", 5),
+                                              Named("peer:b", "Kim's \"Mac\" \\ \xF0\x9F\x98\x80", 9)};
+  EXPECT_EQ(ReadBack(names), names);
+  EXPECT_TRUE(ReadBack({}).empty());
+  auto snapshot = account_locker::Seal(AccountLockerState{.device_names = names}, KeysOf(0x21), 3);
+  ASSERT_TRUE(snapshot);
+  auto opened = account_locker::Open(*snapshot, KeysOf(0x21));
+  ASSERT_TRUE(opened);
+  EXPECT_EQ(opened->device_names, names);
+}
+
+TEST(AccountLockerTest, AnOldSnapshotHasNoNamesAndKeepsEverythingElse) {
+  auto read = account_locker::StateFromJson(R"({"nickname":"alice","providers":["https://node.example/locker"]})");
+  ASSERT_TRUE(read);
+  EXPECT_TRUE(read->device_names.empty());
+  EXPECT_EQ(read->nickname, "alice");
+  EXPECT_EQ(read->providers.size(), 1u);
+}
+
+TEST(AccountLockerTest, UnknownKeysAndFieldsAreIgnoredOnRead) {
+  auto read = account_locker::StateFromJson(
+      R"({"future_key":{"x":1},"device_names":[{"peer_id":"peer:a","name":"Phone","at":4,"icon":"star"},)"
+      R"({"peer_id":"peer:b","name":"Tablet","at":6,"extra":[1,2]}]})");
+  ASSERT_TRUE(read);
+  EXPECT_EQ(read->device_names,
+            (std::vector<DeviceNameEntry>{Named("peer:a", "Phone", 4), Named("peer:b", "Tablet", 6)}));
+}
+
+TEST(AccountLockerTest, AnOldDeviceRewritingTheLockerCostsTheNewDeviceNothingLasting) {
+  // The old device's output has no device_names; the new one merges it with what it has, puts its entry back
+  // and the result reads fine.
+  AccountLockerState old_rewrite = SampleState(); // never heard of names
+  AccountLockerState ours = SampleState();
+  ours.device_names = {Named("peer:a", "Phone", 5)};
+  auto stored = account_locker::StateFromJson(account_locker::StateToJson(old_rewrite));
+  ASSERT_TRUE(stored);
+  const AccountLockerState merged = account_locker::MergeForPublish(ours, *stored);
+  EXPECT_EQ(merged.device_names, ours.device_names);
+}
+
+TEST(AccountLockerTest, DeviceNamesMergeByPeerTheNewerAtWinsWhoeverWroteIt) {
+  const std::vector<DeviceNameEntry> local = {Named("peer:a", "Mine A", 10), Named("peer:b", "Mine B", 5),
+                                              Named("peer:c", "Only here", 1)};
+  const std::vector<DeviceNameEntry> remote = {Named("peer:a", "Theirs A", 7), Named("peer:b", "Theirs B", 8),
+                                               Named("peer:d", "Only there", 2)};
+  EXPECT_EQ(account_locker::MergeDeviceNames(local, remote),
+            (std::vector<DeviceNameEntry>{Named("peer:a", "Mine A", 10), Named("peer:b", "Theirs B", 8),
+                                          Named("peer:c", "Only here", 1), Named("peer:d", "Only there", 2)}));
+}
+
+TEST(AccountLockerTest, ATieInDeviceNamesKeepsTheStoredOne) {
+  EXPECT_EQ(account_locker::MergeDeviceNames({Named("peer:a", "Local", 5)}, {Named("peer:a", "Stored", 5)}),
+            (std::vector<DeviceNameEntry>{Named("peer:a", "Stored", 5)}));
+}
+
+TEST(AccountLockerTest, AStoredStateWithoutTheKeyErasesNoLocalName) {
+  AccountLockerState ours = SampleState();
+  ours.device_names = {Named("peer:a", "Phone", 5), Named("peer:b", "Set by the main device", 9)};
+  const AccountLockerState stored = SampleState(); // an old version wrote it: no device_names
+  EXPECT_EQ(account_locker::MergeForPublish(ours, stored).device_names, ours.device_names);
+}
+
+TEST(AccountLockerTest, DevicesWithDifferentCardsKeepEachOthersNamesAndSettle) {
+  // Phone knows the tablet (named by the phone); the laptop's card is older and does not list it.
+  AccountLockerState phone = SampleState();
+  phone.device_names = {Named("peer:phone", "Phone", 3), Named("peer:tablet", "Tablet (by phone)", 4)};
+  AccountLockerState laptop = SampleState();
+  laptop.device_names = {Named("peer:laptop", "Laptop", 6)};
+
+  // The phone writes; the laptop merges (its card lacks the tablet) and writes back.
+  const AccountLockerState stored1 = account_locker::MergeForPublish(phone, SampleState());
+  const AccountLockerState stored2 = account_locker::MergeForPublish(laptop, stored1);
+  EXPECT_EQ(stored2.device_names.size(), 3u) << "the tablet's name survives the laptop's older card";
+  // The phone merges that back and finds nothing new; the laptop's next publish is the same bytes.
+  const AccountLockerState phone_again = account_locker::MergeForPublish(phone, stored2);
+  EXPECT_EQ(phone_again.device_names, stored2.device_names);
+  const AccountLockerState laptop_again = account_locker::MergeForPublish(laptop, stored2);
+  EXPECT_NE(account_locker::StateToJson(laptop_again).find("Tablet (by phone)"), std::string::npos);
+  EXPECT_EQ(laptop_again.device_names, stored2.device_names);
+}
+
+DeviceNameEntry Gone(const std::string& peer, const int64_t at) {
+  DeviceNameEntry entry;
+  entry.peer_id = peer;
+  entry.at = at;
+  entry.removed = true;
+  return entry;
+}
+
+std::vector<std::string> PeersOf(const std::vector<DeviceNameEntry>& entries) {
+  std::vector<std::string> out;
+  for (const DeviceNameEntry& e : entries) {
+    out.push_back(e.peer_id);
+  }
+  return out;
+}
+
+TEST(AccountLockerTest, TheCapDropsTombstonesFirstThenTheOldestLiveEntriesAndNeedsNoCard) {
+  std::vector<DeviceNameEntry> many;
+  for (int i = 0; i < 9; ++i) {
+    many.push_back(Named("peer:" + std::to_string(i), "Device " + std::to_string(i), 100 + i));
+  }
+  // Nine live: the oldest goes.
+  auto capped = account_locker::CapDeviceNames(many);
+  ASSERT_EQ(capped.size(), kMaxDeviceNameEntries);
+  EXPECT_EQ(capped.front().peer_id, "peer:1");
+  EXPECT_EQ(capped.back().peer_id, "peer:8");
+  // Same input in another order: the same result (every device cuts alike).
+  std::vector<DeviceNameEntry> shuffled(many.rbegin(), many.rend());
+  EXPECT_EQ(account_locker::CapDeviceNames(shuffled), capped);
+  // Tombstones go before any live entry, the oldest tombstone first, even when a tombstone is newer than a name.
+  std::vector<DeviceNameEntry> mixed;
+  for (int i = 0; i < 7; ++i) {
+    mixed.push_back(Named("peer:" + std::to_string(i), "Device", 10 + i));
+  }
+  mixed.push_back(Gone("peer:x", 500));
+  mixed.push_back(Gone("peer:y", 400));
+  capped = account_locker::CapDeviceNames(mixed);
+  ASSERT_EQ(capped.size(), kMaxDeviceNameEntries);
+  const std::vector<std::string> peers = PeersOf(capped);
+  EXPECT_NE(std::find(peers.begin(), peers.end(), "peer:x"), peers.end()) << "the newer tombstone stays";
+  EXPECT_EQ(std::find(peers.begin(), peers.end(), "peer:y"), peers.end()) << "the older tombstone goes first";
+  EXPECT_NE(std::find(peers.begin(), peers.end(), "peer:0"), peers.end()) << "no live entry was cut";
+  // A tie in `at` is broken by peer_id: the smaller peer_id is kept.
+  std::vector<DeviceNameEntry> tied;
+  for (int i = 0; i < 9; ++i) {
+    tied.push_back(Named("peer:" + std::to_string(i), "Same", 7));
+  }
+  const std::vector<std::string> kept = PeersOf(account_locker::CapDeviceNames(tied));
+  EXPECT_EQ(std::find(kept.begin(), kept.end(), "peer:8"), kept.end());
+  // Under the limit nothing is pruned.
+  EXPECT_EQ(account_locker::CapDeviceNames({Named("peer:x", "X", 1)}).size(), 1u);
+}
+
+TEST(AccountLockerTest, ARemovalTombstoneRoundTripsWithoutANameAndWinsByAt) {
+  const std::vector<DeviceNameEntry> names = {Named("peer:a", "Phone", 5), Gone("peer:b", 9)};
+  EXPECT_EQ(ReadBack(names), names);
+  AccountLockerState state;
+  state.device_names = names;
+  const std::string json = account_locker::StateToJson(state);
+  EXPECT_NE(json.find("\"removed\":true"), std::string::npos);
+  // A tombstone read from a file ignores any name it carries.
+  auto read =
+      account_locker::StateFromJson(R"({"device_names":[{"peer_id":"peer:b","name":"Leaked","at":9,"removed":true}]})");
+  ASSERT_TRUE(read);
+  EXPECT_EQ(read->device_names, (std::vector<DeviceNameEntry>{Gone("peer:b", 9)}));
+  // The rule is unchanged: the larger `at` wins, tombstone or live.
+  EXPECT_EQ(account_locker::MergeDeviceNames({Named("peer:b", "Old", 5)}, {Gone("peer:b", 9)}),
+            (std::vector<DeviceNameEntry>{Gone("peer:b", 9)}));
+  EXPECT_EQ(account_locker::MergeDeviceNames({Gone("peer:b", 9)}, {Named("peer:b", "Back", 12)}),
+            (std::vector<DeviceNameEntry>{Named("peer:b", "Back", 12)}));
+}
+
+TEST(AccountLockerTest, AnEntryFarInTheFutureOrBelowZeroIsClampedOnRead) {
+  auto read =
+      account_locker::StateFromJson(R"({"device_names":[{"peer_id":"peer:a","name":"Far","at":9223372036854775807},)"
+                                    R"({"peer_id":"peer:b","name":"Early","at":-5}]})");
+  ASSERT_TRUE(read);
+  ASSERT_EQ(read->device_names.size(), 2u);
+  EXPECT_EQ(read->device_names[0].at, kMaxDeviceNameAt);
+  EXPECT_EQ(read->device_names[1].at, 0);
+}
+
+TEST(AccountLockerTest, ANameReadFromTheLockerIsCleanedFirst) {
+  const std::vector<DeviceNameEntry> read = ReadBack({
+      Named("peer:a", "  Phone\n\t(old)\r  ", 1),
+      Named("peer:b", "   \n ", 2),
+      Named("peer:c", "", 3),
+      Named("peer:d", "Name {device} {id}", 4),
+      Named("", "No peer", 5),
+  });
+  EXPECT_EQ(read,
+            (std::vector<DeviceNameEntry>{Named("peer:a", "Phone(old)", 1), Named("peer:d", "Name {device} {id}", 4)}));
+}
+
+TEST(AccountLockerTest, ANameReadFromTheLockerIsCutAtThirtyTwoCodePoints) {
+  const std::string family = "\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80\x8D\xF0\x9F\x91\xA7";
+  const std::vector<DeviceNameEntry> read = ReadBack({
+      Named("peer:a", Rep("a", 40), 1),
+      Named("peer:b", Rep("\xE4\xBD\xA0", 33), 2),
+      Named("peer:c",
+            Rep("a", 31) + "\xF0\x9F\x98\x80"
+                           "b",
+            3),
+      Named("peer:d", Rep("a", 30) + family, 4),
+  });
+  ASSERT_EQ(read.size(), 4u);
+  EXPECT_EQ(read[0].name, Rep("a", 32));
+  EXPECT_EQ(read[1].name, Rep("\xE4\xBD\xA0", 32));
+  EXPECT_EQ(read[2].name, Rep("a", 31) + "\xF0\x9F\x98\x80");
+  EXPECT_EQ(read[3].name, Rep("a", 30) + "\xF0\x9F\x91\xA8\xE2\x80\x8D");
+}
+
+TEST(AccountLockerTest, MoreEntriesThanTheLimitAreDroppedOnRead) {
+  std::string json = R"({"device_names":[)";
+  for (int i = 0; i < 12; ++i) {
+    json += std::string(i ? "," : "") + R"({"peer_id":"peer:)" + std::to_string(i) + R"(","name":"D","at":)" +
+            std::to_string(i + 1) + "}";
+  }
+  json += "]}";
+  auto read = account_locker::StateFromJson(json);
+  ASSERT_TRUE(read);
+  EXPECT_EQ(read->device_names.size(), kMaxDeviceNameEntries);
+}
+
+// Grants given to the account (multi-relay MR005) ride the locker, so a restored or linked device's first sends to
+// its grantors are not a stranger's (ACCOUNT_LOCKER § State JSON `grants`).
+AccountStateGrant GrantFrom(const std::string& grantor, int64_t issued_at, int64_t expires_at = 0,
+                            const std::string& signature = "c2ln") {
+  return AccountStateGrant{.grantor_account_id = grantor,
+                           .grantee_account_id = "account:alice",
+                           .issued_at = issued_at,
+                           .expires_at = expires_at ? expires_at : issued_at + 1'000'000,
+                           .signature = signature};
+}
+
+TEST(AccountLockerTest, GrantsRoundTripAndABrokenRowIsDropped) {
+  AccountLockerState state = SampleState();
+  state.extras.grants = {GrantFrom("account:bob", 100), GrantFrom("account:carol", 200)};
+  const LockerKeys keys = KeysOf(0x11);
+  auto opened = account_locker::Open(account_locker::Seal(state, keys, 1).value(), keys);
+  ASSERT_TRUE(opened) << opened.error().message;
+  EXPECT_EQ(opened->extras.grants, state.extras.grants);
+
+  auto read = account_locker::StateFromJson(
+      R"({"grants":[{"recipient_account_id":"account:bob","sender_account_id":"account:alice","issued_at":5,)"
+      R"("expires_at":9,"signature":"c2ln","future":1},)"
+      R"({"recipient_account_id":"account:carol","sender_account_id":"account:alice","issued_at":5,"expires_at":9},)"
+      R"({"recipient_account_id":"account:dave","sender_account_id":"account:alice","issued_at":9,"expires_at":5,)"
+      R"("signature":"c2ln"}]})");
+  ASSERT_TRUE(read);
+  EXPECT_EQ(read->extras.grants, (std::vector<AccountStateGrant>{GrantFrom("account:bob", 5, 9)}))
+      << "no signature, or expiring before it was issued: dropped";
+  EXPECT_TRUE(account_locker::StateFromJson(R"({"nickname":"a"})")->extras.grants.empty()) << "an older snapshot";
+}
+
+TEST(AccountLockerTest, GrantsMergeToTheLatestPerGrantorWithoutTheExpired) {
+  AccountLockerState ours;
+  ours.extras.grants = {GrantFrom("account:bob", 300), GrantFrom("account:carol", 100, 150)};
+  AccountLockerState stored;
+  stored.extras.grants = {GrantFrom("account:bob", 200), GrantFrom("account:dave", 50)};
+  const AccountLockerState merged = account_locker::MergeForPublish(ours, stored);
+  EXPECT_EQ(account_locker::CapGrants(merged.extras.grants, 160),
+            (std::vector<AccountStateGrant>{GrantFrom("account:bob", 300), GrantFrom("account:dave", 50)}))
+      << "Bob's later one; Carol's ran out at 150; Dave's from the other device";
+  EXPECT_EQ(
+      account_locker::CapGrants({GrantFrom("account:bob", 300, 0, "YQ"), GrantFrom("account:bob", 300, 0, "Yg")}, 0),
+      (std::vector<AccountStateGrant>{GrantFrom("account:bob", 300, 0, "Yg")}))
+      << "a tie keeps the same one on every device";
+}
+
+// D2 (ACCOUNT_LOCKER § State JSON `relays`): the locker carries our relays' addresses (MR008: each with its PeerId),
+// so a restore keeps the person's list; the copy from the newer card wins a merge, and an untrusted copy is bounded.
+TEST(AccountLockerTest, OurRelaysRoundTripAndTheNewerCardsListWinsAMerge) {
+  const std::string kB = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
+  const std::string kA = "QmeKYz9h9AozszFqAkRzwxx4xGheEMYRVrLHuh7EMG7Bie";
+  AccountLockerState state = SampleState();
+  state.extras.relays = {.list = {{.origin = "https://b.example/api/relay", .peer_id = kB},
+                                  {.origin = "https://a.example/api/relay", .peer_id = kA}},
+                         .card_issued_at = 500};
+  const LockerKeys keys = KeysOf(0x11);
+  auto opened = account_locker::Open(account_locker::Seal(state, keys, 1).value(), keys);
+  ASSERT_TRUE(opened) << opened.error().message;
+  EXPECT_EQ(opened->extras.relays, state.extras.relays);
+
+  AccountLockerState older = state;
+  older.extras.relays = {.list = {{.origin = "https://a.example/api/relay", .peer_id = kA}}, .card_issued_at = 400};
+  EXPECT_EQ(account_locker::MergeForPublish(older, state).extras.relays, state.extras.relays)
+      << "the stored list came with a newer card";
+  EXPECT_EQ(account_locker::MergeForPublish(state, older).extras.relays, state.extras.relays) << "ours is newer";
+
+  const auto row = [](const std::string& origin, const std::string& peer_id) {
+    return R"({"origin":")" + origin + R"(","peer_id":")" + peer_id + R"("})";
+  };
+  auto read = account_locker::StateFromJson(
+      R"({"relays":{"list":[)" + row("https://a.example", kA) + "," + row("https://a.example", kB) + "," + row("", kA) +
+      "," + row("https://n.example", "") + "," + row("https://b.example", kB) + "," + row("https://c.example", kA) +
+      "," + row("https://d.example", kB) + "," + row("https://e.example", kA) + R"(],"card_issued_at":7}})");
+  ASSERT_TRUE(read);
+  std::vector<std::string> origins;
+  for (const AccountStateRelay& relay : read->extras.relays.list) {
+    origins.push_back(relay.origin);
+  }
+  EXPECT_EQ(origins, (std::vector<std::string>{"https://a.example", "https://b.example", "https://c.example",
+                                               "https://d.example"}))
+      << "each origin once, none empty, none without its PeerId (MR008), at most four";
+  EXPECT_TRUE(account_locker::StateFromJson(R"({"nickname":"a"})")->extras.relays.list.empty())
+      << "an older snapshot: none";
+}
+
+TEST(AccountLockerTest, OverTheCapTheLatestIssuedGrantsStay) {
+  std::vector<AccountStateGrant> grants;
+  for (size_t i = 0; i < kMaxLockerGrants + 3; ++i) {
+    grants.push_back(GrantFrom("account:g" + std::to_string(100 + i), static_cast<int64_t>(1000 + i)));
+  }
+  const std::vector<AccountStateGrant> capped = account_locker::CapGrants(grants, 0);
+  ASSERT_EQ(capped.size(), kMaxLockerGrants);
+  EXPECT_EQ(capped.front().grantor_account_id, "account:g103") << "the three issued first went";
+  EXPECT_TRUE(std::is_sorted(capped.begin(), capped.end(),
+                             [](const auto& a, const auto& b) { return a.grantor_account_id < b.grantor_account_id; }));
+}
+
 TEST(AccountLockerTest, SignBytesMatchTheRelaysGoldenVector) {
   // Shared with the relay (web2 www __tests__/AccountLocker.test.ts): what a provider verifies.
   ByteVector locker_id(32);

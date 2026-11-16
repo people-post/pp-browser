@@ -7,6 +7,7 @@
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/WorkingSetController.h"
 #include "gui/contacts/ContactsNotifyPorts.h"
+#include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/shell/SessionSwipeModel.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "lib/ui/ContextMenuHost.h"
@@ -104,7 +105,7 @@ public:
   ChatMenus(ChatMenusHost& host, ChatPresenter& presenter, const ChatScreenState& chat,
             WorkingSetController& working_set, const ContactsNotifyPorts& contacts_notify,
             const EmojiPickerNotifyPorts& emoji_picker_notify, const ShellFeedbackPorts& shell_feedback,
-            const CallActionsPorts& call_actions);
+            const CallActionsPorts& call_actions, const PeoplePickerNotifyPorts& people_picker_notify);
 
   /** ContextMenuHost's provider: what a long press / right-click on `request.target` offers. */
   std::vector<ContextMenuAction> ForRequest(const ContextMenuRequest& request);
@@ -121,7 +122,7 @@ public:
 
   /** "+": chat with AI / message a contact / find someone. */
   void OpenNewSession(ui::Event& ev);
-  /** The open chat's "⋯": search, lock to this device, sync, clear history, forget AI memory. */
+  /** The open chat's "⋯": (phone, 1:1 with a contact) add people, search, lock to this device, sync, clear history, forget AI memory. */
   void OpenThreadActions(ui::Event& ev);
   /** Call button: joins a call that goes on, else voice / video (straight to voice without video). */
   void StartCall(ui::Event& ev);
@@ -151,6 +152,7 @@ private:
   const EmojiPickerNotifyPorts& emoji_picker_notify_;
   const ShellFeedbackPorts& shell_feedback_;
   const CallActionsPorts& call_actions_;
+  const PeoplePickerNotifyPorts& people_picker_notify_;
 };
 
 /**

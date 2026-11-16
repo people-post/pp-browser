@@ -22,12 +22,12 @@
 
 namespace pbr {
 
-ChatSyncWorkflow::ChatSyncWorkflow(IThreadStore& store, IdentityStore& identity, IRelayClient* relay,
+ChatSyncWorkflow::ChatSyncWorkflow(IThreadStore& store, IdentityStore& identity, std::shared_ptr<IRelayClient> relay,
                                    RelayReceivePipeline& receive_pipeline, InboxController& inbox,
                                    IChatHistoryPeerClient* peer_client)
     : store_(store),
       identity_(identity),
-      relay_(relay),
+      relay_(std::move(relay)),
       peer_client_(peer_client),
       receive_pipeline_(receive_pipeline),
       inbox_(inbox) {}
@@ -38,6 +38,16 @@ void ChatSyncWorkflow::SetOnMessagesChanged(std::function<void()> callback) {
 
 void ChatSyncWorkflow::SetAttachmentDownloads(AttachmentFetchWorkflow* downloads) {
   attachment_downloads_ = downloads;
+}
+
+void ChatSyncWorkflow::SetHistoryRelay(std::shared_ptr<IRelayClient> relay) {
+  std::lock_guard lock(relay_mu_);
+  relay_ = std::move(relay);
+}
+
+std::shared_ptr<IRelayClient> ChatSyncWorkflow::HistoryRelay() const {
+  std::lock_guard lock(relay_mu_);
+  return relay_;
 }
 
 void ChatSyncWorkflow::SetPeerHistoryClient(IChatHistoryPeerClient* peer_client) {
@@ -262,11 +272,12 @@ void ChatSyncWorkflow::FetchChatTargetMessagesAsync(const std::string& thread_id
               ingest_and_finish(std::move(peer_response), MessageTransport::Direct);
               return;
             }
-            if (!relay_) {
+            const std::shared_ptr<IRelayClient> relay = HistoryRelay();
+            if (!relay) {
               finish(Error("Relay client not configured"));
               return;
             }
-            auto response = relay_->FetchChatHistory(request);
+            auto response = relay->FetchChatHistory(request);
             if (!response) {
               finish(response.error());
               return;
@@ -283,11 +294,12 @@ void ChatSyncWorkflow::FetchChatTargetMessagesAsync(const std::string& thread_id
     return;
   }
 
-  if (!relay_) {
+  const std::shared_ptr<IRelayClient> relay = HistoryRelay();
+  if (!relay) {
     finish(Error("Relay client not configured"));
     return;
   }
-  auto response = relay_->FetchChatHistory(request);
+  auto response = relay->FetchChatHistory(request);
   if (!response) {
     finish(response.error());
     return;

@@ -58,6 +58,10 @@ bool ShellLayout::HiddenTabShown(const ShellState& state) {
   return state.layout_mode == LayoutMode::Compact && IsHiddenTabOnCompact(state.nav_tab);
 }
 
+bool ShellLayout::HiddenTabHasBack(const ShellState& state) {
+  return HiddenTabShown(state) && (state.nav_tab == NavTab::Contacts || state.compact_chat_open);
+}
+
 bool ShellLayout::IsSettingsFamilyTransient(const std::string& key) {
   return key == "settings_detail" || key == "contact_detail" || key == "blocked_people";
 }

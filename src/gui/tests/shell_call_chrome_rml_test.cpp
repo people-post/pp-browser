@@ -283,6 +283,27 @@ TEST(ShellCallChromeRmlTest, ThePhoneCallPageShowsTheSilhouetteOnlyForAnUnknownO
   EXPECT_TRUE(Has(CallInProgressRml(state), "icons/bob.png"));
 }
 
+TEST(ShellCallChromeRmlTest, TheStatusLineHasABoundWarningTriangleOnThePhoneAndTheBar) {
+  const auto expect_icon = [](const std::string& rml, const char* what) {
+    EXPECT_TRUE(Has(rml, "data-if=\"call_in_progress_subtitle_warning\"")) << what;
+    EXPECT_TRUE(Has(rml, "icons/v2/alert-triangle.svg")) << what;
+    EXPECT_LT(rml.find("alert-triangle.svg"), rml.find("{{call_in_progress_subtitle}}"))
+        << what << ": before the words";
+  };
+  ShellState state;
+  state.layout_mode = LayoutMode::Compact;
+  state.call_in_progress.active = true;
+  state.call_in_progress.mode = CallChromeMode::Expanded;
+  expect_icon(CallInProgressRml(state), "1:1 phone page");
+  state.call_in_progress.show_roster = true;
+  expect_icon(CallInProgressRml(state), "group phone page");
+  ShellState bar;
+  bar.layout_mode = LayoutMode::Expanded;
+  bar.call_in_progress.active = true;
+  bar.call_in_progress.mode = CallChromeMode::Expanded;
+  expect_icon(CallInProgressRml(bar), "desktop bar");
+}
+
 TEST(ShellCallChromeRmlTest, ARosterTileOfAnUnknownMemberShowsTheSilhouetteByABoundFlag) {
   ShellState state;
   state.layout_mode = LayoutMode::Compact;

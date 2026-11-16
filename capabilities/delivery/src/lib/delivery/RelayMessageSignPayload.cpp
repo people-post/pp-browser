@@ -14,9 +14,12 @@ uint8_t HistoryOrderWire(const std::string& order) {
 
 } // namespace
 
-std::vector<uint8_t> BuildRelayApiSendSignBytes(const RelayWireSendRecord& record, const int64_t timestamp) {
+std::vector<uint8_t> BuildRelayApiSendSignBytes(const std::string& audience, const RelayWireSendRecord& record,
+                                                const int64_t timestamp) {
   std::ostringstream oss;
-  AppendRelayApiHeader(oss, RelayApiOp::Send, timestamp);
+  if (!AppendRelayApiHeader(oss, audience, RelayApiOp::Send, timestamp)) {
+    return {};
+  }
   RelaySignAppendWireLenUtf8(oss, record.sender_account_id);
   RelaySignAppendWireLenUtf8(oss, record.recipient_account_id);
   RelaySignAppendWireLenUtf8(oss, record.stream_id);
@@ -24,39 +27,51 @@ std::vector<uint8_t> BuildRelayApiSendSignBytes(const RelayWireSendRecord& recor
   return RelaySignOssToBytes(oss);
 }
 
-std::vector<uint8_t> BuildRelayApiPollInboxSignBytes(const std::string& requester_account_id, const std::string& cursor,
+std::vector<uint8_t> BuildRelayApiPollInboxSignBytes(const std::string& audience,
+                                                     const std::string& requester_account_id, const std::string& cursor,
                                                      const int64_t timestamp) {
   std::ostringstream oss;
-  AppendRelayApiHeader(oss, RelayApiOp::PollInbox, timestamp);
+  if (!AppendRelayApiHeader(oss, audience, RelayApiOp::PollInbox, timestamp)) {
+    return {};
+  }
   RelaySignAppendWireLenUtf8(oss, requester_account_id);
   RelaySignAppendWireLenUtf8(oss, cursor);
   return RelaySignOssToBytes(oss);
 }
 
-std::vector<uint8_t> BuildRelayApiAckInboxSignBytes(const std::string& requester_account_id, const std::string& cursor,
+std::vector<uint8_t> BuildRelayApiAckInboxSignBytes(const std::string& audience,
+                                                    const std::string& requester_account_id, const std::string& cursor,
                                                     const int64_t timestamp) {
   std::ostringstream oss;
-  AppendRelayApiHeader(oss, RelayApiOp::AckInbox, timestamp);
+  if (!AppendRelayApiHeader(oss, audience, RelayApiOp::AckInbox, timestamp)) {
+    return {};
+  }
   RelaySignAppendWireLenUtf8(oss, requester_account_id);
   RelaySignAppendWireLenUtf8(oss, cursor);
   return RelaySignOssToBytes(oss);
 }
 
-std::vector<uint8_t> BuildRelayApiClearInboxSignBytes(const std::string& requester_account_id,
+std::vector<uint8_t> BuildRelayApiClearInboxSignBytes(const std::string& audience,
+                                                      const std::string& requester_account_id,
                                                       const std::string& before_created_at, const int64_t timestamp) {
   std::ostringstream oss;
-  AppendRelayApiHeader(oss, RelayApiOp::ClearInbox, timestamp);
+  if (!AppendRelayApiHeader(oss, audience, RelayApiOp::ClearInbox, timestamp)) {
+    return {};
+  }
   RelaySignAppendWireLenUtf8(oss, requester_account_id);
   RelaySignAppendWireLenUtf8(oss, before_created_at);
   return RelaySignOssToBytes(oss);
 }
 
-std::vector<uint8_t> BuildRelayApiStreamHistorySignBytes(const ChatHistoryRequest& request, const int64_t timestamp) {
+std::vector<uint8_t> BuildRelayApiStreamHistorySignBytes(const std::string& audience, const ChatHistoryRequest& request,
+                                                         const int64_t timestamp) {
   const std::string stream_id = BuildCanonicalRelayStreamKey(
       request.requester_identity_value, request.peer_identity_value, request.channel, request.session_epoch);
 
   std::ostringstream oss;
-  AppendRelayApiHeader(oss, RelayApiOp::StreamHistory, timestamp);
+  if (!AppendRelayApiHeader(oss, audience, RelayApiOp::StreamHistory, timestamp)) {
+    return {};
+  }
   RelaySignAppendWireLenUtf8(oss, request.requester_identity_value);
   RelaySignAppendWireLenUtf8(oss, request.peer_identity_value);
   RelaySignAppendWireLenUtf8(oss, stream_id);

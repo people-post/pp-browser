@@ -4,6 +4,7 @@
 
 #include <exception>
 #include <utility>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -77,6 +78,8 @@ struct MessagingReadyTasks::State {
   std::shared_ptr<CoalescedRun> renew_run = std::make_shared<CoalescedRun>();
   std::shared_ptr<CoalescedRun> brief_key_run;
   std::string brief_key_base_url; // the last MintBriefKey's, for a run asked again
+  /** AfterRenewal's: run once the renewal in flight ends. */
+  std::vector<std::function<void()>> after_renewal;
 };
 
 namespace {
@@ -184,9 +187,22 @@ void RenewRegistrationOn(const std::shared_ptr<State>& state) {
       state, state->renew_run, *ticket,
       [renew_network = state->ports.renew_network, auto_renew]() { return renew_network(auto_renew); },
       [state, auto_renew](Box<RenewResult>& box, const bool live) -> std::function<void()> {
+        std::vector<std::function<void()>> waiting = std::exchange(state->after_renewal, {});
+        const auto run_waiting = [](std::vector<std::function<void()>>& list) {
+          for (std::function<void()>& then : list) {
+            then();
+          }
+        };
         if (!live) {
-          log().info << "registration renewal result dropped: the messaging session changed";
-          return {};
+          // The result is not stored (another session). What waits is not dropped: a queued registration's start
+          // callback must run to answer its caller (the slot is free: End finished the ticket), and it checks the
+          // session it was asked in itself.
+          log().info << "registration renewal result dropped: the messaging session changed; waiting registrations "
+                     << waiting.size() << " still run";
+          if (waiting.empty()) {
+            return {};
+          }
+          return [waiting = std::move(waiting), run_waiting]() mutable { run_waiting(waiting); };
         }
         RenewResult result = box.value ? std::move(*box.value) : RenewResult{.error = Error("renewal threw")};
         bool stored = false;
@@ -200,16 +216,54 @@ void RenewRegistrationOn(const std::shared_ptr<State>& state) {
             result.error = saved.error();
           }
         }
-        return [state, result = std::move(result), auto_renew, stored]() {
+        return [state, result = std::move(result), auto_renew, stored, waiting = std::move(waiting),
+                run_waiting]() mutable {
           if (stored && state->ports.after_identity_changed) {
             state->ports.after_identity_changed();
           }
           if (state->ports.renew_hint) {
             state->ports.renew_hint(result, auto_renew);
           }
+          run_waiting(waiting);
         };
       },
       &RenewRegistrationOn);
+}
+
+/** Runs queued registrations while the renewal slot is free (a hold released with another still waiting). */
+void RunWaitingWhileIdle(const std::shared_ptr<State>& state) {
+  while (!state->closed && !state->renew_run->InFlight() && !state->after_renewal.empty()) {
+    std::vector<std::function<void()>> waiting = std::exchange(state->after_renewal, {});
+    for (std::function<void()>& then : waiting) {
+      then();
+    }
+  }
+}
+
+void HoldRenewalOn(const std::shared_ptr<State>& state, std::function<void(std::function<void()> release)> then) {
+  if (state->closed) {
+    return;
+  }
+  const std::optional<CoalescedRun::Ticket> ticket = state->renew_run->TryStart(/*queue_again=*/false);
+  if (!ticket) {
+    // After the renewal in flight (its hint is said, a run asked for meanwhile not started yet): try again then.
+    state->after_renewal.push_back(
+        [state, then = std::move(then)]() mutable { HoldRenewalOn(state, std::move(then)); });
+    return;
+  }
+  auto released = std::make_shared<bool>(false);
+  // Touches only `state`: safe to call after the one who held the slot is gone. A ticket the teardown reset is stale.
+  auto release = [state, ticket = *ticket, released]() {
+    if (*released) {
+      return;
+    }
+    *released = true;
+    if (state->renew_run->Finish(ticket) && !state->closed) {
+      RenewRegistrationOn(state); // a renewal came due while the registration held the slot
+    }
+    RunWaitingWhileIdle(state);
+  };
+  then(std::move(release));
 }
 
 void MintBriefKeyOn(const std::shared_ptr<State>& state) {
@@ -272,6 +326,7 @@ MessagingReadyTasks::~MessagingReadyTasks() {
   // A result still on its way finishes its run and touches nothing else: the ports point into the owner.
   state_->closed = true;
   state_->ports = {};
+  state_->after_renewal.clear();
 }
 
 void MessagingReadyTasks::SyncPushDevices() {
@@ -297,6 +352,17 @@ void MessagingReadyTasks::OnMessagingTornDown() {
   state_->push_run->Reset();
   state_->renew_run->Reset();
   state_->brief_key_run->Reset();
+  if (!state_->after_renewal.empty()) {
+    log().info << "registration waiting for the renewal dropped: messaging was torn down";
+    state_->after_renewal.clear();
+  }
+}
+
+void MessagingReadyTasks::HoldRenewal(std::function<void(std::function<void()> release)> then) {
+  if (!then) {
+    return;
+  }
+  HoldRenewalOn(state_, std::move(then));
 }
 
 bool MessagingReadyTasks::PushInFlight() const {
@@ -305,6 +371,17 @@ bool MessagingReadyTasks::PushInFlight() const {
 
 bool MessagingReadyTasks::RenewInFlight() const {
   return state_->renew_run->InFlight();
+}
+
+void MessagingReadyTasks::AfterRenewal(std::function<void()> then) {
+  if (!then) {
+    return;
+  }
+  if (!state_->renew_run->InFlight()) {
+    then();
+    return;
+  }
+  state_->after_renewal.push_back(std::move(then));
 }
 
 } // namespace pbr

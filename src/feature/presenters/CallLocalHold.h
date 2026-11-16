@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include "common/PbrCompat.h"
 
@@ -29,8 +30,11 @@ public:
     /** The call's mic is muted / its camera is on right now (false without a call). */
     std::function<bool()> mic_muted;
     std::function<bool()> camera_on;
-    /** Tell the call's others (CallUiBackend::SetLocalOnHold); `done` on the UI thread. */
-    std::function<void(bool on_hold, std::function<void(Roe<void>)> done)> publish_hold;
+    /**
+     * Tell the call's others (CallUiBackend::SetLocalOnHold); `done` on the UI thread. `mute`, when set, is the mic
+     * change the hold makes: it is applied together with the hold, so one roster leaves carrying both (B221).
+     */
+    std::function<void(bool on_hold, std::optional<bool> mute, std::function<void(Roe<void>)> done)> publish_hold;
     std::function<void(bool muted)> set_mic_muted;
     std::function<void(bool paused)> set_camera_paused;
     /** A one-line notice for the user (an i18n key). */
@@ -71,7 +75,7 @@ private:
   void BeginCall(const std::string& call_id);
   /** Once the hold's own mute is seen applied (it is asynchronous), an open mic means the user unmuted. */
   void WatchUserUnmute();
-  void Transition(bool held, bool in_call, bool foreground);
+  void Transition(bool held, bool in_call, bool foreground, int64_t now_ms);
   void PublishIfOwed(bool in_call, int64_t now_ms);
 
   Ports ports_;
@@ -84,6 +88,8 @@ private:
   bool publishing_ = false;
   int64_t next_publish_ms_ = 0;
   bool hold_mute_seen_applied_ = false;
+  /** The hold's mic change, riding on the hold's publish (set and taken within one Transition). */
+  std::optional<bool> pending_mute_;
   CallHoldMute hold_mute_;
   bool camera_paused_ = false;
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);

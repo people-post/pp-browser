@@ -26,7 +26,7 @@ TEST_F(AppErrorTest, TypedFactoriesSetIntFields) {
   EXPECT_EQ(auth.code, static_cast<int32_t>(Err::Auth::Forbidden));
   EXPECT_EQ(auth.message, "HTTP 403");
   EXPECT_TRUE(auth.user.empty());
-  EXPECT_EQ(AppError::Display(auth), "Set up your account in Me → My profile.");
+  EXPECT_EQ(AppError::Display(auth), "Set up your account in Settings → My profile.");
 
   const Error with_user = AppError::Network(Err::Network::HttpError, "LLM HTTP 502").WithUser("Custom");
   EXPECT_EQ(AppError::Display(with_user), "Custom");
@@ -39,7 +39,7 @@ TEST_F(AppErrorTest, PinAndConfigDisplayFromCatalog) {
   EXPECT_EQ(AppError::Display(AppError::Pin(Err::Pin::Required, "vault locked")),
             "Unlock your profile PIN to continue.");
   EXPECT_EQ(AppError::Display(AppError::Config(Err::Config::MissingKey, "LLM not configured")),
-            "Set up the assistant in Me → Advanced.");
+            "Set up the assistant in Settings → Advanced.");
   EXPECT_EQ(AppError::Display(AppError::Network(Err::Network::Unreachable, "curl failed: recv error")),
             "Can't reach the server.");
 }

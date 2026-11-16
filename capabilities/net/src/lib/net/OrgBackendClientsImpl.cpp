@@ -1,5 +1,7 @@
 #include "lib/net/OrgBackendClientsImpl.h"
 
+#include "lib/net/RelayOrigins.h"
+
 #include "common/Diag.h"
 #include "common/Utilities.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -22,57 +24,134 @@ std::string EncodePathSegment(const std::string& value);
 
 namespace pbr {
 
-HttpPushDeviceClient::HttpPushDeviceClient(std::string base_url) : base_url_(std::move(base_url)) {}
+HttpPushDeviceClient::HttpPushDeviceClient(std::string base_url, const bool public_only)
+    : base_url_(std::move(base_url)), public_only_(public_only) {}
 
-Roe<std::string> HttpPushDeviceClient::SignRelayApiBytes(const std::vector<uint8_t>& sign_bytes) const {
-  if (!auth_signer_) {
-    return Error("Relay auth signer not configured");
+namespace {
+
+/** A refused registry or device call: the audience's codes (MR007) typed, the rest by status as before. */
+Error RegistryRefusal(IRelayAudience* audience, const std::string& action, const HttpResponse& response) {
+  if (auto typed = NoteRelayRefusal(audience, response.status_code, response.body)) {
+    return *typed;
   }
-  if (sign_bytes.empty()) {
-    return Error("Empty relay API sign bytes");
+  const std::string code = RelayRefusalCode(response.body);
+  if (response.status_code == 409 && (code == "registration_mismatch" || code == "binding_mismatch")) {
+    return AppError::Auth(Err::Auth::ScopeMismatch, action + ": " + code);
   }
-  return auth_signer_(sign_bytes);
+  return Error(action + " failed with status " + std::to_string(response.status_code));
 }
 
-Roe<void> HttpPushDeviceClient::PostDevice(const char* path, const RelayApiOp op,
-                                           const PushDeviceRegistration& registration) {
+} // namespace
+
+Roe<std::string> HttpPushDeviceClient::PostDevice(const char* path, const PushDeviceRegistration& registration,
+                                                  const char* last_key, const std::string& last,
+                                                  const int64_t timestamp, const RelayCommandBytes& build) {
   if (base_url_.empty()) {
     return Error("Relay base_url not configured");
   }
-  const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildRelayApiDeviceSignBytes(op, registration.account_id, registration.platform,
-                                                       registration.device_id, registration.push_token, timestamp);
-  auto signature = SignRelayApiBytes(sign_bytes);
-  if (!signature) {
-    return signature.error();
+  auto signed_call = SignRelayCommand(audience_.get(), auth_signer_, timestamp, build);
+  if (!signed_call) {
+    return signed_call.error();
   }
   Object body;
   body.set("account_id", registration.account_id);
   body.set("platform", registration.platform);
   body.set("device_id", registration.device_id);
-  body.set("push_token", registration.push_token);
-  body.set("timestamp", timestamp);
-  body.set("signature", *signature);
-  const std::string url = base_url_ + path;
-  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}});
+  body.set(last_key, last);
+  PutSignedRelayCommand(body, *signed_call);
+  const auto response = HttpClient::Post(base_url_ + path, DumpJson(body), {{"Content-Type", "application/json"}},
+                                         kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error(std::string("Device API failed with status ") + std::to_string(response.value().status_code));
+    return RegistryRefusal(audience_.get(), "Device API", response.value());
+  }
+  return response.value().body;
+}
+
+Roe<void> HttpPushDeviceClient::RegisterDevice(const PushDeviceRegistration& registration) {
+  const int64_t timestamp = util::NowUnixMs();
+  auto answered = PostDevice("/v1/devices/register", registration, "push_token", registration.push_token, timestamp,
+                             [&registration, timestamp](const std::string& audience) {
+                               return BuildRelayApiDeviceRegisterSignBytes(
+                                   audience, registration.account_id, registration.platform, registration.device_id,
+                                   registration.push_token, timestamp);
+                             });
+  if (!answered) {
+    return answered.error();
+  }
+  const auto root = TryParseObject(*answered);
+  std::lock_guard lock(binding_mutex_);
+  binding_ids_[registration.device_id] = root ? root->getString("binding_id").value_or("") : std::string();
+  return {};
+}
+
+Roe<void> HttpPushDeviceClient::UnregisterOnce(const PushDeviceRegistration& registration,
+                                               const std::string& binding_id) {
+  const int64_t timestamp = util::NowUnixMs();
+  auto answered = PostDevice("/v1/devices/unregister", registration, "binding_id", binding_id, timestamp,
+                             [&registration, &binding_id, timestamp](const std::string& audience) {
+                               return BuildRelayApiDeviceUnregisterSignBytes(
+                                   audience, registration.account_id, registration.platform, registration.device_id,
+                                   binding_id, timestamp);
+                             });
+  if (!answered) {
+    return answered.error();
+  }
+  std::lock_guard lock(binding_mutex_);
+  if (const auto it = binding_ids_.find(registration.device_id); it != binding_ids_.end() && it->second == binding_id) {
+    binding_ids_.erase(it);
   }
   return {};
 }
 
-Roe<void> HttpPushDeviceClient::RegisterDevice(const PushDeviceRegistration& registration) {
-  return PostDevice("/v1/devices/register", RelayApiOp::DeviceRegister, registration);
-}
-
 Roe<void> HttpPushDeviceClient::UnregisterDevice(const PushDeviceRegistration& registration) {
-  return PostDevice("/v1/devices/unregister", RelayApiOp::DeviceUnregister, registration);
+  std::string kept;
+  {
+    std::lock_guard lock(binding_mutex_);
+    if (const auto it = binding_ids_.find(registration.device_id); it != binding_ids_.end()) {
+      kept = it->second;
+    }
+  }
+  if (!kept.empty()) {
+    auto removed = UnregisterOnce(registration, kept);
+    if (removed || AppError::CategoryOf(removed.error()) != ErrorCategory::Auth ||
+        static_cast<Err::Auth>(removed.error().code) != Err::Auth::ScopeMismatch) {
+      return removed;
+    }
+  }
+  // No binding of ours known, or a newer one there: register (the relay answers the binding it holds now) and remove
+  // that one, once.
+  if (auto bound = RegisterDevice(registration); !bound) {
+    return bound;
+  }
+  std::string fresh;
+  {
+    std::lock_guard lock(binding_mutex_);
+    fresh = binding_ids_[registration.device_id];
+  }
+  if (fresh.empty()) {
+    return Error("Device API: the relay answered no binding_id");
+  }
+  return UnregisterOnce(registration, fresh);
 }
 
-HttpDirectoryClient::HttpDirectoryClient(std::string base_url) : base_url_(std::move(base_url)) {}
+void DirectoryCardSink::Set(Keep keep) {
+  std::lock_guard lock(mutex_);
+  keep_ = std::move(keep);
+}
+
+void DirectoryCardSink::Give(const std::string& account_id, const Object& card) const {
+  std::lock_guard lock(mutex_); // held while it keeps: clearing waits for a card being kept
+  if (keep_) {
+    keep_(account_id, card);
+  }
+}
+
+HttpDirectoryClient::HttpDirectoryClient(std::string base_url, const HttpTimeout timeout,
+                                         std::shared_ptr<const DirectoryCardSink> cards, const bool public_only)
+    : base_url_(std::move(base_url)), timeout_(timeout), cards_(std::move(cards)), public_only_(public_only) {}
 
 namespace {
 
@@ -119,7 +198,7 @@ Roe<std::vector<mesh::DirectoryHit>> HttpDirectoryClient::SearchPeople(const std
     return Error("Directory base_url not configured");
   }
   const std::string url = base_url_ + "/v1/search?q=" + EncodePathSegment(query); // free text from the user
-  const auto response = HttpClient::Get(url);
+  const auto response = HttpClient::Get(url, {}, kMaxHttpClientBodyBytes, timeout_, public_only_);
   if (!response) {
     return response.error();
   }
@@ -206,7 +285,7 @@ Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& 
     return Error("account_id must start with account:");
   }
   const std::string url = base_url_ + "/v1/users/by-account/" + EncodePathSegment(account_id);
-  const auto response = HttpClient::Get(url);
+  const auto response = HttpClient::Get(url, {}, kMaxHttpClientBodyBytes, timeout_, public_only_);
   if (!response) {
     return response.error();
   }
@@ -221,7 +300,49 @@ Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& 
   if (!root || root->getString("account_id").value_or("") != account_id) {
     return Error("Invalid account lookup JSON"); // the row must be the account asked for
   }
+  if (const Object* card = root->getObject("account_card"); card && cards_) {
+    cards_->Give(account_id, *card); // the account's own word on its relays and price, kept once it verifies
+  }
   return DirectoryHitFromJson(*root);
+}
+
+Roe<std::optional<StoredAccountRow>> LookupStoredAccount(const std::string& relay_base_url,
+                                                         const std::string& account_id, const bool public_only) {
+  if (relay_base_url.empty() || account_id.rfind("account:", 0) != 0) {
+    return Error("Stored account lookup: no relay or no Account ID");
+  }
+  if (public_only && !IsPublicRelayOrigin(relay_base_url)) {
+    return Error("Stored account lookup: the relay is not on a public host");
+  }
+  const auto response = HttpClient::Get(relay_base_url + "/v1/users/by-account/" + EncodePathSegment(account_id), {},
+                                        kMaxHttpClientBodyBytes, {}, public_only);
+  if (!response) {
+    return response.error();
+  }
+  if (response.value().status_code == 404) {
+    return std::optional<StoredAccountRow>{}; // not registered there
+  }
+  if (response.value().status_code < 200 || response.value().status_code >= 300) {
+    return Error("Stored account lookup failed with status " + std::to_string(response.value().status_code));
+  }
+  auto root = TryParseObject(response.value().body);
+  if (!root || root->getString("account_id").value_or("") != account_id) {
+    return Error("Invalid account lookup JSON"); // the row must be the account asked for
+  }
+  StoredAccountRow row{.hit = DirectoryHitFromJson(*root)};
+  if (const Object* card = root->getObject("account_card")) {
+    row.card = *card;
+  }
+  return std::optional<StoredAccountRow>(std::move(row));
+}
+
+Roe<std::optional<Object>> FetchStoredAccountCard(const std::string& relay_base_url, const std::string& account_id,
+                                                  const bool public_only) {
+  auto row = LookupStoredAccount(relay_base_url, account_id, public_only);
+  if (!row) {
+    return row.error();
+  }
+  return *row && (*row)->card ? std::optional<Object>((*row)->card) : std::optional<Object>{};
 }
 
 Roe<std::vector<mesh::MeshNodeHit>> MeshNodeHitsFromDirectoryJson(const std::string& json) {
@@ -333,7 +454,7 @@ Roe<std::vector<mesh::MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
   if (base_url_.empty()) {
     return Error("Directory base_url not configured");
   }
-  const auto response = HttpClient::Get(base_url_ + "/v1/mesh/nodes");
+  const auto response = HttpClient::Get(base_url_ + "/v1/mesh/nodes", {}, kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -343,7 +464,14 @@ Roe<std::vector<mesh::MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
   return MeshNodeHitsFromDirectoryJson(response.value().body);
 }
 
-HttpRegistrationClient::HttpRegistrationClient(std::string base_url) : base_url_(std::move(base_url)) {}
+Error RegistrationHttpStatusError(const std::string& step, const long status_code) {
+  const bool refused = status_code >= 400 && status_code < 500 && status_code != 408 && status_code != 429;
+  return AppError::Network(refused ? Err::Network::HttpRejected : Err::Network::HttpError,
+                           "Registration " + step + " failed with status " + std::to_string(status_code));
+}
+
+HttpRegistrationClient::HttpRegistrationClient(std::string base_url, const bool public_only)
+    : base_url_(std::move(base_url)), public_only_(public_only) {}
 
 Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(
     const std::string& public_key_b64, const std::string& nickname, const std::string& signature_alg,
@@ -373,12 +501,13 @@ Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(
   }
   ApplyRegistrationPublishOpts(body, publish);
   const auto response =
-      HttpClient::Post(base_url_ + "/v1/register/start", DumpJson(body), {{"Content-Type", "application/json"}});
+      HttpClient::Post(base_url_ + "/v1/register/start", DumpJson(body), {{"Content-Type", "application/json"}},
+                       kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Registration start failed with status " + std::to_string(response.value().status_code));
+    return RegistrationHttpStatusError("start", response.value().status_code);
   }
 
   auto root = TryParseObject(response.value().body);
@@ -402,8 +531,8 @@ Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(
 
 Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     const std::string& challenge, const std::string& public_key_b64, const std::string& nickname,
-    const std::string& signature, int64_t timestamp, const std::string& signature_alg,
-    const std::string& kem_public_key_b64, const std::string& kem_binding_signature_b64, const std::string& peer_id,
+    const SignedRelayCommand& signed_finish, const std::string& signature_alg, const std::string& kem_public_key_b64,
+    const std::string& kem_binding_signature_b64, const std::string& peer_id,
     const std::vector<std::string>& multiaddrs, const RegistrationPublishOpts& publish) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
@@ -412,8 +541,7 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
   body.set("challenge", challenge);
   body.set("public_key", public_key_b64);
   body.set("nickname", nickname);
-  body.set("signature", signature);
-  body.set("timestamp", timestamp);
+  PutSignedRelayCommand(body, signed_finish);
   body.set("signature_alg", signature_alg);
   body.set("kem_public_key_b64", kem_public_key_b64);
   if (!kem_binding_signature_b64.empty()) {
@@ -438,12 +566,17 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     body.set("account_card", *publish.account_card);
   }
   const auto response =
-      HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body), {{"Content-Type", "application/json"}});
+      HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body), {{"Content-Type", "application/json"}},
+                       kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Registration finish failed with status " + std::to_string(response.value().status_code));
+    // A refusal the relay names (wrong_audience: the pin is checked again) first; else refused or not by status.
+    if (auto typed = NoteRelayRefusal(audience_.get(), response.value().status_code, response.value().body)) {
+      return *typed;
+    }
+    return RegistrationHttpStatusError("finish", response.value().status_code);
   }
 
   auto root = TryParseObject(response.value().body);
@@ -458,12 +591,14 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     if (auto message = root->getString("message")) {
       result.message = *message;
     }
-    if (auto llm_api_key = root->getString("llm_api_key")) {
+    if (auto llm_api_key = root->getString("llm_api_key");
+        llm_api_key && takes_llm_key_.load(std::memory_order_relaxed)) {
       result.llm_api_key = *llm_api_key;
     }
     if (auto expires_at = root->getString("expires_at")) {
       result.expires_at = *expires_at;
     }
+    result.registration_id = root->getString("registration_id").value_or("");
     result.account_card_status = root->getString("account_card_status").value_or("");
     result.kem_bound = root->getIf<bool>("kem_bound").value_or(false);
   }
@@ -471,7 +606,7 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
 }
 
 Roe<RegistrationResult> HttpRegistrationClient::UpdateNickname(const std::string& new_nickname,
-                                                               const std::string& signature, int64_t timestamp,
+                                                               const SignedRelayCommand& signed_update,
                                                                const std::string& account_id) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
@@ -479,48 +614,49 @@ Roe<RegistrationResult> HttpRegistrationClient::UpdateNickname(const std::string
   Object body;
   body.set("account_id", account_id);
   body.set("nickname", new_nickname);
-  body.set("timestamp", timestamp);
-  body.set("signature", signature);
+  PutSignedRelayCommand(body, signed_update);
   const auto response =
-      HttpClient::Post(base_url_ + "/v1/profile/nickname", DumpJson(body), {{"Content-Type", "application/json"}});
+      HttpClient::Post(base_url_ + "/v1/profile/nickname", DumpJson(body), {{"Content-Type", "application/json"}},
+                       kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Nickname update failed with status " + std::to_string(response.value().status_code));
+    return RegistryRefusal(audience_.get(), "Nickname update", response.value());
   }
   return RegistrationResult{.success = true, .message = "Nickname updated"};
 }
 
-Roe<void> HttpRegistrationClient::RevokeRegistration(const std::string& account_id, const std::string& signature,
-                                                     const int64_t timestamp) {
+Roe<void> HttpRegistrationClient::RevokeRegistration(const std::string& account_id, const std::string& registration_id,
+                                                     const SignedRelayCommand& signed_revoke) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
   Object body;
   body.set("account_id", account_id);
-  body.set("timestamp", timestamp);
-  body.set("signature", signature);
+  body.set("registration_id", registration_id);
+  PutSignedRelayCommand(body, signed_revoke);
   // Called on the way into a profile reset: keep a stuck network from holding the UI for long.
   const auto response =
       HttpClient::Post(base_url_ + "/v1/register/revoke", DumpJson(body), {{"Content-Type", "application/json"}},
-                       kMaxHttpClientBodyBytes, HttpTimeout{.total_s = 10, .connect_s = 5});
+                       kMaxHttpClientBodyBytes, HttpTimeout{.total_s = 10, .connect_s = 5}, public_only_);
   if (!response) {
     return response.error();
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Registration revoke failed with status " + std::to_string(response.value().status_code));
+    return RegistryRefusal(audience_.get(), "Registration revoke", response.value());
   }
   return {};
 }
 
-HttpClientCompatClient::HttpClientCompatClient(std::string base_url) : base_url_(std::move(base_url)) {}
+HttpClientCompatClient::HttpClientCompatClient(std::string base_url, const bool public_only)
+    : base_url_(std::move(base_url)), public_only_(public_only) {}
 
 Roe<ClientCompatDocument> HttpClientCompatClient::Fetch() {
   if (base_url_.empty()) {
     return Error("client-compat base_url not configured");
   }
-  const auto response = HttpClient::Get(base_url_ + "/v1/client-compat");
+  const auto response = HttpClient::Get(base_url_ + "/v1/client-compat", {}, kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }

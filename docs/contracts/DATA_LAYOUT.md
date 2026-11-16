@@ -41,24 +41,40 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   mesh_node_reputation.json # mesh nodes and operators this profile demoted for a contradicted claim (N032; schema_version 1; demoted_until_ms / last_strike_ms / strikes); local only, never sent
   mesh_last_good_relays.json # relays that last carried this device's circuits (call-path-resilience K015; schema_version 1; relays: ≤3 PeerIds, most recent first);
                             # plaintext like the directory cache — read at mesh start, before any PIN unlock; local only, never sent; optional
+  our_relays.json           # My relays (multi-relay R3, MR006, MR008): {schema_version: 2, relays: [{origin, peer_id? (the PeerId its address names: its relay link's,
+                            # the build's / config's for the org's relay, our own card's on a linked device; absent only for a developer build's bare origin, or the org's
+                            # in a build that ships none; one that is not a PeerId drops the entry), registration: {state registered|failed|not_registered|expired|unknown,
+                            # reason? (failed: unreachable|refused|identity|other, worded by the page), expires_at?, card_issued_at?, registration_id? (MR007: the one a revoke names, additive),
+                            # at_ms?}}]}, preferred first, ≤4; user data (a restore takes the account locker's `relays`), seeded once from the
+                            # deployment's relay + relay.extra_base_urls (relay links; an unreadable file, or schema 1 (MR007's, no PeerIds), is seeded again; a newer one is refused and never written: the seed in memory, changes refused); plaintext like the
+                            # cursors (the card already names these relays); written atomically on every change and every registration answer
   preferences.json
-  relay_inbox_cursor.json   # poll watermark {account_id, cursor}; delivery-queue ack progress
+  relay_pins.json           # the PeerId each relay origin of ours must answer to (multi-relay MR007, MR008, § relay_pins.json below); plaintext, written atomically
+  relay_inbox_cursor.json   # poll watermarks {account_id, cursor, cursor_relay?, relays?: {origin: cursor}}: the preferred relay's (cursor_relay
+                            # names it, additive; absent: the preferred one's), then our others'; a relay leaving My relays loses its cursor
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
   grace.bin                 # PIN grace window: DEK under K_grace, AAD "grace|{id}" (iOS, Android 9+; only within a window — AT_REST_ENCRYPTION § PIN grace window)
   biometric.bin             # Face ID / Touch ID unlock: DEK under K_bio, AAD "biometric|{id}" (iOS; only while the switch is on — AT_REST_ENCRYPTION § Face ID / Touch ID unlock)
-  identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 4 — 3 steps up, dropping relay_user_id; device ML-DSA-65 + account ML-DSA + account KEM; pre-v3 wipe; optional initiation_floor; optional registered_card_issued_at — the account card the relay last answered for at register/finish, SERVICE_ENDPOINTS; optional recovery_seed_b64 — M023, AT_REST_ENCRYPTION § Identity plaintext)
+  identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 4 — 3 steps up, dropping relay_user_id; device ML-DSA-65 + account ML-DSA + account KEM; pre-v3 wipe; optional initiation_floor; optional registered_card_issued_at — the account card the relay last answered for at register/finish, SERVICE_ENDPOINTS; optional registration_id — the preferred relay's registration a revoke names, MR007, additive; optional recovery_seed_b64 — M023, AT_REST_ENCRYPTION § Identity plaintext)
+  own_card.enc              # our account's newest account card under DEK AEAD (AAD purpose "own-card", plaintext schema_version 1: {schema_version, card}; IdentityStore):
+                            # the copy that outlives Reset chats, the start-up recovery's reset and a profile.db too old to upgrade (all of which remove threads/
+                            # with its peer_cards); only a newer card of ours replaces it; a card of another account is ignored (a link or restore deletes the file
+                            # with the old DEK). Absent until our first card; profile reset removes it with the rest (AT_REST_ENCRYPTION § Own card plaintext,
+                            # ACCOUNT_CARD § Main device)
   secrets.enc               # typed model API key (llm_api_key) under DEK AEAD, AAD purpose "config-secrets", schema_version 1; absent when there are none (PB-034)
-  initiation_billing.json   # per-peer initiation billing state (P001; schema_version 2 — 1 steps up, dropping `relay:` keys)
-  account_locker.json       # account locker sync state: highest_version_by_locker, contact_clock (plaintext; ACCOUNT_LOCKER.md § On disk)
+  initiation_billing.json   # per-peer initiation billing state (P001; schema_version 2 — 1 steps up, dropping `relay:` keys; additive relay_floor_minor / relay_floor_card_issued_at: a relay's payment_required floor and the kept card it came after — SERVICE_ENDPOINTS § The stranger's price)
+  account_locker.json       # account locker sync state: highest_version_by_locker, contact_clock, device_names (plaintext; ACCOUNT_LOCKER.md § On disk)
   contacts.json             # address book (schema_version 3: local + remote + overrides{}; 2 steps up, dropping `relay:` ids from each
-                            # contact's ids — the contact stays); another version, or none, is refused
+                            # contact's ids — the contact stays); another version, or none, is refused; optional
+                            # remote.locator_relay: a QR locator's preferred relay address {origin, peer_id} (multi-relay R4, MR008), its relay list until a card (additive;
+                            # one without its PeerId is read as none)
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)
   home_brief.json           # phone Home "Today's briefs": the article feed's general headlines (schema_version 1; fetched_at_ms,
                             # feed cn|en, items[] of title / category (the site) / time_ms / url); plaintext, refetched when over
                             # 3 h old while the widget is on; device-only, never synced; optional
   threads/
-    profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 7, floor 4 — § Schema
-                            # versions; restart_pending: a public session kept through Reset chats starts its next epoch on the next send);
+    profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 8, floor 4 — § Schema
+                            # versions; restart_pending: a public session kept through a chat reset — Reset chats, or a profile.db below its floor — starts its next epoch on the next send);
                             # thread_local_prefs (pin / mute / archive per thread — device-only, plaintext)
                             # thread_mentions (thread_id, message_id, created_at; PRIMARY KEY (thread_id, message_id)) — a live group message
                             # that mentions this account, unread: a row on arrival (or when a held mention is decided, G015), all of a thread's
@@ -121,7 +137,8 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # them from the payload): payload_json {control_type: "receive_failure"|"send_failure", detail: <JSON string>}.
                             # `send_failure` (#182): a message of ours did not go out, one row per message, id "send-failure-<message_id>"
                             # (+ "-group" for a partial group send); detail {reason, message_id}, reason = a SendFailureWord
-                            # (mesh_off, no_address, ..., relay_rejected) or "group_members_missed". It does not touch the thread's preview/order.
+                            # (mesh_off, no_address, ..., relay_rejected, recipient_not_found, sender_not_registered) or "group_members_missed";
+                            # a reader that does not know a word shows the generic reason. It does not touch the thread's preview/order.
                             # `call_blocked`: 1:1 calls "who can call me" dropped, one row per caller in the DM, id "call-blocked:<caller>",
                             # rewritten in place per call (its time never moves back); detail {count, setting ("contacts_only"|"nobody"),
                             # call_ids (last 20 counted)}; text = the words at write time, a preview stand-in (the transcript words the payload);
@@ -194,6 +211,7 @@ One Keychain generic-password item per profile: service `dev.pp-browser.secure-b
 | `grace.bin` | DEK under the PIN grace window's key (with the Keychain item / Keystore file above; deleted when the window ends) |
 | `biometric.bin` | DEK under the Face ID / Touch ID unlock key (with the Keychain item above; present while the switch is on) |
 | `identity.enc` | Identity JSON under DEK AEAD |
+| `own_card.enc` | Our account's newest card under DEK AEAD (beside the identity, outside the chat store) |
 | `preferences.json` → `pin_is_default` | Schema v4; set when user chooses default PIN (“Just continue”); cleared on Change PIN |
 | `preferences.json` → `pin_digits` | Optional (no schema bump); the PIN's kind, not a secret: absent = unknown, `0` = text PIN, `4`–`8` = digit PIN of that length (the phone gate's number pad). Written after each unlock with an own PIN and on Change PIN |
 | `preferences.json` → `auto_renew_registration` | Schema v4; default true; renew near/past expiry after unlock |
@@ -218,6 +236,34 @@ Saving a backend switch also removes the device's push bindings from the running
 
 There is no account-switcher UI: the profile follows the backend. Use `--profile NAME` for dev isolation. A `mesh_directory_nodes.json` left at the data root by older builds is no longer read.
 
+### relay_pins.json
+
+The PeerId each relay this profile signs for must answer to (multi-relay MR007, MR008;
+[SERVICE_ENDPOINTS § Pins](SERVICE_ENDPOINTS.md#pins)): the identities we expect, from each relay's address, never from
+its own answer. Per profile, so per backend; a pp-node keeps one in its data directory, the same format.
+
+```json
+{ "schema_version": 2,
+  "pins": [ { "origin": "https://www.brief.global/api/relay", "peer_id": "Qm…", "pinned_at_ms": 1761235200000,
+              "presented_peer_id": "Qm…", "presented_at_ms": 1761235300000 } ] }
+```
+
+- `origin`: the relay base URL as relays are compared (`RelayOriginKey`: scheme and host lower case, the default port
+  dropped, no trailing `/`). One pin per origin and one origin per PeerId (a second of either is dropped on read).
+- `peer_id`: what its address names — the relay link it was added by (and `our_relays.json`), the build
+  (`PP_RELAY_PEER_ID_PROD` / `_QA`) or the config (`relay.peer_id`, `registration.peer_id`) for the org's origins, our
+  own card on a linked device; only a developer build's bare origin, and the org's in a build or config that names
+  none, take their first identity answer.
+- `presented_peer_id` / `presented_at_ms`: optional — another PeerId the origin's identity answer named when it was
+  checked; present, the relay does not match its address and nothing is signed for it. It goes when a later check
+  finds the relay answering to its address again, or the address changes (a new link, a build naming another PeerId).
+- Only our relays and the org's origins are pinned (a contact's card or QR code never writes a pin). At most 32;
+  when full, the oldest pin that is neither one of our relays nor the org's origins (one removed from My relays since)
+  goes.
+- Another `schema_version` (1: MR007's first-come pins), or a file that is not JSON, is refused and read as empty
+  (logged as an error): each relay is expected again from its address. A newer one is never overwritten: that run's
+  pins are kept in memory only.
+
 ## Schema versions
 
 **SQLite: a ladder per database** ([chat-storage D105](../../projects/chat-storage-and-memory/DECISIONS.md#d105--disk-schemas-move-up-a-ladder-from-a-floor)). `profile.db` and each `thread.db` say their schema in `PRAGMA user_version`; `SqliteMigrations` (`lib/storage`) brings one to this build's when it opens (`SqliteChatDbLadders`: `ProfileDbLadder`, `ThreadDbLadder`), before any store uses it. It opens **after unlock**: the thread store gets the profile's data key, opens profile.db and runs its ladder with the key in the step context (a step may rewrite encrypted columns); before that nothing opens, creates or migrates either database ([AT_REST_ENCRYPTION § Unlock flow](AT_REST_ENCRYPTION.md#unlock-flow) step 8):
@@ -227,10 +273,10 @@ There is no account-switcher UI: the profile follows the backend. Use `--profile
 | `0` (a new file) | The current schema is created and the version set |
 | The current version | Nothing |
 | Between the floor and the current version | The file is copied beside itself (`*.pre-migration`, SQLite's backup API, so the write-ahead log is in it); each step runs in its own transaction, which sets `user_version` to its target at its end; the copy is deleted. A step that fails is rolled back and the copy restored: the database stays at the version it had and stays shut; the app shows the start-up recovery ("Your chats could not be upgraded": Reset chats…) |
-| Below the floor | Too old to upgrade: the store is reset — `profile.db`: the whole chat store (`threads/`, as Me → Storage → Reset chats; the account, contacts and settings stay); a `thread.db`: that chat's messages (its place in the catalog stays). An error line is logged and `chat_store_reset` is written beside `threads/`; the app takes it once after start-up and says "your chats were reset" |
+| Below the floor | Too old to upgrade: the store is reset — `profile.db`: the whole chat store (`threads/`, as Me → Storage → Reset chats; the account, contacts and settings stay) but its public sessions, which Reset chats keeps too: the `e2e_public` sessions with a key (account and device pair, `SessionsAChatResetKeeps`) are read from the old file before it goes — straight from its tables, whatever columns its version has, their keys still sealed (the AAD names the profile, not the file) — and written into the new one `restart_pending`, less what a step above the old version drops (the relay's ids, 5 → 6); if that fails, none are kept and the reset goes on; a `thread.db`: that chat's messages (its place in the catalog stays). An error line is logged and `chat_store_reset` is written beside `threads/`; the app takes it once after start-up and says "your chats were reset" |
 | Newer than this build's | Left alone and shut; the app shows the start-up recovery ("This data is from a newer version of the app": update the app, or Reset chats…) |
 
-Today: `profile.db` 7 (floor 4), `thread.db` 4 (floor 2). The step 4 → 5 (and 2 → 3) is the **baseline**: a tester's database at today's schema got its later columns added on every open before the ladder, so it has some, all or none of them; the step adds each where its table lacks it, and drops calls' dead `session_kind`. A store still creates a table that is new to it (`CREATE TABLE IF NOT EXISTS`, at the current shape); any change to a table that may already exist is a ladder step, never an `ALTER` on open.
+Today: `profile.db` 8 (floor 4), `thread.db` 4 (floor 2). The step 4 → 5 (and 2 → 3) is the **baseline**: a tester's database at today's schema got its later columns added on every open before the ladder, so it has some, all or none of them; the step adds each where its table lacks it, and drops calls' dead `session_kind`. A store still creates a table that is new to it (`CREATE TABLE IF NOT EXISTS`, at the current shape); any change to a table that may already exist is a ladder step, never an `ALTER` on open.
 
 **Account IDs (multi-relay MR001), `profile.db` 5 → 6 and `thread.db` 3 → 4.** The relay's per-relay `relay:` ids (kind `relay_user`) are gone; nothing on disk can turn one into an Account ID, so:
 
@@ -249,14 +295,29 @@ Everything else was keyed by Account ID already and stays. The JSON stores step 
 
 | Kept version 2 card | Becomes |
 |---------------------|---------|
-| Our own (the record `OwnCards` writes: source `self` or `sibling`) | the version 3 shape, no relays, floor 0, its old signature: it does not verify, so the first card asked for is a new one with the same device list (a fresh list would sign the account's other devices out) |
+| Our own (the record of the profile's Account ID, given to the step; its `source` only when that is not known) | the version 3 shape, no relays, floor 0, its old signature: it does not verify, so the first card asked for is a new one with the same device list (a fresh list would sign the account's other devices out) |
 | Anyone else's | dropped from the record; the checked keys stay as a key card, and the account's next envelope asks for its newer card (`sender_card_at`), as the contact page's refresh does |
 
-A record that is not JSON is left as it is. Nothing else in `profile.db` holds a card for later use.
+A record that is not JSON is left as it is. Nothing else in `profile.db` holds a card for later use. A card of our own
+account is kept only from our own devices (`self`, `sibling`), or as `OwnCards` got it back from our relays' directories
+after checking it against our own account keys (`recovered`, [ACCOUNT_CARD § Main device](ACCOUNT_CARD.md)): one
+carried back by a contact, a directory or a relay any other way is refused (`AccountKeyResolver`), so nothing relabels
+our record.
+
+**Account card version 4 (multi-relay MR007), `profile.db` 7 → 8.** Each relay on the card now names its PeerId
+(`relays: [{origin, peer_id}]`), and a version 3 card is refused; in `peer_cards`, the same way:
+
+| Kept version 3 card | Becomes |
+|---------------------|---------|
+| Our own (as in 6 → 7: the profile's Account ID's record) | the version 4 shape without relays (no PeerId is known for the old entries), its floor and device list kept, its old signature: it does not verify, so the main device re-issues it with the same device list and our pinned relays; a linked device does not (the relays are the main device's to give): it waits for the main device's card |
+| Anyone else's | dropped from the record; the checked keys stay as a key card, and the card is asked for again (the next envelope's `sender_card_at`, or the contact page's refresh) |
+
+`contacts.json` `remote.locator_relay` is the locator's relay address, `{origin, peer_id}` (multi-relay MR008: the
+locator names the PeerId; a contact's first send into it is signed for that PeerId).
 
 **Changing a schema:** bump the version, add the step from the old one (it must run on every shape that version had), keep the floor. The **floor** is the oldest version the latest app still upgrades. Phones install only the latest app — a user cannot step through the versions in between on iOS or Android — so the latest app carries every step from the floor up; the floor moves only at a milestone (a release a user is expected to have opened), and moving it resets the chats of anyone below it. These migrations are this device's own data: they are not a bridge to older peers ([COMPATIBILITY § No bridges](COMPATIBILITY.md#no-bridges-pre-release)), and no step reads an older wire form.
 
-**JSON stores** include `schema_version` (or `config_version` for config) and have one version each: a file of an unsupported version is refused with a clear error — a newer one always, an older one below the store's floor (`contacts.json` 2, `identity.enc` 3, `initiation_billing.json` 1; the Account ID steps above are their only steps), while the config takes an older `config_version` as is. A change follows the same rule as the SQLite ladder: bump the version and add a step in the store's loader from the version below, keeping a floor.
+**JSON stores** include `schema_version` (or `config_version` for config) and have one version each: a file of an unsupported version is refused with a clear error — a newer one always, an older one below the store's floor (`contacts.json` 2, `identity.enc` 3, `own_card.enc` 1, `initiation_billing.json` 1; the Account ID steps above are their only steps), while the config takes an older `config_version` as is. A change follows the same rule as the SQLite ladder: bump the version and add a step in the store's loader from the version below, keeping a floor.
 
 **No legacy import:** older flat layouts (e.g. `identity.json` at data root) are not migrated. Delete the data directory when the layout changes during development. See [COMPATIBILITY.md](COMPATIBILITY.md) for dirty-folder and newer-peer policy.
 

@@ -13,6 +13,12 @@ namespace pbr {
 // The app's settings as the conversations hub takes them (capability-repos CR015): the app reads its config file
 // and the profile's preferences, the hub gets values.
 
+/**
+ * The system's name for this device (os::SystemDeviceName): read on the first call, kept for the run. The first call
+ * is at startup on the main thread (Bootstrap::Run) — the Android reader calls into Java and must not run on a worker.
+ */
+const std::string& StartupSystemDeviceName();
+
 /** The hub's settings from the app's config and the profile's preferences. */
 HubSettings HubSettingsFrom(const AppConfig& config, const ProfilePreferences& prefs);
 /** The same, the profile's preferences read from `profile_data_dir` (defaults when unreadable). */

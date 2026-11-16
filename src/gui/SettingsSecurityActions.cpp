@@ -1,5 +1,6 @@
 #include "gui/SettingsSecurityActions.h"
 
+#include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/crypto/PinRules.h"
 #include "foundation/error/AppError.h"
@@ -49,7 +50,12 @@ SettingsSecurityActions::~SettingsSecurityActions() {
 
 void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("change_pin", DataEvent<>([this]() { ChangePin(); }));
+  ctor.BindEventCallback("remove_pin", DataEvent<>([this]() { RemovePin(); }));
   ctor.BindEventCallback("export_link_device", DataEvent<>([this]() { ExportLinkDevice(); }));
+  SetTransferLabels();
+  ctor.Bind("transfer_code_copied", &transfer_code_copied_);
+  ctor.Bind("move_lead_label", &move_lead_label_);
+  ctor.Bind("move_valid_label", &move_valid_label_);
   ctor.BindEventCallback("toggle_biometric", DataEvent<>([this]() { ToggleBiometric(); }));
   ctor.Bind("recovery_phrase", &recovery_phrase_);
   ctor.BindEventCallback("show_recovery_phrase", DataEvent<>([this]() { ShowRecoveryPhrase(); }));
@@ -189,20 +195,67 @@ void SettingsSecurityActions::ChangePin() {
             done(changed.error());
             return;
           }
-          ProfilePreferences prefs = host_.Store().Snapshot().profile_prefs;
-          prefs.pin_is_default = false;
-          prefs.pin_digits = PinDigitsOf(new_pin.Reveal()); // the gate's pad follows the new PIN
-          auto saved = host_.Store().SaveProfilePrefs(prefs);
-          done({}); // the PIN is changed: the gate closes either way
+          auto saved = RecordPinChanged(new_pin, false); // 123456 chosen here stays an own PIN: the gate still asks
+          done({});                                      // the PIN is changed: the gate closes either way
           if (!saved) {
             host_.ReportFailure(saved.error());
             return;
           }
           host_.Resync(true);
-          host_.ShowStatus(Tr("settings.security.pin_updated"));
+          host_.ShowStatus(""); // the white pill below is the result; no line left on the page
           UserFeedback::Ok(Tr("settings.security.pin_updated"));
         },
         std::move(current_pin));
+  });
+}
+
+Roe<void> SettingsSecurityActions::RecordPinChanged(const SecretText& new_pin, const bool to_default) {
+  ProfilePreferences prefs = host_.Store().Snapshot().profile_prefs;
+  const bool was_default = prefs.pin_is_default;
+  prefs.pin_is_default = to_default;
+  // The default PIN opens silently and never shows the gate's pad: its kind stays unknown, as on first setup.
+  prefs.pin_digits = to_default ? std::nullopt : PinDigitsOf(new_pin.Reveal());
+  auto saved = host_.Store().SaveProfilePrefs(prefs);
+  if (to_default && commands_.disable_biometric) {
+    commands_.disable_biometric();
+  }
+  if (saved && was_default != to_default && commands_.on_pin_mode_changed) {
+    commands_.on_pin_mode_changed(to_default);
+  }
+  return saved;
+}
+
+void SettingsSecurityActions::RemovePin() {
+  EnsureUnlocked(Tr("settings.security.pin_setup_first"), [this]() {
+    if (host_.Store().Snapshot().profile_prefs.pin_is_default) {
+      return;
+    }
+    if (!commands_.change_pin || !pin_prompt_.show_verify) {
+      host_.ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable"));
+      return;
+    }
+    pin_prompt_.show_verify(
+        PinVerifyPurpose::RemovePin,
+        [this](const SecretText& pin, std::function<void(Roe<void>)> done) {
+          AppRuntime::PostWorkerNormal([this, pin, done = std::move(done)]() {
+            // A wrong current PIN comes back as the vault's refusal: the gate says so and stays.
+            Roe<void> changed = commands_.change_pin(pin, SecretText(std::string(kDefaultProfilePin)));
+            AppRuntime::PostUI([done, changed = std::move(changed)]() { done(changed); });
+          });
+        },
+        [this]() {
+          auto saved = RecordPinChanged(SecretText(std::string(kDefaultProfilePin)), true);
+          host_.PullFromView();
+          host_.UiState().security_biometric_on = commands_.biometric_enabled && commands_.biometric_enabled();
+          host_.PushToView(false);
+          if (!saved) {
+            host_.ReportFailure(saved.error());
+            return;
+          }
+          host_.Resync(true);
+          host_.ShowStatus("");
+          UserFeedback::Ok(Tr("settings.security.pin_removed"));
+        });
   });
 }
 
@@ -218,6 +271,10 @@ void SettingsSecurityActions::ToggleBiometric() {
     }
     state.security_biometric_on = commands_.biometric_enabled && commands_.biometric_enabled();
     host_.PushToView(false);
+    return;
+  }
+  if (host_.Store().Snapshot().profile_prefs.pin_is_default) {
+    UserFeedback::Note(Tr("settings.security.biometric.needs_own_pin"));
     return;
   }
   if (!commands_.enable_biometric || !pin_prompt_.show_verify) {
@@ -293,11 +350,28 @@ void SettingsSecurityActions::ConfirmExportLinkDevice() {
                                  system->SetClipboardText(result.value().c_str());
                                }
                                UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
+                               transfer_code_copied_ = true; // the phone page's "copied" box
+                               DataModelHost::Instance().Dirty("settings", "transfer_code_copied");
                                host_.ShowStatus("");
                              });
                            });
                          },
                          {});
+}
+
+void SettingsSecurityActions::SetTransferLabels() {
+  const std::string minutes = std::to_string(kLinkDeviceDefaultTtlMs / 60000);
+  move_lead_label_ = Tr("settings.security.link_device.lead", {{"minutes", minutes}}).c_str();
+  move_valid_label_ = Tr("settings.security.link_device.copied_valid", {{"minutes", minutes}}).c_str();
+}
+
+void SettingsSecurityActions::ClearTransferCopied() {
+  transfer_code_copied_ = false;
+  SetTransferLabels();
+  DataModelHost& model = DataModelHost::Instance();
+  model.Dirty("settings", "transfer_code_copied");
+  model.Dirty("settings", "move_lead_label");
+  model.Dirty("settings", "move_valid_label");
 }
 
 void SettingsSecurityActions::ShowRecoveryPhrase() {

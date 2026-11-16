@@ -14,6 +14,10 @@ struct PushDeviceRegistration {
   std::string account_id;
 };
 
+/**
+ * This device's push binding on one relay (`/v1/devices/register`, `unregister`). An unregister removes only the binding the last register
+ * made (its `binding_id`, multi-relay MR007 item 5), so a late one leaves a newer binding alone.
+ */
 class IPushDeviceClient {
 public:
   virtual ~IPushDeviceClient() = default;

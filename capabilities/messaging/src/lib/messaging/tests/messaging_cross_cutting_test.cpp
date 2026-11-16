@@ -298,6 +298,8 @@ public:
 
 } // namespace
 
+// A redelivery, or the same message through two of our relays (multi-relay R2, SERVICE_ENDPOINTS § Several relays):
+// stored once.
 TEST(MessagingCrossCuttingTest, DuplicateRelayMessageIdIsBenignDuplicate) {
   PipelineHarness harness("dedup", ThreadChannel::E2e);
   const RelayEnvelope envelope = harness.MakeSignedEnvelope("dup-msg-1", 1, "hello", ThreadChannel::E2e);

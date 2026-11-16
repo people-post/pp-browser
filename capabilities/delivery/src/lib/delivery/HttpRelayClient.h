@@ -3,6 +3,7 @@
 #include "common/chat/RelayGrant.h"
 #include "lib/delivery/RelayClients.h"
 #include "lib/net/OrgBackendClients.h"
+#include "lib/net/RelayAudience.h"
 
 #include <functional>
 #include <mutex>
@@ -12,6 +13,13 @@
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+/**
+ * The error for a relay poll answered with a non-2xx `status_code`: a 4xx (but 408 / 429) is HttpRejected, the rest
+ * HttpError; a 403 whose JSON `code` is "not_registered" (the relay has no active registration for our account) is
+ * Auth NotRegistered instead (IsRelayUserNotRegistered).
+ */
+Error RelayPollHttpError(long status_code, const std::string& body);
 
 /** What a relay send adds for the relay's sender and contact checks (multi-relay MR003 / MR005). Any thread. */
 struct RelaySendHooks {
@@ -28,15 +36,22 @@ struct RelaySendHooks {
 
 /**
  * The Brief relay's message API over HTTP: send, inbox poll / ack / clear, stream history (signed per call by our
- * account; every party an Account ID, MR001). A send carries the recipient's grant when we hold one, and goes again
- * once with our key when the relay asks for it, or without the grant when the relay refuses it. Its refusals come
- * back by code: `recipient_not_registered` (Err::Network::RecipientNotRegistered), `payment_required`
- * (PaymentRequired, with the floor), `stranger_quota_exceeded` (Err::Auth::StrangerQuota), a rate limit.
+ * account for the relay its audience names, MR007; every party an Account ID, MR001). A send carries the recipient's
+ * grant when we hold one, and goes again once with our key when the relay asks for it, or without the grant when the
+ * relay refuses it. Its refusals come back by code: `recipient_not_registered` (Err::Network::RecipientNotRegistered),
+ * `payment_required` (PaymentRequired, with the floor), `stranger_quota_exceeded` (Err::Auth::StrangerQuota), a rate
+ * limit, `wrong_audience` (Err::Auth::WrongAudience; the audience hears it, as `not_registered`).
  */
 class HttpRelayClient : public IRelayClient {
 public:
-  explicit HttpRelayClient(std::string base_url);
+  /**
+   * `public_only`: for a relay a contact's card named, not one of ours. Every request is https to a public address
+   * only (checked after DNS, no proxy), and a redirect is never followed.
+   */
+  explicit HttpRelayClient(std::string base_url, bool public_only = false);
   void SetAuthSigner(RelayAuthSigner signer) { auth_signer_ = std::move(signer); }
+  /** Who every call is signed for (the relay's pin; a contact's relay: the PeerId its card names). */
+  void SetAudience(std::shared_ptr<IRelayAudience> audience) { audience_ = std::move(audience); }
   /** Any thread: a send under way keeps the hooks it started with. */
   void SetSendHooks(RelaySendHooks hooks);
   Roe<void> Send(const RelayEnvelope& envelope) override;
@@ -50,14 +65,17 @@ private:
   /** Why the relay refused a send, by its `code`; what to change before sending it again, if anything. */
   enum class SendRetry { None, WithKey, WithoutGrant };
 
-  Roe<std::string> SignRelayApiBytes(const std::vector<uint8_t>& sign_bytes) const;
+  /** Signs a call for our audience at `timestamp`; `build` makes its bytes for the PeerId. */
+  Roe<SignedRelayCommand> Sign(int64_t timestamp, const RelayCommandBytes& build) const;
   /** One POST of `record` (signed here). `retry` says how a refusal may be met by sending again. */
   Roe<void> PostSend(RelayWireSendRecord& record, const RelayEnvelope& envelope, SendRetry& retry);
 
   RelaySendHooks SendHooks() const;
 
   std::string base_url_;
+  bool public_only_ = false;
   RelayAuthSigner auth_signer_;
+  std::shared_ptr<IRelayAudience> audience_;
   mutable std::mutex hooks_mutex_;
   RelaySendHooks send_hooks_;
 };

@@ -22,6 +22,19 @@
 
 namespace pbr::test {
 
+/**
+ * A relay's PeerId for tests (multi-relay MR007): the one a 1952-byte key of `fill` derives (0x42, 0x01: MESH_IDENTITY's
+ * fixtures). A card's relay entry must name one of this form.
+ */
+inline std::string RelayPeerId(uint8_t fill) {
+  return pp::PeerIdFromMlDsaPublicKey(ByteVector(kMlDsa65PublicKeyBytes, fill)).value();
+}
+
+/** A card relay entry `{origin, the PeerId of fill}`. */
+inline AccountCardRelay CardRelay(const std::string& origin, uint8_t fill) {
+  return AccountCardRelay{.origin = origin, .peer_id = RelayPeerId(fill)};
+}
+
 /** One device of an account (M021): its own signing key (its PeerId comes from it) and its own KEM key. */
 struct TestDevice {
   ByteVector signing_public;

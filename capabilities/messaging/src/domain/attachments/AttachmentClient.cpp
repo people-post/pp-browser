@@ -96,8 +96,8 @@ Roe<ChatAttachmentFields> UploadPreparedToRelay(IBlobClient& blob, const std::st
  * unchanged (the caller tells the person it was already sent). `resuming`: the staged record is the Retry chip's, so
  * a cancel only stops this attempt; the record (and a server copy it may now point at) stays.
  */
-bool HonourCancel(IBlobClient& blob, const std::string& relay_id, ChatAttachmentUploadOptions& options,
-                  OutgoingAttachmentStore* store, const std::string& record_id,
+bool HonourCancel(const std::shared_ptr<IBlobClient>& blob, const std::string& relay_id,
+                  ChatAttachmentUploadOptions& options, OutgoingAttachmentStore* store, const std::string& record_id,
                   std::function<void(Roe<ChatAttachmentFields>)>& finish, const bool resuming = false) {
   const auto cancelled = options.cancelled;
   if (!cancelled) {
@@ -106,7 +106,7 @@ bool HonourCancel(IBlobClient& blob, const std::string& relay_id, ChatAttachment
   options.progress = [cancelled, progress = std::move(options.progress)](const uint64_t done, const uint64_t total) {
     return !cancelled->load() && (!progress || progress(done, total));
   };
-  finish = [&blob, relay_id, store, record_id, cancelled, resuming,
+  finish = [blob, relay_id, store, record_id, cancelled, resuming,
             finish = std::move(finish)](Roe<ChatAttachmentFields> result) {
     if (!cancelled->load() || (result && result->url.empty())) {
       finish(std::move(result)); // not cancelled, or the contact already has it (too late to cancel)
@@ -116,7 +116,7 @@ bool HonourCancel(IBlobClient& blob, const std::string& relay_id, ChatAttachment
       store->Remove(record_id);
     }
     if (result && !resuming) {
-      (void)DeleteUploadedAttachmentCopy(blob, relay_id, result->url); // uploaded before the cancel landed
+      (void)DeleteUploadedAttachmentCopy(*blob, relay_id, result->url); // uploaded before the cancel landed
     }
     finish(Error("Attachment send cancelled"));
   };
@@ -128,7 +128,7 @@ bool HonourCancel(IBlobClient& blob, const std::string& relay_id, ChatAttachment
 }
 
 /** Direct push of a staged attachment when allowed, else (or on failure) the server, streamed from the file. */
-void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmentRecord record,
+void DeliverStaged(const std::shared_ptr<IBlobClient>& blob, IdentityStore& identity, OutgoingAttachmentRecord record,
                    std::shared_ptr<PreparedChatAttachment> in_memory, ChatAttachmentUploadOptions options,
                    std::function<void(Roe<ChatAttachmentFields>)> finish, const bool resuming = false) {
   auto account_id = RequireRegisteredAccountId(identity);
@@ -147,11 +147,11 @@ void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmen
   if (HonourCancel(blob, relay_id, options, store, record.id, finish, resuming)) {
     return;
   }
-  auto to_server = [&blob, relay_id, record, store, dek, progress = options.progress,
+  auto to_server = [blob, relay_id, record, store, dek, progress = options.progress,
                     finish](const bool direct_failed) mutable {
     // start → PUT → complete → stored link: all of it, also if the app goes to the background meanwhile.
     const BackgroundActivity background("attachment upload");
-    auto uploaded = UploadRelayFile(blob, relay_id, store->CipherPath(record.id), record.cipher_bytes, progress);
+    auto uploaded = UploadRelayFile(*blob, relay_id, store->CipherPath(record.id), record.cipher_bytes, progress);
     if (!uploaded) {
       finish(direct_failed ? NoteDirectFailed(uploaded.error()) : uploaded.error());
       return;
@@ -163,7 +163,7 @@ void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmen
       // (a retry uploads again).
       logging::getLogger("AttachmentClient").info << "relay file abandon blob=" << uploaded->blob_id
                                                   << " step=store code=none";
-      (void)blob.FileDelete(relay_id, uploaded->blob_id);
+      (void)blob->FileDelete(relay_id, uploaded->blob_id);
       finish(saved.error());
       return;
     }
@@ -239,9 +239,9 @@ bool AttachmentTriesPeerDirect(const std::optional<Thread>& thread, const uint64
          plaintext_bytes <= kMaxDirectAttachmentBytes;
 }
 
-void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const std::vector<uint8_t>& plaintext,
-                               const std::string& filename, const std::string& mime,
-                               ChatAttachmentUploadOptions options,
+void UploadChatAttachmentAsync(std::shared_ptr<IBlobClient> blob, IdentityStore& identity,
+                               const std::vector<uint8_t>& plaintext, const std::string& filename,
+                               const std::string& mime, ChatAttachmentUploadOptions options,
                                std::function<void(Roe<ChatAttachmentFields>)> on_done) {
   std::function<void(Roe<ChatAttachmentFields>)> finish = [on_done =
                                                                std::move(on_done)](Roe<ChatAttachmentFields> value) {
@@ -250,6 +250,10 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
     }
   };
 
+  if (!blob) {
+    finish(Error("Blob client not configured"));
+    return;
+  }
   auto account_id = RequireRegisteredAccountId(identity);
   if (!account_id) {
     finish(account_id.error());
@@ -299,15 +303,15 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
     const std::string relay_id = *account_id;
     const auto prepared_shared = std::make_shared<PreparedChatAttachment>(std::move(*prepared));
     TryPeerPushAsync(*prepared_shared, identity, options,
-                     [&blob, relay_id, prepared_shared, finish](Roe<void> pushed) mutable {
-                       auto continue_result = [&blob, relay_id, prepared_shared, finish = std::move(finish),
+                     [blob, relay_id, prepared_shared, finish](Roe<void> pushed) mutable {
+                       auto continue_result = [blob, relay_id, prepared_shared, finish = std::move(finish),
                                                pushed = std::move(pushed)]() mutable {
                          if (pushed) {
                            finish(prepared_shared->fields);
                            return;
                          }
                          LogDirectPushFailed(prepared_shared->fields.byte_length, pushed.error());
-                         auto uploaded = UploadPreparedToRelay(blob, relay_id, *prepared_shared);
+                         auto uploaded = UploadPreparedToRelay(*blob, relay_id, *prepared_shared);
                          if (!uploaded) {
                            finish(NoteDirectFailed(uploaded.error()));
                            return;
@@ -323,17 +327,21 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
     return;
   }
 
-  finish(UploadPreparedToRelay(blob, *account_id, *prepared));
+  finish(UploadPreparedToRelay(*blob, *account_id, *prepared));
 }
 
-void ResumeChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const OutgoingAttachmentRecord& record,
-                               ChatAttachmentUploadOptions options,
+void ResumeChatAttachmentAsync(std::shared_ptr<IBlobClient> blob, IdentityStore& identity,
+                               const OutgoingAttachmentRecord& record, ChatAttachmentUploadOptions options,
                                std::function<void(Roe<ChatAttachmentFields>)> on_done) {
   auto finish = [on_done = std::move(on_done)](Roe<ChatAttachmentFields> value) {
     if (on_done) {
       on_done(std::move(value));
     }
   };
+  if (!blob) {
+    finish(Error("Blob client not configured"));
+    return;
+  }
   if (!options.outgoing) {
     finish(Error("No outgoing attachment store"));
     return;

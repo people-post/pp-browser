@@ -4,6 +4,7 @@
   <p class="text muted settings-help group-foot">{{i18n:pin.forget_warning}}</p>
   <div class="settings-actions row">
     <button class="btn btn-primary" type="button" data-event-click="change_pin()">{{i18n:settings.security.change_pin}}</button>
+    <button class="btn" type="button" data-if="!pin_protection_is_default" data-event-click="remove_pin()">{{i18n:settings.security.remove_pin}}</button>
   </div>
 </div>
 <p class="text muted group-foot" data-if="show_change_pin && !security_can_change_pin && !pin_protection_not_setup">

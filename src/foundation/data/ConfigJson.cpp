@@ -382,6 +382,9 @@ Object ServiceEndpointToObject(const ServiceEndpointConfig& endpoint) {
   Object object;
   object.set("base_url", endpoint.base_url);
   object.set("transport", endpoint.transport);
+  if (!endpoint.peer_id.empty()) {
+    object.set("peer_id", endpoint.peer_id);
+  }
   return object;
 }
 
@@ -391,6 +394,9 @@ void ServiceEndpointFromObject(const Object& object, ServiceEndpointConfig& endp
   }
   if (auto transport = object.getString("transport")) {
     endpoint.transport = *transport;
+  }
+  if (auto peer_id = object.getString("peer_id")) {
+    endpoint.peer_id = *peer_id;
   }
 }
 
@@ -670,6 +676,13 @@ Object AppConfigToObject(const AppConfig& config) {
   if (config.relay_content_sha256) {
     relay.set("content_sha256", true);
   }
+  if (!config.relay_extra_base_urls.empty()) {
+    std::vector<Value> extras;
+    for (const std::string& url : config.relay_extra_base_urls) {
+      extras.emplace_back(url);
+    }
+    relay.set("extra_base_urls", makeArray(std::move(extras)));
+  }
   object.set("relay", relay);
   object.set("directory", DirectoryConfigToObject(saved ? config.backend.saved_directory : config.directory));
   object.set("registration", ServiceEndpointToObject(saved ? config.backend.saved_registration : config.registration));
@@ -738,6 +751,14 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
     ServiceEndpointFromObject(*relay, config.relay);
     if (auto content_sha256 = relay->getIf<bool>("content_sha256")) {
       config.relay_content_sha256 = *content_sha256;
+    }
+    if (const Array* extras = relay->getArray("extra_base_urls")) {
+      config.relay_extra_base_urls.clear();
+      for (const Value& item : extras->elements) {
+        if (auto url = asString(item); url && !url->empty()) {
+          config.relay_extra_base_urls.push_back(*url);
+        }
+      }
     }
   }
   if (const Object* directory = object.getObject("directory")) {
@@ -812,6 +833,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("attachment_auto_on_wifi", prefs.attachment_auto_on_wifi);
   object.set("attachment_auto_on_cellular", prefs.attachment_auto_on_cellular);
   object.set("show_advanced_settings", prefs.show_advanced_settings);
+  object.set("show_tester_options", prefs.show_tester_options);
   object.set("onboarding_completed", prefs.onboarding_completed);
   object.set("ai_panel_intro_seen", prefs.ai_panel_intro_seen);
   object.set("ai_dot_shown", prefs.ai_dot_shown);
@@ -930,6 +952,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
     prefs.attachment_download_policy = "smart";
   }
   prefs.show_advanced_settings = object.getIf<bool>("show_advanced_settings").value_or(false);
+  prefs.show_tester_options = object.getIf<bool>("show_tester_options").value_or(false);
   prefs.onboarding_completed = object.getIf<bool>("onboarding_completed").value_or(false);
   prefs.ai_panel_intro_seen = object.getIf<bool>("ai_panel_intro_seen").value_or(false);
   prefs.ai_dot_shown = object.getIf<bool>("ai_dot_shown").value_or(true);

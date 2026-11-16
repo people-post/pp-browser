@@ -38,6 +38,8 @@ struct MessagingContactsPorts {
   std::function<Roe<std::vector<Thread>>()> list_threads;
   std::function<int(const std::string& contact_id)> sum_unread_for_contact;
   std::function<Roe<Thread>(const std::string& contact_id, ThreadChannel channel)> find_or_create_direct_thread;
+  /** The same chat, found or made without opening it: not activated, unread count kept (a call's lookup). */
+  std::function<Roe<Thread>(const std::string& contact_id, ThreadChannel channel)> find_direct_thread_quietly;
   std::function<void()> notify_thread_changed;
 
   std::function<std::optional<PeerSigningKeyRecord>(const std::string& peer_identity_kind,
@@ -71,11 +73,13 @@ struct MessagingContactsPorts {
   /** The contact's nickname and photo again when its last directory answer is stale; background, silent (B142). */
   std::function<void(const std::string& contact_id)> refresh_contact_profile;
   /**
-   * The contact page's Refresh: its devices, then our directory, off the UI thread (ContactRefreshWorkflow).
+   * The contact page's Refresh: its devices, then its relays, then ours, off the UI thread (ContactRefreshWorkflow).
    * `done` once, on the UI thread. False (no `done`) when one already runs for that contact.
    */
   std::function<bool(const std::string& contact_id, std::function<void(const ContactRefreshResult&)> done)>
       refresh_contact;
+  /** The contact page's relay line: its preferred relay and what it answered at the last refresh (multi-relay R3). */
+  std::function<ContactRelayView(const Contact& contact)> contact_relay;
 };
 
 class ConversationsHub;

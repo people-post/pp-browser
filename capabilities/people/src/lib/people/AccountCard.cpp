@@ -4,6 +4,7 @@
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/KemKeyBinding.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/PeerIdForm.h"
 #include "crypto/PeerId.h"
 
 #include <algorithm>
@@ -16,9 +17,10 @@ namespace pbr {
 
 namespace {
 
-constexpr char kAccountCardDomain[] = "pp-browser:account-card-v3";
-constexpr uint8_t kAccountCardSignVersion = 3;
-constexpr int64_t kAccountCardVersion = 3;
+// 4 (multi-relay MR007): each relay is `{origin, peer_id}`; every other version is refused (clean cutover).
+constexpr char kAccountCardDomain[] = "pp-browser:account-card-v4";
+constexpr uint8_t kAccountCardSignVersion = 4;
+constexpr int64_t kAccountCardVersion = 4;
 constexpr std::string_view kHttpsScheme = "https://";
 
 void AppendU64(ByteVector& out, uint64_t value) {
@@ -61,7 +63,10 @@ Roe<std::vector<AccountCardDevice>> DevicesFromJson(const Object& json) {
   return out;
 }
 
-/** `relays` is required (an empty list is the mesh only): a card without it is refused, as the relay does. */
+/**
+ * `relays` is required (an empty list is the mesh only), and each entry names an origin and a PeerId: a card without
+ * them is refused, as the relay does.
+ */
 Roe<std::vector<AccountCardRelay>> RelaysFromJson(const Object& json) {
   const Array* relays = json.getArray("relays");
   if (!relays) {
@@ -71,10 +76,14 @@ Roe<std::vector<AccountCardRelay>> RelaysFromJson(const Object& json) {
   for (const Value& item : relays->elements) {
     const Object* row = asObject(item);
     auto origin = row ? row->getString("origin") : std::nullopt;
+    auto peer_id = row ? row->getString("peer_id") : std::nullopt;
     if (!origin) {
       return Error("account card: a relay needs an origin");
     }
-    out.push_back(AccountCardRelay{.origin = *origin});
+    if (!peer_id) {
+      return Error("account card: a relay needs a peer_id");
+    }
+    out.push_back(AccountCardRelay{.origin = *origin, .peer_id = *peer_id});
   }
   return out;
 }
@@ -151,11 +160,15 @@ Roe<void> VerifyCardRelays(const std::vector<AccountCardRelay>& relays) {
     return Error("account card: more than " + std::to_string(kMaxAccountCardRelays) + " relays");
   }
   std::set<std::string> seen;
+  std::set<std::string> peer_ids;
   for (const AccountCardRelay& relay : relays) {
     if (!IsCardRelayOrigin(relay.origin)) {
       return Error("account card: a relay origin is not an https:// URL within the bounds");
     }
-    if (!seen.insert(CardRelayKey(relay.origin)).second) {
+    if (!IsMlDsaPeerIdForm(relay.peer_id)) {
+      return Error("account card: a relay's peer_id is not a PeerId");
+    }
+    if (!seen.insert(CardRelayKey(relay.origin)).second || !peer_ids.insert(relay.peer_id).second) {
       return Error("account card: duplicate relay");
     }
   }
@@ -183,6 +196,7 @@ Object AccountCardToJson(const AccountCard& card) {
   for (const AccountCardRelay& relay : card.relays) {
     Object row;
     row.set("origin", relay.origin);
+    row.set("peer_id", relay.peer_id);
     relays.push_back(ObjectValue(std::move(row)));
   }
   json.set("relays", ArrayValue(std::move(relays)));
@@ -294,6 +308,7 @@ ByteVector AccountCardSignBytes(const AccountCard& card) {
   AppendU64(bytes, card.relays.size()); // in list order: the first is the preferred relay
   for (const AccountCardRelay& relay : card.relays) {
     AppendLenUtf8(bytes, relay.origin);
+    AppendLenUtf8(bytes, relay.peer_id);
   }
   AppendU64(bytes, static_cast<uint64_t>(card.initiation_floor));
   AppendU64(bytes, static_cast<uint64_t>(card.issued_at));

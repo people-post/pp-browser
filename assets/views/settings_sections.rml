@@ -2,6 +2,7 @@
 {{include:settings_section_privacy}}
 {{include:settings_section_security}}
 {{include:settings_section_devices}}
+{{include:settings_section_relays}}
 {{include:settings_section_notifications}}
 {{include:settings_section_appearance}}
 {{include:settings_section_storage}}

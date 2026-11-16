@@ -25,6 +25,7 @@ set(_pp_platform_gui_sources
   AndroidAssetLocator.cpp
   AndroidPathProvider.cpp
   AppEventHooks.cpp
+  CallPushAge.cpp
   CallSystemUi.cpp
   DesktopLocalNotifier.cpp
   desktop/LocalNotifierActivation.cpp
@@ -36,6 +37,7 @@ set(_pp_platform_gui_sources
   NetworkConnectivity.cpp
   NetworkMonitor.cpp
   PlatformEarlyInit.cpp
+  ScreenAwake.cpp
   AiImagePrep.cpp
   ImageEncode.cpp
   ImageSampleAffine.cpp
@@ -109,6 +111,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     os/OsThreadName_Win32.cpp
     os/OsProcess_Win32.cpp
     os/OsLocale_Win32.cpp
+    os/OsDeviceName_Win32.cpp
     os/OsExecutablePath_Win32.cpp
     os/OsDownloadMark_Win32.cpp
     os/OsProcessStats_Default.cpp
@@ -121,6 +124,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     VideoPosterExtractor_Win32.cpp
     ImageThumbnail_Default.cpp
     PlatformShare_Default.cpp
+    PlatformShareImage_Default.cpp
     NativeFileDialog_Default.cpp
     CameraCapture_Default.cpp
     PlatformOpenFile.cpp
@@ -128,11 +132,13 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     PlatformAppBadge_Default.cpp
     DeviceScreenState_Default.cpp
     DeviceRinger_Default.cpp
+    ProximityScreenOff_Default.cpp
   )
 elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_core_sources
     os/OsExecutablePath_Darwin.cpp
     os/OsLocale_Darwin.mm
+    os/OsDeviceName_Darwin.mm
     os/OsProcessStats_Default.cpp
     os/OsThreadStackDump_Darwin.cpp
     desktop/PathProvider_Darwin.cpp
@@ -150,14 +156,17 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   )
   if(NOT PP_BROWSER_IS_IOS)
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm PlatformShare_Darwin.mm
+         PlatformShareImage_Darwin.mm
          NativeFileDialog_Default.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp
          PlatformNotificationSettings_Default.cpp PlatformAppBadge_Darwin.mm DeviceScreenState_Default.cpp
-         DeviceRinger_Default.cpp)
+         DeviceRinger_Default.cpp ProximityScreenOff_Default.cpp)
   else()
     # SDL3 has no iOS file dialog (its dummy backend answers "nothing picked" at once).
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp PlatformShare_Ios.mm
+         PlatformShareImage_Ios.mm
          NativeFileDialog_Ios.mm CameraCapture_Ios.mm PlatformOpenFile_Ios.mm PlatformNotificationSettings_Ios.mm
-         PlatformAppBadge_Ios.mm DeviceScreenState_Default.cpp DeviceRinger_Default.cpp)
+         PlatformAppBadge_Ios.mm DeviceScreenState_Default.cpp DeviceRinger_Default.cpp
+         ProximityScreenOff_Ios.mm)
   endif()
 else()
   list(APPEND _pp_platform_core_sources
@@ -172,12 +181,14 @@ else()
     ImageThumbnail_Default.cpp
     VideoPosterExtractor_Default.cpp
     PlatformShare_Default.cpp
+    PlatformShareImage_Default.cpp
     NativeFileDialog_Default.cpp
+    ProximityScreenOff_Default.cpp
   )
   if(PP_BROWSER_IS_ANDROID)
-    list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp)
+    list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp os/OsDeviceName_Android.cpp)
   else()
-    list(APPEND _pp_platform_core_sources os/OsLocale_Posix.cpp)
+    list(APPEND _pp_platform_core_sources os/OsLocale_Posix.cpp os/OsDeviceName_Posix.cpp)
   endif()
   if(NOT PP_BROWSER_IS_ANDROID)
     list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp
@@ -233,6 +244,23 @@ endif()
 if(NOT PP_API_URL_QA STREQUAL "")
   target_compile_definitions(pp_foundation_platform_core PRIVATE
     PP_API_URL_QA="${PP_API_URL_QA}")
+endif()
+# The org relays' PeerIds beside their origins (multi-relay MR008: a relay address carries its PeerId; the app never
+# learns it from the relay's own answer). Empty: the relay is pinned on its first answer, with a warning (dogfood).
+set(PP_RELAY_PEER_ID_PROD "" CACHE STRING "PeerId of the prod backend's relay (beside PP_API_URL_PROD)")
+set(PP_RELAY_PEER_ID_QA "" CACHE STRING "PeerId of the QA backend's relay (beside PP_API_URL_QA)")
+foreach(peer_id_var PP_RELAY_PEER_ID_PROD PP_RELAY_PEER_ID_QA)
+  if(NOT "${${peer_id_var}}" STREQUAL "" AND NOT "${${peer_id_var}}" MATCHES "^Qm[1-9A-HJ-NP-Za-km-z]+$")
+    message(FATAL_ERROR "${peer_id_var} is not a relay PeerId (Qm…, from the relay's link or GET /v1/relay-identity)")
+  endif()
+endforeach()
+if(NOT PP_RELAY_PEER_ID_PROD STREQUAL "")
+  target_compile_definitions(pp_foundation_platform_core PRIVATE
+    PP_RELAY_PEER_ID_PROD="${PP_RELAY_PEER_ID_PROD}")
+endif()
+if(NOT PP_RELAY_PEER_ID_QA STREQUAL "")
+  target_compile_definitions(pp_foundation_platform_core PRIVATE
+    PP_RELAY_PEER_ID_QA="${PP_RELAY_PEER_ID_QA}")
 endif()
 
 # Compile-time default of `relay.content_sha256`: send x-amz-content-sha256 on relay POST/PUT. Off unless the
@@ -330,7 +358,8 @@ endif()
 
 # macOS: OsLocale_Darwin.mm (platform_core, also linked by pp-node) needs Foundation; iOS adds it above.
 if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN" AND NOT PP_BROWSER_IS_IOS)
-  target_link_libraries(pp_foundation_platform_core PUBLIC "-framework Foundation")
+  # SystemConfiguration: OsDeviceName_Darwin.mm's computer name (non-blocking, unlike NSHost).
+  target_link_libraries(pp_foundation_platform_core PUBLIC "-framework Foundation" "-framework SystemConfiguration")
 endif()
 
 # Android: ApplyPlatformCurlSsl sets CURLOPT_CAPATH via curl.
@@ -358,10 +387,20 @@ if(PP_BROWSER_IS_IOS)
     IosLocalNotifier.mm
     IosApnsAppDelegate.mm
     SecureScreen_Ios.mm)
+  if(PP_BROWSER_IOS_CALLKIT)
+    target_sources(pp_foundation_platform PRIVATE CallSystemUi_Ios.mm)
+    target_compile_definitions(pp_foundation_platform PRIVATE PP_IOS_CALLKIT=1)
+    target_link_libraries(pp_foundation_platform PUBLIC
+      "-framework CallKit"
+      "-framework PushKit"
+      "-framework AVFoundation")
+  endif()
   target_link_libraries(pp_foundation_platform PUBLIC
     "-framework UserNotifications"
     "-framework UIKit"
+    "-framework AVFoundation"
     "-framework PhotosUI"
+    "-framework Photos"
     "-framework QuickLook"
     "-framework UniformTypeIdentifiers")
 endif()

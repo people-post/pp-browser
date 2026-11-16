@@ -157,7 +157,7 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
         Finish(std::move(outcome));
         return;
       }
-      IRelayClient* relay = relay_;
+      IRelayClient* relay = relay_.load(std::memory_order_acquire);
       if (!relay) {
         outcome.failure = direct ? SendFailureFromDirect(direct->GetCode()) : SendFailure::RelayNotConfigured;
         outcome.detail = direct ? direct->message : "Relay client not configured";
@@ -320,7 +320,7 @@ bool DeliveryOutbox::RetryControlLater(Pending item, const Error& failure) {
 }
 
 void DeliveryOutbox::RetryControlNow(Pending item) {
-  IRelayClient* relay = relay_;
+  IRelayClient* relay = relay_.load(std::memory_order_acquire);
   if (!relay) {
     Enqueue(std::move(item));
     return;
@@ -462,7 +462,7 @@ void DeliveryOutbox::Retry() {
     return;
   }
   AppRuntime::PostWorkerNormal([this, pending = std::move(pending)]() mutable {
-    if (!relay_) {
+    if (!relay_.load(std::memory_order_acquire)) {
       std::lock_guard lock(mutex_);
       for (Pending& item : pending) {
         EnqueueLocked(std::move(item));
@@ -506,7 +506,7 @@ void DeliveryOutbox::Retry() {
           (*process)(index + 1);
           return;
         }
-        IRelayClient* relay = relay_;
+        IRelayClient* relay = relay_.load(std::memory_order_acquire);
         auto result = relay ? relay->Send(item.envelope) : Roe<void>(Error("Relay client not configured"));
         if (result) {
           Finish(DeliveryOutcome{.thread_id = item.thread_id,

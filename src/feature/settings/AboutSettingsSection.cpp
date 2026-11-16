@@ -20,23 +20,26 @@ SettingsFlushMode AboutSettingsSection::FlushMode() const {
 }
 
 bool AboutSettingsSection::IsWritable() const {
-  return true; // only the "Show advanced settings" switch
+  return true; // only the "Show advanced settings" switch and the tester switch
 }
 
 void AboutSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
   state.app_name = kProductName;
   state.app_version = AppVersionString();
   state.show_advanced_settings = bootstrap.profile_prefs.show_advanced_settings ? "on" : "off";
+  state.show_tester_options = bootstrap.profile_prefs.show_tester_options ? "on" : "off";
 }
 
 bool AboutSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const {
-  return (state.show_advanced_settings == "on") == bootstrap.profile_prefs.show_advanced_settings;
+  return (state.show_advanced_settings == "on") == bootstrap.profile_prefs.show_advanced_settings &&
+         (state.show_tester_options == "on") == bootstrap.profile_prefs.show_tester_options;
 }
 
 Roe<void> AboutSettingsSection::Flush(SettingsUiState& state, SessionStore& store) {
   ProfilePreferences profile_prefs = store.Snapshot().profile_prefs;
   profile_prefs.schema_version = ProfilePreferences::kSchemaVersion;
   profile_prefs.show_advanced_settings = state.show_advanced_settings == "on";
+  profile_prefs.show_tester_options = state.show_tester_options == "on";
   if (auto saved = store.SaveProfilePrefs(profile_prefs); !saved) {
     return saved.error();
   }
@@ -46,6 +49,7 @@ Roe<void> AboutSettingsSection::Flush(SettingsUiState& state, SessionStore& stor
 
 void AboutSettingsSection::ResetToDefaults(SettingsUiState& state, const SessionStore& store) {
   state.show_advanced_settings = store.DefaultProfilePrefs().show_advanced_settings ? "on" : "off";
+  state.show_tester_options = store.DefaultProfilePrefs().show_tester_options ? "on" : "off";
 }
 
 } // namespace pbr

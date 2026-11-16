@@ -5,6 +5,8 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
 
+#include "lib/people/tests/TestAccount.h"
+
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -31,11 +33,11 @@ private:
 
 /** One device of an account: its identity (own device keys) and its own card store. */
 struct Device {
-  explicit Device(const std::filesystem::path& dir) : identity(dir.string(), dir.filename().string()) {
+  explicit Device(const std::filesystem::path& at) : dir(at), identity(at.string(), at.filename().string()) {
     std::filesystem::create_directories(dir);
     EXPECT_TRUE(identity.SetDek(TestDek()));
     EXPECT_TRUE(identity.LoadOrCreate());
-    cards = std::make_unique<PeerCards>(rows);
+    cards = std::make_unique<PeerCards>(*rows);
     keys = std::make_unique<AccountKeyResolver>(signing, kem, *cards, directory);
     own = std::make_unique<OwnCards>(identity, *keys);
   }
@@ -72,11 +74,35 @@ struct Device {
 
   std::string PeerId() { return own->DevicePeerId().value(); }
 
+  /**
+   * Me → Storage → Reset chats (or the start-up recovery's, or a profile.db too old to upgrade): the chat store —
+   * its kept cards with it — is gone and messaging comes back; the identity (and what lies beside it) stays, read
+   * again from disk.
+   */
+  void ResetChats() {
+    own.reset();
+    keys.reset();
+    cards.reset();
+    rows = std::make_unique<InMemoryPeerCardStore>();
+    ASSERT_TRUE(identity.SetDek(TestDek())); // read again from disk, as the hub's new stores do
+    cards = std::make_unique<PeerCards>(*rows);
+    keys = std::make_unique<AccountKeyResolver>(signing, kem, *cards, directory);
+    own = std::make_unique<OwnCards>(identity, *keys);
+  }
+
+  /** What an older build left: no card of ours beside the identity (only, maybe, in the chat store). */
+  void ForgetOwnCardBesideIdentity() {
+    std::filesystem::remove(dir / "own_card.enc");
+    ASSERT_TRUE(identity.SetDek(TestDek()));
+  }
+
+  std::filesystem::path dir;
   IdentityStore identity;
   PeerSigningKeyStore signing;
   PeerKemKeyStore kem;
   NoDirectory directory;
-  InMemoryPeerCardStore rows; // the kept rows, as the app's storage holds them
+  std::unique_ptr<InMemoryPeerCardStore> rows =
+      std::make_unique<InMemoryPeerCardStore>(); // the kept rows, as the app's storage holds them
   std::unique_ptr<PeerCards> cards;
   std::unique_ptr<AccountKeyResolver> keys;
   std::unique_ptr<OwnCards> own;
@@ -210,22 +236,30 @@ TEST_F(OwnCardsTest, ANonMasterRenameKeepsTheListAsItIs) {
   EXPECT_EQ(phone.identity.Get().value().nickname, "Alice L.") << "the account's name, on every device";
 }
 
-std::vector<AccountCardRelay> Relays(std::initializer_list<const char*> origins) {
+/** Each origin with the PeerId pinned for it in these tests (the n-th origin, the n-th fixture key). */
+std::vector<AccountCardRelay> Relays(std::initializer_list<const char*> origins, uint8_t fill = 0x20) {
   std::vector<AccountCardRelay> out;
   for (const char* origin : origins) {
-    out.push_back(AccountCardRelay{.origin = origin});
+    out.push_back(test::CardRelay(origin, fill++));
   }
   return out;
 }
 
-// MR002 / MR005: the card carries the relays we register on and our floor, re-issued when either changes.
+// MR002 / MR005 / MR007: the card carries the relays we register on, each with its pinned PeerId, and our floor,
+// re-issued when either changes.
 TEST_F(OwnCardsTest, TheCardCarriesOurRelaysAndFloorAndIsReissuedWhenEitherChanges) {
   Device phone(dir_ / "phone");
-  phone.own->SetRelays({"https://www.brief.global/api/relay", "http://127.0.0.1:8080/api/relay", "",
-                        "https://WWW.brief.global:443/api/relay"});
+  std::vector<AccountCardRelay> given = Relays({"https://www.brief.global/api/relay"});
+  given.push_back(test::CardRelay("http://127.0.0.1:8080/api/relay", 0x30));
+  given.push_back(test::CardRelay("", 0x31));
+  given.push_back(test::CardRelay("https://WWW.brief.global:443/api/relay", 0x32));
+  given.push_back(AccountCardRelay{.origin = "https://unpinned.example/api/relay"});
+  given.push_back(test::CardRelay("https://same-peer.example/api/relay", 0x20));
+  EXPECT_TRUE(phone.own->SetRelays(given));
+  EXPECT_FALSE(phone.own->SetRelays(given)) << "the same list: no change";
   const AccountCard card = phone.own->Card(kNow).value();
   EXPECT_EQ(card.relays, Relays({"https://www.brief.global/api/relay"}))
-      << "only origins within MR004's bounds: no http lab relay, no duplicate";
+      << "only relays within the bounds: no http lab relay, no duplicate origin or PeerId, none without a PeerId";
   EXPECT_EQ(card.initiation_floor, 0);
   EXPECT_TRUE(VerifyAccountCard(card, kNow));
   EXPECT_EQ(phone.own->Card(kNow + 10).value(), card) << "nothing changed";
@@ -236,7 +270,7 @@ TEST_F(OwnCardsTest, TheCardCarriesOurRelaysAndFloorAndIsReissuedWhenEitherChang
   EXPECT_GT(priced.issued_at, card.issued_at);
   EXPECT_TRUE(VerifyAccountCard(priced, kNow + 20));
 
-  phone.own->SetRelays({"https://relay.example.org/api/relay"});
+  phone.own->SetRelays(Relays({"https://relay.example.org/api/relay"}));
   const AccountCard moved = phone.own->Card(kNow + 30).value();
   EXPECT_EQ(moved.relays, Relays({"https://relay.example.org/api/relay"}));
   EXPECT_GT(moved.issued_at, priced.issued_at);
@@ -248,8 +282,8 @@ TEST_F(OwnCardsTest, TheCardCarriesOurRelaysAndFloorAndIsReissuedWhenEitherChang
 TEST_F(OwnCardsTest, ALinkedDeviceKeepsTheMastersRelaysAndTheFloorIsTheAccounts) {
   Device phone(dir_ / "phone");
   Device laptop(dir_ / "laptop");
-  phone.own->SetRelays({"https://a.example/api/relay"});
-  laptop.own->SetRelays({"https://b.example/api/relay"});
+  phone.own->SetRelays(Relays({"https://a.example/api/relay"}));
+  laptop.own->SetRelays(Relays({"https://b.example/api/relay"}));
   const AccountCard joined = LinkLaptop(phone, laptop, kNow);
   EXPECT_EQ(joined.relays, Relays({"https://a.example/api/relay"})) << "the laptop is not the master";
   EXPECT_EQ(laptop.own->Card(kNow + 40).value(), joined) << "no tug of war over the list";
@@ -270,15 +304,40 @@ TEST_F(OwnCardsTest, AKeptCardThatDoesNotVerifyIsReissuedWithItsList) {
   Device phone(dir_ / "phone");
   Device laptop(dir_ / "laptop");
   const AccountCard joined = LinkLaptop(phone, laptop, kNow);
-  PeerCardRecord stepped = phone.rows.Get(joined.keys.account_id).value().value();
+  PeerCardRecord stepped = phone.rows->Get(joined.keys.account_id).value().value();
   stepped.newest_card->card_signature_b64 = laptop.own->Card(kNow + 40).value().keys.kem_binding_signature_b64;
-  ASSERT_TRUE(phone.rows.Put(stepped));
+  ASSERT_TRUE(phone.rows->Put(stepped));
 
   const AccountCard reissued = phone.own->Card(kNow + 50).value();
   EXPECT_TRUE(VerifyAccountCard(reissued, kNow + 50));
   EXPECT_GT(reissued.issued_at, joined.issued_at);
   EXPECT_EQ(reissued.devices, joined.devices) << "the laptop stays on the list";
   EXPECT_EQ(phone.own->Card(kNow + 60).value(), reissued);
+}
+
+// D5: on a linked device the stepped card (its relays gone with the step) is not re-issued: its relays are the main
+// device's to give, so the linked device waits for the main device's card, then takes it.
+TEST_F(OwnCardsTest, ALinkedDeviceDoesNotReissueAKeptCardThatDoesNotVerify) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  phone.own->SetRelays(Relays({"https://a.example/api/relay"}));
+  const AccountCard joined = LinkLaptop(phone, laptop, kNow);
+  PeerCardRecord stepped = laptop.rows->Get(joined.keys.account_id).value().value();
+  stepped.newest_card->relays.clear();
+  stepped.newest_card->card_signature_b64 = joined.keys.kem_binding_signature_b64;
+  ASSERT_TRUE(laptop.rows->Put(stepped));
+
+  auto waiting = laptop.own->Card(kNow + 50);
+  ASSERT_FALSE(waiting);
+  EXPECT_EQ(waiting.error().message, kAwaitingMainCardMessage);
+  EXPECT_EQ(laptop.rows->Get(joined.keys.account_id).value()->newest_card->issued_at, joined.issued_at)
+      << "nothing issued";
+
+  const AccountCard mains = phone.own->Card(kNow + 60).value(); // the phone's own copy verifies: as it was
+  ASSERT_TRUE(laptop.own->Learn(phone.own->Card(kNow + 70).value(), kNow + 70));
+  const AccountCard taken = laptop.own->Card(kNow + 80).value();
+  EXPECT_EQ(taken.relays, Relays({"https://a.example/api/relay"})) << "the main device's relays";
+  EXPECT_EQ(taken, mains);
 }
 
 TEST_F(OwnCardsTest, ARestoredDeviceStartsAFreshListAndTheOthersAreSignedOut) {
@@ -323,6 +382,197 @@ TEST_F(OwnCardsTest, AJoinThatReachesTheMasterAfterItsNextCardIsKept) {
   EXPECT_EQ(on_phone->nickname, "Alice P.");
   ASSERT_TRUE(laptop.own->Learn(*on_phone, kNow + 50));
   EXPECT_FALSE(laptop.own->SignedOut());
+}
+
+// --- Our card outlives a reset of the chat store; a fresh list only on purpose ---------------------------------
+
+/** Our relays' directories as a test sets them: each answer is what the relays served (none: none reached). */
+struct FakeRelays {
+  std::vector<Object> cards;
+  size_t answered = 0;
+  size_t unreached = 0;
+  int asked = 0;
+
+  OwnCards::OwnCardLookup Lookup() {
+    return [this](const std::string& /*account_id*/, std::function<void(OwnCardAnswers)> done) {
+      ++asked;
+      done(OwnCardAnswers{.cards = cards, .answered = answered, .unreached = unreached});
+    };
+  }
+};
+
+TEST_F(OwnCardsTest, ANewAccountStartsItsListOnPurpose) {
+  Device phone(dir_ / "phone");
+  EXPECT_EQ(phone.identity.Get().value().card_intent, kCardIntentFresh) << "marked when the account is created";
+  auto card = phone.own->Card(kNow);
+  ASSERT_TRUE(card) << card.error().message;
+  ASSERT_EQ(card->devices.size(), 1u);
+  EXPECT_EQ(card->devices[0].peer_id, phone.PeerId());
+  EXPECT_TRUE(phone.identity.Get().value().card_intent.empty()) << "started once";
+  EXPECT_EQ(phone.identity.OwnCard().value(), *card) << "kept beside the identity";
+}
+
+TEST_F(OwnCardsTest, ResetChatsOnALinkedDeviceKeepsTheAccountsList) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  const AccountCard joined = LinkLaptop(phone, laptop, kNow);
+  int changed = 0;
+  laptop.ResetChats();
+  laptop.own->SetOnChanged([&](const AccountCard&) { ++changed; });
+  auto after = laptop.own->Card(kNow + 100);
+  ASSERT_TRUE(after) << after.error().message;
+  EXPECT_EQ(*after, joined) << "the same list: no fresh one, nothing issued";
+  EXPECT_EQ(changed, 0) << "nothing to tell the siblings";
+  EXPECT_FALSE(laptop.own->SignedOut());
+  EXPECT_EQ(laptop.rows->Get(joined.keys.account_id).value()->newest_card, joined)
+      << "back in the kept cards, for everything else that reads them";
+  ASSERT_TRUE(phone.own->Learn(*after, kNow + 110));
+  EXPECT_EQ(phone.own->Card(kNow + 120).value(), joined) << "the phone keeps both devices";
+}
+
+TEST_F(OwnCardsTest, ResetChatsOnTheMasterKeepsTheAccountsList) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  const AccountCard joined = LinkLaptop(phone, laptop, kNow);
+  phone.ResetChats();
+  auto after = phone.own->Card(kNow + 100);
+  ASSERT_TRUE(after) << after.error().message;
+  EXPECT_EQ(*after, joined) << "the laptop stays on the list";
+  ASSERT_TRUE(laptop.own->Learn(*after, kNow + 110));
+  EXPECT_FALSE(laptop.own->SignedOut());
+  // The master still changes the list: it is still the master.
+  EXPECT_TRUE(phone.own->RemoveDevice(laptop.PeerId(), kNow + 120));
+}
+
+TEST_F(OwnCardsTest, AProfileWithItsCardOnlyInTheChatStoreKeepsItBesideTheIdentity) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  const AccountCard joined = LinkLaptop(phone, laptop, kNow);
+  laptop.ForgetOwnCardBesideIdentity();
+  ASSERT_FALSE(laptop.identity.OwnCard().value()) << "as an older build left it";
+  ASSERT_TRUE(laptop.own->Devices());
+  EXPECT_EQ(laptop.identity.OwnCard().value(), joined) << "filled on first use";
+  laptop.ResetChats();
+  EXPECT_EQ(laptop.own->Card(kNow + 100).value(), joined);
+}
+
+TEST_F(OwnCardsTest, NoCardAndNoIntentGetsOurCardBackFromOurRelays) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  const AccountCard joined = LinkLaptop(phone, laptop, kNow);
+  laptop.ForgetOwnCardBesideIdentity();
+  laptop.ResetChats(); // nothing of ours kept anywhere on the laptop: a reset by an older build
+  FakeRelays relays;
+  relays.cards = {AccountCardToJson(joined)};
+  relays.answered = 1;
+  laptop.own->SetOwnCardLookup(relays.Lookup());
+
+  auto first = laptop.own->Card(kNow + 100); // asks; the answer is taken in at once here
+  EXPECT_EQ(relays.asked, 1);
+  if (!first) {
+    EXPECT_EQ(first.error().message, kAwaitingOwnCardMessage);
+  }
+  auto after = laptop.own->Card(kNow + 110);
+  ASSERT_TRUE(after) << after.error().message;
+  EXPECT_EQ(*after, joined) << "the account's list, not a fresh one";
+  EXPECT_EQ(laptop.identity.OwnCard().value(), joined) << "kept beside the identity too";
+  EXPECT_EQ(laptop.own->Devices().value().recovery, OwnCardRecovery::None);
+}
+
+TEST_F(OwnCardsTest, AnotherAccountsOrABadCardFromARelayIsRefused) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  const AccountCard joined = LinkLaptop(phone, laptop, kNow);
+  Device stranger(dir_ / "stranger");
+  laptop.ForgetOwnCardBesideIdentity();
+  laptop.ResetChats();
+  AccountCard forged = joined;
+  forged.nickname = "not what was signed";
+  FakeRelays relays;
+  relays.cards = {AccountCardToJson(stranger.own->Card(kNow).value()), AccountCardToJson(forged)};
+  relays.answered = 2;
+  laptop.own->SetOwnCardLookup(relays.Lookup());
+
+  auto card = laptop.own->Card(kNow + 100);
+  ASSERT_FALSE(card) << "nothing issued";
+  EXPECT_EQ(laptop.own->Devices().value().recovery, OwnCardRecovery::NotFound);
+  EXPECT_FALSE(laptop.rows->Get(joined.keys.account_id).value()) << "neither card kept";
+  EXPECT_FALSE(laptop.identity.OwnCard().value());
+}
+
+TEST_F(OwnCardsTest, OfflineNothingIsIssuedUntilOurRelaysAnswer) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  const AccountCard joined = LinkLaptop(phone, laptop, kNow);
+  laptop.ForgetOwnCardBesideIdentity();
+  laptop.ResetChats();
+  FakeRelays relays; // none reached
+  laptop.own->SetOwnCardLookup(relays.Lookup());
+  int recovery_changes = 0;
+  laptop.own->SetOnRecoveryChanged([&]() { ++recovery_changes; });
+
+  auto offline = laptop.own->Card(kNow + 100);
+  ASSERT_FALSE(offline);
+  EXPECT_EQ(offline.error().message, kAwaitingOwnCardMessage);
+  EXPECT_EQ(laptop.own->Devices().value().recovery, OwnCardRecovery::Getting);
+  EXPECT_FALSE(laptop.rows->Get(joined.keys.account_id).value()) << "nothing issued";
+  EXPECT_GT(recovery_changes, 0);
+  const int asked = relays.asked;
+  EXPECT_FALSE(laptop.own->Card(kNow + 200)) << "within the backoff";
+  EXPECT_EQ(relays.asked, asked) << "not asked again on every card request";
+
+  relays.cards = {AccountCardToJson(joined)}; // the network is back
+  relays.answered = 1;
+  laptop.own->RetryRecovery(kNow + 300);
+  EXPECT_EQ(laptop.own->Card(kNow + 310).value(), joined);
+  EXPECT_FALSE(laptop.own->SignedOut());
+}
+
+TEST_F(OwnCardsTest, NoCardAnywhereAsksThePersonAndAConfirmStartsAFreshList) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  const AccountCard joined = LinkLaptop(phone, laptop, kNow);
+  laptop.ForgetOwnCardBesideIdentity();
+  laptop.ResetChats();
+  FakeRelays relays;
+  relays.answered = 2; // every relay answered: none keeps a card of ours
+  laptop.own->SetOwnCardLookup(relays.Lookup());
+
+  (void)laptop.own->Card(kNow + 100);
+  auto asked = laptop.own->Card(kNow + 110);
+  ASSERT_FALSE(asked);
+  EXPECT_EQ(asked.error().message, kNoOwnCardMessage);
+  EXPECT_EQ(laptop.own->Devices().value().recovery, OwnCardRecovery::NotFound);
+  EXPECT_EQ(relays.asked, 1) << "the person decides now: no more asking on every request";
+
+  auto fresh = laptop.own->StartFreshList(kNow + 200);
+  ASSERT_TRUE(fresh) << fresh.error().message;
+  ASSERT_EQ(fresh->devices.size(), 1u);
+  EXPECT_EQ(fresh->devices[0].peer_id, laptop.PeerId()) << "this device the master";
+  EXPECT_GT(fresh->issued_at, joined.issued_at);
+  EXPECT_EQ(laptop.own->Devices().value().recovery, OwnCardRecovery::None);
+  EXPECT_FALSE(laptop.own->StartFreshList(kNow + 300)) << "refused once a list is kept";
+  ASSERT_TRUE(phone.own->Learn(*fresh, kNow + 400));
+  EXPECT_TRUE(phone.own->SignedOut()) << "what the confirm said: the other devices are signed out";
+}
+
+// Starting over signs out the other devices: a relay that did not answer (the preferred one down) may keep our card,
+// so the person is asked only once every relay asked has answered.
+TEST_F(OwnCardsTest, ARelayThatDidNotAnswerKeepsItGettingNotAsking) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  (void)LinkLaptop(phone, laptop, kNow);
+  laptop.ForgetOwnCardBesideIdentity();
+  laptop.ResetChats();
+  FakeRelays relays;
+  relays.answered = 1;  // the org's directory: none kept
+  relays.unreached = 1; // the preferred relay: down
+  laptop.own->SetOwnCardLookup(relays.Lookup());
+
+  (void)laptop.own->Card(kNow + 100);
+  EXPECT_FALSE(laptop.own->Card(kNow + 110));
+  EXPECT_EQ(laptop.own->Devices().value().recovery, OwnCardRecovery::Getting) << "asked again later, not the person";
+  EXPECT_FALSE(laptop.own->StartFreshList(kNow + 200)) << "no new list while a relay may still keep ours";
 }
 
 TEST_F(OwnCardsTest, AnotherAccountsCardIsNotLearned) {

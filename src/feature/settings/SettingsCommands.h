@@ -61,7 +61,11 @@ struct SettingsCommands {
   std::function<void(const std::string& tip, const std::string& peer_account_id,
                      std::function<void(Roe<void>)> on_done)>
       fetch_cas_public_tip;
-  std::function<Roe<void>(const RegisterIdentityArgs& args)> register_identity;
+  /**
+   * Asynchronous (two HTTP requests off the UI thread): `done` runs on UI with the outcome, once, unless a messaging
+   * teardown drops the work in flight (SettingsProfileActions::OnMessagingTornDown covers that).
+   */
+  std::function<void(const RegisterIdentityArgs& args, std::function<void(Roe<void>)> done)> register_identity;
   std::function<Roe<void>()> rotate_brief_llm_key;
   std::function<Roe<void>(int older_than_days)> clear_undelivered_older_than;
   std::function<void(bool try_upnp)> run_reachability_probe;
@@ -96,6 +100,8 @@ struct SettingsCommands {
   std::function<PinProtectionView()> load_pin_protection;
   /** Change the profile PIN via the app-owned vault (caller ensures unlocked first). */
   std::function<Roe<void>(const SecretText& current_pin, const SecretText& new_pin)> change_pin;
+  /** The PIN switched between the app default and a custom one (`is_default` is the new state). */
+  std::function<void(bool is_default)> on_pin_mode_changed;
   /** The platform keeps the PIN grace window (#21: a secure store); false hides Security's "Ask for PIN again" row. */
   std::function<bool()> grace_supported;
   /**
@@ -127,10 +133,40 @@ struct SettingsCommands {
   std::function<Roe<std::string>()> export_account_copy;
   /** The account's devices (M021 d4): the main device first; whether this one is signed out. */
   std::function<Roe<OwnDevicesView>()> own_devices;
+  /**
+   * Name a device of the account: this one, or — on the main device — another on the list. An empty name is a cancel
+   * (Ok, nothing written). Blocking (the locker table is kept at once; publishing follows in the background).
+   */
+  std::function<Roe<void>(const std::string& peer_id, const std::string& name)> rename_device;
   /** On the main device: take another device off the account (it stops working until linked again). */
   std::function<Roe<void>(const std::string& peer_id)> remove_own_device;
   /** On the main device: make another device the main one (this one can then no longer add or remove devices). */
   std::function<Roe<void>(const std::string& peer_id)> make_main_device;
+  /**
+   * No list of ours found on our relays (OwnListPending::NotFound): this device starts a new one as the main device;
+   * the account's other devices are signed out. A worker.
+   */
+  std::function<Roe<void>()> start_new_device_list;
+  /** Runs `changed` (on any thread) whenever the device list or where getting it back stands changes; null stops. */
+  std::function<void(std::function<void()> changed)> watch_own_devices;
+  /** Me → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
+  std::function<Roe<MyRelaysView>()> my_relays;
+  /**
+   * Adds the relay the user pasted: its relay link (MR008; it must answer, and answer to the link's PeerId: HTTP, a
+   * worker). An error says why (MyRelaysFailureText).
+   */
+  std::function<Roe<void>(const std::string& typed)> add_my_relay;
+  /** Removes a relay of ours (not the preferred one); a worker. */
+  std::function<Roe<void>(const std::string& origin)> remove_my_relay;
+  /** Makes a relay of ours the preferred one; a worker. */
+  std::function<Roe<void>(const std::string& origin)> make_relay_preferred;
+  /** Runs `changed` (on any thread) whenever the list or a relay's state changes; null stops. */
+  std::function<void(std::function<void()> changed)> watch_my_relays;
+  /**
+   * Scans a QR code and hands its text back (on the UI thread; nothing when cancelled): Add relay… takes a relay link
+   * from a QR code (MR008) as it takes a pasted one. Null: no camera scan in this build.
+   */
+  std::function<void(std::function<void(std::string text)> done)> scan_relay_link;
 
   /** Current app Support discovery (enabled + account_id); nullopt when off/unavailable. */
   std::function<std::optional<ClientCompatSupport>()> load_support_discovery;

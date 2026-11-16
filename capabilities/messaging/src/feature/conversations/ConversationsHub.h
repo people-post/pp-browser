@@ -13,9 +13,11 @@
 #include "feature/conversations/AccountLockerWorkflow.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
+#include "domain/registration/RegistrationClient.h"
 #include "lib/people/ProfileIdentityView.h"
 #include "common/Module.h"
 #include "feature/conversations/ContactActionDispatcher.h"
+#include "feature/conversations/ContactRefreshWorkflow.h"
 #include "domain/peers/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
@@ -48,10 +50,14 @@
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "feature/conversations/RelayRegistrationSignal.h"
 #include "lib/net/BlobClient.h"
 #include "lib/net/BlobQuota.h"
 #include "lib/net/HttpBlobClient.h"
 #include "lib/net/OrgBackendClientsImpl.h"
+#include "lib/net/OurRelaysStore.h"
+#include "lib/net/RelayPins.h"
+#include "feature/conversations/MyRelaysWorkflow.h"
 #include "lib/net/SwitchableDirectoryClient.h"
 #include "lib/net/IPushDeviceClient.h"
 #include "feature/conversations/PushBindingGate.h"
@@ -66,6 +72,7 @@
 #include "feature/conversations/HubMeshOwner.h"
 #include "feature/conversations/HubSettings.h"
 #include "lib/delivery/BackendClientSet.h"
+#include "domain/registration/RelayRegistrationsWorkflow.h"
 #include "lib/net/ProfileIconClient.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "lib/pricing/PaymentPromiseStore.h"
@@ -89,12 +96,7 @@ namespace pbr {
 
 class IPeerSessionStore;
 class ProfileSecretsEngine;
-class AccountKeyResolver;
-class ContactCardExchange;
 class ContactProfileRefresh;
-class ContactRefreshWorkflow;
-struct ContactRefreshResult;
-class PeerCards;
 
 /**
  * App-only messaging composition root (also known as ConversationsCore).
@@ -266,13 +268,44 @@ public:
   bool HasDirectory() const { return directory_.Configured(); }
   DirectoryShadowCache& DirectoryShadows();
   PeerDisplayResolver& PeerLabels();
-  IRegistrationClient& Registration();
+  /**
+   * The preferred relay's registration client, shared: a registration in flight keeps the one it started with when a
+   * preferred change replaces it (MR006). Never null (a stand-in that refuses when none is configured). Any thread.
+   */
+  std::shared_ptr<IRegistrationClient> Registration() const;
+  /** The profile's Account ID (empty before the identity reads). Any thread. */
+  std::string OwnAccountId() const;
+  /** Where the identity's registration belongs when a result is stored: the preferred relay now (PersistRenewal). */
+  RegistrationHome PreferredRegistrationHome() const;
   /** register/finish's extras for this account: its current card (MR002 / MR005), when it has one to give. */
   RegistrationPublishOpts RegistrationCard();
-  IBlobClient& Blob();
-  IPushDeviceClient* PushDevices();
+  /** The preferred relay's push-device client (shared, as Registration; none: not configured). Any thread. */
+  std::shared_ptr<IPushDeviceClient> PushDevices() const;
+  /** Our other relays that hold our registration, with their push-device clients (multi-relay R2). */
+  std::vector<std::pair<std::string, std::shared_ptr<IPushDeviceClient>>> OtherRelayPushDevices();
+  /** Our relays' origins, preferred first (multi-relay R2). */
+  std::vector<std::string> OurRelayOrigins() const;
+  /** The message client of our relay at `origin` (shared; none when it is not ours). The app lab's probe. */
+  std::shared_ptr<IRelayClient> OurRelayClient(const std::string& origin) const;
+  /** The profile's relay pins (MR007); none before the stores open and after Shutdown. */
+  std::shared_ptr<RelayPins> RelayIdentityPins() const {
+    std::lock_guard lock(relay_pins_mu_);
+    return relay_pins_;
+  }
+  /** Our account on our other relays (multi-relay R2); none before Initialize and after Shutdown. Any thread. */
+  std::shared_ptr<RelayRegistrationsWorkflow> OtherRelayRegistrations() const;
+  /** My relays changed (a relay answered our registration, the list changed): read them again. Runs on any thread. */
+  void SetOnOurRelaysChanged(std::function<void()> callback);
+  /**
+   * The org's relay (its origins: the relay, the locker home) answered a call `426 client_upgrade_required`: this app
+   * is too old for it (ClientCompatController shows the update screen). Each time; any thread. nullptr: none.
+   */
+  void SetOnOrgRelayRequiresUpgrade(std::function<void()> callback);
+  /** Registers on our other relays that are due, off the caller's thread (after the preferred one, on a timer). */
+  void RegisterOnOtherRelaysSoon();
   PushBindingGate& PushGate() { return push_gate_; }
-  IClientCompatClient* ClientCompat();
+  /** The org's client-compat client (shared, as Registration; none: not configured). Any thread. */
+  std::shared_ptr<IClientCompatClient> ClientCompat() const;
   /** Profile data directory used for stores and client-compat cache. */
   const std::string& ProfileDataDir() const { return data_dir_; }
   /** Last mesh start failure (empty if ok). For Network settings UX. */
@@ -295,15 +328,60 @@ public:
                                       const std::vector<std::string>& saved_copies = {});
   /** The account's devices as this device knows them (M021 d4); the first is the master. */
   Roe<OwnDeviceList> OwnDevices();
+  /** The account's device names as this device has them (locker `device_names`); filter by OwnDevices() to show. */
+  std::vector<DeviceNameEntry> OwnDeviceNames();
+  /**
+   * Name a device of the account: this one, or — on the main device — another on the list; any other asker is
+   * refused. An empty name (after NormalizeDeviceName) is a cancel: Ok, nothing written. Publishes to the locker.
+   */
+  Roe<void> RenameOwnDevice(const std::string& peer_id, const std::string& name);
   /** On the master: take another device off the account (revoke) and tell siblings and contacts. */
   Roe<void> RemoveOwnDevice(const std::string& peer_id);
   /** On the master: hand the role to another device of the account and tell siblings and contacts. */
   Roe<void> MakeMainDevice(const std::string& peer_id);
+  /**
+   * The person chose a new device list (no card of ours was found on our relays, OwnCards::StartFreshList): this
+   * device's card holds only itself, as the master, and goes to our contacts and relays — the account's other devices
+   * are signed out. Blocks: a worker.
+   */
+  Roe<void> StartNewDeviceList();
+  /** Our device list, or where getting it back stands, changed: read OwnDevices again. Runs on any thread. */
+  void SetOnOwnDevicesChanged(std::function<void()> callback);
+  /** Me → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
+  Roe<OurRelaysStatus> OurRelays();
+  /**
+   * Adds the relay the user pasted: its relay link (`https://host#<PeerId>`, MR008; a bare origin, plain http:// or a
+   * host that is not public only with the settings' developer_relays). It must answer and answer to the link's PeerId;
+   * blocks (HTTP): a worker. The error's message is a code.
+   */
+  Roe<void> AddOurRelay(const std::string& typed);
+  /** Removes a relay of ours (not the preferred one); blocks: a worker. */
+  Roe<void> RemoveOurRelay(const std::string& origin);
+  /** Makes a relay of ours the preferred one; blocks: a worker. */
+  Roe<void> MakeOurRelayPreferred(const std::string& origin);
   /** The master gave out a transfer code valid until `until_ms`: a device joining with it is kept (OwnCards). */
   void ExpectDeviceJoin(int64_t until_ms);
   /** The account locker (M023 s3): publish this account's state; fetch a seed's. Null until messaging is built. */
   AccountLockerWorkflow* AccountLocker() { return account_locker_.get(); }
+  /** Publish the account locker (M023) once a burst of changes settles; no-op before messaging or without a seed. */
+  void PublishAccountLockerSoon();
+  /**
+   * Register (or renew) this account: BeginRegistration, RunRegistration, FinishRegistration in a row. Asynchronous
+   * callers split them: Begin and Finish on the UI thread, Run on a worker.
+   */
   Roe<void> RegisterIdentity(const std::string& nickname);
+  /**
+   * UI thread: saves a non-empty `nickname`, reads the addresses to advertise and the account card, and returns what
+   * RunRegistration needs. Refused when not ready (PIN).
+   */
+  Roe<RegistrationJob> BeginRegistration(const std::string& nickname);
+  /** Worker: the registration's two requests; touches neither the hub nor the stored identity. */
+  static Roe<RegistrationResult> RunRegistration(const RegistrationJob& job);
+  /**
+   * UI thread: stores what RunRegistration brought (the registration fields only, refused when the stored account is
+   * not `account_id`), then publishes the account locker and registers on the other relays.
+   */
+  Roe<void> FinishRegistration(const RegistrationResult& result, const std::string& account_id);
   /** Uploads an icon the app prepared (decoded, sized, encoded: PrepareProfileIconFromFile). */
   Roe<void> UploadProfileIcon(const PreparedProfileIcon& icon);
   Roe<void> ClearProfileIcon();
@@ -379,6 +457,10 @@ public:
   AttachmentLimits CurrentAttachmentLimits() const;
   /** Called (on the UI thread) with the level reached (80 / 90) when the server space is filling up. */
   void SetOnBlobSpaceWarning(std::function<void(int percent)> callback);
+  /** Called on the UI thread with what the relay's polls say about this account's registration (B216). */
+  void SetOnRelayRegistrationSignal(std::function<void(RelayRegistrationSignal)> callback);
+  /** The messaging session ended or a new one starts: a registration signal already posted is dropped on the UI thread. */
+  void InvalidateRelayRegistrationSignals();
   AttachmentFetchWorkflow& Attachments();
   /** Our uploaded relay copy of an attachment message, if any (DeleteUploadedAttachmentCopy); a failure is logged. */
   void DeleteUploadedCopy(const ThreadMessage& message);
@@ -389,16 +471,20 @@ public:
   /**
    * B142: when the contact's last directory answer is older than ContactProfileRefresh::kStaleMs, looks it up
    * on a background worker and takes its new nickname and photo. Cheap and silent when fresh. Any thread.
+   * `force` skips the staleness check (a contact just added by QR code, whose relay id is still missing); a
+   * lookup made lately is still not repeated.
    */
-  void RefreshContactProfileIfStale(const std::string& contact_id);
+  void RefreshContactProfileIfStale(const std::string& contact_id, bool force = false);
   /** The same for every contact, one lookup at a time, at most one every half second; fresh ones cost nothing. */
   void RefreshStaleContactProfiles();
   /**
-   * The contact page's Refresh (ContactRefreshWorkflow): its devices, then our directory; the new routes are
+   * The contact page's Refresh (ContactRefreshWorkflow): its devices, then its relays, then ours; the new routes are
    * registered and the photo fetched before `done`, on the UI thread. False (no `done`) when one already runs
    * for that contact or messaging is not up. UI thread.
    */
   bool RefreshContact(const std::string& contact_id, std::function<void(const ContactRefreshResult&)> done);
+  /** The contact page's relay line: its preferred relay and what it answered at the last refresh (multi-relay R3). */
+  ContactRelayView ContactRelay(const Contact& contact);
   void SetOnPeerIconsChanged(std::function<void()> callback);
   /** Rotates the Brief LLM key at the service `llm_base_url` names (the app's: its preset and deployment). */
   Roe<void> RotateBriefLlmKey(const std::string& llm_base_url);
@@ -542,8 +628,18 @@ private:
   AccountSigningKeyLookup AccountSigningKeys() const;
   void InstallOrgBackendClients(const HubSettings& settings);
   void UpdateOrgBackendClients(const HubSettings& settings);
-  /** Our card's relay list: the registration relay in use (OwnCards::SetRelays). */
-  void SetCardRelays();
+  /** The kept cards' readers: the directory's lookup cards kept, a stranger's price read from its card. */
+  void WireCardReaders();
+  void UnwireCardReaders();
+  /**
+   * Our card's relay list: our relays, preferred first, each pinned and in force (MR007; OwnCards::SetRelays). True
+   * when it changed.
+   */
+  bool SetCardRelays();
+  /** Our relays to messaging: the inboxes it polls, the sender, the origins (multi-relay R2), and registration. */
+  void WireOurRelays();
+  /** Where an account's stored card is asked: our relays, preferred first, then our other http directories. */
+  std::vector<std::string> CardDirectories() const;
   void WireRelayAuthSigner();
   Roe<void> StartMesh(const HubSettings& settings);
   void StopMesh();
@@ -591,7 +687,7 @@ private:
   void ScheduleContactIconFetch(const Contact& contact);
   void NotifyPeerIconsChanged();
   /** Blocking (a worker): refreshes one contact; true when a directory lookup was made. */
-  bool RefreshContactProfileNow(const std::string& contact_id);
+  bool RefreshContactProfileNow(const std::string& contact_id, bool force = false);
   void ContinueContactProfileSweep(std::shared_ptr<const std::vector<std::string>> contact_ids, size_t index);
 
   void SyncLanMdnsAdvertisement();
@@ -641,6 +737,124 @@ private:
   /** Renews the grants in time (and issues missing ones) while messaging runs. */
   uint64_t relay_grant_timer_id_ = 0;
   static constexpr int64_t kRelayGrantSweepIntervalMs = 6LL * 60 * 60 * 1000;
+  /**
+   * Our account on our other relays (multi-relay R2); with the identity it signs with. Read with
+   * OtherRelayRegistrations (a queued run, a worker); Shutdown closes it before the identity goes.
+   */
+  std::shared_ptr<RelayRegistrationsWorkflow> relay_registrations_;
+  mutable std::mutex relay_registrations_mu_;
+  /** Takes relay_registrations_ away and closes it (waits for a run or a revoke in progress). */
+  void CloseRelayRegistrations();
+  /** My relays (MR006): the profile's list and each relay's last registration. */
+  std::unique_ptr<OurRelaysStore> our_relays_;
+  /**
+   * The profile's relay pins (multi-relay MR007): who every signed relay call is for. Opened with the stores, before
+   * the clients are built; its hooks are cleared at Shutdown (a client in flight may hold it longer).
+   */
+  /** Read by workers (the My relays ports, the contact page): set and read under relay_pins_mu_. */
+  mutable std::mutex relay_pins_mu_;
+  std::shared_ptr<RelayPins> relay_pins_;
+  /** The relays whose pins stay when the pin store is full: ours and the org's origins (read on any thread). */
+  std::mutex kept_pins_mu_;
+  std::vector<std::string> kept_pins_;
+  /** The org's origins (its relay, its registration URL), under kept_pins_mu_: first use may pin them (MR008). */
+  std::vector<std::string> org_origins_;
+  /** The preferred relay's lost registration (MR007 self-heal): when it is made again. */
+  std::mutex preferred_loss_mu_;
+  RegistrationLossBackoff preferred_loss_;
+  int64_t preferred_heal_due_ms_ = 0;
+  void OpenRelayPins();
+  void CloseRelayPins();
+  /** A pin the store keeps when full: ours and the org's origins (the only ones pinned). Any thread. */
+  bool KeepsPin(const std::string& origin);
+  /**
+   * An origin no address names a PeerId for may be pinned on its first answer (MR008 item 4): a developer build's
+   * relays of ours, and the org's origins in a build or config that names none for them. Any thread.
+   */
+  bool FirstUseAllowed(const std::string& origin);
+  /** The org's `origin` names no PeerId (`setting`) where first use is not allowed: logged as an error (not used). */
+  void NoteOrgRelayWithoutId(const HubSettings& settings, const std::string& origin, const std::string& peer_id,
+                             const char* setting);
+  /**
+   * The identities every relay of ours and the org's origins are expected to answer to (MR008): the org's from the
+   * build or the config (`relay.peer_id`, `registration.peer_id`), ours from the list. Before the card lists them.
+   */
+  void ExpectRelayIdentities(const HubSettings& settings);
+  /**
+   * A pin changed (any thread): our card's relays follow, the card goes out when it changed (once a pinning pass in
+   * progress ends), the page reads again.
+   */
+  void OnRelayPinsChanged();
+  /** CheckRelayIdentitiesSoon passes queued or running (the card waits for them). */
+  std::atomic<int> checking_passes_{0};
+  /**
+   * Checks our relays' and the org's origins' identity answers against their addresses, once per run each, on a
+   * worker (a developer build's bare origin is pinned on first use).
+   */
+  void CheckRelayIdentitiesSoon();
+  /** Initialize's step: the pins, My relays (its list, seeded once) and our other relays' registrations. */
+  void OpenOurRelays(const HubSettings& settings);
+  /** Initialize's step: the contact cards, the profile refresh and the contact page's Refresh, and their hooks. */
+  void OpenContactCards();
+  /** BuildMessagingObjects' steps: what the account locker reads and takes, and My relays' hooks on the orchestrator. */
+  AccountLockerWorkflow::Sources LockerSources();
+  void WireMyRelaysHooks();
+  /** Shutdown's steps: the orchestrator's and the inbox's hooks into the hub go; the DEK consumers are unregistered. */
+  void UnhookMessaging();
+  void UnregisterDekConsumers();
+  /** CheckRelayIdentitiesSoon from any thread (the network back, the app in front): whatever a fetch's backoff. */
+  void RecheckRelayIdentitiesSoon();
+  /** A relay of ours answered `not_registered` / `registration_expired` (any thread): register there again. */
+  void HealRegistrationSoon(const std::string& origin);
+  /**
+   * A relay answered `426 client_upgrade_required` (any thread): the org's tells the app (SetOnOrgRelayRequiresUpgrade);
+   * another relay of ours keeps it on its row (Me → My relays: needs a newer version of the app), blocking nothing.
+   */
+  void OnRelayRequiresUpgrade(const std::string& origin);
+  /** `origin` is one of the org's (the relay, the locker home). Any thread. */
+  bool IsOrgOrigin(const std::string& origin);
+  std::mutex org_upgrade_mu_;
+  std::function<void()> on_org_upgrade_required_;
+  /** The preferred relay's lost registration: made again whatever the auto-renew preference, with a backoff. */
+  void HealPreferredRegistration(int64_t now_ms);
+  /** Our card re-issued with what changed, sent to our contacts and siblings, and to our relays. Blocks (a worker). */
+  void ReissueAndAnnounceCard();
+  /**
+   * BuildMessagingObjects' step: a device without a card of its own gets it back from our relays' directories (our
+   * relays, preferred first, then the org's; a relay not answering to its address is not asked, MR008).
+   */
+  void WireOwnCardRecovery();
+  /** Asks our relays' directories for `account_id`'s stored card (blocks: a worker). */
+  OwnCardAnswers AskOurRelaysForOwnCard(const std::string& account_id) const;
+  /** The network back, the app in front (any thread): a card of ours still to get back is asked for now. */
+  void RetryOwnCardRecoverySoon();
+  void NotifyOwnDevicesChanged();
+  std::mutex own_devices_changed_mu_;
+  std::function<void()> on_own_devices_changed_;
+  std::mutex our_relays_changed_mu_;
+  std::function<void()> on_our_relays_changed_;
+  /** Read with MyRelays (any thread: the page's worker); Shutdown closes it before what its ports touch goes. */
+  std::shared_ptr<MyRelaysWorkflow> my_relays_;
+  mutable std::mutex my_relays_mu_;
+  std::shared_ptr<MyRelaysWorkflow> MyRelays() const;
+  /** Takes my_relays_ away and closes it (waits for a change in progress; its ports stop at shutdown_requested_). */
+  void CloseMyRelays();
+  void NotifyOurRelaysChanged();
+  MyRelaysWorkflow::Ports MyRelaysPorts();
+  /** My relays' identity ports (MR007, MR008): Add's check, Remove's pin, the relays' and the org origin's state. */
+  void WireMyRelaysIdentityPorts(MyRelaysWorkflow::Ports& ports);
+  /** This device is the account's main one (or the account has no card yet). */
+  bool IsMainDevice();
+  /**
+   * Runs `task` on the hub's thread (UI) and waits for it; inline when already there. False when it was not taken
+   * within 10 s, or before the hub shuts down: it then never runs.
+   */
+  bool RunOnHubThread(std::function<void()> task);
+  /** The identity's registration on the preferred relay, as a My relays record (none: not registered there). */
+  std::optional<RelayRegistrationRecord> PreferredRegistrationRecord();
+  /** Checks which other relays are due a registration while messaging runs. */
+  uint64_t relay_registration_timer_id_ = 0;
+  static constexpr int64_t kRelayRegistrationCheckIntervalMs = 60 * 1000;
   /** The stores encrypted at rest (the profile's data key goes to them). */
   std::vector<IDekConsumer*> at_rest_;
   std::string profile_db_path_;
@@ -691,6 +905,17 @@ private:
   std::unordered_set<std::string> icon_fetch_inflight_;
   std::unordered_map<std::string, std::chrono::steady_clock::time_point> icon_fetch_failed_at_;
   std::function<void(int percent)> on_blob_space_warning_;
+  std::mutex relay_registration_mu_;
+  std::function<void(RelayRegistrationSignal)> on_relay_registration_signal_;
+  /** A NotRegistered signal waits on the UI thread: the next poll's is dropped (one per frame, not one per poll). */
+  std::shared_ptr<std::atomic<bool>> relay_not_registered_posted_ = std::make_shared<std::atomic<bool>>(false);
+  /**
+   * The messaging session a posted registration signal belongs to: bumped at every setup and teardown. The signal
+   * carries the value read when it was posted; on the UI thread a stale one is dropped (a new session must not act
+   * on the old one's "not registered").
+   */
+  std::shared_ptr<std::atomic<uint64_t>> relay_registration_session_ = std::make_shared<std::atomic<uint64_t>>(0);
+  void PostRelayRegistrationSignal(RelayRegistrationSignal signal);
   void CheckBlobSpace(bool after_quota_error);
   struct AttachmentSendJob {
     std::string thread_id;
@@ -707,12 +932,14 @@ private:
                            std::function<void(Roe<ThreadMessage>)> on_done,
                            std::function<bool(uint64_t done, uint64_t total)> progress,
                            std::shared_ptr<const std::atomic<bool>> cancelled);
+  /** The preferred relay's blob client now (none: not configured); a send holds its copy until it ends. */
+  std::shared_ptr<IBlobClient> BlobClient() const;
   std::function<bool(uint64_t done, uint64_t total)> LaneAwareProgress(
       std::function<bool(uint64_t done, uint64_t total)> progress);
   void FinishAttachmentSend(const std::shared_ptr<AttachmentSendJob>& job, Roe<ChatAttachmentFields> fields,
                             const std::function<void(Roe<ThreadMessage>)>& finish);
-  IRelayClient* relay_ = nullptr;
-  IPushDeviceClient* push_devices_ = nullptr;
+  /** The preferred relay's (shared: work in flight keeps the client it started with, MR006). */
+  std::shared_ptr<IRelayClient> relay_;
   PushBindingGate push_gate_;
   /** The one directory client everything keeps; its backend follows the configuration (none: not configured). */
   SwitchableDirectoryClient directory_;
@@ -720,9 +947,15 @@ private:
   BackendClientSet clients_{directory_};
   /** The account locker (M023) on the backend's locker client (declared after the clients: goes first). */
   std::unique_ptr<AccountLockerWorkflow> account_locker_;
-  IRegistrationClient* registration_ = nullptr;
-  IBlobClient* blob_ = nullptr;
-  IClientCompatClient* client_compat_ = nullptr;
+  /**
+   * The clients the hub hands to workers, replaced on the hub's thread (UpdateOrgBackendClients): read them with
+   * Registration, PushDevices, ClientCompat and BlobClient (copies, under clients_mu_).
+   */
+  mutable std::mutex clients_mu_;
+  std::shared_ptr<IRegistrationClient> registration_;
+  std::shared_ptr<IPushDeviceClient> push_devices_;
+  std::shared_ptr<IClientCompatClient> client_compat_;
+  std::shared_ptr<IBlobClient> blob_;
   std::unique_ptr<MeshDeliveryOrchestrator> mesh_messaging_;
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;
@@ -789,6 +1022,8 @@ private:
   struct PendingRestore {
     std::vector<AccountStateGroup> groups;
     std::vector<AccountCardFloor> card_floors;
+    /** The grants given to the account (MR005): taken before the announce below, so its sends carry them. */
+    std::vector<AccountStateGrant> grants;
     /** Tell the contacts this device's card (the restored phone is a new device of the account). */
     bool announce = false;
   };
@@ -796,8 +1031,19 @@ private:
   PendingRestore restored_;
   /** What a restore brought back beyond the account: applied now, or once messaging is up. */
   void QueueRestoredState(AccountStateExtras extras);
-  /** Publish the account locker (M023) once a burst of changes settles; no-op before messaging or without a seed. */
-  void PublishAccountLockerSoon();
+  /** Our relays for the account locker, with the issue time of the card that lists them. Any thread. */
+  AccountStateRelays LockerRelays() const;
+  /** A restore: the locker's relays become ours (My relays) before the restored device issues its first card. */
+  void RestoreOurRelays(const AccountStateRelays& relays);
+  /**
+   * The restored grants into the grant store (blocking: each is checked against its grantor's key), then, after a
+   * restore, each contact hears this device's card on the control lane, so its next message opens a session with this
+   * device (carrying its own card) instead of going to the account's earlier device. Both are taken under one lock: a
+   * second run finds neither. Worker.
+   */
+  void ApplyRestoredGrantsThenAnnounce();
+  /** Grants the locker carried (a sync, a restore) into the grant store, each checked (RelayGrantCoordinator). Worker. */
+  void TakeLockerGrants(const std::vector<AccountStateGrant>& grants, bool look_up_keys);
   static constexpr int64_t kLockerPublishDelayMs = 5 * 1000;
   /** How often the locker is synced while running (another device's contact edits arrive this way). */
   static constexpr int64_t kLockerSyncIntervalMs = 10 * 60 * 1000;
@@ -807,11 +1053,6 @@ private:
   void ApplyRestoredCardFloors();
   /** Recreate the groups a restore brought back, then check the members of every group still checking. */
   void ResumeGroupRosterChecks();
-  /**
-   * After a restore: each contact hears this device's card on the control lane, so its next message opens a
-   * session with this device (carrying its own card) instead of going to the account's earlier device.
-   */
-  void AnnounceRestoredDevice();
   /** Our newest card to every contact (the control lane's device_list notice): after a restore, a revoke. */
   void AnnounceOwnDevicesToContacts();
   /** After the list changed here: sync the account locker (it brings the contacts), then announce to them. */

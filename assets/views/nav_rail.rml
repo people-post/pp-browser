@@ -1,5 +1,6 @@
-<!-- Phones (DEV/PLAN-minimal-nav.md A): two words, no icons. Me and Contacts have no button here: an avatar or an
-     invite opens them, and their own back returns. -->
+<!-- Phones: one word per segment, no icons; AI | Chats | Settings. Every segment is the same button and flexes to an
+     equal share of the bar, so another segment is one more button. Contacts has no segment: an invite opens it, and
+     its own back returns. -->
 <div class="shell-nav-rail-inner" data-if="layout_mode == 'compact'">
     <button class="shell-nav-tab shell-nav-tab--text" type="button"
             data-class-shell-nav-tab--active="nav_bar_tab == 'home'"
@@ -17,6 +18,14 @@
         <p class="shell-nav-tab-label muted" data-if="!fonts_ready">…</p>
         <span class="badge-count badge-count--nav badge-count--text"
               data-if="nav_sessions_unread > 0">{{nav_sessions_unread_display}}</span>
+      </div>
+    </button>
+    <button class="shell-nav-tab shell-nav-tab--text" type="button"
+            data-class-shell-nav-tab--active="nav_bar_tab == 'me'"
+            data-event-click="select_nav_tab('me')">
+      <div class="shell-nav-tab-text-wrap">
+        <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:nav.me}}</p>
+        <p class="shell-nav-tab-label muted" data-if="!fonts_ready">…</p>
       </div>
     </button>
 </div>

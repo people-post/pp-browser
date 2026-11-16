@@ -1,8 +1,11 @@
+#include "lib/people/IdentityStore.h"
+#include "foundation/crypto/KemKeyBinding.h"
 #include "lib/storage/SqliteCallSessionStore.h"
 #include "lib/storage/SqliteChatDbLadders.h"
 #include "lib/storage/SqliteChatStoreGate.h"
 #include "lib/storage/SqliteThreadLocalPrefsStore.h"
 #include "lib/storage/SqliteMigrations.h"
+#include "lib/storage/SqlitePeerSessionStore.h"
 #include "lib/storage/SqliteThreadSchema.h"
 #include "lib/storage/SqliteThreadStore.h"
 
@@ -71,6 +74,7 @@ protected:
   }
 
   void TearDown() override {
+    sessions_.reset();
     store_.reset();
     CloseDb();
     std::filesystem::remove_all(data_dir_);
@@ -150,6 +154,75 @@ protected:
     CloseDb();
   }
 
+  /** The profile's session store, unlocked (the chat store must be open: OpenStore). */
+  SqlitePeerSessionStore& Sessions() {
+    sessions_ = std::make_unique<SqlitePeerSessionStore>(ProfileDb(), "profile");
+    EXPECT_TRUE(sessions_->SetDek(TestDek()));
+    return *sessions_;
+  }
+
+  static PeerSessionRecord Session(const std::string& account, const CryptoChannel channel, const uint32_t epoch,
+                                   const std::string& device = {}) {
+    PeerSessionRecord record;
+    record.key = PeerSessionKey{
+        .peer_identity_kind = "account", .peer_identity_value = account, .channel = channel, .peer_device = device};
+    record.session_epoch = epoch;
+    record.master_psk_b64 = kTestPsk;
+    return record;
+  }
+
+  /**
+   * A chat and the sessions a reset tells apart, at today's schema: public ones with a key (an account's and a
+   * device pair's), and what a reset drops — a private session, a public one with only a retired key, one keyed by a
+   * relay's retired id.
+   */
+  void WriteProfileWithSessions() {
+    WriteProfileWithAChat();
+    OpenStore();
+    SqlitePeerSessionStore& sessions = Sessions();
+    ASSERT_TRUE(sessions.Save(Session("account:ann", CryptoChannel::E2ePublic, 7)));
+    ASSERT_TRUE(sessions.Save(Session("account:ann", CryptoChannel::E2ePublic, 3, "QmAnnPhone")));
+    ASSERT_TRUE(sessions.Save(Session("account:bob", CryptoChannel::E2e, 4)));
+    PeerSessionRecord retired_only = Session("account:cat", CryptoChannel::E2ePublic, 2);
+    retired_only.master_psk_b64.reset();
+    retired_only.retired_psks = {RetiredPskEntry{.epoch = 1, .master_psk_b64 = kTestPsk, .retired_at = 1}};
+    ASSERT_TRUE(sessions.Save(retired_only));
+    PeerSessionRecord relay = Session("relay:old", CryptoChannel::E2ePublic, 5);
+    relay.key.peer_identity_kind = "relay_user";
+    ASSERT_TRUE(sessions.Save(relay));
+    ASSERT_EQ(sessions.List().value().size(), 5u);
+    sessions_.reset();
+    CloseStore();
+  }
+
+  void SetProfileBelowTheFloor() {
+    Exec(Db(ProfileDb()), "PRAGMA user_version = " + std::to_string(kSqliteThreadProfileFloorVersion - 1) + ";");
+    CloseDb();
+  }
+
+  /** After the reset: the chats are gone, and the sessions left are `expected` (key → epoch), each to restart. */
+  void ExpectResetKeeping(const std::vector<std::pair<PeerSessionKey, uint32_t>>& expected) {
+    SqliteThreadStore& store = OpenStore();
+    ASSERT_TRUE(store.ListThreads().value().empty()) << "the chats were reset";
+    EXPECT_TRUE(TakeChatStoreResetNotice(data_dir_.string()));
+    auto listed = Sessions().List();
+    ASSERT_TRUE(listed) << listed.error().message;
+    ASSERT_EQ(listed->size(), expected.size());
+    for (const auto& [key, epoch] : expected) {
+      auto loaded = sessions_->Load(key);
+      ASSERT_TRUE(loaded) << loaded.error().message;
+      ASSERT_TRUE(*loaded) << key.peer_identity_value << " " << key.peer_device << " is kept";
+      EXPECT_EQ((*loaded)->session_epoch, epoch) << "its epoch is kept";
+      EXPECT_EQ((*loaded)->master_psk_b64, std::optional<std::string>(kTestPsk)) << "its key reads under the DEK";
+      EXPECT_TRUE((*loaded)->restart_pending) << "the pair starts its next epoch";
+    }
+    sessions_.reset();
+    CloseStore();
+    EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion);
+  }
+
+  static constexpr const char* kTestPsk = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+
   void ExpectTheChatIsKept() {
     SqliteThreadStore& store = OpenStore();
     auto threads = store.ListThreads();
@@ -165,6 +238,7 @@ protected:
 
   std::filesystem::path data_dir_;
   std::unique_ptr<SqliteThreadStore> store_;
+  std::unique_ptr<SqlitePeerSessionStore> sessions_;
   sqlite3* db_ = nullptr;
 };
 
@@ -237,6 +311,84 @@ TEST_F(SqliteMigrationsTest, BelowTheFloorTheChatStoreIsResetAndSaysSoOnce) {
   EXPECT_FALSE(std::filesystem::exists(SqliteThreadDbFile(data_dir_.string(), "thread-kept")));
   EXPECT_TRUE(TakeChatStoreResetNotice(data_dir_.string()));
   EXPECT_FALSE(TakeChatStoreResetNotice(data_dir_.string())) << "once";
+}
+
+// Our own account card lives beside the identity, outside the chat store: a store too old to upgrade goes, it stays
+// (so the next start's card is the account's list, not a fresh one that signs out the other devices).
+TEST_F(SqliteMigrationsTest, BelowTheFloorTheResetLeavesOurCardBesideTheIdentity) {
+  {
+    IdentityStore identity(data_dir_.string(), "profile");
+    ASSERT_TRUE(identity.SetDek(TestDek()));
+    const LocalIdentity me = identity.LoadOrCreate().value();
+    AccountCard card;
+    card.keys = KeyCard{
+        .account_id = me.account_id,
+        .signing_public_key_b64 = me.account_signing_public_key_b64,
+        .kem_public_key_b64 = me.kem_public_key_b64,
+        .kem_binding_signature_b64 =
+            identity.SignBytes(KemBindingSignBytes(me.account_signing_public_key_b64, me.kem_public_key_b64)).value()};
+    card.devices = {AccountCardDevice{.peer_id = me.peer_id,
+                                      .signing_public_key_b64 = me.public_key_b64,
+                                      .kem_public_key_b64 = me.device_kem_public_key_b64}};
+    card.issued_at = 1'761'235'200'000;
+    ASSERT_TRUE(identity.KeepOwnCard(
+        SignAccountCard(card, [&identity](const ByteVector& bytes) { return identity.SignBytes(bytes); }).value()));
+  }
+  WriteProfileWithAChat();
+  Exec(Db(ProfileDb()), "PRAGMA user_version = " + std::to_string(kSqliteThreadProfileFloorVersion - 1) + ";");
+  CloseDb();
+
+  SqliteThreadStore& store = OpenStore();
+  ASSERT_TRUE(store.ListThreads().value().empty()) << "the chats were reset";
+  CloseStore();
+  IdentityStore identity(data_dir_.string(), "profile");
+  ASSERT_TRUE(identity.SetDek(TestDek()));
+  auto kept = identity.OwnCard();
+  ASSERT_TRUE(kept) << kept.error().message;
+  ASSERT_TRUE(*kept) << "our card outlived the reset";
+  EXPECT_EQ((*kept)->issued_at, 1'761'235'200'000);
+}
+
+// A reset below the floor keeps what Me → Storage → Reset chats keeps: the public sessions with a key, each pair to
+// restart in its next epoch — else this device numbers from 1 again in an epoch the peer holds messages of, and the
+// peer drops them (D014, #378). Read from the old file as it is; what a later step drops (relay ids) stays dropped.
+TEST_F(SqliteMigrationsTest, BelowTheFloorTheResetKeepsThePublicSessions) {
+  WriteProfileWithSessions();
+  SetProfileBelowTheFloor();
+
+  const PeerSessionKey account{"account", "account:ann", CryptoChannel::E2ePublic, ""};
+  const PeerSessionKey device{"account", "account:ann", CryptoChannel::E2ePublic, "QmAnnPhone"};
+  ExpectResetKeeping({{account, 7}, {device, 3}});
+  OpenStore();
+  auto seq = Sessions().AllocateSenderSeq(device);
+  ASSERT_TRUE(seq) << seq.error().message;
+  EXPECT_EQ(*seq, 1u) << "the device pair's numbering starts over (in the next epoch, restart_pending)";
+}
+
+// A file from before some of today's session columns: what it has is kept, the rest reads as the store's default.
+TEST_F(SqliteMigrationsTest, BelowTheFloorAnOlderSessionTableStillKeepsItsPublicSessions) {
+  WriteProfileWithSessions();
+  sqlite3* db = Db(ProfileDb());
+  for (const char* column : {"auto_key_session_id", "auto_key_init_pending", "auto_key_peer_heard_ms",
+                             "restart_pending", "key_scope", "thread_kem_pk_b64", "psk_fingerprint"}) {
+    Exec(db, std::string("ALTER TABLE chat_targets DROP COLUMN ") + column + ";");
+  }
+  Exec(db, "DROP TABLE device_sessions;");
+  CloseDb();
+  SetProfileBelowTheFloor();
+
+  ExpectResetKeeping({{PeerSessionKey{"account", "account:ann", CryptoChannel::E2ePublic, ""}, 7}});
+}
+
+TEST_F(SqliteMigrationsTest, BelowTheFloorAFileWithoutSessionTablesResetsCleanly) {
+  WriteProfileWithSessions();
+  sqlite3* db = Db(ProfileDb());
+  Exec(db, "DROP TABLE chat_targets;");
+  Exec(db, "DROP TABLE device_sessions;");
+  CloseDb();
+  SetProfileBelowTheFloor();
+
+  ExpectResetKeeping({});
 }
 
 TEST_F(SqliteMigrationsTest, ANewerDatabaseIsRefusedAndLeftAlone) {
@@ -329,9 +481,9 @@ TEST_F(SqliteMigrationsTest, AProfileDbAt5DropsWhatARelayIdKeys) {
   CloseDb();
 }
 
-// profile.db 6 → 7 (account card version 3): our own kept version 2 card takes the version 3 shape (OwnCards then
-// re-issues it with its device list); anyone else's goes, their keys kept as a key card.
-TEST_F(SqliteMigrationsTest, AProfileDbAt6StepsKeptCardsToVersion3) {
+// profile.db 6 → 7 → 8 (account card versions 3 and 4): our own kept version 2 card takes the version 4 shape
+// (OwnCards then re-issues it with its device list); anyone else's goes, their keys kept as a key card.
+TEST_F(SqliteMigrationsTest, AProfileDbAt6StepsKeptCardsToVersion4) {
   WriteProfileWithAChat();
   sqlite3* db = Db(ProfileDb());
   Exec(db,
@@ -370,7 +522,7 @@ TEST_F(SqliteMigrationsTest, AProfileDbAt6StepsKeptCardsToVersion3) {
                 "'");
   };
   for (const std::string own : {"account:me", "account:sib"}) {
-    EXPECT_EQ(field(own, "$.newest_card.card_version"), "3") << own;
+    EXPECT_EQ(field(own, "$.newest_card.card_version"), "4") << own;
     EXPECT_EQ(field(own, "$.newest_card.relays"), "[]");
     EXPECT_EQ(field(own, "$.newest_card.initiation_floor"), "0");
     EXPECT_EQ(field(own, "$.newest_card.devices[0].peer_id"), "QmA") << "the device list is kept";
@@ -379,6 +531,107 @@ TEST_F(SqliteMigrationsTest, AProfileDbAt6StepsKeptCardsToVersion3) {
   EXPECT_EQ(field("account:ann", "$.newest_card"), "<none>") << "another account's card goes";
   EXPECT_EQ(field("account:ann", "$.kem_binding_signature_b64"), "b") << "its keys stay";
   EXPECT_EQ(text("SELECT record_json FROM peer_cards WHERE account_id = 'account:bad'"), "not json");
+  CloseDb();
+}
+
+// profile.db 7 → 8 (MR007-CARD: account card version 4, each relay `{origin, peer_id}`): our own kept version 3 card
+// takes the version 4 shape without relays and keeps its old signature (OwnCards re-issues it with its device list and
+// our pinned relays); anyone else's goes, their keys kept as a key card (asked for again).
+TEST_F(SqliteMigrationsTest, AProfileDbAt7StepsKeptCardsToVersion4) {
+  WriteProfileWithAChat();
+  sqlite3* db = Db(ProfileDb());
+  Exec(db,
+       "CREATE TABLE IF NOT EXISTS peer_cards (account_id TEXT PRIMARY KEY, record_json TEXT NOT NULL, "
+       "updated_at INTEGER NOT NULL);");
+  const std::string card =
+      R"({"card_version":3,"account_id":"account:x","devices":[{"peer_id":"QmA","signing_public_key_b64":"s",)"
+      R"("kem_public_key_b64":"k"}],"relays":[{"origin":"https://a.example/api/relay"}],"initiation_floor":250,)"
+      R"("issued_at":5,"card_signature_b64":"sig"})";
+  const auto record = [&card](const std::string& account, const std::string& source) {
+    return R"({"account_id":")" + account + R"(","signing_public_key_b64":"s","kem_public_key_b64":"k",)" +
+           R"("kem_binding_signature_b64":"b","issued_at":5,"devices":["QmA"],"source":")" + source +
+           R"(","newest_card":)" + card + "}";
+  };
+  Exec(db, "INSERT INTO peer_cards VALUES ('account:me', '" + record("account:me", "self") +
+               "', 1), ('account:sib', '" + record("account:sib", "sibling") + "', 1), ('account:ann', '" +
+               record("account:ann", "envelope") + "', 1), ('account:bad', 'not json', 1);");
+  Exec(db, "PRAGMA user_version = 7;");
+  CloseDb();
+
+  ASSERT_TRUE(OpenStore().ListThreads()); // opens and migrates
+  CloseStore();
+  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion);
+  db = Db(ProfileDb());
+  const auto text = [&](const std::string& sql) {
+    sqlite3_stmt* stmt = nullptr;
+    EXPECT_EQ(sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr), SQLITE_OK) << sql;
+    std::string out = "<none>";
+    if (sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_type(stmt, 0) != SQLITE_NULL) {
+      out = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    }
+    sqlite3_finalize(stmt);
+    return out;
+  };
+  const auto field = [&](const std::string& account, const std::string& path) {
+    return text("SELECT json_extract(record_json, '" + path + "') FROM peer_cards WHERE account_id = '" + account +
+                "'");
+  };
+  for (const std::string own : {"account:me", "account:sib"}) {
+    EXPECT_EQ(field(own, "$.newest_card.card_version"), "4") << own;
+    EXPECT_EQ(field(own, "$.newest_card.relays"), "[]") << "no PeerId known for the old entries: none";
+    EXPECT_EQ(field(own, "$.newest_card.initiation_floor"), "250") << "the floor is kept";
+    EXPECT_EQ(field(own, "$.newest_card.devices[0].peer_id"), "QmA") << "the device list is kept";
+    EXPECT_EQ(field(own, "$.newest_card.card_signature_b64"), "sig");
+  }
+  EXPECT_EQ(field("account:ann", "$.newest_card"), "<none>") << "another account's card goes";
+  EXPECT_EQ(field("account:ann", "$.kem_binding_signature_b64"), "b") << "its keys stay";
+  EXPECT_EQ(text("SELECT record_json FROM peer_cards WHERE account_id = 'account:bad'"), "not json");
+  CloseDb();
+}
+
+// D1: our own record is told by the profile's Account ID, not its `source` (a card of ours carried back relabels it):
+// ours keeps its device list whatever its source says; another account labelled `sibling` is someone else's.
+TEST_F(SqliteMigrationsTest, AtStep7OurOwnCardIsToldByOurAccountIdNotItsSource) {
+  WriteProfileWithAChat();
+  sqlite3* db = Db(ProfileDb());
+  Exec(db,
+       "CREATE TABLE IF NOT EXISTS peer_cards (account_id TEXT PRIMARY KEY, record_json TEXT NOT NULL, "
+       "updated_at INTEGER NOT NULL);");
+  const std::string card =
+      R"({"card_version":3,"account_id":"account:x","devices":[{"peer_id":"QmA","signing_public_key_b64":"s",)"
+      R"("kem_public_key_b64":"k"},{"peer_id":"QmB","signing_public_key_b64":"s","kem_public_key_b64":"k"}],)"
+      R"("relays":[],"initiation_floor":0,"issued_at":5,"card_signature_b64":"sig"})";
+  const auto record = [&card](const std::string& account, const std::string& source) {
+    return R"({"account_id":")" + account + R"(","signing_public_key_b64":"s","kem_public_key_b64":"k",)" +
+           R"("kem_binding_signature_b64":"b","issued_at":5,"devices":["QmA","QmB"],"source":")" + source +
+           R"(","newest_card":)" + card + "}";
+  };
+  Exec(db, "INSERT INTO peer_cards VALUES ('account:me', '" + record("account:me", "contact_card") +
+               "', 1), ('account:other', '" + record("account:other", "sibling") + "', 1);");
+  Exec(db, "PRAGMA user_version = 7;");
+  CloseDb();
+
+  store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+  store_->SetOwnAccount([]() { return std::string("account:me"); });
+  ASSERT_TRUE(store_->SetDek(TestDek()));
+  ASSERT_TRUE(store_->ListThreads());
+  CloseStore();
+  db = Db(ProfileDb());
+  const auto field = [db](const std::string& account, const std::string& path) {
+    sqlite3_stmt* stmt = nullptr;
+    const std::string sql =
+        "SELECT json_extract(record_json, '" + path + "') FROM peer_cards WHERE account_id = '" + account + "'";
+    EXPECT_EQ(sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr), SQLITE_OK) << sql;
+    std::string out = "<none>";
+    if (sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_type(stmt, 0) != SQLITE_NULL) {
+      out = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    }
+    sqlite3_finalize(stmt);
+    return out;
+  };
+  EXPECT_EQ(field("account:me", "$.newest_card.card_version"), "4") << "ours, though a contact's card relabelled it";
+  EXPECT_EQ(field("account:me", "$.newest_card.devices[1].peer_id"), "QmB") << "its device list kept";
+  EXPECT_EQ(field("account:other", "$.newest_card"), "<none>") << "not ours, whatever its source says";
   CloseDb();
 }
 

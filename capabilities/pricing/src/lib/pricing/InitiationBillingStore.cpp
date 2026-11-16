@@ -56,6 +56,8 @@ Roe<void> InitiationBillingStore::Load() {
     row.floor_minor = row_obj->getIf<int64_t>("floor_minor").value_or(0);
     row.offer_minor = row_obj->getIf<int64_t>("offer_minor").value_or(0);
     row.currency = row_obj->getString("currency").value_or(std::string(kPricingCurrencyId));
+    row.relay_floor_minor = row_obj->getIf<int64_t>("relay_floor_minor"); // additive: none before a relay said one
+    row.relay_floor_card_issued_at = row_obj->getIf<int64_t>("relay_floor_card_issued_at").value_or(0);
     rows_[key] = std::move(row);
   }
   return {};
@@ -69,6 +71,10 @@ Roe<void> InitiationBillingStore::SaveUnlocked() const {
     entry.set("floor_minor", row.floor_minor);
     entry.set("offer_minor", row.offer_minor);
     entry.set("currency", row.currency);
+    if (row.relay_floor_minor) {
+      entry.set("relay_floor_minor", *row.relay_floor_minor);
+      entry.set("relay_floor_card_issued_at", row.relay_floor_card_issued_at);
+    }
     peers.set(peer, entry);
   }
   Object root;
@@ -82,13 +88,31 @@ Roe<void> InitiationBillingStore::Save() const {
   return SaveUnlocked();
 }
 
-InitiationPeerBilling InitiationBillingStore::Get(const std::string& peer_identity) const {
+void InitiationBillingStore::SetCardFloors(CardFloors card_floors) {
   std::lock_guard lock(mutex_);
-  const auto it = rows_.find(peer_identity);
-  if (it == rows_.end()) {
-    return {};
+  card_floors_ = std::move(card_floors);
+}
+
+std::optional<InitiationCardFloor> InitiationBillingStore::CardFloorOf(const std::string& peer_identity) const {
+  CardFloors card_floors;
+  {
+    std::lock_guard lock(mutex_);
+    card_floors = card_floors_;
   }
-  return it->second;
+  return card_floors && !peer_identity.empty() ? card_floors(peer_identity) : std::nullopt; // outside the lock
+}
+
+InitiationPeerBilling InitiationBillingStore::Get(const std::string& peer_identity) const {
+  const std::optional<InitiationCardFloor> card = CardFloorOf(peer_identity);
+  InitiationPeerBilling row;
+  {
+    std::lock_guard lock(mutex_);
+    if (const auto it = rows_.find(peer_identity); it != rows_.end()) {
+      row = it->second;
+    }
+  }
+  row.floor_minor = PeerInitiationFloor(row, card);
+  return row;
 }
 
 Roe<void> InitiationBillingStore::Set(const std::string& peer_identity, InitiationPeerBilling row) {
@@ -105,6 +129,18 @@ Roe<void> InitiationBillingStore::SetFloor(const std::string& peer_identity, int
     row.currency = kPricingCurrencyId;
   }
   return SaveUnlocked();
+}
+
+Roe<bool> InitiationBillingStore::SetRelayFloor(const std::string& peer_identity, const int64_t floor_minor) {
+  const std::optional<InitiationCardFloor> card = CardFloorOf(peer_identity);
+  std::lock_guard lock(mutex_);
+  InitiationPeerBilling& row = rows_[peer_identity];
+  row.relay_floor_minor = floor_minor;
+  row.relay_floor_card_issued_at = card ? card->issued_at : 0;
+  if (auto saved = SaveUnlocked(); !saved) {
+    return saved.error();
+  }
+  return !card || card->floor_minor != floor_minor;
 }
 
 Roe<void> InitiationBillingStore::MarkOffered(const std::string& peer_identity, int64_t offer_minor,
@@ -131,6 +167,13 @@ Roe<void> InitiationBillingStore::MarkClosed(const std::string& peer_identity) {
   row.state = InitiationBillingState::Closed;
   row.offer_minor = 0;
   return SaveUnlocked();
+}
+
+int64_t PeerInitiationFloor(const InitiationPeerBilling& row, const std::optional<InitiationCardFloor>& card) {
+  if (row.relay_floor_minor && (!card || card->issued_at <= row.relay_floor_card_issued_at)) {
+    return *row.relay_floor_minor;
+  }
+  return card ? card->floor_minor : row.floor_minor;
 }
 
 bool InitiationBillingStore::IsOpen(const std::string& peer_identity) const {

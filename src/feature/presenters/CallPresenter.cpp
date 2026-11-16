@@ -11,6 +11,7 @@
 #include "lib/calls/CallMediaAdaptation.h"
 #include "lib/media/IMediaView.h"
 #include "feature/calls/CallUiBackend.h"
+#include "common/Metrics.h"
 #include "lib/pricing/PricingTypes.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
@@ -782,7 +783,9 @@ void CallPresenter::StepMedia(CallUiBackend& backend, const CallScreen& next, co
           backend.SetLocalVideoEnabled(false);
         }
       }
-      const CallMediaFacts facts = ReadMediaFacts(backend, next, now);
+      CallMediaFacts facts = ReadMediaFacts(backend, next, now);
+      TrackPlayoutStuck(facts, next);
+      TrackHoldStuck(facts, next);
       const CallMediaScreen& frame = media_frame_.Step(next, facts);
       if (!frame.pill_key.empty()) {
         CallNotice notice;
@@ -803,6 +806,10 @@ void CallPresenter::StepMedia(CallUiBackend& backend, const CallScreen& next, co
     case CallScreen::Kind::None:
       if (active_call_id_.empty()) {
         media_frame_.Reset();
+        playout_stuck_.Reset();
+        playout_call_id_.clear();
+        EmitHoldStuckEnd(hold_stuck_.Finish(), hold_group_);
+        hold_call_id_.clear();
       }
       return;
   }
@@ -846,6 +853,73 @@ CallMediaFacts CallPresenter::ReadMediaFacts(CallUiBackend& backend, const CallS
   f.reach_path_kind = backend.MediaPathKind();
   f.link_counters = backend.MediaLinkCounters();
   return f;
+}
+
+void CallPresenter::TrackPlayoutStuck(CallMediaFacts& facts, const CallScreen& s) {
+  if (facts.call_id != playout_call_id_) {
+    playout_call_id_ = facts.call_id;
+    playout_stuck_.Reset();
+  }
+  using Status = CallScreen::Status;
+  CallPlayoutStuck::Sample sample;
+  sample.counting = facts.media_chrome_live && facts.media_active && !facts.local_on_hold &&
+                    !(facts.have_peer_row && facts.peer_on_hold) &&
+                    facts.media_status != CallMediaStatus::Reconnecting && !facts.direct_connect_failed &&
+                    !facts.awaiting_sfu_recovery && s.status != Status::Reconnecting &&
+                    s.status != Status::Disconnected && s.status != Status::CouldntConnect;
+  sample.rx_frames = facts.engine.rx_audio_frames;
+  sample.underruns = facts.engine.playout_underruns;
+  sample.jitter_depth_ms = facts.engine.jitter_depth_ms;
+  sample.now_ms = facts.now_ms;
+  const CallPlayoutStuck::Result result = playout_stuck_.Update(sample);
+  facts.playout_stuck = result.stuck;
+  if (result.became_stuck) {
+    static constexpr ShareWord kKinds[] = {"one_to_one", "group"};
+    const int64_t after_s =
+        facts.live_since_ms > 0 ? std::max<int64_t>(0, facts.now_ms - facts.live_since_ms) / 1000 : 0;
+    log().warning << "playout stuck call_id=" << facts.call_id << " group=" << s.group << " after_s=" << after_s;
+    MetricsLine("call.playout_stuck")
+        .Pick("kind", s.group ? "group" : "one_to_one", kKinds)
+        .Add("after_s", after_s)
+        .Emit();
+  }
+}
+
+void CallPresenter::TrackHoldStuck(CallMediaFacts& facts, const CallScreen& s) {
+  if (facts.call_id != hold_call_id_) {
+    EmitHoldStuckEnd(hold_stuck_.Finish(), hold_group_);
+    hold_call_id_ = facts.call_id;
+  }
+  hold_group_ = s.group;
+  using Status = CallScreen::Status;
+  CallHoldStuck::Sample sample;
+  sample.held = facts.local_on_hold;
+  sample.foreground = !callbacks_.app_foreground || callbacks_.app_foreground();
+  sample.reconnecting = facts.media_status == CallMediaStatus::Reconnecting || facts.direct_connect_failed ||
+                        facts.awaiting_sfu_recovery || s.status == Status::Reconnecting ||
+                        s.status == Status::Disconnected || s.status == Status::CouldntConnect;
+  sample.now_ms = facts.now_ms;
+  const CallHoldStuck::Result result = hold_stuck_.Update(sample);
+  facts.hold_stuck = result.stuck;
+  if (result.became_stuck) {
+    log().warning << "hold stuck call_id=" << facts.call_id << " group=" << s.group;
+  }
+  EmitHoldStuckEnd(result, s.group);
+}
+
+void CallPresenter::EmitHoldStuckEnd(const CallHoldStuck::Result& result, const bool group) {
+  if (!result.ended) {
+    return;
+  }
+  static constexpr ShareWord kKinds[] = {"one_to_one", "group"};
+  static constexpr ShareWord kEnds[] = {"recovered", "call_ended"};
+  log().info << "hold stuck over group=" << group << " held_s=" << result.counted_ms / 1000
+             << " end=" << (result.end == CallHoldStuck::End::Recovered ? "recovered" : "call_ended");
+  MetricsLine("call.hold_stuck")
+      .Pick("kind", group ? "group" : "one_to_one", kKinds)
+      .Add("held_s", result.counted_ms / 1000)
+      .Pick("end", result.end == CallHoldStuck::End::Recovered ? "recovered" : "call_ended", kEnds)
+      .Emit();
 }
 
 void CallPresenter::ActOnMedia(CallUiBackend& backend, const CallMediaScreen& frame) {

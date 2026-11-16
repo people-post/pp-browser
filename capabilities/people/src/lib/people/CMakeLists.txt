@@ -4,6 +4,7 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   AccountStateCodec.cpp
   ContactJson.cpp
   ContactIdentity.cpp
+  DirectoryAnswers.cpp
   DirectoryHitRank.cpp
   ContactReachability.cpp
   ContactsStore.cpp

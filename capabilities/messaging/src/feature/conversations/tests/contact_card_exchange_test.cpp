@@ -4,6 +4,7 @@
 #include "common/ValueJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/people/AccountCard.h"
+#include "lib/people/ContactIdentity.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "lib/net/SwitchableDirectoryClient.h"
 
@@ -17,6 +18,9 @@
 
 namespace pbr {
 namespace {
+
+// A QR code's relay is its address: its origin and the PeerId it answers to (MR008).
+constexpr const char kLocatorRelayPeer[] = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
 
 constexpr int64_t kNow = 1'761'235'200'000;
 
@@ -145,6 +149,101 @@ TEST_F(ContactCardExchangeTest, AnInviteWithNoDeviceReachedStillAddsThePerson) {
   EXPECT_FALSE((*result)->keys_known);
   ASSERT_EQ((*result)->contact.remote.endpoints.size(), 1u);
   EXPECT_EQ((*result)->contact.remote.endpoints[0].peer_id, "QmBobPhone");
+}
+
+// Multi-relay R4: a contact added by QR starts with the locator's preferred relay as its relay list, until its card.
+TEST_F(ContactCardExchangeTest, AnInviteWithARelayStartsTheContactsRelayListWithIt) {
+  exchange_->SetCardFetcher([](const std::string&, const std::string&, std::function<void(Roe<PeerCardRecord>)> done) {
+    done(Error("not reached"));
+  });
+  exchange_->SetBlockingPost([](std::function<void()> task) { task(); });
+  exchange_->SetStoredCardFetch(
+      [](const std::string&, const std::string&, bool) -> Roe<std::optional<Object>> { return Error("relay down"); });
+  std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
+  exchange_->AddFromLocator(
+      ContactLocator{.account_id = bob_.account_id,
+                     .devices = {"QmBobPhone"},
+                     .relay = {.origin = "https://relay.example/api/relay", .peer_id = kLocatorRelayPeer}},
+      [&](Roe<ContactCardExchange::LocatorAdded> added) { result = std::move(added); });
+  ASSERT_TRUE(result.has_value());
+  ASSERT_TRUE(*result) << result->error().message;
+  EXPECT_FALSE((*result)->keys_known);
+  auto stored = contacts_->FindByIdentity(bob_.account_id, mesh::ContactIdKind::Account);
+  ASSERT_TRUE(stored && *stored);
+  const ContactRelayList relays = ContactRelays(**stored, std::nullopt);
+  EXPECT_EQ(relays.origins, (std::vector<std::string>{"https://relay.example/api/relay"}));
+  ASSERT_EQ(relays.relays.size(), 1u);
+  EXPECT_EQ(relays.relays[0].peer_id, kLocatorRelayPeer) << "a first send is signed for the locator's PeerId";
+  EXPECT_FALSE(relays.from_card);
+
+  // Its card arrives: the card's list is the contact's from then on.
+  const AccountCard card = SignedCard(bob_, test::Devices({"QmBobPhone"}));
+  ASSERT_TRUE(exchange_->Add(Shared(DumpJson(AccountCardToJson(card))), kNow));
+  auto kept = keys_->Kept(bob_.account_id);
+  ASSERT_TRUE(kept && *kept);
+  EXPECT_TRUE(ContactRelays(**stored, **kept).from_card);
+}
+
+// A QR code naming a relay on this device or a private network: a release build neither keeps nor asks it.
+TEST_F(ContactCardExchangeTest, ALocatorsRelayAtALocalAddressIsLeftOutUnlessADeveloperBuildAllowsIt) {
+  exchange_->SetCardFetcher([](const std::string&, const std::string&, std::function<void(Roe<PeerCardRecord>)> done) {
+    done(Error("not reached"));
+  });
+  exchange_->SetBlockingPost([](std::function<void()> task) { task(); });
+  std::vector<std::string> asked;
+  std::vector<bool> public_only;
+  exchange_->SetStoredCardFetch(
+      [&](const std::string& origin, const std::string&, const bool only_public) -> Roe<std::optional<Object>> {
+        asked.push_back(origin);
+        public_only.push_back(only_public);
+        return std::optional<Object>{};
+      });
+  const auto add = [this](const std::string& relay) {
+    std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
+    exchange_->AddFromLocator(ContactLocator{.account_id = bob_.account_id,
+                                             .devices = {"QmBobPhone"},
+                                             .relay = {.origin = relay, .peer_id = kLocatorRelayPeer}},
+                              [&](Roe<ContactCardExchange::LocatorAdded> added) { result = std::move(added); });
+    EXPECT_TRUE(result.has_value() && *result);
+    auto stored = contacts_->FindByIdentity(bob_.account_id, mesh::ContactIdKind::Account);
+    return stored && *stored ? (*stored)->remote.locator_relay : std::string("missing");
+  };
+  EXPECT_EQ(add("https://192.168.1.5/api/relay"), "") << "the person is added, the relay left out";
+  EXPECT_TRUE(asked.empty()) << "and not asked for the card";
+
+  exchange_->SetLocalRelaysAllowed(true);
+  EXPECT_EQ(add("https://192.168.1.5/api/relay"), "https://192.168.1.5/api/relay");
+  EXPECT_EQ(asked, (std::vector<std::string>{"https://192.168.1.5/api/relay"}));
+  EXPECT_EQ(public_only, (std::vector<bool>{false})) << "the lab's: asked wherever it is";
+
+  exchange_->SetLocalRelaysAllowed(false);
+  EXPECT_EQ(add("https://relay.example/api/relay"), "https://relay.example/api/relay");
+  EXPECT_EQ(public_only, (std::vector<bool>{false, true})) << "a release build asks it over a public address only";
+}
+
+TEST_F(ContactCardExchangeTest, NoDeviceReachedTheLocatorsRelayGivesTheCard) {
+  const AccountCard card = SignedCard(bob_, test::Devices({"QmBobPhone"}));
+  exchange_->SetCardFetcher([](const std::string&, const std::string&, std::function<void(Roe<PeerCardRecord>)> done) {
+    done(Error("not reached"));
+  });
+  exchange_->SetBlockingPost([](std::function<void()> task) { task(); });
+  std::vector<std::string> asked;
+  exchange_->SetStoredCardFetch(
+      [&](const std::string& origin, const std::string& account_id, bool) -> Roe<std::optional<Object>> {
+        asked.push_back(origin);
+        EXPECT_EQ(account_id, bob_.account_id);
+        return std::optional<Object>(AccountCardToJson(card));
+      });
+  std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
+  exchange_->AddFromLocator(
+      ContactLocator{.account_id = bob_.account_id,
+                     .devices = {"QmBobPhone"},
+                     .relay = {.origin = "https://relay.example/api/relay", .peer_id = kLocatorRelayPeer}},
+      [&](Roe<ContactCardExchange::LocatorAdded> added) { result = std::move(added); });
+  ASSERT_TRUE(result.has_value());
+  ASSERT_TRUE(*result) << result->error().message;
+  EXPECT_TRUE((*result)->keys_known) << "the card Bob registered on his relay";
+  EXPECT_EQ(asked, (std::vector<std::string>{"https://relay.example/api/relay"}));
 }
 
 TEST_F(ContactCardExchangeTest, ARefreshAsksTheDevicesEvenWhenACardIsKept) {

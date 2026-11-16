@@ -6,8 +6,23 @@
 namespace pbr {
 namespace {
 
-const char* SendKey(const SendFailure failure) {
+const char* SendKey(const SendFailure failure, const SendAdvice advice) {
   switch (failure) {
+    case SendFailure::RecipientNotOnRelay:
+      switch (advice) {
+        case SendAdvice::UpdateTheirCardAndResend:
+          return "chat.notice.send.recipient_not_found_resend";
+        case SendAdvice::UpdateTheirCardOnly:
+          return "chat.notice.send.recipient_not_found_update";
+        case SendAdvice::None:
+        case SendAdvice::UpdateMyCard:
+          break;
+      }
+      return "chat.notice.send.recipient_not_found";
+    case SendFailure::SenderNotRegistered:
+      // "Update your card first" only where a tap offers it; elsewhere a tap just resends, so only the reason.
+      return advice == SendAdvice::UpdateMyCard ? "chat.notice.send.sender_not_registered"
+                                                : "chat.notice.send.sender_not_registered_reason";
     case SendFailure::MeshOff:
       return "chat.notice.send.mesh_off";
     case SendFailure::NoAddress:
@@ -32,8 +47,6 @@ const char* SendKey(const SendFailure failure) {
       return "chat.notice.send.relay_unreachable";
     case SendFailure::RelayRejected:
       return "chat.notice.send.relay_rejected";
-    case SendFailure::RecipientNotOnRelay:
-      return "chat.notice.send.recipient_not_on_relay";
     case SendFailure::PaymentRequired:
       return "chat.notice.send.payment_required";
     case SendFailure::Unknown:
@@ -56,22 +69,23 @@ std::string ReceiveFailureText(const ReceiveFailure reason, const std::string& p
   return Tr("chat.notice.receive_failed", {{"peer", who}, {"reason", why}});
 }
 
-std::string SendFailureText(const SendFailure failure) {
-  return Tr(SendKey(failure));
+std::string SendFailureText(const SendFailure failure, const SendAdvice advice) {
+  return Tr(SendKey(failure, advice));
 }
 
-std::string SendFailureReasonText(const std::optional<SendFailure>& reason, const SendMarkTap::Refusal refusal) {
+std::string SendFailureReasonText(const std::optional<SendFailure>& reason, const SendMarkTap::Refusal refusal,
+                                  const SendAdvice advice) {
   switch (refusal) {
     case SendMarkTap::Refusal::None:
       break;
     case SendMarkTap::Refusal::NotText:
-      return reason ? SendFailureText(*reason) : Tr("chat.send.not_sent_other");
+      return reason ? SendFailureText(*reason, advice) : Tr("chat.send.not_sent_other");
     case SendMarkTap::Refusal::ThisKind:
       return reason ? Tr("chat.send.reason_then",
-                         {{"reason", SendFailureText(*reason)}, {"then", Tr("chat.send.not_resendable")}})
+                         {{"reason", SendFailureText(*reason, advice)}, {"then", Tr("chat.send.not_resendable")}})
                     : Tr("chat.send.not_resendable");
   }
-  return reason ? SendFailureText(*reason) : Tr("chat.send.not_sent");
+  return reason ? SendFailureText(*reason, advice) : Tr("chat.send.not_sent");
 }
 
 std::string GroupMembersMissedText() {

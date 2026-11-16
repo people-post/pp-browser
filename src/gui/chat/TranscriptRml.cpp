@@ -152,13 +152,16 @@ std::optional<std::string> CallBlockedLine(const ThreadMessage& message) {
 }
 
 /** A local "this message did not go out" line under a message: worded from its payload, in the reader's language. */
-std::optional<std::string> SendFailureLine(const ThreadMessage& message) {
+std::optional<std::string> SendFailureLine(const ThreadMessage& message, const TranscriptFacts& facts) {
   const auto reason = SendFailureRowReason(message);
   if (!reason) {
     return std::nullopt;
   }
   if (*reason == kGroupMembersMissedWire) {
     return GroupMembersMissedText();
+  }
+  if (const auto line = facts.send_failure_line ? facts.send_failure_line(message) : std::nullopt) {
+    return line;
   }
   return SendFailureText(SendFailureFromWire(*reason).value_or(SendFailure::Unknown));
 }
@@ -168,37 +171,7 @@ std::string StoredSystemText(const ThreadMessage& message) {
   return StoredSystemLineText(message.text).value_or(message.text);
 }
 
-/** The words of a call summary row: the duration, or the outcome's word; a group call says so first. */
-std::string CallSummaryRowText(const CallSummaryRow& row) {
-  using Outcome = CallSummaryRow::Outcome;
-  std::string outcome;
-  switch (row.outcome) {
-    case Outcome::Connected:
-      outcome = row.duration;
-      break;
-    case Outcome::NoAnswer:
-      outcome = Tr("call.row.no_answer");
-      break;
-    case Outcome::Missed:
-      outcome = Tr("call.row.missed");
-      break;
-    case Outcome::Cancelled:
-      outcome = Tr("call.row.cancelled");
-      break;
-    case Outcome::Declined:
-      outcome = Tr("call.row.declined");
-      break;
-    case Outcome::DeclinedByPeer:
-      outcome = Tr("call.row.declined_by_peer");
-      break;
-    case Outcome::Failed:
-      outcome = Tr("call.row.failed");
-      break;
-  }
-  return row.group ? Tr("call.row.group") + " · " + outcome : outcome;
-}
-
-/** A call summary: icon + duration / outcome in a small pill on the starter's side (Kenneth 2026-10-23). */
+/** A call summary: state icon + duration / short outcome word in a small pill on the starter's side (Kenneth 2026-10-23). */
 std::string CallRowRml(const CallSummaryRow& row, bool tappable) {
   std::string html = "<div class=\"chat-call-row";
   if (!row.connected) {
@@ -210,10 +183,9 @@ std::string CallRowRml(const CallSummaryRow& row, bool tappable) {
     html += row.video ? "1" : "0";
     html += "')";
   }
-  html += "\"><svg class=\"chat-call-row-icon\" src=\"";
-  html += row.video ? "../icons/video.svg" : "../icons/phone.svg";
-  html += "\"></svg><span class=\"chat-call-row-text\">" + StructuredTextParser::EscapeText(CallSummaryRowText(row)) +
-          "</span></div>";
+  const CallRowLook look = CallRowLookOf(row);
+  html += "\"><svg class=\"chat-call-row-icon\" src=\"../icons/v2/" + look.icon + ".svg\"></svg>";
+  html += "<span class=\"chat-call-row-text\">" + StructuredTextParser::EscapeText(look.text) + "</span></div>";
   return html;
 }
 
@@ -308,7 +280,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   if (PskRotateCodec::IsPskRotateMessage(message) && message.sender_contact_id != kLocalSelfContactId) {
     return SystemLineRml(Tr("chat.psk_rotate_notice"));
   }
-  if (auto failure = SendFailureLine(message)) {
+  if (auto failure = SendFailureLine(message, facts)) {
     return SystemLineRml(*failure);
   }
   return SystemLineRml(StoredSystemText(message));

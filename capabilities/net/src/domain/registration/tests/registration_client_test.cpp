@@ -6,8 +6,11 @@
 #include "lib/people/IdentityStore.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/KemKeyBinding.h"
+#include "foundation/error/AppError.h"
+#include "lib/net/OrgBackendClientsImpl.h"
 
 #include <filesystem>
+#include <optional>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -124,19 +127,44 @@ TEST(RegistrationClientTest, MarkRegistrationExpired) {
   EXPECT_EQ(ClassifyRegistration(identity, util::NowUnixMs()), RegistrationStatus::Expired);
 }
 
-// #328: records the revoke call; everything else is the mock's behaviour.
+// #328: records the revoke call; everything else is the mock's behaviour. The relay holds `held_id` (MR007 item 5): a
+// revoke of another id is refused as registration_mismatch, and a renewal answers the held one.
 class RecordingRegistrationClient : public MockRegistrationClient {
 public:
-  Roe<void> RevokeRegistration(const std::string& account_id, const std::string& signature,
-                               const int64_t timestamp) override {
+  Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
+                                             const std::string& nickname, const SignedRelayCommand& signed_finish,
+                                             const std::string& signature_alg, const std::string& kem_public_key_b64,
+                                             const std::string& kem_binding_signature_b64, const std::string& peer_id,
+                                             const std::vector<std::string>& multiaddrs,
+                                             const RegistrationPublishOpts& publish) override {
+    ++finish_calls;
+    auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
+                                                             signature_alg, kem_public_key_b64,
+                                                             kem_binding_signature_b64, peer_id, multiaddrs, publish);
+    if (result) {
+      result->registration_id = held_id;
+    }
+    return result;
+  }
+  Roe<void> RevokeRegistration(const std::string& account_id, const std::string& registration_id,
+                               const SignedRelayCommand& signed_revoke) override {
     ++revoke_calls;
     last_account_id = account_id;
-    last_signature = signature;
-    last_timestamp = timestamp;
+    revoked_ids.push_back(registration_id);
+    last_audience = signed_revoke.audience;
+    last_signature = signed_revoke.signature;
+    last_timestamp = signed_revoke.timestamp;
+    if (registration_id != held_id) {
+      return AppError::Auth(Err::Auth::ScopeMismatch, "registration_mismatch");
+    }
     return {};
   }
+  std::string held_id = "reg-now";
+  int finish_calls = 0;
   int revoke_calls = 0;
   std::string last_account_id;
+  std::vector<std::string> revoked_ids;
+  std::string last_audience;
   std::string last_signature;
   int64_t last_timestamp = 0;
 };
@@ -189,7 +217,7 @@ TEST_F(RevokeRegistrationTest, AutoRenewReRegistersAtTheCurrentBackendAndRecords
 }
 
 TEST_F(RevokeRegistrationTest, UnregisteredIdentityIsANoOp) {
-  auto result = RevokeRegistrationWithIdentity(client_, *identity_);
+  auto result = RevokeRegistrationWithIdentity(client_, *identity_, "reg-now");
   EXPECT_TRUE(static_cast<bool>(result));
   EXPECT_EQ(client_.revoke_calls, 0);
 }
@@ -200,25 +228,75 @@ TEST_F(RevokeRegistrationTest, RegisteredIdentitySignsAndCallsTheRelay) {
   identity->registered = true;
   ASSERT_TRUE(static_cast<bool>(identity_->Update(*identity)));
 
-  auto result = RevokeRegistrationWithIdentity(client_, *identity_);
+  auto result = RevokeRegistrationWithIdentity(client_, *identity_, "reg-now");
   ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
   EXPECT_EQ(client_.revoke_calls, 1);
   EXPECT_EQ(client_.last_account_id, identity->account_id) << "the relay's row by Account ID (MR001)";
+  EXPECT_EQ(client_.revoked_ids, std::vector<std::string>{"reg-now"}) << "the registration it removes (MR007-SCOPE)";
+  EXPECT_EQ(client_.last_audience, MockRegistrationClient::kAudience) << "signed for that relay (MR007-AUD)";
   EXPECT_FALSE(client_.last_signature.empty());
   EXPECT_GT(client_.last_timestamp, 0);
+  EXPECT_EQ(client_.finish_calls, 0);
   // The identity itself is untouched: the caller wipes it right after.
   auto after = identity_->Get();
   ASSERT_TRUE(static_cast<bool>(after));
   EXPECT_TRUE(after->registered);
 }
 
+// MR007-SCOPE: a stale id changes nothing at the relay (registration_mismatch); the revoke renews — its finish answers
+// the current id — and revokes that one, once.
+TEST_F(RevokeRegistrationTest, AStaleIdRenewsFirstThenRevokesTheCurrentOneOnce) {
+  auto identity = identity_->Get();
+  ASSERT_TRUE(static_cast<bool>(identity));
+  identity->registered = true;
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(*identity)));
+
+  auto result = RevokeRegistrationWithIdentity(client_, *identity_, "reg-before");
+  ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
+  EXPECT_EQ(client_.revoked_ids, (std::vector<std::string>{"reg-before", "reg-now"}));
+  EXPECT_EQ(client_.finish_calls, 1);
+}
+
+TEST_F(RevokeRegistrationTest, NoIdKeptRenewsFirst) {
+  auto identity = identity_->Get();
+  ASSERT_TRUE(static_cast<bool>(identity));
+  identity->registered = true;
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(*identity)));
+
+  ASSERT_TRUE(static_cast<bool>(RevokeRegistrationWithIdentity(client_, *identity_, "")));
+  EXPECT_EQ(client_.revoked_ids, std::vector<std::string>{"reg-now"});
+  EXPECT_EQ(client_.finish_calls, 1);
+}
+
+TEST_F(RevokeRegistrationTest, AMismatchAgainAfterTheRenewalIsTheAnswer) {
+  auto identity = identity_->Get();
+  ASSERT_TRUE(static_cast<bool>(identity));
+  identity->registered = true;
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(*identity)));
+  client_.held_id = ""; // the renewal answers no id: nothing more is tried
+
+  EXPECT_FALSE(static_cast<bool>(RevokeRegistrationWithIdentity(client_, *identity_, "reg-before")));
+  EXPECT_EQ(client_.revoke_calls, 1);
+}
+
+// MR007-AUD: no command is signed for a relay whose identity is not in force.
+TEST_F(RevokeRegistrationTest, NothingIsSignedWithoutAnAudience) {
+  auto identity = identity_->Get();
+  ASSERT_TRUE(static_cast<bool>(identity));
+  identity->registered = true;
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(*identity)));
+  client_.SetAudience(nullptr);
+
+  EXPECT_FALSE(static_cast<bool>(RevokeRegistrationWithIdentity(client_, *identity_, "reg-now")));
+  EXPECT_EQ(client_.revoke_calls, 0);
+}
+
 // Records what register/finish sent; the relay stores the binding when `relay_stores_binding`.
 class BindingRecordingClient : public MockRegistrationClient {
 public:
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
-                                             const std::string& nickname, const std::string& signature,
-                                             int64_t timestamp, const std::string& signature_alg,
-                                             const std::string& kem_public_key_b64,
+                                             const std::string& nickname, const SignedRelayCommand& signed_finish,
+                                             const std::string& signature_alg, const std::string& kem_public_key_b64,
                                              const std::string& kem_binding_signature_b64, const std::string& peer_id,
                                              const std::vector<std::string>& multiaddrs,
                                              const RegistrationPublishOpts& publish) override {
@@ -226,7 +304,8 @@ public:
     last_kem_public_key_b64 = kem_public_key_b64;
     last_binding = kem_binding_signature_b64;
     last_card = publish.account_card;
-    auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signature, timestamp,
+    last_audience = signed_finish.audience;
+    auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
                                                              signature_alg, kem_public_key_b64,
                                                              kem_binding_signature_b64, peer_id, multiaddrs, publish);
     if (result) {
@@ -238,6 +317,7 @@ public:
   int finish_calls = 0;
   std::string last_kem_public_key_b64;
   std::string last_binding;
+  std::string last_audience;
   std::optional<Object> last_card;
 };
 
@@ -279,6 +359,8 @@ TEST_F(KemBindingPublishTest, AnOlderRegistrationPublishesItsBindingOnceEvenWith
   EXPECT_TRUE(VerifyKemBinding(after.account_id, after.account_signing_public_key_b64, after.kem_public_key_b64,
                                client_.last_binding))
       << "register/finish carries the account's own binding";
+  EXPECT_EQ(client_.last_audience, MockRegistrationClient::kAudience) << "and is signed for that relay (MR007-AUD)";
+  EXPECT_EQ(after.registration_id, "mock-registration") << "the identity keeps the registration's id (MR007-SCOPE)";
 
   renewed = MaybeAutoRenewRegistration(client_, *identity_, /*auto_renew_enabled=*/false);
   ASSERT_TRUE(static_cast<bool>(renewed));
@@ -448,6 +530,23 @@ TEST_F(KemBindingPublishTest, ConcurrentRenewalAndGuestKeyWritesKeepBothFields) 
   EXPECT_EQ(*kept, "brf_guest_" + std::to_string(kRounds - 1));
 }
 
+// T2: a renewal made at the relay that was preferred when it began, stored after Make preferred moved the identity to
+// another, is dropped: it never rewinds the identity's registration to the old relay.
+TEST_F(KemBindingPublishTest, PersistRenewalDropsAResultForARelayNoLongerPreferred) {
+  client_.SetBaseUrl("https://a.example/api/relay");
+  auto result = RenewNetworkOnly(client_, *identity_, identity_->Get().value().nickname);
+  ASSERT_TRUE(static_cast<bool>(result));
+  ASSERT_FALSE(result->registered_backend_url.empty());
+  const LocalIdentity before = identity_->Get().value();
+  std::string preferred = "https://b.example/api/relay";
+  const RegistrationHome home = [&preferred]() { return preferred; };
+  EXPECT_FALSE(static_cast<bool>(PersistRenewal(*identity_, *result, before.account_id, home)));
+  ExpectSameRegistrationFields(before, identity_->Get().value());
+  preferred = result->registered_backend_url;
+  EXPECT_TRUE(static_cast<bool>(PersistRenewal(*identity_, *result, before.account_id, home)))
+      << "the relay it was made at is still the preferred one";
+}
+
 // Hardening: a renewal that ran for one account is not stored into another (the profile changed meanwhile).
 TEST_F(KemBindingPublishTest, PersistRenewalRefusesAnotherAccount) {
   auto result = RenewNetworkOnly(client_, *identity_, identity_->Get().value().nickname);
@@ -459,6 +558,297 @@ TEST_F(KemBindingPublishTest, PersistRenewalRefusesAnotherAccount) {
   ExpectSameRegistrationFields(before, identity_->Get().value());
   EXPECT_TRUE(static_cast<bool>(PersistRenewal(*identity_, *result, before.account_id)));
   EXPECT_TRUE(identity_->Get().value().kem_binding_published);
+}
+
+// What the registration sends, as the relay sees it: the asynchronous job must send the same as the one call did.
+class FieldRecordingClient : public MockRegistrationClient {
+public:
+  struct Sent {
+    std::string call; // "start" / "finish"
+    std::string nickname;
+    std::vector<std::string> multiaddrs;
+    std::string peer_id;
+    std::string entity_kind;
+    std::optional<int64_t> card_issued_at;
+    bool operator==(const Sent& other) const {
+      return call == other.call && nickname == other.nickname && multiaddrs == other.multiaddrs &&
+             peer_id == other.peer_id && entity_kind == other.entity_kind && card_issued_at == other.card_issued_at;
+    }
+  };
+  Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
+                                                 const std::string& signature_alg,
+                                                 const std::string& kem_public_key_b64, const std::string& peer_id,
+                                                 const std::vector<std::string>& multiaddrs,
+                                                 const RegistrationPublishOpts& publish) override {
+    sent.push_back(Record("start", nickname, multiaddrs, peer_id, publish));
+    return MockRegistrationClient::StartRegistration(public_key_b64, nickname, signature_alg, kem_public_key_b64,
+                                                     peer_id, multiaddrs, publish);
+  }
+  Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
+                                             const std::string& nickname, const SignedRelayCommand& signed_finish,
+                                             const std::string& signature_alg, const std::string& kem_public_key_b64,
+                                             const std::string& kem_binding_signature_b64, const std::string& peer_id,
+                                             const std::vector<std::string>& multiaddrs,
+                                             const RegistrationPublishOpts& publish) override {
+    sent.push_back(Record("finish", nickname, multiaddrs, peer_id, publish));
+    return MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish, signature_alg,
+                                                      kem_public_key_b64, kem_binding_signature_b64, peer_id,
+                                                      multiaddrs, publish);
+  }
+  std::vector<Sent> sent;
+
+private:
+  static Sent Record(const char* call, const std::string& nickname, const std::vector<std::string>& multiaddrs,
+                     const std::string& peer_id, const RegistrationPublishOpts& publish) {
+    Sent one{call, nickname, multiaddrs, peer_id, publish.entity_kind, std::nullopt};
+    if (publish.account_card) {
+      one.card_issued_at = publish.account_card->getIf<int64_t>("issued_at");
+    }
+    return one;
+  }
+};
+
+// The registration the user asked for runs as a job off the UI thread (DEV/PLAN-register-async.md): what it sends and what
+// it stores are what FinishAndPersistRegistration sent and stored for the same inputs.
+class RegistrationJobTest : public KemBindingPublishTest {
+protected:
+  /** A client on the test's stack, handed to the job as the hub hands its shared one. */
+  static std::shared_ptr<IRegistrationClient> Unowned(IRegistrationClient& client) {
+    return std::shared_ptr<IRegistrationClient>(std::shared_ptr<void>(), &client);
+  }
+  RegistrationPublishOpts Publish() const {
+    Object card;
+    card.set("card_version", int64_t{3});
+    card.set("issued_at", int64_t{1000});
+    return RegistrationPublishOpts{.account_card = card};
+  }
+};
+
+TEST_F(RegistrationJobTest, TheJobSendsAndStoresWhatFinishAndPersistRegistrationDid) {
+  FieldRecordingClient recording;
+  LocalIdentity named = identity_->Get().value();
+  named.nickname = "Nick"; // saved by the UI half first, as BeginRegistration does
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(named)));
+  const std::vector<std::string> addrs{"/ip4/192.0.2.7/tcp/4001", "/ip6/2001:db8::7/tcp/4001"};
+
+  auto one_call = FinishAndPersistRegistration(recording, *identity_, named.nickname, addrs, Publish());
+  ASSERT_TRUE(static_cast<bool>(one_call)) << one_call.error().message;
+  const LocalIdentity stored_by_one_call = identity_->Get().value();
+  ASSERT_EQ(recording.sent.size(), 2u);
+
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(named))); // the same starting point again
+  const RegistrationJob job = MakeRegistrationJob(Unowned(recording), *identity_, named, addrs, Publish());
+  EXPECT_EQ(job.account_id, named.account_id);
+  EXPECT_EQ(job.nickname, "Nick");
+  EXPECT_EQ(job.listen_addrs, addrs);
+  auto result = RunRegistrationJob(job);
+  ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
+  ASSERT_EQ(recording.sent.size(), 4u);
+  EXPECT_EQ(recording.sent[2], recording.sent[0]) << "the same first request";
+  EXPECT_EQ(recording.sent[3], recording.sent[1]) << "the same second request";
+  EXPECT_EQ(recording.sent[1].nickname, "Nick");
+  EXPECT_EQ(recording.sent[1].multiaddrs, addrs);
+  EXPECT_EQ(recording.sent[1].card_issued_at, 1000);
+  ExpectSameRegistrationFields(named, identity_->Get().value()); // the run stored nothing
+
+  auto applied = PersistRenewal(*identity_, *result, job.account_id);
+  ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
+  const LocalIdentity stored_by_job = identity_->Get().value();
+  ExpectSameRegistrationFields(stored_by_one_call, stored_by_job);
+  EXPECT_EQ(stored_by_job.registered_card_issued_at, stored_by_one_call.registered_card_issued_at);
+  EXPECT_EQ(stored_by_job.registered_backend_url, stored_by_one_call.registered_backend_url);
+}
+
+TEST_F(RegistrationJobTest, ARegistrationForAnotherAccountIsNotStored) {
+  FieldRecordingClient recording;
+  const LocalIdentity before = identity_->Get().value();
+  RegistrationJob job = MakeRegistrationJob(Unowned(recording), *identity_, before, {}, {});
+  auto result = RunRegistrationJob(job);
+  ASSERT_TRUE(static_cast<bool>(result));
+  EXPECT_FALSE(static_cast<bool>(PersistRenewal(*identity_, *result, "account:someone-else")));
+  ExpectSameRegistrationFields(before, identity_->Get().value());
+}
+
+// A relay change that replaces the hub's registration client while a job runs leaves the job the client it began with.
+TEST_F(RegistrationJobTest, TheJobHoldsTheClientItBeganWith) {
+  auto client = std::make_shared<FieldRecordingClient>();
+  const std::weak_ptr<FieldRecordingClient> watched = client;
+  const RegistrationJob job = MakeRegistrationJob(client, *identity_, identity_->Get().value(), {}, {});
+  client.reset(); // the hub's copy replaced
+  ASSERT_FALSE(watched.expired()) << "the job keeps it";
+  ASSERT_TRUE(static_cast<bool>(RunRegistrationJob(job)));
+  EXPECT_EQ(watched.lock()->sent.size(), 2u);
+}
+
+TEST_F(RegistrationJobTest, ANetworkFailureComesBackAsAnErrorAndStoresNothing) {
+  class Failing : public MockRegistrationClient {
+  public:
+    Roe<RegistrationStartResult> StartRegistration(const std::string&, const std::string&, const std::string&,
+                                                   const std::string&, const std::string&,
+                                                   const std::vector<std::string>&,
+                                                   const RegistrationPublishOpts&) override {
+      return AppError::Network(Err::Network::Timeout, "timed out");
+    }
+  } failing;
+  const LocalIdentity before = identity_->Get().value();
+  auto result = RunRegistrationJob(MakeRegistrationJob(Unowned(failing), *identity_, before, {}, {}));
+  ASSERT_FALSE(static_cast<bool>(result));
+  EXPECT_EQ(result.error().code, static_cast<int32_t>(Err::Network::Timeout));
+  ExpectSameRegistrationFields(before, identity_->Get().value());
+  RegistrationJob empty;
+  EXPECT_FALSE(static_cast<bool>(RunRegistrationJob(empty)));
+}
+
+// B216: the server's refusal of a registration is told apart from a failure that may pass (the recovery asks the user
+// after a refusal, and only waits after the rest).
+TEST(RegistrationErrorTest, A4xxButTimeoutAndRateLimitIsARefusal) {
+  for (const long status : {400L, 401L, 403L, 404L, 409L, 422L}) {
+    EXPECT_TRUE(IsRegistrationRefused(RegistrationHttpStatusError("finish", status))) << status;
+  }
+  for (const long status : {408L, 429L, 500L, 502L, 503L}) {
+    EXPECT_FALSE(IsRegistrationRefused(RegistrationHttpStatusError("start", status))) << status;
+    EXPECT_EQ(AppError::CategoryOf(RegistrationHttpStatusError("start", status)), ErrorCategory::Network) << status;
+  }
+  EXPECT_EQ(RegistrationHttpStatusError("start", 403).message, "Registration start failed with status 403")
+      << "the log keeps its words";
+  EXPECT_FALSE(IsRegistrationRefused(AppError::Network(Err::Network::Timeout, "timed out")));
+  EXPECT_FALSE(IsRegistrationRefused(AppError::Network(Err::Network::ConnectFailed, "connect failed")));
+  EXPECT_FALSE(IsRegistrationRefused(Error("Registration finish failed with status 403"))) << "untyped: not a refusal";
+}
+
+// Counts both halves of a registration; fails either with `fail_with` when set.
+class CountingRegistrationClient : public MockRegistrationClient {
+public:
+  Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
+                                                 const std::string& signature_alg,
+                                                 const std::string& kem_public_key_b64, const std::string& peer_id,
+                                                 const std::vector<std::string>& multiaddrs,
+                                                 const RegistrationPublishOpts& publish) override {
+    ++start_calls;
+    if (fail_start_with) {
+      return *fail_start_with;
+    }
+    return MockRegistrationClient::StartRegistration(public_key_b64, nickname, signature_alg, kem_public_key_b64,
+                                                     peer_id, multiaddrs, publish);
+  }
+  Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
+                                             const std::string& nickname, const SignedRelayCommand& signed_finish,
+                                             const std::string& signature_alg, const std::string& kem_public_key_b64,
+                                             const std::string& kem_binding_signature_b64, const std::string& peer_id,
+                                             const std::vector<std::string>& multiaddrs,
+                                             const RegistrationPublishOpts& publish) override {
+    ++finish_calls;
+    if (fail_finish_with) {
+      return *fail_finish_with;
+    }
+    return MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish, signature_alg,
+                                                      kem_public_key_b64, kem_binding_signature_b64, peer_id,
+                                                      multiaddrs, publish);
+  }
+  int start_calls = 0;
+  int finish_calls = 0;
+  std::optional<Error> fail_start_with;
+  std::optional<Error> fail_finish_with;
+};
+
+// B216 as it happened: the identity says "registered, not expired" (the old server's answer, binding published), the
+// new server does not know the account. Marking the registration expired (what the app does when the relay answers a
+// poll "Relay user not registered") makes the existing automatic renewal register again: same account, new route.
+class ServerForgotTheAccountTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    dir_ = std::filesystem::temp_directory_path() /
+           ("pp_server_forgot_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    std::filesystem::remove_all(dir_);
+    std::filesystem::create_directories(dir_);
+    identity_ = std::make_unique<IdentityStore>(dir_.string(), "test-profile");
+    ASSERT_TRUE(static_cast<bool>(identity_->SetDek(ByteVector(kDataEncryptionKeySize, 7))));
+    auto created = identity_->LoadOrCreate();
+    ASSERT_TRUE(static_cast<bool>(created)) << created.error().message;
+    LocalIdentity identity = *created;
+    identity.registered = true;
+    identity.registration_expires_at = "2099-01-01T00:00:00.000Z";
+    identity.kem_binding_published = true;
+    ASSERT_TRUE(static_cast<bool>(identity_->Update(identity)));
+  }
+  void TearDown() override {
+    identity_.reset();
+    std::filesystem::remove_all(dir_);
+  }
+  /** What ChatController does on the "not registered" signal: one modify of the expiry, stored. */
+  void MarkExpiredAndStore() {
+    ASSERT_TRUE(static_cast<bool>(identity_->Modify([](LocalIdentity& identity) {
+      MarkRegistrationExpired(identity);
+      return true;
+    })));
+  }
+  std::filesystem::path dir_;
+  std::unique_ptr<IdentityStore> identity_;
+  CountingRegistrationClient client_;
+};
+
+TEST_F(ServerForgotTheAccountTest, NothingIsDueUntilTheRegistrationIsMarkedExpired) {
+  auto before = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/true);
+  ASSERT_TRUE(static_cast<bool>(before)) << before.error().message;
+  EXPECT_FALSE(before->has_value()) << "the stored answer says active: the renewal alone never fixes B216";
+  EXPECT_EQ(client_.start_calls + client_.finish_calls, 0);
+}
+
+TEST_F(ServerForgotTheAccountTest, MarkedExpiredTheAutomaticRenewalRegistersAgainUnderTheSameAccount) {
+  const LocalIdentity before = identity_->Get().value();
+  MarkExpiredAndStore();
+  EXPECT_TRUE(ShouldRenewRegistration(identity_->Get().value())) << "the mark is stored";
+
+  auto renewed = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/true);
+  ASSERT_TRUE(static_cast<bool>(renewed)) << renewed.error().message;
+  ASSERT_TRUE(renewed->has_value());
+  EXPECT_EQ(client_.start_calls, 1);
+  EXPECT_EQ(client_.finish_calls, 1);
+  ASSERT_TRUE(static_cast<bool>(PersistRenewal(*identity_, **renewed, before.account_id)));
+
+  const LocalIdentity after = identity_->Get().value();
+  EXPECT_EQ(after.account_id, before.account_id) << "the same account key: the same Account ID";
+  EXPECT_EQ(after.registered_backend_url, NormalizeRegistrationBackend(client_.BaseUrl())) << "the new server's";
+  EXPECT_TRUE(after.registered);
+  EXPECT_FALSE(ShouldRenewRegistration(after)) << "the new expiry replaces the mark";
+
+  auto again = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/true);
+  ASSERT_TRUE(static_cast<bool>(again));
+  EXPECT_FALSE(again->has_value()) << "a second trigger right after registers nothing";
+  EXPECT_EQ(client_.finish_calls, 1);
+}
+
+TEST_F(ServerForgotTheAccountTest, WithAutoRenewOffNothingIsSent) {
+  MarkExpiredAndStore();
+  auto renewed = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/false);
+  ASSERT_TRUE(static_cast<bool>(renewed)) << renewed.error().message;
+  EXPECT_FALSE(renewed->has_value()) << "auto-renew off: nothing due (the app asks the user)";
+  EXPECT_EQ(client_.start_calls + client_.finish_calls, 0);
+}
+
+TEST_F(ServerForgotTheAccountTest, ARefusedOrTransientRegistrationKeepsItsTypeAndStoresNothing) {
+  MarkExpiredAndStore();
+  const LocalIdentity marked = identity_->Get().value();
+
+  client_.fail_finish_with = RegistrationHttpStatusError("finish", 403);
+  auto refused = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/true);
+  ASSERT_FALSE(static_cast<bool>(refused));
+  EXPECT_TRUE(IsRegistrationRefused(refused.error()));
+
+  client_.fail_finish_with.reset();
+  client_.fail_start_with = RegistrationHttpStatusError("start", 503);
+  auto transient = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/true);
+  ASSERT_FALSE(static_cast<bool>(transient));
+  EXPECT_FALSE(IsRegistrationRefused(transient.error()));
+
+  client_.fail_start_with = AppError::Network(Err::Network::Timeout, "timed out");
+  auto timed_out = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/true);
+  ASSERT_FALSE(static_cast<bool>(timed_out));
+  EXPECT_FALSE(IsRegistrationRefused(timed_out.error()));
+
+  const LocalIdentity after = identity_->Get().value();
+  EXPECT_EQ(after.registration_expires_at, marked.registration_expires_at) << "a failed registration stores nothing";
+  EXPECT_TRUE(ShouldRenewRegistration(after)) << "still marked: the next try renews";
 }
 
 } // namespace

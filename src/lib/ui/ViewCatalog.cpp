@@ -69,6 +69,7 @@ const std::unordered_map<std::string, std::string>& KnownKeys() {
       {"settings_section_privacy", "views/settings_section_privacy.rml"},
       {"settings_section_security", "views/settings_section_security.rml"},
       {"settings_section_devices", "views/settings_section_devices.rml"},
+      {"settings_section_relays", "views/settings_section_relays.rml"},
       {"settings_section_notifications", "views/settings_section_notifications.rml"},
       {"settings_section_appearance", "views/settings_section_appearance.rml"},
       {"settings_section_storage", "views/settings_section_storage.rml"},
@@ -77,6 +78,9 @@ const std::unordered_map<std::string, std::string>& KnownKeys() {
       {"settings_section_tester", "views/settings_section_tester.rml"},
       {"settings_security_pin", "views/settings_security_pin.rml"},
       {"settings_security_transfer", "views/settings_security_transfer.rml"},
+      {"settings_section_advanced_backend", "views/settings_section_advanced_backend.rml"},
+      {"settings_section_advanced_endpoint", "views/settings_section_advanced_endpoint.rml"},
+      {"settings_section_advanced_integrations", "views/settings_section_advanced_integrations.rml"},
       {"ui_perf_test", "views/ui_perf_test.rml"},
   };
   return keys;

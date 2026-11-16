@@ -399,5 +399,44 @@ TEST(OutboxRetryTest, TheControlLaneBacksOffWithinItsWindow) {
   EXPECT_FALSE(ControlRetryAfter(1, 0, AppError::Network(Err::Network::HttpRejected, "400")));
 }
 
+TEST_F(OutboundMessageTest, OnlyShownMessagesCarryAWakeHint) {
+  ThreadMessage message;
+  for (const ChatContentType type :
+       {ChatContentType::Text, ChatContentType::Attachment, ChatContentType::ContactCard, ChatContentType::CryptoTx}) {
+    message.content_type = type;
+    EXPECT_TRUE(RaisesWakePush(message));
+  }
+  message.content_type = ChatContentType::System;
+  EXPECT_TRUE(RaisesWakePush(message)) << "a system line without a control type is shown";
+  for (const char* control : {"call_summary", "group_invite", "relay_grant"}) {
+    message.payload_json = std::string(R"({"control_type":")") + control + R"("})";
+    EXPECT_FALSE(RaisesWakePush(message)) << control;
+  }
+  for (const char* annotation : {"reaction", "reaction_clear", "retract", "edit"}) {
+    message.content_type = ChatContentType::Annotation;
+    message.payload_json = std::string(R"({"annotation_type":")") + annotation + R"("})";
+    EXPECT_FALSE(RaisesWakePush(message)) << annotation;
+  }
+  message.content_type = ChatContentType::Unsupported;
+  EXPECT_FALSE(RaisesWakePush(message));
+
+  ThreadMessage text;
+  text.id = "m";
+  const EnvelopeSender sender{"account:a", "QmA"};
+  EXPECT_EQ(BuildDirectEnvelope(text, sender, ThreadChannel::E2e, "account:b", {}, 1).relay_wake_hint, "m");
+  ThreadMessage reaction = text;
+  reaction.content_type = ChatContentType::Annotation;
+  EXPECT_EQ(BuildDirectEnvelope(reaction, sender, ThreadChannel::E2e, "account:b", {}, 1).relay_wake_hint, "");
+  EXPECT_EQ(BuildGroupMemberEnvelope(reaction, sender, "group-1", "account:b", {}, 1).relay_wake_hint, "");
+}
+
+TEST_F(OutboundMessageTest, ChatEnvelopesAskForNoShortRetention) {
+  ThreadMessage text;
+  text.id = "m";
+  const EnvelopeSender sender{"account:a", "QmA"};
+  EXPECT_EQ(BuildDirectEnvelope(text, sender, ThreadChannel::E2e, "account:b", {}, 1).relay_ttl_s, 0);
+  EXPECT_EQ(BuildGroupMemberEnvelope(text, sender, "group-1", "account:b", {}, 1).relay_ttl_s, 0);
+}
+
 } // namespace
 } // namespace pbr

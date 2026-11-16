@@ -8,6 +8,7 @@
 
 #include <mutex>
 #include <string>
+#include <vector>
 #include "common/PbrCompat.h"
 
 struct sqlite3;
@@ -32,9 +33,20 @@ public:
   Roe<void> Save(const PeerSessionRecord& record) override;
   Roe<uint64_t> AllocateSenderSeq(const PeerSessionKey& key) override;
 
+  /** The device sessions' table on `db` (the account sessions' columns are `chat_targets`', in the profile schema). */
+  static Roe<void> EnsureSchema(sqlite3* db);
+  /**
+   * Every session on `db` as stored — its secrets still sealed — from this build's schema or an older one (a
+   * profile.db below the floor, read before it goes): a column the file lacks reads as its default, a table it
+   * lacks holds none. The seal's AAD names the profile and the field, not the file, so a sealed row written into
+   * another profile.db of the profile (WriteStored) reads there under the same DEK.
+   */
+  static Roe<std::vector<PeerSessionRecord>> ReadStored(sqlite3* db);
+  /** `sealed` (as ReadStored gave it) into `db` at today's schema, as it is. */
+  static Roe<void> WriteStored(sqlite3* db, const PeerSessionRecord& sealed);
+
 private:
   Roe<sqlite3*> OpenDb() const;
-  Roe<void> SaveDeviceSession(sqlite3* db, const PeerSessionRecord& encrypted, const std::string& retired_json);
   Roe<void> RequireDek() const;
   Roe<std::string> EncryptPskB64(const std::string& plaintext_b64) const;
   Roe<std::string> DecryptPskB64(const std::string& ciphertext_b64) const;

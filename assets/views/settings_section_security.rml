@@ -10,6 +10,13 @@
               <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
             </span>
           </button>
+          <button class="group-row settings-phone-only" type="button"
+                  data-if="show_change_pin && security_can_change_pin && !pin_protection_is_default"
+                  data-event-click="remove_pin()">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.remove_pin}}</span></span>
+            </span>
+          </button>
           <div class="group-row group-row--static settings-phone-only" data-if="!show_change_pin">
             <span class="group-row-body">
               <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.protection_title}}</span></span>
@@ -44,7 +51,7 @@
             </span>
           </button>
         </div>
-        <p class="text muted settings-help group-foot" data-if="security_grace_shown">{{i18n:settings.security.grace.help}}</p>
+        <p class="text muted settings-help group-foot" data-if="security_grace_shown">{{i18n:settings.security.grace.caption}}</p>
         <p class="text muted group-foot" data-if="pin_protection_is_default">
           {{i18n:settings.security.default_hint}}
         </p>
@@ -66,6 +73,7 @@
               <button class="group-row" type="button" data-event-click="show_recovery_phrase()">
                 <span class="group-row-body">
                   <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.recovery.show}}</span></span>
+                  <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
                 </span>
               </button>
             </div>

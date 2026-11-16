@@ -42,7 +42,11 @@ ByteVector TestDek() {
 class NoDirectory : public mesh::IDirectoryClient {
 public:
   Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string&) override { return Error("none"); }
-  Roe<mesh::DirectoryHit> LookupByAccount(const std::string&) override { return Error("none"); }
+  Roe<mesh::DirectoryHit> LookupByAccount(const std::string&) override {
+    ++lookups;
+    return Error("none");
+  }
+  int lookups = 0;
 };
 
 class AnyPeerKem final : public IPeerKemKeyResolver {
@@ -325,6 +329,54 @@ TEST_F(RelayGrantCoordinatorTest, AGrantArrivingReleasesWhatItsGrantorsStrangerQ
   EXPECT_EQ(released.size(), 1u) << "a refused grant releases nothing";
 }
 
+// A restored or linked device takes the grants given to the account from its locker (ACCOUNT_LOCKER § State JSON
+// `grants`): each still proves itself against its grantor's key, and once kept it frees what the quota held back.
+TEST_F(RelayGrantCoordinatorTest, AGrantTheLockerCarriedIsKeptOnlyWhenItProvesItselfAndReleasesWhatWasHeld) {
+  std::vector<std::string> released;
+  grants_->SetOnGrantReceived([&released](const std::string& grantor) { released.push_back(grantor); });
+  const test::TestAccount mallory = test::TestAccount::Make();
+  const RelayGrant forged = IssueRelayGrant(bob_.account_id, me_, now_.load(), [&](const std::vector<uint8_t>& bytes) {
+                              return mallory.Sign(bytes);
+                            }).value();
+  const RelayGrant to_carol =
+      IssueRelayGrant(bob_.account_id, "account:carol", now_.load(), [this](const std::vector<uint8_t>& bytes) {
+        return bob_.Sign(bytes);
+      }).value();
+  grants_->TakeFromLocker({forged, to_carol}, true);
+  EXPECT_FALSE(grant_store_.Received(bob_.account_id).value()) << "not Bob's signature, or not for us";
+  EXPECT_TRUE(released.empty());
+
+  const RelayGrant grant = BobsGrant(now_.load());
+  grants_->TakeFromLocker({grant}, true);
+  EXPECT_EQ(grant_store_.Received(bob_.account_id).value(), grant);
+  EXPECT_EQ(grants_->SendHooks().grant_for(bob_.account_id), grant) << "it rides our first send to Bob";
+  EXPECT_EQ(released, std::vector<std::string>{bob_.account_id});
+  EXPECT_EQ(Settled(bob_.account_id), 0) << "no ack: Bob acked it when our other device got it";
+
+  grants_->TakeFromLocker({BobsGrant(now_.load() - kDayMs)}, true);
+  EXPECT_EQ(grant_store_.Received(bob_.account_id).value(), grant) << "an older one does not replace it";
+  EXPECT_EQ(released.size(), 1u);
+  EXPECT_EQ(grants_->ReceivedForLocker().value(), std::vector<RelayGrant>{grant}) << "and the locker gets it back";
+}
+
+// D8: a locker sync (under the locker's lock, every few minutes) checks a grant against kept keys only; a restore,
+// which keeps no key yet, looks its grantor up.
+TEST_F(RelayGrantCoordinatorTest, ALockerSyncChecksGrantsAgainstKeptKeysOnlyARestoreLooksThemUp) {
+  const test::TestAccount carol = test::TestAccount::Make(); // a grantor whose key is not kept
+  const RelayGrant from_carol =
+      IssueRelayGrant(carol.account_id, me_, now_.load(), [&carol](const std::vector<uint8_t>& bytes) {
+        return carol.Sign(bytes);
+      }).value();
+  directory_.lookups = 0;
+  grants_->TakeFromLocker({from_carol}, false);
+  EXPECT_EQ(directory_.lookups, 0) << "a sync asks no one";
+  EXPECT_FALSE(grant_store_.Received(carol.account_id).value());
+  grants_->TakeFromLocker({from_carol}, true);
+  EXPECT_GT(directory_.lookups, 0) << "a restore looks the grantor up";
+  grants_->TakeFromLocker({BobsGrant(now_.load())}, false);
+  EXPECT_TRUE(grant_store_.Received(bob_.account_id).value()) << "a kept grantor's grant is taken at a sync";
+}
+
 TEST_F(RelayGrantCoordinatorTest, ARefusedGrantIsDroppedAndAskedForAgain) {
   Grant(bob_.account_id);
   ASSERT_TRUE(grant_store_.PutReceived(BobsGrant(now_.load())));
@@ -349,6 +401,36 @@ TEST_F(RelayGrantCoordinatorTest, AnUnconfirmedGrantGoesAgainWhenItsGranteeIsHea
   now_ += 2LL * 60 * 60 * 1000;
   grants_->NoteHeardFrom(bob_.account_id);
   EXPECT_EQ(Settled(bob_.account_id), 2) << "confirmed: not sent again";
+}
+
+// A grantee that linked or restored a device: the grant it confirmed reached its devices then, never the new one, so
+// it goes again when its card lists the device; at most once a minute, and not after it ran out or for the blocked.
+TEST_F(RelayGrantCoordinatorTest, AConfirmedGrantGoesAgainWhenItsGranteeHasANewDevice) {
+  Grant(bob_.account_id);
+  ASSERT_TRUE(grant_store_.PutReceived(BobsGrant(now_.load()))); // we hold Bob's: nothing to ask for
+  grants_->EnsureGranted({bob_.account_id});
+  ASSERT_TRUE(SentTo(bob_.account_id, 1));
+  now_ += 2LL * 60 * 60 * 1000;
+  grants_->NoteHeardFrom(bob_.account_id);
+  ASSERT_TRUE(SentTo(bob_.account_id, 2)) << "unconfirmed: sent again a moment ago";
+  const int64_t issued_at = grant_store_.IssuedTo(bob_.account_id).value()->grant.issued_at;
+  ASSERT_TRUE(static_cast<bool>(grants_->OnNotice(
+      relay_grant::Notice{.kind = relay_grant::NoticeKind::Ack, .issued_at = issued_at}, bob_.account_id)));
+
+  grants_->NoteNewDevices(bob_.account_id);
+  EXPECT_TRUE(SentTo(bob_.account_id, 3)) << "the same grant, to the device list Bob's card names now";
+  EXPECT_EQ(grant_store_.IssuedTo(bob_.account_id).value()->grant.issued_at, issued_at) << "not a new grant";
+  grants_->NoteNewDevices(bob_.account_id);
+  EXPECT_EQ(Settled(bob_.account_id), 3) << "a burst of card updates sends it once";
+  now_ += 2LL * 60 * 1000;
+  grants_->NoteNewDevices(bob_.account_id);
+  EXPECT_TRUE(SentTo(bob_.account_id, 4));
+
+  grants_->NoteNewDevices("account:stranger");
+  grants_->NoteNewDevices(me_);
+  now_ += 31 * kDayMs; // ours ran out
+  grants_->NoteNewDevices(bob_.account_id);
+  EXPECT_EQ(Settled(bob_.account_id), 4) << "nothing issued to them, or nothing left to send";
 }
 
 TEST_F(RelayGrantCoordinatorTest, AnAskFromAGrantedPeerIsAnsweredWithAGrant) {

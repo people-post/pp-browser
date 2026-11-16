@@ -58,6 +58,9 @@ Roe<ProfileStores> OpenSqliteProfileStores(const std::string& profile_data_dir, 
   auto peer_sessions = std::make_unique<SqlitePeerSessionStore>(stores.profile_db_path, profile_id);
   auto invite_links = std::make_unique<SqliteGroupInviteLinkStore>(stores.profile_db_path, profile_id);
   stores.at_rest = {threads.get(), peer_sessions.get(), invite_links.get()};
+  stores.set_own_account = [store = threads.get()](std::function<std::string()> own_account) {
+    store->SetOwnAccount(std::move(own_account)); // the hub calls it at once, while it holds the store
+  };
   stores.invite_links = std::move(invite_links);
   stores.threads = std::move(threads);
   stores.peer_sessions = std::move(peer_sessions);

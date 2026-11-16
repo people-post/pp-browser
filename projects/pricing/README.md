@@ -4,7 +4,7 @@ Cross-cutting pricing slice brought forward ahead of payment rails.
 
 | Concern | Purpose | Surface |
 |---------|---------|---------|
-| **Initiation floor** | Anti-abuse for opening chat/call with a peer | Directory / identity; user↔user |
+| **Initiation floor** | Anti-abuse for opening chat/call with a peer | The peer's account card (relay `payment_required` over it) / identity; user↔user — [SERVICE_ENDPOINTS § The stranger's price](../../docs/contracts/SERVICE_ENDPOINTS.md#the-strangers-price) |
 | **Media relay quote** | Regulate hop capacity ecosystem | Ad-hoc mesh quote/accept |
 | **Payment promise receipts** | Signed local promise/outcome before rails | `PaymentPromiseStore` / codec / avoid |
 

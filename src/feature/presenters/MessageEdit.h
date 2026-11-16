@@ -73,6 +73,14 @@ private:
 /** The edit row whose send gives `message` its mark: our edited text's applied edit (its `edited_by`). */
 std::optional<std::string> EditRowIdOf(const ThreadMessage& message);
 
+/**
+ * The edit row a tap on `message`'s red mark sends again: set when the message is an edited one of ours whose own mark
+ * is none (so the mark shown is its edit's). Shared by the tap and the words that tell what a tap does, so they cannot
+ * disagree.
+ */
+std::optional<std::string> EditResentByTap(const ThreadMessage& message, std::optional<int64_t> started_ms,
+                                           int64_t now_ms);
+
 /** The mark an edited message shows for its edit `edit_row` (a clock while it is being sent, red when it failed). */
 SendMark EditSendMark(const ThreadMessage& edit_row, std::optional<int64_t> started_ms, int64_t now_ms);
 

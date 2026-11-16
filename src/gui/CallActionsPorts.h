@@ -21,6 +21,11 @@ struct CallActionsPorts {
    */
   std::function<bool(const std::string& thread_id, bool want_video)> start_call;
   std::function<void()> refresh_pending_ring;
+  /**
+   * This device can place a call to a person now: messaging and the mesh are ready (the chat header's call button
+   * shows on the same condition). The contact page and list rows read it too.
+   */
+  std::function<bool()> peer_calls_ready;
   /** Platform can encode/send video for a call (gates the "Video call" menu item). */
   std::function<bool()> video_call_available;
   /** A group call goes on in this chat that this device may join (the call button reads "Join"). */

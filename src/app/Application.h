@@ -121,6 +121,8 @@ private:
   /** While in the foreground (the app may be killed without a background event): every half window, 1–5 minutes. */
   void StartGraceTimer();
   void StopGraceTimer();
+  /** The PIN switched between the app default and a custom one (settings change, first "Just continue"). */
+  void OnPinModeChanged(bool is_default);
   /** Both pieces deleted, the timer stopped (the engine's ForgetGrace cannot stop the app's timer). */
   void ForgetGrace();
   /** Gives secrets_ its face / fingerprint unlock entry (at-rest A014), beside AttachGrace. */

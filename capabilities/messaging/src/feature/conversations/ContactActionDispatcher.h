@@ -34,7 +34,7 @@ public:
 
   /** `directory` (may be null: every lookup then fails) serves the account lookups; it outlives this. */
   ContactActionDispatcher(InboxController& inbox, ContactsStore& contacts, IdentityStore& identity, IThreadStore& store,
-                          GroupMembershipWorkflow* groups, IRegistrationClient* registration,
+                          GroupMembershipWorkflow* groups, std::shared_ptr<IRegistrationClient> registration,
                           MeshDeliveryOrchestrator* mesh_messaging = nullptr,
                           mesh::IDirectoryClient* directory = nullptr);
 
@@ -46,7 +46,8 @@ public:
    * result, unless this dispatcher is gone by then.
    */
   void DispatchAsync(const std::string& payload_json, std::function<void(DispatchResult)> done);
-  void SetRegistrationClient(IRegistrationClient* registration);
+  /** The preferred relay's, shared (a registration in flight keeps its own); any thread. */
+  void SetRegistrationClient(std::shared_ptr<IRegistrationClient> registration);
   void SetGroupMembership(GroupMembershipWorkflow* groups);
   void SetOnActionMessage(std::function<void(const ActionNotice& notice)> callback);
 
@@ -59,7 +60,9 @@ private:
   IdentityStore& identity_;
   IThreadStore& store_;
   GroupMembershipWorkflow* groups_ = nullptr;
-  IRegistrationClient* registration_ = nullptr;
+  std::shared_ptr<IRegistrationClient> RegistrationClient() const;
+  mutable std::mutex registration_mu_;
+  std::shared_ptr<IRegistrationClient> registration_;
   MeshDeliveryOrchestrator* mesh_messaging_ = nullptr;
   mesh::IDirectoryClient* directory_ = nullptr;
   std::function<void(const ActionNotice&)> on_action_message_;

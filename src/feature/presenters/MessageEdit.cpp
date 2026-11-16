@@ -68,6 +68,15 @@ std::optional<std::string> EditRowIdOf(const ThreadMessage& message) {
   return mark ? std::optional<std::string>(mark->edited_by) : std::nullopt;
 }
 
+std::optional<std::string> EditResentByTap(const ThreadMessage& message, const std::optional<int64_t> started_ms,
+                                           const int64_t now_ms) {
+  std::optional<std::string> edit_id = EditRowIdOf(message);
+  if (edit_id && MarkOf(message, started_ms, now_ms) == SendMark::None) {
+    return edit_id;
+  }
+  return std::nullopt;
+}
+
 namespace {
 
 /** The edit row read as the message it changes, so the message rules for marks apply to it. */

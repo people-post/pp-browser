@@ -46,6 +46,9 @@ void AccountKeyResolver::LoadKeptCards() {
 
 Roe<PeerCardRecord> AccountKeyResolver::AddAccountCard(const AccountCard& card, int64_t now_ms,
                                                        const std::string& source) {
+  if (auto own = CheckNotOwn(card.keys.account_id, source); !own) {
+    return own.error();
+  }
   auto kept = cards_.AddAccountCard(card, now_ms, source);
   if (!kept) {
     return kept.error();
@@ -54,7 +57,21 @@ Roe<PeerCardRecord> AccountKeyResolver::AddAccountCard(const AccountCard& card, 
   return kept;
 }
 
+Roe<void> AccountKeyResolver::CheckNotOwn(const std::string& account_id, const std::string& source) const {
+  // Our own devices', and our card as OwnCards got it back from our relays (checked there against our account keys).
+  if (source == "self" || source == "sibling" || source == kOwnCardRecoveredSource || !own_account_) {
+    return {};
+  }
+  if (const std::string own = own_account_(); !own.empty() && own == account_id) {
+    return Error("account card: our own account's card is kept from our own devices only");
+  }
+  return {};
+}
+
 Roe<PeerCardRecord> AccountKeyResolver::AddKeyCard(const KeyCard& card, const std::string& source) {
+  if (auto own = CheckNotOwn(card.account_id, source); !own) {
+    return own.error();
+  }
   auto kept = cards_.AddKeyCard(card, source);
   if (!kept) {
     return kept.error();

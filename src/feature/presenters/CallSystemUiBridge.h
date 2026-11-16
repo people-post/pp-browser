@@ -14,7 +14,7 @@
 namespace pbr {
 
 /**
- * Keeps the phone's own call screen (ICallSystemUi: Android's incoming-call notification) in step with CallPresenter's screen, and turns what the user does there into the presenter's
+ * Keeps the phone's own call screen (ICallSystemUi: CallKit on an iPhone with the default PIN, Android's incoming-call notification) in step with CallPresenter's screen, and turns what the user does there into the presenter's
  * buttons (P014).
  *
  * - A ring goes to the system screen when the user cannot see the app (not in the foreground, the screen dark, the
@@ -25,6 +25,8 @@ namespace pbr {
  *   ringtone first, then the notification goes (never a decline). If the user leaves the app while it still rings, it
  *   goes to the system screen again — without raising the app this time (only a call's first notification does).
  *   DEV/PLAN-android-incoming-call-screen.md.
+ * - Answered there, the system owns the call's audio session (CallKit activates it): audio_managed tells
+ *   AudioSession so until the call leaves the system screen.
  * - Answered there, the call stays there until it ends; answered in the app, the system screen lets
  *   it go (the app's own call screen shows it).
  * - Answered or declined on the system screen before the ring was known (the push's call; the app
@@ -45,6 +47,7 @@ public:
     std::function<void(const std::string& call_id, bool voice_only)> accept;
     std::function<void()> decline;
     std::function<void()> leave;
+    std::function<void()> toggle_mute;
     std::function<std::string(const std::string& identity)> display_name;
     /** Unix ms (tests set it). */
     std::function<int64_t()> now_ms;
@@ -57,6 +60,10 @@ public:
     std::function<std::optional<DeviceScreenState>()> screen_state;
     /** PP's PIN gate is up. Unset: never. */
     std::function<bool()> pin_locked;
+    /** The system screen owns the audio session of the call answered there (true) or no longer does (false). */
+    std::function<void(bool managed)> audio_managed;
+    /** The system activated / deactivated that session. */
+    std::function<void(bool active)> audio_activated;
   };
   static constexpr int64_t kPendingChoiceMs = 60'000;
   static constexpr int64_t kPendingMaxMs = 180'000;
@@ -101,6 +108,8 @@ public:
   // ICallSystemUi::Callbacks (public for tests).
   void OnAnswer(const std::string& call_id);
   void OnEnd(const std::string& call_id);
+  void OnSetMuted(const std::string& call_id, bool muted);
+  void OnAudioSession(bool active);
   void OnPendingGone();
 
 private:
@@ -113,6 +122,7 @@ private:
   void ClearChoice();
   /** Declines the ring: the user declined its call on the system screen before it showed. */
   void ApplyDecline();
+  void SetAudioManaged(bool managed);
   /**
    * A ring not seen before: the system screen's availability is asked again (the user may have turned call
    * notifications off since); the frames in between read what the platform keeps.

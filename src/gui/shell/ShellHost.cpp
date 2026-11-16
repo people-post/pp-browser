@@ -87,9 +87,12 @@ constexpr int kPageSlideMs = 300;
 constexpr int64_t kSlowSyncLayoutMs = 30; // two 60 Hz frames
 /** Fallback emoji panel height when the OSK has never been shown this session. */
 constexpr int kDefaultEmojiKeyboardPanelDp = 280;
-/** The AI drawer's "you" row above the home indicator (.ai-drawer-me: min-height, bottom padding). */
-constexpr float kAiDrawerMeHeightDp = 76.f;
-constexpr float kAiDrawerMePaddingDp = 8.f;
+/** The AI drawer's bottom strip above the home indicator (.ai-drawer-strip / .ai-drawer-count height in components.rcss). */
+constexpr float kAiDrawerStripDp = 40.f;
+
+/** System back on the Settings home with no chat thread under it: true goes to the chat page; false leaves it to the
+ *  platform (the app exits, as on the AI and chat root pages). Awaiting the owner's decision: flip this one line. */
+constexpr bool kSystemBackLeavesSettingsHome = true;
 
 } // namespace
 
@@ -285,6 +288,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_reconnect_ok", &host.state_.call_in_progress.reconnect_ok);
     ctor.Bind("call_in_progress_reconnect_fading", &host.state_.call_in_progress.reconnect_fading);
     ctor.Bind("call_in_progress_reconnect_dim", &host.state_.call_in_progress.reconnect_dim);
+    ctor.Bind("call_in_progress_subtitle_warning", &host.state_.call_in_progress.subtitle_warning);
     if (auto roster_handle = ctor.RegisterStruct<CallRosterParticipantState>()) {
       roster_handle.RegisterMember("name", &CallRosterParticipantState::name);
       roster_handle.RegisterMember("stream_id", &CallRosterParticipantState::stream_id);
@@ -345,7 +349,6 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
                              RequestDismiss(DismissStyle::Instant, DismissTarget::CompactChatOverlay);
                            }));
     ctor.BindEventCallback("hidden_tab_back", DataEvent<>([this]() { HiddenTabBack(); }));
-    ctor.BindEventCallback("open_settings_from_avatar", DataEvent<>([this]() { OpenSettingsFromAvatar(); }));
     ctor.BindEventCallback("open_ai_drawer", DataEvent<>([this]() { OpenAiDrawer(); }));
     ctor.BindEventCallback("close_ai_drawer", DataEvent<>([this]() { CloseAiDrawer(); }));
     ctor.BindEventCallback("open_scan_qr", DataEvent<>([this]() {
@@ -645,7 +648,7 @@ void ShellHost::SelectNavTab(NavTab tab) {
   state_.nav_tab = tab;
   ShellLayout::SyncNavTabString(state_);
   // The tab bar highlights the tab a hidden tab's page (Settings) was entered from.
-  state_.nav_bar_tab_str = ShellLayout::NavTabString(ShellLayout::IsHiddenTabOnCompact(tab) ? tab_before_hidden_ : tab);
+  state_.nav_bar_tab_str = ShellLayout::NavTabString(tab == NavTab::Contacts ? tab_before_hidden_ : tab);
   DataModelHost::Instance().Dirty("window", "nav_bar_tab");
   if (tab_changed && on_nav_tab_changed_) {
     on_nav_tab_changed_(tab);
@@ -670,11 +673,8 @@ void ShellHost::HiddenTabBack() {
   if (!ShellLayout::HiddenTabShown(state_)) {
     return;
   }
-  SelectNavTab(tab_before_hidden_);
-}
-
-void ShellHost::OpenSettingsFromAvatar() {
-  SelectNavTab(NavTab::Me);
+  // Settings with no chat under it is a root page of the bar: its system back lands on the chat page.
+  SelectNavTab(ShellLayout::HiddenTabHasBack(state_) ? tab_before_hidden_ : NavTab::Sessions);
 }
 
 void ShellHost::OpenAiDrawer() {
@@ -818,7 +818,12 @@ bool ShellHost::HomeRootShown() const {
 }
 
 bool ShellHost::HiddenTabRootShown() const {
-  return ShellLayout::HiddenTabShown(state_) && local_back_stack_.empty() &&
+  return ShellLayout::HiddenTabHasBack(state_) && local_back_stack_.empty() &&
+         ShellInterruption::Top(state_) == InterruptionKind::None;
+}
+
+bool ShellHost::SettingsHomeRootShown() const {
+  return ShellLayout::HiddenTabShown(state_) && !ShellLayout::HiddenTabHasBack(state_) && local_back_stack_.empty() &&
          ShellInterruption::Top(state_) == InterruptionKind::None;
 }
 
@@ -1061,7 +1066,10 @@ DismissTarget ShellHost::ResolveDismissTarget() const {
       return DismissTarget::CompactChatOverlay;
     case InterruptionKind::None:
       // A hidden tab's root page (phone Me / Contacts) goes back to the tab it came from.
-      return HiddenTabRootShown() ? DismissTarget::HiddenTab : DismissTarget::None;
+      if (HiddenTabRootShown()) {
+        return DismissTarget::HiddenTab;
+      }
+      return kSystemBackLeavesSettingsHome && SettingsHomeRootShown() ? DismissTarget::HiddenTab : DismissTarget::None;
     case InterruptionKind::Dialog:
     case InterruptionKind::PinGate:
     case InterruptionKind::CallRing:
@@ -1120,6 +1128,11 @@ void ShellHost::PlayPageEnter(const char* element_id) {
 }
 
 void ShellHost::BeginAnimatedDismiss(DismissTarget target) {
+  if (target == DismissTarget::HiddenTab && !ShellLayout::HiddenTabHasBack(state_)) {
+    // Settings home as a root page: nothing is under it to slide away from.
+    CommitDismiss(target);
+    return;
+  }
   int delay_ms = 220;
   const bool gesture_started = std::exchange(slide_out_started_, false);
   if (ui::Element* page = PageElementFor(target)) {
@@ -1483,6 +1496,7 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_active");
   DataModelHost::Instance().Dirty("window", "call_in_progress_title");
   DataModelHost::Instance().Dirty("window", "call_in_progress_subtitle");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_subtitle_warning");
   DataModelHost::Instance().Dirty("window", "call_in_progress_on_hold");
   DataModelHost::Instance().Dirty("window", "call_in_progress_status_hint");
   for (const char* name : kCallLevelVariables) { // the same list LevelsOnly dirties
@@ -1559,7 +1573,8 @@ void ShellHost::DirtyCallChrome() {
                            "call_in_progress_reconnect_text",
                            "call_in_progress_reconnect_ok",
                            "call_in_progress_reconnect_fading",
-                           "call_in_progress_reconnect_dim"}) {
+                           "call_in_progress_reconnect_dim",
+                           "call_in_progress_subtitle_warning"}) {
     DataModelHost::Instance().Dirty("window", name);
   }
 }
@@ -1786,6 +1801,10 @@ void ShellHost::SetOnLayoutSynced(std::function<void()> callback) {
 
 void ShellHost::SetOnSessionSwipeAction(SessionSwipeGesture::ActionCallback callback) {
   on_session_swipe_action_ = std::move(callback);
+}
+
+void ShellHost::SetOnNewChatSwipeAction(SessionSwipeGesture::NamedActionCallback callback) {
+  on_new_chat_swipe_action_ = std::move(callback);
 }
 
 void ShellHost::SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp) {
@@ -2037,12 +2056,13 @@ void ShellHost::ApplySafeAreaLayout() {
          bottom_surface == CompactBottomSurface::Page ? strip_dp
          : ShellLayout::SettingsTabBarShown(state_)   ? layout.content_padding_bottom_dp
                                                       : 0.f);
-  // The AI drawer reaches the screen bottom over the tab bar. Its frosted "you" row runs down to the screen bottom too
-  // (one bar, Kenneth 2026-11-07), its content above the home indicator; the list's end spacer keeps the last row
-  // clear of the whole bar (the engine leaves a scroller's bottom padding out of its scroll height).
+  // The AI drawer reaches the screen bottom over the tab bar. Its bottom strip is kAiDrawerStripDp plus the home
+  // indicator; the count text sits in the 40dp above the indicator; the list's end spacer is as tall as the strip so
+  // the last row scrolls clear of it (the engine leaves a scroller's bottom padding out of its scroll height).
   set_dp(doc->GetElementById("shell-ai-drawer-mount"), "padding-bottom", 0.f);
-  set_dp(doc->GetElementById("ai-drawer-me"), "padding-bottom", kAiDrawerMePaddingDp + strip_dp);
-  set_dp(doc->GetElementById("ai-drawer-list-end"), "height", kAiDrawerMeHeightDp + strip_dp);
+  set_dp(doc->GetElementById("ai-drawer-list-end"), "height", strip_dp + kAiDrawerStripDp);
+  set_dp(doc->GetElementById("ai-drawer-strip"), "height", strip_dp + kAiDrawerStripDp);
+  set_dp(doc->GetElementById("ai-drawer-count"), "bottom", strip_dp);
   // Page sheets reach the screen bottom: their content clears the home indicator (not the keyboard: the body
   // already shrinks above it).
   // A sheet shows full height while the keyboard is up, and its own stop again once it is down.
@@ -2428,6 +2448,7 @@ void ShellHost::MountComposer() {
 }
 
 void ShellHost::DetachDismissGestures() {
+  new_chat_swipe_.Detach(); // the New chat page's own swipe; the Chats list's one is not touched
   swipe_back_gesture_.Detach();
   page_sheet_gesture_.Detach();
   gesture_axis_lock_.Unlock();
@@ -2445,6 +2466,8 @@ void ShellHost::AttachSwipeBackGesture() {
   // Chat overlay keeps the 28dp edge strip (horizontal swipes on messages are reserved for reply-quote);
   // the settings detail and transient pages accept a right-swipe from anywhere (vertical drags still scroll).
   options.require_edge = true;
+  // Settings is made of button rows: its edge strip starts the swipe even where a row is under the finger.
+  options.edge_over_buttons = state_.nav_tab == NavTab::Me;
   const auto slide_out = [this](DismissTarget target) {
     slide_out_started_ = true; // the released swipe's transition is the slide-out
     RequestDismiss(DismissStyle::Animated, target);
@@ -2470,6 +2493,17 @@ void ShellHost::AttachSwipeBackGesture() {
       };
       page_sheet_gesture_.Attach(
           sheet, context_, [slide_out]() { slide_out(DismissTarget::OverlayLayer); }, std::move(sheet_options));
+    }
+    return;
+  }
+
+  if (state_.layout_mode == LayoutMode::Compact && !state_.overlay_stack.empty() &&
+      state_.overlay_stack.back().full_screen && state_.overlay_stack.back().key == "avatar_view") {
+    // The photo viewer (a picture opened large from a profile or a contact page): an edge swipe closes it.
+    const std::string viewer_id = "shell-full-screen-" + std::to_string(state_.overlay_stack.back().id);
+    if (ui::Element* viewer = doc->GetElementById(viewer_id.c_str())) {
+      swipe_back_gesture_.Attach(viewer, context_, std::move(options),
+                                 [slide_out]() { slide_out(DismissTarget::OverlayLayer); });
     }
     return;
   }
@@ -2506,6 +2540,17 @@ void ShellHost::AttachSwipeBackGesture() {
   }
 
   if (!state_.transient_stack.empty()) {
+    if (state_.layout_mode == LayoutMode::Compact && state_.transient_stack.back().spec.key == "new_chat") {
+      if (ui::Element* list = doc->GetElementById("new-chat-list")) {
+        new_chat_swipe_.AttachNamed(list, context_, [this](const std::string& contact_id, const std::string& action) {
+          if (on_new_chat_swipe_action_) {
+            on_new_chat_swipe_action_(contact_id, action);
+          }
+        });
+        // An open contact row claims the drags that start on it (they slide it back): the page must not slide too.
+        options.ignore_press = [this](ui::Element* target) { return new_chat_swipe_.OpenRowHolds(target); };
+      }
+    }
     if (ui::Element* layer = doc->GetElementById("shell-transient-layer")) {
       options.chrome_classes = {"shell-transient-chrome", "shell-back-btn"};
       options.axis_lock = nullptr; // no sheet competition on transient
@@ -2516,8 +2561,9 @@ void ShellHost::AttachSwipeBackGesture() {
     }
   }
 
-  if (HiddenTabRootShown()) {
-    // Phone Me / Contacts root page: an edge swipe goes back to the tab it came from (rows keep their own swipes).
+  if (HiddenTabRootShown() || (kSystemBackLeavesSettingsHome && SettingsHomeRootShown())) {
+    // Phone Contacts / Settings home: an edge swipe goes back to the tab it came from, or to the chat thread under
+    // Settings; Settings with nothing under it goes to the chat list (rows keep their own swipes).
     if (ui::Element* page = doc->GetElementById("shell-nav-page")) {
       options.chrome_classes = {"shell-circle-btn"};
       swipe_back_gesture_.Attach(page, context_, std::move(options),
@@ -3312,6 +3358,12 @@ void ShellHost::OnNavTabClicked(const std::string& tab_name) {
   // been opened (TODO #200); SelectNavTab then drops the rest of the tab's context.
   while (ShellLayout::SettingsTabBarShown(state_) && !state_.transient_stack.empty()) {
     PopTransient();
+  }
+  // A second tap on the selected "Settings" segment goes back to the Settings home, from any sub-page.
+  if (tab == NavTab::Me && state_.nav_tab == NavTab::Me && state_.layout_mode == LayoutMode::Compact) {
+    while (!local_back_stack_.empty()) {
+      CommitDismiss(DismissTarget::LocalBack);
+    }
   }
   SelectNavTab(tab);
 }

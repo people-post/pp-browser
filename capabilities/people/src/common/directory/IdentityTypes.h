@@ -72,6 +72,11 @@ struct LocalIdentity {
    */
   std::string registered_backend_url;
   /**
+   * The registration's id at the preferred relay (`registration_id` from register/finish, multi-relay MR007): a revoke
+   * names it, so a late one leaves a newer registration alone. Empty: none answered yet.
+   */
+  std::string registration_id;
+  /**
    * Own initiation floor (pp_credit minor units, P001). Default 0.
    * Dogfood via AppConfig.initiation_floor; published in the account card (multi-relay MR005), which is the
    * account's word: a sibling's newer card sets it here, as its nickname does.

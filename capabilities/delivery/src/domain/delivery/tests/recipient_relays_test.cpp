@@ -1,0 +1,198 @@
+#include "domain/delivery/RecipientRelays.h"
+
+#include "domain/peers/AccountKeyResolver.h"
+#include "lib/people/testing/InMemoryPeerCards.h"
+#include "lib/people/tests/TestAccount.h"
+
+#include <gtest/gtest.h>
+
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "common/PbrCompat.h"
+
+namespace pbr {
+namespace {
+
+// A recipient's relays for sending in list order (multi-relay R2): its kept card's list; and when every relay on it
+// said it is not registered, its newest card — its devices first, then our relays' directories — kept only when it
+// verifies, newest wins.
+
+constexpr const char kOurs[] = "https://ours.example/api/relay";
+constexpr const char kBobsOld[] = "https://old.example/api/relay";
+constexpr const char kBobsNew[] = "https://new.example/api/relay";
+constexpr const char kLocators[] = "https://qr.example/api/relay";
+
+class NoDirectory : public mesh::IDirectoryClient {
+public:
+  Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string&) override { return Error("none"); }
+  Roe<mesh::DirectoryHit> LookupByAccount(const std::string&) override { return Error("none"); }
+};
+
+using Origins = std::vector<std::string>;
+
+/** The relays `Of` / `Refresh` gave, by origin. */
+Origins OriginsOf(const std::vector<AccountCardRelay>& relays) {
+  Origins origins;
+  for (const AccountCardRelay& relay : relays) {
+    origins.push_back(relay.origin);
+  }
+  return origins;
+}
+
+class RecipientRelaysTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    keys_ = std::make_unique<AccountKeyResolver>(signing_, kem_, cards_, directory_);
+    relays_ =
+        std::make_unique<RecipientRelays>(*keys_, [this](const std::string& peer_id, const std::string& account_id,
+                                                         std::function<void(Roe<PeerCardRecord>)> done) {
+          asked_devices_.push_back(peer_id);
+          if (!device_card_) {
+            done(Error("not reached"));
+            return;
+          }
+          done(keys_->AddAccountCard(*device_card_, 10'000, "device"));
+          (void)account_id;
+        });
+    relays_->SetDirectories({kOurs});
+    relays_->SetStoredCardFetch([this](const std::string& origin, const std::string&) -> Roe<std::optional<Object>> {
+      asked_relays_.push_back(origin);
+      if (!stored_card_) {
+        return std::optional<Object>{};
+      }
+      return std::optional<Object>(AccountCardToJson(*stored_card_));
+    });
+  }
+
+  AccountCard BobsCard(int64_t issued_at, Origins origins) {
+    AccountCard card{.keys = bob_.Card(), .nickname = "bob", .devices = {bob_.device.Entry()}, .issued_at = issued_at};
+    uint8_t fill = 0x10;
+    for (auto& origin : origins) {
+      card.relays.push_back(test::CardRelay(origin, fill++));
+    }
+    return SignAccountCard(card, [this](const ByteVector& bytes) { return bob_.Sign(bytes); }).value();
+  }
+
+  test::TestAccount bob_ = test::TestAccount::Make();
+  PeerSigningKeyStore signing_;
+  PeerKemKeyStore kem_;
+  InMemoryPeerCards cards_;
+  NoDirectory directory_;
+  std::unique_ptr<AccountKeyResolver> keys_;
+  std::unique_ptr<RecipientRelays> relays_;
+  std::optional<AccountCard> device_card_;
+  std::optional<AccountCard> stored_card_;
+  std::vector<std::string> asked_devices_;
+  std::vector<std::string> asked_relays_;
+};
+
+TEST_F(RecipientRelaysTest, AnAccountWithoutACardHasNoList) {
+  EXPECT_TRUE(relays_->Of(bob_.account_id).empty());
+  ASSERT_TRUE(keys_->AddKeyCard(bob_.Card(), "directory"));
+  EXPECT_TRUE(relays_->Of(bob_.account_id).empty()) << "a key card lists no relays";
+}
+
+TEST_F(RecipientRelaysTest, TheKeptCardsListInItsOrder) {
+  ASSERT_TRUE(keys_->AddAccountCard(BobsCard(1000, {kBobsOld, kOurs}), 10'000, "device"));
+  EXPECT_EQ(OriginsOf(relays_->Of(bob_.account_id)), Origins({kBobsOld, kOurs}));
+  // MR007-SEND: each with the PeerId the card signed for it, the audience a send into it names.
+  const auto relays = relays_->Of(bob_.account_id);
+  EXPECT_EQ(relays[0].peer_id, test::RelayPeerId(0x10));
+  EXPECT_EQ(relays[1].peer_id, test::RelayPeerId(0x11));
+}
+
+TEST_F(RecipientRelaysTest, ALocatorsRelayNamesNoPeerId) {
+  relays_->SetStartingRelays([](const std::string&) { return Origins({kLocators}); });
+  const auto relays = relays_->Of(bob_.account_id);
+  ASSERT_EQ(relays.size(), 1u);
+  EXPECT_TRUE(relays[0].peer_id.empty()) << "signed for by its pin, fetched (MR007)";
+}
+
+TEST_F(RecipientRelaysTest, ARefreshAsksTheDevicesFirst) {
+  ASSERT_TRUE(keys_->AddAccountCard(BobsCard(1000, {kBobsOld}), 10'000, "device"));
+  device_card_ = BobsCard(2000, {kBobsNew});
+  EXPECT_EQ(OriginsOf(relays_->Refresh(bob_.account_id)), Origins({kBobsNew}));
+  EXPECT_EQ(asked_devices_, Origins({bob_.device.peer_id}));
+  EXPECT_TRUE(asked_relays_.empty()) << "a device's own card is the account's word";
+}
+
+TEST_F(RecipientRelaysTest, NoDeviceAnsweringAsksOurRelaysDirectories) {
+  ASSERT_TRUE(keys_->AddAccountCard(BobsCard(1000, {kBobsOld}), 10'000, "device"));
+  stored_card_ = BobsCard(2000, {kBobsNew});
+  EXPECT_EQ(OriginsOf(relays_->Refresh(bob_.account_id)), Origins({kBobsNew}));
+  EXPECT_EQ(asked_relays_, Origins({kOurs}));
+}
+
+TEST_F(RecipientRelaysTest, AnOlderStoredCardChangesNothing) {
+  ASSERT_TRUE(keys_->AddAccountCard(BobsCard(2000, {kBobsOld}), 10'000, "device"));
+  stored_card_ = BobsCard(1000, {kBobsNew});
+  EXPECT_EQ(OriginsOf(relays_->Refresh(bob_.account_id)), Origins({kBobsOld})) << "newest wins";
+}
+
+TEST_F(RecipientRelaysTest, AStoredCardThatDoesNotVerifyIsNotKept) {
+  ASSERT_TRUE(keys_->AddAccountCard(BobsCard(1000, {kBobsOld}), 10'000, "device"));
+  AccountCard forged = BobsCard(2000, {kBobsNew});
+  forged.relays = {test::CardRelay("https://evil.example/api/relay", 0x66)}; // not what Bob signed
+  stored_card_ = forged;
+  EXPECT_EQ(OriginsOf(relays_->Refresh(bob_.account_id)), Origins({kBobsOld}));
+}
+
+TEST_F(RecipientRelaysTest, TheRoutesAreTheseLookups) {
+  ASSERT_TRUE(keys_->AddAccountCard(BobsCard(1000, {kBobsOld}), 10'000, "device"));
+  stored_card_ = BobsCard(2000, {kBobsNew});
+  RelayRoutes routes = relays_->Routes();
+  EXPECT_EQ(OriginsOf(routes.relays_of(bob_.account_id)), Origins({kBobsOld}));
+  EXPECT_EQ(OriginsOf(routes.refresh_relays_of(bob_.account_id)), Origins({kBobsNew}));
+  EXPECT_EQ(OriginsOf(routes.relays_of(bob_.account_id)), Origins({kBobsNew}));
+}
+
+// Multi-relay R4: a contact added by QR starts with its locator's preferred origin, until a card of it is kept.
+TEST_F(RecipientRelaysTest, BeforeACardTheStartingRelaysAreTheList) {
+  relays_->SetStartingRelays(
+      [&](const std::string& account_id) { return account_id == bob_.account_id ? Origins({kLocators}) : Origins{}; });
+  EXPECT_EQ(OriginsOf(relays_->Of(bob_.account_id)), Origins({kLocators}));
+  ASSERT_TRUE(keys_->AddKeyCard(bob_.Card(), "directory"));
+  EXPECT_EQ(OriginsOf(relays_->Of(bob_.account_id)), Origins({kLocators})) << "keys alone list no relays";
+  ASSERT_TRUE(keys_->AddAccountCard(BobsCard(1000, {kBobsNew}), 10'000, "device"));
+  EXPECT_EQ(OriginsOf(relays_->Of(bob_.account_id)), Origins({kBobsNew})) << "the card's list from then on";
+}
+
+/** A relay that records the sends it takes. */
+class RecordingRelay : public IRelayClient {
+public:
+  explicit RecordingRelay(std::string origin, Origins& log) : origin_(std::move(origin)), log_(log) {}
+  Roe<void> Send(const RelayEnvelope&) override {
+    log_.push_back(origin_);
+    return {};
+  }
+  Roe<RelayPollResult> PollInbox(const std::string&, const std::string&) override { return RelayPollResult{}; }
+  Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override { return RelayDeleteResult{}; }
+  Roe<RelayDeleteResult> ClearInbox(const std::string&, const std::string&) override { return RelayDeleteResult{}; }
+  Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest&) override { return ChatHistoryResponse{}; }
+
+private:
+  std::string origin_;
+  Origins& log_;
+};
+
+TEST_F(RecipientRelaysTest, ASendToAContactAddedByQrGoesToTheLocatorsRelay) {
+  relays_->SetStartingRelays([](const std::string&) { return Origins({kLocators}); });
+  Origins sent_to;
+  RelaySendCoordinator sender;
+  sender.SetOurRelays({{.origin = kOurs, .client = std::make_shared<RecordingRelay>(kOurs, sent_to)}});
+  sender.SetForeignClients([&sent_to](const std::string& origin, const std::string&) {
+    return std::make_shared<RecordingRelay>(origin, sent_to);
+  });
+  sender.SetRoutes(relays_->Routes());
+  RelayEnvelope envelope;
+  envelope.sender_contact_id = "account:me";
+  envelope.recipient_account_id = bob_.account_id;
+  ASSERT_TRUE(sender.Send(envelope));
+  EXPECT_EQ(sent_to, Origins({kLocators})) << "its mailbox, not our preferred relay";
+}
+
+} // namespace
+} // namespace pbr

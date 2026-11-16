@@ -59,7 +59,7 @@ public:
               return account == "account:peer" ? std::optional<AccountCard>(peer.DeviceCard()) : std::nullopt;
             },
             psk_store, LocalKeysFromIdentity(identity), roster_store),
-        sync(store, identity, &relay, receive_pipeline, inbox, &peer_history) {
+        sync(store, identity, relay, receive_pipeline, inbox, &peer_history) {
     std::filesystem::remove_all(data_dir);
     if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
@@ -174,7 +174,7 @@ public:
   InMemoryDeliveryStore store;
   IdentityStore identity;
   InMemoryPeerSessions psk_store;
-  MockRelayClient relay;
+  std::shared_ptr<MockRelayClient> relay = std::make_shared<MockRelayClient>();
   MockChatHistoryPeerClient peer_history;
   /** The peer: its device signs what it sends. */
   test::TestAccount peer;
@@ -194,7 +194,7 @@ public:
 
 TEST(ChatSyncTest, MockFetchReturnsInjectedEnvelope) {
   SyncTestHarness harness("mock_fetch");
-  harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));
+  harness.relay->AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));
 
   ChatHistoryRequest request;
   request.requester_identity_kind = "account";
@@ -208,7 +208,7 @@ TEST(ChatSyncTest, MockFetchReturnsInjectedEnvelope) {
   request.limit = 10;
   request.order = "asc";
 
-  auto response = harness.relay.FetchChatHistory(request);
+  auto response = harness.relay->FetchChatHistory(request);
   ASSERT_TRUE(static_cast<bool>(response));
   ASSERT_EQ(response->messages.size(), 1u);
 }
@@ -227,7 +227,7 @@ TEST(ChatSyncTest, RepairGapIngestsMissingPeerMessage) {
   SyncTestHarness harness("gap_repair");
   harness.SeedPeerSeq(1, "one");
 
-  harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));
+  harness.relay->AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));
 
   auto result = harness.sync.RepairGap(harness.thread.id, 2, 2);
   ASSERT_TRUE(static_cast<bool>(result));
@@ -243,6 +243,22 @@ TEST(ChatSyncTest, RepairGapIngestsMissingPeerMessage) {
   auto sync_state = harness.store.GetPeerSyncState(harness.thread.id, 1);
   ASSERT_TRUE(static_cast<bool>(sync_state));
   EXPECT_EQ(sync_state->contiguous_peer_seq, 2u);
+}
+
+TEST(ChatSyncTest, HistoryIsAskedOfTheRelaySetLaterTheOldOneLetGo) {
+  // My relays moved stream history to another relay (MR006): the same workflow asks it from then on.
+  SyncTestHarness harness("history_relay_moves");
+  harness.SeedPeerSeq(1, "one");
+  auto moved = std::make_shared<MockRelayClient>();
+  moved->AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));
+  std::weak_ptr<MockRelayClient> before = harness.relay;
+  harness.sync.SetHistoryRelay(moved);
+  harness.relay.reset();
+  EXPECT_TRUE(before.expired()) << "the workflow no longer holds the relay it was given first";
+
+  auto result = harness.sync.RepairGap(harness.thread.id, 2, 2);
+  ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
+  EXPECT_EQ(result->ingested, 1u) << "the gap is filled from the relay set later";
 }
 
 TEST(ChatSyncTest, EmptyGapCloseWhenAuthoritativeGuardPasses) {
@@ -297,7 +313,7 @@ TEST(ChatSyncTest, LateFillAcceptsAfterAuthoritativeEmptyClose) {
   ASSERT_TRUE(static_cast<bool>(empty_close));
   EXPECT_TRUE(empty_close->empty_gap_closed);
 
-  harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));
+  harness.relay->AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));
   const RelayReceiveOutcome outcome =
       harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(2, "two"), harness.local_account_id);
   EXPECT_EQ(outcome.decision, IngestDecision::AcceptLateFill);
@@ -313,7 +329,7 @@ TEST(ChatSyncTest, UserInitiatedSyncFetchesOlderHistory) {
   SyncTestHarness harness("user_older");
   harness.SeedPeerSeq(5, "five");
 
-  harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(3, "three"));
+  harness.relay->AddDeliveredEnvelope(harness.MakePeerEnvelope(3, "three"));
 
   auto result = harness.sync.UserInitiatedSync(harness.thread.id);
   ASSERT_TRUE(static_cast<bool>(result));
@@ -357,7 +373,7 @@ TEST(ChatSyncTest, RetryGapSyncRepairsKnownGap) {
       harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(3, "three"), harness.local_account_id);
   EXPECT_EQ(gap_outcome.decision, IngestDecision::AcceptGap);
 
-  harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));
+  harness.relay->AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));
 
   auto result = harness.sync.RetryGapSync(harness.thread.id);
   ASSERT_TRUE(static_cast<bool>(result));
@@ -380,7 +396,7 @@ TEST(ChatSyncTest, ScrollBackfillFetchesOlderHistory) {
   state.history_floor_seq = 4;
   ASSERT_TRUE(static_cast<bool>(harness.store.SetPeerSyncState(harness.thread.id, 1, state)));
 
-  harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(7, "seven"));
+  harness.relay->AddDeliveredEnvelope(harness.MakePeerEnvelope(7, "seven"));
 
   auto result = harness.sync.ScrollBackfill(harness.thread.id);
   ASSERT_TRUE(static_cast<bool>(result));
@@ -402,8 +418,8 @@ TEST(ChatSyncTest, GapRepairClampsWideSeqSpan) {
   SyncTestHarness harness("gap_clamp");
   harness.SeedPeerSeq(1, "one");
 
-  harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "near"));
-  harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(502, "far"));
+  harness.relay->AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "near"));
+  harness.relay->AddDeliveredEnvelope(harness.MakePeerEnvelope(502, "far"));
 
   auto result = harness.sync.RepairGap(harness.thread.id, 2, 600);
   ASSERT_TRUE(static_cast<bool>(result));
@@ -443,7 +459,7 @@ TEST(ChatSyncTest, CompromisedThreadBlocksSync) {
 
 TEST(ChatSyncTest, RelayFetch403ForNonPartyReturnsError) {
   SyncTestHarness harness("relay_403");
-  harness.relay.SetFetchHistoryError("Relay history fetch failed with status 403");
+  harness.relay->SetFetchHistoryError("Relay history fetch failed with status 403");
 
   ChatHistoryRequest request;
   request.requester_identity_kind = "account";
@@ -457,7 +473,7 @@ TEST(ChatSyncTest, RelayFetch403ForNonPartyReturnsError) {
   request.limit = 10;
   request.order = "asc";
 
-  auto response = harness.relay.FetchChatHistory(request);
+  auto response = harness.relay->FetchChatHistory(request);
   ASSERT_FALSE(static_cast<bool>(response));
   EXPECT_NE(response.error().message.find("403"), std::string::npos);
 }

@@ -1,20 +1,39 @@
 <!-- Me > Security > Move to a new device: the transfer code (inline on desktop, its own page on phones;
-     there the page title says what the heading says). -->
+     there the page title says what the heading says). The desktop keeps its heading, button and three captions; the phone
+     has a primary button, a "copied" box and the steps to do on the new device. -->
 <div class="stack settings-actions settings-transfer">
   <p class="text group-head settings-desktop-only">{{i18n:settings.security.link_device}}</p>
   <!-- An own PIN: the PIN first, on the PIN gate (plan #21 ⑧; its number pad for a digit PIN, B2). -->
-  <div class="group-card settings-phone-only" data-if="security_can_export_link && !own_devices_not_main">
-    <button class="group-row" type="button" data-event-click="export_link_device()">
-      <span class="group-row-body">
-        <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.link_device.export}}</span></span>
-      </span>
+  <div class="settings-transfer-copy settings-phone-only" data-if="security_can_export_link && !own_devices_not_main">
+    <p class="text muted settings-transfer-lead" data-if="!transfer_code_copied">{{move_lead_label}}</p>
+    <button class="btn btn-primary settings-transfer-btn" type="button" data-if="!transfer_code_copied"
+            data-event-click="export_link_device()">
+      {{i18n:settings.security.link_device.copy_button}}
     </button>
+    <div class="settings-copied-box" data-if="transfer_code_copied">
+      <p class="settings-copied-title">{{i18n:settings.security.link_device.export_done}}</p>
+      <p class="settings-copied-sub">{{move_valid_label}}</p>
+      <button class="settings-text-btn settings-copied-again" type="button"
+              data-event-click="export_link_device()">{{i18n:settings.security.link_device.copy_again}}</button>
+    </div>
   </div>
   <button class="btn settings-desktop-only" type="button" data-if="security_can_export_link && !own_devices_not_main"
           data-event-click="export_link_device()">
     {{i18n:settings.security.link_device.export}}
   </button>
-  <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.help}}</p>
-  <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.send_hint}}</p>
-  <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.reset_hint}}</p>
+  <p class="text muted settings-help group-foot settings-desktop-only">{{i18n:settings.security.link_device.help}}</p>
+  <p class="text muted settings-help group-foot settings-desktop-only">{{i18n:settings.security.link_device.send_hint}}</p>
+  <p class="text muted settings-help group-foot settings-desktop-only">{{i18n:settings.security.link_device.reset_hint}}</p>
+  <div class="settings-transfer-steps settings-phone-only">
+    <p class="text group-head">{{i18n:settings.security.link_device.steps_head}}</p>
+    <div class="group-card settings-steps-card">
+      <div class="settings-step"><span class="settings-step-num">1</span><p class="settings-step-text">{{i18n:settings.security.link_device.step1}}</p></div>
+      <div class="settings-step"><span class="settings-step-num">2</span><p class="settings-step-text">{{i18n:settings.security.link_device.step2}}</p></div>
+      <div class="settings-step"><span class="settings-step-num">3</span><p class="settings-step-text">{{i18n:settings.security.link_device.step3}}</p></div>
+    </div>
+    <div class="settings-note-row">
+      <p class="text muted group-foot">{{i18n:settings.security.link_device.phone_note}}</p>
+      <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
+    </div>
+  </div>
 </div>

@@ -193,6 +193,37 @@ TEST(ConfigRelayContentSha256Test, IsWrittenOnlyWhenOn) {
   pbr::ResetActiveBackendForTest();
 }
 
+// Our other relays (multi-relay R2; CONFIGURATION.md `relay.extra_base_urls`): read whatever the backend, written
+// back only when set.
+TEST(ConfigRelayExtraBaseUrlsTest, AreReadOnAnyBackendAndWrittenBackOnlyWhenSet) {
+  pbr::ResetActiveBackendForTest();
+  ScopedOrigin origin(nullptr);
+  const std::string path =
+      WriteConfig("pp_browser_config_extra_relays.json",
+                  R"({"config_version": 1, "relay": {"extra_base_urls": ["https://b.example/api/relay", "", 7]}})");
+  auto loaded = pbr::Config::LoadFromFile(path);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  EXPECT_EQ(loaded->relay_extra_base_urls, std::vector<std::string>({"https://b.example/api/relay"}));
+
+  const std::string out = (std::filesystem::temp_directory_path() / "pp_browser_config_extra_out.json").string();
+  ASSERT_TRUE(static_cast<bool>(pbr::Config::SaveToFile(out, *loaded)));
+  auto reloaded = pbr::Config::LoadFromFile(out);
+  ASSERT_TRUE(static_cast<bool>(reloaded));
+  EXPECT_EQ(reloaded->relay_extra_base_urls, loaded->relay_extra_base_urls);
+
+  pbr::AppConfig none = pbr::Config::DefaultAppConfig();
+  ASSERT_TRUE(static_cast<bool>(pbr::Config::SaveToFile(out, none)));
+  std::string text;
+  {
+    std::ifstream in(out); // closed before the remove: Windows refuses to delete an open file
+    text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
+  EXPECT_EQ(text.find("extra_base_urls"), std::string::npos);
+  std::filesystem::remove(path);
+  std::filesystem::remove(out);
+  pbr::ResetActiveBackendForTest();
+}
+
 TEST(ConfigBackendTest, CustomUsesSavedUrls) {
   pbr::ResetActiveBackendForTest();
   ScopedOrigin origin(nullptr);
@@ -236,5 +267,29 @@ TEST(ConfigBackendTest, ReloadAfterChoosingAnotherBackendKeepsTheLatchedOne) {
   EXPECT_EQ(loaded->relay.base_url, pbr::BriefRelayBaseUrl());
   std::filesystem::remove(path);
   std::filesystem::remove(switched);
+  pbr::ResetActiveBackendForTest();
+}
+
+// Multi-relay MR008: a custom backend's relay address carries its PeerId (`relay.peer_id`, `registration.peer_id`);
+// prod / qa take the build's (none in this build).
+TEST(ConfigRelayPeerIdTest, ACustomBackendNamesItsRelaysPeerIdAndWritesItBack) {
+  pbr::ResetActiveBackendForTest();
+  ScopedOrigin origin(nullptr);
+  const std::string path = WriteConfig("pp_browser_config_relay_peer_id.json",
+                                       R"({"config_version": 1, "backend": {"env": "custom"},
+          "relay": {"base_url": "https://custom.example.test/api/relay", "peer_id": "QmCustomRelay"},
+          "registration": {"base_url": "https://custom.example.test/api/relay", "peer_id": "QmCustomRelay"}})");
+  auto loaded = pbr::Config::LoadFromFile(path);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  EXPECT_EQ(loaded->relay.peer_id, "QmCustomRelay");
+  EXPECT_EQ(loaded->registration.peer_id, "QmCustomRelay");
+  const std::string out = (std::filesystem::temp_directory_path() / "pp_browser_config_peer_id_out.json").string();
+  ASSERT_TRUE(static_cast<bool>(pbr::Config::SaveToFile(out, *loaded)));
+  pbr::ResetActiveBackendForTest();
+  auto reloaded = pbr::Config::LoadFromFile(out);
+  ASSERT_TRUE(static_cast<bool>(reloaded));
+  EXPECT_EQ(reloaded->relay.peer_id, "QmCustomRelay");
+  std::filesystem::remove(path);
+  std::filesystem::remove(out);
   pbr::ResetActiveBackendForTest();
 }

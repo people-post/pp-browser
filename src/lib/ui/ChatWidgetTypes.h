@@ -120,6 +120,8 @@ struct SessionDisplayRow {
   ui::String id;
   ui::String title;
   ui::String preview;
+  /** The state icon before `preview` (ChatSessionRow::preview_icon): a file stem under icons/v2, empty for none. */
+  ui::String preview_icon;
   /** `preview` is the "no messages yet" placeholder (ChatSessionRow::preview_empty): the row draws it quieter. */
   bool preview_empty = false;
   /** Visual chat type: ai | private | public | group */

@@ -393,6 +393,14 @@ Roe<Thread> InboxController::FindOrCreateDirectThread(const std::string& contact
 }
 
 Roe<Thread> InboxController::FindOrCreateDirectThread(const std::string& contact_id, ThreadChannel channel) {
+  auto thread = FindOrCreateDirectThreadQuietly(contact_id, channel);
+  if (!thread) {
+    return thread.error();
+  }
+  return OpenThread(thread->id);
+}
+
+Roe<Thread> InboxController::FindOrCreateDirectThreadQuietly(const std::string& contact_id, ThreadChannel channel) {
   auto contact = contacts_.Get(contact_id);
   if (!contact) {
     return contact.error();
@@ -407,11 +415,7 @@ Roe<Thread> InboxController::FindOrCreateDirectThread(const std::string& contact
   }
 
   const std::string title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
-  auto thread = store_.FindOrCreateDirectThread(target, contact_id, title);
-  if (!thread) {
-    return thread.error();
-  }
-  return OpenThread(thread->id);
+  return store_.FindOrCreateDirectThread(target, contact_id, title);
 }
 
 Roe<Thread> InboxController::CreateGroup(const std::string& title, const std::vector<std::string>& member_contact_ids) {
