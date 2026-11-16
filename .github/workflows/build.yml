@@ -299,7 +299,7 @@ jobs:
       - name: Build
         if: env.PP_RUN_PLATFORM == 'true'
         shell: bash
-        run: cmake --build build --config Release -j 4
+        run: cmake --build build --config Release -j "$(cmake -P cmake/HostCores.cmake)"
 
       - name: Test
         if: env.PP_RUN_PLATFORM == 'true'
@@ -307,6 +307,7 @@ jobs:
         env:
           TRACE_DEBUG: "1"
           # A PR skips the tests of the capability folders it does not touch (CR022); pushes run every test.
+          # -j (no count, CMake 3.29+): one test per core. Serial took 9 min on macOS; the slow call tests mostly wait on timers.
           PP_IS_PR: ${{ github.event_name == 'pull_request' }}
           PP_CHANGED_FILTERS: ${{ needs.changes.outputs.changes }}
         run: |
@@ -321,9 +322,9 @@ jobs:
           fi
           if [ ${#skip[@]} -gt 0 ]; then
             echo "Unchanged capabilities, tests skipped: ${skip[*]}"
-            ctest --test-dir build -C Release --output-on-failure -LE "^capability:($(IFS='|'; echo "${skip[*]}"))\$"
+            ctest --test-dir build -C Release -j --output-on-failure -LE "^capability:($(IFS='|'; echo "${skip[*]}"))\$"
           else
-            ctest --test-dir build -C Release --output-on-failure
+            ctest --test-dir build -C Release -j --output-on-failure
           fi
 
       - name: Smoke run (Linux)
@@ -391,7 +392,7 @@ jobs:
             -DPP_RELAY_CONTENT_SHA256=${{ vars.PP_RELAY_CONTENT_SHA256 || 'OFF' }}
 
       - name: Build
-        run: cmake --build build --target pp-browser -j 4
+        run: cmake --build build --target pp-browser -j "$(cmake -P cmake/HostCores.cmake)"
 
       - name: Install and pack
         run: |
@@ -486,7 +487,7 @@ jobs:
             -DPP_BROWSER_COMPILER_CACHE=ON
 
       - name: Build pp-browser
-        run: cmake --build out-ios/build/device --config Release -j 4 --target pp-browser
+        run: cmake --build out-ios/build/device --config Release -j "$(cmake -P cmake/HostCores.cmake)" --target pp-browser
 
       - name: ccache stats (post-build)
         if: always()

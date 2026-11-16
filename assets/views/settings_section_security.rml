@@ -10,6 +10,13 @@
               <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
             </span>
           </button>
+          <button class="group-row settings-phone-only" type="button"
+                  data-if="show_change_pin && security_can_change_pin && !pin_protection_is_default"
+                  data-event-click="remove_pin()">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.remove_pin}}</span></span>
+            </span>
+          </button>
           <div class="group-row group-row--static settings-phone-only" data-if="!show_change_pin">
             <span class="group-row-body">
               <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.protection_title}}</span></span>

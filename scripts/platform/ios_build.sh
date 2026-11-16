@@ -52,6 +52,7 @@ Environment:
   PP_BROWSER_VERSION        Marketing version (e.g. 0.1.0) → CFBundleShortVersionString
   PP_BROWSER_BUILD_NUMBER   Build number for App Store Connect (must bump each upload)
   PP_BROWSER_RELEASE_VERSION  Fallback build string if BUILD_NUMBER unset
+  PP_BROWSER_IOS_CALLKIT      ON (default) or OFF: CallKit + PushKit for default-PIN incoming calls; OFF for the China storefront
   PP_API_URL_PROD             Prod backend origin compiled into the app (empty = none)
   PP_API_URL_QA               QA backend origin compiled into the app (empty = QA option hidden)
   PP_RELAY_PEER_ID_PROD       PeerId of the prod backend's relay (multi-relay MR008; empty = pinned on first use)
@@ -155,6 +156,9 @@ common_cmake_args() {
   args+=(-DPP_RELAY_CONTENT_SHA256="${relay_sha}")
   if [[ -n "${PP_BROWSER_RELEASE_VERSION:-}" ]]; then
     args+=(-DPP_BROWSER_RELEASE_VERSION="${PP_BROWSER_RELEASE_VERSION}")
+  fi
+  if [[ -n "${PP_BROWSER_IOS_CALLKIT:-}" ]]; then
+    args+=(-DPP_BROWSER_IOS_CALLKIT="${PP_BROWSER_IOS_CALLKIT}")
   fi
   if [[ "${GENERATOR}" == "Xcode" ]]; then
     args+=(-G Xcode)

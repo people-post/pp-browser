@@ -28,6 +28,19 @@ std::string CallIdOf(const ThreadMessage& control) {
   return call_id ? *call_id : std::string{};
 }
 
+/** How long the relay keeps a lane record: by its `control_type` tier, else the lane's default hour. */
+int64_t RelayTtlSecondsOf(const ThreadMessage& control) {
+  const auto payload = TryParseObject(control.payload_json);
+  const std::string type = payload ? payload->getString("control_type").value_or("") : std::string{};
+  if (type.rfind("call_", 0) == 0) {
+    return kCallSignalRelayTtlS;
+  }
+  if (type == "device_list") {
+    return kDeviceListRelayTtlS;
+  }
+  return kControlLaneRelayTtlMs / 1000;
+}
+
 } // namespace
 
 ControlLane::ControlLane(IdentityStore& identity, OwnCards& own_keys, AccountKeyResolver& peer_cards,
@@ -191,7 +204,7 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
   }
   // Lane messages are useless once no family would take them: the relay drops them then, not after 90 days — but
   // what the peer needs whenever it is back (`keep`: a relay grant) stays the relay's full window.
-  envelope.relay_ttl_s = keep ? 0 : kControlLaneRelayTtlMs / 1000;
+  envelope.relay_ttl_s = keep ? 0 : RelayTtlSecondsOf(control);
   const std::string message_id = envelope.message_id;
   // Off the caller's thread, on the critical lane (signaling must not queue behind inbox polls); the
   // relay when a route is known, and over a live link to the peer at once as well (#431: an inbox
@@ -289,9 +302,9 @@ Roe<void> ControlLane::NotifySiblings(const ThreadMessage& notice, const Sibling
   if (!built) {
     return built.error();
   }
-  // A signal is fresh only; a sent copy or the device list waits for a sibling that is off for days.
-  if (kind == SiblingNotice::Signal) {
-    built->relay_ttl_s = kControlLaneRelayTtlMs / 1000;
+  // A sent copy waits for a sibling that is off for days: the relay's full window. The rest expire by their tier.
+  if (kind != SiblingNotice::SentCopy) {
+    built->relay_ttl_s = RelayTtlSecondsOf(notice);
   }
   const std::string message_id = built->message_id;
   // The relay only: the account's own mailbox, read by every sibling.

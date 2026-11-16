@@ -776,6 +776,14 @@ void Application::StartGraceTimer() {
   });
 }
 
+void Application::OnPinModeChanged(const bool is_default) {
+  // The default PIN gets VoIP/CallKit calls, a custom one alerts (P020): bind the matching push devices.
+  (void)is_default; // read back from the saved preference by SyncPushDevices
+  if (chat_) {
+    chat_->SyncPushDevices();
+  }
+}
+
 void Application::StopGraceTimer() {
   if (grace_timer_ == 0) {
     return;
@@ -1168,6 +1176,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     StopGraceTimer();
     return {};
   };
+  settings_commands.on_pin_mode_changed = [this](const bool is_default) { OnPinModeChanged(is_default); };
   settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
   // merged from kenneth/pin-grace-settings: Me → Security's "PIN again after" row (PIN grace window, at-rest A013).
   settings_commands.grace_supported = [this]() { return secrets_->GraceSupported(); };
@@ -1746,8 +1755,11 @@ void Application::WireUnlockPinAndFlow() {
       return;
     }
     ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+    const bool changed = prefs.pin_is_default != is_default;
     prefs.pin_is_default = is_default;
-    (void)store_.SaveProfilePrefs(prefs);
+    if (store_.SaveProfilePrefs(prefs) && changed) {
+      OnPinModeChanged(is_default);
+    }
   };
   // The PIN's kind (B): kept from every PIN the user chose that opened the vault, so an older profile gets the number
   // pad after its next unlock and a value left wrong by an interrupted change is put right.

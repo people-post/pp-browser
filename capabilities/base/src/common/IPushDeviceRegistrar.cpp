@@ -1,5 +1,6 @@
 #include "common/IPushDeviceRegistrar.h"
 
+#include <atomic>
 #include <mutex>
 #include "common/PbrCompat.h"
 
@@ -19,6 +20,7 @@ IPushDeviceRegistrar* g_push_registrar = nullptr;
 UnsupportedPushDeviceRegistrar g_unsupported_push_registrar;
 std::mutex g_token_handler_mutex;
 IPushDeviceRegistrar::TokenChangedFn g_token_changed_handler;
+std::atomic<bool> g_voip_push_wanted{false};
 
 } // namespace
 
@@ -28,6 +30,14 @@ IPushDeviceRegistrar& IPushDeviceRegistrar::Instance() {
 
 void IPushDeviceRegistrar::SetInstance(IPushDeviceRegistrar* registrar) {
   g_push_registrar = registrar;
+}
+
+void IPushDeviceRegistrar::SetVoipPushWanted(const bool wanted) {
+  g_voip_push_wanted.store(wanted);
+}
+
+bool IPushDeviceRegistrar::VoipPushWanted() {
+  return g_voip_push_wanted.load();
 }
 
 void IPushDeviceRegistrar::SetTokenChangedHandler(TokenChangedFn handler) {

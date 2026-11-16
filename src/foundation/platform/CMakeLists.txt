@@ -25,6 +25,7 @@ set(_pp_platform_gui_sources
   AndroidAssetLocator.cpp
   AndroidPathProvider.cpp
   AppEventHooks.cpp
+  CallPushAge.cpp
   CallSystemUi.cpp
   DesktopLocalNotifier.cpp
   desktop/LocalNotifierActivation.cpp
@@ -386,6 +387,14 @@ if(PP_BROWSER_IS_IOS)
     IosLocalNotifier.mm
     IosApnsAppDelegate.mm
     SecureScreen_Ios.mm)
+  if(PP_BROWSER_IOS_CALLKIT)
+    target_sources(pp_foundation_platform PRIVATE CallSystemUi_Ios.mm)
+    target_compile_definitions(pp_foundation_platform PRIVATE PP_IOS_CALLKIT=1)
+    target_link_libraries(pp_foundation_platform PUBLIC
+      "-framework CallKit"
+      "-framework PushKit"
+      "-framework AVFoundation")
+  endif()
   target_link_libraries(pp_foundation_platform PUBLIC
     "-framework UserNotifications"
     "-framework UIKit"
