@@ -4341,8 +4341,8 @@ Roe<void> ConversationsHub::StartNewDeviceList() {
     return card.error();
   }
   log().info << "A new device list started on this device, its main device";
-  AppRuntime::PostWorkerNormal([this]() { SyncLockerThenAnnounceOwnDevices(); });
-  RegisterOnOtherRelaysSoon();
+  // Siblings heard already (OwnCards::SetOnChanged); our contacts and every relay of ours take the new card too.
+  AppRuntime::PostWorkerNormal([this]() { ReissueAndAnnounceCard(); });
   return {};
 }
 
