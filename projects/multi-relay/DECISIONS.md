@@ -71,7 +71,7 @@
 ## MR006 — The preferred relay carries the user's relay services; org services stay on the org's origin
 
 **Date:** 2026-11-14
-**Status:** Accepted (Hongwei, 2026-11-14: "relay services follow the preferred relay; org services stay on the org's address"). Built with R3's *My relays* (Me → My relays); shipped form [SERVICE_ENDPOINTS § Relay services and org services](../../docs/contracts/SERVICE_ENDPOINTS.md#relay-services-and-org-services). Amended 2026-11-14 (review): a release build takes no relay at a local address, from Add or a QR locator ([SERVICE_ENDPOINTS § My relays](../../docs/contracts/SERVICE_ENDPOINTS.md#my-relays)); removing the deployment's relay does not stop the locker writes (they fail there, logged) and moves stream history's reads to the preferred relay, as built. Amended by [MR007](#mr007--relays-have-a-node-style-identity-every-signed-relay-command-names-it-as-its-audience) (accepted 2026-11-14, built in R5, not deployed): Add also fetches and pins the relay's identity (a relay without one, or one whose PeerId another listed origin holds, is refused); a relay whose identity changed is shown so and gets no signed call until the user accepts the new one; the org's origin is pinned too (lockers, the LLM token).
+**Status:** Accepted (Hongwei, 2026-11-14: "relay services follow the preferred relay; org services stay on the org's address"). Built with R3's *My relays* (Me → My relays); shipped form [SERVICE_ENDPOINTS § Relay services and org services](../../docs/contracts/SERVICE_ENDPOINTS.md#relay-services-and-org-services). Amended 2026-11-14 (review): a release build takes no relay at a local address, from Add or a QR locator ([SERVICE_ENDPOINTS § My relays](../../docs/contracts/SERVICE_ENDPOINTS.md#my-relays)); removing the deployment's relay does not stop the locker writes (they fail there, logged) and moves stream history's reads to the preferred relay, as built. Amended by [MR007](#mr007--relays-have-a-node-style-identity-every-signed-relay-command-names-it-as-its-audience) (accepted 2026-11-14, built in R5, not deployed): Add also fetches and pins the relay's identity (a relay without one, or one whose PeerId another listed origin holds, is refused); a relay whose identity changed is shown so and gets no signed call until the user accepts the new one; the org's origin is pinned too (lockers, the LLM token). Amended by [MR008](#mr008--a-relay-address-carries-its-peerid-no-first-use-trust) (accepted 2026-11-15, built in R6): Add takes a **relay link** (origin and PeerId; a bare origin in developer builds only) and checks the relay's identity answer against it; there is no *accept*; the list and the seed carry each relay's PeerId.
 **Decision:**
 - **Two origins.** The **org's origin** is the deployment's: the compiled (or configured) backend origin, `relay` / `registration` in the config file. The **preferred relay** is the first of the user's own relay list (*My relays*, kept in the profile). Until the user changes the list the two are the same, and nothing behaves differently.
 - **Relay services follow the preferred relay** (and the list): the inbox (polled at the app's pace; the others more slowly), push, registration (the identity's), the directory (search and lookups: the preferred relay's first, then the others'), profile photos and blobs, chat attachment files.
@@ -91,7 +91,7 @@
 ## MR007 — Relays have a node-style identity; every signed relay command names it as its audience
 
 **Date:** 2026-11-14
-**Status:** Accepted (Hongwei agreed the direction, 2026-11-14). Built in R5 (app and pp-node `feat/relay-audience`; relay pp-relay-apis `feat/relay-identity-audience`), not deployed. **Superseded by the contracts** for what holds: [SERVICE_ENDPOINTS § Relay identity and the audience](../../docs/contracts/SERVICE_ENDPOINTS.md#relay-identity-and-the-audience-multi-relay-mr007), [ACCOUNT_CARD § Account card](../../docs/contracts/ACCOUNT_CARD.md#account-card) (version 4), [DATA_LAYOUT § relay_pins.json](../../docs/contracts/DATA_LAYOUT.md#relay_pinsjson), [COMPATIBILITY § Clean cutovers](../../docs/contracts/COMPATIBILITY.md#clean-cutovers-pre-release), [UI_DESIGN_SYSTEM § My relays](../../docs/ui/UI_DESIGN_SYSTEM.md#my-relays); this entry is the decision and its why. The relay's side, rollout and tests: [DESIGN § Relay identity and audience](DESIGN.md#relay-identity-and-audience-mr007); work: [PHASES R5](PHASES.md#r5--relay-identity-and-audience). Amends [MR002](#mr002--the-relay-list-lives-in-the-account-card) and [MR004](#mr004--a-relay-list-is-small-and-bounded) (card version 4: each relay is `{origin, peer_id}`), [MR003](#mr003--cross-relay-delivery-is-an-account-signed-send) (relays get identities, still no trust between them) and [MR006](#mr006--the-preferred-relay-carries-the-users-relay-services-org-services-stay-on-the-orgs-origin) (Add pins the relay's identity).
+**Status:** Accepted (Hongwei agreed the direction, 2026-11-14). Built in R5 (app and pp-node `feat/relay-audience`; relay pp-relay-apis `feat/relay-identity-audience`), not deployed. **Amended by [MR008](#mr008--a-relay-address-carries-its-peerid-no-first-use-trust)** (accepted 2026-11-15, built in R6): items 1 and 3 — the PeerId comes from the relay's address (a relay link, the build, the config, our own card), never from its first answer; the identity endpoint is only checked; there is no *identity changed* to accept; the "PeerIds compiled into the app" alternative below is now the decision for the org's relay. **Superseded by the contracts** for what holds: [SERVICE_ENDPOINTS § Relay identity and the audience](../../docs/contracts/SERVICE_ENDPOINTS.md#relay-identity-and-the-audience-multi-relay-mr007), [ACCOUNT_CARD § Account card](../../docs/contracts/ACCOUNT_CARD.md#account-card) (version 4), [DATA_LAYOUT § relay_pins.json](../../docs/contracts/DATA_LAYOUT.md#relay_pinsjson), [COMPATIBILITY § Clean cutovers](../../docs/contracts/COMPATIBILITY.md#clean-cutovers-pre-release), [UI_DESIGN_SYSTEM § My relays](../../docs/ui/UI_DESIGN_SYSTEM.md#my-relays); this entry is the decision and its why. The relay's side, rollout and tests: [DESIGN § Relay identity and audience](DESIGN.md#relay-identity-and-audience-mr007); work: [PHASES R5](PHASES.md#r5--relay-identity-and-audience). Amends [MR002](#mr002--the-relay-list-lives-in-the-account-card) and [MR004](#mr004--a-relay-list-is-small-and-bounded) (card version 4: each relay is `{origin, peer_id}`), [MR003](#mr003--cross-relay-delivery-is-an-account-signed-send) (relays get identities, still no trust between them) and [MR006](#mr006--the-preferred-relay-carries-the-users-relay-services-org-services-stay-on-the-orgs-origin) (Add pins the relay's identity).
 **Problem:** A signed relay call signs its domain, version, account and timestamp, but not the relay it is for, and a relay keeps no nonce: any valid signature is good everywhere for ±5 minutes. Every relay on a user's list receives fresh poll and ack signatures every few minutes, so any one of them can replay them at the user's other relays: `clear` wipes mail there, `revoke` drops the registration, `poll` reads the inbox's metadata, a replayed send with another blob takes the dedup slot of the real one, a replayed `register/finish` (on a challenge the replaying relay fetched from the victim relay) hands it the victim's answer, Brief LLM key included. My relays (MR006) lets a user add any relay, so this is now real. Separately, our own app repeats commands (retries, a request delayed in the network), so each command must be safe to arrive twice or late.
 **Decision:**
 1. **A relay has an identity like a node's.** Each HTTPS relay holds its own ML-DSA-65 key (its seed in the relay's secret store) and is named by the PeerId derived from the public key exactly as a pp-node's ([MESH_IDENTITY](../../docs/architecture/MESH_IDENTITY.md), `pp::PeerIdFromMlDsaPublicKey`). It serves `{peer_id, public_key_b64, signature_alg}` at the unauthenticated `GET /v1/relay-identity`; the client checks that the key derives the PeerId. The answer is not signed (see rationale). A new key is a new relay identity.
@@ -113,3 +113,79 @@
 - A self-signed or nonce-signed identity answer (copied or proxied, above); an origin-bound proof (the relay configured with its public origins signs the origin a client used) would stop a relay from claiming another's PeerId at all — left open, not needed for replay safety.
 - PeerIds compiled into the app for `prod` / `qa` (rotation becomes an app release, and TOFU over TLS at the deployment's origin is as good).
 - Pinning from cards (poisoning, above).
+
+## MR008 — A relay address carries its PeerId; no first-use trust
+
+**Date:** 2026-11-15
+**Status:** Accepted (Hongwei, 2026-11-15). Built in R6 (app and pp-node on `feat/relay-audience`, PR #623; the relay's
+keygen script and local stack name the link on pp-relay-apis `feat/relay-identity-audience`, PR #25), not deployed.
+Amends [MR007](#mr007--relays-have-a-node-style-identity-every-signed-relay-command-names-it-as-its-audience) items 1
+and 3 and [MR006](#mr006--the-preferred-relay-carries-the-users-relay-services-org-services-stay-on-the-orgs-origin)'s
+Add. **Superseded by the contracts** for what holds: [SERVICE_ENDPOINTS § Relay identity](../../docs/contracts/SERVICE_ENDPOINTS.md#relay-identity),
+[§ Pins](../../docs/contracts/SERVICE_ENDPOINTS.md#pins), [§ My relays](../../docs/contracts/SERVICE_ENDPOINTS.md#my-relays),
+[ACCOUNT_CARD § Locator](../../docs/contracts/ACCOUNT_CARD.md#locator-qr-code-invite-link),
+[DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md#relay_pinsjson) (`relay_pins.json` 2, `our_relays.json` 2),
+[COMPATIBILITY § Clean cutovers](../../docs/contracts/COMPATIBILITY.md#clean-cutovers-pre-release),
+[CONFIGURATION](../../docs/ops/CONFIGURATION.md) (`relay.peer_id`, `PP_NODE_REGISTRATION_PEER_ID`),
+[BUILD § Backend origin](../../docs/ops/BUILD.md#backend-origin) (`PP_RELAY_PEER_ID_PROD` / `_QA`),
+[UI_DESIGN_SYSTEM § My relays](../../docs/ui/UI_DESIGN_SYSTEM.md#my-relays); this entry is the decision and its why.
+**Problem** (the review of #623): MR007 pinned a relay's identity from the first answer at its origin ("TOFU over TLS at
+the deployment's origin is as good"). That holds only if the first contact is first, online and genuine. A hostile
+relay that claims a PeerId we have not pinned yet wins first-come — a QR code's relay, a relay the person adds, all
+before the org's relay answers (offline at first start, a new profile, a restore); the uniqueness check then refuses
+the honest relay (`relay_identity_taken`); and as a pass-through holding the honest relay's PeerId it reads the answers,
+secrets included: the org's `register/finish` answers with the Brief LLM token.
+**Decision:**
+1. **A relay address is origin + PeerId**, like a node's multiaddr with `/p2p/`. The app never learns a PeerId from a
+   relay's own answer; `GET /v1/relay-identity` is only *checked*: its key must derive the expected PeerId, else the
+   relay is not used — a hard state ("doesn't match its link — not used"), with no "Accept new identity": a rotated key
+   is a new address.
+2. **Where the PeerId comes from:**
+   - the org's relay: shipped with the build beside its origin (CMake `PP_RELAY_PEER_ID_PROD` / `PP_RELAY_PEER_ID_QA`
+     next to `PP_API_URL_PROD` / `PP_API_URL_QA`; CI repository variables or secrets of the same names, passed by
+     `release.yml`, `ios-testflight.yml` and `release-pp-node.yml`);
+   - a custom backend's: the config file (`relay.peer_id`, `registration.peer_id` when that is another origin; the
+     directory is unsigned and needs none);
+   - a relay the user adds: a **relay link** `https://host[:port][/api/relay]#<PeerId>` (the fragment is the base58
+     PeerId and is never sent to the server), pasted or scanned (My relays' Add, the in-app QR scan);
+     `relay.extra_base_urls` takes relay links too;
+   - a contact's: its signed card (version 4, unchanged);
+   - a QR invite's relay: the locator carries `{origin, peer_id}` (a clean cutover of R4's origin-only field);
+   - a linked device's: our own verified card; a restored device's: the account locker's list (`{origin, peer_id}`).
+3. **Pins become expected identities**, never first-come: the store holds origin → expected PeerId from those sources;
+   uniqueness stays (one PeerId per origin, one origin per PeerId): a link, list entry or card naming a PeerId one of
+   our expected identities holds at another origin is refused — which is what stops a hostile relay fronting the org or
+   one of ours. The org's expectations are written first. The Changed / Accept flow, its UI, strings and tests go; the
+   state is "doesn't match its link — not used", cleared only when a later check finds the relay answering to its
+   address again or the address changes.
+4. **Developer builds** (the existing `developer_relays`) may still add a bare origin, verified on first use as before —
+   for local work only; release builds require a PeerId everywhere. The org anchor: a release build with an empty
+   `PP_RELAY_PEER_ID_PROD` fails its release workflow (like the empty `PP_API_URL_PROD` check for pp-node; also a set
+   `PP_API_URL_QA` without `PP_RELAY_PEER_ID_QA`); a dogfood or developer build without it pins the org's relay on its
+   first answer with a log warning.
+5. **pp-node:** the relay it registers at is expected too: `registration.peer_id` / env `PP_NODE_REGISTRATION_PEER_ID`,
+   defaulting to the compiled `PP_RELAY_PEER_ID_PROD` when it uses the compiled prod registration URL (without one it
+   pins the relay's first answer with a warning). QA nodes need the QA PeerId in their environment (ansible).
+6. **Unchanged:** the audience, card version 4, the scoped revoke / unregister, grants. **What remains:** a link's source
+   is trusted — a hostile operator controls what it publishes, and may publish its own origin with another relay's
+   PeerId and pass that relay's answers through. Uniqueness keeps it from fronting the org or any relay of ours (no org
+   secrets reach it), so it can at most front an unrelated relay we hold no identity for, until requests are sealed to
+   the relay's key (Amp, MR007 item 6).
+**Rationale:**
+- The address names whom we speak to; an answer from that address only confirms it. With the PeerId in the address,
+  being first gains nothing: a relay claiming the org's PeerId is refused whenever it comes, because the org's
+  expectation is the build's, written before any link is taken.
+- A node is reached by `/p2p/<PeerId>` and its handshake proves it; a relay link is the same address over HTTPS, so the
+  move to Amp keeps every stored address.
+- The origin-bound proof considered in MR007 (the relay, configured with its public origins, signs the origin a client
+  used) would need every relay to know each public URL it is reached at (CDN aliases, the lab's hosts); with addresses
+  carrying PeerIds it is unnecessary.
+- An "accept a new identity" path is first-use trust again, one tap away. A relay that rotates its key publishes a new
+  link; the org's ships with a new build.
+**Alternatives rejected:**
+- An origin-bound identity proof (above; superseded rather than built).
+- Ordering rules only (pin the org first, refuse adds before it answers): the org may be unreachable at first start,
+  the hostile relay may be the first QR code scanned, and a restore starts with no pins — first come stays first come.
+- Keeping TOFU with a confirm on change (MR007's *Accept*): it trains people to accept.
+**Costs accepted:** rotating the org relay's key is an app release (and a pp-node release, or the operator's
+`PP_NODE_REGISTRATION_PEER_ID`); a signed rotation statement (the old key vouching for the new) may come later.
