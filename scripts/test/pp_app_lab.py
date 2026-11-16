@@ -26,6 +26,7 @@ import queue
 import random
 import re
 import shutil
+import sqlite3
 import ssl
 import subprocess
 import sys
@@ -177,6 +178,47 @@ class User:
 
     def restart(self):
         self.crash()
+        self.surface = {"kind": "none"}
+        self.start()
+        self.wait_ready()
+
+    def reset_chats(self):
+        """Me → Storage → Reset chats (Application::ResetChatData): the chat store — profile.db, every thread.db,
+        the kept cards with them — is gone; the account (identity.enc and what lies beside it), contacts and
+        settings stay, and so do the public sessions (each pair starts its next epoch on its next send, D014).
+        Done at rest: the sessions are put back into the new store as the app puts them back, then it starts."""
+        self.quit()
+        profiles = os.path.join(self.dir, "profiles")
+        kept = {}  # profile.db path -> {table: (columns, rows)}
+        for profile in os.listdir(profiles) if os.path.isdir(profiles) else []:
+            threads = os.path.join(profiles, profile, "threads")
+            if not os.path.isdir(threads):
+                continue
+            db = sqlite3.connect(os.path.join(threads, "profile.db"))
+            tables = {}
+            for table in ("chat_targets", "device_sessions"):
+                cur = db.execute("SELECT * FROM %s WHERE channel = 'e2e_public' AND master_psk_b64 IS NOT NULL" % table)
+                tables[table] = ([d[0] for d in cur.description], cur.fetchall())
+            db.close()
+            shutil.rmtree(threads)
+            kept[os.path.join(threads, "profile.db")] = tables
+        if not kept:
+            raise ProbeError("%s: no chat store to reset" % self.name)
+        self.surface = {"kind": "none"}
+        self.start()
+        self.wait_ready()  # the new chat store is open
+        self.quit()
+        for path, tables in kept.items():
+            db = sqlite3.connect(path)
+            for table, (columns, rows) in tables.items():
+                at = columns.index("restart_pending")
+                for row in rows:
+                    row = list(row)
+                    row[at] = 1
+                    db.execute("INSERT OR REPLACE INTO %s (%s) VALUES (%s)" % (
+                        table, ", ".join(columns), ", ".join("?" * len(columns))), row)
+            db.commit()
+            db.close()
         self.surface = {"kind": "none"}
         self.start()
         self.wait_ready()
@@ -2623,6 +2665,48 @@ def scenario_linked_devices_both_send(lab):
         wait_for(lambda: transcript_row(b, b_thread, m), 30, "bob: %s" % what)
 
 
+def scenario_reset_chats_keeps_linked_devices(lab):
+    """Alice's phone (main) and laptop are two devices of one account (M021). She resets the chats on the laptop,
+    then on the phone (Me → Storage → Reset chats: the chat store, its kept cards with it, goes; the account stays):
+    each comes back with the account's list as it was — our card is kept beside the identity, so no fresh list is
+    issued and neither device is signed out — and both still send to Bob and hear his answers."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    phone_id = a.cmd("whoami")["peer_id"]
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    both = [phone_id, laptop_id]
+    wait_for(lambda: a.cmd("devices")["devices"] == both or None, 40, "phone: the laptop on the list")
+    wait_for(lambda: laptop.cmd("devices")["devices"] == both or None, 40, "laptop: the list")
+    issued = a.cmd("kept_card", account=a.account).get("issued_at")
+    wait_for(lambda: laptop.cmd("kept_card", account=a.account).get("issued_at") == issued or None, 40,
+             "laptop: the phone's newest card")
+
+    def talk(where):
+        l_thread = laptop.cmd("open_chat", account=b.account)["thread"]
+        p_thread = a.cmd("open_chat", account=b.account)["thread"]
+        for who, u, thread in (("laptop", laptop, l_thread), ("phone", a, p_thread)):
+            m = u.cmd("send", thread=thread, text="from the %s %s" % (who, where))["message_id"]
+            wait_for(lambda: transcript_row(b, b_thread, m), 40, "bob: the %s's message %s" % (who, where))
+        r = b.cmd("send", thread=b_thread, text="answer %s" % where)["message_id"]
+        wait_for(lambda: transcript_row(a, p_thread, r), 40, "phone: bob's answer %s" % where)
+        wait_for(lambda: transcript_row(laptop, l_thread, r), 40, "laptop: bob's answer %s" % where)
+
+    for who, u in (("laptop", laptop), ("phone", a)):
+        u.reset_chats()
+        u.wait_mesh()
+        for each in (a, laptop):
+            listed = each.cmd("devices")
+            if listed["devices"] != both or listed["signed_out"]:
+                raise ProbeError("%s: after the %s's reset the list is %s" % (each.name, who, listed))
+        for each in (a, laptop):
+            at = each.cmd("kept_card", account=a.account).get("issued_at")
+            if at != issued:
+                raise ProbeError("%s: after the %s's reset our card is %s, not %s (a new list was issued)" % (
+                    each.name, who, at, issued))
+        talk("after the %s's reset" % who)
+
+
 def assert_signed_out(u, thread):
     """`u` is signed out of its account (M021 d4): its list says so, and it can no longer send."""
     wait_for(lambda: u.cmd("devices").get("signed_out") or None, 40, "%s: signed out" % u.name)
@@ -4499,6 +4583,7 @@ SCENARIOS = [
     ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),
+    ("reset_chats_keeps_linked_devices", scenario_reset_chats_keeps_linked_devices),
     ("bystander_is_no_relay", scenario_bystander_is_no_relay),
     ("call_during_seed_churn", scenario_call_during_seed_churn),
     ("calling_each_other_at_once", scenario_calling_each_other_at_once),

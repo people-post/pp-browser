@@ -597,7 +597,8 @@ public:
         if (auto kept = cards.Kept(account); kept && *kept) {
           out.set("account_id", (*kept)->keys.account_id);
           out.set("source", (*kept)->source);
-          std::vector<Value> relays; // the account's relays, preferred first (multi-relay MR002)
+          out.set("issued_at", (*kept)->issued_at); // the newest account card's (0: keys only)
+          std::vector<Value> relays;                // the account's relays, preferred first (multi-relay MR002)
           for (const AccountCardRelay& relay : KeptRelays(**kept)) {
             relays.emplace_back(relay.origin);
           }
