@@ -578,11 +578,29 @@ Unauthenticated public GET (directory-style; no identity unlock required):
 | `latest_client_version` | no | Semver latest; client below (but ≥ min) → soft banner |
 | `min_protocol_gen` | no | Global protocol floor (default 1) |
 | `upgrade_url` | no | Empty → GitHub Releases fallback |
+| `upgrade_urls` | no | `{ ios, android, macos, windows, linux }`, each optional: that platform's update link, **https only** (anything else, and any other key, is dropped). `ResolvedUpgradeUrl` takes this build's (`Platform::OsName()`), else `upgrade_url`, else the fallback |
 | `message` | no | Empty → client locale strings |
 | `crash_reports_url` | no | Absolute opt-in crash ingest URL, **https only** (anything else is ignored); empty → `{relay.base_url}/v1/crash-reports` |
 | `support` | no | Optional Support discovery block (`enabled`, `account_id`, `display_name`) |
 
 Unknown keys are ignored. Network failure: fail open (no gate); use last good profile cache (`client_compat.json`, TTL 6h) when present.
+
+**When it is checked** (`ClientCompatController`): at start-up (deferred, after the first frame), a fresh cache taken
+as it is; when the app comes to the foreground (`AppLifecycle`), a **forced** check (`CompatCheck::Forced`: the relay
+asked past a fresh cache; a failed fetch still falls back to it) at most once per 15 min since the document held was
+fetched (`ClientCompatRecheckDue`); and when the org's relay answers `426 client_upgrade_required`.
+
+**`426 client_upgrade_required`** — any signed relay call (relay API, registration, blobs and files, lockers, push
+devices, heartbeats) whose sign version or account card the relay no longer takes. Every client reads it through
+`NoteRelayRefusal` as `Err::Auth::ClientUpgradeRequired` (final: not sent again as it is) and the relay's audience
+hears it (`IRelayAudience::Refused` → `RelayPins::SetOnUpgradeRequired`):
+
+| The relay | The app |
+|---|---|
+| The org's (its relay or locker origin) | A forced check, then the blocking update screen **whatever the document says** (the relay refusing us is the authority; its floor may not be raised yet), with the document's link for this platform; for the rest of the session. A later 426 keeps the screen up (shown again once dismissed) without asking again within 15 min |
+| Another relay of ours (Me → My relays) | Nothing is blocked: its row says *Needs a newer version of the app* (registration reason `upgrade`, beside `unreachable` / `refused` / `identity` / `other`), from a registration or any other call there |
+| A contact's relay (a send into it) | The send fails with the typed error (not retried as it is) |
+| pp-node's relay | One ERROR per relay per run: *this pp-node is too old for the relay at X: upgrade it* (`NodeUpgradeNotice`); heartbeats and registration renewals go on at their pace without a generic failure each time |
 
 ## HTTP crash reports (opt-in)
 

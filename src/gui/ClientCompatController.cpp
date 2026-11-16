@@ -1,10 +1,10 @@
-#include <stdexcept>
 #include "gui/ClientCompatController.h"
 
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/net/ClientCompat.h"
 #include "foundation/product/AppVersion.h"
 #include "common/runtime/AppRuntime.h"
+#include "foundation/platform/Platform.h"
 #include "foundation/platform/PlatformOpenUrl.h"
 #include "common/Logger.h"
 #include "gui/UserFeedback.h"
@@ -19,63 +19,15 @@ ClientCompatController::ClientCompatController() {
   redirectLogger("ClientCompat");
 }
 
-namespace {
-
-auto& CompatIoLog() {
-  // Free IO helper (no Module instance) — named logger matches redirectLogger.
-  static auto logger = logging::getLogger("ClientCompat");
-  return logger;
-}
-
-int64_t NowUnix() {
-  return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-}
-
-struct CompatResolveResult {
-  std::optional<ClientCompatDocument> document;
-  std::string error;
-};
-
-CompatResolveResult ResolveDocumentOnIO(IClientCompatClient* client, const std::string& profile_dir) {
-  CompatResolveResult out;
-  const int64_t now = NowUnix();
-  if (auto cached = LoadClientCompatCache(profile_dir); cached && ClientCompatCacheFresh(*cached, now)) {
-    out.document = cached->document;
-    return out;
-  }
-
-  if (!client) {
-    if (auto cached = LoadClientCompatCache(profile_dir); cached) {
-      out.document = cached->document;
-    } else {
-      out.error = "client-compat client unavailable";
-    }
-    return out;
-  }
-
-  auto fetched = client->Fetch();
-  if (!fetched) {
-    out.error = fetched.error().message;
-    if (auto cached = LoadClientCompatCache(profile_dir); cached) {
-      out.document = cached->document;
-    }
-    return out;
-  }
-
-  ClientCompatCacheEntry entry;
-  entry.fetched_at_unix = now;
-  entry.document = *fetched;
-  if (auto saved = SaveClientCompatCache(profile_dir, entry); !saved) {
-    CompatIoLog().warning << "Failed to cache client-compat: " << saved.error().message;
-  }
-  out.document = std::move(*fetched);
-  return out;
-}
-
-} // namespace
-
 void ClientCompatController::BindCompatPorts(MessagingCompatPorts ports) {
+  if (compat_ports_.watch_upgrade_required) {
+    compat_ports_.watch_upgrade_required(nullptr);
+  }
   compat_ports_ = std::move(ports);
+  if (compat_ports_.watch_upgrade_required) {
+    // Any thread (the relay call's): handled on the UI thread.
+    compat_ports_.watch_upgrade_required([this]() { AppRuntime::PostUI([this]() { OnOrgRelayRequiresUpgrade(); }); });
+  }
 }
 
 void ClientCompatController::BindShellFeedback(ShellFeedbackPorts ports) {
@@ -86,29 +38,82 @@ void ClientCompatController::BindSupportDiscovery(SupportDiscoveryPorts ports) {
   support_discovery_ = std::move(ports);
 }
 
-void ClientCompatController::CheckAsync() {
-  if (!compat_ports_.messaging_initialized || !compat_ports_.messaging_initialized()) {
-    return;
+void ClientCompatController::SetClock(std::function<int64_t()> now_unix) {
+  now_unix_ = std::move(now_unix);
+}
+
+int64_t ClientCompatController::NowUnix() const {
+  if (now_unix_) {
+    return now_unix_();
+  }
+  return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+bool ClientCompatController::CheckAsync(const CompatCheck mode) {
+  if (check_in_flight_ || !compat_ports_.messaging_initialized || !compat_ports_.messaging_initialized()) {
+    return false;
   }
   std::shared_ptr<IClientCompatClient> client = compat_ports_.client_compat ? compat_ports_.client_compat() : nullptr;
   const std::string profile_dir = compat_ports_.profile_data_dir ? compat_ports_.profile_data_dir() : std::string{};
+  check_in_flight_ = true;
+  AppRuntime::PostWorkerAndReplyOnUI<ClientCompatResolution>(
+      WorkerLane::Normal,
+      [client, profile_dir, mode, now = NowUnix()]() {
+        return ResolveClientCompat(client.get(), profile_dir, now, mode);
+      },
+      [this](ClientCompatResolution result) { OnResolved(std::move(result)); });
+  return true;
+}
 
-  AppRuntime::PostWorkerAndReplyOnUI<CompatResolveResult>(
-      WorkerLane::Normal, [client, profile_dir]() { return ResolveDocumentOnIO(client.get(), profile_dir); },
-      [this](CompatResolveResult result) {
-        if (!result.document) {
-          if (!result.error.empty()) {
-            log().info << "client-compat unavailable (fail open): " << result.error;
-          }
-          last_action_ = CompatUiAction::None;
-          return;
-        }
-        ApplyDocument(*result.document);
-      });
+void ClientCompatController::OnResolved(ClientCompatResolution result) {
+  check_in_flight_ = false;
+  if (!result.document) {
+    if (!result.error.empty()) {
+      log().info << "client-compat unavailable (fail open): " << result.error;
+    }
+    last_action_ = CompatUiAction::None;
+    if (relay_requires_upgrade_) {
+      PresentAction(CompatUiAction::UpdateRequired, document_.value_or(ClientCompatDocument{}));
+    }
+    return;
+  }
+  if (!result.error.empty()) {
+    if (result.fetched) {
+      log().warning << result.error; // the cache was not written; the document applies
+    } else {
+      log().info << "client-compat fetch failed, cached copy used: " << result.error;
+    }
+  }
+  fetched_at_unix_ = result.fetched_at_unix;
+  ApplyDocument(*result.document);
+}
+
+void ClientCompatController::OnForeground() {
+  if (ClientCompatRecheckDue(fetched_at_unix_, NowUnix())) {
+    (void)CheckAsync(CompatCheck::Forced);
+  }
+}
+
+void ClientCompatController::OnOrgRelayRequiresUpgrade() {
+  const bool first = !relay_requires_upgrade_;
+  relay_requires_upgrade_ = true;
+  if (check_in_flight_) {
+    return; // its answer shows the screen
+  }
+  if (first || ClientCompatRecheckDue(fetched_at_unix_, NowUnix())) {
+    if (first) {
+      log().warning << "the org's relay needs a newer version of this app (426 client_upgrade_required)";
+    }
+    if (CheckAsync(CompatCheck::Forced)) {
+      return; // for the document's links and message
+    }
+  }
+  PresentAction(CompatUiAction::UpdateRequired, document_.value_or(ClientCompatDocument{}));
 }
 
 void ClientCompatController::ApplyDocument(const ClientCompatDocument& doc) {
-  last_action_ = DecideCompatUiAction(AppVersionString(), doc);
+  document_ = doc;
+  last_action_ = DecideCompatUiAction(AppVersionString(), doc, relay_requires_upgrade_);
   PresentAction(last_action_, doc);
   PublishSupport(doc);
 }
@@ -125,8 +130,9 @@ void ClientCompatController::PublishSupport(const ClientCompatDocument& doc) {
 }
 
 void ClientCompatController::PresentAction(CompatUiAction action, const ClientCompatDocument& doc) {
-  upgrade_url_ = ResolvedUpgradeUrl(doc, kDefaultUpgradeUrl);
+  upgrade_url_ = ResolvedUpgradeUrl(doc, kDefaultUpgradeUrl, Platform::OsName());
   if (action == CompatUiAction::UpdateRequired) {
+    last_action_ = action;
     ShowUpdateRequired(doc);
     return;
   }

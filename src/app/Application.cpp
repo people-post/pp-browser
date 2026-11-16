@@ -1880,6 +1880,9 @@ void Application::WireUnlockPinAndFlow() {
     unlock_gate_->OnForeground();
     TouchGrace();
     StartGraceTimer();
+    if (client_compat_) {
+      client_compat_->OnForeground(); // a forced client-compat check, at most once per 15 minutes
+    }
   });
   grace_background_listener_ = AppLifecycle::AddBackgroundListener([this]() {
     TouchGrace(); // best effort: a phone already locked keeps the entry unreadable and the touch is skipped
