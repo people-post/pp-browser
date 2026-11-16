@@ -18,6 +18,12 @@
 namespace pbr {
 
 /**
+ * The source our own card is kept under when it came back from our relays' directories (OwnCards' recovery): checked
+ * by OwnCards against our own account keys first, so it passes the own-account guard (CheckNotOwn).
+ */
+inline constexpr const char kOwnCardRecoveredSource[] = "recovered";
+
+/**
  * Where an account's signing and KEM keys come from (docs/contracts/ACCOUNT_CARD.md#resolving-keys): the
  * cards this device has checked and kept, else the directory when one is configured — its answer kept
  * as a card too. Every key goes through the key stores, which refuse anything that does not prove
@@ -30,8 +36,9 @@ public:
 
   /**
    * The profile's own Account ID (any thread; empty: not known). A card of our own account is kept only from our own
-   * devices (sources `self`, `sibling`: OwnCards): one carried back by a contact, a directory or a relay is refused,
-   * so it never relabels our record (the profile.db ladder and the device list read it).
+   * devices (sources `self`, `sibling`: OwnCards) or as OwnCards got it back from our relays, checked against our own
+   * account keys (kOwnCardRecoveredSource): one carried back by a contact, a directory or a relay any other way is
+   * refused, so it never relabels our record (the profile.db ladder and the device list read it).
    */
   void SetOwnAccount(std::function<std::string()> own_account) { own_account_ = std::move(own_account); }
   /** Fills the key stores from every kept card (at unlock). */

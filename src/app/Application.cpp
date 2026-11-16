@@ -1228,7 +1228,14 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
         names[entry.peer_id] = entry.name;
       }
     }
-    return OwnDevicesViewFor(peer_ids, list->self_peer_id, list->signed_out, names, StartupSystemDeviceName());
+    const OwnListPending pending = list->recovery == OwnCardRecovery::NotFound  ? OwnListPending::NotFound
+                                   : list->recovery == OwnCardRecovery::Getting ? OwnListPending::Getting
+                                                                                : OwnListPending::None;
+    return OwnDevicesViewFor(peer_ids, list->self_peer_id, list->signed_out, names, StartupSystemDeviceName(), pending);
+  };
+  settings_commands.start_new_device_list = [&facade]() { return facade.StartNewDeviceList(); };
+  settings_commands.watch_own_devices = [&facade](std::function<void()> changed) {
+    facade.SetOnOwnDevicesChanged(std::move(changed));
   };
   settings_commands.rename_device = [&facade](const std::string& peer_id, const std::string& name) {
     return facade.RenameOwnDevice(peer_id, name);

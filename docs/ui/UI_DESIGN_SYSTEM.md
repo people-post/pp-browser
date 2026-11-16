@@ -255,6 +255,16 @@ See [WINDOW_SHELL.md](WINDOW_SHELL.md) for layout geometry (content scrolls unde
 
 Preference rows use a disclosure **card** pattern: full-width button with elevated surface, `border-subtle`, and 10dp radius; title/subtitle on the left, `chevron-right.svg` on the right; active row uses the same indigo tint as contacts selection (no accent rail). Binary on/off prefs use an iOS-style switch (`.settings-switch` with sliding `.settings-switch-knob`; on state via `data-class-settings-switch--on`). Limited-choice prefs (Theme, Language, Group invites) use `.settings-choice-row`: label left, muted current value + chevron right; tap opens `ContextMenuHost` (float on expanded, action sheet on compact). Preference labels use `.settings-toggle-label` (15dp); helper copy under rows uses `.settings-help` (12dp muted). Expanded Me uses secondary list + primary detail; compact Me uses the account bottom sheet (nested detail + swipe dismiss). The Me index keeps identity + Support content-sized (target ≲⅓ of pane height); photo/nickname/register live in **Profile** detail; only the Preferences list grows and scrolls.
 
+### My devices
+
+Me → **My devices** (`settings_section_devices.rml`; presenter `OwnDevicesViewFor`, rendered by
+`SettingsOwnDevices`): the account's devices, the main one first ([ACCOUNT_CARD § Main device](../contracts/ACCOUNT_CARD.md)).
+While this device holds no list of its account it shows no list and no link hero: "Getting your device list…" (muted)
+while our relays are asked, and — when they answered and none keeps it — "Your device list wasn't found on your
+relays…" with **Start a new device list…** (secondary button; its confirm, in the danger style, says this device becomes
+the main device and every other device is signed out). The page reads the list again whenever it, or that state,
+changes.
+
 ### My relays
 
 Me → **My relays** (`settings_section_relays.rml`, page `relays`, Home group 1 after My devices; multi-relay R3,

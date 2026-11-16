@@ -442,13 +442,17 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       {"security", "ask_setting_help('settings.security.recovery')", "security_has_recovery_phrase", 1, 1},
       // Devices: the transfer block is the desktop's inline copy here; phones open it as its own page.
       // (2026-11-14: the phone's top button, on the main device only; a linked phone shows nothing to tap.)
-      {"devices", "open_security_page('transfer')", "!own_devices_not_main", 1, 0},
+      // (2026-11-15: and not while no list of ours is here yet — being got back, or not found.)
+      {"devices", "open_security_page('transfer')", "!own_devices_not_main && !own_list_getting && !own_list_missing",
+       1, 0},
       // The "?" of the action: next to the top sentence on the main device, after a linked phone's "Main device
       // (manage)" label (the card's second line has none), and the link page's note (in the hidden desktop wrapper here).
       {"devices", "ask_setting_help('settings.security.transfer_row')",
-       "!own_devices_not_main@@own_devices_not_main && !own_devices_signed_out;;!device.is_this_device && "
-       "device.is_main@@-",
+       "!own_devices_not_main && !own_list_getting && !own_list_missing@@own_devices_not_main && "
+       "!own_devices_signed_out;;!device.is_this_device && device.is_main@@-",
        2, 0},
+      // No list of ours found on our relays: the one way to start a new one (it asks first: SettingsOwnDevicesTest).
+      {"devices", "start_new_device_list()", "own_list_missing", 1, 1},
       // Here the phone's button and "Copy again" sit in the transfer block's desktop wrapper (hidden): only the desktop
       // button shows. Their own page is checked in the next test.
       {"devices", "export_link_device()",

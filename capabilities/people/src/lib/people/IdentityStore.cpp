@@ -398,6 +398,9 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     identity_.registered_backend_url.clear();
     identity_.registered_card_issued_at = 0;
     identity_.registration_id.clear();
+    // A new account: its first card starts the device list, this device its master (M021 d4). Only on purpose — a
+    // device that has an account but holds no card of it gets the card back instead (OwnCards).
+    identity_.card_intent = kCardIntentFresh;
     if (auto peer = DerivePeerId(identity_); !peer) {
       return peer.error();
     }

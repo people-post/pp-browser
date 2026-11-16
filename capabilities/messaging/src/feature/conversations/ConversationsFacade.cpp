@@ -196,6 +196,14 @@ Roe<void> ConversationsFacade::MakeMainDevice(const std::string& peer_id) {
   return hub_.MakeMainDevice(peer_id);
 }
 
+Roe<void> ConversationsFacade::StartNewDeviceList() {
+  return hub_.StartNewDeviceList();
+}
+
+void ConversationsFacade::SetOnOwnDevicesChanged(std::function<void()> callback) {
+  hub_.SetOnOwnDevicesChanged(std::move(callback));
+}
+
 Roe<OurRelaysStatus> ConversationsFacade::OurRelays() {
   return hub_.OurRelays();
 }

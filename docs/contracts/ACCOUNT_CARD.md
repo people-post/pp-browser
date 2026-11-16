@@ -156,9 +156,25 @@ the account lists — a join that reached it after it issued another card. When 
 new device appended itself to, it sends that card to its contacts (the `device_list` notice), so their next
 message reaches the new device too. A device restored from the recovery
 phrase starts a fresh list holding only itself (`card_intent` fresh), newer than any it or the account's card
-floor knew. A device the newest list leaves out is **signed out**: it issues no card, sends nothing, and stops
+floor knew; so does a new account's first device (marked `fresh` when its identity is created). A device the newest
+list leaves out is **signed out**: it issues no card, sends nothing, and stops
 syncing the account locker; Me → Security says so. The rule is followed by the account's own devices — each
 still holds the account key, so a stolen device could sign itself back in (M021 limit 4).
+
+**A fresh list only on purpose.** Our own card is kept twice ([DATA_LAYOUT](DATA_LAYOUT.md)): in `peer_cards` with everyone else's, and beside the
+identity in `own_card.enc` (under the DEK, [AT_REST_ENCRYPTION § Own card plaintext](AT_REST_ENCRYPTION.md#own-card-plaintext-inside-own_cardenc)).
+Every read of our card brings the older copy up to the newer (`OwnCards`), so Reset chats, the start-up recovery's
+reset and a `profile.db` too old to upgrade — which remove the chat store, `peer_cards` with it — leave the account's
+list as it was: our card goes back into `peer_cards` at the next start, nothing is issued, no sibling is signed out.
+A device that holds **no card of its own and no `card_intent`** issues nothing: it asks our relays' directories for
+the card we registered (`GET /v1/users/by-account/<our Account ID>`: our relays, preferred first, then the org's
+directory; a relay that does not answer to its address is not asked, MR008), takes the newest that carries our
+Account ID and account keys and verifies (kept as source `recovered`, which the own-account guard accepts), and goes
+on as usual — listed, it refreshes its entry; left out, it is signed out. While none answered (offline) it waits
+("Getting your device list…"; asked again after 5 s doubling to 5 min, at once when the network comes back or the
+app comes to the front). When relays answered and none keeps a card of ours, Me → My devices asks the person:
+*Start a new device list…* — its confirm says that the account's other devices are signed out — sets `fresh`.
+(A registration while the card is still being got back carries none.)
 
 **Size:** a key card is about 13 KB as JSON (two 3309-byte signatures and two public keys in base64);
 each device adds about 4 KB to an account card. Too large for a QR code, which is why invites carry a

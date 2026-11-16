@@ -299,8 +299,10 @@ Everything else was keyed by Account ID already and stays. The JSON stores step 
 | Anyone else's | dropped from the record; the checked keys stay as a key card, and the account's next envelope asks for its newer card (`sender_card_at`), as the contact page's refresh does |
 
 A record that is not JSON is left as it is. Nothing else in `profile.db` holds a card for later use. A card of our own
-account is kept only from our own devices (`self`, `sibling`): one carried back by a contact, a directory or a relay
-is refused (`AccountKeyResolver`), so nothing relabels our record.
+account is kept only from our own devices (`self`, `sibling`), or as `OwnCards` got it back from our relays' directories
+after checking it against our own account keys (`recovered`, [ACCOUNT_CARD § Main device](ACCOUNT_CARD.md)): one
+carried back by a contact, a directory or a relay any other way is refused (`AccountKeyResolver`), so nothing relabels
+our record.
 
 **Account card version 4 (multi-relay MR007), `profile.db` 7 → 8.** Each relay on the card now names its PeerId
 (`relays: [{origin, peer_id}]`), and a version 3 card is refused; in `peer_cards`, the same way:

@@ -167,3 +167,19 @@ TEST(OwnDevicesTest, NoListYetCountsAsMain) {
   EXPECT_TRUE(view.this_is_main);
   EXPECT_TRUE(view.devices.empty());
 }
+
+TEST(OwnDevicesTest, NoListYetBeingGotBackOrNotFoundManagesNothing) {
+  LoadLocales();
+  const pbr::OwnDevicesView starting = pbr::OwnDevicesViewFor({}, "12D3KooSelf000001", false);
+  EXPECT_TRUE(starting.this_is_main) << "a new account: its first card starts the list";
+  EXPECT_EQ(starting.pending, pbr::OwnListPending::None);
+  for (const pbr::OwnListPending pending : {pbr::OwnListPending::Getting, pbr::OwnListPending::NotFound}) {
+    const pbr::OwnDevicesView view = pbr::OwnDevicesViewFor({}, "12D3KooSelf000001", false, {}, {}, pending);
+    EXPECT_EQ(view.pending, pending);
+    EXPECT_FALSE(view.this_is_main) << "nothing to manage until the list is here";
+    EXPECT_TRUE(view.devices.empty());
+  }
+  const pbr::OwnDevicesView listed =
+      pbr::OwnDevicesViewFor({"12D3KooSelf000001"}, "12D3KooSelf000001", false, {}, {}, pbr::OwnListPending::Getting);
+  EXPECT_EQ(listed.pending, pbr::OwnListPending::None) << "a list is here: nothing pending";
+}

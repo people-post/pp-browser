@@ -430,6 +430,15 @@ pbr::AccountCard OwnCardOf(pbr::IdentityStore& store, const std::string& nicknam
   return pbr::SignAccountCard(card, [&store](const pbr::ByteVector& bytes) { return store.SignBytes(bytes); }).value();
 }
 
+TEST_F(IdentityStoreTest, ANewAccountIsMarkedToStartItsDeviceList) {
+  IdentityStore store(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(store.SetDek(MakeTestDek()));
+  EXPECT_EQ(store.LoadOrCreate().value().card_intent, kCardIntentFresh);
+  IdentityStore again(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(again.SetDek(MakeTestDek()));
+  EXPECT_EQ(again.Get().value().card_intent, kCardIntentFresh) << "kept until its first card";
+}
+
 TEST_F(IdentityStoreTest, OurCardIsSealedBesideTheIdentityAndOnlyANewerOneReplacesIt) {
   IdentityStore store(data_dir_.string(), "test-profile");
   ASSERT_TRUE(store.SetDek(MakeTestDek()));

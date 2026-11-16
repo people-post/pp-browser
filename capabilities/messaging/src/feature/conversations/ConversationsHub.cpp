@@ -52,6 +52,7 @@
 #include "domain/attachments/AttachmentClient.h"
 #include "lib/net/BlobQuota.h"
 #include "lib/net/HttpClient.h"
+#include "lib/net/OrgBackendClientsImpl.h"
 #include "lib/net/ProfileIconClient.h"
 #include "lib/net/ProfileIconFetch.h"
 #include "domain/registration/RegistrationClient.h"
@@ -747,6 +748,7 @@ void ConversationsHub::OnLocalNetworkChanged(const NetworkChange& change) {
       OnLinkNetwork(linked);
       if (linked) {
         RecheckRelayIdentitiesSoon(); // a relay not checked while offline is asked now, not after its backoff
+        RetryOwnCardRecoverySoon();   // and a card of ours still to get back
       }
     }
   }
@@ -1590,6 +1592,7 @@ void ConversationsHub::WireMyRelaysHooks() {
     }
   });
   mesh_messaging_->SetOnOwnCardChanged([this](const AccountCard& card) {
+    NotifyOwnDevicesChanged();
     std::vector<AccountCardRelay> relays = card.relays;
     std::vector<OwnCardRelay> pins;
     for (const AccountCardRelay& relay : card.relays) {
@@ -1694,6 +1697,7 @@ void ConversationsHub::BuildMessagingObjects() {
     PublishAccountLockerSoon();
   });
   WireMyRelaysHooks();
+  WireOwnCardRecovery();
   NotifyMessagingBuilt();
   actions_ =
       std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_, group_membership_.get(),
@@ -1871,6 +1875,9 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
     return Error("shutdown in progress");
   }
 
+  // Our card back into the chat store's kept cards after a reset of it (it stays beside the identity), before anything
+  // reads them.
+  mesh_messaging_->OwnAccountCards().Reconcile(util::NowUnixMs());
   // Before the first poll: a restored device refuses cards older than the ones it knew.
   ApplyRestoredCardFloors();
   messaging_ready_ = true;
@@ -4017,6 +4024,7 @@ void ConversationsHub::OnAppForeground() {
     return;
   }
   RecheckRelayIdentitiesSoon(); // a relay not checked yet is asked now (it may have failed while suspended)
+  RetryOwnCardRecoverySoon();
   if (const std::string active = inbox_->ActiveThreadId(); !active.empty()) {
     mesh_messaging_->WarmPeerForThread(active);
   }
@@ -4044,6 +4052,8 @@ void ConversationsHub::UnhookMessaging() {
     mesh_messaging_->SetGroupMembership(nullptr);
     mesh_messaging_->SetOnSiblingNotice(nullptr);
     mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(nullptr);
+    mesh_messaging_->OwnAccountCards().SetOwnCardLookup(nullptr);
+    mesh_messaging_->OwnAccountCards().SetOnRecoveryChanged(nullptr);
     mesh_messaging_->SetOnInboxPolled(nullptr);
     mesh_messaging_->SetOnOwnCardChanged(nullptr);
   }
@@ -4320,6 +4330,76 @@ Roe<void> ConversationsHub::RemoveOwnDevice(const std::string& peer_id) {
   log().info << "Device " << peer_id << " taken off the account; " << card->devices.size() << " left";
   AppRuntime::PostWorkerNormal([this]() { SyncLockerThenAnnounceOwnDevices(); });
   return {};
+}
+
+Roe<void> ConversationsHub::StartNewDeviceList() {
+  if (!IsMessagingReady() || !mesh_messaging_) {
+    return Error("Messaging is not ready");
+  }
+  auto card = mesh_messaging_->OwnAccountCards().StartFreshList(util::NowUnixMs());
+  if (!card) {
+    return card.error();
+  }
+  log().info << "A new device list started on this device, its main device";
+  AppRuntime::PostWorkerNormal([this]() { SyncLockerThenAnnounceOwnDevices(); });
+  RegisterOnOtherRelaysSoon();
+  return {};
+}
+
+void ConversationsHub::SetOnOwnDevicesChanged(std::function<void()> callback) {
+  std::lock_guard lock(own_devices_changed_mu_);
+  on_own_devices_changed_ = std::move(callback);
+}
+
+void ConversationsHub::NotifyOwnDevicesChanged() {
+  std::function<void()> callback;
+  {
+    std::lock_guard lock(own_devices_changed_mu_);
+    callback = on_own_devices_changed_;
+  }
+  if (callback) {
+    callback();
+  }
+}
+
+void ConversationsHub::RetryOwnCardRecoverySoon() {
+  AppRuntime::PostWorkerNormal([this]() {
+    if (!shutdown_requested_.load(std::memory_order_acquire) && IsMessagingReady() && mesh_messaging_) {
+      mesh_messaging_->OwnAccountCards().RetryRecovery(util::NowUnixMs());
+    }
+  });
+}
+
+void ConversationsHub::WireOwnCardRecovery() {
+  OwnCards& own = mesh_messaging_->OwnAccountCards();
+  own.SetOwnCardLookup([this](const std::string& account_id, std::function<void(OwnCardAnswers)> done) {
+    AppRuntime::PostWorkerNormal([this, account_id, done = std::move(done)]() {
+      done(shutdown_requested_.load(std::memory_order_acquire) ? OwnCardAnswers{} : AskOurRelaysForOwnCard(account_id));
+    });
+  });
+  own.SetOnRecoveryChanged([this]() { NotifyOwnDevicesChanged(); });
+}
+
+OwnCardAnswers ConversationsHub::AskOurRelaysForOwnCard(const std::string& account_id) const {
+  // The card each relay keeps is the newest we registered there; it is ours only if our account key signed it
+  // (OwnCards checks). Our relays first (preferred first), then the org's directory (CardDirectories).
+  OwnCardAnswers answers;
+  const auto pins = RelayIdentityPins();
+  for (const std::string& origin : CardDirectories()) {
+    if (pins && pins->IdentityMismatch(origin)) {
+      continue; // doesn't match its link: not used (MR008)
+    }
+    auto stored = FetchStoredAccountCard(origin, account_id);
+    if (!stored) {
+      log().info << "our card not asked of " << RelayOriginKey(origin) << ": " << stored.error().message;
+      continue;
+    }
+    ++answers.answered;
+    if (*stored) {
+      answers.cards.push_back(**stored);
+    }
+  }
+  return answers;
 }
 
 Roe<void> ConversationsHub::MakeMainDevice(const std::string& peer_id) {

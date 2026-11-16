@@ -140,6 +140,13 @@ struct SettingsCommands {
   std::function<Roe<void>(const std::string& peer_id)> remove_own_device;
   /** On the main device: make another device the main one (this one can then no longer add or remove devices). */
   std::function<Roe<void>(const std::string& peer_id)> make_main_device;
+  /**
+   * No list of ours found on our relays (OwnListPending::NotFound): this device starts a new one as the main device;
+   * the account's other devices are signed out. A worker.
+   */
+  std::function<Roe<void>()> start_new_device_list;
+  /** Runs `changed` (on any thread) whenever the device list or where getting it back stands changes; null stops. */
+  std::function<void(std::function<void()> changed)> watch_own_devices;
   /** Me → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
   std::function<Roe<MyRelaysView>()> my_relays;
   /**

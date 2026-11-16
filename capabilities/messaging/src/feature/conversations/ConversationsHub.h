@@ -334,6 +334,14 @@ public:
   Roe<void> RemoveOwnDevice(const std::string& peer_id);
   /** On the master: hand the role to another device of the account and tell siblings and contacts. */
   Roe<void> MakeMainDevice(const std::string& peer_id);
+  /**
+   * The person chose a new device list (no card of ours was found on our relays, OwnCards::StartFreshList): this
+   * device's card holds only itself, as the master, and goes to our contacts and relays — the account's other devices
+   * are signed out. Blocks: a worker.
+   */
+  Roe<void> StartNewDeviceList();
+  /** Our device list, or where getting it back stands, changed: read OwnDevices again. Runs on any thread. */
+  void SetOnOwnDevicesChanged(std::function<void()> callback);
   /** Me → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
   Roe<OurRelaysStatus> OurRelays();
   /**
@@ -797,6 +805,18 @@ private:
   void HealPreferredRegistration(int64_t now_ms);
   /** Our card re-issued with what changed, sent to our contacts and siblings, and to our relays. Blocks (a worker). */
   void ReissueAndAnnounceCard();
+  /**
+   * BuildMessagingObjects' step: a device without a card of its own gets it back from our relays' directories (our
+   * relays, preferred first, then the org's; a relay not answering to its address is not asked, MR008).
+   */
+  void WireOwnCardRecovery();
+  /** Asks our relays' directories for `account_id`'s stored card (blocks: a worker). */
+  OwnCardAnswers AskOurRelaysForOwnCard(const std::string& account_id) const;
+  /** The network back, the app in front (any thread): a card of ours still to get back is asked for now. */
+  void RetryOwnCardRecoverySoon();
+  void NotifyOwnDevicesChanged();
+  std::mutex own_devices_changed_mu_;
+  std::function<void()> on_own_devices_changed_;
   std::mutex our_relays_changed_mu_;
   std::function<void()> on_our_relays_changed_;
   /** Read with MyRelays (any thread: the page's worker); Shutdown closes it before what its ports touch goes. */

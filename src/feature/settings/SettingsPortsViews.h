@@ -58,6 +58,15 @@ struct OwnDeviceView {
   bool can_manage = false;
 };
 
+/** This device holds no list of its account: where getting it back from our relays stands (OwnCards). */
+enum class OwnListPending {
+  None,
+  /** "Getting your device list…": asking our relays, or waiting to ask again. */
+  Getting,
+  /** No relay that answered keeps it: "Start a new device list…" is offered. */
+  NotFound,
+};
+
 /** The account's devices as this device knows them, in list order (the main device first). */
 struct OwnDevicesView {
   std::vector<OwnDeviceView> devices;
@@ -65,6 +74,8 @@ struct OwnDevicesView {
   bool signed_out = false;
   /** This device is the main one (or the account has no list yet): it may add and remove devices. */
   bool this_is_main = false;
+  /** No list here yet: being got back, or not found (then the person may start a new one). */
+  OwnListPending pending = OwnListPending::None;
 };
 
 /** Me → My relays (multi-relay R3, MR006): one relay of ours as the page shows it. */

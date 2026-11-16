@@ -58,7 +58,8 @@ Roe<PeerCardRecord> AccountKeyResolver::AddAccountCard(const AccountCard& card, 
 }
 
 Roe<void> AccountKeyResolver::CheckNotOwn(const std::string& account_id, const std::string& source) const {
-  if (source == "self" || source == "sibling" || !own_account_) {
+  // Our own devices', and our card as OwnCards got it back from our relays (checked there against our account keys).
+  if (source == "self" || source == "sibling" || source == kOwnCardRecoveredSource || !own_account_) {
     return {};
   }
   if (const std::string own = own_account_(); !own.empty() && own == account_id) {
