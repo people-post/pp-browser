@@ -1,4 +1,5 @@
 #include "lib/people/ContactTypes.h"
+#include "lib/people/ContactIdentity.h"
 #include "lib/delivery/LocalKeysFromIdentity.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
@@ -92,15 +93,16 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
 } // namespace
 
 MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
-    IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay, InboxController& inbox,
-    AccountKeyResolver& account_keys, IPeerSessionStore& psk_store, IGroupRosterStore& group_roster,
-    GroupInviteGate* invite_gate, mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
-    std::function<void(std::function<void()>)> amp_worker_post, std::function<void(std::function<void()>)> amp_post_io,
+    IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, std::shared_ptr<IRelayClient> relay,
+    InboxController& inbox, AccountKeyResolver& account_keys, IPeerSessionStore& psk_store,
+    IGroupRosterStore& group_roster, GroupInviteGate* invite_gate, mesh::IChatPeerLinks* amp_links,
+    std::function<void()> amp_io_pump, std::function<void(std::function<void()>)> amp_worker_post,
+    std::function<void(std::function<void()>)> amp_post_io,
     std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after)
     : store_(store),
       contacts_(contacts),
       identity_(identity),
-      relay_(relay),
+      relay_(std::move(relay)),
       inbox_(inbox),
       account_keys_(account_keys),
       psk_store_(psk_store),
@@ -123,9 +125,51 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
                         }),
       inboxes_(InboxPorts()) {
   redirectLogger("MeshDeliveryOrchestrator");
+  WireCardHooks();
+  WireReceivePipeline(invite_gate);
+  WireOutbox();
+  // Blob + chat/history: Amp single entry ([A020] / D10). May also AttachAmpTransports later.
+  if (amp_links) {
+    AttachAmpTransports(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io),
+                        std::move(amp_post_after));
+  } else {
+    log().warning << "direct chat/history/blob unavailable (Amp required)";
+  }
+  chat_sync_ =
+      std::make_unique<ChatSyncWorkflow>(store_, identity_, relay_, *receive_pipeline_, inbox_, transports_.History());
+  chat_sync_->SetOnMessagesChanged([this]() {
+    if (on_messages_changed_) {
+      AppRuntime::PostUI([this]() { on_messages_changed_(); });
+    }
+  });
+}
+
+void MeshDeliveryOrchestrator::WireCardHooks() {
+  // A contact added by QR is written to its locator's relay until its card is kept (multi-relay R4).
+  recipient_relays_.SetStartingRelays([this](const std::string& account_id) {
+    auto contact = contacts_.FindByIdentity(account_id, mesh::ContactIdKind::Account);
+    return contact && *contact ? ContactRelays(**contact, std::nullopt).origins : std::vector<std::string>{};
+  });
   relay_grants_.SetOnGrantReceived([this](const std::string& grantor) {
     AppRuntime::PostWorkerNormal([this, grantor]() { outbox_.ReleaseHeldFor(grantor); });
   });
+  // Our device list changed here (a device linked in, a sibling's newer list, the nickname): our other devices
+  // hear, through our own mailbox (M022).
+  own_cards_.SetOnChanged([this](const AccountCard& card) {
+    log().info << "own account card now lists " << card.devices.size() << " device(s)";
+    AppRuntime::PostWorkerNormal([this]() { NotifySiblings(); });
+    std::function<void(const AccountCard&)> changed;
+    {
+      std::lock_guard lock(own_hooks_mu_);
+      changed = on_own_card_changed_;
+    }
+    if (changed) {
+      changed(card);
+    }
+  });
+}
+
+void MeshDeliveryOrchestrator::WireReceivePipeline(GroupInviteGate* invite_gate) {
   receive_pipeline_ = std::make_unique<RelayReceivePipeline>(
       store_,
       [this](const std::string& account_id) -> std::optional<AccountCard> {
@@ -181,12 +225,6 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
       });
   receive_pipeline_->SetAccountCardFloor(
       [this](const std::string& account_id) { return account_keys_.CardFloor(account_id); });
-  // Our device list changed here (a device linked in, a sibling's newer list, the nickname): our other devices
-  // hear, through our own mailbox (M022).
-  own_cards_.SetOnChanged([this](const AccountCard& card) {
-    log().info << "own account card now lists " << card.devices.size() << " device(s)";
-    AppRuntime::PostWorkerNormal([this]() { NotifySiblings(); });
-  });
   receive_pipeline_->SetOnRosterMember([this](const GroupMembershipCodec::MemberJoinedEntry& member) {
     if (member.card) {
       if (auto kept =
@@ -209,12 +247,15 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
       [this](const std::string& thread_id, const ThreadMessage& before, const ThreadMessage& after) {
         inbox_.AfterMessageEdited(thread_id, before, after);
       });
+}
+
+void MeshDeliveryOrchestrator::WireOutbox() {
   transports_.SetInboundHandler([this](RelayEnvelope envelope, std::string from_peer_id) {
     HandleDirectInbound(std::move(envelope), from_peer_id);
   });
   // Chat reaches an account over a live link to one of the devices its card lists.
   transports_.SetDevicesOf([this](const std::string& key) { return card_service_.DevicesOf(key); });
-  outbox_.SetRelayClient(relay_);
+  outbox_.SetRelayClient(relay_.get()); // until SetRelayClients gives the sender (stable for the hub's life)
   // On the worker that finished the send: the row is marked before the UI hears of it.
   outbox_.SetOnOutcome([this](const DeliveryOutcome& outcome) {
     if (!outcome.group_member.empty()) {
@@ -235,20 +276,6 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
     }
   });
   outbox_.SetThreadPaused([this](const std::string& thread_id) { return IsThreadCompromised(thread_id); });
-  // Blob + chat/history: Amp single entry ([A020] / D10). May also AttachAmpTransports later.
-  if (amp_links) {
-    AttachAmpTransports(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io),
-                        std::move(amp_post_after));
-  } else {
-    log().warning << "direct chat/history/blob unavailable (Amp required)";
-  }
-  chat_sync_ =
-      std::make_unique<ChatSyncWorkflow>(store_, identity_, relay_, *receive_pipeline_, inbox_, transports_.History());
-  chat_sync_->SetOnMessagesChanged([this]() {
-    if (on_messages_changed_) {
-      AppRuntime::PostUI([this]() { on_messages_changed_(); });
-    }
-  });
 }
 
 std::optional<std::string> MeshDeliveryOrchestrator::RelayRecipientFor(const std::string& account_id) {
@@ -266,9 +293,19 @@ void MeshDeliveryOrchestrator::NotePaymentRequired(const std::string& recipient,
   }
   // The relay refused a stranger's send to a recipient that charges (MR005): its price, as P001's charge_required
   // would say it — the chat shows it, and the outbound gate holds sends while no payment can be made.
+  // The relay's answer is the authority (it reads the card the recipient registered): when our kept card says another
+  // price, or we keep none, the card is fetched again — its devices, then the directories (RecipientRelays).
   log().info << "relay refused a stranger's send: " << recipient << " charges floor=" << floor;
-  (void)initiation_billing_->SetFloor(recipient, floor);
+  auto stale_card = initiation_billing_->SetRelayFloor(recipient, floor);
   (void)initiation_billing_->MarkClosed(recipient);
+  if (stale_card && *stale_card) {
+    AppRuntime::PostWorkerNormal([this, recipient]() {
+      (void)recipient_relays_.Refresh(recipient);
+      if (on_messages_changed_) {
+        AppRuntime::PostUI([this]() { on_messages_changed_(); });
+      }
+    });
+  }
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
@@ -699,19 +736,32 @@ void MeshDeliveryOrchestrator::RegisterPeerKeysFromDirectory(const mesh::Directo
 }
 
 void MeshDeliveryOrchestrator::SetRelayClients(RelayClients clients) {
-  relay_ = clients.preferred;
-  outbox_.SetRelayClient(clients.sender ? clients.sender : clients.preferred);
+  {
+    std::lock_guard lock(relay_mu_);
+    relay_ = clients.preferred;
+  }
+  outbox_.SetRelayClient(clients.sender ? clients.sender : clients.preferred.get());
   inboxes_.SetInboxes(std::move(clients.inboxes), profile_data_dir_);
   if (chat_sync_) {
-    chat_sync_ = std::make_unique<ChatSyncWorkflow>(store_, identity_, relay_, *receive_pipeline_, inbox_,
-                                                    transports_.History());
-    chat_sync_->SetOnMessagesChanged([this]() {
-      if (on_messages_changed_) {
-        AppRuntime::PostUI([this]() { on_messages_changed_(); });
-      }
-    });
+    // The same workflow (its hooks and its attachment downloads stay); a sync in flight keeps the relay it asked.
+    chat_sync_->SetHistoryRelay(clients.history ? std::move(clients.history) : std::move(clients.preferred));
   }
   TailSyncActiveE2eThread();
+}
+
+std::shared_ptr<IRelayClient> MeshDeliveryOrchestrator::PreferredRelay() const {
+  std::lock_guard lock(relay_mu_);
+  return relay_;
+}
+
+void MeshDeliveryOrchestrator::SetOnInboxPolled(std::function<void(const std::string& origin, bool ok)> polled) {
+  std::lock_guard lock(own_hooks_mu_);
+  on_inbox_polled_ = std::move(polled);
+}
+
+void MeshDeliveryOrchestrator::SetOnOwnCardChanged(std::function<void(const AccountCard& card)> changed) {
+  std::lock_guard lock(own_hooks_mu_);
+  on_own_card_changed_ = std::move(changed);
 }
 
 void MeshDeliveryOrchestrator::SetInboxReady(std::function<bool(const std::string& origin)> ready) {
@@ -1105,7 +1155,7 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
   }
   const std::string& peer = (*thread)->peer_identity_value;
   // The relay delivers to the peer's Account ID (MR001).
-  view.relay_available = relay_ != nullptr && IsAccountIdentityValue(peer);
+  view.relay_available = PreferredRelay() != nullptr && IsAccountIdentityValue(peer);
   mesh::IChatPeerLinks* links = transports_.Links();
   if (peer.empty() || !links) {
     view.path_kind = view.relay_available && !peer.empty() ? ThreadPeerPathKind::ViaRelay : ThreadPeerPathKind::Failed;
@@ -2175,7 +2225,8 @@ std::string FormatUnixMsIso8601Utc(const int64_t unix_ms) {
 } // namespace
 
 Roe<RelayDeleteResult> MeshDeliveryOrchestrator::ClearUndeliveredOlderThan(const int older_than_days) {
-  if (!relay_) {
+  const std::shared_ptr<IRelayClient> relay = PreferredRelay();
+  if (!relay) {
     return Error("Relay client unavailable");
   }
   if (older_than_days <= 0) {
@@ -2187,13 +2238,13 @@ Roe<RelayDeleteResult> MeshDeliveryOrchestrator::ClearUndeliveredOlderThan(const
   }
   const int64_t before_ms = util::NowUnixMs() - static_cast<int64_t>(older_than_days) * 24LL * 60 * 60 * 1000;
   const std::string before = FormatUnixMsIso8601Utc(before_ms);
-  auto cleared = relay_->ClearInbox(identity->account_id, before);
+  auto cleared = relay->ClearInbox(identity->account_id, before);
   if (!cleared) {
     return cleared;
   }
   // Our other relays' inboxes too (multi-relay R2), best effort: the preferred relay's answer is the one reported.
   for (const RelayInbox& inbox : inboxes_.Inboxes()) {
-    if (inbox.client.get() == relay_ || !InboxReady(inbox.origin)) {
+    if (inbox.client == relay || !InboxReady(inbox.origin)) {
       continue;
     }
     if (auto other = inbox.client->ClearInbox(identity->account_id, before)) {
@@ -2207,6 +2258,9 @@ Roe<RelayDeleteResult> MeshDeliveryOrchestrator::ClearUndeliveredOlderThan(const
 
 void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool force) {
   RetryFailedOutbound();
+  if (inbox_sync_held_.load(std::memory_order_acquire)) {
+    return;
+  }
   last_relay_poll_ms_ = util::NowUnixMs();
   auto identity = identity_.Get();
   if (!identity) {
@@ -2227,7 +2281,15 @@ RelayInboxCoordinator::Ports MeshDeliveryOrchestrator::InboxPorts() {
   ports.take = [this](const RelayInboxCoordinator::Batch& batch, const std::string& account_id) {
     TakeRelayBatch(batch, account_id);
   };
-  ports.polled = [this](const std::string&, const bool preferred, const Error* failure) {
+  ports.polled = [this](const std::string& origin, const bool preferred, const Error* failure) {
+    std::function<void(const std::string&, bool)> polled;
+    {
+      std::lock_guard lock(own_hooks_mu_);
+      polled = on_inbox_polled_;
+    }
+    if (polled) {
+      polled(origin, failure == nullptr);
+    }
     if (!preferred) {
       return; // another relay re-registers by itself (RelayRegistrationsWorkflow)
     }

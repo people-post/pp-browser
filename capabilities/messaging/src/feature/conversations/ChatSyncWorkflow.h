@@ -9,6 +9,8 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
+#include <mutex>
 #include <string>
 #include "common/PbrCompat.h"
 
@@ -26,7 +28,7 @@ struct ChatSyncResult {
 /** D058 unified E2E backfill — peer-direct (D060) then relay (D027). */
 class ChatSyncWorkflow {
 public:
-  ChatSyncWorkflow(IThreadStore& store, IdentityStore& identity, IRelayClient* relay,
+  ChatSyncWorkflow(IThreadStore& store, IdentityStore& identity, std::shared_ptr<IRelayClient> relay,
                    RelayReceivePipeline& receive_pipeline, InboxController& inbox,
                    IChatHistoryPeerClient* peer_client = nullptr);
 
@@ -50,6 +52,11 @@ public:
 
   void SetOnMessagesChanged(std::function<void()> callback);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
+  /**
+   * Where stream history is asked from now on (multi-relay MR006: the relay that holds it; it follows My relays). A
+   * sync in flight finishes on the relay it started with. Any thread.
+   */
+  void SetHistoryRelay(std::shared_ptr<IRelayClient> relay);
   /** Clear Amp history client before MeshHost/Amp teardown (non-owning). */
   void SetPeerHistoryClient(IChatHistoryPeerClient* peer_client);
 
@@ -66,10 +73,12 @@ private:
                                             MessageTransport transport = MessageTransport::Relay);
   bool PassesEmptyGapGuard(const std::string& thread_id, uint32_t session_epoch, const std::string& seq_owner,
                            uint64_t gap_max) const;
+  std::shared_ptr<IRelayClient> HistoryRelay() const;
 
   IThreadStore& store_;
   IdentityStore& identity_;
-  IRelayClient* relay_ = nullptr;
+  mutable std::mutex relay_mu_;
+  std::shared_ptr<IRelayClient> relay_;
   IChatHistoryPeerClient* peer_client_ = nullptr;
   RelayReceivePipeline& receive_pipeline_;
   InboxController& inbox_;

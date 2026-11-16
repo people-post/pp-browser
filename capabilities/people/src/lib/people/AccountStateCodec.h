@@ -60,10 +60,53 @@ struct AccountCardFloor {
   bool operator==(const AccountCardFloor&) const = default;
 };
 
-/** Account state the locker keeps beyond the contacts: the groups and the card floors. */
+/**
+ * A grant another account gave this one, as received (multi-relay MR005: it lets this account write to the grantor's
+ * relay inboxes past the stranger rules). Signed by the grantor's account key, so it proves itself: a device checks
+ * it against the grantor's key before it keeps one (the locker's seal says only that one of our devices wrote it).
+ */
+struct AccountStateGrant {
+  /** Who granted: the account whose inboxes it opens. */
+  std::string grantor_account_id;
+  /** Who it was given to: this account. */
+  std::string grantee_account_id;
+  /** Unix ms. */
+  int64_t issued_at = 0;
+  int64_t expires_at = 0;
+  /** The grantor's ML-DSA-65 signature, standard base64. */
+  std::string signature;
+
+  bool operator==(const AccountStateGrant&) const = default;
+};
+
+/** One relay of ours as the locker keeps it: its address, the origin and the PeerId it answers to (MR008). */
+struct AccountStateRelay {
+  std::string origin;
+  std::string peer_id;
+
+  bool operator==(const AccountStateRelay&) const = default;
+};
+
+/**
+ * The account's relays (My relays, multi-relay MR006), preferred first, as its card issued at `card_issued_at` lists
+ * them: a restored device takes them before its first card, instead of the deployment's default. Empty: none kept.
+ */
+struct AccountStateRelays {
+  std::vector<AccountStateRelay> list;
+  int64_t card_issued_at = 0;
+
+  bool operator==(const AccountStateRelays&) const = default;
+};
+
+/**
+ * Account state the locker keeps beyond the contacts: the groups, the card floors, the grants given to us and our
+ * relays.
+ */
 struct AccountStateExtras {
   std::vector<AccountStateGroup> groups;
   std::vector<AccountCardFloor> card_floors;
+  std::vector<AccountStateGrant> grants;
+  AccountStateRelays relays;
 };
 
 /** JSON for one group of the account state, as the account locker's `groups` carry it. */

@@ -73,11 +73,13 @@ struct MessagingContactsPorts {
   /** The contact's nickname and photo again when its last directory answer is stale; background, silent (B142). */
   std::function<void(const std::string& contact_id)> refresh_contact_profile;
   /**
-   * The contact page's Refresh: its devices, then our directory, off the UI thread (ContactRefreshWorkflow).
+   * The contact page's Refresh: its devices, then its relays, then ours, off the UI thread (ContactRefreshWorkflow).
    * `done` once, on the UI thread. False (no `done`) when one already runs for that contact.
    */
   std::function<bool(const std::string& contact_id, std::function<void(const ContactRefreshResult&)> done)>
       refresh_contact;
+  /** The contact page's relay line: its preferred relay and what it answered at the last refresh (multi-relay R3). */
+  std::function<ContactRelayView(const Contact& contact)> contact_relay;
 };
 
 class ConversationsHub;

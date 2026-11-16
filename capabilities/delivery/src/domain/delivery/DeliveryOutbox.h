@@ -9,6 +9,7 @@
 #include "lib/delivery/DeliveryNotice.h"
 
 #include <cstdint>
+#include <atomic>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -84,7 +85,8 @@ public:
   /** Cancels the control lane's pending retries and waits out one that is running. */
   ~DeliveryOutbox();
 
-  void SetRelayClient(IRelayClient* relay) { relay_ = relay; }
+  /** Any thread: the sends on workers read it (the relay set's sender, stable once given). */
+  void SetRelayClient(IRelayClient* relay) { relay_.store(relay, std::memory_order_release); }
   void SetOnOutcome(std::function<void(const DeliveryOutcome&)> handler) { on_outcome_ = std::move(handler); }
   /** A thread whose sends are paused (e.g. its E2E session is compromised): its retries are dropped. */
   void SetThreadPaused(std::function<bool(const std::string& thread_id)> paused) { paused_ = std::move(paused); }
@@ -177,7 +179,7 @@ private:
   bool Paused(const std::string& thread_id) const { return !thread_id.empty() && paused_ && paused_(thread_id); }
 
   std::function<IDirectMessageClient*()> direct_chat_;
-  IRelayClient* relay_ = nullptr;
+  std::atomic<IRelayClient*> relay_{nullptr};
   std::function<void(const DeliveryOutcome&)> on_outcome_;
   std::function<bool(const std::string&)> paused_;
   /** A row's sends under way: when the first started, and how many requests have not ended. */

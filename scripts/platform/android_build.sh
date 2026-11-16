@@ -71,6 +71,8 @@ Optional environment variables:
   PP_BROWSER_RELEASE_VERSION  Full release version (e.g. 0.1.0-rc1)
   PP_API_URL_PROD             Prod backend origin compiled into the app (read by Gradle; empty = none)
   PP_API_URL_QA               QA backend origin compiled into the app (empty = QA option hidden)
+  PP_RELAY_PEER_ID_PROD       PeerId of the prod backend's relay (multi-relay MR008; empty = pinned on first use)
+  PP_RELAY_PEER_ID_QA         PeerId of the QA backend's relay (empty = pinned on first use)
   PP_RELAY_CONTENT_SHA256     ON/OFF: default of relay.content_sha256 (x-amz-content-sha256 on relay POST/PUT); empty = OFF
 
 Requires:

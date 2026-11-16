@@ -269,3 +269,27 @@ TEST(ConfigBackendTest, ReloadAfterChoosingAnotherBackendKeepsTheLatchedOne) {
   std::filesystem::remove(switched);
   pbr::ResetActiveBackendForTest();
 }
+
+// Multi-relay MR008: a custom backend's relay address carries its PeerId (`relay.peer_id`, `registration.peer_id`);
+// prod / qa take the build's (none in this build).
+TEST(ConfigRelayPeerIdTest, ACustomBackendNamesItsRelaysPeerIdAndWritesItBack) {
+  pbr::ResetActiveBackendForTest();
+  ScopedOrigin origin(nullptr);
+  const std::string path = WriteConfig("pp_browser_config_relay_peer_id.json",
+                                       R"({"config_version": 1, "backend": {"env": "custom"},
+          "relay": {"base_url": "https://custom.example.test/api/relay", "peer_id": "QmCustomRelay"},
+          "registration": {"base_url": "https://custom.example.test/api/relay", "peer_id": "QmCustomRelay"}})");
+  auto loaded = pbr::Config::LoadFromFile(path);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  EXPECT_EQ(loaded->relay.peer_id, "QmCustomRelay");
+  EXPECT_EQ(loaded->registration.peer_id, "QmCustomRelay");
+  const std::string out = (std::filesystem::temp_directory_path() / "pp_browser_config_peer_id_out.json").string();
+  ASSERT_TRUE(static_cast<bool>(pbr::Config::SaveToFile(out, *loaded)));
+  pbr::ResetActiveBackendForTest();
+  auto reloaded = pbr::Config::LoadFromFile(out);
+  ASSERT_TRUE(static_cast<bool>(reloaded));
+  EXPECT_EQ(reloaded->relay.peer_id, "QmCustomRelay");
+  std::filesystem::remove(path);
+  std::filesystem::remove(out);
+  pbr::ResetActiveBackendForTest();
+}

@@ -160,6 +160,8 @@ jobs:
         run: ./scripts/check/check_rml_bindings.sh
       - name: Shareable channels (what Send diagnostics reads)
         run: ./scripts/check/check_shareable_channels.sh
+      - name: Release PeerId check (multi-relay MR008)
+        run: ./scripts/check/check_relay_peer_ids.sh --self-test
       - name: C++ formatting (clang-format 23.1.5)
         run: |
           pipx install clang-format==23.1.5

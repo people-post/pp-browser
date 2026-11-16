@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -40,6 +41,9 @@ public:
 
   SettingsOwnDevices(const SettingsCommands& commands, const ShellFeedbackPorts& feedback,
                      std::function<void(const Error&)> report_failure);
+  ~SettingsOwnDevices();
+  SettingsOwnDevices(const SettingsOwnDevices&) = delete;
+  SettingsOwnDevices& operator=(const SettingsOwnDevices&) = delete;
 
   /** Its fields and events in the settings model. */
   void Bind(ui::DataModelConstructor& ctor);
@@ -54,7 +58,15 @@ public:
   /** The rename dialog for the device at `index` (this one, or — on the main device — another; a note for others). */
   void Rename(int index);
 
+  /**
+   * "Start a new device list…" (only while no list of ours was found on our relays): asks first — it signs the
+   * account's other devices out — then starts it on a worker.
+   */
+  void StartNewList();
+
 private:
+  /** Reads the list again whenever it, or where getting it back stands, changes (set again at every read). */
+  void Watch();
   void Remove(int index);
   void MakeMain(int index);
   void RenameById(const std::string& peer_id);
@@ -88,8 +100,13 @@ private:
   bool not_main_ = false;
   /** On a linked device whose main device has a name: "The main device is “…”. Manage devices there."; else empty. */
   ui::String main_note_;
+  /** No list here: being got back from our relays ("Getting your device list…"), or not found there. */
+  bool list_getting_ = false;
+  bool list_missing_ = false;
   /** Bumped per read: only the latest read's answer is shown. */
   uint64_t refresh_count_ = 0;
+  bool watching_ = false;
+  std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
 };
 
 } // namespace pbr

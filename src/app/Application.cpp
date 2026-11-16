@@ -54,6 +54,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/delivery/ChatPayloadValidator.h"
+#include "lib/delivery/IPeerSessionStore.h"
 #include "lib/storage/SqliteCallSessionStore.h"
 #include "gui/ChatStoreRecovery.h"
 #include "lib/storage/SqliteChatDbLadders.h"
@@ -89,6 +90,7 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/settings/MyRelays.h"
 #include "feature/settings/OwnDevices.h"
 #include "feature/settings/CasLibraryCommands.h"
 #include "feature/settings/ReachabilityNudge.h"
@@ -365,6 +367,38 @@ Roe<void> RunOnUiAndWait(const std::function<Roe<void>()>& task) {
   return std::move(*slot->result);
 }
 
+/** Me → My relays (multi-relay R3): the facade's relays, as the page shows them. */
+void WireMyRelaysCommands(SettingsCommands& commands, ConversationsFacade& facade) {
+  commands.my_relays = [&facade]() -> Roe<MyRelaysView> {
+    auto status = facade.OurRelays();
+    if (!status) {
+      return status.error();
+    }
+    std::vector<MyRelayFacts> relays;
+    for (const OurRelayStatus& relay : status->relays) {
+      relays.push_back(MyRelayFacts{.origin = relay.origin,
+                                    .registration = relay.registration,
+                                    .reach = relay.reach == OurRelayStatus::Reach::Ok ? MyRelayFacts::Reach::Ok
+                                             : relay.reach == OurRelayStatus::Reach::Failed
+                                                 ? MyRelayFacts::Reach::Failed
+                                                 : MyRelayFacts::Reach::Unknown,
+                                    .reach_at_ms = relay.reach_at_ms,
+                                    .peer_id = relay.peer_id,
+                                    .identity_mismatch = relay.identity_mismatch});
+    }
+    return MyRelaysViewFor(relays, status->editable, status->org_identity_mismatch);
+  };
+  commands.add_my_relay = [&facade](const std::string& typed) {
+    // a bare origin, plain http:// and local addresses: developer builds (HubSettings)
+    return facade.AddOurRelay(typed);
+  };
+  commands.remove_my_relay = [&facade](const std::string& origin) { return facade.RemoveOurRelay(origin); };
+  commands.make_relay_preferred = [&facade](const std::string& origin) { return facade.MakeOurRelayPreferred(origin); };
+  commands.watch_my_relays = [&facade](std::function<void()> changed) {
+    facade.SetOnOurRelaysChanged(std::move(changed));
+  };
+}
+
 } // namespace
 
 Application::Application() {
@@ -561,17 +595,12 @@ Roe<void> Application::ResetChatData() {
   const std::string chats_dir = SqliteThreadsRoot(profile_dir);
   log().info << "Resetting chat data at " << chats_dir;
 
-  // Public sessions outlive a chat reset: their epoch is what lets each pair start its next one
-  // instead of this device rewinding its numbering where the peer still holds the old messages (D014, #378).
+  // Public sessions outlive a chat reset (SessionsAChatResetKeeps, D014, #378).
   std::vector<PeerSessionRecord> kept_sessions;
   if (messaging_ && messaging_->IsInitialized()) {
     if (IPeerSessionStore* psk = messaging_->PeerSessions()) {
       if (auto listed = psk->List()) {
-        for (PeerSessionRecord& record : *listed) {
-          if (record.key.channel == CryptoChannel::E2ePublic && record.master_psk_b64) {
-            kept_sessions.push_back(std::move(record));
-          }
-        }
+        kept_sessions = SessionsAChatResetKeeps(std::move(*listed));
       } else {
         log().warning << "chat reset: public sessions not kept: " << listed.error().message;
       }
@@ -600,13 +629,12 @@ Roe<void> Application::ResetChatData() {
   contacts_->Refresh();
   // The vault is still open: bring messaging back now rather than at the next send — then put the kept
   // sessions back (the stores encrypt them under the DEK they get at unlock), each pair marked to restart.
-  unlock_gate_->EnsureUnlocked([this, kept = std::move(kept_sessions)](const bool unlocked) mutable {
+  unlock_gate_->EnsureUnlocked([this, kept = std::move(kept_sessions)](const bool unlocked) {
     IPeerSessionStore* psk = messaging_ ? messaging_->PeerSessions() : nullptr;
     if (!unlocked || !psk) {
       return;
     }
-    for (PeerSessionRecord& record : kept) {
-      record.restart_pending = true;
+    for (const PeerSessionRecord& record : kept) {
       if (auto saved = psk->Save(record); !saved) {
         log().warning << "chat reset: a public session not kept: " << saved.error().message;
       }
@@ -1204,7 +1232,14 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
         names[entry.peer_id] = entry.name;
       }
     }
-    return OwnDevicesViewFor(peer_ids, list->self_peer_id, list->signed_out, names, StartupSystemDeviceName());
+    const OwnListPending pending = list->recovery == OwnCardRecovery::NotFound  ? OwnListPending::NotFound
+                                   : list->recovery == OwnCardRecovery::Getting ? OwnListPending::Getting
+                                                                                : OwnListPending::None;
+    return OwnDevicesViewFor(peer_ids, list->self_peer_id, list->signed_out, names, StartupSystemDeviceName(), pending);
+  };
+  settings_commands.start_new_device_list = [&facade]() { return facade.StartNewDeviceList(); };
+  settings_commands.watch_own_devices = [&facade](std::function<void()> changed) {
+    facade.SetOnOwnDevicesChanged(std::move(changed));
   };
   settings_commands.rename_device = [&facade](const std::string& peer_id, const std::string& name) {
     return facade.RenameOwnDevice(peer_id, name);
@@ -1213,6 +1248,10 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return facade.RemoveOwnDevice(peer_id);
   };
   settings_commands.make_main_device = [&facade](const std::string& peer_id) { return facade.MakeMainDevice(peer_id); };
+  WireMyRelaysCommands(settings_commands, facade);
+  settings_commands.scan_relay_link = [this](std::function<void(std::string)> done) {
+    qr_scan_->Open(std::move(done)); // the in-app scan (SCANNING.md); the page reads the text as a pasted link
+  };
   settings_commands.load_support_discovery = [this]() -> std::optional<ClientCompatSupport> {
     return support_discovery_;
   };
@@ -1853,6 +1892,9 @@ void Application::WireUnlockPinAndFlow() {
     unlock_gate_->OnForeground();
     TouchGrace();
     StartGraceTimer();
+    if (client_compat_) {
+      client_compat_->OnForeground(); // a forced client-compat check, at most once per 15 minutes
+    }
   });
   grace_background_listener_ = AppLifecycle::AddBackgroundListener([this]() {
     TouchGrace(); // best effort: a phone already locked keeps the entry unreadable and the touch is skipped

@@ -32,6 +32,8 @@ public:
   /** Keep `grant` (one given to us): over the one held for its recipient only when issued later. */
   virtual Roe<void> PutReceived(const RelayGrant& grant) = 0;
   virtual Roe<void> DropReceived(const std::string& recipient_account_id) = 0;
+  /** Every grant given to us, one per grantor, by grantor (the account locker carries them to our other devices). */
+  virtual Roe<std::vector<RelayGrant>> AllReceived() = 0;
 
   virtual Roe<std::optional<Issued>> IssuedTo(const std::string& sender_account_id) = 0;
   /** Keep `issued` as the grant given to its sender (replacing the one held). */

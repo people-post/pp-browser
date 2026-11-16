@@ -6,6 +6,8 @@
 
 #include <sodium.h>
 
+#include <utility>
+
 namespace pbr {
 
 // What a peer session's rows mean (CR024): delivery's, over the store's Load / Save.
@@ -101,6 +103,17 @@ Roe<void> IPeerSessionStore::ImportPskBundle(const PeerSessionKey& key, const Ps
   }
   PskBundleCodec::CapRetiredTail(record.retired_psks, record.session_epoch);
   return Save(record);
+}
+
+std::vector<PeerSessionRecord> SessionsAChatResetKeeps(std::vector<PeerSessionRecord> sessions) {
+  std::vector<PeerSessionRecord> kept;
+  for (PeerSessionRecord& record : sessions) {
+    if (record.key.channel == CryptoChannel::E2ePublic && record.master_psk_b64) {
+      record.restart_pending = true;
+      kept.push_back(std::move(record));
+    }
+  }
+  return kept;
 }
 
 } // namespace pbr

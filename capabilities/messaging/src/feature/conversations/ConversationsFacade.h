@@ -116,6 +116,18 @@ public:
   Roe<void> RemoveOwnDevice(const std::string& peer_id);
   /** On the main device: make another device the main one. */
   Roe<void> MakeMainDevice(const std::string& peer_id);
+  /** No card of ours found on our relays: start a new device list (signs the account's other devices out). */
+  Roe<void> StartNewDeviceList();
+  /** Our device list changed, or where getting it back stands (read OwnDevices again); runs on any thread. */
+  void SetOnOwnDevicesChanged(std::function<void()> callback);
+  /** Me → My relays (multi-relay R3): ours with their state; the changes block (call on a worker). */
+  Roe<OurRelaysStatus> OurRelays();
+  /** Adds the relay a relay link names (MR008: `https://host#<PeerId>`). */
+  Roe<void> AddOurRelay(const std::string& typed);
+  Roe<void> RemoveOurRelay(const std::string& origin);
+  Roe<void> MakeOurRelayPreferred(const std::string& origin);
+  /** My relays changed (read them again); runs on any thread. */
+  void SetOnOurRelaysChanged(std::function<void()> callback);
   void SuspendMeshColdPeers();
 
   // --- Inbox ----------------------------------------------------------------

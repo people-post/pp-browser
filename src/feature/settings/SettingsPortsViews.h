@@ -58,6 +58,15 @@ struct OwnDeviceView {
   bool can_manage = false;
 };
 
+/** This device holds no list of its account: where getting it back from our relays stands (OwnCards). */
+enum class OwnListPending {
+  None,
+  /** "Getting your device list…": asking our relays, or waiting to ask again. */
+  Getting,
+  /** No relay that answered keeps it: "Start a new device list…" is offered. */
+  NotFound,
+};
+
 /** The account's devices as this device knows them, in list order (the main device first). */
 struct OwnDevicesView {
   std::vector<OwnDeviceView> devices;
@@ -65,6 +74,44 @@ struct OwnDevicesView {
   bool signed_out = false;
   /** This device is the main one (or the account has no list yet): it may add and remove devices. */
   bool this_is_main = false;
+  /** No list here yet: being got back, or not found (then the person may start a new one). */
+  OwnListPending pending = OwnListPending::None;
+};
+
+/** Me → My relays (multi-relay R3, MR006): one relay of ours as the page shows it. */
+struct MyRelayRowView {
+  /** Its base URL (what the actions name). */
+  std::string origin;
+  /** Its host (and port), what the user reads. */
+  std::string label;
+  /** "Registered until …", "Registering…", "Couldn't register: …". */
+  std::string state;
+  /** `ok`, `pending` or `error`: the state's colour. */
+  std::string state_kind;
+  /** Its last poll: "Reachable" / "Couldn't reach it"; empty before the first. */
+  std::string reach;
+  bool reach_failed = false;
+  bool preferred = false;
+  bool can_make_preferred = false;
+  bool can_remove = false;
+  /** Its identity answer names another PeerId than its address (MR008): shown as not used. */
+  bool identity_mismatch = false;
+  /** Its relay link (`origin#PeerId`, MR008: what another person adds it by); empty: its PeerId is not known. */
+  std::string link;
+};
+
+/** Ours, preferred first. */
+struct MyRelaysView {
+  std::vector<MyRelayRowView> relays;
+  /** This device changes the list (the main device). */
+  bool editable = false;
+  /** Room for another relay (MR004: at most 4). */
+  bool can_add = false;
+  /**
+   * The org's origin, when it is not on the list and its identity answer does not match what this app names for it
+   * (MR008): its line says the account copy and the assistant are paused (any device). Empty otherwise.
+   */
+  std::string org_identity_mismatch;
 };
 
 } // namespace pbr

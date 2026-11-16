@@ -1,160 +1,21 @@
 #include "app/node/NodeMeshPublish.h"
+#include "app/node/NodeEnvOverlay.h"
+#include "foundation/product/DevTools.h"
 
 #include "amp/L1/Types.h"
 #include "foundation/product/AppVersion.h"
 
-#include "lib/net/HttpClient.h"
 #include "domain/registration/RegistrationClient.h"
-#include "lib/net/RegistrationSignPayload.h"
-#include "common/Utilities.h"
-#include "common/ValueJson.h"
+#include "lib/net/OrgBackendClientsImpl.h"
 
 #include <iostream>
 #include <utility>
 #include "common/PbrCompat.h"
 
 namespace pbr {
-namespace {
 
-/** Headless-safe registration client (no pp_lib_net / messaging). */
-class ThinHttpRegistrationClient : public IRegistrationClient {
-public:
-  explicit ThinHttpRegistrationClient(std::string base_url) : base_url_(std::move(base_url)) {}
-
-  std::string BaseUrl() const override { return base_url_; }
-
-  Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
-                                                 const std::string& signature_alg,
-                                                 const std::string& kem_public_key_b64, const std::string& peer_id,
-                                                 const std::vector<std::string>& multiaddrs,
-                                                 const RegistrationPublishOpts& publish) override {
-    if (base_url_.empty()) {
-      return Error("Registration base_url not configured");
-    }
-    if (kem_public_key_b64.empty()) {
-      return Error("kem_public_key_b64 is required");
-    }
-    Object body;
-    body.set("public_key", public_key_b64);
-    body.set("nickname", nickname);
-    body.set("signature_alg", signature_alg);
-    body.set("kem_public_key_b64", kem_public_key_b64);
-    if (!peer_id.empty()) {
-      body.set("peer_id", peer_id);
-    }
-    if (!multiaddrs.empty()) {
-      std::vector<Value> addrs;
-      for (const std::string& ma : multiaddrs) {
-        addrs.push_back(Value(ma));
-      }
-      body.set("multiaddrs", ArrayValue(std::move(addrs)));
-    }
-    ApplyRegistrationPublishOpts(body, publish);
-    const auto response =
-        HttpClient::Post(base_url_ + "/v1/register/start", DumpJson(body), {{"Content-Type", "application/json"}});
-    if (!response) {
-      return response.error();
-    }
-    if (response.value().status_code < 200 || response.value().status_code >= 300) {
-      return Error("Registration start failed with status " + std::to_string(response.value().status_code));
-    }
-    auto root = TryParseObject(response.value().body);
-    auto challenge = root ? root->getString("challenge") : std::nullopt;
-    if (!challenge) {
-      return Error("Invalid registration start JSON");
-    }
-    RegistrationStartResult result;
-    result.challenge = *challenge;
-    result.signature_alg = root->getString("signature_alg").value_or(signature_alg);
-    if (auto expires = root->getString("expires_at")) {
-      result.expires_at = *expires;
-    }
-    return result;
-  }
-
-  Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
-                                             const std::string& nickname, const std::string& signature,
-                                             int64_t timestamp, const std::string& signature_alg,
-                                             const std::string& kem_public_key_b64,
-                                             const std::string& kem_binding_signature_b64, const std::string& peer_id,
-                                             const std::vector<std::string>& multiaddrs,
-                                             const RegistrationPublishOpts& publish) override {
-    if (base_url_.empty()) {
-      return Error("Registration base_url not configured");
-    }
-    if (kem_public_key_b64.empty()) {
-      return Error("kem_public_key_b64 is required");
-    }
-    Object body;
-    body.set("challenge", challenge);
-    body.set("public_key", public_key_b64);
-    body.set("nickname", nickname);
-    body.set("signature", signature);
-    body.set("timestamp", timestamp);
-    body.set("signature_alg", signature_alg);
-    body.set("kem_public_key_b64", kem_public_key_b64);
-    if (!kem_binding_signature_b64.empty()) {
-      body.set("kem_binding_signature_b64", kem_binding_signature_b64);
-    }
-    if (!peer_id.empty()) {
-      body.set("peer_id", peer_id);
-    }
-    if (!multiaddrs.empty()) {
-      std::vector<Value> addrs;
-      for (const std::string& ma : multiaddrs) {
-        addrs.push_back(Value(ma));
-      }
-      body.set("multiaddrs", ArrayValue(std::move(addrs)));
-    }
-    ApplyRegistrationPublishOpts(body, publish);
-    const auto response =
-        HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body), {{"Content-Type", "application/json"}});
-    if (!response) {
-      return response.error();
-    }
-    if (response.value().status_code < 200 || response.value().status_code >= 300) {
-      return Error("Registration finish failed with status " + std::to_string(response.value().status_code));
-    }
-    auto root = TryParseObject(response.value().body);
-    RegistrationResult result{.success = true};
-    if (root) {
-      if (auto success = root->getIf<bool>("success")) {
-        result.success = *success;
-      }
-      if (auto account_id = root->getString("account_id")) {
-        result.account_id = *account_id;
-      }
-      if (auto message = root->getString("message")) {
-        result.message = *message;
-      }
-      if (auto llm_api_key = root->getString("llm_api_key")) {
-        result.llm_api_key = *llm_api_key;
-      }
-      if (auto expires = root->getString("expires_at")) {
-        result.expires_at = *expires;
-      }
-      result.kem_bound = root->getIf<bool>("kem_bound").value_or(false);
-    }
-    return result;
-  }
-
-  Roe<RegistrationResult> UpdateNickname(const std::string& /*new_nickname*/, const std::string& /*signature*/,
-                                         int64_t /*timestamp*/, const std::string& /*account_id*/) override {
-    return Error("UpdateNickname not supported on pp-node thin client");
-  }
-
-  Roe<void> RevokeRegistration(const std::string& /*account_id*/, const std::string& /*signature*/,
-                               int64_t /*timestamp*/) override {
-    return Error("RevokeRegistration not supported on pp-node thin client");
-  }
-
-private:
-  std::string base_url_;
-};
-
-} // namespace
-
-Roe<bool> PublishOrRenewMeshNodeListing(const AppConfig& config, IdentityStore& identity, const std::string& nickname) {
+Roe<bool> PublishOrRenewMeshNodeListing(const AppConfig& config, IdentityStore& identity, const std::string& nickname,
+                                        std::shared_ptr<IRelayAudience> audience) {
   if (!config.mesh.mesh_publish) {
     return false;
   }
@@ -164,8 +25,13 @@ Roe<bool> PublishOrRenewMeshNodeListing(const AppConfig& config, IdentityStore& 
   if (config.mesh.advertise_multiaddrs.empty()) {
     return Error("mesh_publish requires mesh.advertise_multiaddrs (public multiaddrs)");
   }
+  if (const std::string problem = NodeRegistrationIdProblem(config.registration, kDeveloperRelaysAllowed);
+      !problem.empty()) {
+    return Error(problem); // MR008 item 5: refused before anything is asked or signed
+  }
 
-  ThinHttpRegistrationClient registration(config.registration.base_url);
+  HttpRegistrationClient registration(config.registration.base_url);
+  registration.SetAudience(std::move(audience));
   RegistrationPublishOpts publish;
   publish.entity_kind = "mesh_node";
   publish.has_capabilities = true;

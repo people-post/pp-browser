@@ -29,14 +29,31 @@ struct HeartbeatIdentity {
   std::string peer_id;
 };
 
+/** A signed heartbeat: the relay it is for (its PeerId, multi-relay MR007) and the account key's signature over it. */
+struct HeartbeatSignature {
+  /** The version byte the heartbeat was signed with (`sign_version`). */
+  int sign_version = 0;
+  std::string audience;
+  std::string signature;
+};
+
 struct NodeHeartbeatDeps {
   /** `registration.base_url`; the heartbeat goes to `<base_url>/v1/mesh/heartbeat`. */
   std::string base_url;
   std::function<HeartbeatIdentity()> identity;
-  /** Account-key signature (base64) over the heartbeat sign bytes. */
-  std::function<Roe<std::string>(const std::string& account_id, const std::string& peer_id, const std::string& state,
-                                 int64_t timestamp)>
+  /**
+   * Signs the heartbeat sign bytes for the relay's pinned PeerId (the audience) with the account key. An error when
+   * nothing may be signed for that relay (its identity answer does not match its address, or none is named): no
+   * heartbeat goes.
+   */
+  std::function<Roe<HeartbeatSignature>(const std::string& account_id, const std::string& peer_id,
+                                        const std::string& state, int64_t timestamp)>
       sign;
+  /**
+   * The relay refused a heartbeat with this `code` (`wrong_audience`: its identity is asked again;
+   * `client_upgrade_required`: this pp-node is too old for it, NodeUpgradeNotice). May be empty.
+   */
+  std::function<void(const std::string& code)> refused;
   HttpPostFn post;
   /** The same entry point as startup / periodic registration renewal. */
   std::function<Roe<bool>()> reregister;
@@ -77,6 +94,8 @@ private:
   int64_t last_timestamp_ = 0;
   int64_t reregister_due_ms_ = INT64_MIN;
   int64_t reregister_delay_ms_ = 0;
+  /** The last signing failure logged (one line per new reason, not one per period). */
+  std::string sign_failure_;
 };
 
 } // namespace pbr

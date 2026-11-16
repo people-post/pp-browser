@@ -2,7 +2,7 @@
 
 #include "common/Utilities.h"
 #include "foundation/error/AppError.h"
-#include "lib/delivery/RelayOrigins.h"
+#include "lib/net/RelayOrigins.h"
 
 #include <algorithm>
 #include <chrono>
@@ -27,9 +27,15 @@ bool RelayFailedItself(const Error& failure) {
          !IsNetworkCode(failure, Err::Network::PaymentRequired);
 }
 
+bool IsAuthCode(const Error& failure, const Err::Auth code) {
+  return AppError::CategoryOf(failure) == ErrorCategory::Auth && static_cast<Err::Auth>(failure.code) == code;
+}
+
 Error NoRelay() {
   return AppError::Config(Err::Config::MissingKey, "Relay base_url not configured");
 }
+
+constexpr size_t kMaxMismatches = 256;
 
 } // namespace
 
@@ -53,6 +59,21 @@ void RelaySendCoordinator::SetRoutes(RelayRoutes routes) {
   routes_ = std::move(routes);
 }
 
+void RelaySendCoordinator::SetCardRelayCheck(CardRelayCheckFn check) {
+  std::lock_guard lock(mutex_);
+  card_relay_check_ = std::move(check);
+}
+
+bool RelaySendCoordinator::AudienceMismatch(const std::string& recipient_account_id, const std::string& origin) const {
+  const std::string key = RelayOriginKey(origin);
+  const int64_t now_ms = Now();
+  std::lock_guard lock(mutex_);
+  return std::any_of(mismatched_.begin(), mismatched_.end(), [&](const auto& entry) {
+    return std::get<0>(entry.first) == recipient_account_id && std::get<1>(entry.first) == key &&
+           now_ms - entry.second.at_ms < kAudienceRefusedMs;
+  });
+}
+
 int64_t RelaySendCoordinator::Now() const {
   return now_ms_ ? now_ms_() : util::NowUnixMs();
 }
@@ -62,48 +83,48 @@ std::shared_ptr<IRelayClient> RelaySendCoordinator::Preferred() const {
   return ours_.empty() ? nullptr : ours_.front().client;
 }
 
-std::vector<std::string> RelaySendCoordinator::OurOrigins() const {
+std::vector<AccountCardRelay> RelaySendCoordinator::OurRelayEntries() const {
   std::lock_guard lock(mutex_);
-  std::vector<std::string> origins;
+  std::vector<AccountCardRelay> relays;
   for (const OurRelay& relay : ours_) {
-    origins.push_back(relay.origin);
+    relays.push_back(AccountCardRelay{.origin = relay.origin}); // signed for by its pin
   }
-  return origins;
+  return relays;
 }
 
-std::vector<std::string> RelaySendCoordinator::ListFor(const std::string& recipient, const bool to_self) {
+std::vector<AccountCardRelay> RelaySendCoordinator::ListFor(const std::string& recipient, const bool to_self) {
   if (to_self) {
-    return OurOrigins(); // our other devices poll every relay of ours
+    return OurRelayEntries(); // our other devices poll every relay of ours
   }
-  std::function<std::vector<std::string>(const std::string&)> relays_of;
+  std::function<std::vector<AccountCardRelay>(const std::string&)> relays_of;
   {
     std::lock_guard lock(mutex_);
     relays_of = routes_.relays_of;
   }
-  std::vector<std::string> listed = relays_of ? relays_of(recipient) : std::vector<std::string>{};
+  std::vector<AccountCardRelay> listed = relays_of ? relays_of(recipient) : std::vector<AccountCardRelay>{};
   if (!listed.empty()) {
     return listed;
   }
-  std::vector<std::string> ours = OurOrigins(); // no card (or an empty list): today's way, our preferred relay
+  std::vector<AccountCardRelay> ours = OurRelayEntries(); // no card (or an empty list): our preferred relay
   ours.resize(std::min<size_t>(ours.size(), 1));
   return ours;
 }
 
-std::shared_ptr<IRelayClient> RelaySendCoordinator::ClientFor(const std::string& origin) {
+std::shared_ptr<IRelayClient> RelaySendCoordinator::ClientFor(const AccountCardRelay& relay) {
   std::lock_guard lock(mutex_);
-  for (const OurRelay& relay : ours_) {
-    if (SameRelay(relay.origin, origin)) {
-      return relay.client;
+  for (const OurRelay& ours : ours_) {
+    if (SameRelay(ours.origin, relay.origin)) {
+      return ours.client; // its pin is the card's PeerId (Unusable ruled out any other)
     }
   }
-  const std::string key = RelayOriginKey(origin);
+  const std::string key = RelayOriginKey(relay.origin) + "|" + relay.peer_id;
   if (auto it = foreign_.find(key); it != foreign_.end()) {
     return it->second;
   }
   if (!factory_) {
     return nullptr;
   }
-  std::shared_ptr<IRelayClient> client = factory_(origin);
+  std::shared_ptr<IRelayClient> client = factory_(relay.origin, relay.peer_id);
   if (!client) {
     return nullptr;
   }
@@ -114,44 +135,125 @@ std::shared_ptr<IRelayClient> RelaySendCoordinator::ClientFor(const std::string&
   return client;
 }
 
-RelaySendCoordinator::Pass RelaySendCoordinator::SendAlong(const std::vector<std::string>& origins,
+bool RelaySendCoordinator::Unusable(const std::string& recipient, const AccountCardRelay& relay) {
+  if (relay.peer_id.empty() || recipient.empty()) {
+    return false; // signed for by its pin: the client says when that is not in force
+  }
+  CardRelayCheckFn check;
+  const int64_t now_ms = Now();
+  const auto entry = std::make_tuple(recipient, RelayOriginKey(relay.origin), relay.peer_id);
+  {
+    std::lock_guard lock(mutex_);
+    check = card_relay_check_;
+    if (auto it = mismatched_.find(entry);
+        it != mismatched_.end() && it->second.refused && now_ms - it->second.at_ms < kAudienceRefusedMs) {
+      return true; // it refused this PeerId a moment ago, and the newest card still names it
+    }
+  }
+  if (!check || check(relay.origin, relay.peer_id) == CardRelayCheck::Usable) {
+    return false;
+  }
+  bool first = false;
+  {
+    std::lock_guard lock(mutex_);
+    if (mismatched_.size() >= kMaxMismatches) {
+      std::erase_if(mismatched_, [now_ms](const auto& e) { return now_ms - e.second.at_ms >= kAudienceRefusedMs; });
+    }
+    auto [it, inserted] = mismatched_.try_emplace(entry, Mismatch{});
+    first = inserted;
+    it->second.at_ms = now_ms;
+  }
+  if (first) {
+    log().warning << "relay send: " << recipient << "'s card names " << RelayOriginKey(relay.origin) << " as "
+                  << relay.peer_id << ", which our pins disagree with; that relay is skipped for them";
+  }
+  return true;
+}
+
+RelaySendCoordinator::Try RelaySendCoordinator::TryRelay(const AccountCardRelay& relay, const RelayEnvelope& envelope,
+                                                         Roe<void>& result) {
+  std::shared_ptr<IRelayClient> client = ClientFor(relay);
+  if (!client) {
+    return Try::Skipped;
+  }
+  result = client->Send(envelope);
+  if (result) {
+    health_.NoteOk(relay.origin);
+    return Try::Sent;
+  }
+  const Error& failure = result.error();
+  if (IsAuthCode(failure, Err::Auth::WrongAudience)) {
+    // The relay is not the one the card's PeerId names (it rotated, or the card is wrong): not unhealthy (MR007).
+    const std::string recipient = envelope.recipient_account_id.value_or("");
+    std::lock_guard lock(mutex_);
+    mismatched_[std::make_tuple(recipient, RelayOriginKey(relay.origin), relay.peer_id)] =
+        Mismatch{.at_ms = Now(), .refused = true};
+    return Try::Stale;
+  }
+  if (IsAuthCode(failure, Err::Auth::RelayIdentityMismatch) || IsAuthCode(failure, Err::Auth::RelayIdentityTaken)) {
+    return Try::Skipped; // nothing is signed for it until the person accepts its identity
+  }
+  if (RelayFailedItself(failure)) {
+    health_.NoteFailed(relay.origin, Now());
+    log().warning << "relay send: " << RelayOriginKey(relay.origin) << " failed (" << failure.message
+                  << "); the next relay of the list";
+    return Try::FailedItself;
+  }
+  if (IsNetworkCode(failure, Err::Network::RecipientNotRegistered)) {
+    return Try::Stale;
+  }
+  return Try::Answer; // the relay's answer for this recipient (a price, a quota, a refusal)
+}
+
+RelaySendCoordinator::Pass RelaySendCoordinator::SendAlong(const std::vector<AccountCardRelay>& relays,
                                                            const RelayEnvelope& envelope) {
   Pass pass{.result = NoRelay()};
+  const std::string recipient = envelope.recipient_account_id.value_or("");
+  std::vector<std::string> origins;
+  for (const AccountCardRelay& relay : relays) {
+    origins.push_back(relay.origin);
+  }
   size_t tried = 0;
-  size_t not_registered = 0;
+  size_t stale = 0;
+  bool failed_itself = false;
   for (const std::string& origin : health_.Order(origins, Now())) {
-    std::shared_ptr<IRelayClient> client = ClientFor(origin);
-    if (!client) {
+    const auto relay =
+        std::find_if(relays.begin(), relays.end(), [&origin](const AccountCardRelay& r) { return r.origin == origin; });
+    if (relay == relays.end()) {
       continue;
     }
-    ++tried;
-    Roe<void> sent = client->Send(envelope);
-    if (sent) {
-      health_.NoteOk(origin);
-      return Pass{.result = std::move(sent)};
-    }
-    if (RelayFailedItself(sent.error())) {
-      health_.NoteFailed(origin, Now());
-      log().warning << "relay send: " << RelayOriginKey(origin) << " failed (" << sent.error().message
-                    << "); the next relay of the list";
-      pass.result = std::move(sent);
-      continue;
-    }
-    if (IsNetworkCode(sent.error(), Err::Network::RecipientNotRegistered)) {
-      ++not_registered;
-      if (tried == not_registered) {
-        pass.result = std::move(sent); // a relay that failed itself is the better answer: it may carry it later
+    if (Unusable(recipient, *relay)) {
+      if (tried == 0) {
+        pass.result = AppError::Auth(Err::Auth::WrongAudience,
+                                     "relay send: the recipient's relay does not match the identity its card names");
       }
       continue;
     }
-    return Pass{.result = std::move(sent)}; // the relay's answer for this recipient (a price, a quota, a refusal)
+    Roe<void> sent = Roe<void>{};
+    const Try outcome = TryRelay(*relay, envelope, sent);
+    if (outcome == Try::Sent || outcome == Try::Answer) {
+      return Pass{.result = std::move(sent)};
+    }
+    if (outcome == Try::Skipped) {
+      if (!failed_itself && tried == 0 && !sent) {
+        pass.result = std::move(sent); // why nothing was sent, when nothing else is said
+      }
+      continue;
+    }
+    ++tried;
+    if (outcome == Try::FailedItself) {
+      failed_itself = true;
+      pass.result = std::move(sent);
+    } else if (++stale == tried) {
+      pass.result = std::move(sent); // a relay that failed itself is the better answer: it may carry it later
+    }
   }
-  pass.not_registered_everywhere = tried > 0 && tried == not_registered;
+  pass.not_registered_everywhere = tried > 0 && tried == stale;
   return pass;
 }
 
-std::vector<std::string> RelaySendCoordinator::NewestListOf(const std::string& recipient) {
-  std::function<std::vector<std::string>(const std::string&)> refresh;
+std::vector<AccountCardRelay> RelaySendCoordinator::NewestListOf(const std::string& recipient) {
+  std::function<std::vector<AccountCardRelay>(const std::string&)> refresh;
   {
     std::unique_lock lock(mutex_);
     refresh = routes_.refresh_relays_of;
@@ -177,7 +279,7 @@ std::vector<std::string> RelaySendCoordinator::NewestListOf(const std::string& r
   if (!refresh) {
     return ListFor(recipient, false);
   }
-  std::vector<std::string> fresh = refresh(recipient);
+  std::vector<AccountCardRelay> fresh = refresh(recipient);
   {
     std::lock_guard lock(mutex_);
     refreshing_.erase(recipient);
@@ -189,13 +291,13 @@ std::vector<std::string> RelaySendCoordinator::NewestListOf(const std::string& r
 Roe<void> RelaySendCoordinator::Send(const RelayEnvelope& envelope) {
   const std::string recipient = envelope.recipient_account_id.value_or("");
   const bool to_self = !recipient.empty() && recipient == envelope.sender_contact_id;
-  const std::vector<std::string> tried = ListFor(recipient, to_self);
+  const std::vector<AccountCardRelay> tried = ListFor(recipient, to_self);
   Pass first = SendAlong(tried, envelope);
   if (!first.not_registered_everywhere || to_self || recipient.empty()) {
     return std::move(first.result);
   }
   // Our copy of its list is stale (it moved): its newest card, and that list once more when it says other relays.
-  const std::vector<std::string> fresh = NewestListOf(recipient);
+  const std::vector<AccountCardRelay> fresh = NewestListOf(recipient);
   if (fresh == tried) {
     return std::move(first.result);
   }

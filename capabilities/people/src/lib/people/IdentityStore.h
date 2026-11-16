@@ -7,6 +7,7 @@
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/IDekConsumer.h"
 #include "common/directory/IdentityTypes.h"
+#include "lib/people/AccountCard.h"
 
 #include <functional>
 #include <mutex>
@@ -79,6 +80,21 @@ public:
   Roe<int64_t> InitiationFloor() const override;
   void Flush();
 
+  /** `own_card.enc`'s plaintext schema (DATA_LAYOUT; AT_REST_ENCRYPTION § Own card plaintext). */
+  static constexpr int kOwnCardSchemaVersion = 1;
+  /**
+   * Our account's newest card as kept beside `identity.enc` (`own_card.enc`, under the DEK): it outlives a reset of the
+   * chat store, whose `peer_cards` hold the other copy (OwnCards keeps the two together). Unchecked here: the cards'
+   * checks are PeerCards'. None: none kept, or the one kept is another account's (a link or restore replaced it).
+   */
+  Roe<std::optional<AccountCard>> OwnCard() const;
+  /**
+   * Keeps `card` (our account's) as the own card when it is newer than the one kept (`issued_at`): an older or equal
+   * one changes nothing, so no older card of ours is ever taken here. A card of another account is refused. An
+   * unreadable file is written over.
+   */
+  Roe<void> KeepOwnCard(const AccountCard& card);
+
 private:
   Roe<void> EnsureLoaded() const;
   Roe<void> Save() const;
@@ -86,6 +102,10 @@ private:
   Roe<void> SaveIdentity(const LocalIdentity& identity) const;
   Roe<void> RequireDek() const;
   std::string StorePath() const;
+  std::string OwnCardPath() const;
+  /** Reads own_card.enc once per DEK (any account's: OwnCard() compares). */
+  Roe<void> EnsureOwnCardLoaded() const;
+  void ForgetOwnCardInMemory() const;
   std::string ProfileId() const;
 
   std::string data_dir_;
@@ -97,6 +117,8 @@ private:
   mutable LocalIdentity identity_;
   mutable std::vector<uint8_t> private_key_;
   mutable bool dirty_ = false;
+  mutable bool own_card_loaded_ = false;        // under mutex_
+  mutable std::optional<AccountCard> own_card_; // under mutex_: own_card.enc as read or last written
 };
 
 } // namespace pbr

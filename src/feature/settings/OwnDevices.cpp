@@ -9,11 +9,14 @@ namespace pbr {
 
 OwnDevicesView OwnDevicesViewFor(const std::vector<std::string>& peer_ids, const std::string& self_peer_id,
                                  const bool signed_out, const std::map<std::string, std::string>& names,
-                                 const std::string& own_system_name) {
+                                 const std::string& own_system_name, const OwnListPending pending) {
   OwnDevicesView view;
   view.signed_out = signed_out;
-  // No list yet: this device's first card will start one with itself first (the backend lets it add a device).
-  view.this_is_main = !signed_out && (peer_ids.empty() || peer_ids.front() == self_peer_id);
+  view.pending = peer_ids.empty() ? pending : OwnListPending::None;
+  // No list yet: this device's first card will start one with itself first (the backend lets it add a device) —
+  // unless its list is still being got back (or was not found): nothing to manage until it is here.
+  view.this_is_main =
+      !signed_out && view.pending == OwnListPending::None && (peer_ids.empty() || peer_ids.front() == self_peer_id);
   view.devices.reserve(peer_ids.size());
   for (size_t i = 0; i < peer_ids.size(); ++i) {
     OwnDeviceView device;

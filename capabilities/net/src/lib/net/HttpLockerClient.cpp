@@ -11,7 +11,8 @@ namespace pbr {
 namespace {
 
 constexpr const char kLockerPutDomain[] = "pp-browser:relay-locker-put-v1";
-constexpr uint8_t kLockerPutSignVersion = 1;
+// 2 (multi-relay MR007): the audience after the version.
+constexpr uint8_t kLockerPutSignVersion = 2;
 
 std::string ErrorText(const HttpResponse& response) {
   if (auto root = TryParseObject(response.body)) {
@@ -44,11 +45,13 @@ LockerRecord LockerRecordFromJson(const Object& json) {
   return record;
 }
 
-std::vector<uint8_t> BuildLockerPutSignBytes(const std::string& account_id, const std::string& locker_id,
-                                             const uint64_t version, const int64_t timestamp) {
+std::vector<uint8_t> BuildLockerPutSignBytes(const std::string& audience, const std::string& account_id,
+                                             const std::string& locker_id, const uint64_t version,
+                                             const int64_t timestamp) {
   std::ostringstream oss;
-  RelaySignAppendDomain(oss, kLockerPutDomain);
-  RelaySignAppendU8(oss, kLockerPutSignVersion);
+  if (!RelaySignAppendCommandHeader(oss, kLockerPutDomain, kLockerPutSignVersion, audience)) {
+    return {};
+  }
   RelaySignAppendWireLenUtf8(oss, account_id);
   RelaySignAppendWireLenUtf8(oss, locker_id);
   RelaySignAppendU64(oss, version);
@@ -63,18 +66,16 @@ Roe<void> HttpLockerClient::Put(const std::string& account_id, const LockerRecor
   if (base_url_.empty()) {
     return Error("Locker base_url not configured");
   }
-  if (!auth_signer_) {
-    return Error("Locker auth signer not configured");
-  }
   const int64_t timestamp = util::NowUnixMs();
-  auto signature = auth_signer_(BuildLockerPutSignBytes(account_id, record.locker_id, record.version, timestamp));
-  if (!signature) {
-    return signature.error();
+  auto signed_put = SignRelayCommand(audience_.get(), auth_signer_, timestamp, [&](const std::string& audience) {
+    return BuildLockerPutSignBytes(audience, account_id, record.locker_id, record.version, timestamp);
+  });
+  if (!signed_put) {
+    return signed_put.error();
   }
   Object body;
   body.set("account_id", account_id);
-  body.set("timestamp", timestamp);
-  body.set("signature", *signature);
+  PutSignedRelayCommand(body, *signed_put);
   body.set("locker", ObjectValue(LockerRecordToJson(record)));
   auto response =
       HttpClient::Post(base_url_ + "/v1/lockers/put", DumpJson(body), {{"Content-Type", "application/json"}});
@@ -83,6 +84,9 @@ Roe<void> HttpLockerClient::Put(const std::string& account_id, const LockerRecor
   }
   if (response->status_code >= 200 && response->status_code < 300) {
     return {};
+  }
+  if (auto typed = NoteRelayRefusal(audience_.get(), response->status_code, response->body)) {
+    return *typed;
   }
   if (refused) {
     if (response->status_code == 409) {

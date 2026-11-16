@@ -16,15 +16,23 @@ namespace pbr {
 namespace {
 
 using Devices = ContactRefreshResult::Devices;
-using Directory = ContactRefreshResult::Directory;
+/** What the one relay asked said (NotAsked: none was). */
+enum class Relay { NotAsked, Answered, NotFound, Unreachable };
 
-ContactRefreshResult Result(const Devices devices, const Directory directory, const bool changed = false,
+ContactRefreshResult Result(const Devices devices, const Relay relay, const bool changed = false,
                             const bool keys_rejected = false) {
+  using Ask = ContactRefreshResult::RelayAsk;
   ContactRefreshResult result;
   result.devices = devices;
-  result.directory = directory;
+  if (relay != Relay::NotAsked) {
+    result.relays = {{.origin = "https://relay.example/api/relay",
+                      .whose = Ask::Whose::Theirs,
+                      .outcome = relay == Relay::Answered   ? Ask::Outcome::Answered
+                                 : relay == Relay::NotFound ? Ask::Outcome::NotFound
+                                                            : Ask::Outcome::Unreachable}};
+  }
   result.name_changed = changed;
-  result.directory_keys_rejected = keys_rejected;
+  result.relay_keys_rejected = keys_rejected;
   return result;
 }
 
@@ -96,24 +104,24 @@ TEST_F(SendFailureFixTest, TheirCardIsRefreshedForTheRightContactWithAProgressNo
 
 TEST_F(SendFailureFixTest, FoundAndUpdatedResendsOnce) {
   fix.UpdateTheirCard("t1", "m1", "contact:bob", true);
-  Answer(Result(Devices::Answered, Directory::Answered, /*changed=*/true));
+  Answer(Result(Devices::Answered, Relay::Answered, /*changed=*/true));
   EXPECT_EQ(resent, (std::vector<std::string>{"t1/m1"}));
   EXPECT_TRUE(said.empty());
 }
 
 TEST_F(SendFailureFixTest, FoundAndUpToDateResendsOnce) {
   fix.UpdateTheirCard("t1", "m1", "contact:bob", true);
-  Answer(Result(Devices::NotAsked, Directory::Answered));
+  Answer(Result(Devices::NotAsked, Relay::Answered));
   EXPECT_EQ(resent, (std::vector<std::string>{"t1/m1"}));
   fix.UpdateTheirCard("t1", "m2", "contact:bob", true);
-  Answer(Result(Devices::Answered, Directory::NotFound)); // a device knew them: found
+  Answer(Result(Devices::Answered, Relay::NotFound)); // a device knew them: found
   EXPECT_EQ(resent, (std::vector<std::string>{"t1/m1", "t1/m2"}));
 }
 
 TEST_F(SendFailureFixTest, ThreeRedMessagesTappedOneAfterAnotherAreSentOnceEach) {
   for (const char* id : {"m1", "m2", "m3"}) {
     fix.UpdateTheirCard("t1", id, "contact:bob", true);
-    Answer(Result(Devices::Answered, Directory::Answered));
+    Answer(Result(Devices::Answered, Relay::Answered));
   }
   EXPECT_EQ(refreshed_contacts.size(), 3u);
   EXPECT_EQ(resent, (std::vector<std::string>{"t1/m1", "t1/m2", "t1/m3"}));
@@ -121,7 +129,7 @@ TEST_F(SendFailureFixTest, ThreeRedMessagesTappedOneAfterAnotherAreSentOnceEach)
 
 TEST_F(SendFailureFixTest, NotFoundSendsNothingAndSaysSo) {
   fix.UpdateTheirCard("t1", "m1", "contact:bob", true);
-  Answer(Result(Devices::NotReached, Directory::NotFound));
+  Answer(Result(Devices::NotReached, Relay::NotFound));
   EXPECT_TRUE(resent.empty());
   EXPECT_EQ(
       said,
@@ -130,9 +138,9 @@ TEST_F(SendFailureFixTest, NotFoundSendsNothingAndSaysSo) {
 
 TEST_F(SendFailureFixTest, UnreachableSendsNothingAndSaysTryLater) {
   fix.UpdateTheirCard("t1", "m1", "contact:bob", true);
-  Answer(Result(Devices::NotReached, Directory::Unreachable));
+  Answer(Result(Devices::NotReached, Relay::Unreachable));
   fix.UpdateTheirCard("t1", "m2", "contact:bob", true);
-  Answer(Result(Devices::NotReached, Directory::NotAsked)); // their devices are offline, nobody else to ask
+  Answer(Result(Devices::NotReached, Relay::NotAsked)); // their devices are offline, nobody else to ask
   EXPECT_TRUE(resent.empty());
   ASSERT_EQ(said.size(), 2u);
   EXPECT_EQ(said[0], Words("contacts.refresh.unreachable"));
@@ -143,27 +151,27 @@ TEST_F(SendFailureFixTest, UnreachableSendsNothingAndSaysTryLater) {
 
 TEST_F(SendFailureFixTest, KeysThatDoNotCheckOutSendNothingAndSayTheRefreshWords) {
   fix.UpdateTheirCard("t1", "m1", "contact:bob", true);
-  Answer(Result(Devices::NotAsked, Directory::Answered, /*changed=*/true, /*keys_rejected=*/true));
+  Answer(Result(Devices::NotAsked, Relay::Answered, /*changed=*/true, /*keys_rejected=*/true));
   EXPECT_TRUE(resent.empty());
   EXPECT_EQ(said, (std::vector<std::string>{Words("contacts.refresh.keys_rejected")}));
 }
 
 TEST_F(SendFailureFixTest, NothingToAskSaysTheCardIsIncompleteAndSendsNothing) {
   fix.UpdateTheirCard("t1", "m1", "contact:bob", true);
-  Answer(Result(Devices::NotAsked, Directory::NotAsked));
+  Answer(Result(Devices::NotAsked, Relay::NotAsked));
   EXPECT_TRUE(resent.empty());
   EXPECT_EQ(said, (std::vector<std::string>{Words("contacts.refresh.nothing_to_ask")}));
 }
 
 TEST_F(SendFailureFixTest, AMessageThatCannotBeResentIsNotSentAndTheUserIsToldToSendItAgain) {
   fix.UpdateTheirCard("t1", "voice", "contact:bob", /*resendable=*/false);
-  Answer(Result(Devices::Answered, Directory::Answered, true));
+  Answer(Result(Devices::Answered, Relay::Answered, true));
   EXPECT_TRUE(resent.empty());
   EXPECT_EQ(said, (std::vector<std::string>{"Updated. Please send it again."}));
 
   said.clear();
   fix.UpdateTheirCard("t1", "voice", "contact:bob", false);
-  Answer(Result(Devices::NotReached, Directory::NotFound));
+  Answer(Result(Devices::NotReached, Relay::NotFound));
   EXPECT_TRUE(resent.empty());
   ASSERT_EQ(said.size(), 1u);
   EXPECT_EQ(said[0], Words("chat.send.fix.not_found")) << "never 'updated' when they were not found";
@@ -185,7 +193,7 @@ TEST_F(SendFailureFixTest, ARefusedRefreshSaysSoLeavesNothingPendingAndALaterTap
   refuse_refresh = false;
   said.clear();
   fix.UpdateTheirCard("t1", "m1", "contact:bob", true);
-  Answer(Result(Devices::Answered, Directory::Answered, true));
+  Answer(Result(Devices::Answered, Relay::Answered, true));
   EXPECT_EQ(resent, (std::vector<std::string>{"t1/m1"}));
   EXPECT_TRUE(said.empty());
 }
@@ -193,7 +201,7 @@ TEST_F(SendFailureFixTest, ARefusedRefreshSaysSoLeavesNothingPendingAndALaterTap
 TEST_F(SendFailureFixTest, AnAnswerAfterTheTeardownDoesNothing) {
   fix.UpdateTheirCard("t1", "m1", "contact:bob", true);
   fix.Reset();
-  Answer(Result(Devices::Answered, Directory::Answered, true));
+  Answer(Result(Devices::Answered, Relay::Answered, true));
   EXPECT_TRUE(resent.empty());
   EXPECT_TRUE(said.empty());
 }
@@ -425,15 +433,15 @@ TEST_F(SendFailureFixTest, TheReasonWordsFollowHowATapGoesOn) {
 }
 
 TEST(ClassifyRefreshTest, EachResultTypeHasOneOutcome) {
-  EXPECT_EQ(ClassifyRefresh(Result(Devices::Answered, Directory::Answered, true)), RefreshOutcome::Found);
-  EXPECT_EQ(ClassifyRefresh(Result(Devices::NotAsked, Directory::Answered)), RefreshOutcome::Found);
-  EXPECT_EQ(ClassifyRefresh(Result(Devices::Answered, Directory::Unreachable)), RefreshOutcome::Found);
-  EXPECT_EQ(ClassifyRefresh(Result(Devices::NotReached, Directory::NotFound)), RefreshOutcome::NotFound);
-  EXPECT_EQ(ClassifyRefresh(Result(Devices::NotAsked, Directory::NotFound)), RefreshOutcome::NotFound);
-  EXPECT_EQ(ClassifyRefresh(Result(Devices::NotReached, Directory::Unreachable)), RefreshOutcome::Unreachable);
-  EXPECT_EQ(ClassifyRefresh(Result(Devices::NotReached, Directory::NotAsked)), RefreshOutcome::Unreachable);
-  EXPECT_EQ(ClassifyRefresh(Result(Devices::NotAsked, Directory::NotAsked)), RefreshOutcome::NothingToAsk);
-  EXPECT_EQ(ClassifyRefresh(Result(Devices::Answered, Directory::Answered, true, true)), RefreshOutcome::KeysRejected);
+  EXPECT_EQ(ClassifyRefresh(Result(Devices::Answered, Relay::Answered, true)), RefreshOutcome::Found);
+  EXPECT_EQ(ClassifyRefresh(Result(Devices::NotAsked, Relay::Answered)), RefreshOutcome::Found);
+  EXPECT_EQ(ClassifyRefresh(Result(Devices::Answered, Relay::Unreachable)), RefreshOutcome::Found);
+  EXPECT_EQ(ClassifyRefresh(Result(Devices::NotReached, Relay::NotFound)), RefreshOutcome::NotFound);
+  EXPECT_EQ(ClassifyRefresh(Result(Devices::NotAsked, Relay::NotFound)), RefreshOutcome::NotFound);
+  EXPECT_EQ(ClassifyRefresh(Result(Devices::NotReached, Relay::Unreachable)), RefreshOutcome::Unreachable);
+  EXPECT_EQ(ClassifyRefresh(Result(Devices::NotReached, Relay::NotAsked)), RefreshOutcome::Unreachable);
+  EXPECT_EQ(ClassifyRefresh(Result(Devices::NotAsked, Relay::NotAsked)), RefreshOutcome::NothingToAsk);
+  EXPECT_EQ(ClassifyRefresh(Result(Devices::Answered, Relay::Answered, true, true)), RefreshOutcome::KeysRejected);
 }
 
 } // namespace

@@ -166,8 +166,9 @@ Roe<int> SqliteUserVersion(sqlite3* db) {
 }
 
 Roe<SqliteLadderOutcome> RunSqliteLadder(sqlite3* db, const std::string& db_path, const SqliteSchemaLadder& ladder,
-                                         const ByteVector* dek, std::string thread_peer_account) {
-  const SqliteMigrationContext context{db, dek, std::move(thread_peer_account)};
+                                         const ByteVector* dek, std::string thread_peer_account,
+                                         std::string own_account_id) {
+  const SqliteMigrationContext context{db, dek, std::move(thread_peer_account), std::move(own_account_id)};
   if (auto checked = CheckLadder(ladder); !checked) {
     return checked.error();
   }

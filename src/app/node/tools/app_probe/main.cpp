@@ -73,6 +73,15 @@
 //   warm_seeds                          connect the bootstrap seeds now (what reconnects an idle app to
 //                                       them in the field, #382)
 //   recovery_phrase {pin}               Me → Security → Show recovery phrase: {phrase} (24 words; "" when none)
+//   hold_sync {held}                    hold every inbox poll (held true) or let them run again (MR007 lab: mail
+//                                       waits on the relays meanwhile)
+//   poll_relay {origin}                 one signed poll of that relay of ours, nothing taken {messages, next_cursor}
+//   clear_relay {origin, before}        clear that relay's inbox of rows older than `before` (ISO-8601; a lab-only
+//                                       argument: the product clears only mail a day old) {deleted}
+//   relay_identity {origin}             the relay's own identity answer and the PeerId we expect
+//                                       {peer_id, pinned, mismatch}
+//   add_relay {text}                    Me → My relays → Add (`text` a relay link, MR008); remove_relay /
+//                                       make_relay_preferred {origin}
 //   locker_publish                      sync this account's state with its locker at the relay: take what another
 //                                       device changed, store what changed here {version} (M023)
 //   contacts                            the address book {contacts: [{account, remark}]}
@@ -115,7 +124,9 @@
 #include "lib/delivery/TextSpans.h"
 #include "lib/messaging/MentionAlert.h"
 #include "lib/delivery/PeerRequestAuth.h"
+#include "lib/net/RelayIdentity.h"
 #include "feature/conversations/ContactCardExchange.h"
+#include "feature/conversations/ContactRefreshWorkflow.h"
 #include "common/chat/MessagingJson.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/media/IMediaView.h"
@@ -190,6 +201,30 @@ void ReplyError(int64_t id, const std::string& message) {
   Object out = Reply(id, false);
   out.set("error", message);
   Emit(out);
+}
+
+/** A contact refresh as the lab reads it: the devices' outcome, each relay asked in order, what changed. */
+Object RefreshReply(int64_t id, const ContactRefreshResult& result) {
+  using Ask = ContactRefreshResult::RelayAsk;
+  Object out = Reply(id, true);
+  out.set("devices", result.devices == ContactRefreshResult::Devices::Answered     ? "answered"
+                     : result.devices == ContactRefreshResult::Devices::NotReached ? "not_reached"
+                                                                                   : "not_asked");
+  std::vector<Value> relays;
+  for (const Ask& ask : result.relays) {
+    Object row;
+    row.set("origin", ask.origin);
+    row.set("whose", ask.whose == Ask::Whose::Theirs ? "theirs" : "ours");
+    row.set("outcome", ask.outcome == Ask::Outcome::Answered   ? "answered"
+                       : ask.outcome == Ask::Outcome::NotFound ? "not_found"
+                       : ask.outcome == Ask::Outcome::Rejected ? "rejected"
+                                                               : "unreachable");
+    relays.push_back(ObjectValue(std::move(row)));
+  }
+  out.set("relays", ArrayValue(std::move(relays)));
+  out.set("changed", result.Changed());
+  out.set("keys_rejected", result.relay_keys_rejected);
+  return out;
 }
 
 const char* NoticeKindName(CallNotice::Kind kind) {
@@ -562,7 +597,8 @@ public:
         if (auto kept = cards.Kept(account); kept && *kept) {
           out.set("account_id", (*kept)->keys.account_id);
           out.set("source", (*kept)->source);
-          std::vector<Value> relays; // the account's relays, preferred first (multi-relay MR002)
+          out.set("issued_at", (*kept)->issued_at); // the newest account card's (0: keys only)
+          std::vector<Value> relays;                // the account's relays, preferred first (multi-relay MR002)
           for (const AccountCardRelay& relay : KeptRelays(**kept)) {
             relays.emplace_back(relay.origin);
           }
@@ -574,6 +610,39 @@ public:
       }
       out.set("devices", ArrayValue(std::move(devices)));
       Emit(out);
+    } else if (cmd == "refresh_contact") {
+      // The contact page's *Refresh account info* for contact `account` (multi-relay R3): who was asked, and how.
+      auto contact =
+          facade_->FindContactByIdentity(request->getString("account").value_or(""), mesh::ContactIdKind::Account);
+      if (!contact || !*contact) {
+        ReplyError(id, "no such contact");
+        return;
+      }
+      const bool started = Hub().RefreshContact(
+          (*contact)->id, [id](const ContactRefreshResult& result) { Emit(RefreshReply(id, result)); });
+      if (!started) {
+        ReplyError(id, "a refresh runs already, or messaging is not up");
+      }
+    } else if (cmd == "contact_relay") {
+      // The contact page's relay line for contact `account`: its preferred relay and what it last answered (R3).
+      auto contact =
+          facade_->FindContactByIdentity(request->getString("account").value_or(""), mesh::ContactIdKind::Account);
+      if (!contact || !*contact) {
+        ReplyError(id, "no such contact");
+        return;
+      }
+      const ContactRelayView view = Hub().ContactRelay(**contact);
+      Object out = Reply(id, true);
+      out.set("list", view.list == ContactRelayView::List::Listed       ? "listed"
+                      : view.list == ContactRelayView::List::NoneListed ? "none_listed"
+                                                                        : "not_known");
+      out.set("origin", view.origin);
+      out.set("reach", view.reach == ContactRelayView::Reach::Reachable          ? "reachable"
+                       : view.reach == ContactRelayView::Reach::NotRegistered    ? "not_registered"
+                       : view.reach == ContactRelayView::Reach::Unreachable      ? "unreachable"
+                       : view.reach == ContactRelayView::Reach::IdentityMismatch ? "identity_mismatch"
+                                                                                 : "not_known");
+      Emit(out);
     } else if (cmd == "held_grant") {
       // Whether we hold `account`'s relay grant to us (MR005): our sends to it count as a contact's.
       Object out = Reply(id, true);
@@ -584,7 +653,7 @@ public:
       // Our relays (multi-relay R2): preferred first, whether each other one holds our registration, and our card's.
       Object out = Reply(id, true);
       std::vector<Value> ours;
-      RelayRegistrationsWorkflow* others = Hub().OtherRelayRegistrations();
+      const auto others = Hub().OtherRelayRegistrations();
       for (const std::string& origin : Hub().OurRelayOrigins()) {
         Object row;
         row.set("origin", origin);
@@ -604,6 +673,45 @@ public:
       }
       out.set("card_relays", ArrayValue(std::move(card)));
       Emit(out);
+    } else if (cmd == "my_relays") {
+      // My relays (multi-relay R3) as the settings page reads them: preferred first, each one's registration.
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<OurRelaysStatus>>(
+          WorkerLane::Normal, [this]() { return facade_->OurRelays(); },
+          [id](Roe<OurRelaysStatus> status) {
+            if (!status) {
+              ReplyError(id, status.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            std::vector<Value> relays;
+            for (const OurRelayStatus& relay : status->relays) {
+              Object row;
+              row.set("origin", relay.origin);
+              row.set("preferred", relay.preferred);
+              row.set("registered", relay.registration.state == RelayRegistrationRecord::State::Registered);
+              row.set("reason", relay.registration.reason);
+              row.set("peer_id", relay.peer_id);
+              row.set("identity_mismatch", relay.identity_mismatch);
+              relays.push_back(ObjectValue(std::move(row)));
+            }
+            out.set("relays", ArrayValue(std::move(relays)));
+            out.set("editable", status->editable);
+            Emit(out);
+          });
+    } else if (cmd == "add_relay" || cmd == "remove_relay" || cmd == "make_relay_preferred") {
+      // Me → My relays' actions: `text` as pasted (add: a relay link), or a relay's `origin` (remove, make preferred).
+      const std::string text = request->getString(cmd == "add_relay" ? "text" : "origin").value_or("");
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
+          WorkerLane::Normal,
+          [this, cmd, text]() {
+            if (cmd == "add_relay") {
+              return facade_->AddOurRelay(text);
+            }
+            return cmd == "remove_relay" ? facade_->RemoveOurRelay(text) : facade_->MakeOurRelayPreferred(text);
+          },
+          [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
+    } else if (cmd == "hold_sync" || cmd == "poll_relay" || cmd == "clear_relay" || cmd == "relay_identity") {
+      RelayLabCommand(id, cmd, *request);
     } else if (cmd == "register") {
       const std::string nickname = request->getString("nickname").value_or("");
       AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
@@ -1254,6 +1362,70 @@ public:
   }
 
 private:
+  /**
+   * The relay lab's commands (multi-relay MR007, `replayed_calls_refused_at_other_relay`): hold the inbox polls, poll
+   * or clear one relay of ours directly (signed for it as the product signs), read a relay's identity and our pin.
+   */
+  void RelayLabCommand(const int64_t id, const std::string& cmd, const Object& request) {
+    if (cmd == "hold_sync") {
+      Hub().MeshMessaging().HoldInboxSync(request.getIf<bool>("held").value_or(true));
+      Emit(Reply(id, true));
+      return;
+    }
+    const std::string origin = request.getString("origin").value_or("");
+    if (cmd == "relay_identity") {
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<RelayIdentity>>(
+          WorkerLane::Normal, [origin]() { return FetchRelayIdentity(origin); },
+          [this, id, origin](Roe<RelayIdentity> identity) {
+            if (!identity) {
+              ReplyError(id, identity.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.set("peer_id", identity->peer_id);
+            const auto pins = Hub().RelayIdentityPins();
+            const auto pin = pins ? pins->PinFor(origin) : std::nullopt;
+            out.set("pinned", pin ? pin->peer_id : std::string());
+            out.set("mismatch", pin && pin->Mismatched());
+            Emit(out);
+          });
+      return;
+    }
+    const std::shared_ptr<IRelayClient> relay = Hub().OurRelayClient(origin);
+    const std::string account = Hub().Identity().Get().valueOr(LocalIdentity{}).account_id;
+    if (!relay || account.empty()) {
+      ReplyError(id, "not a relay of ours, or no account");
+      return;
+    }
+    if (cmd == "poll_relay") {
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<RelayPollResult>>(
+          WorkerLane::Normal, [relay, account]() { return relay->PollInbox(account, ""); },
+          [id](Roe<RelayPollResult> polled) {
+            if (!polled) {
+              ReplyError(id, polled.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.set("messages", static_cast<int64_t>(polled->messages.size()));
+            out.set("next_cursor", polled->next_cursor);
+            Emit(out);
+          });
+      return;
+    }
+    const std::string before = request.getString("before").value_or("");
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<RelayDeleteResult>>(
+        WorkerLane::Normal, [relay, account, before]() { return relay->ClearInbox(account, before); },
+        [id](Roe<RelayDeleteResult> cleared) {
+          if (!cleared) {
+            ReplyError(id, cleared.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          out.set("deleted", cleared->deleted);
+          Emit(out);
+        });
+  }
+
   /** People search → tap the person → chat opens (ContactActionDispatcher start_conversation). */
   void OpenChat(int64_t id, const std::string& account) {
     if (account.empty()) {

@@ -73,16 +73,17 @@ uint64_t AttachmentQuotaNeededBytes(const Error& quota_error);
 /**
  * Deliver an already staged attachment (a retry, also after the app was killed): the same ciphertext and key, a
  * direct push first when it is small and the contact is reachable, then the server. A record already delivered
- * returns its fields at once. `options.outgoing` and `options.dek` are required.
+ * returns its fields at once. `options.outgoing` and `options.dek` are required. The send holds `blob` until it ends:
+ * the client it started with, whatever the caller's client becomes meanwhile (a preferred relay changed, MR006).
  */
-void ResumeChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const OutgoingAttachmentRecord& record,
-                               ChatAttachmentUploadOptions options,
+void ResumeChatAttachmentAsync(std::shared_ptr<IBlobClient> blob, IdentityStore& identity,
+                               const OutgoingAttachmentRecord& record, ChatAttachmentUploadOptions options,
                                std::function<void(Roe<ChatAttachmentFields>)> on_done);
 
-/** The same for bytes already in memory (a shrunk picture, a file read by the caller). */
-void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const std::vector<uint8_t>& plaintext,
-                               const std::string& filename, const std::string& mime,
-                               ChatAttachmentUploadOptions options,
+/** The same for bytes already in memory (a shrunk picture, a file read by the caller); it holds `blob` as above. */
+void UploadChatAttachmentAsync(std::shared_ptr<IBlobClient> blob, IdentityStore& identity,
+                               const std::vector<uint8_t>& plaintext, const std::string& filename,
+                               const std::string& mime, ChatAttachmentUploadOptions options,
                                std::function<void(Roe<ChatAttachmentFields>)> on_done);
 
 } // namespace pbr

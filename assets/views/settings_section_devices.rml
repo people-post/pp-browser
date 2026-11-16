@@ -4,7 +4,20 @@
         </div>
         <!-- Phones, main device: the hero (a quiet icon, one sentence, one grey line, the one button that opens the link page),
              then the list. The "?" is next to the sentence; it asks about the same row title as before. -->
-        <div class="settings-phone-only settings-dev-hero" data-if="!own_devices_not_main">
+        <!-- No list of ours here (a reset, a lost card): it is being got back from our relays, or none was found there —
+             then a new list is offered, which signs the account's other devices out (it asks first). -->
+        <div class="stack settings-actions" data-if="own_list_getting">
+          <p class="text group-head">{{i18n:settings.security.devices}}</p>
+          <p class="text muted group-foot">{{i18n:settings.security.devices.getting_list}}</p>
+        </div>
+        <div class="stack settings-actions" data-if="own_list_missing">
+          <p class="text group-head">{{i18n:settings.security.devices}}</p>
+          <p class="text muted group-foot">{{i18n:settings.security.devices.list_not_found}}</p>
+          <div class="row group-actions">
+            <button class="btn btn-secondary" type="button" data-event-click="start_new_device_list()">{{i18n:settings.security.devices.new_list}}</button>
+          </div>
+        </div>
+        <div class="settings-phone-only settings-dev-hero" data-if="!own_devices_not_main && !own_list_getting && !own_list_missing">
           <svg class="settings-dev-ill" src="../icons/v2/phone.svg" width="44" height="44"></svg>
           <div class="settings-dev-sentence-row">
             <span class="settings-dev-sentence">{{i18n:settings.security.devices.hero}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>

@@ -27,4 +27,15 @@ inline constexpr bool kUiDemoBuild = true;
 inline constexpr bool kUiDemoBuild = false;
 #endif
 
+/**
+ * A relay a person types (My relays) or a QR code names may be a plain `http://` one or at a local address (this
+ * device, a private network): developer builds and debug builds only (the lab's plain relays); never on the card
+ * (multi-relay MR004). Release builds take neither.
+ */
+#ifdef NDEBUG
+inline constexpr bool kDeveloperRelaysAllowed = kDevToolsBuild;
+#else
+inline constexpr bool kDeveloperRelaysAllowed = true;
+#endif
+
 } // namespace pbr

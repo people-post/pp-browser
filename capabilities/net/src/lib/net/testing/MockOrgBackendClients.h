@@ -103,8 +103,13 @@ private:
 
 class MockRegistrationClient : public IRegistrationClient {
 public:
+  /** The test relay's PeerId (MR007): every command is signed for it. */
+  static constexpr const char* kAudience = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
+
   std::string BaseUrl() const override { return base_url_; }
   void SetBaseUrl(std::string base_url) { base_url_ = std::move(base_url); }
+  IRelayAudience* Audience() const override { return audience_.get(); }
+  void SetAudience(std::shared_ptr<IRelayAudience> audience) { audience_ = std::move(audience); }
   Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
                                                  const std::string& signature_alg = "ml-dsa-65",
                                                  const std::string& kem_public_key_b64 = "",
@@ -112,19 +117,21 @@ public:
                                                  const std::vector<std::string>& multiaddrs = {},
                                                  const RegistrationPublishOpts& publish = {}) override;
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
-                                             const std::string& nickname, const std::string& signature,
-                                             int64_t timestamp, const std::string& signature_alg = "ml-dsa-65",
+                                             const std::string& nickname, const SignedRelayCommand& signed_finish,
+                                             const std::string& signature_alg = "ml-dsa-65",
                                              const std::string& kem_public_key_b64 = "",
                                              const std::string& kem_binding_signature_b64 = "",
                                              const std::string& peer_id = "",
                                              const std::vector<std::string>& multiaddrs = {},
                                              const RegistrationPublishOpts& publish = {}) override;
-  Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
-                                         int64_t timestamp, const std::string& account_id) override;
-  Roe<void> RevokeRegistration(const std::string& account_id, const std::string& signature, int64_t timestamp) override;
+  Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const SignedRelayCommand& signed_update,
+                                         const std::string& account_id) override;
+  Roe<void> RevokeRegistration(const std::string& account_id, const std::string& registration_id,
+                               const SignedRelayCommand& signed_revoke) override;
 
 private:
   std::string base_url_;
+  std::shared_ptr<IRelayAudience> audience_ = std::make_shared<FixedRelayAudience>(kAudience);
 };
 
 class MockClientCompatClient : public IClientCompatClient {

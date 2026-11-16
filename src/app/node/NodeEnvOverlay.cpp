@@ -1,5 +1,6 @@
 #include "app/node/NodeEnvOverlay.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <string>
@@ -86,6 +87,49 @@ std::vector<std::string> ParsePpNodeBootstrapPeersCsv(std::string_view csv) {
   return out;
 }
 
+std::string NodeRelayUrlKey(const std::string& url) {
+  // Spaces and trailing `/` off, scheme and host lower case, `:443` on https (`:80` on http) as no port.
+  std::string key = url;
+  while (!key.empty() && (key.back() == '/' || std::isspace(static_cast<unsigned char>(key.back())) != 0)) {
+    key.pop_back();
+  }
+  const size_t start = key.find_first_not_of(" \t");
+  key = start == std::string::npos ? std::string() : key.substr(start);
+  const size_t scheme_end = key.find("://");
+  if (scheme_end == std::string::npos) {
+    return key;
+  }
+  const size_t host_end = std::min(key.find('/', scheme_end + 3), key.size());
+  for (size_t i = 0; i < host_end; ++i) {
+    key[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(key[i])));
+  }
+  const std::string scheme = key.substr(0, scheme_end);
+  const std::string default_port = scheme == "https" ? ":443" : scheme == "http" ? ":80" : "";
+  const std::string authority = key.substr(scheme_end + 3, host_end - scheme_end - 3);
+  if (!default_port.empty() && authority.size() > default_port.size() && authority.ends_with(default_port)) {
+    key.erase(host_end - default_port.size(), default_port.size());
+  }
+  return key;
+}
+
+std::string NodeRegistrationIdProblem(const ServiceEndpointConfig& registration, const bool developer_build) {
+  if (registration.base_url.empty() || !registration.peer_id.empty() || developer_build) {
+    return {};
+  }
+  return "registration.peer_id (PP_NODE_REGISTRATION_PEER_ID) is not set for " + registration.base_url +
+         ": the node does not register there (set it to the PeerId after # in the relay's link)";
+}
+
+void DefaultNodeRegistrationPeerId(ServiceEndpointConfig& registration, const std::string& compiled_prod_relay,
+                                   const std::string& compiled_prod_peer_id) {
+  if (!registration.peer_id.empty() || compiled_prod_relay.empty()) {
+    return;
+  }
+  if (NodeRelayUrlKey(registration.base_url) == NodeRelayUrlKey(compiled_prod_relay)) {
+    registration.peer_id = compiled_prod_peer_id;
+  }
+}
+
 void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
   if (const char* data_dir = EnvOrNull("PP_NODE_DATA_DIR")) {
     config.data_dir = data_dir;
@@ -153,6 +197,10 @@ void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
   }
   if (const char* registration = EnvOrNull("PP_NODE_REGISTRATION_BASE_URL")) {
     config.registration.base_url = registration;
+    config.registration.peer_id.clear(); // the file's (or the build's) PeerId is another relay's
+  }
+  if (const char* peer_id = EnvOrNull("PP_NODE_REGISTRATION_PEER_ID")) {
+    config.registration.peer_id = peer_id;
   }
   if (const char* content_sha256 = EnvOrNull("PP_NODE_RELAY_CONTENT_SHA256")) {
     if (auto parsed = ParsePpNodeBoolEnv(content_sha256)) {

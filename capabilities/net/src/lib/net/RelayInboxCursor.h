@@ -12,6 +12,8 @@ namespace pbr {
  */
 struct RelayInboxCursors {
   std::string preferred;
+  /** The relay `preferred` is the cursor of (RelayOriginKey); empty: a file from before My relays, the preferred's. */
+  std::string preferred_relay;
   /** By relay origin (RelayOriginKey). */
   std::map<std::string, std::string> others;
 

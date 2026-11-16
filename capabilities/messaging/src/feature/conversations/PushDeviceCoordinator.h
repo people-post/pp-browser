@@ -21,6 +21,8 @@ public:
   static Roe<void> Register(ConversationsHub& hub);
   /** On one other relay of ours, once it took our registration (RelayRegistrationsWorkflow). */
   static Roe<void> RegisterOn(ConversationsHub& hub, const std::string& origin);
+  /** Removes this device's push binding from another relay of ours (it leaves My relays). Blocks (HTTP). */
+  static Roe<void> UnregisterOn(ConversationsHub& hub, const std::string& origin);
   /** Removes this device's bindings from the running backend (a failed one leaves them there). */
   static Roe<void> Unregister(ConversationsHub& hub);
   /** A saved backend switch (applied on restart) removes the binding now; undoing it registers again. */

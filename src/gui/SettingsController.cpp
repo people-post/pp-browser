@@ -446,6 +446,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.backend_label = BackendDisplayLabel(ui_state_.backend_env).c_str();
   bindings_.backend_restart_pending = ui_state_.backend_restart_pending;
   bindings_.backend_is_custom = ui_state_.backend_env == "custom";
+  bindings_.relay_id_missing = ui_state_.relay_id_missing;
   bindings_.direct_connections = ui_state_.direct_connections.c_str();
   bindings_.trusted_relays_only = ui_state_.trusted_relays_only.c_str();
   bindings_.reachable_without_relay = ui_state_.reachable_without_relay.c_str();
@@ -540,6 +541,9 @@ void SettingsController::SyncBindingsFromSession() {
     }
     if (SettingsPageHas(*page, SettingsPageAction::RefreshDevices)) {
       own_devices_.Refresh();
+    }
+    if (SettingsPageHas(*page, SettingsPageAction::RefreshRelays)) {
+      my_relays_.Refresh();
     }
   }
 
@@ -671,6 +675,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("backend_label", &controller.bindings_.backend_label);
     ctor.Bind("backend_restart_pending", &controller.bindings_.backend_restart_pending);
     ctor.Bind("backend_is_custom", &controller.bindings_.backend_is_custom);
+    ctor.Bind("relay_id_missing", &controller.bindings_.relay_id_missing);
     ctor.Bind("direct_connections_label", &controller.bindings_.direct_connections_label);
     ctor.Bind("trusted_relays_only", &controller.bindings_.trusted_relays_only);
     ctor.Bind("reachable_without_relay", &controller.bindings_.reachable_without_relay);
@@ -754,6 +759,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("support_subtitle", &controller.bindings_.support_subtitle);
     security_actions_.Bind(ctor);
     own_devices_.Bind(ctor);
+    my_relays_.Bind(ctor);
     storage_manager_.Bind(ctor);
     ctor.Bind("status", &controller.status_);
     ctor.Bind("ai_dot_shown", &controller.ai_dot_shown_);
@@ -931,6 +937,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "backend_label");
   host.Dirty("settings", "backend_restart_pending");
   host.Dirty("settings", "backend_is_custom");
+  host.Dirty("settings", "relay_id_missing");
   host.Dirty("settings", "direct_connections_label");
   host.Dirty("settings", "trusted_relays_only");
   host.Dirty("settings", "reachable_without_relay");

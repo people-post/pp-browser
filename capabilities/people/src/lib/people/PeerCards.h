@@ -112,11 +112,17 @@ public:
   Roe<std::vector<PeerCardFloor>> NewestKnown() const;
   /** Called (outside the lock) when an account's newest card got newer: the account locker keeps its floor. */
   void SetOnNewerCard(std::function<void()> callback);
+  /**
+   * Called (outside the lock) with the account when its newest card lists a device the one kept before did not (a
+   * device it linked since): what was sent to its devices before, its grant among them, never reached that one.
+   */
+  void SetOnDevicesAdded(std::function<void(const std::string& account_id)> callback);
 
 private:
   IPeerCardStore& store_;
   mutable std::mutex mutex_;
   std::function<void()> on_newer_card_;
+  std::function<void(const std::string&)> on_devices_added_;
 };
 
 } // namespace pbr

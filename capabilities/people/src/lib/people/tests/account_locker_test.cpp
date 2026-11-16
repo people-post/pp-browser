@@ -446,6 +446,103 @@ TEST(AccountLockerTest, MoreEntriesThanTheLimitAreDroppedOnRead) {
   EXPECT_EQ(read->device_names.size(), kMaxDeviceNameEntries);
 }
 
+// Grants given to the account (multi-relay MR005) ride the locker, so a restored or linked device's first sends to
+// its grantors are not a stranger's (ACCOUNT_LOCKER § State JSON `grants`).
+AccountStateGrant GrantFrom(const std::string& grantor, int64_t issued_at, int64_t expires_at = 0,
+                            const std::string& signature = "c2ln") {
+  return AccountStateGrant{.grantor_account_id = grantor,
+                           .grantee_account_id = "account:alice",
+                           .issued_at = issued_at,
+                           .expires_at = expires_at ? expires_at : issued_at + 1'000'000,
+                           .signature = signature};
+}
+
+TEST(AccountLockerTest, GrantsRoundTripAndABrokenRowIsDropped) {
+  AccountLockerState state = SampleState();
+  state.extras.grants = {GrantFrom("account:bob", 100), GrantFrom("account:carol", 200)};
+  const LockerKeys keys = KeysOf(0x11);
+  auto opened = account_locker::Open(account_locker::Seal(state, keys, 1).value(), keys);
+  ASSERT_TRUE(opened) << opened.error().message;
+  EXPECT_EQ(opened->extras.grants, state.extras.grants);
+
+  auto read = account_locker::StateFromJson(
+      R"({"grants":[{"recipient_account_id":"account:bob","sender_account_id":"account:alice","issued_at":5,)"
+      R"("expires_at":9,"signature":"c2ln","future":1},)"
+      R"({"recipient_account_id":"account:carol","sender_account_id":"account:alice","issued_at":5,"expires_at":9},)"
+      R"({"recipient_account_id":"account:dave","sender_account_id":"account:alice","issued_at":9,"expires_at":5,)"
+      R"("signature":"c2ln"}]})");
+  ASSERT_TRUE(read);
+  EXPECT_EQ(read->extras.grants, (std::vector<AccountStateGrant>{GrantFrom("account:bob", 5, 9)}))
+      << "no signature, or expiring before it was issued: dropped";
+  EXPECT_TRUE(account_locker::StateFromJson(R"({"nickname":"a"})")->extras.grants.empty()) << "an older snapshot";
+}
+
+TEST(AccountLockerTest, GrantsMergeToTheLatestPerGrantorWithoutTheExpired) {
+  AccountLockerState ours;
+  ours.extras.grants = {GrantFrom("account:bob", 300), GrantFrom("account:carol", 100, 150)};
+  AccountLockerState stored;
+  stored.extras.grants = {GrantFrom("account:bob", 200), GrantFrom("account:dave", 50)};
+  const AccountLockerState merged = account_locker::MergeForPublish(ours, stored);
+  EXPECT_EQ(account_locker::CapGrants(merged.extras.grants, 160),
+            (std::vector<AccountStateGrant>{GrantFrom("account:bob", 300), GrantFrom("account:dave", 50)}))
+      << "Bob's later one; Carol's ran out at 150; Dave's from the other device";
+  EXPECT_EQ(
+      account_locker::CapGrants({GrantFrom("account:bob", 300, 0, "YQ"), GrantFrom("account:bob", 300, 0, "Yg")}, 0),
+      (std::vector<AccountStateGrant>{GrantFrom("account:bob", 300, 0, "Yg")}))
+      << "a tie keeps the same one on every device";
+}
+
+// D2 (ACCOUNT_LOCKER § State JSON `relays`): the locker carries our relays' addresses (MR008: each with its PeerId),
+// so a restore keeps the person's list; the copy from the newer card wins a merge, and an untrusted copy is bounded.
+TEST(AccountLockerTest, OurRelaysRoundTripAndTheNewerCardsListWinsAMerge) {
+  const std::string kB = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
+  const std::string kA = "QmeKYz9h9AozszFqAkRzwxx4xGheEMYRVrLHuh7EMG7Bie";
+  AccountLockerState state = SampleState();
+  state.extras.relays = {.list = {{.origin = "https://b.example/api/relay", .peer_id = kB},
+                                  {.origin = "https://a.example/api/relay", .peer_id = kA}},
+                         .card_issued_at = 500};
+  const LockerKeys keys = KeysOf(0x11);
+  auto opened = account_locker::Open(account_locker::Seal(state, keys, 1).value(), keys);
+  ASSERT_TRUE(opened) << opened.error().message;
+  EXPECT_EQ(opened->extras.relays, state.extras.relays);
+
+  AccountLockerState older = state;
+  older.extras.relays = {.list = {{.origin = "https://a.example/api/relay", .peer_id = kA}}, .card_issued_at = 400};
+  EXPECT_EQ(account_locker::MergeForPublish(older, state).extras.relays, state.extras.relays)
+      << "the stored list came with a newer card";
+  EXPECT_EQ(account_locker::MergeForPublish(state, older).extras.relays, state.extras.relays) << "ours is newer";
+
+  const auto row = [](const std::string& origin, const std::string& peer_id) {
+    return R"({"origin":")" + origin + R"(","peer_id":")" + peer_id + R"("})";
+  };
+  auto read = account_locker::StateFromJson(
+      R"({"relays":{"list":[)" + row("https://a.example", kA) + "," + row("https://a.example", kB) + "," + row("", kA) +
+      "," + row("https://n.example", "") + "," + row("https://b.example", kB) + "," + row("https://c.example", kA) +
+      "," + row("https://d.example", kB) + "," + row("https://e.example", kA) + R"(],"card_issued_at":7}})");
+  ASSERT_TRUE(read);
+  std::vector<std::string> origins;
+  for (const AccountStateRelay& relay : read->extras.relays.list) {
+    origins.push_back(relay.origin);
+  }
+  EXPECT_EQ(origins, (std::vector<std::string>{"https://a.example", "https://b.example", "https://c.example",
+                                               "https://d.example"}))
+      << "each origin once, none empty, none without its PeerId (MR008), at most four";
+  EXPECT_TRUE(account_locker::StateFromJson(R"({"nickname":"a"})")->extras.relays.list.empty())
+      << "an older snapshot: none";
+}
+
+TEST(AccountLockerTest, OverTheCapTheLatestIssuedGrantsStay) {
+  std::vector<AccountStateGrant> grants;
+  for (size_t i = 0; i < kMaxLockerGrants + 3; ++i) {
+    grants.push_back(GrantFrom("account:g" + std::to_string(100 + i), static_cast<int64_t>(1000 + i)));
+  }
+  const std::vector<AccountStateGrant> capped = account_locker::CapGrants(grants, 0);
+  ASSERT_EQ(capped.size(), kMaxLockerGrants);
+  EXPECT_EQ(capped.front().grantor_account_id, "account:g103") << "the three issued first went";
+  EXPECT_TRUE(std::is_sorted(capped.begin(), capped.end(),
+                             [](const auto& a, const auto& b) { return a.grantor_account_id < b.grantor_account_id; }));
+}
+
 TEST(AccountLockerTest, SignBytesMatchTheRelaysGoldenVector) {
   // Shared with the relay (web2 www __tests__/AccountLocker.test.ts): what a provider verifies.
   ByteVector locker_id(32);

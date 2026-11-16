@@ -30,6 +30,8 @@
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+
+#include <memory>
 #include <iostream>
 
 namespace pbr {
@@ -89,8 +91,8 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     LocalIdentity local = *identity.Get();
     local.registered = true;
     ASSERT_TRUE(identity.Update(local));
-    HttpBlobClient blob(url);
-    blob.SetAuthSigner([](const std::vector<uint8_t>&) { return Roe<std::string>(std::string("sig")); });
+    auto blob = std::make_shared<HttpBlobClient>(url);
+    blob->SetAuthSigner([](const std::vector<uint8_t>&) { return Roe<std::string>(std::string("sig")); });
     OutgoingAttachmentStore store(dir.string(), profile_id);
 
     // What the app does: read the picked file, hand it to the staged upload, keep a local copy in the CAS.
