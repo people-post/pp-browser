@@ -100,6 +100,8 @@ struct SettingsCommands {
   std::function<PinProtectionView()> load_pin_protection;
   /** Change the profile PIN via the app-owned vault (caller ensures unlocked first). */
   std::function<Roe<void>(const SecretText& current_pin, const SecretText& new_pin)> change_pin;
+  /** The PIN switched between the app default and a custom one (`is_default` is the new state). */
+  std::function<void(bool is_default)> on_pin_mode_changed;
   /** The platform keeps the PIN grace window (#21: a secure store); false hides Security's "Ask for PIN again" row. */
   std::function<bool()> grace_supported;
   /**

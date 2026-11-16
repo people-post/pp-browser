@@ -433,6 +433,9 @@ void PinGateController::ShowVerify(const PinVerifyPurpose purpose, PinGateCheck 
     case PinVerifyPurpose::EnableBiometric:
       pin_state_.message = Tr("pin.verify_biometric_message").c_str();
       break;
+    case PinVerifyPurpose::RemovePin:
+      pin_state_.message = Tr("pin.verify_remove_message").c_str();
+      break;
   }
   SetupKnownPinEntry();
   ApplyPinGate();

@@ -55,6 +55,8 @@ public:
    * default PIN the current-PIN step is skipped (that PIN is public): new, again.
    */
   void ChangePin();
+  /** Me → Security → Remove PIN: the current PIN on the gate, then the vault goes back to the app default PIN. */
+  void RemovePin();
   /**
    * Me → Security → "Unlock with Face ID" switch (at-rest A014): on asks for the PIN on the gate first (the engine
    * seals the DEK with it, off the UI thread), then "Turned on"; off needs no PIN.
@@ -64,6 +66,11 @@ public:
 private:
   /** The PIN opens the vault again (on a worker); `done` on the UI thread. */
   void CheckPin(const SecretText& pin, std::function<void(Roe<void>)> done);
+  /**
+   * Saves the PIN mode and kind for `new_pin`, turns Face / fingerprint unlock off (its sealed DEK is only for a custom
+   * PIN) when the PIN became the default, and tells the app.
+   */
+  Roe<void> RecordPinChanged(const SecretText& new_pin, bool to_default);
   /** The "copy transfer code?" confirm, then the code to the clipboard. */
   void ConfirmExportLinkDevice();
   /** The transfer page's lead and "copied" lines, with the code's validity in minutes (from the code's own TTL). */
