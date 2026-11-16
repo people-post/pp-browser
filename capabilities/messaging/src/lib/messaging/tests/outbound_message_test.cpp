@@ -358,6 +358,7 @@ TEST(OutboundSendRulesTest, AGroupMembersEnvelopeCarriesACopyPerDevice) {
       << "the relay keeps one row per sender, stream and index: each member's records have their own stream";
   EXPECT_EQ(e.recipient_account_id, "account:b") << "the relay delivers to relay ids";
   EXPECT_EQ(e.relay_wake_hint, "m") << "a tap on the push is matched to this message by its id";
+  EXPECT_EQ(e.relay_kind, kRelayKindMsg);
   // Each device reads its own copy, numbered in its own pair.
   auto on_laptop = SelectRelayCopy(e, "QmBLaptop");
   ASSERT_TRUE(on_laptop);
@@ -397,6 +398,37 @@ TEST(OutboxRetryTest, TheControlLaneBacksOffWithinItsWindow) {
   EXPECT_EQ(ControlRetryAfter(1, kControlRetryWindowMs - 1000, unreachable), milliseconds(1000));
   EXPECT_FALSE(ControlRetryAfter(1, kControlRetryWindowMs - 999, unreachable)) << "it would land too late";
   EXPECT_FALSE(ControlRetryAfter(1, 0, AppError::Network(Err::Network::HttpRejected, "400")));
+}
+
+TEST(OutboundMessageTest, RelayKindHintSeparatesMessagesFromControl) {
+  ThreadMessage message;
+  for (const ChatContentType type :
+       {ChatContentType::Text, ChatContentType::Attachment, ChatContentType::ContactCard, ChatContentType::CryptoTx}) {
+    message.content_type = type;
+    EXPECT_STREQ(RelayKindOfChatMessage(message), kRelayKindMsg);
+  }
+  message.content_type = ChatContentType::System;
+  EXPECT_STREQ(RelayKindOfChatMessage(message), kRelayKindMsg) << "a system line without a control type is shown";
+  for (const char* control : {"call_summary", "group_invite", "relay_grant"}) {
+    message.payload_json = std::string(R"({"control_type":")") + control + R"("})";
+    EXPECT_STREQ(RelayKindOfChatMessage(message), kRelayKindCtl) << control;
+  }
+  for (const char* annotation : {"reaction", "reaction_clear", "retract", "edit"}) {
+    message.content_type = ChatContentType::Annotation;
+    message.payload_json = std::string(R"({"annotation_type":")") + annotation + R"("})";
+    EXPECT_STREQ(RelayKindOfChatMessage(message), kRelayKindCtl) << annotation;
+  }
+  message.content_type = ChatContentType::Unsupported;
+  EXPECT_STREQ(RelayKindOfChatMessage(message), kRelayKindCtl);
+
+  ThreadMessage text;
+  text.id = "m";
+  const EnvelopeSender sender{"account:a", "QmA"};
+  EXPECT_EQ(BuildDirectEnvelope(text, sender, ThreadChannel::E2e, "account:b", {}, 1).relay_kind, kRelayKindMsg);
+  ThreadMessage reaction = text;
+  reaction.content_type = ChatContentType::Annotation;
+  EXPECT_EQ(BuildDirectEnvelope(reaction, sender, ThreadChannel::E2e, "account:b", {}, 1).relay_kind, kRelayKindCtl);
+  EXPECT_EQ(BuildGroupMemberEnvelope(reaction, sender, "group-1", "account:b", {}, 1).relay_kind, kRelayKindCtl);
 }
 
 } // namespace
