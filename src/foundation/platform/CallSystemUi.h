@@ -7,9 +7,10 @@
 namespace pbr {
 
 /**
- * The phone's own call screen: the incoming-call notification on Android (P014, AndroidCallSystemUi). It rings
- * full screen, on the lock screen too, and answers / ends calls there. Null elsewhere, iPhone included
- * (Available() is false): the app's own ring and notifications do it all.
+ * The phone's own call screen: CallKit on an iPhone with the default PIN (P020, CallSystemUi_Ios.mm), the
+ * incoming-call notification on Android (P014, AndroidCallSystemUi). It rings full screen, on the lock screen
+ * too, and answers / ends calls there. Null elsewhere (Available() is false): the app's own ring and
+ * notifications do it all.
  *
  * Driven by CallSystemUiBridge on the UI thread; the callbacks arrive there too.
  */
@@ -20,6 +21,9 @@ public:
     std::function<void(const std::string& call_id)> answer;
     /** The user ended (declined, hung up) on the system screen; the push's call: as for `answer`. */
     std::function<void(const std::string& call_id)> end;
+    std::function<void(const std::string& call_id, bool muted)> set_muted;
+    /** The system activated (true) or deactivated (false) the audio session of a call it owns. */
+    std::function<void(bool active)> audio_session;
     /** The push's call left the system screen without a ring found (timeout, reset, ended by us). */
     std::function<void()> pending_gone;
   };
@@ -27,7 +31,7 @@ public:
   virtual ~ICallSystemUi() = default;
 
   /**
-   * Rings can go here (Android: notifications allowed, the calls channel on). Cheap: the platform may keep the
+   * Rings can go here (Android: notifications allowed, the calls channel on; iPhone: the default PIN). Cheap: the platform may keep the
    * answer (asking costs calls into the OS, and the bridge asks every frame of a call) until RecheckAvailable.
    */
   virtual bool Available() const { return false; }

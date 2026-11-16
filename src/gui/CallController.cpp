@@ -80,12 +80,15 @@ CallController::CallController()
                                const bool voice_only) { (void)presenter_.Accept(voice_only, call_id); },
               .decline = [this]() { (void)presenter_.Decline(); },
               .leave = [this]() { (void)presenter_.Leave(); },
+              .toggle_mute = [this]() { ToggleMute(); },
               .display_name = [this](const std::string& identity) { return CallerNameFor(identity).label; },
               .now_ms = {},
               // The ring came back from the phone's call screen, or went to it: draw it where it is now.
               .ring_moved = [this]() { Render(); },
               .screen_state = []() { return ReadDeviceScreenState(); },
               .pin_locked = [this]() { return pin_locked_ && pin_locked_(); },
+              .audio_managed = [](const bool managed) { AudioSession::SetSystemManaged(managed); },
+              .audio_activated = [](const bool active) { AudioSession::NotifySystemActivation(active); },
           }),
       local_hold_(LocalHoldPorts()) {
   redirectLogger("CallController");
