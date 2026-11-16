@@ -92,7 +92,7 @@ The relay **never parses** application envelopes. pp-browser wraps the signed `R
 | `index_key` | integer (u64) | yes | Monotonic per-sender per-stream; **v1:** equals `sender_seq` |
 | `blob_b64` | string | yes | RFC 4648 base64 of application envelope JSON (unsigned routing fields omitted) |
 | `urgent` | bool | send only, optional | P012: wake the recipient at once (an incoming call's push). Unsigned hint |
-| `ttl_s` | integer | send only, optional | How long the relay keeps the record, in seconds (it clamps to 60 s – 90 days); absent: its full window. The control lane sends 3660 (`kControlLaneRelayTtlMs`: no family takes a lane message older than an hour), except sent copies and the device list to our own devices, which wait for a device that is off for days. Unsigned hint |
+| `ttl_s` | integer | send only, optional | How long the relay keeps the record, in seconds (it clamps to 60 s – 90 days); absent: its full window. The control lane sends fixed tiers: 120 for call signaling, 86400 for the device list, else 3660 (`kControlLaneRelayTtlMs`: no family takes a lane message older than an hour); sent copies and relay grants send none, as they wait for a device that is off for days. Unsigned hint |
 
 **Dedup:** relay unique key `(sender_account_id, stream_id, index_key)`. **Signature verification:** client-side only (`RelayReceivePipeline`).
 

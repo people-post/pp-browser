@@ -34,6 +34,13 @@ struct SystemControlLabels {
 inline constexpr int64_t kControlLaneRelayTtlMs = 61 * 60 * 1000;
 
 /**
+ * `ttl_s` tiers of the shortest-lived lane records. Fixed values, not exact ones: the relay sees the field, so an
+ * exact value would fingerprint the sender. Call signaling is stale after two minutes; a device list waits a day.
+ */
+inline constexpr int64_t kCallSignalRelayTtlS = 120;
+inline constexpr int64_t kDeviceListRelayTtlS = 24 * 60 * 60;
+
+/**
  * A family of system-control messages a feature owns (call control, billing, …): system messages
  * whose payload names a `control_type`. Messaging routes them here by what the family claims,
  * without knowing what they mean. They travel one of two ways:

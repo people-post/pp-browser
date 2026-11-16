@@ -430,5 +430,13 @@ TEST_F(OutboundMessageTest, OnlyShownMessagesCarryAWakeHint) {
   EXPECT_EQ(BuildGroupMemberEnvelope(reaction, sender, "group-1", "account:b", {}, 1).relay_wake_hint, "");
 }
 
+TEST_F(OutboundMessageTest, ChatEnvelopesAskForNoShortRetention) {
+  ThreadMessage text;
+  text.id = "m";
+  const EnvelopeSender sender{"account:a", "QmA"};
+  EXPECT_EQ(BuildDirectEnvelope(text, sender, ThreadChannel::E2e, "account:b", {}, 1).relay_ttl_s, 0);
+  EXPECT_EQ(BuildGroupMemberEnvelope(text, sender, "group-1", "account:b", {}, 1).relay_ttl_s, 0);
+}
+
 } // namespace
 } // namespace pbr

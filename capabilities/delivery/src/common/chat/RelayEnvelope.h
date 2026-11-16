@@ -115,7 +115,7 @@ struct RelayEnvelope {
   bool relay_wake_urgent = false;
   /**
    * A hint to the relay, like `relay_wake_urgent`: keep the record only this many seconds (`ttl_s`); 0 keeps it
-   * the relay's full retention window. The control lane sets it — its messages are useless after an hour.
+   * the relay's full retention window. The control lane sets it by tier (kCallSignalRelayTtlS, kDeviceListRelayTtlS, else an hour).
    */
   int64_t relay_ttl_s = 0;
   /**
