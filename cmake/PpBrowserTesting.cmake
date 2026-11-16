@@ -44,6 +44,12 @@ function(pp_browser_add_gtest executable_target)
   if(PP_BROWSER_CAPABILITY)
     set(_pp_labels PROPERTIES LABELS "capability:${PP_BROWSER_CAPABILITY}")
   endif()
+  # Each test process gets a private TMPDIR; gtest_discover_tests prefixes
+  # CROSSCOMPILING_EMULATOR to both discovery and every test command.
+  if(NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
+    set_property(TARGET ${executable_target} PROPERTY CROSSCOMPILING_EMULATOR
+      "${CMAKE_SOURCE_DIR}/scripts/test/private_tmp.sh")
+  endif()
   if(PP_GTEST_WORKING_DIRECTORY)
     gtest_discover_tests(
       ${executable_target}
