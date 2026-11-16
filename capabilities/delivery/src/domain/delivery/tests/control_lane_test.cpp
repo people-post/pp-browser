@@ -10,6 +10,7 @@
 #include "lib/people/IdentityStore.h"
 #include "lib/people/testing/InMemoryPeerCards.h"
 #include "lib/people/tests/TestAccount.h"
+#include "common/chat/SystemControl.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -293,6 +294,30 @@ TEST_F(ControlLaneTest, APeerWithACardGetsACopyPerDevice) {
     auto stored = psk_->Load(pair);
     ASSERT_TRUE(stored && stored->has_value()) << "the chat stream's device pair session, opened";
   }
+}
+
+// The relay's retention tier rides the send as `ttl_s`: fixed values by family, never the message's own age.
+TEST_F(ControlLaneTest, LaneRecordsCarryTheirRetentionTier) {
+  auto send_typed = [this](const std::string& account, const std::string& control_type, const bool keep) {
+    const size_t before = relay_.Sent().size();
+    ControlSend send = To(account);
+    send.control.payload_json = R"({"control_type":")" + control_type + R"("})";
+    EXPECT_TRUE(lane_->Send(send.peer_identity, send.control, false, false, keep));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (relay_.Sent().size() == before && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    const std::vector<RelayEnvelope> sent = relay_.Sent();
+    EXPECT_EQ(sent.size(), before + 1);
+    return sent.empty() ? RelayEnvelope{} : sent.back();
+  };
+  for (const char* call :
+       {"call_invite", "call_accept", "call_decline", "call_leave", "call_roster", "call_media_key", "call_ended"}) {
+    EXPECT_EQ(send_typed("account:stranger", call, false).relay_ttl_s, kCallSignalRelayTtlS) << call;
+  }
+  EXPECT_EQ(send_typed("account:stranger", "device_list", false).relay_ttl_s, kDeviceListRelayTtlS);
+  EXPECT_EQ(send_typed("account:stranger", "card_ask", false).relay_ttl_s, kControlLaneRelayTtlMs / 1000);
+  EXPECT_EQ(send_typed("account:stranger", "relay_grant", true).relay_ttl_s, 0) << "kept: the relay's full window";
 }
 
 // No card for the peer (a first contact): the account copy, carrying the account pair's opener while unconfirmed —

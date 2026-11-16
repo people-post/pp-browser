@@ -380,7 +380,7 @@ TEST(P2pRelayWireTest, WakeHintIsARelayHintOutsideTheEnvelope) {
   EXPECT_FALSE(RelayWireSendRecordToJson(bad.value()).contains("wake_hint")) << "an invalid hint is dropped";
 }
 
-TEST(P2pRelayWireTest, KindIsAnOptionalRelayHint) {
+TEST(P2pRelayWireTest, NoKindIsSent) {
   using namespace pbr;
 
   RelayEnvelope envelope;
@@ -398,23 +398,14 @@ TEST(P2pRelayWireTest, KindIsAnOptionalRelayHint) {
   envelope.signature = "sig";
   envelope.stream_key = "v1:e2e:1:account:alice123:account:bob456";
   envelope.recipient_account_id = "account:bob456";
+  envelope.relay_wake_hint = "m";
+  envelope.relay_wake_urgent = true;
 
-  const auto none = RelayWireSendRecordFromEnvelope(envelope);
-  ASSERT_TRUE(static_cast<bool>(none));
-  EXPECT_FALSE(RelayWireSendRecordToJson(none.value()).contains("kind")) << "empty: the old behavior";
-
-  for (const char* kind : {kRelayKindMsg, kRelayKindCallInvite, kRelayKindCtl}) {
-    envelope.relay_kind = kind;
-    const auto sent = RelayWireSendRecordFromEnvelope(envelope);
-    ASSERT_TRUE(static_cast<bool>(sent));
-    EXPECT_EQ(RelayWireSendRecordToJson(sent.value()).getIf<std::string>("kind"), std::optional<std::string>(kind));
-    EXPECT_EQ(sent.value().blob_b64, none.value().blob_b64) << "not part of what the recipient gets";
-  }
-
-  envelope.relay_kind = "bogus";
-  const auto bad = RelayWireSendRecordFromEnvelope(envelope);
-  ASSERT_TRUE(static_cast<bool>(bad));
-  EXPECT_FALSE(RelayWireSendRecordToJson(bad.value()).contains("kind")) << "an unknown kind is dropped";
+  const auto sent = RelayWireSendRecordFromEnvelope(envelope);
+  ASSERT_TRUE(static_cast<bool>(sent));
+  const auto json = RelayWireSendRecordToJson(sent.value());
+  EXPECT_FALSE(json.contains("kind")) << "the message class stays out of the plaintext fields";
+  EXPECT_TRUE(json.contains("wake_hint"));
 }
 
 TEST(P2pRelayWireTest, WakeHintAcceptsOnlyShortPlainIds) {

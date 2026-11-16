@@ -28,11 +28,6 @@ inline constexpr const char* kRelayRouteGroup = "group";
  */
 inline constexpr const char* kRelayRouteControl = "control";
 
-/** Relay `kind` hint values: a user-visible chat message, an incoming call, everything else (no push). */
-inline constexpr const char* kRelayKindMsg = "msg";
-inline constexpr const char* kRelayKindCallInvite = "call.invite";
-inline constexpr const char* kRelayKindCtl = "ctl";
-
 /**
  * Where the message goes: its kind, and a direct chat's channel. A group copy names no group (group-chat G018
  * item 7): its group id is inside the copy's ciphertext, so the relay cannot tell which group it is for.
@@ -120,7 +115,7 @@ struct RelayEnvelope {
   bool relay_wake_urgent = false;
   /**
    * A hint to the relay, like `relay_wake_urgent`: keep the record only this many seconds (`ttl_s`); 0 keeps it
-   * the relay's full retention window. The control lane sets it — its messages are useless after an hour.
+   * the relay's full retention window. The control lane sets it by tier (kCallSignalRelayTtlS, kDeviceListRelayTtlS, else an hour).
    */
   int64_t relay_ttl_s = 0;
   /**
@@ -128,11 +123,6 @@ struct RelayEnvelope {
    * into the push so a tap can be matched to this message or call after sync. Empty: none.
    */
   std::string relay_wake_hint;
-  /**
-   * A hint to the relay, like `relay_wake_urgent`: what the record is (`kRelayKind*`), so the relay pushes only
-   * `msg` and `call.invite`. Empty: not sent (the relay's pre-hint behavior).
-   */
-  std::string relay_kind;
 };
 
 /**
@@ -205,8 +195,6 @@ struct RelayWireSendRecord {
   int64_t ttl_s = 0;
   /** Opaque id the relay copies into the push (`wake_hint`; unsigned hint; empty: none). */
   std::string wake_hint;
-  /** What the record is (`kRelayKind*`; unsigned hint; empty: not sent). */
-  std::string kind;
   /** The recipient's grant to us (MR005; unsigned by us, signed by the recipient): none — a stranger's send. */
   std::optional<RelayGrant> grant;
   /**
@@ -228,11 +216,6 @@ inline std::string SanitizeWakeHint(const std::string& id) {
     }
   }
   return id;
-}
-
-/** `kind` if it is one of the `kRelayKind*` values, else empty (the field is then not sent). */
-inline std::string SanitizeRelayKind(const std::string& kind) {
-  return kind == kRelayKindMsg || kind == kRelayKindCallInvite || kind == kRelayKindCtl ? kind : std::string();
 }
 
 /** Opaque relay HTTP wire record returned on poll/history. */

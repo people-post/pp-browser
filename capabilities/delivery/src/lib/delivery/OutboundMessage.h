@@ -113,11 +113,12 @@ RelayCopy AccountCopy(const ThreadMessage& numbered, SealedPayload sealed);
 RelayCopy DeviceCopy(const std::string& device, PairCopy copy);
 
 /**
- * The relay `kind` hint of a chat-route message: `msg` for what the transcript shows as a new message; `ctl` for
+ * Whether a chat-route message wakes the recipient: true for what the transcript shows as a new message, false for
  * annotations (reactions, retracts, edits), system-control rows (a payload naming a `control_type`: call summary,
- * group membership, copy asks, ...) and anything else.
+ * group membership, copy asks, ...) and anything else. Only such a message carries a `wake_hint`, which is what the
+ * relay pushes on.
  */
-const char* RelayKindOfChatMessage(const ThreadMessage& message);
+bool RaisesWakePush(const ThreadMessage& message);
 
 /**
  * A direct send's envelope to the account `recipient` (its relay inbox, MR001): one relay record with `copies` for
