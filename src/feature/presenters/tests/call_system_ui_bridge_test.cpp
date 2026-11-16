@@ -713,7 +713,7 @@ TEST_F(CallSystemUiBridgeTest, ARingOverACallInTheBackgroundIsNotMarkedSeen) {
 TEST_F(CallSystemUiBridgeTest, ACallAnsweredOnTheSystemScreenOwnsItsAudioSessionUntilTheSystemReleasesIt) {
   bridge_.Sync(Ring("c1"), "", false);
   ui_.callbacks_.answer("c1");
-  EXPECT_EQ(did, std::vector<std::string>{"accept"});
+  EXPECT_EQ(did, std::vector<std::string>{"accept voice"});
   EXPECT_EQ(audio, std::vector<std::string>{"managed"}) << "its audio waits for the system";
   ui_.callbacks_.audio_session(true);
   ui_.callbacks_.audio_session(false);
