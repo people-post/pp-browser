@@ -1,6 +1,6 @@
 # Multi-relay: design
 
-**Status:** Proposed (2026-11-12), decided in outline ([MR001](DECISIONS.md#mr001--inboxes-are-keyed-by-account-id)–[MR004](DECISIONS.md#mr004--a-relay-list-is-small-and-bounded)); relay identity and audience built ([MR007](DECISIONS.md#mr007--relays-have-a-node-style-identity-every-signed-relay-command-names-it-as-its-audience), R5; the contracts hold it). Pre-release: every change below is a clean cutover ([COMPATIBILITY § No bridges](../../docs/contracts/COMPATIBILITY.md#no-bridges-pre-release)).
+**Status:** Proposed (2026-11-12), decided in outline ([MR001](DECISIONS.md#mr001--inboxes-are-keyed-by-account-id)–[MR004](DECISIONS.md#mr004--a-relay-list-is-small-and-bounded)); relay identity and audience built ([MR007](DECISIONS.md#mr007--relays-have-a-node-style-identity-every-signed-relay-command-names-it-as-its-audience), R5), relay addresses carrying their PeerId built ([MR008](DECISIONS.md#mr008--a-relay-address-carries-its-peerid-no-first-use-trust), R6); the contracts hold them. Pre-release: every change below is a clean cutover ([COMPATIBILITY § No bridges](../../docs/contracts/COMPATIBILITY.md#no-bridges-pre-release)).
 
 ## Where it stands
 
@@ -11,14 +11,15 @@ What holds now is in the contracts ([SERVICE_ENDPOINTS § Several relays](../../
 - **An app registers and polls on up to four relays of its own**, the user's list in Me → My relays (seeded from the deployment's relay and `relay.extra_base_urls`), and **sends into the recipient's relays in list order**, with a per-relay health memory and one retry on a stale list. The user's relay services follow the preferred relay; org services stay on the org's origin ([MR006](DECISIONS.md#mr006--the-preferred-relay-carries-the-users-relay-services-org-services-stay-on-the-orgs-origin)).
 - **A name search asks every relay of ours**; a stranger's price is its card's floor.
 - **The contact page's refresh button** asks the contact's devices, then its relays in list order, then ours, by Account ID, on a worker; keys are kept only when they verify. The page shows the preferred relay by host with whether it answered at the last refresh.
-- **The QR locator carries the preferred relay's origin** (optional, within MR004's bounds) and no card.
+- **The QR locator carries the preferred relay's address** (`{origin, peer_id}`, optional, within MR004's bounds; MR008) and no card.
+- **A relay address is its origin and its PeerId** (MR008): the relay link `https://host#<PeerId>`, the build's PeerId for the org's relay, the config's for a custom backend; the identity endpoint is only checked against it.
 - **Not yet:** account lockers stay at the org's registration URL; stream history is read from the org's relay while it is ours; the list cannot be empty (no mesh-only choice); only the main device edits it.
 
 ## Model
 
 - **A person is their account.** The Account ID is the same on every relay and needs no relay to be checked.
 - **Devices are reached over the mesh;** a relay is a mailbox for when they are offline.
-- **A relay is named by its origin:** the HTTPS base URL a client uses, e.g. `https://www.brief.global/api/relay`. A relay does not know its own public URL; the client records the one it registered at.
+- **A relay is named by its address:** the HTTPS base URL a client uses, e.g. `https://www.brief.global/api/relay`, and the PeerId of its key (MR007, MR008) — written as a relay link, `https://www.brief.global/api/relay#Qm…`. A relay does not know its own public URL; the client records the one it registered at.
 - **Each account publishes its relay list in its account card** ([MR002](DECISIONS.md#mr002--the-relay-list-lives-in-the-account-card)): the relays it is registered on, preferred first. The card is signed by the account key, so any relay or contact can pass it on without being trusted, and the newest card (`issued_at`) wins, as for the device list.
 
 ## Account card: `relays`
@@ -40,7 +41,7 @@ What holds now is in the contracts ([SERVICE_ENDPOINTS § Several relays](../../
 - **Covered by the card signature:** a new card sign version. A card without the field is refused, a clean cutover ([ACCOUNT_CARD.md](../../docs/contracts/ACCOUNT_CARD.md)).
 - **Size:** a card is about 13 KB plus about 4 KB per device; four relays add at most about 0.6 KB.
 - **Where the card goes:** the card exchange over Amp, the contact-card chat message, group join bundles (within `kRosterCardsBudgetBytes`) and relay registration. Each already carries several KB.
-- **The QR locator carries no card.** It may add the preferred relay's origin alone (about 40 bytes, [MR004](DECISIONS.md#mr004--a-relay-list-is-small-and-bounded)), so a contact added by QR can reach the user's mailbox before it has the card.
+- **The QR locator carries no card.** It may add the preferred relay's address, `{origin, peer_id}` (about 100 bytes, [MR004](DECISIONS.md#mr004--a-relay-list-is-small-and-bounded), [MR008](DECISIONS.md#mr008--a-relay-address-carries-its-peerid-no-first-use-trust)), so a contact added by QR can reach the user's mailbox before it has the card.
 
 ## Relays: inboxes by Account ID
 
@@ -96,7 +97,7 @@ A relay cannot read a message, and it does not know who a user's contacts are. I
 
 - **My relays** (Me → My relays):
   - the list, preferred first, kept in the profile (seeded once from the deployment's relay and `relay.extra_base_urls`);
-  - add a relay by origin (it must answer), remove one (not the preferred), mark one preferred;
+  - add a relay by its relay link (it must answer, and answer to the link's PeerId; MR008), remove one (not the preferred), mark one preferred; copy a relay's link;
   - each with its registration (kept across restarts) and reachability (its last poll);
   - only the main device changes it; a linked device follows the card's list.
   - Changing the list signs a new card, registers on new relays, publishes the card to every relay in the list and to contacts over the control lane, and revokes the registration (with its push bindings) and drops the inbox cursor on removed relays.
@@ -153,7 +154,8 @@ work, the rollout and the tests, as planned.
 - The registry checks once per instance that the secret's seed generates `RELAY_IDENTITY_PUBLIC_KEY`. Nothing else uses the private key in this step; it exists now so that the identity is real when sealing (MR007 item 6) or Amp needs it, and so no function but the registry can read it.
 - **Missing or inconsistent configuration fails closed:** a function without a valid `RELAY_IDENTITY_PUBLIC_KEY` answers every signed call, and the registry `GET /v1/relay-identity` too, with `503 relay_identity_unavailable` (and the config check reports the missing variable as the others do, `ConfigError`). A relay never accepts a call without checking its audience.
 - **Key generation:** a script in pp-relay-apis (`scripts/relay-identity-keygen.mjs`, `@noble/post-quantum`'s `ml_dsa65.keygen(seed)` from 32 random bytes) prints the seed (for the secret) and the public key and PeerId (for the variable and the infra repo's record). Local and lab stacks run the same script at setup and give each stack its own key through the same secret mechanism the local stack uses for the LLM token signing key; two lab stacks must never share a key.
-- **Rotation is a new relay.** A new key is a new PeerId: every app shows that relay as *identity changed* and stops using it until its user accepts the new one; every contact's card that names the old PeerId is skipped by senders until its owner accepts and re-issues; every pp-node stops its relay calls until its pin is cleared. So a relay's key is rotated only after a compromise, and before sealing ships nothing checks a signature by it, so a leaked seed alone harms no one yet.
+- **Rotation is a new relay** (MR008: a new address). A new key is a new PeerId: every app shows that relay as *doesn't match its link — not used* and its user adds its new link (the org's relay: a new app build); every contact's card that names the old PeerId is skipped by senders until its owner re-adds and re-issues; every pp-node stops its relay calls until `registration.peer_id` names the new one (or a new pp-node build). So a relay's key is rotated only after a compromise, and before sealing ships nothing checks a signature by it, so a leaked seed alone harms no one yet.
+- **The link:** `scripts/relay-identity-keygen.mjs <origin>` prints the relay link for operators to publish; a local stack's `/_local/status` names it (`relayLink`). Clients take the PeerId from the link and only check `GET /v1/relay-identity` against it (SPECS.md).
 
 pp-relay-apis' `createSignedRequestVerifier` (every registered-key call) and `registerFinish`:
 
@@ -180,7 +182,12 @@ Design sentences each test guards (cite the ID in the test's comment):
 | MR007-ID | A relay serves `{peer_id, public_key_b64, signature_alg}`, the PeerId derived from its key as a node's; a misconfigured relay answers `503 relay_identity_unavailable` and accepts no signed call |
 | MR007-AUD | A signed command verifies only at the relay whose PeerId it names; elsewhere `401 wrong_audience`, checked first; a rewritten `audience` fails the signature |
 | MR007-VEC | Both sides build the same bytes for every domain and op (the vector file) |
-| MR007-PIN | A pin comes only from an origin's own identity answer (or our own card on a linked device); one PeerId per origin and one origin per PeerId; a changed identity gets no signed call until accepted |
+| MR007-PIN | *Superseded by MR008-PIN* (a pin came from an origin's own first answer) |
+| MR008-PIN | A relay's PeerId comes from its address (a relay link, the build, the config, our own card, the locker), never from its own answer, but where first use is allowed (a developer build's bare origin; the org's in a build that ships none, warned); one PeerId per origin and one origin per PeerId, the org's written first; an identity answer naming another PeerId leaves the relay unused, with nothing to accept |
+| MR008-ADD | Add takes a relay link; a release build refuses a bare origin; the relay's answer must name the link's PeerId; a link naming a PeerId held at another origin is refused before it is asked |
+| MR008-ORG | The org relay's PeerId ships with the build (`PP_RELAY_PEER_ID_PROD` / `_QA`; a release workflow with an empty one fails); pp-node expects `registration.peer_id`, defaulting to the compiled one with the compiled URL |
+| MR008-LOC | The QR locator's relay is `{origin, peer_id}`; a contact added from it signs its first send for that PeerId |
+| B-RELAY-LINK | A relay whose identity answer does not match its link is not used (lab) |
 | MR007-CARD | Card version 4 names each relay `{origin, peer_id}` within the bounds; version 3 is refused everywhere |
 | MR007-SEND | A send into a contact's relay names the PeerId the contact's card signed; a pin conflict or `wrong_audience` skips that relay, without marking it unhealthy |
 | MR007-SCOPE | A revoke or an unregister acts only on the registration or binding it names; a stale one changes nothing |

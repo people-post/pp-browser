@@ -78,10 +78,10 @@
 //   poll_relay {origin}                 one signed poll of that relay of ours, nothing taken {messages, next_cursor}
 //   clear_relay {origin, before}        clear that relay's inbox of rows older than `before` (ISO-8601; a lab-only
 //                                       argument: the product clears only mail a day old) {deleted}
-//   relay_identity {origin}             the relay's own identity answer and our pin {peer_id, pinned, changed}
-//   add_relay {text, accept_changed?}   Me → My relays → Add (accept_changed: the confirm of a relay seen before
-//                                       with another identity); remove_relay / make_relay_preferred {origin};
-//                                       accept_relay_identity {origin} (Accept new identity…)
+//   relay_identity {origin}             the relay's own identity answer and the PeerId we expect
+//                                       {peer_id, pinned, mismatch}
+//   add_relay {text}                    Me → My relays → Add (`text` a relay link, MR008); remove_relay /
+//                                       make_relay_preferred {origin}
 //   locker_publish                      sync this account's state with its locker at the relay: take what another
 //                                       device changed, store what changed here {version} (M023)
 //   contacts                            the address book {contacts: [{account, remark}]}
@@ -689,26 +689,22 @@ public:
               row.set("preferred", relay.preferred);
               row.set("registered", relay.registration.state == RelayRegistrationRecord::State::Registered);
               row.set("reason", relay.registration.reason);
-              row.set("identity_changed", relay.identity_changed);
+              row.set("peer_id", relay.peer_id);
+              row.set("identity_mismatch", relay.identity_mismatch);
               relays.push_back(ObjectValue(std::move(row)));
             }
             out.set("relays", ArrayValue(std::move(relays)));
             out.set("editable", status->editable);
             Emit(out);
           });
-    } else if (cmd == "add_relay" || cmd == "remove_relay" || cmd == "make_relay_preferred" ||
-               cmd == "accept_relay_identity") {
-      // Me → My relays' actions: `text` as typed (add), or a relay's `origin` (remove, make preferred, accept).
+    } else if (cmd == "add_relay" || cmd == "remove_relay" || cmd == "make_relay_preferred") {
+      // Me → My relays' actions: `text` as pasted (add: a relay link), or a relay's `origin` (remove, make preferred).
       const std::string text = request->getString(cmd == "add_relay" ? "text" : "origin").value_or("");
-      const bool accept_changed = request->getIf<bool>("accept_changed").value_or(false);
       AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
           WorkerLane::Normal,
-          [this, cmd, text, accept_changed]() {
+          [this, cmd, text]() {
             if (cmd == "add_relay") {
-              return facade_->AddOurRelay(text, accept_changed);
-            }
-            if (cmd == "accept_relay_identity") {
-              return facade_->AcceptRelayIdentity(text);
+              return facade_->AddOurRelay(text);
             }
             return cmd == "remove_relay" ? facade_->RemoveOurRelay(text) : facade_->MakeOurRelayPreferred(text);
           },
@@ -1389,7 +1385,7 @@ private:
             const auto pins = Hub().RelayIdentityPins();
             const auto pin = pins ? pins->PinFor(origin) : std::nullopt;
             out.set("pinned", pin ? pin->peer_id : std::string());
-            out.set("changed", pin && pin->Changed());
+            out.set("mismatch", pin && pin->Mismatched());
             Emit(out);
           });
       return;

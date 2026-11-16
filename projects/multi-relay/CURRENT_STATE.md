@@ -1,8 +1,8 @@
 # Multi-relay — current state
 
-**As of:** 2026-11-15 (R3, R4 and R5 built and run in the app lab on two local pp-relay-apis stacks; not merged or deployed)
+**As of:** 2026-11-15 (R3, R4, R5 and R6 built and run in the app lab on two local pp-relay-apis stacks; not merged or deployed)
 
-Design written ([DESIGN.md](DESIGN.md)); MR001–MR006 accepted.
+Design written ([DESIGN.md](DESIGN.md)); MR001–MR008 accepted.
 
 **R0 built** (app only, no wire change): the contact page's *Refresh account info* is on every contact's page
 (phone row and desktop button; no longer behind *advanced* or a `relay:` id). It runs
@@ -91,7 +91,7 @@ Contracts: [SERVICE_ENDPOINTS § Relay services and org services](../../docs/con
 merged; a clean cutover with the relay:** every signed relay command names its relay's PeerId (the audience) at a new
 sign version; the app pins each origin to the PeerId its own `GET /v1/relay-identity` answered (`relay_pins.json`) before
 it signs for it, treats another PeerId after `wrong_audience` as *identity changed* (nothing signed until the person
-accepts it in My relays), and signs a send into a contact's relay for the PeerId its card (version 4, `profile.db` 8)
+accepts it in My relays; R6 replaced both: the PeerId comes from the relay's address, with nothing to accept), and signs a send into a contact's relay for the PeerId its card (version 4, `profile.db` 8)
 names; revoke and unregister name the registration and binding they remove; `not_registered` from a relay of ours
 registers there again. pp-node pins its relay the same way. The golden vectors (`relay_sign_vectors.json`, written by
 `relay_sign_vectors_test.cpp`) pass pp-relay-apis' own vector and card tests. Contracts:
@@ -102,7 +102,27 @@ registers there again. pp-node pins its relay the same way. The golden vectors (
 `replayed_calls_refused_at_other_relay` runs green on the lab's pp-relay-apis local stacks with MR007 (pp-relay-apis
 `feat/relay-identity-audience`, each stack its own identity), as do the other multi-relay scenarios.
 
+**R6 (MR008, on `feat/relay-audience` with R5; pp-relay-apis `feat/relay-identity-audience` prints and names the
+relay link), built, not merged; ships in R5's cutover, no relay change:** a relay address is its origin and its
+PeerId. The app never learns a PeerId from a relay's answer: the org's ships with the build (`PP_RELAY_PEER_ID_PROD` /
+`_QA`) or the custom config (`relay.peer_id`); a relay the person adds comes as a relay link (`https://host#<PeerId>`,
+pasted or scanned; a bare origin in developer builds only, pinned on first use); `our_relays.json` 2 keeps each relay's
+PeerId; a linked device takes our card's, a restore the locker's; the QR locator carries `{origin, peer_id}`. The pins
+are expected identities (`relay_pins.json` 2): `GET /v1/relay-identity` is only checked (once per run, after a
+`wrong_audience`, at Add), and a relay whose answer names another PeerId is *not used* (no Accept). A link naming a
+PeerId held at another origin is refused, the org's written first. pp-node expects `registration.peer_id`
+(`PP_NODE_REGISTRATION_PEER_ID`; the compiled prod PeerId with the compiled URL). Release workflows fail without
+`PP_RELAY_PEER_ID_PROD` (`scripts/check/check_relay_peer_ids.sh`). My relays shows **Copy link**. Lab:
+`relay_not_matching_its_link_unused` (B-RELAY-LINK) and the multi-relay scenarios on relay links. Contracts:
+[SERVICE_ENDPOINTS § Pins](../../docs/contracts/SERVICE_ENDPOINTS.md#pins),
+[ACCOUNT_CARD § Locator](../../docs/contracts/ACCOUNT_CARD.md#locator-qr-code-invite-link),
+[DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md#relay_pinsjson),
+[COMPATIBILITY](../../docs/contracts/COMPATIBILITY.md#clean-cutovers-pre-release),
+[BUILD § Backend origin](../../docs/ops/BUILD.md#backend-origin), [CONFIGURATION](../../docs/ops/CONFIGURATION.md).
+
 Not yet:
+- A relay link shown as a QR code (My relays copies the link; Add relay… scans one).
+- A signed rotation statement for the org relay's key (a rotation is an app release meanwhile).
 - Account lockers stay at the org's registration URL and are still written there; with the org's relay removed from
   the list (our registration there revoked) those writes fail (logged), the restore's read still works. Stream history
   is read from the org's relay while it is one of ours, else from the preferred one (the org relay's is then not
@@ -116,6 +136,9 @@ Not yet:
   their own preferred relay.
 
 Deploy: the relays (R1 and step 2) and the pp-node fleet on 8.0.0 (pp-relay-infra-ansible#20) are deployed. Steps 3,
-R3 and R4 need no relay change; they ship with the app.
+R3 and R4 need no relay change; they ship with the app. R5/R6 before the prod window: the repository variables
+`PP_RELAY_PEER_ID_PROD` and `PP_RELAY_PEER_ID_QA` (each environment's relay PeerId, from infra's record of its key) for
+`release.yml`, `ios-testflight.yml` and `release-pp-node.yml`; QA pp-nodes need `PP_NODE_REGISTRATION_PEER_ID` set to
+the QA relay's PeerId (`pp-relay-infra-ansible`, Leo); prod nodes take the compiled one.
 
 Next: the items above, as they matter; the multi-relay phases are otherwise done.

@@ -27,10 +27,12 @@ struct ContactRemote {
   int64_t fetched_at = 0;
   std::optional<mesh::ProfileIconRef> icon;
   /**
-   * The preferred relay origin the QR locator gave when the contact was added that way (multi-relay R4); its relay
-   * list until its account's card is kept (ContactRelays). Empty: none given.
+   * The preferred relay the QR locator gave when the contact was added that way (multi-relay R4): its origin and the
+   * PeerId it answers to (MR008, `locator_relay_peer_id`, never empty with an origin); its relay list until its
+   * account's card is kept (ContactRelays). Empty: none given.
    */
   std::string locator_relay;
+  std::string locator_relay_peer_id;
 };
 
 /**

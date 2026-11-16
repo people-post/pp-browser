@@ -37,6 +37,9 @@ void ApplyBackendOverride(AppConfig& config) {
   config.relay.base_url = BriefRelayBaseUrl();
   config.directory.base_url = BriefRelayBaseUrl();
   config.registration.base_url = BriefRelayBaseUrl();
+  // The org relay's address carries its PeerId (multi-relay MR008): the build's for this backend.
+  config.relay.peer_id = BriefRelayPeerId();
+  config.registration.peer_id = BriefRelayPeerId();
 }
 
 } // namespace

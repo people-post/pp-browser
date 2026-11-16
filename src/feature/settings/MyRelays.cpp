@@ -78,25 +78,28 @@ std::string MyRelayLabel(const std::string& origin) {
 }
 
 MyRelaysView MyRelaysViewFor(const std::vector<MyRelayFacts>& relays, const bool editable,
-                             const std::string& org_identity_changed) {
+                             const std::string& org_identity_mismatch) {
   MyRelaysView view;
   view.editable = editable;
   view.can_add = editable && relays.size() < kMaxOurRelays;
-  view.org_identity_changed = org_identity_changed;
+  view.org_identity_mismatch = org_identity_mismatch;
   for (size_t i = 0; i < relays.size(); ++i) {
     const MyRelayFacts& facts = relays[i];
     MyRelayRowView row{.origin = facts.origin, .label = MyRelayLabel(facts.origin), .preferred = i == 0};
-    if (facts.identity_changed) {
-      // Not used until accepted (MR007): not polled, registered on or sent to, so no registration or poll to show.
+    if (facts.identity_mismatch) {
+      // Not used (MR008): not polled, registered on or sent to, so no registration or poll to show.
       row.state_kind = "error";
-      row.state = Tr("settings.relays.state.identity_changed");
-      row.identity_changed = true;
-      row.can_accept_identity = editable;
+      row.state = Tr("settings.relays.state.identity_mismatch");
+      row.identity_mismatch = true;
     } else {
       FillState(row, facts.registration);
       FillReach(row, facts);
+      row.link = RelayLink(facts.origin, facts.peer_id);
+      if (facts.peer_id.empty()) {
+        row.link.clear(); // a bare origin (a developer build) has no link to give
+      }
     }
-    row.can_make_preferred = editable && i > 0 && !facts.identity_changed;
+    row.can_make_preferred = editable && i > 0 && !facts.identity_mismatch;
     row.can_remove = editable && i > 0; // the preferred one stays until another is preferred; never the last
     view.relays.push_back(std::move(row));
   }
@@ -104,7 +107,7 @@ MyRelaysView MyRelaysViewFor(const std::vector<MyRelayFacts>& relays, const bool
 }
 
 std::string MyRelaysFailureText(const Error& error) {
-  // relay_identity_taken|<host>: the host that holds the PeerId the relay claims (MR007).
+  // relay_identity_taken|<host>: the host that holds the PeerId the link names (MR008).
   if (const size_t bar = error.message.find('|'); bar != std::string::npos) {
     const std::string code = error.message.substr(0, bar);
     const std::string host = error.message.substr(bar + 1);
@@ -122,6 +125,8 @@ std::string MyRelaysFailureText(const Error& error) {
       {"relay_origin_has_path", "settings.relays.error.has_path"},
       {"relay_origin_has_query", "settings.relays.error.has_path"},
       {"relay_origin_too_long", "settings.relays.error.too_long"},
+      {"relay_origin_bad_relay_id", "settings.relays.error.bad_relay_id"},
+      {"relay_link_no_id", "settings.relays.error.no_relay_id"},
       {"relay_origin_local", "settings.relays.error.local"},
       {"relay_unreachable", "settings.relays.error.unreachable"},
       {"relay_already_listed", "settings.relays.error.already_listed"},
@@ -131,8 +136,7 @@ std::string MyRelaysFailureText(const Error& error) {
       {"relay_list_not_main_device", "settings.relays.not_main"},
       {"relay_list_not_applied", "settings.relays.error.not_applied"},
       {"relay_identity_unavailable", "settings.relays.error.identity_unavailable"},
-      {"relay_identity_changed_since_seen", "settings.relays.add.identity_changed_message"},
-      {"relay_identity_not_changed", "settings.relays.error.identity_not_changed"},
+      {"relay_identity_mismatch", "settings.relays.error.identity_mismatch"},
   };
   const auto key = kKeys.find(error.message);
   return key == kKeys.end() ? error.message : Tr(key->second);

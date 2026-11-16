@@ -26,8 +26,9 @@ class IRelayAudience {
 public:
   virtual ~IRelayAudience() = default;
   /**
-   * The PeerId to sign for, or why nothing may be signed for this relay now (Err::Auth::RelayIdentityChanged,
-   * RelayIdentityTaken, Err::Network::RelayIdentityUnavailable). May block: a relay not pinned yet is asked first.
+   * The PeerId to sign for, or why nothing may be signed for this relay now (Err::Auth::RelayIdentityMismatch,
+   * RelayIdentityTaken, Err::Network::RelayIdentityUnavailable). May block: a bare origin a developer build takes is
+   * asked first (MR008: every other relay's address names its PeerId).
    */
   virtual Roe<std::string> PeerId() = 0;
   /**
@@ -37,7 +38,7 @@ public:
   virtual void Refused(const std::string& code) = 0;
 };
 
-/** A PeerId given, not pinned (a contact's card names it; tests). Refusals go to `on_refused` when set. */
+/** A PeerId given, not pinned (a contact's card or QR code names it; tests). Refusals go to `on_refused` when set. */
 class FixedRelayAudience : public IRelayAudience {
 public:
   explicit FixedRelayAudience(std::string peer_id, std::function<void(const std::string& code)> on_refused = nullptr)

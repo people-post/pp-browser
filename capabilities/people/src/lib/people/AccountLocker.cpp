@@ -4,6 +4,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/PeerIdForm.h"
 
 #include "common/DeviceName.h"
 #include "common/ValueJson.h"
@@ -102,16 +103,23 @@ std::optional<AccountStateGrant> GrantFromJson(const Object& row) {
 
 namespace {
 
-/** The `relays` of an untrusted copy: at most kMaxLockerRelays non-empty origins, each once. */
+/**
+ * The `relays` of an untrusted copy: at most kMaxLockerRelays, each a non-empty origin with a PeerId (MR008), each
+ * origin once.
+ */
 AccountStateRelays RelaysFromJson(const Object& json) {
   AccountStateRelays relays;
   relays.card_issued_at = json.getIf<int64_t>("card_issued_at").value_or(0);
-  if (const Array* origins = json.getArray("origins")) {
-    for (const Value& item : origins->elements) {
-      const auto origin = asString(item);
-      if (origin && !origin->empty() && origin->size() <= 256 && relays.origins.size() < kMaxLockerRelays &&
-          std::find(relays.origins.begin(), relays.origins.end(), *origin) == relays.origins.end()) {
-        relays.origins.push_back(*origin);
+  if (const Array* list = json.getArray("list")) {
+    for (const Value& item : list->elements) {
+      const Object* row = asObject(item);
+      const AccountStateRelay relay{.origin = row ? row->getString("origin").value_or("") : "",
+                                    .peer_id = row ? row->getString("peer_id").value_or("") : ""};
+      const bool listed = std::any_of(relays.list.begin(), relays.list.end(),
+                                      [&relay](const AccountStateRelay& kept) { return kept.origin == relay.origin; });
+      if (!relay.origin.empty() && relay.origin.size() <= 256 && IsMlDsaPeerIdForm(relay.peer_id) && !listed &&
+          relays.list.size() < kMaxLockerRelays) {
+        relays.list.push_back(relay);
       }
     }
   }
@@ -152,13 +160,16 @@ std::string StateToJson(const AccountLockerState& state) {
     grants.push_back(ObjectValue(std::move(row)));
   }
   root.set("grants", ArrayValue(std::move(grants)));
-  if (!state.extras.relays.origins.empty()) {
-    std::vector<Value> origins;
-    for (const std::string& origin : state.extras.relays.origins) {
-      origins.emplace_back(origin);
+  if (!state.extras.relays.list.empty()) {
+    std::vector<Value> list;
+    for (const AccountStateRelay& relay : state.extras.relays.list) {
+      Object row;
+      row.set("origin", relay.origin);
+      row.set("peer_id", relay.peer_id);
+      list.push_back(ObjectValue(std::move(row)));
     }
     Object relays;
-    relays.set("origins", ArrayValue(std::move(origins)));
+    relays.set("list", ArrayValue(std::move(list)));
     relays.set("card_issued_at", state.extras.relays.card_issued_at);
     root.set("relays", ObjectValue(std::move(relays)));
   }

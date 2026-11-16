@@ -35,7 +35,7 @@ class RecordingAudience : public IRelayAudience {
 public:
   Roe<std::string> PeerId() override {
     if (changed) {
-      return AppError::Auth(Err::Auth::RelayIdentityChanged, "presented another identity");
+      return AppError::Auth(Err::Auth::RelayIdentityMismatch, "presented another identity");
     }
     return std::string(kAudience);
   }
@@ -183,7 +183,7 @@ TEST_F(HttpRelayClientTest, NothingGoesToARelayWhoseIdentityChanged) {
   Script({});
   auto sent = client_.Send(EnvelopeTo(kBob));
   ASSERT_FALSE(sent);
-  EXPECT_EQ(static_cast<Err::Auth>(sent.error().code), Err::Auth::RelayIdentityChanged);
+  EXPECT_EQ(static_cast<Err::Auth>(sent.error().code), Err::Auth::RelayIdentityMismatch);
   EXPECT_FALSE(client_.PollInbox(kMe, ""));
   EXPECT_TRUE(Bodies().empty());
   std::lock_guard lock(mu_);

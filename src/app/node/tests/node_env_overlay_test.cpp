@@ -152,3 +152,30 @@ TEST(NodeEnvOverlayTest, CapacitiesComeFromTheEnvironment) {
   EXPECT_EQ(config.mesh.capacity.bridges, 100u) << "a bad value keeps the config's";
   EXPECT_EQ(config.mesh.capacity.group_calls, 0u);
 }
+
+// Multi-relay MR008 item 5: the relay the node registers at is expected to answer to `registration.peer_id`
+// (PP_NODE_REGISTRATION_PEER_ID), defaulting to the compiled prod relay's PeerId with the compiled prod URL only.
+TEST(NodeEnvOverlayTest, TheRegistrationRelaysPeerIdComesFromItsAddress) {
+  EnvGuard url("PP_NODE_REGISTRATION_BASE_URL");
+  EnvGuard peer("PP_NODE_REGISTRATION_PEER_ID");
+  const std::string prod = "https://backend.example.test/api/relay";
+  pbr::AppConfig config;
+  config.registration.base_url = prod;
+  config.registration.peer_id = "QmFromTheFile";
+  SetEnv("PP_NODE_REGISTRATION_BASE_URL", "https://qa.example.test/api/relay");
+  pbr::ApplyPpNodeConfigEnvOverlays(config);
+  EXPECT_TRUE(config.registration.peer_id.empty()) << "another relay: the file's PeerId was the old one's";
+  SetEnv("PP_NODE_REGISTRATION_PEER_ID", "QmQaRelay");
+  pbr::ApplyPpNodeConfigEnvOverlays(config);
+  EXPECT_EQ(config.registration.peer_id, "QmQaRelay");
+
+  pbr::ServiceEndpointConfig compiled{.base_url = prod + "/"};
+  pbr::DefaultNodeRegistrationPeerId(compiled, prod, "QmProdRelay");
+  EXPECT_EQ(compiled.peer_id, "QmProdRelay") << "the compiled URL: the compiled PeerId";
+  pbr::ServiceEndpointConfig other{.base_url = "https://other.example.test/api/relay"};
+  pbr::DefaultNodeRegistrationPeerId(other, prod, "QmProdRelay");
+  EXPECT_TRUE(other.peer_id.empty()) << "another URL: none (first use, with a warning)";
+  pbr::ServiceEndpointConfig named{.base_url = prod, .peer_id = "QmNamed"};
+  pbr::DefaultNodeRegistrationPeerId(named, prod, "QmProdRelay");
+  EXPECT_EQ(named.peer_id, "QmNamed") << "a named one stays";
+}

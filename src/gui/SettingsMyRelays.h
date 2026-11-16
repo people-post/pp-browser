@@ -21,12 +21,12 @@ class DataModelConstructor;
 namespace pbr {
 
 /**
- * Me → My relays (multi-relay R3, MR006, MR007): the relays of ours, preferred first, each with its
- * registration and reachability, or that it is not used (its identity changed; MyRelaysViewFor decides; this renders). On the main
- * device: Add relay… (an origin field, its problem shown under it; a relay seen before with another identity asks
- * first), Make preferred, Remove… (asks first), Accept new identity… (asks first); the org's origin's changed
- * identity on any device. Its rows are fields of the settings model; the ports are the controller's, read when used.
- * UI thread (the list is read and changed on a worker).
+ * Me → My relays (multi-relay R3, MR006, MR008): the relays of ours, preferred first, each with its registration and
+ * reachability, or that it is not used (it does not match its link; MyRelaysViewFor decides; this renders), and Copy
+ * link (its relay link, on every device). On the main device: Add relay… (a relay link field, its problem shown under
+ * it), Make preferred, Remove… (asks first); the org's origin's mismatch on any device. Its rows are fields of the
+ * settings model; the ports are the controller's, read when used. UI thread (the list is read and changed on a
+ * worker).
  */
 class SettingsMyRelays {
 public:
@@ -40,7 +40,8 @@ public:
     bool preferred = false;
     bool can_make_preferred = false;
     bool can_remove = false;
-    bool can_accept_identity = false;
+    /** Copy link: it has a relay link to give (MR008). */
+    bool has_link = false;
   };
 
   SettingsMyRelays(const SettingsCommands& commands, const ShellFeedbackPorts& feedback,
@@ -58,16 +59,14 @@ private:
   void StartAdd();
   void CancelAdd();
   void Add();
-  /** One Add on a worker; `accept_changed`: the person confirmed a relay seen before with another identity. */
-  void AddNow(const std::string& typed, bool accept_changed);
-  /** The relay seen before with another identity: ask, then Add it anyway. */
-  void ConfirmChangedSinceSeen(const std::string& typed);
+  /** One Add on a worker. */
+  void AddNow(const std::string& typed);
+  /** Add relay…'s Scan: a relay link from a QR code goes into the field and is added as a pasted one. */
+  void ScanLink();
   void MakePreferred(int index);
   void Remove(int index);
-  void AcceptIdentity(int index);
-  void AcceptOrgIdentity();
-  /** The accept confirm for `origin` (its new identity), then the change. */
-  void ConfirmAccept(const std::string& origin, const std::string& label);
+  /** The relay's link to the clipboard, and says so. */
+  void CopyLink(int index);
   /** Runs `change` for the relay `origin` names on a worker (none while one runs); then the list again and `done`. */
   void Change(const std::string& origin, std::function<Roe<void>(const std::string& origin)> change,
               const std::string& done);
@@ -83,10 +82,12 @@ private:
   bool shown_ = false;
   bool editable_ = false;
   bool can_add_ = false;
-  /** The org's origin's host when its identity changed (MR007); empty otherwise. */
-  ui::String org_identity_changed_;
+  /** The org's origin's line when its identity answer does not match (MR008); empty otherwise. */
+  ui::String org_identity_mismatch_;
   /** The origin field is open. */
   bool adding_ = false;
+  /** Add relay… can scan a relay link (a camera scan is bound). */
+  bool can_scan_ = false;
   /** A change is under way (the buttons wait). */
   bool busy_ = false;
   ui::String draft_;

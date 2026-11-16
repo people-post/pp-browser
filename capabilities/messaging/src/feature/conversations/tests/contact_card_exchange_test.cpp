@@ -19,6 +19,9 @@
 namespace pbr {
 namespace {
 
+// A QR code's relay is its address: its origin and the PeerId it answers to (MR008).
+constexpr const char kLocatorRelayPeer[] = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
+
 constexpr int64_t kNow = 1'761'235'200'000;
 
 class ContactCardExchangeTest : public ::testing::Test {
@@ -158,8 +161,9 @@ TEST_F(ContactCardExchangeTest, AnInviteWithARelayStartsTheContactsRelayListWith
       [](const std::string&, const std::string&, bool) -> Roe<std::optional<Object>> { return Error("relay down"); });
   std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
   exchange_->AddFromLocator(
-      ContactLocator{
-          .account_id = bob_.account_id, .devices = {"QmBobPhone"}, .relay = "https://relay.example/api/relay"},
+      ContactLocator{.account_id = bob_.account_id,
+                     .devices = {"QmBobPhone"},
+                     .relay = {.origin = "https://relay.example/api/relay", .peer_id = kLocatorRelayPeer}},
       [&](Roe<ContactCardExchange::LocatorAdded> added) { result = std::move(added); });
   ASSERT_TRUE(result.has_value());
   ASSERT_TRUE(*result) << result->error().message;
@@ -168,6 +172,8 @@ TEST_F(ContactCardExchangeTest, AnInviteWithARelayStartsTheContactsRelayListWith
   ASSERT_TRUE(stored && *stored);
   const ContactRelayList relays = ContactRelays(**stored, std::nullopt);
   EXPECT_EQ(relays.origins, (std::vector<std::string>{"https://relay.example/api/relay"}));
+  ASSERT_EQ(relays.relays.size(), 1u);
+  EXPECT_EQ(relays.relays[0].peer_id, kLocatorRelayPeer) << "a first send is signed for the locator's PeerId";
   EXPECT_FALSE(relays.from_card);
 
   // Its card arrives: the card's list is the contact's from then on.
@@ -194,7 +200,9 @@ TEST_F(ContactCardExchangeTest, ALocatorsRelayAtALocalAddressIsLeftOutUnlessADev
       });
   const auto add = [this](const std::string& relay) {
     std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
-    exchange_->AddFromLocator(ContactLocator{.account_id = bob_.account_id, .devices = {"QmBobPhone"}, .relay = relay},
+    exchange_->AddFromLocator(ContactLocator{.account_id = bob_.account_id,
+                                             .devices = {"QmBobPhone"},
+                                             .relay = {.origin = relay, .peer_id = kLocatorRelayPeer}},
                               [&](Roe<ContactCardExchange::LocatorAdded> added) { result = std::move(added); });
     EXPECT_TRUE(result.has_value() && *result);
     auto stored = contacts_->FindByIdentity(bob_.account_id, mesh::ContactIdKind::Account);
@@ -228,8 +236,9 @@ TEST_F(ContactCardExchangeTest, NoDeviceReachedTheLocatorsRelayGivesTheCard) {
       });
   std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
   exchange_->AddFromLocator(
-      ContactLocator{
-          .account_id = bob_.account_id, .devices = {"QmBobPhone"}, .relay = "https://relay.example/api/relay"},
+      ContactLocator{.account_id = bob_.account_id,
+                     .devices = {"QmBobPhone"},
+                     .relay = {.origin = "https://relay.example/api/relay", .peer_id = kLocatorRelayPeer}},
       [&](Roe<ContactCardExchange::LocatorAdded> added) { result = std::move(added); });
   ASSERT_TRUE(result.has_value());
   ASSERT_TRUE(*result) << result->error().message;

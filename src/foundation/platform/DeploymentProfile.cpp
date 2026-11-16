@@ -13,6 +13,14 @@
 #define PP_API_URL_PROD ""
 #endif
 
+#ifndef PP_RELAY_PEER_ID_PROD
+#define PP_RELAY_PEER_ID_PROD ""
+#endif
+
+#ifndef PP_RELAY_PEER_ID_QA
+#define PP_RELAY_PEER_ID_QA ""
+#endif
+
 namespace pbr {
 
 #ifndef PP_API_URL_QA
@@ -44,8 +52,15 @@ bool CompiledRelayContentSha256() {
   return PP_RELAY_CONTENT_SHA256 != 0;
 }
 
+const char* CompiledDefaultRelayPeerId() {
+  return PP_RELAY_PEER_ID_PROD;
+}
+
 CompiledOrigins BuildCompiledOrigins() {
-  return {.prod = CompiledDefaultOrigin(), .qa = CompiledQaOrigin()};
+  return {.prod = CompiledDefaultOrigin(),
+          .qa = CompiledQaOrigin(),
+          .prod_relay_peer_id = PP_RELAY_PEER_ID_PROD,
+          .qa_relay_peer_id = PP_RELAY_PEER_ID_QA};
 }
 
 BackendEnv ParseBackendEnv(const std::string_view name) {
@@ -116,6 +131,18 @@ std::string ResolveBriefOrigin(const bool ui_demo, const char* env_origin, const
     origin.pop_back();
   }
   return origin;
+}
+
+std::string ResolveRelayPeerId(const bool ui_demo, const char* env_origin, const BackendEnv backend,
+                               const CompiledOrigins& compiled) {
+  if (ui_demo || (env_origin && *env_origin)) {
+    return {};
+  }
+  return backend == BackendEnv::Qa ? compiled.qa_relay_peer_id : compiled.prod_relay_peer_id;
+}
+
+std::string BriefRelayPeerId() {
+  return ResolveRelayPeerId(kUiDemoBuild, std::getenv("PP_BROWSER_ORIGIN"), ActiveBackend(), BuildCompiledOrigins());
 }
 
 std::string BriefOrigin() {

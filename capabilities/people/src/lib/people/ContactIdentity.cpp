@@ -72,7 +72,8 @@ ContactRelayList ContactRelays(const Contact& contact, const std::optional<PeerC
   }
   if (!contact.remote.locator_relay.empty()) {
     list.origins.push_back(contact.remote.locator_relay);
-    list.relays.push_back(AccountCardRelay{.origin = contact.remote.locator_relay});
+    list.relays.push_back(
+        AccountCardRelay{.origin = contact.remote.locator_relay, .peer_id = contact.remote.locator_relay_peer_id});
   }
   return list;
 }

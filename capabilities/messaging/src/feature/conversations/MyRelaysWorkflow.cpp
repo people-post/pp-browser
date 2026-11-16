@@ -3,9 +3,38 @@
 #include "common/Utilities.h"
 #include "lib/people/RegistrationStatus.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace pbr {
+
+namespace {
+
+/** Relays given whole (our card's, the locker's) as our list: bounded (BoundOurRelays), each with its PeerId. */
+OurRelaysList ListOf(const std::vector<AccountCardRelay>& relays) {
+  std::vector<std::string> origins;
+  for (const AccountCardRelay& relay : relays) {
+    origins.push_back(relay.origin);
+  }
+  OurRelaysList list;
+  for (const std::string& origin : BoundOurRelays(origins)) {
+    const auto named = std::find_if(relays.begin(), relays.end(), [&origin](const AccountCardRelay& relay) {
+      return SameRelay(relay.origin, origin);
+    });
+    list.relays.push_back(OurRelayEntry{.origin = origin, .peer_id = named == relays.end() ? "" : named->peer_id});
+  }
+  return list;
+}
+
+/** The same relays at the same addresses, in the same order (their registrations aside). */
+bool SameAddresses(const OurRelaysList& a, const OurRelaysList& b) {
+  return std::equal(a.relays.begin(), a.relays.end(), b.relays.begin(), b.relays.end(),
+                    [](const OurRelayEntry& x, const OurRelayEntry& y) {
+                      return SameRelay(x.origin, y.origin) && x.peer_id == y.peer_id;
+                    });
+}
+
+} // namespace
 
 MyRelaysWorkflow::MyRelaysWorkflow(OurRelaysStore& store, Ports ports) : store_(store), ports_(std::move(ports)) {
   redirectLogger("MyRelays");
@@ -52,6 +81,8 @@ std::string MyRelaysWorkflow::OriginProblemCode(const RelayOriginProblem problem
       return "relay_origin_has_query";
     case RelayOriginProblem::TooLong:
       return "relay_origin_too_long";
+    case RelayOriginProblem::BadRelayId:
+      return "relay_origin_bad_relay_id";
     case RelayOriginProblem::None:
       break;
   }
@@ -65,32 +96,30 @@ Roe<void> MyRelaysWorkflow::RequireMainDevice() const {
   return {};
 }
 
-Roe<void> MyRelaysWorkflow::CheckIdentity(const std::string& base_url, const bool accept_changed, bool& pinned_now) {
+Roe<void> MyRelaysWorkflow::CheckIdentity(const std::string& base_url, std::string& peer_id, bool& pinned_now) {
   pinned_now = false;
   if (!ports_.check_identity) {
     return {};
   }
-  const AddIdentityCheck check = ports_.check_identity(base_url);
+  const AddIdentityCheck check = ports_.check_identity(base_url, peer_id);
   switch (check.result) {
     case AddIdentityCheck::Result::Ok:
       pinned_now = check.pinned_now;
+      peer_id = check.peer_id;
       return {};
     case AddIdentityCheck::Result::Unavailable:
       return Error(kIdentityUnavailable);
     case AddIdentityCheck::Result::Taken:
-      log().warning << "relay " << base_url << " claims the identity of " << check.holder << "; not added";
+      log().warning << "relay " << base_url << " is named for the identity of " << check.holder << "; not added";
       return Error(std::string(store_.List().Lists(check.holder) ? kIdentityTaken : kIdentityTakenKnown) + "|" +
                    RelayOriginHost(check.holder));
-    case AddIdentityCheck::Result::ChangedSinceSeen:
-      if (!accept_changed) {
-        return Error(kIdentityChangedSinceSeen);
-      }
-      return ports_.repin ? ports_.repin(base_url, check.peer_id) : Roe<void>{};
+    case AddIdentityCheck::Result::Mismatch:
+      return Error(kIdentityMismatch);
   }
   return Error(kIdentityUnavailable);
 }
 
-Roe<void> MyRelaysWorkflow::Add(const std::string& typed, const bool developer_build, const bool accept_changed) {
+Roe<void> MyRelaysWorkflow::Add(const std::string& typed, const bool developer_build) {
   const Entered entered(*this);
   if (!entered.open) {
     return Error(kClosed);
@@ -99,16 +128,18 @@ Roe<void> MyRelaysWorkflow::Add(const std::string& typed, const bool developer_b
   if (auto main = RequireMainDevice(); !main) {
     return main;
   }
-  const ParsedRelayOrigin parsed = ParseRelayOrigin(typed, developer_build);
+  const ParsedRelayOrigin parsed = ParseRelayLink(typed, developer_build);
   if (parsed.problem != RelayOriginProblem::None) {
     return Error(OriginProblemCode(parsed.problem));
+  }
+  if (parsed.peer_id.empty() && !developer_build) {
+    return Error(kLinkHasNoId); // MR008: only its address names the PeerId it must answer to
   }
   if (!IsPublicRelayOrigin(parsed.base_url, developer_build)) {
     return Error(kLocal); // before it is asked: the probe would reach into this device's network
   }
-  auto next = WithRelayAdded(store_.List(), parsed.base_url);
-  if (!next) {
-    return next.error();
+  if (auto listed = WithRelayAdded(store_.List(), parsed.base_url, parsed.peer_id); !listed) {
+    return listed.error();
   }
   if (ports_.probe) {
     if (auto answered = ports_.probe(parsed.base_url); !answered) {
@@ -116,11 +147,13 @@ Roe<void> MyRelaysWorkflow::Add(const std::string& typed, const bool developer_b
       return Error(kUnreachable);
     }
   }
+  std::string peer_id = parsed.peer_id;
   bool pinned_now = false;
-  if (auto identified = CheckIdentity(parsed.base_url, accept_changed, pinned_now); !identified) {
-    return identified; // nothing is signed for a relay we have not pinned
+  if (auto identified = CheckIdentity(parsed.base_url, peer_id, pinned_now); !identified) {
+    return identified; // nothing is signed for a relay that does not answer to its address
   }
-  auto committed = Commit(*next, false);
+  auto next = WithRelayAdded(store_.List(), parsed.base_url, peer_id);
+  auto committed = next ? Commit(*next, false) : Roe<void>(next.error());
   if (!committed) {
     if (pinned_now && ports_.drop_pin) {
       ports_.drop_pin(parsed.base_url); // not ours after all: a relay not ours is never pinned (MR007)
@@ -144,11 +177,11 @@ Roe<void> MyRelaysWorkflow::Remove(const std::string& origin) {
   if (!next) {
     return next.error();
   }
-  const bool changed = ports_.identity_changed && ports_.identity_changed(origin);
-  const bool leaving = ports_.leave && !changed;
+  const bool mismatch = ports_.identity_mismatch && ports_.identity_mismatch(origin);
+  const bool leaving = ports_.leave && !mismatch;
   if (leaving) {
-    // Best effort: a relay that is down keeps our row until it expires, but it is no longer ours. A relay whose
-    // identity changed gets no revoke (nothing is signed for it): its old registration expires there.
+    // Best effort: a relay that is down keeps our row until it expires, but it is no longer ours. A relay that does
+    // not match its address gets no revoke (nothing is signed for it): our registration there expires.
     if (auto left = ports_.leave(origin); !left) {
       log().warning << "registration on " << origin << " not revoked: " << left.error().message;
     }
@@ -189,43 +222,7 @@ Roe<void> MyRelaysWorkflow::MakePreferred(const std::string& origin) {
   return Commit(*next, true);
 }
 
-Roe<void> MyRelaysWorkflow::AcceptIdentity(const std::string& origin) {
-  const Entered entered(*this);
-  if (!entered.open) {
-    return Error(kClosed);
-  }
-  std::lock_guard lock(change_mutex_);
-  const OurRelaysList list = store_.List();
-  const bool ours = list.Lists(origin);
-  if (ours) {
-    if (auto main = RequireMainDevice(); !main) {
-      return main; // ours is on our card: the main device's word
-    }
-  }
-  if (!ports_.accept_identity) {
-    return Error(kIdentityNotChanged);
-  }
-  if (auto accepted = ports_.accept_identity(origin); !accepted) {
-    return accepted;
-  }
-  log().info << "relay " << origin << ": its new identity accepted";
-  if (ours) {
-    if (SameRelay(list.Preferred(), origin)) {
-      RegisterPreferred(list.Preferred()); // the identity's registration, push bound there
-    } else if (ports_.register_now) {
-      ports_.register_now(origin);
-    }
-    if (ports_.announce) {
-      ports_.announce(); // our card lists it again, with its new PeerId
-    }
-  }
-  if (ports_.changed) {
-    ports_.changed();
-  }
-  return {};
-}
-
-void MyRelaysWorkflow::FollowCard(const std::vector<std::string>& card_relays) {
+void MyRelaysWorkflow::FollowCard(const std::vector<AccountCardRelay>& card_relays) {
   const Entered entered(*this);
   if (!entered.open) {
     return;
@@ -235,28 +232,22 @@ void MyRelaysWorkflow::FollowCard(const std::vector<std::string>& card_relays) {
     return; // the main device's list is its own; an empty card list (mesh only) is not followed in this step
   }
   const OurRelaysList list = store_.List();
-  if (list.Origins() == BoundOurRelays(card_relays)) {
+  const OurRelaysList next = ListOf(card_relays);
+  if (next.relays.empty() || SameAddresses(list, next)) {
     return;
-  }
-  OurRelaysList next;
-  for (const std::string& origin : card_relays) {
-    next.relays.push_back(OurRelayEntry{.origin = origin});
   }
   log().info << "following the main device's relays (" << card_relays.size() << ")";
   (void)Commit(next, list.Preferred() != next.Preferred());
 }
 
-void MyRelaysWorkflow::Restore(const std::vector<std::string>& relays) {
+void MyRelaysWorkflow::Restore(const std::vector<AccountCardRelay>& relays) {
   const Entered entered(*this);
   if (!entered.open || relays.empty()) {
     return;
   }
   std::lock_guard lock(change_mutex_);
-  OurRelaysList next;
-  for (const std::string& origin : BoundOurRelays(relays)) {
-    next.relays.push_back(OurRelayEntry{.origin = origin});
-  }
-  if (next.relays.empty() || next.Origins() == store_.List().Origins()) {
+  const OurRelaysList next = ListOf(relays);
+  if (next.relays.empty() || SameAddresses(next, store_.List())) {
     return;
   }
   if (auto kept = store_.Replace(next); !kept) {
@@ -379,8 +370,8 @@ OurRelaysStatus MyRelaysWorkflow::Status() const {
   }
   status.editable = !ports_.main_device || ports_.main_device();
   const OurRelaysList list = store_.List();
-  if (ports_.org_identity_changed) {
-    status.org_identity_changed = ports_.org_identity_changed();
+  if (ports_.org_identity_mismatch) {
+    status.org_identity_mismatch = ports_.org_identity_mismatch();
   }
   std::optional<RelayRegistrationRecord> preferred;
   if (!list.relays.empty() && ports_.preferred_registration) {
@@ -391,7 +382,8 @@ OurRelaysStatus MyRelaysWorkflow::Status() const {
   for (size_t i = 0; i < list.relays.size(); ++i) {
     const OurRelayEntry& entry = list.relays[i];
     OurRelayStatus relay{.origin = entry.origin, .preferred = i == 0, .registration = entry.registration};
-    relay.identity_changed = ports_.identity_changed && ports_.identity_changed(entry.origin);
+    relay.identity_mismatch = ports_.identity_mismatch && ports_.identity_mismatch(entry.origin);
+    relay.peer_id = !entry.peer_id.empty() || !ports_.peer_id_of ? entry.peer_id : ports_.peer_id_of(entry.origin);
     relay.registration = ShownRegistration(entry.registration, i == 0, preferred, now_ms);
     if (const auto reach = reach_.find(RelayOriginKey(entry.origin)); reach != reach_.end()) {
       relay.reach = reach->second.first ? OurRelayStatus::Reach::Ok : OurRelayStatus::Reach::Failed;

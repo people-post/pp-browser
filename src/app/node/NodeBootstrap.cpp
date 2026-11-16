@@ -4,6 +4,7 @@
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/node/NodeEnvOverlay.h"
+#include "foundation/platform/DeploymentProfile.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/PinResolver.h"
@@ -35,6 +36,9 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   }
 
   ApplyPpNodeConfigEnvOverlays(*config);
+  // The relay it registers at answers to a PeerId its address names (multi-relay MR008): the compiled prod relay's.
+  DefaultNodeRegistrationPeerId(config->registration, BriefRelayBaseUrlFor(CompiledDefaultOrigin()),
+                                CompiledDefaultRelayPeerId());
   SetSendContentSha256(config->relay_content_sha256);
   config->mesh.node_enabled = true;
   NormalizeMeshConfig(config->mesh);

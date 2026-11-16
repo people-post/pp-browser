@@ -382,15 +382,15 @@ void WireMyRelaysCommands(SettingsCommands& commands, ConversationsFacade& facad
                                                  ? MyRelayFacts::Reach::Failed
                                                  : MyRelayFacts::Reach::Unknown,
                                     .reach_at_ms = relay.reach_at_ms,
-                                    .identity_changed = relay.identity_changed});
+                                    .peer_id = relay.peer_id,
+                                    .identity_mismatch = relay.identity_mismatch});
     }
-    return MyRelaysViewFor(relays, status->editable, status->org_identity_changed);
+    return MyRelaysViewFor(relays, status->editable, status->org_identity_mismatch);
   };
-  commands.add_my_relay = [&facade](const std::string& typed, const bool accept_changed_identity) {
-    // plain http:// and local addresses: developer builds (HubSettings)
-    return facade.AddOurRelay(typed, accept_changed_identity);
+  commands.add_my_relay = [&facade](const std::string& typed) {
+    // a bare origin, plain http:// and local addresses: developer builds (HubSettings)
+    return facade.AddOurRelay(typed);
   };
-  commands.accept_relay_identity = [&facade](const std::string& origin) { return facade.AcceptRelayIdentity(origin); };
   commands.remove_my_relay = [&facade](const std::string& origin) { return facade.RemoveOurRelay(origin); };
   commands.make_relay_preferred = [&facade](const std::string& origin) { return facade.MakeOurRelayPreferred(origin); };
   commands.watch_my_relays = [&facade](std::function<void()> changed) {
@@ -1238,6 +1238,9 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   };
   settings_commands.make_main_device = [&facade](const std::string& peer_id) { return facade.MakeMainDevice(peer_id); };
   WireMyRelaysCommands(settings_commands, facade);
+  settings_commands.scan_relay_link = [this](std::function<void(std::string)> done) {
+    qr_scan_->Open(std::move(done)); // the in-app scan (SCANNING.md); the page reads the text as a pasted link
+  };
   settings_commands.load_support_discovery = [this]() -> std::optional<ClientCompatSupport> {
     return support_discovery_;
   };

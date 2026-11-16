@@ -156,7 +156,7 @@ void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::fun
     done(contact.error());
     return;
   }
-  const std::string relay = UsableLocatorRelay(locator.relay);
+  const AccountCardRelay relay = UsableLocatorRelay(locator.relay);
   KeepLocatorRelay(*contact, relay);
   const auto finish = [this, account_id = locator.account_id, done](bool keys_known) {
     auto latest = contacts_.FindByIdentity(account_id, mesh::ContactIdKind::Account);
@@ -170,11 +170,12 @@ void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::fun
     finish(true);
     return;
   }
-  FetchCard(locator.account_id, locator.devices, relay, finish);
+  FetchCard(locator.account_id, locator.devices, relay.origin, finish);
 }
 
-std::string ContactCardExchange::UsableLocatorRelay(const std::string& relay) {
-  if (relay.empty() || IsPublicRelayOrigin(relay, local_relays_allowed_.load(std::memory_order_relaxed))) {
+AccountCardRelay ContactCardExchange::UsableLocatorRelay(const AccountCardRelay& relay) {
+  if (relay.origin.empty() ||
+      IsPublicRelayOrigin(relay.origin, local_relays_allowed_.load(std::memory_order_relaxed))) {
     return relay;
   }
   // A QR code names a relay on this device or a private network: not a relay a release build writes to or asks.
@@ -182,12 +183,15 @@ std::string ContactCardExchange::UsableLocatorRelay(const std::string& relay) {
   return {};
 }
 
-void ContactCardExchange::KeepLocatorRelay(Contact& contact, const std::string& relay) {
-  // Its relay list until its card is kept (ContactRelays, multi-relay R4): a first message can go to its mailbox.
-  if (relay.empty() || contact.remote.locator_relay == relay) {
+void ContactCardExchange::KeepLocatorRelay(Contact& contact, const AccountCardRelay& relay) {
+  // Its relay list until its card is kept (ContactRelays, multi-relay R4): a first message can go to its mailbox,
+  // signed for the PeerId the locator names (MR008).
+  if (relay.origin.empty() || relay.peer_id.empty() ||
+      (contact.remote.locator_relay == relay.origin && contact.remote.locator_relay_peer_id == relay.peer_id)) {
     return;
   }
-  contact.remote.locator_relay = relay;
+  contact.remote.locator_relay = relay.origin;
+  contact.remote.locator_relay_peer_id = relay.peer_id;
   if (auto stored = contacts_.Upsert(contact); stored) {
     contact = std::move(stored.value());
   } else {

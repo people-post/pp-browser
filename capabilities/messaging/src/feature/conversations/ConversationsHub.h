@@ -337,13 +337,11 @@ public:
   /** Me → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
   Roe<OurRelaysStatus> OurRelays();
   /**
-   * Adds the relay the user typed (it must answer; plain http:// or a host that is not public only with the settings'
-   * developer_relays) and identify itself (MR007; `accept_changed_identity`: the person confirmed one seen before
-   * with another identity); blocks (HTTP): a worker. The error's message is a code.
+   * Adds the relay the user pasted: its relay link (`https://host#<PeerId>`, MR008; a bare origin, plain http:// or a
+   * host that is not public only with the settings' developer_relays). It must answer and answer to the link's PeerId;
+   * blocks (HTTP): a worker. The error's message is a code.
    */
-  Roe<void> AddOurRelay(const std::string& typed, bool accept_changed_identity = false);
-  /** Accepts the new identity a relay of ours (or the org's origin) presented (MR007); blocks: a worker. */
-  Roe<void> AcceptRelayIdentity(const std::string& origin);
+  Roe<void> AddOurRelay(const std::string& typed);
   /** Removes a relay of ours (not the preferred one); blocks: a worker. */
   Roe<void> RemoveOurRelay(const std::string& origin);
   /** Makes a relay of ours the preferred one; blocks: a worker. */
@@ -746,6 +744,8 @@ private:
   /** The relays whose pins stay when the pin store is full: ours and the org's origins (read on any thread). */
   std::mutex kept_pins_mu_;
   std::vector<std::string> kept_pins_;
+  /** The org's origins (its relay, its registration URL), under kept_pins_mu_: first use may pin them (MR008). */
+  std::vector<std::string> org_origins_;
   /** The preferred relay's lost registration (MR007 self-heal): when it is made again. */
   std::mutex preferred_loss_mu_;
   RegistrationLossBackoff preferred_loss_;
@@ -755,14 +755,27 @@ private:
   /** A pin the store keeps when full: ours and the org's origins (the only ones pinned). Any thread. */
   bool KeepsPin(const std::string& origin);
   /**
+   * An origin no address names a PeerId for may be pinned on its first answer (MR008 item 4): a developer build's
+   * relays of ours, and the org's origins in a build or config that names none for them. Any thread.
+   */
+  bool FirstUseAllowed(const std::string& origin);
+  /**
+   * The identities every relay of ours and the org's origins are expected to answer to (MR008): the org's from the
+   * build or the config (`relay.peer_id`, `registration.peer_id`), ours from the list. Before the card lists them.
+   */
+  void ExpectRelayIdentities(const HubSettings& settings);
+  /**
    * A pin changed (any thread): our card's relays follow, the card goes out when it changed (once a pinning pass in
    * progress ends), the page reads again.
    */
   void OnRelayPinsChanged();
-  /** PinOurRelaysSoon passes queued or running (the card waits for them). */
-  std::atomic<int> pinning_passes_{0};
-  /** Pins our relays and the org's origins not pinned yet, on a worker (they are pinned before anything is signed). */
-  void PinOurRelaysSoon();
+  /** CheckRelayIdentitiesSoon passes queued or running (the card waits for them). */
+  std::atomic<int> checking_passes_{0};
+  /**
+   * Checks our relays' and the org's origins' identity answers against their addresses, once per run each, on a
+   * worker (a developer build's bare origin is pinned on first use).
+   */
+  void CheckRelayIdentitiesSoon();
   /** Initialize's step: the pins, My relays (its list, seeded once) and our other relays' registrations. */
   void OpenOurRelays(const HubSettings& settings);
   /** Initialize's step: the contact cards, the profile refresh and the contact page's Refresh, and their hooks. */
@@ -773,8 +786,8 @@ private:
   /** Shutdown's steps: the orchestrator's and the inbox's hooks into the hub go; the DEK consumers are unregistered. */
   void UnhookMessaging();
   void UnregisterDekConsumers();
-  /** PinOurRelaysSoon from any thread (the network back, the app in front): whatever a failed fetch's backoff. */
-  void RepinOurRelaysSoon();
+  /** CheckRelayIdentitiesSoon from any thread (the network back, the app in front): whatever a fetch's backoff. */
+  void RecheckRelayIdentitiesSoon();
   /** A relay of ours answered `not_registered` / `registration_expired` (any thread): register there again. */
   void HealRegistrationSoon(const std::string& origin);
   /** The preferred relay's lost registration: made again whatever the auto-renew preference, with a backoff. */
@@ -791,7 +804,7 @@ private:
   void CloseMyRelays();
   void NotifyOurRelaysChanged();
   MyRelaysWorkflow::Ports MyRelaysPorts();
-  /** My relays' identity ports (MR007): Add's check, re-pin, Remove's pin, Accept, the org origin's state. */
+  /** My relays' identity ports (MR007, MR008): Add's check, Remove's pin, the relays' and the org origin's state. */
   void WireMyRelaysIdentityPorts(MyRelaysWorkflow::Ports& ports);
   /** This device is the account's main one (or the account has no card yet). */
   bool IsMainDevice();

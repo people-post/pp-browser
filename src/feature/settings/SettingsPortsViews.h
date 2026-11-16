@@ -83,10 +83,10 @@ struct MyRelayRowView {
   bool preferred = false;
   bool can_make_preferred = false;
   bool can_remove = false;
-  /** It presented another identity than its pin (MR007): shown as not used. */
-  bool identity_changed = false;
-  /** Accept new identity… (the main device, a changed relay). */
-  bool can_accept_identity = false;
+  /** Its identity answer names another PeerId than its address (MR008): shown as not used. */
+  bool identity_mismatch = false;
+  /** Its relay link (`origin#PeerId`, MR008: what another person adds it by); empty: its PeerId is not known. */
+  std::string link;
 };
 
 /** Ours, preferred first. */
@@ -97,10 +97,10 @@ struct MyRelaysView {
   /** Room for another relay (MR004: at most 4). */
   bool can_add = false;
   /**
-   * The org's origin, when it is not on the list and its identity changed (MR007): "Your app's service server changed
-   * identity", with Accept new identity… (any device). Empty otherwise.
+   * The org's origin, when it is not on the list and its identity answer does not match what this app names for it
+   * (MR008): its line says the account copy and the assistant are paused (any device). Empty otherwise.
    */
-  std::string org_identity_changed;
+  std::string org_identity_mismatch;
 };
 
 } // namespace pbr

@@ -18,6 +18,14 @@ struct SettingsDraft {
 
 AppConfig ApplyLlmSettingsDraft(const AppConfig& base, const SettingsDraft& draft);
 AppConfig ApplyIntegrationsSettingsDraft(const AppConfig& base, const SettingsUiState& state);
+/**
+ * A custom backend's relay or registration endpoint as its field shows it (multi-relay MR008): its relay link,
+ * `base_url#peer_id`, or the base URL alone when it names no PeerId.
+ */
+std::string EndpointLinkText(const ServiceEndpointConfig& endpoint);
+/** The field's text back into `endpoint`: a relay link sets the base URL and the PeerId; a bare URL clears the PeerId. */
+void SetEndpointFromLinkText(ServiceEndpointConfig& endpoint, const std::string& text);
+
 AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState& state);
 
 } // namespace pbr

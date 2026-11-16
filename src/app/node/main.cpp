@@ -14,6 +14,7 @@
 #include "mesh/dht/AmpDhtProtocol.h"
 #include "lib/net/HttpClient.h"
 #include "lib/net/RegistrationSignPayload.h"
+#include "lib/net/RelayOrigins.h"
 #include "lib/net/RelayPins.h"
 #include "mesh/reachability/Reachability.h"
 #if defined(PP_BROWSER_HAS_LEDGER)
@@ -191,22 +192,37 @@ void ShutdownNode(pbr::NodeBootstrapResult& boot) {
 }
 
 /**
- * The node's relay pin (multi-relay MR007): `relay_pins.json` in its data directory, written only from the relay's own
- * identity answer (no config key). A changed identity stops the relay calls (registration, heartbeat) — the mesh
- * services keep running — and is logged once, until the operator clears the pin.
+ * The node's relay identity (multi-relay MR007, MR008): the relay it registers at is expected to answer to
+ * `registration.peer_id` (PP_NODE_REGISTRATION_PEER_ID; the compiled prod relay's with the compiled URL), kept in
+ * `relay_pins.json` in its data directory. With none named the node pins that relay's first answer, with a warning. An
+ * identity answer naming another PeerId stops the relay calls (registration, heartbeat) — the mesh services keep
+ * running — and is logged as an ERROR, until the relay answers to its address again or the operator names its new one.
  */
 std::shared_ptr<pbr::RelayPins> OpenNodeRelayPins(const pbr::NodeBootstrapResult& boot) {
   auto pins = std::make_shared<pbr::RelayPins>(boot.profile_data_dir);
+  const pbr::ServiceEndpointConfig& registration = boot.config.registration;
   std::weak_ptr<pbr::RelayPins> weak = pins;
   pins->SetOnChanged([weak](const std::string& origin) {
     const auto held = weak.lock();
     const auto pin = held ? held->PinFor(origin) : std::nullopt;
-    if (pin && pin->Changed()) {
-      pbr::logging::getLogger("pp-node").error << "relay identity changed: pinned " << pin->peer_id << ", presented "
+    if (pin && pin->Mismatched()) {
+      pbr::logging::getLogger("pp-node").error << "relay identity mismatch: expected " << pin->peer_id << ", presented "
                                                << pin->presented_peer_id << " (" << origin
-                                               << "); relay calls stop until the pin is cleared (relay_pins.json)";
+                                               << "); relay calls stop (registration.peer_id names the relay)";
     }
   });
+  if (registration.base_url.empty()) {
+    return pins;
+  }
+  if (registration.peer_id.empty()) {
+    pbr::logging::getLogger("pp-node").warning
+        << "registration.peer_id is not set: the relay at " << registration.base_url
+        << " is pinned on its first answer (set registration.peer_id or PP_NODE_REGISTRATION_PEER_ID)";
+    pins->SetFirstUse(
+        [relay = registration.base_url](const std::string& origin) { return pbr::SameRelay(origin, relay); });
+  } else if (auto expected = pins->Expect(registration.base_url, registration.peer_id); !expected) {
+    pbr::logging::getLogger("pp-node").error << "registration.peer_id not used: " << expected.error().message;
+  }
   return pins;
 }
 

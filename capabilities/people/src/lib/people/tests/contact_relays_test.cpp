@@ -23,6 +23,7 @@ Contact AddedByQr(const std::string& locator_relay) {
   contact.id = "c1";
   contact.remote.ids = {{mesh::ContactIdKind::Account, "account:bob", true}};
   contact.remote.locator_relay = locator_relay;
+  contact.remote.locator_relay_peer_id = locator_relay.empty() ? "" : "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
   SyncContactMirrors(contact);
   return contact;
 }
@@ -71,10 +72,19 @@ TEST(ContactRelaysTest, NoCardAndNoLocatorMeansNoneKnown) {
   EXPECT_FALSE(list.from_card);
 }
 
-TEST(ContactRelaysTest, TheLocatorsOriginIsStoredWithTheContact) {
+// MR008: the locator's relay is kept as its address, the origin with the PeerId it answers to.
+TEST(ContactRelaysTest, TheLocatorsRelayAddressIsStoredWithTheContact) {
   const Contact again = ContactFromJson(ContactToJson(AddedByQr("https://relay.example/api/relay")));
   EXPECT_EQ(again.remote.locator_relay, "https://relay.example/api/relay");
+  EXPECT_EQ(again.remote.locator_relay_peer_id, "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP");
+  EXPECT_EQ(ContactRelays(again, std::nullopt).relays.at(0).peer_id, again.remote.locator_relay_peer_id);
   EXPECT_FALSE(ContactToJson(AddedByQr("")).getObject("remote")->contains("locator_relay")) << "left out when none";
+
+  Object origin_only = ContactToJson(AddedByQr(""));
+  Object remote = *origin_only.getObject("remote");
+  remote.set("locator_relay", std::string("https://relay.example/api/relay")); // R4 before MR008: no PeerId
+  origin_only.set("remote", ObjectValue(std::move(remote)));
+  EXPECT_TRUE(ContactFromJson(origin_only).remote.locator_relay.empty()) << "an origin alone is no address";
 }
 
 } // namespace

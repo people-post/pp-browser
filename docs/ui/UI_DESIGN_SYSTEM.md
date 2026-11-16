@@ -261,32 +261,37 @@ Me → **My relays** (`settings_section_relays.rml`, page `relays`, Home group 1
 [SERVICE_ENDPOINTS § My relays](../contracts/SERVICE_ENDPOINTS.md#my-relays)). The presenter (`MyRelaysViewFor`)
 decides, `SettingsMyRelays` renders. One card per relay, preferred first: the host (`relay.example.org`), a
 **Preferred** badge on the first, its registration (`Registered until <date>` / `Registering…` / `Couldn't register`
-and why in words — `the relay didn't answer`, `the relay said no`, `the relay's identity couldn't be checked`, never an
+and why in words — `the relay didn't answer`, `the relay said no`, `the relay's ID couldn't be checked`, never an
 error's text / `Registration ended <date>` / on the preferred relay when the account holds no registration there `Not
 registered. Set up your account in My profile to get mail here.`, the others then `Registers after your preferred
 relay`; failures, an ended registration and the preferred relay's missing one in the error colour) and its last poll (`Reachable` / `Couldn't reach it`, the
 latter in the error colour; nothing before the first poll). On the main device the other relays have **Make preferred**
 (immediate) and **Remove…** (a destructive confirm naming the relay); phones show them as rows under the relay
-(Remove in the danger row), desktops as secondary buttons, each shown by its own flag. **Add relay…** (while there are fewer than 4) opens an
-address field with **Add** and **Cancel**; Add checks the relay (`Checking the relay…`), and a refusal is worded under
-the field (`MyRelaysFailureText`: not https, a path, already listed, did not answer, …). A linked device shows the list
-with "Only your main device can change your relays." Before messaging is up the page says the relays show once
-connected.
+(Remove in the danger row), desktops as secondary buttons, each shown by its own flag. Every relay with a relay link
+(MR008: its address with its ID, `origin#PeerId`) has **Copy link** on every device (immediate; "Relay link copied").
+**Add relay…** (while there are fewer than 4) opens a **Relay link** field (placeholder `https://relay.example.org#Qm…`,
+hint "Paste the relay's link. Its operator publishes it; the part after # is the relay's ID.") with **Add**, **Scan QR
+code** (where the in-app scan is bound: the code's text goes into the field and is added as a pasted link) and
+**Cancel**; Add checks the relay (`Checking the relay…`), and a refusal is worded under the field
+(`MyRelaysFailureText`: not https, a path, no relay ID, already listed, did not answer, …). User text calls the PeerId
+the relay's **ID** and the link the relay's **link** — never "PeerId", "fragment" or "identity key". A linked device
+shows the list with "Only your main device can change your relays." Before messaging is up the page says the relays
+show once connected.
 
-**Relay identity states** (multi-relay MR007, [SERVICE_ENDPOINTS § Pins](../contracts/SERVICE_ENDPOINTS.md#pins)):
+**Relay identity states** (multi-relay MR007, MR008, [SERVICE_ENDPOINTS § Pins](../contracts/SERVICE_ENDPOINTS.md#pins)):
 
-- A relay whose identity changed reads **Not used: this relay changed its identity** in the error colour (no registration or poll
-  line: it is not polled, registered on or sent to, and left off the card) and cannot be made preferred; on the main
-  device it offers **Accept new identity…** beside Remove… (Remove revokes nothing there). Accept's confirm: "Accept
-  this relay's new identity?" / "{relay} now shows a different identity. Accept it only if the relay's operator
-  announced a change; otherwise remove the relay." with **Accept**; then "New identity accepted".
-- The org's origin, when it is not on the list and its identity changed: one error line, "Brief's server at {host}
-  changed its identity. Your account copy and the assistant are paused until you accept it." (one string, the host in
-  its place), with **Accept new identity…** on any device (lockers stop until then).
-- Add's identity refusals, under the field: "This server doesn't identify itself as a relay.", "This relay is already
-  on your list as {host}.", "This relay is already known as {host}." A relay seen before with another identity asks
-  first: "Add it anyway?" / "This relay shows a different identity than when it was last seen. Add it only if you
-  trust it." with **Add**.
+- A relay whose identity answer names another ID than its link reads **Not used: this relay's ID doesn't match its
+  link** in the error colour (no registration, poll or link line: it is not polled, registered on or sent to, and left
+  off the card) and cannot be made preferred; on the main device Remove… stays (it revokes nothing there). There is
+  nothing to accept: a relay with a new ID is a new relay, added by its new link.
+- The org's origin, when it is not on the list and does not match the ID this app ships for it: one error line,
+  "Brief's server at {host} doesn't match the ID this app knows for it. Your account copy and the assistant are
+  paused." (one string, the host in its place), on any device; no action (a new build brings a new ID).
+- Add's refusals about the relay's ID, under the field: "This link has no relay ID. Paste the relay's whole link, with
+  the part after #." (a release build takes no bare address), "This link's relay ID isn't right. Paste the relay's
+  whole link again.", "This relay's ID doesn't match its link. It wasn't added.", "This server doesn't say which relay
+  it is.", "This link names a relay already on your list as {host}.", "This link names a relay you already use at
+  {host}." (the org's).
 - The contact page's relay line reads **Not used: it doesn't match this contact's card** when the PeerId the contact's
   card names for its preferred relay disagrees with our pins, or a send found it refused
   (`ContactRelayView::Reach::IdentityMismatch`). A card that lists no relay reads **None listed. Mail goes through

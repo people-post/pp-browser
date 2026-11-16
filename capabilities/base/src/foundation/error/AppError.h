@@ -42,10 +42,10 @@ enum class Auth : int32_t {
    */
   WrongAudience = 7,
   /**
-   * No signed command goes to this relay: it presented another identity (PeerId) than the one pinned for its origin,
-   * and the person has not accepted the new one (MR007, Me → My relays).
+   * No signed command goes to this relay: its identity answer named another PeerId than its address (multi-relay
+   * MR008: the relay link, the build or the config), or its address names none (Me → My relays: not used).
    */
-  RelayIdentityChanged = 8,
+  RelayIdentityMismatch = 8,
   /** The relay claims a PeerId pinned to another origin (`relay_identity_taken`, MR007): never signed for. */
   RelayIdentityTaken = 9,
   /**

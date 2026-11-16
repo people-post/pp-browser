@@ -41,13 +41,15 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   mesh_node_reputation.json # mesh nodes and operators this profile demoted for a contradicted claim (N032; schema_version 1; demoted_until_ms / last_strike_ms / strikes); local only, never sent
   mesh_last_good_relays.json # relays that last carried this device's circuits (call-path-resilience K015; schema_version 1; relays: ≤3 PeerIds, most recent first);
                             # plaintext like the directory cache — read at mesh start, before any PIN unlock; local only, never sent; optional
-  our_relays.json           # My relays (multi-relay R3, MR006): {schema_version: 1, relays: [{origin, registration: {state registered|failed|not_registered|expired|unknown,
+  our_relays.json           # My relays (multi-relay R3, MR006, MR008): {schema_version: 2, relays: [{origin, peer_id? (the PeerId its address names: its relay link's,
+                            # the build's / config's for the org's relay, our own card's on a linked device; absent only for a developer build's bare origin, or the org's
+                            # in a build that ships none; one that is not a PeerId drops the entry), registration: {state registered|failed|not_registered|expired|unknown,
                             # reason? (failed: unreachable|refused|identity|other, worded by the page), expires_at?, card_issued_at?, registration_id? (MR007: the one a revoke names, additive),
                             # at_ms?}}]}, preferred first, ≤4; user data (a restore takes the account locker's `relays`), seeded once from the
-                            # deployment's relay + relay.extra_base_urls (an unreadable file is seeded again; a newer one is refused and never written: the seed in memory, changes refused); plaintext like the
+                            # deployment's relay + relay.extra_base_urls (relay links; an unreadable file, or schema 1 (MR007's, no PeerIds), is seeded again; a newer one is refused and never written: the seed in memory, changes refused); plaintext like the
                             # cursors (the card already names these relays); written atomically on every change and every registration answer
   preferences.json
-  relay_pins.json           # relay origin ↔ PeerId pins (multi-relay MR007, § relay_pins.json below); plaintext, written atomically
+  relay_pins.json           # the PeerId each relay origin of ours must answer to (multi-relay MR007, MR008, § relay_pins.json below); plaintext, written atomically
   relay_inbox_cursor.json   # poll watermarks {account_id, cursor, cursor_relay?, relays?: {origin: cursor}}: the preferred relay's (cursor_relay
                             # names it, additive; absent: the preferred one's), then our others'; a relay leaving My relays loses its cursor
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
@@ -59,7 +61,8 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   account_locker.json       # account locker sync state: highest_version_by_locker, contact_clock, device_names (plaintext; ACCOUNT_LOCKER.md § On disk)
   contacts.json             # address book (schema_version 3: local + remote + overrides{}; 2 steps up, dropping `relay:` ids from each
                             # contact's ids — the contact stays); another version, or none, is refused; optional
-                            # remote.locator_relay: a QR locator's preferred relay origin, its relay list until a card (multi-relay R4, additive)
+                            # remote.locator_relay: a QR locator's preferred relay address {origin, peer_id} (multi-relay R4, MR008), its relay list until a card (additive;
+                            # one without its PeerId is read as none)
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)
   home_brief.json           # phone Home "Today's briefs": the article feed's general headlines (schema_version 1; fetched_at_ms,
                             # feed cn|en, items[] of title / category (the site) / time_ms / url); plaintext, refetched when over
@@ -229,25 +232,31 @@ There is no account-switcher UI: the profile follows the backend. Use `--profile
 
 ### relay_pins.json
 
-The relays this profile signs for, each pinned to the PeerId its origin presented (multi-relay MR007;
-[SERVICE_ENDPOINTS § Pins](SERVICE_ENDPOINTS.md#pins)). Per profile, so per backend; a pp-node keeps one in its data
-directory, the same format.
+The PeerId each relay this profile signs for must answer to (multi-relay MR007, MR008;
+[SERVICE_ENDPOINTS § Pins](SERVICE_ENDPOINTS.md#pins)): the identities we expect, from each relay's address, never from
+its own answer. Per profile, so per backend; a pp-node keeps one in its data directory, the same format.
 
 ```json
-{ "schema_version": 1,
+{ "schema_version": 2,
   "pins": [ { "origin": "https://www.brief.global/api/relay", "peer_id": "Qm…", "pinned_at_ms": 1761235200000,
               "presented_peer_id": "Qm…", "presented_at_ms": 1761235300000 } ] }
 ```
 
 - `origin`: the relay base URL as relays are compared (`RelayOriginKey`: scheme and host lower case, the default port
   dropped, no trailing `/`). One pin per origin and one origin per PeerId (a second of either is dropped on read).
-- `presented_peer_id` / `presented_at_ms`: optional — another PeerId the origin presented after a `wrong_audience`;
-  present, the relay's identity changed and nothing is signed for it until the person accepts it.
+- `peer_id`: what its address names — the relay link it was added by (and `our_relays.json`), the build
+  (`PP_RELAY_PEER_ID_PROD` / `_QA`) or the config (`relay.peer_id`, `registration.peer_id`) for the org's origins, our
+  own card on a linked device; only a developer build's bare origin, and the org's in a build or config that names
+  none, take their first identity answer.
+- `presented_peer_id` / `presented_at_ms`: optional — another PeerId the origin's identity answer named when it was
+  checked; present, the relay does not match its address and nothing is signed for it. It goes when a later check
+  finds the relay answering to its address again, or the address changes (a new link, a build naming another PeerId).
 - Only our relays and the org's origins are pinned (a contact's card or QR code never writes a pin). At most 32;
   when full, the oldest pin that is neither one of our relays nor the org's origins (one removed from My relays since)
   goes.
-- Another `schema_version`, or a file that is not JSON, is refused and read as empty (logged as an error): the relays
-  are pinned again on first use. A newer one is never overwritten: that run's pins are kept in memory only.
+- Another `schema_version` (1: MR007's first-come pins), or a file that is not JSON, is refused and read as empty
+  (logged as an error): each relay is expected again from its address. A newer one is never overwritten: that run's
+  pins are kept in memory only.
 
 ## Schema versions
 
@@ -295,7 +304,8 @@ is refused (`AccountKeyResolver`), so nothing relabels our record.
 | Our own (as in 6 → 7: the profile's Account ID's record) | the version 4 shape without relays (no PeerId is known for the old entries), its floor and device list kept, its old signature: it does not verify, so the main device re-issues it with the same device list and our pinned relays; a linked device does not (the relays are the main device's to give): it waits for the main device's card |
 | Anyone else's | dropped from the record; the checked keys stay as a key card, and the card is asked for again (the next envelope's `sender_card_at`, or the contact page's refresh) |
 
-`contacts.json` `remote.locator_relay` stays an origin (the locator carries no PeerId).
+`contacts.json` `remote.locator_relay` is the locator's relay address, `{origin, peer_id}` (multi-relay MR008: the
+locator names the PeerId; a contact's first send into it is signed for that PeerId).
 
 **Changing a schema:** bump the version, add the step from the old one (it must run on every shape that version had), keep the floor. The **floor** is the oldest version the latest app still upgrades. Phones install only the latest app — a user cannot step through the versions in between on iOS or Android — so the latest app carries every step from the floor up; the floor moves only at a milestone (a release a user is expected to have opened), and moving it resets the chats of anyone below it. These migrations are this device's own data: they are not a bridge to older peers ([COMPATIBILITY § No bridges](COMPATIBILITY.md#no-bridges-pre-release)), and no step reads an older wire form.
 

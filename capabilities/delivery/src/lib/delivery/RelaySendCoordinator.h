@@ -23,7 +23,8 @@ namespace pbr {
 
 /**
  * Where a recipient's mailboxes are (multi-relay R2): its relays, preferred first, as its newest card lists them, each
- * with the PeerId the card names (MR007: the audience a send into it is signed for; empty: none named, its pin).
+ * with the PeerId the card (or QR code) names (MR007, MR008: the audience a send into it is signed for; empty: a relay
+ * of ours, signed for by its pin).
  */
 struct RelayRoutes {
   /** The recipient's relays from the card we keep for it; empty: none known (our preferred relay carries it). */
@@ -61,7 +62,7 @@ public:
     std::string origin;
     std::shared_ptr<IRelayClient> client;
   };
-  /** A client for a relay not ours, signing for `peer_id` (empty: the relay's pin). */
+  /** A client for a relay not ours, signing for `peer_id` (empty: none — nothing is signed for an unnamed relay). */
   using ForeignClientFactory =
       std::function<std::shared_ptr<IRelayClient>(const std::string& origin, const std::string& peer_id)>;
   using CardRelayCheckFn = std::function<CardRelayCheck(const std::string& origin, const std::string& peer_id)>;

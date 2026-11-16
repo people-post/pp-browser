@@ -37,25 +37,32 @@ TEST(BackendClientSetTest, BuildsEveryClientForItsEndpoint) {
   EXPECT_TRUE(directory.Configured());
 }
 
-// MR007-PIN: every client of a relay signs for that relay's pin; the lockers at the org's registration URL for its.
+// MR007, MR008-PIN: every client of a relay signs for the PeerId that relay's address names; the lockers at the org's
+// registration URL for its. Nothing is asked of the relays to sign.
 TEST(BackendClientSetTest, EachRelaysClientsSignForItsPin) {
+  constexpr const char kRelayA[] = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
+  constexpr const char kRelayB[] = "QmeKYz9h9AozszFqAkRzwxx4xGheEMYRVrLHuh7EMG7Bie";
   SwitchableDirectoryClient directory;
   BackendClientSet clients(directory);
   auto pins = std::make_shared<RelayPins>("");
-  pins->SetFetch([](const std::string& origin, bool) -> Roe<RelayIdentity> {
-    return RelayIdentity{.peer_id = origin.find("relay.example") != std::string::npos ? "QmRelayA" : "QmRegistry"};
+  int asked = 0;
+  pins->SetFetch([&asked](const std::string&, bool) -> Roe<RelayIdentity> {
+    ++asked;
+    return Error("not asked");
   });
+  ASSERT_TRUE(pins->Expect("https://relay.example/api/relay", kRelayA));
+  ASSERT_TRUE(pins->Expect("https://b.example/api/relay", kRelayB));
   clients.SetPins(pins);
   auto endpoints = At("https://relay.example/api/relay", "https://relay.example/api/relay",
                       "https://registration.example/api/relay");
   endpoints.extra_relays = {"https://b.example/api/relay"};
   clients.Apply(endpoints);
   ASSERT_NE(clients.Registration()->Audience(), nullptr);
-  EXPECT_EQ(clients.Registration()->Audience()->PeerId().valueOr(""), "QmRelayA");
+  EXPECT_EQ(clients.Registration()->Audience()->PeerId().valueOr(""), kRelayA);
   ASSERT_EQ(clients.OurRelays().size(), 2u);
-  EXPECT_EQ(clients.OurRelays()[1].registration->Audience()->PeerId().valueOr(""), "QmRegistry")
-      << "another relay of ours: its own pin";
-  EXPECT_EQ(pins->PinnedPeerId("https://relay.example/api/relay").value_or(""), "QmRelayA") << "pinned on first use";
+  EXPECT_EQ(clients.OurRelays()[1].registration->Audience()->PeerId().valueOr(""), kRelayB)
+      << "another relay of ours: its own";
+  EXPECT_EQ(asked, 0) << "its address names it: nothing learned from the relay";
 }
 
 TEST(BackendClientSetTest, AnEmptyEndpointTakesTheAppsDefault) {
@@ -179,6 +186,8 @@ TEST(BackendClientSetTest, AForeignRelayOutsideThePolicyGetsNoClient) {
     EXPECT_EQ(clients.Sender().ClientFor({.origin = origin}), nullptr) << origin << " (a locator's: no PeerId)";
   }
   EXPECT_NE(clients.Sender().ClientFor({.origin = "https://other.example/api/relay", .peer_id = "QmPeer"}), nullptr);
+  EXPECT_EQ(clients.Sender().ClientFor({.origin = "https://unnamed.example/api/relay"}), nullptr)
+      << "MR008: a relay not ours whose address names no PeerId gets nothing signed";
   EXPECT_NE(clients.Sender().ClientFor({.origin = "https://relay.example"}), nullptr) << "our own relay";
 }
 
@@ -321,7 +330,7 @@ TEST_F(BackendClientSetOriginTest, ARelayThePersonAddedIsHeldToPublicAddressesOu
 // a signer given later reaches it and an Apply that keeps it changes nothing on it.
 TEST_F(BackendClientSetOriginTest, AClientTakenBeforeTheSignerSignsWithItAndApplyNeverRewritesIt) {
   auto pins = std::make_shared<RelayPins>("");
-  pins->SetFetch([](const std::string&, bool) -> Roe<RelayIdentity> { return RelayIdentity{.peer_id = "QmOrg"}; });
+  ASSERT_TRUE(pins->Expect(OrgRelay(), "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP")); // the build's
   clients_.SetPins(pins);
   Apply({OrgRelay()});
   const std::shared_ptr<IRelayClient> relay = clients_.Relay();

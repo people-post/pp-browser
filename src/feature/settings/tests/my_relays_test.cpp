@@ -108,44 +108,58 @@ TEST(MyRelaysTest, ARefusedChangeSaysWhyInWords) {
   LoadLocales();
   EXPECT_EQ(pbr::MyRelaysFailureText(pp::Error("relay_origin_not_https")), "The address must start with https://.");
   EXPECT_EQ(pbr::MyRelaysFailureText(pp::Error("relay_unreachable")),
-            "That relay didn't answer. Check the address and try again.");
+            "That relay didn't answer. Check the link and try again.");
   EXPECT_EQ(pbr::MyRelaysFailureText(pp::Error("relay_preferred_not_removable")),
             "Make another relay preferred before removing this one.");
   EXPECT_EQ(pbr::MyRelaysFailureText(pp::Error("relay_origin_local")),
-            "That address is on this device or a private network. Enter a relay's public address.");
+            "That link is to this device or a private network. Paste a link to a relay's public address.");
   EXPECT_EQ(pbr::MyRelaysFailureText(pp::Error("relay_list_not_applied")),
             "The app was busy and didn't change your relays. Your list is as it was; try again.");
   EXPECT_EQ(pbr::MyRelaysFailureText(pp::Error("Messaging is not ready")), "Messaging is not ready");
 }
 
-// MR007 § Pins (what the user sees): a relay whose identity changed says it is not used, is not made
-// preferred, may be removed or its identity accepted on the main device; the org's origin's line shows on any device.
-TEST(MyRelaysTest, ARelayWhoseIdentityChangedSaysItIsNotUsed) {
+// MR008 (what the user sees): a relay whose identity answer does not match its link says it is not used, is not made
+// preferred, may be removed on the main device, and has nothing to accept; the org's origin's line shows on any device.
+TEST(MyRelaysTest, ARelayThatDoesNotMatchItsLinkSaysItIsNotUsed) {
   LoadLocales();
-  MyRelayFacts changed = Relay("b.example", Registered("2099-01-01T00:00:00Z"), MyRelayFacts::Reach::Failed);
-  changed.identity_changed = true;
+  MyRelayFacts mismatch = Relay("b.example", Registered("2099-01-01T00:00:00Z"), MyRelayFacts::Reach::Failed);
+  mismatch.peer_id = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
+  mismatch.identity_mismatch = true;
   const pbr::MyRelaysView view =
-      pbr::MyRelaysViewFor({Relay("a.example"), changed}, true, "https://org.example/api/relay");
+      pbr::MyRelaysViewFor({Relay("a.example"), mismatch}, true, "https://org.example/api/relay");
   ASSERT_EQ(view.relays.size(), 2u);
   const pbr::MyRelayRowView& row = view.relays[1];
-  EXPECT_EQ(row.state, "Not used: this relay changed its identity");
+  EXPECT_EQ(row.state, "Not used: this relay's ID doesn't match its link");
   EXPECT_EQ(row.state_kind, "error");
   EXPECT_TRUE(row.reach.empty()) << "it is not polled";
-  EXPECT_TRUE(row.can_accept_identity);
+  EXPECT_TRUE(row.link.empty()) << "a link that does not answer is not handed on";
   EXPECT_TRUE(row.can_remove);
   EXPECT_FALSE(row.can_make_preferred);
-  EXPECT_FALSE(view.relays[0].can_accept_identity);
-  EXPECT_EQ(view.org_identity_changed, "https://org.example/api/relay");
-  EXPECT_FALSE(pbr::MyRelaysViewFor({Relay("a.example"), changed}, false).relays[1].can_accept_identity)
-      << "a linked device shows it only";
+  EXPECT_EQ(view.org_identity_mismatch, "https://org.example/api/relay");
+}
+
+// MR008: each relay of ours with a PeerId has its relay link to copy, on every device; a bare origin has none.
+TEST(MyRelaysTest, EachRelayGivesItsRelayLink) {
+  LoadLocales();
+  MyRelayFacts named = Relay("a.example");
+  named.peer_id = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
+  const pbr::MyRelaysView view = pbr::MyRelaysViewFor({named, Relay("b.example")}, false);
+  EXPECT_EQ(view.relays[0].link, "https://a.example/api/relay#QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP");
+  EXPECT_TRUE(view.relays[1].link.empty());
 }
 
 TEST(MyRelaysTest, AddsIdentityRefusalsAreWorded) {
   LoadLocales();
+  EXPECT_EQ(pbr::MyRelaysFailureText(pbr::Error("relay_link_no_id")),
+            "This link has no relay ID. Paste the relay's whole link, with the part after #.");
+  EXPECT_EQ(pbr::MyRelaysFailureText(pbr::Error("relay_origin_bad_relay_id")),
+            "This link's relay ID isn't right. Paste the relay's whole link again.");
+  EXPECT_EQ(pbr::MyRelaysFailureText(pbr::Error("relay_identity_mismatch")),
+            "This relay's ID doesn't match its link. It wasn't added.");
   EXPECT_EQ(pbr::MyRelaysFailureText(pbr::Error("relay_identity_unavailable")),
-            "This server doesn't identify itself as a relay.");
+            "This server doesn't say which relay it is.");
   EXPECT_EQ(pbr::MyRelaysFailureText(pbr::Error("relay_identity_taken|b.example")),
-            "This relay is already on your list as b.example.");
+            "This link names a relay already on your list as b.example.");
   EXPECT_EQ(pbr::MyRelaysFailureText(pbr::Error("relay_identity_taken_known|c.example")),
-            "This relay is already known as c.example.");
+            "This link names a relay you already use at c.example.");
 }

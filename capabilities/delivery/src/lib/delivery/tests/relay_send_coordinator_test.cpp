@@ -53,7 +53,7 @@ Error WrongAudience() {
   return AppError::Auth(Err::Auth::WrongAudience, "Relay refused the command: signed for another relay");
 }
 Error IdentityChanged() {
-  return AppError::Auth(Err::Auth::RelayIdentityChanged, "presented another identity");
+  return AppError::Auth(Err::Auth::RelayIdentityMismatch, "presented another identity");
 }
 
 /** The PeerId a card names for `origin` in these tests (MR007). */

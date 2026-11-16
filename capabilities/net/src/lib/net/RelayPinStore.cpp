@@ -17,7 +17,7 @@ namespace pbr {
 
 namespace {
 
-constexpr int64_t kSchemaVersion = 1;
+constexpr int64_t kSchemaVersion = 2; // 2: expected identities (MR008)
 
 logging::Logger& PinLog() {
   static logging::Logger log = logging::getLogger("RelayPins");
@@ -39,7 +39,7 @@ std::string RelayPinsToJson(const std::vector<RelayPin>& pins) {
     row.set("origin", pin.origin);
     row.set("peer_id", pin.peer_id);
     row.set("pinned_at_ms", pin.pinned_at_ms);
-    if (pin.Changed()) {
+    if (pin.Mismatched()) {
       row.set("presented_peer_id", pin.presented_peer_id);
       row.set("presented_at_ms", pin.presented_at_ms);
     }
@@ -92,7 +92,7 @@ void RelayPinStore::Load() {
   }
   std::ifstream in(PinsPath(profile_data_dir_));
   if (!in) {
-    return; // none yet: every relay is pinned on first use
+    return; // none yet: each is expected from its address
   }
   const auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
   auto pins = text ? RelayPinsFromJson(*text) : std::nullopt;
@@ -102,7 +102,7 @@ void RelayPinStore::Load() {
     PinLog().error << "relay_pins.json refused ("
                    << (newer_file_ ? "a newer schema_version: kept as it is, pins held in memory only"
                                    : "another schema_version, or not JSON")
-                   << "): the relays are pinned again";
+                   << "): the relays are expected again from their addresses";
     return;
   }
   pins_ = std::move(*pins);
@@ -163,14 +163,18 @@ bool RelayPinStore::AddLocked(RelayPin pin) {
   return true;
 }
 
-PinAnswer RelayPinStore::Present(const std::string& origin, const std::string& peer_id, const int64_t now_ms) {
+PinAnswer RelayPinStore::Present(const std::string& origin, const std::string& peer_id, const int64_t now_ms,
+                                 const bool first_use) {
   std::lock_guard lock(mutex_);
   const std::string key = RelayOriginKey(origin);
-  if (const auto holder = HolderLocked(peer_id); holder != pins_.end() && holder->origin != key) {
-    return PinAnswer{.outcome = PinOutcome::Taken, .holder = holder->origin};
-  }
   const auto found = FindLocked(key);
   if (found == pins_.end()) {
+    if (!first_use) {
+      return PinAnswer{.outcome = PinOutcome::NotExpected};
+    }
+    if (const auto holder = HolderLocked(peer_id); holder != pins_.end()) {
+      return PinAnswer{.outcome = PinOutcome::Taken, .holder = holder->origin};
+    }
     if (!AddLocked(RelayPin{.origin = key, .peer_id = peer_id, .pinned_at_ms = now_ms})) {
       return PinAnswer{.outcome = PinOutcome::Full};
     }
@@ -178,8 +182,8 @@ PinAnswer RelayPinStore::Present(const std::string& origin, const std::string& p
     return PinAnswer{.outcome = PinOutcome::Pinned};
   }
   if (found->peer_id == peer_id) {
-    if (found->Changed()) {
-      // It presents its pinned identity again (the change was undone at the relay): in force once more.
+    if (found->Mismatched()) {
+      // It answers to its address again (the relay's misconfiguration was undone): in force once more.
       found->presented_peer_id.clear();
       found->presented_at_ms = 0;
       SaveLocked();
@@ -191,16 +195,19 @@ PinAnswer RelayPinStore::Present(const std::string& origin, const std::string& p
     found->presented_at_ms = now_ms;
     SaveLocked();
   }
-  return PinAnswer{.outcome = PinOutcome::Changed};
+  return PinAnswer{.outcome = PinOutcome::Mismatch};
 }
 
-PinAnswer RelayPinStore::Repin(const std::string& origin, const std::string& peer_id, const int64_t now_ms) {
+PinAnswer RelayPinStore::Expect(const std::string& origin, const std::string& peer_id, const int64_t now_ms) {
   std::lock_guard lock(mutex_);
   const std::string key = RelayOriginKey(origin);
   if (const auto holder = HolderLocked(peer_id); holder != pins_.end() && holder->origin != key) {
     return PinAnswer{.outcome = PinOutcome::Taken, .holder = holder->origin};
   }
   const auto found = FindLocked(key);
+  if (found != pins_.end() && found->peer_id == peer_id) {
+    return PinAnswer{.outcome = PinOutcome::Same}; // a mismatch seen stays until a check finds it answers again
+  }
   if (found == pins_.end()) {
     if (!AddLocked(RelayPin{.origin = key, .peer_id = peer_id, .pinned_at_ms = now_ms})) {
       return PinAnswer{.outcome = PinOutcome::Full};
@@ -221,7 +228,7 @@ bool RelayPinStore::TakeOwnCard(const std::vector<OwnCardRelay>& relays, const i
       continue;
     }
     const auto found = FindLocked(key);
-    if (found != pins_.end() && found->peer_id == relay.peer_id && !found->Changed()) {
+    if (found != pins_.end() && found->peer_id == relay.peer_id) {
       continue;
     }
     // Our own account's word: another origin's pin of this PeerId goes, and this origin's pin follows the card.

@@ -86,6 +86,22 @@ std::vector<std::string> ParsePpNodeBootstrapPeersCsv(std::string_view csv) {
   return out;
 }
 
+void DefaultNodeRegistrationPeerId(ServiceEndpointConfig& registration, const std::string& compiled_prod_relay,
+                                   const std::string& compiled_prod_peer_id) {
+  if (!registration.peer_id.empty() || compiled_prod_relay.empty()) {
+    return;
+  }
+  const auto trimmed = [](std::string url) {
+    while (!url.empty() && url.back() == '/') {
+      url.pop_back();
+    }
+    return url;
+  };
+  if (trimmed(registration.base_url) == trimmed(compiled_prod_relay)) {
+    registration.peer_id = compiled_prod_peer_id;
+  }
+}
+
 void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
   if (const char* data_dir = EnvOrNull("PP_NODE_DATA_DIR")) {
     config.data_dir = data_dir;
@@ -153,6 +169,10 @@ void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
   }
   if (const char* registration = EnvOrNull("PP_NODE_REGISTRATION_BASE_URL")) {
     config.registration.base_url = registration;
+    config.registration.peer_id.clear(); // the file's (or the build's) PeerId is another relay's
+  }
+  if (const char* peer_id = EnvOrNull("PP_NODE_REGISTRATION_PEER_ID")) {
+    config.registration.peer_id = peer_id;
   }
   if (const char* content_sha256 = EnvOrNull("PP_NODE_RELAY_CONTENT_SHA256")) {
     if (auto parsed = ParsePpNodeBoolEnv(content_sha256)) {

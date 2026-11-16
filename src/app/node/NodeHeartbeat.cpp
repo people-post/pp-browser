@@ -115,7 +115,8 @@ NodeHeartbeat::Outcome NodeHeartbeat::Send(const HeartbeatState state, const lon
   auto signature = deps_.sign(id.account_id, id.peer_id, state_name, timestamp);
   if (!signature) {
     if (signature.error().message != sign_failure_) {
-      sign_failure_ = signature.error().message; // e.g. the relay's identity changed: stopped until the pin is cleared
+      sign_failure_ =
+          signature.error().message; // e.g. the relay does not match its address (MR008): stopped until it does
       log.error << "heartbeat not sent: " << sign_failure_;
     }
     RecordOutcome(Outcome::HttpError);

@@ -30,9 +30,10 @@ void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   // Prod / qa derive the URLs from the origin; the fields edit the custom ones.
   const BackendConfig& backend = bootstrap.config.backend;
   const bool saved = backend.has_saved_urls;
-  state.relay_base_url = saved ? backend.saved_relay.base_url : bootstrap.config.relay.base_url;
+  // The relay and registration fields show relay links (MR008): the address with the PeerId it must answer to.
+  state.relay_base_url = EndpointLinkText(saved ? backend.saved_relay : bootstrap.config.relay);
   state.directory_base_url = saved ? backend.saved_directory.base_url : bootstrap.config.directory.base_url;
-  state.registration_base_url = saved ? backend.saved_registration.base_url : bootstrap.config.registration.base_url;
+  state.registration_base_url = EndpointLinkText(saved ? backend.saved_registration : bootstrap.config.registration);
   state.node_enabled = bootstrap.config.mesh.node_enabled ? "on" : "off";
   state.circuit_relay_enabled = bootstrap.config.mesh.capabilities.circuit_relay ? "on" : "off";
   state.media_relay_enabled = bootstrap.config.mesh.capabilities.media_relay ? "on" : "off";
@@ -53,9 +54,9 @@ bool NetworkSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
   const bool dht_on = state.dht_enabled == "on";
   const bool prefer_contacts = state.prefer_contacts_for_routing == "on";
   const bool saved = config.backend.has_saved_urls;
-  const std::string& relay = saved ? config.backend.saved_relay.base_url : config.relay.base_url;
+  const std::string relay = EndpointLinkText(saved ? config.backend.saved_relay : config.relay);
   const std::string& directory = saved ? config.backend.saved_directory.base_url : config.directory.base_url;
-  const std::string& registration = saved ? config.backend.saved_registration.base_url : config.registration.base_url;
+  const std::string registration = EndpointLinkText(saved ? config.backend.saved_registration : config.registration);
   return (state.backend_env.empty() || state.backend_env == config.backend.env) && state.relay_base_url == relay &&
          state.directory_base_url == directory && state.registration_base_url == registration &&
          node_on == config.mesh.node_enabled && circuit_on == config.mesh.capabilities.circuit_relay &&
@@ -78,9 +79,9 @@ Roe<void> NetworkSettingsSection::Flush(SettingsUiState& state, SessionStore& st
 void NetworkSettingsSection::ResetToDefaults(SettingsUiState& state, const SessionStore& /*store*/) {
   const AppConfig defaults = Config::DefaultAppConfig();
   state.backend_env = defaults.backend.env;
-  state.relay_base_url = defaults.relay.base_url;
+  state.relay_base_url = EndpointLinkText(defaults.relay);
   state.directory_base_url = defaults.directory.base_url;
-  state.registration_base_url = defaults.registration.base_url;
+  state.registration_base_url = EndpointLinkText(defaults.registration);
   state.node_enabled = defaults.mesh.node_enabled ? "on" : "off";
   state.circuit_relay_enabled = defaults.mesh.capabilities.circuit_relay ? "on" : "off";
   state.media_relay_enabled = defaults.mesh.capabilities.media_relay ? "on" : "off";

@@ -190,7 +190,7 @@ RelaySendCoordinator::Try RelaySendCoordinator::TryRelay(const AccountCardRelay&
         Mismatch{.at_ms = Now(), .refused = true};
     return Try::Stale;
   }
-  if (IsAuthCode(failure, Err::Auth::RelayIdentityChanged) || IsAuthCode(failure, Err::Auth::RelayIdentityTaken)) {
+  if (IsAuthCode(failure, Err::Auth::RelayIdentityMismatch) || IsAuthCode(failure, Err::Auth::RelayIdentityTaken)) {
     return Try::Skipped; // nothing is signed for it until the person accepts its identity
   }
   if (RelayFailedItself(failure)) {

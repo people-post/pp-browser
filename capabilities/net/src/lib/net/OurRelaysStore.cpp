@@ -1,12 +1,14 @@
 #include "lib/net/OurRelaysStore.h"
 
 #include "lib/net/RelayOrigins.h"
+#include "lib/people/RegistrationStatus.h"
 
 #include "common/AtomicFileWrite.h"
 #include "common/BoundedRead.h"
 #include "common/Logger.h"
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
+#include "foundation/crypto/PeerIdForm.h"
 #include "foundation/error/AppError.h"
 
 #include <algorithm>
@@ -18,7 +20,7 @@ namespace pbr {
 
 namespace {
 
-constexpr int64_t kFileVersion = 1;
+constexpr int64_t kFileVersion = 2; // 2: each relay names its PeerId (MR008)
 
 std::filesystem::path ListPath(const std::string& profile_data_dir) {
   return std::filesystem::path(profile_data_dir) / "our_relays.json";
@@ -145,7 +147,7 @@ RelayListProblem RelayListProblemFromCode(const std::string& code) {
   return RelayListProblem::None;
 }
 
-Roe<OurRelaysList> WithRelayAdded(const OurRelaysList& list, const std::string& base_url) {
+Roe<OurRelaysList> WithRelayAdded(const OurRelaysList& list, const std::string& base_url, const std::string& peer_id) {
   if (list.Lists(base_url)) {
     return ListError(RelayListProblem::AlreadyListed);
   }
@@ -153,7 +155,7 @@ Roe<OurRelaysList> WithRelayAdded(const OurRelaysList& list, const std::string& 
     return ListError(RelayListProblem::Full);
   }
   OurRelaysList next = list;
-  next.relays.push_back(OurRelayEntry{.origin = base_url});
+  next.relays.push_back(OurRelayEntry{.origin = base_url, .peer_id = peer_id});
   return next;
 }
 
@@ -195,6 +197,9 @@ std::string OurRelaysToJson(const OurRelaysList& list) {
   for (const OurRelayEntry& entry : list.relays) {
     Object relay;
     relay.set("origin", entry.origin);
+    if (!entry.peer_id.empty()) {
+      relay.set("peer_id", entry.peer_id);
+    }
     relay.set("registration", ObjectValue(RecordToObject(entry.registration)));
     relays.push_back(ObjectValue(std::move(relay)));
   }
@@ -218,9 +223,15 @@ std::optional<OurRelaysList> OurRelaysFromJson(const std::string& text) {
     if (!origin || origin->empty() || list.Lists(*origin) || list.relays.size() >= kMaxOurRelays) {
       continue;
     }
+    const std::string peer_id = relay->getString("peer_id").value_or("");
+    if (!peer_id.empty() && !IsMlDsaPeerIdForm(peer_id)) {
+      continue; // an address that names no PeerId we could sign for
+    }
     const Object* registration = relay->getObject("registration");
-    list.relays.push_back(OurRelayEntry{
-        .origin = *origin, .registration = registration ? RecordFromObject(*registration) : RelayRegistrationRecord{}});
+    list.relays.push_back(
+        OurRelayEntry{.origin = *origin,
+                      .peer_id = peer_id,
+                      .registration = registration ? RecordFromObject(*registration) : RelayRegistrationRecord{}});
   }
   if (list.relays.empty()) {
     return std::nullopt;
@@ -232,7 +243,7 @@ std::string RelayRegistrationFailureCode(const Error& error) {
   const ErrorCategory category = AppError::CategoryOf(error);
   if (category == ErrorCategory::Auth) {
     const auto code = static_cast<Err::Auth>(error.code);
-    if (code == Err::Auth::RelayIdentityChanged || code == Err::Auth::RelayIdentityTaken ||
+    if (code == Err::Auth::RelayIdentityMismatch || code == Err::Auth::RelayIdentityTaken ||
         code == Err::Auth::WrongAudience) {
       return kRegistrationIdentity;
     }
@@ -255,7 +266,8 @@ bool OurRelaysFileIsNewer(const std::string& text) {
   return root && root->getIf<int64_t>("schema_version").value_or(0) > kFileVersion;
 }
 
-OurRelaysList OurRelaysStore::LoadOrSeed(const std::string& org_relay, const std::vector<std::string>& extras) {
+OurRelaysList OurRelaysStore::LoadOrSeed(const std::string& org_relay, const std::string& org_peer_id,
+                                         const std::vector<std::string>& extras, const bool bare_allowed) {
   std::lock_guard lock(mutex_);
   newer_file_ = false;
   if (!profile_data_dir_.empty()) {
@@ -275,8 +287,28 @@ OurRelaysList OurRelaysStore::LoadOrSeed(const std::string& org_relay, const std
     }
   }
   list_ = {};
-  for (const std::string& origin : OurRelayOrigins(org_relay, extras)) {
-    list_.relays.push_back(OurRelayEntry{.origin = origin});
+  // The extras are relay links (MR008): each names the PeerId its relay must answer to.
+  std::vector<std::string> seeded;
+  std::vector<std::pair<std::string, std::string>> named; // by RelayOriginKey: its PeerId
+  for (const std::string& extra : extras) {
+    const size_t hash = extra.find('#');
+    const std::string peer_id = hash == std::string::npos ? std::string() : extra.substr(hash + 1);
+    if ((hash != std::string::npos && !IsMlDsaPeerIdForm(peer_id)) || (peer_id.empty() && !bare_allowed)) {
+      logging::getLogger("OurRelays").warning << "relay.extra_base_urls: " << extra.substr(0, hash)
+                                              << " left out (its link names no relay ID)";
+      continue;
+    }
+    seeded.push_back(extra);
+    named.emplace_back(RelayOriginKey(NormalizeRegistrationBackend(extra.substr(0, hash))), peer_id);
+  }
+  for (const std::string& origin : OurRelayOrigins(org_relay, seeded)) {
+    std::string peer_id = list_.relays.empty() ? org_peer_id : std::string();
+    for (const auto& [key, id] : named) {
+      if (!list_.relays.empty() && key == RelayOriginKey(origin)) {
+        peer_id = id;
+      }
+    }
+    list_.relays.push_back(OurRelayEntry{.origin = origin, .peer_id = std::move(peer_id)});
   }
   if (!list_.relays.empty()) {
     (void)SaveLocked(); // the seed is the user's list from now on: config is only a new profile's default

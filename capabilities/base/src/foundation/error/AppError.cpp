@@ -74,7 +74,7 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
         case Err::Auth::StrangerQuota:
           return Localized("errors.auth.busy");
         case Err::Auth::WrongAudience:
-        case Err::Auth::RelayIdentityChanged:
+        case Err::Auth::RelayIdentityMismatch:
         case Err::Auth::RelayIdentityTaken:
           return Localized("errors.auth.relay_identity");
         case Err::Auth::Generic:

@@ -14,7 +14,7 @@ namespace pbr {
 /**
  * Register/renew this pp-node as entity_kind=mesh_node (N027).
  * Uses registration.base_url + advertise_multiaddrs + local capabilities, signed for the relay `audience` names (its
- * pinned PeerId, multi-relay MR007: nothing is signed while its identity changed or is not known yet).
+ * expected PeerId, multi-relay MR007 / MR008: nothing is signed while it does not match its address or none is known).
  * No-op (Ok) when mesh_publish is false or registration URL empty.
  */
 Roe<bool> PublishOrRenewMeshNodeListing(const AppConfig& config, IdentityStore& identity, const std::string& nickname,

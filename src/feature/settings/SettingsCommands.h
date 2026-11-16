@@ -143,18 +143,21 @@ struct SettingsCommands {
   /** Me → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
   std::function<Roe<MyRelaysView>()> my_relays;
   /**
-   * Adds the relay the user typed (it must answer and identify itself: HTTP, a worker). An error says why
-   * (MyRelaysFailureText); `relay_identity_changed_since_seen` asks the person, then Add with `accept_changed_identity`.
+   * Adds the relay the user pasted: its relay link (MR008; it must answer, and answer to the link's PeerId: HTTP, a
+   * worker). An error says why (MyRelaysFailureText).
    */
-  std::function<Roe<void>(const std::string& typed, bool accept_changed_identity)> add_my_relay;
-  /** Accepts the new identity a relay of ours, or the org's origin, presented (MR007); a worker. */
-  std::function<Roe<void>(const std::string& origin)> accept_relay_identity;
+  std::function<Roe<void>(const std::string& typed)> add_my_relay;
   /** Removes a relay of ours (not the preferred one); a worker. */
   std::function<Roe<void>(const std::string& origin)> remove_my_relay;
   /** Makes a relay of ours the preferred one; a worker. */
   std::function<Roe<void>(const std::string& origin)> make_relay_preferred;
   /** Runs `changed` (on any thread) whenever the list or a relay's state changes; null stops. */
   std::function<void(std::function<void()> changed)> watch_my_relays;
+  /**
+   * Scans a QR code and hands its text back (on the UI thread; nothing when cancelled): Add relay… takes a relay link
+   * from a QR code (MR008) as it takes a pasted one. Null: no camera scan in this build.
+   */
+  std::function<void(std::function<void(std::string text)> done)> scan_relay_link;
 
   /** Current app Support discovery (enabled + account_id); nullopt when off/unavailable. */
   std::function<std::optional<ClientCompatSupport>()> load_support_discovery;

@@ -331,24 +331,20 @@ void BackendClientSet::WireSender() {
     sender_.SetCardRelayCheck(nullptr);
   }
   // A relay not ours gets a client of its own, signed by us and with our send hooks (copies: set on this thread),
-  // for the PeerId the recipient's card names; none named (a locator's relay, no card yet): the PeerId it presents,
-  // never pinned (MR007: no one else's relay writes our pins).
+  // for the PeerId the recipient's card (or QR code) names — its address (MR008); none named: no client (nothing is
+  // signed for a relay whose address names no PeerId, and no one else's relay writes our pins).
   // Its origin came from a contact: held to a public host (IsPublicRelayOrigin), none is made for one outside it, and
-  // its requests, the identity fetch included, go to public addresses only.
+  // its requests go to public addresses only.
   sender_.SetForeignClients(
-      [signer = Signer(), hooks = send_hooks_, pins = pins_](const std::string& origin, const std::string& peer_id) {
+      [signer = Signer(), hooks = send_hooks_](const std::string& origin, const std::string& peer_id) {
         const bool lab = DevCaBundleActive();
-        if (!IsPublicRelayOrigin(origin, lab)) {
+        if (peer_id.empty() || !IsPublicRelayOrigin(origin, lab)) {
           return std::shared_ptr<IRelayClient>();
         }
         auto client = std::make_shared<HttpRelayClient>(origin, !lab);
         client->SetAuthSigner(signer);
         client->SetSendHooks(hooks);
-        if (!peer_id.empty()) {
-          client->SetAudience(std::make_shared<FixedRelayAudience>(peer_id));
-        } else if (pins) {
-          client->SetAudience(pins->ForeignAudienceFor(origin, !lab));
-        }
+        client->SetAudience(std::make_shared<FixedRelayAudience>(peer_id));
         return std::shared_ptr<IRelayClient>(std::move(client));
       });
 }

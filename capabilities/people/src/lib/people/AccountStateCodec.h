@@ -79,12 +79,20 @@ struct AccountStateGrant {
   bool operator==(const AccountStateGrant&) const = default;
 };
 
+/** One relay of ours as the locker keeps it: its address, the origin and the PeerId it answers to (MR008). */
+struct AccountStateRelay {
+  std::string origin;
+  std::string peer_id;
+
+  bool operator==(const AccountStateRelay&) const = default;
+};
+
 /**
  * The account's relays (My relays, multi-relay MR006), preferred first, as its card issued at `card_issued_at` lists
  * them: a restored device takes them before its first card, instead of the deployment's default. Empty: none kept.
  */
 struct AccountStateRelays {
-  std::vector<std::string> origins;
+  std::vector<AccountStateRelay> list;
   int64_t card_issued_at = 0;
 
   bool operator==(const AccountStateRelays&) const = default;

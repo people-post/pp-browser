@@ -492,11 +492,14 @@ TEST(AccountLockerTest, GrantsMergeToTheLatestPerGrantorWithoutTheExpired) {
       << "a tie keeps the same one on every device";
 }
 
-// D2 (ACCOUNT_LOCKER § State JSON `relays`): the locker carries our relays, so a restore keeps the person's list; the
-// copy from the newer card wins a merge, and an untrusted copy is bounded.
+// D2 (ACCOUNT_LOCKER § State JSON `relays`): the locker carries our relays' addresses (MR008: each with its PeerId),
+// so a restore keeps the person's list; the copy from the newer card wins a merge, and an untrusted copy is bounded.
 TEST(AccountLockerTest, OurRelaysRoundTripAndTheNewerCardsListWinsAMerge) {
+  const std::string kB = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
+  const std::string kA = "QmeKYz9h9AozszFqAkRzwxx4xGheEMYRVrLHuh7EMG7Bie";
   AccountLockerState state = SampleState();
-  state.extras.relays = {.origins = {"https://b.example/api/relay", "https://a.example/api/relay"},
+  state.extras.relays = {.list = {{.origin = "https://b.example/api/relay", .peer_id = kB},
+                                  {.origin = "https://a.example/api/relay", .peer_id = kA}},
                          .card_issued_at = 500};
   const LockerKeys keys = KeysOf(0x11);
   auto opened = account_locker::Open(account_locker::Seal(state, keys, 1).value(), keys);
@@ -504,19 +507,27 @@ TEST(AccountLockerTest, OurRelaysRoundTripAndTheNewerCardsListWinsAMerge) {
   EXPECT_EQ(opened->extras.relays, state.extras.relays);
 
   AccountLockerState older = state;
-  older.extras.relays = {.origins = {"https://a.example/api/relay"}, .card_issued_at = 400};
+  older.extras.relays = {.list = {{.origin = "https://a.example/api/relay", .peer_id = kA}}, .card_issued_at = 400};
   EXPECT_EQ(account_locker::MergeForPublish(older, state).extras.relays, state.extras.relays)
       << "the stored list came with a newer card";
   EXPECT_EQ(account_locker::MergeForPublish(state, older).extras.relays, state.extras.relays) << "ours is newer";
 
+  const auto row = [](const std::string& origin, const std::string& peer_id) {
+    return R"({"origin":")" + origin + R"(","peer_id":")" + peer_id + R"("})";
+  };
   auto read = account_locker::StateFromJson(
-      R"({"relays":{"origins":["https://a.example","https://a.example","","https://b.example","https://c.example",)"
-      R"("https://d.example","https://e.example"],"card_issued_at":7}})");
+      R"({"relays":{"list":[)" + row("https://a.example", kA) + "," + row("https://a.example", kB) + "," + row("", kA) +
+      "," + row("https://n.example", "") + "," + row("https://b.example", kB) + "," + row("https://c.example", kA) +
+      "," + row("https://d.example", kB) + "," + row("https://e.example", kA) + R"(],"card_issued_at":7}})");
   ASSERT_TRUE(read);
-  EXPECT_EQ(read->extras.relays.origins, (std::vector<std::string>{"https://a.example", "https://b.example",
-                                                                   "https://c.example", "https://d.example"}))
-      << "each once, none empty, at most four";
-  EXPECT_TRUE(account_locker::StateFromJson(R"({"nickname":"a"})")->extras.relays.origins.empty())
+  std::vector<std::string> origins;
+  for (const AccountStateRelay& relay : read->extras.relays.list) {
+    origins.push_back(relay.origin);
+  }
+  EXPECT_EQ(origins, (std::vector<std::string>{"https://a.example", "https://b.example", "https://c.example",
+                                               "https://d.example"}))
+      << "each origin once, none empty, none without its PeerId (MR008), at most four";
+  EXPECT_TRUE(account_locker::StateFromJson(R"({"nickname":"a"})")->extras.relays.list.empty())
       << "an older snapshot: none";
 }
 

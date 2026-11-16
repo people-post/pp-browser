@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
+#include "lib/people/AccountCard.h"
 #include "lib/people/ContactTypes.h"
 
 #include <string>
@@ -21,16 +22,19 @@ struct ContactLocator {
   std::string nickname;
   std::vector<std::string> devices;
   /**
-   * The account's preferred relay origin (multi-relay R4, MR004: an `https://` URL of at most 128 bytes, the card's
-   * bound), so a contact added this way can write before it has the card; empty: none. Optional: a locator without it
-   * reads as before, and an app that does not know it ignores it.
+   * The account's preferred relay (multi-relay R4, MR008): its address, an `https://` origin of at most 128 bytes (the
+   * card's bound) and the PeerId it answers to, so a contact added this way can write before it has the card; empty:
+   * none. Optional: a locator without it reads as before, and an app that does not know it ignores it.
    */
-  std::string relay;
+  AccountCardRelay relay;
 
   bool operator==(const ContactLocator&) const = default;
 };
 
-/** `pp-browser-contact-v1:<base64url-unpadded(JSON)>`; a `relay` outside MR004's bounds is left out. */
+/**
+ * `pp-browser-contact-v1:<base64url-unpadded(JSON)>`; a `relay` outside MR004's bounds, or naming no PeerId, is left
+ * out.
+ */
 std::string EncodeContactLocator(const ContactLocator& locator);
 /**
  * What a user hands to someone else to find this contact: their Account ID, their OWN nickname (`remote.nickname`,
@@ -40,7 +44,7 @@ std::string EncodeContactLocator(const ContactLocator& locator);
 std::string ContactShareLocator(const Contact& contact);
 /**
  * The first locator in `text` (an invite line may wrap it in words); an error when there is none. A `relay` outside
- * MR004's bounds is dropped (the locator still holds).
+ * MR004's bounds, or without a PeerId (MR008), is dropped (the locator still holds).
  */
 Roe<ContactLocator> FindContactLocator(const std::string& text);
 

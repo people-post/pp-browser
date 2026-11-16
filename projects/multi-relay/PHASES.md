@@ -59,13 +59,13 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 
 **App (pp-browser)**
 - [x] Builders for every domain at its new version with the audience (registration, revoke, profile, icon, heartbeat, LLM token, locker put, blobs, files incl. status, relay API v3 incl. unregister's `binding_id`); `relay_sign_vectors_test.cpp` writes and checks `relay_sign_vectors.json`.
-- [x] `relay_pins.json` and the pin rules (fetch, one PeerId per origin and one origin per PeerId, never from others' cards, our own card on a linked device, 32 at most); pinned before the first signed call on each relay of ours and on the org's origin; first start after the upgrade pins them all.
+- [x] `relay_pins.json` and the pin rules (fetch, one PeerId per origin and one origin per PeerId, never from others' cards, our own card on a linked device, 32 at most); pinned before the first signed call on each relay of ours and on the org's origin; first start after the upgrade pins them all. (R6, MR008: pins come from addresses, not fetches.)
 - [x] Every HTTP client sends its origin's pinned audience; `wrong_audience` fetches the identity once and sets *identity changed* when it differs.
 - [x] Card version 4: `relays: [{origin, peer_id}]` signed, verified, bounded; version 3 refused everywhere; `KeptRelays` with PeerIds; `profile.db` 7 → 8; ours lists only pinned relays and is re-issued and announced after the upgrade.
 - [x] Sending: a contact's card entry names the audience; a pin conflict or `wrong_audience` skips the relay (stale-list fetch, no health mark); a locator-only contact pins by fetch.
 - [x] Revoke with `registration_id` (kept per registration; `registration_mismatch` → renew, revoke once); unregister with `binding_id` (in memory; `binding_mismatch` → register, unregister once).
 - [x] Self-heal: `not_registered` / `registration_expired` from a relay of ours where we believe we are registered re-registers (the preferred one whatever auto-renew), with backoff.
-- [x] My relays: Add's identity errors and the re-pin confirm; *Identity changed — not used* with **Accept new identity…**; a changed relay left off the card; the org origin's line; the contact page's *identity doesn't match*.
+- [x] My relays: Add's identity errors and the re-pin confirm; *Identity changed — not used* with **Accept new identity…**; a changed relay left off the card; the org origin's line; the contact page's *identity doesn't match*. (R6, MR008: the re-pin confirm and Accept removed; the state reads *doesn't match its link*.)
 - [x] Contracts promoted in the same PR: SERVICE_ENDPOINTS (identity endpoint, the audience rule and table, `wrong_audience`, the scoped commands, self-heal), ACCOUNT_CARD (version 4), DATA_LAYOUT (`relay_pins.json`, `our_relays.json` `registration_id`, `profile.db` 8), COMPATIBILITY (the cutover rows), UI_DESIGN_SYSTEM (My relays states); MR007's Status updated.
 
 **pp-node**
@@ -80,3 +80,29 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 **Deploy**
 - [ ] Relay to `qa` (after infra); app and pp-node branch builds tested against it.
 - [ ] Prod window: app build available, relay release to `main` with `client-compat` `min_client_version` raised to the R5 build, pp-node fleet (`pp-relay-infra-ansible`, Leo).
+
+## R6 — A relay address carries its PeerId
+
+[MR008](DECISIONS.md#mr008--a-relay-address-carries-its-peerid-no-first-use-trust) (amends MR007 items 1 and 3 and MR006's Add). Ships with R5 (the same cutover; no relay change).
+
+**App (pp-browser)**
+- [x] Relay links: `ParseRelayLink` / `RelayLink` (`origin#<PeerId>`); Add takes a link (pasted, or scanned in Add relay…), a bare origin only in developer builds (`relay_link_no_id`), checks the answer against the link (`relay_identity_mismatch`), refuses a PeerId held at another origin before asking.
+- [x] Pins are expected identities (`RelayPins::Expect`; `relay_pins.json` 2): the org's from the build (`PP_RELAY_PEER_ID_PROD` / `_QA`) or the config (`relay.peer_id`, `registration.peer_id`), ours from `our_relays.json` 2 (`peer_id` per relay), a linked device's from our card, a restore's from the locker (`relays.list`); `CheckIdentities` checks each once per run; first use only for a developer build's bare origin and the org's without a PeerId (warned).
+- [x] *Identity changed* / **Accept new identity…** removed (UI, strings, ports, tests); the state is *doesn't match its link — not used*.
+- [x] The QR locator's `relay` is `{origin, peer_id}`; `contacts.json` `remote.locator_relay` `{origin, peer_id}`; a send into it signs for the locator's PeerId; a relay not ours with no PeerId named gets nothing signed.
+- [x] My relays shows **Copy link** per relay; the custom backend's Network fields take relay links.
+- [x] Contracts: SERVICE_ENDPOINTS (§ Relay identity, § Pins, § My relays, § Sending by the list, config shape), ACCOUNT_CARD (§ Locator), DATA_LAYOUT, COMPATIBILITY (the cutover row), ACCOUNT_LOCKER (`relays`), CONFIGURATION, BUILD, UI_DESIGN_SYSTEM, SCANNING, TEST_STRATEGY; MR006 / MR007 Status lines.
+
+**Build and CI**
+- [x] CMake `PP_RELAY_PEER_ID_PROD` / `PP_RELAY_PEER_ID_QA` (refused when not a PeerId); passed by `release.yml`, `ios-testflight.yml`, `release-pp-node.yml`, Gradle and the platform scripts; `scripts/check/check_relay_peer_ids.sh` fails a release (tagged installers, TestFlight, a published pp-node) without the prod PeerId (or with a QA origin and no QA PeerId); its self-test in the lint job.
+- [ ] Repository variables `PP_RELAY_PEER_ID_PROD` and `PP_RELAY_PEER_ID_QA` set (Hongwei; the values from infra's record of each relay's key).
+
+**pp-node**
+- [x] `registration.peer_id` / `PP_NODE_REGISTRATION_PEER_ID`, defaulting to the compiled prod PeerId with the compiled URL; none: first use, warned.
+- [ ] QA nodes' environment names the QA relay's PeerId (`pp-relay-infra-ansible`, Leo).
+
+**Relay (pp-relay-apis)**
+- [x] `scripts/relay-identity-keygen.mjs [<origin>]` prints the relay link; the local stack's `/_local/status` names `relayLink`; SPECS / openapi / architecture: clients take the PeerId from the link, the identity endpoint is checked.
+
+**Lab**
+- [x] The harness reads each stack's PeerId and gives users `relay.peer_id` and relay links; `invite_names_their_relay` checks the locator's address; `relay_not_matching_its_link_unused` (B-RELAY-LINK).

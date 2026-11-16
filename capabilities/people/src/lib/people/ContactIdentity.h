@@ -27,7 +27,7 @@ std::optional<std::string> PrimaryAccountIdFromHit(const mesh::DirectoryHit& hit
 /** Where a contact receives mail (multi-relay): its relays, preferred first, and whether a card said so. */
 struct ContactRelayList {
   std::vector<std::string> origins;
-  /** The same relays with the PeerId the card names for each (MR007; a locator's relay: none). */
+  /** The same relays with the PeerId the card (or the QR locator, MR008) names for each. */
   std::vector<AccountCardRelay> relays;
   /** The list is its account's newest kept card's (MR002); else the QR locator's origin, or nothing known. */
   bool from_card = false;

@@ -14,35 +14,39 @@
 namespace pbr {
 
 /**
- * A relay origin pinned to the PeerId it presented (multi-relay MR007): the HTTPS stand-in for an Amp handshake's
- * binding of a dial to a PeerId.
+ * A relay origin and the PeerId it must answer to (multi-relay MR008: a relay address carries its PeerId, as a node's
+ * multiaddr its `/p2p/`): the identity we expect, from the relay link it was added by, the build or the config (the
+ * org's), our own card (a linked device) — never from the relay's own answer, but in a developer build for a bare
+ * origin (first use).
  */
 struct RelayPin {
   /** The relay base URL as relays are compared (RelayOriginKey). */
   std::string origin;
   std::string peer_id;
   int64_t pinned_at_ms = 0;
-  /** Another PeerId the origin presented since (after a `wrong_audience`): set, the identity changed. */
+  /** Another PeerId the origin presented when it was checked: set, it does not match its address (not used). */
   std::string presented_peer_id;
   int64_t presented_at_ms = 0;
 
-  /** The origin presented another identity, not accepted yet: nothing is signed for it. */
-  bool Changed() const { return !presented_peer_id.empty(); }
+  /** Its identity answer named another PeerId than expected: nothing is signed for it. */
+  bool Mismatched() const { return !presented_peer_id.empty(); }
   bool operator==(const RelayPin&) const = default;
 };
 
-/** What an identity answer did to the pins. */
+/** What an identity answer, or an expectation, did to the pins. */
 enum class PinOutcome {
-  /** First contact: pinned now. */
+  /** Written now: an expectation, or a developer build's first use. */
   Pinned,
-  /** The PeerId it is pinned to. */
+  /** The PeerId it is pinned to (a mismatch seen before is cleared: it answers to its address again). */
   Same,
-  /** Another PeerId than its pin: the identity changed (kept as presented). */
-  Changed,
+  /** Another PeerId than expected: it does not match its address (kept as presented). */
+  Mismatch,
   /** A PeerId another origin holds: refused, never pinned. */
   Taken,
-  /** First contact, but every pin is one the store keeps (SetKeep): not pinned. */
+  /** Every pin is one the store keeps (SetKeep): not pinned. */
   Full,
+  /** No identity is expected for the origin, and it may not be learned by first use. */
+  NotExpected,
 };
 
 struct PinAnswer {
@@ -58,10 +62,11 @@ struct OwnCardRelay {
 };
 
 /**
- * `relay_pins.json` in the profile directory (docs/contracts/DATA_LAYOUT.md): one PeerId per origin and one origin per
- * PeerId, at most kMaxPins. A pin is written only for a relay of ours or the org's origin, from the origin's own
- * identity answer (Present), or, on a linked device, from our own account's card (TakeOwnCard); a contact's card or
- * QR code never writes one (RelayPins::ForeignAudienceFor). A file of another
+ * `relay_pins.json` in the profile directory (docs/contracts/DATA_LAYOUT.md): the identities we expect, one PeerId per
+ * origin and one origin per PeerId, at most kMaxPins. A pin is written only for a relay of ours or the org's origin:
+ * from its address (Expect: a relay link, the build, the config), on a linked device from our own account's card
+ * (TakeOwnCard), or, for a bare origin where first use is allowed, from its first identity answer (Present); a
+ * contact's card or QR code never writes one. A file of another
  * `schema_version`, or not JSON, is refused and read as empty (logged): the relays are pinned again on first use; a
  * newer one is never overwritten (the pins of this run are kept in memory only).
  * Thread-safe; every change is written at once (atomically).
@@ -86,13 +91,17 @@ public:
   std::optional<std::string> HolderOf(const std::string& peer_id) const;
   std::vector<RelayPin> All() const;
 
-  /** `origin` presented `peer_id` in its own identity answer at `now_ms`. */
-  PinAnswer Present(const std::string& origin, const std::string& peer_id, int64_t now_ms);
   /**
-   * Pins `origin` to `peer_id` whatever it was pinned to (the person accepts a new identity, or adds a relay it saw
-   * with another one); refused (Taken) when another origin holds `peer_id`.
+   * `origin` presented `peer_id` in its own identity answer at `now_ms`: checked against its pin (Same, or Mismatch,
+   * kept as presented). No pin: pinned when `first_use` (a developer build's bare origin, the org's without one
+   * shipped), else NotExpected.
    */
-  PinAnswer Repin(const std::string& origin, const std::string& peer_id, int64_t now_ms);
+  PinAnswer Present(const std::string& origin, const std::string& peer_id, int64_t now_ms, bool first_use);
+  /**
+   * `origin` is expected to answer to `peer_id` (its address names it): pinned, replacing an expectation of another
+   * PeerId (and its mismatch); the same one is left as it is (Same). Refused (Taken) when another origin holds it.
+   */
+  PinAnswer Expect(const std::string& origin, const std::string& peer_id, int64_t now_ms);
   /**
    * A newer card of our own account (a linked device, MR007): each entry becomes a pin, replacing one that disagrees
    * and dropping another origin's pin of the same PeerId. True when a pin changed.

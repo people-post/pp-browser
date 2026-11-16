@@ -29,10 +29,20 @@ std::vector<std::string> ParsePpNodeBootstrapPeersCsv(std::string_view csv);
  *   PP_NODE_CAPACITY_LINKS / _RESERVATIONS / _BRIDGES / _GROUP_CALLS   (mesh.capacity; a positive count)
  *   PP_NODE_ADVERTISE_MULTIADDRS
  *   PP_NODE_MESH_PUBLISH
- *   PP_NODE_REGISTRATION_BASE_URL
+ *   PP_NODE_REGISTRATION_BASE_URL  (clears registration.peer_id: another relay's)
+ *   PP_NODE_REGISTRATION_PEER_ID   (registration.peer_id: the PeerId that relay answers to, multi-relay MR008)
  *   PP_NODE_RELAY_CONTENT_SHA256   (relay.content_sha256: send x-amz-content-sha256 on relay POST/PUT)
  *   (PP_NODE_IDENTITY_SEED is applied in NodeBootstrap, not here)
+ * NodeBootstrap then defaults the registration relay's PeerId (DefaultNodeRegistrationPeerId).
  */
 void ApplyPpNodeConfigEnvOverlays(AppConfig& config);
+
+/**
+ * The relay the node registers at is expected to answer to `registration.peer_id` (MR008); empty while it is the
+ * compiled prod registration URL (`compiled_prod_relay`, the compiled origin + /api/relay): the compiled prod relay's
+ * PeerId. Another URL without one keeps none (the node pins that relay's first answer, with a warning).
+ */
+void DefaultNodeRegistrationPeerId(ServiceEndpointConfig& registration, const std::string& compiled_prod_relay,
+                                   const std::string& compiled_prod_peer_id);
 
 } // namespace pbr

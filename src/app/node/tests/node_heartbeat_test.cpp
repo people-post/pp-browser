@@ -97,7 +97,7 @@ TEST(NodeHeartbeatTest, SendsSignedActiveHeartbeatToContractEndpoint) {
   EXPECT_EQ(f.sent[0].body.getString("audience").value_or(""), "QmRelay");
 }
 
-// MR007-PIN (pp-node): a relay whose identity changed gets no heartbeat — the signer refuses — and the node keeps
+// MR008-PIN (pp-node): a relay that does not match its address gets no heartbeat — the signer refuses — and the node keeps
 // running; once the pin is in force again, heartbeats go.
 TEST(NodeHeartbeatTest, NoHeartbeatWhileNothingMayBeSignedForTheRelay) {
   Fixture f;
@@ -108,7 +108,7 @@ TEST(NodeHeartbeatTest, NoHeartbeatWhileNothingMayBeSignedForTheRelay) {
   deps.sign = [&changed, sign](const std::string& account, const std::string& peer, const std::string& state,
                                int64_t ts) -> pbr::Roe<pbr::HeartbeatSignature> {
     if (changed) {
-      return pbr::Error("relay identity changed: pinned QmA, presented QmB");
+      return pbr::Error("relay identity mismatch: expected QmA, presented QmB");
     }
     return sign(account, peer, state, ts);
   };

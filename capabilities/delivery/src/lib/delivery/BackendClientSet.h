@@ -37,9 +37,9 @@ namespace pbr {
  * lookup in order; the cards its lookups carry go to DirectoryCards. Sends go through one stable RelaySendCoordinator
  * (Sender): into the recipient's relays in list order, with a client of its own for a relay not ours.
  *
- * Every signed call names its relay (multi-relay MR007): the clients of our relays and of the org's registration URL
- * sign for the relay's pin (SetPins: RelayPins::AudienceFor), a relay not ours for the PeerId the recipient's card
- * names (or, with none, the PeerId it presents, never pinned: RelayPins::ForeignAudienceFor). The owner's thread.
+ * Every signed call names its relay (multi-relay MR007, MR008): the clients of our relays and of the org's
+ * registration URL sign for the PeerId each is expected to answer to (SetPins: RelayPins::AudienceFor), a relay not
+ * ours for the PeerId the recipient's card (or QR code) names. The owner's thread.
  */
 class BackendClientSet : public Module {
 public:

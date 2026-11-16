@@ -41,7 +41,8 @@ struct NodeHeartbeatDeps {
   std::function<HeartbeatIdentity()> identity;
   /**
    * Signs the heartbeat sign bytes for the relay's pinned PeerId (the audience) with the account key. An error when
-   * nothing may be signed for that relay (its identity changed, or is not known yet): no heartbeat goes.
+   * nothing may be signed for that relay (its identity answer does not match its address, or none is named): no
+   * heartbeat goes.
    */
   std::function<Roe<HeartbeatSignature>(const std::string& account_id, const std::string& peer_id,
                                         const std::string& state, int64_t timestamp)>

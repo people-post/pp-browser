@@ -118,3 +118,18 @@ TEST(DeploymentProfileTest, QaBackendUsesQaOriginAndEnvStillWins) {
   EXPECT_EQ(pbr::ResolveBriefOrigin(false, "https://backend.example.test", pbr::BackendEnv::Qa, kProdAndQa),
             "https://backend.example.test");
 }
+
+// Multi-relay MR008: the org relay's address carries its PeerId, shipped with the build beside its origin
+// (PP_RELAY_PEER_ID_PROD / PP_RELAY_PEER_ID_QA); a developer's PP_BROWSER_ORIGIN names none (first use, warned).
+TEST(DeploymentProfileTest, TheOrgRelaysPeerIdShipsWithItsBackend) {
+  const pbr::CompiledOrigins compiled{.prod = "https://prod.example.test",
+                                      .qa = "https://qa.example.test",
+                                      .prod_relay_peer_id = "QmProd",
+                                      .qa_relay_peer_id = "QmQa"};
+  EXPECT_EQ(pbr::ResolveRelayPeerId(false, nullptr, pbr::BackendEnv::Prod, compiled), "QmProd");
+  EXPECT_EQ(pbr::ResolveRelayPeerId(false, nullptr, pbr::BackendEnv::Qa, compiled), "QmQa");
+  EXPECT_EQ(pbr::ResolveRelayPeerId(false, "", pbr::BackendEnv::Prod, compiled), "QmProd") << "an empty override";
+  EXPECT_EQ(pbr::ResolveRelayPeerId(false, "https://dev.example.test", pbr::BackendEnv::Prod, compiled), "")
+      << "another origin: not the build's relay";
+  EXPECT_EQ(pbr::ResolveRelayPeerId(true, nullptr, pbr::BackendEnv::Prod, compiled), "") << "the UI demo app";
+}

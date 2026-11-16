@@ -43,8 +43,11 @@ Object ContactToJson(const Contact& contact) {
   if (mirrored.remote.icon && !mirrored.remote.icon->empty()) {
     remote.set("icon", ProfileIconRefToJson(*mirrored.remote.icon));
   }
-  if (!mirrored.remote.locator_relay.empty()) {
-    remote.set("locator_relay", mirrored.remote.locator_relay);
+  if (!mirrored.remote.locator_relay.empty() && !mirrored.remote.locator_relay_peer_id.empty()) {
+    Object locator_relay;
+    locator_relay.set("origin", mirrored.remote.locator_relay);
+    locator_relay.set("peer_id", mirrored.remote.locator_relay_peer_id);
+    remote.set("locator_relay", ObjectValue(std::move(locator_relay)));
   }
 
   Object local;
@@ -96,7 +99,14 @@ Contact ContactFromJson(const Object& json) {
       if (const Object* icon = remote->getObject("icon")) {
         contact.remote.icon = ProfileIconRefFromJson(*icon);
       }
-      contact.remote.locator_relay = remote->getString("locator_relay").value_or("");
+      if (const Object* locator_relay = remote->getObject("locator_relay")) {
+        contact.remote.locator_relay = locator_relay->getString("origin").value_or("");
+        contact.remote.locator_relay_peer_id = locator_relay->getString("peer_id").value_or("");
+        if (contact.remote.locator_relay.empty() || contact.remote.locator_relay_peer_id.empty()) {
+          contact.remote.locator_relay.clear(); // an address without its PeerId is none (MR008)
+          contact.remote.locator_relay_peer_id.clear();
+        }
+      }
     }
     SyncContactMirrors(contact);
     return contact;

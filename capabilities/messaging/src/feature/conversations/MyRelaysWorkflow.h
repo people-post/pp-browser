@@ -28,11 +28,14 @@ struct OurRelayStatus {
   /** Its inbox's last poll (this run). */
   Reach reach = Reach::Unknown;
   int64_t reach_at_ms = 0;
+  /** The PeerId its address names (MR008; its relay link is `origin#peer_id`); empty: none known (a bare origin). */
+  std::string peer_id;
   /**
-   * It presented another identity than its pin (MR007): not used — not polled, registered on or sent to, left off our
-   * card — until the person accepts the new one.
+   * Its identity answer names another PeerId than its address (MR008): not used — not polled, registered on or sent
+   * to, left off our card — until it answers to its address again (a new key is a new address: remove it, add its new
+   * link).
    */
-  bool identity_changed = false;
+  bool identity_mismatch = false;
 };
 
 struct OurRelaysStatus {
@@ -40,10 +43,10 @@ struct OurRelaysStatus {
   /** This device may change the list (it is the main device: it signs the card's list, MR002 / MR006). */
   bool editable = false;
   /**
-   * The org's origin, when it is not one of ours and its identity changed (MR007): lockers and the LLM token stop
-   * until the person accepts it. Empty otherwise.
+   * The org's origin, when it is not one of ours and its identity answer does not match what the build or the config
+   * names (MR008): lockers and the LLM token stop. Empty otherwise.
    */
-  std::string org_identity_changed;
+  std::string org_identity_mismatch;
 };
 
 /**
@@ -51,16 +54,14 @@ struct OurRelaysStatus {
  * list (OurRelaysStore), then the services follow it (`apply`: clients, inboxes, the card's relays), our registration
  * goes where it is new, and the card, re-signed with the new list, is announced to our contacts and siblings:
  *
- * - **Add:** the origin must parse (ParseRelayOrigin), be on a public host (IsPublicRelayOrigin) outside developer
- *   builds, the relay must answer (`probe`) and identify itself (`check_identity`, MR007: pinned now; refused when it names no identity
- *   or claims a PeerId another origin holds; a relay seen before with another identity is added only when the person
- *   confirms, `accept_changed`); it is added last and registered on like any other relay of ours.
+ * - **Add:** a relay link (ParseRelayLink, MR008: `https://host#<PeerId>`; a bare origin only in developer builds) on a
+ *   public host (IsPublicRelayOrigin) outside developer builds; the relay must answer (`probe`) and answer to the
+ *   link's PeerId (`check_identity`: expected from now on; refused when it names no identity or another PeerId, or
+ *   when another origin holds that PeerId); it is added last and registered on like any other relay of ours.
  * - **Remove:** never the preferred one nor the last; our registration there is revoked first (`leave`: with its push
- *   bindings; best effort — a relay that is down does not keep us on it; none for a relay whose identity changed: we
- *   never sign for it); once the services left it its pin goes (`drop_pin`; kept while the org's services use that
- *   origin), and its inbox cursor goes with the inbox. Undone (kNotApplied): we `rejoin` it.
- * - **Accept new identity:** the relay (or the org's origin) is re-pinned to what it presented (`accept_identity`);
- *   ours is then registered on again (the preferred one as the identity's) and our card re-issued with it.
+ *   bindings; best effort — a relay that is down does not keep us on it; none for a relay that does not match its
+ *   address: we never sign for it); once the services left it its pin goes (`drop_pin`; kept while the org's
+ *   services use that origin), and its inbox cursor goes with the inbox. Undone (kNotApplied): we `rejoin` it.
  * - **Make preferred:** the relay moves first; the identity's registration renews there (`register_preferred`: the
  *   card is newer, so it goes whatever the auto-renew preference — the backend-switch path, which records the relay
  *   the registration was made at), and the old preferred one is registered on as another relay of ours.
@@ -94,22 +95,21 @@ public:
     std::function<void()> register_others;
     /** Our card goes to our contacts and siblings (it is re-issued with the new list first). */
     std::function<void()> announce;
-    /** Asks `base_url` for its identity and pins it when nothing stands against it (RelayPins::CheckForAdd). */
-    std::function<AddIdentityCheck(const std::string& base_url)> check_identity;
-    /** Pins `base_url` to `peer_id` (the person confirmed a relay seen before with another identity). */
-    std::function<Roe<void>(const std::string& base_url, const std::string& peer_id)> repin;
+    /**
+     * Asks `base_url` for its identity and checks it against `peer_id`, its link's (expected from now on when nothing
+     * stands against it; empty: a developer build's bare origin, pinned on first use — RelayPins::CheckForAdd).
+     */
+    std::function<AddIdentityCheck(const std::string& base_url, const std::string& peer_id)> check_identity;
     /** `origin`'s pin goes (Remove…, once the services left it), unless the org's services still use it. */
     std::function<void(const std::string& origin)> drop_pin;
     /** A Remove the services did not follow: `origin`, left already, is ours again (registered on again soon). */
     std::function<void(const std::string& origin)> rejoin;
-    /** `origin` presented another identity, not accepted yet. */
-    std::function<bool(const std::string& origin)> identity_changed;
-    /** `origin` is re-pinned to the identity it presented. */
-    std::function<Roe<void>(const std::string& origin)> accept_identity;
-    /** Another relay of ours is registered on now (its backoff forgotten). */
-    std::function<void(const std::string& origin)> register_now;
-    /** The org's origin when it is not ours and its identity changed (OurRelaysStatus::org_identity_changed). */
-    std::function<std::string()> org_identity_changed;
+    /** `origin`'s identity answer names another PeerId than its address (not used). */
+    std::function<bool(const std::string& origin)> identity_mismatch;
+    /** The PeerId `origin` is pinned to and answers to (a developer build's bare origin: learned on first use). */
+    std::function<std::string(const std::string& origin)> peer_id_of;
+    /** The org's origin when it is not ours and does not match its address (OurRelaysStatus::org_identity_mismatch). */
+    std::function<std::string()> org_identity_mismatch;
     /** The page reads the list again. */
     std::function<void()> changed;
     /** Tests: the clock (Unix ms) a registration's end is read against. */
@@ -119,27 +119,22 @@ public:
   MyRelaysWorkflow(OurRelaysStore& store, Ports ports);
 
   /**
-   * Adds the relay `typed` names. `developer_build`: a plain `http://` relay, or one not on a public host
-   * (IsPublicRelayOrigin), may be added (the lab's); else neither. `accept_changed`: the person confirmed a relay
-   * that presents another identity than when it was last seen (kIdentityChangedSinceSeen). The error's message is a
-   * code (below); kIdentityTaken is followed by `|` and the host that holds the PeerId.
+   * Adds the relay `typed` names: its relay link (MR008). `developer_build`: a bare origin (no relay ID: checked on
+   * first use), a plain `http://` relay, or one not on a public host (IsPublicRelayOrigin), may be added (the lab's);
+   * else none of them. The error's message is a code (below); kIdentityTaken is followed by `|` and the host that
+   * holds the PeerId.
    */
-  Roe<void> Add(const std::string& typed, bool developer_build, bool accept_changed = false);
-  /**
-   * The person accepts the identity `origin` presented (MR007): one of ours (the main device only), or the org's
-   * origin (any device).
-   */
-  Roe<void> AcceptIdentity(const std::string& origin);
+  Roe<void> Add(const std::string& typed, bool developer_build);
   Roe<void> Remove(const std::string& origin);
   Roe<void> MakePreferred(const std::string& origin);
-  /** A linked device: the card's list (preferred first) becomes ours when it differs. */
-  void FollowCard(const std::vector<std::string>& card_relays);
+  /** A linked device: the card's list (preferred first, each with its PeerId) becomes ours when it differs. */
+  void FollowCard(const std::vector<AccountCardRelay>& card_relays);
   /**
    * A restore from the account locker (any device: it is the account's own list): `relays` (preferred first) become
    * ours and the services follow; registering and the announce are the restore's own steps. Kept even when the
    * services do not follow now (the next start builds them from it).
    */
-  void Restore(const std::vector<std::string>& relays);
+  void Restore(const std::vector<AccountCardRelay>& relays);
   /** An inbox of ours was polled. Any thread. */
   void NotePolled(const std::string& origin, bool ok, int64_t now_ms);
   /** The list as the page shows it; empty once closed. */
@@ -158,16 +153,19 @@ public:
   static constexpr const char* kNotApplied = "relay_list_not_applied";
   /** The profile is closing. */
   static constexpr const char* kClosed = "Messaging is not ready";
+  /** Add: a release build takes a relay only by its link, which names its PeerId (MR008). */
+  static constexpr const char* kLinkHasNoId = "relay_link_no_id";
   /** Add: the server answers no relay identity (MR007). */
   static constexpr const char* kIdentityUnavailable = "relay_identity_unavailable";
-  /** Add: it claims the PeerId of a relay on our list (`|host` follows), or of one we know (kIdentityTakenKnown). */
+  /**
+   * Add: the link names the PeerId of a relay on our list at another address (`|host` follows), or of one we know
+   * (kIdentityTakenKnown: the org's): it would front that relay (MR008).
+   */
   static constexpr const char* kIdentityTaken = "relay_identity_taken";
   static constexpr const char* kIdentityTakenKnown = "relay_identity_taken_known";
-  /** Add: it presents another identity than when it was last seen: ask the person, then Add with accept_changed. */
-  static constexpr const char* kIdentityChangedSinceSeen = "relay_identity_changed_since_seen";
-  /** Accept: it presents no other identity. */
-  static constexpr const char* kIdentityNotChanged = "relay_identity_not_changed";
-  /** "relay_origin_" and the problem's name (not_a_url, not_https, has_path, has_query, too_long, empty). */
+  /** Add: the relay answers to another PeerId than its link names, or its origin is expected to answer to another. */
+  static constexpr const char* kIdentityMismatch = "relay_identity_mismatch";
+  /** "relay_origin_" and the problem's name (not_a_url, not_https, has_path, has_query, too_long, empty, bad_relay_id). */
   static std::string OriginProblemCode(RelayOriginProblem problem);
 
 private:
@@ -193,8 +191,11 @@ private:
   static RelayRegistrationRecord ShownRegistration(const RelayRegistrationRecord& kept, bool is_preferred,
                                                    const std::optional<RelayRegistrationRecord>& preferred,
                                                    int64_t now_ms);
-  /** Add's identity step for `base_url` (pinned, or why not); `pinned_now`: this step wrote the pin. */
-  Roe<void> CheckIdentity(const std::string& base_url, bool accept_changed, bool& pinned_now);
+  /**
+   * Add's identity step for `base_url` named `peer_id` (expected now, or why not); `pinned_now`: this step wrote the
+   * pin; `peer_id` becomes what it answers to (a developer build's bare origin: its first answer).
+   */
+  Roe<void> CheckIdentity(const std::string& base_url, std::string& peer_id, bool& pinned_now);
   /** Keeps `next`, the services follow, the registrations and the card go. */
   Roe<void> Commit(const OurRelaysList& next, bool preferred_changed);
   void RegisterPreferred(const std::string& preferred);

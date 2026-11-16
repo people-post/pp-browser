@@ -21,7 +21,7 @@ Platform defaults (`PlatformDefaults`) set all three to `<origin>/api/relay` (e.
 
 ```json
 {
-  "relay": { "base_url": "https://backend.example.test/api/relay", "transport": "http" },
+  "relay": { "base_url": "https://backend.example.test/api/relay", "transport": "http", "peer_id": "Qm…" },
   "directory": {
     "base_url": "https://backend.example.test/api/relay",
     "transport": "http",
@@ -29,9 +29,16 @@ Platform defaults (`PlatformDefaults`) set all three to `<origin>/api/relay` (e.
       { "base_url": "https://backend.example.test/api/relay", "transport": "http" }
     ]
   },
-  "registration": { "base_url": "https://backend.example.test/api/relay" }
+  "registration": { "base_url": "https://backend.example.test/api/relay", "peer_id": "Qm…" }
 }
 ```
+
+`peer_id` (relay and registration; multi-relay [MR008](../../projects/multi-relay/DECISIONS.md#mr008--a-relay-address-carries-its-peerid-no-first-use-trust)):
+the PeerId that relay must answer to — its address carries it. `prod` / `qa` take the build's
+(`PP_RELAY_PEER_ID_PROD` / `PP_RELAY_PEER_ID_QA`, [BUILD](../ops/BUILD.md#backend-origin)) and ignore the saved
+ones; `custom` takes the config's. Me → Network's custom relay and registration fields show and take relay links
+(`<base_url>#<peer_id>`); a bare URL there names none. A relay none names is pinned on its first identity answer, with
+a warning ([§ Pins](#pins)). The directory is unsigned and needs none.
 
 `directory.providers[]` (N029 nd3) is an **ordered failover list**. When present and non-empty, `CreateOrgBackendClients` builds HTTP clients for each `transport: http` entry and wraps them in `FailoverDirectoryClient`. When `providers` is omitted/empty, behavior matches legacy single `directory.base_url`. Non-`http` transports (e.g. future `amp`) are skipped with a warning until Phase B.
 
@@ -61,7 +68,13 @@ the threat: a relay, honest-but-curious or hostile, not the network — TLS cove
 
 Each relay deployment holds its own ML-DSA-65 key; its **PeerId** is `pp::PeerIdFromMlDsaPublicKey(key)`, exactly a
 pp-node's ([MESH_IDENTITY](../architecture/MESH_IDENTITY.md): base58btc of `12 20 ‖ SHA-256(08 04 12 A0 0F ‖ key)`,
-`Qm…`, 46 characters). A new key is a new relay identity.
+`Qm…`, 46 characters). A new key is a new relay identity — and so a new relay address.
+
+**A relay address is its origin and its PeerId** ([MR008](../../projects/multi-relay/DECISIONS.md#mr008--a-relay-address-carries-its-peerid-no-first-use-trust)),
+as a node's multiaddr ends in `/p2p/<PeerId>`. Its written form, the **relay link**, is
+`https://host[:port][/api/relay]#<PeerId>` (`ParseRelayLink`, `RelayLink`): the fragment is the base58 PeerId and is
+never sent to the relay. An operator publishes it (pp-relay-apis' `scripts/relay-identity-keygen.mjs <origin>` prints
+it; a local stack's `/_local/status` names it, `relayLink`). The app never learns a PeerId from a relay's own answer.
 
 `GET {base}/v1/relay-identity` (unauthenticated, rate-limited per address) answers
 `{ "schema_version": 1, "peer_id": "Qm…", "public_key_b64": "…", "signature_alg": "ml-dsa-65" }` with
@@ -69,37 +82,60 @@ pp-node's ([MESH_IDENTITY](../architecture/MESH_IDENTITY.md): base58btc of `12 2
 relay_identity_unavailable`. The client (`FetchRelayIdentity` / `ParseRelayIdentity`) takes it only when
 `schema_version` is 1, `signature_alg` is `ml-dsa-65`, `public_key_b64` is canonical base64 of 1952 bytes and the key
 derives `peer_id`; anything else (and unreachable, any other status) is no identity. Unknown keys are ignored. The
-answer is **not signed** on purpose: what stops a relay from borrowing another's PeerId is the pin's uniqueness, below.
+answer is **checked, not trusted**: its `peer_id` must be the one the relay's address names, else the relay is not
+used. It is not signed: a static signature is copied by whoever serves it, and a relay proxying another answers its
+nonce through.
 
 ### Pins
 
-The app signs for a PeerId at one origin only (`RelayPins` over `RelayPinStore`, `relay_pins.json`
-[DATA_LAYOUT](DATA_LAYOUT.md#relay_pinsjson)): one PeerId per origin, one origin per PeerId, at most 32 (the oldest pin
-that is neither ours nor the org's origins goes first). Only a relay of ours and the org's origins are pinned.
+The pins are the identities we expect (`RelayPins` over `RelayPinStore`, `relay_pins.json`
+[DATA_LAYOUT](DATA_LAYOUT.md#relay_pinsjson)): each relay of ours and each of the org's origins with the PeerId its
+address names. One PeerId per origin, one origin per PeerId, at most 32 (the oldest pin that is neither ours nor the
+org's origins goes first). The app signs for a relay only the PeerId its pin holds.
 
-- **Where a pin comes from:** only the origin's own identity answer — fetched before the first command is signed for
-  that relay (at start for every relay of ours and the org's origins, `relay` / `registration`; at Add) — or, on a
-  linked device, our own account's newer card (its `{origin, peer_id}` entries replace a pin that disagrees and drop
-  another origin's pin of that PeerId). A contact's card or QR code never writes a pin: a relay not ours that no card
-  names a PeerId for (a locator-only contact's) is asked for its identity at its first send, over https to a public
-  address only, and what it presents is kept **in memory** for its sends (`RelayPins::ForeignAudienceFor`) — never
-  pinned, so it can neither take a PeerId from a relay of ours nor make a card entry naming one *identity doesn't
-  match*. One presenting a PeerId pinned to another origin gets nothing signed for it; a `wrong_audience` asks it
-  again (at most once per 5 min). A fetch that fails pins nothing; nothing is signed for that origin until a fetch succeeds (asked again
-  after 1 min, doubling to 2 min for a relay of ours or the org's origins and to 30 min for one not ours; ours are
-  asked again at once when the network comes back, the app comes to the front or the list changes). Our card lists
-  each relay of ours whose pin is in force; while a pass pins them (the first start after the upgrade pins them all),
-  the card waits for the pass to end and is re-issued once, so a linked device does not follow a list one pin at a
-  time.
-- **An origin presenting a PeerId pinned to another origin** is refused (`relay_identity_taken`) and never pinned.
-- **`401 wrong_audience` from a relay of ours or the org's origin** asks its identity again (at most once per origin per
-  5 min). Another PeerId than the pin: *identity changed* — kept as `presented_peer_id`; nothing is signed for that
-  relay (it is not polled, registered on or sent to, and left off our card, re-issued at once) until the person
-  accepts it (My relays → **Accept new identity…**, which re-pins it, registers there and re-issues the card). The same
-  PeerId: a misbehaving relay — the call fails like a 5xx, logged.
-- **pp-node** pins its `registration.base_url` in its data directory (`relay_pins.json`, the same format; no config
-  key) by fetch; a changed identity stops its relay calls (registration, heartbeat) and is logged as an ERROR
-  (`relay identity changed: pinned <X>, presented <Y>`) until the operator clears the pin; the mesh keeps running.
+- **Where the PeerId comes from** (MR008 item 2), never from the relay's answer:
+  - the org's relay (`relay`, and `registration` where it is another origin): the build's beside its origin
+    (`PP_RELAY_PEER_ID_PROD` / `PP_RELAY_PEER_ID_QA`) for `prod` / `qa`, the config's `peer_id` for `custom`;
+  - a relay of ours: the address it is kept with in My relays (`our_relays.json` `peer_id`) — the relay link it was
+    added by, the org's above for the seeded one, the relay links of `relay.extra_base_urls`, our own verified card's
+    entries on a linked device (which also replace a pin that disagrees and drop another origin's pin of that PeerId),
+    the account locker's on a restored device;
+  - a contact's relay: its newest card's `{origin, peer_id}` (version 4); a contact added by QR code before its card:
+    the locator's `relay` `{origin, peer_id}`. These are signed for as they name them and never pinned
+    (`CheckCardRelay`, [§ Sending by the list](#sending-by-the-list)).
+- **Uniqueness stops a relay fronting another:** an address naming a PeerId one of our pins holds at another origin is
+  refused — at Add (`relay_identity_taken` / `relay_identity_taken_known`), when the list or config names it
+  (`Expect`: that relay is not used, logged), and for a contact's entry (skipped). The org's pins are written first,
+  so a link naming the org's PeerId can never take it, and a hostile relay that answered first wins nothing.
+- **Checked, not learned:** at start, a list change, the network back and the app in front, each relay of ours and
+  each of the org's origins is asked for its identity once per run (`CheckIdentities`; nothing waits for it: the
+  expected PeerId is signed for meanwhile). So is a relay that answered `401 wrong_audience` (at most once per origin
+  per 5 min). An answer naming another PeerId: the relay **does not match its address** — kept as
+  `presented_peer_id`, logged as an error; nothing is signed for it (it is not polled, registered on or sent to, and
+  left off our card, re-issued at once) until a later check finds it answering to its address again. There is no
+  "accept": a rotated key is a new address, which the person adds by its new link (and the org's ships with a new
+  build). The same PeerId after `wrong_audience`: a misbehaving relay — the call fails like a 5xx, logged.
+- **First use, developer builds only** (MR008 item 4): a developer build (`developer_relays`) may add a bare origin,
+  and seed one from `relay.extra_base_urls`; such an origin is pinned on its first identity answer (logged as a
+  warning), at Add or before its first signed call. The org's origins in a build or config that names no PeerId for
+  them (a dogfood build; a release build's workflow refuses an empty `PP_RELAY_PEER_ID_PROD`) are pinned so too, with
+  the same warning. Any other origin no address names gets nothing signed (`relay_identity_unavailable`). A first-use
+  fetch that fails pins nothing; it is asked again after 1 min, doubling to 2 min, and at once when the network comes
+  back, the app comes to the front or the list changes.
+- Our card lists each relay of ours whose pin is in force; while a check pass runs, the card waits for its end and is
+  re-issued once, so a linked device does not follow a list one check at a time.
+- **pp-node** expects its `registration.base_url` to answer to `registration.peer_id` (`PP_NODE_REGISTRATION_PEER_ID`;
+  with the compiled prod registration URL, the compiled `PP_RELAY_PEER_ID_PROD`; [CONFIGURATION](../ops/CONFIGURATION.md#pp-node-relay-identity)),
+  kept in its data directory (`relay_pins.json`, the same format). With none named it pins that relay's first answer,
+  logged as a warning. An identity answer naming another PeerId (after a `wrong_audience`) stops its relay calls
+  (registration, heartbeat) and is logged as an ERROR (`relay identity mismatch: expected <X>, presented <Y>`) until
+  the relay answers to its address again or the operator names its new PeerId; the mesh keeps running.
+
+**What remains trusted** (MR008 item 6): a link's source. A relay operator controls what it publishes, so a hostile
+operator can publish its own origin with another relay's PeerId and pass that relay's answers through. Uniqueness keeps
+it from fronting the org or any relay of ours (no org secrets reach it: the Brief LLM key comes only from a registration
+at the org's pinned origin); it can at most front an unrelated relay we hold no identity for, until requests are sealed
+to the relay's key (Amp, MR007 item 6).
 
 ### The audience: every signed command names its relay
 
@@ -136,8 +172,8 @@ message.
 **Where each client takes its audience** (`IRelayAudience`; every client signs through `SignRelayCommand` and reports
 refusals through `NoteRelayRefusal`): the clients of a relay of ours (messages, push devices, registration, blobs and
 files) its pin; the lockers at the org's `registration.base_url` that origin's pin (pinned whether or not it is ours);
-a send into a contact's relay the `peer_id` its newest card names for that relay ([Sending by the list](#sending-by-the-list));
-pp-node its relay's pin.
+a send into a contact's relay the `peer_id` its newest card (or its QR locator) names for that relay
+([Sending by the list](#sending-by-the-list)); pp-node its relay's pin.
 
 **Golden vectors:** `capabilities/delivery/src/lib/delivery/tests/data/relay_sign_vectors.json`, written by
 `relay_sign_vectors_test.cpp` (`PP_WRITE_RELAY_SIGN_VECTORS=<path>`) and checked there: every domain and relay API op
@@ -167,7 +203,8 @@ A signed call to a relay of ours answered `403` / `404` `not_registered` or `reg
 registration there we believe current makes it due now: another relay's through `RelayRegistrationsWorkflow::Lost`,
 the preferred relay's — the identity's — whatever the auto-renew preference (the person registered there already),
 then push binds again. Lost again within 30 min of the last loss: after a backoff of 1 min doubling to 30 min. Not for
-a contact's relay (a send keeps its recipient semantics), a relay leaving the list, or one whose identity changed.
+a contact's relay (a send keeps its recipient semantics), a relay leaving the list, or one that does not match its
+address.
 
 ## HTTP relay API auth (per-request sign bytes)
 
@@ -303,16 +340,19 @@ of ours (its list becomes the card's). Every change is kept first, then:
 
 | Change | Rules | Also |
 |---|---|---|
-| **Add** | An origin `https://host[:port]`, or that and `/api/relay` (no other path, query, fragment or user info; at most 128 bytes); `http://`, and a host that is not public (on this device or a private network: `IsPublicRelayOrigin`, the card relays' policy, [ACCOUNT_CARD](ACCOUNT_CARD.md); refused with `relay_origin_local` before it is asked), only in developer builds (never on the card). Outside developer builds every request to it — Add's two asks and, once added, all its clients' (and its identity fetch) — goes over https to a public address only, checked at connect time, so a name that resolves inside later is refused; the relays the deployment configures are not held to it. It must answer `GET <base>/v1/client-compat` (the cheapest unauthenticated GET every relay serves) and identify itself (`GET <base>/v1/relay-identity`, pinned now, MR007): no identity is `relay_identity_unavailable`; a PeerId another origin holds is `relay_identity_taken` (that origin on our list) or `relay_identity_taken_known` (the org's origin, or a relay of ours removed since); an origin pinned before with another PeerId (the org's origin, a relay removed since) is `relay_identity_changed_since_seen`, and added, re-pinned, once the person confirms. At most 4. | Added last |
-| **Remove** | Not the preferred relay (make another preferred first), never the last (mesh-only is not offered in this step) | Our push binding (`/v1/devices/unregister`) and our registration (`/v1/register/revoke`, which also drops the account's push devices there) go first, best effort — none for a relay whose identity changed (nothing is signed for it; its registration expires there); once the services left it its pin goes (a relay that claimed another's PeerId no longer holds it), unless it is the org's origin, whose services still sign for it; its inbox cursor goes. When the services do not follow (the change is undone), the relay is ours again and registered on again |
-| **Accept new identity** | A relay of ours whose identity changed (the main device), or the org's origin (any device) | Re-pinned to the PeerId it presented; ours is registered on again (the preferred one as the identity's, push bound), and our card re-issued with it and announced |
+| **Add** | A **relay link** (MR008), pasted or scanned from a QR code: `https://host[:port]`, or that and `/api/relay`, then `#<PeerId>` (no other path, query or user info; the origin at most 128 bytes): a link with no PeerId is `relay_link_no_id`, one whose fragment is no PeerId `relay_origin_bad_relay_id`. A bare origin (no `#`), `http://`, and a host that is not public (on this device or a private network: `IsPublicRelayOrigin`, the card relays' policy, [ACCOUNT_CARD](ACCOUNT_CARD.md); refused with `relay_origin_local` before it is asked), only in developer builds (never on the card; a bare origin is pinned on its first answer, [§ Pins](#pins)). Outside developer builds every request to it — Add's two asks and, once added, all its clients' (and its identity checks) — goes over https to a public address only, checked at connect time, so a name that resolves inside later is refused; the relays the deployment configures are not held to it. A link naming a PeerId one of our pins holds at another origin is refused before it is asked: `relay_identity_taken` (a relay on our list) or `relay_identity_taken_known` (the org's origin); an origin we expect to answer to another PeerId (the org's) is `relay_identity_mismatch`. It must answer `GET <base>/v1/client-compat` (the cheapest unauthenticated GET every relay serves) and `GET <base>/v1/relay-identity` with the link's PeerId: no identity is `relay_identity_unavailable`, another PeerId `relay_identity_mismatch` (nothing kept). At most 4. | Added last, kept with the link's PeerId (`our_relays.json` `peer_id`), which is expected from then on |
+| **Remove** | Not the preferred relay (make another preferred first), never the last (mesh-only is not offered in this step) | Our push binding (`/v1/devices/unregister`) and our registration (`/v1/register/revoke`, which also drops the account's push devices there) go first, best effort — none for a relay that does not match its address (nothing is signed for it; its registration expires there); once the services left it its pin goes (its PeerId is free for another address), unless it is the org's origin, whose services still sign for it; its inbox cursor goes. When the services do not follow (the change is undone), the relay is ours again and registered on again |
 | **Make preferred** | A relay of ours | The identity's registration renews there at once (the card is newer, so it goes whatever the auto-renew preference; the registration records the relay it was made at, so the Me page reads it as the current one); push binds there; the old preferred relay is registered on as another of ours |
 
 A refused change answers with a code the page words (`relay_origin_not_https`, `relay_origin_local`, `relay_unreachable`,
-`relay_identity_unavailable`, `relay_identity_taken|<host>`, `relay_identity_taken_known|<host>`,
+`relay_link_no_id`, `relay_origin_bad_relay_id`, `relay_identity_unavailable`, `relay_identity_mismatch`,
+`relay_identity_taken|<host>`, `relay_identity_taken_known|<host>`,
 `relay_already_listed`, `relay_list_full`, `relay_preferred_not_removable`, `relay_list_last`,
 `relay_list_not_main_device`, `relay_list_not_applied`, …). A profile closing (a reset, the app stopping) waits for a
 change in progress and refuses any after it.
+
+**Our relay links:** each relay of ours with a PeerId shows its link, `<origin>#<PeerId>`, with **Copy link** (any
+device): what another person, or another app of ours, adds it by.
 
 ### The directory on each
 
@@ -345,21 +385,21 @@ search asks the relays the user has listed; there is no search across relays bey
 `RelaySendCoordinator` (the outbox's relay port) sends a record into its recipient's relays in their list order:
 
 1. **The list:** the relays of the newest card we keep for the recipient (`KeptRelays`); before any card, a contact
-   added by QR code has its locator's preferred origin ([ACCOUNT_CARD § Locator](ACCOUNT_CARD.md#locator-qr-code-invite-link),
-   multi-relay R4); a recipient with neither, or an empty list, goes to our preferred relay; a copy for our own other
-   devices goes to our relays.
+   added by QR code has its locator's preferred relay, `{origin, peer_id}` ([ACCOUNT_CARD § Locator](ACCOUNT_CARD.md#locator-qr-code-invite-link),
+   multi-relay R4, MR008); a recipient with neither, or an empty list, goes to our preferred relay; a copy for our own
+   other devices goes to our relays.
 2. **Health:** a relay a send could not reach (a transport failure, a timeout, a 5xx) is tried after the healthy
    ones for **5 minutes** (`RelayHealth`); a send it takes clears it. An answer about the recipient (a price, a quota,
    not registered) says nothing about the relay's health.
-3. **The audience** (MR007) is the `peer_id` the recipient's card names for that relay; a relay with none named is signed
-   for by its pin when it is ours (our preferred relay for a recipient without a card), else (a locator's) for the
-   PeerId it presents, never pinned ([§ Pins](#pins)). A card
+3. **The audience** (MR007) is the `peer_id` the recipient's card (or locator, MR008) names for that relay; a relay of
+   ours with none named is signed for by its pin (our preferred relay for a recipient without a card); a relay not ours
+   with none named gets nothing signed ([§ Pins](#pins)). A card
    entry our pins disagree with — our pin for that origin is another PeerId, or that PeerId is pinned to another
    origin — is skipped for that recipient (logged once per entry; the card is still kept; the contact page reads
    *Not used: it doesn't match this contact's card*). A relay that answers `wrong_audience` is skipped for this send, counts like
    `recipient_not_registered` toward the stale-list fetch (step 5: the contact may have re-issued its card), and,
    while the newest card still names the refused PeerId, is skipped for that recipient for 5 minutes. Neither marks
-   the relay unhealthy; a relay of ours whose identity changed is skipped alike.
+   the relay unhealthy; a relay of ours that does not match its address is skipped alike.
 4. **The next relay** is tried on a transport failure or a 5xx, and on `recipient_not_registered`. Any other refusal
    (`payment_required`, `stranger_quota_exceeded`, `rate_limited`, another 4xx) is the send's answer. When every relay
    failed, the transport failure is reported (the send is retried later), else `recipient_not_registered`.

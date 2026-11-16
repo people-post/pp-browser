@@ -16,18 +16,22 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
 namespace pbr {
 namespace {
 
-// MR007-PIN: a pin comes only from an origin's own identity answer (or our own card on a linked device); one PeerId per
-// origin and one origin per PeerId; a changed identity gets no signed call until accepted
-// (docs/contracts/SERVICE_ENDPOINTS.md § Relay identity, DATA_LAYOUT.md `relay_pins.json`).
+// MR008-PIN: a relay address carries its PeerId; the pins are the identities we expect, from addresses (a relay link,
+// the build, the config, our own card on a linked device), never from the relay's own answer but where first use is
+// allowed (a developer build's bare origin, the org's without a shipped PeerId); one PeerId per origin and one origin
+// per PeerId; an identity answer naming another PeerId leaves the relay not used, with no way to accept it
+// (docs/contracts/SERVICE_ENDPOINTS.md § Relay identity, § Pins; DATA_LAYOUT.md `relay_pins.json`).
 
 constexpr const char kA[] = "https://a.example/api/relay";
 constexpr const char kB[] = "https://b.example/api/relay";
+constexpr const char kC[] = "https://c.example/api/relay";
 constexpr const char kPeerA[] = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
 constexpr const char kPeerB[] = "QmeKYz9h9AozszFqAkRzwxx4xGheEMYRVrLHuh7EMG7Bie";
 constexpr const char kPeerC[] = "QmbSD2vbEJTdL9PW5w5mr3pak9EYyoiYfiqCPJJ6AxJBig";
@@ -95,6 +99,7 @@ protected:
       }
       return RelayIdentity{.peer_id = it->second};
     });
+    pins_->SetFirstUse([this](const std::string& origin) { return first_use_.contains(origin); });
     pins_->SetOnChanged([this](const std::string& origin) { changed_.push_back(origin); });
     pins_->SetOnNotRegistered([this](const std::string& origin) { lost_.push_back(origin); });
   }
@@ -102,6 +107,7 @@ protected:
   std::filesystem::path dir_;
   int64_t now_ms_ = 1'761'235'200'000;
   std::map<std::string, std::string> presents_;
+  std::set<std::string> first_use_;
   std::vector<std::string> fetched_;
   std::vector<bool> public_only_;
   std::vector<std::string> changed_;
@@ -109,180 +115,192 @@ protected:
   std::shared_ptr<RelayPins> pins_;
 };
 
-TEST_F(RelayPinsTest, TheFirstFetchPinsBeforeAnythingIsSigned) {
-  presents_[kA] = kPeerA;
+TEST_F(RelayPinsTest, AnExpectedRelayIsSignedForTheAddressesPeerIdWithoutAskingIt) {
+  ASSERT_TRUE(pins_->Expect(kA, kPeerA));
   auto audience = pins_->AudienceFor(kA);
   EXPECT_EQ(audience->PeerId().valueOr(""), kPeerA);
-  EXPECT_EQ(fetched_, std::vector<std::string>{kA});
+  EXPECT_TRUE(fetched_.empty()) << "the address names it: nothing is learned from the relay";
   EXPECT_EQ(changed_, std::vector<std::string>{kA});
-  EXPECT_EQ(audience->PeerId().valueOr(""), kPeerA);
-  EXPECT_EQ(fetched_.size(), 1u) << "pinned: not asked again";
   EXPECT_EQ(pins_->AudienceFor("HTTPS://A.example:443/api/relay/"), audience) << "one audience per relay";
 
-  Open(); // restarted: the pin is profile data
+  Open(); // restarted: the expectation is profile data
   EXPECT_EQ(pins_->PinnedPeerId(kA).value_or(""), kPeerA);
   EXPECT_EQ(pins_->AudienceFor(kA)->PeerId().valueOr(""), kPeerA);
-  EXPECT_EQ(fetched_.size(), 1u);
+  EXPECT_TRUE(fetched_.empty());
+  EXPECT_FALSE(pins_->Expect(kA, "not-a-peer-id")) << "only a PeerId is expected";
 }
 
-// A relay not ours (a QR locator's) is asked for its identity as its client asks it: https to a public address only.
-TEST_F(RelayPinsTest, ARelayNotOursIsAskedOverAPublicAddressOnlyAndNeverPinned) {
+// The review's attack (MR008 problem): without an expectation an origin's own answer is never taken (no first come).
+TEST_F(RelayPinsTest, AnOriginNoAddressNamesIsNeverLearnedFromItsAnswer) {
   presents_[kA] = kPeerA;
-  presents_[kB] = kPeerB;
-  auto ours = pins_->AudienceFor(kA);
-  auto theirs = pins_->ForeignAudienceFor(kB, true);
-  EXPECT_EQ(ours->PeerId().valueOr(""), kPeerA);
-  EXPECT_EQ(theirs->PeerId().valueOr(""), kPeerB);
-  EXPECT_EQ(fetched_, (std::vector<std::string>{kA, kB}));
-  EXPECT_EQ(public_only_, (std::vector<bool>{false, true}));
-  EXPECT_FALSE(pins_->PinFor(kB)) << "what a relay not ours presents is never pinned";
+  auto refused = pins_->AudienceFor(kA)->PeerId();
+  ASSERT_FALSE(refused) << "nothing is signed for a relay whose address names no PeerId";
+  EXPECT_EQ(static_cast<Err::Network>(refused.error().code), Err::Network::RelayIdentityUnavailable);
+  EXPECT_FALSE(pins_->CheckIdentities({kA}));
+  EXPECT_TRUE(fetched_.empty()) << "not even asked";
+  EXPECT_FALSE(pins_->PinFor(kA));
+}
+
+TEST_F(RelayPinsTest, AnAnswerNamingAnotherPeerIdLeavesTheRelayUnusedAndIsNeverAccepted) {
+  ASSERT_TRUE(pins_->Expect(kA, kPeerA));
+  presents_[kA] = kPeerB; // the relay rotated its key, or another server sits at the origin
+  changed_.clear();
+  EXPECT_TRUE(pins_->CheckIdentities({kA}));
+  EXPECT_TRUE(pins_->IdentityMismatch(kA));
   EXPECT_EQ(changed_, std::vector<std::string>{kA});
-  EXPECT_EQ(theirs->PeerId().valueOr(""), kPeerB);
-  EXPECT_EQ(fetched_.size(), 2u) << "kept in memory for its sends";
+  auto refused = pins_->AudienceFor(kA)->PeerId();
+  ASSERT_FALSE(refused) << "not used";
+  EXPECT_EQ(static_cast<Err::Auth>(refused.error().code), Err::Auth::RelayIdentityMismatch);
+  EXPECT_FALSE(pins_->PinnedPeerId(kA)) << "left off our card meanwhile";
+  EXPECT_EQ(pins_->PinFor(kA)->peer_id, kPeerA) << "the address's PeerId stays: the answer is never taken";
+  EXPECT_TRUE(pins_->Expect(kA, kPeerA)) << "the same address again changes nothing";
+  EXPECT_TRUE(pins_->IdentityMismatch(kA));
 
-  presents_[kB] = kPeerC;
-  theirs->Refused("wrong_audience");
-  EXPECT_EQ(theirs->PeerId().valueOr(""), kPeerC) << "a wrong_audience asks again";
-  theirs->Refused("not_registered");
-  EXPECT_TRUE(lost_.empty()) << "our registration at a relay not ours is not ours to heal";
-}
-
-// S1: a QR code's relay that presents our relay's PeerId before ours is pinned takes nothing from ours.
-TEST_F(RelayPinsTest, ALocatorsRelayClaimingOurPeerIdNeverBlocksOurRelay) {
-  presents_[kB] = kPeerA; // the invite's relay claims A's identity
-  presents_[kA] = kPeerA;
-  ASSERT_TRUE(pins_->ForeignAudienceFor(kB, true)->PeerId()) << "nothing of ours holds kPeerA yet";
-  EXPECT_FALSE(pins_->PinFor(kB));
-  EXPECT_EQ(pins_->CheckCardRelay(kA, kPeerA), CardRelayCheck::Usable) << "contacts on the real relay stay usable";
-  EXPECT_EQ(pins_->CheckForAdd(kA).result, AddIdentityCheck::Result::Ok) << "Add of the real relay goes through";
+  Open(); // the state survives a restart
+  EXPECT_TRUE(pins_->IdentityMismatch(kA));
+  presents_[kA] = kPeerA; // it answers to its address again (its operator undid the change)
+  EXPECT_TRUE(pins_->CheckIdentities({kA}));
+  EXPECT_FALSE(pins_->IdentityMismatch(kA));
   EXPECT_EQ(pins_->AudienceFor(kA)->PeerId().valueOr(""), kPeerA);
 
-  auto squatter = pins_->ForeignAudienceFor(kB, true)->PeerId();
-  ASSERT_FALSE(squatter) << "once ours holds it, the squatter gets no call signed for it";
-  EXPECT_EQ(static_cast<Err::Auth>(squatter.error().code), Err::Auth::RelayIdentityTaken);
-
-  EXPECT_EQ(pins_->ForeignAudienceFor(kA, true)->PeerId().valueOr(""), kPeerA)
-      << "a locator naming a relay of ours signs for its pin";
+  presents_[kA] = kPeerB;
+  pins_->AudienceFor(kA)->Refused("wrong_audience");
+  ASSERT_TRUE(pins_->IdentityMismatch(kA)) << "a wrong_audience asks, and finds it so too";
+  ASSERT_TRUE(pins_->Expect(kA, kPeerC)) << "a new key is a new address: the person adds its new link";
+  EXPECT_FALSE(pins_->IdentityMismatch(kA));
+  EXPECT_EQ(pins_->AudienceFor(kA)->PeerId().valueOr(""), kPeerC);
 }
 
-TEST_F(RelayPinsTest, AnAnswerThatDoesNotCheckOutPinsNothingAndIsAskedAgainAfterABackoff) {
+TEST_F(RelayPinsTest, EachRelayIsCheckedOncePerRunAndAgainWhileItDidNotAnswer) {
+  ASSERT_TRUE(pins_->Expect(kA, kPeerA));
+  ASSERT_TRUE(pins_->Expect(kB, kPeerB));
+  presents_[kA] = kPeerA;
+  EXPECT_FALSE(pins_->CheckIdentities({kA, kB})) << "both as expected or unanswered: nothing changed";
+  EXPECT_EQ(fetched_, (std::vector<std::string>{kA, kB}));
+  EXPECT_FALSE(pins_->CheckIdentities({kA, kB}));
+  EXPECT_EQ(fetched_, (std::vector<std::string>{kA, kB, kB})) << "A checked already; B asked again";
+  EXPECT_EQ(pins_->AudienceFor(kB)->PeerId().valueOr(""), kPeerB) << "unchecked is still signed for its address";
+}
+
+TEST_F(RelayPinsTest, WrongAudienceForTheExpectedPeerIdIsAMisbehavingRelayAndAskedAtMostEveryFiveMinutes) {
+  ASSERT_TRUE(pins_->Expect(kA, kPeerA));
+  presents_[kA] = kPeerA;
+  auto audience = pins_->AudienceFor(kA);
+  audience->Refused("wrong_audience");
+  audience->Refused("wrong_audience");
+  EXPECT_EQ(fetched_.size(), 1u) << "one identity fetch for the two refusals";
+  EXPECT_FALSE(pins_->IdentityMismatch(kA));
+  EXPECT_EQ(audience->PeerId().valueOr(""), kPeerA);
+  now_ms_ += RelayPins::kWrongAudienceRefetchMs;
+  audience->Refused("wrong_audience");
+  EXPECT_EQ(fetched_.size(), 2u);
+}
+
+// MR008-UNIQ: a link (or a card) naming the PeerId of a relay we know at another address would front it: refused.
+TEST_F(RelayPinsTest, APeerIdExpectedAtAnotherOriginIsRefused) {
+  ASSERT_TRUE(pins_->Expect(kA, kPeerA)); // the org's relay, from the build
+  auto taken = pins_->Expect(kB, kPeerA);
+  ASSERT_FALSE(taken);
+  EXPECT_EQ(static_cast<Err::Auth>(taken.error().code), Err::Auth::RelayIdentityTaken);
+  EXPECT_FALSE(pins_->PinFor(kB));
+  presents_[kB] = kPeerA; // a hostile relay at B that passes the org's answers through
+  const AddIdentityCheck add = pins_->CheckForAdd(kB, kPeerA);
+  EXPECT_EQ(add.result, AddIdentityCheck::Result::Taken);
+  EXPECT_EQ(add.holder, "https://a.example/api/relay");
+  EXPECT_TRUE(fetched_.empty()) << "refused before it is asked";
+  EXPECT_EQ(pins_->AudienceFor(kA)->PeerId().valueOr(""), kPeerA) << "the org keeps its address";
+
+  pins_->Drop(kA); // Remove… of a relay of ours: its PeerId is free again
+  EXPECT_EQ(pins_->CheckForAdd(kB, kPeerA).result, AddIdentityCheck::Result::Ok);
+}
+
+// The review's attack, end to end: the org's PeerId ships with the build, so a relay that claims it first gains
+// nothing, and the org's relay is never refused.
+TEST_F(RelayPinsTest, AHostileRelayClaimingTheOrgsPeerIdFirstNeverBlocksTheOrg) {
+  presents_[kB] = kPeerA; // the hostile relay claims the org's identity and is added (or scanned) first
+  presents_[kA] = kPeerA;
+  EXPECT_EQ(pins_->CheckForAdd(kB, kPeerB).result, AddIdentityCheck::Result::Mismatch)
+      << "its link names its own PeerId, its answer another: not added";
+  ASSERT_TRUE(pins_->Expect(kA, kPeerA)) << "the org's address is the build's: nothing stands against it";
+  EXPECT_EQ(pins_->CheckForAdd(kB, kPeerA).result, AddIdentityCheck::Result::Taken);
+  EXPECT_FALSE(pins_->CheckIdentities({kA}));
+  EXPECT_EQ(pins_->AudienceFor(kA)->PeerId().valueOr(""), kPeerA);
+}
+
+TEST_F(RelayPinsTest, AddChecksTheAnswerAgainstTheLink) {
+  presents_[kB] = kPeerC;
+  const AddIdentityCheck mismatch = pins_->CheckForAdd(kB, kPeerB);
+  EXPECT_EQ(mismatch.result, AddIdentityCheck::Result::Mismatch);
+  EXPECT_FALSE(pins_->PinFor(kB)) << "nothing expected from an Add that did not go through";
+  presents_[kB] = kPeerB;
+  const AddIdentityCheck first = pins_->CheckForAdd(kB, kPeerB);
+  EXPECT_EQ(first.result, AddIdentityCheck::Result::Ok);
+  EXPECT_TRUE(first.pinned_now);
+  EXPECT_EQ(first.peer_id, kPeerB);
+  EXPECT_FALSE(pins_->CheckForAdd(kB, kPeerB).pinned_now) << "expected already";
+  EXPECT_EQ(pins_->CheckForAdd(kB, kPeerC).result, AddIdentityCheck::Result::Mismatch)
+      << "an origin expected to answer to another PeerId";
+  presents_.erase(kA);
+  EXPECT_EQ(pins_->CheckForAdd(kA, kPeerA).result, AddIdentityCheck::Result::Unavailable)
+      << "a server that does not say which relay it is";
+}
+
+// MR008 item 4: a developer build's bare origin (and the org's in a build that ships no PeerId) on first use only.
+TEST_F(RelayPinsTest, FirstUseOnlyWhereItIsAllowed) {
+  presents_[kA] = kPeerA;
+  presents_[kB] = kPeerB;
+  first_use_.insert(kA);
+  EXPECT_EQ(pins_->AudienceFor(kA)->PeerId().valueOr(""), kPeerA) << "pinned on its first answer";
+  EXPECT_EQ(pins_->PinFor(kA)->peer_id, kPeerA);
+  EXPECT_FALSE(pins_->AudienceFor(kB)->PeerId()) << "first use is not allowed for B";
+  EXPECT_EQ(fetched_, std::vector<std::string>{kA});
+
+  const AddIdentityCheck bare = pins_->CheckForAdd(kB, "");
+  EXPECT_EQ(bare.result, AddIdentityCheck::Result::Ok) << "Add of a bare origin (developer builds only)";
+  EXPECT_EQ(bare.peer_id, kPeerB);
+  EXPECT_TRUE(bare.pinned_now);
+  presents_[kC] = kPeerA;
+  EXPECT_EQ(pins_->CheckForAdd(kC, "").result, AddIdentityCheck::Result::Taken);
+}
+
+TEST_F(RelayPinsTest, AFirstUseFetchThatFailsPinsNothingAndIsAskedAgainAfterAShortBackoff) {
+  first_use_.insert(kA);
   auto audience = pins_->AudienceFor(kA);
   ASSERT_FALSE(audience->PeerId());
   EXPECT_FALSE(pins_->PinFor(kA));
   EXPECT_FALSE(audience->PeerId()) << "within the backoff: nothing signed, nothing asked";
   EXPECT_EQ(fetched_.size(), 1u);
-  presents_[kA] = kPeerA;
-  now_ms_ += RelayPins::kFirstRetryMs;
-  EXPECT_EQ(audience->PeerId().valueOr(""), kPeerA);
-  EXPECT_EQ(fetched_.size(), 2u);
-}
-
-// S6: our own relays are not left unsigned for long once the network is back: a short cap, and EnsurePinned (the
-// network back, the app in front, a list change) asks whatever the backoff.
-TEST_F(RelayPinsTest, OurRelaysBackoffIsShortAndEnsurePinnedAsksWhateverIt) {
-  auto audience = pins_->AudienceFor(kA);
   for (int i = 0; i < 6; ++i) {
-    ASSERT_FALSE(audience->PeerId());
     now_ms_ += RelayPins::kMaxOursRetryMs;
+    ASSERT_FALSE(audience->PeerId());
   }
-  EXPECT_EQ(fetched_.size(), 6u) << "asked again at least every kMaxOursRetryMs";
-  ASSERT_FALSE(audience->PeerId());
+  EXPECT_EQ(fetched_.size(), 7u) << "asked again at least every kMaxOursRetryMs";
   presents_[kA] = kPeerA;
   EXPECT_FALSE(audience->PeerId()) << "within the backoff";
-  EXPECT_TRUE(pins_->EnsurePinned({kA})) << "asked now, whatever the backoff";
+  EXPECT_TRUE(pins_->CheckIdentities({kA})) << "asked now, whatever the backoff";
   EXPECT_EQ(audience->PeerId().valueOr(""), kPeerA);
-}
-
-TEST_F(RelayPinsTest, AnotherPeerIdAfterWrongAudienceIsAnIdentityChangeUntilAccepted) {
-  presents_[kA] = kPeerA;
-  auto audience = pins_->AudienceFor(kA);
-  ASSERT_TRUE(audience->PeerId());
-  presents_[kA] = kPeerB; // the relay rotated its key
-  changed_.clear();
-  audience->Refused("wrong_audience");
-  EXPECT_TRUE(pins_->IdentityChanged(kA));
-  EXPECT_EQ(changed_, std::vector<std::string>{kA});
-  auto refused = audience->PeerId();
-  ASSERT_FALSE(refused) << "no signed call until the person accepts";
-  EXPECT_EQ(static_cast<Err::Auth>(refused.error().code), Err::Auth::RelayIdentityChanged);
-  EXPECT_FALSE(pins_->PinnedPeerId(kA)) << "left off our card meanwhile";
-  EXPECT_EQ(pins_->PinFor(kA)->peer_id, kPeerA) << "the pin keeps the old PeerId";
-
-  Open(); // the state survives a restart
-  EXPECT_TRUE(pins_->IdentityChanged(kA));
-  ASSERT_TRUE(pins_->Accept(kA));
-  EXPECT_EQ(pins_->AudienceFor(kA)->PeerId().valueOr(""), kPeerB);
-  EXPECT_FALSE(pins_->IdentityChanged(kA));
-}
-
-TEST_F(RelayPinsTest, WrongAudienceForThePinnedPeerIdIsAMisbehavingRelayAndAskedAtMostEveryFiveMinutes) {
-  presents_[kA] = kPeerA;
-  auto audience = pins_->AudienceFor(kA);
-  ASSERT_TRUE(audience->PeerId());
-  audience->Refused("wrong_audience");
-  audience->Refused("wrong_audience");
-  EXPECT_EQ(fetched_.size(), 2u) << "one identity fetch for the two refusals";
-  EXPECT_FALSE(pins_->IdentityChanged(kA));
-  EXPECT_EQ(audience->PeerId().valueOr(""), kPeerA);
-  now_ms_ += RelayPins::kWrongAudienceRefetchMs;
-  audience->Refused("wrong_audience");
-  EXPECT_EQ(fetched_.size(), 3u);
-}
-
-TEST_F(RelayPinsTest, APeerIdHeldByAnotherOriginIsRefusedAndNeverPinned) {
-  presents_[kA] = kPeerA;
-  presents_[kB] = kPeerA; // B claims A's identity
-  ASSERT_TRUE(pins_->AudienceFor(kA)->PeerId());
-  auto taken = pins_->AudienceFor(kB)->PeerId();
-  ASSERT_FALSE(taken);
-  EXPECT_EQ(static_cast<Err::Auth>(taken.error().code), Err::Auth::RelayIdentityTaken);
-  EXPECT_FALSE(pins_->PinFor(kB));
-  const AddIdentityCheck add = pins_->CheckForAdd(kB);
-  EXPECT_EQ(add.result, AddIdentityCheck::Result::Taken);
-  EXPECT_EQ(add.holder, "https://a.example/api/relay");
-  EXPECT_FALSE(pins_->Repin(kB, kPeerA)) << "not even on confirm";
-
-  pins_->Drop(kA); // Remove… on A: its pin goes, and B's claim no longer collides
-  EXPECT_EQ(pins_->CheckForAdd(kB).result, AddIdentityCheck::Result::Ok);
-}
-
-TEST_F(RelayPinsTest, AddAsksAgainForARelaySeenWithAnotherIdentity) {
-  presents_[kA] = kPeerA;
-  ASSERT_TRUE(pins_->AudienceFor(kA)->PeerId()); // the org's origin, or a relay of ours removed since
-  presents_[kA] = kPeerB;
-  const AddIdentityCheck add = pins_->CheckForAdd(kA);
-  EXPECT_EQ(add.result, AddIdentityCheck::Result::ChangedSinceSeen);
-  EXPECT_EQ(add.peer_id, kPeerB);
-  EXPECT_EQ(pins_->PinnedPeerId(kA).value_or(""), kPeerA) << "nothing re-pinned without the person";
-  ASSERT_TRUE(pins_->Repin(kA, add.peer_id));
-  EXPECT_EQ(pins_->PinnedPeerId(kA).value_or(""), kPeerB);
-  presents_.erase(kB);
-  EXPECT_EQ(pins_->CheckForAdd(kB).result, AddIdentityCheck::Result::Unavailable)
-      << "a server that does not identify itself as a relay";
 }
 
 TEST_F(RelayPinsTest, AContactsCardWritesNoPinButIsCheckedAgainstThem) {
-  presents_[kA] = kPeerA;
-  ASSERT_TRUE(pins_->AudienceFor(kA)->PeerId());
+  ASSERT_TRUE(pins_->Expect(kA, kPeerA));
   EXPECT_EQ(pins_->CheckCardRelay(kA, kPeerA), CardRelayCheck::Usable);
-  EXPECT_EQ(pins_->CheckCardRelay(kA, kPeerB), CardRelayCheck::Mismatch) << "our pin for that origin is another";
-  EXPECT_EQ(pins_->CheckCardRelay(kB, kPeerA), CardRelayCheck::Mismatch) << "that PeerId is pinned to another origin";
+  EXPECT_EQ(pins_->CheckCardRelay(kA, kPeerB), CardRelayCheck::Mismatch) << "we expect another PeerId there";
+  EXPECT_EQ(pins_->CheckCardRelay(kB, kPeerA), CardRelayCheck::Mismatch) << "that PeerId is expected at another origin";
   EXPECT_EQ(pins_->CheckCardRelay(kB, kPeerC), CardRelayCheck::Usable) << "no pin for either: the card's word";
   EXPECT_FALSE(pins_->PinFor(kB)) << "checking writes nothing";
 }
 
 TEST_F(RelayPinsTest, OurOwnCardOnALinkedDeviceWritesPins) {
-  presents_[kA] = kPeerA;
-  ASSERT_TRUE(pins_->AudienceFor(kA)->PeerId());
+  ASSERT_TRUE(pins_->Expect(kA, kPeerA));
   // Our own account says B holds kPeerA now (the relay moved) and A holds kPeerC.
   pins_->TakeOwnCard({{.origin = kB, .peer_id = kPeerA}, {.origin = kA, .peer_id = kPeerC}});
   EXPECT_EQ(pins_->PinnedPeerId(kB).value_or(""), kPeerA);
   EXPECT_EQ(pins_->PinnedPeerId(kA).value_or(""), kPeerC);
-  EXPECT_TRUE(fetched_.size() == 1u) << "written from the card, not fetched";
+  EXPECT_TRUE(fetched_.empty()) << "written from the card, not fetched";
 }
 
 TEST_F(RelayPinsTest, NotRegisteredGoesToTheOwnerAndWrongAudienceDoesNot) {
-  presents_[kA] = kPeerA;
+  ASSERT_TRUE(pins_->Expect(kA, kPeerA));
   auto audience = pins_->AudienceFor(kA);
   audience->Refused("not_registered");
   audience->Refused("registration_expired");
@@ -291,14 +309,12 @@ TEST_F(RelayPinsTest, NotRegisteredGoesToTheOwnerAndWrongAudienceDoesNot) {
 }
 
 TEST_F(RelayPinsTest, OurCardsRelaysArePinnedOnesInForceInOrder) {
-  presents_[kA] = kPeerA;
-  presents_[kB] = kPeerB;
-  ASSERT_TRUE(pins_->AudienceFor(kA)->PeerId());
+  ASSERT_TRUE(pins_->Expect(kA, kPeerA));
   const auto relays = pins_->PinnedRelays({kB, kA});
-  ASSERT_EQ(relays.size(), 1u) << "B is not pinned yet: left off";
+  ASSERT_EQ(relays.size(), 1u) << "B names no PeerId: left off";
   EXPECT_EQ(relays[0].origin, kA);
   EXPECT_EQ(relays[0].peer_id, kPeerA);
-  EXPECT_TRUE(pins_->EnsurePinned({kB, kA}));
+  ASSERT_TRUE(pins_->Expect(kB, kPeerB));
   EXPECT_EQ(pins_->PinnedRelays({kB, kA}).size(), 2u);
 }
 
@@ -306,45 +322,39 @@ TEST(RelayPinStoreTest, TheBoundKeepsOursAndDropsTheOldestOther) {
   RelayPinStore store("");
   store.SetKeep([](const std::string& origin) { return origin.find("ours") != std::string::npos; });
   int64_t at = 1;
-  ASSERT_EQ(store.Present("https://ours.example/api/relay", "QmOurs", at++).outcome, PinOutcome::Pinned);
+  ASSERT_EQ(store.Expect("https://ours.example/api/relay", "QmOurs", at++).outcome, PinOutcome::Pinned);
   for (size_t i = 1; i < RelayPinStore::kMaxPins; ++i) {
-    store.Present("https://seen" + std::to_string(i) + ".example/api/relay", "QmSeen" + std::to_string(i), at++);
+    store.Expect("https://seen" + std::to_string(i) + ".example/api/relay", "QmSeen" + std::to_string(i), at++);
   }
   ASSERT_EQ(store.All().size(), RelayPinStore::kMaxPins);
-  store.Present("https://new.example/api/relay", "QmNew", at++);
+  store.Expect("https://new.example/api/relay", "QmNew", at++);
   EXPECT_EQ(store.All().size(), RelayPinStore::kMaxPins);
   EXPECT_TRUE(store.PinFor("https://ours.example/api/relay")) << "ours is kept, though it is the oldest";
   EXPECT_FALSE(store.PinFor("https://seen1.example/api/relay")) << "the oldest other goes";
   EXPECT_TRUE(store.PinFor("https://new.example/api/relay"));
+  EXPECT_EQ(store.Present("https://other.example/api/relay", "QmOther", at, false).outcome, PinOutcome::NotExpected)
+      << "an answer pins nothing where first use is not allowed";
 }
 
-// S5: a store full of kept pins pins nothing, and says so: Add reads it as no identity, never as pinned.
+// A store full of kept pins pins nothing, and says so: Add reads it as no identity, never as expected.
 TEST_F(RelayPinsTest, PinsFullOfKeptRelaysPinNothingAndAddIsRefused) {
   pins_->SetKeep([](const std::string&) { return true; });
   for (size_t i = 0; i < RelayPinStore::kMaxPins; ++i) {
-    const std::string origin = "https://kept" + std::to_string(i) + ".example/api/relay";
-    presents_[origin] = "QmKept" + std::to_string(i);
-    ASSERT_TRUE(pins_->AudienceFor(origin)->PeerId());
+    const ByteVector key(kMlDsa65PublicKeyBytes, static_cast<uint8_t>(0x80 + i));
+    ASSERT_TRUE(pins_->Expect("https://kept" + std::to_string(i) + ".example/api/relay",
+                              pp::PeerIdFromMlDsaPublicKey(key).value()));
   }
   presents_[kA] = kPeerA;
-  EXPECT_EQ(pins_->CheckForAdd(kA).result, AddIdentityCheck::Result::Unavailable);
+  EXPECT_EQ(pins_->CheckForAdd(kA, kPeerA).result, AddIdentityCheck::Result::Unavailable);
   EXPECT_FALSE(pins_->PinFor(kA));
   auto audience = pins_->AudienceFor(kA)->PeerId();
   ASSERT_FALSE(audience) << "nothing signed for a relay not pinned";
   EXPECT_EQ(static_cast<Err::Network>(audience.error().code), Err::Network::RelayIdentityUnavailable);
-  EXPECT_FALSE(pins_->Repin(kA, kPeerA));
 }
 
-TEST_F(RelayPinsTest, AddSaysWhetherItPinnedTheRelay) {
-  presents_[kA] = kPeerA;
-  const AddIdentityCheck first = pins_->CheckForAdd(kA);
-  EXPECT_EQ(first.result, AddIdentityCheck::Result::Ok);
-  EXPECT_TRUE(first.pinned_now);
-  EXPECT_FALSE(pins_->CheckForAdd(kA).pinned_now) << "pinned already";
-}
-
-TEST(RelayPinStoreTest, ANewerSchemaOrNotJsonIsRefusedAndReadAsEmpty) {
-  EXPECT_FALSE(RelayPinsFromJson(R"({"schema_version":2,"pins":[]})"));
+TEST(RelayPinStoreTest, AnotherSchemaOrNotJsonIsRefusedAndReadAsEmpty) {
+  EXPECT_FALSE(RelayPinsFromJson(R"({"schema_version":1,"pins":[]})")) << "MR007's first-come pins: not ours to read";
+  EXPECT_FALSE(RelayPinsFromJson(R"({"schema_version":3,"pins":[]})"));
   EXPECT_FALSE(RelayPinsFromJson("not json"));
   const std::vector<RelayPin> pins{{.origin = "https://a.example/api/relay",
                                     .peer_id = kPeerA,
@@ -359,8 +369,8 @@ TEST(RelayPinStoreTest, ANewerSchemaOrNotJsonIsRefusedAndReadAsEmpty) {
   std::ofstream(dir / "relay_pins.json") << newer;
   RelayPinStore store(dir.string());
   store.Load();
-  EXPECT_TRUE(store.All().empty()) << "pinned again on first use (TOFU once more)";
-  ASSERT_EQ(store.Present("https://a.example/api/relay", kPeerA, 1).outcome, PinOutcome::Pinned);
+  EXPECT_TRUE(store.All().empty()) << "expected again from their addresses";
+  ASSERT_EQ(store.Expect("https://a.example/api/relay", kPeerA, 1).outcome, PinOutcome::Pinned);
   EXPECT_TRUE(store.PinFor("https://a.example/api/relay")) << "held in memory";
   std::ifstream in(dir / "relay_pins.json");
   EXPECT_EQ(std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>()), newer)
@@ -369,7 +379,7 @@ TEST(RelayPinStoreTest, ANewerSchemaOrNotJsonIsRefusedAndReadAsEmpty) {
 }
 
 TEST(RelayPinStoreTest, OnDiskTheRulesHoldToo) {
-  const auto pins = RelayPinsFromJson(R"({"schema_version":1,"pins":[
+  const auto pins = RelayPinsFromJson(R"({"schema_version":2,"pins":[
       {"origin":"https://a.example/api/relay","peer_id":"QmA","pinned_at_ms":1},
       {"origin":"https://A.example:443/api/relay/","peer_id":"QmB","pinned_at_ms":2},
       {"origin":"https://c.example/api/relay","peer_id":"QmA","pinned_at_ms":3}]})");

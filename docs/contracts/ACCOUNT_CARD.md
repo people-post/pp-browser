@@ -90,9 +90,9 @@ A key card plus what the account says about itself, signed as a whole.
   `IsMlDsaPeerIdForm`); no two the same relay by origin (scheme and host compared without
   case, `:443` as no port, an empty path as `/`) or by `peer_id`. The card cannot show that a relay's key derives its
   PeerId (it carries no relay key): the relay itself refuses a wrong one (`wrong_audience`). The list holds the relays
-  the app registers on whose pin is in force (`OwnCards::SetRelays` from `RelayPins::PinnedRelays`: a relay not pinned
-  yet, or whose identity changed, is left off and the card re-issued once it is): My relays in their order, the
-  preferred first, each with its pinned PeerId. A card from anyone else never writes a pin
+  the app registers on whose pin is in force (`OwnCards::SetRelays` from `RelayPins::PinnedRelays`: a relay whose
+  address names no PeerId, or whose identity answer does not match it, is left off and the card re-issued once it is in
+  force): My relays in their order, the preferred first, each with the PeerId its address names (multi-relay MR008). A card from anyone else never writes a pin
   ([SERVICE_ENDPOINTS § Pins](SERVICE_ENDPOINTS.md#pins)); a linked device takes our own newer card's entries as
   pins. My relays is the profile's list, seeded from the
   deployment's relay and `relay.extra_base_urls` — [CONFIGURATION](../ops/CONFIGURATION.md),
@@ -171,25 +171,29 @@ What fits in a QR code: who to look for and where.
 ```
 pp-browser-contact-v1:<base64url-unpadded(JSON)>
 { "account_id": "account:…", "nickname": "alice", "devices": ["Qm…", "Qm…"],
-  "relay": "https://www.brief.global/api/relay" }
+  "relay": { "origin": "https://www.brief.global/api/relay", "peer_id": "Qm…" } }
 ```
 
 Unsigned: the Account ID is what the person showed or sent. The receiver fetches the account's card
 from a listed device ([card exchange](#card-exchange-over-amp)) or, when one is configured, from the
 relay directory, and accepts it only for that `account_id`. Listed devices are hints; the card decides.
 
-- **`relay`** (optional; multi-relay R4, [MR004](../../projects/multi-relay/DECISIONS.md#mr004--a-relay-list-is-small-and-bounded)):
-  the account's preferred relay origin — the relay the app registers on, about 40 bytes — and nothing else of the
-  card's list. Within the card's bounds: an absolute `https://` URL of at most 128 bytes with no query or fragment;
-  one outside them is left out when writing and dropped when reading (the locator still holds), so a lab's `http://`
-  relay is never on it, as it is never on the card. It is optional, not a new version: an app that does not know it
-  ignores it, and a locator without it reads as before.
-- A contact added from a locator keeps that origin (`contacts.json` `remote.locator_relay`) as its relay list until
-  its account's card is kept: a first message goes into that relay, and the contact page names it. From then on the
-  card's list is the contact's ([`ContactRelays`](../../capabilities/people/src/lib/people/ContactIdentity.h)).
-  A release build leaves out a `relay` outside the public-relay policy above (`IsPublicRelayOrigin`: on this device
-  or a private network): it is neither kept nor asked for the card (developer builds take it, for the lab). The
-  person is still added.
+- **`relay`** (optional; multi-relay R4, [MR004](../../projects/multi-relay/DECISIONS.md#mr004--a-relay-list-is-small-and-bounded),
+  [MR008](../../projects/multi-relay/DECISIONS.md#mr008--a-relay-address-carries-its-peerid-no-first-use-trust)):
+  the account's preferred relay's address — the relay the app registers on: its `origin` and the `peer_id` it answers
+  to, about 100 bytes — and nothing else of the card's list. The origin within the card's bounds (an absolute
+  `https://` URL of at most 128 bytes with no query or fragment) and the PeerId of a PeerId's form; one outside them,
+  or without its PeerId (an origin alone, as R4 wrote it before MR008), is left out when writing and dropped when
+  reading (the locator still holds), so a lab's `http://` relay is never on it, as it is never on the card. It is
+  optional, not a new version: an app that does not know it ignores it, and a locator without it reads as before.
+- A contact added from a locator keeps that address (`contacts.json` `remote.locator_relay`, `{origin, peer_id}`) as
+  its relay list until its account's card is kept: a first message goes into that relay, signed for the locator's
+  PeerId as a card entry's ([SERVICE_ENDPOINTS § Sending by the list](SERVICE_ENDPOINTS.md#sending-by-the-list)), and
+  the contact page names it. From then on the card's list is the contact's
+  ([`ContactRelays`](../../capabilities/people/src/lib/people/ContactIdentity.h)). A release build leaves out a
+  `relay` outside the public-relay policy above (`IsPublicRelayOrigin`: on this device or a private network): it is
+  neither kept nor asked for the card (developer builds take it, for the lab). The person is still added. The PeerId
+  is only the inviter's word, as a card's is: it names whom the first send is for, never a pin of ours.
 
 - **Sharing:** the invite text (*Me → Profile → Invite*, and the share at the end of onboarding) ends
   with the locator line, so pasting the whole message works.
@@ -220,7 +224,7 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
 | Link bundle | the linking device's account card | linking a device: the new one signs itself in (M021) |
 | Sibling notice | the account card, on the control lane to our own mailbox (M022) | when a device's list changes (it linked in, a sibling's newer list, the name), and once a start while it has siblings: they take it |
 | Contact card message | someone's account card (or key card, when that is all the sharer has), plus the sharer's name for them | "Share" on a contact; *Add to contacts* on the card |
-| Locator | account id, nickname, devices, the preferred relay's origin (no card) | QR code, invite link, onboarding share |
+| Locator | account id, nickname, devices, the preferred relay's address `{origin, peer_id}` (no card) | QR code, invite link, onboarding share |
 | Card exchange over Amp | an account card or key card | on request, device to device |
 | Roster add (`member_joined`) | members' cards | from the group owner, so members key pairwise ([Groups](#groups)) |
 

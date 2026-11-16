@@ -33,9 +33,15 @@ struct RelayRegistrationRecord {
   bool operator==(const RelayRegistrationRecord&) const = default;
 };
 
-/** One relay of ours: its base URL and its last registration. */
+/**
+ * One relay of ours: its address — its base URL and the PeerId it must answer to (multi-relay MR008: from the relay
+ * link it was added by, the build's or the config's for the org's relay, our own card on a linked device; empty only
+ * for a bare origin, which a developer build checks on first use, or the org's relay in a build that ships none) —
+ * and its last registration.
+ */
 struct OurRelayEntry {
   std::string origin;
+  std::string peer_id;
   RelayRegistrationRecord registration;
 
   bool operator==(const OurRelayEntry&) const = default;
@@ -70,8 +76,8 @@ const char* RelayListProblemCode(RelayListProblem problem);
 /** The problem a code names (None for any other text). */
 RelayListProblem RelayListProblemFromCode(const std::string& code);
 
-/** `list` with `base_url` added last (a relay of ours already, or a fifth: refused). */
-Roe<OurRelaysList> WithRelayAdded(const OurRelaysList& list, const std::string& base_url);
+/** `list` with `base_url` (named `peer_id`) added last (a relay of ours already, or a fifth: refused). */
+Roe<OurRelaysList> WithRelayAdded(const OurRelaysList& list, const std::string& base_url, const std::string& peer_id);
 /** `list` without `origin`: never the preferred one (mark another first), never the last. */
 Roe<OurRelaysList> WithRelayRemoved(const OurRelaysList& list, const std::string& origin);
 /** `list` with `origin` first, the others in their order. */
@@ -87,11 +93,14 @@ public:
   explicit OurRelaysStore(std::string profile_data_dir);
 
   /**
-   * The kept list; with none kept (a new profile), or one not readable, `org_relay` then `extras`, saved. A newer
-   * app's file (a newer `schema_version`) is refused and never written: the seed is used in memory and changes are
-   * refused.
+   * The kept list; with none kept (a new profile), or one not readable, `org_relay` (named `org_peer_id`, the build's
+   * or the config's) then `extras` (config `relay.extra_base_urls`: relay links, MR008), saved. An extra whose link
+   * names no PeerId is seeded only when `bare_allowed` (a developer build: checked on first use); one whose fragment
+   * is no PeerId never. A newer app's file (a newer `schema_version`) is refused and never written: the seed is used
+   * in memory and changes are refused.
    */
-  OurRelaysList LoadOrSeed(const std::string& org_relay, const std::vector<std::string>& extras);
+  OurRelaysList LoadOrSeed(const std::string& org_relay, const std::string& org_peer_id,
+                           const std::vector<std::string>& extras, bool bare_allowed);
   OurRelaysList List() const;
   /**
    * Keeps `list` (bounded: BoundOurRelays); a relay listed before keeps its record unless `list` gives a newer one (by
