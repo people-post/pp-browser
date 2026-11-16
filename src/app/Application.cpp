@@ -749,8 +749,11 @@ void Application::StartGraceTimer() {
 }
 
 void Application::OnPinModeChanged(const bool is_default) {
-  // Hook for work that depends on the PIN mode (e.g. re-registering push tokens); nothing to do yet.
-  (void)is_default;
+  // The default PIN gets VoIP/CallKit calls, a custom one alerts (P020): bind the matching push devices.
+  (void)is_default; // read back from the saved preference by SyncPushDevices
+  if (chat_) {
+    chat_->SyncPushDevices();
+  }
 }
 
 void Application::StopGraceTimer() {

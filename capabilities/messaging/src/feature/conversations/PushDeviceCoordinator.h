@@ -2,6 +2,7 @@
 
 #include "common/Error.h"
 #include "common/PbrCompat.h"
+#include "lib/net/IPushDeviceClient.h"
 
 #include <string>
 
@@ -24,6 +25,17 @@ public:
   static Roe<void> Unregister(ConversationsHub& hub);
   /** A saved backend switch (applied on restart) removes the binding now; undoing it registers again. */
   static void OnBackendSwitchPending(ConversationsHub& hub, bool pending);
+
+  /**
+   * Binds `reg`, and beside it the iPhone's PushKit token as platform `ios_voip`, device id `<device_id>.voip`:
+   * bound when `voip_wanted` (default PIN), removed otherwise. No token (`voip_token` empty): no VoIP binding is
+   * touched. The first failure is returned; both are tried.
+   */
+  static Roe<void> RegisterWith(IPushDeviceClient& client, const PushDeviceRegistration& reg,
+                                const std::string& voip_token, bool voip_wanted);
+  /** Removes `reg` and, when there is a PushKit token, its VoIP binding. */
+  static Roe<void> UnregisterWith(IPushDeviceClient& client, const PushDeviceRegistration& reg,
+                                  const std::string& voip_token);
 };
 
 } // namespace pbr

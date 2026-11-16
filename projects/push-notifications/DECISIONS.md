@@ -165,7 +165,7 @@ Every ring raises the "Incoming call" notice (`CallPresenter`), however its invi
 
 ## P019 — iOS calls ring by a Time Sensitive alert again; PushKit and CallKit are removed
 
-**Status:** Accepted. Supersedes P016 and P017 on iOS; P015's tap matching and P018's lookup apply to every iOS build.  
+**Status:** Accepted. Supersedes P016 and P017 on iOS; P015's tap matching and P018's lookup apply to every iOS build. **Partly superseded by [P020](#p020--default-pin-calls-ring-by-voip-push-and-callkit-a-custom-pin-by-alert):** with the default PIN an iPhone rings by VoIP push and CallKit again; P019 stands for a custom PIN and for builds without CallKit.  
 **Decision:** the relay sends an iOS call as an alert push only (`apns-push-type: alert`, `aps.interruption-level: time-sensitive`, `aps.sound: default`, `loc-key` `CALL_INCOMING_TITLE` / `CALL_INCOMING_BODY`, top-level `type: call_wake`, `wake_hint` = the call id, `sent_at`; no sender). The app registers no PushKit token (no `ios_voip` binding), reports no CallKit call, and `ICallSystemUi::Available()` is false on iOS again. `PP_BROWSER_IOS_CALLKIT` and the `voip` background mode are gone; `audio` stays for call audio.
 - **Tap:** the app activates, asks for the PIN if locked (the PIN screen reads the call text), syncs, and the ring of the tapped call id rings in the app (answer with voice or video); an invite already dropped as expired (about 65 s) leaves the missed-call `call_summary`, which the tap's `wake_hint` finds and opens in the caller's chat (P018).
 - **Foreground:** the alert is not presented (`willPresentNotification`); the app syncs and rings itself.
@@ -175,3 +175,18 @@ Every ring raises the "Incoming call" notice (`CallPresenter`), however its invi
 **Rationale:** with the PIN lock the background has no keys, so a VoIP push cannot be turned into a ring for CallKit to answer, and the CallKit call answered on the lock screen never connected.  
 **Consequences:** no system incoming-call screen (no AirPods or CarPlay answer, no full-screen ring on the lock screen); the ring is the notification sound, a single alert tone that the silent switch silences and a Focus mode may mute unless it allows Time Sensitive; a call from a stranger posts its notification before anything is decrypted, so it shows although the app would later drop the call.  
 **Cross-link:** `IosApnsAppDelegate.mm`, `PendingNotificationTap`, `CallSystemUiBridge` (Android only now), `docs/architecture/CALLS.md`.
+
+## P020 — Default-PIN calls ring by VoIP push and CallKit; a custom PIN by alert
+
+**Date:** 2026-11-16  
+**Status:** Accepted. Partly supersedes P019 (which stands for a custom PIN and for builds without CallKit); returns P016's CallKit and P017's stale-push rule for the default PIN. P016's "linked by call id" is not returned.  
+**Decision:** an iPhone with the default PIN (`pin_is_default`, 123456: the vault opens silently, so a background-launched app can unlock and find the ring) rings incoming calls on CallKit, reached by VoIP push; with a custom PIN calls stay on P019's Time Sensitive alert.
+- **Binding:** with the default PIN the app binds a second device beside its `ios` one (`platform: ios_voip`, `device_id: <ios device id>.voip`, the PushKit token); with a custom PIN it unregisters `<id>.voip`. `PushDeviceCoordinator` aligns it at each push registration (messaging ready, token change, backend switch) and at each PIN-mode change (`on_pin_mode_changed`: first "Just continue", a custom PIN set, the PIN removed). A failed call is logged and tried again at the next of those.
+- **Relay:** a device with a `.voip` sibling gets an urgent wake as a VoIP push `{type: call_wake, wake_hint?, sent_at}` on topic `<bundle id>.voip` and no call alert; messages stay alerts. See SERVICE_ENDPOINTS.
+- **Every VoIP push is reported to CallKit first**, whatever the app can do with it (locked, vault unavailable, a stranger, stale); ending comes after. A push over 65 s old by `sent_at` (`CallPushAge`, P017) is reported and ended at once as unanswered; one with the app open and active, or with another call up, likewise. The app then syncs, and the first ring found fills the push's call (the push's `wake_hint` is not matched, as on Android).
+- **Gate:** `ICallSystemUi::Available()` on iOS is true only while the VoIP wish (default PIN) holds, so a custom-PIN phone never hands a ring to CallKit. The audio, mute and wait rules are P013's.
+- **Build:** `PP_BROWSER_IOS_CALLKIT` (default on) gates PushKit / CallKit and the `voip` background mode; off for the China storefront, where such a build behaves as P019.
+
+**Rationale:** P019 removed CallKit because a PIN-locked background had no key, so a CallKit call answered on the lock screen never connected. The default PIN has no secret to wait for, so the vault opens silently and CallKit's ring (full screen, AirPods / CarPlay answer, the ringer's tone) is safe there; a custom PIN keeps the alert.  
+**Consequences:** a stranger's call posts CallKit's ring from the push, before anything is decrypted, as the alert did (P019). A late push (under 65 s) of a call already over rings until the wait runs out: nothing tells the bridge the call is over (P017's "its call is over" feed is not returned).  
+**Cross-link:** `CallSystemUi_Ios.mm`, `PushDeviceCoordinator` (`push_device_coordinator_test.cpp`), `CallSystemUiBridge` (`call_system_ui_bridge_test.cpp`), `CallPushAge` (`call_push_age_test.cpp`), `Application::OnPinModeChanged`; `docs/contracts/SERVICE_ENDPOINTS.md`, `docs/architecture/CALLS.md`.

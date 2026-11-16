@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <string>
 
@@ -42,6 +43,12 @@ std::atomic<uint64_t> g_session_gen{0};
 std::atomic<bool> g_began_before_marked{false};
 /** Makes "still ours?" + setActive:NO atomic against a new activation / CancelPendingDeactivate. */
 std::mutex g_session_mu;
+/** CallKit owns the session (see SetSystemManaged); `g_system_active` follows its didActivate / didDeactivate. */
+bool g_system_managed = false;
+bool g_system_active = false;
+std::condition_variable g_system_cv;
+/** How long ActivateForVoip waits for CallKit's activation before taking the session itself. */
+constexpr std::chrono::milliseconds kSystemActivationWait{3000};
 constexpr int kDeactivateRetries = 5;
 constexpr int64_t kDeactivateRetryNs = 150 * NSEC_PER_MSEC;
 
@@ -395,8 +402,8 @@ void DeactivateAttempt(uint64_t gen, int attempts_left) {
   NSError* error = nil;
   {
     std::lock_guard<std::mutex> lock(g_session_mu);
-    if (g_session_gen.load() != gen || g_session_active.load()) {
-      return;
+    if (g_session_gen.load() != gen || g_session_active.load() || g_system_managed) {
+      return; // CallKit deactivates the session of a call it owns
     }
     if ([[AVAudioSession sharedInstance] setActive:NO
                                        withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
@@ -425,10 +432,21 @@ void ActivateForVoip() {
   BOOL active_ok = NO;
   uint64_t gen = 0;
   {
-    std::lock_guard<std::mutex> lock(g_session_mu);
+    std::unique_lock<std::mutex> lock(g_session_mu);
     gen = g_session_gen.fetch_add(1) + 1;
     g_began_before_marked.store(false);
-    active_ok = [session setActive:YES error:&error];
+    if (g_system_managed) {
+      // Activating before CallKit's didActivateAudioSession fights its own activation: wait for it.
+      g_system_cv.wait_for(lock, kSystemActivationWait, [] { return g_system_active || !g_system_managed; });
+      if (g_system_active) {
+        active_ok = YES;
+      } else {
+        NSLog(@"AudioSession ActivateForVoip: CallKit activation not seen, activating");
+        active_ok = [session setActive:YES error:&error];
+      }
+    } else {
+      active_ok = [session setActive:YES error:&error];
+    }
     g_session_active.store(true);
     // The call has the session: a voice message that was playing was cut off without ReleaseVoice (a call holds the
     // devices then), and its flag would label every later route change as voice playback.
@@ -469,6 +487,25 @@ void Deactivate() {
 void CancelPendingDeactivate() {
   std::lock_guard<std::mutex> lock(g_session_mu);
   g_session_gen.fetch_add(1);
+}
+
+void SetSystemManaged(const bool managed) {
+  {
+    std::lock_guard<std::mutex> lock(g_session_mu);
+    g_system_managed = managed;
+    if (!managed) {
+      g_system_active = false; // a stale "active" would skip the next setActive:YES
+    }
+  }
+  g_system_cv.notify_all();
+}
+
+void NotifySystemActivation(const bool active) {
+  {
+    std::lock_guard<std::mutex> lock(g_session_mu);
+    g_system_active = active;
+  }
+  g_system_cv.notify_all();
 }
 
 namespace {
@@ -570,7 +607,15 @@ ResumeAttempt TryResume(const ResumeBy by, const bool reapply) {
   ConfigureVoipSession(session);
   NSError* error = nil;
   attempt.tried = true;
-  attempt.active_ok = [session setActive:YES error:&error];
+  bool managed = false;
+  bool system_active = false;
+  {
+    std::lock_guard<std::mutex> lock(g_session_mu);
+    managed = g_system_managed;
+    system_active = g_system_active;
+  }
+  // Under CallKit only its own activation gives the session back (a phone call took it: its didActivate follows).
+  attempt.active_ok = managed ? system_active : [session setActive:YES error:&error];
   attempt.error_code = error != nil ? static_cast<long>(error.code) : 0L;
   attempt.other_audio = session.otherAudioPlaying;
   attempt.silence_hint = session.secondaryAudioShouldBeSilencedHint;
