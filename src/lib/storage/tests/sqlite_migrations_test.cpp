@@ -1,3 +1,5 @@
+#include "lib/people/IdentityStore.h"
+#include "foundation/crypto/KemKeyBinding.h"
 #include "lib/storage/SqliteCallSessionStore.h"
 #include "lib/storage/SqliteChatDbLadders.h"
 #include "lib/storage/SqliteChatStoreGate.h"
@@ -237,6 +239,42 @@ TEST_F(SqliteMigrationsTest, BelowTheFloorTheChatStoreIsResetAndSaysSoOnce) {
   EXPECT_FALSE(std::filesystem::exists(SqliteThreadDbFile(data_dir_.string(), "thread-kept")));
   EXPECT_TRUE(TakeChatStoreResetNotice(data_dir_.string()));
   EXPECT_FALSE(TakeChatStoreResetNotice(data_dir_.string())) << "once";
+}
+
+// Our own account card lives beside the identity, outside the chat store: a store too old to upgrade goes, it stays
+// (so the next start's card is the account's list, not a fresh one that signs out the other devices).
+TEST_F(SqliteMigrationsTest, BelowTheFloorTheResetLeavesOurCardBesideTheIdentity) {
+  {
+    IdentityStore identity(data_dir_.string(), "profile");
+    ASSERT_TRUE(identity.SetDek(TestDek()));
+    const LocalIdentity me = identity.LoadOrCreate().value();
+    AccountCard card;
+    card.keys = KeyCard{
+        .account_id = me.account_id,
+        .signing_public_key_b64 = me.account_signing_public_key_b64,
+        .kem_public_key_b64 = me.kem_public_key_b64,
+        .kem_binding_signature_b64 =
+            identity.SignBytes(KemBindingSignBytes(me.account_signing_public_key_b64, me.kem_public_key_b64)).value()};
+    card.devices = {AccountCardDevice{.peer_id = me.peer_id,
+                                      .signing_public_key_b64 = me.public_key_b64,
+                                      .kem_public_key_b64 = me.device_kem_public_key_b64}};
+    card.issued_at = 1'761'235'200'000;
+    ASSERT_TRUE(identity.KeepOwnCard(
+        SignAccountCard(card, [&identity](const ByteVector& bytes) { return identity.SignBytes(bytes); }).value()));
+  }
+  WriteProfileWithAChat();
+  Exec(Db(ProfileDb()), "PRAGMA user_version = " + std::to_string(kSqliteThreadProfileFloorVersion - 1) + ";");
+  CloseDb();
+
+  SqliteThreadStore& store = OpenStore();
+  ASSERT_TRUE(store.ListThreads().value().empty()) << "the chats were reset";
+  CloseStore();
+  IdentityStore identity(data_dir_.string(), "profile");
+  ASSERT_TRUE(identity.SetDek(TestDek()));
+  auto kept = identity.OwnCard();
+  ASSERT_TRUE(kept) << kept.error().message;
+  ASSERT_TRUE(*kept) << "our card outlived the reset";
+  EXPECT_EQ((*kept)->issued_at, 1'761'235'200'000);
 }
 
 TEST_F(SqliteMigrationsTest, ANewerDatabaseIsRefusedAndLeftAlone) {

@@ -56,6 +56,11 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   grace.bin                 # PIN grace window: DEK under K_grace, AAD "grace|{id}" (iOS, Android 9+; only within a window — AT_REST_ENCRYPTION § PIN grace window)
   biometric.bin             # Face ID / Touch ID unlock: DEK under K_bio, AAD "biometric|{id}" (iOS; only while the switch is on — AT_REST_ENCRYPTION § Face ID / Touch ID unlock)
   identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 4 — 3 steps up, dropping relay_user_id; device ML-DSA-65 + account ML-DSA + account KEM; pre-v3 wipe; optional initiation_floor; optional registered_card_issued_at — the account card the relay last answered for at register/finish, SERVICE_ENDPOINTS; optional registration_id — the preferred relay's registration a revoke names, MR007, additive; optional recovery_seed_b64 — M023, AT_REST_ENCRYPTION § Identity plaintext)
+  own_card.enc              # our account's newest account card under DEK AEAD (AAD purpose "own-card", plaintext schema_version 1: {schema_version, card}; IdentityStore):
+                            # the copy that outlives Reset chats, the start-up recovery's reset and a profile.db too old to upgrade (all of which remove threads/
+                            # with its peer_cards); only a newer card of ours replaces it; a card of another account is ignored (a link or restore deletes the file
+                            # with the old DEK). Absent until our first card; profile reset removes it with the rest (AT_REST_ENCRYPTION § Own card plaintext,
+                            # ACCOUNT_CARD § Main device)
   secrets.enc               # typed model API key (llm_api_key) under DEK AEAD, AAD purpose "config-secrets", schema_version 1; absent when there are none (PB-034)
   initiation_billing.json   # per-peer initiation billing state (P001; schema_version 2 — 1 steps up, dropping `relay:` keys; additive relay_floor_minor / relay_floor_card_issued_at: a relay's payment_required floor and the kept card it came after — SERVICE_ENDPOINTS § The stranger's price)
   account_locker.json       # account locker sync state: highest_version_by_locker, contact_clock, device_names (plaintext; ACCOUNT_LOCKER.md § On disk)
@@ -206,6 +211,7 @@ One Keychain generic-password item per profile: service `dev.pp-browser.secure-b
 | `grace.bin` | DEK under the PIN grace window's key (with the Keychain item / Keystore file above; deleted when the window ends) |
 | `biometric.bin` | DEK under the Face ID / Touch ID unlock key (with the Keychain item above; present while the switch is on) |
 | `identity.enc` | Identity JSON under DEK AEAD |
+| `own_card.enc` | Our account's newest card under DEK AEAD (beside the identity, outside the chat store) |
 | `preferences.json` → `pin_is_default` | Schema v4; set when user chooses default PIN (“Just continue”); cleared on Change PIN |
 | `preferences.json` → `pin_digits` | Optional (no schema bump); the PIN's kind, not a secret: absent = unknown, `0` = text PIN, `4`–`8` = digit PIN of that length (the phone gate's number pad). Written after each unlock with an own PIN and on Change PIN |
 | `preferences.json` → `auto_renew_registration` | Schema v4; default true; renew near/past expiry after unlock |
@@ -309,7 +315,7 @@ locator names the PeerId; a contact's first send into it is signed for that Peer
 
 **Changing a schema:** bump the version, add the step from the old one (it must run on every shape that version had), keep the floor. The **floor** is the oldest version the latest app still upgrades. Phones install only the latest app — a user cannot step through the versions in between on iOS or Android — so the latest app carries every step from the floor up; the floor moves only at a milestone (a release a user is expected to have opened), and moving it resets the chats of anyone below it. These migrations are this device's own data: they are not a bridge to older peers ([COMPATIBILITY § No bridges](COMPATIBILITY.md#no-bridges-pre-release)), and no step reads an older wire form.
 
-**JSON stores** include `schema_version` (or `config_version` for config) and have one version each: a file of an unsupported version is refused with a clear error — a newer one always, an older one below the store's floor (`contacts.json` 2, `identity.enc` 3, `initiation_billing.json` 1; the Account ID steps above are their only steps), while the config takes an older `config_version` as is. A change follows the same rule as the SQLite ladder: bump the version and add a step in the store's loader from the version below, keeping a floor.
+**JSON stores** include `schema_version` (or `config_version` for config) and have one version each: a file of an unsupported version is refused with a clear error — a newer one always, an older one below the store's floor (`contacts.json` 2, `identity.enc` 3, `own_card.enc` 1, `initiation_billing.json` 1; the Account ID steps above are their only steps), while the config takes an older `config_version` as is. A change follows the same rule as the SQLite ladder: bump the version and add a step in the store's loader from the version below, keeping a floor.
 
 **No legacy import:** older flat layouts (e.g. `identity.json` at data root) are not migrated. Delete the data directory when the layout changes during development. See [COMPATIBILITY.md](COMPATIBILITY.md) for dirty-folder and newer-peer policy.
 

@@ -311,6 +311,7 @@ Roe<void> IdentityStore::SetDek(ByteVector dek) {
   }
   dek_ = std::move(dek);
   loaded_ = false;
+  ForgetOwnCardInMemory();
   return {};
 }
 
@@ -323,6 +324,11 @@ Roe<void> IdentityStore::ReplaceDekKeepLoaded(ByteVector dek) {
     sodium_memzero(dek_.data(), dek_.size());
   }
   dek_ = std::move(dek);
+  // The account this profile held is being replaced (a link or a restore): its own card goes, sealed under the old
+  // DEK; the new account's comes with its first card.
+  ForgetOwnCardInMemory();
+  std::error_code ec;
+  std::filesystem::remove(OwnCardPath(), ec);
   return {};
 }
 
@@ -333,6 +339,7 @@ void IdentityStore::ClearDek() {
     dek_.clear();
   }
   loaded_ = false;
+  ForgetOwnCardInMemory();
 }
 
 Roe<void> IdentityStore::RequireDek() const {
@@ -344,6 +351,10 @@ Roe<void> IdentityStore::RequireDek() const {
 
 std::string IdentityStore::StorePath() const {
   return (std::filesystem::path(data_dir_) / "identity.enc").string();
+}
+
+std::string IdentityStore::OwnCardPath() const {
+  return (std::filesystem::path(data_dir_) / "own_card.enc").string();
 }
 
 std::string IdentityStore::ProfileId() const {
@@ -769,6 +780,104 @@ Roe<int64_t> IdentityStore::InitiationFloor() const {
     return load.error();
   }
   return identity_.initiation_floor;
+}
+
+void IdentityStore::ForgetOwnCardInMemory() const {
+  own_card_loaded_ = false;
+  own_card_.reset();
+}
+
+Roe<void> IdentityStore::EnsureOwnCardLoaded() const {
+  if (own_card_loaded_) {
+    return {};
+  }
+  if (auto dek = RequireDek(); !dek) {
+    return dek.error();
+  }
+  std::error_code ec;
+  if (!std::filesystem::exists(OwnCardPath(), ec)) {
+    own_card_.reset();
+    own_card_loaded_ = true;
+    return {};
+  }
+  const auto file_size = std::filesystem::file_size(OwnCardPath(), ec);
+  if (ec || file_size > kMaxProfileJsonFileBytes) {
+    return Error("own_card.enc unreadable or over its limit");
+  }
+  std::ifstream in(OwnCardPath(), std::ios::binary);
+  ByteVector blob(static_cast<size_t>(file_size));
+  if (!in ||
+      (!blob.empty() && !in.read(reinterpret_cast<char*>(blob.data()), static_cast<std::streamsize>(blob.size())))) {
+    return Error("Failed to read own_card.enc");
+  }
+  auto plaintext = FileCipher::Decrypt(dek_, blob, FileCipher::BuildAad("own-card", ProfileId()));
+  if (!plaintext) {
+    return plaintext.error();
+  }
+  auto root = TryParseObject(std::string(plaintext->begin(), plaintext->end()));
+  if (!root) {
+    return Error("Failed to parse own_card.enc");
+  }
+  if (auto checked = SchemaVersion::Validate(*root, kOwnCardSchemaVersion, "own_card.enc"); !checked) {
+    return checked.error();
+  }
+  const Object* card_json = root->getObject("card");
+  if (!card_json) {
+    return Error("own_card.enc holds no card");
+  }
+  auto card = AccountCardFromJson(*card_json);
+  if (!card) {
+    return card.error();
+  }
+  own_card_ = std::move(*card);
+  own_card_loaded_ = true;
+  return {};
+}
+
+Roe<std::optional<AccountCard>> IdentityStore::OwnCard() const {
+  std::lock_guard lock(mutex_);
+  if (auto load = EnsureLoaded(); !load) {
+    return load.error();
+  }
+  if (auto own = EnsureOwnCardLoaded(); !own) {
+    return own.error();
+  }
+  if (!own_card_ || own_card_->keys.account_id != identity_.account_id) {
+    return std::optional<AccountCard>{};
+  }
+  return own_card_;
+}
+
+Roe<void> IdentityStore::KeepOwnCard(const AccountCard& card) {
+  std::lock_guard lock(mutex_);
+  if (auto load = EnsureLoaded(); !load) {
+    return load.error();
+  }
+  if (identity_.account_id.empty() || card.keys.account_id != identity_.account_id) {
+    return Error("own card: not this profile's account");
+  }
+  if (auto own = EnsureOwnCardLoaded(); !own) {
+    log().warning << "own_card.enc unreadable, written over: " << own.error().message;
+    ForgetOwnCardInMemory();
+  }
+  if (own_card_ && own_card_->keys.account_id == card.keys.account_id && own_card_->issued_at >= card.issued_at) {
+    return {}; // not newer: the kept card stands
+  }
+  Object root;
+  root.set("schema_version", static_cast<int64_t>(kOwnCardSchemaVersion));
+  root.set("card", AccountCardToJson(card));
+  const std::string json = DumpJson(root, 2);
+  auto ciphertext =
+      FileCipher::Encrypt(dek_, ByteVector(json.begin(), json.end()), FileCipher::BuildAad("own-card", ProfileId()));
+  if (!ciphertext) {
+    return ciphertext.error();
+  }
+  if (auto written = AtomicFileWrite::Write(OwnCardPath(), *ciphertext); !written) {
+    return written.error();
+  }
+  own_card_ = card;
+  own_card_loaded_ = true;
+  return {};
 }
 
 } // namespace pbr

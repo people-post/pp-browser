@@ -37,6 +37,7 @@ profiles/{id}/
   grace.bin       # PIN grace window: DEK under K_grace (iOS, Android 9+; absent outside a window)
   biometric.bin   # Face ID / Touch ID unlock: DEK under K_bio (iOS only; absent while the switch is off)
   identity.enc    # AEAD(identity JSON) under DEK
+  own_card.enc    # AEAD(our account's newest card) under DEK, AAD own-card|{profile_id}|1
   contacts.json   # plaintext (atomic write)
   threads/
     profile.db    # PSK columns + preview_enc ciphertext; other columns plaintext (user_version 5 — DATA_LAYOUT § Schema versions)
@@ -100,6 +101,10 @@ JSON fields: `schema_version` (**4**; 3 steps up, dropping its `relay_user_id` �
 Pre-v3 (Ed25519 device keys) **fail closed** — wipe profile and recreate ([libp2p-pq-transport P004](../../projects/libp2p-pq-transport/DECISIONS.md#p004--hard-cut--wipe-amend-m003m008e025)). Unsupported **newer** versions fail load.
 (`peer_id` remains in-memory only.)  
 AEAD AAD (`identity|{profile_id}|1`) is independent of the plaintext `schema_version` field.
+
+### Own card plaintext (inside `own_card.enc`)
+
+`{"schema_version": 1, "card": <account card JSON>}` — our account's newest account card ([ACCOUNT_CARD](ACCOUNT_CARD.md)), sealed by `IdentityStore` under the DEK with AAD `own-card|{profile_id}|1`. It is public material; it is sealed because it lives with the identity, and so a reset of the chat store (whose `peer_cards` keep the other copy, plaintext) cannot lose it: Reset chats, the start-up recovery's reset and a `profile.db` too old to upgrade remove `threads/` only. Only a newer card of the same account replaces it (`issued_at`); a card of another account is ignored and written over. A link or restore that swaps the DEK (`ReplaceDekKeepLoaded`) deletes it with the old account. Profile reset removes it with the profile. A newer `schema_version` is refused (the card is then taken from `peer_cards` or our relays and the file written over).
 
 ## Unlock flow
 

@@ -2,6 +2,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/FileCipher.h"
+#include "foundation/crypto/KemKeyBinding.h"
 #include "foundation/crypto/MlDsa.h"
 #include "foundation/crypto/RecoveryPhrase.h"
 #include "foundation/crypto/RecoverySeed.h"
@@ -404,6 +405,68 @@ TEST_F(IdentityStoreTest, AFailedSaveLeavesTheIdentityAsItWas) {
   })));
   EXPECT_EQ(store.Get().value().brief_llm_guest_api_key.Reveal(), "brf_guest_saved");
   EXPECT_TRUE(std::filesystem::exists(file));
+}
+
+} // namespace
+
+namespace {
+
+/** Our account's card listing this device, `nickname` and `issued_at` as given, signed by the account. */
+pbr::AccountCard OwnCardOf(pbr::IdentityStore& store, const std::string& nickname, int64_t issued_at,
+                           const std::string& account_id = {}) {
+  const pbr::LocalIdentity identity = store.Get().value();
+  pbr::AccountCard card;
+  card.keys.account_id = account_id.empty() ? identity.account_id : account_id;
+  card.keys.signing_public_key_b64 = identity.account_signing_public_key_b64;
+  card.keys.kem_public_key_b64 = identity.kem_public_key_b64;
+  card.keys.kem_binding_signature_b64 =
+      store.SignBytes(pbr::KemBindingSignBytes(identity.account_signing_public_key_b64, identity.kem_public_key_b64))
+          .value();
+  card.devices = {pbr::AccountCardDevice{.peer_id = identity.peer_id,
+                                         .signing_public_key_b64 = identity.public_key_b64,
+                                         .kem_public_key_b64 = identity.device_kem_public_key_b64}};
+  card.nickname = nickname;
+  card.issued_at = issued_at;
+  return pbr::SignAccountCard(card, [&store](const pbr::ByteVector& bytes) { return store.SignBytes(bytes); }).value();
+}
+
+TEST_F(IdentityStoreTest, OurCardIsSealedBesideTheIdentityAndOnlyANewerOneReplacesIt) {
+  IdentityStore store(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(store.SetDek(MakeTestDek()));
+  ASSERT_TRUE(store.LoadOrCreate());
+  EXPECT_FALSE(store.OwnCard().value()) << "none yet";
+
+  const AccountCard card = OwnCardOf(store, "alice-sealed", 100);
+  ASSERT_TRUE(store.KeepOwnCard(card));
+  std::ifstream in(data_dir_ / "own_card.enc", std::ios::binary);
+  const std::string raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  EXPECT_FALSE(raw.empty());
+  EXPECT_EQ(raw.find("alice-sealed"), std::string::npos) << "under the DEK, not plaintext";
+
+  IdentityStore reloaded(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(reloaded.SetDek(MakeTestDek()));
+  EXPECT_EQ(reloaded.OwnCard().value(), card);
+
+  ASSERT_TRUE(reloaded.KeepOwnCard(OwnCardOf(store, "older", 50)));
+  EXPECT_EQ(reloaded.OwnCard().value()->nickname, "alice-sealed") << "no older card of ours is taken";
+  ASSERT_TRUE(reloaded.KeepOwnCard(OwnCardOf(store, "newer", 200)));
+  EXPECT_EQ(reloaded.OwnCard().value()->nickname, "newer");
+
+  EXPECT_FALSE(reloaded.KeepOwnCard(OwnCardOf(store, "other", 300, "account:someone-else")))
+      << "another account's card is refused";
+  EXPECT_EQ(reloaded.OwnCard().value()->nickname, "newer");
+}
+
+TEST_F(IdentityStoreTest, ANewDekForALinkOrRestoreDropsTheOldAccountsCard) {
+  IdentityStore store(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(store.SetDek(MakeTestDek()));
+  ASSERT_TRUE(store.LoadOrCreate());
+  ASSERT_TRUE(store.KeepOwnCard(OwnCardOf(store, "alice", 100)));
+  ByteVector other_dek = MakeTestDek();
+  other_dek[0] ^= 0xff;
+  ASSERT_TRUE(store.ReplaceDekKeepLoaded(other_dek));
+  EXPECT_FALSE(std::filesystem::exists(data_dir_ / "own_card.enc"));
+  EXPECT_FALSE(store.OwnCard().value());
 }
 
 } // namespace
