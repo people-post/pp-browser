@@ -102,7 +102,6 @@ Roe<RelayEnvelope> BuildControlLaneEnvelope(const ControlLaneSendParams& params,
   envelope.sender_contact_id = params.sender_account_id;
   envelope.sender_device = params.sender_device;
   envelope.route.kind = kRelayRouteControl;
-  envelope.relay_kind = kRelayKindCtl; // ControlLane::Send upgrades an urgent call invite
   envelope.route.channel = ThreadChannel::E2ePublic;
   // Our card rides when the peer may not hold it (ControlLaneCarriesCard); the version rides every envelope, for a
   // peer with an older one to ask (M021 d6).

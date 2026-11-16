@@ -68,7 +68,7 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 
 ### A send: the recipient, the sender's key, the grant
 
-`POST /v1/messages` `{ sender_account_id, recipient_account_id, stream_id, index_key, blob_b64, ttl_s?, urgent?, wake_hint?, kind?, timestamp, signature, sender_public_key_b64?, grant? }` (`HttpRelayClient::Send`, [MR003](../../projects/multi-relay/DECISIONS.md#mr003--cross-relay-delivery-is-an-account-signed-send) / [MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)). Neither the key nor the grant is signed by the sender: the key must hash to `sender_account_id`, the grant carries the recipient's signature.
+`POST /v1/messages` `{ sender_account_id, recipient_account_id, stream_id, index_key, blob_b64, ttl_s?, urgent?, wake_hint?, timestamp, signature, sender_public_key_b64?, grant? }` (`HttpRelayClient::Send`, [MR003](../../projects/multi-relay/DECISIONS.md#mr003--cross-relay-delivery-is-an-account-signed-send) / [MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)). Neither the key nor the grant is signed by the sender: the key must hash to `sender_account_id`, the grant carries the recipient's signature.
 
 - **`grant`** — the recipient's grant to us ([ACCOUNT_CARD § Relay grants](ACCOUNT_CARD.md#relay-grants)), attached when we hold a usable one; never on a send to our own mailbox. With it the send is a contact's; without it, a stranger's.
 - **`sender_public_key_b64`** — our account's ML-DSA key, sent only when the relay asked for it (`401 sender_key_required`: it holds no key of ours — we are not registered there); the client sends once more with it.
@@ -352,7 +352,7 @@ A relay may add `sent_at` beside `type` in the `ios` call alert and in the VoIP 
 
 A send record may also carry `"wake_hint": "<id>"` (<= 64 chars of `[A-Za-z0-9-]`; unsigned like `urgent`): a call invite sends its `call_id`, an ordinary message its envelope `message_id`. A relay that knows it copies it into the APNs payload (the alert) as a top-level custom key `wake_hint`, beside `type`; one that does not ignores it. The app matches a tapped alert to its ring, message or missed-call record by it after the PIN unlock and sync; a push without it opens the first ring as before. The VoIP push's `wake_hint` is not read: its call takes the first ring.
 
-A send record may carry `"kind"`, an unsigned hint of what the record is: `msg` (a chat message the transcript shows), `call.invite` (an urgent call invite) or `ctl` (everything else: annotations, call summary and other signaling, relay grants, device-list and group control). A relay that knows it pushes only `msg` and `call.invite`; absent, it keeps its earlier behavior. The client sets it on every relay send (`RelayKindOfChatMessage`, `ControlLane`).
+A relay pushes by two unsigned hints: `urgent` (a call alert) and `wake_hint` (a new-message alert when not urgent); a record with neither is stored silently. The client sets `wake_hint` only on chat messages the transcript shows (`RaisesWakePush`) and on an urgent call invite (the call id); no message class is sent.
 
 Payloads remain **opaque** — no names, thread ids, or media (an id the sender chose is all `wake_hint` carries). Failures must not fail message store. How the provider authenticates to FCM/APNs is outside this contract. See [projects/push-notifications](../../projects/push-notifications/) and [p2p-av-calls V006](../../projects/p2p-av-calls/DECISIONS.md).
 

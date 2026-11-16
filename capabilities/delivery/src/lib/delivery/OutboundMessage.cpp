@@ -317,24 +317,23 @@ RelayCopy DeviceCopy(const std::string& device, PairCopy pair_copy) {
   return copy;
 }
 
-const char* RelayKindOfChatMessage(const ThreadMessage& message) {
+bool RaisesWakePush(const ThreadMessage& message) {
   switch (message.content_type) {
     case ChatContentType::Text:
     case ChatContentType::ContactCard:
     case ChatContentType::CryptoTx:
     case ChatContentType::Attachment:
-      return kRelayKindMsg;
+      return true;
     case ChatContentType::System: {
       const auto payload = TryParseObject(message.payload_json);
-      const bool control = payload && !payload->getString("control_type").value_or("").empty();
-      return control ? kRelayKindCtl : kRelayKindMsg;
+      return !payload || payload->getString("control_type").value_or("").empty();
     }
     case ChatContentType::Annotation:
     case ChatContentType::Unsupported:
     case ChatContentType::Deleted:
       break;
   }
-  return kRelayKindCtl;
+  return false;
 }
 
 RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
@@ -345,8 +344,9 @@ RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const EnvelopeSe
   envelope.route.channel = channel;
   envelope.stream_key = BuildDeviceRelayStreamKey(sender.account_id, recipient, channel, sender.device);
   envelope.recipient_account_id = recipient;
-  envelope.relay_wake_hint = SanitizeWakeHint(envelope.message_id);
-  envelope.relay_kind = RelayKindOfChatMessage(message);
+  if (RaisesWakePush(message)) {
+    envelope.relay_wake_hint = SanitizeWakeHint(envelope.message_id);
+  }
   return envelope;
 }
 
@@ -365,8 +365,9 @@ RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const Envel
   envelope.route.kind = "group";
   envelope.stream_key = BuildGroupRelayStreamKey(group_id, sender.account_id, recipient, sender.device);
   envelope.recipient_account_id = recipient;
-  envelope.relay_wake_hint = SanitizeWakeHint(envelope.message_id);
-  envelope.relay_kind = RelayKindOfChatMessage(message);
+  if (RaisesWakePush(message)) {
+    envelope.relay_wake_hint = SanitizeWakeHint(envelope.message_id);
+  }
   return envelope;
 }
 

@@ -592,9 +592,6 @@ Object RelayWireSendRecordToJson(const RelayWireSendRecord& record) {
   if (!record.wake_hint.empty()) {
     json.set("wake_hint", record.wake_hint);
   }
-  if (!record.kind.empty()) {
-    json.set("kind", record.kind);
-  }
   if (record.grant) {
     json.set("grant", RelayGrantToJson(*record.grant));
   }
@@ -627,7 +624,6 @@ Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& en
   record.urgent = envelope.relay_wake_urgent;
   record.ttl_s = envelope.relay_ttl_s;
   record.wake_hint = SanitizeWakeHint(envelope.relay_wake_hint);
-  record.kind = SanitizeRelayKind(envelope.relay_kind);
   return record;
 }
 
