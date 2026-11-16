@@ -557,6 +557,10 @@ data-event-click="show_setting_note('settings.auto_renew.short','settings.auto_r
 data-event-click="change_pin()"	1	-	security	show_change_pin && security_can_change_pin	security	
 {{i18n:pin.forget_warning}}	1	-	security	show_change_pin && security_can_change_pin	security	
 {{i18n:settings.security.change_pin}}	1	-	security	show_change_pin && security_can_change_pin	security	
+data-event-click="remove_pin()"	1	-	security	show_change_pin && security_can_change_pin && !pin_protection_is_default	security	
+data-event-click="remove_pin()"	1	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
+{{i18n:settings.security.remove_pin}}	1	-	security	show_change_pin && security_can_change_pin && !pin_protection_is_default	security	
+{{i18n:settings.security.remove_pin}}	1	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
 {{i18n:settings.security.unlock_to_change}}	1	-	security	show_change_pin && !security_can_change_pin && !pin_protection_not_setup	security	
 {{i18n:settings.privacy.blocked_help}}	1	-	privacy	-	security	
 {{i18n:settings.tester.banner}}	1	-	tester	tester	-	
