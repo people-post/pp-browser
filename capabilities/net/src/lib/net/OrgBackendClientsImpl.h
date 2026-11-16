@@ -12,6 +12,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -21,7 +22,7 @@
 namespace pbr {
 
 /**
- * This device's push binding on one relay. It keeps the `binding_id` its last register answered (in memory: the app
+ * This device's push binding on one relay. It keeps, per device id, the `binding_id` its last register answered (in memory: the app
  * registers at every start); an unregister names it, and one with none kept, or answered `binding_mismatch` (a newer
  * binding there), registers first and unregisters with that answer, once (MR007 item 5).
  */
@@ -45,9 +46,8 @@ private:
   RelayAuthSigner auth_signer_;
   std::shared_ptr<IRelayAudience> audience_;
   std::mutex binding_mutex_;
-  /** The newest binding_id this relay answered for us ("" none yet), by device id. */
-  std::string binding_id_;
-  std::string binding_device_id_;
+  /** The newest binding_id this relay answered for each device id (the `.voip` sibling has its own). */
+  std::map<std::string, std::string> binding_ids_;
 };
 
 /**

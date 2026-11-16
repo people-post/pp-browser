@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <map>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -91,6 +92,57 @@ TEST_F(PushDeviceClientTest, ABindingMismatchRegistersAndUnregistersTheCurrentOn
   ASSERT_EQ(bodies_.size(), 4u);
   EXPECT_EQ(bodies_[1].getString("binding_id").value_or(""), "bind-1");
   EXPECT_TRUE(bodies_[2].contains("push_token"));
+  EXPECT_EQ(bodies_[3].getString("binding_id").value_or(""), "bind-2");
+  EXPECT_TRUE(held_.empty());
+}
+
+/** A relay that holds one binding per device id, as the real one does. */
+class PushDeviceSiblingTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    client_.SetAuthSigner([](const std::vector<uint8_t>&) -> Roe<std::string> { return std::string("c2ln"); });
+    client_.SetAudience(std::make_shared<FixedRelayAudience>(kAudience));
+    server_.SetHandler([this](const ScriptedHttpServer::Request& request) {
+      std::lock_guard lock(mu_);
+      const Object body = TryParseObject(request.body).value_or(Object{});
+      bodies_.push_back(body);
+      const std::string device = body.getString("device_id").value_or("");
+      if (request.target.ends_with("/v1/devices/register")) {
+        held_[device] = "bind-" + std::to_string(++registers_);
+        return Reply{
+            .status = 200, .headers = {}, .body = R"({"success":true,"binding_id":")" + held_[device] + R"("})"};
+      }
+      if (body.getString("binding_id").value_or("") != held_[device]) {
+        return Reply{.status = 409, .headers = {}, .body = R"({"error":"x","code":"binding_mismatch"})"};
+      }
+      held_.erase(device);
+      return Reply{.status = 200, .headers = {}, .body = R"({"success":true})"};
+    });
+  }
+
+  ScriptedHttpServer server_;
+  HttpPushDeviceClient client_{server_.Origin() + "/api/relay"};
+  std::mutex mu_;
+  std::vector<Object> bodies_;
+  std::map<std::string, std::string> held_;
+  int registers_ = 0;
+};
+
+// The `.voip` sibling's register must not displace the main device's binding id: each unregister names its own.
+TEST_F(PushDeviceSiblingTest, EachDeviceKeepsItsOwnBindingIdForItsUnregister) {
+  const PushDeviceRegistration main{
+      .platform = "ios", .push_token = "tok", .device_id = "dev-1", .account_id = "account:me"};
+  const PushDeviceRegistration voip{
+      .platform = "ios_voip", .push_token = "voip-tok", .device_id = "dev-1.voip", .account_id = "account:me"};
+  ASSERT_TRUE(client_.RegisterDevice(main));
+  ASSERT_TRUE(client_.RegisterDevice(voip));
+  ASSERT_TRUE(client_.UnregisterDevice(main));
+  ASSERT_TRUE(client_.UnregisterDevice(voip));
+  std::lock_guard lock(mu_);
+  ASSERT_EQ(bodies_.size(), 4u) << "no register-first fallback";
+  EXPECT_EQ(bodies_[2].getString("device_id").value_or(""), "dev-1");
+  EXPECT_EQ(bodies_[2].getString("binding_id").value_or(""), "bind-1");
+  EXPECT_EQ(bodies_[3].getString("device_id").value_or(""), "dev-1.voip");
   EXPECT_EQ(bodies_[3].getString("binding_id").value_or(""), "bind-2");
   EXPECT_TRUE(held_.empty());
 }

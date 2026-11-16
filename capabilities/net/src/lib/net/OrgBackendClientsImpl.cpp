@@ -83,8 +83,7 @@ Roe<void> HttpPushDeviceClient::RegisterDevice(const PushDeviceRegistration& reg
   }
   const auto root = TryParseObject(*answered);
   std::lock_guard lock(binding_mutex_);
-  binding_id_ = root ? root->getString("binding_id").value_or("") : std::string();
-  binding_device_id_ = registration.device_id;
+  binding_ids_[registration.device_id] = root ? root->getString("binding_id").value_or("") : std::string();
   return {};
 }
 
@@ -101,8 +100,8 @@ Roe<void> HttpPushDeviceClient::UnregisterOnce(const PushDeviceRegistration& reg
     return answered.error();
   }
   std::lock_guard lock(binding_mutex_);
-  if (binding_id_ == binding_id) {
-    binding_id_.clear();
+  if (const auto it = binding_ids_.find(registration.device_id); it != binding_ids_.end() && it->second == binding_id) {
+    binding_ids_.erase(it);
   }
   return {};
 }
@@ -111,8 +110,8 @@ Roe<void> HttpPushDeviceClient::UnregisterDevice(const PushDeviceRegistration& r
   std::string kept;
   {
     std::lock_guard lock(binding_mutex_);
-    if (binding_device_id_ == registration.device_id) {
-      kept = binding_id_;
+    if (const auto it = binding_ids_.find(registration.device_id); it != binding_ids_.end()) {
+      kept = it->second;
     }
   }
   if (!kept.empty()) {
@@ -130,7 +129,7 @@ Roe<void> HttpPushDeviceClient::UnregisterDevice(const PushDeviceRegistration& r
   std::string fresh;
   {
     std::lock_guard lock(binding_mutex_);
-    fresh = binding_id_;
+    fresh = binding_ids_[registration.device_id];
   }
   if (fresh.empty()) {
     return Error("Device API: the relay answered no binding_id");
