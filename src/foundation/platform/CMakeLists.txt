@@ -244,6 +244,23 @@ if(NOT PP_API_URL_QA STREQUAL "")
   target_compile_definitions(pp_foundation_platform_core PRIVATE
     PP_API_URL_QA="${PP_API_URL_QA}")
 endif()
+# The org relays' PeerIds beside their origins (multi-relay MR008: a relay address carries its PeerId; the app never
+# learns it from the relay's own answer). Empty: the relay is pinned on its first answer, with a warning (dogfood).
+set(PP_RELAY_PEER_ID_PROD "" CACHE STRING "PeerId of the prod backend's relay (beside PP_API_URL_PROD)")
+set(PP_RELAY_PEER_ID_QA "" CACHE STRING "PeerId of the QA backend's relay (beside PP_API_URL_QA)")
+foreach(peer_id_var PP_RELAY_PEER_ID_PROD PP_RELAY_PEER_ID_QA)
+  if(NOT "${${peer_id_var}}" STREQUAL "" AND NOT "${${peer_id_var}}" MATCHES "^Qm[1-9A-HJ-NP-Za-km-z]+$")
+    message(FATAL_ERROR "${peer_id_var} is not a relay PeerId (Qm…, from the relay's link or GET /v1/relay-identity)")
+  endif()
+endforeach()
+if(NOT PP_RELAY_PEER_ID_PROD STREQUAL "")
+  target_compile_definitions(pp_foundation_platform_core PRIVATE
+    PP_RELAY_PEER_ID_PROD="${PP_RELAY_PEER_ID_PROD}")
+endif()
+if(NOT PP_RELAY_PEER_ID_QA STREQUAL "")
+  target_compile_definitions(pp_foundation_platform_core PRIVATE
+    PP_RELAY_PEER_ID_QA="${PP_RELAY_PEER_ID_QA}")
+endif()
 
 # Compile-time default of `relay.content_sha256`: send x-amz-content-sha256 on relay POST/PUT. Off unless the
 # deployment's relay API sits behind CloudFront origin access control; config.json / PP_NODE_RELAY_CONTENT_SHA256 override.
