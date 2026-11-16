@@ -400,7 +400,7 @@ TEST(OutboxRetryTest, TheControlLaneBacksOffWithinItsWindow) {
   EXPECT_FALSE(ControlRetryAfter(1, 0, AppError::Network(Err::Network::HttpRejected, "400")));
 }
 
-TEST(OutboundMessageTest, RelayKindHintSeparatesMessagesFromControl) {
+TEST_F(OutboundMessageTest, RelayKindHintSeparatesMessagesFromControl) {
   ThreadMessage message;
   for (const ChatContentType type :
        {ChatContentType::Text, ChatContentType::Attachment, ChatContentType::ContactCard, ChatContentType::CryptoTx}) {
