@@ -1,4 +1,6 @@
 #include "app/node/NodeMeshPublish.h"
+#include "app/node/NodeEnvOverlay.h"
+#include "foundation/product/DevTools.h"
 
 #include "amp/L1/Types.h"
 #include "foundation/product/AppVersion.h"
@@ -22,6 +24,10 @@ Roe<bool> PublishOrRenewMeshNodeListing(const AppConfig& config, IdentityStore& 
   }
   if (config.mesh.advertise_multiaddrs.empty()) {
     return Error("mesh_publish requires mesh.advertise_multiaddrs (public multiaddrs)");
+  }
+  if (const std::string problem = NodeRegistrationIdProblem(config.registration, kDeveloperRelaysAllowed);
+      !problem.empty()) {
+    return Error(problem); // MR008 item 5: refused before anything is asked or signed
   }
 
   HttpRegistrationClient registration(config.registration.base_url);

@@ -46,16 +46,16 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 [MR007](DECISIONS.md#mr007--relays-have-a-node-style-identity-every-signed-relay-command-names-it-as-its-audience); spec [DESIGN § Relay identity and audience](DESIGN.md#relay-identity-and-audience-mr007). Clean cutover: relay on qa first, then the app, pp-node and prod together.
 
 **Relay (pp-relay-apis; Leo reviews)**
-- [ ] Identity: `RELAY_IDENTITY_PUBLIC_KEY` on every signing / verifying function, `RELAY_IDENTITY_KEY_SECRET_ID` on the registry (the seed checked against the public key); `GET /v1/relay-identity`; `503 relay_identity_unavailable` on everything signed when misconfigured; `scripts/relay-identity-keygen.mjs`.
+- [ ] Identity: `RELAY_IDENTITY_PEER_ID` on every signing / verifying function, `RELAY_IDENTITY_KEY_SECRET_ID` on the registry (the public key derived from the seed and checked against the PeerId); `GET /v1/relay-identity`; `503 relay_identity_unavailable` on everything signed when misconfigured; `scripts/relay-identity-keygen.mjs`.
 - [ ] Audience in `versioned()`, `relayApiHeader()` and the registration builder (the version table); the body's `audience` checked first in the verifier and in `registerFinish` (before the challenge is consumed): `401 wrong_audience`.
 - [ ] `registration_id` answered by `register/finish`; revoke v2 names it, removes conditionally on a consistent read, `409 registration_mismatch` otherwise.
 - [ ] `binding_id` answered by `devices/register`; unregister (op 4) names it, removes conditionally, `409 binding_mismatch` otherwise.
 - [ ] Account card version 4 (verify, bounds, `invalid_card_relays`); version 3 refused at registration and a stored one not served.
-- [ ] Support worker: its relay's PeerId from `RELAY_IDENTITY_PUBLIC_KEY` as audience; its card v4.
+- [ ] Support worker: its relay's PeerId from `RELAY_IDENTITY_PEER_ID` as audience; its card v4.
 - [ ] `relay-sign-vectors.json` copied from pp-browser; the tests of DESIGN § Tests; `openapi/relay.yaml`, `SPECS.md`, `docs/architecture.md` updated.
 
 **Infra (Leo, pp-relay-infra-terraform)**
-- [ ] A key per environment (`qa`, `prod`) from the keygen script: the seed in Secrets Manager, the public key and PeerId recorded in the repo; the variables on the functions and `GetSecretValue` for the registry. In place before the relay deploys.
+- [ ] A key per environment (`qa`, `prod`) from the keygen script: the seed in Secrets Manager, the PeerId (`RELAY_IDENTITY_PEER_ID`) and public key recorded in the repo; the variables on the functions and `GetSecretValue` for the registry. In place before the relay deploys.
 
 **App (pp-browser)**
 - [x] Builders for every domain at its new version with the audience (registration, revoke, profile, icon, heartbeat, LLM token, locker put, blobs, files incl. status, relay API v3 incl. unregister's `binding_id`); `relay_sign_vectors_test.cpp` writes and checks `relay_sign_vectors.json`.
@@ -87,6 +87,7 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 
 **App (pp-browser)**
 - [x] Relay links: `ParseRelayLink` / `RelayLink` (`origin#<PeerId>`); Add takes a link (pasted, or scanned in Add relay…), a bare origin only in developer builds (`relay_link_no_id`), checks the answer against the link (`relay_identity_mismatch`), refuses a PeerId held at another origin before asking.
+- [x] A release build's custom backend (or `PP_BROWSER_ORIGIN`, with `PP_BROWSER_RELAY_PEER_ID`) without its relay's PeerId does not use that relay: an error names the setting, Me → Network says the link has no relay ID; developer builds first-use it, warned.
 - [x] Pins are expected identities (`RelayPins::Expect`; `relay_pins.json` 2): the org's from the build (`PP_RELAY_PEER_ID_PROD` / `_QA`) or the config (`relay.peer_id`, `registration.peer_id`), ours from `our_relays.json` 2 (`peer_id` per relay), a linked device's from our card, a restore's from the locker (`relays.list`); `CheckIdentities` checks each once per run; first use only for a developer build's bare origin and the org's without a PeerId (warned).
 - [x] *Identity changed* / **Accept new identity…** removed (UI, strings, ports, tests); the state is *doesn't match its link — not used*.
 - [x] The QR locator's `relay` is `{origin, peer_id}`; `contacts.json` `remote.locator_relay` `{origin, peer_id}`; a send into it signs for the locator's PeerId; a relay not ours with no PeerId named gets nothing signed.
@@ -98,7 +99,7 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 - [ ] Repository variables `PP_RELAY_PEER_ID_PROD` and `PP_RELAY_PEER_ID_QA` set (Hongwei; the values from infra's record of each relay's key).
 
 **pp-node**
-- [x] `registration.peer_id` / `PP_NODE_REGISTRATION_PEER_ID`, defaulting to the compiled prod PeerId with the compiled URL; none: first use, warned.
+- [x] `registration.peer_id` / `PP_NODE_REGISTRATION_PEER_ID`, defaulting to the compiled prod PeerId with the compiled URL (however spelled); none: a release build refuses to register (an error naming the setting), a developer build first-uses it, warned.
 - [ ] QA nodes' environment names the QA relay's PeerId (`pp-relay-infra-ansible`, Leo).
 
 **Relay (pp-relay-apis)**

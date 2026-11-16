@@ -134,15 +134,19 @@ std::string ResolveBriefOrigin(const bool ui_demo, const char* env_origin, const
 }
 
 std::string ResolveRelayPeerId(const bool ui_demo, const char* env_origin, const BackendEnv backend,
-                               const CompiledOrigins& compiled) {
-  if (ui_demo || (env_origin && *env_origin)) {
+                               const CompiledOrigins& compiled, const char* env_peer_id) {
+  if (ui_demo) {
     return {};
+  }
+  if (env_origin && *env_origin) {
+    return env_peer_id ? std::string(env_peer_id) : std::string(); // the override's relay: its own PeerId, or none
   }
   return backend == BackendEnv::Qa ? compiled.qa_relay_peer_id : compiled.prod_relay_peer_id;
 }
 
 std::string BriefRelayPeerId() {
-  return ResolveRelayPeerId(kUiDemoBuild, std::getenv("PP_BROWSER_ORIGIN"), ActiveBackend(), BuildCompiledOrigins());
+  return ResolveRelayPeerId(kUiDemoBuild, std::getenv("PP_BROWSER_ORIGIN"), ActiveBackend(), BuildCompiledOrigins(),
+                            std::getenv("PP_BROWSER_RELAY_PEER_ID"));
 }
 
 std::string BriefOrigin() {

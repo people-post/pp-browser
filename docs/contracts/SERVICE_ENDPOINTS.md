@@ -36,9 +36,11 @@ Platform defaults (`PlatformDefaults`) set all three to `<origin>/api/relay` (e.
 `peer_id` (relay and registration; multi-relay [MR008](../../projects/multi-relay/DECISIONS.md#mr008--a-relay-address-carries-its-peerid-no-first-use-trust)):
 the PeerId that relay must answer to — its address carries it. `prod` / `qa` take the build's
 (`PP_RELAY_PEER_ID_PROD` / `PP_RELAY_PEER_ID_QA`, [BUILD](../ops/BUILD.md#backend-origin)) and ignore the saved
-ones; `custom` takes the config's. Me → Network's custom relay and registration fields show and take relay links
-(`<base_url>#<peer_id>`); a bare URL there names none. A relay none names is pinned on its first identity answer, with
-a warning ([§ Pins](#pins)). The directory is unsigned and needs none.
+ones; `custom` takes the config's, `PP_BROWSER_ORIGIN` takes `PP_BROWSER_RELAY_PEER_ID`. Me → Network's custom relay
+and registration fields show and take relay links (`<base_url>#<peer_id>`); a bare URL there names none. A custom
+relay (or `PP_BROWSER_ORIGIN`'s) none names is not used in a release build — Me → Network says its link has no relay
+ID, and an ERROR names the missing setting — and pinned on its first identity answer, warned, in a developer build
+([§ Pins](#pins)). The directory is unsigned and needs none.
 
 `directory.providers[]` (N029 nd3) is an **ordered failover list**. When present and non-empty, `CreateOrgBackendClients` builds HTTP clients for each `transport: http` entry and wraps them in `FailoverDirectoryClient`. When `providers` is omitted/empty, behavior matches legacy single `directory.base_url`. Non-`http` transports (e.g. future `amp`) are skipped with a warning until Phase B.
 
@@ -117,17 +119,22 @@ org's origins goes first). The app signs for a relay only the PeerId its pin hol
   build). The same PeerId after `wrong_audience`: a misbehaving relay — the call fails like a 5xx, logged.
 - **First use, developer builds only** (MR008 item 4): a developer build (`developer_relays`) may add a bare origin,
   and seed one from `relay.extra_base_urls`; such an origin is pinned on its first identity answer (logged as a
-  warning), at Add or before its first signed call. The org's origins in a build or config that names no PeerId for
-  them (a dogfood build; a release build's workflow refuses an empty `PP_RELAY_PEER_ID_PROD`) are pinned so too, with
-  the same warning. Any other origin no address names gets nothing signed (`relay_identity_unavailable`). A first-use
+  warning), at Add or before its first signed call; so are the org's origins with none named. Outside developer
+  builds only the compiled `prod` / `qa` backend of a build that ships no PeerId (a dogfood build: a release workflow
+  refuses an empty `PP_RELAY_PEER_ID_PROD`) is pinned so, warned (`OrgRelayFirstUseAllowed`); a release build's custom
+  backend or `PP_BROWSER_ORIGIN` without `relay.peer_id` (or `registration.peer_id` / `PP_BROWSER_RELAY_PEER_ID`) is
+  not used (an ERROR names the setting; Me → Network says so). Any other origin no address names gets nothing signed
+  (`relay_identity_unavailable`). A first-use
   fetch that fails pins nothing; it is asked again after 1 min, doubling to 2 min, and at once when the network comes
   back, the app comes to the front or the list changes.
 - Our card lists each relay of ours whose pin is in force; while a check pass runs, the card waits for its end and is
   re-issued once, so a linked device does not follow a list one check at a time.
 - **pp-node** expects its `registration.base_url` to answer to `registration.peer_id` (`PP_NODE_REGISTRATION_PEER_ID`;
   with the compiled prod registration URL, the compiled `PP_RELAY_PEER_ID_PROD`; [CONFIGURATION](../ops/CONFIGURATION.md#pp-node-relay-identity)),
-  kept in its data directory (`relay_pins.json`, the same format). With none named it pins that relay's first answer,
-  logged as a warning. An identity answer naming another PeerId (after a `wrong_audience`) stops its relay calls
+  kept in its data directory (`relay_pins.json`, the same format); the compiled URL is matched however it is spelled
+  (trailing `/`, case, default port). With none named a release build does not register there or send heartbeats (an
+  ERROR names `registration.peer_id (PP_NODE_REGISTRATION_PEER_ID)`, and each publish fails with it); a developer
+  build pins that relay's first answer, logged as a warning. An identity answer naming another PeerId (after a `wrong_audience`) stops its relay calls
   (registration, heartbeat) and is logged as an ERROR (`relay identity mismatch: expected <X>, presented <Y>`) until
   the relay answers to its address again or the operator names its new PeerId; the mesh keeps running.
 

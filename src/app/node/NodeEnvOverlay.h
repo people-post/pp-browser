@@ -45,4 +45,14 @@ void ApplyPpNodeConfigEnvOverlays(AppConfig& config);
 void DefaultNodeRegistrationPeerId(ServiceEndpointConfig& registration, const std::string& compiled_prod_relay,
                                    const std::string& compiled_prod_peer_id);
 
+/** A relay base URL as the node compares it: trimmed, no trailing `/`, scheme and host lower case, no default port. */
+std::string NodeRelayUrlKey(const std::string& url);
+
+/**
+ * Why the node may not register at `registration` (MR008 item 5): a registration URL with no `peer_id` (after
+ * DefaultNodeRegistrationPeerId) outside a developer build — the message names the setting; "" when it may (or there
+ * is no registration URL). A developer build pins that relay on its first answer instead, warned.
+ */
+std::string NodeRegistrationIdProblem(const ServiceEndpointConfig& registration, bool developer_build);
+
 } // namespace pbr

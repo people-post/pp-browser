@@ -1,4 +1,5 @@
 #include "app/node/NodeBootstrap.h"
+#include "app/node/NodeEnvOverlay.h"
 #include "app/node/NodeHeartbeat.h"
 #include "app/node/NodeMetrics.h"
 #include "app/node/NodeMeshPublish.h"
@@ -14,6 +15,7 @@
 #include "mesh/dht/AmpDhtProtocol.h"
 #include "lib/net/HttpClient.h"
 #include "lib/net/RegistrationSignPayload.h"
+#include "foundation/product/DevTools.h"
 #include "lib/net/RelayOrigins.h"
 #include "lib/net/RelayPins.h"
 #include "mesh/reachability/Reachability.h"
@@ -194,7 +196,8 @@ void ShutdownNode(pbr::NodeBootstrapResult& boot) {
 /**
  * The node's relay identity (multi-relay MR007, MR008): the relay it registers at is expected to answer to
  * `registration.peer_id` (PP_NODE_REGISTRATION_PEER_ID; the compiled prod relay's with the compiled URL), kept in
- * `relay_pins.json` in its data directory. With none named the node pins that relay's first answer, with a warning. An
+ * `relay_pins.json` in its data directory. With none named a release build refuses to register there (logged as an
+ * ERROR naming the setting) and a developer build pins that relay's first answer, with a warning. An
  * identity answer naming another PeerId stops the relay calls (registration, heartbeat) — the mesh services keep
  * running — and is logged as an ERROR, until the relay answers to its address again or the operator names its new one.
  */
@@ -214,10 +217,16 @@ std::shared_ptr<pbr::RelayPins> OpenNodeRelayPins(const pbr::NodeBootstrapResult
   if (registration.base_url.empty()) {
     return pins;
   }
-  if (registration.peer_id.empty()) {
-    pbr::logging::getLogger("pp-node").warning
-        << "registration.peer_id is not set: the relay at " << registration.base_url
-        << " is pinned on its first answer (set registration.peer_id or PP_NODE_REGISTRATION_PEER_ID)";
+  if (const std::string problem = pbr::NodeRegistrationIdProblem(registration, pbr::kDeveloperRelaysAllowed);
+      !problem.empty()) {
+    // MR008 item 5: a release build signs nothing for a relay its address names no PeerId for (no registration, no
+    // heartbeat); the mesh keeps running.
+    pbr::logging::getLogger("pp-node").error << problem;
+  } else if (registration.peer_id.empty()) {
+    pbr::logging::getLogger("pp-node").warning << "registration.peer_id is not set: the relay at "
+                                               << registration.base_url
+                                               << " is pinned on its first answer (a developer build; set "
+                                                  "registration.peer_id or PP_NODE_REGISTRATION_PEER_ID)";
     pins->SetFirstUse(
         [relay = registration.base_url](const std::string& origin) { return pbr::SameRelay(origin, relay); });
   } else if (auto expected = pins->Expect(registration.base_url, registration.peer_id); !expected) {

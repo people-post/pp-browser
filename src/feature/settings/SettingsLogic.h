@@ -27,5 +27,12 @@ std::string EndpointLinkText(const ServiceEndpointConfig& endpoint);
 void SetEndpointFromLinkText(ServiceEndpointConfig& endpoint, const std::string& text);
 
 AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState& state);
+/**
+ * The setting a release build misses to use the backend's relay (multi-relay MR008 item 4): `relay.peer_id`, or
+ * `registration.peer_id` when registration is another origin; "" when nothing is missing — a developer build, the
+ * compiled backend (`compiled_backend`: the build names it), or both named. Me → Network shows it; the hub does not use
+ * such a relay.
+ */
+std::string MissingRelayIdSetting(const AppConfig& config, bool developer_build, bool compiled_backend);
 
 } // namespace pbr

@@ -67,6 +67,26 @@ void SetEndpointFromLinkText(ServiceEndpointConfig& endpoint, const std::string&
   endpoint.peer_id = hash == std::string::npos ? std::string() : text.substr(hash + 1);
 }
 
+std::string MissingRelayIdSetting(const AppConfig& config, const bool developer_build, const bool compiled_backend) {
+  if (OrgRelayFirstUseAllowed(developer_build, compiled_backend)) {
+    return {};
+  }
+  const auto trimmed = [](std::string url) {
+    while (!url.empty() && url.back() == '/') {
+      url.pop_back();
+    }
+    return url;
+  };
+  if (!config.relay.base_url.empty() && config.relay.peer_id.empty()) {
+    return "relay.peer_id";
+  }
+  const bool apart = trimmed(config.registration.base_url) != trimmed(config.relay.base_url);
+  if (apart && !config.registration.base_url.empty() && config.registration.peer_id.empty()) {
+    return "registration.peer_id";
+  }
+  return {};
+}
+
 AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState& state) {
   AppConfig config = base;
   const AppConfig defaults = Config::DefaultAppConfig();

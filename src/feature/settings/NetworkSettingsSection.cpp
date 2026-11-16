@@ -5,6 +5,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/Platform.h"
+#include "foundation/product/DevTools.h"
 #include "feature/settings/SettingsLogic.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
@@ -34,6 +35,9 @@ void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.relay_base_url = EndpointLinkText(saved ? backend.saved_relay : bootstrap.config.relay);
   state.directory_base_url = saved ? backend.saved_directory.base_url : bootstrap.config.directory.base_url;
   state.registration_base_url = EndpointLinkText(saved ? backend.saved_registration : bootstrap.config.registration);
+  state.relay_id_missing = !MissingRelayIdSetting(bootstrap.config, kDeveloperRelaysAllowed,
+                                                  !OriginEnvOverrideActive() && ActiveBackend() != BackendEnv::Custom)
+                                .empty();
   state.node_enabled = bootstrap.config.mesh.node_enabled ? "on" : "off";
   state.circuit_relay_enabled = bootstrap.config.mesh.capabilities.circuit_relay ? "on" : "off";
   state.media_relay_enabled = bootstrap.config.mesh.capabilities.media_relay ? "on" : "off";

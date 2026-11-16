@@ -162,10 +162,14 @@ secrets included: the org's `register/finish` answers with the Brief LLM token.
    for local work only; release builds require a PeerId everywhere. The org anchor: a release build with an empty
    `PP_RELAY_PEER_ID_PROD` fails its release workflow (like the empty `PP_API_URL_PROD` check for pp-node; also a set
    `PP_API_URL_QA` without `PP_RELAY_PEER_ID_QA`); a dogfood or developer build without it pins the org's relay on its
-   first answer with a log warning.
+   first answer with a log warning. A custom backend (`relay.peer_id`, `registration.peer_id`) or `PP_BROWSER_ORIGIN`
+   (`PP_BROWSER_RELAY_PEER_ID`) that names none is first-used in developer builds only: a release build does not use
+   that relay, logs an error naming the setting and says so on Me → Network.
 5. **pp-node:** the relay it registers at is expected too: `registration.peer_id` / env `PP_NODE_REGISTRATION_PEER_ID`,
-   defaulting to the compiled `PP_RELAY_PEER_ID_PROD` when it uses the compiled prod registration URL (without one it
-   pins the relay's first answer with a warning). QA nodes need the QA PeerId in their environment (ansible).
+   defaulting to the compiled `PP_RELAY_PEER_ID_PROD` when it uses the compiled prod registration URL (matched however
+   it is spelled). With none, a release build refuses to register (an error naming the setting at start and at each
+   publish); a developer build pins the relay's first answer with a warning. QA nodes need the QA PeerId in their
+   environment (ansible).
 6. **Unchanged:** the audience, card version 4, the scoped revoke / unregister, grants. **What remains:** a link's source
    is trusted — a hostile operator controls what it publishes, and may publish its own origin with another relay's
    PeerId and pass that relay's answers through. Uniqueness keeps it from fronting the org or any relay of ours (no org

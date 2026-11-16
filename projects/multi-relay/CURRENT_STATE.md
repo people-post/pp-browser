@@ -110,8 +110,11 @@ pasted or scanned; a bare origin in developer builds only, pinned on first use);
 PeerId; a linked device takes our card's, a restore the locker's; the QR locator carries `{origin, peer_id}`. The pins
 are expected identities (`relay_pins.json` 2): `GET /v1/relay-identity` is only checked (once per run, after a
 `wrong_audience`, at Add), and a relay whose answer names another PeerId is *not used* (no Accept). A link naming a
-PeerId held at another origin is refused, the org's written first. pp-node expects `registration.peer_id`
-(`PP_NODE_REGISTRATION_PEER_ID`; the compiled prod PeerId with the compiled URL). Release workflows fail without
+PeerId held at another origin is refused, the org's written first. First use only in developer builds (and for the
+compiled backend of a dogfood build shipping no PeerId): a release build's custom backend or `PP_BROWSER_ORIGIN`
+without its relay's PeerId does not use that relay (Me → Network says so). pp-node expects `registration.peer_id`
+(`PP_NODE_REGISTRATION_PEER_ID`; the compiled prod PeerId with the compiled URL, however spelled); a release build
+without one refuses to register. Release workflows fail without
 `PP_RELAY_PEER_ID_PROD` (`scripts/check/check_relay_peer_ids.sh`). My relays shows **Copy link**. Lab:
 `relay_not_matching_its_link_unused` (B-RELAY-LINK) and the multi-relay scenarios on relay links. Contracts:
 [SERVICE_ENDPOINTS § Pins](../../docs/contracts/SERVICE_ENDPOINTS.md#pins),
@@ -139,6 +142,8 @@ Deploy: the relays (R1 and step 2) and the pp-node fleet on 8.0.0 (pp-relay-infr
 R3 and R4 need no relay change; they ship with the app. R5/R6 before the prod window: the repository variables
 `PP_RELAY_PEER_ID_PROD` and `PP_RELAY_PEER_ID_QA` (each environment's relay PeerId, from infra's record of its key) for
 `release.yml`, `ios-testflight.yml` and `release-pp-node.yml`; QA pp-nodes need `PP_NODE_REGISTRATION_PEER_ID` set to
-the QA relay's PeerId (`pp-relay-infra-ansible`, Leo); prod nodes take the compiled one.
+the QA relay's PeerId (`pp-relay-infra-ansible`, Leo); prod nodes take the compiled one. A user-run node (the g-ipfs
+Pi) built without `PP_API_URL_PROD` / `PP_RELAY_PEER_ID_PROD` needs `PP_NODE_REGISTRATION_PEER_ID` in its env before it
+runs an R6 build, or it stops registering.
 
 Next: the items above, as they matter; the multi-relay phases are otherwise done.

@@ -299,6 +299,8 @@ void ConversationsHub::ExpectRelayIdentities(const HubSettings& settings) {
           : settings.registration.peer_id;
   expect(clients_.OrgRelay(), settings.relay.peer_id);
   expect(clients_.LockerHome(), home_peer_id);
+  NoteOrgRelayWithoutId(settings, clients_.OrgRelay(), settings.relay.peer_id, "relay.peer_id");
+  NoteOrgRelayWithoutId(settings, clients_.LockerHome(), home_peer_id, "registration.peer_id");
   const auto named_by_org = [&](const std::string& origin) {
     return (!settings.relay.peer_id.empty() && SameRelay(origin, clients_.OrgRelay())) ||
            (!home_peer_id.empty() && SameRelay(origin, clients_.LockerHome()));
@@ -358,11 +360,25 @@ bool ConversationsHub::KeepsPin(const std::string& origin) {
                      [&origin](const std::string& kept) { return SameRelay(kept, origin); });
 }
 
+void ConversationsHub::NoteOrgRelayWithoutId(const HubSettings& settings, const std::string& origin,
+                                             const std::string& peer_id, const char* setting) {
+  if (origin.empty() || !peer_id.empty() || settings.org_first_use) {
+    return;
+  }
+  // MR008 item 4: a release build takes no relay on its first answer, the org's neither (Me → Network says so).
+  log().error << "the backend's relay at " << origin << " names no relay ID: it is not used (set " << setting
+              << " to the PeerId after # in the relay's link)";
+}
+
 bool ConversationsHub::FirstUseAllowed(const std::string& origin) {
   // MR008 item 4: a developer build may take a bare origin of ours on its first answer; the org's origins too in a
-  // build (or a config) that names no PeerId for them — a dogfood build, logged as a warning when it happens.
+  // build that names no PeerId for its compiled backend — a dogfood build, logged as a warning when it happens. A
+  // release build's custom backend (or PP_BROWSER_ORIGIN) without one: never.
   if (config_.developer_relays) {
     return KeepsPin(origin);
+  }
+  if (!config_.org_first_use) {
+    return false;
   }
   std::lock_guard lock(kept_pins_mu_);
   return std::any_of(org_origins_.begin(), org_origins_.end(),

@@ -35,6 +35,8 @@ struct SettingsUiState {
   std::string relay_base_url;
   std::string directory_base_url;
   std::string registration_base_url;
+  /** The backend's relay names no relay ID, so a release build does not use it (MissingRelayIdSetting; MR008). */
+  bool relay_id_missing = false;
   /** UI: "on" or "off" — desktop Node participation (N001). */
   std::string node_enabled = "on";
   /** True on desktop so Me → Network shows the help-the-network toggle. */

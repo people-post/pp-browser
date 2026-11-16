@@ -166,6 +166,7 @@ data-value="relay_base_url"	1	network	advanced_backend	advanced;;advanced;;backe
 {{i18n:settings.network.directory}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
 {{i18n:settings.network.registration}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
 {{i18n:settings.network.relay}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.relay_id_missing}}	1	network	advanced_backend	advanced;;advanced;;backend_is_custom;;relay_id_missing	network	
 data-event-click="share_profile()"	1	-	profile	-	profile	
 data-event-click="tap_profile_avatar()"	1	-	profile	-	profile	
 data-event-click="toggle_auto_renew_registration()"	2	profile	profile	advanced	profile	10

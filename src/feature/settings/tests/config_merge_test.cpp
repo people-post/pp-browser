@@ -220,3 +220,20 @@ TEST(ConfigMergeTest, TheCustomRelayFieldsTakeRelayLinks) {
   EXPECT_TRUE(saved.registration.peer_id.empty());
   EXPECT_EQ(pbr::EndpointLinkText(saved.relay), state.relay_base_url) << "the field shows the link again";
 }
+
+// MR008 item 4: a release build's custom backend whose relay names no relay ID is not used, and Me → Network says
+// which setting is missing; a developer build, or the compiled backend, takes it on first use instead.
+TEST(ConfigMergeTest, AReleaseBuildsCustomRelayWithoutItsIdIsNamedAsMissing) {
+  pbr::AppConfig config;
+  config.relay.base_url = "https://relay.example.test/api/relay";
+  config.registration.base_url = "https://relay.example.test/api/relay/";
+  EXPECT_EQ(pbr::MissingRelayIdSetting(config, false, false), "relay.peer_id");
+  EXPECT_EQ(pbr::MissingRelayIdSetting(config, true, false), "") << "a developer build: first use, warned";
+  EXPECT_EQ(pbr::MissingRelayIdSetting(config, false, true), "") << "the compiled backend: the build's PeerId";
+  config.relay.peer_id = "QmRelay";
+  EXPECT_EQ(pbr::MissingRelayIdSetting(config, false, false), "") << "the same origin: the relay's PeerId serves";
+  config.registration.base_url = "https://accounts.example.test/api/relay";
+  EXPECT_EQ(pbr::MissingRelayIdSetting(config, false, false), "registration.peer_id") << "another origin";
+  config.registration.peer_id = "QmAccounts";
+  EXPECT_EQ(pbr::MissingRelayIdSetting(config, false, false), "");
+}

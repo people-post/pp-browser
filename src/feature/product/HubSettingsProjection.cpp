@@ -2,6 +2,7 @@
 
 #include "foundation/data/AppPaths.h"
 #include "foundation/platform/os/OsDeviceName.h"
+#include "foundation/platform/DeploymentProfile.h"
 #include "foundation/product/DevTools.h"
 #include "lib/messaging/AttachmentDownloadPolicy.h"
 #include "lib/messaging/GroupTypes.h"
@@ -25,6 +26,10 @@ HubSettings HubSettingsFrom(const AppConfig& config, const ProfilePreferences& p
   settings.policy = ProjectPolicy(prefs);
   settings.system_device_name = StartupSystemDeviceName();
   settings.developer_relays = kDeveloperRelaysAllowed;
+  // MR008 item 4: first use of the org's relay only in developer builds, or on the compiled backend of a build that
+  // ships no PeerId for it (dogfood); never a release build's custom backend or PP_BROWSER_ORIGIN.
+  settings.org_first_use = OrgRelayFirstUseAllowed(kDeveloperRelaysAllowed,
+                                                   !OriginEnvOverrideActive() && ActiveBackend() != BackendEnv::Custom);
   return settings;
 }
 

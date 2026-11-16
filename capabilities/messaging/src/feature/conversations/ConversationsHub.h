@@ -759,6 +759,9 @@ private:
    * relays of ours, and the org's origins in a build or config that names none for them. Any thread.
    */
   bool FirstUseAllowed(const std::string& origin);
+  /** The org's `origin` names no PeerId (`setting`) where first use is not allowed: logged as an error (not used). */
+  void NoteOrgRelayWithoutId(const HubSettings& settings, const std::string& origin, const std::string& peer_id,
+                             const char* setting);
   /**
    * The identities every relay of ours and the org's origins are expected to answer to (MR008): the org's from the
    * build or the config (`relay.peer_id`, `registration.peer_id`), ours from the list. Before the card lists them.

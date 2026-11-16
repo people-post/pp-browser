@@ -35,6 +35,13 @@ struct HubSettings {
    * host (IsPublicRelayOrigin; the lab's). Release builds: neither.
    */
   bool developer_relays = false;
+  /**
+   * The org's relay (and registration URL) may be pinned on its first identity answer when the build or config names
+   * no PeerId for it (multi-relay MR008 item 4): a developer build, or the compiled prod / qa backend of a build that
+   * ships none (dogfood, warned). Off — a release build's custom backend or PP_BROWSER_ORIGIN without `relay.peer_id`
+   * (`registration.peer_id`): that relay is not used.
+   */
+  bool org_first_use = false;
 };
 
 } // namespace pbr
