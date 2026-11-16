@@ -293,14 +293,21 @@ void ConversationsHub::ExpectRelayIdentities(const HubSettings& settings) {
       (void)pins->Expect(origin, peer_id); // a conflict is logged and leaves that relay unused
     }
   };
+  const std::string home_peer_id =
+      settings.registration.peer_id.empty() && SameRelay(clients_.LockerHome(), clients_.OrgRelay())
+          ? settings.relay.peer_id
+          : settings.registration.peer_id;
   expect(clients_.OrgRelay(), settings.relay.peer_id);
-  expect(clients_.LockerHome(),
-         settings.registration.peer_id.empty() && SameRelay(clients_.LockerHome(), clients_.OrgRelay())
-             ? settings.relay.peer_id
-             : settings.registration.peer_id);
+  expect(clients_.LockerHome(), home_peer_id);
+  const auto named_by_org = [&](const std::string& origin) {
+    return (!settings.relay.peer_id.empty() && SameRelay(origin, clients_.OrgRelay())) ||
+           (!home_peer_id.empty() && SameRelay(origin, clients_.LockerHome()));
+  };
   if (our_relays_) {
     for (const OurRelayEntry& entry : our_relays_->List().relays) {
-      expect(entry.origin, entry.peer_id);
+      if (!named_by_org(entry.origin)) {
+        expect(entry.origin, entry.peer_id); // the org's relay on our list keeps the build's PeerId (a newer build's)
+      }
     }
   }
 }
@@ -2486,9 +2493,12 @@ Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const SecretText& phrase, 
 AccountStateRelays ConversationsHub::LockerRelays() const {
   AccountStateRelays relays;
   if (our_relays_) {
+    const auto pins = RelayIdentityPins();
     for (const OurRelayEntry& entry : our_relays_->List().relays) {
-      if (!entry.peer_id.empty()) {
-        relays.list.push_back(AccountStateRelay{.origin = entry.origin, .peer_id = entry.peer_id}); // its address
+      // Its address: the PeerId we expect of it (the build's for the org's relay), else the one the list kept.
+      std::string peer_id = pins ? pins->PinnedPeerId(entry.origin).value_or(entry.peer_id) : entry.peer_id;
+      if (!peer_id.empty()) {
+        relays.list.push_back(AccountStateRelay{.origin = entry.origin, .peer_id = std::move(peer_id)});
       }
     }
   }

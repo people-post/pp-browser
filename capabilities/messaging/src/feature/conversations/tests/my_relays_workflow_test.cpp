@@ -7,6 +7,7 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <future>
 #include <memory>
 #include <optional>
@@ -103,7 +104,10 @@ protected:
     ports.drop_pin = [this](const std::string& origin) { steps_.push_back("drop_pin " + origin); };
     ports.rejoin = [this](const std::string& origin) { steps_.push_back("rejoin " + origin); };
     ports.identity_mismatch = [this](const std::string& origin) { return mismatch_ == origin; };
-    ports.peer_id_of = [](const std::string&) { return std::string("QmLearnedOnFirstUse"); };
+    ports.peer_id_of = [this](const std::string& origin) {
+      const auto it = pinned_.find(origin);
+      return it == pinned_.end() ? std::string() : it->second;
+    };
     ports.org_identity_mismatch = [this]() { return org_mismatch_; };
     ports.now_ms = []() { return int64_t{1'761'235'200'000}; }; // 2025-10-23
     return ports;
@@ -132,6 +136,7 @@ protected:
   AddIdentityCheck identity_check_;
   std::string mismatch_;
   std::string org_mismatch_;
+  std::map<std::string, std::string> pinned_;
 };
 
 TEST_F(MyRelaysWorkflowTest, ARelayAddedAnswersIsKeptLastAndRegisteredOnAndTheCardGoes) {
@@ -199,6 +204,8 @@ TEST_F(MyRelaysWorkflowTest, AMismatchShowsAndEachRelayNamesItsPeerId) {
   EXPECT_EQ(status.relays[0].peer_id, kPeerA) << "the org relay's, from the build";
   EXPECT_EQ(status.relays[1].peer_id, kPeerB) << "from its link";
   EXPECT_EQ(status.org_identity_mismatch, org_mismatch_);
+  pinned_[kA] = kPeerC; // a newer build names another PeerId for the org's relay
+  EXPECT_EQ(workflow_->Status().relays[0].peer_id, kPeerC) << "what it is expected to answer to now";
 }
 
 TEST_F(MyRelaysWorkflowTest, ARelayThatDoesNotAnswerIsNotAdded) {

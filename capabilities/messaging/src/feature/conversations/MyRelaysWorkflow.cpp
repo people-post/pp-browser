@@ -383,7 +383,11 @@ OurRelaysStatus MyRelaysWorkflow::Status() const {
     const OurRelayEntry& entry = list.relays[i];
     OurRelayStatus relay{.origin = entry.origin, .preferred = i == 0, .registration = entry.registration};
     relay.identity_mismatch = ports_.identity_mismatch && ports_.identity_mismatch(entry.origin);
-    relay.peer_id = !entry.peer_id.empty() || !ports_.peer_id_of ? entry.peer_id : ports_.peer_id_of(entry.origin);
+    // What it answers to now (the build's for the org's relay, a first use's), else what the list kept.
+    relay.peer_id = ports_.peer_id_of ? ports_.peer_id_of(entry.origin) : std::string();
+    if (relay.peer_id.empty()) {
+      relay.peer_id = entry.peer_id;
+    }
     relay.registration = ShownRegistration(entry.registration, i == 0, preferred, now_ms);
     if (const auto reach = reach_.find(RelayOriginKey(entry.origin)); reach != reach_.end()) {
       relay.reach = reach->second.first ? OurRelayStatus::Reach::Ok : OurRelayStatus::Reach::Failed;

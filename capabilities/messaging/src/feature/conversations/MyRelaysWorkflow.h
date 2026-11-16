@@ -106,7 +106,10 @@ public:
     std::function<void(const std::string& origin)> rejoin;
     /** `origin`'s identity answer names another PeerId than its address (not used). */
     std::function<bool(const std::string& origin)> identity_mismatch;
-    /** The PeerId `origin` is pinned to and answers to (a developer build's bare origin: learned on first use). */
+    /**
+     * The PeerId `origin` is expected to answer to now, in force (the build's for the org's relay; a developer build's
+     * bare origin: learned on first use); empty: none.
+     */
     std::function<std::string(const std::string& origin)> peer_id_of;
     /** The org's origin when it is not ours and does not match its address (OurRelaysStatus::org_identity_mismatch). */
     std::function<std::string()> org_identity_mismatch;
