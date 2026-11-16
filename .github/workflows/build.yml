@@ -305,6 +305,7 @@ jobs:
         env:
           TRACE_DEBUG: "1"
           # A PR skips the tests of the capability folders it does not touch (CR022); pushes run every test.
+          # -j 4: the suite ran one test at a time (9 min on macOS); the slow call tests mostly wait on timers.
           PP_IS_PR: ${{ github.event_name == 'pull_request' }}
           PP_CHANGED_FILTERS: ${{ needs.changes.outputs.changes }}
         run: |
@@ -319,9 +320,9 @@ jobs:
           fi
           if [ ${#skip[@]} -gt 0 ]; then
             echo "Unchanged capabilities, tests skipped: ${skip[*]}"
-            ctest --test-dir build -C Release --output-on-failure -LE "^capability:($(IFS='|'; echo "${skip[*]}"))\$"
+            ctest --test-dir build -C Release -j 4 --output-on-failure -LE "^capability:($(IFS='|'; echo "${skip[*]}"))\$"
           else
-            ctest --test-dir build -C Release --output-on-failure
+            ctest --test-dir build -C Release -j 4 --output-on-failure
           fi
 
       - name: Smoke run (Linux)

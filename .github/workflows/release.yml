@@ -109,7 +109,7 @@ jobs:
         run: cmake --build build --config Release -j 4
 
       - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure
+        run: ctest --test-dir build -C Release -j 4 --output-on-failure
 
       - name: Install
         run: cmake --install build
@@ -285,7 +285,7 @@ jobs:
         run: cmake --build build --config Release -j 4
 
       - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure
+        run: ctest --test-dir build -C Release -j 4 --output-on-failure
 
       - name: Install
         run: cmake --install build
