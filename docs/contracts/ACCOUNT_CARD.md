@@ -172,7 +172,7 @@ directory; a relay that does not answer to its address is not asked, MR008), tak
 Account ID and account keys and verifies (kept as source `recovered`, which the own-account guard accepts), and goes
 on as usual — listed, it refreshes its entry; left out, it is signed out. While none answered (offline) it waits
 ("Getting your device list…"; asked again after 5 s doubling to 5 min, at once when the network comes back or the
-app comes to the front). When relays answered and none keeps a card of ours, Me → My devices asks the person:
+app comes to the front). When every relay asked answered and none keeps a card of ours (a relay that did not answer may keep it: then it is asked again later), Me → My devices asks the person:
 *Start a new device list…* — its confirm says that the account's other devices are signed out — sets `fresh`.
 (A registration while the card is still being got back carries none.)
 

@@ -26,7 +26,7 @@ inline constexpr const char kSignedOutMessage[] =
 inline constexpr const char kAwaitingMainCardMessage[] = "account card: waiting for the main device's card";
 /** A device that holds no card of its account (and starts none): it is getting it back from our relays. */
 inline constexpr const char kAwaitingOwnCardMessage[] = "Getting your device list…";
-/** No relay that answered keeps a card of ours: the person decides whether to start a new list (StartFreshList). */
+/** Every relay asked answered and none keeps a card of ours: the person decides whether to start a new list (StartFreshList). */
 inline constexpr const char kNoOwnCardMessage[] = "Your device list was not found";
 
 /** Where a device that holds no card of its own stands in getting it back (OwnDeviceList::recovery). */
@@ -42,6 +42,11 @@ struct OwnCardAnswers {
   std::vector<Object> cards;
   /** The relays that answered — with a card, or that they keep none. 0: none reached (offline). */
   size_t answered = 0;
+  /**
+   * The relays asked that did not answer. Only when every relay asked answered and none kept our card is the person
+   * asked to start a new list (it signs out the account's other devices); otherwise asked again later.
+   */
+  size_t unreached = 0;
 };
 
 /** The account's devices as this device knows them (M021 d4): the newest card's list; its first is the master. */

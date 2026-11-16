@@ -4392,6 +4392,7 @@ OwnCardAnswers ConversationsHub::AskOurRelaysForOwnCard(const std::string& accou
     auto stored = FetchStoredAccountCard(origin, account_id);
     if (!stored) {
       log().info << "our card not asked of " << RelayOriginKey(origin) << ": " << stored.error().message;
+      ++answers.unreached;
       continue;
     }
     ++answers.answered;

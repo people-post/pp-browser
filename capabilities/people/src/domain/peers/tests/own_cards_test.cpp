@@ -390,12 +390,13 @@ TEST_F(OwnCardsTest, AJoinThatReachesTheMasterAfterItsNextCardIsKept) {
 struct FakeRelays {
   std::vector<Object> cards;
   size_t answered = 0;
+  size_t unreached = 0;
   int asked = 0;
 
   OwnCards::OwnCardLookup Lookup() {
     return [this](const std::string& /*account_id*/, std::function<void(OwnCardAnswers)> done) {
       ++asked;
-      done(OwnCardAnswers{.cards = cards, .answered = answered});
+      done(OwnCardAnswers{.cards = cards, .answered = answered, .unreached = unreached});
     };
   }
 };
@@ -553,6 +554,25 @@ TEST_F(OwnCardsTest, NoCardAnywhereAsksThePersonAndAConfirmStartsAFreshList) {
   EXPECT_FALSE(laptop.own->StartFreshList(kNow + 300)) << "refused once a list is kept";
   ASSERT_TRUE(phone.own->Learn(*fresh, kNow + 400));
   EXPECT_TRUE(phone.own->SignedOut()) << "what the confirm said: the other devices are signed out";
+}
+
+// Starting over signs out the other devices: a relay that did not answer (the preferred one down) may keep our card,
+// so the person is asked only once every relay asked has answered.
+TEST_F(OwnCardsTest, ARelayThatDidNotAnswerKeepsItGettingNotAsking) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  (void)LinkLaptop(phone, laptop, kNow);
+  laptop.ForgetOwnCardBesideIdentity();
+  laptop.ResetChats();
+  FakeRelays relays;
+  relays.answered = 1;  // the org's directory: none kept
+  relays.unreached = 1; // the preferred relay: down
+  laptop.own->SetOwnCardLookup(relays.Lookup());
+
+  (void)laptop.own->Card(kNow + 100);
+  EXPECT_FALSE(laptop.own->Card(kNow + 110));
+  EXPECT_EQ(laptop.own->Devices().value().recovery, OwnCardRecovery::Getting) << "asked again later, not the person";
+  EXPECT_FALSE(laptop.own->StartFreshList(kNow + 200)) << "no new list while a relay may still keep ours";
 }
 
 TEST_F(OwnCardsTest, AnotherAccountsCardIsNotLearned) {

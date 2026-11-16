@@ -305,6 +305,10 @@ Roe<AccountCard> OwnCards::StartFreshList(const int64_t now_ms) {
     if (*newest) {
       return Error("This device already has your device list");
     }
+    if (recovery_ != OwnCardRecovery::NotFound) {
+      // Only once every relay answered without our card: a relay that did not may still keep it.
+      return Error("Your device list may still be found: try again when all your relays answer");
+    }
   }
   auto marked = identity_.Modify([](LocalIdentity& identity) {
     identity.card_intent = kCardIntentFresh;
@@ -427,10 +431,10 @@ void OwnCards::OnRecoveryAnswers(const OwnCardAnswers& answers, const int64_t no
       recovery_ = OwnCardRecovery::None;
       recovery_backoff_ms_ = 0;
       recovery_retry_at_ms_ = 0;
-    } else if (answers.answered > 0 && !found) {
-      recovery_ = OwnCardRecovery::NotFound; // the person decides (StartFreshList)
+    } else if (answers.answered > 0 && answers.unreached == 0 && !found) {
+      recovery_ = OwnCardRecovery::NotFound; // every relay answered, none keeps it: the person decides (StartFreshList)
     } else {
-      // None reached, or the card found was refused (older than a floor we know): asked again after a backoff.
+      // Not every relay reached, or the card found was refused (older than a floor we know): asked again later.
       recovery_backoff_ms_ =
           recovery_backoff_ms_ == 0 ? kRecoveryFirstRetryMs : std::min(recovery_backoff_ms_ * 2, kRecoveryMaxRetryMs);
       recovery_retry_at_ms_ = now_ms + recovery_backoff_ms_;
@@ -441,7 +445,7 @@ void OwnCards::OnRecoveryAnswers(const OwnCardAnswers& answers, const int64_t no
              << (recovered ? "recovered"
                  : found   ? "not kept"
                            : "none")
-             << " (" << answers.answered << " answered)";
+             << " (" << answers.answered << " answered, " << answers.unreached << " unreached)";
   if (recovered) {
     // On as usual: listed, its entry brought up to date; left out, signed out (this device was taken off).
     (void)Card(now_ms);
