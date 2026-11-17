@@ -26,7 +26,7 @@ bool PublisherFrameFreshness::Advances(const uint32_t stream_id, const uint16_t 
 }
 
 void PublisherFrameFreshness::Evict(const uint32_t stream_id, const uint16_t channel_id) {
-  const auto first = highest_.lower_bound(Key{stream_id, channel_id, 0});
+  const auto first = highest_.lower_bound(Key{stream_id, channel_id, uint64_t{0}});
   const auto last = highest_.upper_bound(Key{stream_id, channel_id, std::numeric_limits<uint64_t>::max()});
   if (static_cast<size_t>(std::distance(first, last)) < kInstancesKept) {
     return;
@@ -38,7 +38,7 @@ void PublisherFrameFreshness::Evict(const uint32_t stream_id, const uint16_t cha
 
 void PublisherFrameFreshness::Forget(const uint32_t stream_id) {
   highest_.erase(
-      highest_.lower_bound(Key{stream_id, 0, 0}),
+      highest_.lower_bound(Key{stream_id, uint16_t{0}, uint64_t{0}}),
       highest_.upper_bound(Key{stream_id, std::numeric_limits<uint16_t>::max(), std::numeric_limits<uint64_t>::max()}));
 }
 
