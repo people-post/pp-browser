@@ -45,9 +45,9 @@ TEST(SettingsPagesTest, OpeningAPageDoesWhatTheOldSectionDid) {
       {"notifications", static_cast<unsigned>(SettingsPageAction::RefreshBannerTip)},
       {"appearance", 0},
       {"storage", static_cast<unsigned>(SettingsPageAction::EnterStorage)},
-      {"help", static_cast<unsigned>(SettingsPageAction::RefreshDiagnostics)},
       {"advanced", 0},
       {"relays", static_cast<unsigned>(SettingsPageAction::RefreshRelays)},
+      {"help", static_cast<unsigned>(SettingsPageAction::RefreshDiagnostics)},
       {"tester", static_cast<unsigned>(SettingsPageAction::RefreshCasLibrary)},
   };
   ASSERT_EQ(SettingsPages().size(), std::size(expected));
@@ -118,10 +118,10 @@ std::vector<std::string> ListedIds(const bool advanced, const bool tester) {
 
 TEST(SettingsPagesTest, AdvancedFollowsItsSwitchAndTestOptionsFollowTheTesterSwitch) {
   const std::vector<std::string> base = {"profile",    "privacy", "security", "devices", "notifications",
-                                         "appearance", "storage", "help",     "relays"};
+                                         "appearance", "storage", "relays",   "help"};
   EXPECT_EQ(ListedIds(false, false), base);
   auto with_advanced = base;
-  with_advanced.insert(with_advanced.end() - 1, "advanced"); // Advanced comes before My relays, which is always listed
+  with_advanced.insert(with_advanced.end() - 2, "advanced"); // Advanced, then My relays (always listed), then Help
   EXPECT_EQ(ListedIds(true, false), with_advanced);
   auto with_tester = base;
   with_tester.push_back("tester");
