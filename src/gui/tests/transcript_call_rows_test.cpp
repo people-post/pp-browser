@@ -138,7 +138,24 @@ TEST_F(TranscriptCallRowsTest, AMissedCallIsMutedAndHasNoDuration) {
   const std::string rml = row.content_rml.c_str();
   EXPECT_NE(rml.find("../icons/v2/phone-x.svg"), std::string::npos) << rml;
   EXPECT_NE(rml.find("chat-call-row muted"), std::string::npos) << rml;
-  EXPECT_EQ(rml.find(':'), std::string::npos) << rml;
+  // No duration: the only clock is the message time, in its own span.
+  const size_t time_at = rml.find("<span class=\"chat-call-row-time\">");
+  ASSERT_NE(time_at, std::string::npos) << rml;
+  EXPECT_EQ(rml.find(':'), rml.find(':', time_at)) << rml;
+}
+
+TEST_F(TranscriptCallRowsTest, EveryCallRowShowsTheMessageTimeAfterItsText) {
+  const std::string time_span = "<span class=\"chat-call-row-time\">";
+  const std::string missed =
+      std::string(Row("account:peer", CallMediaMode::Voice, CallOutcome::Missed, std::nullopt).content_rml.c_str());
+  EXPECT_NE(missed.find(time_span), std::string::npos) << missed;
+  const std::string connected =
+      std::string(Row("account:peer", CallMediaMode::Voice, CallOutcome::Completed, 192'000).content_rml.c_str());
+  const size_t duration_at = connected.find(">3:12<");
+  const size_t connected_time_at = connected.find(time_span);
+  ASSERT_NE(duration_at, std::string::npos) << connected;
+  ASSERT_NE(connected_time_at, std::string::npos) << connected;
+  EXPECT_LT(duration_at, connected_time_at) << connected;
 }
 
 TEST_F(TranscriptCallRowsTest, ADirectVoiceRecordCallsBackWithVoice) {

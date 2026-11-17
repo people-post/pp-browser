@@ -171,8 +171,8 @@ std::string StoredSystemText(const ThreadMessage& message) {
   return StoredSystemLineText(message.text).value_or(message.text);
 }
 
-/** A call summary: state icon + duration / short outcome word in a small pill on the starter's side (Kenneth 2026-10-23). */
-std::string CallRowRml(const CallSummaryRow& row, bool tappable) {
+/** A call summary: state icon + duration / short outcome word + the time, in a small pill on the starter's side (Kenneth 2026-10-23). */
+std::string CallRowRml(const CallSummaryRow& row, bool tappable, const std::string& clock) {
   std::string html = "<div class=\"chat-call-row";
   if (!row.connected) {
     html += " muted";
@@ -185,7 +185,11 @@ std::string CallRowRml(const CallSummaryRow& row, bool tappable) {
   }
   const CallRowLook look = CallRowLookOf(row);
   html += "\"><svg class=\"chat-call-row-icon\" src=\"../icons/v2/" + look.icon + ".svg\"></svg>";
-  html += "<span class=\"chat-call-row-text\">" + StructuredTextParser::EscapeText(look.text) + "</span></div>";
+  html += "<span class=\"chat-call-row-text\">" + StructuredTextParser::EscapeText(look.text) + "</span>";
+  if (!clock.empty()) {
+    html += "<span class=\"chat-call-row-time\">" + clock + "</span>";
+  }
+  html += "</div>";
   return html;
 }
 
@@ -194,7 +198,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   const ThreadMessage& message = entry.message;
   if (entry.control) {
     if (call_row) {
-      return CallRowRml(*call_row, !facts.thread_is_group && !call_row->group);
+      return CallRowRml(*call_row, !facts.thread_is_group && !call_row->group, MessageClockLabel(message.timestamp));
     }
     // A feature's message: its own line, names included, else the message's text.
     const auto line = facts.control_line ? facts.control_line(message) : std::nullopt;
