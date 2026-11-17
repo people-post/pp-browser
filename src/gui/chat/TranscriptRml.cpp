@@ -171,8 +171,22 @@ std::string StoredSystemText(const ThreadMessage& message) {
   return StoredSystemLineText(message.text).value_or(message.text);
 }
 
+/** The route icon (two dots joined by a line; the line broken by a padlock through a server), "" for Local. */
+std::string RouteSvgRml(const MessageTransport transport) {
+  switch (transport) {
+    case MessageTransport::Direct:
+      return "<svg class=\"route-icon\" src=\"../icons/v2/route-direct.svg\" width=\"26\" height=\"12\"></svg>";
+    case MessageTransport::Relay:
+      return "<svg class=\"route-icon\" src=\"../icons/v2/route-relay.svg\" width=\"26\" height=\"12\"></svg>";
+    case MessageTransport::Local:
+      break;
+  }
+  return {};
+}
+
 /** A call summary: state icon + duration / short outcome word + the time, in a small pill on the starter's side (Kenneth 2026-10-23). */
-std::string CallRowRml(const CallSummaryRow& row, bool tappable, const std::string& clock) {
+std::string CallRowRml(const CallSummaryRow& row, bool tappable, const std::string& clock,
+                       const std::optional<MessageTransport>& transport) {
   std::string html = "<div class=\"chat-call-row";
   if (!row.connected) {
     html += " muted";
@@ -186,6 +200,13 @@ std::string CallRowRml(const CallSummaryRow& row, bool tappable, const std::stri
   const CallRowLook look = CallRowLookOf(row);
   html += "\"><svg class=\"chat-call-row-icon\" src=\"../icons/v2/" + look.icon + ".svg\"></svg>";
   html += "<span class=\"chat-call-row-text\">" + StructuredTextParser::EscapeText(look.text) + "</span>";
+  // Only a call that connected shows how its record travelled (the record's own transport, which may differ from the
+  // call's audio path). A group call's media always goes through the server, so it shows the relay icon.
+  std::string route;
+  if (row.connected) {
+    route = RouteSvgRml(row.group ? MessageTransport::Relay : transport.value_or(MessageTransport::Local));
+  }
+  html += route;
   if (!clock.empty()) {
     html += "<span class=\"chat-call-row-time\">" + clock + "</span>";
   }
@@ -198,7 +219,8 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   const ThreadMessage& message = entry.message;
   if (entry.control) {
     if (call_row) {
-      return CallRowRml(*call_row, !facts.thread_is_group && !call_row->group, MessageClockLabel(message.timestamp));
+      return CallRowRml(*call_row, !facts.thread_is_group && !call_row->group, MessageClockLabel(message.timestamp),
+                        message.transport);
     }
     // A feature's message: its own line, names included, else the message's text.
     const auto line = facts.control_line ? facts.control_line(message) : std::nullopt;
@@ -625,15 +647,7 @@ std::string RouteIconRml(const ThreadMessage& message, const SendMark mark) {
   if (mark != SendMark::None || !message.transport) {
     return {};
   }
-  switch (*message.transport) {
-    case MessageTransport::Direct:
-      return "<svg class=\"route-icon\" src=\"../icons/v2/route-direct.svg\" width=\"26\" height=\"12\"></svg>";
-    case MessageTransport::Relay:
-      return "<svg class=\"route-icon\" src=\"../icons/v2/route-relay.svg\" width=\"26\" height=\"12\"></svg>";
-    case MessageTransport::Local:
-      break;
-  }
-  return {};
+  return RouteSvgRml(*message.transport);
 }
 
 std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& facts, const SendMark mark) {

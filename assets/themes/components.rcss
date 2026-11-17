@@ -7892,6 +7892,16 @@ input.checkbox {
   font-size: 13dp;
 }
 
+/* A connected call's route icon sits before the time and is as faint as the time (colour: colors, like the time's). */
+.chat-call-row .route-icon {
+  margin-left: 8dp;
+  opacity: 0.7;
+}
+
+.chat-call-row .route-icon + .chat-call-row-time {
+  margin-left: 0;
+}
+
 .chat-call-row--tappable {
   cursor: pointer;
 }

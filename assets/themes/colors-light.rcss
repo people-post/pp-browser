@@ -261,6 +261,10 @@ select selectbox option:hover {
   image-color: #ffffff;
 }
 
+.message-row-user .chat-call-row .route-icon {
+  image-color: #ffffff;
+}
+
 .message-row-user .chat-call-row.muted {
   background-color: #a3b3f9;
 }
@@ -270,6 +274,10 @@ select selectbox option:hover {
 }
 
 .message-row-peer .chat-call-row svg {
+  image-color: #000000;
+}
+
+.message-row-peer .chat-call-row .route-icon {
   image-color: #000000;
 }
 

@@ -67,7 +67,8 @@ protected:
 
   // Appends a call summary written by `sender` and returns that row as rendered.
   MessageDisplayRow Row(const std::string& sender, CallMediaMode mode, CallOutcome outcome,
-                        std::optional<int64_t> duration_ms, bool group = false, bool started = false) {
+                        std::optional<int64_t> duration_ms, bool group = false, bool started = false,
+                        std::optional<MessageTransport> transport = MessageTransport::Direct) {
     CallSummaryDetail detail;
     detail.call_id = "call:" + util::GenerateUuid();
     detail.media_mode = mode;
@@ -83,7 +84,7 @@ protected:
     ThreadMessage message = built ? *built : ThreadMessage{};
     message.id = "row-" + util::GenerateUuid();
     message.timestamp = util::NowUnixMs();
-    message.transport = MessageTransport::Direct;
+    message.transport = transport;
     EXPECT_TRUE(store_->AppendMessage(message));
     for (const MessageDisplayRow& row : RenderTranscript(inbox_->BuildTranscript("thread-calls"), inbox_->Facts())) {
       if (std::string(row.message_id.c_str()) == message.id) {
@@ -159,12 +160,64 @@ TEST_F(TranscriptCallRowsTest, EveryCallRowShowsTheMessageTimeAfterItsText) {
   EXPECT_LT(duration_at, connected_time_at) << connected;
 }
 
-TEST_F(TranscriptCallRowsTest, ACallRowShowsNoRouteIcon) {
-  // The record's own transport says how the summary travelled, not the call's audio.
-  const std::string rml =
-      std::string(Row("account:peer", CallMediaMode::Voice, CallOutcome::Completed, 5'000).content_rml.c_str());
+// A connected call row shows the route its record travelled (its own transport, which may differ from the call's audio
+// path), right before the time. The Row() helper stores the transport it is given, so these assert the positive cases.
+TEST_F(TranscriptCallRowsTest, AConnectedDirectRecordShowsTheDirectIconBeforeTheTime) {
+  const std::string rml = std::string(
+      Row("account:peer", CallMediaMode::Voice, CallOutcome::Completed, 5'000, false, false, MessageTransport::Direct)
+          .content_rml.c_str());
+  const size_t icon = rml.find("route-direct.svg");
+  const size_t time = rml.find("chat-call-row-time");
+  ASSERT_NE(icon, std::string::npos) << rml;
+  ASSERT_NE(time, std::string::npos) << rml;
+  EXPECT_LT(rml.find("chat-call-row-text"), icon) << rml;
+  EXPECT_LT(icon, time) << rml;
+  EXPECT_EQ(rml.find("route-relay.svg"), std::string::npos) << rml;
+}
+
+TEST_F(TranscriptCallRowsTest, AConnectedRelayRecordShowsTheRelayIcon) {
+  const std::string rml = std::string(
+      Row("account:peer", CallMediaMode::Voice, CallOutcome::Completed, 5'000, false, false, MessageTransport::Relay)
+          .content_rml.c_str());
+  EXPECT_NE(rml.find("route-relay.svg"), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("route-direct.svg"), std::string::npos) << rml;
+}
+
+TEST_F(TranscriptCallRowsTest, AConnectedGroupCallAlwaysShowsTheRelayIcon) {
+  const std::string rml = std::string(Row("account:peer", CallMediaMode::Voice, CallOutcome::Completed, 5'000,
+                                          /*group=*/true, false, MessageTransport::Direct)
+                                          .content_rml.c_str());
+  EXPECT_NE(rml.find("route-relay.svg"), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("route-direct.svg"), std::string::npos) << rml;
+}
+
+TEST_F(TranscriptCallRowsTest, AMissedCallShowsNoRouteIcon) {
+  const std::string rml = std::string(Row("account:peer", CallMediaMode::Voice, CallOutcome::Missed, std::nullopt,
+                                          false, false, MessageTransport::Relay)
+                                          .content_rml.c_str());
   EXPECT_NE(rml.find("chat-call-row"), std::string::npos) << rml;
   EXPECT_EQ(rml.find("route-"), std::string::npos) << rml;
+}
+
+TEST_F(TranscriptCallRowsTest, ADeclinedOrCancelledOrFailedCallShowsNoRouteIcon) {
+  for (const CallOutcome outcome : {CallOutcome::Declined, CallOutcome::Cancelled, CallOutcome::Failed}) {
+    const std::string rml = std::string(
+        Row("account:peer", CallMediaMode::Voice, outcome, std::nullopt, false, false, MessageTransport::Direct)
+            .content_rml.c_str());
+    EXPECT_NE(rml.find("chat-call-row"), std::string::npos) << rml;
+    EXPECT_EQ(rml.find("route-"), std::string::npos) << rml;
+  }
+}
+
+TEST_F(TranscriptCallRowsTest, AConnectedCallWithNoTransportShowsNoRouteIcon) {
+  for (const std::optional<MessageTransport> transport :
+       {std::optional<MessageTransport>(), std::optional<MessageTransport>(MessageTransport::Local)}) {
+    const std::string rml =
+        std::string(Row("account:peer", CallMediaMode::Voice, CallOutcome::Completed, 5'000, false, false, transport)
+                        .content_rml.c_str());
+    EXPECT_NE(rml.find("chat-call-row"), std::string::npos) << rml;
+    EXPECT_EQ(rml.find("route-"), std::string::npos) << rml;
+  }
 }
 
 TEST_F(TranscriptCallRowsTest, ADirectVoiceRecordCallsBackWithVoice) {
