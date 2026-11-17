@@ -142,7 +142,10 @@ bool CallSummaryIsNews(const ThreadMessage& message) {
   if (!summary || summary->group || message.sender_contact_id == kLocalSelfContactId) {
     return false;
   }
-  return summary->outcome == CallOutcome::Missed || summary->outcome == CallOutcome::Cancelled;
+  // Failed counts too: the caller tried and this side never knew. (A call that merged into another or was answered on
+  // another device of ours writes no summary at all, PlanCallSummary, so a Failed one on the wire is a real failure.)
+  return summary->outcome == CallOutcome::Missed || summary->outcome == CallOutcome::Cancelled ||
+         summary->outcome == CallOutcome::Failed;
 }
 
 SystemControlFamily MakeCallControlFamily(CallControlFamilyPorts ports) {

@@ -83,13 +83,17 @@ TEST_F(CallControlFamilyTest, AGroupSummaryIsTheReadersOwnPartInTheCall) {
   EXPECT_EQ(Line(started), std::optional<std::string>("Group voice call · no answer"));
 }
 
-TEST_F(CallControlFamilyTest, OnlyAMissedCallIsNews) {
+TEST_F(CallControlFamilyTest, AMissedCancelledOrFailedIncomingCallIsNews) {
   const SystemControlFamily family = MakeCallControlFamily({});
   EXPECT_FALSE(family.quiet(Summary("account:bob", CallOutcome::Missed, std::nullopt)));
   EXPECT_FALSE(family.quiet(Summary("account:bob", CallOutcome::Cancelled, std::nullopt)));
+  EXPECT_FALSE(family.quiet(Summary("account:bob", CallOutcome::Failed, std::nullopt))) << "he tried, we never knew";
+  EXPECT_TRUE(family.quiet(Summary("account:bob", CallOutcome::Declined, std::nullopt))) << "we declined it";
   EXPECT_TRUE(family.quiet(Summary("account:bob", CallOutcome::Completed, 5'000)));
+  EXPECT_TRUE(family.quiet(Summary(kLocalSelfContactId, CallOutcome::Failed, std::nullopt))) << "ours: not news";
   EXPECT_TRUE(family.quiet(Summary(kLocalSelfContactId, CallOutcome::Missed, std::nullopt))) << "ours: not news";
   EXPECT_TRUE(family.quiet(Summary("account:bob", CallOutcome::Missed, std::nullopt, true))) << "group: not news";
+  EXPECT_TRUE(family.quiet(Summary("account:bob", CallOutcome::Failed, std::nullopt, true))) << "group: not news";
 }
 
 TEST_F(CallControlFamilyTest, HandsSignalingToTheCallStack) {
