@@ -378,6 +378,8 @@ struct CallRosterParticipantState {
   bool on_hold = false;
   /** V060: their camera is off because their app is in the background: the tile reads "Camera paused". */
   bool video_paused = false;
+  /** V067: nothing has come from them for a few seconds: the tile reads "Reconnecting…", dimmed, no live picture. */
+  bool reconnecting = false;
   /** V062: a guest in the group's call: the tile reads "Guest". */
   bool guest = false;
 };

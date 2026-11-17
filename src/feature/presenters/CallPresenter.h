@@ -41,6 +41,8 @@ struct CallNotice {
     IncomingCall,
     /** V062 1: `identity` joined the group's call as `brought_by`'s guest (once per guest and call). */
     GuestJoined,
+    /** V067: `identity` was reconnecting and is gone from the call ("{name} lost connection"). */
+    ParticipantLost,
     /** V064: the 1:1 call End & accept ended (`ending`) can be called back now that the call taken is over. */
     CallBack,
     /** "Who can call me" dropped a call from `identity`: `key` (an i18n key) says which setting did (the pill). */
@@ -377,6 +379,8 @@ private:
   void OfferCallBack(const CallScreen& next, const CallUiBackend::Surface& surface);
   /** V062 1: "{name} joined as {bringer}'s guest", once per guest of the call on `s`. */
   void AnnounceGuests(const CallScreen& s);
+  /** V067: "{name} lost connection" for each participant reconnecting in `before` and gone in `after`. */
+  void AnnounceLostConnections(const CallScreen& before, const CallScreen& after);
   /** The media frame of the screen `next` (in a call: its facts read, then acted on; answering: the story only). */
   void StepMedia(CallUiBackend& backend, const CallScreen& next, int64_t now);
   /** One tick's media facts for the call on `s`, after the engine's video upkeep. */

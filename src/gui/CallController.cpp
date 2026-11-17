@@ -340,7 +340,8 @@ std::string RosterKey(const std::vector<CallRosterParticipantState>& roster) {
   for (const CallRosterParticipantState& p : roster) {
     key += std::string(p.name.c_str()) + "|" + p.stream_id.c_str() + "|" + (p.audio_muted ? "m" : "-") +
            (p.video_enabled ? "v" : "-") + (p.has_remote_video ? "r" : "-") + (p.on_hold ? "h" : "-") +
-           (p.video_paused ? "p" : "-") + (p.guest ? "g" : "-") + (p.avatar_unknown ? "u" : "-") +
+           (p.video_paused ? "p" : "-") + (p.reconnecting ? "c" : "-") + (p.guest ? "g" : "-") +
+           (p.avatar_unknown ? "u" : "-") +
            AvatarKey(false, p.has_avatar, p.avatar_src, p.avatar_letter, p.avatar_tone) + ";";
   }
   return key;
@@ -1221,6 +1222,9 @@ void CallController::ShowNotice(const CallNotice& notice) {
       UserFeedback::Ok(Tr("call.guest.joined", {{"name", name}, {"bringer", CallerNameFor(notice.brought_by).label}}));
       return;
     }
+    case CallNotice::Kind::ParticipantLost:
+      UserFeedback::Note(Tr("call.notice.lost_connection", {{"name", CallerNameFor(notice.identity).label}}));
+      return;
     case CallNotice::Kind::IncomingCall: {
       if (system_call_screen_.TakesRing(AppLifecycle::IsVisible(), notice.conflict)) {
         return; // the phone's own call screen rings it (Android's call notification)

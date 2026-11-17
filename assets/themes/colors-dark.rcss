@@ -3448,6 +3448,10 @@ input.checkbox:checked {
   image-color: #ffffff;
 }
 
+.call-hold-pill.call-reconnect-pill {
+  background-color: #3a3a3ceb;
+}
+
 .call-phone-notice-icon {
   background-color: #ffffff24;
 }
