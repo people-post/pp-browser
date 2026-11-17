@@ -1871,7 +1871,7 @@
     "hints.mic_blocked": "Microphone access looks blocked — enable it in system privacy settings.",
     "errors.auth.register_or_rotate": "Set up your account in Settings → My profile.",
     "errors.auth.busy": "Service is busy — try again shortly.",
-    "errors.auth.relay_identity": "That relay's ID doesn't match its link. Check Settings → My relays (turn on Help → Show advanced settings first).",
+    "errors.auth.relay_identity": "That relay's ID doesn't match its link. Check Settings → My relays.",
     "errors.auth.upgrade_required": "That relay needs a newer version of the app. Update the app.",
     "errors.ai.limit_daily": "You've used up today's free messages. Try again tomorrow.",
     "errors.ai.limit_minute": "You're sending too fast. Wait a minute and try again.",

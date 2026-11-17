@@ -67,7 +67,7 @@ Contracts: [SERVICE_ENDPOINTS § Several relays](../../docs/contracts/SERVICE_EN
   `relay.extra_base_urls`), each with its last registration, read back at start (a relay holding our registration
   for the current card is not asked again). Inbox cursors are kept by relay (`relay_inbox_cursor.json`
   `cursor_relay`).
-- Me → My relays (shown with Help → Show advanced settings on) (a page of its own on Home, after Advanced; phone and desktop): the list, preferred first, each
+- Me → My relays (a page of its own on Home, after Help and after Advanced when it is listed; phone and desktop): the list, preferred first, each
   with its registration and last poll; Add relay… (https; the relay must answer `client-compat`), Make preferred
   (the identity registers there, #602's path; push binds there), Remove… (never the preferred or the last; push and
   registration revoked there first). Every change re-issues the card and sends it to contacts

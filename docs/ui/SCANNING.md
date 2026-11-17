@@ -8,7 +8,7 @@ confirmation shows the person's name and Account ID. Only confirmation saves the
 locator may carry the person's preferred relay's address — its origin and the relay's ID (PeerId) it answers to
 ([ACCOUNT_CARD § Locator](../contracts/ACCOUNT_CARD.md#locator-qr-code-invite-link), multi-relay MR008): the new contact
 keeps it as its relay until their card arrives, so a first message can reach their mailbox, signed for that ID.
-Me → My relays (shown with Help → Show advanced settings on) → **Add relay…** also scans: a relay's link (`https://host#<PeerId>`) shown as a QR code goes into its
+Me → My relays → **Add relay…** also scans: a relay's link (`https://host#<PeerId>`) shown as a QR code goes into its
 field and is checked as a pasted link ([UI_DESIGN_SYSTEM § My relays](UI_DESIGN_SYSTEM.md#my-relays)).
 A group's **invite link** (`pp://join/…`, [group-chat G021](../../projects/group-chat/DECISIONS.md#g021--invite-links))
 is the other kind it reads: the chats' join prompt asks the link's maker, then shows the group's name and

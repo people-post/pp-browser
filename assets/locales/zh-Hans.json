@@ -1819,7 +1819,7 @@
     "hints.mic_blocked": "麦克风访问似乎被阻止 — 请在系统隐私设置中启用。",
     "errors.auth.register_or_rotate": "请在 设置 → 我的资料 里开通账号。",
     "errors.auth.busy": "服务繁忙，请稍后再试。",
-    "errors.auth.relay_identity": "该中继的 ID 与链接不符，请在“设置 → 我的中继”中查看（要先在“帮助”里打开“显示高级设置”）。",
+    "errors.auth.relay_identity": "该中继的 ID 与链接不符，请在“设置 → 我的中继”中查看。",
     "errors.auth.upgrade_required": "该中继需要更新版本的应用，请更新应用。",
     "errors.ai.limit_daily": "今天的免费次数用完了，明天再试",
     "errors.ai.limit_minute": "发得太快了，请稍等一分钟再试",

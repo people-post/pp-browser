@@ -267,7 +267,7 @@ changes.
 
 ### My relays
 
-Me → **My relays** (shown with Help → Show advanced settings on) (`settings_section_relays.rml`, page `relays`, Home group 3 after Advanced; multi-relay R3,
+Me → **My relays** (`settings_section_relays.rml`, page `relays`, Home group 3, after Help and after Advanced when it is listed; multi-relay R3,
 [SERVICE_ENDPOINTS § My relays](../contracts/SERVICE_ENDPOINTS.md#my-relays)). The presenter (`MyRelaysViewFor`)
 decides, `SettingsMyRelays` renders. One card per relay, preferred first: the host (`relay.example.org`), a
 **Preferred** badge on the first, its registration (`Registered until <date>` / `Registering…` / `Couldn't register`

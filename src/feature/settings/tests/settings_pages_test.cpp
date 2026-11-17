@@ -117,12 +117,11 @@ std::vector<std::string> ListedIds(const bool advanced, const bool tester) {
 }
 
 TEST(SettingsPagesTest, AdvancedFollowsItsSwitchAndTestOptionsFollowTheTesterSwitch) {
-  const std::vector<std::string> base = {"profile",       "privacy",    "security", "devices",
-                                         "notifications", "appearance", "storage",  "help"};
+  const std::vector<std::string> base = {"profile",    "privacy", "security", "devices", "notifications",
+                                         "appearance", "storage", "help",     "relays"};
   EXPECT_EQ(ListedIds(false, false), base);
   auto with_advanced = base;
-  with_advanced.push_back("advanced");
-  with_advanced.push_back("relays"); // My relays: a technical page, listed with Advanced, right after it
+  with_advanced.insert(with_advanced.end() - 1, "advanced"); // Advanced comes before My relays, which is always listed
   EXPECT_EQ(ListedIds(true, false), with_advanced);
   auto with_tester = base;
   with_tester.push_back("tester");
@@ -131,7 +130,7 @@ TEST(SettingsPagesTest, AdvancedFollowsItsSwitchAndTestOptionsFollowTheTesterSwi
   both.push_back("tester");
   EXPECT_EQ(ListedIds(true, true), both);
   EXPECT_EQ(Page("advanced").gate, SettingsPageGate::Advanced);
-  EXPECT_EQ(Page("relays").gate, SettingsPageGate::Advanced);
+  EXPECT_EQ(Page("relays").gate, SettingsPageGate::None);
   EXPECT_EQ(Page("relays").home_group, Page("advanced").home_group);
   EXPECT_EQ(Page("tester").gate, SettingsPageGate::Tester);
   EXPECT_EQ(Page("help").gate, SettingsPageGate::None);
