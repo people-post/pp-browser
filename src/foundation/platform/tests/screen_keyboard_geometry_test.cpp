@@ -76,6 +76,30 @@ TEST(KeyboardLiftTest, GapIsAdded) {
   EXPECT_EQ(KeyboardLift(852, 516, 818, 6), 308);
 }
 
+TEST(KeyboardLiftTest, BarMeasuredFromItsBoxSettlesOnTheKeyboardTop) {
+  // iPad (ShellHost::MeasureKeyboardInput): the bar's bottom without a lift = its box now + the lift already applied.
+  // Model of the shell: the bar ends `c` above the lifted bottom; below the 120 pt latch it also keeps the 20 pt
+  // home-indicator padding inside its box. It must settle on the keyboard top within two frames and stay there.
+  const int window_h = 878;
+  const int safe = 20;
+  const int keyboard_top = 878 - 400;
+  auto bar_bottom = [&](int lift) {
+    const int inset = safe + lift;
+    return inset >= 120 ? window_h - inset - 6 : window_h - 6;
+  };
+  int lift = 0;
+  for (int frame = 0; frame < 3; ++frame) {
+    lift = KeyboardLift(window_h, keyboard_top, bar_bottom(lift) + lift, 0);
+  }
+  EXPECT_EQ(bar_bottom(lift), keyboard_top);
+  EXPECT_EQ(KeyboardLift(window_h, keyboard_top, bar_bottom(lift) + lift, 0), lift);
+}
+
+TEST(KeyboardLiftTest, FieldNearTheTopIsNotLifted) {
+  // A search box ending at 120 pt with the keyboard's top at 478: its own bottom is the input, so nothing moves.
+  EXPECT_EQ(KeyboardLift(878, 478, 120, 0), 0);
+}
+
 TEST(KeyboardLiftTest, NeverPastTheWindowTop) {
   EXPECT_EQ(KeyboardLift(500, -40, 480, 0), 480);
   EXPECT_EQ(KeyboardLift(500, 0, 480, 30), 480);

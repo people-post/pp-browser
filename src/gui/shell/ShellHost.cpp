@@ -1835,7 +1835,7 @@ void ShellHost::SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp) {
   ApplySafeAreaLayout();
 }
 
-ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
+ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() {
   SafeAreaFromSdl insets{};
 #if UI_SDL_VERSION_MAJOR >= 3
   // SDL_GetWindowSafeArea is in window coordinates (points on iOS, pixels on Android).
@@ -1865,10 +1865,15 @@ ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
   insets.window_w = win_w;
   insets.window_h = win_h;
   insets.keyboard_win = std::max(0, ScreenKeyboardHeight());
-  // The input bar is docked on the shell's bottom edge, which without a keyboard is the safe area's bottom; the shell
-  // goes up by just what puts that edge on the keyboard's top (no gap). Same numbers as max(safe bottom, keyboard).
+  insets.keyboard_top_win = win_h - insets.keyboard_win;
+  // iPhone, and the iPad without a measurable input: the input bar is docked on the shell's bottom edge, which without
+  // a keyboard is the safe area's bottom; the shell goes up by just what puts that edge on the keyboard's top (no gap).
+  // Same numbers as max(safe bottom, keyboard).
   insets.input_bottom_win = win_h - safe_bottom_win;
-  insets.lift_win = KeyboardLift(win_h, win_h - insets.keyboard_win, insets.input_bottom_win, 0);
+  if (IsIpadDevice()) {
+    MeasureKeyboardInput(insets, density > 0.f ? density : 1.f);
+  }
+  insets.lift_win = KeyboardLift(win_h, insets.keyboard_top_win, insets.input_bottom_win, 0);
   const int bottom_win = safe_bottom_win + insets.lift_win;
   insets.top_dp = static_cast<int>(static_cast<float>(top_win) * window_to_dp + 0.5f);
   insets.bottom_dp = static_cast<int>(static_cast<float>(bottom_win) * window_to_dp + 0.5f);
@@ -1877,17 +1882,85 @@ ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
   return insets;
 }
 
+void ShellHost::MeasureKeyboardInput(SafeAreaFromSdl& insets, float px_per_win) {
+  if (insets.keyboard_win <= 0) {
+    keyboard_field_ = nullptr;
+    return;
+  }
+  ui::Element* focus = context_ ? context_->GetFocusElement() : nullptr;
+  ui::ElementDocument* doc = context_ && context_->GetNumDocuments() > 0 ? context_->GetDocument(0) : nullptr;
+  if (!focus || focus == doc || focus->GetTagName() == "body") {
+    insets.input_source = "shell";
+    return;
+  }
+  auto bottom_win = [px_per_win](ui::Element* element) {
+    const float px =
+        element->GetAbsoluteOffset(ui::BoxArea::Border).y + element->GetBox().GetSize(ui::BoxArea::Border).y;
+    return static_cast<int>(std::lround(px / px_per_win));
+  };
+  ui::Element* bar = focus;
+  while (bar && !bar->IsClassSet("prompt-composer") && !bar->IsClassSet("ask-ai-composer")) {
+    bar = bar->GetParentNode();
+  }
+  bool in_shell_root = false;
+  for (ui::Element* e = bar; e; e = e->GetParentNode()) {
+    if (e->GetId() == "shell-root") {
+      in_shell_root = true;
+      break;
+    }
+  }
+  const bool home_keeps_place = state_.layout_mode == LayoutMode::Compact && HomeDockApplies();
+  if (bar && in_shell_root && !home_keeps_place && !bottom_chrome_open_) {
+    // The chat input bar, docked in #shell-root: it goes up one for one with the lift already applied, so its place
+    // without a lift is where it is now plus that lift. Within a frame or two it sits on the keyboard's top.
+    insets.input_source = "bar";
+    insets.focus_bottom_win = bottom_win(bar);
+    insets.input_bottom_win = insets.focus_bottom_win + keyboard_lift_applied_win_;
+    keyboard_field_ = nullptr;
+    return;
+  }
+  if (bar) {
+    // A bar the lift does not move (the AI Home's, one outside the shell, under the emoji sheet): as before.
+    insets.input_source = "shell";
+    keyboard_field_ = nullptr;
+    return;
+  }
+  // Another text field (a search box, a setting): decided once per focus, from where it is. Above the keyboard it stays
+  // where it is and nothing is lifted; covered, the shell goes up as before.
+  insets.focus_bottom_win = bottom_win(focus);
+  if (keyboard_field_ != focus) {
+    keyboard_field_ = focus;
+    keyboard_field_covered_ = insets.focus_bottom_win > insets.keyboard_top_win;
+  }
+  if (keyboard_field_covered_) {
+    insets.input_source = "field_covered";
+  } else {
+    insets.input_source = "field";
+    insets.input_bottom_win = insets.focus_bottom_win;
+  }
+}
+
 void ShellHost::RefreshSafeAreaInsets(ui::Context* context) {
   (void)context;
   const SafeAreaFromSdl sdl = ReadSafeAreaFromSdl();
-  if (sdl.keyboard_dp != logged_keyboard_dp_ && (sdl.keyboard_dp > 0 || logged_keyboard_dp_ > 0)) {
-    // One line per change of the keyboard lift (iOS), for the iPad window cases.
-    log().info << "keyboard lift pt=" << sdl.lift_win << " dp=" << sdl.keyboard_dp << " cover_pt=" << sdl.keyboard_win
-               << " input_bottom_pt=" << sdl.input_bottom_win << " sdl_window=" << sdl.window_w << "x" << sdl.window_h
+  const std::string keyboard_events = TakeScreenKeyboardEvents();
+  if (!keyboard_events.empty() ||
+      (sdl.keyboard_dp != logged_keyboard_dp_ && (sdl.keyboard_dp > 0 || logged_keyboard_dp_ > 0))) {
+    // iOS: one line per keyboard notification (iPad) and per change of the keyboard lift.
+    log().info << "keyboard lift pt=" << sdl.lift_win << " dp=" << sdl.keyboard_dp
+               << " events=" << (keyboard_events.empty() ? "-" : keyboard_events) << " cover_pt=" << sdl.keyboard_win
+               << " kb_top_pt=" << sdl.keyboard_top_win << " input=" << sdl.input_source
+               << " input_bottom_pt=" << sdl.input_bottom_win << " focus_bottom_pt=" << sdl.focus_bottom_win
+               << " applied_pt=" << keyboard_lift_applied_win_ << " sdl_window=" << sdl.window_w << "x" << sdl.window_h
                << " bottom_dp=" << sdl.bottom_dp << " latch=" << (sdl.bottom_dp >= kImeLatchMinDp)
                << " layout=" << ShellLayout::LayoutModeString(state_.layout_mode) << " " << DescribeScreenKeyboard();
   }
   logged_keyboard_dp_ = sdl.keyboard_dp;
+  if (sdl.lift_win != keyboard_lift_applied_win_ && std::string_view(sdl.input_source) == "bar") {
+    // The bar's new place is measured on the next frame (it converges there): ask for it even when idle.
+    Backend::RequestForceFrame();
+  }
+  keyboard_lift_applied_win_ = sdl.lift_win;
   if (sdl.bottom_dp >= kImeLatchMinDp) {
     last_ime_bottom_dp_ = sdl.bottom_dp;
     if (bottom_chrome_open_ && !bottom_chrome_fixed_height_) {

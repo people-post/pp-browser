@@ -431,14 +431,19 @@ private:
   struct SafeAreaFromSdl {
     int top_dp = 0;
     int bottom_dp = 0;
-    int keyboard_win = 0;     // the on-screen keyboard's cover of our window, in window units (points on iOS)
-    int input_bottom_win = 0; // the input bar's bottom edge before any lift (the safe area's bottom), window units
-    int lift_win = 0;         // how far the shell goes up so the input bar sits on the keyboard (KeyboardLift)
-    int keyboard_dp = 0;      // lift_win in dp
-    int window_w = 0;         // SDL's window size, window units
+    int keyboard_win = 0;               // the on-screen keyboard's cover of our window, in window units (points on iOS)
+    int keyboard_top_win = 0;           // the keyboard's top edge in the window (window height when there is none)
+    int input_bottom_win = 0;           // the input's bottom edge before any lift, window units
+    int focus_bottom_win = -1;          // iPad: the focused bar's / field's bottom edge as laid out now; -1 none
+    const char* input_source = "shell"; // what input_bottom_win is: shell | bar | field | field_covered
+    int lift_win = 0;                   // how far the shell goes up so the input sits on the keyboard (KeyboardLift)
+    int keyboard_dp = 0;                // lift_win in dp
+    int window_w = 0;                   // SDL's window size, window units
     int window_h = 0;
   };
-  SafeAreaFromSdl ReadSafeAreaFromSdl() const;
+  SafeAreaFromSdl ReadSafeAreaFromSdl();
+  /** iPad, keyboard up: input_bottom_win from the focused chat input bar's real box (or the focused field's). */
+  void MeasureKeyboardInput(SafeAreaFromSdl& insets, float px_per_win);
 
   struct PendingDismiss {
     DismissTarget target = DismissTarget::None;
@@ -450,7 +455,10 @@ private:
   ShellConfig config_;
   int safe_area_top_from_prefs_dp_ = 0;
   int safe_area_bottom_from_prefs_dp_ = 0;
-  int logged_keyboard_dp_ = -1; // the keyboard lift last written to the log (RefreshSafeAreaInsets)
+  int logged_keyboard_dp_ = -1;                 // the keyboard lift last written to the log (RefreshSafeAreaInsets)
+  int keyboard_lift_applied_win_ = 0;           // the keyboard lift in the layout now (window units)
+  const ui::Element* keyboard_field_ = nullptr; // iPad: the non-bar field the decision below is for (compared only)
+  bool keyboard_field_covered_ = false;         // that field was under the keyboard when it got the focus
   /** The AI Home measured with nothing up (SyncHomeDock): window height, landing height, card bottom (dp); 0 = unseen. */
   float home_cache_window_dp_ = 0.f;
   float home_cache_landing_h_dp_ = 0.f;
