@@ -58,3 +58,21 @@ relay versions and ranges, and a clean start (the relay's legacy window removed,
 have to be bridged forever. Nothing older needs to be supported, so the floor is the cheapest point to add them.
 **Alternatives rejected:** apply the rule to today's builds (they refuse unknown content and versions, so the
 first format change would break them anyway).
+
+## RC005 — One main branch, a branch per release, every build tagged
+
+**Date:** 2026-11-17
+**Status:** Proposed (Hongwei agreed to the direction, 2026-11-17).
+**Decision:** Each repo has one `main`; `develop` is retired. Every internal build is tagged from main by the
+workflow that makes it. Each release gets a branch `release/X.Y` cut from main, which takes fixes only, cherry-picked
+from main, and carries the release tags. The relay deploys prod only from release tags. Libraries keep main plus
+tags and cut a release branch only on need ([DESIGN § Branches and tags](DESIGN.md#branches-and-tags)).
+**Rationale:**
+- Under RC001 several releases are live at once; a release branch is where a fix to one of them goes without
+  shipping later format changes, and the live branches are the supported range.
+- Today main is develop running behind: it holds no release users run once it moves on, and internal builds leave
+  no tag.
+- A relay rollback (RC003) becomes a redeploy of the previous release tag.
+**Alternatives rejected:**
+- Keep develop → main with tags (no place for a fix to an older release; two branches that mean little apart).
+- Release tags on main without branches (a fix to release N must ship everything after N).

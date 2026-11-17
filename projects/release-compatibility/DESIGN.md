@@ -1,6 +1,6 @@
 # Release compatibility: design
 
-**Status:** Draft for review (Hongwei, Leo), 2026-11-17. Decisions RC001–RC004 are proposed, not accepted.
+**Status:** Draft for review (Hongwei, Leo), 2026-11-17. Decisions RC001–RC005 are proposed, not accepted.
 **Today's policy** stays [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) until release 1 ships; this
 design replaces its [§ No bridges](../../docs/contracts/COMPATIBILITY.md#no-bridges-pre-release) then.
 
@@ -98,6 +98,7 @@ need of each other (open decision 1).
 
 - **Relay:** must roll back one release without losing data. It never writes a record its previous release cannot
   read. A new record shape is written only after a release that reads it has been deployed.
+  A rollback is a redeploy of the previous release tag ([§ Branches and tags](#branches-and-tags)).
 - **pp-node:** should roll back one release the same way.
 - **Apps:** local data moves forward only; downgrading an app is not supported (open decision 4). A store newer
   than the build is refused with the start-up recovery, as today.
@@ -129,7 +130,7 @@ need of each other (open decision 1).
 
 ## The version table
 
-One table in `docs/contracts/` (promoted in phase P3) lists every format: its current version, the oldest version
+One table in `docs/contracts/` (promoted in phase P4) lists every format: its current version, the oldest version
 readers accept, its owner, and the release at which its oldest version leaves the range. It replaces the
 "Clean cutovers" table in COMPATIBILITY.md, which stays as history ending with release 1.
 
@@ -189,13 +190,54 @@ the range rule):
 - Each PR that changes a format says, in the template's *Contracts and docs*: the format, its class, the versions
   on each side, when the old one leaves the range, and the rollback.
 
+## Branches and tags
+
+Under the rule, several releases are live at once, and each one still in range may need a fix (a security fix, a
+crash, a relay bug that hits old apps). Today's develop → main flow has no home for a fix to release N once main
+has moved on: main is develop running behind, and shipping a fix means shipping everything since N, format changes
+included. Internal builds leave no tag either (on 2026-11-17, "TestFlight 136" had to be found by matching workflow
+run numbers plus 100).
+
+**One main branch.** All PRs go to `main`; CI must pass to merge. `develop` is retired in every repo.
+
+**Every internal build is tagged from main** by the workflow that makes it: TestFlight, Android and desktop test
+builds, internal pp-node builds, the relay's qa deploys (open decision 8). Every build anyone ran maps to one commit.
+
+**One branch per release, `release/X.Y`, cut from main.**
+
+- Release tags (`vX.Y.0`, `vX.Y.1`, …) go on that branch, and release workflows accept no others.
+- A release branch takes **fixes only**: no features and no format changes. Additive changes only where a fix needs
+  them; a security cutover ([§ Change classes](#change-classes)) may go onto a branch.
+- **Fixes land on main first**, then are cherry-picked to each live release branch that needs them. A fix that only
+  makes sense on an older branch says so in its PR. Main never lacks a fix a release has.
+- A release branch takes fixes while its release is in range, and closes when the release leaves it: **the live
+  release branches are the supported range** (open decision 9).
+
+**Deploys follow the same shape.** The relay deploys main to qa and only release tags to prod; rollback redeploys
+the previous release tag. pp-node releases are tags on a release branch.
+
+**Libraries stay simpler.** pp-cpp-* keep main plus version tags. A library release branch is cut only when a
+product's release branch needs a library fix without taking a newer major version.
+
+**App and pp-node share a release number.** They come from one repo and share most code, so one `release/X.Y`
+produces both, and the range table speaks one number for them (open decision 7: today pp-node is at v9 and the app
+at 1.0.0). The relay keeps its own numbers; the [version table](#the-version-table) maps which relay releases
+serve which app/node releases.
+
 ## Open decisions
 
 1. **Range length:** a number of releases, a minimum number of days, or both; measured from the release date or
    from what share of clients still run it. Per pair (relay ↔ app likely wider).
 2. **Security cutovers:** whether each needs Hongwei's sign-off.
-3. **Relay versions:** release tags on pp-relay-apis main, as pp-node does, reported by the relay.
+3. **Relay versions:** the relay's release numbering under [§ Branches and tags](#branches-and-tags), and how it reports
+   its version.
 4. **App downgrade:** out of scope (assumed).
 5. **Breaking work for release 1:** what is in flight that should land before the floor is set.
 6. **Where the version table lives** for the relay: here in `docs/contracts/` with a pointer from pp-relay-apis
    `SPECS.md`, or one table in each repo.
+7. **One number for app and pp-node:** whether they share releases, and how pp-node's numbering (v9 today) meets
+   the app's (1.0.0) at release 1.
+8. **Internal build tags:** their names (for example `internal/<build number>` for apps, `qa/<date>.<n>` for the
+   relay), and whether CI builds that nobody installs get one.
+9. **How long a release branch takes fixes:** every branch in range, or only the newest and security fixes for the
+   rest.

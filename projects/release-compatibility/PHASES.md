@@ -10,25 +10,39 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 - [ ] Each checked against [DESIGN § Release 1](DESIGN.md#release-1); the result is the list of release-1 work items,
   needed and worth-doing marked apart.
 - [ ] The breaking work in flight that should land before the floor (open decision 5).
-- [ ] Open decisions 1–6 settled, or left open with a default.
+- [ ] Open decisions 1–9 settled, or left open with a default.
 
 ## P1 — Freeze
 
 - [ ] No new breaking work outside the P0 list until release 1 ships.
 
-## P2 — Release 1 built
+## P2 — One main, release branches
+
+[DESIGN § Branches and tags](DESIGN.md#branches-and-tags), in every repo, before release 1 is cut:
+
+- [ ] develop merged into main a last time; open PRs retargeted to main; develop deleted (pp-browser, pp-cpp-*,
+  pp-ledger; pp-relay-apis with Leo).
+- [ ] Every internal build tagged by its workflow: TestFlight, Android and desktop test builds, internal pp-node
+  builds, the relay's qa deploys.
+- [ ] Release workflows take release tags only from `release/*` branches; the relay deploys prod only from a
+  release tag, qa from main.
+- [ ] The PR template and `docs/ops/RELEASE.md` say what a release branch takes, and that fixes land on main first.
+
+## P3 — Release 1 built
 
 - [ ] Each P0 item, repo by repo; the relay first (qa), as for every relay change.
 - [ ] Frozen data of each release-1 format checked in, read by unit tests in each repo.
 
-## P3 — Release 1 shipped
+## P4 — Release 1 shipped
 
+- [ ] `release/1.0` cut in pp-browser and the relay's release branch in pp-relay-apis; release 1 tagged there.
 - [ ] Relay on qa, then the app lab; app, pp-node and relay to prod together.
 - [ ] `min_client_version` and the node floor raised to release 1.
 - [ ] The version table promoted to `docs/contracts/`; COMPATIBILITY.md's § No bridges replaced by the rule, its
-  "Clean cutovers" table closed with the release-1 row; RC001–RC004 marked superseded by those docs.
+  "Clean cutovers" table closed with the release-1 row; RC001–RC004 marked superseded by those docs, RC005 by
+  `docs/ops/RELEASE.md`.
 
-## P4 — Release mode in force
+## P5 — Release mode in force
 
 - [ ] The PR template's *Contracts and docs* asks for the format, class, versions, range exit and rollback.
 - [ ] CI: a signed-bytes change without a version bump fails, in every repo with signed objects.
