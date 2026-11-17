@@ -14010,7 +14010,16 @@ textarea:composing ~ .prompt-composer-label,
    row's own 8dp gap is dropped: the 20dp icon sits 6dp after the text, like the "PIN" row's. */
 .shell-layer-compact .settings-section--grouped .settings-q-head--name {
   gap: 0;
-  margin: 24dp 32dp 8dp 32dp;
+  margin: 24dp 32dp 7dp 32dp;
+}
+
+/* A card wrapped in a plain stack (a `data-if` group, the recovery actions) is not the heading's next sibling, so the
+   rule above never reached it and it kept its 20dp top margin: the heading floated far above it. The first card inside
+   such a wrapper sits 8dp under the heading like the others. */
+.shell-layer-compact .settings-section--grouped .group-head + .stack > .group-card:first-child,
+.shell-layer-compact .settings-section--grouped .group-head + .stack > .stack > .group-card:first-child,
+.shell-layer-compact .settings-section--grouped .settings-q-head--name + .stack > .stack > .group-card:first-child {
+  margin-top: 0;
 }
 
 .shell-layer-compact .settings-section--grouped .settings-q-head--name .group-head {

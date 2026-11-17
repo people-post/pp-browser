@@ -214,5 +214,43 @@ TEST_F(ChatHeaderLinkLayoutTest, EverySettingsGroupHeadingIsTheLargerBoldStyle) 
   }
 }
 
+TEST_F(ChatHeaderLinkLayoutTest, HeadingsWithAQuestionMarkOrAWrappedCardSitAsCloseToTheCardAsPlainOnes) {
+  const std::string card = "<div class=\"group-card\"><div class=\"group-row\">Row</div></div>";
+  const std::string button =
+      "<button class=\"settings-q-btn\" type=\"button\"><svg class=\"settings-q-icon\" "
+      "src=\"../icons/v2/help-circle.svg\" width=\"20\" height=\"20\"></svg></button>";
+  Load(
+      "<div class=\"settings-section settings-section--grouped stack\">"
+      "<p class=\"text group-head\" id=\"plain\">Plain</p>" +
+          card + "<p class=\"text group-head\" id=\"ai\">AI</p><div class=\"stack\">" + card +
+          "</div>"
+          "<div class=\"settings-q-head settings-q-head--name row\"><p class=\"text group-head\" "
+          "id=\"phrase\">Phrase</p>" +
+          button +
+          "</div><div class=\"stack settings-actions\"><div class=\"stack\"><div class=\"group-card\">"
+          "<div class=\"group-row\">Row</div></div></div></div></div>",
+      "");
+  auto gap = [this](const char* id) {
+    ui::Element* head = document->GetElementById(id);
+    EXPECT_NE(head, nullptr);
+    ui::Element* start = head->GetParentNode()->IsClassSet("settings-q-head") ? head->GetParentNode() : head;
+    ui::Element* next = start->GetNextSibling();
+    while (next != nullptr && BorderEdges(next).bottom == BorderEdges(next).top) {
+      next = next->GetNextSibling();
+    }
+    ui::Element* card = next;
+    if (!next->IsClassSet("group-card")) {
+      ui::ElementList found;
+      next->GetElementsByClassName(found, "group-card");
+      card = found.empty() ? nullptr : found[0];
+    }
+    EXPECT_NE(card, nullptr);
+    return BorderEdges(card).top - BorderEdges(head).bottom;
+  };
+  const float plain = gap("plain");
+  EXPECT_NEAR(gap("ai"), plain, 2.f) << "AI heading vs plain: " << gap("ai") << " vs " << plain;
+  EXPECT_NEAR(gap("phrase"), plain, 2.f) << "recovery heading vs plain: " << gap("phrase") << " vs " << plain;
+}
+
 } // namespace
 } // namespace pbr
