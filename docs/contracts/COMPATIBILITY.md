@@ -130,7 +130,7 @@ stays strict. The signed bytes are frozen in a test (`EnvelopeSignerTest.SignByt
 
 ### No bridges (pre-release)
 
-**Ends at release 1** (proposed, 2026-11-17): from then on, every app, pp-node and relay works with every other one
+**Ends at release 1** (accepted 2026-11-17, release 1 not shipped yet): from then on, every app, pp-node and relay works with every other one
 whose version is inside the supported range — [release-compatibility RC001](../../projects/release-compatibility/DECISIONS.md#rc001--compatibility-within-a-supported-range-from-release-1-on).
 Until release 1 ships, this section holds.
 

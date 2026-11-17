@@ -1,6 +1,7 @@
 # Release compatibility: design
 
-**Status:** Draft for review (Hongwei, Leo), 2026-11-17. Decisions RC001–RC005 are proposed, not accepted.
+**Status:** Accepted by Hongwei, 2026-11-17; in review with Leo (relay parts: [§ Decisions taken](#decisions-taken),
+items 3 and 8). Decisions RC001–RC006.
 **Today's policy** stays [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) until release 1 ships; this
 design replaces its [§ No bridges](../../docs/contracts/COMPATIBILITY.md#no-bridges-pre-release) then.
 
@@ -69,7 +70,7 @@ cover what they put on the wire.
 |-------|------------|---------------|
 | **Additive** | A new optional field, content type, control type, error code or protocol id that older readers can ignore | No version change. Readers ignore what they do not know |
 | **Format change** | A change older readers cannot ignore | A new version, rolled out by the [range rule](#the-range-rule) |
-| **Security** | An older version is unsafe to keep accepting | May shrink the range at once: the affected version is refused immediately, still with "update needed". Decided case by case (open decision 2) |
+| **Security** | An older version is unsafe to keep accepting | May shrink the range at once: the affected version is refused immediately, still with "update needed". Each one signed off by Hongwei and recorded as a decision with its reason |
 
 ### The range rule
 
@@ -89,10 +90,17 @@ A version stays in range at least as long as the longest of:
 
 - the life of the release after it (a version leaves only after its successor has been out for a while);
 - the life of stored data it writes (relay inbox retention, kept cards, chat history);
-- a minimum time (open decision 1).
+- a minimum time.
 
-Ranges may differ by pair. Phones update slowly, so the relay likely accepts a wider range of apps than apps
-need of each other (open decision 1).
+Ranges differ by pair, because phones update slowly (RC006):
+
+| Pair | In range |
+|------|----------|
+| relay ↔ app | the last 3 app releases, and at least 90 days |
+| app ↔ app, app ↔ pp-node, node ↔ node | the last 2 releases, and at least 60 days |
+
+Days count from the release date. What share of users still run a version may inform when a range closes, but
+does not decide it.
 
 ### Rollback
 
@@ -100,7 +108,8 @@ need of each other (open decision 1).
   read. A new record shape is written only after a release that reads it has been deployed.
   A rollback is a redeploy of the previous release tag ([§ Branches and tags](#branches-and-tags)).
 - **pp-node:** should roll back one release the same way.
-- **Apps:** local data moves forward only; downgrading an app is not supported (open decision 4). A store newer
+- **Apps:** local data moves forward only; downgrading an app is not supported (phones cannot
+  downgrade from the store). A store newer
   than the build is refused with the start-up recovery, as today.
 
 ### Versions are announced and checked
@@ -109,7 +118,7 @@ need of each other (open decision 1).
   signature: a signed object carries its version both inside the signed bytes and readable outside them (the rule
   after #555, today only for envelopes).
 - Each component announces its range where it already introduces itself:
-  - the relay: `client-compat`, plus its release version (open decision 3);
+  - the relay: `client-compat`, with its release version and supported ranges;
   - pp-node and apps on a link: the channel-0 capability offer (it already carries the wire version, node version
     and features, N032);
   - apps and nodes to the relay: `sign_version` on every signed call, as today.
@@ -178,7 +187,8 @@ the range rule):
 - Every key, signature, KEM and AEAD blob names its algorithm, so a later algorithm is a new version, not a new
   identity.
 
-**Also:** breaking work already planned or half done that should land before the floor is set (open decision 5).
+**Also:** breaking work already planned or half done. P0's inventory decides which of it lands before the freeze;
+the rest waits and follows the range rule.
 
 ## Tests
 
@@ -201,7 +211,15 @@ run numbers plus 100).
 **One main branch.** All PRs go to `main`; CI must pass to merge. `develop` is retired in every repo.
 
 **Every internal build is tagged from main** by the workflow that makes it: TestFlight, Android and desktop test
-builds, internal pp-node builds, the relay's qa deploys (open decision 8). Every build anyone ran maps to one commit.
+builds, internal pp-node builds, the relay's qa deploys. Every build anyone ran maps to one commit:
+
+| Build | Tag |
+|-------|-----|
+| App builds people install (TestFlight, Android, desktop test builds) | `internal/<build number>` |
+| Internal pp-node builds | `node-internal/<date>.<n>` |
+| Relay qa deploys | `qa/<date>.<n>` (with Leo) |
+
+CI builds nobody installs get no tag.
 
 **One branch per release, `release/X.Y`, cut from main.**
 
@@ -211,7 +229,8 @@ builds, internal pp-node builds, the relay's qa deploys (open decision 8). Every
 - **Fixes land on main first**, then are cherry-picked to each live release branch that needs them. A fix that only
   makes sense on an older branch says so in its PR. Main never lacks a fix a release has.
 - A release branch takes fixes while its release is in range, and closes when the release leaves it: **the live
-  release branches are the supported range** (open decision 9).
+  release branches are the supported range**. The newest release branch takes every fix; older branches still in
+  range take only security fixes and fixes for a break between in-range versions.
 
 **Deploys follow the same shape.** The relay deploys main to qa and only release tags to prod; rollback redeploys
 the previous release tag. pp-node releases are tags on a release branch.
@@ -220,24 +239,26 @@ the previous release tag. pp-node releases are tags on a release branch.
 product's release branch needs a library fix without taking a newer major version.
 
 **App and pp-node share a release number.** They come from one repo and share most code, so one `release/X.Y`
-produces both, and the range table speaks one number for them (open decision 7: today pp-node is at v9 and the app
-at 1.0.0). The relay keeps its own numbers; the [version table](#the-version-table) maps which relay releases
-serve which app/node releases.
+produces both, and the range table speaks one number for them. **Release 1 is version 10.0** for both: it continues
+pp-node's numbering (v9 today), so pp-node's tags keep rising, and the app moves from 1.0.0 to 10.0. The relay keeps
+its own semver (`vX.Y.Z` on its `release/X.Y`) and reports it in `client-compat`; the
+[version table](#the-version-table) maps which relay releases serve which app/node releases.
 
-## Open decisions
+## Decisions taken
 
-1. **Range length:** a number of releases, a minimum number of days, or both; measured from the release date or
-   from what share of clients still run it. Per pair (relay ↔ app likely wider).
-2. **Security cutovers:** whether each needs Hongwei's sign-off.
-3. **Relay versions:** the relay's release numbering under [§ Branches and tags](#branches-and-tags), and how it reports
-   its version.
-4. **App downgrade:** out of scope (assumed).
-5. **Breaking work for release 1:** what is in flight that should land before the floor is set.
-6. **Where the version table lives** for the relay: here in `docs/contracts/` with a pointer from pp-relay-apis
-   `SPECS.md`, or one table in each repo.
-7. **One number for app and pp-node:** whether they share releases, and how pp-node's numbering (v9 today) meets
-   the app's (1.0.0) at release 1.
-8. **Internal build tags:** their names (for example `internal/<build number>` for apps, `qa/<date>.<n>` for the
-   relay), and whether CI builds that nobody installs get one.
-9. **How long a release branch takes fixes:** every branch in range, or only the newest and security fixes for the
-   rest.
+Hongwei, 2026-11-17 (RC006). Items 3 and 8 touch the relay's workflows and wait for Leo.
+
+1. **Range length:** by pair, from the release date ([§ Range length](#range-length)): relay ↔ app the last 3 app
+   releases and at least 90 days; app ↔ app and with pp-node the last 2 releases and at least 60 days.
+2. **Security cutovers:** each signed off by Hongwei, recorded as a decision with its reason.
+3. **Relay versions:** its own semver, `vX.Y.Z` on `release/X.Y`, reported with its ranges in `client-compat`.
+   *(Leo)*
+4. **App downgrade:** out of scope; local data moves forward only.
+5. **Breaking work for release 1:** decided by P0's inventory; whatever misses the freeze follows the range rule.
+6. **The version table:** one table in pp-browser's `docs/contracts/`; pp-relay-apis `SPECS.md` links to it and
+   lists only the relay's own formats.
+7. **One number for app and pp-node:** yes; release 1 is 10.0 for both.
+8. **Internal build tags:** `internal/<build number>` (apps), `node-internal/<date>.<n>` (pp-node),
+   `qa/<date>.<n>` (relay); none for CI builds nobody installs. *(Leo, for the relay's)*
+9. **Fixes on release branches:** every fix on the newest; security fixes and fixes for a break between in-range
+   versions on older ones in range.
