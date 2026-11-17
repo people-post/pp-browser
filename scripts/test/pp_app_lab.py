@@ -3792,6 +3792,60 @@ def scenario_group_member_crashes(lab):
     assert_idle(a, b, c)
 
 
+def call_member(state, account):
+    """`account`'s row among the call screen's people in `state` (None: not in the call)."""
+    for m in state.get("members", []):
+        if m.get("identity") == account:
+            return m
+    return None
+
+
+def scenario_group_member_killed_is_dropped(lab):
+    """Carol's app is killed mid-call (SIGKILL: no call_leave). Alice and Bob see her tile reconnecting within a few
+    seconds and her gone within the gone window — taken as having left (V067, #617); they go on talking, and neither
+    keeps a stream of hers."""
+    (a, b, c), threads = open_group(lab)
+    call_id = group_call(a, threads[a.name], [b, c])
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    epoch = {u.name: u.state().get("media_epoch") for u in (a, b)}
+    dead_stream = stream_id(c.account)
+    killed = time.time()
+    c.crash()
+    reconnecting = {}
+    for u in (a, b):
+        wait_for(lambda: (call_member(u.state(), c.account) or {}).get("reconnecting") or None, 10,
+                 "%s: Carol's tile reconnecting" % u.name)
+        reconnecting[u.name] = round(time.time() - killed, 1)
+    gone = {}
+    for u in (a, b):
+        def out_of_call():
+            st = u.state()
+            return (call_member(st, c.account) is None and c.account not in st.get("participants", [])) or None
+        wait_for(out_of_call, 45, "%s: Carol out of the call" % u.name)
+        gone[u.name] = round(time.time() - killed, 1)
+    for name, at in reconnecting.items():
+        if at > 6:
+            raise ProbeError("%s saw Carol reconnecting only %.1f s after her app died (wanted ~3 s)" % (name, at))
+    for name, at in gone.items():
+        if not 28 <= at <= 36:
+            raise ProbeError("%s took Carol as gone %.1f s after her app died (wanted ~30 s)" % (name, at))
+    for u in (a, b):
+        st = u.state()
+        if st.get("kind") != "in_call" or st.get("call_id") != call_id:
+            raise ProbeError("%s: not in the call after Carol was dropped (%s)" % (u.name, st))
+        assert_hears(u, 1)
+        held = [row["stream_id"] for row in u.state().get("streams", [])]
+        if dead_stream in held:
+            raise ProbeError("%s: still holds Carol's stream %d (%s)" % (u.name, dead_stream, held))
+    wait_for(lambda: all(u.state().get("media_epoch", 0) > (epoch[u.name] or 0) for u in (a, b)) or None, 20,
+             "the key rotated without Carol")
+    a.cmd("leave")
+    b.cmd("leave", check=False)
+    assert_idle(a, b)
+    return {"reconnecting_s": max(reconnecting.values()), "gone_s": max(gone.values())}
+
+
 def scenario_group_hop_down_mid_call(lab):
     """The hop carrying a three-way call goes down and comes back: each person ends up either back
     in the call hearing the others or out of it — never in a call that carries nothing."""
@@ -4616,6 +4670,7 @@ SCENARIOS = [
     ("group_caller_leaves_first", scenario_group_caller_leaves_first),
     ("group_add_someone_mid_call", scenario_group_add_someone_mid_call),
     ("group_member_crashes", scenario_group_member_crashes),
+    ("group_member_killed_is_dropped", scenario_group_member_killed_is_dropped),
     ("group_hop_down_mid_call", scenario_group_hop_down_mid_call),
     ("group_decline_then_join", scenario_group_decline_then_join),
     ("group_leave_and_rejoin", scenario_group_leave_and_rejoin),
