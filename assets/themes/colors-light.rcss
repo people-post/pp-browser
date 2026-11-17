@@ -2405,6 +2405,15 @@ input.checkbox:checked {
   image-color: #8e8e93;
 }
 
+/* The route icon (as in a bubble) takes the colour of the line's text, whatever the path. */
+.chat-peer-path .route-icon {
+  image-color: #3c3c4399;
+}
+
+.shell-chat-overlay .chat-peer-link {
+  color: #3c3c4399;
+}
+
 .chat-header-call-btn, .chat-header-more-btn {
   background-color: #78788033;
   color: #000000;

@@ -1228,7 +1228,6 @@
     "chat.link.connecting": "Connecting…",
     "chat.link.retrying": "Reconnecting…",
     "chat.link.offline": "Can't connect",
-    "chat.link.ready": "Ready",
     "chat.link.banner.unreachable": "Can't reach them right now — they may be offline. PP will keep trying.",
     "chat.link.banner.no_address":
         "This contact has no usable connection details. Ask them to share their contact again.",

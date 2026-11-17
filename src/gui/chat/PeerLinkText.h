@@ -50,7 +50,12 @@ inline PeerLinkText PeerLinkTextFor(const ThreadPeerLinkView& link) {
       text.banner_key = "chat.link.banner.no_address";
       break;
     case ThreadPeerPathKind::Ready:
-      text.status_key = "chat.link.ready";
+      // No link is up right now. Where a relay can carry the next message, that is how it will travel; with none,
+      // an idle link is not worth a line ("Ready" for a contact we are not connected to said nothing true).
+      if (link.relay_available) {
+        text.status_key = "chat.link.via_relay";
+        text.display_kind = ThreadPeerPathKind::ViaRelay;
+      }
       break;
     case ThreadPeerPathKind::None:
       break;

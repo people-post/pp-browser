@@ -285,6 +285,11 @@ select selectbox option {
   opacity: 0.85;
 }
 
+/* The route icon in the header is the bubbles' (.route-icon); the row's gap spaces it from the text. */
+.chat-peer-path .route-icon {
+  margin-right: 0;
+}
+
 .chat-gap-banner {
   flex-shrink: 0;
   margin-bottom: 8dp;
@@ -4116,9 +4121,22 @@ select selectbox option {
   text-overflow: ellipsis;
 }
 
-/* Phones: no encryption / link-path line; a group shows only its member count. */
+/* Phones: the line under the name is the link path (direct / encrypted relay) of a 1:1 chat; the long encryption
+   subtitle stays desktop-only, and a group shows only its member count. */
 .shell-chat-overlay .chat-header-meta-row {
+  margin-top: 0;
+}
+
+.shell-chat-overlay .chat-peer-path--group,
+.shell-chat-overlay .chat-header-meta-row .chat-header-subtitle {
   display: none;
+}
+
+.shell-chat-overlay .chat-peer-link {
+  font-size: 13dp;
+  line-height: 16dp;
+  opacity: 1;
+  white-space: nowrap;
 }
 
 .shell-chat-overlay .chat-header-phone-subtitle {

@@ -70,15 +70,13 @@
              data-class-chat-peer-path--connecting="peer_link_connecting"
              data-class-chat-peer-path--degraded="peer_link_degraded"
              data-class-chat-peer-path--failed="peer_link_failed"
-             data-class-chat-peer-path--ready="peer_link_ready">
-          <div class="chat-peer-path-icon" data-if="peer_link_direct || peer_link_connecting || peer_link_degraded || peer_link_failed || peer_link_ready">
+             data-class-chat-peer-path--ready="peer_link_ready"
+             data-class-chat-peer-path--group="thread_is_group">
+          <!-- Direct and relay use the bubbles' small route icons (RouteIconRml), tinted like the line's text. -->
+          <svg class="route-icon" src="../icons/v2/route-direct.svg" width="26" height="12" data-if="peer_link_direct"></svg>
+          <svg class="route-icon" src="../icons/v2/route-relay.svg" width="26" height="12" data-if="peer_link_via_hop || peer_link_via_relay"></svg>
+          <div class="chat-peer-path-icon" data-if="peer_link_connecting || peer_link_degraded || peer_link_failed || peer_link_ready">
             <svg src="../icons/status-direct.svg" width="12" height="12" crop-to-content="true"></svg>
-          </div>
-          <div class="chat-peer-path-icon" data-if="peer_link_via_hop">
-            <svg src="../icons/status-hop.svg" width="12" height="12" crop-to-content="true"></svg>
-          </div>
-          <div class="chat-peer-path-icon" data-if="peer_link_via_relay">
-            <svg src="../icons/status-relay.svg" width="12" height="12" crop-to-content="true"></svg>
           </div>
           <p class="text-xs chat-peer-link">{{peer_link_status}}</p>
         </div>

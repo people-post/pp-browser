@@ -1204,7 +1204,6 @@
     "chat.link.connecting": "正在连接…",
     "chat.link.retrying": "正在重新连接…",
     "chat.link.offline": "无法连接",
-    "chat.link.ready": "就绪",
     "chat.link.banner.unreachable": "暂时联系不上对方，对方可能不在线。PP 会自动重试。",
     "chat.link.banner.no_address": "这位联系人缺少可用的连接信息，请让对方重新分享联系方式。",
     "chat.link.retry": "立即重试",
