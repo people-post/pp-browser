@@ -3,6 +3,7 @@
 #include "domain/call_media/CallMediaFrameCrypto.h"
 #include "mesh/l4/shared/MediaFrame.h"
 #include "common/MeshAlias.h"
+#include "common/Utilities.h"
 
 #include <gtest/gtest.h>
 
@@ -60,7 +61,7 @@ TEST_F(CallHopMediaChannelTest, ARotationReachesOnlyALiveRing) {
   channel_->MakeLive(keys);
   ASSERT_TRUE(channel_->HasLiveKeys());
   channel_->InstallKey(2, ByteVector(32, 0x22));
-  EXPECT_EQ(keys->Current().epoch, 2u) << "the committed attach's ring takes the rotation";
+  EXPECT_EQ(keys->Current(util::NowUnixMs()).epoch, 2u) << "the committed attach's ring takes the rotation";
 }
 
 // --- V067: which frames say a publisher is alive ------------------------------------------------------
@@ -74,14 +75,16 @@ protected:
     channel_->AddRemoteStream(11);
   }
   /** A frame of stream 11 as its publisher sealed it under `key`. */
-  mesh::MediaDataFrame Sealed(const uint32_t seq, const ByteVector& key, const uint32_t stream = 11) {
+  mesh::MediaDataFrame Sealed(const uint32_t seq, const ByteVector& key, const uint32_t stream = 11,
+                              const uint32_t epoch = 1) {
     mesh::MediaDataFrame frame;
     frame.stream_id = stream;
     frame.channel_id = 0;
     frame.seq = seq;
     frame.instance = 0xAA;
     frame.capture_ts = seq * 40;
-    EXPECT_TRUE(mesh::SealMediaFrame(key, CallMediaSfuContext("call:hop"), 1, frame, std::vector<uint8_t>{1, 2, 3}));
+    EXPECT_TRUE(
+        mesh::SealMediaFrame(key, CallMediaSfuContext("call:hop"), epoch, frame, std::vector<uint8_t>{1, 2, 3}));
     return frame;
   }
   void Arrives(const mesh::MediaDataFrame& frame) {
@@ -113,8 +116,30 @@ TEST_F(HopFrameLivenessTest, AReplayedOrOldFrameSaysNothing) {
 }
 
 TEST_F(HopFrameLivenessTest, AFrameThatDoesNotOpenSaysNothing) {
+  EXPECT_EQ(channel_->LastUnopenedFrameMs(), 0);
   Arrives(Sealed(5, ByteVector(32, 0x99))); // not the call's key: the hop (or anyone) made it up
   EXPECT_EQ(channel_->LastFreshFrameMs(11), 0);
+  EXPECT_GT(channel_->LastUnopenedFrameMs(), 0) << "but that one came (V067: the others may hold a key we lack)";
+  EXPECT_EQ(channel_->UnopenedFrames(), 1u);
+}
+
+TEST_F(HopFrameLivenessTest, AFrameOfAStreamLetGoThatDoesNotOpenIsStillNoted) {
+  channel_->DropRemoteStream(11); // taken as gone here, while they took us as gone and moved the key on
+  Arrives(Sealed(5, ByteVector(32, 0x99)));
+  EXPECT_GT(channel_->LastUnopenedFrameMs(), 0) << "how a device left alone learns the others are still there";
+}
+
+// --- V068: a rotation this device minted seals once the others hold the key -----------------------------
+
+TEST_F(HopFrameLivenessTest, AFrameUnderOurNewEpochTellsTheHeldRotationItsSenderHoldsIt) {
+  const ByteVector rotated(32, 0x22);
+  keys_->Install(2, rotated, util::NowUnixMs(), {11});
+  EXPECT_EQ(keys_->Current(util::NowUnixMs()).epoch, 1u) << "stream 11 has not shown it holds epoch 2";
+  Arrives(Sealed(5, key_)); // still the old epoch: it says nothing
+  EXPECT_EQ(keys_->Current(util::NowUnixMs()).epoch, 1u);
+  Arrives(Sealed(6, rotated, 11, 2));
+  EXPECT_EQ(keys_->Current(util::NowUnixMs()).epoch, 2u);
+  EXPECT_EQ(channel_->UnopenedFrames(), 0u) << "both epochs opened";
 }
 
 TEST_F(HopFrameLivenessTest, AStreamNotWantedSaysNothing) {

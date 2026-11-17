@@ -3846,6 +3846,32 @@ def scenario_group_member_killed_is_dropped(lab):
     return {"reconnecting_s": max(reconnecting.values()), "gone_s": max(gone.values())}
 
 
+def scenario_group_leave_keeps_audio(lab):
+    """Carol leaves a three-way call: the key rotates without her (V003), and Alice and Bob go on hearing each other
+    through the rotation — the one who minted the new key seals with it only once the other holds it, so neither
+    side gets frames it cannot open (V068; #617's follow-up: ~30 did not open on the late side)."""
+    (a, b, c), threads = open_group(lab)
+    group_call(a, threads[a.name], [b, c])
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    epoch = {u.name: u.state().get("media_epoch") or 0 for u in (a, b)}
+    unopened = {u.name: u.state().get("rx_unopened_frames", 0) for u in (a, b)}
+    c.cmd("leave")
+    assert_idle(c)
+    wait_for(lambda: all((u.state().get("media_epoch") or 0) > epoch[u.name] for u in (a, b)) or None, 20,
+             "the key rotated without Carol")
+    time.sleep(6)  # past the minter's hold (3 s) and the old epoch's grace (3 s)
+    for u in (a, b):
+        assert_hears(u, 1)
+    failed = {u.name: u.state().get("rx_unopened_frames", 0) - unopened[u.name] for u in (a, b)}
+    if any(n > 5 for n in failed.values()):
+        raise ProbeError("frames that did not open across the rotation: %s (wanted at most a few)" % failed)
+    a.cmd("leave")
+    b.cmd("leave", check=False)
+    assert_idle(a, b)
+    return {"unopened": failed}
+
+
 def scenario_group_hop_down_mid_call(lab):
     """The hop carrying a three-way call goes down and comes back: each person ends up either back
     in the call hearing the others or out of it — never in a call that carries nothing."""
@@ -4671,6 +4697,7 @@ SCENARIOS = [
     ("group_add_someone_mid_call", scenario_group_add_someone_mid_call),
     ("group_member_crashes", scenario_group_member_crashes),
     ("group_member_killed_is_dropped", scenario_group_member_killed_is_dropped),
+    ("group_leave_keeps_audio", scenario_group_leave_keeps_audio),
     ("group_hop_down_mid_call", scenario_group_hop_down_mid_call),
     ("group_decline_then_join", scenario_group_decline_then_join),
     ("group_leave_and_rejoin", scenario_group_leave_and_rejoin),

@@ -208,9 +208,9 @@ void CallMedia::OnMediaKeyReady() {
   }
 }
 
-void CallMedia::OnMediaKeyInstalled() {
+void CallMedia::OnMediaKeyInstalled(const CallMediaKeyOrigin origin) {
   if (hop_) {
-    hop_->OnMediaKeyInstalled(call_id_);
+    hop_->OnMediaKeyInstalled(call_id_, origin);
   }
 }
 

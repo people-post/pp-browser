@@ -465,6 +465,8 @@ public:
       heard.set("jitter_target_ms", health.jitter_target_ms);
       out.set("audio_heard", ObjectValue(std::move(heard)));
       out.set("sfu_mode", health.packet_mode);
+      // Hop frames no key this device holds opened (V068: a rotation's gap; V067: shut out of the call).
+      out.set("rx_unopened_frames", calls_->HopHealth().unopened_frames);
       out.set("path", CallMediaPathName(calls_->MediaPath()));
       std::vector<Value> streams;
       for (const MediaStreamHealth& stream : health.streams) {

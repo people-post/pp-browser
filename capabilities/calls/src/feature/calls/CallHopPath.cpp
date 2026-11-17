@@ -405,6 +405,7 @@ CallHopHealth CallHopPath::HopHealth() const {
                               .reliable_sent = relay.reliable_sent,
                               .retransmits = relay.retransmits,
                               .srtt_ms = relay.srtt_ms};
+  hop.unopened_frames = channel_->UnopenedFrames();
   return hop;
 }
 
@@ -2285,11 +2286,11 @@ Roe<void> CallHopPath::LoadHopMediaKey(HopAttach& at) const {
     log().warning << "AttachLocalToSfu missing media key call_id=" << at.call_id << " epoch=" << at.media_epoch;
     return Error("call media key required for SFU");
   }
-  at.keys->Install(at.media_epoch, at.media_key, util::NowUnixMs());
+  at.keys->Install(at.media_epoch, at.media_key, util::NowUnixMs()); // the attach's first key seals at once
   return {};
 }
 
-void CallHopPath::InstallMediaKey(const std::string& call_id) {
+void CallHopPath::InstallMediaKey(const std::string& call_id, const CallMediaKeyOrigin origin) {
   if (call_id != call_id_ || !channel_->HasLiveKeys() || !media_keys_) {
     return;
   }
@@ -2299,8 +2300,17 @@ void CallHopPath::InstallMediaKey(const std::string& call_id) {
   }
   const uint32_t epoch = (*session)->media_epoch;
   if (auto key = media_keys_->LoadEpochKey(call_id, epoch); key && key->has_value()) {
-    channel_->InstallKey(epoch, **key);
-    log().info << "SFU media key now epoch=" << epoch << " call_id=" << call_id;
+    // V068: a key minted here seals once each of the others is seen sealing with it (they hold it), or at the bound.
+    std::vector<uint32_t> hold_for;
+    if (origin == CallMediaKeyOrigin::Minted) {
+      if (auto local = host_.local_account_identity()) {
+        for (const std::string& identity : JoinedRemoteIdentities(call_id, *local)) {
+          hold_for.push_back(PublisherStreamIdForIdentity(identity));
+        }
+      }
+    }
+    channel_->InstallKey(epoch, **key, hold_for);
+    log().info << "SFU media key now epoch=" << epoch << " waiting_for=" << hold_for.size() << " call_id=" << call_id;
   }
 }
 
@@ -2347,7 +2357,8 @@ void CallHopPath::AttachThroughRelay(HopAttach at, std::function<void(Roe<void>)
 Roe<void> CallHopPath::CompleteHopAttach(const HopAttach& at, int64_t a_up_bps) {
   const std::string& call_id = at.call_id;
   channel_->MakeLive(at.keys); // a rotation from now on reaches this attach's frames
-  InstallMediaKey(call_id);    // and one that arrived while attaching (the ring holds the epoch it started with)
+  // And one that arrived while attaching (the ring holds the epoch it started with).
+  InstallMediaKey(call_id, CallMediaKeyOrigin::Taken);
   // Whoever is on the hop can say so: an invite this device sends (a mid-call add, an answer to a
   // join request — V053) names the hop the call is on, not only the picker's.
   if (!at.attach.hop_peer_id.empty()) {
@@ -2813,7 +2824,7 @@ void CallHopPath::StartGuestReattach(const std::string& call_id, const CallSfuAt
   // The engine is already live: frames flow as soon as the relay session is back.
   at.frames_ready->store(true, std::memory_order_release);
   channel_->MakeLive(at.keys);
-  InstallMediaKey(call_id); // a rotation that arrived while the transport was down
+  InstallMediaKey(call_id, CallMediaKeyOrigin::Taken); // a rotation that arrived while the transport was down
   log().info << "ReattachGuestSfuTransport begin call_id=" << call_id << " hop=" << at.attach.hop_peer_id;
   if (at.attach.hop_multiaddr.empty()) {
     at.attach.hop_multiaddr = ranking_.HopMultiaddr(at.attach.hop_peer_id);

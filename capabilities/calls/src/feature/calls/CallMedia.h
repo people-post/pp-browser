@@ -112,8 +112,8 @@ public:
 
   /** The call's media key landed: the deferred 1:1 answerer goes on. */
   void OnMediaKeyReady();
-  /** The call's media key epoch landed: the hop re-keys its streams. */
-  void OnMediaKeyInstalled();
+  /** The call's media key epoch landed: the hop re-keys its streams (`origin`: minted here, or a peer's). */
+  void OnMediaKeyInstalled(CallMediaKeyOrigin origin);
   /** The doorway accepted an inbound 1:1 bundle for the call (the 1:1 path is built if needed). */
   CallMediaDirectCallbacks AcceptInbound(const CallMediaInboundHello& hello);
   /** H013: the call's peer gave up reaching us. */

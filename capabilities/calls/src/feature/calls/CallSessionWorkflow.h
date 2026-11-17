@@ -205,10 +205,11 @@ public:
   /** The decisions DecideLaterUnread put off: made once readable, or from the live call after a few failed reads. */
   void ResolveUnreadRosters(const std::string& local_identity, int64_t now);
   /**
-   * The call's media key moved (ours rotated, or a peer's taken in): epochs only move forward — a newer
-   * one is recorded on the session — and the call's media installs it (the current one again too).
+   * The call's media key moved (ours rotated — `origin` Minted —, or a peer's taken in): epochs only move forward — a
+   * newer one is recorded on the session — and the call's media installs it (the current one again too).
    */
-  void AdoptMediaEpoch(const std::string& call_id, uint32_t epoch, const std::string& key_id);
+  void AdoptMediaEpoch(const std::string& call_id, uint32_t epoch, const std::string& key_id,
+                       CallMediaKeyOrigin origin = CallMediaKeyOrigin::Taken);
   /** This device's mic / camera in `call_id` changed: its participant row, then the roster to the others. */
   struct LocalMedia {
     std::optional<bool> audio_muted;

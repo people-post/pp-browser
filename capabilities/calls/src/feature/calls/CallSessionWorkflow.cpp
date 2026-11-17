@@ -889,7 +889,7 @@ Roe<void> CallSessionWorkflow::RotateMediaKeyAmong(const std::string& call_id,
   if (!key) {
     return key.error();
   }
-  AdoptMediaEpoch(call_id, key->epoch, key->key_id);
+  AdoptMediaEpoch(call_id, key->epoch, key->key_id, CallMediaKeyOrigin::Minted);
 
   // The roster goes with the key when it can be read; the key goes either way (a member who left must not keep one).
   std::optional<std::string> roster_json;
@@ -982,7 +982,8 @@ Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::opt
   return {};
 }
 
-void CallSessionWorkflow::AdoptMediaEpoch(const std::string& call_id, const uint32_t epoch, const std::string& key_id) {
+void CallSessionWorkflow::AdoptMediaEpoch(const std::string& call_id, const uint32_t epoch, const std::string& key_id,
+                                          const CallMediaKeyOrigin origin) {
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value()) {
     return;
@@ -997,7 +998,7 @@ void CallSessionWorkflow::AdoptMediaEpoch(const std::string& call_id, const uint
     (void)sessions_.UpsertSession(**session);
   }
   if (CallMedia* call = call_media_.Find(call_id)) {
-    call->OnMediaKeyInstalled();
+    call->OnMediaKeyInstalled(origin);
   }
 }
 

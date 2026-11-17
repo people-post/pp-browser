@@ -78,7 +78,7 @@ struct NullHopDriver : CallHopDriver {
   void OnMediaStopped(const std::string&) override {}
   void RefreshAdaptation(const std::string&, bool) override {}
   void Handle(HopPathEvent&) override {}
-  void OnMediaKeyInstalled(const std::string&) override {}
+  void OnMediaKeyInstalled(const std::string&, CallMediaKeyOrigin) override {}
   void OnJoinedCountObserved(const std::string&, size_t) override {}
   void ClearSfuAttachWait() override {}
   Roe<void> OnInboundSfuAttach(const std::string&, const CallSfuAttachDetail&, const std::string&) override {

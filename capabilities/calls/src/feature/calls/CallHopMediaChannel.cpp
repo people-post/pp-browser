@@ -27,14 +27,15 @@ bool CallHopMediaChannel::HasLiveKeys() const {
   return live_keys_ != nullptr;
 }
 
-void CallHopMediaChannel::InstallKey(const uint32_t epoch, const ByteVector& key) {
+void CallHopMediaChannel::InstallKey(const uint32_t epoch, const ByteVector& key,
+                                     const std::vector<uint32_t>& hold_for) {
   std::shared_ptr<SfuKeyRing> live;
   {
     std::lock_guard lock(mu_);
     live = live_keys_;
   }
   if (live) {
-    live->Install(epoch, key, util::NowUnixMs());
+    live->Install(epoch, key, util::NowUnixMs(), hold_for);
   }
 }
 
@@ -51,7 +52,8 @@ std::function<void(mesh::MediaDataFrame)> CallHopMediaChannel::MakeFrameSink(std
     pkt.mark = frame.mark;
     pkt.instance = frame.instance;
     pkt.capture_ts = frame.capture_ts;
-    const std::vector<SfuKeyRing::Key> open_with = keys->ForOpen(util::NowUnixMs());
+    const int64_t now = util::NowUnixMs();
+    const std::vector<SfuKeyRing::Key> open_with = keys->ForOpen(now);
     if (open_with.empty()) {
       if (!self->AdmitFrame(frame, /*opened=*/false)) {
         return;
@@ -66,10 +68,14 @@ std::function<void(mesh::MediaDataFrame)> CallHopMediaChannel::MakeFrameSink(std
     for (const SfuKeyRing::Key& key : open_with) {
       plain = mesh::OpenMediaFrame(key.key, context, key.epoch, frame);
       if (plain) {
+        keys->NoteOpened(frame.stream_id, key.epoch, now); // its sender holds this key (a rotation's hold, V068)
         break;
       }
     }
     if (!plain) {
+      // The others seal with a key this device lacks (V067: the key moved on without us, or is still on its way).
+      self->last_unopened_ms_.store(now, std::memory_order_relaxed);
+      self->unopened_frames_.fetch_add(1, std::memory_order_relaxed);
       static std::atomic<int> decrypt_fail_log{0};
       const int n = decrypt_fail_log.fetch_add(1, std::memory_order_relaxed);
       if (n < 8 || (n % 100) == 0) {
@@ -101,7 +107,7 @@ MediaEngine::PacketSendFn CallHopMediaChannel::MakeSendFn(std::shared_ptr<SfuKey
     frame.mark = pkt.mark;
     frame.instance = pkt.instance;
     frame.capture_ts = pkt.capture_ts;
-    const SfuKeyRing::Key key = keys->Current(); // the newest epoch (V003)
+    const SfuKeyRing::Key key = keys->Current(util::NowUnixMs()); // V003 / V068: the newest the others hold
     if (!key.key.empty()) {
       // Never the same (channel, seq) twice under one instance and epoch: it would repeat a nonce (A029 H2).
       if (!guard->Admit(pkt.instance, key.epoch, static_cast<uint8_t>(pkt.channel_id), pkt.seq) ||
@@ -170,6 +176,8 @@ void CallHopMediaChannel::ResetStreams() {
   remote_stream_ids_.clear();
   freshness_.Clear();
   last_fresh_ms_.clear();
+  last_unopened_ms_.store(0, std::memory_order_relaxed);
+  unopened_frames_.store(0, std::memory_order_relaxed);
 }
 
 } // namespace pbr

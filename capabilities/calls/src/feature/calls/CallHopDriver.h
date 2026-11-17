@@ -46,8 +46,8 @@ public:
 
   /** One of the path's own events, back on the calls owner. */
   virtual void Handle(HopPathEvent& event) = 0;
-  /** The call's media key epoch landed (the hop re-keys its streams). */
-  virtual void OnMediaKeyInstalled(const std::string& call_id) = 0;
+  /** The call's media key epoch landed (the hop re-keys its streams; one this device minted waits for the others). */
+  virtual void OnMediaKeyInstalled(const std::string& call_id, CallMediaKeyOrigin origin) = 0;
   virtual void OnJoinedCountObserved(const std::string& call_id, size_t n_joined) = 0;
   virtual void ClearSfuAttachWait() = 0;
   /** Inbound call control for the call's hop (V025 / V029 / V050). */

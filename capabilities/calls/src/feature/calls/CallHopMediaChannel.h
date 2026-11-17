@@ -38,8 +38,11 @@ public:
   /** A committed attach's ring takes the call's later rotations. */
   void MakeLive(std::shared_ptr<SfuKeyRing> keys);
   bool HasLiveKeys() const;
-  /** A rotation: the live ring opens with `key` at `epoch` from now (no-op without a live ring). */
-  void InstallKey(uint32_t epoch, const ByteVector& key);
+  /**
+   * A rotation: the live ring opens with `key` at `epoch` from now (no-op without a live ring). `hold_for`: this device
+   * minted it — the streams of the others to see sealing with it before this one does (V068).
+   */
+  void InstallKey(uint32_t epoch, const ByteVector& key, const std::vector<uint32_t>& hold_for = {});
 
   // --- Frames -----------------------------------------------------------------------------------
   /**
@@ -60,6 +63,10 @@ public:
   void DropRemoteStream(uint32_t id);
   /** When a fresh frame of `id` last opened (V067: PublisherFrameFreshness), wall ms; 0: none since it was added. */
   int64_t LastFreshFrameMs(uint32_t id) const;
+  /** When a frame last came that no key of the ring opened (the others seal with a key we lack), wall ms; 0: none. */
+  int64_t LastUnopenedFrameMs() const { return last_unopened_ms_.load(std::memory_order_relaxed); }
+  /** Frames that came and no key of the ring opened, since the hop was joined (media health; V068). */
+  uint64_t UnopenedFrames() const { return unopened_frames_.load(std::memory_order_relaxed); }
   std::vector<uint32_t> RemoteStreams() const;
   size_t RemoteStreamCount() const;
   /** True the first time `stream_id` asks for an IDR (later asks are not sent again). */
@@ -82,6 +89,8 @@ private:
   std::unordered_set<uint32_t> video_refresh_sent_;
   PublisherFrameFreshness freshness_;
   std::unordered_map<uint32_t, int64_t> last_fresh_ms_;
+  std::atomic<int64_t> last_unopened_ms_{0};
+  std::atomic<uint64_t> unopened_frames_{0};
 };
 
 } // namespace pbr
