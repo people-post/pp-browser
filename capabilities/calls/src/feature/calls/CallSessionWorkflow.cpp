@@ -1077,6 +1077,11 @@ void CallSessionWorkflow::ReportMissedGroupRing(const CallSession& session) {
       !missed_group_rings_reported_.insert(session.call_id).second) {
     return;
   }
+  missed_group_rings_order_.push_back(session.call_id);
+  if (missed_group_rings_order_.size() > kMissedGroupRingsRemembered) {
+    missed_group_rings_reported_.erase(missed_group_rings_order_.front());
+    missed_group_rings_order_.pop_front();
+  }
   log().info << "group call rang unanswered call_id=" << session.call_id;
   reports_.Emit(
       workflow_report::MissedGroupCall{*session.origin_thread_id, session.media_mode == CallMediaMode::Video});

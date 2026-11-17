@@ -611,6 +611,22 @@ TEST_F(CallSessionInboundComposeTest, AGroupRingThatRunsOutIsReportedMissedOnce)
   EXPECT_EQ(missed_group_calls_.size(), 1u);
 }
 
+// The "already reported" memory is for duplicates that come within moments: it keeps the most recent ones only.
+TEST_F(CallSessionInboundComposeTest, TheMissedGroupRingMemoryIsBounded) {
+  const size_t rings = CallSessionWorkflow::kMissedGroupRingsRemembered + 5;
+  for (size_t i = 0; i < rings; ++i) {
+    const std::string call_id = "call:group-bound-" + std::to_string(i);
+    auto msg = MakeInviteMessage(call_id, std::nullopt, std::nullopt, "g1");
+    ASSERT_TRUE(msg);
+    ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+    EXPIRE_RING_AND_SWEEP(call_id);
+  }
+  EXPECT_EQ(missed_group_calls_.size(), rings) << "each ring was reported once";
+  size_t remembered = 0;
+  OnCallsOwner([&] { remembered = device_->Workflow().MissedGroupRingsRememberedForTest(); });
+  EXPECT_EQ(remembered, CallSessionWorkflow::kMissedGroupRingsRemembered);
+}
+
 TEST_F(CallSessionInboundComposeTest, AGroupRingTheOthersEndedWhileItRangIsMissed) {
   const std::string call_id = "call:group-ring-ended";
   auto msg = MakeInviteMessage(call_id, std::nullopt, std::nullopt, "g1");
