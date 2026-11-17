@@ -106,21 +106,29 @@ void ReadOpenAiErrorField(const Value& err, std::string& api_message, std::strin
   }
 }
 
-std::string TruncateForLog(const std::string& text, const size_t max_chars) {
+/** " code=<machine code>" from an error body's `error.code` / `error.type`, else empty. Never the message text. */
+std::string ErrorCodeForLog(const std::string& body) {
+  std::string code;
+  std::string type;
+  if (auto json = TryParseObject(body)) {
+    if (auto err_slot = json->fields().tryGet("error")) {
+      if (const Object* err_obj = asObject(err_slot->get())) {
+        code = err_obj->getString("code").value_or("");
+        type = err_obj->getString("type").value_or("");
+      }
+    }
+  }
+  std::string chosen = code.empty() ? type : code;
   std::string out;
-  out.reserve(text.size() < max_chars ? text.size() : max_chars + 3);
-  for (const char c : text) {
-    if (out.size() >= max_chars) {
-      out += "...";
+  for (const char c : chosen) {
+    if (out.size() >= 64) {
       break;
     }
-    if (c == '\n' || c == '\r' || c == '\t') {
-      out.push_back(' ');
-    } else {
+    if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '.' || c == '-') {
       out.push_back(c);
     }
   }
-  return out;
+  return out.empty() ? std::string() : " code=" + out;
 }
 
 } // namespace
@@ -362,8 +370,7 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   }
 
   if (http_code >= 400) {
-    log().error << "HTTP " << http_code << " (" << response.body.size()
-                << " bytes) body=" << TruncateForLog(response.body, 500);
+    log().error << "HTTP " << http_code << " (" << response.body.size() << " bytes)" << ErrorCodeForLog(response.body);
     return MapHttpError(http_code, response.body);
   }
 

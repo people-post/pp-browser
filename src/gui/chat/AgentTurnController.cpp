@@ -1235,8 +1235,7 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
 
     const std::string assistant_open =
         ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", raw_output) + R"( selectable="text">)";
-    // B81: a blank first line shows in assistant bubbles; log how the body starts to see what sits before the text.
-    log().debug << "assistant bubble markup head: " << hydrated.substr(0, 160);
+    log().debug << "assistant bubble markup length=" << hydrated.size();
 
     // A shared answer ("@ai+" / "@ai++") is stored once, by the relay below, as the "AI · shared" message
     // the peer also sees; a second local copy showed the same text twice (Kenneth 2026-10-28).
