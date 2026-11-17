@@ -126,16 +126,29 @@ TEST_F(DefaultPinNoteTest, TheSecurityQuestionMarkOpensALocalNoteOnlyOnTheDefaul
   EXPECT_EQ(asked, 0) << "a local note: no AI, no support";
 }
 
-TEST_F(DefaultPinNoteTest, TheSecurityPageShowsTheLineAndItsQuestionMarkOnlyOnTheDefaultPin) {
+// 2026-11-17: the Security page no longer carries the default-PIN line; its caption has a "?" that asks PP Support like
+// the other settings rows, and the longer words are the PIN page's caption (the note above stays for the other screens).
+TEST_F(DefaultPinNoteTest, TheSecurityPageHasTheCaptionAndASupportQuestionMarkForEveryone) {
   const std::string rml = ReadAsset("views/settings_section_security.rml");
-  const size_t head = rml.find("data-if=\"pin_protection_is_default\"");
-  ASSERT_NE(head, std::string::npos);
-  const size_t line = rml.find("{{i18n:settings.security.default_hint}}", head);
-  const size_t button = rml.find("data-event-click=\"show_default_pin_note()\"", head);
+  EXPECT_EQ(rml.find("settings.security.default_hint"), std::string::npos);
+  const size_t line = rml.find("{{i18n:settings.security.pin_caption}}");
   ASSERT_NE(line, std::string::npos);
+  const size_t button = rml.find("data-event-click=\"ask_setting_help('settings.help.topic.pin')\"", line);
   ASSERT_NE(button, std::string::npos);
   EXPECT_LT(line, button) << "the \"?\" comes right after the text";
-  EXPECT_NE(rml.find("settings-q-btn", head), std::string::npos) << "the shared 44dp \"?\" button";
+  EXPECT_NE(rml.find("settings-q-btn", line), std::string::npos) << "the shared 44dp \"?\" button";
+  const size_t head = rml.rfind("<div", line);
+  EXPECT_EQ(rml.substr(head, line - head).find("data-if"), std::string::npos) << "shown in either mode";
+  const std::string page = ReadAsset("views/settings_security_pin.rml");
+  EXPECT_EQ(page.find("show_default_pin_note()"), std::string::npos);
+  EXPECT_NE(page.find("{{pin_page_note}}"), std::string::npos);
+  for (const char* lang : {"en", "zh-Hans"}) {
+    LocalizationService::Instance().SetPreferredLanguage(lang);
+    const std::string note = Tr("settings.security.pin_page.note", {{"pin", kDefaultProfilePin}});
+    EXPECT_NE(note.find(kDefaultProfilePin), std::string::npos) << lang;
+    EXPECT_EQ(note.find("{pin}"), std::string::npos) << lang;
+    EXPECT_NE(Tr("settings.help.topic.pin"), "settings.help.topic.pin") << lang;
+  }
 }
 
 TEST_F(DefaultPinNoteTest, TheGateAndDialogMarkupHaveTheLineAndTheQuestionMark) {

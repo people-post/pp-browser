@@ -297,6 +297,7 @@ private:
     /** PIN grace window (#21): the minutes (not bound) and the row's label; the row shows when grace_shown. */
     int unlock_grace_minutes = 15;
     ui::String unlock_grace_label;
+    ui::String pin_page_note; // the PIN page caption, with the default PIN filled in from the constant
     bool security_grace_shown = false;
     /** Face / fingerprint unlock (at-rest A014): the switch shows, its state, its title. */
     bool security_biometric_shown = false;
@@ -392,8 +393,8 @@ private:
   bool CloseSettingsDetailPane();
   void OnBackToList();
   /**
-   * Phones: Security's own page ("transfer"), pushed over the section with the local-back stack. "change_pin" (any
-   * platform) is the PIN gate's change mode instead (B2).
+   * Phones: a page pushed over the section with the local-back stack ("pin" on Security: the rows that start the PIN
+   * gate's steps, B2; "transfer" on Devices; the Advanced pages).
    */
   void OpenSecurityPage(const std::string& page);
   void OnCloseSecurityPage();

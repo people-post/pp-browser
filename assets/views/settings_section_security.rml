@@ -1,20 +1,13 @@
       <div class="settings-section settings-section--grouped settings-mock stack">
-        <!-- Phones: a short list; Change PIN is a page of its own (Kenneth 2026-11-04). One card with the PIN row and,
+        <!-- Phones: a short list; the PIN row opens a page of its own (Kenneth 2026-11-04, 2026-11-17). One card with the PIN row and,
              on a device with the sensor and an own PIN, the face / fingerprint switch (A014; on asks for the PIN first). -->
         <div class="group-card">
           <button class="group-row settings-phone-only" type="button" data-if="show_change_pin"
-                  data-event-click="open_security_page('change_pin')">
+                  data-event-click="open_security_page('pin')">
             <span class="group-row-body">
-              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.change_pin}}</span></span>
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.pin_row}}</span></span>
               <span class="group-row-value">{{pin_protection_status}}</span>
               <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
-            </span>
-          </button>
-          <button class="group-row settings-phone-only" type="button"
-                  data-if="show_change_pin && security_can_change_pin && !pin_protection_is_default"
-                  data-event-click="remove_pin()">
-            <span class="group-row-body">
-              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.remove_pin}}</span></span>
             </span>
           </button>
           <div class="group-row group-row--static settings-phone-only" data-if="!show_change_pin">
@@ -35,6 +28,7 @@
           </div>
         </div>
         <p class="text muted settings-help group-foot" data-if="security_biometric_shown">{{i18n:settings.security.biometric.help}}</p>
+        <div class="settings-q-head row"><p class="text muted group-foot">{{i18n:settings.security.pin_caption}}</p><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.pin')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
         <div class="group-card group-card--pad settings-desktop-only">
           <p class="text muted group-note">{{i18n:settings.security.protection}} <span>{{pin_protection_status}}</span></p>
         </div>
@@ -52,7 +46,6 @@
           </button>
         </div>
         <p class="text muted settings-help group-foot" data-if="security_grace_shown">{{i18n:settings.security.grace.caption}}</p>
-        <div class="settings-q-head row" data-if="pin_protection_is_default"><p class="text muted group-foot">{{i18n:settings.security.default_hint}}</p><button class="settings-q-btn" type="button" data-event-click="show_default_pin_note()"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
         <p class="text muted group-foot" data-if="pin_protection_not_setup">
           {{i18n:settings.security.not_setup_hint}}
         </p>

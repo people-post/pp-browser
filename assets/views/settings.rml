@@ -188,6 +188,9 @@
     </div>
 
     <div class="settings-detail-body nav-bar-scroll stack">
+      <div class="settings-section settings-section--grouped settings-mock stack" data-if="security_page == 'pin'">
+{{include:settings_security_pin}}
+      </div>
       <div class="settings-section settings-section--grouped settings-mock stack" data-if="security_page == 'transfer'">
 {{include:settings_security_transfer}}
       </div>
