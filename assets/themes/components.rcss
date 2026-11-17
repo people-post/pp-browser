@@ -13277,6 +13277,7 @@ input.checkbox {
 .shell-layer-compact .group-head--name {
   font-size: 17dp;
   line-height: 22dp;
+  font-weight: bold;
 }
 
 .shell-layer-compact .group-foot {
@@ -14003,6 +14004,18 @@ textarea:composing ~ .prompt-composer-label,
 
 .shell-layer-compact .settings-mock .group-head + .group-card {
   margin-top: 0;
+}
+
+/* A feature name with its "?" (Security: recovery phrase). The row carries the heading's outer margin, so the heading
+   and the "?" share one centre line (a margin on the heading alone moved its text off the button's centre), and the
+   row's own 8dp gap is dropped: the 20dp icon sits 6dp after the text, like the "PIN" row's. */
+.shell-layer-compact .settings-mock .settings-q-head--name {
+  gap: 0;
+  margin: 24dp 32dp 8dp 32dp;
+}
+
+.shell-layer-compact .settings-mock .settings-q-head--name .group-head {
+  margin: 0;
 }
 
 .shell-layer-compact .me-home .group-row,
