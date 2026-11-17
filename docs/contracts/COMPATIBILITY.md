@@ -130,6 +130,10 @@ stays strict. The signed bytes are frozen in a test (`EnvelopeSignerTest.SignByt
 
 ### No bridges (pre-release)
 
+**Ends at release 1** (proposed, 2026-11-17): from then on, every app, pp-node and relay works with every other one
+whose version is inside the supported range — [release-compatibility RC001](../../projects/release-compatibility/DECISIONS.md#rc001--compatibility-within-a-supported-range-from-release-1-on).
+Until release 1 ships, this section holds.
+
 Pre-release every app and node updates together (the user's decision, 2026-11-12), so no code exists to talk to an
 older peer, read an older wire form, or read older data on disk: a change is a clean cutover, recorded as a row in
 [§ Clean cutovers](#clean-cutovers-pre-release) (what an app or node before it and one after it do to each other).

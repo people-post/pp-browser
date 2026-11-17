@@ -71,6 +71,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [content-cas](content-cas/) | Private/public CAS realms; library / pin / Node-gated catalog use cases (C013) |
 | [support-chat](support-chat/) | Support channel notes |
 | [privacy](privacy/) | What peers, relays, servers and logs learn about a user, and the controls that bound it (first: who gets our IP) |
+| [release-compatibility](release-compatibility/) | Release mode: every app, pp-node and relay in the supported range works with every other; format changes by the range rule (proposed) |
 
 ## Done / archived
 
