@@ -16,7 +16,7 @@ public:
   AutoreleasePoolScope& operator=(const AutoreleasePoolScope&) = delete;
 
 private:
-  void* token_ = nullptr;
+  [[maybe_unused]] void* token_ = nullptr; // only the Apple implementation uses it
 };
 
 } // namespace pbr
