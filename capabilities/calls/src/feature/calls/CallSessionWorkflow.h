@@ -188,6 +188,13 @@ public:
    */
   Roe<CallSession> JoinCall(const std::string& call_id);
   /**
+   * V067 8: this device was cut off from group call `call_id` long enough that the others took it as gone (and moved
+   * the key on): ask to join again as JoinCall does, staying in the call meanwhile ("Reconnecting…"). The invite that
+   * answers ends this device's part here (nothing sent: the others already took it as gone) and is accepted without
+   * ringing. Unanswered: nothing changes here — the call's group path decides (CallParticipantLiveness).
+   */
+  Roe<void> RejoinCall(const std::string& call_id);
+  /**
    * Accept a pending invite: checks → CallAccept + Joined + media arm. The circuit park is asked for,
    * not waited on. A failed accept leaves the call ringing.
    */
@@ -269,7 +276,9 @@ public:
   Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
-  Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
+  /** `sender_identity`: who ended it — a sender no longer in the call does not end it for those still in (V067 8). */
+  Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& sender_identity,
+                               const std::string& local_identity);
   /** M021 d5: another of our devices took (or declined) this call — stop it ringing here, no history. */
   Roe<void> StopRingingAnsweredElsewhere(const std::string& call_id, const std::string& local_identity);
   /** V053: someone the call was offered to asks to join — invite them if this device is in it. */
@@ -293,6 +302,14 @@ private:
   void MarkEveryoneLeft(const std::string& call_id, const std::string& local_identity);
   /** Join requests nobody answered (the call ended); a group call left alone for 5 min. */
   void SweepJoinsAndAloneCalls(const std::string& local_identity, int64_t now);
+  /** Ask everyone `call_id` was offered to for a way in (V053); the earliest joiner still in answers. */
+  Roe<void> SendJoinRequest(const std::string& call_id, const std::string& local_identity);
+  /** V067 8: whether `invite` answers this device's ask back into a call it is still in. */
+  bool AnswersRejoin(const CallInviteDetail& invite, const std::string& sender_identity) const;
+  /** V067 8: this device's part of `call_id` ends here so the answering invite takes it back in (nothing is sent). */
+  void EndOurPartToRejoin(const std::string& call_id, const std::string& local_identity);
+  /** The ask back into `call_id` is off (this device left it, or its part ended another way). */
+  void DropRejoin(const std::string& call_id);
   /** V062: this device checks guests in `session`: a group's call, with a standing port bound. */
   bool ChecksGuests(const CallSession& session) const;
   /** V062: `account`'s standing in the call's group; none: no roster here (or guests not checked). */
@@ -455,6 +472,8 @@ private:
   std::unordered_map<std::string, int64_t> join_requested_until_ms_;
   /** V053: join requests re-sent to anyone in the call (no answer from the earliest joiner). */
   std::unordered_set<std::string> join_any_retry_sent_;
+  /** V067 8: of those, the calls this device is still in and asks back into (RejoinCall). */
+  std::unordered_set<std::string> rejoining_in_place_;
   /** V053: group calls this device is alone in → since when. */
   std::unordered_map<std::string, int64_t> alone_since_ms_;
   /**

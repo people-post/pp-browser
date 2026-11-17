@@ -137,6 +137,11 @@ void CallDevice::OnHopReport(const HopReport& report) {
           (void)TopologyLeaveCall(r.call_id);
         } else if constexpr (std::is_same_v<R, hop_report::ParticipantLost>) {
           workflow_.NoteParticipantLost(r.call_id, r.identity);
+        } else if constexpr (std::is_same_v<R, hop_report::RejoinWanted>) {
+          if (auto asked = workflow_.RejoinCall(r.call_id); !asked) {
+            log().warning << "cut off from call_id=" << r.call_id
+                          << " and cannot ask back in: " << asked.error().message;
+          }
         } else {
           static_assert(!sizeof(R), "take every HopReport");
         }

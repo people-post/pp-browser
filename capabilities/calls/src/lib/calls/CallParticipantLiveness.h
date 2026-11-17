@@ -24,6 +24,20 @@ inline constexpr int64_t kParticipantGoneMs = kCallMediaReconnectWindowMs;
 inline constexpr int64_t kParticipantNeverHeardGoneMs = kSfuAttachWaitDefaultMs + kCallMediaReconnectWindowMs;
 /** How often the group path steps the watch (two steps more than CallSessionLogic::kAppSleptGapMs apart: asleep). */
 inline constexpr int64_t kParticipantLivenessStepMs = 1'000;
+/**
+ * Two or more others whose last frames came this close together, and nothing since: the call went quiet for this
+ * device (its own network), not each of them on their own (V067 8).
+ */
+inline constexpr int64_t kParticipantsQuietTogetherMs = 2'000;
+/**
+ * Frames still come and none opens under any key held, this long: the others moved the key on without us (they took
+ * us as gone). Longer than a rotation's own gap and a missed key's first resend (2 s), so a late key is not it.
+ */
+inline constexpr int64_t kShutOutMs = 5'000;
+/** How long an ask to rejoin waits for the answer (the join request's own wait, CallSessionLogic). */
+inline constexpr int64_t kRejoinWaitMs = 15'000;
+/** Asks to rejoin while shut out before this device gives up and leaves ("You were disconnected"). */
+inline constexpr int kRejoinAsksMax = 2;
 
 /**
  * Which frames say a participant is alive: one that opened under the call's key (the caller only notes those) and is
@@ -67,6 +81,8 @@ struct ParticipantLivenessSample {
   std::vector<Peer> peers;
   /** The call's people could be read (else nothing is taken as left, and the clocks pause). */
   bool peers_known = true;
+  /** When a frame last came that no key we hold opened (from anyone, taken as gone or not); 0: none. */
+  int64_t last_unopened_ms = 0;
 };
 
 struct ParticipantLivenessStep {
@@ -82,12 +98,26 @@ struct ParticipantLivenessStep {
    * taken it as gone and moved the key on without it. It leaves (the group's Join takes it back).
    */
   bool away_too_long = false;
+  /**
+   * V067 8: the call went quiet for this device, not one of them for everyone — two or more others stopped together,
+   * or frames come that no key we hold opens. Nobody is dimmed or taken as gone meanwhile; the call reads
+   * "Reconnecting…".
+   */
+  bool cut_off = false;
+  bool cut_off_changed = false;
+  /** Cut off long enough that the others have taken us as gone (or shown it: the key moved on): ask to rejoin. */
+  bool rejoin = false;
+  /** Shut out and the asks to rejoin went unanswered: leave ("You were disconnected"; the group's Join is there). */
+  bool disconnected = false;
 };
 
 /**
  * V067: the per-participant clocks of one group call, stepped every kParticipantLivenessStepMs. A participant's clock
  * counts from their last fresh frame, or from when they were first seen joined; never across a time our side was not
  * live (connecting, moving, reconnecting) or asleep — those start every clock over, so our own drop removes nobody.
+ * Nor while the call went quiet for this device as a whole (V067 8: `cut_off`): then it asks to rejoin once the others
+ * must have taken it as gone, and leaves only when shut out and unanswered; when nothing at all came back and the ask
+ * went unanswered, the others may really have gone together, and each is judged on their own (V053's wait alone).
  */
 class ParticipantLivenessWatch {
 public:
@@ -105,6 +135,17 @@ private:
   void TakeLeft(const std::vector<ParticipantLivenessSample::Peer>& peers, ParticipantLivenessStep& step);
   /** Our side is live: each participant's clock. */
   void StepLive(const ParticipantLivenessSample& sample, ParticipantLivenessStep& step);
+  /** Our side is live: whether the call went quiet for this device (then nobody is judged on their own), and its asks. */
+  bool StepCutOff(const ParticipantLivenessSample& sample, ParticipantLivenessStep& step);
+  /** Cut off while still asking to rejoin; false: it gave up (said in `step`), or nothing at all came back (V053). */
+  bool StepRejoinWait(int64_t now_ms, bool shut_out, ParticipantLivenessStep& step);
+  /** Asks to rejoin (said in `step`). */
+  void AskRejoin(int64_t now_ms, ParticipantLivenessStep& step);
+  /** Frames open again: whatever was said of being cut off starts over. */
+  void ClearCutOff();
+  bool SetCutOff(bool cut_off, ParticipantLivenessStep& step);
+  /** Two or more others (heard, not taken as gone) whose last frames came within kParticipantsQuietTogetherMs. */
+  bool MayBeQuietTogether(const ParticipantLivenessSample& sample) const;
   void SetQuiet(std::vector<std::string> quiet, ParticipantLivenessStep& step);
 
   /** When each joined participant was first seen (or seen again after a pause). */
@@ -115,6 +156,15 @@ private:
   int64_t live_since_ms_ = 0;
   int64_t last_step_ms_ = 0;
   std::vector<std::string> quiet_;
+  bool cut_off_ = false;
+  /** Since when frames come that no key we hold opens, with nothing opening (0: not so). */
+  int64_t shut_out_since_ms_ = 0;
+  /** When we last asked to rejoin (0: not asked since frames last opened), and how often. */
+  int64_t rejoin_asked_ms_ = 0;
+  int rejoin_asks_ = 0;
+  /** The others went quiet together, our ask went unanswered and nothing came back: they may have; each is judged. */
+  bool together_given_up_ = false;
+  bool disconnected_said_ = false;
 };
 
 } // namespace pbr

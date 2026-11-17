@@ -462,12 +462,16 @@ struct ParticipantLost {
   std::string call_id;
   std::string identity;
 };
+/** V067 8: the call went quiet for this device long enough that the others took it as gone: ask to join again. */
+struct RejoinWanted {
+  std::string call_id;
+};
 
 } // namespace hop_report
 
 using HopReport = std::variant<hop_report::Progress, hop_report::Changed, hop_report::MediaError, hop_report::Activity,
                                hop_report::MediaAttempted, hop_report::InboxSyncWanted, hop_report::LeaveWanted,
-                               hop_report::ParticipantLost>;
+                               hop_report::ParticipantLost, hop_report::RejoinWanted>;
 
 namespace session_event {
 

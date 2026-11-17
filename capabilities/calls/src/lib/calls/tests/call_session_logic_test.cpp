@@ -486,6 +486,33 @@ TEST(CallSessionLogicTest, VoiceAnswerNarrowsOnlyDirectOriginCalls) {
   EXPECT_TRUE(CallSessionLogic::VoiceAnswerNarrowsCall(group));
 }
 
+CallParticipant Row(const std::string& identity, const CallParticipantState state) {
+  CallParticipant row;
+  row.identity = identity;
+  row.state = state;
+  return row;
+}
+
+TEST(CallSessionLogicTest, ACallEndedFromSomeoneNoLongerInItLeavesTheOthersInIt) {
+  // V067 8: Dave was cut off, took everyone as gone, waited alone and left — his call_ended goes to everyone offered.
+  const std::vector<CallParticipant> rows{Row("account:me", CallParticipantState::Joined),
+                                          Row("account:bob", CallParticipantState::Joined),
+                                          Row("account:dave", CallParticipantState::Left)};
+  EXPECT_FALSE(CallSessionLogic::CallEndedStands(rows, "account:dave", "account:me")) << "Bob and I are still in it";
+  EXPECT_TRUE(CallSessionLogic::CallEndedStands(rows, "account:bob", "account:me"))
+      << "from someone in it: we missed the others leaving";
+}
+
+TEST(CallSessionLogicTest, ACallEndedStandsForWhoeverIsNotInItOrAlone) {
+  const std::vector<CallParticipant> out{Row("account:me", CallParticipantState::Left),
+                                         Row("account:bob", CallParticipantState::Joined),
+                                         Row("account:dave", CallParticipantState::Left)};
+  EXPECT_TRUE(CallSessionLogic::CallEndedStands(out, "account:dave", "account:me")) << "no longer joinable (V053)";
+  const std::vector<CallParticipant> alone{Row("account:me", CallParticipantState::Joined),
+                                           Row("account:dave", CallParticipantState::Left)};
+  EXPECT_TRUE(CallSessionLogic::CallEndedStands(alone, "account:dave", "account:me"));
+}
+
 TEST(CallSessionLogicTest, FanoutSelectJoinedOnly) {
   std::vector<CallParticipant> rows(3);
   rows[0].identity = "joined";

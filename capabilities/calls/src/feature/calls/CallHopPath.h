@@ -496,6 +496,8 @@ private:
   void StopLivenessWatch();
   void ScheduleLivenessTick();
   void OnLivenessTick();
+  /** V067 8: the step's word on this device being cut off (the line, a rejoin, a leave); true: leaving. */
+  bool StepCutOffReports(const ParticipantLivenessStep& step, bool our_media_live);
   /** Our side, and when each joined participant's stream last brought a fresh frame. */
   ParticipantLivenessSample LivenessSample() const;
   ParticipantLivenessWatch liveness_;

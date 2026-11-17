@@ -456,6 +456,7 @@ ParticipantLivenessSample CallHopPath::LivenessSample() const {
     return sample;
   }
   sample.our_media_live = sfu_.attached && engine_->Runs() && Recovery() == CallRecovery::None;
+  sample.last_unopened_ms = channel_->LastUnopenedFrameMs();
   for (const CallParticipant& row : *rows) {
     if (row.state == CallParticipantState::Joined && row.identity != *local) {
       sample.peers.push_back({row.identity, channel_->LastFreshFrameMs(PublisherStreamIdForIdentity(row.identity))});
@@ -465,7 +466,8 @@ ParticipantLivenessSample CallHopPath::LivenessSample() const {
 }
 
 void CallHopPath::OnLivenessTick() {
-  const ParticipantLivenessStep step = liveness_.Step(LivenessSample());
+  const ParticipantLivenessSample sample = LivenessSample();
+  const ParticipantLivenessStep step = liveness_.Step(sample);
   ScheduleLivenessTick();
   for (const std::string& identity : step.left) {
     OnParticipantGone(call_id_, identity); // out of the call some other way (a roster, a removal): their stream goes
@@ -476,6 +478,9 @@ void CallHopPath::OnLivenessTick() {
                   << " s (asleep): the others took it as gone — leaving call_id=" << call_id_;
     reports_.Emit(hop_report::MediaError{call_id_, Localized("call.error.away_too_long")});
     reports_.Emit(hop_report::LeaveWanted{call_id_});
+    return;
+  }
+  if (StepCutOffReports(step, sample.our_media_live)) {
     return;
   }
   if (step.quiet_changed) {
@@ -491,6 +496,35 @@ void CallHopPath::OnLivenessTick() {
                   << " s: taking them as gone call_id=" << call_id_;
     reports_.Emit(hop_report::ParticipantLost{call_id_, identity});
   }
+}
+
+bool CallHopPath::StepCutOffReports(const ParticipantLivenessStep& step, const bool our_media_live) {
+  if (step.cut_off_changed) {
+    if (step.cut_off) {
+      // V067 8: the call went quiet for us, not one of them for everyone — the call reconnects, nobody is dimmed.
+      log().warning << "the call went quiet for this device (everyone at once, or frames no key opens) call_id="
+                    << call_id_;
+      reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.reconnecting")});
+      reports_.Emit(hop_report::Progress{call_id_, CallHopPlannerPhase::Attaching});
+    } else if (our_media_live) {
+      log().info << "the call is heard again call_id=" << call_id_;
+      reports_.Emit(hop_report::Activity{call_id_, {}});
+      reports_.Emit(hop_report::Progress{call_id_, CallHopPlannerPhase::Live});
+    } // else our own recovery owns the line now
+    reports_.Emit(hop_report::Changed{call_id_});
+  }
+  if (step.rejoin) {
+    log().warning << "cut off long enough that the others took this device as gone — asking to join again call_id="
+                  << call_id_;
+    reports_.Emit(hop_report::RejoinWanted{call_id_});
+  }
+  if (step.disconnected) {
+    log().warning << "shut out of the call and not let back in — leaving call_id=" << call_id_;
+    reports_.Emit(hop_report::MediaError{call_id_, Localized("call.error.cut_off")});
+    reports_.Emit(hop_report::LeaveWanted{call_id_});
+    return true;
+  }
+  return false;
 }
 
 bool CallHopPath::SettleFinishedMigrate(const std::string& call_id) {

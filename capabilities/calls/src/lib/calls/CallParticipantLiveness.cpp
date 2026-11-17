@@ -42,6 +42,24 @@ void PublisherFrameFreshness::Forget(const uint32_t stream_id) {
       highest_.upper_bound(Key{stream_id, std::numeric_limits<uint16_t>::max(), std::numeric_limits<uint64_t>::max()}));
 }
 
+bool ParticipantLivenessWatch::MayBeQuietTogether(const ParticipantLivenessSample& sample) const {
+  if (together_given_up_) {
+    return false;
+  }
+  int64_t earliest = 0;
+  int64_t latest = 0;
+  size_t heard = 0;
+  for (const ParticipantLivenessSample::Peer& peer : sample.peers) {
+    if (peer.last_frame_ms <= 0 || gone_.contains(peer.identity)) {
+      continue;
+    }
+    earliest = heard == 0 ? peer.last_frame_ms : std::min(earliest, peer.last_frame_ms);
+    latest = std::max(latest, peer.last_frame_ms);
+    ++heard;
+  }
+  return heard >= 2 && latest - earliest <= kParticipantsQuietTogetherMs;
+}
+
 ParticipantLivenessStep ParticipantLivenessWatch::Step(const ParticipantLivenessSample& sample) {
   const int64_t now = sample.now_ms;
   const int64_t gap = last_step_ms_ > 0 ? now - last_step_ms_ : 0;
@@ -82,6 +100,13 @@ void ParticipantLivenessWatch::StepLive(const ParticipantLivenessSample& sample,
   if (live_since_ms_ == 0) {
     live_since_ms_ = now;
   }
+  if (StepCutOff(sample, step)) {
+    SetQuiet({}, step); // it is us: nobody is dimmed, nobody's clock decides
+    return;
+  }
+  // Dimmed only once it cannot be us: while the others' last frames are within a moment of each other, the next steps
+  // may still find everyone quiet together (StepCutOff).
+  const bool may_be_us = MayBeQuietTogether(sample);
   std::vector<std::string> quiet;
   for (const ParticipantLivenessSample::Peer& peer : sample.peers) {
     const int64_t first = first_seen_.emplace(peer.identity, now).first->second;
@@ -97,15 +122,89 @@ void ParticipantLivenessWatch::StepLive(const ParticipantLivenessSample& sample,
       step.gone.push_back(peer.identity);
       gone_.insert(peer.identity);
       quiet.push_back(peer.identity);
-    } else if (heard && silent_ms >= kParticipantQuietMs) {
+    } else if (heard && silent_ms >= kParticipantQuietMs && !may_be_us) {
       quiet.push_back(peer.identity);
     }
   }
   SetQuiet(std::move(quiet), step);
 }
 
+bool ParticipantLivenessWatch::StepCutOff(const ParticipantLivenessSample& sample, ParticipantLivenessStep& step) {
+  const int64_t now = sample.now_ms;
+  int64_t latest = 0; // the last frame that opened, from anyone
+  for (const ParticipantLivenessSample::Peer& peer : sample.peers) {
+    latest = std::max(latest, peer.last_frame_ms);
+  }
+  const int64_t opened_since = std::max(latest, live_since_ms_);
+  if (now - opened_since < kParticipantQuietMs) {
+    ClearCutOff(); // frames open: we are in the call
+    return SetCutOff(false, step);
+  }
+  // Frames that come and do not open: the others are there, sealing with a key we lack.
+  const bool unopened = sample.last_unopened_ms > 0 && sample.last_unopened_ms >= live_since_ms_ &&
+                        now - sample.last_unopened_ms < kParticipantQuietMs;
+  shut_out_since_ms_ = unopened ? (shut_out_since_ms_ > 0 ? shut_out_since_ms_ : now) : 0;
+  const bool shut_out = shut_out_since_ms_ > 0;
+  // Two or more stopping at once: our network, far likelier than theirs going in the same moment.
+  const bool together = MayBeQuietTogether(sample);
+  if (!shut_out && !together) {
+    return SetCutOff(false, step);
+  }
+  if (rejoin_asked_ms_ > 0) {
+    return SetCutOff(StepRejoinWait(now, shut_out, step), step);
+  }
+  // The others take us as gone at their own window (as we would them), and then the key moves on without us.
+  if ((shut_out && now - shut_out_since_ms_ >= kShutOutMs) || (together && now - opened_since >= kParticipantGoneMs)) {
+    AskRejoin(now, step);
+  }
+  return SetCutOff(true, step);
+}
+
+bool ParticipantLivenessWatch::StepRejoinWait(const int64_t now_ms, const bool shut_out,
+                                              ParticipantLivenessStep& step) {
+  if (now_ms - rejoin_asked_ms_ < kRejoinWaitMs) {
+    return true;
+  }
+  if (!shut_out) {
+    // Nothing came back at all: they may really have gone together. Each is judged on their own now (V053).
+    together_given_up_ = true;
+    rejoin_asked_ms_ = 0;
+    return false;
+  }
+  if (rejoin_asks_ < kRejoinAsksMax) {
+    AskRejoin(now_ms, step); // the others are there (their frames come): ask again
+  } else if (!disconnected_said_) {
+    disconnected_said_ = true;
+    step.disconnected = true;
+  }
+  return true;
+}
+
+void ParticipantLivenessWatch::AskRejoin(const int64_t now_ms, ParticipantLivenessStep& step) {
+  step.rejoin = true;
+  rejoin_asked_ms_ = now_ms;
+  ++rejoin_asks_;
+}
+
+void ParticipantLivenessWatch::ClearCutOff() {
+  shut_out_since_ms_ = 0;
+  rejoin_asked_ms_ = 0;
+  rejoin_asks_ = 0;
+  together_given_up_ = false;
+  disconnected_said_ = false;
+}
+
+bool ParticipantLivenessWatch::SetCutOff(const bool cut_off, ParticipantLivenessStep& step) {
+  step.cut_off = cut_off;
+  step.cut_off_changed = cut_off != cut_off_;
+  cut_off_ = cut_off;
+  return cut_off;
+}
+
 void ParticipantLivenessWatch::Pause(const int64_t now_ms, const bool live, ParticipantLivenessStep& step) {
   live_since_ms_ = live ? now_ms : 0;
+  shut_out_since_ms_ = 0;
+  SetCutOff(false, step); // our side's own recovery says so meanwhile
   SetQuiet({}, step);
 }
 
@@ -128,6 +227,8 @@ void ParticipantLivenessWatch::Reset() {
   live_since_ms_ = 0;
   last_step_ms_ = 0;
   quiet_.clear();
+  cut_off_ = false;
+  ClearCutOff();
 }
 
 } // namespace pbr
