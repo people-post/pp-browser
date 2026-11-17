@@ -174,6 +174,39 @@ TEST(ParticipantLivenessTest, TheLastOtherGoingQuietIsGoneToo) {
   EXPECT_EQ(step.gone, Strings{"account:bob"});
 }
 
+TEST(ParticipantLivenessTest, SomeoneNoLongerJoinedIsReportedLeftOnce) {
+  // Out of the call by any way the watch did not see (a roster from the key's coordinator, a removal): their stream
+  // must go too.
+  ParticipantLivenessWatch watch;
+  ParticipantLivenessSample sample;
+  sample.now_ms = 10'000;
+  sample.our_media_live = true;
+  sample.peers = {{"account:bob", 9'990}, {"account:carol", 9'990}};
+  EXPECT_TRUE(watch.Step(sample).left.empty());
+  sample.now_ms = 11'000;
+  sample.peers = {{"account:carol", 10'990}};
+  EXPECT_EQ(watch.Step(sample).left, Strings{"account:bob"});
+  sample.now_ms = 12'000;
+  EXPECT_TRUE(watch.Step(sample).left.empty()) << "said once";
+}
+
+TEST(ParticipantLivenessTest, AnUnreadableRosterTakesNobodyAsLeftAndPauses) {
+  ParticipantLivenessWatch watch;
+  ParticipantLivenessSample sample;
+  sample.now_ms = 10'000;
+  sample.our_media_live = true;
+  sample.peers = {{"account:bob", 9'990}};
+  ASSERT_TRUE(watch.Step(sample).left.empty());
+  sample.peers.clear();
+  sample.peers_known = false;
+  for (int64_t now = 11'000; now <= 80'000; now += 1'000) {
+    sample.now_ms = now;
+    const ParticipantLivenessStep step = watch.Step(sample);
+    EXPECT_TRUE(step.left.empty()) << now;
+    EXPECT_TRUE(step.gone.empty()) << now;
+  }
+}
+
 // --- Which frames count -------------------------------------------------------------------------
 
 TEST(PublisherFrameFreshnessTest, ANewerSeqAdvances) {

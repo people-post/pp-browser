@@ -65,6 +65,8 @@ struct ParticipantLivenessSample {
   };
   /** The others joined in the call (this device not among them). */
   std::vector<Peer> peers;
+  /** The call's people could be read (else nothing is taken as left, and the clocks pause). */
+  bool peers_known = true;
 };
 
 struct ParticipantLivenessStep {
@@ -73,6 +75,8 @@ struct ParticipantLivenessStep {
   bool quiet_changed = false;
   /** Who is gone now (take each as a leave; said once). They stay in `quiet` until forgotten. */
   std::vector<std::string> gone;
+  /** Watched before and no longer joined (left by any way: a leave, the roster, a removal): their stream goes. */
+  std::vector<std::string> left;
   /**
    * This device did not run for a whole gone window while it was in the call (asleep, suspended): everyone else has
    * taken it as gone and moved the key on without it. It leaves (the group's Join takes it back).
@@ -96,7 +100,11 @@ public:
 
 private:
   /** Clocks paused (our side not live, or asleep): nobody is quiet, everything counts from `now_ms` on. */
-  ParticipantLivenessStep Pause(int64_t now_ms, bool live);
+  void Pause(int64_t now_ms, bool live, ParticipantLivenessStep& step);
+  /** Who was watched and is no longer among `peers` goes into `step.left` (and is forgotten). */
+  void TakeLeft(const std::vector<ParticipantLivenessSample::Peer>& peers, ParticipantLivenessStep& step);
+  /** Our side is live: each participant's clock. */
+  void StepLive(const ParticipantLivenessSample& sample, ParticipantLivenessStep& step);
   void SetQuiet(std::vector<std::string> quiet, ParticipantLivenessStep& step);
 
   /** When each joined participant was first seen (or seen again after a pause). */

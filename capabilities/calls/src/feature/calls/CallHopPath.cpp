@@ -449,13 +449,16 @@ ParticipantLivenessSample CallHopPath::LivenessSample() const {
   ParticipantLivenessSample sample;
   sample.now_ms = util::NowUnixMs();
   auto local = host_.local_account_identity();
-  if (!local) {
-    return sample; // who we are is unreadable: the clocks pause (never watch ourselves)
+  auto rows = sessions_.ListParticipants(call_id_);
+  sample.peers_known = local && rows; // unreadable: the clocks pause, nobody is taken as left (never watch ourselves)
+  if (!sample.peers_known) {
+    return sample;
   }
   sample.our_media_live = sfu_.attached && engine_->Runs() && Recovery() == CallRecovery::None;
-  for (std::string& identity : JoinedRemoteIdentities(call_id_, *local)) {
-    const int64_t last = channel_->LastFreshFrameMs(PublisherStreamIdForIdentity(identity));
-    sample.peers.push_back({std::move(identity), last});
+  for (const CallParticipant& row : *rows) {
+    if (row.state == CallParticipantState::Joined && row.identity != *local) {
+      sample.peers.push_back({row.identity, channel_->LastFreshFrameMs(PublisherStreamIdForIdentity(row.identity))});
+    }
   }
   return sample;
 }
@@ -463,6 +466,9 @@ ParticipantLivenessSample CallHopPath::LivenessSample() const {
 void CallHopPath::OnLivenessTick() {
   const ParticipantLivenessStep step = liveness_.Step(LivenessSample());
   ScheduleLivenessTick();
+  for (const std::string& identity : step.left) {
+    OnParticipantGone(call_id_, identity); // out of the call some other way (a roster, a removal): their stream goes
+  }
   if (step.away_too_long) {
     // Asleep (or frozen) longer than the others wait: they took us as gone and moved the key on without us.
     log().warning << "this device sent nothing for " << kParticipantGoneMs / 1000

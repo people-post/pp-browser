@@ -1820,5 +1820,67 @@ TEST_F(CallHopPathTest, AGoneParticipantsStreamIsLetGo) {
   EXPECT_TRUE(topo_->IsSfuAttached()) << "never our own publisher";
 }
 
+// A roster from the key's coordinator (or any way the workflow does not report as a leave) can take someone out of
+// the call: the participant watch sees them no longer joined and their stream goes all the same.
+TEST_F(CallHopPathTest, SomeoneOutOfTheRosterLosesTheirStreamAtTheNextStep) {
+  AppRuntime::Initialize(MediaSessionsManualRuntimeConfig()); // the watch's timer runs on the owner's queue
+  AppRuntime::InitializeUI();
+  const std::string call_id = "call:roster-left";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:B";
+  relay_->started = true;
+  CallHopPath::MediaRelayDeps deps;
+  deps.relay = relay_.get();
+  deps.dial = dial_.get();
+  deps.prefer_local_as_hop = true;
+  deps.local_advertise_multiaddrs = {"/ip4/10.0.0.1/tcp/1/p2p/" + relay_->local_peer_id};
+  SetRelayDeps(std::move(deps));
+  CallSfuAttachDetail self;
+  self.call_id = call_id;
+  self.hop_peer_id = relay_->local_peer_id;
+  self.hop_multiaddr = "/ip4/10.0.0.1/tcp/1/p2p/" + relay_->local_peer_id;
+  self.publisher_stream_id = PublisherStreamIdForIdentity("account:B");
+  ASSERT_TRUE(AttachToHop(call_id, self));
+  auto key = keys_->LoadEpochKey(call_id, 1);
+  ASSERT_TRUE(key && key->has_value());
+  const uint32_t c = PublisherStreamIdForIdentity("account:C");
+  mesh::MediaDataFrame frame;
+  frame.stream_id = c;
+  frame.channel_id = mesh::kMediaChannelAudio;
+  frame.seq = 1;
+  frame.instance = 0x77;
+  ASSERT_TRUE(mesh::SealMediaFrame(**key, CallMediaSfuContext(call_id), 1, frame, std::vector<uint8_t>{0xF8}));
+  relay_->frames_to_us(frame);
+  const auto holds_c = [&] {
+    for (const MediaStreamHealth& stream : media_->HealthSnapshot().streams) {
+      if (stream.stream_id == c) {
+        return true;
+      }
+    }
+    return false;
+  };
+  ASSERT_TRUE(holds_c());
+  // The owner's queue runs while the test waits (as AwaitFlow does).
+  const auto park = [](const std::function<bool()>& done, const std::chrono::milliseconds budget) {
+    std::function<void()> pump;
+    if (AppRuntime::CurrentlyOnUI()) {
+      pump = []() {
+        AppRuntime::RunUIAndOwnerTasks();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      };
+    }
+    mesh::AmpParkUntil(done, std::chrono::steady_clock::now() + budget, pump);
+  };
+  // Let the watch see C joined once (it steps every second), then the roster says C left.
+  park([] { return false; }, std::chrono::milliseconds(kParticipantLivenessStepMs + 300));
+  CallParticipant left;
+  left.call_id = call_id;
+  left.identity = "account:C";
+  left.state = CallParticipantState::Left;
+  ASSERT_TRUE(sessions_->UpsertParticipant(left));
+  park([&] { return !holds_c(); }, std::chrono::milliseconds(3 * kParticipantLivenessStepMs));
+  EXPECT_FALSE(holds_c()) << "C's stream outlived C in the call";
+}
+
 } // namespace
 } // namespace pbr

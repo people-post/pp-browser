@@ -46,55 +46,67 @@ ParticipantLivenessStep ParticipantLivenessWatch::Step(const ParticipantLiveness
   const int64_t now = sample.now_ms;
   const int64_t gap = last_step_ms_ > 0 ? now - last_step_ms_ : 0;
   last_step_ms_ = now;
+  ParticipantLivenessStep step;
+  if (sample.peers_known) {
+    TakeLeft(sample.peers, step);
+  }
   if (live_since_ms_ > 0 && gap >= kParticipantGoneMs) {
     // We sent nothing for as long as the others wait: they have taken us as gone (and the key moved on).
-    ParticipantLivenessStep step = Pause(now, sample.our_media_live);
+    Pause(now, sample.our_media_live, step);
     step.away_too_long = true;
-    return step;
+  } else if (!sample.our_media_live || !sample.peers_known || gap > CallSessionLogic::kAppSleptGapMs || gap < 0) {
+    Pause(now, sample.our_media_live && sample.peers_known, step);
+  } else {
+    StepLive(sample, step);
   }
-  if (!sample.our_media_live || gap > CallSessionLogic::kAppSleptGapMs || gap < 0) {
-    return Pause(now, sample.our_media_live);
+  return step;
+}
+
+void ParticipantLivenessWatch::TakeLeft(const std::vector<ParticipantLivenessSample::Peer>& peers,
+                                        ParticipantLivenessStep& step) {
+  for (auto it = first_seen_.begin(); it != first_seen_.end();) {
+    const bool joined = std::any_of(peers.begin(), peers.end(),
+                                    [&](const ParticipantLivenessSample::Peer& p) { return p.identity == it->first; });
+    if (joined) {
+      ++it;
+      continue;
+    }
+    step.left.push_back(it->first);
+    gone_.erase(it->first);
+    it = first_seen_.erase(it);
   }
+}
+
+void ParticipantLivenessWatch::StepLive(const ParticipantLivenessSample& sample, ParticipantLivenessStep& step) {
+  const int64_t now = sample.now_ms;
   if (live_since_ms_ == 0) {
     live_since_ms_ = now;
   }
-  ParticipantLivenessStep step;
   std::vector<std::string> quiet;
-  std::map<std::string, int64_t> seen;
-  std::set<std::string> gone;
   for (const ParticipantLivenessSample::Peer& peer : sample.peers) {
-    const auto known = first_seen_.find(peer.identity);
-    const int64_t first = known != first_seen_.end() ? known->second : now;
-    seen.emplace(peer.identity, first);
+    const int64_t first = first_seen_.emplace(peer.identity, now).first->second;
     if (gone_.contains(peer.identity)) {
       // Said once; reconnecting on screen until their leave lands (Forget), so the screen can say they lost connection.
-      gone.insert(peer.identity);
       quiet.push_back(peer.identity);
       continue;
     }
     const bool heard = peer.last_frame_ms > 0;
     // Never across a pause of ours: the clock counts from our side going live at the earliest.
-    const int64_t since = std::max(heard ? peer.last_frame_ms : first, live_since_ms_);
-    const int64_t silent_ms = now - since;
+    const int64_t silent_ms = now - std::max(heard ? peer.last_frame_ms : first, live_since_ms_);
     if (silent_ms >= (heard ? kParticipantGoneMs : kParticipantNeverHeardGoneMs)) {
       step.gone.push_back(peer.identity);
-      gone.insert(peer.identity);
+      gone_.insert(peer.identity);
       quiet.push_back(peer.identity);
     } else if (heard && silent_ms >= kParticipantQuietMs) {
       quiet.push_back(peer.identity);
     }
   }
-  first_seen_ = std::move(seen); // who left the call is forgotten
-  gone_ = std::move(gone);
   SetQuiet(std::move(quiet), step);
-  return step;
 }
 
-ParticipantLivenessStep ParticipantLivenessWatch::Pause(const int64_t now_ms, const bool live) {
+void ParticipantLivenessWatch::Pause(const int64_t now_ms, const bool live, ParticipantLivenessStep& step) {
   live_since_ms_ = live ? now_ms : 0;
-  ParticipantLivenessStep step;
   SetQuiet({}, step);
-  return step;
 }
 
 void ParticipantLivenessWatch::SetQuiet(std::vector<std::string> quiet, ParticipantLivenessStep& step) {
