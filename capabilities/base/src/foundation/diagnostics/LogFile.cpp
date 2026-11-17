@@ -35,8 +35,17 @@ std::vector<std::string> LogFile::ExpiredFiles(std::vector<LogFileInfo> files, c
   for (const LogFileInfo& f : files) {
     total += f.size;
   }
-  for (const LogFileInfo& f : files) { // oldest first
-    if (f.current) {
+  // The previous launch's log (the newest rotated file) is what a crash report needs: it is never deleted, by age or
+  // by size, even when it alone is over the cap. It still counts toward the total.
+  std::size_t newest_rotated = files.size();
+  for (std::size_t i = 0; i < files.size(); ++i) {
+    if (!files[i].current) {
+      newest_rotated = i;
+    }
+  }
+  for (std::size_t i = 0; i < files.size(); ++i) { // oldest first
+    const LogFileInfo& f = files[i];
+    if (f.current || i == newest_rotated) {
       continue;
     }
     if (now - f.mtime > retention.max_age || total > retention.max_bytes) {

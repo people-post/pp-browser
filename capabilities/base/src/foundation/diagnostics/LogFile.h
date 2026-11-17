@@ -11,7 +11,7 @@ namespace pbr {
 /**
  * Per-launch log file fed from the root logger. Lines are flushed as written, so the tail
  * survives a crash. Previous launches rotate to `pp-browser.1.log` (newest) … `pp-browser.N.log`;
- * rotated files are kept by age and total size (`LogRetention`), oldest deleted first.
+ * rotated files are kept by age and total size (`LogRetention`), oldest deleted first; the newest is always kept.
  * Flags / location: docs/ops/CONFIGURATION.md § Log file.
  */
 
@@ -33,8 +33,8 @@ class LogFile {
 public:
   /**
    * Names to delete: every non-current file older than `max_age`, then the oldest non-current
-   * files until the rest (current included) is within `max_bytes`. Equal times keep input order
-   * (earlier = older). Pure: no file access.
+   * files until the rest (current included) is within `max_bytes`. The newest non-current file (the
+   * previous launch) is never deleted. Equal times keep input order (earlier = older). Pure: no file access.
    */
   static std::vector<std::string> ExpiredFiles(std::vector<LogFileInfo> files, std::filesystem::file_time_type now,
                                                const LogRetention& retention);

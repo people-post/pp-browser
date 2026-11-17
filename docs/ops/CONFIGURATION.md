@@ -299,7 +299,7 @@ Shared abstractions under `src/foundation/platform/` — see [PLATFORMS.md](../a
 
 ## Log file
 
-Desktop and mobile builds write the root log (same lines and level as the console) to `{data_dir}/logs/pp-browser.log`, flushed per line so the tail survives a crash. Each launch rotates the previous files to `pp-browser.1.log` (newest), `pp-browser.2.log`, …; rotated files are kept for 7 days and at most 50 MB per file family (the log, `metrics`, `diag`), oldest deleted first (age = file modification time). Files are owner-only (`0600`) and never leave the device — neither crash reports nor Send diagnostics read them. Code: `foundation/diagnostics/LogFile.*`.
+Desktop and mobile builds write the root log (same lines and level as the console) to `{data_dir}/logs/pp-browser.log`, flushed per line so the tail survives a crash. Each launch rotates the previous files to `pp-browser.1.log` (newest), `pp-browser.2.log`, …; rotated files are kept for 7 days and at most 50 MB per file family (the log, `metrics`, `diag`), oldest deleted first (age = file modification time); the newest rotated file (the previous launch) is always kept, whatever its age or size. Files are owner-only (`0600`) and never leave the device — neither crash reports nor Send diagnostics read them. Code: `foundation/diagnostics/LogFile.*`.
 
 | Flag | Effect |
 |------|--------|

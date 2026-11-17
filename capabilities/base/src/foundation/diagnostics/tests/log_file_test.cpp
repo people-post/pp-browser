@@ -142,10 +142,26 @@ TEST(LogRetentionTest, ExpiredFilesNeverDeletesTheCurrentFile) {
   const auto now = fs::file_time_type::clock::now();
   pbr::LogRetention retention;
   retention.max_bytes = 50;
-  // The current file alone is over the cap and old: it stays; its size still pushes the others out.
+  // The current file alone is over the cap and old: it stays; its size still pushes the older ones out.
   const std::vector<pbr::LogFileInfo> files = {{"current", now - std::chrono::hours(24 * 30), 100, true},
-                                               {"prev", now - std::chrono::hours(1), 10, false}};
-  EXPECT_EQ(pbr::LogFile::ExpiredFiles(files, now, retention), std::vector<std::string>({"prev"}));
+                                               {"prev", now - std::chrono::hours(1), 10, false},
+                                               {"older", now - std::chrono::hours(2), 10, false}};
+  EXPECT_EQ(pbr::LogFile::ExpiredFiles(files, now, retention), std::vector<std::string>({"older"}));
+}
+
+TEST(LogRetentionTest, ExpiredFilesKeepsTheNewestRotatedFileEvenWhenOldOrOverTheCap) {
+  const auto now = fs::file_time_type::clock::now();
+  // A crash log opened again 8 days later: the previous launch's file is past the age limit and kept; the one before
+  // it, equally old, goes.
+  const std::vector<pbr::LogFileInfo> aged = {{"prev", now - std::chrono::hours(24 * 8), 1, false},
+                                              {"older", now - std::chrono::hours(24 * 9), 1, false},
+                                              {"current", now, 1, true}};
+  EXPECT_EQ(pbr::LogFile::ExpiredFiles(aged, now, {}), std::vector<std::string>({"older"}));
+  // Alone over the size cap: still kept.
+  pbr::LogRetention retention;
+  retention.max_bytes = 10;
+  const std::vector<pbr::LogFileInfo> big = {{"prev", now - std::chrono::hours(1), 100, false}};
+  EXPECT_TRUE(pbr::LogFile::ExpiredFiles(big, now, retention).empty());
 }
 
 TEST(LogRetentionTest, ExpiredFilesEqualTimesKeepInputOrder) {
