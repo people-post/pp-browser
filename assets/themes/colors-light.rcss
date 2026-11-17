@@ -2608,12 +2608,20 @@ input.checkbox:checked {
   color: #3c3c4399;
 }
 
+.bubble-time .route-icon {
+  image-color: #3c3c4399;
+}
+
 .bubble-assistant .bubble-time {
   color: #3c3c4399;
 }
 
 .bubble-user .bubble-time {
   color: #ffffffd9;
+}
+
+.bubble-user .bubble-time .route-icon {
+  image-color: #ffffffd9;
 }
 
 .shell-chat-overlay .bubble-assistant .chat-quote {
@@ -2649,6 +2657,10 @@ input.checkbox:checked {
 .shell-chat-overlay .message-row-user .chat-attachment-card .heading-3,
 .shell-chat-overlay .message-row-user .chat-voice-time {
   color: #ffffff;
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .route-icon {
+  image-color: #ffffff;
 }
 
 .shell-chat-overlay .message-row-user .chat-voice-play {
@@ -2714,6 +2726,10 @@ input.checkbox:checked {
 .chat-voice-card {
   background-color: #ffffff;
   color: #000000;
+}
+
+.chat-voice-card .route-icon {
+  image-color: #000000;
 }
 
 .chat-voice-bar {
@@ -3113,10 +3129,6 @@ input.checkbox:checked {
 .shell-layer-compact .me-card-meta,
 .shell-layer-compact .group-card .muted {
   color: #3c3c4399;
-}
-
-.shell-layer-compact .group-head.group-head--name {
-  color: #000000;
 }
 
 .shell-layer-compact .group-chevron {

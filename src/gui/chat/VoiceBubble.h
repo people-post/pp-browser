@@ -33,6 +33,7 @@ struct VoiceBubbleFace {
   int tone = 0;             // its colour (avatar-tone-N)
   std::string icon_path;    // the cached profile photo ("": the letter shows)
   std::string clock;        // "14:05" (empty: no time shown)
+  std::string route_icon;   // the "how it travelled" icon markup shown before the clock (empty: none)
 };
 
 /**

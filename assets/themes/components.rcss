@@ -9222,6 +9222,15 @@ input.checkbox {
   line-height: 16dp;
 }
 
+/* How a message travelled (RouteIconRml): 12dp high, 4dp before the time, drawn with the time's colour (colors). */
+.route-icon {
+  display: inline-block;
+  width: 26dp;
+  height: 12dp;
+  margin-right: 4dp;
+  vertical-align: middle;
+}
+
 .chat-voice-clock {
   flex-shrink: 0;
   font-size: 12dp;

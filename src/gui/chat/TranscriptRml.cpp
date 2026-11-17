@@ -618,7 +618,25 @@ std::string PendingDiscardRml(const PendingUpload& upload, const char* extra_cla
          "</div></button>";
 }
 
-std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& facts) {
+// How a message travelled, as a small icon before its time: two dots joined by a line (device to device), or the line
+// broken by a closed padlock (through a server). Nothing for Local or an unknown route, and nothing while our own
+// message is still queued or failed (it has not travelled yet).
+std::string RouteIconRml(const ThreadMessage& message, const SendMark mark) {
+  if (mark != SendMark::None || !message.transport) {
+    return {};
+  }
+  switch (*message.transport) {
+    case MessageTransport::Direct:
+      return "<svg class=\"route-icon\" src=\"../icons/v2/route-direct.svg\" width=\"26\" height=\"12\"></svg>";
+    case MessageTransport::Relay:
+      return "<svg class=\"route-icon\" src=\"../icons/v2/route-relay.svg\" width=\"26\" height=\"12\"></svg>";
+    case MessageTransport::Local:
+      break;
+  }
+  return {};
+}
+
+std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& facts, const SendMark mark) {
   auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
   const std::string label = fields && !fields->filename.empty()
                                 ? fields->filename
@@ -656,6 +674,7 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
       face.icon_path = facts.sender_icon(message.sender_contact_id);
     }
     face.clock = MessageClockLabel(message.timestamp);
+    face.route_icon = RouteIconRml(message, mark);
     return VoiceBubbleRml(message.id, JsArgInAttribute(message.id), voice.duration_ms,
                           facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{}, face);
   }
@@ -808,7 +827,7 @@ bool MentionsLocalAccount(const ThreadMessage& message, const std::vector<Mentio
 // `mentions_me`: set when the text mentions this account (the row is then tinted).
 std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
                        const std::optional<CallSummaryRow>& call_row, const std::optional<MentionRoster>& mentions,
-                       bool& mentions_me) {
+                       const SendMark mark, bool& mentions_me) {
   const ThreadMessage& message = entry.message;
   if (message.content_rml) {
     std::string rml = *message.content_rml;
@@ -838,7 +857,7 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
     return CryptoTxRml(message);
   }
   if (message.content_type == ChatContentType::Attachment) {
-    return AttachmentRml(message, facts);
+    return AttachmentRml(message, facts, mark);
   }
   if (message.content_type == ChatContentType::Unsupported) {
     return UnsupportedRml();
@@ -874,7 +893,7 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   // edited message says so before it, in the same size and colour (DEV/PLAN-message-edit.md).
   const std::string clock = EditedTimeLabel(message, MessageClockLabel(message.timestamp));
   if (!clock.empty()) {
-    text_rml += "<div class=\"bubble-time\">" + clock + "</div>";
+    text_rml += "<div class=\"bubble-time\">" + RouteIconRml(message, mark) + clock + "</div>";
   }
   // Only emoji (no quote, 1-6 of them): drawn large without a bubble (EmojiOnlyScale).
   std::string emoji_class;
@@ -1186,7 +1205,9 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     // A call summary: decoded once, its side is the starter's (a group's is written locally).
     const std::optional<CallSummaryRow> call_row = entry.control ? CallSummaryRowOf(message) : std::nullopt;
     bool mentions_me = false;
-    std::string content = MessageRml(entry, facts, call_row, mentions, mentions_me);
+    const auto row_mark = marks.find(entry.message.id);
+    std::string content = MessageRml(entry, facts, call_row, mentions,
+                                     row_mark != marks.end() ? row_mark->second : SendMark::None, mentions_me);
     if (content.empty()) {
       continue;
     }

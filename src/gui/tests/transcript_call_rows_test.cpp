@@ -83,6 +83,7 @@ protected:
     ThreadMessage message = built ? *built : ThreadMessage{};
     message.id = "row-" + util::GenerateUuid();
     message.timestamp = util::NowUnixMs();
+    message.transport = MessageTransport::Direct;
     EXPECT_TRUE(store_->AppendMessage(message));
     for (const MessageDisplayRow& row : RenderTranscript(inbox_->BuildTranscript("thread-calls"), inbox_->Facts())) {
       if (std::string(row.message_id.c_str()) == message.id) {
@@ -156,6 +157,14 @@ TEST_F(TranscriptCallRowsTest, EveryCallRowShowsTheMessageTimeAfterItsText) {
   ASSERT_NE(duration_at, std::string::npos) << connected;
   ASSERT_NE(connected_time_at, std::string::npos) << connected;
   EXPECT_LT(duration_at, connected_time_at) << connected;
+}
+
+TEST_F(TranscriptCallRowsTest, ACallRowShowsNoRouteIcon) {
+  // The record's own transport says how the summary travelled, not the call's audio.
+  const std::string rml =
+      std::string(Row("account:peer", CallMediaMode::Voice, CallOutcome::Completed, 5'000).content_rml.c_str());
+  EXPECT_NE(rml.find("chat-call-row"), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("route-"), std::string::npos) << rml;
 }
 
 TEST_F(TranscriptCallRowsTest, ADirectVoiceRecordCallsBackWithVoice) {
