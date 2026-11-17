@@ -13233,6 +13233,13 @@ input.checkbox {
 /* A "?" right after the heading: the heading gives up its right margin (the button's own -6dp pulls it in). */
 .shell-layer-compact .settings-q-head .group-head {
   margin-right: 0;
+  flex: 0 1 auto;
+}
+
+/* A heading that is the NAME of a feature (not a small category title): the size of a row label (Kenneth 2026-11-17). */
+.shell-layer-compact .group-head--name {
+  font-size: 17dp;
+  line-height: 22dp;
 }
 
 .shell-layer-compact .group-foot {

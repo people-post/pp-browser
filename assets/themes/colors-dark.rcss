@@ -3177,6 +3177,10 @@ input.checkbox:checked {
   color: #ebebf599;
 }
 
+.shell-layer-compact .group-head.group-head--name {
+  color: #ffffff;
+}
+
 .shell-layer-compact .group-chevron {
   image-color: #ebebf54c;
 }

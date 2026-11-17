@@ -3115,6 +3115,10 @@ input.checkbox:checked {
   color: #3c3c4399;
 }
 
+.shell-layer-compact .group-head.group-head--name {
+  color: #000000;
+}
+
 .shell-layer-compact .group-chevron {
   image-color: #3c3c434c;
 }

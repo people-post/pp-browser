@@ -95,7 +95,7 @@
           </div>
         </div>
         <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.home_logo.help}}</p>
-        <p class="text group-head settings-phone-only">{{i18n:settings.ai_dot.look}}</p>
+        <p class="text group-head group-head--name settings-phone-only">{{i18n:settings.ai_dot.look}}</p>
         <div class="group-card ai-look-picker settings-phone-only">
           <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'auto'"
                   data-event-click="set_ai_dot_look('auto')">
