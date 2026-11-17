@@ -89,6 +89,12 @@ public:
   void SetAnchorResolver(std::function<ui::Element*(ui::Element* target)> resolver) {
     anchor_resolver_ = std::move(resolver);
   }
+  /// A surface with text of its own (the ask-AI panel's bubbles) can replace the generic Copy / Select all menu: when the
+  /// override returns actions for a press, they are the menu's text actions (providers' actions still follow).
+  void SetTextMenuOverride(
+      std::function<std::optional<std::vector<ContextMenuAction>>(const ContextMenuRequest&)> override_menu) {
+    text_menu_override_ = std::move(override_menu);
+  }
   void ShowAt(const ContextMenuRequest& request);
   /// Show an explicit action list (no copy/select/paste text actions). `on_dismissed` runs once if the menu goes
   /// away without any of its actions running (tap outside, Escape, another menu replacing it). On a phone it is the
@@ -225,6 +231,7 @@ private:
   std::chrono::steady_clock::time_point sheet_swallow_since_{};
   Presentation presentation_ = Presentation::Float;
   std::string copy_snapshot_;
+  std::function<std::optional<std::vector<ContextMenuAction>>(const ContextMenuRequest&)> text_menu_override_;
   std::vector<ContextMenuAction> active_actions_;
   std::vector<std::function<std::vector<ContextMenuAction>(const ContextMenuRequest&)>> providers_;
 };

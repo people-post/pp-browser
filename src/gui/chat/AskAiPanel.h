@@ -5,6 +5,8 @@
 #include "gui/chat/AgentBusyRules.h"
 #include "lib/ui/ShellTypes.h"
 
+#include "lib/ui/ContextMenuHost.h"
+
 #include <ui/base/Types.h>
 
 #include <chrono>
@@ -16,7 +18,8 @@
 
 namespace ui {
 class Context;
-}
+class Element;
+} // namespace ui
 
 namespace pbr {
 
@@ -69,6 +72,8 @@ struct AskAiView {
   bool has_picture = false;
   bool picture_preparing = false;
   ui::String picture_src;
+  /** "Select all" was chosen: every bubble shows tinted, and the next "Copy" copies the whole conversation. */
+  bool all_selected = false;
 };
 
 /** What the panel needs from the chat screen (ChatController). UI thread. */
@@ -133,6 +138,7 @@ public:
   static constexpr size_t kRowLimit = 30;
 
   AskAiPanel(AskAiPanelHost& host, AgentTurnController& agent);
+  ~AskAiPanel();
 
   bool Register(ui::Context* context);
 
@@ -172,6 +178,17 @@ public:
   void OnOnceReply(const AgentEvent& event);
 
   bool IsOpen() const { return layer_id_ >= 0; }
+
+  // --- copying -----------------------------------------------------------------------------------------
+  /** What a bubble shows, as plain text: no markup, one line per block. `row` is the bubble's row element. */
+  static std::string PlainTextOf(ui::Element* row);
+  /** Every row under `scroll`, in order, one blank line between messages. "" when there is none. */
+  static std::string ConversationText(ui::Element* scroll);
+  /**
+   * The menu of a long press / right click on a bubble: "Copy" (the bubble's text, the text selection if there is one,
+   * or the whole conversation after "Select all") and "Select all". nullopt for a press outside the bubbles.
+   */
+  std::optional<std::vector<ContextMenuAction>> TextMenuFor(const ContextMenuRequest& request);
   /** The panel is open on `thread_id` (an answer there is read). */
   bool Shows(const std::string& thread_id) const;
   /** The shared conversation the panel last showed. */

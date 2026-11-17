@@ -18,7 +18,10 @@
 
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Context.h>
+#include <ui/base/SystemInterface.h>
 #include <ui/dom/Element.h>
+#include <ui/dom/ElementText.h>
+#include <ui/dom/SelectionController.h>
 #include <ui/dom/ElementDocument.h>
 #include <ui/base/StringUtilities.h>
 #include <ui/widgets/ElementFormControlTextArea.h>
@@ -62,6 +65,58 @@ size_t Utf8Floor(const std::string& text, size_t at) {
   return at;
 }
 
+bool IsBlockTag(const std::string& tag) {
+  static const char* const kBlocks[] = {"p",  "div", "li",  "ul", "ol", "h1",         "h2",   "h3",
+                                        "h4", "h5",  "pre", "tr", "br", "blockquote", "table"};
+  return std::any_of(std::begin(kBlocks), std::end(kBlocks), [&tag](const char* block) { return tag == block; });
+}
+
+void AppendText(std::string& out, const std::string& text) {
+  out += text;
+}
+
+void EndLine(std::string& out) {
+  if (!out.empty() && out.back() != '\n') {
+    out += '\n';
+  }
+}
+
+void CollectText(ui::Element* element, std::string& out, const bool keep_space) {
+  if (!element) {
+    return;
+  }
+  if (auto* text = ui_dynamic_cast<ui::ElementText*>(element)) {
+    const std::string raw = ui::StringUtilities::DecodeRml(text->GetText()).c_str();
+    if (keep_space) {
+      AppendText(out, raw);
+      return;
+    }
+    // Source whitespace collapses to one space, as the engine draws it.
+    for (const char c : raw) {
+      if (c == ' ' || c == '\n' || c == '\t' || c == '\r') {
+        if (!out.empty() && out.back() != ' ' && out.back() != '\n') {
+          out += ' ';
+        }
+      } else {
+        out += c;
+      }
+    }
+    return;
+  }
+  const std::string tag = element->GetTagName().c_str();
+  const bool block = IsBlockTag(tag);
+  if (block) {
+    EndLine(out);
+  }
+  const bool keep = keep_space || tag == "pre";
+  for (int i = 0; i < element->GetNumChildren(); ++i) {
+    CollectText(element->GetChild(i), out, keep);
+  }
+  if (block) {
+    EndLine(out);
+  }
+}
+
 AgentEvent Event(const AgentEventType type, const std::string& thread_id) {
   AgentEvent event;
   event.type = type;
@@ -72,6 +127,8 @@ AgentEvent Event(const AgentEventType type, const std::string& thread_id) {
 } // namespace
 
 AskAiPanel::AskAiPanel(AskAiPanelHost& host, AgentTurnController& agent) : host_(host), agent_(agent) {
+  ContextMenuHost::Instance().SetTextMenuOverride(
+      [this](const ContextMenuRequest& request) { return TextMenuFor(request); });
   image_ports_.pick = [this](std::function<void(std::string)> picked) { agent_.PickAiImage(std::move(picked)); };
   image_ports_.capture = [this](std::function<void(std::string)> picked) { agent_.CaptureAiPhoto(std::move(picked)); };
   image_ports_.pick_from = [this](const bool files_app, std::function<void(std::string)> picked) {
@@ -85,6 +142,97 @@ AskAiPanel::AskAiPanel(AskAiPanelHost& host, AgentTurnController& agent) : host_
     return agent_.SendAiImageTo(thread_id, text, std::move(image));
   };
   image_ports_.drop = [this](const AgentTurnController::PendingAiImage& image) { agent_.DropAiImage(image); };
+}
+
+AskAiPanel::~AskAiPanel() {
+  ContextMenuHost::Instance().SetTextMenuOverride(nullptr);
+}
+
+std::string AskAiPanel::PlainTextOf(ui::Element* row) {
+  std::string out;
+  CollectText(row, out, /*keep_space=*/false);
+  while (!out.empty() && (out.back() == '\n' || out.back() == ' ')) {
+    out.pop_back();
+  }
+  size_t start = 0;
+  while (start < out.size() && (out[start] == '\n' || out[start] == ' ')) {
+    ++start;
+  }
+  return out.substr(start);
+}
+
+std::string AskAiPanel::ConversationText(ui::Element* scroll) {
+  std::string all;
+  if (!scroll) {
+    return all;
+  }
+  ui::ElementList rows;
+  scroll->GetElementsByClassName(rows, "ask-ai-row");
+  for (ui::Element* row : rows) {
+    const std::string text = PlainTextOf(row);
+    if (text.empty()) {
+      continue;
+    }
+    if (!all.empty()) {
+      all += "\n\n";
+    }
+    all += text;
+  }
+  return all;
+}
+
+std::optional<std::vector<ContextMenuAction>> AskAiPanel::TextMenuFor(const ContextMenuRequest& request) {
+  if (!IsOpen() || !request.target) {
+    return std::nullopt;
+  }
+  ui::Element* row = nullptr;
+  ui::Element* scroll = nullptr;
+  for (ui::Element* element = request.target; element; element = element->GetParentNode()) {
+    if (!row && element->IsClassSet("ask-ai-row")) {
+      row = element;
+    }
+    if (element->GetId() == kScrollId) {
+      scroll = element;
+      break;
+    }
+  }
+  if (!row || !scroll) {
+    return std::nullopt;
+  }
+  std::string text;
+  if (view_.all_selected) {
+    text = ConversationText(scroll);
+  } else {
+    if (request.context) {
+      if (ui::SelectionController* selection = request.context->GetSelectionController()) {
+        text = selection->GetSelectedText().c_str();
+      }
+    }
+    if (text.empty()) {
+      text = PlainTextOf(row);
+    }
+  }
+  std::vector<ContextMenuAction> actions;
+  actions.push_back({"copy", Tr("common.copy"), [text]() { return !text.empty(); },
+                     [this, text]() {
+                       if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+                         system->SetClipboardText(text);
+                       }
+                       view_.all_selected = false;
+                       Dirty("all_selected");
+                     }});
+  actions.push_back({"select_all", Tr("common.select_all"), nullptr, [this, context = request.context]() {
+                       // The engine's own Select all spans every text on screen (the page behind the sheet too): the panel
+                       // marks its own conversation instead, and Copy takes exactly that.
+                       if (context) {
+                         if (ui::SelectionController* selection = context->GetSelectionController()) {
+                           selection->ClearSelection();
+                         }
+                       }
+                       view_.all_selected = true;
+                       Dirty("all_selected");
+                     }});
+  return actions;
 }
 
 bool AskAiPanel::Register(ui::Context* context) {
@@ -108,6 +256,13 @@ bool AskAiPanel::Register(ui::Context* context) {
     ctor.Bind("has_picture", &view_.has_picture);
     ctor.Bind("picture_preparing", &view_.picture_preparing);
     ctor.Bind("picture_src", &view_.picture_src);
+    ctor.Bind("all_selected", &view_.all_selected);
+    ctor.BindEventCallback("ask_ai_clear_select", DataEvent([this] {
+                             if (view_.all_selected && !ContextMenuHost::Instance().IsOpen()) {
+                               view_.all_selected = false;
+                               Dirty("all_selected");
+                             }
+                           }));
     ctor.BindEventCallback("ask_ai_attach",
                            DataEventAt([this](ui::Event& ev) { ShowAttachMenu(ev.GetCurrentElement()); }));
     ctor.BindEventCallback("ask_ai_emoji", DataEvent([this] {
@@ -724,6 +879,7 @@ void AskAiPanel::TickFake() {
 // --- what shows -------------------------------------------------------------------------------------
 
 void AskAiPanel::Refresh() {
+  view_.all_selected = false;
   base_rows_.clear();
   if (view_.once) {
     int n = 0;
