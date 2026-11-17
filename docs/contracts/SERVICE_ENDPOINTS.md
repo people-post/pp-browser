@@ -288,7 +288,7 @@ Call invite age uses `server_time - created_at` when both are present (caller cr
 ## Several relays
 
 An account may be on several relays (multi-relay R2; [DESIGN](../../projects/multi-relay/DESIGN.md#app)). Ours are the
-profile's list, **My relays** (`our_relays.json`, [DATA_LAYOUT](DATA_LAYOUT.md); Me → My relays, [below](#my-relays)),
+profile's list, **My relays** (`our_relays.json`, [DATA_LAYOUT](DATA_LAYOUT.md); Me → My relays (shown with Help → Show advanced settings on), [below](#my-relays)),
 preferred first, at most 4, none twice. A new profile's list is seeded once from the deployment's relay
 (`relay.base_url`, the preferred one) and the other base URLs of `relay.extra_base_urls`, in that order
 ([CONFIGURATION](../ops/CONFIGURATION.md); `OurRelaysStore`, `OurRelayOrigins`, `BackendClientSet`); afterwards the
@@ -342,7 +342,7 @@ user changes the list.
 
 ### My relays
 
-Me → My relays changes the list (`MyRelaysWorkflow`; the page in [UI_DESIGN_SYSTEM § My relays](../ui/UI_DESIGN_SYSTEM.md#my-relays)).
+Me → My relays (shown with Help → Show advanced settings on) changes the list (`MyRelaysWorkflow`; the page in [UI_DESIGN_SYSTEM § My relays](../ui/UI_DESIGN_SYSTEM.md#my-relays)).
 Only the account's main device changes it (it signs the card's list, MR002); a linked device follows the newest card
 of ours (its list becomes the card's). Every change is kept first, then:
 
@@ -599,7 +599,7 @@ hears it (`IRelayAudience::Refused` → `RelayPins::SetOnUpgradeRequired`):
 | The relay | The app |
 |---|---|
 | The org's (its relay or locker origin) | A forced check, then the blocking update screen **whatever the document says** (the relay refusing us is the authority; its floor may not be raised yet), with the document's link for this platform; for the rest of the session. A later 426 keeps the screen up (shown again once dismissed) without asking again within 15 min |
-| Another relay of ours (Me → My relays) | Nothing is blocked: its row says *Needs a newer version of the app* (registration reason `upgrade`, beside `unreachable` / `refused` / `identity` / `other`), from a registration or any other call there |
+| Another relay of ours (Me → My relays, shown with Help → Show advanced settings on) | Nothing is blocked: its row says *Needs a newer version of the app* (registration reason `upgrade`, beside `unreachable` / `refused` / `identity` / `other`), from a registration or any other call there |
 | A contact's relay (a send into it) | The send fails with the typed error (not retried as it is) |
 | pp-node's relay | One ERROR per relay per run: *this pp-node is too old for the relay at X: upgrade it* (`NodeUpgradeNotice`); heartbeats and registration renewals go on at their pace without a generic failure each time |
 
