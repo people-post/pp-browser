@@ -109,6 +109,12 @@ public:
   SessionSpec ActiveSpec() const;
   /** An inbound packet (already demuxed for this session; plaintext Opus / H264). */
   void OnInboundPacket(const MediaPacket& packet);
+  /**
+   * A remote publisher left the session (a group call's participant gone): its audio track, video decoder and frames
+   * go, so playout stops concealing a stream nobody sends and its slot (kMaxRemoteAudioTracks) is free again. A later
+   * packet of that stream starts it over. Any thread; returns at once (a hardware decoder is destroyed on its own).
+   */
+  void ReleaseRemoteStream(uint32_t stream_id);
   bool IsPacketMode() const;
   /** Retire the session; returns at once (its cleanup runs on its own thread). Emits "closed". */
   void Stop();

@@ -73,6 +73,13 @@ uint64_t NewSenderInstance() {
  */
 constexpr int kPacketMs = 40;
 constexpr int kPacketSamples = kSampleRate * kPacketMs / 1000;
+/**
+ * V067: a call's liveness is an audio frame every packet length from start to stop, silence included. When the capture
+ * thread has sent nothing for this long (held by device work: an open behind the OS mic prompt, a reopen, an audio
+ * rebuild, a route change — up to the open budget), the keeper sends silence in its place. Past the capture thread's
+ * own starve rule (it sends silence after 500 ms without PCM), so the two never take turns.
+ */
+constexpr int64_t kSilenceKeeperAfterMs = 1000;
 /** The longest Opus packet (120 ms): room for one decoded packet. */
 constexpr int kMaxPacketSamples = kSampleRate * 120 / 1000;
 /** Keep ~60 ms queued in the device (spec §1); above ~120 ms skip a slot to shed latency. */
@@ -389,8 +396,10 @@ struct MediaEngine::Impl {
   const uint64_t tx_instance = NewSenderInstance();
   /** Where this sender session's capture times count from (MediaPacket::capture_ts), with the instance. */
   const std::chrono::steady_clock::time_point tx_origin = std::chrono::steady_clock::now();
-  /** The sent audio's capture times (the capture thread's only). */
+  /** The sent audio's capture times; numbered and stamped under packet_send_call_mu (the capture thread, the keeper). */
   AudioCaptureClock tx_audio_clock;
+  /** When the capture thread last sent an audio packet (or the session started), ms since tx_origin. */
+  std::atomic<int64_t> capture_sent_ms{0};
 
   /** `at` in ms since this sender session started (tx_origin). */
   int64_t SessionMs(const std::chrono::steady_clock::time_point at) const {
@@ -547,6 +556,9 @@ struct MediaEngine::Impl {
   std::thread capture_thread;
   std::thread video_thread;
   std::thread playout_thread;
+  /** Sends silence while the capture thread cannot (kSilenceKeeperAfterMs); capturing sessions only. */
+  std::thread keeper_thread;
+  std::atomic<bool> keeper_running{false};
   /** Halves of the running session; written under `mutex` in Start, read by the device thread. */
   SessionSpec spec = SessionSpec::Duplex();
   std::atomic<bool> capture_running{false};
@@ -556,6 +568,7 @@ struct MediaEngine::Impl {
   MediaThreadStageTracker capture_stage;
   MediaThreadStageTracker playout_stage;
   MediaThreadStageTracker video_stage;
+  MediaThreadStageTracker keeper_stage;
   /** Capture worker closes+reopens SDL devices (speaker route / SoftMigrate). */
   std::atomic<bool> audio_reopen_requested{false};
   /**
@@ -721,6 +734,41 @@ struct MediaEngine::Impl {
     rx_video_frames.fetch_add(1, std::memory_order_relaxed);
   }
 
+  /**
+   * One remote stream's state, all of it (its publisher left): the audio track and its decoder, the video decoder
+   * (destroyed on its own thread: GuardedVideoCodec) and its counters, its frames. A later packet starts it again.
+   * False when the session held nothing of it.
+   */
+  bool ReleaseRemoteStream(const uint32_t stream_id) {
+    bool held = false;
+    std::shared_ptr<RemoteDecoder> decoder; // a decode may still hold it: it goes with the last holder
+    {
+      std::lock_guard lock(mutex);
+      held = audio_tracks.erase(stream_id) > 0;
+      if (auto it = remote_decoders.find(stream_id); it != remote_decoders.end()) {
+        decoder = std::move(it->second);
+        remote_decoders.erase(it);
+        held = true;
+      }
+      video_arrivals.erase(stream_id);
+      decoder_resets.erase(stream_id);
+      decoder_restarts.erase(stream_id);
+    }
+    {
+      std::lock_guard lock(rx_log_mu);
+      rx_logged_streams.erase(stream_id);
+    }
+    {
+      std::lock_guard lock(video_refresh_mu);
+      pending_video_refresh_streams.erase(stream_id);
+      last_video_refresh_note_ms.erase(stream_id);
+    }
+    std::lock_guard lock(video_frame_mutex);
+    held = remote_video_by_stream.erase(stream_id) > 0 || held;
+    last_video_ms_by_stream.erase(stream_id);
+    return held;
+  }
+
   void ClearRemoteVideoFrames() {
     std::lock_guard lock(video_frame_mutex);
     remote_video_frame = {};
@@ -875,6 +923,11 @@ struct MediaEngine::Impl {
   void JoinCaptureThread(const char* context) {
     capture_running = false;
     JoinThreadWatched(capture_thread, context, "capture", capture_stage);
+  }
+
+  void JoinKeeperThread(const char* context) {
+    keeper_running = false;
+    JoinThreadWatched(keeper_thread, context, "keeper", keeper_stage);
   }
 
   void JoinPlayoutThread(const char* context) {
@@ -1713,18 +1766,14 @@ struct MediaEngine::Impl {
         }
         if (send_fn) {
           MediaPacket pkt;
-          pkt.channel_id = mesh::kMediaChannelAudio;
-          pkt.seq = tx_audio_seq.fetch_add(1) + 1;
-          pkt.instance = tx_instance;
-          pkt.capture_ts = tx_audio_clock.Stamp(first_sample_ms.value_or(FirstSampleMs(kPacketSamples)), kPacketMs);
           pkt.payload.assign(opus_buf.data(), opus_buf.data() + encoded);
+          const int64_t first_ms = first_sample_ms.value_or(FirstSampleMs(kPacketSamples));
           try {
             capture_stage.Set(MediaThreadStage::Send);
             std::lock_guard send_lock(packet_send_call_mu);
             if (!retired.load(std::memory_order_acquire)) { // a retired session never sends (Retire drains)
-              (*send_fn)(pkt);
-              tx_audio_frames.fetch_add(1, std::memory_order_relaxed);
-              last_tx_audio_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+              SendAudioLocked(*send_fn, pkt, first_ms);
+              capture_sent_ms.store(SessionMs(std::chrono::steady_clock::now()), std::memory_order_release);
             }
           } catch (...) {
           }
@@ -1737,6 +1786,98 @@ struct MediaEngine::Impl {
       }
       capture_stage.Set(MediaThreadStage::Exiting);
     });
+  }
+
+  /**
+   * Under packet_send_call_mu: number, stamp and send one audio packet (the capture thread's or the keeper's: one
+   * sequence and one capture clock for both).
+   */
+  void SendAudioLocked(const PacketSendFn& send, MediaPacket& pkt, const int64_t first_sample_ms) {
+    pkt.channel_id = mesh::kMediaChannelAudio;
+    pkt.seq = tx_audio_seq.fetch_add(1) + 1;
+    pkt.instance = tx_instance;
+    pkt.capture_ts = tx_audio_clock.Stamp(first_sample_ms, kPacketMs);
+    send(pkt);
+    tx_audio_frames.fetch_add(1, std::memory_order_relaxed);
+    last_tx_audio_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+  }
+
+  /** One packet of encoded silence, from an encoder of the keeper's own (Opus encoders are not thread-safe). */
+  static std::vector<uint8_t> EncodeSilencePacket() {
+    int err = 0;
+    OpusEncoder* enc = opus_encoder_create(kSampleRate, kChannels, OPUS_APPLICATION_VOIP, &err);
+    if (!enc || err != OPUS_OK) {
+      return {};
+    }
+    const std::vector<int16_t> pcm(static_cast<size_t>(kPacketSamples), int16_t{0});
+    std::vector<unsigned char> out(4000);
+    const int n = opus_encode(enc, pcm.data(), kPacketSamples, out.data(), static_cast<int>(out.size()));
+    opus_encoder_destroy(enc);
+    return n > 0 ? std::vector<uint8_t>(out.begin(), out.begin() + n) : std::vector<uint8_t>{};
+  }
+
+  /** V067: a capturing session's keeper (kSilenceKeeperAfterMs). Started after the capture loop. */
+  void StartKeeperLoop() {
+    keeper_running = true;
+    capture_sent_ms.store(SessionMs(std::chrono::steady_clock::now()), std::memory_order_release);
+    keeper_stage.Set(MediaThreadStage::Idle);
+    keeper_thread = std::thread([this]() {
+      SetMediaThreadName("pp.keeper");
+      RunKeeperLoop();
+      keeper_stage.Set(MediaThreadStage::Exiting);
+    });
+  }
+
+  void RunKeeperLoop() {
+    const std::vector<uint8_t> silence = EncodeSilencePacket();
+    if (silence.empty()) {
+      EngineLog().warning << "the call's silence keeper has no Opus encoder";
+      return;
+    }
+    bool covering = false;
+    while (keeper_running.load(std::memory_order_acquire)) {
+      keeper_stage.Set(MediaThreadStage::Sleep);
+      std::this_thread::sleep_for(std::chrono::milliseconds(kPacketMs));
+      const int64_t quiet_ms =
+          SessionMs(std::chrono::steady_clock::now()) - capture_sent_ms.load(std::memory_order_acquire);
+      const bool cover = quiet_ms >= kSilenceKeeperAfterMs;
+      if (cover != covering) {
+        covering = cover;
+        EngineLog().info << (cover ? "outgoing audio kept alive with silence: the capture thread is at "
+                                   : "the capture thread sends again; the silence keeper stops (it was at ")
+                         << capture_stage.Name() << (cover ? "" : ")");
+      }
+      if (cover) {
+        keeper_stage.Set(MediaThreadStage::Send);
+        SendKeeperSilence(silence);
+      }
+    }
+  }
+
+  void SendKeeperSilence(const std::vector<uint8_t>& silence) {
+    std::shared_ptr<PacketSendFn> send_fn;
+    {
+      std::lock_guard lock(mutex);
+      if (spec.capture && packet_mode && packet_send) {
+        send_fn = packet_send;
+      }
+    }
+    if (!send_fn) {
+      return;
+    }
+    MediaPacket pkt;
+    pkt.payload = silence;
+    try {
+      std::lock_guard send_lock(packet_send_call_mu);
+      const int64_t now = SessionMs(std::chrono::steady_clock::now());
+      // The capture thread may have sent while we waited for the lock: then it carries the call again.
+      if (retired.load(std::memory_order_acquire) ||
+          now - capture_sent_ms.load(std::memory_order_acquire) < kSilenceKeeperAfterMs) {
+        return;
+      }
+      SendAudioLocked(*send_fn, pkt, FirstSampleMs(kPacketSamples));
+    } catch (...) {
+    }
   }
 
   void StartVideoLoop() {
@@ -2289,8 +2430,8 @@ struct MediaEngine::Impl {
     audio_session_seen = SessionGeneration();
     retired.store(true, std::memory_order_release);
     std::lock_guard lock(mutex);
-    const bool running =
-        active || packet_mode || capture_thread.joinable() || playout_thread.joinable() || video_thread.joinable();
+    const bool running = active || packet_mode || capture_thread.joinable() || playout_thread.joinable() ||
+                         video_thread.joinable() || keeper_thread.joinable();
     if (running) {
       EngineLog().info << "media stop begin session=" << session_id;
       EmitVideoArrivalsLocked();
@@ -2305,6 +2446,7 @@ struct MediaEngine::Impl {
     capture_running = false;
     playout_running = false;
     video_running = false;
+    keeper_running = false;
     ApplyStateLocked("closed");
     return running;
   }
@@ -2347,6 +2489,7 @@ struct MediaEngine::Impl {
       }
     };
     timed_step("join_capture", [&] { JoinCaptureThread("media stop"); });
+    timed_step("join_keeper", [&] { JoinKeeperThread("media stop"); });
     timed_step("join_playout", [&] { JoinPlayoutThread("media stop"); });
     timed_step("release_audio", [&] {
       {
@@ -2543,6 +2686,9 @@ Roe<void> MediaEngine::Start(const std::string& session_id, const SessionSpec sp
     impl->started_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
     impl->ApplyStateLocked("connected");
     impl->StartCaptureLoop(); // device owner for both halves; encodes only when capturing
+    if (spec.capture) {
+      impl->StartKeeperLoop(); // V067: never a call without a frame every packet length
+    }
     if (spec.playback) {
       impl->StartPlayoutLoop();
     }
@@ -2620,6 +2766,13 @@ void MediaEngine::OnInboundPacket(const MediaPacket& packet) {
   if (video_decoder) {
     impl->DecodeRemoteVideo(packet.stream_id, video_decoder, reinterpret_cast<const std::byte*>(packet.payload.data()),
                             packet.payload.size());
+  }
+}
+
+void MediaEngine::ReleaseRemoteStream(const uint32_t stream_id) {
+  const std::shared_ptr<Impl> impl = Session();
+  if (impl->ReleaseRemoteStream(stream_id)) {
+    log().info << "remote stream released stream=" << stream_id << " session=" << ActiveSessionId();
   }
 }
 
