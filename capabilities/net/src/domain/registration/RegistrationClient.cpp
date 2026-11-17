@@ -3,6 +3,7 @@
 #include "foundation/crypto/KemKeyBinding.h"
 #include "foundation/error/AppError.h"
 #include "lib/net/RegistrationSignPayload.h"
+#include "lib/net/RelayOrigins.h"
 #include "common/Utilities.h"
 
 #include "common/PbrCompat.h"
@@ -13,6 +14,32 @@ namespace {
 
 int64_t CardIssuedAt(const RegistrationPublishOpts& publish) {
   return publish.account_card ? publish.account_card->getIf<int64_t>("issued_at").value_or(0) : 0;
+}
+
+/** Signs one registry command for the relay `registration` talks to, with the identity's account key (MR007). */
+Roe<SignedRelayCommand> SignForRegistry(IRegistrationClient& registration, IdentityStore& identity,
+                                        const int64_t timestamp, const RelayCommandBytes& build) {
+  return SignRelayCommand(
+      registration.Audience(), [&identity](const std::vector<uint8_t>& bytes) { return identity.SignBytes(bytes); },
+      timestamp, build);
+}
+
+bool IsScopeMismatch(const Error& error) {
+  return AppError::CategoryOf(error) == ErrorCategory::Auth &&
+         static_cast<Err::Auth>(error.code) == Err::Auth::ScopeMismatch;
+}
+
+/** One revoke of `registration_id` at `registration`'s relay. */
+Roe<void> RevokeOnce(IRegistrationClient& registration, IdentityStore& identity, const std::string& account_id,
+                     const std::string& registration_id) {
+  const int64_t timestamp = util::NowUnixMs();
+  auto signed_revoke = SignForRegistry(registration, identity, timestamp, [&](const std::string& audience) {
+    return BuildAccountRevokeSignBytes(audience, account_id, registration_id, timestamp);
+  });
+  if (!signed_revoke) {
+    return signed_revoke.error();
+  }
+  return registration.RevokeRegistration(account_id, registration_id, *signed_revoke);
 }
 
 } // namespace
@@ -43,6 +70,9 @@ void ApplyRegistrationResult(LocalIdentity& identity, const RegistrationResult& 
       identity.registered_card_issued_at = result.account_card_issued_at;
     }
     identity.kem_binding_published = result.kem_bound;
+    if (!result.registration_id.empty()) {
+      identity.registration_id = result.registration_id;
+    }
     if (!result.registered_backend_url.empty()) {
       identity.registered_backend_url = result.registered_backend_url;
     }
@@ -71,15 +101,12 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
   }
 
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildRegistrationSignBytes(start->challenge, loaded->account_signing_public_key_b64,
-                                                     loaded->kem_public_key_b64, start->signature_alg, timestamp);
-  if (sign_bytes.empty()) {
-    return Error("Failed to build registration sign bytes");
-  }
-
-  auto signature = identity.SignBytes(sign_bytes);
-  if (!signature) {
-    return signature.error();
+  auto signed_finish = SignForRegistry(registration, identity, timestamp, [&](const std::string& audience) {
+    return BuildRegistrationSignBytes(audience, start->challenge, loaded->account_signing_public_key_b64,
+                                      loaded->kem_public_key_b64, start->signature_alg, timestamp);
+  });
+  if (!signed_finish) {
+    return signed_finish.error();
   }
 
   // The account binds its KEM key to itself; the directory hands the binding to peers with the key.
@@ -92,9 +119,9 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
     return kem_binding.error();
   }
 
-  auto finished = registration.FinishRegistration(
-      start->challenge, loaded->account_signing_public_key_b64, nickname, *signature, timestamp, start->signature_alg,
-      loaded->kem_public_key_b64, *kem_binding, loaded->peer_id, multiaddrs, publish);
+  auto finished = registration.FinishRegistration(start->challenge, loaded->account_signing_public_key_b64, nickname,
+                                                  *signed_finish, start->signature_alg, loaded->kem_public_key_b64,
+                                                  *kem_binding, loaded->peer_id, multiaddrs, publish);
   if (!finished) {
     return finished;
   }
@@ -115,7 +142,7 @@ Roe<RegistrationResult> RenewNetworkOnly(IRegistrationClient& registration, Iden
   return FinishRegistrationWithIdentity(registration, identity, nickname, multiaddrs, publish);
 }
 
-RegistrationJob MakeRegistrationJob(IRegistrationClient& registration, IdentityStore& identity_store,
+RegistrationJob MakeRegistrationJob(std::shared_ptr<IRegistrationClient> registration, IdentityStore& identity_store,
                                     const LocalIdentity& identity, std::vector<std::string> listen_addrs,
                                     RegistrationPublishOpts publish) {
   RegistrationJob job;
@@ -123,7 +150,7 @@ RegistrationJob MakeRegistrationJob(IRegistrationClient& registration, IdentityS
   job.nickname = identity.nickname;
   job.listen_addrs = std::move(listen_addrs);
   job.publish = std::move(publish);
-  job.registration = &registration;
+  job.registration = std::move(registration);
   job.identity = &identity_store;
   return job;
 }
@@ -136,10 +163,17 @@ Roe<RegistrationResult> RunRegistrationJob(const RegistrationJob& job) {
 }
 
 Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationResult& result,
-                                  const std::string& expected_account_id) {
+                                  const std::string& expected_account_id, const RegistrationHome& home) {
   // Read again, under the lock: the network half took a while, and only the registration fields are ours to change.
   if (expected_account_id.empty()) {
     return Error("Registration renewal not stored: no account to store it for");
+  }
+  if (const std::string preferred = home ? home() : std::string();
+      !preferred.empty() && !result.registered_backend_url.empty() &&
+      !SameRelay(preferred, result.registered_backend_url)) {
+    // Made at the relay that was preferred when it began: the identity's registration is the new one's now.
+    return Error("Registration renewal not stored: made at " +
+                 NormalizeRegistrationBackend(result.registered_backend_url) + ", no longer the preferred relay");
   }
   bool other_account = false;
   auto applied = identity.Modify([&](LocalIdentity& stored) {
@@ -161,7 +195,7 @@ Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationRes
 
 Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,
                                                 const std::string& nickname, const std::vector<std::string>& multiaddrs,
-                                                const RegistrationPublishOpts& publish) {
+                                                const RegistrationPublishOpts& publish, const RegistrationHome& home) {
   auto loaded = identity.Get(); // the account the registration runs for
   if (!loaded) {
     return loaded.error();
@@ -170,7 +204,7 @@ Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registratio
   if (!result) {
     return result.error();
   }
-  return PersistRenewal(identity, *result, loaded->account_id);
+  return PersistRenewal(identity, *result, loaded->account_id, home);
 }
 
 Roe<std::optional<RegistrationResult>> MaybeAutoRenewNetworkOnly(IRegistrationClient& registration,
@@ -196,7 +230,8 @@ Roe<std::optional<RegistrationResult>> MaybeAutoRenewNetworkOnly(IRegistrationCl
 }
 
 Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, IdentityStore& identity,
-                                     bool auto_renew_enabled, const RegistrationPublishOpts& publish) {
+                                     bool auto_renew_enabled, const RegistrationPublishOpts& publish,
+                                     const RegistrationHome& home) {
   auto loaded = identity.Get(); // the account the renewal runs for
   if (!loaded) {
     return loaded.error();
@@ -208,7 +243,7 @@ Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, Identity
   if (!*result) {
     return false;
   }
-  if (auto applied = PersistRenewal(identity, **result, loaded->account_id); !applied) {
+  if (auto applied = PersistRenewal(identity, **result, loaded->account_id, home); !applied) {
     return applied.error();
   }
   return true;
@@ -230,20 +265,17 @@ Roe<RegistrationResult> UpdateRegisteredNickname(IRegistrationClient& registrati
   }
 
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildProfileUpdateSignBytes(loaded->account_id, nickname, timestamp);
-  if (sign_bytes.empty()) {
-    return Error("Failed to build profile sign bytes");
+  auto signed_update = SignForRegistry(registration, identity, timestamp, [&](const std::string& audience) {
+    return BuildProfileUpdateSignBytes(audience, loaded->account_id, nickname, timestamp);
+  });
+  if (!signed_update) {
+    return signed_update.error();
   }
-
-  auto signature = identity.SignBytes(sign_bytes);
-  if (!signature) {
-    return signature.error();
-  }
-
-  return registration.UpdateNickname(nickname, *signature, timestamp, loaded->account_id);
+  return registration.UpdateNickname(nickname, *signed_update, loaded->account_id);
 }
 
-Roe<void> RevokeRegistrationWithIdentity(IRegistrationClient& registration, IdentityStore& identity) {
+Roe<void> RevokeRegistrationWithIdentity(IRegistrationClient& registration, IdentityStore& identity,
+                                         const std::string& registration_id) {
   auto loaded = identity.Get();
   if (!loaded) {
     return loaded.error();
@@ -251,13 +283,22 @@ Roe<void> RevokeRegistrationWithIdentity(IRegistrationClient& registration, Iden
   if (!loaded->registered || loaded->account_id.empty()) {
     return {};
   }
-  const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildAccountRevokeSignBytes(loaded->account_id, timestamp);
-  auto signature = identity.SignBytes(sign_bytes);
-  if (!signature) {
-    return signature.error();
+  if (!registration_id.empty()) {
+    auto revoked = RevokeOnce(registration, identity, loaded->account_id, registration_id);
+    if (revoked || !IsScopeMismatch(revoked.error())) {
+      return revoked;
+    }
   }
-  return registration.RevokeRegistration(loaded->account_id, *signature, timestamp);
+  // No id kept, or the relay holds a newer registration: renew (its finish answers the current id), then revoke that
+  // one, once (MR007 item 5).
+  auto renewed = RenewNetworkOnly(registration, identity, loaded->nickname);
+  if (!renewed) {
+    return renewed.error();
+  }
+  if (renewed->registration_id.empty()) {
+    return Error("Registration revoke: the relay answered no registration_id");
+  }
+  return RevokeOnce(registration, identity, loaded->account_id, renewed->registration_id);
 }
 
 } // namespace pbr

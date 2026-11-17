@@ -29,7 +29,38 @@ PushDeviceRegistration MakeRegistration(ConversationsHub& hub, const std::string
   return reg;
 }
 
+/** The VoIP binding beside `reg`: its own platform, device id and token. */
+PushDeviceRegistration VoipBinding(const PushDeviceRegistration& reg, const std::string& voip_token) {
+  PushDeviceRegistration call_reg = reg;
+  call_reg.platform = IPushDeviceRegistrar::kVoipPushPlatform;
+  call_reg.device_id = reg.device_id + IPushDeviceRegistrar::kVoipPushDeviceSuffix;
+  call_reg.push_token = voip_token;
+  return call_reg;
+}
+
 } // namespace
+
+Roe<void> PushDeviceCoordinator::RegisterWith(IPushDeviceClient& client, const PushDeviceRegistration& reg,
+                                              const std::string& voip_token, const bool voip_wanted) {
+  auto result = client.RegisterDevice(reg);
+  if (voip_token.empty()) {
+    return result;
+  }
+  // A custom PIN has no background key: its calls ring by alert, so the VoIP binding goes.
+  auto voip_result = voip_wanted ? client.RegisterDevice(VoipBinding(reg, voip_token))
+                                 : client.UnregisterDevice(VoipBinding(reg, voip_token));
+  return result ? voip_result : result;
+}
+
+Roe<void> PushDeviceCoordinator::UnregisterWith(IPushDeviceClient& client, const PushDeviceRegistration& reg,
+                                                const std::string& voip_token) {
+  auto result = client.UnregisterDevice(reg);
+  if (voip_token.empty()) {
+    return result;
+  }
+  auto voip_result = client.UnregisterDevice(VoipBinding(reg, voip_token));
+  return result ? voip_result : result;
+}
 
 Roe<void> PushDeviceCoordinator::Register(ConversationsHub& hub) {
   // Registered whatever "Show notifications" says (P005 / P010): in the background a phone is
@@ -37,7 +68,7 @@ Roe<void> PushDeviceCoordinator::Register(ConversationsHub& hub) {
   if (!hub.IsMessagingReady() || hub.PushGate().Suspended()) {
     return {};
   }
-  IPushDeviceClient* client = hub.PushDevices();
+  const std::shared_ptr<IPushDeviceClient> client = hub.PushDevices(); // held for the binding's call
   if (client == nullptr || !IPushDeviceRegistrar::Instance().IsSupported()) {
     return {};
   }
@@ -51,12 +82,14 @@ Roe<void> PushDeviceCoordinator::Register(ConversationsHub& hub) {
   }
   // Every relay of ours that holds our registration may hold mail, and wakes the phone for it (multi-relay R2). The
   // preferred relay's answer is the one reported; another's failure is logged and tried at the next sync.
+  const std::string voip_token = IPushDeviceRegistrar::Instance().VoipPushToken();
+  const bool voip_wanted = IPushDeviceRegistrar::VoipPushWanted();
   for (const auto& [origin, other] : hub.OtherRelayPushDevices()) {
-    if (auto bound = other->RegisterDevice(reg); !bound) {
+    if (auto bound = RegisterWith(*other, reg, voip_token, voip_wanted); !bound) {
       PushLog().warning << "Push binding on another relay failed: " << AppError::Log(bound.error());
     }
   }
-  return client->RegisterDevice(reg);
+  return RegisterWith(*client, reg, voip_token, voip_wanted);
 }
 
 Roe<void> PushDeviceCoordinator::RegisterOn(ConversationsHub& hub, const std::string& origin) {
@@ -75,13 +108,35 @@ Roe<void> PushDeviceCoordinator::RegisterOn(ConversationsHub& hub, const std::st
     if (reg.account_id.empty()) {
       return {};
     }
-    return other->RegisterDevice(reg);
+    return RegisterWith(*other, reg, IPushDeviceRegistrar::Instance().VoipPushToken(),
+                        IPushDeviceRegistrar::VoipPushWanted());
+  }
+  return {};
+}
+
+Roe<void> PushDeviceCoordinator::UnregisterOn(ConversationsHub& hub, const std::string& origin) {
+  if (!hub.IsMessagingReady() || !IPushDeviceRegistrar::Instance().IsSupported()) {
+    return {};
+  }
+  for (const auto& [other_origin, other] : hub.OtherRelayPushDevices()) {
+    if (other_origin != origin) {
+      continue;
+    }
+    auto token = IPushDeviceRegistrar::Instance().GetPushToken();
+    if (!token) {
+      return token.error();
+    }
+    PushDeviceRegistration reg = MakeRegistration(hub, *token);
+    if (reg.account_id.empty()) {
+      return {};
+    }
+    return other->UnregisterDevice(reg);
   }
   return {};
 }
 
 Roe<void> PushDeviceCoordinator::Unregister(ConversationsHub& hub) {
-  IPushDeviceClient* client = hub.PushDevices();
+  const std::shared_ptr<IPushDeviceClient> client = hub.PushDevices(); // held for the binding's call
   if (client == nullptr || !IPushDeviceRegistrar::Instance().IsSupported()) {
     return {};
   }
@@ -96,7 +151,7 @@ Roe<void> PushDeviceCoordinator::Unregister(ConversationsHub& hub) {
   if (reg.account_id.empty()) {
     return {};
   }
-  return client->UnregisterDevice(reg);
+  return UnregisterWith(*client, reg, IPushDeviceRegistrar::Instance().VoipPushToken());
 }
 
 void PushDeviceCoordinator::OnBackendSwitchPending(ConversationsHub& hub, const bool pending) {

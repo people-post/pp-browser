@@ -52,6 +52,58 @@ TEST(ContactLocatorTest, AContactWithoutAnAccountIdHasNoLocator) {
   EXPECT_TRUE(ContactShareLocator(devices_only).empty());
 }
 
+// Multi-relay R4 (MR004), MR008: the locator may carry the preferred relay's address — its origin, within the card's
+// bounds, and the PeerId it answers to — so the receiver signs its first send for that PeerId.
+constexpr const char kRelayPeer[] = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
+
+TEST(ContactLocatorTest, CarriesThePreferredRelaysAddress) {
+  const ContactLocator locator{.account_id = "account:abc",
+                               .nickname = "Bob",
+                               .devices = {"QmPhone"},
+                               .relay = {.origin = "https://www.brief.global/api/relay", .peer_id = kRelayPeer}};
+  const std::string encoded = EncodeContactLocator(locator);
+  auto found = FindContactLocator(encoded);
+  ASSERT_TRUE(found) << found.error().message;
+  EXPECT_EQ(*found, locator);
+  const ContactLocator without{.account_id = "account:abc", .nickname = "Bob", .devices = {"QmPhone"}};
+  EXPECT_LE(encoded.size(), EncodeContactLocator(without).size() + 160) << "an origin and a PeerId: about 100 bytes";
+}
+
+TEST(ContactLocatorTest, ARelayOutsideTheBoundsOrWithoutItsPeerIdIsLeftOut) {
+  const std::string too_long = "https://relay.example/" + std::string(120, 'a');
+  for (const AccountCardRelay& relay :
+       {AccountCardRelay{.origin = "http://10.0.0.2:8080/api/relay", .peer_id = kRelayPeer},
+        AccountCardRelay{.origin = too_long, .peer_id = kRelayPeer},
+        AccountCardRelay{.origin = "https://relay.example/?x=1", .peer_id = kRelayPeer},
+        AccountCardRelay{.origin = "relay.example", .peer_id = kRelayPeer},
+        AccountCardRelay{.origin = "https://relay.example/api/relay"},
+        AccountCardRelay{.origin = "https://relay.example/api/relay", .peer_id = "QmNotAPeerId"}}) {
+    const std::string encoded = EncodeContactLocator({.account_id = "account:abc", .relay = relay});
+    EXPECT_EQ(encoded, EncodeContactLocator({.account_id = "account:abc"})) << relay.origin << " " << relay.peer_id;
+  }
+  // One written by another app out of bounds, or an origin alone (R4 before MR008): dropped, the locator still holds.
+  for (const std::string& relay :
+       {std::string(
+            R"({"origin":"http://lab.example/api/relay","peer_id":"QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP"})"),
+        std::string(R"("https://relay.example/api/relay")")}) {
+    const std::string json = R"({"account_id":"account:abc","devices":[],"relay":)" + relay + "}";
+    auto found =
+        FindContactLocator(std::string(kContactLocatorPrefix) + Base64UrlEncode(ByteVector(json.begin(), json.end())));
+    ASSERT_TRUE(found) << found.error().message;
+    EXPECT_EQ(found->account_id, "account:abc");
+    EXPECT_TRUE(found->relay.origin.empty()) << relay;
+  }
+}
+
+TEST(ContactLocatorTest, ALocatorWithoutARelayReadsAsBefore) {
+  // As an app before R4 wrote it (no `relay`): the same locator, no relay.
+  const std::string json = R"({"account_id":"account:abc","nickname":"Bob","devices":["QmPhone"]})";
+  auto found =
+      FindContactLocator(std::string(kContactLocatorPrefix) + Base64UrlEncode(ByteVector(json.begin(), json.end())));
+  ASSERT_TRUE(found) << found.error().message;
+  EXPECT_EQ(*found, (ContactLocator{.account_id = "account:abc", .nickname = "Bob", .devices = {"QmPhone"}}));
+}
+
 TEST(Base64UrlTest, RoundTripsWithoutPadding) {
   const ByteVector bytes{0xfb, 0xff, 0x00, 0x10};
   const std::string encoded = Base64UrlEncode(bytes);

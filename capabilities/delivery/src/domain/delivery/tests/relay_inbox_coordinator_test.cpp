@@ -6,12 +6,14 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <random>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "common/PbrCompat.h"
@@ -45,6 +47,9 @@ public:
 
   Roe<void> Send(const RelayEnvelope&) override { return {}; }
   Roe<RelayPollResult> PollInbox(const std::string&, const std::string& cursor) override {
+    if (auto hook = std::exchange(on_poll, nullptr)) {
+      hook(); // once, while the poll is under way (before it answers)
+    }
     std::lock_guard lock(mutex_);
     polled_with.push_back(cursor);
     if (fail_) {
@@ -67,6 +72,7 @@ public:
 
   std::vector<std::string> polled_with;
   std::vector<std::string> acked;
+  std::function<void()> on_poll;
 
 private:
   std::mutex mutex_;
@@ -171,6 +177,60 @@ TEST_F(RelayInboxCoordinatorTest, ARelayThatFailsIsReportedAndTheOthersStillDeli
   coordinator_->Sync(true, kMe);
   EXPECT_EQ(outcomes_, std::vector<std::string>({std::string(kPreferred) + " failed", std::string(kOther) + " ok"}));
   EXPECT_EQ(taken_, std::vector<std::string>({std::string(kOther) + " m1"}));
+}
+
+// My relays (MR006): a relay made preferred polls on from its own cursor; a relay that leaves the list loses its
+// cursor, in the file too.
+TEST_F(RelayInboxCoordinatorTest, ARelayMadePreferredPollsOnFromItsOwnCursor) {
+  preferred_->Queue({"m1"}, "a-1");
+  other_->Queue({"m2"}, "b-1");
+  coordinator_->Sync(true, kMe);
+  coordinator_->SetInboxes({{kOther, other_}, {kPreferred, preferred_}}, dir_.string());
+  registered_ = {kPreferred};
+  coordinator_->Sync(true, kMe);
+  EXPECT_EQ(other_->polled_with.back(), "b-1");
+  EXPECT_EQ(preferred_->polled_with.back(), "a-1");
+
+  RelayInboxCoordinator again(Ports());
+  again.SetInboxes({{kOther, other_}, {kPreferred, preferred_}}, dir_.string());
+  again.Sync(true, kMe);
+  EXPECT_EQ(other_->polled_with.back(), "b-1") << "across a restart too";
+  EXPECT_EQ(preferred_->polled_with.back(), "a-1");
+  EXPECT_EQ(LoadRelayInboxCursors(dir_.string(), kMe).preferred_relay, "https://b.example/api/relay");
+}
+
+TEST_F(RelayInboxCoordinatorTest, ARelayLeavingTheListLosesItsCursor) {
+  other_->Queue({"m2"}, "b-1");
+  coordinator_->Sync(true, kMe);
+  ASSERT_EQ(LoadRelayInboxCursors(dir_.string(), kMe).others.size(), 1u);
+  coordinator_->SetInboxes({{kPreferred, preferred_}}, dir_.string());
+  EXPECT_TRUE(LoadRelayInboxCursors(dir_.string(), kMe).others.empty());
+  coordinator_->SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
+  coordinator_->Sync(true, kMe);
+  EXPECT_EQ(other_->polled_with.back(), "") << "added again: from its oldest message";
+}
+
+// T7: a list change that leaves an inbox as it was keeps it: a poll under way there keeps the cursor it brings back.
+TEST_F(RelayInboxCoordinatorTest, AnUnchangedInboxKeepsItsPollUnderWayAcrossAListChange) {
+  preferred_->Queue({"m1"}, "a-1");
+  auto third = std::make_shared<FakeInbox>();
+  preferred_->on_poll = [this, third]() {
+    coordinator_->SetInboxes({{kPreferred, preferred_}, {kOther, other_}, {"https://c.example/api/relay", third}},
+                             dir_.string());
+  };
+  coordinator_->Sync(false, kMe);
+  coordinator_->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "a-1") << "the cursor the poll under way brought back is kept";
+  EXPECT_EQ(LoadRelayInboxCursors(dir_.string(), kMe).preferred, "a-1");
+}
+
+TEST_F(RelayInboxCoordinatorTest, ACursorFromBeforeMyRelaysIsThePreferredRelays) {
+  SaveRelayInboxCursors(dir_.string(), kMe,
+                        RelayInboxCursors{.preferred = "a-old", .preferred_relay = "", .others = {}});
+  RelayInboxCoordinator again(Ports());
+  again.SetInboxes({{kPreferred, preferred_}}, dir_.string());
+  again.Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "a-old");
 }
 
 TEST_F(RelayInboxCoordinatorTest, NoInboxesPollsNothing) {

@@ -6,6 +6,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/error/AppError.h"
 #include "lib/delivery/OutboundMessage.h"
+#include "lib/delivery/RelayMessageSignPayload.h"
 
 #include <gtest/gtest.h>
 
@@ -26,6 +27,22 @@ using Reply = ScriptedHttpServer::Reply;
 
 constexpr const char kMe[] = "account:me";
 constexpr const char kBob[] = "account:bob";
+/** The relay's PeerId (MR007): every call is signed for it. */
+constexpr const char kAudience[] = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
+
+/** A pinned audience that records what the relay refused. */
+class RecordingAudience : public IRelayAudience {
+public:
+  Roe<std::string> PeerId() override {
+    if (changed) {
+      return AppError::Auth(Err::Auth::RelayIdentityMismatch, "presented another identity");
+    }
+    return std::string(kAudience);
+  }
+  void Refused(const std::string& code) override { refused.push_back(code); }
+  bool changed = false;
+  std::vector<std::string> refused;
+};
 
 RelayEnvelope EnvelopeTo(const std::string& recipient) {
   RelayEnvelope envelope;
@@ -54,7 +71,12 @@ RelayGrant BobsGrant() {
 class HttpRelayClientTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    client_.SetAuthSigner([](const std::vector<uint8_t>&) -> Roe<std::string> { return std::string("c2ln"); });
+    client_.SetAuthSigner([this](const std::vector<uint8_t>& bytes) -> Roe<std::string> {
+      std::lock_guard lock(mu_);
+      signed_.push_back(bytes);
+      return std::string("c2ln");
+    });
+    client_.SetAudience(audience_);
     RelaySendHooks hooks;
     hooks.grant_for = [this](const std::string& recipient) -> std::optional<RelayGrant> {
       std::lock_guard lock(mu_);
@@ -92,6 +114,8 @@ protected:
   HttpRelayClient client_{server_.Origin() + "/api/relay"};
   std::mutex mu_;
   std::vector<Object> bodies_;
+  std::vector<std::vector<uint8_t>> signed_;
+  std::shared_ptr<RecordingAudience> audience_ = std::make_shared<RecordingAudience>();
   std::optional<RelayGrant> held_grant_;
   std::vector<std::string> asked_grant_for_;
   std::vector<std::string> refused_;
@@ -110,6 +134,87 @@ TEST_F(HttpRelayClientTest, ASendNamesBothAccountsAndCarriesTheRecipientsGrant) 
   const Object* grant = bodies[0].getObject("grant");
   ASSERT_NE(grant, nullptr);
   EXPECT_EQ(RelayGrantFromJson(*grant).value(), BobsGrant());
+}
+
+// MR007-AUD: a send names the relay it is for, in its body and in the bytes signed.
+TEST_F(HttpRelayClientTest, ASendNamesItsRelayInBodyAndBytes) {
+  Script({});
+  ASSERT_TRUE(client_.Send(EnvelopeTo(kBob)));
+  const auto bodies = Bodies();
+  ASSERT_EQ(bodies.size(), 1u);
+  EXPECT_EQ(bodies[0].getString("audience").value_or(""), kAudience);
+  EXPECT_EQ(bodies[0].getIf<int64_t>("sign_version"), 3) << "the version byte its bytes carry";
+  RelayWireSendRecord record;
+  record.sender_account_id = kMe;
+  record.recipient_account_id = kBob;
+  record.stream_id = bodies[0].getString("stream_id").value_or("");
+  record.index_key = bodies[0].getNonNegInt("index_key").value_or(0);
+  const int64_t timestamp = bodies[0].getIf<int64_t>("timestamp").value_or(0);
+  std::lock_guard lock(mu_);
+  ASSERT_EQ(signed_.size(), 1u);
+  EXPECT_EQ(signed_[0], BuildRelayApiSendSignBytes(kAudience, record, timestamp));
+}
+
+// MR007-AUD / MR007-PIN: `wrong_audience` is its own refusal, and the audience hears it (its identity is asked again).
+TEST_F(HttpRelayClientTest, AWrongAudienceIsReportedToTheAudience) {
+  Script(
+      {Reply{.status = 401, .headers = {}, .body = R"({"error":"Signed for another relay","code":"wrong_audience"})"}});
+  auto sent = client_.Send(EnvelopeTo(kBob));
+  ASSERT_FALSE(sent);
+  EXPECT_EQ(AppError::CategoryOf(sent.error()), ErrorCategory::Auth);
+  EXPECT_EQ(static_cast<Err::Auth>(sent.error().code), Err::Auth::WrongAudience);
+  EXPECT_EQ(audience_->refused, std::vector<std::string>{"wrong_audience"});
+  EXPECT_EQ(Bodies().size(), 1u) << "not sent again as it is";
+}
+
+// A relay newer than this app answers 426 `client_upgrade_required`: its own typed refusal, heard by the audience (the
+// org's relay: the update screen; another of ours: its row), and not sent again.
+TEST_F(HttpRelayClientTest, AnUpgradeRequiredIsReportedToTheAudience) {
+  Script(
+      {Reply{.status = 426,
+             .headers = {},
+             .body = R"({"error":"This app is too old for this relay; update it","code":"client_upgrade_required"})"}});
+  auto sent = client_.Send(EnvelopeTo(kBob));
+  ASSERT_FALSE(sent);
+  EXPECT_TRUE(IsClientUpgradeRequired(sent.error()));
+  EXPECT_EQ(audience_->refused, std::vector<std::string>{"client_upgrade_required"});
+  EXPECT_EQ(Bodies().size(), 1u) << "not sent again as it is";
+  server_.SetHandler([](const ScriptedHttpServer::Request&) {
+    return Reply{.status = 426, .headers = {}, .body = R"({"error":"x","code":"client_upgrade_required"})"};
+  });
+  auto polled = client_.PollInbox(kMe, "");
+  ASSERT_FALSE(polled);
+  EXPECT_TRUE(IsClientUpgradeRequired(polled.error()));
+  server_.SetHandler([](const ScriptedHttpServer::Request&) {
+    return Reply{.status = 426, .headers = {}, .body = R"({"error":"Upgrade Required"})"};
+  });
+  auto uncoded = client_.PollInbox(kMe, "");
+  ASSERT_FALSE(uncoded);
+  EXPECT_FALSE(IsClientUpgradeRequired(uncoded.error())) << "only the relay's code says so";
+}
+
+// MR007-HEAL: a poll answered not_registered reports the lost registration.
+TEST_F(HttpRelayClientTest, APollAnsweredNotRegisteredIsReportedToTheAudience) {
+  server_.SetHandler([](const ScriptedHttpServer::Request&) {
+    return Reply{.status = 403, .headers = {}, .body = R"({"error":"Account not registered","code":"not_registered"})"};
+  });
+  auto polled = client_.PollInbox(kMe, "");
+  ASSERT_FALSE(polled);
+  EXPECT_EQ(static_cast<Err::Auth>(polled.error().code), Err::Auth::NotRegistered);
+  EXPECT_EQ(audience_->refused, std::vector<std::string>{"not_registered"});
+}
+
+// MR007-PIN: no call is signed for a relay whose identity changed.
+TEST_F(HttpRelayClientTest, NothingGoesToARelayWhoseIdentityChanged) {
+  audience_->changed = true;
+  Script({});
+  auto sent = client_.Send(EnvelopeTo(kBob));
+  ASSERT_FALSE(sent);
+  EXPECT_EQ(static_cast<Err::Auth>(sent.error().code), Err::Auth::RelayIdentityMismatch);
+  EXPECT_FALSE(client_.PollInbox(kMe, ""));
+  EXPECT_TRUE(Bodies().empty());
+  std::lock_guard lock(mu_);
+  EXPECT_TRUE(signed_.empty());
 }
 
 TEST_F(HttpRelayClientTest, ASendToOurOwnMailboxAsksForNoGrant) {
@@ -203,6 +308,7 @@ TEST_F(HttpRelayClientTest, APollNamesTheRequesterByAccountAndReadsRecordsBySend
   auto sent = TryParseObject(poll_body).value();
   EXPECT_EQ(sent.getString("requester_account_id").value_or(""), kMe);
   EXPECT_FALSE(sent.contains("requester_contact_id"));
+  EXPECT_EQ(sent.getString("audience").value_or(""), kAudience);
 }
 
 } // namespace

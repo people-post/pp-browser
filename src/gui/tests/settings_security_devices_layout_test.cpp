@@ -135,9 +135,13 @@ TEST(DevicesLayoutTest, TheMainDevicesButtonIsAPrimaryButtonWithTheOldEventAndTh
   const std::string button = rml.substr(tag, end - tag);
   EXPECT_NE(button.find("class=\"btn btn-primary\""), std::string::npos);
   EXPECT_NE(button.find("{{i18n:settings.security.transfer_row}}"), std::string::npos);
-  const size_t hero =
-      rml.rfind("<div class=\"settings-phone-only settings-dev-hero\" data-if=\"!own_devices_not_main\">", at);
-  ASSERT_NE(hero, std::string::npos) << "same gate as the row it replaces";
+  // The main device's (as the row it replaces), and not while no list of ours is here yet: one being got back, or
+  // none found (then "Start a new device list…" shows instead).
+  const size_t hero = rml.rfind(
+      "<div class=\"settings-phone-only settings-dev-hero\" data-if=\"!own_devices_not_main && "
+      "!own_list_getting && !own_list_missing\">",
+      at);
+  ASSERT_NE(hero, std::string::npos) << "same gate as the row it replaces, and no list pending";
   EXPECT_LT(at - hero, 1400u);
 }
 
@@ -150,16 +154,32 @@ TEST(DevicesLayoutTest, TheDeviceLimitInTheHeroLineIsTheOneTheAccountCardEnforce
 TEST(DevicesLayoutTest, TheNewStringsExistInBothLanguages) {
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     const std::string text = ReadAsset(locale);
-    for (const char* key :
-         {"settings.security.devices.none", "settings.security.devices.role_this",
-          "settings.security.devices.role_this_main", "settings.security.devices.role_main_manage",
-          "settings.security.devices.role_other", "settings.security.devices.unnamed",
-          "settings.security.devices.rename", "settings.security.devices.rename_title",
-          "settings.security.devices.rename_prompt", "settings.security.devices.renamed",
-          "settings.security.devices.main_is", "settings.security.devices.hero", "settings.security.devices.hero_sub",
-          "settings.security.devices.tap_hint", "settings.security.devices.view_head",
-          "settings.security.devices.linked_note", "settings.security.devices.linked_note_sub",
-          "settings.security.link_device.phone_note", "settings.security.grace.caption"}) {
+    for (const char* key : {"settings.security.devices.none",
+                            "settings.security.devices.role_this",
+                            "settings.security.devices.role_this_main",
+                            "settings.security.devices.role_main_manage",
+                            "settings.security.devices.role_other",
+                            "settings.security.devices.unnamed",
+                            "settings.security.devices.rename",
+                            "settings.security.devices.rename_title",
+                            "settings.security.devices.rename_prompt",
+                            "settings.security.devices.renamed",
+                            "settings.security.devices.main_is",
+                            "settings.security.devices.hero",
+                            "settings.security.devices.hero_sub",
+                            "settings.security.devices.tap_hint",
+                            "settings.security.devices.view_head",
+                            "settings.security.devices.linked_note",
+                            "settings.security.devices.linked_note_sub",
+                            "settings.security.link_device.phone_note",
+                            "settings.security.grace.caption",
+                            "settings.security.devices.getting_list",
+                            "settings.security.devices.list_not_found",
+                            "settings.security.devices.new_list",
+                            "settings.security.devices.new_list_confirm_title",
+                            "settings.security.devices.new_list_confirm_message",
+                            "settings.security.devices.new_list_confirm_ok",
+                            "settings.security.devices.new_list_started"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
   }
@@ -285,6 +305,35 @@ TEST_F(SettingsOwnDevicesTest, TheSheetOffersTheThreeActionsOnlyForADeviceTheMai
   devices_->Show(OwnDevicesViewFor({"main-peer", "self-peer", "other-peer-cccccc"}, "self-peer", false));
   EXPECT_TRUE(devices_->DeviceActions(2).empty());
   EXPECT_TRUE(devices_->DeviceActions(0).empty());
+}
+
+// No list of ours found on our relays: "Start a new device list…" asks first (it signs the other devices out, so the
+// confirm is the destructive one), and only a yes starts it.
+TEST_F(SettingsOwnDevicesTest, ANewDeviceListIsStartedOnlyAfterTheConfirmAndOnlyWhenNoneWasFound) {
+  int started = 0;
+  commands_.start_new_device_list = [&started]() -> Roe<void> {
+    ++started;
+    return {};
+  };
+  devices_->Show(OwnDevicesViewFor({}, "self-peer", false, {}, {}, OwnListPending::Getting));
+  devices_->StartNewList();
+  EXPECT_TRUE(confirms_.empty()) << "still getting it back: nothing to start";
+
+  devices_->Show(OwnDevicesViewFor({}, "self-peer", false, {}, {}, OwnListPending::NotFound));
+  devices_->StartNewList();
+  ASSERT_EQ(confirms_.size(), 1U);
+  EXPECT_EQ(confirms_[0].title, Tr("settings.security.devices.new_list_confirm_title"));
+  EXPECT_EQ(confirms_[0].message, Tr("settings.security.devices.new_list_confirm_message"));
+  EXPECT_EQ(confirms_[0].ok_label, Tr("settings.security.devices.new_list_confirm_ok"));
+  EXPECT_TRUE(confirms_[0].destructive);
+  on_result_(false);
+  Settle();
+  EXPECT_EQ(started, 0);
+  devices_->StartNewList();
+  on_result_(true);
+  Settle();
+  EXPECT_EQ(started, 1);
+  EXPECT_EQ(failures_, 0);
 }
 
 TEST_F(SettingsOwnDevicesTest, MakeMainInTheSheetAsksTheOldQuestionAndCallsTheOldCommand) {

@@ -6,6 +6,8 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <memory>
+#include <optional>
+#include <string>
 
 namespace pbr {
 namespace {
@@ -95,6 +97,29 @@ TEST_F(CallInitiationBillingTest, InboundOfferBelowOurFloorIsRefusedElseBooked) 
   EXPECT_EQ(accept.charge_decision, InitiationChargeDecision::Waive);
   billing_->NoteAccepted("caller");
   EXPECT_TRUE(store_->IsOpen("caller"));
+}
+
+// A stranger's price for a call is its card's (multi-relay MR005), not the directory's entry (which relays no longer
+// fill): a card that charges blocks the call before any invite goes; one that is free lets it ring.
+TEST_F(CallInitiationBillingTest, TheStrangersCardSaysWhetherACallCanBePlaced) {
+  billing_->SetStore(store_.get());
+  int64_t card_floor = 6;
+  store_->SetCardFloors([&card_floor](const std::string& peer) -> std::optional<InitiationCardFloor> {
+    if (peer != "account:stranger") {
+      return std::nullopt;
+    }
+    return InitiationCardFloor{.floor_minor = card_floor, .issued_at = 10};
+  });
+  ASSERT_TRUE(store_->SetFloor("account:stranger", 0)); // the directory hit says free
+  EXPECT_FALSE(billing_->CheckCanPlace({"account:stranger"}, "me")) << "its card charges";
+  CallInviteDetail invite;
+  EXPECT_FALSE(billing_->FillInviteOffer("account:stranger", invite));
+
+  card_floor = 0;
+  EXPECT_TRUE(billing_->CheckCanPlace({"account:stranger"}, "me")) << "its card is free";
+  EXPECT_TRUE(billing_->FillInviteOffer("account:stranger", invite));
+  EXPECT_EQ(invite.offer_amount_minor, 0);
+  EXPECT_EQ(invite.floor_minor, 0);
 }
 
 } // namespace

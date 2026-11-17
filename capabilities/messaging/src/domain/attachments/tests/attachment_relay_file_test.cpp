@@ -111,7 +111,7 @@ protected:
   std::unique_ptr<IdentityStore> identity_;
   std::unique_ptr<OutgoingAttachmentStore> store_;
   Thread group_;
-  MockBlobClient blob_;
+  std::shared_ptr<MockBlobClient> blob_ = std::make_shared<MockBlobClient>();
   OutgoingAttachmentRecord staged_;
 };
 
@@ -122,50 +122,50 @@ TEST_F(AttachmentRelayUploadTest, TheMessageCarriesTheRelayShareLink) {
     EXPECT_TRUE(std::regex_match(
         fields->url, std::regex(R"(https://mock\.example/api/relay/v1/files/[0-9a-f-]+/download\?t=[A-Za-z0-9_-]+)")))
         << fields->url;
-    ASSERT_FALSE(blob_.CompletedFileIds().empty());
-    EXPECT_EQ(RelayFileUrl::BlobIdOf(fields->url), blob_.CompletedFileIds().back());
-    EXPECT_EQ(blob_.FileStartByteLengths().back(), 3000u + kAttachmentCipherOverheadBytes);
+    ASSERT_FALSE(blob_->CompletedFileIds().empty());
+    EXPECT_EQ(RelayFileUrl::BlobIdOf(fields->url), blob_->CompletedFileIds().back());
+    EXPECT_EQ(blob_->FileStartByteLengths().back(), 3000u + kAttachmentCipherOverheadBytes);
   }
   auto record = store_->Load(staged_.id, TestDek());
   ASSERT_TRUE(record);
   EXPECT_TRUE(record->delivered);
-  EXPECT_EQ(RelayFileUrl::BlobIdOf(record->fields.url), blob_.CompletedFileIds().back()) << "the link is kept";
-  EXPECT_TRUE(blob_.DeletedFileIds().empty());
+  EXPECT_EQ(RelayFileUrl::BlobIdOf(record->fields.url), blob_->CompletedFileIds().back()) << "the link is kept";
+  EXPECT_TRUE(blob_->DeletedFileIds().empty());
 }
 
 TEST_F(AttachmentRelayUploadTest, AFailedPutDeletesTheStartedFileAndReportsThePutError) {
   for (const bool staged : {false, true}) {
-    blob_.SetPutError(AppError::Blob(Err::Blob::Unavailable, "Blob PUT failed with status 503"));
+    blob_->SetPutError(AppError::Blob(Err::Blob::Unavailable, "Blob PUT failed with status 503"));
     auto fields = Upload(3000, staged);
     ASSERT_FALSE(fields);
     EXPECT_EQ(fields.error().code, static_cast<int32_t>(Err::Blob::Unavailable));
   }
-  EXPECT_EQ(blob_.DeletedFileIds().size(), 2u);
-  EXPECT_TRUE(blob_.CompletedFileIds().empty());
+  EXPECT_EQ(blob_->DeletedFileIds().size(), 2u);
+  EXPECT_TRUE(blob_->CompletedFileIds().empty());
   EXPECT_TRUE(store_->HasCipher(staged_.id)) << "kept for Retry";
 }
 
 TEST_F(AttachmentRelayUploadTest, ACompleteThatIsNoLongerPendingDeletesTheFile) {
-  blob_.SetFileCompleteError(AppError::Blob(Err::Blob::Generic, "HTTP 400 BLOB_NOT_PENDING: Blob is not pending"));
+  blob_->SetFileCompleteError(AppError::Blob(Err::Blob::Generic, "HTTP 400 BLOB_NOT_PENDING: Blob is not pending"));
   auto fields = Upload(3000, /*staged=*/true);
   ASSERT_FALSE(fields);
   EXPECT_EQ(RelayFileErrorCode(fields.error()), "BLOB_NOT_PENDING");
-  ASSERT_EQ(blob_.DeletedFileIds().size(), 1u);
-  EXPECT_EQ(blob_.DeletedFileIds().front(), "00000000-0000-4000-8000-000000000001");
+  ASSERT_EQ(blob_->DeletedFileIds().size(), 1u);
+  EXPECT_EQ(blob_->DeletedFileIds().front(), "00000000-0000-4000-8000-000000000001");
 }
 
 // complete gives the link once: if it cannot be kept, the file is deleted and the send fails (a retry uploads
 // again) rather than a message going out whose resend could never find its copy.
 TEST_F(AttachmentRelayUploadTest, AStoreWriteFailureAfterCompleteDeletesTheFileAndFails) {
-  blob_.SetOnFileComplete([this](const std::string&) {
+  blob_->SetOnFileComplete([this](const std::string&) {
     const std::string record_path = store_->CipherPath(staged_.id) + ".rec";
     std::filesystem::remove(record_path);
     std::filesystem::create_directory(record_path); // the record can no longer be written
   });
   auto fields = Upload(3000, /*staged=*/true);
   ASSERT_FALSE(fields);
-  ASSERT_EQ(blob_.CompletedFileIds().size(), 1u);
-  EXPECT_EQ(blob_.DeletedFileIds(), blob_.CompletedFileIds());
+  ASSERT_EQ(blob_->CompletedFileIds().size(), 1u);
+  EXPECT_EQ(blob_->DeletedFileIds(), blob_->CompletedFileIds());
 }
 
 TEST(AttachmentUploadedCopyTest, DeletingTheServerCopyUsesTheLinksBlobId) {
@@ -317,7 +317,7 @@ TEST_F(AttachmentLogRedactionTest, NoLogLineCarriesTheShareTokenOrTheStorageUrl)
 
   // Send (start, complete; a failed PUT abandons) and receive (302 to storage; a 404), as the app does.
   ASSERT_TRUE(Upload(3000, /*staged=*/true));
-  blob_.SetPutError(AppError::Blob(Err::Blob::Unavailable, "Blob PUT failed with status 503"));
+  blob_->SetPutError(AppError::Blob(Err::Blob::Unavailable, "Blob PUT failed with status 503"));
   ASSERT_FALSE(Upload(3000, /*staged=*/false));
 
   auto prepared = PrepareChatAttachmentFromBytes(std::vector<uint8_t>(5000, 0x33), "a.bin", "", 1'000'000);

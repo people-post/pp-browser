@@ -11,6 +11,9 @@ Derives libp2p-shaped base58 PeerIds from ML-DSA-65 device public keys (1952 byt
 
 - Multiaddr segment: `/p2p/<PeerId>`
 - JSON call control field: `libp2p_peer_id` (name retained for compat)
+- An HTTPS relay's identity: its own ML-DSA-65 key's PeerId, derived the same way, is the audience every signed relay
+  command names, and part of the relay's address — its relay link `https://host#<PeerId>`, as a node's multiaddr ends
+  in `/p2p/<PeerId>` (multi-relay MR007, MR008, [SERVICE_ENDPOINTS § Relay identity](../contracts/SERVICE_ENDPOINTS.md#relay-identity))
 
 ## Derivation pipeline (frozen)
 

@@ -29,11 +29,11 @@ class IdentityStore;
 
 /** What a notice to this account's other devices is: what it carries and how long the relay keeps it. */
 enum class SiblingNotice {
-  /** The device list: our card rides it — the card is the notice. Kept the relay's full window. */
+  /** The device list: our card rides it — the card is the notice. Kept kDeviceListRelayTtlS. */
   DeviceList,
   /** A sent message's copy (M021 d3): history for a sibling that may be off for days. Kept the full window. */
   SentCopy,
-  /** A family's lane signaling (a call taken here): fresh only, so kept kControlLaneRelayTtlMs. */
+  /** A family's lane signaling (a call taken here): fresh only, kept by its tier (kCallSignalRelayTtlS for a call). */
   Signal,
 };
 
@@ -59,7 +59,8 @@ public:
    * peer at once, the platform's most urgent push (an incoming call's). Our account card rides it only when a device it
    * addresses may not hold it (ControlLaneCarriesCard: one this device has not sent the card yet, a device just
    * linked to the peer's account too): `with_card` (or `urgent`) when the caller knows it may not. The relay keeps
-   * it kControlLaneRelayTtlMs, or its full window with `keep` (state the peer needs whenever it is back).
+   * it by tier (a call's kCallSignalRelayTtlS, a device list's kDeviceListRelayTtlS, else kControlLaneRelayTtlMs), or its
+   * full window with `keep` (state the peer needs whenever it is back).
    */
   Roe<void> Send(const std::string& peer_identity, const ThreadMessage& control, bool urgent = false,
                  bool with_card = false, bool keep = false);
@@ -73,7 +74,7 @@ public:
 
   /**
    * Tell this account's other devices `notice` through its own mailbox (M022). Our card rides a device list, and
-   * any notice after the card changed; the relay keeps a signal kControlLaneRelayTtlMs, the rest its full window.
+   * any notice after the card changed; the relay keeps a signal by its tier, a device list kDeviceListRelayTtlS, a sent copy its full window.
    */
   Roe<void> NotifySiblings(const ThreadMessage& notice, SiblingNotice kind);
 

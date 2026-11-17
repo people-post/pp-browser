@@ -10,6 +10,7 @@
 #include "gui/BadgeAggregator.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/delivery/PskFingerprint.h"
+#include "lib/net/RelayOrigins.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/delivery/DirectChatTargetFromContact.h"
 #include "common/chat/MessagingJson.h"
@@ -284,6 +285,11 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   }
   if (ports.ensure_contact_icon_cached && contact.remote.icon && !contact.remote.icon->url.empty()) {
     ports.ensure_contact_icon_cached(contact);
+  }
+  if (ports.contact_relay) {
+    const ContactRelayLine relay = DescribeContactRelay(ports.contact_relay(contact));
+    detail.relay_host = relay.relay.c_str();
+    detail.relay_reach = relay.reach.c_str();
   }
   if (contact.remote.fetched_at > 0) {
     detail.remote_updated = Tr("contacts.from_directory").c_str();
@@ -608,6 +614,8 @@ bool ContactsController::RegisterModel(ui::Context* context) {
           detail_handle.RegisterMember("can_message", &ContactDetail::can_message);
           detail_handle.RegisterMember("name_placeholder", &ContactDetail::name_placeholder);
           detail_handle.RegisterMember("refreshing", &ContactDetail::refreshing);
+          detail_handle.RegisterMember("relay_host", &ContactDetail::relay_host);
+          detail_handle.RegisterMember("relay_reach", &ContactDetail::relay_reach);
           detail_handle.RegisterMember("has_icon", &ContactDetail::has_icon);
           detail_handle.RegisterMember("icon_src", &ContactDetail::icon_src);
           detail_handle.RegisterMember("avatar_letter", &ContactDetail::avatar_letter);
@@ -2458,6 +2466,8 @@ void ContactsController::OnSetTrust(const std::string& trust) {
 
 namespace {
 
+using RelayAsk = ContactRefreshResult::RelayAsk;
+
 /** "name, photo": what a refresh changed, in the user's words; empty when only something unnamed did. */
 std::string RefreshedParts(const ContactRefreshResult& result) {
   std::vector<std::string> parts;
@@ -2480,19 +2490,17 @@ std::string RefreshedParts(const ContactRefreshResult& result) {
   return joined;
 }
 
-/** Nothing answered: which source could not be reached, and why. */
+/** Nothing answered: a relay could not be reached, else no relay knows the account, else no relay was asked. */
 std::string RefreshUnreachableText(const ContactRefreshResult& result) {
-  using Devices = ContactRefreshResult::Devices;
-  using Directory = ContactRefreshResult::Directory;
-  const bool devices_offline = result.devices == Devices::NotReached;
-  switch (result.directory) {
-    case Directory::Unreachable:
-      return Tr(devices_offline ? "contacts.refresh.unreachable" : "contacts.refresh.directory_unreachable");
-    case Directory::NotFound:
-      return Tr(devices_offline ? "contacts.refresh.offline_not_found" : "contacts.refresh.not_found");
-    case Directory::NotAsked:
-    case Directory::Answered:
-      break;
+  const bool relay_unreachable = std::any_of(result.relays.begin(), result.relays.end(), [](const RelayAsk& ask) {
+    return ask.outcome == RelayAsk::Outcome::Unreachable;
+  });
+  if (relay_unreachable) {
+    return Tr("contacts.refresh.unreachable");
+  }
+  const bool devices_offline = result.devices == ContactRefreshResult::Devices::NotReached;
+  if (!result.relays.empty()) { // every relay asked answered without the account
+    return Tr(devices_offline ? "contacts.refresh.offline_not_found" : "contacts.refresh.not_found");
   }
   return Tr(devices_offline ? "contacts.refresh.devices_offline" : "contacts.refresh.nothing_to_ask");
 }
@@ -2500,9 +2508,12 @@ std::string RefreshUnreachableText(const ContactRefreshResult& result) {
 } // namespace
 
 ContactRefreshNotice DescribeContactRefresh(const ContactRefreshResult& result) {
-  if (result.directory_keys_rejected) {
+  if (result.relay_keys_rejected) {
     return {.ok = false,
             .text = Tr(result.Changed() ? "contacts.refresh.keys_rejected_updated" : "contacts.refresh.keys_rejected")};
+  }
+  if (result.NothingAnswered()) {
+    return {.ok = false, .text = RefreshUnreachableText(result)};
   }
   if (result.Changed()) {
     const std::string parts = RefreshedParts(result);
@@ -2510,10 +2521,41 @@ ContactRefreshNotice DescribeContactRefresh(const ContactRefreshResult& result) 
             .text = parts.empty() ? Tr("contacts.refresh.updated_plain")
                                   : Tr("contacts.refresh.updated", {{"what", parts}})};
   }
-  if (result.NothingAnswered()) {
-    return {.ok = false, .text = RefreshUnreachableText(result)};
-  }
   return {.ok = true, .text = Tr("contacts.refresh.up_to_date")};
+}
+
+ContactRelayLine DescribeContactRelay(const ContactRelayView& view) {
+  switch (view.list) {
+    case ContactRelayView::List::NotKnown:
+      return {.relay = Tr("contacts.relay.not_known")};
+    case ContactRelayView::List::NoneListed:
+      return {.relay = Tr("contacts.relay.none_listed")};
+    case ContactRelayView::List::Listed:
+      break;
+  }
+  ContactRelayLine line;
+  line.relay = RelayOriginHost(view.origin);
+  if (line.relay.empty()) {
+    line.relay = view.origin;
+  }
+  switch (view.reach) {
+    case ContactRelayView::Reach::NotKnown:
+      line.reach = Tr("contacts.relay.reach.not_known");
+      break;
+    case ContactRelayView::Reach::Reachable:
+      line.reach = Tr("contacts.relay.reach.reachable");
+      break;
+    case ContactRelayView::Reach::NotRegistered:
+      line.reach = Tr("contacts.relay.reach.not_registered");
+      break;
+    case ContactRelayView::Reach::Unreachable:
+      line.reach = Tr("contacts.relay.reach.unreachable");
+      break;
+    case ContactRelayView::Reach::IdentityMismatch:
+      line.reach = Tr("contacts.relay.reach.identity_mismatch");
+      break;
+  }
+  return line;
 }
 
 std::vector<Contact> BlockedContactsByName(const std::vector<Contact>& contacts) {
@@ -2618,7 +2660,7 @@ void ContactsController::OnRefreshContact() {
     return; // pressed again while it runs
   }
   FlushPending();
-  // The devices and the directory are asked off the UI thread; the outcome comes back here.
+  // The devices and the relays are asked off the UI thread; the outcome comes back here.
   const bool started = contacts_ports_.refresh_contact(
       contact_id, lifetime_.Bind([this, contact_id](const ContactRefreshResult& result) {
         OnContactRefreshed(contact_id, result);

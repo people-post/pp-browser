@@ -2,12 +2,13 @@ name: nightly-lab
 
 # The app lab every night on develop (docs/ops/TEST_STRATEGY.md § Nightly lab): `--suite app` and
 # `--suite app-nat` on the lab machine — a self-hosted EC2 runner that is stopped except while this
-# runs. The relay is its published images (packaging/pp-node/docker-compose.app-lab-images.yml). A scenario that fails twice
-# (one retry) opens or updates an issue labelled nightly-lab; one that passes again closes it.
+# runs. The relay is pp-relay-apis's local stack, from a checkout of that repository (PP_LAB_RELAY_APIS_REF, default
+# main: what prod runs). A scenario that fails twice (one retry) opens or updates an issue labelled nightly-lab; one
+# that passes again closes it.
 #
 # Never on pull requests: the lab machine runs only what this workflow, from the default branch, gives
-# it. Idle until the repository variables PP_LAB_INSTANCE_ID and PP_LAB_AWS_ROLE and the secrets
-# PP_LAB_WWW_IMAGE and PP_LAB_MESSENGER_IMAGE are set.
+# it. Idle until the repository variables PP_LAB_INSTANCE_ID and PP_LAB_AWS_ROLE and the secret
+# PP_LAB_RELAY_APIS_TOKEN (read access to people-post/pp-relay-apis, which is private) are set.
 
 on:
   schedule:
@@ -40,14 +41,13 @@ jobs:
     outputs:
       enabled: ${{ steps.gate.outputs.enabled }}
     steps:
-      # The secrets context is unavailable in job-level `if`, so the image secrets are checked here.
-      - name: Check the image secrets
+      # The secrets context is unavailable in job-level `if`, so the relay checkout's token is checked here.
+      - name: Check the relay token
         id: gate
         env:
-          WWW_IMAGE: ${{ secrets.PP_LAB_WWW_IMAGE }}
-          MESSENGER_IMAGE: ${{ secrets.PP_LAB_MESSENGER_IMAGE }}
+          RELAY_APIS_TOKEN: ${{ secrets.PP_LAB_RELAY_APIS_TOKEN }}
         run: |
-          if [ -n "$WWW_IMAGE" ] && [ -n "$MESSENGER_IMAGE" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"; fi
+          if [ -n "$RELAY_APIS_TOKEN" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"; fi
       - uses: aws-actions/configure-aws-credentials@v6
         if: steps.gate.outputs.enabled == 'true'
         with:
@@ -68,21 +68,21 @@ jobs:
       # Outside the workspace (checkout cleans it): the build and its ccache carry over between nights.
       PP_LOCAL_BUILD_DIR: /home/runner/pp-lab/build
       CCACHE_DIR: /home/runner/pp-lab/ccache
-      PP_APP_LAB_WWW_IMAGE: ${{ secrets.PP_LAB_WWW_IMAGE }}
-      PP_APP_LAB_MESSENGER_IMAGE: ${{ secrets.PP_LAB_MESSENGER_IMAGE }}
+      # The lab's relays build from it (packaging/pp-node/docker-compose.app-lab.yml).
+      PP_RELAY_APIS_ROOT: ${{ github.workspace }}/pp-relay-apis
     steps:
       - uses: actions/checkout@v7
 
-      - name: Pull the relay images
-        run: |
-          # The machine's instance role may pull from both registries.
-          for image in "$PP_APP_LAB_WWW_IMAGE" "$PP_APP_LAB_MESSENGER_IMAGE"; do
-            registry="${image%%/*}"
-            aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$registry"
-            docker pull "$image"
-          done
-          docker image inspect --format '{{index .RepoDigests 0}}' "$PP_APP_LAB_WWW_IMAGE" "$PP_APP_LAB_MESSENGER_IMAGE" \
-            | tee "$RUNNER_TEMP/relay-images.txt"
+      - uses: actions/checkout@v7
+        with:
+          repository: people-post/pp-relay-apis
+          ref: ${{ vars.PP_LAB_RELAY_APIS_REF || 'main' }}
+          token: ${{ secrets.PP_LAB_RELAY_APIS_TOKEN }}
+          path: pp-relay-apis
+          persist-credentials: false
+
+      - name: Record the relay commit
+        run: git -C "$PP_RELAY_APIS_ROOT" rev-parse HEAD | tee "$RUNNER_TEMP/relay-commit.txt"
 
       - name: Build the probe and pp-node
         run: |
@@ -90,7 +90,7 @@ jobs:
           if [ ! -f "$PP_LOCAL_BUILD_DIR/CMakeCache.txt" ]; then
             cmake -S . -B "$PP_LOCAL_BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release -DPP_BROWSER_COMPILER_CACHE=ON
           fi
-          cmake --build "$PP_LOCAL_BUILD_DIR" --target pp-app-probe pp-node -j "$(nproc)"
+          cmake --build "$PP_LOCAL_BUILD_DIR" --target pp-app-probe pp-node pp-node-load -j "$(nproc)"
 
       - name: Run the suites
         env:
@@ -119,7 +119,7 @@ jobs:
                           shutil.copytree(run["kept"], dest, dirs_exist_ok=True)
                           shutil.rmtree(run["kept"], ignore_errors=True)
           EOF
-          cp "$RUNNER_TEMP/relay-images.txt" "$RUNNER_TEMP/lab/"
+          cp "$RUNNER_TEMP/relay-commit.txt" "$RUNNER_TEMP/lab/"
 
       - uses: actions/upload-artifact@v7
         if: always()

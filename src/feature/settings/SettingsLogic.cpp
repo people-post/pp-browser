@@ -57,6 +57,36 @@ AppConfig ApplyIntegrationsSettingsDraft(const AppConfig& base, const SettingsUi
   return config;
 }
 
+std::string EndpointLinkText(const ServiceEndpointConfig& endpoint) {
+  return endpoint.peer_id.empty() ? endpoint.base_url : endpoint.base_url + "#" + endpoint.peer_id;
+}
+
+void SetEndpointFromLinkText(ServiceEndpointConfig& endpoint, const std::string& text) {
+  const size_t hash = text.find('#');
+  endpoint.base_url = text.substr(0, hash);
+  endpoint.peer_id = hash == std::string::npos ? std::string() : text.substr(hash + 1);
+}
+
+std::string MissingRelayIdSetting(const AppConfig& config, const bool developer_build, const bool compiled_backend) {
+  if (OrgRelayFirstUseAllowed(developer_build, compiled_backend)) {
+    return {};
+  }
+  const auto trimmed = [](std::string url) {
+    while (!url.empty() && url.back() == '/') {
+      url.pop_back();
+    }
+    return url;
+  };
+  if (!config.relay.base_url.empty() && config.relay.peer_id.empty()) {
+    return "relay.peer_id";
+  }
+  const bool apart = trimmed(config.registration.base_url) != trimmed(config.relay.base_url);
+  if (apart && !config.registration.base_url.empty() && config.registration.peer_id.empty()) {
+    return "registration.peer_id";
+  }
+  return {};
+}
+
 AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState& state) {
   AppConfig config = base;
   const AppConfig defaults = Config::DefaultAppConfig();
@@ -70,14 +100,16 @@ AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState
     DirectoryConfig& directory = config.backend.has_saved_urls ? config.backend.saved_directory : config.directory;
     ServiceEndpointConfig& registration =
         config.backend.has_saved_urls ? config.backend.saved_registration : config.registration;
-    relay.base_url = state.relay_base_url.empty() ? defaults.relay.base_url : state.relay_base_url;
+    // The relay fields take relay links (MR008: the relay's address with its PeerId).
+    SetEndpointFromLinkText(relay,
+                            state.relay_base_url.empty() ? EndpointLinkText(defaults.relay) : state.relay_base_url);
     directory.base_url = state.directory_base_url.empty() ? defaults.directory.base_url : state.directory_base_url;
     // Settings UI edits the primary URL only; clear providers so EffectiveDirectoryProviders
     // follows base_url (N029 nd3). Advanced providers[] remain config.json / ops.
     directory.providers.clear();
     directory.transport = "http";
-    registration.base_url =
-        state.registration_base_url.empty() ? defaults.registration.base_url : state.registration_base_url;
+    SetEndpointFromLinkText(registration, state.registration_base_url.empty() ? EndpointLinkText(defaults.registration)
+                                                                              : state.registration_base_url);
   }
   config.mesh.node_enabled = (state.node_enabled != "off");
   config.mesh.capabilities.circuit_relay = (state.circuit_relay_enabled == "on");

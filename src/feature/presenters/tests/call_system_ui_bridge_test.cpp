@@ -1,6 +1,8 @@
 #include "feature/presenters/CallSystemUiBridge.h"
 
 #include "common/Diag.h"
+#include "foundation/platform/CallPushAge.h"
+#include "lib/calls/CallTypes.h"
 
 #include <gtest/gtest.h>
 
@@ -66,6 +68,7 @@ protected:
                         },
                     .decline = [this]() { did.push_back("decline"); },
                     .leave = [this]() { did.push_back("leave"); },
+                    .toggle_mute = [this]() { did.push_back("toggle_mute"); },
                     .display_name = [](const std::string& identity) { return "name-of-" + identity; },
                     .now_ms = [this]() { return now; },
                     // What CallController's redraw does: the app rings the ring unless the system screen does.
@@ -79,6 +82,9 @@ protected:
                         },
                     .screen_state = [this]() { return screen; },
                     .pin_locked = [this]() { return pin_locked; },
+                    .audio_managed = [this](const bool managed) { audio.push_back(managed ? "managed" : "unmanaged"); },
+                    .audio_activated =
+                        [this](const bool active) { audio.push_back(active ? "audio active" : "audio inactive"); },
                 }) {}
 
   static CallScreen Ring(const std::string& call_id, bool video = false) {
@@ -111,6 +117,7 @@ protected:
 
   FakeCallSystemUi ui_;
   std::vector<std::string> did;
+  std::vector<std::string> audio; // audio-session ownership events, apart from the user choices in `did`
   std::vector<std::string> accepted_ids;
   std::function<void()> on_accept;
   std::function<void()> on_ring_moved;
@@ -700,6 +707,46 @@ TEST_F(CallSystemUiBridgeTest, ARingOverACallInTheBackgroundIsNotMarkedSeen) {
   EXPECT_TRUE(ui_.log.empty());
   bridge_.Sync(Ring("c2"), "", false); // the call ended; the ring stays
   EXPECT_EQ(ui_.log.back(), "incoming c2 name-of-alice") << "full-screen: the user never saw it";
+}
+
+// CallKit owns the audio session of a call answered on its screen, from the answer until it deactivates the session.
+TEST_F(CallSystemUiBridgeTest, ACallAnsweredOnTheSystemScreenOwnsItsAudioSessionUntilTheSystemReleasesIt) {
+  bridge_.Sync(Ring("c1"), "", false);
+  ui_.callbacks_.answer("c1");
+  EXPECT_EQ(did, std::vector<std::string>{"accept voice"});
+  EXPECT_EQ(audio, std::vector<std::string>{"managed"}) << "its audio waits for the system";
+  ui_.callbacks_.audio_session(true);
+  ui_.callbacks_.audio_session(false);
+  EXPECT_EQ(audio, (std::vector<std::string>{"managed", "audio active", "audio inactive", "unmanaged"}));
+}
+
+TEST_F(CallSystemUiBridgeTest, ThePushsCallGoingWithoutARingLeavesNoManagedAudio) {
+  ui_.pending_push = true;
+  ui_.callbacks_.answer(""); // answered before its ring was known: nothing is managed yet
+  EXPECT_TRUE(did.empty());
+  EXPECT_TRUE(audio.empty());
+  ui_.callbacks_.pending_gone();
+  EXPECT_EQ(audio, (std::vector<std::string>{"unmanaged"}));
+}
+
+TEST_F(CallSystemUiBridgeTest, MutingOnTheSystemScreenTogglesTheCallsMute) {
+  bridge_.Sync(Ring("c1"), "", false);
+  ui_.callbacks_.answer("c1");
+  CallScreen in_call = InCall("c1");
+  bridge_.Sync(in_call, "c1", false);
+  did.clear();
+  ui_.callbacks_.set_muted("c1", true);
+  EXPECT_EQ(did, (std::vector<std::string>{"toggle_mute"}));
+  did.clear();
+  ui_.callbacks_.set_muted("c1", false); // already unmuted: nothing to toggle
+  ui_.callbacks_.set_muted("c2", true);  // not the call in progress
+  EXPECT_TRUE(did.empty());
+}
+
+// A push the phone ends as too old carries an invite the app drops too (its relay age is at least the push's); a
+// younger one still rings, and its push's call must be there for it, or that ring would show as a second call.
+TEST(CallPushStaleRuleTest, APushTooOldToRingCarriesAnInviteTooOldToRing) {
+  EXPECT_EQ(kCallPushStaleAfterMs, kDefaultCallInviteTtlMs + kCallInviteRelayAgeSlackMs);
 }
 
 } // namespace

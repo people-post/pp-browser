@@ -18,6 +18,8 @@ constexpr int64_t kAskAfterRefusalMs = 10LL * 60 * 1000;
 /** An unconfirmed grant goes again at most this often (when its grantee is heard from, or asks). */
 constexpr int64_t kResendEveryMs = 60LL * 60 * 1000;
 constexpr int64_t kResendOnAskMs = 10LL * 60 * 1000;
+/** A grantee's new device: its grant goes again at once, then not more often than this (a burst of card updates). */
+constexpr int64_t kResendOnNewDeviceMs = 60LL * 1000;
 /** Hearing from a peer is looked at at most this often (every inbound envelope reports it). */
 constexpr int64_t kHeardEveryMs = 10LL * 60 * 1000;
 /**
@@ -233,6 +235,24 @@ void RelayGrantCoordinator::NoteHeardFrom(const std::string& account) {
   }
 }
 
+void RelayGrantCoordinator::NoteNewDevices(const std::string& account) {
+  IRelayGrantStore* store = nullptr;
+  {
+    std::lock_guard lock(mutex_);
+    store = store_;
+  }
+  if (!store || account.empty() || account == OwnAccount() || Blocked(account)) {
+    return;
+  }
+  auto issued = store->IssuedTo(account);
+  if (!issued || !*issued || (*issued)->grant.expires_at <= Now() ||
+      !Due(new_device_at_, account, kResendOnNewDeviceMs)) {
+    return;
+  }
+  log().info << "relay grant to " << account << " goes again: its card lists a new device";
+  SendGrants({(*issued)->grant});
+}
+
 std::optional<RelayGrant> RelayGrantCoordinator::GrantFor(const std::string& recipient) {
   IRelayGrantStore* store = nullptr;
   {
@@ -274,6 +294,60 @@ void RelayGrantCoordinator::Ask(const std::string& account, const bool refused) 
   }
   log().info << "asking " << account << " for a relay grant";
   lane_.SendToMany({ControlSend{.peer_identity = account, .control = std::move(*ask)}}, {}, WorkerLane::Normal);
+}
+
+Roe<std::vector<RelayGrant>> RelayGrantCoordinator::ReceivedForLocker() {
+  IRelayGrantStore* store = nullptr;
+  {
+    std::lock_guard lock(mutex_);
+    store = store_;
+  }
+  return store ? store->AllReceived() : Roe<std::vector<RelayGrant>>(std::vector<RelayGrant>{});
+}
+
+void RelayGrantCoordinator::TakeFromLocker(const std::vector<RelayGrant>& grants, const bool look_up_keys) {
+  IRelayGrantStore* store = nullptr;
+  std::function<void(const std::string&)> on_received;
+  {
+    std::lock_guard lock(mutex_);
+    store = store_;
+    on_received = on_grant_received_;
+  }
+  const std::string own = OwnAccount();
+  if (!store || own.empty()) {
+    return;
+  }
+  for (const RelayGrant& grant : grants) {
+    const std::string& grantor = grant.recipient_account_id;
+    if (grant.sender_account_id != own || grantor == own) {
+      continue; // another account's (a copy from before a profile reset): not ours to use
+    }
+    auto held = store->Received(grantor);
+    if (held && *held && (*held)->issued_at >= grant.issued_at) {
+      continue;
+    }
+    auto key = look_up_keys ? peer_keys_.Signing().Resolve("account", grantor)
+                            : peer_keys_.KeptSigning().Resolve("account", grantor);
+    if (!key) {
+      log().warning << "relay grant from the locker not kept: no key for its grantor (" << key.error().message << ")";
+      continue;
+    }
+    if (auto checked = CheckRelayGrant(grant, grantor, own, key->signing_public_key_b64, Now()); !checked) {
+      log().warning << "relay grant from the locker not kept: " << checked.error().message;
+      continue;
+    }
+    if (auto kept = store->PutReceived(grant); !kept) {
+      log().warning << "relay grant from the locker not kept: " << kept.error().message;
+      continue;
+    }
+    {
+      std::lock_guard lock(mutex_);
+      lacking_since_.erase(grantor);
+    }
+    if (on_received) {
+      on_received(grantor); // what its stranger quota held back goes now, as on a grant received
+    }
+  }
 }
 
 Roe<void> RelayGrantCoordinator::OnNotice(const relay_grant::Notice& notice, const std::string& sender) {

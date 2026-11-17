@@ -9,12 +9,19 @@
 #include "mesh/types/IDirectoryClient.h"
 
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <string>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
 namespace pbr {
+
+/**
+ * The source our own card is kept under when it came back from our relays' directories (OwnCards' recovery): checked
+ * by OwnCards against our own account keys first, so it passes the own-account guard (CheckNotOwn).
+ */
+inline constexpr const char kOwnCardRecoveredSource[] = "recovered";
 
 /**
  * Where an account's signing and KEM keys come from (docs/contracts/ACCOUNT_CARD.md#resolving-keys): the
@@ -27,6 +34,13 @@ public:
   AccountKeyResolver(PeerSigningKeyStore& signing_keys, PeerKemKeyStore& kem_keys, PeerCards& cards,
                      mesh::IDirectoryClient& directory);
 
+  /**
+   * The profile's own Account ID (any thread; empty: not known). A card of our own account is kept only from our own
+   * devices (sources `self`, `sibling`: OwnCards) or as OwnCards got it back from our relays, checked against our own
+   * account keys (kOwnCardRecoveredSource): one carried back by a contact, a directory or a relay any other way is
+   * refused, so it never relabels our record (the profile.db ladder and the device list read it).
+   */
+  void SetOwnAccount(std::function<std::string()> own_account) { own_account_ = std::move(own_account); }
   /** Fills the key stores from every kept card (at unlock). */
   void LoadKeptCards();
   /** What is kept for `account_id` (no lookup). */
@@ -60,6 +74,11 @@ public:
   IPeerKemKeyResolver& Kem() { return kem_; }
 
 private:
+  /** Refused: a card of our own account from anyone but our own devices. */
+  Roe<void> CheckNotOwn(const std::string& account_id, const std::string& source) const;
+
+  std::function<std::string()> own_account_;
+
   class SigningView : public IPeerSigningKeyResolver {
   public:
     explicit SigningView(AccountKeyResolver& owner) : owner_(owner) {}

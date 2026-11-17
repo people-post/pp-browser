@@ -3,6 +3,7 @@
 #include "lib/net/OrgBackendClients.h"
 
 #include <functional>
+#include <memory>
 #include <string>
 
 namespace pbr {
@@ -15,8 +16,14 @@ class IClientCompatClient;
  */
 struct MessagingCompatPorts {
   std::function<bool()> messaging_initialized;
-  std::function<IClientCompatClient*()> client_compat;
+  /** Shared: a fetch on a worker keeps the client it started with when the org's relay changes. */
+  std::function<std::shared_ptr<IClientCompatClient>()> client_compat;
   std::function<std::string()> profile_data_dir;
+  /**
+   * Subscribes `upgrade_required` (nullptr: unsubscribes): the org's relay answered a call `426
+   * client_upgrade_required` (any thread; ConversationsHub::SetOnOrgRelayRequiresUpgrade).
+   */
+  std::function<void(std::function<void()> upgrade_required)> watch_upgrade_required;
 };
 
 class ConversationsHub;

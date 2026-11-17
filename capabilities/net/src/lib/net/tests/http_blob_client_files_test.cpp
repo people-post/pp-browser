@@ -226,7 +226,9 @@ protected:
       signed_.push_back(BytesToHex(bytes));
       return std::string("sig");
     });
+    client_.SetAudience(std::make_shared<FixedRelayAudience>(kAudience));
   }
+  static constexpr const char* kAudience = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
   void SetUp() override {
     dir_ =
         std::filesystem::temp_directory_path() / ("pp_blob_files_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
@@ -260,6 +262,8 @@ TEST_F(HttpBlobClientFilesTest, StartPutCompleteGivesTheShareLinkOnTheRelayOrigi
   EXPECT_EQ(starts[0].getNonNegInt("byte_length").value_or(0), 5016u) << "the ciphertext length is reserved";
   EXPECT_EQ(starts[0].getString("account_id").value_or(""), "account:u1");
   EXPECT_EQ(starts[0].getString("signature").value_or(""), "sig");
+  EXPECT_EQ(starts[0].getString("audience").value_or(""), kAudience) << "the relay it is signed for (MR007-AUD)";
+  EXPECT_EQ(starts[0].getIf<int64_t>("sign_version"), 2) << "the version byte its bytes carry";
   EXPECT_EQ(relay_.PutBytes(), 5016u);
   ASSERT_EQ(relay_.Bodies("complete").size(), 1u);
   EXPECT_EQ(relay_.Bodies("complete")[0].getString("blob_id").value_or(""), uploaded->blob_id);
@@ -269,7 +273,7 @@ TEST_F(HttpBlobClientFilesTest, StartPutCompleteGivesTheShareLinkOnTheRelayOrigi
   // The signed bytes are the start domain's, for the timestamp the body carries.
   ASSERT_FALSE(signed_.empty());
   const auto ts = static_cast<int64_t>(starts[0].getNonNegInt("timestamp").value_or(0));
-  EXPECT_EQ(signed_.front(), BytesToHex(BuildFileStartSignBytes("account:u1", 5016, ts)));
+  EXPECT_EQ(signed_.front(), BytesToHex(BuildFileStartSignBytes(kAudience, "account:u1", 5016, ts)));
 }
 
 TEST_F(HttpBlobClientFilesTest, BytesInMemoryGoTheSameWay) {
@@ -464,7 +468,7 @@ TEST_F(RelayFileMultipartTest, TwoFullPartsAndAShortOneThenComplete) {
   EXPECT_EQ(first.getString("blob_id").value_or(""), uploaded->blob_id);
   const auto ts = static_cast<int64_t>(first.getNonNegInt("timestamp").value_or(0));
   EXPECT_NE(std::find(signed_.begin(), signed_.end(),
-                      BytesToHex(BuildFilePartSignBytes("account:u1", uploaded->blob_id, 1, ts))),
+                      BytesToHex(BuildFilePartSignBytes(kAudience, "account:u1", uploaded->blob_id, 1, ts))),
             signed_.end());
 }
 

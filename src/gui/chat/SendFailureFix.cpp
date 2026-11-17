@@ -8,21 +8,21 @@ namespace pbr {
 
 RefreshOutcome ClassifyRefresh(const ContactRefreshResult& result) {
   using Devices = ContactRefreshResult::Devices;
-  using Directory = ContactRefreshResult::Directory;
-  if (result.directory_keys_rejected) {
+  using Outcome = ContactRefreshResult::RelayAsk::Outcome;
+  if (result.relay_keys_rejected) {
     return RefreshOutcome::KeysRejected;
   }
   if (!result.NothingAnswered()) {
     return RefreshOutcome::Found;
   }
-  switch (result.directory) {
-    case Directory::NotFound:
-      return RefreshOutcome::NotFound;
-    case Directory::Unreachable:
-      return RefreshOutcome::Unreachable;
-    case Directory::NotAsked:
-    case Directory::Answered:
-      break;
+  const bool relay_unreachable =
+      std::any_of(result.relays.begin(), result.relays.end(),
+                  [](const ContactRefreshResult::RelayAsk& ask) { return ask.outcome == Outcome::Unreachable; });
+  if (relay_unreachable) {
+    return RefreshOutcome::Unreachable;
+  }
+  if (!result.relays.empty()) {
+    return RefreshOutcome::NotFound; // every relay asked answered without the account
   }
   return result.devices == Devices::NotReached ? RefreshOutcome::Unreachable : RefreshOutcome::NothingToAsk;
 }

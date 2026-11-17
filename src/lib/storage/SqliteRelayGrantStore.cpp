@@ -185,6 +185,40 @@ Roe<void> SqliteRelayGrantStore::PutReceived(const RelayGrant& grant) {
   return Put(kReceived, grant.recipient_account_id, grant, false, /*only_if_newer=*/true);
 }
 
+Roe<std::vector<RelayGrant>> SqliteRelayGrantStore::AllReceived() {
+  std::lock_guard lock(mutex_);
+  auto opened = OpenDb();
+  if (!opened) {
+    return opened.error();
+  }
+  std::unique_ptr<sqlite3, DbCloser> db(*opened);
+  sqlite3_stmt* raw = nullptr;
+  if (sqlite3_prepare_v2(db.get(),
+                         "SELECT recipient_account, sender_account, issued_at, expires_at, signature FROM relay_grants "
+                         "WHERE direction = ?1 ORDER BY peer_account",
+                         -1, &raw, nullptr) != SQLITE_OK) {
+    sqlite3_finalize(raw);
+    return Error("relay_grants list prepare failed");
+  }
+  std::unique_ptr<sqlite3_stmt, StmtCloser> stmt(raw);
+  sqlite3_bind_text(raw, 1, kReceived, -1, SQLITE_STATIC);
+  std::vector<RelayGrant> all;
+  int rc = SQLITE_ROW;
+  while ((rc = sqlite3_step(raw)) == SQLITE_ROW) {
+    RelayGrant grant;
+    grant.recipient_account_id = ColumnText(raw, 0);
+    grant.sender_account_id = ColumnText(raw, 1);
+    grant.issued_at = sqlite3_column_int64(raw, 2);
+    grant.expires_at = sqlite3_column_int64(raw, 3);
+    grant.signature = ColumnText(raw, 4);
+    all.push_back(std::move(grant));
+  }
+  if (rc != SQLITE_DONE) {
+    return Error("relay_grants list failed");
+  }
+  return all;
+}
+
 Roe<void> SqliteRelayGrantStore::DropReceived(const std::string& recipient_account_id) {
   return Drop(kReceived, recipient_account_id);
 }

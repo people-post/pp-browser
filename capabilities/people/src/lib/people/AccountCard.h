@@ -27,9 +27,13 @@ struct AccountCardDevice {
   bool operator==(const AccountCardDevice&) const = default;
 };
 
-/** A relay the account receives on (multi-relay MR002): named by the HTTPS base URL a client uses. */
+/**
+ * A relay the account receives on (multi-relay MR002 / MR007): named by the HTTPS base URL a client uses and by its
+ * PeerId, the audience a sender signs its send into that relay for.
+ */
 struct AccountCardRelay {
   std::string origin;
+  std::string peer_id;
 
   bool operator==(const AccountCardRelay&) const = default;
 };
@@ -74,8 +78,10 @@ Roe<void> VerifyCardDevice(const AccountCardDevice& device);
  */
 bool IsCardRelayOrigin(const std::string& origin);
 /**
- * A relay list is within MR004's bounds: at most 4 entries, each IsCardRelayOrigin, no two the same relay (scheme and
- * host compared without case, `:443` as no port, an empty path as `/`). A list breaking one is refused whole.
+ * A relay list is within MR004's and MR007's bounds: at most 4 entries, each IsCardRelayOrigin with a `peer_id` of an
+ * ML-DSA PeerId's form (IsMlDsaPeerIdForm), no two the same relay by origin (scheme and host compared without case,
+ * `:443` as no port, an empty path as `/`) or by `peer_id`. A list breaking one is refused whole. (Whether a relay's
+ * key derives its PeerId only the relay can tell: it refuses a wrong one, `wrong_audience`.)
  */
 Roe<void> VerifyCardRelays(const std::vector<AccountCardRelay>& relays);
 /** How far ahead of the receiver's clock a card's `issued_at` may be. */
@@ -92,7 +98,7 @@ Roe<void> VerifyKeyCard(const KeyCard& card);
  */
 Roe<void> VerifyAccountCard(const AccountCard& card, int64_t now_ms);
 
-/** What the account signs (domain pp-browser:account-card-v3); empty when a key does not decode to its size. */
+/** What the account signs (domain pp-browser:account-card-v4); empty when a key does not decode to its size. */
 ByteVector AccountCardSignBytes(const AccountCard& card);
 /** Signs `card` (all but its signature filled) with `sign` (the account key, base64 out). */
 Roe<AccountCard> SignAccountCard(AccountCard card, const std::function<Roe<std::string>(const ByteVector&)>& sign);

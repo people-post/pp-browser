@@ -34,6 +34,9 @@ Environment:
   PP_API_URL_PROD     prod backend origin compiled in (registration / directory URLs derive
                       from it; empty = none, so set it or the node's config / env for a release)
   PP_API_URL_QA       QA backend origin compiled in (empty = none)
+  PP_RELAY_PEER_ID_PROD  PeerId of the prod relay (multi-relay MR008): the registration relay's with the
+                      compiled URL (empty = pinned on first use, or registration.peer_id)
+  PP_RELAY_PEER_ID_QA PeerId of the QA relay (empty = none)
 EOF
 }
 
@@ -59,7 +62,9 @@ do_configure() {
     -DPP_BROWSER_VERSION="${PROJECT_VERSION}" \
     -DPP_BROWSER_RELEASE_VERSION="${RELEASE_VERSION}" \
     -DPP_API_URL_PROD="${PP_API_URL_PROD:-}" \
-    -DPP_API_URL_QA="${PP_API_URL_QA:-}"
+    -DPP_API_URL_QA="${PP_API_URL_QA:-}" \
+    -DPP_RELAY_PEER_ID_PROD="${PP_RELAY_PEER_ID_PROD:-}" \
+    -DPP_RELAY_PEER_ID_QA="${PP_RELAY_PEER_ID_QA:-}"
 }
 
 do_build() {

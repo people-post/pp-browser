@@ -2,6 +2,7 @@
 
 #include "lib/storage/SqliteCallSessionStore.h"
 #include "lib/storage/SqliteGroupRosterStore.h"
+#include "lib/storage/SqlitePeerSessionStore.h"
 #include "lib/storage/SqliteThreadLocalPrefsStore.h"
 #include "lib/storage/SqliteThreadSchema.h"
 
@@ -43,6 +44,9 @@ Roe<void> CreateProfileDb(const SqliteMigrationContext& context) {
   }
   if (auto prefs = SqliteThreadLocalPrefsStore::EnsureSchema(db); !prefs) {
     return prefs.error();
+  }
+  if (auto sessions = SqlitePeerSessionStore::EnsureSchema(db); !sessions) {
+    return sessions.error();
   }
   return SqliteCallSessionStore::EnsureSchema(db);
 }
@@ -126,6 +130,11 @@ Roe<void> ExecIfTable(sqlite3* db, const char* table, const char* sql, const std
 /** A stored id from before multi-relay MR001: the relay's per-relay `relay:` id (or its `relay_user` kind). */
 constexpr const char* kRelayIdMatch = "LIKE 'relay:%'";
 
+/** kRelayIdMatch, on a session read from a file older than the step that drops them. */
+bool KeyedByRelayId(const PeerSessionRecord& session) {
+  return session.key.peer_identity_kind == "relay_user" || session.key.peer_identity_value.rfind("relay:", 0) == 0;
+}
+
 /**
  * 5 → 6, Account IDs (multi-relay MR001): the relay's `relay:` ids are gone, and nothing in profile.db can turn one
  * into an Account ID — so what is keyed by one is dropped: a chat's session keys (a new session opens on the next
@@ -161,9 +170,17 @@ Roe<void> ProfileDbAccountIds(const SqliteMigrationContext& context) {
 }
 
 /**
+ * Our own account's record in `peer_cards`: the row of the profile's Account ID (?1). The record's `source` drifts (a
+ * card of ours carried back by a contact, a directory or a relay relabels it), so it decides only when the Account
+ * ID is not known.
+ */
+constexpr const char* kOwnRecord =
+    "(account_id = ?1 OR (?1 = '' AND json_extract(record_json, '$.source') IN ('self', 'sibling')))";
+
+/**
  * 6 → 7, account card version 3 (multi-relay MR002 / MR005: the card signs its relays and floor). A kept version 2
  * card cannot be re-signed here:
- * - our own (the record OwnCards writes, source `self` or `sibling`) takes the version 3 shape with no relays and floor
+ * - our own (the profile's Account ID's record, kOwnRecord) takes the version 3 shape with no relays and floor
  *   0, its old signature kept: it does not verify, so OwnCards re-issues it on its first use, its device list as it
  *   was (a fresh list would sign out the account's other devices);
  * - anyone else's goes, the verified keys staying as a key card: their next envelope asks for the newer card
@@ -176,12 +193,35 @@ Roe<void> ProfileDbCardV3(const SqliteMigrationContext& context) {
       std::string(
           "UPDATE peer_cards SET record_json = json_set(record_json, '$.newest_card.card_version', 3, "
           "'$.newest_card.relays', json('[]'), '$.newest_card.initiation_floor', 0) WHERE ") +
-      kV2 + " AND json_extract(record_json, '$.source') IN ('self', 'sibling')";
-  if (auto done = ExecIfTable(context.db, "peer_cards", own.c_str()); !done) {
+      kV2 + " AND " + kOwnRecord;
+  if (auto done = ExecIfTable(context.db, "peer_cards", own.c_str(), context.own_account_id); !done) {
     return done;
   }
   const std::string others =
       std::string("UPDATE peer_cards SET record_json = json_remove(record_json, '$.newest_card') WHERE ") + kV2;
+  return ExecIfTable(context.db, "peer_cards", others.c_str());
+}
+
+/**
+ * 7 → 8, account card version 4 (multi-relay MR007: each relay on the card names its PeerId). A kept version 3 card
+ * cannot be re-signed here (the step 6 → 7 pattern):
+ * - our own (the profile's Account ID's record, kOwnRecord) takes the version 4 shape with no relays, its old signature kept: it does not
+ *   verify, so OwnCards re-issues it on its first use with its device list (and our pinned relays);
+ * - anyone else's goes, the verified keys staying as a key card: it is asked for again (the next envelope's
+ *   `sender_card_at`, or the contact page's refresh).
+ * A record that is not JSON is left as it is.
+ */
+Roe<void> ProfileDbCardV4(const SqliteMigrationContext& context) {
+  constexpr const char* kV3 = "json_valid(record_json) AND json_extract(record_json, '$.newest_card.card_version') = 3";
+  const std::string own = std::string(
+                              "UPDATE peer_cards SET record_json = json_set(record_json, "
+                              "'$.newest_card.card_version', 4, '$.newest_card.relays', json('[]')) WHERE ") +
+                          kV3 + " AND " + kOwnRecord;
+  if (auto done = ExecIfTable(context.db, "peer_cards", own.c_str(), context.own_account_id); !done) {
+    return done;
+  }
+  const std::string others =
+      std::string("UPDATE peer_cards SET record_json = json_remove(record_json, '$.newest_card') WHERE ") + kV3;
   return ExecIfTable(context.db, "peer_cards", others.c_str());
 }
 
@@ -226,7 +266,7 @@ const SqliteSchemaLadder& ProfileDbLadder() {
       kSqliteThreadProfileFloorVersion,
       kSqliteThreadProfileUserVersion,
       CreateProfileDb,
-      {{4, ProfileDbBaseline}, {5, ProfileDbAccountIds}, {6, ProfileDbCardV3}},
+      {{4, ProfileDbBaseline}, {5, ProfileDbAccountIds}, {6, ProfileDbCardV3}, {7, ProfileDbCardV4}},
   };
   return ladder;
 }
@@ -240,6 +280,34 @@ const SqliteSchemaLadder& ThreadDbLadder() {
       {{2, ThreadDbBaseline}, {3, ThreadDbAccountIds}},
   };
   return ladder;
+}
+
+Roe<std::vector<PeerSessionRecord>> ReadSessionsKeptBelowFloor(sqlite3* old_db) {
+  auto stored = SqlitePeerSessionStore::ReadStored(old_db);
+  if (!stored) {
+    return stored.error();
+  }
+  std::vector<PeerSessionRecord> kept = SessionsAChatResetKeeps(std::move(*stored));
+  // What a step above the file's version drops from the sessions stays dropped (5 → 6: the relay's ids).
+  std::erase_if(kept, KeyedByRelayId);
+  return kept;
+}
+
+Roe<void> WriteSessionsKeptBelowFloor(sqlite3* new_db, const std::vector<PeerSessionRecord>& kept) {
+  if (auto begun = SqliteThreadExecSql(new_db, "BEGIN IMMEDIATE;"); !begun) {
+    return begun.error();
+  }
+  for (const PeerSessionRecord& sealed : kept) {
+    if (auto written = SqlitePeerSessionStore::WriteStored(new_db, sealed); !written) {
+      (void)SqliteThreadExecSql(new_db, "ROLLBACK;");
+      return written.error();
+    }
+  }
+  if (auto committed = SqliteThreadExecSql(new_db, "COMMIT;"); !committed) {
+    (void)SqliteThreadExecSql(new_db, "ROLLBACK;");
+    return committed.error();
+  }
+  return {};
 }
 
 std::optional<ChatStoreProblem> ChatStoreProblemFor(const Roe<SqliteLadderOutcome>& outcome) {

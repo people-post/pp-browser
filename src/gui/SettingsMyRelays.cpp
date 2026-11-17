@@ -1,0 +1,276 @@
+#include "gui/SettingsMyRelays.h"
+
+#include "feature/settings/MyRelays.h"
+#include "foundation/i18n/LocalizationService.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/PbrCompat.h"
+#include "gui/UserFeedback.h"
+#include "gui/shell/DataModelHost.h"
+#include "lib/ui/DataEvent.h"
+
+#include <ui/base/SystemInterface.h>
+#include <ui/data/DataModelHandle.h>
+
+#include <utility>
+
+namespace pbr {
+
+SettingsMyRelays::SettingsMyRelays(const SettingsCommands& commands, const ShellFeedbackPorts& feedback,
+                                   std::function<void(const Error&)> report_failure)
+    : commands_(commands), feedback_(feedback), report_failure_(std::move(report_failure)) {}
+
+SettingsMyRelays::~SettingsMyRelays() {
+  *alive_ = false;
+  if (watching_ && commands_.watch_my_relays) {
+    commands_.watch_my_relays(nullptr);
+  }
+}
+
+void SettingsMyRelays::Bind(ui::DataModelConstructor& ctor) {
+  if (auto row = ctor.RegisterStruct<Row>()) {
+    row.RegisterMember("origin", &Row::origin);
+    row.RegisterMember("label", &Row::label);
+    row.RegisterMember("state", &Row::state);
+    row.RegisterMember("state_kind", &Row::state_kind);
+    row.RegisterMember("reach", &Row::reach);
+    row.RegisterMember("reach_failed", &Row::reach_failed);
+    row.RegisterMember("preferred", &Row::preferred);
+    row.RegisterMember("can_make_preferred", &Row::can_make_preferred);
+    row.RegisterMember("can_remove", &Row::can_remove);
+    row.RegisterMember("has_link", &Row::has_link);
+  }
+  ctor.RegisterArray<std::vector<Row>>();
+  ctor.Bind("my_relay_rows", &rows_);
+  ctor.Bind("my_relays_shown", &shown_);
+  ctor.Bind("my_relays_editable", &editable_);
+  ctor.Bind("my_relays_can_add", &can_add_);
+  ctor.Bind("my_relay_adding", &adding_);
+  ctor.Bind("my_relay_can_scan", &can_scan_);
+  ctor.Bind("my_relays_busy", &busy_);
+  ctor.Bind("my_relay_draft", &draft_);
+  ctor.Bind("my_relay_add_error", &add_error_);
+  ctor.Bind("my_relays_org_mismatch", &org_identity_mismatch_);
+  ctor.BindEventCallback("start_add_my_relay", DataEvent<>([this]() { StartAdd(); }));
+  ctor.BindEventCallback("cancel_add_my_relay", DataEvent<>([this]() { CancelAdd(); }));
+  ctor.BindEventCallback("add_my_relay", DataEvent<>([this]() { Add(); }));
+  ctor.BindEventCallback("scan_my_relay_link", DataEvent<>([this]() { ScanLink(); }));
+  ctor.BindEventCallback("make_relay_preferred", DataEvent<int>([this](const int index) { MakePreferred(index); }));
+  ctor.BindEventCallback("remove_my_relay", DataEvent<int>([this](const int index) { Remove(index); }));
+  ctor.BindEventCallback("copy_relay_link", DataEvent<int>([this](const int index) { CopyLink(index); }));
+}
+
+void SettingsMyRelays::Watch() {
+  if (!commands_.watch_my_relays) {
+    return; // set again at every read: the ports may have been bound anew (a profile reset)
+  }
+  watching_ = true;
+  std::weak_ptr<bool> alive = alive_;
+  commands_.watch_my_relays([this, alive]() {
+    AppRuntime::PostUI([this, alive]() {
+      if (auto live = alive.lock(); live && *live) {
+        Refresh();
+      }
+    });
+  });
+}
+
+void SettingsMyRelays::Refresh() {
+  if (!commands_.my_relays) {
+    Show(Error("Messaging is not ready"));
+    return;
+  }
+  Watch();
+  const uint64_t count = ++refresh_count_;
+  std::weak_ptr<bool> alive = alive_;
+  // The port copied here, on the UI thread: the commands are bound anew (a quit, a profile reset) on this thread only.
+  AppRuntime::PostWorkerNormal([this, count, alive, list = commands_.my_relays]() {
+    auto listed = list();
+    AppRuntime::PostUI([this, count, alive, listed = std::move(listed)]() mutable {
+      if (auto live = alive.lock(); live && *live && count == refresh_count_) {
+        Show(std::move(listed));
+      }
+    });
+  });
+}
+
+void SettingsMyRelays::Show(Roe<MyRelaysView> listed) {
+  // Messaging not up (or no account yet): nothing to show, and nothing to report.
+  view_ = listed ? std::move(*listed) : MyRelaysView{};
+  rows_.clear();
+  rows_.reserve(view_.relays.size());
+  for (const MyRelayRowView& relay : view_.relays) {
+    rows_.push_back({.origin = relay.origin.c_str(),
+                     .label = relay.label.c_str(),
+                     .state = relay.state.c_str(),
+                     .state_kind = relay.state_kind.c_str(),
+                     .reach = relay.reach.c_str(),
+                     .reach_failed = relay.reach_failed,
+                     .preferred = relay.preferred,
+                     .can_make_preferred = relay.can_make_preferred,
+                     .can_remove = relay.can_remove,
+                     .has_link = !relay.link.empty()});
+  }
+  // The whole line, its host in its place (the RML cannot put one into a string).
+  org_identity_mismatch_ =
+      view_.org_identity_mismatch.empty()
+          ? ""
+          : Tr("settings.relays.org_identity_mismatch", {{"host", MyRelayLabel(view_.org_identity_mismatch)}}).c_str();
+  shown_ = !rows_.empty();
+  editable_ = view_.editable;
+  can_add_ = view_.can_add;
+  if (!can_add_) {
+    adding_ = false;
+  }
+  DirtyAll();
+}
+
+void SettingsMyRelays::DirtyAll() {
+  DataModelHost& host = DataModelHost::Instance();
+  for (const char* field :
+       {"my_relay_rows", "my_relays_shown", "my_relays_editable", "my_relays_can_add", "my_relay_adding",
+        "my_relays_busy", "my_relay_draft", "my_relay_add_error", "my_relays_org_mismatch", "my_relay_can_scan"}) {
+    host.Dirty("settings", field);
+  }
+}
+
+void SettingsMyRelays::StartAdd() {
+  adding_ = can_add_;
+  can_scan_ = static_cast<bool>(commands_.scan_relay_link);
+  draft_ = "";
+  add_error_ = "";
+  DirtyAll();
+}
+
+void SettingsMyRelays::CancelAdd() {
+  adding_ = false;
+  add_error_ = "";
+  DirtyAll();
+}
+
+void SettingsMyRelays::Add() {
+  if (busy_ || !adding_) {
+    return;
+  }
+  if (!commands_.add_my_relay) {
+    report_failure_(Error("Messaging is not ready"));
+    return;
+  }
+  AddNow(draft_.c_str());
+}
+
+void SettingsMyRelays::ScanLink() {
+  if (busy_ || !adding_ || !commands_.scan_relay_link) {
+    return;
+  }
+  std::weak_ptr<bool> alive = alive_;
+  commands_.scan_relay_link([this, alive](std::string text) {
+    if (auto live = alive.lock(); !live || !*live || busy_ || !adding_) {
+      return;
+    }
+    // The QR code's text is checked as a pasted link is (it never runs anything): shown, then added.
+    draft_ = text.c_str();
+    AddNow(text);
+  });
+}
+
+void SettingsMyRelays::AddNow(const std::string& typed) {
+  busy_ = true;
+  add_error_ = "";
+  DirtyAll();
+  std::weak_ptr<bool> alive = alive_;
+  AppRuntime::PostWorkerNormal([this, typed, alive, add = commands_.add_my_relay]() {
+    Roe<void> added = add(typed);
+    AppRuntime::PostUI([this, alive, added = std::move(added)]() {
+      if (auto live = alive.lock(); !live || !*live) {
+        return;
+      }
+      busy_ = false;
+      if (!added) {
+        add_error_ = MyRelaysFailureText(added.error()).c_str(); // under the field: the user fixes it there
+        DirtyAll();
+        return;
+      }
+      adding_ = false;
+      add_error_ = "";
+      draft_ = "";
+      Refresh();
+      UserFeedback::Ok(Tr("settings.relays.added"));
+    });
+  });
+}
+
+const MyRelayRowView* SettingsMyRelays::RowAt(const int index) const {
+  if (index < 0 || index >= static_cast<int>(view_.relays.size())) {
+    return nullptr;
+  }
+  return &view_.relays[static_cast<size_t>(index)];
+}
+
+void SettingsMyRelays::MakePreferred(const int index) {
+  const MyRelayRowView* row = RowAt(index);
+  if (!row || !row->can_make_preferred) {
+    return;
+  }
+  Change(row->origin, commands_.make_relay_preferred, Tr("settings.relays.made_preferred"));
+}
+
+void SettingsMyRelays::Remove(const int index) {
+  const MyRelayRowView* row = RowAt(index);
+  if (!row || !row->can_remove || !feedback_.show_confirm) {
+    return;
+  }
+  const auto& show_confirm =
+      feedback_.show_confirm_destructive ? feedback_.show_confirm_destructive : feedback_.show_confirm;
+  show_confirm(
+      Tr("settings.relays.remove_confirm_title"), Tr("settings.relays.remove_confirm_message", {{"relay", row->label}}),
+      // The origin, not the row: the list may be read again (and reordered) while the dialog is open.
+      [this, origin = row->origin](const bool ok) {
+        if (ok) {
+          Change(origin, commands_.remove_my_relay, Tr("settings.relays.removed"));
+        }
+      },
+      Tr("settings.relays.remove_confirm_ok"));
+}
+
+void SettingsMyRelays::CopyLink(const int index) {
+  const MyRelayRowView* row = RowAt(index);
+  if (!row || row->link.empty()) {
+    return;
+  }
+  // What another person (or another app of ours) adds this relay by: its address with its ID (MR008).
+  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+    system->SetClipboardText(row->link.c_str());
+    UserFeedback::Ok(Tr("settings.relays.link_copied"));
+  }
+}
+
+void SettingsMyRelays::Change(const std::string& origin, std::function<Roe<void>(const std::string& origin)> change,
+                              const std::string& done) {
+  if (origin.empty() || busy_) {
+    return;
+  }
+  if (!change) {
+    report_failure_(Error("Messaging is not ready"));
+    return;
+  }
+  busy_ = true;
+  DirtyAll();
+  std::weak_ptr<bool> alive = alive_;
+  AppRuntime::PostWorkerNormal([this, alive, origin, change = std::move(change), done]() {
+    Roe<void> changed = change(origin);
+    AppRuntime::PostUI([this, alive, changed = std::move(changed), done]() {
+      if (auto live = alive.lock(); !live || !*live) {
+        return;
+      }
+      busy_ = false;
+      Refresh();
+      if (!changed) {
+        report_failure_(Error(MyRelaysFailureText(changed.error())));
+        return;
+      }
+      UserFeedback::Ok(done);
+    });
+  });
+}
+
+} // namespace pbr

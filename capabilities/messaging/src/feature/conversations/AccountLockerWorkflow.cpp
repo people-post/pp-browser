@@ -125,6 +125,16 @@ Roe<AccountLockerState> AccountLockerWorkflow::CurrentState() {
       log().warning << "Locker without card floors: " << floors.error().message;
     }
   }
+  if (sources_.grants) {
+    if (auto grants = sources_.grants()) {
+      state.extras.grants = account_locker::CapGrants(std::move(*grants), util::NowUnixMs());
+    } else {
+      log().warning << "Locker without grants: " << grants.error().message;
+    }
+  }
+  if (sources_.relays) {
+    state.extras.relays = sources_.relays();
+  }
   return state;
 }
 
@@ -274,10 +284,21 @@ Roe<void> AccountLockerWorkflow::TakeRemoteContacts(const std::vector<Contact>& 
   return {};
 }
 
+void AccountLockerWorkflow::SetClient(std::shared_ptr<ILockerClient> client) {
+  std::lock_guard lock(mutex_);
+  client_ = std::move(client);
+}
+
+std::shared_ptr<ILockerClient> AccountLockerWorkflow::Client() const {
+  std::lock_guard lock(mutex_);
+  return client_;
+}
+
 Roe<uint64_t> AccountLockerWorkflow::Publish() {
   // One sync at a time: it reads the locker, changes the address book and writes the locker.
   std::lock_guard sync(sync_mutex_);
-  if (!client_) {
+  const std::shared_ptr<ILockerClient> client = Client(); // this sync's, whatever the provider becomes meanwhile
+  if (!client) {
     return Error("No locker provider configured");
   }
   auto seed = identity_.RecoverySeed();
@@ -319,6 +340,9 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
         sources_.take_dissolved(dissolved);
       }
     }
+    if (sources_.take_grants && !(*stored)->state.extras.grants.empty()) {
+      sources_.take_grants((*stored)->state.extras.grants);
+    }
   }
   // 3. Device names: the locker's into ours (the larger `at` wins; a locker without the key erases nothing), then
   // this device's default name, only when no entry for it exists anywhere — never over one it was given.
@@ -359,6 +383,7 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
     state->device_names = device_names_;
   }
   AccountLockerState merged = *stored ? account_locker::MergeForPublish(*state, (*stored)->state) : *state;
+  merged.extras.grants = account_locker::CapGrants(std::move(merged.extras.grants), util::NowUnixMs());
   if (!*stored) {
     merged.device_names = account_locker::CapDeviceNames(merged.device_names);
   }
@@ -383,7 +408,7 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
     return snapshot.error();
   }
   std::optional<LockerPutRefusal> refused;
-  if (auto put = client_->Put(*registered, LockerRecordFromSnapshot(*snapshot), &refused); !put) {
+  if (auto put = client->Put(*registered, LockerRecordFromSnapshot(*snapshot), &refused); !put) {
     return put.error();
   }
   RaiseHighestSeen(locker_id, version);
@@ -399,7 +424,8 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
 
 Roe<std::optional<AccountLockerWorkflow::Fetched>> AccountLockerWorkflow::Fetch(
     const ByteVector& recovery_seed, const std::vector<std::string>& saved_copies) {
-  if (!client_ && saved_copies.empty()) {
+  const std::shared_ptr<ILockerClient> client = Client();
+  if (!client && saved_copies.empty()) {
     return Error("No locker provider configured");
   }
   auto keys = LockerKeysOf(recovery_seed);
@@ -420,8 +446,8 @@ Roe<std::optional<AccountLockerWorkflow::Fetched>> AccountLockerWorkflow::Fetch(
       return Error("The saved copy is damaged: " + snapshot.error().message);
     }
   }
-  if (client_) {
-    auto record = client_->Get(locker_id);
+  if (client) {
+    auto record = client->Get(locker_id);
     if (!record && candidates.empty()) {
       return record.error();
     }

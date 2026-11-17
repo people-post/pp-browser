@@ -39,6 +39,7 @@
 #include "lib/people/PeerCards.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
+#include "lib/people/RegistrationStatus.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/error/AppError.h"
 #include "common/Localized.h"
@@ -51,10 +52,11 @@
 #include "domain/attachments/AttachmentClient.h"
 #include "lib/net/BlobQuota.h"
 #include "lib/net/HttpClient.h"
+#include "lib/net/OrgBackendClientsImpl.h"
 #include "lib/net/ProfileIconClient.h"
 #include "lib/net/ProfileIconFetch.h"
 #include "domain/registration/RegistrationClient.h"
-#include "lib/delivery/RelayOrigins.h"
+#include "lib/net/RelayOrigins.h"
 #include "lib/people/ProfileIconCache.h"
 #include "lib/people/ContactIdentity.h"
 #include "lib/people/ContactTypes.h"
@@ -83,6 +85,7 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <future>
 #include <chrono>
 #include <filesystem>
 #include <unordered_set>
@@ -130,6 +133,14 @@ void FillRegistrationFields(ProfileIdentityView& view, const LocalIdentity& iden
 
 ConversationsHub::ConversationsHub() {
   redirectLogger("ConversationsHub");
+  // A name search asks our other relays' directories on workers while it asks the first itself (multi-relay R2).
+  clients_.SetDirectoryWorker([](std::function<void()> task) {
+    if (!AppRuntime::IsRunning()) {
+      task(); // no pool (a test, start-up): in turn
+      return;
+    }
+    AppRuntime::PostWorkerNormal(std::move(task));
+  });
 }
 
 MeshConnectivityWiringInputs ConversationsHub::MeshInputs() {
@@ -249,52 +260,325 @@ void ConversationsHub::WireRelayAuthSigner() {
 }
 
 void ConversationsHub::UpdateOrgBackendClients(const HubSettings& settings) {
-  clients_.Apply({settings.relay, settings.directory, settings.registration, settings.relay_extra_base_urls});
+  clients_.Apply({.relay = settings.relay,
+                  .directory = settings.directory,
+                  .registration = settings.registration,
+                  .our_relays = our_relays_ ? our_relays_->List().Origins() : std::vector<std::string>{},
+                  .extra_relays = settings.relay_extra_base_urls});
   relay_ = clients_.Relay();
-  push_devices_ = clients_.PushDevices();
-  client_compat_ = clients_.ClientCompat();
-  registration_ = clients_.Registration();
-  blob_ = clients_.Blob();
+  {
+    std::lock_guard lock(clients_mu_);
+    push_devices_ = clients_.PushDevices();
+    client_compat_ = clients_.ClientCompat();
+    registration_ = clients_.Registration();
+    blob_ = clients_.Blob();
+  }
   if (account_locker_) {
     account_locker_->SetClient(clients_.Locker());
   }
-  SetCardRelays();
+  ExpectRelayIdentities(settings); // before the card lists them: each relay's address names its PeerId (MR008)
+  (void)SetCardRelays();
   WireOurRelays();
+  CheckRelayIdentitiesSoon();
 }
 
-void ConversationsHub::SetCardRelays() {
-  // Our card lists the relays we register on (multi-relay MR002), preferred first; OwnCards keeps the https ones.
-  if (!mesh_messaging_) {
+void ConversationsHub::ExpectRelayIdentities(const HubSettings& settings) {
+  const std::shared_ptr<RelayPins> pins = RelayIdentityPins();
+  if (!pins) {
     return;
   }
-  std::vector<std::string> origins{NormalizeRegistrationBackend(Registration().BaseUrl())};
-  for (const BackendClientSet::OurRelay& relay : clients_.OurRelays()) {
-    if (relay.registration) { // the other relays (the preferred one registers through Registration())
-      origins.push_back(relay.origin);
+  // The org's first (the build's or the config's anchor), then ours: a relay of ours naming the org's PeerId at
+  // another address is refused, not the org (MR008).
+  const auto expect = [&pins](const std::string& origin, const std::string& peer_id) {
+    if (!origin.empty() && !peer_id.empty()) {
+      (void)pins->Expect(origin, peer_id); // a conflict is logged and leaves that relay unused
+    }
+  };
+  const std::string home_peer_id =
+      settings.registration.peer_id.empty() && SameRelay(clients_.LockerHome(), clients_.OrgRelay())
+          ? settings.relay.peer_id
+          : settings.registration.peer_id;
+  expect(clients_.OrgRelay(), settings.relay.peer_id);
+  expect(clients_.LockerHome(), home_peer_id);
+  NoteOrgRelayWithoutId(settings, clients_.OrgRelay(), settings.relay.peer_id, "relay.peer_id");
+  NoteOrgRelayWithoutId(settings, clients_.LockerHome(), home_peer_id, "registration.peer_id");
+  const auto named_by_org = [&](const std::string& origin) {
+    return (!settings.relay.peer_id.empty() && SameRelay(origin, clients_.OrgRelay())) ||
+           (!home_peer_id.empty() && SameRelay(origin, clients_.LockerHome()));
+  };
+  if (our_relays_) {
+    for (const OurRelayEntry& entry : our_relays_->List().relays) {
+      if (!named_by_org(entry.origin)) {
+        expect(entry.origin, entry.peer_id); // the org's relay on our list keeps the build's PeerId (a newer build's)
+      }
     }
   }
-  mesh_messaging_->OwnAccountCards().SetRelays(origins);
+}
+
+bool ConversationsHub::SetCardRelays() {
+  // Our card lists the relays we register on (multi-relay MR002), preferred first, each with its pinned PeerId
+  // (MR007: a relay not pinned yet, or whose identity changed, is left off); OwnCards keeps the https ones.
+  const auto pins = RelayIdentityPins();
+  if (!mesh_messaging_ || !pins) {
+    return false;
+  }
+  return mesh_messaging_->OwnAccountCards().SetRelays(pins->PinnedRelays(OurRelayOrigins()));
+}
+
+void ConversationsHub::OpenRelayPins() {
+  CloseRelayPins();
+  auto pins = std::make_shared<RelayPins>(data_dir_);
+  pins->SetKeep([this](const std::string& origin) { return KeepsPin(origin); });
+  pins->SetFirstUse([this](const std::string& origin) { return FirstUseAllowed(origin); });
+  pins->SetOnChanged([this](const std::string&) { OnRelayPinsChanged(); });
+  pins->SetOnNotRegistered([this](const std::string& origin) { HealRegistrationSoon(origin); });
+  pins->SetOnUpgradeRequired([this](const std::string& origin) { OnRelayRequiresUpgrade(origin); });
+  {
+    std::lock_guard lock(relay_pins_mu_);
+    relay_pins_ = pins;
+  }
+  clients_.SetPins(std::move(pins)); // before the clients are built: each signs for its relay's pin
+}
+
+void ConversationsHub::CloseRelayPins() {
+  std::shared_ptr<RelayPins> closing;
+  {
+    std::lock_guard lock(relay_pins_mu_);
+    closing = std::move(relay_pins_);
+  }
+  if (!closing) {
+    return;
+  }
+  closing->SetKeep({});
+  closing->SetFirstUse({});
+  closing->SetOnChanged({});
+  closing->SetOnNotRegistered({});
+  closing->SetOnUpgradeRequired({});
+}
+
+bool ConversationsHub::KeepsPin(const std::string& origin) {
+  // Ours and the org's origins (a relay not ours is never pinned, MR007).
+  std::lock_guard lock(kept_pins_mu_);
+  return std::any_of(kept_pins_.begin(), kept_pins_.end(),
+                     [&origin](const std::string& kept) { return SameRelay(kept, origin); });
+}
+
+void ConversationsHub::NoteOrgRelayWithoutId(const HubSettings& settings, const std::string& origin,
+                                             const std::string& peer_id, const char* setting) {
+  if (origin.empty() || !peer_id.empty() || settings.org_first_use) {
+    return;
+  }
+  // MR008 item 4: a release build takes no relay on its first answer, the org's neither (Me → Network says so).
+  log().error << "the backend's relay at " << origin << " names no relay ID: it is not used (set " << setting
+              << " to the PeerId after # in the relay's link)";
+}
+
+bool ConversationsHub::FirstUseAllowed(const std::string& origin) {
+  // MR008 item 4: a developer build may take a bare origin of ours on its first answer; the org's origins too in a
+  // build that names no PeerId for its compiled backend — a dogfood build, logged as a warning when it happens. A
+  // release build's custom backend (or PP_BROWSER_ORIGIN) without one: never.
+  if (config_.developer_relays) {
+    return KeepsPin(origin);
+  }
+  return config_.org_first_use && IsOrgOrigin(origin);
+}
+
+bool ConversationsHub::IsOrgOrigin(const std::string& origin) {
+  std::lock_guard lock(kept_pins_mu_);
+  return std::any_of(org_origins_.begin(), org_origins_.end(),
+                     [&origin](const std::string& org) { return SameRelay(org, origin); });
+}
+
+void ConversationsHub::OnRelayPinsChanged() {
+  AppRuntime::PostUI([this]() {
+    if (shutdown_requested_.load(std::memory_order_acquire) || !IsMessagingReady()) {
+      return;
+    }
+    // While a pass checks our relays, the card waits for its end: one card with every relay that answers to its
+    // address, not one per check, which a linked device would follow and then follow back.
+    if (checking_passes_.load(std::memory_order_acquire) == 0 && SetCardRelays() && IsMainDevice()) {
+      // A relay pinned now (an Add) or one that does not match its address: our card lists it, or leaves it off.
+      AppRuntime::PostWorkerNormal([this]() { ReissueAndAnnounceCard(); });
+    }
+    NotifyOurRelaysChanged();
+  });
+}
+
+void ConversationsHub::CheckRelayIdentitiesSoon() {
+  std::vector<std::string> origins = OurRelayOrigins();
+  std::vector<std::string> org;
+  for (const std::string& origin : {clients_.OrgRelay(), clients_.LockerHome()}) {
+    if (!origin.empty()) {
+      origins.push_back(origin); // the org's origins are checked whether or not they are ours (lockers, the LLM token)
+      org.push_back(origin);
+    }
+  }
+  {
+    std::lock_guard lock(kept_pins_mu_);
+    kept_pins_ = origins;
+    org_origins_ = std::move(org);
+  }
+  const std::shared_ptr<RelayPins> pins = RelayIdentityPins();
+  if (!pins) {
+    return;
+  }
+  checking_passes_.fetch_add(1, std::memory_order_acq_rel);
+  AppRuntime::PostWorkerNormal([this, pins, origins = std::move(origins)]() {
+    if (!shutdown_requested_.load(std::memory_order_acquire)) {
+      pins->CheckIdentities(origins); // each change reaches OnRelayPinsChanged (the page; the card waits)
+    }
+    if (checking_passes_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+      OnRelayPinsChanged(); // the pass is over: the card takes what it found, once
+    }
+  });
+}
+
+void ConversationsHub::RecheckRelayIdentitiesSoon() {
+  AppRuntime::PostUI([this]() {
+    if (!shutdown_requested_.load(std::memory_order_acquire) && IsMessagingReady()) {
+      CheckRelayIdentitiesSoon(); // on the hub's thread: it reads the clients
+    }
+  });
+}
+
+void ConversationsHub::HealRegistrationSoon(const std::string& origin) {
+  AppRuntime::PostWorkerNormal([this, origin]() {
+    if (shutdown_requested_.load(std::memory_order_acquire) || !IsMessagingReady()) {
+      return;
+    }
+    const std::vector<std::string> ours = OurRelayOrigins();
+    if (!ours.empty() && SameRelay(origin, ours.front())) {
+      HealPreferredRegistration(util::NowUnixMs());
+      return;
+    }
+    // Another relay of ours (a relay not ours, the org's origin alone, is not healed: nothing of ours is there).
+    if (const auto registrations = OtherRelayRegistrations();
+        registrations && registrations->Lost(origin, util::NowUnixMs())) {
+      RegisterOnOtherRelaysSoon();
+    }
+  });
+}
+
+void ConversationsHub::OnRelayRequiresUpgrade(const std::string& origin) {
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    return;
+  }
+  if (IsOrgOrigin(origin)) {
+    std::function<void()> callback;
+    {
+      std::lock_guard lock(org_upgrade_mu_);
+      callback = on_org_upgrade_required_;
+    }
+    if (callback) {
+      callback(); // the relay refusing us is the authority: the update screen, whatever client-compat says
+    }
+  }
+  // A relay of ours (the org's too when it is one) says why on its row; nothing else is blocked.
+  if (!our_relays_) {
+    return;
+  }
+  for (const OurRelayEntry& entry : our_relays_->List().relays) {
+    if (!SameRelay(entry.origin, origin)) {
+      continue;
+    }
+    if (entry.registration.state == RelayRegistrationRecord::State::Failed &&
+        entry.registration.reason == kRegistrationUpgrade) {
+      return; // said so already
+    }
+    log().warning << "relay " << origin << " needs a newer version of this app (426 client_upgrade_required)";
+    RelayRegistrationRecord record = entry.registration; // its registration id stays (a revoke names it)
+    record.state = RelayRegistrationRecord::State::Failed;
+    record.reason = kRegistrationUpgrade;
+    record.at_ms = util::NowUnixMs();
+    our_relays_->Record(entry.origin, record);
+    NotifyOurRelaysChanged();
+    return;
+  }
+}
+
+void ConversationsHub::HealPreferredRegistration(const int64_t now_ms) {
+  auto identity = Identity().Get();
+  const std::shared_ptr<IRegistrationClient> registration = Registration();
+  // Only a registration we believe current: registered there and not expired (an expired one renews as it does).
+  const RegistrationStatus status =
+      identity ? ClassifyRegistration(*identity, now_ms, registration->BaseUrl()) : RegistrationStatus::Unregistered;
+  if (status != RegistrationStatus::Active && status != RegistrationStatus::ExpiringSoon) {
+    return;
+  }
+  {
+    std::lock_guard lock(preferred_loss_mu_);
+    if (preferred_heal_due_ms_ == 0) {
+      preferred_heal_due_ms_ = preferred_loss_.Lost(now_ms);
+    }
+    if (now_ms < preferred_heal_due_ms_) {
+      return; // lost again soon after the last heal: after its backoff
+    }
+    preferred_heal_due_ms_ = 0;
+  }
+  log().warning << "the preferred relay no longer holds our registration; registering again";
+  // Whatever the auto-renew preference: the person registered there already (MR007 self-heal).
+  auto renewed = FinishAndPersistRegistration(*registration, Identity(), identity->nickname, {}, RegistrationCard(),
+                                              PreferredRegistrationHome());
+  if (!renewed) {
+    log().warning << "registering again on the preferred relay failed: " << renewed.error().message;
+    return;
+  }
+  (void)PushDeviceCoordinator::Register(*this); // push binds again; polling resumes on its own
+}
+
+void ConversationsHub::ReissueAndAnnounceCard() {
+  if (shutdown_requested_.load(std::memory_order_acquire) || !mesh_messaging_ || !IsMessagingReady()) {
+    return; // the next start issues the card (and the registrations carry it)
+  }
+  // Issued now: siblings hear (OwnCards::SetOnChanged), then our contacts get it, and our relays take it.
+  if (auto card = mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs()); !card) {
+    log().warning << "account card not re-issued: " << card.error().message;
+    return;
+  }
+  AnnounceOwnDevicesToContacts();
+  RegisterOnOtherRelaysSoon();
+  if (auto published = MaybeAutoRenewRegistration(*Registration(), Identity(), false, RegistrationCard(),
+                                                  PreferredRegistrationHome());
+      !published) {
+    log().info << "the re-issued card did not reach the preferred relay yet: " << published.error().message;
+  }
 }
 
 void ConversationsHub::WireOurRelays() {
-  std::vector<std::string> origins;
   std::vector<RelayInbox> inboxes;
   std::vector<RelayRegistrationsWorkflow::Relay> others;
+  const OurRelaysList kept = our_relays_ ? our_relays_->List() : OurRelaysList{};
   for (const BackendClientSet::OurRelay& relay : clients_.OurRelays()) {
-    origins.push_back(relay.origin);
     inboxes.push_back(RelayInbox{.origin = relay.origin, .client = relay.relay});
     if (relay.registration) {
-      others.push_back({.origin = relay.origin, .client = relay.registration});
+      RelayRegistrationRecord last;
+      for (const OurRelayEntry& entry : kept.relays) {
+        if (SameRelay(entry.origin, relay.origin)) {
+          last = entry.registration; // what it answered before this start
+        }
+      }
+      others.push_back({.origin = relay.origin, .client = relay.registration, .last = std::move(last)});
     }
   }
-  if (relay_registrations_) {
-    relay_registrations_->SetRelays(std::move(others));
+  if (const auto registrations = OtherRelayRegistrations()) {
+    registrations->SetRelays(std::move(others));
+  }
+  if (contact_refresh_) {
+    contact_refresh_->SetOurRelays(CardDirectories()); // the Refresh asks them after the contact's own relays
   }
   if (!mesh_messaging_) {
     return;
   }
-  // A stale recipient's card is asked of our relays' directories, then of the other directories we search.
-  std::vector<std::string> directories = origins;
+  mesh_messaging_->SetCardDirectories(CardDirectories());
+  mesh_messaging_->SetRelayClients({.preferred = relay_,
+                                    .history = clients_.HistoryRelay(),
+                                    .sender = &clients_.Sender(),
+                                    .inboxes = std::move(inboxes)});
+}
+
+std::vector<std::string> ConversationsHub::CardDirectories() const {
+  // Our relays' directories, then the other directories we search (http ones: the mesh's are its own).
+  std::vector<std::string> directories = OurRelayOrigins();
   for (const ServiceEndpointConfig& provider : EffectiveDirectoryProviders(config_.directory)) {
     const bool http = provider.transport.empty() || provider.transport == "http";
     const bool listed = std::any_of(directories.begin(), directories.end(), [&provider](const std::string& known) {
@@ -304,16 +588,38 @@ void ConversationsHub::WireOurRelays() {
       directories.push_back(provider.base_url);
     }
   }
-  mesh_messaging_->SetCardDirectories(std::move(directories));
-  mesh_messaging_->SetRelayClients({.preferred = relay_, .sender = &clients_.Sender(), .inboxes = std::move(inboxes)});
+  return directories;
+}
+
+void ConversationsHub::SetOnOurRelaysChanged(std::function<void()> callback) {
+  std::lock_guard lock(our_relays_changed_mu_);
+  on_our_relays_changed_ = std::move(callback);
+}
+
+void ConversationsHub::SetOnOrgRelayRequiresUpgrade(std::function<void()> callback) {
+  std::lock_guard lock(org_upgrade_mu_);
+  on_org_upgrade_required_ = std::move(callback);
+}
+
+void ConversationsHub::NotifyOurRelaysChanged() {
+  std::function<void()> callback;
+  {
+    std::lock_guard lock(our_relays_changed_mu_);
+    callback = on_our_relays_changed_;
+  }
+  if (callback) {
+    callback();
+  }
 }
 
 void ConversationsHub::RegisterOnOtherRelaysSoon() {
   AppRuntime::PostWorkerNormal([this]() {
-    if (!relay_registrations_ || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
+    // A copy: Shutdown may take the workflow meanwhile; once it is closed this run does nothing.
+    const auto registrations = OtherRelayRegistrations();
+    if (!registrations || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
       return;
     }
-    relay_registrations_->RunDue(util::NowUnixMs());
+    registrations->RunDue(util::NowUnixMs());
   });
 }
 
@@ -325,18 +631,28 @@ std::vector<std::string> ConversationsHub::OurRelayOrigins() const {
   return origins;
 }
 
-std::vector<std::pair<std::string, IPushDeviceClient*>> ConversationsHub::OtherRelayPushDevices() {
-  std::vector<std::pair<std::string, IPushDeviceClient*>> out;
+std::shared_ptr<IRelayClient> ConversationsHub::OurRelayClient(const std::string& origin) const {
   for (const BackendClientSet::OurRelay& relay : clients_.OurRelays()) {
-    if (relay.registration && relay.push_devices && relay_registrations_ &&
-        relay_registrations_->Registered(relay.origin)) {
-      out.emplace_back(relay.origin, relay.push_devices.get());
+    if (SameRelay(relay.origin, origin)) {
+      return relay.relay;
+    }
+  }
+  return nullptr;
+}
+
+std::vector<std::pair<std::string, std::shared_ptr<IPushDeviceClient>>> ConversationsHub::OtherRelayPushDevices() {
+  std::vector<std::pair<std::string, std::shared_ptr<IPushDeviceClient>>> out;
+  const auto registrations = OtherRelayRegistrations();
+  for (const BackendClientSet::OurRelay& relay : clients_.OurRelays()) {
+    if (relay.registration && relay.push_devices && registrations && registrations->Registered(relay.origin)) {
+      out.emplace_back(relay.origin, relay.push_devices); // shared: a binding in flight keeps it
     }
   }
   return out;
 }
 
 void ConversationsHub::InstallOrgBackendClients(const HubSettings& settings) {
+  clients_.SetLocalRelaysAllowed(settings.developer_relays); // a relay the person added: public addresses otherwise
   UpdateOrgBackendClients(settings);
 }
 
@@ -475,6 +791,10 @@ void ConversationsHub::OnLocalNetworkChanged(const NetworkChange& change) {
     const int online = linked ? 1 : 0;
     if (network_online_.exchange(online) != online) {
       OnLinkNetwork(linked);
+      if (linked) {
+        RecheckRelayIdentitiesSoon(); // a relay not checked while offline is asked now, not after its backoff
+        RetryOwnCardRecoverySoon();   // and a card of ours still to get back
+      }
     }
   }
   // Offline or an unknown link keeps the last known kind of network.
@@ -778,6 +1098,8 @@ void ConversationsHub::DiscardMessagingBringUp() {
     mesh_messaging_->SetGroupMembership(nullptr);
     mesh_messaging_->SetOnSiblingNotice(nullptr);
     mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(nullptr);
+    mesh_messaging_->SetOnInboxPolled(nullptr);
+    mesh_messaging_->SetOnOwnCardChanged(nullptr);
     mesh_messaging_->SetAttachmentDownloads(nullptr);
   }
   if (inbox_) {
@@ -792,6 +1114,9 @@ void ConversationsHub::DiscardMessagingBringUp() {
   system_controls_.Unbind(relay_grant::kFamily);
   clients_.SetRelaySendHooks({});
   clients_.Sender().SetRoutes({});
+  if (peer_cards_) {
+    peer_cards_->SetOnDevicesAdded(nullptr);
+  }
   account_locker_.reset();
   group_links_.reset();
   group_membership_.reset();
@@ -949,6 +1274,65 @@ void ConversationsHub::PrefetchPeerReachability(const std::string& identity) {
   }
 }
 
+void ConversationsHub::OpenOurRelays(const HubSettings& settings) {
+  // Before My relays (its ports read them) and the clients (each signs for its relay's pin, MR007).
+  checking_passes_.store(0, std::memory_order_release); // a reset: a pass dropped at Shutdown holds no card back
+  OpenRelayPins();
+  // My relays (multi-relay R3, MR006): the profile's list, seeded once from the deployment's relay and config.
+  CloseMyRelays(); // a profile reset: the old workflow (closed at Shutdown) goes before the store it changes
+  our_relays_ = std::make_unique<OurRelaysStore>(data_dir_);
+  our_relays_->LoadOrSeed(clients_.OrgRelayOf({.relay = settings.relay}), settings.relay.peer_id,
+                          settings.relay_extra_base_urls, settings.developer_relays);
+  CloseRelayRegistrations(); // a reset: closed at Shutdown already
+  auto registrations = std::make_shared<RelayRegistrationsWorkflow>(*identity_);
+  registrations->SetCard([this]() { return RegistrationCard(); });
+  registrations->SetOnResult([this](const std::string& origin, const RelayRegistrationRecord& record) {
+    if (our_relays_) {
+      our_relays_->Record(origin, record);
+    }
+    NotifyOurRelaysChanged();
+  });
+  {
+    std::lock_guard lock(my_relays_mu_);
+    my_relays_ = std::make_shared<MyRelaysWorkflow>(*our_relays_, MyRelaysPorts());
+  }
+  // A relay that took our registration takes our push token too (any relay holding mail can wake the phone).
+  registrations->SetOnRegistered(
+      [this](const std::string& origin) { (void)PushDeviceCoordinator::RegisterOn(*this, origin); });
+  {
+    std::lock_guard lock(relay_registrations_mu_);
+    relay_registrations_ = std::move(registrations);
+  }
+}
+
+void ConversationsHub::OpenContactCards() {
+  contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
+  contact_cards_->SetLocalRelaysAllowed(config_.developer_relays); // a QR code's relay not on a public host: the lab's
+  contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
+  contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, *contact_cards_);
+  contact_refresh_->SetOurRelays(CardDirectories());
+  // The page's *identity doesn't match* (MR007): our pins disagree with the card, or a send found the PeerId refused.
+  contact_refresh_->SetIdentityMismatch(
+      [this](const std::string& account_id, const std::string& origin, const std::string& peer_id) {
+        const auto pins = RelayIdentityPins();
+        return (pins && pins->CheckCardRelay(origin, peer_id) == CardRelayCheck::Mismatch) ||
+               clients_.Sender().AudienceMismatch(account_id, origin);
+      });
+  contact_cards_->SetCardFetcher(
+      [this](const std::string& peer_id, const std::string& account_id, std::function<void(Roe<PeerCardRecord>)> done) {
+        // On the hub's thread, with the address book as it is now: a contact just added (a scanned QR code) is
+        // one we may dial — the republish its add posted may not have run yet (#409).
+        AppRuntime::PostUI([this, peer_id, account_id, done = std::move(done)]() mutable {
+          if (!mesh_messaging_ || shutdown_requested_.load(std::memory_order_acquire)) {
+            done(Error("Messaging not ready"));
+            return;
+          }
+          PublishAddressDisclosure();
+          mesh_messaging_->AccountCards().Fetch(peer_id, account_id, std::move(done));
+        });
+      });
+}
+
 Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::string& profile_data_dir) {
   if (initialized_) {
     return {};
@@ -976,6 +1360,9 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   if (!opened_stores) {
     return opened_stores.error();
   }
+  if (opened_stores->set_own_account) {
+    opened_stores->set_own_account([this]() { return OwnAccountId(); }); // profile.db's steps tell our card by it
+  }
   store_ = std::move(opened_stores->threads);
   psk_store_ = std::move(opened_stores->peer_sessions);
   control_lane_seen_ = std::move(opened_stores->control_lane_seen);
@@ -1002,11 +1389,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   });
   PublishAddressDisclosure();
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
-  relay_registrations_ = std::make_unique<RelayRegistrationsWorkflow>(*identity_);
-  relay_registrations_->SetCard([this]() { return RegistrationCard(); });
-  // A relay that took our registration takes our push token too (any relay holding mail can wake the phone).
-  relay_registrations_->SetOnRegistered(
-      [this](const std::string& origin) { (void)PushDeviceCoordinator::RegisterOn(*this, origin); });
+  OpenOurRelays(settings);
   initiation_billing_ = std::make_unique<InitiationBillingStore>(data_dir_);
   (void)initiation_billing_->Load();
   payment_promises_ = std::make_unique<PaymentPromiseStore>(data_dir_);
@@ -1061,6 +1444,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
     if (!initiation_billing_) {
       return;
     }
+    // The entry's floor counts only while no card of the account is known (its card's speaks over it, MR005).
     const std::string person_id = PrimaryAccountIdFromHit(hit).value_or(std::string());
     if (!person_id.empty()) {
       (void)initiation_billing_->SetFloor(person_id, hit.initiation_floor);
@@ -1102,23 +1486,10 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   // The account locker keeps how new each account's newest card is (a restored device refuses older ones).
   peer_cards_->SetOnNewerCard([this]() { PublishAccountLockerSoon(); });
   account_keys_ = std::make_unique<AccountKeyResolver>(signing_key_store_, kem_key_store_, *peer_cards_, directory_);
+  account_keys_->SetOwnAccount([this]() { return OwnAccountId(); }); // our own card is our devices' only
   kept_cards_loaded_ = false; // read at the first EnsureMessagingReady (the cards are in the chat store)
-  contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
-  contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
-  contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, directory_, *contact_cards_);
-  contact_cards_->SetCardFetcher(
-      [this](const std::string& peer_id, const std::string& account_id, std::function<void(Roe<PeerCardRecord>)> done) {
-        // On the hub's thread, with the address book as it is now: a contact just added (a scanned QR code) is
-        // one we may dial — the republish its add posted may not have run yet (#409).
-        AppRuntime::PostUI([this, peer_id, account_id, done = std::move(done)]() mutable {
-          if (!mesh_messaging_ || shutdown_requested_.load(std::memory_order_acquire)) {
-            done(Error("Messaging not ready"));
-            return;
-          }
-          PublishAddressDisclosure();
-          mesh_messaging_->AccountCards().Fetch(peer_id, account_id, std::move(done));
-        });
-      });
+  WireCardReaders();
+  OpenContactCards();
 
   // The messaging stack, relay-capable once the profile unlocks (no Amp until the mesh is up).
   BuildMessagingObjects();
@@ -1130,6 +1501,42 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   }
   initialized_ = true;
   return {};
+}
+
+void ConversationsHub::WireCardReaders() {
+  // A directory lookup's card is the account's word on its relays and price (multi-relay R2): kept once it verifies.
+  // Not ours: our own card is OwnCards'.
+  clients_.DirectoryCards().Set([this](const std::string& account_id, const Object& card) {
+    auto identity = identity_ ? identity_->Get() : Roe<LocalIdentity>(Error("no identity"));
+    if (!account_keys_ || (identity && identity->account_id == account_id)) {
+      return;
+    }
+    if (auto kept = account_keys_->AddCarriedCard(card, util::NowUnixMs(), "directory", account_id); !kept) {
+      log().debug << "a directory's card for " << account_id << " not kept: " << kept.error().message;
+    }
+  });
+  // A stranger's price is its newest kept card's (MR005), read when the chat or a call decides it.
+  initiation_billing_->SetCardFloors([this](const std::string& peer) -> std::optional<InitiationCardFloor> {
+    if (!account_keys_ || !IsAccountIdentityValue(peer)) {
+      return std::nullopt;
+    }
+    auto kept = account_keys_->Kept(peer);
+    if (!kept || !*kept) {
+      return std::nullopt;
+    }
+    const std::optional<int64_t> floor = KeptInitiationFloor(**kept);
+    if (!floor) {
+      return std::nullopt; // only a key card known
+    }
+    return InitiationCardFloor{.floor_minor = *floor, .issued_at = (*kept)->issued_at};
+  });
+}
+
+void ConversationsHub::UnwireCardReaders() {
+  clients_.DirectoryCards().Set(nullptr);
+  if (initiation_billing_) {
+    initiation_billing_->SetCardFloors(nullptr);
+  }
 }
 
 void ConversationsHub::SetOnMessagingReady(std::function<void()> callback) {
@@ -1175,14 +1582,92 @@ void ConversationsHub::NotifyMeshReady() {
   });
 }
 
+AccountLockerWorkflow::Sources ConversationsHub::LockerSources() {
+  return AccountLockerWorkflow::Sources{
+      .groups = [this]() -> Roe<std::vector<AccountStateGroup>> {
+        return group_membership_ ? group_membership_->StateGroups()
+                                 : Roe<std::vector<AccountStateGroup>>(std::vector<AccountStateGroup>{});
+      },
+      .card_floors = [this]() -> Roe<std::vector<PeerCardFloor>> {
+        return peer_cards_ ? peer_cards_->NewestKnown() : Roe<std::vector<PeerCardFloor>>(std::vector<PeerCardFloor>{});
+      },
+      .take_dissolved =
+          [this](const std::vector<AccountStateGroup>& groups) {
+            if (group_membership_) {
+              for (const AccountStateGroup& group : groups) {
+                group_membership_->EndDissolvedFromLocker(group);
+              }
+            }
+          },
+      .grants = [this]() -> Roe<std::vector<AccountStateGrant>> {
+        if (!mesh_messaging_) {
+          return std::vector<AccountStateGrant>{};
+        }
+        auto held = mesh_messaging_->RelayGrants().ReceivedForLocker();
+        if (!held) {
+          return held.error();
+        }
+        std::vector<AccountStateGrant> grants;
+        for (const RelayGrant& grant : *held) {
+          grants.push_back(AccountStateGrant{.grantor_account_id = grant.recipient_account_id,
+                                             .grantee_account_id = grant.sender_account_id,
+                                             .issued_at = grant.issued_at,
+                                             .expires_at = grant.expires_at,
+                                             .signature = grant.signature});
+        }
+        return grants;
+      },
+      // A sync: kept keys only (it runs under the locker's lock; a grantor not kept yet is taken at the next).
+      .take_grants = [this](const std::vector<AccountStateGrant>& grants) { TakeLockerGrants(grants, false); },
+      .own_devices = [this]() -> Roe<OwnDeviceList> {
+        if (!mesh_messaging_) {
+          return Error("Messaging is not ready");
+        }
+        return mesh_messaging_->OwnAccountCards().Devices();
+      },
+      .own_system_name = [this]() { return config_.system_device_name; },
+      .relays = [this]() { return LockerRelays(); }};
+}
+
+void ConversationsHub::WireMyRelaysHooks() {
+  // My relays: each poll says whether the relay answered; a linked device follows the main device's list.
+  mesh_messaging_->SetOnInboxPolled([this](const std::string& origin, const bool ok) {
+    if (const auto relays = MyRelays()) {
+      relays->NotePolled(origin, ok, util::NowUnixMs());
+    }
+  });
+  mesh_messaging_->SetOnOwnCardChanged([this](const AccountCard& card) {
+    NotifyOwnDevicesChanged();
+    std::vector<AccountCardRelay> relays = card.relays;
+    std::vector<OwnCardRelay> pins;
+    for (const AccountCardRelay& relay : card.relays) {
+      pins.push_back(OwnCardRelay{.origin = relay.origin, .peer_id = relay.peer_id});
+    }
+    AppRuntime::PostWorkerNormal([this, relays = std::move(relays), pins = std::move(pins)]() {
+      if (shutdown_requested_.load(std::memory_order_acquire) || IsMainDevice()) {
+        return; // the main device's list and pins are its own
+      }
+      // A linked device takes our own card's word on each relay's identity (MR007), then follows its list.
+      if (const auto relay_pins = RelayIdentityPins()) {
+        relay_pins->TakeOwnCard(pins);
+      }
+      if (const auto workflow = MyRelays()) {
+        workflow->FollowCard(relays);
+      }
+    });
+  });
+}
+
 void ConversationsHub::BuildMessagingObjects() {
   mesh_messaging_ =
       std::make_unique<MeshDeliveryOrchestrator>(*store_, *contacts_, *identity_, relay_, *inbox_, *account_keys_,
                                                  *psk_store_, *group_roster_, group_invite_gate_.get());
   SetCardRelays(); // before the first card is asked for
   // Another relay of ours is polled once it holds our registration.
-  mesh_messaging_->SetInboxReady(
-      [this](const std::string& origin) { return relay_registrations_ && relay_registrations_->Registered(origin); });
+  mesh_messaging_->SetInboxReady([this](const std::string& origin) {
+    const auto registrations = OtherRelayRegistrations();
+    return registrations && registrations->Registered(origin);
+  });
   mesh_messaging_->SetSystemControls(&system_controls_);
   // The relay's poll results feed the status line (#175); a fresh orchestrator starts with no result.
   mesh_messaging_->SetOnBriefRelayHealthChanged(
@@ -1240,32 +1725,7 @@ void ConversationsHub::BuildMessagingObjects() {
   group_links_ = std::make_unique<GroupInviteLinkWorkflow>(*group_roster_, invite_links_.get(), *group_membership_,
                                                            *mesh_messaging_, *identity_);
   BindGroupLinkJoinFamily();
-  account_locker_ = std::make_unique<AccountLockerWorkflow>(
-      *identity_, *contacts_,
-      AccountLockerWorkflow::Sources{
-          .groups = [this]() -> Roe<std::vector<AccountStateGroup>> {
-            return group_membership_ ? group_membership_->StateGroups()
-                                     : Roe<std::vector<AccountStateGroup>>(std::vector<AccountStateGroup>{});
-          },
-          .card_floors = [this]() -> Roe<std::vector<PeerCardFloor>> {
-            return peer_cards_ ? peer_cards_->NewestKnown()
-                               : Roe<std::vector<PeerCardFloor>>(std::vector<PeerCardFloor>{});
-          },
-          .take_dissolved =
-              [this](const std::vector<AccountStateGroup>& groups) {
-                if (group_membership_) {
-                  for (const AccountStateGroup& group : groups) {
-                    group_membership_->EndDissolvedFromLocker(group);
-                  }
-                }
-              },
-          .own_devices = [this]() -> Roe<OwnDeviceList> {
-            if (!mesh_messaging_) {
-              return Error("Messaging is not ready");
-            }
-            return mesh_messaging_->OwnAccountCards().Devices();
-          },
-          .own_system_name = [this]() { return config_.system_device_name; }});
+  account_locker_ = std::make_unique<AccountLockerWorkflow>(*identity_, *contacts_, LockerSources());
   account_locker_->SetClient(clients_.Locker());
   account_locker_->SetDataDir(data_dir_);
   // The account's devices keep one address book: a write here nudges the others; a nudge from one syncs here.
@@ -1281,10 +1741,12 @@ void ConversationsHub::BuildMessagingObjects() {
     AppRuntime::PostWorkerNormal([this]() { AnnounceOwnDevicesToContacts(); });
     PublishAccountLockerSoon();
   });
+  WireMyRelaysHooks();
+  WireOwnCardRecovery();
   NotifyMessagingBuilt();
   actions_ =
       std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_, group_membership_.get(),
-                                                registration_, mesh_messaging_.get(), &directory_);
+                                                Registration(), mesh_messaging_.get(), &directory_);
   group_invite_gate_->SetInboundPolicy(policy_.group_invite_policy);
   group_membership_->SetInboundPolicy(policy_.group_invite_policy);
   NotifyPolicyPrefs(policy_);
@@ -1458,6 +1920,9 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
     return Error("shutdown in progress");
   }
 
+  // Our card back into the chat store's kept cards after a reset of it (it stays beside the identity), before anything
+  // reads them.
+  mesh_messaging_->OwnAccountCards().Reconcile(util::NowUnixMs());
   // Before the first poll: a restored device refuses cards older than the ones it knew.
   ApplyRestoredCardFloors();
   messaging_ready_ = true;
@@ -1467,7 +1932,7 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
   ScheduleMeshBringUp();
   AppRuntime::PostWorkerNormal([this]() {
     ResumeGroupRosterChecks();
-    AnnounceRestoredDevice();
+    ApplyRestoredGrantsThenAnnounce(); // the restored phone's first sends carry its grants
   });
   SweepRelayGrantsSoon(); // the cutover's too: contacts and members from before MR005 get grants on first run
   RefreshStaleContactProfiles();
@@ -1798,6 +2263,10 @@ void ConversationsHub::RefreshContactProfileIfStale(const std::string& contact_i
   AppRuntime::PostWorkerBackground([this, contact_id, force]() { RefreshContactProfileNow(contact_id, force); });
 }
 
+ContactRelayView ConversationsHub::ContactRelay(const Contact& contact) {
+  return contact_refresh_ ? contact_refresh_->PreferredRelay(contact) : ContactRelayView{};
+}
+
 bool ConversationsHub::RefreshContact(const std::string& contact_id,
                                       std::function<void(const ContactRefreshResult&)> done) {
   if (!contact_refresh_ || !AppRuntime::IsRunning() || shutdown_requested_.load(std::memory_order_acquire)) {
@@ -1941,7 +2410,7 @@ ProfileIdentityView ConversationsHub::LoadProfileIdentityView() {
   view.account_id = identity->account_id;
   view.contact_locator = OwnContactLocator().valueOr("");
   view.public_key_b64 = identity->account_signing_public_key_b64;
-  FillRegistrationFields(view, *identity, config_.registration.base_url);
+  FillRegistrationFields(view, *identity, Registration()->BaseUrl()); // the preferred relay's (MR006)
   view.profile_icon_path = ProfileIconLocalPath(data_dir_);
   view.profile_has_icon = !view.profile_icon_path.empty();
   return view;
@@ -1972,7 +2441,7 @@ Roe<void> ConversationsHub::SaveProfileNickname(const std::string& nickname) {
   }
 
   if (identity->registered) {
-    auto result = UpdateRegisteredNickname(Registration(), Identity(), nickname);
+    auto result = UpdateRegisteredNickname(*Registration(), Identity(), nickname);
     if (!result) {
       return result.error();
     }
@@ -2029,7 +2498,7 @@ Roe<void> ConversationsHub::FinishRegistration(const RegistrationResult& result,
   if (!IsMessagingReady()) {
     return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to register");
   }
-  if (auto applied = PersistRenewal(Identity(), result, account_id); !applied) {
+  if (auto applied = PersistRenewal(Identity(), result, account_id, PreferredRegistrationHome()); !applied) {
     return applied.error();
   }
   PublishAccountLockerSoon();  // the locker keeps the relay binding: a phrase restore needs it
@@ -2081,11 +2550,46 @@ Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const SecretText& phrase, 
       return Error("Account restore failed: " + upserted.error().message);
     }
   }
+  RestoreOurRelays(state.extras.relays); // before the first card: it lists them, not the deployment's default
   log().info << "Account restored from its recovery phrase: locker version " << (*fetched)->version << ", "
              << state.contacts.size() << " contact(s); " << state.extras.groups.size() << " group(s) and "
              << state.extras.card_floors.size() << " card floor(s) once messaging is up";
   QueueRestoredState(std::move(state.extras));
   return {};
+}
+
+AccountStateRelays ConversationsHub::LockerRelays() const {
+  AccountStateRelays relays;
+  if (our_relays_) {
+    const auto pins = RelayIdentityPins();
+    for (const OurRelayEntry& entry : our_relays_->List().relays) {
+      // Its address: the PeerId we expect of it (the build's for the org's relay), else the one the list kept.
+      std::string peer_id = pins ? pins->PinnedPeerId(entry.origin).value_or(entry.peer_id) : entry.peer_id;
+      if (!peer_id.empty()) {
+        relays.list.push_back(AccountStateRelay{.origin = entry.origin, .peer_id = std::move(peer_id)});
+      }
+    }
+  }
+  const std::string own = OwnAccountId();
+  if (account_keys_ && !own.empty()) {
+    if (auto kept = account_keys_->Kept(own); kept && *kept) {
+      relays.card_issued_at = (*kept)->issued_at; // the card that lists them: the newer card's list wins a merge
+    }
+  }
+  return relays;
+}
+
+void ConversationsHub::RestoreOurRelays(const AccountStateRelays& relays) {
+  if (relays.list.empty()) {
+    return; // a locker from before My relays: the deployment's default stays
+  }
+  std::vector<AccountCardRelay> list;
+  for (const AccountStateRelay& relay : relays.list) {
+    list.push_back(AccountCardRelay{.origin = relay.origin, .peer_id = relay.peer_id});
+  }
+  if (const auto workflow = MyRelays()) {
+    workflow->Restore(list);
+  }
 }
 
 void ConversationsHub::QueueRestoredState(AccountStateExtras extras) {
@@ -2097,15 +2601,50 @@ void ConversationsHub::QueueRestoredState(AccountStateExtras extras) {
     for (AccountCardFloor& floor : extras.card_floors) {
       restored_.card_floors.push_back(std::move(floor));
     }
+    for (AccountStateGrant& grant : extras.grants) {
+      restored_.grants.push_back(std::move(grant));
+    }
     restored_.announce = true;
   }
   if (IsMessagingReady()) {
     ApplyRestoredCardFloors();
     AppRuntime::PostWorkerNormal([this]() {
       ResumeGroupRosterChecks();
-      AnnounceRestoredDevice();
+      ApplyRestoredGrantsThenAnnounce();
     });
   }
+}
+
+void ConversationsHub::ApplyRestoredGrantsThenAnnounce() {
+  // Both taken in one step: a second run (the restore's and messaging's, racing) finds neither, so the announce never
+  // goes before the grants another run is still checking.
+  std::vector<AccountStateGrant> restored;
+  bool announce = false;
+  {
+    std::lock_guard lock(restored_mutex_);
+    restored.swap(restored_.grants);
+    announce = std::exchange(restored_.announce, false);
+  }
+  TakeLockerGrants(restored, true); // a restore keeps no key yet: each grantor's is looked up
+  if (announce) {
+    AnnounceOwnDevicesToContacts();
+  }
+}
+
+void ConversationsHub::TakeLockerGrants(const std::vector<AccountStateGrant>& grants, const bool look_up_keys) {
+  if (grants.empty() || !mesh_messaging_ || shutdown_requested_.load(std::memory_order_acquire)) {
+    return;
+  }
+  std::vector<RelayGrant> taken;
+  taken.reserve(grants.size());
+  for (const AccountStateGrant& grant : grants) {
+    taken.push_back(RelayGrant{.recipient_account_id = grant.grantor_account_id,
+                               .sender_account_id = grant.grantee_account_id,
+                               .issued_at = grant.issued_at,
+                               .expires_at = grant.expires_at,
+                               .signature = grant.signature});
+  }
+  mesh_messaging_->RelayGrants().TakeFromLocker(taken, look_up_keys);
 }
 
 void ConversationsHub::PublishAccountLockerSoon() {
@@ -2154,17 +2693,6 @@ void ConversationsHub::ApplyRestoredCardFloors() {
   if (auto raised = peer_cards_->RaiseFloors(floors); !raised) {
     log().warning << "Card floors not restored: " << raised.error().message;
   }
-}
-
-void ConversationsHub::AnnounceRestoredDevice() {
-  {
-    std::lock_guard lock(restored_mutex_);
-    if (!restored_.announce) {
-      return;
-    }
-    restored_.announce = false;
-  }
-  AnnounceOwnDevicesToContacts();
 }
 
 void ConversationsHub::AnnounceOwnDevicesToContacts() {
@@ -2230,10 +2758,11 @@ Roe<void> ConversationsHub::UploadProfileIcon(const PreparedProfileIcon& prepare
   if (!IsMessagingReady()) {
     return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change profile icon");
   }
-  if (!blob_) {
+  const std::shared_ptr<IBlobClient> blob = BlobClient();
+  if (!blob) {
     return Error("Blob client not configured");
   }
-  auto uploaded = UploadPreparedProfileIcon(*blob_, Identity(), data_dir_, prepared);
+  auto uploaded = UploadPreparedProfileIcon(*blob, Identity(), data_dir_, prepared);
   if (!uploaded) {
     return uploaded.error();
   }
@@ -2247,10 +2776,11 @@ Roe<void> ConversationsHub::ClearProfileIcon() {
   if (!IsMessagingReady()) {
     return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change profile icon");
   }
-  if (!blob_) {
+  const std::shared_ptr<IBlobClient> blob = BlobClient();
+  if (!blob) {
     return Error("Blob client not configured");
   }
-  return ClearHostedProfileIcon(*blob_, Identity(), data_dir_);
+  return ClearHostedProfileIcon(*blob, Identity(), data_dir_);
 }
 
 namespace {
@@ -2270,7 +2800,8 @@ Roe<BlobQuotaRecoveryPlan> ConversationsHub::PlanRelayQuotaRecovery(const Error&
   if (!IsMessagingReady()) {
     return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to manage relay blob storage");
   }
-  if (!blob_) {
+  const std::shared_ptr<IBlobClient> blob = BlobClient();
+  if (!blob) {
     return Error("Blob client not configured");
   }
   auto identity = Identity().Get();
@@ -2285,7 +2816,7 @@ Roe<BlobQuotaRecoveryPlan> ConversationsHub::PlanRelayQuotaRecovery(const Error&
     return quota_error;
   }
   // An attachment found the files relay full: free the oldest sent files until this one fits.
-  return PlanOldestRelayFileDeletion(*blob_, identity->account_id, AttachmentQuotaNeededBytes(quota_error));
+  return PlanOldestRelayFileDeletion(*blob, identity->account_id, AttachmentQuotaNeededBytes(quota_error));
 }
 
 Roe<void> ConversationsHub::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {
@@ -2390,7 +2921,8 @@ Roe<ThreadMessage> ConversationsHub::ResendEdit(const std::string& thread_id, co
 }
 
 void ConversationsHub::DeleteUploadedCopy(const ThreadMessage& message) {
-  if (message.content_type != ChatContentType::Attachment || !blob_) {
+  const std::shared_ptr<IBlobClient> blob = BlobClient();
+  if (message.content_type != ChatContentType::Attachment || !blob) {
     return;
   }
   auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
@@ -2401,7 +2933,7 @@ void ConversationsHub::DeleteUploadedCopy(const ThreadMessage& message) {
   if (!identity || identity->account_id.empty()) {
     return;
   }
-  if (auto removed = DeleteUploadedAttachmentCopy(*blob_, identity->account_id, fields->url); !removed) {
+  if (auto removed = DeleteUploadedAttachmentCopy(*blob, identity->account_id, fields->url); !removed) {
     // The copy expires on its own (7 days); the detail names the blob id, never the link.
     log().warning << "uploaded copy not deleted: " << AppError::Log(removed.error());
   }
@@ -2414,7 +2946,8 @@ Roe<void> ConversationsHub::DeleteRelayFileById(const std::string& blob_id) {
   if (!IsMessagingReady()) {
     return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to manage relay blob storage");
   }
-  if (!blob_) {
+  const std::shared_ptr<IBlobClient> blob = BlobClient();
+  if (!blob) {
     return Error("Blob client not configured");
   }
   auto identity = Identity().Get();
@@ -2424,7 +2957,7 @@ Roe<void> ConversationsHub::DeleteRelayFileById(const std::string& blob_id) {
   if (!identity->registered || identity->account_id.empty()) {
     return Error("Register on the network before using relay blob storage");
   }
-  return DeleteRelayFile(*blob_, identity->account_id, blob_id);
+  return DeleteRelayFile(*blob, identity->account_id, blob_id);
 }
 
 AttachmentLimits ConversationsHub::CurrentAttachmentLimits() const {
@@ -2479,7 +3012,8 @@ void ConversationsHub::PostRelayRegistrationSignal(const RelayRegistrationSignal
 }
 
 void ConversationsHub::CheckBlobSpace(const bool after_quota_error) {
-  if (!blob_space_monitor_.ShouldCheck(util::NowUnixMs(), after_quota_error) || !blob_) {
+  const std::shared_ptr<IBlobClient> blob = BlobClient();
+  if (!blob_space_monitor_.ShouldCheck(util::NowUnixMs(), after_quota_error) || !blob) {
     return;
   }
   auto identity = Identity().Get();
@@ -2487,7 +3021,7 @@ void ConversationsHub::CheckBlobSpace(const bool after_quota_error) {
     return;
   }
   // Attachments live on the files relay (#465): its byte quota is the space that fills.
-  auto listed = blob_->FileList(identity->account_id, "");
+  auto listed = blob->FileList(identity->account_id, "");
   if (!listed) {
     return;
   }
@@ -2514,7 +3048,7 @@ Roe<Thread> ConversationsHub::AttachmentTargetThread(const std::string& thread_i
   if (!IsMessagingReady()) {
     return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to send attachments");
   }
-  if (!blob_) {
+  if (!BlobClient()) {
     return Error("Blob client not configured");
   }
   if (thread_id.empty()) {
@@ -2592,9 +3126,10 @@ void ConversationsHub::SendAttachmentAsync(const std::string& thread_id, Outgoin
     };
   }
 
-  auto run = [this, job, finish, name = attachment.filename, mime = attachment.mime,
+  // The send keeps the client it starts with, wherever the preferred relay moves meanwhile (MR006).
+  auto run = [this, job, finish, blob = BlobClient(), name = attachment.filename, mime = attachment.mime,
               upload_opts = std::move(upload_opts)]() mutable {
-    UploadChatAttachmentAsync(*blob_, Identity(), *job->plaintext, name, mime, std::move(upload_opts),
+    UploadChatAttachmentAsync(std::move(blob), Identity(), *job->plaintext, name, mime, std::move(upload_opts),
                               [this, job, finish](Roe<ChatAttachmentFields> fields) mutable {
                                 auto continue_send = [this, job, finish = std::move(finish),
                                                       fields = std::move(fields)]() mutable {
@@ -2697,8 +3232,9 @@ void ConversationsHub::ResumeAttachmentNow(const std::string& thread_id, const s
   upload_opts.cancelled = std::move(cancelled);
   upload_opts.outgoing = store.get();
   upload_opts.dek = dek;
-  auto run = [this, job, finish, record = std::move(*record), upload_opts = std::move(upload_opts)]() mutable {
-    ResumeChatAttachmentAsync(*blob_, Identity(), record, std::move(upload_opts),
+  auto run = [this, job, finish, blob = BlobClient(), record = std::move(*record),
+              upload_opts = std::move(upload_opts)]() mutable {
+    ResumeChatAttachmentAsync(std::move(blob), Identity(), record, std::move(upload_opts),
                               [this, job, finish](Roe<ChatAttachmentFields> fields) mutable {
                                 auto continue_send = [this, job, finish = std::move(finish),
                                                       fields = std::move(fields)]() mutable {
@@ -3047,6 +3583,16 @@ void ConversationsHub::WireRelayGrants() {
   // Sends go into the recipient's relays, as its kept card lists them (multi-relay R2).
   clients_.Sender().SetRoutes(mesh_messaging_->RecipientRelayRoutes());
   system_controls_.Bind(grants.Family());
+  // A grantee's card names a new device (a linked or restored one): our grant goes to it too (MR005).
+  if (peer_cards_) {
+    peer_cards_->SetOnDevicesAdded([this](const std::string& account) {
+      AppRuntime::PostWorkerNormal([this, account]() {
+        if (mesh_messaging_ && IsMessagingReady() && !shutdown_requested_.load(std::memory_order_acquire)) {
+          mesh_messaging_->RelayGrants().NoteNewDevices(account);
+        }
+      });
+    });
+  }
 }
 
 void ConversationsHub::SweepRelayGrantsSoon() {
@@ -3467,7 +4013,7 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
   if (service_urls_changed) {
     UpdateOrgBackendClients(config_); // our relays to messaging too (WireOurRelays)
     if (actions_) {
-      actions_->SetRegistrationClient(registration_);
+      actions_->SetRegistrationClient(Registration());
     }
   }
   if (mesh_changed && messaging_ready_) {
@@ -3522,6 +4068,8 @@ void ConversationsHub::OnAppForeground() {
   if (!messaging_ready_ || !mesh_messaging_ || !inbox_) {
     return;
   }
+  RecheckRelayIdentitiesSoon(); // a relay not checked yet is asked now (it may have failed while suspended)
+  RetryOwnCardRecoverySoon();
   if (const std::string active = inbox_->ActiveThreadId(); !active.empty()) {
     mesh_messaging_->WarmPeerForThread(active);
   }
@@ -3538,12 +4086,62 @@ void ConversationsHub::FlushForExit() {
   }
 }
 
+void ConversationsHub::UnhookMessaging() {
+  if (mesh_messaging_) {
+    mesh_messaging_->SetOnBriefRelayHealthChanged(nullptr);
+    mesh_messaging_->SetOnRelayNotRegistered(nullptr);
+    InvalidateRelayRegistrationSignals();
+    mesh_messaging_->SetOnMessagesChanged(nullptr);
+    mesh_messaging_->SetOnDeliveryNotice(nullptr);
+    mesh_messaging_->SetOnBackgroundUnread(nullptr);
+    mesh_messaging_->SetGroupMembership(nullptr);
+    mesh_messaging_->SetOnSiblingNotice(nullptr);
+    mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(nullptr);
+    mesh_messaging_->OwnAccountCards().SetOwnCardLookup(nullptr);
+    mesh_messaging_->OwnAccountCards().SetOnRecoveryChanged(nullptr);
+    mesh_messaging_->SetOnInboxPolled(nullptr);
+    mesh_messaging_->SetOnOwnCardChanged(nullptr);
+  }
+  if (inbox_) {
+    inbox_->SetGroupMembership(nullptr);
+    inbox_->SetCancelPendingSend(nullptr);
+  }
+}
+
+void ConversationsHub::UnregisterDekConsumers() {
+  if (secrets_ != nullptr) {
+    if (attachment_downloads_) {
+      secrets_->UnregisterDekConsumer(attachment_downloads_.get());
+    }
+    if (mesh_messaging_) {
+      if (auto* peer_blob = mesh_messaging_->PeerBlobService()) {
+        secrets_->UnregisterDekConsumer(peer_blob);
+      }
+    }
+    if (identity_) {
+      secrets_->UnregisterDekConsumer(identity_.get());
+    }
+    for (IDekConsumer* at_rest : at_rest_) {
+      secrets_->UnregisterDekConsumer(at_rest);
+    }
+    for (HubParticipant* participant : ParticipantsDown()) {
+      for (IDekConsumer* consumer : participant->DekConsumers()) {
+        secrets_->UnregisterDekConsumer(consumer);
+      }
+    }
+  }
+}
+
 void ConversationsHub::Shutdown() {
   if (!initialized_) {
     return;
   }
 
   shutdown_requested_.store(true, std::memory_order_release);
+  // My relays first: a change in progress ends (its ports stop here) before anything it touches goes; then the
+  // other relays' registrations (a queued run, a revoke), before the identity they sign with.
+  CloseMyRelays();
+  CloseRelayRegistrations();
   // The unknown-network timer (and its UI post) of this run never reach the hub again; a later run arms its own.
   attachment_network_lifetime_.InvalidateAndWait();
   attachment_network_timer_armed_.store(false);
@@ -3574,21 +4172,7 @@ void ConversationsHub::Shutdown() {
   if (inbox_) {
     inbox_->SetOnThreadChanged(nullptr);
   }
-  if (mesh_messaging_) {
-    mesh_messaging_->SetOnBriefRelayHealthChanged(nullptr);
-    mesh_messaging_->SetOnRelayNotRegistered(nullptr);
-    InvalidateRelayRegistrationSignals();
-    mesh_messaging_->SetOnMessagesChanged(nullptr);
-    mesh_messaging_->SetOnDeliveryNotice(nullptr);
-    mesh_messaging_->SetOnBackgroundUnread(nullptr);
-    mesh_messaging_->SetGroupMembership(nullptr);
-    mesh_messaging_->SetOnSiblingNotice(nullptr);
-    mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(nullptr);
-  }
-  if (inbox_) {
-    inbox_->SetGroupMembership(nullptr);
-    inbox_->SetCancelPendingSend(nullptr);
-  }
+  UnhookMessaging();
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnTeardownStarting();
   }
@@ -3605,27 +4189,7 @@ void ConversationsHub::Shutdown() {
   actions_.reset();
   // Unregister DEK consumers before StopMesh → DetachAmpTransports destroys peer_blob
   // (otherwise ProfileSecretsEngine::Shutdown ClearDek UAFs the stale pointer).
-  if (secrets_ != nullptr) {
-    if (attachment_downloads_) {
-      secrets_->UnregisterDekConsumer(attachment_downloads_.get());
-    }
-    if (mesh_messaging_) {
-      if (auto* peer_blob = mesh_messaging_->PeerBlobService()) {
-        secrets_->UnregisterDekConsumer(peer_blob);
-      }
-    }
-    if (identity_) {
-      secrets_->UnregisterDekConsumer(identity_.get());
-    }
-    for (IDekConsumer* at_rest : at_rest_) {
-      secrets_->UnregisterDekConsumer(at_rest);
-    }
-    for (HubParticipant* participant : ParticipantsDown()) {
-      for (IDekConsumer* consumer : participant->DekConsumers()) {
-        secrets_->UnregisterDekConsumer(consumer);
-      }
-    }
-  }
+  UnregisterDekConsumers();
   // Stop mesh (joins MeshPump) before dropping session façade.
   StopMesh();
   // Participants let go of messaging before it goes (the call sessions deliver through it).
@@ -3637,6 +4201,9 @@ void ConversationsHub::Shutdown() {
   clients_.SetRelaySendHooks({});
   clients_.Sender().SetRoutes({});
   system_controls_.Unbind(relay_grant::kFamily);
+  if (peer_cards_) {
+    peer_cards_->SetOnDevicesAdded(nullptr);
+  }
   // Destroy P2P before groups — P2P held a non-owning Groups pointer.
   mesh_messaging_.reset();
   // Nothing receives any more: the pricing families may let go of their stores.
@@ -3662,6 +4229,7 @@ void ConversationsHub::Shutdown() {
   contact_refresh_.reset();
   contact_cards_.reset();
   contact_profile_refresh_.reset();
+  UnwireCardReaders();
   account_keys_.reset();
   peer_cards_.reset();
   peer_card_rows_.reset();
@@ -3685,13 +4253,16 @@ void ConversationsHub::Shutdown() {
     mesh_owner_->StopDirectoryCache();
   }
   clients_.Clear();
-  relay_ = nullptr;
-  push_devices_ = nullptr;
-  client_compat_ = nullptr;
+  CloseRelayPins();
+  relay_.reset();
   directory_.SetBackend(nullptr);
-  registration_ = nullptr;
-  blob_ = nullptr;
-  relay_registrations_.reset();
+  {
+    std::lock_guard lock(clients_mu_);
+    push_devices_.reset();
+    client_compat_.reset();
+    registration_.reset();
+    blob_.reset();
+  }
   identity_.reset();
   if (contacts_) {
     contacts_->SetOnChanged({});
@@ -3806,6 +4377,77 @@ Roe<void> ConversationsHub::RemoveOwnDevice(const std::string& peer_id) {
   return {};
 }
 
+Roe<void> ConversationsHub::StartNewDeviceList() {
+  if (!IsMessagingReady() || !mesh_messaging_) {
+    return Error("Messaging is not ready");
+  }
+  auto card = mesh_messaging_->OwnAccountCards().StartFreshList(util::NowUnixMs());
+  if (!card) {
+    return card.error();
+  }
+  log().info << "A new device list started on this device, its main device";
+  // Siblings heard already (OwnCards::SetOnChanged); our contacts and every relay of ours take the new card too.
+  AppRuntime::PostWorkerNormal([this]() { ReissueAndAnnounceCard(); });
+  return {};
+}
+
+void ConversationsHub::SetOnOwnDevicesChanged(std::function<void()> callback) {
+  std::lock_guard lock(own_devices_changed_mu_);
+  on_own_devices_changed_ = std::move(callback);
+}
+
+void ConversationsHub::NotifyOwnDevicesChanged() {
+  std::function<void()> callback;
+  {
+    std::lock_guard lock(own_devices_changed_mu_);
+    callback = on_own_devices_changed_;
+  }
+  if (callback) {
+    callback();
+  }
+}
+
+void ConversationsHub::RetryOwnCardRecoverySoon() {
+  AppRuntime::PostWorkerNormal([this]() {
+    if (!shutdown_requested_.load(std::memory_order_acquire) && IsMessagingReady() && mesh_messaging_) {
+      mesh_messaging_->OwnAccountCards().RetryRecovery(util::NowUnixMs());
+    }
+  });
+}
+
+void ConversationsHub::WireOwnCardRecovery() {
+  OwnCards& own = mesh_messaging_->OwnAccountCards();
+  own.SetOwnCardLookup([this](const std::string& account_id, std::function<void(OwnCardAnswers)> done) {
+    AppRuntime::PostWorkerNormal([this, account_id, done = std::move(done)]() {
+      done(shutdown_requested_.load(std::memory_order_acquire) ? OwnCardAnswers{} : AskOurRelaysForOwnCard(account_id));
+    });
+  });
+  own.SetOnRecoveryChanged([this]() { NotifyOwnDevicesChanged(); });
+}
+
+OwnCardAnswers ConversationsHub::AskOurRelaysForOwnCard(const std::string& account_id) const {
+  // The card each relay keeps is the newest we registered there; it is ours only if our account key signed it
+  // (OwnCards checks). Our relays first (preferred first), then the org's directory (CardDirectories).
+  OwnCardAnswers answers;
+  const auto pins = RelayIdentityPins();
+  for (const std::string& origin : CardDirectories()) {
+    if (pins && pins->IdentityMismatch(origin)) {
+      continue; // doesn't match its link: not used (MR008)
+    }
+    auto stored = FetchStoredAccountCard(origin, account_id);
+    if (!stored) {
+      log().info << "our card not asked of " << RelayOriginKey(origin) << ": " << stored.error().message;
+      ++answers.unreached;
+      continue;
+    }
+    ++answers.answered;
+    if (*stored) {
+      answers.cards.push_back(**stored);
+    }
+  }
+  return answers;
+}
+
 Roe<void> ConversationsHub::MakeMainDevice(const std::string& peer_id) {
   if (!IsMessagingReady() || !mesh_messaging_) {
     return Error("Messaging is not ready");
@@ -3817,6 +4459,247 @@ Roe<void> ConversationsHub::MakeMainDevice(const std::string& peer_id) {
   log().info << "Main device handed to " << peer_id;
   AppRuntime::PostWorkerNormal([this]() { SyncLockerThenAnnounceOwnDevices(); });
   return {};
+}
+
+bool ConversationsHub::IsMainDevice() {
+  if (!mesh_messaging_) {
+    return true;
+  }
+  auto devices = mesh_messaging_->OwnAccountCards().Devices();
+  return !devices || devices->devices.empty() || devices->devices.front().peer_id == devices->self_peer_id;
+}
+
+bool ConversationsHub::RunOnHubThread(std::function<void()> task) {
+  if (!AppRuntime::IsRunning() || AppRuntime::CurrentlyOnUI()) {
+    task();
+    return true;
+  }
+  enum : int { kWaiting, kTaken, kGivenUp };
+  auto state = std::make_shared<std::atomic<int>>(kWaiting);
+  auto done = std::make_shared<std::promise<void>>();
+  std::future<void> finished = done->get_future();
+  AppRuntime::PostUI([task = std::move(task), state, done]() {
+    int waiting = kWaiting;
+    if (state->compare_exchange_strong(waiting, kTaken)) {
+      task();
+    }
+    done->set_value();
+  });
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  while (finished.wait_for(std::chrono::milliseconds(50)) != std::future_status::ready) {
+    if (!shutdown_requested_.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
+      continue;
+    }
+    int waiting = kWaiting;
+    if (state->compare_exchange_strong(waiting, kGivenUp)) {
+      log().warning << "the hub's thread did not take the task (10 s, or the hub stops); it does not run";
+      return false;
+    }
+    finished.wait(); // taken already: it ends on the hub's thread
+    return true;
+  }
+  return true;
+}
+
+std::shared_ptr<RelayRegistrationsWorkflow> ConversationsHub::OtherRelayRegistrations() const {
+  std::lock_guard lock(relay_registrations_mu_);
+  return relay_registrations_;
+}
+
+void ConversationsHub::CloseRelayRegistrations() {
+  std::shared_ptr<RelayRegistrationsWorkflow> closing;
+  {
+    std::lock_guard lock(relay_registrations_mu_);
+    closing = std::move(relay_registrations_);
+  }
+  if (closing) {
+    closing->Close();
+  }
+}
+
+std::shared_ptr<MyRelaysWorkflow> ConversationsHub::MyRelays() const {
+  std::lock_guard lock(my_relays_mu_);
+  return my_relays_;
+}
+
+void ConversationsHub::CloseMyRelays() {
+  std::shared_ptr<MyRelaysWorkflow> closing;
+  {
+    std::lock_guard lock(my_relays_mu_);
+    closing = std::move(my_relays_);
+  }
+  if (closing) {
+    closing->Close();
+  }
+}
+
+std::optional<RelayRegistrationRecord> ConversationsHub::PreferredRegistrationRecord() {
+  auto identity = identity_ ? identity_->Get() : Roe<LocalIdentity>(Error("no identity"));
+  if (!identity) {
+    return std::nullopt;
+  }
+  RelayRegistrationRecord record{.expires_at = identity->registration_expires_at,
+                                 .card_issued_at = identity->registered_card_issued_at};
+  switch (ClassifyRegistration(*identity, util::NowUnixMs(), Registration()->BaseUrl())) {
+    case RegistrationStatus::Active:
+    case RegistrationStatus::ExpiringSoon:
+      record.state = RelayRegistrationRecord::State::Registered;
+      break;
+    case RegistrationStatus::Expired:
+      record.state = RelayRegistrationRecord::State::Expired;
+      break;
+    case RegistrationStatus::Unregistered:
+    case RegistrationStatus::WrongBackend:
+      // Never registered, or registered at the relay preferred before (a Make preferred whose renewal failed).
+      record = RelayRegistrationRecord{.state = RelayRegistrationRecord::State::NotRegistered};
+      break;
+  }
+  return record;
+}
+
+MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {
+  MyRelaysWorkflow::Ports ports;
+  ports.probe = [this](const std::string& base_url) -> Roe<void> {
+    // The cheapest unauthenticated GET every relay answers (SERVICE_ENDPOINTS § Client compatibility discovery); a
+    // public address only outside developer builds (a name that resolves inside is refused at connect time).
+    auto answered = HttpClientCompatClient(base_url, !config_.developer_relays).Fetch();
+    if (!answered) {
+      return answered.error();
+    }
+    return {};
+  };
+  ports.main_device = [this]() { return IsMainDevice(); };
+  ports.apply = [this]() {
+    auto applied = std::make_shared<bool>(false);
+    const bool ran = RunOnHubThread([this, applied]() {
+      if (!initialized_ || shutdown_requested_.load(std::memory_order_acquire)) {
+        return;
+      }
+      UpdateOrgBackendClients(config_); // clients, inboxes and the card's relays follow the list
+      if (actions_) {
+        actions_->SetRegistrationClient(Registration());
+      }
+      *applied = true;
+    });
+    return ran && *applied;
+  };
+  ports.leave = [this](const std::string& origin) -> Roe<void> {
+    if (shutdown_requested_.load(std::memory_order_acquire)) {
+      return Error(MyRelaysWorkflow::kClosed);
+    }
+    if (auto unbound = PushDeviceCoordinator::UnregisterOn(*this, origin); !unbound) {
+      log().info << "push binding on " << origin << " not removed: " << unbound.error().message;
+    }
+    const auto registrations = OtherRelayRegistrations();
+    if (!registrations) {
+      return {};
+    }
+    return registrations->Revoke(origin); // with the account's push devices there
+  };
+  ports.register_preferred = [this]() -> Roe<void> {
+    if (shutdown_requested_.load(std::memory_order_acquire)) {
+      return Error(MyRelaysWorkflow::kClosed);
+    }
+    // The card now lists the new order, so it goes whatever the auto-renew preference (ShouldPublishAccountCard),
+    // and the registration records the relay it was made at (#602's backend-switch path).
+    auto renewed =
+        MaybeAutoRenewRegistration(*Registration(), Identity(), true, RegistrationCard(), PreferredRegistrationHome());
+    if (!renewed) {
+      return renewed.error();
+    }
+    (void)PushDeviceCoordinator::Register(*this); // the new preferred relay wakes the phone too
+    return {};
+  };
+  ports.preferred_registration = [this]() -> std::optional<RelayRegistrationRecord> {
+    if (shutdown_requested_.load(std::memory_order_acquire)) {
+      return std::nullopt;
+    }
+    return PreferredRegistrationRecord();
+  };
+  ports.register_others = [this]() { RegisterOnOtherRelaysSoon(); };
+  ports.announce = [this]() { ReissueAndAnnounceCard(); };
+  ports.changed = [this]() { NotifyOurRelaysChanged(); };
+  WireMyRelaysIdentityPorts(ports);
+  return ports;
+}
+
+void ConversationsHub::WireMyRelaysIdentityPorts(MyRelaysWorkflow::Ports& ports) {
+  // Each takes the profile's pins as they are when it runs (none once the profile closes).
+  ports.check_identity = [this](const std::string& base_url, const std::string& peer_id) {
+    const auto pins = RelayIdentityPins();
+    return pins ? pins->CheckForAdd(base_url, peer_id, !config_.developer_relays)
+                : AddIdentityCheck{.result = AddIdentityCheck::Result::Unavailable};
+  };
+  ports.drop_pin = [this](const std::string& origin) {
+    // After the services left it (CheckRelayIdentitiesSoon named what stays): the org's origin keeps its pin, the
+    // build's or the config's anchor.
+    if (const auto pins = RelayIdentityPins(); pins && !KeepsPin(origin)) {
+      pins->Drop(origin);
+    }
+  };
+  ports.rejoin = [this](const std::string& origin) {
+    if (const auto registrations = OtherRelayRegistrations()) {
+      registrations->Rejoin(origin);
+    }
+    RegisterOnOtherRelaysSoon();
+  };
+  ports.identity_mismatch = [this](const std::string& origin) {
+    const auto pins = RelayIdentityPins();
+    return pins && pins->IdentityMismatch(origin);
+  };
+  ports.peer_id_of = [this](const std::string& origin) -> std::string {
+    const auto pins = RelayIdentityPins();
+    return pins ? pins->PinnedPeerId(origin).value_or("") : std::string();
+  };
+  ports.org_identity_mismatch = [this]() -> std::string {
+    const auto pins = RelayIdentityPins();
+    std::vector<std::string> org;
+    {
+      std::lock_guard lock(kept_pins_mu_);
+      org = org_origins_;
+    }
+    const std::vector<std::string> ours = OurRelayOrigins();
+    for (const std::string& origin : org) {
+      const bool is_ours = std::any_of(ours.begin(), ours.end(),
+                                       [&origin](const std::string& relay) { return SameRelay(relay, origin); });
+      if (pins && !is_ours && pins->IdentityMismatch(origin)) {
+        return origin;
+      }
+    }
+    return {};
+  };
+}
+
+Roe<OurRelaysStatus> ConversationsHub::OurRelays() {
+  const auto relays = MyRelays();
+  if (!relays) {
+    return Error(MyRelaysWorkflow::kClosed);
+  }
+  return relays->Status();
+}
+
+Roe<void> ConversationsHub::AddOurRelay(const std::string& typed) {
+  const auto relays = MyRelays();
+  if (!relays || !IsMessagingReady()) {
+    return Error(MyRelaysWorkflow::kClosed);
+  }
+  return relays->Add(typed, config_.developer_relays);
+}
+
+Roe<void> ConversationsHub::RemoveOurRelay(const std::string& origin) {
+  const auto relays = MyRelays();
+  if (!relays || !IsMessagingReady()) {
+    return Error(MyRelaysWorkflow::kClosed);
+  }
+  return relays->Remove(origin);
+}
+
+Roe<void> ConversationsHub::MakeOurRelayPreferred(const std::string& origin) {
+  const auto relays = MyRelays();
+  if (!relays || !IsMessagingReady()) {
+    return Error(MyRelaysWorkflow::kClosed);
+  }
+  return relays->MakePreferred(origin);
 }
 
 void ConversationsHub::SyncLockerThenAnnounceOwnDevices() {
@@ -3892,6 +4775,12 @@ Roe<std::string> ConversationsHub::OwnContactLocator() {
     return Error("Account not set up");
   }
   ContactLocator locator{.account_id = identity->account_id, .nickname = identity->nickname};
+  // Our preferred relay (the one we register on) and the PeerId it answers to (MR008), so a contact adding us can
+  // write before it has our card (R4); an `http://` lab relay, or one not pinned, is left out, as our card leaves it.
+  const std::string preferred = NormalizeRegistrationBackend(Registration()->BaseUrl());
+  if (const auto pins = RelayIdentityPins()) {
+    locator.relay = AccountCardRelay{.origin = preferred, .peer_id = pins->PinnedPeerId(preferred).value_or("")};
+  }
   if (auto self = DevicePeerIdFromKey(identity->public_key_b64)) {
     locator.devices.push_back(*self);
   }
@@ -3942,10 +4831,11 @@ PeerDisplayResolver& ConversationsHub::PeerLabels() {
 
 namespace {
 
-// Registration() / Blob() hand out references, but a build with no backend address creates neither client (the UI
-// demo app, or a custom backend left blank). These stand in so a call reports an error instead of dereferencing null.
+// Registration() never hands out null, but a build with no backend address creates no client (the UI demo app, or a
+// custom backend left blank). This stands in so a call reports an error instead of dereferencing null.
 class UnconfiguredRegistrationClient final : public IRegistrationClient {
 public:
+  IRelayAudience* Audience() const override { return nullptr; }
   Roe<RegistrationStartResult> StartRegistration(const std::string&, const std::string&, const std::string&,
                                                  const std::string&, const std::string&,
                                                  const std::vector<std::string>&,
@@ -3953,46 +4843,37 @@ public:
     return Unavailable();
   }
   Roe<RegistrationResult> FinishRegistration(const std::string&, const std::string&, const std::string&,
-                                             const std::string&, int64_t, const std::string&, const std::string&,
+                                             const SignedRelayCommand&, const std::string&, const std::string&,
                                              const std::string&, const std::string&, const std::vector<std::string>&,
                                              const RegistrationPublishOpts&) override {
     return Unavailable();
   }
-  Roe<RegistrationResult> UpdateNickname(const std::string&, const std::string&, int64_t, const std::string&) override {
+  Roe<RegistrationResult> UpdateNickname(const std::string&, const SignedRelayCommand&, const std::string&) override {
     return Unavailable();
   }
-  Roe<void> RevokeRegistration(const std::string&, const std::string&, int64_t) override { return Unavailable(); }
+  Roe<void> RevokeRegistration(const std::string&, const std::string&, const SignedRelayCommand&) override {
+    return Unavailable();
+  }
 
 private:
   static Error Unavailable() { return Error("registration not configured"); }
 };
 
-class UnconfiguredBlobClient final : public IBlobClient {
-public:
-  Roe<BlobPresignResult> Presign(const std::string&, const std::string&, uint64_t, BlobPurpose) override {
-    return Unavailable();
-  }
-  Roe<void> Retain(const std::string&, const std::string&) override { return Unavailable(); }
-  Roe<void> Delete(const std::string&, const std::string&) override { return Unavailable(); }
-  Roe<void> SetProfileIcon(const std::string&, const std::string&, const std::string&, const std::string&) override {
-    return Unavailable();
-  }
-  Roe<void> PutUpload(const std::string&, const std::string&, const std::string&) override { return Unavailable(); }
-  Roe<RelayFileStartResult> FileStart(const std::string&, uint64_t) override { return Unavailable(); }
-  Roe<RelayFilePartResult> FilePart(const std::string&, const std::string&, uint64_t) override { return Unavailable(); }
-  Roe<RelayFileCompleteResult> FileComplete(const std::string&, const std::string&) override { return Unavailable(); }
-  Roe<void> FileDelete(const std::string&, const std::string&) override { return Unavailable(); }
-  Roe<RelayFileListResult> FileList(const std::string&, const std::string&) override { return Unavailable(); }
-
-private:
-  static Error Unavailable() { return Error("blob service not configured"); }
-};
-
 } // namespace
 
-IRegistrationClient& ConversationsHub::Registration() {
-  static UnconfiguredRegistrationClient unconfigured;
-  return registration_ ? *registration_ : unconfigured;
+std::shared_ptr<IRegistrationClient> ConversationsHub::Registration() const {
+  static const auto unconfigured = std::make_shared<UnconfiguredRegistrationClient>();
+  std::lock_guard lock(clients_mu_);
+  return registration_ ? registration_ : unconfigured;
+}
+
+std::string ConversationsHub::OwnAccountId() const {
+  auto identity = identity_ ? identity_->Get() : Roe<LocalIdentity>(Error("no identity"));
+  return identity ? identity->account_id : std::string();
+}
+
+RegistrationHome ConversationsHub::PreferredRegistrationHome() const {
+  return [this]() { return Registration()->BaseUrl(); };
 }
 
 RegistrationPublishOpts ConversationsHub::RegistrationCard() {
@@ -4002,16 +4883,18 @@ RegistrationPublishOpts ConversationsHub::RegistrationCard() {
   return WithAccountCard({}, mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs()));
 }
 
-IBlobClient& ConversationsHub::Blob() {
-  static UnconfiguredBlobClient unconfigured;
-  return blob_ ? *blob_ : unconfigured;
+std::shared_ptr<IBlobClient> ConversationsHub::BlobClient() const {
+  std::lock_guard lock(clients_mu_);
+  return blob_;
 }
 
-IPushDeviceClient* ConversationsHub::PushDevices() {
+std::shared_ptr<IPushDeviceClient> ConversationsHub::PushDevices() const {
+  std::lock_guard lock(clients_mu_);
   return push_devices_;
 }
 
-IClientCompatClient* ConversationsHub::ClientCompat() {
+std::shared_ptr<IClientCompatClient> ConversationsHub::ClientCompat() const {
+  std::lock_guard lock(clients_mu_);
   return client_compat_;
 }
 

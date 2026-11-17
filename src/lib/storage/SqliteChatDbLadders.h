@@ -2,8 +2,11 @@
 
 #include "lib/storage/SqliteChatStoreGate.h"
 #include "lib/storage/SqliteMigrations.h"
+#include "lib/delivery/IPeerSessionStore.h"
 
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "common/PbrCompat.h"
 
@@ -30,6 +33,16 @@ std::optional<ChatStoreProblem> ChatStoreProblemFor(const Roe<SqliteLadderOutcom
  * messages). Recorded in the profile directory so the app can say so once after start-up.
  */
 void NoteChatStoreReset(const std::string& profile_data_dir, const std::string& what);
+
+/**
+ * What a profile.db below the floor hands on to the empty one that replaces it: the sessions a chat reset keeps
+ * (SessionsAChatResetKeeps, as Me → Storage → Reset chats keeps them), read from `old_db` whatever its schema
+ * (SqlitePeerSessionStore::ReadStored), still sealed, less what a step above its version would have dropped. A step
+ * that drops or rewrites session rows says so here too.
+ */
+Roe<std::vector<PeerSessionRecord>> ReadSessionsKeptBelowFloor(sqlite3* old_db);
+/** `kept` into `new_db` (created at today's schema), as stored: all of them, or none. */
+Roe<void> WriteSessionsKeptBelowFloor(sqlite3* new_db, const std::vector<PeerSessionRecord>& kept);
 /** The reset note, once: true (and the note is gone) when a chat database was reset since it was last taken. */
 bool TakeChatStoreResetNotice(const std::string& profile_data_dir);
 

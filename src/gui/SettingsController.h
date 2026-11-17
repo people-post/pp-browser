@@ -10,6 +10,7 @@
 #include "gui/SettingsChoicePage.h"
 #include "gui/SettingsHost.h"
 #include "gui/SettingsProfileActions.h"
+#include "gui/SettingsMyRelays.h"
 #include "gui/SettingsOwnDevices.h"
 #include "gui/SettingsSecurityActions.h"
 #include "gui/StorageManagerController.h"
@@ -217,6 +218,8 @@ private:
     ui::String backend_label;
     bool backend_restart_pending = false;
     bool backend_is_custom = false;
+    /** The backend's relay names no relay ID: not used in this build (MR008). */
+    bool relay_id_missing = false;
     /** Hidden in the UI demo app (BackendSwitchVisible). */
     bool show_backend_switch = true;
     ui::String direct_connections = "contacts";
@@ -503,6 +506,7 @@ private:
                                   [this](const Error& err) { ReportFailure(err); }};
   SettingsSecurityActions security_actions_{*this, commands_, shell_feedback_, unlock_ensure_, pin_prompt_};
   SettingsOwnDevices own_devices_{commands_, shell_feedback_, [this](const Error& err) { ReportFailure(err); }};
+  SettingsMyRelays my_relays_{commands_, shell_feedback_, [this](const Error& err) { ReportFailure(err); }};
   SettingsProfileActions profile_actions_{*this, commands_, unlock_ensure_};
   StorageManagerController storage_manager_{commands_, shell_navigation_, shell_feedback_, [this]() {
                                               const ShellChromeSnapshot chrome = ChromeSnapshot();

@@ -1285,7 +1285,7 @@ public class MainActivity extends SDLActivity {
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_MESSAGES)
                 .setSmallIcon(android.R.drawable.stat_notify_chat)
                 .setContentTitle(title != null ? title : "New message")
-                .setContentText(body != null ? body : "You have a new message")
+                .setContentText(body != null ? body : getString(R.string.message_incoming_body))
                 .setContentIntent(pi)
                 .setNumber(Math.max(1, threadUnread))
                 .setAutoCancel(true)

@@ -2,7 +2,7 @@
 
 #include "common/Diag.h"
 #include "common/chat/MessagingLimits.h"
-#include "lib/delivery/RelayOrigins.h"
+#include "lib/net/RelayOrigins.h"
 
 #include <algorithm>
 #include <utility>
@@ -13,25 +13,51 @@ RelayInboxCoordinator::RelayInboxCoordinator(Ports ports) : ports_(std::move(por
   redirectLogger("RelayInboxCoordinator");
 }
 
+std::shared_ptr<RelayInboxCoordinator::Inbox> RelayInboxCoordinator::KeptLocked(const RelayInbox& relay,
+                                                                                const bool preferred) const {
+  const auto kept = std::find_if(inboxes_.begin(), inboxes_.end(), [&](const std::shared_ptr<Inbox>& inbox) {
+    return inbox->relay.client == relay.client && inbox->preferred == preferred &&
+           RelayOriginKey(inbox->relay.origin) == RelayOriginKey(relay.origin);
+  });
+  return kept == inboxes_.end() ? nullptr : *kept;
+}
+
 void RelayInboxCoordinator::SetInboxes(std::vector<RelayInbox> inboxes, std::string profile_data_dir) {
-  std::vector<std::shared_ptr<Inbox>> next;
-  for (RelayInbox& relay : inboxes) {
-    if (!relay.client) {
-      continue;
+  bool save = false;
+  {
+    std::lock_guard lock(mutex_);
+    std::vector<std::shared_ptr<Inbox>> next;
+    for (RelayInbox& relay : inboxes) {
+      if (!relay.client) {
+        continue;
+      }
+      if (auto kept = KeptLocked(relay, next.empty())) {
+        next.push_back(std::move(kept)); // unchanged: a poll under way keeps its cursor and its follow-up
+        continue;
+      }
+      auto inbox = std::make_shared<Inbox>();
+      inbox->preferred = next.empty();
+      inbox->relay = std::move(relay);
+      next.push_back(std::move(inbox));
     }
-    auto inbox = std::make_shared<Inbox>();
-    inbox->preferred = next.empty();
-    inbox->relay = std::move(relay);
-    next.push_back(std::move(inbox));
+    for (const auto& old : inboxes_) {
+      if (std::find(next.begin(), next.end(), old) == next.end()) {
+        old->again = false; // a poll under way polls once more at most, into its own (old) inbox
+      }
+    }
+    const bool changed = next != inboxes_;
+    inboxes_ = std::move(next);
+    if (!cursors_account_.empty() && profile_data_dir_ == profile_data_dir) {
+      save = changed; // a relay no longer ours keeps no cursor; the one made preferred keeps its own
+    } else {
+      profile_data_dir_ = std::move(profile_data_dir);
+      cursors_account_.clear(); // read again for the next sync
+      cursors_.clear();
+    }
   }
-  std::lock_guard lock(mutex_);
-  for (const auto& old : inboxes_) {
-    old->again = false; // a poll under way polls once more at most, into its own (old) inbox
+  if (save) {
+    SaveCursorsSoon();
   }
-  inboxes_ = std::move(next);
-  profile_data_dir_ = std::move(profile_data_dir);
-  cursors_account_.clear(); // read again for the next sync
-  cursors_ = {};
 }
 
 std::vector<RelayInbox> RelayInboxCoordinator::Inboxes() const {
@@ -140,17 +166,63 @@ void RelayInboxCoordinator::LoadCursorsLocked(const std::string& account_id) {
     return;
   }
   cursors_account_ = account_id;
-  cursors_ = profile_data_dir_.empty() ? RelayInboxCursors{} : LoadRelayInboxCursors(profile_data_dir_, account_id);
+  cursors_.clear();
+  if (profile_data_dir_.empty()) {
+    return;
+  }
+  const RelayInboxCursors kept = LoadRelayInboxCursors(profile_data_dir_, account_id);
+  cursors_ = kept.others;
+  if (!kept.preferred.empty()) {
+    // A file from before My relays names no relay for it: the preferred one's.
+    std::string relay = kept.preferred_relay;
+    if (relay.empty() && !inboxes_.empty()) {
+      relay = RelayOriginKey(inboxes_.front()->relay.origin);
+    }
+    if (!relay.empty()) {
+      cursors_[relay] = kept.preferred;
+    }
+  }
+}
+
+void RelayInboxCoordinator::SaveCursorsSoon() {
+  // Off the caller's thread (the hub's): a file write, under the lock a poll holds for its own.
+  const auto save = [this]() {
+    std::lock_guard lock(mutex_);
+    SaveCursorsLocked();
+  };
+  if (ports_.ack) {
+    ports_.ack(save);
+    return;
+  }
+  save();
+}
+
+void RelayInboxCoordinator::SaveCursorsLocked() {
+  std::erase_if(cursors_, [this](const auto& entry) {
+    return std::none_of(inboxes_.begin(), inboxes_.end(), [&entry](const std::shared_ptr<Inbox>& known) {
+      return RelayOriginKey(known->relay.origin) == entry.first;
+    });
+  });
+  if (profile_data_dir_.empty() || cursors_account_.empty()) {
+    return;
+  }
+  RelayInboxCursors file;
+  for (const auto& [relay, cursor] : cursors_) {
+    if (!inboxes_.empty() && relay == RelayOriginKey(inboxes_.front()->relay.origin)) {
+      file.preferred = cursor;
+      file.preferred_relay = relay;
+    } else {
+      file.others[relay] = cursor;
+    }
+  }
+  SaveRelayInboxCursors(profile_data_dir_, cursors_account_, file);
 }
 
 std::string RelayInboxCoordinator::CursorOf(const Inbox& inbox, const std::string& account_id) {
   std::lock_guard lock(mutex_);
   LoadCursorsLocked(account_id);
-  if (inbox.preferred) {
-    return cursors_.preferred;
-  }
-  const auto it = cursors_.others.find(RelayOriginKey(inbox.relay.origin));
-  return it == cursors_.others.end() ? std::string() : it->second;
+  const auto it = cursors_.find(RelayOriginKey(inbox.relay.origin));
+  return it == cursors_.end() ? std::string() : it->second;
 }
 
 void RelayInboxCoordinator::KeepCursor(const Inbox& inbox, const std::string& account_id, const std::string& cursor) {
@@ -161,20 +233,8 @@ void RelayInboxCoordinator::KeepCursor(const Inbox& inbox, const std::string& ac
     return; // the inboxes changed meanwhile: this one's cursor is no longer ours to keep
   }
   LoadCursorsLocked(account_id);
-  if (inbox.preferred) {
-    cursors_.preferred = cursor;
-  } else {
-    cursors_.others[RelayOriginKey(inbox.relay.origin)] = cursor;
-  }
-  // A relay no longer ours keeps no cursor.
-  std::erase_if(cursors_.others, [this](const auto& entry) {
-    return std::none_of(inboxes_.begin(), inboxes_.end(), [&entry](const std::shared_ptr<Inbox>& known) {
-      return !known->preferred && RelayOriginKey(known->relay.origin) == entry.first;
-    });
-  });
-  if (!profile_data_dir_.empty()) {
-    SaveRelayInboxCursors(profile_data_dir_, account_id, cursors_);
-  }
+  cursors_[RelayOriginKey(inbox.relay.origin)] = cursor;
+  SaveCursorsLocked();
 }
 
 } // namespace pbr

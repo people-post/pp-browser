@@ -31,6 +31,10 @@ AppConfig BriefDefaults(const std::string& origin) {
   config.relay.base_url = relay_base;
   config.directory.base_url = relay_base;
   config.registration.base_url = relay_base;
+  // The build's PeerId for the backend whose origin this is (MR008); another origin (a test's) names none.
+  const std::string peer_id = origin == BriefOrigin() ? BriefRelayPeerId() : std::string();
+  config.relay.peer_id = peer_id;
+  config.registration.peer_id = peer_id;
   config.relay_content_sha256 = CompiledRelayContentSha256();
   return config;
 }

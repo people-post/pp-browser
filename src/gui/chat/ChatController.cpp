@@ -781,6 +781,8 @@ void ChatController::ResetRecovery() {
 }
 
 void ChatController::SyncPushDevices() {
+  // Read here (UI thread): the binding run itself is off it. Default PIN: calls come by VoIP push (P020).
+  IPushDeviceRegistrar::SetVoipPushWanted(Store().Snapshot().profile_prefs.pin_is_default);
   if (ready_tasks_) {
     ready_tasks_->SyncPushDevices();
   }

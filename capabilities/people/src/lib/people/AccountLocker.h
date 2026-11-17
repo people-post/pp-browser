@@ -22,6 +22,17 @@ namespace pbr {
  */
 inline constexpr size_t kMaxDeviceNameEntries = 8;
 
+/**
+ * Most grants a locker keeps (multi-relay MR005, ACCOUNT_LOCKER § State JSON `grants`): about 4.6 KB each (the
+ * signature), so 32 keep the snapshot within a small size bucket. Over it, the latest issued stay: a grantor that
+ * still writes to us renews, and one cut here grants a restored device again once it hears of it.
+ */
+inline constexpr size_t kMaxLockerGrants = 32;
+/** The relays a locker's `relays` carries at most (a fifth and on are dropped on read; MR004 bounds a list to 4). */
+inline constexpr size_t kMaxLockerRelays = 4;
+/** Longest grant field read from a locker (an Account ID, a base64 ML-DSA-65 signature fits): longer drops the grant. */
+inline constexpr size_t kMaxLockerGrantFieldBytes = 8192;
+
 /** The furthest `at` read from a locker or file (Unix ms, the year 2100): anything beyond is cut back to it. */
 inline constexpr int64_t kMaxDeviceNameAt = 4102444800000;
 
@@ -109,7 +120,8 @@ std::optional<LockerSnapshot> PickNewest(const std::vector<LockerSnapshot>& snap
  * What to publish when the locker already holds `stored` (another device of the account wrote it): contacts by their
  * clocks (the newer register per account wins, ours on a tie; a removal is a tombstone and carries; a contact neither
  * side has a register for is kept from either), groups by id (the higher roster epoch wins, ours on a tie), card
- * floors (the newest per account), providers (union).
+ * floors (the newest per account), grants (both copies' — the publisher runs CapGrants), relays (the copy from the
+ * newer card; ours on a tie), providers (union).
  */
 AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored);
 
@@ -126,6 +138,13 @@ std::vector<DeviceNameEntry> MergeDeviceNames(const std::vector<DeviceNameEntry>
  * first); the larger peer_id goes first on a tie. Never prunes below the limit.
  */
 std::vector<DeviceNameEntry> CapDeviceNames(std::vector<DeviceNameEntry> entries);
+
+/**
+ * The grants a locker keeps, from any mix of copies: none expired at `now_ms`, one per grantor (the latest issued;
+ * the larger signature on a tie, so every device keeps the same), at most kMaxLockerGrants (the latest issued stay),
+ * sorted by grantor. Pure. Checking the signatures is the reader's job.
+ */
+std::vector<AccountStateGrant> CapGrants(std::vector<AccountStateGrant> grants, int64_t now_ms);
 
 /** `device_names` as JSON (an array of {peer_id, name, at}; a tombstone is {peer_id, at, removed: true}). */
 Value DeviceNamesToJson(const std::vector<DeviceNameEntry>& entries);

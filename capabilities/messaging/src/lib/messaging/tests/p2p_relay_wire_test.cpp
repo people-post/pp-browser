@@ -380,6 +380,34 @@ TEST(P2pRelayWireTest, WakeHintIsARelayHintOutsideTheEnvelope) {
   EXPECT_FALSE(RelayWireSendRecordToJson(bad.value()).contains("wake_hint")) << "an invalid hint is dropped";
 }
 
+TEST(P2pRelayWireTest, NoKindIsSent) {
+  using namespace pbr;
+
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = "550e8400-e29b-41d4-a716-446655440003";
+  envelope.sender_contact_id = "account:alice123";
+  envelope.sender_device = "QmAliceDevice";
+  envelope.route.kind = "direct";
+  envelope.route.channel = ThreadChannel::E2e;
+  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.sender_seq = 7;
+  envelope.order_key = 7;
+  envelope.session_epoch = 1;
+  envelope.timestamp = 1719662400123;
+  envelope.signature = "sig";
+  envelope.stream_key = "v1:e2e:1:account:alice123:account:bob456";
+  envelope.recipient_account_id = "account:bob456";
+  envelope.relay_wake_hint = "m";
+  envelope.relay_wake_urgent = true;
+
+  const auto sent = RelayWireSendRecordFromEnvelope(envelope);
+  ASSERT_TRUE(static_cast<bool>(sent));
+  const auto json = RelayWireSendRecordToJson(sent.value());
+  EXPECT_FALSE(json.contains("kind")) << "the message class stays out of the plaintext fields";
+  EXPECT_TRUE(json.contains("wake_hint"));
+}
+
 TEST(P2pRelayWireTest, WakeHintAcceptsOnlyShortPlainIds) {
   using namespace pbr;
 

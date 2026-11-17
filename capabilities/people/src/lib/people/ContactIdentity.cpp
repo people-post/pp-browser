@@ -60,4 +60,22 @@ std::optional<std::string> PrimaryAccountIdFromHit(const mesh::DirectoryHit& hit
   return PrimaryIdFromHit(hit, mesh::ContactIdKind::Account);
 }
 
+ContactRelayList ContactRelays(const Contact& contact, const std::optional<PeerCardRecord>& kept) {
+  ContactRelayList list;
+  if (kept && kept->newest_card) {
+    list.from_card = true;
+    list.relays = KeptRelays(*kept);
+    for (const AccountCardRelay& relay : list.relays) {
+      list.origins.push_back(relay.origin);
+    }
+    return list;
+  }
+  if (!contact.remote.locator_relay.empty()) {
+    list.origins.push_back(contact.remote.locator_relay);
+    list.relays.push_back(
+        AccountCardRelay{.origin = contact.remote.locator_relay, .peer_id = contact.remote.locator_relay_peer_id});
+  }
+  return list;
+}
+
 } // namespace pbr

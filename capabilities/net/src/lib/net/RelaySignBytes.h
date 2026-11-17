@@ -8,6 +8,18 @@
 namespace pbr {
 
 void RelaySignAppendDomain(std::ostringstream& oss, const char* domain_with_nul);
+/**
+ * A signed relay command's header (multi-relay MR007): `domain ‖ 0x00 ‖ u8 version ‖ LenUtf8(audience)`, the
+ * audience the PeerId of the one relay the command is for (base58btc, as nodes print it). False, and nothing
+ * written, when `audience` is empty: no command is signed for no relay.
+ */
+bool RelaySignAppendCommandHeader(std::ostringstream& oss, const char* domain, uint8_t version,
+                                  const std::string& audience);
+/**
+ * The version byte of a signed relay command's bytes (the byte after the domain's NUL), which the command's body
+ * names as `sign_version` (a relay answers an older one 426 `client_upgrade_required`); -1 when `bytes` has none.
+ */
+int RelaySignVersionOf(const std::vector<uint8_t>& bytes);
 void RelaySignAppendU8(std::ostringstream& oss, uint8_t value);
 void RelaySignAppendI64(std::ostringstream& oss, int64_t value);
 void RelaySignAppendU64(std::ostringstream& oss, uint64_t value);

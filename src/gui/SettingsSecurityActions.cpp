@@ -51,6 +51,7 @@ SettingsSecurityActions::~SettingsSecurityActions() {
 
 void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("change_pin", DataEvent<>([this]() { ChangePin(); }));
+  ctor.BindEventCallback("remove_pin", DataEvent<>([this]() { RemovePin(); }));
   ctor.BindEventCallback("export_link_device", DataEvent<>([this]() { ExportLinkDevice(); }));
   SetTransferLabels();
   ctor.Bind("transfer_code_copied", &transfer_code_copied_);
@@ -195,11 +196,8 @@ void SettingsSecurityActions::ChangePin() {
             done(changed.error());
             return;
           }
-          ProfilePreferences prefs = host_.Store().Snapshot().profile_prefs;
-          prefs.pin_is_default = false;
-          prefs.pin_digits = PinDigitsOf(new_pin.Reveal()); // the gate's pad follows the new PIN
-          auto saved = host_.Store().SaveProfilePrefs(prefs);
-          done({}); // the PIN is changed: the gate closes either way
+          auto saved = RecordPinChanged(new_pin, false); // 123456 chosen here stays an own PIN: the gate still asks
+          done({});                                      // the PIN is changed: the gate closes either way
           if (!saved) {
             host_.ReportFailure(saved.error());
             return;
@@ -209,6 +207,56 @@ void SettingsSecurityActions::ChangePin() {
           UserFeedback::Ok(Tr("settings.security.pin_updated"));
         },
         std::move(current_pin));
+  });
+}
+
+Roe<void> SettingsSecurityActions::RecordPinChanged(const SecretText& new_pin, const bool to_default) {
+  ProfilePreferences prefs = host_.Store().Snapshot().profile_prefs;
+  const bool was_default = prefs.pin_is_default;
+  prefs.pin_is_default = to_default;
+  // The default PIN opens silently and never shows the gate's pad: its kind stays unknown, as on first setup.
+  prefs.pin_digits = to_default ? std::nullopt : PinDigitsOf(new_pin.Reveal());
+  auto saved = host_.Store().SaveProfilePrefs(prefs);
+  if (to_default && commands_.disable_biometric) {
+    commands_.disable_biometric();
+  }
+  if (saved && was_default != to_default && commands_.on_pin_mode_changed) {
+    commands_.on_pin_mode_changed(to_default);
+  }
+  return saved;
+}
+
+void SettingsSecurityActions::RemovePin() {
+  EnsureUnlocked(Tr("settings.security.pin_setup_first"), [this]() {
+    if (host_.Store().Snapshot().profile_prefs.pin_is_default) {
+      return;
+    }
+    if (!commands_.change_pin || !pin_prompt_.show_verify) {
+      host_.ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable"));
+      return;
+    }
+    pin_prompt_.show_verify(
+        PinVerifyPurpose::RemovePin,
+        [this](const SecretText& pin, std::function<void(Roe<void>)> done) {
+          AppRuntime::PostWorkerNormal([this, pin, done = std::move(done)]() {
+            // A wrong current PIN comes back as the vault's refusal: the gate says so and stays.
+            Roe<void> changed = commands_.change_pin(pin, SecretText(std::string(kDefaultProfilePin)));
+            AppRuntime::PostUI([done, changed = std::move(changed)]() { done(changed); });
+          });
+        },
+        [this]() {
+          auto saved = RecordPinChanged(SecretText(std::string(kDefaultProfilePin)), true);
+          host_.PullFromView();
+          host_.UiState().security_biometric_on = commands_.biometric_enabled && commands_.biometric_enabled();
+          host_.PushToView(false);
+          if (!saved) {
+            host_.ReportFailure(saved.error());
+            return;
+          }
+          host_.Resync(true);
+          host_.ShowStatus("");
+          UserFeedback::Ok(Tr("settings.security.pin_removed"));
+        });
   });
 }
 
@@ -224,6 +272,10 @@ void SettingsSecurityActions::ToggleBiometric() {
     }
     state.security_biometric_on = commands_.biometric_enabled && commands_.biometric_enabled();
     host_.PushToView(false);
+    return;
+  }
+  if (host_.Store().Snapshot().profile_prefs.pin_is_default) {
+    UserFeedback::Note(Tr("settings.security.biometric.needs_own_pin"));
     return;
   }
   if (!commands_.enable_biometric || !pin_prompt_.show_verify) {

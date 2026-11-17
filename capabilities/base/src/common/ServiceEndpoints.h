@@ -12,9 +12,15 @@ struct ServiceEndpointConfig {
   std::string base_url;
   /** http now; amp = MeshHost AmpDirectoryProtocol (N029 nd4; not CreateOrgBackendClients). */
   std::string transport = "http";
+  /**
+   * The relay's PeerId (multi-relay MR008: a relay address carries it): what its signed calls name and its
+   * `GET /v1/relay-identity` must answer. `relay` / `registration` only; the build's for prod / qa, the config's
+   * `peer_id` for a custom backend. Empty: none named (the app pins its first answer, with a warning).
+   */
+  std::string peer_id;
 
   bool operator==(const ServiceEndpointConfig& other) const {
-    return base_url == other.base_url && transport == other.transport;
+    return base_url == other.base_url && transport == other.transport && peer_id == other.peer_id;
   }
   bool operator!=(const ServiceEndpointConfig& other) const { return !(*this == other); }
 };

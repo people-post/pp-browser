@@ -18,6 +18,13 @@ SettingsOwnDevices::SettingsOwnDevices(const SettingsCommands& commands, const S
                                        std::function<void(const Error&)> report_failure)
     : commands_(commands), feedback_(feedback), report_failure_(std::move(report_failure)) {}
 
+SettingsOwnDevices::~SettingsOwnDevices() {
+  *alive_ = false;
+  if (watching_ && commands_.watch_own_devices) {
+    commands_.watch_own_devices(nullptr);
+  }
+}
+
 void SettingsOwnDevices::Bind(ui::DataModelConstructor& ctor) {
   if (auto row = ctor.RegisterStruct<Row>()) {
     row.RegisterMember("peer_id", &Row::peer_id);
@@ -33,6 +40,9 @@ void SettingsOwnDevices::Bind(ui::DataModelConstructor& ctor) {
   ctor.Bind("own_devices_not_main", &not_main_);
   ctor.Bind("own_has_other_devices", &has_others_);
   ctor.Bind("own_main_note", &main_note_);
+  ctor.Bind("own_list_getting", &list_getting_);
+  ctor.Bind("own_list_missing", &list_missing_);
+  ctor.BindEventCallback("start_new_device_list", DataEvent<>([this]() { StartNewList(); }));
   ctor.BindEventCallback("remove_own_device", DataEvent<int>([this](const int index) { Remove(index); }));
   ctor.BindEventCallback("make_main_device", DataEvent<int>([this](const int index) { MakeMain(index); }));
   ctor.BindEventCallback("rename_own_device", DataEvent<int>([this](const int index) { Rename(index); }));
@@ -49,16 +59,68 @@ void SettingsOwnDevices::Refresh() {
     Show(Error("Messaging is not ready"));
     return;
   }
+  Watch();
   const uint64_t count = ++refresh_count_;
-  AppRuntime::PostWorkerNormal([this, count]() {
-    auto listed =
-        commands_.own_devices ? commands_.own_devices() : Roe<OwnDevicesView>(Error("Messaging is not ready"));
-    AppRuntime::PostUI([this, count, listed = std::move(listed)]() mutable {
-      if (count == refresh_count_) {
+  std::weak_ptr<bool> alive = alive_;
+  // The port copied here, on the UI thread: the commands are bound anew (a quit, a profile reset) on this thread only.
+  AppRuntime::PostWorkerNormal([this, count, alive, list = commands_.own_devices]() {
+    auto listed = list();
+    AppRuntime::PostUI([this, count, alive, listed = std::move(listed)]() mutable {
+      if (auto live = alive.lock(); live && *live && count == refresh_count_) {
         Show(std::move(listed));
       }
     });
   });
+}
+
+void SettingsOwnDevices::Watch() {
+  if (!commands_.watch_own_devices) {
+    return; // set again at every read: the ports may have been bound anew (a profile reset)
+  }
+  watching_ = true;
+  std::weak_ptr<bool> alive = alive_;
+  commands_.watch_own_devices([this, alive]() {
+    AppRuntime::PostUI([this, alive]() {
+      if (auto live = alive.lock(); live && *live) {
+        Refresh();
+      }
+    });
+  });
+}
+
+void SettingsOwnDevices::StartNewList() {
+  if (!list_missing_ || !feedback_.show_confirm) {
+    return;
+  }
+  if (!commands_.start_new_device_list) {
+    report_failure_(Error("Messaging is not ready"));
+    return;
+  }
+  const auto& show_confirm =
+      feedback_.show_confirm_destructive ? feedback_.show_confirm_destructive : feedback_.show_confirm;
+  show_confirm(
+      Tr("settings.security.devices.new_list_confirm_title"), Tr("settings.security.devices.new_list_confirm_message"),
+      [this, start = commands_.start_new_device_list](const bool ok) {
+        if (!ok) {
+          return;
+        }
+        std::weak_ptr<bool> alive = alive_;
+        AppRuntime::PostWorkerNormal([this, alive, start]() {
+          Roe<void> started = start();
+          AppRuntime::PostUI([this, alive, started = std::move(started)]() {
+            if (auto live = alive.lock(); !live || !*live) {
+              return;
+            }
+            Refresh();
+            if (!started) {
+              report_failure_(started.error());
+              return;
+            }
+            UserFeedback::Ok(Tr("settings.security.devices.new_list_started"));
+          });
+        });
+      },
+      Tr("settings.security.devices.new_list_confirm_ok"));
 }
 
 void SettingsOwnDevices::Show(Roe<OwnDevicesView> listed) {
@@ -75,6 +137,8 @@ void SettingsOwnDevices::Show(Roe<OwnDevicesView> listed) {
   }
   shown_ = !rows_.empty() || view_.signed_out;
   signed_out_ = view_.signed_out;
+  list_getting_ = view_.pending == OwnListPending::Getting;
+  list_missing_ = view_.pending == OwnListPending::NotFound;
   not_main_ = shown_ && !view_.this_is_main;
   has_others_ = false;
   for (const OwnDeviceView& device : view_.devices) {
@@ -95,6 +159,8 @@ void SettingsOwnDevices::Show(Roe<OwnDevicesView> listed) {
   host.Dirty("settings", "own_devices_signed_out");
   host.Dirty("settings", "own_devices_not_main");
   host.Dirty("settings", "own_has_other_devices");
+  host.Dirty("settings", "own_list_getting");
+  host.Dirty("settings", "own_list_missing");
 }
 
 const OwnDeviceView* SettingsOwnDevices::ManageableAt(const int index) const {
@@ -167,8 +233,8 @@ void SettingsOwnDevices::RenameById(const std::string& peer_id) {
                             report_failure_(Error("Messaging is not ready"));
                             return;
                           }
-                          AppRuntime::PostWorkerNormal([this, peer_id, name]() {
-                            Roe<void> renamed = commands_.rename_device(peer_id, name);
+                          AppRuntime::PostWorkerNormal([this, peer_id, name, rename = commands_.rename_device]() {
+                            Roe<void> renamed = rename(peer_id, name);
                             AppRuntime::PostUI([this, renamed = std::move(renamed)]() {
                               Refresh();
                               if (!renamed) {

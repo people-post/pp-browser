@@ -255,6 +255,60 @@ See [WINDOW_SHELL.md](WINDOW_SHELL.md) for layout geometry (content scrolls unde
 
 Preference rows use a disclosure **card** pattern: full-width button with elevated surface, `border-subtle`, and 10dp radius; title/subtitle on the left, `chevron-right.svg` on the right; active row uses the same indigo tint as contacts selection (no accent rail). Binary on/off prefs use an iOS-style switch (`.settings-switch` with sliding `.settings-switch-knob`; on state via `data-class-settings-switch--on`). Limited-choice prefs (Theme, Language, Group invites) use `.settings-choice-row`: label left, muted current value + chevron right; tap opens `ContextMenuHost` (float on expanded, action sheet on compact). Preference labels use `.settings-toggle-label` (15dp); helper copy under rows uses `.settings-help` (12dp muted). Expanded Me uses secondary list + primary detail; compact Me uses the account bottom sheet (nested detail + swipe dismiss). The Me index keeps identity + Support content-sized (target ≲⅓ of pane height); photo/nickname/register live in **Profile** detail; only the Preferences list grows and scrolls.
 
+### My devices
+
+Me → **My devices** (`settings_section_devices.rml`; presenter `OwnDevicesViewFor`, rendered by
+`SettingsOwnDevices`): the account's devices, the main one first ([ACCOUNT_CARD § Main device](../contracts/ACCOUNT_CARD.md)).
+While this device holds no list of its account it shows no list and no link hero: "Getting your device list…" (muted)
+while our relays are asked, and — when they answered and none keeps it — "Your device list wasn't found on your
+relays…" with **Start a new device list…** (secondary button; its confirm, in the danger style, says this device becomes
+the main device and every other device is signed out). The page reads the list again whenever it, or that state,
+changes.
+
+### My relays
+
+Me → **My relays** (`settings_section_relays.rml`, page `relays`, Home group 1 after My devices; multi-relay R3,
+[SERVICE_ENDPOINTS § My relays](../contracts/SERVICE_ENDPOINTS.md#my-relays)). The presenter (`MyRelaysViewFor`)
+decides, `SettingsMyRelays` renders. One card per relay, preferred first: the host (`relay.example.org`), a
+**Preferred** badge on the first, its registration (`Registered until <date>` / `Registering…` / `Couldn't register`
+and why in words — `the relay didn't answer`, `the relay said no`, `the relay's ID couldn't be checked`, never an
+error's text / `Needs a newer version of the app` (the relay answered 426 `client_upgrade_required`, to a registration
+or any other call there: nothing else is blocked; the org's relay saying so shows the update screen instead,
+[SERVICE_ENDPOINTS § Client compatibility](../contracts/SERVICE_ENDPOINTS.md#client-compatibility-discovery)) / `Registration ended <date>` / on the preferred relay when the account holds no registration there `Not
+registered. Set up your account in My profile to get mail here.`, the others then `Registers after your preferred
+relay`; failures, an ended registration and the preferred relay's missing one in the error colour) and its last poll (`Reachable` / `Couldn't reach it`, the
+latter in the error colour; nothing before the first poll). On the main device the other relays have **Make preferred**
+(immediate) and **Remove…** (a destructive confirm naming the relay); phones show them as rows under the relay
+(Remove in the danger row), desktops as secondary buttons, each shown by its own flag. Every relay with a relay link
+(MR008: its address with its ID, `origin#PeerId`) has **Copy link** on every device (immediate; "Relay link copied").
+**Add relay…** (while there are fewer than 4) opens a **Relay link** field (placeholder `https://relay.example.org#Qm…`,
+hint "Paste the relay's link. Its operator publishes it; the part after # is the relay's ID.") with **Add**, **Scan QR
+code** (where the in-app scan is bound: the code's text goes into the field and is added as a pasted link) and
+**Cancel**; Add checks the relay (`Checking the relay…`), and a refusal is worded under the field
+(`MyRelaysFailureText`: not https, a path, no relay ID, already listed, did not answer, …). User text calls the PeerId
+the relay's **ID** and the link the relay's **link** — never "PeerId", "fragment" or "identity key". A linked device
+shows the list with "Only your main device can change your relays." Before messaging is up the page says the relays
+show once connected.
+
+**Relay identity states** (multi-relay MR007, MR008, [SERVICE_ENDPOINTS § Pins](../contracts/SERVICE_ENDPOINTS.md#pins)):
+
+- A relay whose identity answer names another ID than its link reads **Not used: this relay's ID doesn't match its
+  link** in the error colour (no registration, poll or link line: it is not polled, registered on or sent to, and left
+  off the card) and cannot be made preferred; on the main device Remove… stays (it revokes nothing there). There is
+  nothing to accept: a relay with a new ID is a new relay, added by its new link.
+- The org's origin, when it is not on the list and does not match the ID this app ships for it: one error line,
+  "Brief's server at {host} doesn't match the ID this app knows for it. Your account copy and the assistant are
+  paused." (one string, the host in its place), on any device; no action (a new build brings a new ID).
+- Add's refusals about the relay's ID, under the field: "This link has no relay ID. Paste the relay's whole link, with
+  the part after #." (a release build takes no bare address), "This link's relay ID isn't right. Paste the relay's
+  whole link again.", "This relay's ID doesn't match its link. It wasn't added.", "This server doesn't say which relay
+  it is.", "This link names a relay already on your list as {host}.", "This link names a relay you already use at
+  {host}." (the org's).
+- The contact page's relay line reads **Not used: it doesn't match this contact's card** when the PeerId the contact's
+  card names for its preferred relay disagrees with our pins, or a send found it refused
+  (`ContactRelayView::Reach::IdentityMismatch`). A card that lists no relay reads **None listed. Mail goes through
+  your relay.** (our sends to it go through our preferred relay).
+
 ## RCSS file layout
 
 ```

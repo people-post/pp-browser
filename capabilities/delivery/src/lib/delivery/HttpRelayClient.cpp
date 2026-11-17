@@ -46,16 +46,19 @@ Error RelayHttpStatusError(const ShareWord action, long status_code, const std::
   return AppError::Network(refused ? Err::Network::HttpRejected : Err::Network::HttpError, detail);
 }
 
-/** The relay's machine-readable reason for a refusal (`code` beside `error`); empty when it gave none. */
-std::string RelayErrorCode(const std::string& body) {
-  if (auto json = TryParseObject(body)) {
-    return json->getString("code").value_or("");
+/** A refused call: the audience hears the codes it acts on (MR007); else the status says it, as before. */
+Error RelayCallRefusal(IRelayAudience* audience, const ShareWord action, const long status, const std::string& body) {
+  if (auto typed = NoteRelayRefusal(audience, status, body)) {
+    return *typed;
   }
-  return {};
+  return RelayHttpStatusError(action, status, body);
 }
 
-/** A send's refusal the client meets itself (its key, its grant) or the caller handles by kind (MR003 / MR005). */
-Error RelaySendRefusal(const long status, const std::string& code, const std::string& body) {
+/** A send's refusal the client meets itself (its key, its grant) or the caller handles by kind (MR003 / MR005 / MR007). */
+Error RelaySendRefusal(IRelayAudience* audience, const long status, const std::string& code, const std::string& body) {
+  if (auto typed = NoteRelayRefusal(audience, status, body)) {
+    return *typed; // wrong_audience: the sender tries the recipient's next relay
+  }
   if (status == 404 && code == "recipient_not_registered") {
     return AppError::Network(Err::Network::RecipientNotRegistered, "Relay send: the recipient is not registered here");
   }
@@ -81,7 +84,7 @@ Error RelaySendRefusal(const long status, const std::string& code, const std::st
 Error RelayPollHttpError(const long status_code, const std::string& body) {
   Error error = RelayHttpStatusError("poll", status_code, body);
   // The relay has no (active) registration for our account: told apart so we register again.
-  if (status_code == 403 && RelayErrorCode(body) == "not_registered") {
+  if (status_code == 403 && RelayRefusalCode(body) == "not_registered") {
     return AppError::Auth(Err::Auth::NotRegistered, error.message);
   }
   return error;
@@ -92,14 +95,8 @@ bool IsRelayUserNotRegistered(const Error& error) {
          error.code == static_cast<int32_t>(Err::Auth::NotRegistered);
 }
 
-Roe<std::string> HttpRelayClient::SignRelayApiBytes(const std::vector<uint8_t>& sign_bytes) const {
-  if (!auth_signer_) {
-    return Error("Relay auth signer not configured");
-  }
-  if (sign_bytes.empty()) {
-    return Error("Empty relay API sign bytes");
-  }
-  return auth_signer_(sign_bytes);
+Roe<SignedRelayCommand> HttpRelayClient::Sign(const int64_t timestamp, const RelayCommandBytes& build) const {
+  return SignRelayCommand(audience_.get(), auth_signer_, timestamp, build);
 }
 
 HttpRelayClient::HttpRelayClient(std::string base_url, bool public_only)
@@ -117,16 +114,17 @@ RelaySendHooks HttpRelayClient::SendHooks() const {
 
 Roe<void> HttpRelayClient::PostSend(RelayWireSendRecord& record, const RelayEnvelope& envelope, SendRetry& retry) {
   retry = SendRetry::None;
-  record.timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildRelayApiSendSignBytes(record, record.timestamp);
-  if (sign_bytes.empty()) {
-    return Error("Failed to build relay send sign bytes");
+  const int64_t timestamp = util::NowUnixMs();
+  auto signed_send = Sign(timestamp, [&record, timestamp](const std::string& audience) {
+    return BuildRelayApiSendSignBytes(audience, record, timestamp);
+  });
+  if (!signed_send) {
+    return signed_send.error();
   }
-  auto signature = SignRelayApiBytes(sign_bytes);
-  if (!signature) {
-    return signature.error();
-  }
-  record.signature = *signature;
+  record.sign_version = signed_send->sign_version;
+  record.audience = signed_send->audience;
+  record.timestamp = signed_send->timestamp;
+  record.signature = signed_send->signature;
 
   const std::string url = base_url_ + "/v1/messages";
   const auto response =
@@ -140,7 +138,7 @@ Roe<void> HttpRelayClient::PostSend(RelayWireSendRecord& record, const RelayEnve
     return {};
   }
   const std::string& body = response.value().body;
-  const std::string code = RelayErrorCode(body);
+  const std::string code = RelayRefusalCode(body);
   // Which recipient the relay refused (a group fan-out sends one envelope per member).
   logging::getLogger("HttpRelayClient").warning
       << "relay send refused status=" << status << " code=" << code << " recipient=" << record.recipient_account_id
@@ -150,7 +148,7 @@ Roe<void> HttpRelayClient::PostSend(RelayWireSendRecord& record, const RelayEnve
   } else if (status == 401 && (code == "grant_expired" || code == "invalid_grant") && record.grant) {
     retry = SendRetry::WithoutGrant;
   }
-  return RelaySendRefusal(status, code, body);
+  return RelaySendRefusal(audience_.get(), status, code, body);
 }
 
 Roe<void> HttpRelayClient::Send(const RelayEnvelope& envelope) {
@@ -194,20 +192,17 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_acc
     return Error("Relay base_url not configured");
   }
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildRelayApiPollInboxSignBytes(requester_account_id, cursor, timestamp);
-  if (sign_bytes.empty()) {
-    return Error("Failed to build relay poll sign bytes");
-  }
-  auto signature = SignRelayApiBytes(sign_bytes);
-  if (!signature) {
-    return signature.error();
+  auto signed_poll = Sign(timestamp, [&](const std::string& audience) {
+    return BuildRelayApiPollInboxSignBytes(audience, requester_account_id, cursor, timestamp);
+  });
+  if (!signed_poll) {
+    return signed_poll.error();
   }
 
   Object body;
   body.set("requester_account_id", requester_account_id);
   body.set("cursor", cursor);
-  body.set("timestamp", timestamp);
-  body.set("signature", *signature);
+  PutSignedRelayCommand(body, *signed_poll);
   const std::string url = base_url_ + "/v1/inbox/poll";
   // B30: poll-specific fail-fast (serialized polls on cellular; global 30s starved Accept/MediaKey).
   // Other relay HTTP keeps default HttpTimeout{30}. Not an env knob.
@@ -218,6 +213,9 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_acc
     return response.error();
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
+    if (auto typed = NoteRelayRefusal(audience_.get(), response.value().status_code, response.value().body)) {
+      return *typed; // wrong_audience: the pin is checked again (MR007)
+    }
     return RelayPollHttpError(response.value().status_code, response.value().body);
   }
 
@@ -279,20 +277,17 @@ Roe<RelayDeleteResult> HttpRelayClient::AckInbox(const std::string& requester_ac
     return Error("Missing inbox cursor");
   }
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildRelayApiAckInboxSignBytes(requester_account_id, cursor, timestamp);
-  if (sign_bytes.empty()) {
-    return Error("Failed to build relay ack sign bytes");
-  }
-  auto signature = SignRelayApiBytes(sign_bytes);
-  if (!signature) {
-    return signature.error();
+  auto signed_ack = Sign(timestamp, [&](const std::string& audience) {
+    return BuildRelayApiAckInboxSignBytes(audience, requester_account_id, cursor, timestamp);
+  });
+  if (!signed_ack) {
+    return signed_ack.error();
   }
 
   Object body;
   body.set("requester_account_id", requester_account_id);
   body.set("cursor", cursor);
-  body.set("timestamp", timestamp);
-  body.set("signature", *signature);
+  PutSignedRelayCommand(body, *signed_ack);
   const std::string url = base_url_ + "/v1/inbox/ack";
   const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}},
                                          kMaxHttpClientBodyBytes, {}, public_only_);
@@ -300,7 +295,7 @@ Roe<RelayDeleteResult> HttpRelayClient::AckInbox(const std::string& requester_ac
     return response.error();
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Relay ack failed with status " + std::to_string(response.value().status_code));
+    return RelayCallRefusal(audience_.get(), "ack", response.value().status_code, response.value().body);
   }
 
   auto root = TryParseObject(response.value().body);
@@ -323,20 +318,17 @@ Roe<RelayDeleteResult> HttpRelayClient::ClearInbox(const std::string& requester_
     return Error("Missing before_created_at");
   }
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildRelayApiClearInboxSignBytes(requester_account_id, before_created_at, timestamp);
-  if (sign_bytes.empty()) {
-    return Error("Failed to build relay clear sign bytes");
-  }
-  auto signature = SignRelayApiBytes(sign_bytes);
-  if (!signature) {
-    return signature.error();
+  auto signed_clear = Sign(timestamp, [&](const std::string& audience) {
+    return BuildRelayApiClearInboxSignBytes(audience, requester_account_id, before_created_at, timestamp);
+  });
+  if (!signed_clear) {
+    return signed_clear.error();
   }
 
   Object body;
   body.set("requester_account_id", requester_account_id);
   body.set("before_created_at", before_created_at);
-  body.set("timestamp", timestamp);
-  body.set("signature", *signature);
+  PutSignedRelayCommand(body, *signed_clear);
   const std::string url = base_url_ + "/v1/inbox/clear";
   const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}},
                                          kMaxHttpClientBodyBytes, {}, public_only_);
@@ -344,7 +336,7 @@ Roe<RelayDeleteResult> HttpRelayClient::ClearInbox(const std::string& requester_
     return response.error();
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Relay clear failed with status " + std::to_string(response.value().status_code));
+    return RelayCallRefusal(audience_.get(), "clear", response.value().status_code, response.value().body);
   }
 
   auto root = TryParseObject(response.value().body);
@@ -363,18 +355,15 @@ Roe<ChatHistoryResponse> HttpRelayClient::FetchChatHistory(const ChatHistoryRequ
     return Error("Relay base_url not configured");
   }
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildRelayApiStreamHistorySignBytes(request, timestamp);
-  if (sign_bytes.empty()) {
-    return Error("Failed to build relay history sign bytes");
-  }
-  auto signature = SignRelayApiBytes(sign_bytes);
-  if (!signature) {
-    return signature.error();
+  auto signed_query = Sign(timestamp, [&](const std::string& audience) {
+    return BuildRelayApiStreamHistorySignBytes(audience, request, timestamp);
+  });
+  if (!signed_query) {
+    return signed_query.error();
   }
 
   Object body = ChatHistoryRequestToStreamHistoryJson(request);
-  body.set("timestamp", timestamp);
-  body.set("signature", *signature);
+  PutSignedRelayCommand(body, *signed_query);
 
   const std::string url = base_url_ + "/v1/streams/messages/query";
   const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}},
@@ -383,7 +372,7 @@ Roe<ChatHistoryResponse> HttpRelayClient::FetchChatHistory(const ChatHistoryRequ
     return response.error();
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Relay history fetch failed with status " + std::to_string(response.value().status_code));
+    return RelayCallRefusal(audience_.get(), "history", response.value().status_code, response.value().body);
   }
 
   auto root = TryParseObject(response.value().body);

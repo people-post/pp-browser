@@ -1,5 +1,6 @@
 #include "lib/storage/SqlitePeerSessionStore.h"
 #include "lib/storage/SqliteChatStoreGate.h"
+#include "lib/storage/SqliteMigrations.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -10,6 +11,9 @@
 
 #include <sodium.h>
 #include <sqlite3.h>
+
+#include <functional>
+#include <string_view>
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
@@ -85,17 +89,258 @@ CREATE TABLE IF NOT EXISTS device_sessions (
 );
 )sql";
 
-// One column list for both tables, so one reader serves them: a device session has no E027 lock columns
-// (its scope is the device pair itself).
-constexpr const char* kAccountSessionColumns =
-    "session_epoch, master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json, "
-    "key_scope, thread_kem_pk_b64, thread_kem_sk_b64, peer_thread_kem_pk_b64, last_psk_rotate_at, "
-    "psk_rotate_msg_count, last_rotation_id, auto_key_session_id, auto_key_init_pending, "
-    "auto_key_peer_heard_ms, restart_pending";
-constexpr const char* kDeviceSessionColumns =
-    "session_epoch, master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json, "
-    "'account', NULL, NULL, NULL, NULL, 0, NULL, auto_key_session_id, auto_key_init_pending, "
-    "auto_key_peer_heard_ms, restart_pending";
+constexpr const char* kAccountSessionsTable = "chat_targets";
+constexpr const char* kDeviceSessionsTable = "device_sessions";
+
+/**
+ * A session column, and what a row without it reads as: a device session has no E027 lock columns (its scope is the
+ * device pair itself), and an older profile.db may lack a column this build added since.
+ */
+struct SessionColumn {
+  const char* name;
+  const char* fallback;
+  bool on_device_table;
+};
+
+constexpr SessionColumn kSessionColumns[] = {
+    {"session_epoch", "1", true},
+    {"master_psk_b64", "NULL", true},
+    {"psk_fingerprint", "NULL", true},
+    {"psk_verified_at", "NULL", true},
+    {"retired_psks_json", "NULL", true},
+    {"key_scope", "'account'", false},
+    {"thread_kem_pk_b64", "NULL", false},
+    {"thread_kem_sk_b64", "NULL", false},
+    {"peer_thread_kem_pk_b64", "NULL", false},
+    {"last_psk_rotate_at", "NULL", false},
+    {"psk_rotate_msg_count", "0", false},
+    {"last_rotation_id", "NULL", false},
+    {"auto_key_session_id", "NULL", true},
+    {"auto_key_init_pending", "NULL", true},
+    {"auto_key_peer_heard_ms", "NULL", true},
+    {"restart_pending", "0", true},
+};
+
+using HasColumn = std::function<bool(const char* column)>;
+
+bool EveryColumn(const char* /*column*/) {
+  return true;
+}
+
+/**
+ * The SELECT of `table`'s sessions, one row shape for both tables (SessionFromRow): the key, kSessionColumns, the
+ * peer device. A column `has` does not name reads as its fallback.
+ */
+std::string SessionSelect(const char* table, const HasColumn& has) {
+  const bool device = std::string_view(table) == kDeviceSessionsTable;
+  std::string sql = "SELECT peer_identity_kind, peer_identity_value, channel";
+  for (const SessionColumn& column : kSessionColumns) {
+    sql += ", ";
+    sql += (device && !column.on_device_table) || !has(column.name) ? column.fallback : column.name;
+  }
+  sql += device ? ", peer_device" : ", ''";
+  return sql + " FROM " + table;
+}
+
+std::optional<std::string> OptText(sqlite3_stmt* stmt, const int column) {
+  if (const unsigned char* text = sqlite3_column_text(stmt, column)) {
+    return std::string(reinterpret_cast<const char*>(text));
+  }
+  return std::nullopt;
+}
+
+std::optional<int64_t> OptInt64(sqlite3_stmt* stmt, const int column) {
+  if (sqlite3_column_type(stmt, column) == SQLITE_NULL) {
+    return std::nullopt;
+  }
+  return sqlite3_column_int64(stmt, column);
+}
+
+/** A row of SessionSelect, as stored (sealed). */
+PeerSessionRecord SessionFromRow(sqlite3_stmt* stmt) {
+  PeerSessionRecord record;
+  record.key.peer_identity_kind = OptText(stmt, 0).value_or(std::string{});
+  record.key.peer_identity_value = OptText(stmt, 1).value_or(std::string{});
+  record.key.channel = ChannelFromDb(OptText(stmt, 2).value_or(std::string{}));
+  record.session_epoch = static_cast<uint32_t>(sqlite3_column_int(stmt, 3));
+  record.master_psk_b64 = OptText(stmt, 4);
+  record.psk_fingerprint = OptText(stmt, 5);
+  record.psk_verified_at = OptInt64(stmt, 6);
+  record.retired_psks = ParseRetiredPsks(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7)));
+  if (auto scope = OptText(stmt, 8)) {
+    record.key_scope = PublicKeyScopeFromString(*scope);
+  }
+  record.thread_kem_pk_b64 = OptText(stmt, 9);
+  record.thread_kem_sk_b64 = OptText(stmt, 10);
+  record.peer_thread_kem_pk_b64 = OptText(stmt, 11);
+  record.last_psk_rotate_at = OptInt64(stmt, 12);
+  record.psk_rotate_msg_count = static_cast<uint32_t>(sqlite3_column_int(stmt, 13));
+  record.last_rotation_id = OptText(stmt, 14);
+  record.auto_key_session_id = OptText(stmt, 15);
+  record.auto_key_init_pending = OptText(stmt, 16);
+  record.auto_key_peer_heard_ms = OptInt64(stmt, 17);
+  record.restart_pending = sqlite3_column_int(stmt, 18) != 0;
+  record.key.peer_device = OptText(stmt, 19).value_or(std::string{});
+  return record;
+}
+
+bool HasSecrets(const PeerSessionRecord& record) {
+  return record.master_psk_b64 || !record.retired_psks.empty() || record.thread_kem_sk_b64;
+}
+
+/** `table`'s sessions as stored, read from whatever shape `db` gives it; none when it is not there or not keyed. */
+Roe<void> ReadStoredTable(sqlite3* db, const char* table, std::vector<PeerSessionRecord>& rows) {
+  auto exists = SqliteTableExists(db, table);
+  if (!exists) {
+    return exists.error();
+  }
+  if (!*exists) {
+    return {};
+  }
+  const HasColumn has = [db, table](const char* column) {
+    auto present = SqliteColumnExists(db, table, column);
+    return present && *present;
+  };
+  const bool device = std::string_view(table) == kDeviceSessionsTable;
+  for (const char* key : {"peer_identity_kind", "peer_identity_value", "channel", device ? "peer_device" : "channel"}) {
+    if (!has(key)) {
+      return {}; // not keyed as a session is today: it names none
+    }
+  }
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, (SessionSelect(table, has) + ";").c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+    const std::string message = sqlite3_errmsg(db);
+    sqlite3_finalize(stmt);
+    return Error(std::string(table) + ": " + message);
+  }
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    rows.push_back(SessionFromRow(stmt));
+  }
+  sqlite3_finalize(stmt);
+  return {};
+}
+
+void BindOptText(sqlite3_stmt* stmt, const int index, const std::optional<std::string>& value) {
+  if (value) {
+    sqlite3_bind_text(stmt, index, value->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, index);
+  }
+}
+
+void BindOptInt64(sqlite3_stmt* stmt, const int index, const std::optional<int64_t>& value) {
+  if (value) {
+    sqlite3_bind_int64(stmt, index, *value);
+  } else {
+    sqlite3_bind_null(stmt, index);
+  }
+}
+
+std::string RetiredPsksJson(const std::vector<RetiredPskEntry>& retired_psks) {
+  std::vector<Value> retired_elements;
+  retired_elements.reserve(retired_psks.size());
+  for (const RetiredPskEntry& entry : retired_psks) {
+    Object item;
+    item.setJsonUInt("epoch", entry.epoch);
+    item.set("master_psk_b64", entry.master_psk_b64);
+    item.set("retired_at", entry.retired_at);
+    retired_elements.push_back(ObjectValue(std::move(item)));
+  }
+  return retired_elements.empty() ? "[]" : DumpJson(ArrayValue(std::move(retired_elements)));
+}
+
+Roe<void> StepToDone(sqlite3_stmt* stmt, const char* failure) {
+  const int rc = sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  if (rc != SQLITE_DONE) {
+    return Error(failure);
+  }
+  return {};
+}
+
+Roe<void> SaveAccountSession(sqlite3* db, const PeerSessionRecord& to_save, const std::string& retired_json) {
+  const char* sql =
+      "INSERT INTO chat_targets (peer_identity_kind, peer_identity_value, channel, local_thread_id, session_epoch, "
+      "master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json, key_scope, thread_kem_pk_b64, "
+      "thread_kem_sk_b64, peer_thread_kem_pk_b64, last_psk_rotate_at, psk_rotate_msg_count, last_rotation_id, "
+      "auto_key_session_id, auto_key_init_pending, auto_key_peer_heard_ms, restart_pending) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "ON CONFLICT(peer_identity_kind, peer_identity_value, channel) DO UPDATE SET "
+      "session_epoch=excluded.session_epoch, master_psk_b64=excluded.master_psk_b64, "
+      "psk_fingerprint=excluded.psk_fingerprint, psk_verified_at=excluded.psk_verified_at, "
+      "retired_psks_json=excluded.retired_psks_json, key_scope=excluded.key_scope, "
+      "thread_kem_pk_b64=excluded.thread_kem_pk_b64, thread_kem_sk_b64=excluded.thread_kem_sk_b64, "
+      "peer_thread_kem_pk_b64=excluded.peer_thread_kem_pk_b64, last_psk_rotate_at=excluded.last_psk_rotate_at, "
+      "psk_rotate_msg_count=excluded.psk_rotate_msg_count, last_rotation_id=excluded.last_rotation_id, "
+      "auto_key_session_id=excluded.auto_key_session_id, auto_key_init_pending=excluded.auto_key_init_pending, "
+      "auto_key_peer_heard_ms=excluded.auto_key_peer_heard_ms, restart_pending=excluded.restart_pending;";
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_finalize(stmt);
+    return Error("Failed to prepare PSK save");
+  }
+  sqlite3_bind_text(stmt, 1, to_save.key.peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, to_save.key.peer_identity_value.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 3, ChannelToDb(to_save.key.channel).c_str(), -1, SQLITE_TRANSIENT);
+  // No thread yet (a session for the control lane, or opened before the chat): a placeholder unique per
+  // target — local_thread_id is unique, and a shared "pending" made the second such peer fail to save.
+  const std::string pending_thread = "pending:" + to_save.key.peer_identity_kind + ":" +
+                                     to_save.key.peer_identity_value + ":" + ChannelToDb(to_save.key.channel);
+  sqlite3_bind_text(stmt, 4, pending_thread.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 5, static_cast<int>(to_save.session_epoch));
+  BindOptText(stmt, 6, to_save.master_psk_b64);
+  BindOptText(stmt, 7, to_save.psk_fingerprint);
+  BindOptInt64(stmt, 8, to_save.psk_verified_at);
+  sqlite3_bind_text(stmt, 9, retired_json.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 10, PublicKeyScopeToString(to_save.key_scope), -1, SQLITE_TRANSIENT);
+  BindOptText(stmt, 11, to_save.thread_kem_pk_b64);
+  BindOptText(stmt, 12, to_save.thread_kem_sk_b64);
+  BindOptText(stmt, 13, to_save.peer_thread_kem_pk_b64);
+  BindOptInt64(stmt, 14, to_save.last_psk_rotate_at);
+  sqlite3_bind_int(stmt, 15, static_cast<int>(to_save.psk_rotate_msg_count));
+  BindOptText(stmt, 16, to_save.last_rotation_id);
+  BindOptText(stmt, 17, to_save.auto_key_session_id);
+  BindOptText(stmt, 18, to_save.auto_key_init_pending);
+  BindOptInt64(stmt, 19, to_save.auto_key_peer_heard_ms);
+  sqlite3_bind_int(stmt, 20, to_save.restart_pending ? 1 : 0);
+  return StepToDone(stmt, "Failed to save PSK row");
+}
+
+Roe<void> SaveDeviceSession(sqlite3* db, const PeerSessionRecord& to_save, const std::string& retired_json) {
+  // A session moved to another epoch numbers from 1 there (its old epoch's count is the old epoch's).
+  const char* sql =
+      "INSERT INTO device_sessions (peer_identity_kind, peer_identity_value, channel, peer_device, session_epoch, "
+      "master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json, auto_key_session_id, "
+      "auto_key_init_pending, auto_key_peer_heard_ms, restart_pending) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "ON CONFLICT(peer_identity_kind, peer_identity_value, channel, peer_device) DO UPDATE SET "
+      "next_outgoing_seq = CASE WHEN excluded.session_epoch != device_sessions.session_epoch THEN 1 "
+      "ELSE device_sessions.next_outgoing_seq END, "
+      "session_epoch=excluded.session_epoch, master_psk_b64=excluded.master_psk_b64, "
+      "psk_fingerprint=excluded.psk_fingerprint, psk_verified_at=excluded.psk_verified_at, "
+      "retired_psks_json=excluded.retired_psks_json, auto_key_session_id=excluded.auto_key_session_id, "
+      "auto_key_init_pending=excluded.auto_key_init_pending, auto_key_peer_heard_ms=excluded.auto_key_peer_heard_ms, "
+      "restart_pending=excluded.restart_pending;";
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_finalize(stmt);
+    return Error("Failed to prepare device session save");
+  }
+  sqlite3_bind_text(stmt, 1, to_save.key.peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, to_save.key.peer_identity_value.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 3, ChannelToDb(to_save.key.channel).c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 4, to_save.key.peer_device.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 5, static_cast<int>(to_save.session_epoch));
+  BindOptText(stmt, 6, to_save.master_psk_b64);
+  BindOptText(stmt, 7, to_save.psk_fingerprint);
+  BindOptInt64(stmt, 8, to_save.psk_verified_at);
+  sqlite3_bind_text(stmt, 9, retired_json.c_str(), -1, SQLITE_TRANSIENT);
+  BindOptText(stmt, 10, to_save.auto_key_session_id);
+  BindOptText(stmt, 11, to_save.auto_key_init_pending);
+  BindOptInt64(stmt, 12, to_save.auto_key_peer_heard_ms);
+  sqlite3_bind_int(stmt, 13, to_save.restart_pending ? 1 : 0);
+  return StepToDone(stmt, "Failed to save device session");
+}
 
 } // namespace
 
@@ -253,13 +498,36 @@ Roe<sqlite3*> SqlitePeerSessionStore::OpenDb() const {
   }
   // profile.db has other writers (group rosters, call sessions): wait for them, as they wait for us.
   sqlite3_busy_timeout(db_, 5000);
+  if (auto schema = EnsureSchema(db_); !schema) {
+    return schema.error();
+  }
+  return db_;
+}
+
+Roe<void> SqlitePeerSessionStore::EnsureSchema(sqlite3* db) {
   char* err = nullptr;
-  if (sqlite3_exec(db_, kDeviceSessionsSchema, nullptr, nullptr, &err) != SQLITE_OK) {
+  if (sqlite3_exec(db, kDeviceSessionsSchema, nullptr, nullptr, &err) != SQLITE_OK) {
     const std::string message = err ? err : "device_sessions schema failed";
     sqlite3_free(err);
     return Error(message);
   }
-  return db_;
+  return {};
+}
+
+Roe<std::vector<PeerSessionRecord>> SqlitePeerSessionStore::ReadStored(sqlite3* db) {
+  std::vector<PeerSessionRecord> rows;
+  for (const char* table : {kAccountSessionsTable, kDeviceSessionsTable}) {
+    if (auto read = ReadStoredTable(db, table, rows); !read) {
+      return read.error();
+    }
+  }
+  return rows;
+}
+
+Roe<void> SqlitePeerSessionStore::WriteStored(sqlite3* db, const PeerSessionRecord& sealed) {
+  const std::string retired_json = RetiredPsksJson(sealed.retired_psks);
+  return sealed.key.peer_device.empty() ? SaveAccountSession(db, sealed, retired_json)
+                                        : SaveDeviceSession(db, sealed, retired_json);
 }
 
 Roe<std::optional<PeerSessionRecord>> SqlitePeerSessionStore::Load(const PeerSessionKey& key) const {
@@ -267,16 +535,13 @@ Roe<std::optional<PeerSessionRecord>> SqlitePeerSessionStore::Load(const PeerSes
   if (!db) {
     return db.error();
   }
-  sqlite3_stmt* stmt = nullptr;
   const bool device = !key.peer_device.empty();
-  const std::string sql =
-      device ? std::string("SELECT ") + kDeviceSessionColumns +
-                   " FROM device_sessions WHERE peer_identity_kind = ? AND peer_identity_value = ? AND channel = ? "
-                   "AND peer_device = ? LIMIT 1;"
-             : std::string("SELECT ") + kAccountSessionColumns +
-                   " FROM chat_targets WHERE peer_identity_kind = ? AND peer_identity_value = ? AND channel = ? "
-                   "LIMIT 1;";
+  const std::string sql = SessionSelect(device ? kDeviceSessionsTable : kAccountSessionsTable, EveryColumn) +
+                          " WHERE peer_identity_kind = ? AND peer_identity_value = ? AND channel = ?" +
+                          (device ? " AND peer_device = ?" : "") + " LIMIT 1;";
+  sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(*db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_finalize(stmt);
     return Error("Failed to prepare PSK load");
   }
   sqlite3_bind_text(stmt, 1, key.peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
@@ -289,50 +554,10 @@ Roe<std::optional<PeerSessionRecord>> SqlitePeerSessionStore::Load(const PeerSes
     sqlite3_finalize(stmt);
     return std::optional<PeerSessionRecord>{};
   }
-  PeerSessionRecord record;
-  record.key = key;
-  record.session_epoch = static_cast<uint32_t>(sqlite3_column_int(stmt, 0));
-  if (sqlite3_column_text(stmt, 1)) {
-    record.master_psk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-  }
-  if (sqlite3_column_text(stmt, 2)) {
-    record.psk_fingerprint = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-  }
-  if (sqlite3_column_type(stmt, 3) != SQLITE_NULL) {
-    record.psk_verified_at = sqlite3_column_int64(stmt, 3);
-  }
-  record.retired_psks = ParseRetiredPsks(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)));
-  if (sqlite3_column_text(stmt, 5)) {
-    record.key_scope = PublicKeyScopeFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5)));
-  }
-  if (sqlite3_column_text(stmt, 6)) {
-    record.thread_kem_pk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
-  }
-  if (sqlite3_column_text(stmt, 7)) {
-    record.thread_kem_sk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
-  }
-  if (sqlite3_column_text(stmt, 8)) {
-    record.peer_thread_kem_pk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
-  }
-  if (sqlite3_column_type(stmt, 9) != SQLITE_NULL) {
-    record.last_psk_rotate_at = sqlite3_column_int64(stmt, 9);
-  }
-  record.psk_rotate_msg_count = static_cast<uint32_t>(sqlite3_column_int(stmt, 10));
-  if (sqlite3_column_text(stmt, 11)) {
-    record.last_rotation_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
-  }
-  if (sqlite3_column_text(stmt, 12)) {
-    record.auto_key_session_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 12));
-  }
-  if (sqlite3_column_text(stmt, 13)) {
-    record.auto_key_init_pending = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 13));
-  }
-  if (sqlite3_column_type(stmt, 14) != SQLITE_NULL) {
-    record.auto_key_peer_heard_ms = sqlite3_column_int64(stmt, 14);
-  }
-  record.restart_pending = sqlite3_column_int(stmt, 15) != 0;
+  PeerSessionRecord record = SessionFromRow(stmt);
   sqlite3_finalize(stmt);
-  if (!record.master_psk_b64 && record.retired_psks.empty() && !record.thread_kem_sk_b64) {
+  record.key = key;
+  if (!HasSecrets(record)) {
     return std::optional<PeerSessionRecord>(record);
   }
   auto decrypted = DecryptRecord(std::move(record));
@@ -347,70 +572,17 @@ Roe<std::vector<PeerSessionRecord>> SqlitePeerSessionStore::List() const {
   if (!db) {
     return db.error();
   }
+  const std::string sql = SessionSelect(kAccountSessionsTable, EveryColumn) + " UNION ALL " +
+                          SessionSelect(kDeviceSessionsTable, EveryColumn) + ";";
   sqlite3_stmt* stmt = nullptr;
-  const std::string sql = std::string("SELECT peer_identity_kind, peer_identity_value, channel, ") +
-                          kAccountSessionColumns + ", '' FROM chat_targets UNION ALL " +
-                          "SELECT peer_identity_kind, peer_identity_value, channel, " + kDeviceSessionColumns +
-                          ", peer_device FROM device_sessions;";
   if (sqlite3_prepare_v2(*db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_finalize(stmt);
     return Error("Failed to prepare PSK list");
   }
   std::vector<PeerSessionRecord> rows;
   while (sqlite3_step(stmt) == SQLITE_ROW) {
-    PeerSessionRecord record;
-    if (sqlite3_column_text(stmt, 0)) {
-      record.key.peer_identity_kind = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-    }
-    if (sqlite3_column_text(stmt, 1)) {
-      record.key.peer_identity_value = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-    }
-    if (sqlite3_column_text(stmt, 2)) {
-      record.key.channel = ChannelFromDb(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)));
-    }
-    record.session_epoch = static_cast<uint32_t>(sqlite3_column_int(stmt, 3));
-    if (sqlite3_column_text(stmt, 4)) {
-      record.master_psk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
-    }
-    if (sqlite3_column_text(stmt, 5)) {
-      record.psk_fingerprint = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
-    }
-    if (sqlite3_column_type(stmt, 6) != SQLITE_NULL) {
-      record.psk_verified_at = sqlite3_column_int64(stmt, 6);
-    }
-    record.retired_psks = ParseRetiredPsks(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7)));
-    if (sqlite3_column_text(stmt, 8)) {
-      record.key_scope = PublicKeyScopeFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8)));
-    }
-    if (sqlite3_column_text(stmt, 9)) {
-      record.thread_kem_pk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
-    }
-    if (sqlite3_column_text(stmt, 10)) {
-      record.thread_kem_sk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
-    }
-    if (sqlite3_column_text(stmt, 11)) {
-      record.peer_thread_kem_pk_b64 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
-    }
-    if (sqlite3_column_type(stmt, 12) != SQLITE_NULL) {
-      record.last_psk_rotate_at = sqlite3_column_int64(stmt, 12);
-    }
-    record.psk_rotate_msg_count = static_cast<uint32_t>(sqlite3_column_int(stmt, 13));
-    if (sqlite3_column_text(stmt, 14)) {
-      record.last_rotation_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 14));
-    }
-    if (sqlite3_column_text(stmt, 15)) {
-      record.auto_key_session_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 15));
-    }
-    if (sqlite3_column_text(stmt, 16)) {
-      record.auto_key_init_pending = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 16));
-    }
-    if (sqlite3_column_type(stmt, 17) != SQLITE_NULL) {
-      record.auto_key_peer_heard_ms = sqlite3_column_int64(stmt, 17);
-    }
-    record.restart_pending = sqlite3_column_int(stmt, 18) != 0;
-    if (sqlite3_column_text(stmt, 19)) {
-      record.key.peer_device = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 19));
-    }
-    if (!record.master_psk_b64 && record.retired_psks.empty() && !record.thread_kem_sk_b64) {
+    PeerSessionRecord record = SessionFromRow(stmt);
+    if (!HasSecrets(record)) {
       continue;
     }
     auto decrypted = DecryptRecord(std::move(record));
@@ -433,173 +605,11 @@ Roe<void> SqlitePeerSessionStore::Save(const PeerSessionRecord& record) {
   if (!encrypted) {
     return encrypted.error();
   }
-  to_save = *encrypted;
-
   auto db = OpenDb();
   if (!db) {
     return db.error();
   }
-  std::vector<Value> retired_elements;
-  retired_elements.reserve(to_save.retired_psks.size());
-  for (const RetiredPskEntry& entry : to_save.retired_psks) {
-    Object item;
-    item.setJsonUInt("epoch", entry.epoch);
-    item.set("master_psk_b64", entry.master_psk_b64);
-    item.set("retired_at", entry.retired_at);
-    retired_elements.push_back(ObjectValue(std::move(item)));
-  }
-  const std::string retired_json = retired_elements.empty() ? "[]" : DumpJson(ArrayValue(std::move(retired_elements)));
-  if (!to_save.key.peer_device.empty()) {
-    return SaveDeviceSession(*db, to_save, retired_json);
-  }
-  sqlite3_stmt* stmt = nullptr;
-  const char* sql =
-      "INSERT INTO chat_targets (peer_identity_kind, peer_identity_value, channel, local_thread_id, session_epoch, "
-      "master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json, key_scope, thread_kem_pk_b64, "
-      "thread_kem_sk_b64, peer_thread_kem_pk_b64, last_psk_rotate_at, psk_rotate_msg_count, last_rotation_id, "
-      "auto_key_session_id, auto_key_init_pending, auto_key_peer_heard_ms, restart_pending) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-      "ON CONFLICT(peer_identity_kind, peer_identity_value, channel) DO UPDATE SET "
-      "session_epoch=excluded.session_epoch, master_psk_b64=excluded.master_psk_b64, "
-      "psk_fingerprint=excluded.psk_fingerprint, psk_verified_at=excluded.psk_verified_at, "
-      "retired_psks_json=excluded.retired_psks_json, key_scope=excluded.key_scope, "
-      "thread_kem_pk_b64=excluded.thread_kem_pk_b64, thread_kem_sk_b64=excluded.thread_kem_sk_b64, "
-      "peer_thread_kem_pk_b64=excluded.peer_thread_kem_pk_b64, last_psk_rotate_at=excluded.last_psk_rotate_at, "
-      "psk_rotate_msg_count=excluded.psk_rotate_msg_count, last_rotation_id=excluded.last_rotation_id, "
-      "auto_key_session_id=excluded.auto_key_session_id, auto_key_init_pending=excluded.auto_key_init_pending, "
-      "auto_key_peer_heard_ms=excluded.auto_key_peer_heard_ms, restart_pending=excluded.restart_pending;";
-  if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-    return Error("Failed to prepare PSK save");
-  }
-  sqlite3_bind_text(stmt, 1, to_save.key.peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 2, to_save.key.peer_identity_value.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 3, ChannelToDb(to_save.key.channel).c_str(), -1, SQLITE_TRANSIENT);
-  // No thread yet (a session for the control lane, or opened before the chat): a placeholder unique per
-  // target — local_thread_id is unique, and a shared "pending" made the second such peer fail to save.
-  const std::string pending_thread = "pending:" + to_save.key.peer_identity_kind + ":" +
-                                     to_save.key.peer_identity_value + ":" + ChannelToDb(to_save.key.channel);
-  sqlite3_bind_text(stmt, 4, pending_thread.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_int(stmt, 5, static_cast<int>(to_save.session_epoch));
-  if (to_save.master_psk_b64) {
-    sqlite3_bind_text(stmt, 6, to_save.master_psk_b64->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 6);
-  }
-  if (to_save.psk_fingerprint) {
-    sqlite3_bind_text(stmt, 7, to_save.psk_fingerprint->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 7);
-  }
-  if (to_save.psk_verified_at) {
-    sqlite3_bind_int64(stmt, 8, *to_save.psk_verified_at);
-  } else {
-    sqlite3_bind_null(stmt, 8);
-  }
-  sqlite3_bind_text(stmt, 9, retired_json.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 10, PublicKeyScopeToString(to_save.key_scope), -1, SQLITE_TRANSIENT);
-  if (to_save.thread_kem_pk_b64) {
-    sqlite3_bind_text(stmt, 11, to_save.thread_kem_pk_b64->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 11);
-  }
-  if (to_save.thread_kem_sk_b64) {
-    sqlite3_bind_text(stmt, 12, to_save.thread_kem_sk_b64->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 12);
-  }
-  if (to_save.peer_thread_kem_pk_b64) {
-    sqlite3_bind_text(stmt, 13, to_save.peer_thread_kem_pk_b64->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 13);
-  }
-  if (to_save.last_psk_rotate_at) {
-    sqlite3_bind_int64(stmt, 14, *to_save.last_psk_rotate_at);
-  } else {
-    sqlite3_bind_null(stmt, 14);
-  }
-  sqlite3_bind_int(stmt, 15, static_cast<int>(to_save.psk_rotate_msg_count));
-  if (to_save.last_rotation_id) {
-    sqlite3_bind_text(stmt, 16, to_save.last_rotation_id->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 16);
-  }
-  if (to_save.auto_key_session_id) {
-    sqlite3_bind_text(stmt, 17, to_save.auto_key_session_id->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 17);
-  }
-  if (to_save.auto_key_init_pending) {
-    sqlite3_bind_text(stmt, 18, to_save.auto_key_init_pending->c_str(), -1, SQLITE_TRANSIENT);
-  } else {
-    sqlite3_bind_null(stmt, 18);
-  }
-  if (to_save.auto_key_peer_heard_ms) {
-    sqlite3_bind_int64(stmt, 19, *to_save.auto_key_peer_heard_ms);
-  } else {
-    sqlite3_bind_null(stmt, 19);
-  }
-  sqlite3_bind_int(stmt, 20, to_save.restart_pending ? 1 : 0);
-  if (sqlite3_step(stmt) != SQLITE_DONE) {
-    sqlite3_finalize(stmt);
-    return Error("Failed to save PSK row");
-  }
-  sqlite3_finalize(stmt);
-  return {};
-}
-
-Roe<void> SqlitePeerSessionStore::SaveDeviceSession(sqlite3* db, const PeerSessionRecord& to_save,
-                                                    const std::string& retired_json) {
-  // A session moved to another epoch numbers from 1 there (its old epoch's count is the old epoch's).
-  const char* sql =
-      "INSERT INTO device_sessions (peer_identity_kind, peer_identity_value, channel, peer_device, session_epoch, "
-      "master_psk_b64, psk_fingerprint, psk_verified_at, retired_psks_json, auto_key_session_id, "
-      "auto_key_init_pending, auto_key_peer_heard_ms, restart_pending) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-      "ON CONFLICT(peer_identity_kind, peer_identity_value, channel, peer_device) DO UPDATE SET "
-      "next_outgoing_seq = CASE WHEN excluded.session_epoch != device_sessions.session_epoch THEN 1 "
-      "ELSE device_sessions.next_outgoing_seq END, "
-      "session_epoch=excluded.session_epoch, master_psk_b64=excluded.master_psk_b64, "
-      "psk_fingerprint=excluded.psk_fingerprint, psk_verified_at=excluded.psk_verified_at, "
-      "retired_psks_json=excluded.retired_psks_json, auto_key_session_id=excluded.auto_key_session_id, "
-      "auto_key_init_pending=excluded.auto_key_init_pending, auto_key_peer_heard_ms=excluded.auto_key_peer_heard_ms, "
-      "restart_pending=excluded.restart_pending;";
-  sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-    return Error("Failed to prepare device session save");
-  }
-  const auto bind_opt_text = [stmt](int index, const std::optional<std::string>& value) {
-    if (value) {
-      sqlite3_bind_text(stmt, index, value->c_str(), -1, SQLITE_TRANSIENT);
-    } else {
-      sqlite3_bind_null(stmt, index);
-    }
-  };
-  const auto bind_opt_int64 = [stmt](int index, const std::optional<int64_t>& value) {
-    if (value) {
-      sqlite3_bind_int64(stmt, index, *value);
-    } else {
-      sqlite3_bind_null(stmt, index);
-    }
-  };
-  sqlite3_bind_text(stmt, 1, to_save.key.peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 2, to_save.key.peer_identity_value.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 3, ChannelToDb(to_save.key.channel).c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 4, to_save.key.peer_device.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_int(stmt, 5, static_cast<int>(to_save.session_epoch));
-  bind_opt_text(6, to_save.master_psk_b64);
-  bind_opt_text(7, to_save.psk_fingerprint);
-  bind_opt_int64(8, to_save.psk_verified_at);
-  sqlite3_bind_text(stmt, 9, retired_json.c_str(), -1, SQLITE_TRANSIENT);
-  bind_opt_text(10, to_save.auto_key_session_id);
-  bind_opt_text(11, to_save.auto_key_init_pending);
-  bind_opt_int64(12, to_save.auto_key_peer_heard_ms);
-  sqlite3_bind_int(stmt, 13, to_save.restart_pending ? 1 : 0);
-  if (sqlite3_step(stmt) != SQLITE_DONE) {
-    sqlite3_finalize(stmt);
-    return Error("Failed to save device session");
-  }
-  sqlite3_finalize(stmt);
-  return {};
+  return WriteStored(*db, *encrypted);
 }
 
 Roe<uint64_t> SqlitePeerSessionStore::AllocateSenderSeq(const PeerSessionKey& key) {

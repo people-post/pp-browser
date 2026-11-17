@@ -8,9 +8,11 @@
 #include "common/Error.h"
 #include "common/Module.h"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -42,6 +44,19 @@ public:
   void SetCardFetcher(CardFetcher fetcher) { fetch_card_ = std::move(fetcher); }
   /** Where a blocking step (a directory lookup) runs; the background worker unless a test says otherwise. */
   void SetBlockingPost(std::function<void(std::function<void()>)> post) { post_blocking_ = std::move(post); }
+  /**
+   * The card a relay keeps for an account (FetchStoredAccountCard); none: none kept there. Blocking. `public_only`: the
+   * locator's relay outside developer builds (SetLocalRelaysAllowed off).
+   */
+  using StoredCardFetch = std::function<Roe<std::optional<Object>>(const std::string& relay_origin,
+                                                                   const std::string& account_id, bool public_only)>;
+  /** Tests: how a relay's stored card is fetched (default: over HTTP). */
+  void SetStoredCardFetch(StoredCardFetch fetch) { fetch_stored_ = std::move(fetch); }
+  /**
+   * A locator may name a relay that is not a public host (IsPublicRelayOrigin): developer builds only (the lab's). Off (the
+   * default, release builds): such a relay is left out of the locator, which still holds.
+   */
+  void SetLocalRelaysAllowed(bool allowed) { local_relays_allowed_.store(allowed, std::memory_order_relaxed); }
 
   /** What adding from a locator came to: the contact, and whether its keys are known yet. */
   struct LocatorAdded {
@@ -50,15 +65,17 @@ public:
   };
   /**
    * Adds the person a locator names (QR code, invite line): the contact (its listed devices as endpoint
-   * rows), then the account's card — from a listed device over Amp, else the directory when one is
-   * configured. Without keys yet the contact still stands; the person's first message brings them. `done`
-   * once, on a worker or I/O thread.
+   * rows, the locator's relay origin as its relay list until a card is kept — one not on a public host only where
+   * SetLocalRelaysAllowed allows it), then the account's card — from a
+   * listed device over Amp, else the card the locator's relay keeps for it (multi-relay R4), else the directory
+   * when one is configured. Without keys yet the contact still stands; the person's first message brings them.
+   * `done` once, on a worker or I/O thread.
    */
   void AddFromLocator(const ContactLocator& locator, std::function<void(Roe<LocatorAdded>)> done);
   /**
    * A contact whose account's card is still unknown (an add whose devices were out of reach, #409): asks
-   * for it again the same way — its devices, then the directory — at most once per kRefetchAfterMs per
-   * account. `done(true)` once a card is kept; nothing is asked (and `done(false)`) when one already is.
+   * for it again the same way — its devices, its locator's relay, then the directory — at most once per
+   * kRefetchAfterMs per account. `done(true)` once a card is kept; nothing is asked (and `done(false)`) when one already is.
    */
   void RefreshIfMissing(const Contact& contact, std::function<void(bool kept)> done);
   static constexpr int64_t kRefetchAfterMs = 30 * 1000;
@@ -81,8 +98,18 @@ public:
 private:
   void FetchFromDevices(std::vector<std::string> devices, const std::string& account_id,
                         std::function<void(bool kept)> done);
-  /** The account's card from `devices`, else the directory: `done(kept)` once, off the I/O thread. */
-  void FetchCard(const std::string& account_id, std::vector<std::string> devices, std::function<void(bool kept)> done);
+  /**
+   * The account's card from `devices`, else the card `relay` keeps for it (a locator's origin; none: skipped), else the
+   * directory: `done(kept)` once, off the I/O thread.
+   */
+  void FetchCard(const std::string& account_id, std::vector<std::string> devices, const std::string& relay,
+                 std::function<void(bool kept)> done);
+  /** The card `relay` keeps for `account_id`, kept when it verifies (blocking); true once kept. */
+  bool FetchFromRelay(const std::string& relay, const std::string& account_id);
+  /** The locator's relay address onto the contact (stored; `contact` becomes the stored one). */
+  void KeepLocatorRelay(Contact& contact, const AccountCardRelay& relay);
+  /** The locator's relay as it may be used here: none when it is not on a public host and that is not allowed. */
+  AccountCardRelay UsableLocatorRelay(const AccountCardRelay& relay);
   std::mutex refetch_mutex_;
   std::unordered_map<std::string, int64_t> last_refetch_ms_;
   struct LastAsk {
@@ -91,7 +118,9 @@ private:
   };
   std::unordered_map<std::string, LastAsk> last_device_ask_;
   CardFetcher fetch_card_;
+  StoredCardFetch fetch_stored_;
   std::function<void(std::function<void()>)> post_blocking_;
+  std::atomic<bool> local_relays_allowed_{false};
   ContactsStore& contacts_;
   AccountKeyResolver& keys_;
 };

@@ -65,23 +65,23 @@ void ConversationsFacade::BindAgentInbound(AgentInboundPorts ports) {
 }
 
 std::string ConversationsFacade::RegistrationBackendUrl() {
-  return hub_.Registration().BaseUrl();
+  return hub_.Registration()->BaseUrl();
 }
 
 Roe<bool> ConversationsFacade::MaybeAutoRenewRegistration(const bool auto_renew_registration) {
-  return pbr::MaybeAutoRenewRegistration(hub_.Registration(), hub_.Identity(), auto_renew_registration,
-                                         hub_.RegistrationCard());
+  return pbr::MaybeAutoRenewRegistration(*hub_.Registration(), hub_.Identity(), auto_renew_registration,
+                                         hub_.RegistrationCard(), hub_.PreferredRegistrationHome());
 }
 
 Roe<std::optional<RegistrationResult>> ConversationsFacade::MaybeAutoRenewRegistrationNetworkOnly(
     const bool auto_renew_registration) {
-  return pbr::MaybeAutoRenewNetworkOnly(hub_.Registration(), hub_.Identity(), auto_renew_registration,
+  return pbr::MaybeAutoRenewNetworkOnly(*hub_.Registration(), hub_.Identity(), auto_renew_registration,
                                         hub_.RegistrationCard());
 }
 
 Roe<LocalIdentity> ConversationsFacade::PersistRegistrationRenewal(const RegistrationResult& result,
                                                                    const std::string& expected_account_id) {
-  return pbr::PersistRenewal(hub_.Identity(), result, expected_account_id);
+  return pbr::PersistRenewal(hub_.Identity(), result, expected_account_id, hub_.PreferredRegistrationHome());
 }
 
 Roe<void> ConversationsFacade::SyncPushDevices() {
@@ -194,6 +194,34 @@ Roe<void> ConversationsFacade::RemoveOwnDevice(const std::string& peer_id) {
 
 Roe<void> ConversationsFacade::MakeMainDevice(const std::string& peer_id) {
   return hub_.MakeMainDevice(peer_id);
+}
+
+Roe<void> ConversationsFacade::StartNewDeviceList() {
+  return hub_.StartNewDeviceList();
+}
+
+void ConversationsFacade::SetOnOwnDevicesChanged(std::function<void()> callback) {
+  hub_.SetOnOwnDevicesChanged(std::move(callback));
+}
+
+Roe<OurRelaysStatus> ConversationsFacade::OurRelays() {
+  return hub_.OurRelays();
+}
+
+Roe<void> ConversationsFacade::AddOurRelay(const std::string& typed) {
+  return hub_.AddOurRelay(typed);
+}
+
+Roe<void> ConversationsFacade::RemoveOurRelay(const std::string& origin) {
+  return hub_.RemoveOurRelay(origin);
+}
+
+Roe<void> ConversationsFacade::MakeOurRelayPreferred(const std::string& origin) {
+  return hub_.MakeOurRelayPreferred(origin);
+}
+
+void ConversationsFacade::SetOnOurRelaysChanged(std::function<void()> callback) {
+  hub_.SetOnOurRelaysChanged(std::move(callback));
 }
 
 Roe<std::string> ConversationsFacade::ExportAccountCopy() {
@@ -1458,8 +1486,8 @@ Roe<LocalIdentity> ConversationsFacade::ModifyLocalIdentity(
 }
 
 Roe<LocalIdentity> ConversationsFacade::FinishAndPersistRegistration(const std::string& nickname) {
-  auto registered =
-      pbr::FinishAndPersistRegistration(hub_.Registration(), hub_.Identity(), nickname, {}, hub_.RegistrationCard());
+  auto registered = pbr::FinishAndPersistRegistration(*hub_.Registration(), hub_.Identity(), nickname, {},
+                                                      hub_.RegistrationCard(), hub_.PreferredRegistrationHome());
   if (registered) {
     hub_.RegisterOnOtherRelaysSoon(); // our other relays follow the preferred one (multi-relay R2)
   }
@@ -1467,15 +1495,17 @@ Roe<LocalIdentity> ConversationsFacade::FinishAndPersistRegistration(const std::
 }
 
 Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std::string& nickname) {
-  return pbr::UpdateRegisteredNickname(hub_.Registration(), hub_.Identity(), nickname);
+  return pbr::UpdateRegisteredNickname(*hub_.Registration(), hub_.Identity(), nickname);
 }
 
 Roe<void> ConversationsFacade::RevokeRegistration() {
   // Our other relays first (best effort, multi-relay R2), while the identity still says it is registered.
-  if (RelayRegistrationsWorkflow* others = hub_.OtherRelayRegistrations()) {
+  if (const auto others = hub_.OtherRelayRegistrations()) {
     others->RevokeAll();
   }
-  return pbr::RevokeRegistrationWithIdentity(hub_.Registration(), hub_.Identity());
+  auto identity = hub_.Identity().Get();
+  const std::string registration_id = identity ? identity->registration_id : std::string();
+  return pbr::RevokeRegistrationWithIdentity(*hub_.Registration(), hub_.Identity(), registration_id);
 }
 
 } // namespace pbr

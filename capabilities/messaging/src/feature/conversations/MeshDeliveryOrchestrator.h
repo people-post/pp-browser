@@ -97,8 +97,9 @@ struct ThreadPeerLinkView {
 class MeshDeliveryOrchestrator : public Module {
 public:
   /** Amp single entry for chat / history / blob ([A020]); requires `amp_links`. */
-  MeshDeliveryOrchestrator(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
-                           InboxController& inbox, AccountKeyResolver& account_keys, IPeerSessionStore& psk_store,
+  MeshDeliveryOrchestrator(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
+                           std::shared_ptr<IRelayClient> relay, InboxController& inbox,
+                           AccountKeyResolver& account_keys, IPeerSessionStore& psk_store,
                            IGroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
                            mesh::IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
@@ -141,6 +142,11 @@ public:
    * `force` (a push, a wake) polls every one.
    */
   void SyncInboxFromWake(bool force = true);
+  /**
+   * Holds every inbox poll (none goes until released): mail waits on the relays. The app lab's probe uses it to keep
+   * messages on a relay while it replays requests (multi-relay MR007); nothing in the product holds. Any thread.
+   */
+  void HoldInboxSync(bool held) { inbox_sync_held_.store(held, std::memory_order_release); }
   /** Last HTTP Brief/relay poll outcome for ambient status chrome. */
   enum class BriefRelayHealthState {
     Unknown = 0,
@@ -173,8 +179,10 @@ public:
   void RetryFailedOutbound();
   /** The relay clients (multi-relay R2). */
   struct RelayClients {
-    /** The preferred relay's: stream history and clearing the inbox. */
-    IRelayClient* preferred = nullptr;
+    /** The preferred relay's: clearing the inbox. */
+    std::shared_ptr<IRelayClient> preferred;
+    /** Where stream history is asked (multi-relay MR006: the relay that holds it); null: `preferred`. */
+    std::shared_ptr<IRelayClient> history;
     /** Where the outbox sends: by the recipient's relay list (RelaySendCoordinator); null: `preferred`. */
     IRelayClient* sender = nullptr;
     /** Our inboxes, preferred first (polled). */
@@ -183,6 +191,10 @@ public:
   void SetRelayClients(RelayClients clients);
   /** Whether another relay of ours may be polled now (we are registered there); none: always. Any thread. */
   void SetInboxReady(std::function<bool(const std::string& origin)> ready);
+  /** Each poll of an inbox of ours (`ok`: it answered), on the poll lane (My relays' reachability). */
+  void SetOnInboxPolled(std::function<void(const std::string& origin, bool ok)> polled);
+  /** Our account card changed here (issued, or a sibling's newer one taken), outside any lock (My relays follow). */
+  void SetOnOwnCardChanged(std::function<void(const AccountCard& card)> changed);
   /** Whose directories a stale recipient's card is asked of: our relays, then our other directories (RecipientRelays). */
   void SetCardDirectories(std::vector<std::string> origins) { recipient_relays_.SetDirectories(std::move(origins)); }
   /** A recipient's relays for the sender, from the cards kept here (valid while this lives). */
@@ -368,6 +380,12 @@ public:
   void RetryPeerDial(const std::string& thread_id);
 
 private:
+  /** The constructor's steps: card and grant hooks (our card's changes, a grant received, a locator's relay). */
+  void WireCardHooks();
+  /** The receive pipeline and what its cards, edits and retractions reach. */
+  void WireReceivePipeline(GroupInviteGate* invite_gate);
+  /** The outbox's relay, outcomes and pauses, and the transports' inbound and device lookups. */
+  void WireOutbox();
   /** A message to or from a peer over its link: its warm mark lasts (PeerWarmMarks::Touch). */
   void NoteMessageActivity(const std::string& thread_id, const std::string& device_peer_id);
   TrustLevel ResolveThreadTrust(const Thread& thread) const;
@@ -406,7 +424,10 @@ private:
   Roe<ThreadMessage> SendPublicPskRotate(const std::string& thread_id, PublicPskRotateKind kind);
   void PurgeRetryQueueForThread(const std::string& thread_id);
   void HandleDirectInbound(RelayEnvelope envelope, const std::string& from_peer_id);
-  /** The relay refused a stranger's send to `recipient` for its price (MR005): the chat shows it (P001). */
+  /**
+   * The relay refused a stranger's send to `recipient` for its price (MR005): the chat shows it (P001), over our kept
+   * card until a newer one; a card that says another price, or none, is fetched again (RecipientRelays::Refresh).
+   */
   void NotePaymentRequired(const std::string& recipient, int64_t floor);
   /** After an inbound envelope: a verified sender is online (its grants, MR005). */
   void NoteVerifiedSender(const RelayEnvelope& envelope, bool sender_verified);
@@ -416,7 +437,13 @@ private:
   IThreadStore& store_;
   ContactsStore& contacts_;
   IdentityStore& identity_;
-  IRelayClient* relay_ = nullptr;
+  /** The preferred relay's, replaced by SetRelayClients: read it with PreferredRelay (any thread). */
+  std::shared_ptr<IRelayClient> PreferredRelay() const;
+  mutable std::mutex relay_mu_;
+  std::shared_ptr<IRelayClient> relay_;
+  mutable std::mutex own_hooks_mu_;
+  std::function<void(const std::string&, bool)> on_inbox_polled_;
+  std::function<void(const AccountCard&)> on_own_card_changed_;
   InboxController& inbox_;
   AccountKeyResolver& account_keys_;
   IPeerSessionStore& psk_store_;
@@ -556,6 +583,7 @@ private:
   /** A recipient's relays from its kept card, and its newest card fetched when they are stale (multi-relay R2). */
   RecipientRelays recipient_relays_;
   uint64_t last_relay_poll_ms_ = 0;
+  std::atomic<bool> inbox_sync_held_{false};
   /** 0 = Unknown, 1 = Ok, 2 = Failed — see BriefRelayHealthState. */
   std::atomic<int> brief_relay_health_{0};
   void StoreBriefRelayHealth(BriefRelayHealthState state);

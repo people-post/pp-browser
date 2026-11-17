@@ -27,6 +27,15 @@ def ppApiUrlQa = System.getenv('PP_API_URL_QA') ?: ''
 if (ppApiUrlQa && !ppBrowserUiDemo) {
     ppBrowserCmakeArgs += ["-DPP_API_URL_QA=${ppApiUrlQa}"]
 }
+// The org relays' PeerIds beside their origins (multi-relay MR008).
+def ppRelayPeerIdProd = System.getenv('PP_RELAY_PEER_ID_PROD') ?: ''
+if (ppRelayPeerIdProd && !ppBrowserUiDemo) {
+    ppBrowserCmakeArgs += ["-DPP_RELAY_PEER_ID_PROD=${ppRelayPeerIdProd}"]
+}
+def ppRelayPeerIdQa = System.getenv('PP_RELAY_PEER_ID_QA') ?: ''
+if (ppRelayPeerIdQa && !ppBrowserUiDemo) {
+    ppBrowserCmakeArgs += ["-DPP_RELAY_PEER_ID_QA=${ppRelayPeerIdQa}"]
+}
 def ppRelayContentSha256 = (System.getenv('PP_RELAY_CONTENT_SHA256') ?: 'OFF').toUpperCase()
 ppBrowserCmakeArgs += ["-DPP_RELAY_CONTENT_SHA256=${ppRelayContentSha256}"]
 if (ppBrowserUiDemo) {

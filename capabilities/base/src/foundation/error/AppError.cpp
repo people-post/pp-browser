@@ -73,6 +73,12 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
         case Err::Auth::ServerBusy:
         case Err::Auth::StrangerQuota:
           return Localized("errors.auth.busy");
+        case Err::Auth::WrongAudience:
+        case Err::Auth::RelayIdentityMismatch:
+        case Err::Auth::RelayIdentityTaken:
+          return Localized("errors.auth.relay_identity");
+        case Err::Auth::ClientUpgradeRequired:
+          return Localized("errors.auth.upgrade_required");
         case Err::Auth::Generic:
         default:
           return Localized("errors.auth.failed");
@@ -93,6 +99,7 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
         case Err::Network::PaymentRequired:
           return Localized("errors.network.http");
         case Err::Network::Unreachable:
+        case Err::Network::RelayIdentityUnavailable:
         case Err::Network::Generic:
         default:
           return Localized("errors.network.unreachable");

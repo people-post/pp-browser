@@ -28,7 +28,7 @@ namespace pbr {
  */
 class AccountLockerWorkflow : public Module {
 public:
-  /** Where the groups and card floors come from (null-safe: missing ones are left out). */
+  /** Where the groups, card floors and grants come from (null-safe: missing ones are left out). */
   struct Sources {
     std::function<Roe<std::vector<AccountStateGroup>>()> groups;
     std::function<Roe<std::vector<PeerCardFloor>>()> card_floors;
@@ -37,6 +37,13 @@ public:
      * a device that missed the dissolve (it was off) ends the group too. Null: not taken.
      */
     std::function<void(const std::vector<AccountStateGroup>&)> take_dissolved;
+    /** The grants given to us that this device holds (multi-relay MR005), for the locker. Null: none published. */
+    std::function<Roe<std::vector<AccountStateGrant>>()> grants;
+    /**
+     * The grants the locker holds, taken here at a sync: another device of the account received them, and this one
+     * (a restored or linked device) needs them for its own sends. The taker checks each. Null: not taken.
+     */
+    std::function<void(const std::vector<AccountStateGrant>&)> take_grants;
     /**
      * The account's devices as this device knows them (its card's list, this device's PeerId): which names to keep
      * and which device the default name is for. Null or an error: the card is unknown, no default name is added.
@@ -44,12 +51,17 @@ public:
     std::function<Roe<OwnDeviceList>()> own_devices;
     /** The system's name for this device, read once at startup (the hub's copy); empty: unknown. */
     std::function<std::string()> own_system_name;
+    /** Our relays as our newest card lists them (My relays), for the locker; null or empty: none published. */
+    std::function<AccountStateRelays()> relays;
   };
 
   AccountLockerWorkflow(IdentityStore& identity, ContactsStore& contacts, Sources sources);
 
-  /** The provider to write to and read from (the relay); null: none configured. */
-  void SetClient(ILockerClient* client) { client_ = client; }
+  /**
+   * The provider to write to and read from (the relay); null: none configured. Shared: a sync in flight keeps the
+   * client it started with when the org's registration URL changes. Any thread.
+   */
+  void SetClient(std::shared_ptr<ILockerClient> client);
   /** After a sync stored a new version (the account's other devices are worth telling). Any thread. */
   void SetOnWritten(std::function<void()> callback) { on_written_ = std::move(callback); }
   /** Where the highest version this device has seen of each locker is kept (`account_locker.json`; empty: memory). */
@@ -121,7 +133,8 @@ private:
   /** The remote registers that win, applied to the address book. */
   Roe<void> TakeRemoteContacts(const std::vector<Contact>& local, const AccountLockerState& stored);
 
-  ILockerClient* client_ = nullptr;
+  std::shared_ptr<ILockerClient> Client() const;
+  std::shared_ptr<ILockerClient> client_;
   std::function<void()> on_written_;
   std::string data_dir_;
   mutable std::mutex mutex_;

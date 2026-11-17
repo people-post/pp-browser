@@ -2,6 +2,8 @@
 
 #include "common/ValueJson.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/PeerIdForm.h"
+#include "lib/people/AccountCard.h"
 #include "lib/people/ContactIdentity.h"
 
 #include <algorithm>
@@ -13,6 +15,11 @@ namespace pbr {
 namespace {
 
 constexpr size_t kMaxLocatorDevices = 16;
+
+/** A locator's relay as the card bounds it, with its PeerId (MR008: a relay address carries it). */
+bool IsLocatorRelay(const AccountCardRelay& relay) {
+  return IsCardRelayOrigin(relay.origin) && IsMlDsaPeerIdForm(relay.peer_id);
+}
 
 bool IsBase64UrlChar(const char c) {
   return std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_';
@@ -31,6 +38,12 @@ std::string EncodeContactLocator(const ContactLocator& locator) {
     devices.emplace_back(peer_id);
   }
   json.set("devices", ArrayValue(std::move(devices)));
+  if (IsLocatorRelay(locator.relay)) {
+    Object relay;
+    relay.set("origin", locator.relay.origin);
+    relay.set("peer_id", locator.relay.peer_id);
+    json.set("relay", ObjectValue(std::move(relay)));
+  }
   const std::string text = DumpJson(json);
   return std::string(kContactLocatorPrefix) + Base64UrlEncode(ByteVector(text.begin(), text.end()));
 }
@@ -79,6 +92,13 @@ Roe<ContactLocator> FindContactLocator(const std::string& text) {
       if (auto peer_id = asString(item); peer_id && !peer_id->empty() && locator.devices.size() < kMaxLocatorDevices) {
         locator.devices.push_back(*peer_id);
       }
+    }
+  }
+  if (const Object* relay = json->getObject("relay")) {
+    const AccountCardRelay named{.origin = relay->getString("origin").value_or(""),
+                                 .peer_id = relay->getString("peer_id").value_or("")};
+    if (IsLocatorRelay(named)) {
+      locator.relay = named; // the preferred relay's address (R4, MR008); one out of bounds, or unnamed, is no hint
     }
   }
   return locator;
