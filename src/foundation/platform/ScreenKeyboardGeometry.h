@@ -45,4 +45,53 @@ inline int KeyboardLift(int window_h, int keyboard_top, int input_bottom, int ga
   return std::clamp(input_bottom - std::max(keyboard_top, 0) + gap, 0, std::max(input_bottom, 0));
 }
 
+/** iPad: where the chat input bar's settling stands (SettleBarLift). */
+struct BarLiftSettle {
+  bool settling = false;
+  int steps = 0;
+  int prev_lift = -1; // the lift and the bar's bottom one step back; -1 = no step yet
+  int prev_bottom = 0;
+};
+
+/**
+ * iPad: the lift that puts the chat input bar on the keyboard's top, settled from the bar's measured bottom. Only a new
+ * target (the keyboard's top, the bar's height, the bar itself, the layout or the window changed: `target_changed`)
+ * starts a settling; otherwise the lift stays as it is, so typing never moves the bar. A step moves by the remaining
+ * distance divided by how far the bar went per point of lift on the step before (1 for a bar docked on the shell's
+ * bottom, 1/2 for one centred in an empty chat), so it lands in one step or two. Done when the bar is on the keyboard
+ * or up to 2 pt above it, after 4 steps, or when the bar does not follow the lift at all (then the step is undone).
+ */
+inline int SettleBarLift(BarLiftSettle& s, int lift_now, int bar_bottom_now, int keyboard_top, bool target_changed) {
+  constexpr int kAboveTolerance = 2;
+  constexpr int kMaxSteps = 4;
+  if (target_changed) {
+    s = BarLiftSettle{};
+    s.settling = true;
+  }
+  if (!s.settling) {
+    return lift_now;
+  }
+  const int error = bar_bottom_now - keyboard_top; // > 0: the keyboard covers the bar
+  if (error <= 0 && error >= -kAboveTolerance) {
+    s.settling = false;
+    return lift_now;
+  }
+  double per_point = 1.0;
+  if (s.prev_lift >= 0 && s.prev_lift != lift_now) {
+    per_point = static_cast<double>(s.prev_bottom - bar_bottom_now) / static_cast<double>(lift_now - s.prev_lift);
+    if (per_point < 0.1) {
+      // The lift did not move the bar: take the step back.
+      s.settling = false;
+      return s.prev_lift;
+    }
+    per_point = std::min(per_point, 1.5);
+  }
+  s.prev_lift = lift_now;
+  s.prev_bottom = bar_bottom_now;
+  if (++s.steps >= kMaxSteps) {
+    s.settling = false;
+  }
+  return std::max(0, lift_now + static_cast<int>(std::ceil(static_cast<double>(error) / per_point)));
+}
+
 } // namespace pbr

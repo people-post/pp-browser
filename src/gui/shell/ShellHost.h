@@ -1,5 +1,6 @@
 #pragma once
 
+#include "foundation/platform/ScreenKeyboardGeometry.h"
 #include "lib/ui/ShellTypes.h"
 #include "foundation/data/UserPreferences.h"
 #include "common/Module.h"
@@ -436,6 +437,7 @@ private:
     int input_bottom_win = 0;           // the input's bottom edge before any lift, window units
     int focus_bottom_win = -1;          // iPad: the focused bar's / field's bottom edge as laid out now; -1 none
     const char* input_source = "shell"; // what input_bottom_win is: shell | bar | field | field_covered
+    int bar_lift_win = 0;               // input_source "bar": the settled lift (SettleBarLift)
     int lift_win = 0;                   // how far the shell goes up so the input sits on the keyboard (KeyboardLift)
     int keyboard_dp = 0;                // lift_win in dp
     int window_w = 0;                   // SDL's window size, window units
@@ -459,6 +461,18 @@ private:
   int keyboard_lift_applied_win_ = 0;           // the keyboard lift in the layout now (window units)
   const ui::Element* keyboard_field_ = nullptr; // iPad: the non-bar field the decision below is for (compared only)
   bool keyboard_field_covered_ = false;         // that field was under the keyboard when it got the focus
+  std::string logged_input_source_ = "shell";   // the keyboard input source last written to the log
+  /** iPad: what the chat input bar's lift was settled for; a change starts a new settling (MeasureKeyboardInput). */
+  struct BarTarget {
+    const ui::Element* bar = nullptr; // compared only
+    int keyboard_top = -1;
+    int bar_h = -1;
+    LayoutMode mode = LayoutMode::Compact;
+    int window_w = 0;
+    int window_h = 0;
+  };
+  BarTarget bar_target_;
+  BarLiftSettle bar_settle_;
   /** The AI Home measured with nothing up (SyncHomeDock): window height, landing height, card bottom (dp); 0 = unseen. */
   float home_cache_window_dp_ = 0.f;
   float home_cache_landing_h_dp_ = 0.f;

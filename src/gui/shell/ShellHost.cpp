@@ -1873,7 +1873,9 @@ ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() {
   if (IsIpadDevice()) {
     MeasureKeyboardInput(insets, density > 0.f ? density : 1.f);
   }
-  insets.lift_win = KeyboardLift(win_h, insets.keyboard_top_win, insets.input_bottom_win, 0);
+  insets.lift_win = std::string_view(insets.input_source) == "bar"
+                        ? std::clamp(insets.bar_lift_win, 0, win_h)
+                        : KeyboardLift(win_h, insets.keyboard_top_win, insets.input_bottom_win, 0);
   const int bottom_win = safe_bottom_win + insets.lift_win;
   insets.top_dp = static_cast<int>(static_cast<float>(top_win) * window_to_dp + 0.5f);
   insets.bottom_dp = static_cast<int>(static_cast<float>(bottom_win) * window_to_dp + 0.5f);
@@ -1885,6 +1887,7 @@ ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() {
 void ShellHost::MeasureKeyboardInput(SafeAreaFromSdl& insets, float px_per_win) {
   if (insets.keyboard_win <= 0) {
     keyboard_field_ = nullptr;
+    bar_target_ = BarTarget{};
     return;
   }
   ui::Element* focus = context_ ? context_->GetFocusElement() : nullptr;
@@ -1911,14 +1914,28 @@ void ShellHost::MeasureKeyboardInput(SafeAreaFromSdl& insets, float px_per_win) 
   }
   const bool home_keeps_place = state_.layout_mode == LayoutMode::Compact && HomeDockApplies();
   if (bar && in_shell_root && !home_keeps_place && !bottom_chrome_open_) {
-    // The chat input bar, docked in #shell-root: it goes up one for one with the lift already applied, so its place
-    // without a lift is where it is now plus that lift. Within a frame or two it sits on the keyboard's top.
+    // The chat input bar in #shell-root: the lift is settled on it only when its target moves (the keyboard's top, the
+    // bar's height when it grows a line, the bar, the layout, the window); a keystroke that changes none of these
+    // leaves the lift alone (SettleBarLift).
     insets.input_source = "bar";
     insets.focus_bottom_win = bottom_win(bar);
-    insets.input_bottom_win = insets.focus_bottom_win + keyboard_lift_applied_win_;
+    const BarTarget target{bar,
+                           insets.keyboard_top_win,
+                           static_cast<int>(std::lround(bar->GetBox().GetSize(ui::BoxArea::Border).y / px_per_win)),
+                           state_.layout_mode,
+                           insets.window_w,
+                           insets.window_h};
+    const bool target_changed = target.bar != bar_target_.bar || target.keyboard_top != bar_target_.keyboard_top ||
+                                std::abs(target.bar_h - bar_target_.bar_h) >= 1 || target.mode != bar_target_.mode ||
+                                target.window_w != bar_target_.window_w || target.window_h != bar_target_.window_h;
+    bar_target_ = target;
+    insets.bar_lift_win = SettleBarLift(bar_settle_, keyboard_lift_applied_win_, insets.focus_bottom_win,
+                                        insets.keyboard_top_win, target_changed);
+    insets.input_bottom_win = insets.keyboard_top_win + insets.bar_lift_win; // the unlifted bottom that lift implies
     keyboard_field_ = nullptr;
     return;
   }
+  bar_target_ = BarTarget{};
   if (bar) {
     // A bar the lift does not move (the AI Home's, one outside the shell, under the emoji sheet): as before.
     insets.input_source = "shell";
@@ -1942,22 +1959,38 @@ void ShellHost::MeasureKeyboardInput(SafeAreaFromSdl& insets, float px_per_win) 
 
 void ShellHost::RefreshSafeAreaInsets(ui::Context* context) {
   (void)context;
+  // iOS: SDL resizes its view away from the window on every keyboard change and every caret move (SDL_SetTextInputArea
+  // -> updateKeyboard, w/h swapped on iPadOS 27) until the next frame puts it back. Sizes and the pixel density read
+  // meanwhile are wrong (11-17 iPad log: the bar measured 528 instead of 393, the lift jumped to 286 on each keystroke):
+  // keep the insets of the last good frame.
+  if (!UikitViewFillsWindow(Backend::GetWindow())) {
+    return;
+  }
   const SafeAreaFromSdl sdl = ReadSafeAreaFromSdl();
   const std::string keyboard_events = TakeScreenKeyboardEvents();
-  if (!keyboard_events.empty() ||
-      (sdl.keyboard_dp != logged_keyboard_dp_ && (sdl.keyboard_dp > 0 || logged_keyboard_dp_ > 0))) {
-    // iOS: one line per keyboard notification (iPad) and per change of the keyboard lift.
-    log().info << "keyboard lift pt=" << sdl.lift_win << " dp=" << sdl.keyboard_dp
-               << " events=" << (keyboard_events.empty() ? "-" : keyboard_events) << " cover_pt=" << sdl.keyboard_win
-               << " kb_top_pt=" << sdl.keyboard_top_win << " input=" << sdl.input_source
-               << " input_bottom_pt=" << sdl.input_bottom_win << " focus_bottom_pt=" << sdl.focus_bottom_win
-               << " applied_pt=" << keyboard_lift_applied_win_ << " sdl_window=" << sdl.window_w << "x" << sdl.window_h
-               << " bottom_dp=" << sdl.bottom_dp << " latch=" << (sdl.bottom_dp >= kImeLatchMinDp)
-               << " layout=" << ShellLayout::LayoutModeString(state_.layout_mode) << " " << DescribeScreenKeyboard();
+  const bool lift_changed = sdl.keyboard_dp != logged_keyboard_dp_ && (sdl.keyboard_dp > 0 || logged_keyboard_dp_ > 0);
+  const bool source_changed = std::string_view(sdl.input_source) != logged_input_source_;
+  if (lift_changed || source_changed || !keyboard_events.empty()) {
+    // iOS: INFO when the lift or what it is measured from changes; the keyboard notifications (iPad) alone at DEBUG.
+    std::ostringstream out;
+    out << "keyboard lift pt=" << sdl.lift_win << " dp=" << sdl.keyboard_dp
+        << " events=" << (keyboard_events.empty() ? "-" : keyboard_events) << " cover_pt=" << sdl.keyboard_win
+        << " kb_top_pt=" << sdl.keyboard_top_win << " input=" << sdl.input_source
+        << " input_bottom_pt=" << sdl.input_bottom_win << " focus_bottom_pt=" << sdl.focus_bottom_win
+        << " applied_pt=" << keyboard_lift_applied_win_ << " settling=" << bar_settle_.settling
+        << " step=" << bar_settle_.steps << " sdl_window=" << sdl.window_w << "x" << sdl.window_h
+        << " bottom_dp=" << sdl.bottom_dp << " latch=" << (sdl.bottom_dp >= kImeLatchMinDp)
+        << " layout=" << ShellLayout::LayoutModeString(state_.layout_mode) << " " << DescribeScreenKeyboard();
+    if (lift_changed || source_changed) {
+      log().info << out.str();
+    } else {
+      log().debug << out.str();
+    }
   }
   logged_keyboard_dp_ = sdl.keyboard_dp;
-  if (sdl.lift_win != keyboard_lift_applied_win_ && std::string_view(sdl.input_source) == "bar") {
-    // The bar's new place is measured on the next frame (it converges there): ask for it even when idle.
+  logged_input_source_ = sdl.input_source;
+  if (bar_settle_.settling) {
+    // The bar's new place is measured on the next frame: ask for it even when idle.
     Backend::RequestForceFrame();
   }
   keyboard_lift_applied_win_ = sdl.lift_win;
