@@ -2,6 +2,8 @@
 
 #include "lib/calls/CallSessionLogic.h"
 
+#include <algorithm>
+
 namespace pbr {
 
 const char* CallScreenKindName(const CallScreen::Kind kind) {
@@ -105,7 +107,8 @@ bool StepNoMediaWatch(NoMediaWatch& watch, const NoMediaSample& sample) {
   const bool woke = watch.last_step_ms > 0 && sample.now_ms - watch.last_step_ms > CallSessionLogic::kAppSleptGapMs;
   watch.last_step_ms = sample.now_ms;
   const bool arriving = sample.last_rx_ms > 0 && sample.now_ms - sample.last_rx_ms < kMediaArrivingWindowMs;
-  if (sample.call_id.empty() || !sample.group || sample.others_joined == 0 || !sample.media_live || woke || arriving) {
+  if (sample.call_id.empty() || !sample.group || sample.others_joined == 0 || !sample.media_live ||
+      sample.participants_watched || woke || arriving) {
     watch.silent_since_ms = 0;
     return false;
   }
@@ -113,6 +116,25 @@ bool StepNoMediaWatch(NoMediaWatch& watch, const NoMediaSample& sample) {
     watch.silent_since_ms = sample.now_ms;
   }
   return sample.now_ms - watch.silent_since_ms >= kGroupNoMediaEndMs;
+}
+
+std::vector<std::string> LostConnection(const CallScreen& before, const CallScreen& after) {
+  std::vector<std::string> lost;
+  if (before.kind != CallScreen::Kind::InCall || after.kind != CallScreen::Kind::InCall || before.call_id.empty() ||
+      before.call_id != after.call_id) {
+    return lost;
+  }
+  for (const CallScreen::Member& was : before.members) {
+    if (!was.reconnecting || was.is_local) {
+      continue;
+    }
+    const bool still_in = std::any_of(after.members.begin(), after.members.end(),
+                                      [&](const CallScreen::Member& now) { return now.identity == was.identity; });
+    if (!still_in) {
+      lost.push_back(was.identity);
+    }
+  }
+  return lost;
 }
 
 InCallStatus DecideInCallStatus(const InCallSignals& s) {

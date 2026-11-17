@@ -78,7 +78,7 @@ struct NullHopDriver : CallHopDriver {
   void OnMediaStopped(const std::string&) override {}
   void RefreshAdaptation(const std::string&, bool) override {}
   void Handle(HopPathEvent&) override {}
-  void OnMediaKeyInstalled(const std::string&) override {}
+  void OnMediaKeyInstalled(const std::string&, CallMediaKeyOrigin) override {}
   void OnJoinedCountObserved(const std::string&, size_t) override {}
   void ClearSfuAttachWait() override {}
   Roe<void> OnInboundSfuAttach(const std::string&, const CallSfuAttachDetail&, const std::string&) override {
@@ -93,6 +93,8 @@ struct NullHopDriver : CallHopDriver {
   void OnLocalNetworkMoved() override {}
   void UnwatchRelay() override {}
   void OnRelayDepsChanged() override {}
+  void OnParticipantGone(const std::string&, const std::string&) override {}
+  std::vector<std::string> QuietParticipants() const override { return {}; }
 };
 
 /** A call's group path that forwards the coordinator's questions to `target` (a test-owned fake). */
@@ -111,6 +113,7 @@ public:
   void BeginSfuAttachWait(const std::string& c) override { target_.BeginSfuAttachWait(c); }
   void OnMediaStopped(const std::string& c) override { target_.OnMediaStopped(c); }
   void RefreshAdaptation(const std::string& c, bool on) override { target_.RefreshAdaptation(c, on); }
+  void OnParticipantGone(const std::string& c, const std::string& who) override { target_.OnParticipantGone(c, who); }
 
 private:
   CallHopDriver& target_;

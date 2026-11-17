@@ -63,6 +63,14 @@ public:
   static bool CanAcceptJoin(size_t current_joined_count, size_t max_joined = kCallEngineeringMaxJoined);
 
   /**
+   * V053 / V067 8: whether a `call_ended` from `sender_identity` ends this device's part. Not when this device is in the
+   * call with others and the sender is no longer in it (its device took us all as gone — cut off itself — waited
+   * alone and left): the call goes on.
+   */
+  static bool CallEndedStands(const std::vector<CallParticipant>& participants, const std::string& sender_identity,
+                              const std::string& local_identity);
+
+  /**
    * video-voice-choice: a voice-only answer narrows the whole call only for a call started from a
    * direct thread (no origin group). Fixed at invite time on both sides — unlike the live participant
    * count, a group-thread call with one invitee or a mid-call guest cannot flip it.

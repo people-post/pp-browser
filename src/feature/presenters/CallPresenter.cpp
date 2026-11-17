@@ -440,6 +440,7 @@ void CallPresenter::Refresh() {
     active_group_id_ = surface.active->origin_group_id.value_or(std::string{});
     FillGuests(next, *backend, active_group_id_, local);
     AnnounceGuests(next);
+    AnnounceLostConnections(screen_, next);
     FillGroupInvite(next, util::NowUnixMs());
     MaybeAutoCamera(*backend, next);
   } else if (engine.open && !Leaving(engine.call_id)) {
@@ -617,6 +618,7 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
     joined = static_cast<int>(participants->size());
     s.group = joined > 2 || group_call;
     s.members.reserve(participants->size());
+    const std::vector<std::string> quiet = backend.QuietParticipants(); // V067
     for (const CallParticipant& row : *participants) {
       CallScreen::Member member;
       member.identity = row.identity;
@@ -625,6 +627,7 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
       member.video_enabled = row.media.video_enabled;
       member.on_hold = row.media.on_hold;
       member.video_paused = row.media.video_paused;
+      member.reconnecting = !member.is_local && std::find(quiet.begin(), quiet.end(), row.identity) != quiet.end();
       s.members.push_back(std::move(member));
     }
   }
@@ -712,6 +715,7 @@ void CallPresenter::WatchForNoMedia(CallUiBackend& backend, const CallScreen& s,
         std::count_if(s.members.begin(), s.members.end(), [](const CallScreen::Member& m) { return !m.is_local; }));
     sample.last_rx_ms = std::max(health.last_rx_audio_ms, health.last_rx_video_ms);
     sample.now_ms = now;
+    sample.participants_watched = backend.MediaPath() == CallMediaPath::Hop; // V067: each one, the last one too
   }
   if (!StepNoMediaWatch(no_media_watch_, sample)) {
     return;
@@ -1254,6 +1258,15 @@ void CallPresenter::AnnounceGuests(const CallScreen& s) {
     notice.kind = CallNotice::Kind::GuestJoined;
     notice.identity = member.identity;
     notice.brought_by = member.brought_by;
+    Notify(notice);
+  }
+}
+
+void CallPresenter::AnnounceLostConnections(const CallScreen& before, const CallScreen& after) {
+  for (const std::string& identity : LostConnection(before, after)) {
+    CallNotice notice;
+    notice.kind = CallNotice::Kind::ParticipantLost;
+    notice.identity = identity;
     Notify(notice);
   }
 }

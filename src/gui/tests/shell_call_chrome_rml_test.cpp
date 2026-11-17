@@ -449,6 +449,7 @@ TEST(ShellCallChromeRmlTest, PhoneGroupGridTapsToSpotlightAndRingsWhoSpeaks) {
   EXPECT_TRUE(Has(rml,
                   "data-for=\"p : call_in_progress_roster\" class=\"call-phone-tile\" "
                   "data-class-call-phone-tile--on-hold=\"p.on_hold\" "
+                  "data-class-call-phone-tile--reconnecting=\"p.reconnecting\" "
                   "data-class-call-phone-tile--speaking=\"p.speaking\" "
                   "data-event-click=\"call_spotlight(p.stream_id)\""));
   EXPECT_FALSE(Has(rml, "call_in_progress_spotlight_rows"));
@@ -678,6 +679,25 @@ TEST(ShellCallChromeRmlTest, DesktopCardsAndChipsShowWhoIsOnHold) {
   EXPECT_TRUE(Has(immersive, "<div class=\"call-hold-pill\" data-if=\"p.on_hold\">"));
   state.call_in_progress.mode = CallChromeMode::Expanded;
   EXPECT_TRUE(Has(CallInProgressRml(state), "data-if=\"p.on_hold\" src=\"../icons/pause.svg\""));
+}
+
+// V067: someone nothing has come from for a few seconds reads "Reconnecting…" on their tile and card, dimmed, with no
+// "starting video" note over it; their roster chip has a sync icon — per row, bound.
+TEST(ShellCallChromeRmlTest, TilesCardsAndChipsShowWhoIsReconnecting) {
+  ShellState state = PhoneGroupCall();
+  const std::string tiles = CallInProgressRml(state);
+  EXPECT_TRUE(Has(tiles,
+                  "<div class=\"call-hold-pill call-reconnect-pill call-hold-pill--tile\" "
+                  "data-if=\"p.reconnecting && !p.on_hold\">"));
+  EXPECT_TRUE(Has(tiles, "data-class-call-phone-tile--reconnecting=\"p.reconnecting\""));
+  EXPECT_TRUE(Has(tiles, "data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video && !p.reconnecting\""));
+  state.layout_mode = LayoutMode::Expanded;
+  const std::string cards = CallInProgressRml(state);
+  EXPECT_TRUE(Has(cards, "data-class-shell-call-peer-card--reconnecting=\"p.reconnecting\""));
+  EXPECT_TRUE(
+      Has(cards, "<div class=\"call-hold-pill call-reconnect-pill\" data-if=\"p.reconnecting && !p.on_hold\">"));
+  state.call_in_progress.mode = CallChromeMode::Expanded;
+  EXPECT_TRUE(Has(CallInProgressRml(state), "data-if=\"p.reconnecting && !p.on_hold\" src=\"../icons/sync.svg\""));
 }
 
 // 1:1 video: their camera big, ours small; a tap on the small one swaps them (spotlights the one it shows).

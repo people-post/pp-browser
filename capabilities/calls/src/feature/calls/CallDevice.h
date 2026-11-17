@@ -187,6 +187,8 @@ public:
   void ClearMediaActivity();
   /** Combined hop health when SFU attached (empty otherwise). */
   CallHopHealth HopHealth() const;
+  /** V067: the active call's participants nothing has come from for a few seconds. */
+  std::vector<std::string> QuietParticipants() const;
   /** 1:1 reach path from CallDirectPath (direct|punched|circuit); empty if unknown. */
   std::string MediaPathKind() const;
   CallLinkCounters MediaLinkCounters() const;

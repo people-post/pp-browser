@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -45,8 +46,8 @@ public:
 
   /** One of the path's own events, back on the calls owner. */
   virtual void Handle(HopPathEvent& event) = 0;
-  /** The call's media key epoch landed (the hop re-keys its streams). */
-  virtual void OnMediaKeyInstalled(const std::string& call_id) = 0;
+  /** The call's media key epoch landed (the hop re-keys its streams; one this device minted waits for the others). */
+  virtual void OnMediaKeyInstalled(const std::string& call_id, CallMediaKeyOrigin origin) = 0;
   virtual void OnJoinedCountObserved(const std::string& call_id, size_t n_joined) = 0;
   virtual void ClearSfuAttachWait() = 0;
   /** Inbound call control for the call's hop (V025 / V029 / V050). */
@@ -64,6 +65,13 @@ public:
   /** The device's relay deps are about to change (the relay client is still alive) / changed. */
   virtual void UnwatchRelay() = 0;
   virtual void OnRelayDepsChanged() = 0;
+  /**
+   * `identity` is no longer in the call (left, removed, or taken as gone, V067): their stream goes — frames of it are
+   * dropped, the engine lets it go, its liveness is forgotten. A rejoin subscribes to it again.
+   */
+  virtual void OnParticipantGone(const std::string& call_id, const std::string& identity) = 0;
+  /** V067: the participants nothing has come from for kParticipantQuietMs (their tiles read "Reconnecting…"). */
+  virtual std::vector<std::string> QuietParticipants() const = 0;
 };
 
 } // namespace pbr

@@ -27,14 +27,15 @@ bool CallHopMediaChannel::HasLiveKeys() const {
   return live_keys_ != nullptr;
 }
 
-void CallHopMediaChannel::InstallKey(const uint32_t epoch, const ByteVector& key) {
+void CallHopMediaChannel::InstallKey(const uint32_t epoch, const ByteVector& key,
+                                     const std::vector<uint32_t>& hold_for) {
   std::shared_ptr<SfuKeyRing> live;
   {
     std::lock_guard lock(mu_);
     live = live_keys_;
   }
   if (live) {
-    live->Install(epoch, key, util::NowUnixMs());
+    live->Install(epoch, key, util::NowUnixMs(), hold_for);
   }
 }
 
@@ -51,8 +52,12 @@ std::function<void(mesh::MediaDataFrame)> CallHopMediaChannel::MakeFrameSink(std
     pkt.mark = frame.mark;
     pkt.instance = frame.instance;
     pkt.capture_ts = frame.capture_ts;
-    const std::vector<SfuKeyRing::Key> open_with = keys->ForOpen(util::NowUnixMs());
+    const int64_t now = util::NowUnixMs();
+    const std::vector<SfuKeyRing::Key> open_with = keys->ForOpen(now);
     if (open_with.empty()) {
+      if (!self->AdmitFrame(frame, /*opened=*/false)) {
+        return;
+      }
       pkt.payload = std::move(frame.payload);
       (void)self->engine_->Deliver(pkt);
       return;
@@ -63,10 +68,14 @@ std::function<void(mesh::MediaDataFrame)> CallHopMediaChannel::MakeFrameSink(std
     for (const SfuKeyRing::Key& key : open_with) {
       plain = mesh::OpenMediaFrame(key.key, context, key.epoch, frame);
       if (plain) {
+        keys->NoteOpened(frame.stream_id, key.epoch, now); // its sender holds this key (a rotation's hold, V068)
         break;
       }
     }
     if (!plain) {
+      // The others seal with a key this device lacks (V067: the key moved on without us, or is still on its way).
+      self->last_unopened_ms_.store(now, std::memory_order_relaxed);
+      self->unopened_frames_.fetch_add(1, std::memory_order_relaxed);
       static std::atomic<int> decrypt_fail_log{0};
       const int n = decrypt_fail_log.fetch_add(1, std::memory_order_relaxed);
       if (n < 8 || (n % 100) == 0) {
@@ -74,6 +83,9 @@ std::function<void(mesh::MediaDataFrame)> CallHopMediaChannel::MakeFrameSink(std
                             << " bytes=" << frame.payload.size() << " n=" << n << " err=" << plain.error().message
                             << " call_id=" << self->call_id_;
       }
+      return;
+    }
+    if (!self->AdmitFrame(frame, /*opened=*/true)) {
       return;
     }
     pkt.payload = std::move(*plain);
@@ -95,7 +107,7 @@ MediaEngine::PacketSendFn CallHopMediaChannel::MakeSendFn(std::shared_ptr<SfuKey
     frame.mark = pkt.mark;
     frame.instance = pkt.instance;
     frame.capture_ts = pkt.capture_ts;
-    const SfuKeyRing::Key key = keys->Current(); // the newest epoch (V003)
+    const SfuKeyRing::Key key = keys->Current(util::NowUnixMs()); // V003 / V068: the newest the others hold
     if (!key.key.empty()) {
       // Never the same (channel, seq) twice under one instance and epoch: it would repeat a nonce (A029 H2).
       if (!guard->Admit(pkt.instance, key.epoch, static_cast<uint8_t>(pkt.channel_id), pkt.seq) ||
@@ -117,6 +129,32 @@ void CallHopMediaChannel::AddRemoteStream(const uint32_t id) {
   remote_stream_ids_.insert(id);
 }
 
+void CallHopMediaChannel::DropRemoteStream(const uint32_t id) {
+  std::lock_guard lock(mu_);
+  remote_stream_ids_.erase(id);
+  video_refresh_sent_.erase(id);
+  freshness_.Forget(id);
+  last_fresh_ms_.erase(id);
+}
+
+int64_t CallHopMediaChannel::LastFreshFrameMs(const uint32_t id) const {
+  std::lock_guard lock(mu_);
+  const auto it = last_fresh_ms_.find(id);
+  return it != last_fresh_ms_.end() ? it->second : 0;
+}
+
+bool CallHopMediaChannel::AdmitFrame(const mesh::MediaDataFrame& frame, const bool opened) {
+  std::lock_guard lock(mu_);
+  if (!remote_stream_ids_.contains(frame.stream_id)) {
+    return false; // its publisher left (or we never asked for it): nothing of it reaches the engine
+  }
+  // Only a frame sealed under the call's key says its sender is alive, and only a newer one: the hop could repeat.
+  if (opened && freshness_.Advances(frame.stream_id, frame.channel_id, frame.instance, frame.seq)) {
+    last_fresh_ms_[frame.stream_id] = util::NowUnixMs();
+  }
+  return true;
+}
+
 std::vector<uint32_t> CallHopMediaChannel::RemoteStreams() const {
   std::lock_guard lock(mu_);
   return {remote_stream_ids_.begin(), remote_stream_ids_.end()};
@@ -136,6 +174,10 @@ void CallHopMediaChannel::ResetStreams() {
   local_stream_id_.store(0);
   std::lock_guard lock(mu_);
   remote_stream_ids_.clear();
+  freshness_.Clear();
+  last_fresh_ms_.clear();
+  last_unopened_ms_.store(0, std::memory_order_relaxed);
+  unopened_frames_.store(0, std::memory_order_relaxed);
 }
 
 } // namespace pbr

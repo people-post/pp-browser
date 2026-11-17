@@ -158,6 +158,7 @@ TEST(CallRosterCacheTest, TheCallStateFieldsAreTheScreensEveryFrame) {
   members[1].video_enabled = true;
   members[1].on_hold = true;
   members[1].video_paused = true;
+  members[1].reconnecting = true;
   members[1].guest = true;
   members[0].audio_muted = true;
   f.Fill(members, kT0 + 16);
@@ -165,6 +166,7 @@ TEST(CallRosterCacheTest, TheCallStateFieldsAreTheScreensEveryFrame) {
   EXPECT_TRUE(f.roster[1].video_enabled);
   EXPECT_TRUE(f.roster[1].on_hold);
   EXPECT_TRUE(f.roster[1].video_paused);
+  EXPECT_TRUE(f.roster[1].reconnecting);
   EXPECT_TRUE(f.roster[1].guest);
   EXPECT_TRUE(f.roster[0].audio_muted);
   EXPECT_TRUE(f.roster[0].is_local);

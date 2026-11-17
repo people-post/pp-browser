@@ -22,6 +22,7 @@
 #include "common/runtime/OwnerSteps.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "lib/calls/CallHopPlannerLogic.h"
+#include "lib/calls/CallParticipantLiveness.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -113,10 +114,10 @@ public:
   void SetMediaKeyStore(ICallMediaKeyStore* keys);
   /** The device's network came back or moved (the hop path, as the direct path's OnLocalNetworkChanged). */
   void OnLocalNetworkMoved() override;
-  /** A new media epoch for `call_id` is stored: the hop path switches to it (V003). */
-  void OnMediaKeyInstalled(const std::string& call_id) override {
+  /** A new media epoch for `call_id` is stored: the hop path switches to it (V003; V068: ours once the others hold it). */
+  void OnMediaKeyInstalled(const std::string& call_id, CallMediaKeyOrigin origin) override {
     if (call_id == call_id_) {
-      InstallMediaKey(call_id);
+      InstallMediaKey(call_id, origin);
     }
   }
   /** V046 exclusive media bind / epoch via ports. */
@@ -200,6 +201,8 @@ public:
   uint32_t PublisherStreamIdForLocal() const;
   /** Hop health when SFU attached (V032). */
   CallHopHealth HopHealth() const override;
+  void OnParticipantGone(const std::string& call_id, const std::string& identity) override;
+  std::vector<std::string> QuietParticipants() const override { return liveness_.Quiet(); }
 
   /** V039 Hop planner Apply. */
   void Apply(CallHopPlannerEvent ev, const std::string& call_id = {});
@@ -359,7 +362,7 @@ private:
   /** A follow-up of those flows, back from the calls owner's queue. */
   void HandleMigrateEvent(HopMigrateEvent& event);
   /** The call moved to a new media epoch (V003): the live hop attach seals with its key from now. */
-  void InstallMediaKey(const std::string& call_id);
+  void InstallMediaKey(const std::string& call_id, CallMediaKeyOrigin origin);
   void ReattachGuestSfuTransportAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
                                       std::function<void(Roe<void>)> on_done);
   struct HopPick;
@@ -486,6 +489,22 @@ private:
 
   void WatchRelayLoss();
   void UnwatchRelayLoss();
+
+  // --- V067: each participant's liveness (the rule: lib/calls CallParticipantLiveness) ---------------
+  /** From the first live attach until the call's media stops, the watch steps every kParticipantLivenessStepMs. */
+  void StartLivenessWatch();
+  void StopLivenessWatch();
+  void ScheduleLivenessTick();
+  void OnLivenessTick();
+  /** V067 8: the step's word on this device being cut off (the line, a rejoin, a leave); true: leaving. */
+  bool StepCutOffReports(const ParticipantLivenessStep& step, bool our_media_live);
+  /** Our side, and when each joined participant's stream last brought a fresh frame. */
+  ParticipantLivenessSample LivenessSample() const;
+  ParticipantLivenessWatch liveness_;
+  bool liveness_watching_ = false;
+  /** Bumped at each stop: a tick armed before it is stale. */
+  uint64_t liveness_armed_ = 0;
+  uint64_t liveness_timer_ = 0;
 };
 
 } // namespace pbr

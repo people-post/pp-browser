@@ -6970,11 +6970,16 @@ call-video-tile {
   display: none;
 }
 
+/* V067: "Reconnecting…" (nothing has come from them for a few seconds) uses the hold pill's shape, in a neutral
+   tint; the person dims the same way. */
 .call-phone-tile--on-hold .call-phone-avatar,
 .call-phone-tile--on-hold call-video-tile,
+.call-phone-tile--reconnecting .call-phone-avatar,
 .shell-call-peer-card--on-hold .shell-call-peer-avatar,
 .shell-call-peer-card--on-hold .shell-call-peer-avatar-image,
-.shell-call-peer-card--on-hold call-video-tile {
+.shell-call-peer-card--on-hold call-video-tile,
+.shell-call-peer-card--reconnecting .shell-call-peer-avatar,
+.shell-call-peer-card--reconnecting .shell-call-peer-avatar-image {
   opacity: 0.45;
 }
 

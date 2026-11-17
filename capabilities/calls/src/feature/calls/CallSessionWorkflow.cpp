@@ -889,7 +889,7 @@ Roe<void> CallSessionWorkflow::RotateMediaKeyAmong(const std::string& call_id,
   if (!key) {
     return key.error();
   }
-  AdoptMediaEpoch(call_id, key->epoch, key->key_id);
+  AdoptMediaEpoch(call_id, key->epoch, key->key_id, CallMediaKeyOrigin::Minted);
 
   // The roster goes with the key when it can be read; the key goes either way (a member who left must not keep one).
   std::optional<std::string> roster_json;
@@ -967,6 +967,9 @@ void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCall
 
 Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms,
                                             const LiveCallEndReason reason) {
+  if (reason != LiveCallEndReason::Rejoining) {
+    DropRejoin(session.call_id);
+  }
   live_calls_.Close(session.call_id, reason);
   // The decision is recorded before the media stops (#452): nothing about a slow stop may leave the
   // call looking live. The stop itself never waits on the devices (L016).
@@ -982,7 +985,8 @@ Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::opt
   return {};
 }
 
-void CallSessionWorkflow::AdoptMediaEpoch(const std::string& call_id, const uint32_t epoch, const std::string& key_id) {
+void CallSessionWorkflow::AdoptMediaEpoch(const std::string& call_id, const uint32_t epoch, const std::string& key_id,
+                                          const CallMediaKeyOrigin origin) {
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value()) {
     return;
@@ -997,7 +1001,7 @@ void CallSessionWorkflow::AdoptMediaEpoch(const std::string& call_id, const uint
     (void)sessions_.UpsertSession(**session);
   }
   if (CallMedia* call = call_media_.Find(call_id)) {
-    call->OnMediaKeyInstalled();
+    call->OnMediaKeyInstalled(origin);
   }
 }
 
@@ -1078,6 +1082,7 @@ bool CallSessionWorkflow::StillInCall(const std::string& call_id) const {
 }
 
 Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveCallEndReason reason) {
+  DropRejoin(call_id);
   const size_t live_peers = LivePeerCount(live_calls_, call_id); // before the close: a 1:1 or a group's, unread
   // This device leaves the call whether or not it ends for the others (group).
   live_calls_.Close(call_id, reason);
@@ -1314,6 +1319,9 @@ Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(
   auto invite = CallControlCodec::DecodeInvite(detail_json);
   if (!invite) {
     return invite.error();
+  }
+  if (AnswersRejoin(*invite, sender_identity)) {
+    EndOurPartToRejoin(invite->call_id, local_identity); // V067 8: then this invite is a join's answer, as below
   }
   if (ShouldIgnoreInvite(*invite, sender_identity, local_identity, relay_created_at_ms, relay_server_time_ms)) {
     return Answer{};
@@ -1828,9 +1836,26 @@ Roe<void> CallSessionWorkflow::HandleInboundLeave(const std::string& detail_json
   return ParticipantGone(leave->call_id, leave->identity.empty() ? sender_identity : leave->identity, local_identity);
 }
 
+void CallSessionWorkflow::NoteParticipantLost(const std::string& call_id, const std::string& identity) {
+  auto session = sessions_.LoadSession(call_id);
+  auto peer = sessions_.FindParticipant(call_id, identity);
+  auto local = host_.wire.local_account_identity();
+  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended || !peer ||
+      !peer->has_value() || (*peer)->state != CallParticipantState::Joined || !local || identity == *local) {
+    return; // they left meanwhile (or the call is over)
+  }
+  log().warning << "participant lost connection call_id=" << call_id << " who=" << identity;
+  (void)ParticipantGone(call_id, identity, *local);
+}
+
 Roe<void> CallSessionWorkflow::ParticipantGone(const std::string& call_id, const std::string& identity,
                                                const std::string& local_identity) {
   SettlePeerBye(call_id, identity);
+  if (identity != local_identity) {
+    if (CallMedia* call = call_media_.Find(call_id)) {
+      call->OnParticipantGone(identity); // their stream goes from the hop and the engine (V067), however they left
+    }
+  }
   CallParticipant participant;
   participant.call_id = call_id;
   participant.identity = identity;
@@ -2074,10 +2099,17 @@ Roe<void> CallSessionWorkflow::StopRingingAnsweredElsewhere(const std::string& c
   return EndCallLocal(**session, std::nullopt, LiveCallEndReason::AnsweredElsewhere);
 }
 
-Roe<void> CallSessionWorkflow::HandleInboundEnded(const std::string& detail_json, const std::string& local_identity) {
+Roe<void> CallSessionWorkflow::HandleInboundEnded(const std::string& detail_json, const std::string& sender_identity,
+                                                  const std::string& local_identity) {
   auto ended = CallControlCodec::DecodeEnded(detail_json);
   if (!ended) {
     return ended.error();
+  }
+  if (auto rows = sessions_.ListParticipants(ended->call_id);
+      rows && !CallSessionLogic::CallEndedStands(*rows, sender_identity, local_identity)) {
+    log().info << "call_ended from " << sender_identity << ", no longer in call_id=" << ended->call_id
+               << ", while others are: the call goes on";
+    return {};
   }
   (void)sessions_.UpdateInviteStatus(ended->call_id, local_identity, "expired");
   MarkEveryoneLeft(ended->call_id, local_identity); // V053: over — no longer joinable
@@ -2145,9 +2177,16 @@ Roe<CallSession> CallSessionWorkflow::JoinCall(const std::string& call_id) {
   if (auto cleared = LeaveCallIfActiveExcept(call_id); !cleared) {
     return cleared.error();
   }
+  if (auto sent = SendJoinRequest(call_id, *local); !sent) {
+    return sent.error();
+  }
+  return **session;
+}
+
+Roe<void> CallSessionWorkflow::SendJoinRequest(const std::string& call_id, const std::string& local_identity) {
   CallJoinRequestDetail request;
   request.call_id = call_id;
-  request.identity = *local;
+  request.identity = local_identity;
   auto detail = CallControlCodec::EncodeJoinRequest(request);
   if (!detail) {
     return detail.error();
@@ -2155,9 +2194,71 @@ Roe<CallSession> CallSessionWorkflow::JoinCall(const std::string& call_id) {
   // The earliest joiner still in it answers with a fresh invite (the roster, hop and key it has now).
   join_requested_until_ms_[call_id] = util::NowUnixMs() + CallSessionLogic::kJoinRequestTimeoutMs;
   join_any_retry_sent_.erase(call_id);
-  SendToEveryoneOffered(call_id, CallControlType::CallJoinRequest, *detail, "Joining the call", *local);
+  SendToEveryoneOffered(call_id, CallControlType::CallJoinRequest, *detail, "Joining the call", local_identity);
   log().info << "Join requested call_id=" << call_id;
-  return **session;
+  return {};
+}
+
+Roe<void> CallSessionWorkflow::RejoinCall(const std::string& call_id) {
+  auto local = host_.wire.local_account_identity();
+  if (!local) {
+    return local.error();
+  }
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended ||
+      !(*session)->origin_group_id || !StillInCall(call_id)) {
+    return Error("Not a group call this device is in");
+  }
+  // V062 4: a guest's device holds no roster for the group and asks nobody back in (the others take it as gone).
+  if (!reads_.InGroup(*(*session)->origin_group_id, *local)) {
+    return Error("You are no longer in this group");
+  }
+  rejoining_in_place_.insert(call_id);
+  log().info << "Asking back into call_id=" << call_id << " (cut off: the others took this device as gone)";
+  return SendJoinRequest(call_id, *local);
+}
+
+bool CallSessionWorkflow::AnswersRejoin(const CallInviteDetail& invite, const std::string& sender_identity) const {
+  if (!rejoining_in_place_.contains(invite.call_id) || !join_requested_until_ms_.contains(invite.call_id)) {
+    return false;
+  }
+  if (!invite.inviter_identity.empty() && invite.inviter_identity != sender_identity) {
+    return false; // PB-054: never ends our part (ShouldIgnoreInvite drops it)
+  }
+  auto session = sessions_.LoadSession(invite.call_id);
+  if (!session || !session->has_value() || !(*session)->origin_group_id ||
+      invite.origin_group_id != (*session)->origin_group_id) {
+    return false;
+  }
+  return !KnownOutOfGroup(*(*session)->origin_group_id, sender_identity);
+}
+
+void CallSessionWorkflow::EndOurPartToRejoin(const std::string& call_id, const std::string& local_identity) {
+  rejoining_in_place_.erase(call_id); // the ask stays (join_requested_until_ms_): the invite is its answer
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
+    return;
+  }
+  log().info << "Rejoining call_id=" << call_id << ": this device's part ends here, the invite takes it back in";
+  CallParticipant self;
+  self.call_id = call_id;
+  self.identity = local_identity;
+  self.state = CallParticipantState::Left;
+  self.left_at = util::NowUnixMs();
+  (void)sessions_.UpsertParticipant(self);
+  alone_since_ms_.erase(call_id);
+  media_key_resends_.erase(call_id);
+  unread_roster_.erase(call_id);
+  alone_unread_reads_.erase(call_id);
+  // No call_leave, no call_ended: the others took us as gone already, and the call goes on for them.
+  (void)EndCallLocal(**session, std::nullopt, LiveCallEndReason::Rejoining);
+}
+
+void CallSessionWorkflow::DropRejoin(const std::string& call_id) {
+  if (rejoining_in_place_.erase(call_id) > 0) {
+    join_requested_until_ms_.erase(call_id); // an answer that comes now must not take us back in
+    join_any_retry_sent_.erase(call_id);
+  }
 }
 
 Roe<void> CallSessionWorkflow::HandleInboundJoinRequest(const std::string& detail_json,
@@ -2484,6 +2585,13 @@ void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_ident
         }
       }
       ++it;
+      continue;
+    }
+    if (rejoining_in_place_.erase(it->first) > 0) {
+      // V067 8: still in the call; its group path decides what no answer means (ask again, wait alone, or leave).
+      log().info << "Ask back into call_id=" << it->first << " unanswered";
+      join_any_retry_sent_.erase(it->first);
+      it = join_requested_until_ms_.erase(it);
       continue;
     }
     // Nobody in the call answered: it is over (or no one left in it can reach us).
