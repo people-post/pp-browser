@@ -286,6 +286,7 @@ void CallHopPath::OnMediaStopped(const std::string& call_id) {
   inbound_gate_.last_failed = false;
   inbound_gate_.last_fail_hop.clear();
   channel_->ResetStreams();
+  StopLivenessWatch();
   guest_.active_attach.reset();
   guest_.active = false;
   guest_.reattach_attempts = 0;
@@ -345,6 +346,7 @@ void CallHopPath::EjectParticipantAfterMigrateFailure(const std::string& call_id
   }
 
   notes_.NoteParticipantLeft(call_id, identity);
+  OnParticipantGone(call_id, identity);
 
   if (detail) {
     auto local = host_.local_account_identity();
@@ -404,6 +406,84 @@ CallHopHealth CallHopPath::HopHealth() const {
                               .retransmits = relay.retransmits,
                               .srtt_ms = relay.srtt_ms};
   return hop;
+}
+
+void CallHopPath::OnParticipantGone(const std::string& call_id, const std::string& identity) {
+  if (!ForThisCall(call_id, "OnParticipantGone")) {
+    return;
+  }
+  const uint32_t stream = PublisherStreamIdForIdentity(identity);
+  if (stream == channel_->LocalStreamId()) {
+    return; // never our own publisher
+  }
+  // The relay keeps forwarding what it has for the stream (a leaver sends nothing more): what comes is dropped here.
+  channel_->DropRemoteStream(stream);
+  engine_->ReleaseRemoteStream(stream);
+  liveness_.Forget(identity);
+  log().info << "SFU stream dropped peer=" << identity << " stream=" << stream << " call_id=" << call_id;
+  reports_.Emit(hop_report::Changed{call_id_});
+}
+
+void CallHopPath::StartLivenessWatch() {
+  if (liveness_watching_) {
+    return;
+  }
+  liveness_watching_ = true;
+  ScheduleLivenessTick();
+}
+
+void CallHopPath::StopLivenessWatch() {
+  liveness_watching_ = false;
+  ++liveness_armed_;
+  outbox_.Cancel(liveness_timer_);
+  liveness_timer_ = 0;
+  liveness_.Reset();
+}
+
+void CallHopPath::ScheduleLivenessTick() {
+  liveness_timer_ = outbox_.After(std::chrono::milliseconds(kParticipantLivenessStepMs),
+                                  hop_path_event::LivenessTick{liveness_armed_});
+}
+
+ParticipantLivenessSample CallHopPath::LivenessSample() const {
+  ParticipantLivenessSample sample;
+  sample.now_ms = util::NowUnixMs();
+  auto local = host_.local_account_identity();
+  if (!local) {
+    return sample; // who we are is unreadable: the clocks pause (never watch ourselves)
+  }
+  sample.our_media_live = sfu_.attached && engine_->Runs() && Recovery() == CallRecovery::None;
+  for (std::string& identity : JoinedRemoteIdentities(call_id_, *local)) {
+    const int64_t last = channel_->LastFreshFrameMs(PublisherStreamIdForIdentity(identity));
+    sample.peers.push_back({std::move(identity), last});
+  }
+  return sample;
+}
+
+void CallHopPath::OnLivenessTick() {
+  const ParticipantLivenessStep step = liveness_.Step(LivenessSample());
+  ScheduleLivenessTick();
+  if (step.away_too_long) {
+    // Asleep (or frozen) longer than the others wait: they took us as gone and moved the key on without us.
+    log().warning << "this device sent nothing for " << kParticipantGoneMs / 1000
+                  << " s (asleep): the others took it as gone — leaving call_id=" << call_id_;
+    reports_.Emit(hop_report::MediaError{call_id_, Localized("call.error.away_too_long")});
+    reports_.Emit(hop_report::LeaveWanted{call_id_});
+    return;
+  }
+  if (step.quiet_changed) {
+    std::string who;
+    for (const std::string& identity : step.quiet) {
+      who += (who.empty() ? "" : ",") + identity;
+    }
+    log().info << "participants reconnecting=[" << who << "] call_id=" << call_id_;
+    reports_.Emit(hop_report::Changed{call_id_});
+  }
+  for (const std::string& identity : step.gone) {
+    log().warning << "nothing from " << identity << " for " << kParticipantGoneMs / 1000
+                  << " s: taking them as gone call_id=" << call_id_;
+    reports_.Emit(hop_report::ParticipantLost{call_id_, identity});
+  }
 }
 
 bool CallHopPath::SettleFinishedMigrate(const std::string& call_id) {
@@ -1425,6 +1505,11 @@ void CallHopPath::Handle(HopPathEvent& event) {
           RefuseGuest(e);
         } else if constexpr (std::is_same_v<E, hop_path_event::Continue>) {
           steps_.Run(e.id);
+        } else if constexpr (std::is_same_v<E, hop_path_event::LivenessTick>) {
+          if (liveness_watching_ && e.armed == liveness_armed_) {
+            liveness_timer_ = 0;
+            OnLivenessTick();
+          }
         } else if constexpr (std::is_same_v<E, HopMigrateEvent>) {
           HandleMigrateEvent(e);
         } else {
@@ -2430,6 +2515,7 @@ void CallHopPath::MarkHopAttachLive(const HopAttach& at, bool fresh_start) {
   if (seat_ports->IsBound()) {
     seat_ports->end_attach_if_matching(call_id, at.attach.hop_peer_id);
   }
+  StartLivenessWatch();
   Apply(CallHopPlannerEvent::AttachSucceeded, call_id); // reports Live
 }
 

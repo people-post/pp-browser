@@ -7,6 +7,9 @@
 #include "feature/calls/tests/calls_loopback_outbox.h"
 
 #include "lib/media/MediaEngine.h"
+#include "domain/call_media/CallMediaFrameCrypto.h"
+#include "mesh/l4/shared/MediaFrame.h"
+#include "mesh/types/MediaChannel.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/ICallMediaKeyStore.h"
@@ -21,6 +24,7 @@
 #include "common/Utilities.h"
 #include "mesh/shared/AmpParkUntil.h"
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <functional>
@@ -234,8 +238,9 @@ public:
   }
 
   mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AttachAsLocalHop(
-      const std::string& /*call_id*/, std::function<void(mesh::MediaDataFrame)> /*on_frame*/) override {
+      const std::string& /*call_id*/, std::function<void(mesh::MediaDataFrame)> on_frame) override {
     ++local_hop_calls;
+    frames_to_us = std::move(on_frame);
     if (!local_hop_ok) {
       return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, local_hop_error);
     }
@@ -283,6 +288,8 @@ public:
   bool local_hop_attached_ = false;
   std::mutex subscribe_mu;
   std::vector<uint32_t> subscribed_streams;
+  /** Where the local hop hands the frames it forwards to us (AttachAsLocalHop). */
+  std::function<void(mesh::MediaDataFrame)> frames_to_us;
   std::vector<uint16_t> subscribed_channels;
   std::map<uint64_t, std::function<void(mesh::MediaRelayClientLoss)>> session_end_observers;
   uint64_t next_observer_token = 1;
@@ -1749,6 +1756,68 @@ TEST_F(CallHopPathTest, LeftoverMediaCallIdDoesNotBlockNewCallInboundAttach) {
   AppRuntime::Shutdown();
   AppRuntime::ShutdownUI();
   new_topo.reset();
+}
+
+// V067 (and #617's follow-up): whoever leaves the call — a leave, a removal, or taken as gone — their stream goes from
+// the hop path and the engine: no track left concealing a stream nobody sends, and what the hop still forwards of it
+// is dropped.
+TEST_F(CallHopPathTest, AGoneParticipantsStreamIsLetGo) {
+  const std::string call_id = "call:gone-stream";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:B";
+  relay_->started = true;
+  CallHopPath::MediaRelayDeps deps;
+  deps.relay = relay_.get();
+  deps.dial = dial_.get();
+  deps.prefer_local_as_hop = true;
+  deps.local_advertise_multiaddrs = {"/ip4/10.0.0.1/tcp/1/p2p/" + relay_->local_peer_id};
+  SetRelayDeps(std::move(deps));
+  CallSfuAttachDetail self;
+  self.call_id = call_id;
+  self.hop_peer_id = relay_->local_peer_id;
+  self.hop_multiaddr = "/ip4/10.0.0.1/tcp/1/p2p/" + relay_->local_peer_id;
+  self.publisher_stream_id = PublisherStreamIdForIdentity("account:B");
+  ASSERT_TRUE(AttachToHop(call_id, self)) << "self hop attach";
+  ASSERT_TRUE(relay_->frames_to_us);
+  auto key = keys_->LoadEpochKey(call_id, 1);
+  ASSERT_TRUE(key && key->has_value());
+
+  const uint32_t a = PublisherStreamIdForIdentity("account:A");
+  const uint32_t c = PublisherStreamIdForIdentity("account:C");
+  uint32_t seq = 0;
+  const auto frame_from = [&](const uint32_t stream) {
+    mesh::MediaDataFrame frame;
+    frame.stream_id = stream;
+    frame.channel_id = mesh::kMediaChannelAudio;
+    frame.seq = ++seq;
+    frame.instance = 0x77;
+    frame.capture_ts = seq * 40;
+    // One Opus TOC byte: a frame with no audio in it (a silent sender's, as far as the track is concerned).
+    EXPECT_TRUE(mesh::SealMediaFrame(**key, CallMediaSfuContext(call_id), 1, frame, std::vector<uint8_t>{0xF8}));
+    relay_->frames_to_us(frame);
+  };
+  const auto engine_streams = [&] {
+    std::vector<uint32_t> ids;
+    for (const MediaStreamHealth& stream : media_->HealthSnapshot().streams) {
+      ids.push_back(stream.stream_id);
+    }
+    std::sort(ids.begin(), ids.end());
+    return ids;
+  };
+  frame_from(a);
+  frame_from(c);
+  std::vector<uint32_t> both = {a, c};
+  std::sort(both.begin(), both.end());
+  ASSERT_EQ(engine_streams(), both) << "both publishers heard";
+  EXPECT_TRUE(topo_->QuietParticipants().empty());
+
+  topo_->OnParticipantGone(call_id, "account:A");
+  EXPECT_EQ(engine_streams(), std::vector<uint32_t>{c}) << "A's stream is let go at once";
+  frame_from(a); // the hop still forwards what it had
+  frame_from(c);
+  EXPECT_EQ(engine_streams(), std::vector<uint32_t>{c}) << "and nothing of it comes back";
+  topo_->OnParticipantGone(call_id, "account:B");
+  EXPECT_TRUE(topo_->IsSfuAttached()) << "never our own publisher";
 }
 
 } // namespace

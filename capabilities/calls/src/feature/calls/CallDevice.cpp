@@ -135,6 +135,8 @@ void CallDevice::OnHopReport(const HopReport& report) {
           RequestInboxSync();
         } else if constexpr (std::is_same_v<R, hop_report::LeaveWanted>) {
           (void)TopologyLeaveCall(r.call_id);
+        } else if constexpr (std::is_same_v<R, hop_report::ParticipantLost>) {
+          workflow_.NoteParticipantLost(r.call_id, r.identity);
         } else {
           static_assert(!sizeof(R), "take every HopReport");
         }
@@ -774,6 +776,10 @@ void CallDevice::KickAnswererDirectMediaIfArmed(const std::string& call_id) {
 
 CallHopHealth CallDevice::HopHealth() const {
   return ActivePathsView().hop_health;
+}
+
+std::vector<std::string> CallDevice::QuietParticipants() const {
+  return ActivePathsView().quiet_participants;
 }
 
 CallLinkCounters CallDevice::MediaLinkCounters() const {

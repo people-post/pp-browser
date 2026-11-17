@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -64,6 +65,13 @@ public:
   /** The device's relay deps are about to change (the relay client is still alive) / changed. */
   virtual void UnwatchRelay() = 0;
   virtual void OnRelayDepsChanged() = 0;
+  /**
+   * `identity` is no longer in the call (left, removed, or taken as gone, V067): their stream goes — frames of it are
+   * dropped, the engine lets it go, its liveness is forgotten. A rejoin subscribes to it again.
+   */
+  virtual void OnParticipantGone(const std::string& call_id, const std::string& identity) = 0;
+  /** V067: the participants nothing has come from for kParticipantQuietMs (their tiles read "Reconnecting…"). */
+  virtual std::vector<std::string> QuietParticipants() const = 0;
 };
 
 } // namespace pbr

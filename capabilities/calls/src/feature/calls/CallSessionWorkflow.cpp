@@ -1828,9 +1828,26 @@ Roe<void> CallSessionWorkflow::HandleInboundLeave(const std::string& detail_json
   return ParticipantGone(leave->call_id, leave->identity.empty() ? sender_identity : leave->identity, local_identity);
 }
 
+void CallSessionWorkflow::NoteParticipantLost(const std::string& call_id, const std::string& identity) {
+  auto session = sessions_.LoadSession(call_id);
+  auto peer = sessions_.FindParticipant(call_id, identity);
+  auto local = host_.wire.local_account_identity();
+  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended || !peer ||
+      !peer->has_value() || (*peer)->state != CallParticipantState::Joined || !local || identity == *local) {
+    return; // they left meanwhile (or the call is over)
+  }
+  log().warning << "participant lost connection call_id=" << call_id << " who=" << identity;
+  (void)ParticipantGone(call_id, identity, *local);
+}
+
 Roe<void> CallSessionWorkflow::ParticipantGone(const std::string& call_id, const std::string& identity,
                                                const std::string& local_identity) {
   SettlePeerBye(call_id, identity);
+  if (identity != local_identity) {
+    if (CallMedia* call = call_media_.Find(call_id)) {
+      call->OnParticipantGone(identity); // their stream goes from the hop and the engine (V067), however they left
+    }
+  }
   CallParticipant participant;
   participant.call_id = call_id;
   participant.identity = identity;

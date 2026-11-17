@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace pbr {
 
@@ -127,6 +128,8 @@ public:
   void OnInboundHopRefuse(const CallHopRefuseDetail& detail);
   void ClearSfuAttachWait();
   void OnPeerMediaRelayCapLearned(const std::string& peer_id);
+  /** `identity` is no longer in the call (any way): the group path lets go of their stream (V067). */
+  void OnParticipantGone(const std::string& identity);
   /** The engine runs the call on the hop. */
   bool IsOnHop() const;
   /** The seat released the call's media: the hop lets go of the call (Detach, attach state). */
@@ -147,6 +150,8 @@ public:
     bool hop_in_flight = false;
     CallRecovery recovery = CallRecovery::None;
     CallHopHealth hop_health;
+    /** V067: the participants nothing has come from for a few seconds (their tiles read "Reconnecting…"). */
+    std::vector<std::string> quiet_participants;
   };
   View PathsView() const;
 

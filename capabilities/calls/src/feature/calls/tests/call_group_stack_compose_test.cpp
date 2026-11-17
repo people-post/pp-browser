@@ -749,6 +749,43 @@ TEST_F(CallGroupStackComposeTest, InitiatorLeaveKeepsTheRestOnTheHop) {
   EXPECT_GE(RxFrom(kC, kB), c_before + kMinRxFrames) << "C stopped hearing B:" << Describe(call_id);
 }
 
+// #617 / V067: whoever leaves, the others' engines let go of their stream — no track left concealing it (about 50
+// underruns a second) until the call ends.
+TEST_F(CallGroupStackComposeTest, ALeaversStreamLeavesTheOthersEngines) {
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  const std::set<uint32_t> a_streams = hop_.PublishedStreams(relays_[kA].get());
+  ASSERT_FALSE(a_streams.empty());
+  const auto holds_a = [&](const size_t i) {
+    const MediaEngine* engine = sides_[i].stack->Engine();
+    if (!engine) {
+      return false;
+    }
+    for (const MediaStreamHealth& s : engine->HealthSnapshot().streams) {
+      if (a_streams.count(s.stream_id) > 0) {
+        return true;
+      }
+    }
+    return false;
+  };
+  DrainUntil([&]() {
+    PumpWire();
+    return holds_a(kB) && holds_a(kC);
+  });
+  ASSERT_TRUE(holds_a(kB) && holds_a(kC)) << "B and C hear A first:" << Describe(call_id);
+
+  sides_[kA].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return !holds_a(kB) && !holds_a(kC);
+  });
+  EXPECT_FALSE(holds_a(kB)) << "B still holds A's stream:" << Describe(call_id);
+  EXPECT_FALSE(holds_a(kC)) << "C still holds A's stream:" << Describe(call_id);
+  for (size_t i : {kB, kC}) {
+    EXPECT_EQ(sides_[i].ui->Phase(), CallPhase::InCall) << "side " << i;
+  }
+}
+
 // The invite carries the media key wrapped for each invitee: no out-of-band share needed.
 TEST_F(CallGroupStackComposeTest, InviteCarriesTheMediaKeyToEveryInvitee) {
   Thread thread;

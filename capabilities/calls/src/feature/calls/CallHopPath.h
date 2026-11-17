@@ -22,6 +22,7 @@
 #include "common/runtime/OwnerSteps.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "lib/calls/CallHopPlannerLogic.h"
+#include "lib/calls/CallParticipantLiveness.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -200,6 +201,8 @@ public:
   uint32_t PublisherStreamIdForLocal() const;
   /** Hop health when SFU attached (V032). */
   CallHopHealth HopHealth() const override;
+  void OnParticipantGone(const std::string& call_id, const std::string& identity) override;
+  std::vector<std::string> QuietParticipants() const override { return liveness_.Quiet(); }
 
   /** V039 Hop planner Apply. */
   void Apply(CallHopPlannerEvent ev, const std::string& call_id = {});
@@ -486,6 +489,20 @@ private:
 
   void WatchRelayLoss();
   void UnwatchRelayLoss();
+
+  // --- V067: each participant's liveness (the rule: lib/calls CallParticipantLiveness) ---------------
+  /** From the first live attach until the call's media stops, the watch steps every kParticipantLivenessStepMs. */
+  void StartLivenessWatch();
+  void StopLivenessWatch();
+  void ScheduleLivenessTick();
+  void OnLivenessTick();
+  /** Our side, and when each joined participant's stream last brought a fresh frame. */
+  ParticipantLivenessSample LivenessSample() const;
+  ParticipantLivenessWatch liveness_;
+  bool liveness_watching_ = false;
+  /** Bumped at each stop: a tick armed before it is stale. */
+  uint64_t liveness_armed_ = 0;
+  uint64_t liveness_timer_ = 0;
 };
 
 } // namespace pbr

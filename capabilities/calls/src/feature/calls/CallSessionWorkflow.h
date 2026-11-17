@@ -153,6 +153,12 @@ public:
    * (ParticipantGone — a remote end, never a failure).
    */
   void NotePeerEndedCall(const std::string& call_id, const std::string& peer);
+  /**
+   * V067: nothing came from `identity` for the gone window (the group path's participant watch): taken as gone, as
+   * their call_leave would (ParticipantGone: the key rotates without them, the roster says so, alone waits). A
+   * participant already out, or a call already over, changes nothing.
+   */
+  void NoteParticipantLost(const std::string& call_id, const std::string& identity);
   /** Test seam: the wait for call_leave after a peer's bye (production kPeerByeLeaveGrace). */
   void SetPeerByeLeaveGraceForTest(std::chrono::milliseconds grace) { peer_bye_leave_grace_ = grace; }
   /** Calls owner: start `call_id`'s alone-in-a-group-call wait at `since_ms` (wall clock), as a peer leaving would. */

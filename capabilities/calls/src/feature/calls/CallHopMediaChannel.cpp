@@ -53,6 +53,9 @@ std::function<void(mesh::MediaDataFrame)> CallHopMediaChannel::MakeFrameSink(std
     pkt.capture_ts = frame.capture_ts;
     const std::vector<SfuKeyRing::Key> open_with = keys->ForOpen(util::NowUnixMs());
     if (open_with.empty()) {
+      if (!self->AdmitFrame(frame, /*opened=*/false)) {
+        return;
+      }
       pkt.payload = std::move(frame.payload);
       (void)self->engine_->Deliver(pkt);
       return;
@@ -74,6 +77,9 @@ std::function<void(mesh::MediaDataFrame)> CallHopMediaChannel::MakeFrameSink(std
                             << " bytes=" << frame.payload.size() << " n=" << n << " err=" << plain.error().message
                             << " call_id=" << self->call_id_;
       }
+      return;
+    }
+    if (!self->AdmitFrame(frame, /*opened=*/true)) {
       return;
     }
     pkt.payload = std::move(*plain);
@@ -117,6 +123,32 @@ void CallHopMediaChannel::AddRemoteStream(const uint32_t id) {
   remote_stream_ids_.insert(id);
 }
 
+void CallHopMediaChannel::DropRemoteStream(const uint32_t id) {
+  std::lock_guard lock(mu_);
+  remote_stream_ids_.erase(id);
+  video_refresh_sent_.erase(id);
+  freshness_.Forget(id);
+  last_fresh_ms_.erase(id);
+}
+
+int64_t CallHopMediaChannel::LastFreshFrameMs(const uint32_t id) const {
+  std::lock_guard lock(mu_);
+  const auto it = last_fresh_ms_.find(id);
+  return it != last_fresh_ms_.end() ? it->second : 0;
+}
+
+bool CallHopMediaChannel::AdmitFrame(const mesh::MediaDataFrame& frame, const bool opened) {
+  std::lock_guard lock(mu_);
+  if (!remote_stream_ids_.contains(frame.stream_id)) {
+    return false; // its publisher left (or we never asked for it): nothing of it reaches the engine
+  }
+  // Only a frame sealed under the call's key says its sender is alive, and only a newer one: the hop could repeat.
+  if (opened && freshness_.Advances(frame.stream_id, frame.channel_id, frame.instance, frame.seq)) {
+    last_fresh_ms_[frame.stream_id] = util::NowUnixMs();
+  }
+  return true;
+}
+
 std::vector<uint32_t> CallHopMediaChannel::RemoteStreams() const {
   std::lock_guard lock(mu_);
   return {remote_stream_ids_.begin(), remote_stream_ids_.end()};
@@ -136,6 +168,8 @@ void CallHopMediaChannel::ResetStreams() {
   local_stream_id_.store(0);
   std::lock_guard lock(mu_);
   remote_stream_ids_.clear();
+  freshness_.Clear();
+  last_fresh_ms_.clear();
 }
 
 } // namespace pbr

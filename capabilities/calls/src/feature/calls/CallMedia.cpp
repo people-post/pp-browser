@@ -275,6 +275,12 @@ void CallMedia::OnPeerMediaRelayCapLearned(const std::string& peer_id) {
   }
 }
 
+void CallMedia::OnParticipantGone(const std::string& identity) {
+  if (hop_) {
+    hop_->OnParticipantGone(call_id_, identity);
+  }
+}
+
 bool CallMedia::IsOnHop() const {
   return hop_ && hop_->IsOnSfuForCall(call_id_);
 }
@@ -316,6 +322,7 @@ CallMedia::View CallMedia::PathsView() const {
     view.hop_attached = hop_->IsSfuAttached();
     view.hop_in_flight = hop_->IsAwaitingSfuRecovery();
     view.recovery = hop_->Recovery();
+    view.quiet_participants = hop_->QuietParticipants();
     if (view.hop_attached) {
       view.hop_health = hop_->HopHealth();
     }
