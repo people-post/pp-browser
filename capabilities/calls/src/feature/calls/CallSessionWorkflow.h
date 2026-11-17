@@ -234,6 +234,8 @@ public:
   int64_t AloneUntilMs(const std::string& call_id) const;
   /** This device is Joined in the call (not left it). */
   bool StillInCall(const std::string& call_id) const;
+  /** Tells the device once per call that a group call rang here unanswered and undeclined (it counts as unread). */
+  void ReportMissedGroupRing(const CallSession& session);
 
   /**
    * A call invite. Returns the call to answer at once: the inviter and this device called each
@@ -448,6 +450,8 @@ private:
   std::unordered_map<std::string, int64_t> join_requested_until_ms_;
   /** V053: join requests re-sent to anyone in the call (no answer from the earliest joiner). */
   std::unordered_set<std::string> join_any_retry_sent_;
+  /** Group calls already reported as missed rings: a repeated end or a replayed invite counts once. */
+  std::unordered_set<std::string> missed_group_rings_reported_;
   /** V053: group calls this device is alone in → since when. */
   std::unordered_map<std::string, int64_t> alone_since_ms_;
   /**

@@ -74,13 +74,18 @@ struct Changed {};
 struct Notice {
   std::string message;
 };
+/** A group call someone else started rang here and ended unanswered and undeclined: the chat counts it as unread. */
+struct MissedGroupCall {
+  std::string thread_id;
+  bool video = false;
+};
 /** A push woke us for a call: fetch the relay inbox now. */
 struct InboxSyncFromWake {};
 
 } // namespace workflow_report
 
-using WorkflowReport =
-    std::variant<workflow_report::Changed, workflow_report::Notice, workflow_report::InboxSyncFromWake>;
+using WorkflowReport = std::variant<workflow_report::Changed, workflow_report::Notice,
+                                    workflow_report::InboxSyncFromWake, workflow_report::MissedGroupCall>;
 
 /** The group path's move-to-hop / attach flows' events (V050 group hop flows). */
 namespace hop_migrate_event {

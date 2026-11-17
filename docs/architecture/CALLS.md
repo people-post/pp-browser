@@ -577,6 +577,8 @@ not), written when the call ends (`CallSessionWorkflow::SendSummary`), worded fr
   keeps `talk_started_at`, because a rejoin's `joined_at` is that stay's, #410); the call's end while back in
   counts the same way; the call's end after this device left (`CallEnded`) and a restart (`Orphaned`) never
   replace a record that exists (`MergeGroupSummary`).
+- **A missed group ring counts as unread.** A group call someone else started that was still ringing here and ended with the user neither answering nor declining it (the ring ran out, the others hung up, the invite came too late to ring) is decided once at that moment (`IsMissedGroupRing`, `CallSessionWorkflow::EndCallLocal`, `RecordMissedGroupCall`; once per call id) and reported as `workflow_report::MissedGroupCall` → `CallDeliveryPorts::note_missed_group_call` → `MeshDeliveryOrchestrator::SurfaceMissedGroupCall`: the chat's one unread (not counted while that chat is open and looked at) and the same away notice a new message gets.
+- Joining it later, or answering on another device of the account, does not take it back; a 1:1 call stays with the caller's summary message. Nothing is sent and no stored format changes.
 
 **The call's thread** is local to each device: the starter's is the thread it called from; an
 invitee resolves its own (`resolve_call_thread`: the group's thread for a group call, else its DM

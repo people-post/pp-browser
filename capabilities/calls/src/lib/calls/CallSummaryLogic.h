@@ -29,6 +29,15 @@ std::optional<CallSummaryPlan> PlanCallSummary(const CallSession& session,
                                                const std::string& local_identity, LiveCallEndReason reason,
                                                int64_t now_ms);
 
+/**
+ * Whether a ring that just ended on this device was a missed group call: a group call someone else started, that was
+ * still ringing here (`was_ringing`: not answered, so not Accepting or Joined) and ended without this user declining
+ * it or another of their devices taking it. Decided once, from what the local user did, not from the record the
+ * summary leaves in the thread. Answered or declined is never missed; a 1:1 call is the caller's summary message.
+ */
+bool IsMissedGroupRing(const CallSession& session, const std::string& local_identity, LiveCallEndReason reason,
+                       bool was_ringing);
+
 /** The id of a group call's record in the thread: one per call on this device, rewritten as it goes. */
 std::string GroupCallSummaryMessageId(const std::string& call_id);
 
