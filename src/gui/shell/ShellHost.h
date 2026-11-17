@@ -473,6 +473,7 @@ private:
   };
   BarTarget bar_target_;
   BarLiftSettle bar_settle_;
+  int layout_passes_ = 0; // finished layouts (NotifyFrameEnd): the settle takes at most one step per pass
   /** The AI Home measured with nothing up (SyncHomeDock): window height, landing height, card bottom (dp); 0 = unseen. */
   float home_cache_window_dp_ = 0.f;
   float home_cache_landing_h_dp_ = 0.f;

@@ -107,9 +107,10 @@ struct ShellModel {
 TEST(SettleBarLiftTest, DockedBarLandsInOneStep) {
   const ShellModel shell{858, 1.0};
   BarLiftSettle settle;
-  int lift = SettleBarLift(settle, 0, shell.BarBottom(0), 394, true);
+  int pass = 0;
+  int lift = SettleBarLift(settle, ++pass, 0, shell.BarBottom(0), 394, true);
   EXPECT_EQ(lift, 464);
-  EXPECT_EQ(SettleBarLift(settle, lift, shell.BarBottom(lift), 394, false), lift);
+  EXPECT_EQ(SettleBarLift(settle, ++pass, lift, shell.BarBottom(lift), 394, false), lift);
   EXPECT_FALSE(settle.settling);
 }
 
@@ -117,45 +118,77 @@ TEST(SettleBarLiftTest, CentredBarLandsInTwoSteps) {
   // 11-17 iPad log: an empty chat's bar at 470 went up 38 pt for a 76 pt lift; it settled at 151-152 over 8 frames.
   const ShellModel shell{470, 0.5};
   BarLiftSettle settle;
-  int lift = SettleBarLift(settle, 0, shell.BarBottom(0), 394, true);
+  int pass = 0;
+  int lift = SettleBarLift(settle, ++pass, 0, shell.BarBottom(0), 394, true);
   EXPECT_EQ(lift, 76);
-  lift = SettleBarLift(settle, lift, shell.BarBottom(lift), 394, false);
+  lift = SettleBarLift(settle, ++pass, lift, shell.BarBottom(lift), 394, false);
   EXPECT_EQ(lift, 152);
   EXPECT_EQ(shell.BarBottom(lift), 394);
-  EXPECT_EQ(SettleBarLift(settle, lift, shell.BarBottom(lift), 394, false), lift);
+  EXPECT_EQ(SettleBarLift(settle, ++pass, lift, shell.BarBottom(lift), 394, false), lift);
   EXPECT_FALSE(settle.settling);
 }
 
 TEST(SettleBarLiftTest, KeystrokesWithoutANewTargetNeverMoveTheBar) {
   // Settled at 152; a keystroke frame measures the bar somewhere else (e.g. a stray reading): no new target, no move.
   BarLiftSettle settle;
-  EXPECT_EQ(SettleBarLift(settle, 152, 528, 394, false), 152);
-  EXPECT_EQ(SettleBarLift(settle, 152, 393, 394, false), 152);
+  int pass = 0;
+  EXPECT_EQ(SettleBarLift(settle, ++pass, 152, 528, 394, false), 152);
+  EXPECT_EQ(SettleBarLift(settle, ++pass, 152, 393, 394, false), 152);
 }
 
 TEST(SettleBarLiftTest, OneOrTwoPointsAboveTheKeyboardIsSettled) {
   BarLiftSettle settle;
-  EXPECT_EQ(SettleBarLift(settle, 152, 393, 394, true), 152);
+  int pass = 0;
+  EXPECT_EQ(SettleBarLift(settle, ++pass, 152, 393, 394, true), 152);
   EXPECT_FALSE(settle.settling);
-  EXPECT_EQ(SettleBarLift(settle, 152, 392, 394, true), 152);
-  EXPECT_NE(SettleBarLift(settle, 152, 390, 394, true), 152);
+  EXPECT_EQ(SettleBarLift(settle, ++pass, 152, 392, 394, true), 152);
+  EXPECT_NE(SettleBarLift(settle, ++pass, 152, 390, 394, true), 152);
 }
 
 TEST(SettleBarLiftTest, BarThatDoesNotFollowTheLiftIsLeftAlone) {
   BarLiftSettle settle;
-  int lift = SettleBarLift(settle, 0, 600, 394, true);
+  int pass = 0;
+  int lift = SettleBarLift(settle, ++pass, 0, 600, 394, true);
   EXPECT_EQ(lift, 206);
-  EXPECT_EQ(SettleBarLift(settle, lift, 600, 394, false), 0);
+  EXPECT_EQ(SettleBarLift(settle, ++pass, lift, 600, 394, false), 0);
   EXPECT_FALSE(settle.settling);
 }
 
 TEST(SettleBarLiftTest, KeyboardGoingDownLowersTheLift) {
   const ShellModel shell{858, 1.0};
   BarLiftSettle settle;
+  int pass = 0;
   // Settled at 464 for a keyboard top of 394; the keyboard's top moves to 520 (shorter keyboard).
-  const int lift = SettleBarLift(settle, 464, shell.BarBottom(464), 520, true);
+  const int lift = SettleBarLift(settle, ++pass, 464, shell.BarBottom(464), 520, true);
   EXPECT_EQ(lift, 338);
   EXPECT_EQ(shell.BarBottom(lift), 520);
+}
+
+TEST(SettleBarLiftTest, TwoRefreshesInOneLayoutPassTakeOneStep) {
+  // The shell refreshes its insets twice before the next layout (ClearBottomChrome, then the frame's own refresh):
+  // the second call sees the bar where the old lift put it and must neither step nor undo.
+  const ShellModel shell{470, 0.5};
+  BarLiftSettle settle;
+  int lift = SettleBarLift(settle, 1, 0, shell.BarBottom(0), 394, true);
+  EXPECT_EQ(lift, 76);
+  EXPECT_EQ(SettleBarLift(settle, 1, lift, shell.BarBottom(0), 394, false), 76);
+  EXPECT_EQ(settle.steps, 1);
+  EXPECT_TRUE(settle.settling);
+  lift = SettleBarLift(settle, 2, lift, shell.BarBottom(lift), 394, false);
+  EXPECT_EQ(lift, 152);
+  EXPECT_EQ(shell.BarBottom(lift), 394);
+}
+
+TEST(SettleBarLiftTest, NewTargetSeenOnTheRepeatCallIsTakenUpNextPass) {
+  const ShellModel shell{858, 1.0};
+  BarLiftSettle settle;
+  int lift = SettleBarLift(settle, 1, 0, shell.BarBottom(0), 394, true);
+  EXPECT_EQ(lift, 464);
+  EXPECT_EQ(SettleBarLift(settle, 2, lift, shell.BarBottom(lift), 394, false), 464);
+  EXPECT_FALSE(settle.settling);
+  // The keyboard's top moves while the pass is the same: no answer change yet, but the next pass settles on it.
+  EXPECT_EQ(SettleBarLift(settle, 2, lift, shell.BarBottom(lift), 520, true), 464);
+  EXPECT_EQ(SettleBarLift(settle, 3, lift, shell.BarBottom(lift), 520, false), 338);
 }
 
 TEST(KeyboardLiftTest, FieldNearTheTopIsNotLifted) {

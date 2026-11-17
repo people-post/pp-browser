@@ -255,7 +255,12 @@ bool WatchScreenKeyboard(std::function<void()> on_change) {
     [center addObserverForName:UIKeyboardWillHideNotification
                         object:nil
                          queue:[NSOperationQueue mainQueue]
-                    usingBlock:^(NSNotification*) {
+                    usingBlock:^(NSNotification* note) {
+                      // Another app's keyboard going away (iPad multi-window) leaves ours where it is.
+                      NSNumber* local = note.userInfo[UIKeyboardIsLocalUserInfoKey];
+                      if (local && !local.boolValue) {
+                        return;
+                      }
                       g_keyboard_frame = CGRectZero;
                       if (g_on_change) {
                         g_on_change();

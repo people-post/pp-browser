@@ -1929,8 +1929,8 @@ void ShellHost::MeasureKeyboardInput(SafeAreaFromSdl& insets, float px_per_win) 
                                 std::abs(target.bar_h - bar_target_.bar_h) >= 1 || target.mode != bar_target_.mode ||
                                 target.window_w != bar_target_.window_w || target.window_h != bar_target_.window_h;
     bar_target_ = target;
-    insets.bar_lift_win = SettleBarLift(bar_settle_, keyboard_lift_applied_win_, insets.focus_bottom_win,
-                                        insets.keyboard_top_win, target_changed);
+    insets.bar_lift_win = SettleBarLift(bar_settle_, layout_passes_, keyboard_lift_applied_win_,
+                                        insets.focus_bottom_win, insets.keyboard_top_win, target_changed);
     insets.input_bottom_win = insets.keyboard_top_win + insets.bar_lift_win; // the unlifted bottom that lift implies
     keyboard_field_ = nullptr;
     return;
@@ -3448,6 +3448,7 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
   if (!context) {
     return;
   }
+  ++layout_passes_; // after Context::Update: the bar measured from here on is this pass's (SettleBarLift)
 
   using clock = std::chrono::steady_clock;
   const auto now = clock::now();

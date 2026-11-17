@@ -51,23 +51,16 @@ struct BarLiftSettle {
   int steps = 0;
   int prev_lift = -1; // the lift and the bar's bottom one step back; -1 = no step yet
   int prev_bottom = 0;
+  int layout_pass = -1;        // the layout pass the last answer was worked out from
+  int result = 0;              // that answer
+  bool target_pending = false; // a new target seen again within that pass, taken up on the next one
 };
 
-/**
- * iPad: the lift that puts the chat input bar on the keyboard's top, settled from the bar's measured bottom. Only a new
- * target (the keyboard's top, the bar's height, the bar itself, the layout or the window changed: `target_changed`)
- * starts a settling; otherwise the lift stays as it is, so typing never moves the bar. A step moves by the remaining
- * distance divided by how far the bar went per point of lift on the step before (1 for a bar docked on the shell's
- * bottom, 1/2 for one centred in an empty chat), so it lands in one step or two. Done when the bar is on the keyboard
- * or up to 2 pt above it, after 4 steps, or when the bar does not follow the lift at all (then the step is undone).
- */
-inline int SettleBarLift(BarLiftSettle& s, int lift_now, int bar_bottom_now, int keyboard_top, bool target_changed) {
+namespace detail {
+
+inline int SettleBarLiftStep(BarLiftSettle& s, int lift_now, int bar_bottom_now, int keyboard_top) {
   constexpr int kAboveTolerance = 2;
   constexpr int kMaxSteps = 4;
-  if (target_changed) {
-    s = BarLiftSettle{};
-    s.settling = true;
-  }
   if (!s.settling) {
     return lift_now;
   }
@@ -92,6 +85,38 @@ inline int SettleBarLift(BarLiftSettle& s, int lift_now, int bar_bottom_now, int
     s.settling = false;
   }
   return std::max(0, lift_now + static_cast<int>(std::ceil(static_cast<double>(error) / per_point)));
+}
+
+} // namespace detail
+
+/**
+ * iPad: the lift that puts the chat input bar on the keyboard's top, settled from the bar's measured bottom. Only a new
+ * target (the keyboard's top, the bar's height, the bar itself, the layout or the window changed: `target_changed`)
+ * starts a settling; otherwise the lift stays as it is, so typing never moves the bar. A step moves by the remaining
+ * distance divided by how far the bar went per point of lift on the step before (1 for a bar docked on the shell's
+ * bottom, 1/2 for one centred in an empty chat), so it lands in one step or two. Done when the bar is on the keyboard
+ * or up to 2 pt above it, after 4 steps, or when the bar does not follow the lift at all (then the step is undone).
+ *
+ * `layout_pass` counts finished layouts: the bar's measured bottom only means something once per pass, so a second
+ * call within the same pass (the shell refreshing its insets twice in a frame) takes no step and gives the same answer;
+ * a new target seen then is kept for the next pass.
+ */
+inline int SettleBarLift(BarLiftSettle& s, int layout_pass, int lift_now, int bar_bottom_now, int keyboard_top,
+                         bool target_changed) {
+  if (layout_pass == s.layout_pass) {
+    s.target_pending = s.target_pending || target_changed;
+    return s.result;
+  }
+  if (target_changed || s.target_pending) {
+    s.settling = true;
+    s.steps = 0;
+    s.prev_lift = -1;
+    s.prev_bottom = 0;
+  }
+  s.layout_pass = layout_pass;
+  s.target_pending = false;
+  s.result = detail::SettleBarLiftStep(s, lift_now, bar_bottom_now, keyboard_top);
+  return s.result;
 }
 
 } // namespace pbr
