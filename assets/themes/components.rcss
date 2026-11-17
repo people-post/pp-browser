@@ -13273,13 +13273,6 @@ input.checkbox {
   flex: 0 1 auto;
 }
 
-/* A heading that is the NAME of a feature (not a small category title): the size of a row label (Kenneth 2026-11-17). */
-.shell-layer-compact .group-head--name {
-  font-size: 17dp;
-  line-height: 22dp;
-  font-weight: bold;
-}
-
 .shell-layer-compact .group-foot {
   margin: 6dp 32dp 0 32dp;
   font-size: 13dp;
@@ -13998,23 +13991,29 @@ textarea:composing ~ .prompt-composer-label,
   text-align: left;
 }
 
-.shell-layer-compact .settings-mock .group-head {
+/* Every group heading on the Settings pages: the size of a row label, bold (Kenneth 2026-11-17). Other pages keep the
+   small grey heading. */
+.shell-layer-compact .settings-section--grouped .group-head {
   margin: 24dp 32dp 8dp 32dp;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
 }
 
-.shell-layer-compact .settings-mock .group-head + .group-card {
+.shell-layer-compact .settings-mock .group-head + .group-card,
+.shell-layer-compact .settings-section--grouped .group-head + .group-card {
   margin-top: 0;
 }
 
 /* A feature name with its "?" (Security: recovery phrase). The row carries the heading's outer margin, so the heading
    and the "?" share one centre line (a margin on the heading alone moved its text off the button's centre), and the
    row's own 8dp gap is dropped: the 20dp icon sits 6dp after the text, like the "PIN" row's. */
-.shell-layer-compact .settings-mock .settings-q-head--name {
+.shell-layer-compact .settings-section--grouped .settings-q-head--name {
   gap: 0;
   margin: 24dp 32dp 8dp 32dp;
 }
 
-.shell-layer-compact .settings-mock .settings-q-head--name .group-head {
+.shell-layer-compact .settings-section--grouped .settings-q-head--name .group-head {
   margin: 0;
 }
 

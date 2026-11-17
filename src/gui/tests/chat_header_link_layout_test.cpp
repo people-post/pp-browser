@@ -8,6 +8,7 @@
 #include <ui/dom/Context.h>
 #include <ui/dom/ElementDocument.h>
 #include <ui/paint/RenderInterface.h>
+#include <ui/style/ComputedValues.h>
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -69,13 +70,13 @@ protected:
     ui::SetRenderInterface(nullptr);
   }
   void Load(const std::string& inner, const char* wrapper_classes) {
-    const std::string rml = "<rml><head><style>" + ReadAll(AssetPath("themes/foundation.rcss")) +
-                            ReadAll(AssetPath("themes/components.rcss")) + ReadAll(AssetPath("themes/colors-light.rcss")) +
-                            "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
-                            "<div style=\"position: absolute; top: 0; left: 0; width: " +
-                            std::to_string(kWidth) + "dp; height: " + std::to_string(kHeight) +
-                            "dp;\"><div class=\"shell-layer shell-layer-base shell-layer-compact\">" + inner +
-                            "</div></div></body></rml>";
+    const std::string rml =
+        "<rml><head><style>" + ReadAll(AssetPath("themes/foundation.rcss")) +
+        ReadAll(AssetPath("themes/components.rcss")) + ReadAll(AssetPath("themes/colors-light.rcss")) +
+        "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
+        "<div style=\"position: absolute; top: 0; left: 0; width: " +
+        std::to_string(kWidth) + "dp; height: " + std::to_string(kHeight) +
+        "dp;\"><div class=\"shell-layer shell-layer-base shell-layer-compact\">" + inner + "</div></div></body></rml>";
     (void)wrapper_classes;
     document = context->LoadDocumentFromMemory(rml);
     ASSERT_NE(document, nullptr);
@@ -88,10 +89,11 @@ protected:
     state.has_turns = true;
     state.thread_title = "Ann";
     state.thread_subtitle = "Long encryption subtitle that stays on the desktop";
-    Load("<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\"><div class=\"shell-pane-body\" "
-         "id=\"pane-body-chat\">" +
-             LocalizationService::Instance().LocalizeText(ReadAll(AssetPath("views/chat.rml"))) + "</div></div>",
-         "");
+    Load(
+        "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\"><div class=\"shell-pane-body\" "
+        "id=\"pane-body-chat\">" +
+            LocalizationService::Instance().LocalizeText(ReadAll(AssetPath("views/chat.rml"))) + "</div></div>",
+        "");
   }
   struct Edges {
     float left, top, right, bottom;
@@ -129,8 +131,7 @@ TEST_F(ChatHeaderLinkLayoutTest, ThePhoneHeaderShowsTheRouteIconAndWordsUnderThe
   const Edges p = BorderEdges(path);
   EXPECT_GT(p.bottom - p.top, 8.f) << "the line is laid out on a phone";
   EXPECT_GE(p.top, BorderEdges(title).bottom - 1.f) << "under the name";
-  EXPECT_NE(std::string(icon->GetAttribute<ui::String>("src", "").c_str()).find("route-direct.svg"),
-            std::string::npos);
+  EXPECT_NE(std::string(icon->GetAttribute<ui::String>("src", "").c_str()).find("route-direct.svg"), std::string::npos);
   EXPECT_EQ(BorderEdges(First("chat-header-subtitle")).bottom - BorderEdges(First("chat-header-subtitle")).top, 0.f)
       << "the long encryption subtitle stays off the phone";
 }
@@ -149,8 +150,7 @@ TEST_F(ChatHeaderLinkLayoutTest, RelayUsesTheRelayIconAndAGroupShowsNoLine) {
     }
   }
   ASSERT_NE(icon, nullptr);
-  EXPECT_NE(std::string(icon->GetAttribute<ui::String>("src", "").c_str()).find("route-relay.svg"),
-            std::string::npos);
+  EXPECT_NE(std::string(icon->GetAttribute<ui::String>("src", "").c_str()).find("route-relay.svg"), std::string::npos);
   EXPECT_GT(BorderEdges(First("chat-peer-path")).bottom - BorderEdges(First("chat-peer-path")).top, 8.f);
 }
 
@@ -165,13 +165,14 @@ TEST_F(ChatHeaderLinkLayoutTest, AGroupInACallShowsNoLineOnThePhone) {
 }
 
 TEST_F(ChatHeaderLinkLayoutTest, AFeatureNameAndItsQuestionMarkShareACentreLineAFewDpApart) {
-  Load("<div class=\"settings-section settings-section--grouped settings-mock stack\">"
-       "<p class=\"text group-head\">Above</p>"
-       "<div class=\"settings-q-head settings-q-head--name row\"><p class=\"text group-head group-head--name\">Recovery "
-       "phrase</p><button class=\"settings-q-btn\" type=\"button\"><svg class=\"settings-q-icon\" "
-       "src=\"../icons/v2/help-circle.svg\" width=\"20\" height=\"20\"></svg></button></div></div>",
-       "");
-  ui::Element* name = First("group-head--name");
+  Load(
+      "<div class=\"settings-section settings-section--grouped settings-mock stack\">"
+      "<p class=\"text group-head\">Above</p>"
+      "<div class=\"settings-q-head settings-q-head--name row\"><p class=\"text group-head\">Recovery "
+      "phrase</p><button class=\"settings-q-btn\" type=\"button\"><svg class=\"settings-q-icon\" "
+      "src=\"../icons/v2/help-circle.svg\" width=\"20\" height=\"20\"></svg></button></div></div>",
+      "");
+  ui::Element* name = First("settings-q-head--name")->GetFirstChild();
   ui::Element* button = First("settings-q-btn");
   ui::Element* icon = First("settings-q-icon");
   ASSERT_NE(name, nullptr);
@@ -186,6 +187,31 @@ TEST_F(ChatHeaderLinkLayoutTest, AFeatureNameAndItsQuestionMarkShareACentreLineA
   EXPECT_LE(icon_left - n.right, 8.f) << "the icon sits a few dp after the heading";
   EXPECT_GE(b.bottom - b.top, 43.f) << "the hit area stays 44dp";
   EXPECT_GE(b.right - b.left, 43.f);
+}
+
+TEST_F(ChatHeaderLinkLayoutTest, EverySettingsGroupHeadingIsTheLargerBoldStyle) {
+  const std::string card = "<div class=\"group-card\"><div class=\"group-row\">Row</div></div>";
+  Load(
+      "<div class=\"settings-section settings-section--grouped settings-mock stack\">"
+      "<p class=\"text group-head\">Mock heading</p>" +
+          card +
+          "</div>"
+          "<div class=\"settings-section settings-section--grouped stack\">"
+          "<p class=\"text group-head settings-phone-only\">Plain grouped heading</p>" +
+          card + "<span class=\"settings-label group-head\">Label heading</span>" + card + "</div>",
+      "");
+  ui::ElementList heads;
+  document->GetElementsByClassName(heads, "group-head");
+  ASSERT_EQ(heads.size(), 3u);
+  for (ui::Element* head : heads) {
+    EXPECT_NEAR(head->GetComputedValues().font_size(), 17.f, 0.5f);
+    EXPECT_EQ(head->GetComputedValues().font_weight(), ui::Style::FontWeight::Bold);
+    const Edges h = BorderEdges(head);
+    ui::Element* next = head->GetNextSibling();
+    ASSERT_NE(next, nullptr);
+    EXPECT_GE(BorderEdges(next).top, h.bottom) << "the heading does not overlap the card below";
+    EXPECT_LE(BorderEdges(next).top - h.bottom, 12.f);
+  }
 }
 
 } // namespace
