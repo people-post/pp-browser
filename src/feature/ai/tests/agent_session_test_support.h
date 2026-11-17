@@ -88,7 +88,8 @@ inline AppConfig MakeConfig(const std::string& preset) {
   return config;
 }
 
-// Keeps messages in memory; everything the AI thread path does not touch is a stub.
+// Keeps messages in memory; everything the AI thread path does not touch is a stub. Thread-safe as the real stores
+// are: several sessions' turns read and write it at once (a test reads `messages` only once the turns are over).
 class MemoryThreadStore : public IThreadStore {
 public:
   std::vector<ThreadMessage> messages;
@@ -109,11 +110,16 @@ public:
                                       const std::vector<std::string>&) override {
     return Thread{};
   }
-  Roe<std::vector<ThreadMessage>> GetMessages(const std::string&) const override { return messages; }
+  Roe<std::vector<ThreadMessage>> GetMessages(const std::string&) const override {
+    std::lock_guard lock(mu_);
+    return messages;
+  }
   Roe<std::vector<ThreadMessage>> GetMessagesPage(const std::string&, std::optional<int64_t>, size_t) const override {
+    std::lock_guard lock(mu_);
     return messages;
   }
   Roe<std::vector<ThreadMessage>> GetMessagesForContext(const std::string&, const ContextBudget&) const override {
+    std::lock_guard lock(mu_);
     return messages;
   }
   Roe<int64_t> CountContextEligibleMessagesAfter(const std::string&, int64_t) const override { return int64_t{0}; }
@@ -122,12 +128,14 @@ public:
     return std::vector<ThreadMessage>{};
   }
   Roe<ThreadMessage> AppendMessage(const ThreadMessage& message) override {
+    std::lock_guard lock(mu_);
     ThreadMessage stored = message;
     stored.display_order = static_cast<int64_t>(messages.size()) + 1;
     messages.push_back(stored);
     return stored;
   }
   Roe<bool> UpdateMessage(const ThreadMessage& message) override {
+    std::lock_guard lock(mu_);
     for (ThreadMessage& stored : messages) {
       if (stored.id == message.id) {
         stored = message;
@@ -140,6 +148,7 @@ public:
   Roe<void> ClearMessages(const std::string&, const ClearMessagesOptions&) override { return {}; }
   Roe<std::vector<ThreadMessage>> ExportMessagesUpTo(const std::string&,
                                                      const std::optional<std::string>&) const override {
+    std::lock_guard lock(mu_);
     return messages;
   }
   Roe<std::optional<ConversationSummary>> GetThreadMemory(const std::string&) const override {
@@ -170,6 +179,9 @@ public:
   Roe<std::vector<std::pair<std::string, std::string>>> ListPendingOutbox() const override {
     return std::vector<std::pair<std::string, std::string>>{};
   }
+
+private:
+  mutable std::mutex mu_;
 };
 
 // --- A fake promoted MCP server over McpClient's HTTP transport (McpClient::SetHttpPost(FakeMcpPost(server))).
