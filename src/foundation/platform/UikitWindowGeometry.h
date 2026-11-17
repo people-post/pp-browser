@@ -46,6 +46,15 @@ inline UikitGeometryFix PlanUikitGeometryFix(const UikitViewGeometry& g) {
 UikitGeometryFix SyncUikitWindowGeometry(SDL_Window* window);
 
 /**
+ * iOS: SDL's view has its window's size (PlanUikitGeometryFix finds nothing to resize). It does not while SDL has just
+ * given it a frame of its own: on each keyboard show / hide SDL recomputes the view frame and, on iPadOS 27 where the
+ * window's screen is window-sized, swaps width and height for a landscape-shaped window (UIKit_ComputeViewFrame's
+ * orientation flip goes by the deprecated statusBarOrientation). Such a size is not the window's and is not drawn.
+ * true elsewhere.
+ */
+bool UikitViewFillsWindow(SDL_Window* window);
+
+/**
  * iOS 26+: how far down (window points) content must start to stay clear of the window controls (close / minimise /
  * full screen) in the top-left corner when the app runs in a window; at least the plain top safe area. 0 elsewhere.
  */

@@ -27,6 +27,17 @@ TEST(UikitWindowGeometryTest, PortraitViewInLandscapeWindowIsResized) {
   EXPECT_FALSE(fix.rescale_view);
 }
 
+TEST(UikitWindowGeometryTest, KeyboardTimeSwappedViewIsNotTheWindow) {
+  // Logged 2026-11-16 on iPadOS 27: the keyboard came up in a 920x766 window and SDL gave its view 766x920. That size
+  // is not drawn (UikitViewFillsWindow is false) and the view is put back.
+  UikitViewGeometry g = Matching();
+  g.window_w = 920;
+  g.window_h = 766;
+  g.view_w = 766;
+  g.view_h = 920;
+  EXPECT_TRUE(PlanUikitGeometryFix(g).resize_view);
+}
+
 TEST(UikitWindowGeometryTest, WindowResizedByTheUserIsFollowed) {
   UikitViewGeometry g = Matching();
   g.window_w = 900;
@@ -59,6 +70,7 @@ TEST(UikitWindowGeometryTest, WindowWithoutSizeIsLeftAlone) {
 
 TEST(UikitWindowGeometryTest, DesktopHelpersAreNoOps) {
   EXPECT_FALSE(SyncUikitWindowGeometry(nullptr).Any());
+  EXPECT_TRUE(UikitViewFillsWindow(nullptr));
   EXPECT_EQ(WindowControlsTopInset(nullptr), 0);
   EXPECT_TRUE(DescribeUikitWindowGeometry(nullptr).empty());
   EXPECT_FALSE(IsIpadDevice());

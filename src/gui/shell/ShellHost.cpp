@@ -15,6 +15,7 @@
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/ScreenKeyboard.h"
+#include "foundation/platform/ScreenKeyboardGeometry.h"
 #include "foundation/platform/UikitWindowGeometry.h"
 #include "foundation/platform/SecureScreen.h"
 #include "foundation/platform/ui/PlatformNavigation.h"
@@ -1860,11 +1861,18 @@ ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
   // iPadOS 26+ in a window: the window controls sit in the top-left corner, outside SDL's safe area.
   const int top_win = std::max({0, safe.y, WindowControlsTopInset(window)});
   // iOS leaves the on-screen keyboard out of the safe area; it is reported separately (0 elsewhere).
+  const int safe_bottom_win = std::max(0, win_h - (safe.y + safe.h));
+  insets.window_w = win_w;
+  insets.window_h = win_h;
   insets.keyboard_win = std::max(0, ScreenKeyboardHeight());
-  const int bottom_win = std::max({0, win_h - (safe.y + safe.h), insets.keyboard_win});
+  // The input bar is docked on the shell's bottom edge, which without a keyboard is the safe area's bottom; the shell
+  // goes up by just what puts that edge on the keyboard's top (no gap). Same numbers as max(safe bottom, keyboard).
+  insets.input_bottom_win = win_h - safe_bottom_win;
+  insets.lift_win = KeyboardLift(win_h, win_h - insets.keyboard_win, insets.input_bottom_win, 0);
+  const int bottom_win = safe_bottom_win + insets.lift_win;
   insets.top_dp = static_cast<int>(static_cast<float>(top_win) * window_to_dp + 0.5f);
   insets.bottom_dp = static_cast<int>(static_cast<float>(bottom_win) * window_to_dp + 0.5f);
-  insets.keyboard_dp = static_cast<int>(static_cast<float>(insets.keyboard_win) * window_to_dp + 0.5f);
+  insets.keyboard_dp = static_cast<int>(static_cast<float>(insets.lift_win) * window_to_dp + 0.5f);
 #endif
   return insets;
 }
@@ -1873,8 +1881,9 @@ void ShellHost::RefreshSafeAreaInsets(ui::Context* context) {
   (void)context;
   const SafeAreaFromSdl sdl = ReadSafeAreaFromSdl();
   if (sdl.keyboard_dp != logged_keyboard_dp_ && (sdl.keyboard_dp > 0 || logged_keyboard_dp_ > 0)) {
-    // One line per change of the on-screen keyboard's cover (iOS), for the iPad window cases.
-    log().info << "keyboard inset pt=" << sdl.keyboard_win << " dp=" << sdl.keyboard_dp
+    // One line per change of the keyboard lift (iOS), for the iPad window cases.
+    log().info << "keyboard lift pt=" << sdl.lift_win << " dp=" << sdl.keyboard_dp << " cover_pt=" << sdl.keyboard_win
+               << " input_bottom_pt=" << sdl.input_bottom_win << " sdl_window=" << sdl.window_w << "x" << sdl.window_h
                << " bottom_dp=" << sdl.bottom_dp << " latch=" << (sdl.bottom_dp >= kImeLatchMinDp)
                << " layout=" << ShellLayout::LayoutModeString(state_.layout_mode) << " " << DescribeScreenKeyboard();
   }

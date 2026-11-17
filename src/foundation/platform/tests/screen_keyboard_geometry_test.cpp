@@ -39,5 +39,47 @@ TEST(ScreenKeyboardGeometryTest, HiddenOrEmptyKeyboardIsZero) {
   EXPECT_EQ(KeyboardInsetInWindow({0, 1000, 820, 0}, 820, 1000), 0);
 }
 
+// KeyboardLift(window_h, keyboard_top, input_bottom, gap), all in window points.
+
+TEST(KeyboardLiftTest, IphoneMatchesTheKeyboardHeight) {
+  // 393x852, home indicator 34: the bar ends at 818; a 336 keyboard (top 516) lifts it by 302, so the shell's
+  // bottom inset is 34 + 302 = 336, the same as max(safe bottom, keyboard) before.
+  EXPECT_EQ(KeyboardLift(852, 516, 818, 0), 302);
+  EXPECT_EQ(34 + KeyboardLift(852, 516, 818, 0), 336);
+}
+
+TEST(KeyboardLiftTest, IpadFullScreenLandscape) {
+  // Logged 2026-11-16: window 954 tall, keyboard top 470 (484 tall), bar on the 20 pt home-indicator inset.
+  EXPECT_EQ(20 + KeyboardLift(954, 470, 934, 0), 484);
+}
+
+TEST(KeyboardLiftTest, IpadWindowAboveTheScreenBottom) {
+  // A 756 tall window whose bottom is 100 pt above the display's: the guide puts the keyboard top at 656 in the window,
+  // so the bar (ending at 746) goes up 90, not the keyboard's full 484.
+  EXPECT_EQ(KeyboardLift(756, 656, 746, 0), 90);
+}
+
+TEST(KeyboardLiftTest, BarAlreadyAboveTheKeyboardStays) {
+  EXPECT_EQ(KeyboardLift(756, 700, 640, 0), 0);
+  EXPECT_EQ(KeyboardLift(756, 700, 640, 8), 0);
+  EXPECT_EQ(KeyboardLift(756, 700, 695, 8), 3);
+}
+
+TEST(KeyboardLiftTest, NoKeyboardNoLiftWhateverTheGap) {
+  // Hidden, floating or undocked: the guide's top is on the window's bottom edge (or below it).
+  EXPECT_EQ(KeyboardLift(756, 756, 746, 0), 0);
+  EXPECT_EQ(KeyboardLift(756, 756, 746, 12), 0);
+  EXPECT_EQ(KeyboardLift(756, 900, 746, 12), 0);
+}
+
+TEST(KeyboardLiftTest, GapIsAdded) {
+  EXPECT_EQ(KeyboardLift(852, 516, 818, 6), 308);
+}
+
+TEST(KeyboardLiftTest, NeverPastTheWindowTop) {
+  EXPECT_EQ(KeyboardLift(500, -40, 480, 0), 480);
+  EXPECT_EQ(KeyboardLift(500, 0, 480, 30), 480);
+}
+
 } // namespace
 } // namespace pbr

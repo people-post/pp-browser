@@ -57,6 +57,17 @@ void ApplyIpadMinimumWindowSize(UIWindow* uiwindow) {
   }
 }
 
+UikitViewGeometry GeometryOf(UIWindow* uiwindow, UIView* view) {
+  UikitViewGeometry g;
+  g.window_w = uiwindow.bounds.size.width;
+  g.window_h = uiwindow.bounds.size.height;
+  g.view_w = view.bounds.size.width;
+  g.view_h = view.bounds.size.height;
+  g.view_scale = view.contentScaleFactor;
+  g.screen_scale = uiwindow.screen.nativeScale;
+  return g;
+}
+
 } // namespace
 
 bool IsIpadDevice() {
@@ -70,14 +81,7 @@ UikitGeometryFix SyncUikitWindowGeometry(SDL_Window* window) {
     return {};
   }
   ApplyIpadMinimumWindowSize(uiwindow);
-  UikitViewGeometry g;
-  g.window_w = uiwindow.bounds.size.width;
-  g.window_h = uiwindow.bounds.size.height;
-  g.view_w = view.bounds.size.width;
-  g.view_h = view.bounds.size.height;
-  g.view_scale = view.contentScaleFactor;
-  g.screen_scale = uiwindow.screen.nativeScale;
-  const UikitGeometryFix fix = PlanUikitGeometryFix(g);
+  const UikitGeometryFix fix = PlanUikitGeometryFix(GeometryOf(uiwindow, view));
   if (!fix.Any()) {
     return fix;
   }
@@ -91,6 +95,12 @@ UikitGeometryFix SyncUikitWindowGeometry(SDL_Window* window) {
   [view setNeedsLayout];
   [view layoutIfNeeded];
   return fix;
+}
+
+bool UikitViewFillsWindow(SDL_Window* window) {
+  UIWindow* uiwindow = WindowOf(window);
+  UIView* view = ViewOf(uiwindow);
+  return !uiwindow || !view || !PlanUikitGeometryFix(GeometryOf(uiwindow, view)).resize_view;
 }
 
 int WindowControlsTopInset(SDL_Window* window) {
@@ -122,15 +132,20 @@ std::string DescribeUikitWindowGeometry(SDL_Window* window) {
     orientation = scene ? scene.effectiveGeometry.interfaceOrientation : UIInterfaceOrientationUnknown;
   }
   UIScreen* screen = uiwindow.screen;
+  // What SDL's view-frame code goes by (UIKit_ComputeViewFrame): logged to confirm the keyboard-time width/height swap.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+  const UIInterfaceOrientation status_bar_orientation = UIApplication.sharedApplication.statusBarOrientation;
+#pragma clang diagnostic pop
   char line[512];
   std::snprintf(line, sizeof(line),
                 "scene=%.0fx%.0f window=%.0fx%.0f view=%.0fx%.0f view_scale=%.3f screen=%.0fx%.0f native_scale=%.3f "
-                "main_screen=%d orientation=%s safe_top=%.0f controls_top=%d",
+                "main_screen=%d orientation=%s sdl_orientation=%s safe_top=%.0f controls_top=%d",
                 scene_bounds.size.width, scene_bounds.size.height, uiwindow.bounds.size.width,
                 uiwindow.bounds.size.height, view.bounds.size.width, view.bounds.size.height, view.contentScaleFactor,
                 screen.bounds.size.width, screen.bounds.size.height, screen.nativeScale,
-                screen == UIScreen.mainScreen ? 1 : 0, OrientationName(orientation), view.safeAreaInsets.top,
-                WindowControlsTopInset(window));
+                screen == UIScreen.mainScreen ? 1 : 0, OrientationName(orientation),
+                OrientationName(status_bar_orientation), view.safeAreaInsets.top, WindowControlsTopInset(window));
   return line;
 }
 

@@ -6,6 +6,10 @@ UikitGeometryFix SyncUikitWindowGeometry(SDL_Window* /*window*/) {
   return {};
 }
 
+bool UikitViewFillsWindow(SDL_Window* /*window*/) {
+  return true;
+}
+
 int WindowControlsTopInset(SDL_Window* /*window*/) {
   return 0;
 }

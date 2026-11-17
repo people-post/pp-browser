@@ -219,6 +219,11 @@ static bool SDLCALL LiveResizeEventWatch(void* /*userdata*/, SDL_Event* event) {
 
   if (!size_may_have_changed && !live_expose)
     return true;
+  // iOS: SDL gave its view a frame that is not the window's (the keyboard-time width/height swap on iPadOS 27,
+  // UikitViewFillsWindow). Drawing it would lay the shell out for a window shape that does not exist (the wide layout
+  // flashed to compact and dropped the focused input); ProcessEvents puts the view back first.
+  if (size_may_have_changed && !pbr::UikitViewFillsWindow(data->window))
+    return true;
 
   int pixel_w = 0;
   int pixel_h = 0;
@@ -645,6 +650,8 @@ bool Backend::ProcessEvents(ui::Context* context, KeyDownCallback key_down_callb
 #if SDL_MAJOR_VERSION >= 3
       case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
       case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
+        // iOS: a view SDL resized away from its window (keyboard show / hide) is put back before its size is read.
+        pbr::SyncUikitWindowGeometry(data->window);
         SyncContext(context);
         propagate_event = false;
         break;
@@ -665,6 +672,9 @@ bool Backend::ProcessEvents(ui::Context* context, KeyDownCallback key_down_callb
         RMLSDL_WINDOW_EVENTS_BEGIN
 
       case event_window_size_changed:
+#if SDL_MAJOR_VERSION >= 3
+        pbr::SyncUikitWindowGeometry(data->window);
+#endif
         SyncContext(context);
         propagate_event = false;
         break;

@@ -32,4 +32,17 @@ inline int KeyboardInsetInWindow(const KeyboardRect& keyboard, double window_w, 
   return reaches_bottom ? static_cast<int>(std::ceil(bottom - top)) : 0;
 }
 
+/**
+ * How far the input bar must go up to sit on the keyboard (WeChat style, Kenneth 2026-11-16): its bottom edge minus
+ * the keyboard's top edge plus `gap`, never below 0 and never past the window's top. Only the bar counts: whatever else
+ * the keyboard covers stays covered. All values in the window's own points, y down; `keyboard_top` at or below
+ * `window_h` means no keyboard over the window (hidden, floating or undocked), so no lift whatever the gap.
+ */
+inline int KeyboardLift(int window_h, int keyboard_top, int input_bottom, int gap) {
+  if (keyboard_top >= window_h) {
+    return 0;
+  }
+  return std::clamp(input_bottom - std::max(keyboard_top, 0) + gap, 0, std::max(input_bottom, 0));
+}
+
 } // namespace pbr
