@@ -102,7 +102,6 @@
             </span>
           </button>
         </div>
-        <p class="heading-2 group-title">{{app_name}}</p>
         <div class="group-card settings-phone-only">
           <div class="group-row" data-event-click="tap_version()">
             <span class="group-row-body">
