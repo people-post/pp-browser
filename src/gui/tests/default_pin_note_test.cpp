@@ -48,8 +48,10 @@ TEST_F(DefaultPinNoteTest, TheNoteFillsInThePinFromTheConstantInBothLanguages) {
     EXPECT_EQ(text.find("{pin}"), std::string::npos) << lang;
   }
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(DefaultPinNoteText(), std::string("系统默认的 PIN 是 ") + kDefaultProfilePin +
-                                      "。建议到 设置 → 安全 → 更改 PIN 换成只有你知道的 PIN。");
+  EXPECT_EQ(
+      DefaultPinNoteText(),
+      std::string("系统默认的 PIN 是 ") + kDefaultProfilePin +
+          "，打开 App 时不用输入，锁屏来电会像电话一样响铃。设了自己的 PIN 以后，每次打开要输入，来电改为通知提醒。");
   EXPECT_EQ(Tr("settings.security.default_hint"), "你现在用的是系统默认的 PIN");
   EXPECT_EQ(Tr("pin.default_note.device"), "这台设备将使用系统默认的 PIN");
 }
