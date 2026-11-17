@@ -15,27 +15,6 @@ namespace {
 using namespace pbr;
 using namespace pbr::agent_test;
 
-/** MemoryThreadStore with a lock: several sessions write to it at once here. */
-class LockedThreadStore : public MemoryThreadStore {
-public:
-  Roe<std::vector<ThreadMessage>> GetMessagesForContext(const std::string& thread_id,
-                                                        const ContextBudget& budget) const override {
-    std::lock_guard lock(mu_);
-    return MemoryThreadStore::GetMessagesForContext(thread_id, budget);
-  }
-  Roe<ThreadMessage> AppendMessage(const ThreadMessage& message) override {
-    std::lock_guard lock(mu_);
-    return MemoryThreadStore::AppendMessage(message);
-  }
-  Roe<bool> UpdateMessage(const ThreadMessage& message) override {
-    std::lock_guard lock(mu_);
-    return MemoryThreadStore::UpdateMessage(message);
-  }
-
-private:
-  mutable std::mutex mu_;
-};
-
 class AgentSessionsTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -75,7 +54,8 @@ protected:
       if (request.message.rfind("hold", 0) == 0) {
         on_event(Token("part"));
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        while (!cancel.load() && !release_.load() && std::chrono::steady_clock::now() < deadline) {
+        while ((!cancel.load() || leave_slowly_.load()) && !release_.load() &&
+               std::chrono::steady_clock::now() < deadline) {
           std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
         if (cancel.load()) {
@@ -251,11 +231,13 @@ protected:
     return args;
   }
 
-  LockedThreadStore store_;
+  MemoryThreadStore store_;
   std::unique_ptr<AgentSessions> sessions_;
   std::chrono::steady_clock::time_point now_ = std::chrono::steady_clock::now();
   std::vector<AgentEvent> events_;
   std::atomic<bool> release_{false};
+  /** A stopped "hold" turn keeps running until `release_` (a turn slow to leave its thread). */
+  std::atomic<bool> leave_slowly_{false};
   std::atomic<bool> block_configure_{false};
   std::atomic<bool> in_configure_{false};
   std::atomic<int> configures_{0};
@@ -400,6 +382,25 @@ TEST_F(AgentSessionsTest, CancelOneThreadLeavesTheOthers) {
   WaitEnded("");
   EXPECT_FALSE(sessions_->AnyBusy());
   EXPECT_TRUE(OfType(AgentEventType::Error).empty());
+}
+
+// A stopped turn is not busy any more but may still be leaving its thread, writing the turn's state; its session is not
+// closed under it (the idle close, as the soft cap's, reads that state).
+TEST_F(AgentSessionsTest, AStoppedTurnStillLeavingKeepsItsSession) {
+  Make();
+  leave_slowly_ = true;
+  EXPECT_EQ(sessions_->SubmitToThread("t1", "hold"), SubmitOutcome::Started);
+  WaitRequests(1);
+  sessions_->Cancel("t1");
+  EXPECT_FALSE(sessions_->IsBusy("t1")) << "stopped";
+  Advance(kSessionIdleTimeout + std::chrono::minutes(1));
+  Poll();
+  EXPECT_TRUE(sessions_->HasSession("t1")) << "its turn is still on its thread";
+
+  release_ = true;
+  WaitEnded("t1");
+  Advance(kSessionIdleTimeout + std::chrono::minutes(1));
+  PumpUntil([&] { return !sessions_->HasSession("t1"); }, "the session to close once its turn left");
 }
 
 TEST_F(AgentSessionsTest, ParkedApprovalKeepsTheInstanceButFreesTheSlot) {
