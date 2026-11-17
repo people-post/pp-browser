@@ -2878,6 +2878,11 @@ void ContactsController::AddSearchChangedCallback(ui::DataModelHandle /*model*/,
   DismissKeyboardOnReturn(ev);
 }
 
+void ContactsController::TypeInAddContact(const std::string& query) {
+  add_query_ = query.c_str();
+  OnAddSearchChanged();
+}
+
 // Typing searches as you type: each keystroke restarts a 300 ms wait, then the directory is asked once.
 void ContactsController::OnAddSearchChanged() {
   ++add_search_generation_;

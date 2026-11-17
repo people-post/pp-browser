@@ -261,6 +261,13 @@ public:
   void RefreshMemberIcon(const std::function<std::string(const std::string&)>& icon_for);
   /** The contact page is open as a page sheet. */
   bool DetailSheetOpen() const { return detail_sheet_layer_id_ >= 0; }
+  /** The Add contact page is open (a transient page on phones, a page sheet elsewhere). */
+  bool AddContactPageOpen() const { return add_open_; }
+  /** The page's search field changed to `query` (what the field's change event does). Exposed for tests. */
+  void TypeInAddContact(const std::string& query);
+  /** The Add contact page's search is waiting or in flight / came back empty. Exposed for tests. */
+  bool AddSearching() const { return add_searching_; }
+  bool AddNoResults() const { return add_no_results_; }
   /**
    * The group owner's "Group admin" card at the bottom of the person's page just opened from that group (phones);
    * opening any page clears it. Remove closes the sheet once the person is out.

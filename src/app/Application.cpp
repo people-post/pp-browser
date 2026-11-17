@@ -109,6 +109,7 @@
 #include "gui/scan/QrScanController.h"
 #include "gui/scan/ElementScanPreview.h"
 #include "gui/contacts/ContactsNotifyPorts.h"
+#include "gui/contacts/ContactsTickGate.h"
 #include "gui/ChatSurfaceNotifyPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/contacts/PeoplePickerSurfaceNotifyPorts.h"
@@ -2820,8 +2821,8 @@ void Application::Run() {
     if (shell_->State().nav_tab == NavTab::Me) {
       settings_->Tick();
     }
-    // The contact page also ticks while it is a page sheet over another tab (its edits, its close).
-    if (shell_->State().nav_tab == NavTab::Contacts || contacts_->DetailSheetOpen()) {
+    // The contact page and the Add contact page also tick while open over another tab (edits, close, the search).
+    if (ShouldTickContacts(shell_->State().nav_tab, contacts_->DetailSheetOpen(), contacts_->AddContactPageOpen())) {
       contacts_->Tick();
     }
     {
