@@ -14,6 +14,7 @@
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/testing/FailingCallSessionStore.h"
+#include "lib/media/IVideoCodec.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
@@ -671,6 +672,20 @@ TEST_F(CallUiNeverDetachedTest, TheLeavingLatchRunsOutAfterFifteenSeconds) {
   EXPECT_EQ(presenter_->ActiveCallId(), "call:stuck-open") << "still open in the engine: on screen again";
 }
 
+/** A codec that only claims it can encode: the camera offer (VideoEncoderAvailable) then holds on every host. */
+class EncodingCodecStub final : public IVideoCodec {
+public:
+  std::string BackendName() const override { return "stub"; }
+  bool HasEncoder() const override { return true; }
+  bool HasDecoder() const override { return false; }
+  Roe<void> ConfigureEncoder(int, int, int) override { return {}; }
+  Roe<void> ConfigureDecoder() override { return {}; }
+  Roe<EncodedAccessUnit> Encode(const VideoFrameI420&, bool) override { return EncodedAccessUnit{}; }
+  Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t*, size_t) override { return std::optional<VideoFrameRgba>{}; }
+  void ResetEncoder() override {}
+  void ResetDecoder() override {}
+};
+
 /** What the presenter's logger wrote, kept for a test (a handler cannot be removed again: it lives for the process). */
 class CapturedPresenterLog final : public logging::Handler {
 public:
@@ -703,8 +718,13 @@ private:
 
 // A host that binds no `auto_camera_on` (the headless call lab) still gets the camera for a video call: the presenter
 // asks the backend to enable video itself instead of dropping the intent. (The engine skips its devices here, so the
-// camera itself stays off; what is checked is that the request was made.)
+// camera itself stays off; what is checked is that the request was made.) The encoder is supplied by a stub, not the
+// platform: a Linux host without a hardware encoder never offers the camera (the auto camera then rightly waits).
 TEST_F(CallUiNeverDetachedTest, WithoutAHostCameraHookTheVideoCallOpensTheCameraItself) {
+  SetPlatformVideoCodecOverride([]() -> std::unique_ptr<IVideoCodec> { return std::make_unique<EncodingCodecStub>(); });
+  struct RestoreCodec {
+    ~RestoreCodec() { SetPlatformVideoCodecOverride({}); }
+  } restore_codec;
   CapturedPresenterLog& captured = CapturedPresenterLog::Instance();
   ASSERT_NO_FATAL_FAILURE(InCall("call:auto-cam-fallback", /*video=*/true));
   DrainUntil([&]() {
