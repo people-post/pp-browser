@@ -50,10 +50,10 @@ TEST_F(DefaultPinNoteTest, TheNoteFillsInThePinFromTheConstantInBothLanguages) {
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
   EXPECT_EQ(
       DefaultPinNoteText(),
-      std::string("系统默认的 PIN 是 ") + kDefaultProfilePin +
-          "，打开 App 时不用输入，锁屏来电会像电话一样响铃。设了自己的 PIN 以后，每次打开要输入，来电改为通知提醒。");
-  EXPECT_EQ(Tr("settings.security.default_hint"), "你现在用的是系统默认的 PIN");
-  EXPECT_EQ(Tr("pin.default_note.device"), "这台设备将使用系统默认的 PIN");
+      std::string("系统默认的 PIN 码是 ") + kDefaultProfilePin +
+          "，打开 App 时不用输入，锁屏来电会像电话一样响铃。设了自己的 PIN 码以后，每次打开要输入，来电改为通知提醒。");
+  EXPECT_EQ(Tr("settings.security.default_hint"), "你现在用的是系统默认的 PIN 码");
+  EXPECT_EQ(Tr("pin.default_note.device"), "这台设备将使用系统默认的 PIN 码");
 }
 
 // Nothing in a locale file or a view may carry the digits: the constant is the one place.
@@ -126,19 +126,21 @@ TEST_F(DefaultPinNoteTest, TheSecurityQuestionMarkOpensALocalNoteOnlyOnTheDefaul
   EXPECT_EQ(asked, 0) << "a local note: no AI, no support";
 }
 
-// 2026-11-17: the Security page no longer carries the default-PIN line; its caption has a "?" that asks PP Support like
-// the other settings rows, and the longer words are the PIN page's caption (the note above stays for the other screens).
-TEST_F(DefaultPinNoteTest, TheSecurityPageHasTheCaptionAndASupportQuestionMarkForEveryone) {
+// 2026-11-17: the Security page's PIN row carries the "?" right after its label (it asks PP Support like the other
+// settings rows; the "?" stops the tap so the row does not also open the page); the longer words are the PIN page's
+// caption (the note above stays for the other screens).
+TEST_F(DefaultPinNoteTest, TheSecurityPinRowHasASupportQuestionMarkAfterItsLabelAndNoCaption) {
   const std::string rml = ReadAsset("views/settings_section_security.rml");
   EXPECT_EQ(rml.find("settings.security.default_hint"), std::string::npos);
-  const size_t line = rml.find("{{i18n:settings.security.pin_caption}}");
-  ASSERT_NE(line, std::string::npos);
-  const size_t button = rml.find("data-event-click=\"ask_setting_help('settings.help.topic.pin')\"", line);
-  ASSERT_NE(button, std::string::npos);
-  EXPECT_LT(line, button) << "the \"?\" comes right after the text";
-  EXPECT_NE(rml.find("settings-q-btn", line), std::string::npos) << "the shared 44dp \"?\" button";
-  const size_t head = rml.rfind("<div", line);
-  EXPECT_EQ(rml.substr(head, line - head).find("data-if"), std::string::npos) << "shown in either mode";
+  EXPECT_EQ(rml.find("settings.security.pin_caption"), std::string::npos);
+  for (const char* label : {"{{i18n:settings.security.pin_row}}", "{{i18n:settings.security.protection_title}}"}) {
+    const size_t line = rml.find(label);
+    ASSERT_NE(line, std::string::npos) << label;
+    const size_t button = rml.find("data-event-click=\"ask_setting_help('settings.help.topic.pin')\"", line);
+    ASSERT_NE(button, std::string::npos) << label;
+    EXPECT_LT(button, rml.find("group-row-value", line)) << "the \"?\" comes right after the label, before the value";
+    EXPECT_NE(rml.find("settings-q-btn", line), std::string::npos) << "the shared 44dp \"?\" button";
+  }
   const std::string page = ReadAsset("views/settings_security_pin.rml");
   EXPECT_EQ(page.find("show_default_pin_note()"), std::string::npos);
   EXPECT_NE(page.find("{{pin_page_note}}"), std::string::npos);

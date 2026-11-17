@@ -327,7 +327,6 @@
     "settings.security.change_pin": "Change PIN",
     "settings.security.pin_row": "PIN",
     "settings.security.set_custom_pin": "Set a custom PIN",
-    "settings.security.pin_caption": "With the default PIN, calls ring on the lock screen like a phone call; with a custom PIN, calls arrive as notifications.",
     "settings.security.pin_page.note": "The default PIN is {pin}. You don't enter it to open the app, and calls ring full-screen on the lock screen like a phone call. A custom PIN is known only to you and is entered each time you open the app, which is safer; calls then arrive as notifications instead of ringing full-screen.",
     "settings.security.default_hint": "You're using the system default PIN",
     "settings.security.default_hint.title": "System default PIN",

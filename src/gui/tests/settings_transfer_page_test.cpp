@@ -55,7 +55,7 @@ TEST(TransferPageMarkupTest, TheNewStringsExistInBothLanguagesAndQuoteTheRealOne
   EXPECT_NE(zh.find("选“我在别的设备上已经有账号”\""), std::string::npos);
   EXPECT_NE(en.find("“I already have an account on another device”\""), std::string::npos);
   // Three short steps, then one grey line; the old long paragraphs are gone.
-  EXPECT_NE(zh.find("\"settings.security.link_device.step2\": \"设一个 PIN\""), std::string::npos);
+  EXPECT_NE(zh.find("\"settings.security.link_device.step2\": \"设一个 PIN 码\""), std::string::npos);
   EXPECT_NE(zh.find("\"settings.security.link_device.step3\": \"粘贴关联码\""), std::string::npos);
   EXPECT_NE(zh.find("\"新设备上看不到以前的聊天记录。已有别的账号的设备要先重置。\""), std::string::npos);
   EXPECT_NE(en.find("\"Earlier chats do not appear on the new device. A device that already has another account must "
