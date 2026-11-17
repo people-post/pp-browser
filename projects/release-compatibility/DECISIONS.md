@@ -61,7 +61,8 @@ first format change would break them anyway).
 ## RC005 — One main branch, a branch per release, every build tagged
 
 **Date:** 2026-11-17
-**Status:** Accepted (Hongwei, 2026-11-17); in review with Leo (the relay's deploy triggers are his).
+**Status:** Accepted (Hongwei, 2026-11-17). Amended by [RC007](#rc007--the-branch-model-after-leos-review) (2026-11-17,
+after Leo's review): tags, environments, build-once and check levels added; backports by a bot. In review with Leo.
 **Decision:** Each repo has one `main`; `develop` is retired. Every internal build is tagged from main by the
 workflow that makes it. Each release gets a branch `release/X.Y` cut from main, which takes fixes only, cherry-picked
 from main, and carries the release tags. The relay deploys prod only from release tags. Libraries keep main plus
@@ -93,3 +94,55 @@ the newest release branch takes every fix, older ones security fixes and in-rang
 - One range for every pair (either too short for phones or longer than peers need).
 - Ranges decided by usage share alone (a number nobody controls; it may inform a close, not decide it).
 - Restarting pp-node at 1.0 (its tags would repeat 1.x–9.x).
+
+## RC007 — The branch model after Leo's review
+
+**Date:** 2026-11-17
+**Status:** Accepted (Hongwei, 2026-11-17); answers Leo's review comment on #634. Amends
+[RC005](#rc005--one-main-branch-a-branch-per-release-every-build-tagged).
+**Context:** Leo proposed a lightweight Git Flow variant: `develop` as the integration baseline, `main` as the
+production baseline taking only complete releases and hotfixes, optional `release/X.Y` stabilization branches,
+`hotfix/X.Y.Z` branches from the production tag, back-merges from `main` to `develop` instead of cherry-picks,
+immutable `vX.Y.Z` tags as the only production deploys behind GitHub environment protection, artifacts built once
+and promoted, and three levels of checks. He asked four questions: (1) optional release branches? (2) merge and
+back-merge as the normal propagation? (3) production only from immutable tags with environment protection? (4) the
+minimum checks for a hotfix?
+**Decision — taken from the review:**
+- Immutable `vX.Y.Z` tags; only tags deploy to production, through GitHub environments with an approval gate; for
+  apps, only tags go to the stores (question 3: yes).
+- Build once and promote the same artifact through candidate, staging / canary and production; rollback redeploys
+  the previous tag's artifact.
+- Checks by level: feature PRs, release candidates and fixes, tags ([DESIGN § Checks by level](DESIGN.md#checks-by-level);
+  question 4).
+- The cost of cherry-picks is real: backports are opened by a bot from a label, and keep the cherry-pick trailer.
+**Decision — kept from RC005:**
+- A release branch for **every** release that ships into the field, kept open while the release is in range
+  (question 1: not optional).
+- **One** long-lived integration branch (`main`); no separate production branch.
+- Fixes land on main first and are **backported**; release branches are not merged back (question 2: backport is
+  the normal path, a merge only where it is the same change).
+**Rationale for what was not taken:**
+- **Several releases are in production at once.** The Git Flow variant fits a service with one deployment: `main`
+  is what runs, a hotfix fixes that deployment, and an older version stops existing when the next one is deployed.
+  Here it does not: RC006 keeps the last 3 app releases (at least 90 days) in range, on phones and on users' own
+  pp-node machines that we cannot update. A security fix to 10.1 while 10.3 is current has no place in the variant:
+  hotfixes start from the current production tag, and 10.1 is not on `main` any more. Each in-range release needs
+  its own line, so release branches cannot be optional.
+- **A second long-lived branch adds a rule to police and no information.** With a branch per release, the release
+  tags already record what is in production. A `main` that means "production" would hold only the newest release
+  and need the back-merge invariant (`main` always an ancestor of `develop`) enforced forever; a missed back-merge
+  silently drops a production fix from the next release.
+- **Back-merging does not reach older releases.** A merge from `main` to `develop` carries fixes forward from the
+  newest release only. A fix needed on 10.1 and 10.2 cannot come from merging the integration branch into them (that
+  would bring every later change, format changes included), so it is a backport either way. Software in the same
+  position (several supported versions running where the vendor does not control upgrades) works the same way:
+  Kubernetes keeps a branch for each of its last 3 minor releases, Bitcoin Core, Go and Chromium keep release
+  branches, and all backport from the main line, usually with a bot.
+- **For the relay alone, the two models nearly coincide**: one production at a time, rollback by redeploying the
+  previous tag. Its release branch still matters: main may already hold the reader half of a format change
+  (RC002) that a hotfix must not carry to production.
+**Alternatives rejected:**
+- Leo's Git Flow variant as proposed (`develop` + `main` + optional release and hotfix branches, back-merges): it
+  maintains only the newest release; reasons above.
+- Merging release branches forward (oldest → newer → main) instead of backporting: needs every older branch merged
+  into every newer one, and fails when the code has moved on; kept only for a fix that exists only on old branches.

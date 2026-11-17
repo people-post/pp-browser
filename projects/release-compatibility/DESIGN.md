@@ -1,7 +1,7 @@
 # Release compatibility: design
 
 **Status:** Accepted by Hongwei, 2026-11-17; in review with Leo (relay parts: [§ Decisions taken](#decisions-taken),
-items 3 and 8). Decisions RC001–RC006.
+items 3 and 8). Decisions RC001–RC007.
 **Today's policy** stays [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) until release 1 ships; this
 design replaces its [§ No bridges](../../docs/contracts/COMPATIBILITY.md#no-bridges-pre-release) then.
 
@@ -206,34 +206,75 @@ Under the rule, several releases are live at once, and each one still in range m
 crash, a relay bug that hits old apps). Today's develop → main flow has no home for a fix to release N once main
 has moved on: main is develop running behind, and shipping a fix means shipping everything since N, format changes
 included. Internal builds leave no tag either (on 2026-11-17, "TestFlight 136" had to be found by matching workflow
-run numbers plus 100).
+run numbers plus 100). Leo's review of the first draft (#634) added the tag, environment, build-once and check-level
+rules below; [RC007](DECISIONS.md#rc007--the-branch-model-after-leos-review) records what was taken from it and why
+the rest was not.
 
-**One main branch.** All PRs go to `main`; CI must pass to merge. `develop` is retired in every repo.
+### Release lines are first-class
 
-**Every internal build is tagged from main** by the workflow that makes it: TestFlight, Android and desktop test
-builds, internal pp-node builds, the relay's qa deploys. Every build anyone ran maps to one commit:
+The product does not have one production. Apps update when their owners update them, pp-node runs on users'
+machines, and under multi-relay relays may be run by others; so "production" is every version still in the
+supported range (RC006: the last 3 app releases and at least 90 days), and each of them is a release line that may
+need a fix. Branches follow from that:
 
-| Build | Tag |
-|-------|-----|
-| App builds people install (TestFlight, Android, desktop test builds) | `internal/<build number>` |
-| Internal pp-node builds | `node-internal/<date>.<n>` |
-| Relay qa deploys | `qa/<date>.<n>` (with Leo) |
+**One integration branch, `main`.** All feature PRs go to `main`; CI must pass to merge. `develop` is retired in
+every repo. (The name is not the point; having one long-lived branch is.)
+
+**One branch per release, `release/X.Y`, cut from main**, for every release that ships into the field: apps,
+pp-node, and the relay.
+
+- Release tags (`vX.Y.0`, `vX.Y.1`, …) go on that branch. They are immutable, and release workflows accept no others.
+- A release branch takes **fixes only**: no features and no format changes. Additive changes only where a fix needs
+  them; a security cutover ([§ Change classes](#change-classes)) may go onto a branch.
+- A release branch stays open while its release is in range and closes when the release leaves it: **the live
+  release branches are the supported range**. The newest release branch takes every fix; older branches still in
+  range take only security fixes and fixes for a break between in-range versions.
+- The relay has one prod deployment, but its release branch matters as much: main may already hold the reader half
+  of a format change ([§ The range rule](#the-range-rule)) that prod must not get with a hotfix.
+
+**Fixes land on main first, then are backported** to each live release branch that needs them. A bot opens the
+backport PRs from a label (for example `backport release/10.1`), and each backported commit keeps the
+`(cherry picked from commit …)` trailer, so every fix on a release branch names its original on main. A fix that
+only makes sense on an older branch (the code is gone from main) goes straight to that branch, and its PR says why.
+Release branches are never merged back into main: main already has every fix.
+
+### Builds, tags and deploys
+
+**Every internal build is tagged** by the workflow that makes it, so every build anyone ran maps to one commit:
+
+| Build | From | Tag |
+|-------|------|-----|
+| App builds people install (TestFlight, Android, desktop test builds) | main | `internal/<build number>` |
+| Release candidates (apps, pp-node) | `release/X.Y` | `vX.Y.Z-rc.<n>` |
+| Internal pp-node builds | main | `node-internal/<date>.<n>` |
+| Relay qa deploys | main | `qa/<date>.<n>` (with Leo) |
 
 CI builds nobody installs get no tag.
 
-**One branch per release, `release/X.Y`, cut from main.**
+**Build once, promote the same artifact.** A release candidate is built once from its tag; the artifact that passed
+is the one released (`commit → build once → test the artifact → staging / canary → production`). This needs
+artifacts that do not depend on their environment: the relay takes its settings from the deploy, and an app's
+release version is set before its candidate build, so the TestFlight build that passed is the one sent to the store.
 
-- Release tags (`vX.Y.0`, `vX.Y.1`, …) go on that branch, and release workflows accept no others.
-- A release branch takes **fixes only**: no features and no format changes. Additive changes only where a fix needs
-  them; a security cutover ([§ Change classes](#change-classes)) may go onto a branch.
-- **Fixes land on main first**, then are cherry-picked to each live release branch that needs them. A fix that only
-  makes sense on an older branch says so in its PR. Main never lacks a fix a release has.
-- A release branch takes fixes while its release is in range, and closes when the release leaves it: **the live
-  release branches are the supported range**. The newest release branch takes every fix; older branches still in
-  range take only security fixes and fixes for a break between in-range versions.
+**Deploys are gated by GitHub environments:**
 
-**Deploys follow the same shape.** The relay deploys main to qa and only release tags to prod; rollback redeploys
-the previous release tag. pp-node releases are tags on a release branch.
+- main deploys the relay to qa automatically;
+- `release/*` may deploy release candidates to a candidate environment;
+- only `v*` tags deploy to production, behind an approval gate; for apps, only tags go to the stores;
+- rollback redeploys the previous release tag's artifact (RC003).
+
+### Checks by level
+
+| Level | Checks |
+|-------|--------|
+| Feature PR to main | Build, unit tests, static checks, focused smoke tests (as today) |
+| Release candidate on `release/X.Y` | Full CI on every shipped platform, the frozen-data compatibility tests, the mixed-version lab run, the release build |
+| Fix or backport to a release branch | All unit tests, the frozen-data compatibility tests, every platform build that ships, the lab scenarios the fix touches (`--only`); for the relay, its integration tests and the local-stack end-to-end test |
+| Version tag | No new build: deploy the tested artifact to staging / canary, then production after approval |
+
+The nightly lab and the full lab run on main and before each `.0` release; a fix does not wait for them.
+
+### Libraries and numbering
 
 **Libraries stay simpler.** pp-cpp-* keep main plus version tags. A library release branch is cut only when a
 product's release branch needs a library fix without taking a newer major version.

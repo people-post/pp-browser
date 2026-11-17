@@ -22,11 +22,14 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 
 - [ ] develop merged into main a last time; open PRs retargeted to main; develop deleted (pp-browser, pp-cpp-*,
   pp-ledger; pp-relay-apis with Leo).
-- [ ] Every internal build tagged by its workflow: TestFlight, Android and desktop test builds, internal pp-node
-  builds, the relay's qa deploys.
-- [ ] Release workflows take release tags only from `release/*` branches; the relay deploys prod only from a
-  release tag, qa from main.
-- [ ] The PR template and `docs/ops/RELEASE.md` say what a release branch takes, and that fixes land on main first.
+- [ ] Every internal build tagged by its workflow: TestFlight, Android and desktop test builds, release candidates,
+  internal pp-node builds, the relay's qa deploys.
+- [ ] Release workflows take release tags only from `release/*` branches, build once, and promote the artifact.
+- [ ] GitHub environments: main → qa; `release/*` → candidates; only `v*` tags → production, behind an approval.
+- [ ] The backport bot (a label opens the backport PR, the cherry-pick trailer kept).
+- [ ] The check levels in CI ([DESIGN § Checks by level](DESIGN.md#checks-by-level)).
+- [ ] The PR template and `docs/ops/RELEASE.md` say what a release branch takes, that fixes land on main first, and
+  how a backport is asked for.
 
 ## P3 — Release 1 built
 
@@ -40,7 +43,7 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 - [ ] `min_client_version` and the node floor raised to release 1.
 - [ ] The version table promoted to `docs/contracts/`; COMPATIBILITY.md's § No bridges replaced by the rule, its
   "Clean cutovers" table closed with the release-1 row; RC001–RC004 and RC006 marked superseded by those docs,
-  RC005 by `docs/ops/RELEASE.md`.
+  RC005 and RC007 by `docs/ops/RELEASE.md`.
 
 ## P5 — Release mode in force
 
