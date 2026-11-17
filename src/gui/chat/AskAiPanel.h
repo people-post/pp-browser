@@ -72,8 +72,6 @@ struct AskAiView {
   bool has_picture = false;
   bool picture_preparing = false;
   ui::String picture_src;
-  /** "Select all" was chosen: every bubble shows tinted, and the next "Copy" copies the whole conversation. */
-  bool all_selected = false;
 };
 
 /** What the panel needs from the chat screen (ChatController). UI thread. */
@@ -182,11 +180,9 @@ public:
   // --- copying -----------------------------------------------------------------------------------------
   /** What a bubble shows, as plain text: no markup, one line per block. `row` is the bubble's row element. */
   static std::string PlainTextOf(ui::Element* row);
-  /** Every row under `scroll`, in order, one blank line between messages. "" when there is none. */
-  static std::string ConversationText(ui::Element* scroll);
   /**
-   * The menu of a long press / right click on a bubble: "Copy" (the bubble's text, the text selection if there is one,
-   * or the whole conversation after "Select all") and "Select all". nullopt for a press outside the bubbles.
+   * The menu of a long press / right click on a bubble: just "Copy" (the text selection if there is one, else the
+   * bubble's text). nullopt for a press outside the bubbles.
    */
   std::optional<std::vector<ContextMenuAction>> TextMenuFor(const ContextMenuRequest& request);
   /** The panel is open on `thread_id` (an answer there is read). */

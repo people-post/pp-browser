@@ -161,26 +161,6 @@ std::string AskAiPanel::PlainTextOf(ui::Element* row) {
   return out.substr(start);
 }
 
-std::string AskAiPanel::ConversationText(ui::Element* scroll) {
-  std::string all;
-  if (!scroll) {
-    return all;
-  }
-  ui::ElementList rows;
-  scroll->GetElementsByClassName(rows, "ask-ai-row");
-  for (ui::Element* row : rows) {
-    const std::string text = PlainTextOf(row);
-    if (text.empty()) {
-      continue;
-    }
-    if (!all.empty()) {
-      all += "\n\n";
-    }
-    all += text;
-  }
-  return all;
-}
-
 std::optional<std::vector<ContextMenuAction>> AskAiPanel::TextMenuFor(const ContextMenuRequest& request) {
   if (!IsOpen() || !request.target) {
     return std::nullopt;
@@ -200,37 +180,20 @@ std::optional<std::vector<ContextMenuAction>> AskAiPanel::TextMenuFor(const Cont
     return std::nullopt;
   }
   std::string text;
-  if (view_.all_selected) {
-    text = ConversationText(scroll);
-  } else {
-    if (request.context) {
-      if (ui::SelectionController* selection = request.context->GetSelectionController()) {
-        text = selection->GetSelectedText().c_str();
-      }
+  if (request.context) {
+    if (ui::SelectionController* selection = request.context->GetSelectionController()) {
+      text = selection->GetSelectedText().c_str();
     }
-    if (text.empty()) {
-      text = PlainTextOf(row);
-    }
+  }
+  if (text.empty()) {
+    text = PlainTextOf(row);
   }
   std::vector<ContextMenuAction> actions;
   actions.push_back({"copy", Tr("common.copy"), [text]() { return !text.empty(); },
-                     [this, text]() {
+                     [text]() {
                        if (ui::SystemInterface* system = ui::GetSystemInterface()) {
                          system->SetClipboardText(text);
                        }
-                       view_.all_selected = false;
-                       Dirty("all_selected");
-                     }});
-  actions.push_back({"select_all", Tr("common.select_all"), nullptr, [this, context = request.context]() {
-                       // The engine's own Select all spans every text on screen (the page behind the sheet too): the panel
-                       // marks its own conversation instead, and Copy takes exactly that.
-                       if (context) {
-                         if (ui::SelectionController* selection = context->GetSelectionController()) {
-                           selection->ClearSelection();
-                         }
-                       }
-                       view_.all_selected = true;
-                       Dirty("all_selected");
                      }});
   return actions;
 }
@@ -256,13 +219,6 @@ bool AskAiPanel::Register(ui::Context* context) {
     ctor.Bind("has_picture", &view_.has_picture);
     ctor.Bind("picture_preparing", &view_.picture_preparing);
     ctor.Bind("picture_src", &view_.picture_src);
-    ctor.Bind("all_selected", &view_.all_selected);
-    ctor.BindEventCallback("ask_ai_clear_select", DataEvent([this] {
-                             if (view_.all_selected && !ContextMenuHost::Instance().IsOpen()) {
-                               view_.all_selected = false;
-                               Dirty("all_selected");
-                             }
-                           }));
     ctor.BindEventCallback("ask_ai_attach",
                            DataEventAt([this](ui::Event& ev) { ShowAttachMenu(ev.GetCurrentElement()); }));
     ctor.BindEventCallback("ask_ai_emoji", DataEvent([this] {
@@ -879,7 +835,6 @@ void AskAiPanel::TickFake() {
 // --- what shows -------------------------------------------------------------------------------------
 
 void AskAiPanel::Refresh() {
-  view_.all_selected = false;
   base_rows_.clear();
   if (view_.once) {
     int n = 0;

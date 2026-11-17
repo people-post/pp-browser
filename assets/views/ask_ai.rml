@@ -10,8 +10,7 @@
     </button>
   </div>
   <p class="ask-ai-privacy">{{i18n:ask_ai.privacy}}</p>
-  <div class="ask-ai-scroll" id="ask-ai-scroll" data-class-ask-ai-all-selected="all_selected"
-       data-event-click="ask_ai_clear_select()">
+  <div class="ask-ai-scroll" id="ask-ai-scroll">
     <div class="ask-ai-intro" data-if="show_intro">
       <p class="ask-ai-intro-body"><span class="ask-ai-intro-lead">{{i18n:ask_ai.intro.lead}}</span><span>{{i18n:ask_ai.intro.body}}</span></p>
       <!-- Its own paragraph; the "?" is the settings pages' help button (same class and icon) and asks PP Support. -->

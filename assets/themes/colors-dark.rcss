@@ -51,12 +51,6 @@ selection {
   background-color: #0a84ff2e;
 }
 
-/* The ask-AI panel's "Select all": every row tinted, the next Copy takes the whole conversation. */
-.ask-ai-all-selected .ask-ai-row {
-  background-color: #0a84ff2e;
-  border-radius: 12dp;
-}
-
 .shell-dialog-prompt {
   background-color: #2c2c2e;
   border-color: #54545899;

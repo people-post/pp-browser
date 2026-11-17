@@ -1,5 +1,4 @@
-// The ask-AI panel's copy: one bubble's plain text, and the whole conversation (every row, in order, one blank line
-// between messages, no markup, no role labels).
+// The ask-AI panel's copy: one bubble's plain text (no markup, no role labels).
 #include "gui/chat/AskAiPanel.h"
 
 #include <ui/core/Core.h>
@@ -65,20 +64,6 @@ TEST_F(AskAiCopyTest, OneBubbleCopiesItsOwnPlainText) {
   ASSERT_EQ(rows.size(), 2u);
   EXPECT_EQ(AskAiPanel::PlainTextOf(rows[0]), "How do I add a friend & a group?");
   EXPECT_EQ(AskAiPanel::PlainTextOf(rows[1]), "Open Contacts, then tap Add.\nFriend\nGroup");
-}
-
-TEST_F(AskAiCopyTest, TheWholeConversationIsEveryRowInOrderWithABlankLineBetween) {
-  const std::string all = AskAiPanel::ConversationText(document_->GetElementById("ask-ai-scroll"));
-  EXPECT_EQ(all,
-            "How do I add a friend & a group?\n\n"
-            "Open Contacts, then tap Add.\nFriend\nGroup");
-  EXPECT_EQ(all.find("Not a message"), std::string::npos);
-  EXPECT_EQ(all.find("Thinking"), std::string::npos);
-  EXPECT_EQ(all.find('<'), std::string::npos);
-}
-
-TEST_F(AskAiCopyTest, NoRowsCopiesNothing) {
-  EXPECT_EQ(AskAiPanel::ConversationText(nullptr), "");
 }
 
 } // namespace
