@@ -5,10 +5,12 @@
 #include "common/Metrics.h"
 #include "common/PbrCompat.h"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -56,9 +58,9 @@ TEST_F(LogFileTest, DefaultPathUnderDataDirLogs) {
 // PB-062: the log and metrics files are owner-only from the moment they exist (logs carry ids and
 // addresses); Windows uses ACLs and is not checked here.
 TEST_F(LogFileTest, InstalledFilesAreOwnerOnly) {
-  const std::string installed = pbr::LogFile::Install(path_, 2);
+  const std::string installed = pbr::LogFile::Install(path_);
   ASSERT_EQ(installed, path_);
-  const std::string metrics = pbr::LogFile::InstallMetrics(path_, 2);
+  const std::string metrics = pbr::LogFile::InstallMetrics(path_);
   ASSERT_FALSE(metrics.empty());
   const auto owner_only = fs::perms::owner_read | fs::perms::owner_write;
   EXPECT_EQ(fs::status(path_).permissions(), owner_only);
@@ -66,23 +68,99 @@ TEST_F(LogFileTest, InstalledFilesAreOwnerOnly) {
 }
 #endif
 
-TEST_F(LogFileTest, RotateShiftsPreviousLaunchesAndDropsOldest) {
+TEST_F(LogFileTest, RotateShiftsEveryPreviousLaunch) {
   WriteText(path_, "current");
   WriteText(pbr::LogFile::RotatedPath(path_, 1), "prev1");
   WriteText(pbr::LogFile::RotatedPath(path_, 2), "prev2");
 
-  pbr::LogFile::Rotate(path_, 2);
+  pbr::LogFile::Rotate(path_);
 
   EXPECT_FALSE(fs::exists(path_));
   EXPECT_EQ(ReadAll(pbr::LogFile::RotatedPath(path_, 1)), "current");
   EXPECT_EQ(ReadAll(pbr::LogFile::RotatedPath(path_, 2)), "prev1");
+  EXPECT_EQ(ReadAll(pbr::LogFile::RotatedPath(path_, 3)), "prev2");
+}
+
+TEST_F(LogFileTest, RotateDeletesFilesOlderThanTheLimit) {
+  WriteText(path_, "current");
+  WriteText(pbr::LogFile::RotatedPath(path_, 1), "fresh");
+  WriteText(pbr::LogFile::RotatedPath(path_, 2), "stale");
+  fs::last_write_time(pbr::LogFile::RotatedPath(path_, 2),
+                      fs::file_time_type::clock::now() - std::chrono::hours(24 * 8));
+
+  pbr::LogFile::Rotate(path_);
+
+  EXPECT_EQ(ReadAll(pbr::LogFile::RotatedPath(path_, 1)), "current");
+  EXPECT_EQ(ReadAll(pbr::LogFile::RotatedPath(path_, 2)), "fresh");
   EXPECT_FALSE(fs::exists(pbr::LogFile::RotatedPath(path_, 3)));
+}
+
+TEST_F(LogFileTest, RotateDeletesOldestWhenOverTheSizeCap) {
+  pbr::LogRetention retention;
+  retention.max_bytes = 10;
+  const auto now = fs::file_time_type::clock::now();
+  WriteText(pbr::LogFile::RotatedPath(path_, 1), "aaaaaa");
+  WriteText(pbr::LogFile::RotatedPath(path_, 2), "bbbbbb");
+  fs::last_write_time(pbr::LogFile::RotatedPath(path_, 1), now - std::chrono::hours(1));
+  fs::last_write_time(pbr::LogFile::RotatedPath(path_, 2), now - std::chrono::hours(2));
+
+  pbr::LogFile::Rotate(path_, retention);
+
+  EXPECT_FALSE(fs::exists(pbr::LogFile::RotatedPath(path_, 1)));
+  EXPECT_EQ(ReadAll(pbr::LogFile::RotatedPath(path_, 2)), "aaaaaa");
+  EXPECT_FALSE(fs::exists(pbr::LogFile::RotatedPath(path_, 3)));
+}
+
+TEST(LogRetentionTest, ExpiredFilesUnderLimitsDeletesNothing) {
+  const auto now = fs::file_time_type::clock::now();
+  EXPECT_TRUE(pbr::LogFile::ExpiredFiles({}, now, {}).empty());
+  const std::vector<pbr::LogFileInfo> files = {{"a", now - std::chrono::hours(1), 100, false},
+                                               {"b", now - std::chrono::hours(24 * 6), 100, false}};
+  EXPECT_TRUE(pbr::LogFile::ExpiredFiles(files, now, {}).empty());
+}
+
+TEST(LogRetentionTest, ExpiredFilesDeletesOlderThanMaxAge) {
+  const auto now = fs::file_time_type::clock::now();
+  const std::vector<pbr::LogFileInfo> files = {{"new", now - std::chrono::hours(1), 1, false},
+                                               {"old", now - std::chrono::hours(24 * 7 + 1), 1, false}};
+  EXPECT_EQ(pbr::LogFile::ExpiredFiles(files, now, {}), std::vector<std::string>({"old"}));
+}
+
+TEST(LogRetentionTest, ExpiredFilesDeletesOldestUntilUnderTheSizeCap) {
+  const auto now = fs::file_time_type::clock::now();
+  pbr::LogRetention retention;
+  retention.max_bytes = 250;
+  const std::vector<pbr::LogFileInfo> files = {{"newest", now - std::chrono::hours(1), 100, false},
+                                               {"oldest", now - std::chrono::hours(3), 100, false},
+                                               {"middle", now - std::chrono::hours(2), 100, false}};
+  EXPECT_EQ(pbr::LogFile::ExpiredFiles(files, now, retention), std::vector<std::string>({"oldest"}));
+  retention.max_bytes = 150;
+  EXPECT_EQ(pbr::LogFile::ExpiredFiles(files, now, retention), std::vector<std::string>({"oldest", "middle"}));
+}
+
+TEST(LogRetentionTest, ExpiredFilesNeverDeletesTheCurrentFile) {
+  const auto now = fs::file_time_type::clock::now();
+  pbr::LogRetention retention;
+  retention.max_bytes = 50;
+  // The current file alone is over the cap and old: it stays; its size still pushes the others out.
+  const std::vector<pbr::LogFileInfo> files = {{"current", now - std::chrono::hours(24 * 30), 100, true},
+                                               {"prev", now - std::chrono::hours(1), 10, false}};
+  EXPECT_EQ(pbr::LogFile::ExpiredFiles(files, now, retention), std::vector<std::string>({"prev"}));
+}
+
+TEST(LogRetentionTest, ExpiredFilesEqualTimesKeepInputOrder) {
+  const auto now = fs::file_time_type::clock::now();
+  pbr::LogRetention retention;
+  retention.max_bytes = 10;
+  const auto same = now - std::chrono::hours(1);
+  const std::vector<pbr::LogFileInfo> files = {{"first", same, 10, false}, {"second", same, 10, false}};
+  EXPECT_EQ(pbr::LogFile::ExpiredFiles(files, now, retention), std::vector<std::string>({"first"}));
 }
 
 TEST_F(LogFileTest, RotateSkipsGapsAndMissingCurrent) {
   WriteText(pbr::LogFile::RotatedPath(path_, 2), "prev2");
 
-  pbr::LogFile::Rotate(path_, 5);
+  pbr::LogFile::Rotate(path_);
 
   EXPECT_FALSE(fs::exists(path_));
   EXPECT_FALSE(fs::exists(pbr::LogFile::RotatedPath(path_, 1)));
@@ -126,15 +204,6 @@ TEST_F(LogFileTest, DiagLinesReachTheirOwnFileOnly) {
   const std::string text = ReadAll(diag);
   EXPECT_NE(text.find("[Diag] event=test.diag n=8"), std::string::npos) << text;
   EXPECT_EQ(text.find("Alice"), std::string::npos) << text;
-}
-
-TEST_F(LogFileTest, RotateWithZeroKeepRemovesCurrent) {
-  WriteText(path_, "current");
-
-  pbr::LogFile::Rotate(path_, 0);
-
-  EXPECT_FALSE(fs::exists(path_));
-  EXPECT_FALSE(fs::exists(pbr::LogFile::RotatedPath(path_, 1)));
 }
 
 } // namespace
