@@ -133,17 +133,6 @@ logging::Logger& EngineLog() {
   return log;
 }
 
-/**
- * TEMPORARY (lifecycle.probe): monotonic ms of a camera request / result. The lifecycle events (PlatformLifecycleEvents)
- * carry the app's foreground / visible state with the same clock; pp_lib_media does not link the runtime library.
- */
-std::string ProbeCameraState() {
-  const auto mono =
-      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
-          .count();
-  return "mono_ms=" + std::to_string(mono);
-}
-
 int64_t MsSince(std::chrono::steady_clock::time_point since) {
   return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - since).count();
 }
@@ -2006,8 +1995,6 @@ struct MediaEngine::Impl {
         camera = OpenCameraLease();
         if (camera) {
           camera_lease_ms = ms_since(*camera_requested);
-          EngineLog().info << "lifecycle.probe camera done=open lease_ms=" << camera_lease_ms << " "
-                           << ProbeCameraState();
           geometry = EncodeGeometry(camera->Geometry());
           camera_front_facing.store(geometry.front_facing, std::memory_order_relaxed);
           camera_open.store(true, std::memory_order_release);
@@ -2022,7 +2009,6 @@ struct MediaEngine::Impl {
         video_stage.Set(MediaThreadStage::CloseCamera);
         camera.reset();
         camera_open.store(false, std::memory_order_release);
-        EngineLog().info << "lifecycle.probe camera done=close " << ProbeCameraState();
         if (video_codec) {
           video_stage.Set(MediaThreadStage::ResetEncoder);
           video_codec->ResetEncoder();
@@ -2823,7 +2809,6 @@ Roe<void> MediaEngine::SetCameraEnabled(bool enabled, const int display_rotation
     return Error("Media session not active");
   }
   if (!enabled) {
-    EngineLog().info << "lifecycle.probe camera request=close " << ProbeCameraState();
     impl->RequestCameraOffLocked();
     return {};
   }
@@ -2836,7 +2821,6 @@ Roe<void> MediaEngine::SetCameraEnabled(bool enabled, const int display_rotation
   // Async: the video thread takes the camera lease (opened on the media device thread). A failed
   // open flips IsCameraEnabled back to false and is reported through TakeCameraFailure.
   impl->camera_display_rotation.store(display_rotation, std::memory_order_relaxed);
-  EngineLog().info << "lifecycle.probe camera request=open " << ProbeCameraState();
   impl->camera_enabled.store(true, std::memory_order_relaxed);
   if (!impl->video_thread.joinable()) {
     impl->StartVideoLoop();

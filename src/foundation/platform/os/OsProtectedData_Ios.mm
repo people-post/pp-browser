@@ -1,10 +1,7 @@
 #include "foundation/platform/os/OsProtectedData.h"
-#include "foundation/platform/os/OsAppState.h"
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
-
-#include "foundation/runtime/AppLifecycle.h"
 
 #include <dispatch/dispatch.h>
 #include <mach/mach_time.h>
@@ -13,7 +10,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <map>
 #include <mutex>
 #include <utility>
@@ -59,13 +55,6 @@ void InstallObservers() {
                          queue:nil
                     usingBlock:^(NSNotification* /*note*/) {
                       g_available.store(true);
-                      // TEMPORARY (lifecycle.probe)
-                      AppLifecycle::logger().info
-                          << "lifecycle.probe event=PROTECTED_DATA_AVAILABLE mono_ms="
-                          << static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                        std::chrono::steady_clock::now().time_since_epoch())
-                                                        .count())
-                          << " ui=" << AppStateName();
                       RunHandlers();
                     }];
     [center addObserverForName:UIApplicationProtectedDataWillBecomeUnavailable
@@ -73,13 +62,6 @@ void InstallObservers() {
                          queue:nil
                     usingBlock:^(NSNotification* /*note*/) {
                       g_available.store(false);
-                      // TEMPORARY (lifecycle.probe)
-                      AppLifecycle::logger().info
-                          << "lifecycle.probe event=PROTECTED_DATA_WILL_BE_UNAVAILABLE mono_ms="
-                          << static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                        std::chrono::steady_clock::now().time_since_epoch())
-                                                        .count())
-                          << " ui=" << AppStateName();
                     }];
   });
 }

@@ -388,7 +388,7 @@ private:
    * A group call's tiles of people who stopped sending (DEV/PLAN-call-silent-tile.md): steps CallSilentTiles from the
    * engine's receive counters and writes `silent_dimmed` / `video_blocked` on `s`'s members. `roster_read` is false when
    * the joined list could not be read this refresh (nothing changes then). Also writes, at most once a second, the
-   * line for a flip of the signals that say our own media path is online (TEMPORARY, to be measured on devices).
+   * line for a flip of the signals that say our own media path is online (DEBUG).
    */
   void StepSilentTiles(CallScreen& s, CallUiBackend& backend, bool roster_read);
   void ApplySilentTiles(CallScreen& s);

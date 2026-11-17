@@ -1,7 +1,5 @@
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/PlatformLifecycleEvents.h"
-#include "foundation/platform/LifecycleProbe.h"
-#include "foundation/platform/os/OsAppState.h"
 #include "foundation/runtime/AppLifecycle.h"
 
 #include <SDL3/SDL.h>
@@ -22,30 +20,20 @@ namespace {
  * thread as it pumps (SDL_SendAppEvent never queues them), so SdlAppEvents::PreProcess never sees them.
  * Desktops send none of these; their minimized / restored window events take the pump path.
  */
-void ProbeLifecycle(const char* tag) {
-  AppLifecycle::logger().info << "lifecycle.probe event=" << tag << " mono_ms=" << lifecycle_probe::MonoMs()
-                              << " wall_ms=" << lifecycle_probe::WallMs() << " ui=" << os::AppStateName()
-                              << " fg=" << AppLifecycle::IsForeground() << " vis=" << AppLifecycle::IsVisible();
-}
-
 bool SDLCALL AppLifecycleWatch(void* /*userdata*/, SDL_Event* event) {
   switch (event->type) {
     case SDL_EVENT_WILL_ENTER_BACKGROUND:
-      ProbeLifecycle("WILL_ENTER_BACKGROUND");
       AppLifecycle::OnWillEnterBackground();
       break;
     case SDL_EVENT_DID_ENTER_BACKGROUND:
       AppLifecycle::OnDidEnterBackground();
-      ProbeLifecycle("DID_ENTER_BACKGROUND");
       PlatformLifecycleEvents::OnDidEnterBackground(); // after AppLifecycle: IsVisible() is already false
       break;
     case SDL_EVENT_WILL_ENTER_FOREGROUND:
-      ProbeLifecycle("WILL_ENTER_FOREGROUND");
       PlatformLifecycleEvents::OnWillEnterForeground();
       break;
     case SDL_EVENT_DID_ENTER_FOREGROUND:
       AppLifecycle::OnDidEnterForeground();
-      ProbeLifecycle("DID_ENTER_FOREGROUND");
       PlatformLifecycleEvents::OnDidEnterForeground();
       break;
     default:

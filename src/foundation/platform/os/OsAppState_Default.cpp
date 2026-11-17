@@ -6,8 +6,4 @@ bool AppShownNow() {
   return true;
 }
 
-const char* AppStateName() {
-  return "n/a";
-}
-
 } // namespace pbr::os
