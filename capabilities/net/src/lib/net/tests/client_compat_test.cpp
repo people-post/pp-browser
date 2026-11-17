@@ -1,5 +1,7 @@
 #include "lib/net/ClientCompat.h"
 
+#include "common/Utilities.h"
+
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -271,8 +273,9 @@ public:
 class ClientCompatResolveTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    dir_ = std::filesystem::temp_directory_path() / "pp-browser-client-compat-resolve-test";
-    std::filesystem::remove_all(dir_);
+    // A directory of its own per test: ctest runs this fixture's tests at once, and on Windows one test's remove_all
+    // fails on a file another still holds open (TEST_STRATEGY § Temp data dirs).
+    dir_ = std::filesystem::temp_directory_path() / ("pp_client_compat_resolve_" + util::GenerateUuid());
     ClientCompatCacheEntry cached;
     cached.fetched_at_unix = kCachedAt;
     cached.document.schema_version = 1;
