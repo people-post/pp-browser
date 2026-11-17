@@ -60,15 +60,17 @@ TEST(SecurityLayoutTest, UntilRestartIsOfferedLabelledAndTickedWhenStored) {
   }
 }
 
-TEST(SecurityLayoutTest, TheRecoveryRowIsOneButtonWithTheOldEventAndAChevron) {
+TEST(SecurityLayoutTest, TheRecoveryRowIsOneRowWithTheOldEventAChevronAndItsQuestionMark) {
   const std::string rml = ReadAsset("views/settings_section_security.rml");
   const size_t event = rml.find("data-event-click=\"show_recovery_phrase()\"");
   ASSERT_NE(event, std::string::npos);
-  const size_t end = rml.find("</button>", event);
+  const size_t end = rml.find("group-chevron", event);
   ASSERT_NE(end, std::string::npos);
   const std::string row = rml.substr(event, end - event);
   EXPECT_NE(row.find("{{i18n:settings.security.recovery.show}}"), std::string::npos);
-  EXPECT_NE(row.find("group-chevron"), std::string::npos);
+  // The row is a div (a button inside a button is not allowed); its "?" follows the label inside the row.
+  EXPECT_EQ(rml.rfind("<div class=\"group-row\"", event) + 23, event);
+  EXPECT_NE(row.find("ask_setting_help('settings.security.recovery')"), std::string::npos);
 }
 
 // The row holding `token` (its row div or button, up to the end of that element's first closing tag of its kind).

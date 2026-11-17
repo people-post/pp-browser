@@ -209,6 +209,7 @@ data-event-click="open_blocked_people()"	1	-	privacy	-	security
 {{i18n:settings.security.group_invites}}	1	-	privacy	-	security	
 data-class-settings-switch--on="security_biometric_on"	1	-	security	security_biometric_shown	security	
 data-event-click="ask_setting_help('settings.security.recovery')"	1	-	security	security_has_recovery_phrase	security	
+data-event-click="ask_setting_help('settings.security.recovery')"	1	-	security	security_has_recovery_phrase;;recovery_phrase == ''	security	
 data-event-click="hide_recovery_phrase()"	2	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
 data-event-click="on_choose_unlock_grace()"	1	security	security	security_grace_shown	security	
 data-event-click="open_security_page('pin')"	1	-	security	show_change_pin	security	

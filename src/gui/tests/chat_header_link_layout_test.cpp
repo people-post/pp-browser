@@ -164,92 +164,78 @@ TEST_F(ChatHeaderLinkLayoutTest, AGroupInACallShowsNoLineOnThePhone) {
   EXPECT_EQ(group.bottom - group.top, 0.f) << "a group's phone header is unchanged";
 }
 
-TEST_F(ChatHeaderLinkLayoutTest, AFeatureNameAndItsQuestionMarkShareACentreLineAFewDpApart) {
+TEST_F(ChatHeaderLinkLayoutTest, TheRecoveryRowsQuestionMarkSitsRightAfterItsLabelOnTheCentreLine) {
   Load(
       "<div class=\"settings-section settings-section--grouped settings-mock stack\">"
-      "<p class=\"text group-head\">Above</p>"
-      "<div class=\"settings-q-head settings-q-head--name row\"><p class=\"text group-head\">Recovery "
-      "phrase</p><button class=\"settings-q-btn\" type=\"button\"><svg class=\"settings-q-icon\" "
-      "src=\"../icons/v2/help-circle.svg\" width=\"20\" height=\"20\"></svg></button></div></div>",
+      "<div class=\"group-card\"><div class=\"group-row\"><span class=\"group-row-body\">"
+      "<span class=\"group-row-label settings-q-label\"><span class=\"group-row-text\">View recovery phrase</span>"
+      "<button class=\"settings-q-btn\" type=\"button\"><svg class=\"settings-q-icon\" "
+      "src=\"../icons/v2/help-circle.svg\" width=\"20\" height=\"20\"></svg></button></span>"
+      "</span></div></div></div>",
       "");
-  ui::Element* name = First("settings-q-head--name")->GetFirstChild();
+  ui::Element* label = First("group-row-text");
   ui::Element* button = First("settings-q-btn");
-  ui::Element* icon = First("settings-q-icon");
-  ASSERT_NE(name, nullptr);
+  ASSERT_NE(label, nullptr);
   ASSERT_NE(button, nullptr);
-  ASSERT_NE(icon, nullptr);
-  const Edges n = BorderEdges(name);
+  const Edges n = BorderEdges(label);
   const Edges b = BorderEdges(button);
   // The 20dp icon is centred in the 44dp button (the file may not load here, so measure the button's centre).
   const float icon_left = b.left + (b.right - b.left - 20.f) / 2;
-  EXPECT_NEAR(n.MidY(), b.MidY(), 1.f) << "the heading and the icon share a centre line";
-  EXPECT_GE(icon_left - n.right, 4.f);
-  EXPECT_LE(icon_left - n.right, 8.f) << "the icon sits a few dp after the heading";
+  EXPECT_NEAR(n.MidY(), b.MidY(), 2.f) << "the label and the icon share a centre line";
+  EXPECT_GE(icon_left - n.right, 0.f);
+  EXPECT_LE(icon_left - n.right, 8.f) << "the icon sits a few dp after the label";
   EXPECT_GE(b.bottom - b.top, 43.f) << "the hit area stays 44dp";
   EXPECT_GE(b.right - b.left, 43.f);
 }
 
-TEST_F(ChatHeaderLinkLayoutTest, EverySettingsGroupHeadingIsTheLargerBoldStyle) {
+TEST_F(ChatHeaderLinkLayoutTest, NoSettingsGroupHeadingShowsOnThePhoneAndTheCardsKeepTheirAir) {
   const std::string card = "<div class=\"group-card\"><div class=\"group-row\">Row</div></div>";
   Load(
-      "<div class=\"settings-section settings-section--grouped settings-mock stack\">"
-      "<p class=\"text group-head\">Mock heading</p>" +
+      "<div class=\"settings-section settings-section--grouped settings-mock stack\" id=\"page1\">"
+      "<p class=\"text group-head\">Plain</p>" +
+          card + "<p class=\"text group-head settings-phone-only\">Phone only</p>" + card +
+          "<div class=\"stack\"><p class=\"text group-head\">Wrapped</p><div class=\"stack\">" + card +
+          "</div></div></div>"
+          "<div class=\"settings-section settings-section--grouped stack\" id=\"page2\">"
+          "<p class=\"text group-head\">Above</p>" +
+          card +
+          "<div class=\"settings-q-head settings-desktop-only row\"><p class=\"text group-head\">Name</p></div>" +
           card +
           "</div>"
           "<div class=\"settings-section settings-section--grouped stack\">"
-          "<p class=\"text group-head settings-phone-only\">Plain grouped heading</p>" +
-          card + "<span class=\"settings-label group-head\">Label heading</span>" + card + "</div>",
+          "<span class=\"settings-label group-head group-head--field\" id=\"field\">Field label</span>"
+          "<p class=\"text muted group-foot\">Foot</p></div>",
       "");
   ui::ElementList heads;
   document->GetElementsByClassName(heads, "group-head");
-  ASSERT_EQ(heads.size(), 3u);
+  ASSERT_EQ(heads.size(), 6u);
   for (ui::Element* head : heads) {
-    EXPECT_NEAR(head->GetComputedValues().font_size(), 17.f, 0.5f);
-    EXPECT_EQ(head->GetComputedValues().font_weight(), ui::Style::FontWeight::Bold);
     const Edges h = BorderEdges(head);
-    ui::Element* next = head->GetNextSibling();
-    ASSERT_NE(next, nullptr);
-    EXPECT_GE(BorderEdges(next).top, h.bottom) << "the heading does not overlap the card below";
-    EXPECT_LE(BorderEdges(next).top - h.bottom, 12.f);
+    if (head->GetId() == "field") {
+      EXPECT_GT(h.bottom - h.top, 0.f) << "an input field's label stays";
+    } else {
+      EXPECT_EQ(h.bottom - h.top, 0.f) << "no group heading is visible on the phone";
+    }
   }
-}
-
-TEST_F(ChatHeaderLinkLayoutTest, HeadingsWithAQuestionMarkOrAWrappedCardSitAsCloseToTheCardAsPlainOnes) {
-  const std::string card = "<div class=\"group-card\"><div class=\"group-row\">Row</div></div>";
-  const std::string button =
-      "<button class=\"settings-q-btn\" type=\"button\"><svg class=\"settings-q-icon\" "
-      "src=\"../icons/v2/help-circle.svg\" width=\"20\" height=\"20\"></svg></button>";
-  Load(
-      "<div class=\"settings-section settings-section--grouped stack\">"
-      "<p class=\"text group-head\" id=\"plain\">Plain</p>" +
-          card + "<p class=\"text group-head\" id=\"ai\">AI</p><div class=\"stack\">" + card +
-          "</div>"
-          "<div class=\"settings-q-head settings-q-head--name row\"><p class=\"text group-head\" "
-          "id=\"phrase\">Phrase</p>" +
-          button +
-          "</div><div class=\"stack settings-actions\"><div class=\"stack\"><div class=\"group-card\">"
-          "<div class=\"group-row\">Row</div></div></div></div></div>",
-      "");
-  auto gap = [this](const char* id) {
-    ui::Element* head = document->GetElementById(id);
-    EXPECT_NE(head, nullptr);
-    ui::Element* start = head->GetParentNode()->IsClassSet("settings-q-head") ? head->GetParentNode() : head;
-    ui::Element* next = start->GetNextSibling();
-    while (next != nullptr && BorderEdges(next).bottom == BorderEdges(next).top) {
-      next = next->GetNextSibling();
-    }
-    ui::Element* card = next;
-    if (!next->IsClassSet("group-card")) {
-      ui::ElementList found;
-      next->GetElementsByClassName(found, "group-card");
-      card = found.empty() ? nullptr : found[0];
-    }
-    EXPECT_NE(card, nullptr);
-    return BorderEdges(card).top - BorderEdges(head).bottom;
+  auto cards_of = [this](const char* id) {
+    ui::ElementList found;
+    document->GetElementById(id)->GetElementsByClassName(found, "group-card");
+    std::vector<ui::Element*> sorted(found.begin(), found.end());
+    std::sort(sorted.begin(), sorted.end(),
+              [](ui::Element* a, ui::Element* b) { return BorderEdges(a).top < BorderEdges(b).top; });
+    return sorted;
   };
-  const float plain = gap("plain");
-  EXPECT_NEAR(gap("ai"), plain, 2.f) << "AI heading vs plain: " << gap("ai") << " vs " << plain;
-  EXPECT_NEAR(gap("phrase"), plain, 2.f) << "recovery heading vs plain: " << gap("phrase") << " vs " << plain;
+  for (const char* id : {"page1", "page2"}) {
+    const std::vector<ui::Element*> cards = cards_of(id);
+    ASSERT_GE(cards.size(), 2u) << id;
+    EXPECT_GE(BorderEdges(cards[0]).top - BorderEdges(document->GetElementById(id)).top, 16.f)
+        << id << ": the first card is not glued to the top";
+    for (size_t i = 1; i < cards.size(); ++i) {
+      const float gap = BorderEdges(cards[i]).top - BorderEdges(cards[i - 1]).bottom;
+      EXPECT_GE(gap, 16.f) << id << " cards " << i - 1 << " and " << i;
+      EXPECT_LE(gap, 24.f) << id << " cards " << i - 1 << " and " << i;
+    }
+  }
 }
 
 } // namespace

@@ -445,7 +445,8 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       {"security", "on_choose_unlock_grace()", "security_grace_shown", 1, 1},
       {"security", "show_recovery_phrase()", "security_has_recovery_phrase;;recovery_phrase == ''", 1, 1},
       {"security", "hide_recovery_phrase()", "security_has_recovery_phrase;;recovery_phrase != ''", 1, 1},
-      {"security", "ask_setting_help('settings.security.recovery')", "security_has_recovery_phrase", 1, 1},
+      {"security", "ask_setting_help('settings.security.recovery')",
+       "security_has_recovery_phrase@security_has_recovery_phrase;;recovery_phrase == ''", 1, 1},
       // Devices: the transfer block is the desktop's inline copy here; phones open it as its own page.
       // (2026-11-14: the phone's top button, on the main device only; a linked phone shows nothing to tap.)
       // (2026-11-15: and not while no list of ours is here yet — being got back, or not found.)

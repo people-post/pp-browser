@@ -52,7 +52,7 @@
 {{include:settings_security_pin}}
         </div>
         <p class="text group-head" data-if="!security_has_recovery_phrase">{{i18n:settings.security.recovery}}</p>
-        <div class="settings-q-head settings-q-head--name row" data-if="security_has_recovery_phrase"><p class="text group-head">{{i18n:settings.security.recovery}}</p><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.recovery')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
+        <div class="settings-q-head settings-desktop-only row" data-if="security_has_recovery_phrase"><p class="text group-head">{{i18n:settings.security.recovery}}</p><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.recovery')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
         <div class="stack settings-actions" data-if="!security_has_recovery_phrase && security_can_export_link">
           <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.none}}</p>
         </div>
@@ -60,12 +60,12 @@
           <div class="stack" data-if="recovery_phrase == ''">
             <!-- The PIN on the PIN gate first (its number pad for a digit PIN, B2). -->
             <div class="group-card settings-phone-only">
-              <button class="group-row" type="button" data-event-click="show_recovery_phrase()">
+              <div class="group-row" data-event-click="show_recovery_phrase()">
                 <span class="group-row-body">
-                  <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.recovery.show}}</span></span>
+                  <span class="group-row-label settings-q-label"><span class="group-row-text">{{i18n:settings.security.recovery.show}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.recovery')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
                   <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
                 </span>
-              </button>
+              </div>
             </div>
             <button class="btn settings-desktop-only" type="button" data-event-click="show_recovery_phrase()">
               {{i18n:settings.security.recovery.show}}
