@@ -175,9 +175,9 @@ std::string StoredSystemText(const ThreadMessage& message) {
 std::string RouteSvgRml(const MessageTransport transport) {
   switch (transport) {
     case MessageTransport::Direct:
-      return "<svg class=\"route-icon\" src=\"../icons/v2/route-direct.svg\" width=\"26\" height=\"12\"></svg>";
+      return "<svg class=\"route-icon\" src=\"../icons/v2/route-direct.svg\" width=\"18\" height=\"12\"></svg>";
     case MessageTransport::Relay:
-      return "<svg class=\"route-icon\" src=\"../icons/v2/route-relay.svg\" width=\"26\" height=\"12\"></svg>";
+      return "<svg class=\"route-icon\" src=\"../icons/v2/route-relay.svg\" width=\"18\" height=\"12\"></svg>";
     case MessageTransport::Local:
       break;
   }
