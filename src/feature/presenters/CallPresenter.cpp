@@ -825,9 +825,21 @@ void CallPresenter::MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s)
     auto_camera_pending_ = false;
     // The user's intent, not an engine call: where the camera may open (not in the background, not before the app has
     // settled) is CallLocalHold's rule (B225).
-    if (callbacks_.auto_camera_on && !(callbacks_.camera_wanted && callbacks_.camera_wanted())) {
+    if (callbacks_.auto_camera_on) {
+      if (!(callbacks_.camera_wanted && callbacks_.camera_wanted())) {
+        log().info << "auto camera on call_id=" << active_call_id_;
+        callbacks_.auto_camera_on();
+      }
+    } else if (!backend.Media().IsCameraEnabled()) {
+      // A host without the hold (the headless call lab) has no one to take the wish: open the camera ourselves.
       log().info << "auto camera on call_id=" << active_call_id_;
-      callbacks_.auto_camera_on();
+      backend.SetLocalVideoEnabled(true, WhileAlive([call_id = active_call_id_](Roe<void> cam) {
+                                     if (!cam) {
+                                       logging::getLogger("CallPresenter").warning
+                                           << "auto camera on failed call_id=" << call_id << ": "
+                                           << cam.error().message;
+                                     }
+                                   }));
     }
   } else if (allowed && allowed->has_value() && !**allowed) {
     // Narrowed to voice-only before we got here: drop the intent (the renderer's camera-off sync
