@@ -26,7 +26,10 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
   internal pp-node builds, the relay's dev deploys.
 - [ ] Release workflows take release tags only from `release/*` branches, build once, and promote the artifact.
 - [ ] GitHub environments: main → dev; release candidates → staging; only `v*` tags → production, behind an approval.
-- [ ] The backport bot (a label opens the backport PR, the cherry-pick trailer kept).
+- [ ] The backport bot ([DESIGN § Release lines](DESIGN.md#release-lines-are-first-class), RC014): a label opens a PR
+  to that exact release branch, running its checks and needing approval; trailer and link to the original kept;
+  conflicts reported as a draft PR or comment; an exception label for release-branch-only fixes; branch closing
+  (open backports closed with a note, the branch protected and kept).
 - [ ] App builds ([DESIGN § App builds](DESIGN.md#app-builds-internal-external-store)): release-candidate tags build
   and upload automatically; the promotion workflow (App Store Connect and Play APIs, approval-gated, refuses non-candidates,
   tags `vX.Y.Z`); phased store releases; the app shows its tag and commit in About and diagnostics.

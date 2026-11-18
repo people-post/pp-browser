@@ -63,6 +63,7 @@ first format change would break them anyway).
 **Date:** 2026-11-17
 **Status:** Accepted (Hongwei, 2026-11-17). Amended by [RC007](#rc007--the-branch-model-after-leos-review) (2026-11-17,
 after Leo's review): tags, environments, build-once and check levels added; backports by a bot. In review with Leo.
+Amended again by [RC014](#rc014--backport-and-hotfix-rules-after-leos-second-review).
 **Decision:** Each repo has one `main`; `develop` is retired. Every internal build is tagged from main by the
 workflow that makes it. Each release gets a branch `release/X.Y` cut from main, which takes fixes only, cherry-picked
 from main, and carries the release tags. The relay deploys prod only from release tags. Libraries keep main plus
@@ -100,7 +101,8 @@ the newest release branch takes every fix, older ones security fixes and in-rang
 
 **Date:** 2026-11-17
 **Status:** Accepted (Hongwei, 2026-11-17); answers Leo's review comment on #634. Amends
-[RC005](#rc005--one-main-branch-a-branch-per-release-every-build-tagged).
+[RC005](#rc005--one-main-branch-a-branch-per-release-every-build-tagged). Amended by [RC014](#rc014--backport-and-hotfix-rules-after-leos-second-review)
+(the backport and hotfix rules).
 **Context:** Leo proposed a lightweight Git Flow variant: `develop` as the integration baseline, `main` as the
 production baseline taking only complete releases and hotfixes, optional `release/X.Y` stabilization branches,
 `hotfix/X.Y.Z` branches from the production tag, back-merges from `main` to `develop` instead of cherry-picks,
@@ -274,4 +276,31 @@ and the lab machine is set up so the nightly runs at all.
 - Run the full lab on every PR (hours per change, the queue blocks everyone).
 - Leave scenario choice to the developer by name (works only for whoever knows the lab).
 - Only nightly (a break merged in the morning is found the next day, mixed with everything else merged).
+
+## RC014 — Backport and hotfix rules after Leo's second review
+
+**Date:** 2026-11-18
+**Status:** Accepted (Hongwei, 2026-11-18); answers Leo's second review comment on #634, which agreed with RC007's
+direction (one integration branch, a release branch for every field release in range, immutable tags with
+tag-only production, build once, automated backports). Amends
+[RC007](#rc007--the-branch-model-after-leos-review).
+**Decision:** All of Leo's proposals, written into [DESIGN § Release lines](DESIGN.md#release-lines-are-first-class):
+- `main` is stated as the integration baseline, not production; production is the release tags and live branches.
+- A backport label makes a bot open a PR to that exact release branch, which runs that branch's checks and needs a
+  human approval.
+- Backports keep the source commit trailer and link the original main PR.
+- A cherry-pick that does not apply is reported (a draft PR or a comment on the original), never adapted silently;
+  an adaptation is a separate commit marked "branch-specific backport".
+- A release-branch-only fix carries an exception label and says why main needs no equivalent.
+- The release owner closes a branch when its release leaves the range; open backports are closed with a note; the
+  branch is protected and kept.
+- A hotfix starts from the affected release branch, runs that line's checks, gets a patch tag there, and takes the
+  same build-once promotion.
+**Rationale:** These make RC007 operational: the mechanical cherry-pick leaves developers' normal work while each
+release line keeps its own validation and an audit trail of which fixes reached it; the hotfix rule makes the
+supported range actionable for older app versions, not only the newest.
+**Refinements in accepting:** a bot cannot open a PR from a cherry-pick that fails, so a conflict is a draft PR with
+the conflict described, or a comment on the original PR; and the branch-closing steps (who, open backports, protect
+and keep) are ours, as Leo asked for them to be defined.
+**Alternatives rejected:** none of Leo's proposals.
 

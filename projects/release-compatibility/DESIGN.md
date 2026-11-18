@@ -1,7 +1,7 @@
 # Release compatibility: design
 
 **Status:** Accepted by Hongwei, 2026-11-17; in review with Leo (relay parts: [§ Decisions taken](#decisions-taken),
-items 3 and 8). Decisions RC001–RC013.
+items 3 and 8). Decisions RC001–RC014.
 **Today's policy** stays [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) until release 1 ships; this
 design replaces its [§ No bridges](../../docs/contracts/COMPATIBILITY.md#no-bridges-pre-release) then.
 
@@ -251,7 +251,9 @@ supported range (RC006: the last 3 app releases and at least 90 days), and each 
 need a fix. Branches follow from that:
 
 **One integration branch, `main`.** All feature PRs go to `main`; CI must pass to merge. `develop` is retired in
-every repo. (The name is not the point; having one long-lived branch is.)
+every repo. (The name is not the point; having one long-lived branch is.) **`main` is the latest integration
+baseline, not production:** what runs in the field is the immutable release tags and the live release branches.
+Wherever "main" could be read as "what is deployed", it is not.
 
 **One branch per release, `release/X.Y`, cut from main**, for every release that ships into the field: apps,
 pp-node, and the relay.
@@ -262,14 +264,32 @@ pp-node, and the relay.
 - A release branch stays open while its release is in range and closes when the release leaves it: **the live
   release branches are the supported range**. The newest release branch takes every fix; older branches still in
   range take only security fixes and fixes for a break between in-range versions.
+- **Closing a branch:** the release owner closes it when the version table says its release has left the range.
+  Open backport PRs to it are closed with a note naming the range exit; the branch is then protected against pushes
+  but kept, because its tags and history must stay.
 - The relay has one prod deployment, but its release branch matters as much: main may already hold the reader half
   of a format change ([§ The range rule](#the-range-rule)) that prod must not get with a hotfix.
 
-**Fixes land on main first, then are backported** to each live release branch that needs them. A bot opens the
-backport PRs from a label (for example `backport release/10.1`), and each backported commit keeps the
-`(cherry picked from commit …)` trailer, so every fix on a release branch names its original on main. A fix that
-only makes sense on an older branch (the code is gone from main) goes straight to that branch, and its PR says why.
-Release branches are never merged back into main: main already has every fix.
+**Fixes land on main first, then are backported** to each live release branch that needs them. Release branches
+are never merged back into main: main already has every fix. The backport rules
+([RC014](DECISIONS.md#rc014--backport-and-hotfix-rules-after-leos-second-review)):
+
+1. **A label opens a PR to that exact branch.** `backport release/10.1` on a merged main PR makes a bot open a PR
+   targeting `release/10.1`. The bot does the cherry-pick mechanically; the backport PR runs that branch's own
+   checks and still needs a human approval (that release's owner may give it).
+2. **Provenance is kept.** Each backported commit keeps its `(cherry picked from commit …)` trailer, and the PR links
+   the original main PR, so which fixes reached which release lines can be audited.
+3. **Conflicts are reported, not adapted silently.** When the cherry-pick does not apply cleanly, the bot opens a
+   draft PR (or comments on the original PR) naming the conflict. An adaptation is a separate commit marked
+   "branch-specific backport", explaining what differs.
+4. **A fix only for a release branch is an exception.** It carries an exception label and says why main needs no
+   equivalent change (for example the code is gone from main).
+
+**A hotfix starts from the affected release branch**, not only from the newest release: a fix for 10.1 while 10.3 is
+current is made on `release/10.1` (by backport, or by the exception above), runs that line's checks, gets a new patch
+tag on that branch (`v10.1.Z+1`, its candidates `-rc.N` first), and follows the same build-once promotion as any
+release ([§ App builds](#app-builds-internal-external-store)). That is what makes the range promise real for older
+app versions.
 
 ### Builds, tags and deploys
 
@@ -503,7 +523,7 @@ The release is the most common action, not the only one; the rare, stressful one
 | Action | When | Who decides | Lives in | Before release 1 |
 |--------|------|-------------|----------|------------------|
 | **Release** | every release ([§ Release checklist](#release-checklist)) | release owner | pp-browser | yes |
-| **Hotfix / backport** | a fix on an existing release branch: the release list, shortened | release owner | pp-browser | yes |
+| **Hotfix / backport** | a fix on an affected release branch (any in range, not only the newest): the release list, shortened; the backport rules of [§ Release lines](#release-lines-are-first-class) | release owner | pp-browser | yes |
 | **Relay rollback** | a bad relay release in prod | anyone on call; the owner is told after | pp-relay-apis | yes |
 | **App incident** | a bad app version on phones: pause the phased release, flip a remote switch, ship a hotfix | release owner | pp-browser | yes |
 | **Restore from backup** | data lost or corrupted ([§ Backups and restore](#backups-and-restore)) | Hongwei and Leo | pp-relay-apis | yes |
