@@ -297,6 +297,8 @@ base64 -i AuthKey_XXXXXX.p8 | pbcopy              # → IOS_ASC_P8_BASE64
 
 The runner needs **Xcode 26+ / iOS 26 SDK** (ASC requirement). The workflow selects `Xcode_26*.app` when present; if the hosted image lacks it, use a self-hosted Mac or wait for the image update.
 
+**Runners.** Repository variables route the Mac jobs: `CI_MAC_BUILD_LABELS` (the iOS compile check and the desktop macOS build in `build.yml`; a fork PR's macOS build stays on hosted `macos-15`, and its iOS check is skipped) and `CI_MAC_RELEASE_LABELS` (this workflow and `release.yml`'s macOS job). Both point at our self-hosted Mac, whose two runners run as that Mac's own user — so the signing scripts put the user's keychain search list back on exit and remove the provisioning profile they installed. A self-hosted Mac needs Xcode's first launch done for that user (`sudo xcodebuild -license accept`, `xcodebuild -runFirstLaunch`): without it `actool` fails with "A required plugin failed to load". Unset a variable to fall back to hosted `macos-15`.
+
 Tagged App Store / GitHub Release iOS shipping is still separate — macOS/Windows/Android remain in [`release.yml`](../../.github/workflows/release.yml).
 
 ---
