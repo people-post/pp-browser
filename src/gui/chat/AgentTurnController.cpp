@@ -185,6 +185,20 @@ void AgentTurnController::Tick() {
   }
   RecoverMissedTurnEnd();
   RetryQueueDrain();
+  RetryQuietMint();
+}
+
+void AgentTurnController::RetryQuietMint() {
+  if (!quiet_mint_retry_pending_) {
+    return;
+  }
+  const int64_t since_launch_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - launched_at_).count();
+  if (since_launch_ms < kStartupQuietWindowMs) {
+    return;
+  }
+  quiet_mint_retry_pending_ = false;
+  RefreshLlmSetupBanner(); // mints again if still keyless; a failure now passes the quiet policy and shows
 }
 
 void AgentTurnController::RetryQueueDrain() {
@@ -1515,6 +1529,11 @@ void AgentTurnController::OnBriefKeyMintEnded(const BriefKeyMintEnd& end) {
           // ReloadAgentConfig (a send tap, an identity change, unlock), which is the retry that exists.
           log().info << "Brief guest key mint failed, network not usable yet; no banner: " << AppError::Log(*end.error);
           brief_guest_mint_attempted_ = false;
+          brief_guest_mint_user_hint_.clear(); // an earlier failure's wording must not outlive this one
+          if (!quiet_mint_retry_used_) {
+            quiet_mint_retry_used_ = true;
+            quiet_mint_retry_pending_ = true; // Tick asks once more when the quiet window ends
+          }
           return;
         }
       }
