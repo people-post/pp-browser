@@ -263,6 +263,8 @@ public:
   bool DetailSheetOpen() const { return detail_sheet_layer_id_ >= 0; }
   /** The Add contact page is open (a transient page on phones, a page sheet elsewhere). */
   bool AddContactPageOpen() const { return add_open_; }
+  /** Adds the person a directory hit names as a contact and shows their page (what a picked search result does). */
+  void AddContactFromHit(const mesh::DirectoryHit& hit);
   /** The page's search field changed to `query` (what the field's change event does). Exposed for tests. */
   void TypeInAddContact(const std::string& query);
   /** The Add contact page's search is waiting or in flight / came back empty. Exposed for tests. */
@@ -420,6 +422,12 @@ private:
   static void RefreshContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
   void SyncFromStore();
+  /**
+   * Every list that shows contacts, read again from the store: the Contacts tab's, New chat's (when open) and the blocked
+   * list's (when open). Each path that adds, removes or renames a contact ends here, so the page the user sees behind a
+   * card or an Add contact page is already right (Chats is the active tab on a phone: no tick or tab change refreshes it).
+   */
+  void SyncLists();
   /** Rebuilds the New chat page's frequent and lettered rows from the contacts and chats (and its search). */
   void SyncNewChat();
   void DirtyNewChat();
@@ -453,7 +461,6 @@ private:
   void OnContactsIndexEnd();
   void AddContactByQuery(const std::string& query);
   void OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits);
-  void AddContactFromHit(const mesh::DirectoryHit& hit);
   std::optional<Contact> FindContactByAccount(const std::string& account_id) const;
   void ShowAlreadyContact(const Contact& contact);
   void OnCopyId();

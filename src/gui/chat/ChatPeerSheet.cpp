@@ -199,6 +199,9 @@ void ChatPeerSheet::AddToContacts(const std::string& peer_id) {
     host_.NotifySurfaceChanged();
     return;
   }
+  if (contacts_notify_.refresh) {
+    contacts_notify_.refresh(); // the contact lists show the new person at once
+  }
   if (contacts_notify_.select_contact) {
     contacts_notify_.select_contact(*added);
   }

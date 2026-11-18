@@ -46,13 +46,19 @@ protected:
       view.initialized = true;
       return view;
     };
-    Contact contact;
-    contact.id = "c-ann";
-    contact.display_name = "Ann";
-    contact.remote.ids = {{mesh::ContactIdKind::Account, "account:ann", true}};
-    SyncContactMirrors(contact);
-    ports.get_contact = [contact](const std::string& id) -> Roe<std::optional<Contact>> {
-      return id == contact.id ? std::optional<Contact>{contact} : std::optional<Contact>{};
+    store_.push_back(MakeContact("c-ann", "Ann"));
+    ports.get_contact = [this](const std::string& id) -> Roe<std::optional<Contact>> {
+      for (const Contact& contact : store_) {
+        if (contact.id == id) {
+          return std::optional<Contact>{contact};
+        }
+      }
+      return std::optional<Contact>{};
+    };
+    ports.list_contacts = [this]() -> Roe<std::vector<Contact>> { return store_; };
+    ports.add_contact_from_directory_hit = [this](const mesh::DirectoryHit&) -> Roe<Contact> {
+      store_.push_back(MakeContact("c-bea", "Bea"));
+      return store_.back();
     };
     ports.find_or_create_direct_thread = [this](const std::string& id, ThreadChannel) -> Roe<Thread> {
       opened_.push_back(id);
@@ -71,7 +77,17 @@ protected:
     ContactsController::ClearInstance();
   }
 
+  static Contact MakeContact(const std::string& id, const std::string& name) {
+    Contact contact;
+    contact.id = id;
+    contact.display_name = name;
+    contact.remote.ids = {{mesh::ContactIdKind::Account, "account:" + id, true}};
+    SyncContactMirrors(contact);
+    return contact;
+  }
+
   ContactsController controller_;
+  std::vector<Contact> store_;
   std::vector<std::string> pages_; // the shell's transient pages, top last
   std::vector<std::string> opened_;
   NavTab tab_ = NavTab::Contacts;
@@ -100,6 +116,19 @@ TEST_F(ContactCardMessageTest, MessageOnTheCardAlsoClosesAnAddContactPageUnderIt
 
   EXPECT_TRUE(pages_.empty());
   EXPECT_FALSE(controller_.AddContactPageOpen());
+}
+
+// The phone's Chats tab is the active one and nothing ticks or switches tabs: the New chat list under the card must
+// already show a person added from the Add contact page.
+TEST_F(ContactCardMessageTest, ANewContactShowsInTheNewChatListAtOnceWithoutClosingAnyPage) {
+  controller_.OpenNewChatPage();
+  ASSERT_EQ(controller_.NewChatRowIds(), std::vector<std::string>{"c-ann"});
+
+  controller_.AddContactFromHit(mesh::DirectoryHit{});
+
+  const std::vector<std::string> ids = controller_.NewChatRowIds();
+  EXPECT_NE(std::find(ids.begin(), ids.end(), "c-bea"), ids.end()) << "the list behind the card is already right";
+  EXPECT_EQ(pages_, (std::vector<std::string>{"new_chat", "contact_detail"})) << "no page was closed to get it";
 }
 
 } // namespace

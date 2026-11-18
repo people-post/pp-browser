@@ -950,8 +950,7 @@ void ContactsController::OnContactsIndexEnd() {
   }
 }
 
-void ContactsController::Refresh() {
-  FlushPending();
+void ContactsController::SyncLists() {
   SyncFromStore();
   if (new_chat_open_) {
     SyncNewChat();
@@ -961,6 +960,11 @@ void ContactsController::Refresh() {
     SyncBlocked();
     DirtyBlocked();
   }
+}
+
+void ContactsController::Refresh() {
+  FlushPending();
+  SyncLists();
   if (!selected_.id.empty()) {
     LoadSelectedDetail(selected_.id.c_str());
   }
@@ -1821,7 +1825,7 @@ bool ContactsController::FlushSelectedContact() {
   }
   UpdateMessagingEligibility(updated);
   contact_dirty_ = false;
-  SyncFromStore();
+  SyncLists(); // a renamed contact reads the new name in New chat too
   DataModelHost::Instance().Dirty("contacts", "contacts");
   DataModelHost::Instance().Dirty("contacts", "selected");
   if (contacts_ports_.notify_thread_changed) {
@@ -2002,7 +2006,7 @@ void ContactsController::OnAddedFromInvite(const Roe<std::pair<std::string, bool
     UserFeedback::Fail(added.error().message.empty() ? Tr("contacts.err.add") : added.error().message);
     return;
   }
-  SyncFromStore();
+  SyncLists();
   OnSelectContact(added.value().first);
   // Without keys yet the contact stands; their first message brings them (or they come online).
   ShowToast(Tr(added.value().second ? "contacts.invite.added" : "contacts.invite.added_pending"));
@@ -2102,7 +2106,7 @@ void ContactsController::AddContactFromHit(const mesh::DirectoryHit& hit) {
   if (contacts_ports_.ensure_directory_hit_icon_cached) {
     contacts_ports_.ensure_directory_hit_icon_cached(hit);
   }
-  SyncFromStore();
+  SyncLists();
   OnSelectContact(created->id);
   DirtyAll();
   NotifySurfaceChanged();
@@ -2177,7 +2181,7 @@ void ContactsController::OnCallContact(const std::string& contact_id, const bool
 }
 
 void ContactsController::ShowPersonPage(const std::string& contact_id) {
-  SyncFromStore();
+  SyncLists();
   if (DetailSheetOpen()) {
     OnSelectContactSheet(contact_id);
   } else {
@@ -2433,11 +2437,7 @@ void ContactsController::OnToggleStar() {
     return;
   }
   selected_.starred = StarRank(prefs.starred_contacts, contact_id) >= 0;
-  SyncFromStore(); // the list's star
-  if (new_chat_open_) {
-    SyncNewChat();
-    DirtyNewChat();
-  }
+  SyncLists(); // the list's star
   DirtyAll();
 }
 
@@ -2448,15 +2448,7 @@ void ContactsController::OnSetTrust(const std::string& trust) {
     return;
   }
   LoadSelectedDetail(selected_.id.c_str());
-  SyncFromStore();
-  if (new_chat_open_) {
-    SyncNewChat(); // New chat's list marks (or unmarks) the person at once
-    DirtyNewChat();
-  }
-  if (blocked_open_) {
-    SyncBlocked(); // unblocked on a contact page opened off the blocked list: gone from it on the way back
-    DirtyBlocked();
-  }
+  SyncLists(); // New chat's list marks (or unmarks) the person at once; an unblocked one is gone from the blocked list
   DirtyAll();
   if (trust == "blocked") {
     ShowToast(Tr("contacts.toast.blocked", {{"name", name}}));
@@ -2636,7 +2628,7 @@ void ContactsController::OnUnblockListed(const std::string& contact_id) {
   SyncBlocked();
   DirtyBlocked();
   ShowToast(Tr("contacts.blocked.unblocked", {{"name", name}}));
-  SyncFromStore();
+  SyncLists();
   DirtyAll();
   if (contacts_ports_.notify_thread_changed) {
     contacts_ports_.notify_thread_changed();
@@ -2690,14 +2682,14 @@ void ContactsController::OnContactRefreshed(const std::string& contact_id, const
   }
   if (selected_.id.c_str() != contact_id) {
     if (result.Changed()) {
-      SyncFromStore();
+      SyncLists();
       DirtyAll();
     }
     return; // another page is open now: its own state stays
   }
   LoadSelectedDetail(contact_id);
   if (result.Changed()) {
-    SyncFromStore();
+    SyncLists();
   }
   DirtyAll();
   NotifySurfaceChanged();
@@ -2735,11 +2727,7 @@ void ContactsController::OnRemoveContact() {
             OnDetailDismissed();
           }
         }
-        SyncFromStore();
-        if (new_chat_open_) {
-          SyncNewChat(); // the person is gone from New chat's list at once
-          DirtyNewChat();
-        }
+        SyncLists(); // the person is gone from New chat's list at once
         DirtyAll();
         ShowToast(Tr("contacts.toast.removed"));
         if (contacts_ports_.notify_thread_changed) {
