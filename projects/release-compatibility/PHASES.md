@@ -40,7 +40,11 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 
 - [ ] `release/10.0` cut in pp-browser (app and pp-node 10.0) and the relay's release branch in pp-relay-apis; release 1 tagged there.
 - [ ] Relay on qa, then the app lab; app, pp-node and relay to prod together.
-- [ ] `min_client_version` and the node floor raised to release 1.
+- [ ] `min_client_version` and the node floor raised to release 1. Prod's `client-compat` set none on 2026-11-17
+  (`min_client_version` empty).
+- [ ] Prod's update links configured: `upgrade_url` and `upgrade_urls` per platform. On 2026-11-17 prod served the
+  code's placeholder `https://example.test/releases`, so an "update needed" screen would link nowhere (relay
+  settings, Leo).
 - [ ] The version table promoted to `docs/contracts/`; COMPATIBILITY.md's § No bridges replaced by the rule, its
   "Clean cutovers" table closed with the release-1 row; RC001–RC004 and RC006 marked superseded by those docs,
   RC005 and RC007 by `docs/ops/RELEASE.md`.
