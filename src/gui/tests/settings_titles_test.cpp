@@ -226,6 +226,27 @@ TEST(SettingsTitlesTest, ThePrivacyCaptionSitsUnderTheCallsRowOnly) {
   LocalizationService::Instance().SetPreferredLanguage("en");
 }
 
+TEST(SettingsTitlesTest, TheStorageResetActionsSitApartAtTheEndInPlainWords) {
+  const std::string rml = ReadAsset("views/settings_section_storage.rml");
+  const size_t zone = rml.find("storage-danger-zone");
+  const size_t policy = rml.find("choose_attachment_download_policy('on_demand')");
+  const size_t manage_page = rml.find("data-if=\"storage_page == 'manage'\"");
+  ASSERT_NE(zone, std::string::npos);
+  EXPECT_LT(policy, zone) << "after the download options";
+  EXPECT_LT(zone, manage_page) << "the end of the main page";
+  const size_t zone_end = rml.find("</div>", zone);
+  EXPECT_NE(rml.substr(zone, zone_end - zone).find("reset_chats()"), std::string::npos);
+  EXPECT_NE(rml.substr(zone, zone_end - zone).find("reset_profile()"), std::string::npos);
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  for (const char* key : {"settings.storage.reset_warning", "settings.storage.reset_chats_confirm_message",
+                          "settings.storage.reset_confirm_message"}) {
+    EXPECT_EQ(Tr(key).find("密钥"), std::string::npos) << key;
+  }
+  EXPECT_NE(Tr("settings.storage.reset_warning").find("账号的加密资料"), std::string::npos);
+  LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
 TEST(SettingsTitlesTest, HomeTitleIsSettings) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("en");

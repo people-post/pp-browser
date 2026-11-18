@@ -13269,6 +13269,11 @@ input.checkbox {
   overflow: hidden;
 }
 
+.storage-danger-zone,
+.shell-layer-compact .settings-mock .group-card.storage-danger-zone {
+  margin-top: 40dp;
+}
+
 .shell-layer-compact .group-card--top {
   margin-top: 8dp;
 }
