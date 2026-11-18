@@ -48,7 +48,8 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 - [ ] Frozen data of each release-1 format checked in, read by unit tests in each repo.
 - [ ] RC011's release-1 items ([DESIGN § Release 1](DESIGN.md#release-1)): version counts at the relay; remote
   switches in `client-compat` and the app's reader; the app ↔ relay behaviour suite in both CIs; relay identity
-  rotation; in-app account deletion; a crash-report destination.
+  rotation; account deletion finished (named as such, relay data after a revoke, offline resets, several devices);
+  a crash-report destination.
 
 ## P4 — Release 1 shipped
 

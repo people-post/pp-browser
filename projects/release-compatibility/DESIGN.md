@@ -202,9 +202,21 @@ the range rule):
   strands every client and a leaked key has no recovery. A designed rotation (for example the old key signing a
   statement that names the new one, or relay links carrying the next PeerId) ships in release 1, because in-range
   apps must understand it.
-- **In-app account deletion.** App Store guideline 5.1.1(v) requires it for an app that creates accounts; the app has
-  none (no such text in its strings, 2026-11-18). The relay has `register/revoke`; the app's side and what it removes
-  locally and on each of our relays are the work. Blocks the App Store, not TestFlight.
+- **Account deletion, finished.** App Store guideline 5.1.1(v) requires an app that creates accounts to let users
+  delete them. It exists as Me → Storage → *Reset my data…* (`SettingsSecurityActions::ResetProfile` →
+  `Application::ResetActiveProfile`): it revokes the registration on every relay of ours (others first, then the
+  preferred; best effort, so an offline reset still goes ahead), the relay removes the account's rows and purges its
+  push devices, and the device is wiped. Left for release 1:
+  - **Say it deletes the account.** The confirmation reads "Deletes chats, contacts and the account's encryption data
+    on this device", which names neither the account nor the relay; users and App Review must be able to find
+    account deletion as such.
+  - **What the relay keeps after a revoke.** `SPECS.md` says a revoke removes the registration and purges push
+    devices; it does not say what happens to the account's mailbox (up to 30 days), public icon, private files,
+    account lockers, Support conversation or usage records. Each is deleted on revoke, or its retention is stated.
+  - **An offline reset** leaves the registration until it expires (up to 90 days): retry the revoke later, or say so.
+  - **Several devices of one account:** whether resetting one device revokes the account's registration for all of
+    them (registration is one per Account ID), and whether that is the intent. Deleting the account and removing one
+    device may need to be two actions.
 - **Crash reports from released versions.** The app sends them when `client-compat` names a `crash_reports_url`;
   prod names none. Release 1 needs a destination, within DIAGNOSTICS' shareable-lines rule.
 
