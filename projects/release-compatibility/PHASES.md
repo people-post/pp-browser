@@ -23,26 +23,30 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 - [ ] develop merged into main a last time; open PRs retargeted to main; develop deleted (pp-browser, pp-cpp-*,
   pp-ledger; pp-relay-apis with Leo).
 - [ ] Every internal build tagged by its workflow: TestFlight, Android and desktop test builds, release candidates,
-  internal pp-node builds, the relay's qa deploys.
+  internal pp-node builds, the relay's dev deploys.
 - [ ] Release workflows take release tags only from `release/*` branches, build once, and promote the artifact.
-- [ ] GitHub environments: main → qa; `release/*` → candidates; only `v*` tags → production, behind an approval.
+- [ ] GitHub environments: main → dev; release candidates → staging; only `v*` tags → production, behind an approval.
 - [ ] The backport bot (a label opens the backport PR, the cherry-pick trailer kept).
 - [ ] App builds ([DESIGN § App builds](DESIGN.md#app-builds-internal-external-store)): release-candidate tags build
   and upload automatically; the promotion workflow (App Store Connect and Play APIs, approval-gated, refuses non-candidates,
   tags `vX.Y.Z`); phased store releases; the app shows its tag and commit in About and diagnostics.
 - [ ] The check levels in CI ([DESIGN § Checks by level](DESIGN.md#checks-by-level)).
+- [ ] Environments ([DESIGN § Environments](DESIGN.md#environments), Leo's infrastructure): dev created (relay,
+  its PeerId, secrets, tables); qa becomes staging (takes release candidates only; Me → Network shows "Staging", the
+  config value stays `qa`); prod canary deploys with alarms and automatic rollback; pp-node dev and staging tiers;
+  a rollback rehearsal on staging.
 - [ ] The PR template and `docs/ops/RELEASE.md` say what a release branch takes, that fixes land on main first, and
   how a backport is asked for.
 
 ## P3 — Release 1 built
 
-- [ ] Each P0 item, repo by repo; the relay first (qa), as for every relay change.
+- [ ] Each P0 item, repo by repo; the relay first (dev, then staging), as for every relay change.
 - [ ] Frozen data of each release-1 format checked in, read by unit tests in each repo.
 
 ## P4 — Release 1 shipped
 
 - [ ] `release/10.0` cut in pp-browser (app and pp-node 10.0) and the relay's release branch in pp-relay-apis; release 1 tagged there.
-- [ ] Relay on qa, then the app lab; app, pp-node and relay to prod together.
+- [ ] Relay on staging, then the app lab and the mixed-version check there; app, pp-node and relay to prod together.
 - [ ] `min_client_version` and the node floor raised to release 1. Prod's `client-compat` set none on 2026-11-17
   (`min_client_version` empty).
 - [ ] Prod's update links configured: `upgrade_url` and `upgrade_urls` per platform. On 2026-11-17 prod served the

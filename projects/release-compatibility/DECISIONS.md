@@ -80,7 +80,8 @@ tags and cut a release branch only on need ([DESIGN § Branches and tags](DESIGN
 ## RC006 — Range lengths, numbering, tags and fix policy
 
 **Date:** 2026-11-17
-**Status:** Accepted (Hongwei, 2026-11-17); items 3 and 8 wait for Leo.
+**Status:** Accepted (Hongwei, 2026-11-17); items 3 and 8 wait for Leo. Item 8 amended by
+[RC009](#rc009--four-environments-todays-qa-becomes-staging-dev-is-new): the relay's main deploys are tagged `dev/<date>.<n>`.
 **Decision:** The nine items of [DESIGN § Decisions taken](DESIGN.md#decisions-taken). In short: relay ↔ app
 in range for the last 3 app releases and at least 90 days, other pairs the last 2 releases and at least 60 days;
 security cutovers signed off by Hongwei; the relay on its own semver; no app downgrade; one version table here;
@@ -169,3 +170,23 @@ refuses anything else and tags `vX.Y.Z` when it submits. Store releases are phas
   dev build can be promoted by mistake, and the repo does not learn which commit shipped.
 - Rebuild for the store from the release tag (the tested binary is not the one shipped).
 - A separate dev app now (worth it for mixed-version testing, but its setup is not needed for release 1; later).
+
+## RC009 — Four environments: today's qa becomes staging, dev is new
+
+**Date:** 2026-11-18
+**Status:** Accepted (Hongwei, 2026-11-18); in review with Leo (the infrastructure is his). Amends RC006 item 8.
+**Decision:** local (local-stack, the lab), dev (new: main deploys there automatically), staging (today's qa:
+release candidates, rollback rehearsals) and prod (tags only, approval, a canary with automatic rollback). Staging
+keeps qa's origin, PeerId and the apps' `backend.env: "qa"`. External testers use prod. Each environment has its own
+data, secrets and relay identity; pp-node gets matching tiers ([DESIGN § Environments](DESIGN.md#environments)).
+**Rationale:**
+- One qa did two jobs (integration and pre-production), so a release candidate was never tested apart from the
+  latest merges, and nothing rehearsed a rollback.
+- Making today's qa the staging environment changes nothing apps hold: the compiled origin, the config value and the
+  pinned PeerId stay. Renaming qa to dev would have been a format change to every user's `config.json`.
+- A relay deploy reaches every app version at once; a canary is the server's phased release.
+**Alternatives rejected:**
+- qa becomes dev and staging is new (the first draft): every app build would need a new compiled origin for staging,
+  and `backend.env: "qa"` would change meaning.
+- Keep prod and qa only (no place for candidates apart from integration).
+- Staging as an ephemeral stack per release (loses the kept data a rollback rehearsal needs).

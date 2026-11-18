@@ -1,7 +1,7 @@
 # Release compatibility: design
 
 **Status:** Accepted by Hongwei, 2026-11-17; in review with Leo (relay parts: [§ Decisions taken](#decisions-taken),
-items 3 and 8). Decisions RC001–RC008.
+items 3 and 8). Decisions RC001–RC009.
 **Today's policy** stays [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) until release 1 ships; this
 design replaces its [§ No bridges](../../docs/contracts/COMPATIBILITY.md#no-bridges-pre-release) then.
 
@@ -247,7 +247,7 @@ Release branches are never merged back into main: main already has every fix.
 | App builds people install (TestFlight, Android, desktop test builds) | main | `internal/<build number>` |
 | Release candidates (apps, pp-node) | `release/X.Y` | `vX.Y.Z-rc.<n>` |
 | Internal pp-node builds | main | `node-internal/<date>.<n>` |
-| Relay qa deploys | main | `qa/<date>.<n>` (with Leo) |
+| Relay dev deploys | main | `dev/<date>.<n>` (with Leo) |
 
 CI builds nobody installs get no tag.
 
@@ -258,8 +258,8 @@ release version is set before its candidate build, so the TestFlight build that 
 
 **Deploys are gated by GitHub environments:**
 
-- main deploys the relay to qa automatically;
-- `release/*` may deploy release candidates to a candidate environment;
+- main deploys the relay to dev automatically;
+- release candidates from `release/*` deploy to staging (today's qa) ([§ Environments](#environments));
 - only `v*` tags deploy to production, behind an approval gate; for apps, only tags go to the stores;
 - rollback redeploys the previous release tag's artifact (RC003).
 
@@ -282,8 +282,9 @@ rules ([RC008](DECISIONS.md#rc008--app-builds-climb-one-ladder-only-release-cand
   review, through the App Store Connect API (and the Play Developer API). It refuses a build whose tag is not a
   release candidate, runs behind a GitHub environment approval, and tags the release (`vX.Y.Z`) on the candidate's
   commit when it submits.
-- **One binary serves both backends.** Builds compile in the prod and qa relays, and testers switch in Me → Network
-  (`backend.env`, prod by default; [CONFIGURATION](../../docs/ops/CONFIGURATION.md)). A candidate tested on qa is the
+- **One binary serves both backends.** Builds compile in the prod and staging relays (staging is today's qa origin),
+  and testers switch in Me → Network (`backend.env`, prod by default; [CONFIGURATION](../../docs/ops/CONFIGURATION.md)).
+  A candidate tested on staging is the
   binary prod users get; it ships with prod as its default.
 - **Hotfixes** take the same path from their release branch. A security fix may go from internal testers straight
   to the store with an expedited review, skipping external testers.
@@ -320,6 +321,53 @@ pp-node's numbering (v9 today), so pp-node's tags keep rising, and the app moves
 its own semver (`vX.Y.Z` on its `release/X.Y`) and reports it in `client-compat`; the
 [version table](#the-version-table) maps which relay releases serve which app/node releases.
 
+## Environments
+
+Before release mode the relay had two environments: prod, and qa, which took every develop merge and was also the
+only place to test before prod. The plan needs three jobs kept apart: integration (the latest main, which may
+break), release candidates (the exact artifact to be promoted, tested in prod-like conditions), and production
+(rolled out gradually, because a relay deploy reaches every app version at once). Today's qa becomes **staging**,
+and **dev** is new ([RC009](DECISIONS.md#rc009--four-environments-todays-qa-becomes-staging-dev-is-new)):
+
+| Environment | What deploys there | Who uses it | Data |
+|-------------|--------------------|-------------|------|
+| **local** (local-stack and the lab, as today) | any branch, in CI and lab runs | developers, CI | thrown away after each run |
+| **dev** (new) | main, automatically | developers, dev builds | may be reset |
+| **staging** (today's qa) | release candidates from `release/X.Y`; the previous release for rollback rehearsals | release testing, internal TestFlight candidates | prod-like and kept, no real users |
+| **prod** | `v*` tags only, behind an approval, canary first | users and external testers | real |
+
+**Staging keeps everything qa has today**, so nothing on the wire or on disk changes: every app build compiles in
+its origin (`PP_API_URL_QA`), users' `config.json` keeps `backend.env: "qa"`, and the relay keeps its PeerId
+(`PP_RELAY_PEER_ID_QA`). Only the label in Me → Network becomes "Staging". What changes is what deploys there: release
+candidates, no longer every merge.
+
+**Staging is where a candidate is proven:**
+
+- the exact artifact that will be promoted (RC007's build once), with prod-like settings;
+- mixed versions: the store app (N−1) and the candidate (N) against the staging relay, beyond the lab;
+- a rollback rehearsal: the previous relay release deployed onto data the candidate wrote, proving RC003 before prod
+  relies on it;
+- migrations and settings: the `client-compat` floor, update links, a window closing.
+
+**Dev is reached without a new build**, through Me → Network's custom relay link (`https://…#<PeerId>`), which
+release builds accept when the link names the PeerId. Compiling it in as a third origin can come later if testers
+use it often.
+
+**Prod rolls out gradually.** A relay release goes to a share of prod traffic first (Lambda weighted aliases), is
+watched, and is rolled back automatically when its alarms fire, the server's version of a phased app release. RC003
+makes this safe: while both versions run, each reads what the other writes.
+
+**External testers stay on prod.** They run the candidate app against the current prod relay, the real "new app,
+current relay" pair. The relay still ships first: staging, then the prod canary, then the app candidate to external
+testers.
+
+**Each environment is separate:** its own tables, buckets, secrets, relay identity (PeerId), LLM upstream token and
+pp-node seeds. pp-node gets matching tiers in the ansible inventories (dev, a small staging node or two, prod). Prod
+moves to its own AWS account, apart from dev and staging (decision below).
+
+**Cost:** the relay is serverless (Lambda, on-demand DynamoDB), so an idle environment costs almost nothing; the cost
+is the staging pp-node machines and the work in terraform, ansible and the workflows.
+
 ## Decisions taken
 
 Hongwei, 2026-11-17 (RC006). Items 3 and 8 touch the relay's workflows and wait for Leo.
@@ -335,6 +383,14 @@ Hongwei, 2026-11-17 (RC006). Items 3 and 8 touch the relay's workflows and wait 
    lists only the relay's own formats.
 7. **One number for app and pp-node:** yes; release 1 is 10.0 for both.
 8. **Internal build tags:** `internal/<build number>` (apps), `node-internal/<date>.<n>` (pp-node),
-   `qa/<date>.<n>` (relay); none for CI builds nobody installs. *(Leo, for the relay's)*
+   `dev/<date>.<n>` (relay dev deploys; `qa/` before RC009); none for CI builds nobody installs. *(Leo, for the
+   relay's)*
 9. **Fixes on release branches:** every fix on the newest; security fixes and fixes for a break between in-range
    versions on older ones in range.
+
+Open, from [§ Environments](#environments) (RC009), for Hongwei and Leo:
+
+10. **Prod's own AWS account:** now, or after release 1.
+11. **The prod canary:** its share and duration (for example 10% for 30 minutes), and which alarms roll it back.
+12. **Dev's data:** reset at any time, or only when announced.
+13. **Staging's data at the switch:** kept from qa, or reset once so staging starts prod-like.
