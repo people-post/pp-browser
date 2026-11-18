@@ -622,7 +622,6 @@ private:
   void OnSearchMessagesChanged();
   void OnAgentTurnEnded(const std::string& thread_id) override;
   bool AskAiPanelShows(const std::string& thread_id) const override { return ask_ai_.Shows(thread_id); }
-  void OnAskAiOnceReply(const AgentEvent& event) override { ask_ai_.OnOnceReply(event); }
   // The ask-AI panel's side of the screen (AskAiPanelHost).
   bool AskAiCompact() const override;
   void AskAiOpenEmoji(std::function<void(const std::string& emoji)> insert) override;
@@ -640,7 +639,6 @@ private:
   void AskAiOpenLink(const std::string& thread_id, const std::string& entry_id, int link_index) override {
     OpenChatLinkIn(thread_id, entry_id, link_index);
   }
-  void AskAiOpenUrl(const std::string& url) override { OpenTrustedUrl(url); } // a one-off AI answer's link
   bool AskAiIntroSeen() const override;
   void AskAiMarkIntroSeen() override;
   void AskAiToast(const std::string& text) override { ShowToast(text); }

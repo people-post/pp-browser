@@ -1,11 +1,10 @@
 // The ask-AI sheet (DEV/PLAN-ui-batch5-ask-ai.md 5a): the real AskAiPanel and AgentTurnController, driven with a
-// fake chat screen and fake agent ports. What is checked: each entry opens the sheet; the settings
-// "?" is a one-off question in the Home session (never PP 客服, never the shared chat); the shared conversation is one
+// fake chat screen and fake agent ports. What is checked: each entry opens the sheet; the shared conversation is one
 // thread for every entry and for "Open in AI chat"; closing keeps the draft and the running answer and sends nothing
-// again; a guest's single turn queues the question once and shows it (the one-off too); no answer shows plain words
-// and "Ask PP Support"; the privacy card shows once. A stopped one-off's late events (Home events carry no thread, only
-// their turn) never end or answer for the next one, and an answer with no chat to go in is never stored in the open
-// chat.
+// again; a guest's single turn queues the question once and shows it; no answer shows plain words and "Ask PP
+// Support", which (like the privacy card's "?") reopens the sheet on the PP 客服 chat (the settings "?"'s mode, tested
+// on the real page in ask_ai_support_render_test.cpp); the privacy card shows once. An answer with no chat to go in is
+// never stored in the open chat.
 #include "gui/chat/AskAiPanel.h"
 #include "gui/chat/AgentTurnController.h"
 #include "gui/SettingsController.h"
@@ -77,11 +76,6 @@ public:
     }
   }
   bool AskAiPanelShows(const std::string& thread_id) const override { return panel && panel->Shows(thread_id); }
-  void OnAskAiOnceReply(const AgentEvent& event) override {
-    if (panel) {
-      panel->OnOnceReply(event);
-    }
-  }
 };
 
 /** The chat screen as the panel sees it. */
@@ -161,7 +155,6 @@ public:
   void AskAiLater(std::function<void()> fn) override { fn(); }
   void AskAiRunAction(const std::string&, const std::string&, int) override {}
   void AskAiOpenLink(const std::string&, const std::string&, int) override {}
-  void AskAiOpenUrl(const std::string&) override {}
   bool AskAiIntroSeen() const override { return intro_seen; }
   void AskAiMarkIntroSeen() override {
     intro_seen = true;
@@ -228,19 +221,6 @@ protected:
     ports.has_session = [] { return true; };
     ports.can_start = [this](const std::string& thread_id) { return can_start_(thread_id); };
     ports.max_thread_turns = [this] { return max_turns_; };
-    // The one-off goes to the Home session in words only (SubmitExplanation); each submit is a new turn there.
-    ports.submit_home_explanation = [this](const std::string& text) {
-      home_submits_.push_back(text);
-      if (home_outcome_ == SubmitOutcome::Started) {
-        ++home_turn_;
-      }
-      return home_outcome_;
-    };
-    ports.home_turn = [this] { return home_turn_; };
-    ports.start_new_home_conversation = [this] {
-      ++new_home_conversations_;
-      return home_free_;
-    };
     ports.cancel = [this](const std::string& thread_id) { cancels_.push_back(thread_id); };
     ports.is_busy = [](const std::string&) { return true; };
     agent_.BindPorts(std::move(ports));
@@ -272,11 +252,6 @@ protected:
 
   std::function<TurnStart(const std::string&)> can_start_ = [](const std::string&) { return TurnStart::Yes; };
   size_t max_turns_ = 3;
-  std::vector<std::string> home_submits_;
-  SubmitOutcome home_outcome_ = SubmitOutcome::Started;
-  int new_home_conversations_ = 0;
-  bool home_free_ = true;
-  uint64_t home_turn_ = 0;
   std::vector<std::string> cancels_;
 };
 
@@ -294,7 +269,7 @@ TEST_F(AskAiPanelTest, EveryEntryOpensAPlainPageSheet) {
   panel_host_.AskAiCloseSheet(0);
   ASSERT_TRUE(panel_.OpenAndAsk(AskAiEntry::HomeChip, "你能做什么？"));
   panel_host_.AskAiCloseSheet(0);
-  ASSERT_TRUE(panel_.OpenOnce("「发送崩溃报告」是什么意思？"));
+  ASSERT_TRUE(panel_.OpenSupport("「发送崩溃报告」是什么意思？"));
   ASSERT_EQ(panel_host_.sheets.size(), 4u);
   for (const PaneSpec& spec : panel_host_.sheets) {
     EXPECT_TRUE(spec.page_sheet);
@@ -306,161 +281,16 @@ TEST_F(AskAiPanelTest, TheDesktopHasNoPanel) {
   panel_host_.compact = false;
   EXPECT_FALSE(panel_.Open(AskAiEntry::ChatMenu));
   EXPECT_FALSE(panel_.OpenAndAsk(AskAiEntry::HomeChip, "hi"));
-  EXPECT_FALSE(panel_.OpenOnce("q"));
+  EXPECT_FALSE(panel_.OpenSupport("q"));
   EXPECT_TRUE(panel_host_.sheets.empty());
   EXPECT_TRUE(panel_host_.sent.empty());
-  EXPECT_TRUE(home_submits_.empty());
+  EXPECT_TRUE(panel_host_.support.empty());
 }
 
 TEST_F(AskAiPanelTest, OpenWhileOpenPushesNoSecondSheet) {
   ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
   ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
   EXPECT_EQ(panel_host_.sheets.size(), 1u);
-}
-
-// --- the settings "?": a one-off in the Home session --------------------------------------------------
-
-TEST_F(AskAiPanelTest, TheSettingsQuestionIsAskedOnceInTheHomeSessionNotOfSupport) {
-  const std::string question = "「发送崩溃报告」是什么意思？";
-  ASSERT_TRUE(panel_.OpenOnce(question));
-  EXPECT_EQ(new_home_conversations_, 1) << "nothing said before goes along";
-  ASSERT_EQ(home_submits_.size(), 1u);
-  EXPECT_EQ(home_submits_[0], question);
-  EXPECT_TRUE(panel_host_.sent.empty()) << "not into the shared AI chat";
-  EXPECT_TRUE(panel_host_.support.empty()) << "PP 客服 is only the button";
-  EXPECT_TRUE(panel_.View().once);
-  EXPECT_TRUE(panel_.View().thinking);
-  ASSERT_EQ(panel_.View().rows.size(), 1u);
-  EXPECT_TRUE(panel_.View().rows[0].user);
-  EXPECT_FALSE(panel_.View().show_support) << "not while it answers";
-
-  // The Home session answers: the reply shows in the panel and is stored in no chat.
-  agent_.HandleAgentEvent(Loading(true));
-  const int syncs = turn_host_.display_syncs;
-  agent_.HandleAgentEvent(Ready("It sends a report when the app breaks."));
-  EXPECT_EQ(turn_host_.display_syncs, syncs) << "FinishAssistantReply never ran: no chat stores it";
-  agent_.HandleAgentEvent(Loading(false));
-  ASSERT_EQ(panel_.View().rows.size(), 2u);
-  EXPECT_FALSE(panel_.View().rows[1].user);
-  EXPECT_NE(std::string(panel_.View().rows[1].content_rml.c_str()).find("sends a report"), std::string::npos);
-  EXPECT_FALSE(panel_.View().thinking);
-  EXPECT_TRUE(panel_.View().show_support);
-  EXPECT_FALSE(agent_.Busy().Any());
-
-  panel_.AskSupport();
-  ASSERT_EQ(panel_host_.support.size(), 1u);
-  EXPECT_EQ(panel_host_.support[0], question);
-  EXPECT_EQ(panel_host_.closes, 1) << "the AI sheet closes; the PP 客服 one opens anew";
-  EXPECT_TRUE(panel_.IsOpen());
-  EXPECT_TRUE(panel_.View().support);
-}
-
-TEST_F(AskAiPanelTest, TheSameQuestionMarkAgainSendsNothingTwice) {
-  ASSERT_TRUE(panel_.OpenOnce("q1"));
-  panel_host_.AskAiCloseSheet(0);
-  ASSERT_TRUE(panel_.OpenOnce("q1"));
-  EXPECT_EQ(home_submits_.size(), 1u);
-  EXPECT_EQ(new_home_conversations_, 1);
-}
-
-TEST_F(AskAiPanelTest, AnotherQuestionMarkStartsAFreshOneOffOnceTheHomeSessionIsFree) {
-  ASSERT_TRUE(panel_.OpenOnce("q1"));
-  agent_.HandleAgentEvent(Loading(true));
-  panel_host_.AskAiCloseSheet(0);
-  home_free_ = false; // q1 still answering
-  ASSERT_TRUE(panel_.OpenOnce("q2"));
-  EXPECT_EQ(home_submits_.size(), 1u) << "waits for the earlier one-off";
-  ASSERT_EQ(cancels_.size(), 1u);
-  EXPECT_EQ(cancels_[0], "") << "the earlier one-off (Home session) is stopped";
-  EXPECT_TRUE(panel_.View().thinking);
-  panel_.Tick();
-  EXPECT_EQ(cancels_.size(), 1u) << "stopped once, not every frame";
-  agent_.HandleAgentEvent(Loading(false));
-  home_free_ = true;
-  panel_.Tick();
-  ASSERT_EQ(home_submits_.size(), 2u);
-  EXPECT_EQ(home_submits_[1], "q2");
-  ASSERT_FALSE(panel_.View().rows.empty());
-  EXPECT_EQ(panel_.View().rows.size(), 1u) << "q1 is gone from the panel";
-}
-
-TEST_F(AskAiPanelTest, AFollowUpStaysInTheOneOff) {
-  ASSERT_TRUE(panel_.OpenOnce("q1"));
-  agent_.HandleAgentEvent(Loading(true));
-  agent_.HandleAgentEvent(Ready("a1"));
-  agent_.HandleAgentEvent(Loading(false));
-  panel_.SetDraftForTest("and then?");
-  panel_.Send();
-  EXPECT_EQ(new_home_conversations_, 1) << "a follow-up keeps the one-off's context";
-  ASSERT_EQ(home_submits_.size(), 2u);
-  EXPECT_EQ(home_submits_[1], "and then?");
-  EXPECT_TRUE(panel_host_.sent.empty());
-}
-
-TEST_F(AskAiPanelTest, AOneOffWithNoAnswerSaysSoAndOffersSupport) {
-  ASSERT_TRUE(panel_.OpenOnce("q1"));
-  agent_.HandleAgentEvent(Loading(true));
-  agent_.HandleAgentEvent(Loading(false)); // ended with no answer (no backend, timeout, …)
-  EXPECT_TRUE(panel_.View().error);
-  EXPECT_FALSE(panel_.View().thinking);
-  EXPECT_TRUE(panel_.View().show_support);
-  panel_.AskSupport();
-  ASSERT_EQ(panel_host_.support.size(), 1u);
-  EXPECT_EQ(panel_host_.support[0], "q1");
-}
-
-TEST_F(AskAiPanelTest, AFailedQuestionMarkIsAskedAgain) {
-  ASSERT_TRUE(panel_.OpenOnce("q1"));
-  agent_.HandleAgentEvent(Loading(true, {}, 1));
-  agent_.HandleAgentEvent(Loading(false, {}, 1)); // no answer
-  ASSERT_TRUE(panel_.View().error);
-  panel_host_.AskAiCloseSheet(0);
-  ASSERT_TRUE(panel_.OpenOnce("q1")); // the same "?" again
-  ASSERT_EQ(home_submits_.size(), 2u) << "a failed one is asked again";
-  EXPECT_EQ(home_submits_[1], "q1");
-  EXPECT_EQ(new_home_conversations_, 2);
-  EXPECT_FALSE(panel_.View().error);
-  EXPECT_TRUE(panel_.View().thinking);
-}
-
-// The review's interleaving: one-off A answers; "?" B stops it and starts once the Home session is free; A's late
-// answer and end arrive after B has started. Neither is stored in the open chat (a chat with a person here), B is not
-// ended or failed by them, and B's own answer reaches the panel.
-TEST_F(AskAiPanelTest, AStoppedOneOffsLateEventsNeitherReachTheOpenChatNorEndTheNextOne) {
-  turn_host_.active_thread = "chat-with-a-person";
-  ASSERT_TRUE(panel_.OpenOnce("q-a"));
-  ASSERT_EQ(home_turn_, 1u);
-  agent_.HandleAgentEvent(Loading(true, {}, 1));
-
-  home_free_ = false; // A still answers
-  ASSERT_TRUE(panel_.OpenOnce("q-b"));
-  ASSERT_EQ(cancels_.size(), 1u) << "A is stopped";
-  EXPECT_EQ(home_submits_.size(), 1u) << "B waits until A's turn has really ended";
-  home_free_ = true; // A's steps ended (its "ended" event is still on its way)
-  panel_.Tick();
-  ASSERT_EQ(home_submits_.size(), 2u);
-  ASSERT_EQ(home_turn_, 2u);
-  ASSERT_TRUE(agent_.Busy().BusyIn(kAskAiOnceThread));
-
-  const int syncs = turn_host_.display_syncs;
-  agent_.HandleAgentEvent(Ready("A's late answer", {}, 1));
-  agent_.HandleAgentEvent(Loading(false, {}, 1));
-  EXPECT_EQ(turn_host_.stored_replies, 0) << "nothing stored in any chat";
-  EXPECT_EQ(turn_host_.display_syncs, syncs);
-  EXPECT_TRUE(agent_.Busy().BusyIn(kAskAiOnceThread)) << "B still answers";
-  EXPECT_TRUE(panel_.View().thinking);
-  EXPECT_FALSE(panel_.View().error) << "B is not shown as failed";
-  ASSERT_EQ(panel_.View().rows.size(), 1u) << "only B's question; A's answer is not B's";
-
-  agent_.HandleAgentEvent(Loading(true, {}, 2));
-  agent_.HandleAgentEvent(Ready("B's answer", {}, 2));
-  agent_.HandleAgentEvent(Loading(false, {}, 2));
-  EXPECT_EQ(turn_host_.stored_replies, 0) << "B's answer is the panel's only";
-  EXPECT_FALSE(agent_.Busy().Any());
-  EXPECT_FALSE(panel_.View().error);
-  ASSERT_EQ(panel_.View().rows.size(), 2u);
-  EXPECT_FALSE(panel_.View().rows[1].user);
-  EXPECT_NE(std::string(panel_.View().rows[1].content_rml.c_str()).find("B's answer"), std::string::npos);
 }
 
 // Defence in depth: a Home answer whose turn the UI no longer knows (no chat it belongs to) is dropped, never stored
@@ -471,27 +301,6 @@ TEST_F(AskAiPanelTest, AHomeAnswerWithNoChatIsNeverStoredInTheOpenChat) {
   EXPECT_EQ(turn_host_.stored_replies, 0);
   agent_.FinishAssistantReply("entry", "text", /*from_llm=*/true, {}, /*thread_id=*/{});
   EXPECT_EQ(turn_host_.stored_replies, 0);
-}
-
-TEST_F(AskAiPanelTest, AOneOffWaitsForAFreeTurnShownAsQueued) {
-  max_turns_ = 1;                                                  // a guest
-  can_start_ = [](const std::string&) { return TurnStart::Full; }; // another chat's answer takes the one turn
-  ASSERT_TRUE(panel_.OpenOnce("q"));
-  EXPECT_TRUE(home_submits_.empty()) << "the cap counts the one-off too";
-  EXPECT_EQ(std::string(panel_.View().queued_text.c_str()), "q") << "shown as 'AI is busy, sent later'";
-  EXPECT_FALSE(panel_.View().thinking);
-  EXPECT_TRUE(panel_.View().rows.empty());
-  panel_.Tick();
-  EXPECT_TRUE(home_submits_.empty());
-
-  can_start_ = [](const std::string&) { return TurnStart::Yes; }; // that answer ended
-  panel_.Tick();
-  ASSERT_EQ(home_submits_.size(), 1u);
-  EXPECT_EQ(home_submits_[0], "q");
-  EXPECT_EQ(std::string(panel_.View().queued_text.c_str()), "");
-  EXPECT_TRUE(panel_.View().thinking);
-  ASSERT_EQ(panel_.View().rows.size(), 1u);
-  EXPECT_TRUE(panel_.View().rows[0].user);
 }
 
 // --- the shared conversation -------------------------------------------------------------------------
@@ -505,7 +314,6 @@ TEST_F(AskAiPanelTest, EveryEntryAndOpenInAiChatUseTheOneSharedThread) {
   ASSERT_EQ(panel_host_.sent.size(), 1u);
   EXPECT_EQ(panel_host_.sent[0].thread_id, "ai-used-last");
   EXPECT_EQ(panel_host_.sent[0].text, "hello");
-  EXPECT_TRUE(home_submits_.empty()) << "never the one-off's Home session";
   EXPECT_TRUE(panel_.Shows("ai-used-last"));
   panel_.OpenInChat();
   ASSERT_EQ(panel_host_.opened_in_chat.size(), 1u);
@@ -647,10 +455,6 @@ TEST_F(AskAiPanelTest, NoAssistantSetUpIsAnErrorNotASilence) {
   EXPECT_TRUE(panel_.View().error);
   EXPECT_TRUE(panel_.View().show_support);
   EXPECT_TRUE(panel_host_.sent.empty());
-
-  ASSERT_TRUE(panel_.OpenOnce("q"));
-  EXPECT_TRUE(panel_.View().error);
-  EXPECT_TRUE(home_submits_.empty());
 }
 
 TEST_F(AskAiPanelTest, ThePrivacyCardShowsOnlyUntilGotIt) {
@@ -794,29 +598,6 @@ TEST(AskAiPanelSourceTest, TheTesterRowClearsTheSeenFlag) {
   ASSERT_TRUE(static_cast<bool>(ClearAskAiIntroSeen(store)));
   EXPECT_FALSE(store.Snapshot().profile_prefs.ai_panel_intro_seen);
   fs::remove_all(root);
-}
-
-// --- the demo app's made-up answers ----------------------------------------------------------------------
-
-TEST_F(AskAiPanelTest, TheDemoStreamsAMadeUpOneOffAnswer) {
-  agent_.SetUseLlm(false);
-  turn_host_.messaging_ready = true;
-  panel_.SetFakeAnswers([](const std::string&) { return std::string("Made-up answer, streamed."); });
-  ASSERT_TRUE(panel_.OpenOnce("q"));
-  EXPECT_TRUE(agent_.Busy().BusyIn(kAskAiOnceThread));
-  std::this_thread::sleep_for(std::chrono::milliseconds(120));
-  panel_.Tick(); // a part of it streams
-  const std::string streamed = agent_.StreamingText(kAskAiOnceThread);
-  EXPECT_FALSE(streamed.empty());
-  EXPECT_EQ(std::string("Made-up answer, streamed.").rfind(streamed, 0), 0u) << streamed;
-  for (int i = 0; i < 50 && agent_.Busy().BusyIn(kAskAiOnceThread); ++i) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    panel_.Tick();
-  }
-  EXPECT_FALSE(agent_.Busy().Any());
-  ASSERT_EQ(panel_.View().rows.size(), 2u);
-  EXPECT_NE(std::string(panel_.View().rows[1].content_rml.c_str()).find("Made-up answer"), std::string::npos);
-  EXPECT_TRUE(panel_.View().show_support);
 }
 
 // --- what ChatController does with the panel (source checks: it needs the whole app to run) -------------
@@ -1005,14 +786,15 @@ TEST_F(AskAiInputRowTest, TheSettingsQuestionMarkHasNoCameraNorAttachmentAndNoPi
   ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
   panel_.PickPicture(false);
   ASSERT_TRUE(panel_.View().has_picture);
-  ASSERT_TRUE(panel_.OpenOnce("「发送崩溃报告」是什么意思？"));
+  ASSERT_TRUE(panel_.OpenSupport("「发送崩溃报告」是什么意思？"));
   EXPECT_FALSE(panel_.View().show_media);
   EXPECT_FALSE(panel_.View().has_picture) << "a picture waiting in the shared mode is not shown here";
   panel_.PickPicture(true);
   EXPECT_EQ(captures_, 0);
   panel_.SetDraftForTest("and more?");
   panel_.Send();
-  EXPECT_TRUE(sends_.empty()) << "a one-off is words only";
+  EXPECT_TRUE(sends_.empty()) << "PP 客服's chat is words only here";
+  EXPECT_EQ(panel_host_.support.back(), "and more?");
   panel_host_.AskAiCloseSheet(0);
   ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
   EXPECT_TRUE(panel_.View().show_media);

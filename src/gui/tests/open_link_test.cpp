@@ -58,9 +58,6 @@ TEST(OpenLinkSourceTest, OwnFeedLinksOpenWithoutAPrompt) {
     EXPECT_NE(body->find("OpenTrustedUrl("), std::string::npos) << signature;
     EXPECT_EQ(body->find("ConfirmAndOpenUrl("), std::string::npos) << signature;
   }
-  const std::string header = ReadFile(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.h");
-  EXPECT_NE(header.find("void AskAiOpenUrl(const std::string& url) override { OpenTrustedUrl(url); }"),
-            std::string::npos);
   // An article card's button is trusted only when the AI assistant wrote the message.
   const auto action = FunctionBody(source, "void ChatController::HandleLocalActionIn(");
   ASSERT_TRUE(action.has_value());

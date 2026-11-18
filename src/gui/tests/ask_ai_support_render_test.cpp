@@ -159,7 +159,6 @@ public:
   void AskAiLater(std::function<void()> fn) override { later.push_back(std::move(fn)); }
   void AskAiRunAction(const std::string&, const std::string&, int) override {}
   void AskAiOpenLink(const std::string&, const std::string&, int) override {}
-  void AskAiOpenUrl(const std::string&) override {}
   bool AskAiIntroSeen() const override { return false; } // the AI card would show in the AI mode
   void AskAiMarkIntroSeen() override {}
   void AskAiToast(const std::string&) override {}
@@ -335,7 +334,6 @@ TEST_F(AskAiSupportRenderTest, TheSheetIsPPSupportWithNothingOfTheAi) {
   EXPECT_EQ(TextOf(".ask-ai-privacy"), Tr("ask_ai.support.privacy"));
   EXPECT_FALSE(Shows(".ask-ai-intro")) << "the AI privacy card is the AI's";
   EXPECT_FALSE(Shows(".ask-ai-support")) << "no \"Ask PP Support\" under it: this is PP 客服";
-  EXPECT_FALSE(Shows(".ask-ai-section")) << "no one-off AI title";
   EXPECT_FALSE(Shows(".prompt-attach-btn"));
   EXPECT_FALSE(Shows(".ask-ai-reminder"));
   EXPECT_FALSE(Shows(".thinking:not(.ask-ai-support-waiting):not(.ask-ai-support-slow)")) << "no AI thinking";

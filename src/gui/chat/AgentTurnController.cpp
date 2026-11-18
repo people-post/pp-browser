@@ -859,19 +859,6 @@ void AgentTurnController::NoteHomeTurnStarted() {
   }
 }
 
-SubmitOutcome AgentTurnController::SubmitAskAiOnce(const std::string& text) {
-  if (!agent_ports_.submit_home_explanation) {
-    return SubmitOutcome::Ignored;
-  }
-  const SubmitOutcome outcome = agent_ports_.submit_home_explanation(text);
-  if (outcome == SubmitOutcome::Started) {
-    MarkAgentBusy(kAskAiOnceThread);
-    home_turn_thread_ = kAskAiOnceThread; // the Home session's events belong to the panel, not to a chat
-    NoteHomeTurnStarted();                // and a stopped earlier one-off's late events are dropped
-  }
-  return outcome;
-}
-
 std::string AgentTurnController::StreamingText(const std::string& thread_id) const {
   const auto it = streaming_.find(thread_id);
   return it == streaming_.end() ? std::string() : it->second.text;
@@ -1401,10 +1388,6 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
     case AgentEventType::AssistantReady: {
       const std::string thread = EventThread(event);
       ClearStreamingRow(thread);
-      if (thread == kAskAiOnceThread) {
-        host_.OnAskAiOnceReply(event); // the panel's one-off answer: shown there, stored nowhere
-        break;
-      }
       if (thread.empty()) {
         // A Home answer whose turn the UI no longer knows: storing it in the open chat could put it in a chat with a
         // person. Dropped, said in the log.

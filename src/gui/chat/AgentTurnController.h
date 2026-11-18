@@ -38,11 +38,6 @@ class ToolRegistry;
 
 /** Pseudo thread whose blobs_view holds AI image thumbnails; wiped with the other session plaintext views. */
 inline constexpr const char* kAiImageViewThread = "ai-images";
-/**
- * The ask-AI panel's one-off question (settings "?", DEV/PLAN-ui-batch5-ask-ai.md 5a): it runs in the Home session
- * and shows only in the panel, under this pseudo thread ("busy", the streamed text). Never a stored thread.
- */
-inline constexpr const char* kAskAiOnceThread = "ask-ai-once";
 
 /** What AgentTurnController needs from the chat screen it is part of (ChatController). UI thread. */
 class AgentTurnHost {
@@ -81,8 +76,6 @@ public:
     (void)thread_id;
     return false;
   }
-  /** The finished answer of the panel's one-off question (kAskAiOnceThread): never stored in a thread. */
-  virtual void OnAskAiOnceReply(const AgentEvent& event) { (void)event; }
   /**
    * Mint a Brief guest key at `llm_base_url` off the UI thread (MessagingReadyTasks, under BriefKeyRun()); its end
    * comes back to OnBriefKeyMintEnded. The default does nothing (no mint).
@@ -178,12 +171,6 @@ public:
    * not (its turn still runs), the text goes back to that composer.
    */
   void SubmitHomeQuestion(const std::string& thread_id, const std::string& text, std::optional<std::string> payload);
-  /**
-   * The ask-AI panel's one-off question in the Home session (its conversation started empty first), answered in
-   * words only (no app action, no permission card): busy in kAskAiOnceThread once taken. Its events reach only the
-   * panel (OnAskAiOnceReply), never a chat.
-   */
-  SubmitOutcome SubmitAskAiOnce(const std::string& text);
   /** The answer streaming in `thread_id` so far ("" when none). */
   std::string StreamingText(const std::string& thread_id) const;
   /** The question waiting in the queue for `thread_id` ("" when none). */
