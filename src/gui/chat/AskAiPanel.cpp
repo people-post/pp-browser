@@ -697,6 +697,13 @@ void AskAiPanel::OnMessagesChanged() {
   scroll_frames_ = kScrollFrames;
 }
 
+void AskAiPanel::OnAttentiveAgain() {
+  if (!IsOpen() || !view_.support || support_.thread.empty()) {
+    return;
+  }
+  ReadSupportIfLooking();
+}
+
 bool AskAiPanel::SuppressesNoticeFor(const std::string& thread_id) const {
   return view_.support && ShouldSuppressNotice(host_.AskAiAttentive(), Shows(thread_id));
 }

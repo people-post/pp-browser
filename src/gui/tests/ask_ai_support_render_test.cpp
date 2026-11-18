@@ -555,6 +555,23 @@ TEST_F(AskAiSupportRenderTest, AReplyWithThePhoneAwayStaysUnreadAndNotifies) {
   EXPECT_EQ(notices_, 1);
 }
 
+// ⑧ The reply came while the phone was away; the user comes back with the sheet still showing the chat: read then.
+TEST_F(AskAiSupportRenderTest, AReplyThatCameWhileAwayIsReadWhenTheUserIsBack) {
+  ASSERT_TRUE(panel_.OpenSupport(question_));
+  host_.attentive = false;
+  Arrive("PIN 码是打开 PP 时输入的数字。");
+  ASSERT_EQ(host_.unread[kSupportThread], 1);
+  host_.attentive = true;
+  panel_.OnAttentiveAgain();
+  EXPECT_EQ(host_.unread[kSupportThread], 0);
+  panel_.Close(); // not shown any more: coming back reads nothing
+  host_.attentive = false;
+  Arrive("还有一句。");
+  host_.attentive = true;
+  panel_.OnAttentiveAgain();
+  EXPECT_EQ(host_.unread[kSupportThread], 1);
+}
+
 // --- what ChatController does with the sheet (source checks: it needs the whole app to run) ----------------------
 
 std::string Source(const std::string& relative) {
@@ -579,6 +596,11 @@ TEST(AskAiSupportWiringTest, EachMessagesRefreshReadsTheSheetsChatBeforeTheListI
   ASSERT_NE(sheet, std::string::npos);
   EXPECT_LT(sheet, refresh.find("SyncShellSessions()")) << "read before the chats list is drawn";
   EXPECT_LT(sheet, refresh.find("badge_notify_.refresh")) << "and before the badges";
+}
+
+TEST(AskAiSupportWiringTest, ComingBackAsksTheSheetToReadItsChat) {
+  const std::string back = Body(Source("src/gui/chat/ChatController.cpp"), "void ChatController::OnAttentiveAgain(");
+  EXPECT_NE(back.find("ask_ai_.OnAttentiveAgain()"), std::string::npos);
 }
 
 TEST(AskAiSupportWiringTest, TheBackgroundNoticeAsksTheSheetFirst) {

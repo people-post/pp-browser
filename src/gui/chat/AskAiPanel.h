@@ -197,6 +197,8 @@ public:
    * someone is looking (SupportAsk), so no unread is left in the chats list. Called first in each messages refresh.
    */
   void OnMessagesChanged();
+  /** The user is looking at the app again: a reply that arrived meanwhile and shows in the sheet is read now. */
+  void OnAttentiveAgain();
   /** No notification for a new message in `thread_id`: the sheet shows it to someone looking (SupportAsk). */
   bool SuppressesNoticeFor(const std::string& thread_id) const;
 

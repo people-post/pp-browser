@@ -1167,6 +1167,7 @@ void ChatController::OnAttentiveAgain() {
   if (!messaging_ready_) {
     return;
   }
+  ask_ai_.OnAttentiveAgain(); // a support reply the sheet shows, which came while nobody looked
   // Refresh only when something was marked: a focus gain with nothing to read must stay cheap.
   if (MarkOpenChatReadIfLooking()) {
     RefreshFromMessaging();
