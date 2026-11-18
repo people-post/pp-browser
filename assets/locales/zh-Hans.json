@@ -341,7 +341,7 @@
     "settings.security.calls.everyone": "所有人",
     "settings.security.calls.contacts_only": "仅联系人",
     "settings.security.calls.nobody": "无人",
-    "settings.security.calls.help": "其他人来电不会响铃，对方也不知道。",
+    "settings.security.calls.help": "选“仅联系人”或“无人”后，其他人打来你这边不会响，对方也不知道被挡了。",
     "settings.privacy.blocked_help": "已屏蔽：收不到这个人的消息和来电，对方不会被告知。",
     "settings.security.grace.title": "自动锁定",
     "settings.security.grace.now": "每次打开",

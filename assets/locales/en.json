@@ -344,7 +344,7 @@
     "settings.security.calls.everyone": "Everyone",
     "settings.security.calls.contacts_only": "Contacts only",
     "settings.security.calls.nobody": "Nobody",
-    "settings.security.calls.help": "Other callers won't ring, and they aren't told.",
+    "settings.security.calls.help": "With \"Contacts only\" or \"Nobody\", other people's calls won't ring on your side, and they aren't told they were blocked.",
     "settings.privacy.blocked_help": "Blocked: you won't get this person's messages or calls, and they aren't told.",
     "settings.security.grace.title": "Auto-lock",
     "settings.security.grace.now": "Every time",

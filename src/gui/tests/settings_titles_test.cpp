@@ -208,6 +208,24 @@ TEST(SettingsTitlesTest, PrivacyFollowsTheMockupOrderAndWords) {
   EXPECT_EQ(Tr("settings.profile.peer_id_copied"), "Account ID copied");
 }
 
+TEST(SettingsTitlesTest, ThePrivacyCaptionSitsUnderTheCallsRowOnly) {
+  const std::string rml = ReadAsset("views/settings_section_privacy.rml");
+  const size_t calls = rml.find("on_choose_call_invite_policy()");
+  const size_t caption = rml.find("{{i18n:settings.security.calls.help}}");
+  const size_t invites = rml.find("on_choose_group_invite_policy()");
+  ASSERT_NE(caption, std::string::npos);
+  EXPECT_LT(calls, caption);
+  EXPECT_LT(caption, invites) << "the caption is between the two rows, in the calls group";
+  // The two rows are two groups: the caption explains the calls row, not both.
+  EXPECT_NE(rml.find("</div>", calls), std::string::npos);
+  EXPECT_LT(rml.find("</div>", calls), caption);
+  EXPECT_EQ(rml.find("{{i18n:settings.security.calls.help}}", caption + 1), std::string::npos);
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("settings.security.calls.help"), "选“仅联系人”或“无人”后，其他人打来你这边不会响，对方也不知道被挡了。");
+  LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
 TEST(SettingsTitlesTest, HomeTitleIsSettings) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("en");
