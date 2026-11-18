@@ -699,6 +699,7 @@
     "onboarding.later": "Later",
     "contacts.title": "Contacts",
     "contacts.add": "Add contact",
+    "contacts.is_contact": "In your contacts",
     "contacts.add_sheet.search_placeholder": "Enter an account ID to find someone",
     "contacts.add_sheet.searching": "Searching…",
     "contacts.add_sheet.no_results": "No one found. Enter their account ID or scan their QR code.",

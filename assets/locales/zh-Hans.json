@@ -690,6 +690,7 @@
     "onboarding.later": "稍后再说",
     "contacts.title": "联系人",
     "contacts.add": "添加联系人",
+    "contacts.is_contact": "已是联系人",
     "contacts.add_sheet.search_placeholder": "输入账号 ID 找人",
     "contacts.add_sheet.searching": "正在搜索…",
     "contacts.add_sheet.no_results": "没有找到这个人。可以输入对方的账号 ID，或扫对方的二维码。",
