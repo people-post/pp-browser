@@ -1,7 +1,7 @@
 # Release compatibility: design
 
 **Status:** Accepted by Hongwei, 2026-11-17; in review with Leo (relay parts: [§ Decisions taken](#decisions-taken),
-items 3 and 8). Decisions RC001–RC010.
+items 3 and 8). Decisions RC001–RC011.
 **Today's policy** stays [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) until release 1 ships; this
 design replaces its [§ No bridges](../../docs/contracts/COMPATIBILITY.md#no-bridges-pre-release) then.
 
@@ -186,6 +186,27 @@ the range rule):
 - An extension block in each binary format that lacks one (media frames have one).
 - Every key, signature, KEM and AEAD blob names its algorithm, so a later algorithm is a new version, not a new
   identity.
+
+**Also needed, found in the 2026-11-18 review** ([RC011](DECISIONS.md#rc011--operating-a-live-release-what-release-1-also-needs)):
+
+- **Versions in use are counted.** The relay counts requests per app and node release version per day, as aggregates
+  only, never per account (the release version in a request header; `sign_version` it sees already). Range exits,
+  canary judgement and floor raises read these counts.
+- **Remote switches.** `client-compat` carries a short list of named switches (a feature or a call path off) that
+  apps read at start-up, so a broken feature can be turned off in versions already on phones. The reader ships in
+  release 1: a version without it can never be switched.
+- **App ↔ relay behaviour tests.** The app's expectations of each relay route (what it accepts, returns, matches and
+  refuses) are a small suite run against the relay's local stack in both repos' CI. Frozen data checks formats, not
+  behaviour: it would not have caught the search 400 of 2026-11-17.
+- **Relay identity rotation and compromise recovery.** Clients pin each relay's PeerId (MR008), so today a new key
+  strands every client and a leaked key has no recovery. A designed rotation (for example the old key signing a
+  statement that names the new one, or relay links carrying the next PeerId) ships in release 1, because in-range
+  apps must understand it.
+- **In-app account deletion.** App Store guideline 5.1.1(v) requires it for an app that creates accounts; the app has
+  none (no such text in its strings, 2026-11-18). The relay has `register/revoke`; the app's side and what it removes
+  locally and on each of our relays are the work. Blocks the App Store, not TestFlight.
+- **Crash reports from released versions.** The app sends them when `client-compat` names a `crash_reports_url`;
+  prod names none. Release 1 needs a destination, within DIAGNOSTICS' shareable-lines rule.
 
 **Also:** breaking work already planned or half done. P0's inventory decides which of it lands before the freeze;
 the rest waits and follows the range rule.
@@ -414,6 +435,18 @@ rehearsal. Targets: at most 5 minutes of data lost, service back within 2 hours.
 
 **By environment:** prod has all of the above; staging has point-in-time recovery (restore rehearsals need it); dev
 has none.
+
+## Not yet designed
+
+Found in the 2026-11-18 review. Each needs its own design before it is relied on; until then it is tracked here.
+
+| Topic | What is missing | Owner |
+|-------|-----------------|-------|
+| **Release cadence, owner, incidents** | How often releases ship (with weekly releases "the last 3" is 3 weeks, so the 90-day minimum is what holds); one owner per release with a go/no-go checklist; who may pause a phased release or roll the relay back; how users are told; a short postmortem per incident whose finding becomes a cheaper test | Hongwei |
+| **Notice before a floor raise** | The "update soon" banner (`latest_client_version`, `message`) for some weeks before `min_client_version` rises, so no one meets a blocking update screen unwarned | Hongwei, Leo |
+| **Security process** | A `SECURITY.md` (how to report a vulnerability); a security release (every in-range release branch fixed and published together); secret rotation on a schedule | Hongwei, Leo |
+| **Relays and nodes run by others** | The app's minimum relay version (the mirror of `min_client_version`, so it can say a relay is too old); how owners of user-run nodes learn an update is due | Hongwei, Leo |
+| **Libraries change the wire too** | pp-cpp-amp and pp-cpp-mesh (and the others that put bytes on the wire) follow the range rule: the old form stays readable for its window, with their own frozen-data tests | Hongwei |
 
 ## Decisions taken
 

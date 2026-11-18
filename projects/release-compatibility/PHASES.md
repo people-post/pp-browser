@@ -46,6 +46,9 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 
 - [ ] Each P0 item, repo by repo; the relay first (dev, then staging), as for every relay change.
 - [ ] Frozen data of each release-1 format checked in, read by unit tests in each repo.
+- [ ] RC011's release-1 items ([DESIGN § Release 1](DESIGN.md#release-1)): version counts at the relay; remote
+  switches in `client-compat` and the app's reader; the app ↔ relay behaviour suite in both CIs; relay identity
+  rotation; in-app account deletion; a crash-report destination.
 
 ## P4 — Release 1 shipped
 
@@ -67,3 +70,5 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 - [ ] The mixed-version lab run (oldest and newest supported app, pp-node, relay) on released artifacts.
 - [ ] The first format change under the range rule, as the worked example.
 - [ ] A separate dev app ("PP Dev", its own bundle id) for mixed-version testing on one phone.
+- [ ] Each [DESIGN § Not yet designed](DESIGN.md#not-yet-designed) topic designed, or moved earlier when release 1
+  needs it.

@@ -213,3 +213,23 @@ and escrowed offline; a quarterly restore rehearsal on staging with a runbook; a
 - Scheduled backups only (Hongwei's starting point, kept as the daily copies): up to a day of data lost.
 - Backups inside the prod account only (no protection from the account itself).
 - Keeping backups indefinitely (deleted users' data would live on without bound).
+
+## RC011 — Operating a live release: what release 1 also needs
+
+**Date:** 2026-11-18
+**Status:** Agreed by Hongwei (2026-11-18); the relay parts recommended to Leo for review.
+**Decision:** Release 1 also carries: aggregate counts of the versions in use; remote switches in `client-compat`
+with the app's reader; an app ↔ relay behaviour suite in both repos' CI; relay identity rotation and compromise
+recovery; in-app account deletion; a crash-report destination for prod. Release cadence and incidents, notice before
+a floor raise, the security process, relays and nodes run by others, and the libraries' share of the range rule are
+tracked as not yet designed ([DESIGN § Release 1](DESIGN.md#release-1), [§ Not yet designed](DESIGN.md#not-yet-designed)).
+**Rationale:**
+- The plan covered formats, branches, builds, environments and backups, not running a release once it is out:
+  without version counts a range closes blind; without switches a bad version on phones can only be waited out.
+- The switch reader and identity rotation must be in the floor itself: a version shipped without them can never use
+  them.
+- The search 400 showed formats can match while behaviour does not.
+- Account deletion is an App Store requirement, not a choice.
+**Alternatives rejected:** adding them after release 1 (the switch reader and identity rotation would then never
+reach the versions already out).
+
