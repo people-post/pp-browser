@@ -5,12 +5,13 @@
       <h2 class="heading-2 shell-dialog-title">{{i18n:onboarding.name_title}}</h2>
       <p class="text shell-dialog-message">{{i18n:onboarding.name_message}}</p>
       <input class="field shell-pin-gate-input" type="text" data-value="nickname" lang=""
-             placeholder="{{i18n:onboarding.name_placeholder}}" data-attrif-disabled="busy"/>
+             placeholder="{{i18n:onboarding.name_placeholder}}" data-attrif-disabled="busy"
+             data-event-change="onboarding_name_changed()"/>
       <p class="text shell-pin-gate-error" data-if="error != ''">{{error}}</p>
       <p class="text muted" data-if="busy">{{i18n:onboarding.registering}}</p>
       <div class="shell-dialog-actions row">
         <button class="btn btn-primary" type="button" data-event-click="onboarding_register()"
-                data-attrif-disabled="busy || nickname == ''">{{i18n:onboarding.register}}</button>
+                data-attrif-disabled="busy || name_blank">{{i18n:onboarding.register}}</button>
       </div>
     </div>
     <div class="stack" data-if="step == 'account'">

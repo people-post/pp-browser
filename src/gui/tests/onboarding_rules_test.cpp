@@ -40,5 +40,8 @@ TEST(OnboardingRulesTest, TheRegisterButtonIsOffWhileTheNameIsEmpty) {
   std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views/onboarding.rml");
   std::stringstream rml;
   rml << in.rdbuf();
-  EXPECT_NE(rml.str().find("data-attrif-disabled=\"busy || nickname == ''\""), std::string::npos);
+  EXPECT_TRUE(OnboardingNameIsBlank(""));
+  EXPECT_TRUE(OnboardingNameIsBlank("  \t\n"));
+  EXPECT_FALSE(OnboardingNameIsBlank(" Ann "));
+  EXPECT_NE(rml.str().find("data-attrif-disabled=\"busy || name_blank\""), std::string::npos);
 }

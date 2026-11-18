@@ -55,6 +55,8 @@ bool OnboardingController::RegisterModel(ui::Context* context) {
     ctor.Bind("account_id", &account_id_);
     ctor.Bind("error", &error_);
     ctor.Bind("busy", &busy_);
+    ctor.Bind("name_blank", &name_blank_);
+    ctor.BindEventCallback("onboarding_name_changed", &OnboardingController::NameChangedCallback);
     ctor.BindEventCallback("onboarding_register", &OnboardingController::RegisterCallback);
     ctor.BindEventCallback("onboarding_copy_id", &OnboardingController::CopyIdCallback);
     ctor.BindEventCallback("onboarding_share", &OnboardingController::ShareCallback);
@@ -105,6 +107,7 @@ void OnboardingController::LoadIdentityFields() {
   if (nickname_.empty() || !view.nickname.empty()) {
     nickname_ = view.nickname.c_str();
   }
+  name_blank_ = OnboardingNameIsBlank(nickname_.c_str());
   // The id friends type: the same Account ID Me → Profile shows and shares (M002; the relay's inbox too, MR001).
   account_id_ = view.account_id.c_str();
   contact_locator_ = view.contact_locator;
@@ -126,7 +129,7 @@ void OnboardingController::Mount() {
 
 void OnboardingController::DirtyAll() {
   auto& host = DataModelHost::Instance();
-  for (const char* key : {"step", "nickname", "account_id", "error", "busy"}) {
+  for (const char* key : {"step", "nickname", "account_id", "error", "busy", "name_blank"}) {
     host.Dirty("onboarding", key);
   }
 }
@@ -176,6 +179,13 @@ void OnboardingController::OnRegister() {
   } else {
     done(work());
   }
+}
+
+void OnboardingController::NameChangedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                               const ui::VariantList& /*args*/) {
+  OnboardingController& self = Instance();
+  self.name_blank_ = OnboardingNameIsBlank(self.nickname_.c_str());
+  DataModelHost::Instance().Dirty("onboarding", "name_blank");
 }
 
 void OnboardingController::RegisterCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
