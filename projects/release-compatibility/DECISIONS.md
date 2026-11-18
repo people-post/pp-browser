@@ -235,3 +235,22 @@ tracked as not yet designed ([DESIGN § Release 1](DESIGN.md#release-1), [§ Not
 **Alternatives rejected:** adding them after release 1 (the switch reader and identity rotation would then never
 reach the versions already out).
 
+## RC012 — A runbook for every operational action, each use recorded
+
+**Date:** 2026-11-18
+**Status:** Agreed by Hongwei (2026-11-18); the relay runbooks recommended to Leo.
+**Decision:** A release checklist ([DESIGN § Release checklist](DESIGN.md#release-checklist)) and one-page runbooks for
+the other actions ([§ Runbooks](DESIGN.md#runbooks)): hotfix, relay rollback, app incident, restore, key compromise
+before release 1; range exit and security release before the first window closes; key rotation, the pp-node fleet
+rollback and environment resets later. All share one shape (when, who, before, steps as workflow runs, verify,
+communicate, follow up). Each use is recorded in a release or incident issue opened from a template. Rollback, restore
+and key-compromise recovery are rehearsed on staging.
+**Rationale:**
+- The rare actions are the stressful ones; no one remembers steps taken twice a year.
+- Steps as workflow runs keep runbooks short and leave a record; an issue per use shows what was done and decided.
+- Today's checklist (`RELEASE.md`) was written for lockstep pre-release tagging and covers none of the range rule,
+  staging, the canary or the phased release.
+**Alternatives rejected:**
+- One long operations document (hard to follow mid-incident; a page per action is).
+- Checklists in a wiki or chat (they drift from the workflows they describe; the repo keeps them beside them).
+

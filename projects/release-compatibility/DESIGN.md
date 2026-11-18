@@ -1,7 +1,7 @@
 # Release compatibility: design
 
 **Status:** Accepted by Hongwei, 2026-11-17; in review with Leo (relay parts: [§ Decisions taken](#decisions-taken),
-items 3 and 8). Decisions RC001–RC011.
+items 3 and 8). Decisions RC001–RC012.
 **Today's policy** stays [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) until release 1 ships; this
 design replaces its [§ No bridges](../../docs/contracts/COMPATIBILITY.md#no-bridges-pre-release) then.
 
@@ -448,13 +448,97 @@ rehearsal. Targets: at most 5 minutes of data lost, service back within 2 hours.
 **By environment:** prod has all of the above; staging has point-in-time recovery (restore rehearsals need it); dev
 has none.
 
+## Release checklist
+
+Today's list (`docs/ops/RELEASE.md` § Checklist before tagging) predates release mode. This one replaces it when
+release mode ships (P4 moves it into `RELEASE.md`; until then it lives here). Each release gets its own copy: when
+`release/X.Y` is cut, a workflow opens an issue "Release X.Y" from a template (`.github/ISSUE_TEMPLATE/release.md`)
+and assigns the release owner, who ticks the boxes, links results and records the go/no-go there. What CI and the
+workflows already check (tests, frozen data, the mixed-version lab, the staging deploy) is linked, not re-checked
+by hand. The relay keeps its own list in pp-relay-apis (Leo's), linked from the issue.
+
+**Before cutting `release/X.Y`**
+
+- [ ] Format changes since the last release listed, each with its class and range-rule step; the version table updated
+- [ ] Any relay release this one needs: deployed to prod first
+- [ ] Floor raises or windows closing in this release: announced weeks earlier (the update banner)
+- [ ] Freeze announced; release owner named
+
+**Release candidate**
+
+- [ ] `vX.Y.Z-rc.N` tagged; artifacts built once (iOS, Android, desktop, pp-node image)
+- [ ] Full CI on every shipped platform, frozen-data tests and the app ↔ relay behaviour suite green
+- [ ] Staging: the relay candidate deployed; the store app (N−1) and the candidate tested against it; relay rollback
+  rehearsed
+- [ ] Lab scenarios the release touches, and the latest nightly lab, green
+- [ ] On real devices from internal testing: register, message, call, push and VoIP wake, link a device, account
+  deletion
+- [ ] Release notes and TestFlight "What to Test" written
+
+**Go / no-go (release owner)**
+
+- [ ] No open blocker; known issues listed
+- [ ] Version counts reviewed: who is on what, and who an exit affects
+- [ ] Rollback path written: the relay's previous tag, the switches that turn this release's features off
+- [ ] Relay backup taken before the release
+
+**Rollout**
+
+- [ ] Relay: canary 10% for 30 minutes, alarms quiet, then everyone
+- [ ] App: external testers, then the store through the promotion workflow (tags `vX.Y.Z`), phased release; crash
+  reports and error-code alarms watched
+- [ ] pp-node: image published; fleet rolled out (ansible, Leo); owners of user-run nodes told
+
+**After**
+
+- [ ] `client-compat`'s `latest_client_version` raised; the next floor raise scheduled
+- [ ] The release branch's open period and the version table updated
+- [ ] A postmortem if anything went wrong, its finding turned into a cheaper test
+
+## Runbooks
+
+The release is the most common action, not the only one; the rare, stressful ones need written steps most
+([RC012](DECISIONS.md#rc012--a-runbook-for-every-operational-action-each-use-recorded)).
+
+| Action | When | Who decides | Lives in | Before release 1 |
+|--------|------|-------------|----------|------------------|
+| **Release** | every release ([§ Release checklist](#release-checklist)) | release owner | pp-browser | yes |
+| **Hotfix / backport** | a fix on an existing release branch: the release list, shortened | release owner | pp-browser | yes |
+| **Relay rollback** | a bad relay release in prod | anyone on call; the owner is told after | pp-relay-apis | yes |
+| **App incident** | a bad app version on phones: pause the phased release, flip a remote switch, ship a hotfix | release owner | pp-browser | yes |
+| **Restore from backup** | data lost or corrupted ([§ Backups and restore](#backups-and-restore)) | Hongwei and Leo | pp-relay-apis | yes |
+| **Key compromise** | a leaked relay identity key, Support seed, LLM signing key or push credential | Hongwei and Leo | pp-relay-apis | yes |
+| **Range exit** | raising `min_client_version` or the node floor; closing a compatibility window | release owner | pp-browser | before the first window closes |
+| **Security release** | a vulnerability: every in-range branch fixed, embargoed until all publish together | Hongwei | pp-browser | before the first window closes |
+| **Key rotation** | scheduled, not an emergency | Leo | pp-relay-apis | later |
+| **pp-node fleet rollback** | a bad node release (ansible) | Leo | pp-relay-infra-ansible | later |
+| **Environment resets** | dev at will, staging rarely | Leo | pp-relay-apis | later |
+
+**Each runbook has the same shape:**
+
+1. **When to use it**, and when not to (for example: roll the relay back only to a release that reads the data the
+   current one wrote, which RC003 guarantees for one release).
+2. **Who may decide**, and who is told.
+3. **Before acting:** for example the pre-rollback backup (RC010), and which version counts are affected.
+4. **Steps**, each one a workflow run where possible (a manual trigger with inputs, behind an approval), not console
+   clicks: the runbook stays short and every action leaves a record.
+5. **Verify:** what shows it worked (alarms quiet, the smoke run passing, `client-compat` answering the expected floor).
+6. **Communicate:** users (the `client-compat` message, store notes), testers, the team.
+7. **Follow up:** the incident issue, a postmortem, the cheaper test that would have caught it.
+
+**Where they live:** `docs/ops/runbooks/`, one short file per action, a page each; the product's in pp-browser, the
+relay's in pp-relay-apis, each linking the other's. **Each use leaves a record:** the release issue for releases, an
+*incident* issue template (holding the runbook's checklist) for rollbacks, restores and compromises, ticked while the
+steps are done. **They are rehearsed:** rollback and restore quarterly on staging (RC010), and key-compromise recovery
+in the same rehearsal once identity rotation exists (RC011). A runbook never run is a guess.
+
 ## Not yet designed
 
 Found in the 2026-11-18 review. Each needs its own design before it is relied on; until then it is tracked here.
 
 | Topic | What is missing | Owner |
 |-------|-----------------|-------|
-| **Release cadence, owner, incidents** | How often releases ship (with weekly releases "the last 3" is 3 weeks, so the 90-day minimum is what holds); one owner per release with a go/no-go checklist; who may pause a phased release or roll the relay back; how users are told; a short postmortem per incident whose finding becomes a cheaper test | Hongwei |
+| **Release cadence, owner, incidents** | How often releases ship (with weekly releases "the last 3" is 3 weeks, so the 90-day minimum is what holds); one owner per release (the go/no-go is in [§ Release checklist](#release-checklist)); who may pause a phased release or roll the relay back; how users are told; a short postmortem per incident whose finding becomes a cheaper test | Hongwei |
 | **Notice before a floor raise** | The "update soon" banner (`latest_client_version`, `message`) for some weeks before `min_client_version` rises, so no one meets a blocking update screen unwarned | Hongwei, Leo |
 | **Security process** | A `SECURITY.md` (how to report a vulnerability); a security release (every in-range release branch fixed and published together); secret rotation on a schedule | Hongwei, Leo |
 | **Relays and nodes run by others** | The app's minimum relay version (the mirror of `min_client_version`, so it can say a relay is too old); how owners of user-run nodes learn an update is due | Hongwei, Leo |
