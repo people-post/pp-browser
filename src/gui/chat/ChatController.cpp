@@ -625,7 +625,7 @@ void ChatController::MakeReadyTasks() {
   ports.brief_key_done = [this](const BriefKeyMintEnd& end) { agent_.OnBriefKeyMintEnded(end); };
   ports.after_identity_changed = [this]() {
     recovery_phrase_present_.reset(); // a restore / link can bring a phrase
-    agent_.ReloadAgentConfig(); // runtime.llm.api_key takes the key now in the identity
+    agent_.ReloadAgentConfig();       // runtime.llm.api_key takes the key now in the identity
     agent_.RefreshLlmSetupBanner();
   };
   ready_tasks_ = std::make_unique<MessagingReadyTasks>(std::move(ports), agent_.BriefKeyRun());

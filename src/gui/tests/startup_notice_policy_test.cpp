@@ -15,8 +15,8 @@ TEST(StartupNoticePolicyTest, UnreachableClassIsDnsRouteTimeoutAndIdentityFetch)
         Err::Network::ConnectFailed, Err::Network::TlsFailed, Err::Network::RelayIdentityUnavailable}) {
     EXPECT_TRUE(IsNetworkUnreachable(Net(code))) << static_cast<int>(code);
   }
-  for (Err::Network code : {Err::Network::HttpError, Err::Network::HttpRejected,
-                            Err::Network::RecipientNotRegistered, Err::Network::PaymentRequired}) {
+  for (Err::Network code : {Err::Network::HttpError, Err::Network::HttpRejected, Err::Network::RecipientNotRegistered,
+                            Err::Network::PaymentRequired}) {
     EXPECT_FALSE(IsNetworkUnreachable(Net(code))) << static_cast<int>(code);
   }
   EXPECT_FALSE(IsNetworkUnreachable(AppError::Auth(Err::Auth::Forbidden, "x")));
