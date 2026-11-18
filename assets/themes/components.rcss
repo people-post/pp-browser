@@ -5307,12 +5307,6 @@ select selectbox option {
   text-align: center;
 }
 
-.ask-ai-section {
-  margin: 0 0 10dp 0;
-  font-size: 13dp;
-  line-height: 18dp;
-}
-
 .ask-ai-empty {
   margin: 24dp 0;
   font-size: 15dp;
