@@ -2199,18 +2199,20 @@ void Application::WireAgentAndConfig() {
     shell_->SetShowAdvancedSettings(prefs.show_advanced_settings);
   });
   // A contact starred or unstarred (on their page), the recovery phrase opened, or the 动态 section toggled: Home follows.
-  store_.AddProfilePrefsListener(
-      [this, starred = store_.Snapshot().profile_prefs.starred_contacts,
-       phrase_seen = store_.Snapshot().profile_prefs.recovery_phrase_seen,
-       show_dynamic = store_.Snapshot().profile_prefs.home_show_dynamic](const ProfilePreferences& prefs) mutable {
-        if (prefs.starred_contacts != starred || prefs.recovery_phrase_seen != phrase_seen ||
-            prefs.home_show_dynamic != show_dynamic) {
-          starred = prefs.starred_contacts;
-          phrase_seen = prefs.recovery_phrase_seen;
-          show_dynamic = prefs.home_show_dynamic;
-          chat_->OnHomePrefsChanged();
-        }
-      });
+  store_.AddProfilePrefsListener([this, starred = store_.Snapshot().profile_prefs.starred_contacts,
+                                  phrase_seen = store_.Snapshot().profile_prefs.recovery_phrase_seen,
+                                  show_dynamic = store_.Snapshot().profile_prefs.home_show_dynamic,
+                                  reminders = store_.Snapshot().profile_prefs.recovery_reminder_dismissals](
+                                     const ProfilePreferences& prefs) mutable {
+    if (prefs.starred_contacts != starred || prefs.recovery_phrase_seen != phrase_seen ||
+        prefs.home_show_dynamic != show_dynamic || prefs.recovery_reminder_dismissals != reminders) {
+      starred = prefs.starred_contacts;
+      phrase_seen = prefs.recovery_phrase_seen;
+      reminders = prefs.recovery_reminder_dismissals;
+      show_dynamic = prefs.home_show_dynamic;
+      chat_->OnHomePrefsChanged();
+    }
+  });
 }
 
 bool Application::MountPresenters(ui::Context* context) {

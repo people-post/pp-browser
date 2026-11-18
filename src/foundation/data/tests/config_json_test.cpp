@@ -550,3 +550,19 @@ TEST(ConfigJsonTest, SavingKeepsEnvReferencesAndNeverWritesResolvedKeys) {
 
   pbr::ICredentialStore::SetInstance(nullptr);
 }
+
+TEST(ConfigJsonTest, ProfilePrefsRecoveryReminderRoundTripsAndClamps) {
+  pbr::ProfilePreferences edited;
+  edited.recovery_reminder_dismissals = 1;
+  edited.recovery_reminder_dismissed_ms = 1700000000000;
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_EQ(parsed.recovery_reminder_dismissals, 1);
+  EXPECT_EQ(parsed.recovery_reminder_dismissed_ms, 1700000000000);
+
+  auto odd = pbr::TryParseObject(R"({ "recovery_reminder_dismissals": 9, "recovery_reminder_dismissed_ms": -5 })");
+  ASSERT_TRUE(odd.has_value());
+  pbr::ProfilePrefsFromObject(*odd, parsed);
+  EXPECT_EQ(parsed.recovery_reminder_dismissals, 2);
+  EXPECT_EQ(parsed.recovery_reminder_dismissed_ms, 0);
+}

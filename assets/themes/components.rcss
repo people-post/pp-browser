@@ -8011,6 +8011,25 @@ input.checkbox {
   overflow-y: auto;
 }
 
+/* A one-time tip card above the chat list (save the recovery phrase). */
+.sidebar-tip {
+  margin: 4dp 16dp 8dp 16dp;
+  padding: 14dp 16dp 8dp 16dp;
+  border-radius: 14dp;
+  box-sizing: border-box;
+}
+
+.sidebar-tip-body {
+  font-size: 15dp;
+  line-height: 21dp;
+  margin-bottom: 8dp;
+}
+
+.sidebar-tip-actions {
+  align-items: center;
+  gap: 8dp;
+}
+
 .sidebar-empty {
   padding: 24dp 16dp;
   text-align: center;

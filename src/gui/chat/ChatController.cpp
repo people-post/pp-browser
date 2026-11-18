@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include "gui/chat/ChatController.h"
+#include "gui/RecoveryReminder.h"
 #include "gui/chat/ApprovalCard.h"
 #include "gui/chat/AttachMenuRules.h"
 
@@ -1718,6 +1719,7 @@ void ChatController::ApplyHomeToday(const ChatListScreen& list) {
                                    : (home_summary_.mentions.title + " · " + home_summary_.mentions.preview).c_str();
   shell_.home_new_people = home_summary_.new_contacts;
   shell_.home_security_ok = session_store_ && Store().Snapshot().profile_prefs.recovery_phrase_seen;
+  shell_.recovery_reminder = RecoveryReminderShows();
   // The widgets page is off until it gets its own page: the stored preference is kept but never read here.
   constexpr bool kWidgetsPageOnHome = false;
   shell_.home_show_dynamic = kWidgetsPageOnHome && session_store_ && Store().Snapshot().profile_prefs.home_show_dynamic;
@@ -1995,6 +1997,38 @@ void ChatController::RefreshHomeCalls() {
           RefreshHomeCalls();
         }
       });
+}
+
+bool ChatController::RecoveryReminderShows() {
+  if (!session_store_) {
+    return false;
+  }
+  const ProfilePreferences& prefs = Store().Snapshot().profile_prefs;
+  RecoveryReminderInput in;
+  in.onboarding_completed = prefs.onboarding_completed;
+  in.phrase_seen = prefs.recovery_phrase_seen;
+  in.dismissals = prefs.recovery_reminder_dismissals;
+  in.dismissed_ms = prefs.recovery_reminder_dismissed_ms;
+  in.now_ms = util::NowUnixMs();
+  // A linked (non-admin) device has no phrase to show; asked last because it reads the vault.
+  in.can_view_phrase = true;
+  if (!ShouldShowRecoveryReminder(in)) {
+    return false;
+  }
+  if (!recovery_phrase_present_ && facade_ != nullptr && messaging_ready_) {
+    recovery_phrase_present_ = facade_->HasRecoveryPhrase();
+  }
+  return recovery_phrase_present_;
+}
+
+void ChatController::OnRecoveryReminderLater() {
+  if (!session_store_) {
+    return;
+  }
+  ProfilePreferences prefs = Store().Snapshot().profile_prefs;
+  prefs.recovery_reminder_dismissals = std::min(2, prefs.recovery_reminder_dismissals + 1);
+  prefs.recovery_reminder_dismissed_ms = util::NowUnixMs();
+  (void)Store().SaveProfilePrefs(prefs); // the prefs listener refreshes the card
 }
 
 void ChatController::OnHomePrefsChanged() {
@@ -5752,6 +5786,12 @@ bool ChatController::Setup(ui::Context* context) {
                                    open_settings_section_("security");
                                  }
                                }));
+        ctor.BindEventCallback("recovery_reminder_open", DataEvent([this] {
+                                 if (open_settings_section_) {
+                                   open_settings_section_("security");
+                                 }
+                               }));
+        ctor.BindEventCallback("recovery_reminder_later", DataEvent([this] { OnRecoveryReminderLater(); }));
         ctor.BindEventCallback("home_open_favorite",
                                DataEvent<int>([this](const int index) { OpenHomeFavorite(index); }));
         ctor.BindEventCallback("home_open_calls", DataEvent([this] { OpenHomeCalls(); }));

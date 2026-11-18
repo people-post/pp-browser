@@ -195,6 +195,9 @@ public:
   void OpenReactors(const std::string& message_id);
   /** The profile preferences changed (a contact starred, Edit Home): Home's widgets are drawn again. */
   void OnHomePrefsChanged();
+  /** The Chats page card "save your recovery phrase" (RecoveryReminder.h); "Later" counts toward its one repeat. */
+  bool RecoveryReminderShows();
+  void OnRecoveryReminderLater();
   void OnSessionsTabActivated();
   /**
    * Phone: back from Settings / Contacts to the chat overlay left open under them (ShellHost
@@ -742,6 +745,8 @@ private:
   ChatState chat_;
   ShellState shell_;
   bool messaging_ready_ = false;
+  /** True once this device was seen to hold a recovery phrase (the vault is read only until then). */
+  bool recovery_phrase_present_ = false;
   /**
    * One up per WireMessagingBindings (and when messaging goes away): a messaging-ready task's result is stored only
    * when the session it started in is still this one (MessagingReadyTasks).

@@ -1654,6 +1654,14 @@ input.checkbox:checked {
   background-color: #7878801f;
 }
 
+.sidebar-tip {
+  background-color: #f2f2f7;
+}
+
+.sidebar-tip-body {
+  color: #000000;
+}
+
 .sidebar-reconnect-entry svg {
   image-color: #ff3b30;
 }
