@@ -111,6 +111,10 @@ void QrScanController::Open(QrScanResultCallback on_result) {
     ScanLog().warning << "Open ignored: app is not in the foreground";
     return;
   }
+  // A newer tap takes over: whatever an older tap left waiting (a late permission answer, a stored "when the app is
+  // active again") belongs to an abandoned request and must not run after this one.
+  awaiting_permission_ = nullptr;
+  on_foreground_ = nullptr;
   switch (camera_.state()) {
     case CameraPermission::Granted:
       Present(std::move(on_result));

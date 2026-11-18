@@ -158,6 +158,45 @@ TEST_F(QrScanPermissionTest, RefusalAnsweredInTheBackgroundShowsTheHintOnForegro
   EXPECT_EQ(pills.size(), 1u);
 }
 
+TEST_F(QrScanPermissionTest, ANewerTapOpeningTheScannerCancelsTheStoredForegroundOpen) {
+  Open();
+  PromptShows();
+  camera.answer(true); // answered in the background: the open waits for the foreground
+  camera.RunUi();
+  PromptGoes(); // the foreground event posts the stored open to the UI queue
+  camera.state = CameraPermission::Granted;
+  Open(); // before the queue runs, the user taps again and the scanner opens
+  EXPECT_EQ(pushed, 1);
+  camera.RunUi();
+  EXPECT_EQ(pushed, 1) << "the older stored open must not present a second time";
+  EXPECT_EQ(closed, 0);
+  EXPECT_TRUE(scan.IsOpen());
+}
+
+TEST_F(QrScanPermissionTest, ANewerTapOpeningTheScannerCancelsTheStoredRefusalPill) {
+  Open();
+  PromptShows();
+  camera.answer(false);
+  camera.RunUi();
+  PromptGoes();
+  camera.state = CameraPermission::Granted;
+  Open();
+  camera.RunUi();
+  EXPECT_EQ(pushed, 1);
+  EXPECT_TRUE(pills.empty()) << "no stale denial pill after a successful open";
+}
+
+TEST_F(QrScanPermissionTest, ALatePermissionAnswerForAnAbandonedRequestDoesNothing) {
+  Open(); // asks
+  camera.state = CameraPermission::Granted;
+  Open(); // a newer tap finds it granted and opens
+  EXPECT_EQ(pushed, 1);
+  camera.answer(true);
+  camera.RunUi();
+  EXPECT_EQ(pushed, 1);
+  EXPECT_EQ(closed, 0);
+}
+
 TEST_F(QrScanPermissionTest, ARealTripToTheBackgroundStillClosesAnOpenScanner) {
   Open();
   PromptShows();
