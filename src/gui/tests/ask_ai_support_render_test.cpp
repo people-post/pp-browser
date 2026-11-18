@@ -137,7 +137,9 @@ public:
     std::vector<AskAiRow> rows;
     int n = 0;
     for (const Message& message : chats[thread_id]) {
-      const std::string rml = "<div class=\"bubble\"><p class=\"bubble-text\">" + message.text + "</p></div>";
+      const std::string rml = "<div class=\"bubble\"><p class=\"bubble-text\">" + message.text + "</p>" +
+                              (message.mark == SendMark::Failed ? "<span class=\"fake-send-failed\"></span>" : "") +
+                              "</div>";
       rows.push_back({("m" + std::to_string(++n)).c_str(), message.own, rml.c_str()});
     }
     return rows;
@@ -437,6 +439,20 @@ TEST_F(AskAiSupportRenderTest, AQuestionThatHasNotGoneOutShowsNoWaitingLine) {
   EXPECT_FALSE(Shows(".ask-ai-support-slow"));
 }
 
+// A question that waits to go out turns "did not go out" by the clock alone: the sheet's bubble shows it then (the
+// chat's send-mark timer redraws the sheet), and no waiting line shows for a send that failed.
+TEST_F(AskAiSupportRenderTest, AQueuedQuestionThatTurnsFailedShowsItInTheSheetWithNoWaitingLine) {
+  host_.sent_mark = SendMark::Queued;
+  ASSERT_TRUE(panel_.OpenSupport(question_));
+  EXPECT_FALSE(Shows(".fake-send-failed"));
+  Later(30'000);
+  host_.chats[kSupportThread][0].mark = SendMark::Failed; // the clock ran out, as SendMarkOf reads it
+  panel_.OnMessagesChanged();                             // what the send-mark timer now calls
+  EXPECT_TRUE(Shows(".fake-send-failed"));
+  EXPECT_FALSE(Shows(".ask-ai-support-waiting"));
+  EXPECT_FALSE(Shows(".ask-ai-support-slow"));
+}
+
 // ⑤ PP 客服 is not configured: the sheet stays open and says so; nothing is sent.
 TEST_F(AskAiSupportRenderTest, PPSupportNotConfiguredSaysSoAndSendsNothing) {
   host_.ensure = Error("Support is not available").WithUser(Tr("settings.support.unavailable"));
@@ -546,6 +562,19 @@ TEST_F(AskAiSupportRenderTest, AReplyAfterTheSheetClosedCountsUnread) {
   EXPECT_EQ(notices_, 1);
 }
 
+// After a failed start the sheet shows no chat: a reply in the old support chat is unread and notifies as anywhere.
+TEST_F(AskAiSupportRenderTest, AFailedStartLeavesNoStaleThreadThatSwallowsANotice) {
+  ASSERT_TRUE(panel_.OpenSupport(question_)); // the chat is found: its id is known
+  host_.ensure = Error("Support is not available").WithUser(Tr("settings.support.unavailable"));
+  ASSERT_TRUE(panel_.OpenSupport(question_)); // asked again: not found now
+  EXPECT_FALSE(panel_.Shows(kSupportThread));
+  EXPECT_FALSE(panel_.SuppressesNoticeFor(kSupportThread));
+  host_.attentive = false;
+  Arrive("PIN 码是打开 PP 时输入的数字。");
+  EXPECT_EQ(host_.unread[kSupportThread], 1);
+  EXPECT_EQ(notices_, 1);
+}
+
 // ⑧ The phone was put away with the sheet open: nobody saw the reply, so it stays unread and notifies.
 TEST_F(AskAiSupportRenderTest, AReplyWithThePhoneAwayStaysUnreadAndNotifies) {
   ASSERT_TRUE(panel_.OpenSupport(question_));
@@ -596,6 +625,11 @@ TEST(AskAiSupportWiringTest, EachMessagesRefreshReadsTheSheetsChatBeforeTheListI
   ASSERT_NE(sheet, std::string::npos);
   EXPECT_LT(sheet, refresh.find("SyncShellSessions()")) << "read before the chats list is drawn";
   EXPECT_LT(sheet, refresh.find("badge_notify_.refresh")) << "and before the badges";
+}
+
+TEST(AskAiSupportWiringTest, TheSendMarkTimerRedrawsTheSheetToo) {
+  const std::string redraw = Body(Source("src/gui/chat/ChatController.cpp"), "void ChatController::RedrawSendMarks(");
+  EXPECT_NE(redraw.find("ask_ai_.OnMessagesChanged()"), std::string::npos);
 }
 
 TEST(AskAiSupportWiringTest, ComingBackAsksTheSheetToReadItsChat) {

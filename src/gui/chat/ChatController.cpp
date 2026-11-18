@@ -3583,6 +3583,7 @@ void ChatController::RedrawSendMarks() {
   }
   SyncDisplayFromThread();
   DirtyChat();
+  ask_ai_.OnMessagesChanged(); // the support sheet's rows read their marks again too (ArmSendMarkRedraw armed this)
   NotifySurfaceChanged();
 }
 
