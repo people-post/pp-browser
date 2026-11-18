@@ -90,7 +90,7 @@ struct Device {
       return sealed.error();
     }
     RelayEnvelope envelope =
-        BuildDirectEnvelope(*appended, EnvelopeSender{keys.account_id, keys.device.peer_id}, thread.channel,
+        BuildDirectEnvelope(*appended, options, EnvelopeSender{keys.account_id, keys.device.peer_id}, thread.channel,
                             "account:" + peer.tag, {AccountCopy(*appended, std::move(*sealed))}, NextRelayOrderKey());
     test::SignEnvelopeAs(keys, envelope);
     return envelope;
@@ -349,12 +349,12 @@ TEST(OutboundSendRulesTest, AGroupMembersEnvelopeCarriesACopyPerDevice) {
                         .payload_b64 = "cGF5bG9hZA=="};
   const RelayCopy laptop{
       .recipient_device = "QmBLaptop", .session_epoch = 1, .sender_seq = 3, .payload_b64 = "cGF5bG9hZDI="};
-  RelayEnvelope e = BuildGroupMemberEnvelope(message, sender, "group-1", "account:b", {phone, laptop}, 11);
+  RelayEnvelope e = BuildGroupMemberEnvelope(message, {}, sender, "group-1", "account:b", {phone, laptop}, 11);
   EXPECT_EQ(e.route.kind, "group");
   EXPECT_EQ(e.body.e2e.copies, (std::vector<RelayCopy>{phone, laptop})) << "one record, each device's copy (M022)";
   EXPECT_EQ(e.order_key, 11u) << "the record's own relay index";
   EXPECT_EQ(e.stream_key, BuildGroupRelayStreamKey("group-1", "account:a", "account:b", "QmA"));
-  EXPECT_NE(BuildGroupMemberEnvelope(message, sender, "group-1", "account:c", {phone}, 12).stream_key, e.stream_key)
+  EXPECT_NE(BuildGroupMemberEnvelope(message, {}, sender, "group-1", "account:c", {phone}, 12).stream_key, e.stream_key)
       << "the relay keeps one row per sender, stream and index: each member's records have their own stream";
   EXPECT_EQ(e.recipient_account_id, "account:b") << "the relay delivers to relay ids";
   EXPECT_EQ(e.relay_wake_hint, "m") << "a tap on the push is matched to this message by its id";
@@ -404,38 +404,61 @@ TEST_F(OutboundMessageTest, OnlyShownMessagesCarryAWakeHint) {
   for (const ChatContentType type :
        {ChatContentType::Text, ChatContentType::Attachment, ChatContentType::ContactCard, ChatContentType::CryptoTx}) {
     message.content_type = type;
-    EXPECT_TRUE(RaisesWakePush(message));
+    EXPECT_TRUE(RaisesWakePush(message, {}));
   }
   message.content_type = ChatContentType::System;
-  EXPECT_TRUE(RaisesWakePush(message)) << "a system line without a control type is shown";
+  EXPECT_TRUE(RaisesWakePush(message, {})) << "a system line without a control type is shown";
   for (const char* control : {"call_summary", "group_invite", "relay_grant"}) {
     message.payload_json = std::string(R"({"control_type":")") + control + R"("})";
-    EXPECT_FALSE(RaisesWakePush(message)) << control;
+    EXPECT_FALSE(RaisesWakePush(message, {})) << control << ": its owner decides";
   }
   for (const char* annotation : {"reaction", "reaction_clear", "retract", "edit"}) {
     message.content_type = ChatContentType::Annotation;
     message.payload_json = std::string(R"({"annotation_type":")") + annotation + R"("})";
-    EXPECT_FALSE(RaisesWakePush(message)) << annotation;
+    EXPECT_FALSE(RaisesWakePush(message, {})) << annotation;
   }
   message.content_type = ChatContentType::Unsupported;
-  EXPECT_FALSE(RaisesWakePush(message));
+  EXPECT_FALSE(RaisesWakePush(message, {}));
 
   ThreadMessage text;
   text.id = "m";
   const EnvelopeSender sender{"account:a", "QmA"};
-  EXPECT_EQ(BuildDirectEnvelope(text, sender, ThreadChannel::E2e, "account:b", {}, 1).relay_wake_hint, "m");
+  EXPECT_EQ(BuildDirectEnvelope(text, {}, sender, ThreadChannel::E2e, "account:b", {}, 1).relay_wake_hint, "m");
   ThreadMessage reaction = text;
   reaction.content_type = ChatContentType::Annotation;
-  EXPECT_EQ(BuildDirectEnvelope(reaction, sender, ThreadChannel::E2e, "account:b", {}, 1).relay_wake_hint, "");
-  EXPECT_EQ(BuildGroupMemberEnvelope(reaction, sender, "group-1", "account:b", {}, 1).relay_wake_hint, "");
+  EXPECT_EQ(BuildDirectEnvelope(reaction, {}, sender, ThreadChannel::E2e, "account:b", {}, 1).relay_wake_hint, "");
+  EXPECT_EQ(BuildGroupMemberEnvelope(reaction, {}, sender, "group-1", "account:b", {}, 1).relay_wake_hint, "");
+}
+
+// A missed call's summary or a group invitation is news to its reader: its owner marks the send, and it wakes them as a
+// new message does. A copy re-sent to a device that asked for it is an old message: it wakes nobody.
+TEST_F(OutboundMessageTest, TheSenderDecidesWhetherASendWakes) {
+  ThreadMessage control;
+  control.id = "c";
+  control.content_type = ChatContentType::System;
+  control.payload_json = R"({"control_type":"group_invite"})";
+  SendRelayOptions news;
+  news.wake = true;
+  EXPECT_TRUE(RaisesWakePush(control, news));
+  const EnvelopeSender sender{"account:a", "QmA"};
+  EXPECT_EQ(BuildDirectEnvelope(control, news, sender, ThreadChannel::E2ePublic, "account:b", {}, 1).relay_wake_hint,
+            "c");
+
+  ThreadMessage text;
+  text.id = "m";
+  SendRelayOptions old;
+  old.wake = false;
+  EXPECT_FALSE(RaisesWakePush(text, old));
+  EXPECT_EQ(BuildDirectEnvelope(text, old, sender, ThreadChannel::E2ePublic, "account:b", {}, 1).relay_wake_hint, "");
+  EXPECT_EQ(BuildGroupMemberEnvelope(text, old, sender, "group-1", "account:b", {}, 1).relay_wake_hint, "");
 }
 
 TEST_F(OutboundMessageTest, ChatEnvelopesAskForNoShortRetention) {
   ThreadMessage text;
   text.id = "m";
   const EnvelopeSender sender{"account:a", "QmA"};
-  EXPECT_EQ(BuildDirectEnvelope(text, sender, ThreadChannel::E2e, "account:b", {}, 1).relay_ttl_s, 0);
-  EXPECT_EQ(BuildGroupMemberEnvelope(text, sender, "group-1", "account:b", {}, 1).relay_ttl_s, 0);
+  EXPECT_EQ(BuildDirectEnvelope(text, {}, sender, ThreadChannel::E2e, "account:b", {}, 1).relay_ttl_s, 0);
+  EXPECT_EQ(BuildGroupMemberEnvelope(text, {}, sender, "group-1", "account:b", {}, 1).relay_ttl_s, 0);
 }
 
 } // namespace

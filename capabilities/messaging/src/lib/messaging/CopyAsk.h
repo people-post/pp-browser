@@ -4,6 +4,7 @@
 #include "common/thread/ThreadRecordTypes.h"
 
 #include "common/Error.h"
+#include "lib/delivery/SendRelayOptions.h"
 
 #include <functional>
 #include <optional>
@@ -43,6 +44,11 @@ Roe<std::optional<CopyAsk>> Parse(const ThreadMessage& notice);
  * copy for the asking device, if it is the one that sent the message).
  */
 SystemControlFamily MakeFamily(std::function<void(CopyAsk ask, std::string asker_account)> answer);
+/**
+ * The answer's send options: what the stored message's send carried (its content beyond the text), for sealing it
+ * again. It wakes nobody: the message is old (a push would alert every device of the asker's account to it).
+ */
+SendRelayOptions ResendOptions(const ThreadMessage& message);
 
 } // namespace copy_ask
 } // namespace pbr
