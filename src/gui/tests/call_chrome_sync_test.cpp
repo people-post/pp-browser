@@ -82,7 +82,7 @@ TEST(CallChromeSyncTest, AStoryStageAdvanceWithTheSameShapeIsDirtyOnlyAndAShapeC
   synced.in_call_story_active = true;
   synced.in_call_story_shape = "4in|Call received|On the encrypted network|Wang";
   synced.in_call_story_stage = 0;
-  synced.in_call_story_steps = "Answered|Finding the fastest line…|Opening your line to them…|Connected";
+  synced.in_call_story_steps = "Answered|Finding the most secure line…|Opening your line to them…|Connected";
   synced.in_call_story_scroll = "0dp|auto";
   pbr::CallChromeLayer next = synced;
   next.in_call_story_stage = 1;

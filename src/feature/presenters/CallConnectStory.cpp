@@ -264,7 +264,7 @@ CallStorySteps CallStoryLines(const CallStoryView& view, const bool group) {
     steps.shown = view.stage;
     return steps;
   }
-  // The five steps (#172): calling, answered, matching the fastest line, setting up the encrypted channel, connected.
+  // The five steps (#172): calling, answered, matching the most secure line, setting up the encrypted channel, connected.
   std::string matching = "call.story.step.matching";
   if (view.stage > CallConnectStory::kStageMatching) {
     matching = view.route == CallRoute::Relayed   ? "call.story.step.matched_relayed"
