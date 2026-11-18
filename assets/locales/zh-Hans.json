@@ -1591,6 +1591,7 @@
     "call.hint.group_media":
         "群组通话需要他人协助承载。请在已开启“协助组网”的电脑上启用“帮他人通话”，或使用组织节点，然后重试。",
     "call.hint.seed_unreachable": "网络受限，如开着 VPN 请先关闭。",
+    "call.hint.no_answer": "对方还没有接听。可以再等等，或者先挂断。",
     "call.error.no_media_relay_hop":
         "没有可用的通话协助 — 请让已启用“帮他人通话”的电脑加入，或从该电脑发起群组通话后重试。",
     "call.error.local_media_relay_unavailable": "此设备无法承载群组媒体。请使用已启用“帮他人通话”的电脑或组织节点。",

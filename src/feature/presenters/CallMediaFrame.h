@@ -173,6 +173,8 @@ struct CallHintPromptInput {
   /** On hold here or there: the silence is by design. */
   bool on_hold = false;
   int64_t now_ms = 0;
+  /** An outgoing 1:1 call has rung 30 s with no answer (CallStoryView::ring_unanswered_long). */
+  bool ring_unanswered_long = false;
 };
 
 struct CallHintPrompt {

@@ -1640,6 +1640,7 @@
     "call.hint.group_media":
         "A group call needs a computer to help host it. Turn on Help host calls on a computer that helps the network, or use your organization's server, then try again.",
     "call.hint.seed_unreachable": "Network restricted — if a VPN is on, turn it off first.",
+    "call.hint.no_answer": "They have not answered yet. You can wait a little longer, or hang up for now.",
     "call.error.no_media_relay_hop":
         "No call host available — join from a computer with Help host calls on, or start the group call from that computer, then retry.",
     "call.error.local_media_relay_unavailable":
