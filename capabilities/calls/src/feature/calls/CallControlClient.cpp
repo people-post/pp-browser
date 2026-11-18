@@ -1,4 +1,5 @@
 #include "feature/calls/CallControlClient.h"
+#include "lib/calls/CallControlFamily.h"
 #include "lib/calls/CallSessionLogic.h"
 
 #include "common/Utilities.h"
@@ -87,6 +88,7 @@ Roe<void> CallControlClient::SendSummary(const std::string& thread_id, const Cal
     payload.set("detail", *detail);
     opts.payload_json = DumpJson(payload);
     opts.generation = "system";
+    opts.wake = CallSummaryIsNewsToCallee(summary); // a missed call wakes the callee, by the rule its chat counts it
     if (auto sent = delivery_.send_to_thread(thread_id, text, opts); sent) {
       return {};
     } else {

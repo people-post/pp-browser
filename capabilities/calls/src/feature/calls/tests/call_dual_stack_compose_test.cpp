@@ -353,6 +353,7 @@ TEST_F(CallDualStackComposeTest, TheStarterWritesOneSummaryIntoItsThread) {
   EXPECT_EQ(summary->outcome, CallOutcome::Completed);
   EXPECT_TRUE(summary->duration_ms.has_value());
   EXPECT_FALSE(summary->group);
+  EXPECT_FALSE(offer_.summary_wakes.front()) << "a call the callee took is no news to it: no push";
   EXPECT_TRUE(answer_.summaries.empty()) << "the invitee reads the starter's summary";
 }
 
@@ -392,6 +393,7 @@ TEST_F(CallDualStackComposeTest, HangingUpBeforeAnAnswerIsSummarizedAsCancelled)
   ASSERT_TRUE(summary);
   EXPECT_EQ(summary->outcome, CallOutcome::Cancelled) << "rang, nobody answered: the callee missed it";
   EXPECT_FALSE(summary->duration_ms.has_value()) << "ringing is not talk time";
+  EXPECT_TRUE(offer_.summary_wakes.front()) << "a missed call wakes the callee, as its chat counts it news";
 }
 
 /** A direct thread on `side` for the other side's account. */

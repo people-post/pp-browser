@@ -75,6 +75,24 @@ TEST(CallSummaryRowTest, EachSideSeesItsOwnOutcome) {
       Outcome::Missed);
 }
 
+// A call to the reader that never reached them is news (unread, notice), and its starter's send wakes them with it:
+// one rule for both sides. A call they took or turned down is not, nor is a group call (each side keeps its own).
+TEST(CallSummaryRowTest, AMissedCallIsNewsToTheCalleeAndWakesIt) {
+  for (const CallOutcome outcome : {CallOutcome::Completed, CallOutcome::Missed, CallOutcome::Cancelled,
+                                    CallOutcome::Declined, CallOutcome::Failed}) {
+    const bool missed = outcome != CallOutcome::Completed && outcome != CallOutcome::Declined;
+    CallSummaryDetail detail;
+    detail.outcome = outcome;
+    EXPECT_EQ(CallSummaryIsNewsToCallee(detail), missed) << static_cast<int>(outcome);
+    EXPECT_EQ(CallSummaryIsNews(Summary("account:peer", CallMediaMode::Voice, outcome, std::nullopt)), missed)
+        << static_cast<int>(outcome);
+    EXPECT_FALSE(CallSummaryIsNews(Summary(kLocalSelfContactId, CallMediaMode::Voice, outcome, std::nullopt)))
+        << "our own call is no news to us";
+    detail.group = true;
+    EXPECT_FALSE(CallSummaryIsNewsToCallee(detail)) << "a group call's summary is local";
+  }
+}
+
 TEST(CallSummaryRowTest, NotASummary) {
   ThreadMessage plain;
   plain.content_type = ChatContentType::Text;
