@@ -166,7 +166,7 @@ TEST_F(DevicesStyleTest, TheHeroButtonIs50dpTheHelpMarkIs44dpAndTheSentenceStays
       "<button id=\"b\" class=\"btn btn-primary\" type=\"button\">关联新设备</button></div>"
       "<div class=\"group-card\"><div id=\"r\" class=\"group-row group-row--static\"><span class=\"group-row-body\">"
       "<span class=\"group-row-label\"><span class=\"group-row-text\">这台手机</span></span>"
-      "<span class=\"group-row-value\">本机 · 主设备</span></span></div></div></div></div>");
+      "<span class=\"group-row-value\">本机 · 管理员</span></span></div></div></div></div>");
   const ui::Vector2f button = document->GetElementById("b")->GetBox().GetSize(ui::BoxArea::Border);
   EXPECT_FLOAT_EQ(button.y, 50.f);
   EXPECT_FLOAT_EQ(button.x, 390.f - 32.f);
@@ -201,7 +201,7 @@ TEST(DevicesTransferMarkupTest, TheNewCaptionsExistInBothLanguagesAndReadAsAgree
   const std::string zh = Asset("locales/zh-Hans.json");
   const std::string en = Asset("locales/en.json");
   EXPECT_NE(zh.find("\"这台手机已关联到你的账号。\""), std::string::npos);
-  EXPECT_NE(zh.find("\"要管理设备，请到主设备上操作。\""), std::string::npos);
+  EXPECT_NE(zh.find("\"要管理设备，请到管理员那台设备上操作。\""), std::string::npos);
   EXPECT_NE(en.find("\"This phone is linked to your account.\""), std::string::npos);
   EXPECT_NE(en.find("\"To manage devices, use your main device.\""), std::string::npos);
   EXPECT_EQ(en.find("linked_note_gone"), std::string::npos);
