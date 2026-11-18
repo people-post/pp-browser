@@ -4,6 +4,13 @@
     <div class="bar-fade"></div>
     <p class="pane-nav-title">{{i18n:nav.sessions}}</p>
     <div class="pane-nav-actions row">
+      <!-- Scan: the camera at once, the same scan and result as Add contact's 扫一扫 (window model's open_scan_qr ->
+           ContactsController::OnScanQr). -->
+      <div class="pane-nav-btn-wrap" data-model="window">
+        <button class="pane-nav-btn pane-nav-btn--scan" type="button" data-event-click="open_scan_qr()">
+          <svg src="../icons/v2/scan.svg" width="24" height="24"></svg>
+        </button>
+      </div>
       <button class="pane-nav-btn" type="button" data-event-click="open_new_session_menu()">
         <svg src="../icons/v2/compose.svg" width="24" height="24"></svg>
       </button>
@@ -19,7 +26,8 @@
   </div>
   <div id="sidebar-sessions" class="sidebar-sessions root-scroll" data-event-scroll="sessions_scroll()">
     <!-- One title row: "Chats", then the link status as a coloured dot and a word (ShellHost::SetChatsLink; the
-         chats_link_* fields are window-model fields). The compose button is in the fixed bar above, at the right. -->
+         chats_link_* fields are window-model fields). The scan and compose buttons are in the fixed bar above, at the
+         right. -->
     <div class="large-title" data-model="window">
       <p class="large-title-text">{{i18n:nav.sessions}}</p>
       <p class="link-status" data-if="chats_link_state != ''">
