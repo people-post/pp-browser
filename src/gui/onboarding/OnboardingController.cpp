@@ -82,6 +82,7 @@ void OnboardingController::MaybeStart() {
   LoadIdentityFields();
   if (start == OnboardingStep::Name) {
     nickname_ = OnboardingNameFieldStart(nickname_.c_str()).c_str();
+    name_blank_ = OnboardingNameIsBlank(nickname_.c_str());
   }
   error_.clear();
   busy_ = false;
@@ -181,10 +182,12 @@ void OnboardingController::OnRegister() {
   }
 }
 
-void OnboardingController::NameChangedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+void OnboardingController::NameChangedCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
                                                const ui::VariantList& /*args*/) {
   OnboardingController& self = Instance();
-  self.name_blank_ = OnboardingNameIsBlank(self.nickname_.c_str());
+  // The change event runs before data-value has copied the field into nickname_ (it is one keystroke behind), so
+  // the new text is read from the event itself.
+  self.name_blank_ = OnboardingNameIsBlank(std::string(ev.GetParameter<ui::String>("value", self.nickname_).c_str()));
   DataModelHost::Instance().Dirty("onboarding", "name_blank");
 }
 
