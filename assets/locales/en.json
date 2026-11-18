@@ -205,7 +205,7 @@
     "settings.notifications.preview": "Show message content in notifications",
     "notification.hidden_body": "Encrypted message",
     "settings.notifications.help": "Off hides notifications. Calls still ring.",
-    "settings.notifications.banner_tip": "Call ringtone stops after a few seconds? Set PP's notification \"Banner Style\" to \"Persistent\" and it rings in full.",
+    "settings.notifications.banner_tip": "Call ringtone stops after a few seconds? On your phone open Settings > Notifications > PP > Banner Style and set it to \"Persistent\", and it rings in full.",
     "settings.notifications.banner_tip.title": "Call ringtone tip",
     "settings.notifications.banner_tip.action": "Open Settings",
     "settings.notifications.tip.blocked.title": "Notifications are off",

@@ -204,7 +204,7 @@
     "settings.notifications.preview": "通知里显示消息内容",
     "notification.hidden_body": "加密消息",
     "settings.notifications.help": "关闭后不弹通知；来电仍会响铃。",
-    "settings.notifications.banner_tip": "来电铃声只响几秒？把 PP 通知的“横幅风格”改成“持续”，铃声就能响满。",
+    "settings.notifications.banner_tip": "来电铃声只响几秒？打开手机的 设置 → 通知 → PP → 横幅风格，改成“持续”，铃声就能响满。",
     "settings.notifications.banner_tip.title": "来电铃声提示",
     "settings.notifications.banner_tip.action": "去设置",
     "settings.notifications.tip.blocked.title": "通知被关了",
