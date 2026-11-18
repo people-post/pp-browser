@@ -610,7 +610,7 @@
     "pin.create_title": "设一个 PIN 码",
     "pin.create_message": "打开 PP 时要输入它。它只存在这台设备上，忘了没有人能帮你找回。",
     "pin.chooser_title": "要设 PIN 码吗？",
-    "pin.chooser_message": "设一个 PIN 码保护聊天，或先用默认保护继续。",
+    "pin.chooser_message": "要设一个 PIN 码吗？设了以后，每次打开 PP 都要输入它。不设也可以，以后能在 设置 → 安全 里再设。",
     "pin.identity_fork_title": "开始使用",
     "pin.identity_fork_message":
         "PP 是私密的聊天和通话，消息只有你和对方能看。新建一个账号，或把这台设备关联到你在别的设备上的账号。",

@@ -616,7 +616,7 @@
     "pin.create_message":
         "You'll enter it to open PP. It stays on this device only; if you forget it, no one can recover it.",
     "pin.chooser_title": "Set a PIN?",
-    "pin.chooser_message": "Set a PIN to protect your chats, or continue with the default for now.",
+    "pin.chooser_message": "Set a PIN? Once you do, you will need it every time you open PP. You can skip it and set one later in Settings > Security.",
     "pin.identity_fork_title": "Get started",
     "pin.identity_fork_message":
         "PP is private chat and calls: only you and the other person can read your messages. Create a new account, or link this device to the one you use on another device.",
