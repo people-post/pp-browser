@@ -15,7 +15,6 @@
 #include "lib/pricing/PricingTypes.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
-#include "common/media/MediaRelayStream.h"
 
 #include <algorithm>
 #include <chrono>
@@ -41,11 +40,6 @@ int64_t SteadyMs(const PendingNotificationTap::Clock::time_point at) {
  */
 bool TapMayBeFor(const std::string& hint, const std::string& call_id) {
   return hint.empty() || hint == call_id;
-}
-
-/** Our own media path carries media: the call's, not one person's (B97's count and the silent tiles share it). */
-bool OwnMediaPathOnline(const CallScreen& s, const CallUiBackend& backend) {
-  return s.media_connected && backend.Recovery() == CallRecovery::None && s.status != CallScreen::Status::Reconnecting;
 }
 
 } // namespace
@@ -446,6 +440,7 @@ void CallPresenter::Refresh() {
     active_group_id_ = surface.active->origin_group_id.value_or(std::string{});
     FillGuests(next, *backend, active_group_id_, local);
     AnnounceGuests(next);
+    AnnounceLostConnections(screen_, next);
     FillGroupInvite(next, util::NowUnixMs());
     MaybeAutoCamera(*backend, next);
   } else if (engine.open && !Leaving(engine.call_id)) {
@@ -619,12 +614,11 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
     local_identity = ports_.local_account_identity().value_or(std::string{});
   }
   int joined = 0;
-  bool roster_read = false;
   if (auto participants = backend.ListJoinedParticipants(call_id); participants) {
-    roster_read = true;
     joined = static_cast<int>(participants->size());
     s.group = group_look_.Observe(call_id, group_call, joined);
     s.members.reserve(participants->size());
+    const std::vector<std::string> quiet = backend.QuietParticipants(); // V067
     for (const CallParticipant& row : *participants) {
       CallScreen::Member member;
       member.identity = row.identity;
@@ -633,6 +627,7 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
       member.video_enabled = row.media.video_enabled;
       member.on_hold = row.media.on_hold;
       member.video_paused = row.media.video_paused;
+      member.reconnecting = !member.is_local && std::find(quiet.begin(), quiet.end(), row.identity) != quiet.end();
       s.members.push_back(std::move(member));
     }
   }
@@ -682,64 +677,6 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   if (decided.show_elapsed || ShowsParticipantCount(s)) {
     s.connected_at_ms = live_since_ms; // the call's, not the current path's
   }
-  StepSilentTiles(s, backend, roster_read);
-}
-
-void CallPresenter::StepSilentTiles(CallScreen& s, CallUiBackend& backend, const bool roster_read) {
-  const int64_t now = steady_ms_();
-  // Only a group call's tiles (once a call has been one, for the rest of it); a refresh that could not read the roster
-  // changes nothing; the counters are read at most four times a second (the engine's lock is shared with the inbound
-  // packet path).
-  if (!silent_tiles_.BeginRefresh(s.call_id, roster_read, s.group, now)) {
-    if (silent_call_id_ != s.call_id) {
-      silent_call_id_ = s.call_id;
-      std::fill(std::begin(own_path_logged_), std::end(own_path_logged_), -1);
-      own_path_changed_ms_ = -1;
-    }
-    if (roster_read) {
-      ApplySilentTiles(s);
-    }
-    return;
-  }
-  if (silent_call_id_ != s.call_id) {
-    silent_call_id_ = s.call_id;
-    std::fill(std::begin(own_path_logged_), std::end(own_path_logged_), -1);
-    own_path_changed_ms_ = -1;
-  }
-  const MediaEngineHealth health = backend.Media().HealthSnapshot();
-  // Our own engine stopped (a stalled local audio rebuild) is not a reason to dim everyone either.
-  const bool online = OwnMediaPathOnline(s, backend) && EngineAlive(health);
-  // Measures the signals behind CallSilentTiles' all_stop_fallback: one DEBUG line when they change (monotonic ms, no
-  // ids), at most one a second. A delayed line carries the time the change was FIRST seen (`changed_t`), not `t`.
-  const int signals[4] = {s.media_connected ? 1 : 0, backend.Recovery() != CallRecovery::None ? 1 : 0,
-                          s.status == CallScreen::Status::Reconnecting ? 1 : 0, EngineAlive(health) ? 1 : 0};
-  if (std::equal(std::begin(signals), std::end(signals), std::begin(own_path_logged_))) {
-    own_path_changed_ms_ = -1; // flipped back before it was written: nothing to say
-  } else {
-    if (own_path_changed_ms_ < 0) {
-      own_path_changed_ms_ = now;
-    }
-    if (own_path_log_ms_ == 0 || now - own_path_log_ms_ >= 1'000) {
-      std::copy(std::begin(signals), std::end(signals), std::begin(own_path_logged_));
-      own_path_log_ms_ = now;
-      log().debug << "own media path signals media_connected=" << signals[0] << " recovering=" << signals[1]
-                  << " reconnecting=" << signals[2] << " engine=" << signals[3] << " online=" << (online ? 1 : 0)
-                  << " changed_t=" << own_path_changed_ms_ << " t=" << now;
-      own_path_changed_ms_ = -1;
-    }
-  }
-  silent_tiles_.Step(now, online, SilentPeopleFrom(s.members, health));
-  ApplySilentTiles(s);
-}
-
-void CallPresenter::ApplySilentTiles(CallScreen& s) {
-  for (CallScreen::Member& m : s.members) {
-    if (!m.is_local) {
-      const CallSilentTiles::Tile tile = silent_tiles_.TileOf(m.identity);
-      m.silent_dimmed = tile.silent;
-      m.video_blocked = tile.video_blocked;
-    }
-  }
 }
 
 void CallPresenter::FillGroupInvite(CallScreen& s, const int64_t now) {
@@ -775,11 +712,13 @@ void CallPresenter::WatchForNoMedia(CallUiBackend& backend, const CallScreen& s,
     sample.call_id = s.call_id;
     sample.group = s.group;
     // A hop reattach keeps the seat "live" while nothing flows: recovering pauses the count too.
-    sample.media_live = OwnMediaPathOnline(s, backend);
+    sample.media_live =
+        s.media_connected && backend.Recovery() == CallRecovery::None && s.status != CallScreen::Status::Reconnecting;
     sample.others_joined = static_cast<size_t>(
         std::count_if(s.members.begin(), s.members.end(), [](const CallScreen::Member& m) { return !m.is_local; }));
     sample.last_rx_ms = std::max(health.last_rx_audio_ms, health.last_rx_video_ms);
     sample.now_ms = now;
+    sample.participants_watched = backend.MediaPath() == CallMediaPath::Hop; // V067: each one, the last one too
   }
   if (!StepNoMediaWatch(no_media_watch_, sample)) {
     return;
@@ -1342,6 +1281,15 @@ void CallPresenter::AnnounceGuests(const CallScreen& s) {
     notice.kind = CallNotice::Kind::GuestJoined;
     notice.identity = member.identity;
     notice.brought_by = member.brought_by;
+    Notify(notice);
+  }
+}
+
+void CallPresenter::AnnounceLostConnections(const CallScreen& before, const CallScreen& after) {
+  for (const std::string& identity : LostConnection(before, after)) {
+    CallNotice notice;
+    notice.kind = CallNotice::Kind::ParticipantLost;
+    notice.identity = identity;
     Notify(notice);
   }
 }

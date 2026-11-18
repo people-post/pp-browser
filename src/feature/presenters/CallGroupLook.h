@@ -9,8 +9,8 @@ namespace pbr {
 
 /**
  * A call that has been a group call (a group id, or three or more people joined) stays one for the rest of that call:
- * when people leave and two or one remain, the screen keeps the roster, the silent-tile rule and the "alone"
- * countdown instead of flipping to the 1:1 look. Remembered per call id; a different call id starts afresh.
+ * when people leave and two or one remain, the screen keeps the roster and the "alone" countdown instead of flipping
+ * to the 1:1 look. Remembered per call id; a different call id starts afresh.
  */
 class CallGroupLook {
 public:

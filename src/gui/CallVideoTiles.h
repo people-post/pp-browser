@@ -5,7 +5,6 @@
 #include "lib/media/IMediaView.h"
 #include "lib/ui/ShellTypes.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <utility>
@@ -26,25 +25,6 @@ inline CallVideoTileRenderer::Frame TileFrame(IMediaView::VideoTileFrame&& tile)
   frame.seq = tile.seq;
   frame.rgba = std::move(tile.rgba);
   return frame;
-}
-
-/**
- * Whether the big stage may take "the latest remote frame" (any stream). In a group call with a blocked row (silent, or
- * restored with no video packet since) the stage's frame must not be that person's old one: it is allowed only while
- * some other row has live video of its own, whose frames are newer than any a blocked person's stream still holds.
- * No blocked row, or a 1:1 call: unchanged.
- */
-template <class Media>
-bool StageMayShowRemote(const Media& media, const bool remote_video, const bool group,
-                        const std::vector<CallRosterParticipantState>& roster) {
-  if (!remote_video || !group ||
-      std::none_of(roster.begin(), roster.end(), [](const CallRosterParticipantState& r) { return r.video_blocked; })) {
-    return remote_video;
-  }
-  return std::any_of(roster.begin(), roster.end(), [&media](const CallRosterParticipantState& r) {
-    const uint32_t stream = RowStream(r);
-    return !r.is_local && !r.video_blocked && stream != 0 && media.HasRemoteVideoForStream(stream);
-  });
 }
 
 /** What this frame's self-view / 1:1 peer reads found. */
@@ -102,8 +82,8 @@ std::vector<uint32_t> SubmitCallRosterTiles(Media& media, CallVideoTileRenderer&
       continue;
     }
     const uint32_t stream = RowStream(row);
-    // A blocked row (silent, or restored with no video packet since) shows the avatar, never a cached picture.
-    row.has_remote_video = stream != 0 && !row.video_blocked && media.HasRemoteVideoForStream(stream);
+    // V067: a stream gone quiet keeps its last frame in the engine for a while; it is not shown as live.
+    row.has_remote_video = !row.reconnecting && stream != 0 && media.HasRemoteVideoForStream(stream);
     if (!row.has_remote_video) {
       continue;
     }

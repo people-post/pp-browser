@@ -286,6 +286,7 @@ void CallHopPath::OnMediaStopped(const std::string& call_id) {
   inbound_gate_.last_failed = false;
   inbound_gate_.last_fail_hop.clear();
   channel_->ResetStreams();
+  StopLivenessWatch();
   guest_.active_attach.reset();
   guest_.active = false;
   guest_.reattach_attempts = 0;
@@ -345,6 +346,7 @@ void CallHopPath::EjectParticipantAfterMigrateFailure(const std::string& call_id
   }
 
   notes_.NoteParticipantLeft(call_id, identity);
+  OnParticipantGone(call_id, identity);
 
   if (detail) {
     auto local = host_.local_account_identity();
@@ -403,7 +405,126 @@ CallHopHealth CallHopPath::HopHealth() const {
                               .reliable_sent = relay.reliable_sent,
                               .retransmits = relay.retransmits,
                               .srtt_ms = relay.srtt_ms};
+  hop.unopened_frames = channel_->UnopenedFrames();
   return hop;
+}
+
+void CallHopPath::OnParticipantGone(const std::string& call_id, const std::string& identity) {
+  if (!ForThisCall(call_id, "OnParticipantGone")) {
+    return;
+  }
+  const uint32_t stream = PublisherStreamIdForIdentity(identity);
+  if (stream == channel_->LocalStreamId()) {
+    return; // never our own publisher
+  }
+  // The relay keeps forwarding what it has for the stream (a leaver sends nothing more): what comes is dropped here.
+  channel_->DropRemoteStream(stream);
+  engine_->ReleaseRemoteStream(stream);
+  liveness_.Forget(identity);
+  log().info << "SFU stream dropped peer=" << identity << " stream=" << stream << " call_id=" << call_id;
+  reports_.Emit(hop_report::Changed{call_id_});
+}
+
+void CallHopPath::StartLivenessWatch() {
+  if (liveness_watching_) {
+    return;
+  }
+  liveness_watching_ = true;
+  ScheduleLivenessTick();
+}
+
+void CallHopPath::StopLivenessWatch() {
+  liveness_watching_ = false;
+  ++liveness_armed_;
+  outbox_.Cancel(liveness_timer_);
+  liveness_timer_ = 0;
+  liveness_.Reset();
+}
+
+void CallHopPath::ScheduleLivenessTick() {
+  liveness_timer_ = outbox_.After(std::chrono::milliseconds(kParticipantLivenessStepMs),
+                                  hop_path_event::LivenessTick{liveness_armed_});
+}
+
+ParticipantLivenessSample CallHopPath::LivenessSample() const {
+  ParticipantLivenessSample sample;
+  sample.now_ms = util::NowUnixMs();
+  auto local = host_.local_account_identity();
+  auto rows = sessions_.ListParticipants(call_id_);
+  sample.peers_known = local && rows; // unreadable: the clocks pause, nobody is taken as left (never watch ourselves)
+  if (!sample.peers_known) {
+    return sample;
+  }
+  sample.our_media_live = sfu_.attached && engine_->Runs() && Recovery() == CallRecovery::None;
+  sample.last_unopened_ms = channel_->LastUnopenedFrameMs();
+  for (const CallParticipant& row : *rows) {
+    if (row.state == CallParticipantState::Joined && row.identity != *local) {
+      sample.peers.push_back({row.identity, channel_->LastFreshFrameMs(PublisherStreamIdForIdentity(row.identity))});
+    }
+  }
+  return sample;
+}
+
+void CallHopPath::OnLivenessTick() {
+  const ParticipantLivenessSample sample = LivenessSample();
+  const ParticipantLivenessStep step = liveness_.Step(sample);
+  ScheduleLivenessTick();
+  for (const std::string& identity : step.left) {
+    OnParticipantGone(call_id_, identity); // out of the call some other way (a roster, a removal): their stream goes
+  }
+  if (step.away_too_long) {
+    // Asleep (or frozen) longer than the others wait: they took us as gone and moved the key on without us.
+    log().warning << "this device sent nothing for " << kParticipantGoneMs / 1000
+                  << " s (asleep): the others took it as gone — leaving call_id=" << call_id_;
+    reports_.Emit(hop_report::MediaError{call_id_, Localized("call.error.away_too_long")});
+    reports_.Emit(hop_report::LeaveWanted{call_id_});
+    return;
+  }
+  if (StepCutOffReports(step, sample.our_media_live)) {
+    return;
+  }
+  if (step.quiet_changed) {
+    std::string who;
+    for (const std::string& identity : step.quiet) {
+      who += (who.empty() ? "" : ",") + identity;
+    }
+    log().info << "participants reconnecting=[" << who << "] call_id=" << call_id_;
+    reports_.Emit(hop_report::Changed{call_id_});
+  }
+  for (const std::string& identity : step.gone) {
+    log().warning << "nothing from " << identity << " for " << kParticipantGoneMs / 1000
+                  << " s: taking them as gone call_id=" << call_id_;
+    reports_.Emit(hop_report::ParticipantLost{call_id_, identity});
+  }
+}
+
+bool CallHopPath::StepCutOffReports(const ParticipantLivenessStep& step, const bool our_media_live) {
+  if (step.cut_off_changed) {
+    if (step.cut_off) {
+      // V067 8: the call went quiet for us, not one of them for everyone — the call reconnects, nobody is dimmed.
+      log().warning << "the call went quiet for this device (everyone at once, or frames no key opens) call_id="
+                    << call_id_;
+      reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.reconnecting")});
+      reports_.Emit(hop_report::Progress{call_id_, CallHopPlannerPhase::Attaching});
+    } else if (our_media_live) {
+      log().info << "the call is heard again call_id=" << call_id_;
+      reports_.Emit(hop_report::Activity{call_id_, {}});
+      reports_.Emit(hop_report::Progress{call_id_, CallHopPlannerPhase::Live});
+    } // else our own recovery owns the line now
+    reports_.Emit(hop_report::Changed{call_id_});
+  }
+  if (step.rejoin) {
+    log().warning << "cut off long enough that the others took this device as gone — asking to join again call_id="
+                  << call_id_;
+    reports_.Emit(hop_report::RejoinWanted{call_id_});
+  }
+  if (step.disconnected) {
+    log().warning << "shut out of the call and not let back in — leaving call_id=" << call_id_;
+    reports_.Emit(hop_report::MediaError{call_id_, Localized("call.error.cut_off")});
+    reports_.Emit(hop_report::LeaveWanted{call_id_});
+    return true;
+  }
+  return false;
 }
 
 bool CallHopPath::SettleFinishedMigrate(const std::string& call_id) {
@@ -1425,6 +1546,11 @@ void CallHopPath::Handle(HopPathEvent& event) {
           RefuseGuest(e);
         } else if constexpr (std::is_same_v<E, hop_path_event::Continue>) {
           steps_.Run(e.id);
+        } else if constexpr (std::is_same_v<E, hop_path_event::LivenessTick>) {
+          if (liveness_watching_ && e.armed == liveness_armed_) {
+            liveness_timer_ = 0;
+            OnLivenessTick();
+          }
         } else if constexpr (std::is_same_v<E, HopMigrateEvent>) {
           HandleMigrateEvent(e);
         } else {
@@ -2194,11 +2320,11 @@ Roe<void> CallHopPath::LoadHopMediaKey(HopAttach& at) const {
     log().warning << "AttachLocalToSfu missing media key call_id=" << at.call_id << " epoch=" << at.media_epoch;
     return Error("call media key required for SFU");
   }
-  at.keys->Install(at.media_epoch, at.media_key, util::NowUnixMs());
+  at.keys->Install(at.media_epoch, at.media_key, util::NowUnixMs()); // the attach's first key seals at once
   return {};
 }
 
-void CallHopPath::InstallMediaKey(const std::string& call_id) {
+void CallHopPath::InstallMediaKey(const std::string& call_id, const CallMediaKeyOrigin origin) {
   if (call_id != call_id_ || !channel_->HasLiveKeys() || !media_keys_) {
     return;
   }
@@ -2208,8 +2334,17 @@ void CallHopPath::InstallMediaKey(const std::string& call_id) {
   }
   const uint32_t epoch = (*session)->media_epoch;
   if (auto key = media_keys_->LoadEpochKey(call_id, epoch); key && key->has_value()) {
-    channel_->InstallKey(epoch, **key);
-    log().info << "SFU media key now epoch=" << epoch << " call_id=" << call_id;
+    // V068: a key minted here seals once each of the others is seen sealing with it (they hold it), or at the bound.
+    std::vector<uint32_t> hold_for;
+    if (origin == CallMediaKeyOrigin::Minted) {
+      if (auto local = host_.local_account_identity()) {
+        for (const std::string& identity : JoinedRemoteIdentities(call_id, *local)) {
+          hold_for.push_back(PublisherStreamIdForIdentity(identity));
+        }
+      }
+    }
+    channel_->InstallKey(epoch, **key, hold_for);
+    log().info << "SFU media key now epoch=" << epoch << " waiting_for=" << hold_for.size() << " call_id=" << call_id;
   }
 }
 
@@ -2256,7 +2391,8 @@ void CallHopPath::AttachThroughRelay(HopAttach at, std::function<void(Roe<void>)
 Roe<void> CallHopPath::CompleteHopAttach(const HopAttach& at, int64_t a_up_bps) {
   const std::string& call_id = at.call_id;
   channel_->MakeLive(at.keys); // a rotation from now on reaches this attach's frames
-  InstallMediaKey(call_id);    // and one that arrived while attaching (the ring holds the epoch it started with)
+  // And one that arrived while attaching (the ring holds the epoch it started with).
+  InstallMediaKey(call_id, CallMediaKeyOrigin::Taken);
   // Whoever is on the hop can say so: an invite this device sends (a mid-call add, an answer to a
   // join request — V053) names the hop the call is on, not only the picker's.
   if (!at.attach.hop_peer_id.empty()) {
@@ -2430,6 +2566,7 @@ void CallHopPath::MarkHopAttachLive(const HopAttach& at, bool fresh_start) {
   if (seat_ports->IsBound()) {
     seat_ports->end_attach_if_matching(call_id, at.attach.hop_peer_id);
   }
+  StartLivenessWatch();
   Apply(CallHopPlannerEvent::AttachSucceeded, call_id); // reports Live
 }
 
@@ -2721,7 +2858,7 @@ void CallHopPath::StartGuestReattach(const std::string& call_id, const CallSfuAt
   // The engine is already live: frames flow as soon as the relay session is back.
   at.frames_ready->store(true, std::memory_order_release);
   channel_->MakeLive(at.keys);
-  InstallMediaKey(call_id); // a rotation that arrived while the transport was down
+  InstallMediaKey(call_id, CallMediaKeyOrigin::Taken); // a rotation that arrived while the transport was down
   log().info << "ReattachGuestSfuTransport begin call_id=" << call_id << " hop=" << at.attach.hop_peer_id;
   if (at.attach.hop_multiaddr.empty()) {
     at.attach.hop_multiaddr = ranking_.HopMultiaddr(at.attach.hop_peer_id);

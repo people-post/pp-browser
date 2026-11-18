@@ -14,7 +14,6 @@ pp_browser_add_feature_library(pp_feature_presenters
     CallRingerOutput.cpp
     CallRingHandBack.cpp
     CallRingSteps.cpp
-    CallSilentTiles.cpp
     CallStepScroll.cpp
     CallStoryList.cpp
     CallWakePlaceholder.cpp

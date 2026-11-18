@@ -455,8 +455,9 @@ Roe<void> CallSessionManager::HandleInboundVideoRefresh(const std::string& detai
   return workflow_.HandleInboundVideoRefresh(detail_json, sender_identity);
 }
 
-Roe<void> CallSessionManager::HandleInboundEnded(const std::string& detail_json, const std::string& local_identity) {
-  return workflow_.HandleInboundEnded(detail_json, local_identity);
+Roe<void> CallSessionManager::HandleInboundEnded(const std::string& detail_json, const std::string& sender_identity,
+                                                 const std::string& local_identity) {
+  return workflow_.HandleInboundEnded(detail_json, sender_identity, local_identity);
 }
 
 bool CallSessionManager::AllowsInboundCall(const std::string& caller) const {
@@ -609,7 +610,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     case CallControlType::CallPunchAnswer:
       return reach_signals_.HandleInboundPunchAnswer(detail_json);
     case CallControlType::CallEnded:
-      return HandleInboundEnded(detail_json, *local);
+      return HandleInboundEnded(detail_json, sender_identity, *local);
     case CallControlType::CallAnsweredElsewhere:
       return HandleAnsweredElsewhere(detail_json, sender_identity, *local);
     case CallControlType::CallSummary:

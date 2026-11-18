@@ -402,7 +402,7 @@ std::string RosterKey(const std::vector<CallRosterParticipantState>& roster) {
   for (const CallRosterParticipantState& p : roster) {
     key += std::string(p.name.c_str()) + "|" + p.stream_id.c_str() + "|" + (p.audio_muted ? "m" : "-") +
            (p.video_enabled ? "v" : "-") + (p.has_remote_video ? "r" : "-") + (p.on_hold ? "h" : "-") +
-           (p.video_paused ? "p" : "-") + (p.silent ? "s" : "-") + (p.camera_resuming ? "w" : "-") +
+           (p.video_paused ? "p" : "-") + (p.reconnecting ? "c" : "-") + (p.camera_resuming ? "w" : "-") +
            (p.guest ? "g" : "-") + (p.avatar_unknown ? "u" : "-") +
            AvatarKey(false, p.has_avatar, p.avatar_src, p.avatar_letter, p.avatar_tone) + ";";
   }
@@ -1285,6 +1285,9 @@ void CallController::ShowNotice(const CallNotice& notice) {
       UserFeedback::Ok(Tr("call.guest.joined", {{"name", name}, {"bringer", CallerNameFor(notice.brought_by).label}}));
       return;
     }
+    case CallNotice::Kind::ParticipantLost:
+      UserFeedback::Note(Tr("call.notice.lost_connection", {{"name", CallerNameFor(notice.identity).label}}));
+      return;
     case CallNotice::Kind::IncomingCall: {
       if (system_call_screen_.TakesRing(AppLifecycle::IsVisible(), notice.conflict)) {
         return; // the phone's own call screen rings it (Android's call notification)
@@ -1959,7 +1962,7 @@ void CallController::SyncCameraRotation(IMediaView& media, const bool camera_ope
 void CallController::ApplyVideo(IMediaView& media, CallUiBackend& backend, const CallMediaScreen& frame,
                                 const int64_t now_ms) {
   auto& in_call = in_call_;
-  in_call.remote_video = StageMayShowRemote(media, frame.media.remote_video, in_call.show_roster, in_call.roster);
+  in_call.remote_video = frame.media.remote_video;
   if (!in_call.remote_video) {
     CallVideoTileRenderer::Instance().ClearRemote();
   }

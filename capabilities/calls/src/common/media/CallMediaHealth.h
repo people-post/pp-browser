@@ -78,6 +78,8 @@ struct CallHopHealth {
   std::vector<CallHopPeerHealth> peers;
   /** The association to the relay (unavailable when attached to this device's own hop). */
   CallLinkCounters link;
+  /** Frames the hop brought that no key held opened, since it was joined (a rotation's gap, V068; shut out, V067). */
+  uint64_t unopened_frames = 0;
 };
 
 struct CallMediaHealthInput {

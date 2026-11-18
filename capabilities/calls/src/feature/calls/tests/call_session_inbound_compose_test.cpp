@@ -2488,5 +2488,37 @@ TEST_F(CallSessionInboundComposeTest, AloneInAGroupCallWithAnUnreadableRosterIsA
   EXPECT_GT(device_->AloneUntilMs(call_id), 0) << "still waited on: asked again";
 }
 
+// V067: a participant the group path takes as gone (nothing from them for the gone window) is a leave — the key
+// rotates without them (V003) and the call goes on; the last one taken as gone leaves this device waiting alone (V053).
+TEST_F(CallSessionInboundComposeTest, AParticipantLostIsTakenAsGoneAndTheLastOneLeavesUsWaitingAlone) {
+  const std::string call_id = "call:group-lost";
+  // Ids that sort after this device's: it is the key's coordinator (the lowest id among those left).
+  ASSERT_NO_FATAL_FAILURE(SeedConnectedCall(call_id, /*group=*/true, {"account:~lost", "account:~stays"}));
+  ASSERT_LT(local_identity_, std::string("account:~stays"));
+  OnCallsOwner([&] { device_->Workflow().NoteParticipantLost(call_id, "account:~lost"); });
+  EXPECT_EQ(LivePeers(call_id), std::vector<std::string>{"account:~stays"}) << "out of the live call";
+  EXPECT_EQ(MediaEpoch(call_id), 2u) << "the one taken as gone keeps no working key";
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall) << "a group's call goes on";
+  EXPECT_EQ(device_->AloneUntilMs(call_id), 0) << "not alone";
+  auto lost = sessions_->FindParticipant(call_id, "account:~lost");
+  ASSERT_TRUE(lost && lost->has_value());
+  EXPECT_EQ((*lost)->state, CallParticipantState::Left) << "the roster says so";
+
+  OnCallsOwner([&] { device_->Workflow().NoteParticipantLost(call_id, "account:~lost"); });
+  EXPECT_EQ(MediaEpoch(call_id), 2u) << "already out: a late report changes nothing";
+
+  OnCallsOwner([&] { device_->Workflow().NoteParticipantLost(call_id, "account:~stays"); });
+  EXPECT_GT(device_->AloneUntilMs(call_id), 0) << "the last other gone: the alone wait starts";
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall) << "waiting for others, not ended";
+}
+
+TEST_F(CallSessionInboundComposeTest, ThisDeviceIsNeverTakenAsLostByItself) {
+  const std::string call_id = "call:group-lost-self";
+  ASSERT_NO_FATAL_FAILURE(SeedConnectedCall(call_id, /*group=*/true, {"account:peer", "account:peer2"}));
+  OnCallsOwner([&] { device_->Workflow().NoteParticipantLost(call_id, local_identity_); });
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall);
+  EXPECT_EQ(MediaEpoch(call_id), 1u);
+}
+
 } // namespace
 } // namespace pbr

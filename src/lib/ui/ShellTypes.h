@@ -386,10 +386,8 @@ struct CallRosterParticipantState {
   bool on_hold = false;
   /** V060: their camera is off because their app is in the background: the tile reads "Camera paused". */
   bool video_paused = false;
-  /** Group call: nothing has arrived from them for 15 s: the tile is dimmed and reads "Connection lost…". */
-  bool silent = false;
-  /** Not bound in RML: the tile may not show a picture (SubmitCallRosterTiles reads it): the avatar instead. */
-  bool video_blocked = false;
+  /** V067: nothing has come from them for a few seconds: the tile reads "Reconnecting…", dimmed, no live picture. */
+  bool reconnecting = false;
   /** Only this device's own row: the camera is wanted but not on yet (waiting its turn, or resting in the background):
    * the tile reads "Restoring video…" (B225). */
   bool camera_resuming = false;

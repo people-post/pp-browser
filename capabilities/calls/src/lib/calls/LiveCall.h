@@ -62,6 +62,8 @@ enum class LiveCallEndReason {
   Merged,
   /** Another of our devices took (or declined) this incoming call: it stops ringing here (M021 d5; no history). */
   AnsweredElsewhere,
+  /** Cut off, this device's part ends to take the call again at once (V067 8; no history, nothing sent). */
+  Rejoining,
 };
 
 /** How a call's media is doing (V037 Status) and what it has reached — per call. */

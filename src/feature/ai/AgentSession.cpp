@@ -2498,7 +2498,9 @@ bool AgentSession::HoldsApproval(const std::string& approval_id) const {
 }
 
 bool AgentSession::CanClose() const {
-  if (impl_->busy.load()) {
+  // A stopped turn is no longer busy but may still be leaving its thread, writing the turn's state as it goes; it
+  // clears turn_in_flight last (FinishTurn), so what is read below is read after it.
+  if (impl_->busy.load() || impl_->turn_in_flight.load()) {
     return false;
   }
   {

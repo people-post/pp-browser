@@ -60,10 +60,11 @@ struct CallScreen {
     /** V060: the roster row's (the OS has their audio / their camera paused in the background). */
     bool on_hold = false;
     bool video_paused = false;
-    /** Group call: nothing has arrived from them for 15 s (CallSilentTiles): the tile is dimmed and says so. */
-    bool silent_dimmed = false;
-    /** Group call: the tile may not show a picture (dimmed, or restored with no video packet since): the avatar. */
-    bool video_blocked = false;
+    /**
+     * V067: nothing has arrived from them for a few seconds (their app or network may be gone): the tile reads
+     * "Reconnecting…", dimmed, and their last picture is not shown as live.
+     */
+    bool reconnecting = false;
     /** V062: a guest in the group's call (the tile reads "Guest"), and the member who brought them. */
     bool guest = false;
     std::string brought_by;
@@ -187,6 +188,12 @@ bool EndedWithoutConnecting(const CallScreen& before, const CallScreen& after, b
 /** The group call this device waited alone in went away at the end of the wait: it left by itself. */
 bool EndedAlone(const CallScreen& before, const CallScreen& after, int64_t now_ms);
 
+/**
+ * V067: who lost connection between two frames of the same call: shown as reconnecting in `before`, gone from the
+ * call's people in `after` (taken as gone — or their leave came while they were quiet). Not us, not a call that ended.
+ */
+std::vector<std::string> LostConnection(const CallScreen& before, const CallScreen& after);
+
 /** G022: "Make a group…" shows once this many are in a call (the local device included). */
 inline constexpr size_t kMakeGroupMinPeople = 3;
 
@@ -228,9 +235,17 @@ struct NoMediaSample {
   /** Last audio or video from anyone (0: none yet). A muted peer still sends (silent frames). */
   int64_t last_rx_ms = 0;
   int64_t now_ms = 0;
+  /**
+   * V067: the call's group path watches each participant on its own (on the hop): it takes each one who goes quiet as
+   * gone, the last one too (then the wait-alone rule applies), so this count stays out of it.
+   */
+  bool participants_watched = false;
 };
 
-/** True when the call should end: live, others in it, and nothing from any of them for kGroupNoMediaEndMs. */
+/**
+ * True when the call should end: live, others in it, nothing from any of them for kGroupNoMediaEndMs, and nobody
+ * watching each participant (V067: a group call on its 1:1 path).
+ */
 bool StepNoMediaWatch(NoMediaWatch& watch, const NoMediaSample& sample);
 
 /** What the in-call status decision reads. */

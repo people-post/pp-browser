@@ -98,8 +98,9 @@
 //   link_import {bundle, pin}           a new device takes it (then restart): another device of the
 //                                       account (M021)
 //   state                               the call surface + media counters (joined participants; `members` with
-//                                       guest / brought_by / can_remove / can_add_to_group, V062; ring_guest /
-//                                       ring_people: ringing in as a guest and how many it shows them to;
+//                                       guest / brought_by / can_remove / can_add_to_group, V062, and
+//                                       reconnecting, V067; ring_guest / ring_people: ringing in as a guest
+//                                       and how many it shows them to;
 //                                       media_epoch: the call key's epoch, which moves on each leave;
 //                                       per-stream rx frames, video tx / rx and how each video stream's
 //                                       frames arrived: gaps, stalls, bunched, lost; the call link's
@@ -239,6 +240,8 @@ const char* NoticeKindName(CallNotice::Kind kind) {
       return "incoming_call";
     case CallNotice::Kind::GuestJoined:
       return "guest_joined";
+    case CallNotice::Kind::ParticipantLost:
+      return "participant_lost";
     case CallNotice::Kind::CallBack:
       return "call_back";
     case CallNotice::Kind::CallBlocked:
@@ -407,6 +410,7 @@ public:
       row.set("brought_by", member.brought_by);
       row.set("can_remove", member.can_remove);
       row.set("can_add_to_group", member.can_add_to_group);
+      row.set("reconnecting", member.reconnecting); // V067: nothing came from them for a few seconds
       members.push_back(ObjectValue(std::move(row)));
     }
     return members;
@@ -461,6 +465,8 @@ public:
       heard.set("jitter_target_ms", health.jitter_target_ms);
       out.set("audio_heard", ObjectValue(std::move(heard)));
       out.set("sfu_mode", health.packet_mode);
+      // Hop frames no key this device holds opened (V068: a rotation's gap; V067: shut out of the call).
+      out.set("rx_unopened_frames", calls_->HopHealth().unopened_frames);
       out.set("path", CallMediaPathName(calls_->MediaPath()));
       std::vector<Value> streams;
       for (const MediaStreamHealth& stream : health.streams) {

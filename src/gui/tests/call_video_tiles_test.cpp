@@ -63,26 +63,6 @@ protected:
   FakeMedia media;
 };
 
-// Group call, desktop stage: a blocked person's old frame never fills the big stage; live video from someone else does.
-TEST_F(CallVideoTilesTest, TheStageNeverTakesABlockedPersonsFrame) {
-  CallRosterParticipantState blocked = Row(11);
-  blocked.video_blocked = true;
-  const CallRosterParticipantState live = Row(22);
-  const CallRosterParticipantState self = Row(33, /*local=*/true);
-  media.streams[11] = 5; // the blocked person's cached frame is the only video there is
-  EXPECT_FALSE(StageMayShowRemote(media, true, /*group=*/true, {self, blocked, live}))
-      << "nobody else has video: the stage would show the blocked one's old frame";
-  media.streams[22] = 6;
-  EXPECT_TRUE(StageMayShowRemote(media, true, true, {self, blocked, live})) << "someone has live video";
-  EXPECT_TRUE(StageMayShowRemote(media, true, true, {self, live})) << "nobody blocked: unchanged";
-  EXPECT_TRUE(StageMayShowRemote(media, true, false, {self, blocked})) << "1:1 is untouched";
-  EXPECT_FALSE(StageMayShowRemote(media, false, true, {self, blocked, live})) << "no remote video stays none";
-  const CallRosterParticipantState self_live = Row(33, true);
-  media.streams[33] = 9; // our own stream is never "someone else"
-  media.streams.erase(22);
-  EXPECT_FALSE(StageMayShowRemote(media, true, true, {self_live, blocked, live}));
-}
-
 TEST_F(CallVideoTilesTest, NoPictureShowsNoSelfView) {
   const CallVideoTilesShown shown = SubmitCallVideoTiles(media, tiles, /*remote_video=*/true);
   EXPECT_FALSE(shown.local_preview);
@@ -171,6 +151,19 @@ TEST_F(CallVideoTilesTest, RosterTilesCopyOnlyNewFramesPerStream) {
   EXPECT_EQ(tiles.HeldSeq(CallVideoTileKind::Peer, 102), 8u);
 }
 
+// V067: someone gone quiet (reconnecting) keeps their last frame in the engine a while; it is not shown as live.
+TEST_F(CallVideoTilesTest, AReconnectingPersonsLastPictureIsNotShown) {
+  media.streams = {{101, 4}};
+  std::vector<CallRosterParticipantState> roster = {Row(0, true), Row(101)};
+  ASSERT_EQ(SubmitCallRosterTiles(media, tiles, roster), std::vector<uint32_t>{101});
+  roster[1].reconnecting = true;
+  EXPECT_TRUE(SubmitCallRosterTiles(media, tiles, roster).empty());
+  EXPECT_FALSE(roster[1].has_remote_video) << "the avatar shows, dimmed";
+  EXPECT_EQ(tiles.HeldSeq(CallVideoTileKind::Peer, 101), 0u) << "the tile let go of the frozen frame";
+  roster[1].reconnecting = false; // frames came back
+  EXPECT_EQ(SubmitCallRosterTiles(media, tiles, roster), std::vector<uint32_t>{101});
+}
+
 TEST_F(CallVideoTilesTest, SomeoneNewOnTheSameStreamWithTheSameNumberIsStillShown) {
   media.streams = {{101, 4}};
   std::vector<CallRosterParticipantState> roster = {Row(0, true), Row(101)};
@@ -189,31 +182,6 @@ TEST_F(CallVideoTilesTest, SomeoneNewOnTheSameStreamWithTheSameNumberIsStillShow
   EXPECT_EQ(media.copies, before + 1);
   EXPECT_EQ(tiles.HeldSeq(CallVideoTileKind::Peer, 101), 4u);
   EXPECT_TRUE(roster[1].has_remote_video);
-}
-
-// DEV/PLAN-call-silent-tile.md test 10: a row the presenter blocked (silent, or restored with no video packet since)
-// shows the avatar even while the engine still holds a cached picture for its stream, and the tile lets it go.
-TEST_F(CallVideoTilesTest, ABlockedRowShowsNoCachedPictureAndItsTileIsLetGo) {
-  media.streams = {{101, 4}, {102, 7}};
-  std::vector<CallRosterParticipantState> roster = {Row(0, true), Row(101), Row(102)};
-  SubmitCallRosterTiles(media, tiles, roster);
-  ASSERT_TRUE(roster[1].has_remote_video);
-  ASSERT_EQ(tiles.HeldSeq(CallVideoTileKind::Peer, 101), 4u);
-  ASSERT_EQ(media.copies, 2);
-
-  roster[1].video_blocked = true; // dimmed: the engine still has a frame for 101
-  media.streams[101] = 5;         // even a newer cached one
-  const std::vector<uint32_t> live = SubmitCallRosterTiles(media, tiles, roster);
-  EXPECT_FALSE(roster[1].has_remote_video);
-  EXPECT_TRUE(roster[2].has_remote_video) << "an unblocked row is untouched";
-  EXPECT_EQ(live, (std::vector<uint32_t>{102}));
-  EXPECT_EQ(media.copies, 2) << "no frame was copied for the blocked row";
-  EXPECT_EQ(tiles.HeldSeq(CallVideoTileKind::Peer, 101), 0u) << "RetainPeers let its held frame go";
-
-  roster[1].video_blocked = false; // a video packet came since: the picture may come back
-  SubmitCallRosterTiles(media, tiles, roster);
-  EXPECT_TRUE(roster[1].has_remote_video);
-  EXPECT_EQ(tiles.HeldSeq(CallVideoTileKind::Peer, 101), 5u);
 }
 
 } // namespace

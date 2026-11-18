@@ -1269,6 +1269,21 @@ def net_drop(u, seconds, during=None):
     net(u, "ip link set eth0 up && ip route replace default via %s" % gw)
 
 
+def net_blackhole(u, seconds, during=None):
+    """The user's link loses every packet for `seconds` with the interface up (a lift, a dead cell): nothing tells the
+    device, unlike net_drop's link down. `during` runs halfway."""
+    clear_link(u)
+    net(u, "tc qdisc replace dev eth0 root netem loss 100%")
+    gw_net(u, "tc qdisc replace dev %s root netem loss 100%%" % gw_inner_dev(u))
+    try:
+        time.sleep(seconds / 2)
+        if during:
+            during()
+        time.sleep(seconds / 2)
+    finally:
+        clear_link(u)
+
+
 def net_drop_together(users, seconds):
     """Several users' links go down at the same moment (each behind its own NAT) and come back together."""
     gws = [(u, net(u, "ip route show default | awk '{print $3; exit}'")) for u in users]
@@ -3792,6 +3807,136 @@ def scenario_group_member_crashes(lab):
     assert_idle(a, b, c)
 
 
+def call_member(state, account):
+    """`account`'s row among the call screen's people in `state` (None: not in the call)."""
+    for m in state.get("members", []):
+        if m.get("identity") == account:
+            return m
+    return None
+
+
+def scenario_group_member_killed_is_dropped(lab):
+    """Carol's app is killed mid-call (SIGKILL: no call_leave). Alice and Bob see her tile reconnecting within a few
+    seconds and her gone within the gone window — taken as having left (V067, #617); they go on talking, and neither
+    keeps a stream of hers."""
+    (a, b, c), threads = open_group(lab)
+    call_id = group_call(a, threads[a.name], [b, c])
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    epoch = {u.name: u.state().get("media_epoch") for u in (a, b)}
+    dead_stream = stream_id(c.account)
+    killed = time.time()
+    c.crash()
+    reconnecting = {}
+    for u in (a, b):
+        wait_for(lambda: (call_member(u.state(), c.account) or {}).get("reconnecting") or None, 10,
+                 "%s: Carol's tile reconnecting" % u.name)
+        reconnecting[u.name] = round(time.time() - killed, 1)
+    gone = {}
+    for u in (a, b):
+        def out_of_call():
+            st = u.state()
+            return (call_member(st, c.account) is None and c.account not in st.get("participants", [])) or None
+        wait_for(out_of_call, 45, "%s: Carol out of the call" % u.name)
+        gone[u.name] = round(time.time() - killed, 1)
+    for name, at in reconnecting.items():
+        if at > 6:
+            raise ProbeError("%s saw Carol reconnecting only %.1f s after her app died (wanted ~3 s)" % (name, at))
+    for name, at in gone.items():
+        if not 28 <= at <= 36:
+            raise ProbeError("%s took Carol as gone %.1f s after her app died (wanted ~30 s)" % (name, at))
+    for u in (a, b):
+        st = u.state()
+        if st.get("kind") != "in_call" or st.get("call_id") != call_id:
+            raise ProbeError("%s: not in the call after Carol was dropped (%s)" % (u.name, st))
+        assert_hears(u, 1)
+        held = [row["stream_id"] for row in u.state().get("streams", [])]
+        if dead_stream in held:
+            raise ProbeError("%s: still holds Carol's stream %d (%s)" % (u.name, dead_stream, held))
+    wait_for(lambda: all(u.state().get("media_epoch", 0) > (epoch[u.name] or 0) for u in (a, b)) or None, 20,
+             "the key rotated without Carol")
+    a.cmd("leave")
+    b.cmd("leave", check=False)
+    assert_idle(a, b)
+    return {"reconnecting_s": max(reconnecting.values()), "gone_s": max(gone.values())}
+
+
+def scenario_group_leave_keeps_audio(lab):
+    """Carol leaves a three-way call: the key rotates without her (V003), and Alice and Bob go on hearing each other
+    through the rotation — the one who minted the new key seals with it only once the other holds it, so neither
+    side gets frames it cannot open (V068; #617's follow-up: ~30 did not open on the late side)."""
+    (a, b, c), threads = open_group(lab)
+    group_call(a, threads[a.name], [b, c])
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    epoch = {u.name: u.state().get("media_epoch") or 0 for u in (a, b)}
+    unopened = {u.name: u.state().get("rx_unopened_frames", 0) for u in (a, b)}
+    c.cmd("leave")
+    assert_idle(c)
+    wait_for(lambda: all((u.state().get("media_epoch") or 0) > epoch[u.name] for u in (a, b)) or None, 20,
+             "the key rotated without Carol")
+    time.sleep(6)  # past the minter's hold (3 s) and the old epoch's grace (3 s)
+    for u in (a, b):
+        assert_hears(u, 1)
+    failed = {u.name: u.state().get("rx_unopened_frames", 0) - unopened[u.name] for u in (a, b)}
+    if any(n > 5 for n in failed.values()):
+        raise ProbeError("frames that did not open across the rotation: %s (wanted at most a few)" % failed)
+    a.cmd("leave")
+    b.cmd("leave", check=False)
+    assert_idle(a, b)
+    return {"unopened": failed}
+
+
+def scenario_group_member_cut_off_rejoins(lab, silent=False):
+    """Carol's network is cut for 35 s in a three-way call — longer than the others wait (V067): they take her as gone
+    and move the key on without her. On her screen the call reconnects (nobody else dimmed or dropped: it is her
+    network), and once it is back she asks back in through the normal join and is let in: everyone hears everyone in
+    the same call, on the same key (V067 8)."""
+    (a, b, c), threads = open_group(lab)
+    call_id = group_call(a, threads[a.name], [b, c])
+    for u in (a, b, c):
+        assert_hears(u, 2, timeout=40)
+    epoch = a.state().get("media_epoch") or 0
+    seen = {}
+
+    def while_cut():
+        st = c.state()
+        seen.update(kind=st.get("kind"), call_id=st.get("call_id"), status=st.get("status"),
+                    dimmed=[m.get("identity") for m in st.get("members", []) if m.get("reconnecting")],
+                    participants=len(st.get("participants", [])))
+
+    (net_blackhole if silent else net_drop)(c, 35, during=while_cut)
+    up = time.time()
+    if seen.get("kind") != "in_call" or seen.get("call_id") != call_id:
+        raise ProbeError("Carol: out of the call while her network was down (%s)" % seen)
+    if seen.get("dimmed") or seen.get("participants") != 3:
+        raise ProbeError("Carol: took the others as reconnecting or gone while it was her network (%s)" % seen)
+    if seen.get("status") == "connected":
+        raise ProbeError("Carol: the call read Connected with her network down (%s)" % seen)
+    wait_for(lambda: all((u.state().get("media_epoch") or 0) > epoch for u in (a, b)) or None, 20,
+             "Alice and Bob moved the key on without Carol")
+
+    def back_in():
+        st = c.state()
+        return (st.get("kind") == "in_call" and st.get("call_id") == call_id and
+                st.get("media_epoch") == a.state().get("media_epoch")) or None
+
+    wait_for(back_in, 90, "Carol back in the call on the others' key")
+    rejoined = round(time.time() - up, 1)
+    assert_everyone_in_call((a, b, c), call_id, timeout=60)
+    for u in (a, b, c):
+        u.cmd("leave", check=False)
+    assert_idle(a, b, c)
+    return {"rejoined_after_up_s": rejoined}
+
+
+def scenario_group_member_silently_cut_off_rejoins(lab):
+    """As group_member_cut_off_rejoins, but every packet of Carol's is lost with her link up (a lift): her device is
+    not told, its hop link stays up past the others' window, and it is the others all stopping at once that says it
+    was her network (V067 8)."""
+    return scenario_group_member_cut_off_rejoins(lab, silent=True)
+
+
 def scenario_group_hop_down_mid_call(lab):
     """The hop carrying a three-way call goes down and comes back: each person ends up either back
     in the call hearing the others or out of it — never in a call that carries nothing."""
@@ -4616,6 +4761,10 @@ SCENARIOS = [
     ("group_caller_leaves_first", scenario_group_caller_leaves_first),
     ("group_add_someone_mid_call", scenario_group_add_someone_mid_call),
     ("group_member_crashes", scenario_group_member_crashes),
+    ("group_member_killed_is_dropped", scenario_group_member_killed_is_dropped),
+    ("group_leave_keeps_audio", scenario_group_leave_keeps_audio),
+    ("group_member_cut_off_rejoins", scenario_group_member_cut_off_rejoins),
+    ("group_member_silently_cut_off_rejoins", scenario_group_member_silently_cut_off_rejoins),
     ("group_hop_down_mid_call", scenario_group_hop_down_mid_call),
     ("group_decline_then_join", scenario_group_decline_then_join),
     ("group_leave_and_rejoin", scenario_group_leave_and_rejoin),
@@ -4661,6 +4810,7 @@ NEEDS_TLS_RELAYS = {"users_on_two_relays_meet", "preferred_relay_down_mail_still
                     "replayed_calls_refused_at_other_relay", "relay_not_matching_its_link_unused"}
 # Scenarios that change a user's network: they need a container per user (--nat).
 NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
+             "group_member_cut_off_rejoins", "group_member_silently_cut_off_rejoins",
              "group_one_way_network_drops", "group_two_join_through_drops", "group_call_on_the_road",
              "group_call_weak_upload", "group_video_on_the_road", "video_on_the_road",
              "bystander_is_no_relay"} | {

@@ -11,7 +11,6 @@
 #include "feature/presenters/CallHoldStuck.h"
 #include "feature/presenters/CallPlayoutStuck.h"
 #include "feature/presenters/CallGroupLook.h"
-#include "feature/presenters/CallSilentTiles.h"
 #include "feature/presenters/CallSpeakerButton.h"
 #include "feature/presenters/CallUiAttachGuard.h"
 #include "feature/presenters/CallWakePlaceholder.h"
@@ -43,6 +42,8 @@ struct CallNotice {
     IncomingCall,
     /** V062 1: `identity` joined the group's call as `brought_by`'s guest (once per guest and call). */
     GuestJoined,
+    /** V067: `identity` was reconnecting and is gone from the call ("{name} lost connection"). */
+    ParticipantLost,
     /** V064: the 1:1 call End & accept ended (`ending`) can be called back now that the call taken is over. */
     CallBack,
     /** "Who can call me" dropped a call from `identity`: `key` (an i18n key) says which setting did (the pill). */
@@ -384,14 +385,6 @@ private:
   void MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s);
   /** B97: a live group call where nothing arrives from anyone for 30 s is left (once told). */
   void WatchForNoMedia(CallUiBackend& backend, const CallScreen& s, int64_t now);
-  /**
-   * A group call's tiles of people who stopped sending (DEV/PLAN-call-silent-tile.md): steps CallSilentTiles from the
-   * engine's receive counters and writes `silent_dimmed` / `video_blocked` on `s`'s members. `roster_read` is false when
-   * the joined list could not be read this refresh (nothing changes then). Also writes, at most once a second, the
-   * line for a flip of the signals that say our own media path is online (DEBUG).
-   */
-  void StepSilentTiles(CallScreen& s, CallUiBackend& backend, bool roster_read);
-  void ApplySilentTiles(CallScreen& s);
   /** G022: the group banner of the call on `s` (the waiting invites read at most once a second). */
   void FillGroupInvite(CallScreen& s, int64_t now);
   /** V062: who is a guest in the group's call on `s`, what this device may do about them, and Add people. */
@@ -404,6 +397,8 @@ private:
   void OfferCallBack(const CallScreen& next, const CallUiBackend::Surface& surface);
   /** V062 1: "{name} joined as {bringer}'s guest", once per guest of the call on `s`. */
   void AnnounceGuests(const CallScreen& s);
+  /** V067: "{name} lost connection" for each participant reconnecting in `before` and gone in `after`. */
+  void AnnounceLostConnections(const CallScreen& before, const CallScreen& after);
   /** The media frame of the screen `next` (in a call: its facts read, then acted on; answering: the story only). */
   void StepMedia(CallUiBackend& backend, const CallScreen& next, int64_t now);
   /** One tick's media facts for the call on `s`, after the engine's video upkeep. */
@@ -467,13 +462,6 @@ private:
   std::string unconnected_call_id_;
   NoMediaWatch no_media_watch_;
   CallGroupLook group_look_;
-  CallSilentTiles silent_tiles_{[this](const std::string& line) { log().info << line; }};
-  /** The call silent_tiles_ is for, and the own-path signals last logged (-1: none yet). */
-  std::string silent_call_id_;
-  int own_path_logged_[4] = {-1, -1, -1, -1};
-  int64_t own_path_log_ms_ = 0;
-  /** When the signals first differed from the last line (-1: they do not). */
-  int64_t own_path_changed_ms_ = -1;
   int64_t no_media_checked_ms_ = 0;
   /** Last CallSessionManager identity the ring callbacks were installed on. */
   const void* bound_calls_ = nullptr;
