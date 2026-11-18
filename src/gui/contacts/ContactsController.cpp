@@ -2034,7 +2034,19 @@ void ContactsController::OnAddedFromInvite(const Roe<std::string>& added) {
 }
 
 void ContactsController::OnInviteCardAsked() {
-  Refresh();
+  // Not Refresh(): that flushes pending edits and reloads the open page's fields, which can wipe a remark being typed
+  // seconds after the add. Lists, plus the one thing the card changes on the open page: can it be messaged now.
+  OnContactsChanged();
+  if (selected_.id.empty() || selected_.member_preview || !contacts_ports_.get_contact) {
+    return;
+  }
+  auto contact = contacts_ports_.get_contact(selected_.id.c_str());
+  if (!contact || !*contact) {
+    return;
+  }
+  UpdateMessagingEligibility(**contact);
+  DataModelHost::Instance().Dirty("contacts", "selected");
+  NotifySurfaceChanged();
 }
 
 void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits) {
