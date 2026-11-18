@@ -318,6 +318,9 @@ private:
   AgentConfig last_agent_runtime_;
   bool use_llm_ = false;
   bool brief_guest_mint_attempted_ = false;
+  /** For StartupNoticePolicy: a fresh install's first seconds are quiet about an unreachable network. */
+  std::chrono::steady_clock::time_point launched_at_ = std::chrono::steady_clock::now();
+  bool had_backend_success_ = false;
   std::shared_ptr<CoalescedRun> brief_key_run_ = std::make_shared<CoalescedRun>();
   bool reload_when_idle_ = false; // ReloadAgentConfigWhenIdle; done in Tick
   std::string brief_guest_mint_user_hint_;

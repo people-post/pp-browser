@@ -94,10 +94,12 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
         case Err::Network::TlsFailed:
           return Localized("errors.network.tls");
         case Err::Network::HttpError:
+          return Localized("errors.network.http");
         case Err::Network::HttpRejected:
         case Err::Network::RecipientNotRegistered:
         case Err::Network::PaymentRequired:
-          return Localized("errors.network.http");
+          // The server answered and said no: "can't reach" would be wrong, and trying again will not help.
+          return Localized("errors.network.rejected");
         case Err::Network::Unreachable:
         case Err::Network::RelayIdentityUnavailable:
         case Err::Network::Generic:

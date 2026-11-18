@@ -54,6 +54,11 @@ TEST_F(AppErrorTest, NetworkDisplayNamesTheCause) {
             "The server took too long to respond — the network is slow or the server isn't answering.");
   EXPECT_EQ(AppError::Display(AppError::Network(Err::Network::TlsFailed, "curl failed: ssl")),
             "Can't set up a secure connection — the network may be going through a proxy.");
+  EXPECT_EQ(AppError::Display(AppError::Network(Err::Network::HttpError, "HTTP 502")),
+            "Can't reach the server right now. Please try again in a moment.");
+  // A server that answered "no" is not "can't reach", and trying again will not change it.
+  EXPECT_EQ(AppError::Display(AppError::Network(Err::Network::HttpRejected, "HTTP 400")),
+            "The server did not accept this request.");
   EXPECT_EQ(AppError::Display(AppError::Blob(Err::Blob::UploadNotConfigured, "Blob upload is not configured")),
             "Can't send attachments right now — the server hasn't enabled uploads.");
   EXPECT_EQ(AppError::Display(AppError::Blob(Err::Blob::UploadNotConfiguredNoDirect, "detail")),

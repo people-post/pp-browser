@@ -1,4 +1,5 @@
 #include "gui/chat/AgentTurnController.h"
+#include "gui/chat/StartupNoticePolicy.h"
 #include "foundation/data/SessionStore.h"
 #include "lib/ai/WorkingSetPolicy.h"
 #include "lib/ai/LocalizedLabels.h"
@@ -1501,9 +1502,22 @@ void AgentTurnController::EnsureBriefGuestLlmKey() {
 void AgentTurnController::OnBriefKeyMintEnded(const BriefKeyMintEnd& end) {
   switch (end.outcome) {
     case BriefKeyMintOutcome::Stored:
+      had_backend_success_ = true;
       brief_guest_mint_user_hint_.clear();
       return; // after_identity_changed reloads the agent and refreshes the banner
     case BriefKeyMintOutcome::MintFailed:
+      if (end.error) {
+        const int64_t since_launch_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - launched_at_)
+                .count();
+        if (!ShowBackgroundFailure(*end.error, /*user_initiated=*/false, since_launch_ms, had_backend_success_)) {
+          // Not shown: the network is not usable yet. The mint runs again at the next RefreshLlmSetupBanner /
+          // ReloadAgentConfig (a send tap, an identity change, unlock), which is the retry that exists.
+          log().info << "Brief guest key mint failed, network not usable yet; no banner: " << AppError::Log(*end.error);
+          brief_guest_mint_attempted_ = false;
+          return;
+        }
+      }
       brief_guest_mint_user_hint_ = end.error ? AppError::Display(*end.error) : std::string();
       if (brief_guest_mint_user_hint_.empty()) {
         brief_guest_mint_user_hint_ = Tr("chat.hint.brief_unavailable_temp");
