@@ -1,7 +1,7 @@
 # Release compatibility: design
 
 **Status:** Accepted by Hongwei, 2026-11-17; in review with Leo (relay parts: [§ Decisions taken](#decisions-taken),
-items 3 and 8). Decisions RC001–RC009.
+items 3 and 8). Decisions RC001–RC010.
 **Today's policy** stays [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) until release 1 ships; this
 design replaces its [§ No bridges](../../docs/contracts/COMPATIBILITY.md#no-bridges-pre-release) then.
 
@@ -367,6 +367,53 @@ moves to its own AWS account, apart from dev and staging (decision below).
 
 **Cost:** the relay is serverless (Lambda, on-demand DynamoDB), so an idle environment costs almost nothing; the cost
 is the staging pp-node machines and the work in terraform, ansible and the workflows.
+
+## Backups and restore
+
+Recommended to Leo for review ([RC010](DECISIONS.md#rc010--backups-continuous-on-every-release-and-rollback-copied-out-of-prod)).
+What the relay keeps (pp-relay-apis main, 2026-11-18): tables `accounts`, `nodes`, `devices`, `blobs`, `messages`,
+`usage`, `limits`, `admin`, `support`, `support-crypto`; buckets for account lockers, blobs and icons, files, keys and
+diagnostics; secrets: the relay identity key, the Support identity seed, the LLM token signing key and upstream
+token, the APNs and FCM credentials. Its `docs/architecture.md` says only `accounts` and `blobs` have point-in-time
+recovery (`messages`, `limits` and `usage` do not); the others are not mentioned. The real settings are in the
+infrastructure.
+
+**Continuous backups, not schedules.** DynamoDB point-in-time recovery restores any second of the last 35 days. It is
+on for every table that holds state: `accounts`, `nodes`, `devices`, `blobs`, `admin`, `support`, `support-crypto`,
+and `messages` (mail not yet collected: encrypted, kept up to 30 days; losing it loses users' messages silently).
+Not `limits` (short-lived counters); `usage` is optional (statistics). The buckets are versioned.
+
+**Backups on events, taken by the workflows,** each tagged with the relay version that wrote the data:
+
+- before each prod release (the deploy workflow);
+- before a rollback, keeping what the bad release wrote, to investigate it and re-apply what was good;
+- before any data change outside a release (a backfill, a cleanup, closing a compatibility window).
+
+**A copy outside the prod account.** AWS Backup copies daily backups into a separate account (the backup or non-prod
+account, decision 10) whose vault is locked: no one in the prod account can delete them, neither a leaked credential
+nor a mistake. Dailies are kept 90 days; event backups as long as their release is in range. Retention is bounded on
+purpose (privacy, below).
+
+**Secrets are their own class.** Losing the relay identity key means a new PeerId: every app, card and relay link
+pins it (MR008), so every client would refuse the relay with no way back. Losing the Support seed loses the Support
+account. These secrets are replicated to a second AWS region and kept in an offline encrypted copy held by two
+people; both copies are checked whenever a key rotates.
+
+**Restores are practised.** A restore makes a new table: a runbook says how the functions move onto it (their
+`TABLE_*` settings) or how the data is copied back. It is rehearsed every quarter on staging, beside the rollback
+rehearsal. Targets: at most 5 minutes of data lost, service back within 2 hours.
+
+**Rules for a restore:**
+
+- backups hold sensitive data (support chats in plaintext, staff data, account metadata): encrypted with their own
+  key in the backup account, and the privacy policy says how long deleted data lives on in them;
+- a restore must not bring back deleted accounts: removals and revocations go to a short log, re-applied after any
+  restore;
+- a restore rolls back data, not code: data from before release N+1 restored under N+1 is covered by the range rule,
+  older code on newer data by RC003; the runbook says so.
+
+**By environment:** prod has all of the above; staging has point-in-time recovery (restore rehearsals need it); dev
+has none.
 
 ## Decisions taken
 

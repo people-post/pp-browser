@@ -192,3 +192,24 @@ data, secrets and relay identity; pp-node gets matching tiers ([DESIGN § Enviro
   and `backend.env: "qa"` would change meaning.
 - Keep prod and qa only (no place for candidates apart from integration).
 - Staging as an ephemeral stack per release (loses the kept data a rollback rehearsal needs).
+
+## RC010 — Backups: continuous, on every release and rollback, copied out of prod
+
+**Date:** 2026-11-18
+**Status:** Agreed by Hongwei (2026-11-18); recommended to Leo for review (his infrastructure).
+**Decision:** Point-in-time recovery on every relay table that holds state (`messages` included, `limits` not),
+versioned buckets; an on-demand backup before each prod release, before a rollback and before any data change outside
+a release, tagged with the relay version; daily copies into a locked vault in another account (90 days; event
+backups while their release is in range); the relay identity key and the Support seed replicated to a second region
+and escrowed offline; a quarterly restore rehearsal on staging with a runbook; a removal log re-applied after a restore
+([DESIGN § Backups and restore](DESIGN.md#backups-and-restore)).
+**Rationale:**
+- Continuous recovery loses minutes, a schedule up to a day; the event backups mark the points a release or rollback
+  starts from.
+- Backups in the account they protect share its failure: a leaked credential or a mistake can delete both.
+- The relay identity key is the one thing whose loss no restore repairs: clients pin its PeerId (MR008).
+- A restore nobody has practised is a guess; a restore that resurrects deleted accounts is a privacy failure.
+**Alternatives rejected:**
+- Scheduled backups only (Hongwei's starting point, kept as the daily copies): up to a day of data lost.
+- Backups inside the prod account only (no protection from the account itself).
+- Keeping backups indefinitely (deleted users' data would live on without bound).

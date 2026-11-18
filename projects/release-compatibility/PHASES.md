@@ -35,6 +35,10 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
   its PeerId, secrets, tables); qa becomes staging (takes release candidates only; Me → Network shows "Staging", the
   config value stays `qa`); prod canary deploys with alarms and automatic rollback; pp-node dev and staging tiers;
   a rollback rehearsal on staging.
+- [ ] Backups ([DESIGN § Backups and restore](DESIGN.md#backups-and-restore), Leo's infrastructure): point-in-time
+  recovery on every state table; backups before each prod release and rollback in the workflows; the locked vault
+  copy in another account; the identity key and Support seed replicated and escrowed; the removal log; the restore
+  runbook and a first restore rehearsal on staging.
 - [ ] The PR template and `docs/ops/RELEASE.md` say what a release branch takes, that fixes land on main first, and
   how a backport is asked for.
 
