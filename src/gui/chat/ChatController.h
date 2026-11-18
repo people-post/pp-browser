@@ -745,8 +745,8 @@ private:
   ChatState chat_;
   ShellState shell_;
   bool messaging_ready_ = false;
-  /** True once this device was seen to hold a recovery phrase (the vault is read only until then). */
-  bool recovery_phrase_present_ = false;
+  /** Whether this device holds a recovery phrase: one vault read per messaging session / identity change. */
+  std::optional<bool> recovery_phrase_present_;
   /**
    * One up per WireMessagingBindings (and when messaging goes away): a messaging-ready task's result is stored only
    * when the session it started in is still this one (MessagingReadyTasks).

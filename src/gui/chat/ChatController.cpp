@@ -624,6 +624,7 @@ void ChatController::MakeReadyTasks() {
   };
   ports.brief_key_done = [this](const BriefKeyMintEnd& end) { agent_.OnBriefKeyMintEnded(end); };
   ports.after_identity_changed = [this]() {
+    recovery_phrase_present_.reset(); // a restore / link can bring a phrase
     agent_.ReloadAgentConfig(); // runtime.llm.api_key takes the key now in the identity
     agent_.RefreshLlmSetupBanner();
   };
@@ -1554,6 +1555,7 @@ void ChatController::OnProfileDataReset() {
   AbandonPick();
   video_bubble_thread_.clear();
   messaging_ready_ = false;
+  recovery_phrase_present_.reset();
   ++messaging_session_; // a task result of the old profile never reaches the new one
   if (ready_tasks_) {
     ready_tasks_->OnMessagingTornDown(); // the teardown dropped work still queued: free its runs
@@ -2017,10 +2019,10 @@ bool ChatController::RecoveryReminderShows() {
   if (!ShouldShowRecoveryReminder(in)) {
     return false;
   }
-  if (!recovery_phrase_present_ && facade_ != nullptr && messaging_ready_) {
-    recovery_phrase_present_ = facade_->HasRecoveryPhrase();
+  if (!recovery_phrase_present_.has_value() && facade_ != nullptr && messaging_ready_) {
+    recovery_phrase_present_ = facade_->HasRecoveryPhrase(); // one vault read per session, yes or no
   }
-  return recovery_phrase_present_;
+  return recovery_phrase_present_.value_or(false);
 }
 
 void ChatController::OnRecoveryReminderLater() {
@@ -5237,6 +5239,7 @@ void ChatController::WireMessagingBindings() {
     return;
   }
   messaging_ready_ = true;
+  recovery_phrase_present_.reset();
   // A new session: results of tasks the last one sent off are dropped when they come back. A run still out keeps its
   // slot (one at a time); what is triggered below runs once more after it.
   ++messaging_session_;
@@ -6371,6 +6374,7 @@ void ChatController::Shutdown() {
   AbandonPick();
   video_bubble_thread_.clear();
   messaging_ready_ = false;
+  recovery_phrase_present_.reset();
   ++messaging_session_; // a task result still on its way is dropped
   if (ready_tasks_) {
     ready_tasks_->OnMessagingTornDown();
