@@ -27,6 +27,9 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 - [ ] Release workflows take release tags only from `release/*` branches, build once, and promote the artifact.
 - [ ] GitHub environments: main → qa; `release/*` → candidates; only `v*` tags → production, behind an approval.
 - [ ] The backport bot (a label opens the backport PR, the cherry-pick trailer kept).
+- [ ] App builds ([DESIGN § App builds](DESIGN.md#app-builds-internal-external-store)): release-candidate tags build
+  and upload automatically; the promotion workflow (App Store Connect and Play APIs, approval-gated, refuses non-candidates,
+  tags `vX.Y.Z`); phased store releases; the app shows its tag and commit in About and diagnostics.
 - [ ] The check levels in CI ([DESIGN § Checks by level](DESIGN.md#checks-by-level)).
 - [ ] The PR template and `docs/ops/RELEASE.md` say what a release branch takes, that fixes land on main first, and
   how a backport is asked for.
@@ -47,7 +50,7 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
   settings, Leo).
 - [ ] The version table promoted to `docs/contracts/`; COMPATIBILITY.md's § No bridges replaced by the rule, its
   "Clean cutovers" table closed with the release-1 row; RC001–RC004 and RC006 marked superseded by those docs,
-  RC005 and RC007 by `docs/ops/RELEASE.md`.
+  RC005, RC007 and RC008 by `docs/ops/RELEASE.md`.
 
 ## P5 — Release mode in force
 
@@ -55,3 +58,4 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 - [ ] CI: a signed-bytes change without a version bump fails, in every repo with signed objects.
 - [ ] The mixed-version lab run (oldest and newest supported app, pp-node, relay) on released artifacts.
 - [ ] The first format change under the range rule, as the worked example.
+- [ ] A separate dev app ("PP Dev", its own bundle id) for mixed-version testing on one phone.

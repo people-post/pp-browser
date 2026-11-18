@@ -146,3 +146,26 @@ minimum checks for a hotfix?
   maintains only the newest release; reasons above.
 - Merging release branches forward (oldest → newer → main) instead of backporting: needs every older branch merged
   into every newer one, and fails when the code has moved on; kept only for a fix that exists only on old branches.
+
+## RC008 — App builds climb one ladder; only release candidates are promoted
+
+**Date:** 2026-11-17
+**Status:** Accepted (Hongwei, 2026-11-17).
+**Decision:** Dev builds are made by hand from any branch or tag for internal testers and are never promoted. Release
+candidates are built automatically from `vX.Y.Z-rc.<n>` tags on `release/X.Y` with their final version, and the same
+binary goes from internal to external testers to the store, moved by an approval-gated promotion workflow that
+refuses anything else and tags `vX.Y.Z` when it submits. Store releases are phased. Builds show their tag and commit.
+([DESIGN § App builds](DESIGN.md#app-builds-internal-external-store).)
+**Rationale:**
+- It is the stores' own model (one upload, promoted), and RC007's build-once rule.
+- The stores cannot tell a dev build from a candidate (a version string and a build number), so the rule has to be
+  enforced where the build is promoted, not remembered.
+- Under the range rule a version cannot be recalled from phones; a phased release is the one way to stop a bad one
+  early.
+- On 2026-11-17 "TestFlight 136" could be traced to its commit only by matching workflow run numbers; tags and a
+  build that names itself make that immediate.
+**Alternatives rejected:**
+- Promote any internal build by hand in App Store Connect (the planned flow before this decision): works, but a
+  dev build can be promoted by mistake, and the repo does not learn which commit shipped.
+- Rebuild for the store from the release tag (the tested binary is not the one shipped).
+- A separate dev app now (worth it for mixed-version testing, but its setup is not needed for release 1; later).

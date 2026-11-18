@@ -1,7 +1,7 @@
 # Release compatibility: design
 
 **Status:** Accepted by Hongwei, 2026-11-17; in review with Leo (relay parts: [§ Decisions taken](#decisions-taken),
-items 3 and 8). Decisions RC001–RC007.
+items 3 and 8). Decisions RC001–RC008.
 **Today's policy** stays [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) until release 1 ships; this
 design replaces its [§ No bridges](../../docs/contracts/COMPATIBILITY.md#no-bridges-pre-release) then.
 
@@ -262,6 +262,41 @@ release version is set before its candidate build, so the TestFlight build that 
 - `release/*` may deploy release candidates to a candidate environment;
 - only `v*` tags deploy to production, behind an approval gate; for apps, only tags go to the stores;
 - rollback redeploys the previous release tag's artifact (RC003).
+
+### App builds: internal, external, store
+
+An app build moves along one ladder, and the same uploaded binary climbs it: App Store Connect gives one upload to
+internal testers, then external testers, then the App Store, with no rebuild (Google Play's internal → closed →
+production tracks promote one app bundle the same way; desktop releases promote the candidate's artifacts). The
+rules ([RC008](DECISIONS.md#rc008--app-builds-climb-one-ladder-only-release-candidates-are-promoted)):
+
+| Build | Made from | Goes to | Tag |
+|-------|-----------|---------|-----|
+| **Dev build** | a manual trigger, any branch or tag (latest features, a fix to try) | internal testers only; **never promoted** | `internal/<build number>` |
+| **Release candidate** | pushing `vX.Y.Z-rc.<n>` on `release/X.Y`; built and uploaded to internal testers automatically | internal, then external testers, then the store | `vX.Y.Z-rc.<n>`; `vX.Y.Z` on the same commit when it is submitted to the store |
+
+- **Only release candidates are promoted.** The stores see a version string and a build number only, so a dev build
+  stamped with the next version looks like a candidate. A candidate is built with its final version (10.1.0); only
+  build numbers differ between candidates.
+- **Promotion is a workflow, not clicks.** A workflow adds a candidate to the external testers, then submits it for
+  review, through the App Store Connect API (and the Play Developer API). It refuses a build whose tag is not a
+  release candidate, runs behind a GitHub environment approval, and tags the release (`vX.Y.Z`) on the candidate's
+  commit when it submits.
+- **One binary serves both backends.** Builds compile in the prod and qa relays, and testers switch in Me → Network
+  (`backend.env`, prod by default; [CONFIGURATION](../../docs/ops/CONFIGURATION.md)). A candidate tested on qa is the
+  binary prod users get; it ships with prod as its default.
+- **Hotfixes** take the same path from their release branch. A security fix may go from internal testers straight
+  to the store with an expedited review, skipping external testers.
+- **Store releases are phased.** The App Store's 7-day phased release (and a staged rollout on Play) is used for
+  every release, and paused when something goes wrong: a bad version stopped at a few percent is far cheaper than
+  one on every phone, since it cannot be taken back.
+- **Review times are planned for.** The first build of each version needs Beta App Review before external testers
+  get it (usually under a day); later builds of the same version usually do not. The first candidate is cut early.
+- **A build says what it is.** The app shows its tag and commit in About and in its diagnostics, so a report names
+  the build it came from.
+- **Later, after release 1: a separate dev app** ("PP Dev", its own bundle id), so a tester can keep the store
+  version and a dev build on one phone for mixed-version testing. It needs a second App Store Connect record, its
+  own push and VoIP certificates, app group and keychain.
 
 ### Checks by level
 
