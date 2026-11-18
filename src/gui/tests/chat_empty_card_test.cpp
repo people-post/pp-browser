@@ -28,5 +28,16 @@ TEST(ChatEmptyCardTest, TheAiEmptyStateShowsOnlyInAnAiThread) {
   EXPECT_NE(tag.find("!has_turns"), std::string::npos);
 }
 
+TEST(ChatEmptyCardTest, TheAccountSetupCardSitsAtTheTopClearOfTheKeyboard) {
+  const std::string css = ReadAsset("themes/components.rcss");
+  const size_t rule = css.find(".shell-dialog.onboarding {");
+  ASSERT_NE(rule, std::string::npos);
+  const std::string body = css.substr(rule, css.find('}', rule) - rule);
+  EXPECT_NE(body.find("top: 64dp;"), std::string::npos);
+  EXPECT_NE(body.find("translate(-50%, 0)"), std::string::npos) << "not centred vertically";
+  // Its button is in that card.
+  EXPECT_NE(ReadAsset("views/onboarding.rml").find("shell-dialog shell-pin-gate onboarding"), std::string::npos);
+}
+
 } // namespace
 } // namespace pbr

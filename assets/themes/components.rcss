@@ -7525,6 +7525,15 @@ input.checkbox {
   transform: translate(-50%, 0);
 }
 
+/* Account setup (name, account, friends) sits near the top instead of the middle: the name step has a text field, and
+   with the keyboard up (a third to half of a phone's height) a centred card lost the lower half of its button. The
+   shell lifts a page only for a covered text field or the chat bar, and this card is not that, so it stays clear of
+   the keyboard on its own. */
+.shell-dialog.onboarding {
+  top: 64dp;
+  transform: translate(-50%, 0);
+}
+
 .shell-pin-gate-chooser {
   display: flex;
   flex-direction: column;
