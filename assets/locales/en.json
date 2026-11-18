@@ -680,7 +680,9 @@
     "onboarding.registering": "Setting up…",
     "onboarding.name_required": "Enter a name first.",
     "onboarding.register_unavailable": "Can't set up the account right now. Try again later.",
-    "onboarding.register_failed": "Setting up didn't work. Check your connection and try again.",
+    "onboarding.register_failed": "Setting up didn't work. Please try again later.",
+    "onboarding.register_busy": "A lot of people are signing up right now. Please try again in a minute or two.",
+    "onboarding.register_offline": "Can't reach the server right now. Please try again later.",
     "onboarding.account_title": "Your account",
     "onboarding.account_message":
         "Your account is ready. Send the account ID below, or your QR code, to friends so they can add you.",

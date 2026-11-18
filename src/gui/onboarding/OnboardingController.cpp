@@ -1,6 +1,8 @@
 #include "gui/onboarding/OnboardingController.h"
 
 #include "gui/AccountInvite.h"
+#include "gui/onboarding/RegistrationFailureText.h"
+#include "common/Logger.h"
 
 #include "lib/ui/ViewCatalog.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -157,7 +159,9 @@ void OnboardingController::OnRegister() {
   auto done = [this](Roe<void> result) {
     busy_ = false;
     if (!result) {
-      error_ = (Tr("onboarding.register_failed") + " " + result.error().message).c_str();
+      // The raw detail (English, technical) goes to the log; the page says what happened in plain words.
+      logging::getLogger("Onboarding").warning << "Account setup failed: " << AppError::Log(result.error());
+      error_ = Tr(RegistrationFailureKey(result.error())).c_str();
       DirtyAll();
       return;
     }
