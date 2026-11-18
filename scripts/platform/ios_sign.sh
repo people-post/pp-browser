@@ -153,10 +153,18 @@ TEMP_PROFILE=""
 TEMP_ASC_P8=""
 KEYCHAIN_PATH=""
 KEYCHAIN_PASSWORD=""
+# The user's keychain search list before this run, put back on exit: a self-hosted Mac keeps it after the job.
+SAVED_KEYCHAINS=()
+KEYCHAINS_SAVED=0
+# The provisioning profile this run installed from IOS_PROVISIONING_PROFILE_BASE64 (removed on exit).
+INSTALLED_PROFILE=""
 
 cleanup() {
   # Use if/fi (not `[[ … ]] && cmd`) so an empty path does not make the EXIT
   # trap return non-zero under `set -e` and abort callers like ios_build.sh.
+  if [[ "$KEYCHAINS_SAVED" == 1 ]]; then
+    security list-keychains -d user -s ${SAVED_KEYCHAINS[@]+"${SAVED_KEYCHAINS[@]}"} >/dev/null 2>&1 || true
+  fi
   if [[ -n "${KEYCHAIN_PATH:-}" && -f "$KEYCHAIN_PATH" ]]; then
     security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
   fi
@@ -168,6 +176,9 @@ cleanup() {
   fi
   if [[ -n "${TEMP_ASC_P8:-}" && -f "$TEMP_ASC_P8" ]]; then
     rm -f "$TEMP_ASC_P8"
+  fi
+  if [[ -n "${INSTALLED_PROFILE:-}" && -f "$INSTALLED_PROFILE" ]]; then
+    rm -f "$INSTALLED_PROFILE"
   fi
   return 0
 }
@@ -191,7 +202,8 @@ prepare_profile() {
   if [[ -n "${IOS_PROVISIONING_PROFILE_BASE64:-}" ]]; then
     TEMP_PROFILE="$(mktemp "${TMPDIR:-/tmp}/frame-ios.XXXXXX")"
     decode_base64_to "$IOS_PROVISIONING_PROFILE_BASE64" "$TEMP_PROFILE"
-    cp "$TEMP_PROFILE" "$profile_dir/"
+    INSTALLED_PROFILE="$profile_dir/$(basename "$TEMP_PROFILE").mobileprovision"
+    cp "$TEMP_PROFILE" "$INSTALLED_PROFILE"
     return
   fi
 
@@ -223,7 +235,19 @@ prepare_keychain() {
     -P "${IOS_CERTIFICATE_PASSWORD:?IOS_CERTIFICATE_PASSWORD required with certificate}" \
     -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
   security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-  security list-keychains -d user -s "$KEYCHAIN_PATH"
+  # Searched first, the user's own keychains after it (a self-hosted Mac keeps the list after the job; a left-over
+  # signing keychain from a killed run is not kept). Put back as it was on exit.
+  local line
+  while IFS= read -r line; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%\"}"
+    line="${line#\"}"
+    if [[ -n "$line" && -f "$line" && "$line" != */frame-ios-signing.keychain-db ]]; then
+      SAVED_KEYCHAINS+=("$line")
+    fi
+  done < <(security list-keychains -d user)
+  KEYCHAINS_SAVED=1
+  security list-keychains -d user -s "$KEYCHAIN_PATH" ${SAVED_KEYCHAINS[@]+"${SAVED_KEYCHAINS[@]}"}
 }
 
 # Stamp marketing / build versions into the app Info.plist before codesign.
