@@ -1997,6 +1997,7 @@
     "sidebar.archived.back_ai": "返回对话",
     "sidebar.error.prefs_failed": "设置保存失败",
     "sidebar.empty": "暂无对话。",
+    "sidebar.empty_start": "还没有聊天。添加一个联系人就能开始。",
     "sidebar.loading_more": "加载中…",
     "preview.empty": "助手生成的结果、表单和列表会显示在这里。",
     "emoji.category.smileys": "表情与情绪",

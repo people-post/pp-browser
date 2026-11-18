@@ -2272,6 +2272,7 @@ bool Application::MountPresenters(ui::Context* context) {
   };
   contacts_notify.set_group_admin = [this](GroupAdminCard card) { contacts_->SetGroupAdminCard(std::move(card)); };
   contacts_notify.open_new_chat = [this]() { contacts_->OpenNewChatPage(); };
+  contacts_notify.open_add_contact = [this]() { contacts_->OnAddContact(); };
   contacts_notify.message_contact = [this](const std::string& id) { contacts_->MessageContact(id); };
   // The member page opened from a 1:1 chat: its Block and Add are the chat menu's own (ChatPresenter).
   contacts_->BindStrangerBlocker([this](const std::string& account_id) { return chat_->BlockStranger(account_id); });

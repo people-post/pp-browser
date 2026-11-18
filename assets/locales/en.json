@@ -2053,6 +2053,7 @@
     "sidebar.archived.back_ai": "Back to conversations",
     "sidebar.error.prefs_failed": "Could not save the setting",
     "sidebar.empty": "No chats yet.",
+    "sidebar.empty_start": "No chats yet. Add a contact to get started.",
     "sidebar.loading_more": "Loading…",
     "preview.empty": "Results, forms, and lists appear here when the assistant produces them.",
     "emoji.category.smileys": "Smileys & emotion",

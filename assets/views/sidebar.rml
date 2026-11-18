@@ -138,7 +138,11 @@
         </div>
       </div>
     </div>
-    <p class="text muted" data-if="sessions.size == 0">{{i18n:sidebar.empty}}</p>
+    <div class="sidebar-empty" data-if="sessions.size == 0 && sessions_query == '' && !showing_archived">
+      <p class="text muted">{{i18n:sidebar.empty_start}}</p>
+      <button class="btn btn-primary" type="button" data-event-click="empty_add_contact()">{{i18n:contacts.add}}</button>
+    </div>
+    <p class="text muted" data-if="sessions.size == 0 && (sessions_query != '' || showing_archived)">{{i18n:sidebar.empty}}</p>
     <p class="text muted sidebar-sessions-more" data-if="sessions_more" data-event-click="sessions_load_more()">{{i18n:sidebar.loading_more}}</p>
     <div class="tab-bar-clear"></div>
   </div>

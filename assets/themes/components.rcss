@@ -8011,6 +8011,15 @@ input.checkbox {
   overflow-y: auto;
 }
 
+.sidebar-empty {
+  padding: 24dp 16dp;
+  text-align: center;
+}
+
+.sidebar-empty .btn {
+  margin-top: 16dp;
+}
+
 .sidebar-session {
   display: flex;
   flex-direction: row;

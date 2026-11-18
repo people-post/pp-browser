@@ -5719,6 +5719,11 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("ai_sessions_scroll", DataEvent([this] { OnAiSessionsScroll(); }));
         ctor.BindEventCallback("sessions_load_more", DataEvent([this] { OnSessionsLoadMore(); }));
         ctor.BindEventCallback("new_chat", DataEvent([this] { OnNewChat(); }));
+        ctor.BindEventCallback("empty_add_contact", DataEvent([this] {
+                                 if (contacts_notify_.open_add_contact) {
+                                   contacts_notify_.open_add_contact();
+                                 }
+                               }));
         ctor.BindEventCallback(
             "open_new_session_menu", DataEventAt([this](ui::Event& ev) {
               // The phone goes straight to a full-screen page; the desktop keeps its small menu.
