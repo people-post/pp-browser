@@ -1087,6 +1087,14 @@ const SessionStore& ChatController::Store() const {
 }
 
 void ChatController::SendSuggestionAction(const std::string& id) {
+  if (id == "find_someone") {
+    // Not an AI turn: the directory refuses an empty query (HTTP 400) and name search is off (pp-relay-apis#42), so the
+    // chip opens the Add contact page (account ID, QR code) and nothing is sent.
+    if (contacts_notify_.open_add_contact) {
+      contacts_notify_.open_add_contact();
+    }
+    return;
+  }
   auto payload = SuggestionPayload(id, LocalizationService::Instance().ResolvedLanguage());
   if (!payload) {
     return;
