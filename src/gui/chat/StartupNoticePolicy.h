@@ -23,10 +23,10 @@ inline bool IsNetworkUnreachable(const Error& err) {
     case Err::Network::Timeout:
     case Err::Network::DnsFailed:
     case Err::Network::ConnectFailed:
+    case Err::Network::TlsFailed: // no usable connection to the server: the user reads "can't reach it"
     case Err::Network::RelayIdentityUnavailable:
       return true;
     case Err::Network::HttpError:
-    case Err::Network::TlsFailed:
     case Err::Network::HttpRejected:
     case Err::Network::RecipientNotRegistered:
     case Err::Network::PaymentRequired:

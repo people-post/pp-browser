@@ -12,10 +12,10 @@ Error Net(Err::Network code) {
 TEST(StartupNoticePolicyTest, UnreachableClassIsDnsRouteTimeoutAndIdentityFetch) {
   for (Err::Network code :
        {Err::Network::Generic, Err::Network::Unreachable, Err::Network::Timeout, Err::Network::DnsFailed,
-        Err::Network::ConnectFailed, Err::Network::RelayIdentityUnavailable}) {
+        Err::Network::ConnectFailed, Err::Network::TlsFailed, Err::Network::RelayIdentityUnavailable}) {
     EXPECT_TRUE(IsNetworkUnreachable(Net(code))) << static_cast<int>(code);
   }
-  for (Err::Network code : {Err::Network::HttpError, Err::Network::HttpRejected, Err::Network::TlsFailed,
+  for (Err::Network code : {Err::Network::HttpError, Err::Network::HttpRejected,
                             Err::Network::RecipientNotRegistered, Err::Network::PaymentRequired}) {
     EXPECT_FALSE(IsNetworkUnreachable(Net(code))) << static_cast<int>(code);
   }

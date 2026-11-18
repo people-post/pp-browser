@@ -2,6 +2,7 @@
 
 #include "common/Error.h"
 #include "foundation/error/AppError.h"
+#include "gui/chat/StartupNoticePolicy.h"
 
 #include <string>
 
@@ -26,21 +27,14 @@ inline RegistrationFailure ClassifyRegistrationFailure(const Error& error) {
   if (category != ErrorCategory::Network) {
     return RegistrationFailure::Other;
   }
-  switch (static_cast<Err::Network>(error.code)) {
-    case Err::Network::HttpError:
-      return error.message.find("status 429") != std::string::npos ? RegistrationFailure::TooBusy
-                                                                   : RegistrationFailure::Other;
-    case Err::Network::Generic:
-    case Err::Network::Unreachable:
-    case Err::Network::Timeout:
-    case Err::Network::DnsFailed:
-    case Err::Network::ConnectFailed:
-    case Err::Network::TlsFailed:
-    case Err::Network::RelayIdentityUnavailable:
-      return RegistrationFailure::Unreachable;
-    default:
-      return RegistrationFailure::Other;
+  // The typed signal for a 429 does not reach here (the transport keeps it as a retryable HttpError with the status
+  // in its text), so the text match stays.
+  if (static_cast<Err::Network>(error.code) == Err::Network::HttpError) {
+    return error.message.find("status 429") != std::string::npos ? RegistrationFailure::TooBusy
+                                                                 : RegistrationFailure::Other;
   }
+  // One definition of "can't reach the server" with the startup notices (TLS failures included).
+  return IsNetworkUnreachable(error) ? RegistrationFailure::Unreachable : RegistrationFailure::Other;
 }
 
 /** The locale key of the line the setup page shows for `error`. */
