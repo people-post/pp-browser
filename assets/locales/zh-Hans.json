@@ -667,7 +667,7 @@
     "pin.change_new_message": "输入新的 PIN 码，输两遍。忘了没有人能帮你找回。",
     "onboarding.name_title": "开通账号",
     "onboarding.name_message": "给自己取个名字，和你聊天的人会看到它，之后可以在 设置 → 我的资料 里修改。",
-    "onboarding.name_placeholder": "名字",
+    "onboarding.name_placeholder": "你的名字",
     "onboarding.register": "开通账号",
     "onboarding.registering": "正在开通…",
     "onboarding.name_required": "先填一个名字。",

@@ -41,6 +41,14 @@ inline const char* OnboardingStepKey(const OnboardingStep step) {
   return "";
 }
 
+/**
+ * What the name field starts with: a fresh identity carries the placeholder nickname "user" (IdentityStore), which must
+ * not look like a typed name (everyone would stay "user"); the field starts empty so its grey hint shows.
+ */
+inline std::string OnboardingNameFieldStart(const std::string& stored_nickname) {
+  return stored_nickname == "user" ? std::string() : stored_nickname;
+}
+
 /** The next step after `step`; Friends is the last one. */
 inline OnboardingStep OnboardingNextStep(const OnboardingStep step) {
   switch (step) {

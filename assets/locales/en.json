@@ -675,7 +675,7 @@
     "onboarding.name_title": "Set up your account",
     "onboarding.name_message":
         "Pick a name. The people you chat with will see it, and you can change it any time in Settings → My profile.",
-    "onboarding.name_placeholder": "Name",
+    "onboarding.name_placeholder": "Your name",
     "onboarding.register": "Set up account",
     "onboarding.registering": "Setting up…",
     "onboarding.name_required": "Enter a name first.",

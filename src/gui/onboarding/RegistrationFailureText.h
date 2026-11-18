@@ -29,7 +29,7 @@ inline RegistrationFailure ClassifyRegistrationFailure(const Error& error) {
   switch (static_cast<Err::Network>(error.code)) {
     case Err::Network::HttpError:
       return error.message.find("status 429") != std::string::npos ? RegistrationFailure::TooBusy
-                                                                    : RegistrationFailure::Other;
+                                                                   : RegistrationFailure::Other;
     case Err::Network::Generic:
     case Err::Network::Unreachable:
     case Err::Network::Timeout:

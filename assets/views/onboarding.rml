@@ -10,7 +10,7 @@
       <p class="text muted" data-if="busy">{{i18n:onboarding.registering}}</p>
       <div class="shell-dialog-actions row">
         <button class="btn btn-primary" type="button" data-event-click="onboarding_register()"
-                data-attrif-disabled="busy">{{i18n:onboarding.register}}</button>
+                data-attrif-disabled="busy || nickname == ''">{{i18n:onboarding.register}}</button>
       </div>
     </div>
     <div class="stack" data-if="step == 'account'">

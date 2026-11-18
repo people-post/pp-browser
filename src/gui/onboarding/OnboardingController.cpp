@@ -78,6 +78,9 @@ void OnboardingController::MaybeStart() {
     return;
   }
   LoadIdentityFields();
+  if (start == OnboardingStep::Name) {
+    nickname_ = OnboardingNameFieldStart(nickname_.c_str()).c_str();
+  }
   error_.clear();
   busy_ = false;
   active_ = true;

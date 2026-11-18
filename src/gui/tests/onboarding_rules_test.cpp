@@ -2,6 +2,10 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+
 using namespace pbr;
 
 // The wizard shows once, after the identity is ready, and starts where the account stands.
@@ -22,4 +26,19 @@ TEST(OnboardingRulesTest, StepsRunNameAccountFriendsThenEnd) {
   EXPECT_EQ(OnboardingNextStep(OnboardingStep::Friends), OnboardingStep::None);
   EXPECT_STREQ(OnboardingStepKey(OnboardingStep::Name), "name");
   EXPECT_STREQ(OnboardingStepKey(OnboardingStep::None), "");
+}
+
+// The fresh identity's placeholder nickname is not offered as a typed name: the field starts empty (grey hint).
+TEST(OnboardingRulesTest, TheNameFieldStartsEmptyForThePlaceholderNickname) {
+  EXPECT_EQ(OnboardingNameFieldStart("user"), "");
+  EXPECT_EQ(OnboardingNameFieldStart("Ann"), "Ann");
+  EXPECT_EQ(OnboardingNameFieldStart(""), "");
+}
+
+// The continue button of the name step stays off while the field is empty.
+TEST(OnboardingRulesTest, TheRegisterButtonIsOffWhileTheNameIsEmpty) {
+  std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views/onboarding.rml");
+  std::stringstream rml;
+  rml << in.rdbuf();
+  EXPECT_NE(rml.str().find("data-attrif-disabled=\"busy || nickname == ''\""), std::string::npos);
 }
