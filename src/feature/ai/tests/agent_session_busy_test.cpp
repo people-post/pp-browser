@@ -212,14 +212,12 @@ TEST_F(AgentSessionBusyTest, AStoppedHomeTurnKeepsItsConversationUntilItsStepsEn
 
   session_->Cancel();
   EXPECT_FALSE(session_->IsBusy()) << "a stop frees the session for the UI at once";
-  EXPECT_FALSE(session_->StartNewConversation()) << "but the stopped turn still runs";
   EXPECT_FALSE(released);
 
   release = true;
   (void)WaitForTurn();
   WaitUntil(released);
   AgentSession::SetTurnReleasedHookForTests(nullptr);
-  EXPECT_TRUE(session_->StartNewConversation()) << "its steps ended: a new one-off may start";
 }
 
 // Home events carry no thread; their turn tells a stopped turn's late ones from the next turn's.

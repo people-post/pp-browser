@@ -192,8 +192,6 @@ struct AgentSession::Impl : public Module {
    * `busy` in FinishTurn). Unlike `busy`, Cancel() leaves it: a stopped turn still uses the conversation until then.
    */
   std::atomic<bool> turn_in_flight{false};
-  /** This turn answers in words only (SubmitExplanation): no app action, no changing tool, no permission card. */
-  bool explain_only = false;
   std::mutex configure_mutex;
   std::condition_variable configure_cv;
   int configure_inflight = 0;
@@ -1225,12 +1223,6 @@ void AgentSession::ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan
   TurnExecutionOptions options;
   options.permissions = state->tool_permissions;
   options.cancel = &state->cancelled;
-  if (state->explain_only) {
-    // Words only: the default permissions (a read runs, anything that changes data asks) and every ask refused, so a
-    // remembered "always allow" changes nothing and no card is parked.
-    options.permissions = ToolPermissionsPrefs{};
-    options.deny_on_ask = true;
-  }
   if (state->turn_plan.local) {
     // Remarks for people-list rows: only in app-action turns, whose entries never reach a model as history.
     options.local_contacts = state->local_contacts;
@@ -1409,12 +1401,6 @@ bool AgentSession::TryPendingLocalAnswer(const std::shared_ptr<Impl>& state) {
 
 void AgentSession::HandleHandoff(const std::shared_ptr<Impl>& state, const std::string& capability,
                                  const std::string& reason) {
-  if (state->explain_only) {
-    // It offered no capability, so nothing may run for it.
-    state->Log().warning << "brief_AI handed back an explanation turn; answered on the device";
-    FinishLocalAnswer(state, RenderLocalUnsupported(), RenderMode::Markdown);
-    return;
-  }
   const std::vector<std::string> declared = AppActionCapabilities(state);
   if (capability.empty() || std::find(declared.begin(), declared.end(), capability) == declared.end()) {
     state->Log().info << "brief_AI handed the turn back for an unknown capability; answered on the device";
@@ -1683,8 +1669,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   }
   // A turn with an image is never handed back, so it advertises no capabilities; neither does "@ai" in a
   // chat (contract: only the question goes out).
-  // An explanation offers none either: brief_AI then never hands it back to run an app action.
-  if (!request.image && state->turn_mode != AgentTurnMode::ScopedAssist && !state->explain_only) {
+  if (!request.image && state->turn_mode != AgentTurnMode::ScopedAssist) {
     request.capabilities = AppActionCapabilities(state);
   }
 
@@ -2113,8 +2098,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
       state->coordinator.BeginTurn(state->conversation, system_prompt, entry, state->config.context);
   state->turn_scratch = snapshot.messages;
   if (UseBriefStream(state)) {
-    // An explanation (SubmitExplanation) is never an app action: "what does X mean?" must not turn X on.
-    if (!state->explain_only && (TryPendingLocalAnswer(state) || TryLocalAppAction(state))) {
+    if (TryPendingLocalAnswer(state) || TryLocalAppAction(state)) {
       return;
     }
     // Context layout: [system, history..., pending user]; the policy appends the pending user message last.
@@ -2433,7 +2417,6 @@ SubmitOutcome AgentSession::SubmitLocalAction(const std::string& thread_id, cons
     return SubmitOutcome::BusyHere;
   }
   impl_->turn_in_flight = true;
-  impl_->explain_only = false;
 
   impl_->cancelled = false;
   BeginStreamTurn();
@@ -2584,15 +2567,6 @@ void AgentSession::BeginStreamTurn() {
 }
 
 SubmitOutcome AgentSession::Submit(const std::string& user_text, std::optional<std::string> user_payload) {
-  return SubmitHomeTurn(user_text, std::move(user_payload), /*explain_only=*/false);
-}
-
-SubmitOutcome AgentSession::SubmitExplanation(const std::string& user_text) {
-  return SubmitHomeTurn(user_text, std::nullopt, /*explain_only=*/true);
-}
-
-SubmitOutcome AgentSession::SubmitHomeTurn(const std::string& user_text, std::optional<std::string> user_payload,
-                                           const bool explain_only) {
   if (user_text.empty()) {
     return SubmitOutcome::Ignored;
   }
@@ -2601,7 +2575,6 @@ SubmitOutcome AgentSession::SubmitHomeTurn(const std::string& user_text, std::op
     return SubmitOutcome::BusyHere;
   }
   impl_->turn_in_flight = true;
-  impl_->explain_only = explain_only;
 
   impl_->cancelled = false;
   BeginStreamTurn();
@@ -2632,7 +2605,6 @@ SubmitOutcome AgentSession::SubmitToThread(const std::string& thread_id, const s
     return SubmitOutcome::BusyHere;
   }
   impl_->turn_in_flight = true;
-  impl_->explain_only = false;
 
   impl_->cancelled = false;
   BeginStreamTurn();
@@ -2662,7 +2634,6 @@ SubmitOutcome AgentSession::SubmitScopedAssist(const std::string& thread_id, con
     return SubmitOutcome::BusyHere;
   }
   impl_->turn_in_flight = true;
-  impl_->explain_only = false;
   impl_->Log().info << "scoped assist mode=" << static_cast<int>(mode) << " prompt_chars=" << prompt.size()
                     << " configured=" << (impl_->configured ? 1 : 0);
 
@@ -2707,15 +2678,6 @@ void AgentSession::Cancel() {
 void AgentSession::WaitForConfigureIdle() {
   std::unique_lock lock(impl_->configure_mutex);
   impl_->configure_cv.wait(lock, [&] { return impl_->configure_inflight == 0; });
-}
-
-bool AgentSession::StartNewConversation() {
-  if (impl_->busy.load() || impl_->turn_in_flight.load()) {
-    return false; // a turn stopped by Cancel() may still be using the conversation: wait for its end
-  }
-  ForgetThread({});
-  impl_->conversation.StartNewConversation();
-  return true;
 }
 
 void AgentSession::ForgetThread(const std::string& thread_id) {

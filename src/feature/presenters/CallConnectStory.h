@@ -89,8 +89,8 @@ struct CallStoryView {
   // --- Before connect: the moving line, the steps and the rotating tips.
   bool connecting = false;
   /** The stage on screen (the ones before it are done). A group call: 0 the group is being called, 1 joined and the
-   *  line is being set up. A 1:1 call (the five steps, #172): 0 calling, 1 the other side answered, 2 matching the
-   *  fastest line (the time between the answer and live media), 3 setting up the encrypted channel, 5 everything
+   *  line is being set up. A 1:1 call (the five steps, #172): 0 calling, 1 the other side answered, 2 matching the most
+   *  secure line (the time between the answer and live media), 3 setting up the encrypted channel, 5 everything
    *  done, "connected" included (4 is never shown: connected is only ever the finished list). Follows the real
    *  stage, but each stage stays on screen at least kStepMinShowMs, and the finished list stays kListHoldMs. */
   int stage = 0;

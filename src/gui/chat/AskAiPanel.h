@@ -1,6 +1,7 @@
 #pragma once
 
 #include "feature/ai/AgentSession.h"
+#include "feature/presenters/SupportAsk.h"
 #include "gui/chat/AgentTurnController.h"
 #include "gui/chat/AgentBusyRules.h"
 #include "lib/ui/ShellTypes.h"
@@ -11,7 +12,6 @@
 
 #include <chrono>
 #include <functional>
-#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -40,7 +40,7 @@ struct AskAiImagePorts {
 enum class AskAiEntry {
   HomeChip,    // a Home chip: its question is asked at once
   ChatMenu,    // a chat's "⋯ → Ask AI": nothing of the chat goes along
-  SettingHelp, // a setting's "?": a one-off question (AskAiPanel::OpenOnce)
+  SettingHelp, // a setting's "?": the PP 客服 chat (AskAiPanel::OpenSupport)
   Dot,         // the floating AI dot (5c): like the chat menu, at the sheet's usual height
 };
 
@@ -53,8 +53,17 @@ struct AskAiRow {
 
 /** What the panel binds ("ask_ai" data model). */
 struct AskAiView {
-  /** The settings "?" one-off question shows (not the shared conversation). */
-  bool once = false;
+  /** The PP 客服 chat shows (a settings "?", DEV/PLAN-help-to-support-panel.md): no AI anywhere in the sheet. */
+  bool support = false;
+  /** PP 客服 mode: the question waits for its reply ("replying…"), or has waited 90 s ("got it, it comes here"). */
+  bool support_waiting = false;
+  bool support_slow = false;
+  /** PP 客服 mode: why nothing can be sent yet (getting ready, not ready, unavailable); "" when it can. */
+  ui::String support_note;
+  /** The mode's own words (the controller picks them): the header button's title, the privacy line, the input's label. */
+  ui::String open_chat_title;
+  ui::String privacy_text;
+  ui::String placeholder_text;
   /** The first-time privacy card, until "Got it". */
   bool show_intro = false;
   std::vector<AskAiRow> rows;
@@ -66,7 +75,7 @@ struct AskAiView {
   bool show_support = false;
   /** The unsent text of the mode shown; kept when the panel closes. */
   ui::String draft;
-  /** Camera and attachment buttons (the shared conversation only; a setting's "?" is explanation only). */
+  /** Camera and attachment buttons (the shared AI conversation only). */
   bool show_media = true;
   /** The picture waiting for its question (being prepared, or ready with its thumbnail). */
   bool has_picture = false;
@@ -101,30 +110,41 @@ public:
   virtual void AskAiCloseSheet(int layer_id) = 0;
   /** Shows the thread in the full chat page (the panel is closed first). */
   virtual void AskAiOpenInChat(const std::string& thread_id) = 0;
-  /** The same question to PP 客服 (settings' ask_support): the person-to-person support chat opens. `on_opened`
-   *  runs only when it did (the panel closes then); on failure the host shows the reason and the panel stays. */
-  virtual void AskAiSupport(const std::string& question, std::function<void()> on_opened) = 0;
+  /** Runs `fn` on the UI thread after the event being handled (the sheet's own button may close the sheet). */
+  virtual void AskAiLater(std::function<void()> fn) = 0;
   /** A button of a stored answer (a permission card, a link button): `action_index` of that message. */
   virtual void AskAiRunAction(const std::string& thread_id, const std::string& entry_id, int action_index) = 0;
   /** Link `link_index` of a stored answer of the thread. */
   virtual void AskAiOpenLink(const std::string& thread_id, const std::string& entry_id, int link_index) = 0;
-  /** Opens an https URL after the user confirms its host. */
-  virtual void AskAiOpenUrl(const std::string& url) = 0;
   virtual bool AskAiIntroSeen() const = 0;
   virtual void AskAiMarkIntroSeen() = 0;
   virtual void AskAiToast(const std::string& text) = 0;
   /** The emoji sheet for the panel's input: `insert` runs with each emoji picked. */
   virtual void AskAiOpenEmoji(std::function<void(const std::string& emoji)> insert) { (void)insert; }
+
+  // --- the PP 客服 mode (a settings "?") -------------------------------------------------------------------
+  /** Messaging is up (just after unlocking it is not yet: nothing can be found or sent). */
+  virtual bool AskAiMessagingReady() const = 0;
+  /** The PP 客服 chat, found or made, not opened (the page under the sheet stays); an error with the user's words. */
+  virtual Roe<std::string> AskAiEnsureSupport() = 0;
+  /** `text` into that chat, as a message typed there (stored and sent at once). */
+  virtual Roe<void> AskAiSendToSupport(const std::string& thread_id, const std::string& text) = 0;
+  /** The chat's last `limit` messages as the support decisions read them (SupportMessageOf), oldest first. */
+  virtual std::vector<SupportMessage> AskAiSupportMessages(const std::string& thread_id, size_t limit) = 0;
+  /** Fetches the inbox now (a reply is awaited; without a push it comes only by fetching). */
+  virtual void AskAiSyncInbox() = 0;
+  /** The user is looking at the app (AppLifecycle::IsUserAttentive). */
+  virtual bool AskAiAttentive() const = 0;
+  /** The chat is read (its unread count and notifications go): a reply the sheet shows to someone looking. */
+  virtual void AskAiMarkRead(const std::string& thread_id) = 0;
 };
 
 /**
  * The ask-AI sheet (DEV/PLAN-ui-batch5-ask-ai.md 5a, design §8.14): opens over the page the user is on, which
  * stays where it was. It shows the shared AI conversation, the AI chat used last (Home and the panel continue it; New
  * chat's "AI chat" makes a new one, which is then the last), and sends into it through the same router and queue as
- * the chat page (the sessions' cap, a guest's 1). A setting's "?" asks a one-off question instead: the Home session,
- * its conversation started empty, in memory only, shown here and nowhere else, answered in words only (no app action,
- * no permission card), counted in the sessions' cap; its follow-ups stay in it; it ends when another "?" starts one,
- * once the earlier one's turn has really ended.
+ * the chat page (the sessions' cap, a guest's 1). A setting's "?" shows the PP 客服 chat instead (OpenSupport,
+ * DEV/PLAN-help-to-support-panel.md): its question goes to PP 客服, nothing goes to the AI.
  *
  * Closing keeps the unsent text and lets a running answer finish where it belongs; opening again sends nothing.
  *
@@ -145,16 +165,19 @@ public:
   /** Opens and asks `question` in the shared conversation (a Home chip); a question already waiting is not sent twice. */
   bool OpenAndAsk(AskAiEntry entry, const std::string& question);
   /**
-   * Opens with `question` asked as a one-off (settings "?"); the same question still asking, answering or answered is
-   * not asked again, a failed one is.
+   * Opens the PP 客服 chat (a settings "?") and sends `question` into it ("" = just open), unless the same question of
+   * ours went out less than 10 minutes ago (SupportAsk). An open AI sheet is closed first: the modes never switch in
+   * place. When PP 客服 cannot be reached the sheet stays open and says why; nothing is sent.
    */
-  bool OpenOnce(const std::string& question);
+  bool OpenSupport(const std::string& question);
 
   // --- the panel's buttons ---------------------------------------------------------------------------
   void Send();
   void DismissIntro();
+  /** "Ask PP Support" under an AI answer that never came: the sheet closes and opens again on PP 客服 with it. */
   void AskSupport();
-  /** The intro card's "?": closes the sheet and asks PP Support how to use one's own AI. The card stays unseen. */
+  /** The intro card's "?": the sheet closes and opens again on PP 客服, asking how to use one's own AI. The card stays
+   *  unseen. */
   void AskSupportOwnAi();
   void OpenInChat();
   /** Closes the sheet (the draft stays; a running answer goes on). */
@@ -170,10 +193,18 @@ public:
   void RemovePicture();
 
   // --- from the chat screen -------------------------------------------------------------------------
-  /** Per frame: the streamed answer, a one-off waiting for the Home session, the demo's answers, focus, scroll. */
+  /** Per frame: the streamed answer, the PP 客服 waiting line, the demo's answers, focus, scroll. */
   void Tick();
   void OnTurnEnded(const std::string& thread_id);
-  void OnOnceReply(const AgentEvent& event);
+  /**
+   * Messages were stored or changed (a reply came, ours went out): the PP 客服 chat shown is drawn again, and read when
+   * someone is looking (SupportAsk), so no unread is left in the chats list. Called first in each messages refresh.
+   */
+  void OnMessagesChanged();
+  /** The user is looking at the app again: a reply that arrived meanwhile and shows in the sheet is read now. */
+  void OnAttentiveAgain();
+  /** No notification for a new message in `thread_id`: the sheet shows it to someone looking (SupportAsk). */
+  bool SuppressesNoticeFor(const std::string& thread_id) const;
 
   bool IsOpen() const { return layer_id_ >= 0; }
 
@@ -197,32 +228,55 @@ public:
   AskAiImagePorts& ImagePorts() { return image_ports_; }
   /** Tests: the panel's draft as if typed. */
   void SetDraftForTest(const std::string& text) { view_.draft = text.c_str(); }
+  /** Tests: the clock the PP 客服 waiting line and fetches go by (unix ms). */
+  void SetClockForTest(std::function<int64_t()> now_ms) { now_ms_ = std::move(now_ms); }
 
 private:
-  struct OnceTurn {
-    std::string question;
-    std::string answer_rml;
-    bool done = false;
-    bool failed = false;
-  };
   struct FakeStream {
-    std::string thread_id; // kAskAiOnceThread for the one-off
-    std::string answer;    // "" = the turn fails
+    std::string thread_id;
+    std::string answer; // "" = the turn fails
     std::chrono::steady_clock::time_point started;
     size_t shown = 0;
   };
 
-  bool Show(AskAiEntry entry, bool once);
+  /** The PP 客服 mode's own state (the decisions are SupportAsk's). */
+  struct SupportState {
+    std::string thread;
+    std::string draft;
+    /** What ReplyState reads, from the last time the rows were drawn. */
+    std::vector<SupportMessage> messages;
+    /** A question asked from here waits for its reply (the waiting line follows ReplyState). */
+    bool awaiting = false;
+    int64_t next_fetch_ms = 0;
+    int64_t fetch_until_ms = 0;
+    /** Messaging was not up yet: this question is asked once it is (one retry), until `ready_by_ms`. */
+    std::optional<std::string> pending;
+    int64_t ready_by_ms = 0;
+  };
+
+  bool Show(AskAiEntry entry, bool support);
   /** The thread a question goes to: the shared one, or (a fresh dot panel) the new one, made on the first question. */
   std::string ThreadToSend();
-  void SwitchMode(bool once);
+  void SwitchMode(bool support);
+  /** The header button's title, privacy line and input label of the mode shown. */
+  void SyncModeWords();
+  /** The unsent text kept for the mode shown. */
+  std::string& ModeDraft();
+  void StartSupport(const std::string& question);
+  /** Sends into the PP 客服 chat; a "?"'s question (not `typed`) only when SupportAsk says it is not a repeat. */
+  void AskSupportQuestion(const std::string& text, bool typed);
+  /** A reply is awaited from `now`: the waiting line follows it and the inbox is fetched anew for a while. */
+  void StartSupportWait(int64_t now);
+  void SyncSupportWait();
+  /** The PP 客服 chat shown is read when someone looks at it (SupportAsk::ShouldReadSupportThread). */
+  void ReadSupportIfLooking();
+  /** Per frame in PP 客服 mode: the retry once messaging is up, the 90 s line, the fetches while waiting. */
+  void TickSupport();
   void SendShared(const std::string& text);
   void SendPicture(const std::string& text);
   void PreparePicture(std::string path);
   void DropPicture();
   void SyncPictureView();
-  void AskOnce(const std::string& text, bool fresh);
-  bool TryStartOnce();
   void StartFake(const std::string& thread_id, const std::string& question);
   void TickFake();
   void FailShared(const std::string& question);
@@ -252,7 +306,6 @@ private:
    */
   bool fresh_ = false;
   std::string shared_draft_;
-  std::string once_draft_;
   /** A shared question was handed over and its answer is awaited (an end without one is an error). */
   bool awaiting_answer_ = false;
   bool shared_failed_ = false;
@@ -260,15 +313,8 @@ private:
   std::string asked_question_;
   std::string failed_question_;
 
-  std::vector<OnceTurn> once_turns_;
-  /** The one-off question (or follow-up) waiting for the Home session to be free. */
-  std::optional<std::string> once_pending_;
-  bool once_pending_fresh_ = false;
-  /** The earlier one-off still answering was asked to stop (once). */
-  bool once_cancel_sent_ = false;
-  /** The waiting one-off waits for a free turn (every turn the sessions allow runs): shown as queued, not thinking. */
-  bool once_waits_for_turn_ = false;
-  std::map<std::string, std::vector<std::string>> once_links_;
+  SupportState support_;
+  std::function<int64_t()> now_ms_;
 
   std::function<std::string(const std::string&)> fake_answer_;
   std::optional<FakeStream> fake_;

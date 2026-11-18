@@ -1,15 +1,19 @@
 #include "gui/scan/QrScanController.h"
 
 #include "gui/scan/ElementScanPreview.h"
+#include "gui/UserFeedback.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "lib/media/CameraCaptureOrientation.h"
 
 #include "common/Logger.h"
+#include "common/runtime/AppRuntime.h"
 
 #include <ui/dom/Context.h>
 #include <ui/dom/ElementDocument.h>
+
+#include <utility>
 
 namespace pbr {
 
@@ -20,12 +24,40 @@ logging::Logger& ScanLog() {
 }
 } // namespace
 
-QrScanController::QrScanController(MediaDeviceArbiter& devices) : scanner_(devices) {
+QrScanController::QrScanController(MediaDeviceArbiter& devices, QrScanCameraPorts camera)
+    : scanner_(devices), camera_(std::move(camera)) {
+  if (!camera_.state) {
+    camera_.state = []() { return CameraPermissionState(); };
+  }
+  if (!camera_.request) {
+    camera_.request = [](std::function<void(bool)> done) { RequestCameraPermission(std::move(done)); };
+  }
+  if (!camera_.post_ui) {
+    camera_.post_ui = [](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); };
+  }
+  // A real trip to the background closes the scanner (the camera is not kept on behind the app). The OS camera
+  // prompt does this too, which is why Open asks before it pushes the page.
   background_listener_ = AppLifecycle::AddBackgroundListener([this]() { Close(); });
+  foreground_listener_ = AppLifecycle::AddForegroundListener([this]() {
+    if (!on_foreground_) {
+      return;
+    }
+    // Out of the lifecycle callback: the page is pushed from the UI loop, like any other tap.
+    camera_.post_ui([this, alive = alive_]() {
+      if (!*alive || !AppLifecycle::IsForeground()) {
+        return;
+      }
+      if (auto next = std::exchange(on_foreground_, nullptr)) {
+        next();
+      }
+    });
+  });
 }
 
 QrScanController::~QrScanController() {
+  *alive_ = false;
   AppLifecycle::RemoveListener(background_listener_);
+  AppLifecycle::RemoveListener(foreground_listener_);
   scanner_.Shutdown();
 }
 
@@ -77,6 +109,62 @@ void QrScanController::Open(QrScanResultCallback on_result) {
   }
   if (!AppLifecycle::IsForeground()) {
     ScanLog().warning << "Open ignored: app is not in the foreground";
+    return;
+  }
+  // A newer tap takes over: whatever an older tap left waiting (a late permission answer, a stored "when the app is
+  // active again") belongs to an abandoned request and must not run after this one.
+  awaiting_permission_ = nullptr;
+  on_foreground_ = nullptr;
+  switch (camera_.state()) {
+    case CameraPermission::Granted:
+      Present(std::move(on_result));
+      return;
+    case CameraPermission::Denied:
+      UserFeedback::Fail(Tr("scan.camera_denied"));
+      return;
+    case CameraPermission::NotDetermined:
+      break;
+  }
+  awaiting_permission_ = std::move(on_result);
+  if (asking_) {
+    return; // the prompt is already up: its answer serves this tap
+  }
+  asking_ = true;
+  ScanLog().info << "Asking for the camera permission before the scan page";
+  camera_.request([post_ui = camera_.post_ui, alive = alive_, this](const bool granted) {
+    post_ui([alive, this, granted]() {
+      if (*alive) {
+        OnCameraAnswer(granted);
+      }
+    });
+  });
+}
+
+void QrScanController::OnCameraAnswer(const bool granted) {
+  asking_ = false;
+  auto on_result = std::exchange(awaiting_permission_, nullptr);
+  if (!on_result) {
+    return; // shut down meanwhile
+  }
+  ScanLog().info << "Camera permission answered: " << (granted ? "granted" : "refused");
+  std::function<void()> next;
+  if (granted) {
+    next = [this, on_result = std::move(on_result)]() mutable { Present(std::move(on_result)); };
+  } else {
+    next = []() { UserFeedback::Fail(Tr("scan.camera_denied")); };
+  }
+  // The answer may land before the app is active again (iOS hands it over while its prompt is going away): the page
+  // then opens on the next foreground transition rather than being dropped.
+  if (AppLifecycle::IsForeground()) {
+    next();
+  } else {
+    on_foreground_ = std::move(next);
+  }
+}
+
+void QrScanController::Present(QrScanResultCallback on_result) {
+  Close();
+  if (!navigation_.push_layer) {
     return;
   }
   PaneSpec spec;
@@ -211,6 +299,8 @@ void QrScanController::Dirty() {
 }
 
 void QrScanController::Shutdown() {
+  awaiting_permission_ = nullptr;
+  on_foreground_ = nullptr;
   Close();
   scanner_.Shutdown();
 }

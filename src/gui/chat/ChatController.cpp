@@ -1167,6 +1167,7 @@ void ChatController::OnAttentiveAgain() {
   if (!messaging_ready_) {
     return;
   }
+  ask_ai_.OnAttentiveAgain(); // a support reply the sheet shows, which came while nobody looked
   // Refresh only when something was marked: a focus gain with nothing to read must stay cheap.
   if (MarkOpenChatReadIfLooking()) {
     RefreshFromMessaging();
@@ -1506,6 +1507,7 @@ void ChatController::OnForgetMemory() {
 
 void ChatController::RefreshFromMessaging() {
   MarkOpenChatReadIfLooking(); // first, so the rest of the refresh draws the read state
+  ask_ai_.OnMessagesChanged(); // the PP 客服 sheet: its chat drawn again, and read there, before the list is drawn
   const int prev_sessions = ChromeSnapshot().nav_badges.sessions_unread;
   const int prev_contacts = ChromeSnapshot().nav_badges.contacts_unread;
   SyncShellSessions();
@@ -3581,6 +3583,7 @@ void ChatController::RedrawSendMarks() {
   }
   SyncDisplayFromThread();
   DirtyChat();
+  ask_ai_.OnMessagesChanged(); // the support sheet's rows read their marks again too (ArmSendMarkRedraw armed this)
   NotifySurfaceChanged();
 }
 
@@ -5278,6 +5281,9 @@ void ChatController::WireMessagingBindings() {
     NotifySurfaceChanged();
   });
   facade_->SetOnBackgroundUnread([this](std::string title, std::string body, std::string thread_id, bool mentions_us) {
+    if (ask_ai_.SuppressesNoticeFor(thread_id)) {
+      return; // the PP 客服 sheet shows this chat to someone looking: it was read there
+    }
     const ProfilePreferences& profile_prefs = Store().Snapshot().profile_prefs;
     if (!profile_prefs.show_notifications) {
       return;
@@ -6935,20 +6941,81 @@ void ChatController::AskAiOpenInChat(const std::string& thread_id) {
   AppRuntime::PostUI([this, thread_id]() { ShowThreadInChat(thread_id); });
 }
 
-void ChatController::AskAiSupport(const std::string& question, std::function<void()> on_opened) {
-  AppRuntime::PostUI([this, question, on_opened = std::move(on_opened)]() {
-    if (!ask_support_) {
-      UserFeedback::Fail(Tr("settings.support.unavailable"));
-      return;
+Roe<std::string> ChatController::AskAiEnsureSupport() {
+  if (!ensure_support_) {
+    return Error("Support is not available").WithUser(Tr("settings.support.unavailable"));
+  }
+  return ensure_support_();
+}
+
+Roe<void> ChatController::AskAiSendToSupport(const std::string& thread_id, const std::string& text) {
+  if (!messaging_ready_ || !facade_ || thread_id.empty()) {
+    return Error("Messaging is not ready").WithUser(Tr("ask_ai.support.try_later"));
+  }
+  // A plain message, as typed in that chat (stored and sent now, or queued with its clock when offline).
+  if (auto routed = facade_->RouteMessage(thread_id, text, std::nullopt); !routed) {
+    log().warning << "PP Support panel: the message was not sent: " << routed.error().message;
+    Error error = routed.error();
+    if (error.user.empty()) {
+      error.user = PaymentErrorUserMessage(routed.error());
     }
-    if (auto asked = ask_support_(question); !asked) {
-      (void)UserFeedback::FailFrom(asked.error());
-      return;
+    return error;
+  }
+  SyncShellSessions(); // the chats list shows it as the newest message there
+  return {};
+}
+
+std::vector<SupportMessage> ChatController::AskAiSupportMessages(const std::string& thread_id, const size_t limit) {
+  std::vector<SupportMessage> out;
+  if (!messaging_ready_ || !facade_ || thread_id.empty()) {
+    return out;
+  }
+  auto page = facade_->GetMessagesPage(thread_id, std::nullopt, static_cast<int>(limit));
+  if (!page) {
+    return out;
+  }
+  std::vector<ThreadMessage> messages = std::move(*page);
+  std::stable_sort(messages.begin(), messages.end(),
+                   [](const ThreadMessage& a, const ThreadMessage& b) { return a.display_order < b.display_order; });
+  const int64_t now_ms = util::NowUnixMs();
+  std::optional<int64_t> next_mark_change; // the panel reads the marks again with the next change
+  for (const ThreadMessage& message : messages) {
+    if (std::optional<SupportMessage> read =
+            SupportMessageOf(message, presenter_.SendMarkOf(message, now_ms, next_mark_change))) {
+      out.push_back(std::move(*read));
     }
-    if (on_opened) {
-      on_opened();
-    }
-  });
+  }
+  return out;
+}
+
+void ChatController::AskAiLater(std::function<void()> fn) {
+  AppRuntime::PostUI(std::move(fn));
+}
+
+bool ChatController::AskAiAttentive() const {
+  return AppLifecycle::IsUserAttentive();
+}
+
+void ChatController::AskAiMarkRead(const std::string& thread_id) {
+  if (reading_open_chat_ || !messaging_ready_ || !facade_ || thread_id.empty()) {
+    return;
+  }
+  auto found = facade_->GetThread(thread_id);
+  if (!found || !*found || (*found)->unread_count == 0) {
+    return;
+  }
+  reading_open_chat_ = true; // as MarkOpenChatReadIfLooking: a refresh reached from here stops at this guard
+  presenter_.MarkRead(thread_id);
+  ILocalNotifier::Instance().ClearForThread(thread_id);
+  reading_open_chat_ = false;
+  // The chats list and the badges without it: drawn by the next refresh (nothing to read then, so no loop).
+  AppRuntime::PostUI([this]() { RefreshFromMessaging(); });
+}
+
+void ChatController::AskAiSyncInbox() {
+  if (messaging_ready_ && facade_) {
+    facade_->SyncInboxFromWake(/*force=*/false); // the preferred relay; the fetch itself runs on a worker
+  }
 }
 
 void ChatController::AskAiRunAction(const std::string& thread_id, const std::string& entry_id, const int action_index) {

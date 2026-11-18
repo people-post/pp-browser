@@ -274,7 +274,7 @@ TEST_F(HomeMinimalLayoutTest, BlockReturnsWhenTheKeyboardOrEmojiSheetGoesAway) {
   }
 }
 
-// The Chats header (sidebar.rml's .pane-nav) on a phone: a fixed 56dp bar holding the compose button at the right (and
+// The Chats header (sidebar.rml's .pane-nav) on a phone: a fixed 56dp bar holding scan and compose at the right (and
 // the centred small title once the list has scrolled), and the scroller starting at the very top with one 56dp title
 // row ("Chats", the link status as a dot and a word) in the band under the bar, then the search box. Bindings stripped.
 class ChatsHeaderTest : public HomeMinimalLayoutTest {
@@ -391,8 +391,8 @@ TEST_F(ChatsHeaderTest, SmallBarHoldsTheTitleAndCompose) {
   ASSERT_NE(title, nullptr);
   ASSERT_NE(button, nullptr);
   EXPECT_EQ(title->GetComputedValues().opacity(), 0.f) << "clear until the large title has scrolled away";
-  EXPECT_FLOAT_EQ(title->GetAbsoluteOffset(ui::BoxArea::Border).x, 96.f);
-  EXPECT_FLOAT_EQ(SizeOf(title).x, 390.f - 192.f) << "centred between the two 96dp margins";
+  EXPECT_FLOAT_EQ(title->GetAbsoluteOffset(ui::BoxArea::Border).x, 116.f);
+  EXPECT_FLOAT_EQ(SizeOf(title).x, 390.f - 232.f) << "centred between the two 116dp margins (clear of scan + compose)";
 }
 
 TEST_F(ChatsHeaderTest, TheFixedBarLetsTouchesThroughExceptOnItsButton) {
@@ -423,8 +423,11 @@ TEST_F(ChatsHeaderTest, TheFixedBarLetsTouchesThroughExceptOnItsButton) {
 
 TEST_F(ChatsHeaderTest, ComposeButtonSitsAtTheTopRightAndDoesNotMoveWhenTheTitleCollapses) {
   LoadChats(0);
-  ui::Element* button = One("pane-nav-btn");
-  ASSERT_NE(button, nullptr);
+  ui::ElementList buttons;
+  document->GetElementsByClassName(buttons, "pane-nav-btn");
+  ASSERT_EQ(buttons.size(), 2u) << "scan and compose";
+  ui::Element* button = buttons[0]->IsClassSet("pane-nav-btn--scan") ? buttons[1] : buttons[0];
+  ASSERT_FALSE(button->IsClassSet("pane-nav-btn--scan"));
   EXPECT_FLOAT_EQ(SizeOf(button).x, 44.f);
   EXPECT_FLOAT_EQ(SizeOf(button).y, 44.f);
   const ui::Vector2f at = button->GetAbsoluteOffset(ui::BoxArea::Border);
@@ -468,8 +471,8 @@ TEST_F(ChatsHeaderTest, TheTitleRowIsTheBandUnderTheBarAndTheSearchBoxFollowsIt)
     EXPECT_GT(status->GetAbsoluteOffset(ui::BoxArea::Border).x,
               word->GetAbsoluteOffset(ui::BoxArea::Border).x + SizeOf(word).x - 0.5f)
         << "the status follows the title on the same row";
-    EXPECT_LE(status->GetAbsoluteOffset(ui::BoxArea::Border).x + SizeOf(status).x, 390.f - 56.f + 0.5f)
-        << "clear of the compose button's 56dp";
+    EXPECT_LE(status->GetAbsoluteOffset(ui::BoxArea::Border).x + SizeOf(status).x, 390.f - 116.f + 0.5f)
+        << "clear of the scan and compose buttons' 116dp";
     // The compose icon's centre is 28dp (2dp + half of 52dp); the title's line box is 41dp with 7dp under it in the
     // 56dp row, so its centre is 56 - 7 - 20.5 = 28.5dp (the test has no font, so the box height cannot be measured).
     EXPECT_FLOAT_EQ(word->GetComputedValues().margin_bottom().value, 7.f);

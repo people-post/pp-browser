@@ -121,14 +121,15 @@ TEST_F(SettingsHelpQuestionTest, TheQuestionMarkIsABigEnoughTarget) {
   EXPECT_NE(css.find("width: 20dp;", icon), std::string::npos);
 }
 
-// Phones: the "?" opens the ask-AI panel with the question asked; PP 客服 is not messaged.
-TEST_F(SettingsHelpQuestionTest, OnAPhoneTheAiAnswersAndSupportIsNotMessaged) {
+// Phones (Kenneth 2026-11-18): the "?" opens the half-screen sheet on the PP 客服 chat with the question asked there;
+// the page under it stays (the chat-page path, ask_support, is not taken).
+TEST_F(SettingsHelpQuestionTest, OnAPhoneTheSheetAsksPPSupportOverThePage) {
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  std::vector<std::string> to_ai;
+  std::vector<std::string> to_panel;
   std::vector<std::string> to_support;
   SettingsCommands commands;
-  commands.ask_ai_once = [&to_ai](const std::string& question) {
-    to_ai.push_back(question);
+  commands.ask_support_panel = [&to_panel](const std::string& question) {
+    to_panel.push_back(question);
     return true;
   };
   commands.ask_support = [&to_support](const std::string& question) -> Roe<void> {
@@ -138,16 +139,32 @@ TEST_F(SettingsHelpQuestionTest, OnAPhoneTheAiAnswersAndSupportIsNotMessaged) {
   SettingsController settings;
   settings.BindCommands(commands);
   settings.OnAskSettingHelp("settings.security.crash_reports.label");
-  ASSERT_EQ(to_ai.size(), 1u);
-  EXPECT_EQ(to_ai[0], "「闪退时自动发送报告」是什么意思？");
+  ASSERT_EQ(to_panel.size(), 1u);
+  EXPECT_EQ(to_panel[0], "「闪退时自动发送报告」是什么意思？");
   EXPECT_TRUE(to_support.empty());
 }
 
-// The desktop has no panel (ask_ai_once says no): the question goes to PP 客服 as before.
+// Send diagnostics' own "?" (its fixed question) takes the same sheet on phones, the chat page elsewhere.
+TEST_F(SettingsHelpQuestionTest, TheSendDiagnosticsQuestionMarkTakesTheSameSheet) {
+  std::ifstream in(std::string(PP_SOURCE_DIR) + "/src/gui/SettingsSecurityActions.cpp", std::ios::binary);
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  const std::string source = buffer.str();
+  const size_t at = source.find("void SettingsSecurityActions::OpenDiagnosticsHelp()");
+  ASSERT_NE(at, std::string::npos);
+  const std::string body = source.substr(at, source.find("\n}\n", at) - at);
+  const size_t panel = body.find("commands_.ask_support_panel(question)");
+  const size_t page = body.find("commands_.ask_support(question)");
+  ASSERT_NE(panel, std::string::npos) << "phones: the PP 客服 sheet";
+  ASSERT_NE(page, std::string::npos);
+  EXPECT_LT(panel, page) << "the chat page only when there is no sheet";
+}
+
+// The desktop has no sheet (ask_support_panel says no): the question goes to the PP 客服 chat page as before.
 TEST_F(SettingsHelpQuestionTest, WithoutThePanelSupportIsAsked) {
   std::vector<std::string> to_support;
   SettingsCommands commands;
-  commands.ask_ai_once = [](const std::string&) { return false; };
+  commands.ask_support_panel = [](const std::string&) { return false; };
   commands.ask_support = [&to_support](const std::string& question) -> Roe<void> {
     to_support.push_back(question);
     return {};
@@ -230,7 +247,7 @@ TEST_F(SettingsHelpQuestionTest, AShownNoteOpensAnAlertWithItsTitleAndTextAndAsk
   std::vector<Alert> alerts;
   int sent = 0;
   SettingsCommands commands;
-  commands.ask_ai_once = [&sent](const std::string&) {
+  commands.ask_support_panel = [&sent](const std::string&) {
     ++sent;
     return true;
   };

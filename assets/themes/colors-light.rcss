@@ -1079,7 +1079,6 @@ select selectbox option:hover {
 .ask-ai-privacy,
 .ask-ai-picture-note,
 .ask-ai-reminder,
-.ask-ai-section,
 .ask-ai-empty,
 .ask-ai-error {
   color: #3c3c4399;

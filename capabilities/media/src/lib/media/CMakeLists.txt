@@ -41,6 +41,7 @@ if(WIN32)
     SdlAudioBootstrap_Default.cpp
     SdlAudioReset_Default.cpp
     MicPermission_Default.cpp
+    CameraPermission_Default.cpp
     VoiceProcessingIo_Stub.cpp)
   target_link_libraries(pp_lib_media PRIVATE mfplat mf mfuuid)
 elseif(APPLE)
@@ -57,6 +58,7 @@ elseif(APPLE)
     target_sources(pp_lib_media PRIVATE
       AudioSession_Ios.mm
       CameraCandidates_Default.cpp
+      CameraPermission_Ios.mm
       CameraCaptureOrientation_Ios.mm
       SdlAudioBootstrap_Default.cpp
       SdlAudioReset_Default.cpp
@@ -67,6 +69,7 @@ elseif(APPLE)
       AudioSession_Default.cpp
       CameraCandidates_Darwin.mm
       CameraCaptureOrientation_Default.cpp
+      CameraPermission_Default.cpp
       SdlAudioBootstrap_Default.cpp
       SdlAudioReset_Default.cpp
         VoiceProcessingIo_Apple.cpp)
@@ -85,6 +88,7 @@ elseif(ANDROID)
     SdlAudioBootstrap_Default.cpp
     SdlAudioReset_Android.cpp
     MicPermission_Android.cpp
+    CameraPermission_Android.cpp
     VoiceProcessingIo_Stub.cpp)
   target_link_libraries(pp_lib_media PRIVATE mediandk camera2ndk)
 else()
@@ -100,6 +104,7 @@ else()
     SdlAudioBootstrap_Linux.cpp
     SdlAudioReset_Default.cpp
     MicPermission_Default.cpp
+    CameraPermission_Default.cpp
     VoiceProcessingIo_Stub.cpp)
   # Linux VA-API (libva + DRM render node) — soft dep; stub builds without it.
   find_package(PkgConfig QUIET)

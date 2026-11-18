@@ -3915,6 +3915,11 @@ select selectbox option {
   height: 24dp;
 }
 
+/* Chats' two buttons (scan, then compose): 4dp between the tap areas, not the row's 8dp. */
+.sidebar-panel .pane-nav-actions {
+  gap: 4dp;
+}
+
 .shell-layer-compact .large-title {
   display: block;
   flex-shrink: 0;
@@ -5300,12 +5305,6 @@ select selectbox option {
   line-height: 44dp;
   font-weight: bold;
   text-align: center;
-}
-
-.ask-ai-section {
-  margin: 0 0 10dp 0;
-  font-size: 13dp;
-  line-height: 18dp;
 }
 
 .ask-ai-empty {
@@ -8292,15 +8291,15 @@ input.checkbox {
 }
 
 /* Chats' title row: "Chats" at the left, the link status (dot + word) right after it on the same line, in the 56dp
-   band the fixed bar's compose button sits in (the scroller starts at the top, under the bar, and the bar lets touches
-   through except on its button). The right 56dp is the compose button's: 12dp margin + 44dp. */
+   band the fixed bar's scan and compose buttons sit in (the scroller starts at the top, under the bar, and the bar lets
+   touches through except on its buttons). The right 116dp is the buttons': 12dp margin + 44dp + 4dp + 44dp. */
 .shell-layer-compact .sidebar-sessions .large-title {
   display: flex;
   flex-direction: row;
   align-items: flex-end;
   box-sizing: border-box;
   height: 56dp;
-  padding: 0 56dp 0 16dp;
+  padding: 0 116dp 0 16dp;
 }
 
 .shell-layer-compact .sidebar-sessions .large-title-text {
@@ -15553,7 +15552,7 @@ textarea:composing ~ .prompt-composer-label,
 }
 
 /* The fixed bar over the title row passes touches through (a drag that starts on the title scrolls the list); only its
-   compose button takes them. */
+   scan and compose buttons take them. */
 .shell-layer-compact .sidebar-panel .pane-nav,
 .shell-layer-compact .sidebar-panel .pane-nav-bg,
 .shell-layer-compact .sidebar-panel .bar-fade,
@@ -15564,6 +15563,12 @@ textarea:composing ~ .prompt-composer-label,
 .shell-layer-compact .sidebar-panel .pane-nav-actions,
 .shell-layer-compact .sidebar-panel .pane-nav-btn {
   pointer-events: auto;
+}
+
+/* Chats' small title stays clear of its two buttons (116dp at the right), centred: the same margin on the left. */
+.shell-layer-compact .sidebar-panel .pane-nav-title {
+  left: 116dp;
+  right: 116dp;
 }
 
 .shell-layer-compact .home-scroll {
