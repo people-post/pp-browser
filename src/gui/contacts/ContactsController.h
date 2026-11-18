@@ -214,6 +214,11 @@ public:
   void SyncLayoutMode();
   /** Reload list from store (e.g. after AI add_contact while tab is open). */
   void Refresh();
+  /**
+   * The address book changed (ConversationsHub::SetOnContactsChanged, posted to the UI thread): every list of people
+   * is read again, so the page on screen and the ones under it show the change without a tap or a page change.
+   */
+  void OnContactsChanged();
   /** Me → About → "Show advanced settings": ids, addresses and fingerprints in the contact detail. */
   void SetShowAdvanced(bool advanced);
   void Tick();
@@ -466,8 +471,15 @@ private:
   void OnCopyId();
   void OnShareContact(ui::Vector2i position);
   void ShareContactTo(const std::string& thread_id, const std::string& contact_id, const std::string& name);
-  /** "Add contact" with a pasted invite: the contact added, shown (UI thread). */
-  void OnAddedFromInvite(const Roe<std::pair<std::string, bool>>& added);
+  /**
+   * The invite's person is asked about, then added. `show_contacts_tab`: the Contacts tab is selected first (an invite
+   * the OS opened, a scan on the desktop); a phone's scan stays on the page it came from (New chat under it).
+   */
+  void AskToAddInvite(const std::string& link, bool show_contacts_tab);
+  /** "Add contact" with a pasted or scanned invite: the contact is stored, shown and confirmed at once (UI thread). */
+  void OnAddedFromInvite(const Roe<std::string>& added);
+  /** Its account's card was asked for (seconds later): an open page says whether the person can be messaged now. */
+  void OnInviteCardAsked();
   void OnSetTrust(const std::string& trust);
   /** Block the selected contact, after the usual confirm. */
   void OnBlockSelected();

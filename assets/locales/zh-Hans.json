@@ -822,8 +822,6 @@
     "contacts.confirm_add_title": "添加这个人吗？",
     "contacts.confirm_add_body": "{name} · {account}",
     "contacts.err.directory_unreachable": "暂时连不上用户目录，请稍后再试。",
-    "contacts.invite.added": "已添加联系人",
-    "contacts.invite.added_pending": "已添加联系人 — 对方设备可联系时即可发消息",
     "contacts.invite.open_title": "添加此人？",
     "contacts.invite.open_body": "把 {name} 加为联系人？账号：{account}",
     "contacts.err.trust": "无法更新信任级别",

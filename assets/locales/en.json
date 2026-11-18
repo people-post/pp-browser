@@ -834,8 +834,6 @@
     "contacts.confirm_add_title": "Add this person?",
     "contacts.confirm_add_body": "{name} · {account}",
     "contacts.err.directory_unreachable": "Could not reach the directory. Try again in a moment.",
-    "contacts.invite.added": "Contact added",
-    "contacts.invite.added_pending": "Contact added — you can message them once their device can be reached",
     "contacts.invite.open_title": "Add this person?",
     "contacts.invite.open_body": "Add {name} to your contacts? Account: {account}",
     "contacts.err.trust": "Could not update trust",

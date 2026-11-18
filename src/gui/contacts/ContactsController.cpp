@@ -952,6 +952,10 @@ void ContactsController::OnContactsIndexEnd() {
 
 void ContactsController::SyncLists() {
   SyncFromStore();
+  auto& host = DataModelHost::Instance();
+  host.Dirty("contacts", "contacts"); // a rebuilt list is redrawn only once its variables are marked
+  host.Dirty("contacts", "contact_sections");
+  host.Dirty("contacts", "contact_index");
   if (new_chat_open_) {
     SyncNewChat();
     DirtyNewChat();
@@ -960,6 +964,10 @@ void ContactsController::SyncLists() {
     SyncBlocked();
     DirtyBlocked();
   }
+}
+
+void ContactsController::OnContactsChanged() {
+  SyncLists(); // only the lists: an open page's fields (a remark being typed) are left as they are
 }
 
 void ContactsController::Refresh() {
@@ -1702,6 +1710,11 @@ std::vector<ContextMenuAction> ContactsController::NewChatMoreActions(const std:
 }
 
 void ContactsController::OnNewChatAction(const std::string& action) {
+  if (action == "add") {
+    // Add contact opens over New chat: back, or a person added there (scan, search), comes back to this list.
+    OnAddContact();
+    return;
+  }
   CloseNewChatPage();
   if (action == "ai") {
     if (chat_ports_.new_ai_chat) {
@@ -1709,8 +1722,6 @@ void ContactsController::OnNewChatAction(const std::string& action) {
     }
   } else if (action == "group") {
     OnNewGroup();
-  } else if (action == "add") {
-    OnAddContact();
   }
 }
 
@@ -1900,7 +1911,8 @@ void ContactsController::OnScanQr() {
   }
   scan_ports_.scan_qr([this](std::string text) {
     if (offer_group_join_ && offer_group_join_(text)) {
-      return; // an invite link to a group (G021): the join prompt asks its maker
+      CloseNewChatPage(); // the group's chat opens where it can be seen, not under New chat
+      return;             // an invite link to a group (G021): the join prompt asks its maker
     }
     const bool valid = static_cast<bool>(FindContactLocator(text));
     MetricsLine("scan.contact").Add("valid_locator", valid).Emit();
@@ -1908,7 +1920,9 @@ void ContactsController::OnScanQr() {
       ShowToast(Tr("scan.not_contact"), ToastDuration::Long);
       return;
     }
-    OfferInvite(text);
+    // A phone's scan (from Add contact, over New chat) stays there: the hidden Contacts tab would take the New chat
+    // page away and show another list without the person.
+    AskToAddInvite(text, ChromeSnapshot().layout_mode != LayoutMode::Compact);
   });
 }
 
@@ -1948,9 +1962,10 @@ void ContactsController::AddContactByQuery(const std::string& query) {
         return;
       }
     }
-    contacts_ports_.add_from_locator(query, [](Roe<std::pair<std::string, bool>> added) {
-      AppRuntime::PostUI([added = std::move(added)]() { ContactsController::Instance().OnAddedFromInvite(added); });
-    });
+    // Shown as soon as the contact is stored; its card (asked of its devices, then relays: seconds) comes later.
+    contacts_ports_.add_from_locator(
+        query, [](Roe<std::string> added) { ContactsController::Instance().OnAddedFromInvite(added); },
+        [](bool /*keys_known*/) { AppRuntime::PostUI([]() { ContactsController::Instance().OnInviteCardAsked(); }); });
     return;
   }
   if (!contacts_ports_.search_people) {
@@ -1965,26 +1980,30 @@ void ContactsController::AddContactByQuery(const std::string& query) {
 }
 
 void ContactsController::OfferInvite(const std::string& link) {
+  AskToAddInvite(link, /*show_contacts_tab=*/true);
+}
+
+void ContactsController::AskToAddInvite(const std::string& link, const bool show_contacts_tab) {
   auto locator = FindContactLocator(link);
   if (!locator) {
     return;
   }
   if (auto known = FindContactByAccount(locator->account_id)) {
-    if (shell_navigation_.select_nav_tab) {
+    if (show_contacts_tab && shell_navigation_.select_nav_tab) {
       shell_navigation_.select_nav_tab(NavTab::Contacts);
     }
     ShowAlreadyContact(*known);
     return;
   }
   const std::string name = locator->nickname.empty() ? locator->account_id : locator->nickname;
-  auto ask = [this, link, name, account_id = locator->account_id]() {
+  auto ask = [this, link, name, account_id = locator->account_id, show_contacts_tab]() {
     ShowConfirm(Tr("contacts.invite.open_title"),
                 Tr("contacts.invite.open_body", {{"name", name}, {"account", account_id}}),
-                [this, link](const bool ok) {
+                [this, link, show_contacts_tab](const bool ok) {
                   if (!ok) {
                     return;
                   }
-                  if (shell_navigation_.select_nav_tab) {
+                  if (show_contacts_tab && shell_navigation_.select_nav_tab) {
                     shell_navigation_.select_nav_tab(NavTab::Contacts);
                   }
                   AddContactByQuery(link);
@@ -2001,16 +2020,21 @@ void ContactsController::OfferInvite(const std::string& link) {
   });
 }
 
-void ContactsController::OnAddedFromInvite(const Roe<std::pair<std::string, bool>>& added) {
+void ContactsController::OnAddedFromInvite(const Roe<std::string>& added) {
   if (!added) {
     UserFeedback::Fail(added.error().message.empty() ? Tr("contacts.err.add") : added.error().message);
     return;
   }
   SyncLists();
-  OnSelectContact(added.value().first);
-  // Without keys yet the contact stands; their first message brings them (or they come online).
-  ShowToast(Tr(added.value().second ? "contacts.invite.added" : "contacts.invite.added_pending"));
+  OnSelectContact(added.value());
+  // The same pill as an add from search. Whether they can be messaged yet is the page's to say (its card may not have
+  // come yet; OnInviteCardAsked updates the page when it does).
+  ShowToast(Tr("contacts.added", {{"name", std::string(selected_.title.c_str())}}));
   NotifySurfaceChanged();
+}
+
+void ContactsController::OnInviteCardAsked() {
+  Refresh();
 }
 
 void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits) {
@@ -2981,6 +3005,7 @@ void ContactsController::OnAddAction(const std::string& action) {
     OnAddShare({});
   } else if (action == "group") {
     CloseAddContactPage();
+    CloseNewChatPage(); // as New chat's own New group: the group's chat must not open under it
     OnNewGroup();
   }
 }

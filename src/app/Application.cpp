@@ -2620,6 +2620,19 @@ void Application::WireHubCallbacks() {
       }
     });
   });
+  messaging.SetOnContactsChanged([this]() {
+    // Whoever changed the address book, on whatever thread: every list of people on screen (New chat, Contacts, the
+    // blocked list) shows it at once. A burst (an import, a card and its profile) is one rebuild.
+    if (contacts_sync_posted_.exchange(true)) {
+      return;
+    }
+    AppRuntime::PostUI([this]() {
+      contacts_sync_posted_ = false;
+      if (contacts_) {
+        contacts_->OnContactsChanged();
+      }
+    });
+  });
 }
 
 void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& bootstrap) {
@@ -3084,6 +3097,7 @@ void Application::Shutdown() {
     messaging_->SetOnReachabilityUpdated(nullptr);
     messaging_->SetOnLinkStateChanged(nullptr);
     messaging_->SetOnPeerIconsChanged(nullptr);
+    messaging_->SetOnContactsChanged(nullptr);
     messaging_->SetOnCallWake(nullptr);
   }
 

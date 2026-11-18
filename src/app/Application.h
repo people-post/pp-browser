@@ -158,6 +158,7 @@ private:
   std::unique_ptr<ShellHost> shell_;
   std::unique_ptr<ChatController> chat_;
   std::atomic<bool> peer_icons_refresh_posted_{false}; // a peer-icon refresh is queued on the UI thread
+  std::atomic<bool> contacts_sync_posted_{false};      // a contact-list rebuild is queued on the UI thread
   /** Milliseconds from StartupEpoch to the first presented frame; -1 until it is up. */
   std::atomic<int64_t> first_present_ms_{-1};
   std::atomic<uint64_t> logged_call_tap_seq_{0};

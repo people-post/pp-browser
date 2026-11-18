@@ -54,10 +54,13 @@ struct MessagingContactsPorts {
   std::function<void(const std::string& thread_id)> warm_peer_for_thread;
   std::function<Roe<void>(const std::string& thread_id)> ensure_psk_generated;
   /**
-   * Add the person a pasted invite names (a locator, ACCOUNT_CARD.md): the contact's id, and whether its keys
-   * are known yet. `done` once, on a worker or I/O thread.
+   * Add the person a pasted invite names (a locator, ACCOUNT_CARD.md). `added` once, on the calling thread: the
+   * contact's id as soon as it is stored, or why it was not. After a stored contact, `card` once the account's card
+   * was asked for (its devices, its relay, the directory: seconds), with whether its keys are known now; on a worker or
+   * I/O thread.
    */
-  std::function<void(const std::string& text, std::function<void(Roe<std::pair<std::string, bool>>)> done)>
+  std::function<void(const std::string& text, std::function<void(Roe<std::string>)> added,
+                     std::function<void(bool keys_known)> card)>
       add_from_locator;
   /** Share a contact into a chat as a contact card. */
   std::function<Roe<void>(const std::string& thread_id, const std::string& contact_id)> share_contact;

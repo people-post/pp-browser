@@ -75,7 +75,7 @@ TEST(ContactQrScanTest, FriendLocatorRequiresConfirmationBeforeSaving) {
   contacts.BindScanPorts({.scan_qr = [&](QrScanResultCallback done) { decoded = std::move(done); }});
   int saves = 0;
   MessagingContactsPorts ports;
-  ports.add_from_locator = [&](const std::string&, auto) { ++saves; };
+  ports.add_from_locator = [&](const std::string&, auto, auto) { ++saves; };
   contacts.BindContactsPorts(std::move(ports));
   std::function<void(bool)> confirmation;
   std::string identity_message;
@@ -108,7 +108,7 @@ TEST(ContactQrScanTest, OrdinaryUrlAndMalformedContactNeverOpenOrSave) {
   contacts.BindScanPorts({.scan_qr = [&](QrScanResultCallback done) { decoded = std::move(done); }});
   int saves = 0;
   MessagingContactsPorts ports;
-  ports.add_from_locator = [&](const std::string&, auto) { ++saves; };
+  ports.add_from_locator = [&](const std::string&, auto, auto) { ++saves; };
   contacts.BindContactsPorts(std::move(ports));
   int notices = 0;
   int confirmations = 0;

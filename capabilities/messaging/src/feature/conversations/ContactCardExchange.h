@@ -69,9 +69,11 @@ public:
    * SetLocalRelaysAllowed allows it), then the account's card — from a
    * listed device over Amp, else the card the locator's relay keeps for it (multi-relay R4), else the directory
    * when one is configured. Without keys yet the contact still stands; the person's first message brings them.
-   * `done` once, on a worker or I/O thread.
+   * `done` once, on a worker or I/O thread. `stored`, when given, once on the calling thread as soon as the contact is
+   * in the address book, before its card is asked for (the card can take many seconds; the person is there already).
    */
-  void AddFromLocator(const ContactLocator& locator, std::function<void(Roe<LocatorAdded>)> done);
+  void AddFromLocator(const ContactLocator& locator, std::function<void(Roe<LocatorAdded>)> done,
+                      std::function<void(const Contact&)> stored = {});
   /**
    * A contact whose account's card is still unknown (an add whose devices were out of reach, #409): asks
    * for it again the same way — its devices, its locator's relay, then the directory — at most once per
