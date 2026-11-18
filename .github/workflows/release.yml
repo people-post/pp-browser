@@ -39,7 +39,8 @@ jobs:
 
   macos:
     needs: [guard]
-    runs-on: macos-15
+    # The self-hosted Mac (CI_MAC_RELEASE_LABELS, as TestFlight; hosted macos-15 when unset). Tag pushes only.
+    runs-on: ${{ fromJSON(vars.CI_MAC_RELEASE_LABELS || '"macos-15"') }}
     env:
       CCACHE_COMPRESSLEVEL: 5
 

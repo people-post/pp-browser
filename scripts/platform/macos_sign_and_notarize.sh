@@ -109,10 +109,16 @@ KEYCHAIN_PATH=""
 KEYCHAIN_PASSWORD=""
 TEMP_P12=""
 TEMP_P8=""
+# The user's keychain search list before this run, put back on exit: a self-hosted Mac keeps it after the job.
+SAVED_KEYCHAINS=()
+KEYCHAINS_SAVED=0
 
 cleanup() {
   # Use if/fi (not `[[ … ]] && cmd`) so an empty path does not make the EXIT
   # trap return non-zero under `set -e`.
+  if [[ "$KEYCHAINS_SAVED" == 1 ]]; then
+    security list-keychains -d user -s ${SAVED_KEYCHAINS[@]+"${SAVED_KEYCHAINS[@]}"} >/dev/null 2>&1 || true
+  fi
   if [[ -n "${KEYCHAIN_PATH:-}" && -f "$KEYCHAIN_PATH" ]]; then
     security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
   fi
@@ -161,7 +167,19 @@ prepare_keychain() {
     -S apple-tool:,apple:,codesign: \
     -s -k "$KEYCHAIN_PASSWORD" \
     "$KEYCHAIN_PATH"
-  security list-keychains -d user -s "$KEYCHAIN_PATH"
+  # Searched first, the user's own keychains after it (a self-hosted Mac keeps the list after the job; a left-over
+  # signing keychain from a killed run is not kept). Put back as it was on exit.
+  local line
+  while IFS= read -r line; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%\"}"
+    line="${line#\"}"
+    if [[ -n "$line" && -f "$line" && "$line" != */frame-signing.keychain-db ]]; then
+      SAVED_KEYCHAINS+=("$line")
+    fi
+  done < <(security list-keychains -d user)
+  KEYCHAINS_SAVED=1
+  security list-keychains -d user -s "$KEYCHAIN_PATH" ${SAVED_KEYCHAINS[@]+"${SAVED_KEYCHAINS[@]}"}
 }
 
 notary_key_path() {

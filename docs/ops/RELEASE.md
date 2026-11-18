@@ -76,7 +76,7 @@ CI refuses tags whose commit is not on `origin/main`.
 
 [`release.yml`](../.github/workflows/release.yml):
 
-- macOS (`macos-15`, built for macOS 14+ — `PP_BROWSER_MACOS_DEPLOYMENT_TARGET`): `PP.app`, optional sign/notarize, `.dmg`
+- macOS (our self-hosted Mac, repo variable `CI_MAC_RELEASE_LABELS`; hosted `macos-15` when unset; built for macOS 14+ — `PP_BROWSER_MACOS_DEPLOYMENT_TARGET`): `PP.app`, optional sign/notarize, `.dmg`
 - Windows (`windows-2022`): NSIS `.exe`
 - Android (`ubuntu-24.04`): release APK
 

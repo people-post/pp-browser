@@ -172,9 +172,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2022, macos-15]
+        os: [ubuntu-24.04, windows-2022, macos]
 
-    runs-on: ${{ matrix.os }}
+    # macOS runs on the self-hosted Mac (CI_MAC_BUILD_LABELS; hosted macos-15 when unset), except a fork PR's: its code
+    # would run on that Mac as its user.
+    runs-on: ${{ matrix.os != 'macos' && matrix.os || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.CI_MAC_BUILD_LABELS || '"macos-15"') || 'macos-15') }}
     env:
       # Asset-only PRs (locales, themes, views) still need the tests, which the Ubuntu build runs; the
       # Windows and macOS builds add nothing for them. Pushes to develop / main always build everything.
@@ -311,6 +313,12 @@ jobs:
           PP_IS_PR: ${{ github.event_name == 'pull_request' }}
           PP_CHANGED_FILTERS: ${{ needs.changes.outputs.changes }}
         run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            # A home of its own: on the self-hosted Mac the runner is the Mac's user, whose ~/Library a test must not
+            # reach (one falling back to the default data dir, say).
+            export HOME="$RUNNER_TEMP/test-home"
+            mkdir -p "$HOME"
+          fi
           skip=()
           if [ "$PP_IS_PR" = true ]; then
             for capability in base people net social delivery pricing media messaging calls broadcast node; do
