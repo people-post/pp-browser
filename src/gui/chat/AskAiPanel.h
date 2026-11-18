@@ -257,6 +257,8 @@ private:
   void StartSupport(const std::string& question);
   /** Sends into the PP 客服 chat; a "?"'s question (not `typed`) only when SupportAsk says it is not a repeat. */
   void AskSupportQuestion(const std::string& text, bool typed);
+  /** A reply is awaited from `now`: the waiting line follows it and the inbox is fetched anew for a while. */
+  void StartSupportWait(int64_t now);
   void SyncSupportWait();
   /** The PP 客服 chat shown is read when someone looks at it (SupportAsk::ShouldReadSupportThread). */
   void ReadSupportIfLooking();

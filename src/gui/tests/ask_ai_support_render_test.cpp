@@ -414,6 +414,19 @@ TEST_F(AskAiSupportRenderTest, TheSameQuestionMarkAgainSendsNothingButATypedFoll
   EXPECT_EQ(std::string(panel_.View().draft.c_str()), "");
 }
 
+// Reopened within 10 minutes with the question still unanswered: the waiting line shows and the inbox is fetched
+// again (the fetch window starts anew; it had run out while the sheet was closed).
+TEST_F(AskAiSupportRenderTest, ReopeningWhileTheReplyIsAwaitedFetchesTheInboxAgain) {
+  ASSERT_TRUE(panel_.OpenSupport(question_));
+  panel_.Close();
+  Later(200'000); // past the first fetch window, inside the 10-minute repeat window
+  ASSERT_TRUE(panel_.OpenSupport(question_));
+  EXPECT_EQ(host_.sent.size(), 1u);
+  const int fetched = host_.fetches;
+  Later(15'000);
+  EXPECT_EQ(host_.fetches, fetched + 1) << "the reply is looked for again";
+}
+
 // Risk 4: offline, ours has not gone out: no "replying" line (its own clock / red mark tells), no 90 s line.
 TEST_F(AskAiSupportRenderTest, AQuestionThatHasNotGoneOutShowsNoWaitingLine) {
   host_.sent_mark = SendMark::Queued;

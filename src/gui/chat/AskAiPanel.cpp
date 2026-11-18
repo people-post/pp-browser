@@ -613,7 +613,7 @@ void AskAiPanel::StartSupport(const std::string& question) {
 void AskAiPanel::AskSupportQuestion(const std::string& text, const bool typed) {
   const int64_t now = now_ms_();
   if (!typed && !ShouldAutoSend(support_.messages, text, now)) {
-    support_.awaiting = true; // asked moments ago: the line follows that question's reply
+    StartSupportWait(now); // asked moments ago: the line follows that question's reply
     SyncSupportWait();
     return;
   }
@@ -626,13 +626,17 @@ void AskAiPanel::AskSupportQuestion(const std::string& text, const bool typed) {
     Dirty("support_note");
     return;
   }
-  support_.awaiting = true;
-  support_.fetch_until_ms = now + kSupportSlowAfterMs;
-  support_.next_fetch_ms = now + kSupportFetchEveryMs;
+  StartSupportWait(now);
   view_.support_note = "";
   Refresh();
   host_.AskAiSyncInbox();
   scroll_frames_ = kScrollFrames;
+}
+
+void AskAiPanel::StartSupportWait(const int64_t now) {
+  support_.awaiting = true;
+  support_.fetch_until_ms = now + kSupportSlowAfterMs;
+  support_.next_fetch_ms = now + kSupportFetchEveryMs;
 }
 
 void AskAiPanel::SyncSupportWait() {
