@@ -388,9 +388,21 @@ Hongwei, 2026-11-17 (RC006). Items 3 and 8 touch the relay's workflows and wait 
 9. **Fixes on release branches:** every fix on the newest; security fixes and fixes for a break between in-range
    versions on older ones in range.
 
-Open, from [§ Environments](#environments) (RC009), for Hongwei and Leo:
+From [§ Environments](#environments) (RC009): agreed by Hongwei on 2026-11-18, **recommended to Leo for review**
+(his infrastructure):
 
-10. **Prod's own AWS account:** now, or after release 1.
-11. **The prod canary:** its share and duration (for example 10% for 30 minutes), and which alarms roll it back.
-12. **Dev's data:** reset at any time, or only when announced.
-13. **Staging's data at the switch:** kept from qa, or reset once so staging starts prod-like.
+10. **Prod's AWS account: prod stays; dev and staging move out.** Moving prod later means migrating live tables,
+    buckets, the CDN distribution, secrets and the relay's identity key with users on it. If prod and qa share an
+    account today, that account becomes prod-only and a new non-prod account holds dev (built there from the start)
+    and staging (moved at the switch, keeping its domain by DNS and its identity key by copying the secret, so apps
+    notice nothing). If they are already apart, dev joins the non-prod one.
+11. **The prod canary: 10% for 30 minutes, then all** (CodeDeploy's `LambdaCanary10Percent30Minutes`). It rolls back
+    on Lambda errors and throttles, the 5xx rate, p99 latency, and a jump in **client-visible error codes** (400,
+    401 such as `wrong_audience` or signature failures, 426, 404 `not_registered`): a contract break like the search
+    400 of 2026-11-17 shows there, not as a crash. While traffic is low, a scripted smoke run covers the window too:
+    relay identity, `client-compat`, lookup, register, send and poll.
+12. **Dev's data may be reset at any time**, by a workflow that posts a note when it runs.
+13. **Staging starts fresh once at the switch** (best together with its move in item 10), keeping its domain and
+    identity: qa's data comes from the pre-release cutovers and is outside every range. From then on it is kept,
+    because rollback rehearsals need data a real release wrote. P2 checks that apps re-register by themselves when
+    staging answers `not_registered` (not yet verified).

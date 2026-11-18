@@ -175,6 +175,8 @@ refuses anything else and tags `vX.Y.Z` when it submits. Store releases are phas
 
 **Date:** 2026-11-18
 **Status:** Accepted (Hongwei, 2026-11-18); in review with Leo (the infrastructure is his). Amends RC006 item 8.
+Its open items (prod's account, the canary, dev's and staging's data) are recommended to Leo in
+[DESIGN § Decisions taken](DESIGN.md#decisions-taken), items 10–13.
 **Decision:** local (local-stack, the lab), dev (new: main deploys there automatically), staging (today's qa:
 release candidates, rollback rehearsals) and prod (tags only, approval, a canary with automatic rollback). Staging
 keeps qa's origin, PeerId and the apps' `backend.env: "qa"`. External testers use prod. Each environment has its own
