@@ -50,7 +50,7 @@
             </div>
           </div>
           <p class="text muted group-foot" data-if="!own_has_other_devices">{{i18n:settings.security.devices.none}}</p>
-          <p class="text muted group-foot" data-if="own_has_other_devices">{{i18n:settings.security.devices.tap_hint}}</p>
+          <p class="text muted group-foot" data-if="own_has_other_devices">{{i18n:settings.security.devices.handover_hint}}</p>
         </div>
         <!-- Phones, linked (not main) device: a card of two short lines, then a read-only list. The only "?" is the one after
              "main device (manage)"; it only asks PP support; nothing else here can be tapped: linking and removing are done on the main device. -->

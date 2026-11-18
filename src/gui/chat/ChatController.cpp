@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include "gui/chat/ChatController.h"
+#include "gui/RecoveryReminder.h"
 #include "gui/chat/ApprovalCard.h"
 #include "gui/chat/AttachMenuRules.h"
 
@@ -363,6 +364,8 @@ ChatController::ChatController()
               .show_attach_button = chat_.show_attach_button,
               .show_thread_actions = chat_.show_thread_actions,
               .show_peer_sheet = chat_.show_peer_sheet,
+              .show_stranger_bar = chat_.show_stranger_bar,
+              .stranger_bar_text = chat_.stranger_bar_text,
               .show_call_actions = chat_.show_call_actions,
               .show_forget_memory = chat_.show_forget_memory,
               .show_sync_with_peer = chat_.show_sync_with_peer,
@@ -621,7 +624,8 @@ void ChatController::MakeReadyTasks() {
   };
   ports.brief_key_done = [this](const BriefKeyMintEnd& end) { agent_.OnBriefKeyMintEnded(end); };
   ports.after_identity_changed = [this]() {
-    agent_.ReloadAgentConfig(); // runtime.llm.api_key takes the key now in the identity
+    recovery_phrase_present_.reset(); // a restore / link can bring a phrase
+    agent_.ReloadAgentConfig();       // runtime.llm.api_key takes the key now in the identity
     agent_.RefreshLlmSetupBanner();
   };
   ready_tasks_ = std::make_unique<MessagingReadyTasks>(std::move(ports), agent_.BriefKeyRun());
@@ -1087,6 +1091,10 @@ const SessionStore& ChatController::Store() const {
 }
 
 void ChatController::SendSuggestionAction(const std::string& id) {
+  if (id == "find_someone") {
+    OnFindSomeone(); // the Add contact page; nothing is sent
+    return;
+  }
   auto payload = SuggestionPayload(id, LocalizationService::Instance().ResolvedLanguage());
   if (!payload) {
     return;
@@ -1543,6 +1551,7 @@ void ChatController::OnProfileDataReset() {
   AbandonPick();
   video_bubble_thread_.clear();
   messaging_ready_ = false;
+  recovery_phrase_present_.reset();
   ++messaging_session_; // a task result of the old profile never reaches the new one
   if (ready_tasks_) {
     ready_tasks_->OnMessagingTornDown(); // the teardown dropped work still queued: free its runs
@@ -1710,6 +1719,7 @@ void ChatController::ApplyHomeToday(const ChatListScreen& list) {
                                    : (home_summary_.mentions.title + " · " + home_summary_.mentions.preview).c_str();
   shell_.home_new_people = home_summary_.new_contacts;
   shell_.home_security_ok = session_store_ && Store().Snapshot().profile_prefs.recovery_phrase_seen;
+  shell_.recovery_reminder = RecoveryReminderShows();
   // The widgets page is off until it gets its own page: the stored preference is kept but never read here.
   constexpr bool kWidgetsPageOnHome = false;
   shell_.home_show_dynamic = kWidgetsPageOnHome && session_store_ && Store().Snapshot().profile_prefs.home_show_dynamic;
@@ -1987,6 +1997,38 @@ void ChatController::RefreshHomeCalls() {
           RefreshHomeCalls();
         }
       });
+}
+
+bool ChatController::RecoveryReminderShows() {
+  if (!session_store_) {
+    return false;
+  }
+  const ProfilePreferences& prefs = Store().Snapshot().profile_prefs;
+  RecoveryReminderInput in;
+  in.onboarding_completed = prefs.onboarding_completed;
+  in.phrase_seen = prefs.recovery_phrase_seen;
+  in.dismissals = prefs.recovery_reminder_dismissals;
+  in.dismissed_ms = prefs.recovery_reminder_dismissed_ms;
+  in.now_ms = util::NowUnixMs();
+  // A linked (non-admin) device has no phrase to show; asked last because it reads the vault.
+  in.can_view_phrase = true;
+  if (!ShouldShowRecoveryReminder(in)) {
+    return false;
+  }
+  if (!recovery_phrase_present_.has_value() && facade_ != nullptr && messaging_ready_) {
+    recovery_phrase_present_ = facade_->HasRecoveryPhrase(); // one vault read per session, yes or no
+  }
+  return recovery_phrase_present_.value_or(false);
+}
+
+void ChatController::OnRecoveryReminderLater() {
+  if (!session_store_) {
+    return;
+  }
+  ProfilePreferences prefs = Store().Snapshot().profile_prefs;
+  prefs.recovery_reminder_dismissals = std::min(2, prefs.recovery_reminder_dismissals + 1);
+  prefs.recovery_reminder_dismissed_ms = util::NowUnixMs();
+  (void)Store().SaveProfilePrefs(prefs); // the prefs listener refreshes the card
 }
 
 void ChatController::OnHomePrefsChanged() {
@@ -4635,13 +4677,11 @@ void ChatController::OnJoinGroupCall() {
 }
 
 void ChatController::OnFindSomeone() {
-  if (!messaging_ready_) {
-    return;
+  // Not an AI turn: the directory refuses an empty query (HTTP 400) and name search is off (pp-relay-apis#42), so
+  // every "find someone" entry (Home chip, New chat menu) opens the Add contact page (account ID, QR code).
+  if (contacts_notify_.open_add_contact) {
+    contacts_notify_.open_add_contact();
   }
-  OnNewChat();
-  focus_draft_after_sync_ = true;
-  chat_.draft = Tr("home.suggestion.find_someone_prompt");
-  DirtyChatChrome();
 }
 
 void ChatController::PrefillDraft(const std::string& text) {
@@ -5193,6 +5233,7 @@ void ChatController::WireMessagingBindings() {
     return;
   }
   messaging_ready_ = true;
+  recovery_phrase_present_.reset();
   // A new session: results of tasks the last one sent off are dropped when they come back. A run still out keeps its
   // slot (one at a time); what is triggered below runs once more after it.
   ++messaging_session_;
@@ -5670,6 +5711,8 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("call_back",
                                DataEvent<std::string>([this](const std::string& video) { menus_.CallBack(video); }));
         ctor.BindEventCallback("join_group_call", DataEvent([this] { OnJoinGroupCall(); }));
+        ctor.BindEventCallback("stranger_add", DataEvent([this] { peer_sheet_.AddOpenStranger(); }));
+        ctor.BindEventCallback("stranger_block", DataEvent([this] { peer_sheet_.BlockOpenStranger(); }));
         ctor.BindEventCallback("open_group_members", DataEvent([this] { peer_sheet_.OpenGroupMembers(); }));
         ctor.BindEventCallback("open_peer_sheet", DataEventAt([this](ui::Event& ev) { OpenPeerSheet(ev); }));
         ctor.BindEventCallback("sync_with_peer", DataEvent([this] { OnSyncWithPeer(); }));
@@ -5719,6 +5762,11 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("ai_sessions_scroll", DataEvent([this] { OnAiSessionsScroll(); }));
         ctor.BindEventCallback("sessions_load_more", DataEvent([this] { OnSessionsLoadMore(); }));
         ctor.BindEventCallback("new_chat", DataEvent([this] { OnNewChat(); }));
+        ctor.BindEventCallback("empty_add_contact", DataEvent([this] {
+                                 if (contacts_notify_.open_add_contact) {
+                                   contacts_notify_.open_add_contact();
+                                 }
+                               }));
         ctor.BindEventCallback(
             "open_new_session_menu", DataEventAt([this](ui::Event& ev) {
               // The phone goes straight to a full-screen page; the desktop keeps its small menu.
@@ -5739,6 +5787,12 @@ bool ChatController::Setup(ui::Context* context) {
                                    open_settings_section_("security");
                                  }
                                }));
+        ctor.BindEventCallback("recovery_reminder_open", DataEvent([this] {
+                                 if (open_settings_section_) {
+                                   open_settings_section_("security");
+                                 }
+                               }));
+        ctor.BindEventCallback("recovery_reminder_later", DataEvent([this] { OnRecoveryReminderLater(); }));
         ctor.BindEventCallback("home_open_favorite",
                                DataEvent<int>([this](const int index) { OpenHomeFavorite(index); }));
         ctor.BindEventCallback("home_open_calls", DataEvent([this] { OpenHomeCalls(); }));
@@ -6314,6 +6368,7 @@ void ChatController::Shutdown() {
   AbandonPick();
   video_bubble_thread_.clear();
   messaging_ready_ = false;
+  recovery_phrase_present_.reset();
   ++messaging_session_; // a task result still on its way is dropped
   if (ready_tasks_) {
     ready_tasks_->OnMessagingTornDown();

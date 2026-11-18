@@ -54,6 +54,9 @@ struct ProfilePreferences {
   std::optional<int> pin_digits;
   /** The user has opened their recovery phrase on Me → Security once (Home's Security widget; device-only). */
   bool recovery_phrase_seen = false;
+  /** The Chats page's "save your recovery phrase" card: how often it was put off (0-2; it comes back once after 7 days) and when last. Device-only. */
+  int recovery_reminder_dismissals = 0;
+  int64_t recovery_reminder_dismissed_ms = 0;
   /**
    * PIN grace window (#21): minutes after the last foreground use during which a cold start or call skips the PIN.
    * One of 0 (every time), 5, 15, 60, or -1 (kUnlockGraceAlways: until the phone restarts, A015); anything else reads back as 15. Device-only, never synced.

@@ -178,6 +178,9 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
     }
   }
 
+  view_.ring_unanswered_long = view_.outgoing && !in.group && !answered_ && !connected_ &&
+                               in.status == Status::Calling && now - began_ms_ >= kNoAnswerAfterMs;
+
   if (view_.result_shown) {
     // The result line starts when the list is gone (a group has no list).
     const bool list_over = in.group || view_.stage == CallConnectStory::kStageDone;

@@ -106,6 +106,8 @@
   <string>PP uses the camera for video calls, scanning QR codes, and taking photos and videos in chats.</string>
   <key>NSPhotoLibraryAddUsageDescription</key>
   <string>Save your QR code to Photos.</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>PP uses your local network to connect directly to people on the same Wi‑Fi, so calls and messages need not pass through a server. PP does not collect your location or information about other devices on your network.</string>
   <key>NSFaceIDUsageDescription</key>
   <string>PP uses Face ID to unlock your account.</string>
   <key>UIBackgroundModes</key>

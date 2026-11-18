@@ -1,2 +1,10 @@
+/* Shown when PP first asks to use the microphone. */
+"NSMicrophoneUsageDescription" = "PP 用麦克风进行语音和视频通话、录语音消息，以及在聊天里录视频。";
+/* Shown when PP first asks to use the camera. */
+"NSCameraUsageDescription" = "PP 用摄像头进行视频通话、扫二维码，以及在聊天里拍照和录视频。";
 /* Shown when PP first asks to add a picture (the QR code) to Photos. */
 "NSPhotoLibraryAddUsageDescription" = "把你的二维码保存到相册。";
+/* Shown when PP first asks to use Face ID. */
+"NSFaceIDUsageDescription" = "PP 用面容 ID 解锁你的账号。";
+/* Shown when iOS first asks whether PP may find devices on the local network. */
+"NSLocalNetworkUsageDescription" = "PP 用它在同一个 Wi‑Fi 里直接连接对方，让通话和消息不经过服务器。PP 不会收集你的位置或网络里其他设备的信息。";

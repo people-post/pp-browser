@@ -462,6 +462,19 @@ TEST(CallHintPromptTest, TheMiddleOfAOneToOnePageNeverCarriesASentence) {
   }
 }
 
+TEST(CallHintPromptTest, ALongUnansweredRingSaysSoInTheMiddleLineEvenOverTheSteps) {
+  CallHintPromptInput in;
+  in.steps_shown = true;
+  in.now_ms = 500'000;
+  EXPECT_TRUE(DecideCallHintPrompt(in, {}).center_key.empty());
+  in.ring_unanswered_long = true;
+  const CallHintPrompt prompt = DecideCallHintPrompt(in, {});
+  EXPECT_EQ(prompt.center_key, "call.hint.no_answer");
+  EXPECT_TRUE(prompt.pill_key.empty()) << "a line, not a pill";
+  in.quiet = true; // the call failed or ended: its own page speaks
+  EXPECT_TRUE(DecideCallHintPrompt(in, {}).center_key.empty());
+}
+
 TEST(CallHintPromptTest, AGroupCallKeepsItsHintLineAndRaisesNoPill) {
   CallHintPromptInput in;
   in.group = true;

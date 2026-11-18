@@ -10,6 +10,9 @@
               </span>
             </span>
           </button>
+        </div>
+        <p class="text muted settings-help group-foot">{{i18n:settings.security.calls.help}}</p>
+        <div class="group-card">
           <button class="settings-toggle-row settings-choice-row row group-row" type="button"
                   data-event-click="on_choose_group_invite_policy()">
             <span class="group-row-body">
@@ -21,7 +24,6 @@
             </span>
           </button>
         </div>
-        <p class="text muted settings-help group-foot">{{i18n:settings.security.calls.help}}</p>
         <div class="group-card settings-phone-only">
           <!-- Blocked people, findable again to unblock (Kenneth 2026-11-04). -->
           <button class="group-row" type="button" data-event-click="open_blocked_people()">

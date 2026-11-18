@@ -640,12 +640,12 @@ const std::set<std::string>& SignedOutFacts() {
 TEST(SettingsDevicesCaptionsTest, ThePhoneShowsAtMostOneCaptionUnderTheDeviceList) {
   const std::vector<std::string> captions = {
       "{{i18n:settings.security.devices.help}}", "{{i18n:settings.security.devices.not_main}}",
-      "{{i18n:settings.security.devices.tap_hint}}", "{{i18n:settings.security.devices.none}}",
+      "{{i18n:settings.security.devices.handover_hint}}", "{{i18n:settings.security.devices.none}}",
       "{{i18n:settings.security.devices.signed_out}}"};
   std::set<std::string> main_with_others = {"own_devices_shown", "own_has_other_devices"};
   const std::set<std::string> main_alone = {"own_devices_shown"};
   EXPECT_EQ(PhoneShown(captions, main_with_others), 1u) << "main device with other devices: the tap hint";
-  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.tap_hint}}"}, main_with_others), 1u);
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.handover_hint}}"}, main_with_others), 1u);
   EXPECT_EQ(PhoneShown(captions, main_alone), 1u) << "main device alone: the grey line";
   EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.none}}"}, main_alone), 1u);
   EXPECT_EQ(PhoneShown(captions, LinkedFacts()), 0u) << "a linked phone has its sentence card, no caption";

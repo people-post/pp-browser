@@ -347,6 +347,11 @@ public:
   Roe<void> StartNewDeviceList();
   /** Our device list, or where getting it back stands, changed: read OwnDevices again. Runs on any thread. */
   void SetOnOwnDevicesChanged(std::function<void()> callback);
+  /**
+   * The address book changed (a contact added, renamed, removed, blocked, or refreshed from its card or the
+   * directory), whoever changed it: lists of people read it again. Runs on the thread that changed it.
+   */
+  void SetOnContactsChanged(std::function<void()> callback);
   /** Me → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
   Roe<OurRelaysStatus> OurRelays();
   /**
@@ -831,6 +836,8 @@ private:
   void NotifyOwnDevicesChanged();
   std::mutex own_devices_changed_mu_;
   std::function<void()> on_own_devices_changed_;
+  std::mutex contacts_changed_mu_;
+  std::function<void()> on_contacts_changed_;
   std::mutex our_relays_changed_mu_;
   std::function<void()> on_our_relays_changed_;
   /** Read with MyRelays (any thread: the page's worker); Shutdown closes it before what its ports touch goes. */

@@ -298,6 +298,11 @@ select selectbox option {
   gap: 8dp;
 }
 
+/* A stranger's first message: the line, then Add and Block as 44dp buttons side by side. */
+.chat-stranger-actions {
+  gap: 8dp;
+}
+
 .chat-header-title {
   flex: 1;
   min-width: 0;
@@ -7520,6 +7525,15 @@ input.checkbox {
   transform: translate(-50%, 0);
 }
 
+/* Account setup (name, account, friends) sits near the top instead of the middle: the name step has a text field, and
+   with the keyboard up (a third to half of a phone's height) a centred card lost the lower half of its button. The
+   shell lifts a page only for a covered text field or the chat bar, and this card is not that, so it stays clear of
+   the keyboard on its own. */
+.shell-dialog.onboarding {
+  top: 64dp;
+  transform: translate(-50%, 0);
+}
+
 .shell-pin-gate-chooser {
   display: flex;
   flex-direction: column;
@@ -8009,6 +8023,34 @@ input.checkbox {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+/* A one-time tip card above the chat list (save the recovery phrase). */
+.sidebar-tip {
+  margin: 4dp 16dp 8dp 16dp;
+  padding: 14dp 16dp 8dp 16dp;
+  border-radius: 14dp;
+  box-sizing: border-box;
+}
+
+.sidebar-tip-body {
+  font-size: 15dp;
+  line-height: 21dp;
+  margin-bottom: 8dp;
+}
+
+.sidebar-tip-actions {
+  align-items: center;
+  gap: 8dp;
+}
+
+.sidebar-empty {
+  padding: 24dp 16dp;
+  text-align: center;
+}
+
+.sidebar-empty .btn {
+  margin-top: 16dp;
 }
 
 .sidebar-session {
@@ -13105,7 +13147,13 @@ input.checkbox {
    goes on the section inside it: with the large title on top, the end of a longer page (Security) would otherwise
    stay under the tab bar where it cannot be scrolled to. */
 .shell-layer-compact #settings-section-mount-sheet {
-  padding-bottom: 81dp;
+  padding-bottom: 169dp;
+}
+
+/* Plus the floating AI button's footprint (76dp, the largest size, and 12dp of air): every settings page can scroll its
+   last rows clear of the button, which rests over the page's right edge and covers a switch or the end of a caption. */
+.shell-layer-compact #settings-section-mount-pane {
+  padding-bottom: 88dp;
 }
 
 /* Pushed pages (Kenneth 2026-11-04/05, PLAN-ui-refresh-impl 原话 71, 78, 80; NavBarCollapseModel): a settings page,
@@ -13234,6 +13282,11 @@ input.checkbox {
   margin: 20dp 16dp 0 16dp;
   border-radius: 10dp;
   overflow: hidden;
+}
+
+.storage-danger-zone,
+.shell-layer-compact .settings-mock .group-card.storage-danger-zone {
+  margin-top: 40dp;
 }
 
 .shell-layer-compact .group-card--top {

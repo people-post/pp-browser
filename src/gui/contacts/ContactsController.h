@@ -214,6 +214,11 @@ public:
   void SyncLayoutMode();
   /** Reload list from store (e.g. after AI add_contact while tab is open). */
   void Refresh();
+  /**
+   * The address book changed (ConversationsHub::SetOnContactsChanged, posted to the UI thread): every list of people
+   * is read again, so the page on screen and the ones under it show the change without a tap or a page change.
+   */
+  void OnContactsChanged();
   /** Me → About → "Show advanced settings": ids, addresses and fingerprints in the contact detail. */
   void SetShowAdvanced(bool advanced);
   void Tick();
@@ -263,6 +268,8 @@ public:
   bool DetailSheetOpen() const { return detail_sheet_layer_id_ >= 0; }
   /** The Add contact page is open (a transient page on phones, a page sheet elsewhere). */
   bool AddContactPageOpen() const { return add_open_; }
+  /** Adds the person a directory hit names as a contact and shows their page (what a picked search result does). */
+  void AddContactFromHit(const mesh::DirectoryHit& hit);
   /** The page's search field changed to `query` (what the field's change event does). Exposed for tests. */
   void TypeInAddContact(const std::string& query);
   /** The Add contact page's search is waiting or in flight / came back empty. Exposed for tests. */
@@ -420,6 +427,12 @@ private:
   static void RefreshContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
   void SyncFromStore();
+  /**
+   * Every list that shows contacts, read again from the store: the Contacts tab's, New chat's (when open) and the blocked
+   * list's (when open). Each path that adds, removes or renames a contact ends here, so the page the user sees behind a
+   * card or an Add contact page is already right (Chats is the active tab on a phone: no tick or tab change refreshes it).
+   */
+  void SyncLists();
   /** Rebuilds the New chat page's frequent and lettered rows from the contacts and chats (and its search). */
   void SyncNewChat();
   void DirtyNewChat();
@@ -453,14 +466,20 @@ private:
   void OnContactsIndexEnd();
   void AddContactByQuery(const std::string& query);
   void OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits);
-  void AddContactFromHit(const mesh::DirectoryHit& hit);
   std::optional<Contact> FindContactByAccount(const std::string& account_id) const;
   void ShowAlreadyContact(const Contact& contact);
   void OnCopyId();
   void OnShareContact(ui::Vector2i position);
   void ShareContactTo(const std::string& thread_id, const std::string& contact_id, const std::string& name);
-  /** "Add contact" with a pasted invite: the contact added, shown (UI thread). */
-  void OnAddedFromInvite(const Roe<std::pair<std::string, bool>>& added);
+  /**
+   * The invite's person is asked about, then added. `show_contacts_tab`: the Contacts tab is selected first (an invite
+   * the OS opened, a scan on the desktop); a phone's scan stays on the page it came from (New chat under it).
+   */
+  void AskToAddInvite(const std::string& link, bool show_contacts_tab);
+  /** "Add contact" with a pasted or scanned invite: the contact is stored, shown and confirmed at once (UI thread). */
+  void OnAddedFromInvite(const Roe<std::string>& added);
+  /** Its account's card was asked for (seconds later): an open page says whether the person can be messaged now. */
+  void OnInviteCardAsked();
   void OnSetTrust(const std::string& trust);
   /** Block the selected contact, after the usual confirm. */
   void OnBlockSelected();

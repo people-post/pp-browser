@@ -174,6 +174,11 @@ CallHintPrompt DecideCallHintPrompt(const CallHintPromptInput& in, const std::ma
     }
     return prompt;
   }
+  // A call nobody answers: after a while the page says so, whatever else it shows (nothing else is true yet).
+  if (in.ring_unanswered_long && !in.quiet) {
+    prompt.center_key = "call.hint.no_answer";
+    return prompt;
+  }
   // A 1:1 call: the steps say how the connecting goes (what "Connecting voice…" repeated); a lost or silent mic means
   // something only once connected. On hold the silence is by design.
   if (in.steps_shown || in.on_hold || in.quiet) {
@@ -384,6 +389,7 @@ const CallMediaScreen& CallMediaFrame::Finish(const CallScreen& screen, const Ca
   hint.playout_stuck = facts.playout_stuck;
   hint.on_hold = held;
   hint.now_ms = now;
+  hint.ring_unanswered_long = view_.story.ring_unanswered_long;
   const CallHintPrompt prompt = DecideCallHintPrompt(hint, last_pill_ms_);
   view_.center_hint_key = prompt.center_key;
   view_.pill_key = prompt.pill_key;

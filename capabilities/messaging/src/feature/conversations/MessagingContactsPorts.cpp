@@ -7,6 +7,8 @@
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
+#include <memory>
+
 namespace pbr {
 
 MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
@@ -53,22 +55,32 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
     }
     return Roe<void>();
   };
-  ports.add_from_locator = [&hub](const std::string& text,
-                                  std::function<void(Roe<std::pair<std::string, bool>>)> done) {
+  ports.add_from_locator = [&hub](const std::string& text, std::function<void(Roe<std::string>)> added,
+                                  std::function<void(bool)> card) {
     auto locator = FindContactLocator(text);
     if (!locator) {
-      done(locator.error());
+      added(locator.error());
       return;
     }
-    hub.ContactCards().AddFromLocator(*locator, [&hub, done](Roe<ContactCardExchange::LocatorAdded> added) {
-      if (!added) {
-        done(added.error());
-        return;
-      }
-      // The invite carries no relay id: ask the directory for it now (on a worker, never on this thread).
-      hub.RefreshContactProfileIfStale(added.value().contact.id, /*force=*/true);
-      done(std::make_pair(added.value().contact.id, added.value().keys_known));
-    });
+    auto stored = std::make_shared<bool>(false);
+    hub.ContactCards().AddFromLocator(
+        *locator,
+        [&hub, added, card, stored](Roe<ContactCardExchange::LocatorAdded> result) {
+          if (!*stored) {
+            // Only a failure comes before the contact is stored.
+            added(result ? Roe<std::string>(result.value().contact.id) : Roe<std::string>(result.error()));
+            return;
+          }
+          if (result) {
+            // The invite carries no relay id: ask the directory for it now (on a worker, never on this thread).
+            hub.RefreshContactProfileIfStale(result.value().contact.id, /*force=*/true);
+          }
+          card(result && result.value().keys_known);
+        },
+        [added, stored](const Contact& contact) {
+          *stored = true;
+          added(contact.id); // the page shows the person now; the card may take seconds
+        });
   };
   ports.share_contact = [&hub](const std::string& thread_id, const std::string& contact_id) -> Roe<void> {
     if (auto sent = hub.ShareContact(thread_id, contact_id); !sent) {

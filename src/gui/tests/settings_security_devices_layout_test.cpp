@@ -169,7 +169,7 @@ TEST(DevicesLayoutTest, TheNewStringsExistInBothLanguages) {
                             "settings.security.devices.main_is",
                             "settings.security.devices.hero",
                             "settings.security.devices.hero_sub",
-                            "settings.security.devices.tap_hint",
+                            "settings.security.devices.handover_hint",
                             "settings.security.devices.view_head",
                             "settings.security.devices.linked_note",
                             "settings.security.devices.linked_note_sub",
@@ -187,10 +187,10 @@ TEST(DevicesLayoutTest, TheNewStringsExistInBothLanguages) {
   }
   const std::string zh = ReadAsset("locales/zh-Hans.json");
   for (const char* line :
-       {"\"在其他设备上使用同一个账号\"", "\"本机（主设备）\"", "\"主设备（管理）\"", "\"其他设备\"", "\"未命名\"",
-        "\"主设备是「{name}」，请到那台设备上管理。\"", "\"设备名\"", "\"只有你自己的设备看得到\"", "\"已改名\"",
-        "\"点一台设备可以移除，或设为主设备。\"", "\"这个账号的设备\"", "\"这台手机已关联到你的账号。\"",
-        "\"要管理设备，请到主设备上操作。\"", "\"还没有关联其他设备。\"",
+       {"\"在其他设备上使用同一个账号\"", "\"本机（管理员）\"", "\"管理员\"", "\"其他设备\"", "\"未命名\"",
+        "\"管理员是「{name}」，请到那台设备上管理。\"", "\"设备名\"", "\"只有你自己的设备看得到\"", "\"已改名\"",
+        "\"换手机前，先把新手机设为管理员，再处理旧手机。\"", "\"这个账号的设备\"", "\"这台手机已关联到你的账号。\"",
+        "\"要管理设备，请到管理员那台设备上操作。\"", "\"还没有关联其他设备。\"",
         "\"新设备上看不到以前的聊天记录。已有别的账号的设备要先重置。\""}) {
     EXPECT_NE(zh.find(line), std::string::npos) << line;
   }

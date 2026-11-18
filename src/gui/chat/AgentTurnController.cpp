@@ -1,4 +1,5 @@
 #include "gui/chat/AgentTurnController.h"
+#include "gui/chat/StartupNoticePolicy.h"
 #include "foundation/data/SessionStore.h"
 #include "lib/ai/WorkingSetPolicy.h"
 #include "lib/ai/LocalizedLabels.h"
@@ -184,6 +185,20 @@ void AgentTurnController::Tick() {
   }
   RecoverMissedTurnEnd();
   RetryQueueDrain();
+  RetryQuietMint();
+}
+
+void AgentTurnController::RetryQuietMint() {
+  if (!quiet_mint_retry_pending_) {
+    return;
+  }
+  const int64_t since_launch_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - launched_at_).count();
+  if (since_launch_ms < kStartupQuietWindowMs) {
+    return;
+  }
+  quiet_mint_retry_pending_ = false;
+  RefreshLlmSetupBanner(); // mints again if still keyless; a failure now passes the quiet policy and shows
 }
 
 void AgentTurnController::RetryQueueDrain() {
@@ -1501,9 +1516,27 @@ void AgentTurnController::EnsureBriefGuestLlmKey() {
 void AgentTurnController::OnBriefKeyMintEnded(const BriefKeyMintEnd& end) {
   switch (end.outcome) {
     case BriefKeyMintOutcome::Stored:
+      had_backend_success_ = true;
       brief_guest_mint_user_hint_.clear();
       return; // after_identity_changed reloads the agent and refreshes the banner
     case BriefKeyMintOutcome::MintFailed:
+      if (end.error) {
+        const int64_t since_launch_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - launched_at_)
+                .count();
+        if (!ShowBackgroundFailure(*end.error, /*user_initiated=*/false, since_launch_ms, had_backend_success_)) {
+          // Not shown: the network is not usable yet. The mint runs again at the next RefreshLlmSetupBanner /
+          // ReloadAgentConfig (a send tap, an identity change, unlock), which is the retry that exists.
+          log().info << "Brief guest key mint failed, network not usable yet; no banner: " << AppError::Log(*end.error);
+          brief_guest_mint_attempted_ = false;
+          brief_guest_mint_user_hint_.clear(); // an earlier failure's wording must not outlive this one
+          if (!quiet_mint_retry_used_) {
+            quiet_mint_retry_used_ = true;
+            quiet_mint_retry_pending_ = true; // Tick asks once more when the quiet window ends
+          }
+          return;
+        }
+      }
       brief_guest_mint_user_hint_ = end.error ? AppError::Display(*end.error) : std::string();
       if (brief_guest_mint_user_hint_.empty()) {
         brief_guest_mint_user_hint_ = Tr("chat.hint.brief_unavailable_temp");

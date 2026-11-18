@@ -612,7 +612,9 @@ void ShellHost::ClearTabContext(const bool keep_compact_chat) {
     state_.compact_chat_open = false;
   }
   state_.auxiliary_open = false;
-  state_.transient_stack.clear();
+  while (!state_.transient_stack.empty()) {
+    PopTransient(); // each pushed page is told it is gone (New chat / Add contact flags), top first
+  }
   state_.transient_active = false;
   state_.secret_page_open = false;
   pending_dismiss_.reset();

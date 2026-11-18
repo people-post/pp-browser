@@ -30,6 +30,36 @@ CallStoryInput At(int64_t now_ms, Status status, bool live = false, const char* 
   return in;
 }
 
+TEST(CallConnectStoryTest, AnOutgoingCallNobodyAnswersSaysSoAfterThirtySeconds) {
+  CallConnectStory story;
+  CallStoryView v = story.Step(At(1'000, Status::Calling));
+  EXPECT_FALSE(v.ring_unanswered_long);
+  v = story.Step(At(1'000 + CallConnectStory::kNoAnswerAfterMs - 1, Status::Calling));
+  EXPECT_FALSE(v.ring_unanswered_long) << "not before 30 s of ringing";
+  v = story.Step(At(1'000 + CallConnectStory::kNoAnswerAfterMs, Status::Calling));
+  EXPECT_TRUE(v.ring_unanswered_long);
+  EXPECT_EQ(v.stage, CallConnectStory::kStageCalling) << "only the words change; nothing about the call does";
+  // The other side answers late: the line goes.
+  v = story.Step(At(45'000, Status::Connecting, false, ""));
+  EXPECT_FALSE(v.ring_unanswered_long);
+}
+
+TEST(CallConnectStoryTest, ACallThisDeviceAnsweredOrAGroupCallNeverSaysNoAnswer) {
+  CallConnectStory answered;
+  CallStoryInput in = At(1'000, Status::Calling);
+  in.placed_here = false;
+  answered.Step(in);
+  in.now_ms = 100'000;
+  EXPECT_FALSE(answered.Step(in).ring_unanswered_long);
+
+  CallConnectStory group;
+  CallStoryInput g = At(1'000, Status::Calling);
+  g.group = true;
+  group.Step(g);
+  g.now_ms = 100'000;
+  EXPECT_FALSE(group.Step(g).ring_unanswered_long);
+}
+
 TEST(CallConnectStoryTest, AnOutgoingCallShowsCallingThenAnsweredThenTheResultWithItsSeconds) {
   CallConnectStory story;
   CallStoryView v = story.Step(At(1'000, Status::Calling));

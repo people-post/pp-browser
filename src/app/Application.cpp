@@ -1943,9 +1943,10 @@ void Application::WireUnlockPinAndFlow() {
         system->SetClipboardText(text.c_str());
       }
     };
+    // The Add contact page (ID / QR) while name search is off (people-post/pp-relay-apis#42); was OnFindSomeone().
     onboarding_ports.find_friends = [this]() {
       if (contacts_) {
-        contacts_->OnFindSomeone();
+        contacts_->OnAddContact();
       }
     };
     onboarding_ports.is_completed = [this]() {
@@ -2198,18 +2199,20 @@ void Application::WireAgentAndConfig() {
     shell_->SetShowAdvancedSettings(prefs.show_advanced_settings);
   });
   // A contact starred or unstarred (on their page), the recovery phrase opened, or the 动态 section toggled: Home follows.
-  store_.AddProfilePrefsListener(
-      [this, starred = store_.Snapshot().profile_prefs.starred_contacts,
-       phrase_seen = store_.Snapshot().profile_prefs.recovery_phrase_seen,
-       show_dynamic = store_.Snapshot().profile_prefs.home_show_dynamic](const ProfilePreferences& prefs) mutable {
-        if (prefs.starred_contacts != starred || prefs.recovery_phrase_seen != phrase_seen ||
-            prefs.home_show_dynamic != show_dynamic) {
-          starred = prefs.starred_contacts;
-          phrase_seen = prefs.recovery_phrase_seen;
-          show_dynamic = prefs.home_show_dynamic;
-          chat_->OnHomePrefsChanged();
-        }
-      });
+  store_.AddProfilePrefsListener([this, starred = store_.Snapshot().profile_prefs.starred_contacts,
+                                  phrase_seen = store_.Snapshot().profile_prefs.recovery_phrase_seen,
+                                  show_dynamic = store_.Snapshot().profile_prefs.home_show_dynamic,
+                                  reminders = store_.Snapshot().profile_prefs.recovery_reminder_dismissals](
+                                     const ProfilePreferences& prefs) mutable {
+    if (prefs.starred_contacts != starred || prefs.recovery_phrase_seen != phrase_seen ||
+        prefs.home_show_dynamic != show_dynamic || prefs.recovery_reminder_dismissals != reminders) {
+      starred = prefs.starred_contacts;
+      phrase_seen = prefs.recovery_phrase_seen;
+      reminders = prefs.recovery_reminder_dismissals;
+      show_dynamic = prefs.home_show_dynamic;
+      chat_->OnHomePrefsChanged();
+    }
+  });
 }
 
 bool Application::MountPresenters(ui::Context* context) {
@@ -2271,6 +2274,7 @@ bool Application::MountPresenters(ui::Context* context) {
   };
   contacts_notify.set_group_admin = [this](GroupAdminCard card) { contacts_->SetGroupAdminCard(std::move(card)); };
   contacts_notify.open_new_chat = [this]() { contacts_->OpenNewChatPage(); };
+  contacts_notify.open_add_contact = [this]() { contacts_->OnAddContact(); };
   contacts_notify.message_contact = [this](const std::string& id) { contacts_->MessageContact(id); };
   // The member page opened from a 1:1 chat: its Block and Add are the chat menu's own (ChatPresenter).
   contacts_->BindStrangerBlocker([this](const std::string& account_id) { return chat_->BlockStranger(account_id); });
@@ -2616,6 +2620,19 @@ void Application::WireHubCallbacks() {
       }
     });
   });
+  messaging.SetOnContactsChanged([this]() {
+    // Whoever changed the address book, on whatever thread: every list of people on screen (New chat, Contacts, the
+    // blocked list) shows it at once. A burst (an import, a card and its profile) is one rebuild.
+    if (contacts_sync_posted_.exchange(true)) {
+      return;
+    }
+    AppRuntime::PostUI([this]() {
+      contacts_sync_posted_ = false;
+      if (contacts_) {
+        contacts_->OnContactsChanged();
+      }
+    });
+  });
 }
 
 void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& bootstrap) {
@@ -2623,7 +2640,6 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
   ChatSessionPorts chat_ports;
   chat_ports.finalize_thread_display = [this]() { chat_->FinalizeThreadDisplay(); };
   chat_ports.select_thread = [this](const std::string& id) { chat_->OnSelectThread(id); };
-  chat_ports.on_find_someone = [this]() { chat_->OnFindSomeone(); };
   chat_ports.open_new_group = [this]() { people_picker_->OpenFree(); };
   chat_ports.new_ai_chat = [this]() { chat_->StartNewAiChat(); };
   contacts_->BindChatPorts(chat_ports);
@@ -3080,6 +3096,7 @@ void Application::Shutdown() {
     messaging_->SetOnReachabilityUpdated(nullptr);
     messaging_->SetOnLinkStateChanged(nullptr);
     messaging_->SetOnPeerIconsChanged(nullptr);
+    messaging_->SetOnContactsChanged(nullptr);
     messaging_->SetOnCallWake(nullptr);
   }
 

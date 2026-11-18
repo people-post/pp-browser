@@ -524,6 +524,13 @@ void ContactsController::ShowConfirm(const std::string& title, const std::string
 
 void ContactsController::NavigateToChatSession() {
   CloseSheetsBeforeLeaving();
+  // On a phone the contact's card can also be a full-screen page, over Add contact / New chat: close them all, or the
+  // chat opens underneath and "Message" looks dead. Top of the stack first.
+  if (IsContactDetailTransientActive(ChromeSnapshot()) && shell_navigation_.pop_transient) {
+    shell_navigation_.pop_transient();
+  }
+  CloseAddContactPage();
+  CloseNewChatPage();
   if (shell_navigation_.select_nav_tab) {
     shell_navigation_.select_nav_tab(NavTab::Sessions);
   }
@@ -943,9 +950,12 @@ void ContactsController::OnContactsIndexEnd() {
   }
 }
 
-void ContactsController::Refresh() {
-  FlushPending();
+void ContactsController::SyncLists() {
   SyncFromStore();
+  auto& host = DataModelHost::Instance();
+  host.Dirty("contacts", "contacts"); // a rebuilt list is redrawn only once its variables are marked
+  host.Dirty("contacts", "contact_sections");
+  host.Dirty("contacts", "contact_index");
   if (new_chat_open_) {
     SyncNewChat();
     DirtyNewChat();
@@ -954,6 +964,15 @@ void ContactsController::Refresh() {
     SyncBlocked();
     DirtyBlocked();
   }
+}
+
+void ContactsController::OnContactsChanged() {
+  SyncLists(); // only the lists: an open page's fields (a remark being typed) are left as they are
+}
+
+void ContactsController::Refresh() {
+  FlushPending();
+  SyncLists();
   if (!selected_.id.empty()) {
     LoadSelectedDetail(selected_.id.c_str());
   }
@@ -1691,6 +1710,11 @@ std::vector<ContextMenuAction> ContactsController::NewChatMoreActions(const std:
 }
 
 void ContactsController::OnNewChatAction(const std::string& action) {
+  if (action == "add") {
+    // Add contact opens over New chat: back, or a person added there (scan, search), comes back to this list.
+    OnAddContact();
+    return;
+  }
   CloseNewChatPage();
   if (action == "ai") {
     if (chat_ports_.new_ai_chat) {
@@ -1698,8 +1722,6 @@ void ContactsController::OnNewChatAction(const std::string& action) {
     }
   } else if (action == "group") {
     OnNewGroup();
-  } else if (action == "add") {
-    OnAddContact();
   }
 }
 
@@ -1814,7 +1836,7 @@ bool ContactsController::FlushSelectedContact() {
   }
   UpdateMessagingEligibility(updated);
   contact_dirty_ = false;
-  SyncFromStore();
+  SyncLists(); // a renamed contact reads the new name in New chat too
   DataModelHost::Instance().Dirty("contacts", "contacts");
   DataModelHost::Instance().Dirty("contacts", "selected");
   if (contacts_ports_.notify_thread_changed) {
@@ -1889,7 +1911,8 @@ void ContactsController::OnScanQr() {
   }
   scan_ports_.scan_qr([this](std::string text) {
     if (offer_group_join_ && offer_group_join_(text)) {
-      return; // an invite link to a group (G021): the join prompt asks its maker
+      CloseNewChatPage(); // the group's chat opens where it can be seen, not under New chat
+      return;             // an invite link to a group (G021): the join prompt asks its maker
     }
     const bool valid = static_cast<bool>(FindContactLocator(text));
     MetricsLine("scan.contact").Add("valid_locator", valid).Emit();
@@ -1897,7 +1920,9 @@ void ContactsController::OnScanQr() {
       ShowToast(Tr("scan.not_contact"), ToastDuration::Long);
       return;
     }
-    OfferInvite(text);
+    // A phone's scan (from Add contact, over New chat) stays there: the hidden Contacts tab would take the New chat
+    // page away and show another list without the person.
+    AskToAddInvite(text, ChromeSnapshot().layout_mode != LayoutMode::Compact);
   });
 }
 
@@ -1937,9 +1962,10 @@ void ContactsController::AddContactByQuery(const std::string& query) {
         return;
       }
     }
-    contacts_ports_.add_from_locator(query, [](Roe<std::pair<std::string, bool>> added) {
-      AppRuntime::PostUI([added = std::move(added)]() { ContactsController::Instance().OnAddedFromInvite(added); });
-    });
+    // Shown as soon as the contact is stored; its card (asked of its devices, then relays: seconds) comes later.
+    contacts_ports_.add_from_locator(
+        query, [](Roe<std::string> added) { ContactsController::Instance().OnAddedFromInvite(added); },
+        [](bool /*keys_known*/) { AppRuntime::PostUI([]() { ContactsController::Instance().OnInviteCardAsked(); }); });
     return;
   }
   if (!contacts_ports_.search_people) {
@@ -1954,26 +1980,30 @@ void ContactsController::AddContactByQuery(const std::string& query) {
 }
 
 void ContactsController::OfferInvite(const std::string& link) {
+  AskToAddInvite(link, /*show_contacts_tab=*/true);
+}
+
+void ContactsController::AskToAddInvite(const std::string& link, const bool show_contacts_tab) {
   auto locator = FindContactLocator(link);
   if (!locator) {
     return;
   }
   if (auto known = FindContactByAccount(locator->account_id)) {
-    if (shell_navigation_.select_nav_tab) {
+    if (show_contacts_tab && shell_navigation_.select_nav_tab) {
       shell_navigation_.select_nav_tab(NavTab::Contacts);
     }
     ShowAlreadyContact(*known);
     return;
   }
   const std::string name = locator->nickname.empty() ? locator->account_id : locator->nickname;
-  auto ask = [this, link, name, account_id = locator->account_id]() {
+  auto ask = [this, link, name, account_id = locator->account_id, show_contacts_tab]() {
     ShowConfirm(Tr("contacts.invite.open_title"),
                 Tr("contacts.invite.open_body", {{"name", name}, {"account", account_id}}),
-                [this, link](const bool ok) {
+                [this, link, show_contacts_tab](const bool ok) {
                   if (!ok) {
                     return;
                   }
-                  if (shell_navigation_.select_nav_tab) {
+                  if (show_contacts_tab && shell_navigation_.select_nav_tab) {
                     shell_navigation_.select_nav_tab(NavTab::Contacts);
                   }
                   AddContactByQuery(link);
@@ -1990,15 +2020,32 @@ void ContactsController::OfferInvite(const std::string& link) {
   });
 }
 
-void ContactsController::OnAddedFromInvite(const Roe<std::pair<std::string, bool>>& added) {
+void ContactsController::OnAddedFromInvite(const Roe<std::string>& added) {
   if (!added) {
     UserFeedback::Fail(added.error().message.empty() ? Tr("contacts.err.add") : added.error().message);
     return;
   }
-  SyncFromStore();
-  OnSelectContact(added.value().first);
-  // Without keys yet the contact stands; their first message brings them (or they come online).
-  ShowToast(Tr(added.value().second ? "contacts.invite.added" : "contacts.invite.added_pending"));
+  SyncLists();
+  OnSelectContact(added.value());
+  // The same pill as an add from search. Whether they can be messaged yet is the page's to say (its card may not have
+  // come yet; OnInviteCardAsked updates the page when it does).
+  ShowToast(Tr("contacts.added", {{"name", std::string(selected_.title.c_str())}}));
+  NotifySurfaceChanged();
+}
+
+void ContactsController::OnInviteCardAsked() {
+  // Not Refresh(): that flushes pending edits and reloads the open page's fields, which can wipe a remark being typed
+  // seconds after the add. Lists, plus the one thing the card changes on the open page: can it be messaged now.
+  OnContactsChanged();
+  if (selected_.id.empty() || selected_.member_preview || !contacts_ports_.get_contact) {
+    return;
+  }
+  auto contact = contacts_ports_.get_contact(selected_.id.c_str());
+  if (!contact || !*contact) {
+    return;
+  }
+  UpdateMessagingEligibility(**contact);
+  DataModelHost::Instance().Dirty("contacts", "selected");
   NotifySurfaceChanged();
 }
 
@@ -2095,7 +2142,7 @@ void ContactsController::AddContactFromHit(const mesh::DirectoryHit& hit) {
   if (contacts_ports_.ensure_directory_hit_icon_cached) {
     contacts_ports_.ensure_directory_hit_icon_cached(hit);
   }
-  SyncFromStore();
+  SyncLists();
   OnSelectContact(created->id);
   DirtyAll();
   NotifySurfaceChanged();
@@ -2170,7 +2217,7 @@ void ContactsController::OnCallContact(const std::string& contact_id, const bool
 }
 
 void ContactsController::ShowPersonPage(const std::string& contact_id) {
-  SyncFromStore();
+  SyncLists();
   if (DetailSheetOpen()) {
     OnSelectContactSheet(contact_id);
   } else {
@@ -2261,12 +2308,8 @@ void ContactsController::OnSecureMessage() {
 }
 
 void ContactsController::OnFindSomeone() {
-  if (shell_navigation_.select_nav_tab) {
-    shell_navigation_.select_nav_tab(NavTab::Sessions);
-  }
-  if (chat_ports_.on_find_someone) {
-    chat_ports_.on_find_someone();
-  }
+  // Name search is off (pp-relay-apis#42), so "find someone" is the Add contact page, as everywhere else.
+  OnAddContact();
 }
 
 void ContactsController::OnCopyId() {
@@ -2426,11 +2469,7 @@ void ContactsController::OnToggleStar() {
     return;
   }
   selected_.starred = StarRank(prefs.starred_contacts, contact_id) >= 0;
-  SyncFromStore(); // the list's star
-  if (new_chat_open_) {
-    SyncNewChat();
-    DirtyNewChat();
-  }
+  SyncLists(); // the list's star
   DirtyAll();
 }
 
@@ -2441,15 +2480,7 @@ void ContactsController::OnSetTrust(const std::string& trust) {
     return;
   }
   LoadSelectedDetail(selected_.id.c_str());
-  SyncFromStore();
-  if (new_chat_open_) {
-    SyncNewChat(); // New chat's list marks (or unmarks) the person at once
-    DirtyNewChat();
-  }
-  if (blocked_open_) {
-    SyncBlocked(); // unblocked on a contact page opened off the blocked list: gone from it on the way back
-    DirtyBlocked();
-  }
+  SyncLists(); // New chat's list marks (or unmarks) the person at once; an unblocked one is gone from the blocked list
   DirtyAll();
   if (trust == "blocked") {
     ShowToast(Tr("contacts.toast.blocked", {{"name", name}}));
@@ -2629,7 +2660,7 @@ void ContactsController::OnUnblockListed(const std::string& contact_id) {
   SyncBlocked();
   DirtyBlocked();
   ShowToast(Tr("contacts.blocked.unblocked", {{"name", name}}));
-  SyncFromStore();
+  SyncLists();
   DirtyAll();
   if (contacts_ports_.notify_thread_changed) {
     contacts_ports_.notify_thread_changed();
@@ -2683,14 +2714,14 @@ void ContactsController::OnContactRefreshed(const std::string& contact_id, const
   }
   if (selected_.id.c_str() != contact_id) {
     if (result.Changed()) {
-      SyncFromStore();
+      SyncLists();
       DirtyAll();
     }
     return; // another page is open now: its own state stays
   }
   LoadSelectedDetail(contact_id);
   if (result.Changed()) {
-    SyncFromStore();
+    SyncLists();
   }
   DirtyAll();
   NotifySurfaceChanged();
@@ -2728,11 +2759,7 @@ void ContactsController::OnRemoveContact() {
             OnDetailDismissed();
           }
         }
-        SyncFromStore();
-        if (new_chat_open_) {
-          SyncNewChat(); // the person is gone from New chat's list at once
-          DirtyNewChat();
-        }
+        SyncLists(); // the person is gone from New chat's list at once
         DirtyAll();
         ShowToast(Tr("contacts.toast.removed"));
         if (contacts_ports_.notify_thread_changed) {
@@ -2986,6 +3013,7 @@ void ContactsController::OnAddAction(const std::string& action) {
     OnAddShare({});
   } else if (action == "group") {
     CloseAddContactPage();
+    CloseNewChatPage(); // as New chat's own New group: the group's chat must not open under it
     OnNewGroup();
   }
 }

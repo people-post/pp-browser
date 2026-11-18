@@ -1386,6 +1386,14 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
     });
     PublishAccountLockerSoon();
     SweepRelayGrantsSoon(); // a contact added gets a grant; one blocked, none renewed
+    std::function<void()> on_contacts_changed;
+    {
+      std::lock_guard lock(contacts_changed_mu_);
+      on_contacts_changed = on_contacts_changed_;
+    }
+    if (on_contacts_changed) {
+      on_contacts_changed();
+    }
   });
   PublishAddressDisclosure();
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
@@ -4394,6 +4402,11 @@ Roe<void> ConversationsHub::StartNewDeviceList() {
 void ConversationsHub::SetOnOwnDevicesChanged(std::function<void()> callback) {
   std::lock_guard lock(own_devices_changed_mu_);
   on_own_devices_changed_ = std::move(callback);
+}
+
+void ConversationsHub::SetOnContactsChanged(std::function<void()> callback) {
+  std::lock_guard lock(contacts_changed_mu_);
+  on_contacts_changed_ = std::move(callback);
 }
 
 void ConversationsHub::NotifyOwnDevicesChanged() {
