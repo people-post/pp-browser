@@ -1943,9 +1943,10 @@ void Application::WireUnlockPinAndFlow() {
         system->SetClipboardText(text.c_str());
       }
     };
+    // The Add contact page (ID / QR) while name search is off (people-post/pp-relay-apis#42); was OnFindSomeone().
     onboarding_ports.find_friends = [this]() {
       if (contacts_) {
-        contacts_->OnFindSomeone();
+        contacts_->OnAddContact();
       }
     };
     onboarding_ports.is_completed = [this]() {
