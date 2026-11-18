@@ -60,6 +60,10 @@ struct AskAiView {
   bool support_slow = false;
   /** PP 客服 mode: why nothing can be sent yet (getting ready, not ready, unavailable); "" when it can. */
   ui::String support_note;
+  /** The mode's own words (the controller picks them): the header button's title, the privacy line, the input's label. */
+  ui::String open_chat_title;
+  ui::String privacy_text;
+  ui::String placeholder_text;
   /** The first-time privacy card, until "Got it". */
   bool show_intro = false;
   std::vector<AskAiRow> rows;
@@ -254,6 +258,8 @@ private:
   /** The thread a question goes to: the shared one, or (a fresh dot panel) the new one, made on the first question. */
   std::string ThreadToSend();
   void SwitchMode(bool support);
+  /** The header button's title, privacy line and input label of the mode shown. */
+  void SyncModeWords();
   /** The unsent text kept for the mode shown. */
   std::string& ModeDraft();
   void StartSupport(const std::string& question);

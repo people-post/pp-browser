@@ -7,17 +7,12 @@
   <div class="sheet-header sheet-header--two-buttons">
     <p class="sheet-title" data-if="!support">{{i18n:ask_ai.title}}</p>
     <p class="sheet-title" data-if="support">{{i18n:support.entry.title}}</p>
-    <button class="ask-ai-open-chat" type="button" data-if="!support" title="{{i18n:ask_ai.open_in_chat}}"
-            data-event-click="ask_ai_open_in_chat()">
-      <span class="sheet-icon-disc"><svg src="../icons/v2/arrow-up-right.svg" width="14" height="14"></svg></span>
-    </button>
-    <button class="ask-ai-open-chat" type="button" data-if="support" title="{{i18n:ask_ai.support.open_in_chat}}"
+    <button class="ask-ai-open-chat" type="button" data-attr-title="open_chat_title"
             data-event-click="ask_ai_open_in_chat()">
       <span class="sheet-icon-disc"><svg src="../icons/v2/arrow-up-right.svg" width="14" height="14"></svg></span>
     </button>
   </div>
-  <p class="ask-ai-privacy" data-if="!support">{{i18n:ask_ai.privacy}}</p>
-  <p class="ask-ai-privacy" data-if="support">{{i18n:ask_ai.support.privacy}}</p>
+  <p class="ask-ai-privacy">{{privacy_text}}</p>
   <div class="ask-ai-scroll" id="ask-ai-scroll">
     <div class="ask-ai-intro" data-if="show_intro">
       <p class="ask-ai-intro-body"><span class="ask-ai-intro-lead">{{i18n:ask_ai.intro.lead}}</span><span>{{i18n:ask_ai.intro.body}}</span></p>
@@ -68,8 +63,7 @@
         <textarea id="ask-ai-input" class="prompt-composer-input" rows="1" max-rows="4" maxlength="4000"
                   data-value="draft"></textarea>
         <!-- The engine draws no placeholder on phones: a label over the empty input. -->
-        <p class="prompt-composer-label" data-if="draft == '' && !support">{{i18n:chat.ai_thread.placeholder}}</p>
-        <p class="prompt-composer-label" data-if="draft == '' && support">{{i18n:chat.composer.placeholder}}</p>
+        <p class="prompt-composer-label" data-if="draft == ''">{{placeholder_text}}</p>
         <button class="prompt-attach-btn" type="button" data-if="show_media" data-event-click="ask_ai_attach()"
                 title="{{i18n:chat.attach_file}}">
           <svg class="prompt-icon-plus" src="../icons/v2/plus-bold.svg" width="24" height="24"></svg>

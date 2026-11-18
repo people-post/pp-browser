@@ -209,6 +209,9 @@ bool AskAiPanel::Register(ui::Context* context) {
     ctor.Bind("support_waiting", &view_.support_waiting);
     ctor.Bind("support_slow", &view_.support_slow);
     ctor.Bind("support_note", &view_.support_note);
+    ctor.Bind("open_chat_title", &view_.open_chat_title);
+    ctor.Bind("privacy_text", &view_.privacy_text);
+    ctor.Bind("placeholder_text", &view_.placeholder_text);
     ctor.Bind("show_intro", &view_.show_intro);
     ctor.Bind("rows", &view_.rows);
     ctor.Bind("thinking", &view_.thinking);
@@ -278,6 +281,13 @@ void AskAiPanel::SwitchMode(const bool support) {
   SyncPictureView();
 }
 
+void AskAiPanel::SyncModeWords() {
+  const bool support = view_.support;
+  view_.open_chat_title = Tr(support ? "ask_ai.support.open_in_chat" : "ask_ai.open_in_chat").c_str();
+  view_.privacy_text = Tr(support ? "ask_ai.support.privacy" : "ask_ai.privacy").c_str();
+  view_.placeholder_text = Tr(support ? "chat.composer.placeholder" : "chat.ai_thread.placeholder").c_str();
+}
+
 std::string AskAiPanel::ThreadToSend() {
   if (!fresh_) {
     return host_.AskAiSharedThread(/*create=*/true);
@@ -296,6 +306,7 @@ bool AskAiPanel::Show(const AskAiEntry entry, const bool support) {
     Close(); // AI and PP 客服 never switch in place: the open sheet goes and the other one opens anew
   }
   SwitchMode(support);
+  SyncModeWords();
   if (!support) {
     if (entry == AskAiEntry::Dot) {
       // Opened again while open keeps its new chat; a closed panel starts empty.

@@ -655,9 +655,22 @@ TEST(AskAiPanelSourceTest, OpenInAiChatIsAnIconInTheSheetHeader) {
   const size_t button = view.find("class=\"ask-ai-open-chat\"");
   ASSERT_NE(button, std::string::npos);
   const std::string tag = view.substr(button, view.find("</button>", button) - button);
-  EXPECT_NE(tag.find("title=\"{{i18n:ask_ai.open_in_chat}}\""), std::string::npos);
+  EXPECT_NE(tag.find("data-attr-title=\"open_chat_title\""), std::string::npos)
+      << "one button, the controller picks the words";
+  EXPECT_EQ(view.find("class=\"ask-ai-open-chat\"", button + 1), std::string::npos) << "only one such button";
   EXPECT_NE(tag.find("../icons/v2/arrow-up-right.svg"), std::string::npos);
   EXPECT_EQ(tag.find(">{{i18n:ask_ai.open_in_chat}}<"), std::string::npos) << "no text link any more";
+}
+
+TEST_F(AskAiPanelTest, TheControllerPicksTheModesWords) {
+  ASSERT_TRUE(panel_.Open(AskAiEntry::HomeChip));
+  EXPECT_EQ(std::string(panel_.View().open_chat_title.c_str()), Tr("ask_ai.open_in_chat"));
+  EXPECT_EQ(std::string(panel_.View().privacy_text.c_str()), Tr("ask_ai.privacy"));
+  EXPECT_EQ(std::string(panel_.View().placeholder_text.c_str()), Tr("chat.ai_thread.placeholder"));
+  ASSERT_TRUE(panel_.OpenSupport(""));
+  EXPECT_EQ(std::string(panel_.View().open_chat_title.c_str()), Tr("ask_ai.support.open_in_chat"));
+  EXPECT_EQ(std::string(panel_.View().privacy_text.c_str()), Tr("ask_ai.support.privacy"));
+  EXPECT_EQ(std::string(panel_.View().placeholder_text.c_str()), Tr("chat.composer.placeholder"));
 }
 
 // --- the input row (5b): camera, attachment, Send ----------------------------------------------------------------
