@@ -69,6 +69,27 @@ TEST(NormalizeExactPeopleIdTest, PrefixedIdsAreKeptAndTrimmed) {
   EXPECT_FALSE(NormalizeExactPeopleId("relay:u1")) << "no relay ids since MR001";
 }
 
+TEST(NormalizeExactPeopleIdTest, AFullWidthColonOrACapitalisedPrefixStillMeansAnAccountId) {
+  EXPECT_EQ(NormalizeExactPeopleId("account\xEF\xBC\x9A"
+                                   "abc")
+                .value(),
+            "account:abc");
+  EXPECT_EQ(NormalizeExactPeopleId("  Account\xEF\xBC\x9A"
+                                   "abc ")
+                .value(),
+            "account:abc");
+  EXPECT_EQ(NormalizeExactPeopleId("ACCOUNT:abc").value(), "account:abc");
+  EXPECT_TRUE(
+      HasExactIdPrefix("account\xEF\xBC\x9A"
+                       "abc"));
+  EXPECT_FALSE(HasExactIdPrefix("accounting")) << "a name that merely starts with the word";
+  EXPECT_FALSE(HasExactIdPrefix("account")) << "no colon, no id";
+  EXPECT_EQ(NormalizeExactPeopleId("Ann\xEF\xBC\x9A"
+                                   "x"),
+            std::nullopt)
+      << "other colons are left alone";
+}
+
 TEST(NormalizeExactPeopleIdTest, BareTokenGetsAccountPrefix) {
   const std::string token = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde";
   ASSERT_EQ(token.size(), 43u);
