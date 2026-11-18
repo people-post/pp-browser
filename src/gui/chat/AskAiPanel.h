@@ -109,9 +109,8 @@ public:
   virtual void AskAiCloseSheet(int layer_id) = 0;
   /** Shows the thread in the full chat page (the panel is closed first). */
   virtual void AskAiOpenInChat(const std::string& thread_id) = 0;
-  /** The same question to PP 客服 (settings' ask_support): the person-to-person support chat opens. `on_opened`
-   *  runs only when it did (the panel closes then); on failure the host shows the reason and the panel stays. */
-  virtual void AskAiSupport(const std::string& question, std::function<void()> on_opened) = 0;
+  /** Runs `fn` on the UI thread after the event being handled (the sheet's own button may close the sheet). */
+  virtual void AskAiLater(std::function<void()> fn) = 0;
   /** A button of a stored answer (a permission card, a link button): `action_index` of that message. */
   virtual void AskAiRunAction(const std::string& thread_id, const std::string& entry_id, int action_index) = 0;
   /** Link `link_index` of a stored answer of the thread. */
@@ -135,6 +134,10 @@ public:
   virtual std::vector<SupportMessage> AskAiSupportMessages(const std::string& thread_id, size_t limit) = 0;
   /** Fetches the inbox now (a reply is awaited; without a push it comes only by fetching). */
   virtual void AskAiSyncInbox() = 0;
+  /** The user is looking at the app (AppLifecycle::IsUserAttentive). */
+  virtual bool AskAiAttentive() const = 0;
+  /** The chat is read (its unread count and notifications go): a reply the sheet shows to someone looking. */
+  virtual void AskAiMarkRead(const std::string& thread_id) = 0;
 };
 
 /**
@@ -179,8 +182,10 @@ public:
   // --- the panel's buttons ---------------------------------------------------------------------------
   void Send();
   void DismissIntro();
+  /** "Ask PP Support" under an AI answer that never came: the sheet closes and opens again on PP 客服 with it. */
   void AskSupport();
-  /** The intro card's "?": closes the sheet and asks PP Support how to use one's own AI. The card stays unseen. */
+  /** The intro card's "?": the sheet closes and opens again on PP 客服, asking how to use one's own AI. The card stays
+   *  unseen. */
   void AskSupportOwnAi();
   void OpenInChat();
   /** Closes the sheet (the draft stays; a running answer goes on). */
@@ -200,8 +205,13 @@ public:
   void Tick();
   void OnTurnEnded(const std::string& thread_id);
   void OnOnceReply(const AgentEvent& event);
-  /** Messages were stored or changed (a reply came, ours went out): the PP 客服 chat shown is drawn again. */
+  /**
+   * Messages were stored or changed (a reply came, ours went out): the PP 客服 chat shown is drawn again, and read when
+   * someone is looking (SupportAsk), so no unread is left in the chats list. Called first in each messages refresh.
+   */
   void OnMessagesChanged();
+  /** No notification for a new message in `thread_id`: the sheet shows it to someone looking (SupportAsk). */
+  bool SuppressesNoticeFor(const std::string& thread_id) const;
 
   bool IsOpen() const { return layer_id_ >= 0; }
 
@@ -267,6 +277,8 @@ private:
   /** Sends into the PP 客服 chat; a "?"'s question (not `typed`) only when SupportAsk says it is not a repeat. */
   void AskSupportQuestion(const std::string& text, bool typed);
   void SyncSupportWait();
+  /** The PP 客服 chat shown is read when someone looks at it (SupportAsk::ShouldReadSupportThread). */
+  void ReadSupportIfLooking();
   /** Per frame in PP 客服 mode: the retry once messaging is up, the 90 s line, the fetches while waiting. */
   void TickSupport();
   void SendShared(const std::string& text);

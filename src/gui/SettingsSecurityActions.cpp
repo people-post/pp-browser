@@ -138,12 +138,16 @@ void SettingsSecurityActions::CopyDiagnosticsId() {
 
 void SettingsSecurityActions::OpenDiagnosticsHelp() {
   // help_key "troubleshooting/send-diagnostics" is the support article; the question goes out at once (Kenneth
-  // 2026-11-04: no typing), the answer comes in the PP 客服 chat.
+  // 2026-11-04: no typing), the answer comes in the PP 客服 chat: on phones in the half-screen sheet over this page.
+  const std::string question = Tr("settings.security.diagnostics.help_question");
+  if (commands_.ask_support_panel && commands_.ask_support_panel(question)) {
+    return;
+  }
   if (!commands_.ask_support) {
     host_.ReportFailure(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
     return;
   }
-  if (auto asked = commands_.ask_support(Tr("settings.security.diagnostics.help_question")); !asked) {
+  if (auto asked = commands_.ask_support(question); !asked) {
     host_.ReportFailure(asked.error());
   }
 }

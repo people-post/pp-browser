@@ -3,7 +3,9 @@
 // What is checked, as drawn: the title is PP 客服 and nothing of the AI shows (no card, no "Ask PP Support", no plus);
 // the "?"'s question goes out at once, once (a second tap or the sheet opened again sends nothing); a waiting line
 // shows until a reply comes, after 90 s it says the reply will come here; a typed follow-up goes to the same chat;
-// PP 客服 not configured or messaging not up yet says so in the sheet and sends nothing.
+// PP 客服 not configured or messaging not up yet says so in the sheet and sends nothing; the AI sheet's two ways to PP
+// 客服 close it and open PP 客服's anew (no AI row stays); a reply the sheet shows to someone looking is read (no unread
+// left in the chats list, no notification), one nobody saw is not.
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "gui/chat/AgentTurnController.h"
@@ -122,6 +124,11 @@ public:
   std::function<void()> on_closed;
   int sheets = 0;
   std::vector<std::string> opened_in_chat;
+  /** What runs after the tap (ChatController posts it to the UI thread). */
+  std::vector<std::function<void()>> later;
+  bool attentive = true;
+  std::map<std::string, int> unread;
+  int marked_read = 0;
 
   bool AskAiCompact() const override { return true; }
   std::string AskAiSharedThread(bool) override { return "ai-used-last"; }
@@ -149,7 +156,7 @@ public:
     }
   }
   void AskAiOpenInChat(const std::string& thread_id) override { opened_in_chat.push_back(thread_id); }
-  void AskAiSupport(const std::string&, std::function<void()>) override {}
+  void AskAiLater(std::function<void()> fn) override { later.push_back(std::move(fn)); }
   void AskAiRunAction(const std::string&, const std::string&, int) override {}
   void AskAiOpenLink(const std::string&, const std::string&, int) override {}
   void AskAiOpenUrl(const std::string&) override {}
@@ -174,6 +181,13 @@ public:
     return out;
   }
   void AskAiSyncInbox() override { ++fetches; }
+  bool AskAiAttentive() const override { return attentive; }
+  void AskAiMarkRead(const std::string& thread_id) override {
+    if (unread[thread_id] > 0) {
+      unread[thread_id] = 0;
+      ++marked_read;
+    }
+  }
 };
 
 constexpr const char* kContext = "ask-ai-support-render-test";
@@ -261,6 +275,30 @@ protected:
     panel_.Tick();
     context_->Update();
   }
+  /** What the host was asked to run after the tap. */
+  void RunLater() {
+    auto later = std::move(host_.later);
+    host_.later.clear();
+    for (auto& fn : later) {
+      fn();
+    }
+    context_->Update();
+  }
+  /**
+   * A PP 客服 message arrives, in the app's order: stored and counted unread (it is not the open chat; MeshDelivery
+   * Orchestrator → InboxController::OnInboundMessagePersisted), a notice raised only when nobody looks at the app
+   * (BackgroundNoticeFor) and passed to ChatController's background-unread callback (which asks the sheet first),
+   * then "messages changed" (RefreshFromMessaging → the sheet first).
+   */
+  void Arrive(const std::string& text) {
+    host_.chats[kSupportThread].push_back({.own = false, .text = text, .at_ms = now_});
+    host_.unread[kSupportThread] += 1;
+    if (!host_.attentive && !panel_.SuppressesNoticeFor(kSupportThread)) {
+      ++notices_;
+    }
+    panel_.OnMessagesChanged();
+    context_->Update();
+  }
   /** PP 客服 replies (stored, then the app's "messages changed"). */
   void Reply(const std::string& text) {
     host_.chats[kSupportThread].push_back({.own = false, .text = text, .at_ms = now_});
@@ -270,6 +308,7 @@ protected:
 
   const std::string question_ = "「PIN 码」是什么意思？";
   int64_t now_ = kT0;
+  int notices_ = 0;
   NullRender render_;
   bool initialized_ = false;
   ui::Context* context_ = nullptr;
@@ -433,6 +472,121 @@ TEST_F(AskAiSupportRenderTest, MessagingNeverUpSaysTryLaterNotUnavailable) {
   host_.ready = true;
   Later(16);
   EXPECT_TRUE(host_.sent.empty()) << "retried once only: the next \"?\" asks again";
+}
+
+// ⑦ The AI sheet's privacy card "?": the AI sheet closes and PP 客服's opens anew, with no AI row in it.
+TEST_F(AskAiSupportRenderTest, ThePrivacyCardQuestionMarkReopensTheSheetOnPPSupport) {
+  host_.chats["ai-used-last"] = {{.own = true, .text = "AI question"}, {.own = false, .text = "AI answer"}};
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  ASSERT_EQ(Bubbles(), 2u);
+  ASSERT_EQ(TextOf(".sheet-title"), Tr("ask_ai.title"));
+  Tap(".ask-ai-intro-q");
+  EXPECT_EQ(host_.sheets, 1) << "nothing closes inside the tap";
+  RunLater();
+  EXPECT_EQ(host_.sheets, 2) << "closed and opened anew";
+  EXPECT_TRUE(panel_.IsOpen());
+  EXPECT_EQ(TextOf(".sheet-title"), Tr("support.entry.title"));
+  ASSERT_EQ(host_.sent.size(), 1u);
+  EXPECT_EQ(host_.sent[0].second, Tr("ask_ai.intro.support_question"));
+  EXPECT_EQ(Bubbles(), 1u) << "only the question: no AI row stays";
+  EXPECT_FALSE(Shows(".ask-ai-intro"));
+}
+
+// ⑦ "Ask PP Support" under an AI answer that never came: the same, with that question.
+TEST_F(AskAiSupportRenderTest, TheAiFailureButtonReopensTheSheetOnPPSupportWithTheQuestion) {
+  host_.chats["ai-used-last"] = {{.own = false, .text = "an earlier AI answer"}};
+  ASSERT_TRUE(panel_.OpenAndAsk(AskAiEntry::HomeChip, "why?")); // no AI set up here: it fails
+  ASSERT_TRUE(Shows(".ask-ai-support"));
+  Tap(".ask-ai-support");
+  RunLater();
+  EXPECT_EQ(host_.sheets, 2);
+  EXPECT_EQ(TextOf(".sheet-title"), Tr("support.entry.title"));
+  ASSERT_EQ(host_.sent.size(), 1u);
+  EXPECT_EQ(host_.sent[0], std::make_pair(std::string(kSupportThread), std::string("why?")));
+  EXPECT_EQ(Bubbles(), 1u);
+  EXPECT_FALSE(Shows(".ask-ai-support"));
+  EXPECT_FALSE(Shows(".ask-ai-error"));
+}
+
+// ⑧ A reply arrives while the sheet shows it to someone looking: read at once (no unread in the chats list), no
+// notification.
+TEST_F(AskAiSupportRenderTest, AReplyShownToSomeoneLookingLeavesNoUnreadAndNoNotice) {
+  ASSERT_TRUE(panel_.OpenSupport(question_));
+  Arrive("PIN 码是打开 PP 时输入的数字。");
+  EXPECT_EQ(Bubbles(), 2u);
+  EXPECT_EQ(host_.unread[kSupportThread], 0);
+  EXPECT_EQ(host_.marked_read, 1);
+  EXPECT_EQ(notices_, 0);
+  EXPECT_TRUE(panel_.SuppressesNoticeFor(kSupportThread))
+      << "a notice raised just before the user looked again is not shown either";
+}
+
+// ⑧ The sheet was just closed: the reply counts unread as in any chat.
+TEST_F(AskAiSupportRenderTest, AReplyAfterTheSheetClosedCountsUnread) {
+  ASSERT_TRUE(panel_.OpenSupport(question_));
+  panel_.Close();
+  Arrive("PIN 码是打开 PP 时输入的数字。");
+  EXPECT_EQ(host_.unread[kSupportThread], 1);
+  EXPECT_EQ(host_.marked_read, 0);
+  EXPECT_FALSE(panel_.SuppressesNoticeFor(kSupportThread));
+  host_.attentive = false; // and with the phone away it notifies
+  Arrive("还有一句。");
+  EXPECT_EQ(host_.unread[kSupportThread], 2);
+  EXPECT_EQ(notices_, 1);
+}
+
+// ⑧ The phone was put away with the sheet open: nobody saw the reply, so it stays unread and notifies.
+TEST_F(AskAiSupportRenderTest, AReplyWithThePhoneAwayStaysUnreadAndNotifies) {
+  ASSERT_TRUE(panel_.OpenSupport(question_));
+  host_.attentive = false;
+  Arrive("PIN 码是打开 PP 时输入的数字。");
+  EXPECT_EQ(host_.unread[kSupportThread], 1);
+  EXPECT_EQ(notices_, 1);
+}
+
+// --- what ChatController does with the sheet (source checks: it needs the whole app to run) ----------------------
+
+std::string Source(const std::string& relative) {
+  std::ifstream in(std::string(PP_SOURCE_DIR) + "/" + relative, std::ios::binary);
+  std::ostringstream out;
+  out << in.rdbuf();
+  std::string text = out.str();
+  text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+  return text;
+}
+
+std::string Body(const std::string& source, const std::string& signature) {
+  const size_t at = source.find("\n" + signature);
+  const size_t close = at == std::string::npos ? at : source.find("\n}\n", at);
+  return close == std::string::npos ? std::string() : source.substr(at, close + 3 - at);
+}
+
+TEST(AskAiSupportWiringTest, EachMessagesRefreshReadsTheSheetsChatBeforeTheListIsDrawn) {
+  const std::string refresh =
+      Body(Source("src/gui/chat/ChatController.cpp"), "void ChatController::RefreshFromMessaging(");
+  const size_t sheet = refresh.find("ask_ai_.OnMessagesChanged()");
+  ASSERT_NE(sheet, std::string::npos);
+  EXPECT_LT(sheet, refresh.find("SyncShellSessions()")) << "read before the chats list is drawn";
+  EXPECT_LT(sheet, refresh.find("badge_notify_.refresh")) << "and before the badges";
+}
+
+TEST(AskAiSupportWiringTest, TheBackgroundNoticeAsksTheSheetFirst) {
+  const std::string controller = Source("src/gui/chat/ChatController.cpp");
+  const size_t at = controller.find("facade_->SetOnBackgroundUnread(");
+  ASSERT_NE(at, std::string::npos);
+  const std::string callback = controller.substr(at, controller.find("\n  });\n", at) - at);
+  const size_t asked = callback.find("if (ask_ai_.SuppressesNoticeFor(thread_id)) {");
+  ASSERT_NE(asked, std::string::npos);
+  EXPECT_LT(asked, callback.find("NotifyIncoming(")) << "before any notification is raised";
+}
+
+TEST(AskAiSupportWiringTest, ReadingTheSheetsChatIsTheChatsOwnRead) {
+  const std::string read = Body(Source("src/gui/chat/ChatController.cpp"), "void ChatController::AskAiMarkRead(");
+  EXPECT_NE(read.find("presenter_.MarkRead(thread_id)"), std::string::npos);
+  EXPECT_NE(read.find("ILocalNotifier::Instance().ClearForThread(thread_id)"), std::string::npos);
+  EXPECT_NE(read.find("reading_open_chat_ = true"), std::string::npos) << "no loop through the refresh it causes";
+  const std::string attentive = Body(Source("src/gui/chat/ChatController.cpp"), "bool ChatController::AskAiAttentive(");
+  EXPECT_NE(attentive.find("AppLifecycle::IsUserAttentive()"), std::string::npos);
 }
 
 } // namespace

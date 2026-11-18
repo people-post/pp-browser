@@ -306,6 +306,9 @@ bool AskAiPanel::Show(const AskAiEntry entry, const bool once, const bool suppor
   if (!host_.AskAiCompact()) {
     return false;
   }
+  if (IsOpen() && view_.support != support) {
+    Close(); // AI and PP 客服 never switch in place: the open sheet goes and the other one opens anew
+  }
   SwitchMode(once, support);
   if (!once && !support) {
     if (entry == AskAiEntry::Dot) {
@@ -378,9 +381,6 @@ bool AskAiPanel::OpenOnce(const std::string& question) {
 bool AskAiPanel::OpenSupport(const std::string& question) {
   if (!host_.AskAiCompact()) {
     return false;
-  }
-  if (IsOpen() && !view_.support) {
-    Close(); // the AI's sheet goes and the PP 客服 one opens anew: no AI row stays behind
   }
   if (!Show(AskAiEntry::SettingHelp, /*once=*/false, /*support=*/true)) {
     return false;
@@ -589,11 +589,12 @@ void AskAiPanel::AskSupport() {
   if (question.empty()) {
     return;
   }
-  host_.AskAiSupport(question, [this] { Close(); });
+  // After this tap: the AI sheet closes and the PP 客服 one opens anew (OpenSupport), no AI row stays.
+  host_.AskAiLater([this, question] { (void)OpenSupport(question); });
 }
 
 void AskAiPanel::AskSupportOwnAi() {
-  host_.AskAiSupport(Tr("ask_ai.intro.support_question"), [this] { Close(); });
+  host_.AskAiLater([this] { (void)OpenSupport(Tr("ask_ai.intro.support_question")); });
 }
 
 void AskAiPanel::OpenInChat() {
@@ -656,6 +657,7 @@ void AskAiPanel::StartSupport(const std::string& question) {
     return;
   }
   support_.thread = *thread;
+  ReadSupportIfLooking(); // what came before shows here now
   Refresh();
   host_.AskAiSyncInbox();
   if (!question.empty()) {
@@ -732,12 +734,23 @@ void AskAiPanel::TickSupport() {
   }
 }
 
+void AskAiPanel::ReadSupportIfLooking() {
+  if (ShouldReadSupportThread(host_.AskAiAttentive(), Shows(support_.thread))) {
+    host_.AskAiMarkRead(support_.thread);
+  }
+}
+
 void AskAiPanel::OnMessagesChanged() {
   if (!IsOpen() || !view_.support || support_.thread.empty()) {
     return;
   }
+  ReadSupportIfLooking(); // a reply that shows here leaves no unread in the chats list
   Refresh();
   scroll_frames_ = kScrollFrames;
+}
+
+bool AskAiPanel::SuppressesNoticeFor(const std::string& thread_id) const {
+  return view_.support && ShouldSuppressNotice(host_.AskAiAttentive(), Shows(thread_id));
 }
 
 // --- the shared conversation ----------------------------------------------------------------------------

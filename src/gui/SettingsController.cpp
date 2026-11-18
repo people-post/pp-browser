@@ -2103,9 +2103,9 @@ void SettingsController::OnAskSettingHelp(const std::string& label_key) {
   if (question.empty()) {
     return;
   }
-  // Kenneth 2026-11-04 (DEV/PLAN-ui-batch5-ask-ai.md 原话 11–13): on phones the AI answers it in the half-screen panel,
-  // a one-off question with no earlier conversation; the panel keeps a "Ask PP Support" button for a person.
-  if (commands_.ask_ai_once && commands_.ask_ai_once(question)) {
+  // Kenneth 2026-11-18 (DEV/PLAN-help-to-support-panel.md): on phones PP 客服 answers it, in the half-screen sheet
+  // over this page (the PP 客服 chat itself); no AI first.
+  if (commands_.ask_support_panel && commands_.ask_support_panel(question)) {
     return;
   }
   if (!commands_.ask_support) {

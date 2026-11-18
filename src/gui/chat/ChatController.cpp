@@ -1506,6 +1506,7 @@ void ChatController::OnForgetMemory() {
 
 void ChatController::RefreshFromMessaging() {
   MarkOpenChatReadIfLooking(); // first, so the rest of the refresh draws the read state
+  ask_ai_.OnMessagesChanged(); // the PP 客服 sheet: its chat drawn again, and read there, before the list is drawn
   const int prev_sessions = ChromeSnapshot().nav_badges.sessions_unread;
   const int prev_contacts = ChromeSnapshot().nav_badges.contacts_unread;
   SyncShellSessions();
@@ -5278,6 +5279,9 @@ void ChatController::WireMessagingBindings() {
     NotifySurfaceChanged();
   });
   facade_->SetOnBackgroundUnread([this](std::string title, std::string body, std::string thread_id, bool mentions_us) {
+    if (ask_ai_.SuppressesNoticeFor(thread_id)) {
+      return; // the PP 客服 sheet shows this chat to someone looking: it was read there
+    }
     const ProfilePreferences& profile_prefs = Store().Snapshot().profile_prefs;
     if (!profile_prefs.show_notifications) {
       return;
@@ -6935,22 +6939,6 @@ void ChatController::AskAiOpenInChat(const std::string& thread_id) {
   AppRuntime::PostUI([this, thread_id]() { ShowThreadInChat(thread_id); });
 }
 
-void ChatController::AskAiSupport(const std::string& question, std::function<void()> on_opened) {
-  AppRuntime::PostUI([this, question, on_opened = std::move(on_opened)]() {
-    if (!ask_support_) {
-      UserFeedback::Fail(Tr("settings.support.unavailable"));
-      return;
-    }
-    if (auto asked = ask_support_(question); !asked) {
-      (void)UserFeedback::FailFrom(asked.error());
-      return;
-    }
-    if (on_opened) {
-      on_opened();
-    }
-  });
-}
-
 Roe<std::string> ChatController::AskAiEnsureSupport() {
   if (!ensure_support_) {
     return Error("Support is not available").WithUser(Tr("settings.support.unavailable"));
@@ -6996,6 +6984,30 @@ std::vector<SupportMessage> ChatController::AskAiSupportMessages(const std::stri
     }
   }
   return out;
+}
+
+void ChatController::AskAiLater(std::function<void()> fn) {
+  AppRuntime::PostUI(std::move(fn));
+}
+
+bool ChatController::AskAiAttentive() const {
+  return AppLifecycle::IsUserAttentive();
+}
+
+void ChatController::AskAiMarkRead(const std::string& thread_id) {
+  if (reading_open_chat_ || !messaging_ready_ || !facade_ || thread_id.empty()) {
+    return;
+  }
+  auto found = facade_->GetThread(thread_id);
+  if (!found || !*found || (*found)->unread_count == 0) {
+    return;
+  }
+  reading_open_chat_ = true; // as MarkOpenChatReadIfLooking: a refresh reached from here stops at this guard
+  presenter_.MarkRead(thread_id);
+  ILocalNotifier::Instance().ClearForThread(thread_id);
+  reading_open_chat_ = false;
+  // The chats list and the badges without it: drawn by the next refresh (nothing to read then, so no loop).
+  AppRuntime::PostUI([this]() { RefreshFromMessaging(); });
 }
 
 void ChatController::AskAiSyncInbox() {

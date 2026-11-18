@@ -99,7 +99,7 @@ TEST_F(DefaultPinNoteTest, TheSecurityQuestionMarkOpensALocalNoteOnlyOnTheDefaul
   std::vector<Alert> alerts;
   int asked = 0;
   SettingsCommands commands;
-  commands.ask_ai_once = [&asked](const std::string&) {
+  commands.ask_support_panel = [&asked](const std::string&) {
     ++asked;
     return true;
   };

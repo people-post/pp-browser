@@ -100,8 +100,9 @@ public:
   std::function<void()> on_closed;
   int closes = 0;
   std::vector<std::string> opened_in_chat;
+  /** What went to the PP 客服 chat (the sheet reopened in its PP 客服 mode sends it there). */
   std::vector<std::string> support;
-  bool support_opens = true; // false: opening the support chat failed (the host shows the reason)
+  bool support_opens = true; // false: PP 客服 cannot be reached (not configured)
   std::vector<std::string> toasts;
 
   bool AskAiCompact() const override { return compact; }
@@ -157,12 +158,7 @@ public:
     }
   }
   void AskAiOpenInChat(const std::string& thread_id) override { opened_in_chat.push_back(thread_id); }
-  void AskAiSupport(const std::string& question, std::function<void()> on_opened) override {
-    support.push_back(question);
-    if (support_opens && on_opened) {
-      on_opened();
-    }
-  }
+  void AskAiLater(std::function<void()> fn) override { fn(); }
   void AskAiRunAction(const std::string&, const std::string&, int) override {}
   void AskAiOpenLink(const std::string&, const std::string&, int) override {}
   void AskAiOpenUrl(const std::string&) override {}
@@ -172,12 +168,29 @@ public:
     ++intro_marks;
   }
   void AskAiToast(const std::string& text) override { toasts.push_back(text); }
-  // The PP 客服 mode is tested on the real page (ask_ai_support_render_test.cpp).
-  bool AskAiMessagingReady() const override { return false; }
-  Roe<std::string> AskAiEnsureSupport() override { return Error("not in this test"); }
-  Roe<void> AskAiSendToSupport(const std::string&, const std::string&) override { return Error("not in this test"); }
-  std::vector<SupportMessage> AskAiSupportMessages(const std::string&, size_t) override { return {}; }
+  // The PP 客服 mode in short (it is tested on the real page in ask_ai_support_render_test.cpp).
+  bool AskAiMessagingReady() const override { return true; }
+  Roe<std::string> AskAiEnsureSupport() override {
+    if (!support_opens) {
+      return Error("Support is not available").WithUser(Tr("settings.support.unavailable"));
+    }
+    return std::string("support-thread");
+  }
+  Roe<void> AskAiSendToSupport(const std::string& thread_id, const std::string& text) override {
+    support.push_back(text);
+    messages[thread_id].push_back({true, text});
+    return {};
+  }
+  std::vector<SupportMessage> AskAiSupportMessages(const std::string& thread_id, size_t) override {
+    std::vector<SupportMessage> out;
+    for (const auto& [user, text] : messages[thread_id]) {
+      out.push_back({.own = user, .text = text, .at_ms = 0});
+    }
+    return out;
+  }
   void AskAiSyncInbox() override {}
+  bool AskAiAttentive() const override { return true; }
+  void AskAiMarkRead(const std::string&) override {}
 };
 
 /** `turn`: the session turn it belongs to (AgentEvent::turn; 0 = not said). */
@@ -337,7 +350,9 @@ TEST_F(AskAiPanelTest, TheSettingsQuestionIsAskedOnceInTheHomeSessionNotOfSuppor
   panel_.AskSupport();
   ASSERT_EQ(panel_host_.support.size(), 1u);
   EXPECT_EQ(panel_host_.support[0], question);
-  EXPECT_EQ(panel_host_.closes, 1) << "the panel closes for the support chat";
+  EXPECT_EQ(panel_host_.closes, 1) << "the AI sheet closes; the PP 客服 one opens anew";
+  EXPECT_TRUE(panel_.IsOpen());
+  EXPECT_TRUE(panel_.View().support);
 }
 
 TEST_F(AskAiPanelTest, TheSameQuestionMarkAgainSendsNothingTwice) {
@@ -620,6 +635,10 @@ TEST_F(AskAiPanelTest, AnUnansweredQuestionShowsPlainWordsAndSupport) {
   panel_.AskSupport();
   ASSERT_EQ(panel_host_.support.size(), 1u);
   EXPECT_EQ(panel_host_.support[0], "why?");
+  EXPECT_EQ(panel_host_.closes, 1);
+  EXPECT_TRUE(panel_.View().support) << "opened again on PP 客服, not switched in place";
+  ASSERT_EQ(panel_.View().rows.size(), 1u) << "only the question in the PP 客服 chat: no AI row stays";
+  EXPECT_EQ(std::string(panel_.View().rows[0].content_rml.c_str()), "why?");
 }
 
 TEST_F(AskAiPanelTest, NoAssistantSetUpIsAnErrorNotASilence) {
@@ -645,16 +664,15 @@ TEST_F(AskAiPanelTest, ThePrivacyCardShowsOnlyUntilGotIt) {
   EXPECT_FALSE(panel_.View().show_intro);
 }
 
-TEST_F(AskAiPanelTest, TheSheetStaysOpenWhenPPSupportCannotBeOpened) {
+TEST_F(AskAiPanelTest, WhenPPSupportCannotBeReachedItsSheetSaysWhyAndSendsNothing) {
   ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
   panel_host_.support_opens = false;
   panel_.AskSupportOwnAi();
-  EXPECT_EQ(panel_host_.support.size(), 1u);
-  EXPECT_EQ(panel_host_.closes, 0) << "the failure pill shows over the open sheet";
-  EXPECT_TRUE(panel_.IsOpen());
-  panel_host_.support_opens = true;
-  panel_.AskSupportOwnAi();
-  EXPECT_EQ(panel_host_.closes, 1) << "closes once the support chat opened";
+  EXPECT_TRUE(panel_host_.support.empty());
+  EXPECT_TRUE(panel_.IsOpen()) << "the sheet stays, saying why";
+  EXPECT_TRUE(panel_.View().support);
+  EXPECT_EQ(std::string(panel_.View().support_note.c_str()), Tr("settings.support.unavailable"));
+  EXPECT_TRUE(panel_host_.toasts.empty()) << "said in the sheet, not in a pill over it";
 }
 
 std::string ReadSource(const std::string& relative);
@@ -687,6 +705,9 @@ TEST_F(AskAiPanelTest, TheQuestionMarkClosesTheSheetAndAsksSupportOnceWithoutMar
   EXPECT_TRUE(panel_host_.sent.empty()) << "straight to PP Support, never to the AI";
   EXPECT_EQ(panel_host_.intro_marks, 0);
   EXPECT_FALSE(panel_host_.intro_seen);
+  EXPECT_TRUE(panel_.View().support);
+  EXPECT_FALSE(panel_.View().show_intro) << "no AI card on PP 客服's sheet";
+  panel_host_.AskAiCloseSheet(0);
   ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
   EXPECT_TRUE(panel_.View().show_intro) << "only \"Got it\" marks it seen";
 }
