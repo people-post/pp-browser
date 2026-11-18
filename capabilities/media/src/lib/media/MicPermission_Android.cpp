@@ -29,9 +29,17 @@ bool IsGranted() {
   if (jclass cls = env->GetObjectClass(activity); cls != nullptr) {
     jmethodID mid = env->GetMethodID(cls, "checkSelfPermission", "(Ljava/lang/String;)I");
     if (mid != nullptr) {
-      jstring name = env->NewStringUTF(kRecordAudio);
-      granted = env->CallIntMethod(activity, mid, name) == 0;
-      env->DeleteLocalRef(name);
+      if (jstring name = env->NewStringUTF(kRecordAudio); name != nullptr) {
+        const jint result = env->CallIntMethod(activity, mid, name);
+        if (env->ExceptionCheck()) {
+          env->ExceptionClear(); // a pending Java exception answers "denied"
+        } else {
+          granted = result == 0;
+        }
+        env->DeleteLocalRef(name);
+      } else {
+        env->ExceptionClear(); // out of memory: "denied"
+      }
     } else {
       env->ExceptionClear();
     }
