@@ -96,6 +96,8 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("voice_title", &state.voice_title);
   ctor.Bind("show_thread_actions", &state.show_thread_actions);
   ctor.Bind("show_peer_sheet", &state.show_peer_sheet);
+  ctor.Bind("show_stranger_bar", &state.show_stranger_bar);
+  ctor.Bind("stranger_bar_text", &state.stranger_bar_text);
   ctor.Bind("show_call_actions", &state.show_call_actions);
   ctor.Bind("call_joinable", &state.call_joinable);
   ctor.Bind("call_bar_text", &state.call_bar_text);
@@ -299,6 +301,8 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "draft_placeholder");
   DataModelHost::Instance().Dirty("chat", "show_thread_actions");
   DataModelHost::Instance().Dirty("chat", "show_peer_sheet");
+  DataModelHost::Instance().Dirty("chat", "show_stranger_bar");
+  DataModelHost::Instance().Dirty("chat", "stranger_bar_text");
   DataModelHost::Instance().Dirty("chat", "show_call_actions");
   DataModelHost::Instance().Dirty("chat", "show_forget_memory");
   DataModelHost::Instance().Dirty("chat", "show_sync_with_peer");

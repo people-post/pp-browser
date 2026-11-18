@@ -1,4 +1,5 @@
 #include "feature/presenters/HomeToday.h"
+#include "feature/presenters/StrangerChat.h"
 
 #include "foundation/i18n/LocalizationService.h"
 
@@ -106,7 +107,7 @@ HomeWidgetLayout MoveHomeWidget(HomeWidgetLayout layout, const std::string& id, 
 }
 
 bool IsStrangerChat(const ThreadKind kind, const PeerDisplayLabel& label) {
-  return kind == ThreadKind::Direct && !label.contact_id && label.trust != PeerLabelTrust::Contact;
+  return IsStrangerDirectChat(kind, label);
 }
 
 HomeTodaySummary SummarizeHomeToday(const std::vector<ChatSessionRow>& rows, const HomeWidgetLayout& layout,

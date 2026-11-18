@@ -44,6 +44,7 @@ PeerDisplayLabel PeerDisplayResolver::ResolveDirectPeer(const std::string& peer_
     const std::string title = FormatDirectoryTitle(*shadow);
     if (!title.empty()) {
       label.title = title;
+      label.peer_name = DirectoryHitName(*shadow);
       label.trust = PeerLabelTrust::DirectoryUnverified;
       return label;
     }

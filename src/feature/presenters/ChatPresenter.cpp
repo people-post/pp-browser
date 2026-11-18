@@ -8,6 +8,7 @@
 #include "feature/presenters/DeliveryNoticePlan.h"
 #include "feature/presenters/GroupEventText.h"
 #include "feature/presenters/HomeToday.h"
+#include "feature/presenters/StrangerChat.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/ChatPayloadValidator.h"
@@ -426,8 +427,8 @@ void ChatPresenter::Refresh() {
     ChatSessionRow row;
     row.id = thread.id;
     const PeerDisplayLabel label = facade_->ResolveThreadLabel(thread);
-    row.title = label.title;
     row.from_stranger = IsStrangerChat(thread.kind, label);
+    row.title = row.from_stranger ? StrangerChatTitle(label) : label.title;
     // The stored default AI title is English; the renderer shows it in the UI language.
     row.title_is_default_ai = thread.kind == ThreadKind::Ai && row.title == "New chat";
     std::string preview_icon;
@@ -451,7 +452,7 @@ void ChatPresenter::Refresh() {
     row.updated_at = thread.updated_at;
     row.active = thread.id == active_id;
     {
-      const AvatarGlyph glyph = MakeAvatarGlyph(row.title, label.stable_id);
+      const AvatarGlyph glyph = MakeAvatarGlyph(row.from_stranger ? label.title : row.title, label.stable_id);
       row.avatar_letter = glyph.letter;
       row.avatar_tone = glyph.tone;
     }

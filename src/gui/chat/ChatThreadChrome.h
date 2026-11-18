@@ -50,6 +50,9 @@ public:
     bool& show_attach_button;
     bool& show_thread_actions;
     bool& show_peer_sheet;
+    /** A first message from someone who is not a contact: the bar with Add / Block, and its line. */
+    bool& show_stranger_bar;
+    ui::String& stranger_bar_text;
     bool& show_call_actions;
     bool& show_forget_memory;
     bool& show_sync_with_peer;

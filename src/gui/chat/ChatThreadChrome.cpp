@@ -12,6 +12,7 @@
 #include "common/thread/ThreadTypes.h"
 #include "lib/people/AvatarGlyph.h"
 #include "lib/people/PeerDisplayLabel.h"
+#include "feature/presenters/StrangerChat.h"
 
 #include <ui/Core.h>
 #include <ui/base/SystemInterface.h>
@@ -223,7 +224,10 @@ void ChatThreadChrome::Update() {
   }
   if (auto thread = facade_->GetActiveThread()) {
     const PeerDisplayLabel label = facade_ ? facade_->ResolveThreadLabel(*thread) : PeerDisplayLabel{};
-    view_.thread_title = label.title.c_str();
+    const bool stranger = IsStrangerDirectChat(thread->kind, label);
+    view_.thread_title = (stranger ? StrangerChatTitle(label) : label.title).c_str();
+    view_.show_stranger_bar = stranger;
+    view_.stranger_bar_text = stranger ? StrangerBarText(label).c_str() : "";
     // The stored default AI title is English; show it in the UI language.
     if (thread->kind == ThreadKind::Ai && label.title == "New chat") {
       view_.thread_title = Tr("chat.new_chat").c_str();
@@ -413,6 +417,8 @@ void ChatThreadChrome::Update() {
     view_.thread_subtitle = "";
     view_.thread_phone_subtitle = "";
     view_.show_peer_sheet = false;
+    view_.show_stranger_bar = false;
+    view_.stranger_bar_text = "";
     view_.peer_link_status = "";
     view_.peer_link_banner = "";
     view_.show_peer_link = false;
@@ -438,6 +444,8 @@ void ChatThreadChrome::Update() {
     view_.show_attach_button = ShowAttachWithoutThread();
     view_.show_thread_actions = false;
     view_.show_peer_sheet = false;
+    view_.show_stranger_bar = false;
+    view_.stranger_bar_text = "";
     view_.show_call_actions = false;
     view_.show_forget_memory = false;
     view_.show_sync_with_peer = false;

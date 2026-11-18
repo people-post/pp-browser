@@ -298,6 +298,11 @@ select selectbox option {
   gap: 8dp;
 }
 
+/* A stranger's first message: the line, then Add and Block as 44dp buttons side by side. */
+.chat-stranger-actions {
+  gap: 8dp;
+}
+
 .chat-header-title {
   flex: 1;
   min-width: 0;

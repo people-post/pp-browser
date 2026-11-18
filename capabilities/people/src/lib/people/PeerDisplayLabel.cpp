@@ -14,8 +14,12 @@ std::string FormatContactTitle(const Contact& contact) {
   return contact.server_nickname;
 }
 
+std::string DirectoryHitName(const mesh::DirectoryHit& hit) {
+  return !hit.nickname.empty() ? hit.nickname : hit.display_name;
+}
+
 std::string FormatDirectoryTitle(const mesh::DirectoryHit& hit) {
-  const std::string& nick = !hit.nickname.empty() ? hit.nickname : hit.display_name;
+  const std::string nick = DirectoryHitName(hit);
   std::string person_id;
   if (hit.account_id && !hit.account_id->empty()) {
     person_id = *hit.account_id;

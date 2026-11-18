@@ -1525,6 +1525,13 @@
     "chat.menu.block_confirm_body":
         "You won't get messages or calls from this person. They are not told. You can undo this any time.",
     "chat.menu.add_to_contacts": "Add to contacts",
+    "chat.stranger.title": "New contact ({name})",
+    "chat.stranger.title_unnamed": "New contact",
+    "chat.stranger.bar": "{name} is not your contact yet.",
+    "chat.stranger.bar_unnamed": "This person is not your contact yet.",
+    "chat.stranger.this_person": "this person",
+    "chat.stranger.add": "Add",
+    "chat.stranger.block": "Block",
     "chat.toast.id_copied": "ID copied",
     "chat.toast.pin_required": "PIN required to continue",
     "chat.hint.brief_register":

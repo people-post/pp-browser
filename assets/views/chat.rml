@@ -105,6 +105,13 @@
       <span class="chat-header-call-btn chat-header-call-btn--join"><span>{{i18n:call.join}}</span></span>
     </button>
   </div>
+  <div class="chat-gap-banner stack chat-stranger-bar" data-if="show_stranger_bar && !search_open">
+    <p class="text muted chat-stranger-text">{{stranger_bar_text}}</p>
+    <div class="chat-stranger-actions row">
+      <button class="btn btn-primary" type="button" data-event-click="stranger_add()">{{i18n:chat.stranger.add}}</button>
+      <button class="btn btn-secondary" type="button" data-event-click="stranger_block()">{{i18n:chat.stranger.block}}</button>
+    </div>
+  </div>
   <div class="chat-gap-banner stack" data-if="show_peer_link_banner && !sync_in_progress">
     <p class="text muted">{{peer_link_banner}}</p>
     <button class="chat-suggestion" data-if="show_retry_peer_dial" data-event-click="retry_peer_dial()">{{i18n:chat.link.retry}}</button>

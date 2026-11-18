@@ -34,6 +34,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     PendingUpload.cpp
     QuickReactions.cpp
     SendMark.cpp
+    StrangerChat.cpp
     ThreadSearch.cpp
     ThreadSearchSession.cpp
     TwoFingerGesture.cpp

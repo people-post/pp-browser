@@ -364,6 +364,8 @@ ChatController::ChatController()
               .show_attach_button = chat_.show_attach_button,
               .show_thread_actions = chat_.show_thread_actions,
               .show_peer_sheet = chat_.show_peer_sheet,
+              .show_stranger_bar = chat_.show_stranger_bar,
+              .stranger_bar_text = chat_.stranger_bar_text,
               .show_call_actions = chat_.show_call_actions,
               .show_forget_memory = chat_.show_forget_memory,
               .show_sync_with_peer = chat_.show_sync_with_peer,
@@ -5712,6 +5714,8 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("call_back",
                                DataEvent<std::string>([this](const std::string& video) { menus_.CallBack(video); }));
         ctor.BindEventCallback("join_group_call", DataEvent([this] { OnJoinGroupCall(); }));
+        ctor.BindEventCallback("stranger_add", DataEvent([this] { peer_sheet_.AddOpenStranger(); }));
+        ctor.BindEventCallback("stranger_block", DataEvent([this] { peer_sheet_.BlockOpenStranger(); }));
         ctor.BindEventCallback("open_group_members", DataEvent([this] { peer_sheet_.OpenGroupMembers(); }));
         ctor.BindEventCallback("open_peer_sheet", DataEventAt([this](ui::Event& ev) { OpenPeerSheet(ev); }));
         ctor.BindEventCallback("sync_with_peer", DataEvent([this] { OnSyncWithPeer(); }));

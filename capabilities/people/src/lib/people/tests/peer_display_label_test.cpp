@@ -25,6 +25,10 @@ TEST(PeerDisplayLabelTest, FormatsContactDirectoryAndShortId) {
   mesh::DirectoryHit nick_only;
   nick_only.nickname = "bob";
   EXPECT_EQ(FormatDirectoryTitle(nick_only), "~bob");
+  EXPECT_EQ(DirectoryHitName(hit), "alice");
+  hit.nickname.clear();
+  hit.display_name = "Alice A";
+  EXPECT_EQ(DirectoryHitName(hit), "Alice A");
 
   EXPECT_EQ(ShortPersonId("account:lHaEnkO4vSbVnl6A"), "account:lHaE…");
   EXPECT_EQ(ShortPersonId("account:abcd"), "account:abcd");
