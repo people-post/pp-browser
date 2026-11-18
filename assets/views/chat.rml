@@ -150,7 +150,8 @@
        data-event-scroll="messages_scroll()">
     <!-- No example-chips card inside an AI thread anymore (Kenneth 2026-11-05): the PP 助手 page already shows the
          quick actions at the bottom, so the in-chat card was redundant. Only the empty-body line remains. -->
-    <div class="chat-empty stack" data-if="!has_turns && !loading">
+    <!-- The AI thread's empty state: it says what to ask the AI, so it never shows in a chat with a person or a group. -->
+    <div class="chat-empty stack" data-if="!has_turns && !loading && thread_is_ai">
       <p class="text muted">{{i18n:chat.empty_body}}</p>
     </div>
     <div data-if="use_messages_layout">
