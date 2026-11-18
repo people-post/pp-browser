@@ -612,6 +612,19 @@ TEST(ShellHostHiddenTabTest, TheDesktopIsUnchangedByTheSettingsSegment) {
   EXPECT_EQ(desktop.BackTarget(), DismissTarget::None);
 }
 
+// A tab switch closes the pushed pages one by one, each reported to its owner (ContactsController's open flags follow).
+TEST(ShellHostHiddenTabTest, ATabSwitchTellsEveryPushedPageItWasClosed) {
+  ShellHost& host = PhoneHost(NavTab::Sessions);
+  std::vector<std::string> popped;
+  host.SetOnTransientPopped([&popped](const std::string& key) { popped.push_back(key); });
+  host.PushTransient({.key = "new_chat"});
+  host.PushTransient({.key = "add_contact"});
+  host.SelectNavTab(NavTab::Home);
+  EXPECT_TRUE(host.State().transient_stack.empty());
+  EXPECT_EQ(popped, (std::vector<std::string>{"add_contact", "new_chat"}));
+  host.SetOnTransientPopped(nullptr);
+}
+
 // TODO #200: a tab in the bar on Settings (or a page pushed from it) leaves the whole stack and shows that tab.
 TEST(ShellHostHiddenTabTest, ATabTapOnSettingsLeavesTheWholeSettingsStack) {
   ShellHost& host = PhoneHost(NavTab::Sessions);
