@@ -7,6 +7,7 @@
 
 #include "common/runtime/AppRuntime.h"
 #include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/PinDefaults.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/UserPreferences.h"
@@ -54,7 +55,7 @@ TEST(TransferPageMarkupTest, TheNewStringsExistInBothLanguagesAndQuoteTheRealOne
   EXPECT_NE(zh.find("选“我在别的设备上已经有账号”\""), std::string::npos);
   EXPECT_NE(en.find("“I already have an account on another device”\""), std::string::npos);
   // Three short steps, then one grey line; the old long paragraphs are gone.
-  EXPECT_NE(zh.find("\"settings.security.link_device.step2\": \"设一个 PIN\""), std::string::npos);
+  EXPECT_NE(zh.find("\"settings.security.link_device.step2\": \"设一个 PIN 码\""), std::string::npos);
   EXPECT_NE(zh.find("\"settings.security.link_device.step3\": \"粘贴关联码\""), std::string::npos);
   EXPECT_NE(zh.find("\"新设备上看不到以前的聊天记录。已有别的账号的设备要先重置。\""), std::string::npos);
   EXPECT_NE(en.find("\"Earlier chats do not appear on the new device. A device that already has another account must "
@@ -147,6 +148,15 @@ protected:
       ++confirms;
       on_confirm = std::move(on_result);
     };
+    feedback.show_confirm_with_note = [this](const std::string&, const std::string&, const std::string& note_line,
+                                             const std::string& note_text, std::function<void(bool)> on_result,
+                                             const std::string&) {
+      ++confirms;
+      ++noted_confirms;
+      confirm_note_line = note_line;
+      confirm_note_text = note_text;
+      on_confirm = std::move(on_result);
+    };
     pin_prompt.show_verify = [this](const PinVerifyPurpose, PinGateCheck, std::function<void()> on_ok) {
       ++pin_prompts;
       on_pin_ok = std::move(on_ok);
@@ -187,8 +197,29 @@ protected:
   std::vector<std::string> toasts;
   int exports = 0;
   int confirms = 0;
+  int noted_confirms = 0;
+  std::string confirm_note_line;
+  std::string confirm_note_text;
   int pin_prompts = 0;
 };
+
+// Default PIN: the copy-code confirm carries the line and a "?" that tells the PIN; an own PIN has neither.
+TEST_F(TransferCopiedFlagTest, TheConfirmOnTheDefaultPinCarriesTheLineAndTheNoteWithThePin) {
+  actions->ExportLinkDevice();
+  ASSERT_EQ(noted_confirms, 1);
+  EXPECT_EQ(confirm_note_line, Tr("settings.security.default_hint"));
+  EXPECT_NE(confirm_note_text.find(kDefaultProfilePin), std::string::npos);
+  EXPECT_EQ(confirm_note_text.find("{pin}"), std::string::npos) << "the digits were filled in";
+}
+
+TEST_F(TransferCopiedFlagTest, TheConfirmOnAnOwnPinHasNoNote) {
+  SetOwnPin();
+  actions->ExportLinkDevice();
+  ASSERT_EQ(pin_prompts, 1);
+  on_pin_ok();
+  ASSERT_EQ(confirms, 1);
+  EXPECT_EQ(noted_confirms, 0);
+}
 
 TEST_F(TransferCopiedFlagTest, SuccessSetsTheFlagAndLeavingThePageClearsIt) {
   EXPECT_FALSE(actions->TransferCodeCopied());

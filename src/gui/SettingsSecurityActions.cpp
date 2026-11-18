@@ -4,6 +4,7 @@
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/crypto/PinRules.h"
 #include "foundation/error/AppError.h"
+#include "gui/DefaultPinNote.h"
 #include "gui/DiagnosticsFeedback.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -331,32 +332,37 @@ void SettingsSecurityActions::ConfirmExportLinkDevice() {
   if (!feedback_.show_confirm) {
     return;
   }
-  feedback_.show_confirm(Tr("settings.security.link_device.export_confirm_title"),
-                         Tr("settings.security.link_device.export_confirm_message"),
-                         [this](const bool ok) {
-                           if (!ok) {
-                             return;
-                           }
-                           AppRuntime::PostWorkerNormal([this]() {
-                             auto result = commands_.export_link_device
-                                               ? commands_.export_link_device()
-                                               : Roe<std::string>{Error("Messaging is not ready")};
-                             AppRuntime::PostUI([this, result = std::move(result)]() {
-                               if (!result) {
-                                 host_.ReportFailure(result.error());
-                                 return;
-                               }
-                               if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-                                 system->SetClipboardText(result.value().c_str());
-                               }
-                               UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
-                               transfer_code_copied_ = true; // the phone page's "copied" box
-                               DataModelHost::Instance().Dirty("settings", "transfer_code_copied");
-                               host_.ShowStatus("");
-                             });
-                           });
-                         },
-                         {});
+  const auto on_result = [this](const bool ok) {
+    if (!ok) {
+      return;
+    }
+    AppRuntime::PostWorkerNormal([this]() {
+      auto result = commands_.export_link_device ? commands_.export_link_device()
+                                                 : Roe<std::string>{Error("Messaging is not ready")};
+      AppRuntime::PostUI([this, result = std::move(result)]() {
+        if (!result) {
+          host_.ReportFailure(result.error());
+          return;
+        }
+        if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+          system->SetClipboardText(result.value().c_str());
+        }
+        UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
+        transfer_code_copied_ = true; // the phone page's "copied" box
+        DataModelHost::Instance().Dirty("settings", "transfer_code_copied");
+        host_.ShowStatus("");
+      });
+    });
+  };
+  const std::string title = Tr("settings.security.link_device.export_confirm_title");
+  const std::string message = Tr("settings.security.link_device.export_confirm_message");
+  // On the app's default PIN nothing asks for it: the dialog only says so, with a "?" that tells the digits.
+  if (host_.Store().Snapshot().profile_prefs.pin_is_default && feedback_.show_confirm_with_note) {
+    feedback_.show_confirm_with_note(title, message, Tr("settings.security.default_hint"), DefaultPinNoteText(),
+                                     on_result, {});
+    return;
+  }
+  feedback_.show_confirm(title, message, on_result, {});
 }
 
 void SettingsSecurityActions::SetTransferLabels() {

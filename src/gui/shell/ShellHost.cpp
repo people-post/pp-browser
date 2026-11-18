@@ -15,6 +15,8 @@
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/ScreenKeyboard.h"
+#include "foundation/platform/ScreenKeyboardGeometry.h"
+#include "foundation/platform/UikitWindowGeometry.h"
 #include "foundation/platform/SecureScreen.h"
 #include "foundation/platform/ui/PlatformNavigation.h"
 #include "lib/ui/ContextMenuHost.h"
@@ -156,6 +158,9 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("dialog_checkbox_checked", &host.state_.dialog.checkbox_checked);
     ctor.Bind("dialog_show_prompt", &host.state_.dialog.show_prompt);
     ctor.Bind("dialog_prompt_value", &host.state_.dialog.prompt_value);
+    ctor.Bind("dialog_note_line", &host.state_.dialog.note_line);
+    ctor.Bind("dialog_note_text", &host.state_.dialog.note_text);
+    ctor.Bind("dialog_note_open", &host.state_.dialog.note_open);
     ctor.Bind("pin_gate_active", &host.state_.pin_gate.active);
     ctor.Bind("pin_gate_identity_fork_mode", &host.state_.pin_gate.identity_fork_mode);
     ctor.Bind("pin_gate_chooser_mode", &host.state_.pin_gate.chooser_mode);
@@ -187,6 +192,9 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_pin", &host.state_.pin_gate.pin);
     ctor.Bind("pin_gate_pin_confirm", &host.state_.pin_gate.pin_confirm);
     ctor.Bind("pin_gate_link_payload", &host.state_.pin_gate.link_payload);
+    ctor.Bind("pin_gate_default_note_line", &host.state_.pin_gate.default_note_line);
+    ctor.Bind("pin_gate_default_note_text", &host.state_.pin_gate.default_note_text);
+    ctor.Bind("pin_gate_default_note_open", &host.state_.pin_gate.default_note_open);
     ctor.Bind("call_ring_active", &host.state_.call_ring.active);
     ctor.Bind("call_ring_pulse", &host.state_.call_ring.pulse);
     ctor.Bind("call_ring_awaiting_invite", &host.state_.call_ring.awaiting_invite);
@@ -217,6 +225,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_peer_hint", &host.state_.call_in_progress.peer_hint);
     ctor.Bind("call_in_progress_muted", &host.state_.call_in_progress.muted);
     ctor.Bind("call_in_progress_camera_on", &host.state_.call_in_progress.camera_on);
+    ctor.Bind("call_in_progress_camera_resuming", &host.state_.call_in_progress.camera_resuming);
     ctor.Bind("call_in_progress_camera_front", &host.state_.call_in_progress.camera_front);
     ctor.Bind("call_in_progress_speaker_on", &host.state_.call_in_progress.speaker_on);
     ctor.Bind("call_in_progress_stage_visible", &host.state_.call_in_progress.stage_visible);
@@ -305,6 +314,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
       roster_handle.RegisterMember("on_hold", &CallRosterParticipantState::on_hold);
       roster_handle.RegisterMember("video_paused", &CallRosterParticipantState::video_paused);
       roster_handle.RegisterMember("reconnecting", &CallRosterParticipantState::reconnecting);
+      roster_handle.RegisterMember("camera_resuming", &CallRosterParticipantState::camera_resuming);
       roster_handle.RegisterMember("guest", &CallRosterParticipantState::guest);
     }
     ctor.RegisterArray<std::vector<CallRosterParticipantState>>();
@@ -373,6 +383,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("dialog_ok", DataEvent<>([this]() { DialogOk(); }));
     ctor.BindEventCallback("dialog_cancel", DataEvent<>([this]() { DialogCancel(); }));
     ctor.BindEventCallback("dialog_toggle_checkbox", DataEvent<>([this]() { DialogToggleCheckbox(); }));
+    ctor.BindEventCallback("dialog_toggle_note", DataEvent<>([this]() { DialogToggleNote(); }));
+    ctor.BindEventCallback("pin_gate_note_toggle", DataEvent<>([this]() { PinGateNoteToggle(); }));
     ctor.BindEventCallback("pin_gate_submit", DataEvent<>([this]() { PinGateSubmit(); }));
     ctor.BindEventCallback("pin_gate_paste", DataEvent<>([this]() { PinGatePaste(); }));
     ctor.BindEventCallback("pin_gate_clear_payload", DataEvent<>([this]() { PinGateClearPayload(); }));
@@ -1342,6 +1354,9 @@ void ShellHost::DirtyFeedback() {
   DataModelHost::Instance().Dirty("window", "dialog_checkbox_checked");
   DataModelHost::Instance().Dirty("window", "dialog_show_prompt");
   DataModelHost::Instance().Dirty("window", "dialog_prompt_value");
+  DataModelHost::Instance().Dirty("window", "dialog_note_line");
+  DataModelHost::Instance().Dirty("window", "dialog_note_text");
+  DataModelHost::Instance().Dirty("window", "dialog_note_open");
 }
 
 void ShellHost::DirtyPinGate() {
@@ -1375,6 +1390,9 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_pin");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_payload");
+  DataModelHost::Instance().Dirty("window", "pin_gate_default_note_line");
+  DataModelHost::Instance().Dirty("window", "pin_gate_default_note_text");
+  DataModelHost::Instance().Dirty("window", "pin_gate_default_note_open");
   DataModelHost::Instance().Dirty("window", "unlock_in_progress");
   DataModelHost::Instance().Dirty("window", "startup_cover_visible");
 }
@@ -1505,6 +1523,7 @@ void ShellHost::DirtyCallChrome() {
   }
   DataModelHost::Instance().Dirty("window", "call_in_progress_muted");
   DataModelHost::Instance().Dirty("window", "call_in_progress_camera_on");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_camera_resuming");
   DataModelHost::Instance().Dirty("window", "call_in_progress_camera_front");
   DataModelHost::Instance().Dirty("window", "call_in_progress_speaker_on");
   DataModelHost::Instance().Dirty("window", "call_in_progress_stage_visible");
@@ -1783,7 +1802,7 @@ void ShellHost::ApplyLayoutModeFromContext(ui::Context* context) {
   const float dp_ratio = context->GetDensityIndependentPixelRatio();
   const float width_dp = static_cast<float>(context->GetDimensions().x) / dp_ratio;
   state_.shell_width_dp = width_dp;
-  state_.layout_mode = ShellLayout::FromWidth(width_dp, config_.compact_breakpoint_dp);
+  state_.layout_mode = ShellLayout::ForDevice(width_dp, IsIpadDevice(), config_.compact_breakpoint_dp);
   ShellLayout::SyncLayoutModeString(state_);
   ContextMenuHost::Instance().SetCompactLayout(state_.layout_mode == LayoutMode::Compact);
 }
@@ -1816,7 +1835,7 @@ void ShellHost::SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp) {
   ApplySafeAreaLayout();
 }
 
-ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
+ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() {
   SafeAreaFromSdl insets{};
 #if UI_SDL_VERSION_MAJOR >= 3
   // SDL_GetWindowSafeArea is in window coordinates (points on iOS, pixels on Android).
@@ -1839,18 +1858,142 @@ ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
   const float display_scale = SDL_GetWindowDisplayScale(window);
   // context_px = window_units * density; dp = context_px / display_scale
   const float window_to_dp = (display_scale > 0.f) ? ((density > 0.f ? density : 1.f) / display_scale) : 1.f;
-  const int top_win = std::max(0, safe.y);
+  // iPadOS 26+ in a window: the window controls sit in the top-left corner, outside SDL's safe area.
+  const int top_win = std::max({0, safe.y, WindowControlsTopInset(window)});
   // iOS leaves the on-screen keyboard out of the safe area; it is reported separately (0 elsewhere).
-  const int bottom_win = std::max({0, win_h - (safe.y + safe.h), ScreenKeyboardHeight()});
+  const int safe_bottom_win = std::max(0, win_h - (safe.y + safe.h));
+  insets.window_w = win_w;
+  insets.window_h = win_h;
+  insets.keyboard_win = std::max(0, ScreenKeyboardHeight());
+  insets.keyboard_top_win = win_h - insets.keyboard_win;
+  // iPhone, and the iPad without a measurable input: the input bar is docked on the shell's bottom edge, which without
+  // a keyboard is the safe area's bottom; the shell goes up by just what puts that edge on the keyboard's top (no gap).
+  // Same numbers as max(safe bottom, keyboard).
+  insets.input_bottom_win = win_h - safe_bottom_win;
+  if (IsIpadDevice()) {
+    MeasureKeyboardInput(insets, density > 0.f ? density : 1.f);
+  }
+  insets.lift_win = std::string_view(insets.input_source) == "bar"
+                        ? std::clamp(insets.bar_lift_win, 0, win_h)
+                        : KeyboardLift(win_h, insets.keyboard_top_win, insets.input_bottom_win, 0);
+  const int bottom_win = safe_bottom_win + insets.lift_win;
   insets.top_dp = static_cast<int>(static_cast<float>(top_win) * window_to_dp + 0.5f);
   insets.bottom_dp = static_cast<int>(static_cast<float>(bottom_win) * window_to_dp + 0.5f);
+  insets.keyboard_dp = static_cast<int>(static_cast<float>(insets.lift_win) * window_to_dp + 0.5f);
 #endif
   return insets;
 }
 
+void ShellHost::MeasureKeyboardInput(SafeAreaFromSdl& insets, float px_per_win) {
+  if (insets.keyboard_win <= 0) {
+    keyboard_field_ = nullptr;
+    bar_target_ = BarTarget{};
+    return;
+  }
+  ui::Element* focus = context_ ? context_->GetFocusElement() : nullptr;
+  ui::ElementDocument* doc = context_ && context_->GetNumDocuments() > 0 ? context_->GetDocument(0) : nullptr;
+  if (!focus || focus == doc || focus->GetTagName() == "body") {
+    insets.input_source = "shell";
+    return;
+  }
+  auto bottom_win = [px_per_win](ui::Element* element) {
+    const float px =
+        element->GetAbsoluteOffset(ui::BoxArea::Border).y + element->GetBox().GetSize(ui::BoxArea::Border).y;
+    return static_cast<int>(std::lround(px / px_per_win));
+  };
+  ui::Element* bar = focus;
+  while (bar && !bar->IsClassSet("prompt-composer") && !bar->IsClassSet("ask-ai-composer")) {
+    bar = bar->GetParentNode();
+  }
+  bool in_shell_root = false;
+  for (ui::Element* e = bar; e; e = e->GetParentNode()) {
+    if (e->GetId() == "shell-root") {
+      in_shell_root = true;
+      break;
+    }
+  }
+  const bool home_keeps_place = state_.layout_mode == LayoutMode::Compact && HomeDockApplies();
+  if (bar && in_shell_root && !home_keeps_place && !bottom_chrome_open_) {
+    // The chat input bar in #shell-root: the lift is settled on it only when its target moves (the keyboard's top, the
+    // bar's height when it grows a line, the bar, the layout, the window); a keystroke that changes none of these
+    // leaves the lift alone (SettleBarLift).
+    insets.input_source = "bar";
+    insets.focus_bottom_win = bottom_win(bar);
+    const BarTarget target{bar,
+                           insets.keyboard_top_win,
+                           static_cast<int>(std::lround(bar->GetBox().GetSize(ui::BoxArea::Border).y / px_per_win)),
+                           state_.layout_mode,
+                           insets.window_w,
+                           insets.window_h};
+    const bool target_changed = target.bar != bar_target_.bar || target.keyboard_top != bar_target_.keyboard_top ||
+                                std::abs(target.bar_h - bar_target_.bar_h) >= 1 || target.mode != bar_target_.mode ||
+                                target.window_w != bar_target_.window_w || target.window_h != bar_target_.window_h;
+    bar_target_ = target;
+    insets.bar_lift_win = SettleBarLift(bar_settle_, layout_passes_, keyboard_lift_applied_win_,
+                                        insets.focus_bottom_win, insets.keyboard_top_win, target_changed);
+    insets.input_bottom_win = insets.keyboard_top_win + insets.bar_lift_win; // the unlifted bottom that lift implies
+    keyboard_field_ = nullptr;
+    return;
+  }
+  bar_target_ = BarTarget{};
+  if (bar) {
+    // A bar the lift does not move (the AI Home's, one outside the shell, under the emoji sheet): as before.
+    insets.input_source = "shell";
+    keyboard_field_ = nullptr;
+    return;
+  }
+  // Another text field (a search box, a setting): decided once per focus, from where it is. Above the keyboard it stays
+  // where it is and nothing is lifted; covered, the shell goes up as before.
+  insets.focus_bottom_win = bottom_win(focus);
+  if (keyboard_field_ != focus) {
+    keyboard_field_ = focus;
+    keyboard_field_covered_ = insets.focus_bottom_win > insets.keyboard_top_win;
+  }
+  if (keyboard_field_covered_) {
+    insets.input_source = "field_covered";
+  } else {
+    insets.input_source = "field";
+    insets.input_bottom_win = insets.focus_bottom_win;
+  }
+}
+
 void ShellHost::RefreshSafeAreaInsets(ui::Context* context) {
   (void)context;
+  // iOS: SDL resizes its view away from the window on every keyboard change and every caret move (SDL_SetTextInputArea
+  // -> updateKeyboard, w/h swapped on iPadOS 27) until the next frame puts it back. Sizes and the pixel density read
+  // meanwhile are wrong (11-17 iPad log: the bar measured 528 instead of 393, the lift jumped to 286 on each keystroke):
+  // keep the insets of the last good frame.
+  if (!UikitViewFillsWindow(Backend::GetWindow())) {
+    return;
+  }
   const SafeAreaFromSdl sdl = ReadSafeAreaFromSdl();
+  const std::string keyboard_events = TakeScreenKeyboardEvents();
+  const bool lift_changed = sdl.keyboard_dp != logged_keyboard_dp_ && (sdl.keyboard_dp > 0 || logged_keyboard_dp_ > 0);
+  const bool source_changed = std::string_view(sdl.input_source) != logged_input_source_;
+  if (lift_changed || source_changed || !keyboard_events.empty()) {
+    // iOS: INFO when the lift or what it is measured from changes; the keyboard notifications (iPad) alone at DEBUG.
+    std::ostringstream out;
+    out << "keyboard lift pt=" << sdl.lift_win << " dp=" << sdl.keyboard_dp
+        << " events=" << (keyboard_events.empty() ? "-" : keyboard_events) << " cover_pt=" << sdl.keyboard_win
+        << " kb_top_pt=" << sdl.keyboard_top_win << " input=" << sdl.input_source
+        << " input_bottom_pt=" << sdl.input_bottom_win << " focus_bottom_pt=" << sdl.focus_bottom_win
+        << " applied_pt=" << keyboard_lift_applied_win_ << " settling=" << bar_settle_.settling
+        << " step=" << bar_settle_.steps << " sdl_window=" << sdl.window_w << "x" << sdl.window_h
+        << " bottom_dp=" << sdl.bottom_dp << " latch=" << (sdl.bottom_dp >= kImeLatchMinDp)
+        << " layout=" << ShellLayout::LayoutModeString(state_.layout_mode) << " " << DescribeScreenKeyboard();
+    if (lift_changed || source_changed) {
+      log().info << out.str();
+    } else {
+      log().debug << out.str();
+    }
+  }
+  logged_keyboard_dp_ = sdl.keyboard_dp;
+  logged_input_source_ = sdl.input_source;
+  if (bar_settle_.settling) {
+    // The bar's new place is measured on the next frame: ask for it even when idle.
+    Backend::RequestForceFrame();
+  }
+  keyboard_lift_applied_win_ = sdl.lift_win;
   if (sdl.bottom_dp >= kImeLatchMinDp) {
     last_ime_bottom_dp_ = sdl.bottom_dp;
     if (bottom_chrome_open_ && !bottom_chrome_fixed_height_) {
@@ -3305,6 +3448,7 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
   if (!context) {
     return;
   }
+  ++layout_passes_; // after Context::Update: the bar measured from here on is this pass's (SettleBarLift)
 
   using clock = std::chrono::steady_clock;
   const auto now = clock::now();
@@ -3385,6 +3529,17 @@ void ShellHost::DialogCancel() {
 void ShellHost::DialogToggleCheckbox() {
   state_.dialog.checkbox_checked = !state_.dialog.checkbox_checked;
   DirtyFeedback();
+}
+
+void ShellHost::DialogToggleNote() {
+  ShellFeedback::ToggleDialogNote(state_);
+  DirtyFeedback();
+}
+
+void ShellHost::PinGateNoteToggle() {
+  if (pin_gate_actions_.on_note_toggle) {
+    pin_gate_actions_.on_note_toggle();
+  }
 }
 
 void ShellHost::PinGateSubmit() {

@@ -9,6 +9,7 @@
 #import <CoreMotion/CoreMotion.h>
 #import <UIKit/UIKit.h>
 
+#include <atomic>
 #include <cmath>
 
 #include <SDL3/SDL.h>
@@ -24,6 +25,57 @@ CMMotionManager* OrientationMotion() {
     motion.deviceMotionUpdateInterval = 0.2;
   }
   return motion;
+}
+
+// The app interface's rotation, CW degrees in the same terms as the physical one (portrait 0, home button on the right
+// = UIInterfaceOrientationLandscapeRight 90, upside down 180, home on the left 270). Written on the main thread, read by
+// the media thread for the local preview. An iPhone stays 0 (portrait-locked); an iPad's interface turns.
+std::atomic<int> g_interface_deg{0};
+
+void RefreshInterfaceRotation() {
+  for (UIScene* scene in UIApplication.sharedApplication.connectedScenes) {
+    if (![scene isKindOfClass:[UIWindowScene class]]) {
+      continue;
+    }
+    int deg = 0;
+    switch (((UIWindowScene*)scene).interfaceOrientation) {
+      case UIInterfaceOrientationLandscapeRight:
+        deg = 90;
+        break;
+      case UIInterfaceOrientationPortraitUpsideDown:
+        deg = 180;
+        break;
+      case UIInterfaceOrientationLandscapeLeft:
+        deg = 270;
+        break;
+      default:
+        break;
+    }
+    g_interface_deg.store(deg);
+    return;
+  }
+}
+
+/** Starts following the interface orientation (callable from any thread; the reads run on the main thread). */
+void TrackInterfaceRotation() {
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+    // The notification is deprecated but still posted (SDL's own display-orientation event hangs on it); the scene
+    // geometry read below is the current API.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    [center addObserverForName:UIApplicationDidChangeStatusBarOrientationNotification
+                        object:nil
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:^(NSNotification*) {
+                      RefreshInterfaceRotation();
+                    }];
+#pragma clang diagnostic pop
+    dispatch_async(dispatch_get_main_queue(), ^{
+      RefreshInterfaceRotation();
+    });
+  });
 }
 
 } // namespace
@@ -80,6 +132,7 @@ int CameraDisplayRotationDegrees() {
 }
 
 CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id, int display_rotation_deg) {
+  TrackInterfaceRotation();
   CameraCaptureTransform t;
   t.encode_width = 360;
   t.encode_height = 640;
@@ -105,7 +158,8 @@ int CameraFrameRotateCw(const CameraCaptureTransform& opened, int current_displa
 }
 
 int CameraPreviewRotateCw(const CameraCaptureTransform& opened) {
-  return IosCameraRotateCw(opened.front_facing, 0); // the UI never rotates: portrait is screen-up
+  // The screen-up direction: the interface rotation (0 on an iPhone, which never rotates; an iPad's landscape too).
+  return IosCameraRotateCw(opened.front_facing, g_interface_deg.load());
 }
 
 } // namespace pbr

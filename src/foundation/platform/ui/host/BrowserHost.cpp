@@ -1,6 +1,8 @@
 #include "foundation/platform/ui/RmlUi_Backend.h"
+#include "foundation/platform/MobileOrientation.h"
 #include "foundation/platform/ScreenAwake.h"
 #include "foundation/platform/ScreenKeyboard.h"
+#include "foundation/platform/UikitWindowGeometry.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "foundation/runtime/FramePacing.h"
@@ -217,6 +219,11 @@ static bool SDLCALL LiveResizeEventWatch(void* /*userdata*/, SDL_Event* event) {
 
   if (!size_may_have_changed && !live_expose)
     return true;
+  // iOS: SDL gave its view a frame that is not the window's (the keyboard-time width/height swap on iPadOS 27,
+  // UikitViewFillsWindow). Drawing it would lay the shell out for a window shape that does not exist (the wide layout
+  // flashed to compact and dropped the focused input); ProcessEvents puts the view back first.
+  if (size_may_have_changed && !pbr::UikitViewFillsWindow(data->window))
+    return true;
 
   int pixel_w = 0;
   int pixel_h = 0;
@@ -244,12 +251,11 @@ static bool SDLCALL LiveResizeEventWatch(void* /*userdata*/, SDL_Event* event) {
 bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize, bool borderless) {
   UI_ASSERT(!data);
 
-  // Mobile: lock UI to portrait so rotation does not tear down EGL / reshape the
-  // shell mid-frame (and so in-call video avoids orientation-related crashes).
-  // Must be set before SDL_Init. Desktop window resize is unaffected.
-#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
-  SDL_SetHint(SDL_HINT_ORIENTATIONS, "Portrait");
-#endif
+  // Mobile: the phone stays in portrait so rotation does not reshape the shell mid-call (and in-call video avoids
+  // orientation-related crashes); an iPad rotates (the layout follows the width). Must be set before SDL_Init.
+  // Desktop window resize is unaffected (no hint).
+  if (const char* orientations = pbr::MobileOrientationsHint())
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, orientations);
 
   // SDL turns the OS's screen sleep off at video init unless told otherwise (B215: PP kept a charging phone lit all
   // night). Platform::EarlyInit sets the hint before any SDL init; the explicit enable below does not depend on who
@@ -399,8 +405,22 @@ void Backend::SyncContext(ui::Context* context) {
   context->SetDensityIndependentPixelRatio(SDL_GetWindowDisplayScale(data->window));
   data->render_interface.SetViewport(pixel_w, pixel_h);
   EventLoopWake::MarkFrame();
-  ui::Log::Message(ui::Log::LT_DEBUG, "SyncContext: %dx%d scale=%.3f", pixel_w, pixel_h,
-                   SDL_GetWindowDisplayScale(data->window));
+  // One line per new size (iPad windows resize and rotate): the sizes the context took and, on iOS, UIKit's view.
+  static int s_logged_w = -1;
+  static int s_logged_h = -1;
+  static float s_logged_scale = -1.f;
+  const float scale = SDL_GetWindowDisplayScale(data->window);
+  if (pixel_w != s_logged_w || pixel_h != s_logged_h || scale != s_logged_scale) {
+    s_logged_w = pixel_w;
+    s_logged_h = pixel_h;
+    s_logged_scale = scale;
+    int win_w = 0;
+    int win_h = 0;
+    SDL_GetWindowSize(data->window, &win_w, &win_h);
+    ::pp::logging::getLogger("Window").info << "context px=" << pixel_w << "x" << pixel_h << " scale=" << scale
+                                            << " sdl_window=" << win_w << "x" << win_h << " "
+                                            << pbr::DescribeUikitWindowGeometry(data->window);
+  }
 #else
   (void)context;
 #endif
@@ -572,6 +592,16 @@ bool Backend::ProcessEvents(ui::Context* context, KeyDownCallback key_down_callb
     }
     timeout_ms = static_cast<int>(delay_sec * 1000.0);
   }
+#if SDL_MAJOR_VERSION >= 3
+  // iOS: keep SDL's view and drawable the size and scale of the window before waiting (the resize events it
+  // causes are then handled below). A no-op elsewhere.
+  const pbr::UikitGeometryFix geometry_fix = pbr::SyncUikitWindowGeometry(data->window);
+  if (geometry_fix.Any()) {
+    ::pp::logging::getLogger("Window").info << "view resynced to window resize=" << geometry_fix.resize_view
+                                            << " rescale=" << geometry_fix.rescale_view;
+    timeout_ms = 0;
+  }
+#endif
   // One wake (flag + its wake event) ends one wait: both are taken here together (EventLoopWake.h).
   has_event = EventLoopWake::TakeFirstEvent(&ev, power_save, timeout_ms);
 
@@ -620,6 +650,8 @@ bool Backend::ProcessEvents(ui::Context* context, KeyDownCallback key_down_callb
 #if SDL_MAJOR_VERSION >= 3
       case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
       case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
+        // iOS: a view SDL resized away from its window (keyboard show / hide) is put back before its size is read.
+        pbr::SyncUikitWindowGeometry(data->window);
         SyncContext(context);
         propagate_event = false;
         break;
@@ -640,6 +672,9 @@ bool Backend::ProcessEvents(ui::Context* context, KeyDownCallback key_down_callb
         RMLSDL_WINDOW_EVENTS_BEGIN
 
       case event_window_size_changed:
+#if SDL_MAJOR_VERSION >= 3
+        pbr::SyncUikitWindowGeometry(data->window);
+#endif
         SyncContext(context);
         propagate_event = false;
         break;

@@ -19,6 +19,7 @@
 #include "feature/calls/ICallSessionNotes.h"
 
 #include <chrono>
+#include <deque>
 #include <functional>
 #include <optional>
 #include <set>
@@ -165,6 +166,9 @@ public:
   void SetAloneSinceForTest(const std::string& call_id, int64_t since_ms) { alone_since_ms_[call_id] = since_ms; }
   /** Calls owner: how soon a decision put off by an unreadable roster is tried again (1 s). */
   void SetUnreadRosterRetryForTest(int64_t ms) { unread_roster_retry_ms_ = ms; }
+  static constexpr size_t kMissedGroupRingsRemembered = 64;
+  /** Test seam: how many missed group rings are remembered (never above kMissedGroupRingsRemembered). */
+  size_t MissedGroupRingsRememberedForTest() const { return missed_group_rings_reported_.size(); }
   /** Test seam: the number of the last peer bye noted (NotePeerEndedCall). */
   uint64_t LastPeerByeForTest() const { return last_peer_bye_; }
   /**
@@ -248,6 +252,8 @@ public:
   int64_t AloneUntilMs(const std::string& call_id) const;
   /** This device is Joined in the call (not left it). */
   bool StillInCall(const std::string& call_id) const;
+  /** Tells the device once per call that a group call rang here unanswered and undeclined (it counts as unread). */
+  void ReportMissedGroupRing(const CallSession& session);
 
   /**
    * A call invite. Returns the call to answer at once: the inviter and this device called each
@@ -474,6 +480,12 @@ private:
   std::unordered_set<std::string> join_any_retry_sent_;
   /** V067 8: of those, the calls this device is still in and asks back into (RejoinCall). */
   std::unordered_set<std::string> rejoining_in_place_;
+  /**
+   * Group calls already reported as missed rings: a repeated end or a replayed invite counts once. Only the most
+   * recent kMissedGroupRingsRemembered are kept (oldest forgotten first): a duplicate comes within moments.
+   */
+  std::unordered_set<std::string> missed_group_rings_reported_;
+  std::deque<std::string> missed_group_rings_order_;
   /** V053: group calls this device is alone in → since when. */
   std::unordered_map<std::string, int64_t> alone_since_ms_;
   /**

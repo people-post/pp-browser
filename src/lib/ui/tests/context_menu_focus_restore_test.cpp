@@ -1,6 +1,7 @@
 #include "lib/ui/ContextMenuHost.h"
 
 #include <ui/base/SystemInterface.h>
+#include <ui/dom/SelectionController.h>
 #include <ui/core/Core.h>
 #include <ui/dom/Context.h>
 #include <ui/dom/ElementDocument.h>
@@ -42,7 +43,9 @@ protected:
         "<rml><head><style>body { width: 400px; height: 400px; } input { width: 200px; height: 20px; } "
         ".context-menu-layer { position: fixed; top: 0; left: 0; right: 0; bottom: 0; } "
         ".context-menu-sheet { position: absolute; }</style></head>"
-        "<body><div id='pane'><input id='field' type='text'/></div><div id='other'/></body></rml>");
+        "<body><div id='pane'><input id='field' type='text'/></div><div id='other'/>"
+        "<div id='note' selectable='text'>first words</div><div id='note2' selectable='text'>second words</div>"
+        "</body></rml>");
     ASSERT_NE(document_, nullptr);
     document_->Show();
     context_->Update();
@@ -472,6 +475,128 @@ TEST_F(ContextMenuPopoverTest, APopoverOnTheDesktopIsAPlainFloatMenu) {
   ASSERT_NE(layer, nullptr);
   EXPECT_FALSE(layer->IsClassSet("context-menu-layer--popover"));
   EXPECT_FALSE(layer->IsClassSet("context-menu-layer--sheet"));
+}
+
+// A surface with text of its own (the ask-AI panel's bubbles) replaces the generic Copy / Select all menu.
+class ContextMenuTextTest : public ContextMenuFocusRestoreTest {
+protected:
+  class RecordingSystem : public ui::SystemInterface {
+  public:
+    double GetElapsedTime() override { return 0.0; }
+    void SetClipboardText(const ui::String& text) override { clipboard = text.c_str(); }
+    std::string clipboard;
+  };
+
+  void SetUp() override {
+    ContextMenuFocusRestoreTest::SetUp();
+    ui::SetSystemInterface(&system_);
+    // Real glyphs: static text with none has nothing to select.
+    ASSERT_TRUE(
+        ui::LoadFontFace(std::string(PP_BROWSER_ASSETS_DIR) + "/fonts/Inter-Regular.ttf", /*fallback_face=*/true));
+    document_->SetProperty("font-family", "Inter");
+    document_->GetElementById("note")->SetInnerRML("first words");
+    context_->Update();
+  }
+  void TearDown() override {
+    ContextMenuHost::Instance().SetTextMenuOverride(nullptr);
+    ContextMenuFocusRestoreTest::TearDown();
+    ui::SetSystemInterface(nullptr);
+  }
+
+  static std::string KeyOf(const std::string& label) {
+    return label == "Copy" ? "common.copy" : label == "Select all" ? "common.select_all" : label;
+  }
+
+  static ui::Element* ItemLabelled(ui::ElementDocument* document, const std::string& label) {
+    ui::ElementList items;
+    document->GetElementsByClassName(items, "context-menu-item");
+    for (ui::Element* item : items) {
+      ui::ElementList labels;
+      item->GetElementsByClassName(labels, "context-menu-item-label");
+      // The test runs without the locale files: a label is then its key.
+      const std::string shown = labels.empty() ? std::string() : std::string(labels[0]->GetInnerRML().c_str());
+      if (shown == label || shown == KeyOf(label)) {
+        return item;
+      }
+    }
+    return nullptr;
+  }
+
+  void Press(ui::Element* item) {
+    item->DispatchEvent(ui::EventId::Mousedown, Pointer(10, 10));
+    item->DispatchEvent(ui::EventId::Mouseup, Pointer(10, 10));
+    item->DispatchEvent(ui::EventId::Click, Pointer(10, 10));
+    ContextMenuHost::Instance().Update();
+    context_->Update();
+  }
+
+  RecordingSystem system_;
+};
+
+TEST_F(ContextMenuTextTest, AnOverrideReplacesTheGenericTextActions) {
+  bool copied = false;
+  ContextMenuHost::Instance().SetTextMenuOverride(
+      [&copied](const ContextMenuRequest&) -> std::optional<std::vector<ContextMenuAction>> {
+        std::vector<ContextMenuAction> actions;
+        actions.push_back({"mine", "Mine", nullptr, [&copied] { copied = true; }});
+        return actions;
+      });
+  ContextMenuRequest request;
+  request.position = {10, 10};
+  request.target = document_->GetElementById("note");
+  request.context = context_;
+  ContextMenuHost::Instance().ShowAt(request);
+  context_->Update();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  EXPECT_EQ(ItemLabelled(document_, "Copy"), nullptr);
+  EXPECT_EQ(ItemLabelled(document_, "Paste"), nullptr);
+  ui::Element* mine = ItemLabelled(document_, "Mine");
+  ASSERT_NE(mine, nullptr);
+  Press(mine);
+  EXPECT_TRUE(copied);
+}
+
+TEST_F(ContextMenuTextTest, AnOverrideThatDeclinesLeavesTheGenericMenu) {
+  ContextMenuHost::Instance().SetTextMenuOverride(
+      [](const ContextMenuRequest&) -> std::optional<std::vector<ContextMenuAction>> { return std::nullopt; });
+  ContextMenuRequest request;
+  request.position = {10, 10};
+  request.target = document_->GetElementById("note");
+  request.context = context_;
+  ContextMenuHost::Instance().ShowAt(request);
+  context_->Update();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  EXPECT_NE(ItemLabelled(document_, "Select all"), nullptr);
+}
+
+// Select all, then Copy from the menu that follows: the clipboard holds the selection as it is when Copy is tapped.
+TEST_F(ContextMenuTextTest, CopyTakesTheSelectionAsItIsWhenCopyIsTapped) {
+  ContextMenuRequest request;
+  request.position = {10, 10};
+  request.target = document_->GetElementById("note");
+  request.context = context_;
+  ContextMenuHost::Instance().ShowAt(request);
+  context_->Update();
+  ui::Element* select_all = ItemLabelled(document_, "Select all");
+  ASSERT_NE(select_all, nullptr);
+  select_all->DispatchEvent(ui::EventId::Mousedown, Pointer(10, 10));
+  ContextMenuHost::Instance().Update();
+  context_->Update();
+  ASSERT_TRUE(context_->GetSelectionController()->HasSelection());
+
+  ContextMenuHost::Instance().ShowAt(request);
+  context_->Update();
+  // The selection grows after the menu opened (the snapshot is of the earlier one): Copy still copies it as it is.
+  const std::string at_open = context_->GetSelectionController()->GetSelectedText().c_str();
+  context_->GetSelectionController()->ClearSelection();
+  context_->GetSelectionController()->SelectWordAt({3, 3});
+  const std::string now = context_->GetSelectionController()->GetSelectedText().c_str();
+  ASSERT_FALSE(now.empty());
+  ASSERT_NE(now, at_open);
+  ui::Element* copy = ItemLabelled(document_, "Copy");
+  ASSERT_NE(copy, nullptr);
+  Press(copy);
+  EXPECT_EQ(system_.clipboard, now);
 }
 
 } // namespace

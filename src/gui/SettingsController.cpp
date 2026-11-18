@@ -25,6 +25,7 @@
 #include "feature/settings/SettingsPortsViews.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/MascotLook.h"
+#include "gui/DefaultPinNote.h"
 #include "gui/ProfileSettingsSection.h"
 #include "gui/shell/RmlMount.h"
 #include "gui/UnlockEnsurePorts.h"
@@ -498,6 +499,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.attachment_auto_on_cellular = ui_state_.attachment_auto_on_cellular.c_str();
   bindings_.attachment_auto_toggles_visible = AttachmentAutoTogglesVisible(ui_state_, Platform::Detect());
   bindings_.pin_protection_status = ui_state_.pin_protection_status.c_str();
+  bindings_.pin_page_note = Tr("settings.security.pin_page.note", {{"pin", kDefaultProfilePin}}).c_str();
   bindings_.pin_protection_is_default = ui_state_.pin_protection_is_default;
   bindings_.pin_protection_not_setup = ui_state_.pin_protection_not_setup;
   bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
@@ -743,6 +745,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("security_can_export_link", &controller.bindings_.security_can_export_link);
     ctor.Bind("security_has_recovery_phrase", &controller.bindings_.security_has_recovery_phrase);
     ctor.Bind("unlock_grace_label", &controller.bindings_.unlock_grace_label);
+    ctor.Bind("pin_page_note", &controller.bindings_.pin_page_note);
     ctor.Bind("security_grace_shown", &controller.bindings_.security_grace_shown);
     ctor.Bind("security_biometric_shown", &controller.bindings_.security_biometric_shown);
     ctor.Bind("security_biometric_on", &controller.bindings_.security_biometric_on);
@@ -795,6 +798,10 @@ bool SettingsController::RegisterModel(ui::Context* context) {
             OnShowSettingNote(*title_key, *text_key);
           }
         });
+    ctor.BindEventCallback("show_default_pin_note", [this](ui::DataModelHandle, ui::Event& ev, const ui::VariantList&) {
+      ev.StopPropagation();
+      OnShowDefaultPinNote();
+    });
     ctor.BindEventCallback("on_llm_field_changed", DataEvent<>([this]() { MarkSectionDirty("llm"); }));
     ctor.BindEventCallback("on_llm_preset_changed", DataEventAt([this](ui::Event& ev) { OnLlmPresetChanged(ev); }));
     ctor.BindEventCallback("on_choose_theme", DataEventAt([this](ui::Event& ev) { OnChooseTheme(ev); }));
@@ -1005,6 +1012,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "security_can_export_link");
   host.Dirty("settings", "security_has_recovery_phrase");
   host.Dirty("settings", "unlock_grace_label");
+  host.Dirty("settings", "pin_page_note");
   host.Dirty("settings", "security_grace_shown");
   host.Dirty("settings", "security_biometric_shown");
   host.Dirty("settings", "security_biometric_on");
@@ -1599,16 +1607,15 @@ void SettingsController::RefreshBlockedCount() {
 }
 
 void SettingsController::OpenSecurityPage(const std::string& page) {
-  if (page == "change_pin") {
-    OpenChangePin(); // B2: the PIN gate's three steps, not a page of fields
-    return;
-  }
   // Phones only: the desktop shows these inline. Devices has the transfer page; Advanced has the pages that hold its
   // free-text fields (the custom endpoint, the integrations, the custom service addresses).
   const bool on_devices = selected_id_ == "devices" && show_detail_;
   const bool on_advanced = selected_id_ == "advanced" && show_detail_;
   bool secret = false; // the transfer code is on it: no tab bar under it
-  if (on_devices && page == "transfer") {
+  if (selected_id_ == "security" && show_detail_ && page == "pin") {
+    // The PIN page: the rows that start the PIN gate's steps (B2: the gate keeps the fields, not this page).
+    security_page_title_ = Tr("settings.security.pin_row").c_str();
+  } else if (on_devices && page == "transfer") {
     security_page_title_ = Tr("settings.security.transfer_row").c_str();
     secret = true;
   } else if (on_advanced && page == "ai_endpoint") {
@@ -2127,6 +2134,14 @@ void SettingsController::OnShowSettingNote(const std::string& title_key, const s
   }
   // The shell's alert: a titled card with the sentence and one OK. No network, no AI.
   shell_feedback_.show_alert(title, text, {}, Tr("common.ok"));
+}
+
+void SettingsController::OnShowDefaultPinNote() {
+  // Only for people on the app's default PIN; the digits are filled in from the constant, a local note, no AI.
+  if (!ui_state_.pin_protection_is_default || !shell_feedback_.show_alert) {
+    return;
+  }
+  shell_feedback_.show_alert(Tr("settings.security.default_hint.title"), DefaultPinNoteText(), {}, Tr("common.ok"));
 }
 
 void SettingsController::OpenNetworkSettings() {

@@ -186,7 +186,11 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int displ
   if (auto cam = call_media->SetCamera(enabled, display_rotation_degrees); !cam) {
     return cam.error();
   }
-  (void)workflow_.PublishLocalMedia(call_id, *local, {std::nullopt, enabled && call_media->CameraOn()});
+  // Whatever the camera was told, any "paused" is over: the others are never left on "Camera paused" by a user's close
+  // or by an open that did not come through SetLocalVideoPaused(false) (B225).
+  video_paused_call_id_.clear();
+  (void)workflow_.PublishLocalMedia(call_id, *local,
+                                    {std::nullopt, enabled && call_media->CameraOn(), std::nullopt, false});
   return {};
 }
 

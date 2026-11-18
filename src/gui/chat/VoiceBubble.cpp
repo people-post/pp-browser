@@ -112,7 +112,8 @@ std::string VoiceBubbleRml(const std::string& message_id, const std::string& cli
   html += "<div class=\"chat-voice-foot\"><span id=\"vt-" + key + "\" class=\"chat-voice-time\">" +
           StructuredTextParser::EscapeText(VoiceBubbleTimeText(state, duration_ms)) + "</span>";
   if (!face.clock.empty()) {
-    html += "<span class=\"chat-voice-clock\">" + StructuredTextParser::EscapeText(face.clock) + "</span>";
+    html += "<span class=\"chat-voice-clock\">" + face.route_icon + StructuredTextParser::EscapeText(face.clock) +
+            "</span>";
   }
   html += "</div></div>";
   return html;

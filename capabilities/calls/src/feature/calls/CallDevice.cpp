@@ -214,6 +214,10 @@ void CallDevice::OnWorkflowReport(const WorkflowReport& report) {
           if (delivery_.sync_inbox_from_wake) {
             delivery_.sync_inbox_from_wake(true);
           }
+        } else if constexpr (std::is_same_v<R, workflow_report::MissedGroupCall>) {
+          if (delivery_.note_missed_group_call) {
+            delivery_.note_missed_group_call(r.thread_id, r.video);
+          }
         } else {
           static_assert(!sizeof(R), "take every WorkflowReport");
         }

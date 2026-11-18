@@ -45,6 +45,21 @@ TEST(CallSummaryLogicTest, OneToOneIsTheStartersToReport) {
   EXPECT_FALSE(restarted->detail.duration_ms) << "no talk time after a restart";
 }
 
+TEST(CallSummaryLogicTest, AGroupRingIsMissedOnlyWhenTheUserNeitherAnsweredNorDeclined) {
+  const CallSession group = Session("owner", true);
+  using R = LiveCallEndReason;
+  EXPECT_TRUE(IsMissedGroupRing(group, "me", R::Expired, true)) << "the ring ran out";
+  EXPECT_TRUE(IsMissedGroupRing(group, "me", R::RemoteEnded, true)) << "the others hung up while it rang";
+  EXPECT_TRUE(IsMissedGroupRing(group, "me", R::Superseded, true));
+  EXPECT_FALSE(IsMissedGroupRing(group, "me", R::Declined, true));
+  EXPECT_FALSE(IsMissedGroupRing(group, "me", R::AnsweredElsewhere, true));
+  EXPECT_FALSE(IsMissedGroupRing(group, "me", R::Merged, true));
+  EXPECT_FALSE(IsMissedGroupRing(group, "me", R::Orphaned, true));
+  EXPECT_FALSE(IsMissedGroupRing(group, "me", R::RemoteEnded, false)) << "answered (joined), then it ended";
+  EXPECT_FALSE(IsMissedGroupRing(Session("me", true), "me", R::Expired, true)) << "our own call";
+  EXPECT_FALSE(IsMissedGroupRing(Session("owner", false), "me", R::Expired, true)) << "1:1 has its own path";
+}
+
 TEST(CallSummaryLogicTest, AGroupNotesTheCallAsItWentHere) {
   const auto participants =
       std::vector<CallParticipant>{Joined("owner", 1'000), Joined("me", 5'000), Joined("other", 3'000)};

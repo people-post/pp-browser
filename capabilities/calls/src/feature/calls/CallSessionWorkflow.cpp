@@ -967,6 +967,12 @@ void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCall
 
 Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms,
                                             const LiveCallEndReason reason) {
+  const LiveCall* live = live_calls_.Find(session.call_id);
+  const bool was_ringing = live && live->State() == LiveCallState::Ringing;
+  if (auto local = host_.wire.local_account_identity();
+      local && IsMissedGroupRing(session, *local, reason, was_ringing)) {
+    ReportMissedGroupRing(session);
+  }
   if (reason != LiveCallEndReason::Rejoining) {
     DropRejoin(session.call_id);
   }
@@ -1068,6 +1074,21 @@ void CallSessionWorkflow::NoteParticipantLeft(const std::string& call_id, const 
   participant.state = CallParticipantState::Left;
   participant.left_at = util::NowUnixMs();
   (void)sessions_.UpsertParticipant(participant);
+}
+
+void CallSessionWorkflow::ReportMissedGroupRing(const CallSession& session) {
+  if (!session.origin_thread_id || session.origin_thread_id->empty() ||
+      !missed_group_rings_reported_.insert(session.call_id).second) {
+    return;
+  }
+  missed_group_rings_order_.push_back(session.call_id);
+  if (missed_group_rings_order_.size() > kMissedGroupRingsRemembered) {
+    missed_group_rings_reported_.erase(missed_group_rings_order_.front());
+    missed_group_rings_order_.pop_front();
+  }
+  log().info << "group call rang unanswered call_id=" << session.call_id;
+  reports_.Emit(
+      workflow_report::MissedGroupCall{*session.origin_thread_id, session.media_mode == CallMediaMode::Video});
 }
 
 bool CallSessionWorkflow::StillInCall(const std::string& call_id) const {
@@ -2674,6 +2695,7 @@ void CallSessionWorkflow::RecordMissedGroupCall(const CallInviteDetail& invite, 
   self.state = CallParticipantState::Missed;
   (void)sessions_.UpsertParticipant(self);
   log().info << "Missed group call recorded (joinable while it lasts) call_id=" << invite.call_id;
+  ReportMissedGroupRing(session); // too late to ring is still unanswered and undeclined
   reports_.Emit(workflow_report::Changed{});
 }
 

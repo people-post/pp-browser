@@ -61,6 +61,17 @@ std::optional<CallSummaryPlan> PlanCallSummary(const CallSession& session,
   return plan;
 }
 
+bool IsMissedGroupRing(const CallSession& session, const std::string& local_identity, const LiveCallEndReason reason,
+                       const bool was_ringing) {
+  const bool group = session.origin_group_id.has_value() && !session.origin_group_id->empty();
+  if (!group || !was_ringing || session.initiator_identity == local_identity) {
+    return false;
+  }
+  // Declined, answered elsewhere, merged, leaving by hand, shutdown and restart are not the ring running out.
+  return reason == LiveCallEndReason::Expired || reason == LiveCallEndReason::RemoteEnded ||
+         reason == LiveCallEndReason::Superseded;
+}
+
 std::string GroupCallSummaryMessageId(const std::string& call_id) {
   return "call-summary:" + call_id;
 }

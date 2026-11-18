@@ -211,6 +211,10 @@ struct DialogState {
   bool checkbox_checked = false;
   bool show_prompt = false;
   ui::String prompt_value;
+  /** A short line under the message with a "?" after it; the "?" opens `note_text` in the dialog ("" line: none). */
+  ui::String note_line;
+  ui::String note_text;
+  bool note_open = false;
   std::function<void(bool confirmed, bool checkbox_checked)> on_result;
   std::function<void(bool confirmed, std::string prompt_value)> on_prompt_result;
 };
@@ -267,6 +271,10 @@ struct PinGateState {
    * phone's own lock screen); the pad / field come after that button, or once the biometric unlock is lost.
    */
   bool biometric_first = false;
+  /** People on the app's default PIN: one short line ("" none) with a "?" after it; the "?" opens `default_note_text`. */
+  ui::String default_note_line;
+  ui::String default_note_text;
+  bool default_note_open = false;
   ui::String title;
   ui::String message;
   ui::String error;
@@ -380,6 +388,9 @@ struct CallRosterParticipantState {
   bool video_paused = false;
   /** V067: nothing has come from them for a few seconds: the tile reads "Reconnecting…", dimmed, no live picture. */
   bool reconnecting = false;
+  /** Only this device's own row: the camera is wanted but not on yet (waiting its turn, or resting in the background):
+   * the tile reads "Restoring video…" (B225). */
+  bool camera_resuming = false;
   /** V062: a guest in the group's call: the tile reads "Guest". */
   bool guest = false;
 };
@@ -425,6 +436,8 @@ struct CallInProgressState {
   bool on_hold = false;
   bool muted = false;
   bool camera_on = false;
+  /** 1:1: the camera is wanted but not on yet (waiting its turn / resting after the background): the pip says so. */
+  bool camera_resuming = false;
   /** The camera on is the front one: the flip button is lit (#83). */
   bool camera_front = false;
   /** Speakerphone on (true) vs earpiece (false). UI: same icon, contrast encodes status. */

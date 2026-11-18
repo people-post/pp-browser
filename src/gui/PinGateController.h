@@ -92,11 +92,15 @@ public:
   /** The phrase page: pick a saved copy of the account (M023) to restore from too. */
   void OnUseSavedCopy();
   void OnForgotToggle();
+  void OnNoteToggle();
   /** "Enter PIN instead" on the waiting screen. */
   void OnUsePinInstead();
   void DirtyPinFields();
 
 private:
+  /** The default-PIN line + "?" on the gate (null key: none). */
+  void SetDefaultNote(const char* line_key);
+
   void ShowCreate();
   void ShowLinkChooser();
   void ShowLinkPaste();

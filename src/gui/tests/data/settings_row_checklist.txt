@@ -209,14 +209,17 @@ data-event-click="open_blocked_people()"	1	-	privacy	-	security
 {{i18n:settings.security.group_invites}}	1	-	privacy	-	security	
 data-class-settings-switch--on="security_biometric_on"	1	-	security	security_biometric_shown	security	
 data-event-click="ask_setting_help('settings.security.recovery')"	1	-	security	security_has_recovery_phrase	security	
+data-event-click="ask_setting_help('settings.security.recovery')"	1	-	security	security_has_recovery_phrase;;recovery_phrase == ''	security	
 data-event-click="hide_recovery_phrase()"	2	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
 data-event-click="on_choose_unlock_grace()"	1	security	security	security_grace_shown	security	
-data-event-click="open_security_page('change_pin')"	1	-	security	show_change_pin	security	
+data-event-click="open_security_page('pin')"	1	-	security	show_change_pin	security	
+data-event-click="ask_setting_help('settings.help.topic.pin')"	1	-	security	show_change_pin	security	
+data-event-click="ask_setting_help('settings.help.topic.pin')"	1	-	security	!show_change_pin	security	
 data-event-click="show_recovery_phrase()"	2	-	security	security_has_recovery_phrase;;recovery_phrase == ''	security	
 data-event-click="toggle_biometric()"	1	security	security	security_biometric_shown	security	
 {{i18n:settings.security.biometric.help}}	1	-	security	security_biometric_shown	security	
-{{i18n:settings.security.change_pin}}	1	-	security	show_change_pin	security	
-{{i18n:settings.security.default_hint}}	1	-	security	pin_protection_is_default	security	
+{{i18n:settings.security.pin_row}}	1	-	security	show_change_pin	security	
+{{pin_page_note}}	2	-	security	show_change_pin && security_can_change_pin	security	
 {{i18n:settings.security.grace.caption}}	1	-	security	security_grace_shown	security	
 {{i18n:settings.security.grace.title}}	1	-	security	security_grace_shown	security	
 {{i18n:settings.security.recovery}}	1	-	security	!security_has_recovery_phrase	security	
@@ -481,7 +484,6 @@ data-event-click="tap_version()"	2	-	help	-	-
 data-event-click="toggle_advanced_settings()"	1	about	help	-	-	
 data-event-click="toggle_crash_reports()"	2	security	help	-	about,security	
 data-help-key="troubleshooting/send-diagnostics"	2	-	help	show_diagnostics_send	about,security	
-{{app_name}}	1	-	help	-	about	
 {{app_version}}	2	-	help	-	about	
 {{diagnostics_last_label}}	2	-	help	diagnostics_last_id != ''	about,security	
 {{diagnostics_send_label}}	1	-	help	show_diagnostics_send	about,security	
@@ -561,13 +563,13 @@ data-event-click="unpublish_cas(item_index)"	1	storage	tester	tester;;tester;;it
 {{i18n:settings.security.devices.this_device}}	1	-	profile	advanced && profile_peer_id != ''	profile	
 {{i18n:settings.auto_renew.short}}	1	-	profile	advanced	profile	
 data-event-click="show_setting_note('settings.auto_renew.short','settings.auto_renew.note')"	1	-	profile	advanced	profile	
-data-event-click="change_pin()"	1	-	security	show_change_pin && security_can_change_pin	security	
-{{i18n:pin.forget_warning}}	1	-	security	show_change_pin && security_can_change_pin	security	
-{{i18n:settings.security.change_pin}}	1	-	security	show_change_pin && security_can_change_pin	security	
-data-event-click="remove_pin()"	1	-	security	show_change_pin && security_can_change_pin && !pin_protection_is_default	security	
-data-event-click="remove_pin()"	1	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
-{{i18n:settings.security.remove_pin}}	1	-	security	show_change_pin && security_can_change_pin && !pin_protection_is_default	security	
-{{i18n:settings.security.remove_pin}}	1	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
+data-event-click="change_pin()"	2	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
+data-event-click="change_pin()"	2	-	security	show_change_pin && security_can_change_pin;;pin_protection_is_default	security	
+{{i18n:pin.forget_warning}}	2	-	security	show_change_pin && security_can_change_pin	security	
+{{i18n:settings.security.change_pin}}	2	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
+data-event-click="remove_pin()"	2	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
+{{i18n:settings.security.remove_pin}}	2	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
+{{i18n:settings.security.set_custom_pin}}	2	-	security	show_change_pin && security_can_change_pin;;pin_protection_is_default	security	
 {{i18n:settings.security.unlock_to_change}}	1	-	security	show_change_pin && !security_can_change_pin && !pin_protection_not_setup	security	
 {{i18n:settings.privacy.blocked_help}}	1	-	privacy	-	security	
 {{i18n:settings.tester.banner}}	1	-	tester	tester	-	

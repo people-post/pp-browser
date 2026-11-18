@@ -2556,7 +2556,11 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
 std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrator::NoticeGroupDissolvedIn(
     const std::string& thread_id) {
   // In the reader's language: the preview is kept as written, the notice shown once.
-  const std::string text = Localized("chat.group.dissolved_preview");
+  return NoticeLocalEvent(thread_id, Localized("chat.group.dissolved_preview"));
+}
+
+std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrator::NoticeLocalEvent(
+    const std::string& thread_id, const std::string& text) {
   inbox_.OnInboundMessagePersisted(thread_id, text, AppLifecycle::IsUserAttentive());
   if (AppLifecycle::IsUserAttentive()) {
     return std::nullopt;
@@ -2576,6 +2580,25 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
 
 void MeshDeliveryOrchestrator::SurfaceGroupDissolved(const std::string& thread_id) {
   auto notice = NoticeGroupDissolvedIn(thread_id);
+  if (on_messages_changed_) {
+    AppRuntime::PostUI([this]() {
+      if (on_messages_changed_) {
+        on_messages_changed_();
+      }
+    });
+  }
+  if (notice && on_background_unread_) {
+    AppRuntime::PostUI([this, notice = std::move(*notice)]() mutable {
+      if (on_background_unread_) {
+        on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id), false);
+      }
+    });
+  }
+}
+
+void MeshDeliveryOrchestrator::SurfaceMissedGroupCall(const std::string& thread_id, const bool video) {
+  auto notice = NoticeLocalEvent(
+      thread_id, Localized(video ? "call.summary.group_missed_video" : "call.summary.group_missed_voice"));
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() {
       if (on_messages_changed_) {

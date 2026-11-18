@@ -19,6 +19,9 @@ namespace {
 class PinGateControllerTest : public ::testing::Test {
 protected:
   void SetUp() override {
+    // The notes are built from catalog text ({pin}); load it here so the tests do not depend on which test ran first.
+    ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+    LocalizationService::Instance().SetPreferredLanguage("en");
     ShellPinGatePorts shell;
     shell.apply_pin_gate = [this](const PinGateState& state) { shown_ = state; };
     shell.pin_gate_snapshot = [this]() {
@@ -632,6 +635,67 @@ TEST_F(PinGateControllerTest, ChangeFromTheDefaultPinStartsAtTheNewPin) {
   ASSERT_EQ(changes_, (std::vector<std::pair<std::string, std::string>>{{std::string(kDefaultProfilePin), "2468"}}));
   change_done_(Roe<void>{});
   EXPECT_FALSE(shown_.active);
+}
+
+// The app's default PIN is never asked for; people on it only see one line with a "?" that tells the digits.
+TEST_F(PinGateControllerTest, ChangeFromTheDefaultPinSaysSoAndTheQuestionMarkTellsThePin) {
+  for (const char* language : {"en", "zh-Hans"}) {
+    LocalizationService::Instance().SetPreferredLanguage(language);
+    controller_.ShowChange(Check(), Change(), SecretText(std::string(kDefaultProfilePin)));
+    EXPECT_EQ(std::string(shown_.default_note_line.c_str()), Tr("settings.security.default_hint"));
+    EXPECT_FALSE(shown_.default_note_open);
+    EXPECT_NE(std::string(shown_.default_note_text.c_str()).find(kDefaultProfilePin), std::string::npos)
+        << "the digits come from the constant";
+    controller_.OnNoteToggle();
+    EXPECT_TRUE(shown_.default_note_open);
+    controller_.OnNoteToggle();
+    EXPECT_FALSE(shown_.default_note_open);
+  }
+  LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
+TEST_F(PinGateControllerTest, ChangeFromAnOwnPinHasNoDefaultNote) {
+  pin_digits_ = 4;
+  controller_.ShowChange(Check(), Change(), std::nullopt);
+  EXPECT_TRUE(shown_.default_note_line.empty());
+  EXPECT_TRUE(shown_.default_note_text.empty());
+  controller_.OnNoteToggle();
+  EXPECT_FALSE(shown_.default_note_open) << "nothing to open";
+}
+
+TEST_F(PinGateControllerTest, JustContinueOnTheLinkAndPhrasePagesSaysTheDeviceUsesTheDefault) {
+  for (const char* language : {"en", "zh-Hans"})
+    for (const bool phrase : {false, true}) {
+      LocalizationService::Instance().SetPreferredLanguage(language);
+      controller_.ShowIdentityFork();
+      if (phrase) {
+        controller_.OnIdentityPhrase();
+      } else {
+        controller_.OnIdentityLink();
+      }
+      controller_.OnUseDefaultPin();
+      ASSERT_TRUE(shown_.link_paste_mode);
+      EXPECT_EQ(shown_.phrase_flow, phrase);
+      EXPECT_EQ(std::string(shown_.default_note_line.c_str()), Tr("pin.default_note.device"));
+      EXPECT_NE(std::string(shown_.default_note_text.c_str()).find(kDefaultProfilePin), std::string::npos);
+      EXPECT_FALSE(shown_.default_note_open);
+      controller_.OnNoteToggle();
+      EXPECT_TRUE(shown_.default_note_open);
+    }
+  LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
+TEST_F(PinGateControllerTest, AnOwnPinOnTheLinkPageHasNoDefaultNote) {
+  controller_.ShowIdentityFork();
+  controller_.OnIdentityLink();
+  controller_.OnSetPin();
+  EXPECT_TRUE(shown_.create_mode);
+  EXPECT_TRUE(shown_.default_note_line.empty());
+  Keys("2468");
+  controller_.OnKeypadOk();
+  Keys("2468");
+  ASSERT_TRUE(shown_.link_paste_mode);
+  EXPECT_TRUE(shown_.default_note_line.empty());
 }
 
 // Face / fingerprint unlock (at-rest A014, DEV/PLAN-pin-gate-redesign.md C): the unlock door's key (pad) / link

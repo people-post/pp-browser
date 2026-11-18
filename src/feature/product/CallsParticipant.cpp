@@ -136,6 +136,11 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
         messaging->SyncInboxFromWake(force);
       }
     };
+    deps.delivery.note_missed_group_call = [&hub](const std::string& thread_id, bool video) {
+      if (auto* messaging = hub.MeshMessagingOrNull()) {
+        messaging->SurfaceMissedGroupCall(thread_id, video);
+      }
+    };
     deps.delivery.catch_up_after_call = [&hub]() {
       if (auto* messaging = hub.MeshMessagingOrNull()) {
         messaging->SyncInboxFromWake(true);

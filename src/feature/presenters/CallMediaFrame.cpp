@@ -78,6 +78,11 @@ CallStatusLine DecideStatusLine(const CallScreen& screen, const CallMediaFacts& 
                                 int64_t& timer_since_ms) {
   CallStatusLine line = ScreenStatusLine(screen);
   timer_since_ms = screen.connected_at_ms;
+  if (screen.status == Status::WaitingForOthers && !d.couldnt_connect) {
+    // Everyone else left: the countdown to leaving by itself is the line, over the live timer, the head count and the
+    // path word (the media is still up while the call waits). Only a failed connect says more.
+    return line;
+  }
   // The call timer counts the call (first live), not the current path: it runs on through a reconnect.
   bool media_line = false;
   if (d.couldnt_connect) {

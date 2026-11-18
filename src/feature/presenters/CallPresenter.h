@@ -10,6 +10,7 @@
 #include "feature/presenters/CallMediaFrame.h"
 #include "feature/presenters/CallHoldStuck.h"
 #include "feature/presenters/CallPlayoutStuck.h"
+#include "feature/presenters/CallGroupLook.h"
 #include "feature/presenters/CallSpeakerButton.h"
 #include "feature/presenters/CallUiAttachGuard.h"
 #include "feature/presenters/CallWakePlaceholder.h"
@@ -173,6 +174,17 @@ public:
     std::function<bool()> on_hold_here;
     /** The app is in front (AppLifecycle::IsForeground; CallHoldStuck counts only then); none: always in front. */
     std::function<bool()> app_foreground;
+    /**
+     * The user's camera wish (the GUI's CallLocalHold): the button, our own tile and "narrow to voice" follow it, not
+     * the engine, which moves later (B225). None: the engine's state.
+     */
+    std::function<bool()> camera_wanted;
+    /** A video call's automatic camera-on at setup: the wish is set; the device opens when the gate lets it. */
+    std::function<void()> auto_camera_on;
+    /** The engine closed the camera itself (permission denied, open failed): the wish goes with it. */
+    std::function<void()> camera_closed_by_engine;
+    /** The call narrowed to voice and turns the camera off: our close. */
+    std::function<void()> camera_closed_by_policy;
   };
   using StartDone = std::function<void(const CallStartResult&)>;
 
@@ -313,7 +325,13 @@ public:
    */
   void Redial();
   void ToggleMute();
-  void ToggleCamera();
+  /**
+   * The camera button's checks before the GUI turns the wish on (turning it off needs none): false, with the reason
+   * shown, when the camera cannot be turned on now.
+   */
+  bool CanTurnCameraOn();
+  /** The call refused the camera the user asked for: the plain sentence. */
+  void ReportCameraToggleFailed();
   /** Phones: front / rear camera while it is on. */
   void FlipCamera();
   void ToggleSpeaker();
@@ -443,6 +461,7 @@ private:
   /** The last 1:1 call shown that this device was in and that had not connected (KeepsFailedPage's kind). */
   std::string unconnected_call_id_;
   NoMediaWatch no_media_watch_;
+  CallGroupLook group_look_;
   int64_t no_media_checked_ms_ = 0;
   /** Last CallSessionManager identity the ring callbacks were installed on. */
   const void* bound_calls_ = nullptr;

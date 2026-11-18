@@ -75,8 +75,10 @@ void AppendRosterCards(std::ostringstream& out, const char* rows, const char* ca
          ">{{call_in_progress_remote_placeholder}}</p>";
   AppendHoldPill(out, "p.on_hold", "");
   AppendReconnectingPill(out, "p.reconnecting && !p.on_hold", "");
-  out << "<p class=\"text-xs shell-call-peer-stall\" data-if=\"p.video_paused && !p.on_hold\">"
+  out << "<p class=\"text-xs shell-call-peer-stall\" data-if=\"p.video_paused && !p.is_local && !p.on_hold\">"
       << Tr("call.placeholder.camera_paused") << "</p>";
+  out << "<p class=\"text-xs shell-call-peer-stall\" data-if=\"p.is_local && p.camera_resuming\">"
+      << Tr("call.placeholder.camera_resuming") << "</p>";
   out << "<div class=\"shell-call-peer-badges row\">";
   out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"14\" height=\"14\" "
          "crop-to-content=\"true\"></svg>";
@@ -463,8 +465,10 @@ void AppendPhoneTiles(std::ostringstream& out, const char* rows, const char* ext
          "{{call_in_progress_remote_placeholder}}</p>";
   AppendHoldPill(out, "p.on_hold", " call-hold-pill--tile");
   AppendReconnectingPill(out, "p.reconnecting && !p.on_hold", " call-hold-pill--tile");
-  out << "<p class=\"call-phone-tile-note\" data-if=\"p.video_paused && !p.on_hold\">"
+  out << "<p class=\"call-phone-tile-note\" data-if=\"p.video_paused && !p.is_local && !p.on_hold\">"
       << Tr("call.placeholder.camera_paused") << "</p>";
+  out << "<p class=\"call-phone-tile-note\" data-if=\"p.is_local && p.camera_resuming\">"
+      << Tr("call.placeholder.camera_resuming") << "</p>";
   out << "<div class=\"call-phone-tile-label\"><svg data-if=\"p.audio_muted\" src=\"../icons/v2/mic-off.svg\" "
          "width=\"14\" height=\"14\"></svg><span class=\"call-phone-tile-name\">{{p.name}}</span>"
       << "<span class=\"call-phone-tile-name\" data-if=\"p.guest\">· " << Tr("call.guest.label") << "</span></div>";
@@ -731,7 +735,12 @@ std::string CallPhoneRml(const ShellState& state) {
         swap_to.empty() ? std::string{} : " data-event-click=\"call_spotlight('" + swap_to + "')\"";
     out << "<call-video-tile class=\"call-phone-pip\""
         << (self_big ? " tile=\"remote\"" : " id=\"call-local-tile\" tile=\"local\"")
-        << " data-if=\"call_in_progress_local_preview\"" << swap << "></call-video-tile></div>";
+        << " data-if=\"call_in_progress_local_preview\"" << swap << "></call-video-tile>";
+    // Our own picture is on its way back (waiting its turn / after the background): the pip's place says so.
+    out << "<div class=\"call-phone-pip call-phone-pip--resuming\" "
+           "data-if=\"!call_in_progress_local_preview && call_in_progress_camera_resuming\">"
+           "<p class=\"call-phone-tile-note\">"
+        << Tr("call.placeholder.camera_resuming") << "</p></div></div>";
   } else if (call.story_active) {
     out << "<div class=\"call-phone-story" << (video_layout ? " call-phone-story--card" : "") << "\">";
     out << (video_layout ? "<div class=\"call-phone-card\">" : "");
@@ -1065,6 +1074,10 @@ std::string CallInProgressRml(const ShellState& state) {
   out << "</call-video-tile>";
   out << "<call-video-tile class=\"shell-call-pip\" id=\"call-local-tile\" tile=\"local\" "
          "data-if=\"call_in_progress_local_preview\"></call-video-tile>";
+  out << "<div class=\"shell-call-pip shell-call-pip--resuming\" "
+         "data-if=\"!call_in_progress_local_preview && call_in_progress_camera_resuming\">"
+         "<p class=\"text-xs shell-call-pip-note\">"
+      << Tr("call.placeholder.camera_resuming") << "</p></div>";
   out << "</div>";
   out << "<div class=\"shell-call-bar\">";
   out << "<div class=\"shell-call-bar-row row\">";

@@ -48,5 +48,29 @@ TEST(CameraPreviewRotateCwTest, DefaultPreviewMatchesTheSentFrame) {
   EXPECT_EQ(CameraPreviewRotateCw(opened), 0);
 }
 
+// The preview takes the shape its rotation gives: a quarter turn is portrait, none (or a half turn) landscape.
+TEST(CameraPreviewSizeTest, FollowsTheRotationNotTheEncodeShape) {
+  CameraCaptureTransform opened;
+  opened.encode_width = 360;
+  opened.encode_height = 640; // opened in portrait
+  int w = 0;
+  int h = 0;
+  CameraPreviewSize(opened, 90, w, h);
+  EXPECT_EQ(w, 360);
+  EXPECT_EQ(h, 640);
+  CameraPreviewSize(opened, 0, w, h);
+  EXPECT_EQ(w, 640);
+  EXPECT_EQ(h, 360);
+  CameraPreviewSize(opened, 180, w, h);
+  EXPECT_EQ(w, 640);
+  CameraPreviewSize(opened, 270, w, h);
+  EXPECT_EQ(h, 640);
+  opened.encode_width = 640;
+  opened.encode_height = 360; // opened in landscape
+  CameraPreviewSize(opened, 270, w, h);
+  EXPECT_EQ(w, 360);
+  EXPECT_EQ(h, 640);
+}
+
 } // namespace
 } // namespace pbr

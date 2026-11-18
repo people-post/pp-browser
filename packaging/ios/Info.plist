@@ -45,7 +45,7 @@
   <!-- Asset catalog AppIcon (compiled to Assets.car by ios_prepare_app_icons.sh). -->
   <key>CFBundleIconName</key>
   <string>AppIcon</string>
-  <!-- Portrait-only: opt out of iPad multitasking (avoids requiring all orientations). -->
+  <!-- Full screen on iPad: no Split View / Slide Over / Stage Manager resizing (a later step). -->
   <key>UIRequiresFullScreen</key>
   <true/>
   <!-- Must match PP_BROWSER_IOS_DEPLOYMENT_TARGET / CMAKE_OSX_DEPLOYMENT_TARGET. -->
@@ -81,7 +81,8 @@
     <string>arm64</string>
     <string>opengles-3</string>
   </array>
-  <!-- Portrait only — avoid rotation EGL/shell churn (same policy as Android). -->
+  <!-- iPhone: portrait only (same policy as Android). iPad: all four orientations; SDL_HINT_ORIENTATIONS
+       (foundation/platform/MobileOrientation.h) narrows the set the same way. -->
   <key>UISupportedInterfaceOrientations</key>
   <array>
     <string>UIInterfaceOrientationPortrait</string>
@@ -89,6 +90,9 @@
   <key>UISupportedInterfaceOrientations~ipad</key>
   <array>
     <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationPortraitUpsideDown</string>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
   </array>
   <!-- Allow HTTPS to Brief API, relay, and custom LLM endpoints. -->
   <key>NSAppTransportSecurity</key>

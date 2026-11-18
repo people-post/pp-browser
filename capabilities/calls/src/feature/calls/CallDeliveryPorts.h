@@ -55,6 +55,8 @@ struct CallDeliveryPorts {
    */
   std::function<void(std::vector<std::string> accounts)> grant_call_peers;
   std::function<void(bool force)> sync_inbox_from_wake;
+  /** A group call rang here and ended with the user neither answering nor declining: the thread's unread + notice. Unset: none. */
+  std::function<void(const std::string& thread_id, bool video)> note_missed_group_call;
   /**
    * After the last local call ends — flush inbox + TailSync that were deferred while
    * HasActiveLocalCall. No-op while another call is still ActiveLocalCall.

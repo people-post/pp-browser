@@ -255,6 +255,10 @@ select selectbox option:hover {
   image-color: #ffffff;
 }
 
+.message-row-user .chat-call-row .route-icon {
+  image-color: #ffffff;
+}
+
 .message-row-user .chat-call-row.muted {
   background-color: #a3b3f9;
 }
@@ -264,6 +268,10 @@ select selectbox option:hover {
 }
 
 .message-row-peer .chat-call-row svg {
+  image-color: #000000;
+}
+
+.message-row-peer .chat-call-row .route-icon {
   image-color: #000000;
 }
 
@@ -1450,7 +1458,8 @@ input.checkbox:checked {
   background-color: #1f2937;
 }
 
-.shell-call-remote-placeholder {
+.shell-call-remote-placeholder,
+.shell-call-pip-note {
   color: #3c3c4399;
 }
 
@@ -2396,6 +2405,15 @@ input.checkbox:checked {
   image-color: #8e8e93;
 }
 
+/* The route icon (as in a bubble) takes the colour of the line's text, whatever the path. */
+.chat-peer-path .route-icon {
+  image-color: #3c3c4399;
+}
+
+.shell-chat-overlay .chat-peer-link {
+  color: #3c3c4399;
+}
+
 .chat-header-call-btn, .chat-header-more-btn {
   background-color: #78788033;
   color: #000000;
@@ -2607,12 +2625,20 @@ input.checkbox:checked {
   color: #3c3c4399;
 }
 
+.bubble-time .route-icon {
+  image-color: #3c3c4399;
+}
+
 .bubble-assistant .bubble-time {
   color: #3c3c4399;
 }
 
 .bubble-user .bubble-time {
   color: #ffffffd9;
+}
+
+.bubble-user .bubble-time .route-icon {
+  image-color: #ffffffd9;
 }
 
 .shell-chat-overlay .bubble-assistant .chat-quote {
@@ -2648,6 +2674,10 @@ input.checkbox:checked {
 .shell-chat-overlay .message-row-user .chat-attachment-card .heading-3,
 .shell-chat-overlay .message-row-user .chat-voice-time {
   color: #ffffff;
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .route-icon {
+  image-color: #ffffff;
 }
 
 .shell-chat-overlay .message-row-user .chat-voice-play {
@@ -2713,6 +2743,10 @@ input.checkbox:checked {
 .chat-voice-card {
   background-color: #ffffff;
   color: #000000;
+}
+
+.chat-voice-card .route-icon {
+  image-color: #000000;
 }
 
 .chat-voice-bar {
@@ -3500,7 +3534,8 @@ input.checkbox:checked {
   background-color: #161819f7;
 }
 
-.call-phone-tile {
+.call-phone-tile,
+.call-phone-pip--resuming {
   background-color: #ffffff17;
 }
 

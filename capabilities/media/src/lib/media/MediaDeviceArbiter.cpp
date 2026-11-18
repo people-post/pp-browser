@@ -1,4 +1,5 @@
 #include "lib/media/MediaDeviceArbiter.h"
+#include "lib/media/AutoreleasePool.h"
 #include "lib/media/MediaThreadName.h"
 #include "lib/media/MicEndpoints.h"
 
@@ -209,7 +210,11 @@ struct MediaDeviceLane {
         busy_op = task.op;
         stuck_reported = false;
       }
-      task.run();
+      {
+        // The device thread has no pool of its own: drain what the OS autoreleases per open / close.
+        AutoreleasePoolScope pool;
+        task.run();
+      }
       int64_t took_ms = 0;
       {
         std::lock_guard lock(mu);

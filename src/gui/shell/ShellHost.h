@@ -1,5 +1,6 @@
 #pragma once
 
+#include "foundation/platform/ScreenKeyboardGeometry.h"
 #include "lib/ui/ShellTypes.h"
 #include "foundation/data/UserPreferences.h"
 #include "common/Module.h"
@@ -316,6 +317,8 @@ private:
   void DialogOk();
   void DialogCancel();
   void DialogToggleCheckbox();
+  void DialogToggleNote();
+  void PinGateNoteToggle();
   void PinGateSubmit();
   void PinGatePaste(); // read the clipboard into the transfer-code / phrase box (iOS has no paste menu there, B163)
   void PinGateClearPayload(); // clear a pasted transfer code so the textarea comes back (B166)
@@ -429,8 +432,20 @@ private:
   struct SafeAreaFromSdl {
     int top_dp = 0;
     int bottom_dp = 0;
+    int keyboard_win = 0;               // the on-screen keyboard's cover of our window, in window units (points on iOS)
+    int keyboard_top_win = 0;           // the keyboard's top edge in the window (window height when there is none)
+    int input_bottom_win = 0;           // the input's bottom edge before any lift, window units
+    int focus_bottom_win = -1;          // iPad: the focused bar's / field's bottom edge as laid out now; -1 none
+    const char* input_source = "shell"; // what input_bottom_win is: shell | bar | field | field_covered
+    int bar_lift_win = 0;               // input_source "bar": the settled lift (SettleBarLift)
+    int lift_win = 0;                   // how far the shell goes up so the input sits on the keyboard (KeyboardLift)
+    int keyboard_dp = 0;                // lift_win in dp
+    int window_w = 0;                   // SDL's window size, window units
+    int window_h = 0;
   };
-  SafeAreaFromSdl ReadSafeAreaFromSdl() const;
+  SafeAreaFromSdl ReadSafeAreaFromSdl();
+  /** iPad, keyboard up: input_bottom_win from the focused chat input bar's real box (or the focused field's). */
+  void MeasureKeyboardInput(SafeAreaFromSdl& insets, float px_per_win);
 
   struct PendingDismiss {
     DismissTarget target = DismissTarget::None;
@@ -442,6 +457,23 @@ private:
   ShellConfig config_;
   int safe_area_top_from_prefs_dp_ = 0;
   int safe_area_bottom_from_prefs_dp_ = 0;
+  int logged_keyboard_dp_ = -1;                 // the keyboard lift last written to the log (RefreshSafeAreaInsets)
+  int keyboard_lift_applied_win_ = 0;           // the keyboard lift in the layout now (window units)
+  const ui::Element* keyboard_field_ = nullptr; // iPad: the non-bar field the decision below is for (compared only)
+  bool keyboard_field_covered_ = false;         // that field was under the keyboard when it got the focus
+  std::string logged_input_source_ = "shell";   // the keyboard input source last written to the log
+  /** iPad: what the chat input bar's lift was settled for; a change starts a new settling (MeasureKeyboardInput). */
+  struct BarTarget {
+    const ui::Element* bar = nullptr; // compared only
+    int keyboard_top = -1;
+    int bar_h = -1;
+    LayoutMode mode = LayoutMode::Compact;
+    int window_w = 0;
+    int window_h = 0;
+  };
+  BarTarget bar_target_;
+  BarLiftSettle bar_settle_;
+  int layout_passes_ = 0; // finished layouts (NotifyFrameEnd): the settle takes at most one step per pass
   /** The AI Home measured with nothing up (SyncHomeDock): window height, landing height, card bottom (dp); 0 = unseen. */
   float home_cache_window_dp_ = 0.f;
   float home_cache_landing_h_dp_ = 0.f;

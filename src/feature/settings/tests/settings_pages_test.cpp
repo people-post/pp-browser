@@ -42,12 +42,12 @@ TEST(SettingsPagesTest, OpeningAPageDoesWhatTheOldSectionDid) {
       {"privacy", static_cast<unsigned>(SettingsPageAction::RefreshBlockedCount)},
       {"security", 0},
       {"devices", static_cast<unsigned>(SettingsPageAction::RefreshDevices)},
-      {"relays", static_cast<unsigned>(SettingsPageAction::RefreshRelays)},
       {"notifications", static_cast<unsigned>(SettingsPageAction::RefreshBannerTip)},
       {"appearance", 0},
       {"storage", static_cast<unsigned>(SettingsPageAction::EnterStorage)},
-      {"help", static_cast<unsigned>(SettingsPageAction::RefreshDiagnostics)},
       {"advanced", 0},
+      {"relays", static_cast<unsigned>(SettingsPageAction::RefreshRelays)},
+      {"help", static_cast<unsigned>(SettingsPageAction::RefreshDiagnostics)},
       {"tester", static_cast<unsigned>(SettingsPageAction::RefreshCasLibrary)},
   };
   ASSERT_EQ(SettingsPages().size(), std::size(expected));
@@ -117,11 +117,11 @@ std::vector<std::string> ListedIds(const bool advanced, const bool tester) {
 }
 
 TEST(SettingsPagesTest, AdvancedFollowsItsSwitchAndTestOptionsFollowTheTesterSwitch) {
-  const std::vector<std::string> base = {"profile",       "privacy",    "security", "devices", "relays",
-                                         "notifications", "appearance", "storage",  "help"};
+  const std::vector<std::string> base = {"profile",    "privacy", "security", "devices", "notifications",
+                                         "appearance", "storage", "relays",   "help"};
   EXPECT_EQ(ListedIds(false, false), base);
   auto with_advanced = base;
-  with_advanced.push_back("advanced");
+  with_advanced.insert(with_advanced.end() - 2, "advanced"); // Advanced, then My relays (always listed), then Help
   EXPECT_EQ(ListedIds(true, false), with_advanced);
   auto with_tester = base;
   with_tester.push_back("tester");
@@ -130,6 +130,8 @@ TEST(SettingsPagesTest, AdvancedFollowsItsSwitchAndTestOptionsFollowTheTesterSwi
   both.push_back("tester");
   EXPECT_EQ(ListedIds(true, true), both);
   EXPECT_EQ(Page("advanced").gate, SettingsPageGate::Advanced);
+  EXPECT_EQ(Page("relays").gate, SettingsPageGate::None);
+  EXPECT_EQ(Page("relays").home_group, Page("advanced").home_group);
   EXPECT_EQ(Page("tester").gate, SettingsPageGate::Tester);
   EXPECT_EQ(Page("help").gate, SettingsPageGate::None);
 }

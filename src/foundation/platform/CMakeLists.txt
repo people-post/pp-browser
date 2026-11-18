@@ -37,6 +37,7 @@ set(_pp_platform_gui_sources
   NetworkConnectivity.cpp
   NetworkMonitor.cpp
   PlatformEarlyInit.cpp
+  PlatformLifecycleEvents.cpp
   ScreenAwake.cpp
   AiImagePrep.cpp
   ImageEncode.cpp
@@ -405,11 +406,25 @@ if(PP_BROWSER_IS_IOS)
     "-framework UniformTypeIdentifiers")
 endif()
 
+# Orientations the window may take (SDL_HINT_ORIENTATIONS): iOS asks the device idiom (iPad rotates, iPhone portrait).
+if(PP_BROWSER_IS_IOS)
+  target_sources(pp_foundation_platform PRIVATE MobileOrientation_Ios.mm)
+else()
+  target_sources(pp_foundation_platform PRIVATE MobileOrientation_Default.cpp)
+endif()
+
 # On-screen keyboard height: only iOS needs it (its safe area leaves the keyboard out).
 if(PP_BROWSER_IS_IOS)
   target_sources(pp_foundation_platform PRIVATE ScreenKeyboard_Ios.mm)
 else()
   target_sources(pp_foundation_platform PRIVATE ScreenKeyboard_Default.cpp)
+endif()
+
+# SDL's UIKit view vs its window (iPadOS 27 resizes the window) and the window-controls corner: only iOS.
+if(PP_BROWSER_IS_IOS)
+  target_sources(pp_foundation_platform PRIVATE UikitWindowGeometry_Ios.mm)
+else()
+  target_sources(pp_foundation_platform PRIVATE UikitWindowGeometry_Default.cpp)
 endif()
 
 # Desktop macOS: UNUserNotificationCenter for local banners.

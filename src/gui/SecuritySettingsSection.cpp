@@ -58,7 +58,7 @@ std::string UnlockGraceDisplayLabel(const int minutes) {
 }
 
 std::vector<int> OfferedUnlockGraceMinutes() {
-  return {0, 5, 15, 60};
+  return {0, 5, 15, 60, kUnlockGraceAlways};
 }
 
 std::string BiometricSwitchLabel(const std::string& kind) {

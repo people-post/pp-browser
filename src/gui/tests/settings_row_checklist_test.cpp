@@ -433,13 +433,20 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
     size_t desktop; // visible on the desktop
   };
   const Expect expected[] = {
-      {"security", "open_security_page('change_pin')", "show_change_pin", 1, 0},
-      {"security", "change_pin()", "show_change_pin && security_can_change_pin", 0, 1},
+      {"security", "open_security_page('pin')", "show_change_pin", 1, 0},
+      // The PIN file is included here only inside the desktop wrapper (its phone rows count as desktop-hidden); the
+      // phones show the same file as the 'pin' page (settings.rml), which this scan does not walk.
+      {"security", "change_pin()",
+       "show_change_pin && security_can_change_pin;;!pin_protection_is_default@show_change_pin && "
+       "security_can_change_pin;;pin_protection_is_default",
+       0, 2},
+      {"security", "remove_pin()", "show_change_pin && security_can_change_pin;;!pin_protection_is_default", 0, 1},
       {"security", "toggle_biometric()", "security_biometric_shown", 1, 1},
       {"security", "on_choose_unlock_grace()", "security_grace_shown", 1, 1},
       {"security", "show_recovery_phrase()", "security_has_recovery_phrase;;recovery_phrase == ''", 1, 1},
       {"security", "hide_recovery_phrase()", "security_has_recovery_phrase;;recovery_phrase != ''", 1, 1},
-      {"security", "ask_setting_help('settings.security.recovery')", "security_has_recovery_phrase", 1, 1},
+      {"security", "ask_setting_help('settings.security.recovery')",
+       "security_has_recovery_phrase@security_has_recovery_phrase;;recovery_phrase == ''", 1, 1},
       // Devices: the transfer block is the desktop's inline copy here; phones open it as its own page.
       // (2026-11-14: the phone's top button, on the main device only; a linked phone shows nothing to tap.)
       // (2026-11-15: and not while no list of ours is here yet — being got back, or not found.)

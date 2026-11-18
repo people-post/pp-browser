@@ -258,6 +258,10 @@ select selectbox option:hover {
   image-color: {{label-on-accent}};
 }
 
+.message-row-user .chat-call-row .route-icon {
+  image-color: {{label-on-accent}};
+}
+
 .message-row-user .chat-call-row.muted {
   background-color: {{x-bubble-out-muted}};
 }
@@ -267,6 +271,10 @@ select selectbox option:hover {
 }
 
 .message-row-peer .chat-call-row svg {
+  image-color: {{label}};
+}
+
+.message-row-peer .chat-call-row .route-icon {
   image-color: {{label}};
 }
 
@@ -1460,7 +1468,8 @@ input.checkbox:checked {
   background-color: {{x-video-remote}};
 }
 
-.shell-call-remote-placeholder {
+.shell-call-remote-placeholder,
+.shell-call-pip-note {
   color: {{label-2}};
 }
 
@@ -2461,6 +2470,15 @@ input.checkbox:checked {
   image-color: {{gray}};
 }
 
+/* The route icon (as in a bubble) takes the colour of the line's text, whatever the path. */
+.chat-peer-path .route-icon {
+  image-color: {{label-2}};
+}
+
+.shell-chat-overlay .chat-peer-link {
+  color: {{label-2}};
+}
+
 .chat-header-call-btn, .chat-header-more-btn {
   background-color: {{fill}};
   color: {{label}};
@@ -2684,12 +2702,20 @@ input.checkbox:checked {
   color: {{label-2}};
 }
 
+.bubble-time .route-icon {
+  image-color: {{label-2}};
+}
+
 .bubble-assistant .bubble-time {
   color: {{label-2}};
 }
 
 .bubble-user .bubble-time {
   color: {{bubble-out-meta}};
+}
+
+.bubble-user .bubble-time .route-icon {
+  image-color: {{bubble-out-meta}};
 }
 
 .shell-chat-overlay .bubble-assistant .chat-quote {
@@ -2725,6 +2751,10 @@ input.checkbox:checked {
 .shell-chat-overlay .message-row-user .chat-attachment-card .heading-3,
 .shell-chat-overlay .message-row-user .chat-voice-time {
   color: {{label-on-accent}};
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .route-icon {
+  image-color: {{label-on-accent}};
 }
 
 .shell-chat-overlay .message-row-user .chat-voice-play {
@@ -2790,6 +2820,10 @@ input.checkbox:checked {
 .chat-voice-card {
   background-color: {{bubble-in}};
   color: {{label}};
+}
+
+.chat-voice-card .route-icon {
+  image-color: {{label}};
 }
 
 .chat-voice-bar {
@@ -3581,7 +3615,8 @@ input.checkbox:checked {
   background-color: {{x-call-card}};
 }
 
-.call-phone-tile {
+.call-phone-tile,
+.call-phone-pip--resuming {
   background-color: {{x-call-tile}};
 }
 
