@@ -1,7 +1,7 @@
 # Release compatibility: design
 
 **Status:** Accepted by Hongwei, 2026-11-17; in review with Leo (relay parts: [§ Decisions taken](#decisions-taken),
-items 3 and 8). Decisions RC001–RC012.
+items 3 and 8). Decisions RC001–RC013.
 **Today's policy** stays [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) until release 1 ships; this
 design replaces its [§ No bridges](../../docs/contracts/COMPATIBILITY.md#no-bridges-pre-release) then.
 
@@ -531,6 +531,38 @@ relay's in pp-relay-apis, each linking the other's. **Each use leaves a record:*
 *incident* issue template (holding the runbook's checklist) for rollbacks, restores and compromises, ticked while the
 steps are done. **They are rehearsed:** rollback and restore quarterly on staging (RC010), and key-compromise recovery
 in the same rehearsal once identity rotation exists (RC011). A runbook never run is a guess.
+
+## Regression suites
+
+The lab is too long for a developer to run whole (about 20 suites in `scripts/test/pp_local_test.sh`; the app lab
+alone, `scripts/test/pp_app_lab.py`, has 103 scenarios), and nothing ran it on a schedule: on 2026-11-18 the last 24
+nightly runs (`.github/workflows/nightly-lab.yml`) were all skipped, because the repo variables `PP_LAB_INSTANCE_ID`
+and `PP_LAB_AWS_ROLE` that start the lab machine were never set. Tiers, each with a time budget
+([RC013](DECISIONS.md#rc013--regression-suites-in-tiers-picked-by-capability-run-remotely)):
+
+| Tier | What runs | When | Budget |
+|------|-----------|------|--------|
+| **PR** | unit and capability-scoped tests (as today) | every PR | ~5 min |
+| **Lab smoke** | ~10 scenarios over the core flows: register, first contact, message, find someone, call, push and VoIP wake, link a device, account deletion | every merge to main; on demand | ≤15 min |
+| **Affected** | the scenarios tagged with the capabilities a change touches | on demand, any branch | ≤30 min |
+| **Nightly full** | every suite on main (app, app-nat, hard, …); findings filed as issues | nightly | ≤2 h |
+| **Release** | the full run plus mixed versions (the store app N−1 against the candidate) | each release candidate ([§ Release checklist](#release-checklist)) | as needed |
+| **After a deploy** | the scripted smoke run against the environment just deployed (dev, staging, prod during the canary) | every relay deploy | ≤5 min |
+
+- **Scenarios are tagged by capability** (messaging, calls, groups, relay, push, mesh, …). `--tags calls` runs every
+  calls scenario; `--changed` works the tags out from the branch's diff, with the capability paths CI already uses to
+  skip tests. "Run what my change touches" needs no scenario names.
+- **Developers run the lab remotely**: the manual trigger takes tags or `--changed`, runs on the lab machine, and
+  returns an artifact and a summary. One run at a time, queued; more lab machines if the queue grows.
+- **The full run gets shorter, not only rarer:** per-scenario times kept from `--summary` and the slowest fixed first;
+  the run split across two or three lab machines; a tier over its budget is a finding like a failing test.
+- **Flaky scenarios are named:** one that passes only on retry (`--retry-failed`) is recorded as flaky; if it stays so,
+  it leaves smoke and the PR-facing tiers for a quarantine with an issue. A lab failure a unit test can reproduce gets
+  that test ([TESTING § When a higher tier finds a bug](../../docs/architecture/TESTING.md#when-a-higher-tier-finds-a-bug)).
+- **The lab machine is set up**: an EC2 runner started per run and stopped after, with the two repo variables and an
+  AWS role (a request to the infra repos). The cheapest high-value item here.
+
+The tiers move into `docs/ops/TEST_STRATEGY.md` (the home of test tiers) when release mode ships.
 
 ## Not yet designed
 

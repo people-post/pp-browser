@@ -43,6 +43,9 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
   the `release` and `incident` issue templates; the workflow that opens "Release X.Y" when `release/X.Y` is cut.
 - [ ] The runbooks needed before release 1, each a page in `docs/ops/runbooks/` with its steps as workflow runs:
   release, hotfix, app incident (pp-browser); relay rollback, restore, key compromise (pp-relay-apis, Leo).
+- [ ] Regression suites ([DESIGN § Regression suites](DESIGN.md#regression-suites)): the lab machine set up (its repo
+  variables and AWS role) so the nightly runs; scenarios tagged by capability, `--tags` and `--changed`; the lab-smoke
+  set on every merge to main; the after-deploy smoke run in the relay's deploys.
 - [ ] The PR template and `docs/ops/RELEASE.md` say what a release branch takes, that fixes land on main first, and
   how a backport is asked for.
 
@@ -65,6 +68,7 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
   code's placeholder `https://example.test/releases`, so an "update needed" screen would link nowhere (relay
   settings, Leo).
 - [ ] The release checklist moved into `docs/ops/RELEASE.md`, replacing § Checklist before tagging.
+- [ ] The regression tiers moved into `docs/ops/TEST_STRATEGY.md`.
 - [ ] The version table promoted to `docs/contracts/`; COMPATIBILITY.md's § No bridges replaced by the rule, its
   "Clean cutovers" table closed with the release-1 row; RC001–RC004 and RC006 marked superseded by those docs,
   RC005, RC007 and RC008 by `docs/ops/RELEASE.md`.
@@ -75,6 +79,7 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 - [ ] CI: a signed-bytes change without a version bump fails, in every repo with signed objects.
 - [ ] The mixed-version lab run (oldest and newest supported app, pp-node, relay) on released artifacts.
 - [ ] The first format change under the range rule, as the worked example.
+- [ ] The full lab run split across lab machines, per-scenario times tracked, the flaky-scenario quarantine.
 - [ ] The range exit and security release runbooks, before the first window closes; key rotation, the pp-node fleet
   rollback and environment resets after.
 - [ ] A separate dev app ("PP Dev", its own bundle id) for mixed-version testing on one phone.

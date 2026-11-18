@@ -254,3 +254,24 @@ and key-compromise recovery are rehearsed on staging.
 - One long operations document (hard to follow mid-incident; a page per action is).
 - Checklists in a wiki or chat (they drift from the workflows they describe; the repo keeps them beside them).
 
+## RC013 — Regression suites in tiers, picked by capability, run remotely
+
+**Date:** 2026-11-18
+**Status:** Agreed by Hongwei (2026-11-18).
+**Decision:** Six tiers with time budgets (PR, lab smoke, affected, nightly full, release, after a deploy;
+[DESIGN § Regression suites](DESIGN.md#regression-suites)). Scenarios are tagged by capability, and `--changed` picks
+them from a branch's diff. Developers start lab runs on the lab machine through the workflow, not on their own
+machines. The full run is shortened (timings, split across machines), flaky scenarios are quarantined with an issue,
+and the lab machine is set up so the nightly runs at all.
+**Rationale:**
+- The whole lab is too long to run by hand, so a developer either runs nothing or must know which of 103 scenarios
+  matter; tags make the choice from the change itself.
+- The nightly had never run (24 of 24 skipped on 2026-11-18: the lab machine's variables were never set): the only
+  regression runs were manual.
+- Budgets keep a tier usable: a smoke run that grows to an hour stops being run.
+- A deploy changes what runs without changing the code; the after-deploy smoke run checks the environment itself.
+**Alternatives rejected:**
+- Run the full lab on every PR (hours per change, the queue blocks everyone).
+- Leave scenario choice to the developer by name (works only for whoever knows the lab).
+- Only nightly (a break merged in the morning is found the next day, mixed with everything else merged).
+
