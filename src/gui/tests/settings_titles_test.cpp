@@ -247,6 +247,18 @@ TEST(SettingsTitlesTest, TheStorageResetActionsSitApartAtTheEndInPlainWords) {
   LocalizationService::Instance().SetPreferredLanguage("en");
 }
 
+TEST(SettingsTitlesTest, SettingsPagesScrollTheirLastRowsClearOfTheFloatingAiButton) {
+  // The button is up to 76dp; both mounts (the page sheet and the pushed pane) keep that much (plus air) at the end.
+  const std::string css = ReadAsset("themes/components.rcss");
+  const size_t sheet = css.find(".shell-layer-compact #settings-section-mount-sheet {");
+  const size_t pane = css.find(".shell-layer-compact #settings-section-mount-pane {");
+  ASSERT_NE(sheet, std::string::npos);
+  ASSERT_NE(pane, std::string::npos);
+  EXPECT_NE(css.find("padding-bottom: 169dp;", sheet), std::string::npos) << "81dp tab bar + 88dp";
+  EXPECT_LT(css.find("padding-bottom: 169dp;", sheet), css.find('}', sheet));
+  EXPECT_LT(css.find("padding-bottom: 88dp;", pane), css.find('}', pane));
+}
+
 TEST(SettingsTitlesTest, HomeTitleIsSettings) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("en");
