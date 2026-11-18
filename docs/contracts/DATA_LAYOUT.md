@@ -309,7 +309,7 @@ our record.
 
 | Kept version 3 card | Becomes |
 |---------------------|---------|
-| Our own (as in 6 → 7: the profile's Account ID's record) | the version 4 shape without relays (no PeerId is known for the old entries), its floor and device list kept, its old signature: it does not verify, so the main device re-issues it with the same device list and our pinned relays; a linked device does not (the relays are the main device's to give): it waits for the main device's card |
+| Our own (as in 6 → 7: the profile's Account ID's record) | the version 4 shape without relays (no PeerId is known for the old entries), its floor and device list kept, its old signature: it does not verify, so the main device re-issues it with the same device list and our pinned relays; a linked device first asks our relays for a newer card of ours and takes it, else — every relay answered without one — re-issues the same list with its own pinned relays ([M026](../../projects/multi-device-account/DECISIONS.md#m026--the-main-device-keeps-the-list-keeping-the-card-signed-is-every-listed-devices)); a relay not reached: asked again later |
 | Anyone else's | dropped from the record; the checked keys stay as a key card, and the card is asked for again (the next envelope's `sender_card_at`, or the contact page's refresh) |
 
 `contacts.json` `remote.locator_relay` is the locator's relay address, `{origin, peer_id}` (multi-relay MR008: the

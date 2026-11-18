@@ -149,7 +149,10 @@ and refuses older cards. A device takes the newest card's nickname as the accoun
 
 **Main device (master, [M021](../../projects/multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) d4):** the first device on the list. Only it changes the list: takes a device off
 (revoke: a newer list without it) or hands the role on (another device first). Any listed device re-issues the
-card to bring its own entry or the nickname up to date, the list otherwise as it is. Only the main device gives
+card to bring its own entry or the nickname up to date, the list otherwise as it is — also a card of ours that no
+longer verifies (stepped by a `profile.db` step), after our relays were asked for a newer one and none was found
+([M026](../../projects/multi-device-account/DECISIONS.md#m026--the-main-device-keeps-the-list-keeping-the-card-signed-is-every-listed-devices)):
+losing the main device freezes the list, nothing else. Only the main device gives
 out a transfer code; the new device gets its card in the link bundle and appends itself at the end, once
 (`card_intent` join). While a code is out (15 min), the main device keeps a device that only an older card of
 the account lists — a join that reached it after it issued another card. When the main device takes in the card a
