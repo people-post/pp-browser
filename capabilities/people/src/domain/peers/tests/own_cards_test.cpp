@@ -315,8 +315,8 @@ TEST_F(OwnCardsTest, AKeptCardThatDoesNotVerifyIsReissuedWithItsList) {
   EXPECT_EQ(phone.own->Card(kNow + 60).value(), reissued);
 }
 
-// D5: on a linked device the stepped card (its relays gone with the step) is not re-issued: its relays are the main
-// device's to give, so the linked device waits for the main device's card, then takes it.
+// D5: on a linked device the stepped card (its relays gone with the step) is not re-issued while the main device's own
+// may still come (no relay answered yet): the linked device waits for it, then takes it.
 TEST_F(OwnCardsTest, ALinkedDeviceDoesNotReissueAKeptCardThatDoesNotVerify) {
   Device phone(dir_ / "phone");
   Device laptop(dir_ / "laptop");
@@ -400,6 +400,81 @@ struct FakeRelays {
     };
   }
 };
+
+/** The laptop linked to the phone, its kept card stepped by profile.db 7 → 8 (relays gone, signature over old bytes). */
+AccountCard SteppedOnTheLaptop(Device& phone, Device& laptop) {
+  const AccountCard joined = LinkLaptop(phone, laptop, kNow);
+  PeerCardRecord stepped = laptop.rows->Get(joined.keys.account_id).value().value();
+  stepped.newest_card->relays.clear();
+  stepped.newest_card->card_signature_b64 = joined.keys.kem_binding_signature_b64;
+  EXPECT_TRUE(laptop.rows->Put(stepped));
+  return joined;
+}
+
+// #632 (M026): the main device is gone, so no newer card will come. Once every relay of ours answered without one, the
+// linked device re-issues the same list itself, with its own relays: it sends again, the list stays as it was.
+TEST_F(OwnCardsTest, ALinkedDeviceWhoseMainDeviceIsGoneReissuesTheSameList) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  phone.own->SetRelays(Relays({"https://a.example/api/relay"}));
+  const AccountCard joined = SteppedOnTheLaptop(phone, laptop);
+  laptop.own->SetRelays(Relays({"https://b.example/api/relay"}));
+  FakeRelays relays;
+  relays.answered = 1; // it keeps no card of ours that verifies
+  laptop.own->SetOwnCardLookup(relays.Lookup());
+
+  auto first = laptop.own->Card(kNow + 100); // asks; the answer is taken in at once here
+  EXPECT_EQ(relays.asked, 1);
+  if (!first) {
+    EXPECT_EQ(first.error().message, kAwaitingMainCardMessage);
+  }
+  const AccountCard reissued = laptop.own->Card(kNow + 110).value();
+  EXPECT_TRUE(VerifyAccountCard(reissued, std::max(kNow + 110, reissued.issued_at)))
+      << "(issued on the answer's clock)";
+  EXPECT_GT(reissued.issued_at, joined.issued_at);
+  ASSERT_EQ(reissued.devices.size(), joined.devices.size());
+  EXPECT_EQ(reissued.devices.front().peer_id, joined.devices.front().peer_id) << "the phone is still the main device";
+  EXPECT_EQ(reissued.relays, Relays({"https://b.example/api/relay"})) << "the laptop's relays";
+  EXPECT_EQ(laptop.own->Card(kNow + 120).value(), reissued) << "issued once";
+}
+
+// The main device did issue a newer card, which the linked device had not heard of: our relays serve it, so it is
+// taken, never overridden by a re-issue.
+TEST_F(OwnCardsTest, ALinkedDeviceTakesTheMainDevicesNewerCardFromTheRelaysInsteadOfReissuing) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  phone.own->SetRelays(Relays({"https://a.example/api/relay"}));
+  SteppedOnTheLaptop(phone, laptop);
+  laptop.own->SetRelays(Relays({"https://b.example/api/relay"}));
+  const AccountCard mains = phone.own->Card(kNow + 60).value();
+  FakeRelays relays;
+  relays.cards = {AccountCardToJson(mains)};
+  relays.answered = 1;
+  laptop.own->SetOwnCardLookup(relays.Lookup());
+
+  (void)laptop.own->Card(kNow + 100);
+  const AccountCard taken = laptop.own->Card(kNow + 110).value();
+  EXPECT_EQ(taken, mains) << "the main device's card, its relays";
+}
+
+// A relay not reached may keep the main device's newer card: the linked device asks again later, issuing nothing.
+TEST_F(OwnCardsTest, ALinkedDeviceWaitsWhileARelayIsNotReached) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  const AccountCard joined = SteppedOnTheLaptop(phone, laptop);
+  laptop.own->SetRelays(Relays({"https://b.example/api/relay"}));
+  FakeRelays relays;
+  relays.answered = 1;
+  relays.unreached = 1;
+  laptop.own->SetOwnCardLookup(relays.Lookup());
+
+  auto waiting = laptop.own->Card(kNow + 100);
+  waiting = laptop.own->Card(kNow + 110);
+  ASSERT_FALSE(waiting);
+  EXPECT_EQ(waiting.error().message, kAwaitingMainCardMessage);
+  EXPECT_EQ(laptop.rows->Get(joined.keys.account_id).value()->newest_card->issued_at, joined.issued_at)
+      << "nothing issued";
+}
 
 TEST_F(OwnCardsTest, ANewAccountStartsItsListOnPurpose) {
   Device phone(dir_ / "phone");
