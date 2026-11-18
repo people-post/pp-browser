@@ -524,6 +524,13 @@ void ContactsController::ShowConfirm(const std::string& title, const std::string
 
 void ContactsController::NavigateToChatSession() {
   CloseSheetsBeforeLeaving();
+  // On a phone the contact's card can also be a full-screen page, over Add contact / New chat: close them all, or the
+  // chat opens underneath and "Message" looks dead. Top of the stack first.
+  if (IsContactDetailTransientActive(ChromeSnapshot()) && shell_navigation_.pop_transient) {
+    shell_navigation_.pop_transient();
+  }
+  CloseAddContactPage();
+  CloseNewChatPage();
   if (shell_navigation_.select_nav_tab) {
     shell_navigation_.select_nav_tab(NavTab::Sessions);
   }
