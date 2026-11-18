@@ -40,3 +40,6 @@ src/feature/ai/                      @gzdemon77
 src/gui/                             @gzdemon77
 src/foundation/platform/             @gzdemon77
 assets/                              @gzdemon77
+
+# What the app expects from the relay (pp-relay-apis, Leo's): its side reviews it too (AGENTS.md § Conventions).
+docs/contracts/SERVICE_ENDPOINTS.md  @yhw1630 @gzdemon77 @leofreiheit
