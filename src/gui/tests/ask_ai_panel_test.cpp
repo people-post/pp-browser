@@ -659,9 +659,11 @@ TEST(AskAiPanelSourceTest, UnavailableSupportShowsOneSettingsWordingNotTheGeneri
   ports.show_toast = [&shown](const std::string& text, ToastDuration) { shown = text; };
   UserFeedback::BindPorts(ports);
   const std::string app = ReadSource("src/app/Application.cpp");
-  EXPECT_NE(app.find("Error(\"Support is not available\").WithUser(Tr(\"settings.support.unavailable\"))"),
-            std::string::npos);
+  EXPECT_NE(app.find("CheckSupportConfigured(support_discovery_)"), std::string::npos);
   EXPECT_EQ(app.find("Error(Tr(\"support.unavailable\"))"), std::string::npos);
+  const std::string check = ReadSource("src/feature/settings/SupportThread.cpp");
+  EXPECT_NE(check.find("Error(\"Support is not available\").WithUser(Tr(\"settings.support.unavailable\"))"),
+            std::string::npos);
   (void)UserFeedback::FailFrom(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
   UserFeedback::BindPorts({});
   EXPECT_EQ(shown, Tr("settings.support.unavailable"));

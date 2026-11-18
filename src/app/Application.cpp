@@ -69,6 +69,7 @@
 #include "gui/chat/ChatController.h"
 #include "feature/product/MessagingTools.h"
 #include "feature/settings/SettingsTools.h"
+#include "feature/settings/SupportThread.h"
 #include "common/runtime/AppRuntime.h"
 #include "feature/product/ProductOwners.h"
 #include "foundation/platform/IAssetLocator.h"
@@ -1262,12 +1263,13 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       contacts_->OpenBlockedPeople();
     }
   };
-  settings_commands.open_support_chat = [this, &facade](const std::string& prefilled_text) -> Roe<void> {
-    if (!support_discovery_ || !support_discovery_->enabled || support_discovery_->account_id.empty()) {
-      return Error("Support is not available").WithUser(Tr("settings.support.unavailable"));
+  // The PP 客服 chat, found or made, not opened: the page under it stays (the settings "?" panel shows it there).
+  const auto ensure_support_thread = [this, &facade]() -> Roe<std::string> {
+    if (auto configured = CheckSupportConfigured(support_discovery_); !configured) {
+      return configured.error();
     }
     if (!facade.IsInitialized()) {
-      return Error("Messaging is not ready");
+      return WithSupportWords(Error("Messaging is not ready"));
     }
 
     const std::string account_id = support_discovery_->account_id;
@@ -1280,7 +1282,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
 
     auto found = facade.FindContactByIdentity(account_id, mesh::ContactIdKind::Account);
     if (!found) {
-      return found.error();
+      return WithSupportWords(found.error());
     }
 
     std::string contact_id;
@@ -1289,7 +1291,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       if (ApplySupportTitle(contact, display_name)) {
         auto saved = Conversations().Contacts().Upsert(contact);
         if (!saved) {
-          return saved.error();
+          return WithSupportWords(saved.error());
         }
         contact_id = saved->id;
       } else {
@@ -1299,14 +1301,39 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       Contact contact = MakeSupportContact(util::GenerateUuid(), account_id, display_name);
       auto saved = Conversations().Contacts().Upsert(contact);
       if (!saved) {
-        return saved.error();
+        return WithSupportWords(saved.error());
       }
       contact_id = saved->id;
     }
 
+    auto threads = facade.ListThreads();
+    if (!threads) {
+      return WithSupportWords(threads.error());
+    }
+    if (std::optional<std::string> existing = FindSupportThread(*threads, contact_id)) {
+      return *existing;
+    }
+    // Made the first time. FindOrCreateDirectThread also opens it: the chat open before is put back.
+    const std::string open_before = facade.ActiveThreadId();
     auto thread = facade.FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
     if (!thread) {
-      return thread.error();
+      return WithSupportWords(thread.error());
+    }
+    if (open_before.empty()) {
+      facade.ClearActiveThread();
+    } else if (open_before != thread->id) {
+      (void)facade.OpenThread(open_before);
+    }
+    return thread->id;
+  };
+  settings_commands.open_support_chat = [this, &facade,
+                                         ensure_support_thread](const std::string& prefilled_text) -> Roe<void> {
+    auto thread_id = ensure_support_thread();
+    if (!thread_id) {
+      return thread_id.error();
+    }
+    if (auto opened = facade.OpenThread(*thread_id); !opened) {
+      return WithSupportWords(opened.error());
     }
 
     const ShellNavigationPorts nav = MakeShellNavigationPorts(*shell_);
