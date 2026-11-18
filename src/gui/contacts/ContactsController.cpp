@@ -2308,12 +2308,8 @@ void ContactsController::OnSecureMessage() {
 }
 
 void ContactsController::OnFindSomeone() {
-  if (shell_navigation_.select_nav_tab) {
-    shell_navigation_.select_nav_tab(NavTab::Sessions);
-  }
-  if (chat_ports_.on_find_someone) {
-    chat_ports_.on_find_someone();
-  }
+  // Name search is off (pp-relay-apis#42), so "find someone" is the Add contact page, as everywhere else.
+  OnAddContact();
 }
 
 void ContactsController::OnCopyId() {

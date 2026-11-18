@@ -2640,7 +2640,6 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
   ChatSessionPorts chat_ports;
   chat_ports.finalize_thread_display = [this]() { chat_->FinalizeThreadDisplay(); };
   chat_ports.select_thread = [this](const std::string& id) { chat_->OnSelectThread(id); };
-  chat_ports.on_find_someone = [this]() { chat_->OnFindSomeone(); };
   chat_ports.open_new_group = [this]() { people_picker_->OpenFree(); };
   chat_ports.new_ai_chat = [this]() { chat_->StartNewAiChat(); };
   contacts_->BindChatPorts(chat_ports);

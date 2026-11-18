@@ -1092,11 +1092,7 @@ const SessionStore& ChatController::Store() const {
 
 void ChatController::SendSuggestionAction(const std::string& id) {
   if (id == "find_someone") {
-    // Not an AI turn: the directory refuses an empty query (HTTP 400) and name search is off (pp-relay-apis#42), so the
-    // chip opens the Add contact page (account ID, QR code) and nothing is sent.
-    if (contacts_notify_.open_add_contact) {
-      contacts_notify_.open_add_contact();
-    }
+    OnFindSomeone(); // the Add contact page; nothing is sent
     return;
   }
   auto payload = SuggestionPayload(id, LocalizationService::Instance().ResolvedLanguage());
@@ -4681,13 +4677,11 @@ void ChatController::OnJoinGroupCall() {
 }
 
 void ChatController::OnFindSomeone() {
-  if (!messaging_ready_) {
-    return;
+  // Not an AI turn: the directory refuses an empty query (HTTP 400) and name search is off (pp-relay-apis#42), so
+  // every "find someone" entry (Home chip, New chat menu) opens the Add contact page (account ID, QR code).
+  if (contacts_notify_.open_add_contact) {
+    contacts_notify_.open_add_contact();
   }
-  OnNewChat();
-  focus_draft_after_sync_ = true;
-  chat_.draft = Tr("home.suggestion.find_someone_prompt");
-  DirtyChatChrome();
 }
 
 void ChatController::PrefillDraft(const std::string& text) {
