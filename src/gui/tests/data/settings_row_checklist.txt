@@ -282,7 +282,7 @@ data-event-click="save_account_copy()"	2	-	devices	security_has_recovery_phrase	
 {{i18n:settings.security.devices.role_this}}	1	-	devices	own_devices_not_main && !own_devices_signed_out;;device.is_this_device	devices	
 {{i18n:settings.security.devices.role_this}}	1	-	devices	own_devices_shown;;device.is_this_device && !device.is_main	devices	
 {{i18n:settings.security.devices.signed_out}}	1	-	devices	own_devices_shown;;own_devices_signed_out	security	
-{{i18n:settings.security.devices.tap_hint}}	1	-	devices	own_devices_shown && !own_devices_not_main;;own_has_other_devices	devices	
+{{i18n:settings.security.devices.handover_hint}}	1	-	devices	own_devices_shown && !own_devices_not_main;;own_has_other_devices	devices	
 {{i18n:settings.security.devices.view_head}}	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
 {{i18n:settings.security.devices}}	1	-	devices	own_devices_shown	security	
 {{i18n:settings.security.devices}}	1	-	devices	own_devices_shown && !own_devices_not_main	security	
@@ -290,6 +290,7 @@ data-event-click="save_account_copy()"	2	-	devices	security_has_recovery_phrase	
 {{i18n:settings.security.link_device.copy_button}}	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
 {{i18n:settings.security.link_device.export_done}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
 {{i18n:settings.security.link_device.export}}	1	-	devices	security_can_export_link && !own_devices_not_main	devices	
+{{i18n:settings.security.link_device.handover_after}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
 {{i18n:settings.security.link_device.help}}	1	-	devices	-	devices	
 {{i18n:settings.security.link_device.phone_note}}	1	-	devices	-	devices	
 {{i18n:settings.security.link_device.reset_hint}}	1	-	devices	-	devices	
