@@ -1362,6 +1362,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.ask_ai_once = [this](const std::string& question) { return chat_ && chat_->AskAiOnce(question); };
   if (chat_) {
     chat_->BindAskSupport(settings_commands.ask_support); // the ask-AI panel's "Ask PP Support"
+    chat_->BindEnsureSupport(ensure_support_thread);      // the sheet's PP 客服 mode (a settings "?")
   }
   settings_commands.send_diagnostics = [this, &facade](std::function<void(DiagnosticsUploadResult)> on_done) {
     DiagnosticsUploadDeps deps;

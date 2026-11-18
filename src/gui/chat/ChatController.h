@@ -219,6 +219,12 @@ public:
   void StartNewAiChat() { OnNewChat(); }
   /** A setting's "?" on a phone: the ask-AI panel opens with `question` asked as a one-off. False elsewhere. */
   bool AskAiOnce(const std::string& question) { return ask_ai_.OpenOnce(question); }
+  /** A setting's "?" on a phone: the sheet shows the PP 客服 chat and asks `question` there. False elsewhere. */
+  bool AskSupportPanel(const std::string& question) { return ask_ai_.OpenSupport(question); }
+  /** The PP 客服 chat found or made, not opened (Application's EnsureSupportThread), for the sheet's PP 客服 mode. */
+  void BindEnsureSupport(std::function<Roe<std::string>()> ensure_support) {
+    ensure_support_ = std::move(ensure_support);
+  }
   /** The question to PP 客服 (SettingsCommands::ask_support), for the panel's "Ask PP Support". */
   void BindAskSupport(std::function<Roe<void>(const std::string& question)> ask_support) {
     ask_support_ = std::move(ask_support);
@@ -644,6 +650,11 @@ private:
   bool AskAiIntroSeen() const override;
   void AskAiMarkIntroSeen() override;
   void AskAiToast(const std::string& text) override { ShowToast(text); }
+  bool AskAiMessagingReady() const override { return messaging_ready_ && facade_; }
+  Roe<std::string> AskAiEnsureSupport() override;
+  Roe<void> AskAiSendToSupport(const std::string& thread_id, const std::string& text) override;
+  std::vector<SupportMessage> AskAiSupportMessages(const std::string& thread_id, size_t limit) override;
+  void AskAiSyncInbox() override;
   /** ChatMenusHost: "⋯ → Ask AI" (phones, chats with people). */
   bool AskAiPanelAvailable() const override { return AskAiCompact(); }
   void OpenAskAiPanel() override { (void)ask_ai_.Open(AskAiEntry::ChatMenu); }
@@ -859,6 +870,7 @@ private:
   /** The ask-AI half sheet over any page (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
   AskAiPanel ask_ai_{*this, agent_};
   std::function<Roe<void>(const std::string& question)> ask_support_;
+  std::function<Roe<std::string>()> ensure_support_;
   std::function<void(const std::string& section_id)> open_settings_section_;
   FlowCoordinatorPorts flow_coordinator_;
   /** The screen's menus (long press / right-click, header buttons, pickers' fallbacks). */

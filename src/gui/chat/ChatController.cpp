@@ -6951,6 +6951,59 @@ void ChatController::AskAiSupport(const std::string& question, std::function<voi
   });
 }
 
+Roe<std::string> ChatController::AskAiEnsureSupport() {
+  if (!ensure_support_) {
+    return Error("Support is not available").WithUser(Tr("settings.support.unavailable"));
+  }
+  return ensure_support_();
+}
+
+Roe<void> ChatController::AskAiSendToSupport(const std::string& thread_id, const std::string& text) {
+  if (!messaging_ready_ || !facade_ || thread_id.empty()) {
+    return Error("Messaging is not ready").WithUser(Tr("ask_ai.support.try_later"));
+  }
+  // A plain message, as typed in that chat (stored and sent now, or queued with its clock when offline).
+  if (auto routed = facade_->RouteMessage(thread_id, text, std::nullopt); !routed) {
+    log().warning << "PP Support panel: the message was not sent: " << routed.error().message;
+    Error error = routed.error();
+    if (error.user.empty()) {
+      error.user = PaymentErrorUserMessage(routed.error());
+    }
+    return error;
+  }
+  SyncShellSessions(); // the chats list shows it as the newest message there
+  return {};
+}
+
+std::vector<SupportMessage> ChatController::AskAiSupportMessages(const std::string& thread_id, const size_t limit) {
+  std::vector<SupportMessage> out;
+  if (!messaging_ready_ || !facade_ || thread_id.empty()) {
+    return out;
+  }
+  auto page = facade_->GetMessagesPage(thread_id, std::nullopt, static_cast<int>(limit));
+  if (!page) {
+    return out;
+  }
+  std::vector<ThreadMessage> messages = std::move(*page);
+  std::stable_sort(messages.begin(), messages.end(),
+                   [](const ThreadMessage& a, const ThreadMessage& b) { return a.display_order < b.display_order; });
+  const int64_t now_ms = util::NowUnixMs();
+  std::optional<int64_t> next_mark_change; // the panel reads the marks again with the next change
+  for (const ThreadMessage& message : messages) {
+    if (std::optional<SupportMessage> read =
+            SupportMessageOf(message, presenter_.SendMarkOf(message, now_ms, next_mark_change))) {
+      out.push_back(std::move(*read));
+    }
+  }
+  return out;
+}
+
+void ChatController::AskAiSyncInbox() {
+  if (messaging_ready_ && facade_) {
+    facade_->SyncInboxFromWake(/*force=*/false); // the preferred relay; the fetch itself runs on a worker
+  }
+}
+
 void ChatController::AskAiRunAction(const std::string& thread_id, const std::string& entry_id, const int action_index) {
   if (!messaging_ready_ || !facade_ || action_index < 0) {
     return;

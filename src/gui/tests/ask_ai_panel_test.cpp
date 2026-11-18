@@ -172,6 +172,12 @@ public:
     ++intro_marks;
   }
   void AskAiToast(const std::string& text) override { toasts.push_back(text); }
+  // The PP 客服 mode is tested on the real page (ask_ai_support_render_test.cpp).
+  bool AskAiMessagingReady() const override { return false; }
+  Roe<std::string> AskAiEnsureSupport() override { return Error("not in this test"); }
+  Roe<void> AskAiSendToSupport(const std::string&, const std::string&) override { return Error("not in this test"); }
+  std::vector<SupportMessage> AskAiSupportMessages(const std::string&, size_t) override { return {}; }
+  void AskAiSyncInbox() override {}
 };
 
 /** `turn`: the session turn it belongs to (AgentEvent::turn; 0 = not said). */
@@ -843,7 +849,7 @@ TEST(AskAiPanelSourceTest, OpenInAiChatIsAnIconInTheSheetHeader) {
   const std::string view = ReadSource("assets/views/ask_ai.rml");
   ASSERT_FALSE(view.empty());
   EXPECT_NE(view.find("<div class=\"sheet-header sheet-header--two-buttons\">"), std::string::npos);
-  EXPECT_NE(view.find("<p class=\"sheet-title\">{{i18n:ask_ai.title}}</p>"), std::string::npos);
+  EXPECT_NE(view.find("<p class=\"sheet-title\" data-if=\"!support\">{{i18n:ask_ai.title}}</p>"), std::string::npos);
   const size_t button = view.find("class=\"ask-ai-open-chat\"");
   ASSERT_NE(button, std::string::npos);
   const std::string tag = view.substr(button, view.find("</button>", button) - button);
