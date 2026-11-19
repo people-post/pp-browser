@@ -191,8 +191,8 @@ TEST(PendingNotificationTapTest, ARoutedOrTakenOrSupersededTapIsNotPendingSoNoth
   tap.Record("", false, "m3", t0);
   EXPECT_FALSE(tap.MessageTapPending(older, t0)) << "a later tap supersedes it";
   EXPECT_TRUE(tap.MessageTapPending(tap.TapSeq(), t0));
-  EXPECT_FALSE(tap.MessageTapPending(tap.TapSeq(), t0 + PendingNotificationTap::kMessageRouteTtl +
-                                                       std::chrono::milliseconds(1)))
+  EXPECT_FALSE(
+      tap.MessageTapPending(tap.TapSeq(), t0 + PendingNotificationTap::kMessageRouteTtl + std::chrono::milliseconds(1)))
       << "an expired one is not";
 
   tap.Record("", true, "c1", t0);
