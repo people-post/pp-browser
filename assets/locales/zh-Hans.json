@@ -521,6 +521,7 @@
     "settings.run_logs.confirm_contents": "里面有：你的账号编号、你聊过的人的编号、服务器地址、出错信息。设计上不记录聊天内容。",
     "settings.run_logs.confirm_recipient": "这个文件会发到你接下来选的联系人，他能看到里面的内容。",
     "settings.run_logs.pick": "选择联系人",
+    "settings.run_logs.sent": "运行日志已发出",
     "settings.run_logs.prepare_failed": "运行日志没能准备好",
     "settings.run_logs.unavailable": "现在发不了运行日志",
     "settings.run_logs.save_failed": "这个设置没能保存",

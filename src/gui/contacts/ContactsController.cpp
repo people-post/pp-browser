@@ -1502,6 +1502,7 @@ void ContactsController::NewChatSearchCallback(ui::DataModelHandle /*model*/, ui
 }
 
 void ContactsController::OpenNewChatPage() {
+  after_pick_ = nullptr; // an ordinary New chat never sends anything after a pick
   if (new_chat_open_ || !shell_navigation_.push_transient) {
     return;
   }
@@ -1517,8 +1518,18 @@ void ContactsController::OpenNewChatPage() {
   shell_navigation_.push_transient(spec);
 }
 
+bool ContactsController::OpenNewChatPageToPick(std::function<void(const std::string& contact_id)> after_pick) {
+  OpenNewChatPage();
+  if (!new_chat_open_) {
+    return false;
+  }
+  after_pick_ = std::move(after_pick);
+  return true;
+}
+
 void ContactsController::OnNewChatDismissed() {
   new_chat_open_ = false;
+  after_pick_ = nullptr;
 }
 
 void ContactsController::CloseNewChatPage() {
@@ -1613,12 +1624,21 @@ void ContactsController::OnNewChatPick(const std::string& contact_id) {
       ShowToast(selected_.message_hint.c_str()); // the page stays; the person cannot be messaged yet
     }
     selected_ = {};
+    if (after_pick_) {
+      CloseNewChatPage(); // picking for Send run logs: nothing goes to anyone, and the page does not stay half-armed
+    }
     return;
   }
+  // Taken before the page closes (closing clears it): runs once, for this pick only, after the chat is open.
+  std::function<void(const std::string&)> after_pick = std::move(after_pick_);
+  after_pick_ = nullptr;
   CloseNewChatPage();
   OnStartChat();
   selected_ = {};
   DirtyAll();
+  if (after_pick) {
+    after_pick(contact_id);
+  }
 }
 
 void ContactsController::OnNewChatSwipeAction(const std::string& contact_id, const std::string& action) {

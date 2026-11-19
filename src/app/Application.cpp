@@ -1364,6 +1364,35 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   if (chat_) {
     chat_->BindEnsureSupport(ensure_support_thread); // the sheet's PP 客服 mode (a settings "?")
   }
+  // Settings → Send run logs (DEV/PLAN-send-run-logs.md): the user picks one contact on the New chat page, the chat
+  // opens, and the archive goes there as an ordinary file message. No pick, nothing sent.
+  settings_commands.send_run_logs = [this, &facade](OutgoingAttachment archive) {
+    auto held = std::make_shared<OutgoingAttachment>(std::move(archive));
+    const bool opened =
+        contacts_ && contacts_->OpenNewChatPageToPick([this, &facade, held](const std::string& contact_id) {
+          auto thread = facade.FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
+          if (!thread) {
+            UserFeedback::FailFrom(thread.error());
+            return;
+          }
+          const std::string thread_id = thread->id;
+          facade.SendAttachmentAsync(thread_id, std::move(*held), [this, thread_id](Roe<ThreadMessage> sent) {
+            AppRuntime::PostUI([this, thread_id, sent = std::move(sent)]() {
+              if (chat_) {
+                chat_->RefreshAfterOutsideSend(thread_id);
+              }
+              if (sent) {
+                UserFeedback::Ok(Tr("settings.run_logs.sent"));
+              } else {
+                UserFeedback::FailFrom(sent.error());
+              }
+            });
+          });
+        });
+    if (!opened) {
+      UserFeedback::Fail(Tr("settings.run_logs.unavailable"));
+    }
+  };
   settings_commands.storage = MakeStorageManagerPorts(facade, [this]() { return store_.Snapshot().profile_data_dir; });
   // Copy ports before BindCommands moves the command bag.
   SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);

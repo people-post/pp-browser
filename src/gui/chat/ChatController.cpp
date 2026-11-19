@@ -1103,6 +1103,14 @@ void ChatController::SendSuggestionAction(const std::string& id) {
   SendUserText(Tr("home.suggestion." + id + "_prompt"), std::move(payload), /*from_home_chip=*/true);
 }
 
+void ChatController::RefreshAfterOutsideSend(const std::string& thread_id) {
+  if (thread_id.empty() || thread_id != ActiveThreadId()) {
+    return;
+  }
+  RefreshFromMessaging();
+  RefreshPendingAttachmentChip(/*force=*/true); // a send that failed but was staged shows Retry
+}
+
 void ChatController::FinalizeThreadDisplay() {
   // The chat before (or this one, opened again): its preview requests not started go; this open asks for its own.
   FinishPreviewsProbe();

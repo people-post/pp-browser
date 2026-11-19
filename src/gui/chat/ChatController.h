@@ -184,6 +184,11 @@ public:
   /** The vault locked, or another tab was opened: a recording is thrown away and a clip stops. */
   void CancelVoice();
   void FinalizeThreadDisplay();
+  /**
+   * An attachment sent into `thread_id` from outside this page (Settings → Send run logs) finished or failed: when that
+   * chat is the open one its rows and its Retry chip are read again.
+   */
+  void RefreshAfterOutsideSend(const std::string& thread_id);
   /** Sends `text` in the open chat as if the user typed it (a settings "?" asking PP 客服). */
   void SendTypedText(const std::string& text) { SendUserText(text); }
   /** Put `text` in the open chat's composer and focus it; the user sends it (Settings "?" → PP Support). */
