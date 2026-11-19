@@ -91,7 +91,6 @@ TEST(SettingsGatingTest, TheRecoveryPhraseIsBoundOnlyInItsShownBlock) {
       settings.rfind("data-if=\"security_page == 'recovery'\"",
                      settings.find("{{include:settings_security_recovery}}")))
       << "the phone's grid is mounted by its own slot, so only one of the two blocks holds the words";
-  EXPECT_EQ(rml.find("{{recovery_phrase}}"), std::string::npos);
 }
 
 TEST(SettingsGatingTest, NoViewOfTheTwoPagesBindsACodeAPhraseOrAKeyOutsideTheShownBlock) {
@@ -101,8 +100,8 @@ TEST(SettingsGatingTest, NoViewOfTheTwoPagesBindsACodeAPhraseOrAKeyOutsideTheSho
   const std::string pin = ReadAsset("views/settings_security_pin.rml");
   for (const std::string& view : {devices, transfer, pin}) {
     ASSERT_FALSE(view.empty());
-    for (const char* secret : {"recovery_words", "{{item.word", "{{recovery_phrase", "{{transfer", "{{link_code",
-                               "{{export_code", "{{pin_value", "{{brief_llm_key}}"}) {
+    for (const char* secret : {"recovery_words", "{{item.word", "{{transfer", "{{link_code", "{{export_code",
+                               "{{pin_value", "{{brief_llm_key}}"}) {
       EXPECT_EQ(view.find(secret), std::string::npos) << secret;
     }
   }

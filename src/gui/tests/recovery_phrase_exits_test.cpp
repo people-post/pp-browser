@@ -1,4 +1,4 @@
-// Every way out of the recovery phrase page ends with the words gone: nothing bound, the private copy wiped. The real
+// Every way out of the recovery phrase page ends with the words gone: nothing bound, the private copy cleared. The real
 // SettingsController (phone layout, a fake local-back stack standing in for the shell's) with its real events, the PIN
 // gate stubbed to say yes at once. Also: the "seen" flag is set by the reveal, not by the covered page opening.
 #include "common/runtime/AppRuntime.h"
@@ -149,10 +149,11 @@ protected:
 
   void BindNavigation() {
     ShellNavigationPorts nav;
-    nav.snapshot = []() {
+    nav.snapshot = [this]() {
       ShellChromeSnapshot chrome;
-      chrome.layout_mode = LayoutMode::Compact;
+      chrome.layout_mode = layout_mode;
       chrome.nav_tab = NavTab::Me;
+      chrome.settings_detail_primary = settings_pane_primary;
       return chrome;
     };
     nav.push_local_back = [this](const std::string& id, std::function<void()> commit) {
@@ -212,13 +213,13 @@ protected:
     Open();
     Click("reveal");
     ASSERT_EQ(Actions().RecoveryWordsForTest(), kWords);
-    ASSERT_EQ(Actions().RecoverySecretCountForTest(), 0u) << "revealed: the private copy is already wiped";
+    ASSERT_EQ(Actions().RecoverySecretCountForTest(), 0u) << "revealed: the private copy is already cleared";
   }
   void ExpectGone() {
     Settle();
     EXPECT_FALSE(Actions().RecoveryPhraseShown());
     EXPECT_TRUE(Actions().RecoveryWordsForTest().empty()) << "no word stays bound";
-    EXPECT_EQ(Actions().RecoverySecretCountForTest(), 0u) << "the private copy is wiped";
+    EXPECT_EQ(Actions().RecoverySecretCountForTest(), 0u) << "the private copy is cleared";
     EXPECT_EQ(Text("sp"), "") << "the page is closed";
     EXPECT_FALSE(secret_page_open);
   }
@@ -249,6 +250,8 @@ protected:
   ui::ElementDocument* document = nullptr;
   bool initialized = false;
   bool secret_page_open = false;
+  LayoutMode layout_mode = LayoutMode::Compact;
+  bool settings_pane_primary = false;
   std::filesystem::path root;
   std::vector<std::pair<std::string, std::function<void()>>> back_stack;
 };
@@ -284,38 +287,53 @@ TEST_F(RecoveryPhraseExitsTest, TheAppGoingToTheBackgroundClearsTheWords) {
 }
 
 TEST_F(RecoveryPhraseExitsTest, LeavingTheMeTabByATabSwitchClearsTheWords) {
-  // ShellHost::SelectNavTab clears the tab context (the local-back stack and the secret-page flag) and then tells
-  // Settings the Me surface closed.
-  ExpectGoneWhenRevealedOrCovered([this]() {
-    back_stack.clear();
-    secret_page_open = false;
-    settings.OnMeSurfaceClosed();
-  });
+  // ShellHost::SelectNavTab tells Settings the Me surface closed; the controller clears its own page and flag.
+  ExpectGoneWhenRevealedOrCovered([this]() { settings.OnMeSurfaceClosed(); });
 }
 
 TEST_F(RecoveryPhraseExitsTest, TheTimerClearsTheWordsAndRestartsAtTheReveal) {
-  Actions().SetRecoveryShownMsForTest(500);
-  // A page nobody reveals closes by itself.
-  Open();
+  // Generous margins: a loaded CI runner may stall a sleep by hundreds of ms.
+  constexpr int kShownMs = 2000;
+  Actions().SetRecoveryShownMsForTest(kShownMs);
+  const auto pump_for = [](const int ms) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+    AppRuntime::RunUITasks();
+  };
   const auto closed_by = [this](const int ms) {
     for (int waited = 0; waited < ms && Actions().RecoveryPhraseShown(); waited += 20) {
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
       AppRuntime::RunUITasks();
     }
   };
-  closed_by(3000);
+  // A page nobody reveals closes by itself.
+  Open();
+  pump_for(kShownMs / 4);
+  EXPECT_TRUE(Actions().RecoveryPhraseShown()) << "still up at a quarter of its time";
+  closed_by(10 * kShownMs);
   ExpectGone();
 
-  // A reveal late in the window gets the full time again: still up after the covered page's own time ran out.
+  // A reveal at the half restarts the time: at 1.25x the covered page's own time ran out, the revealed words must not.
   Open();
-  std::this_thread::sleep_for(std::chrono::milliseconds(350));
-  AppRuntime::RunUITasks();
+  pump_for(kShownMs / 2);
   Click("reveal");
-  std::this_thread::sleep_for(std::chrono::milliseconds(350)); // 700 ms after opening, 350 after the reveal
-  AppRuntime::RunUITasks();
+  pump_for(kShownMs * 3 / 4); // 1.25x after opening, 0.75x after the reveal
   EXPECT_TRUE(Actions().RecoveryPhraseShown()) << "the covered page's timer must not hide a reveal made after it began";
   EXPECT_EQ(Actions().RecoveryWordsForTest(), kWords);
-  closed_by(3000);
+  closed_by(10 * kShownMs);
+  ExpectGone();
+}
+
+TEST_F(RecoveryPhraseExitsTest, AChatReplacingTheWideSettingsPaneClearsTheWords) {
+  // Wide layout: a notification tap selects a chat, the primary pane stops being the settings detail, the tab stays Me.
+  Open();
+  Click("reveal");
+  layout_mode = LayoutMode::Expanded;
+  settings_pane_primary = true;
+  settings.OnShellLayoutSynced();
+  EXPECT_TRUE(Actions().RecoveryPhraseShown()) << "the settings pane is still the one shown";
+
+  settings_pane_primary = false;
+  settings.OnShellLayoutSynced();
   ExpectGone();
 }
 

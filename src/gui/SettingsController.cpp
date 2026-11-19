@@ -1108,6 +1108,12 @@ void SettingsController::MountSelectedSettingsSection() {
 
 void SettingsController::OnShellLayoutSynced() {
   const ShellChromeSnapshot chrome = ChromeSnapshot();
+  // Wide layout shows the phrase inline in the settings detail pane. A chat selected from a notification replaces
+  // that pane without changing the tab (no OnMeSurfaceClosed), so the words are cleared as soon as the pane is gone.
+  if (chrome.layout_mode != LayoutMode::Compact && chrome.nav_tab == NavTab::Me && !chrome.settings_detail_primary &&
+      !chrome.settings_detail_transient && security_actions_.RecoveryPhraseShown()) {
+    ResetSecurityPage();
+  }
   if (!suppress_auto_save_) {
     // A remount this controller did not start (e.g. the list pane was collapsed) still empties the
     // detail pane's section mount; fill it again or the open section shows blank.
@@ -1154,7 +1160,7 @@ void SettingsController::OnNavTabActivated() {
 
 void SettingsController::OnMeSurfaceClosed() {
   if (security_actions_.RecoveryPhraseShown()) {
-    ResetSecurityPage(); // a tab switch or a notification tap: the phrase does not stay bound behind another tab
+    ResetSecurityPage(); // a tab switch: the phrase does not stay bound behind another tab (a pane replaced on wide: OnShellLayoutSynced)
   }
   CommitProfileNickname(/*show_toast=*/false);
   FlushPending();
