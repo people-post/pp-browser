@@ -169,6 +169,17 @@ TEST_F(RunLogPrefsTest, SavingTheSwitchKeepsTheOtherMachineSettings) {
   EXPECT_TRUE(machine->collect_run_logs);
 }
 
+TEST_F(RunLogPrefsTest, TheCrashSwitchIsOffByDefaultOwnFieldAndGated) {
+  EXPECT_FALSE(RunLogPrefs::ReadCollectCrash(Dir(), true));
+  ASSERT_TRUE(RunLogPrefs::SetCollectCrash(Dir(), true));
+  EXPECT_TRUE(RunLogPrefs::ReadCollectCrash(Dir(), true));
+  EXPECT_FALSE(RunLogPrefs::ReadCollectCrash(Dir(), false)) << "gate closed: off whatever is stored";
+  auto machine = UserPreferences::LoadMachine(Dir());
+  ASSERT_TRUE(machine);
+  EXPECT_TRUE(machine->collect_crash_logs);
+  EXPECT_FALSE(machine->collect_run_logs) << "not the run-log switch";
+}
+
 TEST_F(RunLogPrefsTest, TheMachineDirIsTheRecordedRootElseTheFallback) {
   RunLogPrefs::SetMachineDir("");
   EXPECT_EQ(RunLogPrefs::MachineDir("/session"), "/session");

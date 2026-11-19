@@ -36,9 +36,11 @@ void SettingsRunLogsActions::Bind(ui::DataModelConstructor& ctor) {
   Refresh();
   ctor.Bind("show_run_logs", &show_);
   ctor.Bind("run_logs_collect", &collect_);
+  ctor.Bind("run_logs_collect_crash", &collect_crash_);
   ctor.Bind("run_logs_sendable", &sendable_);
   ctor.Bind("run_logs_send_disabled", &send_disabled_);
   ctor.BindEventCallback("toggle_collect_run_logs", DataEvent<>([this]() { ToggleCollect(); }));
+  ctor.BindEventCallback("toggle_collect_crash_logs", DataEvent<>([this]() { ToggleCollectCrash(); }));
   ctor.BindEventCallback("send_run_logs", DataEvent<>([this]() { Send(); }));
 }
 
@@ -67,6 +69,7 @@ void SettingsRunLogsActions::Refresh() {
   show_ = RunLogsAllowed(kUiDemoBuild) && !DataDir().empty();
   // Unreadable counts as off, as for pruning and packaging.
   collect_ = show_ && RunLogPrefs::ReadCollect(DataDir(), true).value_or(false);
+  collect_crash_ = show_ && RunLogPrefs::ReadCollectCrash(DataDir(), true);
   sendable_ = show_ && RunLogBundle::Sendable(LogFile::FamilyFiles(LogPath()), collect_);
   send_disabled_ = busy_ || !sendable_;
   Dirty();
@@ -76,6 +79,7 @@ void SettingsRunLogsActions::Dirty() {
   DataModelHost& model = DataModelHost::Instance();
   model.Dirty("settings", "show_run_logs");
   model.Dirty("settings", "run_logs_collect");
+  model.Dirty("settings", "run_logs_collect_crash");
   model.Dirty("settings", "run_logs_sendable");
   model.Dirty("settings", "run_logs_send_disabled");
 }
@@ -91,6 +95,16 @@ void SettingsRunLogsActions::ToggleCollect() {
     return;
   }
   if (auto set = RunLogPrefs::SetCollect(DataDir(), LogPath(), !collect_); !set) {
+    host_.ReportFailure(set.error().WithUser(Tr("settings.run_logs.save_failed")));
+  }
+  Refresh();
+}
+
+void SettingsRunLogsActions::ToggleCollectCrash() {
+  if (!show_) {
+    return;
+  }
+  if (auto set = RunLogPrefs::SetCollectCrash(DataDir(), !collect_crash_); !set) {
     host_.ReportFailure(set.error().WithUser(Tr("settings.run_logs.save_failed")));
   }
   Refresh();
@@ -113,9 +127,12 @@ void SettingsRunLogsActions::Send() {
   AppRuntime::PostWorkerNormal([this, alive, data_dir, log_path]() {
     // Packaging follows the same retention as pruning: unknown = off = this launch and the one before only.
     const bool collect = RunLogPrefs::ReadCollect(data_dir, true).value_or(false);
+    // Crash records go along only while "Collect crash logs" is on, whatever is on disk.
+    const FileCrashRecordSource crash_source(CrashDump::PendingPath(data_dir));
+    const bool with_crash = RunLogPrefs::ReadCollectCrash(data_dir, true);
     Roe<RunLogArchive> archive =
         RunLogBundle::Build(log_path, LogFile::EffectiveRetention(collect), kRunLogArchiveMaxBytes, std::time(nullptr),
-                            CrashDump::PendingPath(data_dir)); // the last crash, if one is pending, goes along
+                            with_crash ? &crash_source : nullptr);
     AppRuntime::PostUI([this, alive, collect, archive = std::move(archive)]() mutable {
       if (alive.lock()) {
         preparing_ = false;

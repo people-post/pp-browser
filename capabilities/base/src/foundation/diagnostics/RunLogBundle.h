@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace pbr {
@@ -25,6 +26,33 @@ struct RunLogSelection {
   bool truncated = false;        ///< a file was left out or cut to its tail
 };
 
+/** One crash record offered for the archive: a name for its header line and its raw text. */
+struct CrashRecord {
+  std::string name;
+  std::string text;
+};
+
+/**
+ * Where the crash records for the archive come from ("crash records available for the archive"). The app's own
+ * pending record is one source (FileCrashRecordSource); a system-provided one can be added behind the same interface.
+ */
+class CrashRecordSource {
+public:
+  virtual ~CrashRecordSource() = default;
+  /** Newest first; each text at most 64 KiB. Called off the UI thread. */
+  virtual std::vector<CrashRecord> Records() const = 0;
+};
+
+/** The app's own record: CrashDump's `crash_pending.txt` (one file; none when it does not exist). */
+class FileCrashRecordSource final : public CrashRecordSource {
+public:
+  explicit FileCrashRecordSource(std::string path) : path_(std::move(path)) {}
+  std::vector<CrashRecord> Records() const override;
+
+private:
+  std::string path_;
+};
+
 /** The archive "Send run logs" sends, in memory only (never written to disk by this code). */
 struct RunLogArchive {
   std::string filename; ///< `pp-run-logs-<YYYY-MM-DD>.log.gz`
@@ -33,7 +61,7 @@ struct RunLogArchive {
   /** The first record's local time, `MM-DD HH:MM` ("from … to now"); empty when no record survived. */
   std::string first_time;
   bool truncated = false;      ///< older records did not fit
-  bool crash_included = false; ///< the record of the last crash (CrashDump's crash_pending.txt) is in the archive
+  bool crash_included = false; ///< at least one crash record is in the archive
 };
 
 /**
@@ -93,12 +121,12 @@ public:
    * file) and filters it once, joins them oldest first under `==== <file name> ====` lines and gzips the result.
    * While the archive is over `max_bytes`, the oldest records are dropped (whole files first, then the head of the
    * next, at a record start), by about how far over it was plus a 10% margin, and it is gzipped again, up to 12
-   * times; the newest records stay. A non-empty `crash_path` (the pending crash record, read once, at most 64 KiB)
-   * goes last under its own header, filtered by FilterCrashRecord and counted in the size; it is the last to be
-   * dropped. Fails when nothing fits. `now` names the file (local date).
+   * times; the newest records stay. A non-null `crash` (only when "Collect crash logs" is on) adds its records
+   * (read once) after the logs, each under its own header, filtered by FilterCrashRecord and counted in the size;
+   * they are the last to be dropped. Fails when nothing fits. `now` names the file (local date).
    */
   static Roe<RunLogArchive> Build(const std::string& log_path, const LogRetention& retention, std::uintmax_t max_bytes,
-                                  std::time_t now, const std::string& crash_path = {});
+                                  std::time_t now, const CrashRecordSource* crash = nullptr);
 };
 
 } // namespace pbr

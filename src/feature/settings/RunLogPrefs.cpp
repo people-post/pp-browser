@@ -29,6 +29,23 @@ std::optional<bool> RunLogPrefs::ReadCollect(const std::string& data_dir, const 
   return machine->collect_run_logs;
 }
 
+bool RunLogPrefs::ReadCollectCrash(const std::string& data_dir, const bool allowed) {
+  if (!allowed) {
+    return false;
+  }
+  auto machine = UserPreferences::LoadMachine(data_dir);
+  return machine && machine->collect_crash_logs;
+}
+
+Roe<void> RunLogPrefs::SetCollectCrash(const std::string& data_dir, const bool on) {
+  auto machine = UserPreferences::LoadMachine(data_dir);
+  if (!machine) {
+    return machine.error();
+  }
+  machine->collect_crash_logs = on;
+  return UserPreferences::SaveMachine(data_dir, *machine);
+}
+
 LogRetention RunLogPrefs::Retention(const std::string& data_dir, const bool allowed) {
   return LogFile::EffectiveRetention(ReadCollect(data_dir, allowed).value_or(false));
 }

@@ -550,9 +550,12 @@ data-event-click="unpublish_cas(item_index)"	1	storage	tester	tester;;tester;;it
 {{i18n:settings.auto_renew.short}}	1	-	profile	advanced	profile	
 data-event-click="show_setting_note('settings.auto_renew.short','settings.auto_renew.note')"	1	-	profile	advanced	profile	
 data-class-settings-switch--on="run_logs_collect"	1	-	advanced	advanced;;show_run_logs	advanced	
+data-class-settings-switch--on="run_logs_collect_crash"	1	-	advanced	advanced;;show_run_logs	advanced	
 data-event-click="toggle_collect_run_logs()"	1	-	advanced	advanced;;show_run_logs	advanced	
+data-event-click="toggle_collect_crash_logs()"	1	-	advanced	advanced;;show_run_logs	advanced	
 data-event-click="send_run_logs()"	1	-	advanced	advanced;;show_run_logs	advanced	
 {{i18n:settings.run_logs.collect}}	1	-	advanced	advanced;;show_run_logs	advanced	
+{{i18n:settings.run_logs.collect_crash}}	1	-	advanced	advanced;;show_run_logs	advanced	
 {{i18n:settings.run_logs.collect.help}}	1	-	advanced	advanced;;show_run_logs	advanced	
 {{i18n:settings.run_logs.send}}	1	-	advanced	advanced;;show_run_logs	advanced	
 {{i18n:settings.run_logs.nothing_yet}}	1	-	advanced	advanced;;show_run_logs;;!run_logs_sendable	advanced	

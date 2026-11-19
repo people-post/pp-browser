@@ -29,7 +29,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
 ```
 {config_dir}/config.json
 {data_dir}/profiles.json
-{data_dir}/machine.json               # device-wide: active profile, window, safe area, display; collect_run_logs (optional bool, absent = off: "Collect run logs")
+{data_dir}/machine.json               # device-wide: active profile, window, safe area, display; collect_run_logs, collect_crash_logs (optional bools, absent = off: "Collect run logs", "Collect crash logs")
 {data_dir}/logs/pp-browser.log         # current launch log (0600; .1 … .N = previous launches: 7 days / 50 MB with collect_run_logs on, else only .1; .1 is always kept) — ops/CONFIGURATION.md § Log file; leaves the device only by Send run logs (test phase, contracts/DIAGNOSTICS.md)
 {data_dir}/logs/metrics.log            # Metrics channel: shareable lines (rotated like the log) — contracts/DIAGNOSTICS.md
 {data_dir}/logs/diag.log               # Diag channel: shareable lines (rotated like the log) — contracts/DIAGNOSTICS.md

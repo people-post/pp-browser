@@ -35,11 +35,14 @@ public:
   void Refresh();
   /** The switch's event: stores the other value; off deletes the older logs at once. */
   void ToggleCollect();
+  /** The "Collect crash logs" switch's event: stores the other value (device-wide). */
+  void ToggleCollectCrash();
   /** The row's event: prepares the archive and asks first; a tap while one is being prepared does nothing. */
   void Send();
 
   bool Shown() const { return show_; }
   bool Collect() const { return collect_; }
+  bool CollectCrash() const { return collect_crash_; }
   bool Sendable() const { return sendable_; }
   bool Busy() const { return busy_; }
 
@@ -58,6 +61,7 @@ private:
 
   bool show_ = false;
   bool collect_ = false;
+  bool collect_crash_ = false;
   bool sendable_ = false;
   bool busy_ = false;
   /** The archive is being made on a worker: busy_ stays up until it comes back. */

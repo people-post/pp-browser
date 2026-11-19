@@ -392,6 +392,19 @@ std::string RunLogBundle::FilterRecords(const std::string_view text) {
   return out;
 }
 
+std::vector<CrashRecord> FileCrashRecordSource::Records() const {
+  constexpr std::uintmax_t kCrashMax = 64 * 1024;
+  std::error_code ec;
+  if (path_.empty() || !fs::is_regular_file(path_, ec)) {
+    return {};
+  }
+  std::ifstream in(path_, std::ios::binary);
+  std::string text(kCrashMax, '\0');
+  in.read(text.data(), static_cast<std::streamsize>(text.size()));
+  text.resize(static_cast<size_t>(in.gcount()));
+  return {{fs::path(path_).filename().string(), std::move(text)}};
+}
+
 std::string RunLogBundle::FilterCrashRecord(const std::string_view text) {
   std::string out;
   size_t at = 0;
@@ -434,7 +447,7 @@ Roe<std::vector<uint8_t>> RunLogBundle::Gzip(const std::string_view data) {
 
 Roe<RunLogArchive> RunLogBundle::Build(const std::string& log_path, const LogRetention& retention,
                                        const std::uintmax_t max_bytes, const std::time_t now,
-                                       const std::string& crash_path) {
+                                       const CrashRecordSource* crash) {
   const std::vector<LogFileInfo> files = DirectoryFiles(log_path);
   if (files.empty()) {
     return Error("No log files");
@@ -447,18 +460,11 @@ Roe<RunLogArchive> RunLogBundle::Build(const std::string& log_path, const LogRet
     sections.push_back({"==== " + fs::path(pick.name).filename().string() + " ====\n",
                         FilterRecords(ReadTail(pick.name, pick.size, pick.take_bytes))});
   }
-  if (!crash_path.empty()) {
-    constexpr std::uintmax_t kCrashMax = 64 * 1024;
-    std::error_code ec;
-    if (fs::is_regular_file(crash_path, ec)) {
-      std::ifstream in(crash_path, std::ios::binary);
-      std::string text(kCrashMax, '\0');
-      in.read(text.data(), static_cast<std::streamsize>(text.size()));
-      text.resize(static_cast<size_t>(in.gcount()));
-      std::string body = FilterCrashRecord(text);
+  if (crash != nullptr) {
+    for (CrashRecord& record : crash->Records()) {
+      std::string body = FilterCrashRecord(record.text);
       if (!body.empty()) {
-        sections.push_back(
-            {"==== " + fs::path(crash_path).filename().string() + " (the last crash) ====\n", std::move(body), true});
+        sections.push_back({"==== " + record.name + " (crash record) ====\n", std::move(body), true});
       }
     }
   }

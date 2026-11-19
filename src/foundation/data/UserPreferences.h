@@ -40,6 +40,11 @@ struct MachinePreferences {
    * hence here and not in a profile's preferences. Optional on disk (absent = off); the schema version stays.
    */
   bool collect_run_logs = false;
+  /**
+   * Settings → Advanced → "Collect crash logs": when on, Send run logs also carries the crash records. Device-wide,
+   * optional on disk (absent = off). Not the old per-profile `crash_reports_enabled` (its upload stays dormant).
+   */
+  bool collect_crash_logs = false;
 };
 
 struct ProfilePreferences {

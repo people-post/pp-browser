@@ -382,23 +382,44 @@ TEST_F(RunLogDirTest, ThePendingCrashRecordGoesLastFilteredAndCountedInTheSize) 
   Write(crash_path,
         "pp-browser crash dump\nreason=signal 11\n--- breadcrumbs ---\n[I] Chat: sent text=words\n[I] Net: ok\n");
   Write(log_path_, Rec("this launch"));
-  auto archive = RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 4 * 1024 * 1024, 0, crash_path);
+  const FileCrashRecordSource source(crash_path);
+  auto archive = RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 4 * 1024 * 1024, 0, &source);
   ASSERT_TRUE(archive) << archive.error().message;
   EXPECT_TRUE(archive->crash_included);
   EXPECT_EQ(Gunzip(archive->bytes), "==== pp-browser.log ====\n" + Rec("this launch") +
-                                        "==== crash_pending.txt (the last crash) ====\n"
+                                        "==== crash_pending.txt (crash record) ====\n"
                                         "pp-browser crash dump\nreason=signal 11\n--- breadcrumbs ---\n[I] Net: ok\n");
   EXPECT_EQ(fs::file_size(crash_path) > 0, true) << "the record itself is left where it is";
 }
 
-TEST_F(RunLogDirTest, NoCrashRecordMeansNoCrashSectionAndNoFlag) {
+TEST_F(RunLogDirTest, NoSourceOrNoRecordMeansNoCrashSectionAndNoFlag) {
   Write(log_path_, Rec("this launch"));
-  for (const std::string& path : {std::string(), (dir_ / "diagnostics" / "crash_pending.txt").string()}) {
-    auto archive = RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 1024 * 1024, 0, path);
+  const FileCrashRecordSource missing((dir_ / "diagnostics" / "crash_pending.txt").string());
+  for (const CrashRecordSource* source :
+       {static_cast<const CrashRecordSource*>(nullptr), static_cast<const CrashRecordSource*>(&missing)}) {
+    auto archive = RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 1024 * 1024, 0, source);
     ASSERT_TRUE(archive) << archive.error().message;
     EXPECT_FALSE(archive->crash_included);
     EXPECT_EQ(Gunzip(archive->bytes), "==== pp-browser.log ====\n" + Rec("this launch"));
   }
+}
+
+class TwoRecords final : public CrashRecordSource {
+public:
+  std::vector<CrashRecord> Records() const override {
+    return {{"new.txt", "reason=signal 11\n"}, {"old.txt", "reason=signal 6\n"}};
+  }
+};
+
+TEST_F(RunLogDirTest, AnySourceBehindTheInterfaceAddsItsRecordsNewestFirst) {
+  Write(log_path_, Rec("this launch"));
+  const TwoRecords source;
+  auto archive = RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 1024 * 1024, 0, &source);
+  ASSERT_TRUE(archive) << archive.error().message;
+  EXPECT_TRUE(archive->crash_included);
+  EXPECT_EQ(Gunzip(archive->bytes), "==== pp-browser.log ====\n" + Rec("this launch") +
+                                        "==== new.txt (crash record) ====\nreason=signal 11\n" +
+                                        "==== old.txt (crash record) ====\nreason=signal 6\n");
 }
 
 TEST_F(RunLogDirTest, TheCrashRecordSurvivesTheSizeCut) {
@@ -414,7 +435,8 @@ TEST_F(RunLogDirTest, TheCrashRecordSurvivesTheSizeCut) {
   Write(log_path_, noise);
   const std::string crash_path = (dir_ / "crash_pending.txt").string();
   Write(crash_path, "pp-browser crash dump\nreason=signal 6\n");
-  auto archive = RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 20 * 1024, 0, crash_path);
+  const FileCrashRecordSource source(crash_path);
+  auto archive = RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 20 * 1024, 0, &source);
   ASSERT_TRUE(archive) << archive.error().message;
   EXPECT_LE(archive->bytes.size(), 20u * 1024);
   EXPECT_TRUE(archive->crash_included);

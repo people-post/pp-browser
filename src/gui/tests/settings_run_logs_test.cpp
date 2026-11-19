@@ -24,6 +24,8 @@
 #include <ui/dom/Element.h>
 #include <ui/dom/ElementDocument.h>
 #include <ui/paint/RenderInterface.h>
+#include <zlib.h>
+
 #include <gtest/gtest.h>
 
 #include <chrono>
@@ -55,6 +57,24 @@ class QuietSystem : public ui::SystemInterface {
 public:
   double GetElapsedTime() override { return 0.0; }
 };
+
+std::string Gunzip(const std::vector<uint8_t>& bytes) {
+  z_stream stream{};
+  inflateInit2(&stream, 15 + 16);
+  stream.next_in = const_cast<Bytef*>(bytes.data());
+  stream.avail_in = static_cast<uInt>(bytes.size());
+  std::string out;
+  char buffer[65536];
+  int result = Z_OK;
+  do {
+    stream.next_out = reinterpret_cast<Bytef*>(buffer);
+    stream.avail_out = sizeof(buffer);
+    result = inflate(&stream, Z_NO_FLUSH);
+    out.append(buffer, sizeof(buffer) - stream.avail_out);
+  } while (result == Z_OK);
+  inflateEnd(&stream);
+  return out;
+}
 
 std::string ReadAsset(const std::string& relative) {
   std::ifstream in(fs::path(PP_BROWSER_ASSETS_DIR) / relative);
@@ -240,7 +260,7 @@ TEST_F(SettingsRunLogsTest, OffOnAFreshDeviceWithItsWordsAndNothingToSendYet) {
   ASSERT_TRUE(RunLogsAllowed(/*ui_demo=*/false));
   const std::string text = document->GetInnerRML().c_str();
   EXPECT_NE(text.find("收集运行日志"), std::string::npos);
-  EXPECT_NE(text.find("发送运行日志"), std::string::npos);
+  EXPECT_NE(text.find("发送日志"), std::string::npos);
   EXPECT_NE(text.find(Tr("settings.run_logs.collect.help")), std::string::npos);
   ASSERT_NE(Switch(), nullptr);
   EXPECT_FALSE(Switch()->IsClassSet("settings-switch--on")) << "default off";
@@ -287,7 +307,7 @@ TEST_F(SettingsRunLogsTest, TwoTapsMakeOneArchiveAndOneConfirmThatSaysWhatIsInIt
   Click(Pill());
   Settle();
   ASSERT_EQ(confirms.size(), 1u);
-  EXPECT_EQ(confirms[0].title, "发送运行日志");
+  EXPECT_EQ(confirms[0].title, "发送日志");
   EXPECT_EQ(confirms[0].ok, "选择联系人");
   EXPECT_EQ(confirms[0].message.rfind("从 11-17 08:00 到现在的运行日志，约 ", 0), 0u) << confirms[0].message;
   EXPECT_NE(confirms[0].message.find(Tr("settings.run_logs.confirm_contents")), std::string::npos);
@@ -331,26 +351,61 @@ TEST_F(SettingsRunLogsTest, OpeningThePageAgainWhileTheArchiveIsBeingMadeStaysGr
   EXPECT_EQ(confirms.size(), 1u);
 }
 
-TEST_F(SettingsRunLogsTest, APendingCrashRecordIsInTheArchiveAndTheConfirmListsIt) {
+TEST_F(SettingsRunLogsTest, TheCrashSwitchIsOffByDefaultStoredForTheDeviceAndSitsBetweenCollectAndSend) {
+  ui::ElementList switches;
+  document->GetElementsByClassName(switches, "settings-switch");
+  ASSERT_EQ(switches.size(), 2u) << "collect run logs, collect crash logs";
+  ui::Element* crash = switches[1];
+  EXPECT_FALSE(crash->IsClassSet("settings-switch--on")) << "default off";
+  const std::string text = document->GetInnerRML().c_str();
+  const size_t collect = text.find("收集运行日志");
+  const size_t crash_row = text.find("收集闪退日志");
+  const size_t send = text.find("发送日志");
+  ASSERT_NE(crash_row, std::string::npos);
+  EXPECT_LT(collect, crash_row);
+  EXPECT_LT(crash_row, send);
+  EXPECT_NE(text.find("只收集 App 的运行记录，用于排查和修复问题。"), std::string::npos);
+  Click(crash);
+  EXPECT_TRUE(crash->IsClassSet("settings-switch--on"));
+  auto machine = UserPreferences::LoadMachine(root.string());
+  ASSERT_TRUE(machine);
+  EXPECT_TRUE(machine->collect_crash_logs);
+  EXPECT_FALSE(machine->collect_run_logs) << "its own switch";
+  EXPECT_FALSE(fs::exists(root / "session" / "machine.json"));
+}
+
+TEST_F(SettingsRunLogsTest, CrashRecordsGoOnlyWhileTheCrashSwitchIsOnWhateverIsOnDisk) {
   Click(Switch());
   PreviousLaunches(1);
-  Click(Pill());
+  fs::create_directories(root / "diagnostics");
+  Write((root / "diagnostics" / "crash_pending.txt").string(), "pp-browser crash dump\nreason=signal 11\n", 0);
+
+  Click(Pill()); // crash switch off: the record is on disk but stays out
   Settle();
   ASSERT_EQ(confirms.size(), 1u);
   EXPECT_NE(confirms[0].message.find(Tr("settings.run_logs.confirm_contents")), std::string::npos);
-  EXPECT_EQ(confirms[0].message.find("闪退"), std::string::npos) << "no crash record: no mention";
-  answer(false);
+  EXPECT_EQ(confirms[0].message.find("闪退记录"), std::string::npos);
+  answer(true);
+  ASSERT_EQ(sent.size(), 1u);
+  EXPECT_EQ(Gunzip(sent[0].bytes).find("signal 11"), std::string::npos) << "no crash record in the archive";
 
-  fs::create_directories(root / "diagnostics");
-  Write((root / "diagnostics" / "crash_pending.txt").string(), "pp-browser crash dump\nreason=signal 11\n", 0);
-  Click("sel_adv");
+  ui::ElementList switches;
+  document->GetElementsByClassName(switches, "settings-switch");
+  Click(switches[1]); // crash switch on
   Click(Pill());
   Settle();
   ASSERT_EQ(confirms.size(), 2u);
-  EXPECT_NE(confirms[1].message.find("上次闪退的记录"), std::string::npos) << confirms[1].message;
+  EXPECT_NE(confirms[1].message.find("闪退记录"), std::string::npos) << confirms[1].message;
   EXPECT_EQ(confirms[1].message.find(Tr("settings.run_logs.confirm_contents")), std::string::npos);
   answer(true);
-  ASSERT_EQ(sent.size(), 1u);
+  ASSERT_EQ(sent.size(), 2u);
+  EXPECT_NE(Gunzip(sent[1].bytes).find("reason=signal 11"), std::string::npos);
+
+  fs::remove(root / "diagnostics" / "crash_pending.txt"); // switch on, nothing on disk: no mention
+  Click(Pill());
+  Settle();
+  ASSERT_EQ(confirms.size(), 3u);
+  EXPECT_EQ(confirms[2].message.find("闪退记录"), std::string::npos);
 }
 
 TEST_F(SettingsRunLogsTest, OffSaysCollectingIsOffAndCancelSendsNothing) {

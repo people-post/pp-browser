@@ -27,6 +27,12 @@ public:
   /** The switch: false when not allowed; nothing when machine.json cannot be read (callers treat that as off). */
   static std::optional<bool> ReadCollect(const std::string& data_dir, bool allowed);
 
+  /** The "Collect crash logs" switch: false when not allowed or when machine.json cannot be read. */
+  static bool ReadCollectCrash(const std::string& data_dir, bool allowed);
+
+  /** Stores the "Collect crash logs" switch in machine.json (refused, nothing written, when it cannot be read). */
+  static Roe<void> SetCollectCrash(const std::string& data_dir, bool on);
+
   /** The retention the switch gives: unknown counts as off (only this launch and the one before). */
   static LogRetention Retention(const std::string& data_dir, bool allowed);
 

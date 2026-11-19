@@ -59,6 +59,18 @@
               </button>
             </span>
           </div>
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="group-row-text">{{i18n:settings.run_logs.collect_crash}}</span>
+              </span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="run_logs_collect_crash"
+                      data-event-click="toggle_collect_crash_logs()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
           <div class="group-row group-row--static">
             <span class="group-row-body">
               <span class="group-row-label">
