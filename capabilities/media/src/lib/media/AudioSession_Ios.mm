@@ -44,8 +44,8 @@ std::atomic<bool> g_began_before_marked{false};
 /** Makes "still ours?" + setActive:NO atomic against a new activation / CancelPendingDeactivate. */
 std::mutex g_session_mu;
 /** CallKit owns the session (see SetSystemManaged); `g_system_active` follows its didActivate / didDeactivate. */
-bool g_system_managed = false;
-bool g_system_active = false;
+std::atomic<bool> g_system_managed{false}; // atomics: NotifyVoiceProcessingStarted reads them without g_session_mu
+std::atomic<bool> g_system_active{false};
 std::condition_variable g_system_cv;
 /** How long ActivateForVoip waits for CallKit's activation before taking the session itself. */
 constexpr std::chrono::milliseconds kSystemActivationWait{3000};
@@ -920,17 +920,18 @@ bool SpeakerToggleNeedsDeviceReopen() {
 }
 
 void NotifyVoiceProcessingStarted(const double sample_rate, const int channels, const int bypass, const int agc) {
-  bool managed = false;
-  bool system_active = false;
-  {
-    std::lock_guard<std::mutex> lock(g_session_mu);
-    managed = g_system_managed;
-    system_active = g_system_active;
-  }
-  AVAudioSession* session = [AVAudioSession sharedInstance];
-  SessionLog().info << "vpio started sr=" << static_cast<long>(sample_rate) << " ch=" << channels << " bypass=" << bypass
-                    << " agc=" << agc << " category=" << Utf8(session.category) << " mode=" << Utf8(session.mode)
-                    << " system_managed=" << (managed ? 1 : 0) << " system_active=" << (system_active ? 1 : 0);
+  // Developer log only. Runs on the audio device thread right after the unit started: no g_session_mu (the activation
+  // path holds it) and no AVAudioSession read here (those can block on the media server), so the line is written from a
+  // background queue. Once per unit start, never per audio callback.
+  const bool managed = g_system_managed.load();
+  const bool system_active = g_system_active.load();
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    SessionLog().info << "vpio started sr=" << static_cast<long>(sample_rate) << " ch=" << channels
+                      << " bypass=" << bypass << " agc=" << agc << " category=" << Utf8(session.category)
+                      << " mode=" << Utf8(session.mode) << " system_managed=" << (managed ? 1 : 0)
+                      << " system_active=" << (system_active ? 1 : 0);
+  });
 }
 
 int OpusEncoderComplexity() {
