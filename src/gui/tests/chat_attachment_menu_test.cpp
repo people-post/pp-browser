@@ -17,14 +17,15 @@ namespace pbr {
 namespace {
 
 /** The ids of the items a message menu gets for an attachment of `kind` (none: a text message). */
-std::vector<std::string> ExitItems(const AttachmentLayout layout, const std::optional<AttachmentExitKind> kind,
-                                   int* ran = nullptr) {
+std::vector<std::string> ExitItems(const AttachmentLayout layout, const bool can_share_file,
+                                   const std::optional<AttachmentExitKind> kind, int* ran = nullptr) {
   std::vector<ContextMenuAction> actions;
-  AppendAttachmentExitActions(actions, DecideMenuEntries(layout, kind), [ran]() {
+  const auto count = [ran]() {
     if (ran) {
       ++*ran;
     }
-  });
+  };
+  AppendAttachmentExitActions(actions, DecideMenuEntries(layout, can_share_file, kind), count, count);
   std::vector<std::string> ids;
   for (const ContextMenuAction& action : actions) {
     ids.push_back(action.id);
@@ -48,19 +49,38 @@ TEST_F(ChatAttachmentMenuTest, TheDesktopOffersSaveAsForEveryReceivedAttachment)
   for (const AttachmentExitKind kind : {AttachmentExitKind::Picture, AttachmentExitKind::Video,
                                         AttachmentExitKind::AudioFile, AttachmentExitKind::File}) {
     int ran = 0;
-    EXPECT_EQ(ExitItems(AttachmentLayout::Desktop, kind, &ran), std::vector<std::string>{"save_attachment_as"});
+    EXPECT_EQ(ExitItems(AttachmentLayout::Desktop, false, kind, &ran), std::vector<std::string>{"save_attachment_as"});
     EXPECT_EQ(ran, 1) << "the item runs the save";
   }
   std::vector<ContextMenuAction> actions;
-  AppendAttachmentExitActions(actions, DecideMenuEntries(AttachmentLayout::Desktop, AttachmentExitKind::File), {});
+  AppendAttachmentExitActions(actions, DecideMenuEntries(AttachmentLayout::Desktop, false, AttachmentExitKind::File),
+                              {}, {});
   ASSERT_EQ(actions.size(), 1u);
   EXPECT_EQ(actions[0].label, "存储为…");
 }
 
 TEST_F(ChatAttachmentMenuTest, NoSaveAsForATextOrVoiceMessageOrOnAPhone) {
-  EXPECT_TRUE(ExitItems(AttachmentLayout::Desktop, std::nullopt).empty()) << "a text message";
-  EXPECT_TRUE(ExitItems(AttachmentLayout::Desktop, AttachmentExitKind::Voice).empty()) << "an in-app voice message";
-  EXPECT_TRUE(ExitItems(AttachmentLayout::Phone, AttachmentExitKind::File).empty());
+  EXPECT_TRUE(ExitItems(AttachmentLayout::Desktop, false, std::nullopt).empty()) << "a text message";
+  EXPECT_TRUE(ExitItems(AttachmentLayout::Desktop, false, AttachmentExitKind::Voice).empty())
+      << "an in-app voice message";
+  EXPECT_TRUE(ExitItems(AttachmentLayout::Phone, false, AttachmentExitKind::File).empty());
+}
+
+// Phones (iOS, iPadOS, Android: PlatformCanShareFile): "Share…" for every received attachment, never "Save as…".
+TEST_F(ChatAttachmentMenuTest, APhoneOffersShareForEveryReceivedAttachment) {
+  for (const AttachmentExitKind kind : {AttachmentExitKind::Picture, AttachmentExitKind::Video,
+                                        AttachmentExitKind::AudioFile, AttachmentExitKind::File}) {
+    int ran = 0;
+    EXPECT_EQ(ExitItems(AttachmentLayout::Phone, true, kind, &ran), std::vector<std::string>{"share_attachment"});
+    EXPECT_EQ(ran, 1) << "the item runs the share";
+  }
+  EXPECT_TRUE(ExitItems(AttachmentLayout::Phone, true, std::nullopt).empty()) << "a text message";
+  EXPECT_TRUE(ExitItems(AttachmentLayout::Phone, true, AttachmentExitKind::Voice).empty()) << "an in-app voice message";
+  std::vector<ContextMenuAction> actions;
+  AppendAttachmentExitActions(actions, DecideMenuEntries(AttachmentLayout::Phone, true, AttachmentExitKind::Picture),
+                              {}, {});
+  ASSERT_EQ(actions.size(), 1u);
+  EXPECT_EQ(actions[0].label, "分享…");
 }
 
 std::string ReadSource(const std::string& file) {
@@ -83,7 +103,9 @@ TEST_F(ChatAttachmentMenuTest, TheMessageMenuAddsTheItemsBeforeDelete) {
   EXPECT_LT(edit, exit);
   EXPECT_LT(drawn, exit);
   EXPECT_LT(exit, remove);
-  EXPECT_NE(menus.find("DecideMenuEntries(CurrentAttachmentLayout()", for_request), std::string::npos);
+  EXPECT_NE(menus.find("DecideMenuEntries(CurrentAttachmentLayout(), PlatformCanShareFile()", for_request),
+            std::string::npos);
+  EXPECT_NE(menus.find("host_.ShareAttachment(message_id, position)", for_request), std::string::npos);
 }
 
 } // namespace

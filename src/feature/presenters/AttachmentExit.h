@@ -77,10 +77,16 @@ AttachmentTap DecideAttachmentTap(AttachmentLayout layout, AttachmentExitKind ki
 struct AttachmentMenuEntries {
   /** "Save as…" (desktop). */
   bool save_as = false;
+  /** "Share…" (the system share sheet: iOS / iPadOS, Android). */
+  bool share = false;
 };
 
-/** Desktop: "Save as…" for every attachment but a voice message; nothing for a message that is no attachment. */
-AttachmentMenuEntries DecideMenuEntries(AttachmentLayout layout, std::optional<AttachmentExitKind> kind);
+/**
+ * For every attachment but a voice message (nothing for a message that is no attachment): "Save as…" on the desktop,
+ * "Share…" where the platform has a file share sheet (`can_share_file`, PlatformCanShareFile).
+ */
+AttachmentMenuEntries DecideMenuEntries(AttachmentLayout layout, bool can_share_file,
+                                        std::optional<AttachmentExitKind> kind);
 
 /** One save at a time: Idle → Choosing (the dialog is up) → Saving (the copy runs) → Idle. UI thread. */
 class AttachmentSaveState {
@@ -152,6 +158,41 @@ private:
 
   AttachmentSavePorts ports_;
   AttachmentSaveState state_;
+};
+
+/** What the share flow needs from the app. */
+struct AttachmentSharePorts {
+  std::function<void(std::function<void()>)> post_ui;
+  std::function<void(std::function<void()>)> post_worker;
+  /** Worker: the attachment's decrypted view file (made when missing); none when it cannot be made now (locked). */
+  std::function<std::optional<std::string>(const std::string& thread_id, const std::string& message_id)> view_path;
+  /** UI: the system share sheet for `path`, pointing at (`x`, `y`) on an iPad; false when it could not be shown. */
+  std::function<bool(const std::string& path, const std::string& mime, int x, int y)> share;
+  /** UI: the bottom pill for a failure. */
+  std::function<void(const std::string& text)> fail;
+};
+
+/**
+ * "Share…" of one attachment (phones): its view is found (made on a worker when missing), then handed to the system
+ * share sheet. A sheet that cannot be shown says "Can't share this file right now"; a share or a cancel says nothing.
+ * The shared file is the view itself: nothing is deleted or touched afterwards. UI thread; the flow must outlive the
+ * callbacks it hands out (it is the chat screen's member).
+ */
+class AttachmentShareFlow {
+public:
+  enum class Start { Started, Ignored, NotReady };
+
+  explicit AttachmentShareFlow(AttachmentSharePorts ports) : ports_(std::move(ports)) {}
+
+  /** The view is being found for a share: a second Share… waits (Ignored). */
+  bool Busy() const { return busy_; }
+  /** NotReady (the pill says so) when the attachment is not downloaded; (`x`, `y`) anchors the iPad popover. */
+  Start Begin(const std::string& thread_id, const std::string& message_id, const std::string& mime, bool ready, int x,
+              int y);
+
+private:
+  AttachmentSharePorts ports_;
+  bool busy_ = false;
 };
 
 } // namespace pbr

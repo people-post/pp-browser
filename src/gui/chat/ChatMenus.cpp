@@ -7,6 +7,7 @@
 #include "feature/presenters/SessionMenu.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/Platform.h"
+#include "foundation/platform/PlatformShareFile.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "gui/UserFeedback.h"
@@ -112,10 +113,14 @@ AttachmentLayout CurrentAttachmentLayout() {
 }
 
 void AppendAttachmentExitActions(std::vector<ContextMenuAction>& actions, const AttachmentMenuEntries& entries,
-                                 std::function<void()> save_as) {
+                                 std::function<void()> save_as, std::function<void()> share) {
   if (entries.save_as) {
     actions.push_back(
         {"save_attachment_as", Tr("chat.menu.save_as"), nullptr, std::move(save_as), "../icons/v2/file.svg"});
+  }
+  if (entries.share) {
+    actions.push_back(
+        {"share_attachment", Tr("chat.menu.share_file"), nullptr, std::move(share), "../icons/v2/share.svg"});
   }
 }
 
@@ -239,9 +244,12 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   const std::optional<DrawnAttachment> attachment = host_.DrawnAttachmentOf(message_id);
   AppendAttachmentExitActions(
       actions,
-      DecideMenuEntries(CurrentAttachmentLayout(),
+      DecideMenuEntries(CurrentAttachmentLayout(), PlatformCanShareFile(),
                         attachment ? std::optional<AttachmentExitKind>(attachment->kind) : std::nullopt),
-      [this, message_id]() { AppRuntime::PostUI([this, message_id]() { host_.SaveAttachmentAs(message_id); }); });
+      [this, message_id]() { AppRuntime::PostUI([this, message_id]() { host_.SaveAttachmentAs(message_id); }); },
+      [this, message_id, position = request.position]() {
+        AppRuntime::PostUI([this, message_id, position]() { host_.ShareAttachment(message_id, position); });
+      });
   ContextMenuAction remove{
       "delete_message", Tr("common.delete"), nullptr,
       [this, message_id, position = request.position]() { OpenDeleteChoice(message_id, position); }};

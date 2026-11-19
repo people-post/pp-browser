@@ -88,12 +88,14 @@ AttachmentTap DecideAttachmentTap(const AttachmentLayout layout, const Attachmen
   return ready ? AttachmentTap::Save : AttachmentTap::NotReady;
 }
 
-AttachmentMenuEntries DecideMenuEntries(const AttachmentLayout layout, const std::optional<AttachmentExitKind> kind) {
+AttachmentMenuEntries DecideMenuEntries(const AttachmentLayout layout, const bool can_share_file,
+                                        const std::optional<AttachmentExitKind> kind) {
   AttachmentMenuEntries entries;
   if (!kind || *kind == AttachmentExitKind::Voice) {
     return entries;
   }
   entries.save_as = layout == AttachmentLayout::Desktop;
+  entries.share = can_share_file;
   return entries;
 }
 
@@ -174,6 +176,32 @@ void AttachmentSaveFlow::OnCopied(const std::string& message_id, const std::stri
   log().info << "attachment save: done";
   ports_.ok(
       Tr("chat.attachment.saved_to", {{"folder", ports_.folder_name(PathToUtf8(PathFromUtf8(target).parent_path()))}}));
+}
+
+AttachmentShareFlow::Start AttachmentShareFlow::Begin(const std::string& thread_id, const std::string& message_id,
+                                                      const std::string& mime, const bool ready, const int x,
+                                                      const int y) {
+  if (busy_) {
+    return Start::Ignored;
+  }
+  if (!ready) {
+    ports_.fail(Tr("chat.attachment.not_ready"));
+    return Start::NotReady;
+  }
+  busy_ = true;
+  ports_.post_worker([this, thread_id, message_id, mime, x, y]() {
+    std::optional<std::string> view = ports_.view_path(thread_id, message_id);
+    ports_.post_ui([this, mime, x, y, view = std::move(view)]() {
+      busy_ = false;
+      if (view && ports_.share(*view, mime, x, y)) {
+        log().info << "attachment share: sheet shown";
+        return;
+      }
+      log().warning << "attachment share: failed";
+      ports_.fail(Tr("chat.attachment.share_failed"));
+    });
+  });
+  return Start::Started;
 }
 
 } // namespace pbr

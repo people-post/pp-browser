@@ -10,6 +10,7 @@
 #include "feature/presenters/ThreadSearchSession.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "foundation/platform/PlatformShareFile.h"
 #include "gui/chat/AgentTurnController.h"
 #include "gui/chat/AskAiPanel.h"
 #include "foundation/runtime/BackgroundActivity.h"
@@ -488,6 +489,7 @@ private:
   void AddContactFromCard(const std::string& message_id) override;
   std::optional<DrawnAttachment> DrawnAttachmentOf(const std::string& message_id) const override;
   void SaveAttachmentAs(const std::string& message_id) override;
+  void ShareAttachment(const std::string& message_id, ui::Vector2i position) override;
   /**
    * Reply / Ask AI: shows `text` as the quote bar above the composer; the next send carries it as a quote.
    * `draft_prefix` ("@ai " for Ask AI) is put into the input with the caret after it.
@@ -574,6 +576,10 @@ private:
   std::string drawn_attachments_thread_;
   /** Desktop "Save as" (one at a time): its own state, apart from opening_message_ids_ (neither stops the other). */
   std::unique_ptr<AttachmentSaveFlow> save_flow_;
+  /** Phones' "Share…" of a received attachment (the system share sheet); nothing is deleted after it. */
+  std::unique_ptr<AttachmentShareFlow> share_flow_;
+  /** The system share sheet for a file (PlatformShareFile by default, set in the constructor); tests may swap it. */
+  std::function<bool(const std::string& path, const std::string& mime, ShareAnchor anchor)> share_file_;
   PhotoPreviewTracker photo_preview_;
   std::string pending_chip_thread_;
   /** The chat the attachment in flight (preparing, uploading, or the failed one) belongs to. */

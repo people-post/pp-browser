@@ -73,6 +73,7 @@
 #include "lib/messaging/QuoteReply.h"
 #include "foundation/platform/PlatformOpenFile.h"
 #include "foundation/platform/PlatformOpenUrl.h"
+#include "foundation/platform/PlatformShareFile.h"
 #include "foundation/platform/SavedFileCopy.h"
 #include "foundation/platform/os/OsDownloadMark.h"
 #include "foundation/platform/os/OsFolderName.h"
@@ -516,6 +517,23 @@ ChatController::ChatController()
   save_ports.ok = [](const std::string& text) { UserFeedback::Ok(text); };
   save_ports.fail = [](const std::string& text) { UserFeedback::Fail(text); };
   save_flow_ = std::make_unique<AttachmentSaveFlow>(std::move(save_ports));
+
+  // Phones' "Share…": the view handed to the system share sheet through share_file_ (deletes nothing).
+  share_file_ = [](const std::string& path, const std::string& mime, const ShareAnchor anchor) {
+    return PlatformShareFile(Backend::GetWindow(), path, mime, anchor);
+  };
+  AttachmentSharePorts share_ports;
+  share_ports.post_ui = [](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); };
+  share_ports.post_worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
+  share_ports.view_path = [this](const std::string& thread_id,
+                                 const std::string& message_id) -> std::optional<std::string> {
+    return facade_ ? facade_->AttachmentOpenPathForMessage(thread_id, message_id) : std::nullopt;
+  };
+  share_ports.share = [this](const std::string& path, const std::string& mime, const int x, const int y) {
+    return share_file_ && share_file_(path, mime, ShareAnchor{static_cast<float>(x), static_cast<float>(y), 1.f, 1.f});
+  };
+  share_ports.fail = [](const std::string& text) { UserFeedback::Fail(text); };
+  share_flow_ = std::make_unique<AttachmentShareFlow>(std::move(share_ports));
 
   presenter_.BindCallbacks({
       .on_changed = [this]() { ApplySessionList(); },
@@ -3814,6 +3832,15 @@ void ChatController::SaveAttachmentAs(const std::string& message_id) {
   const std::optional<DrawnAttachment> drawn = DrawnAttachmentOf(message_id);
   (void)save_flow_->Begin(ActiveThreadId(), message_id, drawn ? drawn->suggested_name : std::string(),
                           drawn && drawn->ready);
+}
+
+void ChatController::ShareAttachment(const std::string& message_id, const ui::Vector2i position) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  const std::optional<DrawnAttachment> drawn = DrawnAttachmentOf(message_id);
+  (void)share_flow_->Begin(ActiveThreadId(), message_id, drawn ? drawn->mime : std::string(), drawn && drawn->ready,
+                           position.x, position.y);
 }
 
 void ChatController::OpenAttachment(const std::string& message_id) {

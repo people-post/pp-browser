@@ -76,11 +76,22 @@ TEST(AttachmentExitTest, WhileASaveIsBusyEveryDesktopTapIsIgnored) {
 TEST(AttachmentExitTest, SaveAsIsOfferedOnTheDesktopForEveryAttachmentButAVoiceMessage) {
   for (const AttachmentExitKind kind : {AttachmentExitKind::Picture, AttachmentExitKind::Video,
                                         AttachmentExitKind::AudioFile, AttachmentExitKind::File}) {
-    EXPECT_TRUE(DecideMenuEntries(kDesktop, kind).save_as);
-    EXPECT_FALSE(DecideMenuEntries(kPhone, kind).save_as);
+    EXPECT_TRUE(DecideMenuEntries(kDesktop, false, kind).save_as);
+    EXPECT_FALSE(DecideMenuEntries(kDesktop, false, kind).share);
+    EXPECT_FALSE(DecideMenuEntries(kPhone, true, kind).save_as);
   }
-  EXPECT_FALSE(DecideMenuEntries(kDesktop, AttachmentExitKind::Voice).save_as);
-  EXPECT_FALSE(DecideMenuEntries(kDesktop, std::nullopt).save_as) << "a text message";
+  EXPECT_FALSE(DecideMenuEntries(kDesktop, false, AttachmentExitKind::Voice).save_as);
+  EXPECT_FALSE(DecideMenuEntries(kDesktop, false, std::nullopt).save_as) << "a text message";
+}
+
+TEST(AttachmentExitTest, ShareIsOfferedOnlyWhereThePlatformHasAFileShareSheet) {
+  for (const AttachmentExitKind kind : {AttachmentExitKind::Picture, AttachmentExitKind::Video,
+                                        AttachmentExitKind::AudioFile, AttachmentExitKind::File}) {
+    EXPECT_TRUE(DecideMenuEntries(kPhone, /*can_share_file=*/true, kind).share);
+    EXPECT_FALSE(DecideMenuEntries(kPhone, /*can_share_file=*/false, kind).share);
+  }
+  EXPECT_FALSE(DecideMenuEntries(kPhone, true, AttachmentExitKind::Voice).share) << "an in-app voice message";
+  EXPECT_FALSE(DecideMenuEntries(kPhone, true, std::nullopt).share) << "a text message";
 }
 
 TEST(AttachmentExitTest, TheSuggestedNameIsTheSafeNameElseTheSendersNameCleaned) {
@@ -364,6 +375,72 @@ TEST_F(SaveFlowTest, ASaveDependsOnNothingButItsOwnState) {
   Answer({SaveChoice::Kind::Cancelled, {}});
   Pump();
   EXPECT_FALSE(flow.Busy());
+}
+
+/** The phone's side of the share flow: the same queues, a share sheet that records what it was handed. */
+class ShareFlowTest : public SaveFlowTest {
+protected:
+  AttachmentSharePorts SharePorts() {
+    const AttachmentSavePorts save = Ports();
+    AttachmentSharePorts ports;
+    ports.post_ui = save.post_ui;
+    ports.post_worker = save.post_worker;
+    ports.view_path = save.view_path;
+    ports.share = [this](const std::string& path, const std::string& mime, const int x, const int y) {
+      on_ui_.push_back(std::this_thread::get_id() == ui_thread_);
+      shared_.push_back(path + "|" + mime + "|" + std::to_string(x) + "," + std::to_string(y));
+      return sheet_shows_;
+    };
+    ports.fail = save.fail;
+    return ports;
+  }
+
+  bool sheet_shows_ = true;
+  std::vector<std::string> shared_;
+};
+
+TEST_F(ShareFlowTest, TheViewGoesToTheShareSheetAndStaysWhereItIs) {
+  AttachmentShareFlow flow(SharePorts());
+  ASSERT_EQ(flow.Begin("t1", "m1", "application/gzip", true, 40, 300), AttachmentShareFlow::Start::Started);
+  EXPECT_TRUE(flow.Busy());
+  EXPECT_EQ(flow.Begin("t1", "m1", "application/gzip", true, 40, 300), AttachmentShareFlow::Start::Ignored);
+  Pump();
+  EXPECT_EQ(asked_view_, "t1/m1");
+  EXPECT_EQ(shared_, std::vector<std::string>{PathToUtf8(view_) + "|application/gzip|40,300"});
+  EXPECT_TRUE(fails_.empty()) << "a share or a cancel says nothing";
+  EXPECT_TRUE(oks_.empty());
+  EXPECT_TRUE(std::filesystem::exists(view_)) << "nothing is deleted after a share";
+  EXPECT_FALSE(flow.Busy());
+  ExpectAllOnTheirThreads();
+}
+
+TEST_F(ShareFlowTest, ASheetThatCannotShowSaysSoAndDeletesNothing) {
+  sheet_shows_ = false;
+  AttachmentShareFlow flow(SharePorts());
+  ASSERT_EQ(flow.Begin("t1", "m1", "image/png", true, 0, 0), AttachmentShareFlow::Start::Started);
+  Pump();
+  EXPECT_EQ(fails_, std::vector<std::string>{"现在无法分享这个文件"});
+  EXPECT_TRUE(std::filesystem::exists(view_));
+  EXPECT_FALSE(flow.Busy());
+  ExpectAllOnTheirThreads();
+}
+
+TEST_F(ShareFlowTest, NoViewSaysItCannotShareAndShowsNoSheet) {
+  view_available_ = false;
+  AttachmentShareFlow flow(SharePorts());
+  ASSERT_EQ(flow.Begin("t1", "m1", "image/png", true, 0, 0), AttachmentShareFlow::Start::Started);
+  Pump();
+  EXPECT_TRUE(shared_.empty());
+  EXPECT_EQ(fails_, std::vector<std::string>{"现在无法分享这个文件"});
+}
+
+TEST_F(ShareFlowTest, NotDownloadedSaysSoAndFindsNoView) {
+  AttachmentShareFlow flow(SharePorts());
+  EXPECT_EQ(flow.Begin("t1", "m1", "image/png", false, 0, 0), AttachmentShareFlow::Start::NotReady);
+  Pump();
+  EXPECT_TRUE(asked_view_.empty());
+  EXPECT_TRUE(shared_.empty());
+  EXPECT_EQ(fails_, std::vector<std::string>{Tr("chat.attachment.not_ready")});
 }
 
 } // namespace

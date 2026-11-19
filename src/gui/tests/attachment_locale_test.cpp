@@ -47,6 +47,8 @@ const std::vector<Key>& AttachmentKeys() {
       {"chat.attachment.save_failed", {}},
       {"chat.attachment.save_unavailable", {}},
       {"chat.menu.save_as", {}},
+      {"chat.attachment.share_failed", {}},
+      {"chat.menu.share_file", {}},
       {"chat.attachment.space_warning", {"{percent}"}},
       {"chat.voice.title", {}},
       {"chat.voice.title_call", {}},

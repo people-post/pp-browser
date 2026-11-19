@@ -185,5 +185,21 @@ TEST(ChatPictureWiringTest, TheSavePortsCopyTheViewAndDeleteNothing) {
   }
 }
 
+// Phones' "Share…": the view goes to the system sheet through the injected share_file_ (PlatformShareFile by
+// default), and nothing is deleted.
+TEST(ChatPictureWiringTest, ShareGoesThroughTheInjectedShareSheetAndDeletesNothing) {
+  const std::string ports = ControllerSlice("share_file_ = [](", "share_flow_ = std::make_unique");
+  EXPECT_NE(ports.find("return PlatformShareFile(Backend::GetWindow(), path, mime, anchor)"), std::string::npos);
+  EXPECT_NE(ports.find("facade_->AttachmentOpenPathForMessage(thread_id, message_id)"), std::string::npos);
+  EXPECT_NE(ports.find("share_file_(path, mime, ShareAnchor{"), std::string::npos) << "through the injected function";
+  EXPECT_NE(ports.find("UserFeedback::Fail(text)"), std::string::npos) << "a failure is the bottom pill";
+  for (const char* gone : {"remove(", "Remove", "unlink", "Delete", "PlatformOpenFile"}) {
+    EXPECT_EQ(ports.find(gone), std::string::npos) << gone;
+  }
+  const std::string share = Body(kController, "void ChatController::ShareAttachment(");
+  EXPECT_NE(share.find("share_flow_->Begin(ActiveThreadId(), message_id"), std::string::npos);
+  EXPECT_EQ(share.find("PlatformShareFile"), std::string::npos) << "never the hook directly";
+}
+
 } // namespace
 } // namespace pbr
