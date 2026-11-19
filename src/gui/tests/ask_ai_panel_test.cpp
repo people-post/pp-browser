@@ -14,6 +14,7 @@
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/AiImagePrep.h"
+#include "gui/tests/run_log_sentinel_capture.h"
 
 #include <gtest/gtest.h>
 
@@ -900,6 +901,39 @@ TEST(AskAiPanelSourceTest, APanelCardIsAnsweredInItsOwnChat) {
   ASSERT_FALSE(handle.empty());
   EXPECT_NE(handle.find("CloseApprovalCard(thread_id,"), std::string::npos);
   EXPECT_EQ(handle.find("CloseApprovalCard(ActiveThreadId()"), std::string::npos);
+}
+
+// --- "Send run logs" sentinels (DEV/PLAN-send-run-logs.md step 1; the rest in run_log_sentinel_test.cpp) ----------
+
+using run_log_sentinel::kSentinel;
+
+// A question typed in the ask-AI panel, to the AI or to PP 客服, never reaches the log.
+class RunLogSentinelPanelTest : public AskAiPanelTest {
+protected:
+  void SetUp() override { capture_ = &run_log_sentinel::Capture::Start(); }
+  void ExpectNoSentinel() { capture_->ExpectNoSentinel(); }
+  run_log_sentinel::Capture* capture_ = nullptr;
+};
+
+TEST_F(RunLogSentinelPanelTest, ASupportQuestionIsNeverLogged) {
+  const std::string question = std::string("my problem: ") + kSentinel;
+  ASSERT_TRUE(panel_.OpenSupport(question));                    // a "?" asks at once
+  panel_.SetDraftForTest(std::string("and also ") + kSentinel); // then one typed in the sheet
+  panel_.Send();
+  ASSERT_EQ(panel_host_.support.size(), 2u) << "both went to PP 客服";
+  panel_host_.support_opens = false; // PP 客服 cannot be reached: the question is refused, still not logged
+  panel_host_.AskAiCloseSheet(0);
+  (void)panel_.OpenSupport(question);
+  ExpectNoSentinel();
+}
+
+TEST_F(RunLogSentinelPanelTest, AnAiQuestionTypedInThePanelIsNeverLogged) {
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  panel_.SetDraftForTest(std::string("what is ") + kSentinel);
+  panel_.Send();
+  ASSERT_EQ(panel_host_.sent.size(), 1u);
+  EndSharedTurn(panel_host_.sent[0].thread_id, std::string("an answer about ") + kSentinel);
+  ExpectNoSentinel();
 }
 
 } // namespace

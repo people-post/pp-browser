@@ -2049,13 +2049,25 @@ void ContactsController::OnInviteCardAsked() {
   NotifySurfaceChanged();
 }
 
+namespace {
+
+// A lookup's error can quote the words searched for (a server's echo): its kind and code only (DEV/PLAN-send-run-logs).
+std::string LookupFailureForLog(Error err) {
+  const size_t detail_len = err.message.size();
+  err.message.clear();
+  err.user.clear();
+  return AppError::Log(err) + " detail_len=" + std::to_string(detail_len);
+}
+
+} // namespace
+
 void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits) {
   if (!hits) {
     // Not-found never arrives as an error: SearchDirectoryPeople turns it into an empty hit list.
     if (ClassifyPeopleLookupError(hits.error()) == PeopleLookupFailure::DirectoryUnreachable) {
       UserFeedback::Fail(Tr("contacts.err.directory_unreachable"));
     } else {
-      log().warning << "People lookup failed: " << AppError::Log(hits.error());
+      log().warning << "People lookup failed: " << LookupFailureForLog(hits.error());
       UserFeedback::Fail(Tr("contacts.err.add"));
     }
     return;
@@ -2955,7 +2967,7 @@ void ContactsController::OnAddSearched(const std::string& /*query*/, const uint6
     if (ClassifyPeopleLookupError(hits.error()) == PeopleLookupFailure::DirectoryUnreachable) {
       UserFeedback::Fail(Tr("contacts.err.directory_unreachable"));
     } else {
-      log().warning << "People lookup failed: " << AppError::Log(hits.error());
+      log().warning << "People lookup failed: " << LookupFailureForLog(hits.error());
       UserFeedback::Fail(Tr("contacts.err.add"));
     }
     DirtyAddContact();

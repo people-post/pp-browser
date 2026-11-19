@@ -5,6 +5,9 @@
 #include "lib/ui/ShellLayout.h"
 #include "gui/shell/ShellNavigationPorts.h"
 #include "lib/ui/ShellTypes.h"
+#include "gui/tests/run_log_sentinel_capture.h"
+
+#include <ui/base/SystemInterface.h>
 
 #include <gtest/gtest.h>
 #include <fstream>
@@ -837,6 +840,8 @@ struct ShellHostTestAccess {
   static void AcceptVoice(ShellHost& host) { host.CallAcceptVoice(); }
   static void AcceptCharge(ShellHost& host) { host.CallAcceptCharge(); }
   static void Decline(ShellHost& host) { host.CallDecline(); }
+  static void PinGatePaste(ShellHost& host) { host.PinGatePaste(); }
+  static void PinGateClearPayload(ShellHost& host) { host.PinGateClearPayload(); }
 };
 
 namespace {
@@ -961,6 +966,34 @@ TEST(ShellHostCallRingTest, TheStartupCoverIsNotShownOverAnActiveRing) {
   host.ApplyCallChromeSnapshot(Ring(true), CallChromeUpdate::Remount);
   EXPECT_FALSE(host.State().startup_cover_visible);
   host.ApplyCallChromeSnapshot(CallChromeSnapshot{}, CallChromeUpdate::Remount);
+}
+
+// "Send run logs" (DEV/PLAN-send-run-logs.md step 1): text pasted on the PIN gate (a recovery phrase, a transfer code)
+// never reaches the log, at the lowest log level. The other gui sentinels: run_log_sentinel_test.cpp.
+namespace {
+class ClipboardSystem : public ui::SystemInterface {
+public:
+  double GetElapsedTime() override { return 0.0; }
+  void GetClipboardText(ui::String& text) override { text = clipboard.c_str(); }
+  std::string clipboard;
+};
+} // namespace
+
+TEST(RunLogSentinelPasteTest, TextPastedOnThePinGateIsNeverLogged) {
+  run_log_sentinel::Capture& capture = run_log_sentinel::Capture::Start();
+  ClipboardSystem system;
+  ui::SetSystemInterface(&system);
+  ShellHost host;
+  // A short paste (a phrase, shown in the box) and a long one (a transfer code, kept out of the box).
+  system.clipboard = std::string("alpha bravo ") + run_log_sentinel::kSentinel;
+  ShellHostTestAccess::PinGatePaste(host);
+  EXPECT_FALSE(host.State().pin_gate.link_payload.empty() && host.State().pin_gate.link_payload_full.empty())
+      << "the paste was read";
+  system.clipboard = std::string(8000, 'k') + run_log_sentinel::kSentinel;
+  ShellHostTestAccess::PinGatePaste(host);
+  ShellHostTestAccess::PinGateClearPayload(host);
+  ui::SetSystemInterface(nullptr);
+  capture.ExpectNoSentinel();
 }
 
 } // namespace pbr
