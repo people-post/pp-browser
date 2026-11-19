@@ -299,7 +299,7 @@ Shared abstractions under `src/foundation/platform/` — see [PLATFORMS.md](../a
 
 ## Log file
 
-Desktop and mobile builds write the root log (same lines and level as the console) to `{data_dir}/logs/pp-browser.log`, flushed per line so the tail survives a crash. Each launch rotates the previous files to `pp-browser.1.log` (newest), `pp-browser.2.log`, …; rotated files are kept for 7 days and at most 50 MB per file family (the log, `metrics`, `diag`), oldest deleted first (age = file modification time); the newest rotated file (the previous launch) is always kept, whatever its age or size. Files are owner-only (`0600`) and never leave the device — neither crash reports nor Send diagnostics read them. Code: `foundation/diagnostics/LogFile.*`.
+Desktop and mobile builds write the root log (same lines and level as the console) to `{data_dir}/logs/pp-browser.log`, flushed per line so the tail survives a crash. Each launch rotates the previous files to `pp-browser.1.log` (newest), `pp-browser.2.log`, …; how many are kept follows Settings → Advanced → **Collect run logs** (`collect_run_logs` in `{data_dir}/machine.json`, one for the device; off by default): on keeps rotated files for 7 days and at most 50 MB per file family (the log, `metrics`, `diag`), oldest deleted first (age = file modification time); off keeps only the previous launch. The newest rotated file (the previous launch) is always kept, whatever its age or size. Installing only rotates; the old files are deleted once the switch was read at start (an unreadable `machine.json` deletes nothing that launch) and at once when it is turned off. Files are owner-only (`0600`) and never leave the device by themselves — crash reports do not read them; in the test phase the user can send them to a contact from Settings → Advanced → Send run logs, filtered and only after a confirm ([DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md#send-run-logs-test-phase)). Code: `foundation/diagnostics/LogFile.*`, `feature/settings/RunLogPrefs.*`.
 
 | Flag | Effect |
 |------|--------|
@@ -314,7 +314,7 @@ Two channels write shareable lines (`common/ShareableLine.h`: `event=… k=v`, n
 - `{data_dir}/logs/metrics.log` — operational metrics (`common/Metrics.h`): timings, rates and device load.
 - `{data_dir}/logs/diag.log` — troubleshooting events (`common/Diag.h`).
 
-These two files and the pending crash record are all that Me → Security → Send diagnostics sends: [DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md).
+What they may hold: [DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md). Send run logs packs them with the main log.
 
 The log opens before config is read, so it lives under the **default** data root (like `diagnostics/crash_pending.txt`), not a config `data_dir` override. Two instances sharing one data root rotate each other's logs — isolate them with `XDG_DATA_HOME`.
 

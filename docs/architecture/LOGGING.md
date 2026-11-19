@@ -105,7 +105,7 @@ Do **not** thread `Logger&` through every private leaf helper of a single Module
 
 ## Developer log vs shareable lines
 
-The developer log (`log()`, `getLogger`) is free text for whoever debugs this device: it may name ids, addresses and errors, and it **never leaves the device**.
+The developer log (`log()`, `getLogger`) is free text for whoever debugs this device: it may name ids, addresses and errors, and it **never leaves the device by itself**. In the test phase a user can send it to a contact (Settings → Advanced → Send run logs, after a confirm, through a pre-filter — [DIAGNOSTICS.md § Send run logs](../contracts/DIAGNOSTICS.md#send-run-logs-test-phase)), so it never holds a person's words: no message text, name, title, search, question, file name or pasted text — log its length (`query_len=`) instead. The sentinel tests (`RunLogSentinel*`) check the input paths.
 
 Anything that may leave it goes through a **shareable line** (`common/ShareableLine.h`), which cannot take free text — only literals, numbers, a fixed-list `Pick`, keyed-hash `Ref`s, call ids and error codes. Two channels write them, each to its own file at any root level ([CONFIGURATION.md § Log file](../ops/CONFIGURATION.md#log-file)):
 
@@ -114,7 +114,7 @@ Anything that may leave it goes through a **shareable line** (`common/ShareableL
 | `Metrics` | `MetricsLine("area.what")…Emit()` | timings, rates, device load |
 | `Diag` | `DiagLine("area.what")…Emit()` | what support needs to explain a failure |
 
-Never emit them through a module logger. When a shareable line needs a detail it cannot hold (an error message, a reason text), log that detail to the developer log beside it. The list of events and what Send diagnostics reads: [DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md).
+Never emit them through a module logger. When a shareable line needs a detail it cannot hold (an error message, a reason text), log that detail to the developer log beside it. The list of events: [DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md).
 
 ## Secrets
 
