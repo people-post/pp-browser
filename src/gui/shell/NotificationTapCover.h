@@ -15,6 +15,28 @@ struct TapCoverFacts {
   bool app_was_shown = false;
   /** A ring or a call screen (any mode) is up: a live call always shows its call UI, so today's behaviour stays. */
   bool call_shown = false;
+  /** A system dialog is in flight (the Save dialog): never closed around, so today's behaviour stays. */
+  bool os_modal_up = false;
+};
+
+/** What the tapped chat's opening (ChatController::OpenTappedThread) found. */
+struct TapOpenFacts {
+  bool call_shown = false;
+  /** The tap's cover is armed for this tap (the phone case the cover is for). */
+  bool cover_armed = false;
+  bool messaging_ready = false;
+  /** The tapped chat is now the selected one. */
+  bool opened = false;
+};
+
+/** What to do after the tapped chat's opening was tried. */
+enum class TapOpenEnd {
+  /** Nothing more: today's behaviour (a missing chat is simply not opened). */
+  Nothing,
+  /** The cover goes. */
+  Release,
+  /** The chat list shows (the chat is gone), then the cover goes. */
+  ChatListThenRelease,
 };
 
 /** The screen while a tap's cover is armed (Shown). */
@@ -43,7 +65,30 @@ public:
 
   /** Whether a tap with `facts` is held behind the cover. */
   static bool ShouldArm(const TapCoverFacts& facts) {
-    return facts.message_tap && !facts.app_was_shown && !facts.call_shown;
+    return facts.message_tap && !facts.app_was_shown && !facts.call_shown && !facts.os_modal_up;
+  }
+
+  /**
+   * Before opening: the tap's chat cannot be opened yet (messaging not ready) while the cover holds it. Nothing is
+   * closed or selected and the cover stays (bounded by kHold); the later route (the inbox sync, the wiring) opens it.
+   */
+  static bool DeferTapOpen(const TapOpenFacts& facts) {
+    return facts.cover_armed && !facts.call_shown && !facts.messaging_ready;
+  }
+
+  /**
+   * After opening was tried. A call keeps its screen (the cover just goes). Without this tap's cover the old behaviour
+   * stands (a missing chat does nothing). With it: opened -> the cover goes; not opened -> the chat is gone or cannot
+   * open now that messaging is ready: the chat list, then the cover goes.
+   */
+  static TapOpenEnd EndOfTapOpen(const TapOpenFacts& facts) {
+    if (facts.call_shown) {
+      return TapOpenEnd::Release;
+    }
+    if (!facts.cover_armed) {
+      return TapOpenEnd::Nothing;
+    }
+    return facts.opened ? TapOpenEnd::Release : TapOpenEnd::ChatListThenRelease;
   }
 
   /** A newer tap replaces an armed one: the hold starts over. */
@@ -61,6 +106,10 @@ public:
   }
 
   bool Armed() const { return armed_; }
+
+  /** Whether the cover is up for `screen` right now: armed, no call, and nothing else covers the page. No state change
+   *  (Evaluate, driven once per frame, owns the clock and the release). */
+  bool Visible(const TapCoverScreen& screen) const { return armed_ && !screen.call && !screen.held_elsewhere; }
 
   /** When the hold ends, once its clock runs; nullopt while it waits (or is not armed). */
   std::optional<Clock::time_point> Until() const { return until_; }

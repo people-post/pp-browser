@@ -103,6 +103,10 @@ struct ShellNavigationPorts {
   std::function<void()> clear_for_tapped_chat;
   /** The tapped chat (or the chat list) is open: the tap's cover goes (ShellHost::ReleaseTapCover). */
   std::function<void()> release_tap_cover;
+  /** The tap's cover is armed (ShellHost::TapCoverArmed); unset = never. */
+  std::function<bool()> tap_cover_armed;
+  /** The chat about to open is the tapped one (ShellHost::SetTappedChatOpening): its page does not slide in. */
+  std::function<void(bool opening)> tapped_chat_opening;
   /**
    * Mobile / compact IME-replacement bottom panel (latch height, no scrim, remount-only).
    * set_bottom_chrome returns false when that presentation is unavailable (expanded desktop).

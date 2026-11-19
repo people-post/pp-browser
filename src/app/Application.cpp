@@ -1436,6 +1436,7 @@ void Application::OnNotificationTapRecorded(const uint64_t tap_seq, const bool a
   facts.message_tap = true;
   facts.app_was_shown = app_was_shown;
   facts.call_shown = shell_->State().call_ring.active || shell_->State().call_in_progress.active;
+  facts.os_modal_up = PlatformSystemModalUp(Backend::GetWindow()); // a share sheet, the Files export: the OS owns it
   if (NotificationTapCover::ShouldArm(facts)) {
     shell_->ArmTapCover();
   }

@@ -15,6 +15,7 @@
 #include "common/PbrCompat.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/Platform.h"
+#include "foundation/platform/PlatformShare.h"
 #include "foundation/platform/ScreenKeyboard.h"
 #include "foundation/platform/ScreenKeyboardGeometry.h"
 #include "foundation/platform/UikitWindowGeometry.h"
@@ -520,6 +521,9 @@ void ShellHost::Initialize(ui::Context* context) {
   sync_pending_ = false;
   restore_focus_after_sync_ = false;
   PlatformNavigation::SetDismissHandler([this] { return HandleDismiss(); });
+  if (tap_cover_release_after_sync_) {
+    FinishTapCoverRelease(); // the pending sync is dropped above: its deferred release must not wait for it
+  }
   ai_dot_.SetCallbacks({.on_tap =
                             [this]() {
                               if (on_ai_dot_tap_) {
@@ -886,8 +890,9 @@ void ShellHost::OpenCompactChat() {
   }
   // A conversation picked in the AI drawer (or opened any other way) closes it.
   CloseAiDrawer();
-  // A notification tap's chat is there at once when the cover goes, not sliding in over the page left behind.
-  if (!state_.compact_chat_open && !tap_cover_.Armed()) {
+  // A notification tap's chat (and only that one) is there at once when the cover goes, not sliding in over the page
+  // left behind.
+  if (!state_.compact_chat_open && !(tapped_chat_opening_ && tap_cover_.Armed())) {
     page_enter_pending_id_ = "shell-chat-overlay";
   }
   state_.compact_chat_open = true;
@@ -1668,10 +1673,9 @@ void ShellHost::ReconcileStartupCover() {
   }
   // PIN / identity chooser must be reachable; logo cover only masks silent prepare. A ring page (the tapped call
   // alert's placeholder included) is what the person came for: no logo over it.
-  const bool startup_shown = startup_cover_enabled_ && !state_.pin_gate.active && !state_.call_ring.active &&
-                             (startup_cover_armed_ || state_.unlock_in_progress);
+  const bool startup_shown = StartupLogoWanted();
   // A notification tap's chat not open yet: the same cover stands in for the page left behind.
-  const bool show = TapCoverShownNow(startup_shown) || startup_shown;
+  const bool show = startup_shown || tap_cover_.Visible(TapCoverScreenNow(startup_shown));
   if (state_.startup_cover_visible == show) {
     return;
   }
@@ -1685,31 +1689,40 @@ void ShellHost::SettleStartupCoverArm() {
   ReconcileStartupCover();
 }
 
-bool ShellHost::TapCoverShownNow(const bool startup_shown) {
-  if (!tap_cover_.Armed()) {
-    return false;
-  }
+bool ShellHost::StartupLogoWanted() const {
+  // PIN / identity chooser must be reachable; logo cover only masks silent prepare. A ring page (the tapped call
+  // alert's placeholder included) is what the person came for: no logo over it.
+  return startup_cover_enabled_ && !state_.pin_gate.active && !state_.call_ring.active &&
+         (startup_cover_armed_ || state_.unlock_in_progress);
+}
+
+TapCoverScreen ShellHost::TapCoverScreenNow(const bool startup_shown) const {
   TapCoverScreen screen;
   screen.foreground = tap_cover_foreground_ ? tap_cover_foreground_() : AppLifecycle::IsForeground();
   screen.held_elsewhere = startup_shown || state_.pin_gate.active;
   screen.call = state_.call_ring.active || state_.call_in_progress.active;
-  const auto now = tap_cover_now_ ? tap_cover_now_() : NotificationTapCover::Clock::now();
-  switch (tap_cover_.Evaluate(screen, now)) {
-    case NotificationTapCover::Step::Shown:
-      return true;
+  return screen;
+}
+
+void ShellHost::TickTapCover(const NotificationTapCover::Clock::time_point now) {
+  if (!tap_cover_.Armed()) {
+    return;
+  }
+  switch (tap_cover_.Evaluate(TapCoverScreenNow(StartupLogoWanted()), now)) {
     case NotificationTapCover::Step::Expired:
       // Today's behaviour from here: the page left behind, the chat once its message syncs.
       tap_cover_release_after_sync_ = false;
       DiagLine("notification.tap").Add("what", "cover_timeout").Emit();
-      return false;
+      break;
     case NotificationTapCover::Step::Released:
       tap_cover_release_after_sync_ = false;
       DiagLine("notification.tap").Add("what", "cover_call").Emit();
-      return false;
+      break;
+    case NotificationTapCover::Step::Shown:
     case NotificationTapCover::Step::Hidden:
-      return false;
+      break;
   }
-  return false;
+  ReconcileStartupCover();
 }
 
 void ShellHost::ArmTapCover() {
@@ -1742,6 +1755,12 @@ void ShellHost::ClearForTappedChat() {
   // Only while the tap's cover holds: nothing has been shown since the tap. Later (the hold ran out, the person is
   // using the app) the chat opens as it always did, over nothing closed.
   if (state_.layout_mode != LayoutMode::Compact || !tap_cover_.Armed()) {
+    return;
+  }
+  // Never torn down around: a live or ringing call's screen, the PIN gate (the chat opens after it), and a system modal
+  // in flight (a share sheet, the Files export, the photo picker: the OS owns it). Today's behaviour from there.
+  const bool os_modal_up = tap_cover_os_modal_ ? tap_cover_os_modal_() : PlatformSystemModalUp(Backend::GetWindow());
+  if (state_.call_ring.active || state_.call_in_progress.active || state_.pin_gate.active || os_modal_up) {
     return;
   }
   std::vector<int> layers;
@@ -3475,9 +3494,7 @@ void ShellHost::Update(ui::Context* context) {
     pending_dismiss_.reset();
     CommitDismiss(target);
   }
-  if (tap_cover_.Armed()) {
-    ReconcileStartupCover(); // the foreground starts the hold's clock; its end drops the cover
-  }
+  TickTapCover(tap_cover_now_ ? tap_cover_now_() : NotificationTapCover::Clock::now());
 
   const LayoutMode previous = state_.layout_mode;
   ApplyLayoutModeFromContext(context);

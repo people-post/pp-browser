@@ -243,6 +243,13 @@ public:
   void ReleaseTapCover();
   bool TapCoverArmed() const { return tap_cover_.Armed(); }
   /**
+   * The one place the tap cover's clock runs (once per frame, from Update): the foreground starts the hold, its end or a
+   * ring / call screen drops the cover. Reconciling the cover otherwise only reads the state.
+   */
+  void TickTapCover(NotificationTapCover::Clock::time_point now);
+  /** The chat that opens next is the tapped one (OpenTappedThread brackets its select): its page is there at once. */
+  void SetTappedChatOpening(bool opening) { tapped_chat_opening_ = opening; }
+  /**
    * Phone: a tapped notification's chat opens with nothing left over it: every layer (page sheets, the scanner, a
    * picture; each owner hears its close), the pushed pages and the AI drawer go; on a hidden tab (Settings, Contacts)
    * the tab goes too, to Chats. The call screen is not a layer: it stays. Only while the tap's cover is armed (the app
@@ -430,8 +437,10 @@ private:
   void SetSheetDetent(int layer_id, SheetDetent detent);
   /** Slide the element with this id in from the right (adds the shell-page-enter class). */
   void PlayPageEnter(const char* element_id);
-  /** Whether the tap cover is up now (NotificationTapCover::Evaluate); `startup_shown`: the logo is up for the start. */
-  bool TapCoverShownNow(bool startup_shown);
+  /** The startup logo is wanted: a cold start's first paint or its unlock, never over the PIN gate or a ring. */
+  bool StartupLogoWanted() const;
+  /** What the tap cover's rules see; `startup_shown`: the logo is up for the start. */
+  TapCoverScreen TapCoverScreenNow(bool startup_shown) const;
   void FinishTapCoverRelease();
   void CommitDismiss(DismissTarget target);
   void ApplySafeAreaLayout();
@@ -558,6 +567,10 @@ private:
   /** The hold's clock and the app's foreground; tests replace them (ShellHostTestAccess). */
   std::function<NotificationTapCover::Clock::time_point()> tap_cover_now_;
   std::function<bool()> tap_cover_foreground_;
+  /** A system modal is up (PlatformSystemModalUp by default); tests replace it. */
+  std::function<bool()> tap_cover_os_modal_;
+  /** Between OpenTappedThread's brackets: the next OpenCompactChat is the tapped chat's. */
+  bool tapped_chat_opening_ = false;
   bool restore_focus_after_sync_ = false;
   ShellGestureAxisLock gesture_axis_lock_;
   ShellSwipeBackGesture swipe_back_gesture_;

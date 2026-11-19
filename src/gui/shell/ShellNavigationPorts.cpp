@@ -45,6 +45,8 @@ ShellNavigationPorts MakeShellNavigationPorts(ShellHost& shell) {
   navigation.close_page_sheets = [&shell]() { shell.ClosePageSheets(); };
   navigation.clear_for_tapped_chat = [&shell]() { shell.ClearForTappedChat(); };
   navigation.release_tap_cover = [&shell]() { shell.ReleaseTapCover(); };
+  navigation.tap_cover_armed = [&shell]() { return shell.TapCoverArmed(); };
+  navigation.tapped_chat_opening = [&shell](const bool opening) { shell.SetTappedChatOpening(opening); };
   navigation.set_bottom_chrome = [&shell](const BottomChromeSpec& spec) { return shell.SetBottomChrome(spec); };
   navigation.clear_bottom_chrome = [&shell]() { shell.ClearBottomChrome(); };
   navigation.bottom_chrome_open = [&shell]() { return shell.BottomChromeOpen(); };

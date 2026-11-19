@@ -31,6 +31,10 @@ TEST(NotificationTapCoverTest, OnlyAMessageTapThatBroughtTheAppUpWithNoCallIsHel
   shown.app_was_shown = true;
   EXPECT_FALSE(NotificationTapCover::ShouldArm(shown)) << "the screen was up (notification centre, desktop): as today";
 
+  TapCoverFacts modal = facts;
+  modal.os_modal_up = true;
+  EXPECT_FALSE(NotificationTapCover::ShouldArm(modal)) << "a share sheet / Save dialog in flight: as today";
+
   TapCoverFacts in_call = facts;
   in_call.call_shown = true;
   EXPECT_FALSE(NotificationTapCover::ShouldArm(in_call)) << "a live call keeps its screen: as today";
@@ -95,6 +99,39 @@ TEST(NotificationTapCoverTest, ReleasedOnceAndANewTapStartsOver) {
   const Clock::time_point later = t0 + std::chrono::seconds(2);
   EXPECT_EQ(cover.Evaluate(Screen(true), later), Step::Shown);
   EXPECT_EQ(*cover.Until(), later + NotificationTapCover::kHold);
+}
+
+namespace {
+TapOpenFacts Open(const bool call, const bool armed, const bool ready, const bool opened) {
+  TapOpenFacts facts;
+  facts.call_shown = call;
+  facts.cover_armed = armed;
+  facts.messaging_ready = ready;
+  facts.opened = opened;
+  return facts;
+}
+} // namespace
+
+TEST(NotificationTapCoverTest, TheCoverGoesOnlyOnceTheTappedChatWasActuallySelected) {
+  EXPECT_EQ(NotificationTapCover::EndOfTapOpen(Open(false, true, true, true)), TapOpenEnd::Release);
+  EXPECT_EQ(NotificationTapCover::EndOfTapOpen(Open(false, true, true, false)), TapOpenEnd::ChatListThenRelease)
+      << "ready but the chat is gone or would not open: the chat list, then the cover goes";
+}
+
+TEST(NotificationTapCoverTest, AChatThatCannotOpenYetKeepsTheCoverForTheLaterRoute) {
+  EXPECT_TRUE(NotificationTapCover::DeferTapOpen(Open(false, true, false, false)))
+      << "messaging not ready: nothing closed, nothing selected, the cover stays (bounded by its hold)";
+  EXPECT_FALSE(NotificationTapCover::DeferTapOpen(Open(false, true, true, false)));
+  EXPECT_FALSE(NotificationTapCover::DeferTapOpen(Open(false, false, false, false))) << "no cover: as today";
+  EXPECT_FALSE(NotificationTapCover::DeferTapOpen(Open(true, true, false, false))) << "a call keeps its screen";
+}
+
+TEST(NotificationTapCoverTest, AMissingChatSwitchesToTheListOnlyForTheTapsOwnCover) {
+  EXPECT_EQ(NotificationTapCover::EndOfTapOpen(Open(false, false, true, false)), TapOpenEnd::Nothing)
+      << "a desktop banner for a deleted chat, or after the hold: do nothing, as before";
+  EXPECT_EQ(NotificationTapCover::EndOfTapOpen(Open(false, false, true, true)), TapOpenEnd::Nothing);
+  EXPECT_EQ(NotificationTapCover::EndOfTapOpen(Open(true, true, true, false)), TapOpenEnd::Release)
+      << "a call: no list switch, the call keeps its screen";
 }
 
 } // namespace pbr

@@ -262,8 +262,10 @@ public:
   void OnSelectThread(std::string thread_id);
   /**
    * A notification tap's chat (a banner's, or the one a message alert's message synced into): opened with nothing
-   * over it (ShellHost::ClearForTappedChat), or the chat list when that chat is gone; then the tap's cover goes. A
-   * ring or call screen up: only the selection, as before (the call keeps its screen).
+   * over it (ShellHost::ClearForTappedChat); then the tap's cover goes once the chat is selected. With the tap's cover
+   * armed: messaging not ready yet keeps the cover (bounded by its hold) for the later route; a chat that is gone (or
+   * cannot open) shows the chat list. Without the cover: only the selection, as before (a missing chat does nothing). A
+   * ring or call screen up: only the selection (the call keeps its screen).
    */
   void OpenTappedThread(std::string thread_id);
   /**

@@ -36,6 +36,7 @@
 #include "feature/conversations/MessageRouter.h"
 #include "gui/shell/ShellSetupPorts.h"
 #include "gui/shell/FavoritesRowModel.h"
+#include "gui/shell/NotificationTapCover.h"
 #include "lib/ui/ShellLayout.h"
 #include "lib/ui/EmojiCatalog.h"
 #include "gui/chat/ChatDataModel.h"
@@ -1272,8 +1273,14 @@ bool ChatController::MarkOpenChatReadIfLooking() {
 }
 
 void ChatController::OpenTappedThread(std::string thread_id) {
-  const bool call_shown = ChromeSnapshot().call_shown;
-  if (!call_shown && shell_navigation_.clear_for_tapped_chat) {
+  TapOpenFacts facts;
+  facts.call_shown = ChromeSnapshot().call_shown;
+  facts.cover_armed = shell_navigation_.tap_cover_armed && shell_navigation_.tap_cover_armed();
+  facts.messaging_ready = messaging_ready_;
+  if (NotificationTapCover::DeferTapOpen(facts)) {
+    return; // the cover stays (bounded by its hold); the later route (the sync, the wiring) opens the chat
+  }
+  if (!facts.call_shown && shell_navigation_.clear_for_tapped_chat) {
     shell_navigation_.clear_for_tapped_chat();
   }
   bool known = false;
@@ -1282,12 +1289,27 @@ void ChatController::OpenTappedThread(std::string thread_id) {
     known = thread && *thread;
   }
   if (known) {
+    const std::string wanted = thread_id;
+    if (shell_navigation_.tapped_chat_opening) {
+      shell_navigation_.tapped_chat_opening(true); // this open, and no other, shows at once
+    }
     OnSelectThread(std::move(thread_id));
-  } else if (!call_shown) {
-    ShellSelectNavTab(NavTab::Sessions); // the chat is gone (deleted, left): the chat list
+    if (shell_navigation_.tapped_chat_opening) {
+      shell_navigation_.tapped_chat_opening(false);
+    }
+    facts.opened = ActiveThreadId() == wanted;
   }
-  if (shell_navigation_.release_tap_cover) {
-    shell_navigation_.release_tap_cover();
+  switch (NotificationTapCover::EndOfTapOpen(facts)) {
+    case TapOpenEnd::Nothing:
+      return;
+    case TapOpenEnd::ChatListThenRelease:
+      ShellSelectNavTab(NavTab::Sessions); // the chat is gone (deleted, left): the chat list
+      [[fallthrough]];
+    case TapOpenEnd::Release:
+      if (shell_navigation_.release_tap_cover) {
+        shell_navigation_.release_tap_cover();
+      }
+      return;
   }
 }
 
