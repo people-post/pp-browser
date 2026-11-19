@@ -7,6 +7,7 @@
 #include "foundation/platform/PickedFileLease.h"
 #include "foundation/platform/ProfileIconImagePrep.h"
 #include "lib/people/ProfileIdentityView.h"
+#include "lib/messaging/OutgoingAttachment.h"
 #include "foundation/data/SessionStore.h"
 #include "lib/net/BlobQuota.h"
 #include "lib/net/ClientCompat.h"
@@ -188,6 +189,11 @@ struct SettingsCommands {
   std::function<void(std::function<void(DiagnosticsUploadResult)> on_done)> send_diagnostics;
   /** Reference of the last successful send (`diagnostics/last_upload.json`); "" when none. */
   std::function<std::string()> last_diagnostics_id;
+  /**
+   * Advanced → Send run logs, after the confirm (DEV/PLAN-send-run-logs.md): the New chat page opens to pick one
+   * contact, and the archive goes to that chat as an ordinary file message. Nothing is sent when no one is picked.
+   */
+  std::function<void(OutgoingAttachment archive)> send_run_logs;
   /** Me → Storage → Manage storage. */
   StorageManagerPorts storage;
 };

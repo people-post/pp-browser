@@ -62,6 +62,7 @@ pp_browser_add_feature_library(pp_gui
     SettingsOwnDevices.cpp
     SettingsController.cpp
     SettingsProfileActions.cpp
+    SettingsRunLogsActions.cpp
     SettingsSecurityActions.cpp
     StorageManagerController.cpp
     UiPerfTestController.cpp

@@ -12,6 +12,7 @@
 #include "gui/SettingsProfileActions.h"
 #include "gui/SettingsMyRelays.h"
 #include "gui/SettingsOwnDevices.h"
+#include "gui/SettingsRunLogsActions.h"
 #include "gui/SettingsSecurityActions.h"
 #include "gui/StorageManagerController.h"
 #include "gui/shell/ShellFeedbackPorts.h"
@@ -506,6 +507,7 @@ private:
   SettingsCasLibrary cas_library_{commands_, shell_feedback_, unlock_ensure_,
                                   [this](const Error& err) { ReportFailure(err); }};
   SettingsSecurityActions security_actions_{*this, commands_, shell_feedback_, unlock_ensure_, pin_prompt_};
+  SettingsRunLogsActions run_logs_actions_{*this, commands_, shell_feedback_};
   SettingsOwnDevices own_devices_{commands_, shell_feedback_, [this](const Error& err) { ReportFailure(err); }};
   SettingsMyRelays my_relays_{commands_, shell_feedback_, [this](const Error& err) { ReportFailure(err); }};
   SettingsProfileActions profile_actions_{*this, commands_, unlock_ensure_};

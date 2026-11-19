@@ -43,7 +43,7 @@ const std::vector<SettingsPage>& SettingsPages() {
        "settings.advanced.title",
        3,
        {"network", "llm", "integrations", "security", "profile", nullptr},
-       0,
+       Bit(SettingsPageAction::RefreshRunLogs),
        SettingsPageGate::Advanced},
       {"relays",
        "settings_section_relays",

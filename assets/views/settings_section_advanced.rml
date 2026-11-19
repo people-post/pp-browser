@@ -42,6 +42,36 @@
         <div class="stack settings-desktop-only" data-if="advanced">
 {{include:settings_section_advanced_backend}}
         </div>
+        <!-- Collect / Send run logs (DEV/PLAN-send-run-logs.md, test phase): the device-wide switch and, next to it, the
+             row that sends the logs as a file to a contact the user picks. The row does nothing itself: the "Send" pill
+             is the only way to send; grey while an archive is being prepared or when there is nothing to send yet. -->
+        <div class="group-card" data-if="show_run_logs">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="group-row-text">{{i18n:settings.run_logs.collect}}</span>
+                <span class="group-row-sub">{{i18n:settings.run_logs.collect.help}}</span>
+              </span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="run_logs_collect"
+                      data-event-click="toggle_collect_run_logs()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+          <div class="group-row group-row--static">
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="group-row-text">{{i18n:settings.run_logs.send}}</span>
+                <span class="group-row-sub" data-if="!run_logs_sendable">{{i18n:settings.run_logs.nothing_yet}}</span>
+              </span>
+              <button class="settings-pill-btn" type="button" data-attrif-disabled="run_logs_send_disabled"
+                      data-event-click="send_run_logs()">
+                <span class="settings-pill">{{i18n:settings.run_logs.send_short}}</span>
+              </button>
+            </span>
+          </div>
+        </div>
         <p class="text group-head">{{i18n:settings.advanced.group.connection}}</p>
         <div class="group-card">
           <div class="settings-toggle-row row group-row" data-if="advanced && show_node_toggle">

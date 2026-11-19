@@ -761,6 +761,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("support_display_name", &controller.bindings_.support_display_name);
     ctor.Bind("support_subtitle", &controller.bindings_.support_subtitle);
     security_actions_.Bind(ctor);
+    run_logs_actions_.Bind(ctor);
     own_devices_.Bind(ctor);
     my_relays_.Bind(ctor);
     storage_manager_.Bind(ctor);
@@ -1465,6 +1466,10 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   // Send problem logs is on the Help page: it reads its label again.
   if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshDiagnostics)) {
     security_actions_.RefreshDiagnostics();
+  }
+  // Collect / Send run logs are on the Advanced page: the switch and the row read again.
+  if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshRunLogs)) {
+    run_logs_actions_.Refresh();
   }
   if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshBlockedCount)) {
     RefreshBlockedCount();
