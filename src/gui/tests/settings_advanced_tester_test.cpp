@@ -731,8 +731,16 @@ TEST_F(SettingsRealViewTest, PickingAnotherServiceTellsTheUserToReopenPP) {
   EXPECT_EQ(Tr("settings.network.backend.reopen_ok"), "知道了");
   LocalizationService::Instance().SetPreferredLanguage("en");
 
+  pick("custom"); // the option the page shows as selected: no change, no second dialog
+  EXPECT_EQ(alerts.size(), 1u);
+
   pick("prod"); // back to the one that runs: nothing to reopen for
   EXPECT_EQ(alerts.size(), 1u);
+
+  pick("custom"); // a real change again: once more
+  EXPECT_EQ(alerts.size(), 2u);
+  pick("custom");
+  EXPECT_EQ(alerts.size(), 2u);
   ResetActiveBackendForTest();
 }
 

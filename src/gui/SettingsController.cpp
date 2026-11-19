@@ -1914,7 +1914,8 @@ void SettingsController::ApplyBackendChoice(const std::string& env) {
   if (suppress_auto_save_) {
     return;
   }
-  const bool changed = ui_state_.backend_env != env;
+  // Against what the choice page shows as selected (bindings_.backend_env, see BackendChoiceOptions).
+  const bool changed = std::string(bindings_.backend_env.c_str()) != env;
   ui_state_.backend_env = env;
   PushUiStateToBindings();
   MarkSectionDirty("network");
