@@ -126,59 +126,90 @@ void AttachmentSaveState::Finish(const std::string& message_id) {
   }
 }
 
+struct AttachmentSaveFlow::Core {
+  explicit Core(AttachmentSavePorts p) : ports(std::move(p)) {}
+  AttachmentSavePorts ports;
+  AttachmentSaveState state;
+};
+
+AttachmentSaveFlow::AttachmentSaveFlow(AttachmentSavePorts ports) : core_(std::make_shared<Core>(std::move(ports))) {}
+
+bool AttachmentSaveFlow::Busy() const {
+  return core_->state.Busy();
+}
+
 AttachmentSaveFlow::Start AttachmentSaveFlow::Begin(const std::string& thread_id, const std::string& message_id,
                                                     const std::string& suggested_name, const bool ready) {
-  if (state_.Busy()) {
+  if (core_->state.Busy()) {
     return Start::Ignored;
   }
   if (!ready) {
-    ports_.fail(Tr("chat.attachment.not_ready"));
+    core_->ports.fail(Tr("chat.attachment.not_ready"));
     return Start::NotReady;
   }
-  state_.TryBegin(message_id);
-  ports_.choose_path(suggested_name, [this, thread_id, message_id](SaveChoice choice) {
-    // The dialog may answer on another thread: back on the UI thread before anything changes.
-    ports_.post_ui(
-        [this, thread_id, message_id, choice = std::move(choice)]() { OnChoice(thread_id, message_id, choice); });
-  });
+  core_->state.TryBegin(message_id);
+  core_->ports.choose_path(suggested_name,
+                           [weak = std::weak_ptr<Core>(core_), thread_id, message_id](SaveChoice choice) {
+                             // The dialog may answer on another thread: back on the UI thread before anything changes.
+                             const std::shared_ptr<Core> core = weak.lock();
+                             if (!core) {
+                               return;
+                             }
+                             core->ports.post_ui([weak, thread_id, message_id, choice = std::move(choice)]() {
+                               if (const std::shared_ptr<Core> alive = weak.lock()) {
+                                 OnChoice(alive, thread_id, message_id, choice);
+                               }
+                             });
+                           });
   return Start::Started;
 }
 
-void AttachmentSaveFlow::OnChoice(const std::string& thread_id, const std::string& message_id,
-                                  const SaveChoice& choice) {
+void AttachmentSaveFlow::OnChoice(const std::shared_ptr<Core>& core, const std::string& thread_id,
+                                  const std::string& message_id, const SaveChoice& choice) {
+  AttachmentSavePorts& ports = core->ports;
   if (choice.kind != SaveChoice::Kind::Chosen || choice.path.empty()) {
-    state_.Finish(message_id);
+    core->state.Finish(message_id);
     if (choice.kind == SaveChoice::Kind::Unavailable) {
       log().warning << "attachment save: no save dialog";
-      ports_.fail(Tr("chat.attachment.save_unavailable"));
+      ports.fail(Tr("chat.attachment.save_unavailable"));
     } else {
       log().info << "attachment save: cancelled";
     }
     return;
   }
-  if (!state_.Chosen(message_id)) {
+  if (!core->state.Chosen(message_id)) {
     return;
   }
-  ports_.ok(Tr("chat.attachment.saving"));
-  ports_.post_worker([this, thread_id, message_id, target = choice.path]() {
+  ports.ok(Tr("chat.attachment.saving"));
+  ports.post_worker([weak = std::weak_ptr<Core>(core), thread_id, message_id, target = choice.path]() {
+    const std::shared_ptr<Core> core = weak.lock();
+    if (!core) {
+      return; // the chat screen is gone
+    }
     // The view is made (decrypted) only now that a path is chosen; no view (locked meanwhile) = no target file.
-    const std::optional<std::string> view = ports_.view_path(thread_id, message_id);
-    const bool copied = view && ports_.copy(*view, target);
-    ports_.post_ui([this, message_id, target, copied]() { OnCopied(message_id, target, copied); });
+    const std::optional<std::string> view = core->ports.view_path(thread_id, message_id);
+    const bool copied = view && core->ports.copy(*view, target);
+    core->ports.post_ui([weak, message_id, target, copied]() {
+      if (const std::shared_ptr<Core> alive = weak.lock()) {
+        OnCopied(alive, message_id, target, copied);
+      }
+    });
   });
 }
 
-void AttachmentSaveFlow::OnCopied(const std::string& message_id, const std::string& target, const bool copied) {
-  state_.Finish(message_id);
+void AttachmentSaveFlow::OnCopied(const std::shared_ptr<Core>& core, const std::string& message_id,
+                                  const std::string& target, const bool copied) {
+  AttachmentSavePorts& ports = core->ports;
+  core->state.Finish(message_id);
   if (!copied) {
     log().warning << "attachment save: failed";
-    ports_.fail(Tr("chat.attachment.save_failed"));
+    ports.fail(Tr("chat.attachment.save_failed"));
     return;
   }
-  ports_.mark_downloaded(target);
+  ports.mark_downloaded(target);
   log().info << "attachment save: done";
-  ports_.ok(
-      Tr("chat.attachment.saved_to", {{"folder", ports_.folder_name(PathToUtf8(PathFromUtf8(target).parent_path()))}}));
+  ports.ok(
+      Tr("chat.attachment.saved_to", {{"folder", ports.folder_name(PathToUtf8(PathFromUtf8(target).parent_path()))}}));
 }
 
 AttachmentShareFlow::Start AttachmentShareFlow::Begin(const std::string& thread_id, const std::string& message_id,

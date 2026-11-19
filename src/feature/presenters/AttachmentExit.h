@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -138,15 +139,16 @@ struct AttachmentSavePorts {
  * Desktop "Save as" of one attachment: dialog (nothing decrypted before a path is chosen) → "Saving…" → the view copied
  * on a worker → the downloaded mark on the saved file → "Saved to <folder>". Nothing is opened, and nothing is
  * deleted but a failed copy's temporary file. Every answer comes back to the UI thread before any state or pill
- * changes. The flow must outlive the callbacks it hands out (it is the chat screen's member).
+ * changes. The callbacks it hands out hold only a weak reference to the flow's state: when the flow (the chat
+ * screen's member) is destroyed while a dialog or a copy is out, a late answer does nothing.
  */
 class AttachmentSaveFlow {
 public:
   enum class Start { Started, Ignored, NotReady };
 
-  explicit AttachmentSaveFlow(AttachmentSavePorts ports) : ports_(std::move(ports)) {}
+  explicit AttachmentSaveFlow(AttachmentSavePorts ports);
 
-  bool Busy() const { return state_.Busy(); }
+  bool Busy() const;
   /**
    * UI thread. Ignored (nothing happens) while another save is busy; NotReady (the pill says so) when the attachment
    * is not downloaded; else the dialog opens offering `suggested_name`.
@@ -155,11 +157,14 @@ public:
               bool ready);
 
 private:
-  void OnChoice(const std::string& thread_id, const std::string& message_id, const SaveChoice& choice);
-  void OnCopied(const std::string& message_id, const std::string& target, bool copied);
+  /** The flow's state, shared with the callbacks it hands out: once the owner is gone they find nothing and do nothing. */
+  struct Core;
+  static void OnChoice(const std::shared_ptr<Core>& core, const std::string& thread_id, const std::string& message_id,
+                       const SaveChoice& choice);
+  static void OnCopied(const std::shared_ptr<Core>& core, const std::string& message_id, const std::string& target,
+                       bool copied);
 
-  AttachmentSavePorts ports_;
-  AttachmentSaveState state_;
+  std::shared_ptr<Core> core_;
 };
 
 /** What the share flow needs from the app. */

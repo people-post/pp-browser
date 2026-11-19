@@ -388,6 +388,42 @@ TEST_F(SaveFlowTest, ASecondSaveOrClickIsIgnoredWhileTheDialogIsUpOrTheCopyRuns)
   EXPECT_EQ(dialogs_, 2);
 }
 
+// The chat screen can go (quit, profile switch) while a dialog is up or a copy is queued: nothing then touches it.
+TEST_F(SaveFlowTest, AnOwnerDestroyedBeforeTheWorkerRunsIsLeftAlone) {
+  auto flow = std::make_unique<AttachmentSaveFlow>(Ports());
+  ASSERT_EQ(flow->Begin("t1", "m1", "report.gz", true), AttachmentSaveFlow::Start::Started);
+  Answer({SaveChoice::Kind::Chosen, Target()});
+  {
+    std::function<void()> ui; // the answer reaches the UI thread; the copy is queued on the worker
+    {
+      std::lock_guard<std::mutex> lock(mu_);
+      ui = std::move(ui_tasks_.front());
+      ui_tasks_.pop_front();
+    }
+    ui();
+  }
+  ASSERT_EQ(oks_.size(), 1u) << "Saving…";
+  flow.reset();
+  Pump();
+  EXPECT_TRUE(asked_view_.empty()) << "no decrypt for a screen that is gone";
+  EXPECT_EQ(copies_, 0);
+  EXPECT_TRUE(marked_.empty());
+  EXPECT_EQ(oks_.size(), 1u);
+  EXPECT_TRUE(fails_.empty());
+  EXPECT_FALSE(std::filesystem::exists(PathFromUtf8(Target())));
+}
+
+TEST_F(SaveFlowTest, AnOwnerDestroyedWhileTheDialogIsUpIgnoresItsAnswer) {
+  auto flow = std::make_unique<AttachmentSaveFlow>(Ports());
+  ASSERT_EQ(flow->Begin("t1", "m1", "report.gz", true), AttachmentSaveFlow::Start::Started);
+  flow.reset();
+  Answer({SaveChoice::Kind::Chosen, Target()});
+  Pump();
+  EXPECT_TRUE(oks_.empty());
+  EXPECT_TRUE(fails_.empty());
+  EXPECT_EQ(copies_, 0);
+}
+
 // The save keeps its own state: a tap-open of the same message going on (the chat screen's own set) does not stop it,
 // and it neither reads nor clears that set (ChatController wiring, chat_picture_wiring_test).
 TEST_F(SaveFlowTest, ASaveDependsOnNothingButItsOwnState) {
