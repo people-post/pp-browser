@@ -5,6 +5,7 @@ set(_pp_platform_core_sources
   DeploymentProfile.cpp
   PickedFileName.cpp
   Platform.cpp
+  SavedFileCopy.cpp
   PlatformLogDefaults.cpp
   IPathProvider.cpp
   DesktopPathProvider.cpp
@@ -115,6 +116,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     os/OsDeviceName_Win32.cpp
     os/OsExecutablePath_Win32.cpp
     os/OsDownloadMark_Win32.cpp
+    os/OsFolderName_Default.cpp
     os/OsProcessStats_Default.cpp
     os/OsThreadStackDump_Default.cpp
     desktop/PathProvider_Win32.cpp
@@ -145,9 +147,9 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
     desktop/PathProvider_Darwin.cpp
   )
   if(PP_BROWSER_IS_IOS)
-    list(APPEND _pp_platform_core_sources os/OsDownloadMark_Default.cpp)
+    list(APPEND _pp_platform_core_sources os/OsDownloadMark_Default.cpp os/OsFolderName_Default.cpp)
   else()
-    list(APPEND _pp_platform_core_sources os/OsDownloadMark_Darwin.cpp)
+    list(APPEND _pp_platform_core_sources os/OsDownloadMark_Darwin.cpp os/OsFolderName_Darwin.mm)
   endif()
   list(APPEND _pp_platform_gui_sources
     desktop/LocalNotifier_Darwin.mm
@@ -173,6 +175,7 @@ else()
   list(APPEND _pp_platform_core_sources
     os/OsExecutablePath_Linux.cpp
     os/OsDownloadMark_Default.cpp
+    os/OsFolderName_Default.cpp
     os/OsProcessStats_Linux.cpp
     os/OsThreadStackDump_Linux.cpp
     desktop/PathProvider_Linux.cpp
