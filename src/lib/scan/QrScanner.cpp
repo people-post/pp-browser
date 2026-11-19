@@ -105,10 +105,11 @@ public:
     {
       const auto started = ScanClock::now();
       auto result = software_zoom_ > 1.f ? InspectQr(ScanPreview(frame, software_zoom_, 1280)) : InspectQr(frame);
+      const auto finished = ScanClock::now();
       decode_ms = ElapsedMs(started);
       detected = result.region.has_value();
       text = std::move(result.text);
-      policy_.AfterDecode(now, detected, decode_ms);
+      policy_.AfterDecode(started, finished, detected);
       if (result.region) {
         const auto& region = *result.region;
         const float fraction = std::max(region.width, region.height);

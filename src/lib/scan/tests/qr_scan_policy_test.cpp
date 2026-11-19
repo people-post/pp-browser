@@ -37,33 +37,53 @@ TEST(QrScanPolicyTest, ProbesAtMostEveryFourSecondsAndNeverReachThreeX) {
 TEST(QrScanPolicyTest, DecodesEveryHundredMillisecondsWithNothingInView) {
   Fixture f;
   EXPECT_TRUE(f.policy.DecodeDue(At(f.t0, 0)));
-  f.policy.AfterDecode(At(f.t0, 0), false, 20);
-  EXPECT_FALSE(f.policy.DecodeDue(At(f.t0, 99)));
-  EXPECT_TRUE(f.policy.DecodeDue(At(f.t0, 100)));
+  f.policy.AfterDecode(At(f.t0, 0), At(f.t0, 20), false);
+  EXPECT_FALSE(f.policy.DecodeDue(At(f.t0, 119))); // 100 ms after the decode FINISHED
+  EXPECT_TRUE(f.policy.DecodeDue(At(f.t0, 120)));
 }
 
-TEST(QrScanPolicyTest, DecodesEveryFrameWhileACandidateWasSeenInTheLastSecond) {
+TEST(QrScanPolicyTest, DecodesSoonWhileACandidateWasSeenInTheLastSecond) {
   Fixture f;
-  f.policy.AfterDecode(At(f.t0, 1000), true, 0);
-  EXPECT_TRUE(f.policy.DecodeDue(At(f.t0, 1000)));
+  f.policy.AfterDecode(At(f.t0, 1000), At(f.t0, 1000), true);
+  EXPECT_FALSE(f.policy.DecodeDue(At(f.t0, 1009)));
+  EXPECT_TRUE(f.policy.DecodeDue(At(f.t0, 1010)));
   // The candidate is gone from the next frames, but it was seen less than a second ago.
-  f.policy.AfterDecode(At(f.t0, 1033), false, 0);
-  EXPECT_TRUE(f.policy.DecodeDue(At(f.t0, 1033)));
-  f.policy.AfterDecode(At(f.t0, 2001), false, 0);
+  f.policy.AfterDecode(At(f.t0, 1033), At(f.t0, 1033), false);
+  EXPECT_TRUE(f.policy.DecodeDue(At(f.t0, 1043)));
+  f.policy.AfterDecode(At(f.t0, 2001), At(f.t0, 2001), false);
   EXPECT_FALSE(f.policy.DecodeDue(At(f.t0, 2050)));
   EXPECT_TRUE(f.policy.DecodeDue(At(f.t0, 2101)));
 }
 
 TEST(QrScanPolicyTest, ASlowDecodeLeavesTheWorkerHalfItsTimeForThePreview) {
   Fixture f;
-  f.policy.AfterDecode(At(f.t0, 1000), true, 60);
-  EXPECT_FALSE(f.policy.DecodeDue(At(f.t0, 1059)));
-  EXPECT_TRUE(f.policy.DecodeDue(At(f.t0, 1060)));
+  f.policy.AfterDecode(At(f.t0, 1000), At(f.t0, 1060), true);
+  EXPECT_FALSE(f.policy.DecodeDue(At(f.t0, 1119))); // rests as long as the decode took, from when it finished
+  EXPECT_TRUE(f.policy.DecodeDue(At(f.t0, 1120)));
+}
+
+TEST(QrScanPolicyTest, ACandidateInViewKeepsDecodingToHalfTheWorkersTimeAtMost) {
+  // The real call pattern: frames arrive every 33 ms, a decode of 40 ms starts when a frame is due, and the policy is
+  // told when it started and when it ended.
+  Fixture f;
+  int64_t busy_ms = 0;
+  int decodes = 0;
+  for (int64_t t = 0; t < 1000;) {
+    if (f.policy.DecodeDue(At(f.t0, t))) {
+      f.policy.AfterDecode(At(f.t0, t), At(f.t0, t + 40), true);
+      busy_ms += 40;
+      ++decodes;
+      t += 40;
+    }
+    t = (t / 33 + 1) * 33; // next camera frame
+  }
+  EXPECT_LE(busy_ms, 520);
+  EXPECT_GE(decodes, 8); // still several decode attempts a second
 }
 
 TEST(QrScanPolicyTest, ZoomDoesNotMoveWhileACandidateWasSeenInTheLastHalfSecond) {
   Fixture f;
-  f.policy.AfterDecode(At(f.t0, 5000), true, 10);
+  f.policy.AfterDecode(At(f.t0, 5000), At(f.t0, 5010), true);
   EXPECT_TRUE(f.policy.CandidateRecent(At(f.t0, 5499)));
   EXPECT_FALSE(f.policy.ProbeTarget(At(f.t0, 5499), 1.f));
   EXPECT_FALSE(f.policy.ShouldResetCandidateZoom(At(f.t0, 5499)));
@@ -72,12 +92,12 @@ TEST(QrScanPolicyTest, ZoomDoesNotMoveWhileACandidateWasSeenInTheLastHalfSecond)
 
 TEST(QrScanPolicyTest, AZoomTowardACodeIsHeldFiveSecondsAfterItWasLastSeen) {
   Fixture f;
-  f.policy.AfterDecode(At(f.t0, 5000), true, 10);
+  f.policy.AfterDecode(At(f.t0, 5000), At(f.t0, 5010), true);
   EXPECT_FALSE(f.policy.ShouldResetCandidateZoom(At(f.t0, 6000)));
   EXPECT_FALSE(f.policy.ShouldResetCandidateZoom(At(f.t0, 10000)));
   EXPECT_TRUE(f.policy.ShouldResetCandidateZoom(At(f.t0, 10001)));
   // Seen again: the hold starts over.
-  f.policy.AfterDecode(At(f.t0, 10001), true, 10);
+  f.policy.AfterDecode(At(f.t0, 10001), At(f.t0, 10011), true);
   EXPECT_FALSE(f.policy.ShouldResetCandidateZoom(At(f.t0, 14000)));
 }
 

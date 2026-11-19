@@ -9,6 +9,7 @@ namespace pbr {
 
 /** How a camera scan paces its decoding and zooming. Named so a tuning is one line here. */
 inline constexpr std::chrono::milliseconds kQrDecodeInterval{100}; // between decodes when no code is in view
+inline constexpr std::chrono::milliseconds kQrMinDecodeGap{10};    // least rest after a decode while a code is in view
 inline constexpr std::chrono::milliseconds kQrCandidateWindow{
     1000};                                                    // finder patterns seen this recently: decode every frame
 inline constexpr std::chrono::milliseconds kQrZoomQuiet{500}; // never change zoom this soon after a candidate
@@ -34,16 +35,18 @@ public:
   bool DecodeDue(const Time now) const { return now >= next_decode_; }
 
   /**
-   * A decode of `decode_ms` finished at `now`; `candidate` says finder patterns were in the frame. While a candidate
-   * was seen in the last second the next frame is decoded at once, but never more than half the worker's time (the
-   * same thread feeds the preview, so a slow decode would otherwise freeze it); else every kQrDecodeInterval.
+   * A decode that began at `started` finished at `finished`; `candidate` says finder patterns were in the frame. While
+   * a candidate was seen in the last second the next frame is decoded soon, but the worker rests at least as long as
+   * the decode took (so decoding is at most half its time; the same thread feeds the preview, so a slow decode would
+   * otherwise freeze it); else every kQrDecodeInterval. The next decode is due from when this one FINISHED.
    */
-  void AfterDecode(const Time now, const bool candidate, const int64_t decode_ms) {
+  void AfterDecode(const Time started, const Time finished, const bool candidate) {
     if (candidate) {
-      last_candidate_ = now;
+      last_candidate_ = started;
     }
-    const bool recent = last_candidate_ && now - *last_candidate_ <= kQrCandidateWindow;
-    next_decode_ = now + (recent ? std::chrono::milliseconds(std::max<int64_t>(0, decode_ms)) : kQrDecodeInterval);
+    const bool recent = last_candidate_ && finished - *last_candidate_ <= kQrCandidateWindow;
+    const auto took = std::chrono::duration_cast<std::chrono::milliseconds>(finished - started);
+    next_decode_ = finished + (recent ? std::max(took, kQrMinDecodeGap) : kQrDecodeInterval);
   }
 
   /** A candidate (finder patterns) was in view within kQrZoomQuiet: the zoom must not move on its own. */
