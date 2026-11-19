@@ -910,7 +910,7 @@ void ChatController::BindConversationsFacade(ConversationsFacade* facade) {
   chrome_.BindConversationsFacade(facade);
   scroller_.SetRowBuilder(
       [this](const std::string& thread_id, std::optional<int64_t> oldest, std::optional<int64_t> newest) {
-        return BuildMessageRows(thread_id, oldest, newest);
+        return BuildMessageRows(thread_id, oldest, newest, /*remember_drawn=*/true);
       });
 }
 
@@ -3569,7 +3569,8 @@ void ChatController::ShowAttachChoice(std::function<void()> photo, std::function
 
 std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::string& thread_id,
                                                                 std::optional<int64_t> oldest_inclusive,
-                                                                std::optional<int64_t> newest_inclusive) {
+                                                                std::optional<int64_t> newest_inclusive,
+                                                                const bool remember_drawn) {
   if (!facade_) {
     return {};
   }
@@ -3579,11 +3580,13 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   facts.voice_max_seconds = facade_->CurrentAttachmentLimits().voice_max_seconds;
   facts.voice_state = [this](const std::string& message_id) { return voice_playback_->State(message_id); };
   facts.audio_files_play = voice_playback_->PlaysFiles();
-  if (thread_id == ActiveThreadId() && facts.attachment) {
+  if (remember_drawn && thread_id == ActiveThreadId() && facts.attachment) {
     // Each attachment row of the open chat is remembered as drawn: a tap or a menu decides with it (TapAttachment).
-    if (drawn_attachments_thread_ != thread_id) {
-      drawn_attachments_.clear();
-      drawn_attachments_thread_ = thread_id;
+    // The map is rebuilt from the rows built here, so a message no longer drawn leaves it.
+    const bool another_chat = drawn_attachments_thread_ != thread_id;
+    drawn_attachments_.clear();
+    drawn_attachments_thread_ = thread_id;
+    if (another_chat) {
       save_flow_->ReleaseChoosing(); // a save dialog that never answered must not outlive the chat it was for
     }
     facts.attachment = [this, drawn = std::move(facts.attachment), voice_bubbles = facts.voice_supported,

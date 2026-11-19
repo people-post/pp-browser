@@ -457,9 +457,10 @@ private:
   /**
    * A thread's transcript window drawn as bound rows, AI question images decorated. Our messages carry their send mark
    * (#210); when a clock shown now turns red on its own, the chat is redrawn then (ArmSendMarkRedraw).
+   * `remember_drawn` (the chat view's own build, not a read for the AI): drawn_attachments_ is rebuilt from these rows.
    */
   std::vector<MessageDisplayRow> BuildMessageRows(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
-                                                  std::optional<int64_t> newest_inclusive);
+                                                  std::optional<int64_t> newest_inclusive, bool remember_drawn = false);
   void OpenAttachment(const std::string& message_id);
   /**
    * A tap on an attachment card (open_attachment), as AttachmentExit decides: a computer saves a file (the save

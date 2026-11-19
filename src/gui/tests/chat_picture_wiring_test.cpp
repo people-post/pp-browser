@@ -179,6 +179,23 @@ TEST(ChatPictureWiringTest, SwitchingChatsReleasesAWaitingSaveDialog) {
   EXPECT_NE(rows.find("save_flow_->ReleaseChoosing()", switched), std::string::npos);
 }
 
+// The map of drawn attachments is rebuilt from the rows each build of the chat view makes (a message no longer drawn
+// is gone), and only the view's own build does it: the rows read for the AI are no screen.
+TEST(ChatPictureWiringTest, TheDrawnAttachmentsAreRebuiltFromTheRowsJustBuilt) {
+  const std::string rows = Body(kController, "std::vector<MessageDisplayRow> ChatController::BuildMessageRows(");
+  const size_t guard = rows.find("remember_drawn && thread_id == ActiveThreadId()");
+  ASSERT_NE(guard, std::string::npos);
+  const size_t clear = rows.find("drawn_attachments_.clear()", guard);
+  const size_t wrap = rows.find("facts.attachment = [this", guard);
+  ASSERT_NE(clear, std::string::npos);
+  EXPECT_LT(clear, wrap) << "emptied before the rows are built, whatever the chat";
+  const std::string source = ReadFile(std::string(PP_SOURCE_DIR) + "/" + kController);
+  EXPECT_NE(source.find("return BuildMessageRows(thread_id, oldest, newest, /*remember_drawn=*/true);"),
+            std::string::npos);
+  EXPECT_EQ(Body(kController, "std::vector<AskAiRow> ChatController::AskAiRecentRows(").find("remember_drawn"),
+            std::string::npos);
+}
+
 // The save flow's ports: the dialog (Downloads by default), the message's own view, the chunked copy, the downloaded
 // mark on the saved file — and no delete of any kind.
 TEST(ChatPictureWiringTest, TheSavePortsCopyTheViewAndDeleteNothing) {
