@@ -243,6 +243,7 @@ CallMediaDecision CallMediaFrame::Decide(const CallScreen& screen, const CallMed
     one_way_since_ms_ = 0;
     not_sending_since_ms_ = 0;
     last_pill_ms_.clear();
+    pressure_gate_ = {};
   }
   CallMediaDecision d;
   // Whatever VideoAllowedForCall said (false, unknown), a sending camera can always be turned off.
@@ -313,6 +314,8 @@ const CallMediaScreen& CallMediaFrame::Step(const CallScreen& screen, const Call
   in.now_ms = facts.now_ms;
   in.reconnecting = d.reconnect || d.couldnt_connect;
   in.link = SampleLink(facts);
+  in.engine_pressure_for_quality =
+      pressure_gate_.Step(facts.engine.path_pressure, facts.now_ms, facts.audio_route_changed_ms);
   const CallMediaHealthView health = EvaluateCallMediaHealth(in);
   return Finish(screen, facts, d, health);
 }

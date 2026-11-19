@@ -44,8 +44,8 @@ std::atomic<bool> g_began_before_marked{false};
 /** Makes "still ours?" + setActive:NO atomic against a new activation / CancelPendingDeactivate. */
 std::mutex g_session_mu;
 /** CallKit owns the session (see SetSystemManaged); `g_system_active` follows its didActivate / didDeactivate. */
-bool g_system_managed = false;
-bool g_system_active = false;
+std::atomic<bool> g_system_managed{false}; // atomics: NotifyVoiceProcessingStarted reads them without g_session_mu
+std::atomic<bool> g_system_active{false};
 std::condition_variable g_system_cv;
 /** How long ActivateForVoip waits for CallKit's activation before taking the session itself. */
 constexpr std::chrono::milliseconds kSystemActivationWait{3000};
@@ -65,6 +65,8 @@ constexpr bool kRetryOnly = false;
 using AppState = ResumeRetryChain::AppState;
 /** UIApplication's state, from its notifications (main thread); read on the resume queue. Unknown until seen. */
 std::atomic<AppState> g_app_state{AppState::Unknown};
+/** Protected data (a passcode-locked phone has none): 1 available, 0 not (locked), -1 not seen yet. */
+std::atomic<int> g_protected_data{-1};
 
 /** What resumed the session (call.audio_resume by=…). */
 enum class ResumeBy { Retry, Ended, Foreground, Route, Reset };
@@ -180,6 +182,30 @@ ShareWord PortWord(NSString* port) {
     return "AirPlay";
   if ([port isEqualToString:AVAudioSessionPortCarAudio])
     return "CarAudio";
+  if ([port isEqualToString:AVAudioSessionPortBuiltInMic])
+    return "BuiltInMic";
+  if ([port isEqualToString:AVAudioSessionPortHeadsetMic])
+    return "HeadsetMic";
+  return "other";
+}
+
+/** Which microphone of the input port (its selected data source's orientation; never its name). */
+ShareWord DataSourceWord(AVAudioSessionPortDescription* input) {
+  NSString* orientation = input.selectedDataSource.orientation;
+  if (orientation == nil)
+    return "none";
+  if ([orientation isEqualToString:AVAudioSessionOrientationBottom])
+    return "bottom";
+  if ([orientation isEqualToString:AVAudioSessionOrientationFront])
+    return "front";
+  if ([orientation isEqualToString:AVAudioSessionOrientationBack])
+    return "back";
+  if ([orientation isEqualToString:AVAudioSessionOrientationTop])
+    return "top";
+  if ([orientation isEqualToString:AVAudioSessionOrientationLeft])
+    return "left";
+  if ([orientation isEqualToString:AVAudioSessionOrientationRight])
+    return "right";
   return "other";
 }
 
@@ -284,6 +310,11 @@ void InstallInterruptionObservers() {
                       }
                       const auto reason = static_cast<AVAudioSessionRouteChangeReason>(
                           [note.userInfo[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue]);
+                      if (call && (reason == AVAudioSessionRouteChangeReasonNewDeviceAvailable ||
+                                   reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable ||
+                                   reason == AVAudioSessionRouteChangeReasonOverride)) {
+                        NoteRouteChanged(); // a device came or went: the call's quality holds for a moment (B231)
+                      }
                       const ShareWord reason_word = RouteChangeReasonWord(reason);
                       const ShareWord output = OutputPortWord();
                       SessionLog().info << "AudioSession route change reason=" << reason_word.view()
@@ -331,6 +362,18 @@ void InstallInterruptionObservers() {
                     usingBlock:^(NSNotification*) {
                       g_app_state.store(AppState::Inactive); // DidBecomeActive follows
                     }];
+    [center addObserverForName:UIApplicationProtectedDataWillBecomeUnavailable
+                        object:nil
+                         queue:nil
+                    usingBlock:^(NSNotification*) {
+                      g_protected_data.store(0);
+                    }];
+    [center addObserverForName:UIApplicationProtectedDataDidBecomeAvailable
+                        object:nil
+                         queue:nil
+                    usingBlock:^(NSNotification*) {
+                      g_protected_data.store(1);
+                    }];
     [center addObserverForName:AVAudioSessionMediaServicesWereResetNotification
                         object:nil
                          queue:nil
@@ -343,20 +386,38 @@ void InstallInterruptionObservers() {
       AppState expected = AppState::Unknown;
       g_app_state.compare_exchange_strong(expected,
                                           AppStateFromUIKit([UIApplication sharedApplication].applicationState));
+      int unseen = -1;
+      g_protected_data.compare_exchange_strong(unseen,
+                                               [UIApplication sharedApplication].protectedDataAvailable ? 1 : 0);
     });
   });
 }
 
-/** Diagnostic: what iOS actually ended up with (category / mode / options / output port). */
+/**
+ * Diagnostic: what iOS actually ended up with (category / mode / options / output port), the microphone in use (port
+ * type, which of the phone's microphones) and the I/O it runs at (B230).
+ */
 void LogRoute(const char* where) {
   AVAudioSession* session = [AVAudioSession sharedInstance];
   NSString* out = @"-";
   if (session.currentRoute.outputs.count > 0) {
     out = session.currentRoute.outputs.firstObject.portType;
   }
+  AVAudioSessionPortDescription* input = session.currentRoute.inputs.firstObject;
   SessionLog().info << "AudioSession " << where << ": speaker_flag=" << (g_speakerphone.load() ? 1 : 0)
                     << " category=" << Utf8(session.category) << " mode=" << Utf8(session.mode)
-                    << " options=" << static_cast<unsigned long>(session.categoryOptions) << " output=" << Utf8(out);
+                    << " options=" << static_cast<unsigned long>(session.categoryOptions) << " output=" << Utf8(out)
+                    << " input=" << PortWord(input.portType).view() << " mic=" << DataSourceWord(input).view()
+                    << " sr=" << static_cast<long>(session.sampleRate)
+                    << " io_ms=" << static_cast<long>(session.IOBufferDuration * 1000.0 + 0.5)
+                    << " in_latency_ms=" << static_cast<long>(session.inputLatency * 1000.0 + 0.5)
+                    << " other_audio=" << (session.otherAudioPlaying ? 1 : 0);
+}
+
+/** A ConfigureVoipSession step that failed: its error code (B230; the session goes on as before). */
+void LogConfigureFailure(const char* what, NSError* error) {
+  SessionLog().warning << "AudioSession configure: " << what
+                       << " failed code=" << (error != nil ? static_cast<long>(error.code) : 0L);
 }
 
 void ApplyRoute(bool speaker_on) {
@@ -377,7 +438,10 @@ NSString* ModeForRoute(bool /*speaker_on*/) {
   return AVAudioSessionModeVoiceChat;
 }
 
-/** The live session's category, mode and preferred format (errors ignored, as before: setActive is what counts). */
+/**
+ * The live session's category, mode and preferred format. A failure is logged with its code and otherwise ignored, as
+ * before: setActive is what counts.
+ */
 void ConfigureVoipSession(AVAudioSession* session) {
   NSError* error = nil;
   AVAudioSessionCategoryOptions options =
@@ -385,12 +449,22 @@ void ConfigureVoipSession(AVAudioSession* session) {
   if (g_speakerphone.load()) {
     options |= AVAudioSessionCategoryOptionDefaultToSpeaker;
   }
-  [session setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:options error:&error];
-  [session setMode:ModeForRoute(g_speakerphone.load()) error:&error];
+  if (![session setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:options error:&error]) {
+    LogConfigureFailure("setCategory", error);
+  }
+  error = nil;
+  if (![session setMode:ModeForRoute(g_speakerphone.load()) error:&error]) {
+    LogConfigureFailure("setMode", error);
+  }
   // 48 kHz / 20 ms like the engine: fewer resampling steps and smaller voice-processing chunks.
-  [session setPreferredSampleRate:48000 error:&error];
-  [session setPreferredIOBufferDuration:0.02 error:&error];
-  (void)error;
+  error = nil;
+  if (![session setPreferredSampleRate:48000 error:&error]) {
+    LogConfigureFailure("setPreferredSampleRate", error);
+  }
+  error = nil;
+  if (![session setPreferredIOBufferDuration:0.02 error:&error]) {
+    LogConfigureFailure("setPreferredIOBufferDuration", error);
+  }
 }
 
 /**
@@ -431,23 +505,33 @@ void ActivateForVoip() {
   NSError* error = nil;
   BOOL active_ok = NO;
   uint64_t gen = 0;
+  bool managed = false;
+  bool activated_before = false; // CallKit's didActivate came before this call (no wait)
+  bool timed_out = false;
+  int64_t waited_ms = 0;
+  bool session_starts = false; // the first activation since the session was last released: a call's audio starts
   {
     std::unique_lock<std::mutex> lock(g_session_mu);
     gen = g_session_gen.fetch_add(1) + 1;
     g_began_before_marked.store(false);
+    managed = g_system_managed;
     if (g_system_managed) {
+      activated_before = g_system_active;
+      const auto wait_from = std::chrono::steady_clock::now();
       // Activating before CallKit's didActivateAudioSession fights its own activation: wait for it.
       g_system_cv.wait_for(lock, kSystemActivationWait, [] { return g_system_active || !g_system_managed; });
+      waited_ms =
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - wait_from).count();
       if (g_system_active) {
         active_ok = YES;
       } else {
-        NSLog(@"AudioSession ActivateForVoip: CallKit activation not seen, activating");
+        timed_out = true;
         active_ok = [session setActive:YES error:&error];
       }
     } else {
       active_ok = [session setActive:YES error:&error];
     }
-    g_session_active.store(true);
+    session_starts = !g_session_active.exchange(true);
     // The call has the session: a voice message that was playing was cut off without ReleaseVoice (a call holds the
     // devices then), and its flag would label every later route change as voice playback.
     g_voice_playback.store(false);
@@ -461,6 +545,19 @@ void ActivateForVoip() {
   // session was marked in use), or took it between setActive:YES and the mark: either way the call starts interrupted.
   if (!active_ok || g_began_before_marked.exchange(false)) {
     PostInterruptionBegan(std::chrono::steady_clock::now(), gen);
+  }
+  if (session_starts) {
+    // How this call's audio began (B230): on the phone's call screen (CallKit owns the session: answered or placed
+    // there) or in the app, and the app's state then. locked: protected data unavailable (a passcode-locked phone).
+    const int protected_data = g_protected_data.load();
+    SessionLog().info << "AudioSession call audio starts: via=" << (managed ? "system_ui" : "app")
+                      << " app=" << ResumeRetryChain::Word(g_app_state.load())
+                      << " locked=" << (protected_data < 0 ? "unknown" : (protected_data == 0 ? "1" : "0"));
+  }
+  if (managed) {
+    SessionLog().info << "AudioSession ActivateForVoip: system_managed=1 activated_before="
+                      << (activated_before ? 1 : 0) << " waited_ms=" << waited_ms
+                      << " timed_out=" << (timed_out ? 1 : 0);
   }
   ApplyRoute(g_speakerphone.load());
   LogRoute("ActivateForVoip");
@@ -822,6 +919,21 @@ void ForgetSpeakerChoice() {
 
 bool SpeakerToggleNeedsDeviceReopen() {
   return false;
+}
+
+void NotifyVoiceProcessingStarted(const double sample_rate, const int channels, const int bypass, const int agc) {
+  // Developer log only. Runs on the audio device thread right after the unit started: no g_session_mu (the activation
+  // path holds it) and no AVAudioSession read here (those can block on the media server), so the line is written from a
+  // background queue. Once per unit start, never per audio callback.
+  const bool managed = g_system_managed.load();
+  const bool system_active = g_system_active.load();
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    SessionLog().info << "vpio started sr=" << static_cast<long>(sample_rate) << " ch=" << channels
+                      << " bypass=" << bypass << " agc=" << agc << " category=" << Utf8(session.category)
+                      << " mode=" << Utf8(session.mode) << " system_managed=" << (managed ? 1 : 0)
+                      << " system_active=" << (system_active ? 1 : 0);
+  });
 }
 
 int OpusEncoderComplexity() {

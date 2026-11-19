@@ -824,6 +824,8 @@ void CallPresenter::StepMedia(CallUiBackend& backend, const CallScreen& next, co
     case CallScreen::Kind::None:
       if (active_call_id_.empty()) {
         media_frame_.Reset();
+        speaker_toggled_ms_ = 0; // the next call starts with no route change on record (B231)
+        AudioSession::ClearRouteChange();
         playout_stuck_.Reset();
         playout_call_id_.clear();
         EmitHoldStuckEnd(hold_stuck_.Finish(), hold_group_);
@@ -876,6 +878,7 @@ CallMediaFacts CallPresenter::ReadMediaFacts(CallUiBackend& backend, const CallS
   f.hop = backend.HopHealth();
   f.reach_path_kind = backend.MediaPathKind();
   f.link_counters = backend.MediaLinkCounters();
+  f.audio_route_changed_ms = std::max(speaker_toggled_ms_, AudioSession::LastRouteChangeMs());
   return f;
 }
 
@@ -1765,6 +1768,7 @@ void CallPresenter::ToggleSpeaker() {
   BindToMessaging();
   auto* backend = Backend();
   const bool on = !SpeakerShownOn();
+  speaker_toggled_ms_ = util::NowUnixMs(); // the route change refills the jitter buffer: no weak-signal flash (B231)
   // Speaker = route only (not mute). Android: with media up the route changes around the mic — the engine closes it,
   // the route changes, it reopens — or the OS disconnects the open recording stream and SDL never gives it back.
   const bool reopen =
