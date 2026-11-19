@@ -278,6 +278,11 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     chat.OnShellLayoutSynced();
   });
 
+  shell.SetOnViewportResized([&contacts, &chat]() {
+    contacts.OnViewportResized();
+    chat.OnViewportResized();
+  });
+
   shell.SetOnSyncLayoutMeasured([&chat](int64_t ms) { chat.OnSyncLayoutMeasured(ms); });
 
   shell.SetOnSessionSwipeAction([&chat](const std::string& thread_id, SessionSwipeAction action) {

@@ -280,6 +280,8 @@ public:
   void OnMeshReady();
   /** App-wired from ShellHost layout sync (see Application::WireShellPresentationEvents). */
   void OnShellLayoutSynced();
+  /** App-wired from ShellHost: the window changed size (a rotation). */
+  void OnViewportResized();
   /** Phone Chats list swipe: runs the same item the long-press menu offers. */
   void OnSessionSwipeAction(const std::string& thread_id, SessionSwipeAction action);
   /** A tap on the phone AI dot: the ask-AI panel over the current page (DESIGN-pp-ui §8.14). */

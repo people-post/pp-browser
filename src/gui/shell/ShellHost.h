@@ -189,6 +189,8 @@ public:
   void CloseLayer(int layer_id = -1);
   /** Layer `layer_id` (PushLayer) is still open: not closed by its X, the scrim, a swipe or code. */
   bool HasLayer(int layer_id) const;
+  /** `closed` runs once, after layer `layer_id` is removed by any path (CloseLayer is the only way out). */
+  void WatchLayerClosed(int layer_id, std::function<void()> closed);
   /** Closes every page sheet layer, top first (each owner hears its own close as for a swipe). */
   void ClosePageSheets();
 
@@ -284,6 +286,8 @@ public:
   /** Collapse/expand the secondary pane (expanded layout, tabs with a secondary pane only). */
   void ToggleSidebarCollapsed();
   void SetOnLayoutSynced(std::function<void()> callback);
+  /** Runs when the window's size in pixels changes (a rotation, a resize), and once at the first tick. */
+  void SetOnViewportResized(std::function<void()> callback);
   /** Called as each SyncLayout ends with its whole duration in ms (measurement: chat.open's layout_ms). */
   void SetOnSyncLayoutMeasured(std::function<void(int64_t ms)> callback);
   /** Phone Chats list: a swipe-row button (or a full swipe) was used on `thread_id`. */
@@ -603,6 +607,10 @@ private:
   std::function<void(int, bool)> on_sidebar_changed_;
   std::function<void(int)> on_auxiliary_width_changed_;
   std::function<void()> on_layout_synced_;
+  std::multimap<int, std::function<void()>> layer_closed_watchers_;
+  std::function<void()> on_viewport_resized_;
+  int viewport_width_px_ = 0;
+  int viewport_height_px_ = 0;
   std::function<void(int64_t ms)> on_sync_layout_measured_;
   MessagingShellPorts shell_messaging_ports_;
   ShellStatusbar statusbar_{state_, context_, shell_messaging_ports_, [this]() { ApplySafeAreaLayout(); }};

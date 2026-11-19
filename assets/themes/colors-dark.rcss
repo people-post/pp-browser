@@ -3985,4 +3985,38 @@ input.checkbox:checked {
 .avatar-crop-close .shell-circle-btn-face svg {
   image-color: #ffffff;
 }
+
+/* Recovery phrase cards: a quiet fill on the desktop page, the white card on a phone's grey page. */
+.recovery-card {
+  background-color: #2c2c2e;
+}
+
+.shell-layer-compact .recovery-card {
+  background-color: #1c1c1e;
+}
+
+.recovery-num,
+.shell-layer-compact .recovery-lead {
+  color: #ebebf599;
+}
+
+.recovery-word {
+  color: #ffffff;
+}
+
+.recovery-reveal-pill {
+  background-color: #0a84ff2e;
+}
+
+.recovery-reveal-text {
+  color: #0a84ff;
+}
+
+.recovery-reveal-icon {
+  image-color: #0a84ff;
+}
+
+.recovery-dots {
+  color: #ebebf599;
+}
 }

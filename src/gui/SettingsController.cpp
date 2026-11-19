@@ -1020,7 +1020,6 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "security_biometric_shown");
   host.Dirty("settings", "security_biometric_on");
   host.Dirty("settings", "security_biometric_label");
-  host.Dirty("settings", "recovery_phrase");
   host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "group_invite_policy_label");
   host.Dirty("settings", "call_invite_policy_label");
@@ -1109,6 +1108,12 @@ void SettingsController::MountSelectedSettingsSection() {
 
 void SettingsController::OnShellLayoutSynced() {
   const ShellChromeSnapshot chrome = ChromeSnapshot();
+  // Wide layout shows the phrase inline in the settings detail pane. A chat selected from a notification replaces
+  // that pane without changing the tab (no OnMeSurfaceClosed), so the words are cleared as soon as the pane is gone.
+  if (chrome.layout_mode != LayoutMode::Compact && chrome.nav_tab == NavTab::Me && !chrome.settings_detail_primary &&
+      !chrome.settings_detail_transient && security_actions_.RecoveryPhraseShown()) {
+    ResetSecurityPage();
+  }
   if (!suppress_auto_save_) {
     // A remount this controller did not start (e.g. the list pane was collapsed) still empties the
     // detail pane's section mount; fill it again or the open section shows blank.
@@ -1154,6 +1159,9 @@ void SettingsController::OnNavTabActivated() {
 }
 
 void SettingsController::OnMeSurfaceClosed() {
+  if (security_actions_.RecoveryPhraseShown()) {
+    ResetSecurityPage(); // a tab switch: the phrase does not stay bound behind another tab (a pane replaced on wide: OnShellLayoutSynced)
+  }
   CommitProfileNickname(/*show_toast=*/false);
   FlushPending();
 }
@@ -1622,6 +1630,11 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
   } else if (on_devices && page == "transfer") {
     security_page_title_ = Tr("settings.security.transfer_row").c_str();
     secret = true;
+  } else if (selected_id_ == "security" && show_detail_ && page == "recovery") {
+    // The recovery phrase's own page, titled in the bar like every settings page. The words are on it: no tab bar
+    // under it, like the transfer code's page.
+    security_page_title_ = Tr("settings.security.recovery").c_str();
+    secret = true;
   } else if (on_advanced && page == "ai_endpoint") {
     security_page_title_ = Tr("settings.llm.endpoint.title").c_str();
   } else if (on_advanced && page == "integrations") {
@@ -1662,8 +1675,12 @@ void SettingsController::ApplyCloseSecurityPage() {
     shell_navigation_.set_secret_page_open(false);
   }
   security_actions_.ClearTransferCopied();
+  const bool was_recovery = security_page_ == "recovery";
   security_page_ = "";
   security_page_title_ = "";
+  if (was_recovery) {
+    security_actions_.HideRecoveryPhrase(); // the words do not outlive their page
+  }
   choice_page_.Close();
   choice_foot_ = "";
   choice_help_topic_ = "";
@@ -1914,11 +1931,20 @@ void SettingsController::ApplyBackendChoice(const std::string& env) {
   if (suppress_auto_save_) {
     return;
   }
+  // Against what the choice page shows as selected (bindings_.backend_env, see BackendChoiceOptions).
+  const bool changed = std::string(bindings_.backend_env.c_str()) != env;
   ui_state_.backend_env = env;
   PushUiStateToBindings();
   MarkSectionDirty("network");
   FlushPending();
   DirtyAll();
+  // The choice only takes effect on the next start, and the small grey line under the row is easy to miss: say it once
+  // in a dialog (only for a pick that leaves the app on a different service than the one running).
+  if (changed && ParseBackendEnv(env) != ActiveBackend() && shell_feedback_.show_alert) {
+    shell_feedback_.show_alert(Tr("settings.network.backend.reopen_title"),
+                               Tr("settings.network.backend.reopen_body", {{"name", BackendDisplayLabel(env)}}), {},
+                               Tr("settings.network.backend.reopen_ok"));
+  }
 }
 
 void SettingsController::OnChooseDirectConnections(ui::Event& ev) {
@@ -2593,6 +2619,18 @@ void SettingsController::OnBiometricLost() {
 
 void SettingsController::OpenChangePin() {
   security_actions_.ChangePin();
+}
+
+void SettingsController::OpenRecoveryPage() {
+  if (compact_layout_) {
+    OpenSecurityPage("recovery");
+  }
+}
+
+void SettingsController::CloseRecoveryPage() {
+  if (security_page_ == "recovery") {
+    OnCloseSecurityPage();
+  }
 }
 
 Roe<void> SettingsController::ForgetToolPermissions() {

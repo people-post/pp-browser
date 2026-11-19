@@ -23,6 +23,8 @@ struct GroupLinkView {
   ui::String text;
   /** The link's QR code (QrSvgContent), for `data-rml`. */
   ui::String qr_svg_rml;
+  /** The code's side as CSS ("320dp"), bound to its width and height. */
+  ui::String qr_size = "200dp";
   ui::String expiry;
   ui::String error;
   bool can_revoke = false;
@@ -32,7 +34,8 @@ struct GroupLinkView {
 struct GroupLinkSheetPorts {
   std::function<int(const PaneSpec& spec)> push_sheet;
   std::function<void(int layer_id)> close_sheet;
-  std::function<bool(int layer_id)> sheet_open;
+  /** `closed` runs once when the layer is gone, by any path (X, scrim, swipe, a page cleared over it). */
+  std::function<void(int layer_id, std::function<void()> closed)> watch_closed;
   /** Our link to the group (ChatPresenter::InviteLinkFor: ours that lives, else a new one). */
   std::function<void(const std::string& group_id, std::function<void(Roe<GroupLinkRow>)> done)> load;
   /** Ask, then revoke (ChatPresenter::RevokeInviteLink); `done(true)` once it is revoked. */
@@ -40,6 +43,8 @@ struct GroupLinkSheetPorts {
   std::function<void(const std::string& text)> copied;
   /** The group's rows changed (a link made or revoked): group info reads again. */
   std::function<void()> changed;
+  /** The phone layout is on (the code is drawn page-wide there, 200dp on a desktop). */
+  std::function<bool()> compact;
 };
 
 /**
@@ -54,8 +59,8 @@ public:
   void Open(const std::string& group_id);
   void Close();
   bool IsOpen() const { return layer_id_ >= 0; }
-  /** Per frame: notices the sheet was closed by its X, the scrim or a swipe. */
-  void Tick();
+  /** The window changed size (a rotation): the code is redrawn at the size that now fits. */
+  void OnViewportResized();
 
   void Copy();
   void Revoke();
@@ -65,6 +70,8 @@ public:
 private:
   void Show(Roe<GroupLinkRow> link);
   void Dirty();
+  /** Full screen brightness while the code is on screen (QrBrightness). */
+  void SyncBrightness();
 
   GroupLinkSheetPorts ports_;
   ui::Context* context_ = nullptr;

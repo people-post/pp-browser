@@ -1053,7 +1053,24 @@ void ShellHost::CloseLayer(int layer_id) {
                                               [layer_id](const OverlayEntry& entry) { return entry.id == layer_id; }),
                                state_.overlay_stack.end());
   }
+  auto [first, last] = layer_closed_watchers_.equal_range(closing_id);
+  std::vector<std::function<void()>> watchers;
+  for (auto it = first; it != last; ++it) {
+    watchers.push_back(std::move(it->second));
+  }
+  layer_closed_watchers_.erase(first, last);
+  for (auto& closed : watchers) {
+    if (closed) {
+      closed();
+    }
+  }
   RequestSyncLayout(true);
+}
+
+void ShellHost::WatchLayerClosed(const int layer_id, std::function<void()> closed) {
+  if (HasLayer(layer_id) && closed) {
+    layer_closed_watchers_.emplace(layer_id, std::move(closed));
+  }
 }
 
 bool ShellHost::HasLayer(const int layer_id) const {
@@ -1915,6 +1932,10 @@ void ShellHost::ApplyLayoutModeFromContext(ui::Context* context) {
 
 void ShellHost::SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback) {
   on_layout_mode_changed_ = std::move(callback);
+}
+
+void ShellHost::SetOnViewportResized(std::function<void()> callback) {
+  on_viewport_resized_ = std::move(callback);
 }
 
 void ShellHost::SetOnSyncLayoutMeasured(std::function<void(int64_t ms)> callback) {
@@ -3499,6 +3520,13 @@ void ShellHost::Update(ui::Context* context) {
   const LayoutMode previous = state_.layout_mode;
   ApplyLayoutModeFromContext(context);
   RefreshSafeAreaInsets(context);
+  if (context->GetDimensions().x != viewport_width_px_ || context->GetDimensions().y != viewport_height_px_) {
+    viewport_width_px_ = context->GetDimensions().x;
+    viewport_height_px_ = context->GetDimensions().y;
+    if (on_viewport_resized_) {
+      on_viewport_resized_();
+    }
+  }
   if (previous != state_.layout_mode) {
     OnLayoutModeChanged();
     SaveFocus();

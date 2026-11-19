@@ -222,6 +222,8 @@ public:
   /** Me → About → "Show advanced settings": ids, addresses and fingerprints in the contact detail. */
   void SetShowAdvanced(bool advanced);
   void Tick();
+  /** The window changed size (a rotation): the QR page, when up, redraws the code at the size that now fits. */
+  void OnViewportResized();
   void FlushPending();
   /**
    * The contact page's / a list row's voice or video call: opens (or finds) the chat with `contact_id` and calls from
@@ -598,6 +600,8 @@ private:
   std::string my_locator_;
   std::string my_nickname_;
   ui::String my_qr_svg_rml_;
+  /** The QR code's side as CSS ("320dp"): see QrPhoneDisplayDp. */
+  ui::String qr_size_;
   bool can_scan_ = false;
   bool can_new_group_ = false;
   bool my_qr_open_ = false;
