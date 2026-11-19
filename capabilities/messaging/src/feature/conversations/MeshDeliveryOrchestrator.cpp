@@ -564,22 +564,6 @@ void MeshDeliveryOrchestrator::AnswerCopyAsk(const CopyAsk& ask, const std::stri
   log().info << "copy resent message_id=" << ask.message_id << " to " << device->peer_id;
 }
 
-namespace {
-
-/** What a stored message's send carried (its content beyond the text), for sealing it again. */
-SendRelayOptions ResendOptions(const ThreadMessage& message) {
-  SendRelayOptions options;
-  if (message.content_type != ChatContentType::Text) {
-    options.content_type = message.content_type;
-  }
-  if (!message.payload_json.empty()) {
-    options.payload_json = message.payload_json;
-  }
-  return options;
-}
-
-} // namespace
-
 Roe<void> MeshDeliveryOrchestrator::ResendDirectCopy(const Thread& thread, const ThreadMessage& message,
                                                      const std::string& asker, const AccountCardDevice& device) {
   auto identity = identity_.Get();
@@ -594,14 +578,14 @@ Roe<void> MeshDeliveryOrchestrator::ResendDirectCopy(const Thread& thread, const
   if (!device_kem) {
     return device_kem.error();
   }
-  const SendRelayOptions options = ResendOptions(message);
+  const SendRelayOptions options = copy_ask::ResendOptions(message);
   const PeerSessionKey pair = GroupE2ePayloadCodec::PairTargetKey(asker, device.peer_id);
   auto copy = SealPairCopy(message, identity->account_id, options, psk_store_, pair, *device_kem);
   if (!copy) {
     return copy.error();
   }
   const std::optional<std::string> relay_recipient = RelayRecipientFor(asker);
-  RelayEnvelope envelope = BuildDirectEnvelope(message, *sender, thread.channel, asker,
+  RelayEnvelope envelope = BuildDirectEnvelope(message, options, *sender, thread.channel, asker,
                                                {DeviceCopy(device.peer_id, std::move(*copy))}, NextRelayOrderKey());
   if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
     return signed_ok.error();
@@ -665,8 +649,8 @@ Roe<void> MeshDeliveryOrchestrator::ResendGroupCopy(const Thread& thread, const 
   copy.sender_seq = target.sender_seq;
   copy.key_init_b64 = encrypted->copies.front()->key_init_b64;
   copy.payload_b64 = encrypted->copies.front()->payload_b64;
-  RelayEnvelope envelope =
-      BuildGroupMemberEnvelope(message, *sender, group_id, asker, {std::move(copy)}, NextRelayOrderKey());
+  RelayEnvelope envelope = BuildGroupMemberEnvelope(message, copy_ask::ResendOptions(message), *sender, group_id, asker,
+                                                    {std::move(copy)}, NextRelayOrderKey());
   if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
     return signed_ok.error();
   }
@@ -1736,7 +1720,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
         continue;
       }
       NoteMessageActivity((*thread)->id, device.peer_id);
-      RelayEnvelope envelope = BuildDirectEnvelope(wire, *sender, (*thread)->channel, route_party,
+      RelayEnvelope envelope = BuildDirectEnvelope(wire, options, *sender, (*thread)->channel, route_party,
                                                    {std::move(sealed_copy)}, NextRelayOrderKey());
       if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
         failure = signed_ok.error();
@@ -1752,7 +1736,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
       any = true;
     }
     if (!relay_copies.empty()) {
-      RelayEnvelope envelope = BuildDirectEnvelope(wire, *sender, (*thread)->channel, route_party,
+      RelayEnvelope envelope = BuildDirectEnvelope(wire, options, *sender, (*thread)->channel, route_party,
                                                    std::move(relay_copies), NextRelayOrderKey());
       if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
         failure = signed_ok.error();
@@ -1778,7 +1762,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
     if (!sealed) {
       return FailOutbound(store_, *appended, sealed.error());
     }
-    RelayEnvelope envelope = BuildDirectEnvelope(*appended, *sender, (*thread)->channel, route_party,
+    RelayEnvelope envelope = BuildDirectEnvelope(*appended, options, *sender, (*thread)->channel, route_party,
                                                  {AccountCopy(*appended, std::move(*sealed))}, NextRelayOrderKey());
     if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
       return FailOutbound(store_, *appended, signed_ok.error());
@@ -2009,8 +1993,8 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
       relay_copies[recipient].push_back(std::move(copy));
       continue;
     }
-    RelayEnvelope envelope =
-        BuildGroupMemberEnvelope(message, *sender, group_id, recipient, {std::move(copy)}, NextRelayOrderKey());
+    RelayEnvelope envelope = BuildGroupMemberEnvelope(message, options, *sender, group_id, recipient, {std::move(copy)},
+                                                      NextRelayOrderKey());
     if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
       MarkGroupMemberMissed(group_id, recipient);
       any_missed = true;
@@ -2030,7 +2014,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
       any_missed = true;
       continue;
     }
-    RelayEnvelope envelope = BuildGroupMemberEnvelope(message, *sender, group_id, recipient,
+    RelayEnvelope envelope = BuildGroupMemberEnvelope(message, options, *sender, group_id, recipient,
                                                       std::move(relay_copies[recipient]), NextRelayOrderKey());
     if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
       MarkGroupMemberMissed(group_id, recipient);

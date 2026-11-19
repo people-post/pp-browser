@@ -83,5 +83,17 @@ SystemControlFamily MakeFamily(std::function<void(CopyAsk ask, std::string asker
   return family;
 }
 
+SendRelayOptions ResendOptions(const ThreadMessage& message) {
+  SendRelayOptions options;
+  if (message.content_type != ChatContentType::Text) {
+    options.content_type = message.content_type;
+  }
+  if (!message.payload_json.empty()) {
+    options.payload_json = message.payload_json;
+  }
+  options.wake = false;
+  return options;
+}
+
 } // namespace copy_ask
 } // namespace pbr

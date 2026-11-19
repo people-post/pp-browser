@@ -214,7 +214,7 @@ struct Device {
     if (!sealed) {
       return sealed.error();
     }
-    RelayEnvelope envelope = BuildDirectEnvelope(*appended, Sender(), thread.channel, "account:" + peer.tag,
+    RelayEnvelope envelope = BuildDirectEnvelope(*appended, options, Sender(), thread.channel, "account:" + peer.tag,
                                                  {AccountCopy(*appended, std::move(*sealed))}, NextRelayOrderKey());
     test::SignEnvelopeAs(keys, envelope);
     return envelope;
@@ -267,8 +267,8 @@ struct Device {
                          .sender_seq = target.sender_seq,
                          .key_init_b64 = encrypted->copies.front()->key_init_b64,
                          .payload_b64 = encrypted->copies.front()->payload_b64};
-    RelayEnvelope envelope =
-        BuildGroupMemberEnvelope(message, Sender(), group_id, to.account, {copy}, NextRelayOrderKey());
+    RelayEnvelope envelope = BuildGroupMemberEnvelope(message, SendRelayOptions{}, Sender(), group_id, to.account,
+                                                      {copy}, NextRelayOrderKey());
     test::SignEnvelopeAs(keys, envelope);
     return envelope;
   }

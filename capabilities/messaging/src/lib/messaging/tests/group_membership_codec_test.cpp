@@ -1,6 +1,7 @@
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
 #include "lib/messaging/GroupTypes.h"
+#include "lib/delivery/OutboundMessage.h"
 #include "common/thread/ThreadTypes.h"
 #include "common/ValueJson.h"
 
@@ -301,6 +302,30 @@ TEST(GroupMembershipCodecTest, MemberJoinedKeepsTheCallContext) {
       *GroupMembershipCodec::EncodeMemberJoined("group:x", "account:ann", MemberRole::Owner, 1));
   ASSERT_TRUE(ordinary);
   EXPECT_TRUE(ordinary->context.empty());
+}
+
+// The invitation is the one membership event its reader hears of in the direct chat (preview, unread, notice): its send
+// wakes the invitee, and our preview shows it. Accepts, declines, joins, renames, removals ride the same chat silently —
+// the rule the receiver hides them by.
+TEST(GroupMembershipCodecTest, OnlyTheInvitationWakesItsReader) {
+  using Type = GroupMembershipControlType;
+  for (const Type type : {Type::GroupInvite, Type::GroupInviteAccept, Type::GroupInviteDecline, Type::MemberJoined,
+                          Type::MemberRemoved, Type::GroupRenamed, Type::GroupInviteRefused, Type::GroupDissolved}) {
+    const std::string payload = ControlPayload(GroupMembershipControlTypeToWire(type), "{}");
+    const SendRelayOptions options = GroupMembershipCodec::DirectSendOptions(type, payload, "account:ann");
+    const bool invite = type == Type::GroupInvite;
+    EXPECT_EQ(options.content_type, std::optional<ChatContentType>(ChatContentType::System));
+    EXPECT_EQ(options.payload_json, std::optional<std::string>(payload));
+    EXPECT_EQ(options.sender_contact_id, std::optional<std::string>("account:ann"));
+    EXPECT_EQ(options.update_preview, invite) << GroupMembershipControlTypeToWire(type);
+
+    ThreadMessage sent;
+    sent.id = "m";
+    sent.content_type = ChatContentType::System;
+    sent.payload_json = payload;
+    EXPECT_EQ(RaisesWakePush(sent, options), invite) << GroupMembershipControlTypeToWire(type);
+    EXPECT_EQ(GroupMembershipCodec::IsHiddenInDirectThread(sent), !invite) << "the receiver's rule agrees";
+  }
 }
 
 } // namespace

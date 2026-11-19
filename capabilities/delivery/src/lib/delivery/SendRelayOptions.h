@@ -29,6 +29,12 @@ struct SendRelayOptions {
    */
   bool critical_lane = false;
   /**
+   * Whether the send wakes the recipient (a `wake_hint`, what the relay pushes on), when the sender decides it
+   * rather than the content (RaisesWakePush): a system-control row its owner counts as news for the recipient wakes
+   * (true), a copy re-sent to a device that asked for it does not (false: an old message). None: by the content.
+   */
+  std::optional<bool> wake;
+  /**
    * When set, attach this `key_init_b64` and encrypt with the **current** stored PSK
    * (E027 `psk_rotate`, or call AutoKey pre-warm before the first CallInvite send).
    */

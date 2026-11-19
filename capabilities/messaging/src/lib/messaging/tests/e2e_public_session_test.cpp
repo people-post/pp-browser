@@ -293,9 +293,9 @@ struct Side {
       auto copy = SealPairCopy(message, account, SendRelayOptions{}, *psk, pair,
                                Base64Decode(device.kem_public_key_b64).value());
       EXPECT_TRUE(copy) << copy.error().message;
-      RelayEnvelope envelope =
-          BuildDirectEnvelope(message, Sender(), ThreadChannel::E2ePublic, "account:" + peer_account,
-                              {DeviceCopy(device.peer_id, std::move(*copy))}, NextRelayOrderKey());
+      RelayEnvelope envelope = BuildDirectEnvelope(message, SendRelayOptions{}, Sender(), ThreadChannel::E2ePublic,
+                                                   "account:" + peer_account,
+                                                   {DeviceCopy(device.peer_id, std::move(*copy))}, NextRelayOrderKey());
       test::SignEnvelopeAs(keys, envelope);
       out[device.peer_id] = envelope;
     }
@@ -426,8 +426,8 @@ struct Side {
                            .sender_seq = target.sender_seq,
                            .key_init_b64 = encrypted->copies[i]->key_init_b64,
                            .payload_b64 = encrypted->copies[i]->payload_b64};
-      RelayEnvelope envelope =
-          BuildGroupMemberEnvelope(message, Sender(), group_id, recipient, {copy}, NextRelayOrderKey());
+      RelayEnvelope envelope = BuildGroupMemberEnvelope(message, SendRelayOptions{}, Sender(), group_id, recipient,
+                                                        {copy}, NextRelayOrderKey());
       test::SignEnvelopeAs(keys, envelope);
       out[per_device ? target.target_key.peer_device : recipient] = envelope;
     }

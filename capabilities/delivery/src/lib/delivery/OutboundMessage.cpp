@@ -317,7 +317,10 @@ RelayCopy DeviceCopy(const std::string& device, PairCopy pair_copy) {
   return copy;
 }
 
-bool RaisesWakePush(const ThreadMessage& message) {
+bool RaisesWakePush(const ThreadMessage& message, const SendRelayOptions& options) {
+  if (options.wake) {
+    return *options.wake;
+  }
   switch (message.content_type) {
     case ChatContentType::Text:
     case ChatContentType::ContactCard:
@@ -336,15 +339,16 @@ bool RaisesWakePush(const ThreadMessage& message) {
   return false;
 }
 
-RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
-                                  const ThreadChannel channel, const std::string& recipient,
-                                  std::vector<RelayCopy> copies, const uint64_t order_key) {
+RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const SendRelayOptions& options,
+                                  const EnvelopeSender& sender, const ThreadChannel channel,
+                                  const std::string& recipient, std::vector<RelayCopy> copies,
+                                  const uint64_t order_key) {
   RelayEnvelope envelope = EnvelopeFrom(message, sender, std::move(copies), order_key);
   envelope.route.kind = "direct";
   envelope.route.channel = channel;
   envelope.stream_key = BuildDeviceRelayStreamKey(sender.account_id, recipient, channel, sender.device);
   envelope.recipient_account_id = recipient;
-  if (RaisesWakePush(message)) {
+  if (RaisesWakePush(message, options)) {
     envelope.relay_wake_hint = SanitizeWakeHint(envelope.message_id);
   }
   return envelope;
@@ -358,14 +362,15 @@ bool ControlAlsoGoesDirect(const bool peer_connected, const bool has_relay_route
   return critical_lane && has_relay_route && peer_connected;
 }
 
-RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
-                                       const std::string& group_id, const std::string& recipient,
-                                       std::vector<RelayCopy> copies, const uint64_t order_key) {
+RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const SendRelayOptions& options,
+                                       const EnvelopeSender& sender, const std::string& group_id,
+                                       const std::string& recipient, std::vector<RelayCopy> copies,
+                                       const uint64_t order_key) {
   RelayEnvelope envelope = EnvelopeFrom(message, sender, std::move(copies), order_key);
   envelope.route.kind = "group";
   envelope.stream_key = BuildGroupRelayStreamKey(group_id, sender.account_id, recipient, sender.device);
   envelope.recipient_account_id = recipient;
-  if (RaisesWakePush(message)) {
+  if (RaisesWakePush(message, options)) {
     envelope.relay_wake_hint = SanitizeWakeHint(envelope.message_id);
   }
   return envelope;

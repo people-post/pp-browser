@@ -644,14 +644,27 @@ Signed with `pp-browser:relay-api-v1` (sign version 3, the relay's PeerId as aud
 
 An iPhone with the **default PIN** ([P020](../../projects/push-notifications/DECISIONS.md#p020--default-pin-calls-ring-by-voip-push-and-callkit-a-custom-pin-by-alert)) binds a second device beside its `ios` one: `platform: "ios_voip"`, `device_id: "<ios device id>.voip"`, `push_token` = the PushKit (VoIP) token; the signature is as for any device. With a **custom PIN**, or after the PIN is removed back to the default and changed again, the app calls `POST /v1/devices/unregister` for `<ios device id>.voip` (the alert device stays) and does not expect VoIP pushes. A build without CallKit (`PP_BROWSER_IOS_CALLKIT=OFF`) never binds it. The app aligns the binding at each start (once messaging is ready), at each push-token change and at each PIN-mode change; a failed call is logged and tried again at the next of those.
 
-On `POST /v1/messages` accept, a conforming relay **best-effort** wakes registered devices for the recipient:
+On `POST /v1/messages` accept, a conforming relay **best-effort** wakes registered devices for the recipient, never for a send to the sender's own account:
 
 | Condition | Opaque type |
 |-----------|-------------|
-| Accepted message | `inbox_wake` |
-| Accepted message with `"urgent": true`, within the urgent rate limit | `call_wake` |
+| `"urgent": true`, within the urgent rate limit (per sender → recipient, at most one per 15 s) | `call_wake` |
+| `"urgent": true`, over that limit | none |
+| Not urgent, with a `wake_hint` and a `grant` (a contact's send) | `inbox_wake` |
+| Not urgent, without a `wake_hint` or without a `grant` (a stranger's, [The stranger's price](#the-strangers-price)) | none |
 
-The relay cannot tell a call invite from a message (the control type is inside the end-to-end payload). The sender says so instead: a call invite's send record carries `"urgent": true` (P012). The hint sits next to the record's fields and is **not** in the signed bytes, so a relay that does not know it ignores it and verifies the request as before. The relay trusts it no further than a rate limit: per sender → recipient, at most one urgent wake per 15 s; over the limit the message wakes as `inbox_wake`. Every wake syncs the inbox, a call invite in it rings, and every ring raises the "Incoming call" notification where the user is not looking (P010 / `CallPresenter`).
+The relay cannot tell a call invite from a message, nor a message the recipient should hear of from sync traffic (the control type is inside the end-to-end payload). The sender says so instead, by two unsigned hints next to the record's fields and **not** in the signed bytes (a relay that does not know them ignores them and verifies the request as before): `"urgent": true` on a call invite (P012), and a `wake_hint` (below) on a send its recipient should hear of. The relay trusts `urgent` no further than its rate limit. Every wake syncs the inbox, a call invite in it rings, and every ring raises the "Incoming call" notification where the user is not looking (P010 / `CallPresenter`).
+
+Which app sends carry a `wake_hint` (`RaisesWakePush`; the sender decides for a system-control row by `SendRelayOptions::wake`, with the rule the receiver counts the row as news by — [push-notifications P022](../../projects/push-notifications/DECISIONS.md#p022--a-missed-call-and-a-group-invite-wake-a-resent-copy-does-not)):
+
+| Send | `wake_hint` |
+|------|-------------|
+| A new chat message the transcript shows (text, attachment, contact card, crypto tx, a system line without a `control_type`), direct or to each group member | its `message_id` |
+| A 1:1 call's summary that is news to the callee — missed, cancelled before an answer, or failed (`CallSummaryIsNewsToCallee`, the rule of `CallSummaryIsNews`) | its `message_id` |
+| A group invitation in the direct chat with the invitee (`GroupMembershipCodec::IsNewsInDirectThread`) | its `message_id` |
+| A call invite (control lane, `"urgent": true`) | its `call_id` |
+| Anything else: annotations (reactions, retracts, edits), other call summaries (answered, declined; a group call's is never sent), the other membership events in a direct chat (accept, decline, joined, renamed, removed, …), other control-lane records | none |
+| A copy re-sent to a device that asked for it (`copy_ask`: an old message under a new index) | none |
 
 | `platform` | Provider shape |
 |------------|----------------|
@@ -662,9 +675,9 @@ For a device that has an `ios_voip` sibling, an urgent wake (`call_wake`) goes t
 
 A relay may add `sent_at` beside `type` in the `ios` call alert and in the VoIP push: its own time when it sent the push, Unix **milliseconds**, a JSON number. Unsigned and optional (an older relay omits it). The app reads it on the VoIP push only: a push more than 65 s old by the phone's clock is reported to CallKit and ended at once, without ringing (P017).
 
-A send record may also carry `"wake_hint": "<id>"` (<= 64 chars of `[A-Za-z0-9-]`; unsigned like `urgent`): a call invite sends its `call_id`, an ordinary message its envelope `message_id`. A relay that knows it copies it into the APNs payload (the alert) as a top-level custom key `wake_hint`, beside `type`; one that does not ignores it. The app matches a tapped alert to its ring, message or missed-call record by it after the PIN unlock and sync; a push without it opens the first ring as before. The VoIP push's `wake_hint` is not read: its call takes the first ring.
+A `wake_hint` is `"<id>"` (<= 64 chars of `[A-Za-z0-9-]`; unsigned like `urgent`): a call invite's `call_id`, any other send's envelope `message_id`. A relay that knows it copies it into the APNs payload (the alert) as a top-level custom key `wake_hint`, beside `type`; one that does not ignores it. The app matches a tapped alert to its ring, message or missed-call record by it after the PIN unlock and sync; a push without it opens the first ring as before. The VoIP push's `wake_hint` is not read: its call takes the first ring.
 
-A relay pushes by two unsigned hints: `urgent` (a call alert) and `wake_hint` (a new-message alert when not urgent); a record with neither is stored silently. The client sets `wake_hint` only on chat messages the transcript shows (`RaisesWakePush`) and on an urgent call invite (the call id); no message class is sent.
+A relay pushes by the two unsigned hints only (the table above); a record with neither is stored silently, and no message class is sent ([P021](../../projects/push-notifications/DECISIONS.md#p021--the-relay-pushes-by-wake_hint-and-urgent-no-message-class-is-sent)).
 
 Payloads remain **opaque** — no names, thread ids, or media (an id the sender chose is all `wake_hint` carries). Failures must not fail message store. How the provider authenticates to FCM/APNs is outside this contract. See [projects/push-notifications](../../projects/push-notifications/) and [p2p-av-calls V006](../../projects/p2p-av-calls/DECISIONS.md).
 

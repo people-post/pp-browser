@@ -12,6 +12,7 @@
 
 #include "domain/call_media/ICallMediaTransport.h"
 #include "lib/calls/CallTypes.h"
+#include "lib/delivery/OutboundMessage.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
@@ -192,6 +193,8 @@ struct StackSide {
   std::function<void(const std::string& peer, const ThreadMessage& msg)> on_send;
   /** Call summaries this side wrote into the chat stream (its send_to_thread). */
   std::vector<ThreadMessage> summaries;
+  /** Whether each of `summaries` wakes its reader (RaisesWakePush on what it was sent with). */
+  std::vector<bool> summary_wakes;
   /** What the stack was built with (a test may build its sessions again). */
   CallStackDeps deps;
 
@@ -259,6 +262,7 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
     msg.content_type = send_options.content_type.value_or(ChatContentType::System);
     msg.payload_json = send_options.payload_json.value_or("");
     side.summaries.push_back(msg);
+    side.summary_wakes.push_back(RaisesWakePush(msg, send_options));
     return msg;
   };
   deps.delivery.resolve_peer_thread = [](const std::string& peer) -> Roe<std::string> { return "dm:" + peer; };

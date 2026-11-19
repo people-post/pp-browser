@@ -48,6 +48,12 @@ struct CallSummaryRow {
 };
 std::optional<CallSummaryRow> CallSummaryRowOf(const ThreadMessage& message);
 
+/**
+ * Whether a summary is news to the side that did not start the call: a 1:1 call that never reached it (missed,
+ * cancelled, failed). Its reader counts it (CallSummaryIsNews); its starter's send wakes the callee with it.
+ */
+bool CallSummaryIsNewsToCallee(const CallSummaryDetail& summary);
+
 /** A summary the reader should hear about (unread, notice): a call to them that they missed. */
 bool CallSummaryIsNews(const ThreadMessage& message);
 

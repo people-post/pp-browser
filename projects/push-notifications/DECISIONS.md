@@ -193,10 +193,23 @@ Every ring raises the "Incoming call" notice (`CallPresenter`), however its invi
 
 ## P021 — The relay pushes by `wake_hint` and `urgent`; no message class is sent
 
-**Status:** Accepted.  
+**Status:** Accepted. **Amended by [P022](#p022--a-missed-call-and-a-group-invite-wake-a-resent-copy-does-not):** a missed 1:1 call's summary and a group invitation carry a `wake_hint` too, a re-sent copy does not. Current rule: [SERVICE_ENDPOINTS.md § HTTP device push](../../docs/contracts/SERVICE_ENDPOINTS.md#http-device-push-opaque-wake).  
 **Decision:** a send record carries an unsigned `wake_hint` only when a chat message raises a push (text, attachment, contact card, crypto tx, a system line without a `control_type`); annotations, system-control rows and the control lane carry none. The relay pushes a call alert for `urgent`, a new-message alert for a non-urgent record with a `wake_hint`, and stays silent for neither. No `kind` is sent. Retention is the unsigned `ttl_s`, a fixed tier by family: 120 s for call signaling, 604800 s (7 days) for the device list, an hour for other control-lane records, none for chat.
 - **Source:** `RaisesWakePush` decides the chat hint; the control lane sets a hint (the call id) only for an urgent invite.
 
 **Rationale:** the relay cannot read the blob, so without a signal every record, including reactions and sync traffic, wakes the recipient; a plaintext class field would show the relay what each record is, while a hint's presence reveals only that it may push.  
 **Consequences:** both fields are unsigned and visible to the relay; a sender can only withhold or force a push for its own record.  
 **Cross-link:** `RaisesWakePush`, `p2p_relay_wire_test.cpp`, `outbound_message_test.cpp`; `docs/contracts/SERVICE_ENDPOINTS.md`.
+
+## P022 — A missed call and a group invite wake; a resent copy does not
+
+**Status:** Accepted (2026-11-18). Amends P021's list of sends that carry a `wake_hint`.  
+**Decision:** a chat-route send wakes its recipient (carries a `wake_hint`) as P021 says, with three changes:
+- **A missed 1:1 call** — the starter's call summary carries one exactly when it is news to the callee: missed, cancelled before an answer, or failed (`CallSummaryIsNewsToCallee`, which `CallSummaryIsNews` — the receiver's unread and notice rule — is built on). An answered or declined call's summary stays silent; a group call's is never sent.
+- **A group invitation** — the invite in the direct chat with the invitee carries one (`GroupMembershipCodec::IsNewsInDirectThread`, the rule `IsHiddenInDirectThread` hides the other membership events by). Accept, decline, joined, renamed, removed and the other membership events in a direct chat stay silent.
+- **A copy re-sent** to a device that asked for it (`copy_ask`) carries none: it is an old message under a new index, and with the hint every device of the asker's account alerted for it.
+- **Source:** the decision stays in `RaisesWakePush`; a system-control row's owner decides for it by `SendRelayOptions::wake` (set by `CallControlClient::SendSummary` and `GroupMembershipCodec::DirectSendOptions`), and `copy_ask::ResendOptions` sets it false. Delivery sits below calls and messaging in the capability order, so it cannot read a call summary or a membership event: the owner passes the decision down, computed by the same predicate its receiver counts the row as news by.
+
+**Rationale:** an iPhone hears of nothing it is not pushed for; a missed call and an invitation are what the chat counts as news, so the recipient should hear of them as of a message. A resend is not news.  
+**Consequences:** a failed call pushes the callee (it counts as news there too: the caller tried and the callee never knew). The relay's alert still says only "New message"; the relay side (the alert's collapse id) is a separate pp-relay-apis change.  
+**Cross-link:** `RaisesWakePush`, `SendRelayOptions::wake`, `CallSummaryIsNewsToCallee`, `GroupMembershipCodec::DirectSendOptions`, `copy_ask::ResendOptions`; `outbound_message_test.cpp`, `copy_ask_test.cpp`, `group_membership_codec_test.cpp`, `call_summary_row_test.cpp`, `call_dual_stack_compose_test.cpp`; `docs/contracts/SERVICE_ENDPOINTS.md`.
