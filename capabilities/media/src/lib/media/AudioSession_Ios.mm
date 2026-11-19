@@ -10,7 +10,6 @@
 #include "common/Logger.h"
 #include "common/Metrics.h"
 #include "lib/media/ResumeRetryChain.h"
-#include "lib/media/VoipCategoryGuard.h"
 
 #include <atomic>
 #include <chrono>
@@ -52,9 +51,6 @@ std::condition_variable g_system_cv;
 constexpr std::chrono::milliseconds kSystemActivationWait{3000};
 constexpr int kDeactivateRetries = 5;
 constexpr int64_t kDeactivateRetryNs = 150 * NSEC_PER_MSEC;
-/** B230: one reopen when something else rewrites the session right after the voice-processing unit started. */
-std::mutex g_guard_mu;
-VoipCategoryGuard g_category_guard;
 
 #if defined(PP_BROWSER_DEV_RESUME_RETRY_ONLY) && PP_BROWSER_DEV_RESUME_RETRY_ONLY
 /**
@@ -73,7 +69,7 @@ std::atomic<AppState> g_app_state{AppState::Unknown};
 std::atomic<int> g_protected_data{-1};
 
 /** What resumed the session (call.audio_resume by=…). */
-enum class ResumeBy { Retry, Ended, Foreground, Route, Reset, Category };
+enum class ResumeBy { Retry, Ended, Foreground, Route, Reset };
 
 /**
  * Every resume attempt runs on this one serial queue (TryResume), so attempts never overlap and the retry chain needs
@@ -90,8 +86,6 @@ void RunResume(ResumeBy by, bool reapply);
 void BeginRetryChain(std::chrono::steady_clock::time_point began_at);
 /** On ResumeQueue: forget when the last interruption began (the next resume's waited_ms is then 0). */
 void ForgetBegan();
-/** B230: configure the session again and reopen the call's audio devices (VoipCategoryGuard asked for it). */
-void PostCategoryReopen();
 
 /**
  * An interruption of the session activated as `gen` began at `began_at`: on the resume queue, so it is ordered with
@@ -215,12 +209,6 @@ ShareWord DataSourceWord(AVAudioSessionPortDescription* input) {
   return "other";
 }
 
-/** The session is in the call's configuration (ConfigureVoipSession's category and mode). */
-bool SessionIsVoip(AVAudioSession* session) {
-  return [session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord] &&
-         [session.mode isEqualToString:AVAudioSessionModeVoiceChat];
-}
-
 /** The current output's port type. */
 ShareWord OutputPortWord() {
   AVAudioSessionRouteDescription* route = [AVAudioSession sharedInstance].currentRoute;
@@ -338,22 +326,6 @@ void InstallInterruptionObservers() {
                           .Emit();
                       if (call && reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable && IsInterrupted()) {
                         ResumeSoonIfSessionFree();
-                      }
-                      if (call && reason == AVAudioSessionRouteChangeReasonCategoryChange) {
-                        AVAudioSession* session = [AVAudioSession sharedInstance];
-                        const bool ours = SessionIsVoip(session);
-                        bool reopen = false;
-                        {
-                          std::lock_guard<std::mutex> lock(g_guard_mu);
-                          reopen = g_category_guard.OnCategoryChange(std::chrono::steady_clock::now(), ours);
-                        }
-                        if (reopen) {
-                          SessionLog().warning << "AudioSession category changed under voice processing: category="
-                                               << Utf8(session.category) << " mode=" << Utf8(session.mode)
-                                               << " — configuring the session and reopening voice processing once"
-                                                  " reason=foreign_category_change";
-                          PostCategoryReopen();
-                        }
                       }
                     }];
     [center addObserverForName:UIApplicationDidBecomeActiveNotification
@@ -591,10 +563,6 @@ void ActivateForVoip() {
 
 void Deactivate() {
   g_session_active.store(false);
-  {
-    std::lock_guard<std::mutex> lock(g_guard_mu);
-    g_category_guard.Reset(); // the call's one reopen goes with its session
-  }
   if (IsInterrupted()) {
     // The call ended while the OS still had its audio: nothing gave it back (B217).
     SessionLog().info << "AudioSession Deactivate: still interrupted";
@@ -652,8 +620,6 @@ ShareWord ByWord(const ResumeBy by) {
       return "route";
     case ResumeBy::Reset:
       return "reset";
-    case ResumeBy::Category:
-      return "category";
   }
   return "other";
 }
@@ -839,15 +805,6 @@ void BeginRetryChain(const Clock::time_point began_at) {
   }
 }
 
-void PostCategoryReopen() {
-  // The media-services-reset path (TryResume with reapply): category, mode and format set again, the session taken, the
-  // route applied, then every interruption handler — each engine reopens its audio devices, the voice-processing pair
-  // whole (its Open configures the session once more). Not RunResume: no resume metric, and no hold on a failure.
-  dispatch_async(ResumeQueue(), ^{
-    (void)TryResume(ResumeBy::Category, /*reapply=*/true);
-  });
-}
-
 void RunResume(const ResumeBy by, const bool reapply) {
   const ResumeAttempt attempt = TryResume(by, reapply);
   if (attempt.result == TryResult::Ok) {
@@ -962,10 +919,6 @@ bool SpeakerToggleNeedsDeviceReopen() {
   return false;
 }
 
-bool ToneCloseRewritesSession() {
-  return true; // SDL's coreaudio backend sets its own category when it closes a device (UpdateAudioSession)
-}
-
 void NotifyVoiceProcessingStarted(const double sample_rate, const int channels, const int bypass, const int agc) {
   bool managed = false;
   bool system_active = false;
@@ -974,15 +927,10 @@ void NotifyVoiceProcessingStarted(const double sample_rate, const int channels, 
     managed = g_system_managed;
     system_active = g_system_active;
   }
-  {
-    std::lock_guard<std::mutex> lock(g_guard_mu);
-    g_category_guard.OnVoiceProcessingStarted(std::chrono::steady_clock::now());
-  }
   AVAudioSession* session = [AVAudioSession sharedInstance];
-  SessionLog().info << "vpio started sr=" << static_cast<long>(sample_rate) << " ch=" << channels
-                    << " bypass=" << bypass << " agc=" << agc << " category=" << Utf8(session.category)
-                    << " mode=" << Utf8(session.mode) << " system_managed=" << (managed ? 1 : 0)
-                    << " system_active=" << (system_active ? 1 : 0);
+  SessionLog().info << "vpio started sr=" << static_cast<long>(sample_rate) << " ch=" << channels << " bypass=" << bypass
+                    << " agc=" << agc << " category=" << Utf8(session.category) << " mode=" << Utf8(session.mode)
+                    << " system_managed=" << (managed ? 1 : 0) << " system_active=" << (system_active ? 1 : 0);
 }
 
 int OpusEncoderComplexity() {

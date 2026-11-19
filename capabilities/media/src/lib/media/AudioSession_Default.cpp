@@ -30,10 +30,6 @@ bool SpeakerToggleNeedsDeviceReopen() {
   return false;
 }
 
-bool ToneCloseRewritesSession() {
-  return false;
-}
-
 void NotifyVoiceProcessingStarted(double /*sample_rate*/, int /*channels*/, int /*bypass*/, int /*agc*/) {}
 
 int OpusEncoderComplexity() {

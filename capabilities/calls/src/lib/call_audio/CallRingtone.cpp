@@ -2,8 +2,6 @@
 #include "lib/media/AudioSession.h"
 #include "lib/call_audio/Ringback.h"
 
-#include "common/Logger.h"
-
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -27,12 +25,6 @@ std::mutex& RingSoundMutex() {
 std::string& RingSoundPath() {
   static std::string path;
   return path;
-}
-
-/** The app's file log (SDL_Log does not reach it); used from the tone workers. */
-logging::Logger& RingLog() {
-  static logging::Logger log = logging::getLogger("CallRingtone");
-  return log;
 }
 
 bool LoadRingWav(std::vector<unsigned char>& pcm, int& freq, int& channels) {
@@ -187,39 +179,9 @@ void CallRingtone::StartTone() {
   current_stop_ = std::make_shared<std::atomic<bool>>(false);
   current_release_ = std::make_shared<std::atomic<bool>>(true);
   current_done_ = std::make_shared<std::atomic<bool>>(false);
-  current_hold_ = tone_ == Tone::IncomingRing && hold_until_closed_ ? std::make_shared<RingHold>() : nullptr;
   playing_ = true;
-  thread_ = std::thread([this, previous_done, stop = current_stop_, release = current_release_, done = current_done_,
-                         hold = current_hold_]() { RunLoop(previous_done, stop, release, done, hold); });
-}
-
-void CallRingtone::TakeRingHold() {
-  if (!current_hold_ || (current_stop_ && current_stop_->load())) {
-    return; // no hold for this generation, or it was stopped already (that stop took it)
-  }
-  int64_t none = 0;
-  (void)current_hold_->stop_at_ns.compare_exchange_strong(
-      none, std::chrono::steady_clock::now().time_since_epoch() / std::chrono::nanoseconds(1));
-  AudioSession::BeginToneHold();
-  int running = RingHold::kRunning;
-  if (!current_hold_->state.compare_exchange_strong(running, RingHold::kHeld, std::memory_order_acq_rel)) {
-    AudioSession::EndToneHold(); // its worker already finished (nothing left to close)
-  }
-}
-
-void CallRingtone::FinishRingHold(const std::shared_ptr<RingHold>& hold) {
-  if (!hold || hold->state.exchange(RingHold::kDone, std::memory_order_acq_rel) != RingHold::kHeld) {
-    return;
-  }
-  // FIFO device thread: once this returns, the close the released lease queued has run (SDL's session rewrite with it).
-  const bool closed = devices_.DrainAudio(kRingCloseWait);
-  const int64_t stop_ns = hold->stop_at_ns.load();
-  const int64_t since_stop_ms =
-      stop_ns > 0
-          ? (std::chrono::steady_clock::now().time_since_epoch() / std::chrono::nanoseconds(1) - stop_ns) / 1'000'000
-          : -1;
-  RingLog().info << "ringtone lease closed since_stop_ms=" << since_stop_ms << " closed=" << (closed ? 1 : 0);
-  AudioSession::EndToneHold();
+  thread_ = std::thread([this, previous_done, stop = current_stop_, release = current_release_,
+                         done = current_done_]() { RunLoop(previous_done, stop, release, done); });
 }
 
 void CallRingtone::RequestStop(const bool wait) {
@@ -227,9 +189,7 @@ void CallRingtone::RequestStop(const bool wait) {
   {
     std::lock_guard lock(mutex_);
     // Only the CURRENT generation needs signalling: every older one had its own flag set when it
-    // was superseded (Start() always goes through here first). Its hold first: the worker may exit
-    // as soon as the flag is set.
-    TakeRingHold();
+    // was superseded (Start() always goes through here first).
     if (current_stop_) {
       current_stop_->store(true);
     }
@@ -345,8 +305,8 @@ bool CallRingtone::StopAndJoin(std::chrono::milliseconds budget) {
 }
 
 void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done, std::shared_ptr<std::atomic<bool>> stop,
-                           std::shared_ptr<std::atomic<bool>> release_on_stop, std::shared_ptr<std::atomic<bool>> done,
-                           std::shared_ptr<RingHold> hold) {
+                           std::shared_ptr<std::atomic<bool>> release_on_stop,
+                           std::shared_ptr<std::atomic<bool>> done) {
   // Cross-generation ordering rules for OutgoingRingback (a fast cancel-then-redial can launch
   // this worker before the PREVIOUS one has finished tearing down; the audio session must never
   // see two generations' activate / release calls interleave):
@@ -400,10 +360,6 @@ void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done, std
   if (!lease || !(*lease)->HasDevice()) {
     SDL_Log("CallRingtone: no speaker: %s", lease ? (*lease)->OpenError().c_str() : lease.error().message.c_str());
     clear_playing_if_current();
-    if (lease) {
-      lease->reset(); // a lease without a device: released before the hold ends
-    }
-    FinishRingHold(hold);
     signal_done();
     return;
   }
@@ -447,8 +403,6 @@ void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done, std
     // Released, or handed to call media: either way a call may activate its own session now.
     AudioSession::EndToneHold();
   }
-  FinishRingHold(hold); // Tone::IncomingRing: once the close above has run
-
   // No playing_ write here: the loop only exits once `stop` is set, and RequestStop already
   // cleared playing_ at that moment (rule 5).
   signal_done();

@@ -24,12 +24,11 @@ bool ToneHoldsSession() {
   return g_tone_holds.load(std::memory_order_acquire) > 0;
 }
 
-bool WaitUntilToneHoldsReleased(const std::chrono::milliseconds timeout) {
+void WaitUntilToneHoldsReleased(const std::chrono::milliseconds timeout) {
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   while (ToneHoldsSession() && std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
-  return !ToneHoldsSession();
 }
 
 } // namespace AudioSession

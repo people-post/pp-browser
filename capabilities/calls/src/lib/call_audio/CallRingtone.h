@@ -5,7 +5,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -103,30 +102,8 @@ public:
    * started.
    */
   static bool RingbackSessionHeld() { return AudioSession::ToneHoldsSession(); }
-  /**
-   * Tone::IncomingRing: a stop takes a tone hold (AudioSession::BeginToneHold) that the worker ends only once its
-   * speaker stream is closed on the device thread (bounded by kRingCloseWait), so call media started by an answer waits
-   * for that close (B230: on iOS the close rewrites the audio session). Default: AudioSession::ToneCloseRewritesSession().
-   * Before the first Start().
-   */
-  void SetHoldSessionUntilClosed(bool hold) { hold_until_closed_ = hold; }
-  /** How long a stopped incoming ring waits for its stream's close before it ends its hold anyway. */
-  static constexpr std::chrono::milliseconds kRingCloseWait{2000};
 
 private:
-  /** One incoming-ring generation's stop-time hold (SetHoldSessionUntilClosed): who ends it, and when the stop came. */
-  struct RingHold {
-    static constexpr int kRunning = 0; // no hold
-    static constexpr int kHeld = 1;    // a stop took the hold; the worker ends it
-    static constexpr int kDone = 2;    // the worker finished: a later stop takes no hold
-    std::atomic<int> state{kRunning};
-    /** steady_clock nanoseconds of the first stop (0: none yet). */
-    std::atomic<int64_t> stop_at_ns{0};
-  };
-  /** Under mutex_, before the stop flag is set: take the current generation's hold (unless its worker finished). */
-  void TakeRingHold();
-  /** Worker, after its lease is released: wait for the close, then end the hold a stop took (if any). */
-  void FinishRingHold(const std::shared_ptr<RingHold>& hold);
   /** The tone's worker (the old Start()). */
   void StartTone();
   /** Tone::IncomingRing: sound and vibration as `out` says. */
@@ -142,8 +119,7 @@ private:
    * waits on it next.
    */
   void RunLoop(std::shared_ptr<std::atomic<bool>> previous_done, std::shared_ptr<std::atomic<bool>> stop,
-               std::shared_ptr<std::atomic<bool>> release_on_stop, std::shared_ptr<std::atomic<bool>> done,
-               std::shared_ptr<RingHold> hold);
+               std::shared_ptr<std::atomic<bool>> release_on_stop, std::shared_ptr<std::atomic<bool>> done);
 
   MediaDeviceArbiter& devices_;
   std::mutex mutex_;
@@ -168,9 +144,6 @@ private:
   std::shared_ptr<std::atomic<bool>> current_stop_;
   std::shared_ptr<std::atomic<bool>> current_release_;
   std::shared_ptr<std::atomic<bool>> current_done_;
-  /** Guarded by mutex_: the current generation's stop-time hold (Tone::IncomingRing with hold_until_closed_; else null). */
-  std::shared_ptr<RingHold> current_hold_;
-  bool hold_until_closed_ = AudioSession::ToneCloseRewritesSession();
   std::vector<unsigned char> wav_pcm_;
   int wav_freq_ = 24000;
   int wav_channels_ = 1;
