@@ -310,8 +310,10 @@ void InstallInterruptionObservers() {
                       }
                       const auto reason = static_cast<AVAudioSessionRouteChangeReason>(
                           [note.userInfo[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue]);
-                      if (call) {
-                        NoteRouteChanged(); // the call's quality ignores buffer pressure for a moment (B231)
+                      if (call && (reason == AVAudioSessionRouteChangeReasonNewDeviceAvailable ||
+                                   reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable ||
+                                   reason == AVAudioSessionRouteChangeReasonOverride)) {
+                        NoteRouteChanged(); // a device came or went: the call's quality holds for a moment (B231)
                       }
                       const ShareWord reason_word = RouteChangeReasonWord(reason);
                       const ShareWord output = OutputPortWord();

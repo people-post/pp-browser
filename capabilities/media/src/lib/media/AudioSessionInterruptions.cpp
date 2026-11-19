@@ -31,6 +31,10 @@ void NoteRouteChanged() {
   g_route_changed_ms.store(util::NowUnixMs());
 }
 
+void ClearRouteChange() {
+  g_route_changed_ms.store(0);
+}
+
 int64_t LastRouteChangeMs() {
   return g_route_changed_ms.load();
 }

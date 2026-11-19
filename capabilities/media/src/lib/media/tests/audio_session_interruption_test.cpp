@@ -21,6 +21,16 @@ namespace {
 
 using namespace std::chrono_literals;
 
+// B231: a route change belongs to its call; the next one starts with none on record.
+TEST(AudioSessionInterruptionTest, ClearingTheRouteChangeAtACallsEndForgetsIt) {
+  AudioSession::ClearRouteChange();
+  EXPECT_EQ(AudioSession::LastRouteChangeMs(), 0);
+  AudioSession::NoteRouteChanged();
+  EXPECT_GT(AudioSession::LastRouteChangeMs(), 0);
+  AudioSession::ClearRouteChange();
+  EXPECT_EQ(AudioSession::LastRouteChangeMs(), 0);
+}
+
 // Every handler added runs when the session comes back; a removed one does not.
 TEST(AudioSessionInterruptionTest, EveryAddedHandlerRunsAndARemovedOneDoesNot) {
   int first = 0;

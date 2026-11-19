@@ -1,5 +1,7 @@
 #include "lib/calls/CallMediaAdaptation.h"
 
+#include "common/media/CallMediaHealth.h"
+
 #include <algorithm>
 
 namespace pbr {
@@ -33,7 +35,7 @@ CallAdaptationDecision CallMediaAdaptation::Evaluate(const CallAdaptationInput& 
     out.reason = "uplink_cap_audio";
   }
 
-  const bool path_ok = in.path_pressure < 0.75;
+  const bool path_ok = in.path_pressure < kCallPressurePoor;
   int64_t remaining = budget;
   if (out.publish_audio) {
     remaining -= out.target_audio_bps;

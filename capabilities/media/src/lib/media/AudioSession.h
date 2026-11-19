@@ -81,8 +81,13 @@ bool ToneHoldsSession();
 /** Wait until no tone holds the session, at most `timeout`. */
 void WaitUntilToneHoldsReleased(std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
 
-/** The OS changed a live call's audio route (iOS's route-change notification), now. Any thread. */
+/**
+ * The OS changed a live call's audio route in a way a call's quality should not judge at once (iOS: a device came or
+ * went, or an override; not a category change, not our own configuration), now. Any thread.
+ */
 void NoteRouteChanged();
+/** The call is over: forget the last route change, so the next call does not see it (B231). Any thread. */
+void ClearRouteChange();
 /** When NoteRouteChanged last ran (util::NowUnixMs; 0: never). A call's quality reads it (B231). Any thread. */
 int64_t LastRouteChangeMs();
 

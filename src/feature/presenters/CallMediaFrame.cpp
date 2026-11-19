@@ -243,6 +243,7 @@ CallMediaDecision CallMediaFrame::Decide(const CallScreen& screen, const CallMed
     one_way_since_ms_ = 0;
     not_sending_since_ms_ = 0;
     last_pill_ms_.clear();
+    pressure_gate_ = {};
   }
   CallMediaDecision d;
   // Whatever VideoAllowedForCall said (false, unknown), a sending camera can always be turned off.

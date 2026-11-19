@@ -824,6 +824,8 @@ void CallPresenter::StepMedia(CallUiBackend& backend, const CallScreen& next, co
     case CallScreen::Kind::None:
       if (active_call_id_.empty()) {
         media_frame_.Reset();
+        speaker_toggled_ms_ = 0; // the next call starts with no route change on record (B231)
+        AudioSession::ClearRouteChange();
         playout_stuck_.Reset();
         playout_call_id_.clear();
         EmitHoldStuckEnd(hold_stuck_.Finish(), hold_group_);

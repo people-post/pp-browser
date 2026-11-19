@@ -332,6 +332,73 @@ TEST(CallBufferPressureGateTest, PressureOutlastingTheSettleTimeIsTimedFromItsEn
   EXPECT_EQ(EvaluateGated(gate, PressureAt(settled + 1'000, 1.0), toggled).quality, CallPathQuality::Poor);
 }
 
+// A route that flaps every second (a Bluetooth link, say) must not hide a call that is really degrading: the first
+// change opens one window, the changes inside it and in the cooldown after it open none.
+TEST(CallBufferPressureGateTest, ARouteFlappingEverySecondDoesNotHideSustainedPressure) {
+  CallBufferPressureGate gate;
+  const int64_t from = 10'000;
+  int64_t poor_at = -1;
+  for (int64_t t = from; t <= from + 20'000; t += 100) {
+    const int64_t flap = from + (t - from) / 1000 * 1000; // the newest change, once a second
+    const auto v = EvaluateGated(gate, PressureAt(t, 1.0), flap);
+    if (v.quality == CallPathQuality::Poor && poor_at < 0) {
+      poor_at = t;
+    }
+    if (poor_at >= 0) {
+      EXPECT_EQ(v.quality, CallPathQuality::Poor) << "stays Poor, at +" << (t - from) << " ms";
+    }
+  }
+  ASSERT_GE(poor_at, 0);
+  EXPECT_LE(poor_at - from, 4'000) << "Poor within about 4 s";
+}
+
+TEST(CallBufferPressureGateTest, AChangeInsideTheWindowDoesNotRestartIt) {
+  CallBufferPressureGate gate;
+  const int64_t from = 10'000;
+  (void)EvaluateGated(gate, PressureAt(from, 1.0), from);
+  (void)EvaluateGated(gate, PressureAt(from + 2'000, 1.0), from + 2'000); // inside: ignored
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(from + kCallRouteChangeSettleMs, 1.0), from + 2'000).quality,
+            CallPathQuality::Fair)
+      << "the window ended at +3 s, not +5 s";
+}
+
+TEST(CallBufferPressureGateTest, AnotherWindowOpensOnlyTenSecondsAfterTheLastEnded) {
+  CallBufferPressureGate gate;
+  const int64_t from = 10'000;
+  const int64_t ended = from + kCallRouteChangeSettleMs;
+  (void)EvaluateGated(gate, PressureAt(from, 1.0), from);
+  // A second change 5 s after the first window ended: in the cooldown, so it hides nothing.
+  int64_t second = ended + 5'000;
+  for (int64_t t = ended; t <= second + 100; t += 100) {
+    (void)EvaluateGated(gate, PressureAt(t, 1.0), t >= second ? second : from);
+  }
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(second + 200, 1.0), second).quality, CallPathQuality::Poor);
+  // A third one after the cooldown opens a window: a healthy call shows no flash.
+  CallBufferPressureGate healthy;
+  (void)EvaluateGated(healthy, PressureAt(from, 0.0), from);
+  for (int64_t t = ended; t < ended + kCallRouteChangeCooldownMs; t += 500) {
+    (void)EvaluateGated(healthy, PressureAt(t, 0.0), from);
+  }
+  const int64_t third = ended + kCallRouteChangeCooldownMs;
+  EXPECT_EQ(EvaluateGated(healthy, PressureAt(third, 1.0), third).quality, CallPathQuality::Excellent);
+}
+
+TEST(CallBufferPressureGateTest, AChangeThatWasLongAgoWhenFirstSeenOpensNoWindow) {
+  CallBufferPressureGate gate;
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(20'000, 1.0), 10'000).quality, CallPathQuality::Fair)
+      << "a stale change (a previous call's) is not a window";
+}
+
+TEST(CallBufferPressureGateTest, APauseInEvaluationStartsThePersistenceOver) {
+  CallBufferPressureGate gate;
+  const int64_t from = 10'000;
+  (void)EvaluateGated(gate, PressureAt(from, 1.0), 0);
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(from + 1'000, 1.0), 0).quality, CallPathQuality::Poor);
+  // Nothing evaluated for 5 s (a ring over the call, the app in the background), then the same pressure.
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(from + 6'000, 1.0), 0).quality, CallPathQuality::Fair);
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(from + 7'000, 1.0), 0).quality, CallPathQuality::Poor);
+}
+
 TEST(CallBufferPressureGateTest, ModeratePressureGradesAtOnce) {
   CallBufferPressureGate gate;
   EXPECT_EQ(EvaluateGated(gate, PressureAt(10'000, 0.5), 0).quality, CallPathQuality::Fair);
