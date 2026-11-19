@@ -30,6 +30,8 @@ bool SpeakerToggleNeedsDeviceReopen() {
   return false;
 }
 
+void NotifyVoiceProcessingStarted(double /*sample_rate*/, int /*channels*/, int /*bypass*/, int /*agc*/) {}
+
 int OpusEncoderComplexity() {
   return 8;
 }

@@ -398,6 +398,27 @@ TEST(CallMediaFrameTest, TheFactsHealthSamplesTheLinkAndReconnectsWithTheDecisio
   EXPECT_EQ(v.health.quality, CallPathQuality::Reconnecting) << "the health hears the call reconnects";
 }
 
+// B231: the persistence timer of high buffer pressure belongs to one call.
+TEST(CallMediaFrameTest, ANewCallStartsTheBufferPressureTimerOver) {
+  CallMediaFrame frame;
+  auto step = [&frame](const char* id, const int64_t now) {
+    CallMediaFacts f = LiveFacts(now);
+    f.call_id = id;
+    f.engine.rx_audio_frames = 100;
+    f.engine.tx_audio_frames = 100;
+    f.engine.last_rx_audio_ms = now - 100;
+    f.engine.last_tx_audio_ms = now - 100;
+    f.engine.path_pressure = 1.0;
+    CallScreen s = InCallScreen();
+    s.call_id = id;
+    return frame.Step(s, f).health.quality;
+  };
+  EXPECT_EQ(step("call-1", 160'000), CallPathQuality::Fair);
+  EXPECT_EQ(step("call-1", 161'000), CallPathQuality::Poor);
+  EXPECT_EQ(step("call-2", 161'500), CallPathQuality::Fair) << "the second second is not call-1's";
+  EXPECT_EQ(step("call-2", 162'500), CallPathQuality::Poor);
+}
+
 // --- DEV/PLAN-call-failed-redial.md 9-10: only the steps while connecting; after connect, bottom pills ------------
 
 /** The pills a 1:1 voice call's frame raises from `from_ms` to `to_ms` (a tick every `step_ms`), with `health_at`. */

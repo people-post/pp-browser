@@ -36,6 +36,7 @@
 #include "feature/conversations/MessageRouter.h"
 #include "gui/shell/ShellSetupPorts.h"
 #include "gui/shell/FavoritesRowModel.h"
+#include "gui/shell/NotificationTapCover.h"
 #include "lib/ui/ShellLayout.h"
 #include "lib/ui/EmojiCatalog.h"
 #include "gui/chat/ChatDataModel.h"
@@ -1258,7 +1259,7 @@ bool ChatController::MarkOpenChatReadIfLooking() {
   PendingNotificationTap& tap = PendingNotificationTap::Instance();
   const auto now = PendingNotificationTap::Clock::now();
   const bool route_unknown_thread = !tap.FreshHint(now).empty() || tap.PeekCallRoute(now);
-  const bool tap_elsewhere = TapPendingElsewhere(tap.PeekThread(), route_unknown_thread, thread_id);
+  const bool tap_elsewhere = TapPendingElsewhere(tap.PeekThread(now), route_unknown_thread, thread_id);
   if (!ShouldMarkOpenChatRead(AppLifecycle::IsUserAttentive(), !thread_id.empty(),
                               ChatTranscriptOnScreen(ChromeSnapshot(), thread_id, thread_id), has_unread,
                               tap_elsewhere)) {
@@ -1269,6 +1270,68 @@ bool ChatController::MarkOpenChatReadIfLooking() {
   ILocalNotifier::Instance().ClearForThread(thread_id);
   reading_open_chat_ = false;
   return true;
+}
+
+void ChatController::OpenTappedThread(std::string thread_id) {
+  TapOpenFacts facts;
+  facts.call_shown = ChromeSnapshot().call_shown;
+  facts.cover_armed = shell_navigation_.tap_cover_armed && shell_navigation_.tap_cover_armed();
+  facts.messaging_ready = messaging_ready_;
+  if (NotificationTapCover::DeferTapOpen(facts)) {
+    return; // the cover stays (bounded by its hold); the later route (the sync, the wiring) opens the chat
+  }
+  if (!facts.call_shown && shell_navigation_.clear_for_tapped_chat) {
+    shell_navigation_.clear_for_tapped_chat();
+  }
+  bool known = false;
+  if (facade_) {
+    auto thread = facade_->GetThread(thread_id);
+    known = thread && *thread;
+  }
+  if (known) {
+    const std::string wanted = thread_id;
+    if (shell_navigation_.tapped_chat_opening) {
+      shell_navigation_.tapped_chat_opening(true); // this open, and no other, shows at once
+    }
+    OnSelectThread(std::move(thread_id));
+    if (shell_navigation_.tapped_chat_opening) {
+      shell_navigation_.tapped_chat_opening(false);
+    }
+    facts.opened = ActiveThreadId() == wanted;
+  }
+  switch (NotificationTapCover::EndOfTapOpen(facts)) {
+    case TapOpenEnd::Nothing:
+      return;
+    case TapOpenEnd::ChatListThenRelease:
+      ShellSelectNavTab(NavTab::Sessions); // the chat is gone (deleted, left): the chat list
+      [[fallthrough]];
+    case TapOpenEnd::Release:
+      if (shell_navigation_.release_tap_cover) {
+        shell_navigation_.release_tap_cover();
+      }
+      return;
+  }
+}
+
+void ChatController::RouteSyncedTap() {
+  if (!messaging_ready_ || !facade_) {
+    return;
+  }
+  auto& tap = PendingNotificationTap::Instance();
+  const auto now = PendingNotificationTap::Clock::now();
+  const std::string hint = tap.FreshHint(now);
+  if (hint.empty()) {
+    return;
+  }
+  const auto thread_id = facade_->ThreadOfInbound(hint);
+  if (thread_id) {
+    DiagLine("notification.tap").Add("what", "lookup_found").Emit();
+  } else {
+    DiagLine("notification.tap").Add("what", "lookup_notfound").Emit();
+  }
+  if (thread_id && tap.TakeHintedRoute(hint, now)) {
+    OpenTappedThread(*thread_id);
+  }
 }
 
 void ChatController::OnSelectThread(std::string thread_id) { // by value: ShellSelectNavTab below rebuilds Home (B161)
@@ -5519,7 +5582,7 @@ void ChatController::WireMessagingBindings() {
   const auto activate = [this](std::string thread_id) {
     DesktopWindowChrome::RaiseAndFocus();
     if (!thread_id.empty()) {
-      OnSelectThread(thread_id);
+      OpenTappedThread(std::move(thread_id));
     }
   };
   ILocalNotifier::Instance().SetActivationHandler(activate);
@@ -5527,29 +5590,15 @@ void ChatController::WireMessagingBindings() {
   // then opens its chat.
   facade_->SetOnInboundMessage([this](std::string id, std::string thread_id) {
     if (PendingNotificationTap::Instance().TakeHintedRoute(id, PendingNotificationTap::Clock::now())) {
-      OnSelectThread(thread_id);
+      OpenTappedThread(std::move(thread_id));
     }
   });
   // A tap that arrived before unlock found no handler; it is still waiting.
-  if (auto pending = PendingNotificationTap::Instance().TakeThread()) {
+  if (auto pending = PendingNotificationTap::Instance().TakeThread(PendingNotificationTap::Clock::now())) {
     activate(std::move(*pending));
   }
   // What the tap names may have synced before it, or before this wiring: look it up.
-  {
-    auto& tap = PendingNotificationTap::Instance();
-    const auto now = PendingNotificationTap::Clock::now();
-    if (const std::string hint = tap.FreshHint(now); !hint.empty()) {
-      const auto thread_id = facade_->ThreadOfInbound(hint);
-      if (thread_id) {
-        DiagLine("notification.tap").Add("what", "lookup_found").Emit();
-      } else {
-        DiagLine("notification.tap").Add("what", "lookup_notfound").Emit();
-      }
-      if (thread_id && tap.TakeHintedRoute(hint, now)) {
-        OnSelectThread(*thread_id);
-      }
-    }
-  }
+  RouteSyncedTap();
   // Relay poll is armed by ConversationsHub::StartCoordinatorTimers (not here). Call-wake UI
   // refresh is wired via ConversationsHub::SetOnCallWake from Application.
   // Push binding is HTTP: off the UI thread, one run at a time (a token change while one runs: once more after it).

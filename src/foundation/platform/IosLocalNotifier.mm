@@ -104,7 +104,7 @@ void DispatchIosNotificationActivation(const std::string& thread_id, const bool 
     return;
   }
   AppRuntime::PostUI([handler = std::move(handler)]() mutable {
-    if (auto pending = PendingNotificationTap::Instance().TakeThread()) {
+    if (auto pending = PendingNotificationTap::Instance().TakeThread(PendingNotificationTap::Clock::now())) {
       handler(std::move(*pending));
     }
   });

@@ -260,6 +260,19 @@ public:
   // from Home first switches to the Chats tab, which rebuilds those containers -- the reference would dangle before
   // SelectThread hashes it (B161: SIGSEGV in PrefsOf's hash lookup, phones only).
   void OnSelectThread(std::string thread_id);
+  /**
+   * A notification tap's chat (a banner's, or the one a message alert's message synced into): opened with nothing
+   * over it (ShellHost::ClearForTappedChat); then the tap's cover goes once the chat is selected. With the tap's cover
+   * armed: messaging not ready yet keeps the cover (bounded by its hold) for the later route; a chat that is gone (or
+   * cannot open) shows the chat list. Without the cover: only the selection, as before (a missing chat does nothing). A
+   * ring or call screen up: only the selection (the call keeps its screen).
+   */
+  void OpenTappedThread(std::string thread_id);
+  /**
+   * A fresh message / call alert tap whose message already synced (before the tap, or before this wiring): its chat
+   * opens now instead of waiting for a sync that already happened. Messaging ready only.
+   */
+  void RouteSyncedTap();
   /** Rebind messaging ports after a full profile data wipe/reinit. */
   void OnProfileDataReset();
   /** Called when messaging becomes ready (app-wired). */
