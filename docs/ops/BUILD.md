@@ -290,7 +290,7 @@ export ANDROID_NDK_HOME=/path/to/android/ndk
 ### Build and install
 
 ```bash
-./scripts/platform/android_build.sh apk          # assembleDebug
+./scripts/platform/android_build.sh apk          # assembleDebug, arm64-v8a only (PP_ANDROID_ABIS=arm64-v8a,x86_64 for more)
 ./scripts/platform/android_build.sh apk-release  # assembleRelease (unsigned; debug keystore)
 ./scripts/platform/android_build.sh install      # installDebug (requires adb device/emulator)
 ```
