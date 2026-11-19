@@ -307,7 +307,7 @@ public:
    * Settings → Send run logs (DEV/PLAN-send-run-logs.md): the New chat page to pick one contact; the pick opens that
    * chat as usual and then runs `after_pick(contact_id)` once. One-shot: dropped on any other way onto the page, on
    * leaving it (back, a tab, a pick), and when the contact picked cannot be messaged (the page then closes). Returns
-   * false when the page could not open (nothing is kept).
+   * false, arming nothing, when the page could not open or a New chat page is already up (its pick must not send).
    */
   bool OpenNewChatPageToPick(std::function<void(const std::string& contact_id)> after_pick);
   /** A pick on the New chat page would run a pending "after pick" action (tests). */

@@ -1519,6 +1519,10 @@ void ContactsController::OpenNewChatPage() {
 }
 
 bool ContactsController::OpenNewChatPageToPick(std::function<void(const std::string& contact_id)> after_pick) {
+  after_pick_ = nullptr;
+  if (new_chat_open_) {
+    return false; // a page already up (or a stale flag) is not ours: an ordinary pick there must send nothing
+  }
   OpenNewChatPage();
   if (!new_chat_open_) {
     return false;

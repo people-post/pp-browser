@@ -171,6 +171,26 @@ TEST_F(NewChatPickActionTest, OpeningThePageTheOrdinaryWayWhileArmedDropsTheActi
   EXPECT_TRUE(sent_to_.empty());
 }
 
+TEST_F(NewChatPickActionTest, ANewChatPageAlreadyOpenIsNotArmedAndAnOrdinaryPickSendsNothing) {
+  tab_ = NavTab::Sessions;
+  controller_.OpenNewChatPage(); // the ordinary page is already up
+  EXPECT_FALSE(controller_.OpenNewChatPageToPick([this](const std::string& id) { sent_to_.push_back(id); }));
+  EXPECT_FALSE(controller_.PickActionPending());
+  EXPECT_EQ(pages_, std::vector<std::string>{"new_chat"}) << "no second page";
+  controller_.OnNewChatPickForTest("c-ann");
+  EXPECT_EQ(opened_, std::vector<std::string>{"c-ann"});
+  EXPECT_TRUE(sent_to_.empty());
+}
+
+TEST_F(NewChatPickActionTest, AStaleOpenFlagIsNotArmedEither) {
+  OpenToPick();
+  pages_.clear(); // the page went away without the shell telling us: the flag is stale
+  EXPECT_FALSE(controller_.OpenNewChatPageToPick([this](const std::string& id) { sent_to_.push_back(id); }));
+  EXPECT_FALSE(controller_.PickActionPending());
+  controller_.OnNewChatPickForTest("c-ann");
+  EXPECT_TRUE(sent_to_.empty());
+}
+
 TEST_F(NewChatPickActionTest, AnOrdinaryUnreachablePickKeepsThePageAsBefore) {
   tab_ = NavTab::Sessions;
   controller_.OpenNewChatPage();
