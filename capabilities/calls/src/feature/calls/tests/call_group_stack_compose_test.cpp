@@ -538,6 +538,7 @@ protected:
         return DirectPairLive(kA, first);
       });
       EXPECT_TRUE(DirectPairLive(kA, first)) << "first accept must be a direct 1:1 (V050):" << Describe(call_id);
+      WaitPastJoinStamp(first, call_id);
     }
     AcceptInvite(second, call_id);
     DrainUntil(
@@ -548,6 +549,22 @@ protected:
         20000);
     EXPECT_TRUE(GroupLive(call_id)) << "group call never went live on the hop:" << Describe(call_id);
     return call_id;
+  }
+
+  /**
+   * The initiator's clock moves past the join stamp it gave `joiner`, so the next accept is stamped later: "joined
+   * first" is then the earlier stamp, not the tie-break (equal stamps go to the lower identity, which is random here).
+   * A fast Mac took both accepts in one millisecond.
+   */
+  void WaitPastJoinStamp(size_t joiner, const std::string& call_id) {
+    auto row = sides_[kA].stack->Sessions()->FindParticipant(call_id, sides_[joiner].local_identity);
+    if (!row || !row->has_value() || !(*row)->joined_at) {
+      return;
+    }
+    const int64_t stamp = *(*row)->joined_at;
+    while (util::NowUnixMs() <= stamp) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
   }
 
   std::optional<CallPlannedHop> PlannedHopSeenBy(size_t i, const std::string& call_id) const {
@@ -721,6 +738,12 @@ TEST_F(CallGroupStackComposeTest, InviteesNeverStampJoinsFromTheirOwnClock) {
 TEST_F(CallGroupStackComposeTest, InitiatorLeaveKeepsTheRestOnTheHop) {
   const std::string call_id = RunGroupCallToHopLive();
   ASSERT_FALSE(call_id.empty());
+  const auto joined_at = [&](size_t i) {
+    auto row = sides_[kA].stack->Sessions()->FindParticipant(call_id, sides_[i].local_identity);
+    return row && row->has_value() ? (*row)->joined_at : std::nullopt;
+  };
+  ASSERT_TRUE(joined_at(kB) && joined_at(kC));
+  ASSERT_LT(*joined_at(kB), *joined_at(kC)) << "B joined first: its stamp, not the identity tie-break, makes it next";
   EXPECT_EQ(OwnerSeenBy(kB, call_id), sides_[kA].local_identity);
 
   sides_[kA].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
