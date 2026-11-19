@@ -61,6 +61,7 @@ TEST_F(LogFileTest, DefaultPathUnderDataDirLogs) {
 TEST_F(LogFileTest, InstalledFilesAreOwnerOnly) {
   const std::string installed = pbr::LogFile::Install(path_);
   ASSERT_EQ(installed, path_);
+  EXPECT_EQ(pbr::LogFile::InstalledPath(), path_) << "Send run logs reads the file the app opened";
   const std::string metrics = pbr::LogFile::InstallMetrics(path_);
   ASSERT_FALSE(metrics.empty());
   const auto owner_only = fs::perms::owner_read | fs::perms::owner_write;

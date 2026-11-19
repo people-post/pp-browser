@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <vector>
@@ -155,6 +156,16 @@ LogRetention LogFile::EffectiveRetention(const bool collect) {
 
 namespace {
 
+std::mutex& InstalledMutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+std::string& InstalledPathSlot() {
+  static std::string path;
+  return path;
+}
+
 // Creates `path` (empty, append mode) and makes it owner-only before anyone writes to it.
 void CreateOwnerOnly(const std::string& path) {
   {
@@ -186,7 +197,16 @@ std::string LogFile::Install(const std::string& path) {
     return {};
   }
   root.addHandler(std::move(handler));
+  {
+    std::lock_guard<std::mutex> lock(InstalledMutex());
+    InstalledPathSlot() = path;
+  }
   return path;
+}
+
+std::string LogFile::InstalledPath() {
+  std::lock_guard<std::mutex> lock(InstalledMutex());
+  return InstalledPathSlot();
 }
 
 std::string LogFile::MetricsPath(const std::string& log_path) {

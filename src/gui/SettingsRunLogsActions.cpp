@@ -46,6 +46,10 @@ std::string SettingsRunLogsActions::DataDir() const {
 }
 
 std::string SettingsRunLogsActions::LogPath() const {
+  // The file the app opened at start (it can sit outside the session's data_dir); else where it would be.
+  if (std::string installed = LogFile::InstalledPath(); !installed.empty()) {
+    return installed;
+  }
   const std::string data_dir = DataDir();
   return data_dir.empty() ? std::string() : LogFile::DefaultPath(data_dir);
 }

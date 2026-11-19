@@ -74,6 +74,12 @@ public:
    */
   static std::string Install(const std::string& path);
 
+  /**
+   * The path the last successful Install opened, or empty (no file log this run). The log opens before config is
+   * read, so it is not always under the session's data_dir (a config override, `--log-file`).
+   */
+  static std::string InstalledPath();
+
   /** `metrics.log` next to the log file at `log_path`. */
   static std::string MetricsPath(const std::string& log_path);
 
