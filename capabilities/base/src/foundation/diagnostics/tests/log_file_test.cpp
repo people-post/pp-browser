@@ -5,6 +5,7 @@
 #include "common/Metrics.h"
 #include "common/PbrCompat.h"
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -60,6 +61,7 @@ TEST_F(LogFileTest, DefaultPathUnderDataDirLogs) {
 TEST_F(LogFileTest, InstalledFilesAreOwnerOnly) {
   const std::string installed = pbr::LogFile::Install(path_);
   ASSERT_EQ(installed, path_);
+  EXPECT_EQ(pbr::LogFile::InstalledPath(), path_) << "Send run logs reads the file the app opened";
   const std::string metrics = pbr::LogFile::InstallMetrics(path_);
   ASSERT_FALSE(metrics.empty());
   const auto owner_only = fs::perms::owner_read | fs::perms::owner_write;
@@ -81,21 +83,38 @@ TEST_F(LogFileTest, RotateShiftsEveryPreviousLaunch) {
   EXPECT_EQ(ReadAll(pbr::LogFile::RotatedPath(path_, 3)), "prev2");
 }
 
-TEST_F(LogFileTest, RotateDeletesFilesOlderThanTheLimit) {
+// Installing only rotates: whatever is on disk stays until the caller knows the retention and prunes
+// (DEV/PLAN-send-run-logs.md: the "Collect run logs" switch is read after the log is installed).
+TEST_F(LogFileTest, RotateAndInstallNeverDelete) {
+  WriteText(path_, "current");
+  for (std::size_t i = 1; i <= 5; ++i) {
+    WriteText(pbr::LogFile::RotatedPath(path_, i), "old");
+    fs::last_write_time(pbr::LogFile::RotatedPath(path_, i),
+                        fs::file_time_type::clock::now() - std::chrono::hours(24 * 30));
+  }
+
+  ASSERT_EQ(pbr::LogFile::Install(path_), path_); // rotates: the old current is .1, the month-old files .2 to .6
+
+  for (std::size_t i = 1; i <= 6; ++i) {
+    EXPECT_TRUE(fs::exists(pbr::LogFile::RotatedPath(path_, i))) << i;
+  }
+}
+
+TEST_F(LogFileTest, PruneDeletesFilesOlderThanTheLimit) {
   WriteText(path_, "current");
   WriteText(pbr::LogFile::RotatedPath(path_, 1), "fresh");
   WriteText(pbr::LogFile::RotatedPath(path_, 2), "stale");
   fs::last_write_time(pbr::LogFile::RotatedPath(path_, 2),
                       fs::file_time_type::clock::now() - std::chrono::hours(24 * 8));
 
-  pbr::LogFile::Rotate(path_);
+  pbr::LogFile::Prune(path_, pbr::LogFile::EffectiveRetention(/*collect=*/true));
 
-  EXPECT_EQ(ReadAll(pbr::LogFile::RotatedPath(path_, 1)), "current");
-  EXPECT_EQ(ReadAll(pbr::LogFile::RotatedPath(path_, 2)), "fresh");
-  EXPECT_FALSE(fs::exists(pbr::LogFile::RotatedPath(path_, 3)));
+  EXPECT_EQ(ReadAll(path_), "current");
+  EXPECT_EQ(ReadAll(pbr::LogFile::RotatedPath(path_, 1)), "fresh");
+  EXPECT_FALSE(fs::exists(pbr::LogFile::RotatedPath(path_, 2)));
 }
 
-TEST_F(LogFileTest, RotateDeletesOldestWhenOverTheSizeCap) {
+TEST_F(LogFileTest, PruneDeletesOldestWhenOverTheSizeCap) {
   pbr::LogRetention retention;
   retention.max_bytes = 10;
   const auto now = fs::file_time_type::clock::now();
@@ -104,11 +123,56 @@ TEST_F(LogFileTest, RotateDeletesOldestWhenOverTheSizeCap) {
   fs::last_write_time(pbr::LogFile::RotatedPath(path_, 1), now - std::chrono::hours(1));
   fs::last_write_time(pbr::LogFile::RotatedPath(path_, 2), now - std::chrono::hours(2));
 
-  pbr::LogFile::Rotate(path_, retention);
+  pbr::LogFile::Prune(path_, retention);
 
-  EXPECT_FALSE(fs::exists(pbr::LogFile::RotatedPath(path_, 1)));
-  EXPECT_EQ(ReadAll(pbr::LogFile::RotatedPath(path_, 2)), "aaaaaa");
-  EXPECT_FALSE(fs::exists(pbr::LogFile::RotatedPath(path_, 3)));
+  EXPECT_EQ(ReadAll(pbr::LogFile::RotatedPath(path_, 1)), "aaaaaa");
+  EXPECT_FALSE(fs::exists(pbr::LogFile::RotatedPath(path_, 2)));
+}
+
+// With the switch off the rule is max_age 0: the running launch (current, already installed) and the one before
+// (.1) stay, even when .1 is weeks old; every older file goes. Each family in the directory is pruned.
+TEST_F(LogFileTest, OffKeepsThisLaunchAndThePreviousOneInEveryFamily) {
+  const auto now = fs::file_time_type::clock::now();
+  for (const std::string& family : {path_, pbr::LogFile::MetricsPath(path_), pbr::LogFile::DiagPath(path_)}) {
+    WriteText(family, "current");
+    for (std::size_t i = 1; i <= 4; ++i) {
+      WriteText(pbr::LogFile::RotatedPath(family, i), "launch " + std::to_string(i));
+      fs::last_write_time(pbr::LogFile::RotatedPath(family, i), now - std::chrono::hours(24 * 20) * i);
+    }
+  }
+
+  pbr::LogFile::PruneAll(path_, pbr::LogFile::EffectiveRetention(/*collect=*/false));
+
+  for (const std::string& family : {path_, pbr::LogFile::MetricsPath(path_), pbr::LogFile::DiagPath(path_)}) {
+    EXPECT_EQ(ReadAll(family), "current") << family;
+    EXPECT_EQ(ReadAll(pbr::LogFile::RotatedPath(family, 1)), "launch 1") << family;
+    for (std::size_t i = 2; i <= 4; ++i) {
+      EXPECT_FALSE(fs::exists(pbr::LogFile::RotatedPath(family, i))) << family << " " << i;
+    }
+  }
+}
+
+TEST(LogRetentionTest, EffectiveRetentionIsSevenDaysOnAndTwoLaunchesOff) {
+  const pbr::LogRetention on = pbr::LogFile::EffectiveRetention(true);
+  EXPECT_EQ(on.max_age, std::chrono::hours(24 * 7));
+  EXPECT_EQ(on.max_bytes, 50ull * 1024 * 1024);
+  const pbr::LogRetention off = pbr::LogFile::EffectiveRetention(false);
+  EXPECT_EQ(off.max_age, std::chrono::hours(0));
+}
+
+TEST_F(LogFileTest, FamilyFilesListsTheCurrentAndRotatedFilesOfOneFamilyOnly) {
+  WriteText(path_, "current");
+  WriteText(pbr::LogFile::RotatedPath(path_, 2), "two");
+  WriteText(pbr::LogFile::MetricsPath(path_), "metrics");
+  WriteText((fs::path(path_).parent_path() / "pp-browser.x.log").string(), "not ours");
+  std::vector<pbr::LogFileInfo> files = pbr::LogFile::FamilyFiles(path_);
+  ASSERT_EQ(files.size(), 2u);
+  std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) { return a.name < b.name; });
+  EXPECT_EQ(files[0].name, pbr::LogFile::RotatedPath(path_, 2));
+  EXPECT_FALSE(files[0].current);
+  EXPECT_EQ(files[1].name, path_);
+  EXPECT_TRUE(files[1].current);
+  EXPECT_EQ(files[1].size, 7u);
 }
 
 TEST(LogRetentionTest, ExpiredFilesUnderLimitsDeletesNothing) {

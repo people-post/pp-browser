@@ -65,7 +65,6 @@ TEST(DeploymentProfileTest, NoOriginYieldsEmptyUrls) {
   EXPECT_TRUE(pbr::BriefLlmBaseUrlFor(origin).empty());
   EXPECT_TRUE(pbr::BriefRelayBaseUrlFor(origin).empty());
   EXPECT_TRUE(pbr::BriefMcpUrlFor(origin).empty());
-  EXPECT_TRUE(pbr::ResolveDiagnosticsUploadUrl(false, nullptr, origin).empty());
 }
 
 TEST(DeploymentProfileTest, ACompiledDefaultOriginIsUsedWithoutTheEnvironment) {
@@ -74,8 +73,6 @@ TEST(DeploymentProfileTest, ACompiledDefaultOriginIsUsedWithoutTheEnvironment) {
   EXPECT_EQ(pbr::BriefLlmBaseUrlFor(origin), "https://prod.example.test/api/llm/v1");
   EXPECT_EQ(pbr::BriefRelayBaseUrlFor(origin), "https://prod.example.test/api/relay");
   EXPECT_EQ(pbr::BriefMcpUrlFor(origin), "https://prod.example.test/mcp");
-  EXPECT_EQ(pbr::ResolveDiagnosticsUploadUrl(false, nullptr, origin),
-            "https://prod.example.test/api/support/diagnostics");
   EXPECT_EQ(pbr::ResolveBriefOrigin(false, "", pbr::BackendEnv::Prod, kProdOnly), "https://prod.example.test")
       << "an empty variable is unset";
 }

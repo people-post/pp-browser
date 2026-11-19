@@ -1598,7 +1598,8 @@ void CallController::LogSubtitleChange(const CallScreen& screen, CallUiBackend& 
     return;
   }
   logged_subtitle_ = sub;
-  log().info << "in-call subtitle=\"" << sub << "\" phase=" << CallPhaseName(backend.Phase())
+  // The line can name the peer ("<name> put you on hold"): its length only, never its words (DEV/PLAN-send-run-logs).
+  log().info << "in-call subtitle_len=" << sub.size() << " phase=" << CallPhaseName(backend.Phase())
              << " status=" << CallMediaStatusName(backend.MediaStatus())
              << " screen=" << CallScreenStatusName(screen.status)
              << " media_live=" << (backend.MediaChromeLive() ? 1 : 0)

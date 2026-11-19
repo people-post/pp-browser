@@ -2,21 +2,29 @@
 
 **Tier:** contract  
 **Decision:** [privacy P009](../../projects/privacy/DECISIONS.md#p009--diagnostics-leave-the-device-as-shareable-lines-only)  
-**Code:** `common/ShareableLine.h` (the rule), `common/Diag.h` / `common/Metrics.h` (the channels), `foundation/diagnostics/DiagnosticsBundle.*` (what is read), `app/DiagnosticsUpload.*` (the send)
+**Code:** `common/ShareableLine.h` (the rule), `common/Diag.h` / `common/Metrics.h` (the channels), `foundation/diagnostics/RunLogBundle.*` (Send logs), `app/CrashReportUpload.*` (crash reports)
 
-A user can send diagnostics to support from Me → Security → Send diagnostics. This page is the whole list of what that sends, and the rule that keeps names, content and raw ids out of it.
+Two things can leave the device, and only by the user's choice: a crash report (Me → Help, its own switch) and, in the test phase, the run logs a user sends from Settings → Advanced → Send logs to a contact they pick ([below](#send-logs-test-phase)). This page is the whole list of what goes, and the rule that keeps names, content and raw ids out of the troubleshooting channels. Me → Help → Send diagnostics was retired on 2026-11-19 (DEV/PLAN-send-run-logs.md).
 
-## What is sent
+## What leaves the device
 
-| Source | File | Written by |
-|--------|------|------------|
-| Troubleshooting events | `{data_dir}/logs/diag.log` (this run) and `diag.1.log` (the previous run) | `DiagLine` — channel `Diag` |
-| Operational metrics | `{data_dir}/logs/metrics.log` (this run) | `MetricsLine` — channel `Metrics` |
-| The last crash, if one is pending | `{data_dir}/diagnostics/crash_pending.txt`, rebuilt as `Crash` lines: reason, frames, breadcrumb tags (never the raw sample) | `CrashEnvelopeLines` |
+| What | When | Code |
+|------|------|------|
+| The last crash, if one is pending: `{data_dir}/diagnostics/crash_pending.txt` as a compact envelope (reason, frames, breadcrumb tags — never the raw sample) | next launch, only with the crash-report switch on | `CrashReportEnvelope`, `CrashReportUpload` |
+| The run logs: `pp-browser`, `metrics` and `diag` files, filtered (below) | only when the user taps Send logs, confirms and picks a contact (test phase) | `RunLogBundle`, `SettingsRunLogsActions` |
 
-Nothing else. The developer log (`pp-browser.log`) is never read for a send: it is free text, and it stays on the device.
+The Help page's crash-report switch is gone (2026-11-19): `CrashReportUpload` and the `crash_reports_enabled` preference stay dormant (nothing sets it) until the relay provides the crash-reports endpoint. Crash records now travel only with Send logs, and only while Settings → Advanced → **Collect crash logs** is on.
 
-Before sending, the bundle keeps only lines of the channels `Diag`, `Metrics` and `Crash` at INFO or above, caps them (30 000 lines, 2 MiB JSON, 2048 bytes a line; at most 4 file entries — the gateway and app-support refuse a fifth; the least wanted file's oldest lines go first — `diag.1.log`, then `metrics.log`, then `diag.log`), and runs `SelfCheck` over exactly what would go: one hit (a long hex run, an id-like token, an email, a home path, one of the user's own or contacts' ids) and nothing is sent.
+Nothing else. The developer log (`pp-browser.log`) never leaves the device unless the user, in the test phase, taps Send logs, confirms what is in it and picks the contact it goes to (below); nothing sends it by itself.
+
+## Send logs (test phase)
+
+A test-phase measure behind one gate, `RunLogsAllowed` (`foundation/platform/DeploymentProfile.h`; false hides both rows and keeps only two launches whatever is stored). Code: `foundation/diagnostics/RunLogBundle.*` (choose, filter, gzip), `feature/settings/RunLogPrefs.*` (the switch, pruning), `gui/SettingsRunLogsActions.*` (the rows and the confirm), `ContactsController::OpenNewChatPageToPick` and `Application` (the pick and the send).
+
+- **Collect run logs** (Settings → Advanced; off by default; `collect_run_logs` in `{data_dir}/machine.json`, one for the device, every profile and backend): on keeps the log directory's files for 7 days / 50 MB per family; off, unreadable or gate closed keeps only this launch and the one before (`LogFile::EffectiveRetention`). Old files are deleted once per launch after the switch was read (an unreadable switch deletes nothing that launch) and at once when it is turned off.
+- **Send logs**: nothing is sent by itself, ever. A tap prepares an archive off the UI thread; a confirm states its real time range (the first record kept) and size, that it holds the account ID, the IDs of people chatted with, server addresses and error messages, that it is designed not to record chat content, and that the contact picked next can read it. The user then picks one contact on the New chat page; the archive goes into that chat as an ordinary file message (`pp-run-logs-<date>.log.gz`, `application/gzip`), in memory only (the send stores it encrypted like any attachment). Under the 4 MiB direct size, it goes peer to peer when the contact is reachable; otherwise the attachment server is tried, as for any file.
+- **What is in it**: the files of the three families (`pp-browser`, `metrics`, `diag`) the same retention keeps (off or unknown: two launches only, whatever else is on disk), newest first within 4 MiB − 16 KiB of gzip (older records are dropped first; a file being written is read to its last complete line), each under a `==== <file> ====` line. With **Collect crash logs** on (`collect_crash_logs` in `{data_dir}/machine.json`, device-wide, default off; separate from the run-log switch) the crash records a `CrashRecordSource` offers are added after the logs, each under `==== <name> (crash record) ====`: today the app's own pending record (`{data_dir}/diagnostics/crash_pending.txt`: signal or reason, version, frame addresses, the last 80 log lines; at most 64 KiB), filtered line by line with the same keys and path scrub (`RunLogBundle::FilterCrashRecord`), counted in the size and dropped last; the confirm names "crash records" only when one is in. With the switch off the archive never holds one, whatever is on disk. The record itself is never deleted. A system-provided source can be added behind the same interface later.
+- **Pre-filter** (`RunLogBundle::FilterRecords`, per record — a record starts with the logger's timestamp and owns the lines after it): a record holding `text=`, `body=`, `content=`, `query=`, `question=`, `prompt=`, `draft=`, `caption=` or `raw=` is dropped whole; the values of `name=`, `display_name=`, `nickname=`, `title=`, `filename=`, `path=`, `subtitle=`, `user=` become `<hidden>` up to the next ` key=` (a quoted value to its closing quote); keys count only at a boundary (`hostname=` is not `name=`); home and iOS / Android container paths become `~`. The run log is free text, so this is a safety net, not a proof: the sentinel tests (`RunLogSentinel*`) check that typed text is not logged in the first place. A new log line that carries a person's words logs a length instead; a key the filter must learn is added here and in the code (the list only grows).
 
 ## The rule: shareable lines
 
@@ -79,38 +87,4 @@ Call events are capped at 8 lines per event and call (`CallDiagBudget`), and a c
 
 Metrics events are listed where they are emitted (`MetricsLine("…")`); they follow the same rule.
 
-## The request
-
-`POST {BriefOrigin()}/api/support/diagnostics` (`DiagnosticsUploadUrl()`; dev-only override `PP_BROWSER_DIAGNOSTICS_URL`), `Content-Type: application/json`, `X-PP-Diagnostics: 1`, `Authorization: Bearer <brief LLM key>` (registered, else guest).
-
-```json
-{
-  "schema_version": 1,
-  "client_token": "<uuid, kept across a retry that got no answer>",
-  "product": "pp-browser",
-  "version": "1.2.3",
-  "os": "macos",
-  "captured_at": 1761642000000,
-  "files": [
-    { "name": "diag.log", "lines": ["[2026-10-28 08:57:32.329] [INFO] [Diag] event=relay.http_failed action=send status=503"] },
-    { "name": "metrics.log", "lines": ["…"] },
-    { "name": "diag.1.log", "lines": ["…"] },
-    { "name": "crash", "lines": ["[…] [INFO] [Crash] reason=SIGSEGV"] }
-  ]
-}
-```
-
-| Answer | Shown as |
-|--------|----------|
-| 2xx `{"upload_id", "lines"}` | Sent; the reference is kept in `diagnostics/last_upload.json` (owner-only) and shown under the button |
-| 429 `{"reason": "quota_key" \| "quota_ip" \| "quota_global"}` | Already sent today / limit reached |
-| 409 | The previous send is still being processed |
-| 401, 404, 503 | Unavailable |
-| 413 | Too large |
-| other (400: a body the server refused) / no answer | Failed / no network (the same `client_token` on retry) |
-
-### The receiving side
-
-The gateway (www, `app/src/r_support_client.ts`) checks the Bearer like the LLM routes, validates the body (the fields above, strict; 1–4 `files`; 30 000 lines, 2048 chars a line, 2.5 MB of line bytes) and forwards it to app-support `POST /v1/diagnostics` with two hashes for the quota: `X-Diag-Key-Hash` (SHA-256 of the Bearer) and `X-Diag-Ip-Hash` (HMAC with a gateway-only secret; IPv6 by /64). Its access log for this path carries no IP, user agent or request id. app-support validates the same body, reserves the daily quotas (3 a key, 10 an IP, a global cap), writes each line to CloudWatch as a `client_diag` record (`upload`, `file`, `version`, `os`, `line`) and keeps only the upload record in Mongo. A change to the body or the file limits is a change on all three.
-
-Changelog: 2026-10-30 — first version (P009). 2026-10-31 — call connection events (`call.*`). 2026-11-07 — `MediaErrWord` gains `dropped` (a connected call's media ended under it, K014). 2026-11-07 — `ai.llm_key` (B183). 2026-11-08 — `control.unreadable` (M024, #555 B186); `control.unverified` (M025, #555). 2026-11-08 — unlock.done gains ms (time since unlock.start). 2026-11-08 — `net.ui_block` (HTTP on the UI thread; the messaging-ready requests moved off it). 2026-11-08 — `unlock.done` `ms` counts from the door's first `unlock.start` (not the last attempt) and times grace unlocks. 2026-11-08 — `call.chip` (#166, the minimised call chip's placement). 2026-11-08 — `call.system` gains `push_stale`, `pending_call_over` and `age_ms` ([push-notifications P017](../../projects/push-notifications/DECISIONS.md#p017--a-call-push-too-old-to-ring-and-a-call-already-over-end-on-callkit-at-once)), and lists `pending_over_call` / `answer_over_call`, emitted since V064. 2026-11-08 — `notification.tap` (P018). 2026-11-09 — `call.system` drops `push_stale` and `age_ms` (they went with CallKit in [P019](../../projects/push-notifications/DECISIONS.md#p019--ios-calls-ring-by-a-time-sensitive-alert-again-pushkit-and-callkit-are-removed)) and `pending_call_over` and `choice_other_call` (Android's call push names no call: the clean-up of the push's named call, P017's Status). 2026-11-16 — `call.system` regains the iPhone push events (`push`, `push_locked`, `push_in_app`, `push_stale`, `timer_armed`, `timer_fired`, `audio_on` / `audio_off`, `ms`, `age_ms`) with CallKit for the default PIN ([P020](../../projects/push-notifications/DECISIONS.md#p020--default-pin-calls-ring-by-voip-push-and-callkit-a-custom-pin-by-alert)); `pending_call_over` and `choice_other_call` stay gone.
+Changelog: 2026-10-30 — first version (P009). 2026-10-31 — call connection events (`call.*`). 2026-11-07 — `MediaErrWord` gains `dropped` (a connected call's media ended under it, K014). 2026-11-07 — `ai.llm_key` (B183). 2026-11-08 — `control.unreadable` (M024, #555 B186); `control.unverified` (M025, #555). 2026-11-08 — unlock.done gains ms (time since unlock.start). 2026-11-08 — `net.ui_block` (HTTP on the UI thread; the messaging-ready requests moved off it). 2026-11-08 — `unlock.done` `ms` counts from the door's first `unlock.start` (not the last attempt) and times grace unlocks. 2026-11-08 — `call.chip` (#166, the minimised call chip's placement). 2026-11-08 — `call.system` gains `push_stale`, `pending_call_over` and `age_ms` ([push-notifications P017](../../projects/push-notifications/DECISIONS.md#p017--a-call-push-too-old-to-ring-and-a-call-already-over-end-on-callkit-at-once)), and lists `pending_over_call` / `answer_over_call`, emitted since V064. 2026-11-08 — `notification.tap` (P018). 2026-11-09 — `call.system` drops `push_stale` and `age_ms` (they went with CallKit in [P019](../../projects/push-notifications/DECISIONS.md#p019--ios-calls-ring-by-a-time-sensitive-alert-again-pushkit-and-callkit-are-removed)) and `pending_call_over` and `choice_other_call` (Android's call push names no call: the clean-up of the push's named call, P017's Status). 2026-11-16 — `call.system` regains the iPhone push events (`push`, `push_locked`, `push_in_app`, `push_stale`, `timer_armed`, `timer_fired`, `audio_on` / `audio_off`, `ms`, `age_ms`) with CallKit for the default PIN ([P020](../../projects/push-notifications/DECISIONS.md#p020--default-pin-calls-ring-by-voip-push-and-callkit-a-custom-pin-by-alert)); `pending_call_over` and `choice_other_call` stay gone. 2026-11-19 — Send logs (test phase) and the device-wide "Collect run logs" switch; Me → Help → Send diagnostics retired. 2026-11-19 — the Send diagnostics upload (its bundle, request and receiving side) is removed with its code.

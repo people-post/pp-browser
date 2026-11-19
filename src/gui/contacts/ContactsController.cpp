@@ -1502,6 +1502,7 @@ void ContactsController::NewChatSearchCallback(ui::DataModelHandle /*model*/, ui
 }
 
 void ContactsController::OpenNewChatPage() {
+  after_pick_ = nullptr; // an ordinary New chat never sends anything after a pick
   if (new_chat_open_ || !shell_navigation_.push_transient) {
     return;
   }
@@ -1517,8 +1518,22 @@ void ContactsController::OpenNewChatPage() {
   shell_navigation_.push_transient(spec);
 }
 
+bool ContactsController::OpenNewChatPageToPick(std::function<void(const std::string& contact_id)> after_pick) {
+  after_pick_ = nullptr;
+  if (new_chat_open_) {
+    return false; // a page already up (or a stale flag) is not ours: an ordinary pick there must send nothing
+  }
+  OpenNewChatPage();
+  if (!new_chat_open_) {
+    return false;
+  }
+  after_pick_ = std::move(after_pick);
+  return true;
+}
+
 void ContactsController::OnNewChatDismissed() {
   new_chat_open_ = false;
+  after_pick_ = nullptr;
 }
 
 void ContactsController::CloseNewChatPage() {
@@ -1613,12 +1628,21 @@ void ContactsController::OnNewChatPick(const std::string& contact_id) {
       ShowToast(selected_.message_hint.c_str()); // the page stays; the person cannot be messaged yet
     }
     selected_ = {};
+    if (after_pick_) {
+      CloseNewChatPage(); // picking for Send run logs: nothing goes to anyone, and the page does not stay half-armed
+    }
     return;
   }
+  // Taken before the page closes (closing clears it): runs once, for this pick only, after the chat is open.
+  std::function<void(const std::string&)> after_pick = std::move(after_pick_);
+  after_pick_ = nullptr;
   CloseNewChatPage();
   OnStartChat();
   selected_ = {};
   DirtyAll();
+  if (after_pick) {
+    after_pick(contact_id);
+  }
 }
 
 void ContactsController::OnNewChatSwipeAction(const std::string& contact_id, const std::string& action) {
@@ -2049,13 +2073,25 @@ void ContactsController::OnInviteCardAsked() {
   NotifySurfaceChanged();
 }
 
+namespace {
+
+// A lookup's error can quote the words searched for (a server's echo): its kind and code only (DEV/PLAN-send-run-logs).
+std::string LookupFailureForLog(Error err) {
+  const size_t detail_len = err.message.size();
+  err.message.clear();
+  err.user.clear();
+  return AppError::Log(err) + " detail_len=" + std::to_string(detail_len);
+}
+
+} // namespace
+
 void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits) {
   if (!hits) {
     // Not-found never arrives as an error: SearchDirectoryPeople turns it into an empty hit list.
     if (ClassifyPeopleLookupError(hits.error()) == PeopleLookupFailure::DirectoryUnreachable) {
       UserFeedback::Fail(Tr("contacts.err.directory_unreachable"));
     } else {
-      log().warning << "People lookup failed: " << AppError::Log(hits.error());
+      log().warning << "People lookup failed: " << LookupFailureForLog(hits.error());
       UserFeedback::Fail(Tr("contacts.err.add"));
     }
     return;
@@ -2955,7 +2991,7 @@ void ContactsController::OnAddSearched(const std::string& /*query*/, const uint6
     if (ClassifyPeopleLookupError(hits.error()) == PeopleLookupFailure::DirectoryUnreachable) {
       UserFeedback::Fail(Tr("contacts.err.directory_unreachable"));
     } else {
-      log().warning << "People lookup failed: " << AppError::Log(hits.error());
+      log().warning << "People lookup failed: " << LookupFailureForLog(hits.error());
       UserFeedback::Fail(Tr("contacts.err.add"));
     }
     DirtyAddContact();

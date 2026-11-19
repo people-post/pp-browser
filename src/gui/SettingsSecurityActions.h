@@ -37,8 +37,6 @@ public:
 
   /** Its fields and events in the settings model. */
   void Bind(ui::DataModelConstructor& ctor);
-  /** The Send diagnostics button's label and the last-sent line, read again (on opening the section). */
-  void RefreshDiagnostics();
   /** The recovery phrase is on screen now (shown, not yet hidden). */
   bool RecoveryPhraseShown() const { return !recovery_phrase_.empty(); }
   /**
@@ -85,9 +83,6 @@ private:
   void PerformResetProfile();
   void ResetChats();
   void PerformResetChats();
-  void SendDiagnostics();
-  void CopyDiagnosticsId();
-  void OpenDiagnosticsHelp();
   /** Runs `then` once the vault is open (asks for the PIN when it is not); reports why not otherwise. */
   void EnsureUnlocked(const std::string& not_ready_message, std::function<void()> then);
 
@@ -113,13 +108,7 @@ private:
   ui::String move_lead_label_;
   ui::String move_valid_label_;
 
-  bool diagnostics_sending_ = false;
-  /** Hidden in the UI demo app (it uploads nothing). */
-  bool show_diagnostics_send_ = true;
   bool show_change_pin_ = true;
-  ui::String diagnostics_send_label_;
-  ui::String diagnostics_last_id_;
-  ui::String diagnostics_last_label_;
 };
 
 } // namespace pbr

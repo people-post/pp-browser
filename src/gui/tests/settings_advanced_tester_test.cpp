@@ -301,6 +301,14 @@ TEST_F(SettingsAdvancedTesterTest, QaIsOfferedOnlyWhileTheTesterOptionsAreOnAndW
   EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "custom"}));
 }
 
+// Only the word changes: the stored value stays "qa" (the ids above), the row is offered where it was.
+TEST_F(SettingsAdvancedTesterTest, TheQaChoiceIsCalledStaging) {
+  EXPECT_EQ(Tr("settings.network.backend.qa"), "Staging");
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("settings.network.backend.qa"), "预发布");
+  LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
 TEST_F(SettingsAdvancedTesterTest, WithoutAQaAddressInTheBuildQaIsNeverOffered) {
   host().UiState().backend_qa_available = false;
   host().PushToView(false);

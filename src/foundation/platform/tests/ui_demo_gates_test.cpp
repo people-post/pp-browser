@@ -23,19 +23,6 @@ TEST(UiDemoGatesTest, NormalOriginStillPrefersTheEnvironmentAndDropsTrailingSlas
   EXPECT_EQ(ResolveBriefOrigin(false, nullptr, BackendEnv::Qa, compiled), "https://qa.example.test");
 }
 
-TEST(UiDemoGatesTest, DemoDiagnosticsUrlIsEmptyEvenWithTheOverrideAndAnOrigin) {
-  EXPECT_EQ(ResolveDiagnosticsUploadUrl(true, "http://127.0.0.1:9/diag", "https://backend.example.test"), "");
-  EXPECT_EQ(ResolveDiagnosticsUploadUrl(true, nullptr, "https://backend.example.test"), "");
-}
-
-TEST(UiDemoGatesTest, NormalDiagnosticsUrlIsUnchanged) {
-  EXPECT_EQ(ResolveDiagnosticsUploadUrl(false, "http://127.0.0.1:9/diag", "https://backend.example.test"),
-            "http://127.0.0.1:9/diag");
-  EXPECT_EQ(ResolveDiagnosticsUploadUrl(false, nullptr, "https://backend.example.test"),
-            "https://backend.example.test/api/support/diagnostics");
-  EXPECT_EQ(ResolveDiagnosticsUploadUrl(false, "", ""), "");
-}
-
 TEST(UiDemoGatesTest, DemoIgnoresTheStreamUrlOverrideAndNormalKeepsIt) {
   EXPECT_EQ(ResolveBriefStreamUrlOverride(true, "http://127.0.0.1:9/stream"), "");
   EXPECT_EQ(ResolveBriefStreamUrlOverride(false, "http://127.0.0.1:9/stream"), "http://127.0.0.1:9/stream");

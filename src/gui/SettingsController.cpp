@@ -519,6 +519,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.tool_permissions_has_saved = ui_state_.tool_permissions_has_saved;
   bindings_.app_name = ui_state_.app_name.c_str();
   bindings_.app_version = ui_state_.app_version.c_str();
+  bindings_.app_build = ui_state_.app_build.c_str();
 
   bindings_.mcp_servers.clear();
   bindings_.mcp_servers.reserve(ui_state_.mcp_servers.size());
@@ -757,10 +758,12 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("tool_permissions_has_saved", &controller.bindings_.tool_permissions_has_saved);
     ctor.Bind("app_name", &controller.bindings_.app_name);
     ctor.Bind("app_version", &controller.bindings_.app_version);
+    ctor.Bind("app_build", &controller.bindings_.app_build);
     ctor.Bind("support_visible", &controller.bindings_.support_visible);
     ctor.Bind("support_display_name", &controller.bindings_.support_display_name);
     ctor.Bind("support_subtitle", &controller.bindings_.support_subtitle);
     security_actions_.Bind(ctor);
+    run_logs_actions_.Bind(ctor);
     own_devices_.Bind(ctor);
     my_relays_.Bind(ctor);
     storage_manager_.Bind(ctor);
@@ -1025,6 +1028,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "tool_permissions_has_saved");
   host.Dirty("settings", "app_name");
   host.Dirty("settings", "app_version");
+  host.Dirty("settings", "app_build");
   host.Dirty("settings", "support_visible");
   host.Dirty("settings", "support_display_name");
   host.Dirty("settings", "support_subtitle");
@@ -1462,9 +1466,9 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
 
   status_ = "";
   const SettingsPage* opened = FindSettingsPage(section_id);
-  // Send problem logs is on the Help page: it reads its label again.
-  if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshDiagnostics)) {
-    security_actions_.RefreshDiagnostics();
+  // Collect / Send run logs are on the Advanced page: the switch and the row read again.
+  if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshRunLogs)) {
+    run_logs_actions_.Refresh();
   }
   if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshBlockedCount)) {
     RefreshBlockedCount();

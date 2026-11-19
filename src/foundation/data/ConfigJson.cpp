@@ -782,6 +782,8 @@ Object MachinePrefsToObject(const MachinePreferences& prefs) {
   object.set("window", WindowPrefsToObject(prefs.window));
   object.set("safe_area", SafeAreaToObject(prefs.safe_area));
   object.set("display", DisplayPrefsToObject(prefs.display));
+  object.set("collect_run_logs", prefs.collect_run_logs);
+  object.set("collect_crash_logs", prefs.collect_crash_logs);
   return object;
 }
 
@@ -800,6 +802,12 @@ void MachinePrefsFromObject(const Object& object, MachinePreferences& prefs) {
   }
   if (const Object* display = object.getObject("display")) {
     DisplayPrefsFromObject(*display, prefs.display);
+  }
+  if (auto collect = object.getIf<bool>("collect_run_logs")) {
+    prefs.collect_run_logs = *collect;
+  }
+  if (auto collect = object.getIf<bool>("collect_crash_logs")) {
+    prefs.collect_crash_logs = *collect;
   }
 }
 

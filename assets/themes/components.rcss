@@ -14155,7 +14155,7 @@ textarea:composing ~ .prompt-composer-label,
   display: none;
 }
 
-/* A small tinted pill at the right end of a row ("Send" under Send diagnostics): the button is a 44dp tap area, the pill
+/* A small tinted pill at the right end of a row ("Send" of Send run logs): the button is a 44dp tap area, the pill
    inside it 32dp tall. It greys out while the action runs. */
 .shell-layer-compact .settings-pill-btn {
   flex-shrink: 0;

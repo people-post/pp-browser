@@ -7,7 +7,6 @@
 #include "foundation/platform/IncomingLink.h"
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
-#include "app/DiagnosticsUpload.h"
 #include "feature/product/DemoDataSeeder.h"
 #include "feature/product/HubSettingsProjection.h"
 #include "foundation/data/LlmPreset.h"
@@ -1365,61 +1364,34 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   if (chat_) {
     chat_->BindEnsureSupport(ensure_support_thread); // the sheet's PP 客服 mode (a settings "?")
   }
-  settings_commands.send_diagnostics = [this, &facade](std::function<void(DiagnosticsUploadResult)> on_done) {
-    DiagnosticsUploadDeps deps;
-    deps.data_dir = store_.Snapshot().data_dir;
-    // The bundle's self-check refuses to send when any of these appears in it (a line that got past the shareable rule).
-    if (auto identity = facade.GetIdentity()) {
-      deps.known_identifiers = {identity->account_id, identity->peer_id};
+  // Settings → Send run logs (DEV/PLAN-send-run-logs.md): the user picks one contact on the New chat page, the chat
+  // opens, and the archive goes there as an ordinary file message. No pick, nothing sent.
+  settings_commands.send_run_logs = [this, &facade](OutgoingAttachment archive) {
+    auto held = std::make_shared<OutgoingAttachment>(std::move(archive));
+    const bool opened =
+        contacts_ && contacts_->OpenNewChatPageToPick([this, &facade, held](const std::string& contact_id) {
+          auto thread = facade.FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
+          if (!thread) {
+            UserFeedback::FailFrom(thread.error());
+            return;
+          }
+          const std::string thread_id = thread->id;
+          facade.SendAttachmentAsync(thread_id, std::move(*held), [this, thread_id](Roe<ThreadMessage> sent) {
+            AppRuntime::PostUI([this, thread_id, sent = std::move(sent)]() {
+              if (chat_) {
+                chat_->RefreshAfterOutsideSend(thread_id);
+              }
+              if (sent) {
+                UserFeedback::Ok(Tr("settings.run_logs.sent"));
+              } else {
+                UserFeedback::FailFrom(sent.error());
+              }
+            });
+          });
+        });
+    if (!opened) {
+      UserFeedback::Fail(Tr("settings.run_logs.unavailable"));
     }
-    // The self-check strips a leading scheme itself; the bare ids are passed too so either form is caught.
-    auto add_bare = [&deps](const std::string& id) {
-      for (const char* scheme : {"account:", "peer:", "call:"}) {
-        const std::string prefix = scheme;
-        if (id.compare(0, prefix.size(), prefix) == 0 && id.size() > prefix.size()) {
-          deps.known_identifiers.push_back(id.substr(prefix.size()));
-          return;
-        }
-      }
-    };
-    for (const std::string& id : std::vector<std::string>(deps.known_identifiers)) {
-      add_bare(id);
-    }
-    if (auto contacts = Conversations().Contacts().List()) {
-      for (const Contact& contact : *contacts) {
-        for (const auto& id : contact.ids) {
-          deps.known_identifiers.push_back(id.value);
-          add_bare(id.value);
-        }
-      }
-    }
-    // The AI stream's key: registered, else guest, else mint a guest key now (same helpers as the chat).
-    deps.bearer = [&facade]() -> Roe<std::string> {
-      auto identity = facade.GetIdentity();
-      if (!identity) {
-        return Error("Messaging is not ready");
-      }
-      std::string key =
-          ResolveBriefLlmApiKey(identity->brief_llm_api_key.Reveal(), identity->brief_llm_guest_api_key.Reveal());
-      if (!key.empty()) {
-        return key;
-      }
-      if (identity->account_id.empty()) {
-        return Error("Messaging is not ready"); // no account to mint for: nothing minted, nothing written
-      }
-      auto minted = MintBriefGuestLlmKey(BriefLlmBaseUrl());
-      if (!minted) {
-        return minted.error();
-      }
-      // Off the UI thread: one modify of the guest key field only, into the account it was minted for, keeping a key
-      // stored meanwhile (that one is the Bearer then).
-      return StoreBriefGuestKeyIfNone(MakeBriefLlmKeyStore(facade), minted->llm_api_key, identity->account_id);
-    };
-    SendDiagnostics(std::move(deps), std::move(on_done));
-  };
-  settings_commands.last_diagnostics_id = [this]() -> std::string {
-    const auto last = ReadLastUpload(store_.Snapshot().data_dir);
-    return last ? last->upload_id : std::string();
   };
   settings_commands.storage = MakeStorageManagerPorts(facade, [this]() { return store_.Snapshot().profile_data_dir; });
   // Copy ports before BindCommands moves the command bag.

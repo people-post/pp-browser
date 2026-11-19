@@ -10,11 +10,11 @@ enum class SettingsPageAction : unsigned {
   None = 0,
   RefreshBlockedCount = 1u << 0,
   RefreshBannerTip = 1u << 1,
-  RefreshDiagnostics = 1u << 2,
   EnterStorage = 1u << 3,
   RefreshDevices = 1u << 4,
   RefreshCasLibrary = 1u << 5,
   RefreshRelays = 1u << 6,
+  RefreshRunLogs = 1u << 7,
 };
 
 /** Which switch lists a page on Home: none, "show advanced settings" (Me → Help), or the tester switch (five taps on the version). */

@@ -25,7 +25,8 @@ docs/contracts/                      @yhw1630 @gzdemon77
 capabilities/base/src/common/ShareableLine.*           @yhw1630 @gzdemon77
 capabilities/base/src/common/Secret.h                  @yhw1630 @gzdemon77
 capabilities/base/src/foundation/diagnostics/Diagnostics*  @yhw1630 @gzdemon77
-src/app/DiagnosticsUpload.*          @yhw1630 @gzdemon77
+capabilities/base/src/foundation/diagnostics/RunLogBundle*  @yhw1630 @gzdemon77
+src/feature/settings/RunLogPrefs*                      @yhw1630 @gzdemon77
 
 # Identity, crypto, registration, local backup: both.
 capabilities/base/src/foundation/crypto/               @yhw1630 @gzdemon77
@@ -40,6 +41,9 @@ src/feature/ai/                      @gzdemon77
 src/gui/                             @gzdemon77
 src/foundation/platform/             @gzdemon77
 assets/                              @gzdemon77
+
+# Send run logs UI: under src/gui/ above, but it is the diagnostics path too, so both (the last matching line wins).
+src/gui/SettingsRunLogsActions*      @yhw1630 @gzdemon77
 
 # What the app expects from the relay (pp-relay-apis, Leo's): its side reviews it too (AGENTS.md § Conventions).
 docs/contracts/SERVICE_ENDPOINTS.md  @yhw1630 @gzdemon77 @leofreiheit

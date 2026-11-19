@@ -34,6 +34,17 @@ struct MachinePreferences {
   WindowPrefs window;
   SafeAreaInsets safe_area;
   DisplayPrefs display;
+  /**
+   * Settings → Advanced → "Collect run logs" (DEV/PLAN-send-run-logs.md): on keeps 7 days / 50 MB of logs, off only
+   * this launch's and the one before. Device-wide like the log directory (every profile and backend shares it),
+   * hence here and not in a profile's preferences. Optional on disk (absent = off); the schema version stays.
+   */
+  bool collect_run_logs = false;
+  /**
+   * Settings → Advanced → "Collect crash logs": when on, Send run logs also carries the crash records. Device-wide,
+   * optional on disk (absent = off). Not the old per-profile `crash_reports_enabled` (its upload stays dormant).
+   */
+  bool collect_crash_logs = false;
 };
 
 struct ProfilePreferences {

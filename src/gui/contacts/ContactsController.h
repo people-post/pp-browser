@@ -303,6 +303,17 @@ public:
 
   /** Phone Chats "plus": pushes the full-screen New chat page (new group / add contact / contacts by letter). */
   void OpenNewChatPage();
+  /**
+   * Settings → Send run logs (DEV/PLAN-send-run-logs.md): the New chat page to pick one contact; the pick opens that
+   * chat as usual and then runs `after_pick(contact_id)` once. One-shot: dropped on any other way onto the page, on
+   * leaving it (back, a tab, a pick), and when the contact picked cannot be messaged (the page then closes). Returns
+   * false, arming nothing, when the page could not open or a New chat page is already up (its pick must not send).
+   */
+  bool OpenNewChatPageToPick(std::function<void(const std::string& contact_id)> after_pick);
+  /** A pick on the New chat page would run a pending "after pick" action (tests). */
+  bool PickActionPending() const { return static_cast<bool>(after_pick_); }
+  /** A row tapped on the New chat page (the view's new_chat_pick; tests). */
+  void OnNewChatPickForTest(const std::string& contact_id) { OnNewChatPick(contact_id); }
   /** Opens (or starts) the chat with a contact, as a pick on the New chat page does (Home's Favorites). */
   void MessageContact(const std::string& contact_id);
   /**
@@ -533,6 +544,8 @@ private:
   bool new_chat_has_contacts_ = false;
   ui::String new_chat_query_;
   bool new_chat_open_ = false;
+  /** OpenNewChatPageToPick's action: set only while that page is up, cleared before it runs. */
+  std::function<void(const std::string& contact_id)> after_pick_;
   /** The Add contact page is a full-screen transient (phones), not a page sheet layer. */
   bool add_is_transient_ = false;
   /** Blocked people, by name (OpenBlockedPeople). */

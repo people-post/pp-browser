@@ -153,6 +153,7 @@ struct SettingsUiState {
   bool tool_permissions_has_saved = false;
   std::string app_name;
   std::string app_version;
+  std::string app_build; // BuildLabel(): "tag · commit", or the commit alone
 };
 
 struct SettingsSectionListItem {
