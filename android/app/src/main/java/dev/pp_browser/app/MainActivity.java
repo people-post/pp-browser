@@ -347,16 +347,8 @@ public class MainActivity extends SDLActivity {
                 Log.w(TAG, "openFile: no share folder");
                 return false;
             }
-            // Old folders go by their own age (set when their link was made; a link's mtime is the source's inode).
             final long now = System.currentTimeMillis();
-            final File[] old = dir.listFiles();
-            if (old != null) {
-                for (File f : old) {
-                    if (now - f.lastModified() > OPEN_KEEP_MS) {
-                        deleteTree(f);
-                    }
-                }
-            }
+            sweepOldOpenFolders(dir, now);
             final File folder = new File(dir, contentFolderName(source));
             if (!folder.isDirectory() && !folder.mkdirs()) {
                 Log.w(TAG, "openFile: no share folder");
@@ -394,11 +386,27 @@ public class MainActivity extends SDLActivity {
     }
 
     /**
+     * Open folders go by their own age (set when their link was made; a link's mtime is the source's inode): one older
+     * than OPEN_KEEP_MS is gone at the next open or share (the viewer it was for has read it by then).
+     */
+    private static void sweepOldOpenFolders(final File dir, final long now) {
+        final File[] old = dir.listFiles();
+        if (old != null) {
+            for (File f : old) {
+                if (now - f.lastModified() > OPEN_KEEP_MS) {
+                    deleteTree(f);
+                }
+            }
+        }
+    }
+
+    /**
      * Called from native (PlatformShareFile_Android.cpp): hands a downloaded attachment to the system share sheet
      * (ACTION_SEND; saving it is one of the choices). Same rules and link as openFile: only an attachment view under
      * {@code <filesDir>/pp-browser/.../blobs_view/}, linked (else copied) into {@code <cacheDir>/open/<hash prefix>/}
-     * and sent as a FileProvider address with read permission. Nothing is deleted here: the link goes with the open
-     * links (clearOpenLinks, openFile's OPEN_KEEP_MS sweep). {@code mime} may be empty (then the name's type).
+     * and sent as a FileProvider address with read permission. Old open folders are swept as openFile does
+     * (sweepOldOpenFolders, OPEN_KEEP_MS); this link goes with them (and clearOpenLinks). {@code mime} may be empty
+     * (then the name's type).
      */
     public static boolean shareFile(final String path, final String mime) {
         final SDLActivity activity = mSingleton;
@@ -413,7 +421,14 @@ public class MainActivity extends SDLActivity {
                 Log.w(TAG, "shareFile: refused, not an attachment view");
                 return false;
             }
-            final File folder = new File(new File(activity.getCacheDir(), OPEN_DIR), contentFolderName(source));
+            final File dir = new File(activity.getCacheDir(), OPEN_DIR);
+            if (!dir.isDirectory() && !dir.mkdirs()) {
+                Log.w(TAG, "shareFile: no share folder");
+                return false;
+            }
+            final long now = System.currentTimeMillis();
+            sweepOldOpenFolders(dir, now);  // the same sweep openFile makes, at the same point
+            final File folder = new File(dir, contentFolderName(source));
             if (!folder.isDirectory() && !folder.mkdirs()) {
                 Log.w(TAG, "shareFile: no share folder");
                 return false;
@@ -426,7 +441,7 @@ public class MainActivity extends SDLActivity {
                     java.nio.file.Files.copy(source.toPath(), shared.toPath());
                 }
             }
-            folder.setLastModified(System.currentTimeMillis());  // the folder's own age, as openFile sets it
+            folder.setLastModified(now);  // the folder's own age, as openFile sets it
             final Uri uri;
             try {
                 uri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".capture", shared);
