@@ -3,6 +3,7 @@
 #include "common/chat/MessagingLimits.h"
 #include "common/runtime/AppRuntime.h"
 #include "feature/settings/RunLogPrefs.h"
+#include "foundation/diagnostics/CrashDump.h"
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/diagnostics/RunLogBundle.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -113,7 +114,8 @@ void SettingsRunLogsActions::Send() {
     // Packaging follows the same retention as pruning: unknown = off = this launch and the one before only.
     const bool collect = RunLogPrefs::ReadCollect(data_dir, true).value_or(false);
     Roe<RunLogArchive> archive =
-        RunLogBundle::Build(log_path, LogFile::EffectiveRetention(collect), kRunLogArchiveMaxBytes, std::time(nullptr));
+        RunLogBundle::Build(log_path, LogFile::EffectiveRetention(collect), kRunLogArchiveMaxBytes, std::time(nullptr),
+                            CrashDump::PendingPath(data_dir)); // the last crash, if one is pending, goes along
     AppRuntime::PostUI([this, alive, collect, archive = std::move(archive)]() mutable {
       if (alive.lock()) {
         preparing_ = false;
@@ -144,7 +146,9 @@ void SettingsRunLogsActions::OnPrepared(Roe<RunLogArchive> archive, const bool c
                {{"from", archive->first_time}, {"size", size}});
   }
   const std::string message =
-      range + " " + Tr("settings.run_logs.confirm_contents") + " " + Tr("settings.run_logs.confirm_recipient");
+      range + " " +
+      Tr(archive->crash_included ? "settings.run_logs.confirm_contents_crash" : "settings.run_logs.confirm_contents") +
+      " " + Tr("settings.run_logs.confirm_recipient");
   auto ready = std::make_shared<RunLogArchive>(std::move(*archive));
   std::weak_ptr<bool> alive = alive_;
   feedback_.show_confirm(

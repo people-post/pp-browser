@@ -361,6 +361,66 @@ TEST_F(RunLogDirTest, AShrinkingArchiveKeepsTheNewestRecordsAndStartsAtAWholeRec
   EXPECT_NE(text.find("last"), std::string::npos);
 }
 
+// --- the record of the last crash -----------------------------------------------------------------------------------
+
+TEST(RunLogCrashFilterTest, EveryLineIsFilteredOnItsOwnAndTheRestStays) {
+  const std::string dump =
+      "pp-browser crash dump\nproduct=pp\nversion=1.2\nos=ios\nreason=signal 11\nimage_base=0x1000\n"
+      "backtrace_frames=2\n0x1010\n0x1020\n--- breadcrumbs ---\n"
+      "[I] Chat: sent text=my secret words\n[I] Net: relay ok status=200\n[W] Contacts: saved name=Mary Ann err=0\n"
+      "[E] App: dir /Users/kenneth/Library/x\n";
+  EXPECT_EQ(RunLogBundle::FilterCrashRecord(dump),
+            "pp-browser crash dump\nproduct=pp\nversion=1.2\nos=ios\nreason=signal 11\nimage_base=0x1000\n"
+            "backtrace_frames=2\n0x1010\n0x1020\n--- breadcrumbs ---\n"
+            "[I] Net: relay ok status=200\n[W] Contacts: saved name=<hidden> err=0\n[E] App: dir ~/Library/x\n");
+  EXPECT_EQ(RunLogBundle::FilterCrashRecord(""), "");
+}
+
+TEST_F(RunLogDirTest, ThePendingCrashRecordGoesLastFilteredAndCountedInTheSize) {
+  const std::string crash_path = (dir_ / "diagnostics" / "crash_pending.txt").string();
+  fs::create_directories(dir_ / "diagnostics");
+  Write(crash_path,
+        "pp-browser crash dump\nreason=signal 11\n--- breadcrumbs ---\n[I] Chat: sent text=words\n[I] Net: ok\n");
+  Write(log_path_, Rec("this launch"));
+  auto archive = RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 4 * 1024 * 1024, 0, crash_path);
+  ASSERT_TRUE(archive) << archive.error().message;
+  EXPECT_TRUE(archive->crash_included);
+  EXPECT_EQ(Gunzip(archive->bytes), "==== pp-browser.log ====\n" + Rec("this launch") +
+                                        "==== crash_pending.txt (the last crash) ====\n"
+                                        "pp-browser crash dump\nreason=signal 11\n--- breadcrumbs ---\n[I] Net: ok\n");
+  EXPECT_EQ(fs::file_size(crash_path) > 0, true) << "the record itself is left where it is";
+}
+
+TEST_F(RunLogDirTest, NoCrashRecordMeansNoCrashSectionAndNoFlag) {
+  Write(log_path_, Rec("this launch"));
+  for (const std::string& path : {std::string(), (dir_ / "diagnostics" / "crash_pending.txt").string()}) {
+    auto archive = RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 1024 * 1024, 0, path);
+    ASSERT_TRUE(archive) << archive.error().message;
+    EXPECT_FALSE(archive->crash_included);
+    EXPECT_EQ(Gunzip(archive->bytes), "==== pp-browser.log ====\n" + Rec("this launch"));
+  }
+}
+
+TEST_F(RunLogDirTest, TheCrashRecordSurvivesTheSizeCut) {
+  std::mt19937 random(5);
+  std::string noise;
+  while (noise.size() < 300 * 1024) {
+    std::string line = kHead;
+    for (int i = 0; i < 64; ++i) {
+      line += static_cast<char>('!' + random() % 90);
+    }
+    noise += line + "\n";
+  }
+  Write(log_path_, noise);
+  const std::string crash_path = (dir_ / "crash_pending.txt").string();
+  Write(crash_path, "pp-browser crash dump\nreason=signal 6\n");
+  auto archive = RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 20 * 1024, 0, crash_path);
+  ASSERT_TRUE(archive) << archive.error().message;
+  EXPECT_LE(archive->bytes.size(), 20u * 1024);
+  EXPECT_TRUE(archive->crash_included);
+  EXPECT_NE(Gunzip(archive->bytes).find("reason=signal 6"), std::string::npos);
+}
+
 TEST_F(RunLogDirTest, NoLogFilesIsAnError) {
   EXPECT_FALSE(RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 1024 * 1024, 0));
 }

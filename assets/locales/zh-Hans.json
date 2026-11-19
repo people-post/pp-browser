@@ -520,6 +520,7 @@
     "settings.run_logs.confirm_size_on": "运行日志，约 {size}。",
     "settings.run_logs.confirm_size_off": "收集未打开，只包含这一次和上一次启动的记录，约 {size}。",
     "settings.run_logs.confirm_contents": "里面有：你的账号编号、你聊过的人的编号、服务器地址、出错信息。设计上不记录聊天内容。",
+    "settings.run_logs.confirm_contents_crash": "里面有：你的账号编号、你聊过的人的编号、服务器地址、出错信息、上次闪退的记录。设计上不记录聊天内容。",
     "settings.run_logs.confirm_recipient": "这个文件会发到你接下来选的联系人，他能看到里面的内容。",
     "settings.run_logs.pick": "选择联系人",
     "settings.run_logs.sent": "运行日志已发出",

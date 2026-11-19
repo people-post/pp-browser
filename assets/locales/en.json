@@ -524,6 +524,7 @@
     "settings.run_logs.confirm_size_on": "Run logs, about {size}.",
     "settings.run_logs.confirm_size_off": "Collecting is off: only this launch and the one before, about {size}.",
     "settings.run_logs.confirm_contents": "It holds your account ID, the IDs of people you have chatted with, server addresses and error messages. It is designed not to record chat content.",
+    "settings.run_logs.confirm_contents_crash": "It holds your account ID, the IDs of people you have chatted with, server addresses, error messages and the record of the last crash. It is designed not to record chat content.",
     "settings.run_logs.confirm_recipient": "The file goes to the contact you choose next, who can read what is in it.",
     "settings.run_logs.pick": "Choose contact",
     "settings.run_logs.sent": "Run logs sent",

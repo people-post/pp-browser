@@ -32,7 +32,8 @@ struct RunLogArchive {
   std::vector<uint8_t> bytes;
   /** The first record's local time, `MM-DD HH:MM` ("from … to now"); empty when no record survived. */
   std::string first_time;
-  bool truncated = false; ///< older records did not fit
+  bool truncated = false;      ///< older records did not fit
+  bool crash_included = false; ///< the record of the last crash (CrashDump's crash_pending.txt) is in the archive
 };
 
 /**
@@ -70,6 +71,13 @@ public:
    */
   static std::string FilterRecords(std::string_view text);
 
+  /**
+   * Pure. The pending crash record (CrashDump: signal or reason, version, frames, the last log lines) with the same
+   * filter as the logs, line by line (the record's lines are not log records): a line with a drop key goes, mask keys
+   * and home paths are scrubbed. Empty when nothing is left.
+   */
+  static std::string FilterCrashRecord(std::string_view text);
+
   /** RFC 1952 gzip of `data`. */
   static Roe<std::vector<uint8_t>> Gzip(std::string_view data);
 
@@ -85,10 +93,12 @@ public:
    * file) and filters it once, joins them oldest first under `==== <file name> ====` lines and gzips the result.
    * While the archive is over `max_bytes`, the oldest records are dropped (whole files first, then the head of the
    * next, at a record start), by about how far over it was plus a 10% margin, and it is gzipped again, up to 12
-   * times; the newest records stay. Fails when nothing fits. `now` names the file (local date).
+   * times; the newest records stay. A non-empty `crash_path` (the pending crash record, read once, at most 64 KiB)
+   * goes last under its own header, filtered by FilterCrashRecord and counted in the size; it is the last to be
+   * dropped. Fails when nothing fits. `now` names the file (local date).
    */
   static Roe<RunLogArchive> Build(const std::string& log_path, const LogRetention& retention, std::uintmax_t max_bytes,
-                                  std::time_t now);
+                                  std::time_t now, const std::string& crash_path = {});
 };
 
 } // namespace pbr

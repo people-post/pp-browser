@@ -331,6 +331,28 @@ TEST_F(SettingsRunLogsTest, OpeningThePageAgainWhileTheArchiveIsBeingMadeStaysGr
   EXPECT_EQ(confirms.size(), 1u);
 }
 
+TEST_F(SettingsRunLogsTest, APendingCrashRecordIsInTheArchiveAndTheConfirmListsIt) {
+  Click(Switch());
+  PreviousLaunches(1);
+  Click(Pill());
+  Settle();
+  ASSERT_EQ(confirms.size(), 1u);
+  EXPECT_NE(confirms[0].message.find(Tr("settings.run_logs.confirm_contents")), std::string::npos);
+  EXPECT_EQ(confirms[0].message.find("闪退"), std::string::npos) << "no crash record: no mention";
+  answer(false);
+
+  fs::create_directories(root / "diagnostics");
+  Write((root / "diagnostics" / "crash_pending.txt").string(), "pp-browser crash dump\nreason=signal 11\n", 0);
+  Click("sel_adv");
+  Click(Pill());
+  Settle();
+  ASSERT_EQ(confirms.size(), 2u);
+  EXPECT_NE(confirms[1].message.find("上次闪退的记录"), std::string::npos) << confirms[1].message;
+  EXPECT_EQ(confirms[1].message.find(Tr("settings.run_logs.confirm_contents")), std::string::npos);
+  answer(true);
+  ASSERT_EQ(sent.size(), 1u);
+}
+
 TEST_F(SettingsRunLogsTest, OffSaysCollectingIsOffAndCancelSendsNothing) {
   PreviousLaunches(3); // only the newest of them is packaged
   Click("sel_adv");

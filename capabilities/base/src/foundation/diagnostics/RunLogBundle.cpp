@@ -226,6 +226,7 @@ std::string LocalDate(const std::time_t now) {
 struct Section {
   std::string header;
   std::string body;
+  bool crash = false;
 };
 
 size_t RawBytes(const std::vector<Section>& sections) {
@@ -391,6 +392,25 @@ std::string RunLogBundle::FilterRecords(const std::string_view text) {
   return out;
 }
 
+std::string RunLogBundle::FilterCrashRecord(const std::string_view text) {
+  std::string out;
+  size_t at = 0;
+  while (at < text.size()) {
+    const size_t end = text.find('\n', at);
+    const std::string_view line = text.substr(at, end == std::string_view::npos ? std::string_view::npos : end - at);
+    std::string kept = FilterRecord(line);
+    if (!kept.empty()) {
+      out += kept;
+      out += '\n';
+    }
+    if (end == std::string_view::npos) {
+      break;
+    }
+    at = end + 1;
+  }
+  return out;
+}
+
 Roe<std::vector<uint8_t>> RunLogBundle::Gzip(const std::string_view data) {
   z_stream stream{};
   // windowBits 15 + 16: a gzip header and trailer around the deflate stream.
@@ -413,7 +433,8 @@ Roe<std::vector<uint8_t>> RunLogBundle::Gzip(const std::string_view data) {
 }
 
 Roe<RunLogArchive> RunLogBundle::Build(const std::string& log_path, const LogRetention& retention,
-                                       const std::uintmax_t max_bytes, const std::time_t now) {
+                                       const std::uintmax_t max_bytes, const std::time_t now,
+                                       const std::string& crash_path) {
   const std::vector<LogFileInfo> files = DirectoryFiles(log_path);
   if (files.empty()) {
     return Error("No log files");
@@ -425,6 +446,21 @@ Roe<RunLogArchive> RunLogBundle::Build(const std::string& log_path, const LogRet
   for (const RunLogPick& pick : selection.files) {
     sections.push_back({"==== " + fs::path(pick.name).filename().string() + " ====\n",
                         FilterRecords(ReadTail(pick.name, pick.size, pick.take_bytes))});
+  }
+  if (!crash_path.empty()) {
+    constexpr std::uintmax_t kCrashMax = 64 * 1024;
+    std::error_code ec;
+    if (fs::is_regular_file(crash_path, ec)) {
+      std::ifstream in(crash_path, std::ios::binary);
+      std::string text(kCrashMax, '\0');
+      in.read(text.data(), static_cast<std::streamsize>(text.size()));
+      text.resize(static_cast<size_t>(in.gcount()));
+      std::string body = FilterCrashRecord(text);
+      if (!body.empty()) {
+        sections.push_back(
+            {"==== " + fs::path(crash_path).filename().string() + " (the last crash) ====\n", std::move(body), true});
+      }
+    }
   }
   bool truncated = selection.truncated;
   // Gzip, and while it is over `max_bytes` drop the oldest records (scaled by how far over it was, with a margin)
@@ -443,6 +479,7 @@ Roe<RunLogArchive> RunLogBundle::Build(const std::string& log_path, const LogRet
       archive.bytes = std::move(*gz);
       archive.first_time = FirstRecordTime(joined);
       archive.truncated = truncated;
+      archive.crash_included = std::any_of(sections.begin(), sections.end(), [](const Section& s) { return s.crash; });
       return archive;
     }
     const double keep = 0.9 * static_cast<double>(max_bytes) / static_cast<double>(gz->size());
