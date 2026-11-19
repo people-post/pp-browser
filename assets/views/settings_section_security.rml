@@ -74,7 +74,9 @@
           </div>
           <div class="stack settings-desktop-only" data-if="recovery_shown">
             <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.write_down}}</p>
+            <div data-for="slot : recovery_inline">
 {{include:settings_security_recovery}}
+            </div>
             <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.shown_hint}}</p>
             <button class="btn btn-primary" type="button" data-event-click="hide_recovery_phrase()">
               {{i18n:settings.security.recovery.done}}

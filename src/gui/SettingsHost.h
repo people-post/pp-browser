@@ -34,6 +34,8 @@ public:
   virtual Roe<void> ForgetToolPermissions() = 0;
   /** Takes the user to where the PIN is changed (the Change PIN page on phones; inline on desktop). */
   virtual void OpenChangePin() = 0;
+  /** The phrase is shown on a page of its own (phones), not inline (desktop). */
+  virtual bool RecoveryOnOwnPage() const { return false; }
   /** The recovery phrase is now in front of its owner: phones push its page (desktop shows it inline). */
   virtual void OpenRecoveryPage() {}
   /** The phrase was hidden (done, timeout, background): the phone's page goes. */

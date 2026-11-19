@@ -176,6 +176,8 @@ public:
   std::vector<SettingsChoicePage::Option> BackendChoiceOptions() const;
   /** Test seam: what the Service chooser does for a picked row id (a public forwarder; tests must not widen access with `#define private public`, which breaks the MSVC link). */
   void ChooseBackendForTest(const std::string& id) { ApplyBackendChoice(id); }
+  /** Test seam: the security actions (the recovery phrase's bound words and private copy). */
+  SettingsSecurityActions& SecurityActionsForTest() { return security_actions_; }
   /** Test seam: the phone's Preset chooser, by preset id (as `ShowChoice` would call it). */
   void ChooseLlmPresetForTest(const std::string& id) { ApplyLlmPresetChoice(id); }
   /** Test seam: how many times the preset was applied (each pick must apply once). */
@@ -387,6 +389,7 @@ private:
   void RequestSyncLayout(const char* reason) override;
   Roe<void> ForgetToolPermissions() override;
   void OpenChangePin() override;
+  bool RecoveryOnOwnPage() const override { return compact_layout_; }
   void OpenRecoveryPage() override;
   void CloseRecoveryPage() override;
   void FinishPaneResync();

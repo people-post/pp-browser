@@ -1153,6 +1153,9 @@ void SettingsController::OnNavTabActivated() {
 }
 
 void SettingsController::OnMeSurfaceClosed() {
+  if (security_actions_.RecoveryPhraseShown()) {
+    ResetSecurityPage(); // a tab switch or a notification tap: the phrase does not stay bound behind another tab
+  }
   CommitProfileNickname(/*show_toast=*/false);
   FlushPending();
 }

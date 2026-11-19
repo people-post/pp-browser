@@ -75,7 +75,11 @@ public:
   void RequestSyncLayout(const char*) override {}
   Roe<void> ForgetToolPermissions() override { return {}; }
   void OpenChangePin() override {}
+  bool RecoveryOnOwnPage() const override { return on_own_page; }
   void OpenRecoveryPage() override {
+    if (!on_own_page) {
+      return; // as the controller: the desktop pushes no page
+    }
     ++opened;
     page = "recovery";
     DataModelHost::Instance().Dirty("settings", "security_page");
@@ -85,6 +89,7 @@ public:
     page = "";
     DataModelHost::Instance().Dirty("settings", "security_page");
   }
+  bool on_own_page = true; // a phone; false = the desktop's inline block
   int opened = 0;
   int closed = 0;
   ui::String page;
@@ -144,7 +149,7 @@ protected:
   }
 
   /** The phone page block of settings.rml in a `width` x `height` compact layer, on the light or dark colours. */
-  void Open(const int width, const int height, const bool dark = false) {
+  void Open(const int width, const int height, const bool dark = false, const bool with_desktop_block = false) {
     context = ui::CreateContext(kContext, {width, height});
     ASSERT_NE(context, nullptr);
     ASSERT_TRUE(DataModelHost::Instance().Register(context, "settings", [this](ui::DataModelConstructor& ctor) {
@@ -159,6 +164,18 @@ protected:
     std::string block = rml.substr(from, to - from);
     const std::string marker = "{{include:settings_security_recovery}}";
     block.replace(block.find(marker), marker.size(), ReadAll("views/settings_security_recovery.rml"));
+    if (with_desktop_block) {
+      // The desktop's inline block of the real Security section, mounted beside the phone's page as in the real view.
+      const std::string section = ReadAll("views/settings_section_security.rml");
+      const size_t desktop_from = section.find("<div class=\"stack settings-desktop-only\" data-if=\"recovery_shown");
+      const size_t desktop_done = section.find("{{i18n:settings.security.recovery.done}}");
+      ASSERT_NE(desktop_from, std::string::npos);
+      ASSERT_NE(desktop_done, std::string::npos);
+      const size_t desktop_to = section.find("</div>", desktop_done) + 6;
+      std::string desktop = section.substr(desktop_from, desktop_to - desktop_from);
+      desktop.replace(desktop.find(marker), marker.size(), ReadAll("views/settings_security_recovery.rml"));
+      block = desktop + block;
+    }
     const std::string page = "<rml><head><style>" + ReadAll("themes/components.rcss") +
                              ReadAll(dark ? "themes/colors-dark.rcss" : "themes/colors-light.rcss") +
                              "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
@@ -287,6 +304,40 @@ TEST_F(RecoveryPhrasePageTest, LeavingByBackOrTheBackgroundClearsTheWordsToo) {
   EXPECT_FALSE(PageHoldsAWord());
 }
 
+// data-if only hides, so what counts is which nodes exist: the grid of the block that is not in use must not be mounted.
+TEST_F(RecoveryPhrasePageTest, OnAPhoneTheRevealedWordsAreBoundOnceNotAlsoInTheDesktopBlock) {
+  Open(375, 667, false, /*with_desktop_block=*/true);
+  ShowFromSettings();
+  Tap(".recovery-reveal");
+  EXPECT_EQ(All(".recovery-card").size(), 24u) << "one grid in the whole combined document";
+  EXPECT_EQ(All(".recovery-page .recovery-card").size(), 24u) << "the phone's page holds it";
+  EXPECT_EQ(All(".settings-desktop-only .recovery-card").size(), 0u) << "the desktop block holds none";
+  const std::string text = document->GetInnerRML().c_str();
+  for (const char* word : {"mushroom", "wrestle", "wisdom"}) {
+    size_t copies = 0;
+    for (size_t at = text.find(std::string(">") + word + "<"); at != std::string::npos;
+         at = text.find(std::string(">") + word + "<", at + 1)) {
+      ++copies;
+    }
+    EXPECT_EQ(copies, 1u) << word << " is in the document once";
+  }
+}
+
+TEST_F(RecoveryPhrasePageTest, OnTheDesktopTheInlineBlockHoldsTheWordsAndThePageHoldsNone) {
+  host->on_own_page = false;
+  Open(375, 667, false, /*with_desktop_block=*/true);
+  ShowFromSettings();
+  EXPECT_EQ(host->opened, 0) << "no page is pushed on the desktop";
+  EXPECT_EQ(All(".settings-desktop-only .recovery-card").size(), 24u);
+  EXPECT_EQ(All(".recovery-page .recovery-card").size(), 0u);
+  Tap(".recovery-reveal");
+  EXPECT_EQ(actions->RecoveryWordsForTest(), kWords);
+  EXPECT_EQ(All(".recovery-card").size(), 24u) << "still one grid";
+  Tap(".settings-desktop-only .btn-primary");
+  EXPECT_TRUE(All(".recovery-card").empty());
+  EXPECT_TRUE(actions->RecoveryWordsForTest().empty());
+}
+
 class RecoveryPhraseLayoutTest : public RecoveryPhrasePageTest,
                                  public testing::WithParamInterface<std::pair<int, bool>> {};
 
@@ -337,10 +388,14 @@ TEST_P(RecoveryPhraseLayoutTest, ThreeCardsToARowReadingOrderNothingOverflowsAnd
   EXPECT_LE(at.y + size.y, 667.f);
   EXPECT_GE(at.x, 0.f);
   EXPECT_LE(at.x + size.x, static_cast<float>(width));
-  ui::ElementList scroll = All(".recovery-scroll");
-  ASSERT_EQ(scroll.size(), 1u);
-  EXPECT_LE(scroll[0]->GetAbsoluteOffset(ui::BoxArea::Border).y + scroll[0]->GetBox().GetSize(ui::BoxArea::Border).y,
-            at.y + 0.5f);
+  // The scroller is mounted by its slot (data-for): the template element stays in the DOM, hidden.
+  ASSERT_EQ(Visible(".recovery-scroll"), 1u);
+  for (ui::Element* scroll : All(".recovery-scroll")) {
+    if (scroll->IsVisible()) {
+      EXPECT_LE(scroll->GetAbsoluteOffset(ui::BoxArea::Border).y + scroll->GetBox().GetSize(ui::BoxArea::Border).y,
+                at.y + 0.5f);
+    }
+  }
   EXPECT_EQ(All(".recovery-lead").size(), 1u);
   EXPECT_EQ(All(".page-large-title").size(), 0u) << "one title per page, and it is the bar's";
 }

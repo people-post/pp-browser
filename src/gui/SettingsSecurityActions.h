@@ -45,6 +45,10 @@ public:
   void Bind(ui::DataModelConstructor& ctor);
   /** The recovery phrase is on screen now (shown, not yet hidden). */
   bool RecoveryPhraseShown() const { return recovery_shown_; }
+  /** Tests: a short auto-hide time, set before the page opens. */
+  void SetRecoveryShownMsForTest(const int64_t ms) { recovery_shown_ms_ = ms; }
+  /** Tests: the words are held, not bound, until the reveal (the private copy). */
+  size_t RecoverySecretCountForTest() const { return recovery_secret_.size(); }
   /** The words bound into the view now, in order (tests; the words are empty while the grid is covered). */
   std::vector<std::string> RecoveryWordsForTest() const {
     std::vector<std::string> words;
@@ -90,6 +94,10 @@ private:
   /** The words and the shown flag redrawn. */
   void DirtyRecoveryWords();
   void ClearRecoverySecret();
+  /** Zero-fills each bound word, then empties the list. */
+  void ClearRecoveryWords();
+  /** (Re)starts the auto-hide: a newer showing or a hide voids the one before. */
+  void ScheduleRecoveryAutoHide();
 
   /** Me → Security → Save a copy of my account: the sealed account state to a file the user picks (M023). */
   void SaveAccountCopy();
@@ -115,6 +123,13 @@ private:
   };
   /** The phrase's words while it is shown (empty otherwise); cleared when the page closes. */
   std::vector<RecoveryWord> recovery_words_;
+  /** One slot while the phrase is shown inline (desktop), none otherwise: the grid in the inline block is mounted by it (data-for), and the phone's page grid by `recovery_page_` the other way round, so the words are bound in one place only. */
+  struct InlineSlot {
+    int n = 1;
+  };
+  std::vector<InlineSlot> recovery_inline_;
+  /** The same for the phone's page. */
+  std::vector<InlineSlot> recovery_page_;
   bool recovery_shown_ = false;
   /** The words are in the view (one tap on the covered grid); until then `recovery_words_` holds numbers only. */
   bool recovery_revealed_ = false;
@@ -127,8 +142,10 @@ private:
   uint64_t recovery_shown_count_ = 0;
   /** Hides the recovery phrase when the app goes to the background (UI thread, SDL's event). */
   uint64_t background_listener_ = 0;
-  /** How long the phrase stays on screen. */
+  /** How long the page stays up (covered, or from the reveal). */
   static constexpr int64_t kRecoveryPhraseShownMs = 2 * 60 * 1000;
+  static constexpr size_t kRecoveryWordCount = 24;
+  int64_t recovery_shown_ms_ = kRecoveryPhraseShownMs;
 
   bool transfer_code_copied_ = false;
   ui::String move_lead_label_;

@@ -226,7 +226,7 @@
          on top, the grid scrolls if the screen is short, and the one button stays at the bottom. -->
     <div class="recovery-page" data-if="security_page == 'recovery'">
       <p class="recovery-lead">{{i18n:settings.security.recovery.write_down}}</p>
-      <div class="recovery-scroll">
+      <div class="recovery-scroll" data-for="slot : recovery_page">
 {{include:settings_security_recovery}}
       </div>
       <div class="recovery-bottom">

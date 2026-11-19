@@ -71,19 +71,26 @@ TEST(SettingsGatingTest, TheRecoveryPhraseIsBoundOnlyInItsShownBlock) {
   EXPECT_NE(grid.rfind("data-if=\"recovery_revealed\"", word), std::string::npos);
   EXPECT_EQ(grid.find("data-if=", grid.rfind("data-if=\"recovery_revealed\"", word) + 10) > word, true)
       << "no other condition between the gate and the word";
-  // It is only included inside the block that exists while the phrase is shown: the desktop's (recovery_shown, inside
-  // the has-phrase gate) and the phone's page.
+  // It is only included inside the block that exists while the phrase is shown: the desktop's (its grid is mounted by recovery_inline, a slot on the
+  // desktop only, inside the has-phrase gate) and the phone's page.
   const std::string rml = ReadAsset("views/settings_section_security.rml");
   ASSERT_EQ(CountOf(rml, "{{include:settings_security_recovery}}"), 1u);
   const size_t include = rml.find("{{include:settings_security_recovery}}");
   const size_t block = rml.rfind("data-if=\"recovery_shown\"", include);
   ASSERT_NE(block, std::string::npos);
   EXPECT_LT(rml.rfind("data-if=\"security_has_recovery_phrase\"", block), block);
+  EXPECT_NE(rml.rfind("data-for=\"slot : recovery_inline\"", include), std::string::npos);
+  EXPECT_GT(rml.rfind("data-for=\"slot : recovery_inline\"", include), block) << "the grid sits inside the slot";
   const std::string settings = ReadAsset("views/settings.rml");
   ASSERT_EQ(CountOf(settings, "{{include:settings_security_recovery}}"), 1u);
   EXPECT_NE(settings.rfind("data-if=\"security_page == 'recovery'\"",
                            settings.find("{{include:settings_security_recovery}}")),
             std::string::npos);
+  EXPECT_GT(
+      settings.rfind("data-for=\"slot : recovery_page\"", settings.find("{{include:settings_security_recovery}}")),
+      settings.rfind("data-if=\"security_page == 'recovery'\"",
+                     settings.find("{{include:settings_security_recovery}}")))
+      << "the phone's grid is mounted by its own slot, so only one of the two blocks holds the words";
   EXPECT_EQ(rml.find("{{recovery_phrase}}"), std::string::npos);
 }
 
@@ -94,12 +101,17 @@ TEST(SettingsGatingTest, NoViewOfTheTwoPagesBindsACodeAPhraseOrAKeyOutsideTheSho
   const std::string pin = ReadAsset("views/settings_security_pin.rml");
   for (const std::string& view : {devices, transfer, pin}) {
     ASSERT_FALSE(view.empty());
-    for (const char* secret :
-         {"{{recovery_phrase", "{{transfer", "{{link_code", "{{export_code", "{{pin_value", "{{brief_llm_key}}"}) {
+    for (const char* secret : {"recovery_words", "{{item.word", "{{recovery_phrase", "{{transfer", "{{link_code",
+                               "{{export_code", "{{pin_value", "{{brief_llm_key}}"}) {
       EXPECT_EQ(view.find(secret), std::string::npos) << secret;
     }
   }
   EXPECT_EQ(security.find("{{transfer"), std::string::npos);
+  // The words are bound only by the shared grid (reached through the include), never written out in a page.
+  for (const std::string& view : {security, ReadAsset("views/settings.rml")}) {
+    EXPECT_EQ(view.find("recovery_words"), std::string::npos);
+    EXPECT_EQ(view.find("{{item.word"), std::string::npos);
+  }
   EXPECT_EQ(security.find("{{brief_llm_key}}"), std::string::npos);
 }
 
