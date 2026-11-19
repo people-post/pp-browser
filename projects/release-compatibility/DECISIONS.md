@@ -81,7 +81,8 @@ tags and cut a release branch only on need ([DESIGN § Branches and tags](DESIGN
 ## RC006 — Range lengths, numbering, tags and fix policy
 
 **Date:** 2026-11-17
-**Status:** Accepted (Hongwei, 2026-11-17); items 3 and 8 wait for Leo. Item 8 amended by
+**Status:** Accepted (Hongwei, 2026-11-17); items 3 and 8 wait for Leo. Item 7 superseded by
+[RC016](#rc016--app-pp-node-and-relay-each-have-their-own-version) (each product its own version). Item 8 amended by
 [RC009](#rc009--four-environments-todays-qa-becomes-staging-dev-is-new): the relay's main deploys are tagged `dev/<date>.<n>`.
 **Decision:** The nine items of [DESIGN § Decisions taken](DESIGN.md#decisions-taken). In short: relay ↔ app
 in range for the last 3 app releases and at least 90 days, other pairs the last 2 releases and at least 60 days;
@@ -307,7 +308,8 @@ and keep) are ours, as Leo asked for them to be defined.
 ## RC015 — Client-side answers after Kenneth's review
 
 **Date:** 2026-11-19
-**Status:** Accepted (Hongwei, 2026-11-19); answers Kenneth's review on #634. Amends
+**Status:** Accepted (Hongwei, 2026-11-19); answers Kenneth's review on #634. Its "release owner for 10.0" reads
+"for release 1" since [RC016](#rc016--app-pp-node-and-relay-each-have-their-own-version). Amends
 [RC008](#rc008--app-builds-climb-one-ladder-only-release-candidates-are-promoted) and
 [RC009](#rc009--four-environments-todays-qa-becomes-staging-dev-is-new).
 **Decision:**
@@ -336,4 +338,26 @@ and keep) are ours, as Leo asked for them to be defined.
 - A Staging row in store builds, hidden behind a developer switch (still compiled in; a custom link does the same
   for testers without it).
 - A fixed switch date now (P2's start depends on #634's review).
+
+## RC016 — App, pp-node and relay each have their own version
+
+**Date:** 2026-11-19
+**Status:** Accepted (Hongwei, 2026-11-19). Supersedes RC006 item 7 (app and pp-node share numbers, release 1 = 10.0).
+**Decision:** Three version lines: the app (`vX.Y.Z`, branches `release/app-X.Y`, release 1 = **1.0**), pp-node
+(`pp-node/vX.Y.Z`, branches `release/node-X.Y`, release 1 = **10.0**, the next major after v9) and the relay
+(`vX.Y.Z` in pp-relay-apis, branches `release/X.Y`, release 1 = **1.0**). The version table lists, per release of
+each product, the format versions it writes and reads ([DESIGN § Libraries and numbering](DESIGN.md#libraries-and-numbering)).
+**Rationale:**
+- Compatibility is decided by format versions, not product numbers; a product number only names a release, so
+  independent numbers cost one more table, not a weaker rule. (RC006 item 7 chose a shared number to keep the range
+  table readable; the per-format table makes that unnecessary.)
+- The three ship on different cadences: store review, the node fleet and user-run nodes, relay deploys. A shared
+  number forces a release of both for a fix in one.
+- The repo already releases app and node on separate trains (`v*`, `pp-node/v*`); a shared number would merge them.
+- The app's first public release reads 1.0 instead of jumping to 10.0.
+**Alternatives rejected:**
+- One number for app and pp-node (RC006 item 7): see above.
+- A shared minor line with independent patches (`release/10.1` producing app 10.1.z and node 10.1.z'): ties feature
+  cadence together while gaining little over fully independent lines.
+**Cost:** a fix in code both products share is backported to each product's branch that needs it (a label each).
 

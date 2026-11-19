@@ -1,7 +1,7 @@
 # Release compatibility: design
 
 **Status:** Accepted by Hongwei, 2026-11-17; in review with Leo (relay parts: [§ Decisions taken](#decisions-taken),
-items 3 and 8). Decisions RC001–RC015.
+items 3 and 8). Decisions RC001–RC016.
 **Today's policy** stays [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) until release 1 ships; this
 design replaces its [§ No bridges](../../docs/contracts/COMPATIBILITY.md#no-bridges-pre-release) then.
 
@@ -149,6 +149,10 @@ One table in `docs/contracts/` (promoted in phase P4) lists every format: its cu
 readers accept, its owner, and the release at which its oldest version leaves the range. It replaces the
 "Clean cutovers" table in COMPATIBILITY.md, which stays as history ending with release 1.
 
+App, pp-node and the relay each have their own version ([RC016](DECISIONS.md#rc016--app-pp-node-and-relay-each-have-their-own-version)), so the table also lists, for each release of each
+product, the format versions it writes and reads. Compatibility is decided by those format versions; a product number
+only names a release.
+
 Starting inventory, to be checked in phase P0 (from COMPATIBILITY.md and the 2026-11-17 review):
 
 | Format | Version today | Owner |
@@ -270,8 +274,9 @@ Wherever "main" could be read as "what is deployed", it is not. **Every PR into 
 other than its author** ([RC015](DECISIONS.md#rc015--client-side-answers-after-kenneths-review)), enforced by branch protection, with the code owners of its paths
 (`.github/CODEOWNERS`); release branches take the release owner's approval (RC014).
 
-**One branch per release, `release/X.Y`, cut from main**, for every release that ships into the field: apps,
-pp-node, and the relay.
+**One branch per release, cut from main**, for every release that ships into the field, named by its product
+([RC016](DECISIONS.md#rc016--app-pp-node-and-relay-each-have-their-own-version)): `release/app-X.Y` and `release/node-X.Y` in pp-browser, `release/X.Y` in pp-relay-apis. Below,
+`release/X.Y` stands for whichever product's branch is meant.
 
 - Release tags (`vX.Y.0`, `vX.Y.1`, …) go on that branch. They are immutable, and release workflows accept no others.
 - A release branch takes **fixes only**: no features and no format changes. Additive changes only where a fix needs
@@ -289,8 +294,8 @@ pp-node, and the relay.
 are never merged back into main: main already has every fix. The backport rules
 ([RC014](DECISIONS.md#rc014--backport-and-hotfix-rules-after-leos-second-review)):
 
-1. **A label opens a PR to that exact branch.** `backport release/10.1` on a merged main PR makes a bot open a PR
-   targeting `release/10.1`. The bot does the cherry-pick mechanically; the backport PR runs that branch's own
+1. **A label opens a PR to that exact branch.** `backport release/app-1.1` on a merged main PR makes a bot open a PR
+   targeting `release/app-1.1`. A fix in code both products share takes a label per product branch that needs it. The bot does the cherry-pick mechanically; the backport PR runs that branch's own
    checks and still needs a human approval (that release's owner may give it).
 2. **Provenance is kept.** Each backported commit keeps its `(cherry picked from commit …)` trailer, and the PR links
    the original main PR, so which fixes reached which release lines can be audited.
@@ -300,9 +305,9 @@ are never merged back into main: main already has every fix. The backport rules
 4. **A fix only for a release branch is an exception.** It carries an exception label and says why main needs no
    equivalent change (for example the code is gone from main).
 
-**A hotfix starts from the affected release branch**, not only from the newest release: a fix for 10.1 while 10.3 is
-current is made on `release/10.1` (by backport, or by the exception above), runs that line's checks, gets a new patch
-tag on that branch (`v10.1.Z+1`, its candidates `-rc.N` first), and follows the same build-once promotion as any
+**A hotfix starts from the affected release branch**, not only from the newest release: a fix for app 1.1 while 1.3 is
+current is made on `release/app-1.1` (by backport, or by the exception above), runs that line's checks, gets a new
+patch tag on that branch (`v1.1.Z+1`, its candidates `-rc.N` first), and follows the same build-once promotion as any
 release ([§ App builds](#app-builds-internal-external-store)). That is what makes the range promise real for older
 app versions.
 
@@ -313,7 +318,8 @@ app versions.
 | Build | From | Tag |
 |-------|------|-----|
 | App dev builds people install (TestFlight, Android, desktop test builds) | any branch or tag, by hand | `internal/<build number>` |
-| Release candidates (apps, pp-node) | `release/X.Y` | `vX.Y.Z-rc.<n>` |
+| App release candidates | `release/app-X.Y` | `vX.Y.Z-rc.<n>` |
+| pp-node release candidates | `release/node-X.Y` | `pp-node/vX.Y.Z-rc.<n>` |
 | Internal pp-node builds | main | `node-internal/<date>.<n>` |
 | Relay dev deploys | main | `dev/<date>.<n>` (with Leo) |
 
@@ -342,10 +348,10 @@ rules ([RC008](DECISIONS.md#rc008--app-builds-climb-one-ladder-only-release-cand
 | Build | Made from | Goes to | Tag |
 |-------|-----------|---------|-----|
 | **Dev build** | a manual trigger, any branch or tag (latest features, a fix to try) | internal testers only; **never promoted** | `internal/<build number>` |
-| **Release candidate** | pushing `vX.Y.Z-rc.<n>` on `release/X.Y`; built and uploaded to internal testers automatically | internal, then external testers, then the store | `vX.Y.Z-rc.<n>`; `vX.Y.Z` on the same commit when it is submitted to the store |
+| **Release candidate** | pushing `vX.Y.Z-rc.<n>` on `release/app-X.Y`; built and uploaded to internal testers automatically | internal, then external testers, then the store | `vX.Y.Z-rc.<n>`; `vX.Y.Z` on the same commit when it is submitted to the store |
 
 - **Only release candidates are promoted.** The stores see a version string and a build number only, so a dev build
-  stamped with the next version looks like a candidate. A candidate is built with its final version (10.1.0); only
+  stamped with the next version looks like a candidate. A candidate is built with its final version (1.1.0); only
   build numbers differ between candidates.
 - **Promotion is a workflow, not clicks.** A workflow adds a candidate to the external testers, then submits it for
   review, through the App Store Connect API (and the Play Developer API). It refuses a build whose tag is not a
@@ -386,11 +392,19 @@ The nightly lab and the full lab run on main and before each `.0` release; a fix
 **Libraries stay simpler.** pp-cpp-* keep main plus version tags. A library release branch is cut only when a
 product's release branch needs a library fix without taking a newer major version.
 
-**App and pp-node share a release number.** They come from one repo and share most code, so one `release/X.Y`
-produces both, and the range table speaks one number for them. **Release 1 is version 10.0** for both: it continues
-pp-node's numbering (v9 today), so pp-node's tags keep rising, and the app moves from 1.0.0 to 10.0. The relay keeps
-its own semver (`vX.Y.Z` on its `release/X.Y`) and reports it in `client-compat`; the
-[version table](#the-version-table) maps which relay releases serve which app/node releases.
+**App, pp-node and the relay each have their own version** ([RC016](DECISIONS.md#rc016--app-pp-node-and-relay-each-have-their-own-version)), as the repo's two trains already do (`v*` for
+the app, `pp-node/v*` for the node, `docs/ops/RELEASE.md`):
+
+| Product | Tags | Release branch | Release 1 |
+|---------|------|----------------|-----------|
+| App | `vX.Y.Z` (pp-browser) | `release/app-X.Y` | **1.0** (its first public release; 1.0.0 today) |
+| pp-node | `pp-node/vX.Y.Z` (pp-browser) | `release/node-X.Y` | **10.0** (the next major after v9) |
+| Relay | `vX.Y.Z` (pp-relay-apis) | `release/X.Y` | **1.0** |
+
+Each ships on its own cadence: an app release waits on store review, a node release goes to the fleet and user-run
+nodes, a relay release deploys; a node-only fix needs no app release. What works with what is the
+[version table](#the-version-table)'s map of product releases to the format versions they speak, not a shared
+number. "Release 1" names the floor across all three.
 
 ## Environments
 
@@ -489,11 +503,11 @@ has none.
 
 ## Release checklist
 
-**The release owner for 10.0 is Hongwei** (RC015); the role rotates after it.
+**The release owner for release 1 (app 1.0, pp-node 10.0, relay 1.0) is Hongwei** (RC015); the role rotates after it.
 
 Today's list (`docs/ops/RELEASE.md` § Checklist before tagging) predates release mode. This one replaces it when
 release mode ships (P4 moves it into `RELEASE.md`; until then it lives here). Each release gets its own copy: when
-`release/X.Y` is cut, a workflow opens an issue "Release X.Y" from a template (`.github/ISSUE_TEMPLATE/release.md`)
+a product's release branch is cut, a workflow opens an issue for it ("Release app 1.0", "Release pp-node 10.0") from a template (`.github/ISSUE_TEMPLATE/release.md`)
 and assigns the release owner, who ticks the boxes, links results and records the go/no-go there. What CI and the
 workflows already check (tests, frozen data, the mixed-version lab, the staging deploy) is linked, not re-checked
 by hand. The relay keeps its own list in pp-relay-apis (Leo's), linked from the issue.
@@ -630,7 +644,8 @@ Hongwei, 2026-11-17 (RC006). Items 3 and 8 touch the relay's workflows and wait 
 5. **Breaking work for release 1:** decided by P0's inventory; whatever misses the freeze follows the range rule.
 6. **The version table:** one table in pp-browser's `docs/contracts/`; pp-relay-apis `SPECS.md` links to it and
    lists only the relay's own formats.
-7. **One number for app and pp-node:** yes; release 1 is 10.0 for both.
+7. **One number for app and pp-node:** no, superseded by [RC016](DECISIONS.md#rc016--app-pp-node-and-relay-each-have-their-own-version) (2026-11-19): each product has its own version;
+   release 1 is app 1.0, pp-node 10.0, relay 1.0.
 8. **Internal build tags:** `internal/<build number>` (apps), `node-internal/<date>.<n>` (pp-node),
    `dev/<date>.<n>` (relay dev deploys; `qa/` before RC009); none for CI builds nobody installs. *(Leo, for the
    relay's)*

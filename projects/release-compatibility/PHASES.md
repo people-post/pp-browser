@@ -47,7 +47,7 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
   copy in another account; the identity key and Support seed replicated and escrowed; the removal log; the restore
   runbook and a first restore rehearsal on staging.
 - [ ] Release and incident records ([DESIGN § Release checklist](DESIGN.md#release-checklist), [§ Runbooks](DESIGN.md#runbooks)):
-  the `release` and `incident` issue templates; the workflow that opens "Release X.Y" when `release/X.Y` is cut.
+  the `release` and `incident` issue templates; the workflow that opens a release issue when a product's release branch is cut.
 - [ ] The runbooks needed before release 1, each a page in `docs/ops/runbooks/` with its steps as workflow runs:
   release, hotfix, app incident (pp-browser); relay rollback, restore, key compromise (pp-relay-apis, Leo).
 - [ ] Regression suites ([DESIGN § Regression suites](DESIGN.md#regression-suites)): the lab machine set up (its repo
@@ -67,7 +67,9 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 
 ## P4 — Release 1 shipped
 
-- [ ] `release/10.0` cut in pp-browser (app and pp-node 10.0) and the relay's release branch in pp-relay-apis; release 1 tagged there.
+- [ ] Release 1's branches cut and tagged: `release/app-1.0` (app 1.0) and `release/node-10.0` (pp-node 10.0) in
+  pp-browser, `release/1.0` (relay 1.0) in pp-relay-apis.
+- [ ] The version table lists, for each of the three, the format versions it writes and reads.
 - [ ] Relay on staging, then the app lab and the mixed-version check there; app, pp-node and relay to prod together.
 - [ ] `min_client_version` and the node floor raised to release 1. Prod's `client-compat` set none on 2026-11-17
   (`min_client_version` empty).
