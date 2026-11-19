@@ -196,26 +196,6 @@ std::string FamilyOf(const std::string& name) {
   return (p.parent_path() / (stem + p.extension().string())).string();
 }
 
-/** The last `take` bytes of `name` (as long as it was `size`), from its first to its last complete line. */
-std::string ReadTail(const std::string& name, const std::uintmax_t size, const std::uintmax_t take) {
-  std::ifstream in(name, std::ios::binary);
-  if (!in) {
-    return {};
-  }
-  const std::uintmax_t offset = take < size ? size - take : 0;
-  in.seekg(static_cast<std::streamoff>(offset));
-  std::string text(static_cast<size_t>(take), '\0');
-  in.read(text.data(), static_cast<std::streamsize>(take));
-  text.resize(static_cast<size_t>(in.gcount()));
-  const size_t last = text.rfind('\n');
-  text.resize(last == std::string::npos ? 0 : last + 1); // a line still being written is left out
-  if (offset > 0) {
-    const size_t first = text.find('\n');
-    text.erase(0, first == std::string::npos ? text.size() : first + 1); // the cut line
-  }
-  return text;
-}
-
 std::string FirstRecordTime(const std::string_view text) {
   size_t at = 0;
   while (at < text.size()) {
@@ -242,7 +222,82 @@ std::string LocalDate(const std::time_t now) {
   return buffer;
 }
 
+/** One log file's filtered text, under its `==== name ====` line. */
+struct Section {
+  std::string header;
+  std::string body;
+};
+
+size_t RawBytes(const std::vector<Section>& sections) {
+  size_t total = 0;
+  for (const Section& section : sections) {
+    total += section.header.size() + section.body.size();
+  }
+  return total;
+}
+
+std::string Join(const std::vector<Section>& sections) {
+  std::string joined;
+  joined.reserve(RawBytes(sections));
+  for (const Section& section : sections) {
+    joined += section.header;
+    joined += section.body;
+  }
+  return joined;
+}
+
+/** Drops about `drop` bytes from the front, oldest first: whole sections, then the head of the first left, up to the
+ *  next record start. Returns false when nothing is left. */
+bool DropOldest(std::vector<Section>& sections, size_t drop) {
+  size_t at = 0;
+  while (at < sections.size() && drop >= sections[at].header.size() + sections[at].body.size()) {
+    drop -= sections[at].header.size() + sections[at].body.size();
+    ++at;
+  }
+  sections.erase(sections.begin(), sections.begin() + static_cast<std::ptrdiff_t>(at));
+  if (sections.empty()) {
+    return false;
+  }
+  std::string& body = sections.front().body;
+  size_t cut = std::max<size_t>(1, drop > sections.front().header.size() ? drop - sections.front().header.size() : 0);
+  while (cut < body.size() &&
+         !((cut == 0 || body[cut - 1] == '\n') && IsRecordHead(std::string_view(body).substr(cut)))) {
+    const size_t nl = body.find('\n', cut);
+    cut = nl == std::string::npos ? body.size() : nl + 1;
+  }
+  body.erase(0, cut);
+  while (!sections.empty() && sections.front().body.empty()) {
+    sections.erase(sections.begin());
+  }
+  return !sections.empty();
+}
+
 } // namespace
+
+std::string RunLogBundle::ReadTail(const std::string& name, const std::uintmax_t size, const std::uintmax_t take) {
+  std::ifstream in(name, std::ios::binary);
+  if (!in) {
+    return {};
+  }
+  const std::uintmax_t offset = take < size ? size - take : 0;
+  // From the byte before the cut (when there is one): a cut that lands exactly on a line start keeps that line.
+  const std::uintmax_t from = offset > 0 ? offset - 1 : 0;
+  in.seekg(static_cast<std::streamoff>(from));
+  std::string text(static_cast<size_t>(take + (offset > 0 ? 1 : 0)), '\0');
+  in.read(text.data(), static_cast<std::streamsize>(text.size()));
+  text.resize(static_cast<size_t>(in.gcount()));
+  const size_t last = text.rfind('\n');
+  text.resize(last == std::string::npos ? 0 : last + 1); // a line still being written is left out
+  if (offset > 0) {
+    if (!text.empty() && text[0] == '\n') {
+      text.erase(0, 1); // the cut fell on a line start: the first line is whole
+    } else {
+      const size_t first = text.find('\n');
+      text.erase(0, first == std::string::npos ? text.size() : first + 1); // the cut line
+    }
+  }
+  return text;
+}
 
 std::vector<LogFileInfo> RunLogBundle::DirectoryFiles(const std::string& log_path) {
   std::vector<LogFileInfo> files;
@@ -363,23 +418,20 @@ Roe<RunLogArchive> RunLogBundle::Build(const std::string& log_path, const LogRet
   if (files.empty()) {
     return Error("No log files");
   }
-  // Raw bytes read per attempt: logs shrink about eight to ten times, so the first try usually fits a 4 MiB archive
-  // while a phone holds at most a few copies of 16 MiB; the last raw budget is the limit itself, which gzip cannot grow
-  // past it by more than its few bytes of framing.
-  constexpr std::uintmax_t kMiB = 1024 * 1024;
-  std::vector<std::uintmax_t> budgets = {16 * kMiB, 8 * kMiB};
-  budgets.erase(std::remove_if(budgets.begin(), budgets.end(), [&](std::uintmax_t b) { return b <= max_bytes; }),
-                budgets.end());
-  budgets.push_back(max_bytes > 8192 ? max_bytes - 8192 : max_bytes / 2);
-
-  const fs::file_time_type file_now = fs::file_time_type::clock::now();
-  for (const std::uintmax_t budget : budgets) {
-    const RunLogSelection selection = Select(files, file_now, retention, budget);
-    std::string joined;
-    for (const RunLogPick& pick : selection.files) {
-      joined += "==== " + fs::path(pick.name).filename().string() + " ====\n";
-      joined += FilterRecords(ReadTail(pick.name, pick.size, pick.take_bytes));
-    }
+  // Each file is read and filtered once, at most 16 MiB of raw text in all (a phone holds a few copies of that).
+  constexpr std::uintmax_t kRawLimit = 16 * 1024 * 1024;
+  const RunLogSelection selection = Select(files, fs::file_time_type::clock::now(), retention, kRawLimit);
+  std::vector<Section> sections;
+  for (const RunLogPick& pick : selection.files) {
+    sections.push_back({"==== " + fs::path(pick.name).filename().string() + " ====\n",
+                        FilterRecords(ReadTail(pick.name, pick.size, pick.take_bytes))});
+  }
+  bool truncated = selection.truncated;
+  // Gzip, and while it is over `max_bytes` drop the oldest records (scaled by how far over it was, with a margin)
+  // and gzip again; the newest records stay.
+  constexpr int kMaxAttempts = 12;
+  for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
+    const std::string joined = Join(sections);
     auto gz = Gzip(joined);
     if (!gz) {
       return gz.error();
@@ -390,8 +442,15 @@ Roe<RunLogArchive> RunLogBundle::Build(const std::string& log_path, const LogRet
       archive.mime = "application/gzip";
       archive.bytes = std::move(*gz);
       archive.first_time = FirstRecordTime(joined);
-      archive.truncated = selection.truncated;
+      archive.truncated = truncated;
       return archive;
+    }
+    const double keep = 0.9 * static_cast<double>(max_bytes) / static_cast<double>(gz->size());
+    const size_t raw = joined.size();
+    const size_t drop = std::max<size_t>(1, raw - static_cast<size_t>(static_cast<double>(raw) * keep));
+    truncated = true;
+    if (!DropOldest(sections, drop)) {
+      break;
     }
   }
   return Error("Run logs do not fit the size limit");

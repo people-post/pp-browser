@@ -74,10 +74,18 @@ public:
   static Roe<std::vector<uint8_t>> Gzip(std::string_view data);
 
   /**
-   * Reads the files Select picks from `log_path`'s directory (each up to its last complete line, a cut tail from its
-   * first complete line), filters them, joins them oldest first under `==== <file name> ====` lines and gzips the
-   * result; while the archive is over `max_bytes` the raw budget halves and it is built again (the newest records
-   * stay). `now` names the file (local date).
+   * The last `take` bytes of `name` (a file of `size` bytes) from its first to its last complete line: a line still
+   * being written is left out, and a cut that falls inside a line drops that line (one that falls exactly on a line
+   * start keeps it).
+   */
+  static std::string ReadTail(const std::string& name, std::uintmax_t size, std::uintmax_t take);
+
+  /**
+   * Reads each file Select picks from `log_path`'s directory once (at most 16 MiB of raw text in all; ReadTail per
+   * file) and filters it once, joins them oldest first under `==== <file name> ====` lines and gzips the result.
+   * While the archive is over `max_bytes`, the oldest records are dropped (whole files first, then the head of the
+   * next, at a record start), by about how far over it was plus a 10% margin, and it is gzipped again, up to 12
+   * times; the newest records stay. Fails when nothing fits. `now` names the file (local date).
    */
   static Roe<RunLogArchive> Build(const std::string& log_path, const LogRetention& retention, std::uintmax_t max_bytes,
                                   std::time_t now);

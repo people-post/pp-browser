@@ -330,6 +330,37 @@ TEST_F(RunLogDirTest, AnArchiveOverTheLimitKeepsTheNewestRecordsAndFits) {
   EXPECT_EQ(text.find("==== pp-browser.1.log ===="), std::string::npos) << "the older launch did not fit";
 }
 
+TEST_F(RunLogDirTest, ReadTailKeepsAFirstLineThatTheCutLandsExactlyOn) {
+  const std::string path = (dir_ / "tail.log").string();
+  Write(path, "aaaa\nbbbb\ncccc\n");
+  EXPECT_EQ(RunLogBundle::ReadTail(path, 15, 15), "aaaa\nbbbb\ncccc\n");
+  EXPECT_EQ(RunLogBundle::ReadTail(path, 15, 10), "bbbb\ncccc\n") << "the cut is at the start of bbbb";
+  EXPECT_EQ(RunLogBundle::ReadTail(path, 15, 9), "cccc\n") << "the cut is inside bbbb: that line is dropped";
+  EXPECT_EQ(RunLogBundle::ReadTail(path, 15, 4), "") << "the cut is inside cccc's newline: nothing whole";
+  EXPECT_EQ(RunLogBundle::ReadTail(path, 15, 5), "cccc\n");
+}
+
+TEST_F(RunLogDirTest, AShrinkingArchiveKeepsTheNewestRecordsAndStartsAtAWholeRecord) {
+  std::mt19937 random(11);
+  std::string noise;
+  while (noise.size() < 400 * 1024) {
+    std::string line = kHead;
+    for (int i = 0; i < 64; ++i) {
+      line += static_cast<char>('!' + random() % 90);
+    }
+    noise += line + "\n";
+  }
+  Write(log_path_, noise + Rec("last"));
+  const std::uintmax_t limit = 20 * 1024;
+  auto archive = RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), limit, 0);
+  ASSERT_TRUE(archive) << archive.error().message;
+  EXPECT_LE(archive->bytes.size(), limit);
+  EXPECT_TRUE(archive->truncated);
+  const std::string text = Gunzip(archive->bytes);
+  EXPECT_EQ(text.rfind("==== pp-browser.log ====\n[", 0), 0u) << "the kept head starts at a whole record";
+  EXPECT_NE(text.find("last"), std::string::npos);
+}
+
 TEST_F(RunLogDirTest, NoLogFilesIsAnError) {
   EXPECT_FALSE(RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 1024 * 1024, 0));
 }
