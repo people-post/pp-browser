@@ -1914,11 +1914,19 @@ void SettingsController::ApplyBackendChoice(const std::string& env) {
   if (suppress_auto_save_) {
     return;
   }
+  const bool changed = ui_state_.backend_env != env;
   ui_state_.backend_env = env;
   PushUiStateToBindings();
   MarkSectionDirty("network");
   FlushPending();
   DirtyAll();
+  // The choice only takes effect on the next start, and the small grey line under the row is easy to miss: say it once
+  // in a dialog (only for a pick that leaves the app on a different service than the one running).
+  if (changed && ParseBackendEnv(env) != ActiveBackend() && shell_feedback_.show_alert) {
+    shell_feedback_.show_alert(Tr("settings.network.backend.reopen_title"),
+                               Tr("settings.network.backend.reopen_body", {{"name", BackendDisplayLabel(env)}}), {},
+                               Tr("settings.network.backend.reopen_ok"));
+  }
 }
 
 void SettingsController::OnChooseDirectConnections(ui::Event& ev) {
