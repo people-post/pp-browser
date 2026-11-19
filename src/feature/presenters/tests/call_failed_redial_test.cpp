@@ -462,6 +462,36 @@ TEST_F(CallFailedRedialTest, TryLaterEndsTheFailedCallAndClosesThePageAsCloseDid
   EXPECT_TRUE(InvitesSent(sent_by_a_, sent_by_a_.size()).empty());
 }
 
+// A call answered that then ended with no path (the line could not be found) is told in plain words, and as none of the
+// other endings: not "no answer", not "ended by the other side", not "declined".
+TEST_F(CallFailedRedialTest, ACallAnsweredThatEndsWithNoPathSaysItCouldNotConnect) {
+  const std::string call_id = AnsweredNotConnected(a_, b_);
+  a_.notices.clear();
+  a_.side.stack->RunOnOwner(
+      [call_id](CallDevice& calls) { calls.LiveCallsForTest().Close(call_id, LiveCallEndReason::MediaUnavailable); });
+  PumpUntil([&]() { return a_.Screen().kind == CallScreen::Kind::None; });
+  ASSERT_EQ(a_.Screen().kind, CallScreen::Kind::None);
+  int told = 0;
+  for (const CallNotice& notice : a_.notices) {
+    if (notice.kind == CallNotice::Kind::Error && notice.key == "call.status.ended_couldnt_connect") {
+      ++told;
+    }
+    EXPECT_NE(notice.kind, CallNotice::Kind::PeerEnded);
+    EXPECT_NE(notice.kind, CallNotice::Kind::PeerDeclined);
+  }
+  EXPECT_EQ(told, 1);
+}
+
+TEST_F(CallFailedRedialTest, ACallNobodyAnsweredThatTheCallerCancelsSaysNothingAboutConnecting) {
+  Ring(a_, b_, false);
+  a_.notices.clear();
+  EXPECT_FALSE(a_.presenter->Leave().empty());
+  Pump();
+  for (const CallNotice& notice : a_.notices) {
+    EXPECT_NE(notice.key, "call.status.ended_couldnt_connect");
+  }
+}
+
 TEST_F(CallFailedRedialTest, CallAgainPressedTwiceCallsOnce) {
   const std::string failed = FailedCall(a_, b_);
   const size_t sent = sent_by_a_.size();
