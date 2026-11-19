@@ -121,5 +121,69 @@ TEST(ChatPictureWiringTest, ATapOpensTheFullPictureFoundFromTheMessage) {
   EXPECT_EQ(named.find("AttachmentPosterPath"), std::string::npos);
 }
 
+/** The text of ChatController's constructor from `from` to `to` (both must be in it, in that order). */
+std::string ControllerSlice(const std::string& from, const std::string& to) {
+  const std::string ctor = Body(kController, "ChatController::ChatController()");
+  const size_t begin = ctor.find(from);
+  const size_t end = begin == std::string::npos ? std::string::npos : ctor.find(to, begin);
+  EXPECT_NE(begin, std::string::npos) << from;
+  EXPECT_NE(end, std::string::npos) << to;
+  return begin == std::string::npos || end == std::string::npos ? std::string() : ctor.substr(begin, end - begin);
+}
+
+// DEV/PLAN-received-file-save-as.md step 4: a tap on an attachment card goes through AttachmentExit. On a computer a
+// file goes to the save flow, never to PlatformOpenFile; everything else (every phone tap) is today's OpenAttachment.
+TEST(ChatPictureWiringTest, AnAttachmentTapIsDecidedThenSavedOrOpenedAsBefore) {
+  const std::string source = ReadFile(std::string(PP_SOURCE_DIR) + "/" + kController);
+  const size_t event = source.find("ctor.BindEventCallback(\"open_attachment\"");
+  ASSERT_NE(event, std::string::npos);
+  const std::string handler = source.substr(event, source.find("}));", event) - event);
+  EXPECT_NE(handler.find("TapAttachment(message_id)"), std::string::npos);
+  EXPECT_EQ(handler.find("OpenAttachment("), std::string::npos) << "the tap is decided first";
+
+  const std::string tap = Body(kController, "void ChatController::TapAttachment(");
+  EXPECT_NE(tap.find("DecideAttachmentTap(CurrentAttachmentLayout()"), std::string::npos);
+  EXPECT_NE(tap.find("DrawnAttachmentOf(message_id)"), std::string::npos) << "decided with the row as drawn";
+  EXPECT_EQ(tap.find("PlatformOpenFile"), std::string::npos) << "a desktop file is never opened";
+  EXPECT_EQ(tap.find("facade_->"), std::string::npos) << "nothing read or decrypted on the UI thread to decide";
+  const size_t save = tap.find("case AttachmentTap::Save:");
+  ASSERT_NE(save, std::string::npos);
+  EXPECT_NE(tap.find("SaveAttachmentAs(message_id)", save), std::string::npos);
+  const size_t open = tap.find("case AttachmentTap::Open:");
+  ASSERT_NE(open, std::string::npos);
+  EXPECT_LT(tap.find("OpenAttachment(message_id)", open), save) << "Open is today's path, unchanged";
+
+  // A picture's tap waits while a save is busy (desktop); otherwise as before.
+  const size_t picture = source.find("ctor.BindEventCallback(\"open_picture\"");
+  ASSERT_NE(picture, std::string::npos);
+  const std::string picture_handler = source.substr(picture, source.find("}));", picture) - picture);
+  EXPECT_NE(picture_handler.find("save_flow_->Busy()"), std::string::npos);
+  EXPECT_NE(picture_handler.find("OpenPicture(message_id)"), std::string::npos);
+}
+
+// The save keeps its own state (AttachmentSaveFlow), apart from the taps' opening_message_ids_: neither reads or clears
+// the other's.
+TEST(ChatPictureWiringTest, TheSaveAndTheOpenKeepTheirOwnState) {
+  const std::string save = Body(kController, "void ChatController::SaveAttachmentAs(");
+  EXPECT_NE(save.find("save_flow_->Begin(ActiveThreadId(), message_id"), std::string::npos);
+  EXPECT_EQ(save.find("opening_message_ids_"), std::string::npos);
+  const std::string open = Body(kController, "void ChatController::OpenAttachment(");
+  EXPECT_EQ(open.find("save_flow_"), std::string::npos);
+}
+
+// The save flow's ports: the dialog (Downloads by default), the message's own view, the chunked copy, the downloaded
+// mark on the saved file — and no delete of any kind.
+TEST(ChatPictureWiringTest, TheSavePortsCopyTheViewAndDeleteNothing) {
+  const std::string ports = ControllerSlice("AttachmentSavePorts save_ports;", "save_flow_ = std::make_unique");
+  EXPECT_NE(ports.find("ChooseSavePath(Backend::GetWindow(), suggested_name, DefaultSaveFolder()"), std::string::npos);
+  EXPECT_NE(ports.find("facade_->AttachmentOpenPathForMessage(thread_id, message_id)"), std::string::npos);
+  EXPECT_NE(ports.find("CopyFileInChunks(from, to)"), std::string::npos);
+  EXPECT_NE(ports.find("os::MarkFileAsDownloaded(path)"), std::string::npos);
+  EXPECT_NE(ports.find("UserFeedback::Ok(text)"), std::string::npos) << "results are the bottom pill";
+  for (const char* gone : {"remove(", "Remove", "unlink", "Delete", "PlatformOpenFile"}) {
+    EXPECT_EQ(ports.find(gone), std::string::npos) << gone;
+  }
+}
+
 } // namespace
 } // namespace pbr

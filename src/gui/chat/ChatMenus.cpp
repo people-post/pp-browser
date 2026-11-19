@@ -6,6 +6,7 @@
 #include "feature/presenters/QuickReactions.h"
 #include "feature/presenters/SessionMenu.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/Platform.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "gui/UserFeedback.h"
@@ -104,6 +105,18 @@ void InsertEditAction(std::vector<ContextMenuAction>& actions, std::function<voi
   const auto copy = std::find_if(actions.begin(), actions.end(),
                                  [](const ContextMenuAction& action) { return action.id == "copy_message"; });
   actions.insert(copy == actions.end() ? actions.end() : std::next(copy), std::move(edit));
+}
+
+AttachmentLayout CurrentAttachmentLayout() {
+  return Platform::IsDesktop() ? AttachmentLayout::Desktop : AttachmentLayout::Phone;
+}
+
+void AppendAttachmentExitActions(std::vector<ContextMenuAction>& actions, const AttachmentMenuEntries& entries,
+                                 std::function<void()> save_as) {
+  if (entries.save_as) {
+    actions.push_back(
+        {"save_attachment_as", Tr("chat.menu.save_as"), nullptr, std::move(save_as), "../icons/v2/file.svg"});
+  }
 }
 
 void RemoveActionsWhileEditing(std::vector<ContextMenuAction>& actions) {
@@ -222,6 +235,13 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   } else if (host_.CanEditMessage(message_id)) {
     InsertEditAction(actions, [this, message_id]() { host_.StartEditMessage(message_id); });
   }
+  // A received attachment's way out of the app (DEV/PLAN-received-file-save-as.md): opened after this menu is gone.
+  const std::optional<DrawnAttachment> attachment = host_.DrawnAttachmentOf(message_id);
+  AppendAttachmentExitActions(
+      actions,
+      DecideMenuEntries(CurrentAttachmentLayout(),
+                        attachment ? std::optional<AttachmentExitKind>(attachment->kind) : std::nullopt),
+      [this, message_id]() { AppRuntime::PostUI([this, message_id]() { host_.SaveAttachmentAs(message_id); }); });
   ContextMenuAction remove{
       "delete_message", Tr("common.delete"), nullptr,
       [this, message_id, position = request.position]() { OpenDeleteChoice(message_id, position); }};

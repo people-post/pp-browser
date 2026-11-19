@@ -461,6 +461,14 @@ private:
                                                   std::optional<int64_t> newest_inclusive);
   void OpenAttachment(const std::string& message_id);
   /**
+   * A tap on an attachment card (open_attachment), as AttachmentExit decides: a computer saves a file (the save
+   * dialog), everything else opens as before (OpenAttachment).
+   */
+  void TapAttachment(const std::string& message_id);
+  /** Remembers how `message`'s attachment row is drawn now (`view`), for a later tap or menu (drawn_attachments_). */
+  void RememberDrawnAttachment(const ThreadMessage& message, const TranscriptAttachmentView& view, bool voice_bubbles,
+                               int voice_max_seconds);
+  /**
    * A tap on a picture (or its placeholder): a spinner now, then the system viewer with the full picture (found from
    * the message, never the bubble's preview); its own share / save are the way out.
    */
@@ -478,6 +486,8 @@ private:
   bool IsContactCard(const std::string& message_id) const override;
   bool IsCallRecord(const std::string& message_id) const override;
   void AddContactFromCard(const std::string& message_id) override;
+  std::optional<DrawnAttachment> DrawnAttachmentOf(const std::string& message_id) const override;
+  void SaveAttachmentAs(const std::string& message_id) override;
   /**
    * Reply / Ask AI: shows `text` as the quote bar above the composer; the next send carries it as a quote.
    * `draft_prefix` ("@ai " for Ask AI) is put into the input with the caret after it.
@@ -556,6 +566,14 @@ private:
   int attach_menu_y_ = 120;
   /** Attachments being opened right now (an Open decrypts on a worker; a second tap waits for the first). */
   std::unordered_set<std::string> opening_message_ids_;
+  /**
+   * The open chat's attachment rows as BuildMessageRows last drew them (kind, downloaded, the name to offer): a tap or
+   * a menu decides with them on the UI thread, nothing decrypted or read from the store. Emptied for another chat.
+   */
+  std::unordered_map<std::string, DrawnAttachment> drawn_attachments_;
+  std::string drawn_attachments_thread_;
+  /** Desktop "Save as" (one at a time): its own state, apart from opening_message_ids_ (neither stops the other). */
+  std::unique_ptr<AttachmentSaveFlow> save_flow_;
   PhotoPreviewTracker photo_preview_;
   std::string pending_chip_thread_;
   /** The chat the attachment in flight (preparing, uploading, or the failed one) belongs to. */
