@@ -10,38 +10,6 @@
             </span>
           </button>
         </div>
-        <!-- Phones: the crash-report switch in a card of its own. "Send diagnostics" is gone: run logs are sent from
-             Settings > Advanced (DEV/PLAN-send-run-logs.md). -->
-        <p class="text group-head settings-phone-only">{{i18n:settings.about.improve.title}}</p>
-        <div class="group-card settings-phone-only">
-          <div class="settings-toggle-row row group-row">
-            <span class="group-row-body">
-              <span class="group-row-label">
-                <span class="settings-q-label"><span class="group-row-text">{{i18n:settings.security.crash_reports.label}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.crash_reports.label')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
-                <span class="group-row-sub">{{i18n:settings.security.crash_reports.help}}</span>
-              </span>
-              <button class="settings-switch" type="button"
-                      data-class-settings-switch--on="crash_reports_enabled == 'on'"
-                      data-event-click="toggle_crash_reports()">
-                <div class="settings-switch-knob"></div>
-              </button>
-            </span>
-          </div>
-        </div>
-        <p class="text group-head settings-desktop-only">{{i18n:settings.security.group.diagnostics}}</p>
-        <div class="group-card settings-desktop-only">
-          <div class="settings-toggle-row row group-row">
-            <span class="group-row-body">
-              <span class="settings-q-label"><span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.security.crash_reports.label}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.crash_reports.label')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
-              <button class="settings-switch" type="button"
-                      data-class-settings-switch--on="crash_reports_enabled == 'on'"
-                      data-event-click="toggle_crash_reports()">
-                <div class="settings-switch-knob"></div>
-              </button>
-            </span>
-          </div>
-        </div>
-        <p class="text muted settings-help group-foot settings-desktop-only">{{i18n:settings.security.crash_reports.help}}</p>
         <div class="group-card">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">

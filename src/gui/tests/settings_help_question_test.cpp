@@ -57,7 +57,6 @@ TEST_F(SettingsHelpQuestionTest, TheHardSettingsHaveOneBesideThem) {
     const char* view;
     const char* key;
   } expected[] = {
-      {"settings_section_help.rml", "settings.security.crash_reports.label"},
       {"settings_section_security.rml", "settings.security.recovery"},
       {"settings_section_devices.rml", "settings.security.transfer_row"},
       {"settings_section_devices.rml", "settings.help.topic.account_copy"},
@@ -82,26 +81,15 @@ TEST_F(SettingsHelpQuestionTest, TheHardSettingsHaveOneBesideThem) {
   EXPECT_EQ(ReadAsset("views/settings_section_help.rml").find("open_diagnostics_help()"), std::string::npos);
 }
 
-// Phones: the crash-report switch sits on the Help page, in one "Help improve PP" card, with its "?" and a line under
-// it; the desktop has its own copy (hidden on phones) on the same page.
-TEST_F(SettingsHelpQuestionTest, PhonesShowCrashReportsInHelpImprovePp) {
+// The crash-report switch is off the Help page, phone and desktop (2026-11-19): its upload endpoint does not exist yet
+// and the last crash record now goes with the run logs. The upload code and the preference stay, dormant.
+TEST_F(SettingsHelpQuestionTest, TheHelpPageHasNoCrashReportSwitch) {
   const std::string about = ReadAsset("views/settings_section_help.rml");
-  const size_t card = about.find("{{i18n:settings.about.improve.title}}");
-  ASSERT_NE(card, std::string::npos);
-  // The title and the card are phone-only, and every piece follows the title.
-  EXPECT_NE(about.find("<p class=\"text group-head settings-phone-only\">{{i18n:settings.about.improve.title}}"),
-            std::string::npos);
-  EXPECT_NE(about.find("<div class=\"group-card settings-phone-only\">", card), std::string::npos);
-  for (const char* piece : {"ask_setting_help('settings.security.crash_reports.label')", "toggle_crash_reports()",
-                            "{{i18n:settings.security.crash_reports.help}}"}) {
-    EXPECT_NE(about.find(piece, card), std::string::npos) << piece;
+  for (const char* gone : {"toggle_crash_reports()", "crash_reports_enabled", "settings.security.crash_reports.",
+                           "settings.about.improve.title", "ask_setting_help("}) {
+    EXPECT_EQ(about.find(gone), std::string::npos) << gone;
   }
-  EXPECT_NE(about.find("<div class=\"group-card settings-desktop-only\">"), std::string::npos);
-  EXPECT_EQ(Tr("settings.about.improve.title"), "Help improve PP");
-  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(Tr("settings.about.improve.title"), "帮我们改进 PP");
-  EXPECT_EQ(Tr("settings.security.crash_reports.label"), "闪退时自动发送报告");
-  EXPECT_EQ(Tr("settings.security.crash_reports.help"), "只在闪退时发送，不含聊天内容。");
+  EXPECT_EQ(about.find("settings-phone-only\">{{i18n:settings.about.improve"), std::string::npos);
 }
 
 TEST_F(SettingsHelpQuestionTest, TheQuestionMarkIsABigEnoughTarget) {
@@ -155,7 +143,7 @@ TEST_F(SettingsHelpQuestionTest, WithoutThePanelSupportIsAsked) {
 }
 
 // "Send diagnostics" is retired from the Help page, on phones and the desktop (DEV/PLAN-send-run-logs.md: run logs
-// are sent from Advanced); the crash-report switch stays. The small "Send" pill it used is now the run logs row's.
+// are sent from Advanced). The small "Send" pill it used is now the run logs row's.
 TEST_F(SettingsHelpQuestionTest, TheHelpPageNoLongerSendsDiagnostics) {
   const std::string rml = ReadAsset("views/settings_section_help.rml");
   for (const char* gone :
@@ -163,7 +151,6 @@ TEST_F(SettingsHelpQuestionTest, TheHelpPageNoLongerSendsDiagnostics) {
         "diagnostics_last", "diagnostics_sending", "settings.security.diagnostics."}) {
     EXPECT_EQ(rml.find(gone), std::string::npos) << gone;
   }
-  EXPECT_NE(rml.find("toggle_crash_reports()"), std::string::npos);
   // The pill and the "?" are 44dp tap areas.
   const std::string css = ReadAsset("themes/components.rcss");
   const size_t pill = css.find(".shell-layer-compact .settings-pill-btn {");

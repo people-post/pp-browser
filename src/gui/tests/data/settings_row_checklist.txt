@@ -473,25 +473,19 @@ data-event-click="toggle_attachment_auto_wifi()"	1	storage	storage	storage_page 
 {{storage_tab_video_label}}	1	-	storage	storage_page == 'items'	storage	
 {{storage_total_label}}	1	-	storage	storage_page == 'main';;storage_ready	storage	
 data-class-settings-switch--on="show_advanced_settings == 'on'"	1	-	help	-	-	
-data-class-settings-switch--on="crash_reports_enabled == 'on'"	2	-	help	-	about,security	
-data-event-click="ask_setting_help('settings.security.crash_reports.label')"	2	-	help	-	about,security	
 data-event-click="open_privacy_policy()"	1	-	help	-	-	
 data-event-click="open_support_chat()"	1	-	help	support_visible	-	
 data-event-click="open_terms()"	1	-	help	-	-	
 data-event-click="tap_version()"	2	-	help	-	-	
 data-event-click="toggle_advanced_settings()"	1	about	help	-	-	
-data-event-click="toggle_crash_reports()"	2	security	help	-	about,security	
 {{app_build}}	2	-	help	-	about	
 {{app_version}}	2	-	help	-	about	
 {{i18n:settings.about.build}}	2	-	help	-	about	
-{{i18n:settings.about.improve.title}}	1	-	help	-	about	
 {{i18n:settings.about.version}}	2	-	help	-	about	
 {{i18n:settings.help.privacy_policy}}	1	-	help	-	-	
 {{i18n:settings.help.show_advanced.hint}}	1	-	help	-	-	
 {{i18n:settings.help.show_advanced}}	1	-	help	-	-	
 {{i18n:settings.help.terms}}	1	-	help	-	-	
-{{i18n:settings.security.crash_reports.help}}	2	-	help	-	about,security	
-{{i18n:settings.security.crash_reports.label}}	2	-	help	-	about,security	
 {{support_display_name}}	1	-	help	support_visible	-	
 {{support_subtitle}}	1	-	help	support_visible	-	
 data-class-settings-switch--on="call_diagnostics == 'on'"	1	-	tester	tester	appearance	
@@ -611,5 +605,3 @@ data-event-click="copy_relay_link(relay_index)"	1	-	relays	my_relays_shown;;rela
 {{i18n:settings.relays.add.hint}}	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;my_relay_add_error == '' && !my_relays_busy	relays	
 data-event-click="scan_my_relay_link()"	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy && my_relay_can_scan	relays	
 {{i18n:settings.relays.add.scan}}	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy && my_relay_can_scan	relays	
-
-{{i18n:settings.security.group.diagnostics}}	1	-	help	-	security	

@@ -13,6 +13,8 @@ Two things can leave the device, and only by the user's choice: a crash report (
 | The last crash, if one is pending: `{data_dir}/diagnostics/crash_pending.txt` as a compact envelope (reason, frames, breadcrumb tags — never the raw sample) | next launch, only with the crash-report switch on | `CrashReportEnvelope`, `CrashReportUpload` |
 | The run logs: `pp-browser`, `metrics` and `diag` files, filtered (below) | only when the user taps Send run logs, confirms and picks a contact (test phase) | `RunLogBundle`, `SettingsRunLogsActions` |
 
+The crash-report switch is no longer on the Help page (2026-11-19): `CrashReportUpload` and the `crash_reports_enabled` preference stay dormant (the switch is off, no row sets it) until the relay provides the crash-reports endpoint, and the last crash record goes with Send run logs instead.
+
 Nothing else. The developer log (`pp-browser.log`) never leaves the device unless the user, in the test phase, taps Send run logs, confirms what is in it and picks the contact it goes to (below); nothing sends it by itself.
 
 ## Send run logs (test phase)
