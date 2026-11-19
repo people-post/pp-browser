@@ -11,5 +11,6 @@ review; RC015 Kenneth's client-side questions; RC016 three independent version l
 **P0 written:** [INVENTORY.md](INVENTORY.md), at the commits of 2026-11-19: every format, what an unknown version or
 field does today, and the release-1 work list (§ 4). In review with Hongwei, Kenneth (RC015's rows, the update
 text) and Leo (the relay's rows). P0's decisions are taken (RC017: a clean local start, `pp_credit` fixed, the easy
-recovery tier and N031 after release 1); P1, the freeze, starts once the list is agreed. Until release 1 ships, [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) (clean cutovers) is the
+recovery tier and N031 after release 1; RC018: the answers for Kenneth's and Leo's rows, the
+rest theirs with defaults). P1, the freeze, can start: nothing on the list waits on an open decision. Until release 1 ships, [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) (clean cutovers) is the
 policy in force, but new breaking changes should already be weighed against the range rule.

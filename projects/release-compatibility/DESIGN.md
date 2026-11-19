@@ -234,8 +234,8 @@ the range rule):
     account lockers, Support conversation or usage records. Each is deleted on revoke, or its retention is stated.
   - **An offline reset** leaves the registration until it expires (up to 90 days): retry the revoke later, or say so.
   - **Several devices of one account:** whether resetting one device revokes the account's registration for all of
-    them (registration is one per Account ID), and whether that is the intent. Deleting the account and removing one
-    device may need to be two actions.
+    them (registration is one per Account ID), and whether that is the intent. Decided: two actions, *Delete account…* and
+    *Remove this device…* ([RC018](DECISIONS.md#rc018--the-release-1-answers-for-kenneths-and-leos-rows) item 1).
 - **Crash reports from released versions.** The app sends them when `client-compat` names a `crash_reports_url`;
   prod names none. Release 1 needs a destination, within DIAGNOSTICS' shareable-lines rule.
 
