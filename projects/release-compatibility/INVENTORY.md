@@ -333,7 +333,7 @@ in his repo, O6 (the crash-report destination), X11 (deploy per tag with Lambda 
 | T15 | needed | S | pb | The release-1 floor readers accept any `schema_version` ≥ 1 for the fields they know (`client-compat`, and `relay-identity`'s `== 1`); a timer re-check; decide prerelease and malformed-min handling | `ClientCompat.cpp:16-63, 155-170`, `RelayIdentity.cpp:29-31`, `client_compat_test.cpp:67` |
 | T16 | needed | S | mesh, pb | Media readers forward or skip unknown channel types instead of refusing them, before simulcast or screen share need it | `MediaFrame.cpp`, COMPATIBILITY.md:111 |
 | T17 | worth | S | pb | Retries slow to daily after a permanent refusal: other-relay registration, pp-node registration and heartbeat | `RelayRegistrationsWorkflow.cpp:137-140`, `node/main.cpp:496-549`, `NodeHeartbeat.cpp:207-226` |
-| T18 | needed | S | pb | Billing and promise readers refuse or ignore an amount whose `currency` is not `pp_credit` (today any string is taken, and a missing one defaults to it); the minor-unit scale written in pricing P001 (RC017 item 2) | `InitiationBillingCodec.cpp:66, 89, 111`, `PaymentPromiseCodec.cpp:72`, `InitiationBillingStore.cpp:58`, `projects/pricing/DECISIONS.md` |
+| T18 | needed | S | pb | Billing and promise readers refuse or ignore an amount whose `currency` is not `pp_credit` (today any string is taken, and a missing one defaults to it); RC017 item 2 | `InitiationBillingCodec.cpp:66, 89, 111`, `PaymentPromiseCodec.cpp:72`, `InitiationBillingStore.cpp:58`, `projects/pricing/DECISIONS.md` |
 
 ### V: A version every receiver checks first
 
@@ -433,7 +433,7 @@ in his repo, O6 (the crash-report destination), X11 (deploy per tag with Lambda 
 |----|------|------|
 | D1 | decided: after release 1 | The synced-keychain recovery tier (multi-device-account): additive; versioned with frozen data from day 1 when built (RC017 item 3) |
 | D2 | decided: after release 1 | N031 signed node records (p2p-mesh): additive, with heartbeats and rows kept for the node range and A2's floor closing them (RC017 item 4) |
-| D3 | decided | `pp_credit` is the protocol id for good; the display name stays free; the scale and a checking reader in T18 (RC017 item 2) |
+| D3 | decided | `pp_credit` is the protocol id for good; the display name stays free; the minor unit is one credit, a major unit later is display only; a checking reader in T18 (RC017 item 2) |
 | D4 | needed | Version-table rows DESIGN lacks: MSH handshake 1, session control byte 2, the carrier id, the PeerId derivation, every row of § 2 |
 | D5 | needed | Doc drift: `WIRE_SCHEMAS.md:61` and `COMPATIBILITY.md:68, 84` (history keys), `COMPATIBILITY.md:42` (JSON floors), `MESSAGE_ENCRYPTION.md:105` (group copy 2), `MESH_DHT.md:190-205` (sign bytes), `mesh ERRORS.md` (`bad_version`), `DATA_LAYOUT.md:147` and its missing stores, `SERVICE_ENDPOINTS.md:451` (revoke body) and its retired diagnostics endpoint, chat-storage `PHASES.md:307` ("unknown types rejected on ingest", the opposite of the rule) |
 | D6 | needed | Other projects' docs: tick multi-relay R5, e2e-message-crypto c3++ / c4 and chat-storage `PHASES.md:306-320`, which are done in code; refresh the multi-relay, group-chat and chat-storage CURRENT_STATEs |

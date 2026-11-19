@@ -8,7 +8,7 @@ Cross-cutting pricing slice brought forward ahead of payment rails.
 | **Media relay quote** | Regulate hop capacity ecosystem | Ad-hoc mesh quote/accept |
 | **Payment promise receipts** | Signed local promise/outcome before rails | `PaymentPromiseStore` / codec / avoid |
 
-Currency: protocol id **`pp_credit`**, fixed for good ([release-compatibility RC017](../release-compatibility/DECISIONS.md#rc017--p0s-decisions-a-clean-local-start-the-currency-id-fixed-two-features-after-release-1)); integer **minor units**. The display name (“Credits”) and symbol may still change.
+Currency: protocol id **`pp_credit`**, fixed for good ([release-compatibility RC017](../release-compatibility/DECISIONS.md#rc017--p0s-decisions-a-clean-local-start-the-currency-id-fixed-two-features-after-release-1)); integer **minor units**, and the minor unit is **one credit**. A major unit (decided later) only groups credits for display. The display name (“Credits”) and symbol may still change.
 
 ### This slice (client)
 

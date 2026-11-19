@@ -371,8 +371,9 @@ each product, the format versions it writes and reads ([DESIGN § Libraries and 
    `identity.enc` 3→4 and `contacts.json` 2→3; no reset path is added for stores below the floor (INVENTORY C4).
 2. **`pp_credit` is the currency's protocol id, fixed for good.** It is already on the wire (billing control details),
    inside signed payment promises, in two local stores, and the implied unit of the card's `initiation_floor`. The
-   name people see (`kPricingCurrencyDisplayName`) stays free to change. The minor-unit scale is fixed and written
-   down before release 1, and readers refuse or ignore an amount in a currency they do not know (INVENTORY T18). A
+   name people see (`kPricingCurrencyDisplayName`) stays free to change. **The minor unit is one credit:** every amount
+   counts credits. A major unit, decided later, only groups credits for display; amounts on the wire, in signed bytes
+   and in stores do not change. Readers refuse or ignore an amount in a currency they do not know (INVENTORY T18). A
    second currency later is a new id, and a currency field beside `initiation_floor`: additive.
 3. **The easy recovery tier (seed in the synced keychain, multi-device-account M023 §3) comes after release 1.** It is
    additive: an app without its reader asks for the phrase. When built, the synced item carries a version and has
