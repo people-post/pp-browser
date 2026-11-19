@@ -7,6 +7,7 @@
 #include "foundation/platform/CameraCapture.h"
 #include "foundation/platform/CapturePathRules.h"
 #include "foundation/platform/PickedFileName.h"
+#include "common/PathUtf8.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -113,6 +114,55 @@ void SaveFileAs(SDL_Window* window, const std::string& suggested_name, std::stri
     done(!paths.empty() && WriteWhole(paths.front(), bytes));
   }};
   SDL_ShowSaveFileDialog(OnDialogComplete, state, window, nullptr, 0, suggested_name.c_str());
+}
+
+namespace {
+
+struct SavePathState {
+  std::function<void(SavePathResult)> done;
+};
+
+// SDL: a null list is an error (no dialog could be shown), an empty one a cancel.
+void OnSavePathChosen(void* userdata, const char* const* filelist, int /*filter*/) {
+  std::unique_ptr<SavePathState> state(static_cast<SavePathState*>(userdata));
+  SavePathResult result;
+  if (filelist == nullptr) {
+    result.kind = SavePathResult::Kind::Unavailable;
+  } else if (filelist[0] != nullptr && filelist[0][0] != '\0') {
+    result.kind = SavePathResult::Kind::Chosen;
+    result.path = filelist[0];
+  }
+  state->done(std::move(result));
+}
+
+} // namespace
+
+void ChooseSavePath(SDL_Window* window, const std::string& suggested_name, const std::string& default_dir,
+                    std::function<void(SavePathResult)> done) {
+  if (!done) {
+    return;
+  }
+  // "<folder>/<name>": every SDL backend opens the folder and fills in the name (a bare name: the name only).
+  std::string location = default_dir;
+  if (!location.empty() && location.back() != '/' && location.back() != '\\') {
+    location += '/';
+  }
+  location += suggested_name;
+  auto* state = new SavePathState{.done = std::move(done)};
+  SDL_ShowSaveFileDialog(OnSavePathChosen, state, window, nullptr, 0, location.empty() ? nullptr : location.c_str());
+}
+
+std::string DefaultSaveFolder() {
+  if (const char* downloads = SDL_GetUserFolder(SDL_FOLDER_DOWNLOADS); downloads != nullptr && downloads[0] != '\0') {
+    return downloads;
+  }
+  const char* home = SDL_getenv("HOME");
+  if (home == nullptr || home[0] == '\0') {
+    return {};
+  }
+  const std::string fallback = std::string(home) + "/Downloads";
+  std::error_code ec;
+  return std::filesystem::is_directory(PathFromUtf8(fallback), ec) ? fallback : std::string();
 }
 
 std::optional<ImportedPick> ImportPickedFile(const std::string& picked, const std::string& scratch_dir,

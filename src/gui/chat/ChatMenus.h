@@ -1,5 +1,6 @@
 #pragma once
 
+#include "feature/presenters/AttachmentExit.h"
 #include "feature/presenters/ChatPresenter.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "gui/CallActionsPorts.h"
@@ -77,6 +78,12 @@ public:
   virtual bool IsContactCard(const std::string& message_id) const = 0;
   /** *Add to contacts* on a contact card: checks it, adds the person, shows them. */
   virtual void AddContactFromCard(const std::string& message_id) = 0;
+  /** The attachment of a message in the open chat as its row was last drawn; none: no attachment (or not drawn). */
+  virtual std::optional<DrawnAttachment> DrawnAttachmentOf(const std::string& message_id) const = 0;
+  /** "Save as…" (desktop): the save dialog for the message's attachment, then the copy (AttachmentSaveFlow). */
+  virtual void SaveAttachmentAs(const std::string& message_id) = 0;
+  /** "Share…" (phones): the system share sheet for the message's attachment, pointing at `position` on an iPad. */
+  virtual void ShareAttachment(const std::string& message_id, ui::Vector2i position) = 0;
   /** The ask-AI panel exists here (phones): the chat's "⋯" offers "Ask AI". */
   virtual bool AskAiPanelAvailable() const = 0;
   /** Opens the ask-AI panel over the chat; nothing of the chat goes to the AI. */
@@ -85,6 +92,17 @@ public:
 
 /** Puts "Edit" (running `start_edit`) right under "Copy" in a message's menu, or last when there is no Copy. */
 void InsertEditAction(std::vector<ContextMenuAction>& actions, std::function<void()> start_edit);
+
+/** Desktop or phone, by the platform only (an iPad, even full screen, is a phone): AttachmentExit's layout. */
+AttachmentLayout CurrentAttachmentLayout();
+
+/**
+ * A received attachment's way out of the app (DEV/PLAN-received-file-save-as.md), as `entries` asks: "Save as…"
+ * running `save_as`, "Share…" running `share`. Appended where it is called (ForRequest: after Copy / Edit, before
+ * Delete).
+ */
+void AppendAttachmentExitActions(std::vector<ContextMenuAction>& actions, const AttachmentMenuEntries& entries,
+                                 std::function<void()> save_as, std::function<void()> share);
 
 /**
  * While the open chat is editing a message: takes out "Edit", "Reply" and "Ask AI" (each would replace the words being

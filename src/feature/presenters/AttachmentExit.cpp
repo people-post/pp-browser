@@ -1,0 +1,306 @@
+#include "feature/presenters/AttachmentExit.h"
+
+#include "common/Logger.h"
+#include "common/PathUtf8.h"
+#include "foundation/i18n/LocalizationService.h"
+#include "lib/messaging/AttachmentCache.h"
+#include "lib/voice/AudioFilePlayer.h"
+#include "lib/voice/VoiceFile.h"
+
+#include <chrono>
+#include <cstring>
+#include <utility>
+
+namespace pbr {
+
+namespace {
+
+logging::Logger log() {
+  return logging::getLogger("attachment");
+}
+
+} // namespace
+
+AttachmentExitKind KindOfAttachment(const std::string& mime, const std::string& filename, const uint64_t declared_bytes,
+                                    const int voice_max_seconds, const bool voice_bubbles) {
+  if (voice_bubbles && DecideVoiceBubble(mime, filename, declared_bytes, voice_max_seconds).bubble) {
+    return AttachmentExitKind::Voice;
+  }
+  if (IsAttachmentImageMime(mime)) {
+    return AttachmentExitKind::Picture;
+  }
+  if (IsAttachmentVideoMime(mime)) {
+    return AttachmentExitKind::Video;
+  }
+  if (IsAudioFileAttachment(mime, filename)) {
+    return AttachmentExitKind::AudioFile;
+  }
+  return AttachmentExitKind::File;
+}
+
+std::string SuggestedSaveName(const std::string& sender_filename, const std::string& mime) {
+  // The name the system viewer is handed (nothing decrypted is needed to know it).
+  if (std::string open_name = AttachmentOpenFilename(sender_filename, mime, "attachment"); !open_name.empty()) {
+    return open_name;
+  }
+  // A type with no safe extension (an archive, an unknown file) is opened under its stored name, which is no name
+  // for a save dialog: the sender's, cleaned the same way.
+  constexpr size_t kMaxNameBytes = 100;
+  const size_t slash = sender_filename.find_last_of("/\\");
+  std::string name;
+  for (const char ch : sender_filename.substr(slash == std::string::npos ? 0 : slash + 1)) {
+    const auto c = static_cast<unsigned char>(ch);
+    if (c >= 0x20 && c != 0x7F && std::strchr("<>:\"|?*", ch) == nullptr) {
+      name.push_back(ch);
+    }
+  }
+  const size_t first = name.find_first_not_of(". ");
+  name = first == std::string::npos ? std::string() : name.substr(first);
+  if (name.size() > kMaxNameBytes) {
+    size_t cut = kMaxNameBytes;
+    while (cut > 0 && (static_cast<unsigned char>(name[cut]) & 0xC0) == 0x80) {
+      --cut; // not inside a UTF-8 character
+    }
+    name.resize(cut);
+  }
+  const size_t last = name.find_last_not_of(". ");
+  name = last == std::string::npos ? std::string() : name.substr(0, last + 1);
+  return name.empty() ? std::string("attachment") : name;
+}
+
+std::optional<AttachmentExitKind> MenuKindOf(const std::optional<DrawnAttachment>& drawn) {
+  if (!drawn || !drawn->ready) {
+    return std::nullopt;
+  }
+  return drawn->kind;
+}
+
+AttachmentTap DecideAttachmentTap(const AttachmentLayout layout, const AttachmentExitKind kind, const bool ready,
+                                  const bool plays_in_app, const bool save_busy) {
+  if (layout == AttachmentLayout::Phone) {
+    return AttachmentTap::Open;
+  }
+  switch (kind) {
+    case AttachmentExitKind::Picture:
+    case AttachmentExitKind::Video:
+    case AttachmentExitKind::Voice:
+      return AttachmentTap::Open;
+    case AttachmentExitKind::AudioFile:
+      if (plays_in_app) {
+        return AttachmentTap::PlayInApp;
+      }
+      break;
+    case AttachmentExitKind::File:
+      break;
+  }
+  if (save_busy) {
+    return AttachmentTap::Ignore; // only a tap that would save is held back
+  }
+  return ready ? AttachmentTap::Save : AttachmentTap::NotReady;
+}
+
+AttachmentMenuEntries DecideMenuEntries(const AttachmentLayout layout, const bool can_share_file,
+                                        const std::optional<AttachmentExitKind> kind) {
+  AttachmentMenuEntries entries;
+  if (!kind || *kind == AttachmentExitKind::Voice) {
+    return entries;
+  }
+  entries.save_as = layout == AttachmentLayout::Desktop;
+  entries.share = can_share_file;
+  return entries;
+}
+
+bool AttachmentSaveState::TryBegin(const std::string& message_id) {
+  if (phase_ != Phase::Idle) {
+    return false;
+  }
+  phase_ = Phase::Choosing;
+  message_id_ = message_id;
+  ++token_;
+  return true;
+}
+
+bool AttachmentSaveState::Chosen(const std::string& message_id) {
+  if (phase_ != Phase::Choosing || message_id != message_id_) {
+    return false;
+  }
+  phase_ = Phase::Saving;
+  return true;
+}
+
+void AttachmentSaveState::ReleaseChoosing() {
+  if (phase_ == Phase::Choosing) {
+    phase_ = Phase::Idle;
+    message_id_.clear();
+    ++token_;
+  }
+}
+
+void AttachmentSaveState::Finish(const std::string& message_id) {
+  if (phase_ != Phase::Idle && message_id == message_id_) {
+    phase_ = Phase::Idle;
+    message_id_.clear();
+  }
+}
+
+struct AttachmentSaveFlow::Core {
+  explicit Core(AttachmentSavePorts p) : ports(std::move(p)) {}
+  int64_t NowMs() const {
+    return ports.now_ms ? ports.now_ms()
+                        : std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count();
+  }
+  /** A dialog waiting longer than kStaleDialogMs is taken as lost. */
+  bool StaleChoosing() const {
+    return state.phase() == AttachmentSaveState::Phase::Choosing && NowMs() - choosing_since_ms > kStaleDialogMs;
+  }
+  AttachmentSavePorts ports;
+  AttachmentSaveState state;
+  int64_t choosing_since_ms = 0;
+};
+
+AttachmentSaveFlow::AttachmentSaveFlow(AttachmentSavePorts ports) : core_(std::make_shared<Core>(std::move(ports))) {}
+
+bool AttachmentSaveFlow::Busy() const {
+  return core_->state.Busy() && !core_->StaleChoosing();
+}
+
+void AttachmentSaveFlow::ReleaseChoosing() {
+  if (core_->state.phase() == AttachmentSaveState::Phase::Choosing) {
+    log().warning << "attachment save: dialog dropped";
+  }
+  core_->state.ReleaseChoosing();
+}
+
+AttachmentSaveFlow::Start AttachmentSaveFlow::Begin(const std::string& thread_id, const std::string& message_id,
+                                                    const std::string& suggested_name, const bool ready) {
+  if (core_->StaleChoosing()) {
+    ReleaseChoosing(); // the dialog never answered: start over (its late answer is ignored)
+  }
+  if (core_->state.Busy()) {
+    return Start::Ignored;
+  }
+  if (!ready) {
+    core_->ports.fail(Tr("chat.attachment.not_ready"));
+    return Start::NotReady;
+  }
+  core_->state.TryBegin(message_id);
+  core_->choosing_since_ms = core_->NowMs();
+  const uint64_t token = core_->state.token();
+  core_->ports.choose_path(suggested_name,
+                           [weak = std::weak_ptr<Core>(core_), thread_id, message_id, token](SaveChoice choice) {
+                             // The dialog may answer on another thread: back on the UI thread before anything changes.
+                             const std::shared_ptr<Core> core = weak.lock();
+                             if (!core) {
+                               return;
+                             }
+                             core->ports.post_ui([weak, thread_id, message_id, token, choice = std::move(choice)]() {
+                               if (const std::shared_ptr<Core> alive = weak.lock()) {
+                                 OnChoice(alive, thread_id, message_id, token, choice);
+                               }
+                             });
+                           });
+  return Start::Started;
+}
+
+void AttachmentSaveFlow::OnChoice(const std::shared_ptr<Core>& core, const std::string& thread_id,
+                                  const std::string& message_id, const uint64_t token, const SaveChoice& choice) {
+  AttachmentSavePorts& ports = core->ports;
+  if (token != core->state.token() || core->state.phase() != AttachmentSaveState::Phase::Choosing) {
+    log().info << "attachment save: late answer ignored";
+    return; // its dialog was dropped (another chat, or too long without an answer)
+  }
+  if (choice.kind != SaveChoice::Kind::Chosen || choice.path.empty()) {
+    core->state.Finish(message_id);
+    if (choice.kind == SaveChoice::Kind::Unavailable) {
+      log().warning << "attachment save: no save dialog";
+      ports.fail(Tr("chat.attachment.save_unavailable"));
+    } else {
+      log().info << "attachment save: cancelled";
+    }
+    return;
+  }
+  if (!core->state.Chosen(message_id)) {
+    return;
+  }
+  ports.ok(Tr("chat.attachment.saving"));
+  ports.post_worker([weak = std::weak_ptr<Core>(core), thread_id, message_id, target = choice.path]() {
+    const std::shared_ptr<Core> core = weak.lock();
+    if (!core) {
+      return; // the chat screen is gone
+    }
+    // The view is made (decrypted) only now that a path is chosen; no view (locked meanwhile) = no target file.
+    const std::optional<std::string> view = core->ports.view_path(thread_id, message_id);
+    const bool copied = view && core->ports.copy(*view, target);
+    core->ports.post_ui([weak, message_id, target, copied]() {
+      if (const std::shared_ptr<Core> alive = weak.lock()) {
+        OnCopied(alive, message_id, target, copied);
+      }
+    });
+  });
+}
+
+void AttachmentSaveFlow::OnCopied(const std::shared_ptr<Core>& core, const std::string& message_id,
+                                  const std::string& target, const bool copied) {
+  AttachmentSavePorts& ports = core->ports;
+  core->state.Finish(message_id);
+  if (!copied) {
+    log().warning << "attachment save: failed";
+    ports.fail(Tr("chat.attachment.save_failed"));
+    return;
+  }
+  ports.mark_downloaded(target);
+  log().info << "attachment save: done";
+  ports.ok(
+      Tr("chat.attachment.saved_to", {{"folder", ports.folder_name(PathToUtf8(PathFromUtf8(target).parent_path()))}}));
+}
+
+struct AttachmentShareFlow::Core {
+  explicit Core(AttachmentSharePorts p) : ports(std::move(p)) {}
+  AttachmentSharePorts ports;
+  bool busy = false;
+};
+
+AttachmentShareFlow::AttachmentShareFlow(AttachmentSharePorts ports)
+    : core_(std::make_shared<Core>(std::move(ports))) {}
+
+bool AttachmentShareFlow::Busy() const {
+  return core_->busy;
+}
+
+AttachmentShareFlow::Start AttachmentShareFlow::Begin(const std::string& thread_id, const std::string& message_id,
+                                                      const std::string& mime, const bool ready, const int x,
+                                                      const int y) {
+  if (core_->busy) {
+    return Start::Ignored;
+  }
+  if (!ready) {
+    core_->ports.fail(Tr("chat.attachment.not_ready"));
+    return Start::NotReady;
+  }
+  core_->busy = true;
+  core_->ports.post_worker([weak = std::weak_ptr<Core>(core_), thread_id, message_id, mime, x, y]() {
+    const std::shared_ptr<Core> core = weak.lock();
+    if (!core) {
+      return; // the chat screen is gone
+    }
+    std::optional<std::string> view = core->ports.view_path(thread_id, message_id);
+    core->ports.post_ui([weak, mime, x, y, view = std::move(view)]() {
+      const std::shared_ptr<Core> alive = weak.lock();
+      if (!alive) {
+        return;
+      }
+      alive->busy = false;
+      if (view && alive->ports.share(*view, mime, x, y)) {
+        log().info << "attachment share: sheet shown";
+        return;
+      }
+      log().warning << "attachment share: failed";
+      alive->ports.fail(Tr("chat.attachment.share_failed"));
+    });
+  });
+  return Start::Started;
+}
+
+} // namespace pbr

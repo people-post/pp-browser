@@ -5,6 +5,7 @@ set(_pp_platform_core_sources
   DeploymentProfile.cpp
   PickedFileName.cpp
   Platform.cpp
+  SavedFileCopy.cpp
   PlatformLogDefaults.cpp
   IPathProvider.cpp
   DesktopPathProvider.cpp
@@ -115,6 +116,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     os/OsDeviceName_Win32.cpp
     os/OsExecutablePath_Win32.cpp
     os/OsDownloadMark_Win32.cpp
+    os/OsFolderName_Default.cpp
     os/OsProcessStats_Default.cpp
     os/OsThreadStackDump_Default.cpp
     desktop/PathProvider_Win32.cpp
@@ -126,6 +128,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     ImageThumbnail_Default.cpp
     PlatformShare_Default.cpp
     PlatformShareImage_Default.cpp
+    PlatformShareFile_Default.cpp
     NativeFileDialog_Default.cpp
     CameraCapture_Default.cpp
     PlatformOpenFile.cpp
@@ -145,9 +148,9 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
     desktop/PathProvider_Darwin.cpp
   )
   if(PP_BROWSER_IS_IOS)
-    list(APPEND _pp_platform_core_sources os/OsDownloadMark_Default.cpp)
+    list(APPEND _pp_platform_core_sources os/OsDownloadMark_Default.cpp os/OsFolderName_Default.cpp)
   else()
-    list(APPEND _pp_platform_core_sources os/OsDownloadMark_Darwin.cpp)
+    list(APPEND _pp_platform_core_sources os/OsDownloadMark_Darwin.cpp os/OsFolderName_Darwin.mm)
   endif()
   list(APPEND _pp_platform_gui_sources
     desktop/LocalNotifier_Darwin.mm
@@ -157,14 +160,14 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   )
   if(NOT PP_BROWSER_IS_IOS)
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm PlatformShare_Darwin.mm
-         PlatformShareImage_Darwin.mm
+         PlatformShareImage_Darwin.mm PlatformShareFile_Default.cpp
          NativeFileDialog_Default.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp
          PlatformNotificationSettings_Default.cpp PlatformAppBadge_Darwin.mm DeviceScreenState_Default.cpp
          DeviceRinger_Default.cpp ProximityScreenOff_Default.cpp)
   else()
     # SDL3 has no iOS file dialog (its dummy backend answers "nothing picked" at once).
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp PlatformShare_Ios.mm
-         PlatformShareImage_Ios.mm
+         PlatformShareImage_Ios.mm PlatformShareFile_Ios.mm
          NativeFileDialog_Ios.mm CameraCapture_Ios.mm PlatformOpenFile_Ios.mm PlatformNotificationSettings_Ios.mm
          PlatformAppBadge_Ios.mm DeviceScreenState_Default.cpp DeviceRinger_Default.cpp
          ProximityScreenOff_Ios.mm)
@@ -173,6 +176,7 @@ else()
   list(APPEND _pp_platform_core_sources
     os/OsExecutablePath_Linux.cpp
     os/OsDownloadMark_Default.cpp
+    os/OsFolderName_Default.cpp
     os/OsProcessStats_Linux.cpp
     os/OsThreadStackDump_Linux.cpp
     desktop/PathProvider_Linux.cpp
@@ -193,11 +197,12 @@ else()
   endif()
   if(NOT PP_BROWSER_IS_ANDROID)
     list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp
+         PlatformShareFile_Default.cpp
          PlatformNotificationSettings_Default.cpp PlatformAppBadge_Default.cpp DeviceScreenState_Default.cpp
          DeviceRinger_Default.cpp)
   else()
     # A file:// address is refused by Android 7+ (FileUriExposedException): a FileProvider address instead.
-    list(APPEND _pp_platform_gui_sources CameraCapture_Android.cpp PlatformOpenFile_Android.cpp
+    list(APPEND _pp_platform_gui_sources CameraCapture_Android.cpp PlatformOpenFile_Android.cpp PlatformShareFile_Android.cpp
          PlatformNotificationSettings_Android.cpp PlatformAppBadge_Android.cpp DeviceScreenState_Android.cpp
          DeviceRinger_Android.cpp)
   endif()

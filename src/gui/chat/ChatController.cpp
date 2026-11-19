@@ -73,6 +73,11 @@
 #include "lib/messaging/QuoteReply.h"
 #include "foundation/platform/PlatformOpenFile.h"
 #include "foundation/platform/PlatformOpenUrl.h"
+#include "foundation/platform/PlatformShareFile.h"
+#include "foundation/platform/SavedFileCopy.h"
+#include "foundation/platform/os/OsDownloadMark.h"
+#include "foundation/platform/os/OsFolderName.h"
+#include "common/PathUtf8.h"
 
 #include "lib/ai/MarkdownToRml.h"
 #include "lib/ai/StructuredTextParser.h"
@@ -475,6 +480,61 @@ ChatController::ChatController()
   playback_ports.call_live = [this]() { return facade_ && facade_->AnyCallLive(); };
   voice_playback_ = std::make_unique<VoicePlayback>(std::move(playback_ports));
 
+  // Desktop "Save as" of a received attachment (DEV/PLAN-received-file-save-as.md): AttachmentSaveFlow decides, these
+  // are its ports. Only "saved / cancelled / failed" and the size go to the log, never a name or a path.
+  AttachmentSavePorts save_ports;
+  save_ports.choose_path = [](const std::string& suggested_name, std::function<void(SaveChoice)> done) {
+    ChooseSavePath(Backend::GetWindow(), suggested_name, DefaultSaveFolder(),
+                   [done = std::move(done)](const SavePathResult& result) {
+                     SaveChoice choice;
+                     choice.path = result.path;
+                     choice.kind = result.kind == SavePathResult::Kind::Chosen      ? SaveChoice::Kind::Chosen
+                                   : result.kind == SavePathResult::Kind::Cancelled ? SaveChoice::Kind::Cancelled
+                                                                                    : SaveChoice::Kind::Unavailable;
+                     done(std::move(choice));
+                   });
+  };
+  save_ports.post_ui = [](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); };
+  save_ports.post_worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
+  save_ports.view_path = [this](const std::string& thread_id,
+                                const std::string& message_id) -> std::optional<std::string> {
+    return facade_ ? facade_->AttachmentOpenPathForMessage(thread_id, message_id) : std::nullopt;
+  };
+  save_ports.copy = [this](const std::string& from, const std::string& to) {
+    const auto copied = CopyFileInChunks(from, to);
+    if (copied) {
+      std::error_code ec;
+      log().info << "attachment save: copied " << std::filesystem::file_size(PathFromUtf8(to), ec) << " bytes";
+    }
+    return static_cast<bool>(copied);
+  };
+  save_ports.mark_downloaded = [this](const std::string& path) {
+    if (!os::MarkFileAsDownloaded(path)) {
+      log().warning << "attachment save: the downloaded mark was not set";
+    }
+  };
+  save_ports.folder_name = [](const std::string& folder) { return os::FolderDisplayName(folder); };
+  save_ports.ok = [](const std::string& text) { UserFeedback::Ok(text); };
+  save_ports.fail = [](const std::string& text) { UserFeedback::Fail(text); };
+  save_flow_ = std::make_unique<AttachmentSaveFlow>(std::move(save_ports));
+
+  // Phones' "Share…": the view handed to the system share sheet through share_file_ (deletes nothing).
+  share_file_ = [](const std::string& path, const std::string& mime, const ShareAnchor anchor) {
+    return PlatformShareFile(Backend::GetWindow(), path, mime, anchor);
+  };
+  AttachmentSharePorts share_ports;
+  share_ports.post_ui = [](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); };
+  share_ports.post_worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
+  share_ports.view_path = [this](const std::string& thread_id,
+                                 const std::string& message_id) -> std::optional<std::string> {
+    return facade_ ? facade_->AttachmentOpenPathForMessage(thread_id, message_id) : std::nullopt;
+  };
+  share_ports.share = [this](const std::string& path, const std::string& mime, const int x, const int y) {
+    return share_file_ && share_file_(path, mime, ShareAnchor{static_cast<float>(x), static_cast<float>(y), 1.f, 1.f});
+  };
+  share_ports.fail = [](const std::string& text) { UserFeedback::Fail(text); };
+  share_flow_ = std::make_unique<AttachmentShareFlow>(std::move(share_ports));
+
   presenter_.BindCallbacks({
       .on_changed = [this]() { ApplySessionList(); },
       .prefs_failed = []() { UserFeedback::Fail(Tr("sidebar.error.prefs_failed")); },
@@ -850,7 +910,7 @@ void ChatController::BindConversationsFacade(ConversationsFacade* facade) {
   chrome_.BindConversationsFacade(facade);
   scroller_.SetRowBuilder(
       [this](const std::string& thread_id, std::optional<int64_t> oldest, std::optional<int64_t> newest) {
-        return BuildMessageRows(thread_id, oldest, newest);
+        return BuildMessageRows(thread_id, oldest, newest, /*remember_drawn=*/true);
       });
 }
 
@@ -3509,7 +3569,8 @@ void ChatController::ShowAttachChoice(std::function<void()> photo, std::function
 
 std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::string& thread_id,
                                                                 std::optional<int64_t> oldest_inclusive,
-                                                                std::optional<int64_t> newest_inclusive) {
+                                                                std::optional<int64_t> newest_inclusive,
+                                                                const bool remember_drawn) {
   if (!facade_) {
     return {};
   }
@@ -3519,6 +3580,22 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   facts.voice_max_seconds = facade_->CurrentAttachmentLimits().voice_max_seconds;
   facts.voice_state = [this](const std::string& message_id) { return voice_playback_->State(message_id); };
   facts.audio_files_play = voice_playback_->PlaysFiles();
+  if (remember_drawn && thread_id == ActiveThreadId() && facts.attachment) {
+    // Each attachment row of the open chat is remembered as drawn: a tap or a menu decides with it (TapAttachment).
+    // The map is rebuilt from the rows built here, so a message no longer drawn leaves it.
+    const bool another_chat = drawn_attachments_thread_ != thread_id;
+    drawn_attachments_.clear();
+    drawn_attachments_thread_ = thread_id;
+    if (another_chat) {
+      save_flow_->ReleaseChoosing(); // a save dialog that never answered must not outlive the chat it was for
+    }
+    facts.attachment = [this, drawn = std::move(facts.attachment), voice_bubbles = facts.voice_supported,
+                        voice_max_seconds = facts.voice_max_seconds](const ThreadMessage& message) {
+      TranscriptAttachmentView view = drawn(message);
+      RememberDrawnAttachment(message, view, voice_bubbles, voice_max_seconds);
+      return view;
+    };
+  }
   const int64_t now_ms = util::NowUnixMs();
   std::optional<int64_t> next_mark_change;
   std::vector<std::string> red_ids;
@@ -3706,6 +3783,107 @@ void ChatController::OpenPicture(const std::string& message_id) {
     shell_feedback_.mount_photo_preview(PhotoPreviewRml());
   }
   OpenAttachment(message_id);
+}
+
+namespace {
+
+std::optional<DrawnAttachment> DescribeDrawnAttachment(const ThreadMessage& message,
+                                                       const TranscriptAttachmentView& view, const bool voice_bubbles,
+                                                       const int voice_max_seconds) {
+  auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
+  if (!fields) {
+    return std::nullopt;
+  }
+  DrawnAttachment drawn;
+  drawn.kind = KindOfAttachment(fields->mime, fields->filename, fields->byte_length, voice_max_seconds, voice_bubbles);
+  drawn.ready = view.state == AttachmentFetchWorkflow::DownloadState::Ready;
+  drawn.mime = fields->mime;
+  drawn.suggested_name = SuggestedSaveName(fields->filename, fields->mime);
+  return drawn;
+}
+
+} // namespace
+
+void ChatController::RememberDrawnAttachment(const ThreadMessage& message, const TranscriptAttachmentView& view,
+                                             const bool voice_bubbles, const int voice_max_seconds) {
+  if (auto drawn = DescribeDrawnAttachment(message, view, voice_bubbles, voice_max_seconds)) {
+    drawn_attachments_[message.id] = std::move(*drawn);
+  }
+}
+
+std::optional<DrawnAttachment> ChatController::LookUpAttachment(const std::string& message_id) {
+  if (!facade_) {
+    return std::nullopt;
+  }
+  const auto message = facade_->GetMessage(ActiveThreadId(), message_id);
+  const TranscriptFacts facts = facade_->TranscriptFactsFor();
+  if (!message || !*message || !facts.attachment) {
+    return std::nullopt;
+  }
+  return DescribeDrawnAttachment(**message, facts.attachment(**message), VoiceMessagesSupported(),
+                                 facade_->CurrentAttachmentLimits().voice_max_seconds);
+}
+
+std::optional<DrawnAttachment> ChatController::DrawnAttachmentOf(const std::string& message_id) const {
+  if (drawn_attachments_thread_.empty() || drawn_attachments_thread_ != ActiveThreadId()) {
+    return std::nullopt;
+  }
+  const auto found = drawn_attachments_.find(message_id);
+  return found == drawn_attachments_.end() ? std::nullopt : std::optional<DrawnAttachment>(found->second);
+}
+
+void ChatController::TapAttachment(const std::string& message_id) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  const std::optional<DrawnAttachment> drawn = DrawnAttachmentOf(message_id);
+  if (!drawn) {
+    OpenAttachment(message_id); // not drawn (chat just switched): nothing is known to decide with, as before
+    return;
+  }
+  switch (DecideAttachmentTap(CurrentAttachmentLayout(), drawn->kind, drawn->ready, voice_playback_->PlaysFiles(),
+                              save_flow_->Busy())) {
+    case AttachmentTap::Open:
+    case AttachmentTap::PlayInApp: // a sound card drawn as a file row: today's path, never a save dialog
+      OpenAttachment(message_id);
+      return;
+    case AttachmentTap::Save:
+      SaveAttachmentAs(message_id);
+      return;
+    case AttachmentTap::NotReady:
+      UserFeedback::Fail(Tr("chat.attachment.not_ready"));
+      return;
+    case AttachmentTap::Ignore:
+      return;
+  }
+}
+
+void ChatController::SaveAttachmentAs(const std::string& message_id) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  std::optional<DrawnAttachment> drawn = DrawnAttachmentOf(message_id);
+  if (!drawn) {
+    drawn = LookUpAttachment(message_id); // not drawn (chat just switched): look this one message up, assume nothing
+  }
+  if (!drawn) {
+    return; // no such attachment any more
+  }
+  (void)save_flow_->Begin(ActiveThreadId(), message_id, drawn->suggested_name, drawn->ready);
+}
+
+void ChatController::ShareAttachment(const std::string& message_id, const ui::Vector2i position) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  std::optional<DrawnAttachment> drawn = DrawnAttachmentOf(message_id);
+  if (!drawn) {
+    drawn = LookUpAttachment(message_id); // not drawn (chat just switched): look this one message up, assume nothing
+  }
+  if (!drawn) {
+    return; // no such attachment any more
+  }
+  (void)share_flow_->Begin(ActiveThreadId(), message_id, drawn->mime, drawn->ready, position.x, position.y);
 }
 
 void ChatController::OpenAttachment(const std::string& message_id) {
@@ -5692,7 +5870,7 @@ bool ChatController::Setup(ui::Context* context) {
                                  if (IsPendingUploadRowId(message_id)) {
                                    return;
                                  }
-                                 OpenAttachment(message_id);
+                                 TapAttachment(message_id);
                                }));
         ctor.BindEventCallback("open_picture", DataEvent<std::string>([this](const std::string& message_id) {
                                  if (IsPendingUploadRowId(message_id)) {

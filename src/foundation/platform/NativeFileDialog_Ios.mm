@@ -407,6 +407,18 @@ void SaveFileAs(SDL_Window* window, const std::string& suggested_name, std::stri
   }
 }
 
+// The phone shares a file through the system sheet instead (nothing calls this here): only so ChatController links.
+void ChooseSavePath(SDL_Window* /*window*/, const std::string& /*suggested_name*/, const std::string& /*default_dir*/,
+                    std::function<void(SavePathResult)> done) {
+  if (done) {
+    done(SavePathResult{.kind = SavePathResult::Kind::Unavailable});
+  }
+}
+
+std::string DefaultSaveFolder() {
+  return {};
+}
+
 std::optional<ImportedPick> ImportPickedFile(const std::string& picked, const std::string& /*scratch_dir*/,
                                              bool /*force_copy*/) {
   // iOS picks are already private files (tmp/pp-picks); there are no content:// URIs.
