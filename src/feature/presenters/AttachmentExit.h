@@ -46,11 +46,13 @@ struct DrawnAttachment {
 };
 
 /**
- * The name a save dialog offers: `safe_name` (the name the system viewer is handed, AttachmentOpenFilename) when there
- * is one, else the sender's name without folder part, control or reserved characters or leading dots (at most 100
- * bytes), else "attachment".
+ * The name a save dialog offers: the name the system viewer is handed (AttachmentOpenFilename, the same call the open
+ * path makes: the sender's name cleaned, with the type's safe extension); for a type that has none (an archive) the
+ * sender's name cleaned the same way, else "attachment". A sound file whose content is another container than its
+ * name says gets one more suffix on the open path (it is sniffed from the decrypted view): not known before a path
+ * is chosen, so the dialog's name lacks it then.
  */
-std::string SuggestedSaveName(const std::string& sender_filename, const std::string& safe_name);
+std::string SuggestedSaveName(const std::string& sender_filename, const std::string& mime);
 
 enum class AttachmentTap {
   /** Today's open (the system viewer / player, a phone's own handling). */

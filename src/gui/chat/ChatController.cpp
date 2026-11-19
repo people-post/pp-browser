@@ -3791,8 +3791,7 @@ void ChatController::RememberDrawnAttachment(const ThreadMessage& message, const
   drawn.kind = KindOfAttachment(fields->mime, fields->filename, fields->byte_length, voice_max_seconds, voice_bubbles);
   drawn.ready = view.state == AttachmentFetchWorkflow::DownloadState::Ready;
   drawn.mime = fields->mime;
-  drawn.suggested_name =
-      SuggestedSaveName(fields->filename, AttachmentOpenFilename(fields->filename, fields->mime, "attachment"));
+  drawn.suggested_name = SuggestedSaveName(fields->filename, fields->mime);
 }
 
 std::optional<DrawnAttachment> ChatController::DrawnAttachmentOf(const std::string& message_id) const {

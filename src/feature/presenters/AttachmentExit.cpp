@@ -37,10 +37,13 @@ AttachmentExitKind KindOfAttachment(const std::string& mime, const std::string& 
   return AttachmentExitKind::File;
 }
 
-std::string SuggestedSaveName(const std::string& sender_filename, const std::string& safe_name) {
-  if (!safe_name.empty()) {
-    return safe_name;
+std::string SuggestedSaveName(const std::string& sender_filename, const std::string& mime) {
+  // The name the system viewer is handed (nothing decrypted is needed to know it).
+  if (std::string open_name = AttachmentOpenFilename(sender_filename, mime, "attachment"); !open_name.empty()) {
+    return open_name;
   }
+  // A type with no safe extension (an archive, an unknown file) is opened under its stored name, which is no name
+  // for a save dialog: the sender's, cleaned the same way.
   constexpr size_t kMaxNameBytes = 100;
   const size_t slash = sender_filename.find_last_of("/\\");
   std::string name;

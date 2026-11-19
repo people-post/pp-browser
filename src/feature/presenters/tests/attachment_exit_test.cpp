@@ -7,6 +7,7 @@
 #include "common/Utilities.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/SavedFileCopy.h"
+#include "lib/messaging/AttachmentCache.h"
 
 #include <gtest/gtest.h>
 
@@ -94,12 +95,34 @@ TEST(AttachmentExitTest, ShareIsOfferedOnlyWhereThePlatformHasAFileShareSheet) {
   EXPECT_FALSE(DecideMenuEntries(kPhone, true, std::nullopt).share) << "a text message";
 }
 
-TEST(AttachmentExitTest, TheSuggestedNameIsTheSafeNameElseTheSendersNameCleaned) {
-  EXPECT_EQ(SuggestedSaveName("../../evil/report.pdf", "report.pdf"), "report.pdf");
-  EXPECT_EQ(SuggestedSaveName("../dir\\.data:1.json", ""), "data1.json");
-  EXPECT_EQ(SuggestedSaveName("...", ""), "attachment");
-  EXPECT_EQ(SuggestedSaveName("", ""), "attachment");
-  EXPECT_EQ(SuggestedSaveName(std::string(150, 'a') + ".json", "").size(), 100u);
+TEST(AttachmentExitTest, TheSuggestedNameIsTheNameTheOpenPathUses) {
+  // A file, a picture and an audio file: the dialog offers exactly what the open path names the view.
+  const struct {
+    const char* filename;
+    const char* mime;
+  } cases[] = {
+      {"../../evil/report.pdf", "application/pdf"},
+      {"notes", "text/plain"},
+      {"IMG 1.JPG", "image/jpeg"},
+      {"photo", "image/png"},
+      {"Song Title.mp3", "audio/mpeg"},
+      {"song", "audio/mpeg"},
+      {"", "image/png"},
+  };
+  for (const auto& c : cases) {
+    const std::string open_name = AttachmentOpenFilename(c.filename, c.mime, "attachment");
+    ASSERT_FALSE(open_name.empty()) << c.filename;
+    EXPECT_EQ(SuggestedSaveName(c.filename, c.mime), open_name) << c.filename;
+  }
+  EXPECT_EQ(SuggestedSaveName("song", "audio/mpeg"), "song.mp3");
+}
+
+TEST(AttachmentExitTest, ATypeWithoutASafeExtensionOffersTheSendersNameCleaned) {
+  EXPECT_EQ(SuggestedSaveName("../dir\\.data:1.json", "application/octet-stream"), "data1.json");
+  EXPECT_EQ(SuggestedSaveName("logs.tar.gz", "application/gzip"), "logs.tar.gz");
+  EXPECT_EQ(SuggestedSaveName("...", "application/octet-stream"), "attachment");
+  EXPECT_EQ(SuggestedSaveName("", "application/octet-stream"), "attachment");
+  EXPECT_EQ(SuggestedSaveName(std::string(150, 'a') + ".json", "application/octet-stream").size(), 100u);
 }
 
 TEST(AttachmentExitTest, TheSaveStateGoesIdleChoosingSavingIdle) {
