@@ -361,3 +361,29 @@ each product, the format versions it writes and reads ([DESIGN § Libraries and 
   cadence together while gaining little over fully independent lines.
 **Cost:** a fix in code both products share is backported to each product's branch that needs it (a label each).
 
+## RC017 — P0's decisions: a clean local start, the currency id fixed, two features after release 1
+
+**Date:** 2026-11-19
+**Status:** Accepted (Hongwei, 2026-11-19). Answers [INVENTORY](INVENTORY.md) C5 and D1–D3.
+**Decision:**
+1. **Local stores start clean at release 1.** Every tester deletes the app and installs release 1 (they are in direct
+   contact). Each store's floor becomes its current version and every pre-release migration step goes, including
+   `identity.enc` 3→4 and `contacts.json` 2→3; no reset path is added for stores below the floor (INVENTORY C4).
+2. **`pp_credit` is the currency's protocol id, fixed for good.** It is already on the wire (billing control details),
+   inside signed payment promises, in two local stores, and the implied unit of the card's `initiation_floor`. The
+   name people see (`kPricingCurrencyDisplayName`) stays free to change. The minor-unit scale is fixed and written
+   down before release 1, and readers refuse or ignore an amount in a currency they do not know (INVENTORY T18). A
+   second currency later is a new id, and a currency field beside `initiation_floor`: additive.
+3. **The easy recovery tier (seed in the synced keychain, multi-device-account M023 §3) comes after release 1.** It is
+   additive: an app without its reader asks for the phrase. When built, the synced item carries a version and has
+   frozen data from day 1, because another install on another version reads it.
+4. **N031's signed node records come after release 1.** Directory row readers already ignore unknown keys, so records
+   arrive additively; the relay keeps accepting heartbeats and clients read rows and records for the node pair's range
+   (2 releases, 60 days), and the node floor (INVENTORY A2) closes the old path.
+**Rationale:**
+- With every tester reinstalling, nothing older than release 1 exists, so steps kept for older files would never run.
+- Renaming a protocol id later is a format change on the wire, in signed bytes and in stores; a display name is not.
+- Both features are additive under the range rule, and neither is built (N031 is L-sized), so neither is worth
+  delaying release 1.
+**Cost:** release 1's default "Just continue" path keeps no off-device copy of the seed: a user who never shows their
+phrase or saves a copy loses the account with the phone. Two paths stay open for 60 days after N031 ships.

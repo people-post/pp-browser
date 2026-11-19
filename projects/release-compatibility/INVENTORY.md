@@ -333,6 +333,7 @@ in his repo, O6 (the crash-report destination), X11 (deploy per tag with Lambda 
 | T15 | needed | S | pb | The release-1 floor readers accept any `schema_version` ≥ 1 for the fields they know (`client-compat`, and `relay-identity`'s `== 1`); a timer re-check; decide prerelease and malformed-min handling | `ClientCompat.cpp:16-63, 155-170`, `RelayIdentity.cpp:29-31`, `client_compat_test.cpp:67` |
 | T16 | needed | S | mesh, pb | Media readers forward or skip unknown channel types instead of refusing them, before simulcast or screen share need it | `MediaFrame.cpp`, COMPATIBILITY.md:111 |
 | T17 | worth | S | pb | Retries slow to daily after a permanent refusal: other-relay registration, pp-node registration and heartbeat | `RelayRegistrationsWorkflow.cpp:137-140`, `node/main.cpp:496-549`, `NodeHeartbeat.cpp:207-226` |
+| T18 | needed | S | pb | Billing and promise readers refuse or ignore an amount whose `currency` is not `pp_credit` (today any string is taken, and a missing one defaults to it); the minor-unit scale written in pricing P001 (RC017 item 2) | `InitiationBillingCodec.cpp:66, 89, 111`, `PaymentPromiseCodec.cpp:72`, `InitiationBillingStore.cpp:58`, `projects/pricing/DECISIONS.md` |
 
 ### V: A version every receiver checks first
 
@@ -376,8 +377,8 @@ in his repo, O6 (the crash-report destination), X11 (deploy per tag with Lambda 
 | C1 | needed | M | pb | Leave the relay's legacy routes **before C2**: `/v1/search` → users/by-account, `blobs/*` → `cdn/*`, `files/*` → `blob/*`, `keys/rotate` and `llm_api_key` → `llm_token` and `token/renew`; drop the `brf_llm_` logic and `RelayFileUrl`'s hard-coded path | `OrgBackendClientsImpl.cpp:196-224, 594-597`, `HttpBlobClient.cpp`, `RelayFileUrl.cpp:8-32`, `ConversationsHub.cpp:101-110, 3865-3937`, `AgentSessions.cpp:17-27` |
 | C2 | needed | S–M | relay | Remove the legacy sign window (`94c6865`), the `blobs/*` / `files/*` / `GET /search` aliases, `llm_api_key` and `keys/rotate`, the pre-cutover sender mapping, once no app in the release-1 range uses them (after C1). Leo for timing | § 2.2 legacy list |
 | C3 | needed | S | relay config | `min_client_version` raised to app 1.0; prod's `upgrade_url` and `upgrade_urls` set (prod served `https://example.test/releases` on 2026-11-17). Leo | prod `CLIENT_COMPAT_JSON` |
-| C4 | needed | M | pb | Local floors moved to release 1 and pre-release steps dropped: `profile.db` 4→8, `thread.db` 2→4, `initiation_billing` floor 2 and its flat-root reader, the preferences <16 reset, manifest backend adoption | `SqliteThreadSchema.h:19-22`, `SqliteChatDbLadders.cpp:54-282`, `InitiationBillingStore.cpp:37-53`, `ConfigJson.cpp:939-956`, `ProfileRegistry.cpp:211-241` |
-| C5 | needed (decision) | S | pb | `identity.enc` 3→4 and `contacts.json` 2→3: below the floor these lose the account, not just chats. Confirm no tester is still below, keep the one-line steps, or add a reset path. Hongwei | `IdentityStore.cpp:487-497`, `ContactsStore.cpp:94-108` |
+| C4 | needed | M | pb | Local floors moved to release 1 and every pre-release step dropped ([RC017](DECISIONS.md#rc017--p0s-decisions-a-clean-local-start-the-currency-id-fixed-two-features-after-release-1)): `profile.db` 4→8, `thread.db` 2→4, `identity.enc` 3→4, `contacts.json` 2→3, `initiation_billing` floor 2 and its flat-root reader, the preferences <16 reset, manifest backend adoption | `SqliteThreadSchema.h:19-22`, `SqliteChatDbLadders.cpp:54-282`, `InitiationBillingStore.cpp:37-53`, `ConfigJson.cpp:939-956`, `ProfileRegistry.cpp:211-241` |
+| C5 | decided | — | — | `identity.enc` and `contacts.json` lose the account below their floor, not just chats: every tester deletes the app and installs release 1, so their floors move too and no reset path is added (RC017 item 1, folded into C4) | — |
 
 ### O: Operating a live release (RC011)
 
@@ -430,9 +431,9 @@ in his repo, O6 (the crash-report destination), X11 (deploy per tag with Lambda 
 
 | Id | Need | Item |
 |----|------|------|
-| D1 | decide before the freeze | The synced-keychain recovery tier (multi-device-account): a store other installs read, so versioned from day 1 if it is in release 1, or deferred explicitly |
-| D2 | decide before the freeze | N031 signed node records (p2p-mesh): if they replace the heartbeat soon, give them a version and extension area from day 1 |
-| D3 | decide before the freeze | The pricing currency id (`pp_credit`, "TBD"), before it is stored on devices and on the wire |
+| D1 | decided: after release 1 | The synced-keychain recovery tier (multi-device-account): additive; versioned with frozen data from day 1 when built (RC017 item 3) |
+| D2 | decided: after release 1 | N031 signed node records (p2p-mesh): additive, with heartbeats and rows kept for the node range and A2's floor closing them (RC017 item 4) |
+| D3 | decided | `pp_credit` is the protocol id for good; the display name stays free; the scale and a checking reader in T18 (RC017 item 2) |
 | D4 | needed | Version-table rows DESIGN lacks: MSH handshake 1, session control byte 2, the carrier id, the PeerId derivation, every row of § 2 |
 | D5 | needed | Doc drift: `WIRE_SCHEMAS.md:61` and `COMPATIBILITY.md:68, 84` (history keys), `COMPATIBILITY.md:42` (JSON floors), `MESSAGE_ENCRYPTION.md:105` (group copy 2), `MESH_DHT.md:190-205` (sign bytes), `mesh ERRORS.md` (`bad_version`), `DATA_LAYOUT.md:147` and its missing stores, `SERVICE_ENDPOINTS.md:451` (revoke body) and its retired diagnostics endpoint, chat-storage `PHASES.md:307` ("unknown types rejected on ingest", the opposite of the rule) |
 | D6 | needed | Other projects' docs: tick multi-relay R5, e2e-message-crypto c3++ / c4 and chat-storage `PHASES.md:306-320`, which are done in code; refresh the multi-relay, group-chat and chat-storage CURRENT_STATEs |
@@ -448,9 +449,9 @@ nothing in flight has to be split. Planned or half-done work that would change a
 | pp-relay-apis | `POST /v1/crash-reports` | new endpoint | planned | **before the freeze** (O6) |
 | pp-relay-apis | legacy aliases and LLM legacy keys | removal of old readers | in place, dated | **before the freeze**, after C1 (C2) |
 | p2p-av-calls, broadcast | `video_hi`, simulcast, screen share | new media channel or stream ids | planned | the tolerant reader **before the freeze** (T16); the features wait |
-| pricing | the `pp_credit` name | currency id in billing rows and on the wire | undecided | **decide before the freeze** (D3) |
-| multi-device-account | seed in the synced keychain | a store other installs read | planned | **decide before the freeze** (D1) |
-| p2p-mesh | N031 signed short-lived node records | new signed object | planned | **decide before the freeze** (D2) |
+| pricing | the `pp_credit` name | currency id in billing rows and on the wire | decided (RC017) | id fixed now; display name free (D3, T18) |
+| multi-device-account | seed in the synced keychain | a store other installs read | planned | after release 1, additive (D1) |
+| p2p-mesh | N031 signed short-lived node records | new signed object | planned | after release 1, additive (D2) |
 | social-posts | P2 client (`post-entry-v1`, already with a version byte and extension section) | post log, head and media | half-done, library only | wait; S4 first |
 | media-hop-reachability | circuit protocol v2 (`bridge_path`, `sub_bridge`, `max_hops`) | circuit relay | planned | wait; ship as a new id beside v1 (X6) |
 | pricing | P004 paid-hop handover | new hop payment controls | deferred | wait |
