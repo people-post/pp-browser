@@ -58,6 +58,11 @@ std::string SettingsRunLogsActions::LogPath() const {
 }
 
 void SettingsRunLogsActions::Refresh() {
+  // Opening the page again: the confirm is modal, so with no archive being made nobody can still be answering one. A
+  // sheet that went away without calling back must not leave the row grey.
+  if (!preparing_) {
+    busy_ = false;
+  }
   show_ = RunLogsAllowed(kUiDemoBuild) && !DataDir().empty();
   // Unreadable counts as off, as for pruning and packaging.
   collect_ = show_ && RunLogPrefs::ReadCollect(DataDir(), true).value_or(false);
@@ -99,6 +104,7 @@ void SettingsRunLogsActions::Send() {
     return;
   }
   SetBusy(true); // grey at once: a second tap makes no second archive
+  preparing_ = true;
   UserFeedback::Note(Tr("settings.run_logs.preparing"));
   const std::string data_dir = DataDir();
   const std::string log_path = LogPath();
@@ -110,6 +116,7 @@ void SettingsRunLogsActions::Send() {
         RunLogBundle::Build(log_path, LogFile::EffectiveRetention(collect), kRunLogArchiveMaxBytes, std::time(nullptr));
     AppRuntime::PostUI([this, alive, collect, archive = std::move(archive)]() mutable {
       if (alive.lock()) {
+        preparing_ = false;
         OnPrepared(std::move(archive), collect);
       }
     });

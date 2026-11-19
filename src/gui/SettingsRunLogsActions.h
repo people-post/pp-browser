@@ -60,6 +60,8 @@ private:
   bool collect_ = false;
   bool sendable_ = false;
   bool busy_ = false;
+  /** The archive is being made on a worker: busy_ stays up until it comes back. */
+  bool preparing_ = false;
   bool send_disabled_ = true;
 };
 

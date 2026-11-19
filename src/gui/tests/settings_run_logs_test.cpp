@@ -305,6 +305,32 @@ TEST_F(SettingsRunLogsTest, TwoTapsMakeOneArchiveAndOneConfirmThatSaysWhatIsInIt
   EXPECT_FALSE(Pill()->HasAttribute("disabled"));
 }
 
+TEST_F(SettingsRunLogsTest, AConfirmThatWentAwayWithoutAnswerLeavesTheRowUsableOnceThePageOpensAgain) {
+  Click(Switch());
+  PreviousLaunches(1);
+  Click(Pill());
+  Settle();
+  ASSERT_EQ(confirms.size(), 1u);
+  EXPECT_TRUE(Pill()->HasAttribute("disabled")) << "the confirm is up";
+  // The sheet is torn down by something other than its buttons: no callback ever comes.
+  Click("sel_adv"); // the Advanced page opened again
+  EXPECT_FALSE(Pill()->HasAttribute("disabled"));
+  Click(Pill());
+  Settle();
+  EXPECT_EQ(confirms.size(), 2u) << "a new tap makes a new confirm";
+  EXPECT_TRUE(sent.empty());
+}
+
+TEST_F(SettingsRunLogsTest, OpeningThePageAgainWhileTheArchiveIsBeingMadeStaysGrey) {
+  Click(Switch());
+  PreviousLaunches(1);
+  Click(Pill());
+  Click("sel_adv"); // before the worker came back
+  EXPECT_TRUE(Pill()->HasAttribute("disabled"));
+  Settle();
+  EXPECT_EQ(confirms.size(), 1u);
+}
+
 TEST_F(SettingsRunLogsTest, OffSaysCollectingIsOffAndCancelSendsNothing) {
   PreviousLaunches(3); // only the newest of them is packaged
   Click("sel_adv");
