@@ -328,7 +328,6 @@ Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps
 | `PP_BROWSER_ORIGIN` | Backend origin (`scheme://host`); overrides the compile-time default and saved backend URLs |
 | `PP_BROWSER_RELAY_PEER_ID` | The PeerId of `PP_BROWSER_ORIGIN`'s relay (multi-relay MR008; the part after `#` of its relay link). Without it a release build does not use that relay, and a developer build pins it on its first answer, warned |
 | `PP_BROWSER_PIN` | Profile unlock PIN (`pp-node` / automation) |
-| `PP_BROWSER_DIAGNOSTICS_URL` | Dev only (local knob, not remote config): full URL that replaces the "Send diagnostics" upload endpoint (`<origin>/api/support/diagnostics`), e.g. `DEV/tools/fake_diagnostics.py` |
 | `PP_BROWSER_CA_BUNDLE` | Lab and development only, **Debug** desktop builds (a Release build does not read it: its environment must not choose whom it trusts): a PEM file that **replaces** curl's CA bundle (`CURLOPT_CAINFO`) for every HTTPS request — the app lab's TLS relays are signed by a lab CA (`scripts/test/pp_app_lab.py` passes the system bundle plus that CA). Unset: curl's own trust. Not read on Android or iOS |
 | `PP_BROWSER_BRIEF_STREAM_URL` | Dev only: full URL that replaces the streamed-answer endpoint (`llm.base_url` + `/pp/chat/stream`), e.g. a local fake server |
 | `PP_BROWSER_LLM_MODEL` | Default Brief model when no config file |

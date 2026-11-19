@@ -25,7 +25,6 @@ docs/contracts/                      @yhw1630 @gzdemon77
 capabilities/base/src/common/ShareableLine.*           @yhw1630 @gzdemon77
 capabilities/base/src/common/Secret.h                  @yhw1630 @gzdemon77
 capabilities/base/src/foundation/diagnostics/Diagnostics*  @yhw1630 @gzdemon77
-src/app/DiagnosticsUpload.*          @yhw1630 @gzdemon77
 
 # Identity, crypto, registration, local backup: both.
 capabilities/base/src/foundation/crypto/               @yhw1630 @gzdemon77

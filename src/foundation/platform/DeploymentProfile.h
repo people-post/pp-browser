@@ -61,12 +61,7 @@ inline bool OrgRelayFirstUseAllowed(bool developer_build, bool compiled_backend)
 std::string BriefRelayPeerId();
 /** The compile-time prod relay's PeerId ("" unless configured; pp-node's default with the compiled URL). */
 const char* CompiledDefaultRelayPeerId();
-/**
- * The rule behind DiagnosticsUploadUrl(): "" in the UI demo app; else `env_url` (PP_BROWSER_DIAGNOSTICS_URL, may be
- * null) when set, else `origin` + /api/support/diagnostics ("" when origin is empty).
- */
-std::string ResolveDiagnosticsUploadUrl(bool ui_demo, const char* env_url, const std::string& origin);
-/** False in the UI demo app: nothing may leave the device (diagnostics, crash reports). */
+/** False in the UI demo app: nothing may leave the device (crash reports, run logs). */
 inline bool UploadAllowed(bool ui_demo) {
   return !ui_demo;
 }
@@ -130,12 +125,6 @@ std::string BriefMcpUrlFor(const std::string& origin);
 std::string BriefStreamUrlOverride();
 /** The rule behind BriefStreamUrlOverride(), inputs passed in: always "" in the UI demo app (no backend, no redirect). */
 std::string ResolveBriefStreamUrlOverride(bool ui_demo, const char* env_url);
-/**
- * Where "Send diagnostics" posts: BriefOrigin() + /api/support/diagnostics. PP_BROWSER_DIAGNOSTICS_URL (a full
- * URL) replaces it for local development against DEV/tools/fake_diagnostics.py only; it is not remote config.
- * Empty when neither is set.
- */
-std::string DiagnosticsUploadUrl();
 std::string BriefRelayBaseUrl();
 std::string BriefMcpUrl();
 

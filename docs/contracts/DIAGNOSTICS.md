@@ -2,21 +2,18 @@
 
 **Tier:** contract  
 **Decision:** [privacy P009](../../projects/privacy/DECISIONS.md#p009--diagnostics-leave-the-device-as-shareable-lines-only)  
-**Code:** `common/ShareableLine.h` (the rule), `common/Diag.h` / `common/Metrics.h` (the channels), `foundation/diagnostics/DiagnosticsBundle.*` (what is read), `app/DiagnosticsUpload.*` (the send)
+**Code:** `common/ShareableLine.h` (the rule), `common/Diag.h` / `common/Metrics.h` (the channels), `foundation/diagnostics/RunLogBundle.*` (Send run logs), `app/CrashReportUpload.*` (crash reports)
 
 Two things can leave the device, and only by the user's choice: a crash report (Me → Help, its own switch) and, in the test phase, the run logs a user sends from Settings → Advanced → Send run logs to a contact they pick ([below](#send-run-logs-test-phase)). This page is the whole list of what goes, and the rule that keeps names, content and raw ids out of the troubleshooting channels. Me → Help → Send diagnostics was retired on 2026-11-19 (DEV/PLAN-send-run-logs.md).
 
-## What is sent
+## What leaves the device
 
-| Source | File | Written by |
-|--------|------|------------|
-| Troubleshooting events | `{data_dir}/logs/diag.log` (this run) and `diag.1.log` (the previous run) | `DiagLine` — channel `Diag` |
-| Operational metrics | `{data_dir}/logs/metrics.log` (this run) | `MetricsLine` — channel `Metrics` |
-| The last crash, if one is pending | `{data_dir}/diagnostics/crash_pending.txt`, rebuilt as `Crash` lines: reason, frames, breadcrumb tags (never the raw sample) | `CrashEnvelopeLines` |
+| What | When | Code |
+|------|------|------|
+| The last crash, if one is pending: `{data_dir}/diagnostics/crash_pending.txt` as a compact envelope (reason, frames, breadcrumb tags — never the raw sample) | next launch, only with the crash-report switch on | `CrashReportEnvelope`, `CrashReportUpload` |
+| The run logs: `pp-browser`, `metrics` and `diag` files, filtered (below) | only when the user taps Send run logs, confirms and picks a contact (test phase) | `RunLogBundle`, `SettingsRunLogsActions` |
 
 Nothing else. The developer log (`pp-browser.log`) never leaves the device unless the user, in the test phase, taps Send run logs, confirms what is in it and picks the contact it goes to (below); nothing sends it by itself.
-
-Before sending, the bundle keeps only lines of the channels `Diag`, `Metrics` and `Crash` at INFO or above, caps them (30 000 lines, 2 MiB JSON, 2048 bytes a line; at most 4 file entries — the gateway and app-support refuse a fifth; the least wanted file's oldest lines go first — `diag.1.log`, then `metrics.log`, then `diag.log`), and runs `SelfCheck` over exactly what would go: one hit (a long hex run, an id-like token, an email, a home path, one of the user's own or contacts' ids) and nothing is sent.
 
 ## Send run logs (test phase)
 
@@ -88,38 +85,4 @@ Call events are capped at 8 lines per event and call (`CallDiagBudget`), and a c
 
 Metrics events are listed where they are emitted (`MetricsLine("…")`); they follow the same rule.
 
-## The request
-
-`POST {BriefOrigin()}/api/support/diagnostics` (`DiagnosticsUploadUrl()`; dev-only override `PP_BROWSER_DIAGNOSTICS_URL`), `Content-Type: application/json`, `X-PP-Diagnostics: 1`, `Authorization: Bearer <brief LLM key>` (registered, else guest).
-
-```json
-{
-  "schema_version": 1,
-  "client_token": "<uuid, kept across a retry that got no answer>",
-  "product": "pp-browser",
-  "version": "1.2.3",
-  "os": "macos",
-  "captured_at": 1761642000000,
-  "files": [
-    { "name": "diag.log", "lines": ["[2026-10-28 08:57:32.329] [INFO] [Diag] event=relay.http_failed action=send status=503"] },
-    { "name": "metrics.log", "lines": ["…"] },
-    { "name": "diag.1.log", "lines": ["…"] },
-    { "name": "crash", "lines": ["[…] [INFO] [Crash] reason=SIGSEGV"] }
-  ]
-}
-```
-
-| Answer | Shown as |
-|--------|----------|
-| 2xx `{"upload_id", "lines"}` | Sent; the reference is kept in `diagnostics/last_upload.json` (owner-only) and shown under the button |
-| 429 `{"reason": "quota_key" \| "quota_ip" \| "quota_global"}` | Already sent today / limit reached |
-| 409 | The previous send is still being processed |
-| 401, 404, 503 | Unavailable |
-| 413 | Too large |
-| other (400: a body the server refused) / no answer | Failed / no network (the same `client_token` on retry) |
-
-### The receiving side
-
-The gateway (www, `app/src/r_support_client.ts`) checks the Bearer like the LLM routes, validates the body (the fields above, strict; 1–4 `files`; 30 000 lines, 2048 chars a line, 2.5 MB of line bytes) and forwards it to app-support `POST /v1/diagnostics` with two hashes for the quota: `X-Diag-Key-Hash` (SHA-256 of the Bearer) and `X-Diag-Ip-Hash` (HMAC with a gateway-only secret; IPv6 by /64). Its access log for this path carries no IP, user agent or request id. app-support validates the same body, reserves the daily quotas (3 a key, 10 an IP, a global cap), writes each line to CloudWatch as a `client_diag` record (`upload`, `file`, `version`, `os`, `line`) and keeps only the upload record in Mongo. A change to the body or the file limits is a change on all three.
-
-Changelog: 2026-10-30 — first version (P009). 2026-10-31 — call connection events (`call.*`). 2026-11-07 — `MediaErrWord` gains `dropped` (a connected call's media ended under it, K014). 2026-11-07 — `ai.llm_key` (B183). 2026-11-08 — `control.unreadable` (M024, #555 B186); `control.unverified` (M025, #555). 2026-11-08 — unlock.done gains ms (time since unlock.start). 2026-11-08 — `net.ui_block` (HTTP on the UI thread; the messaging-ready requests moved off it). 2026-11-08 — `unlock.done` `ms` counts from the door's first `unlock.start` (not the last attempt) and times grace unlocks. 2026-11-08 — `call.chip` (#166, the minimised call chip's placement). 2026-11-08 — `call.system` gains `push_stale`, `pending_call_over` and `age_ms` ([push-notifications P017](../../projects/push-notifications/DECISIONS.md#p017--a-call-push-too-old-to-ring-and-a-call-already-over-end-on-callkit-at-once)), and lists `pending_over_call` / `answer_over_call`, emitted since V064. 2026-11-08 — `notification.tap` (P018). 2026-11-09 — `call.system` drops `push_stale` and `age_ms` (they went with CallKit in [P019](../../projects/push-notifications/DECISIONS.md#p019--ios-calls-ring-by-a-time-sensitive-alert-again-pushkit-and-callkit-are-removed)) and `pending_call_over` and `choice_other_call` (Android's call push names no call: the clean-up of the push's named call, P017's Status). 2026-11-16 — `call.system` regains the iPhone push events (`push`, `push_locked`, `push_in_app`, `push_stale`, `timer_armed`, `timer_fired`, `audio_on` / `audio_off`, `ms`, `age_ms`) with CallKit for the default PIN ([P020](../../projects/push-notifications/DECISIONS.md#p020--default-pin-calls-ring-by-voip-push-and-callkit-a-custom-pin-by-alert)); `pending_call_over` and `choice_other_call` stay gone. 2026-11-19 — Send run logs (test phase) and the device-wide "Collect run logs" switch; Me → Help → Send diagnostics retired.
+Changelog: 2026-10-30 — first version (P009). 2026-10-31 — call connection events (`call.*`). 2026-11-07 — `MediaErrWord` gains `dropped` (a connected call's media ended under it, K014). 2026-11-07 — `ai.llm_key` (B183). 2026-11-08 — `control.unreadable` (M024, #555 B186); `control.unverified` (M025, #555). 2026-11-08 — unlock.done gains ms (time since unlock.start). 2026-11-08 — `net.ui_block` (HTTP on the UI thread; the messaging-ready requests moved off it). 2026-11-08 — `unlock.done` `ms` counts from the door's first `unlock.start` (not the last attempt) and times grace unlocks. 2026-11-08 — `call.chip` (#166, the minimised call chip's placement). 2026-11-08 — `call.system` gains `push_stale`, `pending_call_over` and `age_ms` ([push-notifications P017](../../projects/push-notifications/DECISIONS.md#p017--a-call-push-too-old-to-ring-and-a-call-already-over-end-on-callkit-at-once)), and lists `pending_over_call` / `answer_over_call`, emitted since V064. 2026-11-08 — `notification.tap` (P018). 2026-11-09 — `call.system` drops `push_stale` and `age_ms` (they went with CallKit in [P019](../../projects/push-notifications/DECISIONS.md#p019--ios-calls-ring-by-a-time-sensitive-alert-again-pushkit-and-callkit-are-removed)) and `pending_call_over` and `choice_other_call` (Android's call push names no call: the clean-up of the push's named call, P017's Status). 2026-11-16 — `call.system` regains the iPhone push events (`push`, `push_locked`, `push_in_app`, `push_stale`, `timer_armed`, `timer_fired`, `audio_on` / `audio_off`, `ms`, `age_ms`) with CallKit for the default PIN ([P020](../../projects/push-notifications/DECISIONS.md#p020--default-pin-calls-ring-by-voip-push-and-callkit-a-custom-pin-by-alert)); `pending_call_over` and `choice_other_call` stay gone. 2026-11-19 — Send run logs (test phase) and the device-wide "Collect run logs" switch; Me → Help → Send diagnostics retired. 2026-11-19 — the Send diagnostics upload (its bundle, request and receiving side) is removed with its code.
