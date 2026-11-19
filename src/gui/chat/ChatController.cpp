@@ -4951,6 +4951,10 @@ void ChatController::OnSessionSwipeAction(const std::string& thread_id, const Se
   menus_.RunSessionSwipeAction(thread_id, action);
 }
 
+void ChatController::OnViewportResized() {
+  group_link_->OnViewportResized();
+}
+
 void ChatController::OnShellLayoutSynced() {
   // SyncLayout remounts the shell DOM and resets scroll offsets — re-arm follow-tail.
   scroller_.OnShellRemounted();
@@ -6221,7 +6225,6 @@ void ChatController::Update() {
   ask_ai_.Tick(); // the panel's streamed answer, a one-off waiting to start, focus and scroll
   group_info_.Tick(messaging_ready_ ? ActiveThreadId() : std::string(), std::chrono::steady_clock::now());
   group_leave_.Tick(std::chrono::steady_clock::now());
-  group_link_->Tick();
   join_prompt_->Tick(std::chrono::steady_clock::now());
 
   if (search_.view().open) {
@@ -7080,7 +7083,11 @@ GroupLinkSheetPorts ChatController::MakeGroupLinkPorts() {
   GroupLinkSheetPorts ports;
   ports.push_sheet = [this](const PaneSpec& spec) { return GroupInfoPushSheet(spec); };
   ports.close_sheet = [this](const int layer_id) { GroupInfoCloseSheet(layer_id); };
-  ports.sheet_open = [this](const int layer_id) { return GroupInfoSheetOpen(layer_id); };
+  ports.watch_closed = [this](const int layer_id, std::function<void()> closed) {
+    if (shell_navigation_.watch_layer_closed) {
+      shell_navigation_.watch_layer_closed(layer_id, std::move(closed));
+    }
+  };
   ports.load = [this](const std::string& group_id, std::function<void(Roe<GroupLinkRow>)> done) {
     AppRuntime::PostWorkerAndReplyOnUI<Roe<GroupLinkRow>>(
         WorkerLane::Normal, [this, group_id]() { return presenter_.InviteLinkFor(group_id); }, std::move(done));

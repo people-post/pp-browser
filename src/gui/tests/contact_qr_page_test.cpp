@@ -155,6 +155,11 @@ TEST(ContactQrPageMarkupTest, ThePageNamesTheOwnerAndHasBothButtonsBehindTheirFl
   EXPECT_NE(rml.find("data-event-click=\"save_qr_image()\""), std::string::npos);
 }
 
+TEST(ContactQrPageMarkupTest, TheButtonsTakeTheCodesBoundWidth) {
+  const std::string rml = ReadAsset("views/my_qr.rml");
+  EXPECT_NE(rml.find("class=\"qr-actions\" data-style-width=\"qr_size\""), std::string::npos);
+}
+
 TEST(ContactQrPageMarkupTest, TheCodesSideIsBoundSoAPhoneDrawsItPageWide) {
   for (const char* page : {"views/my_qr.rml", "views/group_link.rml"}) {
     const std::string rml = ReadAsset(page);

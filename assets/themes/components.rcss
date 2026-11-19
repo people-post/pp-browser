@@ -11488,10 +11488,11 @@ input.checkbox {
 .shell-layer-compact .qr-body {
   flex: 1;
   min-height: 0;
+  overflow-y: auto; /* a short page (phone landscape) scrolls to the name and buttons */
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24dp 16dp 32dp 16dp;
+  padding: 24dp 0 32dp 0; /* no side padding: the sheet's own 16dp is the margin, so a 340dp code on a 393dp page fits */
   box-sizing: border-box;
 }
 
@@ -11509,7 +11510,7 @@ input.checkbox {
 }
 
 .shell-layer-compact .qr-name {
-  margin: 20dp 0 0 0;
+  margin: 20dp 16dp 0 16dp;
   font-size: 20dp;
   line-height: 26dp;
   font-weight: bold;
@@ -11517,13 +11518,13 @@ input.checkbox {
 }
 
 .shell-layer-compact .qr-hint {
-  margin: 6dp 0 0 0;
+  margin: 6dp 16dp 0 16dp;
   font-size: 15dp;
   line-height: 20dp;
   text-align: center;
 }
 
-/* The two buttons under the code (share as a picture, save it): full width of the card, 44dp or taller. */
+/* The two buttons under the code (share as a picture, save it): as wide as the code (qr_size is bound), 44dp or taller. */
 .shell-layer-compact .qr-actions {
   width: 260dp;
   margin: 24dp 0 0 0;
@@ -11917,8 +11918,8 @@ input.checkbox {
 /* Inside the centred qr-body column the card would shrink to its content (one character per line, B179). */
 .shell-layer-compact .qr-page .cd-card {
   align-self: stretch;
-  margin-left: 0;
-  margin-right: 0;
+  margin-left: 16dp; /* qr-body has no side padding */
+  margin-right: 16dp;
 }
 
 /* A person in a card (the group info's members): a 60dp row with a 44dp round avatar before the name (the lists'

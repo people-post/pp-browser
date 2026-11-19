@@ -97,6 +97,9 @@ struct ShellNavigationPorts {
   std::function<void(int layer_id)> close_layer;
   /** The layer push_layer returned is still open (a sheet stacked over others learns it was closed). */
   std::function<bool(int layer_id)> has_layer;
+  /** `closed` runs once when layer `layer_id` is gone, by any path (X, scrim, swipe, tab switch, a tapped chat's
+   *  clear-out, code); not when the layer was already gone. Lets an owner tie a resource to the layer's lifetime. */
+  std::function<void(int layer_id, std::function<void()> closed)> watch_layer_closed;
   /** Closes every page sheet at once (a button in a sheet stacked over others leaves for another page). */
   std::function<void()> close_page_sheets;
   /** A notification tap opens its chat: what is over it goes (ShellHost::ClearForTappedChat). */

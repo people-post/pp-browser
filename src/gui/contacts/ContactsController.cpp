@@ -1781,7 +1781,6 @@ void ContactsController::OnContactFieldChanged() {
 
 void ContactsController::Tick() {
   NoticeDetailSheetClosed();
-  SyncMyQrBrightness();
   if (add_search_deadline_ms_ != 0 && SDL_GetTicks() >= add_search_deadline_ms_) {
     add_search_deadline_ms_ = 0;
     RunAddSearch();
@@ -3105,12 +3104,13 @@ void ContactsController::OpenQrPage(const QrOwner owner, const std::string& name
   qr_locator_ = locator;
   qr_name_ = name.c_str();
   qr_hint_ = hint.c_str();
-  auto qr = QrSvgContent(locator);
+  QrShape shape;
+  auto qr = QrSvgContent(locator, &shape);
   my_qr_svg_rml_ = qr ? qr.value().c_str() : "";
   const QrDisplay display = QrDisplayFor(ChromeSnapshot().layout_mode == LayoutMode::Compact, context_);
   qr_size_ = display.css.c_str();
   if (qr) {
-    ReportQrShown(locator, display);
+    ReportQrShown(shape, display);
   }
   qr_can_share_ = static_cast<bool>(account_ports_.share_image);
   const ImageSaveKind kind = account_ports_.save_image ? account_ports_.save_image_kind : ImageSaveKind::None;
@@ -3132,7 +3132,27 @@ void ContactsController::OpenQrPage(const QrOwner owner, const std::string& name
   if (flow_coordinator_.begin_modal) {
     flow_coordinator_.begin_modal(my_qr_layer_id_, {}, [this]() { OnMyQrDismissed(); });
   }
-  SyncMyQrBrightness();
+  if (shell_navigation_.watch_layer_closed) {
+    // The brightness lives as long as the layer, whichever way it goes (the flow coordinator tracks only one page).
+    const int layer_id = my_qr_layer_id_;
+    shell_navigation_.watch_layer_closed(layer_id, [this, layer_id]() {
+      if (my_qr_layer_id_ == layer_id) {
+        OnMyQrDismissed();
+      }
+    });
+  }
+  QrBrightness().Want(QrBrightnessHold::kMyQr, true);
+}
+
+void ContactsController::OnViewportResized() {
+  if (!my_qr_open_) {
+    return;
+  }
+  const QrDisplay display = QrDisplayFor(ChromeSnapshot().layout_mode == LayoutMode::Compact, context_);
+  if (qr_size_ != display.css.c_str()) {
+    qr_size_ = display.css.c_str();
+    DataModelHost::Instance().Dirty("contacts", "qr_size");
+  }
 }
 
 void ContactsController::OnShareQrImage(const ShareAnchor anchor) {
@@ -3250,16 +3270,6 @@ void ContactsController::OnMyQrDismissed() {
   my_qr_open_ = false;
   my_qr_layer_id_ = -1;
   QrBrightness().Want(QrBrightnessHold::kMyQr, false);
-}
-
-// The page can be cleared without its dismissal callback (a tab switch, a notification): the layer is looked at each
-// frame, and the screen is only held bright while it is really up.
-void ContactsController::SyncMyQrBrightness() {
-  if (my_qr_open_ && shell_navigation_.has_layer && !shell_navigation_.has_layer(my_qr_layer_id_)) {
-    OnMyQrDismissed();
-    return;
-  }
-  QrBrightness().Want(QrBrightnessHold::kMyQr, my_qr_open_);
 }
 
 } // namespace pbr

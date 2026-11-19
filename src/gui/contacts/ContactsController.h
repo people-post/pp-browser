@@ -222,6 +222,8 @@ public:
   /** Me → About → "Show advanced settings": ids, addresses and fingerprints in the contact detail. */
   void SetShowAdvanced(bool advanced);
   void Tick();
+  /** The window changed size (a rotation): the QR page, when up, redraws the code at the size that now fits. */
+  void OnViewportResized();
   void FlushPending();
   /**
    * The contact page's / a list row's voice or video call: opens (or finds) the chat with `contact_id` and calls from
@@ -414,8 +416,6 @@ private:
   void OpenMyQrPage();
   void OnShareFriend(ui::Vector2i position);
   void OnMyQrDismissed();
-  /** Holds the screen at full brightness while the QR page is up (QrBrightness); notices it was cleared. */
-  void SyncMyQrBrightness();
   /** A directory hit chosen (or the only hit of a typed query): already a contact, ask first, or add. */
   void OfferHit(const mesh::DirectoryHit& hit, const std::string& query);
   static void SelectContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);

@@ -25,7 +25,7 @@ TEST(QrSvgTest, ThePngIsTheSameCodeWithWholePixelModulesAndAQuietZone) {
   ASSERT_TRUE(png) << png.error().message;
   SDL_Surface* image = DecodeImageUpright(png->data(), png->size(), "png");
   ASSERT_NE(image, nullptr);
-  const qrcodegen::QrCode code = qrcodegen::QrCode::encodeText(text.c_str(), qrcodegen::QrCode::Ecc::LOW);
+  const qrcodegen::QrCode code = qrcodegen::QrCode::encodeText(text.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
   const int span = code.getSize() + 8;
   const int scale = kQrPngTargetPx / span;
   EXPECT_EQ(image->w, span * scale);
@@ -49,8 +49,10 @@ TEST(QrSvgTest, ThePngIsTheSameCodeWithWholePixelModulesAndAQuietZone) {
 TEST(QrSvgTest, LowErrorCorrectionMakesASmallerCodeForTheSameContactPayload) {
   const std::string text = "pp-browser-contact-v1:" + std::string(428, 'A'); // about the size of a real contact code
   ASSERT_EQ(text.size(), 450u);
-  auto shape = QrSvgShape(text);
-  ASSERT_TRUE(shape) << shape.error().message;
+  QrShape got;
+  auto svg = QrSvgContent(text, &got);
+  ASSERT_TRUE(svg) << svg.error().message;
+  const auto* shape = &got;
   const auto low = qrcodegen::QrCode::encodeText(text.c_str(), qrcodegen::QrCode::Ecc::LOW);
   const auto medium = qrcodegen::QrCode::encodeText(text.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
   EXPECT_EQ(shape->version, low.getVersion());
@@ -59,8 +61,6 @@ TEST(QrSvgTest, LowErrorCorrectionMakesASmallerCodeForTheSameContactPayload) {
   EXPECT_LT(shape->version, medium.getVersion());
   EXPECT_LT(shape->modules, medium.getSize());
   // The SVG draws exactly that code: the dark modules of the L code, nothing else.
-  auto svg = QrSvgContent(text);
-  ASSERT_TRUE(svg);
   int dark = 0;
   for (int y = 0; y < low.getSize(); ++y) {
     for (int x = 0; x < low.getSize(); ++x) {
@@ -74,13 +74,37 @@ TEST(QrSvgTest, LowErrorCorrectionMakesASmallerCodeForTheSameContactPayload) {
   EXPECT_EQ(drawn, dark);
 }
 
+TEST(QrSvgTest, TheSavedPictureKeepsMediumErrorCorrectionWhileTheScreenCodeIsLow) {
+  const std::string text = "pp-browser-contact-v1:" + std::string(428, 'A');
+  const auto low = qrcodegen::QrCode::encodeText(text.c_str(), qrcodegen::QrCode::Ecc::LOW);
+  const auto medium = qrcodegen::QrCode::encodeText(text.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
+  ASSERT_NE(low.getSize(), medium.getSize());
+  QrShape screen;
+  ASSERT_TRUE(QrSvgContent(text, &screen));
+  EXPECT_EQ(screen.modules, low.getSize());
+  auto png = QrPngBytes(text, 4000);
+  ASSERT_TRUE(png);
+  SDL_Surface* image = DecodeImageUpright(png->data(), png->size(), "png");
+  ASSERT_NE(image, nullptr);
+  EXPECT_EQ(image->w % (medium.getSize() + 8), 0) << "the picture is whole medium-code modules";
+  EXPECT_NE(image->w % (low.getSize() + 8), 0);
+  SDL_DestroySurface(image);
+}
+
 TEST(QrSvgTest, AQrCodeOnAPhoneIsAsWideAsThePageAllowsWithTwentyDpEachSideAtMost340) {
-  EXPECT_EQ(QrPhoneDisplayDp(360.f), 320);
-  EXPECT_EQ(QrPhoneDisplayDp(393.f), 340);
-  EXPECT_EQ(QrPhoneDisplayDp(375.f), 335);
-  EXPECT_EQ(QrPhoneDisplayDp(320.f), 280);
-  EXPECT_EQ(QrPhoneDisplayDp(430.f), 340);
-  EXPECT_EQ(QrPhoneDisplayDp(10.f), 1);
+  EXPECT_EQ(QrPhoneDisplayDp(360.f, 2000.f), 320);
+  EXPECT_EQ(QrPhoneDisplayDp(393.f, 2000.f), 340);
+  EXPECT_EQ(QrPhoneDisplayDp(375.f, 2000.f), 335);
+  EXPECT_EQ(QrPhoneDisplayDp(320.f, 2000.f), 280);
+  EXPECT_EQ(QrPhoneDisplayDp(430.f, 2000.f), 340);
+  EXPECT_EQ(QrPhoneDisplayDp(10.f, 2000.f), 1);
+}
+
+TEST(QrSvgTest, AShortPageShrinksTheCodeToLeaveRoomForTheNameAndButtonsButNeverBelow200) {
+  EXPECT_EQ(QrPhoneDisplayDp(393.f, 852.f), 340); // a tall phone is not limited by its height
+  EXPECT_EQ(QrPhoneDisplayDp(375.f, 667.f), 267); // a small phone
+  EXPECT_EQ(QrPhoneDisplayDp(852.f, 393.f), 200); // phone landscape: the floor; the page scrolls
+  EXPECT_EQ(QrPhoneDisplayDp(160.f, 393.f), 120); // a page narrower than the floor keeps its margins
 }
 
 TEST(QrSvgTest, TheQuietZoneStaysFourModulesAndTheCodeIsBlackOnWhiteWhateverTheTheme) {

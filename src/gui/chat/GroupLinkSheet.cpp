@@ -56,6 +56,16 @@ void GroupLinkSheet::Open(const std::string& group_id) {
     spec.key = "group_link";
     spec.page_sheet = true;
     layer_id_ = ports_.push_sheet(spec);
+    if (ports_.watch_closed) {
+      const int layer_id = layer_id_;
+      ports_.watch_closed(layer_id, [this, layer_id]() {
+        if (layer_id_ == layer_id) {
+          layer_id_ = -1;
+          ++opening_;
+          SyncBrightness();
+        }
+      });
+    }
   }
   const uint64_t opening = ++opening_;
   ports_.load(group_id, [this, opening](Roe<GroupLinkRow> link) {
@@ -79,12 +89,13 @@ void GroupLinkSheet::Show(Roe<GroupLinkRow> link) {
   link_id_ = link->link_id;
   text_ = link->text;
   view_.text = text_.c_str();
-  auto qr = QrSvgContent(text_);
+  QrShape shape;
+  auto qr = QrSvgContent(text_, &shape);
   view_.qr_svg_rml = qr ? qr->c_str() : "";
   const QrDisplay display = QrDisplayFor(ports_.compact && ports_.compact(), context_);
   view_.qr_size = display.css.c_str();
   if (qr) {
-    ReportQrShown(text_, display);
+    ReportQrShown(shape, display);
   }
   view_.expiry = GroupLinkExpiryText(link->expires_at, util::NowUnixMs()).c_str();
   view_.can_revoke = link->can_revoke;
@@ -102,12 +113,15 @@ void GroupLinkSheet::Close() {
   SyncBrightness();
 }
 
-void GroupLinkSheet::Tick() {
-  if (IsOpen() && ports_.sheet_open && !ports_.sheet_open(layer_id_)) {
-    layer_id_ = -1;
-    ++opening_;
+void GroupLinkSheet::OnViewportResized() {
+  if (!IsOpen() || text_.empty()) {
+    return;
   }
-  SyncBrightness();
+  const QrDisplay display = QrDisplayFor(ports_.compact && ports_.compact(), context_);
+  if (view_.qr_size != display.css.c_str()) {
+    view_.qr_size = display.css.c_str();
+    Dirty();
+  }
 }
 
 void GroupLinkSheet::SyncBrightness() {

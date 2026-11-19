@@ -9,7 +9,7 @@
     </div>
     <p class="qr-name">{{qr_name}}</p>
     <p class="qr-hint">{{qr_hint}}</p>
-    <div class="qr-actions" data-if="qr_can_share || qr_save_label != ''">
+    <div class="qr-actions" data-style-width="qr_size" data-if="qr_can_share || qr_save_label != ''">
       <button class="btn btn-primary qr-action" type="button" data-if="qr_can_share"
               data-event-click="share_qr_image()">{{i18n:contacts.qr.share}}</button>
       <button class="btn btn-secondary qr-action" type="button" data-if="qr_save_label != ''"
