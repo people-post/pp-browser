@@ -335,10 +335,11 @@ Roe<RunLogArchive> RunLogBundle::Build(const std::string& log_path, const LogRet
   if (files.empty()) {
     return Error("No log files");
   }
-  // Raw bytes read per attempt: logs shrink about ten times, so the first try usually fits; the last raw budget is
-  // the limit itself, which gzip cannot grow past it by more than its few bytes of framing.
+  // Raw bytes read per attempt: logs shrink about eight to ten times, so the first try usually fits a 4 MiB archive
+  // while a phone holds at most a few copies of 16 MiB; the last raw budget is the limit itself, which gzip cannot grow
+  // past it by more than its few bytes of framing.
   constexpr std::uintmax_t kMiB = 1024 * 1024;
-  std::vector<std::uintmax_t> budgets = {32 * kMiB, 16 * kMiB, 8 * kMiB};
+  std::vector<std::uintmax_t> budgets = {16 * kMiB, 8 * kMiB};
   budgets.erase(std::remove_if(budgets.begin(), budgets.end(), [&](std::uintmax_t b) { return b <= max_bytes; }),
                 budgets.end());
   budgets.push_back(max_bytes > 8192 ? max_bytes - 8192 : max_bytes / 2);
