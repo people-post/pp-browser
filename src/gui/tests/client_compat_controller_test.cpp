@@ -37,6 +37,7 @@ public:
 
 struct Alert {
   std::string title;
+  std::string message;
   std::string ok_label;
 };
 
@@ -52,8 +53,8 @@ protected:
     relay_->doc.schema_version = 1;
     controller_.SetClock([this]() { return now_; });
     controller_.BindShellFeedback(ShellFeedbackPorts{
-        .show_alert = [this](const std::string& title, const std::string&, std::function<void()>,
-                             const std::string& ok_label) { alerts_.push_back({title, ok_label}); },
+        .show_alert = [this](const std::string& title, const std::string& message, std::function<void()>,
+                             const std::string& ok_label) { alerts_.push_back({title, message, ok_label}); },
         .dialog_active = [this]() { return dialog_open_; },
     });
   }
@@ -167,6 +168,39 @@ TEST_F(ClientCompatControllerTest, WithoutAFetchTheScreenStillShowsWithTheDefaul
   ASSERT_EQ(alerts_.size(), 1u);
   EXPECT_EQ(controller_.UpgradeUrl(), kDefaultUpgradeUrl);
   EXPECT_EQ(controller_.LastAction(), CompatUiAction::UpdateRequired);
+}
+
+// The relay sends no `message` (what prod and QA answer today): the app's own words, in the UI language.
+TEST_F(ClientCompatControllerTest, WithoutARelayMessageTheScreenSaysItInTheAppsOwnWords) {
+  BindMessaging();
+  relay_->doc.min_client_version = "999.0.0";
+  ASSERT_TRUE(relay_->doc.message.empty());
+  ASSERT_TRUE(controller_.CheckAsync());
+  Settle();
+  ASSERT_EQ(alerts_.size(), 1u);
+  EXPECT_EQ(alerts_[0].message, "This version of PP is no longer supported. Update to keep using it.");
+  EXPECT_EQ(alerts_[0].message, Tr("compat.update_required.message"));
+
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  dialog_open_ = false;
+  controller_.ApplyDocument(relay_->doc);
+  ASSERT_EQ(alerts_.size(), 2u);
+  EXPECT_EQ(alerts_[1].message, "这个版本的 PP 已经不再支持，请更新后继续使用。");
+  EXPECT_EQ(alerts_[1].title, "需要更新");
+  EXPECT_EQ(alerts_[1].ok_label, "更新");
+}
+
+// The relay sends a `message`: that line, not the app's.
+TEST_F(ClientCompatControllerTest, ARelayMessageIsShownInsteadOfTheAppsOwnWords) {
+  BindMessaging();
+  relay_->doc.min_client_version = "999.0.0";
+  relay_->doc.message = "Maintenance: update by Friday";
+  ASSERT_TRUE(controller_.CheckAsync());
+  Settle();
+  ASSERT_EQ(alerts_.size(), 1u);
+  EXPECT_EQ(alerts_[0].message, "Maintenance: update by Friday");
+  EXPECT_NE(alerts_[0].message, Tr("compat.update_required.message"));
+  EXPECT_EQ(alerts_[0].title, "Update required") << "the title and button stay the app's";
 }
 
 } // namespace

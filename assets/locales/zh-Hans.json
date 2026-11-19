@@ -126,7 +126,7 @@
     "settings.about.version": "版本号",
     "settings.about.build": "构建",
     "compat.update_required.title": "需要更新",
-    "compat.update_required.message": "当前 PP 版本过旧，请更新到最新版本后继续使用。",
+    "compat.update_required.message": "这个版本的 PP 已经不再支持，请更新后继续使用。",
     "compat.update_required.action": "更新",
     "compat.update_available.message": "有新版本的 PP 可用。",
     "support.entry.title": "PP 客服",

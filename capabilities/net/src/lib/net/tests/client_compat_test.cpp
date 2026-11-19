@@ -217,6 +217,23 @@ TEST(ClientCompatUpgradeUrl, ThisPlatformsLinkFirst) {
   EXPECT_EQ(ResolvedUpgradeUrl(*doc, "https://example.com/releases", "windows"), "https://example.com/releases");
 }
 
+// Each of the five platforms gets its own link, whichever platform runs the test.
+TEST(ClientCompatUpgradeUrl, EveryPlatformGetsItsOwnLink) {
+  auto doc = ParseClientCompatDocument(R"({
+    "schema_version": 1,
+    "upgrade_url": "https://example.com/app",
+    "upgrade_urls": {"ios": "https://example.com/ios", "android": "https://example.com/android",
+                     "macos": "https://example.com/macos", "windows": "https://example.com/windows",
+                     "linux": "https://example.com/linux"}
+  })");
+  ASSERT_TRUE(doc);
+  for (const char* platform : {"ios", "android", "macos", "windows", "linux"}) {
+    EXPECT_EQ(ResolvedUpgradeUrl(*doc, "https://example.com/releases", platform),
+              std::string("https://example.com/") + platform)
+        << platform;
+  }
+}
+
 // Only the known platforms' https links are kept (each is opened as an "update now" link); a malformed block is none.
 TEST(ClientCompatParse, UpgradeUrlsKeepOnlyHttpsLinksOfKnownPlatforms) {
   auto doc = ParseClientCompatDocument(R"({

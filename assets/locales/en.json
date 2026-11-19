@@ -126,7 +126,7 @@
     "settings.about.version": "Version",
     "settings.about.build": "Build",
     "compat.update_required.title": "Update required",
-    "compat.update_required.message": "This version of PP is too old to continue. Please update to the latest release.",
+    "compat.update_required.message": "This version of PP is no longer supported. Update to keep using it.",
     "compat.update_required.action": "Update",
     "compat.update_available.message": "A newer version of PP is available.",
     "support.entry.title": "PP Support",
