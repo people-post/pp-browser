@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -105,13 +106,31 @@ TEST_F(SavedFileCopyTest, ANonAsciiNameIsKept) {
 }
 
 // The dialog took a name up to the file system's limit: the temporary name must not be longer than the name.
-TEST_F(SavedFileCopyTest, ANameOfTwoHundredFiftyBytesIsSaved) {
+// Windows also limits the whole path to 260 characters (MAX_PATH; the Save dialog never offers more), and the
+// temporary folder is already long, so there the name takes what is left under 255 characters: still far longer than
+// the temporary name (".pp-part-" + 8), which is what the test is about.
+TEST_F(SavedFileCopyTest, ALongestNameTheFileSystemTakesIsSaved) {
   Write(dir_ / "view.bin", "long");
-  const std::string name = std::string(246, 'n') + ".txt"; // 250 bytes
-  ASSERT_EQ(name.size(), 250u);
+  size_t length = 250; // bytes
+#ifdef _WIN32
+  length = std::min<size_t>(length, 255 - PathToUtf8(dir_).size());
+#endif
+  ASSERT_GT(length, 40u) << "the temporary folder leaves room for a long name";
+  const std::string name = std::string(length - 4, 'n') + ".txt";
+  ASSERT_EQ(name.size(), length);
   ASSERT_TRUE(CopyFileInChunks(PathToUtf8(dir_ / "view.bin"), PathToUtf8(dir_ / name)));
   EXPECT_EQ(Read(dir_ / name), "long");
   EXPECT_EQ(EntryCount(), 2u);
+}
+
+// The rename onto a file that is already there (Windows: MoveFileEx with replace) swaps in the whole copy.
+TEST_F(SavedFileCopyTest, AnExistingFileIsReplacedByTheWholeCopy) {
+  Write(dir_ / "view.bin", LargeContent());
+  const auto target = dir_ / "report.pdf";
+  Write(target, "the user's older file");
+  ASSERT_TRUE(CopyFileInChunks(PathToUtf8(dir_ / "view.bin"), PathToUtf8(target)));
+  EXPECT_EQ(Read(target), LargeContent());
+  EXPECT_EQ(EntryCount(), 2u) << "no temporary file left";
 }
 
 #ifndef _WIN32
