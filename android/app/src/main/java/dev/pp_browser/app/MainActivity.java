@@ -394,6 +394,69 @@ public class MainActivity extends SDLActivity {
     }
 
     /**
+     * Called from native (PlatformShareFile_Android.cpp): hands a downloaded attachment to the system share sheet
+     * (ACTION_SEND; saving it is one of the choices). Same rules and link as openFile: only an attachment view under
+     * {@code <filesDir>/pp-browser/.../blobs_view/}, linked (else copied) into {@code <cacheDir>/open/<hash prefix>/}
+     * and sent as a FileProvider address with read permission. Nothing is deleted here: the link goes with the open
+     * links (clearOpenLinks, openFile's OPEN_KEEP_MS sweep). {@code mime} may be empty (then the name's type).
+     */
+    public static boolean shareFile(final String path, final String mime) {
+        final SDLActivity activity = mSingleton;
+        if (activity == null || path == null) {
+            return false;
+        }
+        try {
+            final File source = new File(path).getCanonicalFile();
+            final String root = new File(activity.getFilesDir(), "pp-browser").getCanonicalPath() + File.separator;
+            final String views = File.separator + "blobs_view" + File.separator;
+            if (!source.getPath().startsWith(root) || !source.getPath().contains(views) || !source.isFile()) {
+                Log.w(TAG, "shareFile: refused, not an attachment view");
+                return false;
+            }
+            final File folder = new File(new File(activity.getCacheDir(), OPEN_DIR), contentFolderName(source));
+            if (!folder.isDirectory() && !folder.mkdirs()) {
+                Log.w(TAG, "shareFile: no share folder");
+                return false;
+            }
+            final File shared = new File(folder, source.getName());
+            if (!shared.isFile()) {  // the same content shared or opened again keeps its link
+                try {
+                    android.system.Os.link(source.getPath(), shared.getPath());
+                } catch (Exception linkFailed) {
+                    java.nio.file.Files.copy(source.toPath(), shared.toPath());
+                }
+            }
+            folder.setLastModified(System.currentTimeMillis());  // the folder's own age, as openFile sets it
+            final Uri uri;
+            try {
+                uri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".capture", shared);
+            } catch (IllegalArgumentException e) {
+                Log.w(TAG, "shareFile: the share folder is not in the provider's paths");
+                return false;
+            }
+            String type = mime;
+            if (type == null || type.isEmpty()) {
+                final String name = shared.getName();
+                final int dot = name.lastIndexOf('.');
+                final String ext = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT);
+                type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
+            }
+            final Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType(type != null ? type : "*/*");
+            send.putExtra(Intent.EXTRA_STREAM, uri);
+            send.setClipData(android.content.ClipData.newRawUri(shared.getName(), uri));
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            final Intent chooser = Intent.createChooser(send, null);
+            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            activity.startActivity(chooser);
+            return true;
+        } catch (Exception e) {  // no app for it (ActivityNotFoundException), an unreadable file
+            Log.w(TAG, "shareFile: " + e.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    /**
      * The open folder for a view: its content hash's first 16 hex digits (from {@code <hash>.open/<name>} or
      * {@code <hash>.<ext>}), so one content has one folder and two files with the same name never share one.
      */
