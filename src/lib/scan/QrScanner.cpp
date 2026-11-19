@@ -1,6 +1,7 @@
 #include "lib/scan/QrScanner.h"
 
 #include "lib/scan/QrDecode.h"
+#include "lib/scan/QrScanPolicy.h"
 #include "lib/media/CameraCaptureOrientation.h"
 #include "lib/media/VideoYuv.h"
 #include "common/Metrics.h"
@@ -72,8 +73,11 @@ VideoFrameRgba ScanPreview(VideoFrameRgba frame, float zoom, int max_edge = 640)
 
 class ScanFrameProcessor {
 public:
-  ScanFrameProcessor(CameraDeviceLease& camera, int rotation) : camera_(camera), rotation_(rotation) {}
-  bool DecodeDue(ScanClock::time_point now) const { return now >= next_decode_; }
+  ScanFrameProcessor(CameraDeviceLease& camera, int rotation, ScanClock::time_point scan_started)
+      : camera_(camera), rotation_(rotation) {
+    policy_.Begin(scan_started);
+  }
+  bool DecodeDue(ScanClock::time_point now) const { return policy_.DecodeDue(now); }
   // `zoom_state` must be sampled before `frame` was fetched: a frame captured mid-ramp judged
   // against the settled state would compound a second zoom on top of the first (Windows CI).
   QrScanner::Update Process(VideoFrameRgba frame, ScanClock::time_point now, const CameraZoomState& zoom_state) {
@@ -85,7 +89,7 @@ public:
     }
     decode_ms = 0;
     detected = false;
-    if (now < next_decode_) {
+    if (!policy_.DecodeDue(now)) {
       // Most frames only feed the preview: shrink to the preview size first, then rotate the small copy.
       auto preview = Upright(ScanPreview(std::move(frame), software_zoom_), rotation_);
       if (preview.width < 2 || preview.height < 2) {
@@ -104,8 +108,8 @@ public:
       decode_ms = ElapsedMs(started);
       detected = result.region.has_value();
       text = std::move(result.text);
+      policy_.AfterDecode(now, detected, decode_ms);
       if (result.region) {
-        last_region_ = now;
         const auto& region = *result.region;
         const float fraction = std::max(region.width, region.height);
         if (!text && fraction > .02f && fraction < .45f && std::abs(region.center_x - .5f) < .25f &&
@@ -117,21 +121,23 @@ public:
           if (!native_zoom_ || (!state.ramping && std::abs(state.factor - zoom) < .05f)) {
             const float base = native_zoom_ ? state.factor : zoom;
             const float target = std::min(base * .5f / fraction, base * .5f / extent);
-            SetZoom(std::clamp(target, base, 3.f));
+            SetZoom(std::clamp(target, base, 3.f), now);
             candidate_zoom_ = zoom > 1.f;
           }
         }
-      } else if (candidate_zoom_ && now - last_region_ > std::chrono::seconds(2)) {
-        SetZoom(1.f);
+      } else if (candidate_zoom_ && policy_.ShouldResetCandidateZoom(now)) {
+        SetZoom(1.f, now);
         candidate_zoom_ = false;
-        hunt_settled_ = {};
       } else if (!candidate_zoom_) {
         Hunt(now, zoom_state);
       }
-      next_decode_ = now + std::chrono::milliseconds(200);
     }
     if (text) {
-      MetricsLine("scan.result").Add("decoded", true).Emit();
+      MetricsLine("scan.result")
+          .Add("decoded", true)
+          .Add("elapsed_ms", policy_.ElapsedMs(now))
+          .Add("zoom_changes", policy_.ZoomChanges())
+          .Emit();
     }
     return {ScanPreview(std::move(frame), software_zoom_), std::move(text), {}};
   }
@@ -143,24 +149,18 @@ public:
 private:
   // A code too far away yields no candidate at all (a capstone needs about three pixels per
   // module), so nothing would ever trigger the candidate zoom. Once the zoom has settled with
-  // nothing in view for a while, step 1x -> 2x -> 3x -> 1x; a candidate then takes over.
+  // nothing in view, QrScanPolicy lets it swing 1x <-> 2x now and then (never in a scan's first
+  // seconds, never close behind another zoom change); a candidate then takes over.
   void Hunt(ScanClock::time_point now, const CameraZoomState& state) {
     const bool settled = !state.supported || !native_zoom_ || (!state.ramping && std::abs(state.factor - zoom) < .05f);
     if (!settled) {
-      hunt_settled_ = {};
       return;
     }
-    if (hunt_settled_ == ScanClock::time_point{}) {
-      hunt_settled_ = now;
-      return;
+    if (const auto target = policy_.ProbeTarget(now, zoom)) {
+      SetZoom(*target, now, true);
     }
-    if (now - hunt_settled_ < std::chrono::milliseconds(1500)) {
-      return;
-    }
-    SetZoom(zoom < 1.5f ? 2.f : zoom < 2.5f ? 3.f : 1.f, true);
-    hunt_settled_ = {};
   }
-  void SetZoom(float target, bool hunt = false) {
+  void SetZoom(float target, ScanClock::time_point now, bool hunt = false) {
     const auto state = camera_.ZoomState();
     if (state.supported) {
       target = std::clamp(target, 1.f, state.maximum);
@@ -172,6 +172,7 @@ private:
     native_zoom_ = native;
     software_zoom_ = native ? 1.f : target;
     zoom = target;
+    policy_.OnZoomChanged(now);
     MetricsLine("scan.zoom").Add("factor", static_cast<double>(zoom)).Add("native", native).Add("hunt", hunt).Emit();
   }
   CameraDeviceLease& camera_;
@@ -179,9 +180,7 @@ private:
   float software_zoom_ = 1.f;
   bool native_zoom_ = false;
   bool candidate_zoom_ = false;
-  ScanClock::time_point next_decode_{};
-  ScanClock::time_point last_region_{};
-  ScanClock::time_point hunt_settled_{};
+  QrScanPolicy policy_;
 };
 
 struct ScanCaptureStats {
@@ -245,6 +244,7 @@ struct QrScanner::State {
   }
 
   void Capture(uint64_t epoch, int display_rotation) {
+    const auto scan_started = ScanClock::now();
     CameraLeaseRequest request;
     request.holder = "qr-scanner";
     request.format.display_rotation_deg = display_rotation;
@@ -278,7 +278,7 @@ struct QrScanner::State {
     transform.front_facing = geometry.front_facing;
     const int rotate = CameraPreviewRotateCw(transform);
     auto last_frame = std::chrono::steady_clock::now();
-    ScanFrameProcessor processor(*lease, rotate);
+    ScanFrameProcessor processor(*lease, rotate, scan_started);
     ScanCaptureStats stats;
     // Wake on the frame cadence, not every few ms: each wake costs three locked camera calls.
     const auto frame_period = std::chrono::milliseconds(request.format.fps > 0 ? 1000 / request.format.fps : 16);

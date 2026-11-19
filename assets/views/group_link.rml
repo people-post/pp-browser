@@ -9,7 +9,7 @@
     <p class="qr-hint" data-if="error != ''">{{error}}</p>
     <div class="qr-card" data-if="text != ''">
       <svg class="me-invite-qr-code qr-code" viewBox="0 0 100 100" width="240" height="240"
-           data-rml="qr_svg_rml"></svg>
+           data-style-width="qr_size" data-style-height="qr_size" data-rml="qr_svg_rml"></svg>
     </div>
     <p class="qr-hint" data-if="text != ''" selectable="text">{{text}}</p>
     <p class="qr-hint" data-if="text != ''">{{expiry}}</p>

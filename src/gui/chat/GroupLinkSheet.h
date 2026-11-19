@@ -23,6 +23,8 @@ struct GroupLinkView {
   ui::String text;
   /** The link's QR code (QrSvgContent), for `data-rml`. */
   ui::String qr_svg_rml;
+  /** The code's side as CSS ("320dp"), bound to its width and height. */
+  ui::String qr_size = "200dp";
   ui::String expiry;
   ui::String error;
   bool can_revoke = false;
@@ -40,6 +42,8 @@ struct GroupLinkSheetPorts {
   std::function<void(const std::string& text)> copied;
   /** The group's rows changed (a link made or revoked): group info reads again. */
   std::function<void()> changed;
+  /** The phone layout is on (the code is drawn page-wide there, 200dp on a desktop). */
+  std::function<bool()> compact;
 };
 
 /**
@@ -65,6 +69,8 @@ public:
 private:
   void Show(Roe<GroupLinkRow> link);
   void Dirty();
+  /** Full screen brightness while the code is on screen (QrBrightness). */
+  void SyncBrightness();
 
   GroupLinkSheetPorts ports_;
   ui::Context* context_ = nullptr;

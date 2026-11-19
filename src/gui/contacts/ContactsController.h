@@ -414,6 +414,8 @@ private:
   void OpenMyQrPage();
   void OnShareFriend(ui::Vector2i position);
   void OnMyQrDismissed();
+  /** Holds the screen at full brightness while the QR page is up (QrBrightness); notices it was cleared. */
+  void SyncMyQrBrightness();
   /** A directory hit chosen (or the only hit of a typed query): already a contact, ask first, or add. */
   void OfferHit(const mesh::DirectoryHit& hit, const std::string& query);
   static void SelectContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -598,6 +600,8 @@ private:
   std::string my_locator_;
   std::string my_nickname_;
   ui::String my_qr_svg_rml_;
+  /** The QR code's side as CSS ("320dp"): see QrPhoneDisplayDp. */
+  ui::String qr_size_;
   bool can_scan_ = false;
   bool can_new_group_ = false;
   bool my_qr_open_ = false;

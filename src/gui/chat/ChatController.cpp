@@ -7095,6 +7095,7 @@ GroupLinkSheetPorts ChatController::MakeGroupLinkPorts() {
     ShowToast(Tr("group_link.copied"));
   };
   ports.changed = [this]() { group_info_.Refresh(); };
+  ports.compact = [this]() { return ChromeSnapshot().layout_mode == LayoutMode::Compact; };
   return ports;
 }
 

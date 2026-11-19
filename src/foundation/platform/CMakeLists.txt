@@ -137,6 +137,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     DeviceScreenState_Default.cpp
     DeviceRinger_Default.cpp
     ProximityScreenOff_Default.cpp
+    PlatformScreenBrightness_Default.cpp
   )
 elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_core_sources
@@ -163,14 +164,14 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
          PlatformShareImage_Darwin.mm PlatformShareFile_Default.cpp
          NativeFileDialog_Default.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp
          PlatformNotificationSettings_Default.cpp PlatformAppBadge_Darwin.mm DeviceScreenState_Default.cpp
-         DeviceRinger_Default.cpp ProximityScreenOff_Default.cpp)
+         DeviceRinger_Default.cpp ProximityScreenOff_Default.cpp PlatformScreenBrightness_Default.cpp)
   else()
     # SDL3 has no iOS file dialog (its dummy backend answers "nothing picked" at once).
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp PlatformShare_Ios.mm
          PlatformShareImage_Ios.mm PlatformShareFile_Ios.mm
          NativeFileDialog_Ios.mm CameraCapture_Ios.mm PlatformOpenFile_Ios.mm PlatformNotificationSettings_Ios.mm
          PlatformAppBadge_Ios.mm DeviceScreenState_Default.cpp DeviceRinger_Default.cpp
-         ProximityScreenOff_Ios.mm)
+         ProximityScreenOff_Ios.mm PlatformScreenBrightness_Ios.mm)
   endif()
 else()
   list(APPEND _pp_platform_core_sources
@@ -189,6 +190,7 @@ else()
     PlatformShareImage_Default.cpp
     NativeFileDialog_Default.cpp
     ProximityScreenOff_Default.cpp
+    PlatformScreenBrightness_Default.cpp
   )
   if(PP_BROWSER_IS_ANDROID)
     list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp os/OsDeviceName_Android.cpp)

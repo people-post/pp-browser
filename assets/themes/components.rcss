@@ -11499,11 +11499,10 @@ input.checkbox {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 260dp;
-  height: 260dp;
-  border-radius: 16dp;
+  border-radius: 12dp;
 }
 
+/* The code's side is bound (qr_size): as wide as the page allows with a 20dp margin each side, at most 340dp. */
 .shell-layer-compact .qr-code {
   width: 240dp;
   height: 240dp;

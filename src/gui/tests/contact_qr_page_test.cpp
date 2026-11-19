@@ -155,5 +155,12 @@ TEST(ContactQrPageMarkupTest, ThePageNamesTheOwnerAndHasBothButtonsBehindTheirFl
   EXPECT_NE(rml.find("data-event-click=\"save_qr_image()\""), std::string::npos);
 }
 
+TEST(ContactQrPageMarkupTest, TheCodesSideIsBoundSoAPhoneDrawsItPageWide) {
+  for (const char* page : {"views/my_qr.rml", "views/group_link.rml"}) {
+    const std::string rml = ReadAsset(page);
+    EXPECT_NE(rml.find("data-style-width=\"qr_size\" data-style-height=\"qr_size\""), std::string::npos) << page;
+  }
+}
+
 } // namespace
 } // namespace pbr

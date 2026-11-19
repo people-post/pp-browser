@@ -16,11 +16,30 @@ namespace {
 /** The blank modules a scanner needs around the code. */
 constexpr int kQuietZone = 4;
 
+/**
+ * Error correction LOW: the least redundancy, so the fewest modules and the biggest ones for the same drawn size. Every
+ * scanner reads any level, and the payload is unchanged, so this is not a format anyone has to agree on.
+ */
+constexpr qrcodegen::QrCode::Ecc kEcc = qrcodegen::QrCode::Ecc::LOW;
+
 } // namespace
+
+Roe<QrShape> QrSvgShape(const std::string& text) {
+  try {
+    const qrcodegen::QrCode code = qrcodegen::QrCode::encodeText(text.c_str(), kEcc);
+    return QrShape{code.getVersion(), code.getSize(), static_cast<int>(text.size())};
+  } catch (const std::exception& e) {
+    return Error(std::string("QR code: ") + e.what());
+  }
+}
+
+int QrPhoneDisplayDp(const float page_width_dp) {
+  return std::clamp(static_cast<int>(page_width_dp) - 2 * kQrPhoneSideMarginDp, 1, kQrPhoneMaxDp);
+}
 
 Roe<std::string> QrSvgContent(const std::string& text) {
   try {
-    const qrcodegen::QrCode code = qrcodegen::QrCode::encodeText(text.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
+    const qrcodegen::QrCode code = qrcodegen::QrCode::encodeText(text.c_str(), kEcc);
     const int size = code.getSize();
     const int span = size + 2 * kQuietZone;
     std::ostringstream svg;
@@ -43,7 +62,7 @@ Roe<std::string> QrSvgContent(const std::string& text) {
 
 Roe<std::vector<uint8_t>> QrPngBytes(const std::string& text, const int target_px) {
   try {
-    const qrcodegen::QrCode code = qrcodegen::QrCode::encodeText(text.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
+    const qrcodegen::QrCode code = qrcodegen::QrCode::encodeText(text.c_str(), kEcc);
     const int span = code.getSize() + 2 * kQuietZone;
     const int scale = std::max(1, target_px / span);
     const int side = span * scale;

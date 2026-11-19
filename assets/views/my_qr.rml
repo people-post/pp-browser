@@ -5,7 +5,7 @@
   <div class="qr-body">
     <div class="qr-card">
       <svg class="me-invite-qr-code qr-code" viewBox="0 0 100 100" width="240" height="240"
-           data-rml="my_qr_svg_rml"></svg>
+           data-style-width="qr_size" data-style-height="qr_size" data-rml="my_qr_svg_rml"></svg>
     </div>
     <p class="qr-name">{{qr_name}}</p>
     <p class="qr-hint">{{qr_hint}}</p>

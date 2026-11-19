@@ -12,8 +12,26 @@ namespace pbr {
 /** The coordinate box QrSvgContent draws in: an `<svg viewBox="0 0 100 100">` shows it whole. */
 inline constexpr int kQrSvgViewBox = 100;
 
+/** Side margin and largest side, in dp, of a QR code drawn on a phone page. */
+inline constexpr int kQrPhoneSideMarginDp = 20;
+inline constexpr int kQrPhoneMaxDp = 340;
+
+/** How the code for a text is built: its version (1..40), modules per side (without the quiet zone) and text bytes. */
+struct QrShape {
+  int version = 0;
+  int modules = 0;
+  int bytes = 0;
+};
+
+/** The shape QrSvgContent / QrPngBytes would draw `text` in (error correction L), or an error when it is too long. */
+Roe<QrShape> QrSvgShape(const std::string& text);
+
+/** The side, in dp, a QR code is drawn at on a phone page `page_width_dp` wide: as wide as the page allows with a 20dp
+ *  margin each side, at most 340dp. */
+int QrPhoneDisplayDp(float page_width_dp);
+
 /**
- * A QR code of `text` (byte mode, error correction M, with its quiet zone) as SVG content for an
+ * A QR code of `text` (byte mode, error correction L, with its quiet zone) as SVG content for an
  * inline `<svg viewBox="0 0 100 100">`: a white square and the dark modules as one path. Dark on
  * white whatever the theme, which every scanner reads.
  */

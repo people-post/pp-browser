@@ -10,6 +10,8 @@ pp_browser_add_feature_library(pp_gui
     avatar/AvatarViewController.cpp
     avatar/ElementAvatarCrop.cpp
     BadgeAggregator.cpp
+    QrBrightness.cpp
+    QrDisplay.cpp
     CallChromeSync.cpp
     CallController.cpp
     CallDemoScenes.cpp
