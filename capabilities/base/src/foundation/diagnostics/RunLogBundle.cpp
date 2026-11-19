@@ -90,8 +90,38 @@ std::string MaskValues(std::string record) {
   return record;
 }
 
-/** `prefix<segment>sep` → `~sep` (segment: a user or app folder name, spaces allowed, up to 64 bytes, on one line). */
-void ReplacePathSegment(std::string& text, const std::string_view prefix, const char sep, const bool ignore_case) {
+bool IsSegmentEnd(const char c) {
+  return c == '/' || c == '\\' || c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '"' || c == '\'';
+}
+
+/**
+ * Where the folder name that starts at `from` ends: at the first separator (`/` or `\`), whitespace, quote or the end
+ * of the record. A Windows user name may hold spaces: with `spaces_before_sep`, a name with spaces goes up to the
+ * separator that follows within 64 bytes on the same line (no quote in between), else it stops at the first space.
+ */
+size_t SegmentEnd(const std::string& text, const size_t from, const bool spaces_before_sep) {
+  size_t end = from;
+  while (end < text.size() && !IsSegmentEnd(text[end])) {
+    ++end;
+  }
+  if (!spaces_before_sep || end >= text.size() || (text[end] != ' ' && text[end] != '\t')) {
+    return end;
+  }
+  constexpr size_t kMaxSegment = 64;
+  for (size_t at = end; at < text.size() && at - from <= kMaxSegment; ++at) {
+    if (text[at] == '\\' || text[at] == '/') {
+      return at;
+    }
+    if (text[at] == '\n' || text[at] == '"' || text[at] == '\'') {
+      break;
+    }
+  }
+  return end;
+}
+
+/** `prefix<segment>` becomes `~` (what follows stays); the segment may be the last thing in the record. */
+void ReplacePathSegment(std::string& text, const std::string_view prefix, const bool ignore_case,
+                        const bool spaces_before_sep) {
   auto find_from = [&](size_t from) {
     if (!ignore_case) {
       return text.find(prefix, from);
@@ -103,32 +133,29 @@ void ReplacePathSegment(std::string& text, const std::string_view prefix, const 
     return it == text.end() ? std::string::npos : static_cast<size_t>(it - text.begin());
   };
   for (size_t at = find_from(0); at != std::string::npos; at = find_from(at + 1)) {
-    constexpr size_t kMaxSegment = 64;
-    size_t end = at + prefix.size();
-    while (end < text.size() && end - at - prefix.size() <= kMaxSegment && text[end] != sep && text[end] != '\n' &&
-           text[end] != '"') {
-      ++end;
+    const size_t start = at + prefix.size();
+    const size_t end = SegmentEnd(text, start, spaces_before_sep);
+    if (end == start) {
+      continue; // no segment
     }
-    if (end == at + prefix.size() || end >= text.size() || text[end] != sep) {
-      continue; // no segment, or not followed by the separator
-    }
-    text.replace(at, end + 1 - at, std::string("~") + sep);
+    text.replace(at, end - at, "~");
   }
 }
 
 std::string ScrubPaths(std::string text) {
   // Longest first: the iOS container under /private, then the plain one.
-  ReplacePathSegment(text, "/private/var/mobile/Containers/Data/Application/", '/', false);
-  ReplacePathSegment(text, "/var/mobile/Containers/Data/Application/", '/', false);
-  ReplacePathSegment(text, "/private/var/mobile/Containers/Shared/AppGroup/", '/', false);
-  ReplacePathSegment(text, "/var/mobile/Containers/Shared/AppGroup/", '/', false);
-  ReplacePathSegment(text, "/data/user/0/", '/', false);
-  ReplacePathSegment(text, "/data/data/", '/', false);
-  ReplacePathSegment(text, "/Users/", '/', false);
-  ReplacePathSegment(text, "/home/", '/', false);
+  ReplacePathSegment(text, "/private/var/mobile/Containers/Data/Application/", false, false);
+  ReplacePathSegment(text, "/var/mobile/Containers/Data/Application/", false, false);
+  ReplacePathSegment(text, "/private/var/mobile/Containers/Shared/AppGroup/", false, false);
+  ReplacePathSegment(text, "/var/mobile/Containers/Shared/AppGroup/", false, false);
+  ReplacePathSegment(text, "/data/user/0/", false, false);
+  ReplacePathSegment(text, "/data/data/", false, false);
+  ReplacePathSegment(text, "/Users/", false, false);
+  ReplacePathSegment(text, "/home/", false, false);
   for (const char drive : std::string_view("ABCDEFGHIJKLMNOPQRSTUVWXYZ")) {
-    const std::string prefix = std::string(1, drive) + ":\\Users\\";
-    ReplacePathSegment(text, prefix, '\\', true);
+    // Single backslashes, and doubled ones as in a JSON-escaped string.
+    ReplacePathSegment(text, std::string(1, drive) + ":\\Users\\", true, true);
+    ReplacePathSegment(text, std::string(1, drive) + ":\\\\Users\\\\", true, true);
   }
   return text;
 }

@@ -239,6 +239,28 @@ TEST(RunLogFilterTest, HomeAndAppContainerPathsBecomeATilde) {
   EXPECT_EQ(RunLogBundle::FilterRecords(Rec("open /data/data/dev.pp.app/files")), Rec("open ~/files"));
 }
 
+TEST(RunLogFilterTest, AUserFolderIsScrubbedWithOrWithoutASeparatorAfterIt) {
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec("dir /Users/kenneth")), Rec("dir ~"));
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec("dir /Users/kenneth ok")), Rec("dir ~ ok"));
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec(R"(path "/Users/kenneth" ok)")), Rec(R"(path "~" ok)"));
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec("dir '/home/ann'")), Rec("dir '~'"));
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec("dir /data/data/dev.pp.app")), Rec("dir ~"));
+}
+
+TEST(RunLogFilterTest, AUserFolderEndsAtTheFirstSeparatorSpaceOrQuote) {
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec("saw /Users/ann and then /tmp/x here")), Rec("saw ~ and then /tmp/x here"))
+      << "the words after the name are not swallowed";
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec("a /Users/ann/b /Users/bob/c")), Rec("a ~/b ~/c"));
+}
+
+TEST(RunLogFilterTest, JsonEscapedWindowsPathsAreScrubbed) {
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec(R"({"dir":"C:\\Users\\ann\\AppData\\pp"})")),
+            Rec(R"({"dir":"~\\AppData\\pp"})"));
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec(R"({"dir":"d:\\users\\Ann Lee\\x"})")), Rec(R"({"dir":"~\\x"})"));
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec(R"(dir C:\Users\ann)")), Rec("dir ~"));
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec(R"(dir "C:\Users\ann" ok)")), Rec(R"(dir "~" ok)"));
+}
+
 TEST(RunLogFilterTest, LinesBeforeTheFirstRecordAreDropped) {
   EXPECT_EQ(RunLogBundle::FilterRecords("the end of a cut record\n" + Rec("next")), Rec("next"));
 }
