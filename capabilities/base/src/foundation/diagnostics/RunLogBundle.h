@@ -65,7 +65,8 @@ public:
    * record with any of text= body= content= query= question= prompt= draft= caption= raw= goes whole; the values of
    * name= display_name= nickname= title= filename= path= subtitle= user= become `<hidden>` up to the next ` key=`
    * (a quoted value: to its closing quote); home and app-container paths become `~`. A key counts only at the start
-   * or after a space, tab, `,`, `;`, `(`, `[` or `{` (so hostname= is not name=).
+   * or after a space, tab, `,`, `;`, `(`, `[`, `{`, `?`, `&`, quote, `:` or `/`, never after a letter, digit or `_` (so
+   * hostname= is not name=).
    */
   static std::string FilterRecords(std::string_view text);
 

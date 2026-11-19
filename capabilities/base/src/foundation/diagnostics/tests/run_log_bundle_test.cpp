@@ -178,6 +178,30 @@ TEST(RunLogFilterTest, EachDropKeyTakesTheWholeRecord) {
   }
 }
 
+TEST(RunLogFilterTest, ADropKeyAfterAnyOfTheBoundariesTakesTheRecord) {
+  for (const std::string lead : {"?", "&", "\"", "'", ":", "/", " ", "(", "[", "{", ",", ";", "\t"}) {
+    const std::string text = Rec("before") + Rec("GET /x" + lead + "text=hello there") + Rec("after");
+    EXPECT_EQ(RunLogBundle::FilterRecords(text), Rec("before") + Rec("after")) << "lead [" << lead << "]";
+  }
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec("GET /search?query=alice&lang=en")), "");
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec("post a=1&text=hello")), "");
+}
+
+TEST(RunLogFilterTest, AMaskKeyAfterTheNewBoundariesIsHidden) {
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec("saved \"name=Bob\"")), Rec("saved \"name=<hidden>"));
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec("saved 'name=Bob'")), Rec("saved 'name=<hidden>"));
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec("peer:name=Bob err=EIO")), Rec("peer:name=<hidden> err=EIO"));
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec("GET /x?name=Bob err=EIO")), Rec("GET /x?name=<hidden> err=EIO"));
+  EXPECT_EQ(RunLogBundle::FilterRecords(Rec("GET /x/name=Bob err=EIO")), Rec("GET /x/name=<hidden> err=EIO"));
+}
+
+TEST(RunLogFilterTest, AKeyInsideALongerWordNeverMatches) {
+  const std::string text = Rec("hostname=h context=c filepath=f device_name=d username=u") +
+                           Rec("x_text=1 a9body=2 Xname=3 2path=4") +
+                           Rec("?hostname=h &context=c \"filepath=f 'device_name=d :username=u /subtitle2=s");
+  EXPECT_EQ(RunLogBundle::FilterRecords(text), text);
+}
+
 TEST(RunLogFilterTest, AMultiLineRecordGoesWhole) {
   const std::string text = Rec("before") + std::string(kHead) + "draft text=first line\nsecond line of the words\n" +
                            "third line\n" + Rec("after");

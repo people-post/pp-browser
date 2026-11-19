@@ -32,7 +32,8 @@ bool IsKeyBoundary(const std::string_view text, const size_t at) {
   }
   const char before = text[at - 1];
   return before == ' ' || before == '\t' || before == ',' || before == ';' || before == '(' || before == '[' ||
-         before == '{' || before == '\n';
+         before == '{' || before == '\n' || before == '?' || before == '&' || before == '"' || before == '\'' ||
+         before == ':' || before == '/';
 }
 
 /** Where `key=` starts in `text` at or after `from`, on a key boundary; npos when nowhere. */
