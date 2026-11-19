@@ -413,10 +413,25 @@ leaves for them.
    `GET /search` aliases, `llm_api_key` and `keys/rotate`, the pre-cutover sender mapping. Testers reinstall that day
    (RC017), so no supported app needs them and no window is kept.
 6. **The version header** (O1): `X-PP-Client: <product>/<version> <os>` on every relay call from the app and pp-node.
-7. **Relay identity rotation** (O4): a cold rotation key, kept offline and escrowed with the backups (RC010), whose
-   public key builds carry beside the relay's PeerId; it only signs "this relay's identity is now X", which also covers
-   a leaked identity key. A planned rotation may in addition be signed by the old identity key. The reader ships in
-   release 1, since a build without it can never follow a rotation.
+7. **A relay's operator and its keys are separate, as in pp-ledger** (O4, C7). pp-ledger keeps three layers apart: the
+   beacon's Amp key is transport only, a hot signing key signs the chain's tips, and an offline admin set with a
+   threshold certifies that signing key; a beacon cannot hand itself a successor (pp-ledger B002, B006, B014). For a
+   relay:
+   - An **operator set** (keys and a threshold, offline) is what clients pin, in place of the PeerId. It signs only a
+     **relay certificate**: the relay's current transport key (its PeerId) and signing key, with a rising sequence
+     number. The format carries a set and a threshold from day 1.
+   - The **transport key** stays the relay's Amp identity. Unlike the beacon's dial hint it is trusted (Amp
+     authenticates it, signed calls name it as their audience), so the certificate binds it.
+   - A **signing key**, hot on the deployment as the identity seed is today, signs the items the relay issues in
+     future, apart from transport, so each rotates alone.
+   - Clients take the valid certificate with the highest sequence they have seen, from any channel (`relay-identity`,
+     `client-compat`, later peers), and never go below it. A relay's own keys cannot certify their successors: only the
+     operator set can, so a stolen hot key cannot move clients to the thief's.
+   - The account card, the locator's `relay` entry and relay links name the operator key in place of `peer_id`, and
+     builds carry the org relay's operator key: a card version, cheapest as a pre-release cutover now (testers
+     reinstall, RC017). This amends [MR008](../multi-relay/DECISIONS.md#mr008--a-relay-address-carries-its-peerid-no-first-use-trust):
+     moving a relay's PeerId (a new host, a leaked key) is a new certificate, not a new relay.
+   The reader ships in release 1, since a build without it can never follow a rotation.
 8. **What a revoke deletes** (O5): the mailbox (messages, META, large bodies), the public icon and its record, the quota
    counter, every push row (a lost purge retried), and the lockers; an expired registration is cleaned of the same set
    on a schedule. Support conversations are kept for a stated period, then deleted (the period: part 2).
@@ -441,6 +456,8 @@ leaves for them.
 | Prod's update links (C3) | Leo | the App Store and Play links and the desktop download page, set on the release day |
 | Support retention, S3 lifecycle days (item 8) | Leo | 90 days each, stated in SPECS and the privacy text |
 | The crash-report endpoint (O6) | Leo | as SPECS plans: a bucket with a 90-day expiry, no account id, rate-limited |
+| The operator set: how many keys, its threshold, who holds them (item 7) | Leo | 2 of 3, offline, one in escrow (RC010) |
+| Whether relay certificates expire (bounds a stolen hot key against a client that never sees the new certificate, at the cost of re-signing offline) | Leo | no expiry in release 1; certificates spread by every channel |
 | The support-worker's "not readable" reply (X9), wake payload version (X10), PITR on every state table | Leo | yes to each |
 
 **Rationale:** Part 1 is what code on both sides is written against, or what decides when the relay's old paths can

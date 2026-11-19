@@ -218,9 +218,9 @@ the range rule):
   refuses) are a small suite run against the relay's local stack in both repos' CI. Frozen data checks formats, not
   behaviour: it would not have caught the search 400 of 2026-11-17.
 - **Relay identity rotation and compromise recovery.** Clients pin each relay's PeerId (MR008), so today a new key
-  strands every client and a leaked key has no recovery. A designed rotation (for example the old key signing a
-  statement that names the new one, or relay links carrying the next PeerId) ships in release 1, because in-range
-  apps must understand it.
+  strands every client and a leaked key has no recovery. Decided ([RC018](DECISIONS.md#rc018--the-release-1-answers-for-kenneths-and-leos-rows) item 7): as in pp-ledger, an offline
+  operator set certifies the relay's transport and signing keys, and clients pin the operator key, not the PeerId.
+  It ships in release 1, because in-range apps must understand it.
 - **Account deletion, finished.** App Store guideline 5.1.1(v) requires an app that creates accounts to let users
   delete them. It exists as Me → Storage → *Reset my data…* (`SettingsSecurityActions::ResetProfile` →
   `Application::ResetActiveProfile`): it revokes the registration on every relay of ours (others first, then the

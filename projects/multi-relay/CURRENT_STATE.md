@@ -125,7 +125,7 @@ without one refuses to register. Release workflows fail without
 
 Not yet:
 - A relay link shown as a QR code (My relays copies the link; Add relay… scans one).
-- A signed rotation statement for the org relay's key (a rotation is an app release meanwhile).
+- A signed rotation statement for the org relay's key (a rotation is an app release meanwhile): now the relay certificate and the operator key in cards, release-compatibility RC018 item 7 (INVENTORY O4, C7).
 - Account lockers stay at the org's registration URL and are still written there; with the org's relay removed from
   the list (our registration there revoked) those writes fail (logged), the restore's read still works. Stream history
   is read from the org's relay while it is one of ours, else from the preferred one (the org relay's is then not
