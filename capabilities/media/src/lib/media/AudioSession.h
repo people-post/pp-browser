@@ -78,8 +78,21 @@ void CancelPendingDeactivate();
 void BeginToneHold();
 void EndToneHold();
 bool ToneHoldsSession();
-/** Wait until no tone holds the session, at most `timeout`. */
-void WaitUntilToneHoldsReleased(std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
+/** Wait until no tone holds the session, at most `timeout`. False when it ran out (a tone still holds it). */
+bool WaitUntilToneHoldsReleased(std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
+/**
+ * Closing a tone's speaker stream rewrites the session here (iOS: SDL's coreaudio backend sets its own category on every
+ * device close, B230): the incoming ring then holds the session from its stop until its stream is closed, like the
+ * ringback, so a call's voice processing never starts ahead of that rewrite. False elsewhere.
+ */
+bool ToneCloseRewritesSession();
+
+/**
+ * The call's voice-processing unit started (iOS, VoiceProcessingIo_Apple): logged with what the unit reports (-1: could
+ * not be read) and the session's category / mode, and the start of the window in which a category change that leaves
+ * the session out of the call's configuration reopens the unit once (VoipCategoryGuard, B230). No-op elsewhere.
+ */
+void NotifyVoiceProcessingStarted(double sample_rate, int channels, int bypass, int agc);
 
 /** True when the OS exposes earpiece vs loudspeaker routing. */
 bool SupportsSpeakerToggle();

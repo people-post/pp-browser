@@ -1239,8 +1239,11 @@ struct MediaEngine::Impl {
     if (voip) {
       // VoIP audio session only when the mic is ours (a playback-only viewer is not a call).
       // Re-asserted on reopen too: Android route changes can drop MODE_IN_COMMUNICATION.
-      // A caller ringback that activated the session may still release it: let it finish first.
-      AudioSession::WaitUntilToneHoldsReleased();
+      // A caller ringback that activated the session may still release it, and an incoming ring's stream may still be
+      // closing (iOS rewrites the session on that close, B230): let them finish first.
+      if (!AudioSession::WaitUntilToneHoldsReleased()) {
+        EngineLog().warning << "audio session: a tone still holds it after the wait — activating anyway";
+      }
       if (!capture_running.load(std::memory_order_acquire)) {
         return Error("media session stopped");
       }
