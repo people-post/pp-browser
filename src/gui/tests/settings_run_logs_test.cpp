@@ -34,6 +34,7 @@
 #include <functional>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace pbr {
@@ -225,10 +226,21 @@ protected:
   bool Shown(ui::Element* element) {
     return element && element->GetComputedValues().display() != ui::Style::Display::None;
   }
-  /** The archive is made on a worker and comes back on the UI thread. */
-  void Settle() {
-    AppRuntime::DrainWorkersThenUI();
-    AppRuntime::RunUITasks();
+  /**
+   * The archive is made on a worker and comes back on the UI thread. DrainWorkersThenUI is a barrier behind the queued
+   * tasks, not behind one that is still running on another worker thread, so with `want_confirms` the pump goes on
+   * until that many confirms have been shown (a slow disk, as on Windows, made the archive land after one pass).
+   */
+  void Settle(const size_t want_confirms = 0) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    do {
+      AppRuntime::DrainWorkersThenUI();
+      AppRuntime::RunUITasks();
+      if (confirms.size() >= want_confirms) {
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    } while (std::chrono::steady_clock::now() < deadline);
     context->Update();
   }
   size_t PrunableFiles() { return LogFile::FamilyFiles(log_path).size(); }
@@ -305,7 +317,7 @@ TEST_F(SettingsRunLogsTest, TwoTapsMakeOneArchiveAndOneConfirmThatSaysWhatIsInIt
   EXPECT_TRUE(Pill()->HasAttribute("disabled")) << "grey at once";
   EXPECT_EQ(toasts.back(), Tr("settings.run_logs.preparing"));
   Click(Pill());
-  Settle();
+  Settle(1);
   ASSERT_EQ(confirms.size(), 1u);
   EXPECT_EQ(confirms[0].title, "发送日志");
   EXPECT_EQ(confirms[0].ok, "选择联系人");
@@ -329,14 +341,14 @@ TEST_F(SettingsRunLogsTest, AConfirmThatWentAwayWithoutAnswerLeavesTheRowUsableO
   Click(Switch());
   PreviousLaunches(1);
   Click(Pill());
-  Settle();
+  Settle(1);
   ASSERT_EQ(confirms.size(), 1u);
   EXPECT_TRUE(Pill()->HasAttribute("disabled")) << "the confirm is up";
   // The sheet is torn down by something other than its buttons: no callback ever comes.
   Click("sel_adv"); // the Advanced page opened again
   EXPECT_FALSE(Pill()->HasAttribute("disabled"));
   Click(Pill());
-  Settle();
+  Settle(2);
   EXPECT_EQ(confirms.size(), 2u) << "a new tap makes a new confirm";
   EXPECT_TRUE(sent.empty());
 }
@@ -347,7 +359,7 @@ TEST_F(SettingsRunLogsTest, OpeningThePageAgainWhileTheArchiveIsBeingMadeStaysGr
   Click(Pill());
   Click("sel_adv"); // before the worker came back
   EXPECT_TRUE(Pill()->HasAttribute("disabled"));
-  Settle();
+  Settle(1);
   EXPECT_EQ(confirms.size(), 1u);
 }
 
@@ -381,7 +393,7 @@ TEST_F(SettingsRunLogsTest, CrashRecordsGoOnlyWhileTheCrashSwitchIsOnWhateverIsO
   Write((root / "diagnostics" / "crash_pending.txt").string(), "pp-browser crash dump\nreason=signal 11\n", 0);
 
   Click(Pill()); // crash switch off: the record is on disk but stays out
-  Settle();
+  Settle(1);
   ASSERT_EQ(confirms.size(), 1u);
   EXPECT_NE(confirms[0].message.find(Tr("settings.run_logs.confirm_contents")), std::string::npos);
   EXPECT_EQ(confirms[0].message.find("闪退记录"), std::string::npos);
@@ -393,7 +405,7 @@ TEST_F(SettingsRunLogsTest, CrashRecordsGoOnlyWhileTheCrashSwitchIsOnWhateverIsO
   document->GetElementsByClassName(switches, "settings-switch");
   Click(switches[1]); // crash switch on
   Click(Pill());
-  Settle();
+  Settle(2);
   ASSERT_EQ(confirms.size(), 2u);
   EXPECT_NE(confirms[1].message.find("闪退记录"), std::string::npos) << confirms[1].message;
   EXPECT_EQ(confirms[1].message.find(Tr("settings.run_logs.confirm_contents")), std::string::npos);
@@ -403,7 +415,7 @@ TEST_F(SettingsRunLogsTest, CrashRecordsGoOnlyWhileTheCrashSwitchIsOnWhateverIsO
 
   fs::remove(root / "diagnostics" / "crash_pending.txt"); // switch on, nothing on disk: no mention
   Click(Pill());
-  Settle();
+  Settle(3);
   ASSERT_EQ(confirms.size(), 3u);
   EXPECT_EQ(confirms[2].message.find("闪退记录"), std::string::npos);
 }
@@ -412,7 +424,7 @@ TEST_F(SettingsRunLogsTest, OffSaysCollectingIsOffAndCancelSendsNothing) {
   PreviousLaunches(3); // only the newest of them is packaged
   Click("sel_adv");
   Click(Pill());
-  Settle();
+  Settle(1);
   ASSERT_EQ(confirms.size(), 1u);
   EXPECT_EQ(confirms[0].message.rfind("收集未打开，只包含这一次和上一次启动的记录，从 11-18 08:00 到现在，约 ", 0), 0u)
       << confirms[0].message;
@@ -435,7 +447,7 @@ TEST_F(SettingsRunLogsTest, NoArchiveFileIsLeftOnDisk) {
   Click(Switch());
   PreviousLaunches(1);
   Click(Pill());
-  Settle();
+  Settle(1);
   ASSERT_EQ(confirms.size(), 1u);
   answer(true);
   for (const fs::path& dir : {root, fs::temp_directory_path()}) {

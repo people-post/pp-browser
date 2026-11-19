@@ -296,6 +296,21 @@ TEST_F(RunLogDirTest, TheArchiveIsTheFilteredFilesOldestFirstUpToTheLastComplete
                                         "==== pp-browser.log ====\n" + Rec("this launch"));
 }
 
+// The running app holds its current log open for appending; on Windows a second open of such a file can be refused
+// unless both sides share it, so the archive has to be readable while the writer is still there.
+TEST_F(RunLogDirTest, TheCurrentLogCanBePackagedWhileItIsOpenForWriting) {
+  Write(log_path_, Rec("this launch"));
+  std::ofstream writer(log_path_, std::ios::app | std::ios::binary);
+  ASSERT_TRUE(writer.is_open());
+  writer << Rec("written after the open");
+  writer.flush();
+  auto archive = RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 4 * 1024 * 1024, 0);
+  ASSERT_TRUE(archive) << archive.error().message;
+  EXPECT_EQ(Gunzip(archive->bytes), "==== pp-browser.log ====\n" + Rec("this launch") + Rec("written after the open"));
+  writer << Rec("and still writable");
+  EXPECT_TRUE(writer.good());
+}
+
 TEST_F(RunLogDirTest, OffPackagesOnlyTwoLaunchesWhateverIsOnDisk) {
   Write(log_path_, Rec("now"));
   for (int i = 1; i <= 5; ++i) {
