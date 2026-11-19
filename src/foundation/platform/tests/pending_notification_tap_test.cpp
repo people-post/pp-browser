@@ -10,27 +10,27 @@ const Clock::time_point t0{};
 
 TEST(PendingNotificationTapTest, AMessageTapWaitsAndIsTakenOnce) {
   PendingNotificationTap tap;
-  EXPECT_EQ(tap.TakeThread(), std::nullopt);
+  EXPECT_EQ(tap.TakeThread(t0), std::nullopt);
   tap.Record("thread-a", false, "", t0);
-  EXPECT_EQ(tap.TakeThread(), std::optional<std::string>("thread-a"));
-  EXPECT_EQ(tap.TakeThread(), std::nullopt);
+  EXPECT_EQ(tap.TakeThread(t0), std::optional<std::string>("thread-a"));
+  EXPECT_EQ(tap.TakeThread(t0), std::nullopt);
 }
 
 TEST(PendingNotificationTapTest, PeekThreadShowsTheBannerTapWithoutTakingIt) {
   PendingNotificationTap tap;
-  EXPECT_FALSE(tap.PeekThread());
-  tap.Record("thread-9", false, "", PendingNotificationTap::Clock::now());
-  EXPECT_EQ(tap.PeekThread(), "thread-9");
-  EXPECT_EQ(tap.PeekThread(), "thread-9");
-  EXPECT_EQ(tap.TakeThread(), "thread-9");
-  EXPECT_FALSE(tap.PeekThread());
+  EXPECT_FALSE(tap.PeekThread(t0));
+  tap.Record("thread-9", false, "", t0);
+  EXPECT_EQ(tap.PeekThread(t0), "thread-9");
+  EXPECT_EQ(tap.PeekThread(t0), "thread-9");
+  EXPECT_EQ(tap.TakeThread(t0), "thread-9");
+  EXPECT_FALSE(tap.PeekThread(t0));
 }
 
 TEST(PendingNotificationTapTest, OnlyTheNewestTapIsKept) {
   PendingNotificationTap tap;
   tap.Record("thread-a", false, "", t0);
   tap.Record("thread-b", false, "", t0);
-  EXPECT_EQ(tap.TakeThread(), std::optional<std::string>("thread-b"));
+  EXPECT_EQ(tap.TakeThread(t0), std::optional<std::string>("thread-b"));
 
   tap.Record("", true, "", t0);
   tap.Record("thread-c", false, "", t0);
@@ -38,7 +38,7 @@ TEST(PendingNotificationTapTest, OnlyTheNewestTapIsKept) {
 
   tap.Record("thread-d", false, "", t0);
   tap.Record("", true, "", t0);
-  EXPECT_EQ(tap.TakeThread(), std::nullopt) << "a later call tap cancels the chat to open";
+  EXPECT_EQ(tap.TakeThread(t0), std::nullopt) << "a later call tap cancels the chat to open";
   EXPECT_TRUE(tap.TakeCallRoute("c1", t0));
 
   tap.Record("", false, "m1", t0);
@@ -148,9 +148,28 @@ TEST(PendingNotificationTapTest, ALookupThenTakeRoutesOnceWhenTheMessageSyncedBe
 TEST(PendingNotificationTapTest, TapBeforeWiringIsConsumedAtWiring) {
   PendingNotificationTap tap;
   tap.Record("thread-a", false, "", t0);
-  auto wire = [&]() { return tap.TakeThread(); };
+  auto wire = [&]() { return tap.TakeThread(t0); };
   EXPECT_EQ(wire(), std::optional<std::string>("thread-a"));
-  EXPECT_EQ(tap.TakeThread(), std::nullopt) << "the posted dispatch finds the slot already consumed";
+  EXPECT_EQ(tap.TakeThread(t0), std::nullopt) << "the posted dispatch finds the slot already consumed";
+}
+
+TEST(PendingNotificationTapTest, ABannerTapThatWaitedPastTheMessageBoundIsDroppedNotRoutedOrCounted) {
+  PendingNotificationTap tap;
+  tap.Record("thread-old", false, "", t0);
+  const auto fresh = t0 + PendingNotificationTap::kMessageRouteTtl;
+  EXPECT_EQ(tap.PeekThread(fresh), "thread-old") << "still in time at the bound";
+  const auto stale = fresh + std::chrono::milliseconds(1);
+  EXPECT_FALSE(tap.PeekThread(stale)) << "a later unrelated event must not read it as a fresh tap";
+  EXPECT_EQ(tap.PeekThread(t0), std::nullopt) << "dropped for good, not just hidden";
+  tap.Record("thread-old2", false, "", t0);
+  EXPECT_EQ(tap.TakeThread(stale), std::nullopt) << "nor taken at the wiring long after";
+}
+
+TEST(PendingNotificationTapTest, AConsumedBannerTapIsNoLongerPending) {
+  PendingNotificationTap tap;
+  tap.Record("thread-a", false, "", t0);
+  EXPECT_TRUE(tap.TakeThread(t0));
+  EXPECT_FALSE(tap.PeekThread(t0));
 }
 
 TEST(PendingNotificationTapTest, CallTapSeqCountsCallTapsAndIsNeverReset) {

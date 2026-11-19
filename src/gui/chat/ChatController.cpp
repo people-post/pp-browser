@@ -1258,7 +1258,7 @@ bool ChatController::MarkOpenChatReadIfLooking() {
   PendingNotificationTap& tap = PendingNotificationTap::Instance();
   const auto now = PendingNotificationTap::Clock::now();
   const bool route_unknown_thread = !tap.FreshHint(now).empty() || tap.PeekCallRoute(now);
-  const bool tap_elsewhere = TapPendingElsewhere(tap.PeekThread(), route_unknown_thread, thread_id);
+  const bool tap_elsewhere = TapPendingElsewhere(tap.PeekThread(now), route_unknown_thread, thread_id);
   if (!ShouldMarkOpenChatRead(AppLifecycle::IsUserAttentive(), !thread_id.empty(),
                               ChatTranscriptOnScreen(ChromeSnapshot(), thread_id, thread_id), has_unread,
                               tap_elsewhere)) {
@@ -5572,7 +5572,7 @@ void ChatController::WireMessagingBindings() {
     }
   });
   // A tap that arrived before unlock found no handler; it is still waiting.
-  if (auto pending = PendingNotificationTap::Instance().TakeThread()) {
+  if (auto pending = PendingNotificationTap::Instance().TakeThread(PendingNotificationTap::Clock::now())) {
     activate(std::move(*pending));
   }
   // What the tap names may have synced before it, or before this wiring: look it up.

@@ -1427,7 +1427,7 @@ void Application::OnNotificationTapRecorded(const bool app_was_shown) {
     shell_->ReleaseTapCover(); // a call alert's tap: its ring is what shows
     return;
   }
-  const bool message_tap = tap.PeekThread().has_value() || !tap.FreshHint(now).empty();
+  const bool message_tap = tap.PeekThread(now).has_value() || !tap.FreshHint(now).empty();
   if (!message_tap) {
     return;
   }
