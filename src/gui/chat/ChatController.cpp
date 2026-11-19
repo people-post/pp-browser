@@ -3876,9 +3876,14 @@ void ChatController::ShareAttachment(const std::string& message_id, const ui::Ve
   if (!messaging_ready_ || !facade_ || message_id.empty()) {
     return;
   }
-  const std::optional<DrawnAttachment> drawn = DrawnAttachmentOf(message_id);
-  (void)share_flow_->Begin(ActiveThreadId(), message_id, drawn ? drawn->mime : std::string(), drawn && drawn->ready,
-                           position.x, position.y);
+  std::optional<DrawnAttachment> drawn = DrawnAttachmentOf(message_id);
+  if (!drawn) {
+    drawn = LookUpAttachment(message_id); // not drawn (chat just switched): look this one message up, assume nothing
+  }
+  if (!drawn) {
+    return; // no such attachment any more
+  }
+  (void)share_flow_->Begin(ActiveThreadId(), message_id, drawn->mime, drawn->ready, position.x, position.y);
 }
 
 void ChatController::OpenAttachment(const std::string& message_id) {

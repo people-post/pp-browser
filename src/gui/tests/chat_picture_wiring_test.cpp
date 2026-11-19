@@ -182,6 +182,12 @@ TEST(ChatPictureWiringTest, AMessageNotDrawnOpensOnTapAndIsLookedUpToSave) {
   EXPECT_NE(lookup.find("facts.attachment(**message)"), std::string::npos) << "ready as the card would say";
 }
 
+TEST(ChatPictureWiringTest, ShareOfAMessageNotDrawnLooksItUpToo) {
+  const std::string share = Body(kController, "void ChatController::ShareAttachment(");
+  EXPECT_NE(share.find("LookUpAttachment(message_id)"), std::string::npos);
+  EXPECT_EQ(share.find("drawn && drawn->ready"), std::string::npos) << "an unknown row is not assumed not ready";
+}
+
 // The save keeps its own state (AttachmentSaveFlow), apart from the taps' opening_message_ids_: neither reads or clears
 // the other's.
 TEST(ChatPictureWiringTest, TheSaveAndTheOpenKeepTheirOwnState) {
