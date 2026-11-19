@@ -2,7 +2,21 @@
 
 #include "foundation/data/UserPreferences.h"
 
+#include <utility>
+
 namespace pbr {
+
+namespace {
+std::string g_machine_dir;
+} // namespace
+
+void RunLogPrefs::SetMachineDir(std::string dir) {
+  g_machine_dir = std::move(dir);
+}
+
+std::string RunLogPrefs::MachineDir(const std::string& fallback) {
+  return g_machine_dir.empty() ? fallback : g_machine_dir;
+}
 
 std::optional<bool> RunLogPrefs::ReadCollect(const std::string& data_dir, const bool allowed) {
   if (!allowed) {

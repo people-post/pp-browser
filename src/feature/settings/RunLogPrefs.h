@@ -16,6 +16,14 @@ namespace pbr {
  */
 class RunLogPrefs {
 public:
+  /**
+   * The directory machine.json is read from and written to, by start-up pruning and by the Settings switch alike: the
+   * default data root the log lives in (the app records it before the config's `data_dir` override takes effect).
+   */
+  static void SetMachineDir(std::string dir);
+  /** The recorded directory; `fallback` (the session's data_dir) when none was recorded. */
+  static std::string MachineDir(const std::string& fallback);
+
   /** The switch: false when not allowed; nothing when machine.json cannot be read (callers treat that as off). */
   static std::optional<bool> ReadCollect(const std::string& data_dir, bool allowed);
 

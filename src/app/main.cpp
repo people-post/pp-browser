@@ -137,7 +137,10 @@ int main(int argc, char** argv) {
       pbr::LogFile::InstallDiag(log_path);
       // Installing only rotated: the old files go now, by the device's "Collect run logs" switch (7 days, or only
       // this launch and the one before). Unreadable switch: nothing is deleted this launch (DEV/PLAN-send-run-logs.md).
-      if (!pbr::RunLogPrefs::PruneAtStartup(pbr::AppPaths::DataDir(), log_path,
+      // The switch lives in the default data root, where the log is: Settings reads the same one, not the session's
+      // data_dir (a config override only takes effect later, in Bootstrap).
+      pbr::RunLogPrefs::SetMachineDir(pbr::AppPaths::DataDir());
+      if (!pbr::RunLogPrefs::PruneAtStartup(pbr::RunLogPrefs::MachineDir(""), log_path,
                                             pbr::RunLogsAllowed(pbr::kUiDemoBuild))) {
         root.warning << "Old log files kept: the collect-run-logs setting could not be read";
       }

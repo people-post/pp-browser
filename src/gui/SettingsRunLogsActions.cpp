@@ -42,7 +42,10 @@ void SettingsRunLogsActions::Bind(ui::DataModelConstructor& ctor) {
 }
 
 std::string SettingsRunLogsActions::DataDir() const {
-  return host_.Store().IsInitialized() ? host_.Store().Snapshot().data_dir : std::string();
+  // machine.json sits where start-up pruning reads it: the default data root, which a config data_dir override
+  // does not move (the session's own data_dir only when the app recorded none).
+  const std::string session = host_.Store().IsInitialized() ? host_.Store().Snapshot().data_dir : std::string();
+  return RunLogPrefs::MachineDir(session);
 }
 
 std::string SettingsRunLogsActions::LogPath() const {

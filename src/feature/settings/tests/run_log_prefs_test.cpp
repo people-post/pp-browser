@@ -169,5 +169,13 @@ TEST_F(RunLogPrefsTest, SavingTheSwitchKeepsTheOtherMachineSettings) {
   EXPECT_TRUE(machine->collect_run_logs);
 }
 
+TEST_F(RunLogPrefsTest, TheMachineDirIsTheRecordedRootElseTheFallback) {
+  RunLogPrefs::SetMachineDir("");
+  EXPECT_EQ(RunLogPrefs::MachineDir("/session"), "/session");
+  RunLogPrefs::SetMachineDir("/default-root");
+  EXPECT_EQ(RunLogPrefs::MachineDir("/session"), "/default-root") << "a config override does not move it";
+  RunLogPrefs::SetMachineDir("");
+}
+
 } // namespace
 } // namespace pbr

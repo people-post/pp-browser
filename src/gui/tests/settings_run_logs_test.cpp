@@ -5,6 +5,7 @@
 // two taps make one archive and one confirm; the confirm says what is in it (two wordings, on and off); OK hands one
 // .log.gz to the pick step, Cancel nothing; turning the switch off deletes the older logs; no file is written.
 #include "common/runtime/AppRuntime.h"
+#include "feature/settings/RunLogPrefs.h"
 #include "feature/settings/SettingsCommands.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
@@ -109,7 +110,10 @@ protected:
     BootstrapResult bootstrap{};
     bootstrap.config = Config::DefaultAppConfig();
     bootstrap.config_path = (root / "config.json").string();
-    bootstrap.data_dir = root.string();
+    // The session's data_dir is NOT the default data root (a config override): the switch still lives in `root`.
+    fs::create_directories(root / "session");
+    bootstrap.data_dir = (root / "session").string();
+    RunLogPrefs::SetMachineDir(root.string());
     bootstrap.profile_data_dir = (root / "profile").string();
     bootstrap.profile_prefs = UserPreferences::DefaultProfile();
     store.SetUiDemo(false);
@@ -142,6 +146,7 @@ protected:
     Click("sel_adv");
   }
   void TearDown() override {
+    RunLogPrefs::SetMachineDir("");
     AppRuntime::DrainWorkersThenUI();
     AppRuntime::RunUITasks();
     UserFeedback::BindPorts({});
@@ -261,6 +266,16 @@ TEST_F(SettingsRunLogsTest, TheSwitchOnIsAlwaysSendableAndStoredForTheDevice) {
   EXPECT_TRUE(machine->collect_run_logs) << "machine.json, not the profile's preferences";
   EXPECT_FALSE(Shown(NothingYet()));
   EXPECT_FALSE(Pill()->HasAttribute("disabled"));
+}
+
+TEST_F(SettingsRunLogsTest, TheSwitchIsStoredInTheDefaultDataRootNotTheSessionsOverride) {
+  Click(Switch());
+  EXPECT_TRUE(fs::exists(root / "machine.json"));
+  EXPECT_FALSE(fs::exists(root / "session" / "machine.json")) << "no stray file under the session's data_dir";
+  // What start-up pruning reads next launch is what the switch wrote.
+  EXPECT_EQ(RunLogPrefs::ReadCollect(RunLogPrefs::MachineDir(""), true), std::optional<bool>(true));
+  EXPECT_EQ(RunLogPrefs::ReadCollect((root / "session").string(), true), std::optional<bool>(false))
+      << "the other root never had the switch";
 }
 
 TEST_F(SettingsRunLogsTest, TwoTapsMakeOneArchiveAndOneConfirmThatSaysWhatIsInIt) {
