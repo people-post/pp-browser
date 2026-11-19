@@ -19,6 +19,7 @@
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/PlatformHooks.h"
 #include "foundation/product/AppVersion.h"
+#include "foundation/product/BuildInfo.h"
 #include "foundation/product/DevTools.h"
 #include "foundation/product/ProductBranding.h"
 
@@ -142,6 +143,11 @@ int main(int argc, char** argv) {
       }
     }
   }
+
+  // Which build this is, so a run log names it. WARNING like the header above, so it survives the desktop default
+  // level. The commit, tag and version are the build's own words, no user data (DiagLine takes no runtime text).
+  root.warning << "app.build version=" << pbr::AppVersionString() << " commit=" << pbr::BuildCommit()
+               << " tag=" << (*pbr::BuildTag() != '\0' ? pbr::BuildTag() : "-");
 
   if (!profile_override.empty()) {
     root.warning << "Using profile override '" << profile_override << "' (multi-profile UI is not shipped yet)";

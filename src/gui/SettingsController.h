@@ -312,6 +312,7 @@ private:
     bool tool_permissions_has_saved = false;
     ui::String app_name;
     ui::String app_version;
+    ui::String app_build;
     bool support_visible = false;
     ui::String support_display_name;
     ui::String support_subtitle;

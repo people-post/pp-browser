@@ -481,7 +481,9 @@ data-event-click="open_terms()"	1	-	help	-	-
 data-event-click="tap_version()"	2	-	help	-	-	
 data-event-click="toggle_advanced_settings()"	1	about	help	-	-	
 data-event-click="toggle_crash_reports()"	2	security	help	-	about,security	
+{{app_build}}	2	-	help	-	about	
 {{app_version}}	2	-	help	-	about	
+{{i18n:settings.about.build}}	2	-	help	-	about	
 {{i18n:settings.about.improve.title}}	1	-	help	-	about	
 {{i18n:settings.about.version}}	2	-	help	-	about	
 {{i18n:settings.help.privacy_policy}}	1	-	help	-	-	

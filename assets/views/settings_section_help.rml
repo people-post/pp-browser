@@ -78,6 +78,13 @@
               <span class="group-row-value">{{app_version}}</span>
             </span>
           </div>
+          <div class="group-row">
+            <span class="group-row-body">
+              <span class="group-row-text">{{i18n:settings.about.build}}</span>
+              <span class="group-row-value">{{app_build}}</span>
+            </span>
+          </div>
         </div>
         <p class="text muted group-foot settings-desktop-only" data-event-click="tap_version()">{{i18n:settings.about.version}}: <span>{{app_version}}</span></p>
+        <p class="text muted group-foot settings-desktop-only">{{i18n:settings.about.build}} <span>{{app_build}}</span></p>
       </div>

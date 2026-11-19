@@ -124,6 +124,7 @@
     "settings.help.show_advanced.hint": "Shows more details such as connection and card validity. Most people don’t need it.",
     "settings.about.improve.title": "Help improve PP",
     "settings.about.version": "Version",
+    "settings.about.build": "Build",
     "compat.update_required.title": "Update required",
     "compat.update_required.message": "This version of PP is too old to continue. Please update to the latest release.",
     "compat.update_required.action": "Update",
