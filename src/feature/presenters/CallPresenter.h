@@ -417,6 +417,8 @@ private:
   CallFunctionalPorts ports_;
   /** The last speaker tap handed to the media engine as a route change (CallSpeakerButtonOn). */
   std::optional<CallSpeakerTap> speaker_tap_;
+  /** When the speaker was last toggled (util::NowUnixMs; 0: never): the call's quality reads it (B231). */
+  int64_t speaker_toggled_ms_ = 0;
   std::function<bool()> dev_route_reorder_skip_;
   std::function<bool()> dev_detach_ui_;
   std::function<bool()> video_available_for_test_;

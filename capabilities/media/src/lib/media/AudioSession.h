@@ -94,6 +94,11 @@ bool ToneCloseRewritesSession();
  */
 void NotifyVoiceProcessingStarted(double sample_rate, int channels, int bypass, int agc);
 
+/** The OS changed a live call's audio route (iOS's route-change notification), now. Any thread. */
+void NoteRouteChanged();
+/** When NoteRouteChanged last ran (util::NowUnixMs; 0: never). A call's quality reads it (B231). Any thread. */
+int64_t LastRouteChangeMs();
+
 /** True when the OS exposes earpiece vs loudspeaker routing. */
 bool SupportsSpeakerToggle();
 /** The live session's speaker choice. */

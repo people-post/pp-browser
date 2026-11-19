@@ -275,5 +275,99 @@ TEST(CallMediaHealthTest, DetailsShowTheNetworkLineOnlyWhenGiven) {
   EXPECT_NE(FormatCallDetailsText(view, 0, false, copy).find("Network: Round trip 42 ms"), std::string::npos);
 }
 
+// --- B231: buffer pressure right after a local route change (the speaker toggle) is not a weak signal.
+
+/** One evaluation as CallMediaFrame does it: the gate's pressure grades, the engine's figure stays for the log. */
+CallMediaHealthView EvaluateGated(CallBufferPressureGate& gate, CallMediaHealthInput in,
+                                  const int64_t route_changed_ms) {
+  in.engine_pressure_for_quality = gate.Step(in.engine.path_pressure, in.now_ms, route_changed_ms);
+  return EvaluateCallMediaHealth(in);
+}
+
+CallMediaHealthInput PressureAt(const int64_t now_ms, const double pressure) {
+  auto in = BaseHealthyInput(now_ms);
+  in.engine.path_pressure = pressure;
+  return in;
+}
+
+TEST(CallBufferPressureGateTest, ASpikeRightAfterARouteChangeIsNotPoor) {
+  CallBufferPressureGate gate;
+  const int64_t toggled = 10'000;
+  for (int64_t t = toggled; t < toggled + kCallRouteChangeSettleMs; t += 100) {
+    const auto v = EvaluateGated(gate, PressureAt(t, 1.0), toggled);
+    EXPECT_EQ(v.quality, CallPathQuality::Excellent) << "at +" << (t - toggled) << " ms";
+    EXPECT_EQ(v.engine.path_pressure, 1.0) << "the media_health line still shows the engine's pressure";
+  }
+}
+
+TEST(CallBufferPressureGateTest, SustainedPressureWithoutARouteChangeIsPoorAfterASecond) {
+  CallBufferPressureGate gate;
+  const int64_t from = 10'000;
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(from, 1.0), 0).quality, CallPathQuality::Fair);
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(from + 500, 1.0), 0).quality, CallPathQuality::Fair);
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(from + 999, 1.0), 0).quality, CallPathQuality::Fair);
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(from + kCallBufferPressureSustainMs, 1.0), 0).quality,
+            CallPathQuality::Poor);
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(from + 1'500, 1.0), 0).quality, CallPathQuality::Poor);
+}
+
+TEST(CallBufferPressureGateTest, ADipStartsTheSecondOver) {
+  CallBufferPressureGate gate;
+  const int64_t from = 10'000;
+  (void)EvaluateGated(gate, PressureAt(from, 1.0), 0);
+  (void)EvaluateGated(gate, PressureAt(from + 800, 1.0), 0);
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(from + 900, 0.2), 0).quality, CallPathQuality::Good);
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(from + 1'000, 1.0), 0).quality, CallPathQuality::Fair);
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(from + 1'500, 1.0), 0).quality, CallPathQuality::Fair);
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(from + 2'000, 1.0), 0).quality, CallPathQuality::Poor);
+}
+
+TEST(CallBufferPressureGateTest, PressureOutlastingTheSettleTimeIsTimedFromItsEnd) {
+  CallBufferPressureGate gate;
+  const int64_t toggled = 10'000;
+  const int64_t settled = toggled + kCallRouteChangeSettleMs;
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(settled - 100, 1.0), toggled).quality, CallPathQuality::Excellent);
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(settled, 1.0), toggled).quality, CallPathQuality::Fair);
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(settled + 900, 1.0), toggled).quality, CallPathQuality::Fair);
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(settled + 1'000, 1.0), toggled).quality, CallPathQuality::Poor);
+}
+
+TEST(CallBufferPressureGateTest, ModeratePressureGradesAtOnce) {
+  CallBufferPressureGate gate;
+  EXPECT_EQ(EvaluateGated(gate, PressureAt(10'000, 0.5), 0).quality, CallPathQuality::Fair);
+}
+
+TEST(CallBufferPressureGateTest, LossRightAfterARouteChangeStillDropsTheBars) {
+  const int64_t toggled = 10'000;
+  const int64_t now = toggled + 300;
+  {
+    CallBufferPressureGate gate;
+    auto in = PressureAt(now, 1.0);
+    in.engine.tx_audio_frames = 0; // nothing sent (not muted, mic present)
+    in.engine.last_tx_audio_ms = 0;
+    const auto v = EvaluateGated(gate, in, toggled);
+    EXPECT_EQ(v.quality, CallPathQuality::Poor);
+    EXPECT_EQ(v.asymmetry, CallAudioAsymmetry::ReceivingOnly);
+  }
+  {
+    CallBufferPressureGate gate;
+    auto in = PressureAt(now, 1.0);
+    in.engine.last_rx_audio_ms = now - 5'000; // nothing heard for 5 s
+    EXPECT_EQ(EvaluateGated(gate, in, toggled).quality, CallPathQuality::NoAudio);
+  }
+  {
+    CallBufferPressureGate gate;
+    auto in = PressureAt(now, 1.0);
+    in.hop.path_pressure = 0.9; // the relay's pressure is the network's
+    EXPECT_EQ(EvaluateGated(gate, in, toggled).quality, CallPathQuality::Poor);
+  }
+  {
+    CallBufferPressureGate gate;
+    auto in = PressureAt(now, 1.0);
+    in.reconnecting = true;
+    EXPECT_EQ(EvaluateGated(gate, in, toggled).quality, CallPathQuality::Reconnecting);
+  }
+}
+
 } // namespace
 } // namespace pbr

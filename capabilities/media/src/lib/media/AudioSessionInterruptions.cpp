@@ -1,5 +1,7 @@
 #include "lib/media/AudioSession.h"
 
+#include "common/PbrCompat.h"
+
 #include <atomic>
 #include <mutex>
 #include <utility>
@@ -21,8 +23,17 @@ InterruptionHandlers& Registry() {
 }
 
 std::atomic<bool> g_interrupted{false};
+std::atomic<int64_t> g_route_changed_ms{0};
 
 } // namespace
+
+void NoteRouteChanged() {
+  g_route_changed_ms.store(util::NowUnixMs());
+}
+
+int64_t LastRouteChangeMs() {
+  return g_route_changed_ms.load();
+}
 
 InterruptionHandlerId AddInterruptionEndedHandler(std::function<void()> fn) {
   if (!fn) {

@@ -26,6 +26,22 @@ bool CallDiagnosticsEnabled(bool profile_pref) {
   return profile_pref || CallDiagnosticsCliOverride();
 }
 
+double CallBufferPressureGate::Step(const double engine_pressure, const int64_t now_ms,
+                                    const int64_t route_changed_ms) {
+  if (route_changed_ms > 0 && now_ms >= route_changed_ms && now_ms - route_changed_ms < kCallRouteChangeSettleMs) {
+    poor_since_ms_ = 0; // a spike that began in the settle time is timed from its end
+    return 0.0;
+  }
+  if (engine_pressure < kCallPressurePoor) {
+    poor_since_ms_ = 0;
+    return engine_pressure;
+  }
+  if (poor_since_ms_ == 0) {
+    poor_since_ms_ = now_ms;
+  }
+  return now_ms - poor_since_ms_ >= kCallBufferPressureSustainMs ? engine_pressure : kCallPressureFair;
+}
+
 CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
   CallMediaHealthView out;
   out.engine = in.engine;
@@ -40,7 +56,8 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
     out.path_kind = "direct";
   }
 
-  const double pressure = std::max(in.engine.path_pressure, in.hop.path_pressure);
+  const double pressure =
+      std::max(in.engine_pressure_for_quality.value_or(in.engine.path_pressure), in.hop.path_pressure);
   const int64_t now = in.now_ms;
   const int64_t rx_age = (in.engine.last_rx_audio_ms > 0 && now > in.engine.last_rx_audio_ms)
                              ? (now - in.engine.last_rx_audio_ms)
@@ -65,13 +82,13 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
     out.quality = CallPathQuality::Poor;
     out.asymmetry = CallAudioAsymmetry::ReceivingOnly;
     out.quality_bars = 1;
-  } else if (pressure >= 0.75) {
+  } else if (pressure >= kCallPressurePoor) {
     out.quality = CallPathQuality::Poor;
     out.quality_bars = 1;
-  } else if (pressure >= 0.4) {
+  } else if (pressure >= kCallPressureFair) {
     out.quality = CallPathQuality::Fair;
     out.quality_bars = 2;
-  } else if (pressure >= 0.15) {
+  } else if (pressure >= kCallPressureGood) {
     out.quality = CallPathQuality::Good;
     out.quality_bars = 3;
   } else {

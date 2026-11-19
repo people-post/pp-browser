@@ -313,6 +313,8 @@ const CallMediaScreen& CallMediaFrame::Step(const CallScreen& screen, const Call
   in.now_ms = facts.now_ms;
   in.reconnecting = d.reconnect || d.couldnt_connect;
   in.link = SampleLink(facts);
+  in.engine_pressure_for_quality =
+      pressure_gate_.Step(facts.engine.path_pressure, facts.now_ms, facts.audio_route_changed_ms);
   const CallMediaHealthView health = EvaluateCallMediaHealth(in);
   return Finish(screen, facts, d, health);
 }
