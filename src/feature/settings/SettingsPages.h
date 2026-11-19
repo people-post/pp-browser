@@ -10,7 +10,6 @@ enum class SettingsPageAction : unsigned {
   None = 0,
   RefreshBlockedCount = 1u << 0,
   RefreshBannerTip = 1u << 1,
-  RefreshDiagnostics = 1u << 2,
   EnterStorage = 1u << 3,
   RefreshDevices = 1u << 4,
   RefreshCasLibrary = 1u << 5,

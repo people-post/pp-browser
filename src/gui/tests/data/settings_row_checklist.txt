@@ -475,20 +475,13 @@ data-event-click="toggle_attachment_auto_wifi()"	1	storage	storage	storage_page 
 data-class-settings-switch--on="show_advanced_settings == 'on'"	1	-	help	-	-	
 data-class-settings-switch--on="crash_reports_enabled == 'on'"	2	-	help	-	about,security	
 data-event-click="ask_setting_help('settings.security.crash_reports.label')"	2	-	help	-	about,security	
-data-event-click="copy_diagnostics_id()"	2	-	help	diagnostics_last_id != ''	about,security	
-data-event-click="open_diagnostics_help()"	2	-	help	show_diagnostics_send	about,security	
 data-event-click="open_privacy_policy()"	1	-	help	-	-	
 data-event-click="open_support_chat()"	1	-	help	support_visible	-	
 data-event-click="open_terms()"	1	-	help	-	-	
-data-event-click="send_diagnostics()"	2	-	help	show_diagnostics_send	about,security	
 data-event-click="tap_version()"	2	-	help	-	-	
 data-event-click="toggle_advanced_settings()"	1	about	help	-	-	
 data-event-click="toggle_crash_reports()"	2	security	help	-	about,security	
-data-help-key="troubleshooting/send-diagnostics"	2	-	help	show_diagnostics_send	about,security	
 {{app_version}}	2	-	help	-	about	
-{{diagnostics_last_label}}	2	-	help	diagnostics_last_id != ''	about,security	
-{{diagnostics_send_label}}	1	-	help	show_diagnostics_send	about,security	
-{{diagnostics_send_label}}	1	-	help	show_diagnostics_send;;diagnostics_sending	about,security	
 {{i18n:settings.about.improve.title}}	1	-	help	-	about	
 {{i18n:settings.about.version}}	2	-	help	-	about	
 {{i18n:settings.help.privacy_policy}}	1	-	help	-	-	
@@ -497,10 +490,6 @@ data-help-key="troubleshooting/send-diagnostics"	2	-	help	show_diagnostics_send	
 {{i18n:settings.help.terms}}	1	-	help	-	-	
 {{i18n:settings.security.crash_reports.help}}	2	-	help	-	about,security	
 {{i18n:settings.security.crash_reports.label}}	2	-	help	-	about,security	
-{{i18n:settings.security.diagnostics.help}}	1	-	help	show_diagnostics_send	security	
-{{i18n:settings.security.diagnostics.send}}	1	-	help	show_diagnostics_send		
-{{i18n:settings.security.diagnostics.send_short}}	1	-	help	show_diagnostics_send;;!diagnostics_sending		
-{{i18n:settings.security.group.diagnostics}}	1	-	help	-	security	
 {{support_display_name}}	1	-	help	support_visible	-	
 {{support_subtitle}}	1	-	help	support_visible	-	
 data-class-settings-switch--on="call_diagnostics == 'on'"	1	-	tester	tester	appearance	
@@ -620,3 +609,5 @@ data-event-click="copy_relay_link(relay_index)"	1	-	relays	my_relays_shown;;rela
 {{i18n:settings.relays.add.hint}}	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;my_relay_add_error == '' && !my_relays_busy	relays	
 data-event-click="scan_my_relay_link()"	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy && my_relay_can_scan	relays	
 {{i18n:settings.relays.add.scan}}	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy && my_relay_can_scan	relays	
+
+{{i18n:settings.security.group.diagnostics}}	1	-	help	-	security	

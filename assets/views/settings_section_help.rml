@@ -10,8 +10,8 @@
             </span>
           </button>
         </div>
-        <!-- Phones: the crash-report switch and the send-problem-logs button in one card of their own (Kenneth 2026-11-04:
-             side by side under Security they read as one feature). Desktop keeps them on the Security page. -->
+        <!-- Phones: the crash-report switch in a card of its own. "Send diagnostics" is gone: run logs are sent from
+             Settings > Advanced (DEV/PLAN-send-run-logs.md). -->
         <p class="text group-head settings-phone-only">{{i18n:settings.about.improve.title}}</p>
         <div class="group-card settings-phone-only">
           <div class="settings-toggle-row row group-row">
@@ -27,24 +27,6 @@
               </button>
             </span>
           </div>
-          <!-- The row itself does nothing: the "?" sits right after the title and the small "Send" pill at the right end is the only
-               way to send (the whole row used to be one button, so the "?" could not be hit). -->
-          <div class="group-row group-row--static" data-if="show_diagnostics_send">
-            <span class="group-row-body">
-              <span class="group-row-label">
-                <span class="settings-q-label"><span class="group-row-text">{{i18n:settings.security.diagnostics.send}}</span><button class="settings-q-btn" type="button" data-help-key="troubleshooting/send-diagnostics" data-event-click="open_diagnostics_help()"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
-              </span>
-              <button class="settings-pill-btn" type="button" data-attrif-disabled="diagnostics_sending" data-event-click="send_diagnostics()">
-                <span class="settings-pill"><span data-if="!diagnostics_sending">{{i18n:settings.security.diagnostics.send_short}}</span><span data-if="diagnostics_sending">{{diagnostics_send_label}}</span></span>
-              </button>
-            </span>
-          </div>
-          <button class="group-row settings-improve-send" type="button" data-if="diagnostics_last_id != ''"
-                  data-event-click="copy_diagnostics_id()">
-            <span class="group-row-body">
-              <span class="group-row-label"><span class="group-row-text settings-row-sentence">{{diagnostics_last_label}}</span></span>
-            </span>
-          </button>
         </div>
         <p class="text group-head settings-desktop-only">{{i18n:settings.security.group.diagnostics}}</p>
         <div class="group-card settings-desktop-only">
@@ -60,19 +42,6 @@
           </div>
         </div>
         <p class="text muted settings-help group-foot settings-desktop-only">{{i18n:settings.security.crash_reports.help}}</p>
-        <div class="settings-toggle-row row group-actions settings-desktop-only" data-if="show_diagnostics_send">
-          <button class="btn" type="button" data-attrif-disabled="diagnostics_sending"
-                  data-event-click="send_diagnostics()">
-            {{diagnostics_send_label}}
-          </button>
-          <button class="settings-q-btn" type="button" data-help-key="troubleshooting/send-diagnostics"
-                  data-event-click="open_diagnostics_help()"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
-        </div>
-        <p class="text muted settings-help group-foot settings-desktop-only" data-if="show_diagnostics_send">{{i18n:settings.security.diagnostics.help}}</p>
-        <button class="btn settings-desktop-only" type="button" data-if="diagnostics_last_id != ''"
-                data-event-click="copy_diagnostics_id()">
-          {{diagnostics_last_label}}
-        </button>
         <div class="group-card">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">

@@ -1463,10 +1463,6 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
 
   status_ = "";
   const SettingsPage* opened = FindSettingsPage(section_id);
-  // Send problem logs is on the Help page: it reads its label again.
-  if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshDiagnostics)) {
-    security_actions_.RefreshDiagnostics();
-  }
   // Collect / Send run logs are on the Advanced page: the switch and the row read again.
   if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshRunLogs)) {
     run_logs_actions_.Refresh();

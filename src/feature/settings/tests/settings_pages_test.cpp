@@ -47,7 +47,7 @@ TEST(SettingsPagesTest, OpeningAPageDoesWhatTheOldSectionDid) {
       {"storage", static_cast<unsigned>(SettingsPageAction::EnterStorage)},
       {"advanced", static_cast<unsigned>(SettingsPageAction::RefreshRunLogs)},
       {"relays", static_cast<unsigned>(SettingsPageAction::RefreshRelays)},
-      {"help", static_cast<unsigned>(SettingsPageAction::RefreshDiagnostics)},
+      {"help", 0},
       {"tester", static_cast<unsigned>(SettingsPageAction::RefreshCasLibrary)},
   };
   ASSERT_EQ(SettingsPages().size(), std::size(expected));

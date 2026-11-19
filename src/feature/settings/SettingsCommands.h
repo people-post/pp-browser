@@ -2,7 +2,6 @@
 
 #include "common/Secret.h"
 
-#include "foundation/diagnostics/DiagnosticsUploadResult.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/PickedFileLease.h"
 #include "foundation/platform/ProfileIconImagePrep.h"
@@ -185,10 +184,6 @@ struct SettingsCommands {
   std::function<int()> blocked_count;
   /** Phones: the list of blocked people, pushed over Settings (each with Unblock). */
   std::function<void()> open_blocked_people;
-  /** Send diagnostics (Security): bundles and uploads on a worker; `on_done` runs on UI. One at a time. */
-  std::function<void(std::function<void(DiagnosticsUploadResult)> on_done)> send_diagnostics;
-  /** Reference of the last successful send (`diagnostics/last_upload.json`); "" when none. */
-  std::function<std::string()> last_diagnostics_id;
   /**
    * Advanced → Send run logs, after the confirm (DEV/PLAN-send-run-logs.md): the New chat page opens to pick one
    * contact, and the archive goes to that chat as an ordinary file message. Nothing is sent when no one is picked.
