@@ -204,24 +204,26 @@ struct AttachmentSharePorts {
 /**
  * "Share…" of one attachment (phones): its view is found (made on a worker when missing), then handed to the system
  * share sheet. A sheet that cannot be shown says "Can't share this file right now"; a share or a cancel says nothing.
- * The shared file is the view itself: nothing is deleted or touched afterwards. UI thread; the flow must outlive the
- * callbacks it hands out (it is the chat screen's member).
+ * The shared file is the view itself: nothing is deleted or touched afterwards. UI thread; the callbacks it hands out
+ * hold only a weak reference to the flow's state: when the flow (the chat screen's member) is destroyed first, a late
+ * one does nothing.
  */
 class AttachmentShareFlow {
 public:
   enum class Start { Started, Ignored, NotReady };
 
-  explicit AttachmentShareFlow(AttachmentSharePorts ports) : ports_(std::move(ports)) {}
+  explicit AttachmentShareFlow(AttachmentSharePorts ports);
 
   /** The view is being found for a share: a second Share… waits (Ignored). */
-  bool Busy() const { return busy_; }
+  bool Busy() const;
   /** NotReady (the pill says so) when the attachment is not downloaded; (`x`, `y`) anchors the iPad popover. */
   Start Begin(const std::string& thread_id, const std::string& message_id, const std::string& mime, bool ready, int x,
               int y);
 
 private:
-  AttachmentSharePorts ports_;
-  bool busy_ = false;
+  /** Shared with the callbacks it hands out: once the owner is gone they find nothing and do nothing. */
+  struct Core;
+  std::shared_ptr<Core> core_;
 };
 
 } // namespace pbr

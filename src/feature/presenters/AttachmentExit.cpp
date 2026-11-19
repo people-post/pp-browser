@@ -256,27 +256,48 @@ void AttachmentSaveFlow::OnCopied(const std::shared_ptr<Core>& core, const std::
       Tr("chat.attachment.saved_to", {{"folder", ports.folder_name(PathToUtf8(PathFromUtf8(target).parent_path()))}}));
 }
 
+struct AttachmentShareFlow::Core {
+  explicit Core(AttachmentSharePorts p) : ports(std::move(p)) {}
+  AttachmentSharePorts ports;
+  bool busy = false;
+};
+
+AttachmentShareFlow::AttachmentShareFlow(AttachmentSharePorts ports)
+    : core_(std::make_shared<Core>(std::move(ports))) {}
+
+bool AttachmentShareFlow::Busy() const {
+  return core_->busy;
+}
+
 AttachmentShareFlow::Start AttachmentShareFlow::Begin(const std::string& thread_id, const std::string& message_id,
                                                       const std::string& mime, const bool ready, const int x,
                                                       const int y) {
-  if (busy_) {
+  if (core_->busy) {
     return Start::Ignored;
   }
   if (!ready) {
-    ports_.fail(Tr("chat.attachment.not_ready"));
+    core_->ports.fail(Tr("chat.attachment.not_ready"));
     return Start::NotReady;
   }
-  busy_ = true;
-  ports_.post_worker([this, thread_id, message_id, mime, x, y]() {
-    std::optional<std::string> view = ports_.view_path(thread_id, message_id);
-    ports_.post_ui([this, mime, x, y, view = std::move(view)]() {
-      busy_ = false;
-      if (view && ports_.share(*view, mime, x, y)) {
+  core_->busy = true;
+  core_->ports.post_worker([weak = std::weak_ptr<Core>(core_), thread_id, message_id, mime, x, y]() {
+    const std::shared_ptr<Core> core = weak.lock();
+    if (!core) {
+      return; // the chat screen is gone
+    }
+    std::optional<std::string> view = core->ports.view_path(thread_id, message_id);
+    core->ports.post_ui([weak, mime, x, y, view = std::move(view)]() {
+      const std::shared_ptr<Core> alive = weak.lock();
+      if (!alive) {
+        return;
+      }
+      alive->busy = false;
+      if (view && alive->ports.share(*view, mime, x, y)) {
         log().info << "attachment share: sheet shown";
         return;
       }
       log().warning << "attachment share: failed";
-      ports_.fail(Tr("chat.attachment.share_failed"));
+      alive->ports.fail(Tr("chat.attachment.share_failed"));
     });
   });
   return Start::Started;

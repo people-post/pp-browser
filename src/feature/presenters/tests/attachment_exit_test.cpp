@@ -568,6 +568,32 @@ TEST_F(ShareFlowTest, TheViewGoesToTheShareSheetAndStaysWhereItIs) {
   ExpectAllOnTheirThreads();
 }
 
+TEST_F(ShareFlowTest, AnOwnerDestroyedBeforeTheWorkerRunsIsLeftAlone) {
+  auto flow = std::make_unique<AttachmentShareFlow>(SharePorts());
+  ASSERT_EQ(flow->Begin("t1", "m1", "application/gzip", true, 0, 0), AttachmentShareFlow::Start::Started);
+  flow.reset();
+  Pump();
+  EXPECT_TRUE(asked_view_.empty()) << "no decrypt for a screen that is gone";
+  EXPECT_TRUE(shared_.empty());
+  EXPECT_TRUE(fails_.empty());
+}
+
+TEST_F(ShareFlowTest, AnOwnerDestroyedWhileTheViewIsBeingFoundShowsNoSheet) {
+  auto flow = std::make_unique<AttachmentShareFlow>(SharePorts());
+  ASSERT_EQ(flow->Begin("t1", "m1", "application/gzip", true, 0, 0), AttachmentShareFlow::Start::Started);
+  std::function<void()> worker;
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+    worker = std::move(worker_tasks_.front());
+    worker_tasks_.pop_front();
+  }
+  worker(); // the view is found, the UI step is queued
+  flow.reset();
+  Pump();
+  EXPECT_TRUE(shared_.empty());
+  EXPECT_TRUE(fails_.empty());
+}
+
 TEST_F(ShareFlowTest, ASheetThatCannotShowSaysSoAndDeletesNothing) {
   sheet_shows_ = false;
   AttachmentShareFlow flow(SharePorts());
