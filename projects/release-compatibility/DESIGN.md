@@ -1,7 +1,7 @@
 # Release compatibility: design
 
 **Status:** Accepted by Hongwei, 2026-11-17; in review with Leo (relay parts: [§ Decisions taken](#decisions-taken),
-items 3 and 8). Decisions RC001–RC014.
+items 3 and 8). Decisions RC001–RC015.
 **Today's policy** stays [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) until release 1 ships; this
 design replaces its [§ No bridges](../../docs/contracts/COMPATIBILITY.md#no-bridges-pre-release) then.
 
@@ -111,6 +111,12 @@ does not decide it.
 - **Apps:** local data moves forward only; downgrading an app is not supported (phones cannot
   downgrade from the store). A store newer
   than the build is refused with the start-up recovery, as today.
+- **Stores only the same install reads are exempt from the range rule** ([RC015](DECISIONS.md#rc015--client-side-answers-after-kenneths-review)): `profile.db`, `thread.db`, local
+  preferences and the other files of one device's profile migrate forward through their ladder
+  ([DATA_LAYOUT § Schema versions](../../docs/contracts/DATA_LAYOUT.md#schema-versions)) and never carry readers for
+  older releases' forms. **Data another install reads is not exempt:** the account backup, device names and what
+  linked devices sync are read by other devices of the account, which may run other releases, so they follow the
+  range rule like the wire.
 
 ### Versions are announced and checked
 
@@ -159,8 +165,14 @@ Starting inventory, to be checked in phase P0 (from COMPATIBILITY.md and the 202
 | Channel-0 capability offer | leading byte `4` | pp-cpp-amp, pp-cpp-mesh |
 | Media frames | 4 (extension block) | pp-cpp-mesh |
 | Mesh protocols | version in each protocol id | pp-cpp-mesh, pp-browser |
+| Control lane (per-device copies, card and copy asks) | to check in P0 | pp-browser (delivery) |
+| Group chat messages and bundles (roster, group copies) | to check in P0 | pp-browser (messaging) |
+| Attachment metadata (blob references, keys, sizes) | to check in P0 | pp-browser (delivery) |
+| Account backup format (the account locker) | to check in P0 | pp-browser (people), pp-relay-apis (storage) |
+| Support client contract (the Support account, `client-compat` `support`) | to check in P0 | pp-browser, pp-relay-apis |
+| AI client contract (`/api/llm/v1`: `chat/completions`, `pp/chat/stream`, guest keys) | to check in P0 | pp-browser (ai), pp-relay-apis (llm-gateway) |
 | Relay tables | no record versions; card version inside | pp-relay-apis |
-| Local stores | `profile.db` 8, `thread.db`, `contacts.json`, `identity.enc`, `our_relays.json`, `relay_pins.json`, … | pp-browser |
+| Local stores (exempt: one install reads them, [§ Rollback](#rollback)) | `profile.db` 8, `thread.db`, `contacts.json`, `identity.enc`, `our_relays.json`, `relay_pins.json`, preferences, … | pp-browser |
 
 ## Release 1
 
@@ -172,7 +184,8 @@ ships in lockstep. Phase P0 turns this list into exact work items.
 - Readers that tolerate what they do not know ([above](#readers-tolerate-what-they-do-not-know)). Today ingest
   often hard-refuses an unknown content type or envelope version, and `ChatHistoryRequest` refuses unknown keys.
 - A version every receiver checks first, for every signed object, not only envelopes.
-- A clean "update needed" for every version refusal.
+- A clean "update needed" for every version refusal. Its screen's text and translations are Kenneth's; prod's update
+  links (`upgrade_url`, `upgrade_urls`) are Leo's (P4).
 - The relay with release versions it reports, and its range in `client-compat`; a node floor beside the app's.
 - A clean start: the relay's legacy window for older apps (pp-relay-apis `94c6865`) removed, pre-release readers
   and local-store migration steps below release 1 dropped (the floors move to release 1), and `min_client_version`
@@ -253,7 +266,9 @@ need a fix. Branches follow from that:
 **One integration branch, `main`.** All feature PRs go to `main`; CI must pass to merge. `develop` is retired in
 every repo. (The name is not the point; having one long-lived branch is.) **`main` is the latest integration
 baseline, not production:** what runs in the field is the immutable release tags and the live release branches.
-Wherever "main" could be read as "what is deployed", it is not.
+Wherever "main" could be read as "what is deployed", it is not. **Every PR into main needs one approval from someone
+other than its author** ([RC015](DECISIONS.md#rc015--client-side-answers-after-kenneths-review)), enforced by branch protection, with the code owners of its paths
+(`.github/CODEOWNERS`); release branches take the release owner's approval (RC014).
 
 **One branch per release, `release/X.Y`, cut from main**, for every release that ships into the field: apps,
 pp-node, and the relay.
@@ -297,12 +312,13 @@ app versions.
 
 | Build | From | Tag |
 |-------|------|-----|
-| App builds people install (TestFlight, Android, desktop test builds) | main | `internal/<build number>` |
+| App dev builds people install (TestFlight, Android, desktop test builds) | any branch or tag, by hand | `internal/<build number>` |
 | Release candidates (apps, pp-node) | `release/X.Y` | `vX.Y.Z-rc.<n>` |
 | Internal pp-node builds | main | `node-internal/<date>.<n>` |
 | Relay dev deploys | main | `dev/<date>.<n>` (with Leo) |
 
-CI builds nobody installs get no tag.
+CI builds nobody installs, and builds a developer installs on their own device (USB, a local run), get no tag: tags
+are for builds someone else installs.
 
 **Build once, promote the same artifact.** A release candidate is built once from its tag; the artifact that passed
 is the one released (`commit → build once → test the artifact → staging / canary → production`). This needs
@@ -335,10 +351,12 @@ rules ([RC008](DECISIONS.md#rc008--app-builds-climb-one-ladder-only-release-cand
   review, through the App Store Connect API (and the Play Developer API). It refuses a build whose tag is not a
   release candidate, runs behind a GitHub environment approval, and tags the release (`vX.Y.Z`) on the candidate's
   commit when it submits.
-- **One binary serves both backends.** Builds compile in the prod and staging relays (staging is today's qa origin),
-  and testers switch in Me → Network (`backend.env`, prod by default; [CONFIGURATION](../../docs/ops/CONFIGURATION.md)).
-  A candidate tested on staging is the
-  binary prod users get; it ships with prod as its default.
+- **Store builds know prod only** ([RC015](DECISIONS.md#rc015--client-side-answers-after-kenneths-review)). Release candidates, and so the store builds they become, compile in the
+  prod relay alone; Me → Network offers prod and a custom server, as Leo asked, and no Staging row reaches store
+  users. Testers reach staging on a candidate through a custom relay link (`https://…#<PeerId>`), which release
+  builds accept when the link names the PeerId ([CONFIGURATION](../../docs/ops/CONFIGURATION.md)); the binary they
+  tested is the one prod users get. Dev builds compile in prod and staging and switch in Me → Network
+  (`backend.env`).
 - **Hotfixes** take the same path from their release branch. A security fix may go from internal testers straight
   to the store with an expedited review, skipping external testers.
 - **Store releases are phased.** The App Store's 7-day phased release (and a staged rollout on Play) is used for
@@ -389,10 +407,11 @@ and **dev** is new ([RC009](DECISIONS.md#rc009--four-environments-todays-qa-beco
 | **staging** (today's qa) | release candidates from `release/X.Y`; the previous release for rollback rehearsals | release testing, internal TestFlight candidates | prod-like and kept, no real users |
 | **prod** | `v*` tags only, behind an approval, canary first | users and external testers | real |
 
-**Staging keeps everything qa has today**, so nothing on the wire or on disk changes: every app build compiles in
-its origin (`PP_API_URL_QA`), users' `config.json` keeps `backend.env: "qa"`, and the relay keeps its PeerId
-(`PP_RELAY_PEER_ID_QA`). Only the label in Me → Network becomes "Staging". What changes is what deploys there: release
-candidates, no longer every merge.
+**Staging keeps everything qa has today**, so nothing on the wire or on disk changes: dev builds compile in its
+origin (`PP_API_URL_QA`), users' `config.json` keeps `backend.env: "qa"`, and the relay keeps its PeerId
+(`PP_RELAY_PEER_ID_QA`). In dev builds the label in Me → Network becomes "Staging"; store builds do not compile it
+in, and a `backend.env: "qa"` there loads as prod, as it already does for a build without a QA origin ([RC015](DECISIONS.md#rc015--client-side-answers-after-kenneths-review)).
+What changes is what deploys there: release candidates, no longer every merge.
 
 **Staging is where a candidate is proven:**
 
@@ -470,6 +489,8 @@ has none.
 
 ## Release checklist
 
+**The release owner for 10.0 is Hongwei** (RC015); the role rotates after it.
+
 Today's list (`docs/ops/RELEASE.md` § Checklist before tagging) predates release mode. This one replaces it when
 release mode ships (P4 moves it into `RELEASE.md`; until then it lives here). Each release gets its own copy: when
 `release/X.Y` is cut, a workflow opens an issue "Release X.Y" from a template (`.github/ISSUE_TEMPLATE/release.md`)
@@ -525,10 +546,10 @@ The release is the most common action, not the only one; the rare, stressful one
 | **Release** | every release ([§ Release checklist](#release-checklist)) | release owner | pp-browser | yes |
 | **Hotfix / backport** | a fix on an affected release branch (any in range, not only the newest): the release list, shortened; the backport rules of [§ Release lines](#release-lines-are-first-class) | release owner | pp-browser | yes |
 | **Relay rollback** | a bad relay release in prod | anyone on call; the owner is told after | pp-relay-apis | yes |
-| **App incident** | a bad app version on phones: pause the phased release, flip a remote switch, ship a hotfix | release owner | pp-browser | yes |
+| **App incident** | a bad app version on phones: pause the phased release, flip a remote switch, ship a hotfix; a store rejecting or delaying a fix mid-rollout (switches, relay-side mitigation, expedited review or an appeal; the relay never needs the new app, so a delay breaks nothing) | release owner | pp-browser | yes |
 | **Restore from backup** | data lost or corrupted ([§ Backups and restore](#backups-and-restore)) | Hongwei and Leo | pp-relay-apis | yes |
 | **Key compromise** | a leaked relay identity key, Support seed, LLM signing key or push credential | Hongwei and Leo | pp-relay-apis | yes |
-| **Range exit** | raising `min_client_version` or the node floor; closing a compatibility window | release owner | pp-browser | before the first window closes |
+| **Range exit** | raising `min_client_version` or the node floor; closing a compatibility window. A release that raises the minimum iOS or Android version strands users who cannot update: before their last supported release leaves the range, the version counts by OS are checked and that release kept longer or its users warned | release owner | pp-browser | before the first window closes |
 | **Security release** | a vulnerability: every in-range branch fixed, embargoed until all publish together | Hongwei | pp-browser | before the first window closes |
 | **Key rotation** | scheduled, not an emergency | Leo | pp-relay-apis | later |
 | **pp-node fleet rollback** | a bad node release (ansible) | Leo | pp-relay-infra-ansible | later |

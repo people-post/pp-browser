@@ -10,6 +10,8 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 - [ ] Each checked against [DESIGN § Release 1](DESIGN.md#release-1); the result is the list of release-1 work items,
   needed and worth-doing marked apart.
 - [ ] The breaking work in flight: which lands before the freeze, which waits for the range rule.
+- [ ] Kenneth's additions to the version table checked (RC015): the control lane, group messages and bundles, attachment
+  metadata, the account backup format, the support and AI client contracts; preferences under local stores.
 - [ ] Leo's review of the relay's parts ([DESIGN § Decisions taken](DESIGN.md#decisions-taken), items 3 and 8).
 
 ## P1 — Freeze
@@ -20,8 +22,10 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 
 [DESIGN § Branches and tags](DESIGN.md#branches-and-tags), in every repo, before release 1 is cut:
 
-- [ ] develop merged into main a last time; open PRs retargeted to main; develop deleted (pp-browser, pp-cpp-*,
-  pp-ledger; pp-relay-apis with Leo).
+- [ ] **First, at the start of P2:** develop merged into main a last time; open PRs retargeted to main; develop deleted
+  (pp-browser, pp-cpp-*, pp-ledger; pp-relay-apis with Leo), all repos in the same week; P2's own work lands on main.
+- [ ] Branch protection on main in every repo: one approval from someone other than the author, code owners on their
+  paths.
 - [ ] Every internal build tagged by its workflow: TestFlight, Android and desktop test builds, release candidates,
   internal pp-node builds, the relay's dev deploys.
 - [ ] Release workflows take release tags only from `release/*` branches, build once, and promote the artifact.
@@ -67,6 +71,8 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 - [ ] Relay on staging, then the app lab and the mixed-version check there; app, pp-node and relay to prod together.
 - [ ] `min_client_version` and the node floor raised to release 1. Prod's `client-compat` set none on 2026-11-17
   (`min_client_version` empty).
+- [ ] Release candidates built with the prod origin only (no `PP_API_URL_QA`); dev builds keep both.
+- [ ] The update-needed screen's text and translations (Kenneth).
 - [ ] Prod's update links configured: `upgrade_url` and `upgrade_urls` per platform. On 2026-11-17 prod served the
   code's placeholder `https://example.test/releases`, so an "update needed" screen would link nowhere (relay
   settings, Leo).

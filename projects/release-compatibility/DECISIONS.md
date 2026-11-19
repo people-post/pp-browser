@@ -153,7 +153,7 @@ minimum checks for a hotfix?
 ## RC008 — App builds climb one ladder; only release candidates are promoted
 
 **Date:** 2026-11-17
-**Status:** Accepted (Hongwei, 2026-11-17).
+**Status:** Accepted (Hongwei, 2026-11-17). Amended by [RC015](#rc015--client-side-answers-after-kenneths-review): store builds compile in prod only.
 **Decision:** Dev builds are made by hand from any branch or tag for internal testers and are never promoted. Release
 candidates are built automatically from `vX.Y.Z-rc.<n>` tags on `release/X.Y` with their final version, and the same
 binary goes from internal to external testers to the store, moved by an approval-gated promotion workflow that
@@ -176,7 +176,7 @@ refuses anything else and tags `vX.Y.Z` when it submits. Store releases are phas
 ## RC009 — Four environments: today's qa becomes staging, dev is new
 
 **Date:** 2026-11-18
-**Status:** Accepted (Hongwei, 2026-11-18); in review with Leo (the infrastructure is his). Amends RC006 item 8.
+**Status:** Accepted (Hongwei, 2026-11-18); in review with Leo (the infrastructure is his). Amends RC006 item 8. Amended by [RC015](#rc015--client-side-answers-after-kenneths-review): store builds compile in prod only.
 Its open items (prod's account, the canary, dev's and staging's data) are recommended to Leo in
 [DESIGN § Decisions taken](DESIGN.md#decisions-taken), items 10–13.
 **Decision:** local (local-stack, the lab), dev (new: main deploys there automatically), staging (today's qa:
@@ -303,4 +303,37 @@ supported range actionable for older app versions, not only the newest.
 the conflict described, or a comment on the original PR; and the branch-closing steps (who, open backports, protect
 and keep) are ours, as Leo asked for them to be defined.
 **Alternatives rejected:** none of Leo's proposals.
+
+## RC015 — Client-side answers after Kenneth's review
+
+**Date:** 2026-11-19
+**Status:** Accepted (Hongwei, 2026-11-19); answers Kenneth's review on #634. Amends
+[RC008](#rc008--app-builds-climb-one-ladder-only-release-candidates-are-promoted) and
+[RC009](#rc009--four-environments-todays-qa-becomes-staging-dev-is-new).
+**Decision:**
+- **Version table:** the control lane, group chat messages and bundles, attachment metadata, the account backup format,
+  and the support and AI client contracts join the inventory, checked in P0; preferences go under local stores.
+- **Local stores:** stores only the same install reads migrate forward only and are exempt from readers-first; data
+  another install reads (the account backup, device names, linked-device sync) is not.
+- **Store builds compile in prod only;** testers reach staging on a candidate through a custom relay link; dev builds
+  keep prod and staging. No Staging row reaches store users.
+- **Dev builds** are cut by hand from any branch or tag (the tag table said main; RC008 said any branch: fixed);
+  builds a developer installs on their own device, and CI builds, get no tag.
+- **Branch switch:** develop → main happens first in P2, every repo in the same week; no fixed date.
+- **Reviews:** every PR into main needs one approval from someone other than its author, by branch protection.
+- **Release owner for 10.0:** Hongwei; the role rotates after.
+- **Update-needed screen:** its text and translations are Kenneth's; prod's update links Leo's.
+- **Runbooks:** a minimum OS version raise is weighed in the range exit; a store rejection mid-rollout is an app
+  incident.
+**Rationale:**
+- A store a single install reads has no other reader, so readers-first there only accumulates old UI readers; the
+  exemption stops at data that crosses devices, where other releases do read it.
+- One binary for both backends would show every store user a Staging row; prod-only candidates keep build-once and
+  keep test servers out of users' menus, as Leo had asked.
+- An author approving their own change is no review; with three people one other approval stays light.
+**Alternatives rejected:**
+- Readers-first for local stores too (old readers carried for nothing).
+- A Staging row in store builds, hidden behind a developer switch (still compiled in; a custom link does the same
+  for testers without it).
+- A fixed switch date now (P2's start depends on #634's review).
 
