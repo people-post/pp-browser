@@ -1420,6 +1420,27 @@ void Application::LogCallTapTiming() {
   }
 }
 
+void Application::OnNotificationTapRecorded(const bool app_was_shown) {
+  PendingNotificationTap& tap = PendingNotificationTap::Instance();
+  const auto now = PendingNotificationTap::Clock::now();
+  if (tap.PeekCallRoute(now)) {
+    shell_->ReleaseTapCover(); // a call alert's tap: its ring is what shows
+    return;
+  }
+  const bool message_tap = tap.PeekThread().has_value() || !tap.FreshHint(now).empty();
+  if (!message_tap) {
+    return;
+  }
+  TapCoverFacts facts;
+  facts.message_tap = true;
+  facts.app_was_shown = app_was_shown;
+  facts.call_shown = shell_->State().call_ring.active || shell_->State().call_in_progress.active;
+  if (NotificationTapCover::ShouldArm(facts)) {
+    shell_->ArmTapCover();
+  }
+  chat_->RouteSyncedTap(); // its message may have synced already (a wake window, an earlier poll)
+}
+
 void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_ports) {
   ConversationsHub& messaging = Conversations();
   ConversationsFacade& facade = *messaging_facade_;
@@ -1524,11 +1545,18 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
       call_->OnCallWake();
     }
   });
-  // A tap arrives off the UI thread; the PIN screen words itself by it.
+  // A tap arrives off the UI thread; the PIN screen words itself by it. Whether the app's screen was up is read here:
+  // the foreground the tap brings is applied before the post runs.
   PendingNotificationTap::Instance().SetRecordedHandler([this]() {
     LogCallTapTiming();
-    AppRuntime::PostUI([this]() { pin_gate_->RefreshCallHint(); });
+    const bool app_was_shown = AppLifecycle::IsVisible() && first_present_ms_.load() >= 0;
+    AppRuntime::PostUI([this, app_was_shown]() {
+      pin_gate_->RefreshCallHint();
+      OnNotificationTapRecorded(app_was_shown);
+    });
   });
+  // A tap that launched the app may have been recorded before the handler above existed.
+  OnNotificationTapRecorded(/*app_was_shown=*/false);
   debug_call_tap_delay_ms_ = DebugCallTapDelayMs();
   if (debug_call_tap_delay_ms_ == 0) {
     RecordDebugCallTap(); // before the first frame

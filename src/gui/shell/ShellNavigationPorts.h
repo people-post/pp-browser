@@ -26,6 +26,8 @@ struct ShellChromeSnapshot {
   bool auxiliary_open = false;
   /** Compact layout: the chat page is open over the list (false = the list or another page shows). */
   bool compact_chat_open = false;
+  /** A ring or a call screen (any mode, the minimised chip too) is up. */
+  bool call_shown = false;
 };
 
 /**
@@ -52,6 +54,7 @@ inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
   snap.auxiliary_open = state.auxiliary_open;
   // Under a hidden tab's page (phone Me / Contacts) the chat overlay is open but not on screen.
   snap.compact_chat_open = state.compact_chat_open && !ShellLayout::HiddenTabShown(state);
+  snap.call_shown = state.call_ring.active || state.call_in_progress.active;
   return snap;
 }
 
@@ -96,6 +99,10 @@ struct ShellNavigationPorts {
   std::function<bool(int layer_id)> has_layer;
   /** Closes every page sheet at once (a button in a sheet stacked over others leaves for another page). */
   std::function<void()> close_page_sheets;
+  /** A notification tap opens its chat: what is over it goes (ShellHost::ClearForTappedChat). */
+  std::function<void()> clear_for_tapped_chat;
+  /** The tapped chat (or the chat list) is open: the tap's cover goes (ShellHost::ReleaseTapCover). */
+  std::function<void()> release_tap_cover;
   /**
    * Mobile / compact IME-replacement bottom panel (latch height, no scrim, remount-only).
    * set_bottom_chrome returns false when that presentation is unavailable (expanded desktop).

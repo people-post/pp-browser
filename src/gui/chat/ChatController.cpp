@@ -1271,6 +1271,47 @@ bool ChatController::MarkOpenChatReadIfLooking() {
   return true;
 }
 
+void ChatController::OpenTappedThread(std::string thread_id) {
+  const bool call_shown = ChromeSnapshot().call_shown;
+  if (!call_shown && shell_navigation_.clear_for_tapped_chat) {
+    shell_navigation_.clear_for_tapped_chat();
+  }
+  bool known = false;
+  if (facade_) {
+    auto thread = facade_->GetThread(thread_id);
+    known = thread && *thread;
+  }
+  if (known) {
+    OnSelectThread(std::move(thread_id));
+  } else if (!call_shown) {
+    ShellSelectNavTab(NavTab::Sessions); // the chat is gone (deleted, left): the chat list
+  }
+  if (shell_navigation_.release_tap_cover) {
+    shell_navigation_.release_tap_cover();
+  }
+}
+
+void ChatController::RouteSyncedTap() {
+  if (!messaging_ready_ || !facade_) {
+    return;
+  }
+  auto& tap = PendingNotificationTap::Instance();
+  const auto now = PendingNotificationTap::Clock::now();
+  const std::string hint = tap.FreshHint(now);
+  if (hint.empty()) {
+    return;
+  }
+  const auto thread_id = facade_->ThreadOfInbound(hint);
+  if (thread_id) {
+    DiagLine("notification.tap").Add("what", "lookup_found").Emit();
+  } else {
+    DiagLine("notification.tap").Add("what", "lookup_notfound").Emit();
+  }
+  if (thread_id && tap.TakeHintedRoute(hint, now)) {
+    OpenTappedThread(*thread_id);
+  }
+}
+
 void ChatController::OnSelectThread(std::string thread_id) { // by value: ShellSelectNavTab below rebuilds Home (B161)
   if (!messaging_ready_) {
     return;
@@ -5519,7 +5560,7 @@ void ChatController::WireMessagingBindings() {
   const auto activate = [this](std::string thread_id) {
     DesktopWindowChrome::RaiseAndFocus();
     if (!thread_id.empty()) {
-      OnSelectThread(thread_id);
+      OpenTappedThread(std::move(thread_id));
     }
   };
   ILocalNotifier::Instance().SetActivationHandler(activate);
@@ -5527,7 +5568,7 @@ void ChatController::WireMessagingBindings() {
   // then opens its chat.
   facade_->SetOnInboundMessage([this](std::string id, std::string thread_id) {
     if (PendingNotificationTap::Instance().TakeHintedRoute(id, PendingNotificationTap::Clock::now())) {
-      OnSelectThread(thread_id);
+      OpenTappedThread(std::move(thread_id));
     }
   });
   // A tap that arrived before unlock found no handler; it is still waiting.
@@ -5535,21 +5576,7 @@ void ChatController::WireMessagingBindings() {
     activate(std::move(*pending));
   }
   // What the tap names may have synced before it, or before this wiring: look it up.
-  {
-    auto& tap = PendingNotificationTap::Instance();
-    const auto now = PendingNotificationTap::Clock::now();
-    if (const std::string hint = tap.FreshHint(now); !hint.empty()) {
-      const auto thread_id = facade_->ThreadOfInbound(hint);
-      if (thread_id) {
-        DiagLine("notification.tap").Add("what", "lookup_found").Emit();
-      } else {
-        DiagLine("notification.tap").Add("what", "lookup_notfound").Emit();
-      }
-      if (thread_id && tap.TakeHintedRoute(hint, now)) {
-        OnSelectThread(*thread_id);
-      }
-    }
-  }
+  RouteSyncedTap();
   // Relay poll is armed by ConversationsHub::StartCoordinatorTimers (not here). Call-wake UI
   // refresh is wired via ConversationsHub::SetOnCallWake from Application.
   // Push binding is HTTP: off the UI thread, one run at a time (a token change while one runs: once more after it).

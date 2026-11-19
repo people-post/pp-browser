@@ -6,6 +6,7 @@
 #include "common/Module.h"
 #include "gui/shell/ShellAiDot.h"
 #include "gui/shell/ShellHomeMascot.h"
+#include "gui/shell/NotificationTapCover.h"
 #include "gui/shell/ShellLayoutRml.h"
 #include "gui/shell/ShellStatusbar.h"
 #include "gui/shell/StatusbarText.h"
@@ -232,6 +233,22 @@ public:
   void ReconcileStartupCover();
   /** Clear the first-paint arm after deferred unlock has decided what to do. */
   void SettleStartupCoverArm();
+  /**
+   * A notification tap brought the app up for one chat (NotificationTapCover::ShouldArm, decided by Application): the
+   * startup cover stands in for the page left behind until ReleaseTapCover, a ring or call screen, or the hold's end.
+   * The PIN gate stays on top of it.
+   */
+  void ArmTapCover();
+  /** The tapped chat (or the chat list) is open: the cover goes once the layout showing it is built. */
+  void ReleaseTapCover();
+  bool TapCoverArmed() const { return tap_cover_.Armed(); }
+  /**
+   * Phone: a tapped notification's chat opens with nothing left over it: every layer (page sheets, the scanner, a
+   * picture; each owner hears its close), the pushed pages and the AI drawer go; on a hidden tab (Settings, Contacts)
+   * the tab goes too, to Chats. The call screen is not a layer: it stays. Only while the tap's cover is armed (the app
+   * came up for the tap and nothing showed yet); no-op otherwise and on the desktop.
+   */
+  void ClearForTappedChat();
   // Deferred remount of the nav rail (safe from click handlers). Use when badge counts change
   // and DirtyVariable alone may not refresh data-if views.
   void RequestRemountNavRail();
@@ -413,6 +430,9 @@ private:
   void SetSheetDetent(int layer_id, SheetDetent detent);
   /** Slide the element with this id in from the right (adds the shell-page-enter class). */
   void PlayPageEnter(const char* element_id);
+  /** Whether the tap cover is up now (NotificationTapCover::Evaluate); `startup_shown`: the logo is up for the start. */
+  bool TapCoverShownNow(bool startup_shown);
+  void FinishTapCoverRelease();
   void CommitDismiss(DismissTarget target);
   void ApplySafeAreaLayout();
   bool HomeDockApplies() const;
@@ -531,6 +551,13 @@ private:
   bool startup_cover_armed_ = true;
   /** Cleared after cold-start prepare ends — blocks mid-session unlock from re-showing the logo. */
   bool startup_cover_enabled_ = true;
+  /** A notification tap's hold (ArmTapCover); shown through startup_cover_visible. */
+  NotificationTapCover tap_cover_;
+  /** ReleaseTapCover came while a SyncLayout was pending: the cover goes after it, not a frame before. */
+  bool tap_cover_release_after_sync_ = false;
+  /** The hold's clock and the app's foreground; tests replace them (ShellHostTestAccess). */
+  std::function<NotificationTapCover::Clock::time_point()> tap_cover_now_;
+  std::function<bool()> tap_cover_foreground_;
   bool restore_focus_after_sync_ = false;
   ShellGestureAxisLock gesture_axis_lock_;
   ShellSwipeBackGesture swipe_back_gesture_;
