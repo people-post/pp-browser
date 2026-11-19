@@ -44,4 +44,13 @@ bool PlatformShareText(SDL_Window* window, const std::string& text, const ShareA
   }
 }
 
+bool PlatformSystemModalUp(SDL_Window* window) {
+  if (window == nullptr) {
+    return false;
+  }
+  UIWindow* uiwindow = static_cast<UIWindow*>(
+      SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER, nullptr));
+  return uiwindow.rootViewController.presentedViewController != nil;
+}
+
 } // namespace pbr

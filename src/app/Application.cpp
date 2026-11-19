@@ -1420,6 +1420,29 @@ void Application::LogCallTapTiming() {
   }
 }
 
+void Application::OnNotificationTapRecorded(const uint64_t tap_seq, const bool app_was_shown) {
+  PendingNotificationTap& tap = PendingNotificationTap::Instance();
+  const auto now = PendingNotificationTap::Clock::now();
+  if (tap.PeekCallRoute(now)) {
+    shell_->ReleaseTapCover(); // a call alert's tap: its ring is what shows
+    return;
+  }
+  // This tap, still waiting: one the chat already opened for (an inbound message took its hint before this ran) or a
+  // later tap's is not held behind a cover nothing would release.
+  if (!tap.MessageTapPending(tap_seq, now)) {
+    return;
+  }
+  TapCoverFacts facts;
+  facts.message_tap = true;
+  facts.app_was_shown = app_was_shown;
+  facts.call_shown = shell_->State().call_ring.active || shell_->State().call_in_progress.active;
+  facts.os_modal_up = PlatformSystemModalUp(Backend::GetWindow()); // a share sheet, the Files export: the OS owns it
+  if (NotificationTapCover::ShouldArm(facts)) {
+    shell_->ArmTapCover();
+  }
+  chat_->RouteSyncedTap(); // its message may have synced already (a wake window, an earlier poll)
+}
+
 void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_ports) {
   ConversationsHub& messaging = Conversations();
   ConversationsFacade& facade = *messaging_facade_;
@@ -1524,11 +1547,19 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
       call_->OnCallWake();
     }
   });
-  // A tap arrives off the UI thread; the PIN screen words itself by it.
+  // A tap arrives off the UI thread; the PIN screen words itself by it. Whether the app's screen was up is read here:
+  // the foreground the tap brings is applied before the post runs.
   PendingNotificationTap::Instance().SetRecordedHandler([this]() {
     LogCallTapTiming();
-    AppRuntime::PostUI([this]() { pin_gate_->RefreshCallHint(); });
+    const bool app_was_shown = AppLifecycle::IsVisible() && first_present_ms_.load() >= 0;
+    const uint64_t tap_seq = PendingNotificationTap::Instance().TapSeq();
+    AppRuntime::PostUI([this, app_was_shown, tap_seq]() {
+      pin_gate_->RefreshCallHint();
+      OnNotificationTapRecorded(tap_seq, app_was_shown);
+    });
   });
+  // A tap that launched the app may have been recorded before the handler above existed.
+  OnNotificationTapRecorded(PendingNotificationTap::Instance().TapSeq(), /*app_was_shown=*/false);
   debug_call_tap_delay_ms_ = DebugCallTapDelayMs();
   if (debug_call_tap_delay_ms_ == 0) {
     RecordDebugCallTap(); // before the first frame
