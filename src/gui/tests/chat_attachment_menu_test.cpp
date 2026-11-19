@@ -105,6 +105,7 @@ TEST_F(ChatAttachmentMenuTest, TheMessageMenuAddsTheItemsBeforeDelete) {
   EXPECT_LT(exit, remove);
   EXPECT_NE(menus.find("DecideMenuEntries(CurrentAttachmentLayout(), PlatformCanShareFile()", for_request),
             std::string::npos);
+  EXPECT_NE(menus.find("MenuKindOf(attachment)", for_request), std::string::npos) << "nothing before it is downloaded";
   EXPECT_NE(menus.find("host_.ShareAttachment(message_id, position)", for_request), std::string::npos);
 }
 

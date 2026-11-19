@@ -243,9 +243,7 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   // A received attachment's way out of the app (DEV/PLAN-received-file-save-as.md): opened after this menu is gone.
   const std::optional<DrawnAttachment> attachment = host_.DrawnAttachmentOf(message_id);
   AppendAttachmentExitActions(
-      actions,
-      DecideMenuEntries(CurrentAttachmentLayout(), PlatformCanShareFile(),
-                        attachment ? std::optional<AttachmentExitKind>(attachment->kind) : std::nullopt),
+      actions, DecideMenuEntries(CurrentAttachmentLayout(), PlatformCanShareFile(), MenuKindOf(attachment)),
       [this, message_id]() { AppRuntime::PostUI([this, message_id]() { host_.SaveAttachmentAs(message_id); }); },
       [this, message_id, position = request.position]() {
         AppRuntime::PostUI([this, message_id, position]() { host_.ShareAttachment(message_id, position); });

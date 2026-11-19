@@ -55,6 +55,12 @@ struct DrawnAttachment {
  */
 std::string SuggestedSaveName(const std::string& sender_filename, const std::string& mime);
 
+/**
+ * The kind a message's menu decides with: only an attachment that is downloaded (`ready`) has a way out; one still to
+ * download, failed, or not drawn has none (the entry would only say "not ready").
+ */
+std::optional<AttachmentExitKind> MenuKindOf(const std::optional<DrawnAttachment>& drawn);
+
 enum class AttachmentTap {
   /** Today's open (the system viewer / player, a phone's own handling). */
   Open,

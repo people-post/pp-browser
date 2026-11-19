@@ -79,6 +79,22 @@ TEST(AttachmentExitTest, WhileASaveIsBusyOnlyATapThatWouldSaveIsIgnored) {
       << "a sound file with no player would save";
 }
 
+TEST(AttachmentExitTest, AnAttachmentNotDownloadedYetHasNoWayOutInItsMenu) {
+  DrawnAttachment drawn;
+  drawn.kind = AttachmentExitKind::File;
+  drawn.ready = false;
+  EXPECT_FALSE(MenuKindOf(drawn)) << "to download, or failed";
+  EXPECT_FALSE(MenuKindOf(std::nullopt)) << "not drawn";
+  drawn.ready = true;
+  ASSERT_TRUE(MenuKindOf(drawn));
+  EXPECT_EQ(*MenuKindOf(drawn), AttachmentExitKind::File);
+  EXPECT_TRUE(DecideMenuEntries(kDesktop, false, MenuKindOf(drawn)).save_as);
+  drawn.ready = false;
+  const AttachmentMenuEntries none = DecideMenuEntries(kDesktop, true, MenuKindOf(drawn));
+  EXPECT_FALSE(none.save_as);
+  EXPECT_FALSE(none.share);
+}
+
 TEST(AttachmentExitTest, SaveAsIsOfferedOnTheDesktopForEveryAttachmentButAVoiceMessage) {
   for (const AttachmentExitKind kind : {AttachmentExitKind::Picture, AttachmentExitKind::Video,
                                         AttachmentExitKind::AudioFile, AttachmentExitKind::File}) {

@@ -68,6 +68,13 @@ std::string SuggestedSaveName(const std::string& sender_filename, const std::str
   return name.empty() ? std::string("attachment") : name;
 }
 
+std::optional<AttachmentExitKind> MenuKindOf(const std::optional<DrawnAttachment>& drawn) {
+  if (!drawn || !drawn->ready) {
+    return std::nullopt;
+  }
+  return drawn->kind;
+}
+
 AttachmentTap DecideAttachmentTap(const AttachmentLayout layout, const AttachmentExitKind kind, const bool ready,
                                   const bool plays_in_app, const bool save_busy) {
   if (layout == AttachmentLayout::Phone) {
