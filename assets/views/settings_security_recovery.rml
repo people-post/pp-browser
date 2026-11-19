@@ -1,0 +1,22 @@
+<!-- Me > Security > Recovery phrase: the 24 words as a numbered grid, three to a row, read left to right then down
+     (Kenneth 2026-11-19). The one place the phrase is drawn: phones push it as a page of its own (settings.rml,
+     security_page 'recovery'), the desktop shows it inline (settings_section_security.rml). It opens covered: the
+     cards and their numbers are there, but no word is bound until one tap on the grid (reveal_recovery_phrase())
+     brings all 24 in; the words are cleared when it closes. Selecting the grid copies the words. -->
+<div class="recovery-wrap">
+  <div class="recovery-grid" selectable="text">
+    <div data-for="item : recovery_words" class="recovery-cell">
+      <div class="recovery-card">
+        <span class="recovery-num">{{item.n}}</span>
+        <span class="recovery-word" data-if="recovery_revealed">{{item.word}}</span>
+        <span class="recovery-word recovery-dots" data-if="!recovery_revealed">••••</span>
+      </div>
+    </div>
+  </div>
+  <button class="recovery-reveal" type="button" data-if="!recovery_revealed" data-event-click="reveal_recovery_phrase()">
+    <span class="recovery-reveal-pill">
+      <svg class="recovery-reveal-icon" src="../icons/v2/eye.svg" width="20" height="20"></svg>
+      <span class="recovery-reveal-text">{{i18n:settings.security.recovery.tap_to_show}}</span>
+    </span>
+  </button>
+</div>

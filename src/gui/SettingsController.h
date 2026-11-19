@@ -387,6 +387,8 @@ private:
   void RequestSyncLayout(const char* reason) override;
   Roe<void> ForgetToolPermissions() override;
   void OpenChangePin() override;
+  void OpenRecoveryPage() override;
+  void CloseRecoveryPage() override;
   void FinishPaneResync();
   /** Mount selected section RML into #settings-section-mount (one section at a time). */
   void MountSelectedSettingsSection();

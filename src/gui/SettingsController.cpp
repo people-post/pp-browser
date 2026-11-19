@@ -1020,7 +1020,6 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "security_biometric_shown");
   host.Dirty("settings", "security_biometric_on");
   host.Dirty("settings", "security_biometric_label");
-  host.Dirty("settings", "recovery_phrase");
   host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "group_invite_policy_label");
   host.Dirty("settings", "call_invite_policy_label");
@@ -1622,6 +1621,11 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
   } else if (on_devices && page == "transfer") {
     security_page_title_ = Tr("settings.security.transfer_row").c_str();
     secret = true;
+  } else if (selected_id_ == "security" && show_detail_ && page == "recovery") {
+    // The recovery phrase's own page, titled in the bar like every settings page. The words are on it: no tab bar
+    // under it, like the transfer code's page.
+    security_page_title_ = Tr("settings.security.recovery").c_str();
+    secret = true;
   } else if (on_advanced && page == "ai_endpoint") {
     security_page_title_ = Tr("settings.llm.endpoint.title").c_str();
   } else if (on_advanced && page == "integrations") {
@@ -1662,8 +1666,12 @@ void SettingsController::ApplyCloseSecurityPage() {
     shell_navigation_.set_secret_page_open(false);
   }
   security_actions_.ClearTransferCopied();
+  const bool was_recovery = security_page_ == "recovery";
   security_page_ = "";
   security_page_title_ = "";
+  if (was_recovery) {
+    security_actions_.HideRecoveryPhrase(); // the words do not outlive their page
+  }
   choice_page_.Close();
   choice_foot_ = "";
   choice_help_topic_ = "";
@@ -2602,6 +2610,18 @@ void SettingsController::OnBiometricLost() {
 
 void SettingsController::OpenChangePin() {
   security_actions_.ChangePin();
+}
+
+void SettingsController::OpenRecoveryPage() {
+  if (compact_layout_) {
+    OpenSecurityPage("recovery");
+  }
+}
+
+void SettingsController::CloseRecoveryPage() {
+  if (security_page_ == "recovery") {
+    OnCloseSecurityPage();
+  }
 }
 
 Roe<void> SettingsController::ForgetToolPermissions() {

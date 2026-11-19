@@ -21,6 +21,7 @@
 #include <ui/base/SystemInterface.h>
 #include <ui/data/DataModelHandle.h>
 
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <memory>
@@ -36,7 +37,7 @@ SettingsSecurityActions::SettingsSecurityActions(SettingsHost& host, const Setti
   // The phrase does not stay up behind the app (the app switcher, an unlocked phone left on the table), and a reveal
   // still being checked is void (second review 2026-11-06).
   background_listener_ = AppLifecycle::AddBackgroundListener([this]() {
-    if (!recovery_phrase_.empty()) {
+    if (recovery_shown_) {
       HideRecoveryPhrase();
     } else {
       ++recovery_shown_count_;
@@ -57,7 +58,15 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.Bind("move_lead_label", &move_lead_label_);
   ctor.Bind("move_valid_label", &move_valid_label_);
   ctor.BindEventCallback("toggle_biometric", DataEvent<>([this]() { ToggleBiometric(); }));
-  ctor.Bind("recovery_phrase", &recovery_phrase_);
+  if (auto word = ctor.RegisterStruct<RecoveryWord>()) {
+    word.RegisterMember("n", &RecoveryWord::n);
+    word.RegisterMember("word", &RecoveryWord::word);
+  }
+  ctor.RegisterArray<std::vector<RecoveryWord>>();
+  ctor.Bind("recovery_words", &recovery_words_);
+  ctor.Bind("recovery_shown", &recovery_shown_);
+  ctor.Bind("recovery_revealed", &recovery_revealed_);
+  ctor.BindEventCallback("reveal_recovery_phrase", DataEvent<>([this]() { RevealRecoveryWords(); }));
   ctor.BindEventCallback("show_recovery_phrase", DataEvent<>([this]() { ShowRecoveryPhrase(); }));
   ctor.BindEventCallback("hide_recovery_phrase", DataEvent<>([this]() { HideRecoveryPhrase(); }));
   ctor.BindEventCallback("save_account_copy", DataEvent<>([this]() { SaveAccountCopy(); }));
@@ -344,9 +353,27 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
           host_.ReportFailure(Error("No recovery phrase").WithUser(Tr("settings.security.recovery.none")));
           return;
         }
-        recovery_phrase_ = (*revealed)->Reveal().c_str(); // shown to its owner, on their screen
+        // Shown to its owner, on their screen: numbered words for the grid.
+        const std::string phrase = (*revealed)->Reveal().c_str();
         revealed->reset();
+        // The page opens covered: numbered cards with no word bound; the words wait here until the one tap.
+        recovery_words_.clear();
+        recovery_secret_.clear();
+        recovery_revealed_ = false;
+        for (size_t at = 0; at < phrase.size();) {
+          const size_t end = std::min(phrase.find(' ', at), phrase.size());
+          if (end > at) {
+            RecoveryWord word;
+            word.n = static_cast<int>(recovery_words_.size()) + 1;
+            recovery_words_.push_back(std::move(word));
+            recovery_secret_.push_back(phrase.substr(at, end - at));
+          }
+          at = end + 1;
+        }
+        recovery_shown_ = !recovery_words_.empty();
+        DirtyRecoveryWords();
         host_.PushToView(false);
+        host_.OpenRecoveryPage();
         // Home's Security widget: the phrase has been in front of its owner once (Kenneth 2026-11-05 原话 98).
         if (!host_.Store().Snapshot().profile_prefs.recovery_phrase_seen) {
           ProfilePreferences prefs = host_.Store().Snapshot().profile_prefs;
@@ -365,10 +392,41 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
       });
 }
 
+void SettingsSecurityActions::DirtyRecoveryWords() {
+  DataModelHost& model = DataModelHost::Instance();
+  model.Dirty("settings", "recovery_words");
+  model.Dirty("settings", "recovery_shown");
+  model.Dirty("settings", "recovery_revealed");
+}
+
+void SettingsSecurityActions::RevealRecoveryWords() {
+  if (!recovery_shown_ || recovery_revealed_ || recovery_secret_.size() != recovery_words_.size()) {
+    return;
+  }
+  for (size_t i = 0; i < recovery_words_.size(); ++i) {
+    recovery_words_[i].word = recovery_secret_[i].c_str(); // the words come into the view here
+  }
+  ClearRecoverySecret();
+  recovery_revealed_ = true;
+  DirtyRecoveryWords();
+}
+
+void SettingsSecurityActions::ClearRecoverySecret() {
+  for (std::string& word : recovery_secret_) {
+    std::fill(word.begin(), word.end(), '\0');
+  }
+  recovery_secret_.clear();
+}
+
 void SettingsSecurityActions::HideRecoveryPhrase() {
-  recovery_phrase_ = "";
+  recovery_words_.clear(); // the words leave the view here, with the page
+  ClearRecoverySecret();
+  recovery_revealed_ = false;
+  recovery_shown_ = false;
   ++recovery_shown_count_;
+  DirtyRecoveryWords();
   host_.PushToView(false);
+  host_.CloseRecoveryPage();
 }
 
 namespace {

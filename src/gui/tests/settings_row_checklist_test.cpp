@@ -58,7 +58,7 @@ std::string View(const std::string& id) {
   for (size_t at = text.find(marker); at != std::string::npos; at = text.find(marker)) {
     const size_t end = text.find("}}", at);
     const std::string name = text.substr(at + marker.size(), end - at - marker.size());
-    const bool subpage = name.rfind("settings_section_advanced_", 0) == 0;
+    const bool subpage = name.rfind("settings_section_advanced_", 0) == 0 || name == "settings_security_recovery";
     text.replace(at, end + 2 - at, subpage ? std::string() : ReadAsset("views/" + name + ".rml"));
   }
   return text;
@@ -443,10 +443,12 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       {"security", "remove_pin()", "show_change_pin && security_can_change_pin;;!pin_protection_is_default", 0, 1},
       {"security", "toggle_biometric()", "security_biometric_shown", 1, 1},
       {"security", "on_choose_unlock_grace()", "security_grace_shown", 1, 1},
-      {"security", "show_recovery_phrase()", "security_has_recovery_phrase;;recovery_phrase == ''", 1, 1},
-      {"security", "hide_recovery_phrase()", "security_has_recovery_phrase;;recovery_phrase != ''", 1, 1},
-      {"security", "ask_setting_help('settings.security.recovery')",
-       "security_has_recovery_phrase@security_has_recovery_phrase;;recovery_phrase == ''", 1, 1},
+      // The phone's row opens the phrase's own page (settings.rml); the desktop's button and "I've written it down" are
+      // inline, the grid itself is the shared settings_security_recovery.rml (not walked here).
+      {"security", "show_recovery_phrase()",
+       "security_has_recovery_phrase@security_has_recovery_phrase;;!recovery_shown", 1, 1},
+      {"security", "hide_recovery_phrase()", "security_has_recovery_phrase;;recovery_shown", 0, 1},
+      {"security", "ask_setting_help('settings.security.recovery')", "security_has_recovery_phrase", 1, 1},
       // Devices: the transfer block is the desktop's inline copy here; phones open it as its own page.
       // (2026-11-14: the phone's top button, on the main device only; a linked phone shows nothing to tap.)
       // (2026-11-15: and not while no list of ours is here yet — being got back, or not found.)

@@ -63,16 +63,28 @@ TEST(SettingsGatingTest, TheAiCredentialRowLivesOnlyOnTheAdvancedPage) {
 // here: the recovery phrase is bound once, only inside the block that exists while it is shown (the PIN gate is in
 // show_recovery_phrase()), and neither page nor the transfer block binds a code, phrase or key anywhere else.
 TEST(SettingsGatingTest, TheRecoveryPhraseIsBoundOnlyInItsShownBlock) {
+  // The words are drawn by one shared grid, bound once, only after the tap that reveals them (recovery_revealed).
+  const std::string grid = ReadAsset("views/settings_security_recovery.rml");
+  ASSERT_FALSE(grid.empty());
+  ASSERT_EQ(CountOf(grid, "{{item.word}}"), 1u);
+  const size_t word = grid.find("{{item.word}}");
+  EXPECT_NE(grid.rfind("data-if=\"recovery_revealed\"", word), std::string::npos);
+  EXPECT_EQ(grid.find("data-if=", grid.rfind("data-if=\"recovery_revealed\"", word) + 10) > word, true)
+      << "no other condition between the gate and the word";
+  // It is only included inside the block that exists while the phrase is shown: the desktop's (recovery_shown, inside
+  // the has-phrase gate) and the phone's page.
   const std::string rml = ReadAsset("views/settings_section_security.rml");
-  ASSERT_FALSE(rml.empty());
-  ASSERT_EQ(CountOf(rml, "{{recovery_phrase}}"), 1u);
-  const size_t phrase = rml.find("{{recovery_phrase}}");
-  const size_t block = rml.rfind("data-if=\"recovery_phrase != ''\"", phrase);
+  ASSERT_EQ(CountOf(rml, "{{include:settings_security_recovery}}"), 1u);
+  const size_t include = rml.find("{{include:settings_security_recovery}}");
+  const size_t block = rml.rfind("data-if=\"recovery_shown\"", include);
   ASSERT_NE(block, std::string::npos);
-  const std::string between = rml.substr(block + 10, phrase - block - 10);
-  EXPECT_EQ(between.find("data-if="), std::string::npos) << "no other condition between the gate and the phrase";
-  EXPECT_LT(rml.rfind("data-if=\"security_has_recovery_phrase\"", block), block)
-      << "and that block is inside the has-phrase gate";
+  EXPECT_LT(rml.rfind("data-if=\"security_has_recovery_phrase\"", block), block);
+  const std::string settings = ReadAsset("views/settings.rml");
+  ASSERT_EQ(CountOf(settings, "{{include:settings_security_recovery}}"), 1u);
+  EXPECT_NE(settings.rfind("data-if=\"security_page == 'recovery'\"",
+                           settings.find("{{include:settings_security_recovery}}")),
+            std::string::npos);
+  EXPECT_EQ(rml.find("{{recovery_phrase}}"), std::string::npos);
 }
 
 TEST(SettingsGatingTest, NoViewOfTheTwoPagesBindsACodeAPhraseOrAKeyOutsideTheShownBlock) {

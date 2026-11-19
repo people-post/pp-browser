@@ -16084,3 +16084,149 @@ textarea:composing ~ .prompt-composer-label,
   height: 100vw;
   max-height: 512dp;
 }
+
+/* Recovery phrase (Kenneth 2026-11-19): the 24 words as numbered cards, three to a row, read left to right then down.
+   One grid for the phone's page and the desktop's inline block. A cell is a third of the row with the gap as its own
+   padding, so three always fit; the number has a fixed slot so the words line up in a column. */
+.recovery-grid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  max-width: 520dp;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.recovery-cell {
+  width: 33.3%;
+  padding: 0 6dp 12dp 6dp;
+  box-sizing: border-box;
+}
+
+.recovery-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 40dp;
+  padding: 0 8dp;
+  border-radius: 12dp;
+  box-sizing: border-box;
+}
+
+.recovery-num {
+  flex: 0 0 16dp;
+  width: 16dp;
+  margin-right: 4dp;
+  font-size: 11dp;
+  white-space: nowrap;
+}
+
+.recovery-word {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 14dp;
+  white-space: nowrap;
+}
+
+/* Phones: a page of its own over the Security section. The bar's title and the lead stay on top, the grid scrolls when the
+   screen is short (iPhone SE), and the button stays at the bottom, above the home-indicator strip the layer keeps. */
+.shell-layer-compact .recovery-page {
+  position: absolute;
+  top: 64dp;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  z-index: 1;
+}
+
+.shell-layer-compact .recovery-lead {
+  flex-shrink: 0;
+  margin: 8dp 20dp 16dp 20dp;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.shell-layer-compact .recovery-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0 14dp 4dp 14dp;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+/* The engine keeps 16dp for an (undrawn) scrollbar once the grid overflows: it must not take a column's width. */
+.shell-layer-compact .recovery-scroll scrollbarvertical {
+  width: 0dp;
+}
+
+.shell-layer-compact .recovery-scroll .recovery-grid {
+  max-width: none;
+}
+
+.shell-layer-compact .recovery-bottom {
+  flex-shrink: 0;
+  padding: 12dp 20dp 16dp 20dp;
+}
+
+.shell-layer-compact .recovery-bottom .recovery-done {
+  display: block;
+  width: auto;
+  height: 50dp;
+  min-height: 50dp;
+  margin: 0;
+  padding: 0 16dp;
+  font-size: 17dp;
+  line-height: 50dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+/* The covered grid: the cards keep their numbers and show dots; one button over the whole grid reveals all 24 words. */
+.recovery-wrap {
+  position: relative;
+}
+
+.recovery-reveal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  background-color: transparent;
+  decorator: none;
+  border-width: 0dp;
+}
+
+.recovery-reveal-pill {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 44dp;
+  padding: 0 20dp;
+  border-radius: 22dp;
+  box-sizing: border-box;
+}
+
+.recovery-reveal-icon {
+  width: 20dp;
+  height: 20dp;
+  margin-right: 8dp;
+}
+
+.recovery-reveal-text {
+  font-size: 16dp;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.recovery-dots {
+  letter-spacing: 1dp;
+}
