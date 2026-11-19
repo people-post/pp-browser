@@ -80,8 +80,7 @@ TEST_F(SavedFileCopyTest, AFailedWriteLeavesTheReplacedFileWholeAndNoTemporaryFi
                                        [](const size_t chunk) { return chunk < 1; }); // the second chunk fails
   EXPECT_FALSE(copied);
   EXPECT_EQ(Read(target), "the user's own file");
-  EXPECT_FALSE(std::filesystem::exists(dir_ / ".report.pdf.pp-part"));
-  EXPECT_EQ(EntryCount(), 2u);
+  EXPECT_EQ(EntryCount(), 2u) << "no temporary file left";
 }
 
 TEST_F(SavedFileCopyTest, AMissingFolderIsAnErrorAndLeavesNothing) {
@@ -104,6 +103,36 @@ TEST_F(SavedFileCopyTest, ANonAsciiNameIsKept) {
   ASSERT_TRUE(CopyFileInChunks(PathToUtf8(dir_ / "view.bin"), target));
   EXPECT_EQ(Read(PathFromUtf8(target)), "日志");
 }
+
+// The dialog took a name up to the file system's limit: the temporary name must not be longer than the name.
+TEST_F(SavedFileCopyTest, ANameOfTwoHundredFiftyBytesIsSaved) {
+  Write(dir_ / "view.bin", "long");
+  const std::string name = std::string(246, 'n') + ".txt"; // 250 bytes
+  ASSERT_EQ(name.size(), 250u);
+  ASSERT_TRUE(CopyFileInChunks(PathToUtf8(dir_ / "view.bin"), PathToUtf8(dir_ / name)));
+  EXPECT_EQ(Read(dir_ / name), "long");
+  EXPECT_EQ(EntryCount(), 2u);
+}
+
+#ifndef _WIN32
+// A target that is a link to a file: the file behind the link is replaced and the link stays a link.
+TEST_F(SavedFileCopyTest, ASymlinkTargetIsWrittenThrough) {
+  Write(dir_ / "view.bin", "new bytes");
+  std::filesystem::create_directories(dir_ / "real");
+  Write(dir_ / "real" / "data.txt", "old bytes");
+  const auto link = dir_ / "link.txt";
+  std::filesystem::create_symlink(dir_ / "real" / "data.txt", link);
+  ASSERT_TRUE(CopyFileInChunks(PathToUtf8(dir_ / "view.bin"), PathToUtf8(link)));
+  EXPECT_TRUE(std::filesystem::is_symlink(link));
+  EXPECT_EQ(Read(dir_ / "real" / "data.txt"), "new bytes");
+  EXPECT_EQ(Read(link), "new bytes");
+  size_t in_real = 0;
+  for ([[maybe_unused]] const auto& entry : std::filesystem::directory_iterator(dir_ / "real")) {
+    ++in_real;
+  }
+  EXPECT_EQ(in_real, 1u) << "no temporary file left behind the link";
+}
+#endif
 
 // The pill names the folder the file went to: its own name where the system has no localized one.
 TEST_F(SavedFileCopyTest, TheFolderNameIsTheFoldersOwnNameOrTheSystemsName) {

@@ -16,9 +16,10 @@ using ChunkWriteHook = std::function<bool(size_t chunk_index)>;
 
 /**
  * Copies `source` to `target` (UTF-8 paths) one chunk at a time, never the whole file in memory. The bytes go to a
- * temporary name beside the target (`.<name>.pp-part`) and are renamed over the target only once all of them are
+ * temporary name beside the target (`.pp-part-<8 hex>`, short whatever the name's length) and are renamed over the target only once all of them are
  * written, so a file the user chose to replace stays whole when the copy fails (a full disk, no permission, a missing
- * folder, an unplugged volume). On failure only that temporary file is removed. Blocking: call off the UI thread.
+ * folder, an unplugged volume). A target that is a symbolic link to a file is written through: the file behind it is
+ * replaced and the link stays. On failure only that temporary file is removed. Blocking: call off the UI thread.
  */
 Roe<void> CopyFileInChunks(const std::string& source, const std::string& target, const ChunkWriteHook& write_hook = {});
 

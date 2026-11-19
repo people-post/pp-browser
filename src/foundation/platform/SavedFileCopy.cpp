@@ -1,6 +1,7 @@
 #include "foundation/platform/SavedFileCopy.h"
 
 #include "common/PathUtf8.h"
+#include "common/Utilities.h"
 
 #include <filesystem>
 #include <fstream>
@@ -9,15 +10,24 @@
 namespace pbr {
 
 Roe<void> CopyFileInChunks(const std::string& source, const std::string& target, const ChunkWriteHook& write_hook) {
-  const std::filesystem::path to = PathFromUtf8(target);
+  std::filesystem::path to = PathFromUtf8(target);
   if (to.filename().empty()) {
     return Error("No file name to save under");
+  }
+  // A target that is a link to a file: the file behind it is replaced, the link stays (a dangling link: the link is).
+  std::error_code link_ec;
+  if (std::filesystem::is_symlink(to, link_ec)) {
+    const std::filesystem::path resolved = std::filesystem::canonical(to, link_ec);
+    if (!link_ec) {
+      to = resolved;
+    }
   }
   std::ifstream in(PathFromUtf8(source), std::ios::binary);
   if (!in) {
     return Error("Cannot read the file to save");
   }
-  const std::filesystem::path part = to.parent_path() / PathFromUtf8("." + PathToUtf8(to.filename()) + ".pp-part");
+  // A short fixed-form name: the user's name may already be as long as the file system allows.
+  const std::filesystem::path part = to.parent_path() / PathFromUtf8(".pp-part-" + util::GenerateUuid().substr(0, 8));
   bool ok = true;
   {
     std::ofstream out(part, std::ios::binary | std::ios::trunc);
