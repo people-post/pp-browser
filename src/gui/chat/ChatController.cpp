@@ -3584,6 +3584,7 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
     if (drawn_attachments_thread_ != thread_id) {
       drawn_attachments_.clear();
       drawn_attachments_thread_ = thread_id;
+      save_flow_->ReleaseChoosing(); // a save dialog that never answered must not outlive the chat it was for
     }
     facts.attachment = [this, drawn = std::move(facts.attachment), voice_bubbles = facts.voice_supported,
                         voice_max_seconds = facts.voice_max_seconds](const ThreadMessage& message) {
@@ -5829,10 +5830,8 @@ bool ChatController::Setup(ui::Context* context) {
                                  TapAttachment(message_id);
                                }));
         ctor.BindEventCallback("open_picture", DataEvent<std::string>([this](const std::string& message_id) {
-                                 if (IsPendingUploadRowId(message_id) ||
-                                     DecideAttachmentTap(CurrentAttachmentLayout(), AttachmentExitKind::Picture, true,
-                                                         false, save_flow_->Busy()) == AttachmentTap::Ignore) {
-                                   return; // a save is being chosen or written (desktop)
+                                 if (IsPendingUploadRowId(message_id)) {
+                                   return;
                                  }
                                  OpenPicture(message_id);
                                }));

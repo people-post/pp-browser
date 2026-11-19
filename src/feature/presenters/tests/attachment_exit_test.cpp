@@ -66,12 +66,17 @@ TEST(AttachmentExitTest, EveryPhoneTapIsAsBefore) {
   }
 }
 
-TEST(AttachmentExitTest, WhileASaveIsBusyEveryDesktopTapIsIgnored) {
+TEST(AttachmentExitTest, WhileASaveIsBusyOnlyATapThatWouldSaveIsIgnored) {
+  EXPECT_EQ(DecideAttachmentTap(kDesktop, AttachmentExitKind::File, true, true, /*save_busy=*/true),
+            AttachmentTap::Ignore);
+  EXPECT_EQ(DecideAttachmentTap(kDesktop, AttachmentExitKind::File, false, true, true), AttachmentTap::Ignore);
   for (const AttachmentExitKind kind :
-       {AttachmentExitKind::Picture, AttachmentExitKind::Video, AttachmentExitKind::AudioFile,
-        AttachmentExitKind::Voice, AttachmentExitKind::File}) {
-    EXPECT_EQ(DecideAttachmentTap(kDesktop, kind, true, true, /*save_busy=*/true), AttachmentTap::Ignore);
+       {AttachmentExitKind::Picture, AttachmentExitKind::Video, AttachmentExitKind::Voice}) {
+    EXPECT_EQ(DecideAttachmentTap(kDesktop, kind, true, true, true), AttachmentTap::Open) << "saves nothing";
   }
+  EXPECT_EQ(DecideAttachmentTap(kDesktop, AttachmentExitKind::AudioFile, true, true, true), AttachmentTap::PlayInApp);
+  EXPECT_EQ(DecideAttachmentTap(kDesktop, AttachmentExitKind::AudioFile, true, false, true), AttachmentTap::Ignore)
+      << "a sound file with no player would save";
 }
 
 TEST(AttachmentExitTest, SaveAsIsOfferedOnTheDesktopForEveryAttachmentButAVoiceMessage) {
@@ -367,6 +372,9 @@ TEST_F(SaveFlowTest, ASecondSaveOrClickIsIgnoredWhileTheDialogIsUpOrTheCopyRuns)
   EXPECT_EQ(flow.Begin("t1", "m1", "report.gz", true), AttachmentSaveFlow::Start::Ignored);
   EXPECT_EQ(flow.Begin("t1", "m2", "other.pdf", true), AttachmentSaveFlow::Start::Ignored);
   EXPECT_EQ(DecideAttachmentTap(kDesktop, AttachmentExitKind::File, true, true, flow.Busy()), AttachmentTap::Ignore);
+  EXPECT_EQ(DecideAttachmentTap(kDesktop, AttachmentExitKind::Picture, true, true, flow.Busy()), AttachmentTap::Open)
+      << "a picture opens while the dialog is up";
+  EXPECT_EQ(DecideAttachmentTap(kDesktop, AttachmentExitKind::Video, true, true, flow.Busy()), AttachmentTap::Open);
   EXPECT_EQ(dialogs_, 1);
   Answer({SaveChoice::Kind::Chosen, Target()});
   {
@@ -381,7 +389,8 @@ TEST_F(SaveFlowTest, ASecondSaveOrClickIsIgnoredWhileTheDialogIsUpOrTheCopyRuns)
   }
   EXPECT_TRUE(flow.Busy());
   EXPECT_EQ(flow.Begin("t1", "m2", "other.pdf", true), AttachmentSaveFlow::Start::Ignored);
-  EXPECT_EQ(DecideAttachmentTap(kDesktop, AttachmentExitKind::Picture, true, true, flow.Busy()), AttachmentTap::Ignore);
+  EXPECT_EQ(DecideAttachmentTap(kDesktop, AttachmentExitKind::Picture, true, true, flow.Busy()), AttachmentTap::Open)
+      << "a picture opens even while a copy runs";
   Pump();
   EXPECT_FALSE(flow.Busy());
   EXPECT_EQ(flow.Begin("t1", "m2", "other.pdf", true), AttachmentSaveFlow::Start::Started) << "free again";
@@ -422,6 +431,76 @@ TEST_F(SaveFlowTest, AnOwnerDestroyedWhileTheDialogIsUpIgnoresItsAnswer) {
   EXPECT_TRUE(oks_.empty());
   EXPECT_TRUE(fails_.empty());
   EXPECT_EQ(copies_, 0);
+}
+
+// A dialog that never answers (a portal that hung, the window closed with it up) must not stop saving for good.
+TEST_F(SaveFlowTest, LeavingTheChatReleasesADialogAndItsLateAnswerIsIgnored) {
+  AttachmentSaveFlow flow(Ports());
+  ASSERT_EQ(flow.Begin("t1", "m1", "report.gz", true), AttachmentSaveFlow::Start::Started);
+  ASSERT_TRUE(flow.Busy());
+  flow.ReleaseChoosing(); // another chat is opened
+  EXPECT_FALSE(flow.Busy());
+  std::function<void(SaveChoice)> first = pending_dialog_;
+  ASSERT_EQ(flow.Begin("t1", "m2", "other.pdf", true), AttachmentSaveFlow::Start::Started) << "saving works again";
+  EXPECT_EQ(dialogs_, 2);
+  // The first dialog finally answers: nothing is saved, no pill, and the second dialog is still the one waited for.
+  dialog_ = std::thread([first]() { first({SaveChoice::Kind::Chosen, "/never/saved.gz"}); });
+  dialog_.join();
+  Pump();
+  EXPECT_TRUE(oks_.empty());
+  EXPECT_TRUE(fails_.empty());
+  EXPECT_EQ(copies_, 0);
+  EXPECT_TRUE(flow.Busy());
+  Answer({SaveChoice::Kind::Cancelled, {}});
+  Pump();
+  EXPECT_FALSE(flow.Busy());
+}
+
+TEST_F(SaveFlowTest, ALateChoiceAfterARelayIsNotSaved) {
+  AttachmentSaveFlow flow(Ports());
+  ASSERT_EQ(flow.Begin("t1", "m1", "report.gz", true), AttachmentSaveFlow::Start::Started);
+  flow.ReleaseChoosing();
+  Answer({SaveChoice::Kind::Chosen, Target()});
+  Pump();
+  EXPECT_TRUE(asked_view_.empty());
+  EXPECT_FALSE(std::filesystem::exists(PathFromUtf8(Target())));
+  EXPECT_TRUE(oks_.empty());
+  EXPECT_FALSE(flow.Busy());
+}
+
+TEST_F(SaveFlowTest, ARunningCopyIsNotReleasedByLeavingTheChat) {
+  AttachmentSaveFlow flow(Ports());
+  ASSERT_EQ(flow.Begin("t1", "m1", "report.gz", true), AttachmentSaveFlow::Start::Started);
+  Answer({SaveChoice::Kind::Chosen, Target()});
+  {
+    std::function<void()> ui;
+    {
+      std::lock_guard<std::mutex> lock(mu_);
+      ui = std::move(ui_tasks_.front());
+      ui_tasks_.pop_front();
+    }
+    ui();
+  }
+  flow.ReleaseChoosing();
+  EXPECT_TRUE(flow.Busy());
+  Pump();
+  EXPECT_EQ(Read(Target()), content_);
+  EXPECT_FALSE(flow.Busy());
+}
+
+TEST_F(SaveFlowTest, ADialogThatNeverAnsweredIsLostAfterTheStaleTime) {
+  int64_t now = 1000;
+  AttachmentSavePorts ports = Ports();
+  ports.now_ms = [&now]() { return now; };
+  AttachmentSaveFlow flow(std::move(ports));
+  ASSERT_EQ(flow.Begin("t1", "m1", "report.gz", true), AttachmentSaveFlow::Start::Started);
+  now += AttachmentSaveFlow::kStaleDialogMs - 1;
+  EXPECT_TRUE(flow.Busy());
+  EXPECT_EQ(flow.Begin("t1", "m2", "other.pdf", true), AttachmentSaveFlow::Start::Ignored);
+  now += 2;
+  EXPECT_FALSE(flow.Busy()) << "a file tap is no longer held back";
+  EXPECT_EQ(flow.Begin("t1", "m2", "other.pdf", true), AttachmentSaveFlow::Start::Started);
+  EXPECT_EQ(dialogs_, 2);
 }
 
 // The save keeps its own state: a tap-open of the same message going on (the chat screen's own set) does not stop it,

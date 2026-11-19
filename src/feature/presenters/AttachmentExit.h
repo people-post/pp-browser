@@ -69,9 +69,9 @@ enum class AttachmentTap {
 };
 
 /**
- * A tap on an attachment card. Phone: always Open (as before). Desktop: Ignore while a save is busy; pictures, videos
- * and voice messages Open; a sound file the app plays (`plays_in_app`) PlayInApp; anything else NotReady when not
- * `ready`, else Save.
+ * A tap on an attachment card. Phone: always Open (as before). Desktop: pictures, videos and voice messages Open, a
+ * sound file the app plays (`plays_in_app`) PlayInApp, whatever a save dialog is up or a save runs (they save
+ * nothing); any other file is Ignored while a save is busy, else NotReady when not `ready`, else Save.
  */
 AttachmentTap DecideAttachmentTap(AttachmentLayout layout, AttachmentExitKind kind, bool ready, bool plays_in_app,
                                   bool save_busy);
@@ -101,12 +101,17 @@ public:
   bool Chosen(const std::string& message_id);
   /** Back to Idle when `message_id` is the one in progress. */
   void Finish(const std::string& message_id);
+  /** Choosing → Idle (the dialog never answered); a copy already running (Saving) is not touched. */
+  void ReleaseChoosing();
   bool Busy() const { return phase_ != Phase::Idle; }
   Phase phase() const { return phase_; }
+  /** Names the dialog being waited for: changes with every TryBegin, so an answer to a released one is told apart. */
+  uint64_t token() const { return token_; }
 
 private:
   Phase phase_ = Phase::Idle;
   std::string message_id_;
+  uint64_t token_ = 0;
 };
 
 /** The save dialog's answer, as the flow sees it. */
@@ -133,6 +138,8 @@ struct AttachmentSavePorts {
   /** UI: the bottom pill, a result / a failure. */
   std::function<void(const std::string& text)> ok;
   std::function<void(const std::string& text)> fail;
+  /** Milliseconds on a steady clock (a dialog's age); empty = the real clock. */
+  std::function<int64_t()> now_ms;
 };
 
 /**
@@ -146,9 +153,18 @@ class AttachmentSaveFlow {
 public:
   enum class Start { Started, Ignored, NotReady };
 
+  /** A dialog that has not answered for this long is taken as lost (portal hang, window closed with it up). */
+  static constexpr int64_t kStaleDialogMs = 30000;
+
   explicit AttachmentSaveFlow(AttachmentSavePorts ports);
 
+  /** A copy is running, or a dialog is up that is not stale: generic-file taps and "Save as…" wait. */
   bool Busy() const;
+  /**
+   * Drops a dialog still waiting (the open chat changed): its late answer is ignored and nothing is saved. A copy that
+   * already runs goes on.
+   */
+  void ReleaseChoosing();
   /**
    * UI thread. Ignored (nothing happens) while another save is busy; NotReady (the pill says so) when the attachment
    * is not downloaded; else the dialog opens offering `suggested_name`.
@@ -160,7 +176,7 @@ private:
   /** The flow's state, shared with the callbacks it hands out: once the owner is gone they find nothing and do nothing. */
   struct Core;
   static void OnChoice(const std::shared_ptr<Core>& core, const std::string& thread_id, const std::string& message_id,
-                       const SaveChoice& choice);
+                       uint64_t token, const SaveChoice& choice);
   static void OnCopied(const std::shared_ptr<Core>& core, const std::string& message_id, const std::string& target,
                        bool copied);
 

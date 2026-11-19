@@ -153,11 +153,11 @@ TEST(ChatPictureWiringTest, AnAttachmentTapIsDecidedThenSavedOrOpenedAsBefore) {
   ASSERT_NE(open, std::string::npos);
   EXPECT_LT(tap.find("OpenAttachment(message_id)", open), save) << "Open is today's path, unchanged";
 
-  // A picture's tap waits while a save is busy (desktop); otherwise as before.
+  // A picture's tap never waits for a save (a dialog that never answers must not make pictures dead).
   const size_t picture = source.find("ctor.BindEventCallback(\"open_picture\"");
   ASSERT_NE(picture, std::string::npos);
   const std::string picture_handler = source.substr(picture, source.find("}));", picture) - picture);
-  EXPECT_NE(picture_handler.find("save_flow_->Busy()"), std::string::npos);
+  EXPECT_EQ(picture_handler.find("save_flow_"), std::string::npos);
   EXPECT_NE(picture_handler.find("OpenPicture(message_id)"), std::string::npos);
 }
 
@@ -169,6 +169,14 @@ TEST(ChatPictureWiringTest, TheSaveAndTheOpenKeepTheirOwnState) {
   EXPECT_EQ(save.find("opening_message_ids_"), std::string::npos);
   const std::string open = Body(kController, "void ChatController::OpenAttachment(");
   EXPECT_EQ(open.find("save_flow_"), std::string::npos);
+}
+
+// Opening another chat drops a save dialog that never answered.
+TEST(ChatPictureWiringTest, SwitchingChatsReleasesAWaitingSaveDialog) {
+  const std::string rows = Body(kController, "std::vector<MessageDisplayRow> ChatController::BuildMessageRows(");
+  const size_t switched = rows.find("drawn_attachments_thread_ != thread_id");
+  ASSERT_NE(switched, std::string::npos);
+  EXPECT_NE(rows.find("save_flow_->ReleaseChoosing()", switched), std::string::npos);
 }
 
 // The save flow's ports: the dialog (Downloads by default), the message's own view, the chunked copy, the downloaded

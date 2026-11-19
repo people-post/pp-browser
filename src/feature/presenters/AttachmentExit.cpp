@@ -7,6 +7,7 @@
 #include "lib/voice/AudioFilePlayer.h"
 #include "lib/voice/VoiceFile.h"
 
+#include <chrono>
 #include <cstring>
 #include <utility>
 
@@ -72,9 +73,6 @@ AttachmentTap DecideAttachmentTap(const AttachmentLayout layout, const Attachmen
   if (layout == AttachmentLayout::Phone) {
     return AttachmentTap::Open;
   }
-  if (save_busy) {
-    return AttachmentTap::Ignore;
-  }
   switch (kind) {
     case AttachmentExitKind::Picture:
     case AttachmentExitKind::Video:
@@ -87,6 +85,9 @@ AttachmentTap DecideAttachmentTap(const AttachmentLayout layout, const Attachmen
       break;
     case AttachmentExitKind::File:
       break;
+  }
+  if (save_busy) {
+    return AttachmentTap::Ignore; // only a tap that would save is held back
   }
   return ready ? AttachmentTap::Save : AttachmentTap::NotReady;
 }
@@ -108,6 +109,7 @@ bool AttachmentSaveState::TryBegin(const std::string& message_id) {
   }
   phase_ = Phase::Choosing;
   message_id_ = message_id;
+  ++token_;
   return true;
 }
 
@@ -119,6 +121,14 @@ bool AttachmentSaveState::Chosen(const std::string& message_id) {
   return true;
 }
 
+void AttachmentSaveState::ReleaseChoosing() {
+  if (phase_ == Phase::Choosing) {
+    phase_ = Phase::Idle;
+    message_id_.clear();
+    ++token_;
+  }
+}
+
 void AttachmentSaveState::Finish(const std::string& message_id) {
   if (phase_ != Phase::Idle && message_id == message_id_) {
     phase_ = Phase::Idle;
@@ -128,18 +138,39 @@ void AttachmentSaveState::Finish(const std::string& message_id) {
 
 struct AttachmentSaveFlow::Core {
   explicit Core(AttachmentSavePorts p) : ports(std::move(p)) {}
+  int64_t NowMs() const {
+    return ports.now_ms ? ports.now_ms()
+                        : std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count();
+  }
+  /** A dialog waiting longer than kStaleDialogMs is taken as lost. */
+  bool StaleChoosing() const {
+    return state.phase() == AttachmentSaveState::Phase::Choosing && NowMs() - choosing_since_ms > kStaleDialogMs;
+  }
   AttachmentSavePorts ports;
   AttachmentSaveState state;
+  int64_t choosing_since_ms = 0;
 };
 
 AttachmentSaveFlow::AttachmentSaveFlow(AttachmentSavePorts ports) : core_(std::make_shared<Core>(std::move(ports))) {}
 
 bool AttachmentSaveFlow::Busy() const {
-  return core_->state.Busy();
+  return core_->state.Busy() && !core_->StaleChoosing();
+}
+
+void AttachmentSaveFlow::ReleaseChoosing() {
+  if (core_->state.phase() == AttachmentSaveState::Phase::Choosing) {
+    log().warning << "attachment save: dialog dropped";
+  }
+  core_->state.ReleaseChoosing();
 }
 
 AttachmentSaveFlow::Start AttachmentSaveFlow::Begin(const std::string& thread_id, const std::string& message_id,
                                                     const std::string& suggested_name, const bool ready) {
+  if (core_->StaleChoosing()) {
+    ReleaseChoosing(); // the dialog never answered: start over (its late answer is ignored)
+  }
   if (core_->state.Busy()) {
     return Start::Ignored;
   }
@@ -148,16 +179,18 @@ AttachmentSaveFlow::Start AttachmentSaveFlow::Begin(const std::string& thread_id
     return Start::NotReady;
   }
   core_->state.TryBegin(message_id);
+  core_->choosing_since_ms = core_->NowMs();
+  const uint64_t token = core_->state.token();
   core_->ports.choose_path(suggested_name,
-                           [weak = std::weak_ptr<Core>(core_), thread_id, message_id](SaveChoice choice) {
+                           [weak = std::weak_ptr<Core>(core_), thread_id, message_id, token](SaveChoice choice) {
                              // The dialog may answer on another thread: back on the UI thread before anything changes.
                              const std::shared_ptr<Core> core = weak.lock();
                              if (!core) {
                                return;
                              }
-                             core->ports.post_ui([weak, thread_id, message_id, choice = std::move(choice)]() {
+                             core->ports.post_ui([weak, thread_id, message_id, token, choice = std::move(choice)]() {
                                if (const std::shared_ptr<Core> alive = weak.lock()) {
-                                 OnChoice(alive, thread_id, message_id, choice);
+                                 OnChoice(alive, thread_id, message_id, token, choice);
                                }
                              });
                            });
@@ -165,8 +198,12 @@ AttachmentSaveFlow::Start AttachmentSaveFlow::Begin(const std::string& thread_id
 }
 
 void AttachmentSaveFlow::OnChoice(const std::shared_ptr<Core>& core, const std::string& thread_id,
-                                  const std::string& message_id, const SaveChoice& choice) {
+                                  const std::string& message_id, const uint64_t token, const SaveChoice& choice) {
   AttachmentSavePorts& ports = core->ports;
+  if (token != core->state.token() || core->state.phase() != AttachmentSaveState::Phase::Choosing) {
+    log().info << "attachment save: late answer ignored";
+    return; // its dialog was dropped (another chat, or too long without an answer)
+  }
   if (choice.kind != SaveChoice::Kind::Chosen || choice.path.empty()) {
     core->state.Finish(message_id);
     if (choice.kind == SaveChoice::Kind::Unavailable) {
