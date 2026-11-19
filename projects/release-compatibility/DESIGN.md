@@ -153,7 +153,8 @@ App, pp-node and the relay each have their own version ([RC016](DECISIONS.md#rc0
 product, the format versions it writes and reads. Compatibility is decided by those format versions; a product number
 only names a release.
 
-Starting inventory, to be checked in phase P0 (from COMPATIBILITY.md and the 2026-11-17 review):
+Starting inventory (from COMPATIBILITY.md and the 2026-11-17 review), checked in phase P0: [INVENTORY.md](INVENTORY.md)
+has every row's version, its check and what an unknown version or field does today:
 
 | Format | Version today | Owner |
 |--------|---------------|-------|
@@ -181,12 +182,13 @@ Starting inventory, to be checked in phase P0 (from COMPATIBILITY.md and the 202
 ## Release 1
 
 Release 1 is the floor of every range. It ships across app, pp-node and relay together, the last time anything
-ships in lockstep. Phase P0 turns this list into exact work items.
+ships in lockstep. Phase P0 turned this list into exact work items: [INVENTORY § 4](INVENTORY.md#4-release-1-work-list).
 
 **Needed, because the rule cannot hold without them:**
 
-- Readers that tolerate what they do not know ([above](#readers-tolerate-what-they-do-not-know)). Today ingest
-  often hard-refuses an unknown content type or envelope version, and `ChatHistoryRequest` refuses unknown keys.
+- Readers that tolerate what they do not know ([above](#readers-tolerate-what-they-do-not-know)). Today a higher
+  `envelope_version` stalls the thread in Gap, an unknown content type cannot be stored and stalls the same way,
+  and a higher payload version reads as "couldn't decrypt" ([INVENTORY § 2.1](INVENTORY.md#21-app--app)).
 - A version every receiver checks first, for every signed object, not only envelopes.
 - A clean "update needed" for every version refusal. Its screen's text and translations are Kenneth's; prod's update
   links (`upgrade_url`, `upgrade_urls`) are Leo's (P4).

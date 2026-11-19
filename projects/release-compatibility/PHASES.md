@@ -4,13 +4,15 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 
 ## P0 — Inventory
 
-- [ ] Every format in [DESIGN § Scope](DESIGN.md#scope), per repo (pp-browser, pp-cpp-amp, pp-cpp-mesh, pp-cpp-common,
+Written up in [INVENTORY.md](INVENTORY.md) (2026-11-19); its work list is agreed in review before P1.
+
+- [x] Every format in [DESIGN § Scope](DESIGN.md#scope), per repo (pp-browser, pp-cpp-amp, pp-cpp-mesh, pp-cpp-common,
   pp-cpp-crypto, pp-relay-apis): its version, where the receiver checks it, what an unknown version or field does
   today.
-- [ ] Each checked against [DESIGN § Release 1](DESIGN.md#release-1); the result is the list of release-1 work items,
+- [x] Each checked against [DESIGN § Release 1](DESIGN.md#release-1); the result is the list of release-1 work items,
   needed and worth-doing marked apart.
-- [ ] The breaking work in flight: which lands before the freeze, which waits for the range rule.
-- [ ] Kenneth's additions to the version table checked (RC015): the control lane, group messages and bundles, attachment
+- [x] The breaking work in flight: which lands before the freeze, which waits for the range rule.
+- [x] Kenneth's additions to the version table checked (RC015): the control lane, group messages and bundles, attachment
   metadata, the account backup format, the support and AI client contracts; preferences under local stores.
 - [ ] Leo's review of the relay's parts ([DESIGN § Decisions taken](DESIGN.md#decisions-taken), items 3 and 8).
 
