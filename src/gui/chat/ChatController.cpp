@@ -3785,17 +3785,43 @@ void ChatController::OpenPicture(const std::string& message_id) {
   OpenAttachment(message_id);
 }
 
-void ChatController::RememberDrawnAttachment(const ThreadMessage& message, const TranscriptAttachmentView& view,
-                                             const bool voice_bubbles, const int voice_max_seconds) {
+namespace {
+
+std::optional<DrawnAttachment> DescribeDrawnAttachment(const ThreadMessage& message,
+                                                       const TranscriptAttachmentView& view, const bool voice_bubbles,
+                                                       const int voice_max_seconds) {
   auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
   if (!fields) {
-    return;
+    return std::nullopt;
   }
-  DrawnAttachment& drawn = drawn_attachments_[message.id];
+  DrawnAttachment drawn;
   drawn.kind = KindOfAttachment(fields->mime, fields->filename, fields->byte_length, voice_max_seconds, voice_bubbles);
   drawn.ready = view.state == AttachmentFetchWorkflow::DownloadState::Ready;
   drawn.mime = fields->mime;
   drawn.suggested_name = SuggestedSaveName(fields->filename, fields->mime);
+  return drawn;
+}
+
+} // namespace
+
+void ChatController::RememberDrawnAttachment(const ThreadMessage& message, const TranscriptAttachmentView& view,
+                                             const bool voice_bubbles, const int voice_max_seconds) {
+  if (auto drawn = DescribeDrawnAttachment(message, view, voice_bubbles, voice_max_seconds)) {
+    drawn_attachments_[message.id] = std::move(*drawn);
+  }
+}
+
+std::optional<DrawnAttachment> ChatController::LookUpAttachment(const std::string& message_id) {
+  if (!facade_) {
+    return std::nullopt;
+  }
+  const auto message = facade_->GetMessage(ActiveThreadId(), message_id);
+  const TranscriptFacts facts = facade_->TranscriptFactsFor();
+  if (!message || !*message || !facts.attachment) {
+    return std::nullopt;
+  }
+  return DescribeDrawnAttachment(**message, facts.attachment(**message), VoiceMessagesSupported(),
+                                 facade_->CurrentAttachmentLimits().voice_max_seconds);
 }
 
 std::optional<DrawnAttachment> ChatController::DrawnAttachmentOf(const std::string& message_id) const {
@@ -3811,8 +3837,12 @@ void ChatController::TapAttachment(const std::string& message_id) {
     return;
   }
   const std::optional<DrawnAttachment> drawn = DrawnAttachmentOf(message_id);
-  switch (DecideAttachmentTap(CurrentAttachmentLayout(), drawn ? drawn->kind : AttachmentExitKind::File,
-                              drawn && drawn->ready, voice_playback_->PlaysFiles(), save_flow_->Busy())) {
+  if (!drawn) {
+    OpenAttachment(message_id); // not drawn (chat just switched): nothing is known to decide with, as before
+    return;
+  }
+  switch (DecideAttachmentTap(CurrentAttachmentLayout(), drawn->kind, drawn->ready, voice_playback_->PlaysFiles(),
+                              save_flow_->Busy())) {
     case AttachmentTap::Open:
     case AttachmentTap::PlayInApp: // a sound card drawn as a file row: today's path, never a save dialog
       OpenAttachment(message_id);
@@ -3832,9 +3862,14 @@ void ChatController::SaveAttachmentAs(const std::string& message_id) {
   if (!messaging_ready_ || !facade_ || message_id.empty()) {
     return;
   }
-  const std::optional<DrawnAttachment> drawn = DrawnAttachmentOf(message_id);
-  (void)save_flow_->Begin(ActiveThreadId(), message_id, drawn ? drawn->suggested_name : std::string(),
-                          drawn && drawn->ready);
+  std::optional<DrawnAttachment> drawn = DrawnAttachmentOf(message_id);
+  if (!drawn) {
+    drawn = LookUpAttachment(message_id); // not drawn (chat just switched): look this one message up, assume nothing
+  }
+  if (!drawn) {
+    return; // no such attachment any more
+  }
+  (void)save_flow_->Begin(ActiveThreadId(), message_id, drawn->suggested_name, drawn->ready);
 }
 
 void ChatController::ShareAttachment(const std::string& message_id, const ui::Vector2i position) {

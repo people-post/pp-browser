@@ -161,6 +161,27 @@ TEST(ChatPictureWiringTest, AnAttachmentTapIsDecidedThenSavedOrOpenedAsBefore) {
   EXPECT_NE(picture_handler.find("OpenPicture(message_id)"), std::string::npos);
 }
 
+// A message that was not drawn (the chat just switched, outside the rebuilt rows): a tap opens it as it always did, and
+// "Save as…" looks that one message up instead of assuming a generic file that is not ready.
+TEST(ChatPictureWiringTest, AMessageNotDrawnOpensOnTapAndIsLookedUpToSave) {
+  const std::string tap = Body(kController, "void ChatController::TapAttachment(");
+  const size_t none = tap.find("if (!drawn) {");
+  const size_t decide = tap.find("DecideAttachmentTap(");
+  ASSERT_NE(none, std::string::npos);
+  ASSERT_LT(none, decide);
+  EXPECT_NE(tap.find("OpenAttachment(message_id);", none), std::string::npos);
+  EXPECT_LT(tap.find("OpenAttachment(message_id);", none), decide);
+  EXPECT_EQ(tap.find("AttachmentExitKind::File"), std::string::npos) << "no invented generic file";
+
+  const std::string save = Body(kController, "void ChatController::SaveAttachmentAs(");
+  EXPECT_NE(save.find("LookUpAttachment(message_id)"), std::string::npos);
+  EXPECT_EQ(save.find("drawn && drawn->ready"), std::string::npos) << "an unknown row is not assumed not ready";
+
+  const std::string lookup = Body(kController, "std::optional<DrawnAttachment> ChatController::LookUpAttachment(");
+  EXPECT_NE(lookup.find("facade_->GetMessage(ActiveThreadId(), message_id)"), std::string::npos);
+  EXPECT_NE(lookup.find("facts.attachment(**message)"), std::string::npos) << "ready as the card would say";
+}
+
 // The save keeps its own state (AttachmentSaveFlow), apart from the taps' opening_message_ids_: neither reads or clears
 // the other's.
 TEST(ChatPictureWiringTest, TheSaveAndTheOpenKeepTheirOwnState) {

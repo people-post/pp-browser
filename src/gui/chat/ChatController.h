@@ -467,6 +467,8 @@ private:
    * dialog), everything else opens as before (OpenAttachment).
    */
   void TapAttachment(const std::string& message_id);
+  /** One message's attachment as a draw would describe it, looked up now (UI thread, one read); none: not an attachment. */
+  std::optional<DrawnAttachment> LookUpAttachment(const std::string& message_id);
   /** Remembers how `message`'s attachment row is drawn now (`view`), for a later tap or menu (drawn_attachments_). */
   void RememberDrawnAttachment(const ThreadMessage& message, const TranscriptAttachmentView& view, bool voice_bubbles,
                                int voice_max_seconds);
