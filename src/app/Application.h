@@ -96,9 +96,10 @@ private:
   /**
    * A notification tap was recorded (UI thread). A message tap that brought the app up arms the shell's tap cover
    * (NotificationTapCover::ShouldArm), so the page left behind never shows before the tapped chat; a call tap drops
-   * it (its ring shows). `app_was_shown`: the screen was up and drawn when tapped, read on the tapping thread.
+   * it (its ring shows). Only while that tap (`tap_seq`, PendingNotificationTap::TapSeq) is still waiting: one already
+   * routed or taken, or superseded, arms nothing. `app_was_shown`: the screen was up and drawn when tapped, read on the tapping thread.
    */
-  void OnNotificationTapRecorded(bool app_was_shown);
+  void OnNotificationTapRecorded(uint64_t tap_seq, bool app_was_shown);
   void WireCalls();
   void WireUnlockPinAndFlow();
   void WireAgentAndConfig();

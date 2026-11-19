@@ -1420,15 +1420,16 @@ void Application::LogCallTapTiming() {
   }
 }
 
-void Application::OnNotificationTapRecorded(const bool app_was_shown) {
+void Application::OnNotificationTapRecorded(const uint64_t tap_seq, const bool app_was_shown) {
   PendingNotificationTap& tap = PendingNotificationTap::Instance();
   const auto now = PendingNotificationTap::Clock::now();
   if (tap.PeekCallRoute(now)) {
     shell_->ReleaseTapCover(); // a call alert's tap: its ring is what shows
     return;
   }
-  const bool message_tap = tap.PeekThread(now).has_value() || !tap.FreshHint(now).empty();
-  if (!message_tap) {
+  // This tap, still waiting: one the chat already opened for (an inbound message took its hint before this ran) or a
+  // later tap's is not held behind a cover nothing would release.
+  if (!tap.MessageTapPending(tap_seq, now)) {
     return;
   }
   TapCoverFacts facts;
@@ -1550,13 +1551,14 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   PendingNotificationTap::Instance().SetRecordedHandler([this]() {
     LogCallTapTiming();
     const bool app_was_shown = AppLifecycle::IsVisible() && first_present_ms_.load() >= 0;
-    AppRuntime::PostUI([this, app_was_shown]() {
+    const uint64_t tap_seq = PendingNotificationTap::Instance().TapSeq();
+    AppRuntime::PostUI([this, app_was_shown, tap_seq]() {
       pin_gate_->RefreshCallHint();
-      OnNotificationTapRecorded(app_was_shown);
+      OnNotificationTapRecorded(tap_seq, app_was_shown);
     });
   });
   // A tap that launched the app may have been recorded before the handler above existed.
-  OnNotificationTapRecorded(/*app_was_shown=*/false);
+  OnNotificationTapRecorded(PendingNotificationTap::Instance().TapSeq(), /*app_was_shown=*/false);
   debug_call_tap_delay_ms_ = DebugCallTapDelayMs();
   if (debug_call_tap_delay_ms_ == 0) {
     RecordDebugCallTap(); // before the first frame

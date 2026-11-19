@@ -172,6 +172,34 @@ TEST(PendingNotificationTapTest, AConsumedBannerTapIsNoLongerPending) {
   EXPECT_FALSE(tap.PeekThread(t0));
 }
 
+TEST(PendingNotificationTapTest, ARoutedOrTakenOrSupersededTapIsNotPendingSoNothingArmsAfterIt) {
+  PendingNotificationTap tap;
+  tap.Record("", false, "m1", t0);
+  const uint64_t seq = tap.TapSeq();
+  EXPECT_TRUE(tap.MessageTapPending(seq, t0)) << "an alert tap waiting for its message";
+  EXPECT_TRUE(tap.TakeHintedRoute("m1", t0)) << "the inbound message opened the chat before the queued arm";
+  EXPECT_FALSE(tap.MessageTapPending(seq, t0)) << "route before arm: no cover";
+
+  tap.Record("thread-a", false, "", t0);
+  const uint64_t banner = tap.TapSeq();
+  EXPECT_TRUE(tap.MessageTapPending(banner, t0));
+  EXPECT_TRUE(tap.TakeThread(t0));
+  EXPECT_FALSE(tap.MessageTapPending(banner, t0)) << "a banner tap already taken";
+
+  tap.Record("", false, "m2", t0);
+  const uint64_t older = tap.TapSeq();
+  tap.Record("", false, "m3", t0);
+  EXPECT_FALSE(tap.MessageTapPending(older, t0)) << "a later tap supersedes it";
+  EXPECT_TRUE(tap.MessageTapPending(tap.TapSeq(), t0));
+  EXPECT_FALSE(tap.MessageTapPending(tap.TapSeq(), t0 + PendingNotificationTap::kMessageRouteTtl +
+                                                       std::chrono::milliseconds(1)))
+      << "an expired one is not";
+
+  tap.Record("", true, "c1", t0);
+  EXPECT_FALSE(tap.MessageTapPending(tap.TapSeq(), t0)) << "a call alert's tap is no message tap";
+  EXPECT_FALSE(tap.MessageTapPending(0, t0)) << "no tap yet";
+}
+
 TEST(PendingNotificationTapTest, CallTapSeqCountsCallTapsAndIsNeverReset) {
   PendingNotificationTap tap;
   EXPECT_EQ(tap.CallTapSeq(), 0u);

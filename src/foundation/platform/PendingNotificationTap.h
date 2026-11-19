@@ -113,6 +113,20 @@ public:
     return std::exchange(thread_id_, std::string{});
   }
 
+  /**
+   * Whether the message tap numbered `seq` (TapSeq right after it was recorded) is still waiting to be opened: it is
+   * the newest tap, no call alert's, and its banner thread or alert hint is fresh and not yet routed or taken. The
+   * check and the routing (TakeHintedRoute / TakeThread) read the same state, so a tap already opened is never
+   * reported pending. Does not consume.
+   */
+  bool MessageTapPending(const uint64_t seq, const Clock::time_point now) {
+    std::lock_guard<std::mutex> lock(mu_);
+    if (seq != tap_seq_ || call_) {
+      return false;
+    }
+    return ThreadFresh(now) || (!hint_.empty() && Fresh(now));
+  }
+
   /** Counts every tap recorded; a tap's handler reads it to tell its own tap from a later one. */
   uint64_t TapSeq() const {
     std::lock_guard<std::mutex> lock(mu_);
