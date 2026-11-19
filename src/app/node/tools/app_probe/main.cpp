@@ -2126,6 +2126,7 @@ int main(int argc, char** argv) {
   }
   if (!log_file.empty()) {
     pbr::LogFile::Install(log_file);
+    pbr::LogFile::Prune(log_file, {}); // Install only rotates now: the probe keeps its 7 days / 50 MB
   }
 
   pbr::AppRuntimeConfig runtime = pbr::ProductRuntimeConfig();

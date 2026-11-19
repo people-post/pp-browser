@@ -7,6 +7,7 @@
 #include "common/media/CallMediaHealth.h"
 #include "lib/calls/CallMobility.h"
 #include "foundation/data/AppPaths.h"
+#include "feature/settings/RunLogPrefs.h"
 #include "foundation/platform/IncomingLink.h"
 #include "gui/UiPerfTestController.h"
 #include "foundation/diagnostics/CrashDump.h"
@@ -133,6 +134,12 @@ int main(int argc, char** argv) {
                    << " level=" << LevelName(root.getLevel());
       pbr::LogFile::InstallMetrics(log_path);
       pbr::LogFile::InstallDiag(log_path);
+      // Installing only rotated: the old files go now, by the device's "Collect run logs" switch (7 days, or only
+      // this launch and the one before). Unreadable switch: nothing is deleted this launch (DEV/PLAN-send-run-logs.md).
+      if (!pbr::RunLogPrefs::PruneAtStartup(pbr::AppPaths::DataDir(), log_path,
+                                            pbr::RunLogsAllowed(pbr::kUiDemoBuild))) {
+        root.warning << "Old log files kept: the collect-run-logs setting could not be read";
+      }
     }
   }
 

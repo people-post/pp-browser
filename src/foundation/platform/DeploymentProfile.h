@@ -79,6 +79,14 @@ inline bool MockReplyBannerVisible(bool ui_demo) {
 inline bool PeerLinkStatusVisible(bool ui_demo) {
   return !ui_demo;
 }
+/**
+ * The one gate of "Collect run logs" / "Send run logs" (DEV/PLAN-send-run-logs.md, a test-phase feature): false hides
+ * both rows and keeps only this launch's and the previous launch's logs, whatever the stored switch says. To switch
+ * the feature off in a build, make this false.
+ */
+inline bool RunLogsAllowed(bool ui_demo) {
+  return UploadAllowed(ui_demo);
+}
 /** Runs `sender` only when UploadAllowed(ui_demo); returns whether it ran. */
 bool RunIfUploadAllowed(bool ui_demo, const std::function<void()>& sender);
 /** The Me -> Network prod / qa / custom switch: hidden in the UI demo app (its profile key stays `prod`). */
