@@ -129,8 +129,11 @@ jobs:
       - name: Build the probe and pp-node
         run: |
           mkdir -p "$PP_LOCAL_BUILD_DIR" "$CCACHE_DIR"
-          if [ ! -f "$PP_LOCAL_BUILD_DIR/CMakeCache.txt" ]; then
-            cmake -S . -B "$PP_LOCAL_BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release -DPP_BROWSER_COMPILER_CACHE=ON
+          # Debug: only a Debug desktop build reads PP_BROWSER_CA_BUNDLE, the lab CA its TLS relays need
+          # (docs/ops/TEST_STRATEGY.md § Two relays); a Release probe fails every scenario on them. A build dir
+          # left in another type is configured again.
+          if ! grep -qx 'CMAKE_BUILD_TYPE:STRING=Debug' "$PP_LOCAL_BUILD_DIR/CMakeCache.txt" 2>/dev/null; then
+            cmake -S . -B "$PP_LOCAL_BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DPP_BROWSER_COMPILER_CACHE=ON
           fi
           cmake --build "$PP_LOCAL_BUILD_DIR" --target pp-app-probe pp-node pp-node-load -j "$(nproc)"
 
