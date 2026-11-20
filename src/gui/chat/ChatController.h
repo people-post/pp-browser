@@ -19,6 +19,7 @@
 #include "gui/chat/OutgoingAttachmentPrep.h"
 #include "gui/chat/PendingUploadRows.h"
 #include "feature/presenters/AttachmentPicks.h"
+#include "feature/presenters/PictureSendQueue.h"
 #include "gui/chat/PhotoPreview.h"
 #include "gui/chat/ChatOpenMetrics.h"
 #include "gui/chat/ChatPictureTextures.h"
@@ -415,10 +416,30 @@ private:
    * chat is open when this runs; empty: nothing is sent). `voice_file`: a voice recording of ours; it is deleted once
    * the send succeeded or is staged for a retry, otherwise it is kept and the chip offers Retry / Discard (also when
    * the send is refused because another one runs).
+   * `on_finished` hears how the send ended exactly once, on every way out (AttachmentSendOnce; empty: nobody asks).
+   * `from_picture_queue`: an item of picture_queue_, which holds the attachment slot between its items, so only a send
+   * really running refuses it; its file is the queue's (released by the queue, never here), it has no pick, a pace
+   * refusal says nothing (the queue tries again), and a failed bubble does not give way to it.
    */
   void StartAttachmentUpload(const std::string& path, OutgoingPickSource source, bool voice_file,
                              const std::string& to_thread, std::optional<PendingUploadKind> bubble = std::nullopt,
-                             uint64_t pick_serial = 0);
+                             uint64_t pick_serial = 0, std::function<void(AttachmentSendOutcome)> on_finished = {},
+                             bool from_picture_queue = false);
+  /**
+   * The one "an attachment is on its way" check: preparing (a pick being copied), uploading, or a picture queue that
+   * has started and not ended (its gaps and pace waits included). Every entry that starts an attachment, and every
+   * entry greyed meanwhile, asks this.
+   */
+  bool AttachmentBusy() const;
+  /**
+   * A queue for the pictures of one pick in `thread_id` (DEV/PLAN-picture-send-preview.md), wired to
+   * StartAttachmentUpload, the drafts, the clock and the pills; null when one is still there or messaging is down.
+   */
+  PictureSendQueue* BeginPictureQueue(const std::string& thread_id);
+  /** The queue's ports: everything it asks for, for queue `serial` only (a late call for an older one does nothing). */
+  PictureSendPorts MakePictureSendPorts(uint64_t serial);
+  /** After any call into the queue: the composer follows the slot, and a queue with nothing left to happen goes. */
+  void SettlePictureQueue();
   // The wait between a pick and its choice / bubble (DEV/PLAN-attachment-bubbles-multi-pick.md step 3): a pick serial
   // per picker opening, the centred overlay while it is prepared, its late results dropped once it is over.
   uint64_t ArmPick();
@@ -441,6 +462,11 @@ private:
    * false when the caller draws it right after, in the same UI task).
    */
   void ApplyPendingUpload(PendingUploadStep step, bool redraw = true);
+  /**
+   * `event` applied to the bubble `row_id` (each send carries its own row: several bubbles may show while a picture
+   * queue runs, its failed ones kept); nothing when that row is gone. Redrawn as ApplyPendingUpload.
+   */
+  void ApplyPendingUploadTo(const std::string& row_id, const PendingUploadRows::Event& event, bool redraw = true);
   /** chat_.attachment_in_transcript: the open chat shows that bubble, so the composer's upload card / chip stay hidden. */
   void RefreshAttachmentInTranscript();
   /** A voice recording that could not be sent and was not staged: the chip offers Retry / Discard for the file. */
@@ -561,6 +587,10 @@ private:
   /** The picture being sent, as a temporary bubble at the end of its chat; one at a time. */
   PendingUploadRows pending_uploads_;
   uint64_t pending_upload_serial_ = 0;
+  /** The pictures of one pick being chosen or sent one at a time (none most of the time); see BeginPictureQueue. */
+  std::unique_ptr<PictureSendQueue> picture_queue_;
+  /** Names the current queue: an item's late end or a late tick for an older one is told apart. */
+  uint64_t picture_queue_serial_ = 0;
   AttachmentPicks picks_;
   /**
    * A bubble's disc ignores a cancel tap this long after the tap that started or retried it: the retry disc and the
