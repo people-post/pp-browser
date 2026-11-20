@@ -657,6 +657,10 @@ void CallController::BindPinLocked(std::function<bool()> pin_locked) {
   pin_locked_ = std::move(pin_locked);
 }
 
+void CallController::BindCallUiShown(std::function<void()> callback) {
+  call_ui_shown_ = std::move(callback);
+}
+
 void CallController::BindPeoplePickerNotify(PeoplePickerNotifyPorts ports) {
   people_picker_notify_ = std::move(ports);
 }
@@ -1110,6 +1114,17 @@ void CallController::SyncShellState() {
     AppRuntime::PostUI([this]() { SyncShellState(); });
     return;
   }
+  // Every call screen of the app passes here: tell once when one comes up, whether or not the chrome gate lets a
+  // snapshot through below.
+  const bool call_ui = ring_.active || in_call_.active;
+  if (call_ui && !call_ui_visible_) {
+    call_ui_visible_ = true;
+    if (call_ui_shown_) {
+      call_ui_shown_();
+    }
+  } else if (!call_ui) {
+    call_ui_visible_ = false;
+  }
   if (!shell_call_chrome_.apply_snapshot) {
     return;
   }
@@ -1355,6 +1370,9 @@ void CallController::Render() {
       peer_link_refresh_();
     }
   }
+  if (screen.kind != CallScreen::Kind::Ringing) {
+    system_ring_notified_id_.clear();
+  }
   if (in_call_.failed_kept && screen.kind != CallScreen::Kind::None) {
     ClearInCall(); // a call or a ring takes the kept failed page's place: nothing of that page carries over
   }
@@ -1368,7 +1386,16 @@ void CallController::Render() {
         ClearRing();
         SyncShellState();
         SyncRingtone();
+        // The phone's own screen now covers the app: that is a call screen coming up too (the app's ring never is).
+        const std::string ring_key = screen.ring_call_id.empty() ? "system" : screen.ring_call_id;
+        if (system_ring_notified_id_ != ring_key) {
+          system_ring_notified_id_ = ring_key;
+          if (call_ui_shown_) {
+            call_ui_shown_();
+          }
+        }
       } else {
+        system_ring_notified_id_.clear();
         RenderRing(screen, now_ms);
       }
       // The ring of a tapped call alert (its call id, or the first ring for a push without one): land on its chat

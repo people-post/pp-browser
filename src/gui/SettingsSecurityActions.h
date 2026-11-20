@@ -43,6 +43,8 @@ public:
 
   /** Its fields and events in the settings model. */
   void Bind(ui::DataModelConstructor& ctor);
+  /** A reveal still being checked (the PIN is being verified) is void: it opens nothing when it finishes. */
+  void VoidPendingReveal() { ++recovery_shown_count_; }
   /** The recovery phrase is on screen now (shown, not yet hidden). */
   bool RecoveryPhraseShown() const { return recovery_shown_; }
   /** Tests: a short auto-hide time, set before the page opens. */

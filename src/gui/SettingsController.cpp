@@ -1169,6 +1169,14 @@ void SettingsController::OnMeSurfaceClosed() {
   FlushPending();
 }
 
+void SettingsController::OnCallUiShown() {
+  if (security_actions_.RecoveryPhraseShown()) {
+    ResetSecurityPage(); // clears the words, closes the page and its back entry
+  } else {
+    security_actions_.VoidPendingReveal();
+  }
+}
+
 void SettingsController::SyncLayoutMode() {
   const ShellChromeSnapshot chrome = ChromeSnapshot();
   const bool compact = chrome.layout_mode == LayoutMode::Compact;

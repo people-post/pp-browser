@@ -40,7 +40,7 @@ SettingsSecurityActions::SettingsSecurityActions(SettingsHost& host, const Setti
     if (recovery_shown_) {
       HideRecoveryPhrase();
     } else {
-      ++recovery_shown_count_;
+      VoidPendingReveal();
     }
   });
 }

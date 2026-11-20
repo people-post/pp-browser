@@ -440,6 +440,13 @@ Application::Application() {
   call_ = std::make_unique<CallController>();
   // PIN locked = the vault is not open (the PIN gate is up): a ring on the phone's call screen stays there meanwhile.
   call_->BindPinLocked([this]() { return !secrets_ || !secrets_->IsUnlocked(); });
+  // A call screen coming up closes the recovery phrase page (Settings does not know the call internals; only this fact
+  // crosses).
+  call_->BindCallUiShown([this]() {
+    if (settings_) {
+      settings_->OnCallUiShown();
+    }
+  });
   if constexpr (kDevToolsBuild) {
     // Android merge check for the mic rebuild: `adb shell setprop debug.pp.skip_route_reorder 1` makes the next
     // speaker tap change the route the old way (before the mic closes); set it back to 0 before arming it again.
@@ -3095,6 +3102,7 @@ void Application::Shutdown() {
     call_->BindPeerLinkRefresh(nullptr);
     call_->BindPeoplePickerNotify({});
     call_->BindPinLocked({});
+    call_->BindCallUiShown({});
   }
   if (chat_) {
     chat_->BindCallActions({});
