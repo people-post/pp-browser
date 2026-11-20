@@ -109,7 +109,9 @@ void ClientCompatController::OnResolved(ClientCompatResolution result) {
     }
     last_action_ = CompatUiAction::None;
     if (relay_requires_upgrade_) {
-      PresentAction(CompatUiAction::UpdateRequired, document_.value_or(ClientCompatDocument{}));
+      const ClientCompatDocument doc = document_.value_or(ClientCompatDocument{});
+      last_action_ = DecideCompatUiAction(AppVersionString(), doc, true);
+      PresentAction(last_action_, doc);
     }
     return;
   }
@@ -134,7 +136,7 @@ void ClientCompatController::OnOrgRelayRequiresUpgrade() {
   const bool first = !relay_requires_upgrade_;
   relay_requires_upgrade_ = true;
   if (check_in_flight_) {
-    return; // its answer shows the screen
+    return; // its answer shows the card
   }
   if (first || ClientCompatRecheckDue(fetched_at_unix_, NowUnix())) {
     if (first) {
@@ -144,7 +146,12 @@ void ClientCompatController::OnOrgRelayRequiresUpgrade() {
       return; // for the document's links and message
     }
   }
-  PresentAction(CompatUiAction::UpdateRequired, document_.value_or(ClientCompatDocument{}));
+  if (!first) {
+    return; // the card is up already: a refusal again raises nothing new (T14)
+  }
+  const ClientCompatDocument doc = document_.value_or(ClientCompatDocument{});
+  last_action_ = DecideCompatUiAction(AppVersionString(), doc, true);
+  PresentAction(last_action_, doc);
 }
 
 void ClientCompatController::ApplyDocument(const ClientCompatDocument& doc) {
@@ -178,18 +185,23 @@ void ClientCompatController::PresentAction(CompatUiAction action, const ClientCo
     ShowUpdateRequired(doc);
     return;
   }
-  if (action == CompatUiAction::SoftUpdateAvailable) {
-    SetSoftUpdate(UpdateAdvice{doc.latest_client_version, UsableUpdateLink(doc, Platform::OsName(), kDefaultUpgradeUrl),
-                               doc.message});
+  if (action == CompatUiAction::UpdateNeeded || action == CompatUiAction::SoftUpdateAvailable) {
+    // The org's relay refusing this app: the same card, held up (T14); no alert, so a refusal at every poll raises
+    // nothing new. Its line stays the card's own words, the relay's note under it (RC018 part 2, U12).
+    SetSoftUpdate(UpdateAdvice{.latest_version = doc.latest_client_version,
+                               .url = UsableUpdateLink(doc, Platform::OsName(), kDefaultUpgradeUrl),
+                               .message = doc.message,
+                               .held = action == CompatUiAction::UpdateNeeded});
     return;
   }
   SetSoftUpdate(std::nullopt); // up to date, or the update screen says it
 }
 
 void ClientCompatController::SetSoftUpdate(std::optional<UpdateAdvice> advice) {
-  const bool same = soft_update_.has_value() == advice.has_value() &&
-                    (!advice || (soft_update_->latest_version == advice->latest_version &&
-                                 soft_update_->url == advice->url && soft_update_->message == advice->message));
+  const bool same =
+      soft_update_.has_value() == advice.has_value() &&
+      (!advice || (soft_update_->latest_version == advice->latest_version && soft_update_->url == advice->url &&
+                   soft_update_->message == advice->message && soft_update_->held == advice->held));
   if (same) {
     return;
   }

@@ -19,6 +19,11 @@ struct UpdateAdvice {
   std::string url;
   /** The relay document's `message`, as sent (the card shows UpdateServerNote of it as an extra line). */
   std::string message;
+  /**
+   * The org's relay refuses this app (`426`, CompatUiAction::UpdateNeeded; T14): the card is held up — shown whatever
+   * "Later" was tapped before, and without the Later button — until the app is updated. Its words stay the card's own.
+   */
+  bool held = false;
 };
 
 /** The longest server note the card or dialog shows, in characters; longer ends in an ellipsis. */
@@ -94,6 +99,7 @@ inline bool UpdateCardIsNewAnnouncement(const std::string& latest_version, const
  */
 inline bool ShouldShowUpdateCard(const std::string& latest_version, const UpdateCardState& state,
                                  const int64_t now_ms) {
+  // (A held card, UpdateAdvice::held, is shown without asking this.)
   if (latest_version.empty()) {
     return false;
   }

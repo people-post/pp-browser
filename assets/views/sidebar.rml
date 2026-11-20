@@ -60,7 +60,7 @@
       <p class="sidebar-tip-note" data-if="update_card_note_shown">{{update_card_note}}</p>
       <div class="sidebar-tip-actions row">
         <button class="btn btn-primary" type="button" data-if="update_card_link" data-event-click="update_card_open()">{{i18n:compat.update_card.action}}</button>
-        <button class="btn btn-ghost sidebar-tip-later" type="button" data-event-click="update_card_later()">{{i18n:compat.update_card.later}}</button>
+        <button class="btn btn-ghost sidebar-tip-later" type="button" data-if="!update_card_held" data-event-click="update_card_later()">{{i18n:compat.update_card.later}}</button>
       </div>
     </div>
     <div class="sidebar-archived-entry row" data-if="archived_count > 0" data-event-click="toggle_archived()">

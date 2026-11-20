@@ -203,6 +203,7 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
   ctor.Bind("update_card_link", &state.update_card_link);
   ctor.Bind("update_card_note_shown", &state.update_card_note_shown);
   ctor.Bind("update_card_note", &state.update_card_note);
+  ctor.Bind("update_card_held", &state.update_card_held);
   ctor.Bind("home_show_dynamic", &state.home_show_dynamic);
   ctor.Bind("home_brief", &state.home_brief);
   ctor.Bind("home_edit_on", &state.home_edit_on);
@@ -338,11 +339,13 @@ void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "ai_sessions");
   DataModelHost::Instance().Dirty("shell", "ai_sessions_count_label");
   DataModelHost::Instance().Dirty("shell", "home_date_label");
-  for (const char* name : {"home_widgets",           "home_favorites",    "home_recent",         "home_missed_calls",
-                           "home_calls_latest",      "home_mentions",     "home_mentions_where", "home_new_people",
-                           "home_security_ok",       "recovery_reminder", "update_card",         "update_card_link",
-                           "update_card_note_shown", "update_card_note",  "home_show_dynamic",   "home_brief",
-                           "home_edit_on",           "home_edit_off",     "home_edit_dragging",  "home_fav_avatar",
+  for (const char* name : {"home_widgets",           "home_favorites",     "home_recent",
+                           "home_missed_calls",      "home_calls_latest",  "home_mentions",
+                           "home_mentions_where",    "home_new_people",    "home_security_ok",
+                           "recovery_reminder",      "update_card",        "update_card_link",
+                           "update_card_note_shown", "update_card_note",   "update_card_held",
+                           "home_show_dynamic",      "home_brief",         "home_edit_on",
+                           "home_edit_off",          "home_edit_dragging", "home_fav_avatar",
                            "home_fav_avatar_radius"}) {
     DataModelHost::Instance().Dirty("shell", name);
   }

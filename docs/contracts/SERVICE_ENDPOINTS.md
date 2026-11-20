@@ -612,17 +612,26 @@ hears it (`IRelayAudience::Refused` → `RelayPins::SetOnUpgradeRequired`):
 
 | The relay | The app |
 |---|---|
-| The org's (its relay or locker origin) | A forced check, then the blocking update screen **whatever the document says** (the relay refusing us is the authority; its floor may not be raised yet), with the document's link for this platform; for the rest of the session. A later 426 keeps the screen up (shown again once dismissed) without asking again within 15 min |
-| Another relay of ours (Me → My relays) | Nothing is blocked: its row says *Needs a newer version of the app* (registration reason `upgrade`, beside `unreachable` / `refused` / `identity` / `other`), from a registration or any other call there |
+| The org's (its relay or locker origin) | A forced check (for the document's links), then the Chats page's update card **held up** whatever the document says (the relay refusing us is the authority; its floor may not be raised yet): its own words and Update button with this platform's link, the relay's note under them, **no "Later" and no alert** (`CompatUiAction::UpdateNeeded`, `UpdateAdvice::held`; RC018 part 2 default, release-compatibility T14). For the rest of the session; a later 426 changes nothing on screen and asks again at most once per 15 min. The full screen (the blocking dialog) is the document's floor's alone (`UpdateRequired`) |
+| Another relay of ours (Me → My relays) | Nothing is blocked: its row says *Needs a newer version of the app* (registration reason `upgrade`, beside `unreachable` / `refused` / `identity` / `relay_upgrade` / `card` / `other`), from a registration or any other call there; its registration is asked again once a day, not on the minute backoff (`RelayRegistrationsWorkflow::kRefusedRetryMs`, T17) |
 | A contact's relay (a send into it) | The send fails with the typed error (not retried as it is) |
-| pp-node's relay | One ERROR per relay per run: *this pp-node is too old for the relay at X: upgrade it* (`NodeUpgradeNotice`); heartbeats and registration renewals go on at their pace without a generic failure each time |
+| pp-node's relay | One ERROR per relay per run: *this pp-node is too old for the relay at X: upgrade it* (`NodeUpgradeNotice`); its heartbeat and registration are sent again once a day, not every period (`kHeartbeatRefusedRetryMs`, T17). pp-node also reads `client-compat`'s `min_node_version` itself (`NodeCompatFloor`, A2: at start and once a day; a failed read keeps the last, none read is no floor): below it, one ERROR (*this pp-node (X) is below the relay's min_node_version Y: it no longer registers or sends heartbeats there …*) and **no registration or heartbeat there**, while the mesh services keep running (peers that reach it directly are still served, and a supervisor does not restart it in a loop); once the floor no longer excludes it, it registers again |
+
+**The inbox poll after a refusal for good** (T14): a relay that refuses the poll with a refusal asking again will not
+change (`IsPermanentRelayRefusal`: `426 client_upgrade_required`, `400 relay_upgrade_required` /
+`unsupported_sign_version`, `401 wrong_audience` at the PeerId it presents) is not polled again, forced (a push) or not,
+for 1 min, doubling to 30 min while it keeps refusing (`RelayInboxCoordinator::kRefusedFirstMs`, `kRefusedMaxMs`);
+the other relays go on, and an answer ends the back-off. An ordinary failure (unreachable, a lost registration) keeps
+the app's pace.
 
 **`400 relay_upgrade_required`** (or, from a relay before that code, `400 unsupported_sign_version`) — the relay is
 **older** than this app (a sign version or account card newer than it reads; release-compatibility U10, U11). Read by
 `NoteRelayRefusal` as `Err::Auth::RelayUpgradeRequired` (final for a send, as the 400 was before it was typed); the
 audience hears `relay_upgrade_required` (`RelayPins::SetOnRelayOutdated`). The words say the **relay** needs an update,
 never "update the app": the error's text (*That relay needs an update before it works with this version of the app*)
-and, for a relay of ours, its My relays row (registration reason `relay_upgrade`: *The relay needs an update*).
+and, for a relay of ours, its My relays row (registration reason `relay_upgrade`: *The relay needs an update*). The
+update card is **not** raised for it: its words ask the person to update the app, which would not help. The inbox poll
+backs off (above) and its registration is asked again once a day.
 
 ## Version header
 

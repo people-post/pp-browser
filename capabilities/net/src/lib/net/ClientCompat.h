@@ -120,7 +120,13 @@ struct ClientCompatDocument {
 enum class CompatUiAction {
   None = 0,
   SoftUpdateAvailable,
+  /** Below the document's `min_client_version`: the full screen (the blocking dialog). */
   UpdateRequired,
+  /**
+   * The org's relay refuses this app (`426 client_upgrade_required`) while the document raises no floor above it: the
+   * update card, held up (no "Later") instead of the full screen (RC018 part 2 default; T14).
+   */
+  UpdateNeeded,
 };
 
 Roe<ClientCompatDocument> ParseClientCompatDocument(std::string_view json_text);
@@ -148,8 +154,9 @@ bool ClientCompatFloorUnreadable(const ClientCompatDocument& doc);
  */
 bool NodeBelowFloor(std::string_view node_version, const ClientCompatDocument& doc);
 /**
- * As above, but UpdateRequired whatever the document says when `relay_requires_upgrade`: the org's relay answered
- * `426 client_upgrade_required` (the relay refusing us is the authority; its document may not raise the floor yet).
+ * As above, and when `relay_requires_upgrade` (the org's relay answered `426 client_upgrade_required`: the relay
+ * refusing us is the authority, its document may not raise the floor yet) at least UpdateNeeded: the document's
+ * UpdateRequired stays the full screen, anything else becomes the held-up card.
  */
 CompatUiAction DecideCompatUiAction(std::string_view local_version, const ClientCompatDocument& doc,
                                     bool relay_requires_upgrade);
