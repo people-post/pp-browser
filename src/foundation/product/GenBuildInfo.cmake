@@ -1,11 +1,13 @@
 # Writes BuildInfoGenerated.cpp (the commit and tag this build came from). Runs in CMake script mode on every
 # build, not at configure time, so a new commit or an edit to a tracked file shows without a re-configure.
-# The file is rewritten only when its text changes, so an unchanged build recompiles nothing.
-# Inputs: -DSOURCE_DIR=<repo root> -DOUTPUT=<file to write> -DBUILD_TAG=<tag or empty>.
-# An empty BUILD_TAG falls back to the PP_BUILD_TAG environment variable of the build.
+# The file is rewritten only when its text changes, so an unchanged build recompiles nothing. No timestamps: the
+# same commit and tag give the same file.
+# Inputs: -DSOURCE_DIR=<repo root> -DOUTPUT=<file to write> -DBUILD_TAG=<tag or empty> -DBUILD_COMMIT=<hash or empty>.
+# An empty BUILD_TAG / BUILD_COMMIT falls back to the PP_BUILD_TAG / PP_BUILD_COMMIT environment variable of the
+# build (what the release workflows set), then to git.
 
-set(_commit "unknown")
 find_program(_git git)
+set(_have_git FALSE)
 if(_git AND EXISTS "${SOURCE_DIR}")
   execute_process(
     COMMAND "${_git}" rev-parse --short=8 HEAD
@@ -15,6 +17,30 @@ if(_git AND EXISTS "${SOURCE_DIR}")
     ERROR_QUIET
     OUTPUT_STRIP_TRAILING_WHITESPACE)
   if(_rc EQUAL 0 AND _head MATCHES "^[0-9a-f]+$")
+    set(_have_git TRUE)
+  endif()
+endif()
+
+# The commit: one the build was given (a hex hash, cut to 8 like git's), else HEAD plus "-dirty" when tracked files
+# have uncommitted changes, else "unknown".
+set(_commit "${BUILD_COMMIT}")
+if(_commit STREQUAL "" AND DEFINED ENV{PP_BUILD_COMMIT})
+  set(_commit "$ENV{PP_BUILD_COMMIT}")
+endif()
+string(STRIP "${_commit}" _commit)
+string(TOLOWER "${_commit}" _commit)
+set(_dirty FALSE)
+if(_commit MATCHES "^[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]+$")
+  string(LENGTH "${_commit}" _len)
+  if(_len GREATER 8)
+    string(SUBSTRING "${_commit}" 0 8 _commit)
+  endif()
+else()
+  if(NOT _commit STREQUAL "")
+    message(WARNING "PP_BUILD_COMMIT '${_commit}' is not a hex commit hash: ignored")
+  endif()
+  set(_commit "unknown")
+  if(_have_git)
     set(_commit "${_head}")
     execute_process(
       COMMAND "${_git}" status --porcelain --untracked-files=no
@@ -24,14 +50,46 @@ if(_git AND EXISTS "${SOURCE_DIR}")
       ERROR_QUIET
       OUTPUT_STRIP_TRAILING_WHITESPACE)
     if(NOT _rc EQUAL 0 OR NOT "${_changes}" STREQUAL "")
+      set(_dirty TRUE)
       string(APPEND _commit "-dirty")
     endif()
   endif()
 endif()
 
+# The tag: one the build was given, else a build tag on HEAD (a clean checkout only: a modified tree is not the
+# tagged build). Only the build-tag names count (release-compatibility DESIGN § Builds, tags and deploys), in this
+# order when HEAD has several; any other tag (a library's, a test's) means no tag.
 set(_tag "${BUILD_TAG}")
 if(_tag STREQUAL "" AND DEFINED ENV{PP_BUILD_TAG})
   set(_tag "$ENV{PP_BUILD_TAG}")
+endif()
+string(STRIP "${_tag}" _tag)
+if(_tag STREQUAL "" AND _have_git AND NOT _dirty AND _commit STREQUAL _head)
+  execute_process(
+    COMMAND "${_git}" tag --points-at HEAD --sort=-v:refname
+    WORKING_DIRECTORY "${SOURCE_DIR}"
+    RESULT_VARIABLE _rc
+    OUTPUT_VARIABLE _tags
+    ERROR_QUIET
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if(_rc EQUAL 0 AND NOT _tags STREQUAL "")
+    string(REPLACE "\n" ";" _tags "${_tags}")
+    set(_version "[0-9]+\\.[0-9]+\\.[0-9]+")
+    set(_patterns
+      "^v${_version}$"
+      "^v${_version}-rc\\.[0-9]+$"
+      "^internal/[0-9]+$"
+      "^pp-node/v${_version}$"
+      "^pp-node/v${_version}-rc\\.[0-9]+$"
+      "^node-internal/[0-9]+(-[0-9]+)*\\.[0-9]+$")
+    foreach(_pattern IN LISTS _patterns)
+      foreach(_candidate IN LISTS _tags)
+        if(_tag STREQUAL "" AND _candidate MATCHES "${_pattern}")
+          set(_tag "${_candidate}")
+        endif()
+      endforeach()
+    endforeach()
+  endif()
 endif()
 # The tag goes into a string literal: keep only the characters a tag is made of.
 string(REGEX REPLACE "[^A-Za-z0-9._/+-]" "" _tag "${_tag}")

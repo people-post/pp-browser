@@ -237,9 +237,10 @@ size_t RawBytes(const std::vector<Section>& sections) {
   return total;
 }
 
-std::string Join(const std::vector<Section>& sections) {
+std::string Join(const std::string& head, const std::vector<Section>& sections) {
   std::string joined;
-  joined.reserve(RawBytes(sections));
+  joined.reserve(head.size() + RawBytes(sections));
+  joined += head;
   for (const Section& section : sections) {
     joined += section.header;
     joined += section.body;
@@ -447,7 +448,7 @@ Roe<std::vector<uint8_t>> RunLogBundle::Gzip(const std::string_view data) {
 
 Roe<RunLogArchive> RunLogBundle::Build(const std::string& log_path, const LogRetention& retention,
                                        const std::uintmax_t max_bytes, const std::time_t now,
-                                       const CrashRecordSource* crash) {
+                                       const CrashRecordSource* crash, const std::string_view build) {
   const std::vector<LogFileInfo> files = DirectoryFiles(log_path);
   if (files.empty()) {
     return Error("No log files");
@@ -468,12 +469,14 @@ Roe<RunLogArchive> RunLogBundle::Build(const std::string& log_path, const LogRet
       }
     }
   }
+  // The build heads the archive and is not a section: DropOldest never takes it.
+  const std::string head = build.empty() ? std::string() : "==== build " + std::string(build) + " ====\n";
   bool truncated = selection.truncated;
   // Gzip, and while it is over `max_bytes` drop the oldest records (scaled by how far over it was, with a margin)
   // and gzip again; the newest records stay.
   constexpr int kMaxAttempts = 12;
   for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
-    const std::string joined = Join(sections);
+    const std::string joined = Join(head, sections);
     auto gz = Gzip(joined);
     if (!gz) {
       return gz.error();

@@ -106,6 +106,10 @@ CrashReportEnvelope BuildCrashReportEnvelope(const std::string& dump_text) {
         env.product = std::move(product);
       } else if (auto version = ValueAfterPrefix(line, "version="); !version.empty()) {
         env.version = std::move(version);
+      } else if (auto commit = ValueAfterPrefix(line, "commit="); !commit.empty()) {
+        env.commit = std::move(commit);
+      } else if (auto tag = ValueAfterPrefix(line, "tag="); !tag.empty()) {
+        env.tag = std::move(tag);
       } else if (auto os = ValueAfterPrefix(line, "os="); !os.empty()) {
         env.os = std::move(os);
       } else if (auto reason = ValueAfterPrefix(line, "reason="); !reason.empty()) {
@@ -140,6 +144,12 @@ std::string CrashReportEnvelopeToJson(const CrashReportEnvelope& envelope) {
   root.set("schema_version", static_cast<int64_t>(envelope.schema_version));
   root.set("product", envelope.product);
   root.set("version", envelope.version);
+  if (!envelope.commit.empty()) {
+    root.set("commit", envelope.commit);
+  }
+  if (!envelope.tag.empty()) {
+    root.set("tag", envelope.tag);
+  }
   root.set("os", envelope.os);
   root.set("reason", envelope.reason);
   root.set("fingerprint", envelope.fingerprint);

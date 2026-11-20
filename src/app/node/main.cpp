@@ -16,6 +16,8 @@
 #include "mesh/dht/AmpDhtProtocol.h"
 #include "lib/net/HttpClient.h"
 #include "lib/net/RegistrationSignPayload.h"
+#include "foundation/product/AppVersion.h"
+#include "foundation/product/BuildInfo.h"
 #include "foundation/product/DevTools.h"
 #include "lib/net/RelayOrigins.h"
 #include "lib/net/RelayPins.h"
@@ -381,6 +383,11 @@ int main(int argc, char** argv) {
 
   std::signal(SIGINT, OnSignal);
   std::signal(SIGTERM, OnSignal);
+
+  // Which build this is, so a node's log names it (release-compatibility "A build says what it is"). Local only:
+  // the relay still gets node_version alone (frozen wire).
+  root.info << "pp-node.build version=" << pbr::AppVersionString() << " commit=" << pbr::BuildCommit()
+            << " tag=" << (*pbr::BuildTag() != '\0' ? pbr::BuildTag() : "-");
 
   pbr::NodeBootstrapOptions options;
   options.argc = argc;

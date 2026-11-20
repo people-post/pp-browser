@@ -8,10 +8,12 @@ namespace pbr {
  * Bare-minimal crash capture: write `{data_dir}/diagnostics/crash_pending.txt`
  * from signal / terminate handlers, then optionally upload on next launch.
  */
-/** Who crashed, as the dump says: the app's slug and release version (the app hands them in). */
+/** Who crashed, as the dump says: the app's slug, release version and build (the app hands them in). */
 struct CrashIdentity {
   std::string product;
   std::string version;
+  std::string commit; ///< the build's commit ("a1b2c3d4"); no `commit=` line when empty
+  std::string tag;    ///< the build's tag ("internal/141"); no `tag=` line when empty
 };
 
 class CrashDump {
