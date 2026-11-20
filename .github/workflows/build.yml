@@ -4,7 +4,8 @@ name: build
 # and PRs to them (backports, release-branch-only fixes) build every platform and run every test, not a PR's subset.
 on:
   push:
-    branches: [main, 'release/**', 'cutover/**']
+    # The integration branch only: its work branches (cutover/w1-…) build through their PRs into it.
+    branches: [main, 'release/**', 'cutover/signed-formats']
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
