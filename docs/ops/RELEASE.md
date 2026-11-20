@@ -13,6 +13,8 @@ When [macOS signing secrets](MACOS_SIGNING.md#github-repository-secrets) are con
 
 The design behind this page: [release-compatibility DESIGN § Branches and tags](../../projects/release-compatibility/DESIGN.md#branches-and-tags).
 
+Step by step, with who does what and how to check it: the [release, hotfix and app incident runbooks](runbooks/README.md).
+
 ## Branching
 
 | Branch | Role |
@@ -26,7 +28,7 @@ main ──cut──► release/app-1.0 ──tag──► v1.0.0-rc.1 … v1.0.
      └─cut──► release/node-10.0 ──tag──► pp-node/v10.0.0-rc.1 … ──tag (same commit)──► pp-node/v10.0.0
 ```
 
-A release branch takes fixes only. Fixes land on main first and are then backported to each live release branch that needs them (DESIGN [§ Release lines are first-class](../../projects/release-compatibility/DESIGN.md#release-lines-are-first-class)); release branches are never merged back. Until the backport bot exists (see [Coming](#coming)), a backport is a cherry-pick PR to the release branch (`git cherry-pick -x`, linking the original main PR).
+A release branch takes fixes only. Fixes land on main first and are then backported to each live release branch that needs them (DESIGN [§ Release lines are first-class](../../projects/release-compatibility/DESIGN.md#release-lines-are-first-class)); release branches are never merged back. A `backport release/app-X.Y` label on the merged main PR has the backport bot open the cherry-pick PR ([§ Release branches and backports](#release-branches-and-backports)).
 
 The libraries (pp-cpp-*) and pp-ledger have only `main`: pins are release tags cut on their `main`.
 
@@ -110,7 +112,6 @@ For a release (`pp-node/vX.Y.Z`) only `guard` and `promote` run.
 Not in these workflows yet (release-compatibility P2):
 
 - **Store promotion workflow** (TODO): moves a release candidate's TestFlight build to external testers and App Store review through the App Store Connect API (and the Play Developer API), behind a GitHub environment approval; refuses anything that is not a candidate; tags `vX.Y.Z` when it submits. It needs App Store Connect and Play API keys as secrets. Until then a candidate's build is sent to external testers and review by hand in App Store Connect, and `vX.Y.Z` is tagged by hand. Android has no Play upload at all yet (the APK's `versionCode` is fixed at 1).
-- **Backport bot:** a `backport release/app-X.Y` label on a merged main PR opens the cherry-pick PR to that branch.
 - GitHub environments (staging / production approval gates), phased store releases.
 
 ## Artifacts
