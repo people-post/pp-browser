@@ -4,7 +4,7 @@ name: build
 # and PRs to them (backports, release-branch-only fixes) build every platform and run every test, not a PR's subset.
 on:
   push:
-    branches: [main, 'release/**']
+    branches: [main, 'release/**', 'cutover/**']
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -18,7 +18,7 @@ on:
   # skips the jobs below it through the `code` filter instead of a paths-ignore.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main, 'release/**']
+    branches: [main, 'release/**', 'cutover/**']
   # The backport bot (backport.yml) runs this on its backport/* branch: a PR it opens with the workflow token starts
   # no pull_request run. A dispatch runs everything, as a push does.
   workflow_dispatch:
