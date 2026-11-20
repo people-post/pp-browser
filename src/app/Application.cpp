@@ -1087,7 +1087,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     };
     AppRuntime::PostWorkerAndReplyOnUI<Roe<RegistrationResult>>(WorkerLane::Normal, std::move(work), std::move(reply));
   };
-  settings_commands.rotate_brief_llm_key = [this, &facade]() {
+  settings_commands.rotate_brief_llm_key = [&facade]() {
     return facade.RenewBriefLlmToken(); // the assistant takes the new token (SetOnBriefLlmTokenRenewed)
   };
   settings_commands.clear_undelivered_older_than = [&facade](int days) -> Roe<void> {
