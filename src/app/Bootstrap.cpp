@@ -19,6 +19,10 @@
 #include "foundation/platform/PlatformLogSink.h"
 #include "foundation/platform/PlatformHooks.h"
 #include "foundation/tls/ContentSha256Policy.h"
+#include "foundation/tls/RelayClientHeader.h"
+#include "foundation/platform/Platform.h"
+#include "foundation/product/AppVersion.h"
+#include "lib/net/ClientCompat.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -43,6 +47,8 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
     return config.error();
   }
   SetSendContentSha256(config->relay_content_sha256);
+  // Every relay call names this build (O1; SERVICE_ENDPOINTS § Version header): product, version, OS.
+  SetRelayClientHeader(RelayClientHeaderValue("pp-app", AppVersionString(), Platform::OsName()));
   // B233: the audio-session timing lines are written wherever the QA origin is compiled in (today every iOS build);
   // timestamps and flags of our own call provider only, sent only through the user's own "send logs"; see
   // CallKitDiagnostics.h.

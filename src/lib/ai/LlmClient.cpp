@@ -10,6 +10,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/tls/ContentSha256Policy.h"
 #include "foundation/tls/CurlSsl.h"
+#include "foundation/tls/RelayClientHeader.h"
 
 #include <curl/curl.h>
 #include "common/PbrCompat.h"
@@ -342,6 +343,12 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   if (SendContentSha256()) {
     sha_header = "x-amz-content-sha256: " + Sha256Hex(payload);
     headers = curl_slist_append(headers, sha_header.c_str());
+  }
+  // The version header goes to the relay's gateway only (the brief preset), never to another LLM provider (O1).
+  if (config_.preset.empty() || config_.preset == "brief") {
+    for (const auto& [name, value] : WithRelayClientHeader()) {
+      headers = curl_slist_append(headers, (name + ": " + value).c_str());
+    }
   }
 
   const std::string url = config_.base_url + "/chat/completions";

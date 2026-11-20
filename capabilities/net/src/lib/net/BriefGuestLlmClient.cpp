@@ -1,4 +1,5 @@
 #include "lib/net/BriefGuestLlmClient.h"
+#include "foundation/tls/RelayClientHeader.h"
 #include "common/Localized.h"
 
 #include "foundation/error/AppError.h"
@@ -39,7 +40,7 @@ Roe<BriefGuestLlmMintResult> MintBriefGuestLlmKey(const std::string& llm_base_ur
   }
   const std::string payload = DumpJson(body);
 
-  auto response = HttpClient::Post(url, payload, {{"Content-Type", "application/json"}});
+  auto response = HttpClient::Post(url, payload, WithRelayClientHeader({{"Content-Type", "application/json"}}));
   if (!response) {
     return response.error();
   }

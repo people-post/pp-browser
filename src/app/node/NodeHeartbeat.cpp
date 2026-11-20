@@ -3,6 +3,7 @@
 #include "common/Logger.h"
 #include "common/ValueJson.h"
 #include "common/metrics/MetricsRegistry.h"
+#include "foundation/tls/RelayClientHeader.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -133,7 +134,7 @@ NodeHeartbeat::Outcome NodeHeartbeat::Send(const HeartbeatState state, const lon
   body.set("signature", signature->signature);
 
   const auto response = deps_.post(deps_.base_url + "/v1/mesh/heartbeat", DumpJson(body),
-                                   {{"Content-Type", "application/json"}}, timeout_s);
+                                   WithRelayClientHeader({{"Content-Type", "application/json"}}), timeout_s);
   if (!response) {
     log.warning << "heartbeat failed: " << response.error().message;
     RecordOutcome(Outcome::Network);

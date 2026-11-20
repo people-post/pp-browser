@@ -1,5 +1,7 @@
 #include "feature/conversations/ConversationsHub.h"
 
+#include "foundation/tls/RelayClientHeader.h"
+
 #include "lib/messaging/GroupLinkJoinFamily.h"
 #include "lib/people/DevicePeerId.h"
 #include "domain/attachments/AttachmentContent.h"
@@ -333,6 +335,7 @@ void ConversationsHub::OpenRelayPins() {
   pins->SetOnChanged([this](const std::string&) { OnRelayPinsChanged(); });
   pins->SetOnNotRegistered([this](const std::string& origin) { HealRegistrationSoon(origin); });
   pins->SetOnUpgradeRequired([this](const std::string& origin) { OnRelayRequiresUpgrade(origin); });
+  pins->SetOnRelayOutdated([this](const std::string& origin) { OnRelayOutdated(origin); });
   {
     std::lock_guard lock(relay_pins_mu_);
     relay_pins_ = pins;
@@ -354,6 +357,7 @@ void ConversationsHub::CloseRelayPins() {
   closing->SetOnChanged({});
   closing->SetOnNotRegistered({});
   closing->SetOnUpgradeRequired({});
+  closing->SetOnRelayOutdated({});
 }
 
 bool ConversationsHub::KeepsPin(const std::string& origin) {
@@ -474,6 +478,20 @@ void ConversationsHub::OnRelayRequiresUpgrade(const std::string& origin) {
     }
   }
   // A relay of ours (the org's too when it is one) says why on its row; nothing else is blocked.
+  MarkRelayRowFailed(origin, kRegistrationUpgrade, "needs a newer version of this app (426 client_upgrade_required)");
+}
+
+void ConversationsHub::OnRelayOutdated(const std::string& origin) {
+  if (shutdown_requested_.load(std::memory_order_acquire)) {
+    return;
+  }
+  // The relay is the one to update (U11): its row says so, not "update the app"; nothing else is blocked.
+  MarkRelayRowFailed(origin, kRegistrationRelayUpgrade,
+                     "is older than this app and needs an update "
+                     "(400 relay_upgrade_required)");
+}
+
+void ConversationsHub::MarkRelayRowFailed(const std::string& origin, const std::string& reason, const char* why) {
   if (!our_relays_) {
     return;
   }
@@ -481,14 +499,13 @@ void ConversationsHub::OnRelayRequiresUpgrade(const std::string& origin) {
     if (!SameRelay(entry.origin, origin)) {
       continue;
     }
-    if (entry.registration.state == RelayRegistrationRecord::State::Failed &&
-        entry.registration.reason == kRegistrationUpgrade) {
+    if (entry.registration.state == RelayRegistrationRecord::State::Failed && entry.registration.reason == reason) {
       return; // said so already
     }
-    log().warning << "relay " << origin << " needs a newer version of this app (426 client_upgrade_required)";
+    log().warning << "relay " << origin << " " << why;
     RelayRegistrationRecord record = entry.registration; // its registration id stays (a revoke names it)
     record.state = RelayRegistrationRecord::State::Failed;
-    record.reason = kRegistrationUpgrade;
+    record.reason = reason;
     record.at_ms = util::NowUnixMs();
     our_relays_->Record(entry.origin, record);
     NotifyOurRelaysChanged();
@@ -3881,9 +3898,10 @@ Roe<void> ConversationsHub::RotateBriefLlmKey(const std::string& llm_base_url) {
   }
   const std::string url = llm_base_url + "/keys/rotate";
 
-  auto response = HttpClient::Post(
-      url, "{}",
-      {{"Authorization", "Bearer " + identity->brief_llm_api_key.Reveal()}, {"Content-Type", "application/json"}});
+  auto response =
+      HttpClient::Post(url, "{}",
+                       WithRelayClientHeader({{"Authorization", "Bearer " + identity->brief_llm_api_key.Reveal()},
+                                              {"Content-Type", "application/json"}}));
   if (!response) {
     return response.error();
   }

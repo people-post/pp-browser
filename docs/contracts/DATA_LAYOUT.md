@@ -73,7 +73,9 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   contacts.json             # address book (schema_version 3: local + remote + overrides{}); another version, or none, is refused; optional
                             # remote.locator_relay: a QR locator's preferred relay address {origin, peer_id} (multi-relay R4, MR008), its relay list until a card (additive;
                             # one without its PeerId is read as none)
-  client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)
+  client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional): {schema_version: 1, fetched_at_unix, document} with every field the
+                            # reader knows (SERVICE_ENDPOINTS § Client compatibility: ranges, node floor, switches); no schema_version (a file from
+                            # before it): read as it is; a newer one is no cache and never written over
   cache/icons/{key}/        # profile photos (ProfileIconCache): key `self` (ours) or an Account ID with `/ \ :` made `_`; meta.json {url, blob_id, kind,
                             # fetched_at_ms, local_filename} beside icon-<hash>.<ext> (named after its bytes); a cache, fetched again when its url or blob_id
                             # changes or the file is gone; plaintext, unversioned; optional

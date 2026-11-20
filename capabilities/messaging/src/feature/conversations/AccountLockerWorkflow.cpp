@@ -419,13 +419,31 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
     return (*stored)->version; // nothing new: no write
   }
   const std::string locker_id = BytesToHex(keys->locker_id);
-  const uint64_t version = std::max<uint64_t>(static_cast<uint64_t>(util::NowUnixMs()), HighestSeen(locker_id) + 1);
+  uint64_t provider_holds = 0;
+  {
+    std::lock_guard lock(mutex_);
+    if (const auto held = provider_holds_.find(locker_id); held != provider_holds_.end()) {
+      provider_holds = held->second;
+    }
+  }
+  const uint64_t version =
+      std::max({static_cast<uint64_t>(util::NowUnixMs()), HighestSeen(locker_id) + 1, provider_holds + 1});
   auto snapshot = account_locker::Seal(merged, *keys, version);
   if (!snapshot) {
     return snapshot.error();
   }
-  std::optional<LockerPutRefusal> refused;
+  std::optional<LockerPutRefused> refused;
   if (auto put = client->Put(*registered, LockerRecordFromSnapshot(*snapshot), &refused); !put) {
+    if (refused && refused->reason == LockerPutRefusal::NotNewer && refused->stored_version > 0) {
+      // Another device wrote a newer one meanwhile (X12): the next publish reads it, merges and goes above it.
+      {
+        std::lock_guard lock(mutex_);
+        uint64_t& holds = provider_holds_[locker_id];
+        holds = std::max(holds, refused->stored_version);
+      }
+      log().info << "Account locker not newer than the stored version=" << refused->stored_version
+                 << "; the next publish goes above it";
+    }
     return put.error();
   }
   RaiseHighestSeen(locker_id, version);

@@ -4,6 +4,11 @@
 
 #include "common/ValueJson.h"
 
+#include "foundation/error/AppError.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -62,6 +67,146 @@ SemverCore ParseSemverCoreImpl(std::string_view version) {
   return out;
 }
 
+/** The version without a leading `v` and without build metadata (`+…`). */
+std::string_view WithoutBuild(std::string_view version) {
+  if (!version.empty() && (version.front() == 'v' || version.front() == 'V')) {
+    version.remove_prefix(1);
+  }
+  return version.substr(0, version.find('+'));
+}
+
+/** The prerelease part of a version (after the first `-`, before any `+`); empty for a release. */
+std::string_view PrereleaseOf(std::string_view version) {
+  version = WithoutBuild(version);
+  const size_t dash = version.find('-');
+  return dash == std::string_view::npos ? std::string_view{} : version.substr(dash + 1);
+}
+
+bool AllDigits(std::string_view text) {
+  return !text.empty() && std::all_of(text.begin(), text.end(), [](char c) { return c >= '0' && c <= '9'; });
+}
+
+/** Two all-digit identifiers, numerically (no overflow: by length, then by text, leading zeros dropped). */
+int CompareNumeric(std::string_view a, std::string_view b) {
+  const auto strip = [](std::string_view v) {
+    while (v.size() > 1 && v.front() == '0') {
+      v.remove_prefix(1);
+    }
+    return v;
+  };
+  a = strip(a);
+  b = strip(b);
+  if (a.size() != b.size()) {
+    return a.size() < b.size() ? -1 : 1;
+  }
+  return a < b ? -1 : (a == b ? 0 : 1);
+}
+
+/** One prerelease identifier against another (CompareReleaseVersions). */
+int CompareIdentifier(std::string_view a, std::string_view b) {
+  const bool a_num = AllDigits(a);
+  const bool b_num = AllDigits(b);
+  if (a_num && b_num) {
+    return CompareNumeric(a, b);
+  }
+  if (a_num != b_num) {
+    return a_num ? -1 : 1; // numbers below words (semver 2.0)
+  }
+  // Letters then digits ("rc16"): the letters, then the number — how our tags are written (rc2 before rc16).
+  const auto split = [](std::string_view v) {
+    size_t i = v.size();
+    while (i > 0 && v[i - 1] >= '0' && v[i - 1] <= '9') {
+      --i;
+    }
+    return std::pair{v.substr(0, i), v.substr(i)};
+  };
+  const auto [a_word, a_number] = split(a);
+  const auto [b_word, b_number] = split(b);
+  if (!a_number.empty() && !b_number.empty() && a_word == b_word) {
+    return CompareNumeric(a_number, b_number);
+  }
+  return a < b ? -1 : (a == b ? 0 : 1);
+}
+
+/** Dot-separated prerelease identifiers (both non-empty). */
+int ComparePrerelease(std::string_view a, std::string_view b) {
+  while (true) {
+    const size_t a_dot = a.find('.');
+    const size_t b_dot = b.find('.');
+    if (const int c = CompareIdentifier(a.substr(0, a_dot), b.substr(0, b_dot)); c != 0) {
+      return c;
+    }
+    if (a_dot == std::string_view::npos || b_dot == std::string_view::npos) {
+      if (a_dot == b_dot) {
+        return 0;
+      }
+      return a_dot == std::string_view::npos ? -1 : 1; // fewer identifiers first
+    }
+    a.remove_prefix(a_dot + 1);
+    b.remove_prefix(b_dot + 1);
+  }
+}
+
+/** A switch name the relay answers (SPECS § client-compat `switches`). */
+bool IsSwitchName(const std::string& name) {
+  if (name.empty() || name.size() > 64) {
+    return false;
+  }
+  const auto lower_or_digit = [](char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'); };
+  if (!lower_or_digit(name.front())) {
+    return false;
+  }
+  return std::all_of(name.begin(), name.end(),
+                     [&](char c) { return lower_or_digit(c) || c == '_' || c == '.' || c == '-'; });
+}
+
+std::map<std::string, bool> ParseSwitches(const Object* switches) {
+  std::map<std::string, bool> out;
+  if (!switches) {
+    return out;
+  }
+  for (const auto& [name, value] : switches->fields()) {
+    if (out.size() >= kMaxRemoteSwitches) {
+      break;
+    }
+    const bool* on = std::get_if<bool>(&value);
+    if (!on || !IsSwitchName(name)) {
+      continue; // dropped, as the relay drops it
+    }
+    out[name] = *on;
+  }
+  return out;
+}
+
+/** A range bound: a release version (`X.Y.Z`, numbers only) or nothing (`null`, absent, anything else). */
+std::string RangeBound(const Object& range, const char* key) {
+  const auto bound = range.getString(key);
+  if (!bound || bound->empty() || bound->find_first_not_of("0123456789.") != std::string::npos ||
+      !ParseSemverCore(*bound).ok) {
+    return {};
+  }
+  return *bound;
+}
+
+std::optional<ClientCompatRange> ParseRange(const Object* range) {
+  if (!range) {
+    return std::nullopt;
+  }
+  return ClientCompatRange{.min = RangeBound(*range, "min"), .max = RangeBound(*range, "max")};
+}
+
+Object RangeToObject(const ClientCompatRange& range) {
+  Object out;
+  for (const auto& [key, bound] : {std::pair{"min", &range.min}, std::pair{"max", &range.max}}) {
+    if (bound->empty()) {
+      out.set(key, Null{});
+    } else {
+      out.set(key, *bound);
+    }
+  }
+  return out;
+}
+
 /** The platforms `upgrade_urls` may name (Platform::OsName()). */
 constexpr const char* kUpgradePlatforms[] = {"ios", "android", "macos", "windows", "linux"};
 
@@ -112,6 +257,21 @@ Object ClientCompatDocumentToObject(const ClientCompatDocument& doc) {
     support.set("display_name", doc.support->display_name);
     document.set("support", support);
   }
+  if (!doc.relay_version.empty()) {
+    document.set("relay_version", doc.relay_version);
+  }
+  if (doc.app_range) {
+    document.set("app_range", RangeToObject(*doc.app_range));
+  }
+  if (doc.node_range) {
+    document.set("node_range", RangeToObject(*doc.node_range));
+  }
+  document.set("min_node_version", doc.min_node_version);
+  Object switches;
+  for (const auto& [name, on] : doc.switches) {
+    switches.set(name, on);
+  }
+  document.set("switches", switches);
   return document;
 }
 
@@ -147,6 +307,53 @@ int CompareSemverCore(std::string_view a, std::string_view b) {
   return CompareSemverCore(ParseSemverCore(a), ParseSemverCore(b));
 }
 
+int CompareReleaseVersions(std::string_view a, std::string_view b) {
+  const SemverCore core_a = ParseSemverCore(a);
+  const SemverCore core_b = ParseSemverCore(b);
+  if (const int core = CompareSemverCore(core_a, core_b); core != 0 || !core_a.ok || !core_b.ok) {
+    return core;
+  }
+  const std::string_view pre_a = PrereleaseOf(a);
+  const std::string_view pre_b = PrereleaseOf(b);
+  if (pre_a.empty() || pre_b.empty()) {
+    if (pre_a.empty() == pre_b.empty()) {
+      return 0;
+    }
+    return pre_a.empty() ? 1 : -1; // a prerelease is below its release
+  }
+  return ComparePrerelease(pre_a, pre_b);
+}
+
+std::string ClientHeaderVersion(std::string_view version) {
+  const SemverCore core = ParseSemverCore(version);
+  if (!core.ok) {
+    return {};
+  }
+  std::string out = std::to_string(core.major) + "." + std::to_string(core.minor) + "." + std::to_string(core.patch);
+  const std::string_view pre = PrereleaseOf(version);
+  const bool readable = !pre.empty() && pre.size() <= 16 && std::all_of(pre.begin(), pre.end(), [](char c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '.';
+  });
+  if (readable) {
+    out += "-" + std::string(pre);
+  }
+  return out;
+}
+
+std::string RelayClientHeaderValue(std::string_view product, std::string_view version, std::string_view os) {
+  const std::string core = ClientHeaderVersion(version);
+  if (core.empty()) {
+    return {};
+  }
+  const auto lower = [](std::string_view text) {
+    std::string out(text);
+    std::transform(out.begin(), out.end(), out.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return out;
+  };
+  return lower(product) + "/" + core + " " + lower(os);
+}
+
 Roe<ClientCompatDocument> ParseClientCompatDocument(std::string_view json_text) {
   auto root = TryParseObject(std::string(json_text));
   if (!root) {
@@ -161,13 +368,11 @@ Roe<ClientCompatDocument> ParseClientCompatDocument(std::string_view json_text) 
   if (!schema_version_opt) {
     return Error("client-compat missing schema_version");
   }
-  const int schema_version = static_cast<int>(*schema_version_opt);
-  if (schema_version > kClientCompatSchemaVersion) {
-    return Error("Unsupported client-compat schema_version");
-  }
-  if (schema_version < 1) {
+  // A newer schema_version is read for the fields this reader knows (T15); the relay keeps them meaning the same.
+  if (*schema_version_opt < 1 || *schema_version_opt > INT32_MAX) {
     return Error("Invalid client-compat schema_version");
   }
+  const int schema_version = static_cast<int>(*schema_version_opt);
 
   ClientCompatDocument doc;
   doc.schema_version = schema_version;
@@ -217,6 +422,12 @@ Roe<ClientCompatDocument> ParseClientCompatDocument(std::string_view json_text) 
     // Malformed / incomplete enabled block: omit (fail-open for Support only).
   }
   // Non-object support: omit (do not fail the whole document).
+  // Release-1 fields (A1, A2, O2): each read alone, a malformed one left out without failing the document.
+  doc.relay_version = root->getString("relay_version").value_or("");
+  doc.app_range = ParseRange(root->getObject("app_range"));
+  doc.node_range = ParseRange(root->getObject("node_range"));
+  doc.min_node_version = root->getString("min_node_version").value_or("");
+  doc.switches = ParseSwitches(root->getObject("switches"));
   return doc;
 }
 
@@ -232,13 +443,26 @@ std::string ResolvedUpgradeUrl(const ClientCompatDocument& doc, const std::strin
 }
 
 CompatUiAction DecideCompatUiAction(std::string_view local_version, const ClientCompatDocument& doc) {
-  if (!doc.min_client_version.empty() && CompareSemverCore(local_version, doc.min_client_version) < 0) {
+  // A floor that is not a version is none (ParseSemverCore fails: CompareSemverCore would put us above it anyway).
+  if (const SemverCore floor = ParseSemverCore(doc.min_client_version);
+      floor.ok && CompareSemverCore(ParseSemverCore(local_version), floor) < 0) {
     return CompatUiAction::UpdateRequired;
   }
-  if (!doc.latest_client_version.empty() && CompareSemverCore(local_version, doc.latest_client_version) < 0) {
+  if (ParseSemverCore(doc.latest_client_version).ok &&
+      CompareReleaseVersions(local_version, doc.latest_client_version) < 0) {
     return CompatUiAction::SoftUpdateAvailable;
   }
   return CompatUiAction::None;
+}
+
+bool ClientCompatFloorUnreadable(const ClientCompatDocument& doc) {
+  return !doc.min_client_version.empty() && !ParseSemverCore(doc.min_client_version).ok;
+}
+
+bool NodeBelowFloor(std::string_view node_version, const ClientCompatDocument& doc) {
+  const SemverCore floor = ParseSemverCore(doc.min_node_version);
+  const SemverCore own = ParseSemverCore(node_version);
+  return floor.ok && own.ok && CompareSemverCore(own, floor) < 0;
 }
 
 CompatUiAction DecideCompatUiAction(std::string_view local_version, const ClientCompatDocument& doc,
@@ -260,6 +484,11 @@ Roe<ClientCompatCacheEntry> LoadClientCompatCache(const std::string& profile_dat
   const auto root = text ? TryParseObject(*text) : std::nullopt;
   if (!root) {
     return Error("Invalid client_compat cache");
+  }
+  // A file from before A4 names no version (read as it is); a newer app's file is no cache here, and is never written
+  // over (SaveClientCompatCache): local data moves forward only (release-compatibility DESIGN § Rollback).
+  if (root->getIf<int64_t>("schema_version").value_or(0) > kClientCompatCacheFileVersion) {
+    return AppError::NewerFormat("client_compat cache written by a newer app");
   }
   auto fetched_at = root->getIf<int64_t>("fetched_at_unix");
   if (!fetched_at) {
@@ -285,10 +514,18 @@ Roe<void> SaveClientCompatCache(const std::string& profile_data_dir, const Clien
   }
   std::error_code ec;
   std::filesystem::create_directories(profile_data_dir, ec);
+  const auto path = CachePath(profile_data_dir);
+  if (std::ifstream existing(path); existing) {
+    const auto text = ReadBounded(existing, kMaxProfileJsonFileBytes);
+    const auto held = text ? TryParseObject(*text) : std::nullopt;
+    if (held && held->getIf<int64_t>("schema_version").value_or(0) > kClientCompatCacheFileVersion) {
+      return AppError::NewerFormat("client_compat cache written by a newer app: kept as it is");
+    }
+  }
   Object root;
+  root.set("schema_version", static_cast<int64_t>(kClientCompatCacheFileVersion));
   root.set("fetched_at_unix", entry.fetched_at_unix);
   root.set("document", ClientCompatDocumentToObject(entry.document));
-  const auto path = CachePath(profile_data_dir);
   std::ofstream out(path, std::ios::trunc);
   if (!out) {
     return Error("Failed to write client_compat cache");

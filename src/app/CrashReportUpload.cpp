@@ -1,5 +1,7 @@
 #include "app/CrashReportUpload.h"
 
+#include "foundation/tls/RelayClientHeader.h"
+
 #include "lib/net/ClientCompat.h"
 #include "lib/net/HttpClient.h"
 #include "foundation/diagnostics/CrashDump.h"
@@ -64,7 +66,8 @@ void MaybeUploadPendingCrashReport(const std::string& data_dir, const std::strin
   log.info << "Uploading crash envelope fingerprint=" << envelope.fingerprint << " bytes=" << body.size()
            << " url=" << url;
 
-  auto response = HttpClient::Post(url, body, {{"Content-Type", "application/json"}, {"X-PP-Crash-Report", "1"}});
+  auto response = HttpClient::Post(
+      url, body, WithRelayClientHeader({{"Content-Type", "application/json"}, {"X-PP-Crash-Report", "1"}}));
   if (!response) {
     log.warning << "Crash dump upload failed: " << response.error().message;
     return;

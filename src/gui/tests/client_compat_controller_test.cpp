@@ -9,6 +9,7 @@
 #include "foundation/product/AppVersion.h"
 #include "gui/UpdateLink.h"
 #include "lib/net/ClientCompat.h"
+#include "lib/net/RemoteSwitches.h"
 
 #include <gtest/gtest.h>
 
@@ -131,6 +132,45 @@ TEST_F(ClientCompatControllerTest, TheForegroundForcesACheckAtMostOncePerFifteen
   controller_.OnForeground();
   EXPECT_FALSE(controller_.CheckInFlight()) << "fetched a minute ago";
   EXPECT_EQ(relay_->fetches.load(), 1);
+}
+
+// T15: while the app runs, its timer forces a check once the document held is six hours old, not before.
+TEST_F(ClientCompatControllerTest, TheRunningAppChecksAgainEverySixHours) {
+  BindMessaging();
+  ClientCompatDocument cached;
+  cached.schema_version = 1;
+  CacheDocument(cached, kFetchedAt);
+  ASSERT_TRUE(controller_.CheckAsync());
+  Settle();
+  EXPECT_EQ(relay_->fetches.load(), 0);
+  now_ = kFetchedAt + kClientCompatTimerRecheckSeconds - 1;
+  controller_.OnRecheckTimer();
+  EXPECT_FALSE(controller_.CheckInFlight()) << "not six hours old yet";
+  now_ = kFetchedAt + kClientCompatTimerRecheckSeconds;
+  relay_->doc.min_client_version = "999.0.0";
+  controller_.OnRecheckTimer();
+  EXPECT_TRUE(controller_.CheckInFlight());
+  Settle();
+  EXPECT_EQ(relay_->fetches.load(), 1) << "a floor raised while the app runs is seen";
+  EXPECT_EQ(controller_.LastAction(), CompatUiAction::UpdateRequired);
+}
+
+// O2: the run's switches are the first document's; a later one is cached for the next start, not applied now.
+TEST_F(ClientCompatControllerTest, TheRunTakesItsSwitchesFromItsFirstDocument) {
+  RemoteSwitches::ResetForTest();
+  BindMessaging();
+  relay_->doc.switches = {{"test.flag", true}};
+  ASSERT_TRUE(controller_.CheckAsync());
+  Settle();
+  EXPECT_TRUE(RemoteSwitches::IsOn("test.flag", false));
+  relay_->doc.switches = {{"test.flag", false}};
+  ASSERT_TRUE(controller_.CheckAsync(CompatCheck::Forced));
+  Settle();
+  EXPECT_TRUE(RemoteSwitches::IsOn("test.flag", false)) << "the next start takes the new value";
+  auto cached = LoadClientCompatCache(dir_.string());
+  ASSERT_TRUE(cached);
+  EXPECT_EQ(cached->document.switches.at("test.flag"), false) << "kept for the next start";
+  RemoteSwitches::ResetForTest();
 }
 
 // The org's relay refusing us (426) is the authority: the update screen even though the document raises no floor, with

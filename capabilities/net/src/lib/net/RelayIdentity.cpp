@@ -1,4 +1,5 @@
 #include "lib/net/RelayIdentity.h"
+#include "foundation/tls/RelayClientHeader.h"
 
 #include "common/ValueJson.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -26,7 +27,8 @@ Roe<RelayIdentity> ParseRelayIdentity(const std::string& body) {
   if (!root) {
     return Unavailable(kRelayIdentityInvalid, "not a JSON object");
   }
-  if (root->getIf<int64_t>("schema_version").value_or(0) != kSchemaVersion) {
+  // A newer schema_version is read for the fields this reader knows (T15): the relay only adds fields to it.
+  if (root->getIf<int64_t>("schema_version").value_or(0) < kSchemaVersion) {
     return Unavailable(kRelayIdentityInvalid, "unsupported schema_version");
   }
   if (root->getString("signature_alg").value_or("") != kSignatureAlg) {
@@ -49,7 +51,7 @@ Roe<RelayIdentity> FetchRelayIdentity(const std::string& base_url, const bool pu
   if (base_url.empty()) {
     return Unavailable(kRelayIdentityUnavailable, "no relay");
   }
-  const auto response = HttpClient::Get(base_url + "/v1/relay-identity", {}, 64 * 1024,
+  const auto response = HttpClient::Get(base_url + "/v1/relay-identity", WithRelayClientHeader(), 64 * 1024,
                                         HttpTimeout{.total_s = 10, .connect_s = 5}, public_only);
   if (!response) {
     return Unavailable(kRelayIdentityUnavailable, response.error().message);

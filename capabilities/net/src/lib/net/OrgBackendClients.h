@@ -57,7 +57,11 @@ struct RegistrationResult {
    * across its renewals; a revoke names it. Empty when the relay gave none.
    */
   std::string registration_id;
-  /** What the relay did with the account card sent (`stored`, `same`, `stale`); empty when none was sent. */
+  /**
+   * What the relay did with the account card sent (`stored`, `same`, `stale`); empty when none was sent. `stale`
+   * (X12): the relay holds a newer card (another device of the account wrote it); the registration still holds. Read
+   * through AccountCardStale.
+   */
   std::string account_card_status;
   /** Set by the registration flow, not the wire: the `issued_at` of the card the relay answered for (0: none). */
   int64_t account_card_issued_at = 0;
@@ -66,6 +70,11 @@ struct RegistrationResult {
   /** Set by the registration flow, not the wire: the normalized base URL of the registry that finished it. */
   std::string registered_backend_url;
 };
+
+/** `account_card_status` `stale`: the relay keeps a newer card than the one sent (X12). */
+inline bool AccountCardStale(const RegistrationResult& result) {
+  return result.account_card_status == "stale";
+}
 
 struct RegistrationStartResult {
   std::string challenge;

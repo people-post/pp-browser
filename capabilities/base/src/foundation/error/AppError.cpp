@@ -89,6 +89,10 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
           return Localized("errors.auth.relay_identity");
         case Err::Auth::ClientUpgradeRequired:
           return Localized("errors.auth.upgrade_required");
+        case Err::Auth::RelayUpgradeRequired:
+          return Localized("errors.auth.relay_upgrade_required");
+        case Err::Auth::AccountCardRefused:
+          return Localized("errors.auth.card_refused");
         case Err::Auth::Generic:
         default:
           return Localized("errors.auth.failed");

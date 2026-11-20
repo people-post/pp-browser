@@ -193,6 +193,31 @@ TEST_F(HttpRelayClientTest, AnUpgradeRequiredIsReportedToTheAudience) {
   EXPECT_FALSE(IsClientUpgradeRequired(uncoded.error())) << "only the relay's code says so";
 }
 
+// U10/U11: a relay older than this app (a newer sign version than it reads) says so with 400
+// `relay_upgrade_required`, or, before that code, `unsupported_sign_version`: typed as "the relay needs an update", not
+// "update the app", heard by the audience under the one code, and final for a send.
+TEST_F(HttpRelayClientTest, ARelayOlderThanThisAppIsTypedApartFromAnAppTooOld) {
+  for (const char* code : {"relay_upgrade_required", "unsupported_sign_version"}) {
+    audience_->refused.clear();
+    const std::string body = std::string(R"({"error":"x","code":")") + code + R"("})";
+    server_.SetHandler(
+        [body](const ScriptedHttpServer::Request&) { return Reply{.status = 400, .headers = {}, .body = body}; });
+    auto polled = client_.PollInbox(kMe, "");
+    ASSERT_FALSE(polled);
+    EXPECT_TRUE(IsRelayUpgradeRequired(polled.error())) << code;
+    EXPECT_FALSE(IsClientUpgradeRequired(polled.error())) << code;
+    EXPECT_TRUE(IsPermanentRelayRefusal(polled.error())) << code;
+    EXPECT_EQ(audience_->refused, std::vector<std::string>{"relay_upgrade_required"}) << code;
+  }
+  // A send into such a relay is the relay's refusal: not sent again as it is.
+  Script({Reply{.status = 400, .headers = {}, .body = R"({"error":"x","code":"relay_upgrade_required"})"}});
+  auto sent = client_.Send(EnvelopeTo(kBob));
+  ASSERT_FALSE(sent);
+  EXPECT_TRUE(IsRelayUpgradeRequired(sent.error()));
+  EXPECT_EQ(Bodies().size(), 1u) << "not sent again as it is";
+  EXPECT_FALSE(OutboxRetryAgain(1, sent.error())) << "final, as the 400 was before it was typed";
+}
+
 // MR007-HEAL: a poll answered not_registered reports the lost registration.
 TEST_F(HttpRelayClientTest, APollAnsweredNotRegisteredIsReportedToTheAudience) {
   server_.SetHandler([](const ScriptedHttpServer::Request&) {

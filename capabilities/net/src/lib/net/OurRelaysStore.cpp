@@ -246,6 +246,12 @@ std::string RelayRegistrationFailureCode(const Error& error) {
     if (code == Err::Auth::ClientUpgradeRequired) {
       return kRegistrationUpgrade;
     }
+    if (code == Err::Auth::RelayUpgradeRequired) {
+      return kRegistrationRelayUpgrade;
+    }
+    if (code == Err::Auth::AccountCardRefused) {
+      return kRegistrationCard;
+    }
     if (code == Err::Auth::RelayIdentityMismatch || code == Err::Auth::RelayIdentityTaken ||
         code == Err::Auth::WrongAudience) {
       return kRegistrationIdentity;

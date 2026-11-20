@@ -93,6 +93,11 @@ public:
   void SetOnNotRegistered(std::function<void(const std::string& origin)> on_not_registered);
   /** A relay answered a command `426 client_upgrade_required`: this app is too old for it (any thread; each time). */
   void SetOnUpgradeRequired(std::function<void(const std::string& origin)> on_upgrade_required);
+  /**
+   * A relay answered a command `400 relay_upgrade_required` (or an older relay's `unsupported_sign_version`): that
+   * relay is older than this app (U11; any thread; each time).
+   */
+  void SetOnRelayOutdated(std::function<void(const std::string& origin)> on_relay_outdated);
 
   /**
    * The audience every client of the relay of ours (or the org's origin) at `origin` signs for (shared; the same object
@@ -178,6 +183,7 @@ private:
   std::function<void(const std::string&)> on_changed_;
   std::function<void(const std::string&)> on_not_registered_;
   std::function<void(const std::string&)> on_upgrade_required_;
+  std::function<void(const std::string&)> on_relay_outdated_;
   /** Fetch states and audiences; never held while a hook or a fetch runs. */
   mutable std::mutex mutex_;
   std::map<std::string, FetchState> fetches_;

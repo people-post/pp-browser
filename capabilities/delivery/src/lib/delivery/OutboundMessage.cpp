@@ -386,9 +386,14 @@ bool IsNetworkCode(const Error& failure, const Err::Network code) {
   return AppError::CategoryOf(failure) == ErrorCategory::Network && static_cast<Err::Network>(failure.code) == code;
 }
 
-/** The relay refused the request itself (#391): the same bytes would be refused again. */
+/**
+ * The relay refused the request itself (#391): the same bytes would be refused again. A relay older than this app
+ * (`relay_upgrade_required`, typed since U11; a 400 counted here before) refuses them until it is updated.
+ */
 bool RelayRefused(const Error& failure) {
-  return IsNetworkCode(failure, Err::Network::HttpRejected) ||
+  return (AppError::CategoryOf(failure) == ErrorCategory::Auth &&
+          static_cast<Err::Auth>(failure.code) == Err::Auth::RelayUpgradeRequired) ||
+         IsNetworkCode(failure, Err::Network::HttpRejected) ||
          IsNetworkCode(failure, Err::Network::RecipientNotRegistered) ||
          IsNetworkCode(failure, Err::Network::PaymentRequired);
 }

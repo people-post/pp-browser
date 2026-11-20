@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <functional>
+#include <map>
 #include <string>
 
 namespace pbr {
@@ -15,6 +16,8 @@ struct SseRequest {
   std::string url;
   std::string bearer_token; // empty = no Authorization header
   std::string json_body;
+  /** More request headers (the relay's version header, WithRelayClientHeader); never Content-Type or Accept. */
+  std::map<std::string, std::string> headers;
   long connect_timeout_s = 10;
   // Abort when neither headers nor body bytes arrive for this long. The clock starts with the
   // request, so it also bounds connect + time to the response headers.

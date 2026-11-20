@@ -29,10 +29,17 @@ LockerRecord LockerRecordFromJson(const Object& json);
 
 /** Why a locker write did not store. */
 enum class LockerPutRefusal {
-  /** The provider holds this version or a newer one (`stored_version` when it said which). */
+  /** The provider holds this version or a newer one (LockerPutRefused::stored_version when it said which). */
   NotNewer,
   /** This relay user already holds as many lockers as the provider allows. */
   QuotaReached,
+};
+
+/** A locker write the provider refused, and what it said. */
+struct LockerPutRefused {
+  LockerPutRefusal reason = LockerPutRefusal::NotNewer;
+  /** NotNewer: the version the provider holds (the relay's 409 `version`, X12); 0 when it did not say. */
+  uint64_t stored_version = 0;
 };
 
 /** One locker provider (the relay; later other relays). */
@@ -41,10 +48,10 @@ public:
   virtual ~ILockerClient() = default;
   /**
    * Store `record` as `account_id` (the relay checks the request is that user's, and the snapshot is the locker
-   * owner's). An error carries a LockerPutRefusal in `refused` when the provider said why.
+   * owner's). An error carries a LockerPutRefused in `refused` when the provider said why.
    */
   virtual Roe<void> Put(const std::string& account_id, const LockerRecord& record,
-                        std::optional<LockerPutRefusal>* refused = nullptr) = 0;
+                        std::optional<LockerPutRefused>* refused = nullptr) = 0;
   /** The stored snapshot of `locker_id` (hex), by id alone; nullopt when the provider holds none. */
   virtual Roe<std::optional<LockerRecord>> Get(const std::string& locker_id) = 0;
 };

@@ -1,4 +1,5 @@
 #include "lib/delivery/HttpRelayClient.h"
+#include "foundation/tls/RelayClientHeader.h"
 
 #include "common/Diag.h"
 #include "common/Utilities.h"
@@ -127,9 +128,9 @@ Roe<void> HttpRelayClient::PostSend(RelayWireSendRecord& record, const RelayEnve
   record.signature = signed_send->signature;
 
   const std::string url = base_url_ + "/v1/messages";
-  const auto response =
-      HttpClient::Post(url, DumpJson(RelayWireSendRecordToJson(record)), {{"Content-Type", "application/json"}},
-                       kMaxHttpClientBodyBytes, {}, public_only_);
+  const auto response = HttpClient::Post(url, DumpJson(RelayWireSendRecordToJson(record)),
+                                         WithRelayClientHeader({{"Content-Type", "application/json"}}),
+                                         kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -207,8 +208,9 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_acc
   // B30: poll-specific fail-fast (serialized polls on cellular; global 30s starved Accept/MediaKey).
   // Other relay HTTP keeps default HttpTimeout{30}. Not an env knob.
   constexpr HttpTimeout kRelayPollTimeout{.total_s = 10, .connect_s = 5};
-  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}},
-                                         kMaxHttpClientBodyBytes, kRelayPollTimeout, public_only_);
+  const auto response =
+      HttpClient::Post(url, DumpJson(body), WithRelayClientHeader({{"Content-Type", "application/json"}}),
+                       kMaxHttpClientBodyBytes, kRelayPollTimeout, public_only_);
   if (!response) {
     return response.error();
   }
@@ -289,8 +291,9 @@ Roe<RelayDeleteResult> HttpRelayClient::AckInbox(const std::string& requester_ac
   body.set("cursor", cursor);
   PutSignedRelayCommand(body, *signed_ack);
   const std::string url = base_url_ + "/v1/inbox/ack";
-  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}},
-                                         kMaxHttpClientBodyBytes, {}, public_only_);
+  const auto response =
+      HttpClient::Post(url, DumpJson(body), WithRelayClientHeader({{"Content-Type", "application/json"}}),
+                       kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -330,8 +333,9 @@ Roe<RelayDeleteResult> HttpRelayClient::ClearInbox(const std::string& requester_
   body.set("before_created_at", before_created_at);
   PutSignedRelayCommand(body, *signed_clear);
   const std::string url = base_url_ + "/v1/inbox/clear";
-  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}},
-                                         kMaxHttpClientBodyBytes, {}, public_only_);
+  const auto response =
+      HttpClient::Post(url, DumpJson(body), WithRelayClientHeader({{"Content-Type", "application/json"}}),
+                       kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -366,8 +370,9 @@ Roe<ChatHistoryResponse> HttpRelayClient::FetchChatHistory(const ChatHistoryRequ
   PutSignedRelayCommand(body, *signed_query);
 
   const std::string url = base_url_ + "/v1/streams/messages/query";
-  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}},
-                                         kMaxHttpClientBodyBytes, {}, public_only_);
+  const auto response =
+      HttpClient::Post(url, DumpJson(body), WithRelayClientHeader({{"Content-Type", "application/json"}}),
+                       kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }

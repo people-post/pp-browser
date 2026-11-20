@@ -25,10 +25,56 @@ SemverCore ParseSemverCore(std::string_view version);
 int CompareSemverCore(const SemverCore& a, const SemverCore& b);
 int CompareSemverCore(std::string_view a, std::string_view b);
 
+/**
+ * Release precedence (release-compatibility T15; SERVICE_ENDPOINTS § Client compatibility): the core as
+ * CompareSemverCore, then a prerelease is below its release (`1.0.0-rc.2` < `1.0.0`) and prereleases compare by their
+ * dot-separated identifiers as semver 2.0 says (numbers numerically, below words; fewer identifiers first), with one
+ * addition for how our tags are written: an identifier of letters then digits (`rc16`) compares by its letters, then
+ * by its number (`rc2` < `rc16`). Build metadata (`+…`) is ignored. Invalid versions compare as CompareSemverCore.
+ * Used for "a newer version exists" only; a floor (min_client_version, min_node_version) compares the core, as the
+ * relay does, so a release candidate meets the floor of the version it is a candidate for.
+ */
+int CompareReleaseVersions(std::string_view a, std::string_view b);
+
+/**
+ * The version the relay's `X-PP-Client` header carries (SPECS: `X.Y.Z` with an optional `-prerelease` of up to 16
+ * characters of `[0-9A-Za-z.]`): `version`'s core and prerelease, its build metadata and leading `v` dropped; a
+ * prerelease the relay would not read is dropped too. Empty when `version` has no readable core.
+ */
+std::string ClientHeaderVersion(std::string_view version);
+
+/**
+ * `X-PP-Client`'s value (O1; SPECS § X-PP-Client): `<product>/<ClientHeaderVersion(version)> <os>`, product and os
+ * lowercased (`pp-app/1.0.0-rc16 linux`, `pp-node/1.0.0 linux`). Empty when the version has no readable core.
+ */
+std::string RelayClientHeaderValue(std::string_view product, std::string_view version, std::string_view os);
+
+/**
+ * The highest `schema_version` this reader was written for. A document naming a higher one is still read for the
+ * fields this reader knows (T15: the relay adds fields without breaking release 1); unknown fields are ignored.
+ */
 inline constexpr int kClientCompatSchemaVersion = 1;
 inline constexpr int64_t kClientCompatCacheTtlSeconds = 6 * 60 * 60;
 /** The app in front again asks anew once the document it holds was fetched this long ago (a forced check). */
 inline constexpr int64_t kClientCompatRecheckSeconds = 15 * 60;
+/** While the app runs, a forced check once the document held is this old (T15: a running app sees a new floor). */
+inline constexpr int64_t kClientCompatTimerRecheckSeconds = 6 * 60 * 60;
+/**
+ * The `client_compat.json` file's own format version (A4; DATA_LAYOUT.md). A newer app's file reads as no cache and is
+ * never written over; a file without one (before A4) is read as it is.
+ */
+inline constexpr int kClientCompatCacheFileVersion = 1;
+/** At most this many remote switches are kept (the relay answers at most 64). */
+inline constexpr size_t kMaxRemoteSwitches = 64;
+
+/**
+ * A range of versions a relay supports (`app_range`, `node_range`; RC018 part 1 item 3): each bound a release version
+ * `X.Y.Z`, empty for no bound (the relay's `null`).
+ */
+struct ClientCompatRange {
+  std::string min;
+  std::string max;
+};
 
 /** Nested app Support discovery on client-compat (product help desk; omit / disabled = no entry). */
 struct ClientCompatSupport {
@@ -55,6 +101,20 @@ struct ClientCompatDocument {
    */
   std::string crash_reports_url;
   std::optional<ClientCompatSupport> support;
+  /** The relay's own build version (`relay_version`: `X.Y.Z`, `dev.<date>.<n>` or `0.0.0-local`); empty: not sent. */
+  std::string relay_version;
+  /** The app versions the relay supports (`app_range`); none: not sent. */
+  std::optional<ClientCompatRange> app_range;
+  /** The pp-node versions the relay supports (`node_range`); none: not sent. */
+  std::optional<ClientCompatRange> node_range;
+  /** The oldest pp-node the relay serves (`min_node_version`); empty: no floor. Read by pp-node (A2). */
+  std::string min_node_version;
+  /**
+   * Remote switches (`switches`, O2): name to on / off, as the relay sent them (names of 1 to 64 of `a-z0-9_.-`,
+   * starting with a letter or digit; a value that is not a boolean, or a name not of that form, is dropped; at most
+   * kMaxRemoteSwitches). Read through RemoteSwitches, never directly by a feature.
+   */
+  std::map<std::string, bool> switches;
 };
 
 enum class CompatUiAction {
@@ -72,7 +132,21 @@ Roe<ClientCompatDocument> ParseClientCompatDocument(std::string_view json_text);
 std::string ResolvedUpgradeUrl(const ClientCompatDocument& doc, const std::string& fallback,
                                const std::string& platform);
 
+/**
+ * UpdateRequired when `local_version`'s core is below `min_client_version`'s (CompareSemverCore: a prerelease meets
+ * the floor of its release, as the relay compares); SoftUpdateAvailable when it is below `latest_client_version` by
+ * CompareReleaseVersions (a release candidate hears that its release is out). A floor that does not parse as a version
+ * is no floor (fail open: a typo in the relay's config must not lock every app out; ClientCompatFloorUnreadable says
+ * so, for the log).
+ */
 CompatUiAction DecideCompatUiAction(std::string_view local_version, const ClientCompatDocument& doc);
+/** `min_client_version` is set but is not a version: DecideCompatUiAction ignores it (log it). */
+bool ClientCompatFloorUnreadable(const ClientCompatDocument& doc);
+/**
+ * pp-node (A2): `node_version`'s core is below the document's `min_node_version` (CompareSemverCore, as the relay
+ * compares). False when there is no floor, or when either does not parse (not judged, as the relay does not).
+ */
+bool NodeBelowFloor(std::string_view node_version, const ClientCompatDocument& doc);
 /**
  * As above, but UpdateRequired whatever the document says when `relay_requires_upgrade`: the org's relay answered
  * `426 client_upgrade_required` (the relay refusing us is the authority; its document may not raise the floor yet).

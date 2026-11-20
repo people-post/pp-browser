@@ -816,6 +816,10 @@ private:
    * another relay of ours keeps it on its row (Me → My relays: needs a newer version of the app), blocking nothing.
    */
   void OnRelayRequiresUpgrade(const std::string& origin);
+  /** A relay answered `400 relay_upgrade_required` (any thread): it is older than this app; its row says so (U11). */
+  void OnRelayOutdated(const std::string& origin);
+  /** That relay of ours shows a failed registration with `reason` (once: a row saying so already is left). */
+  void MarkRelayRowFailed(const std::string& origin, const std::string& reason, const char* why);
   /** `origin` is one of the org's (the relay, the locker home). Any thread. */
   bool IsOrgOrigin(const std::string& origin);
   std::mutex org_upgrade_mu_;
