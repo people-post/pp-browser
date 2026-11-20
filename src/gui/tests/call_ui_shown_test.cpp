@@ -7,7 +7,7 @@
 #include "foundation/platform/CallSystemUi.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "gui/CallController.h"
-#include "feature/presenters/CallPresenter.h"
+#include "gui/tests/CallControllerTestAccess.h"
 
 #include <gtest/gtest.h>
 
@@ -15,23 +15,6 @@
 #include <string>
 
 namespace pbr {
-
-struct CallControllerTestAccess {
-  static CallScreen& Screen(CallController& c) { return c.presenter_.ScreenForTest(); }
-  static std::optional<CallFailedPage>& Failed(CallController& c) { return c.presenter_.FailedPageForTest(); }
-  static void Render(CallController& c) { c.Render(); }
-  static void RenderAwaitingRing(CallController& c) { c.RenderAwaitingRing(); }
-  /** What RenderInCall ends with, without a live media backend behind it. */
-  static void InCallSync(CallController& c) {
-    c.in_call_.active = true;
-    c.SyncShellState();
-  }
-  static void EndCall(CallController& c) {
-    c.in_call_ = {};
-    c.ring_ = {};
-    c.SyncShellState();
-  }
-};
 
 namespace {
 
@@ -103,8 +86,9 @@ TEST_F(CallUiShownTest, TheConnectingPlaceholderNotifies) {
   EXPECT_EQ(shown, 1);
 }
 
-// 3: a tapped call alert lands on the same Ringing screen (the tap is only noted, then the Ringing branch draws).
-TEST_F(CallUiShownTest, ATappedCallAlertGoesThroughTheRingBranchAndNotifiesOnce) {
+// 3: a tapped call alert lands on the same Ringing screen (the tap is only noted, then the Ringing branch draws). The
+// tap itself (PendingNotificationTap) is not driven here: this checks the Ringing branch with a thread to open.
+TEST_F(CallUiShownTest, ARingWithAThreadToOpenGoesThroughTheRingBranchAndNotifiesOnce) {
   Make(false);
   controller->BindOpenThread([](const std::string&) {});
   CallScreen& screen = CallControllerTestAccess::Screen(*controller);
@@ -159,16 +143,38 @@ TEST_F(CallUiShownTest, TheKeptFailedPageNotifies) {
   EXPECT_EQ(shown, 1);
 }
 
-// Edges: a second call ringing over a call does not notify again; once everything ended the next call does.
-TEST_F(CallUiShownTest, ASecondCallOverACallIsNotANewAppearanceButTheNextCallAfterTheEndIs) {
+// Edges: a second call ringing over a call is a new appearance (the ring page comes up over the call); so is a ring
+// replacing a kept failed page; once everything ended the next call notifies again.
+TEST_F(CallUiShownTest, ASecondCallOverACallNotifiesAndSoDoesTheNextCallAfterTheEnd) {
   Make(false);
   CallControllerTestAccess::InCallSync(*controller);
   ASSERT_EQ(shown, 1);
   Ring("c2");
-  EXPECT_EQ(shown, 1);
+  EXPECT_EQ(shown, 2);
+  Ring("c2");
+  EXPECT_EQ(shown, 2) << "the same ring drawn again";
   CallControllerTestAccess::EndCall(*controller);
   Ring("c3");
+  EXPECT_EQ(shown, 3);
+}
+
+TEST_F(CallUiShownTest, ARingReplacingAKeptFailedPageNotifies) {
+  Make(false);
+  CallControllerTestAccess::Screen(*controller) = {};
+  CallControllerTestAccess::Failed(*controller) = CallFailedPage{};
+  CallControllerTestAccess::Render(*controller);
+  ASSERT_EQ(shown, 1);
+  Ring("c1");
   EXPECT_EQ(shown, 2);
+}
+
+TEST_F(CallUiShownTest, AnsweringARingNotifiesAgainAndThatIsHarmless) {
+  Make(false);
+  Ring("c1");
+  ASSERT_EQ(shown, 1);
+  Render(CallScreen::Kind::Answering);
+  EXPECT_EQ(shown, 2)
+      << "the call page turns on as the ring page goes: a second notification, which closes nothing twice";
 }
 
 // Hanging up (nothing on screen) notifies nothing.

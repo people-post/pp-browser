@@ -1116,14 +1116,14 @@ void CallController::SyncShellState() {
   }
   // Every call screen of the app passes here: tell once when one comes up, whether or not the chrome gate lets a
   // snapshot through below.
-  const bool call_ui = ring_.active || in_call_.active;
-  if (call_ui && !call_ui_visible_) {
-    call_ui_visible_ = true;
-    if (call_ui_shown_) {
-      call_ui_shown_();
-    }
-  } else if (!call_ui) {
-    call_ui_visible_ = false;
+  // Two edges, so a ring over a call, or a ring replacing a kept failed page, is an appearance too (the listener's
+  // close is idempotent: an extra notification, e.g. on answer, changes nothing).
+  const bool ring_turned_on = ring_.active && !ring_ui_visible_;
+  const bool call_turned_on = in_call_.active && !in_call_ui_visible_;
+  ring_ui_visible_ = ring_.active;
+  in_call_ui_visible_ = in_call_.active;
+  if ((ring_turned_on || call_turned_on) && call_ui_shown_) {
+    call_ui_shown_();
   }
   if (!shell_call_chrome_.apply_snapshot) {
     return;

@@ -8,7 +8,9 @@
 #include "foundation/data/UserPreferences.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppLifecycle.h"
+#include "gui/CallController.h"
 #include "gui/SettingsController.h"
+#include "gui/tests/CallControllerTestAccess.h"
 #include "gui/UserFeedback.h"
 #include "gui/shell/DataModelHost.h"
 #include "lib/ui/UiEditSession.h"
@@ -23,6 +25,8 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <fstream>
+#include <sstream>
 #include <filesystem>
 #include <functional>
 #include <string>
@@ -419,6 +423,75 @@ TEST_F(RecoveryPhraseExitsTest, OnTheDesktopTheInlinePhraseGoesWhenACallScreenAp
   EXPECT_FALSE(Actions().RecoveryPhraseShown());
   EXPECT_TRUE(Actions().RecoveryWordsForTest().empty());
   EXPECT_EQ(Actions().RecoverySecretCountForTest(), 0u);
+}
+
+// The real CallController wired to Settings as Application does: every call screen, including a second ring over a
+// (minimised) call and a ring replacing a kept failed page, closes the phrase page that was opened meanwhile.
+TEST_F(RecoveryPhraseExitsTest, EveryCallScreenIncludingASecondRingOverACallClosesTheOpenPhrase) {
+  CallController call;
+  call.BindCallUiShown([this]() { settings.OnCallUiShown(); });
+  const auto ring = [&call](const std::string& id) {
+    CallScreen& screen = CallControllerTestAccess::Screen(call);
+    screen = {};
+    screen.kind = CallScreen::Kind::Ringing;
+    screen.ring_call_id = id;
+    screen.caller_identity = "alice";
+    CallControllerTestAccess::Render(call);
+  };
+  const auto answer = [&call]() {
+    CallScreen& screen = CallControllerTestAccess::Screen(call);
+    screen = {};
+    screen.kind = CallScreen::Kind::Answering;
+    screen.ring_call_id = "c1";
+    CallControllerTestAccess::Render(call);
+  };
+  for (const bool reveal : {false, true}) {
+    SCOPED_TRACE(reveal ? "revealed" : "covered");
+    // A call is up and minimised; the phrase page is opened over it; then a second ring comes.
+    CallControllerTestAccess::EndCall(call);
+    CallControllerTestAccess::InCallSync(call);
+    if (!settings.ShowsSecuritySection()) {
+      Click("sel_sec");
+    }
+    reveal ? OpenAndReveal() : Open();
+    ring("c2");
+    ExpectGone();
+    back_stack.clear();
+
+    // A ring replacing a kept failed page.
+    CallControllerTestAccess::EndCall(call);
+    CallControllerTestAccess::Screen(call) = {};
+    CallControllerTestAccess::Failed(call) = CallFailedPage{};
+    CallControllerTestAccess::Render(call);
+    if (!settings.ShowsSecuritySection()) {
+      Click("sel_sec");
+    }
+    reveal ? OpenAndReveal() : Open();
+    ring("c1");
+    ExpectGone();
+    back_stack.clear();
+
+    // Answering the ring: another notification with the page already closed changes nothing, no error.
+    answer();
+    ExpectGone();
+    CallControllerTestAccess::Failed(call).reset();
+    CallControllerTestAccess::EndCall(call);
+  }
+}
+
+// The harness cannot see the PIN gate's captured secret, so the wipe of a voided reveal is pinned in the source: the
+// branch that returns on a count mismatch resets (and so wipes) the decoded phrase first.
+TEST_F(RecoveryPhraseExitsTest, AVoidedRevealWipesTheDecodedPhraseBeforeReturning) {
+  std::ifstream in(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/SettingsSecurityActions.cpp");
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  const std::string source = buffer.str();
+  const size_t voided = source.find("if (request != recovery_shown_count_) {");
+  ASSERT_NE(voided, std::string::npos);
+  const size_t ret = source.find("return;", voided);
+  const size_t reset = source.find("revealed->reset();", voided);
+  ASSERT_NE(reset, std::string::npos);
+  EXPECT_LT(reset, ret) << "reset before the early return";
 }
 
 } // namespace

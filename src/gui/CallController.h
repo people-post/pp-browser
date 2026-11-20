@@ -395,8 +395,10 @@ private:
   std::string ringer_logged_;
   std::function<bool()> pin_locked_;
   std::function<void()> call_ui_shown_;
-  /** A call screen of the app is up (ring or call): the edge "became visible" is notified once per appearance. */
-  bool call_ui_visible_ = false;
+  /** The ring page / the call page is up: each one's turning on is notified (CallUiShown). Expanding a minimised call
+   * is not an appearance: the page is already up, and nothing is notified. */
+  bool ring_ui_visible_ = false;
+  bool in_call_ui_visible_ = false;
   /** The ring call id the phone's own call screen is ringing, already notified ("" none). */
   std::string system_ring_notified_id_;
   /** V060: the call on hold while the OS has its audio, and the camera's rest (hold, background). */
