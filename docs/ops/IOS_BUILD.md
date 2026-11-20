@@ -262,18 +262,20 @@ PP_BROWSER_BUILD_NUMBER=1   # bump every upload
 
 ---
 
-## GitHub Actions / TestFlight (manual)
+## GitHub Actions / TestFlight
 
-[`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) uploads a Distribution IPA to App Store Connect on **workflow_dispatch** only (Actions → **ios-testflight** → Run workflow). It does **not** run on push/PR — verify CI stays in [`build.yml`](../../.github/workflows/build.yml) (unsigned iOS compile check).
+[`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) uploads a Distribution IPA to App Store Connect. It does **not** run on push/PR — verify CI stays in [`build.yml`](../../.github/workflows/build.yml) (unsigned iOS compile check). Two ways in ([RELEASE.md](RELEASE.md#dev-and-internal-builds)):
 
 ```text
-Actions → ios-testflight → Run workflow
-  → pick branch/tag
+Actions → ios-testflight → Run workflow          (a dev build, any branch or tag)
   → optional version / build_number overrides
-  → ios_build.sh ipa → upload-ipa
+  → ios_build.sh ipa → upload-ipa → tag internal/<build number>
+
+push vX.Y.Z-rc.<n> on release/app-X.Y           (release.yml calls this workflow)
+  → version X.Y.Z exactly → ios_build.sh ipa → upload-ipa → tag rc-build/<build number>
 ```
 
-Defaults: marketing version from `PP_BROWSER_VERSION` in `CMakeLists.txt`; build number `github.run_number + 100` (avoids colliding with early local uploads). Each App Store Connect upload still needs a **new** build number.
+Defaults: a dev build's marketing version is `PP_BROWSER_VERSION` in `CMakeLists.txt`; a candidate's is its tag's X.Y.Z. The build number is one counter for both: the next after the highest `internal/<n>` or `rc-build/<n>` tag (and after 143, the last upload before builds were tagged); a `build_number` override that is already a tag is refused. The tag is made only after the upload succeeded, so `TestFlight X.Y.Z (<n>)` maps to one commit.
 
 ### Repository secrets
 
