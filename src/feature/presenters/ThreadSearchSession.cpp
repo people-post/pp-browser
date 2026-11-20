@@ -4,6 +4,22 @@
 
 namespace pbr {
 
+namespace {
+
+/**
+ * The message to scroll to, or none for "". The caller assigns the whole optional at once: a reset() followed by
+ * an assign or emplace into the same optional makes GCC 14 at -O3 warn that the string it just destroyed "may be
+ * used uninitialized" (-Wmaybe-uninitialized, an error under -Werror) on a path the engaged flag rules out.
+ */
+std::optional<std::string> JumpTarget(const std::string& message_id) {
+  if (message_id.empty()) {
+    return std::nullopt;
+  }
+  return message_id;
+}
+
+} // namespace
+
 uint64_t ThreadSearchSession::Open() {
   Close();
   view_.open = true;
@@ -55,10 +71,7 @@ void ThreadSearchSession::SetQuery(std::string query) {
   view_.query = std::move(query);
   Recompute(/*keep_cursor=*/false);
   // A new query always shows its newest hit, even when that is the message already in view.
-  view_.jump_to.reset();
-  if (!hits_.empty()) {
-    view_.jump_to = hits_[view_.current].message_id;
-  }
+  view_.jump_to = JumpTarget(CurrentMessageId());
 }
 
 void ThreadSearchSession::Older() {
@@ -96,10 +109,7 @@ bool ThreadSearchSession::DropHit(const std::string& message_id) {
     if (view_.current >= hits_.size()) {
       view_.current = hits_.empty() ? 0 : hits_.size() - 1;
     }
-    view_.jump_to.reset();
-    if (!hits_.empty()) {
-      view_.jump_to = hits_[view_.current].message_id;
-    }
+    view_.jump_to = JumpTarget(CurrentMessageId());
   }
   RefreshFlags();
   return true;
@@ -142,10 +152,7 @@ void ThreadSearchSession::Recompute(const bool keep_cursor) {
   hits_ = std::move(found);
   const std::string after = CurrentMessageId();
   if (after != before) {
-    view_.jump_to.reset();
-    if (!after.empty()) {
-      view_.jump_to = after;
-    }
+    view_.jump_to = JumpTarget(after);
   }
   RefreshFlags();
 }

@@ -179,6 +179,9 @@ jobs:
         run: ./scripts/check/check_shareable_channels.sh
       - name: Release PeerId check (multi-relay MR008)
         run: ./scripts/check/check_relay_peer_ids.sh --self-test
+      # Only the self-test: the check itself still fails on main (hard-coded colours in components.rcss).
+      - name: Theme colour check (self-test)
+        run: python3 ./scripts/check/check_theme_colors.py --self-test
       - name: App lab selection (tags, --changed, the registry self-check)
         run: python3 -m unittest discover -s scripts/test -p '*_test.py'
       - name: C++ formatting (clang-format 23.1.5)
