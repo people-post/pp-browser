@@ -120,6 +120,9 @@
 #include "gui/CallController.h"
 #include "gui/BadgeAggregator.h"
 #include "gui/ClientCompatController.h"
+#ifdef PP_CRASH_PROBE
+#include "foundation/diagnostics/CrashProbe.h"
+#endif
 #include "gui/SupportDiscoveryPorts.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/DeferredStartup.h"
@@ -1621,7 +1624,19 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   });
   // The Chats page's "new version" card: client-compat says what exists, the chat list draws it.
   chat_->BindUpdateCard(UpdateCardPorts{
-      .advice = [this]() { return client_compat_->SoftUpdate(); },
+      .advice = [this]() -> std::optional<UpdateAdvice> {
+#ifdef PP_CRASH_PROBE // PROBE ONLY: fake announcement driven by the Settings -> Advanced probe row
+        switch (CrashProbe::UpdateCardMode()) {
+        case 1:
+          return UpdateAdvice{"9.9.9", "https://testflight.apple.com/"};
+        case 2:
+          return UpdateAdvice{"9.9.9", ""};
+        default:
+          break;
+        }
+#endif
+        return client_compat_->SoftUpdate();
+      },
       .machine_dir =
           [this]() {
             return RunLogPrefs::MachineDir(store_.IsInitialized() ? store_.Snapshot().data_dir : std::string());
@@ -1629,6 +1644,9 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
       .open_url = [](const std::string& url) { PlatformOpenUrl(url); },
   });
   client_compat_->BindSoftUpdateChanged([this]() { chat_->RefreshUpdateCard(); });
+#ifdef PP_CRASH_PROBE
+  CrashProbe::SetUpdateCardRefresh([this]() { chat_->RefreshUpdateCard(); });
+#endif
   badges_->BindShellNavigation(shell_navigation);
   badges_->BindAppBadge([](const int count) { SetAppBadgeCount(count); });
   badges_->BindSource([this, &facade, &shell]() {

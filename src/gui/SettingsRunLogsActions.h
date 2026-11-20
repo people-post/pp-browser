@@ -73,12 +73,14 @@ private:
 public:
   void ProbeCrash(int kind);
   void ProbeHang(int seconds);
+  void ProbeUpdateCard();
 
 private:
   void ProbeAsk(const std::string& what, std::function<void()> action);
   void ProbeRefresh();
   bool probe_enabled_ = false;
   std::string probe_status_;
+  std::string probe_card_status_;
 };
 
 } // namespace pbr

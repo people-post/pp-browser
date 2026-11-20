@@ -48,6 +48,8 @@ void SettingsRunLogsActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("send_run_logs", DataEvent<>([this]() { Send(); }));
   ctor.Bind("probe_enabled", &probe_enabled_);
   ctor.Bind("probe_status", &probe_status_);
+  ctor.Bind("probe_card_status", &probe_card_status_);
+  ctor.BindEventCallback("probe_update_card", DataEvent<>([this]() { ProbeUpdateCard(); }));
   ctor.BindEventCallback("probe_crash", DataEvent<>([this]() { ProbeCrash(0); }));
   ctor.BindEventCallback("probe_throw", DataEvent<>([this]() { ProbeCrash(1); }));
   ctor.BindEventCallback("probe_hang10", DataEvent<>([this]() { ProbeHang(10); }));
@@ -61,8 +63,20 @@ void SettingsRunLogsActions::ProbeRefresh() {
   const CrashProbe::Status status = CrashProbe::ReadStatus(DataDir());
   probe_status_ = "已收到 " + std::to_string(status.payloads) + " 份 · 最近一份：" +
                   (status.last_time.empty() ? std::string("还没有") : status.last_time);
+  const int card_mode = CrashProbe::UpdateCardMode();
+  probe_card_status_ = card_mode == 1 ? "现在：有链接（点一下 → 无链接）"
+                       : card_mode == 2 ? "现在：无链接（点一下 → 关）"
+                                        : "现在：关（点一下 → 有链接）";
+  DataModelHost::Instance().Dirty("settings", "probe_card_status");
   DataModelHost::Instance().Dirty("settings", "probe_enabled");
   DataModelHost::Instance().Dirty("settings", "probe_status");
+#endif
+}
+
+void SettingsRunLogsActions::ProbeUpdateCard() {
+#ifdef PP_CRASH_PROBE
+  CrashProbe::CycleUpdateCardMode();
+  ProbeRefresh();
 #endif
 }
 

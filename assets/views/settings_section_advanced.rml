@@ -119,6 +119,14 @@
               <span class="group-row-label"><span class="group-row-text">探测：卡住 30 秒</span></span>
             </span>
           </button>
+          <button class="group-row" type="button" data-event-click="probe_update_card()">
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="group-row-text">探测：显示“有新版本”卡片</span>
+                <span class="group-row-sub">{{probe_card_status}}</span>
+              </span>
+            </span>
+          </button>
           <button class="group-row" type="button" data-event-click="probe_refresh()">
             <span class="group-row-body">
               <span class="group-row-label">

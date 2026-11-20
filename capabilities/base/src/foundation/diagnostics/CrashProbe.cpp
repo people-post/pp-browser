@@ -36,6 +36,23 @@ CrashProbe::Status CrashProbe::ReadStatus(const std::string& data_dir) {
   return status;
 }
 
+namespace {
+int g_update_card_mode = 0;
+std::function<void()> g_update_card_refresh;
+} // namespace
+
+int CrashProbe::UpdateCardMode() { return g_update_card_mode; }
+
+int CrashProbe::CycleUpdateCardMode() {
+  g_update_card_mode = (g_update_card_mode + 1) % 3;
+  if (g_update_card_refresh) {
+    g_update_card_refresh();
+  }
+  return g_update_card_mode;
+}
+
+void CrashProbe::SetUpdateCardRefresh(std::function<void()> refresh) { g_update_card_refresh = std::move(refresh); }
+
 void CrashProbe::Crash(const int kind) {
   if (kind == 1) {
     std::thread([] { throw std::runtime_error("probe: uncaught exception"); }).join();
