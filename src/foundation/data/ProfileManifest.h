@@ -13,10 +13,13 @@ namespace pbr {
  */
 Roe<void> EnsureProfileManifest(const std::string& profile_data_dir, const std::string& backend_key = {});
 
-/** The backend the profile was created or adopted for; empty when none is recorded (or no manifest). */
+/** The backend the profile was created or claimed for; empty when none is recorded (or no manifest). */
 std::string ReadProfileBackend(const std::string& profile_data_dir);
 
-/** Records `backend_key` in an existing manifest that has none; a recorded backend is never replaced. */
+/**
+ * Records `backend_key` in an existing manifest that has none (the active profile's, ProfileRegistry); a recorded
+ * backend is never replaced, and a newer manifest is refused, not written.
+ */
 Roe<void> AdoptProfileBackend(const std::string& profile_data_dir, const std::string& backend_key);
 
 } // namespace pbr

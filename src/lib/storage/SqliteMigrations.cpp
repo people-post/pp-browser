@@ -166,9 +166,8 @@ Roe<int> SqliteUserVersion(sqlite3* db) {
 }
 
 Roe<SqliteLadderOutcome> RunSqliteLadder(sqlite3* db, const std::string& db_path, const SqliteSchemaLadder& ladder,
-                                         const ByteVector* dek, std::string thread_peer_account,
-                                         std::string own_account_id) {
-  const SqliteMigrationContext context{db, dek, std::move(thread_peer_account), std::move(own_account_id)};
+                                         const ByteVector* dek) {
+  const SqliteMigrationContext context{db, dek};
   if (auto checked = CheckLadder(ladder); !checked) {
     return checked.error();
   }
@@ -219,36 +218,6 @@ Roe<bool> SqliteColumnExists(sqlite3* db, const std::string& table, const std::s
   const bool exists = sqlite3_step(stmt) == SQLITE_ROW;
   sqlite3_finalize(stmt);
   return exists;
-}
-
-Roe<void> SqliteAddColumnIfMissing(sqlite3* db, const std::string& table, const std::string& column,
-                                   const std::string& declaration) {
-  auto table_exists = SqliteTableExists(db, table);
-  if (!table_exists) {
-    return table_exists.error();
-  }
-  if (!*table_exists) {
-    return {}; // its store makes it, at the current shape, when it first opens
-  }
-  auto column_exists = SqliteColumnExists(db, table, column);
-  if (!column_exists) {
-    return column_exists.error();
-  }
-  if (*column_exists) {
-    return {};
-  }
-  return Exec(db, "ALTER TABLE " + table + " ADD COLUMN " + column + " " + declaration + ";");
-}
-
-Roe<void> SqliteDropColumnIfPresent(sqlite3* db, const std::string& table, const std::string& column) {
-  auto column_exists = SqliteColumnExists(db, table, column);
-  if (!column_exists) {
-    return column_exists.error();
-  }
-  if (!*column_exists) {
-    return {};
-  }
-  return Exec(db, "ALTER TABLE " + table + " DROP COLUMN " + column + ";");
 }
 
 } // namespace pbr

@@ -1360,9 +1360,6 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   if (!opened_stores) {
     return opened_stores.error();
   }
-  if (opened_stores->set_own_account) {
-    opened_stores->set_own_account([this]() { return OwnAccountId(); }); // profile.db's steps tell our card by it
-  }
   store_ = std::move(opened_stores->threads);
   psk_store_ = std::move(opened_stores->peer_sessions);
   control_lane_seen_ = std::move(opened_stores->control_lane_seen);

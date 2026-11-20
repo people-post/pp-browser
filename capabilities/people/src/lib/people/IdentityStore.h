@@ -21,13 +21,12 @@ namespace pbr {
 class IdentityStore : public Module, public IDekConsumer, public IAccountSigningAccess, public ILocalAccount {
 public:
   /**
-   * Current identity plaintext JSON schema inside identity.enc. Unversioned / v1–v2 Ed25519 device keys fail closed
-   * (PQ hard cut); 3 is stepped up on load (its `relay_user_id` dropped: the relay addresses the account by its
-   * Account ID, multi-relay MR001).
+   * Current identity plaintext JSON schema inside identity.enc. An older or unversioned one fails closed: release 1
+   * starts clean (release-compatibility RC017), so no step from before it is kept.
    */
   static constexpr int kSchemaVersion = 4;
-  /** The oldest identity.enc this build steps up (DATA_LAYOUT § Schema versions). */
-  static constexpr int kFloorSchemaVersion = 3;
+  /** The oldest identity.enc this build reads (DATA_LAYOUT § Schema versions): release 1's. */
+  static constexpr int kFloorSchemaVersion = 4;
 
   explicit IdentityStore(std::string data_dir, std::string profile_id = {});
 

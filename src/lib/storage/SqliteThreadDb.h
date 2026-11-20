@@ -30,8 +30,6 @@ public:
 
   Roe<void> SetDek(ByteVector dek);
   void ClearDek();
-  /** The profile's own Account ID, read when profile.db's ladder runs (its own-card steps); before SetDek. */
-  void SetOwnAccount(std::function<std::string()> own_account);
   Roe<void> RequireDek() const;
   /** Copy under dek_mutex — for TranscriptCipher calls. */
   ByteVector CopyDek() const;
@@ -70,8 +68,6 @@ private:
   Roe<void> OpenProfileDbUnguarded() const;
   Roe<void> ResetBelowFloor() const;
   Roe<void> EnsureThreadDirectory(const std::string& thread_id) const;
-  /** The Account ID of a direct thread's peer in the catalog (a thread.db step's context); empty otherwise. */
-  std::string DirectPeerAccountOf(const std::string& thread_id) const;
   /** A chat's thread.db, opened and brought through its ladder (a file below the floor is reset first). */
   Roe<sqlite3*> OpenThreadDbFile(const std::string& thread_id) const;
   Roe<void> RepairOrphanThreadDirs() const;
@@ -82,7 +78,6 @@ private:
   std::string profile_id_;
   ByteVector dek_;
   mutable std::mutex dek_mutex_;
-  std::function<std::string()> own_account_; // under dek_mutex_
   mutable std::mutex profile_mutex_;
   mutable sqlite3* profile_db_ = nullptr;
   mutable std::mutex thread_cache_mutex_;

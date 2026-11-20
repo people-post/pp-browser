@@ -115,31 +115,17 @@ TEST_F(ThreadLocalPrefsStoreTest, DeleteRemovesTheRow) {
   EXPECT_EQ(got->pinned_at, 0);
 }
 
-TEST_F(ThreadLocalPrefsStoreTest, MuteMentionsIsStoredAndAddedByTheBaselineToAnOlderTable) {
-  // G015: a tester's profile.db (schema 4) whose table was made before the column: the ladder's baseline adds it.
-  const std::string db_path = store_->ProfileDbPath();
-  prefs_.reset();
-  store_.reset();
-  sqlite3* db = nullptr;
-  ASSERT_EQ(sqlite3_open(db_path.c_str(), &db), SQLITE_OK);
-  ASSERT_EQ(
-      sqlite3_exec(db,
-                   "DROP TABLE IF EXISTS thread_local_prefs; CREATE TABLE thread_local_prefs (thread_id TEXT "
-                   "PRIMARY KEY, pinned_at INTEGER NOT NULL DEFAULT 0, muted_until INTEGER NOT NULL DEFAULT 0, "
-                   "archived INTEGER NOT NULL DEFAULT 0, marked_unread INTEGER NOT NULL DEFAULT 0); "
-                   "INSERT INTO thread_local_prefs (thread_id, muted_until) VALUES ('g', 99); PRAGMA user_version = 4;",
-                   nullptr, nullptr, nullptr),
-      SQLITE_OK);
-  sqlite3_close(db);
-  store_ = test::MakeUnlockedThreadStore(data_dir_.string()); // the app opens profile.db first: the ladder
-  ASSERT_TRUE(store_->ListThreads());
-  prefs_ = std::make_unique<SqliteThreadLocalPrefsStore>(db_path);
+TEST_F(ThreadLocalPrefsStoreTest, MuteMentionsIsStored) {
+  // G015: mentions muted with the thread, kept apart from the other settings.
+  ThreadLocalPrefs p;
+  p.thread_id = "g";
+  p.muted_until = 99;
+  ASSERT_TRUE(prefs_->Set(p));
   auto old = prefs_->Get("g");
   ASSERT_TRUE(old) << old.error().message;
   EXPECT_EQ(old->muted_until, 99);
   EXPECT_FALSE(old->mute_mentions);
 
-  ThreadLocalPrefs p = *old;
   p.mute_mentions = true;
   ASSERT_TRUE(prefs_->Set(p));
   EXPECT_TRUE(prefs_->Get("g")->mute_mentions);
@@ -148,32 +134,15 @@ TEST_F(ThreadLocalPrefsStoreTest, MuteMentionsIsStoredAndAddedByTheBaselineToAnO
   ASSERT_EQ(prefs_->List()->size(), 1u) << "mute_mentions alone is not the defaults";
 }
 
-TEST_F(ThreadLocalPrefsStoreTest, ShareAiConfirmedIsStoredAndAddedByTheBaselineToAnOlderTable) {
-  // The same for share_ai_confirmed, on a table that has mute_mentions already.
-  const std::string db_path = store_->ProfileDbPath();
-  prefs_.reset();
-  store_.reset();
-  sqlite3* db = nullptr;
-  ASSERT_EQ(sqlite3_open(db_path.c_str(), &db), SQLITE_OK);
-  ASSERT_EQ(
-      sqlite3_exec(db,
-                   "DROP TABLE IF EXISTS thread_local_prefs; CREATE TABLE thread_local_prefs (thread_id TEXT "
-                   "PRIMARY KEY, pinned_at INTEGER NOT NULL DEFAULT 0, muted_until INTEGER NOT NULL DEFAULT 0, "
-                   "archived INTEGER NOT NULL DEFAULT 0, marked_unread INTEGER NOT NULL DEFAULT 0, "
-                   "mute_mentions INTEGER NOT NULL DEFAULT 0); "
-                   "INSERT INTO thread_local_prefs (thread_id, muted_until) VALUES ('g', 99); PRAGMA user_version = 4;",
-                   nullptr, nullptr, nullptr),
-      SQLITE_OK);
-  sqlite3_close(db);
-  store_ = test::MakeUnlockedThreadStore(data_dir_.string()); // the app opens profile.db first: the ladder
-  ASSERT_TRUE(store_->ListThreads());
-  prefs_ = std::make_unique<SqliteThreadLocalPrefsStore>(db_path);
+TEST_F(ThreadLocalPrefsStoreTest, ShareAiConfirmedIsStored) {
+  ThreadLocalPrefs p;
+  p.thread_id = "g";
+  p.muted_until = 99;
+  ASSERT_TRUE(prefs_->Set(p));
   auto old = prefs_->Get("g");
   ASSERT_TRUE(old) << old.error().message;
-  EXPECT_EQ(old->muted_until, 99);
   EXPECT_FALSE(old->share_ai_confirmed);
 
-  ThreadLocalPrefs p = *old;
   p.share_ai_confirmed = true;
   ASSERT_TRUE(prefs_->Set(p));
   EXPECT_TRUE(prefs_->Get("g")->share_ai_confirmed);

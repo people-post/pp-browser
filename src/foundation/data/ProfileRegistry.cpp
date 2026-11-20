@@ -211,13 +211,14 @@ Roe<void> ProfileRegistry::SelectProfileForBackend(const std::string& backend_ke
   const std::string active_dir = ActiveProfileDataDir();
   std::string recorded = ReadProfileBackend(active_dir);
   if (recorded.empty()) {
-    recorded = backend_key == "qa" ? "prod" : backend_key;
+    // The active profile records no backend yet — a fresh install's default, or one just reset: it is this backend's.
     if (auto ensured = EnsureProfileManifest(active_dir); !ensured) {
       return ensured;
     }
-    if (auto adopted = AdoptProfileBackend(active_dir, recorded); !adopted) {
+    if (auto adopted = AdoptProfileBackend(active_dir, backend_key); !adopted) {
       return adopted;
     }
+    recorded = backend_key;
   }
   if (recorded == backend_key) {
     return {};
@@ -225,18 +226,7 @@ Roe<void> ProfileRegistry::SelectProfileForBackend(const std::string& backend_ke
 
   std::string target;
   for (const ProfileEntry& entry : profiles_) {
-    if (entry.id == active_profile_id_) {
-      continue;
-    }
-    const std::string dir = ProfileDataDir(entry.id);
-    if (ReadProfileBackend(dir) == backend_key) {
-      target = entry.id;
-      break;
-    }
-    if (entry.id == backend_key && ReadProfileBackend(dir).empty() && std::filesystem::exists(dir)) {
-      if (auto adopted = AdoptProfileBackend(dir, backend_key); !adopted) {
-        return adopted;
-      }
+    if (entry.id != active_profile_id_ && ReadProfileBackend(ProfileDataDir(entry.id)) == backend_key) {
       target = entry.id;
       break;
     }

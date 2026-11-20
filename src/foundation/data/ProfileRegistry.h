@@ -37,9 +37,10 @@ public:
   /**
    * Makes the active profile the one recorded for `backend_key` (BackendProfile.h), so identities and data
    * of different backends never mix: keep the active one when it matches, else switch to an existing profile
-   * recorded for the key, else create profile `backend_key`. A profile with no recorded backend is adopted as
-   * `backend_key` (as `prod` when that is `qa`, which no pre-existing profile belongs to). A session
-   * override (`--profile`) is left alone. Persists the registry when the active profile changes.
+   * recorded for the key, else create profile `backend_key`. An active profile that records no backend (a fresh
+   * install's default, or one just reset) takes `backend_key`; no other profile is ever claimed (release 1 starts
+   * clean, release-compatibility RC017). A session override (`--profile`) is left alone. Persists the registry when
+   * the active profile changes.
    */
   Roe<void> SelectProfileForBackend(const std::string& backend_key);
   void SetSessionProfileOverride(std::string id) { session_override_ = std::move(id); }

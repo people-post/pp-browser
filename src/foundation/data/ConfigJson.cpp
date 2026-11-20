@@ -881,7 +881,6 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
 }
 
 void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
-  const int64_t file_schema_version = ReadI64(object, "schema_version").value_or(0);
   if (auto schema_version = ReadI64(object, "schema_version")) {
     prefs.schema_version = static_cast<int>(*schema_version);
   }
@@ -936,24 +935,9 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   } else {
     prefs.crash_reports_enabled = false;
   }
-  // Product decision (Kenneth, 2026-11-11): both policies default to everyone. A file saved before schema 16 is reset
-  // to everyone once, whatever it holds; the next save writes schema 16, so a later choice is kept.
-  const bool reset_invite_policies = file_schema_version < 16;
-  if (auto group_invite_policy = object.getString("group_invite_policy");
-      group_invite_policy && !reset_invite_policies) {
-    prefs.group_invite_policy = *group_invite_policy;
-  } else {
-    prefs.group_invite_policy = "everyone";
-  }
-  if (auto call_invite_policy = object.getString("call_invite_policy"); call_invite_policy && !reset_invite_policies) {
-    prefs.call_invite_policy = *call_invite_policy;
-  } else {
-    prefs.call_invite_policy = "everyone";
-  }
-  if (reset_invite_policies) {
-    // Several save sites write the loaded struct back as is; keep them from re-running the reset on the next load.
-    prefs.schema_version = ProfilePreferences::kSchemaVersion;
-  }
+  // Product decision (Kenneth, 2026-11-11): both policies default to everyone.
+  prefs.group_invite_policy = object.getString("group_invite_policy").value_or("everyone");
+  prefs.call_invite_policy = object.getString("call_invite_policy").value_or("everyone");
   if (auto attachment_download_policy = object.getString("attachment_download_policy")) {
     prefs.attachment_download_policy = *attachment_download_policy;
   } else {

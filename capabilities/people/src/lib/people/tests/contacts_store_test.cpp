@@ -155,12 +155,13 @@ TEST_F(ContactsStoreTest, AddFromDirectoryHitRequiresAccountId) {
   EXPECT_NE(result.error().message.find("Account ID"), std::string::npos);
 }
 
-// A contacts file of another version than this build's is refused, older (or unversioned) as newer: pre-release,
-// no leftover contacts file is carried over.
+// A contacts file of another version than this build's is refused, older (or unversioned) as newer: release 1's
+// is the floor (RC017), so no leftover contacts file is carried over — 2 (with its `relay:` ids) included.
 TEST_F(ContactsStoreTest, RejectsAnOlderOrUnversionedFile) {
   const auto path = data_dir_ / "contacts.json";
   std::filesystem::create_directories(data_dir_);
-  for (const std::optional<int64_t> version : {std::optional<int64_t>{}, std::optional<int64_t>{1}}) {
+  for (const std::optional<int64_t> version :
+       {std::optional<int64_t>{}, std::optional<int64_t>{1}, std::optional<int64_t>{2}}) {
     {
       Object old;
       if (version) {
@@ -176,38 +177,6 @@ TEST_F(ContactsStoreTest, RejectsAnOlderOrUnversionedFile) {
     ASSERT_FALSE(static_cast<bool>(listed));
     EXPECT_NE(listed.error().message.find("schema"), std::string::npos) << listed.error().message;
   }
-}
-
-// contacts.json 2 → 3 (multi-relay MR001): a contact's `relay_user` id is dropped — its Account ID is its relay inbox —
-// and the file is written back at 3; everything else about the contact stays.
-TEST_F(ContactsStoreTest, AVersion2FileDropsItsRelayIdsAndIsWrittenBackAt3) {
-  const auto path = data_dir_ / "contacts.json";
-  std::filesystem::create_directories(data_dir_);
-  {
-    std::ofstream out(path);
-    ASSERT_TRUE(static_cast<bool>(out));
-    out << R"({"schema_version":2,"contacts":[{"id":"c1","local":{"display_name":"Ann","trust":"friendly"},
-      "remote":{"nickname":"ann","ids":[{"kind":"account","value":"account:ann","primary":true},
-      {"kind":"relay_user","value":"relay:ann","primary":false},{"kind":"peer_id","value":"12D3KooWAnn",
-      "primary":false}],"endpoints":[],"multiaddrs":[]},"overrides":{}}]})";
-  }
-  {
-    ContactsStore store(data_dir_.string());
-    auto listed = store.List();
-    ASSERT_TRUE(static_cast<bool>(listed)) << listed.error().message;
-    ASSERT_EQ(listed->size(), 1u);
-    const Contact& ann = listed->front();
-    EXPECT_EQ(ann.local.display_name, "Ann");
-    EXPECT_EQ(ann.trust, TrustLevel::Friendly);
-    ASSERT_EQ(ann.remote.ids.size(), 2u);
-    EXPECT_EQ(ann.remote.ids[0].value, "account:ann");
-    EXPECT_EQ(ann.remote.ids[1].value, "12D3KooWAnn");
-    store.Flush();
-  }
-  std::ifstream in(path);
-  const std::string written((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  EXPECT_NE(written.find("\"schema_version\": 3"), std::string::npos) << written;
-  EXPECT_EQ(written.find("relay:ann"), std::string::npos);
 }
 
 TEST_F(ContactsStoreTest, RejectsNewerSchemaVersion) {

@@ -103,12 +103,8 @@ Roe<void> ContactsStore::EnsureLoaded() const {
             continue;
           }
           contacts_.push_back(ContactFromJson(*item));
-          if (*version == 2) {
-            DropRetiredRelayIds(contacts_.back());
-          }
         }
       }
-      dirty_ = *version != kSchemaVersion; // a stepped-up file is written back at the current version
     }
   }
 
