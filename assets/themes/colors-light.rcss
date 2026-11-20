@@ -1661,6 +1661,10 @@ input.checkbox:checked {
   color: #000000;
 }
 
+.sidebar-tip-note {
+  color: #3c3c4399;
+}
+
 .sidebar-reconnect-entry svg {
   image-color: #ff3b30;
 }

@@ -191,17 +191,29 @@ TEST_F(ClientCompatControllerTest, WithoutARelayMessageTheScreenSaysItInTheAppsO
   EXPECT_EQ(alerts_[1].ok_label, "更新");
 }
 
-// The relay sends a `message`: that line, not the app's.
-TEST_F(ClientCompatControllerTest, ARelayMessageIsShownInsteadOfTheAppsOwnWords) {
+// The relay sends a `message`: the app's own words stay, the relay's is a second paragraph (RC018 part 2).
+TEST_F(ClientCompatControllerTest, ARelayMessageIsAnExtraParagraphAfterTheAppsOwnWords) {
   BindMessaging();
   relay_->doc.min_client_version = "999.0.0";
   relay_->doc.message = "Maintenance: update by Friday";
   ASSERT_TRUE(controller_.CheckAsync());
   Settle();
   ASSERT_EQ(alerts_.size(), 1u);
-  EXPECT_EQ(alerts_[0].message, "Maintenance: update by Friday");
-  EXPECT_NE(alerts_[0].message, Tr("compat.update_required.message"));
+  EXPECT_EQ(alerts_[0].message, Tr("compat.update_required.message") + "\n\nMaintenance: update by Friday");
   EXPECT_EQ(alerts_[0].title, "Update required") << "the title and button stay the app's";
+}
+
+TEST_F(ClientCompatControllerTest, ALongOrMarkedUpRelayMessageIsCappedAndKeptAsPlainText) {
+  BindMessaging();
+  relay_->doc.min_client_version = "999.0.0";
+  relay_->doc.message = "<b>Update</b> now\n\n[link](https://x.test) & " + std::string(400, 'z');
+  ASSERT_TRUE(controller_.CheckAsync());
+  Settle();
+  ASSERT_EQ(alerts_.size(), 1u);
+  const std::string own = Tr("compat.update_required.message");
+  ASSERT_EQ(alerts_[0].message.compare(0, own.size(), own), 0) << "the app's line first, never replaced";
+  EXPECT_NE(alerts_[0].message.find("\n\n<b>Update</b> now [link](https://x.test) & zzz"), std::string::npos);
+  EXPECT_NE(alerts_[0].message.find("\xE2\x80\xA6"), std::string::npos) << "capped with an ellipsis";
 }
 
 // A newer version than this one: the Chats list's card (the advice), no toast and no dialog; the card does not depend
@@ -220,6 +232,7 @@ TEST_F(ClientCompatControllerTest, ANewerVersionRaisesTheCardWithoutAnAlertAndTh
   EXPECT_TRUE(alerts_.empty());
   ASSERT_TRUE(controller_.SoftUpdate().has_value()) << "the card shows whatever the link";
   EXPECT_EQ(controller_.SoftUpdate()->latest_version, "999.0.0");
+  EXPECT_TRUE(controller_.SoftUpdate()->message.empty());
   const std::string placeholder_link = UsableUpdateLink(relay_->doc, Platform::OsName(), kDefaultUpgradeUrl);
   EXPECT_EQ(controller_.SoftUpdate()->url, placeholder_link);
   const std::string os = Platform::OsName();
@@ -232,6 +245,21 @@ TEST_F(ClientCompatControllerTest, ANewerVersionRaisesTheCardWithoutAnAlertAndTh
   EXPECT_EQ(changes, 2);
   controller_.ApplyDocument(relay_->doc);
   EXPECT_EQ(changes, 2) << "the same advice is not announced twice";
+}
+
+TEST_F(ClientCompatControllerTest, TheCardCarriesTheRelaysMessageAndAChangedMessageIsAnnounced) {
+  BindMessaging();
+  int changes = 0;
+  controller_.BindSoftUpdateChanged([&changes]() { ++changes; });
+  relay_->doc.latest_client_version = "999.0.0";
+  relay_->doc.message = "Fixes calls";
+  controller_.ApplyDocument(relay_->doc);
+  ASSERT_TRUE(controller_.SoftUpdate().has_value());
+  EXPECT_EQ(controller_.SoftUpdate()->message, "Fixes calls");
+  EXPECT_EQ(changes, 1);
+  relay_->doc.message = "Fixes calls and sound";
+  controller_.ApplyDocument(relay_->doc);
+  EXPECT_EQ(changes, 2);
 }
 
 TEST_F(ClientCompatControllerTest, TheCardGoesWhenUpToDateAndTheDialogCaseKeepsItsOwnLink) {

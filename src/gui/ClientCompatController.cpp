@@ -138,17 +138,17 @@ void ClientCompatController::PresentAction(CompatUiAction action, const ClientCo
     return;
   }
   if (action == CompatUiAction::SoftUpdateAvailable) {
-    SetSoftUpdate(
-        UpdateAdvice{doc.latest_client_version, UsableUpdateLink(doc, Platform::OsName(), kDefaultUpgradeUrl)});
+    SetSoftUpdate(UpdateAdvice{doc.latest_client_version, UsableUpdateLink(doc, Platform::OsName(), kDefaultUpgradeUrl),
+                               doc.message});
     return;
   }
   SetSoftUpdate(std::nullopt); // up to date, or the update screen says it
 }
 
 void ClientCompatController::SetSoftUpdate(std::optional<UpdateAdvice> advice) {
-  const bool same =
-      soft_update_.has_value() == advice.has_value() &&
-      (!advice || (soft_update_->latest_version == advice->latest_version && soft_update_->url == advice->url));
+  const bool same = soft_update_.has_value() == advice.has_value() &&
+                    (!advice || (soft_update_->latest_version == advice->latest_version &&
+                                 soft_update_->url == advice->url && soft_update_->message == advice->message));
   if (same) {
     return;
   }
@@ -164,7 +164,11 @@ void ClientCompatController::ShowUpdateRequired(const ClientCompatDocument& doc)
   }
   force_dialog_shown_ = true;
   const std::string title = Tr("compat.update_required.title");
-  const std::string message = doc.message.empty() ? Tr("compat.update_required.message") : doc.message;
+  // The app's own words always; the relay's message, when it sent one, is a second paragraph (plain text, capped).
+  std::string message = Tr("compat.update_required.message");
+  if (const std::string note = UpdateServerNote(doc.message); !note.empty()) {
+    message += "\n\n" + note;
+  }
   const std::string url = upgrade_url_;
   if (shell_feedback_.show_alert) {
     shell_feedback_.show_alert(title, message, [url]() { PlatformOpenUrl(url); }, Tr("compat.update_required.action"));

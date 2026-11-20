@@ -2207,13 +2207,18 @@ bool ChatController::UpdateCardShows() {
 void ChatController::RefreshUpdateCard() {
   const bool shows = UpdateCardShows();
   const bool link = shows && !update_card_.advice()->url.empty();
-  if (shell_.update_card == shows && shell_.update_card_link == link) {
+  const std::string note = shows ? UpdateServerNote(update_card_.advice()->message) : std::string();
+  if (shell_.update_card == shows && shell_.update_card_link == link && shell_.update_card_note == note) {
     return;
   }
   shell_.update_card = shows;
   shell_.update_card_link = link;
+  shell_.update_card_note_shown = !note.empty();
+  shell_.update_card_note = note;
   DataModelHost::Instance().Dirty("shell", "update_card");
   DataModelHost::Instance().Dirty("shell", "update_card_link");
+  DataModelHost::Instance().Dirty("shell", "update_card_note_shown");
+  DataModelHost::Instance().Dirty("shell", "update_card_note");
 }
 
 void ChatController::OnUpdateCardOpen() {
@@ -2234,7 +2239,12 @@ void ChatController::OnUpdateCardLater() {
     update_card_state_for_ = advice->latest_version;
   }
   update_card_state_ = UpdateCardAfterLater(advice->latest_version, update_card_state_, UpdateCardNowMs(update_card_));
-  (void)UpdatePrefs::Write(dir, update_card_state_);
+  if (!UpdatePrefs::Write(dir, update_card_state_)) {
+    // No error text and no path: both carry the user's folder names. Write fails when machine.json cannot be read
+    // (its other settings would be lost) as well as when it cannot be written; the card hides until the next start.
+    log().warning
+        << "update card: \"Later\" was not remembered (the device preferences file could not be read or written)";
+  }
   RefreshUpdateCard();
 }
 

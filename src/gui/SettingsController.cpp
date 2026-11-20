@@ -1223,6 +1223,12 @@ void SettingsController::SyncLayoutMode() {
   if (had_detail && !selected_id_.empty()) {
     OpenSettingsDetailPane();
     storage_manager_.RestoreBackStack();
+    // Advanced shows My relays inline in the wide layout: a list that was last read for the phone page (or never) is
+    // read again now that it is on screen (iPad split view, a window resize).
+    if (const SettingsPage* page = FindSettingsPage(selected_id_.c_str());
+        page && SettingsPageHas(*page, SettingsPageAction::RefreshRelays)) {
+      my_relays_.Refresh();
+    }
   }
   DirtyAll();
 }

@@ -5,9 +5,14 @@
 #include "gui/UpdateCard.h"
 #include "gui/chat/ChatController.h"
 
+#include "common/Logger.h"
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <fstream>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -153,4 +158,69 @@ TEST_F(UpdateCardControllerTest, LaterIsRememberedOnTheDeviceAndFollowsTheRhythm
 }
 
 } // namespace
+/** Collects the controller channel's lines (logger handlers cannot be removed: kept for the process). */
+struct ControllerLogCapture : logging::Handler {
+  void emit(logging::Level, const std::string&, const std::string& message) override {
+    std::lock_guard lock(mu);
+    lines.push_back(message);
+  }
+  size_t Count(const std::string& needle) {
+    std::lock_guard lock(mu);
+    return static_cast<size_t>(std::count_if(
+        lines.begin(), lines.end(), [&](const std::string& line) { return line.find(needle) != std::string::npos; }));
+  }
+  std::mutex mu;
+  std::vector<std::string> lines;
+};
+
+// "Later" that cannot be remembered says so once in the file log, without the folder's name; the card still hides.
+TEST_F(UpdateCardControllerTest, ALaterThatCannotBeSavedIsLoggedWithoutAPath) {
+  auto capture = std::make_shared<ControllerLogCapture>();
+  logging::getLogger("ChatController").addHandler(capture);
+  {
+    std::ofstream bad(dir_ / "machine.json");
+    bad << "{ not json";
+  }
+  advice_ = UpdateAdvice{"1.2.0", ""};
+  chat_.OnUpdateCardLater();
+  EXPECT_EQ(capture->Count("update card: \"Later\" was not remembered"), 1u);
+  EXPECT_EQ(capture->Count(dir_.string()), 0u) << "no path in the line";
+  EXPECT_FALSE(chat_.UpdateCardShows()) << "the card is hidden for now: the state in memory says so";
+}
+
+TEST_F(UpdateCardControllerTest, ALaterThatIsSavedLogsNothing) {
+  auto capture = std::make_shared<ControllerLogCapture>();
+  logging::getLogger("ChatController").addHandler(capture);
+  advice_ = UpdateAdvice{"1.2.0", ""};
+  chat_.OnUpdateCardLater();
+  EXPECT_EQ(capture->Count("was not remembered"), 0u);
+}
+
+TEST(UpdateServerNoteTest, EmptyAndBlankMessagesShowNothing) {
+  EXPECT_EQ(UpdateServerNote(""), "");
+  EXPECT_EQ(UpdateServerNote(" \n\t "), "");
+}
+
+TEST(UpdateServerNoteTest, IsOneParagraphOfPlainText) {
+  EXPECT_EQ(UpdateServerNote("  Line one\r\n\r\nLine\ttwo  "), "Line one Line two");
+  EXPECT_EQ(UpdateServerNote("<b>bold</b> & [x](http://a.test) &amp; <script>"),
+            "<b>bold</b> & [x](http://a.test) &amp; <script>")
+      << "markup characters are kept as they are, never interpreted";
+}
+
+TEST(UpdateServerNoteTest, IsCappedWithAnEllipsisAtACharacterBoundary) {
+  const std::string exact(kUpdateServerNoteMaxChars, 'a');
+  EXPECT_EQ(UpdateServerNote(exact), exact);
+  EXPECT_EQ(UpdateServerNote(exact + "b"), exact + "\xE2\x80\xA6");
+  std::string wide;
+  for (size_t i = 0; i < kUpdateServerNoteMaxChars + 5; ++i) {
+    wide += "\xE6\x9B\xB4"; // 更
+  }
+  std::string expected;
+  for (size_t i = 0; i < kUpdateServerNoteMaxChars; ++i) {
+    expected += "\xE6\x9B\xB4";
+  }
+  EXPECT_EQ(UpdateServerNote(wide), expected + "\xE2\x80\xA6") << "never cuts inside a multi-byte character";
+}
+
 } // namespace pbr

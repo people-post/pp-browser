@@ -132,6 +132,8 @@ protected:
   void Apply() {
     DataModelHost::Instance().Dirty("shell", "update_card");
     DataModelHost::Instance().Dirty("shell", "update_card_link");
+    DataModelHost::Instance().Dirty("shell", "update_card_note_shown");
+    DataModelHost::Instance().Dirty("shell", "update_card_note");
     DataModelHost::Instance().Dirty("shell", "recovery_reminder");
     context_->Update();
   }
@@ -186,6 +188,40 @@ TEST_F(UpdateCardRenderTest, WithoutALinkTheCardKeepsItsLineAndOnlyLater) {
   const auto buttons = Buttons(cards[0]);
   ASSERT_EQ(buttons.size(), 1u);
   EXPECT_EQ(buttons[0]->GetInnerRML(), "Later");
+}
+
+TEST_F(UpdateCardRenderTest, TheRelaysNoteIsASecondLineUnderTheAppsOwnAndShownAsPlainText) {
+  shell_.update_card = true;
+  shell_.update_card_link = true;
+  shell_.update_card_note_shown = true;
+  shell_.update_card_note = "<b>Fixes</b> calls & <a href=\"https://x.test\">more</a>";
+  Mount();
+  const auto cards = Cards();
+  ASSERT_EQ(cards.size(), 1u);
+  EXPECT_NE(cards[0]->GetInnerRML().find("A new version of PP is available. Update for the best experience."),
+            std::string::npos)
+      << "the app's own line stays";
+  ui::ElementList notes;
+  cards[0]->GetElementsByClassName(notes, "sidebar-tip-note");
+  ASSERT_EQ(notes.size(), 1u);
+  EXPECT_TRUE(notes[0]->IsVisible(true));
+  ui::ElementList markup;
+  document_->GetElementsByTagName(markup, "b");
+  document_->GetElementsByTagName(markup, "a");
+  EXPECT_TRUE(markup.empty()) << "the note's markup characters are text, not elements";
+}
+
+TEST_F(UpdateCardRenderTest, WithoutANoteThereIsNoSecondLine) {
+  shell_.update_card = true;
+  shell_.update_card_link = true;
+  Mount();
+  const auto cards = Cards();
+  ASSERT_EQ(cards.size(), 1u);
+  ui::ElementList notes;
+  cards[0]->GetElementsByClassName(notes, "sidebar-tip-note");
+  for (ui::Element* note : notes) {
+    EXPECT_FALSE(note->IsVisible(true));
+  }
 }
 
 TEST_F(UpdateCardRenderTest, WhenBothAreDueTheRecoveryCardIsFirstAndTheUpdateCardBelowIt) {

@@ -24,6 +24,7 @@
 #include <ui/paint/RenderInterface.h>
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <fstream>
 #include <sstream>
@@ -118,6 +119,7 @@ protected:
         "<button id=\"toggle_adv\" data-event-click=\"toggle_advanced_settings()\">x</button>"
         "<button id=\"sel_sec\" data-event-click=\"select_section('security')\">x</button>"
         "<button id=\"sel_dev\" data-event-click=\"select_section('devices')\">x</button>"
+        "<button id=\"sel_adv\" data-event-click=\"select_section('advanced')\">x</button>"
         "<button id=\"show\" data-event-click=\"show_recovery_phrase()\">x</button>"
         "<button id=\"reveal\" data-event-click=\"reveal_recovery_phrase()\">x</button>"
         "<button id=\"done\" data-event-click=\"hide_recovery_phrase()\">x</button>"
@@ -495,4 +497,38 @@ TEST_F(RecoveryPhraseExitsTest, AVoidedRevealWipesTheDecodedPhraseBeforeReturnin
 }
 
 } // namespace
+// My relays sits inline in Advanced on the wide layout and is read when that page opens there. A layout that turns
+// wide while Advanced is already open (iPad split view, a window resize) must read it too: the inline list would be
+// empty or stale.
+TEST_F(RecoveryPhraseExitsTest, MyRelaysIsReadAgainWhenTheLayoutTurnsWideWithAdvancedOpen) {
+  std::atomic<int> reads{0};
+  commands.my_relays = [&reads]() -> Roe<MyRelaysView> {
+    ++reads;
+    return MyRelaysView{};
+  };
+  settings.BindCommands(commands);
+  Click("sel_adv");
+  Settle();
+  const int before = reads.load();
+  layout_mode = LayoutMode::Expanded;
+  settings.SyncLayoutMode();
+  Settle();
+  EXPECT_GT(reads.load(), before) << "the inline list is read for the wide layout";
+}
+
+TEST_F(RecoveryPhraseExitsTest, MyRelaysIsNotReadWhenTheLayoutTurnsWideOnAnotherPage) {
+  std::atomic<int> reads{0};
+  commands.my_relays = [&reads]() -> Roe<MyRelaysView> {
+    ++reads;
+    return MyRelaysView{};
+  };
+  settings.BindCommands(commands);
+  Settle();
+  const int before = reads.load();
+  layout_mode = LayoutMode::Expanded;
+  settings.SyncLayoutMode(); // Account & security is open
+  Settle();
+  EXPECT_EQ(reads.load(), before);
+}
+
 } // namespace pbr

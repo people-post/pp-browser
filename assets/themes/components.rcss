@@ -8038,6 +8038,13 @@ input.checkbox {
   margin-bottom: 8dp;
 }
 
+/* The relay's own note under the card's line: smaller, plain text. */
+.sidebar-tip-note {
+  font-size: 13dp;
+  line-height: 18dp;
+  margin-bottom: 8dp;
+}
+
 .sidebar-tip-actions {
   align-items: center;
   gap: 8dp;

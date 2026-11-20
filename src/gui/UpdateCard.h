@@ -17,7 +17,52 @@ struct UpdateAdvice {
   std::string latest_version;
   /** The usable update link (UsableUpdateLink); empty: the card has no Update button. */
   std::string url;
+  /** The relay document's `message`, as sent (the card shows UpdateServerNote of it as an extra line). */
+  std::string message;
 };
+
+/** The longest server note the card or dialog shows, in characters; longer ends in an ellipsis. */
+inline constexpr size_t kUpdateServerNoteMaxChars = 200;
+
+/**
+ * RC018 part 2: the app's own translated text is always the card's line; the relay's `message` is an extra line, as
+ * plain text only. Whitespace runs (line breaks included) and control characters become one space, so it is a single
+ * paragraph; it is cut at kUpdateServerNoteMaxChars characters (UTF-8 aware) with an ellipsis. Markup characters are
+ * kept as they are: the view prints the string as text, it never interprets it. Empty when there is nothing to show.
+ */
+inline std::string UpdateServerNote(const std::string& message) {
+  std::string flat;
+  bool pending_space = false;
+  for (const char c : message) {
+    const unsigned char u = static_cast<unsigned char>(c);
+    if (u <= 0x20 || u == 0x7f) {
+      pending_space = !flat.empty();
+      continue;
+    }
+    if (pending_space) {
+      flat.push_back(' ');
+      pending_space = false;
+    }
+    flat.push_back(c);
+  }
+  size_t chars = 0;
+  size_t cut = flat.size();
+  for (size_t i = 0; i < flat.size(); ++i) {
+    if ((static_cast<unsigned char>(flat[i]) & 0xC0) == 0x80) {
+      continue; // a continuation byte belongs to the character before it
+    }
+    if (chars == kUpdateServerNoteMaxChars) {
+      cut = i;
+      break;
+    }
+    ++chars;
+  }
+  if (cut < flat.size()) {
+    flat.resize(cut);
+    flat += "\xE2\x80\xA6"; // …
+  }
+  return flat;
+}
 
 /** What ChatController needs to draw and answer the card; Application wires it to ClientCompatController. */
 struct UpdateCardPorts {
