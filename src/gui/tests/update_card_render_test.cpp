@@ -163,7 +163,7 @@ TEST_F(UpdateCardRenderTest, WithALinkTheCardHasUpdateAndLater) {
   Mount();
   const auto cards = Cards();
   ASSERT_EQ(cards.size(), 1u);
-  EXPECT_NE(cards[0]->GetInnerRML().find("There is a new version. PP works better after you update."),
+  EXPECT_NE(cards[0]->GetInnerRML().find("A new version of PP is available. Update for the best experience."),
             std::string::npos);
   const auto buttons = Buttons(cards[0]);
   ASSERT_EQ(buttons.size(), 2u);
@@ -180,7 +180,7 @@ TEST_F(UpdateCardRenderTest, WithoutALinkTheCardKeepsItsLineAndOnlyLater) {
   Mount();
   const auto cards = Cards();
   ASSERT_EQ(cards.size(), 1u);
-  EXPECT_NE(cards[0]->GetInnerRML().find("Please update PP where you installed it."), std::string::npos);
+  EXPECT_NE(cards[0]->GetInnerRML().find("A new version of PP is available. Please update it from where you installed PP."), std::string::npos);
   const auto buttons = Buttons(cards[0]);
   ASSERT_EQ(buttons.size(), 1u);
   EXPECT_EQ(buttons[0]->GetInnerRML(), "Later");
@@ -225,8 +225,8 @@ TEST_F(UpdateCardRenderTest, TheCardFollowsTheModelAndNeverShowsOverASearchOrThe
 
 TEST_F(UpdateCardRenderTest, TheLinesAreTranslated) {
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(Tr("compat.update_card.body"), "有新版本，更新后更好用。");
-  EXPECT_EQ(Tr("compat.update_card.body_nolink"), "请在你安装 PP 的地方更新。");
+  EXPECT_EQ(Tr("compat.update_card.body"), "发现新版本，建议更新以获得更好的体验。");
+  EXPECT_EQ(Tr("compat.update_card.body_nolink"), "发现新版本，请前往你安装 PP 的应用商店更新。");
   EXPECT_EQ(Tr("compat.update_card.action"), "更新");
   EXPECT_EQ(Tr("compat.update_card.later"), "以后再说");
   LocalizationService::Instance().SetPreferredLanguage("en");
