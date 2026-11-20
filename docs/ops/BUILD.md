@@ -170,7 +170,7 @@ PP_NODE_AMP_UDP_PORT=18517 ./build/src/app/node/pp-node --pin "$PP_BROWSER_PIN"
 - **Ledger role** (pp-ledger platform-integration pi4): `--ledger-role relay|miner` (or `PP_NODE_LEDGER_ROLE`) runs one pp-ledger role on the node's mesh runtime, with the node's identity and address, from `--ledger-dir` (default `<profile data dir>/ledger`: pp-ledger's own `config.json`, keys and data). A first run with no `config.json` writes pp-ledger's template and exits with what to fill in; the role advertises the ledger's protocols while it serves them, and stops before the mesh. Built when `PP_BROWSER_WITH_LEDGER` is on (the default, but not on mobile): pp-ledger comes from [`cmake/PpLedger.cmake`](../../cmake/PpLedger.cmake) (pinned release; `-DPP_LEDGER_SOURCE_DIR=…` for a local checkout), linked only by `pp_domain_node_ledger`. Smoke: `pp_local_test.sh run --suite ledger` (N-LEDGER).
 - Sketches / release packaging: [`packaging/pp-node/`](../../packaging/pp-node/), [`scripts/platform/pp_node_package_linux.sh`](../../scripts/platform/pp_node_package_linux.sh).
 - **Image smoke (L0/L1/L2 N-FANOUT):** [`packaging/pp-node/IMAGE_SMOKE.md`](../../packaging/pp-node/IMAGE_SMOKE.md). Local lifecycle: [`scripts/test/pp_local_test.sh`](../../scripts/test/pp_local_test.sh) (`run --suite node|cap|soak|chaos|call-hop|msg-call-hop|mix` / `stop` / `clear`). Loopback thin client (no Docker): `--suite call|conflict|msg-call`. Thin smokes: `pp_node_image_smoke.sh`, `pp_node_relay_smoke.sh`, `pp_node_fanout_smoke.sh`, `pp-node-probe`. Strategy / purpose IDs: [`TEST_STRATEGY.md`](TEST_STRATEGY.md). Doctrine (tiers / layers): [`TESTING.md`](../architecture/TESTING.md).
-- **Release trains:** app (`v*` / [`release.yml`](../../.github/workflows/release.yml)) and node (`pp-node/v*` / [`release-pp-node.yml`](../../.github/workflows/release-pp-node.yml)) are independent; cut tags from **`main`**, the only integration line. See [RELEASE.md](RELEASE.md).
+- **Release trains:** app (`v*` / [`release.yml`](../../.github/workflows/release.yml)) and node (`pp-node/v*` / [`release-pp-node.yml`](../../.github/workflows/release-pp-node.yml)) are independent; their tags go on release branches cut from **`main`** (`release/app-X.Y`, `release/node-X.Y`). See [RELEASE.md](RELEASE.md).
 - **Node release CI** builds on Ubuntu 24.04 (same family as `ubuntu:24.04` image), attaches a Linux tarball to the **pp-node** GitHub Release, pushes GHCR, and runs L0 smoke.
 - Local tarball + image smoke (on Ubuntu 24.04):
 
@@ -332,7 +332,7 @@ Build **PP.app** for the iOS Simulator or device with CMake + Xcode. Signing pla
 ./scripts/platform/ios_build.sh run-sim
 ```
 
-Device builds and code signing: [IOS_BUILD.md](IOS_BUILD.md). Manual TestFlight upload from Actions: [ios-testflight.yml](../../.github/workflows/ios-testflight.yml) (`workflow_dispatch`).
+Device builds and code signing: [IOS_BUILD.md](IOS_BUILD.md). TestFlight upload from Actions: [ios-testflight.yml](../../.github/workflows/ios-testflight.yml) (by hand, or for a release candidate from `release.yml`).
 
 The first clean iOS build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../../assets/) are copied into `PP.app/assets/` automatically.
 

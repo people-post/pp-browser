@@ -1,6 +1,12 @@
 name: release
 
-# App installers only (macOS / Windows / Android). pp-node: release-pp-node.yml + pp-node/v* tags.
+# App releases (release-compatibility DESIGN § Branches and tags, docs/ops/RELEASE.md). pp-node: release-pp-node.yml.
+#
+# - vX.Y.Z-rc.<n> on release/app-X.Y: a release candidate. Built once, with its final version X.Y.Z: macOS DMG,
+#   Windows installer, Android APK and the TestFlight upload (ios-testflight.yml); a GitHub prerelease holds the files.
+# - vX.Y.Z on the same commit as a candidate: the release. Nothing is rebuilt: the GitHub release gets that
+#   candidate's files (build once, promote the artifact).
+# The guard refuses every other tag, and tags whose commit is not on release/app-X.Y.
 
 on:
   push:
@@ -8,7 +14,7 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+*'
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   INSTALL_PREFIX: ${{ github.workspace }}/install
@@ -19,20 +25,94 @@ env:
 jobs:
   guard:
     runs-on: ubuntu-24.04
+    outputs:
+      kind: ${{ steps.tag.outputs.kind }}
+      version: ${{ steps.tag.outputs.version }}
+      commit: ${{ steps.tag.outputs.commit }}
+      candidate: ${{ steps.tag.outputs.candidate }}
+      testflight_build: ${{ steps.tag.outputs.testflight_build }}
+      latest: ${{ steps.tag.outputs.latest }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Require tag commit on main (release line)
+      - name: Release tags only from release/app-X.Y (RC007, RC016)
+        id: tag
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git fetch origin main
-          if ! git merge-base --is-ancestor HEAD origin/main; then
-            echo "::error::App release tags (v*) must point at a commit on origin/main."
+          tag="${GITHUB_REF_NAME}"
+          num='(0|[1-9][0-9]*)'
+          if [[ ! "$tag" =~ ^v(${num}\.${num}\.${num})(-rc\.([1-9][0-9]*))?$ ]]; then
+            echo "::error::${tag} is not an app release tag. Release workflows take vX.Y.Z (a release) and vX.Y.Z-rc.<n> (a release candidate) only; a build to try goes through ios-testflight by hand (tagged internal/<n>)."
             exit 1
           fi
+          version="${BASH_REMATCH[1]}"
+          major="${BASH_REMATCH[2]}"
+          minor="${BASH_REMATCH[3]}"
+          patch="${BASH_REMATCH[4]}"
+          rc="${BASH_REMATCH[6]}"
+          branch="release/app-${major}.${minor}"
+          commit="$(git rev-parse HEAD)"
+          if ! git fetch --no-tags origin "+refs/heads/${branch}:refs/remotes/origin/${branch}"; then
+            echo "::error::${tag}: there is no branch ${branch}. App release tags go on their release branch; cut it from main first (docs/ops/RELEASE.md)."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$commit" "origin/${branch}"; then
+            echo "::error::${tag} points at ${commit}, which is not on ${branch}. App release tags are taken only from their release branch (v${major}.${minor}.* from ${branch})."
+            exit 1
+          fi
+          echo "OK: ${commit} is on ${branch}"
+          if [[ -n "$rc" ]]; then
+            if git rev-parse -q --verify "refs/tags/v${version}" >/dev/null; then
+              echo "::error::v${version} is already released; a fix to it is v${major}.${minor}.$(( patch + 1 ))-rc.1."
+              exit 1
+            fi
+            kind="candidate"
+            candidate=""
+            testflight_build=""
+          else
+            # Build once: the release takes the files of a candidate on this same commit.
+            re="^v${version//./\\.}-rc\\.([1-9][0-9]*)$"
+            candidate=""
+            best=0
+            while read -r t; do
+              if [[ "$t" =~ $re ]] && (( BASH_REMATCH[1] > best )); then
+                best="${BASH_REMATCH[1]}"
+                candidate="$t"
+              fi
+            done < <(git tag --points-at "$commit")
+            if [[ -z "$candidate" ]]; then
+              echo "::error::${tag}: no release candidate v${version}-rc.<n> points at ${commit}. A release is never built: tag a candidate, let it build and pass, then tag ${tag} on the same commit."
+              exit 1
+            fi
+            if ! gh release view "$candidate" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null; then
+              echo "::error::${tag}: candidate ${candidate} has no GitHub release, so its build did not finish. Fix it and tag a new candidate."
+              exit 1
+            fi
+            # The candidate's TestFlight build (ios-testflight.yml tags it rc-build/<n>).
+            testflight_build="$(git tag --points-at "$commit" --list 'rc-build/*' | sed 's#^rc-build/##' | sort -n | tail -1)"
+            kind="release"
+          fi
+          # GitHub's "latest" only for the newest release, not for a fix to an older line.
+          newest="$( { git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; echo "v${version}"; } | sort -V | tail -1)"
+          latest=false
+          if [[ "$newest" == "v${version}" ]]; then
+            latest=true
+          fi
+          {
+            echo "kind=${kind}"
+            echo "version=${version}"
+            echo "commit=${commit}"
+            echo "candidate=${candidate}"
+            echo "testflight_build=${testflight_build}"
+            echo "latest=${latest}"
+          } >> "$GITHUB_OUTPUT"
+          echo "${tag}: ${kind} of ${version} from ${branch}${candidate:+ (promotes ${candidate})}"
       - name: Require the org relays' PeerIds (multi-relay MR008)
+        if: steps.tag.outputs.kind == 'candidate'
         shell: bash
         env:
           PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
@@ -42,6 +122,7 @@ jobs:
 
   macos:
     needs: [guard]
+    if: needs.guard.outputs.kind == 'candidate'
     # The self-hosted Mac (CI_MAC_RELEASE_LABELS, as TestFlight; hosted macos-15 when unset). Tag pushes only.
     runs-on: ${{ fromJSON(vars.CI_MAC_RELEASE_LABELS || '"macos-15"') }}
     env:
@@ -84,14 +165,17 @@ jobs:
       - name: Parse version from tag
         id: version
         shell: bash
+        env:
+          GUARD_VERSION: ${{ needs.guard.outputs.version }}
         run: |
-          RELEASE_VERSION="${GITHUB_REF_NAME#v}"
-          # PB-009: the tag name is anyone-with-push's text; only a version goes on into the build.
-          if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
-            echo "::error::tag ${GITHUB_REF_NAME} is not vX.Y.Z or vX.Y.Z-suffix"
+          # A candidate is built with its final version X.Y.Z, so the release can ship these same files (build once;
+          # the tag itself names the candidate). PB-009: only a version goes on into the build.
+          RELEASE_VERSION="${GUARD_VERSION}"
+          if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::guard version ${RELEASE_VERSION} is not X.Y.Z"
             exit 1
           fi
-          PROJECT_VERSION="${RELEASE_VERSION%%-*}"
+          PROJECT_VERSION="${RELEASE_VERSION}"
           echo "release_version=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
           echo "project_version=${PROJECT_VERSION}" >> "$GITHUB_OUTPUT"
           echo "PP_RELEASE_VERSION=${RELEASE_VERSION}" >> "$GITHUB_ENV"
@@ -218,6 +302,7 @@ jobs:
 
   windows:
     needs: [guard]
+    if: needs.guard.outputs.kind == 'candidate'
     runs-on: windows-2022
     env:
       CCACHE_COMPRESSLEVEL: 5
@@ -263,14 +348,17 @@ jobs:
       - name: Parse version from tag
         id: version
         shell: bash
+        env:
+          GUARD_VERSION: ${{ needs.guard.outputs.version }}
         run: |
-          RELEASE_VERSION="${GITHUB_REF_NAME#v}"
-          # PB-009: the tag name is anyone-with-push's text; only a version goes on into the build.
-          if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
-            echo "::error::tag ${GITHUB_REF_NAME} is not vX.Y.Z or vX.Y.Z-suffix"
+          # A candidate is built with its final version X.Y.Z, so the release can ship these same files (build once;
+          # the tag itself names the candidate). PB-009: only a version goes on into the build.
+          RELEASE_VERSION="${GUARD_VERSION}"
+          if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::guard version ${RELEASE_VERSION} is not X.Y.Z"
             exit 1
           fi
-          PROJECT_VERSION="${RELEASE_VERSION%%-*}"
+          PROJECT_VERSION="${RELEASE_VERSION}"
           echo "release_version=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
           echo "project_version=${PROJECT_VERSION}" >> "$GITHUB_OUTPUT"
           echo "PP_RELEASE_VERSION=${RELEASE_VERSION}" >> "$GITHUB_ENV"
@@ -341,6 +429,7 @@ jobs:
 
   android:
     needs: [guard]
+    if: needs.guard.outputs.kind == 'candidate'
     runs-on: ubuntu-24.04
     env:
       # Set before setup-java / Gradle daemon so native builds inherit ccache config.
@@ -430,14 +519,17 @@ jobs:
       - name: Parse version from tag
         id: version
         shell: bash
+        env:
+          GUARD_VERSION: ${{ needs.guard.outputs.version }}
         run: |
-          RELEASE_VERSION="${GITHUB_REF_NAME#v}"
-          # PB-009: the tag name is anyone-with-push's text; only a version goes on into the build.
-          if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
-            echo "::error::tag ${GITHUB_REF_NAME} is not vX.Y.Z or vX.Y.Z-suffix"
+          # A candidate is built with its final version X.Y.Z, so the release can ship these same files (build once;
+          # the tag itself names the candidate). PB-009: only a version goes on into the build.
+          RELEASE_VERSION="${GUARD_VERSION}"
+          if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::guard version ${RELEASE_VERSION} is not X.Y.Z"
             exit 1
           fi
-          PROJECT_VERSION="${RELEASE_VERSION%%-*}"
+          PROJECT_VERSION="${RELEASE_VERSION}"
           echo "release_version=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
           echo "project_version=${PROJECT_VERSION}" >> "$GITHUB_OUTPUT"
           echo "PP_RELEASE_VERSION=${RELEASE_VERSION}" >> "$GITHUB_ENV"
@@ -487,9 +579,25 @@ jobs:
           path: dist/android/*.apk
           if-no-files-found: error
 
+  # The candidate's TestFlight upload, same workflow as a dev build (tags rc-build/<build number> after it).
+  ios:
+    needs: [guard]
+    if: needs.guard.outputs.kind == 'candidate'
+    uses: ./.github/workflows/ios-testflight.yml
+    permissions:
+      contents: write
+    with:
+      candidate_tag: ${{ github.ref_name }}
+    secrets: inherit
+
+  # A candidate's GitHub prerelease, made only when every platform built and TestFlight took the upload: a release
+  # (vX.Y.Z) promotes only a candidate that has one.
   release:
-    needs: [macos, windows, android]
+    needs: [guard, macos, windows, android, ios]
+    if: needs.guard.outputs.kind == 'candidate'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v7
@@ -512,18 +620,68 @@ jobs:
           name: android-release-apk
           path: dist/android
 
-      - name: Create GitHub Release
+      - name: Create GitHub prerelease
         uses: softprops/action-gh-release@v3
         with:
           name: pp-browser ${{ github.ref_name }}
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: true
           generate_release_notes: true
           files: |
             dist/macos/*
             dist/windows/*
             dist/android/*
           body: |
-            ## App release
+            ## App release candidate
 
-            macOS / Windows / Android installers. Headless **`pp-node`** ships on a separate train — tag `pp-node/v…` and see [RELEASE.md](https://github.com/${{ github.repository }}/blob/main/docs/ops/RELEASE.md).
+            Release candidate of **${{ needs.guard.outputs.version }}**, built with that version: macOS / Windows / Android installers, and iOS TestFlight build **${{ needs.guard.outputs.version }} (${{ needs.ios.outputs.build_number }})** (tag `rc-build/${{ needs.ios.outputs.build_number }}`). Tagging `v${{ needs.guard.outputs.version }}` on this commit releases these same files without a rebuild. Headless **`pp-node`** ships on a separate train — see [RELEASE.md](https://github.com/${{ github.repository }}/blob/main/docs/ops/RELEASE.md).
+
+  # vX.Y.Z: no build. The release gets the candidate's files, byte for byte (DESIGN § Builds, tags and deploys).
+  # TODO (docs/ops/RELEASE.md § Coming): the store promotion workflow (App Store Connect / Play APIs).
+  promote:
+    needs: [guard]
+    if: needs.guard.outputs.kind == 'release'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Release the candidate's files
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.guard.outputs.version }}
+          COMMIT: ${{ needs.guard.outputs.commit }}
+          CANDIDATE: ${{ needs.guard.outputs.candidate }}
+          TESTFLIGHT_BUILD: ${{ needs.guard.outputs.testflight_build }}
+          LATEST: ${{ needs.guard.outputs.latest }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download "$CANDIDATE" --repo "$GITHUB_REPOSITORY" --dir dist
+          shopt -s nullglob
+          files=(dist/*)
+          if (( ${#files[@]} == 0 )); then
+            echo "::error::candidate ${CANDIDATE}'s GitHub release has no files"
+            exit 1
+          fi
+          {
+            echo "## App release"
+            echo ""
+            echo "**${VERSION}**, promoted from release candidate **${CANDIDATE}** (commit \`${COMMIT}\`): these are that candidate's files, not a rebuild."
+            echo ""
+            if [[ -n "$TESTFLIGHT_BUILD" ]]; then
+              echo "iOS: TestFlight build ${VERSION} (${TESTFLIGHT_BUILD}), tag \`rc-build/${TESTFLIGHT_BUILD}\`. Until the store promotion workflow lands, it is sent to external testers and App Store review by hand in App Store Connect."
+              echo ""
+            fi
+            echo "| File | SHA-256 |"
+            echo "|------|---------|"
+            for f in "${files[@]}"; do
+              echo "| $(basename "$f") | \`$(sha256sum "$f" | cut -d' ' -f1)\` |"
+            done
+            echo ""
+            echo "Headless **\`pp-node\`** ships on a separate train — see [RELEASE.md](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/main/docs/ops/RELEASE.md)."
+          } > notes.md
+          gh release create "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "pp-browser ${TAG}" --notes-file notes.md --generate-notes --latest="${LATEST}"
+          cat notes.md >> "$GITHUB_STEP_SUMMARY"
