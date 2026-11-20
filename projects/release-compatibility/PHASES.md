@@ -18,7 +18,12 @@ Written up in [INVENTORY.md](INVENTORY.md) (2026-11-19); its work list is agreed
 
 ## P1 — Freeze
 
-- [ ] No new breaking work outside the P0 list until release 1 ships.
+**In force since 2026-11-19** (Hongwei), until release 1 ships.
+
+- [ ] No new breaking work outside the P0 list until release 1 ships. The list is [INVENTORY § 4](INVENTORY.md#4-release-1-work-list)
+  and the planned work it sends before the freeze ([§ 5](INVENTORY.md#5-breaking-work-in-flight)); anything else is
+  additive (old readers ignore it) or waits for the range rule. A PR that breaks a format names its INVENTORY item in
+  *Contracts and docs*. The rule covers pp-browser, pp-relay-apis and the pp-cpp-* libraries.
 
 ## P2 — One main, release branches
 

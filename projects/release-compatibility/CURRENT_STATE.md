@@ -12,5 +12,6 @@ review; RC015 Kenneth's client-side questions; RC016 three independent version l
 field does today, and the release-1 work list (§ 4). In review with Hongwei, Kenneth (RC015's rows, the update
 text) and Leo (the relay's rows). P0's decisions are taken (RC017: a clean local start, `pp_credit` fixed, the easy
 recovery tier and N031 after release 1; RC018: the answers for Kenneth's and Leo's rows, the
-rest theirs with defaults). P1, the freeze, can start: nothing on the list waits on an open decision. Until release 1 ships, [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) (clean cutovers) is the
+rest theirs with defaults). **P1, the freeze, is in force since 2026-11-19:** no breaking change outside the list until
+release 1 ships ([PHASES § P1](PHASES.md#p1--freeze)). Next: P2 (one main, release branches) and P3 (the list built). Until release 1 ships, [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) (clean cutovers) is the
 policy in force, but new breaking changes should already be weighed against the range rule.
