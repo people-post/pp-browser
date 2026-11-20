@@ -65,6 +65,14 @@ void ShellFeedback::ExpireToasts(ShellState& state, float now_ms) {
                      state.toasts.end());
 }
 
+bool ShellFeedback::DismissToastWithMessage(ShellState& state, const std::string& message) {
+  const size_t before = state.toasts.size();
+  state.toasts.erase(std::remove_if(state.toasts.begin(), state.toasts.end(),
+                                    [&message](const ToastEntry& toast) { return message == toast.message.c_str(); }),
+                     state.toasts.end());
+  return state.toasts.size() != before;
+}
+
 double ShellFeedback::SecondsUntilNextFeedbackExpiry(const ShellState& state, float now_ms) {
   // The banner counts too: an idle (power-save) loop must still wake up to take it down.
   const bool banner = !state.banner_message.empty() && state.banner_expires_at_ms > 0.f;

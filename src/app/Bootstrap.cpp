@@ -6,7 +6,9 @@
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/BackendProfile.h"
 #include "foundation/data/Config.h"
+#include "foundation/platform/CallKitDiagnostics.h"
 #include "foundation/platform/DeploymentProfile.h"
+#include "lib/media/AudioSession.h"
 #include "foundation/data/ProfileManifest.h"
 #include "feature/product/HubSettingsProjection.h"
 #include "feature/product/UiDemoConfig.h"
@@ -41,6 +43,9 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
     return config.error();
   }
   SetSendContentSha256(config->relay_content_sha256);
+  // B233: the audio-session timing lines are written wherever the QA origin is compiled in (today every iOS build, not
+  // a store-build gate); see CallKitDiagnostics.h.
+  AudioSession::SetDiagnosticsEnabled(CallKitDiagnosticsEnabled());
   AppPaths::DataDir(config->data_dir);
 
   auto registry = ProfileRegistry::Load(AppPaths::DataDir());

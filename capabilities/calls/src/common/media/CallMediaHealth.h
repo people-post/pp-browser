@@ -17,6 +17,11 @@ enum class CallPathQuality {
   Poor = 3,
   Reconnecting = 4,
   NoAudio = 5,
+  /**
+   * B233: a microphone is wanted and no capture device has been open for kCallMicNotOpenAfterMs (the engine's
+   * MediaEngineHealth::mic_missing_ms). Appended last so the numbers of the others (metrics history) keep meaning.
+   */
+  NoMic = 6,
 };
 
 enum class CallAudioAsymmetry {
@@ -83,6 +88,14 @@ struct CallHopHealth {
   uint64_t unopened_frames = 0;
 };
 
+/** B233: a wanted microphone with no open device grades the call NoMic (and the page says so) after this long. */
+inline constexpr int64_t kCallMicNotOpenAfterMs = 3000;
+
+/** The engine's wanted-but-not-open microphone has lasted long enough to say so. */
+inline bool CallMicNotOpen(const MediaEngineHealth& engine) {
+  return engine.mic_missing_ms >= kCallMicNotOpenAfterMs;
+}
+
 /** Path pressure (the engine's or the hop's, the larger) at which the call grades Poor, Fair, Good (else Excellent). */
 inline constexpr double kCallPressurePoor = 0.75;
 inline constexpr double kCallPressureFair = 0.4;
@@ -137,6 +150,8 @@ struct CallMediaHealthInput {
    * Used when hop is not attached (1:1 Amp also sets engine.packet_mode for capture).
    */
   std::string reach_path_kind;
+  /** B233: grade a wanted microphone with no open device NoMic (phones; desktop keeps grading as before). */
+  bool grade_mic_not_open = true;
   /** The call's link, sampled by the caller (rates need two samples). */
   CallLinkHealth link;
   /** The engine's pressure that grades the call (CallBufferPressureGate); none: engine.path_pressure as it is. */

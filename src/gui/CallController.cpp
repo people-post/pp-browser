@@ -1335,6 +1335,9 @@ void CallController::ShowNotice(const CallNotice& notice) {
         UserFeedback::Note(Tr(notice.key));
       }
       return;
+    case CallNotice::Kind::HintWithdrawn:
+      UserFeedback::DismissToastWithMessage(Tr(notice.key)); // only our own sentence; a pill that replaced it stays
+      return;
   }
 }
 
@@ -2136,7 +2139,7 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend& backend,
   in_call.quality_ok = view.quality <= CallPathQuality::Good;
   in_call.quality_warn = view.quality == CallPathQuality::Fair;
   in_call.quality_error = view.quality == CallPathQuality::Poor || view.quality == CallPathQuality::NoAudio ||
-                          view.quality == CallPathQuality::Reconnecting;
+                          view.quality == CallPathQuality::Reconnecting || view.quality == CallPathQuality::NoMic;
   const char* label_key = CallPathQualityLabelKey(view.quality);
   in_call.quality_label = label_key && label_key[0] ? Tr(label_key).c_str() : "";
   ApplyDebugSubtitle(media, view, now_ms);
@@ -2165,6 +2168,8 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend& backend,
   // spike, "can't hear the other side" in the second before the first audio arrived). Network quality stays visible
   // in the signal bars; an audio fault must persist for CallAudioFaultToastGate::kAudioFaultToastMs and toasts at
   // most once per call.
+  // NoMic (B233) is not counted: the presenter's pill says it, and this gate speaks once per call — a NoMic that used
+  // the turn would silence a later real "no audio".
   const bool audio_fault = view.quality == CallPathQuality::NoAudio || view.asymmetry != CallAudioAsymmetry::None;
   if (audio_fault_gate_.Update(presenter_.ActiveCallId(), audio_fault, now_ms)) {
     if (!frame.hint_key.empty()) {

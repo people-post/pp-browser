@@ -98,6 +98,10 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
   if (in.reconnecting) {
     out.quality = CallPathQuality::Reconnecting;
     out.quality_bars = 1;
+  } else if (in.grade_mic_not_open && CallMicNotOpen(in.engine)) {
+    // Not the network: the engine has no capture device, so the other side hears silence (B233).
+    out.quality = CallPathQuality::NoMic;
+    out.quality_bars = 1;
   } else if (in.engine.active && !rx_alive && tx_alive) {
     out.quality = CallPathQuality::NoAudio;
     out.asymmetry = CallAudioAsymmetry::SendingOnly;
@@ -135,6 +139,8 @@ const char* CallPathQualityLabelKey(CallPathQuality q) {
       return "call.status.reconnecting";
     case CallPathQuality::NoAudio:
       return "call.quality.no_audio";
+    case CallPathQuality::NoMic:
+      return ""; // the network is fine; the status line and the pill say the microphone is not open
   }
   return "";
 }
@@ -153,6 +159,8 @@ const char* CallPathQualityDetailsLabelKey(CallPathQuality q) {
       return "call.status.reconnecting";
     case CallPathQuality::NoAudio:
       return "call.quality.no_audio";
+    case CallPathQuality::NoMic:
+      return "call.quality.no_mic";
   }
   return "call.quality.good";
 }
@@ -263,7 +271,8 @@ std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_m
       << " hop_pressure=" << v.hop.path_pressure << " opus_bps=" << v.engine.opus_target_bps
       << " tx_drops=" << v.engine.outbound_drops << " hop_drops_rate=" << v.hop.drops_rate
       << " hop_drops_queue=" << v.hop.drops_queue << " hop_drops_ceiling=" << v.hop.drops_ceiling
-      << " rx_age_ms=" << rx_age << " mic_lvl=" << v.engine.local_level << " peer_lvl=" << v.engine.remote_level;
+      << " rx_age_ms=" << rx_age << " mic_missing_ms=" << v.engine.mic_missing_ms << " mic_lvl=" << v.engine.local_level
+      << " peer_lvl=" << v.engine.remote_level;
   if (v.link.available) {
     out << " link_rtt_ms=" << v.link.rtt_ms << " link_resend_pct=" << v.link.resend_pct;
   }

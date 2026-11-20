@@ -7,6 +7,7 @@ namespace pbr {
 namespace {
 
 std::atomic<int> g_tone_holds{0};
+std::atomic<bool> g_diagnostics{false};
 
 } // namespace
 
@@ -18,6 +19,14 @@ void BeginToneHold() {
 
 void EndToneHold() {
   g_tone_holds.fetch_sub(1, std::memory_order_acq_rel);
+}
+
+void SetDiagnosticsEnabled(const bool enabled) {
+  g_diagnostics.store(enabled, std::memory_order_relaxed);
+}
+
+bool DiagnosticsEnabled() {
+  return g_diagnostics.load(std::memory_order_relaxed);
 }
 
 bool ToneHoldsSession() {

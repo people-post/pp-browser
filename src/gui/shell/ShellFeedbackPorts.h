@@ -15,6 +15,8 @@ struct ShellFeedbackPorts {
   std::function<void(const std::string& message, ToastDuration duration)> show_toast;
   /** Takes the pill down now (a "Preparing…" note whose work has finished). */
   std::function<void()> dismiss_toast;
+  /** Takes down only the toast(s) showing exactly this text (a pill whose cause is gone; not whatever replaced it). */
+  std::function<void(const std::string& message)> dismiss_toast_with_message;
   /** `sticky`: stays until dismissed; otherwise gone after ShellFeedback::kBannerTtlMs. */
   std::function<void(const std::string& message, bool sticky)> show_banner;
   std::function<void()> dismiss_banner;

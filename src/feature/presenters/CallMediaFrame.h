@@ -65,6 +65,12 @@ struct CallMediaFacts {
   /** This device's hold has lasted too long to be a normal one (CallHoldStuck, fed by CallPresenter; B217). */
   bool hold_stuck = false;
 
+  /**
+   * B233: the platform says a wanted microphone with no open device is this call's fault (AudioSession::
+   * MicNotOpenHintApplies: phones). Where false, the page keeps what it said before: no NoMic grade, line or pill.
+   */
+  bool mic_not_open_hint = true;
+
   // --- What the media health is evaluated from (EvaluateCallMediaHealth).
   MediaEngineHealth engine;
   CallHopHealth hop;
@@ -174,6 +180,8 @@ struct CallHintPromptInput {
   bool playout_stuck = false;
   /** On hold here or there: the silence is by design. */
   bool on_hold = false;
+  /** B233: a wanted microphone has had no open device for a while (CallPathQuality::NoMic): hang up, restart PP. */
+  bool mic_not_open = false;
   int64_t now_ms = 0;
   /** An outgoing 1:1 call has rung 30 s with no answer (CallStoryView::ring_unanswered_long). */
   bool ring_unanswered_long = false;
@@ -186,6 +194,9 @@ struct CallHintPrompt {
   std::string pill_key;
   bool pill_alarm = false;
 };
+
+/** B233: the pill's sentence for a wanted microphone that is not open (the status line says the short call.quality.no_mic). */
+inline constexpr const char* kCallMicNotOpenKey = "call.quality.hint.mic_not_open";
 
 /**
  * One-way audio (either way) this long after the steps went is said: the first packets of a call often take a moment,
@@ -216,6 +227,11 @@ struct CallMediaScreen {
   std::string center_hint_key;
   std::string pill_key;
   bool pill_alarm = false;
+  /**
+   * A pill this call raised earlier whose cause is gone (the microphone opened): its text (a locale key), to take down
+   * if it is still showing. Said once per pill. "" none.
+   */
+  std::string pill_withdraw_key;
   /** The hint's sentences are this frame's pills (a 1:1 call): the GUI's old audio-fault toast does not say them too. */
   bool hint_pilled = false;
   CallStoryView story;
@@ -273,6 +289,8 @@ private:
   int64_t one_way_since_ms_ = 0;
   int64_t not_sending_since_ms_ = 0;
   std::map<std::string, int64_t> last_pill_ms_;
+  /** B233: the microphone pill was raised and not yet withdrawn. */
+  bool mic_pill_raised_ = false;
   CallConnectStory story_;
   CallReconnectCapsule reconnect_;
 };
