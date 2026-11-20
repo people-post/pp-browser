@@ -746,19 +746,19 @@ TEST_P(PictureSendPageTest, TheSizeShowsOnlyWithOriginalCheckedAndCheckingItMark
   Arrive("b.jpg", 4 * kMb);
   Frames();
   EXPECT_EQ(Width(One(".ps-original-size")), 0.f) << "no size while the check is empty";
-  EXPECT_EQ(Count(".ps-original-check.storage-check--on"), 0U) << "empty when the page opens";
-  EXPECT_EQ(Count(".ps-original-check .storage-check-icon"), 0U);
+  EXPECT_EQ(Count(".ps-original-check--on"), 0U) << "empty when the page opens";
+  EXPECT_EQ(Count(".ps-original-tick"), 0U);
   EXPECT_GE(Width(One(".ps-original-check")), 22.f - 0.5f) << "a round check, not a switch";
   EXPECT_EQ(Count(".settings-switch"), 0U);
   Tap(".ps-original-check"); // the circle itself
   EXPECT_TRUE(queue_->Original());
-  EXPECT_EQ(Count(".ps-original-check.storage-check--on"), 1U) << "filled";
-  EXPECT_EQ(Count(".ps-original-check .storage-check-icon"), 1U) << "with a tick";
+  EXPECT_EQ(Count(".ps-original-check--on"), 1U) << "filled";
+  EXPECT_EQ(Count(".ps-original-tick"), 1U) << "with a tick";
   EXPECT_GT(Width(One(".ps-original-size")), 0.f);
   EXPECT_EQ(Text(".ps-original-size"), "7.0 MB total");
   Tap(".ps-original-label"); // the label toggles it too
   EXPECT_FALSE(queue_->Original());
-  EXPECT_EQ(Count(".ps-original-check.storage-check--on"), 0U);
+  EXPECT_EQ(Count(".ps-original-check--on"), 0U);
   EXPECT_EQ(Width(One(".ps-original-size")), 0.f);
 }
 

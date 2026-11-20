@@ -4094,6 +4094,22 @@ input.checkbox:checked {
   color: #ffffff;
 }
 
+.ps-original-check {
+  background-color: #8e8e93;
+}
+
+.ps-original-check--on {
+  background-color: #0a84ff;
+}
+
+.ps-original-hole {
+  background-color: #000000;
+}
+
+.ps-original-tick {
+  image-color: #ffffff;
+}
+
 .ps-original-size {
   color: #ebebf599;
 }
