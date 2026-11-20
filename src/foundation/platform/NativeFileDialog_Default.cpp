@@ -57,7 +57,8 @@ void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callba
 }
 
 void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback callback,
-                                std::function<void(const std::string& name)> /*on_preparing*/) {
+                                std::function<void(const std::string& name)> /*on_preparing*/, const int /*max_count*/,
+                                NativePhotoItemCallback /*on_item*/) {
   if (!callback) {
     return;
   }

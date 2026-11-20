@@ -560,6 +560,33 @@ TEST(PendingPictureSourcePinTest, PickResultsCarryTheirSerialAndEveryEndClosesTh
   EXPECT_NE(Body(source, "void ChatController::Update(").find("AbandonPick(); // locked"), std::string::npos);
 }
 
+// Kenneth 2026-11-19: the system camera's "Use Photo" is the confirmation, so a camera picture goes straight on, sent
+// smaller, with no "Send / Send original / Cancel" choice. The choice stays for the desktop and Android library pick.
+TEST(PendingPictureSourcePinTest, ACameraPictureGoesStraightOnWithoutTheSendChoice) {
+  const std::string source = Controller();
+  const std::string ports = Body(source, "CaptureFlowPorts ChatController::MakeCaptureFlowPorts(");
+  ASSERT_FALSE(ports.empty());
+  const size_t at = ports.find("ports.ask_picture = ");
+  ASSERT_NE(at, std::string::npos);
+  const std::string ask = ports.substr(at, ports.find("ports.send_video", at) - at);
+  EXPECT_EQ(ask.find("ShowPictureSendChoice"), std::string::npos) << "no second prompt after the camera";
+  EXPECT_NE(ask.find("thread_id != ActiveThreadId()"), std::string::npos) << "the chat changed meanwhile: not sent";
+  EXPECT_NE(ask.find("Tr(\"chat.attach.not_sent_left_chat\")"), std::string::npos);
+  std::string squeezed;
+  for (const char c : ask) {
+    if (c != ' ' && c != '\n') {
+      squeezed += c;
+    }
+  }
+  EXPECT_NE(squeezed.find(
+                "OutgoingPickSource::Photo,/*voice_file=*/false,thread_id,PendingUploadKind::Picture,pick_serial);"),
+            std::string::npos)
+      << "shrunk, to the armed chat";
+  // The library pick of the desktop and Android still asks.
+  EXPECT_NE(Body(source, "void ChatController::OnAttachFile(").find("ShowPictureSendChoice(std::move(path), *thread);"),
+            std::string::npos);
+}
+
 // B1 (source-order pins): a pick's result is only ever sent to the chat it was armed in — every picker result, the
 // camera's and the picture choice hand that thread to StartAttachmentUpload, which never reads the open chat.
 TEST(PendingPictureSourcePinTest, APickIsSentOnlyToTheChatItWasArmedIn) {

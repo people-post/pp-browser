@@ -2981,7 +2981,16 @@ void ChatController::OpenCameraCapture(const CameraCaptureKind kind) {
 CaptureFlowPorts ChatController::MakeCaptureFlowPorts(const uint64_t pick_serial, const std::string& thread_id) {
   CaptureFlowPorts ports;
   ports.release = [this](const std::string& path) { release_pick_(path); };
-  ports.ask_picture = [this, thread_id](std::string path) { ShowPictureSendChoice(std::move(path), thread_id); };
+  // The system camera's "Use Photo" is the confirmation (Kenneth 2026-11-19): the picture goes straight on, sent smaller.
+  ports.ask_picture = [this, pick_serial, thread_id](std::string path) {
+    if (thread_id.empty() || thread_id != ActiveThreadId()) {
+      release_pick_(path); // its chat is no longer the open one: nothing is sent
+      UserFeedback::Fail(Tr("chat.attach.not_sent_left_chat"));
+      return;
+    }
+    StartAttachmentUpload(path, OutgoingPickSource::Photo, /*voice_file=*/false, thread_id, PendingUploadKind::Picture,
+                          pick_serial);
+  };
   ports.send_video = [this, pick_serial, thread_id](std::string path) {
     StartAttachmentUpload(path, OutgoingPickSource::Photo, /*voice_file=*/false, thread_id, PendingUploadKind::Video,
                           pick_serial);

@@ -25,6 +25,7 @@
   pbr::NativeFileDialogCallback callback;
   std::function<void(const std::string& name)> preparing; // a video was chosen and is being copied (may be empty)
   bool preparing_for_images; // also call `preparing` for a photo (ShowOpenImageFileDialog's caller asked for it)
+  pbr::NativePhotoItemCallback on_item; // several photos: each item as it is copied, then `callback({})` as "done"
 }
 @end
 
@@ -131,6 +132,7 @@ void Finish(PPPickDelegate* delegate, std::vector<std::string> paths) {
   delegate->callback = nullptr;
   delegate->preparing = nullptr;
   delegate->preparing_for_images = false;
+  delegate->on_item = nullptr;
   if (ActivePicker() == delegate) {
     SetActivePicker(nil);
     [delegate release];
@@ -138,6 +140,77 @@ void Finish(PPPickDelegate* delegate, std::vector<std::string> paths) {
   if (callback) {
     callback(std::move(paths));
   }
+}
+
+/** What to ask the library for: a video as the library has it, a photo as JPEG / PNG (any image as a last resort). */
+NSString* RepresentationType(NSItemProvider* provider, bool* is_video) {
+  // Ask for the JPEG / PNG the "compatible" mode offers: SDL_image cannot decode the HEIC originals here
+  // (2026-10-20 device: photos failed as "not an image"). Any image only as a last resort.
+  NSString* type = UTTypeImage.identifier;
+  *is_video = [provider hasItemConformingToTypeIdentifier:UTTypeMovie.identifier];
+  if (*is_video) {
+    return UTTypeMovie.identifier; // a video from the library picker: its file as it is (.mov, HEVC)
+  }
+  if ([provider hasItemConformingToTypeIdentifier:UTTypeJPEG.identifier]) {
+    type = UTTypeJPEG.identifier;
+  } else if ([provider hasItemConformingToTypeIdentifier:UTTypePNG.identifier]) {
+    type = UTTypePNG.identifier;
+  }
+  return type;
+}
+
+/**
+ * Several photos: the items are copied one at a time in the order they were chosen (the picker's selection is
+ * ordered); each one is reported on the main thread as soon as it is copied (`path` empty: this one could not be
+ * copied), then `callback({})` says the batch is over. The delegate and `results` are retained for the whole chain.
+ */
+void DeliverNextItem(PPPickDelegate* delegate, NSArray<PHPickerResult*>* results, const NSUInteger index) {
+  const NSUInteger total = results.count;
+  if (index >= total) {
+    Finish(delegate, {});
+    [results release];
+    [delegate release];
+    return;
+  }
+  NSItemProvider* provider = results[index].itemProvider;
+  NSString* name = provider.suggestedName;
+  bool is_video = false;
+  NSString* type = RepresentationType(provider, &is_video);
+  const auto started = std::chrono::steady_clock::now();
+  [provider
+      loadFileRepresentationForTypeIdentifier:type
+                            completionHandler:^(NSURL* url, NSError* error) {
+                              // `url` is removed when this handler returns: copy it now.
+                              std::string copied;
+                              if (url != nil) {
+                                copied = CopyIntoPickRoot(url, name);
+                                if (!copied.empty()) {
+                                  copied = ConvertHeicToJpeg(copied);
+                                }
+                              }
+                              const long ms = static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                                    std::chrono::steady_clock::now() - started)
+                                                                    .count());
+                              if (copied.empty()) {
+                                pbr::logging::getLogger("photo-picker").warning
+                                    << "photo picker delivery failed kind=" << (is_video ? "video" : "image")
+                                    << " index=" << index << " ms=" << ms
+                                    << " error=" << (error != nil ? error.localizedDescription.UTF8String : "none");
+                              } else {
+                                NSNumber* size = [[[NSFileManager defaultManager]
+                                    attributesOfItemAtPath:[NSString stringWithUTF8String:copied.c_str()]
+                                                     error:nil] objectForKey:NSFileSize];
+                                pbr::logging::getLogger("photo-picker").info
+                                    << "photo picker delivered kind=" << (is_video ? "video" : "image")
+                                    << " index=" << index << " bytes=" << size.unsignedLongLongValue << " ms=" << ms;
+                              }
+                              dispatch_async(dispatch_get_main_queue(), ^{
+                                if (delegate->on_item) {
+                                  delegate->on_item(static_cast<size_t>(index), static_cast<size_t>(total), copied);
+                                }
+                                DeliverNextItem(delegate, results, index + 1);
+                              });
+                            }];
 }
 
 /** Start a pick: nil (and the callback answered "nothing picked") when another pick is up or UIKit is busy. */
@@ -164,28 +237,28 @@ PPPickDelegate* BeginPick(SDL_Window* window, pbr::NativeFileDialogCallback call
     Finish(self, {});
     return;
   }
+  if (on_item) {
+    // Several photos: "Preparing…" once for the whole batch, then one item at a time.
+    if (preparing) {
+      preparing(std::string());
+    }
+    [self retain];    // until the last item is copied (DeliverNextItem)
+    [results retain]; // likewise
+    DeliverNextItem(self, results, 0);
+    return;
+  }
   NSItemProvider* provider = results.firstObject.itemProvider;
-  // Ask for the JPEG / PNG the "compatible" mode offers: SDL_image cannot decode the HEIC originals here
-  // (2026-10-20 device: photos failed as "not an image"). Any image only as a last resort.
-  NSString* type = UTTypeImage.identifier;
   NSString* name = provider.suggestedName;
-  const bool is_video = [provider hasItemConformingToTypeIdentifier:UTTypeMovie.identifier];
+  bool is_video = false;
+  NSString* type = RepresentationType(provider, &is_video);
   if (is_video) {
-    type = UTTypeMovie.identifier; // a video from the library picker: its file as it is (.mov, HEVC)
     if (preparing) {
       // The copy below can take a while: the caller says "Sending…" (with the name) meanwhile.
       preparing(name != nil ? std::string(name.UTF8String) : std::string());
     }
-  } else {
-    if ([provider hasItemConformingToTypeIdentifier:UTTypeJPEG.identifier]) {
-      type = UTTypeJPEG.identifier;
-    } else if ([provider hasItemConformingToTypeIdentifier:UTTypePNG.identifier]) {
-      type = UTTypePNG.identifier;
-    }
-    if (preparing && preparing_for_images) {
-      // A large photo takes seconds to copy / convert: the caller says "Preparing…" meanwhile.
-      preparing(name != nil ? std::string(name.UTF8String) : std::string());
-    }
+  } else if (preparing && preparing_for_images) {
+    // A large photo takes seconds to copy / convert: the caller says "Preparing…" meanwhile.
+    preparing(name != nil ? std::string(name.UTF8String) : std::string());
   }
   const auto started = std::chrono::steady_clock::now();
   [self retain]; // until the file has been copied
@@ -305,7 +378,8 @@ void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callba
 }
 
 void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback callback,
-                                std::function<void(const std::string& name)> on_preparing) {
+                                std::function<void(const std::string& name)> on_preparing, const int max_count,
+                                NativePhotoItemCallback on_item) {
   if (!callback) {
     return;
   }
@@ -319,7 +393,14 @@ void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback cal
     delegate->preparing = std::move(on_preparing);
     config.filter =
         [PHPickerFilter anyFilterMatchingSubfilters:@[ [PHPickerFilter imagesFilter], [PHPickerFilter videosFilter] ]];
-    config.selectionLimit = 1;
+    if (on_item && max_count > 1) {
+      // Several: the order the person tapped them in is the order they are delivered (and shown, and sent).
+      delegate->on_item = std::move(on_item);
+      config.selectionLimit = max_count;
+      config.selection = PHPickerConfigurationSelectionOrdered;
+    } else {
+      config.selectionLimit = 1;
+    }
     // Current: a video arrives as the library has it (HEVC .mov is not transcoded to H.264, which on a long clip
     // takes minutes); a HEIC photo then arrives as HEIC and ConvertHeicToJpeg makes the JPEG.
     config.preferredAssetRepresentationMode = PHPickerConfigurationAssetRepresentationModeCurrent;
