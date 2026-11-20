@@ -132,19 +132,30 @@ Full GUI is the wrong default stress vehicle. Prefer thin clients / in-process c
 | Gate | Contents |
 |------|----------|
 | **Every PR** | Tier A + stable Tier B compose set (below) + pp-node L0 if image/packaging touched; a capability folder's unit tests (`capability:<name>`) only when the PR touches it or what is below it ([SRC_LAYOUT § Capability folders](../architecture/SRC_LAYOUT.md#capability-folders)) |
+| **Every merge to main** | Lab smoke — the app lab's `smoke` scenarios on the lab machine, after the merge; blocks nothing ([§ Lab smoke](#lab-smoke)) |
 | **Nightly** | The app lab — `--suite app` and `--suite app-nat` on main ([§ Nightly lab](#nightly-lab)); later: heavier soak, L1, L2 `N-FANOUT` when stable, modest capacity (small N), `--suite mix` |
 | **Weekly / pre-release** | `N-SOAK`, `N-CHAOS`, larger `N-CAP-*`, `B-CALL-HOP` on compose |
 | **Manual dogfood** | Real phones, NAT, UPnP — never the only gate |
 
 ### Nightly lab
 
-[`nightly-lab.yml`](../../.github/workflows/nightly-lab.yml) runs the app lab every night (07:17 UTC) on main, and on demand (Actions → nightly-lab → Run workflow: suites, scenarios). Never on pull requests.
+[`nightly-lab.yml`](../../.github/workflows/nightly-lab.yml) runs the app lab every night (07:17 UTC) on main, and on demand (Actions → nightly-lab → Run workflow: suites, scenarios, tags). Never on pull requests. It and [lab smoke](#lab-smoke) call one reusable workflow, [`lab-run.yml`](../../.github/workflows/lab-run.yml): start the machine, build `pp-app-probe` and `pp-node`, run the suites (`--retry-failed --summary`), report, stop the machine.
 
 - **Machine:** a self-hosted EC2 instance (`c7i.2xlarge`, 150 GB), registered as this repository's self-hosted runner `pp-lab`. It is stopped except while the workflow runs: a hosted job starts it (OIDC role `github-pp-lab`, start/stop of that one instance only), a hosted job stops it after, and it shuts itself down four hours after boot whatever happens. Its build and ccache stay on its disk between nights.
 - **Relay:** pp-relay-apis's local stack (below), from a checkout of [`people-post/pp-relay-apis`](https://github.com/people-post/pp-relay-apis) at `PP_LAB_RELAY_APIS_REF` (repository variable, default `main`: what prod runs) beside the workspace; the run records its commit.
 - **Flakes:** `pp_app_lab.py --retry-failed` runs each failed scenario once more; passing then is a flake (listed in the run's summary), failing again a failure. `--summary <file>` writes every outcome as JSON.
 - **Reporting:** [`nightly_lab_report.py`](../../scripts/test/nightly_lab_report.py) keeps one issue per failing scenario (label `nightly-lab`: opened, commented while it fails, closed the night it passes) and one per suite that did not finish. Issues carry the scenario, the first line of its error, the commit and the run link; profiles and logs of what failed are the run's artifact (14 days).
-- **Idle until configured:** the repository variables `PP_LAB_INSTANCE_ID` and `PP_LAB_AWS_ROLE` and the secret `PP_LAB_RELAY_APIS_TOKEN` (read access to the private pp-relay-apis) switch it on.
+- **Idle until configured:** the repository variables `PP_LAB_INSTANCE_ID` and `PP_LAB_AWS_ROLE` and the secret `PP_LAB_RELAY_APIS_TOKEN` (read access to the private pp-relay-apis) switch it on. Until then each run's first (hosted) job says which are missing in a notice and starts nothing.
+- **One machine, two workflows:** the machine's one runner takes the nightly's and lab smoke's lab jobs in turn; a run's stop job leaves the machine on while another run's lab job has not finished (that run stops it), and a start waits for a machine still stopping.
+
+### Lab smoke
+
+[`lab-smoke.yml`](../../.github/workflows/lab-smoke.yml) runs the app lab's `smoke` scenarios ([§ Scenario tags](#scenario-tags-and-selection)) on the lab machine after every merge to main — `pp_local_test.sh run --suite app --tags smoke`, as the nightly runs its suites — with the same `--retry-failed` and artifact (`lab-smoke`, 14 days). The tier's budget is 15 min of scenarios ([release-compatibility § Regression suites](../../projects/release-compatibility/DESIGN.md#regression-suites)).
+
+- **Blocks nothing:** it runs on the push to main, never on a pull request, and is not a required check. A failure shows on the commit and in the run's summary (`nightly_lab_report.py --no-issues`); the nightly keeps the issues.
+- **One at a time:** a newer push replaces one still waiting for the run before it (`concurrency`, not cancelled once running). Merges that touch only docs (`docs/`, `projects/`, `*.md`) do not run it.
+- **On demand** (Actions → lab-smoke → Run workflow): any tags, and `changed` — `origin/main` from your branch, a range, or paths — for the scenarios a branch touches; the two add up (clear tags to run only the change's).
+- **Idle until configured,** as the nightly.
 
 Capacity tests emit a **curve** (success rate / latency vs N). First qualify “does not crash and recovers”; then tighten SLOs.
 
@@ -206,6 +217,9 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 ./scripts/test/pp_local_test.sh run --suite ledger  # N-LEDGER, local processes (needs PP_LEDGER_ROOT built; not in all)
 ./scripts/test/pp_local_test.sh run --suite app     # app lab: scripted users on pp-app-probe over the real relay (not in all)
 ./scripts/test/pp_local_test.sh run --suite app-nat # the app lab with each user behind its own NAT (not in all)
+./scripts/test/pp_local_test.sh run --suite app --tags smoke          # the lab-smoke set
+./scripts/test/pp_local_test.sh run --suite app --changed origin/main # what this branch touches (nothing: no lab)
+./scripts/test/pp_local_test.sh list --tags calls,groups              # scenarios, tags, what runs (no lab needed)
 ./scripts/test/pp_local_test.sh run                 # unit + call + conflict + msg-call + node (not cap/soak/chaos/call-hop/mix)
 ./scripts/test/pp_local_test.sh stop                # compose stop, volume kept
 ./scripts/test/pp_local_test.sh clear               # down -v + ready-file
@@ -260,6 +274,48 @@ They check that video flows; the numbers are the result.
 **App lifecycle and the network.** The probe runs the app's own frame pacing (`FramePacing.h`: a frame at once on posted UI work, else every `kLiveChromeFrameIntervalSec` while a ring / call panel shows, `kIdleFrameMaxWaitSec` idle; each frame ticks `CallPresenter`). `background` / `foreground` are a phone's OS events (`AppLifecycle::OnWillEnterBackground` / `OnDidEnterForeground`: background work paused; the hub's `OnAppBackground` / `OnAppForeground` react), `minimize` / `restore` a desktop window (`AppLifecycle::OnDesktopMinimized`: not attentive, still working), `push_wake` a call push (`BackgroundSyncScheduler::RequestUrgentWakeSync`, as `PushWakeJni`). Scenarios: `minimized_still_rings`, `push_wakes_background_callee`, `background_mid_call`, `peer_hangs_up_while_backgrounded`, `answered_in_background`; with `--nat` also `network_drops_mid_call` / `group_member_network_drops` (the user's link down 6 s: the same call recovers, and does not read Connected while down) and `address_changes_mid_call` (a new LAN address, so a new NAT mapping).
 
 Probes dial the hop at a **private / loopback** address from `/status` `listen_addrs` (its Docker network address) when the status URL is local: the hop ranks a public address learned from an internet seed first, which probes on the same host usually cannot reach (no NAT hairpin). Set `PP_NODE_HOP_MULTIADDR` to dial a specific hop address.
+
+### Scenario tags and selection
+
+Every app-lab scenario is declared with its tags in `SCENARIOS` ([`pp_app_lab.py`](../../scripts/test/pp_app_lab.py)); what the tags mean and how a run picks scenarios are in [`app_lab_select.py`](../../scripts/test/app_lab_select.py) ([release-compatibility RC013](../../projects/release-compatibility/DECISIONS.md#rc013--regression-suites-in-tiers-picked-by-capability-run-remotely)). A scenario carries the tags of what it checks, not of everything it passes through (every scenario registers and holds keys); every run first checks each scenario has known tags and at least one capability tag, so a scenario added without them fails at once.
+
+| Tag | What the scenarios check |
+|-----|--------------------------|
+| `people` `net` `social` `delivery` `pricing` `media` `messaging` `calls` `broadcast` `node` | one per capability folder (`capabilities/<name>/`, CTest label `capability:<name>`; [SRC_LAYOUT § Capabilities](../architecture/SRC_LAYOUT.md#capabilities-across-layers)). No scenario has `social`, `pricing` or `broadcast` yet |
+| `relay` | the relay service itself (pp-relay-apis): mailboxes, the directory, lockers, two relays |
+| `mesh` | reach between users: seeds, parking, circuits, NATs, a network that drops or changes |
+| `groups` | group chats and group calls |
+| `devices` | one account on several devices: linking, signing out, restoring, the recovery phrase |
+| `push` | the app in the background: push wakes, staying connected |
+| `smoke` | the lab-smoke set ([§ Lab smoke](#lab-smoke)) |
+
+**The smoke set** (`--suite app`, nine scenarios): `first_contact` (register; a stranger's 1:1 call), `first_message_brings_keys` (find someone in the directory; a first message), `chat_quote_reply` (send and receive), `group_members_key_each_other` (a group), `group_call_three` (a group call on the hop), `push_wakes_background_callee` (a push wake), `linked_device_introduces_itself` (link a device), `restore_from_phrase` (restore from the recovery phrase), `relay_not_matching_its_link_unused` (the relay's identity). Account deletion has no scenario yet. A scenario that flakes leaves the set (release-compatibility § Regression suites).
+
+**Selection** (`pp_app_lab.py`, and `pp_local_test.sh run|list` for `--suite app` / `app-nat`); the three add up, and with none a run takes the suite's whole set as before:
+
+- `--only NAME` — that scenario, opt-in ones included.
+- `--tags a,b` — every scenario with any of the tags that the suite runs (an opt-in measurement or a NAT-only scenario in `--suite app` is listed as picked but left out).
+- `--changed SPEC` — the tags of the paths a change touches, then as `--tags`. SPEC is a git range (`origin/main...HEAD`), one revision (`origin/main`: the files changed since the branch forked, its working tree and new files included), paths (`a,b`) or `-` (paths on stdin). A change that maps to no tag runs nothing, and `pp_local_test.sh` does not start the lab.
+- `--list` (`pp_local_test.sh list`) — every scenario, its tags and whether this selection runs it and why; needs no lab, exits 3 when nothing is selected. A run prints the same for what it runs before it starts, and `--summary` records each scenario's tags.
+
+**Paths → tags** (`PATH_RULES`, first match wins; a path in no rule picks everything):
+
+| Paths | Tags |
+|-------|------|
+| the lab: `pp_app_lab.py`, `app_lab_select.py`, `pp_local_test.sh`, `docker-compose.app-lab*`, `app-lab-*`, `src/app/node/tools/app_probe/` | all |
+| `lab-run.yml`, `lab-smoke.yml`, `nightly-lab.yml` | `smoke` |
+| docs: `docs/`, `projects/`, `design/`, `reports/`, `*.md` | none |
+| unit tests and other suites: `*/tests/*`, `*/testing/*`, other `scripts/test/` | none |
+| GUI and AI: `src/gui/`, `src/lib/ui/`, `src/common/ui/`, `src/lib/ai/`, `src/feature/ai/`, `src/lib/scan/`, `assets/` | none |
+| other platforms, tooling, CI: `android/`, `ios/`, `packaging/ios/`, `packaging/macos/`, other `scripts/`, other `.github/` | none |
+| `capabilities/base/`, `cmake/`, `CMakeLists.txt`, `src/CMakeLists.txt`, `third_party/` (the base, the build, the pinned pp-cpp-*) | all |
+| `capabilities/<x>/` | x and the capabilities above it, as CI's capability filters (`build.yml` `changes`): `calls` → calls, broadcast; `media` → media, messaging, calls, broadcast; `people` → all but media |
+| the app stack the probe runs: `src/feature/`, `src/foundation/`, `src/lib/storage/`, `src/domain/`, `src/app/Bootstrap.*` | all |
+| `src/app/node/`, `packaging/pp-node/Dockerfile`, its `config.json.example` (the seeds) | `node` |
+| `packaging/pp-node/Dockerfile.hard-*`, `hard-gw-*` (the NAT gateways) | `mesh` |
+| the rest of `src/app/` (the desktop shell), the rest of `packaging/pp-node/` | none |
+
+[`app_lab_select_test.py`](../../scripts/test/app_lab_select_test.py) tests the table, the selection and the registry (`python3 -m unittest discover -s scripts/test -p '*_test.py'`; standard library, plus PyYAML when present to check the capability order against `build.yml`'s filters).
 
 ---
 

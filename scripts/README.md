@@ -7,7 +7,7 @@ Repo tooling lives under topic subdirs (not a flat dump). Prefer these paths in 
 | [`check/`](check/) | Layer / include / platform `#ifdef` guards, C++ formatting (CI lint) | `check_format.sh` (`--fix`; clang-format 23.1.5), `check_base_includes.sh`, `check_feature_includes.sh`, `check_capability_edges.py`, `check_platform_ifdefs.sh`, `check_owner_runners.sh`, `check_shareable_channels.sh`, … |
 | [`platform/`](platform/) | Mobile / desktop build, sign, notarize; Linux `pp-node` package | `android_build.sh`, `ios_build.sh`, `macos_sign_and_notarize.sh`, `pp_node_package_linux.sh` |
 | [`vendor/`](vendor/) | Import / refresh third-party and fork trees | `vendor_import.sh`, `libp2p_vendor_import.sh`, `fonts_import_noto.sh`, `rmlui_tests_import.sh`, `quirc_import.sh` |
-| [`test/`](test/) | Local driver + image / hop / hard-lab / call smokes | `pp_local_test.sh`, `pp_*_smoke.sh`, `pp_hard_*`, `*_lib.sh` |
+| [`test/`](test/) | Local driver + image / hop / hard-lab / call smokes; the app lab (scenarios tagged by capability) | `pp_local_test.sh`, `pp_app_lab.py` (`app_lab_select.py`: tags, `--tags` / `--changed`; `app_lab_select_test.py`), `pp_*_smoke.sh`, `pp_hard_*`, `*_lib.sh` |
 | [`dev/`](dev/) | Local profile wipe after hard cuts; dogfood launcher (core dumps, console tee, crash symbolize); pp-node closure report (what a node release would ship); fake relay files server for the manual large-attachment run (`LargeAttachmentE2e`, Python 3 stdlib) | `wipe_local_profile.sh`, `wipe_local_profile.ps1`, `pp_dogfood.sh`, `pp_node_closure.sh`, `fake_blob_server.py` |
 
 Examples:

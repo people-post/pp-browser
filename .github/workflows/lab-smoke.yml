@@ -1,0 +1,57 @@
+name: lab-smoke
+
+# Lab smoke (docs/ops/TEST_STRATEGY.md § Lab smoke; release-compatibility RC013): the app lab's `smoke` scenarios
+# (`pp_local_test.sh run --suite app --tags smoke`: register, find someone, a first message, a group, a call, a
+# group call, a push wake, a linked device, a restore, the relay's identity) on the lab machine after every merge to
+# main, as nightly-lab.yml runs its suites (lab-run.yml). On demand (Run workflow) it takes any tags or a --changed
+# range instead: the scenarios a branch touches.
+#
+# Never on pull requests and never a required check: it runs after the merge and blocks nothing; a failure shows on
+# the commit and in the run's summary (no issue: the nightly keeps those). Idle (a notice) until the lab machine is
+# set up — the repository variables PP_LAB_INSTANCE_ID and PP_LAB_AWS_ROLE and the secret PP_LAB_RELAY_APIS_TOKEN.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: # what the path → tag table maps to no scenario (scripts/test/app_lab_select.py)
+      - 'docs/**'
+      - 'projects/**'
+      - '**/*.md'
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: 'Scenarios with any of these tags (a,b)'
+        default: 'smoke'
+      changed:
+        description: 'And the scenarios a change touches: origin/main (run from your branch), a range or paths (a,b); clear tags to run only these'
+        default: ''
+      suites:
+        description: 'Suites to run (space-separated)'
+        default: 'app'
+
+permissions:
+  contents: read
+
+# One at a time: a newer push replaces one still waiting; the one running finishes.
+concurrency:
+  group: lab-smoke-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  lab:
+    permissions:
+      contents: read
+      id-token: write # the hosted jobs start and stop the lab machine (OIDC role)
+      issues: write # lab-run.yml's report job asks for it; with issues false it files none
+      actions: read # the stop job looks for other lab runs still on the machine
+    uses: ./.github/workflows/lab-run.yml
+    secrets: inherit
+    with:
+      name: Lab smoke
+      artifact: lab-smoke
+      suites: ${{ inputs.suites || 'app' }}
+      tags: ${{ github.event_name == 'push' && 'smoke' || inputs.tags }}
+      changed: ${{ inputs.changed || '' }}
+      issues: false
+      suite_timeout_minutes: 30 # the tier's budget is 15 min of scenarios; the rest is building and the stack
+      job_timeout_minutes: 75
