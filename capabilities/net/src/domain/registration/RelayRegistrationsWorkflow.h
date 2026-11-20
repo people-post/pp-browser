@@ -42,7 +42,8 @@ struct RegistrationLossBackoff {
  * Our account on our other relays (multi-relay R2; docs/contracts/SERVICE_ENDPOINTS.md § Several relays): once the
  * account is registered on its preferred relay (the person's act, kept in the identity), it registers on each other
  * relay of ours with the same card — and again when the card changes, when that registration nears its expiry (14
- * days, as the preferred one), or after a failure (a backoff from kFirstRetryMs doubling to kMaxRetryMs). What a
+ * days, as the preferred one), or after a failure (a backoff from kFirstRetryMs doubling to kMaxRetryMs; once a day,
+ * kRefusedRetryMs, after a refusal asking again will not change). What a
  * relay answered is reported (SetOnResult: the owner keeps it, OurRelaysStore) and given back at the next start
  * (Relay::last): a relay that holds a registration for our current card is not asked again. The preferred relay's
  * registration stays
@@ -53,6 +54,11 @@ class RelayRegistrationsWorkflow : public Module {
 public:
   static constexpr int64_t kFirstRetryMs = 60 * 1000;
   static constexpr int64_t kMaxRetryMs = 30 * 60 * 1000;
+  /**
+   * After a permanent refusal (IsPermanentRelayRefusal: that relay needs a newer app, is older than this app, or
+   * answers to another identity; release-compatibility T17): asked again once a day, not on the backoff.
+   */
+  static constexpr int64_t kRefusedRetryMs = 24 * 60 * 60 * 1000;
 
   struct Relay {
     std::string origin;

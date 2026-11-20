@@ -134,6 +134,7 @@ protected:
     DataModelHost::Instance().Dirty("shell", "update_card_link");
     DataModelHost::Instance().Dirty("shell", "update_card_note_shown");
     DataModelHost::Instance().Dirty("shell", "update_card_note");
+    DataModelHost::Instance().Dirty("shell", "update_card_held");
     DataModelHost::Instance().Dirty("shell", "recovery_reminder");
     context_->Update();
   }
@@ -188,6 +189,25 @@ TEST_F(UpdateCardRenderTest, WithoutALinkTheCardKeepsItsLineAndOnlyLater) {
   const auto buttons = Buttons(cards[0]);
   ASSERT_EQ(buttons.size(), 1u);
   EXPECT_EQ(buttons[0]->GetInnerRML(), "Later");
+}
+
+// T14: held up while the org's relay refuses this app: the card's own words and its Update button, no Later.
+TEST_F(UpdateCardRenderTest, AHeldCardHasUpdateAndNoLater) {
+  shell_.update_card = true;
+  shell_.update_card_link = true;
+  shell_.update_card_held = true;
+  Mount();
+  const auto cards = Cards();
+  ASSERT_EQ(cards.size(), 1u);
+  EXPECT_NE(cards[0]->GetInnerRML().find("A new version of PP is available. Update for the best experience."),
+            std::string::npos)
+      << "the card's own line, unchanged";
+  const auto buttons = Buttons(cards[0]);
+  ASSERT_EQ(buttons.size(), 1u);
+  EXPECT_EQ(buttons[0]->GetInnerRML(), "Update");
+  shell_.update_card_held = false;
+  Apply();
+  EXPECT_EQ(Buttons(Cards()[0]).size(), 2u) << "Later comes back once it is not held";
 }
 
 TEST_F(UpdateCardRenderTest, TheRelaysNoteIsASecondLineUnderTheAppsOwnAndShownAsPlainText) {

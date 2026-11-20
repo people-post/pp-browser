@@ -157,6 +157,25 @@ TEST_F(UpdateCardControllerTest, LaterIsRememberedOnTheDeviceAndFollowsTheRhythm
   EXPECT_TRUE(chat_.UpdateCardShows());
 }
 
+// T14: the org's relay refusing this app holds the card up: shown whatever "Later" was tapped, with no Later (a tap
+// does nothing), and with no announced version too; the Update button opens the link as ever.
+TEST_F(UpdateCardControllerTest, AHeldCardStaysUpAndHasNoLater) {
+  advice_ = UpdateAdvice{"1.2.0", ""};
+  chat_.OnUpdateCardLater();
+  ASSERT_FALSE(chat_.UpdateCardShows());
+  advice_ = UpdateAdvice{.latest_version = "1.2.0", .url = "https://apps.apple.com/app/id1", .held = true};
+  EXPECT_TRUE(chat_.UpdateCardShows()) << "held: \"Later\" before does not hide it";
+  chat_.OnUpdateCardLater();
+  EXPECT_TRUE(chat_.UpdateCardShows()) << "a held card has no Later";
+  EXPECT_EQ(UpdatePrefs::Read(dir_.string()).dismissals, 1) << "nothing remembered for it";
+  chat_.OnUpdateCardOpen();
+  EXPECT_EQ(opened_, std::vector<std::string>{"https://apps.apple.com/app/id1"});
+  advice_ = UpdateAdvice{.latest_version = "", .url = "", .held = true};
+  EXPECT_TRUE(chat_.UpdateCardShows()) << "the relay's 426 needs no announced version";
+  store_.Mutable().profile_prefs.onboarding_completed = false;
+  EXPECT_FALSE(chat_.UpdateCardShows()) << "never over the first-run sheets";
+}
+
 } // namespace
 /** Collects the controller channel's lines (logger handlers cannot be removed: kept for the process). */
 struct ControllerLogCapture : logging::Handler {

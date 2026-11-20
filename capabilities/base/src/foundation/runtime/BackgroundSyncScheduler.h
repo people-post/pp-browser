@@ -21,7 +21,8 @@ inline constexpr uint64_t kBackgroundWakeWindowMs = 20000;
 inline constexpr uint64_t kStayConnectedRelayPollIntervalMs = 30000;
 
 /**
- * Owns the relay poll (foreground only) and the wakes (P010).
+ * Owns the relay poll (foreground only) and the wakes (P010). The pace is the app's; a relay that refuses the poll for
+ * good is backed off per relay by the inbox coordinator (RelayInboxCoordinator, release-compatibility T14), not here.
  * Poll runs on the coordinator timer wheel; wake paths post immediate coordinator messages. In the
  * background the app's work is paused and it is reached by push only: a push / WorkManager wake
  * resumes it for kBackgroundWakeWindowMs.

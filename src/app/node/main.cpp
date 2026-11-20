@@ -1,4 +1,5 @@
 #include "app/node/NodeBootstrap.h"
+#include "app/node/NodeCompatFloor.h"
 #include "app/node/NodeEnvOverlay.h"
 #include "app/node/NodeHeartbeat.h"
 #include "app/node/NodeMetrics.h"
@@ -15,6 +16,7 @@
 #include "common/ValueJson.h"
 #include "mesh/dht/AmpDhtProtocol.h"
 #include "lib/net/HttpClient.h"
+#include "lib/net/OrgBackendClientsImpl.h"
 #include "lib/net/RegistrationSignPayload.h"
 #include "foundation/product/AppVersion.h"
 #include "foundation/product/BuildInfo.h"
@@ -289,6 +291,46 @@ pbr::NodeHeartbeatDeps MakeHeartbeatDeps(pbr::NodeBootstrapResult& boot,
   return deps;
 }
 
+constexpr std::chrono::steady_clock::duration kPublishRetryInitial = std::chrono::seconds(10);
+constexpr std::chrono::steady_clock::duration kPublishRetryMax = std::chrono::minutes(5);
+/** After a refusal asking again will not change (T17): the registration is tried again once a day. */
+constexpr std::chrono::steady_clock::duration kPublishRetryRefused = std::chrono::hours(24);
+
+/**
+ * The wait before the next registration try after `error`: once a day after a permanent refusal (426, a relay older
+ * than this node, another identity; T17), else 10 s doubling to 5 min (`first`: the delay itself, not yet doubled).
+ */
+std::chrono::steady_clock::duration NextPublishRetryDelay(const std::chrono::steady_clock::duration delay,
+                                                          const pbr::Error& error, const bool first) {
+  if (pbr::IsPermanentRelayRefusal(error)) {
+    return kPublishRetryRefused;
+  }
+  if (delay >= kPublishRetryRefused) {
+    return kPublishRetryInitial; // the refusal is over: back to the ordinary backoff
+  }
+  return first ? delay : std::min<std::chrono::steady_clock::duration>(delay * 2, kPublishRetryMax);
+}
+
+/** A failed registration, logged unless the pins told the operator already (426: NodeUpgradeNotice). */
+void NotePublishFailure(pbr::logging::Logger& log, const char* what, const pbr::Error& error) {
+  if (!pbr::IsClientUpgradeRequired(error)) {
+    log.warning << what << error.message;
+  }
+}
+
+/** The relay's client-compat, read for its node floor (A2); none without a registration URL. */
+pbr::NodeCompatFloor MakeNodeCompatFloor(const pbr::NodeBootstrapResult& boot) {
+  pbr::NodeCompatFloor::Fetch fetch;
+  if (const std::string& relay = boot.config.registration.base_url; !relay.empty()) {
+    auto client = std::make_shared<pbr::HttpClientCompatClient>(relay);
+    fetch = [client]() { return client->Fetch(); };
+  }
+  return pbr::NodeCompatFloor(std::move(fetch), pbr::AppVersionString(), []() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+  });
+}
+
 pbr::StatusHttpSnapshot MakeSnapshot(pbr::NodeBootstrapResult& boot) {
   pbr::StatusHttpSnapshot snap;
   snap.host_running = boot.mesh && boot.mesh->IsRunning();
@@ -498,20 +540,23 @@ int main(int argc, char** argv) {
   auto schedule_probe = [&]() { boot->mesh->StartReachabilityProbe(/*try_upnp_first=*/false); };
   schedule_probe();
 
+  // The relay's node floor (A2): below it, no registration and no heartbeat there (one ERROR); the mesh runs on.
+  pbr::NodeCompatFloor node_floor = MakeNodeCompatFloor(*boot);
+  bool relay_calls_allowed = node_floor.RelayCallsAllowed();
+
   // Publish/renew mesh_node listing when advertise multiaddrs configured (N027); a failed first
   // publish is retried with backoff below until the node is registered.
-  constexpr auto kPublishRetryInitial = std::chrono::seconds(10);
-  constexpr auto kPublishRetryMax = std::chrono::minutes(5);
   std::chrono::steady_clock::duration publish_retry_delay = kPublishRetryInitial;
   auto publish_retry_due = std::chrono::steady_clock::now();
-  bool publish_pending = false;
-  if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, "", relay_audience);
-      !published) {
-    if (!pbr::IsClientUpgradeRequired(published.error())) { // told once (NodeUpgradeNotice)
-      root.warning << "mesh directory publish skipped/failed: " << published.error().message;
+  bool publish_pending = !relay_calls_allowed;
+  if (relay_calls_allowed) {
+    if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, "", relay_audience);
+        !published) {
+      NotePublishFailure(root, "mesh directory publish skipped/failed: ", published.error());
+      publish_pending = true;
+      publish_retry_delay = NextPublishRetryDelay(publish_retry_delay, published.error(), true);
+      publish_retry_due += publish_retry_delay;
     }
-    publish_pending = true;
-    publish_retry_due += publish_retry_delay;
   }
 
   root.info << "pp-node running (SIGINT/SIGTERM to stop)";
@@ -530,36 +575,40 @@ int main(int argc, char** argv) {
       last_probe = now;
       schedule_probe();
     }
-    if (publish_pending && now >= publish_retry_due) {
+    if (const bool allowed = node_floor.RelayCallsAllowed(); allowed != relay_calls_allowed) {
+      relay_calls_allowed = allowed;
+      if (allowed) { // the floor no longer excludes this node: register there again now
+        publish_pending = true;
+        publish_retry_delay = kPublishRetryInitial;
+        publish_retry_due = now;
+      }
+    }
+    if (relay_calls_allowed && publish_pending && now >= publish_retry_due) {
       if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, "", relay_audience);
           published) {
         publish_pending = false;
         last_mesh_publish = now;
       } else {
-        if (!pbr::IsClientUpgradeRequired(published.error())) {
-          root.warning << "mesh directory publish retry failed: " << published.error().message;
-        }
-        publish_retry_delay = std::min<std::chrono::steady_clock::duration>(publish_retry_delay * 2, kPublishRetryMax);
+        NotePublishFailure(root, "mesh directory publish retry failed: ", published.error());
+        publish_retry_delay = NextPublishRetryDelay(publish_retry_delay, published.error(), false);
         publish_retry_due = now + publish_retry_delay;
       }
     }
-    if (heartbeat) {
+    if (heartbeat && relay_calls_allowed) {
       heartbeat->Tick();
     }
-    if (now - last_mesh_publish > std::chrono::hours(12)) {
+    if (relay_calls_allowed && !publish_pending && now - last_mesh_publish > std::chrono::hours(12)) {
       last_mesh_publish = now;
       if (auto published = pbr::PublishOrRenewMeshNodeListing(boot->config, *boot->identity, "", relay_audience);
           !published) {
-        if (!pbr::IsClientUpgradeRequired(published.error())) {
-          root.warning << "mesh directory renew failed: " << published.error().message;
-        }
+        NotePublishFailure(root, "mesh directory renew failed: ", published.error());
       }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
   }
 
   root.info << "pp-node shutting down";
-  if (heartbeat) {
+  if (heartbeat && relay_calls_allowed) {
     heartbeat->SendFinal(); // before the mesh stops; bounded by a short timeout
   }
   ledger.Stop(); // its protocols withdrawn, its thread joined — before the mesh stops

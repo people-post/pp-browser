@@ -4,6 +4,7 @@
 #include "common/ValueJson.h"
 #include "common/metrics/MetricsRegistry.h"
 #include "foundation/tls/RelayClientHeader.h"
+#include "lib/net/RelayAudience.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -143,6 +144,7 @@ NodeHeartbeat::Outcome NodeHeartbeat::Send(const HeartbeatState state, const lon
 
   const long status = response.value().status_code;
   const ParsedError parsed = ParseBody(response.value().body);
+  refused_for_good_ = false;
   MetricsRegistry& r = MetricsRegistry::Global();
   int64_t skew_ms = 0;
   if (parsed.server_time) {
@@ -177,6 +179,12 @@ NodeHeartbeat::Outcome NodeHeartbeat::Send(const HeartbeatState state, const lon
     log.warning << "heartbeat: peer_id is not an endpoint of this registration; will retry";
   } else if (status == 426) {
     outcome = Outcome::Rejected; // `client_upgrade_required`: `refused` above told the pins (one ERROR per relay)
+    refused_for_good_ = true;
+  } else if (status == 400 && (parsed.code == "relay_upgrade_required" || parsed.code == "unsupported_sign_version")) {
+    outcome = Outcome::Rejected;
+    refused_for_good_ = true;
+    log.error << "heartbeat refused (400 " << parsed.code
+              << "): the relay is older than this pp-node and needs an update; sent again once a day";
   } else if (status == 400 || status == 403) {
     outcome = Outcome::Rejected;
     log.error << "heartbeat refused (" << status << "): " << parsed.code;
@@ -200,7 +208,11 @@ void NodeHeartbeat::HandleNotRegistered(const int64_t now) {
   if (renewed) {
     next_send_ms_ = now; // retry the heartbeat right away
   } else {
-    logging::getLogger("pp-node").warning << "heartbeat re-registration failed: " << renewed.error().message;
+    if (IsPermanentRelayRefusal(renewed.error())) {
+      reregister_due_ms_ = now + kHeartbeatRefusedRetryMs; // until one side is updated: once a day (T17)
+    } else {
+      logging::getLogger("pp-node").warning << "heartbeat re-registration failed: " << renewed.error().message;
+    }
     next_send_ms_ = reregister_due_ms_;
   }
 }
@@ -223,6 +235,8 @@ void NodeHeartbeat::Tick() {
     reregister_due_ms_ = INT64_MIN;
   } else if (outcome == Outcome::NotRegistered) {
     HandleNotRegistered(now);
+  } else if (refused_for_good_) {
+    next_send_ms_ = now + kHeartbeatRefusedRetryMs; // asking every 5 minutes changes nothing (T17)
   }
 }
 

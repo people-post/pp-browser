@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <random>
 #include <set>
 #include <string>
@@ -44,6 +45,11 @@ public:
     queued_.push_back(std::move(result));
   }
   void Fail(bool fail) { fail_ = fail; }
+  /** Every poll is refused with `refusal` (none: answered as queued). */
+  void Refuse(std::optional<Error> refusal) {
+    std::lock_guard lock(mutex_);
+    refusal_ = std::move(refusal);
+  }
 
   Roe<void> Send(const RelayEnvelope&) override { return {}; }
   Roe<RelayPollResult> PollInbox(const std::string&, const std::string& cursor) override {
@@ -52,6 +58,9 @@ public:
     }
     std::lock_guard lock(mutex_);
     polled_with.push_back(cursor);
+    if (refusal_) {
+      return *refusal_;
+    }
     if (fail_) {
       return AppError::Network(Err::Network::ConnectFailed, "down");
     }
@@ -78,6 +87,7 @@ private:
   std::mutex mutex_;
   std::vector<RelayPollResult> queued_;
   bool fail_ = false;
+  std::optional<Error> refusal_;
 };
 
 class RelayInboxCoordinatorTest : public ::testing::Test {
@@ -107,6 +117,7 @@ protected:
       outcomes_.push_back(origin + (failure ? " failed" : " ok"));
     };
     ports.ready = [this](const std::string& origin) { return registered_.contains(origin); };
+    ports.now_ms = [this]() { return now_ms_; };
     return ports;
   }
 
@@ -116,6 +127,7 @@ protected:
   std::set<std::string> registered_{kOther};
   std::vector<std::string> taken_;
   std::vector<std::string> outcomes_;
+  int64_t now_ms_ = 1'000'000;
   std::unique_ptr<RelayInboxCoordinator> coordinator_;
 };
 
@@ -177,6 +189,66 @@ TEST_F(RelayInboxCoordinatorTest, ARelayThatFailsIsReportedAndTheOthersStillDeli
   coordinator_->Sync(true, kMe);
   EXPECT_EQ(outcomes_, std::vector<std::string>({std::string(kPreferred) + " failed", std::string(kOther) + " ok"}));
   EXPECT_EQ(taken_, std::vector<std::string>({std::string(kOther) + " m1"}));
+}
+
+// T14: a relay refusing the poll for good (426, 400 relay_upgrade_required / unsupported_sign_version, wrong_audience
+// at the PeerId it presents) is not asked every 2 s: it waits kRefusedFirstMs, doubling to kRefusedMaxMs, forced syncs
+// too; the others go on, and an answer ends the back-off.
+TEST_F(RelayInboxCoordinatorTest, APermanentRefusalBacksThePollOff) {
+  for (const Error& refusal : {AppError::Auth(Err::Auth::ClientUpgradeRequired, "426"),
+                               AppError::Auth(Err::Auth::RelayUpgradeRequired, "relay_upgrade_required"),
+                               AppError::Auth(Err::Auth::WrongAudience, "wrong_audience")}) {
+    coordinator_ = std::make_unique<RelayInboxCoordinator>(Ports());
+    coordinator_->SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
+    preferred_->polled_with.clear();
+    other_->polled_with.clear();
+    preferred_->Refuse(refusal);
+    coordinator_->Sync(false, kMe);
+    ASSERT_EQ(preferred_->polled_with.size(), 1u) << refusal.message;
+    for (int i = 0; i < 20; ++i) {
+      now_ms_ += 2'000; // the app's pace
+      coordinator_->Sync(i % 5 == 0, kMe);
+    }
+    EXPECT_EQ(preferred_->polled_with.size(), 1u) << "not again within the first minute, forced or not";
+    EXPECT_GT(other_->polled_with.size(), 1u) << "the other relays go on";
+    now_ms_ += RelayInboxCoordinator::kRefusedFirstMs;
+    coordinator_->Sync(false, kMe);
+    EXPECT_EQ(preferred_->polled_with.size(), 2u) << "asked again after the back-off";
+    now_ms_ += RelayInboxCoordinator::kRefusedFirstMs; // the wait doubled: not yet
+    coordinator_->Sync(false, kMe);
+    EXPECT_EQ(preferred_->polled_with.size(), 2u);
+    now_ms_ += RelayInboxCoordinator::kRefusedFirstMs;
+    coordinator_->Sync(false, kMe);
+    EXPECT_EQ(preferred_->polled_with.size(), 3u);
+    preferred_->Refuse(std::nullopt);
+    now_ms_ += RelayInboxCoordinator::kRefusedMaxMs;
+    coordinator_->Sync(false, kMe);
+    coordinator_->Sync(false, kMe);
+    EXPECT_EQ(preferred_->polled_with.size(), 5u) << "an answer ends the back-off: every sync again";
+  }
+}
+
+TEST_F(RelayInboxCoordinatorTest, AnOrdinaryFailureIsNotBackedOff) {
+  preferred_->Fail(true);
+  for (int i = 0; i < 5; ++i) {
+    coordinator_->Sync(false, kMe);
+  }
+  EXPECT_EQ(preferred_->polled_with.size(), 5u) << "unreachable is the network's: polled at the app's pace";
+  preferred_->Fail(false);
+  preferred_->Refuse(AppError::Auth(Err::Auth::NotRegistered, "not_registered"));
+  coordinator_->Sync(false, kMe);
+  coordinator_->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.size(), 7u) << "a lost registration heals: not backed off";
+}
+
+TEST_F(RelayInboxCoordinatorTest, TheBackOffStopsAtItsLongest) {
+  preferred_->Refuse(AppError::Auth(Err::Auth::ClientUpgradeRequired, "426"));
+  coordinator_->Sync(false, kMe);
+  for (int i = 0; i < 12; ++i) {
+    now_ms_ += RelayInboxCoordinator::kRefusedMaxMs;
+    coordinator_->Sync(false, kMe);
+  }
+  EXPECT_EQ(preferred_->polled_with.size(), 13u) << "at most every kRefusedMaxMs, never further apart";
 }
 
 // My relays (MR006): a relay made preferred polls on from its own cursor; a relay that leaves the list loses its

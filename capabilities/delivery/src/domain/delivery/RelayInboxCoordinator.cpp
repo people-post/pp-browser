@@ -2,9 +2,11 @@
 
 #include "common/Diag.h"
 #include "common/chat/MessagingLimits.h"
+#include "lib/net/RelayAudience.h"
 #include "lib/net/RelayOrigins.h"
 
 #include <algorithm>
+#include <chrono>
 #include <utility>
 
 namespace pbr {
@@ -60,6 +62,31 @@ void RelayInboxCoordinator::SetInboxes(std::vector<RelayInbox> inboxes, std::str
   }
 }
 
+int64_t RelayInboxCoordinator::NowMs() const {
+  if (ports_.now_ms) {
+    return ports_.now_ms();
+  }
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
+bool RelayInboxCoordinator::BackingOff(const Inbox& inbox, const int64_t now_ms) const {
+  std::lock_guard lock(mutex_);
+  return inbox.refused_until_ms > 0 && now_ms < inbox.refused_until_ms;
+}
+
+void RelayInboxCoordinator::NoteRefusal(Inbox& inbox, const bool permanent) {
+  std::lock_guard lock(mutex_);
+  if (!permanent) {
+    inbox.refused_until_ms = 0;
+    inbox.refused_backoff_ms = 0;
+    return;
+  }
+  inbox.refused_backoff_ms =
+      inbox.refused_backoff_ms == 0 ? kRefusedFirstMs : std::min(inbox.refused_backoff_ms * 2, kRefusedMaxMs);
+  inbox.refused_until_ms = NowMs() + inbox.refused_backoff_ms;
+}
+
 std::vector<RelayInbox> RelayInboxCoordinator::Inboxes() const {
   std::lock_guard lock(mutex_);
   std::vector<RelayInbox> out;
@@ -83,9 +110,13 @@ void RelayInboxCoordinator::Sync(const bool force, const std::string& account_id
       }
     }
   }
+  const int64_t now = NowMs();
   for (const auto& inbox : due) {
     if (!inbox->preferred && ports_.ready && !ports_.ready(inbox->relay.origin)) {
       continue; // not registered there yet: it would refuse the poll
+    }
+    if (BackingOff(*inbox, now)) {
+      continue; // it refused us for good a moment ago (T14): asking every 2 s changes nothing
     }
     // Always mark a poll asked for: one in flight polls once more after it (a call's key may land meanwhile).
     inbox->again.store(true);
@@ -105,14 +136,15 @@ void RelayInboxCoordinator::Poll(const std::shared_ptr<Inbox>& inbox, const std:
     ~PendingGuard() { pending = false; }
   } guard{inbox->pending};
   while (inbox->again.exchange(false)) {
-    if (!PollOnce(inbox, account_id) && !inbox->preferred) {
-      return; // another relay that failed waits for its next turn
+    if (!PollOnce(inbox, account_id) && (!inbox->preferred || BackingOff(*inbox, NowMs()))) {
+      return; // another relay that failed, or one refusing us for good, waits for its next turn
     }
   }
 }
 
 bool RelayInboxCoordinator::PollOnce(const std::shared_ptr<Inbox>& inbox, const std::string& account_id) {
   auto poll = inbox->relay.client->PollInbox(account_id, CursorOf(*inbox, account_id));
+  NoteRefusal(*inbox, !poll && IsPermanentRelayRefusal(poll.error()));
   if (!poll) {
     log().warning << "PollInbox failed relay=" << RelayOriginKey(inbox->relay.origin) << ": " << poll.error().message;
     DiagLine("relay.poll_failed").Add("preferred", inbox->preferred).Fail("error", poll.error()).Emit();

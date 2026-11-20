@@ -21,8 +21,10 @@ namespace pbr {
  * § Client compatibility). Checked at start-up (a fresh cache as it is), again when the app comes to the foreground
  * (forced, at most once per kClientCompatRecheckSeconds since the last fetch), while it runs (forced, once the
  * document held is kClientCompatTimerRecheckSeconds old; T15), and when the org's relay answers `426
- * client_upgrade_required` (forced; the update screen shows whatever the document says). The first document a run
- * resolves gives the run its remote switches (RemoteSwitches, O2). UI thread.
+ * client_upgrade_required` (forced, for the document's links). What it shows (RC018 part 2 default, T14): below the
+ * document's floor the full screen (the blocking dialog); while the org's relay refuses this app, the Chats page's
+ * update card held up (no "Later", no alert: a refusal at every poll raises nothing new); a newer version, the card.
+ * The first document a run resolves gives the run its remote switches (RemoteSwitches, O2). UI thread.
  */
 class ClientCompatController : public Module {
 public:
@@ -55,8 +57,9 @@ public:
   void OnRecheckTimer();
   static constexpr int64_t kRecheckTimerMs = 60 * 60 * 1000;
   /**
-   * The org's relay refused a call `426 client_upgrade_required`: the update screen (with the document's links: a
-   * forced check first unless one ran a moment ago), for the rest of the session, whatever the document's floor.
+   * The org's relay refused a call `426 client_upgrade_required`: the update card held up for the rest of the session
+   * (with the document's links: a forced check first unless one ran a moment ago), whatever the document's floor. The
+   * full screen stays the document's floor's alone; a refusal again changes nothing on screen.
    */
   void OnOrgRelayRequiresUpgrade();
 
@@ -67,8 +70,9 @@ public:
   /** A check started and its answer is not applied yet. */
   bool CheckInFlight() const { return check_in_flight_; }
   /**
-   * A newer version than this one exists (the document's latest_client_version) and the update screen is not up: what
-   * the Chats page's card shows. Nothing when up to date, when the screen is up, or before any document.
+   * What the Chats page's card shows: a newer version than this one exists (the document's latest_client_version), or
+   * the org's relay refuses this app (UpdateAdvice::held). Nothing when up to date, when the full screen is the
+   * answer (below the floor), or before any document and refusal.
    */
   const std::optional<UpdateAdvice>& SoftUpdate() const { return soft_update_; }
   /** The link the update screen opens (ResolvedUpgradeUrl for this platform). */

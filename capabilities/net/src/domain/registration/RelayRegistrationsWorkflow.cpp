@@ -1,6 +1,7 @@
 #include "domain/registration/RelayRegistrationsWorkflow.h"
 
 #include "domain/registration/RegistrationClient.h"
+#include "lib/net/RelayAudience.h"
 #include "lib/net/RelayOrigins.h"
 #include "lib/people/RegistrationStatus.h"
 
@@ -134,6 +135,8 @@ void RelayRegistrationsWorkflow::Register(const Relay& relay, const std::string&
       }
       state->backoff_ms = 0;
       state->next_try_ms = 0;
+    } else if (!result && IsPermanentRelayRefusal(result.error())) {
+      state->next_try_ms = now_ms + kRefusedRetryMs; // until one side is updated: once a day (T17)
     } else {
       state->backoff_ms = state->backoff_ms == 0 ? kFirstRetryMs : std::min(state->backoff_ms * 2, kMaxRetryMs);
       state->next_try_ms = now_ms + state->backoff_ms;

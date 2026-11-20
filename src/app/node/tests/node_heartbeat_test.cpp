@@ -1,6 +1,7 @@
 #include "app/node/NodeHeartbeat.h"
 
 #include "common/ValueJson.h"
+#include "foundation/tls/RelayClientHeader.h"
 
 #include "common/metrics/MetricsRegistry.h"
 
@@ -30,6 +31,7 @@ struct Fixture {
   bool registered = true;
   int64_t unix_ms = 1'700'000'000'000;
   int64_t steady_ms = 1'000;
+  std::map<std::string, std::string> last_headers;
 
   pbr::NodeHeartbeatDeps Deps() {
     pbr::NodeHeartbeatDeps d;
@@ -42,8 +44,9 @@ struct Fixture {
       return pbr::HeartbeatSignature{
           .sign_version = 2, .audience = "QmRelay", .signature = "sig-" + state + "-" + std::to_string(ts)};
     };
-    d.post = [this](const std::string& url, const std::string& body, const std::map<std::string, std::string>&,
+    d.post = [this](const std::string& url, const std::string& body, const std::map<std::string, std::string>& headers,
                     long timeout_s) -> pbr::Roe<pbr::HttpResponse> {
+      last_headers = headers;
       Sent s;
       s.url = url;
       s.body = *pbr::TryParseObject(body);
@@ -152,6 +155,55 @@ TEST(NodeHeartbeatTest, AnUpgradeRequiredRefusalIsReportedAndNothingReregisters)
   EXPECT_EQ(refused, std::vector<std::string>{"client_upgrade_required"});
   EXPECT_EQ(f.reregisters, 0);
   EXPECT_EQ(f.sent.size(), 1u);
+}
+
+// T17: after a refusal sending again will not change (426, or a relay older than this node: 400
+// relay_upgrade_required / unsupported_sign_version) the heartbeat goes once a day, not every period.
+TEST(NodeHeartbeatTest, APermanentRefusalSlowsTheHeartbeatToDaily) {
+  for (const auto& reply :
+       std::vector<std::pair<long, std::string>>{{426, R"({"error":"x","code":"client_upgrade_required"})"},
+                                                 {400, R"({"error":"x","code":"relay_upgrade_required"})"},
+                                                 {400, R"({"error":"x","code":"unsupported_sign_version"})"}}) {
+    Fixture f;
+    f.replies = {reply};
+    pbr::NodeHeartbeat hb(f.Deps());
+    hb.Tick();
+    ASSERT_EQ(f.sent.size(), 1u);
+    f.Advance(pbr::kHeartbeatRefusedRetryMs - 1);
+    hb.Tick();
+    EXPECT_EQ(f.sent.size(), 1u) << reply.second << ": not before a day";
+    f.Advance(1);
+    hb.Tick();
+    EXPECT_EQ(f.sent.size(), 2u) << reply.second;
+    f.replies = {{200, kOk}};
+    f.Advance(pbr::kHeartbeatRefusedRetryMs);
+    hb.Tick();
+    f.Advance(kPeriod);
+    hb.Tick();
+    EXPECT_EQ(f.sent.size(), 4u) << "accepted again: every period";
+  }
+}
+
+TEST(NodeHeartbeatTest, AnOrdinaryRefusalKeepsThePeriod) {
+  Fixture f;
+  f.replies = {{400, R"({"error":"x","code":"invalid_state"})"}};
+  pbr::NodeHeartbeat hb(f.Deps());
+  hb.Tick();
+  f.Advance(kPeriod);
+  hb.Tick();
+  EXPECT_EQ(f.sent.size(), 2u);
+}
+
+// O1: the heartbeat names the build (X-PP-Client) when one is set.
+TEST(NodeHeartbeatTest, TheHeartbeatCarriesTheVersionHeader) {
+  Fixture f;
+  f.replies = {{200, kOk}};
+  const pbr::ScopedRelayClientHeaderForTest header("pp-node/10.0.0 linux");
+  pbr::NodeHeartbeat hb(f.Deps());
+  hb.Tick();
+  ASSERT_EQ(f.sent.size(), 1u);
+  EXPECT_EQ(f.last_headers.at("X-PP-Client"), "pp-node/10.0.0 linux");
+  EXPECT_EQ(f.last_headers.at("Content-Type"), "application/json");
 }
 
 TEST(NodeHeartbeatTest, WaitsForThePeriodBetweenSends) {

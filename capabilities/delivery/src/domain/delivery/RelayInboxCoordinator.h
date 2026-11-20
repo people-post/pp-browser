@@ -30,11 +30,17 @@ struct RelayInbox {
  * woke us). Another relay is polled only once we are registered there. Each inbox keeps its own cursor (persisted,
  * RelayInboxCursors, by relay: a relay made preferred keeps its cursor, one no longer ours loses it) and one poll at a time; a batch is handed to `take` on the ingest lane, then acked on the relay
  * it came from. A message that arrives through two relays is taken twice: the receive pipeline drops the second by
- * its id. Thread-safe; the polls' HTTP runs on the `poll` lane.
+ * its id. A relay that refuses the poll for good (IsPermanentRelayRefusal: `426 client_upgrade_required`, `400
+ * relay_upgrade_required` / `unsupported_sign_version`, `401 wrong_audience`; release-compatibility T14) is not polled
+ * again, forced or not, for kRefusedFirstMs, doubling to kRefusedMaxMs while it keeps refusing; an answer ends the
+ * back-off. Thread-safe; the polls' HTTP runs on the `poll` lane.
  */
 class RelayInboxCoordinator : public Module {
 public:
   static constexpr int kOtherRelaysEverySyncs = 4;
+  /** After a permanent refusal (T14): the first wait before that relay is polled again, and the longest. */
+  static constexpr int64_t kRefusedFirstMs = 60 * 1000;
+  static constexpr int64_t kRefusedMaxMs = 30 * 60 * 1000;
 
   using Post = std::function<void(std::function<void()>)>;
 
@@ -58,6 +64,8 @@ public:
     std::function<void(const std::string& origin, bool preferred, const Error* failure)> polled;
     /** Whether another relay may be polled now (we are registered there); none: always. */
     std::function<bool(const std::string& origin)> ready;
+    /** Monotonic ms (the refusal back-off); none: the steady clock. */
+    std::function<int64_t()> now_ms;
   };
 
   explicit RelayInboxCoordinator(Ports ports);
@@ -80,9 +88,17 @@ private:
     bool preferred = false;
     std::atomic<bool> pending{false};
     std::atomic<bool> again{false};
+    /** A permanent refusal's back-off (T14): not polled before refused_until_ms; 0: none. Guarded by mutex_. */
+    int64_t refused_until_ms = 0;
+    int64_t refused_backoff_ms = 0;
   };
 
   void Poll(const std::shared_ptr<Inbox>& inbox, const std::string& account_id);
+  int64_t NowMs() const;
+  /** `inbox` waits out a permanent refusal's back-off at `now_ms`. */
+  bool BackingOff(const Inbox& inbox, int64_t now_ms) const;
+  /** A poll of `inbox` was refused for good (true) or answered (false): its back-off grows or ends. */
+  void NoteRefusal(Inbox& inbox, bool permanent);
   /** One poll of `inbox`: false when it failed. */
   bool PollOnce(const std::shared_ptr<Inbox>& inbox, const std::string& account_id);
   std::string CursorOf(const Inbox& inbox, const std::string& account_id);

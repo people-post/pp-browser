@@ -250,6 +250,8 @@ struct ChatShellState {
   /** The relay's own note under the card's line (UpdateServerNote; plain text), when it sent one. */
   bool update_card_note_shown = false;
   ui::String update_card_note;
+  /** The org's relay refuses this app (UpdateAdvice::held, T14): the card stays up, without its "Later" button. */
+  bool update_card_held = false;
   /** Phone Home shows the 动态 widgets section (date, title, grid); off = minimal AI-first Home. */
   bool home_show_dynamic = false;
   std::vector<HomeBriefRow> home_brief;
