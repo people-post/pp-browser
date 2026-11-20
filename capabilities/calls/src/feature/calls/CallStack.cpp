@@ -259,6 +259,7 @@ void CallStack::PublishUiState() {
     state.direct_connect_seed_unreachable = call_device_->DirectConnectSeedUnreachable();
     state.last_media_error = call_device_->PeekLastMediaError();
     state.hop_health = call_device_->HopHealth();
+    state.quiet_participants = call_device_->QuietParticipants();
     state.media_path_kind = call_device_->MediaPathKind();
     state.media_link = call_device_->MediaLinkCounters();
   }

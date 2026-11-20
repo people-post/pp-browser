@@ -17,6 +17,7 @@ struct CallChromeLayer {
   bool in_call_muted = false;
   bool in_call_camera_on = false;
   bool in_call_camera_front = false;
+  bool in_call_camera_resuming = false;
   bool in_call_speaker_on = false;
   bool in_call_stage_visible = false;
   bool in_call_remote_video = false;

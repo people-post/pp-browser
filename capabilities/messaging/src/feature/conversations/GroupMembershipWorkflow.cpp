@@ -158,12 +158,8 @@ Roe<void> GroupMembershipWorkflow::SendInviteDirectMessage(const GroupInvitePayl
   Object payload;
   payload.set("control_type", GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupInvite));
   payload.set("detail", *detail);
-  const std::string payload_json = DumpJson(payload);
-  SendRelayOptions opts;
-  opts.generation = "system";
-  opts.content_type = ChatContentType::System;
-  opts.payload_json = payload_json;
-  opts.sender_contact_id = *local;
+  const SendRelayOptions opts =
+      GroupMembershipCodec::DirectSendOptions(GroupMembershipControlType::GroupInvite, DumpJson(payload), *local);
   auto sent = mesh_messaging_.SendUserMessage(thread->id, display, opts);
   if (!sent) {
     return sent.error();
@@ -425,13 +421,7 @@ Roe<void> GroupMembershipWorkflow::SendInviteResponseDirectMessage(const std::st
   Object payload;
   payload.set("control_type", GroupMembershipControlTypeToWire(response_type));
   payload.set("detail", *detail);
-  const std::string payload_json = DumpJson(payload);
-  SendRelayOptions opts;
-  opts.generation = "system";
-  opts.update_preview = false;
-  opts.content_type = ChatContentType::System;
-  opts.payload_json = payload_json;
-  opts.sender_contact_id = *local;
+  const SendRelayOptions opts = GroupMembershipCodec::DirectSendOptions(response_type, DumpJson(payload), *local);
   auto sent = mesh_messaging_.SendUserMessage(thread->id, display, opts);
   if (!sent) {
     return sent.error();
@@ -685,15 +675,10 @@ Roe<void> GroupMembershipWorkflow::SendMembershipDirectMessage(const std::string
     payload.set("detail", detail);
     return DumpJson(payload);
   };
-  SendRelayOptions opts;
-  opts.generation = "system";
-  opts.update_preview = false;
-  opts.content_type = ChatContentType::System;
-  opts.payload_json = payload_with(detail_json);
+  SendRelayOptions opts = GroupMembershipCodec::DirectSendOptions(control_type, payload_with(detail_json), *local);
   if (stored_detail_json) {
     opts.stored_payload_json = payload_with(*stored_detail_json);
   }
-  opts.sender_contact_id = *local;
   auto sent = mesh_messaging_.SendUserMessage(thread->id, display, opts);
   if (!sent) {
     return sent.error();

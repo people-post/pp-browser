@@ -150,6 +150,10 @@ Capacity tests emit a **curve** (success rate / latency vs N). First qualify “
 
 ---
 
+## Test temp directories
+
+Each ctest test process runs with a private `TMPDIR` (`scripts/test/private_tmp.sh`, applied to gtest targets on non-Windows native builds), so `ctest -j` is safe for fixtures using `temp_directory_path()`. Tests should still avoid shared fixed directory names.
+
 ## Core compose PR set (Tier B)
 
 Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are the local stand-ins for call/hop correctness:
@@ -223,7 +227,7 @@ The other probes drive the call stack around the product's messaging; the app la
 
 | Scenario | Links between members | Size | Calls | Joins | Network |
 |----------|----------------------|------|-------|-------|---------|
-| `group_call_three` and the other `group_*` call scenarios | none | 3 | owner (or a member) | the ring; decline → join, late start, rejoin, … | steady (`group_member_network_drops`: a link drop, `--nat`) |
+| `group_call_three` and the other `group_*` call scenarios | none | 3 | owner (or a member) | the ring; decline → join, late start, rejoin, … | steady (`group_member_network_drops`: a link drop, `--nat`; `group_member_cut_off_rejoins` / `group_member_silently_cut_off_rejoins`: a link down 35 s, or every packet lost with the link up (`net_blackhole`), past the others' gone window — the member asks back in, V067 8; `group_leave_keeps_audio`: no frame fails to open across a leave's key rotation, `rx_unopened_frames`, V068) |
 | `group_call_one_way_contact` | `bob>dave` | 4 | owner | the ring | steady |
 | `group_fourth_answers_late` | none | 4 | owner | Bob and Dave at once (the hop), Carol 10 s later | steady |
 | `group_call_placed_by_stranger` | `bob=carol` (nobody added Dave) | 4 | Dave | the ring | steady |

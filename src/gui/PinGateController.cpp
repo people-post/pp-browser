@@ -6,6 +6,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/CallSystemUi.h"
 #include "foundation/platform/PendingNotificationTap.h"
+#include "gui/DefaultPinNote.h"
 #include "gui/UserFeedback.h"
 
 #include <utility>
@@ -375,6 +376,7 @@ void PinGateController::ShowCreate() {
   pin_state_.chooser_mode = false;
   pin_state_.create_mode = true;
   pin_state_.error = "";
+  SetDefaultNote(nullptr);
   pin_state_.title = Tr("pin.create_title").c_str();
   SetupNewPinEntry();
   pin_state_.message = NewPinMessage().c_str();
@@ -400,6 +402,8 @@ void PinGateController::ShowLinkPaste() {
   pin_state_.error = "";
   pin_state_.link_payload = "";
   pin_state_.saved_copy_name = "";
+  // "Just continue" gave this device the app's default PIN: say so under the box, with a "?" that tells the digits.
+  SetDefaultNote(pending_link_default_pin_ ? "pin.default_note.device" : nullptr);
   saved_copy_.clear();
   pin_state_.title = (phrase_flow_ ? Tr("pin.phrase_paste_title") : Tr("pin.link_paste_title")).c_str();
   pin_state_.message = (phrase_flow_ ? Tr("pin.phrase_paste_message") : Tr("pin.link_paste_message")).c_str();
@@ -458,8 +462,9 @@ void PinGateController::ShowChange(PinGateCheck check_old, PinGateChange change,
   pin_state_.change_mode = true;
   pin_state_.title = Tr("settings.security.change_pin").c_str();
   if (current_pin) {
-    // The app default PIN: straight to the new PIN.
+    // The app default PIN: straight to the new PIN. No field asks for it; the page only says it is the default.
     change_old_pin_ = std::move(*current_pin);
+    SetDefaultNote("settings.security.default_hint");
     change_step_ = 1;
     SetupNewPinEntry();
     pin_state_.message = NewPinMessage().c_str();
@@ -523,6 +528,27 @@ void PinGateController::OnForgotToggle() {
   pin_state_.forgot_open = !pin_state_.forgot_open;
   ApplyPinGate();
   DirtyPinFields();
+}
+
+void PinGateController::OnNoteToggle() {
+  if (!shell_pin_gate_.apply_pin_gate || !pin_state_.active || pin_state_.default_note_line.empty()) {
+    return;
+  }
+  PullBoundPinFields();
+  pin_state_.default_note_open = !pin_state_.default_note_open;
+  ApplyPinGate();
+  DirtyPinFields();
+}
+
+void PinGateController::SetDefaultNote(const char* line_key) {
+  pin_state_.default_note_open = false;
+  if (line_key == nullptr) {
+    pin_state_.default_note_line = {};
+    pin_state_.default_note_text = {};
+    return;
+  }
+  pin_state_.default_note_line = Tr(line_key).c_str();
+  pin_state_.default_note_text = DefaultPinNoteText().c_str();
 }
 
 void PinGateController::OnSetPin() {

@@ -7,6 +7,12 @@
 
 This doc answers: what happens when the data directory has leftovers, or when a **newer peer / API** talks to this build? Goal: **no crash**; degrade or fail clearly; avoid dual parsers for obsolete wire (D016).
 
+**Release-1 freeze (since 2026-11-19, until release 1 ships):** a breaking change to any format between separately
+released components (wire, signed bytes, HTTP, the relay's stored data) lands only if it is an item of the release-1
+work list ([release-compatibility INVENTORY § 4](../../projects/release-compatibility/INVENTORY.md#4-release-1-work-list));
+the PR names the item. Anything else is additive or waits for the range rule that starts with release 1
+([PHASES § P1](../../projects/release-compatibility/PHASES.md#p1--freeze)). Local stores stay exempt.
+
 ---
 
 ## Change classes
@@ -129,6 +135,10 @@ stays strict. The signed bytes are frozen in a test (`EnvelopeSignerTest.SignByt
 `kRelayEnvelopeVersion`): a change that moves its hash changes a version receivers check in the same change.
 
 ### No bridges (pre-release)
+
+**Ends at release 1** (accepted 2026-11-17, release 1 not shipped yet): from then on, every app, pp-node and relay works with every other one
+whose version is inside the supported range — [release-compatibility RC001](../../projects/release-compatibility/DECISIONS.md#rc001--compatibility-within-a-supported-range-from-release-1-on).
+Until release 1 ships, this section holds.
 
 Pre-release every app and node updates together (the user's decision, 2026-11-12), so no code exists to talk to an
 older peer, read an older wire form, or read older data on disk: a change is a clean cutover, recorded as a row in

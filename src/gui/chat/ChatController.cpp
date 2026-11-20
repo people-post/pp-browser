@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include "gui/chat/ChatController.h"
+#include "gui/RecoveryReminder.h"
 #include "gui/chat/ApprovalCard.h"
 #include "gui/chat/AttachMenuRules.h"
 
@@ -35,6 +36,7 @@
 #include "feature/conversations/MessageRouter.h"
 #include "gui/shell/ShellSetupPorts.h"
 #include "gui/shell/FavoritesRowModel.h"
+#include "gui/shell/NotificationTapCover.h"
 #include "lib/ui/ShellLayout.h"
 #include "lib/ui/EmojiCatalog.h"
 #include "gui/chat/ChatDataModel.h"
@@ -72,6 +74,11 @@
 #include "lib/messaging/QuoteReply.h"
 #include "foundation/platform/PlatformOpenFile.h"
 #include "foundation/platform/PlatformOpenUrl.h"
+#include "foundation/platform/PlatformShareFile.h"
+#include "foundation/platform/SavedFileCopy.h"
+#include "foundation/platform/os/OsDownloadMark.h"
+#include "foundation/platform/os/OsFolderName.h"
+#include "common/PathUtf8.h"
 
 #include "lib/ai/MarkdownToRml.h"
 #include "lib/ai/StructuredTextParser.h"
@@ -363,6 +370,8 @@ ChatController::ChatController()
               .show_attach_button = chat_.show_attach_button,
               .show_thread_actions = chat_.show_thread_actions,
               .show_peer_sheet = chat_.show_peer_sheet,
+              .show_stranger_bar = chat_.show_stranger_bar,
+              .stranger_bar_text = chat_.stranger_bar_text,
               .show_call_actions = chat_.show_call_actions,
               .show_forget_memory = chat_.show_forget_memory,
               .show_sync_with_peer = chat_.show_sync_with_peer,
@@ -471,6 +480,61 @@ ChatController::ChatController()
   playback_ports.say = [](const std::string& text) { UserFeedback::Fail(text); };
   playback_ports.call_live = [this]() { return facade_ && facade_->AnyCallLive(); };
   voice_playback_ = std::make_unique<VoicePlayback>(std::move(playback_ports));
+
+  // Desktop "Save as" of a received attachment (DEV/PLAN-received-file-save-as.md): AttachmentSaveFlow decides, these
+  // are its ports. Only "saved / cancelled / failed" and the size go to the log, never a name or a path.
+  AttachmentSavePorts save_ports;
+  save_ports.choose_path = [](const std::string& suggested_name, std::function<void(SaveChoice)> done) {
+    ChooseSavePath(Backend::GetWindow(), suggested_name, DefaultSaveFolder(),
+                   [done = std::move(done)](const SavePathResult& result) {
+                     SaveChoice choice;
+                     choice.path = result.path;
+                     choice.kind = result.kind == SavePathResult::Kind::Chosen      ? SaveChoice::Kind::Chosen
+                                   : result.kind == SavePathResult::Kind::Cancelled ? SaveChoice::Kind::Cancelled
+                                                                                    : SaveChoice::Kind::Unavailable;
+                     done(std::move(choice));
+                   });
+  };
+  save_ports.post_ui = [](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); };
+  save_ports.post_worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
+  save_ports.view_path = [this](const std::string& thread_id,
+                                const std::string& message_id) -> std::optional<std::string> {
+    return facade_ ? facade_->AttachmentOpenPathForMessage(thread_id, message_id) : std::nullopt;
+  };
+  save_ports.copy = [this](const std::string& from, const std::string& to) {
+    const auto copied = CopyFileInChunks(from, to);
+    if (copied) {
+      std::error_code ec;
+      log().info << "attachment save: copied " << std::filesystem::file_size(PathFromUtf8(to), ec) << " bytes";
+    }
+    return static_cast<bool>(copied);
+  };
+  save_ports.mark_downloaded = [this](const std::string& path) {
+    if (!os::MarkFileAsDownloaded(path)) {
+      log().warning << "attachment save: the downloaded mark was not set";
+    }
+  };
+  save_ports.folder_name = [](const std::string& folder) { return os::FolderDisplayName(folder); };
+  save_ports.ok = [](const std::string& text) { UserFeedback::Ok(text); };
+  save_ports.fail = [](const std::string& text) { UserFeedback::Fail(text); };
+  save_flow_ = std::make_unique<AttachmentSaveFlow>(std::move(save_ports));
+
+  // Phones' "Share…": the view handed to the system share sheet through share_file_ (deletes nothing).
+  share_file_ = [](const std::string& path, const std::string& mime, const ShareAnchor anchor) {
+    return PlatformShareFile(Backend::GetWindow(), path, mime, anchor);
+  };
+  AttachmentSharePorts share_ports;
+  share_ports.post_ui = [](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); };
+  share_ports.post_worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
+  share_ports.view_path = [this](const std::string& thread_id,
+                                 const std::string& message_id) -> std::optional<std::string> {
+    return facade_ ? facade_->AttachmentOpenPathForMessage(thread_id, message_id) : std::nullopt;
+  };
+  share_ports.share = [this](const std::string& path, const std::string& mime, const int x, const int y) {
+    return share_file_ && share_file_(path, mime, ShareAnchor{static_cast<float>(x), static_cast<float>(y), 1.f, 1.f});
+  };
+  share_ports.fail = [](const std::string& text) { UserFeedback::Fail(text); };
+  share_flow_ = std::make_unique<AttachmentShareFlow>(std::move(share_ports));
 
   presenter_.BindCallbacks({
       .on_changed = [this]() { ApplySessionList(); },
@@ -621,7 +685,8 @@ void ChatController::MakeReadyTasks() {
   };
   ports.brief_key_done = [this](const BriefKeyMintEnd& end) { agent_.OnBriefKeyMintEnded(end); };
   ports.after_identity_changed = [this]() {
-    agent_.ReloadAgentConfig(); // runtime.llm.api_key takes the key now in the identity
+    recovery_phrase_present_.reset(); // a restore / link can bring a phrase
+    agent_.ReloadAgentConfig();       // runtime.llm.api_key takes the key now in the identity
     agent_.RefreshLlmSetupBanner();
   };
   ready_tasks_ = std::make_unique<MessagingReadyTasks>(std::move(ports), agent_.BriefKeyRun());
@@ -846,7 +911,7 @@ void ChatController::BindConversationsFacade(ConversationsFacade* facade) {
   chrome_.BindConversationsFacade(facade);
   scroller_.SetRowBuilder(
       [this](const std::string& thread_id, std::optional<int64_t> oldest, std::optional<int64_t> newest) {
-        return BuildMessageRows(thread_id, oldest, newest);
+        return BuildMessageRows(thread_id, oldest, newest, /*remember_drawn=*/true);
       });
 }
 
@@ -1087,12 +1152,24 @@ const SessionStore& ChatController::Store() const {
 }
 
 void ChatController::SendSuggestionAction(const std::string& id) {
+  if (id == "find_someone") {
+    OnFindSomeone(); // the Add contact page; nothing is sent
+    return;
+  }
   auto payload = SuggestionPayload(id, LocalizationService::Instance().ResolvedLanguage());
   if (!payload) {
     return;
   }
   // The bubble shows the localized sentence; the payload makes the app run the function itself.
   SendUserText(Tr("home.suggestion." + id + "_prompt"), std::move(payload), /*from_home_chip=*/true);
+}
+
+void ChatController::RefreshAfterOutsideSend(const std::string& thread_id) {
+  if (thread_id.empty() || thread_id != ActiveThreadId()) {
+    return;
+  }
+  RefreshFromMessaging();
+  RefreshPendingAttachmentChip(/*force=*/true); // a send that failed but was staged shows Retry
 }
 
 void ChatController::FinalizeThreadDisplay() {
@@ -1159,6 +1236,7 @@ void ChatController::OnAttentiveAgain() {
   if (!messaging_ready_) {
     return;
   }
+  ask_ai_.OnAttentiveAgain(); // a support reply the sheet shows, which came while nobody looked
   // Refresh only when something was marked: a focus gain with nothing to read must stay cheap.
   if (MarkOpenChatReadIfLooking()) {
     RefreshFromMessaging();
@@ -1181,7 +1259,7 @@ bool ChatController::MarkOpenChatReadIfLooking() {
   PendingNotificationTap& tap = PendingNotificationTap::Instance();
   const auto now = PendingNotificationTap::Clock::now();
   const bool route_unknown_thread = !tap.FreshHint(now).empty() || tap.PeekCallRoute(now);
-  const bool tap_elsewhere = TapPendingElsewhere(tap.PeekThread(), route_unknown_thread, thread_id);
+  const bool tap_elsewhere = TapPendingElsewhere(tap.PeekThread(now), route_unknown_thread, thread_id);
   if (!ShouldMarkOpenChatRead(AppLifecycle::IsUserAttentive(), !thread_id.empty(),
                               ChatTranscriptOnScreen(ChromeSnapshot(), thread_id, thread_id), has_unread,
                               tap_elsewhere)) {
@@ -1192,6 +1270,68 @@ bool ChatController::MarkOpenChatReadIfLooking() {
   ILocalNotifier::Instance().ClearForThread(thread_id);
   reading_open_chat_ = false;
   return true;
+}
+
+void ChatController::OpenTappedThread(std::string thread_id) {
+  TapOpenFacts facts;
+  facts.call_shown = ChromeSnapshot().call_shown;
+  facts.cover_armed = shell_navigation_.tap_cover_armed && shell_navigation_.tap_cover_armed();
+  facts.messaging_ready = messaging_ready_;
+  if (NotificationTapCover::DeferTapOpen(facts)) {
+    return; // the cover stays (bounded by its hold); the later route (the sync, the wiring) opens the chat
+  }
+  if (!facts.call_shown && shell_navigation_.clear_for_tapped_chat) {
+    shell_navigation_.clear_for_tapped_chat();
+  }
+  bool known = false;
+  if (facade_) {
+    auto thread = facade_->GetThread(thread_id);
+    known = thread && *thread;
+  }
+  if (known) {
+    const std::string wanted = thread_id;
+    if (shell_navigation_.tapped_chat_opening) {
+      shell_navigation_.tapped_chat_opening(true); // this open, and no other, shows at once
+    }
+    OnSelectThread(std::move(thread_id));
+    if (shell_navigation_.tapped_chat_opening) {
+      shell_navigation_.tapped_chat_opening(false);
+    }
+    facts.opened = ActiveThreadId() == wanted;
+  }
+  switch (NotificationTapCover::EndOfTapOpen(facts)) {
+    case TapOpenEnd::Nothing:
+      return;
+    case TapOpenEnd::ChatListThenRelease:
+      ShellSelectNavTab(NavTab::Sessions); // the chat is gone (deleted, left): the chat list
+      [[fallthrough]];
+    case TapOpenEnd::Release:
+      if (shell_navigation_.release_tap_cover) {
+        shell_navigation_.release_tap_cover();
+      }
+      return;
+  }
+}
+
+void ChatController::RouteSyncedTap() {
+  if (!messaging_ready_ || !facade_) {
+    return;
+  }
+  auto& tap = PendingNotificationTap::Instance();
+  const auto now = PendingNotificationTap::Clock::now();
+  const std::string hint = tap.FreshHint(now);
+  if (hint.empty()) {
+    return;
+  }
+  const auto thread_id = facade_->ThreadOfInbound(hint);
+  if (thread_id) {
+    DiagLine("notification.tap").Add("what", "lookup_found").Emit();
+  } else {
+    DiagLine("notification.tap").Add("what", "lookup_notfound").Emit();
+  }
+  if (thread_id && tap.TakeHintedRoute(hint, now)) {
+    OpenTappedThread(*thread_id);
+  }
 }
 
 void ChatController::OnSelectThread(std::string thread_id) { // by value: ShellSelectNavTab below rebuilds Home (B161)
@@ -1498,6 +1638,7 @@ void ChatController::OnForgetMemory() {
 
 void ChatController::RefreshFromMessaging() {
   MarkOpenChatReadIfLooking(); // first, so the rest of the refresh draws the read state
+  ask_ai_.OnMessagesChanged(); // the PP 客服 sheet: its chat drawn again, and read there, before the list is drawn
   const int prev_sessions = ChromeSnapshot().nav_badges.sessions_unread;
   const int prev_contacts = ChromeSnapshot().nav_badges.contacts_unread;
   SyncShellSessions();
@@ -1543,6 +1684,7 @@ void ChatController::OnProfileDataReset() {
   AbandonPick();
   video_bubble_thread_.clear();
   messaging_ready_ = false;
+  recovery_phrase_present_.reset();
   ++messaging_session_; // a task result of the old profile never reaches the new one
   if (ready_tasks_) {
     ready_tasks_->OnMessagingTornDown(); // the teardown dropped work still queued: free its runs
@@ -1710,6 +1852,7 @@ void ChatController::ApplyHomeToday(const ChatListScreen& list) {
                                    : (home_summary_.mentions.title + " · " + home_summary_.mentions.preview).c_str();
   shell_.home_new_people = home_summary_.new_contacts;
   shell_.home_security_ok = session_store_ && Store().Snapshot().profile_prefs.recovery_phrase_seen;
+  shell_.recovery_reminder = RecoveryReminderShows();
   // The widgets page is off until it gets its own page: the stored preference is kept but never read here.
   constexpr bool kWidgetsPageOnHome = false;
   shell_.home_show_dynamic = kWidgetsPageOnHome && session_store_ && Store().Snapshot().profile_prefs.home_show_dynamic;
@@ -1987,6 +2130,38 @@ void ChatController::RefreshHomeCalls() {
           RefreshHomeCalls();
         }
       });
+}
+
+bool ChatController::RecoveryReminderShows() {
+  if (!session_store_) {
+    return false;
+  }
+  const ProfilePreferences& prefs = Store().Snapshot().profile_prefs;
+  RecoveryReminderInput in;
+  in.onboarding_completed = prefs.onboarding_completed;
+  in.phrase_seen = prefs.recovery_phrase_seen;
+  in.dismissals = prefs.recovery_reminder_dismissals;
+  in.dismissed_ms = prefs.recovery_reminder_dismissed_ms;
+  in.now_ms = util::NowUnixMs();
+  // A linked (non-admin) device has no phrase to show; asked last because it reads the vault.
+  in.can_view_phrase = true;
+  if (!ShouldShowRecoveryReminder(in)) {
+    return false;
+  }
+  if (!recovery_phrase_present_.has_value() && facade_ != nullptr && messaging_ready_) {
+    recovery_phrase_present_ = facade_->HasRecoveryPhrase(); // one vault read per session, yes or no
+  }
+  return recovery_phrase_present_.value_or(false);
+}
+
+void ChatController::OnRecoveryReminderLater() {
+  if (!session_store_) {
+    return;
+  }
+  ProfilePreferences prefs = Store().Snapshot().profile_prefs;
+  prefs.recovery_reminder_dismissals = std::min(2, prefs.recovery_reminder_dismissals + 1);
+  prefs.recovery_reminder_dismissed_ms = util::NowUnixMs();
+  (void)Store().SaveProfilePrefs(prefs); // the prefs listener refreshes the card
 }
 
 void ChatController::OnHomePrefsChanged() {
@@ -3457,7 +3632,8 @@ void ChatController::ShowAttachChoice(std::function<void()> photo, std::function
 
 std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::string& thread_id,
                                                                 std::optional<int64_t> oldest_inclusive,
-                                                                std::optional<int64_t> newest_inclusive) {
+                                                                std::optional<int64_t> newest_inclusive,
+                                                                const bool remember_drawn) {
   if (!facade_) {
     return {};
   }
@@ -3467,6 +3643,22 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   facts.voice_max_seconds = facade_->CurrentAttachmentLimits().voice_max_seconds;
   facts.voice_state = [this](const std::string& message_id) { return voice_playback_->State(message_id); };
   facts.audio_files_play = voice_playback_->PlaysFiles();
+  if (remember_drawn && thread_id == ActiveThreadId() && facts.attachment) {
+    // Each attachment row of the open chat is remembered as drawn: a tap or a menu decides with it (TapAttachment).
+    // The map is rebuilt from the rows built here, so a message no longer drawn leaves it.
+    const bool another_chat = drawn_attachments_thread_ != thread_id;
+    drawn_attachments_.clear();
+    drawn_attachments_thread_ = thread_id;
+    if (another_chat) {
+      save_flow_->ReleaseChoosing(); // a save dialog that never answered must not outlive the chat it was for
+    }
+    facts.attachment = [this, drawn = std::move(facts.attachment), voice_bubbles = facts.voice_supported,
+                        voice_max_seconds = facts.voice_max_seconds](const ThreadMessage& message) {
+      TranscriptAttachmentView view = drawn(message);
+      RememberDrawnAttachment(message, view, voice_bubbles, voice_max_seconds);
+      return view;
+    };
+  }
   const int64_t now_ms = util::NowUnixMs();
   std::optional<int64_t> next_mark_change;
   std::vector<std::string> red_ids;
@@ -3539,6 +3731,7 @@ void ChatController::RedrawSendMarks() {
   }
   SyncDisplayFromThread();
   DirtyChat();
+  ask_ai_.OnMessagesChanged(); // the support sheet's rows read their marks again too (ArmSendMarkRedraw armed this)
   NotifySurfaceChanged();
 }
 
@@ -3653,6 +3846,107 @@ void ChatController::OpenPicture(const std::string& message_id) {
     shell_feedback_.mount_photo_preview(PhotoPreviewRml());
   }
   OpenAttachment(message_id);
+}
+
+namespace {
+
+std::optional<DrawnAttachment> DescribeDrawnAttachment(const ThreadMessage& message,
+                                                       const TranscriptAttachmentView& view, const bool voice_bubbles,
+                                                       const int voice_max_seconds) {
+  auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
+  if (!fields) {
+    return std::nullopt;
+  }
+  DrawnAttachment drawn;
+  drawn.kind = KindOfAttachment(fields->mime, fields->filename, fields->byte_length, voice_max_seconds, voice_bubbles);
+  drawn.ready = view.state == AttachmentFetchWorkflow::DownloadState::Ready;
+  drawn.mime = fields->mime;
+  drawn.suggested_name = SuggestedSaveName(fields->filename, fields->mime);
+  return drawn;
+}
+
+} // namespace
+
+void ChatController::RememberDrawnAttachment(const ThreadMessage& message, const TranscriptAttachmentView& view,
+                                             const bool voice_bubbles, const int voice_max_seconds) {
+  if (auto drawn = DescribeDrawnAttachment(message, view, voice_bubbles, voice_max_seconds)) {
+    drawn_attachments_[message.id] = std::move(*drawn);
+  }
+}
+
+std::optional<DrawnAttachment> ChatController::LookUpAttachment(const std::string& message_id) {
+  if (!facade_) {
+    return std::nullopt;
+  }
+  const auto message = facade_->GetMessage(ActiveThreadId(), message_id);
+  const TranscriptFacts facts = facade_->TranscriptFactsFor();
+  if (!message || !*message || !facts.attachment) {
+    return std::nullopt;
+  }
+  return DescribeDrawnAttachment(**message, facts.attachment(**message), VoiceMessagesSupported(),
+                                 facade_->CurrentAttachmentLimits().voice_max_seconds);
+}
+
+std::optional<DrawnAttachment> ChatController::DrawnAttachmentOf(const std::string& message_id) const {
+  if (drawn_attachments_thread_.empty() || drawn_attachments_thread_ != ActiveThreadId()) {
+    return std::nullopt;
+  }
+  const auto found = drawn_attachments_.find(message_id);
+  return found == drawn_attachments_.end() ? std::nullopt : std::optional<DrawnAttachment>(found->second);
+}
+
+void ChatController::TapAttachment(const std::string& message_id) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  const std::optional<DrawnAttachment> drawn = DrawnAttachmentOf(message_id);
+  if (!drawn) {
+    OpenAttachment(message_id); // not drawn (chat just switched): nothing is known to decide with, as before
+    return;
+  }
+  switch (DecideAttachmentTap(CurrentAttachmentLayout(), drawn->kind, drawn->ready, voice_playback_->PlaysFiles(),
+                              save_flow_->Busy())) {
+    case AttachmentTap::Open:
+    case AttachmentTap::PlayInApp: // a sound card drawn as a file row: today's path, never a save dialog
+      OpenAttachment(message_id);
+      return;
+    case AttachmentTap::Save:
+      SaveAttachmentAs(message_id);
+      return;
+    case AttachmentTap::NotReady:
+      UserFeedback::Fail(Tr("chat.attachment.not_ready"));
+      return;
+    case AttachmentTap::Ignore:
+      return;
+  }
+}
+
+void ChatController::SaveAttachmentAs(const std::string& message_id) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  std::optional<DrawnAttachment> drawn = DrawnAttachmentOf(message_id);
+  if (!drawn) {
+    drawn = LookUpAttachment(message_id); // not drawn (chat just switched): look this one message up, assume nothing
+  }
+  if (!drawn) {
+    return; // no such attachment any more
+  }
+  (void)save_flow_->Begin(ActiveThreadId(), message_id, drawn->suggested_name, drawn->ready);
+}
+
+void ChatController::ShareAttachment(const std::string& message_id, const ui::Vector2i position) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  std::optional<DrawnAttachment> drawn = DrawnAttachmentOf(message_id);
+  if (!drawn) {
+    drawn = LookUpAttachment(message_id); // not drawn (chat just switched): look this one message up, assume nothing
+  }
+  if (!drawn) {
+    return; // no such attachment any more
+  }
+  (void)share_flow_->Begin(ActiveThreadId(), message_id, drawn->mime, drawn->ready, position.x, position.y);
 }
 
 void ChatController::OpenAttachment(const std::string& message_id) {
@@ -4635,13 +4929,11 @@ void ChatController::OnJoinGroupCall() {
 }
 
 void ChatController::OnFindSomeone() {
-  if (!messaging_ready_) {
-    return;
+  // Not an AI turn: the directory refuses an empty query (HTTP 400) and name search is off (pp-relay-apis#42), so
+  // every "find someone" entry (Home chip, New chat menu) opens the Add contact page (account ID, QR code).
+  if (contacts_notify_.open_add_contact) {
+    contacts_notify_.open_add_contact();
   }
-  OnNewChat();
-  focus_draft_after_sync_ = true;
-  chat_.draft = Tr("home.suggestion.find_someone_prompt");
-  DirtyChatChrome();
 }
 
 void ChatController::PrefillDraft(const std::string& text) {
@@ -4657,6 +4949,10 @@ void ChatController::PrefillDraft(const std::string& text) {
 
 void ChatController::OnSessionSwipeAction(const std::string& thread_id, const SessionSwipeAction action) {
   menus_.RunSessionSwipeAction(thread_id, action);
+}
+
+void ChatController::OnViewportResized() {
+  group_link_->OnViewportResized();
 }
 
 void ChatController::OnShellLayoutSynced() {
@@ -5193,6 +5489,7 @@ void ChatController::WireMessagingBindings() {
     return;
   }
   messaging_ready_ = true;
+  recovery_phrase_present_.reset();
   // A new session: results of tasks the last one sent off are dropped when they come back. A run still out keeps its
   // slot (one at a time); what is triggered below runs once more after it.
   ++messaging_session_;
@@ -5237,6 +5534,9 @@ void ChatController::WireMessagingBindings() {
     NotifySurfaceChanged();
   });
   facade_->SetOnBackgroundUnread([this](std::string title, std::string body, std::string thread_id, bool mentions_us) {
+    if (ask_ai_.SuppressesNoticeFor(thread_id)) {
+      return; // the PP 客服 sheet shows this chat to someone looking: it was read there
+    }
     const ProfilePreferences& profile_prefs = Store().Snapshot().profile_prefs;
     if (!profile_prefs.show_notifications) {
       return;
@@ -5286,7 +5586,7 @@ void ChatController::WireMessagingBindings() {
   const auto activate = [this](std::string thread_id) {
     DesktopWindowChrome::RaiseAndFocus();
     if (!thread_id.empty()) {
-      OnSelectThread(thread_id);
+      OpenTappedThread(std::move(thread_id));
     }
   };
   ILocalNotifier::Instance().SetActivationHandler(activate);
@@ -5294,29 +5594,15 @@ void ChatController::WireMessagingBindings() {
   // then opens its chat.
   facade_->SetOnInboundMessage([this](std::string id, std::string thread_id) {
     if (PendingNotificationTap::Instance().TakeHintedRoute(id, PendingNotificationTap::Clock::now())) {
-      OnSelectThread(thread_id);
+      OpenTappedThread(std::move(thread_id));
     }
   });
   // A tap that arrived before unlock found no handler; it is still waiting.
-  if (auto pending = PendingNotificationTap::Instance().TakeThread()) {
+  if (auto pending = PendingNotificationTap::Instance().TakeThread(PendingNotificationTap::Clock::now())) {
     activate(std::move(*pending));
   }
   // What the tap names may have synced before it, or before this wiring: look it up.
-  {
-    auto& tap = PendingNotificationTap::Instance();
-    const auto now = PendingNotificationTap::Clock::now();
-    if (const std::string hint = tap.FreshHint(now); !hint.empty()) {
-      const auto thread_id = facade_->ThreadOfInbound(hint);
-      if (thread_id) {
-        DiagLine("notification.tap").Add("what", "lookup_found").Emit();
-      } else {
-        DiagLine("notification.tap").Add("what", "lookup_notfound").Emit();
-      }
-      if (thread_id && tap.TakeHintedRoute(hint, now)) {
-        OnSelectThread(*thread_id);
-      }
-    }
-  }
+  RouteSyncedTap();
   // Relay poll is armed by ConversationsHub::StartCoordinatorTimers (not here). Call-wake UI
   // refresh is wired via ConversationsHub::SetOnCallWake from Application.
   // Push binding is HTTP: off the UI thread, one run at a time (a token change while one runs: once more after it).
@@ -5637,7 +5923,7 @@ bool ChatController::Setup(ui::Context* context) {
                                  if (IsPendingUploadRowId(message_id)) {
                                    return;
                                  }
-                                 OpenAttachment(message_id);
+                                 TapAttachment(message_id);
                                }));
         ctor.BindEventCallback("open_picture", DataEvent<std::string>([this](const std::string& message_id) {
                                  if (IsPendingUploadRowId(message_id)) {
@@ -5670,6 +5956,8 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("call_back",
                                DataEvent<std::string>([this](const std::string& video) { menus_.CallBack(video); }));
         ctor.BindEventCallback("join_group_call", DataEvent([this] { OnJoinGroupCall(); }));
+        ctor.BindEventCallback("stranger_add", DataEvent([this] { peer_sheet_.AddOpenStranger(); }));
+        ctor.BindEventCallback("stranger_block", DataEvent([this] { peer_sheet_.BlockOpenStranger(); }));
         ctor.BindEventCallback("open_group_members", DataEvent([this] { peer_sheet_.OpenGroupMembers(); }));
         ctor.BindEventCallback("open_peer_sheet", DataEventAt([this](ui::Event& ev) { OpenPeerSheet(ev); }));
         ctor.BindEventCallback("sync_with_peer", DataEvent([this] { OnSyncWithPeer(); }));
@@ -5719,6 +6007,11 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("ai_sessions_scroll", DataEvent([this] { OnAiSessionsScroll(); }));
         ctor.BindEventCallback("sessions_load_more", DataEvent([this] { OnSessionsLoadMore(); }));
         ctor.BindEventCallback("new_chat", DataEvent([this] { OnNewChat(); }));
+        ctor.BindEventCallback("empty_add_contact", DataEvent([this] {
+                                 if (contacts_notify_.open_add_contact) {
+                                   contacts_notify_.open_add_contact();
+                                 }
+                               }));
         ctor.BindEventCallback(
             "open_new_session_menu", DataEventAt([this](ui::Event& ev) {
               // The phone goes straight to a full-screen page; the desktop keeps its small menu.
@@ -5739,6 +6032,12 @@ bool ChatController::Setup(ui::Context* context) {
                                    open_settings_section_("security");
                                  }
                                }));
+        ctor.BindEventCallback("recovery_reminder_open", DataEvent([this] {
+                                 if (open_settings_section_) {
+                                   open_settings_section_("security");
+                                 }
+                               }));
+        ctor.BindEventCallback("recovery_reminder_later", DataEvent([this] { OnRecoveryReminderLater(); }));
         ctor.BindEventCallback("home_open_favorite",
                                DataEvent<int>([this](const int index) { OpenHomeFavorite(index); }));
         ctor.BindEventCallback("home_open_calls", DataEvent([this] { OpenHomeCalls(); }));
@@ -5926,7 +6225,6 @@ void ChatController::Update() {
   ask_ai_.Tick(); // the panel's streamed answer, a one-off waiting to start, focus and scroll
   group_info_.Tick(messaging_ready_ ? ActiveThreadId() : std::string(), std::chrono::steady_clock::now());
   group_leave_.Tick(std::chrono::steady_clock::now());
-  group_link_->Tick();
   join_prompt_->Tick(std::chrono::steady_clock::now());
 
   if (search_.view().open) {
@@ -6314,6 +6612,7 @@ void ChatController::Shutdown() {
   AbandonPick();
   video_bubble_thread_.clear();
   messaging_ready_ = false;
+  recovery_phrase_present_.reset();
   ++messaging_session_; // a task result still on its way is dropped
   if (ready_tasks_) {
     ready_tasks_->OnMessagingTornDown();
@@ -6784,7 +7083,11 @@ GroupLinkSheetPorts ChatController::MakeGroupLinkPorts() {
   GroupLinkSheetPorts ports;
   ports.push_sheet = [this](const PaneSpec& spec) { return GroupInfoPushSheet(spec); };
   ports.close_sheet = [this](const int layer_id) { GroupInfoCloseSheet(layer_id); };
-  ports.sheet_open = [this](const int layer_id) { return GroupInfoSheetOpen(layer_id); };
+  ports.watch_closed = [this](const int layer_id, std::function<void()> closed) {
+    if (shell_navigation_.watch_layer_closed) {
+      shell_navigation_.watch_layer_closed(layer_id, std::move(closed));
+    }
+  };
   ports.load = [this](const std::string& group_id, std::function<void(Roe<GroupLinkRow>)> done) {
     AppRuntime::PostWorkerAndReplyOnUI<Roe<GroupLinkRow>>(
         WorkerLane::Normal, [this, group_id]() { return presenter_.InviteLinkFor(group_id); }, std::move(done));
@@ -6799,6 +7102,7 @@ GroupLinkSheetPorts ChatController::MakeGroupLinkPorts() {
     ShowToast(Tr("group_link.copied"));
   };
   ports.changed = [this]() { group_info_.Refresh(); };
+  ports.compact = [this]() { return ChromeSnapshot().layout_mode == LayoutMode::Compact; };
   return ports;
 }
 
@@ -6880,20 +7184,81 @@ void ChatController::AskAiOpenInChat(const std::string& thread_id) {
   AppRuntime::PostUI([this, thread_id]() { ShowThreadInChat(thread_id); });
 }
 
-void ChatController::AskAiSupport(const std::string& question, std::function<void()> on_opened) {
-  AppRuntime::PostUI([this, question, on_opened = std::move(on_opened)]() {
-    if (!ask_support_) {
-      UserFeedback::Fail(Tr("settings.support.unavailable"));
-      return;
+Roe<std::string> ChatController::AskAiEnsureSupport() {
+  if (!ensure_support_) {
+    return Error("Support is not available").WithUser(Tr("settings.support.unavailable"));
+  }
+  return ensure_support_();
+}
+
+Roe<void> ChatController::AskAiSendToSupport(const std::string& thread_id, const std::string& text) {
+  if (!messaging_ready_ || !facade_ || thread_id.empty()) {
+    return Error("Messaging is not ready").WithUser(Tr("ask_ai.support.try_later"));
+  }
+  // A plain message, as typed in that chat (stored and sent now, or queued with its clock when offline).
+  if (auto routed = facade_->RouteMessage(thread_id, text, std::nullopt); !routed) {
+    log().warning << "PP Support panel: the message was not sent: " << routed.error().message;
+    Error error = routed.error();
+    if (error.user.empty()) {
+      error.user = PaymentErrorUserMessage(routed.error());
     }
-    if (auto asked = ask_support_(question); !asked) {
-      (void)UserFeedback::FailFrom(asked.error());
-      return;
+    return error;
+  }
+  SyncShellSessions(); // the chats list shows it as the newest message there
+  return {};
+}
+
+std::vector<SupportMessage> ChatController::AskAiSupportMessages(const std::string& thread_id, const size_t limit) {
+  std::vector<SupportMessage> out;
+  if (!messaging_ready_ || !facade_ || thread_id.empty()) {
+    return out;
+  }
+  auto page = facade_->GetMessagesPage(thread_id, std::nullopt, static_cast<int>(limit));
+  if (!page) {
+    return out;
+  }
+  std::vector<ThreadMessage> messages = std::move(*page);
+  std::stable_sort(messages.begin(), messages.end(),
+                   [](const ThreadMessage& a, const ThreadMessage& b) { return a.display_order < b.display_order; });
+  const int64_t now_ms = util::NowUnixMs();
+  std::optional<int64_t> next_mark_change; // the panel reads the marks again with the next change
+  for (const ThreadMessage& message : messages) {
+    if (std::optional<SupportMessage> read =
+            SupportMessageOf(message, presenter_.SendMarkOf(message, now_ms, next_mark_change))) {
+      out.push_back(std::move(*read));
     }
-    if (on_opened) {
-      on_opened();
-    }
-  });
+  }
+  return out;
+}
+
+void ChatController::AskAiLater(std::function<void()> fn) {
+  AppRuntime::PostUI(std::move(fn));
+}
+
+bool ChatController::AskAiAttentive() const {
+  return AppLifecycle::IsUserAttentive();
+}
+
+void ChatController::AskAiMarkRead(const std::string& thread_id) {
+  if (reading_open_chat_ || !messaging_ready_ || !facade_ || thread_id.empty()) {
+    return;
+  }
+  auto found = facade_->GetThread(thread_id);
+  if (!found || !*found || (*found)->unread_count == 0) {
+    return;
+  }
+  reading_open_chat_ = true; // as MarkOpenChatReadIfLooking: a refresh reached from here stops at this guard
+  presenter_.MarkRead(thread_id);
+  ILocalNotifier::Instance().ClearForThread(thread_id);
+  reading_open_chat_ = false;
+  // The chats list and the badges without it: drawn by the next refresh (nothing to read then, so no loop).
+  AppRuntime::PostUI([this]() { RefreshFromMessaging(); });
+}
+
+void ChatController::AskAiSyncInbox() {
+  if (messaging_ready_ && facade_) {
+    facade_->SyncInboxFromWake(/*force=*/false); // the preferred relay; the fetch itself runs on a worker
+  }
 }
 
 void ChatController::AskAiRunAction(const std::string& thread_id, const std::string& entry_id, const int action_index) {

@@ -378,7 +378,7 @@ Roe<std::string> SearchGoogleNewsRss(const std::string& query) {
       query.empty() ? "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en"
                     : "https://news.google.com/rss/search?q=" + UrlEncode(query) + "&hl=en-US&gl=US&ceid=US:en";
   // The query is the user's own words: never at info level in a file that may be shared (PB-057).
-  logging::getLogger("WebSearchTool").debug << "web_search (google news rss) query: " << query;
+  logging::getLogger("WebSearchTool").debug << "web_search (google news rss) query_len=" << query.size();
 
   auto body = HttpGet(url);
   if (!body) {
@@ -401,7 +401,7 @@ Roe<std::string> SearchGoogleNewsRss(const std::string& query) {
 }
 
 Roe<std::string> SearchDuckDuckGo(const std::string& query) {
-  logging::getLogger("WebSearchTool").debug << "web_search query: " << query;
+  logging::getLogger("WebSearchTool").debug << "web_search query_len=" << query.size();
 
   const std::string url =
       "https://api.duckduckgo.com/?q=" + UrlEncode(query) + "&format=json&no_html=1&skip_disambig=1";

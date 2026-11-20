@@ -110,6 +110,7 @@ CallOutcome SummaryOutcome(const bool answered, const LiveCallEndReason reason) 
     case LiveCallEndReason::Orphaned:
     case LiveCallEndReason::Merged:
     case LiveCallEndReason::AnsweredElsewhere:
+    case LiveCallEndReason::Rejoining:
       return CallOutcome::Failed;
   }
   return CallOutcome::Failed;
@@ -145,6 +146,8 @@ const char* LiveCallEndReasonName(const LiveCallEndReason reason) {
       return "Merged";
     case LiveCallEndReason::AnsweredElsewhere:
       return "AnsweredElsewhere";
+    case LiveCallEndReason::Rejoining:
+      return "Rejoining";
   }
   return "?";
 }

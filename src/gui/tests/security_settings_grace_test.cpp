@@ -136,7 +136,7 @@ TEST_F(SecuritySettingsGraceTest, AlwaysIsSavedShownAndHandedToTheApp) {
   EXPECT_NE(back.unlock_grace_label, UnlockGraceDisplayLabel(15));
 }
 
-TEST_F(SecuritySettingsGraceTest, PickingOneOfTheFourOverAStoredUntilRestartStoresExactlyThatAndDropsTheOldValue) {
+TEST_F(SecuritySettingsGraceTest, PickingAnyOfferedChoiceOverAStoredUntilRestartStoresExactlyThat) {
   SettingsUiState state = Synced();
   state.unlock_grace_minutes = kUnlockGraceAlways;
   ASSERT_TRUE(static_cast<bool>(section_.Flush(state, store_)));
@@ -188,7 +188,7 @@ TEST_F(SecuritySettingsGraceTest, ThePageHasTheRowItsHelpAndBothLanguages) {
   EXPECT_NE(rml.find("data-event-click=\"on_choose_unlock_grace()\""), std::string::npos);
   EXPECT_NE(rml.find("{{unlock_grace_label}}"), std::string::npos);
   EXPECT_NE(rml.find("{{i18n:settings.security.grace.caption}}"), std::string::npos);
-  EXPECT_LT(rml.find("open_security_page('change_pin')"), rml.find("on_choose_unlock_grace")) << "under the PIN";
+  EXPECT_LT(rml.find("open_security_page('pin')"), rml.find("on_choose_unlock_grace")) << "under the PIN";
 
   // B2: no PIN field of their own any more; the PIN gate asks (its number pad for a digit PIN).
   for (const char* view : {"views/settings_security_transfer.rml", "views/settings_security_pin.rml",
@@ -485,7 +485,6 @@ TEST_F(SecuritySettingsBiometricTest, ThePageHasTheSwitchItsHelpAndBothLanguages
   EXPECT_NE(rml.find("data-event-click=\"toggle_biometric()\""), std::string::npos);
   EXPECT_NE(rml.find("data-class-settings-switch--on=\"security_biometric_on\""), std::string::npos);
   EXPECT_NE(rml.find("{{security_biometric_label}}"), std::string::npos);
-  EXPECT_NE(rml.find("remove_pin()"), std::string::npos);
   EXPECT_NE(ReadAsset("views/settings_security_pin.rml").find("remove_pin()"), std::string::npos);
   EXPECT_NE(rml.find("{{i18n:settings.security.biometric.help}}"), std::string::npos);
   EXPECT_EQ(rml.find("biometric toggle row goes here"), std::string::npos);

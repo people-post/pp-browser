@@ -1,6 +1,6 @@
 # Push notifications — current state
 
-**Last updated:** 2026-11-09
+**Last updated:** 2026-11-18
 
 ## Landed (wave 1 + iOS)
 
@@ -22,6 +22,7 @@
 | Stay connected (Android, opt-in) | P011: foreground service keeps the work running in the background; relay polled every 30 s |
 | Contracts | `SERVICE_ENDPOINTS.md`, `PLATFORMS.md` updated |
 | `call_wake` | Opaque type + Android JNI + iOS alert handler + client fetch-then-ring (P008 / V006); a call invite's relay send is marked `urgent` (P012), the relay wakes with `call_wake` |
+| `wake_hint` | Set on what the recipient should hear of (P021, P022): new chat messages, a missed 1:1 call's summary, a group invitation; a call invite's is its call id; a re-sent copy carries none |
 
 ## Ops (client)
 
@@ -45,6 +46,7 @@
 - Android (P014): verify on a device — killed-app call push (full screen, answer before unlock), decline on the lock screen, Android 14 full-screen permission; in-call foreground service; Telecom
 - Android notification tap → open specific thread in ChatController (PendingIntent already embeds `thread_id`)
 - Relay (www): honour `urgent` — `call_wake` to Android, the time-sensitive alert to iOS, rate limit (P012)
+- Relay (pp-relay-apis, separate PR): the `inbox_wake` alert's collapse id for these sends (P022)
 - iOS alert tap (P015): verify on a device — tap a call alert and a message alert from the lock screen, PIN, landing on the right chat / ring
 - iOS call alert (P019; needs app-static-api's alert-only calls deployed and an App ID with Time Sensitive Notifications): verify on a device —
   - locked phone: the alert breaks through Focus, a tap asks for the PIN, then the app rings the call (voice or video answer), audio both ways

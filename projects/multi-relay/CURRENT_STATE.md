@@ -67,7 +67,7 @@ Contracts: [SERVICE_ENDPOINTS § Several relays](../../docs/contracts/SERVICE_EN
   `relay.extra_base_urls`), each with its last registration, read back at start (a relay holding our registration
   for the current card is not asked again). Inbox cursors are kept by relay (`relay_inbox_cursor.json`
   `cursor_relay`).
-- Me → My relays (a page of its own on Home, after My devices; phone and desktop): the list, preferred first, each
+- Me → My relays (a page of its own on Home, after Advanced when it is listed, above Help; phone and desktop): the list, preferred first, each
   with its registration and last poll; Add relay… (https; the relay must answer `client-compat`), Make preferred
   (the identity registers there, #602's path; push binds there), Remove… (never the preferred or the last; push and
   registration revoked there first). Every change re-issues the card and sends it to contacts
@@ -125,7 +125,7 @@ without one refuses to register. Release workflows fail without
 
 Not yet:
 - A relay link shown as a QR code (My relays copies the link; Add relay… scans one).
-- A signed rotation statement for the org relay's key (a rotation is an app release meanwhile).
+- A signed rotation statement for the org relay's key (a rotation is an app release meanwhile): now the relay certificate and the operator key in cards, release-compatibility RC018 item 7 (INVENTORY O4, C7).
 - Account lockers stay at the org's registration URL and are still written there; with the org's relay removed from
   the list (our registration there revoked) those writes fail (logged), the restore's read still works. Stream history
   is read from the org's relay while it is one of ours, else from the preferred one (the org relay's is then not

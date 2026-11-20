@@ -178,6 +178,9 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
     }
   }
 
+  view_.ring_unanswered_long = view_.outgoing && !in.group && !answered_ && !connected_ &&
+                               in.status == Status::Calling && now - began_ms_ >= kNoAnswerAfterMs;
+
   if (view_.result_shown) {
     // The result line starts when the list is gone (a group has no list).
     const bool list_over = in.group || view_.stage == CallConnectStory::kStageDone;
@@ -261,7 +264,7 @@ CallStorySteps CallStoryLines(const CallStoryView& view, const bool group) {
     steps.shown = view.stage;
     return steps;
   }
-  // The five steps (#172): calling, answered, matching the fastest line, setting up the encrypted channel, connected.
+  // The five steps (#172): calling, answered, matching the most secure line, setting up the encrypted channel, connected.
   std::string matching = "call.story.step.matching";
   if (view.stage > CallConnectStory::kStageMatching) {
     matching = view.route == CallRoute::Relayed   ? "call.story.step.matched_relayed"

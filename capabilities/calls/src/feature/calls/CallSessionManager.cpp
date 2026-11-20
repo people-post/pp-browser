@@ -186,7 +186,11 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int displ
   if (auto cam = call_media->SetCamera(enabled, display_rotation_degrees); !cam) {
     return cam.error();
   }
-  (void)workflow_.PublishLocalMedia(call_id, *local, {std::nullopt, enabled && call_media->CameraOn()});
+  // Whatever the camera was told, any "paused" is over: the others are never left on "Camera paused" by a user's close
+  // or by an open that did not come through SetLocalVideoPaused(false) (B225).
+  video_paused_call_id_.clear();
+  (void)workflow_.PublishLocalMedia(call_id, *local,
+                                    {std::nullopt, enabled && call_media->CameraOn(), std::nullopt, false});
   return {};
 }
 
@@ -451,8 +455,9 @@ Roe<void> CallSessionManager::HandleInboundVideoRefresh(const std::string& detai
   return workflow_.HandleInboundVideoRefresh(detail_json, sender_identity);
 }
 
-Roe<void> CallSessionManager::HandleInboundEnded(const std::string& detail_json, const std::string& local_identity) {
-  return workflow_.HandleInboundEnded(detail_json, local_identity);
+Roe<void> CallSessionManager::HandleInboundEnded(const std::string& detail_json, const std::string& sender_identity,
+                                                 const std::string& local_identity) {
+  return workflow_.HandleInboundEnded(detail_json, sender_identity, local_identity);
 }
 
 bool CallSessionManager::AllowsInboundCall(const std::string& caller) const {
@@ -605,7 +610,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     case CallControlType::CallPunchAnswer:
       return reach_signals_.HandleInboundPunchAnswer(detail_json);
     case CallControlType::CallEnded:
-      return HandleInboundEnded(detail_json, *local);
+      return HandleInboundEnded(detail_json, sender_identity, *local);
     case CallControlType::CallAnsweredElsewhere:
       return HandleAnsweredElsewhere(detail_json, sender_identity, *local);
     case CallControlType::CallSummary:

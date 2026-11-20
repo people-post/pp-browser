@@ -74,13 +74,18 @@ struct Changed {};
 struct Notice {
   std::string message;
 };
+/** A group call someone else started rang here and ended unanswered and undeclined: the chat counts it as unread. */
+struct MissedGroupCall {
+  std::string thread_id;
+  bool video = false;
+};
 /** A push woke us for a call: fetch the relay inbox now. */
 struct InboxSyncFromWake {};
 
 } // namespace workflow_report
 
-using WorkflowReport =
-    std::variant<workflow_report::Changed, workflow_report::Notice, workflow_report::InboxSyncFromWake>;
+using WorkflowReport = std::variant<workflow_report::Changed, workflow_report::Notice,
+                                    workflow_report::InboxSyncFromWake, workflow_report::MissedGroupCall>;
 
 /** The group path's move-to-hop / attach flows' events (V050 group hop flows). */
 namespace hop_migrate_event {
@@ -173,12 +178,16 @@ struct RefuseGuest {
 struct Continue {
   uint64_t id = 0;
 };
+/** V067: the participant watch's next step (armed as `armed`; a stop or a re-arm since makes it stale). */
+struct LivenessTick {
+  uint64_t armed = 0;
+};
 
 } // namespace hop_path_event
 
 using HopPathEvent = std::variant<hop_path_event::RelayTransportLost, hop_path_event::AttachWaitDeadline,
                                   hop_path_event::ReannouncePublisher, hop_path_event::RefuseGuest,
-                                  hop_path_event::Continue, HopMigrateEvent>;
+                                  hop_path_event::Continue, hop_path_event::LivenessTick, HopMigrateEvent>;
 
 /** The 1:1 path's (CallDirectPath) own events. */
 /** What the 1:1 connect sequence (`CallMediaConnectCoordinator`) reports to itself. */
@@ -453,11 +462,21 @@ struct InboxSyncWanted {
 struct LeaveWanted {
   std::string call_id;
 };
+/** V067: nothing came from `identity` for the gone window: take them as gone, as their leave would. */
+struct ParticipantLost {
+  std::string call_id;
+  std::string identity;
+};
+/** V067 8: the call went quiet for this device long enough that the others took it as gone: ask to join again. */
+struct RejoinWanted {
+  std::string call_id;
+};
 
 } // namespace hop_report
 
 using HopReport = std::variant<hop_report::Progress, hop_report::Changed, hop_report::MediaError, hop_report::Activity,
-                               hop_report::MediaAttempted, hop_report::InboxSyncWanted, hop_report::LeaveWanted>;
+                               hop_report::MediaAttempted, hop_report::InboxSyncWanted, hop_report::LeaveWanted,
+                               hop_report::ParticipantLost, hop_report::RejoinWanted>;
 
 namespace session_event {
 

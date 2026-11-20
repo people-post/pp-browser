@@ -78,6 +78,11 @@ CallStatusLine DecideStatusLine(const CallScreen& screen, const CallMediaFacts& 
                                 int64_t& timer_since_ms) {
   CallStatusLine line = ScreenStatusLine(screen);
   timer_since_ms = screen.connected_at_ms;
+  if (screen.status == Status::WaitingForOthers && !d.couldnt_connect) {
+    // Everyone else left: the countdown to leaving by itself is the line, over the live timer, the head count and the
+    // path word (the media is still up while the call waits). Only a failed connect says more.
+    return line;
+  }
   // The call timer counts the call (first live), not the current path: it runs on through a reconnect.
   bool media_line = false;
   if (d.couldnt_connect) {
@@ -169,6 +174,11 @@ CallHintPrompt DecideCallHintPrompt(const CallHintPromptInput& in, const std::ma
     }
     return prompt;
   }
+  // A call nobody answers: after a while the page says so, whatever else it shows (nothing else is true yet).
+  if (in.ring_unanswered_long && !in.quiet) {
+    prompt.center_key = "call.hint.no_answer";
+    return prompt;
+  }
   // A 1:1 call: the steps say how the connecting goes (what "Connecting voice…" repeated); a lost or silent mic means
   // something only once connected. On hold the silence is by design.
   if (in.steps_shown || in.on_hold || in.quiet) {
@@ -233,6 +243,7 @@ CallMediaDecision CallMediaFrame::Decide(const CallScreen& screen, const CallMed
     one_way_since_ms_ = 0;
     not_sending_since_ms_ = 0;
     last_pill_ms_.clear();
+    pressure_gate_ = {};
   }
   CallMediaDecision d;
   // Whatever VideoAllowedForCall said (false, unknown), a sending camera can always be turned off.
@@ -303,6 +314,8 @@ const CallMediaScreen& CallMediaFrame::Step(const CallScreen& screen, const Call
   in.now_ms = facts.now_ms;
   in.reconnecting = d.reconnect || d.couldnt_connect;
   in.link = SampleLink(facts);
+  in.engine_pressure_for_quality =
+      pressure_gate_.Step(facts.engine.path_pressure, facts.now_ms, facts.audio_route_changed_ms);
   const CallMediaHealthView health = EvaluateCallMediaHealth(in);
   return Finish(screen, facts, d, health);
 }
@@ -379,6 +392,7 @@ const CallMediaScreen& CallMediaFrame::Finish(const CallScreen& screen, const Ca
   hint.playout_stuck = facts.playout_stuck;
   hint.on_hold = held;
   hint.now_ms = now;
+  hint.ring_unanswered_long = view_.story.ring_unanswered_long;
   const CallHintPrompt prompt = DecideCallHintPrompt(hint, last_pill_ms_);
   view_.center_hint_key = prompt.center_key;
   view_.pill_key = prompt.pill_key;

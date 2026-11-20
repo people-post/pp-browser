@@ -7,7 +7,6 @@
 #include "foundation/platform/IncomingLink.h"
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
-#include "app/DiagnosticsUpload.h"
 #include "feature/product/DemoDataSeeder.h"
 #include "feature/product/HubSettingsProjection.h"
 #include "foundation/data/LlmPreset.h"
@@ -69,6 +68,7 @@
 #include "gui/chat/ChatController.h"
 #include "feature/product/MessagingTools.h"
 #include "feature/settings/SettingsTools.h"
+#include "feature/settings/SupportThread.h"
 #include "common/runtime/AppRuntime.h"
 #include "feature/product/ProductOwners.h"
 #include "foundation/platform/IAssetLocator.h"
@@ -109,6 +109,7 @@
 #include "gui/scan/QrScanController.h"
 #include "gui/scan/ElementScanPreview.h"
 #include "gui/contacts/ContactsNotifyPorts.h"
+#include "gui/contacts/ContactsTickGate.h"
 #include "gui/ChatSurfaceNotifyPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/contacts/PeoplePickerSurfaceNotifyPorts.h"
@@ -275,6 +276,11 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
   shell.SetOnLayoutSynced([&settings, &chat]() {
     settings.OnShellLayoutSynced();
     chat.OnShellLayoutSynced();
+  });
+
+  shell.SetOnViewportResized([&contacts, &chat]() {
+    contacts.OnViewportResized();
+    chat.OnViewportResized();
   });
 
   shell.SetOnSyncLayoutMeasured([&chat](int64_t ms) { chat.OnSyncLayoutMeasured(ms); });
@@ -1261,12 +1267,13 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       contacts_->OpenBlockedPeople();
     }
   };
-  settings_commands.open_support_chat = [this, &facade](const std::string& prefilled_text) -> Roe<void> {
-    if (!support_discovery_ || !support_discovery_->enabled || support_discovery_->account_id.empty()) {
-      return Error("Support is not available").WithUser(Tr("settings.support.unavailable"));
+  // The PP 客服 chat, found or made, not opened: the page under it stays (the settings "?" panel shows it there).
+  const auto ensure_support_thread = [this, &facade]() -> Roe<std::string> {
+    if (auto configured = CheckSupportConfigured(support_discovery_); !configured) {
+      return configured.error();
     }
     if (!facade.IsInitialized()) {
-      return Error("Messaging is not ready");
+      return WithSupportWords(Error("Messaging is not ready"));
     }
 
     const std::string account_id = support_discovery_->account_id;
@@ -1279,7 +1286,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
 
     auto found = facade.FindContactByIdentity(account_id, mesh::ContactIdKind::Account);
     if (!found) {
-      return found.error();
+      return WithSupportWords(found.error());
     }
 
     std::string contact_id;
@@ -1288,7 +1295,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       if (ApplySupportTitle(contact, display_name)) {
         auto saved = Conversations().Contacts().Upsert(contact);
         if (!saved) {
-          return saved.error();
+          return WithSupportWords(saved.error());
         }
         contact_id = saved->id;
       } else {
@@ -1298,14 +1305,39 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       Contact contact = MakeSupportContact(util::GenerateUuid(), account_id, display_name);
       auto saved = Conversations().Contacts().Upsert(contact);
       if (!saved) {
-        return saved.error();
+        return WithSupportWords(saved.error());
       }
       contact_id = saved->id;
     }
 
+    auto threads = facade.ListThreads();
+    if (!threads) {
+      return WithSupportWords(threads.error());
+    }
+    if (std::optional<std::string> existing = FindSupportThread(*threads, contact_id)) {
+      return *existing;
+    }
+    // Made the first time. FindOrCreateDirectThread also opens it: the chat open before is put back.
+    const std::string open_before = facade.ActiveThreadId();
     auto thread = facade.FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
     if (!thread) {
-      return thread.error();
+      return WithSupportWords(thread.error());
+    }
+    if (open_before.empty()) {
+      facade.ClearActiveThread();
+    } else if (open_before != thread->id) {
+      (void)facade.OpenThread(open_before);
+    }
+    return thread->id;
+  };
+  settings_commands.open_support_chat = [this, &facade,
+                                         ensure_support_thread](const std::string& prefilled_text) -> Roe<void> {
+    auto thread_id = ensure_support_thread();
+    if (!thread_id) {
+      return thread_id.error();
+    }
+    if (auto opened = facade.OpenThread(*thread_id); !opened) {
+      return WithSupportWords(opened.error());
     }
 
     const ShellNavigationPorts nav = MakeShellNavigationPorts(*shell_);
@@ -1331,65 +1363,40 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
     return {};
   };
-  settings_commands.ask_ai_once = [this](const std::string& question) { return chat_ && chat_->AskAiOnce(question); };
-  if (chat_) {
-    chat_->BindAskSupport(settings_commands.ask_support); // the ask-AI panel's "Ask PP Support"
-  }
-  settings_commands.send_diagnostics = [this, &facade](std::function<void(DiagnosticsUploadResult)> on_done) {
-    DiagnosticsUploadDeps deps;
-    deps.data_dir = store_.Snapshot().data_dir;
-    // The bundle's self-check refuses to send when any of these appears in it (a line that got past the shareable rule).
-    if (auto identity = facade.GetIdentity()) {
-      deps.known_identifiers = {identity->account_id, identity->peer_id};
-    }
-    // The self-check strips a leading scheme itself; the bare ids are passed too so either form is caught.
-    auto add_bare = [&deps](const std::string& id) {
-      for (const char* scheme : {"account:", "peer:", "call:"}) {
-        const std::string prefix = scheme;
-        if (id.compare(0, prefix.size(), prefix) == 0 && id.size() > prefix.size()) {
-          deps.known_identifiers.push_back(id.substr(prefix.size()));
-          return;
-        }
-      }
-    };
-    for (const std::string& id : std::vector<std::string>(deps.known_identifiers)) {
-      add_bare(id);
-    }
-    if (auto contacts = Conversations().Contacts().List()) {
-      for (const Contact& contact : *contacts) {
-        for (const auto& id : contact.ids) {
-          deps.known_identifiers.push_back(id.value);
-          add_bare(id.value);
-        }
-      }
-    }
-    // The AI stream's key: registered, else guest, else mint a guest key now (same helpers as the chat).
-    deps.bearer = [&facade]() -> Roe<std::string> {
-      auto identity = facade.GetIdentity();
-      if (!identity) {
-        return Error("Messaging is not ready");
-      }
-      std::string key =
-          ResolveBriefLlmApiKey(identity->brief_llm_api_key.Reveal(), identity->brief_llm_guest_api_key.Reveal());
-      if (!key.empty()) {
-        return key;
-      }
-      if (identity->account_id.empty()) {
-        return Error("Messaging is not ready"); // no account to mint for: nothing minted, nothing written
-      }
-      auto minted = MintBriefGuestLlmKey(BriefLlmBaseUrl());
-      if (!minted) {
-        return minted.error();
-      }
-      // Off the UI thread: one modify of the guest key field only, into the account it was minted for, keeping a key
-      // stored meanwhile (that one is the Bearer then).
-      return StoreBriefGuestKeyIfNone(MakeBriefLlmKeyStore(facade), minted->llm_api_key, identity->account_id);
-    };
-    SendDiagnostics(std::move(deps), std::move(on_done));
+  settings_commands.ask_support_panel = [this](const std::string& question) {
+    return chat_ && chat_->AskSupportPanel(question);
   };
-  settings_commands.last_diagnostics_id = [this]() -> std::string {
-    const auto last = ReadLastUpload(store_.Snapshot().data_dir);
-    return last ? last->upload_id : std::string();
+  if (chat_) {
+    chat_->BindEnsureSupport(ensure_support_thread); // the sheet's PP 客服 mode (a settings "?")
+  }
+  // Settings → Send run logs (DEV/PLAN-send-run-logs.md): the user picks one contact on the New chat page, the chat
+  // opens, and the archive goes there as an ordinary file message. No pick, nothing sent.
+  settings_commands.send_run_logs = [this, &facade](OutgoingAttachment archive) {
+    auto held = std::make_shared<OutgoingAttachment>(std::move(archive));
+    const bool opened =
+        contacts_ && contacts_->OpenNewChatPageToPick([this, &facade, held](const std::string& contact_id) {
+          auto thread = facade.FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
+          if (!thread) {
+            UserFeedback::FailFrom(thread.error());
+            return;
+          }
+          const std::string thread_id = thread->id;
+          facade.SendAttachmentAsync(thread_id, std::move(*held), [this, thread_id](Roe<ThreadMessage> sent) {
+            AppRuntime::PostUI([this, thread_id, sent = std::move(sent)]() {
+              if (chat_) {
+                chat_->RefreshAfterOutsideSend(thread_id);
+              }
+              if (sent) {
+                UserFeedback::Ok(Tr("settings.run_logs.sent"));
+              } else {
+                UserFeedback::FailFrom(sent.error());
+              }
+            });
+          });
+        });
+    if (!opened) {
+      UserFeedback::Fail(Tr("settings.run_logs.unavailable"));
+    }
   };
   settings_commands.storage = MakeStorageManagerPorts(facade, [this]() { return store_.Snapshot().profile_data_dir; });
   // Copy ports before BindCommands moves the command bag.
@@ -1416,6 +1423,29 @@ void Application::LogCallTapTiming() {
   } else {
     log().info << "Call tap recorded " << (now_ms - first_ms) << " ms after the first frame";
   }
+}
+
+void Application::OnNotificationTapRecorded(const uint64_t tap_seq, const bool app_was_shown) {
+  PendingNotificationTap& tap = PendingNotificationTap::Instance();
+  const auto now = PendingNotificationTap::Clock::now();
+  if (tap.PeekCallRoute(now)) {
+    shell_->ReleaseTapCover(); // a call alert's tap: its ring is what shows
+    return;
+  }
+  // This tap, still waiting: one the chat already opened for (an inbound message took its hint before this ran) or a
+  // later tap's is not held behind a cover nothing would release.
+  if (!tap.MessageTapPending(tap_seq, now)) {
+    return;
+  }
+  TapCoverFacts facts;
+  facts.message_tap = true;
+  facts.app_was_shown = app_was_shown;
+  facts.call_shown = shell_->State().call_ring.active || shell_->State().call_in_progress.active;
+  facts.os_modal_up = PlatformSystemModalUp(Backend::GetWindow()); // a share sheet, the Files export: the OS owns it
+  if (NotificationTapCover::ShouldArm(facts)) {
+    shell_->ArmTapCover();
+  }
+  chat_->RouteSyncedTap(); // its message may have synced already (a wake window, an earlier poll)
 }
 
 void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_ports) {
@@ -1522,11 +1552,19 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
       call_->OnCallWake();
     }
   });
-  // A tap arrives off the UI thread; the PIN screen words itself by it.
+  // A tap arrives off the UI thread; the PIN screen words itself by it. Whether the app's screen was up is read here:
+  // the foreground the tap brings is applied before the post runs.
   PendingNotificationTap::Instance().SetRecordedHandler([this]() {
     LogCallTapTiming();
-    AppRuntime::PostUI([this]() { pin_gate_->RefreshCallHint(); });
+    const bool app_was_shown = AppLifecycle::IsVisible() && first_present_ms_.load() >= 0;
+    const uint64_t tap_seq = PendingNotificationTap::Instance().TapSeq();
+    AppRuntime::PostUI([this, app_was_shown, tap_seq]() {
+      pin_gate_->RefreshCallHint();
+      OnNotificationTapRecorded(tap_seq, app_was_shown);
+    });
   });
+  // A tap that launched the app may have been recorded before the handler above existed.
+  OnNotificationTapRecorded(PendingNotificationTap::Instance().TapSeq(), /*app_was_shown=*/false);
   debug_call_tap_delay_ms_ = DebugCallTapDelayMs();
   if (debug_call_tap_delay_ms_ == 0) {
     RecordDebugCallTap(); // before the first frame
@@ -1942,9 +1980,10 @@ void Application::WireUnlockPinAndFlow() {
         system->SetClipboardText(text.c_str());
       }
     };
+    // The Add contact page (ID / QR) while name search is off (people-post/pp-relay-apis#42); was OnFindSomeone().
     onboarding_ports.find_friends = [this]() {
       if (contacts_) {
-        contacts_->OnFindSomeone();
+        contacts_->OnAddContact();
       }
     };
     onboarding_ports.is_completed = [this]() {
@@ -2021,6 +2060,7 @@ void Application::WireUnlockPinAndFlow() {
     pin_actions.on_identity_phrase = [this]() { pin_gate_->OnIdentityPhrase(); };
     pin_actions.on_use_saved_copy = [this]() { pin_gate_->OnUseSavedCopy(); };
     pin_actions.on_forgot_toggle = [this]() { pin_gate_->OnForgotToggle(); };
+    pin_actions.on_note_toggle = [this]() { pin_gate_->OnNoteToggle(); };
     pin_actions.on_use_pin_instead = [this]() { pin_gate_->OnUsePinInstead(); };
     pin_actions.on_key = [this](const int digit) { pin_gate_->OnKey(digit); };
     pin_actions.on_backspace = [this]() { pin_gate_->OnBackspace(); };
@@ -2196,18 +2236,20 @@ void Application::WireAgentAndConfig() {
     shell_->SetShowAdvancedSettings(prefs.show_advanced_settings);
   });
   // A contact starred or unstarred (on their page), the recovery phrase opened, or the 动态 section toggled: Home follows.
-  store_.AddProfilePrefsListener(
-      [this, starred = store_.Snapshot().profile_prefs.starred_contacts,
-       phrase_seen = store_.Snapshot().profile_prefs.recovery_phrase_seen,
-       show_dynamic = store_.Snapshot().profile_prefs.home_show_dynamic](const ProfilePreferences& prefs) mutable {
-        if (prefs.starred_contacts != starred || prefs.recovery_phrase_seen != phrase_seen ||
-            prefs.home_show_dynamic != show_dynamic) {
-          starred = prefs.starred_contacts;
-          phrase_seen = prefs.recovery_phrase_seen;
-          show_dynamic = prefs.home_show_dynamic;
-          chat_->OnHomePrefsChanged();
-        }
-      });
+  store_.AddProfilePrefsListener([this, starred = store_.Snapshot().profile_prefs.starred_contacts,
+                                  phrase_seen = store_.Snapshot().profile_prefs.recovery_phrase_seen,
+                                  show_dynamic = store_.Snapshot().profile_prefs.home_show_dynamic,
+                                  reminders = store_.Snapshot().profile_prefs.recovery_reminder_dismissals](
+                                     const ProfilePreferences& prefs) mutable {
+    if (prefs.starred_contacts != starred || prefs.recovery_phrase_seen != phrase_seen ||
+        prefs.home_show_dynamic != show_dynamic || prefs.recovery_reminder_dismissals != reminders) {
+      starred = prefs.starred_contacts;
+      phrase_seen = prefs.recovery_phrase_seen;
+      reminders = prefs.recovery_reminder_dismissals;
+      show_dynamic = prefs.home_show_dynamic;
+      chat_->OnHomePrefsChanged();
+    }
+  });
 }
 
 bool Application::MountPresenters(ui::Context* context) {
@@ -2269,6 +2311,7 @@ bool Application::MountPresenters(ui::Context* context) {
   };
   contacts_notify.set_group_admin = [this](GroupAdminCard card) { contacts_->SetGroupAdminCard(std::move(card)); };
   contacts_notify.open_new_chat = [this]() { contacts_->OpenNewChatPage(); };
+  contacts_notify.open_add_contact = [this]() { contacts_->OnAddContact(); };
   contacts_notify.message_contact = [this](const std::string& id) { contacts_->MessageContact(id); };
   // The member page opened from a 1:1 chat: its Block and Add are the chat menu's own (ChatPresenter).
   contacts_->BindStrangerBlocker([this](const std::string& account_id) { return chat_->BlockStranger(account_id); });
@@ -2614,6 +2657,19 @@ void Application::WireHubCallbacks() {
       }
     });
   });
+  messaging.SetOnContactsChanged([this]() {
+    // Whoever changed the address book, on whatever thread: every list of people on screen (New chat, Contacts, the
+    // blocked list) shows it at once. A burst (an import, a card and its profile) is one rebuild.
+    if (contacts_sync_posted_.exchange(true)) {
+      return;
+    }
+    AppRuntime::PostUI([this]() {
+      contacts_sync_posted_ = false;
+      if (contacts_) {
+        contacts_->OnContactsChanged();
+      }
+    });
+  });
 }
 
 void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& bootstrap) {
@@ -2621,7 +2677,6 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
   ChatSessionPorts chat_ports;
   chat_ports.finalize_thread_display = [this]() { chat_->FinalizeThreadDisplay(); };
   chat_ports.select_thread = [this](const std::string& id) { chat_->OnSelectThread(id); };
-  chat_ports.on_find_someone = [this]() { chat_->OnFindSomeone(); };
   chat_ports.open_new_group = [this]() { people_picker_->OpenFree(); };
   chat_ports.new_ai_chat = [this]() { chat_->StartNewAiChat(); };
   contacts_->BindChatPorts(chat_ports);
@@ -2819,8 +2874,8 @@ void Application::Run() {
     if (shell_->State().nav_tab == NavTab::Me) {
       settings_->Tick();
     }
-    // The contact page also ticks while it is a page sheet over another tab (its edits, its close).
-    if (shell_->State().nav_tab == NavTab::Contacts || contacts_->DetailSheetOpen()) {
+    // The contact page and the Add contact page also tick while open over another tab (edits, close, the search).
+    if (ShouldTickContacts(shell_->State().nav_tab, contacts_->DetailSheetOpen(), contacts_->AddContactPageOpen())) {
       contacts_->Tick();
     }
     {
@@ -3078,6 +3133,7 @@ void Application::Shutdown() {
     messaging_->SetOnReachabilityUpdated(nullptr);
     messaging_->SetOnLinkStateChanged(nullptr);
     messaging_->SetOnPeerIconsChanged(nullptr);
+    messaging_->SetOnContactsChanged(nullptr);
     messaging_->SetOnCallWake(nullptr);
   }
 

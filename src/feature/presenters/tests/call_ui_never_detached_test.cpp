@@ -14,6 +14,7 @@
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/testing/FailingCallSessionStore.h"
+#include "lib/media/IVideoCodec.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
@@ -30,6 +31,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
@@ -291,12 +293,13 @@ protected:
     return applied;
   }
 
-  Roe<void> IngestInvite(const std::string& call_id) {
+  Roe<void> IngestInvite(const std::string& call_id, const CallMediaMode mode = CallMediaMode::Voice) {
     CallInviteDetail invite;
     invite.call_id = call_id;
     invite.inviter_identity = "account:peer";
     invite.invitee_identity = local_identity_;
-    invite.media_mode = CallMediaMode::Voice;
+    invite.media_mode = mode;
+    invite.video_allowed = mode == CallMediaMode::Video;
     invite.media_epoch = 1;
     invite.media_key_id = "mk:1";
     invite.expires_at = util::NowUnixMs() + kDefaultCallInviteTtlMs;
@@ -311,12 +314,12 @@ protected:
   }
 
   /** A ring from the peer, answered on the screen: the call is open in the engine and on screen. */
-  void InCall(const std::string& call_id) {
-    ASSERT_TRUE(IngestInvite(call_id));
+  void InCall(const std::string& call_id, const bool video = false) {
+    ASSERT_TRUE(IngestInvite(call_id, video ? CallMediaMode::Video : CallMediaMode::Voice));
     presenter_->Refresh();
     DrainUntil([&]() { return presenter_->Screen().kind == CallScreen::Kind::Ringing; });
     ASSERT_EQ(presenter_->Screen().kind, CallScreen::Kind::Ringing);
-    ASSERT_EQ(presenter_->Accept(/*voice_only=*/true, call_id), call_id);
+    ASSERT_EQ(presenter_->Accept(/*voice_only=*/!video, call_id), call_id);
     DrainUntil([&]() {
       presenter_->Tick();
       return EngineOpen() && presenter_->ActiveCallId() == call_id;
@@ -667,6 +670,70 @@ TEST_F(CallUiNeverDetachedTest, TheLeavingLatchRunsOutAfterFifteenSeconds) {
   EXPECT_TRUE(presenter_->LeavingCallId().empty()) << "dropped after 15 s";
   presenter_->Tick();
   EXPECT_EQ(presenter_->ActiveCallId(), "call:stuck-open") << "still open in the engine: on screen again";
+}
+
+/** A codec that only claims it can encode: the camera offer (VideoEncoderAvailable) then holds on every host. */
+class EncodingCodecStub final : public IVideoCodec {
+public:
+  std::string BackendName() const override { return "stub"; }
+  bool HasEncoder() const override { return true; }
+  bool HasDecoder() const override { return false; }
+  Roe<void> ConfigureEncoder(int, int, int) override { return {}; }
+  Roe<void> ConfigureDecoder() override { return {}; }
+  Roe<EncodedAccessUnit> Encode(const VideoFrameI420&, bool) override { return EncodedAccessUnit{}; }
+  Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t*, size_t) override { return std::optional<VideoFrameRgba>{}; }
+  void ResetEncoder() override {}
+  void ResetDecoder() override {}
+};
+
+/** What the presenter's logger wrote, kept for a test (a handler cannot be removed again: it lives for the process). */
+class CapturedPresenterLog final : public logging::Handler {
+public:
+  static CapturedPresenterLog& Instance() {
+    static std::shared_ptr<CapturedPresenterLog> handler = [] {
+      auto h = std::make_shared<CapturedPresenterLog>();
+      logging::getLogger("CallPresenter").addHandler(h);
+      return h;
+    }();
+    return *handler;
+  }
+  void emit(logging::Level /*level*/, const std::string& /*name*/, const std::string& message) override {
+    std::lock_guard<std::mutex> lock(mu_);
+    lines_.push_back(message);
+  }
+  bool Has(const std::string& text) {
+    std::lock_guard<std::mutex> lock(mu_);
+    for (const std::string& line : lines_) {
+      if (line.find(text) != std::string::npos) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+private:
+  std::mutex mu_;
+  std::vector<std::string> lines_;
+};
+
+// A host that binds no `auto_camera_on` (the headless call lab) still gets the camera for a video call: the presenter
+// asks the backend to enable video itself instead of dropping the intent. (The engine skips its devices here, so the
+// camera itself stays off; what is checked is that the request was made.) The encoder is supplied by a stub, not the
+// platform: a Linux host without a hardware encoder never offers the camera (the auto camera then rightly waits).
+TEST_F(CallUiNeverDetachedTest, WithoutAHostCameraHookTheVideoCallOpensTheCameraItself) {
+  SetPlatformVideoCodecOverride([]() -> std::unique_ptr<IVideoCodec> { return std::make_unique<EncodingCodecStub>(); });
+  struct RestoreCodec {
+    ~RestoreCodec() { SetPlatformVideoCodecOverride({}); }
+  } restore_codec;
+  CapturedPresenterLog& captured = CapturedPresenterLog::Instance();
+  ASSERT_NO_FATAL_FAILURE(InCall("call:auto-cam-fallback", /*video=*/true));
+  DrainUntil([&]() {
+    presenter_->Tick();
+    return captured.Has("auto camera on failed call_id=call:auto-cam-fallback");
+  });
+  EXPECT_TRUE(captured.Has("auto camera on call_id=call:auto-cam-fallback"));
+  EXPECT_TRUE(captured.Has("auto camera on failed call_id=call:auto-cam-fallback: camera skipped (test)"))
+      << "the backend was asked to enable video";
 }
 
 } // namespace

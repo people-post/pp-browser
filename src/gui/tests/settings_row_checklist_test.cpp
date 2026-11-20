@@ -58,7 +58,7 @@ std::string View(const std::string& id) {
   for (size_t at = text.find(marker); at != std::string::npos; at = text.find(marker)) {
     const size_t end = text.find("}}", at);
     const std::string name = text.substr(at + marker.size(), end - at - marker.size());
-    const bool subpage = name.rfind("settings_section_advanced_", 0) == 0;
+    const bool subpage = name.rfind("settings_section_advanced_", 0) == 0 || name == "settings_security_recovery";
     text.replace(at, end + 2 - at, subpage ? std::string() : ReadAsset("views/" + name + ".rml"));
   }
   return text;
@@ -433,12 +433,21 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
     size_t desktop; // visible on the desktop
   };
   const Expect expected[] = {
-      {"security", "open_security_page('change_pin')", "show_change_pin", 1, 0},
-      {"security", "change_pin()", "show_change_pin && security_can_change_pin", 0, 1},
+      {"security", "open_security_page('pin')", "show_change_pin", 1, 0},
+      // The PIN file is included here only inside the desktop wrapper (its phone rows count as desktop-hidden); the
+      // phones show the same file as the 'pin' page (settings.rml), which this scan does not walk.
+      {"security", "change_pin()",
+       "show_change_pin && security_can_change_pin;;!pin_protection_is_default@show_change_pin && "
+       "security_can_change_pin;;pin_protection_is_default",
+       0, 2},
+      {"security", "remove_pin()", "show_change_pin && security_can_change_pin;;!pin_protection_is_default", 0, 1},
       {"security", "toggle_biometric()", "security_biometric_shown", 1, 1},
       {"security", "on_choose_unlock_grace()", "security_grace_shown", 1, 1},
-      {"security", "show_recovery_phrase()", "security_has_recovery_phrase;;recovery_phrase == ''", 1, 1},
-      {"security", "hide_recovery_phrase()", "security_has_recovery_phrase;;recovery_phrase != ''", 1, 1},
+      // The phone's row opens the phrase's own page (settings.rml); the desktop's button and "I've written it down" are
+      // inline, the grid itself is the shared settings_security_recovery.rml (not walked here).
+      {"security", "show_recovery_phrase()",
+       "security_has_recovery_phrase@security_has_recovery_phrase;;!recovery_shown", 1, 1},
+      {"security", "hide_recovery_phrase()", "security_has_recovery_phrase;;recovery_shown", 0, 1},
       {"security", "ask_setting_help('settings.security.recovery')", "security_has_recovery_phrase", 1, 1},
       // Devices: the transfer block is the desktop's inline copy here; phones open it as its own page.
       // (2026-11-14: the phone's top button, on the main device only; a linked phone shows nothing to tap.)
@@ -633,12 +642,12 @@ const std::set<std::string>& SignedOutFacts() {
 TEST(SettingsDevicesCaptionsTest, ThePhoneShowsAtMostOneCaptionUnderTheDeviceList) {
   const std::vector<std::string> captions = {
       "{{i18n:settings.security.devices.help}}", "{{i18n:settings.security.devices.not_main}}",
-      "{{i18n:settings.security.devices.tap_hint}}", "{{i18n:settings.security.devices.none}}",
+      "{{i18n:settings.security.devices.handover_hint}}", "{{i18n:settings.security.devices.none}}",
       "{{i18n:settings.security.devices.signed_out}}"};
   std::set<std::string> main_with_others = {"own_devices_shown", "own_has_other_devices"};
   const std::set<std::string> main_alone = {"own_devices_shown"};
   EXPECT_EQ(PhoneShown(captions, main_with_others), 1u) << "main device with other devices: the tap hint";
-  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.tap_hint}}"}, main_with_others), 1u);
+  EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.handover_hint}}"}, main_with_others), 1u);
   EXPECT_EQ(PhoneShown(captions, main_alone), 1u) << "main device alone: the grey line";
   EXPECT_EQ(PhoneShown({"{{i18n:settings.security.devices.none}}"}, main_alone), 1u);
   EXPECT_EQ(PhoneShown(captions, LinkedFacts()), 0u) << "a linked phone has its sentence card, no caption";

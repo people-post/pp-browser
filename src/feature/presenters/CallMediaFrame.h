@@ -71,6 +71,8 @@ struct CallMediaFacts {
   std::string reach_path_kind;
   /** The call's link counters now (sampled every CallMediaFrame::kLinkSampleMs). */
   CallLinkCounters link_counters;
+  /** The last local audio route change (the speaker toggle, the OS's route change) on now_ms's clock; 0: none (B231). */
+  int64_t audio_route_changed_ms = 0;
 };
 
 /** What the remote video stage says where there is no picture. */
@@ -173,6 +175,8 @@ struct CallHintPromptInput {
   /** On hold here or there: the silence is by design. */
   bool on_hold = false;
   int64_t now_ms = 0;
+  /** An outgoing 1:1 call has rung 30 s with no answer (CallStoryView::ring_unanswered_long). */
+  bool ring_unanswered_long = false;
 };
 
 struct CallHintPrompt {
@@ -261,6 +265,8 @@ private:
   CallLinkCounters link_counters_;
   CallLinkHealth link_health_;
   int64_t link_sampled_ms_ = 0;
+  /** B231: the engine's buffer pressure grades the call only when it lasts, and not right after a route change. */
+  CallBufferPressureGate pressure_gate_;
   CallMediaHintClock hint_clock_;
   /** The hint's pills (DecideCallHintPrompt): when the steps went and one-way audio began (0: not), the last of each. */
   int64_t steps_gone_ms_ = 0;

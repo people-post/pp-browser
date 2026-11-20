@@ -10,6 +10,7 @@
 #include "feature/presenters/CallMediaFrame.h"
 #include "feature/presenters/CallHoldStuck.h"
 #include "feature/presenters/CallPlayoutStuck.h"
+#include "feature/presenters/CallGroupLook.h"
 #include "feature/presenters/CallSpeakerButton.h"
 #include "feature/presenters/CallUiAttachGuard.h"
 #include "feature/presenters/CallWakePlaceholder.h"
@@ -41,6 +42,8 @@ struct CallNotice {
     IncomingCall,
     /** V062 1: `identity` joined the group's call as `brought_by`'s guest (once per guest and call). */
     GuestJoined,
+    /** V067: `identity` was reconnecting and is gone from the call ("{name} lost connection"). */
+    ParticipantLost,
     /** V064: the 1:1 call End & accept ended (`ending`) can be called back now that the call taken is over. */
     CallBack,
     /** "Who can call me" dropped a call from `identity`: `key` (an i18n key) says which setting did (the pill). */
@@ -171,6 +174,17 @@ public:
     std::function<bool()> on_hold_here;
     /** The app is in front (AppLifecycle::IsForeground; CallHoldStuck counts only then); none: always in front. */
     std::function<bool()> app_foreground;
+    /**
+     * The user's camera wish (the GUI's CallLocalHold): the button, our own tile and "narrow to voice" follow it, not
+     * the engine, which moves later (B225). None: the engine's state.
+     */
+    std::function<bool()> camera_wanted;
+    /** A video call's automatic camera-on at setup: the wish is set; the device opens when the gate lets it. */
+    std::function<void()> auto_camera_on;
+    /** The engine closed the camera itself (permission denied, open failed): the wish goes with it. */
+    std::function<void()> camera_closed_by_engine;
+    /** The call narrowed to voice and turns the camera off: our close. */
+    std::function<void()> camera_closed_by_policy;
   };
   using StartDone = std::function<void(const CallStartResult&)>;
 
@@ -311,7 +325,13 @@ public:
    */
   void Redial();
   void ToggleMute();
-  void ToggleCamera();
+  /**
+   * The camera button's checks before the GUI turns the wish on (turning it off needs none): false, with the reason
+   * shown, when the camera cannot be turned on now.
+   */
+  bool CanTurnCameraOn();
+  /** The call refused the camera the user asked for: the plain sentence. */
+  void ReportCameraToggleFailed();
   /** Phones: front / rear camera while it is on. */
   void FlipCamera();
   void ToggleSpeaker();
@@ -377,6 +397,8 @@ private:
   void OfferCallBack(const CallScreen& next, const CallUiBackend::Surface& surface);
   /** V062 1: "{name} joined as {bringer}'s guest", once per guest of the call on `s`. */
   void AnnounceGuests(const CallScreen& s);
+  /** V067: "{name} lost connection" for each participant reconnecting in `before` and gone in `after`. */
+  void AnnounceLostConnections(const CallScreen& before, const CallScreen& after);
   /** The media frame of the screen `next` (in a call: its facts read, then acted on; answering: the story only). */
   void StepMedia(CallUiBackend& backend, const CallScreen& next, int64_t now);
   /** One tick's media facts for the call on `s`, after the engine's video upkeep. */
@@ -395,6 +417,8 @@ private:
   CallFunctionalPorts ports_;
   /** The last speaker tap handed to the media engine as a route change (CallSpeakerButtonOn). */
   std::optional<CallSpeakerTap> speaker_tap_;
+  /** When the speaker was last toggled (util::NowUnixMs; 0: never): the call's quality reads it (B231). */
+  int64_t speaker_toggled_ms_ = 0;
   std::function<bool()> dev_route_reorder_skip_;
   std::function<bool()> dev_detach_ui_;
   std::function<bool()> video_available_for_test_;
@@ -439,6 +463,7 @@ private:
   /** The last 1:1 call shown that this device was in and that had not connected (KeepsFailedPage's kind). */
   std::string unconnected_call_id_;
   NoMediaWatch no_media_watch_;
+  CallGroupLook group_look_;
   int64_t no_media_checked_ms_ = 0;
   /** Last CallSessionManager identity the ring callbacks were installed on. */
   const void* bound_calls_ = nullptr;

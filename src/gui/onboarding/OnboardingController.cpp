@@ -1,6 +1,8 @@
 #include "gui/onboarding/OnboardingController.h"
 
 #include "gui/AccountInvite.h"
+#include "gui/onboarding/RegistrationFailureText.h"
+#include "common/Logger.h"
 
 #include "lib/ui/ViewCatalog.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -53,6 +55,8 @@ bool OnboardingController::RegisterModel(ui::Context* context) {
     ctor.Bind("account_id", &account_id_);
     ctor.Bind("error", &error_);
     ctor.Bind("busy", &busy_);
+    ctor.Bind("name_blank", &name_blank_);
+    ctor.BindEventCallback("onboarding_name_changed", &OnboardingController::NameChangedCallback);
     ctor.BindEventCallback("onboarding_register", &OnboardingController::RegisterCallback);
     ctor.BindEventCallback("onboarding_copy_id", &OnboardingController::CopyIdCallback);
     ctor.BindEventCallback("onboarding_share", &OnboardingController::ShareCallback);
@@ -76,6 +80,10 @@ void OnboardingController::MaybeStart() {
     return;
   }
   LoadIdentityFields();
+  if (start == OnboardingStep::Name) {
+    nickname_ = OnboardingNameFieldStart(nickname_.c_str()).c_str();
+    name_blank_ = OnboardingNameIsBlank(nickname_.c_str());
+  }
   error_.clear();
   busy_ = false;
   active_ = true;
@@ -100,6 +108,7 @@ void OnboardingController::LoadIdentityFields() {
   if (nickname_.empty() || !view.nickname.empty()) {
     nickname_ = view.nickname.c_str();
   }
+  name_blank_ = OnboardingNameIsBlank(nickname_.c_str());
   // The id friends type: the same Account ID Me → Profile shows and shares (M002; the relay's inbox too, MR001).
   account_id_ = view.account_id.c_str();
   contact_locator_ = view.contact_locator;
@@ -121,7 +130,7 @@ void OnboardingController::Mount() {
 
 void OnboardingController::DirtyAll() {
   auto& host = DataModelHost::Instance();
-  for (const char* key : {"step", "nickname", "account_id", "error", "busy"}) {
+  for (const char* key : {"step", "nickname", "account_id", "error", "busy", "name_blank"}) {
     host.Dirty("onboarding", key);
   }
 }
@@ -157,7 +166,9 @@ void OnboardingController::OnRegister() {
   auto done = [this](Roe<void> result) {
     busy_ = false;
     if (!result) {
-      error_ = (Tr("onboarding.register_failed") + " " + result.error().message).c_str();
+      // The raw detail (English, technical) goes to the log; the page says what happened in plain words.
+      logging::getLogger("Onboarding").warning << "Account setup failed: " << AppError::Log(result.error());
+      error_ = Tr(RegistrationFailureKey(result.error())).c_str();
       DirtyAll();
       return;
     }
@@ -169,6 +180,15 @@ void OnboardingController::OnRegister() {
   } else {
     done(work());
   }
+}
+
+void OnboardingController::NameChangedCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
+                                               const ui::VariantList& /*args*/) {
+  OnboardingController& self = Instance();
+  // The change event runs before data-value has copied the field into nickname_ (it is one keystroke behind), so
+  // the new text is read from the event itself.
+  self.name_blank_ = OnboardingNameIsBlank(std::string(ev.GetParameter<ui::String>("value", self.nickname_).c_str()));
+  DataModelHost::Instance().Dirty("onboarding", "name_blank");
 }
 
 void OnboardingController::RegisterCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,

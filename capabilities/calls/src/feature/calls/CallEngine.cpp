@@ -28,6 +28,12 @@ bool CallEngine::Deliver(const MediaEngine::MediaPacket& packet) {
   return true;
 }
 
+void CallEngine::ReleaseRemoteStream(const uint32_t stream_id) {
+  if (Runs()) {
+    engine_.ReleaseRemoteStream(stream_id);
+  }
+}
+
 void CallEngine::NoteOutboundDrop() {
   if (Runs()) {
     engine_.NoteOutboundDrop();

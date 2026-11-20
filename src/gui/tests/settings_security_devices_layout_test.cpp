@@ -37,41 +37,40 @@ std::string ReadAsset(const std::string& relative) {
   return buffer.str();
 }
 
-TEST(SecurityLayoutTest, AutoLockOffersTheFourOldValuesInTheOldOrderAndNotUntilRestart) {
-  // Before this change the chooser listed {0, 5, 15, 60, kUnlockGraceAlways}.
-  const std::vector<int> before{0, 5, 15, 60, kUnlockGraceAlways};
-  std::vector<int> expected = before;
-  expected.pop_back();
+TEST(SecurityLayoutTest, AutoLockOffersTheFiveValuesWithUntilRestartLast) {
+  const std::vector<int> expected{0, 5, 15, 60, kUnlockGraceAlways};
   EXPECT_EQ(OfferedUnlockGraceMinutes(), expected);
-  for (const int minutes : OfferedUnlockGraceMinutes()) {
-    EXPECT_NE(minutes, kUnlockGraceAlways);
-  }
+  EXPECT_EQ(kUnlockGraceAlways, -1);
 }
 
-TEST(SecurityLayoutTest, AStoredUntilRestartStillShowsItsLabelButNothingInTheChooserIsTicked) {
+TEST(SecurityLayoutTest, UntilRestartIsOfferedLabelledAndTickedWhenStored) {
   const std::string label = UnlockGraceDisplayLabel(kUnlockGraceAlways);
   EXPECT_FALSE(label.empty());
   EXPECT_NE(label, UnlockGraceDisplayLabel(15));
+  EXPECT_EQ(ReadAsset("locales/en.json").find("\"settings.security.grace.always\": \"Never\""),
+            ReadAsset("locales/en.json").find("\"settings.security.grace.always\""));
+  EXPECT_NE(ReadAsset("locales/zh-Hans.json").find("\"settings.security.grace.always\": \"从不\""), std::string::npos);
   int ticked = 0;
   for (const int minutes : OfferedUnlockGraceMinutes()) {
     ticked += minutes == kUnlockGraceAlways ? 1 : 0; // what the chooser does: current == minutes
   }
-  EXPECT_EQ(ticked, 0);
-  // Both languages carry the label of the value that is no longer offered.
+  EXPECT_EQ(ticked, 1);
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     EXPECT_NE(ReadAsset(locale).find("\"settings.security.grace.always\""), std::string::npos) << locale;
   }
 }
 
-TEST(SecurityLayoutTest, TheRecoveryRowIsOneButtonWithTheOldEventAndAChevron) {
+TEST(SecurityLayoutTest, TheRecoveryRowIsOneRowWithTheOldEventAChevronAndItsQuestionMark) {
   const std::string rml = ReadAsset("views/settings_section_security.rml");
   const size_t event = rml.find("data-event-click=\"show_recovery_phrase()\"");
   ASSERT_NE(event, std::string::npos);
-  const size_t end = rml.find("</button>", event);
+  const size_t end = rml.find("group-chevron", event);
   ASSERT_NE(end, std::string::npos);
   const std::string row = rml.substr(event, end - event);
   EXPECT_NE(row.find("{{i18n:settings.security.recovery.show}}"), std::string::npos);
-  EXPECT_NE(row.find("group-chevron"), std::string::npos);
+  // The row is a div (a button inside a button is not allowed); its "?" follows the label inside the row.
+  EXPECT_EQ(rml.rfind("<div class=\"group-row\"", event) + 23, event);
+  EXPECT_NE(row.find("ask_setting_help('settings.security.recovery')"), std::string::npos);
 }
 
 // The row holding `token` (its row div or button, up to the end of that element's first closing tag of its kind).
@@ -170,7 +169,7 @@ TEST(DevicesLayoutTest, TheNewStringsExistInBothLanguages) {
                             "settings.security.devices.main_is",
                             "settings.security.devices.hero",
                             "settings.security.devices.hero_sub",
-                            "settings.security.devices.tap_hint",
+                            "settings.security.devices.handover_hint",
                             "settings.security.devices.view_head",
                             "settings.security.devices.linked_note",
                             "settings.security.devices.linked_note_sub",
@@ -188,10 +187,10 @@ TEST(DevicesLayoutTest, TheNewStringsExistInBothLanguages) {
   }
   const std::string zh = ReadAsset("locales/zh-Hans.json");
   for (const char* line :
-       {"\"在其他设备上使用同一个账号\"", "\"本机（主设备）\"", "\"主设备（管理）\"", "\"其他设备\"", "\"未命名\"",
-        "\"主设备是「{name}」，请到那台设备上管理。\"", "\"设备名\"", "\"只有你自己的设备看得到\"", "\"已改名\"",
-        "\"点一台设备可以移除，或设为主设备。\"", "\"这个账号的设备\"", "\"这台手机已关联到你的账号。\"",
-        "\"要管理设备，请到主设备上操作。\"", "\"还没有关联其他设备。\"",
+       {"\"在其他设备上使用同一个账号\"", "\"本机（管理员）\"", "\"管理员\"", "\"其他设备\"", "\"未命名\"",
+        "\"管理员是「{name}」，请到那台设备上管理。\"", "\"设备名\"", "\"只有你自己的设备看得到\"", "\"已改名\"",
+        "\"换手机前，先把新手机设为管理员，再处理旧手机。\"", "\"这个账号的设备\"", "\"这台手机已关联到你的账号。\"",
+        "\"要管理设备，请到管理员那台设备上操作。\"", "\"还没有关联其他设备。\"",
         "\"新设备上看不到以前的聊天记录。已有别的账号的设备要先重置。\""}) {
     EXPECT_NE(zh.find(line), std::string::npos) << line;
   }

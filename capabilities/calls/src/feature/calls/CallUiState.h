@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -45,6 +46,8 @@ struct CallUiState {
   CallLinkCounters media_link;
   /** V053: the active group call this device waits alone in ends for it then (0: not waiting). */
   int64_t alone_until_ms = 0;
+  /** V067: the shown call's participants nothing has come from for a few seconds (their tiles: "Reconnecting…"). */
+  std::vector<std::string> quiet_participants;
 
   // Stack-level (hub / app reads from UI).
   bool available = false;                  // sessions + lifecycle exist

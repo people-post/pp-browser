@@ -81,6 +81,7 @@ TEST(SettingsSectionsTest, SyncAndPersistenceSignals) {
   about_section.SyncFromSession(bootstrap, state);
   EXPECT_FALSE(state.app_name.empty());
   EXPECT_FALSE(state.app_version.empty());
+  EXPECT_FALSE(state.app_build.empty());
   EXPECT_TRUE(about_section.IsWritable()) << "About owns the Show advanced settings switch";
 }
 

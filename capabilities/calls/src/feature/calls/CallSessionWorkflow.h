@@ -19,6 +19,7 @@
 #include "feature/calls/ICallSessionNotes.h"
 
 #include <chrono>
+#include <deque>
 #include <functional>
 #include <optional>
 #include <set>
@@ -153,12 +154,21 @@ public:
    * (ParticipantGone — a remote end, never a failure).
    */
   void NotePeerEndedCall(const std::string& call_id, const std::string& peer);
+  /**
+   * V067: nothing came from `identity` for the gone window (the group path's participant watch): taken as gone, as
+   * their call_leave would (ParticipantGone: the key rotates without them, the roster says so, alone waits). A
+   * participant already out, or a call already over, changes nothing.
+   */
+  void NoteParticipantLost(const std::string& call_id, const std::string& identity);
   /** Test seam: the wait for call_leave after a peer's bye (production kPeerByeLeaveGrace). */
   void SetPeerByeLeaveGraceForTest(std::chrono::milliseconds grace) { peer_bye_leave_grace_ = grace; }
   /** Calls owner: start `call_id`'s alone-in-a-group-call wait at `since_ms` (wall clock), as a peer leaving would. */
   void SetAloneSinceForTest(const std::string& call_id, int64_t since_ms) { alone_since_ms_[call_id] = since_ms; }
   /** Calls owner: how soon a decision put off by an unreadable roster is tried again (1 s). */
   void SetUnreadRosterRetryForTest(int64_t ms) { unread_roster_retry_ms_ = ms; }
+  static constexpr size_t kMissedGroupRingsRemembered = 64;
+  /** Test seam: how many missed group rings are remembered (never above kMissedGroupRingsRemembered). */
+  size_t MissedGroupRingsRememberedForTest() const { return missed_group_rings_reported_.size(); }
   /** Test seam: the number of the last peer bye noted (NotePeerEndedCall). */
   uint64_t LastPeerByeForTest() const { return last_peer_bye_; }
   /**
@@ -182,6 +192,13 @@ public:
    */
   Roe<CallSession> JoinCall(const std::string& call_id);
   /**
+   * V067 8: this device was cut off from group call `call_id` long enough that the others took it as gone (and moved
+   * the key on): ask to join again as JoinCall does, staying in the call meanwhile ("Reconnecting…"). The invite that
+   * answers ends this device's part here (nothing sent: the others already took it as gone) and is accepted without
+   * ringing. Unanswered: nothing changes here — the call's group path decides (CallParticipantLiveness).
+   */
+  Roe<void> RejoinCall(const std::string& call_id);
+  /**
    * Accept a pending invite: checks → CallAccept + Joined + media arm. The circuit park is asked for,
    * not waited on. A failed accept leaves the call ringing.
    */
@@ -199,10 +216,11 @@ public:
   /** The decisions DecideLaterUnread put off: made once readable, or from the live call after a few failed reads. */
   void ResolveUnreadRosters(const std::string& local_identity, int64_t now);
   /**
-   * The call's media key moved (ours rotated, or a peer's taken in): epochs only move forward — a newer
-   * one is recorded on the session — and the call's media installs it (the current one again too).
+   * The call's media key moved (ours rotated — `origin` Minted —, or a peer's taken in): epochs only move forward — a
+   * newer one is recorded on the session — and the call's media installs it (the current one again too).
    */
-  void AdoptMediaEpoch(const std::string& call_id, uint32_t epoch, const std::string& key_id);
+  void AdoptMediaEpoch(const std::string& call_id, uint32_t epoch, const std::string& key_id,
+                       CallMediaKeyOrigin origin = CallMediaKeyOrigin::Taken);
   /** This device's mic / camera in `call_id` changed: its participant row, then the roster to the others. */
   struct LocalMedia {
     std::optional<bool> audio_muted;
@@ -234,6 +252,8 @@ public:
   int64_t AloneUntilMs(const std::string& call_id) const;
   /** This device is Joined in the call (not left it). */
   bool StillInCall(const std::string& call_id) const;
+  /** Tells the device once per call that a group call rang here unanswered and undeclined (it counts as unread). */
+  void ReportMissedGroupRing(const CallSession& session);
 
   /**
    * A call invite. Returns the call to answer at once: the inviter and this device called each
@@ -262,7 +282,9 @@ public:
   Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
-  Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
+  /** `sender_identity`: who ended it — a sender no longer in the call does not end it for those still in (V067 8). */
+  Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& sender_identity,
+                               const std::string& local_identity);
   /** M021 d5: another of our devices took (or declined) this call — stop it ringing here, no history. */
   Roe<void> StopRingingAnsweredElsewhere(const std::string& call_id, const std::string& local_identity);
   /** V053: someone the call was offered to asks to join — invite them if this device is in it. */
@@ -286,6 +308,14 @@ private:
   void MarkEveryoneLeft(const std::string& call_id, const std::string& local_identity);
   /** Join requests nobody answered (the call ended); a group call left alone for 5 min. */
   void SweepJoinsAndAloneCalls(const std::string& local_identity, int64_t now);
+  /** Ask everyone `call_id` was offered to for a way in (V053); the earliest joiner still in answers. */
+  Roe<void> SendJoinRequest(const std::string& call_id, const std::string& local_identity);
+  /** V067 8: whether `invite` answers this device's ask back into a call it is still in. */
+  bool AnswersRejoin(const CallInviteDetail& invite, const std::string& sender_identity) const;
+  /** V067 8: this device's part of `call_id` ends here so the answering invite takes it back in (nothing is sent). */
+  void EndOurPartToRejoin(const std::string& call_id, const std::string& local_identity);
+  /** The ask back into `call_id` is off (this device left it, or its part ended another way). */
+  void DropRejoin(const std::string& call_id);
   /** V062: this device checks guests in `session`: a group's call, with a standing port bound. */
   bool ChecksGuests(const CallSession& session) const;
   /** V062: `account`'s standing in the call's group; none: no roster here (or guests not checked). */
@@ -448,6 +478,14 @@ private:
   std::unordered_map<std::string, int64_t> join_requested_until_ms_;
   /** V053: join requests re-sent to anyone in the call (no answer from the earliest joiner). */
   std::unordered_set<std::string> join_any_retry_sent_;
+  /** V067 8: of those, the calls this device is still in and asks back into (RejoinCall). */
+  std::unordered_set<std::string> rejoining_in_place_;
+  /**
+   * Group calls already reported as missed rings: a repeated end or a replayed invite counts once. Only the most
+   * recent kMissedGroupRingsRemembered are kept (oldest forgotten first): a duplicate comes within moments.
+   */
+  std::unordered_set<std::string> missed_group_rings_reported_;
+  std::deque<std::string> missed_group_rings_order_;
   /** V053: group calls this device is alone in → since when. */
   std::unordered_map<std::string, int64_t> alone_since_ms_;
   /**

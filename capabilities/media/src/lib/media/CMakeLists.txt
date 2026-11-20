@@ -35,16 +35,19 @@ if(WIN32)
     DeviceVitals_Default.cpp
     ThreadCpu_Default.cpp
     MediaThreadName_Default.cpp
+    AutoreleasePool_Default.cpp
     AudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
     SdlAudioBootstrap_Default.cpp
     SdlAudioReset_Default.cpp
     MicPermission_Default.cpp
+    CameraPermission_Default.cpp
     VoiceProcessingIo_Stub.cpp)
   target_link_libraries(pp_lib_media PRIVATE mfplat mf mfuuid)
 elseif(APPLE)
   target_sources(pp_lib_media PRIVATE VideoCodec_Darwin.cpp DeviceVitals_Darwin.mm MicPermission_Darwin.mm
-    ThreadCpu_Darwin.mm MediaThreadName_Darwin.mm)
+    ThreadCpu_Darwin.mm MediaThreadName_Darwin.mm
+    AutoreleasePool_Darwin.mm)
   target_link_libraries(pp_lib_media PRIVATE
     "-framework Foundation"
     "-framework VideoToolbox"
@@ -55,6 +58,7 @@ elseif(APPLE)
     target_sources(pp_lib_media PRIVATE
       AudioSession_Ios.mm
       CameraCandidates_Default.cpp
+      CameraPermission_Ios.mm
       CameraCaptureOrientation_Ios.mm
       SdlAudioBootstrap_Default.cpp
       SdlAudioReset_Default.cpp
@@ -65,6 +69,7 @@ elseif(APPLE)
       AudioSession_Default.cpp
       CameraCandidates_Darwin.mm
       CameraCaptureOrientation_Default.cpp
+      CameraPermission_Default.cpp
       SdlAudioBootstrap_Default.cpp
       SdlAudioReset_Default.cpp
         VoiceProcessingIo_Apple.cpp)
@@ -77,11 +82,13 @@ elseif(ANDROID)
     DeviceVitals_Android.cpp
     ThreadCpu_Default.cpp
     MediaThreadName_Default.cpp
+    AutoreleasePool_Default.cpp
     AudioSession_Android.cpp
     CameraCaptureOrientation_Android.cpp
     SdlAudioBootstrap_Default.cpp
     SdlAudioReset_Android.cpp
     MicPermission_Android.cpp
+    CameraPermission_Android.cpp
     VoiceProcessingIo_Stub.cpp)
   target_link_libraries(pp_lib_media PRIVATE mediandk camera2ndk)
 else()
@@ -91,11 +98,13 @@ else()
     DeviceVitals_Default.cpp
     ThreadCpu_Default.cpp
     MediaThreadName_Default.cpp
+    AutoreleasePool_Default.cpp
     AudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
     SdlAudioBootstrap_Linux.cpp
     SdlAudioReset_Default.cpp
     MicPermission_Default.cpp
+    CameraPermission_Default.cpp
     VoiceProcessingIo_Stub.cpp)
   # Linux VA-API (libva + DRM render node) — soft dep; stub builds without it.
   find_package(PkgConfig QUIET)

@@ -45,6 +45,8 @@ public:
     {
       std::lock_guard<std::mutex> lock(mu_);
       thread_id_ = std::move(thread_id);
+      thread_until_ = thread_id_.empty() ? std::nullopt : std::optional<Clock::time_point>(now + kMessageRouteTtl);
+      ++tap_seq_;
       call_ = call_wake;
       hint_ = std::move(wake_hint);
       route_until_ = std::nullopt;
@@ -92,22 +94,43 @@ public:
     on_recorded_ = std::move(fn);
   }
 
-  /** The chat a banner tap asked for, without taking it. */
-  std::optional<std::string> PeekThread() const {
+  /** The chat a fresh banner tap asked for, without taking it; an expired one is dropped. */
+  std::optional<std::string> PeekThread(const Clock::time_point now) {
     std::lock_guard<std::mutex> lock(mu_);
-    if (thread_id_.empty()) {
+    if (!ThreadFresh(now)) {
       return std::nullopt;
     }
     return thread_id_;
   }
 
-  /** The chat a banner tap asked for; taken once. */
-  std::optional<std::string> TakeThread() {
+  /** The chat a fresh banner tap asked for; taken once. An expired one is dropped (same bound as a message alert's). */
+  std::optional<std::string> TakeThread(const Clock::time_point now) {
     std::lock_guard<std::mutex> lock(mu_);
-    if (thread_id_.empty()) {
+    if (!ThreadFresh(now)) {
       return std::nullopt;
     }
+    thread_until_.reset();
     return std::exchange(thread_id_, std::string{});
+  }
+
+  /**
+   * Whether the message tap numbered `seq` (TapSeq right after it was recorded) is still waiting to be opened: it is
+   * the newest tap, no call alert's, and its banner thread or alert hint is fresh and not yet routed or taken. The
+   * check and the routing (TakeHintedRoute / TakeThread) read the same state, so a tap already opened is never
+   * reported pending. Does not consume.
+   */
+  bool MessageTapPending(const uint64_t seq, const Clock::time_point now) {
+    std::lock_guard<std::mutex> lock(mu_);
+    if (seq != tap_seq_ || call_) {
+      return false;
+    }
+    return ThreadFresh(now) || (!hint_.empty() && Fresh(now));
+  }
+
+  /** Counts every tap recorded; a tap's handler reads it to tell its own tap from a later one. */
+  uint64_t TapSeq() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return tap_seq_;
   }
 
   /** True while a call-alert tap is fresh and its ring has not been routed yet; does not consume. */
@@ -162,6 +185,19 @@ public:
   }
 
 private:
+  /** Whether a banner tap's chat is still waiting and in time; an expired one is dropped. Caller holds `mu_`. */
+  bool ThreadFresh(const Clock::time_point now) {
+    if (thread_id_.empty()) {
+      return false;
+    }
+    if (!thread_until_ || now > *thread_until_) {
+      thread_id_.clear();
+      thread_until_.reset();
+      return false;
+    }
+    return true;
+  }
+
   enum class Kind { Msg, Call, Thread };
 
   Kind CurrentKind() const { return call_ ? Kind::Call : Kind::Msg; }
@@ -212,6 +248,8 @@ private:
 
   mutable std::mutex mu_;
   std::string thread_id_;
+  std::optional<Clock::time_point> thread_until_;
+  uint64_t tap_seq_ = 0;
   bool call_ = false;
   std::string hint_;
   std::optional<Clock::time_point> route_until_;

@@ -113,19 +113,22 @@ RelayCopy AccountCopy(const ThreadMessage& numbered, SealedPayload sealed);
 RelayCopy DeviceCopy(const std::string& device, PairCopy copy);
 
 /**
- * Whether a chat-route message wakes the recipient: true for what the transcript shows as a new message, false for
- * annotations (reactions, retracts, edits), system-control rows (a payload naming a `control_type`: call summary,
- * group membership, copy asks, ...) and anything else. Only such a message carries a `wake_hint`, which is what the
- * relay pushes on.
+ * Whether a chat-route send wakes the recipient: what the sender decided (`options.wake`: a system-control row its
+ * owner counts as news for the recipient wakes, a copy re-sent to a device that asked for it does not), else by the
+ * content — true for what the transcript shows as a new message, false for annotations (reactions, retracts, edits),
+ * system-control rows (a payload naming a `control_type`: call summary, group membership, ...) and anything else.
+ * Only such a send carries a `wake_hint`, which is what the relay pushes on.
  */
-bool RaisesWakePush(const ThreadMessage& message);
+bool RaisesWakePush(const ThreadMessage& message, const SendRelayOptions& options);
 
 /**
  * A direct send's envelope to the account `recipient` (its relay inbox, MR001): one relay record with `copies` for
- * the account's devices, or the account copy (M022). `order_key`: its relay index.
+ * the account's devices, or the account copy (M022). `order_key`: its relay index. `options`: the send's, for
+ * whether it wakes the recipient (RaisesWakePush).
  */
-RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const EnvelopeSender& sender, ThreadChannel channel,
-                                  const std::string& recipient, std::vector<RelayCopy> copies, uint64_t order_key);
+RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const SendRelayOptions& options,
+                                  const EnvelopeSender& sender, ThreadChannel channel, const std::string& recipient,
+                                  std::vector<RelayCopy> copies, uint64_t order_key);
 
 /**
  * Control-lane signaling (call control) prefers the relay when a route is known (Amp's open + ack per message races the
@@ -146,11 +149,12 @@ bool ControlAlsoGoesDirect(bool peer_connected, bool has_relay_route, bool criti
  * One member's envelope of a group send: `copies` for the member's devices (each a pairwise payload numbered
  * in its device pair, with a key_init while that session is ours and not yet confirmed), or the member's
  * account copy (M022), addressed to the member's account (its relay inbox, MR001). The route names no group
- * (G018 item 7: the copies carry it inside); `group_id` only makes the pair's stream id.
+ * (G018 item 7: the copies carry it inside); `group_id` only makes the pair's stream id. `options`: the send's, for
+ * whether it wakes the member (RaisesWakePush).
  */
-RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
-                                       const std::string& group_id, const std::string& recipient,
-                                       std::vector<RelayCopy> copies, uint64_t order_key);
+RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const SendRelayOptions& options,
+                                       const EnvelopeSender& sender, const std::string& group_id,
+                                       const std::string& recipient, std::vector<RelayCopy> copies, uint64_t order_key);
 
 // --- The outbox: sends queued after a failed relay attempt ----------------------------------------
 

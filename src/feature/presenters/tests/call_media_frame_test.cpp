@@ -253,6 +253,22 @@ TEST(CallMediaFrameTest, AGroupWaitingAloneCountsDown) {
   EXPECT_EQ(v.line.until_ms, 200'000);
 }
 
+// The media is still live while the group waits alone: the countdown stays, no timer / head count / path word.
+TEST(CallMediaFrameTest, AGroupLeftAloneKeepsTheCountdownWhileItsMediaIsStillLive) {
+  CallMediaFrame frame;
+  CallScreen screen = InCallScreen(Status::WaitingForOthers);
+  screen.group = true;
+  screen.alone_until_ms = 200'000;
+  screen.members = {{.identity = "me", .is_local = true}};
+  CallMediaFacts f = LiveFacts(160'000);
+  f.have_peer_row = false;
+  const CallMediaScreen v = frame.Step(screen, f, Health("media_relay"));
+  EXPECT_EQ(v.line.kind, LineKind::Countdown);
+  EXPECT_EQ(v.line.key, "call.status.waiting_for_others");
+  EXPECT_EQ(v.line.until_ms, 200'000);
+  EXPECT_TRUE(v.line.path_key.empty());
+}
+
 // Kenneth 2026-09-29: a video call shows its stage from the answer with "Starting video…" until the first frame, at most
 // kVideoStartMs after connect, and never while it still rings out.
 TEST(CallMediaFrameTest, AVideoCallSaysStartingVideoUntilTheFirstFrameAtMostTenSeconds) {
@@ -382,6 +398,27 @@ TEST(CallMediaFrameTest, TheFactsHealthSamplesTheLinkAndReconnectsWithTheDecisio
   EXPECT_EQ(v.health.quality, CallPathQuality::Reconnecting) << "the health hears the call reconnects";
 }
 
+// B231: the persistence timer of high buffer pressure belongs to one call.
+TEST(CallMediaFrameTest, ANewCallStartsTheBufferPressureTimerOver) {
+  CallMediaFrame frame;
+  auto step = [&frame](const char* id, const int64_t now) {
+    CallMediaFacts f = LiveFacts(now);
+    f.call_id = id;
+    f.engine.rx_audio_frames = 100;
+    f.engine.tx_audio_frames = 100;
+    f.engine.last_rx_audio_ms = now - 100;
+    f.engine.last_tx_audio_ms = now - 100;
+    f.engine.path_pressure = 1.0;
+    CallScreen s = InCallScreen();
+    s.call_id = id;
+    return frame.Step(s, f).health.quality;
+  };
+  EXPECT_EQ(step("call-1", 160'000), CallPathQuality::Fair);
+  EXPECT_EQ(step("call-1", 161'000), CallPathQuality::Poor);
+  EXPECT_EQ(step("call-2", 161'500), CallPathQuality::Fair) << "the second second is not call-1's";
+  EXPECT_EQ(step("call-2", 162'500), CallPathQuality::Poor);
+}
+
 // --- DEV/PLAN-call-failed-redial.md 9-10: only the steps while connecting; after connect, bottom pills ------------
 
 /** The pills a 1:1 voice call's frame raises from `from_ms` to `to_ms` (a tick every `step_ms`), with `health_at`. */
@@ -444,6 +481,19 @@ TEST(CallHintPromptTest, TheMiddleOfAOneToOnePageNeverCarriesASentence) {
       }
     }
   }
+}
+
+TEST(CallHintPromptTest, ALongUnansweredRingSaysSoInTheMiddleLineEvenOverTheSteps) {
+  CallHintPromptInput in;
+  in.steps_shown = true;
+  in.now_ms = 500'000;
+  EXPECT_TRUE(DecideCallHintPrompt(in, {}).center_key.empty());
+  in.ring_unanswered_long = true;
+  const CallHintPrompt prompt = DecideCallHintPrompt(in, {});
+  EXPECT_EQ(prompt.center_key, "call.hint.no_answer");
+  EXPECT_TRUE(prompt.pill_key.empty()) << "a line, not a pill";
+  in.quiet = true; // the call failed or ended: its own page speaks
+  EXPECT_TRUE(DecideCallHintPrompt(in, {}).center_key.empty());
 }
 
 TEST(CallHintPromptTest, AGroupCallKeepsItsHintLineAndRaisesNoPill) {

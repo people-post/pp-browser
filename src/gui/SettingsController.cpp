@@ -25,6 +25,7 @@
 #include "feature/settings/SettingsPortsViews.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/MascotLook.h"
+#include "gui/DefaultPinNote.h"
 #include "gui/ProfileSettingsSection.h"
 #include "gui/shell/RmlMount.h"
 #include "gui/UnlockEnsurePorts.h"
@@ -498,6 +499,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.attachment_auto_on_cellular = ui_state_.attachment_auto_on_cellular.c_str();
   bindings_.attachment_auto_toggles_visible = AttachmentAutoTogglesVisible(ui_state_, Platform::Detect());
   bindings_.pin_protection_status = ui_state_.pin_protection_status.c_str();
+  bindings_.pin_page_note = Tr("settings.security.pin_page.note", {{"pin", kDefaultProfilePin}}).c_str();
   bindings_.pin_protection_is_default = ui_state_.pin_protection_is_default;
   bindings_.pin_protection_not_setup = ui_state_.pin_protection_not_setup;
   bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
@@ -517,6 +519,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.tool_permissions_has_saved = ui_state_.tool_permissions_has_saved;
   bindings_.app_name = ui_state_.app_name.c_str();
   bindings_.app_version = ui_state_.app_version.c_str();
+  bindings_.app_build = ui_state_.app_build.c_str();
 
   bindings_.mcp_servers.clear();
   bindings_.mcp_servers.reserve(ui_state_.mcp_servers.size());
@@ -743,6 +746,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("security_can_export_link", &controller.bindings_.security_can_export_link);
     ctor.Bind("security_has_recovery_phrase", &controller.bindings_.security_has_recovery_phrase);
     ctor.Bind("unlock_grace_label", &controller.bindings_.unlock_grace_label);
+    ctor.Bind("pin_page_note", &controller.bindings_.pin_page_note);
     ctor.Bind("security_grace_shown", &controller.bindings_.security_grace_shown);
     ctor.Bind("security_biometric_shown", &controller.bindings_.security_biometric_shown);
     ctor.Bind("security_biometric_on", &controller.bindings_.security_biometric_on);
@@ -754,10 +758,12 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("tool_permissions_has_saved", &controller.bindings_.tool_permissions_has_saved);
     ctor.Bind("app_name", &controller.bindings_.app_name);
     ctor.Bind("app_version", &controller.bindings_.app_version);
+    ctor.Bind("app_build", &controller.bindings_.app_build);
     ctor.Bind("support_visible", &controller.bindings_.support_visible);
     ctor.Bind("support_display_name", &controller.bindings_.support_display_name);
     ctor.Bind("support_subtitle", &controller.bindings_.support_subtitle);
     security_actions_.Bind(ctor);
+    run_logs_actions_.Bind(ctor);
     own_devices_.Bind(ctor);
     my_relays_.Bind(ctor);
     storage_manager_.Bind(ctor);
@@ -795,6 +801,10 @@ bool SettingsController::RegisterModel(ui::Context* context) {
             OnShowSettingNote(*title_key, *text_key);
           }
         });
+    ctor.BindEventCallback("show_default_pin_note", [this](ui::DataModelHandle, ui::Event& ev, const ui::VariantList&) {
+      ev.StopPropagation();
+      OnShowDefaultPinNote();
+    });
     ctor.BindEventCallback("on_llm_field_changed", DataEvent<>([this]() { MarkSectionDirty("llm"); }));
     ctor.BindEventCallback("on_llm_preset_changed", DataEventAt([this](ui::Event& ev) { OnLlmPresetChanged(ev); }));
     ctor.BindEventCallback("on_choose_theme", DataEventAt([this](ui::Event& ev) { OnChooseTheme(ev); }));
@@ -1005,11 +1015,11 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "security_can_export_link");
   host.Dirty("settings", "security_has_recovery_phrase");
   host.Dirty("settings", "unlock_grace_label");
+  host.Dirty("settings", "pin_page_note");
   host.Dirty("settings", "security_grace_shown");
   host.Dirty("settings", "security_biometric_shown");
   host.Dirty("settings", "security_biometric_on");
   host.Dirty("settings", "security_biometric_label");
-  host.Dirty("settings", "recovery_phrase");
   host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "group_invite_policy_label");
   host.Dirty("settings", "call_invite_policy_label");
@@ -1017,6 +1027,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "tool_permissions_has_saved");
   host.Dirty("settings", "app_name");
   host.Dirty("settings", "app_version");
+  host.Dirty("settings", "app_build");
   host.Dirty("settings", "support_visible");
   host.Dirty("settings", "support_display_name");
   host.Dirty("settings", "support_subtitle");
@@ -1097,6 +1108,12 @@ void SettingsController::MountSelectedSettingsSection() {
 
 void SettingsController::OnShellLayoutSynced() {
   const ShellChromeSnapshot chrome = ChromeSnapshot();
+  // Wide layout shows the phrase inline in the settings detail pane. A chat selected from a notification replaces
+  // that pane without changing the tab (no OnMeSurfaceClosed), so the words are cleared as soon as the pane is gone.
+  if (chrome.layout_mode != LayoutMode::Compact && chrome.nav_tab == NavTab::Me && !chrome.settings_detail_primary &&
+      !chrome.settings_detail_transient && security_actions_.RecoveryPhraseShown()) {
+    ResetSecurityPage();
+  }
   if (!suppress_auto_save_) {
     // A remount this controller did not start (e.g. the list pane was collapsed) still empties the
     // detail pane's section mount; fill it again or the open section shows blank.
@@ -1142,6 +1159,9 @@ void SettingsController::OnNavTabActivated() {
 }
 
 void SettingsController::OnMeSurfaceClosed() {
+  if (security_actions_.RecoveryPhraseShown()) {
+    ResetSecurityPage(); // a tab switch: the phrase does not stay bound behind another tab (a pane replaced on wide: OnShellLayoutSynced)
+  }
   CommitProfileNickname(/*show_toast=*/false);
   FlushPending();
 }
@@ -1454,9 +1474,9 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
 
   status_ = "";
   const SettingsPage* opened = FindSettingsPage(section_id);
-  // Send problem logs is on the Help page: it reads its label again.
-  if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshDiagnostics)) {
-    security_actions_.RefreshDiagnostics();
+  // Collect / Send run logs are on the Advanced page: the switch and the row read again.
+  if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshRunLogs)) {
+    run_logs_actions_.Refresh();
   }
   if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshBlockedCount)) {
     RefreshBlockedCount();
@@ -1599,17 +1619,21 @@ void SettingsController::RefreshBlockedCount() {
 }
 
 void SettingsController::OpenSecurityPage(const std::string& page) {
-  if (page == "change_pin") {
-    OpenChangePin(); // B2: the PIN gate's three steps, not a page of fields
-    return;
-  }
   // Phones only: the desktop shows these inline. Devices has the transfer page; Advanced has the pages that hold its
   // free-text fields (the custom endpoint, the integrations, the custom service addresses).
   const bool on_devices = selected_id_ == "devices" && show_detail_;
   const bool on_advanced = selected_id_ == "advanced" && show_detail_;
   bool secret = false; // the transfer code is on it: no tab bar under it
-  if (on_devices && page == "transfer") {
+  if (selected_id_ == "security" && show_detail_ && page == "pin") {
+    // The PIN page: the rows that start the PIN gate's steps (B2: the gate keeps the fields, not this page).
+    security_page_title_ = Tr("settings.security.pin_row").c_str();
+  } else if (on_devices && page == "transfer") {
     security_page_title_ = Tr("settings.security.transfer_row").c_str();
+    secret = true;
+  } else if (selected_id_ == "security" && show_detail_ && page == "recovery") {
+    // The recovery phrase's own page, titled in the bar like every settings page. The words are on it: no tab bar
+    // under it, like the transfer code's page.
+    security_page_title_ = Tr("settings.security.recovery").c_str();
     secret = true;
   } else if (on_advanced && page == "ai_endpoint") {
     security_page_title_ = Tr("settings.llm.endpoint.title").c_str();
@@ -1651,8 +1675,12 @@ void SettingsController::ApplyCloseSecurityPage() {
     shell_navigation_.set_secret_page_open(false);
   }
   security_actions_.ClearTransferCopied();
+  const bool was_recovery = security_page_ == "recovery";
   security_page_ = "";
   security_page_title_ = "";
+  if (was_recovery) {
+    security_actions_.HideRecoveryPhrase(); // the words do not outlive their page
+  }
   choice_page_.Close();
   choice_foot_ = "";
   choice_help_topic_ = "";
@@ -1903,11 +1931,20 @@ void SettingsController::ApplyBackendChoice(const std::string& env) {
   if (suppress_auto_save_) {
     return;
   }
+  // Against what the choice page shows as selected (bindings_.backend_env, see BackendChoiceOptions).
+  const bool changed = std::string(bindings_.backend_env.c_str()) != env;
   ui_state_.backend_env = env;
   PushUiStateToBindings();
   MarkSectionDirty("network");
   FlushPending();
   DirtyAll();
+  // The choice only takes effect on the next start, and the small grey line under the row is easy to miss: say it once
+  // in a dialog (only for a pick that leaves the app on a different service than the one running).
+  if (changed && ParseBackendEnv(env) != ActiveBackend() && shell_feedback_.show_alert) {
+    shell_feedback_.show_alert(Tr("settings.network.backend.reopen_title"),
+                               Tr("settings.network.backend.reopen_body", {{"name", BackendDisplayLabel(env)}}), {},
+                               Tr("settings.network.backend.reopen_ok"));
+  }
 }
 
 void SettingsController::OnChooseDirectConnections(ui::Event& ev) {
@@ -2096,9 +2133,9 @@ void SettingsController::OnAskSettingHelp(const std::string& label_key) {
   if (question.empty()) {
     return;
   }
-  // Kenneth 2026-11-04 (DEV/PLAN-ui-batch5-ask-ai.md 原话 11–13): on phones the AI answers it in the half-screen panel,
-  // a one-off question with no earlier conversation; the panel keeps a "Ask PP Support" button for a person.
-  if (commands_.ask_ai_once && commands_.ask_ai_once(question)) {
+  // Kenneth 2026-11-18 (DEV/PLAN-help-to-support-panel.md): on phones PP 客服 answers it, in the half-screen sheet
+  // over this page (the PP 客服 chat itself); no AI first.
+  if (commands_.ask_support_panel && commands_.ask_support_panel(question)) {
     return;
   }
   if (!commands_.ask_support) {
@@ -2127,6 +2164,14 @@ void SettingsController::OnShowSettingNote(const std::string& title_key, const s
   }
   // The shell's alert: a titled card with the sentence and one OK. No network, no AI.
   shell_feedback_.show_alert(title, text, {}, Tr("common.ok"));
+}
+
+void SettingsController::OnShowDefaultPinNote() {
+  // Only for people on the app's default PIN; the digits are filled in from the constant, a local note, no AI.
+  if (!ui_state_.pin_protection_is_default || !shell_feedback_.show_alert) {
+    return;
+  }
+  shell_feedback_.show_alert(Tr("settings.security.default_hint.title"), DefaultPinNoteText(), {}, Tr("common.ok"));
 }
 
 void SettingsController::OpenNetworkSettings() {
@@ -2574,6 +2619,18 @@ void SettingsController::OnBiometricLost() {
 
 void SettingsController::OpenChangePin() {
   security_actions_.ChangePin();
+}
+
+void SettingsController::OpenRecoveryPage() {
+  if (compact_layout_) {
+    OpenSecurityPage("recovery");
+  }
+}
+
+void SettingsController::CloseRecoveryPage() {
+  if (security_page_ == "recovery") {
+    OnCloseSecurityPage();
+  }
 }
 
 Roe<void> SettingsController::ForgetToolPermissions() {

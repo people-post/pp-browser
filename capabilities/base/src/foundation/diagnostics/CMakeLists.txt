@@ -3,10 +3,9 @@ pp_browser_add_foundation_library(pp_foundation_diagnostics
     CrashBreadcrumbs.cpp
     CrashDump.cpp
     CrashReportEnvelope.cpp
-    DiagnosticsBundle.cpp
     DiagnosticsSelfCheck.cpp
-    DiagnosticsUploadResult.cpp
     LogFile.cpp
+    RunLogBundle.cpp
   PUBLIC_LIBS
     pp_foundation_runtime_core)
 # Peak resident memory for metrics (OsPeakRss): getrusage on POSIX, unknown elsewhere.
@@ -25,6 +24,8 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
 else()
   target_sources(pp_foundation_diagnostics PRIVATE OsCurrentMemory_Posix.cpp)
 endif()
+# gzip for "Send run logs" (RunLogBundle): the vendored zlib every build already has (cmake/libp2p_dependencies.cmake).
+target_link_libraries(pp_foundation_diagnostics PRIVATE ZLIB::ZLIB)
 # dladdr (CrashDump image_base) — libdl on older glibc.
 target_link_libraries(pp_foundation_diagnostics PRIVATE ${CMAKE_DL_LIBS})
 

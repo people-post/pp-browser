@@ -538,6 +538,7 @@ protected:
         return DirectPairLive(kA, first);
       });
       EXPECT_TRUE(DirectPairLive(kA, first)) << "first accept must be a direct 1:1 (V050):" << Describe(call_id);
+      WaitPastJoinStamp(first, call_id);
     }
     AcceptInvite(second, call_id);
     DrainUntil(
@@ -548,6 +549,22 @@ protected:
         20000);
     EXPECT_TRUE(GroupLive(call_id)) << "group call never went live on the hop:" << Describe(call_id);
     return call_id;
+  }
+
+  /**
+   * The initiator's clock moves past the join stamp it gave `joiner`, so the next accept is stamped later: "joined
+   * first" is then the earlier stamp, not the tie-break (equal stamps go to the lower identity, which is random here).
+   * A fast Mac took both accepts in one millisecond.
+   */
+  void WaitPastJoinStamp(size_t joiner, const std::string& call_id) {
+    auto row = sides_[kA].stack->Sessions()->FindParticipant(call_id, sides_[joiner].local_identity);
+    if (!row || !row->has_value() || !(*row)->joined_at) {
+      return;
+    }
+    const int64_t stamp = *(*row)->joined_at;
+    while (util::NowUnixMs() <= stamp) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
   }
 
   std::optional<CallPlannedHop> PlannedHopSeenBy(size_t i, const std::string& call_id) const {
@@ -721,6 +738,12 @@ TEST_F(CallGroupStackComposeTest, InviteesNeverStampJoinsFromTheirOwnClock) {
 TEST_F(CallGroupStackComposeTest, InitiatorLeaveKeepsTheRestOnTheHop) {
   const std::string call_id = RunGroupCallToHopLive();
   ASSERT_FALSE(call_id.empty());
+  const auto joined_at = [&](size_t i) {
+    auto row = sides_[kA].stack->Sessions()->FindParticipant(call_id, sides_[i].local_identity);
+    return row && row->has_value() ? (*row)->joined_at : std::nullopt;
+  };
+  ASSERT_TRUE(joined_at(kB) && joined_at(kC));
+  ASSERT_LT(*joined_at(kB), *joined_at(kC)) << "B joined first: its stamp, not the identity tie-break, makes it next";
   EXPECT_EQ(OwnerSeenBy(kB, call_id), sides_[kA].local_identity);
 
   sides_[kA].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
@@ -747,6 +770,43 @@ TEST_F(CallGroupStackComposeTest, InitiatorLeaveKeepsTheRestOnTheHop) {
   }
   EXPECT_GE(RxFrom(kB, kC), b_before + kMinRxFrames) << "B stopped hearing C:" << Describe(call_id);
   EXPECT_GE(RxFrom(kC, kB), c_before + kMinRxFrames) << "C stopped hearing B:" << Describe(call_id);
+}
+
+// #617 / V067: whoever leaves, the others' engines let go of their stream — no track left concealing it (about 50
+// underruns a second) until the call ends.
+TEST_F(CallGroupStackComposeTest, ALeaversStreamLeavesTheOthersEngines) {
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  const std::set<uint32_t> a_streams = hop_.PublishedStreams(relays_[kA].get());
+  ASSERT_FALSE(a_streams.empty());
+  const auto holds_a = [&](const size_t i) {
+    const MediaEngine* engine = sides_[i].stack->Engine();
+    if (!engine) {
+      return false;
+    }
+    for (const MediaStreamHealth& s : engine->HealthSnapshot().streams) {
+      if (a_streams.count(s.stream_id) > 0) {
+        return true;
+      }
+    }
+    return false;
+  };
+  DrainUntil([&]() {
+    PumpWire();
+    return holds_a(kB) && holds_a(kC);
+  });
+  ASSERT_TRUE(holds_a(kB) && holds_a(kC)) << "B and C hear A first:" << Describe(call_id);
+
+  sides_[kA].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return !holds_a(kB) && !holds_a(kC);
+  });
+  EXPECT_FALSE(holds_a(kB)) << "B still holds A's stream:" << Describe(call_id);
+  EXPECT_FALSE(holds_a(kC)) << "C still holds A's stream:" << Describe(call_id);
+  for (size_t i : {kB, kC}) {
+    EXPECT_EQ(sides_[i].ui->Phase(), CallPhase::InCall) << "side " << i;
+  }
 }
 
 // The invite carries the media key wrapped for each invitee: no out-of-band share needed.
@@ -1245,6 +1305,60 @@ TEST_F(CallGroupStackComposeTest, AMemberWhoLeftRejoins) {
     EXPECT_TRUE(std::any_of(joined_rows->begin(), joined_rows->end(),
                             [&](const CallParticipant& row) { return row.identity == sides_[kC].local_identity; }))
         << "side " << i << " lost the one who rejoined";
+  }
+}
+
+// V067 8: C's network was down past the gone window: A and B took it as gone (the key rotated without it) while C,
+// seeing everyone stop at once, stayed in the call. C asks back in; the answering invite ends its part there and takes
+// it in again, on the key the others moved to — nobody's call ended, and everyone hears everyone.
+TEST_F(CallGroupStackComposeTest, AMemberCutOffAsksBackInAndIsInTheCallAgain) {
+  group_id_ = "group-1";
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  const std::string member = sides_[kC].local_identity;
+  for (size_t i : {kA, kB}) {
+    sides_[i].stack->Device()->Workflow().NoteParticipantLost(call_id, member);
+  }
+  const auto joined_on = [&](size_t i) {
+    auto rows = sides_[i].ui->ListJoinedParticipants(call_id);
+    return rows ? rows->size() : size_t{0};
+  };
+  const auto epoch_of = [&](size_t i) {
+    auto session = sides_[i].stack->Sessions()->LoadSession(call_id);
+    return session && session->has_value() ? (*session)->media_epoch : 0u;
+  };
+  DrainUntil([&]() {
+    PumpWire();
+    return joined_on(kA) == 2u && joined_on(kB) == 2u && epoch_of(kA) == 2u && epoch_of(kB) == 2u;
+  });
+  ASSERT_EQ(epoch_of(kA), 2u) << "the key did not rotate without C:" << Describe(call_id);
+  ASSERT_EQ(epoch_of(kC), 1u) << "C was cut off: it never got the rotated key";
+  ASSERT_EQ(sides_[kC].ui->Phase(), CallPhase::InCall) << "C stayed in the call meanwhile";
+
+  auto asked = sides_[kC].stack->Device()->Workflow().RejoinCall(call_id);
+  ASSERT_TRUE(asked) << asked.error().message;
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return epoch_of(kC) == epoch_of(kA) && sides_[kC].ui->Phase() == CallPhase::InCall && OnHopFor(kC, call_id) &&
+               joined_on(kA) == 3u && joined_on(kB) == 3u;
+      },
+      20000);
+  ASSERT_EQ(epoch_of(kC), epoch_of(kA)) << "C is not on the key the others moved to:" << Describe(call_id);
+  ASSERT_EQ(joined_on(kA), 3u) << "A does not have C back:" << Describe(call_id);
+  ASSERT_EQ(joined_on(kB), 3u) << "B does not have C back:" << Describe(call_id);
+  const uint64_t c_from_a = RxFrom(kC, kA);
+  const uint64_t a_from_c = RxFrom(kA, kC);
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return RxFrom(kC, kA) >= c_from_a + kMinRxFrames && RxFrom(kA, kC) >= a_from_c + kMinRxFrames;
+      },
+      20000);
+  EXPECT_GE(RxFrom(kC, kA), c_from_a + kMinRxFrames) << "C does not hear A again:" << Describe(call_id);
+  EXPECT_GE(RxFrom(kA, kC), a_from_c + kMinRxFrames) << "A does not hear C again:" << Describe(call_id);
+  for (size_t i : {kA, kB}) {
+    EXPECT_EQ(sides_[i].ui->Phase(), CallPhase::InCall) << "side " << i << ": the call ended for the others";
   }
 }
 

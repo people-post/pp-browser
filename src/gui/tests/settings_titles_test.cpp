@@ -208,6 +208,57 @@ TEST(SettingsTitlesTest, PrivacyFollowsTheMockupOrderAndWords) {
   EXPECT_EQ(Tr("settings.profile.peer_id_copied"), "Account ID copied");
 }
 
+TEST(SettingsTitlesTest, ThePrivacyCaptionSitsUnderTheCallsRowOnly) {
+  const std::string rml = ReadAsset("views/settings_section_privacy.rml");
+  const size_t calls = rml.find("on_choose_call_invite_policy()");
+  const size_t caption = rml.find("{{i18n:settings.security.calls.help}}");
+  const size_t invites = rml.find("on_choose_group_invite_policy()");
+  ASSERT_NE(caption, std::string::npos);
+  EXPECT_LT(calls, caption);
+  EXPECT_LT(caption, invites) << "the caption is between the two rows, in the calls group";
+  // The two rows are two groups: the caption explains the calls row, not both.
+  EXPECT_NE(rml.find("</div>", calls), std::string::npos);
+  EXPECT_LT(rml.find("</div>", calls), caption);
+  EXPECT_EQ(rml.find("{{i18n:settings.security.calls.help}}", caption + 1), std::string::npos);
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("settings.security.calls.help"), "选“仅联系人”或“无人”后，其他人打来你这边不会响，对方也不知道被挡了。");
+  LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
+TEST(SettingsTitlesTest, TheStorageResetActionsSitApartAtTheEndInPlainWords) {
+  const std::string rml = ReadAsset("views/settings_section_storage.rml");
+  const size_t zone = rml.find("storage-danger-zone");
+  const size_t policy = rml.find("choose_attachment_download_policy('on_demand')");
+  const size_t manage_page = rml.find("data-if=\"storage_page == 'manage'\"");
+  ASSERT_NE(zone, std::string::npos);
+  EXPECT_LT(policy, zone) << "after the download options";
+  EXPECT_LT(zone, manage_page) << "the end of the main page";
+  const size_t zone_end = rml.find("</div>", zone);
+  EXPECT_NE(rml.substr(zone, zone_end - zone).find("reset_chats()"), std::string::npos);
+  EXPECT_NE(rml.substr(zone, zone_end - zone).find("reset_profile()"), std::string::npos);
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  for (const char* key : {"settings.storage.reset_warning", "settings.storage.reset_chats_confirm_message",
+                          "settings.storage.reset_confirm_message"}) {
+    EXPECT_EQ(Tr(key).find("密钥"), std::string::npos) << key;
+  }
+  EXPECT_NE(Tr("settings.storage.reset_warning").find("账号的加密资料"), std::string::npos);
+  LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
+TEST(SettingsTitlesTest, SettingsPagesScrollTheirLastRowsClearOfTheFloatingAiButton) {
+  // The button is up to 76dp; both mounts (the page sheet and the pushed pane) keep that much (plus air) at the end.
+  const std::string css = ReadAsset("themes/components.rcss");
+  const size_t sheet = css.find(".shell-layer-compact #settings-section-mount-sheet {");
+  const size_t pane = css.find(".shell-layer-compact #settings-section-mount-pane {");
+  ASSERT_NE(sheet, std::string::npos);
+  ASSERT_NE(pane, std::string::npos);
+  EXPECT_NE(css.find("padding-bottom: 169dp;", sheet), std::string::npos) << "81dp tab bar + 88dp";
+  EXPECT_LT(css.find("padding-bottom: 169dp;", sheet), css.find('}', sheet));
+  EXPECT_LT(css.find("padding-bottom: 88dp;", pane), css.find('}', pane));
+}
+
 TEST(SettingsTitlesTest, HomeTitleIsSettings) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("en");

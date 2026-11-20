@@ -125,6 +125,8 @@ void ShellFeedback::ShowAlert(ShellState& state, const std::string& title, const
   state.dialog.ok_label = ui::String(ok_label.c_str());
   state.dialog.show_cancel = false;
   state.dialog.show_checkbox = false;
+  state.dialog.note_line = {};
+  state.dialog.note_open = false;
   state.dialog.checkbox_checked = false;
   state.dialog.show_prompt = false;
   state.dialog.prompt_value = {};
@@ -139,7 +141,7 @@ void ShellFeedback::ShowAlert(ShellState& state, const std::string& title, const
 
 void ShellFeedback::ShowConfirm(ShellState& state, const std::string& title, const std::string& message,
                                 std::function<void(bool)> on_result, const std::string& ok_label,
-                                const bool destructive) {
+                                const bool destructive, const std::string& note_line, const std::string& note_text) {
   state.dialog.active = true;
   state.dialog.kind = OverlayKind::Confirm;
   state.dialog.destructive = destructive;
@@ -148,6 +150,9 @@ void ShellFeedback::ShowConfirm(ShellState& state, const std::string& title, con
   state.dialog.ok_label = ui::String(ok_label.c_str());
   state.dialog.show_cancel = true;
   state.dialog.show_checkbox = false;
+  state.dialog.note_line = ui::String(note_line.c_str());
+  state.dialog.note_text = ui::String(note_text.c_str());
+  state.dialog.note_open = false;
   state.dialog.checkbox_checked = false;
   state.dialog.show_prompt = false;
   state.dialog.prompt_value = {};
@@ -160,6 +165,18 @@ void ShellFeedback::ShowConfirm(ShellState& state, const std::string& title, con
   SyncDialogChrome("dialog_open");
 }
 
+void ShellFeedback::ShowConfirmWithNote(ShellState& state, const std::string& title, const std::string& message,
+                                        const std::string& note_line, const std::string& note_text,
+                                        std::function<void(bool)> on_result, const std::string& ok_label) {
+  ShowConfirm(state, title, message, std::move(on_result), ok_label, false, note_line, note_text);
+}
+
+void ShellFeedback::ToggleDialogNote(ShellState& state) {
+  if (state.dialog.active && !state.dialog.note_line.empty()) {
+    state.dialog.note_open = !state.dialog.note_open;
+  }
+}
+
 void ShellFeedback::ShowConfirmWithCheckbox(ShellState& state, const std::string& title, const std::string& message,
                                             const std::string& checkbox_label, const bool checkbox_default,
                                             std::function<void(bool, bool)> on_result, const std::string& ok_label) {
@@ -170,6 +187,8 @@ void ShellFeedback::ShowConfirmWithCheckbox(ShellState& state, const std::string
   state.dialog.ok_label = ui::String(ok_label.c_str());
   state.dialog.show_cancel = true;
   state.dialog.show_checkbox = true;
+  state.dialog.note_line = {};
+  state.dialog.note_open = false;
   state.dialog.checkbox_label = ui::String(checkbox_label.c_str());
   state.dialog.checkbox_checked = checkbox_default;
   state.dialog.show_prompt = false;
@@ -188,6 +207,8 @@ void ShellFeedback::ShowPrompt(ShellState& state, const std::string& title, cons
   state.dialog.ok_label = {};
   state.dialog.show_cancel = true;
   state.dialog.show_checkbox = false;
+  state.dialog.note_line = {};
+  state.dialog.note_open = false;
   state.dialog.show_prompt = true;
   state.dialog.prompt_value = ui::String(default_value.c_str());
   state.dialog.on_result = {};

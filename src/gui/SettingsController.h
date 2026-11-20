@@ -12,6 +12,7 @@
 #include "gui/SettingsProfileActions.h"
 #include "gui/SettingsMyRelays.h"
 #include "gui/SettingsOwnDevices.h"
+#include "gui/SettingsRunLogsActions.h"
 #include "gui/SettingsSecurityActions.h"
 #include "gui/StorageManagerController.h"
 #include "gui/shell/ShellFeedbackPorts.h"
@@ -111,6 +112,8 @@ public:
    * `text_key`'s as its body (both `settings.*` locale keys) and one OK. Local only: no AI, no support chat, no network.
    */
   void OnShowSettingNote(const std::string& title_key, const std::string& text_key);
+  /** The "?" after the default-PIN line on Security: a local note that tells the default PIN. */
+  void OnShowDefaultPinNote();
   /** Shell layout / navigation. Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);
   /** Toast / dialog feedback. Clear via BindShellFeedback({}). */
@@ -173,6 +176,8 @@ public:
   std::vector<SettingsChoicePage::Option> BackendChoiceOptions() const;
   /** Test seam: what the Service chooser does for a picked row id (a public forwarder; tests must not widen access with `#define private public`, which breaks the MSVC link). */
   void ChooseBackendForTest(const std::string& id) { ApplyBackendChoice(id); }
+  /** Test seam: the security actions (the recovery phrase's bound words and private copy). */
+  SettingsSecurityActions& SecurityActionsForTest() { return security_actions_; }
   /** Test seam: the phone's Preset chooser, by preset id (as `ShowChoice` would call it). */
   void ChooseLlmPresetForTest(const std::string& id) { ApplyLlmPresetChoice(id); }
   /** Test seam: how many times the preset was applied (each pick must apply once). */
@@ -295,6 +300,7 @@ private:
     /** PIN grace window (#21): the minutes (not bound) and the row's label; the row shows when grace_shown. */
     int unlock_grace_minutes = 15;
     ui::String unlock_grace_label;
+    ui::String pin_page_note; // the PIN page caption, with the default PIN filled in from the constant
     bool security_grace_shown = false;
     /** Face / fingerprint unlock (at-rest A014): the switch shows, its state, its title. */
     bool security_biometric_shown = false;
@@ -308,6 +314,7 @@ private:
     bool tool_permissions_has_saved = false;
     ui::String app_name;
     ui::String app_version;
+    ui::String app_build;
     bool support_visible = false;
     ui::String support_display_name;
     ui::String support_subtitle;
@@ -382,6 +389,9 @@ private:
   void RequestSyncLayout(const char* reason) override;
   Roe<void> ForgetToolPermissions() override;
   void OpenChangePin() override;
+  bool RecoveryOnOwnPage() const override { return compact_layout_; }
+  void OpenRecoveryPage() override;
+  void CloseRecoveryPage() override;
   void FinishPaneResync();
   /** Mount selected section RML into #settings-section-mount (one section at a time). */
   void MountSelectedSettingsSection();
@@ -390,8 +400,8 @@ private:
   bool CloseSettingsDetailPane();
   void OnBackToList();
   /**
-   * Phones: Security's own page ("transfer"), pushed over the section with the local-back stack. "change_pin" (any
-   * platform) is the PIN gate's change mode instead (B2).
+   * Phones: a page pushed over the section with the local-back stack ("pin" on Security: the rows that start the PIN
+   * gate's steps, B2; "transfer" on Devices; the Advanced pages).
    */
   void OpenSecurityPage(const std::string& page);
   void OnCloseSecurityPage();
@@ -503,6 +513,7 @@ private:
   SettingsCasLibrary cas_library_{commands_, shell_feedback_, unlock_ensure_,
                                   [this](const Error& err) { ReportFailure(err); }};
   SettingsSecurityActions security_actions_{*this, commands_, shell_feedback_, unlock_ensure_, pin_prompt_};
+  SettingsRunLogsActions run_logs_actions_{*this, commands_, shell_feedback_};
   SettingsOwnDevices own_devices_{commands_, shell_feedback_, [this](const Error& err) { ReportFailure(err); }};
   SettingsMyRelays my_relays_{commands_, shell_feedback_, [this](const Error& err) { ReportFailure(err); }};
   SettingsProfileActions profile_actions_{*this, commands_, unlock_ensure_};

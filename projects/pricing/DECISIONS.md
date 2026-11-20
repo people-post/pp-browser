@@ -8,6 +8,7 @@
 ### Decision
 
 1. **Protocol amounts** use one fixed currency stub (`pp_credit` / “Credits”) in **integer minor units**. Name/symbol may change later without reshaping amounts.
+   *Amended 2026-11-19 (Hongwei, [release-compatibility RC017](../release-compatibility/DECISIONS.md#rc017--p0s-decisions-a-clean-local-start-the-currency-id-fixed-two-features-after-release-1)):* `pp_credit` is the protocol id for good, and the minor unit is one credit. A major unit, decided later, is a display grouping only.
 2. **Numeric amount is authoritative.** `volunteer` / `paid` are UX labels only (`amount == 0` ↔ free). Do not branch protocol on mode strings.
 3. **Initiation (user↔user, anti-abuse):** one public **floor** covers opening a chat thread **or** call session. Default / missing directory field → `0`. Initiator offers `offer_amount >= floor` (may tip up) before first message / dial. Recipient or path that actually charges **rejects** offers below floor. Accept UI: show amount; only **waive (0)** or **take all** (no custom edit). Waive → full cancel/refund conceptually. After open → no further initiation fee until re-locked.
 4. **`charge_required` control message** re-locks a peer relationship to closed until a new offer/accept.

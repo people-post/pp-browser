@@ -285,11 +285,21 @@ select selectbox option {
   opacity: 0.85;
 }
 
+/* The route icon in the header is the bubbles' (.route-icon); the row's gap spaces it from the text. */
+.chat-peer-path .route-icon {
+  margin-right: 0;
+}
+
 .chat-gap-banner {
   flex-shrink: 0;
   margin-bottom: 8dp;
   padding: 8dp 12dp;
   border-radius: 8dp;
+  gap: 8dp;
+}
+
+/* A stranger's first message: the line, then Add and Block as 44dp buttons side by side. */
+.chat-stranger-actions {
   gap: 8dp;
 }
 
@@ -3905,6 +3915,11 @@ select selectbox option {
   height: 24dp;
 }
 
+/* Chats' two buttons (scan, then compose): 4dp between the tap areas, not the row's 8dp. */
+.sidebar-panel .pane-nav-actions {
+  gap: 4dp;
+}
+
 .shell-layer-compact .large-title {
   display: block;
   flex-shrink: 0;
@@ -4116,9 +4131,22 @@ select selectbox option {
   text-overflow: ellipsis;
 }
 
-/* Phones: no encryption / link-path line; a group shows only its member count. */
+/* Phones: the line under the name is the link path (direct / encrypted relay) of a 1:1 chat; the long encryption
+   subtitle stays desktop-only, and a group shows only its member count. */
 .shell-chat-overlay .chat-header-meta-row {
+  margin-top: 0;
+}
+
+.shell-chat-overlay .chat-peer-path--group,
+.shell-chat-overlay .chat-header-meta-row .chat-header-subtitle {
   display: none;
+}
+
+.shell-chat-overlay .chat-peer-link {
+  font-size: 13dp;
+  line-height: 16dp;
+  opacity: 1;
+  white-space: nowrap;
 }
 
 .shell-chat-overlay .chat-header-phone-subtitle {
@@ -5279,12 +5307,6 @@ select selectbox option {
   text-align: center;
 }
 
-.ask-ai-section {
-  margin: 0 0 10dp 0;
-  font-size: 13dp;
-  line-height: 18dp;
-}
-
 .ask-ai-empty {
   margin: 24dp 0;
   font-size: 15dp;
@@ -5692,6 +5714,20 @@ call-video-tile {
   bottom: 10dp;
   border-radius: 8dp;
   overflow: hidden;
+}
+
+.shell-call-pip--resuming,
+.call-phone-pip--resuming {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 6dp;
+}
+
+.shell-call-pip-note {
+  margin: 0;
 }
 
 .shell-call-leave {
@@ -6970,11 +7006,16 @@ call-video-tile {
   display: none;
 }
 
+/* V067: "Reconnecting…" (nothing has come from them for a few seconds) uses the hold pill's shape, in a neutral
+   tint; the person dims the same way. */
 .call-phone-tile--on-hold .call-phone-avatar,
 .call-phone-tile--on-hold call-video-tile,
+.call-phone-tile--reconnecting .call-phone-avatar,
 .shell-call-peer-card--on-hold .shell-call-peer-avatar,
 .shell-call-peer-card--on-hold .shell-call-peer-avatar-image,
-.shell-call-peer-card--on-hold call-video-tile {
+.shell-call-peer-card--on-hold call-video-tile,
+.shell-call-peer-card--reconnecting .shell-call-peer-avatar,
+.shell-call-peer-card--reconnecting .shell-call-peer-avatar-image {
   opacity: 0.45;
 }
 
@@ -7483,6 +7524,15 @@ input.checkbox {
   transform: translate(-50%, 0);
 }
 
+/* Account setup (name, account, friends) sits near the top instead of the middle: the name step has a text field, and
+   with the keyboard up (a third to half of a phone's height) a centred card lost the lower half of its button. The
+   shell lifts a page only for a covered text field or the chat bar, and this card is not that, so it stays clear of
+   the keyboard on its own. */
+.shell-dialog.onboarding {
+  top: 64dp;
+  transform: translate(-50%, 0);
+}
+
 .shell-pin-gate-chooser {
   display: flex;
   flex-direction: column;
@@ -7503,6 +7553,25 @@ input.checkbox {
 
 .shell-pin-gate-note {
   margin-top: 12dp;
+}
+
+/* The default-PIN line with its "?" (dialog and PIN gate): small, centred, below the content. */
+.shell-note-line {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8dp;
+}
+
+.shell-note-line .text {
+  font-size: 13dp;
+}
+
+.shell-note-text {
+  margin-top: 4dp;
+  font-size: 13dp;
+  text-align: center;
 }
 
 .shell-pin-gate-error {
@@ -7844,6 +7913,26 @@ input.checkbox {
 }
 
 /* A call record in a 1:1 chat: tap = call back. Group records do not get this class. */
+.chat-call-row-time {
+  margin-left: 8dp;
+  font-size: 12dp;
+  opacity: 0.7;
+}
+
+.shell-chat-overlay .chat-call-row-time {
+  font-size: 13dp;
+}
+
+/* A connected call's route icon sits before the time and is as faint as the time (colour: colors, like the time's). */
+.chat-call-row .route-icon {
+  margin-left: 8dp;
+  opacity: 0.7;
+}
+
+.chat-call-row .route-icon + .chat-call-row-time {
+  margin-left: 0;
+}
+
 .chat-call-row--tappable {
   cursor: pointer;
 }
@@ -7933,6 +8022,34 @@ input.checkbox {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+/* A one-time tip card above the chat list (save the recovery phrase). */
+.sidebar-tip {
+  margin: 4dp 16dp 8dp 16dp;
+  padding: 14dp 16dp 8dp 16dp;
+  border-radius: 14dp;
+  box-sizing: border-box;
+}
+
+.sidebar-tip-body {
+  font-size: 15dp;
+  line-height: 21dp;
+  margin-bottom: 8dp;
+}
+
+.sidebar-tip-actions {
+  align-items: center;
+  gap: 8dp;
+}
+
+.sidebar-empty {
+  padding: 24dp 16dp;
+  text-align: center;
+}
+
+.sidebar-empty .btn {
+  margin-top: 16dp;
 }
 
 .sidebar-session {
@@ -8174,15 +8291,15 @@ input.checkbox {
 }
 
 /* Chats' title row: "Chats" at the left, the link status (dot + word) right after it on the same line, in the 56dp
-   band the fixed bar's compose button sits in (the scroller starts at the top, under the bar, and the bar lets touches
-   through except on its button). The right 56dp is the compose button's: 12dp margin + 44dp. */
+   band the fixed bar's scan and compose buttons sit in (the scroller starts at the top, under the bar, and the bar lets
+   touches through except on its buttons). The right 116dp is the buttons': 12dp margin + 44dp + 4dp + 44dp. */
 .shell-layer-compact .sidebar-sessions .large-title {
   display: flex;
   flex-direction: row;
   align-items: flex-end;
   box-sizing: border-box;
   height: 56dp;
-  padding: 0 56dp 0 16dp;
+  padding: 0 116dp 0 16dp;
 }
 
 .shell-layer-compact .sidebar-sessions .large-title-text {
@@ -9172,6 +9289,15 @@ input.checkbox {
 .chat-voice-card .chat-voice-time {
   font-size: 13dp;
   line-height: 16dp;
+}
+
+/* How a message travelled (RouteIconRml): 12dp high, 4dp before the time, drawn with the time's colour (colors). */
+.route-icon {
+  display: inline-block;
+  width: 18dp;
+  height: 12dp;
+  margin-right: 4dp;
+  vertical-align: middle;
 }
 
 .chat-voice-clock {
@@ -11362,10 +11488,11 @@ input.checkbox {
 .shell-layer-compact .qr-body {
   flex: 1;
   min-height: 0;
+  overflow-y: auto; /* a short page (phone landscape) scrolls to the name and buttons */
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24dp 16dp 32dp 16dp;
+  padding: 24dp 0 32dp 0; /* no side padding: the sheet's own 16dp is the margin, so a 340dp code on a 393dp page fits */
   box-sizing: border-box;
 }
 
@@ -11373,18 +11500,17 @@ input.checkbox {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 260dp;
-  height: 260dp;
-  border-radius: 16dp;
+  border-radius: 12dp;
 }
 
+/* The code's side is bound (qr_size): as wide as the page allows with a 20dp margin each side, at most 340dp. */
 .shell-layer-compact .qr-code {
   width: 240dp;
   height: 240dp;
 }
 
 .shell-layer-compact .qr-name {
-  margin: 20dp 0 0 0;
+  margin: 20dp 16dp 0 16dp;
   font-size: 20dp;
   line-height: 26dp;
   font-weight: bold;
@@ -11392,13 +11518,13 @@ input.checkbox {
 }
 
 .shell-layer-compact .qr-hint {
-  margin: 6dp 0 0 0;
+  margin: 6dp 16dp 0 16dp;
   font-size: 15dp;
   line-height: 20dp;
   text-align: center;
 }
 
-/* The two buttons under the code (share as a picture, save it): full width of the card, 44dp or taller. */
+/* The two buttons under the code (share as a picture, save it): as wide as the code (qr_size is bound), 44dp or taller. */
 .shell-layer-compact .qr-actions {
   width: 260dp;
   margin: 24dp 0 0 0;
@@ -11792,8 +11918,8 @@ input.checkbox {
 /* Inside the centred qr-body column the card would shrink to its content (one character per line, B179). */
 .shell-layer-compact .qr-page .cd-card {
   align-self: stretch;
-  margin-left: 0;
-  margin-right: 0;
+  margin-left: 16dp; /* qr-body has no side padding */
+  margin-right: 16dp;
 }
 
 /* A person in a card (the group info's members): a 60dp row with a 44dp round avatar before the name (the lists'
@@ -13020,7 +13146,13 @@ input.checkbox {
    goes on the section inside it: with the large title on top, the end of a longer page (Security) would otherwise
    stay under the tab bar where it cannot be scrolled to. */
 .shell-layer-compact #settings-section-mount-sheet {
-  padding-bottom: 81dp;
+  padding-bottom: 169dp;
+}
+
+/* Plus the floating AI button's footprint (76dp, the largest size, and 12dp of air): every settings page can scroll its
+   last rows clear of the button, which rests over the page's right edge and covers a switch or the end of a caption. */
+.shell-layer-compact #settings-section-mount-pane {
+  padding-bottom: 88dp;
 }
 
 /* Pushed pages (Kenneth 2026-11-04/05, PLAN-ui-refresh-impl 原话 71, 78, 80; NavBarCollapseModel): a settings page,
@@ -13151,6 +13283,11 @@ input.checkbox {
   overflow: hidden;
 }
 
+.storage-danger-zone,
+.shell-layer-compact .settings-mock .group-card.storage-danger-zone {
+  margin-top: 40dp;
+}
+
 .shell-layer-compact .group-card--top {
   margin-top: 8dp;
 }
@@ -13180,11 +13317,6 @@ input.checkbox {
   margin: 20dp 32dp 6dp 32dp;
   font-size: 13dp;
   line-height: 18dp;
-}
-
-/* A "?" right after the heading: the heading gives up its right margin (the button's own -6dp pulls it in). */
-.shell-layer-compact .settings-q-head .group-head {
-  margin-right: 0;
 }
 
 .shell-layer-compact .group-foot {
@@ -13905,12 +14037,28 @@ textarea:composing ~ .prompt-composer-label,
   text-align: left;
 }
 
-.shell-layer-compact .settings-mock .group-head {
-  margin: 24dp 32dp 8dp 32dp;
+/* Settings pages on the phone show no group headings: the rows below say what the group is about (Kenneth 2026-11-17).
+   Other pages keep the small grey heading, and the desktop keeps all of them. The heading is only hidden, so it still
+   matches `.group-head + .group-card` above: a card after it gets its normal top margin back here. */
+.shell-layer-compact .settings-section--grouped .group-head {
+  display: none;
 }
 
-.shell-layer-compact .settings-mock .group-head + .group-card {
-  margin-top: 0;
+.shell-layer-compact .settings-section--grouped .group-head + .group-card {
+  margin-top: 20dp;
+}
+
+.shell-layer-compact .settings-section--grouped .group-head + .group-foot,
+.shell-layer-compact .settings-section--grouped .group-head + .stack > .group-foot:first-child {
+  margin-top: 20dp;
+}
+
+/* The one heading that stays: the label of an input field (Brief API key), a label and not a group title. */
+.shell-layer-compact .settings-section--grouped .group-head.group-head--field {
+  display: block;
+  margin: 20dp 32dp 4dp 32dp;
+  font-size: 17dp;
+  line-height: 22dp;
 }
 
 .shell-layer-compact .me-home .group-row,
@@ -14007,7 +14155,7 @@ textarea:composing ~ .prompt-composer-label,
   display: none;
 }
 
-/* A small tinted pill at the right end of a row ("Send" under Send diagnostics): the button is a 44dp tap area, the pill
+/* A small tinted pill at the right end of a row ("Send" of Send run logs): the button is a 44dp tap area, the pill
    inside it 32dp tall. It greys out while the action runs. */
 .shell-layer-compact .settings-pill-btn {
   flex-shrink: 0;
@@ -15404,7 +15552,7 @@ textarea:composing ~ .prompt-composer-label,
 }
 
 /* The fixed bar over the title row passes touches through (a drag that starts on the title scrolls the list); only its
-   compose button takes them. */
+   scan and compose buttons take them. */
 .shell-layer-compact .sidebar-panel .pane-nav,
 .shell-layer-compact .sidebar-panel .pane-nav-bg,
 .shell-layer-compact .sidebar-panel .bar-fade,
@@ -15415,6 +15563,12 @@ textarea:composing ~ .prompt-composer-label,
 .shell-layer-compact .sidebar-panel .pane-nav-actions,
 .shell-layer-compact .sidebar-panel .pane-nav-btn {
   pointer-events: auto;
+}
+
+/* Chats' small title stays clear of its two buttons (116dp at the right), centred: the same margin on the left. */
+.shell-layer-compact .sidebar-panel .pane-nav-title {
+  left: 116dp;
+  right: 116dp;
 }
 
 .shell-layer-compact .home-scroll {
@@ -15929,4 +16083,150 @@ textarea:composing ~ .prompt-composer-label,
   max-width: 512dp;
   height: 100vw;
   max-height: 512dp;
+}
+
+/* Recovery phrase (Kenneth 2026-11-19): the 24 words as numbered cards, three to a row, read left to right then down.
+   One grid for the phone's page and the desktop's inline block. A cell is a third of the row with the gap as its own
+   padding, so three always fit; the number has a fixed slot so the words line up in a column. */
+.recovery-grid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  max-width: 520dp;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.recovery-cell {
+  width: 33.3%;
+  padding: 0 6dp 12dp 6dp;
+  box-sizing: border-box;
+}
+
+.recovery-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 40dp;
+  padding: 0 8dp;
+  border-radius: 12dp;
+  box-sizing: border-box;
+}
+
+.recovery-num {
+  flex: 0 0 16dp;
+  width: 16dp;
+  margin-right: 4dp;
+  font-size: 11dp;
+  white-space: nowrap;
+}
+
+.recovery-word {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 14dp;
+  white-space: nowrap;
+}
+
+/* Phones: a page of its own over the Security section. The bar's title and the lead stay on top, the grid scrolls when the
+   screen is short (iPhone SE), and the button stays at the bottom, above the home-indicator strip the layer keeps. */
+.shell-layer-compact .recovery-page {
+  position: absolute;
+  top: 64dp;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  z-index: 1;
+}
+
+.shell-layer-compact .recovery-lead {
+  flex-shrink: 0;
+  margin: 8dp 20dp 16dp 20dp;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.shell-layer-compact .recovery-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0 14dp 4dp 14dp;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+/* The engine keeps 16dp for an (undrawn) scrollbar once the grid overflows: it must not take a column's width. */
+.shell-layer-compact .recovery-scroll scrollbarvertical {
+  width: 0dp;
+}
+
+.shell-layer-compact .recovery-scroll .recovery-grid {
+  max-width: none;
+}
+
+.shell-layer-compact .recovery-bottom {
+  flex-shrink: 0;
+  padding: 12dp 20dp 16dp 20dp;
+}
+
+.shell-layer-compact .recovery-bottom .recovery-done {
+  display: block;
+  width: auto;
+  height: 50dp;
+  min-height: 50dp;
+  margin: 0;
+  padding: 0 16dp;
+  font-size: 17dp;
+  line-height: 50dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+/* The covered grid: the cards keep their numbers and show dots; one button over the whole grid reveals all 24 words. */
+.recovery-wrap {
+  position: relative;
+}
+
+.recovery-reveal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  background-color: transparent;
+  decorator: none;
+  border-width: 0dp;
+}
+
+.recovery-reveal-pill {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 44dp;
+  padding: 0 20dp;
+  border-radius: 22dp;
+  box-sizing: border-box;
+}
+
+.recovery-reveal-icon {
+  width: 20dp;
+  height: 20dp;
+  margin-right: 8dp;
+}
+
+.recovery-reveal-text {
+  font-size: 16dp;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.recovery-dots {
+  letter-spacing: 1dp;
 }

@@ -408,12 +408,22 @@ std::vector<ContextMenuAction> ContextMenuHost::BuildTextActions() const {
   const std::string snapshot = copy_snapshot_;
 
   auto copy_enabled = [snapshot]() { return !snapshot.empty(); };
-  auto copy_run = [snapshot]() {
-    if (snapshot.empty()) {
+  // Static text copies the selection as it stands when Copy is tapped (a Select all just before it counts); the
+  // snapshot taken when the menu opened is the fallback (a text field's selection, or one a tap already cleared).
+  const bool live_static = !editor && selection;
+  auto copy_run = [snapshot, selection, live_static]() {
+    std::string text = snapshot;
+    if (live_static) {
+      const std::string live = selection->GetSelectedText();
+      if (!live.empty()) {
+        text = live;
+      }
+    }
+    if (text.empty()) {
       return;
     }
     if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-      system->SetClipboardText(snapshot);
+      system->SetClipboardText(text);
     }
   };
 
@@ -475,7 +485,14 @@ std::vector<ContextMenuAction> ContextMenuHost::BuildTextActions() const {
 
 std::vector<ContextMenuAction> ContextMenuHost::CollectActions(const ContextMenuRequest& request) const {
   // An item menu (chat message) is the providers' alone: no text-editing actions.
-  std::vector<ContextMenuAction> actions = menu_anchor_ ? std::vector<ContextMenuAction>{} : BuildTextActions();
+  std::vector<ContextMenuAction> actions;
+  if (!menu_anchor_) {
+    std::optional<std::vector<ContextMenuAction>> overridden;
+    if (text_menu_override_ && !menu_editor_) {
+      overridden = text_menu_override_(request);
+    }
+    actions = overridden ? std::move(*overridden) : BuildTextActions();
+  }
   for (const auto& provider : providers_) {
     if (!provider) {
       continue;

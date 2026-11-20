@@ -2,11 +2,11 @@
 
 #include "common/Secret.h"
 
-#include "foundation/diagnostics/DiagnosticsUploadResult.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/PickedFileLease.h"
 #include "foundation/platform/ProfileIconImagePrep.h"
 #include "lib/people/ProfileIdentityView.h"
+#include "lib/messaging/OutgoingAttachment.h"
 #include "foundation/data/SessionStore.h"
 #include "lib/net/BlobQuota.h"
 #include "lib/net/ClientCompat.h"
@@ -175,18 +175,20 @@ struct SettingsCommands {
   /** Opens the PP 客服 chat and sends `question` in it, as if typed (a settings "?"; the answer comes in that chat). */
   std::function<Roe<void>(const std::string& question)> ask_support;
   /**
-   * Phones: the ask-AI panel opens over the setting with `question` asked as a one-off (DEV/PLAN-ui-batch5-ask-ai.md
-   * 5a). False when there is no panel (the desktop): the settings "?" then asks PP 客服 (ask_support) as before.
+   * Phones: the half-screen sheet opens over the setting on the PP 客服 chat and asks `question` there
+   * (DEV/PLAN-help-to-support-panel.md). False when there is no sheet (the desktop, a full-screen iPad): the "?" then
+   * asks PP 客服 in its chat page (ask_support) as before.
    */
-  std::function<bool(const std::string& question)> ask_ai_once;
+  std::function<bool(const std::string& question)> ask_support_panel;
   /** How many saved contacts this device blocked (Security's "Blocked" row). */
   std::function<int()> blocked_count;
   /** Phones: the list of blocked people, pushed over Settings (each with Unblock). */
   std::function<void()> open_blocked_people;
-  /** Send diagnostics (Security): bundles and uploads on a worker; `on_done` runs on UI. One at a time. */
-  std::function<void(std::function<void(DiagnosticsUploadResult)> on_done)> send_diagnostics;
-  /** Reference of the last successful send (`diagnostics/last_upload.json`); "" when none. */
-  std::function<std::string()> last_diagnostics_id;
+  /**
+   * Advanced → Send run logs, after the confirm (DEV/PLAN-send-run-logs.md): the New chat page opens to pick one
+   * contact, and the archive goes to that chat as an ordinary file message. Nothing is sent when no one is picked.
+   */
+  std::function<void(OutgoingAttachment archive)> send_run_logs;
   /** Me → Storage → Manage storage. */
   StorageManagerPorts storage;
 };

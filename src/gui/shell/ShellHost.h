@@ -1,10 +1,12 @@
 #pragma once
 
+#include "foundation/platform/ScreenKeyboardGeometry.h"
 #include "lib/ui/ShellTypes.h"
 #include "foundation/data/UserPreferences.h"
 #include "common/Module.h"
 #include "gui/shell/ShellAiDot.h"
 #include "gui/shell/ShellHomeMascot.h"
+#include "gui/shell/NotificationTapCover.h"
 #include "gui/shell/ShellLayoutRml.h"
 #include "gui/shell/ShellStatusbar.h"
 #include "gui/shell/StatusbarText.h"
@@ -187,6 +189,8 @@ public:
   void CloseLayer(int layer_id = -1);
   /** Layer `layer_id` (PushLayer) is still open: not closed by its X, the scrim, a swipe or code. */
   bool HasLayer(int layer_id) const;
+  /** `closed` runs once, after layer `layer_id` is removed by any path (CloseLayer is the only way out). */
+  void WatchLayerClosed(int layer_id, std::function<void()> closed);
   /** Closes every page sheet layer, top first (each owner hears its own close as for a swipe). */
   void ClosePageSheets();
 
@@ -231,6 +235,29 @@ public:
   void ReconcileStartupCover();
   /** Clear the first-paint arm after deferred unlock has decided what to do. */
   void SettleStartupCoverArm();
+  /**
+   * A notification tap brought the app up for one chat (NotificationTapCover::ShouldArm, decided by Application): the
+   * startup cover stands in for the page left behind until ReleaseTapCover, a ring or call screen, or the hold's end.
+   * The PIN gate stays on top of it.
+   */
+  void ArmTapCover();
+  /** The tapped chat (or the chat list) is open: the cover goes once the layout showing it is built. */
+  void ReleaseTapCover();
+  bool TapCoverArmed() const { return tap_cover_.Armed(); }
+  /**
+   * The one place the tap cover's clock runs (once per frame, from Update): the foreground starts the hold, its end or a
+   * ring / call screen drops the cover. Reconciling the cover otherwise only reads the state.
+   */
+  void TickTapCover(NotificationTapCover::Clock::time_point now);
+  /** The chat that opens next is the tapped one (OpenTappedThread brackets its select): its page is there at once. */
+  void SetTappedChatOpening(bool opening) { tapped_chat_opening_ = opening; }
+  /**
+   * Phone: a tapped notification's chat opens with nothing left over it: every layer (page sheets, the scanner, a
+   * picture; each owner hears its close), the pushed pages and the AI drawer go; on a hidden tab (Settings, Contacts)
+   * the tab goes too, to Chats. The call screen is not a layer: it stays. Only while the tap's cover is armed (the app
+   * came up for the tap and nothing showed yet); no-op otherwise and on the desktop.
+   */
+  void ClearForTappedChat();
   // Deferred remount of the nav rail (safe from click handlers). Use when badge counts change
   // and DirtyVariable alone may not refresh data-if views.
   void RequestRemountNavRail();
@@ -259,6 +286,8 @@ public:
   /** Collapse/expand the secondary pane (expanded layout, tabs with a secondary pane only). */
   void ToggleSidebarCollapsed();
   void SetOnLayoutSynced(std::function<void()> callback);
+  /** Runs when the window's size in pixels changes (a rotation, a resize), and once at the first tick. */
+  void SetOnViewportResized(std::function<void()> callback);
   /** Called as each SyncLayout ends with its whole duration in ms (measurement: chat.open's layout_ms). */
   void SetOnSyncLayoutMeasured(std::function<void(int64_t ms)> callback);
   /** Phone Chats list: a swipe-row button (or a full swipe) was used on `thread_id`. */
@@ -316,6 +345,8 @@ private:
   void DialogOk();
   void DialogCancel();
   void DialogToggleCheckbox();
+  void DialogToggleNote();
+  void PinGateNoteToggle();
   void PinGateSubmit();
   void PinGatePaste(); // read the clipboard into the transfer-code / phrase box (iOS has no paste menu there, B163)
   void PinGateClearPayload(); // clear a pasted transfer code so the textarea comes back (B166)
@@ -410,6 +441,11 @@ private:
   void SetSheetDetent(int layer_id, SheetDetent detent);
   /** Slide the element with this id in from the right (adds the shell-page-enter class). */
   void PlayPageEnter(const char* element_id);
+  /** The startup logo is wanted: a cold start's first paint or its unlock, never over the PIN gate or a ring. */
+  bool StartupLogoWanted() const;
+  /** What the tap cover's rules see; `startup_shown`: the logo is up for the start. */
+  TapCoverScreen TapCoverScreenNow(bool startup_shown) const;
+  void FinishTapCoverRelease();
   void CommitDismiss(DismissTarget target);
   void ApplySafeAreaLayout();
   bool HomeDockApplies() const;
@@ -429,8 +465,20 @@ private:
   struct SafeAreaFromSdl {
     int top_dp = 0;
     int bottom_dp = 0;
+    int keyboard_win = 0;               // the on-screen keyboard's cover of our window, in window units (points on iOS)
+    int keyboard_top_win = 0;           // the keyboard's top edge in the window (window height when there is none)
+    int input_bottom_win = 0;           // the input's bottom edge before any lift, window units
+    int focus_bottom_win = -1;          // iPad: the focused bar's / field's bottom edge as laid out now; -1 none
+    const char* input_source = "shell"; // what input_bottom_win is: shell | bar | field | field_covered
+    int bar_lift_win = 0;               // input_source "bar": the settled lift (SettleBarLift)
+    int lift_win = 0;                   // how far the shell goes up so the input sits on the keyboard (KeyboardLift)
+    int keyboard_dp = 0;                // lift_win in dp
+    int window_w = 0;                   // SDL's window size, window units
+    int window_h = 0;
   };
-  SafeAreaFromSdl ReadSafeAreaFromSdl() const;
+  SafeAreaFromSdl ReadSafeAreaFromSdl();
+  /** iPad, keyboard up: input_bottom_win from the focused chat input bar's real box (or the focused field's). */
+  void MeasureKeyboardInput(SafeAreaFromSdl& insets, float px_per_win);
 
   struct PendingDismiss {
     DismissTarget target = DismissTarget::None;
@@ -442,6 +490,23 @@ private:
   ShellConfig config_;
   int safe_area_top_from_prefs_dp_ = 0;
   int safe_area_bottom_from_prefs_dp_ = 0;
+  int logged_keyboard_dp_ = -1;                 // the keyboard lift last written to the log (RefreshSafeAreaInsets)
+  int keyboard_lift_applied_win_ = 0;           // the keyboard lift in the layout now (window units)
+  const ui::Element* keyboard_field_ = nullptr; // iPad: the non-bar field the decision below is for (compared only)
+  bool keyboard_field_covered_ = false;         // that field was under the keyboard when it got the focus
+  std::string logged_input_source_ = "shell";   // the keyboard input source last written to the log
+  /** iPad: what the chat input bar's lift was settled for; a change starts a new settling (MeasureKeyboardInput). */
+  struct BarTarget {
+    const ui::Element* bar = nullptr; // compared only
+    int keyboard_top = -1;
+    int bar_h = -1;
+    LayoutMode mode = LayoutMode::Compact;
+    int window_w = 0;
+    int window_h = 0;
+  };
+  BarTarget bar_target_;
+  BarLiftSettle bar_settle_;
+  int layout_passes_ = 0; // finished layouts (NotifyFrameEnd): the settle takes at most one step per pass
   /** The AI Home measured with nothing up (SyncHomeDock): window height, landing height, card bottom (dp); 0 = unseen. */
   float home_cache_window_dp_ = 0.f;
   float home_cache_landing_h_dp_ = 0.f;
@@ -499,6 +564,17 @@ private:
   bool startup_cover_armed_ = true;
   /** Cleared after cold-start prepare ends — blocks mid-session unlock from re-showing the logo. */
   bool startup_cover_enabled_ = true;
+  /** A notification tap's hold (ArmTapCover); shown through startup_cover_visible. */
+  NotificationTapCover tap_cover_;
+  /** ReleaseTapCover came while a SyncLayout was pending: the cover goes after it, not a frame before. */
+  bool tap_cover_release_after_sync_ = false;
+  /** The hold's clock and the app's foreground; tests replace them (ShellHostTestAccess). */
+  std::function<NotificationTapCover::Clock::time_point()> tap_cover_now_;
+  std::function<bool()> tap_cover_foreground_;
+  /** A system modal is up (PlatformSystemModalUp by default); tests replace it. */
+  std::function<bool()> tap_cover_os_modal_;
+  /** Between OpenTappedThread's brackets: the next OpenCompactChat is the tapped chat's. */
+  bool tapped_chat_opening_ = false;
   bool restore_focus_after_sync_ = false;
   ShellGestureAxisLock gesture_axis_lock_;
   ShellSwipeBackGesture swipe_back_gesture_;
@@ -531,6 +607,10 @@ private:
   std::function<void(int, bool)> on_sidebar_changed_;
   std::function<void(int)> on_auxiliary_width_changed_;
   std::function<void()> on_layout_synced_;
+  std::multimap<int, std::function<void()>> layer_closed_watchers_;
+  std::function<void()> on_viewport_resized_;
+  int viewport_width_px_ = 0;
+  int viewport_height_px_ = 0;
   std::function<void(int64_t ms)> on_sync_layout_measured_;
   MessagingShellPorts shell_messaging_ports_;
   ShellStatusbar statusbar_{state_, context_, shell_messaging_ports_, [this]() { ApplySafeAreaLayout(); }};

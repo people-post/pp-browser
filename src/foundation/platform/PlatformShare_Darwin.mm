@@ -51,4 +51,8 @@ bool PlatformShareText(SDL_Window* window, const std::string& text, const ShareA
   }
 }
 
+bool PlatformSystemModalUp(SDL_Window* /*window*/) {
+  return false;
+}
+
 } // namespace pbr

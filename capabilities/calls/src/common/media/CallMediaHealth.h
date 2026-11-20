@@ -3,6 +3,7 @@
 #include "common/media_engine/MediaEngineHealth.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -78,6 +79,50 @@ struct CallHopHealth {
   std::vector<CallHopPeerHealth> peers;
   /** The association to the relay (unavailable when attached to this device's own hop). */
   CallLinkCounters link;
+  /** Frames the hop brought that no key held opened, since it was joined (a rotation's gap, V068; shut out, V067). */
+  uint64_t unopened_frames = 0;
+};
+
+/** Path pressure (the engine's or the hop's, the larger) at which the call grades Poor, Fair, Good (else Excellent). */
+inline constexpr double kCallPressurePoor = 0.75;
+inline constexpr double kCallPressureFair = 0.4;
+inline constexpr double kCallPressureGood = 0.15;
+/** B231: the engine's buffer pressure grades the call Poor only once it has stayed at kCallPressurePoor this long. */
+inline constexpr int64_t kCallBufferPressureSustainMs = 1000;
+/** B231: the engine's buffer pressure is held (not graded anew) this long after a local audio route change. */
+inline constexpr int64_t kCallRouteChangeSettleMs = 3000;
+/** B231: after such a window ends, no other starts for this long (pressure is masked 3 s in any 13 s at most). */
+inline constexpr int64_t kCallRouteChangeCooldownMs = 10000;
+/** B231: evaluation that skips more than this lets the gate forget what it saw (a pause is not a steady state). */
+inline constexpr int64_t kCallPressurePauseMs = 2000;
+
+/**
+ * B231: a local audio route change (the speaker toggle, the OS's route change) refills the jitter buffer — its depth
+ * jumps and the engine's pressure reads 1 for up to ~2 s with no loss on the network — so the signal bars flashed weak
+ * on every speaker tap. The engine's pressure that may grade the call: none within kCallRouteChangeSettleMs of a route
+ * change, and a spike at kCallPressurePoor counts as Fair until it has lasted kCallBufferPressureSustainMs. The hop's
+ * pressure and the loss signs (no audio in, none out) are not touched: they still grade at once.
+ */
+class CallBufferPressureGate {
+public:
+  /**
+   * `route_changed_ms`: the last local route change (the speaker toggle, a device that came or went) on `now_ms`'s
+   * clock (0: none). Call once per evaluation. While a window is running the gate returns what it graded before it
+   * (a Poor call stays Poor), so a call that is really degrading is not shown healthy; only a change that is fresh
+   * and after the cooldown opens a window, and one inside a window does not extend it.
+   */
+  double Step(double engine_pressure, int64_t now_ms, int64_t route_changed_ms);
+
+private:
+  /** When the engine's pressure reached kCallPressurePoor outside a window (0: not there). */
+  int64_t poor_since_ms_ = 0;
+  /** What the last evaluation outside a window returned. */
+  double held_ = 0.0;
+  int64_t last_step_ms_ = 0;
+  /** The newest route change already looked at, so one change is judged once. */
+  int64_t seen_route_change_ms_ = 0;
+  /** End of the running or last window (0: none yet). */
+  int64_t window_end_ms_ = 0;
 };
 
 struct CallMediaHealthInput {
@@ -94,6 +139,8 @@ struct CallMediaHealthInput {
   std::string reach_path_kind;
   /** The call's link, sampled by the caller (rates need two samples). */
   CallLinkHealth link;
+  /** The engine's pressure that grades the call (CallBufferPressureGate); none: engine.path_pressure as it is. */
+  std::optional<double> engine_pressure_for_quality;
 };
 
 struct CallMediaHealthView {

@@ -137,12 +137,19 @@ std::optional<CallSummaryRow> CallSummaryRowOf(const ThreadMessage& message) {
   return row;
 }
 
-bool CallSummaryIsNews(const ThreadMessage& message) {
-  const auto summary = SummaryOf(message);
-  if (!summary || summary->group || message.sender_contact_id == kLocalSelfContactId) {
+bool CallSummaryIsNewsToCallee(const CallSummaryDetail& summary) {
+  if (summary.group) {
     return false;
   }
-  return summary->outcome == CallOutcome::Missed || summary->outcome == CallOutcome::Cancelled;
+  // Failed counts too: the caller tried and this side never knew. (A call that merged into another or was answered on
+  // another device of ours writes no summary at all, PlanCallSummary, so a Failed one on the wire is a real failure.)
+  return summary.outcome == CallOutcome::Missed || summary.outcome == CallOutcome::Cancelled ||
+         summary.outcome == CallOutcome::Failed;
+}
+
+bool CallSummaryIsNews(const ThreadMessage& message) {
+  const auto summary = SummaryOf(message);
+  return summary && message.sender_contact_id != kLocalSelfContactId && CallSummaryIsNewsToCallee(*summary);
 }
 
 SystemControlFamily MakeCallControlFamily(CallControlFamilyPorts ports) {

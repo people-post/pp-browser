@@ -93,6 +93,19 @@ CallSessionState CallSessionLogic::TransitionOnLeave(const CallSessionState curr
   return current == CallSessionState::Ringing ? CallSessionState::Ringing : CallSessionState::Active;
 }
 
+bool CallSessionLogic::CallEndedStands(const std::vector<CallParticipant>& participants,
+                                       const std::string& sender_identity, const std::string& local_identity) {
+  const auto joined = [&](const std::string& identity) {
+    return std::any_of(participants.begin(), participants.end(), [&](const CallParticipant& p) {
+      return p.identity == identity && p.state == CallParticipantState::Joined;
+    });
+  };
+  const bool others_in = std::any_of(participants.begin(), participants.end(), [&](const CallParticipant& p) {
+    return p.state == CallParticipantState::Joined && p.identity != sender_identity && p.identity != local_identity;
+  });
+  return !(joined(local_identity) && !joined(sender_identity) && others_in);
+}
+
 bool CallSessionLogic::CanAcceptJoin(const size_t current_joined_count, const size_t max_joined) {
   return current_joined_count < max_joined;
 }

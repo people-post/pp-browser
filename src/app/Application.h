@@ -93,6 +93,13 @@ private:
   void WireShellPresenters(const SettingsToolPorts& settings_tool_ports);
   /** One info line per new call-alert tap: when it was recorded against the first presented frame. Any thread. */
   void LogCallTapTiming();
+  /**
+   * A notification tap was recorded (UI thread). A message tap that brought the app up arms the shell's tap cover
+   * (NotificationTapCover::ShouldArm), so the page left behind never shows before the tapped chat; a call tap drops
+   * it (its ring shows). Only while that tap (`tap_seq`, PendingNotificationTap::TapSeq) is still waiting: one already
+   * routed or taken, or superseded, arms nothing. `app_was_shown`: the screen was up and drawn when tapped, read on the tapping thread.
+   */
+  void OnNotificationTapRecorded(uint64_t tap_seq, bool app_was_shown);
   void WireCalls();
   void WireUnlockPinAndFlow();
   void WireAgentAndConfig();
@@ -158,6 +165,7 @@ private:
   std::unique_ptr<ShellHost> shell_;
   std::unique_ptr<ChatController> chat_;
   std::atomic<bool> peer_icons_refresh_posted_{false}; // a peer-icon refresh is queued on the UI thread
+  std::atomic<bool> contacts_sync_posted_{false};      // a contact-list rebuild is queued on the UI thread
   /** Milliseconds from StartupEpoch to the first presented frame; -1 until it is up. */
   std::atomic<int64_t> first_present_ms_{-1};
   std::atomic<uint64_t> logged_call_tap_seq_{0};

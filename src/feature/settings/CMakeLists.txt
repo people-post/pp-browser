@@ -10,12 +10,14 @@ pp_browser_add_feature_library(pp_feature_settings
     MyRelays.cpp
     OwnDevices.cpp
     ReachabilityNudge.cpp
+    RunLogPrefs.cpp
     SettingsLogic.cpp
     SettingsPages.cpp
     SettingsSections.cpp
     SettingsTools.cpp
     StorageManagerModel.cpp
     StorageSettingsSection.cpp
+    SupportThread.cpp
     VersionTapCounter.cpp
   PUBLIC_LIBS
     pp_domain_attachments

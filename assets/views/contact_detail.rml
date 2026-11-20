@@ -29,6 +29,7 @@
         </div>
         <p class="contacts-row-subtitle contacts-row-subtitle--desktop text muted" data-if="selected.subtitle != ''">{{selected.subtitle}}</p>
         <p class="cd-account" data-if="selected.short_id != ''">{{i18n:contacts.account_short}} {{selected.short_id}}</p>
+        <p class="cd-account cd-is-contact" data-if="!selected.member_preview && selected.trust_key != 'blocked'">{{i18n:contacts.is_contact}}</p>
       </div>
     </div>
   </div>

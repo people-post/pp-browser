@@ -25,6 +25,10 @@ struct ShellFeedbackPorts {
   std::function<void(const std::string& title, const std::string& message, std::function<void(bool)> on_result,
                      const std::string& ok_label)>
       show_confirm;
+  /** show_confirm plus one short line and a "?" under the message; the "?" opens `note_text` in the dialog. */
+  std::function<void(const std::string& title, const std::string& message, const std::string& note_line,
+                     const std::string& note_text, std::function<void(bool)> on_result, const std::string& ok_label)>
+      show_confirm_with_note;
   /** Same as show_confirm, but the confirm button deletes / removes / resets something (danger colour on the phone). */
   std::function<void(const std::string& title, const std::string& message, std::function<void(bool)> on_result,
                      const std::string& ok_label)>

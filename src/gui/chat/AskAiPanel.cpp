@@ -6,11 +6,9 @@
 #include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatAnswer.h"
 #include "gui/shell/DataModelHost.h"
-#include "lib/ai/StructuredTextParser.h"
 #include "lib/ui/ChatFormHelper.h"
 #include "lib/ui/ContextMenuHost.h"
 #include "lib/ui/DataEvent.h"
-#include "common/Logger.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -18,7 +16,10 @@
 
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Context.h>
+#include <ui/base/SystemInterface.h>
 #include <ui/dom/Element.h>
+#include <ui/dom/ElementText.h>
+#include <ui/dom/SelectionController.h>
 #include <ui/dom/ElementDocument.h>
 #include <ui/base/StringUtilities.h>
 #include <ui/widgets/ElementFormControlTextArea.h>
@@ -26,11 +27,6 @@
 namespace pbr {
 
 namespace {
-
-logging::Logger& log() {
-  static logging::Logger logger = logging::getLogger("AskAiPanel");
-  return logger;
-}
 
 constexpr const char* kModel = "ask_ai";
 constexpr const char* kScrollId = "ask-ai-scroll";
@@ -42,15 +38,19 @@ constexpr auto kStreamRenderEvery = std::chrono::milliseconds(100);
 constexpr double kFakeBytesPerSecond = 90.0;
 /** A made-up failure ends its turn after this long, like a real one that timed out. */
 constexpr auto kFakeFailAfter = std::chrono::milliseconds(1500);
+/** Just unlocked: the PP 客服 question waits this long for messaging, then the sheet says to try again later. */
+constexpr int64_t kSupportReadyWaitMs = 5'000;
+/** While a PP 客服 reply is awaited (up to kSupportSlowAfterMs), the inbox is fetched this often. */
+constexpr int64_t kSupportFetchEveryMs = 15'000;
+
+/** The user's words of `error`, or the "PP 客服 cannot be reached" sentence when it has none. */
+std::string SupportWords(const Error& error) {
+  return error.user.empty() ? Tr("settings.support.unavailable") : error.user;
+}
 
 std::string AssistantBubble(const std::string& body, const std::string& text_for_lang) {
   return ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", text_for_lang) + R"( selectable="text">)" +
          body + "</div>";
-}
-
-std::string UserBubble(const std::string& text) {
-  return R"(<div class="bubble bubble-user" selectable="text"><p class="bubble-text">)" +
-         StructuredTextParser::EscapeText(text) + "</p></div>";
 }
 
 /** Cut at a whole UTF-8 character. */
@@ -62,6 +62,58 @@ size_t Utf8Floor(const std::string& text, size_t at) {
   return at;
 }
 
+bool IsBlockTag(const std::string& tag) {
+  static const char* const kBlocks[] = {"p",  "div", "li",  "ul", "ol", "h1",         "h2",   "h3",
+                                        "h4", "h5",  "pre", "tr", "br", "blockquote", "table"};
+  return std::any_of(std::begin(kBlocks), std::end(kBlocks), [&tag](const char* block) { return tag == block; });
+}
+
+void AppendText(std::string& out, const std::string& text) {
+  out += text;
+}
+
+void EndLine(std::string& out) {
+  if (!out.empty() && out.back() != '\n') {
+    out += '\n';
+  }
+}
+
+void CollectText(ui::Element* element, std::string& out, const bool keep_space) {
+  if (!element) {
+    return;
+  }
+  if (auto* text = ui_dynamic_cast<ui::ElementText*>(element)) {
+    const std::string raw = ui::StringUtilities::DecodeRml(text->GetText()).c_str();
+    if (keep_space) {
+      AppendText(out, raw);
+      return;
+    }
+    // Source whitespace collapses to one space, as the engine draws it.
+    for (const char c : raw) {
+      if (c == ' ' || c == '\n' || c == '\t' || c == '\r') {
+        if (!out.empty() && out.back() != ' ' && out.back() != '\n') {
+          out += ' ';
+        }
+      } else {
+        out += c;
+      }
+    }
+    return;
+  }
+  const std::string tag = element->GetTagName().c_str();
+  const bool block = IsBlockTag(tag);
+  if (block) {
+    EndLine(out);
+  }
+  const bool keep = keep_space || tag == "pre";
+  for (int i = 0; i < element->GetNumChildren(); ++i) {
+    CollectText(element->GetChild(i), out, keep);
+  }
+  if (block) {
+    EndLine(out);
+  }
+}
+
 AgentEvent Event(const AgentEventType type, const std::string& thread_id) {
   AgentEvent event;
   event.type = type;
@@ -71,7 +123,10 @@ AgentEvent Event(const AgentEventType type, const std::string& thread_id) {
 
 } // namespace
 
-AskAiPanel::AskAiPanel(AskAiPanelHost& host, AgentTurnController& agent) : host_(host), agent_(agent) {
+AskAiPanel::AskAiPanel(AskAiPanelHost& host, AgentTurnController& agent)
+    : host_(host), agent_(agent), now_ms_([] { return util::NowUnixMs(); }) {
+  ContextMenuHost::Instance().SetTextMenuOverride(
+      [this](const ContextMenuRequest& request) { return TextMenuFor(request); });
   image_ports_.pick = [this](std::function<void(std::string)> picked) { agent_.PickAiImage(std::move(picked)); };
   image_ports_.capture = [this](std::function<void(std::string)> picked) { agent_.CaptureAiPhoto(std::move(picked)); };
   image_ports_.pick_from = [this](const bool files_app, std::function<void(std::string)> picked) {
@@ -87,6 +142,60 @@ AskAiPanel::AskAiPanel(AskAiPanelHost& host, AgentTurnController& agent) : host_
   image_ports_.drop = [this](const AgentTurnController::PendingAiImage& image) { agent_.DropAiImage(image); };
 }
 
+AskAiPanel::~AskAiPanel() {
+  ContextMenuHost::Instance().SetTextMenuOverride(nullptr);
+}
+
+std::string AskAiPanel::PlainTextOf(ui::Element* row) {
+  std::string out;
+  CollectText(row, out, /*keep_space=*/false);
+  while (!out.empty() && (out.back() == '\n' || out.back() == ' ')) {
+    out.pop_back();
+  }
+  size_t start = 0;
+  while (start < out.size() && (out[start] == '\n' || out[start] == ' ')) {
+    ++start;
+  }
+  return out.substr(start);
+}
+
+std::optional<std::vector<ContextMenuAction>> AskAiPanel::TextMenuFor(const ContextMenuRequest& request) {
+  if (!IsOpen() || !request.target) {
+    return std::nullopt;
+  }
+  ui::Element* row = nullptr;
+  ui::Element* scroll = nullptr;
+  for (ui::Element* element = request.target; element; element = element->GetParentNode()) {
+    if (!row && element->IsClassSet("ask-ai-row")) {
+      row = element;
+    }
+    if (element->GetId() == kScrollId) {
+      scroll = element;
+      break;
+    }
+  }
+  if (!row || !scroll) {
+    return std::nullopt;
+  }
+  std::string text;
+  if (request.context) {
+    if (ui::SelectionController* selection = request.context->GetSelectionController()) {
+      text = selection->GetSelectedText().c_str();
+    }
+  }
+  if (text.empty()) {
+    text = PlainTextOf(row);
+  }
+  std::vector<ContextMenuAction> actions;
+  actions.push_back({"copy", Tr("common.copy"), [text]() { return !text.empty(); },
+                     [text]() {
+                       if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+                         system->SetClipboardText(text);
+                       }
+                     }});
+  return actions;
+}
+
 bool AskAiPanel::Register(ui::Context* context) {
   context_ = context;
   return DataModelHost::Instance().Register(context, kModel, [this](ui::DataModelConstructor& ctor) {
@@ -96,7 +205,13 @@ bool AskAiPanel::Register(ui::Context* context) {
       row.RegisterMember("content_rml", &AskAiRow::content_rml);
     }
     ctor.RegisterArray<std::vector<AskAiRow>>();
-    ctor.Bind("once", &view_.once);
+    ctor.Bind("support", &view_.support);
+    ctor.Bind("support_waiting", &view_.support_waiting);
+    ctor.Bind("support_slow", &view_.support_slow);
+    ctor.Bind("support_note", &view_.support_note);
+    ctor.Bind("open_chat_title", &view_.open_chat_title);
+    ctor.Bind("privacy_text", &view_.privacy_text);
+    ctor.Bind("placeholder_text", &view_.placeholder_text);
     ctor.Bind("show_intro", &view_.show_intro);
     ctor.Bind("rows", &view_.rows);
     ctor.Bind("thinking", &view_.thinking);
@@ -142,18 +257,35 @@ void AskAiPanel::DirtyAll() {
 }
 
 bool AskAiPanel::Shows(const std::string& thread_id) const {
-  return IsOpen() && !view_.once && !thread_id.empty() && thread_id == shared_thread_;
+  if (!IsOpen() || thread_id.empty()) {
+    return false;
+  }
+  if (view_.support) {
+    return thread_id == support_.thread;
+  }
+  return thread_id == shared_thread_;
 }
 
-void AskAiPanel::SwitchMode(const bool once) {
-  if (view_.once == once) {
+std::string& AskAiPanel::ModeDraft() {
+  return view_.support ? support_.draft : shared_draft_;
+}
+
+void AskAiPanel::SwitchMode(const bool support) {
+  if (view_.support == support) {
     return;
   }
-  (view_.once ? once_draft_ : shared_draft_) = view_.draft.c_str();
-  view_.once = once;
-  view_.draft = (once ? once_draft_ : shared_draft_).c_str();
-  view_.show_media = !once;
+  ModeDraft() = view_.draft.c_str();
+  view_.support = support;
+  view_.draft = ModeDraft().c_str();
+  view_.show_media = !support;
   SyncPictureView();
+}
+
+void AskAiPanel::SyncModeWords() {
+  const bool support = view_.support;
+  view_.open_chat_title = Tr(support ? "ask_ai.support.open_in_chat" : "ask_ai.open_in_chat").c_str();
+  view_.privacy_text = Tr(support ? "ask_ai.support.privacy" : "ask_ai.privacy").c_str();
+  view_.placeholder_text = Tr(support ? "chat.composer.placeholder" : "chat.ai_thread.placeholder").c_str();
 }
 
 std::string AskAiPanel::ThreadToSend() {
@@ -166,12 +298,16 @@ std::string AskAiPanel::ThreadToSend() {
   return shared_thread_;
 }
 
-bool AskAiPanel::Show(const AskAiEntry entry, const bool once) {
+bool AskAiPanel::Show(const AskAiEntry entry, const bool support) {
   if (!host_.AskAiCompact()) {
     return false;
   }
-  SwitchMode(once);
-  if (!once) {
+  if (IsOpen() && view_.support != support) {
+    Close(); // AI and PP 客服 never switch in place: the open sheet goes and the other one opens anew
+  }
+  SwitchMode(support);
+  SyncModeWords();
+  if (!support) {
     if (entry == AskAiEntry::Dot) {
       // Opened again while open keeps its new chat; a closed panel starts empty.
       if (!IsOpen()) {
@@ -185,7 +321,7 @@ bool AskAiPanel::Show(const AskAiEntry entry, const bool once) {
       shared_thread_ = host_.AskAiSharedThread(/*create=*/false);
     }
   }
-  view_.show_intro = !host_.AskAiIntroSeen();
+  view_.show_intro = !support && !host_.AskAiIntroSeen();
   if (!IsOpen()) {
     PaneSpec spec;
     spec.key = "ask_ai";
@@ -205,67 +341,56 @@ bool AskAiPanel::Show(const AskAiEntry entry, const bool once) {
 }
 
 bool AskAiPanel::Open(const AskAiEntry entry) {
-  return Show(entry, /*once=*/false);
+  return Show(entry, /*support=*/false);
 }
 
 bool AskAiPanel::OpenAndAsk(const AskAiEntry entry, const std::string& question) {
-  if (!Show(entry, /*once=*/false)) {
+  if (!Show(entry, /*support=*/false)) {
     return false;
   }
   SendShared(question);
   return true;
 }
 
-bool AskAiPanel::OpenOnce(const std::string& question) {
-  if (question.empty() || !Show(AskAiEntry::SettingHelp, /*once=*/true)) {
+bool AskAiPanel::OpenSupport(const std::string& question) {
+  if (!host_.AskAiCompact()) {
     return false;
   }
-  // The same "?" again while its question still shows (asked, answering or answered): nothing is sent twice. One
-  // that failed is asked again.
-  if (!once_turns_.empty() && once_turns_.front().question == question) {
-    const bool failed = once_turns_.back().failed && !agent_.Busy().BusyIn(kAskAiOnceThread);
-    if (!failed) {
-      return true;
-    }
+  if (!Show(AskAiEntry::SettingHelp, /*support=*/true)) {
+    return false;
   }
-  if (once_pending_ && *once_pending_ == question) {
-    return true;
-  }
-  once_turns_.clear();
-  once_links_.clear();
-  once_draft_.clear();
-  view_.draft = "";
-  AskOnce(question, /*fresh=*/true);
+  StartSupport(question);
   return true;
 }
 
 void AskAiPanel::Send() {
   const std::string text = util::Trim(view_.draft.c_str());
-  const bool picture = !view_.once && picture_.has_value();
+  const bool picture = !view_.support && picture_.has_value();
   if ((text.empty() && !picture) || view_.thinking) {
+    return;
+  }
+  if (view_.support) {
+    if (support_.thread.empty()) {
+      return; // PP 客服 could not be reached (the sheet says why): the text stays typed
+    }
+    view_.draft = "";
+    Dirty("draft");
+    AskSupportQuestion(text, /*typed=*/true);
     return;
   }
   if (picture) {
     SendPicture(text);
     return;
   }
-  if (view_.once && once_pending_) {
-    host_.AskAiToast(Tr("chat.ai_queue.already")); // a question already waits for a free turn: this one stays typed
-    return;
-  }
   view_.draft = "";
   Dirty("draft");
-  if (view_.once) {
-    AskOnce(text, /*fresh=*/false);
-  } else {
-    SendShared(text);
-  }
+  SendShared(text);
 }
 
 // --- the picture (camera / attachment), the chat's own path ----------------------------------------------------
 
 void AskAiPanel::SyncPictureView() {
-  const bool shown = !view_.once && (picture_.has_value() || picture_preparing_);
+  const bool shown = !view_.support && (picture_.has_value() || picture_preparing_);
   view_.has_picture = shown;
   view_.picture_preparing = shown && picture_preparing_;
   view_.picture_src = shown && picture_ ? picture_->file_path.c_str() : "";
@@ -291,7 +416,7 @@ void AskAiPanel::RemovePicture() {
 }
 
 void AskAiPanel::PickPicture(const bool camera) {
-  if (view_.once) {
+  if (view_.support) {
     return;
   }
   auto& pick = camera ? image_ports_.capture : image_ports_.pick;
@@ -301,7 +426,7 @@ void AskAiPanel::PickPicture(const bool camera) {
 }
 
 void AskAiPanel::ShowAttachMenu(ui::Element* anchor) {
-  if (view_.once || !anchor) {
+  if (view_.support || !anchor) {
     return;
   }
   const auto pick_from = [this](const bool files_app) {
@@ -421,25 +546,22 @@ void AskAiPanel::DismissIntro() {
 }
 
 void AskAiPanel::AskSupport() {
-  std::string question;
-  if (view_.once) {
-    question = once_turns_.empty() ? std::string() : once_turns_.front().question;
-  } else {
-    question = failed_question_;
-  }
+  const std::string question = failed_question_;
   if (question.empty()) {
     return;
   }
-  host_.AskAiSupport(question, [this] { Close(); });
+  // After this tap: the AI sheet closes and the PP 客服 one opens anew (OpenSupport), no AI row stays.
+  host_.AskAiLater([this, question] { (void)OpenSupport(question); });
 }
 
 void AskAiPanel::AskSupportOwnAi() {
-  host_.AskAiSupport(Tr("ask_ai.intro.support_question"), [this] { Close(); });
+  host_.AskAiLater([this] { (void)OpenSupport(Tr("ask_ai.intro.support_question")); });
 }
 
 void AskAiPanel::OpenInChat() {
-  const std::string thread_id =
-      shared_thread_.empty() && !fresh_ ? host_.AskAiSharedThread(/*create=*/true) : shared_thread_;
+  const std::string thread_id = view_.support                       ? support_.thread
+                                : shared_thread_.empty() && !fresh_ ? host_.AskAiSharedThread(/*create=*/true)
+                                                                    : shared_thread_;
   if (thread_id.empty()) {
     return;
   }
@@ -456,22 +578,145 @@ void AskAiPanel::Close() {
 }
 
 void AskAiPanel::RunAction(const std::string& entry_id, const int action_index) {
-  if (view_.once || shared_thread_.empty()) {
-    return; // a one-off answer is stored nowhere: it has no buttons to run
+  if (view_.support || shared_thread_.empty()) {
+    return; // the AI's answers' buttons only
   }
   host_.AskAiRunAction(shared_thread_, entry_id, action_index);
 }
 
 void AskAiPanel::OpenLink(const std::string& entry_id, const int link_index) {
-  if (const auto it = once_links_.find(entry_id); it != once_links_.end()) {
-    if (const std::optional<std::string> url = ResolveChatLink(it->second, link_index)) {
-      host_.AskAiOpenUrl(*url);
+  if (view_.support || shared_thread_.empty()) {
+    return; // the AI's answers' links only (opened without asking); a person's links are opened from the chat page
+  }
+  host_.AskAiOpenLink(shared_thread_, entry_id, link_index);
+}
+
+// --- PP 客服 (a settings "?") -------------------------------------------------------------------------------
+
+void AskAiPanel::StartSupport(const std::string& question) {
+  support_.pending.reset();
+  view_.support_note = "";
+  if (!host_.AskAiMessagingReady()) {
+    // Just unlocked: nothing is found, sent or queued now; asked once messaging is up (TickSupport), seconds at most.
+    support_.pending = question;
+    support_.ready_by_ms = now_ms_() + kSupportReadyWaitMs;
+    view_.support_note = Tr("ask_ai.support.preparing").c_str();
+    Refresh();
+    return;
+  }
+  Roe<std::string> thread = host_.AskAiEnsureSupport();
+  if (!thread) {
+    support_.thread.clear();
+    view_.support_note = SupportWords(thread.error()).c_str();
+    Refresh();
+    return;
+  }
+  support_.thread = *thread;
+  ReadSupportIfLooking(); // what came before shows here now
+  Refresh();
+  host_.AskAiSyncInbox();
+  if (!question.empty()) {
+    AskSupportQuestion(question, /*typed=*/false);
+  }
+  scroll_frames_ = kScrollFrames;
+}
+
+void AskAiPanel::AskSupportQuestion(const std::string& text, const bool typed) {
+  const int64_t now = now_ms_();
+  if (!typed && !ShouldAutoSend(support_.messages, text, now)) {
+    StartSupportWait(now); // asked moments ago: the line follows that question's reply
+    SyncSupportWait();
+    return;
+  }
+  if (Roe<void> sent = host_.AskAiSendToSupport(support_.thread, text); !sent) {
+    if (typed) {
+      view_.draft = text.c_str();
+      Dirty("draft");
+    }
+    view_.support_note = SupportWords(sent.error()).c_str();
+    Dirty("support_note");
+    return;
+  }
+  StartSupportWait(now);
+  view_.support_note = "";
+  Refresh();
+  host_.AskAiSyncInbox();
+  scroll_frames_ = kScrollFrames;
+}
+
+void AskAiPanel::StartSupportWait(const int64_t now) {
+  support_.awaiting = true;
+  support_.fetch_until_ms = now + kSupportSlowAfterMs;
+  support_.next_fetch_ms = now + kSupportFetchEveryMs;
+}
+
+void AskAiPanel::SyncSupportWait() {
+  const SupportWait wait = support_.awaiting ? ReplyState(support_.messages, now_ms_()) : SupportWait::Answered;
+  if (wait == SupportWait::Answered) {
+    support_.awaiting = false;
+  }
+  const bool waiting = wait == SupportWait::Waiting;
+  const bool slow = wait == SupportWait::Slow;
+  if (waiting == view_.support_waiting && slow == view_.support_slow) {
+    return;
+  }
+  view_.support_waiting = waiting;
+  view_.support_slow = slow;
+  Dirty("support_waiting");
+  Dirty("support_slow");
+  scroll_frames_ = kScrollFrames;
+}
+
+void AskAiPanel::TickSupport() {
+  if (!IsOpen() || !view_.support) {
+    return;
+  }
+  const int64_t now = now_ms_();
+  if (support_.pending) {
+    if (host_.AskAiMessagingReady()) {
+      const std::string question = *support_.pending;
+      StartSupport(question); // the one retry
+    } else if (now >= support_.ready_by_ms) {
+      support_.pending.reset();
+      view_.support_note = Tr("ask_ai.support.try_later").c_str();
+      Dirty("support_note");
     }
     return;
   }
-  if (!shared_thread_.empty()) {
-    host_.AskAiOpenLink(shared_thread_, entry_id, link_index);
+  if (!support_.awaiting) {
+    return;
   }
+  SyncSupportWait();
+  if (support_.awaiting && now < support_.fetch_until_ms && now >= support_.next_fetch_ms) {
+    support_.next_fetch_ms = now + kSupportFetchEveryMs;
+    host_.AskAiSyncInbox();
+  }
+}
+
+void AskAiPanel::ReadSupportIfLooking() {
+  if (ShouldReadSupportThread(host_.AskAiAttentive(), Shows(support_.thread))) {
+    host_.AskAiMarkRead(support_.thread);
+  }
+}
+
+void AskAiPanel::OnMessagesChanged() {
+  if (!IsOpen() || !view_.support || support_.thread.empty()) {
+    return;
+  }
+  ReadSupportIfLooking(); // a reply that shows here leaves no unread in the chats list
+  Refresh();
+  scroll_frames_ = kScrollFrames;
+}
+
+void AskAiPanel::OnAttentiveAgain() {
+  if (!IsOpen() || !view_.support || support_.thread.empty()) {
+    return;
+  }
+  ReadSupportIfLooking();
+}
+
+bool AskAiPanel::SuppressesNoticeFor(const std::string& thread_id) const {
+  return view_.support && ShouldSuppressNotice(host_.AskAiAttentive(), Shows(thread_id));
 }
 
 // --- the shared conversation ----------------------------------------------------------------------------
@@ -555,110 +800,7 @@ void AskAiPanel::SendShared(const std::string& text) {
   scroll_frames_ = kScrollFrames;
 }
 
-// --- the one-off question (settings "?") ----------------------------------------------------------------
-
-void AskAiPanel::AskOnce(const std::string& text, const bool fresh) {
-  once_pending_ = text;
-  once_pending_fresh_ = fresh;
-  if (!TryStartOnce()) {
-    Refresh();
-  }
-}
-
-bool AskAiPanel::TryStartOnce() {
-  if (!once_pending_) {
-    return false;
-  }
-  const std::string text = *once_pending_;
-  if (!agent_.UseLlm()) {
-    once_pending_.reset();
-    once_turns_.push_back({.question = text});
-    if (fake_answer_) {
-      StartFake(kAskAiOnceThread, text);
-    } else {
-      once_turns_.back().failed = true;
-    }
-    Refresh();
-    return true;
-  }
-  if (!agent_.AgentCloudReady() && !(agent_.AgentReady() && agent_.AgentHasCredentials())) {
-    once_pending_.reset();
-    once_waits_for_turn_ = false;
-    once_turns_.push_back({.question = text, .failed = true});
-    Refresh();
-    return true;
-  }
-  // The sessions' cap counts it like a chat's question (a guest has one turn): with every turn taken it waits, shown
-  // as waiting ("AI is busy, sent later"), and goes out when one is free (Tick).
-  const bool full = agent_.CanStart(kAskAiOnceThread) == TurnStart::Full;
-  if (full != once_waits_for_turn_) {
-    once_waits_for_turn_ = full;
-    Refresh();
-  }
-  if (full) {
-    return false;
-  }
-  AgentUiPorts& ports = agent_.Ports();
-  if (once_pending_fresh_) {
-    // A new "?": nothing said before goes along. An earlier one-off still answering is stopped first; the
-    // question waits here (Tick) until the Home session is free.
-    if (!ports.start_new_home_conversation || !ports.start_new_home_conversation()) {
-      if (ports.cancel && agent_.Busy().BusyIn(kAskAiOnceThread) && !once_cancel_sent_) {
-        ports.cancel({});
-        once_cancel_sent_ = true;
-      }
-      return false;
-    }
-  }
-  const SubmitOutcome outcome = agent_.SubmitAskAiOnce(text);
-  if (outcome == SubmitOutcome::BusyHere) {
-    return false; // its previous turn is still leaving: Tick tries again
-  }
-  once_pending_.reset();
-  once_cancel_sent_ = false;
-  once_waits_for_turn_ = false;
-  once_turns_.push_back({.question = text, .failed = outcome != SubmitOutcome::Started});
-  if (outcome != SubmitOutcome::Started) {
-    log().warning << "One-off question not started (outcome " << static_cast<int>(outcome) << ")";
-  }
-  Refresh();
-  scroll_frames_ = kScrollFrames;
-  return true;
-}
-
-void AskAiPanel::OnOnceReply(const AgentEvent& event) {
-  if (once_turns_.empty() || once_turns_.back().done) {
-    return; // a one-off replaced by a newer "?" (its turn was stopped): dropped
-  }
-  OnceTurn& turn = once_turns_.back();
-  const std::string entry_id = "ask-ai-once-" + std::to_string(once_turns_.size());
-  std::string body;
-  if (event.render_mode == RenderMode::Markdown) {
-    ChatAnswerRml answer = BuildMarkdownAnswer(event.text);
-    body = InjectEntryPlaceholders(answer.rml, entry_id);
-    once_links_[entry_id] = std::move(answer.links);
-  } else {
-    const ParseResult parsed =
-        event.from_model ? StructuredTextParser::ParseFromLlmOutput(event.text, event.response_goal, event.render_mode)
-                         : StructuredTextParser::ParseBlocksJson(event.text, event.response_goal, event.render_mode);
-    body = parsed.ok ? InjectEntryPlaceholders(parsed.rml, entry_id)
-                     : "<p>" + StructuredTextParser::EscapeText(StructuredTextParser::PlainText(event.text)) + "</p>";
-  }
-  turn.answer_rml = AssistantBubble(body, event.text);
-  turn.done = true;
-  Refresh();
-  scroll_frames_ = kScrollFrames;
-}
-
 void AskAiPanel::OnTurnEnded(const std::string& thread_id) {
-  if (thread_id == kAskAiOnceThread) {
-    if (!once_turns_.empty() && !once_turns_.back().done) {
-      once_turns_.back().failed = true; // ended with no answer: an error, said in plain words
-      once_turns_.back().done = true;
-    }
-    Refresh();
-    return;
-  }
   if (thread_id.empty() || thread_id != shared_thread_) {
     return;
   }
@@ -676,10 +818,8 @@ void AskAiPanel::StartFake(const std::string& thread_id, const std::string& ques
   fake_ = FakeStream{.thread_id = thread_id,
                      .answer = fake_answer_ ? fake_answer_(question) : std::string(),
                      .started = std::chrono::steady_clock::now()};
-  if (thread_id != kAskAiOnceThread) {
-    awaiting_answer_ = true;
-    asked_question_ = question;
-  }
+  awaiting_answer_ = true;
+  asked_question_ = question;
   AgentEvent loading = Event(AgentEventType::LoadingChanged, thread_id);
   loading.loading = true;
   agent_.HandleAgentEvent(loading);
@@ -725,26 +865,17 @@ void AskAiPanel::TickFake() {
 
 void AskAiPanel::Refresh() {
   base_rows_.clear();
-  if (view_.once) {
-    int n = 0;
-    for (const OnceTurn& turn : once_turns_) {
-      ++n;
-      base_rows_.push_back({("ask-ai-once-q-" + std::to_string(n)).c_str(), true, UserBubble(turn.question).c_str()});
-      if (!turn.answer_rml.empty()) {
-        base_rows_.push_back({("ask-ai-once-" + std::to_string(n)).c_str(), false, turn.answer_rml.c_str()});
-      }
+  if (view_.support) {
+    base_rows_.clear();
+    support_.messages.clear();
+    if (!support_.thread.empty()) {
+      base_rows_ = host_.AskAiRecentRows(support_.thread, kRowLimit);
+      support_.messages = host_.AskAiSupportMessages(support_.thread, kRowLimit);
     }
-    // A question waiting for a free turn shows as queued; one waiting for the earlier one-off to stop, as asked.
-    const bool queued = once_pending_ && once_waits_for_turn_;
-    if (once_pending_ && !queued) {
-      base_rows_.push_back({"ask-ai-once-pending", true, UserBubble(*once_pending_).c_str()});
-    }
-    const bool failed = !once_turns_.empty() && once_turns_.back().failed;
-    const bool running = once_pending_.has_value() || agent_.Busy().BusyIn(kAskAiOnceThread);
-    view_.error = failed && !running;
-    view_.queued_text = queued ? once_pending_->c_str() : "";
-    // Under the answer (or the error): the same question to a person.
-    view_.show_support = !once_turns_.empty() && (once_turns_.front().done || failed) && !running;
+    view_.queued_text = "";
+    view_.error = false;
+    view_.show_support = false;
+    SyncSupportWait();
   } else {
     if (!shared_thread_.empty()) {
       base_rows_ = host_.AskAiRecentRows(shared_thread_, kRowLimit);
@@ -760,7 +891,7 @@ void AskAiPanel::Refresh() {
 }
 
 void AskAiPanel::RefreshStreaming(const bool force) {
-  const std::string thread_id = view_.once ? std::string(kAskAiOnceThread) : shared_thread_;
+  const std::string thread_id = view_.support ? std::string() : shared_thread_;
   const std::string text = thread_id.empty() ? std::string() : agent_.StreamingText(thread_id);
   const auto now = std::chrono::steady_clock::now();
   if (!force) {
@@ -783,8 +914,8 @@ void AskAiPanel::RefreshStreaming(const bool force) {
     view_.rows.push_back(
         {kStreamRowId, false, AssistantBubble(InjectEntryPlaceholders(answer.rml, kStreamRowId), text).c_str()});
     view_.thinking = false; // the text itself shows the AI is at work
-  } else if (view_.once) {
-    view_.thinking = (once_pending_ && !once_waits_for_turn_) || agent_.Busy().BusyIn(kAskAiOnceThread);
+  } else if (view_.support) {
+    view_.thinking = false; // PP 客服 is a person's chat: the waiting line says it is replying
   } else {
     view_.thinking = !shared_thread_.empty() && agent_.Busy().BusyIn(shared_thread_);
   }
@@ -797,14 +928,12 @@ void AskAiPanel::RefreshStreaming(const bool force) {
 
 void AskAiPanel::Tick() {
   TickFake();
-  if (once_pending_) {
-    (void)TryStartOnce(); // a new "?" waiting for the Home session's previous turn to leave
-  }
+  TickSupport();
   if (!IsOpen()) {
     return;
   }
   // "Thinking", the queue and the streamed text follow the conversation shown.
-  if (!view_.once) {
+  if (!view_.support) {
     const ui::String queued = shared_thread_.empty() ? "" : agent_.QueuedText(shared_thread_).c_str();
     if (queued != view_.queued_text) {
       Refresh(); // it went out (or waits now): its bubble moves from the queue into the rows

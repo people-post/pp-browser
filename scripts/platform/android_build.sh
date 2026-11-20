@@ -60,7 +60,7 @@ usage() {
 Usage: $(basename "$0") <command>
 
 Commands:
-  apk            Build debug APK (assembleDebug)
+  apk            Build debug APK (assembleDebug), arm64-v8a only unless PP_ANDROID_ABIS says otherwise
   apk-release    Build release APK (assembleRelease)
   install        Build and install debug APK on a connected device/emulator
                    Set ANDROID_SERIAL to target one device when several are connected.
@@ -74,6 +74,8 @@ Optional environment variables:
   PP_RELAY_PEER_ID_PROD       PeerId of the prod backend's relay (multi-relay MR008; empty = pinned on first use)
   PP_RELAY_PEER_ID_QA         PeerId of the QA backend's relay (empty = pinned on first use)
   PP_RELAY_CONTENT_SHA256     ON/OFF: default of relay.content_sha256 (x-amz-content-sha256 on relay POST/PUT); empty = OFF
+  PP_ANDROID_ABIS             ABIs for \`apk\` (comma-separated, e.g. arm64-v8a,x86_64; default arm64-v8a). apk-release and
+                              install build every ABI (android/app/build.gradle ppBrowserAbiFilters)
 
 Requires:
   ANDROID_SDK_ROOT (or ANDROID_HOME)
@@ -88,6 +90,9 @@ case "${cmd}" in
     require_env ANDROID_SDK_ROOT
     require_env ANDROID_NDK_HOME
     cd "${ANDROID_DIR}"
+    # A debug APK is a compile check: one ABI is enough, and each one more is a whole debug build of the app on disk
+    # (about 10 GB). A Gradle property already given (CI's ORG_GRADLE_PROJECT_ppBrowserAbiFilters) wins.
+    export ORG_GRADLE_PROJECT_ppBrowserAbiFilters="${ORG_GRADLE_PROJECT_ppBrowserAbiFilters:-${PP_ANDROID_ABIS:-arm64-v8a}}"
     run_gradlew assembleDebug
     ;;
   apk-release)

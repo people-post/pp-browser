@@ -82,7 +82,8 @@ std::vector<uint32_t> SubmitCallRosterTiles(Media& media, CallVideoTileRenderer&
       continue;
     }
     const uint32_t stream = RowStream(row);
-    row.has_remote_video = stream != 0 && media.HasRemoteVideoForStream(stream);
+    // V067: a stream gone quiet keeps its last frame in the engine for a while; it is not shown as live.
+    row.has_remote_video = !row.reconnecting && stream != 0 && media.HasRemoteVideoForStream(stream);
     if (!row.has_remote_video) {
       continue;
     }

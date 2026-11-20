@@ -82,7 +82,7 @@ TEST(CallChromeSyncTest, AStoryStageAdvanceWithTheSameShapeIsDirtyOnlyAndAShapeC
   synced.in_call_story_active = true;
   synced.in_call_story_shape = "4in|Call received|On the encrypted network|Wang";
   synced.in_call_story_stage = 0;
-  synced.in_call_story_steps = "Answered|Finding the fastest line…|Opening your line to them…|Connected";
+  synced.in_call_story_steps = "Answered|Finding the most secure line…|Opening your line to them…|Connected";
   synced.in_call_story_scroll = "0dp|auto";
   pbr::CallChromeLayer next = synced;
   next.in_call_story_stage = 1;
@@ -288,6 +288,16 @@ TEST(CallChromeSyncTest, CameraFacingDirtiesOnly) {
   synced.in_call_camera_front = true;
   pbr::CallChromeLayer next = synced;
   next.in_call_camera_front = false;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+}
+
+// B225: "Restoring video…" in the small picture's place only re-binds a data-if.
+TEST(CallChromeSyncTest, CameraResumingDirtiesOnly) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_camera_resuming = true;
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
 }
 

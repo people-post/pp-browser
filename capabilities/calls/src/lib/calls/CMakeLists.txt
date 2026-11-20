@@ -21,6 +21,7 @@ pp_browser_add_lib_library(pp_lib_calls
     CallMediaSeat.cpp
     CallMediaSessionLogic.cpp
     CallMobility.cpp
+    CallParticipantLiveness.cpp
     CallPathMobility.cpp
     CallPathPolicy.cpp
     CallScreen.cpp

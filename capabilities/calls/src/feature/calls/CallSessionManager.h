@@ -129,7 +129,8 @@ private:
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
   /** H013: our 1:1 caller stopped trying to reach us; the answerer stops waiting. */
   Roe<void> HandleInboundConnectGiveUp(const std::string& detail_json, const std::string& sender_identity);
-  Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
+  Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& sender_identity,
+                               const std::string& local_identity);
   /** M021 d5: a sibling's notice (our own account only) that it took / declined a call ringing here too. */
   Roe<void> HandleAnsweredElsewhere(const std::string& detail_json, const std::string& sender_identity,
                                     const std::string& local_identity);

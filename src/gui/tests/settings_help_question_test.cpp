@@ -57,7 +57,6 @@ TEST_F(SettingsHelpQuestionTest, TheHardSettingsHaveOneBesideThem) {
     const char* view;
     const char* key;
   } expected[] = {
-      {"settings_section_help.rml", "settings.security.crash_reports.label"},
       {"settings_section_security.rml", "settings.security.recovery"},
       {"settings_section_devices.rml", "settings.security.transfer_row"},
       {"settings_section_devices.rml", "settings.help.topic.account_copy"},
@@ -78,36 +77,19 @@ TEST_F(SettingsHelpQuestionTest, TheHardSettingsHaveOneBesideThem) {
     EXPECT_NE(rml.find(click), std::string::npos) << item.view << " " << item.key;
     EXPECT_FALSE(SettingHelpQuestion(item.key).empty()) << item.key;
   }
-  // Send diagnostics keeps its own "?" (its question names the support article).
-  EXPECT_NE(ReadAsset("views/settings_section_help.rml").find("open_diagnostics_help()"), std::string::npos);
+  // "Send diagnostics" and its own "?" are gone (run logs are sent from Advanced, DEV/PLAN-send-run-logs.md).
+  EXPECT_EQ(ReadAsset("views/settings_section_help.rml").find("open_diagnostics_help()"), std::string::npos);
 }
 
-// Phones: the crash-report switch and Send problem logs sit on the Help page, in one "Help improve PP" card, each
-// with its "?" and a line under it; the desktop has its own copies of the two (hidden on phones) on the same page.
-TEST_F(SettingsHelpQuestionTest, PhonesShowCrashReportsAndProblemLogsInHelpImprovePp) {
+// The crash-report switch is off the Help page, phone and desktop (2026-11-19): its upload endpoint does not exist yet
+// and the last crash record now goes with the run logs. The upload code and the preference stay, dormant.
+TEST_F(SettingsHelpQuestionTest, TheHelpPageHasNoCrashReportSwitch) {
   const std::string about = ReadAsset("views/settings_section_help.rml");
-  const size_t card = about.find("{{i18n:settings.about.improve.title}}");
-  ASSERT_NE(card, std::string::npos);
-  // The title and the card are phone-only, and every piece follows the title.
-  EXPECT_NE(about.find("<p class=\"text group-head settings-phone-only\">{{i18n:settings.about.improve.title}}"),
-            std::string::npos);
-  EXPECT_NE(about.find("<div class=\"group-card settings-phone-only\">", card), std::string::npos);
-  for (const char* piece :
-       {"ask_setting_help('settings.security.crash_reports.label')", "toggle_crash_reports()",
-        "{{i18n:settings.security.crash_reports.help}}", "send_diagnostics()", "open_diagnostics_help()",
-        "{{i18n:settings.security.diagnostics.help}}", "copy_diagnostics_id()"}) {
-    EXPECT_NE(about.find(piece, card), std::string::npos) << piece;
+  for (const char* gone : {"toggle_crash_reports()", "crash_reports_enabled", "settings.security.crash_reports.",
+                           "settings.about.improve.title", "ask_setting_help("}) {
+    EXPECT_EQ(about.find(gone), std::string::npos) << gone;
   }
-  EXPECT_NE(about.find("<div class=\"group-card settings-desktop-only\">"), std::string::npos);
-  EXPECT_NE(about.find("group-actions settings-desktop-only\" data-if=\"show_diagnostics_send\""), std::string::npos);
-  EXPECT_EQ(Tr("settings.about.improve.title"), "Help improve PP");
-  EXPECT_EQ(Tr("settings.security.diagnostics.send"), "Send diagnostics");
-  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(Tr("settings.about.improve.title"), "帮我们改进 PP");
-  EXPECT_EQ(Tr("settings.security.crash_reports.label"), "闪退时自动发送报告");
-  EXPECT_EQ(Tr("settings.security.crash_reports.help"), "只在闪退时发送，不含聊天内容。");
-  EXPECT_EQ(Tr("settings.security.diagnostics.send"), "发送诊断");
-  EXPECT_EQ(Tr("settings.security.diagnostics.help"), "遇到问题、客服请你发时用。");
+  EXPECT_EQ(about.find("settings-phone-only\">{{i18n:settings.about.improve"), std::string::npos);
 }
 
 TEST_F(SettingsHelpQuestionTest, TheQuestionMarkIsABigEnoughTarget) {
@@ -121,14 +103,15 @@ TEST_F(SettingsHelpQuestionTest, TheQuestionMarkIsABigEnoughTarget) {
   EXPECT_NE(css.find("width: 20dp;", icon), std::string::npos);
 }
 
-// Phones: the "?" opens the ask-AI panel with the question asked; PP 客服 is not messaged.
-TEST_F(SettingsHelpQuestionTest, OnAPhoneTheAiAnswersAndSupportIsNotMessaged) {
+// Phones (Kenneth 2026-11-18): the "?" opens the half-screen sheet on the PP 客服 chat with the question asked there;
+// the page under it stays (the chat-page path, ask_support, is not taken).
+TEST_F(SettingsHelpQuestionTest, OnAPhoneTheSheetAsksPPSupportOverThePage) {
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  std::vector<std::string> to_ai;
+  std::vector<std::string> to_panel;
   std::vector<std::string> to_support;
   SettingsCommands commands;
-  commands.ask_ai_once = [&to_ai](const std::string& question) {
-    to_ai.push_back(question);
+  commands.ask_support_panel = [&to_panel](const std::string& question) {
+    to_panel.push_back(question);
     return true;
   };
   commands.ask_support = [&to_support](const std::string& question) -> Roe<void> {
@@ -138,16 +121,16 @@ TEST_F(SettingsHelpQuestionTest, OnAPhoneTheAiAnswersAndSupportIsNotMessaged) {
   SettingsController settings;
   settings.BindCommands(commands);
   settings.OnAskSettingHelp("settings.security.crash_reports.label");
-  ASSERT_EQ(to_ai.size(), 1u);
-  EXPECT_EQ(to_ai[0], "「闪退时自动发送报告」是什么意思？");
+  ASSERT_EQ(to_panel.size(), 1u);
+  EXPECT_EQ(to_panel[0], "「闪退时自动发送报告」是什么意思？");
   EXPECT_TRUE(to_support.empty());
 }
 
-// The desktop has no panel (ask_ai_once says no): the question goes to PP 客服 as before.
+// The desktop has no sheet (ask_support_panel says no): the question goes to the PP 客服 chat page as before.
 TEST_F(SettingsHelpQuestionTest, WithoutThePanelSupportIsAsked) {
   std::vector<std::string> to_support;
   SettingsCommands commands;
-  commands.ask_ai_once = [](const std::string&) { return false; };
+  commands.ask_support_panel = [](const std::string&) { return false; };
   commands.ask_support = [&to_support](const std::string& question) -> Roe<void> {
     to_support.push_back(question);
     return {};
@@ -159,64 +142,20 @@ TEST_F(SettingsHelpQuestionTest, WithoutThePanelSupportIsAsked) {
   EXPECT_EQ(to_support[0], "What does “Send a report if PP crashes” do?");
 }
 
-// Send diagnostics on a phone: the title with its own "?" (same call as before), the small "Send" pill at the right end
-// (same event, disabled while sending), the row body does nothing; the last-id line is a second row of the same card.
-TEST_F(SettingsHelpQuestionTest, TheSendDiagnosticsRowHasASeparateQuestionMarkAndSendPillAndNoRowEvent) {
+// "Send diagnostics" is retired from the Help page, on phones and the desktop (DEV/PLAN-send-run-logs.md: run logs
+// are sent from Advanced). The small "Send" pill it used is now the run logs row's.
+TEST_F(SettingsHelpQuestionTest, TheHelpPageNoLongerSendsDiagnostics) {
   const std::string rml = ReadAsset("views/settings_section_help.rml");
-  const std::string open_row = "<div class=\"group-row group-row--static\" data-if=\"show_diagnostics_send\">";
-  const size_t row = rml.find(open_row);
-  ASSERT_NE(row, std::string::npos);
-  const size_t last = rml.find(
-      "<button class=\"group-row settings-improve-send\" type=\"button\" "
-      "data-if=\"diagnostics_last_id != ''\"",
-      row);
-  ASSERT_NE(last, std::string::npos);
-  const std::string body = rml.substr(row, last - row);
-  // The row itself carries no event; it is not a button.
-  EXPECT_EQ(rml.substr(row, open_row.size()).find("data-event"), std::string::npos);
-  const size_t q = body.find("data-event-click=\"open_diagnostics_help()\"");
-  const size_t send = body.find("data-event-click=\"send_diagnostics()\"");
-  ASSERT_NE(q, std::string::npos);
-  ASSERT_NE(send, std::string::npos);
-  EXPECT_LT(q, send) << "the \"?\" follows the title, the pill is at the right end";
-  // Two distinct buttons, never nested; each event once.
-  EXPECT_EQ(body.find("data-event-click=\"open_diagnostics_help()\"", q + 1), std::string::npos);
-  EXPECT_EQ(body.find("data-event-click=\"send_diagnostics()\"", send + 1), std::string::npos);
-  const size_t first_close = body.find("</button>");
-  const size_t second_open = body.find("<button", body.find("<button") + 1);
-  ASSERT_NE(second_open, std::string::npos);
-  EXPECT_LT(first_close, second_open) << "the second button starts after the first ended";
-  EXPECT_EQ(body.find("<button", second_open + 1), std::string::npos) << "only two buttons in the row";
-  // The "?" sits in the title's own span, right after the title text, and keeps its help key.
-  EXPECT_NE(body.find("{{i18n:settings.security.diagnostics.send}}</span><button class=\"settings-q-btn\" "
-                      "type=\"button\" data-help-key=\"troubleshooting/send-diagnostics\" "
-                      "data-event-click=\"open_diagnostics_help()\">"),
-            std::string::npos);
-  // The pill: disabled while sending, label "Send" idle and the existing send label while it sends.
-  EXPECT_NE(
-      body.find("<button class=\"settings-pill-btn\" type=\"button\" data-attrif-disabled=\"diagnostics_sending\" "
-                "data-event-click=\"send_diagnostics()\">"),
-      std::string::npos);
-  EXPECT_NE(body.find("<span data-if=\"!diagnostics_sending\">{{i18n:settings.security.diagnostics.send_short}}</span>"
-                      "<span data-if=\"diagnostics_sending\">{{diagnostics_send_label}}</span>"),
-            std::string::npos);
-  // The explanation sentence is gone from the phone's row (the "?" explains); the last-id row is in the same card.
-  EXPECT_EQ(body.find("diagnostics.help}}"), std::string::npos);
-  const size_t card_end = rml.find("<p class=\"text group-head settings-desktop-only\">", last);
-  const size_t card_open = rml.rfind("<div class=\"group-card settings-phone-only\">", row);
-  EXPECT_EQ(rml.substr(card_open, row - card_open).find("<p class=\"text group-head"), std::string::npos)
-      << "no heading between the card's opening and the row";
-  EXPECT_NE(rml.find("data-event-click=\"copy_diagnostics_id()\"", last), std::string::npos);
-  EXPECT_LT(rml.find("data-event-click=\"copy_diagnostics_id()\"", last), card_end);
-  EXPECT_NE(rml.find("{{diagnostics_last_label}}", last), std::string::npos);
+  for (const char* gone :
+       {"send_diagnostics()", "open_diagnostics_help()", "copy_diagnostics_id()", "show_diagnostics_send",
+        "diagnostics_last", "diagnostics_sending", "settings.security.diagnostics."}) {
+    EXPECT_EQ(rml.find(gone), std::string::npos) << gone;
+  }
   // The pill and the "?" are 44dp tap areas.
   const std::string css = ReadAsset("themes/components.rcss");
   const size_t pill = css.find(".shell-layer-compact .settings-pill-btn {");
   ASSERT_NE(pill, std::string::npos);
   EXPECT_NE(css.find("height: 44dp;", pill), std::string::npos);
-  EXPECT_EQ(Tr("settings.security.diagnostics.send_short"), "Send");
-  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(Tr("settings.security.diagnostics.send_short"), "发送");
 }
 
 // show_setting_note('<title key>','<text key>'): a "?" that explains a setting from the app's own text. It opens the
@@ -230,7 +169,7 @@ TEST_F(SettingsHelpQuestionTest, AShownNoteOpensAnAlertWithItsTitleAndTextAndAsk
   std::vector<Alert> alerts;
   int sent = 0;
   SettingsCommands commands;
-  commands.ask_ai_once = [&sent](const std::string&) {
+  commands.ask_support_panel = [&sent](const std::string&) {
     ++sent;
     return true;
   };

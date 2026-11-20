@@ -5,6 +5,9 @@
 #include "lib/ui/ShellLayout.h"
 #include "gui/shell/ShellNavigationPorts.h"
 #include "lib/ui/ShellTypes.h"
+#include "gui/tests/run_log_sentinel_capture.h"
+
+#include <ui/base/SystemInterface.h>
 
 #include <gtest/gtest.h>
 #include <fstream>
@@ -20,6 +23,13 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_EQ(ShellLayout::FromWidth(767.f), LayoutMode::Compact);
   EXPECT_EQ(ShellLayout::FromWidth(768.f), LayoutMode::Expanded);
   EXPECT_EQ(ShellLayout::FromWidth(1280.f), LayoutMode::Expanded);
+  EXPECT_EQ(ShellLayout::ForDevice(590.f, true), LayoutMode::Compact);
+  EXPECT_EQ(ShellLayout::ForDevice(899.f, true), LayoutMode::Compact);
+  EXPECT_EQ(ShellLayout::ForDevice(900.f, true), LayoutMode::Expanded);
+  EXPECT_EQ(ShellLayout::ForDevice(1180.f, true), LayoutMode::Expanded);
+  EXPECT_EQ(ShellLayout::ForDevice(500.f, false), LayoutMode::Compact);
+  EXPECT_EQ(ShellLayout::ForDevice(767.f, false), LayoutMode::Compact);
+  EXPECT_EQ(ShellLayout::ForDevice(1280.f, false), LayoutMode::Expanded);
   EXPECT_EQ(ShellLayout::NavTabString(NavTab::Home), std::string("home"));
   EXPECT_EQ(ShellLayout::NavContentKey(NavTab::Home), nullptr);
   EXPECT_FALSE(ShellLayout::TabHasSecondary(NavTab::Home));
@@ -605,6 +615,19 @@ TEST(ShellHostHiddenTabTest, TheDesktopIsUnchangedByTheSettingsSegment) {
   EXPECT_EQ(desktop.BackTarget(), DismissTarget::None);
 }
 
+// A tab switch closes the pushed pages one by one, each reported to its owner (ContactsController's open flags follow).
+TEST(ShellHostHiddenTabTest, ATabSwitchTellsEveryPushedPageItWasClosed) {
+  ShellHost& host = PhoneHost(NavTab::Sessions);
+  std::vector<std::string> popped;
+  host.SetOnTransientPopped([&popped](const std::string& key) { popped.push_back(key); });
+  host.PushTransient({.key = "new_chat"});
+  host.PushTransient({.key = "add_contact"});
+  host.SelectNavTab(NavTab::Home);
+  EXPECT_TRUE(host.State().transient_stack.empty());
+  EXPECT_EQ(popped, (std::vector<std::string>{"add_contact", "new_chat"}));
+  host.SetOnTransientPopped(nullptr);
+}
+
 // TODO #200: a tab in the bar on Settings (or a page pushed from it) leaves the whole stack and shows that tab.
 TEST(ShellHostHiddenTabTest, ATabTapOnSettingsLeavesTheWholeSettingsStack) {
   ShellHost& host = PhoneHost(NavTab::Sessions);
@@ -817,6 +840,26 @@ struct ShellHostTestAccess {
   static void AcceptVoice(ShellHost& host) { host.CallAcceptVoice(); }
   static void AcceptCharge(ShellHost& host) { host.CallAcceptCharge(); }
   static void Decline(ShellHost& host) { host.CallDecline(); }
+  static void PinGatePaste(ShellHost& host) { host.PinGatePaste(); }
+  static void PinGateClearPayload(ShellHost& host) { host.PinGateClearPayload(); }
+  // The tap cover's clock and the app's foreground, faked; the queued SyncLayout run as the UI queue would.
+  static void FakeTapCoverEnv(ShellHost& host, NotificationTapCover::Clock::time_point* now, bool* foreground,
+                              bool* os_modal) {
+    host.tap_cover_now_ = [now]() { return *now; };
+    host.tap_cover_foreground_ = [foreground]() { return *foreground; };
+    host.tap_cover_os_modal_ = [os_modal]() { return *os_modal; };
+  }
+  /** The host outlives the test (KeptHost): the fakes and a hold still armed go with the test. */
+  static void ClearTapCoverEnv(ShellHost& host) {
+    host.tap_cover_.Release();
+    host.tap_cover_release_after_sync_ = false;
+    host.tap_cover_now_ = nullptr;
+    host.tap_cover_foreground_ = nullptr;
+    host.tap_cover_os_modal_ = nullptr;
+    host.tapped_chat_opening_ = false;
+  }
+  static void RunPendingSync(ShellHost& host) { host.FlushPendingSyncLayout(); }
+  static bool ChatSlidesIn(const ShellHost& host) { return host.page_enter_pending_id_ == "shell-chat-overlay"; }
 };
 
 namespace {
@@ -934,6 +977,254 @@ TEST(ShellHostCallRingTest, TheAnswersDoNothingWhileAwaitingTheInviteAndActOther
   EXPECT_EQ(declines, 1);
 }
 
+// A notification tap that brought the app up for a chat (NotificationTapCover): the first frame after the transition is
+// the cover (the startup one) or the chat, never the page left behind; the hold is bounded; a call is never covered.
+namespace {
+
+struct TapCoverHost {
+  ShellHost& host;
+  NotificationTapCover::Clock::time_point now{};
+  bool foreground = true;
+  bool os_modal = false;
+
+  explicit TapCoverHost(const NavTab tab) : host(PhoneHost(tab)) {
+    ShellHostTestAccess::FakeTapCoverEnv(host, &now, &foreground, &os_modal);
+    host.SettleStartupCoverArm(); // the app has been running: no start's logo
+  }
+  ~TapCoverHost() { ShellHostTestAccess::ClearTapCoverEnv(host); }
+  TapCoverHost(const TapCoverHost&) = delete;
+  TapCoverHost& operator=(const TapCoverHost&) = delete;
+  bool Covered() const { return host.State().startup_cover_visible; }
+  /** The tapped chat opens as OpenTappedThread does it: bracketed, so only this open skips the slide-in. */
+  void OpenTappedChat() {
+    host.SetTappedChatOpening(true);
+    OpenChat(host);
+    host.SetTappedChatOpening(false);
+  }
+};
+
+PaneSpec Sheet(const char* key) {
+  PaneSpec spec;
+  spec.key = key;
+  spec.rml_path = "views/dialog.rml";
+  spec.page_sheet = true;
+  return spec;
+}
+
+} // namespace
+
+TEST(ShellHostTapCoverTest, ATapFromSettingsShowsTheCoverThenTheChatWithNoPageInBetween) {
+  TapCoverHost t(NavTab::Me);
+  t.foreground = false; // the tap comes in ahead of the foreground
+  ASSERT_FALSE(t.Covered());
+  t.host.PushLocalBack("settings_detail", []() {}); // a settings page open
+  t.host.PushLayer(Sheet("ask_ai"));                // and the Ask-AI sheet over it
+  t.host.ArmTapCover();
+  EXPECT_TRUE(t.Covered()) << "in place before the first resumed frame";
+  t.foreground = true;
+  t.host.TickTapCover(t.now); // the first resumed frame (ShellHost::Update)
+  EXPECT_TRUE(t.Covered()) << "the first frame is the cover, not Settings";
+
+  // The tapped chat is known (ChatController::OpenTappedThread).
+  t.host.ClearForTappedChat();
+  EXPECT_EQ(t.host.State().nav_tab, NavTab::Sessions);
+  EXPECT_TRUE(t.host.State().overlay_stack.empty()) << "the sheet went";
+  EXPECT_FALSE(t.host.HasLocalBack("settings_detail")) << "the settings page went";
+  t.OpenTappedChat();
+  EXPECT_FALSE(ShellHostTestAccess::ChatSlidesIn(t.host)) << "no slide-in over the page left behind";
+  t.host.ReleaseTapCover();
+  EXPECT_TRUE(t.Covered()) << "until the layout showing the chat is built";
+  ShellHostTestAccess::RunPendingSync(t.host);
+  EXPECT_FALSE(t.Covered());
+  EXPECT_FALSE(t.host.TapCoverArmed());
+  EXPECT_TRUE(ShellLayout::WhichPanesVisible(t.host.State()).compact_chat_overlay) << "the chat is what shows";
+  t.host.ReleaseTapCover(); // consumed once: a second release changes nothing
+  EXPECT_FALSE(t.Covered());
+}
+
+TEST(ShellHostTapCoverTest, PushedPagesOnTheChatsTabGoAndAnOpenChatIsReused) {
+  TapCoverHost t(NavTab::Sessions);
+  OpenChat(t.host); // another chat open
+  PaneSpec new_chat;
+  new_chat.key = "new_chat";
+  new_chat.rml_path = "views/new_chat.rml";
+  t.host.PushTransient(new_chat);
+  ASSERT_FALSE(t.host.State().transient_stack.empty());
+  t.host.ArmTapCover();
+  t.host.ClearForTappedChat();
+  EXPECT_TRUE(t.host.State().transient_stack.empty()) << "New chat went";
+  EXPECT_TRUE(t.host.State().compact_chat_open) << "the chat page stays for the tapped chat";
+  EXPECT_EQ(t.host.State().nav_tab, NavTab::Sessions);
+}
+
+TEST(ShellHostTapCoverTest, TheHoldIsBoundedThenTheAppIsAsToday) {
+  TapCoverHost t(NavTab::Me);
+  t.foreground = false;
+  t.host.ArmTapCover();
+  t.now += std::chrono::seconds(30); // the phone's own unlock between the tap and the foreground
+  t.host.TickTapCover(t.now);
+  EXPECT_TRUE(t.Covered()) << "no clock before the foreground";
+  t.foreground = true;
+  t.host.TickTapCover(t.now);
+  t.now += NotificationTapCover::kHold - std::chrono::milliseconds(1);
+  t.host.TickTapCover(t.now);
+  EXPECT_TRUE(t.Covered());
+  t.now += std::chrono::milliseconds(1);
+  t.host.TickTapCover(t.now);
+  EXPECT_FALSE(t.Covered()) << "never blank for good: the page left behind";
+  EXPECT_FALSE(t.host.TapCoverArmed());
+  // The chat syncing later opens as today: nothing the person opened meanwhile is closed.
+  t.host.PushLayer(Sheet("ask_ai"));
+  t.host.ClearForTappedChat();
+  EXPECT_EQ(t.host.State().overlay_stack.size(), 1u);
+  EXPECT_EQ(t.host.State().nav_tab, NavTab::Me);
+  t.host.CloseLayer();
+}
+
+TEST(ShellHostTapCoverTest, ANormalForegroundingChangesNothing) {
+  TapCoverHost t(NavTab::Me);
+  t.host.PushLayer(Sheet("ask_ai"));
+  t.host.ReconcileStartupCover();
+  EXPECT_FALSE(t.Covered()) << "the page left is what shows";
+  t.host.ClearForTappedChat();
+  EXPECT_EQ(t.host.State().overlay_stack.size(), 1u) << "no tap: nothing closes";
+  EXPECT_EQ(t.host.State().nav_tab, NavTab::Me);
+  t.host.CloseLayer();
+  TapCoverHost chats(NavTab::Sessions);
+  OpenChat(chats.host);
+  EXPECT_TRUE(ShellHostTestAccess::ChatSlidesIn(chats.host)) << "a chat picked by hand still slides in";
+}
+
+TEST(ShellHostTapCoverTest, ThePinGateStaysOnTopAndTheHoldStartsAfterIt) {
+  TapCoverHost t(NavTab::Sessions);
+  PinGateState pin;
+  pin.active = true;
+  t.host.ApplyPinGateState(pin);
+  t.host.ArmTapCover();
+  EXPECT_FALSE(t.Covered()) << "the PIN gate is what shows";
+  t.now += std::chrono::seconds(40); // a slow PIN entry
+  t.host.TickTapCover(t.now);
+  t.host.ApplyPinGateState(PinGateState{});
+  t.host.TickTapCover(t.now); // the first frame after the PIN gate: the hold's clock starts
+  EXPECT_TRUE(t.Covered()) << "after the PIN: the cover, not the page left behind";
+  t.now += NotificationTapCover::kHold - std::chrono::milliseconds(1);
+  t.host.TickTapCover(t.now);
+  EXPECT_TRUE(t.Covered()) << "the hold counts from the PIN gate's close";
+  t.host.ReleaseTapCover();
+  ShellHostTestAccess::RunPendingSync(t.host);
+  EXPECT_FALSE(t.Covered());
+}
+
+TEST(ShellHostTapCoverTest, ACallIsNeverCovered) {
+  TapCoverHost t(NavTab::Sessions);
+  t.host.ArmTapCover();
+  ASSERT_TRUE(t.Covered());
+  t.host.ApplyCallChromeSnapshot(Ring(false), CallChromeUpdate::Remount);
+  EXPECT_FALSE(t.Covered()) << "a ring shows, at once";
+  t.host.TickTapCover(t.now); // the next frame drops the arm for good
+  EXPECT_FALSE(t.host.TapCoverArmed());
+  t.host.ApplyCallChromeSnapshot(CallChromeSnapshot{}, CallChromeUpdate::Remount);
+  EXPECT_FALSE(t.Covered()) << "not back once the ring ends";
+
+  // A call minimised to its chip counts as a call shown: the tap is not held, nothing over it is cleared.
+  CallChromeSnapshot minimised;
+  minimised.in_progress.active = true;
+  minimised.in_progress.mode = CallChromeMode::Minimized;
+  t.host.ApplyCallChromeSnapshot(minimised, CallChromeUpdate::Remount);
+  EXPECT_TRUE(ProjectShellChromeSnapshot(t.host.State()).call_shown);
+  t.host.ArmTapCover(); // even if armed, the call wins at once
+  EXPECT_FALSE(t.Covered());
+  t.host.ApplyCallChromeSnapshot(CallChromeSnapshot{}, CallChromeUpdate::Remount);
+}
+
+TEST(ShellHostTapCoverTest, ReconcilingOnlyReadsTheStateTheFrameTickOwnsTheClock) {
+  TapCoverHost t(NavTab::Sessions);
+  t.host.ArmTapCover();
+  t.host.TickTapCover(t.now); // the hold's clock starts
+  t.now += NotificationTapCover::kHold + std::chrono::seconds(5);
+  t.host.ReconcileStartupCover();
+  t.host.ReconcileStartupCover();
+  EXPECT_TRUE(t.host.TapCoverArmed()) << "a reconcile never expires the hold, whoever calls it first";
+  EXPECT_TRUE(t.Covered());
+  t.host.TickTapCover(t.now);
+  EXPECT_FALSE(t.host.TapCoverArmed());
+  EXPECT_FALSE(t.Covered());
+}
+
+TEST(ShellHostTapCoverTest, OnlyTheTappedChatsOpenSkipsTheSlideInAnotherOneDuringTheHoldStillSlides) {
+  TapCoverHost t(NavTab::Sessions);
+  t.host.ArmTapCover();
+  OpenChat(t.host); // a chat picked by hand while the cover holds
+  EXPECT_TRUE(ShellHostTestAccess::ChatSlidesIn(t.host));
+  TapCoverHost tapped(NavTab::Sessions);
+  tapped.host.ArmTapCover();
+  tapped.OpenTappedChat();
+  EXPECT_FALSE(ShellHostTestAccess::ChatSlidesIn(tapped.host));
+}
+
+TEST(ShellHostTapCoverTest, AReleaseDeferredBehindAPendingLayoutIsNotLostWhenTheHostIsReinitialised) {
+  TapCoverHost t(NavTab::Sessions);
+  t.host.ArmTapCover();
+  t.OpenTappedChat(); // a layout sync is now pending
+  t.host.ReleaseTapCover();
+  ASSERT_TRUE(t.Covered()) << "deferred until the layout is built";
+  t.host.Initialize(nullptr); // the re-init drops the pending sync without flushing it
+  EXPECT_FALSE(t.host.TapCoverArmed());
+  EXPECT_FALSE(t.Covered()) << "not up until the hold's end";
+}
+
+TEST(ShellHostTapCoverTest, EveryPageTheTapClosesIsToldItIsGone) {
+  TapCoverHost t(NavTab::Sessions);
+  std::vector<std::string> popped;
+  t.host.SetOnTransientPopped([&popped](const std::string& key) { popped.push_back(key); });
+  PaneSpec contact;
+  contact.key = "add_contact";
+  contact.rml_path = "views/dialog.rml";
+  PaneSpec new_chat;
+  new_chat.key = "new_chat";
+  new_chat.rml_path = "views/new_chat.rml";
+  t.host.PushTransient(contact);
+  t.host.PushTransient(new_chat);
+  t.host.ArmTapCover();
+  t.host.ClearForTappedChat();
+  t.host.SetOnTransientPopped(nullptr);
+  EXPECT_EQ(popped, (std::vector<std::string>{"new_chat", "add_contact"})) << "top first, through the normal pop";
+  EXPECT_TRUE(t.host.State().transient_stack.empty());
+}
+
+TEST(ShellHostTapCoverTest, NothingIsClosedAroundACallThePinGateOrASystemModal) {
+  TapCoverHost modal(NavTab::Me);
+  modal.host.PushLayer(Sheet("ask_ai"));
+  modal.host.ArmTapCover();
+  modal.os_modal = true; // the Save dialog / share sheet is up
+  modal.host.ClearForTappedChat();
+  EXPECT_EQ(modal.host.State().overlay_stack.size(), 1u);
+  EXPECT_EQ(modal.host.State().nav_tab, NavTab::Me);
+  modal.os_modal = false;
+  modal.host.ClearForTappedChat();
+  EXPECT_TRUE(modal.host.State().overlay_stack.empty()) << "no modal: it goes";
+
+  TapCoverHost pin(NavTab::Me);
+  pin.host.PushLayer(Sheet("ask_ai"));
+  pin.host.ArmTapCover();
+  PinGateState gate;
+  gate.active = true;
+  pin.host.ApplyPinGateState(gate);
+  pin.host.ClearForTappedChat();
+  EXPECT_EQ(pin.host.State().overlay_stack.size(), 1u) << "the unlock gate is not a page to tear down";
+  pin.host.ApplyPinGateState(PinGateState{});
+  pin.host.CloseLayer();
+
+  TapCoverHost call(NavTab::Me);
+  call.host.PushLayer(Sheet("ask_ai"));
+  call.host.ArmTapCover();
+  call.host.ApplyCallChromeSnapshot(Ring(false), CallChromeUpdate::Remount);
+  call.host.ClearForTappedChat();
+  EXPECT_EQ(call.host.State().overlay_stack.size(), 1u) << "a ringing call's screen is never dismissed";
+  call.host.ApplyCallChromeSnapshot(CallChromeSnapshot{}, CallChromeUpdate::Remount);
+  call.host.CloseLayer();
+}
+
 TEST(ShellHostCallRingTest, TheStartupCoverIsNotShownOverAnActiveRing) {
   ShellHost& host = KeptHost();
   host.ReconcileStartupCover();
@@ -941,6 +1232,34 @@ TEST(ShellHostCallRingTest, TheStartupCoverIsNotShownOverAnActiveRing) {
   host.ApplyCallChromeSnapshot(Ring(true), CallChromeUpdate::Remount);
   EXPECT_FALSE(host.State().startup_cover_visible);
   host.ApplyCallChromeSnapshot(CallChromeSnapshot{}, CallChromeUpdate::Remount);
+}
+
+// "Send run logs" (DEV/PLAN-send-run-logs.md step 1): text pasted on the PIN gate (a recovery phrase, a transfer code)
+// never reaches the log, at the lowest log level. The other gui sentinels: run_log_sentinel_test.cpp.
+namespace {
+class ClipboardSystem : public ui::SystemInterface {
+public:
+  double GetElapsedTime() override { return 0.0; }
+  void GetClipboardText(ui::String& text) override { text = clipboard.c_str(); }
+  std::string clipboard;
+};
+} // namespace
+
+TEST(RunLogSentinelPasteTest, TextPastedOnThePinGateIsNeverLogged) {
+  run_log_sentinel::Capture& capture = run_log_sentinel::Capture::Start();
+  ClipboardSystem system;
+  ui::SetSystemInterface(&system);
+  ShellHost host;
+  // A short paste (a phrase, shown in the box) and a long one (a transfer code, kept out of the box).
+  system.clipboard = std::string("alpha bravo ") + run_log_sentinel::kSentinel;
+  ShellHostTestAccess::PinGatePaste(host);
+  EXPECT_FALSE(host.State().pin_gate.link_payload.empty() && host.State().pin_gate.link_payload_full.empty())
+      << "the paste was read";
+  system.clipboard = std::string(8000, 'k') + run_log_sentinel::kSentinel;
+  ShellHostTestAccess::PinGatePaste(host);
+  ShellHostTestAccess::PinGateClearPayload(host);
+  ui::SetSystemInterface(nullptr);
+  capture.ExpectNoSentinel();
 }
 
 } // namespace pbr

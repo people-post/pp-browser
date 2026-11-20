@@ -16,6 +16,7 @@
       <button class="settings-text-btn settings-copied-again" type="button"
               data-event-click="export_link_device()">{{i18n:settings.security.link_device.copy_again}}</button>
     </div>
+    <p class="text muted group-foot" data-if="transfer_code_copied">{{i18n:settings.security.link_device.handover_after}}</p>
   </div>
   <button class="btn settings-desktop-only" type="button" data-if="security_can_export_link && !own_devices_not_main"
           data-event-click="export_link_device()">

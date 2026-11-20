@@ -44,6 +44,9 @@ public:
   void Open(ui::Event& ev);
   /** Phones, a 1:1 chat: opens the person's page instead of the menu. False when the menu should open instead. */
   bool OpenPeerPage(bool compact);
+  /** The open stranger chat's bar: Add saves the person (the pill says so, no page opens); Block asks, then blocks. */
+  void AddOpenStranger();
+  void BlockOpenStranger();
   /** The group's member list (the header's "N members", and a peer sheet item). */
   void OpenGroupMembers();
 

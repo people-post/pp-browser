@@ -29,6 +29,9 @@ inline constexpr int64_t kCallInviteWireSkewSlackMs = 120'000;
 
 enum class CallMediaMode : uint8_t { Voice = 0, Video = 1 };
 
+/** Where a call's new media epoch key came from: this device rotated it, or a peer sent it (V068: who waits to seal). */
+enum class CallMediaKeyOrigin : uint8_t { Taken = 0, Minted = 1 };
+
 enum class CallSessionState : uint8_t { Ringing = 0, Active = 1, Ended = 2 };
 
 enum class CallParticipantState : uint8_t {

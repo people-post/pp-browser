@@ -8,8 +8,8 @@
 namespace pbr {
 
 /**
- * The "Diag" channel: troubleshooting events a user may send to support (Me → Security → Send diagnostics).
- * `logs/diag.log` holds only these lines; the developer log (`pp-browser.log`) never leaves the device.
+ * The "Diag" channel: troubleshooting events, in `logs/diag.log` (only these lines). It goes with the developer log
+ * (`pp-browser.log`) only when the user sends their run logs (Settings → Advanced → Send run logs, test phase).
  * What may go in a line, and how to add an event: docs/contracts/DIAGNOSTICS.md.
  */
 inline logging::Logger& DiagLog() {

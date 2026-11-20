@@ -135,6 +135,13 @@ void CallDevice::OnHopReport(const HopReport& report) {
           RequestInboxSync();
         } else if constexpr (std::is_same_v<R, hop_report::LeaveWanted>) {
           (void)TopologyLeaveCall(r.call_id);
+        } else if constexpr (std::is_same_v<R, hop_report::ParticipantLost>) {
+          workflow_.NoteParticipantLost(r.call_id, r.identity);
+        } else if constexpr (std::is_same_v<R, hop_report::RejoinWanted>) {
+          if (auto asked = workflow_.RejoinCall(r.call_id); !asked) {
+            log().warning << "cut off from call_id=" << r.call_id
+                          << " and cannot ask back in: " << asked.error().message;
+          }
         } else {
           static_assert(!sizeof(R), "take every HopReport");
         }
@@ -206,6 +213,10 @@ void CallDevice::OnWorkflowReport(const WorkflowReport& report) {
         } else if constexpr (std::is_same_v<R, workflow_report::InboxSyncFromWake>) {
           if (delivery_.sync_inbox_from_wake) {
             delivery_.sync_inbox_from_wake(true);
+          }
+        } else if constexpr (std::is_same_v<R, workflow_report::MissedGroupCall>) {
+          if (delivery_.note_missed_group_call) {
+            delivery_.note_missed_group_call(r.thread_id, r.video);
           }
         } else {
           static_assert(!sizeof(R), "take every WorkflowReport");
@@ -774,6 +785,10 @@ void CallDevice::KickAnswererDirectMediaIfArmed(const std::string& call_id) {
 
 CallHopHealth CallDevice::HopHealth() const {
   return ActivePathsView().hop_health;
+}
+
+std::vector<std::string> CallDevice::QuietParticipants() const {
+  return ActivePathsView().quiet_participants;
 }
 
 CallLinkCounters CallDevice::MediaLinkCounters() const {

@@ -1,4 +1,5 @@
 #include "foundation/platform/Platform.h"
+#include "foundation/platform/PlatformLifecycleEvents.h"
 #include "foundation/runtime/AppLifecycle.h"
 
 #include <SDL3/SDL.h>
@@ -26,9 +27,14 @@ bool SDLCALL AppLifecycleWatch(void* /*userdata*/, SDL_Event* event) {
       break;
     case SDL_EVENT_DID_ENTER_BACKGROUND:
       AppLifecycle::OnDidEnterBackground();
+      PlatformLifecycleEvents::OnDidEnterBackground(); // after AppLifecycle: IsVisible() is already false
+      break;
+    case SDL_EVENT_WILL_ENTER_FOREGROUND:
+      PlatformLifecycleEvents::OnWillEnterForeground();
       break;
     case SDL_EVENT_DID_ENTER_FOREGROUND:
       AppLifecycle::OnDidEnterForeground();
+      PlatformLifecycleEvents::OnDidEnterForeground();
       break;
     default:
       break;

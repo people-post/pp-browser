@@ -20,4 +20,10 @@ struct ShareAnchor {
  */
 bool PlatformShareText(SDL_Window* window, const std::string& text, ShareAnchor anchor = {});
 
+/**
+ * Whether a system modal (a share sheet, the Files / photo picker) is presented over `window` now; never closed around.
+ * iOS only; false elsewhere. UI thread only.
+ */
+bool PlatformSystemModalUp(SDL_Window* window);
+
 } // namespace pbr

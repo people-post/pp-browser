@@ -4,6 +4,7 @@
 #include "common/PbrCompat.h"
 
 #include <algorithm>
+#include <cctype>
 
 namespace pbr {
 
@@ -46,8 +47,37 @@ void RankDirectoryHits(std::vector<mesh::DirectoryHit>& hits, const std::string&
   });
 }
 
+namespace {
+
+/**
+ * The typed query with its "account:" prefix in the form the directory knows: a Chinese keyboard types the colon as the
+ * full-width "：", and a phone may capitalise the first letter. Only the prefix is touched.
+ */
+std::string CleanTypedPeopleId(std::string_view query) {
+  std::string q = util::Trim(std::string(query));
+  constexpr std::string_view kWord = "account";
+  constexpr std::string_view kFullWidthColon = "\xEF\xBC\x9A"; // U+FF1A
+  if (q.size() <= kWord.size()) {
+    return q;
+  }
+  for (size_t i = 0; i < kWord.size(); ++i) {
+    if (std::tolower(static_cast<unsigned char>(q[i])) != kWord[i]) {
+      return q;
+    }
+  }
+  if (q[kWord.size()] == ':') {
+    return "account:" + q.substr(kWord.size() + 1);
+  }
+  if (q.compare(kWord.size(), kFullWidthColon.size(), kFullWidthColon) == 0) {
+    return "account:" + q.substr(kWord.size() + kFullWidthColon.size());
+  }
+  return q;
+}
+
+} // namespace
+
 std::optional<std::string> NormalizeExactPeopleId(std::string_view query) {
-  const std::string q = util::Trim(std::string(query));
+  const std::string q = CleanTypedPeopleId(query);
   if (q.rfind("account:", 0) == 0) {
     return q;
   }
@@ -65,7 +95,7 @@ std::optional<std::string> NormalizeExactPeopleId(std::string_view query) {
 }
 
 bool HasExactIdPrefix(std::string_view query) {
-  const std::string q = util::Trim(std::string(query));
+  const std::string q = CleanTypedPeopleId(query);
   return q.rfind("account:", 0) == 0;
 }
 

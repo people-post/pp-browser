@@ -440,6 +440,7 @@ void CallPresenter::Refresh() {
     active_group_id_ = surface.active->origin_group_id.value_or(std::string{});
     FillGuests(next, *backend, active_group_id_, local);
     AnnounceGuests(next);
+    AnnounceLostConnections(screen_, next);
     FillGroupInvite(next, util::NowUnixMs());
     MaybeAutoCamera(*backend, next);
   } else if (engine.open && !Leaving(engine.call_id)) {
@@ -615,8 +616,9 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   int joined = 0;
   if (auto participants = backend.ListJoinedParticipants(call_id); participants) {
     joined = static_cast<int>(participants->size());
-    s.group = joined > 2 || group_call;
+    s.group = group_look_.Observe(call_id, group_call, joined);
     s.members.reserve(participants->size());
+    const std::vector<std::string> quiet = backend.QuietParticipants(); // V067
     for (const CallParticipant& row : *participants) {
       CallScreen::Member member;
       member.identity = row.identity;
@@ -625,10 +627,14 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
       member.video_enabled = row.media.video_enabled;
       member.on_hold = row.media.on_hold;
       member.video_paused = row.media.video_paused;
+      member.reconnecting = !member.is_local && std::find(quiet.begin(), quiet.end(), row.identity) != quiet.end();
       s.members.push_back(std::move(member));
     }
   }
-  if (auto peer = backend.PeerIdentityForCall(call_id); peer && peer->has_value()) {
+  // The 1:1 name comes from the people joined now; the store's first remote row may be someone who left.
+  if (const CallScreen::Member* remote = FirstJoinedRemote(s.members)) {
+    s.peer_identity = remote->identity;
+  } else if (auto peer = backend.PeerIdentityForCall(call_id); peer && peer->has_value()) {
     s.peer_identity = **peer;
   }
 
@@ -712,6 +718,7 @@ void CallPresenter::WatchForNoMedia(CallUiBackend& backend, const CallScreen& s,
         std::count_if(s.members.begin(), s.members.end(), [](const CallScreen::Member& m) { return !m.is_local; }));
     sample.last_rx_ms = std::max(health.last_rx_audio_ms, health.last_rx_video_ms);
     sample.now_ms = now;
+    sample.participants_watched = backend.MediaPath() == CallMediaPath::Hop; // V067: each one, the last one too
   }
   if (!StepNoMediaWatch(no_media_watch_, sample)) {
     return;
@@ -754,7 +761,15 @@ void CallPresenter::MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s)
   auto allowed = backend.VideoAllowedForCall(active_call_id_);
   if (allowed && allowed->has_value() && **allowed && camera_offerable && answer_known) {
     auto_camera_pending_ = false;
-    if (!backend.Media().IsCameraEnabled()) {
+    // The user's intent, not an engine call: where the camera may open (not in the background, not before the app has
+    // settled) is CallLocalHold's rule (B225).
+    if (callbacks_.auto_camera_on) {
+      if (!(callbacks_.camera_wanted && callbacks_.camera_wanted())) {
+        log().info << "auto camera on call_id=" << active_call_id_;
+        callbacks_.auto_camera_on();
+      }
+    } else if (!backend.Media().IsCameraEnabled()) {
+      // A host without the hold (the headless call lab) has no one to take the wish: open the camera ourselves.
       log().info << "auto camera on call_id=" << active_call_id_;
       backend.SetLocalVideoEnabled(true, WhileAlive([call_id = active_call_id_](Roe<void> cam) {
                                      if (!cam) {
@@ -780,6 +795,9 @@ void CallPresenter::StepMedia(CallUiBackend& backend, const CallScreen& next, co
         // the roster already advertised.
         ReportCameraFailure(*failure);
         if (!backend.Media().CameraWaitingForDevice()) {
+          if (callbacks_.camera_closed_by_engine) {
+            callbacks_.camera_closed_by_engine(); // not our close: the user may open it again at once
+          }
           backend.SetLocalVideoEnabled(false);
         }
       }
@@ -806,6 +824,8 @@ void CallPresenter::StepMedia(CallUiBackend& backend, const CallScreen& next, co
     case CallScreen::Kind::None:
       if (active_call_id_.empty()) {
         media_frame_.Reset();
+        speaker_toggled_ms_ = 0; // the next call starts with no route change on record (B231)
+        AudioSession::ClearRouteChange();
         playout_stuck_.Reset();
         playout_call_id_.clear();
         EmitHoldStuckEnd(hold_stuck_.Finish(), hold_group_);
@@ -832,14 +852,20 @@ CallMediaFacts CallPresenter::ReadMediaFacts(CallUiBackend& backend, const CallS
   f.awaiting_sfu_recovery = backend.IsAwaitingSfuRecovery();
   f.on_hop = backend.MediaPath() == CallMediaPath::Hop;
   f.live_since_ms = backend.LiveSinceMs(s.call_id);
-  if (auto peer = backend.PeerMediaForCall(s.call_id); peer && peer->has_value()) {
+  if (const CallScreen::Member* remote = FirstJoinedRemote(s.members)) {
+    f.have_peer_row = true;
+    f.peer_camera_on = remote->video_enabled;
+    f.peer_on_hold = remote->on_hold;
+    f.peer_video_paused = remote->video_paused;
+  } else if (auto peer = backend.PeerMediaForCall(s.call_id); peer && peer->has_value()) {
     f.have_peer_row = true;
     f.peer_camera_on = (*peer)->video_enabled;
     f.peer_on_hold = (*peer)->on_hold;
     f.peer_video_paused = (*peer)->video_paused;
   }
   f.media_active = media.IsActive();
-  f.camera_on = media.IsCameraEnabled();
+  // What the user wants, not what the engine has opened yet (B225).
+  f.camera_on = callbacks_.camera_wanted ? callbacks_.camera_wanted() : media.IsCameraEnabled();
   f.encoder_available = media.VideoEncoderAvailable();
   f.path_allows_video = CallMediaAdaptation::CameraPathAllowsVideo(media.PathPressure(), media.UplinkBudget());
   f.has_remote_video = media.HasRemoteVideo();
@@ -852,6 +878,7 @@ CallMediaFacts CallPresenter::ReadMediaFacts(CallUiBackend& backend, const CallS
   f.hop = backend.HopHealth();
   f.reach_path_kind = backend.MediaPathKind();
   f.link_counters = backend.MediaLinkCounters();
+  f.audio_route_changed_ms = std::max(speaker_toggled_ms_, AudioSession::LastRouteChangeMs());
   return f;
 }
 
@@ -929,6 +956,9 @@ void CallPresenter::ActOnMedia(CallUiBackend& backend, const CallMediaScreen& fr
   if (frame.media.narrow_camera) {
     // V035: narrowed to voice with the camera on — off through the normal path, once.
     log().info << "camera off (video_allowed=false) call_id=" << frame.call_id;
+    if (callbacks_.camera_closed_by_policy) {
+      callbacks_.camera_closed_by_policy();
+    }
     backend.SetLocalVideoEnabled(false, WhileAlive([this](Roe<void> cam) {
                                    if (!cam) {
                                      FailText(cam.error().message);
@@ -1254,6 +1284,15 @@ void CallPresenter::AnnounceGuests(const CallScreen& s) {
     notice.kind = CallNotice::Kind::GuestJoined;
     notice.identity = member.identity;
     notice.brought_by = member.brought_by;
+    Notify(notice);
+  }
+}
+
+void CallPresenter::AnnounceLostConnections(const CallScreen& before, const CallScreen& after) {
+  for (const std::string& identity : LostConnection(before, after)) {
+    CallNotice notice;
+    notice.kind = CallNotice::Kind::ParticipantLost;
+    notice.identity = identity;
     Notify(notice);
   }
 }
@@ -1663,32 +1702,28 @@ void CallPresenter::ToggleMute() {
   }));
 }
 
-void CallPresenter::ToggleCamera() {
+bool CallPresenter::CanTurnCameraOn() {
   BindToMessaging();
   auto* backend = Backend();
   if (!backend || !backend->Available() || !backend->Media().IsActive()) {
-    return;
+    return false;
   }
   if (active_call_id_.empty()) {
     if (auto active = backend->ActiveLocalCall(); active && active->has_value()) {
       active_call_id_ = (*active)->call_id;
     }
   }
-  const bool next = !backend->Media().IsCameraEnabled();
-  if (next && !active_call_id_.empty()) {
+  if (!active_call_id_.empty()) {
     if (auto allowed = backend->VideoAllowedForCall(active_call_id_); !allowed || !allowed->has_value() || !**allowed) {
       Fail("call.error.video_not_allowed");
-      return;
+      return false;
     }
   }
-  backend->SetLocalVideoEnabled(next, WhileAlive([this](Roe<void> cam) {
-                                  if (!cam) {
-                                    // The backend's reason is English technical text: the log keeps it, the user sees a plain sentence.
-                                    log().info << "camera toggle failed: " << cam.error().message;
-                                    Fail("call.error.camera_failed");
-                                  }
-                                  Refresh();
-                                }));
+  return true;
+}
+
+void CallPresenter::ReportCameraToggleFailed() {
+  Fail("call.error.camera_failed");
 }
 
 void CallPresenter::FlipCamera() {
@@ -1733,6 +1768,7 @@ void CallPresenter::ToggleSpeaker() {
   BindToMessaging();
   auto* backend = Backend();
   const bool on = !SpeakerShownOn();
+  speaker_toggled_ms_ = util::NowUnixMs(); // the route change refills the jitter buffer: no weak-signal flash (B231)
   // Speaker = route only (not mute). Android: with media up the route changes around the mic — the engine closes it,
   // the route changes, it reopens — or the OS disconnects the open recording stream and SDL never gives it back.
   const bool reopen =

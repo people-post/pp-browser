@@ -135,6 +135,30 @@ TEST_F(ContactCardExchangeTest, AnInviteAddsThePersonAndFetchesTheirCardFromALis
   EXPECT_TRUE(kem_.Get(kind, bob_.account_id).has_value());
 }
 
+// A scanned QR code: the page shows the person as soon as they are stored, not after their devices answer (seconds).
+TEST_F(ContactCardExchangeTest, AnInvitesPersonIsReportedStoredBeforeTheirCardIsAsked) {
+  std::function<void(Roe<PeerCardRecord>)> pending; // the device has not answered yet
+  exchange_->SetCardFetcher([&](const std::string&, const std::string&, std::function<void(Roe<PeerCardRecord>)> done) {
+    pending = std::move(done);
+  });
+  exchange_->SetBlockingPost([](std::function<void()> task) { task(); });
+  std::optional<Contact> stored;
+  std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
+  exchange_->AddFromLocator(
+      ContactLocator{.account_id = bob_.account_id, .nickname = "bob", .devices = {"QmBobPhone"}},
+      [&](Roe<ContactCardExchange::LocatorAdded> added) { result = std::move(added); },
+      [&](const Contact& contact) { stored = contact; });
+  ASSERT_TRUE(stored.has_value());
+  auto kept = contacts_->FindByIdentity(bob_.account_id, mesh::ContactIdKind::Account);
+  ASSERT_TRUE(kept && *kept);
+  EXPECT_EQ(stored->id, (*kept)->id) << "in the address book already";
+  EXPECT_FALSE(result.has_value()) << "while the card is still being asked for";
+  ASSERT_TRUE(pending);
+  pending(Error("not reached"));
+  ASSERT_TRUE(result.has_value());
+  EXPECT_TRUE(*result);
+}
+
 TEST_F(ContactCardExchangeTest, AnInviteWithNoDeviceReachedStillAddsThePerson) {
   exchange_->SetCardFetcher([](const std::string&, const std::string&, std::function<void(Roe<PeerCardRecord>)> done) {
     done(Error("not reached"));

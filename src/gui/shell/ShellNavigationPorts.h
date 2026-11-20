@@ -26,6 +26,8 @@ struct ShellChromeSnapshot {
   bool auxiliary_open = false;
   /** Compact layout: the chat page is open over the list (false = the list or another page shows). */
   bool compact_chat_open = false;
+  /** A ring or a call screen (any mode, the minimised chip too) is up. */
+  bool call_shown = false;
 };
 
 /**
@@ -52,6 +54,7 @@ inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
   snap.auxiliary_open = state.auxiliary_open;
   // Under a hidden tab's page (phone Me / Contacts) the chat overlay is open but not on screen.
   snap.compact_chat_open = state.compact_chat_open && !ShellLayout::HiddenTabShown(state);
+  snap.call_shown = state.call_ring.active || state.call_in_progress.active;
   return snap;
 }
 
@@ -94,8 +97,19 @@ struct ShellNavigationPorts {
   std::function<void(int layer_id)> close_layer;
   /** The layer push_layer returned is still open (a sheet stacked over others learns it was closed). */
   std::function<bool(int layer_id)> has_layer;
+  /** `closed` runs once when layer `layer_id` is gone, by any path (X, scrim, swipe, tab switch, a tapped chat's
+   *  clear-out, code); not when the layer was already gone. Lets an owner tie a resource to the layer's lifetime. */
+  std::function<void(int layer_id, std::function<void()> closed)> watch_layer_closed;
   /** Closes every page sheet at once (a button in a sheet stacked over others leaves for another page). */
   std::function<void()> close_page_sheets;
+  /** A notification tap opens its chat: what is over it goes (ShellHost::ClearForTappedChat). */
+  std::function<void()> clear_for_tapped_chat;
+  /** The tapped chat (or the chat list) is open: the tap's cover goes (ShellHost::ReleaseTapCover). */
+  std::function<void()> release_tap_cover;
+  /** The tap's cover is armed (ShellHost::TapCoverArmed); unset = never. */
+  std::function<bool()> tap_cover_armed;
+  /** The chat about to open is the tapped one (ShellHost::SetTappedChatOpening): its page does not slide in. */
+  std::function<void(bool opening)> tapped_chat_opening;
   /**
    * Mobile / compact IME-replacement bottom panel (latch height, no scrim, remount-only).
    * set_bottom_chrome returns false when that presentation is unavailable (expanded desktop).

@@ -8,8 +8,10 @@ std::optional<CallSummaryPlan> PlanCallSummary(const CallSession& session,
                                                const std::vector<CallParticipant>& participants,
                                                const std::string& local_identity, const LiveCallEndReason reason,
                                                const int64_t now_ms) {
-  if (reason == LiveCallEndReason::Merged || reason == LiveCallEndReason::AnsweredElsewhere) {
-    // Gave way to the call both sides are now in, or another of our devices has the call: that one is the history.
+  if (reason == LiveCallEndReason::Merged || reason == LiveCallEndReason::AnsweredElsewhere ||
+      reason == LiveCallEndReason::Rejoining) {
+    // Gave way to the call both sides are now in, another of our devices has the call, or this device takes the same
+    // call again at once (V067 8): that one is the history.
     return std::nullopt;
   }
   const bool group = session.origin_group_id.has_value() && !session.origin_group_id->empty();
@@ -57,6 +59,17 @@ std::optional<CallSummaryPlan> PlanCallSummary(const CallSession& session,
   }
   plan.local_only = group || reason == LiveCallEndReason::Shutdown;
   return plan;
+}
+
+bool IsMissedGroupRing(const CallSession& session, const std::string& local_identity, const LiveCallEndReason reason,
+                       const bool was_ringing) {
+  const bool group = session.origin_group_id.has_value() && !session.origin_group_id->empty();
+  if (!group || !was_ringing || session.initiator_identity == local_identity) {
+    return false;
+  }
+  // Declined, answered elsewhere, merged, leaving by hand, shutdown and restart are not the ring running out.
+  return reason == LiveCallEndReason::Expired || reason == LiveCallEndReason::RemoteEnded ||
+         reason == LiveCallEndReason::Superseded;
 }
 
 std::string GroupCallSummaryMessageId(const std::string& call_id) {

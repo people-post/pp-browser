@@ -34,6 +34,7 @@ public:
   bool IsActive() const { return active_; }
 
 private:
+  static void NameChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void RegisterCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CopyIdCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ShareCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -57,6 +58,7 @@ private:
   std::string contact_locator_;
   ui::String error_;
   bool busy_ = false;
+  bool name_blank_ = true; // the Register button is off while the typed name is blank
 };
 
 } // namespace pbr

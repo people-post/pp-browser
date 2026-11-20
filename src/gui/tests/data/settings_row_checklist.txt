@@ -208,15 +208,18 @@ data-event-click="open_blocked_people()"	1	-	privacy	-	security
 {{i18n:settings.security.calls}}	1	-	privacy	-	security	
 {{i18n:settings.security.group_invites}}	1	-	privacy	-	security	
 data-class-settings-switch--on="security_biometric_on"	1	-	security	security_biometric_shown	security	
-data-event-click="ask_setting_help('settings.security.recovery')"	1	-	security	security_has_recovery_phrase	security	
-data-event-click="hide_recovery_phrase()"	2	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
+data-event-click="ask_setting_help('settings.security.recovery')"	2	-	security	security_has_recovery_phrase	security	
+data-event-click="hide_recovery_phrase()"	1	-	security	security_has_recovery_phrase;;recovery_shown	security	
 data-event-click="on_choose_unlock_grace()"	1	security	security	security_grace_shown	security	
-data-event-click="open_security_page('change_pin')"	1	-	security	show_change_pin	security	
-data-event-click="show_recovery_phrase()"	2	-	security	security_has_recovery_phrase;;recovery_phrase == ''	security	
+data-event-click="open_security_page('pin')"	1	-	security	show_change_pin	security	
+data-event-click="ask_setting_help('settings.help.topic.pin')"	1	-	security	show_change_pin	security	
+data-event-click="ask_setting_help('settings.help.topic.pin')"	1	-	security	!show_change_pin	security	
+data-event-click="show_recovery_phrase()"	1	-	security	security_has_recovery_phrase	security	
+data-event-click="show_recovery_phrase()"	1	-	security	security_has_recovery_phrase;;!recovery_shown	security	
 data-event-click="toggle_biometric()"	1	security	security	security_biometric_shown	security	
 {{i18n:settings.security.biometric.help}}	1	-	security	security_biometric_shown	security	
-{{i18n:settings.security.change_pin}}	1	-	security	show_change_pin	security	
-{{i18n:settings.security.default_hint}}	1	-	security	pin_protection_is_default	security	
+{{i18n:settings.security.pin_row}}	1	-	security	show_change_pin	security	
+{{pin_page_note}}	2	-	security	show_change_pin && security_can_change_pin	security	
 {{i18n:settings.security.grace.caption}}	1	-	security	security_grace_shown	security	
 {{i18n:settings.security.grace.title}}	1	-	security	security_grace_shown	security	
 {{i18n:settings.security.recovery}}	1	-	security	!security_has_recovery_phrase	security	
@@ -225,14 +228,15 @@ data-event-click="toggle_biometric()"	1	security	security	security_biometric_sho
 {{i18n:settings.security.protection_title}}	1	-	security	!show_change_pin	security	
 {{i18n:settings.security.protection}}	1	-	security	-	security	
 {{i18n:settings.security.recovery.help}}	1	-	security	security_has_recovery_phrase	security	
-{{i18n:settings.security.recovery.hide}}	2	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
+{{i18n:settings.security.recovery.done}}	1	-	security	security_has_recovery_phrase;;recovery_shown	security	
+{{i18n:settings.security.recovery.write_down}}	1	-	security	security_has_recovery_phrase;;recovery_shown	security	
 {{i18n:settings.security.recovery.none}}	1	-	security	!security_has_recovery_phrase && security_can_export_link	security	
-{{i18n:settings.security.recovery.shown_hint}}	1	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
-{{i18n:settings.security.recovery.show}}	2	-	security	security_has_recovery_phrase;;recovery_phrase == ''	security	
+{{i18n:settings.security.recovery.shown_hint}}	1	-	security	security_has_recovery_phrase;;recovery_shown	security	
+{{i18n:settings.security.recovery.show}}	1	-	security	security_has_recovery_phrase	security	
+{{i18n:settings.security.recovery.show}}	1	-	security	security_has_recovery_phrase;;!recovery_shown	security	
 {{pin_protection_status}}	1	-	security	!show_change_pin	security	
 {{pin_protection_status}}	1	-	security	-	security	
 {{pin_protection_status}}	1	-	security	show_change_pin	security	
-{{recovery_phrase}}	1	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
 {{security_biometric_label}}	1	-	security	security_biometric_shown	security	
 {{unlock_grace_label}}	1	-	security	security_grace_shown	security	
 data-event-click="ask_setting_help('settings.help.topic.account_copy')"	2	-	devices	security_has_recovery_phrase	security	
@@ -279,7 +283,7 @@ data-event-click="save_account_copy()"	2	-	devices	security_has_recovery_phrase	
 {{i18n:settings.security.devices.role_this}}	1	-	devices	own_devices_not_main && !own_devices_signed_out;;device.is_this_device	devices	
 {{i18n:settings.security.devices.role_this}}	1	-	devices	own_devices_shown;;device.is_this_device && !device.is_main	devices	
 {{i18n:settings.security.devices.signed_out}}	1	-	devices	own_devices_shown;;own_devices_signed_out	security	
-{{i18n:settings.security.devices.tap_hint}}	1	-	devices	own_devices_shown && !own_devices_not_main;;own_has_other_devices	devices	
+{{i18n:settings.security.devices.handover_hint}}	1	-	devices	own_devices_shown && !own_devices_not_main;;own_has_other_devices	devices	
 {{i18n:settings.security.devices.view_head}}	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
 {{i18n:settings.security.devices}}	1	-	devices	own_devices_shown	security	
 {{i18n:settings.security.devices}}	1	-	devices	own_devices_shown && !own_devices_not_main	security	
@@ -287,6 +291,7 @@ data-event-click="save_account_copy()"	2	-	devices	security_has_recovery_phrase	
 {{i18n:settings.security.link_device.copy_button}}	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
 {{i18n:settings.security.link_device.export_done}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
 {{i18n:settings.security.link_device.export}}	1	-	devices	security_can_export_link && !own_devices_not_main	devices	
+{{i18n:settings.security.link_device.handover_after}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
 {{i18n:settings.security.link_device.help}}	1	-	devices	-	devices	
 {{i18n:settings.security.link_device.phone_note}}	1	-	devices	-	devices	
 {{i18n:settings.security.link_device.reset_hint}}	1	-	devices	-	devices	
@@ -469,35 +474,19 @@ data-event-click="toggle_attachment_auto_wifi()"	1	storage	storage	storage_page 
 {{storage_tab_video_label}}	1	-	storage	storage_page == 'items'	storage	
 {{storage_total_label}}	1	-	storage	storage_page == 'main';;storage_ready	storage	
 data-class-settings-switch--on="show_advanced_settings == 'on'"	1	-	help	-	-	
-data-class-settings-switch--on="crash_reports_enabled == 'on'"	2	-	help	-	about,security	
-data-event-click="ask_setting_help('settings.security.crash_reports.label')"	2	-	help	-	about,security	
-data-event-click="copy_diagnostics_id()"	2	-	help	diagnostics_last_id != ''	about,security	
-data-event-click="open_diagnostics_help()"	2	-	help	show_diagnostics_send	about,security	
 data-event-click="open_privacy_policy()"	1	-	help	-	-	
 data-event-click="open_support_chat()"	1	-	help	support_visible	-	
 data-event-click="open_terms()"	1	-	help	-	-	
-data-event-click="send_diagnostics()"	2	-	help	show_diagnostics_send	about,security	
 data-event-click="tap_version()"	2	-	help	-	-	
 data-event-click="toggle_advanced_settings()"	1	about	help	-	-	
-data-event-click="toggle_crash_reports()"	2	security	help	-	about,security	
-data-help-key="troubleshooting/send-diagnostics"	2	-	help	show_diagnostics_send	about,security	
-{{app_name}}	1	-	help	-	about	
+{{app_build}}	2	-	help	-	about	
 {{app_version}}	2	-	help	-	about	
-{{diagnostics_last_label}}	2	-	help	diagnostics_last_id != ''	about,security	
-{{diagnostics_send_label}}	1	-	help	show_diagnostics_send	about,security	
-{{diagnostics_send_label}}	1	-	help	show_diagnostics_send;;diagnostics_sending	about,security	
-{{i18n:settings.about.improve.title}}	1	-	help	-	about	
+{{i18n:settings.about.build}}	2	-	help	-	about	
 {{i18n:settings.about.version}}	2	-	help	-	about	
 {{i18n:settings.help.privacy_policy}}	1	-	help	-	-	
 {{i18n:settings.help.show_advanced.hint}}	1	-	help	-	-	
 {{i18n:settings.help.show_advanced}}	1	-	help	-	-	
 {{i18n:settings.help.terms}}	1	-	help	-	-	
-{{i18n:settings.security.crash_reports.help}}	2	-	help	-	about,security	
-{{i18n:settings.security.crash_reports.label}}	2	-	help	-	about,security	
-{{i18n:settings.security.diagnostics.help}}	1	-	help	show_diagnostics_send	security	
-{{i18n:settings.security.diagnostics.send}}	1	-	help	show_diagnostics_send		
-{{i18n:settings.security.diagnostics.send_short}}	1	-	help	show_diagnostics_send;;!diagnostics_sending		
-{{i18n:settings.security.group.diagnostics}}	1	-	help	-	security	
 {{support_display_name}}	1	-	help	support_visible	-	
 {{support_subtitle}}	1	-	help	support_visible	-	
 data-class-settings-switch--on="call_diagnostics == 'on'"	1	-	tester	tester	appearance	
@@ -561,13 +550,24 @@ data-event-click="unpublish_cas(item_index)"	1	storage	tester	tester;;tester;;it
 {{i18n:settings.security.devices.this_device}}	1	-	profile	advanced && profile_peer_id != ''	profile	
 {{i18n:settings.auto_renew.short}}	1	-	profile	advanced	profile	
 data-event-click="show_setting_note('settings.auto_renew.short','settings.auto_renew.note')"	1	-	profile	advanced	profile	
-data-event-click="change_pin()"	1	-	security	show_change_pin && security_can_change_pin	security	
-{{i18n:pin.forget_warning}}	1	-	security	show_change_pin && security_can_change_pin	security	
-{{i18n:settings.security.change_pin}}	1	-	security	show_change_pin && security_can_change_pin	security	
-data-event-click="remove_pin()"	1	-	security	show_change_pin && security_can_change_pin && !pin_protection_is_default	security	
-data-event-click="remove_pin()"	1	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
-{{i18n:settings.security.remove_pin}}	1	-	security	show_change_pin && security_can_change_pin && !pin_protection_is_default	security	
-{{i18n:settings.security.remove_pin}}	1	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
+data-class-settings-switch--on="run_logs_collect"	1	-	advanced	advanced;;show_run_logs	advanced	
+data-class-settings-switch--on="run_logs_collect_crash"	1	-	advanced	advanced;;show_run_logs	advanced	
+data-event-click="toggle_collect_run_logs()"	1	-	advanced	advanced;;show_run_logs	advanced	
+data-event-click="toggle_collect_crash_logs()"	1	-	advanced	advanced;;show_run_logs	advanced	
+data-event-click="send_run_logs()"	1	-	advanced	advanced;;show_run_logs	advanced	
+{{i18n:settings.run_logs.collect}}	1	-	advanced	advanced;;show_run_logs	advanced	
+{{i18n:settings.run_logs.collect_crash}}	1	-	advanced	advanced;;show_run_logs	advanced	
+{{i18n:settings.run_logs.collect.help}}	1	-	advanced	advanced;;show_run_logs	advanced	
+{{i18n:settings.run_logs.send}}	1	-	advanced	advanced;;show_run_logs	advanced	
+{{i18n:settings.run_logs.nothing_yet}}	1	-	advanced	advanced;;show_run_logs;;!run_logs_sendable	advanced	
+{{i18n:settings.run_logs.send_short}}	1	-	advanced	advanced;;show_run_logs	advanced	
+data-event-click="change_pin()"	2	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
+data-event-click="change_pin()"	2	-	security	show_change_pin && security_can_change_pin;;pin_protection_is_default	security	
+{{i18n:pin.forget_warning}}	2	-	security	show_change_pin && security_can_change_pin	security	
+{{i18n:settings.security.change_pin}}	2	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
+data-event-click="remove_pin()"	2	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
+{{i18n:settings.security.remove_pin}}	2	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
+{{i18n:settings.security.set_custom_pin}}	2	-	security	show_change_pin && security_can_change_pin;;pin_protection_is_default	security	
 {{i18n:settings.security.unlock_to_change}}	1	-	security	show_change_pin && !security_can_change_pin && !pin_protection_not_setup	security	
 {{i18n:settings.privacy.blocked_help}}	1	-	privacy	-	security	
 {{i18n:settings.tester.banner}}	1	-	tester	tester	-	

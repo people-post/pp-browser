@@ -89,13 +89,15 @@ struct CallStoryView {
   // --- Before connect: the moving line, the steps and the rotating tips.
   bool connecting = false;
   /** The stage on screen (the ones before it are done). A group call: 0 the group is being called, 1 joined and the
-   *  line is being set up. A 1:1 call (the five steps, #172): 0 calling, 1 the other side answered, 2 matching the
-   *  fastest line (the time between the answer and live media), 3 setting up the encrypted channel, 5 everything
+   *  line is being set up. A 1:1 call (the five steps, #172): 0 calling, 1 the other side answered, 2 matching the most
+   *  secure line (the time between the answer and live media), 3 setting up the encrypted channel, 5 everything
    *  done, "connected" included (4 is never shown: connected is only ever the finished list). Follows the real
    *  stage, but each stage stays on screen at least kStepMinShowMs, and the finished list stays kListHoldMs. */
   int stage = 0;
   /** This device placed the call (the first step reads "Calling X…" then "X answered"). */
   bool outgoing = false;
+  /** A 1:1 call this device placed has rung kNoAnswerAfterMs without being answered: the page says so (presentation only). */
+  bool ring_unanswered_long = false;
 
   // --- Just connected (1:1): one line under the name for kResultShowMs, then it fades.
   bool result_shown = false;
@@ -138,6 +140,8 @@ public:
   static constexpr int64_t kStepMinShowMs = 450;
   /** After "connected" the finished list stays this long before the call page takes over. */
   static constexpr int64_t kListHoldMs = 1'500;
+  /** An outgoing 1:1 call nobody has answered after this long gets "They have not answered yet" on its page. */
+  static constexpr int64_t kNoAnswerAfterMs = 30'000;
   /** Stage values of a 1:1 call (CallStoryView::stage). */
   static constexpr int kStageCalling = 0;
   static constexpr int kStageAnswered = 1;

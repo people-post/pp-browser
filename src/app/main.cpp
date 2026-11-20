@@ -7,6 +7,7 @@
 #include "common/media/CallMediaHealth.h"
 #include "lib/calls/CallMobility.h"
 #include "foundation/data/AppPaths.h"
+#include "feature/settings/RunLogPrefs.h"
 #include "foundation/platform/IncomingLink.h"
 #include "gui/UiPerfTestController.h"
 #include "foundation/diagnostics/CrashDump.h"
@@ -18,6 +19,7 @@
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/PlatformHooks.h"
 #include "foundation/product/AppVersion.h"
+#include "foundation/product/BuildInfo.h"
 #include "foundation/product/DevTools.h"
 #include "foundation/product/ProductBranding.h"
 
@@ -133,8 +135,22 @@ int main(int argc, char** argv) {
                    << " level=" << LevelName(root.getLevel());
       pbr::LogFile::InstallMetrics(log_path);
       pbr::LogFile::InstallDiag(log_path);
+      // Installing only rotated: the old files go now, by the device's "Collect run logs" switch (7 days, or only
+      // this launch and the one before). Unreadable switch: nothing is deleted this launch (DEV/PLAN-send-run-logs.md).
+      // The switch lives in the default data root, where the log is: Settings reads the same one, not the session's
+      // data_dir (a config override only takes effect later, in Bootstrap).
+      pbr::RunLogPrefs::SetMachineDir(pbr::AppPaths::DataDir());
+      if (!pbr::RunLogPrefs::PruneAtStartup(pbr::RunLogPrefs::MachineDir(""), log_path,
+                                            pbr::RunLogsAllowed(pbr::kUiDemoBuild))) {
+        root.warning << "Old log files kept: the collect-run-logs setting could not be read";
+      }
     }
   }
+
+  // Which build this is, so a run log names it. WARNING like the header above, so it survives the desktop default
+  // level. The commit, tag and version are the build's own words, no user data (DiagLine takes no runtime text).
+  root.warning << "app.build version=" << pbr::AppVersionString() << " commit=" << pbr::BuildCommit()
+               << " tag=" << (*pbr::BuildTag() != '\0' ? pbr::BuildTag() : "-");
 
   if (!profile_override.empty()) {
     root.warning << "Using profile override '" << profile_override << "' (multi-profile UI is not shipped yet)";

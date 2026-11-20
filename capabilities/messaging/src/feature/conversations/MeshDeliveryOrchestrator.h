@@ -252,6 +252,8 @@ public:
   /** A verified notice from another device of our own account arrived (M023: time to sync the locker). */
   /** G016: a group ended by an answer or another device of ours: its chat gets the one unread count, preview and notice. */
   void SurfaceGroupDissolved(const std::string& thread_id);
+  /** A group call rang here and ended with the user neither answering nor declining: the chat's one unread count, preview and notice. */
+  void SurfaceMissedGroupCall(const std::string& thread_id, bool video);
   void SetOnSiblingNotice(std::function<void()> callback) { on_sibling_notice_ = std::move(callback); }
   /**
    * Our other devices hear that something of the account changed here (the account locker was written, M023): the
@@ -509,6 +511,8 @@ private:
    */
   std::optional<BackgroundNotice> NoticeGroupDissolved(const RelayReceiveOutcome& outcome);
   std::optional<BackgroundNotice> NoticeGroupDissolvedIn(const std::string& thread_id);
+  /** The unread count and the away user's notice for a local event whose preview is `text`. */
+  std::optional<BackgroundNotice> NoticeLocalEvent(const std::string& thread_id, const std::string& text);
   /** A live message that mentions us is marked (unless its chat is open); one that cannot be decided is held. */
   void NoteMention(const RelayReceiveOutcome& outcome, const std::string& local_account);
   struct HeldMention {

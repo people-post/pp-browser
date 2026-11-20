@@ -4,7 +4,7 @@
 
 ## Contracts and docs
 
-<!-- Wire / disk / HTTP format changed? Additive or breaking (docs/contracts/COMPATIBILITY.md). The docs/ files updated in this PR, and decisions whose Status line changed. "None" when nothing. -->
+<!-- Wire / disk / HTTP format changed? Additive or breaking (docs/contracts/COMPATIBILITY.md). Until release 1 ships, a breaking change names its item in projects/release-compatibility/INVENTORY.md § 4 (the freeze). The docs/ files updated in this PR, and decisions whose Status line changed. "None" when nothing. -->
 
 ## Depends on
 

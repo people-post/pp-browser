@@ -1,15 +1,18 @@
 <!-- The ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a): a page sheet over whatever page is open. The rows
-     are the shared AI conversation's last bubbles (or the settings "?" one-off question); the input row sends to it.
-     The sheet's own grab handle and X sit around this view; "Open in AI chat" is an icon left of the X. -->
+     are the shared AI conversation's last bubbles; the input row sends to it.
+     A settings "?" shows the PP 客服 chat instead (`support`, DEV/PLAN-help-to-support-panel.md): its title, its
+     privacy line, its waiting line, no AI card, no plus. The sheet's own grab handle and X sit around this view;
+     "Open in AI chat" (PP 客服: "Open in chat") is an icon left of the X. -->
 <div class="ask-ai" data-model="ask_ai">
   <div class="sheet-header sheet-header--two-buttons">
-    <p class="sheet-title">{{i18n:ask_ai.title}}</p>
-    <button class="ask-ai-open-chat" type="button" data-if="!once" title="{{i18n:ask_ai.open_in_chat}}"
+    <p class="sheet-title" data-if="!support">{{i18n:ask_ai.title}}</p>
+    <p class="sheet-title" data-if="support">{{i18n:support.entry.title}}</p>
+    <button class="ask-ai-open-chat" type="button" data-attr-title="open_chat_title"
             data-event-click="ask_ai_open_in_chat()">
       <span class="sheet-icon-disc"><svg src="../icons/v2/arrow-up-right.svg" width="14" height="14"></svg></span>
     </button>
   </div>
-  <p class="ask-ai-privacy">{{i18n:ask_ai.privacy}}</p>
+  <p class="ask-ai-privacy">{{privacy_text}}</p>
   <div class="ask-ai-scroll" id="ask-ai-scroll">
     <div class="ask-ai-intro" data-if="show_intro">
       <p class="ask-ai-intro-body"><span class="ask-ai-intro-lead">{{i18n:ask_ai.intro.lead}}</span><span>{{i18n:ask_ai.intro.body}}</span></p>
@@ -18,8 +21,8 @@
                 data-event-click="ask_ai_own_ai_help()"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></p>
       <button class="ask-ai-intro-ok" type="button" data-event-click="ask_ai_intro_seen()">{{i18n:ask_ai.intro.ok}}</button>
     </div>
-    <p class="ask-ai-section" data-if="once">{{i18n:ask_ai.once_title}}</p>
-    <p class="ask-ai-empty" data-if="!once && !show_intro && rows.size == 0 && queued_text == '' && !thinking && !error">{{i18n:ask_ai.empty}}</p>
+    <p class="ask-ai-empty" data-if="!support && !show_intro && rows.size == 0 && queued_text == '' && !thinking && !error">{{i18n:ask_ai.empty}}</p>
+    <p class="ask-ai-empty" data-if="support && rows.size == 0 && support_note == ''">{{i18n:ask_ai.support.empty}}</p>
     <div data-for="row : rows" class="message-row ask-ai-row"
          data-class-message-row-user="row.user" data-class-message-row-ai="!row.user">
       <div selectable="text" data-rml="row.content_rml"></div>
@@ -30,6 +33,9 @@
       <p class="queued-note muted">{{i18n:ask_ai.queued}}</p>
     </div>
     <p class="text muted thinking" data-if="thinking">{{i18n:chat.thinking}}</p>
+    <p class="text muted thinking ask-ai-support-waiting" data-if="support_waiting">{{i18n:ask_ai.support.waiting}}</p>
+    <p class="text muted thinking ask-ai-support-slow" data-if="support_slow">{{i18n:ask_ai.support.slow}}</p>
+    <p class="ask-ai-error ask-ai-support-note" data-if="support_note != ''">{{support_note}}</p>
     <p class="ask-ai-error" data-if="error">{{i18n:ask_ai.error}}</p>
     <button class="ask-ai-support" type="button" data-if="show_support"
             data-event-click="ask_ai_support()">{{i18n:ask_ai.ask_support}}</button>
@@ -51,13 +57,13 @@
     </div>
     <!-- The chat composer's row (Kenneth 2026-11-07: one composer everywhere), its classes and icons: inside the pill
          the bold plus (its Camera / Photos / File card) at the bottom left, the emoji key at the pill's right end, Send at the bottom right
-         once there is text or a picture. No microphone. A setting's "?" is explanation only: no plus. -->
+         once there is text or a picture. No microphone. PP 客服's chat (a settings "?"): no plus. -->
     <div class="prompt-composer-row ask-ai-input-row" data-class-ask-ai-input-row--text-only="!show_media">
       <div class="prompt-composer-pill">
         <textarea id="ask-ai-input" class="prompt-composer-input" rows="1" max-rows="4" maxlength="4000"
                   data-value="draft"></textarea>
         <!-- The engine draws no placeholder on phones: a label over the empty input. -->
-        <p class="prompt-composer-label" data-if="draft == ''">{{i18n:chat.ai_thread.placeholder}}</p>
+        <p class="prompt-composer-label" data-if="draft == ''">{{placeholder_text}}</p>
         <button class="prompt-attach-btn" type="button" data-if="show_media" data-event-click="ask_ai_attach()"
                 title="{{i18n:chat.attach_file}}">
           <svg class="prompt-icon-plus" src="../icons/v2/plus-bold.svg" width="24" height="24"></svg>
@@ -78,6 +84,6 @@
         <span class="prompt-send-disc"><svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg></span>
       </button>
     </div>
-    <p class="ask-ai-reminder">{{i18n:ask_ai.reminder}}</p>
+    <p class="ask-ai-reminder" data-if="!support">{{i18n:ask_ai.reminder}}</p>
   </div>
 </div>

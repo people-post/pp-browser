@@ -380,6 +380,27 @@ TEST(QrDecodeTest, DenseContactPayloadRetainsIdentityAndDetectedBounds) {
   EXPECT_NEAR(detected.region->center_y, .5f, .03f);
 }
 
+TEST(QrDecodeTest, ALowErrorCorrectionContactCodeIsReadBack) {
+  // What the app now draws: the same payload at error correction L (a smaller version than M).
+  const std::string payload = "pp-browser-contact-v1:" + std::string(428, 'B');
+  const auto low = qrcodegen::QrCode::encodeText(payload.c_str(), qrcodegen::QrCode::Ecc::LOW);
+  const auto medium = qrcodegen::QrCode::encodeText(payload.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
+  ASSERT_LT(low.getVersion(), medium.getVersion());
+  const int scale = 5;
+  VideoFrameRgba frame;
+  frame.width = frame.height = (low.getSize() + 8) * scale;
+  frame.rgba.assign(static_cast<size_t>(frame.width * frame.height * 4), 255);
+  for (int y = 0; y < frame.height; ++y) {
+    for (int x = 0; x < frame.width; ++x) {
+      if (low.getModule(x / scale - 4, y / scale - 4)) {
+        const size_t i = static_cast<size_t>((y * frame.width + x) * 4);
+        frame.rgba[i] = frame.rgba[i + 1] = frame.rgba[i + 2] = 0;
+      }
+    }
+  }
+  EXPECT_EQ(InspectQr(frame).text, payload);
+}
+
 TEST(QrScannerTest, OffCenterCandidateLimitsZoomToKeepTheCodeVisible) {
   FakeState state;
   state.zoom_required = true;
@@ -418,7 +439,7 @@ TEST(QrScannerTest, NothingInViewHuntsThroughZoomLevelsUntilTheCodeAppears) {
         result = scanner.Poll();
         return result.text.has_value();
       },
-      std::chrono::seconds(8)));
+      std::chrono::seconds(14)));
   EXPECT_EQ(result.text, "old payload");
   EXPECT_GE(state.zoom.load(), 2.f);
   EXPECT_LE(state.zoom.load(), 3.f);

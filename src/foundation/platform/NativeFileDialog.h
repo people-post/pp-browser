@@ -50,6 +50,30 @@ void ReleasePickedFile(const std::string& path);
 void SaveFileAs(SDL_Window* window, const std::string& suggested_name, std::string bytes,
                 std::function<void(bool saved)> done);
 
+/** What the save dialog of ChooseSavePath answered. */
+struct SavePathResult {
+  enum class Kind {
+    /** `path` is where the user wants the file (it may exist: the dialog asked about replacing it). */
+    Chosen,
+    Cancelled,
+    /** No dialog could be shown (Linux without a file-dialog portal, iOS / Android). */
+    Unavailable,
+  };
+  Kind kind = Kind::Cancelled;
+  std::string path;
+};
+
+/**
+ * Asks where to save a file, writing nothing: the system save dialog offering `suggested_name` in `default_dir`
+ * (empty: the dialog's own folder). Desktop only; iOS answers Unavailable at once. `done` runs exactly once and may run
+ * on any thread. Call on the UI thread.
+ */
+void ChooseSavePath(SDL_Window* window, const std::string& suggested_name, const std::string& default_dir,
+                    std::function<void(SavePathResult)> done);
+
+/** The user's Downloads folder (SDL's user folder, else ~/Downloads when it exists); empty when there is none. */
+std::string DefaultSaveFolder();
+
 /** A picked file made readable by ordinary file calls (see ImportPickedFile). */
 struct ImportedPick {
   /** What to read: the picked path itself, or the private copy of a content:// URI. */

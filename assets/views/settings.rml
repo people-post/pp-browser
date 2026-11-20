@@ -188,6 +188,9 @@
     </div>
 
     <div class="settings-detail-body nav-bar-scroll stack">
+      <div class="settings-section settings-section--grouped settings-mock stack" data-if="security_page == 'pin'">
+{{include:settings_security_pin}}
+      </div>
       <div class="settings-section settings-section--grouped settings-mock stack" data-if="security_page == 'transfer'">
 {{include:settings_security_transfer}}
       </div>
@@ -217,6 +220,18 @@
         <p class="text muted settings-help group-foot" data-if="choice_foot != ''">{{choice_foot}}</p>
       </div>
       <p class="text muted group-foot" data-if="status != ''">{{status}}</p>
+    </div>
+
+    <!-- The recovery phrase (security_page 'recovery'): a page of its own over the section. The title is the bar's (one title per page); the lead stays
+         on top, the grid scrolls if the screen is short, and the one button stays at the bottom. -->
+    <div class="recovery-page" data-if="security_page == 'recovery'">
+      <p class="recovery-lead">{{i18n:settings.security.recovery.write_down}}</p>
+      <div class="recovery-scroll" data-for="slot : recovery_page">
+{{include:settings_security_recovery}}
+      </div>
+      <div class="recovery-bottom">
+        <button class="btn btn-primary recovery-done" type="button" data-event-click="hide_recovery_phrase()">{{i18n:settings.security.recovery.done}}</button>
+      </div>
     </div>
   </div>
 </div>

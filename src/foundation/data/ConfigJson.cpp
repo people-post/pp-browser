@@ -782,6 +782,8 @@ Object MachinePrefsToObject(const MachinePreferences& prefs) {
   object.set("window", WindowPrefsToObject(prefs.window));
   object.set("safe_area", SafeAreaToObject(prefs.safe_area));
   object.set("display", DisplayPrefsToObject(prefs.display));
+  object.set("collect_run_logs", prefs.collect_run_logs);
+  object.set("collect_crash_logs", prefs.collect_crash_logs);
   return object;
 }
 
@@ -800,6 +802,12 @@ void MachinePrefsFromObject(const Object& object, MachinePreferences& prefs) {
   }
   if (const Object* display = object.getObject("display")) {
     DisplayPrefsFromObject(*display, prefs.display);
+  }
+  if (auto collect = object.getIf<bool>("collect_run_logs")) {
+    prefs.collect_run_logs = *collect;
+  }
+  if (auto collect = object.getIf<bool>("collect_crash_logs")) {
+    prefs.collect_crash_logs = *collect;
   }
 }
 
@@ -820,6 +828,8 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
     object.set("pin_digits", static_cast<int64_t>(*prefs.pin_digits));
   }
   object.set("recovery_phrase_seen", prefs.recovery_phrase_seen);
+  object.set("recovery_reminder_dismissals", static_cast<int64_t>(prefs.recovery_reminder_dismissals));
+  object.set("recovery_reminder_dismissed_ms", prefs.recovery_reminder_dismissed_ms);
   object.set("unlock_grace_minutes", static_cast<int64_t>(prefs.unlock_grace_minutes));
   object.set("auto_renew_registration", prefs.auto_renew_registration);
   object.set("show_notifications", prefs.show_notifications);
@@ -895,6 +905,10 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
                          ? std::optional<int>(static_cast<int>(*pin_digits))
                          : std::nullopt;
   prefs.recovery_phrase_seen = object.getIf<bool>("recovery_phrase_seen").value_or(false);
+  prefs.recovery_reminder_dismissals =
+      static_cast<int>(std::clamp<int64_t>(ReadI64(object, "recovery_reminder_dismissals").value_or(0), 0, 2));
+  prefs.recovery_reminder_dismissed_ms =
+      std::max<int64_t>(0, ReadI64(object, "recovery_reminder_dismissed_ms").value_or(0));
   const int64_t grace_minutes = ReadI64(object, "unlock_grace_minutes").value_or(15);
   prefs.unlock_grace_minutes = (grace_minutes == 0 || grace_minutes == 5 || grace_minutes == 15 ||
                                 grace_minutes == 60 || grace_minutes == kUnlockGraceAlways)

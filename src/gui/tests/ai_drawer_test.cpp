@@ -755,6 +755,27 @@ TEST_F(ShellDrawerTest, TheShellRootLiftIsGoneWhenTheKeyboardOrEmojiSheetGoes) {
   EXPECT_EQ(bottom(), rest_chats) << "emoji sheet gone: the lift is dropped";
 }
 
+// iPad: the on-screen keyboard lifts #shell-root by its cover in both layouts — the phone layout in a narrow window and
+// the wide one full screen — so a chat's composer sits right above it.
+TEST_F(ShellDrawerTest, TheKeyboardLiftsTheShellInBothLayouts) {
+  ui::Element* root = ById("shell-root");
+  ASSERT_NE(root, nullptr);
+  const auto bottom = [root]() { return root->GetProperty<float>("bottom"); };
+  host_.SelectNavTab(NavTab::Sessions);
+  for (const LayoutMode mode : {LayoutMode::Compact, LayoutMode::Expanded}) {
+    host_.State().layout_mode = mode;
+    ShellLayout::SyncLayoutModeString(host_.State());
+    host_.SetSafeAreaInsetsFromPrefs(0, 0);
+    host_.RefreshSafeAreaInsets(context_);
+    host_.SyncLayout();
+    Settle();
+    const float rest = bottom();
+    host_.SetSafeAreaInsetsFromPrefs(0, 400); // a landscape iPad keyboard
+    Settle();
+    EXPECT_EQ(bottom(), rest + 400.f) << ShellLayout::LayoutModeString(mode);
+  }
+}
+
 // TODO #204 (real ShellHost): the AI Home does not follow the keyboard / emoji sheet. Its mascot and card stay where they
 // are, the keyboard covers the chips; only when it would cover the card the block moves up by exactly the overlap
 // (card bottom = keyboard top - 8). Every other page keeps the full lift.

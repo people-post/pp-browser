@@ -10,6 +10,7 @@
 #include "feature/presenters/ThreadSearchSession.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "foundation/platform/PlatformShareFile.h"
 #include "gui/chat/AgentTurnController.h"
 #include "gui/chat/AskAiPanel.h"
 #include "foundation/runtime/BackgroundActivity.h"
@@ -184,6 +185,11 @@ public:
   /** The vault locked, or another tab was opened: a recording is thrown away and a clip stops. */
   void CancelVoice();
   void FinalizeThreadDisplay();
+  /**
+   * An attachment sent into `thread_id` from outside this page (Settings → Send run logs) finished or failed: when that
+   * chat is the open one its rows and its Retry chip are read again.
+   */
+  void RefreshAfterOutsideSend(const std::string& thread_id);
   /** Sends `text` in the open chat as if the user typed it (a settings "?" asking PP 客服). */
   void SendTypedText(const std::string& text) { SendUserText(text); }
   /** Put `text` in the open chat's composer and focus it; the user sends it (Settings "?" → PP Support). */
@@ -195,6 +201,9 @@ public:
   void OpenReactors(const std::string& message_id);
   /** The profile preferences changed (a contact starred, Edit Home): Home's widgets are drawn again. */
   void OnHomePrefsChanged();
+  /** The Chats page card "save your recovery phrase" (RecoveryReminder.h); "Later" counts toward its one repeat. */
+  bool RecoveryReminderShows();
+  void OnRecoveryReminderLater();
   void OnSessionsTabActivated();
   /**
    * Phone: back from Settings / Contacts to the chat overlay left open under them (ShellHost
@@ -214,11 +223,11 @@ public:
    * continues from then on (DEV/PLAN-ui-batch5-ask-ai.md 5a).
    */
   void StartNewAiChat() { OnNewChat(); }
-  /** A setting's "?" on a phone: the ask-AI panel opens with `question` asked as a one-off. False elsewhere. */
-  bool AskAiOnce(const std::string& question) { return ask_ai_.OpenOnce(question); }
-  /** The question to PP 客服 (SettingsCommands::ask_support), for the panel's "Ask PP Support". */
-  void BindAskSupport(std::function<Roe<void>(const std::string& question)> ask_support) {
-    ask_support_ = std::move(ask_support);
+  /** A setting's "?" on a phone: the sheet shows the PP 客服 chat and asks `question` there. False elsewhere. */
+  bool AskSupportPanel(const std::string& question) { return ask_ai_.OpenSupport(question); }
+  /** The PP 客服 chat found or made, not opened (Application's EnsureSupportThread), for the sheet's PP 客服 mode. */
+  void BindEnsureSupport(std::function<Roe<std::string>()> ensure_support) {
+    ensure_support_ = std::move(ensure_support);
   }
   /** Home's Security widget opens Me → that page (SettingsController::OpenSection). */
   void BindOpenSettingsSection(std::function<void(const std::string& section_id)> open) {
@@ -251,6 +260,19 @@ public:
   // from Home first switches to the Chats tab, which rebuilds those containers -- the reference would dangle before
   // SelectThread hashes it (B161: SIGSEGV in PrefsOf's hash lookup, phones only).
   void OnSelectThread(std::string thread_id);
+  /**
+   * A notification tap's chat (a banner's, or the one a message alert's message synced into): opened with nothing
+   * over it (ShellHost::ClearForTappedChat); then the tap's cover goes once the chat is selected. With the tap's cover
+   * armed: messaging not ready yet keeps the cover (bounded by its hold) for the later route; a chat that is gone (or
+   * cannot open) shows the chat list. Without the cover: only the selection, as before (a missing chat does nothing). A
+   * ring or call screen up: only the selection (the call keeps its screen).
+   */
+  void OpenTappedThread(std::string thread_id);
+  /**
+   * A fresh message / call alert tap whose message already synced (before the tap, or before this wiring): its chat
+   * opens now instead of waiting for a sync that already happened. Messaging ready only.
+   */
+  void RouteSyncedTap();
   /** Rebind messaging ports after a full profile data wipe/reinit. */
   void OnProfileDataReset();
   /** Called when messaging becomes ready (app-wired). */
@@ -258,6 +280,8 @@ public:
   void OnMeshReady();
   /** App-wired from ShellHost layout sync (see Application::WireShellPresentationEvents). */
   void OnShellLayoutSynced();
+  /** App-wired from ShellHost: the window changed size (a rotation). */
+  void OnViewportResized();
   /** Phone Chats list swipe: runs the same item the long-press menu offers. */
   void OnSessionSwipeAction(const std::string& thread_id, SessionSwipeAction action);
   /** A tap on the phone AI dot: the ask-AI panel over the current page (DESIGN-pp-ui §8.14). */
@@ -448,10 +472,21 @@ private:
   /**
    * A thread's transcript window drawn as bound rows, AI question images decorated. Our messages carry their send mark
    * (#210); when a clock shown now turns red on its own, the chat is redrawn then (ArmSendMarkRedraw).
+   * `remember_drawn` (the chat view's own build, not a read for the AI): drawn_attachments_ is rebuilt from these rows.
    */
   std::vector<MessageDisplayRow> BuildMessageRows(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
-                                                  std::optional<int64_t> newest_inclusive);
+                                                  std::optional<int64_t> newest_inclusive, bool remember_drawn = false);
   void OpenAttachment(const std::string& message_id);
+  /**
+   * A tap on an attachment card (open_attachment), as AttachmentExit decides: a computer saves a file (the save
+   * dialog), everything else opens as before (OpenAttachment).
+   */
+  void TapAttachment(const std::string& message_id);
+  /** One message's attachment as a draw would describe it, looked up now (UI thread, one read); none: not an attachment. */
+  std::optional<DrawnAttachment> LookUpAttachment(const std::string& message_id);
+  /** Remembers how `message`'s attachment row is drawn now (`view`), for a later tap or menu (drawn_attachments_). */
+  void RememberDrawnAttachment(const ThreadMessage& message, const TranscriptAttachmentView& view, bool voice_bubbles,
+                               int voice_max_seconds);
   /**
    * A tap on a picture (or its placeholder): a spinner now, then the system viewer with the full picture (found from
    * the message, never the bubble's preview); its own share / save are the way out.
@@ -470,6 +505,9 @@ private:
   bool IsContactCard(const std::string& message_id) const override;
   bool IsCallRecord(const std::string& message_id) const override;
   void AddContactFromCard(const std::string& message_id) override;
+  std::optional<DrawnAttachment> DrawnAttachmentOf(const std::string& message_id) const override;
+  void SaveAttachmentAs(const std::string& message_id) override;
+  void ShareAttachment(const std::string& message_id, ui::Vector2i position) override;
   /**
    * Reply / Ask AI: shows `text` as the quote bar above the composer; the next send carries it as a quote.
    * `draft_prefix` ("@ai " for Ask AI) is put into the input with the caret after it.
@@ -548,6 +586,18 @@ private:
   int attach_menu_y_ = 120;
   /** Attachments being opened right now (an Open decrypts on a worker; a second tap waits for the first). */
   std::unordered_set<std::string> opening_message_ids_;
+  /**
+   * The open chat's attachment rows as BuildMessageRows last drew them (kind, downloaded, the name to offer): a tap or
+   * a menu decides with them on the UI thread, nothing decrypted or read from the store. Emptied for another chat.
+   */
+  std::unordered_map<std::string, DrawnAttachment> drawn_attachments_;
+  std::string drawn_attachments_thread_;
+  /** Desktop "Save as" (one at a time): its own state, apart from opening_message_ids_ (neither stops the other). */
+  std::unique_ptr<AttachmentSaveFlow> save_flow_;
+  /** Phones' "Share…" of a received attachment (the system share sheet); nothing is deleted after it. */
+  std::unique_ptr<AttachmentShareFlow> share_flow_;
+  /** The system share sheet for a file (PlatformShareFile by default, set in the constructor); tests may swap it. */
+  std::function<bool(const std::string& path, const std::string& mime, ShareAnchor anchor)> share_file_;
   PhotoPreviewTracker photo_preview_;
   std::string pending_chip_thread_;
   /** The chat the attachment in flight (preparing, uploading, or the failed one) belongs to. */
@@ -619,7 +669,6 @@ private:
   void OnSearchMessagesChanged();
   void OnAgentTurnEnded(const std::string& thread_id) override;
   bool AskAiPanelShows(const std::string& thread_id) const override { return ask_ai_.Shows(thread_id); }
-  void OnAskAiOnceReply(const AgentEvent& event) override { ask_ai_.OnOnceReply(event); }
   // The ask-AI panel's side of the screen (AskAiPanelHost).
   bool AskAiCompact() const override;
   void AskAiOpenEmoji(std::function<void(const std::string& emoji)> insert) override;
@@ -632,15 +681,21 @@ private:
   int AskAiPushSheet(const PaneSpec& spec, std::function<void()> on_closed) override;
   void AskAiCloseSheet(int layer_id) override;
   void AskAiOpenInChat(const std::string& thread_id) override;
-  void AskAiSupport(const std::string& question, std::function<void()> on_opened) override;
+  void AskAiLater(std::function<void()> fn) override;
   void AskAiRunAction(const std::string& thread_id, const std::string& entry_id, int action_index) override;
   void AskAiOpenLink(const std::string& thread_id, const std::string& entry_id, int link_index) override {
     OpenChatLinkIn(thread_id, entry_id, link_index);
   }
-  void AskAiOpenUrl(const std::string& url) override { OpenTrustedUrl(url); } // a one-off AI answer's link
   bool AskAiIntroSeen() const override;
   void AskAiMarkIntroSeen() override;
   void AskAiToast(const std::string& text) override { ShowToast(text); }
+  bool AskAiMessagingReady() const override { return messaging_ready_ && facade_; }
+  Roe<std::string> AskAiEnsureSupport() override;
+  Roe<void> AskAiSendToSupport(const std::string& thread_id, const std::string& text) override;
+  std::vector<SupportMessage> AskAiSupportMessages(const std::string& thread_id, size_t limit) override;
+  void AskAiSyncInbox() override;
+  bool AskAiAttentive() const override;
+  void AskAiMarkRead(const std::string& thread_id) override;
   /** ChatMenusHost: "⋯ → Ask AI" (phones, chats with people). */
   bool AskAiPanelAvailable() const override { return AskAiCompact(); }
   void OpenAskAiPanel() override { (void)ask_ai_.Open(AskAiEntry::ChatMenu); }
@@ -742,6 +797,8 @@ private:
   ChatState chat_;
   ShellState shell_;
   bool messaging_ready_ = false;
+  /** Whether this device holds a recovery phrase: one vault read per messaging session / identity change. */
+  std::optional<bool> recovery_phrase_present_;
   /**
    * One up per WireMessagingBindings (and when messaging goes away): a messaging-ready task's result is stored only
    * when the session it started in is still this one (MessagingReadyTasks).
@@ -853,7 +910,7 @@ private:
   AgentTurnController agent_{*this, chat_, chat_links_, widgets_, working_set_, shell_feedback_};
   /** The ask-AI half sheet over any page (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
   AskAiPanel ask_ai_{*this, agent_};
-  std::function<Roe<void>(const std::string& question)> ask_support_;
+  std::function<Roe<std::string>()> ensure_support_;
   std::function<void(const std::string& section_id)> open_settings_section_;
   FlowCoordinatorPorts flow_coordinator_;
   /** The screen's menus (long press / right-click, header buttons, pickers' fallbacks). */

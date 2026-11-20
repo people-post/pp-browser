@@ -151,6 +151,19 @@ TEST_F(CallVideoTilesTest, RosterTilesCopyOnlyNewFramesPerStream) {
   EXPECT_EQ(tiles.HeldSeq(CallVideoTileKind::Peer, 102), 8u);
 }
 
+// V067: someone gone quiet (reconnecting) keeps their last frame in the engine a while; it is not shown as live.
+TEST_F(CallVideoTilesTest, AReconnectingPersonsLastPictureIsNotShown) {
+  media.streams = {{101, 4}};
+  std::vector<CallRosterParticipantState> roster = {Row(0, true), Row(101)};
+  ASSERT_EQ(SubmitCallRosterTiles(media, tiles, roster), std::vector<uint32_t>{101});
+  roster[1].reconnecting = true;
+  EXPECT_TRUE(SubmitCallRosterTiles(media, tiles, roster).empty());
+  EXPECT_FALSE(roster[1].has_remote_video) << "the avatar shows, dimmed";
+  EXPECT_EQ(tiles.HeldSeq(CallVideoTileKind::Peer, 101), 0u) << "the tile let go of the frozen frame";
+  roster[1].reconnecting = false; // frames came back
+  EXPECT_EQ(SubmitCallRosterTiles(media, tiles, roster), std::vector<uint32_t>{101});
+}
+
 TEST_F(CallVideoTilesTest, SomeoneNewOnTheSameStreamWithTheSameNumberIsStillShown) {
   media.streams = {{101, 4}};
   std::vector<CallRosterParticipantState> roster = {Row(0, true), Row(101)};

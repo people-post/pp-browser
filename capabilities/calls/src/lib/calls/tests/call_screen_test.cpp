@@ -325,6 +325,61 @@ TEST(NoMediaWatchTest, AnotherCallStartsAFreshCount) {
   EXPECT_TRUE(StepNoMediaWatch(watch, other));
 }
 
+TEST(NoMediaWatchTest, OnTheHopEachParticipantsWatchDecidesInstead) {
+  // V067: on the hop each participant is watched on their own and the last one going quiet leaves this device alone
+  // (the 2 min wait), so the call-wide count never ends the call there.
+  NoMediaWatch watch;
+  NoMediaSample on_hop = LiveGroup(0, 9'000);
+  on_hop.participants_watched = true;
+  EXPECT_FALSE(StepEverySecond(watch, 10'000, 200'000, on_hop));
+}
+
+// --- V067: who lost connection ----------------------------------------------------------------------
+
+CallScreen InCallWith(std::vector<CallScreen::Member> members) {
+  CallScreen s;
+  s.kind = CallScreen::Kind::InCall;
+  s.call_id = "call:g";
+  s.group = true;
+  s.members = std::move(members);
+  return s;
+}
+
+CallScreen::Member Person(const std::string& identity, const bool reconnecting = false, const bool local = false) {
+  CallScreen::Member m;
+  m.identity = identity;
+  m.reconnecting = reconnecting;
+  m.is_local = local;
+  return m;
+}
+
+TEST(LostConnectionTest, SomeoneReconnectingWhoIsGoneLostConnection) {
+  const CallScreen before =
+      InCallWith({Person("account:me", false, true), Person("account:bob", true), Person("account:carol")});
+  const CallScreen after = InCallWith({Person("account:me", false, true), Person("account:carol")});
+  EXPECT_EQ(LostConnection(before, after), std::vector<std::string>{"account:bob"});
+}
+
+TEST(LostConnectionTest, SomeoneLeavingWhileLiveJustLeft) {
+  const CallScreen before = InCallWith({Person("account:me", false, true), Person("account:bob")});
+  const CallScreen after = InCallWith({Person("account:me", false, true)});
+  EXPECT_TRUE(LostConnection(before, after).empty());
+}
+
+TEST(LostConnectionTest, StillReconnectingOrBackIsNotLost) {
+  const CallScreen before = InCallWith({Person("account:me", false, true), Person("account:bob", true)});
+  EXPECT_TRUE(LostConnection(before, before).empty());
+  EXPECT_TRUE(LostConnection(before, InCallWith({Person("account:me", false, true), Person("account:bob")})).empty());
+}
+
+TEST(LostConnectionTest, OurCallEndingOrAnotherCallSaysNothing) {
+  const CallScreen before = InCallWith({Person("account:me", false, true), Person("account:bob", true)});
+  EXPECT_TRUE(LostConnection(before, CallScreen{}).empty()) << "our part is over: its own notice says why";
+  CallScreen other = InCallWith({Person("account:me", false, true)});
+  other.call_id = "call:h";
+  EXPECT_TRUE(LostConnection(before, other).empty());
+}
+
 // --- V053: waiting alone in a group call ------------------------------------------------------------
 
 CallScreen WaitingAlone(const int64_t until) {

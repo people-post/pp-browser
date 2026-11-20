@@ -705,7 +705,24 @@ std::optional<GroupMembershipControlType> GroupMembershipCodec::ControlTypeFromM
 
 bool GroupMembershipCodec::IsHiddenInDirectThread(const ThreadMessage& message) {
   const auto type = ControlTypeFromMessage(message);
-  return type && *type != GroupMembershipControlType::GroupInvite;
+  return type && !IsNewsInDirectThread(*type);
+}
+
+bool GroupMembershipCodec::IsNewsInDirectThread(const GroupMembershipControlType type) {
+  return type == GroupMembershipControlType::GroupInvite;
+}
+
+SendRelayOptions GroupMembershipCodec::DirectSendOptions(const GroupMembershipControlType type,
+                                                         std::string payload_json, const std::string& sender) {
+  SendRelayOptions options;
+  options.generation = "system";
+  options.content_type = ChatContentType::System;
+  options.payload_json = std::move(payload_json);
+  options.sender_contact_id = sender;
+  const bool news = IsNewsInDirectThread(type);
+  options.update_preview = news;
+  options.wake = news; // the invitation alerts the invitee; the rest of the exchange stays silent
+  return options;
 }
 
 Roe<GroupInvitePayload> GroupMembershipCodec::DecodeInviteFromMessage(const ThreadMessage& message) {

@@ -26,6 +26,46 @@ bool CallDiagnosticsEnabled(bool profile_pref) {
   return profile_pref || CallDiagnosticsCliOverride();
 }
 
+double CallBufferPressureGate::Step(const double engine_pressure, const int64_t now_ms,
+                                    const int64_t route_changed_ms) {
+  if (last_step_ms_ != 0 && now_ms - last_step_ms_ > kCallPressurePauseMs) {
+    // Evaluation paused (a ring over the call, another screen, the app in the background): the pressure seen before the
+    // pause says nothing about the time since, so its persistence timer and the grade held for a window start over.
+    poor_since_ms_ = 0;
+    held_ = 0.0;
+  }
+  last_step_ms_ = now_ms;
+
+  if (route_changed_ms > seen_route_change_ms_) {
+    seen_route_change_ms_ = route_changed_ms;
+    // A change whose settle time has already run out arms nothing. One that arrives inside a window does not restart
+    // it, and none starts until kCallRouteChangeCooldownMs after the last window ended.
+    const bool fresh = now_ms - route_changed_ms < kCallRouteChangeSettleMs;
+    const bool idle = now_ms >= window_end_ms_;
+    const bool rested = window_end_ms_ == 0 || route_changed_ms >= window_end_ms_ + kCallRouteChangeCooldownMs;
+    if (fresh && idle && rested) {
+      window_end_ms_ = route_changed_ms + kCallRouteChangeSettleMs;
+    }
+  }
+  if (now_ms < window_end_ms_) {
+    // Settling: keep showing what was graded before. A call that was already Poor stays Poor, its timer running.
+    if (held_ < kCallPressurePoor) {
+      poor_since_ms_ = 0; // a spike that began in the settle time is timed from its end
+    }
+    return held_;
+  }
+  if (engine_pressure < kCallPressurePoor) {
+    poor_since_ms_ = 0;
+    held_ = engine_pressure;
+    return held_;
+  }
+  if (poor_since_ms_ == 0) {
+    poor_since_ms_ = now_ms;
+  }
+  held_ = now_ms - poor_since_ms_ >= kCallBufferPressureSustainMs ? engine_pressure : kCallPressureFair;
+  return held_;
+}
+
 CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
   CallMediaHealthView out;
   out.engine = in.engine;
@@ -40,7 +80,8 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
     out.path_kind = "direct";
   }
 
-  const double pressure = std::max(in.engine.path_pressure, in.hop.path_pressure);
+  const double pressure =
+      std::max(in.engine_pressure_for_quality.value_or(in.engine.path_pressure), in.hop.path_pressure);
   const int64_t now = in.now_ms;
   const int64_t rx_age = (in.engine.last_rx_audio_ms > 0 && now > in.engine.last_rx_audio_ms)
                              ? (now - in.engine.last_rx_audio_ms)
@@ -65,13 +106,13 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
     out.quality = CallPathQuality::Poor;
     out.asymmetry = CallAudioAsymmetry::ReceivingOnly;
     out.quality_bars = 1;
-  } else if (pressure >= 0.75) {
+  } else if (pressure >= kCallPressurePoor) {
     out.quality = CallPathQuality::Poor;
     out.quality_bars = 1;
-  } else if (pressure >= 0.4) {
+  } else if (pressure >= kCallPressureFair) {
     out.quality = CallPathQuality::Fair;
     out.quality_bars = 2;
-  } else if (pressure >= 0.15) {
+  } else if (pressure >= kCallPressureGood) {
     out.quality = CallPathQuality::Good;
     out.quality_bars = 3;
   } else {
@@ -210,7 +251,9 @@ std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_m
       << " asymmetry=" << static_cast<int>(v.asymmetry) << " streams=" << v.engine.stream_count
       << " rx_frames=" << v.engine.rx_audio_frames << " tx_frames=" << v.engine.tx_audio_frames
       << " rx_video=" << v.engine.rx_video_frames << " tx_video=" << v.engine.tx_video_frames
-      << " preview=" << v.engine.preview_frames << " enc_ms=" << static_cast<int64_t>(v.engine.encode_ms_avg) << "/"
+      << " preview=" << v.engine.preview_frames << " vstage=" << v.engine.video_stage
+      << " vstage_ms=" << v.engine.video_stage_ms << " vfetch_ms=" << v.engine.video_fetch_ms
+      << " enc_ms=" << static_cast<int64_t>(v.engine.encode_ms_avg) << "/"
       << static_cast<int64_t>(v.engine.encode_ms_max) << " video_bps=" << v.engine.video_target_bps
       << " underrun=" << v.engine.playout_underruns << " plc=" << v.engine.plc_frames << " fec=" << v.engine.fec_frames
       << " audio_io=" << v.engine.audio_io << " io_underrun=" << v.engine.io_underruns

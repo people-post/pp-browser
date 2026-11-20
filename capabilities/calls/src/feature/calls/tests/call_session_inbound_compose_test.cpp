@@ -235,6 +235,12 @@ protected:
     };
     delivery.resolve_peer_thread = [](const std::string& peer) -> Roe<std::string> { return "dm:" + peer; };
     delivery.sync_inbox_from_wake = [this](bool /*force*/) { ++inbox_syncs_; };
+    delivery.resolve_group_thread = [](const std::string& group_id) -> std::optional<std::string> {
+      return "thread:" + group_id;
+    };
+    delivery.note_missed_group_call = [this](const std::string& thread_id, bool video) {
+      missed_group_calls_.push_back({thread_id, video});
+    };
     delivery.grant_call_peers = [this](std::vector<std::string> accounts) {
       granted_.insert(granted_.end(), accounts.begin(), accounts.end());
     };
@@ -305,9 +311,11 @@ protected:
   }
 
   Roe<ThreadMessage> MakeInviteMessage(const std::string& call_id, std::optional<int64_t> expires_at = std::nullopt,
-                                       std::optional<bool> video_allowed = std::nullopt) {
+                                       std::optional<bool> video_allowed = std::nullopt,
+                                       std::optional<std::string> group_id = std::nullopt) {
     CallInviteDetail invite;
     invite.call_id = call_id;
+    invite.origin_group_id = group_id;
     invite.inviter_identity = "account:peer";
     invite.invitee_identity = local_identity_;
     invite.media_mode = CallMediaMode::Voice;
@@ -500,6 +508,8 @@ protected:
   std::vector<bool> invite_urgent_;
   std::string last_sent_invite_payload_;
   std::vector<ThreadMessage> summaries_;
+  /** Each group call that rang here unanswered and undeclined, as the device told the app (thread, video). */
+  std::vector<std::pair<std::string, bool>> missed_group_calls_;
   /** V062: bind the group standing port (set before SetUp); the roster it reads; whether one is held here. */
   bool with_group_standing_ = false;
   bool holds_roster_ = true;
@@ -569,6 +579,100 @@ TEST_F(CallSessionInboundComposeTest, AReplayedInviteForACallAlreadyEndedRingsNo
   auto pending = reads_->TopPendingInvite();
   ASSERT_TRUE(pending);
   EXPECT_FALSE(pending->has_value());
+}
+
+/** Lets the ring of `call_id` run out, then sweeps. */
+#define EXPIRE_RING_AND_SWEEP(call_id)                                      \
+  do {                                                                      \
+    auto pending_ = sessions_->LoadPendingInvite(call_id, local_identity_); \
+    ASSERT_TRUE(pending_ && pending_->has_value());                         \
+    (*pending_)->expires_at = 1;                                            \
+    ASSERT_TRUE(sessions_->UpsertPendingInvite(**pending_));                \
+    OnCallsOwner([&] {                                                      \
+      csm_->SweepExpiredInvites();                                          \
+      return Roe<void>{};                                                   \
+    });                                                                     \
+  } while (0)
+
+// A group call someone else started rang here and ran out: the chat is told once, however often the sweep runs.
+TEST_F(CallSessionInboundComposeTest, AGroupRingThatRunsOutIsReportedMissedOnce) {
+  const std::string call_id = "call:group-ring-out";
+  auto msg = MakeInviteMessage(call_id, std::nullopt, std::nullopt, "g1");
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+  EXPIRE_RING_AND_SWEEP(call_id);
+  ASSERT_EQ(missed_group_calls_.size(), 1u);
+  EXPECT_EQ(missed_group_calls_[0].first, "thread:g1");
+  EXPECT_FALSE(missed_group_calls_[0].second);
+  OnCallsOwner([&] {
+    csm_->SweepExpiredInvites();
+    return Roe<void>{};
+  });
+  EXPECT_EQ(missed_group_calls_.size(), 1u);
+}
+
+// The "already reported" memory is for duplicates that come within moments: it keeps the most recent ones only.
+TEST_F(CallSessionInboundComposeTest, TheMissedGroupRingMemoryIsBounded) {
+  const size_t rings = CallSessionWorkflow::kMissedGroupRingsRemembered + 5;
+  for (size_t i = 0; i < rings; ++i) {
+    const std::string call_id = "call:group-bound-" + std::to_string(i);
+    auto msg = MakeInviteMessage(call_id, std::nullopt, std::nullopt, "g1");
+    ASSERT_TRUE(msg);
+    ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+    EXPIRE_RING_AND_SWEEP(call_id);
+  }
+  EXPECT_EQ(missed_group_calls_.size(), rings) << "each ring was reported once";
+  size_t remembered = 0;
+  OnCallsOwner([&] { remembered = device_->Workflow().MissedGroupRingsRememberedForTest(); });
+  EXPECT_EQ(remembered, CallSessionWorkflow::kMissedGroupRingsRemembered);
+}
+
+TEST_F(CallSessionInboundComposeTest, AGroupRingTheOthersEndedWhileItRangIsMissed) {
+  const std::string call_id = "call:group-ring-ended";
+  auto msg = MakeInviteMessage(call_id, std::nullopt, std::nullopt, "g1");
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+  CallEndedDetail ended;
+  ended.call_id = call_id;
+  auto detail = CallControlCodec::EncodeEnded(ended);
+  ASSERT_TRUE(detail);
+  auto end_msg = CallControlCodec::BuildSystemMessage("thread:g1", CallControlType::CallEnded, "Call ended", *detail,
+                                                      "account:peer");
+  ASSERT_TRUE(end_msg);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*end_msg, "account:peer"); }));
+  EXPECT_EQ(missed_group_calls_.size(), 1u);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*end_msg, "account:peer"); })); // a replay
+  EXPECT_EQ(missed_group_calls_.size(), 1u);
+}
+
+TEST_F(CallSessionInboundComposeTest, ADeclinedGroupRingIsNotMissed) {
+  const std::string call_id = "call:group-ring-declined";
+  auto msg = MakeInviteMessage(call_id, std::nullopt, std::nullopt, "g1");
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->DeclineInvite(call_id); }));
+  EXPECT_TRUE(missed_group_calls_.empty());
+}
+
+TEST_F(CallSessionInboundComposeTest, AOneToOneRingThatRunsOutIsNotReportedHere) {
+  const std::string call_id = "call:one-ring-out";
+  auto msg = MakeInviteMessage(call_id);
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+  EXPIRE_RING_AND_SWEEP(call_id);
+  EXPECT_TRUE(missed_group_calls_.empty()) << "the caller's summary message is the 1:1 path";
+}
+
+TEST_F(CallSessionInboundComposeTest, AGroupInviteTooLateToRingIsMissedOnce) {
+  const std::string call_id = "call:group-stale";
+  auto msg = MakeInviteMessage(call_id, std::nullopt, std::nullopt, "g1");
+  ASSERT_TRUE(msg);
+  const int64_t created = 1'000;
+  const int64_t relay_now = created + kDefaultCallInviteTtlMs + kCallInviteRelayAgeSlackMs + 1;
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer", created, relay_now); }));
+  EXPECT_EQ(missed_group_calls_.size(), 1u);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer", created, relay_now); }));
+  EXPECT_EQ(missed_group_calls_.size(), 1u) << "a replay of the invite counts nothing more";
 }
 
 TEST_F(CallSessionInboundComposeTest, DeclineClearsPendingInvite) {
@@ -2035,6 +2139,27 @@ TEST_F(CallSessionInboundComposeTest, MuteAndVideoControlsOnActiveMedia) {
   EXPECT_EQ(sent_control_messages_, before_pause);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalVideoPaused(false, 0); }));
 
+  // B225: SetLocalVideoEnabled, open or close, ends any "paused" (the roster row and the manager's own mark): the
+  // others are never left on "Camera paused" by a user's close, nor by an open that did not come through the pause's
+  // own undo.
+  for (const bool enabled : {false, true}) {
+    auto row = sessions_->FindParticipant(call_id, local_identity_);
+    ASSERT_TRUE(row && row->has_value());
+    (*row)->media.video_paused = true;
+    ASSERT_TRUE(sessions_->UpsertParticipant(**row));
+    auto set = OnCallsOwner([&] { return csm_->SetLocalVideoEnabled(enabled, 0); });
+    if (!set) {
+      EXPECT_TRUE(enabled) << "a close always succeeds; only a headless camera open may fail";
+      continue;
+    }
+    EXPECT_FALSE(sessions_->FindParticipant(call_id, local_identity_).value()->media.video_paused)
+        << "SetLocalVideoEnabled(" << enabled << ") clears video_paused";
+    // The manager's mark is gone too: the undo of a pause that is no longer in force opens nothing.
+    ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalVideoEnabled(false, 0); }));
+    ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalVideoPaused(false, 0); }));
+    EXPECT_FALSE(media_->IsCameraEnabled());
+  }
+
   // Camera may fail headless — gate must still accept video_allowed before device open.
   auto enable = OnCallsOwner([&] { return csm_->SetLocalVideoEnabled(true, 0); });
   if (enable) {
@@ -2361,6 +2486,38 @@ TEST_F(CallSessionInboundComposeTest, AloneInAGroupCallWithAnUnreadableRosterIsA
   Sweep();
   EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall) << "left on one failed read (the live call still has the peer)";
   EXPECT_GT(device_->AloneUntilMs(call_id), 0) << "still waited on: asked again";
+}
+
+// V067: a participant the group path takes as gone (nothing from them for the gone window) is a leave — the key
+// rotates without them (V003) and the call goes on; the last one taken as gone leaves this device waiting alone (V053).
+TEST_F(CallSessionInboundComposeTest, AParticipantLostIsTakenAsGoneAndTheLastOneLeavesUsWaitingAlone) {
+  const std::string call_id = "call:group-lost";
+  // Ids that sort after this device's: it is the key's coordinator (the lowest id among those left).
+  ASSERT_NO_FATAL_FAILURE(SeedConnectedCall(call_id, /*group=*/true, {"account:~lost", "account:~stays"}));
+  ASSERT_LT(local_identity_, std::string("account:~stays"));
+  OnCallsOwner([&] { device_->Workflow().NoteParticipantLost(call_id, "account:~lost"); });
+  EXPECT_EQ(LivePeers(call_id), std::vector<std::string>{"account:~stays"}) << "out of the live call";
+  EXPECT_EQ(MediaEpoch(call_id), 2u) << "the one taken as gone keeps no working key";
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall) << "a group's call goes on";
+  EXPECT_EQ(device_->AloneUntilMs(call_id), 0) << "not alone";
+  auto lost = sessions_->FindParticipant(call_id, "account:~lost");
+  ASSERT_TRUE(lost && lost->has_value());
+  EXPECT_EQ((*lost)->state, CallParticipantState::Left) << "the roster says so";
+
+  OnCallsOwner([&] { device_->Workflow().NoteParticipantLost(call_id, "account:~lost"); });
+  EXPECT_EQ(MediaEpoch(call_id), 2u) << "already out: a late report changes nothing";
+
+  OnCallsOwner([&] { device_->Workflow().NoteParticipantLost(call_id, "account:~stays"); });
+  EXPECT_GT(device_->AloneUntilMs(call_id), 0) << "the last other gone: the alone wait starts";
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall) << "waiting for others, not ended";
+}
+
+TEST_F(CallSessionInboundComposeTest, ThisDeviceIsNeverTakenAsLostByItself) {
+  const std::string call_id = "call:group-lost-self";
+  ASSERT_NO_FATAL_FAILURE(SeedConnectedCall(call_id, /*group=*/true, {"account:peer", "account:peer2"}));
+  OnCallsOwner([&] { device_->Workflow().NoteParticipantLost(call_id, local_identity_); });
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall);
+  EXPECT_EQ(MediaEpoch(call_id), 1u);
 }
 
 } // namespace

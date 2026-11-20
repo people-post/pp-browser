@@ -2,6 +2,7 @@
 
 #include "lib/messaging/GroupTypes.h"
 #include "common/thread/ThreadTypes.h"
+#include "lib/delivery/SendRelayOptions.h"
 
 #include "common/Error.h"
 #include "common/Value.h"
@@ -167,6 +168,17 @@ public:
    * except the invitation itself, which is the one card the invitee answers in the direct chat.
    */
   static bool IsHiddenInDirectThread(const ThreadMessage& message);
+  /**
+   * Whether a membership event of `type` is news to its reader in the direct chat it travels in (preview, unread,
+   * notice, and the push its send wakes them with): the invitation only — the rest is hidden there.
+   */
+  static bool IsNewsInDirectThread(GroupMembershipControlType type);
+  /**
+   * How a membership event of `type` is sent to the direct chat it travels in (`payload_json`: its system payload;
+   * `sender`: our account): a system row, in our preview and waking its reader only when it is news there.
+   */
+  static SendRelayOptions DirectSendOptions(GroupMembershipControlType type, std::string payload_json,
+                                            const std::string& sender);
   static Roe<GroupInvitePayload> DecodeInviteFromMessage(const ThreadMessage& message);
 
   static Roe<GroupPolicy> DecodeGroupPolicy(const std::string& policy_json);

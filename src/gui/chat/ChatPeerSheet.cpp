@@ -2,6 +2,7 @@
 
 #include "common/thread/ThreadTypes.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "feature/presenters/StrangerChat.h"
 #include "gui/UserFeedback.h"
 #include "lib/people/PeerDisplayLabel.h"
 #include "common/directory/DirectoryJson.h"
@@ -192,12 +193,57 @@ std::vector<ContextMenuAction> ChatPeerSheet::DirectActions(const Thread& thread
   return actions;
 }
 
+void ChatPeerSheet::AddOpenStranger() {
+  ConversationsFacade* facade = host_.Facade();
+  if (!host_.MessagingIsReady() || !facade) {
+    return;
+  }
+  auto thread = facade->GetActiveThread();
+  if (!thread || !IsStrangerDirectChat(thread->kind, facade->ResolveThreadLabel(*thread)) ||
+      thread->peer_identity_value.empty()) {
+    return;
+  }
+  const PeerDisplayLabel label = facade->ResolveThreadLabel(*thread);
+  auto added = presenter_.AddPeerToContacts(thread->peer_identity_value);
+  if (!added) {
+    UserFeedback::Fail(Tr(added.error().message));
+    host_.NotifySurfaceChanged();
+    return;
+  }
+  if (contacts_notify_.refresh) {
+    contacts_notify_.refresh(); // the contact lists show the new person at once
+  }
+  const std::string name = label.peer_name.empty() ? Tr("chat.stranger.this_person") : label.peer_name;
+  host_.ShowToast(Tr("contacts.added", {{"name", name}}));
+  host_.AfterThreadPrefsChanged(); // the title becomes the plain name and the bar goes
+}
+
+void ChatPeerSheet::BlockOpenStranger() {
+  ConversationsFacade* facade = host_.Facade();
+  if (!host_.MessagingIsReady() || !facade) {
+    return;
+  }
+  auto thread = facade->GetActiveThread();
+  if (!thread) {
+    return;
+  }
+  const PeerDisplayLabel label = facade->ResolveThreadLabel(*thread);
+  if (!IsStrangerDirectChat(thread->kind, label) || thread->peer_identity_value.empty()) {
+    return;
+  }
+  const std::string name = label.peer_name.empty() ? Tr("chat.stranger.this_person") : label.peer_name;
+  RunBlockFlow(host_, presenter_, contacts_notify_, std::nullopt, thread->peer_identity_value, name, true);
+}
+
 void ChatPeerSheet::AddToContacts(const std::string& peer_id) {
   auto added = presenter_.AddPeerToContacts(peer_id);
   if (!added) {
     UserFeedback::Fail(Tr(added.error().message));
     host_.NotifySurfaceChanged();
     return;
+  }
+  if (contacts_notify_.refresh) {
+    contacts_notify_.refresh(); // the contact lists show the new person at once
   }
   if (contacts_notify_.select_contact) {
     contacts_notify_.select_contact(*added);

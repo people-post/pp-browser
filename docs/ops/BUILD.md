@@ -76,6 +76,13 @@ cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
+### Build identity (commit and tag)
+
+About shows which build this is under the version ("Build a1b2c3d4"; zh "构建 a1b2c3d4"), and every launch logs `app.build version=… commit=… tag=…` ([LOGGING.md](../architecture/LOGGING.md#developer-log-vs-shareable-lines)).
+
+- **Commit**: made on **every build**, not at configure time (`pp_build_info_generate`, CMake script mode in `src/foundation/product/GenBuildInfo.cmake`: no shell, so it is the same on macOS, iOS, Android, Windows and Linux). It writes `BuildInfoGenerated.cpp` into the build tree only when its text changed, so an incremental build recompiles that one file. Value: `git rev-parse --short=8 HEAD`, plus `-dirty` when tracked files have uncommitted changes (`git status --porcelain --untracked-files=no`); `unknown` when git or the repository is not there.
+- **Tag** (e.g. `internal/141`): `-DPP_BUILD_TAG=<tag>`, or the `PP_BUILD_TAG` environment variable of the build when the cache variable is empty (so `scripts/platform/*_build.sh` and Gradle pick it up without passing it). Empty: no tag, About shows only the commit. Only `A-Za-z0-9._/+-` are kept. The release workflows are not ours: they can set `PP_BUILD_TAG` in the environment of their build step.
+
 ### Owned forks (RmlUi / libp2p)
 
 Use only these `PP_BROWSER_*` knobs. Do not pass raw fork cache vars (`RMLUI_*`, `PACKAGE_MANAGER`, …) — product profiles under `src/lib/pp_lib_*.cmake` set those.
@@ -283,7 +290,7 @@ export ANDROID_NDK_HOME=/path/to/android/ndk
 ### Build and install
 
 ```bash
-./scripts/platform/android_build.sh apk          # assembleDebug
+./scripts/platform/android_build.sh apk          # assembleDebug, arm64-v8a only (PP_ANDROID_ABIS=arm64-v8a,x86_64 for more)
 ./scripts/platform/android_build.sh apk-release  # assembleRelease (unsigned; debug keystore)
 ./scripts/platform/android_build.sh install      # installDebug (requires adb device/emulator)
 ```

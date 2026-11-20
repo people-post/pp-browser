@@ -34,6 +34,17 @@ struct MachinePreferences {
   WindowPrefs window;
   SafeAreaInsets safe_area;
   DisplayPrefs display;
+  /**
+   * Settings → Advanced → "Collect run logs" (DEV/PLAN-send-run-logs.md): on keeps 7 days / 50 MB of logs, off only
+   * this launch's and the one before. Device-wide like the log directory (every profile and backend shares it),
+   * hence here and not in a profile's preferences. Optional on disk (absent = off); the schema version stays.
+   */
+  bool collect_run_logs = false;
+  /**
+   * Settings → Advanced → "Collect crash logs": when on, Send run logs also carries the crash records. Device-wide,
+   * optional on disk (absent = off). Not the old per-profile `crash_reports_enabled` (its upload stays dormant).
+   */
+  bool collect_crash_logs = false;
 };
 
 struct ProfilePreferences {
@@ -54,6 +65,9 @@ struct ProfilePreferences {
   std::optional<int> pin_digits;
   /** The user has opened their recovery phrase on Me → Security once (Home's Security widget; device-only). */
   bool recovery_phrase_seen = false;
+  /** The Chats page's "save your recovery phrase" card: how often it was put off (0-2; it comes back once after 7 days) and when last. Device-only. */
+  int recovery_reminder_dismissals = 0;
+  int64_t recovery_reminder_dismissed_ms = 0;
   /**
    * PIN grace window (#21): minutes after the last foreground use during which a cold start or call skips the PIN.
    * One of 0 (every time), 5, 15, 60, or -1 (kUnlockGraceAlways: until the phone restarts, A015); anything else reads back as 15. Device-only, never synced.

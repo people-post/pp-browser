@@ -85,7 +85,8 @@
           <p class="text muted settings-help group-foot" data-if="attachment_download_policy == 'always_auto' && !attachment_auto_toggles_visible">{{i18n:settings.storage.manage.policy_foot.always_auto_desktop}}</p>
           <p class="text muted settings-help group-foot" data-if="attachment_download_policy == 'on_demand'">{{i18n:settings.storage.manage.policy_foot.on_demand}}</p>
 
-          <div class="group-card">
+          <!-- The two reset actions: their own group at the very end, apart from the download options above. -->
+          <div class="storage-danger-zone group-card">
             <button class="group-row group-row--danger" type="button" data-event-click="reset_chats()">
               <span class="group-row-body">
                 <span class="group-row-label"><span class="group-row-text">{{i18n:settings.storage.reset_chats}}</span></span>

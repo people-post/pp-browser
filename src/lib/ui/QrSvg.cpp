@@ -16,12 +16,33 @@ namespace {
 /** The blank modules a scanner needs around the code. */
 constexpr int kQuietZone = 4;
 
+/**
+ * On screen: error correction LOW, the least redundancy, so the fewest modules and the biggest ones for the same drawn
+ * size. Every scanner reads any level, and the payload is unchanged, so this is not a format anyone has to agree on.
+ */
+constexpr qrcodegen::QrCode::Ecc kScreenEcc = qrcodegen::QrCode::Ecc::LOW;
+
+/**
+ * The saved / shared picture: MEDIUM, because it passes through photo libraries, chat apps, JPEG recompression and
+ * printing, which damage modules that a screen code never meets.
+ */
+constexpr qrcodegen::QrCode::Ecc kImageEcc = qrcodegen::QrCode::Ecc::MEDIUM;
+
 } // namespace
 
-Roe<std::string> QrSvgContent(const std::string& text) {
+int QrPhoneDisplayDp(const float page_width_dp, const float page_height_dp) {
+  const int by_width = std::clamp(static_cast<int>(page_width_dp) - 2 * kQrPhoneSideMarginDp, 1, kQrPhoneMaxDp);
+  const int by_height = std::max(kQrPhoneMinDp, static_cast<int>(page_height_dp) - kQrPhoneReservedHeightDp);
+  return std::min(by_width, by_height);
+}
+
+Roe<std::string> QrSvgContent(const std::string& text, QrShape* shape) {
   try {
-    const qrcodegen::QrCode code = qrcodegen::QrCode::encodeText(text.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
+    const qrcodegen::QrCode code = qrcodegen::QrCode::encodeText(text.c_str(), kScreenEcc);
     const int size = code.getSize();
+    if (shape != nullptr) {
+      *shape = QrShape{code.getVersion(), size, static_cast<int>(text.size())};
+    }
     const int span = size + 2 * kQuietZone;
     std::ostringstream svg;
     svg << "<rect width=\"" << kQrSvgViewBox << "\" height=\"" << kQrSvgViewBox << "\" fill=\"#ffffff\"/>";
@@ -43,7 +64,7 @@ Roe<std::string> QrSvgContent(const std::string& text) {
 
 Roe<std::vector<uint8_t>> QrPngBytes(const std::string& text, const int target_px) {
   try {
-    const qrcodegen::QrCode code = qrcodegen::QrCode::encodeText(text.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
+    const qrcodegen::QrCode code = qrcodegen::QrCode::encodeText(text.c_str(), kImageEcc);
     const int span = code.getSize() + 2 * kQuietZone;
     const int scale = std::max(1, target_px / span);
     const int side = span * scale;

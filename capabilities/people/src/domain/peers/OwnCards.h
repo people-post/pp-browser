@@ -86,8 +86,9 @@ public:
   /**
    * The account card: the newest this device knows, re-issued when this device's entry or the nickname changed
    * (or to join / start fresh, per `card_intent`). An error (kSignedOutMessage) when this device is signed out, and
-   * (kAwaitingMainCardMessage) on a linked device whose kept card does not verify: only the main device re-issues it
-   * (its relays are the main device's to give). With no card kept and no intent to start one, nothing is issued: it
+   * (kAwaitingMainCardMessage) on a linked device whose kept card does not verify (stepped by profile.db 7 → 8)
+   * while our relays are asked for a newer one; once every relay answered without one, the same list is re-issued
+   * here with this device's relays (M026: keeping the card signed is any listed device's). With no card kept and no intent to start one, nothing is issued: it
    * asks our relays for our card (at most once per backoff) and says kAwaitingOwnCardMessage, or kNoOwnCardMessage
    * once every relay that answered keeps none.
    */
@@ -203,7 +204,7 @@ private:
   std::string verified_signature_;       // under mutex_: the kept card last found signed
   OwnCardLookup lookup_;                 // under mutex_
   std::function<void()> on_recovery_changed_;
-  OwnCardRecovery recovery_ = OwnCardRecovery::None; // under mutex_: only meaningful while no card is kept
+  OwnCardRecovery recovery_ = OwnCardRecovery::None; // under mutex_: while no card is kept, or a stepped one
   bool recovery_in_flight_ = false;                  // under mutex_
   int64_t recovery_retry_at_ms_ = 0;                 // under mutex_
   int64_t recovery_backoff_ms_ = 0;                  // under mutex_

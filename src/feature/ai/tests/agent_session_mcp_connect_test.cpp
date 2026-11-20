@@ -165,7 +165,7 @@ TEST_F(McpConnectOnFirstUseTest, ConfiguringConnectsNothing) {
 }
 
 // Streamed brief questions in two chats (switching between them, each opening its session), "@ai" in a person chat,
-// a Home explanation and an app-action button: none needs MCP tools, so none connects.
+// a Home question and an app-action button: none needs MCP tools, so none connects.
 TEST_F(McpConnectOnFirstUseTest, QuestionsWithoutMcpToolsConnectNothing) {
   Make();
   ASSERT_EQ(sessions_->SubmitToThread("t1", "hello"), SubmitOutcome::Started);
@@ -174,7 +174,7 @@ TEST_F(McpConnectOnFirstUseTest, QuestionsWithoutMcpToolsConnectNothing) {
   auto events = WaitForTurns({"t1", "t2", "peer"});
   EXPECT_EQ(Count(events["t1"], AgentEventType::AssistantReady), 1u);
   EXPECT_EQ(Count(events["t2"], AgentEventType::AssistantReady), 1u);
-  ASSERT_EQ(sessions_->SubmitHomeExplanation("what does this setting do?"), SubmitOutcome::Started);
+  ASSERT_EQ(sessions_->Submit("what does this setting do?"), SubmitOutcome::Started);
   WaitForTurns({""});
   ASSERT_EQ(sessions_->SubmitLocalAction("t1", "Search", "search_people", Object{}), SubmitOutcome::Started);
   WaitForTurns({"t1"});

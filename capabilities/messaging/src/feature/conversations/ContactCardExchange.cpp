@@ -136,7 +136,8 @@ void ContactCardExchange::FetchFromDevices(std::vector<std::string> devices, con
       });
 }
 
-void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::function<void(Roe<LocatorAdded>)> done) {
+void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::function<void(Roe<LocatorAdded>)> done,
+                                         std::function<void(const Contact&)> stored) {
   mesh::DirectoryHit hit;
   hit.hit_id = locator.account_id;
   hit.account_id = locator.account_id;
@@ -158,6 +159,9 @@ void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::fun
   }
   const AccountCardRelay relay = UsableLocatorRelay(locator.relay);
   KeepLocatorRelay(*contact, relay);
+  if (stored) {
+    stored(*contact);
+  }
   const auto finish = [this, account_id = locator.account_id, done](bool keys_known) {
     auto latest = contacts_.FindByIdentity(account_id, mesh::ContactIdKind::Account);
     if (!latest || !*latest) {

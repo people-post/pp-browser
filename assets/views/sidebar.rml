@@ -4,6 +4,13 @@
     <div class="bar-fade"></div>
     <p class="pane-nav-title">{{i18n:nav.sessions}}</p>
     <div class="pane-nav-actions row">
+      <!-- Scan: the camera at once, the same scan and result as Add contact's 扫一扫 (window model's open_scan_qr ->
+           ContactsController::OnScanQr). -->
+      <div class="pane-nav-btn-wrap" data-model="window">
+        <button class="pane-nav-btn pane-nav-btn--scan" type="button" data-event-click="open_scan_qr()">
+          <svg src="../icons/v2/scan.svg" width="24" height="24"></svg>
+        </button>
+      </div>
       <button class="pane-nav-btn" type="button" data-event-click="open_new_session_menu()">
         <svg src="../icons/v2/compose.svg" width="24" height="24"></svg>
       </button>
@@ -19,7 +26,8 @@
   </div>
   <div id="sidebar-sessions" class="sidebar-sessions root-scroll" data-event-scroll="sessions_scroll()">
     <!-- One title row: "Chats", then the link status as a coloured dot and a word (ShellHost::SetChatsLink; the
-         chats_link_* fields are window-model fields). The compose button is in the fixed bar above, at the right. -->
+         chats_link_* fields are window-model fields). The scan and compose buttons are in the fixed bar above, at the
+         right. -->
     <div class="large-title" data-model="window">
       <p class="large-title-text">{{i18n:nav.sessions}}</p>
       <p class="link-status" data-if="chats_link_state != ''">
@@ -38,6 +46,13 @@
     <div class="sidebar-reconnect-entry row" data-if="show_reconnect_banner" data-event-click="reconnect_account()">
       <svg src="../icons/v2/cloud-off.svg" width="16" height="16"></svg>
       <p class="sidebar-reconnect-label">{{i18n:chat.reconnect.banner}}</p>
+    </div>
+    <div class="sidebar-tip" data-if="recovery_reminder && sessions_query == '' && !showing_archived">
+      <p class="sidebar-tip-body">{{i18n:recovery_reminder.body}}</p>
+      <div class="sidebar-tip-actions row">
+        <button class="btn btn-primary" type="button" data-event-click="recovery_reminder_open()">{{i18n:recovery_reminder.now}}</button>
+        <button class="btn btn-ghost sidebar-tip-later" type="button" data-event-click="recovery_reminder_later()">{{i18n:recovery_reminder.later}}</button>
+      </div>
     </div>
     <div class="sidebar-archived-entry row" data-if="archived_count > 0" data-event-click="toggle_archived()">
       <svg src="../icons/back.svg" width="14" height="14" crop-to-content="true" data-if="showing_archived"></svg>
@@ -138,7 +153,11 @@
         </div>
       </div>
     </div>
-    <p class="text muted" data-if="sessions.size == 0">{{i18n:sidebar.empty}}</p>
+    <div class="sidebar-empty" data-if="sessions.size == 0 && sessions_query == '' && !showing_archived">
+      <p class="text muted">{{i18n:sidebar.empty_start}}</p>
+      <button class="btn btn-primary" type="button" data-event-click="empty_add_contact()">{{i18n:contacts.add}}</button>
+    </div>
+    <p class="text muted" data-if="sessions.size == 0 && (sessions_query != '' || showing_archived)">{{i18n:sidebar.empty}}</p>
     <p class="text muted sidebar-sessions-more" data-if="sessions_more" data-event-click="sessions_load_more()">{{i18n:sidebar.loading_more}}</p>
     <div class="tab-bar-clear"></div>
   </div>

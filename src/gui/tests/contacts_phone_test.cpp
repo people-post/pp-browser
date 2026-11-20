@@ -282,12 +282,12 @@ TEST_F(ContactsPhoneTest, AddContactSheetHasTopCardsSearchAccountCardAndTwoTiles
 }
 
 TEST_F(ContactsPhoneTest, AddContactSheetStringsAreTranslated) {
-  EXPECT_EQ(Tr("contacts.add_sheet.search_placeholder"), "Search by name or account ID");
+  EXPECT_EQ(Tr("contacts.add_sheet.search_placeholder"), "Enter an account ID to find someone");
   EXPECT_EQ(Tr("contacts.my_qr"), "My QR code");
   EXPECT_EQ(Tr("contacts.invite_friends"), "Invite friends to PP");
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
   EXPECT_EQ(Tr("contacts.add"), "添加联系人");
-  EXPECT_EQ(Tr("contacts.add_sheet.search_placeholder"), "输入名字或账号 ID 找人");
+  EXPECT_EQ(Tr("contacts.add_sheet.search_placeholder"), "输入账号 ID 找人");
   EXPECT_EQ(Tr("contacts.my_qr"), "我的二维码");
   EXPECT_EQ(Tr("contacts.invite_friends"), "邀请朋友使用 PP");
   EXPECT_EQ(Tr("scan.title"), "扫一扫");

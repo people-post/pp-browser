@@ -177,20 +177,6 @@ std::string BriefStreamUrlOverride() {
   return ResolveBriefStreamUrlOverride(kUiDemoBuild, std::getenv("PP_BROWSER_BRIEF_STREAM_URL"));
 }
 
-std::string ResolveDiagnosticsUploadUrl(const bool ui_demo, const char* env_url, const std::string& origin) {
-  if (ui_demo) {
-    return {};
-  }
-  if (env_url && *env_url) {
-    return env_url;
-  }
-  return origin.empty() ? std::string() : origin + "/api/support/diagnostics";
-}
-
-std::string DiagnosticsUploadUrl() {
-  return ResolveDiagnosticsUploadUrl(kUiDemoBuild, std::getenv("PP_BROWSER_DIAGNOSTICS_URL"), BriefOrigin());
-}
-
 bool RunIfUploadAllowed(const bool ui_demo, const std::function<void()>& sender) {
   if (!UploadAllowed(ui_demo)) {
     return false;

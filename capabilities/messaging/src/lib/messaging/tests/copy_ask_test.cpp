@@ -2,6 +2,7 @@
 #include "lib/messaging/CardAsk.h"
 
 #include "lib/delivery/ChatPayloadCodec.h"
+#include "lib/delivery/OutboundMessage.h"
 
 #include <gtest/gtest.h>
 
@@ -65,6 +66,30 @@ TEST(CardAskTest, AnAskNamesTheDeviceThatSaidItsListIsNewer) {
   ASSERT_TRUE(family.apply(ask, SystemControlContext{.sender_identity = "account:carol"}));
   ASSERT_EQ(answered.size(), 1u);
   EXPECT_EQ(answered[0], std::make_pair(std::string("QmBobPhone"), std::string("account:carol")));
+}
+
+// The answer to an ask re-sends an old message to the device that missed it: sealed as it was first sent, but it wakes
+// nobody — a push would alert every device of the asker's account to a message they have already seen.
+TEST(CopyAskTest, AnAnsweredCopyWakesNobody) {
+  ThreadMessage text;
+  text.id = "m-3";
+  text.text = "hello";
+  ASSERT_TRUE(RaisesWakePush(text, {})) << "it woke them when it was new";
+  const SendRelayOptions resend = copy_ask::ResendOptions(text);
+  EXPECT_FALSE(resend.content_type) << "a plain text seals as text";
+  EXPECT_FALSE(RaisesWakePush(text, resend));
+  const EnvelopeSender sender{"account:bob", "QmBobPhone"};
+  EXPECT_EQ(BuildDirectEnvelope(text, resend, sender, ThreadChannel::E2ePublic, "account:carol", {}, 1).relay_wake_hint,
+            "");
+  EXPECT_EQ(BuildGroupMemberEnvelope(text, resend, sender, "group:hike", "account:carol", {}, 1).relay_wake_hint, "");
+
+  ThreadMessage attachment = text;
+  attachment.content_type = ChatContentType::Attachment;
+  attachment.payload_json = R"({"attachment":{}})";
+  const SendRelayOptions rich = copy_ask::ResendOptions(attachment);
+  EXPECT_EQ(rich.content_type, std::optional<ChatContentType>(ChatContentType::Attachment));
+  EXPECT_EQ(rich.payload_json, std::optional<std::string>(attachment.payload_json)) << "sealed with what it carried";
+  EXPECT_FALSE(RaisesWakePush(attachment, rich));
 }
 
 } // namespace

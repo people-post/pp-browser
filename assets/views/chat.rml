@@ -70,15 +70,13 @@
              data-class-chat-peer-path--connecting="peer_link_connecting"
              data-class-chat-peer-path--degraded="peer_link_degraded"
              data-class-chat-peer-path--failed="peer_link_failed"
-             data-class-chat-peer-path--ready="peer_link_ready">
-          <div class="chat-peer-path-icon" data-if="peer_link_direct || peer_link_connecting || peer_link_degraded || peer_link_failed || peer_link_ready">
+             data-class-chat-peer-path--ready="peer_link_ready"
+             data-class-chat-peer-path--group="thread_is_group">
+          <!-- Direct and relay use the bubbles' small route icons (RouteIconRml), tinted like the line's text. -->
+          <svg class="route-icon" src="../icons/v2/route-direct.svg" width="18" height="12" data-if="peer_link_direct"></svg>
+          <svg class="route-icon" src="../icons/v2/route-relay.svg" width="18" height="12" data-if="peer_link_via_hop || peer_link_via_relay"></svg>
+          <div class="chat-peer-path-icon" data-if="peer_link_connecting || peer_link_degraded || peer_link_failed || peer_link_ready">
             <svg src="../icons/status-direct.svg" width="12" height="12" crop-to-content="true"></svg>
-          </div>
-          <div class="chat-peer-path-icon" data-if="peer_link_via_hop">
-            <svg src="../icons/status-hop.svg" width="12" height="12" crop-to-content="true"></svg>
-          </div>
-          <div class="chat-peer-path-icon" data-if="peer_link_via_relay">
-            <svg src="../icons/status-relay.svg" width="12" height="12" crop-to-content="true"></svg>
           </div>
           <p class="text-xs chat-peer-link">{{peer_link_status}}</p>
         </div>
@@ -106,6 +104,13 @@
     <button class="chat-call-bar-join" type="button" data-event-click="join_group_call()">
       <span class="chat-header-call-btn chat-header-call-btn--join"><span>{{i18n:call.join}}</span></span>
     </button>
+  </div>
+  <div class="chat-gap-banner stack chat-stranger-bar" data-if="show_stranger_bar && !search_open">
+    <p class="text muted chat-stranger-text">{{stranger_bar_text}}</p>
+    <div class="chat-stranger-actions row">
+      <button class="btn btn-primary" type="button" data-event-click="stranger_add()">{{i18n:chat.stranger.add}}</button>
+      <button class="btn btn-secondary" type="button" data-event-click="stranger_block()">{{i18n:chat.stranger.block}}</button>
+    </div>
   </div>
   <div class="chat-gap-banner stack" data-if="show_peer_link_banner && !sync_in_progress">
     <p class="text muted">{{peer_link_banner}}</p>
@@ -145,7 +150,8 @@
        data-event-scroll="messages_scroll()">
     <!-- No example-chips card inside an AI thread anymore (Kenneth 2026-11-05): the PP 助手 page already shows the
          quick actions at the bottom, so the in-chat card was redundant. Only the empty-body line remains. -->
-    <div class="chat-empty stack" data-if="!has_turns && !loading">
+    <!-- The AI thread's empty state: it says what to ask the AI, so it never shows in a chat with a person or a group. -->
+    <div class="chat-empty stack" data-if="!has_turns && !loading && thread_is_ai">
       <p class="text muted">{{i18n:chat.empty_body}}</p>
     </div>
     <div data-if="use_messages_layout">

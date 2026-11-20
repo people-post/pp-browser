@@ -1,4 +1,5 @@
 #include "gui/chat/AgentTurnController.h"
+#include "gui/chat/StartupNoticePolicy.h"
 #include "foundation/data/SessionStore.h"
 #include "lib/ai/WorkingSetPolicy.h"
 #include "lib/ai/LocalizedLabels.h"
@@ -184,6 +185,20 @@ void AgentTurnController::Tick() {
   }
   RecoverMissedTurnEnd();
   RetryQueueDrain();
+  RetryQuietMint();
+}
+
+void AgentTurnController::RetryQuietMint() {
+  if (!quiet_mint_retry_pending_) {
+    return;
+  }
+  const int64_t since_launch_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - launched_at_).count();
+  if (since_launch_ms < kStartupQuietWindowMs) {
+    return;
+  }
+  quiet_mint_retry_pending_ = false;
+  RefreshLlmSetupBanner(); // mints again if still keyless; a failure now passes the quiet policy and shows
 }
 
 void AgentTurnController::RetryQueueDrain() {
@@ -844,19 +859,6 @@ void AgentTurnController::NoteHomeTurnStarted() {
   }
 }
 
-SubmitOutcome AgentTurnController::SubmitAskAiOnce(const std::string& text) {
-  if (!agent_ports_.submit_home_explanation) {
-    return SubmitOutcome::Ignored;
-  }
-  const SubmitOutcome outcome = agent_ports_.submit_home_explanation(text);
-  if (outcome == SubmitOutcome::Started) {
-    MarkAgentBusy(kAskAiOnceThread);
-    home_turn_thread_ = kAskAiOnceThread; // the Home session's events belong to the panel, not to a chat
-    NoteHomeTurnStarted();                // and a stopped earlier one-off's late events are dropped
-  }
-  return outcome;
-}
-
 std::string AgentTurnController::StreamingText(const std::string& thread_id) const {
   const auto it = streaming_.find(thread_id);
   return it == streaming_.end() ? std::string() : it->second.text;
@@ -1235,8 +1237,7 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
 
     const std::string assistant_open =
         ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", raw_output) + R"( selectable="text">)";
-    // B81: a blank first line shows in assistant bubbles; log how the body starts to see what sits before the text.
-    log().debug << "assistant bubble markup head: " << hydrated.substr(0, 160);
+    log().debug << "assistant bubble markup length=" << hydrated.size();
 
     // A shared answer ("@ai+" / "@ai++") is stored once, by the relay below, as the "AI · shared" message
     // the peer also sees; a second local copy showed the same text twice (Kenneth 2026-10-28).
@@ -1387,10 +1388,6 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
     case AgentEventType::AssistantReady: {
       const std::string thread = EventThread(event);
       ClearStreamingRow(thread);
-      if (thread == kAskAiOnceThread) {
-        host_.OnAskAiOnceReply(event); // the panel's one-off answer: shown there, stored nowhere
-        break;
-      }
       if (thread.empty()) {
         // A Home answer whose turn the UI no longer knows: storing it in the open chat could put it in a chat with a
         // person. Dropped, said in the log.
@@ -1502,9 +1499,27 @@ void AgentTurnController::EnsureBriefGuestLlmKey() {
 void AgentTurnController::OnBriefKeyMintEnded(const BriefKeyMintEnd& end) {
   switch (end.outcome) {
     case BriefKeyMintOutcome::Stored:
+      had_backend_success_ = true;
       brief_guest_mint_user_hint_.clear();
       return; // after_identity_changed reloads the agent and refreshes the banner
     case BriefKeyMintOutcome::MintFailed:
+      if (end.error) {
+        const int64_t since_launch_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - launched_at_)
+                .count();
+        if (!ShowBackgroundFailure(*end.error, /*user_initiated=*/false, since_launch_ms, had_backend_success_)) {
+          // Not shown: the network is not usable yet. The mint runs again at the next RefreshLlmSetupBanner /
+          // ReloadAgentConfig (a send tap, an identity change, unlock), which is the retry that exists.
+          log().info << "Brief guest key mint failed, network not usable yet; no banner: " << AppError::Log(*end.error);
+          brief_guest_mint_attempted_ = false;
+          brief_guest_mint_user_hint_.clear(); // an earlier failure's wording must not outlive this one
+          if (!quiet_mint_retry_used_) {
+            quiet_mint_retry_used_ = true;
+            quiet_mint_retry_pending_ = true; // Tick asks once more when the quiet window ends
+          }
+          return;
+        }
+      }
       brief_guest_mint_user_hint_ = end.error ? AppError::Display(*end.error) : std::string();
       if (brief_guest_mint_user_hint_.empty()) {
         brief_guest_mint_user_hint_ = Tr("chat.hint.brief_unavailable_temp");

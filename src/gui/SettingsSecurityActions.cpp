@@ -4,7 +4,7 @@
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/crypto/PinRules.h"
 #include "foundation/error/AppError.h"
-#include "gui/DiagnosticsFeedback.h"
+#include "gui/DefaultPinNote.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/DeploymentProfile.h"
@@ -21,6 +21,7 @@
 #include <ui/base/SystemInterface.h>
 #include <ui/data/DataModelHandle.h>
 
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <memory>
@@ -36,7 +37,7 @@ SettingsSecurityActions::SettingsSecurityActions(SettingsHost& host, const Setti
   // The phrase does not stay up behind the app (the app switcher, an unlocked phone left on the table), and a reveal
   // still being checked is void (second review 2026-11-06).
   background_listener_ = AppLifecycle::AddBackgroundListener([this]() {
-    if (!recovery_phrase_.empty()) {
+    if (recovery_shown_) {
       HideRecoveryPhrase();
     } else {
       ++recovery_shown_count_;
@@ -57,7 +58,21 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.Bind("move_lead_label", &move_lead_label_);
   ctor.Bind("move_valid_label", &move_valid_label_);
   ctor.BindEventCallback("toggle_biometric", DataEvent<>([this]() { ToggleBiometric(); }));
-  ctor.Bind("recovery_phrase", &recovery_phrase_);
+  if (auto word = ctor.RegisterStruct<RecoveryWord>()) {
+    word.RegisterMember("n", &RecoveryWord::n);
+    word.RegisterMember("word", &RecoveryWord::word);
+  }
+  ctor.RegisterArray<std::vector<RecoveryWord>>();
+  if (auto slot = ctor.RegisterStruct<InlineSlot>()) {
+    slot.RegisterMember("n", &InlineSlot::n);
+  }
+  ctor.RegisterArray<std::vector<InlineSlot>>();
+  ctor.Bind("recovery_inline", &recovery_inline_);
+  ctor.Bind("recovery_page", &recovery_page_);
+  ctor.Bind("recovery_words", &recovery_words_);
+  ctor.Bind("recovery_shown", &recovery_shown_);
+  ctor.Bind("recovery_revealed", &recovery_revealed_);
+  ctor.BindEventCallback("reveal_recovery_phrase", DataEvent<>([this]() { RevealRecoveryWords(); }));
   ctor.BindEventCallback("show_recovery_phrase", DataEvent<>([this]() { ShowRecoveryPhrase(); }));
   ctor.BindEventCallback("hide_recovery_phrase", DataEvent<>([this]() { HideRecoveryPhrase(); }));
   ctor.BindEventCallback("save_account_copy", DataEvent<>([this]() { SaveAccountCopy(); }));
@@ -67,84 +82,6 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("reset_chats", DataEvent<>([this]() { ResetChats(); }));
   show_change_pin_ = ChangePinVisible(kUiDemoBuild);
   ctor.Bind("show_change_pin", &show_change_pin_);
-  show_diagnostics_send_ = UploadAllowed(kUiDemoBuild);
-  ctor.Bind("show_diagnostics_send", &show_diagnostics_send_);
-  ctor.Bind("diagnostics_sending", &diagnostics_sending_);
-  ctor.Bind("diagnostics_send_label", &diagnostics_send_label_);
-  ctor.Bind("diagnostics_last_id", &diagnostics_last_id_);
-  ctor.Bind("diagnostics_last_label", &diagnostics_last_label_);
-  ctor.BindEventCallback("send_diagnostics", DataEvent<>([this]() { SendDiagnostics(); }));
-  ctor.BindEventCallback("copy_diagnostics_id", DataEvent<>([this]() { CopyDiagnosticsId(); }));
-  ctor.BindEventCallback("open_diagnostics_help", DataEvent<>([this]() { OpenDiagnosticsHelp(); }));
-}
-
-void SettingsSecurityActions::RefreshDiagnostics() {
-  const std::string last = commands_.last_diagnostics_id ? commands_.last_diagnostics_id() : std::string();
-  diagnostics_send_label_ =
-      Tr(diagnostics_sending_ ? "settings.security.diagnostics.sending" : "settings.security.diagnostics.send").c_str();
-  diagnostics_last_id_ = last.c_str();
-  diagnostics_last_label_ = last.empty() ? "" : Tr("settings.security.diagnostics.last_id", {{"id", last}}).c_str();
-  DataModelHost& model = DataModelHost::Instance();
-  model.Dirty("settings", "diagnostics_sending");
-  model.Dirty("settings", "diagnostics_send_label");
-  model.Dirty("settings", "diagnostics_last_id");
-  model.Dirty("settings", "diagnostics_last_label");
-}
-
-void SettingsSecurityActions::SendDiagnostics() {
-  if (diagnostics_sending_) {
-    return;
-  }
-  if (!commands_.send_diagnostics || !feedback_.show_confirm) {
-    host_.ReportFailure(
-        Error("Diagnostics are not available").WithUser(Tr("settings.security.diagnostics.unavailable")));
-    return;
-  }
-  feedback_.show_confirm(
-      Tr("settings.security.diagnostics.confirm_title"), Tr("settings.security.diagnostics.confirm_body"),
-      [this](const bool ok) {
-        if (!ok || diagnostics_sending_) {
-          return;
-        }
-        diagnostics_sending_ = true;
-        RefreshDiagnostics();
-        commands_.send_diagnostics([this](DiagnosticsUploadResult result) {
-          diagnostics_sending_ = false;
-          const std::string last = commands_.last_diagnostics_id ? commands_.last_diagnostics_id() : std::string();
-          // A fresh send has just written its own reference; QuotaKey names the one on file from before.
-          const std::string text = DiagnosticsResultText(result, last);
-          RefreshDiagnostics();
-          if (result.kind == DiagnosticsUploadKind::Sent) {
-            host_.ShowStatus("");
-            UserFeedback::Ok(text);
-          } else {
-            host_.ReportFailure(Error(text).WithUser(text));
-          }
-        });
-      },
-      Tr("settings.security.diagnostics.confirm_ok"));
-}
-
-void SettingsSecurityActions::CopyDiagnosticsId() {
-  const std::string id = diagnostics_last_id_.c_str();
-  if (id.empty()) {
-    return;
-  }
-  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-    system->SetClipboardText(id.c_str());
-  }
-}
-
-void SettingsSecurityActions::OpenDiagnosticsHelp() {
-  // help_key "troubleshooting/send-diagnostics" is the support article; the question goes out at once (Kenneth
-  // 2026-11-04: no typing), the answer comes in the PP 客服 chat.
-  if (!commands_.ask_support) {
-    host_.ReportFailure(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
-    return;
-  }
-  if (auto asked = commands_.ask_support(Tr("settings.security.diagnostics.help_question")); !asked) {
-    host_.ReportFailure(asked.error());
-  }
 }
 
 void SettingsSecurityActions::EnsureUnlocked(const std::string& not_ready_message, std::function<void()> then) {
@@ -331,32 +268,37 @@ void SettingsSecurityActions::ConfirmExportLinkDevice() {
   if (!feedback_.show_confirm) {
     return;
   }
-  feedback_.show_confirm(Tr("settings.security.link_device.export_confirm_title"),
-                         Tr("settings.security.link_device.export_confirm_message"),
-                         [this](const bool ok) {
-                           if (!ok) {
-                             return;
-                           }
-                           AppRuntime::PostWorkerNormal([this]() {
-                             auto result = commands_.export_link_device
-                                               ? commands_.export_link_device()
-                                               : Roe<std::string>{Error("Messaging is not ready")};
-                             AppRuntime::PostUI([this, result = std::move(result)]() {
-                               if (!result) {
-                                 host_.ReportFailure(result.error());
-                                 return;
-                               }
-                               if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-                                 system->SetClipboardText(result.value().c_str());
-                               }
-                               UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
-                               transfer_code_copied_ = true; // the phone page's "copied" box
-                               DataModelHost::Instance().Dirty("settings", "transfer_code_copied");
-                               host_.ShowStatus("");
-                             });
-                           });
-                         },
-                         {});
+  const auto on_result = [this](const bool ok) {
+    if (!ok) {
+      return;
+    }
+    AppRuntime::PostWorkerNormal([this]() {
+      auto result = commands_.export_link_device ? commands_.export_link_device()
+                                                 : Roe<std::string>{Error("Messaging is not ready")};
+      AppRuntime::PostUI([this, result = std::move(result)]() {
+        if (!result) {
+          host_.ReportFailure(result.error());
+          return;
+        }
+        if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+          system->SetClipboardText(result.value().c_str());
+        }
+        UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
+        transfer_code_copied_ = true; // the phone page's "copied" box
+        DataModelHost::Instance().Dirty("settings", "transfer_code_copied");
+        host_.ShowStatus("");
+      });
+    });
+  };
+  const std::string title = Tr("settings.security.link_device.export_confirm_title");
+  const std::string message = Tr("settings.security.link_device.export_confirm_message");
+  // On the app's default PIN nothing asks for it: the dialog only says so, with a "?" that tells the digits.
+  if (host_.Store().Snapshot().profile_prefs.pin_is_default && feedback_.show_confirm_with_note) {
+    feedback_.show_confirm_with_note(title, message, Tr("settings.security.default_hint"), DefaultPinNoteText(),
+                                     on_result, {});
+    return;
+  }
+  feedback_.show_confirm(title, message, on_result, {});
 }
 
 void SettingsSecurityActions::SetTransferLabels() {
@@ -417,31 +359,117 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
           host_.ReportFailure(Error("No recovery phrase").WithUser(Tr("settings.security.recovery.none")));
           return;
         }
-        recovery_phrase_ = (*revealed)->Reveal().c_str(); // shown to its owner, on their screen
-        revealed->reset();
-        host_.PushToView(false);
-        // Home's Security widget: the phrase has been in front of its owner once (Kenneth 2026-11-05 原话 98).
-        if (!host_.Store().Snapshot().profile_prefs.recovery_phrase_seen) {
-          ProfilePreferences prefs = host_.Store().Snapshot().profile_prefs;
-          prefs.recovery_phrase_seen = true;
-          (void)host_.Store().SaveProfilePrefs(prefs);
+        // Shown to its owner, on their screen: numbered words for the grid. Split straight from the revealed secret
+        // (no second full copy of the phrase); the secret is wiped by `reset()` below.
+        const std::string& phrase = (*revealed)->Reveal();
+        // The page opens covered: numbered cards with no word bound; the words wait here until the one tap.
+        ClearRecoveryWords();
+        ClearRecoverySecret();
+        recovery_words_.reserve(kRecoveryWordCount);
+        recovery_secret_.reserve(kRecoveryWordCount);
+        recovery_revealed_ = false;
+        for (size_t at = 0; at < phrase.size();) {
+          const size_t end = std::min(phrase.find(' ', at), phrase.size());
+          if (end > at) {
+            RecoveryWord word;
+            word.n = static_cast<int>(recovery_words_.size()) + 1;
+            recovery_words_.push_back(std::move(word));
+            recovery_secret_.push_back(phrase.substr(at, end - at));
+          }
+          at = end + 1;
         }
-        // Not left on screen: it hides by itself.
-        const uint64_t shown = ++recovery_shown_count_;
-        AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kRecoveryPhraseShownMs), [this, shown]() {
-          AppRuntime::PostUI([this, shown]() {
-            if (shown == recovery_shown_count_) {
-              HideRecoveryPhrase();
-            }
-          });
-        });
+        revealed->reset();
+        recovery_shown_ = !recovery_words_.empty();
+        recovery_inline_.clear();
+        recovery_page_.clear();
+        if (recovery_shown_) {
+          (host_.RecoveryOnOwnPage() ? recovery_page_ : recovery_inline_).push_back({});
+        }
+        DirtyRecoveryWords();
+        host_.PushToView(false);
+        host_.OpenRecoveryPage();
+        // A page nobody reveals still closes by itself; revealing restarts the time (RevealRecoveryWords).
+        ScheduleRecoveryAutoHide();
       });
 }
 
+void SettingsSecurityActions::ScheduleRecoveryAutoHide() {
+  const uint64_t shown = ++recovery_shown_count_;
+  AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(recovery_shown_ms_), [this, shown]() {
+    AppRuntime::PostUI([this, shown]() {
+      if (shown == recovery_shown_count_) {
+        HideRecoveryPhrase();
+      }
+    });
+  });
+}
+
+void SettingsSecurityActions::DirtyRecoveryWords() {
+  DataModelHost& model = DataModelHost::Instance();
+  model.Dirty("settings", "recovery_words");
+  model.Dirty("settings", "recovery_shown");
+  model.Dirty("settings", "recovery_inline");
+  model.Dirty("settings", "recovery_page");
+  model.Dirty("settings", "recovery_revealed");
+}
+
+void SettingsSecurityActions::RevealRecoveryWords() {
+  if (!recovery_shown_ || recovery_revealed_ || recovery_secret_.size() != recovery_words_.size()) {
+    return;
+  }
+  for (size_t i = 0; i < recovery_words_.size(); ++i) {
+    recovery_words_[i].word = recovery_secret_[i].c_str(); // the words come into the view here
+  }
+  ClearRecoverySecret();
+  recovery_revealed_ = true;
+  DirtyRecoveryWords();
+  // Home's Security widget: the phrase has been in front of its owner once (Kenneth 2026-11-05 原话 98) - only now
+  // that the words were actually shown, not when the covered page opened.
+  if (!host_.Store().Snapshot().profile_prefs.recovery_phrase_seen) {
+    ProfilePreferences prefs = host_.Store().Snapshot().profile_prefs;
+    prefs.recovery_phrase_seen = true;
+    (void)host_.Store().SaveProfilePrefs(prefs);
+  }
+  ScheduleRecoveryAutoHide(); // the full time from the reveal, whatever was left of the covered page's
+}
+
+namespace {
+
+/** Zero-fills `text` through a volatile pointer, so the stores are not dropped before the string goes away. */
+void WipeText(std::string& text) {
+  volatile char* bytes = text.data();
+  for (size_t i = 0; i < text.size(); ++i) {
+    bytes[i] = 0;
+  }
+}
+
+} // namespace
+
+void SettingsSecurityActions::ClearRecoverySecret() {
+  for (std::string& word : recovery_secret_) {
+    WipeText(word);
+  }
+  recovery_secret_.clear();
+}
+
+void SettingsSecurityActions::ClearRecoveryWords() {
+  for (RecoveryWord& entry : recovery_words_) {
+    WipeText(entry.word);
+  }
+  recovery_words_.clear();
+}
+
 void SettingsSecurityActions::HideRecoveryPhrase() {
-  recovery_phrase_ = "";
+  ClearRecoveryWords(); // the words leave the view here, with the page
+  ClearRecoverySecret();
+  recovery_inline_.clear();
+  recovery_page_.clear();
+  recovery_revealed_ = false;
+  recovery_shown_ = false;
   ++recovery_shown_count_;
+  DirtyRecoveryWords();
   host_.PushToView(false);
+  host_.CloseRecoveryPage();
 }
 
 namespace {

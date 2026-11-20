@@ -260,15 +260,25 @@ Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
     } else {
       return Error(kSignedOutMessage);
     }
-    recovery_ = OwnCardRecovery::None;
-    intent_done = !identity->card_intent.empty();
     const bool master = devices.front().peer_id == self->peer_id;
-    if (!master && *newest && !VerifiedLocked(**newest, now_ms)) {
-      // A card stepped up on disk (profile.db 7 → 8: its relays gone, its signature over the old bytes): its relays
-      // are the main device's to give, so this device waits for the main device's card instead of re-issuing it.
+    const bool stepped = !master && *newest && !VerifiedLocked(**newest, now_ms);
+    if (stepped && (recovery_ != OwnCardRecovery::NotFound || relays_.empty())) {
+      // A card stepped up on disk (profile.db 7 → 8: its relays gone, its signature over the old bytes). Keeping the
+      // card signed is any listed device's (M021, amended by M026); the list stays the main device's. The main device
+      // may have issued a newer card this device has not heard of: our relays are asked for it first, and the same
+      // list is re-issued only once every relay answered without one (and this device knows its relays).
+      recovery_changed = recovery_ == OwnCardRecovery::None;
+      if (recovery_changed) {
+        recovery_ = OwnCardRecovery::Getting;
+      }
+      ask = RecoveryDueLocked(now_ms);
+      recovery_in_flight_ = recovery_in_flight_ || ask;
       return Error(kAwaitingMainCardMessage);
     }
-    std::vector<AccountCardRelay> relays = RelaysLocked(devices, self->peer_id, *newest);
+    recovery_ = OwnCardRecovery::None;
+    intent_done = !identity->card_intent.empty();
+    // The stepped card's relays went with the step: this device's own (pinned) relays take their place.
+    std::vector<AccountCardRelay> relays = stepped ? relays_ : RelaysLocked(devices, self->peer_id, *newest);
     return IssueLocked(*newest,
                        CardContent{.devices = std::move(devices),
                                    .nickname = identity->nickname,
@@ -372,7 +382,7 @@ void OwnCards::StartRecovery(const std::string& account_id) {
     recovery_in_flight_ = false;
     return;
   }
-  log().info << "no card of our own kept: asking our relays for it";
+  log().info << "no card of our own that verifies: asking our relays for it";
   lookup(account_id, [life = life_](const OwnCardAnswers& answers) {
     std::lock_guard guard(life->mutex);
     if (life->owner) {
@@ -415,6 +425,7 @@ std::optional<AccountCard> OwnCards::OursAmong(const OwnCardAnswers& answers, co
 void OwnCards::OnRecoveryAnswers(const OwnCardAnswers& answers, const int64_t now_ms) {
   const std::optional<AccountCard> found = OursAmong(answers, now_ms);
   bool recovered = false;
+  bool not_found = false;
   {
     std::lock_guard lock(mutex_);
     recovery_in_flight_ = false;
@@ -433,6 +444,7 @@ void OwnCards::OnRecoveryAnswers(const OwnCardAnswers& answers, const int64_t no
       recovery_retry_at_ms_ = 0;
     } else if (answers.answered > 0 && answers.unreached == 0 && !found) {
       recovery_ = OwnCardRecovery::NotFound; // every relay answered, none keeps it: the person decides (StartFreshList)
+      not_found = true;
     } else {
       // Not every relay reached, or the card found was refused (older than a floor we know): asked again later.
       recovery_backoff_ms_ =
@@ -446,8 +458,9 @@ void OwnCards::OnRecoveryAnswers(const OwnCardAnswers& answers, const int64_t no
                  : found   ? "not kept"
                            : "none")
              << " (" << answers.answered << " answered, " << answers.unreached << " unreached)";
-  if (recovered) {
-    // On as usual: listed, its entry brought up to date; left out, signed out (this device was taken off).
+  if (recovered || not_found) {
+    // On as usual: listed, its entry brought up to date; left out, signed out (this device was taken off). None found
+    // while a stepped card is kept: that list is re-issued here (Card); with no card kept, Card only says so.
     (void)Card(now_ms);
   }
   NotifyRecoveryChanged();

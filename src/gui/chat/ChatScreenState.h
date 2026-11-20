@@ -116,6 +116,9 @@ struct ChatScreenState {
   ui::String quote_reply_text;
   bool show_thread_actions = false;
   bool show_peer_sheet = false;
+  /** A first message from someone not yet a contact: the bar with Add / Block above the transcript. */
+  bool show_stranger_bar = false;
+  ui::String stranger_bar_text;
   bool show_call_actions = false;
   /** A group call goes on here that this device may join: the call button reads "Join" (V053). */
   bool call_joinable = false;
@@ -239,6 +242,8 @@ struct ChatShellState {
   int home_new_people = 0;
   /** Home's Security widget: the recovery phrase has been opened once (else it asks to write it down). */
   bool home_security_ok = false;
+  /** Chats page: the "save your recovery phrase" card (RecoveryReminder.h). */
+  bool recovery_reminder = false;
   /** Phone Home shows the 动态 widgets section (date, title, grid); off = minimal AI-first Home. */
   bool home_show_dynamic = false;
   std::vector<HomeBriefRow> home_brief;

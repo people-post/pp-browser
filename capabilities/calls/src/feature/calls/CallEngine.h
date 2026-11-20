@@ -41,6 +41,8 @@ public:
   // --- The data plane (only while the engine runs this call) ---------------------------------
   /** An inbound packet for this call's session; false (dropped) when the engine runs no session of this call. */
   bool Deliver(const MediaEngine::MediaPacket& packet);
+  /** A publisher left the call (V067): the engine lets go of its stream (MediaEngine::ReleaseRemoteStream). */
+  void ReleaseRemoteStream(uint32_t stream_id);
   void NoteOutboundDrop();
   void NoteUplinkBudget(int64_t per_user_up_bps);
   void ApplyTargets(const MediaTargets& targets);

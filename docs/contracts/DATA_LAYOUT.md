@@ -29,11 +29,10 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
 ```
 {config_dir}/config.json
 {data_dir}/profiles.json
-{data_dir}/machine.json
-{data_dir}/logs/pp-browser.log         # current launch log (0600; .1 … .5 = previous launches) — ops/CONFIGURATION.md § Log file; never leaves the device
+{data_dir}/machine.json               # device-wide: active profile, window, safe area, display; collect_run_logs, collect_crash_logs (optional bools, absent = off: "Collect run logs", "Collect crash logs")
+{data_dir}/logs/pp-browser.log         # current launch log (0600; .1 … .N = previous launches: 7 days / 50 MB with collect_run_logs on, else only .1; .1 is always kept) — ops/CONFIGURATION.md § Log file; leaves the device only by Send run logs (test phase, contracts/DIAGNOSTICS.md)
 {data_dir}/logs/metrics.log            # Metrics channel: shareable lines (rotated like the log) — contracts/DIAGNOSTICS.md
 {data_dir}/logs/diag.log               # Diag channel: shareable lines (rotated like the log) — contracts/DIAGNOSTICS.md
-{data_dir}/diagnostics/last_upload.json    # {upload_id, at_ms} of the last Send diagnostics (0600)
 {data_dir}/diagnostics/crash_pending.txt   # last fatal-signal dump (image_base=, raw frames, breadcrumbs); uploaded + cleared next launch
 {data_dir}/profiles/{id}/
   manifest.json             # schema_version; backend = the backend key the profile belongs to (see Per-backend profiles)
@@ -309,7 +308,7 @@ our record.
 
 | Kept version 3 card | Becomes |
 |---------------------|---------|
-| Our own (as in 6 → 7: the profile's Account ID's record) | the version 4 shape without relays (no PeerId is known for the old entries), its floor and device list kept, its old signature: it does not verify, so the main device re-issues it with the same device list and our pinned relays; a linked device does not (the relays are the main device's to give): it waits for the main device's card |
+| Our own (as in 6 → 7: the profile's Account ID's record) | the version 4 shape without relays (no PeerId is known for the old entries), its floor and device list kept, its old signature: it does not verify, so the main device re-issues it with the same device list and our pinned relays; a linked device first asks our relays for a newer card of ours and takes it, else — every relay answered without one — re-issues the same list with its own pinned relays ([M026](../../projects/multi-device-account/DECISIONS.md#m026--the-main-device-keeps-the-list-keeping-the-card-signed-is-every-listed-devices)); a relay not reached: asked again later |
 | Anyone else's | dropped from the record; the checked keys stay as a key card, and the card is asked for again (the next envelope's `sender_card_at`, or the contact page's refresh) |
 
 `contacts.json` `remote.locator_relay` is the locator's relay address, `{origin, peer_id}` (multi-relay MR008: the
@@ -355,6 +354,8 @@ locator names the PeerId; a contact's first send into it is signed for that Peer
 | `home_widgets_order` | `preferences.json` | string array, optional (added after schema v14, no version bump); default empty (the default order: `favorites`, `calls`, `mentions`, `recent_chats`, `brief`, `new_people`). The phone Home widgets' order, set with Edit Home's drag handles; unknown and repeated ids are dropped, a widget it lacks goes at the end. Device-only, never synced (like `thread_local_prefs`) |
 | `starred_contacts` | `preferences.json` | string array, optional (added after schema v14, no version bump); default empty. Contact ids starred on the contact page ("Add to Favorites"), in the order they were starred; empty ids and repeats are dropped on read, an id with no contact is ignored. They come first in the phone Home Favorites widget and the New chat page's frequent group. Device-only, never synced or sent (like `thread_local_prefs`) |
 | `recovery_phrase_seen` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Set once the user has opened their recovery phrase on Me → Security; the phone Home Security widget shows "Protected" after that, "Save recovery phrase" before. Never cleared by the app. Device-only, never synced or sent (like `thread_local_prefs`) |
+| `recovery_reminder_dismissals` | `preferences.json` | integer 0–2, optional (added after schema v14, no version bump); default 0. How often the Chats page's "save your recovery phrase" card was put off ("Later"); the card returns once, 7 days after the first "Later", and never after the second. Ignored once `recovery_phrase_seen` is true. Device-only, never synced or sent |
+| `recovery_reminder_dismissed_ms` | `preferences.json` | integer (Unix ms), optional (added after schema v14, no version bump); default 0. When "Later" was last tapped on that card. Device-only, never synced or sent |
 | `unlock_grace_minutes` | `preferences.json` | integer, optional (added after schema v14, no version bump); one of 0 / 5 / 15 / 60 or -1 (Always: until the phone restarts, [at-rest A015](../../projects/at-rest-crypto/DECISIONS.md#a015--pin-grace-window-an-always-option-the-phones-own-lock-is-the-lock)), default 15; any other value reads back as 15. The PIN grace window (Me → Security → "Ask for PIN again after"): minutes after the last foreground use during which a cold start skips the PIN; 0 = every time. Only offered with an own PIN on a platform with a secure store. Device-only, never synced or sent |
 | `home_show_dynamic` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Home shows the 动态 widgets section; default off = minimal AI-first Home (Me → Appearance → Show Activity on Home, phones). Device-only, never synced or sent (like `thread_local_prefs`) |
 

@@ -4,14 +4,9 @@
 
 using namespace pbr;
 
-TEST(SuggestionPayloadTest, FindSomeoneListsTheDirectoryWithAnEmptyQuery) {
-  const auto payload = SuggestionPayload("find_someone", "en");
-  ASSERT_TRUE(payload.has_value());
-  const auto doc = TryParseObject(*payload);
-  ASSERT_TRUE(doc.has_value());
-  EXPECT_EQ(doc->getString("tool").value_or(""), "search_people");
-  ASSERT_TRUE(doc->getString("query").has_value());
-  EXPECT_EQ(*doc->getString("query"), "");
+// The directory refuses an empty query (HTTP 400): the "find someone" chip opens Add contact and sends no tool call.
+TEST(SuggestionPayloadTest, FindSomeoneRunsNoToolItOpensAddContact) {
+  EXPECT_FALSE(SuggestionPayload("find_someone", "en").has_value());
 }
 
 TEST(SuggestionPayloadTest, ArticlesFollowTheUiLanguage) {

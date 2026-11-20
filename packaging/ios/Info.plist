@@ -45,7 +45,7 @@
   <!-- Asset catalog AppIcon (compiled to Assets.car by ios_prepare_app_icons.sh). -->
   <key>CFBundleIconName</key>
   <string>AppIcon</string>
-  <!-- Portrait-only: opt out of iPad multitasking (avoids requiring all orientations). -->
+  <!-- Full screen on iPad: no Split View / Slide Over / Stage Manager resizing (a later step). -->
   <key>UIRequiresFullScreen</key>
   <true/>
   <!-- Must match PP_BROWSER_IOS_DEPLOYMENT_TARGET / CMAKE_OSX_DEPLOYMENT_TARGET. -->
@@ -81,7 +81,8 @@
     <string>arm64</string>
     <string>opengles-3</string>
   </array>
-  <!-- Portrait only — avoid rotation EGL/shell churn (same policy as Android). -->
+  <!-- iPhone: portrait only (same policy as Android). iPad: all four orientations; SDL_HINT_ORIENTATIONS
+       (foundation/platform/MobileOrientation.h) narrows the set the same way. -->
   <key>UISupportedInterfaceOrientations</key>
   <array>
     <string>UIInterfaceOrientationPortrait</string>
@@ -89,6 +90,9 @@
   <key>UISupportedInterfaceOrientations~ipad</key>
   <array>
     <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationPortraitUpsideDown</string>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
   </array>
   <!-- Allow HTTPS to Brief API, relay, and custom LLM endpoints. -->
   <key>NSAppTransportSecurity</key>
@@ -102,6 +106,8 @@
   <string>PP uses the camera for video calls, scanning QR codes, and taking photos and videos in chats.</string>
   <key>NSPhotoLibraryAddUsageDescription</key>
   <string>Save your QR code to Photos.</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>PP uses your local network to connect directly to people on the same Wi‑Fi, so calls and messages need not pass through a server. PP does not collect your location or information about other devices on your network.</string>
   <key>NSFaceIDUsageDescription</key>
   <string>PP uses Face ID to unlock your account.</string>
   <key>UIBackgroundModes</key>

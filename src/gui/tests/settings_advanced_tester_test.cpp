@@ -301,6 +301,14 @@ TEST_F(SettingsAdvancedTesterTest, QaIsOfferedOnlyWhileTheTesterOptionsAreOnAndW
   EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "custom"}));
 }
 
+// Only the word changes: the stored value stays "qa" (the ids above), the row is offered where it was.
+TEST_F(SettingsAdvancedTesterTest, TheQaChoiceIsCalledStaging) {
+  EXPECT_EQ(Tr("settings.network.backend.qa"), "Staging");
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("settings.network.backend.qa"), "预发布");
+  LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
 TEST_F(SettingsAdvancedTesterTest, WithoutAQaAddressInTheBuildQaIsNeverOffered) {
   host().UiState().backend_qa_available = false;
   host().PushToView(false);
@@ -667,6 +675,73 @@ TEST_F(SettingsRealViewTest, ResettingTheCustomAddressesClosesThePageAndCancelli
   ASSERT_EQ(back_stack.size(), 1u);
   EXPECT_EQ(back_stack.back().first, "settings_detail") << "the Advanced page is current";
   EXPECT_NE(store.Snapshot().config.backend.env, "custom");
+}
+
+// Picking another service says, in a dialog, that it only switches after PP is quit completely and opened again; the small
+// grey line stays. Nothing is quit by the app, and picking what already runs says nothing.
+TEST_F(SettingsRealViewTest, PickingAnotherServiceTellsTheUserToReopenPP) {
+  ResetActiveBackendForTest();
+  LatchActiveBackend(BackendEnv::Prod); // the service this "run" is on
+  struct Alert {
+    std::string title, message, ok;
+  };
+  std::vector<Alert> alerts;
+  ports.show_alert = [&alerts](const std::string& title, const std::string& message, std::function<void()>,
+                               const std::string& ok) { alerts.push_back({title, message, ok}); };
+  settings.BindShellFeedback(ports);
+  settings.SyncLayoutMode();
+  const auto pick = [&](const char* id) {
+    RealClick(ClickTarget("", "on_choose_backend()"));
+    ASSERT_EQ(Text("sp"), "choice");
+    const std::vector<SettingsChoicePage::Option> options = settings.BackendChoiceOptions();
+    size_t index = options.size();
+    for (size_t i = 0; i < options.size(); ++i) {
+      if (options[i].id == id) {
+        index = i;
+      }
+    }
+    ASSERT_LT(index, options.size());
+    ui::ElementList found;
+    real->QuerySelectorAll(found, "#settings-subpage-view .settings-choice-option");
+    std::vector<ui::Element*> rows;
+    for (ui::Element* row : found) {
+      if (row->GetNumChildren() > 0) {
+        rows.push_back(row);
+      }
+    }
+    ASSERT_EQ(rows.size(), options.size());
+    RealClick(rows[index]);
+  };
+
+  pick("prod"); // already the one selected and running
+  EXPECT_TRUE(alerts.empty());
+
+  pick("custom");
+  ASSERT_EQ(alerts.size(), 1u);
+  EXPECT_EQ(alerts[0].title, "Reopen PP to switch");
+  EXPECT_EQ(alerts[0].message, "You chose \"Custom\". Quit PP completely and open it again to switch.");
+  EXPECT_EQ(alerts[0].ok, "OK");
+  EXPECT_EQ(store.Snapshot().config.backend.env, "custom") << "the choice is saved as before";
+  EXPECT_TRUE(host().UiState().backend_restart_pending) << "the small grey line still shows";
+
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("settings.network.backend.reopen_title"), "需要重新打开 PP");
+  EXPECT_EQ(Tr("settings.network.backend.reopen_body", {{"name", "自定义"}}),
+            "已选择「自定义」。完全关闭 PP 再打开后才会切换。");
+  EXPECT_EQ(Tr("settings.network.backend.reopen_ok"), "知道了");
+  LocalizationService::Instance().SetPreferredLanguage("en");
+
+  pick("custom"); // the option the page shows as selected: no change, no second dialog
+  EXPECT_EQ(alerts.size(), 1u);
+
+  pick("prod"); // back to the one that runs: nothing to reopen for
+  EXPECT_EQ(alerts.size(), 1u);
+
+  pick("custom"); // a real change again: once more
+  EXPECT_EQ(alerts.size(), 2u);
+  pick("custom");
+  EXPECT_EQ(alerts.size(), 2u);
+  ResetActiveBackendForTest();
 }
 
 // A "?" inside a row that opens a page or toggles a switch only shows its note.

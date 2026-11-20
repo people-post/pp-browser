@@ -115,3 +115,28 @@ TEST(ViewCatalogAssetsTest, KeysAndViewFilesMatch) {
         << "view file has no key in ViewCatalog::KnownKeys: " << relative;
   }
 }
+
+// The recovery phrase's grid is a fragment the phone page (settings) and the desktop block (settings_section_security)
+// include by key. Without the key the include expanded to nothing on a device: the page showed its lead and button and
+// no cards (2026-11-19). The page tests inline the fragment themselves, so only the real catalog sees this.
+TEST(ViewCatalogAssetsTest, TheRecoveryGridIsExpandedIntoItsTwoHosts) {
+  const std::filesystem::path assets(PP_BROWSER_ASSETS_DIR);
+  pbr::ViewCatalog::ClearCache();
+  pbr::IAssetLocator::SetInstance(nullptr);
+  class AssetsLocator : public pbr::IAssetLocator {
+  public:
+    explicit AssetsLocator(std::filesystem::path root) : root_(std::move(root)) {}
+    std::string Resolve(const std::string& relative) const override { return (root_ / relative).string(); }
+
+  private:
+    std::filesystem::path root_;
+  } locator(assets);
+  pbr::IAssetLocator::SetInstance(&locator);
+  for (const char* host : {"settings", "settings_section_security"}) {
+    const std::string body = pbr::ViewCatalog::LoadBody(host);
+    EXPECT_NE(body.find("recovery-grid"), std::string::npos) << host << " lost the recovery grid";
+    EXPECT_EQ(body.find("{{include:"), std::string::npos) << host << " has an include left";
+  }
+  pbr::ViewCatalog::ClearCache();
+  pbr::IAssetLocator::SetInstance(nullptr);
+}

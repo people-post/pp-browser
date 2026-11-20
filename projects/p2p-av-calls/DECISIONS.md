@@ -9,6 +9,8 @@
 > |-------|--------------|------------------|
 > | Group call SFU hop: who picks, which relay | [CALLS.md § Group call hop](../../docs/architecture/CALLS.md#group-call-hop--the-rule-now) | V021 → V023 → V028 → V029 → V035 → V050 → **V054** |
 > | Group topology (1:1 first, planned hop, monotonic) | [CALLS.md § Topology rules](../../docs/architecture/CALLS.md#topology-rules-v021--v026--v038) | V021 → V038 → **V050**, V053 |
+> | Who is still in a group call (a participant whose app died) | [CALLS.md § Participant liveness](../../docs/architecture/CALLS.md#participant-liveness-v067) | B97, V053 → **V067** |
+| When a rotated media key is sealed with | [CALLS.md § Media key rotation](../../docs/architecture/CALLS.md#media-key-rotation-v003-v068) | V003 → **V068** |
 
 Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001–P004](../push-notifications/DECISIONS.md), [group-chat G008](../group-chat/DECISIONS.md), [e2e E022](../e2e-message-crypto/DECISIONS.md).
 
@@ -36,6 +38,7 @@ Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001
 ## V003 — Rotate media key on every leave; overlapping epochs
 
 **Date:** 2026-07-28  
+**Status:** Accepted; its overlap is made exact by [V068](#v068--a-rotations-minter-seals-with-the-new-key-once-the-others-hold-it) (who switches when, and the bound).  
 **Decision:** On every participant leave, remaining members **rotate** the shared media key (`media_epoch++`). Implementations **SHOULD** use **overlapping epochs** (accept previous epoch for a short grace, e.g. ~2s) so leave does not hard-cut audio.  
 **Rationale:** Prevents ex-participants from decrypting subsequent media; overlap preserves UX.  
 **Alternatives:** Rotate only on new call (weaker); rotate without overlap (jarring UX).
@@ -1571,3 +1574,68 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 **Alternatives:** receiver-only (re-anchor when late packets keep coming at the nominal pace without the lag shrinking: a heuristic, fails on a paced backlog); time-based seq (no format change, but a pause then reads as loss and FEC never applies across it); the capture time as an extension (+3 B a frame for a field every frame has).
 **Cost:** a wire cutover — frame v3 and v4 do not interoperate; apps and pp-node (hops) ship together ([COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md)). 5 B more per frame (the 4 B time, the 1 B `ext_len`).
 
+## V067 — Every participant sends every 40 ms; each device watches each participant
+
+**Date:** 2026-11-16
+**Status:** Accepted (Hongwei, 2026-11-16) → built (2026-11-16); amended 2026-11-17 (8: a device cut off itself asks back in — its first Open item; the second is [V068](#v068--a-rotations-minter-seals-with-the-new-key-once-the-others-hold-it)). Narrows B97's call-wide watch (`StepNoMediaWatch`) to a group call off the hop; composes with V053's wait alone and V003's rotation. The current rule: [CALLS.md § Participant liveness](../../docs/architecture/CALLS.md#participant-liveness-v067).
+
+**Context:** [#617](https://github.com/people-post/pp-browser/issues/617): in a 3-party video call one phone's app was killed by iOS. A killed process sends no `call_leave`; the other two kept him in the call, his last video frame on screen, and nothing would ever have removed him. A participant left only by `call_leave`, a media `bye` or a decline. Heartbeats are per media path, and in the SFU topology the path ends at the hop, which stays up when a publisher dies; the only timeout was call-wide (B97: nothing from anyone for 30 s ends the call). The follow-up on the issue adds that even after a clean leave the departed publisher's stream stays subscribed and in the engine until the call ends (playout concealing it, ~50 underruns/s). Small groups have no direct mesh (N ≥ 3 is always the hop, V038); a group call with two on its 1:1 path has that path's own liveness.
+
+**Decision:**
+
+1. **The liveness invariant.** Every participant sends a sealed audio frame every 40 ms — silence included — from joining media until leaving; the camera does not matter (audio carries liveness). Audit of the paths where a live participant might have sent nothing (2026-11-16):
+
+   | Path | Before | Now |
+   |------|--------|-----|
+   | Mute | zeros the PCM, frames go on | same |
+   | OS audio interruption (iOS phone call, Siri; the session held elsewhere) | silence, frames go on (#605); opens fail → the no-mic path | same |
+   | No mic: permission denied, refused, none | paced silence | same |
+   | Mic gives nothing: wedged, starved, lost for good (`capture_lost`), voice processing given up (falls back to SDL) | silence after 500 ms | same |
+   | Capture thread held by device work: the first open behind the OS mic prompt (the open budget is 20 s, per device), the mic handover wait, the ringback session wait, a reopen, an audio rebuild, a route change, the SDL fallback's reopen | **nothing sent** for as long as it took | **closed:** the engine's silence keeper (`pp.keeper`) sends silence after 1 s (`kSilenceKeeperAfterMs`), on the same sequence and capture clock, until the capture thread sends again |
+   | Camera off, video-only views | audio independent of the camera | same |
+   | The process suspended (iOS background without audio, the device asleep) | nothing (cannot be helped) | the others take it as gone at 30 s; on waking it leaves (6) |
+
+2. **What is a sign of life:** a frame that opened under the call's key and advanced its sender's sequence (frame v4's `seq` per channel and `instance`, V066). The hop cannot forge a frame; a repeat or an older seq counts for nothing (`PublisherFrameFreshness`, four sender instances kept per stream and channel). Noted per publisher stream by the group path's data plane.
+3. **The rule, on every receiver of a group call on the hop** (`ParticipantLivenessWatch`, stepped every second by the call's `CallHopPath`): nothing for 3 s → that participant's tile reads "Reconnecting…" (zh-Hans 重新连接中…), dimmed, their last picture not shown as live, on phone tiles and desktop cards; nothing for 30 s (`kCallMediaReconnectWindowMs`, the 1:1 reconnect window) → gone, exactly as their leave (`ParticipantGone`: out of the live call, the key rotates without them per V003, the roster says so), and the screen says "{name} lost connection". Frames resuming before that clear it. Someone not heard yet (joining the hop) is not dimmed and is taken as gone only after their attach wait plus the window (75 s). Someone gone who comes back rejoins through the normal join request (V053).
+4. **Each device decides alone,** from the same signal: no coordinator authority over who is gone (the key's coordinator among the rest rotates, as on any leave). The last other taken as gone leaves this device alone: V053's 2 min wait. B97's call-wide count no longer runs on the hop (it would race the per-participant rule at 30 s); it stays for a group call on its 1:1 path.
+5. **Our side pauses it.** While our own media is not live (not attached, being moved, reattaching, the hop lost) or this device was asleep (two steps more than 5 s apart), every clock starts over and nobody is dimmed: our own drop removes nobody.
+6. **Asleep for the whole window** (the process suspended at least 30 s while in the call): the others have taken this device as gone and moved the key on, so it leaves and says so ("You were away too long, so you left the call"); the group's Join takes it back.
+7. **A departed publisher's stream goes, however they left** (a leave, a removal, an ejection, 3, or a roster that no longer lists them as joined — the key's coordinator sends one with the rotated key, often before this device's own window ends): the hop path drops the stream (what the hop still forwards of it is dropped) and the engine lets it go (`MediaEngine::ReleaseRemoteStream`: the audio track, the video decoder, its frames; the slot is free for someone new).
+8. **Cut off ourselves** (amended 2026-11-17, closing the first Open item). A device whose own network goes is, to the others, a participant gone quiet: at 30 s they take it as gone and move the key on. Before, it took each of them as gone in turn (rotating a key of its own, alone), waited alone 2 min and left — and its `call_ended` then ended the call for the others. Now it tells its side from theirs by two signals, both from what reaches it:
+   - **Everyone stopped at once:** two or more others, heard before and not taken as gone, whose last frames came within 2 s of each other (`kParticipantsQuietTogetherMs`), and nothing since. Independent people do not stop in the same moment; one network does. Meanwhile nobody is dimmed and nobody's clock decides (a tile is dimmed only once the others' last frames are more than 2 s apart): the call reads "Reconnecting…". With one other in the call nothing tells the two apart: the per-participant rule holds (and the next signal catches our side).
+   - **Frames that never open:** frames keep coming through the hop and none opens under any key held, while nothing opens (5 s, `kShutOutMs`, after 3 s of nothing opening): the others are there and seal with a key we lack — they took us as gone. A rotation's own gap (V068) and a missed `CallMediaKey`'s first resend (2 s) are shorter. This also covers being alone after taking the one other as gone, and our hop's own reattach (our side paused, then frames that no longer open).
+
+   **Then:** once the others must have taken us as gone (everyone at once for the 30 s window, or shut out for 5 s), the device asks back in through the normal join (`call_join_request` to everyone offered → the earliest joiner's mid-call invite; the half-time retry lets anyone answer) while staying in the call ("Reconnecting…"). The invite that answers ends this device's part there — nothing sent: no `call_leave`, no `call_ended` — and is accepted without ringing, as a relaunched app's join is: the hop, the roster and the key the others hold now. No history line for the gap (`LiveCallEndReason::Rejoining`).
+   **If nobody answers** (15 s): everyone-at-once with nothing at all coming back means they may really have gone together (two dying in the same moment, the hard case): each is then judged on their own — taken as gone, and this device waits alone (V053), never leaving on its own for it; frames that then come and do not open still ask back in. Shut out (their frames come) and unanswered twice: the device leaves and says so ("You were disconnected from the call"); the group's Join is there.
+   **Misfire analysis:** others who really left by `call_leave`, a bye or the roster are out of the watch before either signal can hold. Two really dying at once costs 15 s more before the wait alone, and no wrong leave or drop. A key that reaches us late reads "Reconnecting…" for a moment and asks nothing (frames open again within the 5 s). A hop forging unopenable frames can at most make us ask to join (it can already drop our media).
+   **A `call_ended` from someone no longer in the call does not end it** for a device in it with others (`CallSessionLogic::CallEndedStands`): a device that took everyone as gone (cut off, before this) and left alone said the call was over when it was not.
+   Asleep for the whole window (6) still leaves and says so: there the user put the device away; here they did not.
+
+**Not built:** a hop-side "publisher went away" hint (the relay telling subscribers that a publisher's session ended). Considered: faster for a dead app, but it trusts the relay with who is in the call (a relay could drop someone by lying) and only covers a dead hop session, not a publisher whose app hangs or whose uplink dies with its session up; the media itself is the signal every receiver can verify. Also not built: an unsubscribe to the relay for a gone stream (the mesh client has none; a leaver sends nothing, so the relay forwards nothing).
+
+**Rationale:** the call already sends the signal (B97 relied on it); using it per participant needs no wire change and no new authority, and makes "in the call" mean "heard from lately" for everyone the same way. The window is the 1:1 call's, so a phone in a tunnel survives the same outage in both kinds of call.
+**Alternatives:** a roster TTL refreshed by control messages (a new heartbeat on the control lane: more traffic, and a dead media path with live control would still look alive); a relay hint (above); a shorter gone window (a phone switching networks takes longer than 10 s, K008).
+**Open** (both taken 2026-11-17):
+- ~~A device cut off by its own network for longer than the window comes back with the old key.~~ → 8.
+- ~~After a leave the coordinator seals with the new epoch about 1.2 s before the rest hold it.~~ → [V068](#v068--a-rotations-minter-seals-with-the-new-key-once-the-others-hold-it).
+
+---
+
+## V068 — A rotation's minter seals with the new key once the others hold it
+
+**Date:** 2026-11-17
+**Status:** Accepted (Hongwei's brief, 2026-11-17) → built (2026-11-17). Makes V003's overlap exact. The current rule: [CALLS.md § Media key rotation](../../docs/architecture/CALLS.md#media-key-rotation-v003-v068).
+
+**Context:** #617's follow-up: after a leave (or a participant taken as gone, V067), the key's coordinator minted the next epoch, sent it (`CallMediaKey`, no ack) and sealed its own media with it at once. The key reached the others about 1.2 s later; meanwhile none of the coordinator's frames opened for them (~30 frames per receiver: an audio gap). V003 asked for overlapping epochs; receivers did keep the previous epoch for 3 s, but that covers the other direction only — nobody can open a frame under a key not yet received.
+
+**Decision:**
+1. **The minter keeps sealing with the old epoch until each remaining participant has shown it holds the new one**: a frame of theirs that opened under the new epoch (`SfuKeyRing::NoteOpened`). The others switch when the key reaches them (as before), so their first new frames are the acknowledgement — no wire change, no new message. Bounded: at most 3 s (`kSealHoldMaxMs`), then it seals with the new key whoever showed it (a member who never got it is cut off from the minter's media until a resend lands, as before).
+2. **Opening:** every epoch from the one sealed with on (the newest included at once: the others may already seal with it); an epoch no longer sealed with opens for 3 s after this device stopped sealing with it (`kPreviousEpochGraceMs`), then never.
+3. A key taken from a peer (or the attach's first key) seals at once; a newer rotation during a hold replaces it (the hold waits for the newest).
+
+**Security window (V003's property):** the removed participant can open the minter's media until every remaining participant holds the new key — in practice the key's delivery time (~1 s), at most 3 s after the rotation — and each other member's media until the key reaches that member (as before: unavoidable without a hold of everyone). After the rotation completes (everyone seals with the new epoch) nothing they send opens for the removed one; the old epoch stops opening frames 3 s later. Acceptable: a few seconds of the call the leaver was in a moment ago, which V003 already allowed (~2 s overlap), and the removed participant must also still be subscribed at the hop to get it.
+
+**What is left:** the skew between the others' copies of the key: one who gets it first seals with it at once, and a frame of theirs may not open for one who gets it a moment later (a frame or two in the lab).
+
+**Rationale:** the others' own frames already say they hold the key; waiting for them fixes the gap at its root (the minter switching early) without an ack on the wire.
+**Alternatives:** a fixed delay for everyone (the window would be the delay, not the delivery time, and a slow delivery still gaps); an explicit key ack (a wire change, for what the frames already say); receivers buffering frames until the key lands (late audio is dropped by the jitter buffer anyway, V065).

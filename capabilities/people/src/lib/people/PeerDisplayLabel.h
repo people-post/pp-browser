@@ -20,10 +20,15 @@ struct PeerDisplayLabel {
   std::optional<std::string> contact_id;
   /** Shared group title when local override is active (for subtitle). */
   std::optional<std::string> shared_title;
+  /** The name a not-yet-contact gave the directory (no "~", no id); empty when none is known. */
+  std::string peer_name;
 };
 
 /** Contact display title: display_name, else server_nickname. */
 std::string FormatContactTitle(const Contact& contact);
+
+/** The name a directory hit goes by (nickname, else display name); empty when it has none. */
+std::string DirectoryHitName(const mesh::DirectoryHit& hit);
 
 /** Unverified directory nickname: "~nick @account:…". Empty nickname → empty unless id present. */
 std::string FormatDirectoryTitle(const mesh::DirectoryHit& hit);

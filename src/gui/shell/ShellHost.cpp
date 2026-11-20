@@ -5,6 +5,7 @@
 #include "gui/chat/PhotoPreview.h"
 
 #include "lib/ui/DataEvent.h"
+#include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/FramePacing.h"
 
 #include "common/Diag.h"
@@ -14,7 +15,10 @@
 #include "common/PbrCompat.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/Platform.h"
+#include "foundation/platform/PlatformShare.h"
 #include "foundation/platform/ScreenKeyboard.h"
+#include "foundation/platform/ScreenKeyboardGeometry.h"
+#include "foundation/platform/UikitWindowGeometry.h"
 #include "foundation/platform/SecureScreen.h"
 #include "foundation/platform/ui/PlatformNavigation.h"
 #include "lib/ui/ContextMenuHost.h"
@@ -156,6 +160,9 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("dialog_checkbox_checked", &host.state_.dialog.checkbox_checked);
     ctor.Bind("dialog_show_prompt", &host.state_.dialog.show_prompt);
     ctor.Bind("dialog_prompt_value", &host.state_.dialog.prompt_value);
+    ctor.Bind("dialog_note_line", &host.state_.dialog.note_line);
+    ctor.Bind("dialog_note_text", &host.state_.dialog.note_text);
+    ctor.Bind("dialog_note_open", &host.state_.dialog.note_open);
     ctor.Bind("pin_gate_active", &host.state_.pin_gate.active);
     ctor.Bind("pin_gate_identity_fork_mode", &host.state_.pin_gate.identity_fork_mode);
     ctor.Bind("pin_gate_chooser_mode", &host.state_.pin_gate.chooser_mode);
@@ -187,6 +194,9 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_pin", &host.state_.pin_gate.pin);
     ctor.Bind("pin_gate_pin_confirm", &host.state_.pin_gate.pin_confirm);
     ctor.Bind("pin_gate_link_payload", &host.state_.pin_gate.link_payload);
+    ctor.Bind("pin_gate_default_note_line", &host.state_.pin_gate.default_note_line);
+    ctor.Bind("pin_gate_default_note_text", &host.state_.pin_gate.default_note_text);
+    ctor.Bind("pin_gate_default_note_open", &host.state_.pin_gate.default_note_open);
     ctor.Bind("call_ring_active", &host.state_.call_ring.active);
     ctor.Bind("call_ring_pulse", &host.state_.call_ring.pulse);
     ctor.Bind("call_ring_awaiting_invite", &host.state_.call_ring.awaiting_invite);
@@ -217,6 +227,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_peer_hint", &host.state_.call_in_progress.peer_hint);
     ctor.Bind("call_in_progress_muted", &host.state_.call_in_progress.muted);
     ctor.Bind("call_in_progress_camera_on", &host.state_.call_in_progress.camera_on);
+    ctor.Bind("call_in_progress_camera_resuming", &host.state_.call_in_progress.camera_resuming);
     ctor.Bind("call_in_progress_camera_front", &host.state_.call_in_progress.camera_front);
     ctor.Bind("call_in_progress_speaker_on", &host.state_.call_in_progress.speaker_on);
     ctor.Bind("call_in_progress_stage_visible", &host.state_.call_in_progress.stage_visible);
@@ -304,6 +315,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
       roster_handle.RegisterMember("speaking", &CallRosterParticipantState::speaking);
       roster_handle.RegisterMember("on_hold", &CallRosterParticipantState::on_hold);
       roster_handle.RegisterMember("video_paused", &CallRosterParticipantState::video_paused);
+      roster_handle.RegisterMember("reconnecting", &CallRosterParticipantState::reconnecting);
+      roster_handle.RegisterMember("camera_resuming", &CallRosterParticipantState::camera_resuming);
       roster_handle.RegisterMember("guest", &CallRosterParticipantState::guest);
     }
     ctor.RegisterArray<std::vector<CallRosterParticipantState>>();
@@ -372,6 +385,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("dialog_ok", DataEvent<>([this]() { DialogOk(); }));
     ctor.BindEventCallback("dialog_cancel", DataEvent<>([this]() { DialogCancel(); }));
     ctor.BindEventCallback("dialog_toggle_checkbox", DataEvent<>([this]() { DialogToggleCheckbox(); }));
+    ctor.BindEventCallback("dialog_toggle_note", DataEvent<>([this]() { DialogToggleNote(); }));
+    ctor.BindEventCallback("pin_gate_note_toggle", DataEvent<>([this]() { PinGateNoteToggle(); }));
     ctor.BindEventCallback("pin_gate_submit", DataEvent<>([this]() { PinGateSubmit(); }));
     ctor.BindEventCallback("pin_gate_paste", DataEvent<>([this]() { PinGatePaste(); }));
     ctor.BindEventCallback("pin_gate_clear_payload", DataEvent<>([this]() { PinGateClearPayload(); }));
@@ -506,6 +521,9 @@ void ShellHost::Initialize(ui::Context* context) {
   sync_pending_ = false;
   restore_focus_after_sync_ = false;
   PlatformNavigation::SetDismissHandler([this] { return HandleDismiss(); });
+  if (tap_cover_release_after_sync_) {
+    FinishTapCoverRelease(); // the pending sync is dropped above: its deferred release must not wait for it
+  }
   ai_dot_.SetCallbacks({.on_tap =
                             [this]() {
                               if (on_ai_dot_tap_) {
@@ -599,7 +617,9 @@ void ShellHost::ClearTabContext(const bool keep_compact_chat) {
     state_.compact_chat_open = false;
   }
   state_.auxiliary_open = false;
-  state_.transient_stack.clear();
+  while (!state_.transient_stack.empty()) {
+    PopTransient(); // each pushed page is told it is gone (New chat / Add contact flags), top first
+  }
   state_.transient_active = false;
   state_.secret_page_open = false;
   pending_dismiss_.reset();
@@ -870,7 +890,9 @@ void ShellHost::OpenCompactChat() {
   }
   // A conversation picked in the AI drawer (or opened any other way) closes it.
   CloseAiDrawer();
-  if (!state_.compact_chat_open) {
+  // A notification tap's chat (and only that one) is there at once when the cover goes, not sliding in over the page
+  // left behind.
+  if (!state_.compact_chat_open && !(tapped_chat_opening_ && tap_cover_.Armed())) {
     page_enter_pending_id_ = "shell-chat-overlay";
   }
   state_.compact_chat_open = true;
@@ -1031,7 +1053,24 @@ void ShellHost::CloseLayer(int layer_id) {
                                               [layer_id](const OverlayEntry& entry) { return entry.id == layer_id; }),
                                state_.overlay_stack.end());
   }
+  auto [first, last] = layer_closed_watchers_.equal_range(closing_id);
+  std::vector<std::function<void()>> watchers;
+  for (auto it = first; it != last; ++it) {
+    watchers.push_back(std::move(it->second));
+  }
+  layer_closed_watchers_.erase(first, last);
+  for (auto& closed : watchers) {
+    if (closed) {
+      closed();
+    }
+  }
   RequestSyncLayout(true);
+}
+
+void ShellHost::WatchLayerClosed(const int layer_id, std::function<void()> closed) {
+  if (HasLayer(layer_id) && closed) {
+    layer_closed_watchers_.emplace(layer_id, std::move(closed));
+  }
 }
 
 bool ShellHost::HasLayer(const int layer_id) const {
@@ -1341,6 +1380,9 @@ void ShellHost::DirtyFeedback() {
   DataModelHost::Instance().Dirty("window", "dialog_checkbox_checked");
   DataModelHost::Instance().Dirty("window", "dialog_show_prompt");
   DataModelHost::Instance().Dirty("window", "dialog_prompt_value");
+  DataModelHost::Instance().Dirty("window", "dialog_note_line");
+  DataModelHost::Instance().Dirty("window", "dialog_note_text");
+  DataModelHost::Instance().Dirty("window", "dialog_note_open");
 }
 
 void ShellHost::DirtyPinGate() {
@@ -1374,6 +1416,9 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_pin");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_payload");
+  DataModelHost::Instance().Dirty("window", "pin_gate_default_note_line");
+  DataModelHost::Instance().Dirty("window", "pin_gate_default_note_text");
+  DataModelHost::Instance().Dirty("window", "pin_gate_default_note_open");
   DataModelHost::Instance().Dirty("window", "unlock_in_progress");
   DataModelHost::Instance().Dirty("window", "startup_cover_visible");
 }
@@ -1504,6 +1549,7 @@ void ShellHost::DirtyCallChrome() {
   }
   DataModelHost::Instance().Dirty("window", "call_in_progress_muted");
   DataModelHost::Instance().Dirty("window", "call_in_progress_camera_on");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_camera_resuming");
   DataModelHost::Instance().Dirty("window", "call_in_progress_camera_front");
   DataModelHost::Instance().Dirty("window", "call_in_progress_speaker_on");
   DataModelHost::Instance().Dirty("window", "call_in_progress_stage_visible");
@@ -1644,8 +1690,9 @@ void ShellHost::ReconcileStartupCover() {
   }
   // PIN / identity chooser must be reachable; logo cover only masks silent prepare. A ring page (the tapped call
   // alert's placeholder included) is what the person came for: no logo over it.
-  const bool show = startup_cover_enabled_ && !state_.pin_gate.active && !state_.call_ring.active &&
-                    (startup_cover_armed_ || state_.unlock_in_progress);
+  const bool startup_shown = StartupLogoWanted();
+  // A notification tap's chat not open yet: the same cover stands in for the page left behind.
+  const bool show = startup_shown || tap_cover_.Visible(TapCoverScreenNow(startup_shown));
   if (state_.startup_cover_visible == show) {
     return;
   }
@@ -1657,6 +1704,99 @@ void ShellHost::ReconcileStartupCover() {
 void ShellHost::SettleStartupCoverArm() {
   startup_cover_armed_ = false;
   ReconcileStartupCover();
+}
+
+bool ShellHost::StartupLogoWanted() const {
+  // PIN / identity chooser must be reachable; logo cover only masks silent prepare. A ring page (the tapped call
+  // alert's placeholder included) is what the person came for: no logo over it.
+  return startup_cover_enabled_ && !state_.pin_gate.active && !state_.call_ring.active &&
+         (startup_cover_armed_ || state_.unlock_in_progress);
+}
+
+TapCoverScreen ShellHost::TapCoverScreenNow(const bool startup_shown) const {
+  TapCoverScreen screen;
+  screen.foreground = tap_cover_foreground_ ? tap_cover_foreground_() : AppLifecycle::IsForeground();
+  screen.held_elsewhere = startup_shown || state_.pin_gate.active;
+  screen.call = state_.call_ring.active || state_.call_in_progress.active;
+  return screen;
+}
+
+void ShellHost::TickTapCover(const NotificationTapCover::Clock::time_point now) {
+  if (!tap_cover_.Armed()) {
+    return;
+  }
+  switch (tap_cover_.Evaluate(TapCoverScreenNow(StartupLogoWanted()), now)) {
+    case NotificationTapCover::Step::Expired:
+      // Today's behaviour from here: the page left behind, the chat once its message syncs.
+      tap_cover_release_after_sync_ = false;
+      DiagLine("notification.tap").Add("what", "cover_timeout").Emit();
+      break;
+    case NotificationTapCover::Step::Released:
+      tap_cover_release_after_sync_ = false;
+      DiagLine("notification.tap").Add("what", "cover_call").Emit();
+      break;
+    case NotificationTapCover::Step::Shown:
+    case NotificationTapCover::Step::Hidden:
+      break;
+  }
+  ReconcileStartupCover();
+}
+
+void ShellHost::ArmTapCover() {
+  tap_cover_.Arm();
+  tap_cover_release_after_sync_ = false;
+  DiagLine("notification.tap").Add("what", "cover_armed").Emit();
+  ReconcileStartupCover();
+}
+
+void ShellHost::ReleaseTapCover() {
+  if (!tap_cover_.Armed()) {
+    return;
+  }
+  if (sync_pending_) {
+    tap_cover_release_after_sync_ = true; // the chat's layout is built first: no frame of the page under it
+    return;
+  }
+  FinishTapCoverRelease();
+}
+
+void ShellHost::FinishTapCoverRelease() {
+  tap_cover_release_after_sync_ = false;
+  if (tap_cover_.Release()) {
+    DiagLine("notification.tap").Add("what", "cover_released").Emit();
+  }
+  ReconcileStartupCover();
+}
+
+void ShellHost::ClearForTappedChat() {
+  // Only while the tap's cover holds: nothing has been shown since the tap. Later (the hold ran out, the person is
+  // using the app) the chat opens as it always did, over nothing closed.
+  if (state_.layout_mode != LayoutMode::Compact || !tap_cover_.Armed()) {
+    return;
+  }
+  // Never torn down around: a live or ringing call's screen, the PIN gate (the chat opens after it), and a system modal
+  // in flight (a share sheet, the Files export, the photo picker: the OS owns it). Today's behaviour from there.
+  const bool os_modal_up = tap_cover_os_modal_ ? tap_cover_os_modal_() : PlatformSystemModalUp(Backend::GetWindow());
+  if (state_.call_ring.active || state_.call_in_progress.active || state_.pin_gate.active || os_modal_up) {
+    return;
+  }
+  std::vector<int> layers;
+  for (auto it = state_.overlay_stack.rbegin(); it != state_.overlay_stack.rend(); ++it) {
+    layers.push_back(it->id);
+  }
+  for (const int id : layers) {
+    if (HasLayer(id)) { // an owner's close may have taken another with it
+      CloseLayer(id);
+    }
+  }
+  if (ShellLayout::IsHiddenTabOnCompact(state_.nav_tab)) {
+    // A chat left open under Settings / Contacts is not shown again on the way: the tapped one replaces it.
+    CloseCompactChat();
+    SelectNavTab(NavTab::Sessions);
+  } else {
+    ClearTabContext(/*keep_compact_chat=*/true); // pushed pages and the drawer; the chat page is reused
+  }
+  RequestSyncLayout(false, "tapped_chat");
 }
 
 void ShellHost::RequestRemountNavRail() {
@@ -1769,6 +1909,9 @@ void ShellHost::FlushPendingSyncLayout() {
   } catch (...) {
     log().error << "SyncLayout failed with unknown exception";
   }
+  if (tap_cover_release_after_sync_) {
+    FinishTapCoverRelease(); // the tapped chat's layout is built: same frame
+  }
   if (restore_focus_after_sync_) {
     restore_focus_after_sync_ = false;
     RestoreFocus();
@@ -1782,13 +1925,17 @@ void ShellHost::ApplyLayoutModeFromContext(ui::Context* context) {
   const float dp_ratio = context->GetDensityIndependentPixelRatio();
   const float width_dp = static_cast<float>(context->GetDimensions().x) / dp_ratio;
   state_.shell_width_dp = width_dp;
-  state_.layout_mode = ShellLayout::FromWidth(width_dp, config_.compact_breakpoint_dp);
+  state_.layout_mode = ShellLayout::ForDevice(width_dp, IsIpadDevice(), config_.compact_breakpoint_dp);
   ShellLayout::SyncLayoutModeString(state_);
   ContextMenuHost::Instance().SetCompactLayout(state_.layout_mode == LayoutMode::Compact);
 }
 
 void ShellHost::SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback) {
   on_layout_mode_changed_ = std::move(callback);
+}
+
+void ShellHost::SetOnViewportResized(std::function<void()> callback) {
+  on_viewport_resized_ = std::move(callback);
 }
 
 void ShellHost::SetOnSyncLayoutMeasured(std::function<void(int64_t ms)> callback) {
@@ -1815,7 +1962,7 @@ void ShellHost::SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp) {
   ApplySafeAreaLayout();
 }
 
-ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
+ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() {
   SafeAreaFromSdl insets{};
 #if UI_SDL_VERSION_MAJOR >= 3
   // SDL_GetWindowSafeArea is in window coordinates (points on iOS, pixels on Android).
@@ -1838,18 +1985,142 @@ ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
   const float display_scale = SDL_GetWindowDisplayScale(window);
   // context_px = window_units * density; dp = context_px / display_scale
   const float window_to_dp = (display_scale > 0.f) ? ((density > 0.f ? density : 1.f) / display_scale) : 1.f;
-  const int top_win = std::max(0, safe.y);
+  // iPadOS 26+ in a window: the window controls sit in the top-left corner, outside SDL's safe area.
+  const int top_win = std::max({0, safe.y, WindowControlsTopInset(window)});
   // iOS leaves the on-screen keyboard out of the safe area; it is reported separately (0 elsewhere).
-  const int bottom_win = std::max({0, win_h - (safe.y + safe.h), ScreenKeyboardHeight()});
+  const int safe_bottom_win = std::max(0, win_h - (safe.y + safe.h));
+  insets.window_w = win_w;
+  insets.window_h = win_h;
+  insets.keyboard_win = std::max(0, ScreenKeyboardHeight());
+  insets.keyboard_top_win = win_h - insets.keyboard_win;
+  // iPhone, and the iPad without a measurable input: the input bar is docked on the shell's bottom edge, which without
+  // a keyboard is the safe area's bottom; the shell goes up by just what puts that edge on the keyboard's top (no gap).
+  // Same numbers as max(safe bottom, keyboard).
+  insets.input_bottom_win = win_h - safe_bottom_win;
+  if (IsIpadDevice()) {
+    MeasureKeyboardInput(insets, density > 0.f ? density : 1.f);
+  }
+  insets.lift_win = std::string_view(insets.input_source) == "bar"
+                        ? std::clamp(insets.bar_lift_win, 0, win_h)
+                        : KeyboardLift(win_h, insets.keyboard_top_win, insets.input_bottom_win, 0);
+  const int bottom_win = safe_bottom_win + insets.lift_win;
   insets.top_dp = static_cast<int>(static_cast<float>(top_win) * window_to_dp + 0.5f);
   insets.bottom_dp = static_cast<int>(static_cast<float>(bottom_win) * window_to_dp + 0.5f);
+  insets.keyboard_dp = static_cast<int>(static_cast<float>(insets.lift_win) * window_to_dp + 0.5f);
 #endif
   return insets;
 }
 
+void ShellHost::MeasureKeyboardInput(SafeAreaFromSdl& insets, float px_per_win) {
+  if (insets.keyboard_win <= 0) {
+    keyboard_field_ = nullptr;
+    bar_target_ = BarTarget{};
+    return;
+  }
+  ui::Element* focus = context_ ? context_->GetFocusElement() : nullptr;
+  ui::ElementDocument* doc = context_ && context_->GetNumDocuments() > 0 ? context_->GetDocument(0) : nullptr;
+  if (!focus || focus == doc || focus->GetTagName() == "body") {
+    insets.input_source = "shell";
+    return;
+  }
+  auto bottom_win = [px_per_win](ui::Element* element) {
+    const float px =
+        element->GetAbsoluteOffset(ui::BoxArea::Border).y + element->GetBox().GetSize(ui::BoxArea::Border).y;
+    return static_cast<int>(std::lround(px / px_per_win));
+  };
+  ui::Element* bar = focus;
+  while (bar && !bar->IsClassSet("prompt-composer") && !bar->IsClassSet("ask-ai-composer")) {
+    bar = bar->GetParentNode();
+  }
+  bool in_shell_root = false;
+  for (ui::Element* e = bar; e; e = e->GetParentNode()) {
+    if (e->GetId() == "shell-root") {
+      in_shell_root = true;
+      break;
+    }
+  }
+  const bool home_keeps_place = state_.layout_mode == LayoutMode::Compact && HomeDockApplies();
+  if (bar && in_shell_root && !home_keeps_place && !bottom_chrome_open_) {
+    // The chat input bar in #shell-root: the lift is settled on it only when its target moves (the keyboard's top, the
+    // bar's height when it grows a line, the bar, the layout, the window); a keystroke that changes none of these
+    // leaves the lift alone (SettleBarLift).
+    insets.input_source = "bar";
+    insets.focus_bottom_win = bottom_win(bar);
+    const BarTarget target{bar,
+                           insets.keyboard_top_win,
+                           static_cast<int>(std::lround(bar->GetBox().GetSize(ui::BoxArea::Border).y / px_per_win)),
+                           state_.layout_mode,
+                           insets.window_w,
+                           insets.window_h};
+    const bool target_changed = target.bar != bar_target_.bar || target.keyboard_top != bar_target_.keyboard_top ||
+                                std::abs(target.bar_h - bar_target_.bar_h) >= 1 || target.mode != bar_target_.mode ||
+                                target.window_w != bar_target_.window_w || target.window_h != bar_target_.window_h;
+    bar_target_ = target;
+    insets.bar_lift_win = SettleBarLift(bar_settle_, layout_passes_, keyboard_lift_applied_win_,
+                                        insets.focus_bottom_win, insets.keyboard_top_win, target_changed);
+    insets.input_bottom_win = insets.keyboard_top_win + insets.bar_lift_win; // the unlifted bottom that lift implies
+    keyboard_field_ = nullptr;
+    return;
+  }
+  bar_target_ = BarTarget{};
+  if (bar) {
+    // A bar the lift does not move (the AI Home's, one outside the shell, under the emoji sheet): as before.
+    insets.input_source = "shell";
+    keyboard_field_ = nullptr;
+    return;
+  }
+  // Another text field (a search box, a setting): decided once per focus, from where it is. Above the keyboard it stays
+  // where it is and nothing is lifted; covered, the shell goes up as before.
+  insets.focus_bottom_win = bottom_win(focus);
+  if (keyboard_field_ != focus) {
+    keyboard_field_ = focus;
+    keyboard_field_covered_ = insets.focus_bottom_win > insets.keyboard_top_win;
+  }
+  if (keyboard_field_covered_) {
+    insets.input_source = "field_covered";
+  } else {
+    insets.input_source = "field";
+    insets.input_bottom_win = insets.focus_bottom_win;
+  }
+}
+
 void ShellHost::RefreshSafeAreaInsets(ui::Context* context) {
   (void)context;
+  // iOS: SDL resizes its view away from the window on every keyboard change and every caret move (SDL_SetTextInputArea
+  // -> updateKeyboard, w/h swapped on iPadOS 27) until the next frame puts it back. Sizes and the pixel density read
+  // meanwhile are wrong (11-17 iPad log: the bar measured 528 instead of 393, the lift jumped to 286 on each keystroke):
+  // keep the insets of the last good frame.
+  if (!UikitViewFillsWindow(Backend::GetWindow())) {
+    return;
+  }
   const SafeAreaFromSdl sdl = ReadSafeAreaFromSdl();
+  const std::string keyboard_events = TakeScreenKeyboardEvents();
+  const bool lift_changed = sdl.keyboard_dp != logged_keyboard_dp_ && (sdl.keyboard_dp > 0 || logged_keyboard_dp_ > 0);
+  const bool source_changed = std::string_view(sdl.input_source) != logged_input_source_;
+  if (lift_changed || source_changed || !keyboard_events.empty()) {
+    // iOS: INFO when the lift or what it is measured from changes; the keyboard notifications (iPad) alone at DEBUG.
+    std::ostringstream out;
+    out << "keyboard lift pt=" << sdl.lift_win << " dp=" << sdl.keyboard_dp
+        << " events=" << (keyboard_events.empty() ? "-" : keyboard_events) << " cover_pt=" << sdl.keyboard_win
+        << " kb_top_pt=" << sdl.keyboard_top_win << " input=" << sdl.input_source
+        << " input_bottom_pt=" << sdl.input_bottom_win << " focus_bottom_pt=" << sdl.focus_bottom_win
+        << " applied_pt=" << keyboard_lift_applied_win_ << " settling=" << bar_settle_.settling
+        << " step=" << bar_settle_.steps << " sdl_window=" << sdl.window_w << "x" << sdl.window_h
+        << " bottom_dp=" << sdl.bottom_dp << " latch=" << (sdl.bottom_dp >= kImeLatchMinDp)
+        << " layout=" << ShellLayout::LayoutModeString(state_.layout_mode) << " " << DescribeScreenKeyboard();
+    if (lift_changed || source_changed) {
+      log().info << out.str();
+    } else {
+      log().debug << out.str();
+    }
+  }
+  logged_keyboard_dp_ = sdl.keyboard_dp;
+  logged_input_source_ = sdl.input_source;
+  if (bar_settle_.settling) {
+    // The bar's new place is measured on the next frame: ask for it even when idle.
+    Backend::RequestForceFrame();
+  }
+  keyboard_lift_applied_win_ = sdl.lift_win;
   if (sdl.bottom_dp >= kImeLatchMinDp) {
     last_ime_bottom_dp_ = sdl.bottom_dp;
     if (bottom_chrome_open_ && !bottom_chrome_fixed_height_) {
@@ -3244,10 +3515,18 @@ void ShellHost::Update(ui::Context* context) {
     pending_dismiss_.reset();
     CommitDismiss(target);
   }
+  TickTapCover(tap_cover_now_ ? tap_cover_now_() : NotificationTapCover::Clock::now());
 
   const LayoutMode previous = state_.layout_mode;
   ApplyLayoutModeFromContext(context);
   RefreshSafeAreaInsets(context);
+  if (context->GetDimensions().x != viewport_width_px_ || context->GetDimensions().y != viewport_height_px_) {
+    viewport_width_px_ = context->GetDimensions().x;
+    viewport_height_px_ = context->GetDimensions().y;
+    if (on_viewport_resized_) {
+      on_viewport_resized_();
+    }
+  }
   if (previous != state_.layout_mode) {
     OnLayoutModeChanged();
     SaveFocus();
@@ -3304,6 +3583,7 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
   if (!context) {
     return;
   }
+  ++layout_passes_; // after Context::Update: the bar measured from here on is this pass's (SettleBarLift)
 
   using clock = std::chrono::steady_clock;
   const auto now = clock::now();
@@ -3311,6 +3591,13 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
 
   if (pending_dismiss_) {
     const double remaining = std::chrono::duration<double>(pending_dismiss_->at - now).count();
+    delay_sec = std::min(delay_sec, std::max(0.0, remaining));
+  }
+
+  // A notification tap's hold: one frame when it runs out (Update drops the cover).
+  if (const std::optional<NotificationTapCover::Clock::time_point> until = tap_cover_.Until()) {
+    const auto tap_now = tap_cover_now_ ? tap_cover_now_() : NotificationTapCover::Clock::now();
+    const double remaining = std::chrono::duration<double>(*until - tap_now).count();
     delay_sec = std::min(delay_sec, std::max(0.0, remaining));
   }
 
@@ -3384,6 +3671,17 @@ void ShellHost::DialogCancel() {
 void ShellHost::DialogToggleCheckbox() {
   state_.dialog.checkbox_checked = !state_.dialog.checkbox_checked;
   DirtyFeedback();
+}
+
+void ShellHost::DialogToggleNote() {
+  ShellFeedback::ToggleDialogNote(state_);
+  DirtyFeedback();
+}
+
+void ShellHost::PinGateNoteToggle() {
+  if (pin_gate_actions_.on_note_toggle) {
+    pin_gate_actions_.on_note_toggle();
+  }
 }
 
 void ShellHost::PinGateSubmit() {

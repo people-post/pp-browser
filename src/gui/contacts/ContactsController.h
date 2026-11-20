@@ -214,9 +214,16 @@ public:
   void SyncLayoutMode();
   /** Reload list from store (e.g. after AI add_contact while tab is open). */
   void Refresh();
+  /**
+   * The address book changed (ConversationsHub::SetOnContactsChanged, posted to the UI thread): every list of people
+   * is read again, so the page on screen and the ones under it show the change without a tap or a page change.
+   */
+  void OnContactsChanged();
   /** Me → About → "Show advanced settings": ids, addresses and fingerprints in the contact detail. */
   void SetShowAdvanced(bool advanced);
   void Tick();
+  /** The window changed size (a rotation): the QR page, when up, redraws the code at the size that now fits. */
+  void OnViewportResized();
   void FlushPending();
   /**
    * The contact page's / a list row's voice or video call: opens (or finds) the chat with `contact_id` and calls from
@@ -261,6 +268,15 @@ public:
   void RefreshMemberIcon(const std::function<std::string(const std::string&)>& icon_for);
   /** The contact page is open as a page sheet. */
   bool DetailSheetOpen() const { return detail_sheet_layer_id_ >= 0; }
+  /** The Add contact page is open (a transient page on phones, a page sheet elsewhere). */
+  bool AddContactPageOpen() const { return add_open_; }
+  /** Adds the person a directory hit names as a contact and shows their page (what a picked search result does). */
+  void AddContactFromHit(const mesh::DirectoryHit& hit);
+  /** The page's search field changed to `query` (what the field's change event does). Exposed for tests. */
+  void TypeInAddContact(const std::string& query);
+  /** The Add contact page's search is waiting or in flight / came back empty. Exposed for tests. */
+  bool AddSearching() const { return add_searching_; }
+  bool AddNoResults() const { return add_no_results_; }
   /**
    * The group owner's "Group admin" card at the bottom of the person's page just opened from that group (phones);
    * opening any page clears it. Remove closes the sheet once the person is out.
@@ -289,6 +305,17 @@ public:
 
   /** Phone Chats "plus": pushes the full-screen New chat page (new group / add contact / contacts by letter). */
   void OpenNewChatPage();
+  /**
+   * Settings → Send run logs (DEV/PLAN-send-run-logs.md): the New chat page to pick one contact; the pick opens that
+   * chat as usual and then runs `after_pick(contact_id)` once. One-shot: dropped on any other way onto the page, on
+   * leaving it (back, a tab, a pick), and when the contact picked cannot be messaged (the page then closes). Returns
+   * false, arming nothing, when the page could not open or a New chat page is already up (its pick must not send).
+   */
+  bool OpenNewChatPageToPick(std::function<void(const std::string& contact_id)> after_pick);
+  /** A pick on the New chat page would run a pending "after pick" action (tests). */
+  bool PickActionPending() const { return static_cast<bool>(after_pick_); }
+  /** A row tapped on the New chat page (the view's new_chat_pick; tests). */
+  void OnNewChatPickForTest(const std::string& contact_id) { OnNewChatPick(contact_id); }
   /** Opens (or starts) the chat with a contact, as a pick on the New chat page does (Home's Favorites). */
   void MessageContact(const std::string& contact_id);
   /**
@@ -413,6 +440,12 @@ private:
   static void RefreshContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
   void SyncFromStore();
+  /**
+   * Every list that shows contacts, read again from the store: the Contacts tab's, New chat's (when open) and the blocked
+   * list's (when open). Each path that adds, removes or renames a contact ends here, so the page the user sees behind a
+   * card or an Add contact page is already right (Chats is the active tab on a phone: no tick or tab change refreshes it).
+   */
+  void SyncLists();
   /** Rebuilds the New chat page's frequent and lettered rows from the contacts and chats (and its search). */
   void SyncNewChat();
   void DirtyNewChat();
@@ -446,14 +479,20 @@ private:
   void OnContactsIndexEnd();
   void AddContactByQuery(const std::string& query);
   void OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits);
-  void AddContactFromHit(const mesh::DirectoryHit& hit);
   std::optional<Contact> FindContactByAccount(const std::string& account_id) const;
   void ShowAlreadyContact(const Contact& contact);
   void OnCopyId();
   void OnShareContact(ui::Vector2i position);
   void ShareContactTo(const std::string& thread_id, const std::string& contact_id, const std::string& name);
-  /** "Add contact" with a pasted invite: the contact added, shown (UI thread). */
-  void OnAddedFromInvite(const Roe<std::pair<std::string, bool>>& added);
+  /**
+   * The invite's person is asked about, then added. `show_contacts_tab`: the Contacts tab is selected first (an invite
+   * the OS opened, a scan on the desktop); a phone's scan stays on the page it came from (New chat under it).
+   */
+  void AskToAddInvite(const std::string& link, bool show_contacts_tab);
+  /** "Add contact" with a pasted or scanned invite: the contact is stored, shown and confirmed at once (UI thread). */
+  void OnAddedFromInvite(const Roe<std::string>& added);
+  /** Its account's card was asked for (seconds later): an open page says whether the person can be messaged now. */
+  void OnInviteCardAsked();
   void OnSetTrust(const std::string& trust);
   /** Block the selected contact, after the usual confirm. */
   void OnBlockSelected();
@@ -507,6 +546,8 @@ private:
   bool new_chat_has_contacts_ = false;
   ui::String new_chat_query_;
   bool new_chat_open_ = false;
+  /** OpenNewChatPageToPick's action: set only while that page is up, cleared before it runs. */
+  std::function<void(const std::string& contact_id)> after_pick_;
   /** The Add contact page is a full-screen transient (phones), not a page sheet layer. */
   bool add_is_transient_ = false;
   /** Blocked people, by name (OpenBlockedPeople). */
@@ -559,6 +600,8 @@ private:
   std::string my_locator_;
   std::string my_nickname_;
   ui::String my_qr_svg_rml_;
+  /** The QR code's side as CSS ("320dp"): see QrPhoneDisplayDp. */
+  ui::String qr_size_;
   bool can_scan_ = false;
   bool can_new_group_ = false;
   bool my_qr_open_ = false;

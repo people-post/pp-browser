@@ -377,6 +377,25 @@ bool VoiceProcessingIo::Open(std::string* reason) {
   if (st != noErr) {
     return fail(Failed("AudioOutputUnitStart", st));
   }
+#if !TARGET_OS_OSX
+  {
+    // Read back, never set (B230 diagnostics): the microphone side's format, and whether voice processing / AGC run.
+    AudioStreamBasicDescription mic{};
+    UInt32 mic_size = sizeof(mic);
+    const bool mic_ok = AudioUnitGetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, kInputBus,
+                                             &mic, &mic_size) == noErr;
+    const auto read_flag = [unit](AudioUnitPropertyID id) {
+      UInt32 value = 0;
+      UInt32 value_size = sizeof(value);
+      return AudioUnitGetProperty(unit, id, kAudioUnitScope_Global, 0, &value, &value_size) == noErr
+                 ? static_cast<int>(value)
+                 : -1;
+    };
+    AudioSession::NotifyVoiceProcessingStarted(
+        mic_ok ? mic.mSampleRate : -1.0, mic_ok ? static_cast<int>(mic.mChannelsPerFrame) : -1,
+        read_flag(kAUVoiceIOProperty_BypassVoiceProcessing), read_flag(kAUVoiceIOProperty_VoiceProcessingEnableAGC));
+  }
+#endif
 #if TARGET_OS_OSX
   // Baseline for TakeDeviceChanged (I1): a notification fired by Start itself (or an
   // AirPods A2DP→HFP flip right after) must not look like a device change on the next check.
