@@ -64,6 +64,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 
 | Task | Where to look |
 |------|----------------|
+| A format change (wire, signed bytes, HTTP, the relay's data); the release-1 freeze | [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md), [projects/release-compatibility/](projects/release-compatibility/) (its CURRENT_STATE lists the questions open for Kenneth and Leo) |
 | Default chat UI | `assets/samples/window_shell.rml`, `assets/views/home.rml`, `assets/views/chat.rml`, `src/gui/chat/ChatController.cpp` |
 | Window shell / layout | `src/gui/shell/ShellHost.*`, [docs/ui/WINDOW_SHELL.md](docs/ui/WINDOW_SHELL.md) |
 | Working set panel | [docs/ui/WORKING_SET_PANEL.md](docs/ui/WORKING_SET_PANEL.md) |
