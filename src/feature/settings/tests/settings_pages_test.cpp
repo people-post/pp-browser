@@ -45,8 +45,8 @@ TEST(SettingsPagesTest, OpeningAPageDoesWhatTheOldSectionDid) {
       {"notifications", static_cast<unsigned>(SettingsPageAction::RefreshBannerTip)},
       {"appearance", 0},
       {"storage", static_cast<unsigned>(SettingsPageAction::EnterStorage)},
-      {"advanced", static_cast<unsigned>(SettingsPageAction::RefreshRunLogs)},
-      {"relays", static_cast<unsigned>(SettingsPageAction::RefreshRelays)},
+      {"advanced", static_cast<unsigned>(SettingsPageAction::RefreshRunLogs) |
+                       static_cast<unsigned>(SettingsPageAction::RefreshRelays)},
       {"help", 0},
       {"tester", static_cast<unsigned>(SettingsPageAction::RefreshCasLibrary)},
   };
@@ -117,11 +117,11 @@ std::vector<std::string> ListedIds(const bool advanced, const bool tester) {
 }
 
 TEST(SettingsPagesTest, AdvancedFollowsItsSwitchAndTestOptionsFollowTheTesterSwitch) {
-  const std::vector<std::string> base = {"profile",    "privacy", "security", "devices", "notifications",
-                                         "appearance", "storage", "relays",   "help"};
+  const std::vector<std::string> base = {"profile",       "privacy",    "security", "devices",
+                                         "notifications", "appearance", "storage",  "help"};
   EXPECT_EQ(ListedIds(false, false), base);
   auto with_advanced = base;
-  with_advanced.insert(with_advanced.end() - 2, "advanced"); // Advanced, then My relays (always listed), then Help
+  with_advanced.insert(with_advanced.end() - 1, "advanced"); // Advanced, then Help (My relays lives inside Advanced)
   EXPECT_EQ(ListedIds(true, false), with_advanced);
   auto with_tester = base;
   with_tester.push_back("tester");
@@ -130,8 +130,8 @@ TEST(SettingsPagesTest, AdvancedFollowsItsSwitchAndTestOptionsFollowTheTesterSwi
   both.push_back("tester");
   EXPECT_EQ(ListedIds(true, true), both);
   EXPECT_EQ(Page("advanced").gate, SettingsPageGate::Advanced);
-  EXPECT_EQ(Page("relays").gate, SettingsPageGate::None);
-  EXPECT_EQ(Page("relays").home_group, Page("advanced").home_group);
+  EXPECT_EQ(FindSettingsPage("relays"), nullptr); // My relays is a sub-page of Advanced, not a page of its own
+  EXPECT_TRUE(SettingsPageHas(Page("advanced"), SettingsPageAction::RefreshRelays));
   EXPECT_EQ(Page("tester").gate, SettingsPageGate::Tester);
   EXPECT_EQ(Page("help").gate, SettingsPageGate::None);
 }

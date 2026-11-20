@@ -42,6 +42,19 @@
         <div class="stack settings-desktop-only" data-if="advanced">
 {{include:settings_section_advanced_backend}}
         </div>
+        <!-- My relays: under Service, a page of its own on phones (open_security_page('relays')), inline on the desktop. The "?" asks PP Support. -->
+        <div class="group-card settings-phone-only">
+          <div class="group-row" data-event-click="open_security_page('relays')">
+            <span class="group-row-body">
+              <span class="group-row-label settings-q-label"><span class="group-row-text">{{i18n:settings.relays.title}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.relays.title')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </div>
+        </div>
+        <div class="stack settings-desktop-only">
+          <p class="text group-head settings-q-label"><span>{{i18n:settings.relays.title}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.relays.title')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></p>
+{{include:settings_section_advanced_relays}}
+        </div>
         <!-- Collect / Send run logs (DEV/PLAN-send-run-logs.md, test phase): the device-wide switch and, next to it, the
              row that sends the logs as a file to a contact the user picks. The row does nothing itself: the "Send" pill
              is the only way to send; grey while an archive is being prepared or when there is nothing to send yet. -->

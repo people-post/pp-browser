@@ -545,7 +545,10 @@ void SettingsController::SyncBindingsFromSession() {
     if (SettingsPageHas(*page, SettingsPageAction::RefreshDevices)) {
       own_devices_.Refresh();
     }
-    if (SettingsPageHas(*page, SettingsPageAction::RefreshRelays)) {
+    // My relays sits inside Advanced: the desktop shows it inline (refresh with the page), a phone refreshes when
+    // the relays sub-page is entered (OpenSecurityPage), not on every open of Advanced.
+    if (SettingsPageHas(*page, SettingsPageAction::RefreshRelays) &&
+        ChromeSnapshot().layout_mode != LayoutMode::Compact) {
       my_relays_.Refresh();
     }
   }
@@ -1641,6 +1644,9 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
     security_page_title_ = Tr("settings.integrations.page.title").c_str();
   } else if (on_advanced && page == "backend_custom" && bindings_.backend_is_custom) {
     security_page_title_ = Tr("settings.network.backend.custom_addresses").c_str();
+  } else if (on_advanced && page == "relays") {
+    security_page_title_ = Tr("settings.relays.title").c_str();
+    my_relays_.Refresh();
   } else {
     return;
   }
