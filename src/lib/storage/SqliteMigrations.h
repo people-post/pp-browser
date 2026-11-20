@@ -15,16 +15,11 @@ namespace pbr {
 
 /**
  * What a step works with: the database, and the profile's data key (the ladder runs after unlock, so a step may
- * rewrite encrypted columns; none does yet). `dek` is null only where no key is given (a store's own tests). A
- * thread.db's step also gets the Account ID of its chat's peer (`thread_peer_account`; empty for a group chat or a
- * thread the catalog does not name one for).
+ * rewrite encrypted columns). `dek` is null only where no key is given (a store's own tests).
  */
 struct SqliteMigrationContext {
   sqlite3* db = nullptr;
   const ByteVector* dek = nullptr;
-  std::string thread_peer_account;
-  /** profile.db: the profile's own Account ID (a step that must tell our own card from others'); empty: not known. */
-  std::string own_account_id;
 };
 
 /** One rung of a database's ladder: from `from` to `from + 1`. The runner wraps it in its own transaction. */
@@ -72,16 +67,10 @@ Roe<int> SqliteUserVersion(sqlite3* db);
  * deleted either way. Not safe against another connection writing meanwhile: run it before the stores open theirs.
  */
 Roe<SqliteLadderOutcome> RunSqliteLadder(sqlite3* db, const std::string& db_path, const SqliteSchemaLadder& ladder,
-                                         const ByteVector* dek = nullptr, std::string thread_peer_account = {},
-                                         std::string own_account_id = {});
+                                         const ByteVector* dek = nullptr);
 
-/** For steps: whether `table` exists, and whether it has `column`. */
+/** For steps (and readers of a file whatever its version): whether `table` exists, and whether it has `column`. */
 Roe<bool> SqliteTableExists(sqlite3* db, const std::string& table);
 Roe<bool> SqliteColumnExists(sqlite3* db, const std::string& table, const std::string& column);
-/** For steps: add `column` (`declaration` is its type and constraints) to `table` when the table exists without it. */
-Roe<void> SqliteAddColumnIfMissing(sqlite3* db, const std::string& table, const std::string& column,
-                                   const std::string& declaration);
-/** For steps: drop `column` from `table` when the table has it. */
-Roe<void> SqliteDropColumnIfPresent(sqlite3* db, const std::string& table, const std::string& column);
 
 } // namespace pbr

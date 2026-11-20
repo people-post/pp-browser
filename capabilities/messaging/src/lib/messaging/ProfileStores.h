@@ -45,11 +45,6 @@ struct ProfileStores {
   std::string profile_db_path;
   /** Bytes the message databases take on disk now (Me → Storage's "chats" share); none: not known. Blocking. */
   std::function<uint64_t()> message_store_bytes;
-  /**
-   * Tells the stores whose profile it is (its own Account ID, read when their schema steps run: profile.db's tells our
-   * own card from others' by it); called once, at open, before the data key arrives. None: not needed.
-   */
-  std::function<void(std::function<std::string()> own_account)> set_own_account;
 };
 
 /** Opens a profile's stores (`profile_data_dir`, `profile_id`): the app's storage, or a test's in-memory ones. */

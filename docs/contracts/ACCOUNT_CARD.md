@@ -406,8 +406,7 @@ grantor, and the grants we issued, one per grantee, with whether it was confirme
   every one says the account is not registered there, its newest card is asked for — its devices over the mesh,
   then the directories of our relays and our other directory providers (`GET /v1/users/by-account`'s
   `account_card`), kept only once it verifies.
-- Our own kept card is re-issued, its device list as it is, when it does not verify (`OwnCards`): the `profile.db`
-  steps to card versions 3 and 4 leave our older card in the newer shape with its old signature ([DATA_LAYOUT § Schema versions](DATA_LAYOUT.md#schema-versions)).
+- Our own kept card is re-issued, its device list as it is, when it does not verify (`OwnCards`).
 
 ## Resolving keys
 

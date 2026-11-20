@@ -10,7 +10,6 @@
 
 #include <filesystem>
 #include <fstream>
-#include <initializer_list>
 #include <string>
 #include <utility>
 #include <vector>
@@ -18,21 +17,6 @@
 namespace pbr {
 
 namespace {
-
-struct AddedColumn {
-  const char* table;
-  const char* column;
-  const char* declaration;
-};
-
-Roe<void> AddColumnsIfMissing(sqlite3* db, const std::initializer_list<AddedColumn> columns) {
-  for (const AddedColumn& added : columns) {
-    if (auto done = SqliteAddColumnIfMissing(db, added.table, added.column, added.declaration); !done) {
-      return Error(std::string(added.table) + "." + added.column + ": " + done.error().message);
-    }
-  }
-  return {};
-}
 
 Roe<void> CreateProfileDb(const SqliteMigrationContext& context) {
   sqlite3* db = context.db;
@@ -51,209 +35,6 @@ Roe<void> CreateProfileDb(const SqliteMigrationContext& context) {
   return SqliteCallSessionStore::EnsureSchema(db);
 }
 
-/**
- * 4 → 5, the baseline (D105): a tester's profile.db at schema 4 got its later columns added on each open, so it has
- * some, all or none of them. Each is added where its table exists without it; a table not there yet is made by its
- * store at the current shape. Calls' `session_kind` (the legacy broadcast row kind) is dropped where it was added.
- */
-Roe<void> ProfileDbBaseline(const SqliteMigrationContext& context) {
-  sqlite3* db = context.db;
-  auto added = AddColumnsIfMissing(db, {
-                                           {"threads", "listed", "INTEGER NOT NULL DEFAULT 1"},
-                                           {"chat_targets", "auto_key_session_id", "TEXT"},
-                                           {"chat_targets", "auto_key_init_pending", "TEXT"},
-                                           {"chat_targets", "auto_key_peer_heard_ms", "INTEGER"},
-                                           {"chat_targets", "restart_pending", "INTEGER NOT NULL DEFAULT 0"},
-                                           {"pending_group_invites", "group_title", "TEXT NOT NULL DEFAULT ''"},
-                                           {"pending_group_invites", "roster_epoch", "INTEGER NOT NULL DEFAULT 1"},
-                                           {"pending_group_invites", "outbound", "INTEGER NOT NULL DEFAULT 0"},
-                                           {"pending_group_invites", "owner_identity", "TEXT NOT NULL DEFAULT ''"},
-                                           {"group_metadata", "title_version", "INTEGER NOT NULL DEFAULT 0"},
-                                           {"group_metadata", "roster_statement_json", "TEXT NOT NULL DEFAULT ''"},
-                                           {"group_metadata", "sync_state", "TEXT NOT NULL DEFAULT 'active'"},
-                                           {"group_metadata", "sync_request_id", "TEXT NOT NULL DEFAULT ''"},
-                                           {"group_metadata", "sync_requested_at", "INTEGER NOT NULL DEFAULT 0"},
-                                           {"group_rosters", "added_by", "TEXT NOT NULL DEFAULT ''"},
-                                           {"thread_local_prefs", "mute_mentions", "INTEGER NOT NULL DEFAULT 0"},
-                                           {"thread_local_prefs", "share_ai_confirmed", "INTEGER NOT NULL DEFAULT 0"},
-                                           {"call_sessions", "video_allowed", "INTEGER NOT NULL DEFAULT 0"},
-                                           {"call_sessions", "planned_hop", "TEXT"},
-                                           {"call_sessions", "planned_hop_ma", "TEXT"},
-                                           {"call_sessions", "initiator_identity", "TEXT NOT NULL DEFAULT ''"},
-                                           {"pending_call_invites", "video_allowed", "INTEGER NOT NULL DEFAULT 0"},
-                                           {"call_participants", "on_hold", "INTEGER NOT NULL DEFAULT 0"},
-                                           {"call_participants", "video_paused", "INTEGER NOT NULL DEFAULT 0"},
-                                           {"call_participants", "brought_by", "TEXT NOT NULL DEFAULT ''"},
-                                       });
-  if (!added) {
-    return added.error();
-  }
-  for (const char* table : {"call_sessions", "pending_call_invites"}) {
-    if (auto dropped = SqliteDropColumnIfPresent(db, table, "session_kind"); !dropped) {
-      return Error(std::string(table) + ".session_kind: " + dropped.error().message);
-    }
-  }
-  return {};
-}
-
-/** 2 → 3, the baseline (D105): `messages.sender_device` (M021), added on open before. */
-Roe<void> ThreadDbBaseline(const SqliteMigrationContext& context) {
-  return AddColumnsIfMissing(context.db, {{"messages", "sender_device", "TEXT"}});
-}
-
-/** `sql` on `db` with `text` bound to every `?1`, when `table` exists (a store makes its table when it first opens). */
-Roe<void> ExecIfTable(sqlite3* db, const char* table, const char* sql, const std::string& text = {}) {
-  auto exists = SqliteTableExists(db, table);
-  if (!exists) {
-    return exists.error();
-  }
-  if (!*exists) {
-    return {};
-  }
-  sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-    const std::string message = sqlite3_errmsg(db);
-    sqlite3_finalize(stmt);
-    return Error(std::string(table) + ": " + message);
-  }
-  if (sqlite3_bind_parameter_count(stmt) > 0) {
-    sqlite3_bind_text(stmt, 1, text.c_str(), -1, SQLITE_TRANSIENT);
-  }
-  const int rc = sqlite3_step(stmt);
-  sqlite3_finalize(stmt);
-  if (rc != SQLITE_DONE) {
-    return Error(std::string(table) + ": " + sqlite3_errmsg(db));
-  }
-  return {};
-}
-
-/** A stored id from before multi-relay MR001: the relay's per-relay `relay:` id (or its `relay_user` kind). */
-constexpr const char* kRelayIdMatch = "LIKE 'relay:%'";
-
-/** kRelayIdMatch, on a session read from a file older than the step that drops them. */
-bool KeyedByRelayId(const PeerSessionRecord& session) {
-  return session.key.peer_identity_kind == "relay_user" || session.key.peer_identity_value.rfind("relay:", 0) == 0;
-}
-
-/**
- * 5 → 6, Account IDs (multi-relay MR001): the relay's `relay:` ids are gone, and nothing in profile.db can turn one
- * into an Account ID — so what is keyed by one is dropped: a chat's session keys (a new session opens on the next
- * send), group roster rows, invites and owed sends naming one, call participants and invites, applied control-lane
- * ids. A thread whose peer was one keeps its messages and loses its peer (it cannot be sent to). Everything else is
- * keyed by Account ID already and stays.
- */
-Roe<void> ProfileDbAccountIds(const SqliteMigrationContext& context) {
-  sqlite3* db = context.db;
-  const std::string relay = kRelayIdMatch;
-  const std::vector<std::pair<const char*, std::string>> statements = {
-      {"chat_targets",
-       "DELETE FROM chat_targets WHERE peer_identity_kind = 'relay_user' OR peer_identity_value " + relay},
-      {"threads",
-       "UPDATE threads SET peer_identity_kind = '', peer_identity_value = '' WHERE peer_identity_kind = "
-       "'relay_user' OR peer_identity_value " +
-           relay},
-      {"group_rosters", "DELETE FROM group_rosters WHERE member_identity " + relay},
-      {"group_pending_sends", "DELETE FROM group_pending_sends WHERE recipient " + relay},
-      {"pending_group_invites",
-       "DELETE FROM pending_group_invites WHERE inviter_identity " + relay + " OR invitee_identity " + relay},
-      {"call_participants", "DELETE FROM call_participants WHERE identity " + relay},
-      {"pending_call_invites",
-       "DELETE FROM pending_call_invites WHERE invitee_identity " + relay + " OR inviter_identity " + relay},
-      {"control_lane_seen", "DELETE FROM control_lane_seen WHERE sender " + relay},
-  };
-  for (const auto& [table, sql] : statements) {
-    if (auto done = ExecIfTable(db, table, sql.c_str()); !done) {
-      return done;
-    }
-  }
-  return {};
-}
-
-/**
- * Our own account's record in `peer_cards`: the row of the profile's Account ID (?1). The record's `source` drifts (a
- * card of ours carried back by a contact, a directory or a relay relabels it), so it decides only when the Account
- * ID is not known.
- */
-constexpr const char* kOwnRecord =
-    "(account_id = ?1 OR (?1 = '' AND json_extract(record_json, '$.source') IN ('self', 'sibling')))";
-
-/**
- * 6 → 7, account card version 3 (multi-relay MR002 / MR005: the card signs its relays and floor). A kept version 2
- * card cannot be re-signed here:
- * - our own (the profile's Account ID's record, kOwnRecord) takes the version 3 shape with no relays and floor
- *   0, its old signature kept: it does not verify, so OwnCards re-issues it on its first use, its device list as it
- *   was (a fresh list would sign out the account's other devices);
- * - anyone else's goes, the verified keys staying as a key card: their next envelope asks for the newer card
- *   (`sender_card_at`), as does the contact page's refresh.
- * A record that is not JSON is left as it is (it does not read today either).
- */
-Roe<void> ProfileDbCardV3(const SqliteMigrationContext& context) {
-  constexpr const char* kV2 = "json_valid(record_json) AND json_extract(record_json, '$.newest_card.card_version') = 2";
-  const std::string own =
-      std::string(
-          "UPDATE peer_cards SET record_json = json_set(record_json, '$.newest_card.card_version', 3, "
-          "'$.newest_card.relays', json('[]'), '$.newest_card.initiation_floor', 0) WHERE ") +
-      kV2 + " AND " + kOwnRecord;
-  if (auto done = ExecIfTable(context.db, "peer_cards", own.c_str(), context.own_account_id); !done) {
-    return done;
-  }
-  const std::string others =
-      std::string("UPDATE peer_cards SET record_json = json_remove(record_json, '$.newest_card') WHERE ") + kV2;
-  return ExecIfTable(context.db, "peer_cards", others.c_str());
-}
-
-/**
- * 7 → 8, account card version 4 (multi-relay MR007: each relay on the card names its PeerId). A kept version 3 card
- * cannot be re-signed here (the step 6 → 7 pattern):
- * - our own (the profile's Account ID's record, kOwnRecord) takes the version 4 shape with no relays, its old signature kept: it does not
- *   verify, so OwnCards re-issues it on its first use with its device list (and our pinned relays);
- * - anyone else's goes, the verified keys staying as a key card: it is asked for again (the next envelope's
- *   `sender_card_at`, or the contact page's refresh).
- * A record that is not JSON is left as it is.
- */
-Roe<void> ProfileDbCardV4(const SqliteMigrationContext& context) {
-  constexpr const char* kV3 = "json_valid(record_json) AND json_extract(record_json, '$.newest_card.card_version') = 3";
-  const std::string own = std::string(
-                              "UPDATE peer_cards SET record_json = json_set(record_json, "
-                              "'$.newest_card.card_version', 4, '$.newest_card.relays', json('[]')) WHERE ") +
-                          kV3 + " AND " + kOwnRecord;
-  if (auto done = ExecIfTable(context.db, "peer_cards", own.c_str(), context.own_account_id); !done) {
-    return done;
-  }
-  const std::string others =
-      std::string("UPDATE peer_cards SET record_json = json_remove(record_json, '$.newest_card') WHERE ") + kV3;
-  return ExecIfTable(context.db, "peer_cards", others.c_str());
-}
-
-/**
- * 3 → 4, Account IDs (multi-relay MR001): a message whose sender (or numbering owner) is stored as a `relay:` id is
- * the peer's in a 1:1 chat — it becomes the peer's Account ID (`thread_peer_account`); in a group chat, or a chat
- * whose peer is not known, who sent it cannot be told, and it is dropped. A history watermark keyed by a relay id is
- * dropped (history sync starts that peer over).
- */
-Roe<void> ThreadDbAccountIds(const SqliteMigrationContext& context) {
-  sqlite3* db = context.db;
-  const std::string relay = kRelayIdMatch;
-  const std::string& peer = context.thread_peer_account;
-  if (!peer.empty()) {
-    for (const char* column : {"sender_contact_id", "seq_owner_contact_id"}) {
-      const std::string sql = std::string("UPDATE messages SET ") + column + " = ?1 WHERE " + column + " " + relay;
-      if (auto done = ExecIfTable(db, "messages", sql.c_str(), peer); !done) {
-        return done;
-      }
-    }
-  } else {
-    const std::string sql =
-        "DELETE FROM messages WHERE sender_contact_id " + relay + " OR seq_owner_contact_id " + relay;
-    if (auto done = ExecIfTable(db, "messages", sql.c_str()); !done) {
-      return done;
-    }
-  }
-  const std::string sync =
-      "DELETE FROM sync_state WHERE peer_identity_kind = 'relay_user' OR peer_identity_value " + relay;
-  return ExecIfTable(db, "sync_state", sync.c_str());
-}
-
 std::filesystem::path ResetNotePath(const std::string& profile_data_dir) {
   return std::filesystem::path(profile_data_dir) / "chat_store_reset";
 }
@@ -262,11 +43,7 @@ std::filesystem::path ResetNotePath(const std::string& profile_data_dir) {
 
 const SqliteSchemaLadder& ProfileDbLadder() {
   static const SqliteSchemaLadder ladder{
-      "profile.db",
-      kSqliteThreadProfileFloorVersion,
-      kSqliteThreadProfileUserVersion,
-      CreateProfileDb,
-      {{4, ProfileDbBaseline}, {5, ProfileDbAccountIds}, {6, ProfileDbCardV3}, {7, ProfileDbCardV4}},
+      "profile.db", kSqliteThreadProfileFloorVersion, kSqliteThreadProfileUserVersion, CreateProfileDb, {},
   };
   return ladder;
 }
@@ -277,7 +54,7 @@ const SqliteSchemaLadder& ThreadDbLadder() {
       kSqliteThreadFloorVersion,
       kSqliteThreadUserVersion,
       [](const SqliteMigrationContext& context) { return SqliteThreadExecSql(context.db, kSqliteThreadSchemaV2); },
-      {{2, ThreadDbBaseline}, {3, ThreadDbAccountIds}},
+      {},
   };
   return ladder;
 }
@@ -287,10 +64,7 @@ Roe<std::vector<PeerSessionRecord>> ReadSessionsKeptBelowFloor(sqlite3* old_db) 
   if (!stored) {
     return stored.error();
   }
-  std::vector<PeerSessionRecord> kept = SessionsAChatResetKeeps(std::move(*stored));
-  // What a step above the file's version drops from the sessions stays dropped (5 → 6: the relay's ids).
-  std::erase_if(kept, KeyedByRelayId);
-  return kept;
+  return SessionsAChatResetKeeps(std::move(*stored));
 }
 
 Roe<void> WriteSessionsKeptBelowFloor(sqlite3* new_db, const std::vector<PeerSessionRecord>& kept) {

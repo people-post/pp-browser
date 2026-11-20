@@ -17,7 +17,8 @@ namespace pbr {
 /**
  * Per-peer initiation billing state (P001).
  * Persists under profile `initiation_billing.json`. Keyed by the peer's Account ID (or a peer id where no account is
- * known). Schema 2; a 1 is stepped up on load, its `relay:` keys dropped (multi-relay MR001).
+ * known). Schema 2, also its floor: an older, unversioned or newer file is refused (release 1 starts clean,
+ * release-compatibility RC017).
  *
  * A peer's floor is read from its newest kept account card when one is known (CardFloors, multi-relay MR005), the
  * relay's `payment_required` over a card it came after, and the directory's / `charge_required`'s only without a card
@@ -26,6 +27,7 @@ namespace pbr {
 class InitiationBillingStore : public Module, public IInitiationBillingBook {
 public:
   static constexpr uint64_t kSchemaVersion = 2;
+  static constexpr uint64_t kFloorSchemaVersion = 2;
 
   explicit InitiationBillingStore(std::string data_dir);
 

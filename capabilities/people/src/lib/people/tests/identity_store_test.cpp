@@ -198,33 +198,27 @@ TEST_F(IdentityStoreTest, WritesSchemaVersionOnCreate) {
   EXPECT_EQ(static_cast<int>(root->getIf<int64_t>("schema_version").value_or(-1)), IdentityStore::kSchemaVersion);
 }
 
-// identity.enc 3 → 4 (multi-relay MR001): the relay's per-relay id is dropped; the registration stands (the relay keeps
-// the account's row by its Account ID), and the next save writes 4.
-TEST_F(IdentityStoreTest, AVersion3FileDropsItsRelayIdAndKeepsTheRegistration) {
+// identity.enc's floor is release 1's schema, 4 (release-compatibility RC017: every tester reinstalls): an older file
+// is refused, not stepped up, and left as it is; the profile is wiped.
+TEST_F(IdentityStoreTest, AFileBelowTheFloorIsRefusedAndLeftAsItIs) {
   const ByteVector dek = MakeTestDek();
   const std::string aad = FileCipher::BuildAad("identity", "test-profile");
-  std::string account_id;
   {
     IdentityStore created(data_dir_.string(), "test-profile");
     ASSERT_TRUE(created.SetDek(dek));
-    auto identity = created.LoadOrCreate();
-    ASSERT_TRUE(static_cast<bool>(identity));
-    account_id = identity->account_id;
+    ASSERT_TRUE(static_cast<bool>(created.LoadOrCreate()));
   }
-  const auto read_root = [&]() {
-    std::ifstream in(data_dir_ / "identity.enc", std::ios::binary);
-    ByteVector blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    auto plain = FileCipher::Decrypt(dek, blob, aad);
-    return TryParseObject(std::string(plain->begin(), plain->end())).value();
-  };
-  Object v3 = read_root();
-  v3.set("schema_version", static_cast<int64_t>(3));
-  v3.set("relay_user_id", "relay:retired");
-  v3.set("registered", true);
+  std::ifstream in(data_dir_ / "identity.enc", std::ios::binary);
+  ByteVector blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  in.close();
+  auto plain = FileCipher::Decrypt(dek, blob, aad);
+  ASSERT_TRUE(static_cast<bool>(plain));
+  Object v3 = TryParseObject(std::string(plain->begin(), plain->end())).value();
+  v3.set("schema_version", static_cast<int64_t>(IdentityStore::kFloorSchemaVersion - 1));
+  const std::string json = DumpJson(v3, 2);
+  auto ciphertext = FileCipher::Encrypt(dek, ByteVector(json.begin(), json.end()), aad);
+  ASSERT_TRUE(static_cast<bool>(ciphertext));
   {
-    const std::string json = DumpJson(v3, 2);
-    auto ciphertext = FileCipher::Encrypt(dek, ByteVector(json.begin(), json.end()), aad);
-    ASSERT_TRUE(static_cast<bool>(ciphertext));
     std::ofstream out(data_dir_ / "identity.enc", std::ios::binary | std::ios::trunc);
     out.write(reinterpret_cast<const char*>(ciphertext->data()), static_cast<std::streamsize>(ciphertext->size()));
   }
@@ -232,13 +226,12 @@ TEST_F(IdentityStoreTest, AVersion3FileDropsItsRelayIdAndKeepsTheRegistration) {
   IdentityStore store(data_dir_.string(), "test-profile");
   ASSERT_TRUE(store.SetDek(dek));
   auto identity = store.Get();
-  ASSERT_TRUE(static_cast<bool>(identity)) << identity.error().message;
-  EXPECT_TRUE(identity->registered);
-  EXPECT_EQ(identity->account_id, account_id);
+  ASSERT_FALSE(static_cast<bool>(identity));
+  EXPECT_NE(identity.error().message.find("wipe"), std::string::npos) << identity.error().message;
   store.Flush();
-  const Object v4 = read_root();
-  EXPECT_EQ(v4.getIf<int64_t>("schema_version").value_or(0), 4);
-  EXPECT_FALSE(v4.contains("relay_user_id"));
+  std::ifstream again(data_dir_ / "identity.enc", std::ios::binary);
+  const ByteVector kept((std::istreambuf_iterator<char>(again)), std::istreambuf_iterator<char>());
+  EXPECT_EQ(kept, *ciphertext) << "not written over";
 }
 
 TEST_F(IdentityStoreTest, RejectsNewerSchemaVersion) {

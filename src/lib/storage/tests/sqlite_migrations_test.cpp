@@ -17,8 +17,9 @@
 #include <utility>
 #include <vector>
 
-// D105 (DATA_LAYOUT § Schema versions): each chat database moves up a ladder of versions, from a floor; the step
-// into today's schema keeps a tester's chats whatever columns the per-open ALTERs of before had added.
+// D105 (DATA_LAYOUT § Schema versions): each chat database moves up a ladder of versions, from a floor. Release 1
+// starts clean (release-compatibility RC017): each floor is release 1's schema, so a file below it is reset and one
+// above it refused; the runner's steps are tested on a ladder of their own.
 
 namespace pbr {
 namespace {
@@ -29,38 +30,6 @@ ByteVector TestDek() {
     dek[i] = static_cast<uint8_t>(0x30 + i);
   }
   return dek;
-}
-
-/** The columns the per-open ALTERs added to profile.db before the ladder (table, column). */
-const std::vector<std::pair<std::string, std::string>>& ProfileAlterColumns() {
-  static const std::vector<std::pair<std::string, std::string>> columns = {
-      {"threads", "listed"},
-      {"chat_targets", "auto_key_session_id"},
-      {"chat_targets", "auto_key_init_pending"},
-      {"chat_targets", "auto_key_peer_heard_ms"},
-      {"chat_targets", "restart_pending"},
-      {"pending_group_invites", "group_title"},
-      {"pending_group_invites", "roster_epoch"},
-      {"pending_group_invites", "outbound"},
-      {"pending_group_invites", "owner_identity"},
-      {"group_metadata", "title_version"},
-      {"group_metadata", "roster_statement_json"},
-      {"group_metadata", "sync_state"},
-      {"group_metadata", "sync_request_id"},
-      {"group_metadata", "sync_requested_at"},
-      {"group_rosters", "added_by"},
-      {"thread_local_prefs", "mute_mentions"},
-      {"thread_local_prefs", "share_ai_confirmed"},
-      {"call_sessions", "video_allowed"},
-      {"call_sessions", "planned_hop"},
-      {"call_sessions", "planned_hop_ma"},
-      {"call_sessions", "initiator_identity"},
-      {"pending_call_invites", "video_allowed"},
-      {"call_participants", "on_hold"},
-      {"call_participants", "video_paused"},
-      {"call_participants", "brought_by"},
-  };
-  return columns;
 }
 
 class SqliteMigrationsTest : public ::testing::Test {
@@ -136,23 +105,6 @@ protected:
     CloseDb();
     return version ? *version : -1;
   }
-  bool HasColumn(const std::string& path, const std::string& table, const std::string& column) {
-    auto has = SqliteColumnExists(Db(path), table, column);
-    CloseDb();
-    return has && *has;
-  }
-
-  /** The tester's profile.db: today's tables at schema 4, as the stores left it before the ALTERs ran on it. */
-  void MakeTesterProfileDbWithoutTheAlteredColumns() {
-    sqlite3* db = Db(ProfileDb());
-    for (const auto& [table, column] : ProfileAlterColumns()) {
-      Exec(db, "ALTER TABLE " + table + " DROP COLUMN " + column + ";");
-    }
-    Exec(db, "ALTER TABLE call_sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'group';");
-    Exec(db, "ALTER TABLE pending_call_invites ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'group';");
-    Exec(db, "PRAGMA user_version = 4;");
-    CloseDb();
-  }
 
   /** The profile's session store, unlocked (the chat store must be open: OpenStore). */
   SqlitePeerSessionStore& Sessions() {
@@ -173,8 +125,7 @@ protected:
 
   /**
    * A chat and the sessions a reset tells apart, at today's schema: public ones with a key (an account's and a
-   * device pair's), and what a reset drops — a private session, a public one with only a retired key, one keyed by a
-   * relay's retired id.
+   * device pair's), and what a reset drops — a private session, a public one with only a retired key.
    */
   void WriteProfileWithSessions() {
     WriteProfileWithAChat();
@@ -187,10 +138,7 @@ protected:
     retired_only.master_psk_b64.reset();
     retired_only.retired_psks = {RetiredPskEntry{.epoch = 1, .master_psk_b64 = kTestPsk, .retired_at = 1}};
     ASSERT_TRUE(sessions.Save(retired_only));
-    PeerSessionRecord relay = Session("relay:old", CryptoChannel::E2ePublic, 5);
-    relay.key.peer_identity_kind = "relay_user";
-    ASSERT_TRUE(sessions.Save(relay));
-    ASSERT_EQ(sessions.List().value().size(), 5u);
+    ASSERT_EQ(sessions.List().value().size(), 4u);
     sessions_.reset();
     CloseStore();
   }
@@ -223,19 +171,6 @@ protected:
 
   static constexpr const char* kTestPsk = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 
-  void ExpectTheChatIsKept() {
-    SqliteThreadStore& store = OpenStore();
-    auto threads = store.ListThreads();
-    ASSERT_TRUE(threads) << threads.error().message;
-    ASSERT_EQ(threads->size(), 1u);
-    EXPECT_EQ(threads->front().id, "thread-kept");
-    auto page = store.GetMessagesPage("thread-kept", std::nullopt, 10);
-    ASSERT_TRUE(page) << page.error().message;
-    ASSERT_EQ(page->size(), 1u);
-    EXPECT_EQ(page->front().text, "still here");
-    CloseStore();
-  }
-
   std::filesystem::path data_dir_;
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<SqlitePeerSessionStore> sessions_;
@@ -247,54 +182,7 @@ TEST_F(SqliteMigrationsTest, AFreshInstallGetsTheCurrentSchema) {
   ASSERT_TRUE(store.ListThreads());
   CloseStore();
   EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion);
-  for (const auto& [table, column] : ProfileAlterColumns()) {
-    EXPECT_TRUE(HasColumn(ProfileDb(), table, column)) << table << "." << column << " is in the created schema";
-  }
-  EXPECT_FALSE(HasColumn(ProfileDb(), "call_sessions", "session_kind"));
   EXPECT_FALSE(TakeChatStoreResetNotice(data_dir_.string())) << "nothing was reset";
-}
-
-TEST_F(SqliteMigrationsTest, ATesterDatabaseWithoutTheAlteredColumnsMigratesAndKeepsItsRows) {
-  WriteProfileWithAChat();
-  MakeTesterProfileDbWithoutTheAlteredColumns();
-  ASSERT_FALSE(HasColumn(ProfileDb(), "threads", "listed"));
-
-  ExpectTheChatIsKept();
-
-  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion);
-  for (const auto& [table, column] : ProfileAlterColumns()) {
-    EXPECT_TRUE(HasColumn(ProfileDb(), table, column)) << table << "." << column;
-  }
-  EXPECT_FALSE(HasColumn(ProfileDb(), "call_sessions", "session_kind")) << "the legacy row kind is dropped";
-  EXPECT_FALSE(HasColumn(ProfileDb(), "pending_call_invites", "session_kind"));
-  EXPECT_FALSE(std::filesystem::exists(ProfileDb() + ".pre-migration")) << "the backup copy is gone";
-  // Its calls store reads and writes its rows (the columns it names are there).
-  SqliteCallSessionStore calls(ProfileDb());
-  EXPECT_TRUE(calls.ListRecentSessions(5)) << "call rows read at the baseline";
-}
-
-TEST_F(SqliteMigrationsTest, ATesterDatabaseThatAlreadyHasTheColumnsMigratesToo) {
-  WriteProfileWithAChat();
-  Exec(Db(ProfileDb()), "PRAGMA user_version = 4;");
-  CloseDb();
-
-  ExpectTheChatIsKept();
-  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion);
-}
-
-TEST_F(SqliteMigrationsTest, RunningTheLadderTwiceIsANoOp) {
-  WriteProfileWithAChat();
-  Exec(Db(ProfileDb()), "PRAGMA user_version = 4;");
-  CloseDb();
-  sqlite3* db = Db(ProfileDb());
-  auto first = RunSqliteLadder(db, ProfileDb(), ProfileDbLadder());
-  ASSERT_TRUE(first) << first.error().message;
-  EXPECT_EQ(*first, SqliteLadderOutcome::Migrated);
-  auto second = RunSqliteLadder(db, ProfileDb(), ProfileDbLadder());
-  ASSERT_TRUE(second) << second.error().message;
-  EXPECT_EQ(*second, SqliteLadderOutcome::Current);
-  CloseDb();
-  ExpectTheChatIsKept();
 }
 
 TEST_F(SqliteMigrationsTest, BelowTheFloorTheChatStoreIsResetAndSaysSoOnce) {
@@ -351,7 +239,7 @@ TEST_F(SqliteMigrationsTest, BelowTheFloorTheResetLeavesOurCardBesideTheIdentity
 
 // A reset below the floor keeps what Me → Storage → Reset chats keeps: the public sessions with a key, each pair to
 // restart in its next epoch — else this device numbers from 1 again in an epoch the peer holds messages of, and the
-// peer drops them (D014, #378). Read from the old file as it is; what a later step drops (relay ids) stays dropped.
+// peer drops them (D014, #378). Read from the old file as it is.
 TEST_F(SqliteMigrationsTest, BelowTheFloorTheResetKeepsThePublicSessions) {
   WriteProfileWithSessions();
   SetProfileBelowTheFloor();
@@ -405,19 +293,6 @@ TEST_F(SqliteMigrationsTest, ANewerDatabaseIsRefusedAndLeftAlone) {
   EXPECT_TRUE(std::filesystem::exists(SqliteThreadDbFile(data_dir_.string(), "thread-kept"))) << "nothing reset";
 }
 
-TEST_F(SqliteMigrationsTest, AThreadDbWithoutSenderDeviceMigratesAndKeepsItsMessages) {
-  WriteProfileWithAChat();
-  const std::string thread_db = SqliteThreadDbFile(data_dir_.string(), "thread-kept");
-  sqlite3* db = Db(thread_db);
-  Exec(db, "ALTER TABLE messages DROP COLUMN sender_device;");
-  Exec(db, "PRAGMA user_version = 2;");
-  CloseDb();
-
-  ExpectTheChatIsKept();
-  EXPECT_EQ(Version(thread_db), kSqliteThreadUserVersion);
-  EXPECT_TRUE(HasColumn(thread_db, "messages", "sender_device"));
-}
-
 TEST_F(SqliteMigrationsTest, AThreadDbBelowItsFloorLosesItsMessagesNotItsChat) {
   WriteProfileWithAChat();
   const std::string thread_db = SqliteThreadDbFile(data_dir_.string(), "thread-kept");
@@ -436,284 +311,34 @@ TEST_F(SqliteMigrationsTest, AThreadDbBelowItsFloorLosesItsMessagesNotItsChat) {
   EXPECT_TRUE(TakeChatStoreResetNotice(data_dir_.string()));
 }
 
-// profile.db 5 → 6 (multi-relay MR001): nothing in profile.db maps a retired `relay:` id to an Account ID, so what is
-// keyed by one is dropped — a chat's session keys, roster rows, invites, owed sends, call rows, applied lane ids — and
-// a chat whose peer was one keeps its messages and loses its peer; everything keyed by an Account ID stays.
-TEST_F(SqliteMigrationsTest, AProfileDbAt5DropsWhatARelayIdKeys) {
+// Nothing opens, creates, migrates or resets the chat store before the PIN is entered: the thread store holds
+// profile.db shut until it gets the data key, and the stores sharing the file are refused meanwhile.
+TEST_F(SqliteMigrationsTest, NothingIsOpenedOrResetBeforeUnlock) {
   WriteProfileWithAChat();
-  sqlite3* db = Db(ProfileDb());
-  Exec(db,
-       "INSERT INTO threads (id, kind, channel, peer_identity_kind, peer_identity_value, title, "
-       "participant_contact_ids, updated_at) VALUES ('thread-relay', 'direct', 'e2e_public', 'relay_user', "
-       "'relay:old', 'Old', '[]', 1), ('thread-account', 'direct', 'e2e_public', 'account', 'account:ann', "
-       "'Ann', '[]', 2);");
-  Exec(db,
-       "INSERT INTO chat_targets (peer_identity_kind, peer_identity_value, channel, local_thread_id) VALUES "
-       "('relay_user', 'relay:old', 'e2e_public', 'thread-relay'), "
-       "('account', 'account:ann', 'e2e_public', 'thread-account');");
-  Exec(db, "INSERT INTO group_rosters (group_id, member_identity) VALUES ('g', 'relay:old'), ('g', 'account:ann');");
-  Exec(db, "INSERT INTO call_participants (call_id, identity) VALUES ('c', 'relay:old'), ('c', 'account:ann');");
-  Exec(db, "PRAGMA user_version = 5;");
-  CloseDb();
-
-  {
-    auto threads = OpenStore().ListThreads(); // opens and migrates
-    ASSERT_TRUE(threads) << threads.error().message;
-    EXPECT_EQ(threads->size(), 3u) << "no chat is dropped";
-    CloseStore();
-  }
-  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion);
-  db = Db(ProfileDb());
-  const auto count = [&](const std::string& sql) {
-    sqlite3_stmt* stmt = nullptr;
-    EXPECT_EQ(sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr), SQLITE_OK) << sql;
-    const int n = sqlite3_step(stmt) == SQLITE_ROW ? sqlite3_column_int(stmt, 0) : -1;
-    sqlite3_finalize(stmt);
-    return n;
-  };
-  EXPECT_EQ(count("SELECT COUNT(*) FROM chat_targets WHERE peer_identity_value LIKE 'relay:%'"), 0);
-  EXPECT_EQ(count("SELECT COUNT(*) FROM chat_targets WHERE peer_identity_value = 'account:ann'"), 1);
-  EXPECT_EQ(count("SELECT COUNT(*) FROM threads WHERE id = 'thread-relay' AND peer_identity_value = ''"), 1)
-      << "the chat stays, without its peer";
-  EXPECT_EQ(count("SELECT COUNT(*) FROM threads WHERE peer_identity_value = 'account:ann'"), 1);
-  EXPECT_EQ(count("SELECT COUNT(*) FROM group_rosters"), 1);
-  EXPECT_EQ(count("SELECT COUNT(*) FROM call_participants"), 1);
-  CloseDb();
-}
-
-// profile.db 6 → 7 → 8 (account card versions 3 and 4): our own kept version 2 card takes the version 4 shape
-// (OwnCards then re-issues it with its device list); anyone else's goes, their keys kept as a key card.
-TEST_F(SqliteMigrationsTest, AProfileDbAt6StepsKeptCardsToVersion4) {
-  WriteProfileWithAChat();
-  sqlite3* db = Db(ProfileDb());
-  Exec(db,
-       "CREATE TABLE IF NOT EXISTS peer_cards (account_id TEXT PRIMARY KEY, record_json TEXT NOT NULL, "
-       "updated_at INTEGER NOT NULL);");
-  const std::string card =
-      R"({"card_version":2,"account_id":"account:x","devices":[{"peer_id":"QmA","signing_public_key_b64":"s",)"
-      R"("kem_public_key_b64":"k"}],"issued_at":5,"card_signature_b64":"sig"})";
-  const auto record = [&card](const std::string& account, const std::string& source) {
-    return R"({"account_id":")" + account + R"(","signing_public_key_b64":"s","kem_public_key_b64":"k",)" +
-           R"("kem_binding_signature_b64":"b","issued_at":5,"devices":["QmA"],"source":")" + source +
-           R"(","newest_card":)" + card + "}";
-  };
-  Exec(db, "INSERT INTO peer_cards VALUES ('account:me', '" + record("account:me", "self") +
-               "', 1), ('account:sib', '" + record("account:sib", "sibling") + "', 1), ('account:ann', '" +
-               record("account:ann", "envelope") + "', 1), ('account:bad', 'not json', 1);");
-  Exec(db, "PRAGMA user_version = 6;");
-  CloseDb();
-
-  ASSERT_TRUE(OpenStore().ListThreads()); // opens and migrates
-  CloseStore();
-  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion);
-  db = Db(ProfileDb());
-  const auto text = [&](const std::string& sql) {
-    sqlite3_stmt* stmt = nullptr;
-    EXPECT_EQ(sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr), SQLITE_OK) << sql;
-    std::string out = "<none>";
-    if (sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_type(stmt, 0) != SQLITE_NULL) {
-      out = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-    }
-    sqlite3_finalize(stmt);
-    return out;
-  };
-  const auto field = [&](const std::string& account, const std::string& path) {
-    return text("SELECT json_extract(record_json, '" + path + "') FROM peer_cards WHERE account_id = '" + account +
-                "'");
-  };
-  for (const std::string own : {"account:me", "account:sib"}) {
-    EXPECT_EQ(field(own, "$.newest_card.card_version"), "4") << own;
-    EXPECT_EQ(field(own, "$.newest_card.relays"), "[]");
-    EXPECT_EQ(field(own, "$.newest_card.initiation_floor"), "0");
-    EXPECT_EQ(field(own, "$.newest_card.devices[0].peer_id"), "QmA") << "the device list is kept";
-    EXPECT_EQ(field(own, "$.newest_card.card_signature_b64"), "sig");
-  }
-  EXPECT_EQ(field("account:ann", "$.newest_card"), "<none>") << "another account's card goes";
-  EXPECT_EQ(field("account:ann", "$.kem_binding_signature_b64"), "b") << "its keys stay";
-  EXPECT_EQ(text("SELECT record_json FROM peer_cards WHERE account_id = 'account:bad'"), "not json");
-  CloseDb();
-}
-
-// profile.db 7 → 8 (MR007-CARD: account card version 4, each relay `{origin, peer_id}`): our own kept version 3 card
-// takes the version 4 shape without relays and keeps its old signature (OwnCards re-issues it with its device list and
-// our pinned relays); anyone else's goes, their keys kept as a key card (asked for again).
-TEST_F(SqliteMigrationsTest, AProfileDbAt7StepsKeptCardsToVersion4) {
-  WriteProfileWithAChat();
-  sqlite3* db = Db(ProfileDb());
-  Exec(db,
-       "CREATE TABLE IF NOT EXISTS peer_cards (account_id TEXT PRIMARY KEY, record_json TEXT NOT NULL, "
-       "updated_at INTEGER NOT NULL);");
-  const std::string card =
-      R"({"card_version":3,"account_id":"account:x","devices":[{"peer_id":"QmA","signing_public_key_b64":"s",)"
-      R"("kem_public_key_b64":"k"}],"relays":[{"origin":"https://a.example/api/relay"}],"initiation_floor":250,)"
-      R"("issued_at":5,"card_signature_b64":"sig"})";
-  const auto record = [&card](const std::string& account, const std::string& source) {
-    return R"({"account_id":")" + account + R"(","signing_public_key_b64":"s","kem_public_key_b64":"k",)" +
-           R"("kem_binding_signature_b64":"b","issued_at":5,"devices":["QmA"],"source":")" + source +
-           R"(","newest_card":)" + card + "}";
-  };
-  Exec(db, "INSERT INTO peer_cards VALUES ('account:me', '" + record("account:me", "self") +
-               "', 1), ('account:sib', '" + record("account:sib", "sibling") + "', 1), ('account:ann', '" +
-               record("account:ann", "envelope") + "', 1), ('account:bad', 'not json', 1);");
-  Exec(db, "PRAGMA user_version = 7;");
-  CloseDb();
-
-  ASSERT_TRUE(OpenStore().ListThreads()); // opens and migrates
-  CloseStore();
-  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion);
-  db = Db(ProfileDb());
-  const auto text = [&](const std::string& sql) {
-    sqlite3_stmt* stmt = nullptr;
-    EXPECT_EQ(sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr), SQLITE_OK) << sql;
-    std::string out = "<none>";
-    if (sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_type(stmt, 0) != SQLITE_NULL) {
-      out = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-    }
-    sqlite3_finalize(stmt);
-    return out;
-  };
-  const auto field = [&](const std::string& account, const std::string& path) {
-    return text("SELECT json_extract(record_json, '" + path + "') FROM peer_cards WHERE account_id = '" + account +
-                "'");
-  };
-  for (const std::string own : {"account:me", "account:sib"}) {
-    EXPECT_EQ(field(own, "$.newest_card.card_version"), "4") << own;
-    EXPECT_EQ(field(own, "$.newest_card.relays"), "[]") << "no PeerId known for the old entries: none";
-    EXPECT_EQ(field(own, "$.newest_card.initiation_floor"), "250") << "the floor is kept";
-    EXPECT_EQ(field(own, "$.newest_card.devices[0].peer_id"), "QmA") << "the device list is kept";
-    EXPECT_EQ(field(own, "$.newest_card.card_signature_b64"), "sig");
-  }
-  EXPECT_EQ(field("account:ann", "$.newest_card"), "<none>") << "another account's card goes";
-  EXPECT_EQ(field("account:ann", "$.kem_binding_signature_b64"), "b") << "its keys stay";
-  EXPECT_EQ(text("SELECT record_json FROM peer_cards WHERE account_id = 'account:bad'"), "not json");
-  CloseDb();
-}
-
-// D1: our own record is told by the profile's Account ID, not its `source` (a card of ours carried back relabels it):
-// ours keeps its device list whatever its source says; another account labelled `sibling` is someone else's.
-TEST_F(SqliteMigrationsTest, AtStep7OurOwnCardIsToldByOurAccountIdNotItsSource) {
-  WriteProfileWithAChat();
-  sqlite3* db = Db(ProfileDb());
-  Exec(db,
-       "CREATE TABLE IF NOT EXISTS peer_cards (account_id TEXT PRIMARY KEY, record_json TEXT NOT NULL, "
-       "updated_at INTEGER NOT NULL);");
-  const std::string card =
-      R"({"card_version":3,"account_id":"account:x","devices":[{"peer_id":"QmA","signing_public_key_b64":"s",)"
-      R"("kem_public_key_b64":"k"},{"peer_id":"QmB","signing_public_key_b64":"s","kem_public_key_b64":"k"}],)"
-      R"("relays":[],"initiation_floor":0,"issued_at":5,"card_signature_b64":"sig"})";
-  const auto record = [&card](const std::string& account, const std::string& source) {
-    return R"({"account_id":")" + account + R"(","signing_public_key_b64":"s","kem_public_key_b64":"k",)" +
-           R"("kem_binding_signature_b64":"b","issued_at":5,"devices":["QmA","QmB"],"source":")" + source +
-           R"(","newest_card":)" + card + "}";
-  };
-  Exec(db, "INSERT INTO peer_cards VALUES ('account:me', '" + record("account:me", "contact_card") +
-               "', 1), ('account:other', '" + record("account:other", "sibling") + "', 1);");
-  Exec(db, "PRAGMA user_version = 7;");
-  CloseDb();
-
-  store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
-  store_->SetOwnAccount([]() { return std::string("account:me"); });
-  ASSERT_TRUE(store_->SetDek(TestDek()));
-  ASSERT_TRUE(store_->ListThreads());
-  CloseStore();
-  db = Db(ProfileDb());
-  const auto field = [db](const std::string& account, const std::string& path) {
-    sqlite3_stmt* stmt = nullptr;
-    const std::string sql =
-        "SELECT json_extract(record_json, '" + path + "') FROM peer_cards WHERE account_id = '" + account + "'";
-    EXPECT_EQ(sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr), SQLITE_OK) << sql;
-    std::string out = "<none>";
-    if (sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_type(stmt, 0) != SQLITE_NULL) {
-      out = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-    }
-    sqlite3_finalize(stmt);
-    return out;
-  };
-  EXPECT_EQ(field("account:me", "$.newest_card.card_version"), "4") << "ours, though a contact's card relabelled it";
-  EXPECT_EQ(field("account:me", "$.newest_card.devices[1].peer_id"), "QmB") << "its device list kept";
-  EXPECT_EQ(field("account:other", "$.newest_card"), "<none>") << "not ours, whatever its source says";
-  CloseDb();
-}
-
-// thread.db 3 → 4 (multi-relay MR001): in a 1:1 chat, a message stored with a `relay:` sender is the peer's — it takes
-// the peer's Account ID; a history watermark keyed by a relay id is dropped.
-TEST_F(SqliteMigrationsTest, AThreadDbAt3NamesItsPeerByAccountId) {
-  SqliteThreadStore& store = OpenStore();
-  Thread thread;
-  thread.id = "thread-ann";
-  thread.kind = ThreadKind::Direct;
-  thread.channel = ThreadChannel::E2ePublic;
-  thread.peer_identity_kind = "account";
-  thread.peer_identity_value = "account:ann";
-  thread.title = "Ann";
-  thread.updated_at = 7;
-  ASSERT_TRUE(store.UpsertThread(thread));
-  ThreadMessage message;
-  message.id = "msg-from-ann";
-  message.thread_id = thread.id;
-  message.sender_contact_id = "relay:old";
-  message.text = "hi";
-  message.timestamp = 7;
-  ASSERT_TRUE(store.AppendMessage(message));
-  CloseStore();
-  const std::string thread_db = SqliteThreadDbFile(data_dir_.string(), "thread-ann");
-  sqlite3* db = Db(thread_db);
-  Exec(db,
-       "INSERT INTO sync_state (peer_identity_kind, peer_identity_value, session_epoch, state_json) VALUES "
-       "('relay_user', 'relay:old', 1, '{}');");
-  Exec(db, "PRAGMA user_version = 3;");
-  CloseDb();
-
-  SqliteThreadStore& reopened = OpenStore();
-  auto page = reopened.GetMessagesPage("thread-ann", std::nullopt, 10);
-  ASSERT_TRUE(page) << page.error().message;
-  ASSERT_EQ(page->size(), 1u);
-  EXPECT_EQ(page->front().sender_contact_id, "account:ann");
-  CloseStore();
-  EXPECT_EQ(Version(thread_db), kSqliteThreadUserVersion);
-  db = Db(thread_db);
-  sqlite3_stmt* stmt = nullptr;
-  ASSERT_EQ(sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM sync_state", -1, &stmt, nullptr), SQLITE_OK);
-  ASSERT_EQ(sqlite3_step(stmt), SQLITE_ROW);
-  EXPECT_EQ(sqlite3_column_int(stmt, 0), 0);
-  sqlite3_finalize(stmt);
-  CloseDb();
-}
-
-// In a chat with no 1:1 peer (a group's, here the AI's) who a `relay:` sender was cannot be told: the message is dropped.
-TEST_F(SqliteMigrationsTest, AThreadDbAt3WithoutAPeerDropsMessagesFromARelayId) {
-  WriteProfileWithAChat();
-  const std::string thread_db = SqliteThreadDbFile(data_dir_.string(), "thread-kept");
-  sqlite3* db = Db(thread_db);
-  Exec(db, "UPDATE messages SET id = 'msg-relay', sender_contact_id = 'relay:old';");
-  Exec(db, "PRAGMA user_version = 3;");
-  CloseDb();
-  SqliteThreadStore& store = OpenStore();
-  auto page = store.GetMessagesPage("thread-kept", std::nullopt, 10);
-  ASSERT_TRUE(page) << page.error().message;
-  EXPECT_TRUE(page->empty()) << "not a 1:1 chat: no peer to name it by";
-  CloseStore();
-}
-
-// Nothing opens, creates or migrates the chat store before the PIN is entered: the thread store holds profile.db
-// shut until it gets the data key, and the stores sharing the file are refused meanwhile.
-TEST_F(SqliteMigrationsTest, NothingIsOpenedOrMigratedBeforeUnlock) {
-  WriteProfileWithAChat();
-  Exec(Db(ProfileDb()), "PRAGMA user_version = 4;");
-  CloseDb();
+  SetProfileBelowTheFloor();
 
   store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
   auto locked = store_->ListThreads();
   ASSERT_FALSE(locked);
   SqliteThreadLocalPrefsStore prefs(ProfileDb());
   EXPECT_FALSE(prefs.List()) << "a store on the same file waits for the unlock too";
-  EXPECT_EQ(Version(ProfileDb()), 4) << "not migrated before unlock";
+  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileFloorVersion - 1) << "not touched before unlock";
+  EXPECT_TRUE(std::filesystem::exists(SqliteThreadDbFile(data_dir_.string(), "thread-kept"))) << "nothing reset";
 
   ASSERT_TRUE(store_->SetDek(TestDek())) << "the unlock opens the store";
-  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion) << "migrated at unlock";
+  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion) << "reset at unlock";
   EXPECT_TRUE(prefs.List()) << "open once the chat store is";
+  EXPECT_TRUE(store_->ListThreads().value().empty());
   CloseStore();
-  ExpectTheChatIsKept();
+}
+
+// Release 1 is every store's start (RC017): the floors are its schemas, profile.db 8 and thread.db 4, and no step
+// from before it is kept. A later change adds a step above the floor; only a milestone moves the floor.
+TEST_F(SqliteMigrationsTest, TheFloorsAreRelease1sSchemas) {
+  EXPECT_EQ(ProfileDbLadder().floor, 8);
+  EXPECT_EQ(ThreadDbLadder().floor, 4);
+  EXPECT_GE(ProfileDbLadder().current, ProfileDbLadder().floor);
+  EXPECT_GE(ThreadDbLadder().current, ThreadDbLadder().floor);
 }
 
 TEST_F(SqliteMigrationsTest, AFreshProfileCreatesNothingBeforeUnlock) {
@@ -750,24 +375,6 @@ TEST_F(SqliteMigrationsTest, ANewerStoreStaysShutAndSaysWhyThenAResetOpensAFresh
   ASSERT_TRUE(threads) << threads.error().message;
   EXPECT_TRUE(threads->empty());
   EXPECT_TRUE(prefs.List());
-}
-
-TEST_F(SqliteMigrationsTest, AFailedUpgradeStaysShutAsNotUpgradedAtItsOldVersion) {
-  WriteProfileWithAChat();
-  sqlite3* db = Db(ProfileDb());
-  // A tester's file the baseline cannot finish: session_kind is indexed, so dropping it fails.
-  Exec(db, "ALTER TABLE call_sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'group';");
-  Exec(db, "CREATE INDEX idx_kind ON call_sessions(session_kind); PRAGMA user_version = 4;");
-  CloseDb();
-
-  SqliteThreadStore& store = OpenStore();
-  auto failure = chat_store_gate::OpenFailure(ProfileDb());
-  ASSERT_TRUE(failure.has_value());
-  EXPECT_EQ(failure->problem, ChatStoreProblem::NotUpgraded) << failure->message;
-  EXPECT_FALSE(store.ListThreads());
-  CloseStore();
-  EXPECT_EQ(Version(ProfileDb()), 4) << "rolled back to the version it had";
-  EXPECT_TRUE(std::filesystem::exists(SqliteThreadDbFile(data_dir_.string(), "thread-kept"))) << "nothing reset";
 }
 
 // The runner itself, on a ladder of its own: a step that fails leaves the database as it was — the steps before it

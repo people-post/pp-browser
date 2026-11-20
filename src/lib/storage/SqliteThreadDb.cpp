@@ -43,11 +43,6 @@ SqliteThreadDb::~SqliteThreadDb() {
   }
 }
 
-void SqliteThreadDb::SetOwnAccount(std::function<std::string()> own_account) {
-  std::lock_guard lock(dek_mutex_);
-  own_account_ = std::move(own_account);
-}
-
 Roe<void> SqliteThreadDb::SetDek(ByteVector dek) {
   if (dek.size() != 32u) {
     return Error("Invalid DEK size");
@@ -155,12 +150,7 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
     return cfg.error();
   }
   const ByteVector dek = CopyDek();
-  std::function<std::string()> own_account;
-  {
-    std::lock_guard lock(dek_mutex_);
-    own_account = own_account_;
-  }
-  auto outcome = RunSqliteLadder(profile_db_, path, ProfileDbLadder(), &dek, {}, own_account ? own_account() : "");
+  auto outcome = RunSqliteLadder(profile_db_, path, ProfileDbLadder(), &dek);
   if (const auto problem = ChatStoreProblemFor(outcome)) {
     return RecordOpenFailure(*problem, *problem == ChatStoreProblem::Newer
                                            ? "Incompatible profile.db: it is from a newer version of the app "
@@ -244,29 +234,6 @@ Roe<sqlite3*> SqliteThreadDb::OpenThreadDb(const std::string& thread_id) const {
   return it->second.db;
 }
 
-std::string SqliteThreadDb::DirectPeerAccountOf(const std::string& thread_id) const {
-  if (!profile_db_) {
-    return {};
-  }
-  sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(profile_db_,
-                         "SELECT peer_identity_value FROM threads WHERE id = ?1 AND kind = 'direct' AND "
-                         "peer_identity_kind = 'account'",
-                         -1, &stmt, nullptr) != SQLITE_OK) {
-    sqlite3_finalize(stmt);
-    return {};
-  }
-  sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
-  std::string account;
-  if (sqlite3_step(stmt) == SQLITE_ROW) {
-    if (const unsigned char* text = sqlite3_column_text(stmt, 0)) {
-      account = reinterpret_cast<const char*>(text);
-    }
-  }
-  sqlite3_finalize(stmt);
-  return account;
-}
-
 Roe<sqlite3*> SqliteThreadDb::OpenThreadDbFile(const std::string& thread_id) const {
   const std::string path = SqliteThreadDbFile(data_dir_, thread_id);
   sqlite3* db = nullptr;
@@ -282,7 +249,7 @@ Roe<sqlite3*> SqliteThreadDb::OpenThreadDbFile(const std::string& thread_id) con
     return cfg.error();
   }
   const ByteVector dek = CopyDek();
-  auto outcome = RunSqliteLadder(db, path, ThreadDbLadder(), &dek, DirectPeerAccountOf(thread_id));
+  auto outcome = RunSqliteLadder(db, path, ThreadDbLadder(), &dek);
   if (!outcome || *outcome == SqliteLadderOutcome::Newer) {
     sqlite3_close(db);
     return Error((outcome ? std::string("Incompatible thread.db: it is from a newer version of the app")

@@ -94,6 +94,10 @@ Roe<void> AdoptProfileBackend(const std::string& profile_data_dir, const std::st
   if (!root) {
     return Roe<void>::error(Error("Failed to read profile manifest"));
   }
+  if (auto validated = SchemaVersion::Validate(*root, SchemaVersion::kCurrentSchemaVersion, "manifest.json");
+      !validated) {
+    return Roe<void>::error(Error(validated.error().message)); // a newer manifest is never written here
+  }
   if (root->getString("backend").has_value()) {
     return {};
   }

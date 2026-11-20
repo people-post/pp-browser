@@ -190,7 +190,7 @@ TEST(ConfigJsonTest, ProfilePrefsSidebarFieldsDefaultWhenAbsentAndRoundTrip) {
   EXPECT_TRUE(parsed.show_advanced_settings);
 }
 
-TEST(ConfigJsonTest, ProfilePrefsInvitePoliciesDefaultToEveryoneAndResetOnceBelowSchema16) {
+TEST(ConfigJsonTest, ProfilePrefsInvitePoliciesDefaultToEveryone) {
   pbr::ProfilePreferences fresh;
   EXPECT_EQ(fresh.call_invite_policy, "everyone");
   EXPECT_EQ(fresh.group_invite_policy, "everyone");
@@ -204,21 +204,8 @@ TEST(ConfigJsonTest, ProfilePrefsInvitePoliciesDefaultToEveryoneAndResetOnceBelo
     pbr::ProfilePrefsFromObject(*object, prefs);
     return prefs;
   };
-  // Below schema 16 both values are read as everyone, whatever the file holds.
-  for (const char* stored : {"contacts_only", "nobody"}) {
-    for (const int version : {14, 15}) {
-      const std::string json = "{ \"schema_version\": " + std::to_string(version) + ", \"call_invite_policy\": \"" +
-                               stored + "\", \"group_invite_policy\": \"" + stored + "\" }";
-      const auto prefs = parse(json.c_str());
-      EXPECT_EQ(prefs.call_invite_policy, "everyone") << json;
-      EXPECT_EQ(prefs.group_invite_policy, "everyone") << json;
-      EXPECT_EQ(prefs.schema_version, pbr::ProfilePreferences::kSchemaVersion) << "saved back as current: " << json;
-    }
-  }
-  EXPECT_EQ(parse(R"({ "schema_version": 15 })").call_invite_policy, "everyone");
-  EXPECT_EQ(parse(R"({ "schema_version": 15 })").group_invite_policy, "everyone");
-
-  // From schema 16 the stored value stands; a missing key reads as everyone.
+  // The stored value stands (release 1 keeps no one-time reset from before it, RC017); a missing key reads as
+  // everyone.
   const auto kept =
       parse(R"({ "schema_version": 16, "call_invite_policy": "contacts_only", "group_invite_policy": "nobody" })");
   EXPECT_EQ(kept.call_invite_policy, "contacts_only");

@@ -30,8 +30,6 @@ public:
 
   Roe<void> SetDek(ByteVector dek) override;
   void ClearDek() override;
-  /** The profile's own Account ID, read when profile.db's ladder runs (SqliteThreadDb::SetOwnAccount). */
-  void SetOwnAccount(std::function<std::string()> own_account) { db_.SetOwnAccount(std::move(own_account)); }
 
   Roe<std::vector<Thread>> ListThreads() const override;
   Roe<std::optional<Thread>> GetThread(const std::string& thread_id) const override;

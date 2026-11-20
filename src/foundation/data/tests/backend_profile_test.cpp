@@ -99,40 +99,62 @@ TEST_F(BackendProfileTest, SavedKeyIsConstantUnderAnOriginOverride) {
   SetOriginEnv(nullptr);
 }
 
-TEST_F(BackendProfileTest, ExistingProfileIsAdoptedAsProdWithoutMovingData) {
+// The active profile with no backend recorded (a fresh install's default, or one just reset, whose manifest is written
+// again without one) is the running backend's: qa as much as prod.
+TEST_F(BackendProfileTest, AnActiveProfileWithoutABackendTakesTheRunningOne) {
   auto registry = pbr::ProfileRegistry::Load(data_dir_);
   ASSERT_TRUE(static_cast<bool>(registry));
   const std::string dir = registry->ActiveProfileDataDir();
-  ASSERT_TRUE(static_cast<bool>(pbr::EnsureProfileManifest(dir))); // pre-existing manifest: no backend
+  ASSERT_TRUE(static_cast<bool>(pbr::EnsureProfileManifest(dir))); // a manifest with no backend
   EXPECT_TRUE(pbr::ReadProfileBackend(dir).empty());
 
-  ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend("prod")));
+  ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend("qa")));
   EXPECT_EQ(registry->ActiveProfileId(), "default");
   EXPECT_EQ(registry->ActiveProfileDataDir(), dir);
-  EXPECT_EQ(pbr::ReadProfileBackend(dir), "prod");
+  EXPECT_EQ(pbr::ReadProfileBackend(dir), "qa");
 }
 
-TEST_F(BackendProfileTest, QaGetsItsOwnProfileAndPreExistingOneBecomesProd) {
+TEST_F(BackendProfileTest, EachBackendGetsItsOwnProfileAndSwitchingBackFindsIt) {
   auto registry = pbr::ProfileRegistry::Load(data_dir_);
   ASSERT_TRUE(static_cast<bool>(registry));
-  const std::string prod_dir = registry->ActiveProfileDataDir();
+  const std::string qa_dir = registry->ActiveProfileDataDir();
 
   ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend("qa")));
-  EXPECT_EQ(registry->ActiveProfileId(), "qa");
-  EXPECT_EQ(pbr::ReadProfileBackend(prod_dir), "prod");
-  EXPECT_EQ(pbr::ReadProfileBackend(registry->ActiveProfileDataDir()), "qa");
+  EXPECT_EQ(registry->ActiveProfileId(), "default") << "a fresh install's default is the first backend's";
+  ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend("prod")));
+  EXPECT_EQ(registry->ActiveProfileId(), "prod");
+  EXPECT_EQ(pbr::ReadProfileBackend(qa_dir), "qa");
+  EXPECT_EQ(pbr::ReadProfileBackend(registry->ActiveProfileDataDir()), "prod");
 
   // Switching back finds the first profile instead of creating another; the choice persists.
-  ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend("prod")));
+  ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend("qa")));
   EXPECT_EQ(registry->ActiveProfileId(), "default");
   auto reloaded = pbr::ProfileRegistry::Load(data_dir_);
   ASSERT_TRUE(static_cast<bool>(reloaded));
   EXPECT_EQ(reloaded->ActiveProfileId(), "default");
   EXPECT_EQ(reloaded->Profiles().size(), 2u);
 
-  ASSERT_TRUE(static_cast<bool>(reloaded->SelectProfileForBackend("qa")));
-  EXPECT_EQ(reloaded->ActiveProfileId(), "qa");
+  ASSERT_TRUE(static_cast<bool>(reloaded->SelectProfileForBackend("prod")));
+  EXPECT_EQ(reloaded->ActiveProfileId(), "prod");
   EXPECT_EQ(reloaded->Profiles().size(), 2u);
+}
+
+// Only the active profile takes a backend: another profile whose manifest records none (one from before the field)
+// is not claimed, and its manifest is not written (release-compatibility RC017: no adoption kept).
+TEST_F(BackendProfileTest, AnotherProfileWithoutABackendIsNotClaimed) {
+  auto registry = pbr::ProfileRegistry::Load(data_dir_);
+  ASSERT_TRUE(static_cast<bool>(registry));
+  ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend("prod")));
+  ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend("qa")));
+  const std::string qa_dir = registry->ActiveProfileDataDir();
+  ASSERT_EQ(registry->ActiveProfileId(), "qa");
+  ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend("prod")));
+  std::filesystem::remove(std::filesystem::path(qa_dir) / "manifest.json");
+  ASSERT_TRUE(static_cast<bool>(pbr::EnsureProfileManifest(qa_dir))); // no backend
+
+  EXPECT_FALSE(static_cast<bool>(registry->SelectProfileForBackend("qa")));
+  EXPECT_EQ(registry->ActiveProfileId(), "default");
+  EXPECT_TRUE(pbr::ReadProfileBackend(qa_dir).empty()) << "not written";
 }
 
 TEST_F(BackendProfileTest, AMatchingActiveProfileIsKept) {

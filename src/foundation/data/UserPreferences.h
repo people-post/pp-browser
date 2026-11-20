@@ -93,7 +93,7 @@ struct ProfilePreferences {
   bool crash_reports_enabled = false;
   /** G007 — inbound group invite policy: everyone | contacts_only | nobody */
   std::string group_invite_policy = "everyone";
-  /** projects/privacy T3 — who may call this profile: everyone | contacts_only | nobody. Files older than schema 16 read back as everyone (one-time reset). */
+  /** projects/privacy T3 — who may call this profile: everyone | contacts_only | nobody. */
   std::string call_invite_policy = "everyone";
   /** R021 — attachment download: smart | always_auto | on_demand */
   std::string attachment_download_policy = "smart";

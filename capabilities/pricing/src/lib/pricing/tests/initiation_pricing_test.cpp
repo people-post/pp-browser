@@ -112,22 +112,24 @@ TEST(InitiationBillingStoreTest, PersistsState) {
   std::filesystem::remove_all(dir);
 }
 
-// initiation_billing.json 1 → 2 (multi-relay MR001): rows keyed by a retired `relay:` id are dropped; the rest stay.
-TEST(InitiationBillingStoreTest, AVersion1FileDropsItsRelayKeyedRows) {
+// initiation_billing.json's floor is release 1's schema, 2 (RC017): a version 1 file, an unversioned one and the flat
+// form before `peers` are refused, not read.
+TEST(InitiationBillingStoreTest, AFileBelowTheFloorIsRefused) {
   const auto dir = std::filesystem::temp_directory_path() /
                    ("pp_initiation_billing_v1_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
-  std::filesystem::remove_all(dir);
-  std::filesystem::create_directories(dir);
-  {
-    std::ofstream out(dir / "initiation_billing.json");
-    out << R"({"schema_version":1,"peers":{"relay:old":{"state":"open","floor_minor":3},)"
-           R"("account:ann":{"state":"open","floor_minor":4}}})";
+  for (const char* text : {R"({"schema_version":1,"peers":{"account:ann":{"state":"open","floor_minor":4}}})",
+                           R"({"peers":{"account:ann":{"state":"open","floor_minor":4}}})",
+                           R"({"account:ann":{"state":"open","floor_minor":4}})"}) {
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    {
+      std::ofstream out(dir / "initiation_billing.json");
+      out << text;
+    }
+    InitiationBillingStore store(dir.string());
+    EXPECT_FALSE(store.Load()) << text;
+    EXPECT_FALSE(store.IsOpen("account:ann")) << text;
   }
-  InitiationBillingStore store(dir.string());
-  ASSERT_TRUE(store.Load());
-  EXPECT_FALSE(store.IsOpen("relay:old"));
-  EXPECT_TRUE(store.IsOpen("account:ann"));
-  EXPECT_EQ(store.Get("account:ann").floor_minor, 4);
   std::filesystem::remove_all(dir);
 }
 
