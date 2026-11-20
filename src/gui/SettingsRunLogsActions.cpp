@@ -4,6 +4,9 @@
 #include "common/runtime/AppRuntime.h"
 #include "feature/settings/RunLogPrefs.h"
 #include "foundation/diagnostics/CrashDump.h"
+#ifdef PP_CRASH_PROBE
+#include "foundation/diagnostics/CrashProbe.h"
+#endif
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/diagnostics/RunLogBundle.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -43,6 +46,53 @@ void SettingsRunLogsActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("toggle_collect_run_logs", DataEvent<>([this]() { ToggleCollect(); }));
   ctor.BindEventCallback("toggle_collect_crash_logs", DataEvent<>([this]() { ToggleCollectCrash(); }));
   ctor.BindEventCallback("send_run_logs", DataEvent<>([this]() { Send(); }));
+  ctor.Bind("probe_enabled", &probe_enabled_);
+  ctor.Bind("probe_status", &probe_status_);
+  ctor.BindEventCallback("probe_crash", DataEvent<>([this]() { ProbeCrash(0); }));
+  ctor.BindEventCallback("probe_throw", DataEvent<>([this]() { ProbeCrash(1); }));
+  ctor.BindEventCallback("probe_hang10", DataEvent<>([this]() { ProbeHang(10); }));
+  ctor.BindEventCallback("probe_hang30", DataEvent<>([this]() { ProbeHang(30); }));
+  ctor.BindEventCallback("probe_refresh", DataEvent<>([this]() { ProbeRefresh(); }));
+}
+
+void SettingsRunLogsActions::ProbeRefresh() {
+#ifdef PP_CRASH_PROBE
+  probe_enabled_ = true;
+  const CrashProbe::Status status = CrashProbe::ReadStatus(DataDir());
+  probe_status_ = "已收到 " + std::to_string(status.payloads) + " 份 · 最近一份：" +
+                  (status.last_time.empty() ? std::string("还没有") : status.last_time);
+  DataModelHost::Instance().Dirty("settings", "probe_enabled");
+  DataModelHost::Instance().Dirty("settings", "probe_status");
+#endif
+}
+
+void SettingsRunLogsActions::ProbeAsk(const std::string& what, std::function<void()> action) {
+  if (!feedback_.show_confirm) {
+    return;
+  }
+  feedback_.show_confirm("探测：" + what, "确定？这会让 App 闪退或卡住。",
+                         [alive = std::weak_ptr<bool>(alive_), action = std::move(action)](const bool ok) {
+                           if (ok && alive.lock()) {
+                             action();
+                           }
+                         },
+                         "确定");
+}
+
+void SettingsRunLogsActions::ProbeCrash(const int kind) {
+#ifdef PP_CRASH_PROBE
+  ProbeAsk(kind == 1 ? "未捕获异常" : "制造一次闪退", [kind]() { CrashProbe::Crash(kind); });
+#else
+  (void)kind;
+#endif
+}
+
+void SettingsRunLogsActions::ProbeHang(const int seconds) {
+#ifdef PP_CRASH_PROBE
+  ProbeAsk("卡住 " + std::to_string(seconds) + " 秒", [seconds]() { CrashProbe::Hang(seconds); });
+#else
+  (void)seconds;
+#endif
 }
 
 std::string SettingsRunLogsActions::DataDir() const {
@@ -73,6 +123,7 @@ void SettingsRunLogsActions::Refresh() {
   collect_crash_ = show_ && RunLogPrefs::ReadCollectCrash(DataDir(), true);
   sendable_ = show_ && RunLogBundle::Sendable(LogFile::FamilyFiles(LogPath()), collect_);
   send_disabled_ = busy_ || !sendable_;
+  ProbeRefresh();
   Dirty();
 }
 

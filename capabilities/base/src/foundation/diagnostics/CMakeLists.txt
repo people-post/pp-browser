@@ -24,6 +24,16 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
 else()
   target_sources(pp_foundation_diagnostics PRIVATE OsCurrentMemory_Posix.cpp)
 endif()
+# THROWAWAY device probe (branch kenneth/crash-probe, never merged): MetricKit collector + crash / hang triggers.
+if(PP_CRASH_PROBE)
+  target_sources(pp_foundation_diagnostics PRIVATE CrashProbe.cpp)
+  if(PP_BROWSER_IS_IOS)
+    target_sources(pp_foundation_diagnostics PRIVATE CrashProbe_Ios.mm)
+    target_link_libraries(pp_foundation_diagnostics PUBLIC "-framework MetricKit" "-framework Foundation")
+  else()
+    target_sources(pp_foundation_diagnostics PRIVATE CrashProbe_Default.cpp)
+  endif()
+endif()
 # gzip for "Send run logs" (RunLogBundle): the vendored zlib every build already has (cmake/libp2p_dependencies.cmake).
 target_link_libraries(pp_foundation_diagnostics PRIVATE ZLIB::ZLIB)
 # dladdr (CrashDump image_base) — libdl on older glibc.
