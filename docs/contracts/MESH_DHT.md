@@ -2,7 +2,7 @@
 
 **Tier:** contract (draft — **n2-spec**; implementation **n2-core**)  
 **Status:** Draft v1 (routing table, iterative lookup, publish at the k closest: 2026-10-21)  
-**Date:** 2026-09-02, updated 2026-10-21 — design: pp-cpp-mesh [docs/DHT.md](https://github.com/people-post/pp-cpp-mesh/blob/develop/docs/DHT.md)  
+**Date:** 2026-09-02, updated 2026-10-21 — design: pp-cpp-mesh [docs/DHT.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/DHT.md)  
 **Related:** [N028](../../projects/p2p-mesh/DECISIONS.md#n028--amp-native-mesh-dht-find_peer-v1), [DISCOVERY_ROADMAP](../../projects/p2p-mesh/DISCOVERY_ROADMAP.md), [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md), [AMP-CHANNEL.md](AMP-CHANNEL.md), [platform-integration](../../../pp-ledger/docs/architecture/PLATFORM_INTEGRATION.md) (pp-ledger fleet DHT retired)
 
 ## Purpose
@@ -24,7 +24,7 @@ DHT **feeds candidates** only. [`MeshHopPolicy`](../../capabilities/people/src/l
 | Mobile / Client | Never participates (consume-only) |
 | Default | `capabilities.dht = false` |
 | Publish gate | Reachability ≠ `Blocked`; advertise dialable ADP multiaddrs only |
-| Bootstrap | `mesh.bootstrap_peers` ∪ cached [`MeshDirectoryCache`](https://github.com/people-post/pp-cpp-mesh/blob/develop/include/mesh/discovery/MeshDirectoryCache.h) nodes (n-dir) |
+| Bootstrap | `mesh.bootstrap_peers` ∪ cached [`MeshDirectoryCache`](https://github.com/people-post/pp-cpp-mesh/blob/main/include/mesh/discovery/MeshDirectoryCache.h) nodes (n-dir) |
 | Lookups | A participating Node walks the DHT (iterative, below). A Client asks its query peers only and follows no `closer_peers` — a walk tells strangers whom you look for |
 
 ## Transport

@@ -9,7 +9,7 @@ is not chat UX, HTTP Brief, or hop-ranking policy — those stay in pp-browser (
 and reach the mesh as pushed snapshots and app protocols. This page is pp-browser's view of it: how
 the app composes and uses it. The library's own layout, rules and threading contract are in its
 [README](https://github.com/people-post/pp-cpp-mesh#readme) and
-[docs/THREADING.md](https://github.com/people-post/pp-cpp-mesh/blob/develop/docs/THREADING.md).
+[docs/THREADING.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/THREADING.md).
 
 ## Architecture
 
@@ -88,7 +88,7 @@ Feature must **not** `#include "amp/link/*"` in headers. Implementation `.cpp` f
 
 ## Link events and hygiene
 
-Amp owns link liveness; the mesh layer only observes it ([ADR_LINK_PLANE §9–11](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md), keepalive v2 in [KEEPALIVE.md](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/KEEPALIVE.md)).
+Amp owns link liveness; the mesh layer only observes it ([ADR_LINK_PLANE §9–11](https://github.com/people-post/pp-cpp-amp/blob/main/docs/ADR_LINK_PLANE.md), keepalive v2 in [KEEPALIVE.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/KEEPALIVE.md)).
 
 - **Events:** `MeshRuntime::AddLinkEventListener` posts `Connected` / `Dropped` (+ `LinkDropReason`) / `PathChanged` off the strand. `host/MeshLinkEventLog` logs them under `MeshLink` with `path=direct|punched|carrier`, the remote endpoint and RX age — INFO for connects and path changes, WARNING for the drop of a connected link, DEBUG for failed attempts.
 - **Per-link, not per-peer:** a direct (ADP) link and a nested relay-carrier link to one PeerId coexist ([A024](../../projects/adp/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session)); drops, waits and lookups key on `LinkHandle`, and `PeerLinkManager::FindConnectedLinkByPeerId(peer, TransportClass)` picks exactly one class. Call media binds a path to one handle and never follows an alias to "whatever now carries the peer" ([AMP-CHANNEL.md § Call-media bundle](../contracts/AMP-CHANNEL.md#call-media-bundle)).
@@ -101,7 +101,7 @@ Amp owns link liveness; the mesh layer only observes it ([ADR_LINK_PLANE §9–1
 
 | Change | Mesh (`MeshHost::OnLocalNetworkChanged`, `DecideLocalNetworkReaction`) | Calls (`CallDirectPath::OnLocalNetworkChanged`) |
 |--------|---------------------------|------------------|
-| Online on a new attachment, or back online | Amp `NotifyNetworkChanged`: every direct link probed at once (the probe from the new address also moves the peer's path), silent ones dropped after 2 s (`network-changed`), dial backoffs cleared ([KEEPALIVE.md § Network change](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/KEEPALIVE.md)); reachability re-probed 2.5 s later → advertised / punch addresses refreshed | Reconnecting: re-anchor once links settled (2.5 s); Live relayed (offerer): direct-upgrade punches start over |
+| Online on a new attachment, or back online | Amp `NotifyNetworkChanged`: every direct link probed at once (the probe from the new address also moves the peer's path), silent ones dropped after 2 s (`network-changed`), dial backoffs cleared ([KEEPALIVE.md § Network change](https://github.com/people-post/pp-cpp-amp/blob/main/docs/KEEPALIVE.md)); reachability re-probed 2.5 s later → advertised / punch addresses refreshed | Reconnecting: re-anchor once links settled (2.5 s); Live relayed (offerer): direct-upgrade punches start over |
 | Offline | Nothing — probes into no route would drop every link; they may survive a short outage | Nothing |
 | Cost / transport label only | Nothing (mobility policy, k6) | Nothing |
 
@@ -159,7 +159,7 @@ pin, local-checkout override).
 
 The library depends on pp-cpp-common, pp-cpp-crypto and pp-cpp-amp only; it carries protocols and
 bytes, product types stay in pp-browser; its threads and rules are its
-[docs/THREADING.md](https://github.com/people-post/pp-cpp-mesh/blob/develop/docs/THREADING.md).
+[docs/THREADING.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/THREADING.md).
 
 | Step | |
 |------|---|

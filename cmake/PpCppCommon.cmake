@@ -1,7 +1,7 @@
 # Fetch people-post/pp-cpp-common (namespace pp) as target pp_common.
 #
 # Pin a release tag from that repo's main line (PP_CPP_COMMON_GIT_TAG).
-# Do not track develop/main branch tips.
+# Do not track the main branch tip.
 #
 # Optional override: PP_CPP_COMMON_SOURCE_DIR (local checkout path).
 

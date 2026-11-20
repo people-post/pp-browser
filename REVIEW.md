@@ -41,5 +41,5 @@ Flag these first; everything else is secondary.
   font styles**, ask for an iPhone check in **Testing** (2026-10-20: all three were found on a device only).
 - Changing what a **shared function** does (e.g. `PrepareThreadHistoryClear`, used by clear history *and*
   clear downloaded media): the author lists every caller and says why the new behaviour is right for each.
-- A pull request that is **CONFLICTING** against `develop` never triggers the `pull_request` checks; "no checks
+- A pull request that is **CONFLICTING** against `main` never triggers the `pull_request` checks; "no checks
   reported" usually means "rebase first", not "CI is down".

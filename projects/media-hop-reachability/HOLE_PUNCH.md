@@ -4,7 +4,7 @@
 **Stack ADR:** [H009](DECISIONS.md#h009--amp-coordinated-punch-acp)  
 **Preference order:** [H002](DECISIONS.md#h002--publish-in-stack--punch--circuit--fail)  
 **Underlay:** Amp UDP (D10 / A017) — not libp2p DCUtR as a product path  
-**Related:** dial-back / UPnP ([D8](../adp/DECISIONS.md)), circuit ([H005](DECISIONS.md#h005--circuit-last-resort-bill-media-hop), [H008](DECISIONS.md#h008--multi-hop-circuit-chains-planned)), keepalive ([pp-cpp-amp KEEPALIVE](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/KEEPALIVE.md))
+**Related:** dial-back / UPnP ([D8](../adp/DECISIONS.md)), circuit ([H005](DECISIONS.md#h005--circuit-last-resort-bill-media-hop), [H008](DECISIONS.md#h008--multi-hop-circuit-chains-planned)), keepalive ([pp-cpp-amp KEEPALIVE](https://github.com/people-post/pp-cpp-amp/blob/main/docs/KEEPALIVE.md))
 
 ## Problem
 

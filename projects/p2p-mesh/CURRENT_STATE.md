@@ -49,7 +49,7 @@
 | Busy-port | `ListenBusyPolicy::FailLoud` (pp-node default) vs `DesktopFallback` (GUI) |
 | Binary | `pp-node` (`src/app/node/`) — PIN unlock, force Node, signal wait; does **not** use ConversationsHub / inbox / calls |
 | Dial-back | `/pp-mesh/reach/1.0.0` (`DialBackService`) — seed probes client listen addrs |
-| Packaging | Dual trains: app `v*` + `pp-node/v*` from `main`; tip on `develop`; L0/L1 smoke ([IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md); L2 deferred) |
+| Packaging | Dual trains: app `v*` + `pp-node/v*` from `main`, the only integration line; L0/L1 smoke ([IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md); L2 deferred) |
 | Tests | FailLoud candidates; two-host dial-back LAN probe |
 
 ## nr in code

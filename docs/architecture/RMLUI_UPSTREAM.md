@@ -25,11 +25,11 @@ foundation/platform/ui/host → pp_ui_backend (Platform_SDL + Renderer_GL3) → 
 ## Provenance
 
 Engine code started as an RmlUi 6.2 hard fork and is now owned first-party source in pp-cpp-ui.
-See `../pp-cpp-ui/docs/PROVENANCE.md` and [ADR 001](https://github.com/people-post/pp-cpp-ui/blob/develop/docs/ADR_001_FIRST_PARTY_LAYOUT.md).
+See `../pp-cpp-ui/docs/PROVENANCE.md` and [ADR 001](https://github.com/people-post/pp-cpp-ui/blob/main/docs/ADR_001_FIRST_PARTY_LAYOUT.md).
 
 ## Build flags / product profile
 
-Supported knobs are `PP_BROWSER_*` plus the pp-cpp-ui pin in [`cmake/PpCppUi.cmake`](../../cmake/PpCppUi.cmake). Prefer a sibling `../pp-cpp-ui` checkout when integrating unreleased `develop`; FetchContent falls back to `PP_CPP_UI_GIT_TAG` (release tags on `main`). A packaged build (`PP_BROWSER_PACKAGED_BUILD=ON`) always takes the tag.
+Supported knobs are `PP_BROWSER_*` plus the pp-cpp-ui pin in [`cmake/PpCppUi.cmake`](../../cmake/PpCppUi.cmake). Prefer a sibling `../pp-cpp-ui` checkout when integrating unreleased `main`; FetchContent falls back to `PP_CPP_UI_GIT_TAG` (release tags on `main`). A packaged build (`PP_BROWSER_PACKAGED_BUILD=ON`) always takes the tag.
 
 | Option | Effect |
 |--------|--------|

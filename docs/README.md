@@ -96,7 +96,7 @@ Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURA
 | [ops/BUILD.md](ops/BUILD.md) | Build and test |
 | [../scripts/README.md](../scripts/README.md) | Repo scripts layout (`check/` `platform/` `vendor/` `test/` `dev/`) |
 | [ops/TEST_STRATEGY.md](ops/TEST_STRATEGY.md) | Purpose IDs (`N-*` / `B-*` / `N-HARD-*`), inventory, CI ladder, SQLite test conventions — doctrine: [TESTING.md](architecture/TESTING.md); hard lab: [HARD_LAB.md](../packaging/pp-node/HARD_LAB.md) |
-| [ops/RELEASE.md](ops/RELEASE.md) | Branching (`develop`/`main`), app `v*` vs `pp-node/v*` trains, artifacts |
+| [ops/RELEASE.md](ops/RELEASE.md) | Branching (`main` only), app `v*` vs `pp-node/v*` trains, artifacts |
 | [ops/MACOS_SIGNING.md](ops/MACOS_SIGNING.md) | Apple Developer ID — sign + notarize PP.app |
 | [ops/IOS_BUILD.md](ops/IOS_BUILD.md) | iOS simulator/device build + provisioning placeholders |
 | [ops/APP_STORE_EXPORT_COMPLIANCE.md](ops/APP_STORE_EXPORT_COMPLIANCE.md) | App Store Connect encryption questionnaire + crypto inventory |

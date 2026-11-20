@@ -1,7 +1,7 @@
 # Fetch people-post/pp-cpp-crypto (sodium + ML-KEM/ML-DSA + BoringSSL + pp_crypto).
 #
 # Pin a release tag from that repo's main line (PP_CPP_CRYPTO_GIT_TAG).
-# Do not track develop/main branch tips or auto-pick a sibling checkout.
+# Do not track the main branch tip or auto-pick a sibling checkout.
 
 include(FetchContent)
 include(PpFetchPin)
