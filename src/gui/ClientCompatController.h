@@ -5,6 +5,7 @@
 #include "feature/conversations/MessagingCompatPorts.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/SupportDiscoveryPorts.h"
+#include "gui/UpdateCard.h"
 
 #include <cstdint>
 #include <functional>
@@ -30,6 +31,8 @@ public:
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** Publish app Support discovery after each resolved document. Clear via BindSupportDiscovery({}). */
   void BindSupportDiscovery(SupportDiscoveryPorts ports);
+  /** The "new version" card's source changed (UI thread); read it with SoftUpdate(). Clear via {}. */
+  void BindSoftUpdateChanged(std::function<void()> changed) { on_soft_update_changed_ = std::move(changed); }
   /** Tests: the clock (Unix seconds). */
   void SetClock(std::function<int64_t()> now_unix);
 
@@ -53,6 +56,11 @@ public:
   CompatUiAction LastAction() const { return last_action_; }
   /** A check started and its answer is not applied yet. */
   bool CheckInFlight() const { return check_in_flight_; }
+  /**
+   * A newer version than this one exists (the document's latest_client_version) and the update screen is not up: what
+   * the Chats page's card shows. Nothing when up to date, when the screen is up, or before any document.
+   */
+  const std::optional<UpdateAdvice>& SoftUpdate() const { return soft_update_; }
   /** The link the update screen opens (ResolvedUpgradeUrl for this platform). */
   const std::string& UpgradeUrl() const { return upgrade_url_; }
 
@@ -61,10 +69,10 @@ private:
   void PresentAction(CompatUiAction action, const ClientCompatDocument& doc);
   void ShowUpdateRequired(const ClientCompatDocument& doc);
   void PublishSupport(const ClientCompatDocument& doc);
+  void SetSoftUpdate(std::optional<UpdateAdvice> advice);
   int64_t NowUnix() const;
 
   CompatUiAction last_action_ = CompatUiAction::None;
-  bool soft_banner_shown_ = false;
   bool force_dialog_shown_ = false;
   bool check_in_flight_ = false;
   /** The org's relay answered 426 this session: the update screen, whatever the document says. */
@@ -73,6 +81,8 @@ private:
   int64_t fetched_at_unix_ = 0;
   std::optional<ClientCompatDocument> document_;
   std::string upgrade_url_;
+  std::optional<UpdateAdvice> soft_update_;
+  std::function<void()> on_soft_update_changed_;
   std::function<int64_t()> now_unix_;
   MessagingCompatPorts compat_ports_;
   ShellFeedbackPorts shell_feedback_;

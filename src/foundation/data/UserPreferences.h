@@ -45,6 +45,14 @@ struct MachinePreferences {
    * optional on disk (absent = off). Not the old per-profile `crash_reports_enabled` (its upload stays dormant).
    */
   bool collect_crash_logs = false;
+  /**
+   * The Chats page's "new version" card (DEV/PLAN-release1-update-and-support.md A1): which latest_client_version the
+   * count belongs to, how often "Later" was tapped on it, and when last. Device-wide (an update has nothing to do
+   * with the account), optional on disk (absent = never tapped); the schema version stays, an older build ignores them.
+   */
+  std::string update_card_version;
+  int update_card_dismissals = 0;
+  int64_t update_card_dismissed_ms = 0;
 };
 
 struct ProfilePreferences {

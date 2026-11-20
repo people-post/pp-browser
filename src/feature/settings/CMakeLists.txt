@@ -11,6 +11,7 @@ pp_browser_add_feature_library(pp_feature_settings
     OwnDevices.cpp
     ReachabilityNudge.cpp
     RunLogPrefs.cpp
+    UpdatePrefs.cpp
     SettingsLogic.cpp
     SettingsPages.cpp
     SettingsSections.cpp

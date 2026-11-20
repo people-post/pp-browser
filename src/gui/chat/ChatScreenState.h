@@ -244,6 +244,9 @@ struct ChatShellState {
   bool home_security_ok = false;
   /** Chats page: the "save your recovery phrase" card (RecoveryReminder.h). */
   bool recovery_reminder = false;
+  /** Chats page: the "new version is available" card (UpdateCard.h), below the recovery card; with its Update button. */
+  bool update_card = false;
+  bool update_card_link = false;
   /** Phone Home shows the 动态 widgets section (date, title, grid); off = minimal AI-first Home. */
   bool home_show_dynamic = false;
   std::vector<HomeBriefRow> home_brief;

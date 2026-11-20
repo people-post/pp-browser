@@ -199,6 +199,8 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
   ctor.Bind("home_new_people", &state.home_new_people);
   ctor.Bind("home_security_ok", &state.home_security_ok);
   ctor.Bind("recovery_reminder", &state.recovery_reminder);
+  ctor.Bind("update_card", &state.update_card);
+  ctor.Bind("update_card_link", &state.update_card_link);
   ctor.Bind("home_show_dynamic", &state.home_show_dynamic);
   ctor.Bind("home_brief", &state.home_brief);
   ctor.Bind("home_edit_on", &state.home_edit_on);
@@ -334,10 +336,11 @@ void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "ai_sessions");
   DataModelHost::Instance().Dirty("shell", "ai_sessions_count_label");
   DataModelHost::Instance().Dirty("shell", "home_date_label");
-  for (const char* name : {"home_widgets", "home_favorites", "home_recent", "home_missed_calls", "home_calls_latest",
-                           "home_mentions", "home_mentions_where", "home_new_people", "home_security_ok",
-                           "recovery_reminder", "home_show_dynamic", "home_brief", "home_edit_on", "home_edit_off",
-                           "home_edit_dragging", "home_fav_avatar", "home_fav_avatar_radius"}) {
+  for (const char* name :
+       {"home_widgets", "home_favorites", "home_recent", "home_missed_calls", "home_calls_latest", "home_mentions",
+        "home_mentions_where", "home_new_people", "home_security_ok", "recovery_reminder", "update_card",
+        "update_card_link", "home_show_dynamic", "home_brief", "home_edit_on", "home_edit_off", "home_edit_dragging",
+        "home_fav_avatar", "home_fav_avatar_radius"}) {
     DataModelHost::Instance().Dirty("shell", name);
   }
   DataModelHost::Instance().Dirty("shell", "archived_count");

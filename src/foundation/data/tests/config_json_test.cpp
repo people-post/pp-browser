@@ -553,3 +553,24 @@ TEST(ConfigJsonTest, ProfilePrefsRecoveryReminderRoundTripsAndClamps) {
   EXPECT_EQ(parsed.recovery_reminder_dismissals, 2);
   EXPECT_EQ(parsed.recovery_reminder_dismissed_ms, 0);
 }
+
+TEST(ConfigJsonTest, MachinePrefsUpdateCardFieldsAreOptionalAndRoundTrip) {
+  pbr::MachinePreferences fresh;
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 1, "active_profile_id": "qa", "collect_run_logs": true })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::MachinePrefsFromObject(*absent, fresh);
+  EXPECT_EQ(fresh.update_card_version, "");
+  EXPECT_EQ(fresh.update_card_dismissals, 0);
+  EXPECT_EQ(fresh.update_card_dismissed_ms, 0);
+  EXPECT_TRUE(fresh.collect_run_logs);
+
+  pbr::MachinePreferences edited;
+  edited.update_card_version = "1.2.0";
+  edited.update_card_dismissals = 1;
+  edited.update_card_dismissed_ms = 1700000000000;
+  pbr::MachinePreferences parsed;
+  pbr::MachinePrefsFromObject(pbr::MachinePrefsToObject(edited), parsed);
+  EXPECT_EQ(parsed.update_card_version, "1.2.0");
+  EXPECT_EQ(parsed.update_card_dismissals, 1);
+  EXPECT_EQ(parsed.update_card_dismissed_ms, 1700000000000);
+}

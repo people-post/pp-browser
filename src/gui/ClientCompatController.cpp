@@ -7,7 +7,7 @@
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/PlatformOpenUrl.h"
 #include "common/Logger.h"
-#include "gui/UserFeedback.h"
+#include "gui/UpdateLink.h"
 
 #include <chrono>
 #include <optional>
@@ -133,13 +133,28 @@ void ClientCompatController::PresentAction(CompatUiAction action, const ClientCo
   upgrade_url_ = ResolvedUpgradeUrl(doc, kDefaultUpgradeUrl, Platform::OsName());
   if (action == CompatUiAction::UpdateRequired) {
     last_action_ = action;
+    SetSoftUpdate(std::nullopt); // the dialog says it
     ShowUpdateRequired(doc);
     return;
   }
-  if (action == CompatUiAction::SoftUpdateAvailable && !soft_banner_shown_) {
-    soft_banner_shown_ = true;
-    const std::string message = doc.message.empty() ? Tr("compat.update_available.message") : doc.message;
-    UserFeedback::NeedsSetup(message, /*sticky=*/true); // once per session; must outlive a glance away
+  if (action == CompatUiAction::SoftUpdateAvailable) {
+    SetSoftUpdate(
+        UpdateAdvice{doc.latest_client_version, UsableUpdateLink(doc, Platform::OsName(), kDefaultUpgradeUrl)});
+    return;
+  }
+  SetSoftUpdate(std::nullopt); // up to date, or the update screen says it
+}
+
+void ClientCompatController::SetSoftUpdate(std::optional<UpdateAdvice> advice) {
+  const bool same =
+      soft_update_.has_value() == advice.has_value() &&
+      (!advice || (soft_update_->latest_version == advice->latest_version && soft_update_->url == advice->url));
+  if (same) {
+    return;
+  }
+  soft_update_ = std::move(advice);
+  if (on_soft_update_changed_) {
+    on_soft_update_changed_();
   }
 }
 

@@ -4,6 +4,7 @@
 #include "gui/contacts/ContactsNotifyPorts.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/EmojiPickerNotifyPorts.h"
+#include "gui/UpdateCard.h"
 #include "feature/presenters/ChatPresenter.h"
 #include "feature/presenters/HomeBrief.h"
 #include "feature/presenters/HomeToday.h"
@@ -206,6 +207,16 @@ public:
   /** The Chats page card "save your recovery phrase" (RecoveryReminder.h); "Later" counts toward its one repeat. */
   bool RecoveryReminderShows();
   void OnRecoveryReminderLater();
+  /**
+   * The Chats page card "a new version is available" (UpdateCard.h), under the recovery card: Update opens the link
+   * (when there is a usable one), "Later" hides it on the recovery card's rhythm. RefreshUpdateCard draws it anew
+   * (the advice changed).
+   */
+  void BindUpdateCard(UpdateCardPorts ports);
+  bool UpdateCardShows();
+  void RefreshUpdateCard();
+  void OnUpdateCardOpen();
+  void OnUpdateCardLater();
   void OnSessionsTabActivated();
   /**
    * Phone: back from Settings / Contacts to the chat overlay left open under them (ShellHost
@@ -865,6 +876,7 @@ private:
   bool messaging_ready_ = false;
   /** Whether this device holds a recovery phrase: one vault read per messaging session / identity change. */
   std::optional<bool> recovery_phrase_present_;
+  UpdateCardPorts update_card_;
   /**
    * One up per WireMessagingBindings (and when messaging goes away): a messaging-ready task's result is stored only
    * when the session it started in is still this one (MessagingReadyTasks).

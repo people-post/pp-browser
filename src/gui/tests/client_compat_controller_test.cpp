@@ -7,6 +7,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/product/AppVersion.h"
+#include "gui/UpdateLink.h"
 #include "lib/net/ClientCompat.h"
 
 #include <gtest/gtest.h>
@@ -201,6 +202,56 @@ TEST_F(ClientCompatControllerTest, ARelayMessageIsShownInsteadOfTheAppsOwnWords)
   EXPECT_EQ(alerts_[0].message, "Maintenance: update by Friday");
   EXPECT_NE(alerts_[0].message, Tr("compat.update_required.message"));
   EXPECT_EQ(alerts_[0].title, "Update required") << "the title and button stay the app's";
+}
+
+// A newer version than this one: the Chats list's card (the advice), no toast and no dialog; the card does not depend
+// on the link, which only decides the Update button.
+TEST_F(ClientCompatControllerTest, ANewerVersionRaisesTheCardWithoutAnAlertAndTheLinkOnlyDecidesTheButton) {
+  BindMessaging();
+  int changes = 0;
+  controller_.BindSoftUpdateChanged([&changes]() { ++changes; });
+  EXPECT_FALSE(controller_.SoftUpdate().has_value());
+
+  relay_->doc.latest_client_version = "999.0.0";
+  relay_->doc.upgrade_url = "https://example.test/releases"; // what prod answers before the store links are filled in
+  ASSERT_TRUE(controller_.CheckAsync());
+  Settle();
+  EXPECT_EQ(controller_.LastAction(), CompatUiAction::SoftUpdateAvailable);
+  EXPECT_TRUE(alerts_.empty());
+  ASSERT_TRUE(controller_.SoftUpdate().has_value()) << "the card shows whatever the link";
+  EXPECT_EQ(controller_.SoftUpdate()->latest_version, "999.0.0");
+  const std::string placeholder_link = UsableUpdateLink(relay_->doc, Platform::OsName(), kDefaultUpgradeUrl);
+  EXPECT_EQ(controller_.SoftUpdate()->url, placeholder_link);
+  const std::string os = Platform::OsName();
+  EXPECT_EQ(placeholder_link.empty(), !(os == "macos" || os == "windows")) << "the releases page on the desktop only";
+  EXPECT_EQ(changes, 1);
+
+  relay_->doc.upgrade_url = "https://apps.apple.com/app/id123";
+  controller_.ApplyDocument(relay_->doc);
+  EXPECT_EQ(controller_.SoftUpdate()->url, "https://apps.apple.com/app/id123");
+  EXPECT_EQ(changes, 2);
+  controller_.ApplyDocument(relay_->doc);
+  EXPECT_EQ(changes, 2) << "the same advice is not announced twice";
+}
+
+TEST_F(ClientCompatControllerTest, TheCardGoesWhenUpToDateAndTheDialogCaseKeepsItsOwnLink) {
+  BindMessaging();
+  relay_->doc.latest_client_version = "999.0.0";
+  controller_.ApplyDocument(relay_->doc);
+  ASSERT_TRUE(controller_.SoftUpdate().has_value());
+  relay_->doc.latest_client_version = "";
+  controller_.ApplyDocument(relay_->doc);
+  EXPECT_FALSE(controller_.SoftUpdate().has_value());
+
+  relay_->doc.latest_client_version = "999.0.0";
+  controller_.ApplyDocument(relay_->doc);
+  ASSERT_TRUE(controller_.SoftUpdate().has_value());
+  relay_->doc.min_client_version = "999.0.0";
+  relay_->doc.upgrade_url = "https://example.test/releases";
+  controller_.ApplyDocument(relay_->doc);
+  EXPECT_FALSE(controller_.SoftUpdate().has_value()) << "below the floor: the dialog, not the card";
+  ASSERT_EQ(alerts_.size(), 1u);
+  EXPECT_EQ(controller_.UpgradeUrl(), "https://example.test/releases") << "the dialog still takes the resolved link";
 }
 
 } // namespace

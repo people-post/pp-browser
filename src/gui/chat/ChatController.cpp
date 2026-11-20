@@ -9,6 +9,7 @@
 #include <fstream>
 #include "gui/chat/ChatController.h"
 #include "gui/RecoveryReminder.h"
+#include "gui/UpdateCard.h"
 #include "gui/chat/ApprovalCard.h"
 #include "gui/chat/AttachMenuRules.h"
 
@@ -1863,6 +1864,7 @@ void ChatController::ApplyHomeToday(const ChatListScreen& list) {
   shell_.home_new_people = home_summary_.new_contacts;
   shell_.home_security_ok = session_store_ && Store().Snapshot().profile_prefs.recovery_phrase_seen;
   shell_.recovery_reminder = RecoveryReminderShows();
+  RefreshUpdateCard();
   // The widgets page is off until it gets its own page: the stored preference is kept but never read here.
   constexpr bool kWidgetsPageOnHome = false;
   shell_.home_show_dynamic = kWidgetsPageOnHome && session_store_ && Store().Snapshot().profile_prefs.home_show_dynamic;
@@ -2172,6 +2174,60 @@ void ChatController::OnRecoveryReminderLater() {
   prefs.recovery_reminder_dismissals = std::min(2, prefs.recovery_reminder_dismissals + 1);
   prefs.recovery_reminder_dismissed_ms = util::NowUnixMs();
   (void)Store().SaveProfilePrefs(prefs); // the prefs listener refreshes the card
+}
+
+void ChatController::BindUpdateCard(UpdateCardPorts ports) {
+  update_card_ = std::move(ports);
+  RefreshUpdateCard();
+}
+
+namespace {
+int64_t UpdateCardNowMs(const UpdateCardPorts& ports) {
+  return ports.now_ms ? ports.now_ms() : util::NowUnixMs();
+}
+} // namespace
+
+bool ChatController::UpdateCardShows() {
+  if (!session_store_ || !update_card_.advice || !update_card_.machine_dir) {
+    return false;
+  }
+  const std::optional<UpdateAdvice> advice = update_card_.advice();
+  // Never over the first-run sheets.
+  if (!advice || !Store().Snapshot().profile_prefs.onboarding_completed) {
+    return false;
+  }
+  return ShouldShowUpdateCard(advice->latest_version, UpdatePrefs::Read(update_card_.machine_dir()),
+                              UpdateCardNowMs(update_card_));
+}
+
+void ChatController::RefreshUpdateCard() {
+  const bool shows = UpdateCardShows();
+  const bool link = shows && !update_card_.advice()->url.empty();
+  if (shell_.update_card == shows && shell_.update_card_link == link) {
+    return;
+  }
+  shell_.update_card = shows;
+  shell_.update_card_link = link;
+  DataModelHost::Instance().Dirty("shell", "update_card");
+  DataModelHost::Instance().Dirty("shell", "update_card_link");
+}
+
+void ChatController::OnUpdateCardOpen() {
+  const std::optional<UpdateAdvice> advice = update_card_.advice ? update_card_.advice() : std::nullopt;
+  if (advice && !advice->url.empty() && update_card_.open_url) {
+    update_card_.open_url(advice->url);
+  }
+}
+
+void ChatController::OnUpdateCardLater() {
+  const std::optional<UpdateAdvice> advice = update_card_.advice ? update_card_.advice() : std::nullopt;
+  if (!advice || !update_card_.machine_dir) {
+    return;
+  }
+  const std::string dir = update_card_.machine_dir();
+  (void)UpdatePrefs::Write(
+      dir, UpdateCardAfterLater(advice->latest_version, UpdatePrefs::Read(dir), UpdateCardNowMs(update_card_)));
+  RefreshUpdateCard();
 }
 
 void ChatController::OnHomePrefsChanged() {
@@ -6479,6 +6535,8 @@ bool ChatController::Setup(ui::Context* context) {
                                  }
                                }));
         ctor.BindEventCallback("recovery_reminder_later", DataEvent([this] { OnRecoveryReminderLater(); }));
+        ctor.BindEventCallback("update_card_open", DataEvent([this] { OnUpdateCardOpen(); }));
+        ctor.BindEventCallback("update_card_later", DataEvent([this] { OnUpdateCardLater(); }));
         ctor.BindEventCallback("home_open_favorite",
                                DataEvent<int>([this](const int index) { OpenHomeFavorite(index); }));
         ctor.BindEventCallback("home_open_calls", DataEvent([this] { OpenHomeCalls(); }));

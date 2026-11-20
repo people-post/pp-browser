@@ -68,6 +68,8 @@
 #include "gui/chat/ChatController.h"
 #include "feature/product/MessagingTools.h"
 #include "feature/settings/SettingsTools.h"
+#include "feature/settings/RunLogPrefs.h"
+#include "foundation/platform/PlatformOpenUrl.h"
 #include "feature/settings/SupportThread.h"
 #include "common/runtime/AppRuntime.h"
 #include "feature/product/ProductOwners.h"
@@ -1617,6 +1619,16 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
             }
           },
   });
+  // The Chats page's "new version" card: client-compat says what exists, the chat list draws it.
+  chat_->BindUpdateCard(UpdateCardPorts{
+      .advice = [this]() { return client_compat_->SoftUpdate(); },
+      .machine_dir =
+          [this]() {
+            return RunLogPrefs::MachineDir(store_.IsInitialized() ? store_.Snapshot().data_dir : std::string());
+          },
+      .open_url = [](const std::string& url) { PlatformOpenUrl(url); },
+  });
+  client_compat_->BindSoftUpdateChanged([this]() { chat_->RefreshUpdateCard(); });
   badges_->BindShellNavigation(shell_navigation);
   badges_->BindAppBadge([](const int count) { SetAppBadgeCount(count); });
   badges_->BindSource([this, &facade, &shell]() {
@@ -2446,6 +2458,7 @@ bool Application::MountPresenters(ui::Context* context) {
       client_compat_->BindCompatPorts({});
       client_compat_->BindShellFeedback({});
       client_compat_->BindSupportDiscovery({});
+      client_compat_->BindSoftUpdateChanged({});
     }
     if (flow_) {
       flow_->BindShellNavigation({});
