@@ -4010,16 +4010,26 @@ input.checkbox:checked {
   image-color: {{x-scan-ink}};
 }
 
-/* The send time of an attachment bubble. */
-.chat-attachment-time,
-.chat-attachment-pill {
-  background-color: {{x-media-pill}};
-  color: {{x-scan-ink}};
+/* The send time of an attachment bubble: the text bubble's time colours on that bubble (received: label-2; sent: the
+   sent bubble's meta white). */
+.chat-attachment-clock,
+.chat-attachment-foot {
+  color: {{label-2}};
 }
 
-.chat-attachment-time .route-icon,
-.chat-attachment-pill .route-icon {
-  image-color: {{x-scan-ink}};
+.chat-attachment-clock .route-icon,
+.chat-attachment-foot .route-icon {
+  image-color: {{label-2}};
+}
+
+.message-row-user .chat-attachment-clock,
+.message-row-user .chat-attachment-foot {
+  color: {{bubble-out-meta}};
+}
+
+.message-row-user .chat-attachment-clock .route-icon,
+.message-row-user .chat-attachment-foot .route-icon {
+  image-color: {{bubble-out-meta}};
 }
 
 /* Text on a video's dark frame (no poster): the label and the file name. */

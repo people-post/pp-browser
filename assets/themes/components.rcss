@@ -12346,11 +12346,6 @@ input.checkbox {
   margin-bottom: 24dp;
 }
 
-/* A video card ends at its frame: the reaction pills hang under it, in room the card keeps for them. */
-.shell-chat-overlay .chat-attachment-card--video.chat-reaction-host {
-  padding-bottom: 24dp;
-}
-
 .shell-chat-overlay .chat-attachment-video-frame {
   max-width: 292dp;
 }
@@ -16513,28 +16508,12 @@ textarea:composing ~ .ps-placeholder {
   cursor: pointer;
 }
 
-/* The send time of an attachment bubble (phones; the desktop has the meta line). A picture or video carries it on a small
-   dark pill at its bottom-right corner, readable on any picture; a file, music or unready card carries it at the bottom
-   right like a text bubble's. */
-.chat-attachment-time,
+/* The send time of an attachment bubble (phones; the desktop has the meta line). A file, music or unready card carries
+   it at the bottom right inside the card like a text bubble's; a picture or video has a slim footer row under its
+   media, inside the bubble (nothing is drawn over the media), "size · route icon time" at the right. Both in the text
+   bubble's time size and colours (colors.rcss.tmpl). */
 .chat-attachment-clock {
   display: none;
-}
-
-.shell-chat-overlay .chat-attachment-card--image {
-  position: relative;
-}
-
-.shell-chat-overlay .chat-attachment-time {
-  display: block;
-  position: absolute;
-  right: 9dp;
-  bottom: 9dp;
-  padding: 1dp 7dp;
-  border-radius: 10dp;
-  font-size: 12dp;
-  line-height: 16dp;
-  pointer-events: none;
 }
 
 .shell-chat-overlay .chat-attachment-clock {
@@ -16561,26 +16540,30 @@ textarea:composing ~ .ps-placeholder {
   padding-bottom: 8dp;
 }
 
-/* A video's one pill, "size · time", in the frame's bottom-right corner. The size shows everywhere; the time part only on
-   phones (the desktop has the meta line). The frame clips it. */
-.chat-attachment-pill {
+/* The footer row of a picture or video: always there (empty when it has nothing; on the phone a line high, so the card
+   being sent is the size of the card it turns into). The card is 3dp round the media, the row sits in the bubble's own
+   colour and the bubble's bottom corners are its. */
+.chat-attachment-foot {
   display: block;
-  position: absolute;
-  right: 9dp;
-  bottom: 9dp;
-  padding: 1dp 7dp;
-  border-radius: 10dp;
+  text-align: right;
   font-size: 12dp;
-  line-height: 16dp;
-  white-space: nowrap;
-  pointer-events: none;
+  line-height: 14dp;
 }
 
-.chat-pill-time {
+.shell-chat-overlay .chat-attachment-foot {
+  min-height: 14dp;
+  padding: 3dp 6dp 3dp 6dp;
+}
+
+.chat-foot-right {
+  white-space: nowrap;
+}
+
+.chat-foot-time {
   display: none;
 }
 
-.shell-chat-overlay .chat-pill-time {
+.shell-chat-overlay .chat-foot-time {
   display: inline;
 }
 

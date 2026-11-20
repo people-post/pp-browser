@@ -3924,16 +3924,26 @@ input.checkbox:checked {
   image-color: #ffffff;
 }
 
-/* The send time of an attachment bubble. */
-.chat-attachment-time,
-.chat-attachment-pill {
-  background-color: #000000a6;
-  color: #ffffff;
+/* The send time of an attachment bubble: the text bubble's time colours on that bubble (received: label-2; sent: the
+   sent bubble's meta white). */
+.chat-attachment-clock,
+.chat-attachment-foot {
+  color: #3c3c4399;
 }
 
-.chat-attachment-time .route-icon,
-.chat-attachment-pill .route-icon {
-  image-color: #ffffff;
+.chat-attachment-clock .route-icon,
+.chat-attachment-foot .route-icon {
+  image-color: #3c3c4399;
+}
+
+.message-row-user .chat-attachment-clock,
+.message-row-user .chat-attachment-foot {
+  color: #ffffffd9;
+}
+
+.message-row-user .chat-attachment-clock .route-icon,
+.message-row-user .chat-attachment-foot .route-icon {
+  image-color: #ffffffd9;
 }
 
 /* Text on a video's dark frame (no poster): the label and the file name. */
