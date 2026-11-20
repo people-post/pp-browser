@@ -15,7 +15,7 @@ struct ReceiveWire {
   ShareWord wire;
 };
 
-constexpr std::array<ReceiveWire, 16> kReceiveWire = {{
+constexpr std::array<ReceiveWire, 17> kReceiveWire = {{
     {ReceiveFailure::ApplyFailed, "apply_failed"},
     {ReceiveFailure::ThreadLookupFailed, "thread_lookup_failed"},
     {ReceiveFailure::SenderMismatch, "sender_mismatch"},
@@ -32,6 +32,7 @@ constexpr std::array<ReceiveWire, 16> kReceiveWire = {{
     {ReceiveFailure::MembershipUpdateFailed, "membership_update_failed"},
     {ReceiveFailure::ReactionRejected, "reaction_rejected"},
     {ReceiveFailure::GroupInviteNeedsContact, "group_invite_needs_contact"},
+    {ReceiveFailure::NeedsUpdate, "needs_update"},
 }};
 
 } // namespace

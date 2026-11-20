@@ -382,6 +382,11 @@ void ChatThreadChrome::Update() {
       if (label.trust == PeerLabelTrust::DirectoryUnverified) {
         view_.thread_subtitle = std::string(view_.thread_subtitle.c_str()) + " · " + Tr("chat.subtitle.unverified");
       }
+      // Something this peer sent needs a newer app here (U1, U2): said in the header, on the phone too.
+      if (facade_ && facade_->PeerNeedsNewerApp(thread->peer_identity_value)) {
+        view_.thread_subtitle = std::string(view_.thread_subtitle.c_str()) + " · " + Tr("chat.subtitle.peer_newer_app");
+        view_.thread_phone_subtitle = Tr("chat.subtitle.peer_newer_app").c_str();
+      }
     } else {
       std::string roster_label = thread->encrypted ? Tr("chat.subtitle.group_e2e") : Tr("chat.subtitle.group");
       if (group_dissolved) {

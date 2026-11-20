@@ -235,6 +235,15 @@ public:
     on_unknown_sender_device_ = std::move(callback);
   }
   /**
+   * An envelope carried an account card for its sender in a newer `card_version` than this app reads (INVENTORY U2):
+   * `(account)` — the sender needs a newer app here, and asking for its card again only brings the same card back.
+   * Called before the unknown-device ask, so the caller can stop that ask (CardAskGate::NoteUnreadable). Unverified
+   * (the card cannot be read): it only marks and backs off.
+   */
+  void SetOnUnreadableSenderCard(std::function<void(const std::string& account)> callback) {
+    on_unreadable_sender_card_ = std::move(callback);
+  }
+  /**
    * The issue time a carried card of an account must reach to speak for it (PeerCards::Floor): a restored
    * device keeps no cards, only how new the ones it had were. None: 0.
    */
@@ -315,6 +324,7 @@ private:
   std::function<void(const AccountCard&)> on_sender_card_;
   std::function<void(const std::string&, const std::string&, int64_t)> on_sender_card_version_;
   std::function<void(const std::string&, const std::string&, int64_t)> on_unknown_sender_device_;
+  std::function<void(const std::string&)> on_unreadable_sender_card_;
   std::function<int64_t(const std::string&)> account_card_floor_;
   std::function<void(const GroupMembershipCodec::MemberJoinedEntry&)> on_roster_member_;
 
@@ -484,6 +494,13 @@ private:
   /** G016: the owner ended a group we are in — empty its roster, mark it dissolved, keep its chat with one line. */
   Roe<void> ApplyGroupDissolved(const ThreadMessage& message, const std::string& actor_identity,
                                 const std::string& local_account, RelayReceiveOutcome* outcome) const;
+  /**
+   * A message refused after its sender verified (a membership or control that did not apply, the annotation cap, a
+   * psk_rotate refused): its seq is consumed — closed as empty in its numbering's sync state — so sync never stalls
+   * on it (INVENTORY T5). Not at an epoch advance: the epoch moves with a stored message only.
+   */
+  void ConsumeRefusedSeq(const std::string& thread_id, const RelayEnvelope& envelope, const std::string& numbering,
+                         const IngestClassifierResult& classified);
   Roe<void> ValidateInboundPskRotate(const RelayEnvelope& envelope, const ThreadMessage& message) const;
   Roe<void> ApplyInboundPskRotate(const std::string& thread_id, const RelayEnvelope& envelope,
                                   const ThreadMessage& message);

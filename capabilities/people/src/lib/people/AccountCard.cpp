@@ -206,6 +206,10 @@ Object AccountCardToJson(const AccountCard& card) {
   return json;
 }
 
+bool IsNewerAccountCard(const Object& json) {
+  return json.getIf<int64_t>("card_version").value_or(0) > kAccountCardVersion;
+}
+
 Roe<AccountCard> AccountCardFromJson(const Object& json) {
   if (json.getIf<int64_t>("card_version").value_or(0) != kAccountCardVersion) {
     return Error("account card: unsupported card_version");

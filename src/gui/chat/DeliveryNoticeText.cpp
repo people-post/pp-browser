@@ -62,6 +62,11 @@ std::string ReceiveFailureText(const ReceiveFailure reason, const std::string& p
     return Tr("chat.receive_failure.group_invite_needs_contact",
               {{"peer", peer.empty() ? Tr("chat.notice.receive.a_peer") : ShortPersonId(peer)}});
   }
+  if (reason == ReceiveFailure::NeedsUpdate) {
+    // Who must update: this app (the sender's is newer). No peer: another device of ours.
+    return peer.empty() ? Tr("chat.notice.receive.needs_update_device")
+                        : Tr("chat.notice.receive.needs_update", {{"peer", ShortPersonId(peer)}});
+  }
   const std::string who = peer.empty() ? Tr("chat.notice.receive.a_peer") : ShortPersonId(peer);
   const std::string why = reason == ReceiveFailure::ApplyFailed && !family.empty()
                               ? Tr("chat.receive_failure.apply_failed_family", {{"family", family}})

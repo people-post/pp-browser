@@ -40,6 +40,7 @@ pp_browser_add_lib_library(pp_lib_messaging
     CopyAsk.cpp
     CardAsk.cpp
     CardAskGate.cpp
+    PeerUpdateMarks.cpp
     ContactLocator.cpp
     TranscriptBodyCodec.cpp
     TranscriptAssembly.cpp

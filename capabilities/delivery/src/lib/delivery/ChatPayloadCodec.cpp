@@ -3,6 +3,7 @@
 #include "lib/delivery/TextSpans.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Serialize.hpp"
@@ -64,6 +65,11 @@ constexpr uint8_t kContentTypeContactCard = 3;
 constexpr uint8_t kContentTypeCryptoTx = 4;
 constexpr uint8_t kContentTypeAttachment = 5;
 constexpr uint8_t kContentTypeTextSpans = 6;
+/**
+ * Never sent: a local row's stand-in for a message nothing readable was kept of (a newer blob or group copy, read
+ * as "update needed"). A peer's message of this type is unknown like any other.
+ */
+constexpr uint8_t kContentTypeUnreadable = 0xFF;
 
 constexpr uint8_t kSubVersion = 1;
 // 3: no relay route (multi-relay MR001 — the card's Account ID is the person's relay inbox); 2 carried one.
@@ -119,6 +125,18 @@ Roe<void> ReadExactEnd(InputArchive& ar) {
   return {};
 }
 
+/**
+ * A message this app cannot read, made by a newer app (an unknown content type, a higher payload or sub-version):
+ * kept as Unsupported with its bytes (`raw_b64`), so the row stores them as received and a newer app reads it. The
+ * transcript shows "update to view" (INVENTORY T1, T3).
+ */
+Roe<void> KeepUnreadable(const std::vector<uint8_t>& chat_payload, Object facts, ThreadMessage& message) {
+  message.content_type = ChatContentType::Unsupported;
+  facts.set("raw_b64", Base64Encode(chat_payload));
+  message.payload_json = DumpJson(facts);
+  return {};
+}
+
 void WriteSpans(OutputArchive& ar, const std::vector<TextSpan>& spans) {
   ar & kSubVersion;
   ar& static_cast<uint8_t>(spans.size());
@@ -131,10 +149,16 @@ void WriteSpans(OutputArchive& ar, const std::vector<TextSpan>& spans) {
 }
 
 /** text_spans (G015): structure errors reject the message; a bad range drops only its span. */
-Roe<void> ReadSpans(InputArchive& ar, ThreadMessage& message) {
+Roe<void> ReadSpans(InputArchive& ar, const std::vector<uint8_t>& chat_payload, ThreadMessage& message) {
   uint8_t sub_version = 0;
   uint8_t count = 0;
   ar & sub_version;
+  if (!ar.failed() && sub_version > kSubVersion) {
+    Object facts;
+    facts.set("wire_content_type", static_cast<int64_t>(kContentTypeTextSpans));
+    facts.set("wire_sub_version", static_cast<int64_t>(sub_version));
+    return KeepUnreadable(chat_payload, std::move(facts), message);
+  }
   ar & count;
   if (ar.failed() || sub_version != kSubVersion) {
     return Error("Unsupported ChatPayload sub-version");
@@ -327,8 +351,18 @@ Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeToRow(const ThreadMessage& mes
       }
       return EncodeAttachment(fields, message.text);
     }
-    case ChatContentType::Unsupported:
-      return Error("Cannot encode unsupported ChatPayload");
+    case ChatContentType::Unsupported: {
+      // Stored as received (KeepUnreadable), so a newer app reads the row; with nothing kept, the local stand-in.
+      if (auto payload = TryParseObject(message.payload_json)) {
+        if (auto raw_b64 = payload->getString("raw_b64")) {
+          auto raw = Base64Decode(*raw_b64);
+          if (raw && !raw->empty() && raw->size() <= kMaxE2ePlaintextBytes) {
+            return std::move(*raw);
+          }
+        }
+      }
+      return EncodePayloadBytes(kContentTypeUnreadable, std::string(), nullptr);
+    }
     case ChatContentType::Deleted: // the row body of a tombstone: no content
       return EncodeText(std::string());
     case ChatContentType::Text:
@@ -347,6 +381,13 @@ Roe<void> ChatPayloadCodec::ApplyRowToMessage(const std::vector<uint8_t>& chat_p
 
   uint8_t payload_version = 0;
   ar & payload_version;
+  if (!ar.failed() && payload_version > kPayloadVersion) {
+    // A newer app's layout: nothing after the version byte is read.
+    message.text.clear();
+    Object facts;
+    facts.set("wire_payload_version", static_cast<int64_t>(payload_version));
+    return KeepUnreadable(chat_payload, std::move(facts), message);
+  }
   if (ar.failed() || payload_version != kPayloadVersion) {
     return Error("Unsupported ChatPayload version");
   }
@@ -365,23 +406,27 @@ Roe<void> ChatPayloadCodec::ApplyRowToMessage(const std::vector<uint8_t>& chat_p
     return ReadExactEnd(ar);
   }
   if (content_type == kContentTypeTextSpans) {
-    return ReadSpans(ar, message);
+    return ReadSpans(ar, chat_payload, message);
   }
 
   if (content_type != kContentTypeSystem && content_type != kContentTypeAnnotation &&
       content_type != kContentTypeContactCard && content_type != kContentTypeCryptoTx &&
       content_type != kContentTypeAttachment) {
-    message.content_type = ChatContentType::Unsupported;
-    Object payload;
-    payload.set("wire_content_type", static_cast<int64_t>(content_type));
-    message.payload_json = DumpJson(payload);
-    return {};
+    Object facts;
+    facts.set("wire_content_type", static_cast<int64_t>(content_type));
+    return KeepUnreadable(chat_payload, std::move(facts), message);
   }
 
   uint8_t sub_version = 0;
   ar & sub_version;
   // A contact card is sub_version 3 (2 named a relay route; its 1, never sent, is retired); every other type is 1.
   const uint8_t expected_sub_version = content_type == kContentTypeContactCard ? kContactCardSubVersion : kSubVersion;
+  if (!ar.failed() && sub_version > expected_sub_version) {
+    Object facts;
+    facts.set("wire_content_type", static_cast<int64_t>(content_type));
+    facts.set("wire_sub_version", static_cast<int64_t>(sub_version));
+    return KeepUnreadable(chat_payload, std::move(facts), message);
+  }
   if (ar.failed() || sub_version != expected_sub_version) {
     return Error("Unsupported ChatPayload sub-version");
   }

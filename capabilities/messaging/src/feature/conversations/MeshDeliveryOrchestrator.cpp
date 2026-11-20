@@ -213,6 +213,15 @@ void MeshDeliveryOrchestrator::WireReceivePipeline(GroupInviteGate* invite_gate)
         }
         AskForNewerCard(account, device, issued_at, CardAskGate::Source::Verified);
       });
+  // A card in a newer card_version than ours (U2): the sender needs a newer app here, and asking its device again
+  // would only bring the same card back — no asks for a while (CardAskGate::NoteUnreadable), before the one below.
+  receive_pipeline_->SetOnUnreadableSenderCard([this](const std::string& account) {
+    {
+      std::lock_guard lock(card_asks_mutex_);
+      card_ask_gate_.NoteUnreadable(account, util::NowUnixMs());
+    }
+    NotePeerNeedsUpdate(account, "account card of a newer card_version");
+  });
   // An envelope we could not check (no card for its device; lane messages carry the card only when the peer may
   // lack it): ask that device. Unverified, so its hint counts for nothing and the asks are rate-limited (CardAskGate).
   receive_pipeline_->SetOnUnknownSenderDevice(
@@ -901,8 +910,51 @@ void MeshDeliveryOrchestrator::ReplayHeldControl(const std::string& account) {
   });
 }
 
+bool MeshDeliveryOrchestrator::PeerNeedsNewerApp(const std::string& account) const {
+  std::lock_guard lock(receive_failure_mutex_);
+  return peer_update_marks_.Marked(account);
+}
+
+void MeshDeliveryOrchestrator::NotePeerNeedsUpdate(const std::string& account, const std::string& detail) {
+  auto own = identity_.Get();
+  const bool own_device = own && account == own->account_id;
+  bool tell = false;
+  {
+    std::lock_guard lock(receive_failure_mutex_);
+    tell = peer_update_marks_.Note(account, util::NowUnixMs());
+  }
+  log().info << "needs a newer app: sender=" << account << " detail=" << detail << (tell ? " (told)" : "");
+  if (!tell) {
+    return;
+  }
+  DiagLine("chat.receive_failed")
+      .Add("reason", ReceiveFailureWord(ReceiveFailure::NeedsUpdate))
+      .Ref("sender", account)
+      .Emit();
+  DeliveryNotice notice;
+  notice.kind = DeliveryNotice::Kind::ReceiveFailed;
+  notice.receive = ReceiveFailure::NeedsUpdate;
+  notice.peer = own_device ? std::string() : account; // none: "another device" (ours)
+  notice.detail = detail;
+  if (on_delivery_notice_) {
+    AppRuntime::PostUI([this, notice]() {
+      if (on_delivery_notice_) {
+        on_delivery_notice_(notice);
+      }
+    });
+  }
+  if (on_messages_changed_) {
+    AppRuntime::PostUI([this]() { on_messages_changed_(); }); // the chat header's line
+  }
+}
+
 void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome) {
   if (!outcome.receive_failure) {
+    return;
+  }
+  if (*outcome.receive_failure == ReceiveFailure::NeedsUpdate) {
+    // Its own notice (one per sender a day, no line: the "update to view" row is the line).
+    NotePeerNeedsUpdate(outcome.receive_failure_sender.value_or(""), outcome.receive_failure_detail);
     return;
   }
   DeliveryNotice notice;

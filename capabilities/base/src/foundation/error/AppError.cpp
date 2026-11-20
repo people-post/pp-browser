@@ -35,6 +35,14 @@ Error AppError::Internal(const std::string& detail) {
                      detail);
 }
 
+Error AppError::NewerFormat(const std::string& detail) {
+  return Error::Make(static_cast<int32_t>(ErrorCategory::Format), static_cast<int32_t>(Err::Format::Newer), detail);
+}
+
+bool AppError::IsNewerFormat(const Error& err) {
+  return CategoryOf(err) == ErrorCategory::Format && err.code == static_cast<int32_t>(Err::Format::Newer);
+}
+
 ErrorCategory AppError::CategoryOf(const Error& err) {
   return static_cast<ErrorCategory>(err.category);
 }
@@ -53,6 +61,8 @@ const char* AppError::CategoryName(ErrorCategory category) {
       return "Storage";
     case ErrorCategory::Blob:
       return "Blob";
+    case ErrorCategory::Format:
+      return "Format";
     case ErrorCategory::Internal:
       return "Internal";
     case ErrorCategory::Unknown:
@@ -164,6 +174,8 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
         default:
           return Localized("errors.blob.failed");
       }
+    case ErrorCategory::Format:
+      return Localized("errors.format.newer");
     case ErrorCategory::Internal:
       return Localized("errors.internal");
     case ErrorCategory::Unknown:

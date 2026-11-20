@@ -1047,6 +1047,11 @@ Roe<void> ConversationsFacade::ClearSharedAiConfirmed(const std::string& thread_
   return hub_.ThreadPrefs().Set(*prefs);
 }
 
+bool ConversationsFacade::PeerNeedsNewerApp(const std::string& account) {
+  auto* mesh = hub_.MeshMessagingOrNull();
+  return mesh && !account.empty() && mesh->PeerNeedsNewerApp(account);
+}
+
 bool ConversationsFacade::IsInitiationOutboundBlocked(const std::string& peer_identity) {
   if (peer_identity.empty()) {
     return false;

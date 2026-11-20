@@ -102,7 +102,7 @@ Binary **`ChatPayload` v1** — AEAD plaintext. Layout: [WIRE_SCHEMAS § ChatPay
 
 Max decrypted size: **128 KiB** (`kMaxE2ePlaintextBytes`). Check length before `ChatPayloadCodec::Decode`; reject trailing bytes.
 
-**Group copies (group-chat G018 item 7):** the plaintext is a *group copy* — `group_copy_version` u8 `1`, `group_id` LenUtf8, the ChatPayload LenBytes, nothing after ([WIRE_SCHEMAS § Group](WIRE_SCHEMAS.md)) — under the same AAD as a 1:1 `e2e_public` message in that device pair. The relay never sees the group id; the receiver reads it after decrypting, then checks the roster. **Sign v3** (with `route.group_id`) is no longer produced or read: a clean cutover (unreleased product).
+**Group copies (group-chat G018 items 5, 7):** the plaintext is a *group copy* — `group_copy_version` u8 `2`, `group_id` LenUtf8, `statement_epoch` u64, `changes_hash` LenUtf8, the ChatPayload LenBytes, nothing after ([WIRE_SCHEMAS § Group](WIRE_SCHEMAS.md)) — under the same AAD as a 1:1 `e2e_public` message in that device pair. The relay never sees the group id; the receiver reads it after decrypting, then checks the roster. **Sign v3** (with `route.group_id`) is no longer produced or read: a clean cutover (unreleased product).
 
 ## Encrypted payload blob
 
@@ -113,6 +113,8 @@ Binary inside `body.e2e.payload_b64` (RFC 4648 base64):
 | 0 | 1 | `payload_version` = `1` |
 | 1 | 24 | `nonce` (random in production) |
 | 25 | var | ciphertext + Poly1305 tag |
+
+A `payload_version` byte above `1` in a verified envelope (the blob is in the signed copy hash) is a newer app's, not a broken one: the receiver stores an "update to view" row in its place, consumes its `sender_seq` and marks the sender as using a newer app (`AppError::NewerFormat` → `ReceiveFailure::NeedsUpdate`). So is a higher `group_copy_version`, or a higher ChatPayload `payload_version` / `sub_version`, once the AEAD opened. Anything else that fails — `0`, a short blob, the AEAD tag, the signature — is a hard refusal, as before: crypto stays strict.
 
 API: `crypto_aead_xchacha20poly1305_ietf_encrypt` / `_decrypt` with `npub` = nonce, `ad` = AAD, `k` = session_key.
 
@@ -171,7 +173,7 @@ Peer verify keys: `PeerSigningKeyStore` / `PeerKemKeyStore`, filled from account
 
 1. Build binary `ChatPayload` → canonical AAD from envelope fields → `MessageCipher::Encrypt` → blob → base64 → `body.e2e.payload_b64`.
 2. `EnvelopeSigner::BuildSignBytes` → sign.
-3. Receive: skip a copy for another device of ours (`recipient_device` set and not ours) → verify with the sending device's key from the sender's card (keep a carried, newer card once it verified) → resolve PSK for `envelope.session_epoch` in the copy's session (the device pair's, or the account's for an account copy; its `key_init` opened with this device's or the account's KEM key) → decrypt with AAD from envelope → `ChatPayloadCodec::Decode` → ingest, numbered per sending device.
+3. Receive: skip a copy for another device of ours (`recipient_device` set and not ours) → verify with the sending device's key from the sender's card (keep a carried, newer card once it verified) → resolve PSK for `envelope.session_epoch` in the copy's session (the device pair's, or the account's for an account copy; its `key_init` opened with this device's or the account's KEM key) → decrypt with AAD from envelope → `ChatPayloadCodec::Decode` → ingest, numbered per sending device. After the signature verified, a refusal never leaves the sender's seq waiting: a newer format is stored as "update to view", and a message refused on its content (a membership or control update that does not apply, the reaction cap, a `psk_rotate` refused) has its seq closed as empty (`empty_closed_seqs`: a resend is a late fill, refused or applied again, never a gap repair or a private chat's compromise latch). Only an epoch advance waits for a stored message (the next one at that epoch moves it).
 
 Outbound HKDF uses `chat_targets.session_epoch`; inbound uses `envelope.session_epoch` (E019).
 

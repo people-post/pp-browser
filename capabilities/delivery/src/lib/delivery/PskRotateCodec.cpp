@@ -1,6 +1,7 @@
 #include "lib/delivery/PskRotateCodec.h"
 
 #include "common/ValueJson.h"
+#include "foundation/error/AppError.h"
 #include <cstdint>
 #include "common/PbrCompat.h"
 
@@ -58,6 +59,11 @@ Roe<PskRotateDetail> PskRotateCodec::Decode(const ThreadMessage& message) {
   auto parsed = ParseDetailJson(*detail_json);
   if (!parsed) {
     return parsed.error();
+  }
+  if (!parsed->wrap_kind.empty() && parsed->wrap_kind != kPskRotateWrapAccountKem &&
+      parsed->wrap_kind != kPskRotateWrapThreadKem) {
+    // A wrap a newer app made: "update needed", not a broken rotate (INVENTORY T5).
+    return AppError::NewerFormat("psk_rotate wrap_kind " + parsed->wrap_kind);
   }
   if (auto valid = Validate(*parsed); !valid) {
     return valid.error();

@@ -68,5 +68,27 @@ TEST(CardAskGateTest, RemembersAtMostTheCapAndForgetsPastTheGap) {
   EXPECT_EQ(gate.Size(), 1u) << "asks past the gap decide nothing and are forgotten";
 }
 
+// U2: an account whose card is a newer card_version than this app reads is not asked again and again.
+TEST(CardAskGateTest, AnUnreadableCardStopsTheAsksForADay) {
+  CardAskGate gate;
+  gate.NoteUnreadable("bob", kNow);
+  EXPECT_FALSE(gate.Allow("bob", kNow, Source::Unverified, kNow + 1));
+  EXPECT_FALSE(gate.Allow("bob", kNow + 5, Source::Verified, kNow + kCardReaskGapMs + 1))
+      << "not even a verified hint of a newer list: the answer would be the same unreadable card";
+  gate.NoteUnreadable("bob", kNow + kCardUnreadableReaskGapMs - 1);
+  EXPECT_TRUE(gate.Allow("bob", kNow, Source::Unverified, kNow + kCardUnreadableReaskGapMs))
+      << "noting it again inside the gap does not extend it";
+  EXPECT_TRUE(gate.Allow("carol", kNow, Source::Unverified, kNow + 2)) << "only that account";
+}
+
+TEST(CardAskGateTest, UnreadableMarksAreBoundedToo) {
+  CardAskGate gate;
+  for (size_t i = 0; i < kCardAskAccountsMax + 10; ++i) {
+    gate.NoteUnreadable("acct-" + std::to_string(i), kNow + static_cast<int64_t>(i));
+  }
+  EXPECT_EQ(gate.Size(), kCardAskAccountsMax);
+  EXPECT_TRUE(gate.Allow("acct-0", kNow, Source::Unverified, kNow + 20)) << "the oldest went first";
+}
+
 } // namespace
 } // namespace pbr

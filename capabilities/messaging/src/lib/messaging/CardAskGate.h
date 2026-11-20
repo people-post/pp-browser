@@ -20,6 +20,12 @@ inline constexpr int64_t kCardReaskGapMs = 10 * 60 * 1000;
 /** Asks on an unverified envelope's word, whoever it names: at most this many per kUnverifiedCardAskWindowMs. */
 inline constexpr size_t kUnverifiedCardAsksPerWindow = 8;
 inline constexpr int64_t kUnverifiedCardAskWindowMs = 60 * 1000;
+/**
+ * An account whose card came in a newer `card_version` than this app reads (INVENTORY U2) is asked again no sooner
+ * than this, whatever the source: the answer would be the same unreadable card until this app is updated (or the
+ * peer's app goes back).
+ */
+inline constexpr int64_t kCardUnreadableReaskGapMs = 24 * 60 * 60 * 1000;
 /** Accounts remembered at most (asked within kCardReaskGapMs); past it, the longest-asked go first. */
 inline constexpr size_t kCardAskAccountsMax = 512;
 
@@ -30,8 +36,9 @@ inline constexpr size_t kCardAskAccountsMax = 512;
  * ahead than kCardAtClockSkewMs, counts as a version, and a newer one than last asked for asks at once. An
  * unverified envelope (no card to check it with) asks at most once per account per gap and, from all senders
  * together, at most kUnverifiedCardAsksPerWindow per window: anyone can forge one, naming any account. Bounded:
- * entries past the gap are forgotten (they decide nothing), and at most kCardAskAccountsMax are kept. Pure: the
- * caller locks, and gives the clock.
+ * entries past the gap are forgotten (they decide nothing), and at most kCardAskAccountsMax are kept. An account whose
+ * card is a newer card_version than this app reads (NoteUnreadable) is not asked at all for
+ * kCardUnreadableReaskGapMs (INVENTORY U2). Pure: the caller locks, and gives the clock.
  */
 class CardAskGate {
 public:
@@ -43,6 +50,11 @@ public:
   };
   /** True when `account` is to be asked now (and the ask is counted); `claimed_at` is the hint (ms). */
   bool Allow(const std::string& account, int64_t claimed_at, Source source, int64_t now_ms);
+  /**
+   * `account`'s card is a newer version than this app reads: no ask for kCardUnreadableReaskGapMs from the first
+   * time noted (noting it again inside that does not extend it).
+   */
+  void NoteUnreadable(const std::string& account, int64_t now_ms);
   size_t Size() const { return entries_.size(); }
 
 private:
@@ -50,8 +62,12 @@ private:
     /** The newest list version asked for on a verified envelope's word (0: none). */
     int64_t asked_for = 0;
     int64_t asked_at_ms = 0;
+    /** When its card was first found unreadable (a newer card_version); 0: never, or that gap is over. */
+    int64_t unreadable_at_ms = 0;
   };
   void Forget(int64_t now_ms);
+  /** At most kCardAskAccountsMax entries: the longest untouched go first. */
+  void Bound();
   bool TakeUnverifiedSlot(int64_t now_ms);
 
   std::map<std::string, Entry> entries_;
