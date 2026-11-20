@@ -1,7 +1,7 @@
 # Fetch / add people-post/pp-cpp-ui (first-party ui:: engine + FreeType/HarfBuzz/LunaSVG + SDL/GL).
 #
 # Prefer a local sibling checkout when present (ppweb3 workspace layout) — use this
-# when integrating unreleased develop before cutting a pp-cpp-ui release tag. Packaged
+# when integrating unreleased main before cutting a pp-cpp-ui release tag. Packaged
 # (release) builds never take the sibling.
 # Otherwise pin a release tag from that repo's main line (PP_CPP_UI_GIT_TAG).
 #

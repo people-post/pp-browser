@@ -1,6 +1,6 @@
 name: nightly-lab
 
-# The app lab every night on develop (docs/ops/TEST_STRATEGY.md § Nightly lab): `--suite app` and
+# The app lab every night on main (docs/ops/TEST_STRATEGY.md § Nightly lab): `--suite app` and
 # `--suite app-nat` on the lab machine — a self-hosted EC2 runner that is stopped except while this
 # runs. The relay is pp-relay-apis's local stack, from a checkout of that repository (PP_LAB_RELAY_APIS_REF, default
 # main: what prod runs). A scenario that fails twice (one retry) opens or updates an issue labelled nightly-lab; one

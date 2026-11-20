@@ -136,7 +136,7 @@ Max reassembled size defaults match today’s stream caps:
 
 ## Channel policies (port StreamIoPolicy)
 
-Core factories: pp-cpp-amp `amp/L3/ChannelPolicy.h` (Amp owns Bulk class + size). Product L4 factories: pp-cpp-mesh `mesh/l4/shared/ProductChannelPolicies.h` (product-only extras + `read_once` / timeouts). See [pp-cpp-amp OWNERSHIP](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/OWNERSHIP.md).
+Core factories: pp-cpp-amp `amp/L3/ChannelPolicy.h` (Amp owns Bulk class + size). Product L4 factories: pp-cpp-mesh `mesh/l4/shared/ProductChannelPolicies.h` (product-only extras + `read_once` / timeouts). See [pp-cpp-amp OWNERSHIP](https://github.com/people-post/pp-cpp-amp/blob/main/docs/OWNERSHIP.md).
 
 | Factory | Class | `read_once` | Read timeout | Home |
 |---------|-------|-------------|--------------|------|
@@ -176,7 +176,7 @@ an in-flight request, a placeholder) must be released there or by a deadline. Si
 v2.16.0 a closed session also drops its handlers, so a handler may hold the session (and
 since v2.16.1 it forgets its mux, so it may outlive its link); and dial
 keys registered for one job are dropped with `UnregisterEndpoint` when it ends
-([pp-cpp-amp STACK § Lifetimes](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/STACK.md)).
+([pp-cpp-amp STACK § Lifetimes](https://github.com/people-post/pp-cpp-amp/blob/main/docs/STACK.md)).
 The closed callback can run while the component's own lock is held (a write that fails inside
 `EnqueueOutbound`): post the release to the io strand rather than locking inline.
 

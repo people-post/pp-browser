@@ -15,16 +15,15 @@ When [macOS signing secrets](MACOS_SIGNING.md#github-repository-secrets) are con
 
 | Branch | Role |
 |--------|------|
-| **`develop`** (default) | Integration / tip — day-to-day PRs and [build CI](../.github/workflows/build.yml) |
-| **`main`** | Release line — stabilize, hotfixes, **cut tags here** |
+| **`main`** (default) | The integration line — day-to-day PRs, [build CI](../.github/workflows/build.yml) on PRs and pushes, **cut tags here** |
 
 ```text
-develop  ──merge──►  main  ──tag──►  v*  and/or  pp-node/v*
-                ▲
-                └── hotfix on main, then backport to develop
+main  ──tag──►  v*  and/or  pp-node/v*
 ```
 
-Do not add a third long-lived branch unless you later need N-1 maintenance lines.
+There is no `develop`. Until the release branches of [release-compatibility DESIGN § Branches and tags](../../projects/release-compatibility/DESIGN.md#branches-and-tags) exist (later in its P2), every release is a tag cut from `main`.
+
+The libraries (pp-cpp-*) and pp-ledger also have only `main`: pins are release tags cut on their `main`.
 
 ## Tag conventions
 
@@ -48,14 +47,13 @@ Independent semver from the app. Breaking mesh/wire protocols still need a coord
 
 ## Maintainer flow
 
-### Ship from develop → main
+### Ship from main
 
-1. Land work on **`develop`** (PRs; build CI green).
-2. Open PR **`develop` → `main`** when ready to stabilize; merge.
-3. On **`main`**, bump versions if needed:
+1. Land work on **`main`** (PRs; build CI green).
+2. On **`main`**, bump versions if needed:
    - App: `PP_BROWSER_VERSION` in [`CMakeLists.txt`](../../CMakeLists.txt)
    - Node: version comes from the **`pp-node/v…` tag** (passed as `PP_BROWSER_RELEASE_VERSION` at build time)
-4. Tag **from `main`** and push (one or both trains):
+3. Tag **from `main`** and push (one or both trains):
 
 ```bash
 # App only
@@ -68,7 +66,7 @@ git tag -a pp-node/v0.1.0 -m "pp-node 0.1.0"
 git push origin pp-node/v0.1.0
 ```
 
-5. Hotfix: commit on **`main`**, tag again, then merge/cherry-pick back to **`develop`**.
+4. Fix: land it on **`main`**, tag again.
 
 CI refuses tags whose commit is not on `origin/main`.
 
@@ -171,7 +169,7 @@ PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/platform/pp_node_package_lin
 
 - [ ] Changes merged to **`main`**
 - [ ] Version bumped in `CMakeLists.txt` when needed
-- [ ] `develop` / `main` build CI green
+- [ ] `main` build CI green
 - [ ] Smoke-tested packaged build locally if possible
 - [ ] macOS signing secrets configured (optional)
 

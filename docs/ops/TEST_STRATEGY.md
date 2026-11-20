@@ -18,7 +18,7 @@ Repo-wide decision rules live in [TESTING.md](../architecture/TESTING.md). This 
 1. **Design as oracle** — cases guard documented intent / purpose IDs, not the current call graph; see [TESTING.md § Design as oracle](../architecture/TESTING.md#design-as-oracle). Prefer narrowing or redesigning an over-wide case before heroic product fixes under harness constraints. Pre-existing cases may still mirror implementation — tighten them when spotted in the work at hand ([Legacy suites](../architecture/TESTING.md#legacy-suites)).
 2. **Purpose-first** — pick the question (cite a purpose ID or doc sentence), then the cheapest layer that can answer it.
 3. **Cost order** — unit → local integration (in-process / loopback) → deploy smoke → multi-node / hard lab.
-4. **Hard filter** — if a failure mode reproduces with in-process loopback ([`loopback_partition_fixture.h`](https://github.com/people-post/pp-cpp-mesh/blob/develop/tests/loopback_partition_fixture.h)), it does **not** belong in multi-node.
+4. **Hard filter** — if a failure mode reproduces with in-process loopback ([`loopback_partition_fixture.h`](https://github.com/people-post/pp-cpp-mesh/blob/main/tests/loopback_partition_fixture.h)), it does **not** belong in multi-node.
 5. **Promote failures downward** — if smoke/hard-lab finds a policy bug that gtest can reproduce, lock it below; see [TESTING.md § When a higher tier finds a bug](../architecture/TESTING.md#when-a-higher-tier-finds-a-bug).
 6. **Three kinds of testing** (orthogonal to tiers) — correctness / reliability / capacity; see doctrine.
 7. **Do not merge** pp-node and pp-browser into one suite with shared pass criteria. Share fixtures where useful; qualify separately.
@@ -132,13 +132,13 @@ Full GUI is the wrong default stress vehicle. Prefer thin clients / in-process c
 | Gate | Contents |
 |------|----------|
 | **Every PR** | Tier A + stable Tier B compose set (below) + pp-node L0 if image/packaging touched; a capability folder's unit tests (`capability:<name>`) only when the PR touches it or what is below it ([SRC_LAYOUT § Capability folders](../architecture/SRC_LAYOUT.md#capability-folders)) |
-| **Nightly** | The app lab — `--suite app` and `--suite app-nat` on develop ([§ Nightly lab](#nightly-lab)); later: heavier soak, L1, L2 `N-FANOUT` when stable, modest capacity (small N), `--suite mix` |
+| **Nightly** | The app lab — `--suite app` and `--suite app-nat` on main ([§ Nightly lab](#nightly-lab)); later: heavier soak, L1, L2 `N-FANOUT` when stable, modest capacity (small N), `--suite mix` |
 | **Weekly / pre-release** | `N-SOAK`, `N-CHAOS`, larger `N-CAP-*`, `B-CALL-HOP` on compose |
 | **Manual dogfood** | Real phones, NAT, UPnP — never the only gate |
 
 ### Nightly lab
 
-[`nightly-lab.yml`](../../.github/workflows/nightly-lab.yml) runs the app lab every night (07:17 UTC) on develop, and on demand (Actions → nightly-lab → Run workflow: suites, scenarios). Never on pull requests.
+[`nightly-lab.yml`](../../.github/workflows/nightly-lab.yml) runs the app lab every night (07:17 UTC) on main, and on demand (Actions → nightly-lab → Run workflow: suites, scenarios). Never on pull requests.
 
 - **Machine:** a self-hosted EC2 instance (`c7i.2xlarge`, 150 GB), registered as this repository's self-hosted runner `pp-lab`. It is stopped except while the workflow runs: a hosted job starts it (OIDC role `github-pp-lab`, start/stop of that one instance only), a hosted job stops it after, and it shuts itself down four hours after boot whatever happens. Its build and ccache stay on its disk between nights.
 - **Relay:** pp-relay-apis's local stack (below), from a checkout of [`people-post/pp-relay-apis`](https://github.com/people-post/pp-relay-apis) at `PP_LAB_RELAY_APIS_REF` (repository variable, default `main`: what prod runs) beside the workspace; the run records its commit.
@@ -161,9 +161,9 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 | Concern | ctest / sources |
 |---------|-----------------|
 | Direct call-media | `call_media_leg_coordinator_test` — [`capabilities/calls/src/domain/call_media/tests/call_media_leg_coordinator_test.cpp`](../../capabilities/calls/src/domain/call_media/tests/call_media_leg_coordinator_test.cpp) |
-| Media relay fan-out | `media_relay_server_client_test` — pp-cpp-mesh [`tests/media_relay_server_client_test.cpp`](https://github.com/people-post/pp-cpp-mesh/blob/develop/tests/media_relay_server_client_test.cpp) |
+| Media relay fan-out | `media_relay_server_client_test` — pp-cpp-mesh [`tests/media_relay_server_client_test.cpp`](https://github.com/people-post/pp-cpp-mesh/blob/main/tests/media_relay_server_client_test.cpp) |
 | Circuit + call-media | `amp_circuit_call_media_compose_test` — peer-id-only nest + private-MA hop-book poison contrast (hard-w5) — [`amp_circuit_call_media_compose_test.cpp`](../../capabilities/calls/src/domain/call_media/tests/amp_circuit_call_media_compose_test.cpp) |
-| Circuit + media_relay | `AmpCircuitMediaRelayComposeTest` — a hop behind a circuit gets a nested link, a data lane and media both ways — pp-cpp-mesh [`src/reach/tests/circuit_hop_media_relay_test.cpp`](https://github.com/people-post/pp-cpp-mesh/blob/develop/src/reach/tests/circuit_hop_media_relay_test.cpp) |
+| Circuit + media_relay | `AmpCircuitMediaRelayComposeTest` — a hop behind a circuit gets a nested link, a data lane and media both ways — pp-cpp-mesh [`src/reach/tests/circuit_hop_media_relay_test.cpp`](https://github.com/people-post/pp-cpp-mesh/blob/main/src/reach/tests/circuit_hop_media_relay_test.cpp) |
 | AmpCircuitHopReach NAT policy | `amp_circuit_hop_reach_test` — skip EnsureAssociation / PreferredMultiaddr on nested; PeerId hop key; **dialable+DialInBackoff still Connected via circuit** — [`amp_circuit_hop_reach_test.cpp`](../../capabilities/messaging/src/feature/conversations/tests/amp_circuit_hop_reach_test.cpp) |
 | Amp IPv6 dial preference | `reachability_test` / `amp_observed_addrs_test` / `mesh_hop_policy_test` — global `/ip6` > private `/ip4`; Reachable-via-v6; directory PreferredDial |
 | Amp IPv6 dial smoke | `amp_ipv6_dial_test` — MemoryIo `/ip6` EnsureAssociation + PreferredMultiaddr prefers global `/ip6` |

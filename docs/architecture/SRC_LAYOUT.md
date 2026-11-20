@@ -137,7 +137,7 @@ media's (headers only) as `pp_media_common`; `lib/media` links SDL3 and Opus its
   it or beside it, the product's base or the app: the compiler holds the order too (the gate checks it first).
 - Its tests carry the CTest label `capability:<name>`. A PR skips them (`ctest -LE`) when neither the folder nor
   anything below it changed (CI's changes filter: one filter per folder, the one below it plus the folder); pushes
-  to develop and main run all.
+  to main run all.
 - A later split into the capabilities repo is a `git subtree split` of the folder.
 - A capability ships ideas, not a database ([CR024](../../projects/capability-repos/DECISIONS.md#cr024--capabilities-own-ideas-the-app-owns-the-database)):
   its records, its logic, the ports that keep them, and in-memory stores for tests (delivery's

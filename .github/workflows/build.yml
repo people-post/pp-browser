@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [develop, main]
+    branches: [main]
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -14,7 +14,7 @@ on:
       - 'LICENSE'
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    branches: [develop, main]
+    branches: [main]
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -36,7 +36,7 @@ concurrency:
 
 jobs:
   # Which jobs a PR needs (Kenneth 2026-10-20: every push ran all six jobs and queued behind each other).
-  # Drafts run nothing; marking "ready for review" runs the set below. Pushes to develop / main run everything.
+  # Drafts run nothing; marking "ready for review" runs the set below. Pushes to main run everything.
   changes:
     runs-on: ubuntu-24.04
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
@@ -179,7 +179,7 @@ jobs:
     runs-on: ${{ matrix.os != 'macos' && matrix.os || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.CI_MAC_BUILD_LABELS || '"macos-15"') || 'macos-15') }}
     env:
       # Asset-only PRs (locales, themes, views) still need the tests, which the Ubuntu build runs; the
-      # Windows and macOS builds add nothing for them. Pushes to develop / main always build everything.
+      # Windows and macOS builds add nothing for them. Pushes to main always build everything.
       PP_RUN_PLATFORM: ${{ github.event_name != 'pull_request' || needs.changes.outputs.src == 'true' || matrix.os == 'ubuntu-24.04' }}
       CCACHE_COMPRESSLEVEL: 5
 
@@ -354,7 +354,7 @@ jobs:
         shell: bash
         run: ccache --show-stats || true
 
-  # Downloadable Linux build of every develop / main push (no tests: the build job runs them). Packaged
+  # Downloadable Linux build of every main push (no tests: the build job runs them). Packaged
   # layout (bin/ + share/pp-browser/assets); no backend URL is compiled in, set PP_BROWSER_ORIGIN at run time.
   linux-package:
     if: github.event_name == 'push'
@@ -419,7 +419,7 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ github.ref_name == 'main' && 90 || 14 }}
 
-      # Retention alone does not cap the count: keep the newest 10 (main) / 5 (develop).
+      # Retention alone does not cap the count: keep the newest 10 (main).
       - name: Prune old artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -612,7 +612,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-          # PR builds keep the shared name and expire fast; develop / main get a per-branch name to prune.
+          # PR builds keep the shared name and expire fast; main gets a per-branch name to prune.
           name: ${{ github.event_name == 'push' && format('android-debug-apk-{0}', github.ref_name) || 'android-debug-apk' }}
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error

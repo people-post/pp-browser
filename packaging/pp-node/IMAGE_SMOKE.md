@@ -19,7 +19,7 @@ Automated checks for a **running** `pp-node` (Docker image, compose, or bare bin
 
 ## CI / release
 
-Node images ship on the **`pp-node/v*`** train ([`release-pp-node.yml`](../../.github/workflows/release-pp-node.yml)), independent of app `v*` tags. Cut tags from **`main`**; day-to-day work is on **`develop`**. See [RELEASE.md](../../docs/ops/RELEASE.md).
+Node images ship on the **`pp-node/v*`** train ([`release-pp-node.yml`](../../.github/workflows/release-pp-node.yml)), independent of app `v*` tags. Cut tags from **`main`**, where day-to-day work lands. See [RELEASE.md](../../docs/ops/RELEASE.md).
 
 Release CI runs **L0** against the pushed image. Run L0/L1/L2 locally against compose as below. Gate **L2** in nightly/release only once stable (not every PR).
 

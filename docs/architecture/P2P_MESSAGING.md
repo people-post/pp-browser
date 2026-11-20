@@ -164,7 +164,7 @@ Two different jobs, with different answers ([E028](../../projects/e2e-message-cr
 nickname or Account ID), the chain name registry later
 ([N029](../../projects/p2p-mesh/NAME_DIRECTORY_NORTH_STAR.md)). The mesh does not do it: the DHT never
 holds names (N029), client devices do not walk it (lookups tell strangers whom you are looking for —
-[DHT D2](https://github.com/people-post/pp-cpp-mesh/blob/develop/docs/DHT.md)), and phones cannot hold
+[DHT D2](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/DHT.md)), and phones cannot hold
 records for others. Without a phone book, people are added from what they hand over: a QR code or
 invite link (a **locator**: Account ID, nickname, device Peer IDs), or a **contact card** a friend
 forwards in a chat.
@@ -180,7 +180,7 @@ forwards in a chat.
   them. They are reached the mesh's ways — a link already up, LAN mDNS among contacts, circuit rendezvous
   and hole punching through seeds (an idle desktop stays parked there with *Reachable without the relay*;
   a phone is woken by push)
-  ([PEER_REACH](https://github.com/people-post/pp-cpp-mesh/blob/develop/docs/PEER_REACH.md)), addresses
+  ([PEER_REACH](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/PEER_REACH.md)), addresses
   from call invites, and the DHT where the device is a Node. Mesh seeds stay the bootstrap (N029 L0).
 
 A group message goes member by member the same way, each copy a pairwise message that names its group
