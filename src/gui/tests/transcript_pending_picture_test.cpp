@@ -543,7 +543,7 @@ TEST_F(PendingPictureLayoutTest, ThePreparingOverlayHasItsLinesAndCancel) {
 }
 
 // S2 / S3: reaction chips on a sent file card are not inside the row that opens the file, and the card grows so the
-// chips hang under the size line (own and incoming cards).
+// chips hang under the size line, in the room of the card's time line (own and incoming cards).
 TEST_F(PendingPictureLayoutTest, ReactionsOnAFileCardKeepTheirOwnTapAndClearTheSizeLine) {
   for (const char* sender : {kLocalSelfContactId, "contact-1"}) {
     SCOPED_TRACE(sender);
@@ -563,7 +563,13 @@ TEST_F(PendingPictureLayoutTest, ReactionsOnAFileCardKeepTheirOwnTapAndClearTheS
     for (ui::Element* up = chip->GetParentNode(); up; up = up->GetParentNode()) {
       EXPECT_NE(up, row) << "a chip inside the row would open the file too";
     }
-    EXPECT_NEAR(Size(card).y, plain_height + 16.f, 0.5f) << "room under the size line for the chips";
+    // The time line under the row (every file card has one) is the room the chips hang in: the card does not grow.
+    EXPECT_NEAR(Size(card).y, plain_height, 0.5f);
+    ui::Element* size_line = First("chat-file-size");
+    ASSERT_NE(size_line, nullptr);
+    EXPECT_GE(chip->GetAbsoluteOffset(ui::BoxArea::Border).y,
+              size_line->GetAbsoluteOffset(ui::BoxArea::Border).y + Size(size_line).y)
+        << "the chips are under the size line";
   }
 }
 

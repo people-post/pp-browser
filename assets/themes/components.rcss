@@ -16498,3 +16498,51 @@ textarea:composing ~ .ps-placeholder {
   text-align: center;
   cursor: pointer;
 }
+
+/* The send time of an attachment bubble (phones; the desktop has the meta line). A picture or video carries it on a small
+   dark pill at its bottom-right corner, readable on any picture; a file, music or unready card carries it at the bottom
+   right like a text bubble's. */
+.chat-attachment-time,
+.chat-attachment-clock {
+  display: none;
+}
+
+.shell-chat-overlay .chat-attachment-card--image {
+  position: relative;
+}
+
+.shell-chat-overlay .chat-attachment-time {
+  display: block;
+  position: absolute;
+  right: 9dp;
+  bottom: 9dp;
+  padding: 1dp 7dp;
+  border-radius: 10dp;
+  font-size: 12dp;
+  line-height: 16dp;
+  pointer-events: none;
+}
+
+.shell-chat-overlay .chat-attachment-clock {
+  display: block;
+  min-height: 14dp;
+  margin-top: 2dp;
+  font-size: 12dp;
+  line-height: 14dp;
+  text-align: right;
+}
+
+/* A file or music card has no padding of its own (its row has): the time keeps the row's 8dp side inset and the card's
+   rounded corner clear. The reaction chips of a file card hang over the bottom edge and now sit beside the time line. */
+.shell-chat-overlay .chat-file-card .chat-attachment-clock {
+  padding: 0 14dp 6dp 14dp;
+  margin-top: -2dp;
+}
+
+.shell-chat-overlay .chat-audio-card .chat-attachment-clock {
+  margin-top: 4dp;
+}
+
+.shell-chat-overlay .chat-file-card.chat-reaction-host .chat-file-row {
+  padding-bottom: 8dp;
+}

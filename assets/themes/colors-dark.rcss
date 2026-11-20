@@ -3986,6 +3986,24 @@ input.checkbox:checked {
   image-color: #ffffff;
 }
 
+/* The send time of an attachment bubble. */
+.chat-attachment-time {
+  background-color: #000000a6;
+  color: #ffffff;
+}
+
+.chat-attachment-time .route-icon {
+  image-color: #ffffff;
+}
+
+.chat-attachment-clock {
+  color: #ebebf599;
+}
+
+.chat-attachment-clock .route-icon {
+  image-color: #ebebf599;
+}
+
 /* Picture preview page. */
 .picture-send {
   background-color: #000000;
