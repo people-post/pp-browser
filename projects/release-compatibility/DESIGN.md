@@ -153,7 +153,8 @@ App, pp-node and the relay each have their own version ([RC016](DECISIONS.md#rc0
 product, the format versions it writes and reads. Compatibility is decided by those format versions; a product number
 only names a release.
 
-Starting inventory, to be checked in phase P0 (from COMPATIBILITY.md and the 2026-11-17 review):
+Starting inventory (from COMPATIBILITY.md and the 2026-11-17 review), checked in phase P0: [INVENTORY.md](INVENTORY.md)
+has every row's version, its check and what an unknown version or field does today:
 
 | Format | Version today | Owner |
 |--------|---------------|-------|
@@ -181,12 +182,13 @@ Starting inventory, to be checked in phase P0 (from COMPATIBILITY.md and the 202
 ## Release 1
 
 Release 1 is the floor of every range. It ships across app, pp-node and relay together, the last time anything
-ships in lockstep. Phase P0 turns this list into exact work items.
+ships in lockstep. Phase P0 turned this list into exact work items: [INVENTORY § 4](INVENTORY.md#4-release-1-work-list).
 
 **Needed, because the rule cannot hold without them:**
 
-- Readers that tolerate what they do not know ([above](#readers-tolerate-what-they-do-not-know)). Today ingest
-  often hard-refuses an unknown content type or envelope version, and `ChatHistoryRequest` refuses unknown keys.
+- Readers that tolerate what they do not know ([above](#readers-tolerate-what-they-do-not-know)). Today a higher
+  `envelope_version` stalls the thread in Gap, an unknown content type cannot be stored and stalls the same way,
+  and a higher payload version reads as "couldn't decrypt" ([INVENTORY § 2.1](INVENTORY.md#21-app--app)).
 - A version every receiver checks first, for every signed object, not only envelopes.
 - A clean "update needed" for every version refusal. Its screen's text and translations are Kenneth's; prod's update
   links (`upgrade_url`, `upgrade_urls`) are Leo's (P4).
@@ -216,9 +218,9 @@ the range rule):
   refuses) are a small suite run against the relay's local stack in both repos' CI. Frozen data checks formats, not
   behaviour: it would not have caught the search 400 of 2026-11-17.
 - **Relay identity rotation and compromise recovery.** Clients pin each relay's PeerId (MR008), so today a new key
-  strands every client and a leaked key has no recovery. A designed rotation (for example the old key signing a
-  statement that names the new one, or relay links carrying the next PeerId) ships in release 1, because in-range
-  apps must understand it.
+  strands every client and a leaked key has no recovery. Decided ([RC018](DECISIONS.md#rc018--the-release-1-answers-for-kenneths-and-leos-rows) item 7): as in pp-ledger, an offline
+  operator set certifies the relay's transport and signing keys, and clients pin the operator key, not the PeerId.
+  It ships in release 1, because in-range apps must understand it.
 - **Account deletion, finished.** App Store guideline 5.1.1(v) requires an app that creates accounts to let users
   delete them. It exists as Me → Storage → *Reset my data…* (`SettingsSecurityActions::ResetProfile` →
   `Application::ResetActiveProfile`): it revokes the registration on every relay of ours (others first, then the
@@ -232,8 +234,8 @@ the range rule):
     account lockers, Support conversation or usage records. Each is deleted on revoke, or its retention is stated.
   - **An offline reset** leaves the registration until it expires (up to 90 days): retry the revoke later, or say so.
   - **Several devices of one account:** whether resetting one device revokes the account's registration for all of
-    them (registration is one per Account ID), and whether that is the intent. Deleting the account and removing one
-    device may need to be two actions.
+    them (registration is one per Account ID), and whether that is the intent. Decided: two actions, *Delete account…* and
+    *Remove this device…* ([RC018](DECISIONS.md#rc018--the-release-1-answers-for-kenneths-and-leos-rows) item 1).
 - **Crash reports from released versions.** The app sends them when `client-compat` names a `crash_reports_url`;
   prod names none. Release 1 needs a destination, within DIAGNOSTICS' shareable-lines rule.
 

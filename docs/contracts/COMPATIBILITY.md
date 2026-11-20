@@ -7,6 +7,12 @@
 
 This doc answers: what happens when the data directory has leftovers, or when a **newer peer / API** talks to this build? Goal: **no crash**; degrade or fail clearly; avoid dual parsers for obsolete wire (D016).
 
+**Release-1 freeze (since 2026-11-19, until release 1 ships):** a breaking change to any format between separately
+released components (wire, signed bytes, HTTP, the relay's stored data) lands only if it is an item of the release-1
+work list ([release-compatibility INVENTORY § 4](../../projects/release-compatibility/INVENTORY.md#4-release-1-work-list));
+the PR names the item. Anything else is additive or waits for the range rule that starts with release 1
+([PHASES § P1](../../projects/release-compatibility/PHASES.md#p1--freeze)). Local stores stay exempt.
+
 ---
 
 ## Change classes

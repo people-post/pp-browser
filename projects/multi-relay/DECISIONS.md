@@ -117,7 +117,9 @@
 ## MR008 — A relay address carries its PeerId; no first-use trust
 
 **Date:** 2026-11-15
-**Status:** Accepted (Hongwei, 2026-11-15). Built in R6 (app and pp-node on `feat/relay-audience`, PR #623; the relay's
+**Status:** Accepted (Hongwei, 2026-11-15). **Amended by** [release-compatibility RC018](../release-compatibility/DECISIONS.md#rc018--the-release-1-answers-for-kenneths-and-leos-rows) item 7
+(2026-11-19, for release 1): a relay address names its operator's key, which certifies the PeerId, so a new PeerId is a new
+certificate, not a new relay. Built in R6 (app and pp-node on `feat/relay-audience`, PR #623; the relay's
 keygen script and local stack name the link on pp-relay-apis `feat/relay-identity-audience`, PR #25), not deployed.
 Amends [MR007](#mr007--relays-have-a-node-style-identity-every-signed-relay-command-names-it-as-its-audience) items 1
 and 3 and [MR006](#mr006--the-preferred-relay-carries-the-users-relay-services-org-services-stay-on-the-orgs-origin)'s

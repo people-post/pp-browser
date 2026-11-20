@@ -361,3 +361,104 @@ each product, the format versions it writes and reads ([DESIGN § Libraries and 
   cadence together while gaining little over fully independent lines.
 **Cost:** a fix in code both products share is backported to each product's branch that needs it (a label each).
 
+## RC017 — P0's decisions: a clean local start, the currency id fixed, two features after release 1
+
+**Date:** 2026-11-19
+**Status:** Accepted (Hongwei, 2026-11-19). Answers [INVENTORY](INVENTORY.md) C5 and D1–D3.
+**Decision:**
+1. **Local stores start clean at release 1.** Every tester deletes the app and installs release 1 (they are in direct
+   contact). Each store's floor becomes its current version and every pre-release migration step goes, including
+   `identity.enc` 3→4 and `contacts.json` 2→3; no reset path is added for stores below the floor (INVENTORY C4).
+2. **`pp_credit` is the currency's protocol id, fixed for good.** It is already on the wire (billing control details),
+   inside signed payment promises, in two local stores, and the implied unit of the card's `initiation_floor`. The
+   name people see (`kPricingCurrencyDisplayName`) stays free to change. **The minor unit is one credit:** every amount
+   counts credits, as a 64-bit integer (`int64_t`; the card's floor is capped at 2⁵³−1 so the relay reads it exactly),
+   never a floating-point number, and a rate names the unit it is per (INVENTORY C6). A major unit, decided later,
+   only groups credits for display; amounts on the wire, in signed bytes and in stores do not change. Readers refuse or ignore an amount in a currency they do not know (INVENTORY T18). A
+   second currency later is a new id, and a currency field beside `initiation_floor`: additive.
+3. **The easy recovery tier (seed in the synced keychain, multi-device-account M023 §3) comes after release 1.** It is
+   additive: an app without its reader asks for the phrase. When built, the synced item carries a version and has
+   frozen data from day 1, because another install on another version reads it.
+4. **N031's signed node records come after release 1.** Directory row readers already ignore unknown keys, so records
+   arrive additively; the relay keeps accepting heartbeats and clients read rows and records for the node pair's range
+   (2 releases, 60 days), and the node floor (INVENTORY A2) closes the old path.
+**Rationale:**
+- With every tester reinstalling, nothing older than release 1 exists, so steps kept for older files would never run.
+- Renaming a protocol id later is a format change on the wire, in signed bytes and in stores; a display name is not.
+- Both features are additive under the range rule, and neither is built (N031 is L-sized), so neither is worth
+  delaying release 1.
+**Cost:** release 1's default "Just continue" path keeps no off-device copy of the seed: a user who never shows their
+phrase or saves a copy loses the account with the phone. Two paths stay open for 60 days after N031 ships.
+
+## RC018 — The release-1 answers for Kenneth's and Leo's rows
+
+**Date:** 2026-11-19
+**Status:** Part 1 accepted (Hongwei, 2026-11-19). Part 2 is Kenneth's and Leo's to decide; until they do, its default
+stands, so no release work waits on it. Answers the questions [INVENTORY § 3](INVENTORY.md#3-rows-from-rc015-kenneth-and-for-leo)
+leaves for them.
+
+**Part 1 — decided now** (each sets a format, a reader that ships in release 1, or the order of release work):
+1. **Two deletion actions** (INVENTORY O5). *Delete account…* revokes the registration on every relay of ours, deletes
+   the account's relay data including its lockers (item 8), and wipes this device; it says plainly that it deletes the
+   account on every device and cannot be undone, even with the recovery phrase. *Remove this device…* wipes only this
+   install and revokes nothing; on the main device it also takes the device off the card, and on a linked device it is
+   the missing "leave". Registration stays one per Account ID.
+2. **The AI client follows the relay's current contract** (C1): `llm_token` renewed before it expires, the relay's
+   error codes (`user_rate_limit`, `user_daily_limit`, `guest_*`, `token_expired`) instead of message text, and
+   "registered or guest" from the key's slot (`brief_llm_api_key` / `brief_llm_guest_api_key`), not its prefix.
+3. **The relay's version** (RC006 item 3, A1): its own semver `vX.Y.Z` on `release/X.Y`, starting at 1.0, reported in
+   `client-compat` at `schema_version` 1 as `relay_version`, `app_range` and `node_range`.
+4. **Floors at release** (A2, C3): `min_client_version` `1.0.0`, and a new `min_node_version` `10.0.0`.
+5. **The legacy parts go in relay 1.0** (C2), deployed with app 1.0: the sign window, the `blobs/*`, `files/*` and
+   `GET /search` aliases, `llm_api_key` and `keys/rotate`, the pre-cutover sender mapping. Testers reinstall that day
+   (RC017), so no supported app needs them and no window is kept.
+6. **The version header** (O1): `X-PP-Client: <product>/<version> <os>` on every relay call from the app and pp-node.
+7. **A relay's operator and its keys are separate, as in pp-ledger** (O4, C7). pp-ledger keeps three layers apart: the
+   beacon's Amp key is transport only, a hot signing key signs the chain's tips, and an offline admin set with a
+   threshold certifies that signing key; a beacon cannot hand itself a successor (pp-ledger B002, B006, B014). For a
+   relay:
+   - An **operator set** (keys and a threshold, offline) is what clients pin, in place of the PeerId. It signs only a
+     **relay certificate**: the relay's current transport key (its PeerId) and signing key, with a rising sequence
+     number. The format carries a set and a threshold from day 1.
+   - The **transport key** stays the relay's Amp identity. Unlike the beacon's dial hint it is trusted (Amp
+     authenticates it, signed calls name it as their audience), so the certificate binds it.
+   - A **signing key**, hot on the deployment as the identity seed is today, signs the items the relay issues in
+     future, apart from transport, so each rotates alone.
+   - Clients take the valid certificate with the highest sequence they have seen, from any channel (`relay-identity`,
+     `client-compat`, later peers), and never go below it. A relay's own keys cannot certify their successors: only the
+     operator set can, so a stolen hot key cannot move clients to the thief's.
+   - The account card, the locator's `relay` entry and relay links name the operator key in place of `peer_id`, and
+     builds carry the org relay's operator key: a card version, cheapest as a pre-release cutover now (testers
+     reinstall, RC017). This amends [MR008](../multi-relay/DECISIONS.md#mr008--a-relay-address-carries-its-peerid-no-first-use-trust):
+     moving a relay's PeerId (a new host, a leaked key) is a new certificate, not a new relay.
+   The reader ships in release 1, since a build without it can never follow a rotation.
+8. **What a revoke deletes** (O5): the mailbox (messages, META, large bodies), the public icon and its record, the quota
+   counter, every push row (a lost purge retried), and the lockers; an expired registration is cleaned of the same set
+   on a schedule. Support conversations are kept for a stated period, then deleted (the period: part 2).
+9. **Relay codes and fields the app reads** (T8, U10, O2): the account card stored as received; `relay_upgrade_required`
+   for a card or `sign_version` newer than the relay reads; remote switches as `switches: {name: true | false}` in
+   `client-compat`.
+
+**Part 2 — Kenneth's and Leo's to decide, default until then:**
+
+| Item | Owner | Default |
+|------|-------|---------|
+| Update-needed display and words (U1, U2, U11, T14) | Kenneth | one persistent banner with an Update button, a full screen only below `min_client_version`; a per-contact line in the chat header; "relay needs an update" apart from "update the app"; en and zh-Hans |
+| `client-compat` `message` vs translations (U12) | Kenneth | the app's own translated text always; the server's `message` as an extra line |
+| Both deletion confirmations' text (item 1) | Kenneth | plain words as in item 1 |
+| *Delete account…* offline | Kenneth | needs a connection: offline it says so and wipes nothing |
+| Crash-report opt-in (O6) | Kenneth | a switch in Me, off by default, one line on what is sent |
+| Person-level preferences in the locker | Kenneth | none in release 1 (additive later, once INVENTORY T7 lands) |
+| Where versions are counted (O1) | Leo | a CloudWatch metric by product, version and OS; no account id, no table |
+| How `RELAY_VERSION` reaches the functions; an `x-pp-relay-version` header | Leo | injected by the deploy workflow from the tag; header optional |
+| Deploys (RC006 item 8, X11) | Leo | `dev/<date>.<n>` tags; a Lambda version per tag and one alias per function |
+| Checks before deploy (O3) | Leo | `deploy` needs `integration`; the behaviour suite on PRs in both repos; the nightly lab's variables set |
+| Prod's update links (C3) | Leo | the App Store and Play links and the desktop download page, set on the release day |
+| Support retention, S3 lifecycle days (item 8) | Leo | 90 days each, stated in SPECS and the privacy text |
+| The crash-report endpoint (O6) | Leo | as SPECS plans: a bucket with a 90-day expiry, no account id, rate-limited |
+| The operator set: how many keys, its threshold, who holds them (item 7) | Leo | 2 of 3, offline, one in escrow (RC010) |
+| Whether relay certificates expire (bounds a stolen hot key against a client that never sees the new certificate, at the cost of re-signing offline) | Leo | no expiry in release 1; certificates spread by every channel |
+| The support-worker's "not readable" reply (X9), wake payload version (X10), PITR on every state table | Leo | yes to each |
+
+**Rationale:** Part 1 is what code on both sides is written against, or what decides when the relay's old paths can
+go; leaving it open would stall P3. Part 2 changes no format the other side reads, so it can be settled during P3.
