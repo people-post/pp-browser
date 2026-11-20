@@ -429,13 +429,17 @@ TEST(ClientCompatCache, RoundTripsUpgradeUrls) {
 }
 
 // The org's relay refusing us (426 client_upgrade_required) is the authority: the update screen whatever the floor.
-TEST(ClientCompatDecide, TheOrgRelayRefusingUsRequiresTheUpdate) {
+// T14 / RC018 part 2 default: the org's relay refusing us needs the update whatever the document says, as the held-up
+// card; the full screen stays the document's floor's.
+TEST(ClientCompatDecide, TheOrgRelayRefusingUsNeedsTheUpdate) {
   ClientCompatDocument doc;
   doc.schema_version = 1;
-  EXPECT_EQ(DecideCompatUiAction("9.9.9", doc, /*relay_requires_upgrade=*/true), CompatUiAction::UpdateRequired);
+  EXPECT_EQ(DecideCompatUiAction("9.9.9", doc, /*relay_requires_upgrade=*/true), CompatUiAction::UpdateNeeded);
   EXPECT_EQ(DecideCompatUiAction("9.9.9", doc, /*relay_requires_upgrade=*/false), CompatUiAction::None);
   doc.latest_client_version = "10.0.0";
-  EXPECT_EQ(DecideCompatUiAction("9.9.9", doc, true), CompatUiAction::UpdateRequired);
+  EXPECT_EQ(DecideCompatUiAction("9.9.9", doc, true), CompatUiAction::UpdateNeeded);
+  doc.min_client_version = "10.0.0";
+  EXPECT_EQ(DecideCompatUiAction("9.9.9", doc, true), CompatUiAction::UpdateRequired) << "below the floor: full screen";
 }
 
 /** A relay answering `doc` (or failing), counting its fetches. */

@@ -316,6 +316,30 @@ TEST_F(RelayRegistrationsWorkflowTest, ARelayNeedingANewerAppSaysSo) {
   EXPECT_TRUE(registered_on_.empty());
 }
 
+// T17: a refusal asking again will not change (this app too old there, the relay too old for it, another identity) is
+// asked again once a day, not on the minute backoff.
+TEST_F(RelayRegistrationsWorkflowTest, APermanentRefusalIsAskedAgainOnceADay) {
+  RegisterOnPreferred();
+  for (const Error& refusal : {AppError::Auth(Err::Auth::ClientUpgradeRequired, "426"),
+                               AppError::Auth(Err::Auth::RelayUpgradeRequired, "relay_upgrade_required"),
+                               AppError::Auth(Err::Auth::WrongAudience, "wrong_audience")}) {
+    workflow_->MakeDue(kOther);
+    client_->refusal = refusal;
+    const int before = client_->finish_calls;
+    workflow_->RunDue(kNow);
+    EXPECT_EQ(client_->finish_calls, before + 1);
+    workflow_->RunDue(kNow + RelayRegistrationsWorkflow::kMaxRetryMs);
+    workflow_->RunDue(kNow + RelayRegistrationsWorkflow::kRefusedRetryMs - 1);
+    EXPECT_EQ(client_->finish_calls, before + 1) << refusal.message << ": not before a day";
+    workflow_->RunDue(kNow + RelayRegistrationsWorkflow::kRefusedRetryMs);
+    EXPECT_EQ(client_->finish_calls, before + 2) << refusal.message;
+  }
+  client_->refusal.reset();
+  workflow_->MakeDue(kOther);
+  workflow_->RunDue(kNow);
+  EXPECT_TRUE(workflow_->Registered(kOther));
+}
+
 // U11 / X12: a relay older than this app, and a relay that did not take our card, each say so in their own code.
 TEST_F(RelayRegistrationsWorkflowTest, ARelayOlderThanThisAppOrRefusingOurCardSaysWhich) {
   RegisterOnPreferred();

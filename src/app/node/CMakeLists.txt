@@ -8,6 +8,7 @@ include(PpBrowserNoUiDeps)
 add_executable(pp-node
   main.cpp
   NodeBootstrap.cpp
+  NodeCompatFloor.cpp
   NodeEnvOverlay.cpp
   NodeHeartbeat.cpp
   NodeMeshPublish.cpp
@@ -60,6 +61,8 @@ if(PP_BROWSER_BUILD_TESTS)
     tests/node_heartbeat_test.cpp
     tests/status_http_server_test.cpp
     tests/node_upgrade_notice_test.cpp
+    tests/node_compat_floor_test.cpp
+    NodeCompatFloor.cpp
     NodeHeartbeat.cpp
     NodeUpgradeNotice.cpp
     StatusHttpProtocol.cpp
@@ -74,6 +77,7 @@ if(PP_BROWSER_BUILD_TESTS)
     GTest::gtest_main
     pp_pbr_common
     pp_foundation_tls
+    pp_lib_net
     Asio::asio
     Threads::Threads
   )

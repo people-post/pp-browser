@@ -20,6 +20,12 @@ const char* HeartbeatStateName(HeartbeatState state);
 std::optional<HeartbeatState> ParseHeartbeatState(std::string_view name);
 
 inline constexpr int64_t kHeartbeatPeriodMs = 5 * 60 * 1000;
+/**
+ * After a refusal sending again will not change (`426 client_upgrade_required`, `400 relay_upgrade_required` /
+ * `unsupported_sign_version`; release-compatibility T17): the next heartbeat, and a re-registration it would start,
+ * once a day. A state change still sends at once.
+ */
+inline constexpr int64_t kHeartbeatRefusedRetryMs = 24LL * 60 * 60 * 1000;
 inline constexpr long kHeartbeatTimeoutS = 8;
 inline constexpr long kHeartbeatFinalTimeoutS = 3;
 
@@ -73,7 +79,7 @@ public:
   bool SetState(HeartbeatState next);
   HeartbeatState State() const { return static_cast<HeartbeatState>(state_.load()); }
 
-  /** Sends when the period elapsed or the state changed; re-registers on 404. */
+  /** Sends when the period elapsed or the state changed; re-registers on 404; once a day after a permanent refusal. */
   void Tick();
 
   /** Shutdown path: marks retiring and sends once with a short timeout; failure is only a warning. */
@@ -96,6 +102,8 @@ private:
   int64_t reregister_delay_ms_ = 0;
   /** The last signing failure logged (one line per new reason, not one per period). */
   std::string sign_failure_;
+  /** The last Send was a refusal sending again will not change (kHeartbeatRefusedRetryMs). */
+  bool refused_for_good_ = false;
 };
 
 } // namespace pbr

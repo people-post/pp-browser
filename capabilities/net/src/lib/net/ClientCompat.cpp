@@ -467,7 +467,11 @@ bool NodeBelowFloor(std::string_view node_version, const ClientCompatDocument& d
 
 CompatUiAction DecideCompatUiAction(std::string_view local_version, const ClientCompatDocument& doc,
                                     const bool relay_requires_upgrade) {
-  return relay_requires_upgrade ? CompatUiAction::UpdateRequired : DecideCompatUiAction(local_version, doc);
+  const CompatUiAction by_document = DecideCompatUiAction(local_version, doc);
+  if (!relay_requires_upgrade || by_document == CompatUiAction::UpdateRequired) {
+    return by_document;
+  }
+  return CompatUiAction::UpdateNeeded;
 }
 
 Roe<ClientCompatCacheEntry> LoadClientCompatCache(const std::string& profile_data_dir) {

@@ -1,6 +1,7 @@
 // Client compatibility (docs/contracts/SERVICE_ENDPOINTS.md § Client compatibility): checked at start-up from a fresh
-// cache, again when the app comes to the foreground (forced, at most once per 15 minutes since the last fetch), and the
-// update screen when the org's relay answers 426 `client_upgrade_required` — whatever the document's floor says.
+// cache, again when the app comes to the foreground (forced, at most once per 15 minutes since the last fetch) and
+// every 6 hours while it runs; the full screen below the document's floor, and the update card held up when the org's
+// relay answers 426 `client_upgrade_required` — whatever the document's floor says.
 #include "gui/ClientCompatController.h"
 
 #include "common/runtime/AppRuntime.h"
@@ -173,42 +174,59 @@ TEST_F(ClientCompatControllerTest, TheRunTakesItsSwitchesFromItsFirstDocument) {
   RemoteSwitches::ResetForTest();
 }
 
-// The org's relay refusing us (426) is the authority: the update screen even though the document raises no floor, with
-// the document's link for this platform.
-TEST_F(ClientCompatControllerTest, TheOrgRelaysUpgradeRequiredShowsTheUpdateScreen) {
+// The org's relay refusing us (426) is the authority, even though the document raises no floor: the Chats page's card,
+// held up (no "Later") with the document's link for this platform — never the full screen, and no alert at all, so a
+// refusal at every poll raises nothing new (RC018 part 2 default; release-compatibility T14).
+TEST_F(ClientCompatControllerTest, TheOrgRelaysUpgradeRequiredHoldsTheCardUpWithoutAnAlert) {
   BindMessaging();
   ASSERT_TRUE(upgrade_hook_) << "the controller listens to the org relay's 426";
-  relay_->doc.upgrade_url = "https://example.com/app";
-  relay_->doc.upgrade_urls = {{Platform::OsName(), "https://example.com/this-platform"}};
+  int announced = 0;
+  controller_.BindSoftUpdateChanged([&announced]() { ++announced; });
+  relay_->doc.upgrade_url = "https://github.com/people-post/pp-browser/releases";
+  relay_->doc.upgrade_urls = {{Platform::OsName(), "https://apps.apple.com/app/id123"}};
+  relay_->doc.message = "Relay 1.0 is live";
   upgrade_hook_(); // a relay call's thread: handled on the UI thread
-  RunUntil([this]() { return !alerts_.empty(); });
+  RunUntil([this]() { return controller_.SoftUpdate().has_value(); });
   Settle();
   EXPECT_EQ(relay_->fetches.load(), 1) << "forced, for the document's links";
-  EXPECT_EQ(alerts_[0].title, "Update required");
-  EXPECT_EQ(alerts_[0].ok_label, "Update");
-  EXPECT_EQ(controller_.LastAction(), CompatUiAction::UpdateRequired);
-  EXPECT_EQ(controller_.UpgradeUrl(), "https://example.com/this-platform");
+  EXPECT_TRUE(alerts_.empty()) << "no full screen: the document raises no floor";
+  EXPECT_EQ(controller_.LastAction(), CompatUiAction::UpdateNeeded);
+  ASSERT_TRUE(controller_.SoftUpdate().has_value());
+  EXPECT_TRUE(controller_.SoftUpdate()->held);
+  EXPECT_EQ(controller_.SoftUpdate()->url, "https://apps.apple.com/app/id123") << "this platform's link";
+  EXPECT_EQ(controller_.SoftUpdate()->message, "Relay 1.0 is live") << "the relay's note under the card's own line";
+  EXPECT_EQ(controller_.UpgradeUrl(), "https://apps.apple.com/app/id123");
+  const int raised = announced;
 
-  // Every later refusal keeps the screen up without asking the relay again (it answered a moment ago).
-  dialog_open_ = true;
-  upgrade_hook_();
-  AppRuntime::RunUITasks();
+  // Every later refusal (one per poll) changes nothing on screen and asks the relay nothing (it answered a moment ago).
+  for (int i = 0; i < 5; ++i) {
+    upgrade_hook_();
+    AppRuntime::RunUITasks();
+  }
   EXPECT_FALSE(controller_.CheckInFlight());
   EXPECT_EQ(relay_->fetches.load(), 1);
-  EXPECT_EQ(alerts_.size(), 1u) << "the screen is up already";
-  // Dismissed: the next refusal shows it again; a document without a floor does not take it away.
-  dialog_open_ = false;
+  EXPECT_TRUE(alerts_.empty());
+  EXPECT_EQ(announced, raised) << "raised once";
+  // A document without a floor keeps it held; one below whose floor this app is shows the full screen instead.
+  controller_.ApplyDocument(relay_->doc);
+  EXPECT_EQ(controller_.LastAction(), CompatUiAction::UpdateNeeded);
+  EXPECT_TRUE(controller_.SoftUpdate()->held);
+  relay_->doc.min_client_version = "999.0.0";
   controller_.ApplyDocument(relay_->doc);
   EXPECT_EQ(controller_.LastAction(), CompatUiAction::UpdateRequired);
-  EXPECT_EQ(alerts_.size(), 2u);
+  EXPECT_EQ(alerts_.size(), 1u) << "below the floor: the full screen";
+  EXPECT_FALSE(controller_.SoftUpdate().has_value()) << "the dialog says it";
+  controller_.BindSoftUpdateChanged({});
 }
 
-// Messaging not ready (nothing to fetch with): the screen still shows, with the app's own releases page.
-TEST_F(ClientCompatControllerTest, WithoutAFetchTheScreenStillShowsWithTheDefaultLink) {
+// Messaging not ready (nothing to fetch with): the card is still held up, with the app's own releases page.
+TEST_F(ClientCompatControllerTest, WithoutAFetchTheCardIsStillHeldWithTheDefaultLink) {
   controller_.OnOrgRelayRequiresUpgrade();
-  ASSERT_EQ(alerts_.size(), 1u);
+  EXPECT_TRUE(alerts_.empty());
+  ASSERT_TRUE(controller_.SoftUpdate().has_value());
+  EXPECT_TRUE(controller_.SoftUpdate()->held);
   EXPECT_EQ(controller_.UpgradeUrl(), kDefaultUpgradeUrl);
-  EXPECT_EQ(controller_.LastAction(), CompatUiAction::UpdateRequired);
+  EXPECT_EQ(controller_.LastAction(), CompatUiAction::UpdateNeeded);
 }
 
 // The relay sends no `message` (what prod and QA answer today): the app's own words, in the UI language.

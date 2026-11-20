@@ -2197,6 +2197,9 @@ bool ChatController::UpdateCardShows() {
   if (!advice || !Store().Snapshot().profile_prefs.onboarding_completed) {
     return false;
   }
+  if (advice->held) {
+    return true; // the org's relay refuses this app (T14): up until the app is updated, "Later" or not
+  }
   if (update_card_state_for_ != advice->latest_version) {
     update_card_state_ = UpdatePrefs::Read(update_card_.machine_dir()); // once per announced version
     update_card_state_for_ = advice->latest_version;
@@ -2208,13 +2211,17 @@ void ChatController::RefreshUpdateCard() {
   const bool shows = UpdateCardShows();
   const bool link = shows && !update_card_.advice()->url.empty();
   const std::string note = shows ? UpdateServerNote(update_card_.advice()->message) : std::string();
-  if (shell_.update_card == shows && shell_.update_card_link == link && shell_.update_card_note == note) {
+  const bool held = shows && update_card_.advice()->held;
+  if (shell_.update_card == shows && shell_.update_card_link == link && shell_.update_card_note == note &&
+      shell_.update_card_held == held) {
     return;
   }
   shell_.update_card = shows;
   shell_.update_card_link = link;
   shell_.update_card_note_shown = !note.empty();
   shell_.update_card_note = note;
+  shell_.update_card_held = held;
+  DataModelHost::Instance().Dirty("shell", "update_card_held");
   DataModelHost::Instance().Dirty("shell", "update_card");
   DataModelHost::Instance().Dirty("shell", "update_card_link");
   DataModelHost::Instance().Dirty("shell", "update_card_note_shown");
@@ -2230,8 +2237,8 @@ void ChatController::OnUpdateCardOpen() {
 
 void ChatController::OnUpdateCardLater() {
   const std::optional<UpdateAdvice> advice = update_card_.advice ? update_card_.advice() : std::nullopt;
-  if (!advice || !update_card_.machine_dir) {
-    return;
+  if (!advice || advice->held || !update_card_.machine_dir) {
+    return; // a held card has no "Later" (T14)
   }
   const std::string dir = update_card_.machine_dir();
   if (update_card_state_for_ != advice->latest_version) {
