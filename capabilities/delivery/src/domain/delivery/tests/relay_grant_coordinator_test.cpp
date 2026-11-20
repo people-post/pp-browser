@@ -12,6 +12,7 @@
 #include "lib/people/testing/InMemoryPeerCards.h"
 #include "lib/people/tests/TestAccount.h"
 #include "common/Utilities.h"
+#include "common/tests/TeardownLikeTheApp.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -122,10 +123,7 @@ protected:
   }
 
   void TearDown() override {
-    ASSERT_TRUE(AppRuntime::DrainWorkersThenUI());
-    grants_.reset();
-    lane_.reset();
-    outbox_.reset();
+    test::FreeLikeTheApp(grants_, lane_, outbox_); // they post raw `this` onto the workers
     AppRuntime::Shutdown();
     keys_.reset();
     psk_.reset();

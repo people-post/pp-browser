@@ -8,6 +8,7 @@
 #include "common/Logger.h"
 #include "common/Metrics.h"
 #include "common/runtime/AppRuntime.h"
+#include "common/tests/TeardownLikeTheApp.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -251,7 +252,7 @@ protected:
   }
   void TearDown() override {
     UserFeedback::BindPorts({});
-    devices_.reset();
+    test::FreeLikeTheApp(devices_); // it posts raw `this` onto the workers and the UI mailbox
     AppRuntime::Shutdown();
   }
 

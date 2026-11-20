@@ -6,6 +6,8 @@
 
 #include "foundation/error/AppError.h"
 
+#include "common/tests/TeardownLikeTheApp.h"
+
 #include <gtest/gtest.h>
 
 namespace pbr {
@@ -17,28 +19,28 @@ void ExpectPinRequired(const Error& error) {
 }
 
 TEST(RegistrationSplitTest, ABeginOnAHubThatWasNeverInitializedIsRefused) {
-  ConversationsHub hub;
-  auto job = hub.BeginRegistration("Nick");
+  test::TestOwner<ConversationsHub> hub;
+  auto job = hub->BeginRegistration("Nick");
   ASSERT_FALSE(static_cast<bool>(job));
   ExpectPinRequired(job.error());
-  auto without_nickname = hub.BeginRegistration("");
+  auto without_nickname = hub->BeginRegistration("");
   ASSERT_FALSE(static_cast<bool>(without_nickname));
   ExpectPinRequired(without_nickname.error());
 }
 
 TEST(RegistrationSplitTest, AFinishOnAHubThatWasNeverInitializedIsRefusedAndWritesNothing) {
-  ConversationsHub hub;
+  test::TestOwner<ConversationsHub> hub;
   RegistrationResult result;
   result.success = true;
   result.account_id = "account:a";
-  auto finished = hub.FinishRegistration(result, "account:a");
+  auto finished = hub->FinishRegistration(result, "account:a");
   ASSERT_FALSE(static_cast<bool>(finished));
   ExpectPinRequired(finished.error());
 }
 
 TEST(RegistrationSplitTest, RegisterIdentityAnswersTheSameErrorAsBefore) {
-  ConversationsHub hub;
-  auto registered = hub.RegisterIdentity("Nick");
+  test::TestOwner<ConversationsHub> hub;
+  auto registered = hub->RegisterIdentity("Nick");
   ASSERT_FALSE(static_cast<bool>(registered));
   ExpectPinRequired(registered.error());
 }

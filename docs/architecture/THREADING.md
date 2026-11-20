@@ -302,6 +302,8 @@ Owners post raw `this` onto the worker pool, coordinator and UI mailbox, but tea
 - A post a mailbox drops unrun (stopped pool / owner) settles its gate count on destruction, so it cannot stall a later quiesce.
 - Per-owner guards remain only for owners that die **mid-life** on their own strand (`pp::Lifetime`, [OWNERSHIP.md](OWNERSHIP.md#lifetime-ticket--invalidate)); do not add per-owner gates for teardown.
 
+Tests free owners the way the app does: `common/tests/TeardownLikeTheApp.h` (`pbr::test`). A test holds a hub, an outbox or a controller that posts raw `this` in a `test::TestOwner<T>` (built in place, used through `->`, freed when the holder goes or on `Free()`; declared after the fakes and ports its posts reach), or frees its `unique_ptr`s with `test::FreeLikeTheApp(a, b, …)`. Both run `QuiesceForTeardown` (the quit budget, 2 s) on the test's thread, free the owners in the order given, then `ReopenAfterTeardown`: what an owner queued runs while it is alive, a post made after the quiesce is dropped, and the next test starts open with a new epoch. A quiesce that runs out fails the test that left the work and leaks the owners instead of freeing them under it, as quit does. A test that starts the runtime frees them before `AppRuntime::Shutdown`, as the app does. A test that stops the runtime and the UI mailbox (`AppRuntime::ShutdownUI`) before it frees anything, as the call-stack compositions do, leaves nothing to run and needs neither.
+
 Timeline marks (grep `[startup]`): `shutdown_begin`, `shutdown_window_hidden`,
 `shutdown_context` (call_active / connect_inflight / worker_queued),
 `shutdown_abort_call_media_done`, `shutdown_stop_mesh_done`, `shutdown_runtime_join_done`,

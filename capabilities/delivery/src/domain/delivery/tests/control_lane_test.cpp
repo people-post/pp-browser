@@ -13,6 +13,7 @@
 #include "common/chat/SystemControl.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
+#include "common/tests/TeardownLikeTheApp.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
@@ -120,9 +121,7 @@ protected:
   }
 
   void TearDown() override {
-    ASSERT_TRUE(AppRuntime::DrainWorkersThenUI());
-    lane_.reset();
-    outbox_.reset();
+    test::FreeLikeTheApp(lane_, outbox_); // they post raw `this` onto the workers
     AppRuntime::Shutdown();
     keys_.reset();
     psk_.reset();

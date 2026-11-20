@@ -7,6 +7,7 @@
 #include "gui/shell/DataModelHost.h"
 
 #include "common/runtime/AppRuntime.h"
+#include "common/tests/TeardownLikeTheApp.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/UserPreferences.h"
@@ -150,7 +151,7 @@ protected:
     if (context) {
       ui::RemoveContext(kContext);
     }
-    actions.reset();
+    test::FreeLikeTheApp(actions); // it posts raw `this` onto the workers and the UI mailbox
     ui::Shutdown();
     ui::SetRenderInterface(nullptr);
     AppRuntime::Shutdown();

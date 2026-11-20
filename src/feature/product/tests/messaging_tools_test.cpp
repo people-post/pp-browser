@@ -2,11 +2,13 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/product/MessagingTools.h"
 
+#include "common/tests/TeardownLikeTheApp.h"
+
 #include <gtest/gtest.h>
 
 TEST(MessagingToolsTest, FindingAFriendOffersSearchAndLeavesAdditionToTheSelectedRow) {
-  pbr::ConversationsHub hub;
-  pbr::ConversationsFacade facade(hub);
+  pbr::test::TestOwner<pbr::ConversationsHub> hub;
+  pbr::ConversationsFacade facade(*hub);
   pbr::ToolRegistry registry;
   pbr::RegisterMessagingTools(registry, facade);
 

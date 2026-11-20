@@ -11,6 +11,8 @@
 #include "lib/ai/ToolRegistry.h"
 #include "lib/storage/SqliteThreadStore.h"
 
+#include "common/tests/TeardownLikeTheApp.h"
+
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -172,8 +174,8 @@ TEST(ApprovalTapReactionTest, OnlyUnexpectedRefusalsRewriteAndNothingShowsARawCo
 
 // Every tool the permission policy can stop for (meta.mutating) reads in plain words, in both languages.
 TEST_P(ApprovalCardTest, EveryMutatingToolHasCopyAndNeverShowsItsName) {
-  ConversationsHub hub;
-  ConversationsFacade facade(hub);
+  test::TestOwner<ConversationsHub> hub;
+  ConversationsFacade facade(*hub);
   ToolRegistry registry;
   RegisterMessagingTools(registry, facade);
   RegisterSettingsTools(registry, SettingsToolPorts{});

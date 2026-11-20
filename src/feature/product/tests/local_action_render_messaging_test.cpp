@@ -7,6 +7,7 @@
 #include "lib/messaging/ModelFacingJson.h"
 
 #include "common/ValueJson.h"
+#include "common/tests/TeardownLikeTheApp.h"
 
 #include <gtest/gtest.h>
 
@@ -14,8 +15,8 @@ TEST(LocalActionRenderMessagingTest, OpenAndStartConversationRenderTheContactNam
   ASSERT_TRUE(pbr::LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   pbr::LocalizationService::Instance().SetPreferredLanguage("en");
 
-  pbr::ConversationsHub hub;
-  pbr::ConversationsFacade facade(hub);
+  pbr::test::TestOwner<pbr::ConversationsHub> hub;
+  pbr::ConversationsFacade facade(*hub);
   pbr::ToolRegistry registry;
   pbr::RegisterMessagingTools(registry, facade);
 
