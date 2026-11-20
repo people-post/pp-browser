@@ -15,6 +15,11 @@ rest theirs with defaults). **P1, the freeze, is in force since 2026-11-19:** no
 release 1 ships ([PHASES § P1](PHASES.md#p1--freeze)). **P2 started 2026-11-19** ([RC019](DECISIONS.md#rc019--p2-starts-one-main-the-relay-deploys-from-main-and-tags-no-protection-on-the-private-relay-repos)): since 2026-11-20 every repo has only `main` (`develop` deleted); the relay repos deploy qa from a push to `main` and prod from a `vX.Y.Z` tag that only Hongwei pushes. Regression suites (P2, [RC013](DECISIONS.md#rc013--regression-suites-in-tiers-picked-by-capability-run-remotely)): the app lab's scenarios are tagged by capability, `--tags` and `--changed` pick them, and lab smoke runs the `smoke` set after every merge to main ([TEST_STRATEGY § Lab smoke](../../docs/ops/TEST_STRATEGY.md#lab-smoke)); it and the nightly stay idle until the lab machine's variables and AWS role are set (O3); the relay's after-deploy smoke run is still to do. Since 2026-11-20 also branch protection, build tags, release-branch-only release tags (build once), the backport bot, release and incident records, pp-browser's runbooks and the lab's scenario tags ([PHASES § P2](PHASES.md#p2--one-main-release-branches)). Left in P2: the store promotion workflow (needs App Store Connect and Play API keys), the lab machine, and Leo's environments, backups and relay runbooks; then P3 (the list built). Until release 1 ships, [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) (clean cutovers) is the
 policy in force, but new breaking changes should already be weighed against the range rule.
 
+**P3, the signed-format cutover:** started 2026-11-20 on the integration branches `cutover/signed-formats` in
+pp-browser and pp-relay-apis ([CUTOVER_PLAN.md](CUTOVER_PLAN.md)): nothing of it lands on `main` before merge day. Done
+so far: pp-cpp-common 1.5.0 (`ExtArea`), pp-cpp-crypto 1.4.0 (`AlgId`, typed blobs, seeded-keygen goldens), pinned
+on main.
+
 ## Open questions for Kenneth and Leo
 
 [RC018](DECISIONS.md#rc018--the-release-1-answers-for-kenneths-and-leos-rows) part 2 holds the questions left to each of them. Every row has a default that stands until they
