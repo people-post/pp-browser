@@ -251,6 +251,9 @@ jobs:
           PP_BROWSER_BUILD_NUMBER: ${{ steps.ver.outputs.build }}
           # Empty (the tree's default) for a dev build; X.Y.Z for a release candidate.
           PP_BROWSER_RELEASE_VERSION: ${{ steps.ver.outputs.release_version }}
+          # About and diagnostics name the build (GenBuildInfo.cmake): the candidate tag, else internal/<build number>.
+          PP_BUILD_TAG: ${{ inputs.candidate_tag || steps.ver.outputs.tag }}
+          PP_BUILD_COMMIT: ${{ steps.ver.outputs.commit }}
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
           PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
           PP_RELAY_PEER_ID_PROD: ${{ vars.PP_RELAY_PEER_ID_PROD || secrets.PP_RELAY_PEER_ID_PROD }}

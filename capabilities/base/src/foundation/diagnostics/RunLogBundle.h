@@ -123,10 +123,13 @@ public:
    * next, at a record start), by about how far over it was plus a 10% margin, and it is gzipped again, up to 12
    * times; the newest records stay. A non-null `crash` (only when "Collect crash logs" is on) adds its records
    * (read once) after the logs, each under its own header, filtered by FilterCrashRecord and counted in the size;
-   * they are the last to be dropped. Fails when nothing fits. `now` names the file (local date).
+   * they are the last to be dropped. A non-empty `build` (the app's version, tag and commit) heads the archive as
+   * `==== build <build> ====` and is never dropped, so the archive names the build that sent it whatever the logs
+   * kept. Fails when nothing fits. `now` names the file (local date).
    */
   static Roe<RunLogArchive> Build(const std::string& log_path, const LogRetention& retention, std::uintmax_t max_bytes,
-                                  std::time_t now, const CrashRecordSource* crash = nullptr);
+                                  std::time_t now, const CrashRecordSource* crash = nullptr,
+                                  std::string_view build = {});
 };
 
 } // namespace pbr

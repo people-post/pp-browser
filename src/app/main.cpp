@@ -124,7 +124,8 @@ int main(int argc, char** argv) {
   pbr::PlatformHooks::Register();
 
   // Capture fatal signals / terminate into data_dir/diagnostics/crash_pending.txt.
-  pbr::CrashDump::Install(pbr::AppPaths::DataDir(), {pbr::kProductSlug, pbr::AppVersionString()});
+  pbr::CrashDump::Install(pbr::AppPaths::DataDir(),
+                          {pbr::kProductSlug, pbr::AppVersionString(), pbr::BuildCommit(), pbr::BuildTag()});
 
   if (log_file_enabled) {
     const std::string log_path = pbr::LogFile::Install(

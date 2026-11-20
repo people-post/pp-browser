@@ -615,6 +615,8 @@ Unauthenticated public POST (same org backend family as client-compat; no vault 
   "schema_version": 1,
   "product": "pp-browser",
   "version": "1.0.0-rc14",
+  "commit": "a1b2c3d4",
+  "tag": "v1.0.0-rc.3",
   "os": "linux",
   "reason": "signal 11",
   "fingerprint": "a1b2c3d4e5f60718",
@@ -626,6 +628,7 @@ Unauthenticated public POST (same org backend family as client-compat; no vault 
 
 | Field | Notes |
 |-------|--------|
+| `commit`, `tag` | The build's commit (8 hex, maybe `-dirty`, or `unknown`) and tag ([BUILD.md § Build identity](../ops/BUILD.md#build-identity-commit-and-tag)); each omitted when the dump has none. Not in the fingerprint |
 | `fingerprint` | Client FNV-1a of `version\|reason\|frames[]` for server clustering / dedupe |
 | `frames` | Raw addresses only (no symbols); capped |
 | `breadcrumb_tags` | Logger component names only — not chat content |

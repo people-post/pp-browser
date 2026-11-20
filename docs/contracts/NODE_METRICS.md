@@ -14,7 +14,7 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 
 | Name | Type | Labels | Meaning |
 |------|------|--------|---------|
-| `pp_build_info` | gauge | `version` | Always 1 |
+| `pp_build_info` | gauge | `version`, `commit`, `tag` | Always 1. `commit` / `tag`: the build's ([BUILD.md § Build identity](../ops/BUILD.md#build-identity-commit-and-tag)); `tag` empty when it has none |
 | `pp_node_capability` | gauge | `service` = `circuit_relay` \| `media_relay` \| `dht` | 1 while serving |
 | `pp_process_start_time_seconds` | gauge | | Unix seconds |
 | `pp_process_uptime_seconds` | gauge | | |

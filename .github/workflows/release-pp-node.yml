@@ -31,6 +31,10 @@ env:
   CCACHE_BASEDIR: ${{ github.workspace }}
   CCACHE_NOHASHDIR: true
   CCACHE_MAXSIZE: 2G
+  # The build names itself in its log and /metrics (src/foundation/product/GenBuildInfo.cmake). A manual run builds
+  # inputs.ref: empty here, so the commit (and a build tag on it) come from the checkout's git.
+  PP_BUILD_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+  PP_BUILD_COMMIT: ${{ github.event_name == 'push' && github.sha || '' }}
 
 jobs:
   guard:

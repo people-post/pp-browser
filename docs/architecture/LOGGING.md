@@ -114,7 +114,7 @@ Anything that may leave it goes through a **shareable line** (`common/ShareableL
 | `Metrics` | `MetricsLine("area.what")…Emit()` | timings, rates, device load |
 | `Diag` | `DiagLine("area.what")…Emit()` | what support needs to explain a failure |
 
-The one line of the developer log every launch writes about the build is `app.build version=… commit=… tag=…` (WARNING, so the desktop default level keeps it; `tag=-` when the build has none; `commit` ends in `-dirty` when tracked files were modified, `unknown` without git). It is not a shareable line because a commit is not a word of the source code; it holds no user data.
+The one line of the developer log every launch writes about the build is `app.build version=… commit=… tag=…` (WARNING, so the desktop default level keeps it; `tag=-` when the build has none; `commit` ends in `-dirty` when tracked files were modified, `unknown` without git). pp-node writes `pp-node.build version=… commit=… tag=…` at INFO (its default level) when it starts. It is not a shareable line because a commit is not a word of the source code; it holds no user data. Where the values come from: [BUILD.md § Build identity](../ops/BUILD.md#build-identity-commit-and-tag).
 
 Never emit them through a module logger. When a shareable line needs a detail it cannot hold (an error message, a reason text), log that detail to the developer log beside it. The list of events: [DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md).
 

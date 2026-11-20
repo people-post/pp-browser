@@ -10,6 +10,7 @@
 #include "mesh/reachability/punch/PunchTypes.h"
 #include "foundation/platform/os/OsProcessStats.h"
 #include "foundation/product/AppVersion.h"
+#include "foundation/product/BuildInfo.h"
 
 #include <chrono>
 #include <string>
@@ -154,7 +155,10 @@ void CollectMesh(MetricsRegistry& r, mesh::MeshHost& mesh) {
 
 ScopedMetricsCollector RegisterNodeMetrics(NodeBootstrapResult& boot) {
   MetricsRegistry& registry = MetricsRegistry::Global();
-  registry.Gauge("pp_build_info", "This build (value is always 1).", {{"version", AppVersionString()}}).Set(1);
+  registry
+      .Gauge("pp_build_info", "This build (value is always 1).",
+             {{"version", AppVersionString()}, {"commit", BuildCommit()}, {"tag", BuildTag()}})
+      .Set(1);
   registry.Gauge("pp_process_start_time_seconds", "Process start, Unix seconds.")
       .Set(UnixSeconds(std::chrono::system_clock::now()));
   const auto started = std::chrono::steady_clock::now();

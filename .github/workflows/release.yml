@@ -18,6 +18,9 @@ permissions:
 
 env:
   INSTALL_PREFIX: ${{ github.workspace }}/install
+  # The build names itself in About and its diagnostics (src/foundation/product/GenBuildInfo.cmake reads these).
+  PP_BUILD_TAG: ${{ github.ref_name }}
+  PP_BUILD_COMMIT: ${{ github.sha }}
 
 jobs:
   guard:

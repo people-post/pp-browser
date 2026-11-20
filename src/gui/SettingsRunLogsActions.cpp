@@ -8,6 +8,7 @@
 #include "foundation/diagnostics/RunLogBundle.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/DeploymentProfile.h"
+#include "foundation/product/BuildInfo.h"
 #include "foundation/product/DevTools.h"
 #include "gui/UserFeedback.h"
 #include "gui/shell/DataModelHost.h"
@@ -130,9 +131,10 @@ void SettingsRunLogsActions::Send() {
     // Crash records go along only while "Collect crash logs" is on, whatever is on disk.
     const FileCrashRecordSource crash_source(CrashDump::PendingPath(data_dir));
     const bool with_crash = RunLogPrefs::ReadCollectCrash(data_dir, true);
+    // The archive opens with this build ("1.0.0 · internal/141 · a1b2c3d4"), so a report names the build it came from.
     Roe<RunLogArchive> archive =
         RunLogBundle::Build(log_path, LogFile::EffectiveRetention(collect), kRunLogArchiveMaxBytes, std::time(nullptr),
-                            with_crash ? &crash_source : nullptr);
+                            with_crash ? &crash_source : nullptr, BuildIdentity());
     AppRuntime::PostUI([this, alive, collect, archive = std::move(archive)]() mutable {
       if (alive.lock()) {
         preparing_ = false;
