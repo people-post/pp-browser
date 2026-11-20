@@ -180,7 +180,9 @@ TEST_F(UpdateCardRenderTest, WithoutALinkTheCardKeepsItsLineAndOnlyLater) {
   Mount();
   const auto cards = Cards();
   ASSERT_EQ(cards.size(), 1u);
-  EXPECT_NE(cards[0]->GetInnerRML().find("A new version of PP is available. Please update it from where you installed PP."), std::string::npos);
+  EXPECT_NE(
+      cards[0]->GetInnerRML().find("A new version of PP is available. Please update it from where you installed PP."),
+      std::string::npos);
   const auto buttons = Buttons(cards[0]);
   ASSERT_EQ(buttons.size(), 1u);
   EXPECT_EQ(buttons[0]->GetInnerRML(), "Later");
