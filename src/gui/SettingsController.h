@@ -498,7 +498,7 @@ private:
   /** The app-foreground listener (AppLifecycle) that re-reads the banner style. */
   uint64_t foreground_listener_ = 0;
   NotificationHealth last_health_;
-  /** Cleared when this controller goes: a banner-style answer still in flight then does nothing. */
+  /** Cleared when this controller goes: a banner-style answer or a chooser's pop still in flight then does nothing. */
   std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
   std::optional<std::string> last_toast_section_;
   uint64_t last_toast_at_ms_ = 0;

@@ -1845,10 +1845,13 @@ void SettingsController::OnPickChoice(const std::string& id) {
   DataModelHost::Instance().Dirty("settings", "choice_options");
   const uint64_t generation = ++choice_pop_generation_;
   // A short beat so the check is seen landing; a thread, so the wait also ends while nothing else wakes the loop.
-  std::thread([this, generation]() {
+  // The beat can outlive this controller (the app's teardown, a test's fixture): `alive` is read on the UI thread,
+  // where this controller is destroyed, before `this` is touched. The generation alone cannot tell: a new controller
+  // at the same address counts its own generations, and one of them can match.
+  std::thread([this, alive = alive_, generation]() {
     std::this_thread::sleep_for(std::chrono::milliseconds(SettingsChoicePage::kPopDelayMs));
-    AppRuntime::PostUI([this, generation]() {
-      if (generation == choice_pop_generation_ && security_page_ == "choice") {
+    AppRuntime::PostUI([this, alive, generation]() {
+      if (*alive && generation == choice_pop_generation_ && security_page_ == "choice") {
         OnCloseSecurityPage();
       }
     });
