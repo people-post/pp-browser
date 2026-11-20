@@ -7,6 +7,7 @@
 
 #include <fstream>
 #include <filesystem>
+#include <optional>
 #include <sstream>
 #include "common/PbrCompat.h"
 
@@ -17,6 +18,21 @@ std::filesystem::path CursorPath(const std::string& profile_data_dir) {
   return std::filesystem::path(profile_data_dir) / "relay_inbox_cursor.json";
 }
 
+std::optional<Object> ReadCursorFile(const std::string& profile_data_dir) {
+  std::ifstream in(CursorPath(profile_data_dir));
+  if (!in) {
+    return std::nullopt;
+  }
+  // An oversized file reads as unparseable (PB-063).
+  const auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
+  return text ? TryParseObject(*text) : std::nullopt;
+}
+
+/** A newer app's file (INVENTORY S3): not read, and never written over. A file without a version is this one's. */
+bool IsNewer(const Object& root) {
+  return root.getNonNegInt("schema_version").value_or(kRelayInboxCursorSchemaVersion) > kRelayInboxCursorSchemaVersion;
+}
+
 } // namespace
 
 RelayInboxCursors LoadRelayInboxCursors(const std::string& profile_data_dir, const std::string& account_id) {
@@ -24,14 +40,8 @@ RelayInboxCursors LoadRelayInboxCursors(const std::string& profile_data_dir, con
   if (profile_data_dir.empty() || account_id.empty()) {
     return cursors;
   }
-  std::ifstream in(CursorPath(profile_data_dir));
-  if (!in) {
-    return cursors;
-  }
-  // An oversized file reads as unparseable (PB-063).
-  const auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
-  const auto root = text ? TryParseObject(*text) : std::nullopt;
-  if (!root) {
+  const auto root = ReadCursorFile(profile_data_dir);
+  if (!root || IsNewer(*root)) {
     return cursors;
   }
   auto stored_id = root->getString("account_id");
@@ -55,9 +65,13 @@ void SaveRelayInboxCursors(const std::string& profile_data_dir, const std::strin
   if (profile_data_dir.empty() || account_id.empty()) {
     return;
   }
+  if (const auto kept = ReadCursorFile(profile_data_dir); kept && IsNewer(*kept)) {
+    return; // a cursor not kept only fetches again what the inbox drops as already seen
+  }
   std::error_code ec;
   std::filesystem::create_directories(profile_data_dir, ec);
   Object root;
+  root.setJsonUInt("schema_version", kRelayInboxCursorSchemaVersion);
   root.set("account_id", account_id);
   if (!cursors.preferred.empty()) {
     root.set("cursor", cursors.preferred);

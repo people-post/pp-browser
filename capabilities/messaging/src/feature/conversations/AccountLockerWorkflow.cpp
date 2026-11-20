@@ -20,6 +20,8 @@ namespace pbr {
 namespace {
 
 constexpr const char kStateFile[] = "account_locker.json";
+/** `account_locker.json`'s schema (INVENTORY S3): a file without one is this one; a newer one is never written over. */
+constexpr uint64_t kStateSchemaVersion = 1;
 /** An exported locker file (M023 §6): the provider record as the relay stores it. */
 constexpr const char kLockerFileFormat[] = "pp-browser-account-locker-file-v1";
 
@@ -140,6 +142,10 @@ Roe<AccountLockerState> AccountLockerWorkflow::CurrentState() {
 
 void AccountLockerWorkflow::SetDataDir(std::string data_dir) {
   data_dir_ = std::move(data_dir);
+  {
+    std::lock_guard save(save_mutex_);
+    newer_state_file_ = false;
+  }
   if (data_dir_.empty()) {
     return;
   }
@@ -150,6 +156,13 @@ void AccountLockerWorkflow::SetDataDir(std::string data_dir) {
   }
   auto json = TryParseObject(*text);
   if (!json) {
+    return;
+  }
+  if (json->getNonNegInt("schema_version").value_or(kStateSchemaVersion) > kStateSchemaVersion) {
+    // A newer app's: not read, and never written over (this run keeps what it learns in memory).
+    log().warning << "account_locker.json is from a newer version of the app: not read, not written";
+    std::lock_guard save(save_mutex_);
+    newer_state_file_ = true;
     return;
   }
   std::lock_guard lock(mutex_);
@@ -240,7 +253,11 @@ void AccountLockerWorkflow::RaiseHighestSeen(const std::string& locker_id_hex, c
 void AccountLockerWorkflow::Save() {
   // One writer from snapshot to file, so an older snapshot cannot land after a newer one; I/O stays off mutex_.
   std::lock_guard save(save_mutex_);
+  if (newer_state_file_) {
+    return;
+  }
   Object json;
+  json.setJsonUInt("schema_version", kStateSchemaVersion);
   {
     std::lock_guard lock(mutex_);
     Object by_locker;

@@ -16,10 +16,13 @@ namespace pbr {
 
 /**
  * The content index on disk (CR024): `{profile}/object_index.db`, its own file beside the profile database. Opened
- * on first use and held open.
+ * on first use and held open. Its schema is its `user_version` (kSchemaVersion, also its floor): a file without one
+ * is taken as it is and marked, a newer one is refused and left alone.
  */
 class SqliteObjectIndex : public IObjectIndex {
 public:
+  static constexpr int kSchemaVersion = 1;
+
   explicit SqliteObjectIndex(std::string profile_dir);
   ~SqliteObjectIndex() override;
 

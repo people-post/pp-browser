@@ -44,6 +44,19 @@ Roe<void> PaymentPromiseStore::Load() {
   std::lock_guard lock(mutex_);
   rows_.clear();
   pending_inbound_.clear();
+  refused_.reset();
+  auto loaded = LoadUnlocked();
+  if (!loaded) {
+    // The file is kept as it is: this run's receipts live in memory only (a newer app's, or a file to look at).
+    rows_.clear();
+    pending_inbound_.clear();
+    refused_ = loaded.error().message;
+    log().warning << "payment_promises.json not read, so not written: " << *refused_;
+  }
+  return loaded;
+}
+
+Roe<void> PaymentPromiseStore::LoadUnlocked() {
   const std::string path = Path();
   if (!std::filesystem::exists(path)) {
     return {};
@@ -58,6 +71,11 @@ Roe<void> PaymentPromiseStore::Load() {
   if (!root) {
     return Error("Invalid payment_promises.json");
   }
+  const std::optional<uint64_t> version = root->getNonNegInt("schema_version");
+  if (version != kSchemaVersion) {
+    return Error("Unsupported schema version " + (version ? std::to_string(*version) : std::string("(none)")) +
+                 " in payment_promises.json");
+  }
   const Array* promises = root->getArray("promises");
   if (!promises) {
     return Error("payment_promises.json missing promises array");
@@ -65,7 +83,7 @@ Roe<void> PaymentPromiseStore::Load() {
   if (auto loaded = DecodeArrayInto(promises, rows_); !loaded) {
     return loaded.error();
   }
-  // Optional until schema_version bumps; missing key → empty pending.
+  // Optional; a missing key → nothing pending.
   if (auto pending = DecodeArrayInto(root->getArray("pending_inbound"), pending_inbound_); !pending) {
     return pending.error();
   }
@@ -73,6 +91,9 @@ Roe<void> PaymentPromiseStore::Load() {
 }
 
 Roe<void> PaymentPromiseStore::SaveUnlocked() const {
+  if (refused_) {
+    return Error("payment_promises.json was not read (" + *refused_ + "): not written over");
+  }
   auto encode_map = [](const std::unordered_map<std::string, PaymentPromise>& map) -> Roe<std::vector<Value>> {
     std::vector<Value> values;
     values.reserve(map.size());
@@ -101,7 +122,7 @@ Roe<void> PaymentPromiseStore::SaveUnlocked() const {
   }
 
   Object root;
-  root.setJsonUInt("schema_version", 2);
+  root.setJsonUInt("schema_version", kSchemaVersion);
   root.set("promises", ArrayValue(std::move(*promise_values)));
   root.set("pending_inbound", ArrayValue(std::move(*pending_values)));
   return AtomicFileWrite::Write(Path(), DumpJson(root, 2));

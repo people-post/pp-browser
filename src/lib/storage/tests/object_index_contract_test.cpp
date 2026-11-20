@@ -6,9 +6,11 @@
 #include "common/Utilities.h"
 
 #include <gtest/gtest.h>
+#include <sqlite3.h>
 
 #include <filesystem>
 #include <memory>
+#include <string>
 
 namespace pbr {
 namespace {
@@ -150,6 +152,73 @@ TEST(SqliteObjectIndexTest, RowsSurviveARestart) {
     EXPECT_FALSE(row->pinned);
     EXPECT_EQ(row->created_at_ms, 100);
   }
+  std::error_code ec;
+  std::filesystem::remove_all(dir, ec);
+}
+
+int UserVersion(const std::filesystem::path& path) {
+  sqlite3* db = nullptr;
+  int version = -1;
+  if (sqlite3_open_v2(path.string().c_str(), &db, SQLITE_OPEN_READONLY, nullptr) == SQLITE_OK) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, "PRAGMA user_version;", -1, &stmt, nullptr) == SQLITE_OK &&
+        sqlite3_step(stmt) == SQLITE_ROW) {
+      version = sqlite3_column_int(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+  }
+  sqlite3_close(db);
+  return version;
+}
+
+void SetUserVersion(const std::filesystem::path& path, const int version) {
+  sqlite3* db = nullptr;
+  ASSERT_EQ(sqlite3_open(path.string().c_str(), &db), SQLITE_OK);
+  const std::string sql = "PRAGMA user_version = " + std::to_string(version) + ";";
+  EXPECT_EQ(sqlite3_exec(db, sql.c_str(), nullptr, nullptr, nullptr), SQLITE_OK);
+  sqlite3_close(db);
+}
+
+// INVENTORY S3: object_index.db says its schema (`user_version` 1). A file from before it said one (0) is read as the
+// current schema, its rows kept, and marked; a newer one is refused and left as it was.
+TEST(SqliteObjectIndexTest, TheFileSaysItsVersionAndAnUnversionedOneIsTakenAsItIs) {
+  const auto dir = std::filesystem::temp_directory_path() / ("pp_object_index_version_" + util::GenerateUuid());
+  std::filesystem::create_directories(dir);
+  const auto path = dir / "object_index.db";
+  {
+    SqliteObjectIndex index(dir.string());
+    ASSERT_TRUE(index.Upsert(Meta(CasRealm::Private, 1, 100)));
+  }
+  EXPECT_EQ(UserVersion(path), SqliteObjectIndex::kSchemaVersion);
+  SetUserVersion(path, 0);
+  {
+    SqliteObjectIndex reopened(dir.string());
+    auto row = reopened.Lookup(CasRealm::Private, Id(1));
+    ASSERT_TRUE(row) << row.error().message;
+    EXPECT_TRUE(row->has_value()) << "its rows are kept";
+  }
+  EXPECT_EQ(UserVersion(path), SqliteObjectIndex::kSchemaVersion) << "and it says its version from now on";
+  std::error_code ec;
+  std::filesystem::remove_all(dir, ec);
+}
+
+TEST(SqliteObjectIndexTest, ANewerFileIsRefusedAndLeftAlone) {
+  const auto dir = std::filesystem::temp_directory_path() / ("pp_object_index_newer_" + util::GenerateUuid());
+  std::filesystem::create_directories(dir);
+  const auto path = dir / "object_index.db";
+  {
+    SqliteObjectIndex index(dir.string());
+    ASSERT_TRUE(index.Upsert(Meta(CasRealm::Private, 1, 100)));
+  }
+  SetUserVersion(path, SqliteObjectIndex::kSchemaVersion + 1);
+  {
+    SqliteObjectIndex reopened(dir.string());
+    auto row = reopened.Lookup(CasRealm::Private, Id(1));
+    ASSERT_FALSE(row);
+    EXPECT_NE(row.error().message.find("newer"), std::string::npos) << row.error().message;
+    EXPECT_FALSE(reopened.Upsert(Meta(CasRealm::Private, 2, 200))) << "nothing is written to it";
+  }
+  EXPECT_EQ(UserVersion(path), SqliteObjectIndex::kSchemaVersion + 1);
   std::error_code ec;
   std::filesystem::remove_all(dir, ec);
 }

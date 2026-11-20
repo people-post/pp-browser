@@ -53,6 +53,10 @@ Roe<void> AttachmentSuppressionStore::LoadUnlocked() const {
   if (!root) {
     return Error("Invalid attachment suppression store");
   }
+  // No version: a file from before it said one, today's. A newer app's is refused, so nothing writes over it.
+  if (root->getNonNegInt("schema_version").value_or(kSchemaVersion) > kSchemaVersion) {
+    return Error("attachment_suppressions.json is from a newer version of the app");
+  }
   if (const Object* threads = root->getObject("threads")) {
     for (const auto& [thread_id, hashes_value] : threads->fields()) {
       const Array* hashes = asArray(hashes_value);
@@ -88,6 +92,7 @@ Roe<void> AttachmentSuppressionStore::SaveUnlocked() const {
     threads.set(thread_id, ArrayValue(std::move(array)));
   }
   Object root;
+  root.setJsonUInt("schema_version", kSchemaVersion);
   root.set("threads", ObjectValue(std::move(threads)));
 
   // Replaced whole and synced: what the user deleted stays deleted after a crash.

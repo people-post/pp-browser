@@ -1,6 +1,7 @@
 #include "lib/storage/SqlitePostStore.h"
 
 #include "lib/posts/PostEntry.h"
+#include "lib/storage/SqliteChatStoreGate.h"
 
 #include <sqlite3.h>
 
@@ -120,6 +121,10 @@ SqlitePostStore::SqlitePostStore(std::string profile_db_path) : profile_db_path_
 }
 
 Roe<SqlitePostStore::Db> SqlitePostStore::Open() const {
+  // profile.db is the chat store's: refused before unlock, and while it is shut (newer, not upgraded) — INVENTORY S4.
+  if (auto gate = chat_store_gate::RequireOpen(profile_db_path_); !gate) {
+    return gate.error();
+  }
   sqlite3* raw = nullptr;
   if (sqlite3_open(profile_db_path_.c_str(), &raw) != SQLITE_OK) {
     sqlite3_close(raw);

@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <optional>
@@ -129,6 +130,31 @@ TEST(InitiationBillingStoreTest, AFileBelowTheFloorIsRefused) {
     InitiationBillingStore store(dir.string());
     EXPECT_FALSE(store.Load()) << text;
     EXPECT_FALSE(store.IsOpen("account:ann")) << text;
+  }
+  std::filesystem::remove_all(dir);
+}
+
+// INVENTORY S2: a file the store could not read — a newer app's here — is never written over: this run's rows live
+// in memory, every save is refused, and the file stays as it was.
+TEST(InitiationBillingStoreTest, ANewerFileIsRefusedAndNeverWrittenOver) {
+  const auto dir = std::filesystem::temp_directory_path() /
+                   ("pp_initiation_billing_newer_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  const std::string newer = R"({"schema_version":3,"peers":{"account:ann":{"state":"open"}},"later":true})";
+  {
+    std::ofstream out(dir / "initiation_billing.json");
+    out << newer;
+  }
+  InitiationBillingStore store(dir.string());
+  EXPECT_FALSE(store.Load());
+  EXPECT_FALSE(store.MarkOpen("account:bob")) << "the save is refused";
+  EXPECT_TRUE(store.IsOpen("account:bob")) << "the change holds for this run";
+  EXPECT_FALSE(store.Save());
+  {
+    std::ifstream in(dir / "initiation_billing.json");
+    const std::string on_disk((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(on_disk, newer);
   }
   std::filesystem::remove_all(dir);
 }
