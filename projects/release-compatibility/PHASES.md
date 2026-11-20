@@ -33,20 +33,27 @@ Written up in [INVENTORY.md](INVENTORY.md) (2026-11-19); its work list is agreed
   (pp-browser, pp-cpp-*, pp-ledger; pp-relay-apis with Leo), all repos in the same week; P2's own work lands on main.
   Done 2026-11-20 in all ten repos (pp-browser, the five pp-cpp-*, pp-ledger, pp-ledger-apps, pp-relay-apis,
   pp-relay-infra-ansible); the relay repos deploy qa from main and prod from `v*` tags. Started 2026-11-19 ([RC019](DECISIONS.md#rc019--p2-starts-one-main-the-relay-deploys-from-main-and-tags-no-protection-on-the-private-relay-repos)): the relay repos move once their deploys do.
-- [ ] Branch protection on main in every repo except pp-relay-apis and pp-relay-infra-ansible ([RC019](DECISIONS.md#rc019--p2-starts-one-main-the-relay-deploys-from-main-and-tags-no-protection-on-the-private-relay-repos) item 3): one approval from someone other than the author, code owners on their
-  paths.
-- [ ] Every internal build tagged by its workflow: TestFlight, Android and desktop test builds, release candidates,
-  internal pp-node builds, the relay's dev deploys.
-- [ ] Release workflows take release tags only from `release/*` branches, build once, and promote the artifact.
+- [x] Branch protection on main in every repo except pp-relay-apis and pp-relay-infra-ansible ([RC019](DECISIONS.md#rc019--p2-starts-one-main-the-relay-deploys-from-main-and-tags-no-protection-on-the-private-relay-repos) item 3): one approval from someone other than the author, code owners on their
+  paths. Done 2026-11-20: main in the eight repos (admins may bypass; CI checks required, pp-browser's one `required`
+  check); pp-browser's `release/**` ruleset (one approval, the `required` check, no force push or deletion).
+- [x] Every internal build tagged by its workflow: TestFlight, Android and desktop test builds, release candidates,
+  internal pp-node builds, the relay's dev deploys. Done 2026-11-20 (`internal/<n>`, `rc-build/<n>`,
+  `node-internal/<date>.<n>`, relay `dev/<date>.<n>`); there is no Android or desktop test build people install yet.
+- [x] Release workflows take release tags only from `release/*` branches, build once, and promote the artifact.
+  Done 2026-11-20: app and pp-node (`release/app-X.Y`, `release/node-X.Y`), relay (`release/X.Y`, Hongwei's tags).
 - [ ] GitHub environments: main → dev; release candidates → staging; only `v*` tags → production, behind an approval.
-- [ ] The backport bot ([DESIGN § Release lines](DESIGN.md#release-lines-are-first-class), RC014): a label opens a PR
+  So far: the relay's main → qa and `v*` tags → prod (only Hongwei); dev and staging wait for Environments below.
+- [x] The backport bot ([DESIGN § Release lines](DESIGN.md#release-lines-are-first-class), RC014): a label opens a PR
   to that exact release branch, running its checks and needing approval; trailer and link to the original kept;
   conflicts reported as a draft PR or comment; an exception label for release-branch-only fixes; branch closing
-  (open backports closed with a note, the branch protected and kept).
+  (open backports closed with a note, the branch protected and kept). Done 2026-11-20 in pp-browser and pp-relay-apis.
 - [ ] App builds ([DESIGN § App builds](DESIGN.md#app-builds-internal-external-store)): release-candidate tags build
   and upload automatically; the promotion workflow (App Store Connect and Play APIs, approval-gated, refuses non-candidates,
-  tags `vX.Y.Z`); phased store releases; the app shows its tag and commit in About and diagnostics.
-- [ ] The check levels in CI ([DESIGN § Checks by level](DESIGN.md#checks-by-level)).
+  tags `vX.Y.Z`); phased store releases; the app shows its tag and commit in About and diagnostics. So far:
+  candidates build and upload, and the app names its build; the promotion workflow (needs App Store Connect and
+  Play API keys), phased releases and an Android build number (`versionCode` is 1) are left.
+- [ ] The check levels in CI ([DESIGN § Checks by level](DESIGN.md#checks-by-level)). So far: PRs to a release
+  branch build every platform and run every test; the frozen-data tests (P3) and the mixed-version lab run are left.
 - [ ] Environments ([DESIGN § Environments](DESIGN.md#environments), Leo's infrastructure): dev created (relay,
   its PeerId, secrets, tables); qa becomes staging (takes release candidates only; Me → Network shows "Staging", the
   config value stays `qa`); prod canary deploys with alarms and automatic rollback; pp-node dev and staging tiers;
@@ -55,14 +62,18 @@ Written up in [INVENTORY.md](INVENTORY.md) (2026-11-19); its work list is agreed
   recovery on every state table; backups before each prod release and rollback in the workflows; the locked vault
   copy in another account; the identity key and Support seed replicated and escrowed; the removal log; the restore
   runbook and a first restore rehearsal on staging.
-- [ ] Release and incident records ([DESIGN § Release checklist](DESIGN.md#release-checklist), [§ Runbooks](DESIGN.md#runbooks)):
+- [x] Release and incident records ([DESIGN § Release checklist](DESIGN.md#release-checklist), [§ Runbooks](DESIGN.md#runbooks)):
   the `release` and `incident` issue templates; the workflow that opens a release issue when a product's release branch is cut.
+  Done 2026-11-20 in pp-browser and pp-relay-apis.
 - [ ] The runbooks needed before release 1, each a page in `docs/ops/runbooks/` with its steps as workflow runs:
-  release, hotfix, app incident (pp-browser); relay rollback, restore, key compromise (pp-relay-apis, Leo).
+  release, hotfix, app incident (pp-browser); relay rollback, restore, key compromise (pp-relay-apis, Leo). So far:
+  pp-browser's three (2026-11-20); the relay's are Leo's.
 - [ ] Regression suites ([DESIGN § Regression suites](DESIGN.md#regression-suites)): the lab machine set up (its repo
   variables and AWS role) so the nightly runs; scenarios tagged by capability, `--tags` and `--changed`; the lab-smoke
-  set on every merge to main; the after-deploy smoke run in the relay's deploys.
-- [ ] The PR template and `docs/ops/RELEASE.md` say what a release branch takes, that fixes land on main first, and
+  set on every merge to main; the after-deploy smoke run in the relay's deploys. So far: tags, `--tags`,
+  `--changed` and lab-smoke on main (2026-11-20; idle until the lab machine is set up); the lab machine and the
+  relay's after-deploy smoke are left.
+- [x] The PR template and `docs/ops/RELEASE.md` say what a release branch takes, that fixes land on main first, and
   how a backport is asked for.
 
 ## P3 — Release 1 built
