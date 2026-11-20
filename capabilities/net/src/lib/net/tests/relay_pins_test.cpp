@@ -55,7 +55,9 @@ TEST(RelayIdentityTest, AnAnswerIsTakenOnlyWhenTheKeyDerivesThePeerId) {
   Object wrong = TryParseObject(IdentityBody(key)).value();
   wrong.set("peer_id", std::string(kPeerB));
   EXPECT_FALSE(ParseRelayIdentity(DumpJson(wrong))) << "a PeerId its key does not derive";
-  EXPECT_FALSE(ParseRelayIdentity(IdentityBody(key, 2))) << "a newer schema";
+  // T15: a newer schema_version is read for the fields this reader knows; an older (or absent) one is not ours.
+  EXPECT_TRUE(ParseRelayIdentity(IdentityBody(key, 2))) << "a newer schema: the fields we know still hold";
+  EXPECT_FALSE(ParseRelayIdentity(IdentityBody(key, 0))) << "no schema we know";
   EXPECT_FALSE(ParseRelayIdentity(IdentityBody(key, 1, "ed25519")));
   Object short_key = TryParseObject(IdentityBody(key)).value();
   short_key.set("public_key_b64", Base64Encode(ByteVector(32, 0x42)));
@@ -319,6 +321,18 @@ TEST_F(RelayPinsTest, UpgradeRequiredGoesToTheOwnerEachTime) {
   audience->Refused("client_upgrade_required");
   audience->Refused("client_upgrade_required");
   EXPECT_EQ(too_old_, (std::vector<std::string>{kA, kA}));
+  EXPECT_TRUE(lost_.empty());
+  EXPECT_TRUE(fetched_.empty()) << "its identity is not asked again";
+}
+
+// U11: a relay older than this app goes to its own owner hook, never to "this app is too old".
+TEST_F(RelayPinsTest, ARelayOlderThanThisAppGoesToItsOwnHook) {
+  std::vector<std::string> outdated;
+  pins_->SetOnRelayOutdated([&outdated](const std::string& origin) { outdated.push_back(origin); });
+  ASSERT_TRUE(pins_->Expect(kA, kPeerA));
+  pins_->AudienceFor(kA)->Refused("relay_upgrade_required");
+  EXPECT_EQ(outdated, std::vector<std::string>{kA});
+  EXPECT_TRUE(too_old_.empty());
   EXPECT_TRUE(lost_.empty());
   EXPECT_TRUE(fetched_.empty()) << "its identity is not asked again";
 }

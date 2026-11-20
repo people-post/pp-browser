@@ -31,7 +31,7 @@ public:
   void SetAudience(std::shared_ptr<IRelayAudience> audience) { audience_ = std::move(audience); }
 
   Roe<void> Put(const std::string& account_id, const LockerRecord& record,
-                std::optional<LockerPutRefusal>* refused = nullptr) override;
+                std::optional<LockerPutRefused>* refused = nullptr) override;
   Roe<std::optional<LockerRecord>> Get(const std::string& locker_id) override;
 
 private:

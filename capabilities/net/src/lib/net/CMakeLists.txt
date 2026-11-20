@@ -14,6 +14,7 @@ pp_browser_add_lib_library(pp_lib_net
     RelayInboxCursor.cpp
     RelayOrigins.cpp
     RelayPins.cpp
+    RemoteSwitches.cpp
     RelayPinStore.cpp
     RelaySignBytes.cpp
     RegistrationSignPayload.cpp

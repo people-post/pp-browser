@@ -4,6 +4,9 @@
 #include "foundation/error/AppError.h"
 #include "lib/net/RelaySignBytes.h"
 
+#include <algorithm>
+#include <iterator>
+
 namespace pbr {
 
 Roe<std::string> FixedRelayAudience::PeerId() {
@@ -73,6 +76,17 @@ std::optional<Error> NoteRelayRefusal(IRelayAudience* audience, const long statu
     return AppError::Auth(Err::Auth::ClientUpgradeRequired,
                           "Relay refused the command: this app is too old for it (client_upgrade_required)");
   }
+  if (status == 400 && (code == kRelayUpgradeRequiredCode || code == kUnsupportedSignVersionCode)) {
+    if (audience) {
+      audience->Refused(kRelayUpgradeRequiredCode);
+    }
+    return AppError::Auth(Err::Auth::RelayUpgradeRequired,
+                          "Relay refused the command: the relay is older than this app (" + code + ")");
+  }
+  if (status == 400 && std::find(std::begin(kAccountCardRefusalCodes), std::end(kAccountCardRefusalCodes), code) !=
+                           std::end(kAccountCardRefusalCodes)) {
+    return AppError::Auth(Err::Auth::AccountCardRefused, "Relay refused the account card (" + code + ")");
+  }
   if ((status == 403 || status == 404) && (code == kNotRegisteredCode || code == kRegistrationExpiredCode)) {
     if (audience) {
       audience->Refused(code);
@@ -82,9 +96,22 @@ std::optional<Error> NoteRelayRefusal(IRelayAudience* audience, const long statu
   return std::nullopt;
 }
 
+namespace {
+bool IsAuth(const Error& error, const Err::Auth code) {
+  return AppError::CategoryOf(error) == ErrorCategory::Auth && static_cast<Err::Auth>(error.code) == code;
+}
+} // namespace
+
 bool IsClientUpgradeRequired(const Error& error) {
-  return AppError::CategoryOf(error) == ErrorCategory::Auth &&
-         static_cast<Err::Auth>(error.code) == Err::Auth::ClientUpgradeRequired;
+  return IsAuth(error, Err::Auth::ClientUpgradeRequired);
+}
+
+bool IsRelayUpgradeRequired(const Error& error) {
+  return IsAuth(error, Err::Auth::RelayUpgradeRequired);
+}
+
+bool IsPermanentRelayRefusal(const Error& error) {
+  return IsClientUpgradeRequired(error) || IsRelayUpgradeRequired(error) || IsAuth(error, Err::Auth::WrongAudience);
 }
 
 } // namespace pbr

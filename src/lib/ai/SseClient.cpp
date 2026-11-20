@@ -138,6 +138,9 @@ Roe<SseOutcome> SseClient::Post(const SseRequest& request, const std::function<v
     sha_header = "x-amz-content-sha256: " + Sha256Hex(request.json_body);
     headers = curl_slist_append(headers, sha_header.c_str());
   }
+  for (const auto& [name, value] : request.headers) {
+    headers = curl_slist_append(headers, (name + ": " + value).c_str()); // curl copies the string
+  }
 
   log().debug << "POST " << request.url;
   curl_easy_setopt(curl, CURLOPT_URL, request.url.c_str());

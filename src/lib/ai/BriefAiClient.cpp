@@ -6,6 +6,7 @@
 #include "lib/ai/SseClient.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/error/AppError.h"
+#include "foundation/tls/RelayClientHeader.h"
 
 #include <algorithm>
 #include "common/PbrCompat.h"
@@ -183,6 +184,7 @@ Roe<BriefAiOutcome> BriefAiClient::Stream(const BriefAiRequest& request,
     sse.bearer_token = config_.api_key.Reveal();
   }
   sse.json_body = BuildRequestJson(request);
+  sse.headers = WithRelayClientHeader(); // the relay's AI gateway counts versions (O1)
   log().debug << "stream " << sse.url;
 
   std::optional<BriefAiOutcome> terminal;

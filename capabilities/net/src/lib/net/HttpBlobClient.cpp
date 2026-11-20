@@ -1,4 +1,5 @@
 #include "lib/net/HttpBlobClient.h"
+#include "foundation/tls/RelayClientHeader.h"
 
 #include "foundation/error/AppError.h"
 #include "lib/net/HttpClient.h"
@@ -162,16 +163,17 @@ Roe<HttpResponse> HttpBlobClient::PostSigned(const std::string& path, Object bod
     return signed_call.error();
   }
   PutSignedRelayCommand(body, *signed_call);
-  auto response = HttpClient::Post(base_url_ + path, DumpJson(body), {{"Content-Type", "application/json"}},
-                                   kMaxHttpClientBodyBytes, {}, public_only_);
+  auto response =
+      HttpClient::Post(base_url_ + path, DumpJson(body), WithRelayClientHeader({{"Content-Type", "application/json"}}),
+                       kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
   if (response->status_code < 200 || response->status_code >= 300) {
     // wrong_audience, not_registered: the audience hears them, the blob error says the rest as before; an app too old
-    // for the relay is told so.
+    // for the relay, or a relay too old for the app, is told so.
     if (auto typed = NoteRelayRefusal(audience_.get(), response->status_code, response->body);
-        typed && IsClientUpgradeRequired(*typed)) {
+        typed && (IsClientUpgradeRequired(*typed) || IsRelayUpgradeRequired(*typed))) {
       return *typed;
     }
   }

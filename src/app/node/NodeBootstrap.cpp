@@ -14,6 +14,9 @@
 #include "foundation/data/ProfileRegistry.h"
 #include "foundation/data/ProfileManifest.h"
 #include "foundation/tls/ContentSha256Policy.h"
+#include "foundation/tls/RelayClientHeader.h"
+#include "foundation/platform/Platform.h"
+#include "lib/net/ClientCompat.h"
 #include "domain/node/NodeMeshServices.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/runtime/AppRuntime.h"
@@ -40,6 +43,8 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   DefaultNodeRegistrationPeerId(config->registration, BriefRelayBaseUrlFor(CompiledDefaultOrigin()),
                                 CompiledDefaultRelayPeerId());
   SetSendContentSha256(config->relay_content_sha256);
+  // Every relay call names this build (O1): its registration, heartbeat and directory calls.
+  SetRelayClientHeader(RelayClientHeaderValue("pp-node", AppVersionString(), Platform::OsName()));
   config->mesh.node_enabled = true;
   NormalizeMeshConfig(config->mesh);
 

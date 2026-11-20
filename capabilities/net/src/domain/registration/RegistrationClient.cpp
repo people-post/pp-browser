@@ -4,6 +4,7 @@
 #include "foundation/error/AppError.h"
 #include "lib/net/RegistrationSignPayload.h"
 #include "lib/net/RelayOrigins.h"
+#include "common/Logger.h"
 #include "common/Utilities.h"
 
 #include "common/PbrCompat.h"
@@ -132,6 +133,12 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
   finished->registered_backend_url = NormalizeRegistrationBackend(registration.BaseUrl());
   if (!finished->account_card_status.empty()) {
     finished->account_card_issued_at = CardIssuedAt(publish); // the relay holds it, or a newer one (stale)
+  }
+  if (AccountCardStale(*finished)) {
+    // Not sent again (the relay keeps the newest): this device's card is older than another device's (X12).
+    logging::getLogger("Registration").warning
+        << "registration at " << NormalizeRegistrationBackend(registration.BaseUrl())
+        << ": the relay keeps a newer account card than this device's (account_card_status stale)";
   }
   return finished;
 }

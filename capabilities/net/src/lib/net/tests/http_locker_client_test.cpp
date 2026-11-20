@@ -1,6 +1,7 @@
 // The relay half of a locker write (multi-device M023 s3): what the relay verifies.
 #include "lib/net/HttpLockerClient.h"
 
+#include "common/tests/ScriptedHttpServer.h"
 #include "foundation/crypto/CryptoUtil.h"
 
 #include <gtest/gtest.h>
@@ -37,6 +38,32 @@ TEST(HttpLockerClientTest, WithoutASignerAnAudienceOrAUrlNothingIsSent) {
   HttpLockerClient no_audience("http://127.0.0.1:9");
   no_audience.SetAuthSigner([](const std::vector<uint8_t>&) -> Roe<std::string> { return std::string("sig"); });
   EXPECT_FALSE(no_audience.Put("account:alice", LockerRecord{}));
+}
+
+// X12: a 409 names the version the relay holds (SPECS § lockers/put), so the next write can go above it.
+TEST(HttpLockerClientTest, ANotNewerAnswerNamesTheStoredVersion) {
+  test::ScriptedHttpServer server;
+  std::string body = R"({"error":"A newer or equal version is stored","version":1700000000999})";
+  server.SetHandler([&body](const test::ScriptedHttpServer::Request&) {
+    return test::ScriptedHttpServer::Reply{.status = 409, .headers = {}, .body = body};
+  });
+  HttpLockerClient client(server.Origin());
+  client.SetAudience(std::make_shared<FixedRelayAudience>(kAudience));
+  client.SetAuthSigner([](const std::vector<uint8_t>&) -> Roe<std::string> { return std::string("sig"); });
+  LockerRecord record;
+  record.locker_id = std::string(64, 'a');
+  record.version = 5;
+  std::optional<LockerPutRefused> refused;
+  EXPECT_FALSE(client.Put("account:alice", record, &refused));
+  ASSERT_TRUE(refused);
+  EXPECT_EQ(refused->reason, LockerPutRefusal::NotNewer);
+  EXPECT_EQ(refused->stored_version, 1700000000999u);
+
+  body = R"({"error":"A newer or equal version is stored"})";
+  refused.reset();
+  EXPECT_FALSE(client.Put("account:alice", record, &refused));
+  ASSERT_TRUE(refused);
+  EXPECT_EQ(refused->stored_version, 0u) << "a relay that does not say";
 }
 
 } // namespace

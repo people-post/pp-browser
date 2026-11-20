@@ -2,6 +2,7 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/net/ClientCompat.h"
+#include "lib/net/RemoteSwitches.h"
 #include "foundation/product/AppVersion.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/Platform.h"
@@ -19,7 +20,41 @@ ClientCompatController::ClientCompatController() {
   redirectLogger("ClientCompat");
 }
 
+ClientCompatController::~ClientCompatController() {
+  StopRecheckTimer();
+}
+
+void ClientCompatController::EnsureRecheckTimer() {
+  if (recheck_timer_id_ != 0 || !AppRuntime::IsRunning()) {
+    return;
+  }
+  std::weak_ptr<ClientCompatController*> alive = alive_;
+  recheck_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(std::chrono::milliseconds(kRecheckTimerMs), [alive]() {
+    AppRuntime::PostUI([alive]() {
+      if (const auto held = alive.lock()) {
+        (*held)->OnRecheckTimer();
+      }
+    });
+  });
+}
+
+void ClientCompatController::StopRecheckTimer() {
+  if (recheck_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(recheck_timer_id_);
+    recheck_timer_id_ = 0;
+  }
+}
+
+void ClientCompatController::OnRecheckTimer() {
+  if (ClientCompatRecheckDue(fetched_at_unix_, NowUnix(), kClientCompatTimerRecheckSeconds)) {
+    (void)CheckAsync(CompatCheck::Forced);
+  }
+}
+
 void ClientCompatController::BindCompatPorts(MessagingCompatPorts ports) {
+  if (!ports.messaging_initialized) {
+    StopRecheckTimer(); // unbound: nothing to check against (the next bind's first check arms it again)
+  }
   if (compat_ports_.watch_upgrade_required) {
     compat_ports_.watch_upgrade_required(nullptr);
   }
@@ -56,6 +91,7 @@ bool ClientCompatController::CheckAsync(const CompatCheck mode) {
   std::shared_ptr<IClientCompatClient> client = compat_ports_.client_compat ? compat_ports_.client_compat() : nullptr;
   const std::string profile_dir = compat_ports_.profile_data_dir ? compat_ports_.profile_data_dir() : std::string{};
   check_in_flight_ = true;
+  EnsureRecheckTimer();
   AppRuntime::PostWorkerAndReplyOnUI<ClientCompatResolution>(
       WorkerLane::Normal,
       [client, profile_dir, mode, now = NowUnix()]() {
@@ -113,6 +149,11 @@ void ClientCompatController::OnOrgRelayRequiresUpgrade() {
 
 void ClientCompatController::ApplyDocument(const ClientCompatDocument& doc) {
   document_ = doc;
+  RemoteSwitches::Load(doc.switches); // the run's first document only (O2)
+  if (ClientCompatFloorUnreadable(doc) && !floor_unreadable_logged_) {
+    floor_unreadable_logged_ = true;
+    log().warning << "client-compat min_client_version is not a version; no floor applies: " << doc.min_client_version;
+  }
   last_action_ = DecideCompatUiAction(AppVersionString(), doc, relay_requires_upgrade_);
   PresentAction(last_action_, doc);
   PublishSupport(doc);

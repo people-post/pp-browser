@@ -1,4 +1,5 @@
 #include "lib/net/OrgBackendClientsImpl.h"
+#include "foundation/tls/RelayClientHeader.h"
 
 #include "lib/net/RelayOrigins.h"
 
@@ -59,8 +60,9 @@ Roe<std::string> HttpPushDeviceClient::PostDevice(const char* path, const PushDe
   body.set("device_id", registration.device_id);
   body.set(last_key, last);
   PutSignedRelayCommand(body, *signed_call);
-  const auto response = HttpClient::Post(base_url_ + path, DumpJson(body), {{"Content-Type", "application/json"}},
-                                         kMaxHttpClientBodyBytes, {}, public_only_);
+  const auto response =
+      HttpClient::Post(base_url_ + path, DumpJson(body), WithRelayClientHeader({{"Content-Type", "application/json"}}),
+                       kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -198,7 +200,7 @@ Roe<std::vector<mesh::DirectoryHit>> HttpDirectoryClient::SearchPeople(const std
     return Error("Directory base_url not configured");
   }
   const std::string url = base_url_ + "/v1/search?q=" + EncodePathSegment(query); // free text from the user
-  const auto response = HttpClient::Get(url, {}, kMaxHttpClientBodyBytes, timeout_, public_only_);
+  const auto response = HttpClient::Get(url, WithRelayClientHeader(), kMaxHttpClientBodyBytes, timeout_, public_only_);
   if (!response) {
     return response.error();
   }
@@ -285,7 +287,7 @@ Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& 
     return Error("account_id must start with account:");
   }
   const std::string url = base_url_ + "/v1/users/by-account/" + EncodePathSegment(account_id);
-  const auto response = HttpClient::Get(url, {}, kMaxHttpClientBodyBytes, timeout_, public_only_);
+  const auto response = HttpClient::Get(url, WithRelayClientHeader(), kMaxHttpClientBodyBytes, timeout_, public_only_);
   if (!response) {
     return response.error();
   }
@@ -314,8 +316,8 @@ Roe<std::optional<StoredAccountRow>> LookupStoredAccount(const std::string& rela
   if (public_only && !IsPublicRelayOrigin(relay_base_url)) {
     return Error("Stored account lookup: the relay is not on a public host");
   }
-  const auto response = HttpClient::Get(relay_base_url + "/v1/users/by-account/" + EncodePathSegment(account_id), {},
-                                        kMaxHttpClientBodyBytes, {}, public_only);
+  const auto response = HttpClient::Get(relay_base_url + "/v1/users/by-account/" + EncodePathSegment(account_id),
+                                        WithRelayClientHeader(), kMaxHttpClientBodyBytes, {}, public_only);
   if (!response) {
     return response.error();
   }
@@ -454,7 +456,8 @@ Roe<std::vector<mesh::MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
   if (base_url_.empty()) {
     return Error("Directory base_url not configured");
   }
-  const auto response = HttpClient::Get(base_url_ + "/v1/mesh/nodes", {}, kMaxHttpClientBodyBytes, {}, public_only_);
+  const auto response =
+      HttpClient::Get(base_url_ + "/v1/mesh/nodes", WithRelayClientHeader(), kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -500,9 +503,9 @@ Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(
     body.set("multiaddrs", ArrayValue(std::move(addrs)));
   }
   ApplyRegistrationPublishOpts(body, publish);
-  const auto response =
-      HttpClient::Post(base_url_ + "/v1/register/start", DumpJson(body), {{"Content-Type", "application/json"}},
-                       kMaxHttpClientBodyBytes, {}, public_only_);
+  const auto response = HttpClient::Post(base_url_ + "/v1/register/start", DumpJson(body),
+                                         WithRelayClientHeader({{"Content-Type", "application/json"}}),
+                                         kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -565,9 +568,9 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
   if (publish.account_card) {
     body.set("account_card", *publish.account_card);
   }
-  const auto response =
-      HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body), {{"Content-Type", "application/json"}},
-                       kMaxHttpClientBodyBytes, {}, public_only_);
+  const auto response = HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body),
+                                         WithRelayClientHeader({{"Content-Type", "application/json"}}),
+                                         kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -615,9 +618,9 @@ Roe<RegistrationResult> HttpRegistrationClient::UpdateNickname(const std::string
   body.set("account_id", account_id);
   body.set("nickname", new_nickname);
   PutSignedRelayCommand(body, signed_update);
-  const auto response =
-      HttpClient::Post(base_url_ + "/v1/profile/nickname", DumpJson(body), {{"Content-Type", "application/json"}},
-                       kMaxHttpClientBodyBytes, {}, public_only_);
+  const auto response = HttpClient::Post(base_url_ + "/v1/profile/nickname", DumpJson(body),
+                                         WithRelayClientHeader({{"Content-Type", "application/json"}}),
+                                         kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -637,9 +640,9 @@ Roe<void> HttpRegistrationClient::RevokeRegistration(const std::string& account_
   body.set("registration_id", registration_id);
   PutSignedRelayCommand(body, signed_revoke);
   // Called on the way into a profile reset: keep a stuck network from holding the UI for long.
-  const auto response =
-      HttpClient::Post(base_url_ + "/v1/register/revoke", DumpJson(body), {{"Content-Type", "application/json"}},
-                       kMaxHttpClientBodyBytes, HttpTimeout{.total_s = 10, .connect_s = 5}, public_only_);
+  const auto response = HttpClient::Post(
+      base_url_ + "/v1/register/revoke", DumpJson(body), WithRelayClientHeader({{"Content-Type", "application/json"}}),
+      kMaxHttpClientBodyBytes, HttpTimeout{.total_s = 10, .connect_s = 5}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -656,7 +659,8 @@ Roe<ClientCompatDocument> HttpClientCompatClient::Fetch() {
   if (base_url_.empty()) {
     return Error("client-compat base_url not configured");
   }
-  const auto response = HttpClient::Get(base_url_ + "/v1/client-compat", {}, kMaxHttpClientBodyBytes, {}, public_only_);
+  const auto response = HttpClient::Get(base_url_ + "/v1/client-compat", WithRelayClientHeader(),
+                                        kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }

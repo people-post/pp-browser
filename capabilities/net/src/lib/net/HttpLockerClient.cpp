@@ -1,4 +1,5 @@
 #include "lib/net/HttpLockerClient.h"
+#include "foundation/tls/RelayClientHeader.h"
 
 #include "lib/net/HttpClient.h"
 #include "lib/net/RelaySignBytes.h"
@@ -62,7 +63,7 @@ std::vector<uint8_t> BuildLockerPutSignBytes(const std::string& audience, const 
 HttpLockerClient::HttpLockerClient(std::string base_url) : base_url_(std::move(base_url)) {}
 
 Roe<void> HttpLockerClient::Put(const std::string& account_id, const LockerRecord& record,
-                                std::optional<LockerPutRefusal>* refused) {
+                                std::optional<LockerPutRefused>* refused) {
   if (base_url_.empty()) {
     return Error("Locker base_url not configured");
   }
@@ -77,8 +78,8 @@ Roe<void> HttpLockerClient::Put(const std::string& account_id, const LockerRecor
   body.set("account_id", account_id);
   PutSignedRelayCommand(body, *signed_put);
   body.set("locker", ObjectValue(LockerRecordToJson(record)));
-  auto response =
-      HttpClient::Post(base_url_ + "/v1/lockers/put", DumpJson(body), {{"Content-Type", "application/json"}});
+  auto response = HttpClient::Post(base_url_ + "/v1/lockers/put", DumpJson(body),
+                                   WithRelayClientHeader({{"Content-Type", "application/json"}}));
   if (!response) {
     return response.error();
   }
@@ -90,9 +91,13 @@ Roe<void> HttpLockerClient::Put(const std::string& account_id, const LockerRecor
   }
   if (refused) {
     if (response->status_code == 409) {
-      *refused = LockerPutRefusal::NotNewer;
+      // The relay names the version it holds (SPECS § lockers/put): the next write goes above it.
+      const auto stored = TryParseObject(response->body);
+      const auto version = stored ? stored->getNonNegInt("version") : std::nullopt;
+      *refused = LockerPutRefused{.reason = LockerPutRefusal::NotNewer,
+                                  .stored_version = version ? static_cast<uint64_t>(*version) : 0};
     } else if (response->status_code == 403 && ErrorText(*response) == "Locker quota reached") {
-      *refused = LockerPutRefusal::QuotaReached;
+      *refused = LockerPutRefused{.reason = LockerPutRefusal::QuotaReached};
     }
   }
   return Error("Locker put refused: " + ErrorText(*response));
@@ -102,7 +107,7 @@ Roe<std::optional<LockerRecord>> HttpLockerClient::Get(const std::string& locker
   if (base_url_.empty()) {
     return Error("Locker base_url not configured");
   }
-  auto response = HttpClient::Get(base_url_ + "/v1/lockers/" + locker_id);
+  auto response = HttpClient::Get(base_url_ + "/v1/lockers/" + locker_id, WithRelayClientHeader());
   if (!response) {
     return response.error();
   }

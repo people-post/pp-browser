@@ -19,7 +19,10 @@ struct RelayRegistrationRecord {
    */
   enum class State { Unknown, Registered, Failed, NotRegistered, Expired };
   State state = State::Unknown;
-  /** Failed: why, as a code (RelayRegistrationFailureCode: unreachable, refused, identity, upgrade, other). */
+  /**
+   * Failed: why, as a code (RelayRegistrationFailureCode: unreachable, refused, identity, upgrade, relay_upgrade, card,
+   * other).
+   */
   std::string reason;
   /** Registered: until when (ISO-8601, the relay's `expires_at`). */
   std::string expires_at;
@@ -53,10 +56,15 @@ inline constexpr const char kRegistrationRefused[] = "refused";
 inline constexpr const char kRegistrationIdentity[] = "identity";
 inline constexpr const char kRegistrationOther[] = "other";
 inline constexpr const char kRegistrationUpgrade[] = "upgrade";
+inline constexpr const char kRegistrationRelayUpgrade[] = "relay_upgrade";
+inline constexpr const char kRegistrationCard[] = "card";
 /**
  * Why a registration failed, as a code the page words: unreachable (no answer: a transport failure, a timeout, a
  * 5xx), refused (the relay answered no), identity (its identity is not in force: changed, taken or not given), upgrade
- * (the relay needs a newer version of this app: 426 `client_upgrade_required`), other.
+ * (the relay needs a newer version of this app: 426 `client_upgrade_required`), relay_upgrade (the relay is older
+ * than this app and needs an update: 400 `relay_upgrade_required`, U11), card (the relay did not take our account
+ * card: a 400 card code at register/finish, X12), other. A reader that does not know a code words it as a plain
+ * failure (MyRelays), so codes can be added.
  */
 std::string RelayRegistrationFailureCode(const Error& error);
 

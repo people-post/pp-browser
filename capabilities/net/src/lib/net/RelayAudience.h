@@ -34,7 +34,8 @@ public:
   /**
    * The relay refused a command signed for PeerId() with this `code`: `wrong_audience` (its identity is asked again),
    * `not_registered` / `registration_expired` (our registration there is lost), `client_upgrade_required` (this app
-   * is too old for that relay). Any other code is ignored.
+   * is too old for that relay), `relay_upgrade_required` (that relay is older than this app; NoteRelayRefusal names
+   * an older relay's `unsupported_sign_version` so too). Any other code is ignored.
    */
   virtual void Refused(const std::string& code) = 0;
 };
@@ -58,6 +59,16 @@ inline constexpr const char kNotRegisteredCode[] = "not_registered";
 inline constexpr const char kRegistrationExpiredCode[] = "registration_expired";
 /** HTTP 426: this app is older than the relay speaks (docs/contracts/SERVICE_ENDPOINTS.md § Client compatibility). */
 inline constexpr const char kClientUpgradeRequiredCode[] = "client_upgrade_required";
+/**
+ * HTTP 400: this relay is older than this app (a sign version or account card newer than it reads; relay U10). A
+ * relay from before that code answers a newer sign version `unsupported_sign_version` (read the same: our app never
+ * sends a malformed one).
+ */
+inline constexpr const char kRelayUpgradeRequiredCode[] = "relay_upgrade_required";
+inline constexpr const char kUnsupportedSignVersionCode[] = "unsupported_sign_version";
+/** HTTP 400 at register/finish: the relay did not take our account card (SPECS § register/finish). */
+inline constexpr const char* kAccountCardRefusalCodes[] = {"invalid_account_card", "account_card_mismatch",
+                                                           "account_card_too_large", "invalid_card_relays"};
 
 /**
  * What a signed command's JSON body carries beside its fields: the version byte it was signed with (`sign_version`),
@@ -89,13 +100,24 @@ std::string RelayRefusalCode(const std::string& body);
 /**
  * A relay refused a signed command with HTTP `status` and `body`: the audience hears the codes it acts on
  * (IRelayAudience::Refused), and the typed error comes back for `401 wrong_audience` (Err::Auth::WrongAudience),
- * `403/404 not_registered` / `registration_expired` (Err::Auth::NotRegistered) and `426 client_upgrade_required`
- * (Err::Auth::ClientUpgradeRequired); nullopt for any other refusal (the caller words it as before). Every relay
- * client (relay, registration, blob, locker, push) reads its refusals through this one.
+ * `403/404 not_registered` / `registration_expired` (Err::Auth::NotRegistered), `426 client_upgrade_required`
+ * (Err::Auth::ClientUpgradeRequired: this app is the one to update), `400 relay_upgrade_required` or `400
+ * unsupported_sign_version` (Err::Auth::RelayUpgradeRequired: the relay is the one to update; the audience hears
+ * `relay_upgrade_required`) and a `400` account-card code (Err::Auth::AccountCardRefused, naming the code); nullopt
+ * for any other refusal (the caller words it as before). Every relay client (relay, registration, blob, locker, push)
+ * reads its refusals through this one.
  */
 std::optional<Error> NoteRelayRefusal(IRelayAudience* audience, long status, const std::string& body);
 
 /** `error` is a relay's `426 client_upgrade_required` (NoteRelayRefusal). */
 bool IsClientUpgradeRequired(const Error& error);
+/** `error` is a relay's `400 relay_upgrade_required` / `unsupported_sign_version` (NoteRelayRefusal). */
+bool IsRelayUpgradeRequired(const Error& error);
+/**
+ * A refusal that asking again will not change until one side is updated or the relay's identity is fixed (T14):
+ * ClientUpgradeRequired, RelayUpgradeRequired, WrongAudience. Callers that repeat a call (the inbox poll, pp-node's
+ * heartbeat and registration, other-relay registration) slow down after one.
+ */
+bool IsPermanentRelayRefusal(const Error& error);
 
 } // namespace pbr

@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include "common/PbrCompat.h"
@@ -18,12 +19,15 @@ namespace pbr {
 /**
  * Fetches relay client-compat and surfaces update-required / update-available UX (docs/contracts/SERVICE_ENDPOINTS.md
  * § Client compatibility). Checked at start-up (a fresh cache as it is), again when the app comes to the foreground
- * (forced, at most once per kClientCompatRecheckSeconds since the last fetch), and when the org's relay answers `426
- * client_upgrade_required` (forced; the update screen shows whatever the document says). UI thread.
+ * (forced, at most once per kClientCompatRecheckSeconds since the last fetch), while it runs (forced, once the
+ * document held is kClientCompatTimerRecheckSeconds old; T15), and when the org's relay answers `426
+ * client_upgrade_required` (forced; the update screen shows whatever the document says). The first document a run
+ * resolves gives the run its remote switches (RemoteSwitches, O2). UI thread.
  */
 class ClientCompatController : public Module {
 public:
   ClientCompatController();
+  ~ClientCompatController() override;
 
   /** Subscribes to the org relay's 426 through `ports` (the previous ports' subscription goes). */
   void BindCompatPorts(MessagingCompatPorts ports);
@@ -44,6 +48,12 @@ public:
   bool CheckAsync(CompatCheck mode = CompatCheck::CacheFirst);
   /** The app came to the foreground: a forced check once the document held is kClientCompatRecheckSeconds old. */
   void OnForeground();
+  /**
+   * The running app's timer (every kRecheckTimerMs, armed by the first check): a forced check once the document held
+   * is kClientCompatTimerRecheckSeconds old (T15: a floor raised while the app runs is seen within hours).
+   */
+  void OnRecheckTimer();
+  static constexpr int64_t kRecheckTimerMs = 60 * 60 * 1000;
   /**
    * The org's relay refused a call `426 client_upgrade_required`: the update screen (with the document's links: a
    * forced check first unless one ran a moment ago), for the rest of the session, whatever the document's floor.
@@ -71,6 +81,8 @@ private:
   void PublishSupport(const ClientCompatDocument& doc);
   void SetSoftUpdate(std::optional<UpdateAdvice> advice);
   int64_t NowUnix() const;
+  void EnsureRecheckTimer();
+  void StopRecheckTimer();
 
   CompatUiAction last_action_ = CompatUiAction::None;
   bool force_dialog_shown_ = false;
@@ -84,6 +96,11 @@ private:
   std::optional<UpdateAdvice> soft_update_;
   std::function<void()> on_soft_update_changed_;
   std::function<int64_t()> now_unix_;
+  uint64_t recheck_timer_id_ = 0;
+  /** The timer's tasks hold this weakly: one that fires after the controller is gone does nothing. */
+  std::shared_ptr<ClientCompatController*> alive_ = std::make_shared<ClientCompatController*>(this);
+  /** The document's floor was not a version (logged once a run). */
+  bool floor_unreadable_logged_ = false;
   MessagingCompatPorts compat_ports_;
   ShellFeedbackPorts shell_feedback_;
   SupportDiscoveryPorts support_discovery_;

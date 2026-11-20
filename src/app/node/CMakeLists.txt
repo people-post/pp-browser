@@ -73,6 +73,7 @@ if(PP_BROWSER_BUILD_TESTS)
     GTest::gtest
     GTest::gtest_main
     pp_pbr_common
+    pp_foundation_tls
     Asio::asio
     Threads::Threads
   )

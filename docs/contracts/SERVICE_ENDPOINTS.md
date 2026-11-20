@@ -58,7 +58,10 @@ When `registration.base_url` is set (e.g. `https://host/api/relay`), `HttpRegist
 
 Finish signs canonical bytes: domain `pp-browser:relay-register-v1\0`, `sign_version=3`, the relay's PeerId (`audience`, len-prefixed UTF-8, [§ The audience](#the-audience-every-signed-command-names-its-relay)), challenge (len-prefixed UTF-8), **1952-byte raw ML-DSA-65** account public key, **1184-byte raw ML-KEM-768** **account** public key (`kem_public_key_b64` — person encapsulate-to, **M015**; not per-device), `signature_alg` u8 (`1=ml-dsa-65`), `timestamp` i64 BE. Pre-release hard cut: Ed25519 register/API auth removed; wipe legacy relay_users.
 
-Brief derives `account_id = account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` and keeps **one row per Account ID** (M006): the Account ID is the row's key and the account's inbox address — the relay issues no ids of its own ([multi-relay MR001](../../projects/multi-relay/DECISIONS.md#mr001--inboxes-are-keyed-by-account-id)). Finish answers with it (`account_id`), and the client refuses a registration answered for another account. It carries the account's signed card (`account_card`, version 4, [ACCOUNT_CARD.md](ACCOUNT_CARD.md); a pp-node sends none): the relay checks it as the app does — a card that does not verify, is another account's, or breaks a bound refuses the registration (`400` `invalid_account_card` / `account_card_mismatch` / `account_card_too_large` / `invalid_card_relays`) — keeps the newest and serves it with the directory row (`account_card_status`: `stored` / `same` / `stale`). The relay reads the account's **initiation floor** from it (the stranger check below); there is no registration field for the floor ([pricing P001](../../projects/pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet) item 7 as amended by [multi-relay MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)). The app registers again, whatever the auto-renew preference, when its card is newer than the one the relay last answered for (`registered_card_issued_at` in the identity; `ShouldPublishAccountCard`), so a changed floor, relay list or device list reaches the relay on the next start. An id of another shape is refused everywhere with `400 invalid_account_id`. Directory / user lookup include `account_id`, `signature_alg=ml-dsa-65`, and the **account** `kem_public_key_b64` (same key on every linked device) with `kem_binding_signature_b64`: the account's signature binding that KEM key to it ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md), `pp-browser:kem-binding-v1`). Finish verifies a binding it is sent and stores it with the KEM key, replacing both (none sent, none kept); `kem_bound` says the entry now carries one. Clients take a directory KEM key only with a valid binding, and a registration from before bindings re-registers once to publish one.
+Brief derives `account_id = account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` and keeps **one row per Account ID** (M006): the Account ID is the row's key and the account's inbox address — the relay issues no ids of its own ([multi-relay MR001](../../projects/multi-relay/DECISIONS.md#mr001--inboxes-are-keyed-by-account-id)). Finish answers with it (`account_id`), and the client refuses a registration answered for another account. It carries the account's signed card (`account_card`, version 4, [ACCOUNT_CARD.md](ACCOUNT_CARD.md); a pp-node sends none): the relay checks it as the app does — a card that does not verify, is another account's, or breaks a bound refuses the registration (`400` `invalid_account_card` / `account_card_mismatch` / `account_card_too_large` / `invalid_card_relays`) — keeps the newest and serves it with the directory row (`account_card_status`: `stored` / `same` / `stale`; `stale` —
+another device of the account stored a newer card — is logged and the card is not sent again for it,
+`AccountCardStale`). A card code at finish is `Err::Auth::AccountCardRefused` naming the code, and My relays words it
+(registration reason `card`). The relay reads the account's **initiation floor** from it (the stranger check below); there is no registration field for the floor ([pricing P001](../../projects/pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet) item 7 as amended by [multi-relay MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)). The app registers again, whatever the auto-renew preference, when its card is newer than the one the relay last answered for (`registered_card_issued_at` in the identity; `ShouldPublishAccountCard`), so a changed floor, relay list or device list reaches the relay on the next start. An id of another shape is refused everywhere with `400 invalid_account_id`. Directory / user lookup include `account_id`, `signature_alg=ml-dsa-65`, and the **account** `kem_public_key_b64` (same key on every linked device) with `kem_binding_signature_b64`: the account's signature binding that KEM key to it ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md), `pp-browser:kem-binding-v1`). Finish verifies a binding it is sent and stores it with the KEM key, replacing both (none sent, none kept); `kem_bound` says the entry now carries one. Clients take a directory KEM key only with a valid binding, and a registration from before bindings re-registers once to publish one.
 
 ## Relay identity and the audience (multi-relay MR007)
 
@@ -82,7 +85,8 @@ it; a local stack's `/_local/status` names it, `relayLink`). The app never learn
 `{ "schema_version": 1, "peer_id": "Qm…", "public_key_b64": "…", "signature_alg": "ml-dsa-65" }` with
 `Cache-Control: public, max-age=300`; a relay without a valid identity answers it, and every signed call, `503
 relay_identity_unavailable`. The client (`FetchRelayIdentity` / `ParseRelayIdentity`) takes it only when
-`schema_version` is 1, `signature_alg` is `ml-dsa-65`, `public_key_b64` is canonical base64 of 1952 bytes and the key
+`schema_version` is 1 or above (a newer one is read for the fields this reader knows: the relay only adds fields;
+release-compatibility T15), `signature_alg` is `ml-dsa-65`, `public_key_b64` is canonical base64 of 1952 bytes and the key
 derives `peer_id`; anything else (and unreachable, any other status) is no identity. Unknown keys are ignored. The
 answer is **checked, not trusted**: its `peer_id` must be the one the relay's address names, else the relay is not
 used. It is not signed: a static signature is copied by whoever serves it, and a relay proxying another answers its
@@ -151,12 +155,14 @@ relay's PeerId string (`LenUtf8` = `u64be(len) ‖ utf8`, as every string here; 
 carries it as a top-level `"audience"` beside `sign_version` (the version byte the bytes carry; `SignRelayCommand`
 reads it from them, `PutSignedRelayCommand` writes it), `timestamp` and `signature`. The relay checks the sign version
 **first**, from the body alone: none, or one older than the table's, answers `426 { "code": "client_upgrade_required" }`
-([Client compatibility](#client-compatibility-discovery): this app is too old for that relay), a newer or malformed one
+([Client compatibility](#client-compatibility-discovery): this app is too old for that relay), a newer one `400 {
+"code": "relay_upgrade_required" }` (that relay is older than this app; a relay from before the code answered a newer
+one `400 unsupported_sign_version`, which the app reads the same: it never sends a malformed one) and a malformed one
 `400 unsupported_sign_version`. It then refuses an `audience` that is absent or not byte-equal to its own PeerId with
 `401 { "code": "wrong_audience" }` (before the window, the account lookup, the signature, and for `register/finish`
 before the challenge is spent), then verifies the signature over bytes built with its own PeerId: a body whose
 `audience` was rewritten fails the signature. `register/finish` answers `426 client_upgrade_required` to a person's
-account card older than version 4 as well, before anything is spent.
+account card older than version 4 as well, and `400 relay_upgrade_required` to a newer one, before anything is spent.
 
 | Domain | Version | Fields after the audience |
 |---|---|---|
@@ -543,7 +549,9 @@ Base path under the org's `registration.base_url` (not the preferred relay's: lo
 
 | HTTP | Purpose |
 |------|---------|
-| `POST /v1/lockers/put` | `{ account_id, audience, timestamp, signature, locker: { locker_id, version, signing_public_key_b64, sealed_b64, signature_b64 } }` → `200 { locker_id, version }`; **409** when the stored version is the same or newer (also when two writers race); **403** `Locker quota reached` past 4 lockers per account; body ≤ 2 MiB |
+| `POST /v1/lockers/put` | `{ account_id, audience, timestamp, signature, locker: { locker_id, version, signing_public_key_b64, sealed_b64, signature_b64 } }` → `200 { locker_id, version }`; **409** `{ error, version }` when the stored version is the same or newer (also when two writers race): the client
+reads `version` (`LockerPutRefused::stored_version`) and its next write goes above it — memory only, never the
+rollback floor, which only a verified snapshot raises; **403** `Locker quota reached` past 4 lockers per account; body ≤ 2 MiB |
 | `GET /v1/lockers/:locker_id` | `200 { locker: {…} }` or **404**. By id alone — a restoring device is not registered yet; rate-limited per IP |
 
 Two signatures on a write:
@@ -574,22 +582,28 @@ Unauthenticated public GET (directory-style; no identity unlock required):
 
 | Field | Required | Notes |
 |-------|----------|--------|
-| `schema_version` | yes | **1**; reject unsupported **newer** |
-| `min_client_version` | no | Semver floor; client below → blocking update UX |
-| `latest_client_version` | no | Semver latest; client below (but ≥ min) → the card at the top of the chat list (not a banner); the app's own translated line is always the card's line, and the relay's `message` is an extra, smaller line under it (see `message`) |
+| `schema_version` | yes | **1**; a newer one is read for the fields this reader knows (release-compatibility T15: the relay adds fields, never changes one's meaning); below 1 or absent: no document |
+| `min_client_version` | no | Semver floor; client below → blocking update UX. Compared by the **core** (`CompareSemverCore`, as the relay compares its node floor): a prerelease meets the floor of its release (`1.0.0-rc.2` meets `1.0.0`), so a release candidate can be tested against a relay whose floor is the version it is a candidate for. A floor that is not a version is **no floor** (fail open: a typo in the relay's config must not lock every app out); the app logs it once a run (`ClientCompatFloorUnreadable`) |
+| `latest_client_version` | no | Semver latest; client below (but ≥ min) by **release precedence** (`CompareReleaseVersions`: a prerelease is below its release, `1.0.0-rc.2` < `1.0.0`; prereleases by semver 2.0 identifiers, and `rc2` < `rc16` as our tags are written) → the card at the top of the chat list (not a banner); the app's own translated line is always the card's line, and the relay's `message` is an extra, smaller line under it (see `message`) |
 | `min_protocol_gen` | no | Global protocol floor (default 1) |
 | `upgrade_url` | no | Empty → GitHub Releases fallback |
 | `upgrade_urls` | no | `{ ios, android, macos, windows, linux }`, each optional: that platform's update link, **https only** (anything else, and any other key, is dropped). `ResolvedUpgradeUrl` takes this build's (`Platform::OsName()`), else `upgrade_url`, else the fallback |
 | `message` | no | RC018 part 2: **never replaces the app's own translated text**. Non-empty → shown as an extra line under it, on the card and in the blocking dialog (a second paragraph): plain text only (no markup or links interpreted), whitespace runs and line breaks become one space (a single paragraph), cut at 200 characters with an ellipsis (`UpdateServerNote`). Empty → only the app's own words |
 | `crash_reports_url` | no | Absolute opt-in crash ingest URL, **https only** (anything else is ignored); empty → `{relay.base_url}/v1/crash-reports` |
 | `support` | no | Optional Support discovery block (`enabled`, `account_id`, `display_name`) |
+| `relay_version` | no | The relay's build version (`X.Y.Z`, `dev.<date>.<n>`, `0.0.0-local`); kept, not acted on (A1) |
+| `app_range`, `node_range` | no | `{ min, max }`, each a release version `X.Y.Z` or `null` (no bound; anything else is read as `null`); kept, not acted on yet (A1) |
+| `min_node_version` | no | The oldest pp-node the relay serves; **pp-node** reads it (below, A2). Compared by the core, as the relay does; empty or not a version: no floor |
+| `switches` | no | Remote switches `{ name: true \| false }` (O2): names of 1–64 of `a-z0-9_.-` starting with a letter or digit, booleans only, at most 64 (anything else dropped). Read through `RemoteSwitches::IsOn(name, default)`: the run takes the switches of the **first** document its start-up check resolves (a fresh cache, else the relay's answer); a later fetch is cached and applies at the next start, so a switch never flips under a running feature. A switch the document does not name is the caller's built-in default; one the app does not know is never asked for. **No product switch is defined in release 1** |
 
-Unknown keys are ignored. Network failure: fail open (no gate); use last good profile cache (`client_compat.json`, TTL 6h) when present.
+Unknown keys are ignored. Network failure: fail open (no gate); use last good profile cache (`client_compat.json`, TTL 6h) when present. The cache keeps every field above and names its own file version (`schema_version` 1, [DATA_LAYOUT](DATA_LAYOUT.md)); a newer app's file is no cache here and is never written over.
 
 **When it is checked** (`ClientCompatController`): at start-up (deferred, after the first frame), a fresh cache taken
 as it is; when the app comes to the foreground (`AppLifecycle`), a **forced** check (`CompatCheck::Forced`: the relay
 asked past a fresh cache; a failed fetch still falls back to it) at most once per 15 min since the document held was
-fetched (`ClientCompatRecheckDue`); and when the org's relay answers `426 client_upgrade_required`.
+fetched (`ClientCompatRecheckDue`); while the app runs, a forced check once the document held is 6 h old (an hourly
+timer, `ClientCompatController::OnRecheckTimer`; T15: a floor raised during a long session is seen); and when the
+org's relay answers `426 client_upgrade_required`.
 
 **`426 client_upgrade_required`** — any signed relay call (relay API, registration, blobs and files, lockers, push
 devices, heartbeats) whose sign version or account card the relay no longer takes. Every client reads it through
@@ -602,6 +616,26 @@ hears it (`IRelayAudience::Refused` → `RelayPins::SetOnUpgradeRequired`):
 | Another relay of ours (Me → My relays) | Nothing is blocked: its row says *Needs a newer version of the app* (registration reason `upgrade`, beside `unreachable` / `refused` / `identity` / `other`), from a registration or any other call there |
 | A contact's relay (a send into it) | The send fails with the typed error (not retried as it is) |
 | pp-node's relay | One ERROR per relay per run: *this pp-node is too old for the relay at X: upgrade it* (`NodeUpgradeNotice`); heartbeats and registration renewals go on at their pace without a generic failure each time |
+
+**`400 relay_upgrade_required`** (or, from a relay before that code, `400 unsupported_sign_version`) — the relay is
+**older** than this app (a sign version or account card newer than it reads; release-compatibility U10, U11). Read by
+`NoteRelayRefusal` as `Err::Auth::RelayUpgradeRequired` (final for a send, as the 400 was before it was typed); the
+audience hears `relay_upgrade_required` (`RelayPins::SetOnRelayOutdated`). The words say the **relay** needs an update,
+never "update the app": the error's text (*That relay needs an update before it works with this version of the app*)
+and, for a relay of ours, its My relays row (registration reason `relay_upgrade`: *The relay needs an update*).
+
+## Version header
+
+Every call to a relay — HttpClient's relay callers (relay API, registration, directory, blobs and files, lockers, push
+devices, client-compat, relay identity, crash reports, the LLM key calls), the AI stream (`BriefAiClient`), the LLM
+client on the relay's gateway (the `brief` preset) and pp-node's heartbeat — carries `X-PP-Client: <product>/<version>
+<os>` (release-compatibility O1, RC018 part 1 item 6; pp-relay-apis SPECS § X-PP-Client): product `pp-app` or
+`pp-node`, version the build's release version without a leading `v` or build metadata (`1.0.0-rc16`; a prerelease the
+relay would not read is dropped), os `Platform::OsName()` lowercased (`ios`, `android`, `macos`, `windows`, `linux`).
+`RelayClientHeaderValue` builds it; the app and pp-node set it once at start-up (`SetRelayClientHeader`) and each
+relay caller adds it (`WithRelayClientHeader`). It is additive (a relay ignores a header it does not know) and is
+**never** sent to a host that is not a relay: a peer's attachment or icon link, a feed, a presigned storage URL,
+another LLM provider. The relay counts requests per product, version and OS, aggregates only.
 
 ## HTTP crash reports (opt-in)
 

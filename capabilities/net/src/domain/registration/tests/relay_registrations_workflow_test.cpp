@@ -50,6 +50,9 @@ public:
     if (too_old) {
       return AppError::Auth(Err::Auth::ClientUpgradeRequired, "client_upgrade_required");
     }
+    if (refusal) {
+      return *refusal;
+    }
     auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
                                                              signature_alg, kem_public_key_b64,
                                                              kem_binding_signature_b64, peer_id, multiaddrs, publish);
@@ -71,6 +74,8 @@ public:
   bool fail = false;
   /** The relay answers 426 `client_upgrade_required` (this app is too old for it). */
   bool too_old = false;
+  /** The relay refuses with this (typed as NoteRelayRefusal types it). */
+  std::optional<Error> refusal;
   /** What the relay answers as the Brief LLM key (only the org's relay's client keeps one, MR006). */
   std::string llm_key;
   std::string expires_at = "2099-01-01T00:00:00.000Z";
@@ -309,6 +314,23 @@ TEST_F(RelayRegistrationsWorkflowTest, ARelayNeedingANewerAppSaysSo) {
   EXPECT_EQ(records[0].state, RelayRegistrationRecord::State::Failed);
   EXPECT_EQ(records[0].reason, kRegistrationUpgrade);
   EXPECT_TRUE(registered_on_.empty());
+}
+
+// U11 / X12: a relay older than this app, and a relay that did not take our card, each say so in their own code.
+TEST_F(RelayRegistrationsWorkflowTest, ARelayOlderThanThisAppOrRefusingOurCardSaysWhich) {
+  RegisterOnPreferred();
+  std::vector<RelayRegistrationRecord> records;
+  workflow_->SetOnResult(
+      [&records](const std::string&, const RelayRegistrationRecord& record) { records.push_back(record); });
+  client_->refusal = AppError::Auth(Err::Auth::RelayUpgradeRequired, "relay_upgrade_required");
+  workflow_->RunDue(kNow);
+  ASSERT_EQ(records.size(), 1u);
+  EXPECT_EQ(records[0].reason, kRegistrationRelayUpgrade);
+  workflow_->MakeDue(kOther);
+  client_->refusal = AppError::Auth(Err::Auth::AccountCardRefused, "invalid_account_card");
+  workflow_->RunDue(kNow);
+  ASSERT_EQ(records.size(), 2u);
+  EXPECT_EQ(records[1].reason, kRegistrationCard);
 }
 
 TEST_F(RelayRegistrationsWorkflowTest, ARegistrationKeptFromBeforeTheStartIsNotAskedAgain) {

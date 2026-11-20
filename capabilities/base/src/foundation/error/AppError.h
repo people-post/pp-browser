@@ -60,6 +60,18 @@ enum class Auth : int32_t {
    * card it no longer takes). Final until the app is updated; the org's relay saying so shows the update screen.
    */
   ClientUpgradeRequired = 11,
+  /**
+   * HTTP 400 with code "relay_upgrade_required" (or, from a relay before that code, "unsupported_sign_version"): the
+   * relay is older than this app (a sign version or account card newer than it reads; release-compatibility U10,
+   * U11). Final until the relay is updated; the app is not the one to update.
+   */
+  RelayUpgradeRequired = 12,
+  /**
+   * HTTP 400 at registration with an account-card code (`invalid_account_card`, `account_card_mismatch`,
+   * `account_card_too_large`, `invalid_card_relays`): the relay did not take this account's card (X12). The detail
+   * names the code.
+   */
+  AccountCardRefused = 13,
 };
 
 enum class Network : int32_t {

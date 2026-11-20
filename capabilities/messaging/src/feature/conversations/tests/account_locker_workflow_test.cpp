@@ -15,6 +15,8 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <utility>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -23,11 +25,19 @@ namespace {
 /** The relay as a locker provider: keeps the newest version per locker; can be made unreachable. */
 class FakeLockerProvider final : public ILockerClient {
 public:
-  Roe<void> Put(const std::string&, const LockerRecord& record, std::optional<LockerPutRefusal>* refused) override {
+  Roe<void> Put(const std::string&, const LockerRecord& record, std::optional<LockerPutRefused>* refused) override {
+    puts.push_back(record.version);
+    if (const uint64_t raced = std::exchange(race_version, 0); raced > 0) {
+      // Another device wrote that version after our read: the relay's 409 names it (X12).
+      if (refused) {
+        *refused = LockerPutRefused{.reason = LockerPutRefusal::NotNewer, .stored_version = raced};
+      }
+      return Error("not newer");
+    }
     auto held = records_.find(record.locker_id);
     if (held != records_.end() && held->second.version >= record.version) {
       if (refused) {
-        *refused = LockerPutRefusal::NotNewer;
+        *refused = LockerPutRefused{.reason = LockerPutRefusal::NotNewer, .stored_version = held->second.version};
       }
       return Error("not newer");
     }
@@ -42,6 +52,11 @@ public:
     return held == records_.end() ? std::optional<LockerRecord>{} : std::optional<LockerRecord>(held->second);
   }
   bool unreachable = false;
+  /** The next put is refused as not newer than this version, stored by another device meanwhile (0: none). */
+  uint64_t race_version = 0;
+  /** The versions each put tried. */
+  std::vector<uint64_t> puts;
+  std::string LastLockerId() const { return records_.empty() ? std::string() : records_.begin()->first; }
 
 private:
   std::map<std::string, LockerRecord> records_;
@@ -150,6 +165,20 @@ TEST_F(AccountLockerWorkflowTest, GrantsGoIntoTheLockerAndAnotherDeviceTakesThem
   ASSERT_TRUE(after && after->has_value());
   EXPECT_EQ((**after).state.extras.grants, std::vector<AccountStateGrant>{bobs})
       << "a device holding none does not drop it from the locker";
+}
+
+// X12: the relay's 409 names the version it holds; the next write goes above it instead of meeting the 409 again.
+TEST_F(AccountLockerWorkflowTest, ANotNewerAnswerNamingTheStoredVersionPutsTheNextWriteAboveIt) {
+  ASSERT_TRUE(workflow_->Publish());
+  const uint64_t raced = provider_->puts.back() + 1'000'000'000;
+  provider_->race_version = raced;
+  RenameBob("Bobby");
+  EXPECT_FALSE(workflow_->Publish()) << "refused: not newer";
+  const std::string locker_id = provider_->LastLockerId();
+  EXPECT_LT(workflow_->HighestSeen(locker_id), raced) << "the provider's word is no proof: not the rollback floor";
+  RenameBob("Robert");
+  ASSERT_TRUE(workflow_->Publish());
+  EXPECT_GT(provider_->puts.back(), raced);
 }
 
 TEST_F(AccountLockerWorkflowTest, ASavedFileRestoresTheAccountWhenTheProviderHasNone) {

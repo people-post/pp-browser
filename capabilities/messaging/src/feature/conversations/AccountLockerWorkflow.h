@@ -147,6 +147,12 @@ private:
   ContactClock clock_;
   /** Per locker (hex id): a provider serving an older copy of one locker says nothing about another. */
   std::map<std::string, uint64_t> highest_seen_;
+  /**
+   * The version a provider said it holds when it refused a write as not newer (X12), by locker: the next write goes
+   * above it. Memory only, and never the rollback floor (highest_seen_ is raised only by a verified snapshot): a
+   * provider's word is not proof of a snapshot.
+   */
+  std::map<std::string, uint64_t> provider_holds_;
   /** Device names by peer_id order; see DeviceNames(). */
   std::vector<DeviceNameEntry> device_names_;
 };

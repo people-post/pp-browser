@@ -78,6 +78,12 @@ TEST(MyRelaysTest, ARegistrationSaysWhyItFailedWhetherItEndedAndWhenOneIsMissing
   EXPECT_EQ(view.relays[3].state, "Couldn't register: the relay said no");
   EXPECT_EQ(view.relays[4].state, "Needs a newer version of the app") << "426 client_upgrade_required there";
   EXPECT_EQ(view.relays[4].state_kind, "error");
+  // U11: a relay older than this app says the relay needs an update, not the app; X12: a card it did not take.
+  const pbr::MyRelaysView older =
+      pbr::MyRelaysViewFor({Relay("a.example", Failed("relay_upgrade")), Relay("b.example", Failed("card"))}, true);
+  EXPECT_EQ(older.relays[0].state, "The relay needs an update") << "400 relay_upgrade_required there";
+  EXPECT_EQ(older.relays[0].state_kind, "error");
+  EXPECT_EQ(older.relays[1].state, "Couldn't register: the relay didn't accept this account's card");
   EXPECT_EQ(pbr::MyRelaysViewFor({Relay("a.example", Failed("Connection refused (curl 7)"))}, true).relays[0].state,
             "Couldn't register")
       << "a reason that is not a code is not shown";
