@@ -67,6 +67,17 @@ type      = bit 15 (0x8000): critical (must understand); bits 0–14: the id. 0x
   (ChatPayload tails) and X5's binary formats; X3 (MSH v2) designs its own inside the transcript.
 - One codec: `common/ExtArea.{h,cpp}` in pp-cpp-common (used by pp-browser and pp-cpp-mesh), and
   `packages/shared/src/sign-payload/ext-area.ts` in relay, both reading one frozen vector file (§ 6).
+- **Decoding, exactly** (as built in pp-cpp-common 1.5.0, [#24](https://github.com/people-post/pp-cpp-common/pull/24);
+  every implementation names the same refusal for the same bytes):
+  - Checks run in this order: the area's u64 length cut short → `length_past_end`; the u64 above 4096 →
+    `too_large` (before comparing with what is left); the u64 past the input → `length_past_end`; then per entry:
+    room for the 6-byte header (1–5 bytes left → `bytes_left_over`), a valid type, strictly above the previous
+    type (`duplicate` / `unsorted`), then its length (`length_past_end`). Bytes after the area in a whole-buffer
+    decode → `bytes_left_over`.
+  - A type is the whole u16, critical bit included: the registry defines each type with its bit, so `0x0002` and
+    `0x8002` are two types, and "the types a reader understands" lists whole u16 values.
+  - A zero-length value is valid.
+  - `"ext_b64": ""` reads as absent (empty); writers still omit it.
 
 ### 1.3 Algorithm names: one registry, typed blobs
 
