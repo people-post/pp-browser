@@ -38,6 +38,7 @@ struct Fakes {
   std::vector<std::pair<std::string, std::string>> texts;
   std::vector<std::pair<std::string, bool>> sent_items; // path, original
   std::vector<std::vector<std::string>> textures;
+  std::vector<std::string> played;
   int left = 0;
   int queue_changed = 0;
   int first_preview = 0;
@@ -128,6 +129,10 @@ protected:
       }
     };
     host.remove_path = [this](const std::string& path) { fakes_.removed_paths.push_back(path); };
+    host.play_video = [this](const std::string& path) {
+      fakes_.played.push_back(path);
+      return true;
+    };
     controller_.SetHost(std::move(host));
   }
 
@@ -335,6 +340,27 @@ TEST_F(PictureSendControllerTest, WhileMoreAreComingAnEmptiedPageStaysAndClosesW
   EXPECT_TRUE(controller_.IsOpen()) << "more pictures are still being copied";
   controller_.SetArriving(false);
   EXPECT_FALSE(controller_.IsOpen());
+}
+
+TEST_F(PictureSendControllerTest, PlayingAPickedVideoOpensThePlayerOnItsFileAndLeavesThePageAsItWas) {
+  Arrive("a.jpg");
+  Arrive("clip.mov", kMb, PictureSendKind::Video);
+  controller_.SetTextForTest("typed");
+  controller_.OnToggleOriginal();
+  controller_.OnPlay();
+  EXPECT_TRUE(fakes_.played.empty()) << "the current picture is a picture: nothing to play";
+  controller_.OnSelect(1);
+  controller_.OnPlay();
+  EXPECT_EQ(fakes_.played, std::vector<std::string>{"clip.mov"}) << "the picked copy itself";
+  EXPECT_TRUE(controller_.IsOpen());
+  EXPECT_EQ(controller_.CurrentIndex(), 1);
+  EXPECT_EQ(controller_.Text(), "typed");
+  EXPECT_TRUE(queue_->Original());
+  EXPECT_EQ(queue_->Items().size(), 2U);
+  EXPECT_TRUE(fakes_.released.empty());
+  // The page still leaves cleanly with the player up: Back releases the copy the player was given.
+  controller_.OnBack();
+  EXPECT_EQ(fakes_.released, (std::vector<std::string>{"a.jpg", "clip.mov"}));
 }
 
 TEST_F(PictureSendControllerTest, ThePickedSizeIsOneDecimalBelowTenMegabytes) {
@@ -565,6 +591,25 @@ TEST_P(PictureSendPageTest, TheFittedPictureStaysInsideItsStageOnADenseScreen) {
   EXPECT_LE(image_size.x, stage_size.x + 1.f);
   EXPECT_LE(image_size.y, stage_size.y + 1.f);
   EXPECT_NEAR(image_size.x / image_size.y, 4.f / 3.f, 0.03f);
+}
+
+TEST_P(PictureSendPageTest, AVideoHasAPlayButtonOfAtLeast44dpInTheMiddleAndAPictureHasNone) {
+  Arrive("a.jpg");
+  Arrive("clip.mov", kMb, PictureSendKind::Video);
+  Frames();
+  EXPECT_EQ(Count(".ps-play-btn"), 0U) << "a picture has nothing to play";
+  Tap(".ps-cell", 1);
+  ASSERT_EQ(Count(".ps-play-btn"), 1U);
+  ui::Element* button = One(".ps-play-btn");
+  const Edges edges = BorderEdges(button);
+  EXPECT_GE(edges.right - edges.left, 44.f);
+  EXPECT_GE(edges.bottom - edges.top, 44.f);
+  const Edges stage = BorderEdges(One(".ps-stage"));
+  EXPECT_NEAR((edges.left + edges.right) / 2.f, (stage.left + stage.right) / 2.f, 1.f) << "centred";
+  EXPECT_NEAR((edges.top + edges.bottom) / 2.f, (stage.top + stage.bottom) / 2.f, 1.f);
+  button->DispatchEvent(ui::EventId::Click, {});
+  EXPECT_EQ(fakes_.played, std::vector<std::string>{"clip.mov"});
+  EXPECT_TRUE(controller_.IsOpen()) << "the page stays under the player";
 }
 
 TEST_P(PictureSendPageTest, TheSendButtonCountsOnlyWhatCanBeSentAndTheTooLargeOnesAreMarked) {

@@ -3492,6 +3492,14 @@ PictureSendHost ChatController::MakePictureSendHost() {
     return facade_ ? (std::filesystem::path(facade_->ProfileDataDir()) / "picked" / "preview").string() : std::string();
   };
   host.make_preview = &MakePicturePreviewFiles;
+  host.play_video = [](const std::string& path) {
+    // The system player a chat video opens in (OpenAttachment): QuickLook on the iPhone, over the page.
+    if (!PlatformOpenFile(path)) {
+      UserFeedback::Fail(Tr("chat.attachment.video_unplayable"));
+      return false;
+    }
+    return true;
+  };
   host.release_textures = [this](std::vector<std::string> srcs) { QueueTextureRelease(std::move(srcs)); };
   host.queue_changed = [this]() { SettlePictureQueue(); };
   host.left = [this]() {

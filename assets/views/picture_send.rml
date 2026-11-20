@@ -13,8 +13,11 @@
   <div class="ps-stage" id="ps-stage" data-event-mousedown="ps_press()" data-event-mouseup="ps_release()">
     <img class="ps-image" data-if="ps_current_ready" data-attr-src="ps_current_src"
          data-style-width="ps_image_w" data-style-height="ps_image_h"/>
-    <div class="ps-play" data-if="ps_current_ready && ps_current_video">
-      <svg src="../icons/v2/play-fill.svg" width="56" height="56"></svg>
+    <div class="ps-play" data-if="ps_current_video">
+      <!-- A tap plays the picked video in the system's player over this page (the same one a chat video opens in). -->
+      <button class="ps-play-btn" type="button" data-event-click="ps_play()" title="{{i18n:chat.voice.play}}">
+        <svg src="../icons/v2/play-fill.svg" width="32" height="32"></svg>
+      </button>
     </div>
     <p class="ps-stage-note" data-if="ps_current_preparing">{{i18n:chat.attach.preparing}}</p>
     <p class="ps-flag ps-flag--stage" data-if="ps_current_too_large">{{i18n:picture_send.too_large}}</p>

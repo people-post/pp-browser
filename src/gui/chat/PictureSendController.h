@@ -73,6 +73,8 @@ struct PictureSendHost {
   /** Where background work and its answers run (default: AppRuntime's worker pool and UI mailbox). */
   std::function<void(std::function<void()>)> post_worker;
   std::function<void(std::function<void()>)> post_ui;
+  /** Plays the picked video `path` in the system's player over the page (what a chat video opens in); false: it could not. */
+  std::function<bool(const std::string& path)> play_video;
   /** Deletes a file / a folder (default: std::filesystem). */
   std::function<void(const std::string& path)> remove_path;
 };
@@ -122,6 +124,8 @@ public:
   void OnRemove();
   void OnSelect(int index);
   void OnToggleOriginal();
+  /** The current picture is a video: its play button opens the player (the page, its choices and text stay as they are). */
+  void OnPlay();
   void OnPress(int x);
   void OnRelease(int x);
 

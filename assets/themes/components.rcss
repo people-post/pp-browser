@@ -16294,7 +16294,7 @@ textarea:composing ~ .prompt-composer-label,
   flex-shrink: 0;
 }
 
-/* The play mark of a video's poster: a layer over the stage that takes no taps. */
+/* The play button of a video's poster: a 64dp disc in the middle of the stage. Its layer takes no taps itself. */
 .ps-play {
   position: absolute;
   top: 0;
@@ -16305,6 +16305,20 @@ textarea:composing ~ .prompt-composer-label,
   align-items: center;
   justify-content: center;
   pointer-events: none;
+}
+
+.ps-play-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64dp;
+  height: 64dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 32dp;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .ps-stage-note {

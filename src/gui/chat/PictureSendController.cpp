@@ -97,6 +97,7 @@ bool PictureSendController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("ps_remove", DataEvent([this] { OnRemove(); }));
     ctor.BindEventCallback("ps_select", DataEvent<int>([this](const int index) { OnSelect(index); }));
     ctor.BindEventCallback("ps_toggle_original", DataEvent([this] { OnToggleOriginal(); }));
+    ctor.BindEventCallback("ps_play", DataEvent([this] { OnPlay(); }));
     ctor.BindEventCallback("ps_press",
                            DataEventAt([this](ui::Event& ev) { OnPress(ev.GetParameter<int>("mouse_x", 0)); }));
     ctor.BindEventCallback("ps_release",
@@ -471,6 +472,21 @@ void PictureSendController::OnToggleOriginal() {
   original_ = !original_;
   queue->SetOriginal(original_); // the over-limit marks are decided again for the way they would go now
   Refresh();
+}
+
+void PictureSendController::OnPlay() {
+  PictureSendQueue* queue = Queue();
+  if (!queue || !IsOpen() || queue->Started() || !host_.play_video) {
+    return;
+  }
+  const auto& items = queue->Items();
+  if (current_ < 0 || current_ >= static_cast<int>(items.size())) {
+    return;
+  }
+  const PictureSendItem& item = items[static_cast<size_t>(current_)];
+  if (item.kind == PictureSendKind::Video && !item.path.empty()) {
+    host_.play_video(item.path); // the picked copy itself: the player is the system's, nothing here decodes it
+  }
 }
 
 void PictureSendController::OnRemove() {

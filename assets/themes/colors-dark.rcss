@@ -4025,7 +4025,11 @@ input.checkbox:checked {
   color: #ebebf599;
 }
 
-.ps-play svg {
+.ps-play-btn {
+  background-color: #000000a6;
+}
+
+.ps-play-btn svg {
   image-color: #ffffff;
 }
 
