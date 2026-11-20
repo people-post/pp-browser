@@ -54,6 +54,12 @@ void UserFeedback::DismissToast() {
   }
 }
 
+void UserFeedback::DismissToastWithMessage(const std::string& message) {
+  if (ports_.dismiss_toast_with_message) {
+    ports_.dismiss_toast_with_message(message);
+  }
+}
+
 void UserFeedback::Fail(const std::string& message) {
   if (ports_.show_toast) {
     ports_.show_toast(message, ToastDuration::Long);

@@ -135,6 +135,14 @@ CallStatusLine DecideStatusLine(const CallScreen& screen, const CallMediaFacts& 
     line = Words(screen.group ? "call.status.cant_hear_group" : "call.status.cant_hear_peer");
     line.warning = true;
   }
+  // B233: a microphone that is wanted and not open says so in place of the timer, for as long as it lasts, and the
+  // timer is back the moment it opens (the quality is NoMic only while it lasts). Same exceptions as above.
+  if (health.quality == CallPathQuality::NoMic &&
+      (line.kind == LineKind::Timer || line.kind == LineKind::Participants) && !d.on_hold && !d.couldnt_connect &&
+      !d.path_lost && !d.reconnect && !facts.playout_stuck) {
+    line = Words(kCallMicNotOpenKey);
+    line.warning = true;
+  }
   line.hint = screen.status == Status::CouldntConnect ? screen.hint : CallScreen::Hint::None;
   return line;
 }
@@ -164,7 +172,14 @@ CallHintPrompt DecideCallHintPrompt(const CallHintPromptInput& in, const std::ma
     prompt.center_key = in.hint_shown ? in.hint_key : ""; // a group call's page as before
     // Their audio arrives but nothing plays: the only pill a group call raises (not over a lost mic, steps, a hold or a
     // reconnect), the same at most once in 30 s.
-    if (in.playout_stuck && !in.capture_lost && !in.steps_shown && !in.on_hold && !in.quiet) {
+    if (in.mic_not_open && !in.capture_lost && !in.steps_shown && !in.on_hold && !in.quiet) {
+      const std::string key = kCallMicNotOpenKey; // B233: they hear nothing from here
+      if (const auto last = last_pill_ms.find(key);
+          last == last_pill_ms.end() || in.now_ms - last->second >= kHintPillEveryMs) {
+        prompt.pill_key = key;
+        prompt.pill_alarm = true;
+      }
+    } else if (in.playout_stuck && !in.capture_lost && !in.steps_shown && !in.on_hold && !in.quiet) {
       const std::string key = "call.quality.hint.cant_hear_group";
       if (const auto last = last_pill_ms.find(key);
           last == last_pill_ms.end() || in.now_ms - last->second >= kHintPillEveryMs) {
@@ -188,6 +203,9 @@ CallHintPrompt DecideCallHintPrompt(const CallHintPromptInput& in, const std::ma
   bool alarm = false;
   if (in.capture_lost) {
     key = "call.quality.hint.mic_lost"; // the engine could not get the mic back: they hear nothing until a restart
+    alarm = true;
+  } else if (in.mic_not_open) {
+    key = kCallMicNotOpenKey; // B233: no capture device is open, so they hear silence: only a restart helps
     alarm = true;
   } else if (in.playout_stuck) {
     key = "call.quality.hint.cant_hear_peer"; // their packets arrive, nothing plays: only a new call helps (#605)
@@ -243,6 +261,7 @@ CallMediaDecision CallMediaFrame::Decide(const CallScreen& screen, const CallMed
     one_way_since_ms_ = 0;
     not_sending_since_ms_ = 0;
     last_pill_ms_.clear();
+    mic_pill_raised_ = false;
     pressure_gate_ = {};
   }
   CallMediaDecision d;
@@ -391,6 +410,7 @@ const CallMediaScreen& CallMediaFrame::Finish(const CallScreen& screen, const Ca
   hint.mic_blocked = facts.mic_blocked;
   hint.playout_stuck = facts.playout_stuck;
   hint.on_hold = held;
+  hint.mic_not_open = health.quality == CallPathQuality::NoMic;
   hint.now_ms = now;
   hint.ring_unanswered_long = view_.story.ring_unanswered_long;
   const CallHintPrompt prompt = DecideCallHintPrompt(hint, last_pill_ms_);
@@ -400,6 +420,15 @@ const CallMediaScreen& CallMediaFrame::Finish(const CallScreen& screen, const Ca
   view_.hint_pilled = !screen.group;
   if (!prompt.pill_key.empty()) {
     last_pill_ms_[prompt.pill_key] = now;
+  }
+  // B233: the microphone opened (by itself): its pill, if it is still up, goes at once. Only that text is taken down.
+  view_.pill_withdraw_key.clear();
+  if (prompt.pill_key == kCallMicNotOpenKey) {
+    mic_pill_raised_ = true;
+  } else if (mic_pill_raised_ && health.quality != CallPathQuality::NoMic) {
+    mic_pill_raised_ = false;
+    view_.pill_withdraw_key = kCallMicNotOpenKey;
+    last_pill_ms_.erase(kCallMicNotOpenKey); // a later spell says it again without waiting out the 30 s
   }
   return view_;
 }

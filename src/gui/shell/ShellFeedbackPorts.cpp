@@ -23,6 +23,11 @@ ShellFeedbackPorts BindSharedShellFeedback(ShellHost& shell) {
     shell.State().toasts.clear();
     shell.DirtyFeedback();
   };
+  feedback.dismiss_toast_with_message = [&shell](const std::string& message) {
+    if (ShellFeedback::DismissToastWithMessage(shell.State(), message)) {
+      shell.DirtyFeedback();
+    }
+  };
   feedback.show_banner = [&shell](const std::string& message, const bool sticky) {
     if (sticky) {
       ShellFeedback::ShowStickyBanner(shell.State(), message);

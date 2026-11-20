@@ -15,6 +15,7 @@
 #include "lib/media/VideoArrivalStats.h"
 #include "common/Metrics.h"
 #include "lib/media/IVideoCodec.h"
+#include "lib/media/MicPermission.h"
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/media/NoiseSuppressor.h"
 #include "lib/media/VideoYuv.h"
@@ -586,6 +587,8 @@ struct MediaEngine::Impl {
   std::atomic<int> route_state{static_cast<int>(IMediaView::AudioRouteChange::None)};
   /** Capture is gone even after a reopen and an audio rebuild (MediaEngineHealth::capture_lost). */
   std::atomic<bool> capture_lost{false};
+  /** B233: how long a wanted microphone has had no open device; read-only, fed by HealthSnapshot (MicMissingClock). */
+  MicMissingClock mic_missing_clock;
   /** The capture thread is reopening / rebuilding the audio devices (IMediaView::AudioDevicesReopening). */
   std::atomic<bool> audio_reopening{false};
   /** Capture thread: audio_reopening for a scope. */
@@ -2857,6 +2860,7 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
   h.video_target_bps = impl->adaptation_target_video_bps.load(std::memory_order_relaxed);
   h.local_level = impl->local_input_level.load(std::memory_order_relaxed);
   h.remote_level = impl->remote_output_level.load(std::memory_order_relaxed);
+  MicWantedInputs mic_inputs;
   {
     Impl::TimedGetterLock lock(*impl, "HealthSnapshot");
     AudioDeviceLease* speaker = impl->speaker_lease.get();
@@ -2868,6 +2872,10 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
     h.packet_mode = impl->packet_mode;
     h.capture_available = impl->capture_available;
     h.capture_lost = impl->capture_lost.load(std::memory_order_acquire);
+    mic_inputs.engine_running = h.engine_running;
+    mic_inputs.capture_wanted = impl->spec.capture;
+    mic_inputs.muted = h.muted;
+    mic_inputs.capture_device_open = impl->mic_lease && impl->mic_lease->HasDevice();
     for (const auto& [id, stats] : impl->video_arrivals) {
       h.video_arrivals.push_back(VideoStreamArrival{.stream_id = id, .arrival = stats.Summary()});
     }
@@ -2890,6 +2898,18 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
       h.jitter_late_drops += track->jitter.drops_late();
     }
   }
+  // B233: watch only. The OS facts are read here, outside the lock, and nothing below touches a device or a thread.
+  mic_inputs.os_has_session = AudioSession::IsInterrupted();
+  mic_inputs.route_change_pending =
+      impl->route_state.load(std::memory_order_acquire) != static_cast<int>(IMediaView::AudioRouteChange::None);
+  if (MicWantedButNotOpen(mic_inputs)) {
+    mic_inputs.permission_granted = MicPermissionState() == MicPermission::Granted;
+  }
+  const bool missing = MicWantedButNotOpen(mic_inputs);
+  const MicMissingClock::Reading mic =
+      impl->mic_missing_clock.Step(missing, mic_inputs.capture_device_open, SteadyNowMs());
+  h.mic_missing_ms = mic.missing_ms;
+  h.mic_ever_open = mic.ever_open;
   return h;
 }
 

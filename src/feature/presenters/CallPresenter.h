@@ -53,6 +53,8 @@ struct CallNotice {
      * the error style when `alarm` (the user must act).
      */
     Hint,
+    /** B233: the pill `key` (an i18n key) said something that is no longer so: take it down if it is still showing. */
+    HintWithdrawn,
   };
   Kind kind = Kind::Error;
   std::string key;

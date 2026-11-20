@@ -248,6 +248,8 @@ const char* NoticeKindName(CallNotice::Kind kind) {
       return "call_blocked";
     case CallNotice::Kind::Hint:
       return "hint";
+    case CallNotice::Kind::HintWithdrawn:
+      return "hint_withdrawn";
   }
   return "?";
 }

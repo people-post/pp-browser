@@ -436,5 +436,42 @@ TEST(CallBufferPressureGateTest, LossRightAfterARouteChangeStillDropsTheBars) {
   }
 }
 
+// B233: a wanted microphone with no open device (the engine says how long) is not an excellent call.
+TEST(CallMediaHealthTest, NoMicAfterThreeSecondsOfAWantedMicrophoneThatIsNotOpen) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = kCallMicNotOpenAfterMs - 1;
+  EXPECT_EQ(EvaluateCallMediaHealth(in).quality, CallPathQuality::Excellent) << "an open takes a moment";
+  in.engine.mic_missing_ms = kCallMicNotOpenAfterMs;
+  const auto v = EvaluateCallMediaHealth(in);
+  EXPECT_EQ(v.quality, CallPathQuality::NoMic);
+  EXPECT_EQ(v.quality_bars, 1);
+  EXPECT_EQ(v.asymmetry, CallAudioAsymmetry::None);
+  in.engine.mic_missing_ms = 0;
+  EXPECT_EQ(EvaluateCallMediaHealth(in).quality, CallPathQuality::Excellent) << "the microphone opened by itself";
+}
+
+TEST(CallMediaHealthTest, NoMicKeepsTheOlderNumbersAndWordsNoNetworkLabel) {
+  EXPECT_EQ(static_cast<int>(CallPathQuality::NoAudio), 5);
+  EXPECT_EQ(static_cast<int>(CallPathQuality::NoMic), 6) << "appended last: metrics history keeps its meaning";
+  EXPECT_STREQ(CallPathQualityLabelKey(CallPathQuality::NoMic), "") << "the network is fine";
+  EXPECT_STREQ(CallPathQualityDetailsLabelKey(CallPathQuality::NoMic), "call.quality.no_mic");
+}
+
+TEST(CallMediaHealthTest, ReconnectingStillComesBeforeNoMic) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = 20'000;
+  in.reconnecting = true;
+  EXPECT_EQ(EvaluateCallMediaHealth(in).quality, CallPathQuality::Reconnecting);
+}
+
+TEST(CallMediaHealthTest, TheLogLineCarriesTheMissingMicrophoneTime) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = 4200;
+  const auto v = EvaluateCallMediaHealth(in);
+  const std::string line = FormatMediaHealthLogLine(v, in.now_ms, "c");
+  EXPECT_NE(line.find("quality=6"), std::string::npos) << line;
+  EXPECT_NE(line.find("mic_missing_ms=4200"), std::string::npos) << line;
+}
+
 } // namespace
 } // namespace pbr

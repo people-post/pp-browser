@@ -863,5 +863,143 @@ TEST(CallMediaFrameTest, OnlyTheTwoBrokenAudioLinesCarryTheWarningTriangle) {
   EXPECT_FALSE(frame.Step(InCallScreen(Status::Connecting), LiveFacts(160'000), Health()).line.warning) << "connecting";
 }
 
+// --- B233: a microphone that is wanted and not open --------------------------------------------------------------
+
+constexpr const char* kMicKey = "call.quality.hint.mic_not_open";
+
+TEST(CallMediaFrameTest, ANotOpenMicrophoneReplacesTheTimerAndTheTimerComesBackAtOnce) {
+  CallMediaFrame frame;
+  const CallMediaFacts f = LiveFacts(160'000);
+  EXPECT_EQ(frame.Step(InCallScreen(), f, Health()).line.kind, LineKind::Timer);
+  const CallStatusLine line = frame.Step(InCallScreen(), f, Health("direct", CallPathQuality::NoMic)).line;
+  EXPECT_EQ(line.kind, LineKind::Words);
+  EXPECT_EQ(line.key, kMicKey);
+  EXPECT_TRUE(line.warning);
+  EXPECT_EQ(frame.Step(InCallScreen(), f, Health()).line.kind, LineKind::Timer) << "the microphone opened";
+}
+
+TEST(CallMediaFrameTest, ANotOpenMicrophoneInAGroupReplacesTheHeadCountLine) {
+  CallMediaFrame frame;
+  CallScreen group = InCallScreen();
+  group.group = true;
+  EXPECT_EQ(frame.Step(group, LiveFacts(160'000), Health("direct", CallPathQuality::NoMic)).line.key, kMicKey);
+}
+
+TEST(CallMediaFrameTest, HoldsAndFailuresKeepTheirLineOverANotOpenMicrophone) {
+  CallMediaFrame frame;
+  CallMediaFacts f = LiveFacts(160'000);
+  f.peer_on_hold = true;
+  EXPECT_EQ(frame.Step(InCallScreen(), f, Health("direct", CallPathQuality::NoMic)).line.kind, LineKind::PeerOnHold);
+  f.peer_on_hold = false;
+  f.local_on_hold = true;
+  EXPECT_EQ(frame.Step(InCallScreen(), f, Health("direct", CallPathQuality::NoMic)).line.key,
+            "call.status.on_hold_local");
+  f.local_on_hold = false;
+  f.media_status = CallMediaStatus::Reconnecting;
+  EXPECT_NE(frame.Step(InCallScreen(Status::Reconnecting), f, Health("direct", CallPathQuality::NoMic)).line.key,
+            kMicKey);
+}
+
+TEST(CallMediaFrameTest, NoMicIsNotAMediaBrokenLineAndNamesNoNetworkLabel) {
+  // MediaBroken (the quality label replacing the line) must not fire for NoMic: its label is empty, the line is ours.
+  CallMediaFrame frame;
+  CallMediaFacts f = LiveFacts(160'000);
+  f.engine.capture_lost = false;
+  const CallMediaScreen& v = frame.Step(InCallScreen(), f, Health("direct", CallPathQuality::NoMic));
+  EXPECT_STREQ(CallPathQualityLabelKey(v.health.quality), "");
+  EXPECT_EQ(v.line.key, kMicKey);
+  EXPECT_TRUE(v.hint_key.empty()) << "the sentence is the line's and the pill's; no hint line says it again";
+}
+
+TEST(CallHintPromptTest, ANotOpenMicrophoneIsAnErrorPillAfterALostMicAndBeforeAStuckPlayout) {
+  CallHintPromptInput in;
+  in.now_ms = 500'000;
+  in.mic_not_open = true;
+  CallHintPrompt p = DecideCallHintPrompt(in, {});
+  EXPECT_EQ(p.pill_key, kMicKey);
+  EXPECT_TRUE(p.pill_alarm);
+  in.playout_stuck = true;
+  EXPECT_EQ(DecideCallHintPrompt(in, {}).pill_key, kMicKey);
+  in.capture_lost = true;
+  EXPECT_EQ(DecideCallHintPrompt(in, {}).pill_key, "call.quality.hint.mic_lost") << "our own fault first";
+}
+
+TEST(CallHintPromptTest, ANotOpenMicrophonePillIsNotSaidOverStepsHoldsOrFailuresAndRepeatsEveryThirtySeconds) {
+  for (int which = 0; which < 3; ++which) {
+    CallHintPromptInput in;
+    in.now_ms = 500'000;
+    in.mic_not_open = true;
+    in.on_hold = which == 0;
+    in.quiet = which == 1;
+    in.steps_shown = which == 2;
+    EXPECT_TRUE(DecideCallHintPrompt(in, {}).pill_key.empty()) << which;
+    in.group = true;
+    EXPECT_TRUE(DecideCallHintPrompt(in, {}).pill_key.empty()) << "group " << which;
+  }
+  CallHintPromptInput in;
+  in.mic_not_open = true;
+  in.now_ms = 500'000;
+  const std::map<std::string, int64_t> last{{kMicKey, 500'000}};
+  in.now_ms = 529'900;
+  EXPECT_TRUE(DecideCallHintPrompt(in, last).pill_key.empty());
+  in.now_ms = 530'000;
+  EXPECT_EQ(DecideCallHintPrompt(in, last).pill_key, kMicKey);
+  in.group = true;
+  EXPECT_EQ(DecideCallHintPrompt(in, last).pill_key, kMicKey) << "a group call says it as well";
+}
+
+TEST(CallMediaFrameTest, TheMicrophonePillIsRaisedOnceAndWithdrawnTheMomentTheMicrophoneOpens) {
+  CallMediaFrame frame;
+  CallMediaFacts f = LiveFacts(300'000);
+  const CallMediaHealthView bad = Health("direct", CallPathQuality::NoMic);
+  const CallMediaScreen& raised = frame.Step(InCallScreen(), f, bad);
+  EXPECT_EQ(raised.pill_key, kMicKey);
+  EXPECT_TRUE(raised.pill_withdraw_key.empty());
+  f.now_ms += 1000;
+  const CallMediaScreen& still = frame.Step(InCallScreen(), f, bad);
+  EXPECT_TRUE(still.pill_key.empty()) << "not again inside 30 s";
+  EXPECT_TRUE(still.pill_withdraw_key.empty());
+  f.now_ms += 1000;
+  const CallMediaScreen& opened = frame.Step(InCallScreen(), f, Health());
+  EXPECT_EQ(opened.pill_withdraw_key, kMicKey);
+  EXPECT_TRUE(opened.pill_key.empty());
+  EXPECT_EQ(opened.line.kind, LineKind::Timer);
+  f.now_ms += 1000;
+  EXPECT_TRUE(frame.Step(InCallScreen(), f, Health()).pill_withdraw_key.empty()) << "withdrawn once";
+  // A later spell is said again at once (the 30 s memory went with the withdrawal).
+  f.now_ms += 1000;
+  EXPECT_EQ(frame.Step(InCallScreen(), f, bad).pill_key, kMicKey);
+}
+
+TEST(CallMediaFrameTest, ANeverRaisedMicrophonePillIsNeverWithdrawnAndANewCallForgetsIt) {
+  CallMediaFrame frame;
+  CallMediaFacts f = LiveFacts(300'000);
+  EXPECT_TRUE(frame.Step(InCallScreen(), f, Health()).pill_withdraw_key.empty());
+  frame.Step(InCallScreen(), f, Health("direct", CallPathQuality::NoMic));
+  f.call_id = "call-2";
+  f.now_ms += 1000;
+  EXPECT_TRUE(frame.Step(InCallScreen(), f, Health()).pill_withdraw_key.empty()) << "another call, nothing raised yet";
+}
+
+TEST(CallMediaFrameTest, TheEnginesMissingMicrophoneTimeGradesTheCallWhenTheHealthIsEvaluatedHere) {
+  CallMediaFrame frame;
+  CallMediaFacts f = LiveFacts(300'000);
+  f.engine.active = true;
+  f.engine.engine_running = true;
+  f.engine.rx_audio_frames = 100;
+  f.engine.tx_audio_frames = 100;
+  f.engine.last_rx_audio_ms = f.now_ms - 100;
+  f.engine.last_tx_audio_ms = f.now_ms - 100;
+  f.engine.mic_missing_ms = 2'999;
+  EXPECT_EQ(frame.Step(InCallScreen(), f).health.quality, CallPathQuality::Excellent);
+  f.now_ms += 100;
+  f.engine.last_rx_audio_ms = f.now_ms - 100;
+  f.engine.last_tx_audio_ms = f.now_ms - 100;
+  f.engine.mic_missing_ms = 3'000;
+  const CallMediaScreen& v = frame.Step(InCallScreen(), f);
+  EXPECT_EQ(v.health.quality, CallPathQuality::NoMic);
+  EXPECT_EQ(v.line.key, kMicKey);
+}
+
 } // namespace
 } // namespace pbr

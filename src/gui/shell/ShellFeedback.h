@@ -12,6 +12,8 @@ struct ShellFeedback {
   static void ShowToast(ShellState& state, const std::string& message, ToastDuration duration = ToastDuration::Short,
                         float now_ms = 0.f);
   static void ExpireToasts(ShellState& state, float now_ms);
+  /** Takes down the toasts whose text is exactly `message`, and no other; true when one went. */
+  static bool DismissToastWithMessage(ShellState& state, const std::string& message);
   /** Seconds until the soonest toast expiry, or < 0 if none. Used to arm power-save wake. */
   static double SecondsUntilNextFeedbackExpiry(const ShellState& state, float now_ms);
   /** Long enough to read one sentence, then gone; nobody wants to hunt for the × (Kenneth 2026-10-19). */

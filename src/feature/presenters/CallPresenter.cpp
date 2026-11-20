@@ -812,6 +812,12 @@ void CallPresenter::StepMedia(CallUiBackend& backend, const CallScreen& next, co
         notice.alarm = frame.pill_alarm;
         Notify(notice);
       }
+      if (!frame.pill_withdraw_key.empty()) {
+        CallNotice notice;
+        notice.kind = CallNotice::Kind::HintWithdrawn;
+        notice.key = frame.pill_withdraw_key;
+        Notify(notice);
+      }
       ActOnMedia(backend, frame);
       LogMedia(facts, frame);
       return;
