@@ -17,6 +17,7 @@ pp_browser_add_foundation_library(pp_foundation_crypto
     MessageCipher.cpp
     PinKeyDeriver.cpp
     PeerIdForm.cpp
+    RelayId.cpp
     PinResolver.cpp
     ProfileSecretsEngine.cpp
     ProfileUnlockGate.cpp
