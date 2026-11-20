@@ -514,6 +514,8 @@ first release that writes these forms, so before it there is no release to roll 
 
 ## Open questions
 
+All answered as recommended: [RC020](DECISIONS.md#rc020--the-signed-formats-for-the-release-1-cutover) (Hongwei, 2026-11-20).
+
 | # | Question | Recommendation |
 |---|----------|----------------|
 | Q1 | JSON objects: the extension area as `ext_b64` (the binary TLV, base64) or as a JSON map of entries? | **`ext_b64` TLV.** One encoding everywhere; the signed bytes are the decoded entries, so no JSON canonicalization (forbidden in signed bytes by D088); a JSON map's duplicate keys are read differently by different parsers, a known signature-bypass route |

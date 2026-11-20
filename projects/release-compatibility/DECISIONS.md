@@ -484,3 +484,32 @@ protection item for two repos.
 PR on a branch that is about to go. Moving the trust before the workflows means no deploy fails during the switch.
 **Cost:** without protection, a mistaken push to `main` in the relay repos reaches qa unreviewed; prod still needs a
 tag.
+
+## RC020 — The signed formats for the release-1 cutover
+
+**Date:** 2026-11-20
+**Status:** Accepted (Hongwei, 2026-11-20): every recommendation of [SIGNED_FORMATS § Open questions](SIGNED_FORMATS.md#open-questions),
+Q1–Q16. The design is [SIGNED_FORMATS.md](SIGNED_FORMATS.md); it lands as one pre-release cutover (RC017: testers
+reinstall release 1), and its formats move to `docs/contracts/` as each is built.
+**Decision:**
+1. Every signed object carries one version, outside its signature and inside it, read before verifying; a newer
+   version, an unknown algorithm or an unknown critical extension is "update needed", never a forgery.
+2. The extension area is the last signed field, a sorted TLV list with a critical bit, at most 4 KiB (Q16); JSON
+   objects carry it as `ext_b64` (Q1). One codec, `ExtArea`, in pp-cpp-common, and its TypeScript twin in the relay.
+3. Algorithms are named by an id byte at the start of every key, signature, KEM and AEAD blob (Q2), from one registry
+   (`AlgId` in pp-cpp-crypto); Account IDs, PeerIds and locker ids are unchanged.
+4. Signing domains drop their `-vN` suffix (Q3); every relay sign domain moves to version 4 (Q4); text sign bytes
+   become binary.
+5. A relay is identified by `relay:` + base64url(BLAKE2b-256 of its founding operator set) (Q5). Its certificate binds
+   1–4 origins (Q6), carries `expires_at` with 0 = none and a reader for it (Q7), and release 1 ships the reader for
+   operator-set changes, unused until its runbook exists (Q8). Set sizes: prod and staging 2 of 3, dev and local 1 of
+   1 (Q9; who holds them is Leo's). Builds embed each environment's relay id and current certificate (Q10). A planned
+   rotation accepts the previous PeerId as audience for 24 h, never after a compromise (Q11). The certified signing
+   key is unused in release 1 (Q13).
+6. Pre-release relay data release 1 cannot read (v4 cards, record-1 lockers, envelope-3 mailboxes) is deleted with
+   relay 1.0's deploy (Q12).
+7. No extension area per envelope copy (Q14); the DHT record is in the cutover (Q15).
+**Rationale:** SIGNED_FORMATS § Open questions gives each one. Doing all signed objects in one cutover, before release
+1, is the only time no older reader exists.
+**Cost:** a tester who restores after release 1 keeps their Account ID but starts with an empty locker and re-adds
+contacts (Q12); every signed object's bytes change at once, so the libraries, the relay and the app land together.
