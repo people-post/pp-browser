@@ -1020,6 +1020,7 @@ void ChatController::BindShellNavigation(ShellNavigationPorts ports) {
   shell_navigation_ = std::move(ports);
   chrome_.BindShellNavigation(shell_navigation_);
   working_set_.BindShellNavigation(shell_navigation_);
+  picture_send_.BindShellNavigation(shell_navigation_);
 }
 
 void ChatController::BindShellFeedback(ShellFeedbackPorts ports) {
@@ -1377,6 +1378,7 @@ void ChatController::CloseChatWith(const std::string& thread_id, const std::func
     AbandonPick(); // a pick of the deleted chat: its late results are dropped and released
   }
   if (picture_queue_ && picture_queue_->ThreadId() == thread_id) {
+    picture_send_.CloseForExit();  // the page goes first, so its close is not a "Back" that would revive the draft
     picture_queue_->ChatDeleted(); // never revived in its draft
     SettlePictureQueue();
   }
@@ -1685,6 +1687,7 @@ void ChatController::OnProfileDataReset() {
   previews_probe_ = ChatPreviewsProbe{};
   pending_uploads_.Drop(); // the lock check never sees this teardown: the plaintext thumbnail goes here
   AbandonPick();
+  picture_send_.CloseForExit();
   if (picture_queue_) {
     picture_queue_->SignedOut(); // the rest released, the text dropped; an item in flight releases its own copy
     picture_queue_.reset();
@@ -2743,7 +2746,7 @@ void ChatController::AbandonPick() {
 }
 
 void ChatController::RefreshPickOverlay() {
-  const PickOverlay overlay = PickOverlayOf(picks_.State(), ActiveThreadId(), /*choice_shown=*/false,
+  const PickOverlay overlay = PickOverlayOf(picks_.State(), ActiveThreadId(), /*choice_shown=*/picture_send_.IsOpen(),
                                             /*bubble_built=*/false, util::NowUnixMs());
   const bool busy = overlay != PickOverlay::Hidden;
   const bool slow = overlay == PickOverlay::TwoLines;
@@ -2851,9 +2854,36 @@ void ChatController::OnAttachFile(ui::Event* ev) {
     };
   };
   // "Photo" on a phone: the library with pictures and videos.
-  const auto pick_photo_or_video = [this, picked_picture]() {
-    return [this, picked_picture]() {
+  const auto pick_photo_or_video = [this, picked_picture, thread_id]() {
+    return [this, picked_picture, thread_id]() {
       const uint64_t serial = ArmPick();
+      if (Platform::Detect() == PlatformKind::IOS) {
+        // iPhone / iPad: up to nine, in the order tapped, one at a time into the preview page (the picture and the
+        // text go out as separate messages). The pictures arrive through on_item; the plain callback only says "done".
+        photo_batch_ = PhotoBatch{.pick_serial = serial, .thread_id = thread_id, .session = messaging_session_};
+        picture_picker_done_ms_ = 0;
+        ShowOpenPhotoLibraryDialog(
+            Backend::GetWindow(),
+            [this, serial](std::vector<std::string> /*never any: the items came through on_item*/) {
+              AppRuntime::PostUI([this, serial]() { OnPhotoBatchDone(serial); });
+            },
+            [this, serial](const std::string& /*name*/) {
+              AppRuntime::PostUI([this, serial]() {
+                if (!picks_.IsCurrent(serial)) {
+                  return;
+                }
+                picture_picker_done_ms_ = SteadyNowMs();
+                BeginAttachmentPreparing({});
+                ShowPick(serial); // the copy out of the library runs: "Preparing…" until the first picture is up
+              });
+            },
+            static_cast<int>(PictureSendQueue::kMaxItems),
+            [this, serial](const size_t index, const size_t total, const std::string& path) {
+              AppRuntime::PostUI(
+                  [this, serial, index, total, path]() { OnPhotoBatchItem(serial, index, total, path); });
+            });
+        return;
+      }
       ShowOpenPhotoLibraryDialog(Backend::GetWindow(), picked_picture(serial), [this, serial](const std::string& name) {
         AppRuntime::PostUI([this, serial, name]() {
           if (!picks_.IsCurrent(serial)) {
@@ -3404,14 +3434,243 @@ PictureSendPorts ChatController::MakePictureSendPorts(const uint64_t serial) {
                                            });
   };
   ports.offline = [this]() { return facade_ && facade_->DeviceOffline(); };
-  ports.done = [this](const PictureSendReport& report) {
-    log().info << "picture queue ended: exit=" << static_cast<int>(report.exit) << " sent=" << report.sent
-               << " not_sent=" << report.NotSent() << " text=" << static_cast<int>(report.text);
-  };
+  ports.done = [this](const PictureSendReport& report) { OnPictureQueueDone(report); };
   return ports;
 }
 
+namespace {
+
+/**
+ * The preview page's two pictures of a picked file, on a worker: the large one (long edge 1280) from the file, the
+ * small one from the large one. The cancel flag is looked at before and after each write; what was written is deleted
+ * when it says stop.
+ */
+PictureSendPreviewFiles MakePicturePreviewFiles(const std::string& path, const PictureSendKind kind,
+                                                const std::string& dir, const std::function<bool()>& cancelled) {
+  constexpr int kPreviewLongEdgePx = 1280;
+  constexpr int kThumbLongEdgePx = 144;
+  const uint64_t max_bytes = AttachmentLimits{}.max_original_image_bytes;
+  PictureSendPreviewFiles files;
+  if (cancelled()) {
+    return files;
+  }
+  const UploadThumbnail large = kind == PictureSendKind::Video
+                                    ? WriteVideoPosterThumbnail(path, dir, kPreviewLongEdgePx)
+                                    : WritePickedPictureThumbnail(path, dir, max_bytes, kPreviewLongEdgePx);
+  const auto drop = [](const std::string& file) {
+    if (!file.empty()) {
+      std::error_code ec;
+      std::filesystem::remove(file, ec);
+    }
+  };
+  if (large.path.empty()) {
+    return files;
+  }
+  if (cancelled()) {
+    drop(large.path);
+    return files;
+  }
+  const UploadThumbnail small = WritePickedPictureThumbnail(large.path, dir, max_bytes, kThumbLongEdgePx);
+  if (cancelled()) {
+    drop(large.path);
+    drop(small.path);
+    return files;
+  }
+  files.preview_path = large.path;
+  files.thumb_path = small.path;
+  files.width = large.width;
+  files.height = large.height;
+  return files;
+}
+
+} // namespace
+
+PictureSendHost ChatController::MakePictureSendHost() {
+  PictureSendHost host;
+  host.queue = [this]() { return picture_queue_.get(); };
+  host.preview_root = [this]() {
+    return facade_ ? (std::filesystem::path(facade_->ProfileDataDir()) / "picked" / "preview").string() : std::string();
+  };
+  host.make_preview = &MakePicturePreviewFiles;
+  host.release_textures = [this](std::vector<std::string> srcs) { QueueTextureRelease(std::move(srcs)); };
+  host.queue_changed = [this]() { SettlePictureQueue(); };
+  host.left = [this]() {
+    picture_picker_done_ms_ = 0;
+    AbandonPick(); // later pictures of the pick are released as they arrive
+  };
+  host.first_preview_shown = [this]() {
+    if (picture_picker_done_ms_ > 0) {
+      MetricsLine("picture.preview_open").Add("first_ms", SteadyNowMs() - picture_picker_done_ms_).Emit();
+      picture_picker_done_ms_ = 0;
+    }
+  };
+  host.send_label = [](const size_t sendable) {
+    return sendable <= 1 ? Tr("picture_send.send_one") : Tr("picture_send.send_n", {{"n", std::to_string(sendable)}});
+  };
+  host.size_label = [](const uint64_t bytes) {
+    return Tr("picture_send.size_total", {{"size", FormatPickedSize(bytes)}});
+  };
+  return host;
+}
+
+void ChatController::OnPhotoBatchItem(const uint64_t pick_serial, const size_t /*index*/, const size_t total,
+                                      std::string path) {
+  const auto drop = [this](const std::string& file) {
+    if (!file.empty()) {
+      release_pick_(file);
+    }
+  };
+  if (!photo_batch_ || photo_batch_->pick_serial != pick_serial) {
+    drop(path); // an older pick's late picture
+    return;
+  }
+  PhotoBatch& batch = *photo_batch_;
+  ++batch.seen;
+  const bool more = batch.seen < total;
+  PictureSendQueue* queue = batch.queue_serial != 0 && picture_queue_ && picture_queue_serial_ == batch.queue_serial
+                                ? picture_queue_.get()
+                                : nullptr;
+  if (path.empty()) {
+    // This one could not be copied: the rest carry on.
+    if (queue) {
+      queue->SetArriving(more);
+      if (!queue->Started()) {
+        picture_send_.SetArriving(more);
+      }
+    }
+    return;
+  }
+  // Every picture is checked as it arrives: the vault still unlocked, the same session, the pick not over (cancelled,
+  // replaced, or the page left), and its queue still there once there was one. Otherwise its copy is released here.
+  if (!messaging_ready_ || !MessagingReady() || batch.session != messaging_session_ || !picks_.IsCurrent(pick_serial) ||
+      (batch.queue_serial != 0 && !queue)) {
+    drop(path);
+    return;
+  }
+  const bool started = queue && queue->Started();
+  if (!started && batch.thread_id != ActiveThreadId()) {
+    drop(path); // its chat is no longer the open one: nothing is sent, and the rest of the pick is let go
+    AbandonPick();
+    UserFeedback::Fail(Tr("chat.attach.not_sent_left_chat"));
+    return;
+  }
+  if (!queue) {
+    queue = BeginPictureQueue(batch.thread_id);
+    if (!queue) {
+      drop(path);
+      AbandonPick();
+      UserFeedback::Fail(Tr("chat.attach.previous_still_sending"));
+      return;
+    }
+    batch.queue_serial = picture_queue_serial_;
+    EndAttachmentPreparing(); // the page replaces "Preparing…"
+  }
+  std::error_code ec;
+  const uint64_t bytes = static_cast<uint64_t>(std::filesystem::file_size(path, ec));
+  const PictureSendKind kind =
+      AttachmentMimeFromFilename(path).rfind("video/", 0) == 0 ? PictureSendKind::Video : PictureSendKind::Picture;
+  uint64_t pixels = 0;
+  if (kind == PictureSendKind::Picture) {
+    if (const auto header = ReadImageHeader(path)) {
+      pixels = static_cast<uint64_t>(header->width) * static_cast<uint64_t>(header->height);
+    }
+  }
+  const std::optional<uint64_t> id = queue->Add(path, kind, ec ? 0 : bytes, pixels); // a full queue releases it
+  queue->SetArriving(more);
+  if (!id) {
+    return;
+  }
+  if (!queue->Started()) {
+    if (!picture_send_.OnItemAdded(*id)) {
+      queue->Back(); // no page to show them on: nothing is sent, the copies are released
+      AbandonPick();
+    } else {
+      picture_send_.SetArriving(more);
+      RefreshPickOverlay();
+    }
+  }
+  SettlePictureQueue();
+}
+
+void ChatController::OnPhotoBatchDone(const uint64_t pick_serial) {
+  if (!photo_batch_ || photo_batch_->pick_serial != pick_serial) {
+    return;
+  }
+  const bool had_queue = photo_batch_->queue_serial != 0;
+  PictureSendQueue* queue = had_queue && picture_queue_ && picture_queue_serial_ == photo_batch_->queue_serial
+                                ? picture_queue_.get()
+                                : nullptr;
+  photo_batch_.reset();
+  if (queue) {
+    queue->SetArriving(false); // a started queue that waited only for these goes on (or ends)
+    if (!queue->Started()) {
+      picture_send_.SetArriving(false);
+    }
+    SettlePictureQueue();
+  }
+  EndPick(pick_serial);
+  if (!had_queue) {
+    EndAttachmentPreparing(); // nothing came: cancelled, or every copy failed
+  }
+}
+
+void ChatController::ShowPictureProgress() {
+  if (!picture_queue_ || !picture_queue_->Active()) {
+    return;
+  }
+  const PictureSendProgress progress = picture_queue_->Progress();
+  const int64_t now = SteadyNowMs();
+  if (progress.paced && !picture_paced_) {
+    picture_paced_ = true;
+    picture_pace_since_ms_ = now;
+  } else if (!progress.paced && picture_paced_) {
+    picture_paced_ = false;
+    picture_wait_ms_ += now - picture_pace_since_ms_;
+  }
+  if (progress.of <= 1 && !progress.paced) {
+    return; // one picture: its own bubble shows the sending
+  }
+  const std::string text =
+      progress.paced
+          ? Tr("picture_send.paced")
+          : Tr("picture_send.progress", {{"i", std::to_string(progress.number)}, {"n", std::to_string(progress.of)}});
+  if (text != picture_progress_text_) {
+    picture_progress_text_ = text;
+    UserFeedback::Note(text);
+  }
+}
+
+void ChatController::OnPictureQueueDone(const PictureSendReport& report) {
+  log().info << "picture queue ended: exit=" << static_cast<int>(report.exit) << " sent=" << report.sent
+             << " not_sent=" << report.NotSent() << " text=" << static_cast<int>(report.text);
+  if (picture_paced_) {
+    picture_paced_ = false;
+    picture_wait_ms_ += SteadyNowMs() - picture_pace_since_ms_;
+  }
+  const bool went = report.exit == PictureSendExit::Finished || report.exit == PictureSendExit::Cancelled ||
+                    report.exit == PictureSendExit::Offline;
+  if (went) {
+    MetricsLine("picture.send_batch")
+        .Add("count", report.sent + report.NotSent() + report.in_flight)
+        .Add("original", picture_queue_ && picture_queue_->Original())
+        .Add("not_sent", report.NotSent())
+        .Add("wait_ms", picture_wait_ms_)
+        .Emit();
+  }
+  picture_wait_ms_ = 0;
+  const bool pill_shown = !picture_progress_text_.empty();
+  picture_progress_text_.clear();
+  if (report.exit == PictureSendExit::Offline) {
+    UserFeedback::Fail(Tr("picture_send.offline_stop"));
+  } else if (went && report.NotSent() > 0) {
+    UserFeedback::Fail(Tr("picture_send.not_sent", {{"n", std::to_string(report.NotSent())}}));
+  } else if (pill_shown) {
+    UserFeedback::DismissToast(); // the progress words end with the sending
+  }
+}
+
 void ChatController::SettlePictureQueue() {
+  ShowPictureProgress();
   if (picture_queue_ && picture_queue_->Settled()) {
     picture_queue_.reset();
     RefreshPendingAttachmentChip(/*force=*/true); // the chip waited while the queue held the slot
@@ -6159,6 +6418,10 @@ bool ChatController::Setup(ui::Context* context) {
   if (!group_link_->Register(context)) {
     return false;
   }
+  picture_send_.SetHost(MakePictureSendHost());
+  if (!picture_send_.RegisterModel(context)) {
+    return false;
+  }
   if constexpr (kUiDemoBuild) {
     ask_ai_.SetFakeAnswers(DemoAskAiAnswer); // the demo app has no AI backend
   }
@@ -6353,6 +6616,7 @@ void ChatController::OnApplicationPause() {
 }
 
 void ChatController::Update() {
+  picture_send_.Update();
   PollChatShowing();
   ReleaseQueuedTextures();
   // The vault locked: the view cache (previews, pictures, posters, covers) is wiped. Every chat picture becomes its
@@ -6424,6 +6688,9 @@ void ChatController::Update() {
   // shows the grey placeholder once drawn again; a retry reads the staged ciphertext, not the thumbnail).
   if (messaging_ready_ && !MessagingReady() && picks_.State().serial != 0) {
     AbandonPick(); // locked: a pick's late results are dropped and released, the entries come back
+  }
+  if (messaging_ready_ && !MessagingReady()) {
+    picture_send_.CloseForExit(); // an open preview page closes by itself (nothing else closes layers on a lock)
   }
   if (messaging_ready_ && !MessagingReady() && picture_queue_ && !picture_queue_->Ended()) {
     picture_queue_->Locked(); // the rest is released, the text dropped; an item in flight still reports its end
@@ -6784,6 +7051,7 @@ void ChatController::Shutdown() {
   // Hub + ProfileSecrets lifetime is owned by Application::ShutdownMessaging.
   pending_uploads_.Drop(); // the lock check never sees this teardown: the plaintext thumbnail goes here
   AbandonPick();
+  picture_send_.CloseForExit();
   if (picture_queue_) {
     picture_queue_->SignedOut(); // the rest released, the text dropped; an item in flight releases its own copy
     picture_queue_.reset();

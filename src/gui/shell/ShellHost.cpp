@@ -2769,8 +2769,10 @@ void ShellHost::AttachSwipeBackGesture() {
   }
 
   if (state_.layout_mode == LayoutMode::Compact && !state_.overlay_stack.empty() &&
-      state_.overlay_stack.back().full_screen && state_.overlay_stack.back().key == "avatar_view") {
-    // The photo viewer (a picture opened large from a profile or a contact page): an edge swipe closes it.
+      state_.overlay_stack.back().full_screen &&
+      (state_.overlay_stack.back().key == "avatar_view" || state_.overlay_stack.back().key == "picture_send")) {
+    // The photo viewer (a picture opened large from a profile or a contact page) and the picture preview page (pictures
+    // picked to send): an edge swipe closes it (the preview page's close is its Back).
     const std::string viewer_id = "shell-full-screen-" + std::to_string(state_.overlay_stack.back().id);
     if (ui::Element* viewer = doc->GetElementById(viewer_id.c_str())) {
       swipe_back_gesture_.Attach(viewer, context_, std::move(options),

@@ -18,6 +18,7 @@
 #include "gui/chat/CameraCaptureFlow.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
 #include "gui/chat/PendingUploadRows.h"
+#include "gui/chat/PictureSendController.h"
 #include "feature/presenters/AttachmentPicks.h"
 #include "feature/presenters/PictureSendQueue.h"
 #include "gui/chat/PhotoPreview.h"
@@ -256,7 +257,10 @@ public:
   /** Messaging was torn down (reset): frees the renewal slot a registration still holds. Application calls it. */
   void OnMessagingTornDownForRegistration();
   /** The panel's sheet is a modal layer: the coordinator says when the shell closed it. */
-  void BindFlowCoordinator(FlowCoordinatorPorts ports) { flow_coordinator_ = std::move(ports); }
+  void BindFlowCoordinator(FlowCoordinatorPorts ports) {
+    picture_send_.BindFlowCoordinator(ports);
+    flow_coordinator_ = std::move(ports);
+  }
   // By value, not by reference: Home callers pass a reference into home_favorites_ / home_summary_, and selecting
   // from Home first switches to the Chats tab, which rebuilds those containers -- the reference would dangle before
   // SelectThread hashes it (B161: SIGSEGV in PrefsOf's hash lookup, phones only).
@@ -440,6 +444,16 @@ private:
   PictureSendPorts MakePictureSendPorts(uint64_t serial);
   /** After any call into the queue: the composer follows the slot, and a queue with nothing left to happen goes. */
   void SettlePictureQueue();
+  /** What the picture preview page needs from this screen (its queue, files, textures, words). */
+  PictureSendHost MakePictureSendHost();
+  /** One picture of a several-photo pick arrived from the library (`path` empty: it could not be copied). */
+  void OnPhotoBatchItem(uint64_t pick_serial, size_t index, size_t total, std::string path);
+  /** The library has handed over every picture of the pick (or none: it was cancelled). */
+  void OnPhotoBatchDone(uint64_t pick_serial);
+  /** The bottom pill follows the queue: "Sending 3 of 9" while it runs. */
+  void ShowPictureProgress();
+  /** How the queue ended: the pill's last word, and the metrics line. */
+  void OnPictureQueueDone(const PictureSendReport& report);
   // The wait between a pick and its choice / bubble (DEV/PLAN-attachment-bubbles-multi-pick.md step 3): a pick serial
   // per picker opening, the centred overlay while it is prepared, its late results dropped once it is over.
   uint64_t ArmPick();
@@ -591,6 +605,25 @@ private:
   std::unique_ptr<PictureSendQueue> picture_queue_;
   /** Names the current queue: an item's late end or a late tick for an older one is told apart. */
   uint64_t picture_queue_serial_ = 0;
+  /** The preview page of the pictures picked together (hosted here like OpenHomeEdit's layer). */
+  PictureSendController picture_send_;
+  /** The several-photo pick being copied out of the library (iPhone / iPad); none otherwise. */
+  struct PhotoBatch {
+    uint64_t pick_serial = 0;
+    std::string thread_id;
+    uint64_t session = 0;
+    /** The queue made for it (0: none yet). */
+    uint64_t queue_serial = 0;
+    size_t seen = 0;
+  };
+  /** When the system picker finished (the preview page's first picture is timed from here); 0: not timing. */
+  int64_t picture_picker_done_ms_ = 0;
+  std::optional<PhotoBatch> photo_batch_;
+  /** The progress pill's last text, and the time spent waiting out the send pace (the batch metric). */
+  std::string picture_progress_text_;
+  bool picture_paced_ = false;
+  int64_t picture_pace_since_ms_ = 0;
+  int64_t picture_wait_ms_ = 0;
   AttachmentPicks picks_;
   /**
    * A bubble's disc ignores a cancel tap this long after the tap that started or retried it: the retry disc and the

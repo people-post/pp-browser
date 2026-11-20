@@ -16230,3 +16230,231 @@ textarea:composing ~ .prompt-composer-label,
 .recovery-dots {
   letter-spacing: 1dp;
 }
+
+/* Picture preview (a full-screen layer over the chat, DEV/PLAN-picture-send-preview.md): a column whose picture takes
+   what is left, so the bottom rows stay above the keyboard. Colours: colors.rcss.tmpl. */
+.picture-send {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.ps-top {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 52dp;
+  padding: 0 4dp;
+}
+
+.ps-top-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48dp;
+  height: 48dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.ps-top-btn--none {
+  cursor: default;
+}
+
+.ps-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 17dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.ps-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin: 0 16dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 12dp;
+}
+
+.ps-image {
+  flex-shrink: 0;
+}
+
+/* The play mark of a video's poster: a layer over the stage that takes no taps. */
+.ps-play {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.ps-stage-note {
+  margin: 0;
+  font-size: 15dp;
+}
+
+.ps-flag {
+  margin: 0;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.ps-flag--stage {
+  position: absolute;
+  left: 12dp;
+  bottom: 12dp;
+  padding: 6dp 12dp;
+  border-radius: 14dp;
+  font-size: 13dp;
+}
+
+.ps-flag--cell {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2dp;
+  font-size: 9dp;
+  line-height: 11dp;
+  text-align: center;
+}
+
+.ps-strip {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  gap: 8dp;
+  height: 88dp;
+  padding: 12dp 16dp 12dp 16dp;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.ps-cell {
+  position: relative;
+  flex-shrink: 0;
+  width: 64dp;
+  height: 64dp;
+  border-width: 2dp;
+  border-radius: 10dp;
+  box-sizing: border-box;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.ps-cell-image {
+  display: block;
+}
+
+.ps-bottom {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4dp;
+  padding: 4dp 16dp 12dp 16dp;
+}
+
+.ps-field {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  min-height: 44dp;
+  padding: 0 16dp;
+  border-radius: 22dp;
+  box-sizing: border-box;
+}
+
+.ps-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  min-height: 24dp;
+  margin: 0;
+  padding: 10dp 0;
+  border: 0;
+  background-color: transparent;
+  font-size: 17dp;
+  line-height: 22dp;
+  cursor: text;
+}
+
+.ps-placeholder {
+  position: absolute;
+  top: 0;
+  left: 16dp;
+  height: 44dp;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  pointer-events: none;
+}
+
+textarea:composing ~ .ps-placeholder {
+  display: none;
+}
+
+.ps-original {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+  min-height: 50dp;
+  margin: 0;
+  padding: 0 4dp;
+  border: 0;
+  background-color: transparent;
+  box-sizing: border-box;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ps-original-label {
+  flex-shrink: 0;
+  font-size: 17dp;
+}
+
+.ps-original-size {
+  flex-shrink: 0;
+  margin-left: 12dp;
+  font-size: 15dp;
+}
+
+.ps-spacer {
+  flex: 1;
+  min-width: 8dp;
+}
+
+.ps-send {
+  width: 100%;
+  height: 50dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 25dp;
+  line-height: 50dp;
+  font-size: 17dp;
+  font-weight: bold;
+  text-align: center;
+  cursor: pointer;
+}

@@ -1,0 +1,51 @@
+<!-- Pictures picked together, looked at before they go (DEV/PLAN-picture-send-preview.md): a full-screen layer over the
+     chat. Top bar (back, "n / N", remove), the current picture large (swipe sideways), a strip of small ones, and the
+     bottom: a line of text, the "original" switch and one full-width Send button. The page is a column and the picture
+     takes what is left, so the bottom stays above the keyboard. -->
+<div class="picture-send" data-model="picture_send">
+  <div class="ps-top">
+    <button class="ps-top-btn" type="button" data-event-click="ps_back()" title="{{i18n:common.back}}">
+      <svg src="../icons/v2/back.svg" width="24" height="24"></svg>
+    </button>
+    <p class="ps-title">{{ps_title}}</p>
+    <button class="ps-top-btn" type="button" data-event-click="ps_remove()" data-if="ps_has_items">
+      <svg src="../icons/v2/trash.svg" width="24" height="24"></svg>
+    </button>
+    <div class="ps-top-btn ps-top-btn--none" data-if="!ps_has_items"></div>
+  </div>
+  <div class="ps-stage" id="ps-stage" data-event-mousedown="ps_press()" data-event-mouseup="ps_release()">
+    <img class="ps-image" data-if="ps_current_ready" data-attr-src="ps_current_src"
+         data-style-width="ps_image_w" data-style-height="ps_image_h"/>
+    <div class="ps-play" data-if="ps_current_ready && ps_current_video">
+      <svg src="../icons/v2/play-fill.svg" width="56" height="56"></svg>
+    </div>
+    <p class="ps-stage-note" data-if="ps_current_preparing">{{i18n:chat.attach.preparing}}</p>
+    <p class="ps-flag ps-flag--stage" data-if="ps_current_too_large">{{i18n:picture_send.too_large}}</p>
+  </div>
+  <div class="ps-strip" data-if="ps_show_strip">
+    <div data-for="cell : ps_cells" class="ps-cell" data-class-ps-cell--current="cell.current"
+         data-event-click="ps_select(cell.index)">
+      <img class="ps-cell-image" data-if="cell.ready" data-attr-src="cell.thumb_src"
+           data-style-width="cell.iw" data-style-height="cell.ih"
+           data-style-margin-left="cell.ml" data-style-margin-top="cell.mt"/>
+      <p class="ps-flag ps-flag--cell" data-if="cell.too_large">{{i18n:picture_send.too_large}}</p>
+    </div>
+  </div>
+  <div class="ps-bottom">
+    <div class="ps-field">
+      <textarea id="ps-text" class="ps-input" rows="1" max-rows="5" maxlength="65536" data-value="ps_text"></textarea>
+      <!-- Phones: the engine draws no placeholder, so a label sits over the empty input. -->
+      <p class="ps-placeholder" data-if="ps_text == ''">{{i18n:picture_send.placeholder}}</p>
+    </div>
+    <button class="ps-original" type="button" data-event-click="ps_toggle_original()">
+      <span class="ps-original-label">{{i18n:picture_send.original}}</span>
+      <span class="ps-original-size" data-if="ps_original">{{ps_size_label}}</span>
+      <span class="ps-spacer"></span>
+      <span class="settings-switch ps-switch" data-class-settings-switch--on="ps_original">
+        <span class="settings-switch-knob"></span>
+      </span>
+    </button>
+    <button class="ps-send" type="button" data-event-click="ps_send()" data-attrif-disabled="!ps_can_send"
+            data-class-ps-send--off="!ps_can_send">{{ps_send_label}}</button>
+  </div>
+</div>

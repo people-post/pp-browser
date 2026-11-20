@@ -3924,6 +3924,83 @@ input.checkbox:checked {
   image-color: #ffffff;
 }
 
+/* Picture preview page. */
+.picture-send {
+  background-color: #ffffff;
+}
+
+.ps-title {
+  color: #000000;
+}
+
+.ps-top-btn svg {
+  image-color: #007aff;
+}
+
+.ps-stage {
+  background-color: #f2f2f7;
+}
+
+.ps-stage-note {
+  color: #3c3c4399;
+}
+
+.ps-play svg {
+  image-color: #ffffff;
+}
+
+.ps-flag {
+  background-color: #00000066;
+  color: #ffffff;
+}
+
+.ps-cell {
+  background-color: #f2f2f7;
+  border-color: transparent;
+}
+
+.ps-cell--current {
+  border-color: #007aff;
+}
+
+.ps-field {
+  background-color: #f2f2f7;
+  border: 1dp #3c3c434a;
+}
+
+.ps-input {
+  color: #000000;
+}
+
+.ps-placeholder {
+  color: #3c3c434c;
+}
+
+.ps-original-label {
+  color: #000000;
+}
+
+.ps-original-size {
+  color: #3c3c4399;
+}
+
+.ps-send {
+  background-color: #007aff;
+  color: #ffffff;
+}
+
+.ps-send:hover,
+.ps-send:focus {
+  background-color: #007aff;
+}
+
+.ps-send--off,
+.ps-send--off:hover,
+.ps-send--off:focus {
+  background-color: #78788033;
+  color: #3c3c434c;
+}
+
 /* Recovery phrase cards: a quiet fill on the desktop page, the white card on a phone's grey page. */
 .recovery-card {
   background-color: #f2f2f7;
