@@ -430,6 +430,22 @@ TEST(TranscriptPendingVideoTest, NoPlayKeyWhileItUploadsAndTheBareFrameWithoutAP
   PendingUpload bare = StartPendingUpload(2, "t", std::nullopt, PendingUploadKind::Video);
   bare.title = "clip.mov";
   EXPECT_NE(PendingUploadRml(bare).find("chat-attachment-video-frame--bare"), std::string::npos);
+  // One footer row under the frame (never two): what the old row carried (the size, or "…" until it is known) is at
+  // its right; the upload's progress and failure stay in the frame's disc.
+  const std::string uploading = PendingUploadRml(bare);
+  EXPECT_EQ(uploading.find("text muted"), std::string::npos);
+  EXPECT_NE(uploading.find("<div class=\"chat-attachment-foot\"><span class=\"chat-foot-right\"><span "
+                           "class=\"chat-foot-size\">…</span></span></div>"),
+            std::string::npos);
+  EXPECT_NE(uploading.find("chat-pending-percent"), std::string::npos);
+  PendingUpload sized = OnUploadDetails(bare, "clip.mov", "12.0 MB").next;
+  EXPECT_NE(PendingUploadRml(sized).find("<span class=\"chat-foot-size\">12.0 MB</span>"), std::string::npos);
+  PendingUpload failed = sized;
+  failed.state = PendingUploadState::Failed;
+  const std::string failed_rml = PendingUploadRml(failed);
+  EXPECT_NE(failed_rml.find("retry_attachment_send"), std::string::npos);
+  EXPECT_NE(failed_rml.find("discard_attachment_send"), std::string::npos);
+  EXPECT_NE(failed_rml.find("chat-foot-size"), std::string::npos);
 }
 
 TEST_F(PendingPictureLayoutTest, AFileBubbleAndTheSentCardItTurnsIntoHaveTheSameSize) {
@@ -543,7 +559,7 @@ TEST_F(PendingPictureLayoutTest, ThePreparingOverlayHasItsLinesAndCancel) {
 }
 
 // S2 / S3: reaction chips on a sent file card are not inside the row that opens the file, and the card grows so the
-// chips hang under the size line (own and incoming cards).
+// chips hang under the size line, in the room of the card's time line (own and incoming cards).
 TEST_F(PendingPictureLayoutTest, ReactionsOnAFileCardKeepTheirOwnTapAndClearTheSizeLine) {
   for (const char* sender : {kLocalSelfContactId, "contact-1"}) {
     SCOPED_TRACE(sender);
@@ -563,7 +579,13 @@ TEST_F(PendingPictureLayoutTest, ReactionsOnAFileCardKeepTheirOwnTapAndClearTheS
     for (ui::Element* up = chip->GetParentNode(); up; up = up->GetParentNode()) {
       EXPECT_NE(up, row) << "a chip inside the row would open the file too";
     }
-    EXPECT_NEAR(Size(card).y, plain_height + 16.f, 0.5f) << "room under the size line for the chips";
+    // The time line under the row (every file card has one) is the room the chips hang in: the card does not grow.
+    EXPECT_NEAR(Size(card).y, plain_height, 0.5f);
+    ui::Element* size_line = First("chat-file-size");
+    ASSERT_NE(size_line, nullptr);
+    EXPECT_GE(chip->GetAbsoluteOffset(ui::BoxArea::Border).y,
+              size_line->GetAbsoluteOffset(ui::BoxArea::Border).y + Size(size_line).y)
+        << "the chips are under the size line";
   }
 }
 

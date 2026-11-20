@@ -450,7 +450,7 @@ TEST(PendingPictureSourcePinTest, RowsAreBuiltThroughThePendingRowsAtTheTip) {
 TEST(PendingPictureSourcePinTest, ASentPictureIsTakenBackWithoutARedrawThenTheOneSyncDrawsTheRealRow) {
   const std::string body = Body(Controller(), "void ChatController::StartAttachmentUpload(");
   ASSERT_FALSE(body.empty());
-  const size_t finished = body.find("OnUploadSendFinished(pending_uploads_.Upload(), outcome)");
+  const size_t finished = body.find("PendingUploadStep step = OnUploadSendFinished(now, outcome);");
   ASSERT_NE(finished, std::string::npos);
   EXPECT_NE(body.find("/*redraw=*/!sent", finished), std::string::npos);
   const size_t sync = body.find("SyncDisplayFromThread();", finished);
@@ -497,7 +497,7 @@ TEST(PendingPictureSourcePinTest, RetryAndDiscardAskWhoseTapItIs) {
 TEST(PendingPictureSourcePinTest, BesideABubbleTheMicrophoneIsGreyedNotHidden) {
   const std::string body = Body(Controller(), "void ChatController::SyncComposerInputState(");
   const size_t refresh = body.find("voice_->Refresh()");
-  const size_t off = body.find("(chat_.attachment_uploading || chat_.attachment_preparing) && !chat_.show_voice");
+  const size_t off = body.find("const bool voice_off = AttachmentBusy() && !chat_.show_voice");
   ASSERT_NE(off, std::string::npos);
   EXPECT_LT(refresh, off) << "decided after VoiceComposer has hidden the microphone";
   EXPECT_NE(body.find("chat_.voice_entry_off = voice_off"), std::string::npos);
@@ -537,7 +537,7 @@ TEST(PendingPictureSourcePinTest, VideoPosterFirstLatePosterDeletedVoiceWithoutB
       "if (!pick_current || session != messaging_session_ || send_cancel_ != cancel || cancel->load()) {", poster);
   ASSERT_NE(cancelled, std::string::npos);
   EXPECT_LT(body.find("remove_poster();", cancelled), body.find("StartPendingUpload(", cancelled));
-  EXPECT_NE(body.find("OnUploadDetails(pending_uploads_.Upload(), prepared->filename"), std::string::npos);
+  EXPECT_NE(body.find("return OnUploadDetails(now, title, size);"), std::string::npos);
 }
 
 // Step 3 wiring (source-order pins only): every picker result is checked against its pick serial before anything is
@@ -558,6 +558,33 @@ TEST(PendingPictureSourcePinTest, PickResultsCarryTheirSerialAndEveryEndClosesTh
   const std::string start = Body(source, "void ChatController::StartAttachmentUpload(");
   EXPECT_NE(start.find("UserFeedback::Fail(Tr(\"chat.attach.previous_still_sending\"))"), std::string::npos);
   EXPECT_NE(Body(source, "void ChatController::Update(").find("AbandonPick(); // locked"), std::string::npos);
+}
+
+// Kenneth 2026-11-19: the system camera's "Use Photo" is the confirmation, so a camera picture goes straight on, sent
+// smaller, with no "Send / Send original / Cancel" choice. The choice stays for the desktop and Android library pick.
+TEST(PendingPictureSourcePinTest, ACameraPictureGoesStraightOnWithoutTheSendChoice) {
+  const std::string source = Controller();
+  const std::string ports = Body(source, "CaptureFlowPorts ChatController::MakeCaptureFlowPorts(");
+  ASSERT_FALSE(ports.empty());
+  const size_t at = ports.find("ports.ask_picture = ");
+  ASSERT_NE(at, std::string::npos);
+  const std::string ask = ports.substr(at, ports.find("ports.send_video", at) - at);
+  EXPECT_EQ(ask.find("ShowPictureSendChoice"), std::string::npos) << "no second prompt after the camera";
+  EXPECT_NE(ask.find("thread_id != ActiveThreadId()"), std::string::npos) << "the chat changed meanwhile: not sent";
+  EXPECT_NE(ask.find("Tr(\"chat.attach.not_sent_left_chat\")"), std::string::npos);
+  std::string squeezed;
+  for (const char c : ask) {
+    if (c != ' ' && c != '\n') {
+      squeezed += c;
+    }
+  }
+  EXPECT_NE(squeezed.find(
+                "OutgoingPickSource::Photo,/*voice_file=*/false,thread_id,PendingUploadKind::Picture,pick_serial);"),
+            std::string::npos)
+      << "shrunk, to the armed chat";
+  // The library pick of the desktop and Android still asks.
+  EXPECT_NE(Body(source, "void ChatController::OnAttachFile(").find("ShowPictureSendChoice(std::move(path), *thread);"),
+            std::string::npos);
 }
 
 // B1 (source-order pins): a pick's result is only ever sent to the chat it was armed in — every picker result, the
@@ -595,13 +622,14 @@ TEST(PendingPictureSourcePinTest, PickEndsEndPreparingStalePostersBuildNothingRe
   EXPECT_NE(Body(source, "void ChatController::CloseChatWith(").find("AbandonPick();"), std::string::npos);
   EXPECT_NE(Body(source, "void ChatController::Update(").find("AbandonPick(); // locked"), std::string::npos);
   const std::string start = Body(source, "void ChatController::StartAttachmentUpload(");
-  EXPECT_NE(start.find("const bool pick_current = picks_.IsCurrent(pick_serial);"), std::string::npos);
+  EXPECT_NE(start.find("const bool pick_current = from_picture_queue || picks_.IsCurrent(pick_serial);"),
+            std::string::npos);
   EXPECT_NE(start.find("session != messaging_session_"), std::string::npos);
   const size_t refused = start.find("if (voice_file && !thread_id.empty()) {");
   ASSERT_NE(refused, std::string::npos);
   EXPECT_LT(start.find("KeepVoiceForRetry(path, thread_id);", refused), start.find("release_pick_(path);", refused));
   const std::string retry = Body(source, "void ChatController::OnRetryAttachmentSend(");
-  EXPECT_NE(retry.find("chat_.attachment_preparing || chat_.voice_recording"), std::string::npos);
+  EXPECT_NE(retry.find("if (AttachmentBusy() || chat_.voice_recording) {"), std::string::npos);
   EXPECT_EQ(retry.find("!item->record_id.empty() ? item->record_id : failed_record_id_"), std::string::npos)
       << "N2: no fallback for a bubble";
   EXPECT_NE(retry.find("const std::string record_id = item ? item->record_id : failed_record_id_;"), std::string::npos);

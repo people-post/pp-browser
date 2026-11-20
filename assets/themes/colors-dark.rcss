@@ -3986,6 +3986,135 @@ input.checkbox:checked {
   image-color: #ffffff;
 }
 
+/* The send time of an attachment bubble: the text bubble's time colours on that bubble (received: label-2; sent: the
+   sent bubble's meta white). */
+.chat-attachment-clock,
+.chat-attachment-foot {
+  color: #ebebf599;
+}
+
+.chat-attachment-clock .route-icon,
+.chat-attachment-foot .route-icon {
+  image-color: #ebebf599;
+}
+
+.message-row-user .chat-attachment-clock,
+.message-row-user .chat-attachment-foot {
+  color: #ffffffd9;
+}
+
+.message-row-user .chat-attachment-clock .route-icon,
+.message-row-user .chat-attachment-foot .route-icon {
+  image-color: #ffffffd9;
+}
+
+/* Text on a video's dark frame (no poster): the label and the file name. */
+.chat-attachment-video-frame--bare .chat-attachment-video-badge,
+.chat-attachment-video-frame--bare .chat-attachment-video-name {
+  color: #ffffff;
+}
+
+.chat-attachment-clock {
+  color: #ebebf599;
+}
+
+.chat-attachment-clock .route-icon {
+  image-color: #ebebf599;
+}
+
+/* Picture preview page. */
+.picture-send {
+  background-color: #000000;
+}
+
+.ps-title {
+  color: #ffffff;
+}
+
+.ps-top-btn svg {
+  image-color: #0a84ff;
+}
+
+.ps-stage {
+  background-color: #2c2c2e;
+}
+
+.ps-stage-note {
+  color: #ebebf599;
+}
+
+.ps-play-btn {
+  background-color: #000000a6;
+}
+
+.ps-play-btn svg {
+  image-color: #ffffff;
+}
+
+.ps-flag {
+  background-color: #00000099;
+  color: #ffffff;
+}
+
+.ps-cell-clip {
+  background-color: #2c2c2e;
+  border-color: transparent;
+}
+
+.ps-cell--current .ps-cell-clip {
+  border-color: #0a84ff;
+}
+
+.ps-badge-dot {
+  background-color: #ff453a;
+}
+
+.ps-badge-dot svg {
+  image-color: #ffffff;
+}
+
+.ps-badge:active .ps-badge-dot {
+  background-color: #ff453a;
+}
+
+.ps-field {
+  background-color: #2c2c2e;
+  border: 1dp #54545899;
+}
+
+.ps-input {
+  color: #ffffff;
+}
+
+.ps-placeholder {
+  color: #ebebf54c;
+}
+
+.ps-original-label {
+  color: #ffffff;
+}
+
+.ps-original-size {
+  color: #ebebf599;
+}
+
+.ps-send {
+  background-color: #0a84ff;
+  color: #ffffff;
+}
+
+.ps-send:hover,
+.ps-send:focus {
+  background-color: #0a84ff;
+}
+
+.ps-send--off,
+.ps-send--off:hover,
+.ps-send--off:focus {
+  background-color: #7878805c;
+  color: #ebebf54c;
+}
+
 /* Recovery phrase cards: a quiet fill on the desktop page, the white card on a phone's grey page. */
 .recovery-card {
   background-color: #2c2c2e;

@@ -542,20 +542,55 @@ bool DropPictureImages(std::string& rml) {
 
 namespace {
 
+/** A video frame at least this wide (dp) has room for "size · time" in the row under it. */
+constexpr int kVideoFooterWithSizeMinWidthDp = 150;
+
+/**
+ * The slim row under a picture's or video's media, inside the bubble (nothing is drawn over the media): at the right
+ * "size · route icon time" (a picture has no size; `time_html` is the route icon and clock, empty for an unknown time or
+ * on the card being sent). The row is always there, empty when it has nothing, so the card being sent is the size of
+ * the card it turns into. The time part is phone-only (the desktop has the meta line), so its separator goes with it.
+ * Whatever status a card would show on the left of the row goes in a `chat-foot-left` before the right part.
+ */
+std::string AttachmentFootRml(const std::string& size_text, const std::string& time_html) {
+  std::string right;
+  if (!size_text.empty()) {
+    right = "<span class=\"chat-foot-size\">" + StructuredTextParser::EscapeText(size_text) + "</span>";
+  }
+  if (!time_html.empty()) {
+    right += "<span class=\"chat-foot-time\">" + std::string(size_text.empty() ? "" : "\xC2\xA0\xC2\xB7\xE2\x80\x89") +
+             time_html + "</span>";
+  }
+  return "<div class=\"chat-attachment-foot\">" +
+         (right.empty() ? std::string() : "<span class=\"chat-foot-right\">" + right + "</span>") + "</div>";
+}
+
 /**
  * A video card's body, sent or being sent: the poster in its clip box (`poster_frame`: FitPictureInBubble; 216 x 122
  * when its size is unknown; the box empty when the poster file is gone), or the bare dark frame naming the file; `inner` over it (the play disc, or the
- * upload disc); the size line under it when there is one. `frame_attrs` go on the frame (the tap).
+ * upload disc); under it the footer row with the size and the time (AttachmentFootRml). `frame_attrs` go on the frame
+ * (the tap).
  */
 std::string VideoBodyRml(const bool poster_frame, const std::string& poster_path, const int width, const int height,
                          const std::string& frame_attrs, const std::string& inner, const std::string& label,
-                         const std::string& size_text, const std::string& poster_attrs = {}) {
-  std::string html = "<div class=\"chat-attachment-video\">";
+                         const std::string& size_text, const std::string& time_html,
+                         const std::string& poster_attrs = {}) {
+  // A frame too narrow for "size · time" under it drops the size (the time is what stays), so the bubble keeps hugging
+  // the frame.
+  constexpr int kBareFrameWidthDp = 200;
+  int frame_width = kBareFrameWidthDp;
+  PictureBubbleSize fit;
   if (poster_frame) {
-    PictureBubbleSize fit = FitPictureInBubble(width, height);
+    fit = FitPictureInBubble(width, height);
     if (fit.width_dp <= 0) {
       fit = {216, 122, 122, 0};
     }
+    frame_width = fit.width_dp;
+  }
+  const bool with_size = !size_text.empty() && (time_html.empty() || frame_width >= kVideoFooterWithSizeMinWidthDp);
+  const std::string footer = AttachmentFootRml(with_size ? size_text : std::string(), time_html);
+  std::string html = "<div class=\"chat-attachment-video\">";
+  if (poster_frame) {
     html += "<div class=\"chat-attachment-clip chat-attachment-video-frame\" style=\"width:" +
             std::to_string(fit.width_dp) + "dp;height:" + std::to_string(fit.height_dp) + "dp\"" + frame_attrs + ">";
     if (!poster_path.empty()) {
@@ -571,14 +606,11 @@ std::string VideoBodyRml(const bool poster_frame, const std::string& poster_path
     html += "<div class=\"chat-attachment-video-frame chat-attachment-video-frame--bare\"" + frame_attrs + ">";
     html += "<div class=\"chat-attachment-video-badge\">" +
             StructuredTextParser::EscapeText(Tr("chat.card.video_badge")) + "</div>";
-    html += "<p class=\"text\">" + StructuredTextParser::EscapeText(label) + "</p>";
+    html += "<p class=\"text chat-attachment-video-name\">" + StructuredTextParser::EscapeText(label) + "</p>";
     html += inner;
     html += "</div>";
   }
-  if (!size_text.empty()) {
-    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(size_text) + "</p>";
-  }
-  return html + "</div>";
+  return html + footer + "</div>";
 }
 
 /** The file type tile's face: the name's extension in capitals (at most 4 letters), else the generic file icon. */
@@ -650,6 +682,35 @@ std::string RouteIconRml(const ThreadMessage& message, const SendMark mark) {
   return RouteSvgRml(*message.transport);
 }
 
+/**
+ * The time of an attachment bubble, by the rule of a text bubble's: its route icon (none while the message is queued or
+ * failed) and the clock time, whenever the time is known. `css_class`: chat-attachment-clock (bottom right inside a file
+ * card, a music card or the card of an unready attachment; a picture or video has its footer row instead,
+ * AttachmentFootRml).
+ * Phones only (the stylesheet hides both on the desktop, which has the meta line).
+ */
+std::string AttachmentClockRml(const ThreadMessage& message, const SendMark mark, const char* css_class) {
+  const std::string clock = MessageClockLabel(message.timestamp);
+  if (clock.empty()) {
+    return {};
+  }
+  return std::string("<div class=\"") + css_class + "\">" + RouteIconRml(message, mark) +
+         StructuredTextParser::EscapeText(clock) + "</div>";
+}
+
+/** The route icon and clock of an attachment bubble without their wrapper (a video's pill carries them after the size). */
+std::string AttachmentClockParts(const ThreadMessage& message, const SendMark mark) {
+  const std::string clock = MessageClockLabel(message.timestamp);
+  return clock.empty() ? std::string() : RouteIconRml(message, mark) + StructuredTextParser::EscapeText(clock);
+}
+
+/** The time slot of a file card: always there (empty for an unknown time), so the card being sent, which has the slot
+ *  but no time yet, is the size of the card it turns into. */
+std::string FileCardClockRml(const ThreadMessage& message, const SendMark mark) {
+  const std::string clock = AttachmentClockRml(message, mark, "chat-attachment-clock");
+  return clock.empty() ? std::string("<div class=\"chat-attachment-clock\"></div>") : clock;
+}
+
 std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& facts, const SendMark mark) {
   auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
   const std::string label = fields && !fields->filename.empty()
@@ -702,6 +763,7 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
         view.audio_artist.empty() ? size : (size.empty() ? view.audio_artist : view.audio_artist + " · " + size);
     face.cover_path = view.poster_path;
     face.duration_ms = view.audio_duration_ms;
+    face.clock_rml = AttachmentClockRml(message, mark, "chat-attachment-clock");
     return AudioFileBubbleRml(message.id, JsArgInAttribute(message.id), face,
                               facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
   }
@@ -709,20 +771,24 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
     // A tap opens the full picture in the system viewer (zoomable). The bubble shows its preview (or the picture, when
     // no longer than the preview) fitted inside the box, or a placeholder of that size until the preview is made.
     html += PictureBubbleClipRml(message.id, AttachmentHashHex(fields->content_hash), view);
+    // The time is a row under the picture, inside the bubble, not over it; beside the clip, not in it (a preview that
+    // arrives later replaces the clip alone, ReplacePictureClip).
+    html += AttachmentFootRml({}, AttachmentClockParts(message, mark));
   } else if (ready && IsAttachmentVideoMime(fields->mime)) {
     // The whole frame is the tap target (the system player opens directly); the play disc is drawn over the poster
     // and takes no taps. The frame is clipped to the same size picture bubbles use, so nothing can exceed the bubble.
     const char* play_disc =
         "<div class=\"chat-attachment-video-play\"><svg class=\"chat-attachment-video-play-icon\" "
         "src=\"../icons/play.svg\" width=\"22\" height=\"22\"></svg></div>";
-    html +=
-        VideoBodyRml(!view.poster_path.empty(), view.poster_path, view.image_width, view.image_height,
-                     " data-event-click=\"open_attachment('" + JsArgInAttribute(message.id) + "')\"", play_disc, label,
-                     fields->byte_length > 0 ? FormatAttachmentByteSize(fields->byte_length) : std::string());
+    html += VideoBodyRml(!view.poster_path.empty(), view.poster_path, view.image_width, view.image_height,
+                         " data-event-click=\"open_attachment('" + JsArgInAttribute(message.id) + "')\"", play_disc,
+                         label, fields->byte_length > 0 ? FormatAttachmentByteSize(fields->byte_length) : std::string(),
+                         AttachmentClockParts(message, mark));
   } else if (ready && (!local_path.empty() || view.on_demand)) {
     // The whole card opens the file (DEV/PLAN-attachment-bubbles-multi-pick.md): its type tile, name and size.
     return FileCardRml(label, fields->byte_length > 0 ? FormatAttachmentByteSize(fields->byte_length) : std::string(),
-                       " data-event-click=\"open_attachment('" + JsArgInAttribute(message.id) + "')\"", {}, {});
+                       " data-event-click=\"open_attachment('" + JsArgInAttribute(message.id) + "')\"", {},
+                       FileCardClockRml(message, mark));
   } else {
     html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
     if (fields && fields->byte_length > 0) {
@@ -745,6 +811,7 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
       html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"retry_attachment('" +
               JsArgInAttribute(message.id) + "')\">" + Tr("chat.attachment.retry") + "</button>";
     }
+    html += AttachmentClockRml(message, mark, "chat-attachment-clock"); // a card still waiting for its file
   }
   html += "</div>";
   return html;
@@ -1117,7 +1184,7 @@ std::string PendingPictureRml(const PendingUpload& upload) {
     // while it uploads. Built once the poster is known, so its size never changes.
     return "<div class=\"chat-card chat-attachment-card chat-attachment-card--video chat-pending-video\">" +
            VideoBodyRml(upload.size_known, upload.thumb_path, upload.pixels.width, upload.pixels.height, "", overlay,
-                        upload.title, upload.size_text.empty() ? std::string("…") : upload.size_text,
+                        upload.title, upload.size_text.empty() ? std::string("…") : upload.size_text, {},
                         " id=\"" + PendingThumbElementId(upload.row_id) + "\"") +
            "</div>";
   }
@@ -1125,7 +1192,7 @@ std::string PendingPictureRml(const PendingUpload& upload) {
   return "<div class=\"chat-card chat-attachment-card chat-attachment-card--image chat-pending-picture\">" +
          PictureClipRml(fit, upload.thumb_path, " chat-pending-picture-clip",
                         " id=\"" + PendingThumbElementId(upload.row_id) + "\"", overlay) +
-         "</div>";
+         AttachmentFootRml({}, {}) + "</div>";
 }
 
 std::string PendingFileRml(const PendingUpload& upload) {
@@ -1139,7 +1206,8 @@ std::string PendingFileRml(const PendingUpload& upload) {
   if (failed) {
     tile_inner += PendingDiscardRml(upload, " chat-file-discard");
   }
-  return FileCardRml(upload.title, upload.size_text.empty() ? std::string("…") : upload.size_text, "", tile_inner, {});
+  return FileCardRml(upload.title, upload.size_text.empty() ? std::string("…") : upload.size_text, "", tile_inner,
+                     "<div class=\"chat-attachment-clock\"></div>");
 }
 
 std::string PendingUploadRml(const PendingUpload& upload) {

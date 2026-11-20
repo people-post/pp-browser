@@ -163,7 +163,7 @@ std::string AudioFileBubbleRml(const std::string& message_id, const std::string&
                                    : (face.duration_ms > 0 ? FormatVoiceDuration(face.duration_ms) : std::string());
   html += "<span id=\"vt-" + key + "\" class=\"chat-voice-time chat-audio-time\">" +
           StructuredTextParser::EscapeText(time) + "</span>";
-  html += "</div></div>";
+  html += "</div>" + face.clock_rml + "</div>";
   return html;
 }
 

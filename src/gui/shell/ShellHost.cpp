@@ -2349,7 +2349,13 @@ void ShellHost::ApplySafeAreaLayout() {
       const std::string body_id = "overlay-body-" + std::to_string(overlay.id);
       ui::Element* body = doc->GetElementById(body_id.c_str());
       set_dp(body, "padding-top", status_bar_dp);
-      set_dp(body, "padding-bottom", strip_dp);
+      if (overlay.key == "picture_send") {
+        // The page draws its own bottom safe area, so its colour runs to the screen edge (no strip of the shell's).
+        set_dp(body, "padding-bottom", 0.f);
+        set_dp(doc->GetElementById("ps-safe-bottom"), "height", strip_dp);
+      } else {
+        set_dp(body, "padding-bottom", strip_dp);
+      }
       continue;
     }
     if (overlay.page_sheet) {
@@ -2769,8 +2775,10 @@ void ShellHost::AttachSwipeBackGesture() {
   }
 
   if (state_.layout_mode == LayoutMode::Compact && !state_.overlay_stack.empty() &&
-      state_.overlay_stack.back().full_screen && state_.overlay_stack.back().key == "avatar_view") {
-    // The photo viewer (a picture opened large from a profile or a contact page): an edge swipe closes it.
+      state_.overlay_stack.back().full_screen &&
+      (state_.overlay_stack.back().key == "avatar_view" || state_.overlay_stack.back().key == "picture_send")) {
+    // The photo viewer (a picture opened large from a profile or a contact page) and the picture preview page (pictures
+    // picked to send): an edge swipe closes it (the preview page's close is its Back).
     const std::string viewer_id = "shell-full-screen-" + std::to_string(state_.overlay_stack.back().id);
     if (ui::Element* viewer = doc->GetElementById(viewer_id.c_str())) {
       swipe_back_gesture_.Attach(viewer, context_, std::move(options),

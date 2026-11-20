@@ -853,8 +853,11 @@ TEST(ComposerCaptureSourceTest, StartAttachmentUploadReleasesTheFileOnEveryExit)
     return n;
   };
   EXPECT_EQ(count("release_pick_(path);"), 2u) << "the refusal and the worker's own release";
-  // A refused send releases a picked file before it returns; a refused voice recording is kept for Retry instead.
-  EXPECT_NE(body.find("    release_pick_(path);\n    if (busy) {"), std::string::npos);
+  // A refused send releases a picked file before it returns (a picture queue's file stays the queue's, which releases
+  // it once); a refused voice recording is kept for Retry instead.
+  EXPECT_NE(body.find("    if (!from_picture_queue) {\n      release_pick_(path); // a queue's file stays the queue's"),
+            std::string::npos);
+  EXPECT_LT(body.find("release_pick_(path); // a queue's file"), body.find("    if (busy) {"));
   EXPECT_NE(body.find("KeepVoiceForRetry(path, thread_id);"), std::string::npos);
 }
 

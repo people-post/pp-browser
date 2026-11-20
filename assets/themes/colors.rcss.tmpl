@@ -4010,6 +4010,135 @@ input.checkbox:checked {
   image-color: {{x-scan-ink}};
 }
 
+/* The send time of an attachment bubble: the text bubble's time colours on that bubble (received: label-2; sent: the
+   sent bubble's meta white). */
+.chat-attachment-clock,
+.chat-attachment-foot {
+  color: {{label-2}};
+}
+
+.chat-attachment-clock .route-icon,
+.chat-attachment-foot .route-icon {
+  image-color: {{label-2}};
+}
+
+.message-row-user .chat-attachment-clock,
+.message-row-user .chat-attachment-foot {
+  color: {{bubble-out-meta}};
+}
+
+.message-row-user .chat-attachment-clock .route-icon,
+.message-row-user .chat-attachment-foot .route-icon {
+  image-color: {{bubble-out-meta}};
+}
+
+/* Text on a video's dark frame (no poster): the label and the file name. */
+.chat-attachment-video-frame--bare .chat-attachment-video-badge,
+.chat-attachment-video-frame--bare .chat-attachment-video-name {
+  color: {{x-scan-ink}};
+}
+
+.chat-attachment-clock {
+  color: {{label-2}};
+}
+
+.chat-attachment-clock .route-icon {
+  image-color: {{label-2}};
+}
+
+/* Picture preview page. */
+.picture-send {
+  background-color: {{bg}};
+}
+
+.ps-title {
+  color: {{label}};
+}
+
+.ps-top-btn svg {
+  image-color: {{accent}};
+}
+
+.ps-stage {
+  background-color: {{bg-card-2}};
+}
+
+.ps-stage-note {
+  color: {{label-2}};
+}
+
+.ps-play-btn {
+  background-color: {{x-media-pill}};
+}
+
+.ps-play-btn svg {
+  image-color: {{x-scan-ink}};
+}
+
+.ps-flag {
+  background-color: {{scrim}};
+  color: {{x-scan-ink}};
+}
+
+.ps-cell-clip {
+  background-color: {{bg-card-2}};
+  border-color: transparent;
+}
+
+.ps-cell--current .ps-cell-clip {
+  border-color: {{accent}};
+}
+
+.ps-badge-dot {
+  background-color: {{danger}};
+}
+
+.ps-badge-dot svg {
+  image-color: {{x-scan-ink}};
+}
+
+.ps-badge:active .ps-badge-dot {
+  background-color: {{danger}};
+}
+
+.ps-field {
+  background-color: {{bg-card-2}};
+  border: 1dp {{separator}};
+}
+
+.ps-input {
+  color: {{label}};
+}
+
+.ps-placeholder {
+  color: {{label-3}};
+}
+
+.ps-original-label {
+  color: {{label}};
+}
+
+.ps-original-size {
+  color: {{label-2}};
+}
+
+.ps-send {
+  background-color: {{accent}};
+  color: {{label-on-accent}};
+}
+
+.ps-send:hover,
+.ps-send:focus {
+  background-color: {{accent}};
+}
+
+.ps-send--off,
+.ps-send--off:hover,
+.ps-send--off:focus {
+  background-color: {{fill}};
+  color: {{label-3}};
+}
+
 /* Recovery phrase cards: a quiet fill on the desktop page, the white card on a phone's grey page. */
 .recovery-card {
   background-color: {{bg-card-2}};

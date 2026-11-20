@@ -11,6 +11,8 @@ struct SDL_Window;
 namespace pbr {
 
 using NativeFileDialogCallback = std::function<void(std::vector<std::string> paths)>;
+/** One photo of a several-photo pick, as soon as it is copied: `index` of `total` in the order chosen; `path` empty = this one could not be copied. */
+using NativePhotoItemCallback = std::function<void(size_t index, size_t total, const std::string& path)>;
 
 /**
  * Async native open dialog for a single image file. Empty paths = cancel. `include_heic` adds heic/heif to the
@@ -28,9 +30,15 @@ void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback);
  * desktop: the system dialog filtered to pictures and video. Empty paths = cancel; same path rules as
  * ShowOpenImageFileDialog. `on_preparing` (iOS only, main thread; other platforms never call it) fires when a video
  * was chosen, before it is copied out of the library (`name` is the item's suggested name, may be empty): the caller can say "Sending…" while the callback is still to come.
+ * Several (iOS only: `on_item` set and `max_count` > 1): up to `max_count` pictures and videos, ordered as the person
+ * chose them; they are copied one at a time and each is handed to `on_item` (main thread) as soon as it is copied, and
+ * `on_preparing` fires once when the choice is made. Then `callback` runs with EMPTY paths as the "done" signal: the
+ * items never arrive through `callback`, and no item at all means the picker was cancelled. Other platforms ignore both
+ * and pick one file through `callback` as before.
  */
 void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback callback,
-                                std::function<void(const std::string& name)> on_preparing = nullptr);
+                                std::function<void(const std::string& name)> on_preparing = nullptr, int max_count = 1,
+                                NativePhotoItemCallback on_item = nullptr);
 /**
  * An image kept as a file (not in the photo library): on iOS the Files picker limited to JPEG / PNG / GIF /
  * WebP; elsewhere the same dialog as ShowOpenImageFileDialog.

@@ -33,6 +33,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     MessageResend.cpp
     NewCallGuard.cpp
     PendingUpload.cpp
+    PictureSendQueue.cpp
     QuickReactions.cpp
     SendMark.cpp
     StrangerChat.cpp
