@@ -3,6 +3,7 @@
 #include "common/chat/MessagingLimits.h"
 #include "common/runtime/AppRuntime.h"
 #include "feature/settings/RunLogPrefs.h"
+#include "feature/settings/UpdatePrefs.h"
 #include "foundation/diagnostics/CrashDump.h"
 #ifdef PP_CRASH_PROBE
 #include "foundation/diagnostics/CrashProbe.h"
@@ -75,7 +76,9 @@ void SettingsRunLogsActions::ProbeRefresh() {
 
 void SettingsRunLogsActions::ProbeUpdateCard() {
 #ifdef PP_CRASH_PROBE
-  CrashProbe::CycleUpdateCardMode();
+  if (CrashProbe::CycleUpdateCardMode() == 0) {
+    (void)UpdatePrefs::Write(DataDir(), UpdateCardState{}); // "off" also forgets the fake 9.9.9 "Later"
+  }
   ProbeRefresh();
 #endif
 }
