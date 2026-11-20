@@ -143,6 +143,12 @@ if(PP_BROWSER_DEV_TOOLS OR NOT "${PP_BROWSER_DEV_PIN}" STREQUAL "")
   add_compile_definitions(PP_BROWSER_DEV_TOOLS=1)
 endif()
 
+# THROWAWAY (branch kenneth/crash-probe, never merged): device probe for what iOS hands an app after a crash / hang.
+option(PP_CRASH_PROBE "Crash / hang probe rows in Settings -> Advanced + MetricKit collector (throwaway)" OFF)
+if(PP_CRASH_PROBE)
+  add_compile_definitions(PP_CRASH_PROBE=1)
+endif()
+
 include(UiDemo) # after PP_BROWSER_DEV_TOOLS and the PP_API_URL_* settings it checks
 
 add_subdirectory(src)

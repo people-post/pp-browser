@@ -4,6 +4,7 @@
 #include "gui/SettingsHost.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -67,6 +68,17 @@ private:
   /** The archive is being made on a worker: busy_ stays up until it comes back. */
   bool preparing_ = false;
   bool send_disabled_ = true;
+
+  // THROWAWAY probe (branch kenneth/crash-probe): bound always, true / used only with PP_CRASH_PROBE.
+public:
+  void ProbeCrash(int kind);
+  void ProbeHang(int seconds);
+
+private:
+  void ProbeAsk(const std::string& what, std::function<void()> action);
+  void ProbeRefresh();
+  bool probe_enabled_ = false;
+  std::string probe_status_;
 };
 
 } // namespace pbr

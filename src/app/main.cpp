@@ -11,6 +11,9 @@
 #include "foundation/platform/IncomingLink.h"
 #include "gui/UiPerfTestController.h"
 #include "foundation/diagnostics/CrashDump.h"
+#ifdef PP_CRASH_PROBE
+#include "foundation/diagnostics/CrashProbe.h"
+#endif
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/PlatformLogDefaults.h"
@@ -126,6 +129,10 @@ int main(int argc, char** argv) {
   // Capture fatal signals / terminate into data_dir/diagnostics/crash_pending.txt.
   pbr::CrashDump::Install(pbr::AppPaths::DataDir(),
                           {pbr::kProductSlug, pbr::AppVersionString(), pbr::BuildCommit(), pbr::BuildTag()});
+#ifdef PP_CRASH_PROBE
+  // Throwaway probe (never merged): subscribe to the system's diagnostics early, before anything can crash.
+  pbr::CrashProbe::Start(pbr::AppPaths::DataDir());
+#endif
 
   if (log_file_enabled) {
     const std::string log_path = pbr::LogFile::Install(
