@@ -99,6 +99,7 @@ public:
     subscriptions.emplace_back(stream_id, channel_id);
     return {};
   }
+  mesh::MediaRelayRoe<void> Unsubscribe(uint32_t /*stream_id*/, uint16_t /*channel_id*/) override { return {}; }
   /** Capture thread (broadcaster) — guarded. */
   mesh::MediaRelayRoe<void> SendFrame(const mesh::MediaDataFrame& frame) override {
     if (!attached.load()) {

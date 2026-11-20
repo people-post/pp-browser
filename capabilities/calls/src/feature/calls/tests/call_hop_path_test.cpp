@@ -260,6 +260,7 @@ public:
     subscribed_channels.push_back(channel_id);
     return {};
   }
+  mesh::MediaRelayRoe<void> Unsubscribe(uint32_t /*stream_id*/, uint16_t /*channel_id*/) override { return {}; }
   mesh::MediaRelayRoe<void> SendFrame(const mesh::MediaDataFrame& /*frame*/) override { return {}; }
   void Detach() override {
     attached_ = false;

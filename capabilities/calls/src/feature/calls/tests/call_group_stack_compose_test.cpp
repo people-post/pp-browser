@@ -216,6 +216,7 @@ public:
   mesh::MediaRelayRoe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
     return hop_.Subscribe(this, stream_id, channel_id);
   }
+  mesh::MediaRelayRoe<void> Unsubscribe(uint32_t /*stream_id*/, uint16_t /*channel_id*/) override { return {}; }
   mesh::MediaRelayRoe<void> SendFrame(const mesh::MediaDataFrame& frame) override { return hop_.Forward(this, frame); }
   void Detach() override { hop_.Detach(this); }
   bool IsAttached() const override { return hop_.IsAttached(this); }
