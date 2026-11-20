@@ -1,6 +1,7 @@
 #include "feature/conversations/ConversationsHub.h"
 
 #include "common/runtime/AppRuntime.h"
+#include "common/tests/TeardownLikeTheApp.h"
 
 #include <gtest/gtest.h>
 #include <chrono>
@@ -11,6 +12,11 @@
 
 namespace pbr {
 namespace {
+
+// Every hub here is a test::TestOwner: OnLocalNetworkChanged posts raw `this` onto the UI mailbox
+// (RecheckRelayIdentitiesSoon, FeedAttachmentNetwork), and a hub freed with those queued had a later test's
+// RunUITasks run them on a dead stack frame (crashed about one run in two). It is freed the way the app frees it,
+// after the runtime quiesce (THREADING.md § Teardown quiesce).
 
 /** Records the hooks it gets, tagged with its name, into a shared log. */
 class RecordingParticipant : public HubParticipant {
@@ -27,35 +33,17 @@ private:
   std::vector<std::string>& log_;
 };
 
-/**
- * A hub freed the way the product frees one: nothing it posted is still queued. OnLocalNetworkChanged posts raw
- * `this` onto the UI mailbox (RecheckRelayIdentitiesSoon, FeedAttachmentNetwork); the product frees the hub only
- * after QuiesceForTeardown has closed the runtime gate over those posts (THREADING.md § Teardown quiesce), and
- * this binary has no runtime to quiesce. So the UI thread runs them while the hub is still alive. Freed with
- * them queued, the next test's RunUITasks ran them on that test's dead stack frame (crashed about one run in two).
- */
-class TestHub : public ConversationsHub {
-public:
-  TestHub() = default;
-  TestHub(const TestHub&) = delete;
-  TestHub& operator=(const TestHub&) = delete;
-  ~TestHub() override {
-    AppRuntime::RunUITasks(); // runs what those tasks post too
-    EXPECT_FALSE(AppRuntime::HasPendingUITasks()) << "a post outlives the hub";
-  }
-};
-
 TEST(HubParticipantTest, NetworkChangesReachParticipantsInOrderWithTheMeshsView) {
   std::vector<std::string> log;
   RecordingParticipant calls("calls", log);
   RecordingParticipant broadcast("broadcast", log);
-  TestHub hub;
-  hub.AddParticipant(calls);
-  hub.AddParticipant(broadcast);
+  test::TestOwner<ConversationsHub> hub;
+  hub->AddParticipant(calls);
+  hub->AddParticipant(broadcast);
 
   NetworkChange baseline;
   baseline.current.online = true;
-  hub.OnLocalNetworkChanged(baseline);
+  hub->OnLocalNetworkChanged(baseline);
   EXPECT_EQ(log, (std::vector<std::string>{"calls:baseline", "broadcast:baseline"}));
 
   log.clear();
@@ -65,9 +53,9 @@ TEST(HubParticipantTest, NetworkChangesReachParticipantsInOrderWithTheMeshsView)
   moved.previous.fingerprint = "wifi";
   moved.current.online = true;
   moved.current.fingerprint = "cellular";
-  hub.OnLocalNetworkChanged(moved);
+  hub->OnLocalNetworkChanged(moved);
   EXPECT_EQ(log, (std::vector<std::string>{"calls:moved", "broadcast:moved"}));
-  hub.ClearParticipants();
+  hub->ClearParticipants();
 }
 
 // The Chats header's status line (#175): the OS network and the relay's last poll become one state. The 5 s
@@ -77,19 +65,19 @@ public:
   using Health = MeshDeliveryOrchestrator::BriefRelayHealthState;
   using Link = ConversationsHub::LinkState;
   LinkFixture() {
-    hub.SetOnLinkStateChanged([this](Link state) { seen.push_back(state); });
-    hub.SetLinkGraceScheduler([this](std::chrono::milliseconds delay, std::function<void()> fn) {
+    hub->SetOnLinkStateChanged([this](Link state) { seen.push_back(state); });
+    hub->SetLinkGraceScheduler([this](std::chrono::milliseconds delay, std::function<void()> fn) {
       delays.push_back(delay);
       pending = std::move(fn);
     });
   }
-  ~LinkFixture() { hub.SetOnLinkStateChanged(nullptr); }
+  ~LinkFixture() { hub->SetOnLinkStateChanged(nullptr); }
   void Network(bool online, bool tunnel_only = false) {
     NetworkChange change;
     change.generation = ++generation;
     change.current.online = online;
     change.current.tunnel_only = tunnel_only;
-    hub.OnLocalNetworkChanged(change);
+    hub->OnLocalNetworkChanged(change);
   }
   void FireTimer() {
     auto fn = std::move(pending);
@@ -97,21 +85,22 @@ public:
     ASSERT_TRUE(fn);
     fn();
   }
-  TestHub hub;
   std::vector<Link> seen;
   std::vector<std::chrono::milliseconds> delays;
   std::function<void()> pending;
   uint64_t generation = 0;
+  /** Last: freed first, while what its hooks write to is still here. */
+  test::TestOwner<ConversationsHub> hub;
 };
 
 TEST(HubParticipantTest, LinkIsOnlineWhenTheNetworkIsUpAndTheRelayAnswered) {
   LinkFixture f;
-  EXPECT_EQ(f.hub.CurrentLinkState(), LinkFixture::Link::Unknown);
+  EXPECT_EQ(f.hub->CurrentLinkState(), LinkFixture::Link::Unknown);
   f.Network(true);
   EXPECT_TRUE(f.seen.empty()) << "network up, no poll result yet: nothing for the first 5 s";
   ASSERT_EQ(f.delays.size(), 1u);
   EXPECT_EQ(f.delays[0], std::chrono::milliseconds(5000));
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
   EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Online}));
   f.FireTimer(); // the stale timer does nothing
   EXPECT_EQ(f.seen.size(), 1u);
@@ -120,9 +109,9 @@ TEST(HubParticipantTest, LinkIsOnlineWhenTheNetworkIsUpAndTheRelayAnswered) {
 TEST(HubParticipantTest, LinkIsConnectingAtOnceWhenTheRelayPollFails) {
   LinkFixture f;
   f.Network(true);
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Failed);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Failed);
   EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Connecting}));
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
   EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Connecting, LinkFixture::Link::Online}));
 }
 
@@ -137,18 +126,18 @@ TEST(HubParticipantTest, LinkWithNoPollResultBecomesConnectingOnlyWhenTheGraceEl
 TEST(HubParticipantTest, LinkIsOfflineWhenTheNetworkIsDownWhateverTheRelaySaid) {
   LinkFixture f;
   f.Network(true);
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
   f.Network(false);
   EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Online, LinkFixture::Link::Offline}));
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Failed);
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Failed);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
   EXPECT_EQ(f.seen.size(), 2u) << "relay news changes nothing while the network is down";
   // Airplane mode with a VPN left on: only the tunnel is up, which counts as offline.
   f.Network(true);
   EXPECT_EQ(f.seen.back(), LinkFixture::Link::Online);
   f.Network(true, true);
   EXPECT_EQ(f.seen.back(), LinkFixture::Link::Offline);
-  EXPECT_EQ(f.hub.NetworkOnline(), 0);
+  EXPECT_EQ(f.hub->NetworkOnline(), 0);
 }
 
 TEST(HubParticipantTest, LinkLeavesOfflineForConnectingAtOnceWhenTheNetworkReturns) {
@@ -157,7 +146,7 @@ TEST(HubParticipantTest, LinkLeavesOfflineForConnectingAtOnceWhenTheNetworkRetur
   EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Offline}));
   f.Network(true); // health still Unknown: red would be false now, no 5 s wait
   EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Offline, LinkFixture::Link::Connecting}));
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
   EXPECT_EQ(f.seen.back(), LinkFixture::Link::Online);
   EXPECT_EQ(f.seen.size(), 3u);
 }
@@ -165,12 +154,12 @@ TEST(HubParticipantTest, LinkLeavesOfflineForConnectingAtOnceWhenTheNetworkRetur
 TEST(HubParticipantTest, AnOutageForgetsTheOldRelayResult) {
   LinkFixture f;
   f.Network(true);
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
   f.Network(false);
   f.Network(true); // the Ok from before the outage is stale
   EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Online, LinkFixture::Link::Offline,
                                                     LinkFixture::Link::Connecting}));
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
   EXPECT_EQ(f.seen.back(), LinkFixture::Link::Online);
 }
 
@@ -179,13 +168,13 @@ TEST(HubParticipantTest, AnOutageForgetsTheOldRelayResult) {
 TEST(HubParticipantTest, LinkIsOnlineAgainAfterANetworkBlipOnceThePollIsOkAgain) {
   LinkFixture f;
   f.Network(true);
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
   f.Network(false);
   f.Network(true);
   EXPECT_EQ(f.seen.back(), LinkFixture::Link::Connecting) << "the old Ok is stale after an outage";
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
   EXPECT_EQ(f.seen.back(), LinkFixture::Link::Online);
-  EXPECT_EQ(f.hub.CurrentLinkState(), LinkFixture::Link::Online);
+  EXPECT_EQ(f.hub->CurrentLinkState(), LinkFixture::Link::Online);
 }
 
 TEST(HubParticipantTest, LinkIsOnlineAfterTheFirstOkPollWhenTheGraceAlreadyRanOut) {
@@ -193,7 +182,7 @@ TEST(HubParticipantTest, LinkIsOnlineAfterTheFirstOkPollWhenTheGraceAlreadyRanOu
   f.Network(true);
   f.FireTimer();
   EXPECT_EQ(f.seen.back(), LinkFixture::Link::Connecting);
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
   EXPECT_EQ(f.seen.back(), LinkFixture::Link::Online);
 }
 
@@ -201,16 +190,16 @@ TEST(HubParticipantTest, TheWayDownRunsInReverseAndClearedParticipantsHearNothin
   std::vector<std::string> log;
   RecordingParticipant calls("calls", log);
   RecordingParticipant broadcast("broadcast", log);
-  TestHub hub;
-  hub.AddParticipant(calls);
-  hub.AddParticipant(broadcast);
+  test::TestOwner<ConversationsHub> hub;
+  hub->AddParticipant(calls);
+  hub->AddParticipant(broadcast);
 
-  hub.AbortParticipantsForShutdown();
+  hub->AbortParticipantsForShutdown();
   EXPECT_EQ(log, (std::vector<std::string>{"broadcast:abort", "calls:abort"}));
 
   log.clear();
-  hub.ClearParticipants();
-  hub.AbortParticipantsForShutdown();
+  hub->ClearParticipants();
+  hub->AbortParticipantsForShutdown();
   EXPECT_TRUE(log.empty());
 }
 
@@ -220,16 +209,16 @@ TEST(HubParticipantTest, ThePollTurningOkIsPostedToTheUiAsPollOk) {
   LinkFixture f;
   AppRuntime::RunUITasks(); // nothing of an earlier test left
   std::vector<RelayRegistrationSignal> signals;
-  f.hub.SetOnRelayRegistrationSignal([&signals](RelayRegistrationSignal signal) { signals.push_back(signal); });
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Failed);
+  f.hub->SetOnRelayRegistrationSignal([&signals](RelayRegistrationSignal signal) { signals.push_back(signal); });
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Failed);
   AppRuntime::RunUITasks();
   EXPECT_TRUE(signals.empty()) << "a failed poll alone says nothing about the registration";
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
   EXPECT_TRUE(signals.empty()) << "posted, not called on the poll worker";
   AppRuntime::RunUITasks();
   EXPECT_EQ(signals, (std::vector<RelayRegistrationSignal>{RelayRegistrationSignal::PollOk}));
-  f.hub.SetOnRelayRegistrationSignal(nullptr);
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.hub->SetOnRelayRegistrationSignal(nullptr);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
   AppRuntime::RunUITasks();
   EXPECT_EQ(signals.size(), 1u) << "cleared: nothing more";
 }
@@ -239,17 +228,17 @@ TEST(HubParticipantTest, ARegistrationSignalOfAnEndedSessionIsDropped) {
   LinkFixture f;
   AppRuntime::RunUITasks();
   std::vector<RelayRegistrationSignal> signals;
-  f.hub.SetOnRelayRegistrationSignal([&signals](RelayRegistrationSignal signal) { signals.push_back(signal); });
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
-  f.hub.InvalidateRelayRegistrationSignals(); // teardown / a new session before the posted task ran
+  f.hub->SetOnRelayRegistrationSignal([&signals](RelayRegistrationSignal signal) { signals.push_back(signal); });
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.hub->InvalidateRelayRegistrationSignals(); // teardown / a new session before the posted task ran
   AppRuntime::RunUITasks();
   EXPECT_TRUE(signals.empty());
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Failed);
-  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Failed);
+  f.hub->OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
   AppRuntime::RunUITasks();
   EXPECT_EQ(signals, (std::vector<RelayRegistrationSignal>{RelayRegistrationSignal::PollOk}))
       << "the new session's own";
-  f.hub.SetOnRelayRegistrationSignal(nullptr);
+  f.hub->SetOnRelayRegistrationSignal(nullptr);
 }
 
 } // namespace

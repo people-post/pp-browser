@@ -5,6 +5,7 @@
 #include "common/Utilities.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/tests/ScriptedHttpServer.h"
+#include "common/tests/TeardownLikeTheApp.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
@@ -306,8 +307,9 @@ TEST_F(AttachmentLocalDeleteTest, ARestartWithDownloadEverythingDoesNotBringItBa
   const ThreadMessage a1 = Post("A", "a1", photo.fields);
   Delete({{"A", photo.fields.content_hash}});
 
-  // A new run: the suppression comes back from disk.
-  workflow_.reset();
+  // A new run: the suppression comes back from disk. The workflow goes as a profile reset frees it, behind the
+  // runtime quiesce (its workers run raw `this`).
+  test::FreeLikeTheApp(workflow_);
   suppression_ = std::make_unique<AttachmentSuppressionStore>(dir_.string());
   workflow_ = std::make_unique<AttachmentFetchWorkflow>();
   Wire(*workflow_, *suppression_);

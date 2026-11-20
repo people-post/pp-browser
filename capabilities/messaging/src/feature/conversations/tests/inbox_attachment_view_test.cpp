@@ -10,6 +10,7 @@
 #include "lib/people/ContactsStore.h"
 #include "common/Utilities.h"
 #include "common/runtime/AppRuntime.h"
+#include "common/tests/TeardownLikeTheApp.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "foundation/crypto/AttachmentContentHash.h"
@@ -52,7 +53,7 @@ protected:
     inbox_->SetProfileDataDir(data_dir_.string());
   }
   void TearDown() override {
-    inbox_.reset();
+    test::FreeLikeTheApp(inbox_); // with a runtime it posts raw `this` onto the UI mailbox
     std::error_code ec;
     std::filesystem::remove_all(data_dir_, ec);
   }
@@ -289,8 +290,8 @@ protected:
   }
   void TearDown() override {
     inbox_->SetAttachmentDownloads(nullptr);
-    AppRuntime::Shutdown(); // its workers are joined before the workflow goes
-    downloads_.reset();
+    test::FreeLikeTheApp(inbox_, downloads_); // the workflow's workers run raw `this` too
+    AppRuntime::Shutdown();
     SetAttachmentPlatform({});
     InboxAttachmentViewTest::TearDown();
   }

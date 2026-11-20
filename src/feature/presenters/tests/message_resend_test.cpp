@@ -6,6 +6,7 @@
 #include "feature/presenters/MessageResend.h"
 #include "feature/presenters/SendMark.h"
 #include "common/runtime/AppRuntime.h"
+#include "common/tests/TeardownLikeTheApp.h"
 #include "domain/delivery/DeliveryOutbox.h"
 #include "foundation/error/AppError.h"
 #include "lib/delivery/DeliveryNotice.h"
@@ -546,16 +547,16 @@ TEST_F(MessageResendTest, ARelayAnswering404RecipientNotRegisteredLeadsToUpdateT
   RecipientNotFoundRelay relay;
   std::vector<DeliveryOutcome> outcomes;
   {
-    DeliveryOutbox outbox([]() -> IDirectMessageClient* { return nullptr; });
-    outbox.SetRelayClient(&relay);
-    outbox.SetOnOutcome([&outcomes](const DeliveryOutcome& outcome) { outcomes.push_back(outcome); });
+    test::TestOwner<DeliveryOutbox> outbox([]() -> IDirectMessageClient* { return nullptr; });
+    outbox->SetRelayClient(&relay);
+    outbox->SetOnOutcome([&outcomes](const DeliveryOutcome& outcome) { outcomes.push_back(outcome); });
     DeliveryRequest request;
     request.envelope.message_id = "m1";
     request.envelope.timestamp = 1;
     request.thread_id = "t1";
     request.message_id = "m1";
     request.relay_recipient = "account:bob";
-    outbox.Send(std::move(request));
+    outbox->Send(std::move(request));
     ASSERT_TRUE(AppRuntime::DrainWorkersThenUI());
   }
   AppRuntime::Shutdown();

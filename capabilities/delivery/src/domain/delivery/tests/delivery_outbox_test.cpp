@@ -9,6 +9,7 @@
 #include "foundation/error/AppError.h"
 #include "lib/net/OrgBackendClients.h"
 #include "common/Utilities.h"
+#include "common/tests/TeardownLikeTheApp.h"
 
 #include <gtest/gtest.h>
 
@@ -159,8 +160,9 @@ protected:
 
   void Drain() { ASSERT_TRUE(AppRuntime::DrainWorkersThenUI()); }
 
-  std::unique_ptr<DeliveryOutbox> MakeOutbox(IRelayClient& relay) {
-    auto outbox = std::make_unique<DeliveryOutbox>([]() -> IDirectMessageClient* { return nullptr; });
+  /** Freed like the app frees it (before the runtime stops): it posts raw `this` onto the workers. */
+  test::TestOwner<DeliveryOutbox> MakeOutbox(IRelayClient& relay) {
+    test::TestOwner<DeliveryOutbox> outbox([]() -> IDirectMessageClient* { return nullptr; });
     outbox->SetRelayClient(&relay);
     outbox->SetOnOutcome([this](const DeliveryOutcome& outcome) {
       std::lock_guard lock(mu_);
@@ -226,8 +228,8 @@ TEST_F(DeliveryOutboxTest, CallControlAlsoGoesOverALiveLinkAtOnce) {
   for (const bool connected : {true, false}) {
     FakeRelay relay(0);
     FakeDirect direct(connected);
-    DeliveryOutbox outbox([&direct]() -> IDirectMessageClient* { return &direct; });
-    outbox.SetRelayClient(&relay);
+    test::TestOwner<DeliveryOutbox> outbox([&direct]() -> IDirectMessageClient* { return &direct; });
+    outbox->SetRelayClient(&relay);
     DeliveryRequest control;
     control.envelope.message_id = "ctl-1";
     control.envelope.timestamp = util::NowUnixMs();
@@ -235,7 +237,7 @@ TEST_F(DeliveryOutboxTest, CallControlAlsoGoesOverALiveLinkAtOnce) {
     control.amp_peer_key = "account:bob";
     control.relay_recipient = "account:bob";
     control.critical_lane = true;
-    outbox.Send(control);
+    outbox->Send(control);
     // On the send itself, not a drain marker: the critical lane has more than one thread, so the marker can run
     // while the send still does. The direct copy goes before the relay's.
     ASSERT_TRUE(WaitFor([&] { return relay.SentCount() == 1u; }, std::chrono::seconds(5)))
@@ -440,15 +442,15 @@ TEST_F(DeliveryOutboxTest, ARecipientNotOnTheRelayFailsAtOnceAndIsNotQueued) {
 TEST_F(DeliveryOutboxTest, ARecipientNotOnTheRelayIsReachedOverALinkWhenOneCanBeHad) {
   FakeRelay relay(1, AppError::Network(Err::Network::RecipientNotRegistered, "recipient_not_registered"));
   FakeDirect direct(false);
-  DeliveryOutbox outbox([&direct]() -> IDirectMessageClient* { return &direct; });
-  outbox.SetRelayClient(&relay);
-  outbox.SetOnOutcome([this](const DeliveryOutcome& outcome) {
+  test::TestOwner<DeliveryOutbox> outbox([&direct]() -> IDirectMessageClient* { return &direct; });
+  outbox->SetRelayClient(&relay);
+  outbox->SetOnOutcome([this](const DeliveryOutcome& outcome) {
     std::lock_guard lock(mu_);
     outcomes_.push_back(outcome);
   });
   DeliveryRequest request = ToRelay("t1", "m1");
   request.amp_fallback_key = "account:bob";
-  outbox.Send(std::move(request));
+  outbox->Send(std::move(request));
   ASSERT_TRUE(WaitFor([&] { return !Outcomes().empty(); }, std::chrono::seconds(5)));
   EXPECT_TRUE(Outcomes()[0].ok);
   EXPECT_EQ(Outcomes()[0].transport, MessageTransport::Direct);
@@ -506,22 +508,22 @@ TEST_F(DeliveryOutboxTest, ASendThatEndsAtOnceLeavesNothingActive) {
   EXPECT_FALSE(outbox->SendStartedMs("delivered"));
   EXPECT_FALSE(outbox->SendStartedMs("no-route"));
 
-  DeliveryOutbox no_relay([]() -> IDirectMessageClient* { return nullptr; });
-  no_relay.Send(ToRelay("t1", "no-relay"));
+  test::TestOwner<DeliveryOutbox> no_relay([]() -> IDirectMessageClient* { return nullptr; });
+  no_relay->Send(ToRelay("t1", "no-relay"));
   Drain();
-  EXPECT_FALSE(no_relay.SendStartedMs("no-relay"));
+  EXPECT_FALSE(no_relay->SendStartedMs("no-relay"));
 }
 
 TEST_F(DeliveryOutboxTest, ADirectDeliveryEndsTheActiveSend) {
   FakeRelay relay(0);
   FakeDirect direct(false);
-  DeliveryOutbox outbox([&direct]() -> IDirectMessageClient* { return &direct; });
-  outbox.SetRelayClient(&relay);
+  test::TestOwner<DeliveryOutbox> outbox([&direct]() -> IDirectMessageClient* { return &direct; });
+  outbox->SetRelayClient(&relay);
   DeliveryRequest request = ToRelay("t1", "m1");
   request.amp_peer_key = "account:bob";
-  outbox.Send(std::move(request));
+  outbox->Send(std::move(request));
   ASSERT_TRUE(
-      WaitFor([&] { return direct.Sent().size() == 1u && !outbox.SendStartedMs("m1"); }, std::chrono::seconds(5)));
+      WaitFor([&] { return direct.Sent().size() == 1u && !outbox->SendStartedMs("m1"); }, std::chrono::seconds(5)));
   EXPECT_TRUE(relay.sent.empty()) << "it went over the link";
 }
 

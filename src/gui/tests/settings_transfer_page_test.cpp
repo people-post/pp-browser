@@ -6,6 +6,7 @@
 #include "gui/UserFeedback.h"
 
 #include "common/runtime/AppRuntime.h"
+#include "common/tests/TeardownLikeTheApp.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/data/Config.h"
@@ -168,7 +169,7 @@ protected:
     actions = std::make_unique<SettingsSecurityActions>(*host, commands, feedback, unlock, pin_prompt);
   }
   void TearDown() override {
-    actions.reset();
+    test::FreeLikeTheApp(actions); // it posts raw `this` onto the workers and the UI mailbox
     UserFeedback::BindPorts({});
     AppRuntime::Shutdown();
     std::filesystem::remove_all(root);
