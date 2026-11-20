@@ -153,7 +153,8 @@ picker); the restore page's **Use a saved copy…** (the open picker).
 
 ## On disk
 
-`{data_dir}/profiles/{id}/account_locker.json` (plaintext, atomic write):
+`{data_dir}/profiles/{id}/account_locker.json` (plaintext, atomic write): `schema_version` 1 (a file without it, from
+before it, is 1; a newer one is not read and never written over — that run keeps its state in memory),
 `highest_version_by_locker` (`{locker id hex: version}`), `contact_clock` (the registers above) and `device_names` (the
 table as last merged, plus this device's own edits not yet published; plaintext like the contacts' nicknames). See
 [DATA_LAYOUT](DATA_LAYOUT.md).

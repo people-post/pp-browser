@@ -8,7 +8,9 @@
 #include "common/Utilities.h"
 
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -536,6 +538,37 @@ TEST_F(AccountLockerWorkflowNamesTest, TheTableSurvivesARestartInAccountLockerJs
   auto again = Device("peer:phone", {"peer:phone"}, "iPhone");
   again->workflow->SetDataDir(dir_.string());
   EXPECT_EQ(NameIn(again->workflow->DeviceNames(), "peer:phone"), "Mine");
+}
+
+// INVENTORY S3: account_locker.json says its schema from now on; a file without one is read as it (every file
+// before had none), and a newer app's is not read and never written over.
+TEST_F(AccountLockerWorkflowNamesTest, TheStateFileSaysItsVersionAndANewerOneIsLeftAlone) {
+  workflow_.reset();
+  const auto path = dir_ / "account_locker.json";
+  const auto read = [&path]() {
+    std::ifstream in(path);
+    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  };
+  {
+    std::ofstream out(path);
+    out << R"({"device_names":[{"peer_id":"peer:phone","name":"Unversioned","at":5}]})";
+  }
+  auto phone = Device("peer:phone", {"peer:phone"}, "iPhone");
+  phone->workflow->SetDataDir(dir_.string());
+  EXPECT_EQ(NameIn(phone->workflow->DeviceNames(), "peer:phone"), "Unversioned") << "no version: today's";
+  ASSERT_TRUE(phone->workflow->SetDeviceName("peer:phone", "Mine", util::NowUnixMs()));
+  EXPECT_NE(read().find("\"schema_version\":1"), std::string::npos) << read();
+
+  const std::string newer = R"({"schema_version":2,"device_names":[{"peer_id":"peer:phone","name":"Later","at":9}]})";
+  {
+    std::ofstream out(path, std::ios::trunc);
+    out << newer;
+  }
+  auto again = Device("peer:phone", {"peer:phone"}, "iPhone");
+  again->workflow->SetDataDir(dir_.string());
+  EXPECT_NE(NameIn(again->workflow->DeviceNames(), "peer:phone"), "Later") << "a newer app's file is not read";
+  ASSERT_TRUE(again->workflow->SetDeviceName("peer:phone", "Changed", util::NowUnixMs()));
+  EXPECT_EQ(read(), newer) << "and never written over";
 }
 
 } // namespace

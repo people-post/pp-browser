@@ -18,12 +18,18 @@ namespace pbr {
  * Persists under profile `payment_promises.json`.
  *
  * Committed receipts live in `promises[]`. Inbound remote receipts stage in
- * `pending_inbound[]` until the user Accepts or Ignores them (P003).
+ * `pending_inbound[]` until the user Accepts or Ignores them (P003). Schema 2, also its floor (DATA_LAYOUT).
  */
 class PaymentPromiseStore : public Module {
 public:
+  static constexpr uint64_t kSchemaVersion = 2;
+
   explicit PaymentPromiseStore(std::string data_dir);
 
+  /**
+   * Reads the file. One of another version (or none), or one it cannot read, is kept as it is: this run's receipts
+   * live in memory and every save is refused (INVENTORY S2), until a Load that reads.
+   */
   Roe<void> Load();
   Roe<void> Save() const;
 
@@ -52,6 +58,7 @@ public:
 
 private:
   std::string Path() const;
+  Roe<void> LoadUnlocked();
   Roe<void> SaveUnlocked() const;
   static Roe<void> DecodeArrayInto(const Array* arr, std::unordered_map<std::string, PaymentPromise>& out);
 
@@ -59,6 +66,8 @@ private:
   mutable std::mutex mutex_;
   std::unordered_map<std::string, PaymentPromise> rows_;
   std::unordered_map<std::string, PaymentPromise> pending_inbound_;
+  /** Why the last Load did not read the file; set: no save writes it. */
+  std::optional<std::string> refused_;
 };
 
 } // namespace pbr

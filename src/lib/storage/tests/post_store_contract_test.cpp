@@ -6,6 +6,10 @@
 #include "lib/posts/testing/InMemoryPostStore.h"
 #include "lib/storage/SqlitePostStore.h"
 #include "lib/posts/tests/PostTestAccount.h"
+#include "lib/storage/SqliteThreadStore.h"
+#include "UnlockedThreadStore.h"
+
+#include "common/Utilities.h"
 
 #include <gtest/gtest.h>
 
@@ -192,6 +196,29 @@ INSTANTIATE_TEST_SUITE_P(Impls, PostStoreContractTest, ::testing::Values(Impl::S
                          [](const ::testing::TestParamInfo<Impl>& info) {
                            return info.param == Impl::Sqlite ? std::string("Sqlite") : std::string("Memory");
                          });
+
+// INVENTORY S4: on a profile's profile.db the post store asks the chat store's gate first (as every store on the file
+// does, AT_REST_ENCRYPTION § Unlock flow): refused before unlock — nothing created, nothing written — open after.
+TEST(SqlitePostStoreGateTest, ProfileDbIsRefusedUntilTheChatStoreIsOpen) {
+  const auto dir = std::filesystem::temp_directory_path() / ("pp_posts_gate_" + util::GenerateUuid());
+  std::filesystem::create_directories(dir);
+  {
+    auto threads = std::make_unique<SqliteThreadStore>(dir.string());
+    SqlitePostStore posts(threads->ProfileDbPath());
+    EXPECT_FALSE(posts.OwnLane("QmPhone")) << "locked: refused";
+    EXPECT_FALSE(posts.PutOwnLane(OwnPostLane{.device = "QmPhone", .next_seq = 2}));
+    EXPECT_FALSE(std::filesystem::exists(threads->ProfileDbPath())) << "nothing created before unlock";
+
+    ASSERT_TRUE(threads->SetDek(test::TestStoreDek()));
+    ASSERT_TRUE(posts.PutOwnLane(OwnPostLane{.device = "QmPhone", .next_seq = 2}));
+    auto lane = posts.OwnLane("QmPhone");
+    ASSERT_TRUE(lane) << lane.error().message;
+    ASSERT_TRUE(lane->has_value());
+    EXPECT_EQ((*lane)->next_seq, 2u);
+  }
+  std::error_code ec;
+  std::filesystem::remove_all(dir, ec);
+}
 
 } // namespace
 } // namespace pbr
