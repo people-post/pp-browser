@@ -430,6 +430,21 @@ TEST(TranscriptPendingVideoTest, NoPlayKeyWhileItUploadsAndTheBareFrameWithoutAP
   PendingUpload bare = StartPendingUpload(2, "t", std::nullopt, PendingUploadKind::Video);
   bare.title = "clip.mov";
   EXPECT_NE(PendingUploadRml(bare).find("chat-attachment-video-frame--bare"), std::string::npos);
+  // No row under the frame: what it carried (the size, or "…" until it is known) is the pill inside the frame; the
+  // upload's progress and failure stay in the frame's disc.
+  const std::string uploading = PendingUploadRml(bare);
+  EXPECT_EQ(uploading.find("text muted"), std::string::npos);
+  EXPECT_NE(uploading.find("<div class=\"chat-attachment-pill\"><span class=\"chat-pill-size\">…</span></div>"),
+            std::string::npos);
+  EXPECT_NE(uploading.find("chat-pending-percent"), std::string::npos);
+  PendingUpload sized = OnUploadDetails(bare, "clip.mov", "12.0 MB").next;
+  EXPECT_NE(PendingUploadRml(sized).find("<span class=\"chat-pill-size\">12.0 MB</span>"), std::string::npos);
+  PendingUpload failed = sized;
+  failed.state = PendingUploadState::Failed;
+  const std::string failed_rml = PendingUploadRml(failed);
+  EXPECT_NE(failed_rml.find("retry_attachment_send"), std::string::npos);
+  EXPECT_NE(failed_rml.find("discard_attachment_send"), std::string::npos);
+  EXPECT_NE(failed_rml.find("chat-pill-size"), std::string::npos);
 }
 
 TEST_F(PendingPictureLayoutTest, AFileBubbleAndTheSentCardItTurnsIntoHaveTheSameSize) {

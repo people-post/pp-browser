@@ -3925,13 +3925,21 @@ input.checkbox:checked {
 }
 
 /* The send time of an attachment bubble. */
-.chat-attachment-time {
+.chat-attachment-time,
+.chat-attachment-pill {
   background-color: #000000a6;
   color: #ffffff;
 }
 
-.chat-attachment-time .route-icon {
+.chat-attachment-time .route-icon,
+.chat-attachment-pill .route-icon {
   image-color: #ffffff;
+}
+
+/* Text on a video's dark frame (no poster): the label and the file name. */
+.chat-attachment-video-frame--bare .chat-attachment-video-badge,
+.chat-attachment-video-frame--bare .chat-attachment-video-name {
+  color: #ffffff;
 }
 
 .chat-attachment-clock {

@@ -12346,9 +12346,13 @@ input.checkbox {
   margin-bottom: 24dp;
 }
 
+/* A video card ends at its frame: the reaction pills hang under it, in room the card keeps for them. */
+.shell-chat-overlay .chat-attachment-card--video.chat-reaction-host {
+  padding-bottom: 24dp;
+}
+
 .shell-chat-overlay .chat-attachment-video-frame {
   max-width: 292dp;
-  margin-bottom: 6dp;
 }
 
 /* A video card (sent or being sent) is a 3dp frame round its poster like a picture card: as wide as the poster (up to
@@ -12356,16 +12360,12 @@ input.checkbox {
 .shell-chat-overlay .chat-attachment-card--video {
   min-width: 0;
   max-width: 298dp;
-  padding: 3dp 3dp 0 3dp;
+  padding: 3dp;
   border-radius: 12dp;
 }
 
 .shell-chat-overlay .chat-attachment-card--video .chat-attachment-video-frame {
   border-radius: 9dp;
-}
-
-.shell-chat-overlay .chat-attachment-card--video .muted {
-  padding: 0 9dp;
 }
 
 /* The music card is one width on the phone, inside the 240dp card limit, with room under its controls. */
@@ -16559,4 +16559,41 @@ textarea:composing ~ .ps-placeholder {
 
 .shell-chat-overlay .chat-file-card.chat-reaction-host .chat-file-row {
   padding-bottom: 8dp;
+}
+
+/* A video's one pill, "size · time", in the frame's bottom-right corner. The size shows everywhere; the time part only on
+   phones (the desktop has the meta line). The frame clips it. */
+.chat-attachment-pill {
+  display: block;
+  position: absolute;
+  right: 9dp;
+  bottom: 9dp;
+  padding: 1dp 7dp;
+  border-radius: 10dp;
+  font-size: 12dp;
+  line-height: 16dp;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.chat-pill-time {
+  display: none;
+}
+
+.shell-chat-overlay .chat-pill-time {
+  display: inline;
+}
+
+/* The label and file name on a video's bare frame (no poster) are on the dark frame: white, one line, cut with an
+   ellipsis. */
+.chat-attachment-video-frame--bare .chat-attachment-video-badge,
+.chat-attachment-video-frame--bare .chat-attachment-video-name {
+  margin: 0;
+}
+
+.chat-attachment-video-frame--bare .chat-attachment-video-name {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }

@@ -136,13 +136,16 @@ protected:
           Message("s", ChatContentType::Attachment, at, Attachment("voice-3000.ogg", "audio/ogg", 20000))}) {
       TranscriptRow row;
       row.message = message;
+      if (video_reaction && message.id == "v") {
+        row.reactions.push_back({"\xF0\x9F\x91\x8D", 2, false, {"a", "b"}});
+      }
       rows.push_back(row);
     }
     TranscriptFacts facts;
     facts.voice_supported = true;
     facts.audio_files_play = true;
     facts.send_mark = [mark](const ThreadMessage&) { return mark; };
-    facts.attachment = [](const ThreadMessage& message) {
+    facts.attachment = [this](const ThreadMessage& message) {
       TranscriptAttachmentView view;
       view.state = AttachmentFetchWorkflow::DownloadState::Ready;
       view.inline_image_ok = true;
@@ -151,7 +154,11 @@ protected:
       if (message.id == "p") {
         view.local_path = "/x/a.jpg";
       } else if (message.id == "v") {
-        view.poster_path = "/x/poster.jpg";
+        view.poster_path = video_poster ? "/x/poster.jpg" : "";
+        if (video_w > 0) {
+          view.image_width = video_w;
+          view.image_height = video_h;
+        }
       } else {
         view.on_demand = true;
       }
@@ -196,6 +203,12 @@ protected:
     return std::string(time->GetInnerRML().c_str()).find("route-icon") != std::string::npos;
   }
 
+  // What the video of ShowAll looks like (poster or the bare frame; the poster's size, 0: the default).
+  bool video_poster = true;
+  bool video_reaction = false;
+  int video_w = 0;
+  int video_h = 0;
+
   NullRender renderer;
   bool initialized = false;
   ui::Context* context = nullptr;
@@ -207,7 +220,7 @@ protected:
 const char* const kTimeSelectors[] = {
     ".bubble .bubble-time",                               // text
     ".chat-attachment-card--image .chat-attachment-time", // picture
-    ".chat-attachment-video-frame .chat-attachment-time", // video
+    ".chat-attachment-video-frame .chat-pill-time",       // video
     ".chat-file-card .chat-attachment-clock",             // file
     ".chat-audio-card .chat-attachment-clock",            // sound file
     ".chat-voice-clock",                                  // voice message
@@ -253,7 +266,9 @@ TEST_P(AttachmentTimeTest, ThePicturesAndVideosTimeIsAPillInsideTheirBottomRight
   ShowAll(kSentAt, SendMark::None);
   for (const char* parent : {".chat-attachment-card--image", ".chat-attachment-video-frame"}) {
     SCOPED_TRACE(parent);
-    ui::Element* time = TimeIn((std::string(parent) + " .chat-attachment-time").c_str());
+    const bool video = std::string(parent) == ".chat-attachment-video-frame";
+    ui::Element* time = TimeIn(video ? ".chat-attachment-video-frame .chat-attachment-pill"
+                                     : ".chat-attachment-card--image .chat-attachment-time");
     ASSERT_NE(time, nullptr);
     ui::Element* frame = All(parent).front();
     const ui::Vector2f frame_at = frame->GetAbsoluteOffset(ui::BoxArea::Border);
@@ -283,6 +298,84 @@ TEST_P(AttachmentTimeTest, TheFileAndSoundCardsTimeIsAtTheirBottomRightInsideThe
     EXPECT_LE(at.y + size.y, card_at.y + card_size.y + 0.5f);
     EXPECT_GT(at.y, card_at.y + card_size.y / 2.f) << "at the bottom";
   }
+}
+
+// The video bubble ends at its frame: one pill in the frame's bottom-right corner reads "size · time"; nothing is under
+// the frame; a frame too narrow for both keeps the time; the bare frame's label and name are white on its dark ground.
+TEST_P(AttachmentTimeTest, TheVideoBubbleEndsAtItsFrameWithOnePillSizeAndTime) {
+  ShowAll(kSentAt, SendMark::None);
+  ui::Element* frame = All(".chat-attachment-video-frame").front();
+  ui::Element* pill = TimeIn(".chat-attachment-video-frame .chat-attachment-pill");
+  ASSERT_NE(pill, nullptr);
+  const std::string text = pill->GetInnerRML().c_str();
+  EXPECT_NE(text.find("KB"), std::string::npos) << "the size is in the pill";
+  EXPECT_NE(text.find("\xC2\xB7"), std::string::npos) << "the middle dot between size and time";
+  EXPECT_LT(text.find("KB"), text.find(':')) << "the size first, then the time";
+  EXPECT_EQ(All(".chat-attachment-video-frame ~ .muted").size(), 0U) << "no size row after the frame";
+  EXPECT_EQ(All(".chat-attachment-card--video .muted").size(), 0U);
+  ui::Element* card = All(".chat-attachment-card--video").front();
+  const ui::Vector2f frame_at = frame->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f frame_size = frame->GetBox().GetSize(ui::BoxArea::Border);
+  const ui::Vector2f card_at = card->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f card_size = card->GetBox().GetSize(ui::BoxArea::Border);
+  EXPECT_NEAR((card_at.y + card_size.y) - (frame_at.y + frame_size.y), 3.f, 0.5f)
+      << "the card ends 3dp under its frame, nothing else";
+  const ui::Vector2f at = pill->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f size = pill->GetBox().GetSize(ui::BoxArea::Border);
+  EXPECT_LE(at.x + size.x, frame_at.x + frame_size.x + 0.5f);
+  EXPECT_LE(at.y + size.y, frame_at.y + frame_size.y + 0.5f);
+  EXPECT_GT(at.x, frame_at.x + frame_size.x / 2.f - 40.f) << "right side";
+}
+
+TEST_P(AttachmentTimeTest, TheReactionsOfAVideoHangUnderItsFrameNotOverItsPill) {
+  video_reaction = true;
+  ShowAll(kSentAt, SendMark::None);
+  ui::Element* frame = All(".chat-attachment-video-frame").front();
+  ui::Element* chip = nullptr;
+  for (ui::Element* candidate : All(".chat-reaction-chip")) {
+    if (Shown(candidate)) {
+      chip = candidate;
+      break;
+    }
+  }
+  ASSERT_NE(chip, nullptr);
+  const ui::Vector2f frame_at = frame->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f frame_size = frame->GetBox().GetSize(ui::BoxArea::Border);
+  // The chip's 40dp box may reach up into the card's padding, but its drawn pill (30dp, centred) starts at or under the
+  // frame's bottom edge, clear of the size-and-time pill inside it.
+  const ui::Vector2f chip_at = chip->GetAbsoluteOffset(ui::BoxArea::Border);
+  EXPECT_GE(chip_at.y + 5.f, frame_at.y + frame_size.y) << "the pills hang under the frame";
+  ui::Element* card = All(".chat-attachment-card--video").front();
+  EXPECT_GT(card->GetBox().GetSize(ui::BoxArea::Border).y, frame_size.y + 20.f) << "the card keeps room for them";
+}
+
+TEST_P(AttachmentTimeTest, ANarrowVideoFrameDropsTheSizeAndKeepsTheTime) {
+  video_w = 90;
+  video_h = 1600; // a very tall video: a narrow frame
+  ShowAll(kSentAt, SendMark::None);
+  ui::Element* frame = All(".chat-attachment-video-frame").front();
+  ASSERT_LT(frame->GetBox().GetSize(ui::BoxArea::Border).x, 150.f) << "the frame is narrow";
+  ui::Element* pill = TimeIn(".chat-attachment-video-frame .chat-attachment-pill");
+  ASSERT_NE(pill, nullptr) << "the time stays";
+  const std::string text = pill->GetInnerRML().c_str();
+  EXPECT_EQ(text.find("KB"), std::string::npos) << "the size is the one that goes";
+  EXPECT_EQ(text.find("\xC2\xB7"), std::string::npos) << "and its separator";
+}
+
+TEST_P(AttachmentTimeTest, TheBareVideoFramesLabelAndNameAreWhiteOnOneLineAndTheSizeIsInItsPill) {
+  video_poster = false;
+  ShowAll(kSentAt, SendMark::None);
+  for (const char* selector : {".chat-attachment-video-badge", ".chat-attachment-video-name"}) {
+    SCOPED_TRACE(selector);
+    ui::Element* element = All(selector).front();
+    const ui::Colourb colour = element->GetComputedValues().color();
+    EXPECT_GE(colour.red, 250);
+    EXPECT_GE(colour.green, 250);
+    EXPECT_GE(colour.blue, 250);
+  }
+  ui::Element* name = All(".chat-attachment-video-name").front();
+  EXPECT_LE(name->GetBox().GetSize(ui::BoxArea::Border).y, 24.f) << "one line";
+  ASSERT_NE(TimeIn(".chat-attachment-video-frame--bare .chat-attachment-pill"), nullptr);
 }
 
 INSTANTIATE_TEST_SUITE_P(ThemesAndSides, AttachmentTimeTest,
