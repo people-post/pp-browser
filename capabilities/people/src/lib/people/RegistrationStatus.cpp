@@ -124,6 +124,14 @@ bool ShouldRenewRegistration(const LocalIdentity& identity, int64_t now_ms, cons
          status == RegistrationStatus::WrongBackend;
 }
 
+bool BriefLlmTokenRenewDue(const LocalIdentity& identity, const int64_t now_ms) {
+  if (identity.brief_llm_api_key.empty()) {
+    return false;
+  }
+  const auto expires_ms = ParseIso8601ToUnixMs(identity.brief_llm_token_expires_at);
+  return !expires_ms || *expires_ms - ResolveNowMs(now_ms) <= kBriefLlmTokenRenewWindowMs;
+}
+
 bool ShouldPublishKemBinding(const LocalIdentity& identity) {
   return identity.registered && !identity.kem_binding_published;
 }

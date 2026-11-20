@@ -35,8 +35,8 @@ struct RelayBlobRecord {
 };
 
 /**
- * `/files/start`: where to PUT the ciphertext. `mode` "single" (one PUT to `upload_url`) or "multipart"
- * (`part_count` parts, each exactly `part_bytes` but the last, each PUT to a URL from `/files/part`).
+ * `/blob/start`: where to PUT the ciphertext. `mode` "single" (one PUT to `upload_url`) or "multipart"
+ * (`part_count` parts, each exactly `part_bytes` but the last, each PUT to a URL from `/blob/part`).
  */
 struct RelayFileStartResult {
   std::string blob_id;
@@ -48,7 +48,7 @@ struct RelayFileStartResult {
   std::string pending_expires_at;
 };
 
-/** `/files/part`: the PUT URL of one part and that part's size (the last part's is the remainder). */
+/** `/blob/part`: the PUT URL of one part and that part's size (the last part's is the remainder). */
 struct RelayFilePartResult {
   std::string upload_url;
   uint64_t part_bytes = 0;
@@ -56,7 +56,7 @@ struct RelayFilePartResult {
 };
 
 /**
- * `/files/complete`: `share_path` is `/api/relay/v1/files/<blob_id>/download?t=<token>`, `share_url` the relay
+ * `/blob/complete`: `share_path` is `/api/relay/v1/blob/<blob_id>/download?t=<token>`, `share_url` the relay
  * origin plus it. The token is the download credential and is returned once: never log either.
  */
 struct RelayFileCompleteResult {
@@ -66,7 +66,7 @@ struct RelayFileCompleteResult {
   std::string expires_at;
 };
 
-/** One `/files/list` entry; times are the relay's ISO-8601 UTC strings (empty when not set). */
+/** One `/blob/list` entry; times are the relay's ISO-8601 UTC strings (empty when not set). */
 struct RelayFileRecord {
   std::string blob_id;
   std::string status;
@@ -130,7 +130,7 @@ public:
                                        const std::string& path, uint64_t offset, uint64_t length,
                                        const std::function<bool(uint64_t done, uint64_t total)>& progress);
 
-  // The encrypted-file relay (`/files/*`), for chat attachments; the `/blobs` calls above stay for profile photos.
+  // The encrypted-file routes (`blob/`), for chat attachments; the `cdn/` calls above stay for profile photos.
   virtual Roe<RelayFileStartResult> FileStart(const std::string& account_id, uint64_t byte_length) = 0;
   /** A fresh PUT URL for part `part_number` (1-based) of a multipart upload. */
   virtual Roe<RelayFilePartResult> FilePart(const std::string& account_id, const std::string& blob_id,
@@ -141,14 +141,14 @@ public:
   virtual Roe<RelayFileListResult> FileList(const std::string& account_id, const std::string& status_filter) = 0;
 };
 
-/** The relay error code (`QUOTA_FILE_BYTES`, `BLOB_NOT_PENDING`, ...) a failed `/files` call carried, or "". */
+/** The relay error code (`QUOTA_FILE_BYTES`, `BLOB_NOT_PENDING`, ...) a failed `blob/` call carried, or "". */
 std::string RelayFileErrorCode(const Error& err);
 
 /**
- * files/start → PUT the staged ciphertext (`cipher_bytes` long: the size the relay reserves and signs into the
- * PUT) → files/complete. A `multipart` answer (over the relay's part size, 16 MiB) is sent part by part in order,
+ * blob/start → PUT the staged ciphertext (`cipher_bytes` long: the size the relay reserves and signs into the
+ * PUT) → blob/complete. A `multipart` answer (over the relay's part size, 16 MiB) is sent part by part in order,
  * each part from the offset the relay's `part_bytes` gives; a part that fails on the network, with a 5xx or a 403
- * (expired URL) is tried again with a fresh `/files/part` URL at most twice, and so is complete. A cancel
+ * (expired URL) is tried again with a fresh `/blob/part` URL at most twice, and so is complete. A cancel
  * (`progress` false) or any other refusal stops at once. Once start has answered, any later
  * failure deletes that blob id (best effort) and returns the original error, so no pending upload is left on the
  * account. A start refused for too many pending uploads first deletes this account's pending uploads started over

@@ -41,9 +41,9 @@ inline constexpr std::chrono::milliseconds kTurnStopBudget{2000};
 inline constexpr size_t kTurnPoolThreads = kMaxConcurrentTurns + 1 + 2;
 
 /**
- * The most thread turns at once with this configuration: kMaxConcurrentTurns for a registered brief_AI key
- * (`brf_llm_*`) or another provider's key, kMaxConcurrentGuestTurns for a guest key or none yet (the guest key is
- * minted after launch).
+ * The most thread turns at once with this configuration: kMaxConcurrentTurns for a brief_AI key from the account's
+ * registered slot (LlmConfig::brief_key_registered) or another provider's key, kMaxConcurrentGuestTurns for a guest
+ * key or none yet (the guest key is minted after launch).
  */
 size_t MaxConcurrentTurnsFor(const AppConfig& config);
 

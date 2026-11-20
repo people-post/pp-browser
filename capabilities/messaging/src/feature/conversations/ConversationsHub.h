@@ -392,7 +392,7 @@ public:
   Roe<void> ClearProfileIcon();
   /** The relay files to offer deleting for a full files relay (the only quota this device can free). */
   Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
-  /** One file of a confirmed quota recovery (`/files/delete`). */
+  /** One file of a confirmed quota recovery (`/blob/delete`). */
   Roe<void> DeleteRelayFileById(const std::string& blob_id);
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   /** Me → Storage → Manage storage (AttachmentFetchWorkflow): blocking, call on a worker. */
@@ -491,8 +491,14 @@ public:
   /** The contact page's relay line: its preferred relay and what it answered at the last refresh (multi-relay R3). */
   ContactRelayView ContactRelay(const Contact& contact);
   void SetOnPeerIconsChanged(std::function<void()> callback);
-  /** Rotates the Brief LLM key at the service `llm_base_url` names (the app's: its preset and deployment). */
-  Roe<void> RotateBriefLlmKey(const std::string& llm_base_url);
+  /**
+   * Renews the account's Brief LLM token at the org's relay (`token/renew`, RC018 item 2:
+   * RenewBriefLlmTokenWithIdentity) and tells SetOnBriefLlmTokenRenewed. Blocks (HTTP). Me's "Regenerate AI access
+   * credential" asks it; the timer does before the token expires (RenewBriefLlmTokenSoon).
+   */
+  Roe<void> RenewBriefLlmToken();
+  /** The registered Brief LLM token was renewed: the assistant takes the new one. Any thread; nullptr: none. */
+  void SetOnBriefLlmTokenRenewed(std::function<void()> callback);
 
   /** P001: send `charge_required` and re-lock peer initiation billing. */
   Roe<void> SendChargeRequired(const std::string& peer_identity, std::optional<int64_t> floor_minor = std::nullopt);
@@ -866,6 +872,19 @@ private:
   /** Checks which other relays are due a registration while messaging runs. */
   uint64_t relay_registration_timer_id_ = 0;
   static constexpr int64_t kRelayRegistrationCheckIntervalMs = 60 * 1000;
+  /** The registry that issued the account's Brief LLM token (the org's relay, MR006); none: not one of ours. */
+  std::shared_ptr<IRegistrationClient> BriefLlmTokenRegistry() const;
+  /** Renews the Brief LLM token off the caller's thread when it is due (BriefLlmTokenRenewDue); one at a time. */
+  void RenewBriefLlmTokenSoon();
+  /** Checks whether the Brief LLM token is due a renewal while messaging runs (it lasts 7 days). */
+  uint64_t llm_token_timer_id_ = 0;
+  static constexpr int64_t kLlmTokenCheckIntervalMs = 10 * 60 * 1000;
+  /** After a failed renewal the next is not asked before this long (the token still holds until it expires). */
+  static constexpr int64_t kLlmTokenRetryMs = 30 * 60 * 1000;
+  std::atomic<bool> llm_token_renewing_{false};
+  std::atomic<int64_t> llm_token_next_try_ms_{0};
+  std::mutex llm_token_renewed_mu_;
+  std::function<void()> on_llm_token_renewed_;
   /** The stores encrypted at rest (the profile's data key goes to them). */
   std::vector<IDekConsumer*> at_rest_;
   std::string profile_db_path_;

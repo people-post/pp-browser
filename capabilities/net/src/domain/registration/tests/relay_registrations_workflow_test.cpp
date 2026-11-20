@@ -58,7 +58,7 @@ public:
                                                              kem_binding_signature_b64, peer_id, multiaddrs, publish);
     if (result) {
       result->expires_at = expires_at;
-      result->llm_api_key = llm_key;
+      result->llm_token = llm_key;
       result->registration_id = "reg-" + std::to_string(finish_calls);
     }
     return result;

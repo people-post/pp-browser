@@ -3,6 +3,8 @@
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
 #include "common/tests/LocalHttpServer.h"
+#include "foundation/error/AppError.h"
+#include "foundation/i18n/LocalizationService.h"
 
 #include <gtest/gtest.h>
 
@@ -16,7 +18,7 @@ namespace {
 TEST(LlmLimitKindTest, ClassifiesTheGatewayMessages) {
   using pbr::LlmClient;
   using pbr::LlmLimitKind;
-  EXPECT_EQ(LlmClient::ClassifyLimit("Guest Brief LLM daily limit exceeded"), LlmLimitKind::GuestDaily);
+  EXPECT_EQ(LlmClient::ClassifyLimit("Guest Brief LLM daily limit exceeded"), LlmLimitKind::Daily);
   EXPECT_EQ(LlmClient::ClassifyLimit("Guest Brief LLM rate limit exceeded"), LlmLimitKind::PerMinute);
   EXPECT_EQ(LlmClient::ClassifyLimit("Per-user Brief LLM rate limit exceeded"), LlmLimitKind::PerMinute);
   EXPECT_EQ(LlmClient::ClassifyLimit("Global Brief LLM rate limit exceeded"), LlmLimitKind::Other);
@@ -28,7 +30,7 @@ TEST(LlmLimitKindTest, ClassifiesTheNeutralGatewayMessages) {
   using pbr::LlmClient;
   using pbr::LlmLimitKind;
   EXPECT_EQ(LlmClient::ClassifyLimit("Per-user LLM rate limit exceeded"), LlmLimitKind::PerMinute);
-  EXPECT_EQ(LlmClient::ClassifyLimit("Per-user LLM daily limit exceeded"), LlmLimitKind::GuestDaily);
+  EXPECT_EQ(LlmClient::ClassifyLimit("Per-user LLM daily limit exceeded"), LlmLimitKind::Daily);
   EXPECT_EQ(LlmClient::ClassifyLimit("Guest LLM rate limit exceeded"), LlmLimitKind::PerMinute);
   EXPECT_EQ(LlmClient::ClassifyLimit("Global LLM rate limit exceeded"), LlmLimitKind::Other);
   EXPECT_EQ(LlmClient::ClassifyLimit("Global LLM guest rate limit exceeded"), LlmLimitKind::Other);
@@ -37,6 +39,50 @@ TEST(LlmLimitKindTest, ClassifiesTheNeutralGatewayMessages) {
         "Global LLM rate limit exceeded", "Global LLM guest rate limit exceeded"}) {
     EXPECT_TRUE(LlmClient::IsBriefGatewayLimit(text)) << text;
   }
+}
+
+// RC018 item 2: the relay's gateway names each limit in `code` (SPECS § llm-gateway); its words come from the code.
+TEST(LlmLimitKindTest, ClassifiesTheRelaysCodes) {
+  using pbr::LlmClient;
+  using pbr::LlmLimitKind;
+  EXPECT_EQ(LlmClient::ClassifyLimitCode("user_rate_limit"), LlmLimitKind::PerMinute);
+  EXPECT_EQ(LlmClient::ClassifyLimitCode("guest_rate_limit"), LlmLimitKind::PerMinute);
+  EXPECT_EQ(LlmClient::ClassifyLimitCode("user_daily_limit"), LlmLimitKind::Daily);
+  EXPECT_EQ(LlmClient::ClassifyLimitCode("guest_daily_limit"), LlmLimitKind::Daily);
+  EXPECT_EQ(LlmClient::ClassifyLimitCode("global_rate_limit"), LlmLimitKind::Other);
+  EXPECT_EQ(LlmClient::ClassifyLimitCode("guest_global_rate_limit"), LlmLimitKind::Other);
+  EXPECT_EQ(LlmClient::ClassifyLimitCode("guest_mint_rate_limit"), LlmLimitKind::Other);
+  EXPECT_EQ(LlmClient::ClassifyLimitCode("_daily_limit"), LlmLimitKind::Other);
+  EXPECT_EQ(LlmClient::ClassifyLimitCode(""), LlmLimitKind::Other);
+}
+
+TEST(LlmLimitKindTest, TheRelaysCodeDecidesNotItsText) {
+  using pbr::LlmClient;
+  // The code wins over a text that would read otherwise (the text is the relay's to change).
+  const pbr::Error daily =
+      LlmClient::MapHttpError(429, R"({"error":"Per-user LLM rate limit exceeded","code":"user_daily_limit"})");
+  EXPECT_EQ(daily.code, static_cast<int32_t>(pbr::Err::Auth::RateLimited));
+  EXPECT_EQ(daily.user, pbr::Tr("errors.ai.limit_daily"));
+  const pbr::Error minute = LlmClient::MapHttpError(429, R"({"error":"slow down","code":"user_rate_limit"})");
+  EXPECT_EQ(minute.user, pbr::Tr("errors.ai.limit_minute"));
+  EXPECT_EQ(LlmClient::MapHttpError(429, R"({"error":"x","code":"guest_rate_limit"})").user,
+            pbr::Tr("errors.ai.limit_minute"));
+  const pbr::Error global = LlmClient::MapHttpError(429, R"({"error":"Some new words","code":"global_rate_limit"})");
+  EXPECT_EQ(global.code, static_cast<int32_t>(pbr::Err::Auth::RateLimited));
+  EXPECT_NE(global.user, "Some new words") << "a coded gateway limit never shows the relay's English text";
+  EXPECT_EQ(LlmClient::MapHttpError(429, R"({"error":"busy","code":"server_busy"})").code,
+            static_cast<int32_t>(pbr::Err::Auth::ServerBusy));
+}
+
+TEST(LlmLimitKindTest, AnExpiredTokenIsExpiredNotForbidden) {
+  using pbr::LlmClient;
+  const pbr::Error expired = LlmClient::MapHttpError(401, R"({"error":"Invalid LLM API key","code":"token_expired"})");
+  EXPECT_EQ(expired.code, static_cast<int32_t>(pbr::Err::Auth::Expired));
+  EXPECT_EQ(expired.message.rfind("LLM HTTP 401", 0), 0u) << "still a refused Bearer to the 401 heal";
+  EXPECT_EQ(LlmClient::MapHttpError(401, R"({"error":"x","code":"legacy_key_retired"})").code,
+            static_cast<int32_t>(pbr::Err::Auth::Expired));
+  EXPECT_EQ(LlmClient::MapHttpError(401, R"({"error":"Invalid LLM API key"})").code,
+            static_cast<int32_t>(pbr::Err::Auth::Forbidden));
 }
 
 TEST(LlmLimitKindTest, OtherProvidersKeepTheirOwnText) {

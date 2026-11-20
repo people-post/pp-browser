@@ -119,8 +119,7 @@ Roe<RelayFileCompleteResult> MockBlobClient::FileComplete(const std::string& /*a
   RelayFileCompleteResult result;
   result.blob_id = blob_id;
   // A token of the relay's shape (base64url, 43 chars): what the redaction tests must never see in a log.
-  result.share_path =
-      "/api/relay/v1/files/" + blob_id + "/download?t=Mock_Token-0123456789abcdefghijklmnopqrstuvwxyzAB";
+  result.share_path = "/api/relay/v1/blob/" + blob_id + "/download?t=Mock_Token-0123456789abcdefghijklmnopqrstuvwxyzAB";
   result.share_url = "https://mock.example" + result.share_path;
   result.expires_at = "2099-01-08T00:00:00.000Z";
   return result;
@@ -231,7 +230,8 @@ Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(
   return RegistrationResult{.success = true,
                             .account_id = account_id,
                             .message = "Registered as " + nickname,
-                            .llm_api_key = "brf_llm_mock_key",
+                            .llm_token = "brf_llm_mock_key",
+                            .llm_token_expires_at = "2099-01-01T00:00:00.000Z",
                             .expires_at = "2099-01-01T00:00:00.000Z",
                             .registration_id = "mock-registration",
                             .account_card_status = publish.account_card ? "stored" : "",

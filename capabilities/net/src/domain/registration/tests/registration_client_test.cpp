@@ -53,13 +53,15 @@ TEST(RegistrationClientTest, ApplyRegistrationResultPersistsFields) {
   identity.brief_llm_guest_api_key = "brf_guest_old";
   RegistrationResult result{.success = true,
                             .message = "ok",
-                            .llm_api_key = "brf_llm_new",
+                            .llm_token = "ppl1.k.p.s",
+                            .llm_token_expires_at = "2099-12-07T23:59:59.000Z",
                             .expires_at = "2099-12-31T23:59:59.000Z",
                             .account_card_status = "stored",
                             .account_card_issued_at = 1234};
   ApplyRegistrationResult(identity, result);
   EXPECT_TRUE(identity.registered);
-  EXPECT_EQ(identity.brief_llm_api_key, "brf_llm_new");
+  EXPECT_EQ(identity.brief_llm_api_key, "ppl1.k.p.s") << "the registered slot takes the relay's llm_token";
+  EXPECT_EQ(identity.brief_llm_token_expires_at, "2099-12-07T23:59:59.000Z");
   EXPECT_TRUE(identity.brief_llm_guest_api_key.empty());
   EXPECT_EQ(identity.registration_expires_at, "2099-12-31T23:59:59.000Z");
   EXPECT_EQ(identity.registered_card_issued_at, 1234);
@@ -289,6 +291,132 @@ TEST_F(RevokeRegistrationTest, NothingIsSignedWithoutAnAudience) {
 
   EXPECT_FALSE(static_cast<bool>(RevokeRegistrationWithIdentity(client_, *identity_, "reg-now")));
   EXPECT_EQ(client_.revoke_calls, 0);
+}
+
+// RC018 item 2: the registered slot's token is renewed before it expires (7 days), with `token/renew`.
+TEST(BriefLlmTokenRenewDueTest, DueNearItsExpiryOrWhenItIsNotKnown) {
+  const int64_t now = 1'704'067'200'000; // 2024-01-01T00:00:00Z
+  LocalIdentity identity;
+  EXPECT_FALSE(BriefLlmTokenRenewDue(identity, now)) << "no registered token: a guest key is minted, not renewed";
+  identity.brief_llm_guest_api_key = "guest";
+  EXPECT_FALSE(BriefLlmTokenRenewDue(identity, now));
+  identity.brief_llm_api_key = "ppl1.k.p.s";
+  EXPECT_TRUE(BriefLlmTokenRenewDue(identity, now)) << "a key kept before the expiry was read: renewed at once";
+  identity.brief_llm_token_expires_at = "2024-01-08T00:00:00.000Z"; // 7 days
+  EXPECT_FALSE(BriefLlmTokenRenewDue(identity, now));
+  identity.brief_llm_token_expires_at = "2024-01-04T00:00:00.000Z"; // 3 days
+  EXPECT_TRUE(BriefLlmTokenRenewDue(identity, now));
+  identity.brief_llm_token_expires_at = "2023-12-30T00:00:00.000Z";
+  EXPECT_TRUE(BriefLlmTokenRenewDue(identity, now)) << "expired";
+}
+
+class TokenRenewingClient : public RecordingRegistrationClient {
+public:
+  bool TakesBriefLlmKey() const override { return takes; }
+  Roe<LlmTokenRenewal> RenewLlmToken(const std::string& account_id, const SignedRelayCommand& signed_renew) override {
+    ++renew_calls;
+    renew_account_id = account_id;
+    renew_audience = signed_renew.audience;
+    renew_signature = signed_renew.signature;
+    if (refuse) {
+      return AppError::Auth(Err::Auth::NotRegistered, "not_registered");
+    }
+    return LlmTokenRenewal{.llm_token = "ppl1.k.renewed.s", .llm_token_expires_at = "2099-01-08T00:00:00.000Z"};
+  }
+  bool takes = true;
+  bool refuse = false;
+  int renew_calls = 0;
+  std::string renew_account_id;
+  std::string renew_audience;
+  std::string renew_signature;
+};
+
+class BriefLlmTokenRenewalTest : public RevokeRegistrationTest {
+protected:
+  void HoldToken(const std::string& token) {
+    auto identity = identity_->Get();
+    ASSERT_TRUE(static_cast<bool>(identity));
+    identity->registered = true;
+    identity->brief_llm_api_key = token;
+    identity->brief_llm_guest_api_key = "guest";
+    ASSERT_TRUE(static_cast<bool>(identity_->Update(*identity)));
+  }
+  TokenRenewingClient renewing_;
+};
+
+TEST_F(BriefLlmTokenRenewalTest, TheRenewedTokenAndItsExpiryGoToTheRegisteredSlot) {
+  HoldToken("ppl1.k.old.s");
+  auto renewed = RenewBriefLlmTokenWithIdentity(renewing_, *identity_);
+  ASSERT_TRUE(static_cast<bool>(renewed)) << renewed.error().message;
+  EXPECT_EQ(renewing_.renew_calls, 1);
+  const LocalIdentity after = identity_->Get().value();
+  EXPECT_EQ(renewing_.renew_account_id, after.account_id);
+  EXPECT_EQ(renewing_.renew_audience, MockRegistrationClient::kAudience) << "signed for the org's relay";
+  EXPECT_FALSE(renewing_.renew_signature.empty());
+  EXPECT_EQ(after.brief_llm_api_key, "ppl1.k.renewed.s");
+  EXPECT_EQ(after.brief_llm_token_expires_at, "2099-01-08T00:00:00.000Z");
+  EXPECT_TRUE(after.brief_llm_guest_api_key.empty()) << "as at register/finish";
+  EXPECT_FALSE(BriefLlmTokenRenewDue(after, 1'704'067'200'000));
+  EXPECT_EQ(renewing_.finish_calls, 0) << "a renewal, not a registration";
+}
+
+TEST_F(BriefLlmTokenRenewalTest, NothingIsAskedWithoutARegisteredTokenOrAtAnotherRelay) {
+  EXPECT_FALSE(static_cast<bool>(RenewBriefLlmTokenWithIdentity(renewing_, *identity_))) << "no token yet";
+  HoldToken("ppl1.k.old.s");
+  renewing_.takes = false;
+  EXPECT_FALSE(static_cast<bool>(RenewBriefLlmTokenWithIdentity(renewing_, *identity_)))
+      << "only the org's relay issued it";
+  EXPECT_EQ(renewing_.renew_calls, 0);
+}
+
+TEST_F(BriefLlmTokenRenewalTest, ARefusedRenewalKeepsTheTokenHeld) {
+  HoldToken("ppl1.k.old.s");
+  renewing_.refuse = true;
+  EXPECT_FALSE(static_cast<bool>(RenewBriefLlmTokenWithIdentity(renewing_, *identity_)));
+  EXPECT_EQ(identity_->Get().value().brief_llm_api_key, "ppl1.k.old.s");
+}
+
+// The 401 heal (B183) renews a refused registered token before it mints a guest key: the user stays registered.
+TEST_F(BriefLlmTokenRenewalTest, ARefusedRegisteredTokenIsRenewedBeforeAGuestKeyIsMinted) {
+  HoldToken("ppl1.k.old.s");
+  int mints = 0;
+  BriefLlmKeyStore store{
+      .get = [this]() -> std::optional<LocalIdentity> {
+        auto got = identity_->Get();
+        return got ? std::optional<LocalIdentity>(*got) : std::nullopt;
+      },
+      .modify = [this](const std::function<bool(LocalIdentity&)>& change) -> Roe<void> {
+        if (auto changed = identity_->Modify(change); !changed) {
+          return changed.error();
+        }
+        return {};
+      },
+      .mint = [&mints](const std::string&) -> Roe<BriefGuestLlmMintResult> {
+        ++mints;
+        return BriefGuestLlmMintResult{.llm_api_key = "guest-new"};
+      },
+      .renew_token = [this]() -> Roe<std::string> {
+        auto renewed = RenewBriefLlmTokenWithIdentity(renewing_, *identity_);
+        if (!renewed) {
+          return renewed.error();
+        }
+        return renewed->llm_token.Reveal();
+      },
+  };
+  auto healed = RenewBriefLlmKey(store, "ppl1.k.old.s", "https://llm.example/api/llm/v1");
+  ASSERT_TRUE(static_cast<bool>(healed)) << healed.error().message;
+  EXPECT_EQ(healed->key, "ppl1.k.renewed.s");
+  EXPECT_EQ(mints, 0);
+  ASSERT_TRUE(static_cast<bool>(CommitBriefLlmKey(store, "ppl1.k.old.s")));
+  EXPECT_EQ(identity_->Get().value().brief_llm_api_key, "ppl1.k.renewed.s") << "the commit drops nothing renewed";
+
+  // The relay refuses the renewal (the registration is gone): the guest key beside it, as before.
+  HoldToken("ppl1.k.old.s");
+  renewing_.refuse = true;
+  healed = RenewBriefLlmKey(store, "ppl1.k.old.s", "https://llm.example/api/llm/v1");
+  ASSERT_TRUE(static_cast<bool>(healed)) << healed.error().message;
+  EXPECT_EQ(healed->key, "guest");
+  EXPECT_EQ(mints, 0);
 }
 
 // Records what register/finish sent; the relay stores the binding when `relay_stores_binding`.

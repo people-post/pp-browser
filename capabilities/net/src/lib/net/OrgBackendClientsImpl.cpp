@@ -18,6 +18,8 @@
 namespace pbr {
 namespace {
 std::string EncodePathSegment(const std::string& value);
+/** A lookup the relay answered 404 (`not_registered`); ClassifyPeopleLookupError reads it as not found. */
+constexpr const char kAccountNotFound[] = "Account not found";
 } // namespace
 } // namespace pbr
 #include "common/PbrCompat.h"
@@ -199,30 +201,22 @@ Roe<std::vector<mesh::DirectoryHit>> HttpDirectoryClient::SearchPeople(const std
   if (base_url_.empty()) {
     return Error("Directory base_url not configured");
   }
-  const std::string url = base_url_ + "/v1/search?q=" + EncodePathSegment(query); // free text from the user
-  const auto response = HttpClient::Get(url, WithRelayClientHeader(), kMaxHttpClientBodyBytes, timeout_, public_only_);
-  if (!response) {
-    return response.error();
+  // The relay's directory matches one exact Account ID and nothing else (SPECS `users/by-account`; the legacy
+  // `GET /search` it replaces matched the same): any other text has no hit there, and is not sent.
+  if (query.rfind("account:", 0) != 0) {
+    return std::vector<mesh::DirectoryHit>{};
   }
-  if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Directory search failed with status " + std::to_string(response.value().status_code));
-  }
-
-  auto root = TryParseObject(response.value().body);
-  const Array* hits_arr = root ? root->getArray("hits") : nullptr;
-  if (!hits_arr) {
-    return Error("Invalid directory search JSON");
-  }
-
-  std::vector<mesh::DirectoryHit> hits;
-  for (const Value& item_value : hits_arr->elements) {
-    const Object* item = asObject(item_value);
-    if (!item) {
-      continue;
+  auto hit = LookupByAccount(query);
+  if (!hit) {
+    if (hit.error().message == kAccountNotFound) {
+      return std::vector<mesh::DirectoryHit>{}; // not registered there, or expired: no hit
     }
-    hits.push_back(DirectoryHitFromJson(*item));
+    return hit.error();
   }
-  return hits;
+  if (hit->entity_kind == "mesh_node") {
+    return std::vector<mesh::DirectoryHit>{}; // a search finds people; nodes are listed by mesh/nodes
+  }
+  return std::vector<mesh::DirectoryHit>{std::move(*hit)};
 }
 
 namespace {
@@ -292,7 +286,7 @@ Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& 
     return response.error();
   }
   if (response.value().status_code == 404) {
-    return Error("Account not found"); // `not_registered`: not on this relay, or expired
+    return Error(kAccountNotFound); // `not_registered`: not on this relay, or expired
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
     return Error("Directory lookup failed with status " + std::to_string(response.value().status_code));
@@ -594,9 +588,10 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     if (auto message = root->getString("message")) {
       result.message = *message;
     }
-    if (auto llm_api_key = root->getString("llm_api_key");
-        llm_api_key && takes_llm_key_.load(std::memory_order_relaxed)) {
-      result.llm_api_key = *llm_api_key;
+    // The org's token only (MR006); the legacy `llm_api_key` beside it is not read (relay 1.0 removes it, RC018).
+    if (auto llm_token = root->getString("llm_token"); llm_token && takes_llm_key_.load(std::memory_order_relaxed)) {
+      result.llm_token = *llm_token;
+      result.llm_token_expires_at = root->getString("llm_token_expires_at").value_or("");
     }
     if (auto expires_at = root->getString("expires_at")) {
       result.expires_at = *expires_at;
@@ -650,6 +645,33 @@ Roe<void> HttpRegistrationClient::RevokeRegistration(const std::string& account_
     return RegistryRefusal(audience_.get(), "Registration revoke", response.value());
   }
   return {};
+}
+
+Roe<LlmTokenRenewal> HttpRegistrationClient::RenewLlmToken(const std::string& account_id,
+                                                           const SignedRelayCommand& signed_renew) {
+  if (base_url_.empty()) {
+    return Error("Registration base_url not configured");
+  }
+  Object body;
+  body.set("account_id", account_id);
+  PutSignedRelayCommand(body, signed_renew);
+  // The registry serves it under the LLM prefix of the same origin (`/api/llm/v1`, SPECS § llm-gateway).
+  const auto response = HttpClient::Post(RelayOriginOf(base_url_) + "/api/llm/v1/token/renew", DumpJson(body),
+                                         WithRelayClientHeader({{"Content-Type", "application/json"}}),
+                                         kMaxHttpClientBodyBytes, {}, public_only_);
+  if (!response) {
+    return response.error();
+  }
+  if (response.value().status_code < 200 || response.value().status_code >= 300) {
+    return RegistryRefusal(audience_.get(), "LLM token renew", response.value());
+  }
+  auto root = TryParseObject(response.value().body);
+  auto token = root ? root->getString("llm_token") : std::nullopt;
+  if (!token || token->empty()) {
+    return Error("Invalid LLM token renew JSON");
+  }
+  return LlmTokenRenewal{.llm_token = SecretText(*token),
+                         .llm_token_expires_at = root->getString("llm_token_expires_at").value_or("")};
 }
 
 HttpClientCompatClient::HttpClientCompatClient(std::string base_url, const bool public_only)

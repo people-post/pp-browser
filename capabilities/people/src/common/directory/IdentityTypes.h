@@ -55,10 +55,19 @@ struct LocalIdentity {
   std::string nickname;
   /** Device endpoint: mesh PeerId base58; derived in memory from device ML-DSA pubkey. */
   std::string peer_id;
-  /** Brief LLM API key (plaintext in memory; persisted inside identity.enc). Empty until registered. */
+  /**
+   * The registered slot: the Brief LLM token the org's relay issued this account (`llm_token` from register/finish
+   * or `token/renew`; plaintext in memory, persisted inside identity.enc). Empty until registered. A Bearer in this
+   * slot is a registered user's, whatever it looks like (RC018 item 2).
+   */
   SecretText brief_llm_api_key;
   /**
-   * Free-tier guest Brief Bearer (`brf_guest_*`) minted without registration.
+   * When the registered slot's token expires (`llm_token_expires_at`, ISO-8601); it is renewed before then
+   * (BriefLlmTokenRenewDue). Empty: not known (a key kept before the app read it), renewed at once.
+   */
+  std::string brief_llm_token_expires_at;
+  /**
+   * The guest slot: a free-tier guest Brief Bearer minted without registration (`guest/start`).
    * Ignored when brief_llm_api_key is set. Cleared after successful register/finish.
    */
   SecretText brief_llm_guest_api_key;

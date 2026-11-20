@@ -126,15 +126,18 @@ TEST_F(HttpClientUiBlockTest, EveryEntryPointIsRecorded) {
   }
   (void)HttpClient::Get(server_.Url() + "/v1/mesh/nodes");
   (void)HttpClient::Post(server_.Url() + "/v1/register/start", "{}");
-  (void)HttpClient::PutFile(server_.Url() + "/v1/blobs/put", upload);
-  (void)HttpClient::GetToFile(server_.Url() + "/v1/files/abc/download", (dir_ / "down.bin").string(), 1024);
+  (void)HttpClient::PutFile(server_.Url() + "/v1/cdn/put", upload);
+  (void)HttpClient::GetToFile(server_.Url() + "/v1/blob/abc/download", (dir_ / "down.bin").string(), 1024);
+  // A link in a message sent before the app moved to `blob/` (the relay serves it until relay 1.0).
+  (void)HttpClient::GetToFile(server_.Url() + "/v1/files/abc/download", (dir_ / "old.bin").string(), 1024);
   const std::vector<std::string> diag = UiBlockLines(DiagCapture());
-  ASSERT_EQ(diag.size(), 4u);
+  ASSERT_EQ(diag.size(), 5u);
   EXPECT_NE(diag[0].find("route=v1.mesh"), std::string::npos) << diag[0];
   EXPECT_NE(diag[1].find("route=v1.register"), std::string::npos) << diag[1];
-  EXPECT_NE(diag[2].find("route=v1.blobs"), std::string::npos) << diag[2];
-  EXPECT_NE(diag[3].find("route=v1.files"), std::string::npos) << diag[3];
-  EXPECT_EQ(UiBlockLines(MetricsCapture()).size(), 4u);
+  EXPECT_NE(diag[2].find("route=v1.cdn"), std::string::npos) << diag[2];
+  EXPECT_NE(diag[3].find("route=v1.blob "), std::string::npos) << diag[3];
+  EXPECT_NE(diag[4].find("route=v1.files"), std::string::npos) << diag[4];
+  EXPECT_EQ(UiBlockLines(MetricsCapture()).size(), 5u);
 }
 
 TEST_F(HttpClientUiBlockTest, NoProbeOrNotTheUiThreadWritesNothing) {

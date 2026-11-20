@@ -72,10 +72,11 @@ protected:
     }
   }
 
-  /** MakeConfig with a registered user's brief_AI key: kMaxConcurrentTurns. */
+  /** MakeConfig with a token from the account's registered slot: kMaxConcurrentTurns. */
   static AppConfig RegisteredConfig() {
     AppConfig config = MakeConfig("brief");
-    config.llm.api_key = "brf_llm_test";
+    config.llm.api_key = "ppl1.kid.payload.sig";
+    config.llm.brief_key_registered = true;
     return config;
   }
 
@@ -358,7 +359,8 @@ TEST_F(AgentSessionsTest, AGuestKeyAnswersOneChatAtATime) {
   PumpUntil([&] { return !sessions_->AnyBusy(); }, "every turn to end");
 
   AppConfig registered = MakeConfig("brief");
-  registered.llm.api_key = "brf_llm_0123";
+  registered.llm.api_key = "ppl1.kid.payload.sig";
+  registered.llm.brief_key_registered = true;
   sessions_->Configure(registered); // the user signed up
   sessions_->WaitForConfigureIdle();
   EXPECT_EQ(sessions_->MaxConcurrentTurns(), kMaxConcurrentTurns);
@@ -723,6 +725,14 @@ TEST_F(AgentSessionsTest, NoBriefKeyYetAnswersOneChatAtATime) {
   unknown.llm.api_key = "something-else";
   EXPECT_EQ(MaxConcurrentTurnsFor(unknown), kMaxConcurrentGuestTurns);
   EXPECT_EQ(MaxConcurrentTurnsFor(RegisteredConfig()), kMaxConcurrentTurns);
+  // RC018 item 2: registered or guest by the slot the key came from, never by its text.
+  AppConfig prefixed_guest = MakeConfig("brief");
+  prefixed_guest.llm.api_key = "brf_llm_looks_registered";
+  EXPECT_EQ(MaxConcurrentTurnsFor(prefixed_guest), kMaxConcurrentGuestTurns) << "the guest slot, whatever the text";
+  AppConfig empty_registered = MakeConfig("brief");
+  empty_registered.llm.api_key.clear();
+  empty_registered.llm.brief_key_registered = true;
+  EXPECT_EQ(MaxConcurrentTurnsFor(empty_registered), kMaxConcurrentGuestTurns) << "no key: nothing to be registered";
   AppConfig other = MakeConfig("ollama");
   EXPECT_EQ(MaxConcurrentTurnsFor(other), kMaxConcurrentTurns) << "another provider's own key";
 }

@@ -120,7 +120,7 @@ TEST_F(AttachmentRelayUploadTest, TheMessageCarriesTheRelayShareLink) {
     auto fields = Upload(3000, staged);
     ASSERT_TRUE(fields) << fields.error().message;
     EXPECT_TRUE(std::regex_match(
-        fields->url, std::regex(R"(https://mock\.example/api/relay/v1/files/[0-9a-f-]+/download\?t=[A-Za-z0-9_-]+)")))
+        fields->url, std::regex(R"(https://mock\.example/api/relay/v1/blob/[0-9a-f-]+/download\?t=[A-Za-z0-9_-]+)")))
         << fields->url;
     ASSERT_FALSE(blob_->CompletedFileIds().empty());
     EXPECT_EQ(RelayFileUrl::BlobIdOf(fields->url), blob_->CompletedFileIds().back());
@@ -174,6 +174,14 @@ TEST(AttachmentUploadedCopyTest, DeletingTheServerCopyUsesTheLinksBlobId) {
   EXPECT_TRUE(blob.DeletedFileIds().empty());
 
   ASSERT_TRUE(DeleteUploadedAttachmentCopy(blob, "account:u1",
+                                           "https://www.brief.global/api/relay/v1/blob/abc-123/download?t=tok"));
+  EXPECT_EQ(blob.DeletedFileIds(), (std::vector<std::string>{"abc-123"}));
+}
+
+TEST(AttachmentUploadedCopyTest, ALinkSentBeforeTheBlobRoutesIsStillDeletedByItsId) {
+  // A message sent before the app moved to the `blob/` routes carries a `files/` link; the relay serves both until relay 1.0.
+  MockBlobClient blob;
+  ASSERT_TRUE(DeleteUploadedAttachmentCopy(blob, "account:u1",
                                            "https://www.brief.global/api/relay/v1/files/abc-123/download?t=tok"));
   EXPECT_EQ(blob.DeletedFileIds(), (std::vector<std::string>{"abc-123"}));
 }
@@ -198,19 +206,19 @@ private:
 TEST(AttachmentUploadedCopyTest, AFailedDeleteKeepsItsOwnErrorAndNamesTheBlob) {
   FailingDeleteBlob limited(AppError::Blob(Err::Blob::RateLimited, "HTTP 429: Rate limit exceeded"));
   auto deleted =
-      DeleteUploadedAttachmentCopy(limited, "account:u1", "https://h/api/relay/v1/files/abc-1/download?t=tok");
+      DeleteUploadedAttachmentCopy(limited, "account:u1", "https://h/api/relay/v1/blob/abc-1/download?t=tok");
   ASSERT_FALSE(deleted);
   EXPECT_EQ(deleted.error().code, static_cast<int32_t>(Err::Blob::RateLimited));
   EXPECT_NE(deleted.error().message.find("blob=abc-1"), std::string::npos);
   EXPECT_EQ(deleted.error().message.find("t=tok"), std::string::npos);
 
   FailingDeleteBlob offline(AppError::Network(Err::Network::ConnectFailed, "HTTP request failed: no route"));
-  auto down = DeleteUploadedAttachmentCopy(offline, "account:u1", "https://h/api/relay/v1/files/abc-1/download?t=tok");
+  auto down = DeleteUploadedAttachmentCopy(offline, "account:u1", "https://h/api/relay/v1/blob/abc-1/download?t=tok");
   ASSERT_FALSE(down);
   EXPECT_EQ(down.error().code, static_cast<int32_t>(Err::Network::ConnectFailed));
 
   FailingDeleteBlob gone(AppError::Blob(Err::Blob::Expired, "HTTP 404 BLOB_NOT_FOUND: Blob not found"));
-  EXPECT_TRUE(DeleteUploadedAttachmentCopy(gone, "account:u1", "https://h/api/relay/v1/files/abc-1/download?t=tok"))
+  EXPECT_TRUE(DeleteUploadedAttachmentCopy(gone, "account:u1", "https://h/api/relay/v1/blob/abc-1/download?t=tok"))
       << "already gone is what was wanted";
 }
 
@@ -309,7 +317,7 @@ protected:
 TEST_F(AttachmentLogRedactionTest, NoLogLineCarriesTheShareTokenOrTheStorageUrl) {
   const std::string blob_id = "0b8c2a52-6f2e-4a52-9d1e-1f2a3b4c5d6e";
   const std::string link =
-      server_.Origin() + "/api/relay/v1/files/" + blob_id + "/download?t=Zx9_Token-abcdefghijklmnopqrstuvwxyz0123";
+      server_.Origin() + "/api/relay/v1/blob/" + blob_id + "/download?t=Zx9_Token-abcdefghijklmnopqrstuvwxyz0123";
 
   // The pattern catches a whole link: a line that prints one is caught.
   logging::getLogger("RelayFileLogProbe").info << "deliberately unredacted " << link;
@@ -325,7 +333,7 @@ TEST_F(AttachmentLogRedactionTest, NoLogLineCarriesTheShareTokenOrTheStorageUrl)
   const std::string cipher(prepared->ciphertext.begin(), prepared->ciphertext.end());
   const std::string storage = server_.Origin() + "/s3/object?X-Amz-Signature=deadbeefdeadbeefdeadbeef";
   server_.SetHandler([&](const ScriptedHttpServer::Request& request) {
-    if (request.target.rfind("/api/relay/v1/files/" + blob_id + "/download?t=", 0) == 0) {
+    if (request.target.rfind("/api/relay/v1/blob/" + blob_id + "/download?t=", 0) == 0) {
       return ScriptedHttpServer::Reply{.status = 302, .headers = {{"Location", storage}}, .body = ""};
     }
     if (request.target.rfind("/s3/object", 0) == 0) {
@@ -344,7 +352,7 @@ TEST_F(AttachmentLogRedactionTest, NoLogLineCarriesTheShareTokenOrTheStorageUrl)
   context.profile_data_dir.clear(); // buffered
   ASSERT_TRUE(FetchAndDecryptAttachment(fields, context));
 
-  fields.url = server_.Origin() + "/api/relay/v1/files/" + blob_id + "x/download?t=Gone_Token-abcdefghijklmnop";
+  fields.url = server_.Origin() + "/api/relay/v1/blob/" + blob_id + "x/download?t=Gone_Token-abcdefghijklmnop";
   auto gone = FetchAttachmentCiphertext(fields, context);
   ASSERT_FALSE(gone);
   EXPECT_EQ(gone.error().code, static_cast<int32_t>(Err::Blob::Expired));
@@ -361,6 +369,37 @@ TEST_F(AttachmentLogRedactionTest, NoLogLineCarriesTheShareTokenOrTheStorageUrl)
   EXPECT_TRUE(AnyLineHas(lines, "step=put"));
   EXPECT_TRUE(AnyLineHas(lines, "attachment fetch blob=" + blob_id + " http=200 redirects=1"));
   EXPECT_TRUE(AnyLineHas(lines, "http=404 redirects=0"));
+}
+
+TEST_F(AttachmentLogRedactionTest, ALinkSentBeforeTheBlobRoutesStillOpens) {
+  // The link a message carries is used as sent: one from before the move names the `files/` family, which the relay
+  // serves until relay 1.0 (that release deletes the pre-release data with it, RC020 Q12).
+  const std::string blob_id = "0b8c2a52-6f2e-4a52-9d1e-1f2a3b4c5d6e";
+  auto prepared = PrepareChatAttachmentFromBytes(std::vector<uint8_t>(4000, 0x5a), "old.bin", "", 1'000'000);
+  ASSERT_TRUE(prepared);
+  const std::string cipher(prepared->ciphertext.begin(), prepared->ciphertext.end());
+  std::mutex asked_mutex;
+  std::vector<std::string> asked;
+  server_.SetHandler([&](const ScriptedHttpServer::Request& request) {
+    {
+      std::lock_guard lock(asked_mutex);
+      asked.push_back(RelayFileUrl::Redacted(request.target));
+    }
+    if (request.target.rfind("/api/relay/v1/files/" + blob_id + "/download?t=", 0) == 0) {
+      return ScriptedHttpServer::Reply{.status = 200, .headers = {}, .body = cipher};
+    }
+    return ScriptedHttpServer::Reply{.status = 404, .headers = {}, .body = R"({"error":"Not found"})"};
+  });
+  ChatAttachmentFields fields = prepared->fields;
+  fields.url = server_.Origin() + "/api/relay/v1/files/" + blob_id + "/download?t=Old_Token-abcdefghijklmnopqrstu";
+  AttachmentFetchContext context;
+  context.allow_local_cdn_for_test = true;
+  auto fetched = FetchAndDecryptAttachment(fields, context);
+  ASSERT_TRUE(fetched) << fetched.error().message;
+  EXPECT_EQ(fetched->size(), 4000u);
+  std::lock_guard lock(asked_mutex);
+  EXPECT_EQ(asked, (std::vector<std::string>{"/api/relay/v1/files/" + blob_id + "/download"}));
+  EXPECT_TRUE(AnyLineHas(capture_->Take(), "attachment fetch blob=" + blob_id + " http=200"));
 }
 
 // Every server GET spends one of the file's ten downloads, and the relay answers expired, used up and deleted with
@@ -402,7 +441,7 @@ protected:
     EXPECT_TRUE(prepared);
     cipher_ = std::string(prepared->ciphertext.begin(), prepared->ciphertext.end());
     ChatAttachmentFields fields = prepared->fields;
-    fields.url = origin + "/api/relay/v1/files/f-" + id + "/download?t=Some_Token-abcdefghijk";
+    fields.url = origin + "/api/relay/v1/blob/f-" + id + "/download?t=Some_Token-abcdefghijk";
     ThreadMessage message;
     message.id = id;
     message.thread_id = "t1";
@@ -473,7 +512,7 @@ TEST_F(AttachmentDownloadSuppressionTest, AFailedDownloadIsNotFetchedAgainUntilT
   auto prepared = PrepareChatAttachmentFromBytes(std::vector<uint8_t>(2000, 0x21), "p.jpg", "", 1'000'000);
   ASSERT_TRUE(prepared);
   ChatAttachmentFields fields = prepared->fields;
-  fields.url = server_.Origin() + "/api/relay/v1/files/f-1/download?t=Expired_Token-abcdefghijk";
+  fields.url = server_.Origin() + "/api/relay/v1/blob/f-1/download?t=Expired_Token-abcdefghijk";
   ThreadMessage message;
   message.id = "m1";
   message.thread_id = "t1";

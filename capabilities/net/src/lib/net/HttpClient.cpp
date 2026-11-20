@@ -75,11 +75,11 @@ std::function<bool()> CurrentUiProbe() {
 /**
  * The routes a `net.ui_block` line may name (UiBlockRoute with `/` as `.`): the mounts of our own backend and the
  * first segments of its APIs. Any other route is written `other`, so a path from elsewhere (a peer's URL) never
- * reaches the line.
+ * reaches the line. `v1.files`: a link in a message sent before the app moved to `blob/` (served until relay 1.0).
  */
 constexpr ShareWord kUiBlockRoutes[] = {
     "api.relay",        "api.llm",          "api.support",    "mcp",         "v1.users", "v1.devices", "v1.register",
-    "v1.profile",       "v1.search",        "v1.mesh",        "v1.blobs",    "v1.files", "v1.lockers", "v1.inbox",
+    "v1.profile",       "v1.mesh",          "v1.cdn",         "v1.blob",     "v1.files", "v1.lockers", "v1.inbox",
     "v1.client-compat", "v1.crash-reports", "v1.diagnostics", "guest.start",
 };
 

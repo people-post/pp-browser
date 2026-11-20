@@ -82,7 +82,7 @@ Error AbandonRelayFile(IBlobClient& blob, const std::string& account_id, const s
   return why;
 }
 
-/** Tries after the first, for one part (a fresh `/files/part` URL each) and for complete. */
+/** Tries after the first, for one part (a fresh `/blob/part` URL each) and for complete. */
 constexpr int kMultipartRetries = 2;
 /** What a multipart plan from the relay may say before it is followed (16 MiB parts, at most 4 for 50 MB today). */
 constexpr uint64_t kMinPartBytes = 1ULL << 20;
@@ -104,7 +104,7 @@ bool RetryableRelayFailure(const Error& err, const bool storage_put) {
 
 /**
  * The parts of a multipart upload, in order: part n from (n-1)·part_bytes of the relay's plan, its length the
- * one `/files/part` gives (checked against the plan). Progress is the part's start plus its bytes sent, never
+ * one `/blob/part` gives (checked against the plan). Progress is the part's start plus its bytes sent, never
  * going back on a retry.
  */
 Roe<void> PutRelayFileParts(IBlobClient& blob, const std::string& account_id, const RelayFileStartResult& started,
