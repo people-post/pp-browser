@@ -35,7 +35,7 @@ ar2 and ar3 can run in parallel once ar1 is in. ar3 is the delicate phase (AR004
 
 - [ ] Scriptable fault backend: per kind (mic, speaker, voice pair) × operation (open, read, write, close) × behaviour (fail, hang until let go, silence, slow) × from step
 - [ ] Matrix D6 × M3–M7 × {separate devices, voice pair}, each against I3, I4, I5
-- [ ] Bring in `media_engine_redial_test` (I4: an ended call's stuck thread) and decide fix 1 (`LetGo`, local branch `test/ios-redial-mic-held`) with the matrix's results in hand
+- [ ] Bring in `media_engine_redial_test` (I4: an ended call's stuck thread) and decide fix 1 (`LetGo`, draft [#680](https://github.com/people-post/pp-browser/pull/680)) with the matrix's results in hand
 - [ ] Each red case: a finding row in DESIGN, then its fix in the owning project
 
 **Exit:** the matrix runs in CI; every case is green or a recorded finding.

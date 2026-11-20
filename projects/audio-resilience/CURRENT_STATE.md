@@ -14,6 +14,6 @@ Design written ([DESIGN.md](DESIGN.md), AR001–AR005); the direction (AR001) ag
 
 | Item | State |
 |------|-------|
-| Fix 1 prototype: an ended call's stuck audio thread no longer keeps the mic (`MediaDeviceArbiter::LetGo` at the slow-join warning) with `media_engine_redial_test` and two arbiter tests | Local branch `test/ios-redial-mic-held` on Hongwei's machine, uncommitted, not pushed; parked until ar2 (its limits: DESIGN § Findings) |
+| Fix 1 prototype: an ended call's stuck audio thread no longer keeps the mic (`MediaDeviceArbiter::LetGo` at the slow-join warning) with `media_engine_redial_test` and two arbiter tests | Draft PR [#680](https://github.com/people-post/pp-browser/pull/680), marked to re-evaluate in ar2 before it leaves draft (its limits: DESIGN § Findings) |
 | CallKit for calls placed or answered in the app | Not started; a product decision for [p2p-av-calls](../p2p-av-calls/) |
 | The 2026-11-19 device's log | Not collected |
