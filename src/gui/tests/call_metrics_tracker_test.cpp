@@ -359,8 +359,9 @@ TEST(CallMetricsTrackerTest, TheFirstThreeSecondsOfAMissingMicrophoneAreNotCount
   EXPECT_TRUE(Has(summary, "no_mic_s=0.0")) << summary;
 }
 
-// Desktop does not grade NoMic (the call page is unchanged there), but the metrics count the engine's own fact.
-TEST(CallMetricsTrackerTest, AMissingMicrophoneIsCountedEvenWhereTheCallIsNotGradedNoMic) {
+// Desktop does not grade NoMic (the call page is unchanged there): the time is filed under what the page showed, and
+// the engine's own fact is reported through no_mic_s only.
+TEST(CallMetricsTrackerTest, AMissingMicrophoneWhereTheCallIsNotGradedNoMicIsFiledUnderThePagesGrade) {
   Tracker t;
   int64_t now = 1000;
   t.NoteOutbound(kCall, false, now, Vitals());
@@ -370,8 +371,24 @@ TEST(CallMetricsTrackerTest, AMissingMicrophoneIsCountedEvenWhereTheCallIsNotGra
     t.NoteMedia(kCall, tick, now += 1000, Vitals());
   }
   const std::string summary = EndCall(t, now);
-  EXPECT_TRUE(Has(summary, "q_nomic_pct=100")) << summary;
-  EXPECT_TRUE(Has(summary, "q_excellent_pct=0")) << summary;
+  EXPECT_TRUE(Has(summary, "q_nomic_pct=0")) << summary;
+  EXPECT_TRUE(Has(summary, "q_excellent_pct=100")) << summary;
+  EXPECT_TRUE(Has(summary, "no_mic_s=3.0")) << summary;
+}
+
+// A phone call whose page said NoAudio (the microphone fact does not hide it) is q_noaudio, and the mic seconds count.
+TEST(CallMetricsTrackerTest, ARealNoAudioWithAMissingMicrophoneIsFiledAsNoAudio) {
+  Tracker t;
+  int64_t now = 1000;
+  t.NoteOutbound(kCall, false, now, Vitals());
+  Tracker::MediaTick tick = Media(true, 10, 0, CallPathQuality::NoAudio);
+  tick.health.mic_missing_ms = 8000;
+  for (int i = 0; i < 4; ++i) {
+    t.NoteMedia(kCall, tick, now += 1000, Vitals());
+  }
+  const std::string summary = EndCall(t, now);
+  EXPECT_TRUE(Has(summary, "q_noaudio_pct=100")) << summary;
+  EXPECT_TRUE(Has(summary, "q_nomic_pct=0")) << summary;
   EXPECT_TRUE(Has(summary, "no_mic_s=3.0")) << summary;
 }
 

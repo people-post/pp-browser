@@ -136,10 +136,10 @@ CallStatusLine DecideStatusLine(const CallScreen& screen, const CallMediaFacts& 
     line.warning = true;
   }
   // B233: a microphone that is wanted and not open says so in place of the timer, for as long as it lasts, and the
-  // timer is back the moment it opens (the quality is NoMic only while it lasts). Same exceptions as above.
-  if (health.quality == CallPathQuality::NoMic &&
-      (line.kind == LineKind::Timer || line.kind == LineKind::Participants) && !d.on_hold && !d.couldnt_connect &&
-      !d.path_lost && !d.reconnect && !facts.playout_stuck) {
+  // timer is back the moment it opens. Same exceptions as above, and an audio-fault line (no audio, one-way audio)
+  // wins: the pill still says the microphone is not open.
+  if (health.mic_not_open && (line.kind == LineKind::Timer || line.kind == LineKind::Participants) && !d.on_hold &&
+      !d.couldnt_connect && !d.path_lost && !d.reconnect && !facts.playout_stuck && !MediaBroken(facts, health)) {
     line = Words("call.quality.no_mic"); // short; the full sentence is the pill's
     line.warning = true;
   }
@@ -371,7 +371,7 @@ const CallMediaScreen& CallMediaFrame::Finish(const CallScreen& screen, const Ca
   story.placed_here = screen.placed_here;
   story.media_connected = screen.media_connected;
   story.path_kind = health.path_kind;
-  story.quality = health.quality;
+  story.quality = health.network_quality; // a closed microphone is not a bad line: the bars follow the network
   story.quality_bars = health.quality_bars;
   story.now_ms = facts.now_ms;
   StepStory(story, screen.status == Status::Reconnecting || d.reconnect);
@@ -411,7 +411,7 @@ const CallMediaScreen& CallMediaFrame::Finish(const CallScreen& screen, const Ca
   hint.mic_blocked = facts.mic_blocked;
   hint.playout_stuck = facts.playout_stuck;
   hint.on_hold = held;
-  hint.mic_not_open = health.quality == CallPathQuality::NoMic;
+  hint.mic_not_open = health.mic_not_open;
   hint.now_ms = now;
   hint.ring_unanswered_long = view_.story.ring_unanswered_long;
   const CallHintPrompt prompt = DecideCallHintPrompt(hint, last_pill_ms_);
@@ -424,9 +424,12 @@ const CallMediaScreen& CallMediaFrame::Finish(const CallScreen& screen, const Ca
   }
   // B233: the microphone opened (by itself): its pill, if it is still up, goes at once. Only that text is taken down.
   view_.pill_withdraw_key.clear();
+  // The withdrawal follows the microphone fact alone, on every frame (hold, quiet and other pills included).
   if (prompt.pill_key == kCallMicNotOpenKey) {
     mic_pill_raised_ = true;
-  } else if (mic_pill_raised_ && health.quality != CallPathQuality::NoMic) {
+  } else if (!prompt.pill_key.empty()) {
+    mic_pill_raised_ = false; // another pill took the slot: ours is no longer on screen, nothing to withdraw
+  } else if (mic_pill_raised_ && !health.mic_not_open) {
     mic_pill_raised_ = false;
     view_.pill_withdraw_key = kCallMicNotOpenKey; // the 30 s memory stays: a mic that keeps dropping is not re-pilled
   }

@@ -2136,10 +2136,12 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend& backend,
   NoteActiveSpeaker(view.engine, in_call.muted ? 0.f : media.LocalInputLevel(), now_ms);
   NoteMediaMetrics(backend, frame, now_ms);
   in_call.quality_bars = view.quality_bars;
-  in_call.quality_ok = view.quality <= CallPathQuality::Good;
-  in_call.quality_warn = view.quality == CallPathQuality::Fair;
-  in_call.quality_error = view.quality == CallPathQuality::Poor || view.quality == CallPathQuality::NoAudio ||
-                          view.quality == CallPathQuality::Reconnecting || view.quality == CallPathQuality::NoMic;
+  // The network's grade, not the page's: a closed microphone (NoMic) is not a bad line (B233).
+  const CallPathQuality network = view.network_quality;
+  in_call.quality_ok = network <= CallPathQuality::Good;
+  in_call.quality_warn = network == CallPathQuality::Fair;
+  in_call.quality_error = network == CallPathQuality::Poor || network == CallPathQuality::NoAudio ||
+                          network == CallPathQuality::Reconnecting;
   const char* label_key = CallPathQualityLabelKey(view.quality);
   in_call.quality_label = label_key && label_key[0] ? Tr(label_key).c_str() : "";
   ApplyDebugSubtitle(media, view, now_ms);

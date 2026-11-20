@@ -444,7 +444,9 @@ TEST(CallMediaHealthTest, NoMicAfterThreeSecondsOfAWantedMicrophoneThatIsNotOpen
   in.engine.mic_missing_ms = kCallMicNotOpenAfterMs;
   const auto v = EvaluateCallMediaHealth(in);
   EXPECT_EQ(v.quality, CallPathQuality::NoMic);
-  EXPECT_EQ(v.quality_bars, 1);
+  EXPECT_TRUE(v.mic_not_open);
+  EXPECT_EQ(v.network_quality, CallPathQuality::Excellent) << "a closed microphone is not a bad line";
+  EXPECT_EQ(v.quality_bars, 4) << "the bars come from the network";
   EXPECT_EQ(v.asymmetry, CallAudioAsymmetry::None);
   in.engine.mic_missing_ms = 0;
   EXPECT_EQ(EvaluateCallMediaHealth(in).quality, CallPathQuality::Excellent) << "the microphone opened by itself";
@@ -471,7 +473,51 @@ TEST(CallMediaHealthTest, ReconnectingStillComesBeforeNoMic) {
   auto in = BaseHealthyInput();
   in.engine.mic_missing_ms = 20'000;
   in.reconnecting = true;
-  EXPECT_EQ(EvaluateCallMediaHealth(in).quality, CallPathQuality::Reconnecting);
+  const auto v = EvaluateCallMediaHealth(in);
+  EXPECT_EQ(v.quality, CallPathQuality::Reconnecting);
+  EXPECT_TRUE(v.mic_not_open) << "the fact stays; only the grade gives way";
+}
+
+// B233: NoMic is the grade only where nothing else is wrong; it never hides no audio or one-way audio.
+TEST(CallMediaHealthTest, ARealNoAudioKeepsItsGradeWhileTheMicrophoneIsNotOpen) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = 20'000;
+  in.engine.capture_available = false; // no microphone: transmitting is not expected, so only their side is silent
+  in.engine.rx_audio_frames = 0;
+  in.engine.last_rx_audio_ms = 0;
+  const auto v = EvaluateCallMediaHealth(in);
+  EXPECT_EQ(v.quality, CallPathQuality::NoAudio);
+  EXPECT_EQ(v.asymmetry, CallAudioAsymmetry::SendingOnly);
+  EXPECT_EQ(v.quality_bars, 0);
+  EXPECT_TRUE(v.mic_not_open) << "the pill is driven by the fact";
+}
+
+TEST(CallMediaHealthTest, OneWayAudioKeepsItsGradeWhileTheMicrophoneIsNotOpen) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = 20'000;
+  in.engine.tx_audio_frames = 0;
+  in.engine.last_tx_audio_ms = 0; // wanted and not sending
+  const auto v = EvaluateCallMediaHealth(in);
+  EXPECT_EQ(v.quality, CallPathQuality::Poor);
+  EXPECT_EQ(v.asymmetry, CallAudioAsymmetry::ReceivingOnly);
+  EXPECT_TRUE(v.mic_not_open);
+}
+
+TEST(CallMediaHealthTest, ABadNetworkBarsStayWhileTheMicrophoneIsNotOpenAndTheGradeSaysNoMic) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = 20'000;
+  in.engine_pressure_for_quality = 0.5; // Fair
+  const auto v = EvaluateCallMediaHealth(in);
+  EXPECT_EQ(v.quality, CallPathQuality::NoMic);
+  EXPECT_EQ(v.network_quality, CallPathQuality::Fair);
+  EXPECT_EQ(v.quality_bars, 2);
+}
+
+TEST(CallMediaHealthTest, TheMicrophoneFactIsOffWhereTheHintDoesNotApply) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = 20'000;
+  in.grade_mic_not_open = false;
+  EXPECT_FALSE(EvaluateCallMediaHealth(in).mic_not_open);
 }
 
 TEST(CallMediaHealthTest, TheLogLineCarriesTheMissingMicrophoneTime) {

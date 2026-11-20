@@ -24,13 +24,13 @@ CallSignalTone ToneFor(const CallPathQuality quality) {
   switch (quality) {
     case CallPathQuality::Excellent:
     case CallPathQuality::Good:
+    case CallPathQuality::NoMic: // not a line fault: the words are the status line's (callers pass the network grade)
       return CallSignalTone::Good;
     case CallPathQuality::Fair:
       return CallSignalTone::Fair;
     case CallPathQuality::Poor:
     case CallPathQuality::Reconnecting:
     case CallPathQuality::NoAudio:
-    case CallPathQuality::NoMic: // the bars sit low (one bar); the words are the status line's
       return CallSignalTone::Poor;
   }
   return CallSignalTone::Poor;

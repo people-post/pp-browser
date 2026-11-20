@@ -52,6 +52,9 @@ CallMediaHealthView Health(const char* path = "direct", const CallPathQuality qu
   h.path_kind = path;
   h.quality = quality;
   h.asymmetry = asymmetry;
+  // NoMic is the page's grade for a closed microphone; the network grade and the bars are what they would be without it.
+  h.network_quality = quality == CallPathQuality::NoMic ? CallPathQuality::Good : quality;
+  h.mic_not_open = quality == CallPathQuality::NoMic;
   return h;
 }
 
@@ -984,6 +987,72 @@ TEST(CallMediaFrameTest, ANeverRaisedMicrophonePillIsNeverWithdrawnAndANewCallFo
   f.call_id = "call-2";
   f.now_ms += 1000;
   EXPECT_TRUE(frame.Step(InCallScreen(), f, Health()).pill_withdraw_key.empty()) << "another call, nothing raised yet";
+}
+
+CallMediaHealthView MicClosed(CallMediaHealthView h) {
+  h.mic_not_open = true;
+  return h;
+}
+
+// An existing audio-fault line wins over "microphone isn't on"; the pill still says it (the pill follows the fact).
+TEST(CallMediaFrameTest, ARealNoAudioKeepsItsLineWhileTheMicrophonePillStillShows) {
+  CallMediaFrame frame;
+  const CallMediaFacts f = LiveFacts(300'000);
+  const CallMediaScreen& v = frame.Step(InCallScreen(), f, MicClosed(Health("direct", CallPathQuality::NoAudio)));
+  EXPECT_EQ(v.line.key, "call.quality.no_audio");
+  EXPECT_EQ(v.pill_key, kMicKey);
+}
+
+TEST(CallMediaFrameTest, OneWayAudioKeepsItsLineWhileTheMicrophonePillStillShows) {
+  CallMediaFrame frame;
+  const CallMediaFacts f = LiveFacts(300'000);
+  const CallMediaScreen& v = frame.Step(
+      InCallScreen(), f, MicClosed(Health("direct", CallPathQuality::Poor, CallAudioAsymmetry::ReceivingOnly)));
+  EXPECT_NE(v.line.key, "call.quality.no_mic");
+  EXPECT_EQ(v.pill_key, kMicKey);
+}
+
+TEST(CallMediaFrameTest, TheMicrophoneStatusLineAndPillShowWhateverTheNetworkGradeIs) {
+  CallMediaFrame frame;
+  const CallMediaFacts f = LiveFacts(300'000);
+  CallMediaHealthView h = MicClosed(Health("direct", CallPathQuality::Fair));
+  const CallMediaScreen& v = frame.Step(InCallScreen(), f, h);
+  EXPECT_EQ(v.line.key, "call.quality.no_mic");
+  EXPECT_EQ(v.pill_key, kMicKey);
+}
+
+TEST(CallMediaFrameTest, TheMicrophonePillIsWithdrawnWhenTheMicrophoneOpensDuringAHold) {
+  CallMediaFrame frame;
+  CallMediaFacts f = LiveFacts(300'000);
+  EXPECT_EQ(frame.Step(InCallScreen(), f, Health("direct", CallPathQuality::NoMic)).pill_key, kMicKey);
+  f.now_ms += 1000;
+  f.local_on_hold = true;
+  const CallMediaScreen& v = frame.Step(InCallScreen(), f, Health());
+  EXPECT_EQ(v.pill_withdraw_key, kMicKey) << "the fact cleared; the hold does not keep the pill up";
+}
+
+TEST(CallMediaFrameTest, TheMicrophonePillIsWithdrawnWhenTheFactClearsEvenIfTheGradeIsSomethingElse) {
+  CallMediaFrame frame;
+  CallMediaFacts f = LiveFacts(300'000);
+  EXPECT_EQ(frame.Step(InCallScreen(), f, MicClosed(Health("direct", CallPathQuality::NoAudio))).pill_key, kMicKey);
+  f.now_ms += 1000;
+  EXPECT_EQ(frame.Step(InCallScreen(), f, Health("direct", CallPathQuality::NoAudio)).pill_withdraw_key, kMicKey);
+}
+
+// Another pill took the slot: ours is no longer on screen, so there is nothing to withdraw; the 30 s memory stays.
+TEST(CallMediaFrameTest, ARecoveryWhileAnotherPillShowsWithdrawsNothingAndTheMemoryStays) {
+  CallMediaFrame frame;
+  CallMediaFacts f = LiveFacts(300'000);
+  const CallMediaHealthView bad = Health("direct", CallPathQuality::NoMic);
+  EXPECT_EQ(frame.Step(InCallScreen(), f, bad).pill_key, kMicKey);
+  f.now_ms += 1000;
+  f.engine.capture_lost = true; // its own pill takes the slot
+  EXPECT_EQ(frame.Step(InCallScreen(), f, bad).pill_key, "call.quality.hint.mic_lost");
+  f.now_ms += 1000;
+  EXPECT_TRUE(frame.Step(InCallScreen(), f, Health()).pill_withdraw_key.empty());
+  f.engine.capture_lost = false;
+  f.now_ms += 1000;
+  EXPECT_TRUE(frame.Step(InCallScreen(), f, bad).pill_key.empty()) << "dropped again inside 30 s: no new pill";
 }
 
 TEST(CallMediaFrameTest, TheEnginesMissingMicrophoneTimeGradesTheCallWhenTheHealthIsEvaluatedHere) {

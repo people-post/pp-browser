@@ -159,7 +159,12 @@ struct CallMediaHealthInput {
 };
 
 struct CallMediaHealthView {
+  /** The grade the page uses (status line, label, metrics): the network grade, or NoMic where nothing else is wrong. */
   CallPathQuality quality = CallPathQuality::Good;
+  /** The grade the network alone gives (never NoMic): the signal bars, tone and quality flags follow it (B233). */
+  CallPathQuality network_quality = CallPathQuality::Good;
+  /** B233: a wanted microphone has no open device (phones; grade_mic_not_open): the pill and the short line follow this. */
+  bool mic_not_open = false;
   CallAudioAsymmetry asymmetry = CallAudioAsymmetry::None;
   /** 0..4 segment fill (0 empty … 4 full) — same language as statusbar reach bars. */
   int quality_bars = 4;

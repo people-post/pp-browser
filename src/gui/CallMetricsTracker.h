@@ -111,11 +111,10 @@ public:
     call_.was_connected = tick.connected;
     const int64_t dt = call_.last_media_tick_ms ? now_ms - call_.last_media_tick_ms : 0;
     call_.last_media_tick_ms = now_ms;
-    // NoMic is graded where the call page says so (phones); the metrics count it on every platform, from the engine's
-    // own fact, except under a reconnect (which comes first, as in the grading).
-    const bool no_mic =
-        tick.health.engine_running && CallMicNotOpen(tick.health) && tick.quality != CallPathQuality::Reconnecting;
-    const int q = no_mic ? static_cast<int>(CallPathQuality::NoMic) : std::clamp(static_cast<int>(tick.quality), 0, 6);
+    // The quality time follows the grade the call page used (so a desktop call with no microphone is filed under what
+    // the page showed, and a phone call with real NoAudio is q_noaudio); q_nomic_pct is only the share graded NoMic.
+    // The cross-platform microphone fact is reported through mic= and no_mic_s.
+    const int q = std::clamp(static_cast<int>(tick.quality), 0, 6);
     call_.quality_ms[q] += dt;
     if (tick.quality == CallPathQuality::NoAudio) {
       call_.no_audio_ms += dt;

@@ -32,7 +32,7 @@ TEST(CallAudioDiagnosticsTest, TheLeaseReleaseStillUnholdsAndClosesBeforeItLogs)
   EXPECT_LT(close, note);
 }
 
-// The CallKit timing lines exist only in builds that can reach QA (the store build compiles no QA origin).
+// The CallKit timing lines are written wherever a QA origin is compiled in (today every iOS build).
 TEST(CallKitDiagnosticsGateTest, OffWithoutAQaAddressOnWithOne) {
   EXPECT_FALSE(CallKitDiagnosticsEnabled(""));
   EXPECT_FALSE(CallKitDiagnosticsEnabled(nullptr));

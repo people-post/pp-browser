@@ -98,10 +98,6 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
   if (in.reconnecting) {
     out.quality = CallPathQuality::Reconnecting;
     out.quality_bars = 1;
-  } else if (in.grade_mic_not_open && CallMicNotOpen(in.engine)) {
-    // Not the network: the engine has no capture device, so the other side hears silence (B233).
-    out.quality = CallPathQuality::NoMic;
-    out.quality_bars = 1;
   } else if (in.engine.active && !rx_alive && tx_alive) {
     out.quality = CallPathQuality::NoAudio;
     out.asymmetry = CallAudioAsymmetry::SendingOnly;
@@ -122,6 +118,15 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
   } else {
     out.quality = CallPathQuality::Excellent;
     out.quality_bars = 4;
+  }
+  out.network_quality = out.quality;
+  // B233: the microphone fact is its own: the pill and the short status line follow it, whatever the grade is. The grade
+  // becomes NoMic only where nothing else is wrong (a reconnect, no audio, one-way audio); the bars and the network
+  // grade stay what the network says, because a closed microphone is not a bad line.
+  out.mic_not_open = in.grade_mic_not_open && CallMicNotOpen(in.engine);
+  if (out.mic_not_open && out.asymmetry == CallAudioAsymmetry::None && out.quality != CallPathQuality::Reconnecting &&
+      out.quality != CallPathQuality::NoAudio) {
+    out.quality = CallPathQuality::NoMic;
   }
   return out;
 }
