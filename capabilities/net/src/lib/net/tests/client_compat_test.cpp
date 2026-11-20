@@ -323,8 +323,12 @@ TEST(ClientCompatCache, KeepsTheReleaseOneFieldsAndItsFileVersion) {
   entry.document.switches = {{"a", true}, {"b", false}};
   ASSERT_TRUE(SaveClientCompatCache(dir.string(), entry));
 
-  std::ifstream in(dir / "client_compat.json");
-  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  std::string text;
+  {
+    // Closed before the rewrites and the remove_all below: Windows cannot write over or delete an open file.
+    std::ifstream in(dir / "client_compat.json");
+    text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
   EXPECT_NE(text.find("\"schema_version\": 1,"), std::string::npos) << "the file's own version: " << text;
 
   auto loaded = LoadClientCompatCache(dir.string());
