@@ -14,6 +14,7 @@
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/testing/InMemoryMessagingStores.h"
 #include "lib/messaging/tests/TestAccount.h"
+#include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Serialize.hpp"
 #include "common/ValueJson.h"
@@ -360,6 +361,124 @@ TEST(TolerantCodecTest, ANewerBlobByteAndGroupCopyVersionAreNewerFormatNotBroken
   auto read = GroupE2ePayloadCodec::DecodeCopyPlaintext(*copy);
   ASSERT_FALSE(read);
   EXPECT_TRUE(AppError::IsNewerFormat(read.error()));
+}
+
+// ---- T2: a higher envelope_version -----------------------------------------------------------------------------
+
+/** `envelope` as a newer app would send it: a higher version and a body this app cannot read. */
+Object NewerEnvelopeJson(const RelayEnvelope& envelope, const int64_t version = kRelayEnvelopeVersion + 1) {
+  Object json = RelayEnvelopeToJson(envelope);
+  json.set("envelope_version", version);
+  Object body = *json.getObject("body");
+  Object e2e = *body.getObject("e2e");
+  Object copy = *asObject(e2e.getArray("copies")->elements.front());
+  copy.erase("payload_b64");
+  copy.set("sealed_v4", "AQID"); // a newer field this app does not know
+  e2e.set("copies", ArrayValue({ObjectValue(copy)}));
+  body.set("e2e", e2e);
+  json.set("body", body);
+  return json;
+}
+
+TEST(TolerantEnvelopeParseTest, AHigherVersionIsReadForItsRoutingAndNumberingOnly) {
+  RelayEnvelope sent;
+  sent.message_id = "newer-1";
+  sent.sender_contact_id = kPeer;
+  sent.sender_device = "QmPeerDevice";
+  sent.route.kind = kRelayRouteDirect;
+  sent.route.channel = ThreadChannel::E2ePublic;
+  sent.timestamp = 77;
+  sent.body.e2e.copies = {RelayCopy{.recipient_device = "", .session_epoch = 2, .sender_seq = 9, .payload_b64 = "AQ"}};
+  auto parsed = ParseRelayEnvelope(NewerEnvelopeJson(sent));
+  ASSERT_TRUE(parsed) << parsed.error().message;
+  EXPECT_EQ(parsed->envelope_version, kRelayEnvelopeVersion + 1) << "kept as sent: the pipeline routes on it";
+  EXPECT_EQ(parsed->message_id, "newer-1");
+  EXPECT_EQ(parsed->session_epoch, 2u);
+  EXPECT_EQ(parsed->sender_seq, 9u);
+  EXPECT_EQ(parsed->route.channel, ThreadChannel::E2ePublic);
+  EXPECT_TRUE(parsed->body.e2e.payload_b64.empty()) << "nothing of the body is read";
+
+  Object no_numbering = NewerEnvelopeJson(sent);
+  no_numbering.erase("body");
+  EXPECT_FALSE(ParseRelayEnvelope(no_numbering)) << "nothing to number: refused as before";
+  EXPECT_FALSE(ParseRelayEnvelope(NewerEnvelopeJson(sent, kRelayEnvelopeVersion - 1))) << "older: still refused";
+  EXPECT_FALSE(ParseRelayEnvelope(NewerEnvelopeJson(sent, (int64_t{1} << 32) + kRelayEnvelopeVersion)))
+      << "no version past int32";
+}
+
+class NewerEnvelopeTest : public TolerantReceiveTest {
+protected:
+  /** The peer's message at `seq` as a newer app sends it (its copy for our account). */
+  RelayEnvelope Newer(const uint64_t seq) {
+    RelayEnvelope envelope = TextEnvelope(seq, "unread");
+    envelope.message_id = "newer-msg-" + std::to_string(seq);
+    auto parsed = ParseRelayEnvelope(NewerEnvelopeJson(envelope));
+    EXPECT_TRUE(parsed) << parsed.error().message;
+    return *parsed;
+  }
+};
+
+TEST_F(NewerEnvelopeTest, ItsSeqIsClosedAndItShowsAsUpdateToView) {
+  ASSERT_EQ(pipeline_->ProcessEnvelope(TextEnvelope(1, "one"), local_.account_id).decision,
+            IngestDecision::AcceptBootstrap);
+  const RelayReceiveOutcome outcome = pipeline_->ProcessEnvelope(Newer(2), local_.account_id);
+  EXPECT_TRUE(outcome.persisted);
+  ASSERT_TRUE(outcome.receive_failure);
+  EXPECT_EQ(*outcome.receive_failure, ReceiveFailure::NeedsUpdate);
+  EXPECT_FALSE(outcome.sender_verified) << "nothing of it is verified, so nothing of it is applied";
+  const auto rows = Rows();
+  ASSERT_EQ(rows.size(), 2u);
+  const ThreadMessage& shown = rows[0].id == "newer-msg-2" ? rows[0] : rows[1];
+  EXPECT_EQ(shown.content_type, ChatContentType::Unsupported);
+  EXPECT_FALSE(shown.sender_seq) << "it holds no seq: a genuine message there would still be taken";
+  EXPECT_EQ(Sync().contiguous_peer_seq, 2u);
+  EXPECT_TRUE(Closed(Sync(), 2));
+  EXPECT_EQ(pipeline_->ProcessEnvelope(TextEnvelope(3, "three"), local_.account_id).decision,
+            IngestDecision::AcceptContiguous)
+      << "no gap behind it, so no repair";
+
+  EXPECT_EQ(pipeline_->ProcessEnvelope(Newer(2), local_.account_id).decision, IngestDecision::BenignDuplicate);
+  EXPECT_EQ(Rows().size(), 3u) << "one row, however often it comes (poll, history, link)";
+}
+
+// The stall INVENTORY § 2.1 names: later messages came first and the thread sat in Gap, repairing for good.
+TEST_F(NewerEnvelopeTest, ArrivingAfterLaterMessagesItTakesTheThreadOutOfGap) {
+  ASSERT_EQ(pipeline_->ProcessEnvelope(TextEnvelope(1, "one"), local_.account_id).decision,
+            IngestDecision::AcceptBootstrap);
+  ASSERT_EQ(pipeline_->ProcessEnvelope(TextEnvelope(3, "three"), local_.account_id).decision,
+            IngestDecision::AcceptGap);
+  ASSERT_EQ(Sync().phase, PeerSyncPhase::Gap);
+  (void)pipeline_->ProcessEnvelope(Newer(2), local_.account_id);
+  EXPECT_EQ(Sync().contiguous_peer_seq, 3u);
+  EXPECT_EQ(Sync().phase, PeerSyncPhase::Ok);
+}
+
+TEST_F(NewerEnvelopeTest, AGenuineMessageAtItsSeqIsStillTaken) {
+  ASSERT_EQ(pipeline_->ProcessEnvelope(TextEnvelope(1, "one"), local_.account_id).decision,
+            IngestDecision::AcceptBootstrap);
+  (void)pipeline_->ProcessEnvelope(Newer(2), local_.account_id);
+  const RelayReceiveOutcome genuine = pipeline_->ProcessEnvelope(TextEnvelope(2, "two"), local_.account_id);
+  EXPECT_EQ(genuine.decision, IngestDecision::AcceptLateFill) << "a closed seq is a late fill, never a compromise";
+  EXPECT_TRUE(genuine.persisted);
+}
+
+TEST_F(NewerEnvelopeTest, AtAnotherEpochOnlyTheRowIsShown) {
+  ASSERT_EQ(pipeline_->ProcessEnvelope(TextEnvelope(1, "one"), local_.account_id).decision,
+            IngestDecision::AcceptBootstrap);
+  RelayEnvelope envelope = TextEnvelope(1, "x");
+  envelope.message_id = "newer-epoch";
+  Object json = NewerEnvelopeJson(envelope);
+  Object body = *json.getObject("body");
+  Object e2e = *body.getObject("e2e");
+  Object copy = *asObject(e2e.getArray("copies")->elements.front());
+  copy.set("session_epoch", static_cast<int64_t>(5));
+  e2e.set("copies", ArrayValue({ObjectValue(copy)}));
+  body.set("e2e", e2e);
+  json.set("body", body);
+  const RelayReceiveOutcome outcome = pipeline_->ProcessEnvelope(ParseRelayEnvelope(json).value(), local_.account_id);
+  EXPECT_TRUE(outcome.persisted);
+  EXPECT_EQ(store_.GetChatTargetSessionEpoch(thread_.id).value(), 1u) << "an unverified envelope moves no epoch";
+  EXPECT_EQ(Sync().contiguous_peer_seq, 1u);
 }
 
 } // namespace

@@ -83,14 +83,14 @@ Normative shapes: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md). Crypto: [MESSAGE_ENCRYPTIO
 | Condition | Desired outcome |
 |-----------|-----------------|
 | `envelope_version` == known | Full ingest |
-| `envelope_version` > known (after JSON parse of required fields) | Soft-skip message; log; do not crash; prefer seq-safe handling so sync does not stall |
+| `envelope_version` > known | **Done** (INVENTORY T2): its routing and numbering read loosely, nothing decrypted or verified; its seq closed as empty (so the thread leaves Gap and no repair asks for it again; a verified message at that seq is still taken), one "update to view" row with no seq, the sender marked (`NeedsUpdate`). On the relay poll, in history and over a link alike. It moves no epoch |
 | Unknown `content_type`, or a higher ChatPayload `payload_version` / `sub_version`, `group_copy_version` or blob version byte, after the signature verified (and the AEAD opened, where it is inside) | **Done** (release-compatibility INVENTORY T1, T3): kept as "Update the app to view this message." — the ChatPayload bytes stored as received, so the updated app reads the row (a newer blob or group copy keeps nothing readable: a local stand-in row, [WIRE_SCHEMAS § ChatPayload](WIRE_SCHEMAS.md#binary-layout-payload_version--1)); its `sender_seq` consumed; sent copies from our own newer devices alike. One signal, `ReceiveFailure::NeedsUpdate`, apart from `DecryptFailed` and `BadSignature` (U1): the sender is marked "uses a newer app" in the chat's header, and the user gets one notice per sender a day naming who sent it and that this app needs the update; no failure line (the row is the line) |
 | Any other refusal after the signature verified: a membership or control update that does not apply, the reaction cap, a `psk_rotate` refused | **Done** (T5): refused, and its `sender_seq` consumed — closed as empty, so sync never stalls and a resend is a late fill, not a gap or (in a private chat) a compromise. A `psk_rotate` with a `wrap_kind` this app does not know is `NeedsUpdate` |
 | An account card of a higher `card_version` (riding an envelope) | **Done** (U2): not kept; its account marked as using a newer app, and not asked for its card for 24 h (`CardAskGate`) |
 | Decrypt / verify / AEAD failure | Hard reject that message (trust boundary) |
 | Legacy shapes (`thread_id`, `body.text`, `content_b64`, `public_relay`) | Hard reject (D016 / D090) — not “newer”, obsolete |
 
-**Implementation note:** the rows marked **Done** are the receiver's behaviour since release-compatibility P3 (2026-11-20); the update-needed words and display follow [RC018](../../projects/release-compatibility/DECISIONS.md#rc018--the-release-1-answers-for-kenneths-and-leos-rows) part 2's default until Kenneth decides them. A higher `envelope_version` is still hard-rejected (INVENTORY T2). Hard rejects stay for crypto and known-legacy shapes.
+**Implementation note:** the rows marked **Done** are the receiver's behaviour since release-compatibility P3 (2026-11-20); the update-needed words and display follow [RC018](../../projects/release-compatibility/DECISIONS.md#rc018--the-release-1-answers-for-kenneths-and-leos-rows) part 2's default until Kenneth decides them. Hard rejects stay for crypto, older versions and known-legacy shapes.
 
 ### Clean cutovers (pre-release)
 

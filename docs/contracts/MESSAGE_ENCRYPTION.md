@@ -139,7 +139,7 @@ API: `crypto_aead_xchacha20poly1305_ietf_encrypt` / `_decrypt` with `npub` = non
 
 `sender_card` appears only with `key_init_b64`, must be the account card of `sender_contact_id`, and is checked on its own (it is signed by the account it names), so it is not part of the envelope signing bytes. It speaks for the sender only when newer than the card the receiver keeps: an older card cannot bring back a device taken off the list.
 
-Reject envelopes with `thread_id`, `public_relay`, `body.content_b64`, or unknown `envelope_version`.
+Reject envelopes with `thread_id`, `public_relay`, `body.content_b64`, or an older `envelope_version`. A higher one is a newer app's and is not verified — its signed bytes are a layout this app does not know: its routing and numbering are read loosely, its seq is closed as empty (never filled with a row, so a verified message at that seq is still taken as a late fill) and the chat shows "update to view" ([WIRE_SCHEMAS § Envelope](WIRE_SCHEMAS.md)). Nothing it carries is decrypted, kept or acted on: crypto stays strict.
 
 ## Canonical relay-envelope signing bytes (E014)
 

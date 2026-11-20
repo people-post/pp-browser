@@ -27,7 +27,11 @@ ThreadMessage ThreadMessageFromJson(const pp::common::Object& json);
 pp::common::Object RelayEnvelopeToJson(const RelayEnvelope& envelope);
 /** Application envelope JSON without relay routing fields (for blob encoding). */
 pp::common::Object RelayEnvelopeToApplicationJson(const RelayEnvelope& envelope);
-/** Strict ingest — rejects legacy thread_id / flat body.text (D063). */
+/**
+ * Strict ingest — rejects legacy thread_id / flat body.text (D063). A higher `envelope_version` is read loosely, its
+ * routing and numbering only, with `envelope_version` as sent and no payloads (release-compatibility T2): the
+ * receive pipeline closes its seqs and shows "update to view"; nothing in it is decrypted or verified.
+ */
 pp::Roe<RelayEnvelope> ParseRelayEnvelope(const pp::common::Object& json);
 
 pp::common::Object RelayGrantToJson(const RelayGrant& grant);
