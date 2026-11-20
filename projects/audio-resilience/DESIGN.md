@@ -133,7 +133,7 @@ What can outlive a call today (I3's ledger). Each entry gets a "fresh?" read-out
 ### B3 — Fault-injecting device backend
 
 - An `IMediaDeviceBackend` whose endpoints follow a script: per kind (mic, speaker, voice pair) and per operation (open, read, write, close), **fail**, **hang until let go**, **give silence**, **slow by N ms**, from a step on.
-- The first instance exists: `media_engine_redial_test.cpp` (branch `test/ios-redial-mic-held`, local) wedges the mic read during an interruption and shows the redial refused the mic (I4).
+- The first instance exists: `media_engine_redial_test.cpp` (draft [#680](https://github.com/people-post/pp-browser/pull/680)) wedges the mic read during an interruption and shows the redial refused the mic (I4).
 - The matrix in gtest: D6 × M3–M7 × the separate-devices and voice-pair paths, each checked against I3, I4, I5.
 
 ### B4 — Platform audio emulator
@@ -204,7 +204,7 @@ Found while looking into 2026-11-19; recorded here so the tests cover them. None
 
 | Finding | Where | Covered by |
 |---------|-------|-----------|
-| An ended call's audio thread that never returns keeps the mic from every later call (the leases are released only after the joins, and the join has no limit). Prototype fix: `MediaDeviceArbiter::LetGo` at the slow-join warning — local branch `test/ios-redial-mic-held`, not merged; open question: a second mic endpoint beside a wedged one on iOS | `MediaEngine.cpp` `FinishRetired`, `JoinThreadWatched` | B3, I4 |
+| An ended call's audio thread that never returns keeps the mic from every later call (the leases are released only after the joins, and the join has no limit). Prototype fix: `MediaDeviceArbiter::LetGo` at the slow-join warning — draft [#680](https://github.com/people-post/pp-browser/pull/680), not merged; open question: a second mic endpoint beside a wedged one on iOS | `MediaEngine.cpp` `FinishRetired`, `JoinThreadWatched` | B3, I4 |
 | `TryResume` under CallKit never calls `setActive:YES`; it trusts `g_system_active`, which a non-call interruption may leave stale either way (R7) | `AudioSession_Ios.mm` `TryResume`, `ActivateForVoip` | B4, I1 (O2) |
 | Every voice-processing open calls `ActivateForVoip`, bumping the session generation (a resume in flight then reads Stale) | `VoiceProcessingIo_Apple.cpp` `Open` | B4, B6 |
 | SDL's `session_active` sticks once set: `COREAUDIO_CloseDevice` updates the session while its own device still counts as open | pp-cpp-ui `third_party/sdl3/.../SDL_coreaudio.m` | B4 (R10), I3 |
