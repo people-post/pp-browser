@@ -7,4 +7,4 @@
 /* Shown when PP first asks to use Face ID. */
 "NSFaceIDUsageDescription" = "PP 用面容 ID 解锁你的账号。";
 /* Shown when iOS first asks whether PP may find devices on the local network. */
-"NSLocalNetworkUsageDescription" = "PP 用它在同一个 Wi‑Fi 里直接连接对方，让通话和消息不经过服务器。PP 不会收集你的位置或网络里其他设备的信息。";
+"NSLocalNetworkUsageDescription" = "用于在同一个 Wi-Fi 下和好友直接连接。PP 不会获取你的位置。";

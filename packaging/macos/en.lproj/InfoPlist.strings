@@ -1,0 +1,2 @@
+/* Shown when macOS first asks whether PP may find devices on the local network. */
+"NSLocalNetworkUsageDescription" = "Used to connect directly with friends on the same Wi-Fi. PP never gets your location.";

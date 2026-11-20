@@ -7,4 +7,4 @@
 /* Shown when PP first asks to use Face ID. */
 "NSFaceIDUsageDescription" = "PP uses Face ID to unlock your account.";
 /* Shown when iOS first asks whether PP may find devices on the local network. */
-"NSLocalNetworkUsageDescription" = "PP uses your local network to connect directly to people on the same Wi‑Fi, so calls and messages need not pass through a server. PP does not collect your location or information about other devices on your network.";
+"NSLocalNetworkUsageDescription" = "Used to connect directly with friends on the same Wi-Fi. PP never gets your location.";

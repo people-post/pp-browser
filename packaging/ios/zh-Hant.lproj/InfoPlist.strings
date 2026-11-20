@@ -1,0 +1,10 @@
+/* Shown when PP first asks to use the microphone. */
+"NSMicrophoneUsageDescription" = "PP 使用麥克風進行語音和視訊通話、錄製語音訊息，以及在聊天中錄製影片。";
+/* Shown when PP first asks to use the camera. */
+"NSCameraUsageDescription" = "PP 使用相機進行視訊通話、掃描 QR 碼，以及在聊天中拍照和錄影。";
+/* Shown when PP first asks to add a picture (the QR code) to Photos. */
+"NSPhotoLibraryAddUsageDescription" = "把你的 QR 碼儲存到相簿。";
+/* Shown when PP first asks to use Face ID. */
+"NSFaceIDUsageDescription" = "PP 使用 Face ID 解鎖你的帳號。";
+/* Shown when iOS first asks whether PP may find devices on the local network. */
+"NSLocalNetworkUsageDescription" = "用於在同一個 Wi-Fi 下和好友直接連線。PP 不會取得你的位置。";

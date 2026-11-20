@@ -67,6 +67,12 @@ elseif(APPLE AND PP_BROWSER_PACKAGED_BUILD)
     MACOSX_PACKAGE_LOCATION Resources)
   target_sources(${PP_BROWSER_APP_TARGET} PRIVATE
     ${CMAKE_SOURCE_DIR}/assets/branding/app-icon.png)
+  # The local-network permission text in the system language (InfoPlist.strings per .lproj).
+  foreach(_lproj en zh-Hans zh-Hant)
+    set(_strings "${CMAKE_SOURCE_DIR}/packaging/macos/${_lproj}.lproj/InfoPlist.strings")
+    set_source_files_properties(${_strings} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/${_lproj}.lproj)
+    target_sources(${PP_BROWSER_APP_TARGET} PRIVATE ${_strings})
+  endforeach()
 endif()
 
 target_include_directories(${PP_BROWSER_APP_TARGET} PRIVATE
