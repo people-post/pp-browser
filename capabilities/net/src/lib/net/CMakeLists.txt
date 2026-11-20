@@ -9,6 +9,7 @@ pp_browser_add_lib_library(pp_lib_net
     HttpClient.cpp
     RelayApiSignPayload.cpp
     RelayBlobSignPayload.cpp
+    RelayCertificate.cpp
     RelayAudience.cpp
     RelayIdentity.cpp
     RelayInboxCursor.cpp
