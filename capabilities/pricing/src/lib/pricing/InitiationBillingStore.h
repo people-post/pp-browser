@@ -31,6 +31,10 @@ public:
 
   explicit InitiationBillingStore(std::string data_dir);
 
+  /**
+   * Reads the file. One it cannot read (newer, below the floor, not JSON) is kept as it is: this run's rows live in
+   * memory and every save is refused (INVENTORY S2), until a Load that reads.
+   */
   Roe<void> Load();
   Roe<void> Save() const;
 
@@ -58,6 +62,7 @@ public:
 
 private:
   std::string Path() const;
+  Roe<void> LoadUnlocked();
   Roe<void> SaveUnlocked() const;
 
   std::optional<InitiationCardFloor> CardFloorOf(const std::string& peer_identity) const;
@@ -66,6 +71,8 @@ private:
   CardFloors card_floors_;
   mutable std::mutex mutex_;
   std::unordered_map<std::string, InitiationPeerBilling> rows_;
+  /** Why the last Load did not read the file; set: no save writes it. */
+  std::optional<std::string> refused_;
 };
 
 } // namespace pbr

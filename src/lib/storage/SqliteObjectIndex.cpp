@@ -1,6 +1,7 @@
 #include "lib/storage/SqliteObjectIndex.h"
 
 #include "foundation/crypto/CryptoUtil.h"
+#include "lib/storage/SqliteMigrations.h"
 #include "common/PbrCompat.h"
 
 #include <sqlite3.h>
@@ -25,6 +26,30 @@ CREATE TABLE IF NOT EXISTS cas_objects (
 );
 )sql";
 
+/**
+ * object_index.db's ladder (DATA_LAYOUT § Content CAS; INVENTORY S3): `user_version` 1, also its floor. A file
+ * from before it had a version says 0, and reads as a new one: `create` is `CREATE TABLE IF NOT EXISTS` at the
+ * current shape, so its rows stay and it is marked 1. A newer file is refused and left alone.
+ */
+const SqliteSchemaLadder& ObjectIndexLadder() {
+  static const SqliteSchemaLadder ladder{
+      "object_index.db",
+      SqliteObjectIndex::kSchemaVersion,
+      SqliteObjectIndex::kSchemaVersion,
+      [](const SqliteMigrationContext& context) -> Roe<void> {
+        char* err = nullptr;
+        if (sqlite3_exec(context.db, kSchema, nullptr, nullptr, &err) != SQLITE_OK) {
+          const std::string message = err != nullptr ? err : "CAS object_index schema failed";
+          sqlite3_free(err);
+          return Error(message);
+        }
+        return {};
+      },
+      {},
+  };
+  return ladder;
+}
+
 int64_t NowMs() {
   return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
       .count();
@@ -45,13 +70,14 @@ SqliteObjectIndex::~SqliteObjectIndex() {
 }
 
 Roe<void> SqliteObjectIndex::MigrateSchema(sqlite3* db) const {
-  char* err = nullptr;
-  if (sqlite3_exec(db, kSchema, nullptr, nullptr, &err) != SQLITE_OK) {
-    const std::string message = err != nullptr ? err : "CAS object_index schema migrate failed";
-    sqlite3_free(err);
-    return Error(message);
+  auto outcome = RunSqliteLadder(db, db_path_, ObjectIndexLadder());
+  if (!outcome) {
+    return outcome.error();
   }
-  return {};
+  if (*outcome == SqliteLadderOutcome::Newer) {
+    return Error("Incompatible object_index.db: it is from a newer version of the app");
+  }
+  return {}; // floor == current: never below it (a file with no version is created at it)
 }
 
 Roe<void> SqliteObjectIndex::EnsureOpen() const {

@@ -21,6 +21,17 @@ std::string InitiationBillingStore::Path() const {
 Roe<void> InitiationBillingStore::Load() {
   std::lock_guard lock(mutex_);
   rows_.clear();
+  refused_.reset();
+  auto loaded = LoadUnlocked();
+  if (!loaded) {
+    // The file is kept as it is: this run's changes live in memory only (a newer app's rows, or a file to look at).
+    refused_ = loaded.error().message;
+    log().warning << "initiation_billing.json not read, so not written: " << *refused_;
+  }
+  return loaded;
+}
+
+Roe<void> InitiationBillingStore::LoadUnlocked() {
   const std::string path = Path();
   if (!std::filesystem::exists(path)) {
     return {};
@@ -62,6 +73,9 @@ Roe<void> InitiationBillingStore::Load() {
 }
 
 Roe<void> InitiationBillingStore::SaveUnlocked() const {
+  if (refused_) {
+    return Error("initiation_billing.json was not read (" + *refused_ + "): not written over");
+  }
   Object peers;
   for (const auto& [peer, row] : rows_) {
     Object entry;

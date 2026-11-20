@@ -6,7 +6,10 @@
 #include "lib/people/ContactTypes.h"
 
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
+#include <iterator>
+#include <string>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
@@ -99,6 +102,38 @@ TEST_F(PaymentPromiseTest, StorePersistsAndLocalAvoid) {
   EXPECT_TRUE((*got)->local_avoid);
   EXPECT_TRUE(reloaded.HasLocalAvoidAgainst("account:alice", "account:bob"));
   EXPECT_FALSE(reloaded.HasLocalAvoidAgainst("account:alice", "account:carol"));
+}
+
+// INVENTORY S2: the store reads its version — 2, also its floor — and a file of another version (or none) is
+// refused and never written over: this run's receipts live in memory, every save is refused.
+TEST_F(PaymentPromiseTest, AFileOfAnotherVersionIsRefusedAndNeverWrittenOver) {
+  std::filesystem::create_directories(data_dir_);
+  const auto path = data_dir_ / "payment_promises.json";
+  for (const std::string& text :
+       {std::string(R"({"schema_version":3,"promises":[],"later":true})"),
+        std::string(R"({"schema_version":1,"promises":[]})"), std::string(R"({"promises":[]})")}) {
+    {
+      std::ofstream out(path, std::ios::trunc);
+      out << text;
+    }
+    PaymentPromiseStore store(data_dir_.string());
+    auto loaded = store.Load();
+    ASSERT_FALSE(static_cast<bool>(loaded)) << text;
+    EXPECT_NE(loaded.error().message.find("schema version"), std::string::npos) << loaded.error().message;
+    EXPECT_FALSE(static_cast<bool>(store.Upsert(SamplePromise()))) << "the save is refused: " << text;
+    std::ifstream in(path);
+    const std::string on_disk((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(on_disk, text) << "left as it was";
+  }
+}
+
+TEST_F(PaymentPromiseTest, AFileIsWrittenAtItsVersion) {
+  PaymentPromiseStore store(data_dir_.string());
+  ASSERT_TRUE(static_cast<bool>(store.Load()));
+  ASSERT_TRUE(static_cast<bool>(store.Upsert(SamplePromise())));
+  std::ifstream in(data_dir_ / "payment_promises.json");
+  const std::string on_disk((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  EXPECT_NE(on_disk.find("\"schema_version\": 2"), std::string::npos) << on_disk;
 }
 
 TEST_F(PaymentPromiseTest, AvoidBlocksContactAndStampsReceipt) {

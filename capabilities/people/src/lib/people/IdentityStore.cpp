@@ -780,6 +780,7 @@ Roe<int64_t> IdentityStore::InitiationFloor() const {
 
 void IdentityStore::ForgetOwnCardInMemory() const {
   own_card_loaded_ = false;
+  own_card_newer_ = false;
   own_card_.reset();
 }
 
@@ -815,6 +816,8 @@ Roe<void> IdentityStore::EnsureOwnCardLoaded() const {
     return Error("Failed to parse own_card.enc");
   }
   if (auto checked = SchemaVersion::Validate(*root, kOwnCardSchemaVersion, "own_card.enc"); !checked) {
+    // A newer app's file: refused, and never written over (KeepOwnCard); the card is read from peer_cards meanwhile.
+    own_card_newer_ = root->getNonNegInt("schema_version").value_or(0) > kOwnCardSchemaVersion;
     return checked.error();
   }
   const Object* card_json = root->getObject("card");
@@ -853,6 +856,9 @@ Roe<void> IdentityStore::KeepOwnCard(const AccountCard& card) {
     return Error("own card: not this profile's account");
   }
   if (auto own = EnsureOwnCardLoaded(); !own) {
+    if (own_card_newer_) {
+      return Error("own_card.enc is from a newer version of the app: not written over");
+    }
     log().warning << "own_card.enc unreadable, written over: " << own.error().message;
     ForgetOwnCardInMemory();
   }

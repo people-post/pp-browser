@@ -2,6 +2,7 @@
 
 #include "common/Error.h"
 
+#include <cstdint>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -11,9 +12,14 @@
 
 namespace pbr {
 
-/** Profile-local tombstones for attachment hashes (R020). */
+/**
+ * Profile-local tombstones for attachment hashes (R020), in `attachment_suppressions.json` (DATA_LAYOUT). A file it
+ * cannot read — a newer app's included — refuses every change, so it is never written over (INVENTORY S3).
+ */
 class AttachmentSuppressionStore {
 public:
+  static constexpr uint64_t kSchemaVersion = 1;
+
   explicit AttachmentSuppressionStore(std::string profile_dir);
 
   void SetProfileDir(std::string profile_dir);

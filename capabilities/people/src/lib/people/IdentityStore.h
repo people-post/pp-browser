@@ -90,7 +90,7 @@ public:
   /**
    * Keeps `card` (our account's) as the own card when it is newer than the one kept (`issued_at`): an older or equal
    * one changes nothing, so no older card of ours is ever taken here. A card of another account is refused. An
-   * unreadable file is written over.
+   * unreadable file is written over; a newer app's (a newer `schema_version`) is refused and never written over.
    */
   Roe<void> KeepOwnCard(const AccountCard& card);
 
@@ -117,6 +117,7 @@ private:
   mutable std::vector<uint8_t> private_key_;
   mutable bool dirty_ = false;
   mutable bool own_card_loaded_ = false;        // under mutex_
+  mutable bool own_card_newer_ = false;         // under mutex_: own_card.enc is a newer app's (never written over)
   mutable std::optional<AccountCard> own_card_; // under mutex_: own_card.enc as read or last written
 };
 

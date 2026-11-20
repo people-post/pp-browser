@@ -49,8 +49,9 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # cursors (the card already names these relays); written atomically on every change and every registration answer
   preferences.json
   relay_pins.json           # the PeerId each relay origin of ours must answer to (multi-relay MR007, MR008, § relay_pins.json below); plaintext, written atomically
-  relay_inbox_cursor.json   # poll watermarks {account_id, cursor, cursor_relay?, relays?: {origin: cursor}}: the preferred relay's (cursor_relay
-                            # names it, additive; absent: the preferred one's), then our others'; a relay leaving My relays loses its cursor
+  relay_inbox_cursor.json   # poll watermarks {schema_version: 1, account_id, cursor, cursor_relay?, relays?: {origin: cursor}}: the preferred relay's (cursor_relay
+                            # names it, additive; absent: the preferred one's), then our others'; a relay leaving My relays loses its cursor;
+                            # no schema_version (a file from before it): 1; a newer one is not read (those inboxes fetch from their oldest message) and never written over
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
   grace.bin                 # PIN grace window: DEK under K_grace, AAD "grace|{id}" (iOS, Android 9+; only within a window — AT_REST_ENCRYPTION § PIN grace window)
   biometric.bin             # Face ID / Touch ID unlock: DEK under K_bio, AAD "biometric|{id}" (iOS; only while the switch is on — AT_REST_ENCRYPTION § Face ID / Touch ID unlock)
@@ -58,15 +59,24 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   own_card.enc              # our account's newest account card under DEK AEAD (AAD purpose "own-card", plaintext schema_version 1: {schema_version, card}; IdentityStore):
                             # the copy that outlives Reset chats, the start-up recovery's reset and a profile.db too old to upgrade (all of which remove threads/
                             # with its peer_cards); only a newer card of ours replaces it; a card of another account is ignored (a link or restore deletes the file
-                            # with the old DEK). Absent until our first card; profile reset removes it with the rest (AT_REST_ENCRYPTION § Own card plaintext,
-                            # ACCOUNT_CARD § Main device)
+                            # with the old DEK). Absent until our first card; profile reset removes it with the rest; a newer schema_version is refused and
+                            # never written over (the card is read from peer_cards meanwhile) — AT_REST_ENCRYPTION § Own card plaintext, ACCOUNT_CARD § Main device
   secrets.enc               # typed model API key (llm_api_key) under DEK AEAD, AAD purpose "config-secrets", schema_version 1; absent when there are none (PB-034)
-  initiation_billing.json   # per-peer initiation billing state (P001; `{schema_version: 2, peers: {account → row}}`; 2 is also its floor: an older, unversioned or flat file is refused; additive relay_floor_minor / relay_floor_card_issued_at: a relay's payment_required floor and the kept card it came after — SERVICE_ENDPOINTS § The stranger's price)
-  account_locker.json       # account locker sync state: highest_version_by_locker, contact_clock, device_names (plaintext; ACCOUNT_LOCKER.md § On disk)
+  initiation_billing.json   # per-peer initiation billing state (P001; `{schema_version: 2, peers: {account → row}}`; 2 is also its floor: an older, unversioned or flat file is refused; a file not read (that, a newer one, not JSON) is never written over: that run's rows live in memory; additive relay_floor_minor / relay_floor_card_issued_at: a relay's payment_required floor and the kept card it came after — SERVICE_ENDPOINTS § The stranger's price)
+  payment_promises.json     # payment promise receipts (pricing P002 / P003; plaintext, the signed promises as received): {schema_version: 2, promises: [...],
+                            # pending_inbound?: [...] — inbound receipts staged until Accept or Ignore}; 2 is also its floor: another version, or none, is refused,
+                            # and a file not read is never written over (that run's receipts live in memory); optional
+  account_locker.json       # account locker sync state: schema_version 1, highest_version_by_locker, contact_clock, device_names (plaintext; ACCOUNT_LOCKER.md
+                            # § On disk); no schema_version (a file from before it): 1; a newer one is not read and never written over (that run keeps it in memory)
+  attachment_suppressions.json # attachments the person deleted here, not fetched again (R020): {schema_version: 1, threads: {thread_id: [content hash hex]}};
+                            # plaintext, written atomically; no schema_version (a file from before it): 1; a newer one, or one not read, refuses every change; optional
   contacts.json             # address book (schema_version 3: local + remote + overrides{}); another version, or none, is refused; optional
                             # remote.locator_relay: a QR locator's preferred relay address {origin, peer_id} (multi-relay R4, MR008), its relay list until a card (additive;
                             # one without its PeerId is read as none)
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)
+  cache/icons/{key}/        # profile photos (ProfileIconCache): key `self` (ours) or an Account ID with `/ \ :` made `_`; meta.json {url, blob_id, kind,
+                            # fetched_at_ms, local_filename} beside icon-<hash>.<ext> (named after its bytes); a cache, fetched again when its url or blob_id
+                            # changes or the file is gone; plaintext, unversioned; optional
   home_brief.json           # phone Home "Today's briefs": the article feed's general headlines (schema_version 1; fetched_at_ms,
                             # feed cn|en, items[] of title / category (the site) / time_ms / url); plaintext, refetched when over
                             # 3 h old while the widget is on; device-only, never synced; optional
@@ -143,18 +153,19 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # generation "local_action" (never model context); no unread (DEV/PLAN-call-stranger-declined.md).
 ```
 
-### Content CAS (planned)
+### Content CAS
 
-**Status:** design accepted — [content-cas](../../projects/content-cas/) (C001–C011). `CasStore` on disk; attachment durable path is private CAS only (P2 / C007); legacy thread `blobs/` support removed.
+[content-cas](../../projects/content-cas/) (C001–C011): `CasStore` on disk; the attachment durable path is private CAS only (P2 / C007); legacy thread `blobs/` support removed.
 
-After cutover (C007 big bang), durable bytes move to a profile-level CAS with **two realms**. Chat decrypt never writes the public realm. Block files use **two-level hex sharding** (C010).
+Durable bytes live in a profile-level CAS with **two realms**. Chat decrypt never writes the public realm. Block files use **two-level hex sharding** (C010).
 
 ```
 {data_dir}/profiles/{id}/
   cas/
     private/blocks/{aa}/{bb}/{content_id_hex}  # DEK-wrapped (PPBA)
     public/blocks/{aa}/{bb}/{content_id_hex}   # clear published bytes (v1)
-  object_index.db       # realm, content_id, mime, pins, published_from?, thread refs
+  object_index.db       # cas_objects: realm, content_id, mime, filename, byte_length, published_from?, pinned, created_at (SqliteObjectIndex);
+                        # user_version 1, also its floor: 0 (a file from before it) is taken as 1, its rows kept; a newer one is refused and left alone
   threads/{thread_id}/
     blobs_view/         # optional session plaintext materialization (not source of truth); wiped at start and on ClearDek;
                         # a file above 4 MiB appears here only after an explicit Open; {hash}.poster.jpg = a video's poster,

@@ -463,6 +463,37 @@ TEST_F(IdentityStoreTest, OurCardIsSealedBesideTheIdentityAndOnlyANewerOneReplac
   EXPECT_EQ(reloaded.OwnCard().value()->nickname, "newer");
 }
 
+// INVENTORY S1: own_card.enc from a newer app is refused, and a card of ours is never written over it (a downgrade
+// would lose what the newer app kept there); the card is read from the chat store meanwhile.
+TEST_F(IdentityStoreTest, ANewerOwnCardFileIsRefusedAndNeverWrittenOver) {
+  IdentityStore store(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(store.SetDek(MakeTestDek()));
+  ASSERT_TRUE(store.LoadOrCreate());
+  Object newer;
+  newer.set("schema_version", static_cast<int64_t>(IdentityStore::kOwnCardSchemaVersion + 1));
+  newer.set("cards", ArrayValue({}));
+  const std::string json = DumpJson(newer, 2);
+  auto sealed = FileCipher::Encrypt(MakeTestDek(), ByteVector(json.begin(), json.end()),
+                                    FileCipher::BuildAad("own-card", "test-profile"));
+  ASSERT_TRUE(static_cast<bool>(sealed));
+  {
+    std::ofstream out(data_dir_ / "own_card.enc", std::ios::binary | std::ios::trunc);
+    out.write(reinterpret_cast<const char*>(sealed->data()), static_cast<std::streamsize>(sealed->size()));
+  }
+
+  IdentityStore reloaded(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(reloaded.SetDek(MakeTestDek()));
+  auto own = reloaded.OwnCard();
+  ASSERT_FALSE(static_cast<bool>(own));
+  EXPECT_NE(own.error().message.find("schema"), std::string::npos) << own.error().message;
+  auto kept = reloaded.KeepOwnCard(OwnCardOf(store, "alice", 100));
+  ASSERT_FALSE(static_cast<bool>(kept));
+  EXPECT_NE(kept.error().message.find("newer"), std::string::npos) << kept.error().message;
+  std::ifstream in(data_dir_ / "own_card.enc", std::ios::binary);
+  const ByteVector on_disk((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  EXPECT_EQ(on_disk, *sealed) << "the newer file is left as it was";
+}
+
 TEST_F(IdentityStoreTest, ANewDekForALinkOrRestoreDropsTheOldAccountsCard) {
   IdentityStore store(data_dir_.string(), "test-profile");
   ASSERT_TRUE(store.SetDek(MakeTestDek()));

@@ -142,6 +142,8 @@ private:
   std::mutex sync_mutex_;
   /** Held by Save() from the snapshot to the file write (never together with I/O under mutex_). */
   std::mutex save_mutex_;
+  /** Under save_mutex_: `account_locker.json` is a newer app's, so Save() never writes it. */
+  bool newer_state_file_ = false;
   ContactClock clock_;
   /** Per locker (hex id): a provider serving an older copy of one locker says nothing about another. */
   std::map<std::string, uint64_t> highest_seen_;
