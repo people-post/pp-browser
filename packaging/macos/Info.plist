@@ -22,6 +22,12 @@
   <string>@MACOSX_BUNDLE_SHORT_VERSION_STRING@</string>
   <key>CFBundleVersion</key>
   <string>@MACOSX_BUNDLE_BUNDLE_VERSION@</string>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>en</string>
+    <string>zh-Hans</string>
+    <string>zh-Hant</string>
+  </array>
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSMicrophoneUsageDescription</key>
@@ -33,7 +39,7 @@
        That breaks Android↔Mac on the same Wi‑Fi while Linux↔Mac can still succeed via
        srflx/hairpin or a peer that is not treated as local-only. -->
   <key>NSLocalNetworkUsageDescription</key>
-  <string>PP uses the local network for peer-to-peer calls and messaging with nearby devices.</string>
+  <string>Used to connect directly with friends on the same Wi-Fi. PP never gets your location.</string>
   <key>NSBonjourServices</key>
   <array>
     <string>_pp-mesh._udp</string>

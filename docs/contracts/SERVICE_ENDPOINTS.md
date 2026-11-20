@@ -576,11 +576,11 @@ Unauthenticated public GET (directory-style; no identity unlock required):
 |-------|----------|--------|
 | `schema_version` | yes | **1**; reject unsupported **newer** |
 | `min_client_version` | no | Semver floor; client below → blocking update UX |
-| `latest_client_version` | no | Semver latest; client below (but ≥ min) → soft banner |
+| `latest_client_version` | no | Semver latest; client below (but ≥ min) → the card at the top of the chat list (not a banner); the app's own translated line is always the card's line, and the relay's `message` is an extra, smaller line under it (see `message`) |
 | `min_protocol_gen` | no | Global protocol floor (default 1) |
 | `upgrade_url` | no | Empty → GitHub Releases fallback |
 | `upgrade_urls` | no | `{ ios, android, macos, windows, linux }`, each optional: that platform's update link, **https only** (anything else, and any other key, is dropped). `ResolvedUpgradeUrl` takes this build's (`Platform::OsName()`), else `upgrade_url`, else the fallback |
-| `message` | no | Empty → client locale strings |
+| `message` | no | RC018 part 2: **never replaces the app's own translated text**. Non-empty → shown as an extra line under it, on the card and in the blocking dialog (a second paragraph): plain text only (no markup or links interpreted), whitespace runs and line breaks become one space (a single paragraph), cut at 200 characters with an ellipsis (`UpdateServerNote`). Empty → only the app's own words |
 | `crash_reports_url` | no | Absolute opt-in crash ingest URL, **https only** (anything else is ignored); empty → `{relay.base_url}/v1/crash-reports` |
 | `support` | no | Optional Support discovery block (`enabled`, `account_id`, `display_name`) |
 

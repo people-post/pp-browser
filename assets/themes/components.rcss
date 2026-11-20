@@ -8038,6 +8038,13 @@ input.checkbox {
   margin-bottom: 8dp;
 }
 
+/* The relay's own note under the card's line: smaller, plain text. */
+.sidebar-tip-note {
+  font-size: 13dp;
+  line-height: 18dp;
+  margin-bottom: 8dp;
+}
+
 .sidebar-tip-actions {
   align-items: center;
   gap: 8dp;
@@ -16489,9 +16496,22 @@ textarea:composing ~ .ps-placeholder {
   font-size: 15dp;
 }
 
-.ps-spacer {
-  flex: 1;
-  min-width: 8dp;
+/* A ring drawn as a disc with a smaller disc over it: this renderer draws a bordered rounded box as a squircle. */
+.ps-original-check {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22dp;
+  height: 22dp;
+  margin-right: 10dp;
+  border-radius: 11dp;
+}
+
+.ps-original-hole {
+  width: 18dp;
+  height: 18dp;
+  border-radius: 9dp;
 }
 
 .ps-send {

@@ -24,12 +24,16 @@ CallSignalTone ToneFor(const CallPathQuality quality) {
   switch (quality) {
     case CallPathQuality::Excellent:
     case CallPathQuality::Good:
+    case CallPathQuality::NoMic: // not a line fault: the words are the status line's (callers pass the network grade)
       return CallSignalTone::Good;
     case CallPathQuality::Fair:
       return CallSignalTone::Fair;
-    default:
+    case CallPathQuality::Poor:
+    case CallPathQuality::Reconnecting:
+    case CallPathQuality::NoAudio:
       return CallSignalTone::Poor;
   }
+  return CallSignalTone::Poor;
 }
 
 } // namespace
@@ -230,7 +234,7 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
       view_.signal_tone = tone;
       signal_changed_ms_ = now;
       // "The line got slower": good turning fair or poor while the call runs. A reconnect says so itself, and no
-      // audio is not a slower line (it has its own hint: "you can't hear them").
+      // audio is not a slower line (it has its own hint: "you can't hear them"), nor is a microphone that is not open.
       const bool slower = in.quality == CallPathQuality::Fair || in.quality == CallPathQuality::Poor;
       if (last_tone_ == CallSignalTone::Good && slower && !reconnecting &&
           (!slow_noticed_ || now - slow_notice_ms_ >= kSlowNoticeEveryMs)) {
@@ -348,6 +352,8 @@ const char* CallSignalWordKey(const CallPathQuality quality) {
       return "call.quality.poor";
     case CallPathQuality::NoAudio:
       return "call.quality.no_audio";
+    case CallPathQuality::NoMic:
+      return ""; // not the line: the status line says the microphone is not open
     case CallPathQuality::Excellent:
     case CallPathQuality::Good:
       break;

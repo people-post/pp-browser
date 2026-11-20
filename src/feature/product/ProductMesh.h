@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include "feature/product/LanDiscoveryGate.h"
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -46,6 +47,11 @@ public:
   void StopWatchingNetwork() override;
   void StartLanDiscovery(std::function<void(const mesh::LanMdnsDiscoveredPeer&)> on_peer) override;
   void AdvertiseOnLan(const std::string& peer_id, int amp_udp_port) override;
+  /**
+   * Account setup is finished (true) or not (false). LAN discovery waits for true (default true: a node, a probe and
+   * the tests start it at once); a request made meanwhile runs when it comes. The app sets it per profile.
+   */
+  void SetLanDiscoveryAllowed(bool allowed);
   void StopLanDiscovery() override;
   void StartDirectoryCache(mesh::IDirectoryClient& directory, const std::string& profile_data_dir,
                            std::function<void()> on_updated) override;
@@ -104,6 +110,18 @@ private:
   std::unique_ptr<NetworkMonitor> network_monitor_;
   /** LAN discovery and announcement while the hub's mesh services run. */
   std::unique_ptr<mesh::LanMdnsDiscovery> lan_mdns_;
+  LanDiscoveryGate lan_gate_{{[this](const std::string& peer_id, const int amp_udp_port) {
+                                if (lan_mdns_ && lan_mdns_->IsRunning()) {
+                                  // Empty host_ips → LanMdnsDiscovery enumerates LAN IFs (Amp typically binds 0.0.0.0).
+                                  lan_mdns_->SetAdvertisement(peer_id, amp_udp_port, {});
+                                }
+                              },
+                              [this]() {
+                                if (lan_mdns_) {
+                                  lan_mdns_->Stop();
+                                  lan_mdns_.reset();
+                                }
+                              }}};
   /** The directory's mesh nodes, for the profile's lifetime (across mesh restarts). */
   std::unique_ptr<mesh::MeshDirectoryCache> directory_cache_;
   /** N032: this profile's verdicts on mesh nodes; replaced with the directory cache (a profile switch). */

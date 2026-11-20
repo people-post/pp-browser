@@ -36,6 +36,8 @@ struct UserFeedback {
   static void Note(const std::string& message);
   /** Takes the bottom pill down at once (for a Note that said "Preparing…" and whose work is done). */
   static void DismissToast();
+  /** Takes the bottom pill down only if it shows exactly `message`: a pill that replaced it is left alone. */
+  static void DismissToastWithMessage(const std::string& message);
   /** Toast AppError::Display; returns that string for status_ binding. */
   static std::string FailFrom(const Error& err);
   /** Banner. Gone after 5 s unless `sticky` (something the user must act on). */

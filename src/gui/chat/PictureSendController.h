@@ -20,7 +20,7 @@ class Context;
 
 namespace pbr {
 
-/** "12.4 MB": the size beside the "original" switch (one decimal below ten MB, whole above). */
+/** "12.4 MB": the size beside the "original" check (one decimal below ten MB, whole above). */
 std::string FormatPickedSize(uint64_t bytes);
 
 /** One cell of the page's thumbnail strip, as the page binds it. */
@@ -139,6 +139,8 @@ public:
   const std::vector<PictureSendCell>& Cells() const { return cells_; }
   std::string CurrentSrc() const { return std::string(current_src_.c_str()); }
   bool CanSend() const { return can_send_; }
+  /** The "original" check: off every time the page opens, set only by a tap, never stored anywhere. */
+  bool OriginalChecked() const { return original_; }
   /** Every frame while the page is open: the picture is fitted again when the space for it changed (the keyboard). */
   void Update();
   /** A preview worker is running (the folder of a stopped page is deleted when it reports). */

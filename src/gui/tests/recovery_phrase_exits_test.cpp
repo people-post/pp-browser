@@ -8,7 +8,9 @@
 #include "foundation/data/UserPreferences.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppLifecycle.h"
+#include "gui/CallController.h"
 #include "gui/SettingsController.h"
+#include "gui/tests/CallControllerTestAccess.h"
 #include "gui/UserFeedback.h"
 #include "gui/shell/DataModelHost.h"
 #include "lib/ui/UiEditSession.h"
@@ -22,7 +24,10 @@
 #include <ui/paint/RenderInterface.h>
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
+#include <fstream>
+#include <sstream>
 #include <filesystem>
 #include <functional>
 #include <string>
@@ -114,10 +119,12 @@ protected:
         "<button id=\"toggle_adv\" data-event-click=\"toggle_advanced_settings()\">x</button>"
         "<button id=\"sel_sec\" data-event-click=\"select_section('security')\">x</button>"
         "<button id=\"sel_dev\" data-event-click=\"select_section('devices')\">x</button>"
+        "<button id=\"sel_adv\" data-event-click=\"select_section('advanced')\">x</button>"
         "<button id=\"show\" data-event-click=\"show_recovery_phrase()\">x</button>"
         "<button id=\"reveal\" data-event-click=\"reveal_recovery_phrase()\">x</button>"
         "<button id=\"done\" data-event-click=\"hide_recovery_phrase()\">x</button>"
         "<button id=\"close_sub\" data-event-click=\"close_security_page()\">x</button>"
+        "<button id=\"open_pin\" data-event-click=\"open_security_page('pin')\">x</button>"
         "<p id=\"sp\">{{security_page}}</p>"
         "</div></body></rml>");
     ASSERT_NE(document, nullptr);
@@ -350,5 +357,178 @@ TEST_F(RecoveryPhraseExitsTest, ThePhraseIsMarkedSeenOnlyOnceTheWordsWereShown) 
   EXPECT_TRUE(store.Snapshot().profile_prefs.recovery_phrase_seen);
 }
 
+// A call screen appearing (CallController::BindCallUiShown, wired by Application to OnCallUiShown): the page closes and
+// the words go, masked or revealed; seeing the phrase again takes the PIN again.
+TEST_F(RecoveryPhraseExitsTest, ACallScreenAppearingClearsTheWordsMaskedOrRevealed) {
+  ExpectGoneWhenRevealedOrCovered([this]() { settings.OnCallUiShown(); });
+}
+
+TEST_F(RecoveryPhraseExitsTest, AfterACallScreenTheNextLookAsksForThePinAgain) {
+  int pin_asks = 0;
+  PinPromptPorts pin;
+  pin.show_verify = [&pin_asks](const PinVerifyPurpose, PinGateCheck check, std::function<void()> on_ok) {
+    ++pin_asks;
+    check(SecretText("1234"), [on_ok = std::move(on_ok)](Roe<void>) { on_ok(); });
+  };
+  settings.BindPinPrompt(pin);
+  OpenAndReveal();
+  EXPECT_EQ(pin_asks, 1);
+  settings.OnCallUiShown();
+  ExpectGone();
+  EXPECT_EQ(pin_asks, 1) << "closing never asks";
+  back_stack.clear();
+  Open(); // the only way to the words again: the row, which asks for the PIN
+  EXPECT_EQ(pin_asks, 2);
+}
+
+TEST_F(RecoveryPhraseExitsTest, ACallScreenWithoutThePhraseOpenLeavesOtherPagesAlone) {
+  Click("open_pin");
+  ASSERT_EQ(Text("sp"), "pin");
+  settings.OnCallUiShown();
+  Settle();
+  EXPECT_EQ(Text("sp"), "pin") << "only the recovery phrase is closed by a call screen";
+  EXPECT_FALSE(back_stack.empty());
+}
+
+TEST_F(RecoveryPhraseExitsTest, ARevealStillBeingCheckedIsVoidWhenACallScreenAppears) {
+  // The PIN gate is up (the check not run yet) when the call screen comes: finishing the check afterwards opens nothing.
+  PinGateCheck held_check;
+  std::function<void()> held_ok;
+  PinPromptPorts pin;
+  pin.show_verify = [&](const PinVerifyPurpose, PinGateCheck check, std::function<void()> on_ok) {
+    held_check = std::move(check);
+    held_ok = std::move(on_ok);
+  };
+  settings.BindPinPrompt(pin);
+  Click("show");
+  ASSERT_TRUE(held_check);
+  ASSERT_FALSE(Actions().RecoveryPhraseShown()) << "nothing is open while the PIN is being asked";
+  settings.OnCallUiShown();
+  held_check(SecretText("1234"), [&held_ok](Roe<void>) { held_ok(); });
+  Settle();
+  ExpectGone();
+  EXPECT_EQ(Actions().RecoverySecretCountForTest(), 0u);
+}
+
+TEST_F(RecoveryPhraseExitsTest, OnTheDesktopTheInlinePhraseGoesWhenACallScreenAppears) {
+  layout_mode = LayoutMode::Expanded;
+  settings.SyncLayoutMode();
+  if (!settings.ShowsSecuritySection()) {
+    Click("sel_sec");
+  }
+  Click("show");
+  ASSERT_TRUE(Actions().RecoveryPhraseShown()) << "the desktop shows it inline";
+  Click("reveal");
+  ASSERT_EQ(Actions().RecoveryWordsForTest(), kWords);
+  settings.OnCallUiShown();
+  Settle();
+  EXPECT_FALSE(Actions().RecoveryPhraseShown());
+  EXPECT_TRUE(Actions().RecoveryWordsForTest().empty());
+  EXPECT_EQ(Actions().RecoverySecretCountForTest(), 0u);
+}
+
+// The real CallController wired to Settings as Application does: every call screen, including a second ring over a
+// (minimised) call and a ring replacing a kept failed page, closes the phrase page that was opened meanwhile.
+TEST_F(RecoveryPhraseExitsTest, EveryCallScreenIncludingASecondRingOverACallClosesTheOpenPhrase) {
+  CallController call;
+  call.BindCallUiShown([this]() { settings.OnCallUiShown(); });
+  const auto ring = [&call](const std::string& id) {
+    CallScreen& screen = CallControllerTestAccess::Screen(call);
+    screen = {};
+    screen.kind = CallScreen::Kind::Ringing;
+    screen.ring_call_id = id;
+    screen.caller_identity = "alice";
+    CallControllerTestAccess::Render(call);
+  };
+  const auto answer = [&call]() {
+    CallScreen& screen = CallControllerTestAccess::Screen(call);
+    screen = {};
+    screen.kind = CallScreen::Kind::Answering;
+    screen.ring_call_id = "c1";
+    CallControllerTestAccess::Render(call);
+  };
+  for (const bool reveal : {false, true}) {
+    SCOPED_TRACE(reveal ? "revealed" : "covered");
+    // A call is up and minimised; the phrase page is opened over it; then a second ring comes.
+    CallControllerTestAccess::EndCall(call);
+    CallControllerTestAccess::InCallSync(call);
+    if (!settings.ShowsSecuritySection()) {
+      Click("sel_sec");
+    }
+    reveal ? OpenAndReveal() : Open();
+    ring("c2");
+    ExpectGone();
+    back_stack.clear();
+
+    // A ring replacing a kept failed page.
+    CallControllerTestAccess::EndCall(call);
+    CallControllerTestAccess::Screen(call) = {};
+    CallControllerTestAccess::Failed(call) = CallFailedPage{};
+    CallControllerTestAccess::Render(call);
+    if (!settings.ShowsSecuritySection()) {
+      Click("sel_sec");
+    }
+    reveal ? OpenAndReveal() : Open();
+    ring("c1");
+    ExpectGone();
+    back_stack.clear();
+
+    // Answering the ring: another notification with the page already closed changes nothing, no error.
+    answer();
+    ExpectGone();
+    CallControllerTestAccess::Failed(call).reset();
+    CallControllerTestAccess::EndCall(call);
+  }
+}
+
+// The harness cannot see the PIN gate's captured secret, so the wipe of a voided reveal is pinned in the source: the
+// branch that returns on a count mismatch resets (and so wipes) the decoded phrase first.
+TEST_F(RecoveryPhraseExitsTest, AVoidedRevealWipesTheDecodedPhraseBeforeReturning) {
+  std::ifstream in(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/SettingsSecurityActions.cpp");
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  const std::string source = buffer.str();
+  const size_t voided = source.find("if (request != recovery_shown_count_) {");
+  ASSERT_NE(voided, std::string::npos);
+  const size_t ret = source.find("return;", voided);
+  const size_t reset = source.find("revealed->reset();", voided);
+  ASSERT_NE(reset, std::string::npos);
+  EXPECT_LT(reset, ret) << "reset before the early return";
+}
+
 } // namespace
+// My relays sits inline in Advanced on the wide layout and is read when that page opens there. A layout that turns
+// wide while Advanced is already open (iPad split view, a window resize) must read it too: the inline list would be
+// empty or stale.
+TEST_F(RecoveryPhraseExitsTest, MyRelaysIsReadAgainWhenTheLayoutTurnsWideWithAdvancedOpen) {
+  std::atomic<int> reads{0};
+  commands.my_relays = [&reads]() -> Roe<MyRelaysView> {
+    ++reads;
+    return MyRelaysView{};
+  };
+  settings.BindCommands(commands);
+  Click("sel_adv");
+  Settle();
+  const int before = reads.load();
+  layout_mode = LayoutMode::Expanded;
+  settings.SyncLayoutMode();
+  Settle();
+  EXPECT_GT(reads.load(), before) << "the inline list is read for the wide layout";
+}
+
+TEST_F(RecoveryPhraseExitsTest, MyRelaysIsNotReadWhenTheLayoutTurnsWideOnAnotherPage) {
+  std::atomic<int> reads{0};
+  commands.my_relays = [&reads]() -> Roe<MyRelaysView> {
+    ++reads;
+    return MyRelaysView{};
+  };
+  settings.BindCommands(commands);
+  Settle();
+  const int before = reads.load();
+  layout_mode = LayoutMode::Expanded;
+  settings.SyncLayoutMode(); // Account & security is open
+  Settle();
+  EXPECT_EQ(reads.load(), before);
+}
+
 } // namespace pbr

@@ -1,0 +1,2 @@
+/* Shown when macOS first asks whether PP may find devices on the local network. */
+"NSLocalNetworkUsageDescription" = "用于在同一个 Wi-Fi 下和好友直接连接。PP 不会获取你的位置。";

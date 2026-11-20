@@ -109,8 +109,8 @@ function(pp_browser_configure_ios_app target)
     VERBATIM
   )
 
-  # Words for the relay's call alert (its push carries only loc-keys; P012).
-  foreach(_lproj en zh-Hans)
+  # Words for the relay's call alert (its push carries only loc-keys; P012) and the permission alerts (InfoPlist.strings).
+  foreach(_lproj en zh-Hans zh-Hant)
     add_custom_command(TARGET ${target} POST_BUILD
       COMMAND "${CMAKE_COMMAND}" -E copy_directory
         "${CMAKE_SOURCE_DIR}/packaging/ios/${_lproj}.lproj"

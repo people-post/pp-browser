@@ -545,7 +545,10 @@ void SettingsController::SyncBindingsFromSession() {
     if (SettingsPageHas(*page, SettingsPageAction::RefreshDevices)) {
       own_devices_.Refresh();
     }
-    if (SettingsPageHas(*page, SettingsPageAction::RefreshRelays)) {
+    // My relays sits inside Advanced: the desktop shows it inline (refresh with the page), a phone refreshes when
+    // the relays sub-page is entered (OpenSecurityPage), not on every open of Advanced.
+    if (SettingsPageHas(*page, SettingsPageAction::RefreshRelays) &&
+        ChromeSnapshot().layout_mode != LayoutMode::Compact) {
       my_relays_.Refresh();
     }
   }
@@ -1166,6 +1169,14 @@ void SettingsController::OnMeSurfaceClosed() {
   FlushPending();
 }
 
+void SettingsController::OnCallUiShown() {
+  if (security_actions_.RecoveryPhraseShown()) {
+    ResetSecurityPage(); // clears the words, closes the page and its back entry
+  } else {
+    security_actions_.VoidPendingReveal();
+  }
+}
+
 void SettingsController::SyncLayoutMode() {
   const ShellChromeSnapshot chrome = ChromeSnapshot();
   const bool compact = chrome.layout_mode == LayoutMode::Compact;
@@ -1212,6 +1223,12 @@ void SettingsController::SyncLayoutMode() {
   if (had_detail && !selected_id_.empty()) {
     OpenSettingsDetailPane();
     storage_manager_.RestoreBackStack();
+    // Advanced shows My relays inline in the wide layout: a list that was last read for the phone page (or never) is
+    // read again now that it is on screen (iPad split view, a window resize).
+    if (const SettingsPage* page = FindSettingsPage(selected_id_.c_str());
+        page && SettingsPageHas(*page, SettingsPageAction::RefreshRelays)) {
+      my_relays_.Refresh();
+    }
   }
   DirtyAll();
 }
@@ -1641,6 +1658,9 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
     security_page_title_ = Tr("settings.integrations.page.title").c_str();
   } else if (on_advanced && page == "backend_custom" && bindings_.backend_is_custom) {
     security_page_title_ = Tr("settings.network.backend.custom_addresses").c_str();
+  } else if (on_advanced && page == "relays") {
+    security_page_title_ = Tr("settings.relays.title").c_str();
+    my_relays_.Refresh();
   } else {
     return;
   }

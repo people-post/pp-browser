@@ -812,6 +812,12 @@ void CallPresenter::StepMedia(CallUiBackend& backend, const CallScreen& next, co
         notice.alarm = frame.pill_alarm;
         Notify(notice);
       }
+      if (!frame.pill_withdraw_key.empty()) {
+        CallNotice notice;
+        notice.kind = CallNotice::Kind::HintWithdrawn;
+        notice.key = frame.pill_withdraw_key;
+        Notify(notice);
+      }
       ActOnMedia(backend, frame);
       LogMedia(facts, frame);
       return;
@@ -841,6 +847,7 @@ CallMediaFacts CallPresenter::ReadMediaFacts(CallUiBackend& backend, const CallS
   CallMediaFacts f;
   f.call_id = s.call_id;
   f.now_ms = now;
+  f.mic_not_open_hint = AudioSession::MicNotOpenHintApplies();
   if (auto allowed = backend.VideoAllowedForCall(s.call_id); allowed && allowed->has_value()) {
     f.video_allowed = **allowed;
   }

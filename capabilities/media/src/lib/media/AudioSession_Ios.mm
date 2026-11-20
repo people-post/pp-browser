@@ -14,6 +14,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstring>
 #include <mutex>
 #include <string>
 
@@ -934,6 +935,19 @@ void NotifyVoiceProcessingStarted(const double sample_rate, const int channels, 
                       << " mode=" << Utf8(session.mode) << " system_managed=" << (managed ? 1 : 0)
                       << " system_active=" << (system_active ? 1 : 0);
   });
+}
+
+bool MicNotOpenHintApplies() {
+  return true;
+}
+
+void NoteToneStreamClosed(const char* holder, const int64_t since_stop_ms) {
+  // Developer log only, from the device thread right after the close; no AVAudioSession read, nothing blocks.
+  if (!DiagnosticsEnabled() || holder == nullptr || std::strncmp(holder, "ring", 4) != 0) {
+    return;
+  }
+  SessionLog().info << "tone stream closed holder=" << holder << " since_stop_ms=" << since_stop_ms
+                    << " t_ms=" << static_cast<int64_t>([NSProcessInfo processInfo].systemUptime * 1000);
 }
 
 int OpusEncoderComplexity() {

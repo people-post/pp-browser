@@ -25,6 +25,8 @@ data-event-click="ask_setting_help('settings.network.media_relay')"	1	-	advanced
 data-event-click="ask_setting_help('settings.network.prefer_contacts')"	1	-	advanced	advanced;;advanced && show_prefer_contacts_toggle	network	
 data-event-click="ask_setting_help('settings.network.reachable_without_relay')"	1	-	advanced	advanced;;show_node_toggle	network	
 data-event-click="ask_setting_help('settings.network.trusted_relays')"	1	-	advanced	advanced	network	
+data-event-click="ask_setting_help('settings.relays.title')"	2	-	advanced	advanced	advanced	
+data-event-click="open_security_page('relays')"	1	-	advanced	advanced	advanced	
 data-event-click="dismiss_reachability_help()"	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'blocked'	network	
 data-event-click="dismiss_reachability_help()"	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'outbound_only'	network	
 data-event-click="dismiss_reachability_help()"	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'reachable'	network	
@@ -105,6 +107,7 @@ data-value="llm_preset"	1	llm	advanced	advanced;;advanced	llm
 {{i18n:settings.network.reachable_without_relay}}	1	-	advanced	advanced;;show_node_toggle	network	
 {{i18n:settings.network.trusted_relays.help}}	1	-	advanced	advanced	network	
 {{i18n:settings.network.trusted_relays}}	1	-	advanced	advanced	network	
+{{i18n:settings.relays.title}}	2	-	advanced	advanced	advanced	
 {{i18n:settings.security.tool_permissions.help}}	1	-	advanced	advanced;;advanced	security	
 {{i18n:settings.security.tool_permissions.reset}}	1	-	advanced	advanced;;advanced;;tool_permissions_has_saved	security	
 {{i18n:settings.security.tool_permissions}}	1	-	advanced	advanced;;advanced	security	
@@ -571,41 +574,41 @@ data-event-click="remove_pin()"	2	-	security	show_change_pin && security_can_cha
 {{i18n:settings.security.unlock_to_change}}	1	-	security	show_change_pin && !security_can_change_pin && !pin_protection_not_setup	security	
 {{i18n:settings.privacy.blocked_help}}	1	-	privacy	-	security	
 {{i18n:settings.tester.banner}}	1	-	tester	tester	-	
-data-event-click="add_my_relay()"	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy	relays	
-data-event-click="cancel_add_my_relay()"	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy	relays	
-data-event-click="make_relay_preferred(relay_index)"	1	-	relays	my_relays_shown;;relay.has_link || (my_relays_editable && !my_relays_busy && (relay.can_make_preferred || relay.can_remove));;my_relays_editable && !my_relays_busy && relay.can_make_preferred	relays	
-data-event-click="make_relay_preferred(relay_index)"	1	-	relays	my_relays_shown;;my_relays_editable && !my_relays_busy;;relay.can_make_preferred	relays	
-data-event-click="remove_my_relay(relay_index)"	1	-	relays	my_relays_shown;;relay.has_link || (my_relays_editable && !my_relays_busy && (relay.can_make_preferred || relay.can_remove));;my_relays_editable && !my_relays_busy && relay.can_remove	relays	
-data-event-click="remove_my_relay(relay_index)"	1	-	relays	my_relays_shown;;my_relays_editable && !my_relays_busy;;relay.can_remove	relays	
-data-event-click="start_add_my_relay()"	1	-	relays	my_relays_shown && my_relays_can_add;;!my_relay_adding	relays	
-data-value="my_relay_draft"	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding	relays	
-{{i18n:common.cancel}}	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy	relays	
-{{i18n:settings.relays.add.checking}}	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;my_relays_busy	relays	
-{{i18n:settings.relays.add.field}}	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding	relays	
-{{i18n:settings.relays.add.ok}}	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy	relays	
-{{i18n:settings.relays.add.placeholder}}	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding	relays	
-{{i18n:settings.relays.add.placeholder}}	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;my_relay_draft == ''	relays	
-{{i18n:settings.relays.add}}	1	-	relays	my_relays_shown && my_relays_can_add;;!my_relay_adding	relays	
-{{i18n:settings.relays.help}}	1	-	relays	my_relays_shown	relays	
-{{i18n:settings.relays.intro}}	1	-	relays	-	relays	
-{{i18n:settings.relays.make_preferred}}	1	-	relays	my_relays_shown;;relay.has_link || (my_relays_editable && !my_relays_busy && (relay.can_make_preferred || relay.can_remove));;my_relays_editable && !my_relays_busy && relay.can_make_preferred	relays	
-{{i18n:settings.relays.make_preferred}}	1	-	relays	my_relays_shown;;my_relays_editable && !my_relays_busy;;relay.can_make_preferred	relays	
-{{i18n:settings.relays.not_main}}	1	-	relays	my_relays_shown;;!my_relays_editable	relays	
-{{i18n:settings.relays.preferred}}	2	-	relays	my_relays_shown;;relay.preferred	relays	
-{{i18n:settings.relays.remove}}	1	-	relays	my_relays_shown;;relay.has_link || (my_relays_editable && !my_relays_busy && (relay.can_make_preferred || relay.can_remove));;my_relays_editable && !my_relays_busy && relay.can_remove	relays	
-{{i18n:settings.relays.remove}}	1	-	relays	my_relays_shown;;my_relays_editable && !my_relays_busy;;relay.can_remove	relays	
-{{i18n:settings.relays.unavailable}}	1	-	relays	!my_relays_shown	relays	
-{{my_relay_add_error}}	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;my_relay_add_error != ''	relays	
-{{my_relays_org_mismatch}}	1	-	relays	my_relays_shown;;my_relays_org_mismatch != ''	relays	
-{{relay.label}}	2	-	relays	my_relays_shown	relays	
-{{relay.reach}}	2	-	relays	my_relays_shown;;relay.reach != '' && !relay.reach_failed	relays	
-{{relay.reach}}	2	-	relays	my_relays_shown;;relay.reach_failed	relays	
-{{relay.state}}	2	-	relays	my_relays_shown;;relay.state_kind != 'error'	relays	
-{{relay.state}}	2	-	relays	my_relays_shown;;relay.state_kind == 'error'	relays	
-data-event-click="copy_relay_link(relay_index)"	1	-	relays	my_relays_shown;;relay.has_link	relays	
-data-event-click="copy_relay_link(relay_index)"	1	-	relays	my_relays_shown;;relay.has_link || (my_relays_editable && !my_relays_busy && (relay.can_make_preferred || relay.can_remove));;relay.has_link	relays	
-{{i18n:settings.relays.copy_link}}	1	-	relays	my_relays_shown;;relay.has_link	relays	
-{{i18n:settings.relays.copy_link}}	1	-	relays	my_relays_shown;;relay.has_link || (my_relays_editable && !my_relays_busy && (relay.can_make_preferred || relay.can_remove));;relay.has_link	relays	
-{{i18n:settings.relays.add.hint}}	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;my_relay_add_error == '' && !my_relays_busy	relays	
-data-event-click="scan_my_relay_link()"	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy && my_relay_can_scan	relays	
-{{i18n:settings.relays.add.scan}}	1	-	relays	my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy && my_relay_can_scan	relays	
+data-event-click="add_my_relay()"	1	-	advanced_relays	advanced;;my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy	advanced_relays	
+data-event-click="cancel_add_my_relay()"	1	-	advanced_relays	advanced;;my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy	advanced_relays	
+data-event-click="make_relay_preferred(relay_index)"	1	-	advanced_relays	advanced;;my_relays_shown;;relay.has_link || (my_relays_editable && !my_relays_busy && (relay.can_make_preferred || relay.can_remove));;my_relays_editable && !my_relays_busy && relay.can_make_preferred	advanced_relays	
+data-event-click="make_relay_preferred(relay_index)"	1	-	advanced_relays	advanced;;my_relays_shown;;my_relays_editable && !my_relays_busy;;relay.can_make_preferred	advanced_relays	
+data-event-click="remove_my_relay(relay_index)"	1	-	advanced_relays	advanced;;my_relays_shown;;relay.has_link || (my_relays_editable && !my_relays_busy && (relay.can_make_preferred || relay.can_remove));;my_relays_editable && !my_relays_busy && relay.can_remove	advanced_relays	
+data-event-click="remove_my_relay(relay_index)"	1	-	advanced_relays	advanced;;my_relays_shown;;my_relays_editable && !my_relays_busy;;relay.can_remove	advanced_relays	
+data-event-click="start_add_my_relay()"	1	-	advanced_relays	advanced;;my_relays_shown && my_relays_can_add;;!my_relay_adding	advanced_relays	
+data-value="my_relay_draft"	1	-	advanced_relays	advanced;;my_relays_shown && my_relays_can_add;;my_relay_adding	advanced_relays	
+{{i18n:common.cancel}}	1	-	advanced_relays	advanced;;my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy	advanced_relays	
+{{i18n:settings.relays.add.checking}}	1	-	advanced_relays	advanced;;my_relays_shown && my_relays_can_add;;my_relay_adding;;my_relays_busy	advanced_relays	
+{{i18n:settings.relays.add.field}}	1	-	advanced_relays	advanced;;my_relays_shown && my_relays_can_add;;my_relay_adding	advanced_relays	
+{{i18n:settings.relays.add.ok}}	1	-	advanced_relays	advanced;;my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy	advanced_relays	
+{{i18n:settings.relays.add.placeholder}}	1	-	advanced_relays	advanced;;my_relays_shown && my_relays_can_add;;my_relay_adding	advanced_relays	
+{{i18n:settings.relays.add.placeholder}}	1	-	advanced_relays	advanced;;my_relays_shown && my_relays_can_add;;my_relay_adding;;my_relay_draft == ''	advanced_relays	
+{{i18n:settings.relays.add}}	1	-	advanced_relays	advanced;;my_relays_shown && my_relays_can_add;;!my_relay_adding	advanced_relays	
+{{i18n:settings.relays.help}}	1	-	advanced_relays	advanced;;my_relays_shown	advanced_relays	
+{{i18n:settings.relays.intro}}	1	-	advanced_relays	advanced	advanced_relays	
+{{i18n:settings.relays.make_preferred}}	1	-	advanced_relays	advanced;;my_relays_shown;;relay.has_link || (my_relays_editable && !my_relays_busy && (relay.can_make_preferred || relay.can_remove));;my_relays_editable && !my_relays_busy && relay.can_make_preferred	advanced_relays	
+{{i18n:settings.relays.make_preferred}}	1	-	advanced_relays	advanced;;my_relays_shown;;my_relays_editable && !my_relays_busy;;relay.can_make_preferred	advanced_relays	
+{{i18n:settings.relays.not_main}}	1	-	advanced_relays	advanced;;my_relays_shown;;!my_relays_editable	advanced_relays	
+{{i18n:settings.relays.preferred}}	2	-	advanced_relays	advanced;;my_relays_shown;;relay.preferred	advanced_relays	
+{{i18n:settings.relays.remove}}	1	-	advanced_relays	advanced;;my_relays_shown;;relay.has_link || (my_relays_editable && !my_relays_busy && (relay.can_make_preferred || relay.can_remove));;my_relays_editable && !my_relays_busy && relay.can_remove	advanced_relays	
+{{i18n:settings.relays.remove}}	1	-	advanced_relays	advanced;;my_relays_shown;;my_relays_editable && !my_relays_busy;;relay.can_remove	advanced_relays	
+{{i18n:settings.relays.unavailable}}	1	-	advanced_relays	advanced;;!my_relays_shown	advanced_relays	
+{{my_relay_add_error}}	1	-	advanced_relays	advanced;;my_relays_shown && my_relays_can_add;;my_relay_adding;;my_relay_add_error != ''	advanced_relays	
+{{my_relays_org_mismatch}}	1	-	advanced_relays	advanced;;my_relays_shown;;my_relays_org_mismatch != ''	advanced_relays	
+{{relay.label}}	2	-	advanced_relays	advanced;;my_relays_shown	advanced_relays	
+{{relay.reach}}	2	-	advanced_relays	advanced;;my_relays_shown;;relay.reach != '' && !relay.reach_failed	advanced_relays	
+{{relay.reach}}	2	-	advanced_relays	advanced;;my_relays_shown;;relay.reach_failed	advanced_relays	
+{{relay.state}}	2	-	advanced_relays	advanced;;my_relays_shown;;relay.state_kind != 'error'	advanced_relays	
+{{relay.state}}	2	-	advanced_relays	advanced;;my_relays_shown;;relay.state_kind == 'error'	advanced_relays	
+data-event-click="copy_relay_link(relay_index)"	1	-	advanced_relays	advanced;;my_relays_shown;;relay.has_link	advanced_relays	
+data-event-click="copy_relay_link(relay_index)"	1	-	advanced_relays	advanced;;my_relays_shown;;relay.has_link || (my_relays_editable && !my_relays_busy && (relay.can_make_preferred || relay.can_remove));;relay.has_link	advanced_relays	
+{{i18n:settings.relays.copy_link}}	1	-	advanced_relays	advanced;;my_relays_shown;;relay.has_link	advanced_relays	
+{{i18n:settings.relays.copy_link}}	1	-	advanced_relays	advanced;;my_relays_shown;;relay.has_link || (my_relays_editable && !my_relays_busy && (relay.can_make_preferred || relay.can_remove));;relay.has_link	advanced_relays	
+{{i18n:settings.relays.add.hint}}	1	-	advanced_relays	advanced;;my_relays_shown && my_relays_can_add;;my_relay_adding;;my_relay_add_error == '' && !my_relays_busy	advanced_relays	
+data-event-click="scan_my_relay_link()"	1	-	advanced_relays	advanced;;my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy && my_relay_can_scan	advanced_relays	
+{{i18n:settings.relays.add.scan}}	1	-	advanced_relays	advanced;;my_relays_shown && my_relays_can_add;;my_relay_adding;;!my_relays_busy && my_relay_can_scan	advanced_relays	

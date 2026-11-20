@@ -53,6 +53,8 @@ struct CallNotice {
      * the error style when `alarm` (the user must act).
      */
     Hint,
+    /** B233: the pill `key` (an i18n key) said something that is no longer so: take it down if it is still showing. */
+    HintWithdrawn,
   };
   Kind kind = Kind::Error;
   std::string key;
@@ -237,6 +239,9 @@ public:
   static constexpr int64_t kBlockedPillPerCallerMs = 60'000;
 
   const CallScreen& Screen() const { return screen_; }
+  /** Tests: the screen and the kept failed page the controller draws from (no call stack behind them). */
+  CallScreen& ScreenForTest() { return screen_; }
+  std::optional<CallFailedPage>& FailedPageForTest() { return failed_page_; }
   /**
    * The media decisions of the call on screen, stepped with each refresh (CallMediaFrame): the status line, whether
    * it reconnects (the capsule), the video stage, the one-way-audio hint and the connection story.

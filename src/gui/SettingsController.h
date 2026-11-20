@@ -133,6 +133,12 @@ public:
   void OnNavTabActivated();
   /** Persist nickname / dirty sections when leaving Me (tab or sheet). */
   void OnMeSurfaceClosed();
+  /**
+   * A call screen (a ring, an answer, a call, a failed page, or the phone's own call screen) has just come up. The
+   * recovery phrase, masked or revealed, does not stay behind it: words and private copy go, the page closes, and seeing
+   * it again takes the PIN. A reveal still being checked is void.
+   */
+  void OnCallUiShown();
   void SyncLayoutMode();
   /** Clear detail UI without touching the shell local-back stack (used by sheet dismiss). */
   void ApplyBackToListUi();

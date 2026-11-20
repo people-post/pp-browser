@@ -28,8 +28,6 @@ the date) and the INVENTORY item it names, in one PR, and drop the row from the 
 - **Kenneth** (`@gzdemon77`, client UI, texts, the AI client):
   - the update-needed display and words (INVENTORY U1, U2, U11, T14);
   - the server's `message` vs the app's translations (U12);
-  - both deletion confirmations' text, and *Delete account…* offline (O5);
-  - the crash-report opt-in (O6);
   - person-level preferences in the locker.
 - **Leo** (`@leofreiheit`, the relay and its infrastructure):
   - the operator set: its keys, threshold and holders, and whether relay certificates expire (O4, C7);

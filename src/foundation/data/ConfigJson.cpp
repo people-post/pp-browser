@@ -784,6 +784,11 @@ Object MachinePrefsToObject(const MachinePreferences& prefs) {
   object.set("display", DisplayPrefsToObject(prefs.display));
   object.set("collect_run_logs", prefs.collect_run_logs);
   object.set("collect_crash_logs", prefs.collect_crash_logs);
+  if (prefs.update_card_dismissals > 0 && !prefs.update_card_version.empty()) {
+    object.set("update_card_version", prefs.update_card_version);
+    object.set("update_card_dismissals", static_cast<int64_t>(prefs.update_card_dismissals));
+    object.set("update_card_dismissed_ms", prefs.update_card_dismissed_ms);
+  }
   return object;
 }
 
@@ -808,6 +813,15 @@ void MachinePrefsFromObject(const Object& object, MachinePreferences& prefs) {
   }
   if (auto collect = object.getIf<bool>("collect_crash_logs")) {
     prefs.collect_crash_logs = *collect;
+  }
+  if (auto version = object.getString("update_card_version")) {
+    prefs.update_card_version = *version;
+  }
+  if (auto dismissals = ReadI64(object, "update_card_dismissals")) {
+    prefs.update_card_dismissals = static_cast<int>(std::clamp<int64_t>(*dismissals, 0, 2));
+  }
+  if (auto dismissed_ms = ReadI64(object, "update_card_dismissed_ms")) {
+    prefs.update_card_dismissed_ms = std::max<int64_t>(0, *dismissed_ms);
   }
 }
 

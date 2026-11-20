@@ -1660,6 +1660,10 @@ input.checkbox:checked {
   color: #ffffff;
 }
 
+.sidebar-tip-note {
+  color: #ebebf599;
+}
+
 .sidebar-reconnect-entry svg {
   image-color: #ff453a;
 }
@@ -4092,6 +4096,22 @@ input.checkbox:checked {
 
 .ps-original-label {
   color: #ffffff;
+}
+
+.ps-original-check {
+  background-color: #8e8e93;
+}
+
+.ps-original-check--on {
+  background-color: #0a84ff;
+}
+
+.ps-original-hole {
+  background-color: #000000;
+}
+
+.ps-original-tick {
+  image-color: #ffffff;
 }
 
 .ps-original-size {

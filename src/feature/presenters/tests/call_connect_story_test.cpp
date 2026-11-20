@@ -413,6 +413,18 @@ TEST(CallConnectStoryTest, NoAudioIsNotASlowerLine) {
   EXPECT_EQ(v.notice, CallStoryNotice::None) << "no audio has its own hint";
 }
 
+// B233: a microphone that is not open is not a slower line either; its words are the status line's, not the bar's, and
+// the bars and tone follow the network (the page feeds the story the network grade; NoMic itself never reads as Poor).
+TEST(CallConnectStoryTest, NoMicIsNotASlowerLineAndHasNoSignalWord) {
+  CallConnectStory story;
+  story.Step(At(0, Status::Connected, true, "direct", CallPathQuality::Good, 4));
+  const CallStoryView v = story.Step(At(1'000, Status::Connected, true, "direct", CallPathQuality::NoMic, 4));
+  EXPECT_EQ(v.signal_tone, CallSignalTone::Good);
+  EXPECT_EQ(v.signal_bars, 4);
+  EXPECT_EQ(v.notice, CallStoryNotice::None);
+  EXPECT_STREQ(CallSignalWordKey(CallPathQuality::NoMic), "");
+}
+
 TEST(CallConnectStoryTest, TheTimelineKeepsOnlyTheLatestMoveCloser) {
   CallConnectStory story;
   story.Step(At(0, Status::Connected, true, "circuit"));

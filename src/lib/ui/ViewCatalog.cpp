@@ -70,7 +70,7 @@ const std::unordered_map<std::string, std::string>& KnownKeys() {
       {"settings_section_privacy", "views/settings_section_privacy.rml"},
       {"settings_section_security", "views/settings_section_security.rml"},
       {"settings_section_devices", "views/settings_section_devices.rml"},
-      {"settings_section_relays", "views/settings_section_relays.rml"},
+      {"settings_section_advanced_relays", "views/settings_section_advanced_relays.rml"},
       {"settings_section_notifications", "views/settings_section_notifications.rml"},
       {"settings_section_appearance", "views/settings_section_appearance.rml"},
       {"settings_section_storage", "views/settings_section_storage.rml"},

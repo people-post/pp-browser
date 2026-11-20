@@ -436,5 +436,98 @@ TEST(CallBufferPressureGateTest, LossRightAfterARouteChangeStillDropsTheBars) {
   }
 }
 
+// B233: a wanted microphone with no open device (the engine says how long) is not an excellent call.
+TEST(CallMediaHealthTest, NoMicAfterThreeSecondsOfAWantedMicrophoneThatIsNotOpen) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = kCallMicNotOpenAfterMs - 1;
+  EXPECT_EQ(EvaluateCallMediaHealth(in).quality, CallPathQuality::Excellent) << "an open takes a moment";
+  in.engine.mic_missing_ms = kCallMicNotOpenAfterMs;
+  const auto v = EvaluateCallMediaHealth(in);
+  EXPECT_EQ(v.quality, CallPathQuality::NoMic);
+  EXPECT_TRUE(v.mic_not_open);
+  EXPECT_EQ(v.network_quality, CallPathQuality::Excellent) << "a closed microphone is not a bad line";
+  EXPECT_EQ(v.quality_bars, 4) << "the bars come from the network";
+  EXPECT_EQ(v.asymmetry, CallAudioAsymmetry::None);
+  in.engine.mic_missing_ms = 0;
+  EXPECT_EQ(EvaluateCallMediaHealth(in).quality, CallPathQuality::Excellent) << "the microphone opened by itself";
+}
+
+// Desktop: a missing or OS-blocked microphone is not graded, as before B233 (the engine's fact is still in the view).
+TEST(CallMediaHealthTest, WhereTheHintDoesNotApplyAMissingMicrophoneIsNotGraded) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = 30'000;
+  in.grade_mic_not_open = false;
+  const auto v = EvaluateCallMediaHealth(in);
+  EXPECT_EQ(v.quality, CallPathQuality::Excellent);
+  EXPECT_EQ(v.engine.mic_missing_ms, 30'000);
+}
+
+TEST(CallMediaHealthTest, NoMicKeepsTheOlderNumbersAndWordsNoNetworkLabel) {
+  EXPECT_EQ(static_cast<int>(CallPathQuality::NoAudio), 5);
+  EXPECT_EQ(static_cast<int>(CallPathQuality::NoMic), 6) << "appended last: metrics history keeps its meaning";
+  EXPECT_STREQ(CallPathQualityLabelKey(CallPathQuality::NoMic), "") << "the network is fine";
+  EXPECT_STREQ(CallPathQualityDetailsLabelKey(CallPathQuality::NoMic), "call.quality.no_mic");
+}
+
+TEST(CallMediaHealthTest, ReconnectingStillComesBeforeNoMic) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = 20'000;
+  in.reconnecting = true;
+  const auto v = EvaluateCallMediaHealth(in);
+  EXPECT_EQ(v.quality, CallPathQuality::Reconnecting);
+  EXPECT_TRUE(v.mic_not_open) << "the fact stays; only the grade gives way";
+}
+
+// B233: NoMic is the grade only where nothing else is wrong; it never hides no audio or one-way audio.
+TEST(CallMediaHealthTest, ARealNoAudioKeepsItsGradeWhileTheMicrophoneIsNotOpen) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = 20'000;
+  in.engine.capture_available = false; // no microphone: transmitting is not expected, so only their side is silent
+  in.engine.rx_audio_frames = 0;
+  in.engine.last_rx_audio_ms = 0;
+  const auto v = EvaluateCallMediaHealth(in);
+  EXPECT_EQ(v.quality, CallPathQuality::NoAudio);
+  EXPECT_EQ(v.asymmetry, CallAudioAsymmetry::SendingOnly);
+  EXPECT_EQ(v.quality_bars, 0);
+  EXPECT_TRUE(v.mic_not_open) << "the pill is driven by the fact";
+}
+
+TEST(CallMediaHealthTest, OneWayAudioKeepsItsGradeWhileTheMicrophoneIsNotOpen) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = 20'000;
+  in.engine.tx_audio_frames = 0;
+  in.engine.last_tx_audio_ms = 0; // wanted and not sending
+  const auto v = EvaluateCallMediaHealth(in);
+  EXPECT_EQ(v.quality, CallPathQuality::Poor);
+  EXPECT_EQ(v.asymmetry, CallAudioAsymmetry::ReceivingOnly);
+  EXPECT_TRUE(v.mic_not_open);
+}
+
+TEST(CallMediaHealthTest, ABadNetworkBarsStayWhileTheMicrophoneIsNotOpenAndTheGradeSaysNoMic) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = 20'000;
+  in.engine_pressure_for_quality = 0.5; // Fair
+  const auto v = EvaluateCallMediaHealth(in);
+  EXPECT_EQ(v.quality, CallPathQuality::NoMic);
+  EXPECT_EQ(v.network_quality, CallPathQuality::Fair);
+  EXPECT_EQ(v.quality_bars, 2);
+}
+
+TEST(CallMediaHealthTest, TheMicrophoneFactIsOffWhereTheHintDoesNotApply) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = 20'000;
+  in.grade_mic_not_open = false;
+  EXPECT_FALSE(EvaluateCallMediaHealth(in).mic_not_open);
+}
+
+TEST(CallMediaHealthTest, TheLogLineCarriesTheMissingMicrophoneTime) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = 4200;
+  const auto v = EvaluateCallMediaHealth(in);
+  const std::string line = FormatMediaHealthLogLine(v, in.now_ms, "c");
+  EXPECT_NE(line.find("quality=6"), std::string::npos) << line;
+  EXPECT_NE(line.find("mic_missing_ms=4200"), std::string::npos) << line;
+}
+
 } // namespace
 } // namespace pbr

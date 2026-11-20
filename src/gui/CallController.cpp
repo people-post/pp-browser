@@ -657,6 +657,10 @@ void CallController::BindPinLocked(std::function<bool()> pin_locked) {
   pin_locked_ = std::move(pin_locked);
 }
 
+void CallController::BindCallUiShown(std::function<void()> callback) {
+  call_ui_shown_ = std::move(callback);
+}
+
 void CallController::BindPeoplePickerNotify(PeoplePickerNotifyPorts ports) {
   people_picker_notify_ = std::move(ports);
 }
@@ -1110,6 +1114,17 @@ void CallController::SyncShellState() {
     AppRuntime::PostUI([this]() { SyncShellState(); });
     return;
   }
+  // Every call screen of the app passes here: tell once when one comes up, whether or not the chrome gate lets a
+  // snapshot through below.
+  // Two edges, so a ring over a call, or a ring replacing a kept failed page, is an appearance too (the listener's
+  // close is idempotent: an extra notification, e.g. on answer, changes nothing).
+  const bool ring_turned_on = ring_.active && !ring_ui_visible_;
+  const bool call_turned_on = in_call_.active && !in_call_ui_visible_;
+  ring_ui_visible_ = ring_.active;
+  in_call_ui_visible_ = in_call_.active;
+  if ((ring_turned_on || call_turned_on) && call_ui_shown_) {
+    call_ui_shown_();
+  }
   if (!shell_call_chrome_.apply_snapshot) {
     return;
   }
@@ -1320,6 +1335,9 @@ void CallController::ShowNotice(const CallNotice& notice) {
         UserFeedback::Note(Tr(notice.key));
       }
       return;
+    case CallNotice::Kind::HintWithdrawn:
+      UserFeedback::DismissToastWithMessage(Tr(notice.key)); // only our own sentence; a pill that replaced it stays
+      return;
   }
 }
 
@@ -1355,6 +1373,9 @@ void CallController::Render() {
       peer_link_refresh_();
     }
   }
+  if (screen.kind != CallScreen::Kind::Ringing) {
+    system_ring_notified_id_.clear();
+  }
   if (in_call_.failed_kept && screen.kind != CallScreen::Kind::None) {
     ClearInCall(); // a call or a ring takes the kept failed page's place: nothing of that page carries over
   }
@@ -1368,7 +1389,16 @@ void CallController::Render() {
         ClearRing();
         SyncShellState();
         SyncRingtone();
+        // The phone's own screen now covers the app: that is a call screen coming up too (the app's ring never is).
+        const std::string ring_key = screen.ring_call_id.empty() ? "system" : screen.ring_call_id;
+        if (system_ring_notified_id_ != ring_key) {
+          system_ring_notified_id_ = ring_key;
+          if (call_ui_shown_) {
+            call_ui_shown_();
+          }
+        }
       } else {
+        system_ring_notified_id_.clear();
         RenderRing(screen, now_ms);
       }
       // The ring of a tapped call alert (its call id, or the first ring for a push without one): land on its chat
@@ -2106,10 +2136,12 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend& backend,
   NoteActiveSpeaker(view.engine, in_call.muted ? 0.f : media.LocalInputLevel(), now_ms);
   NoteMediaMetrics(backend, frame, now_ms);
   in_call.quality_bars = view.quality_bars;
-  in_call.quality_ok = view.quality <= CallPathQuality::Good;
-  in_call.quality_warn = view.quality == CallPathQuality::Fair;
-  in_call.quality_error = view.quality == CallPathQuality::Poor || view.quality == CallPathQuality::NoAudio ||
-                          view.quality == CallPathQuality::Reconnecting;
+  // The network's grade, not the page's: a closed microphone (NoMic) is not a bad line (B233).
+  const CallPathQuality network = view.network_quality;
+  in_call.quality_ok = network <= CallPathQuality::Good;
+  in_call.quality_warn = network == CallPathQuality::Fair;
+  in_call.quality_error = network == CallPathQuality::Poor || network == CallPathQuality::NoAudio ||
+                          network == CallPathQuality::Reconnecting;
   const char* label_key = CallPathQualityLabelKey(view.quality);
   in_call.quality_label = label_key && label_key[0] ? Tr(label_key).c_str() : "";
   ApplyDebugSubtitle(media, view, now_ms);
@@ -2138,6 +2170,8 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend& backend,
   // spike, "can't hear the other side" in the second before the first audio arrived). Network quality stays visible
   // in the signal bars; an audio fault must persist for CallAudioFaultToastGate::kAudioFaultToastMs and toasts at
   // most once per call.
+  // NoMic (B233) is not counted: the presenter's pill says it, and this gate speaks once per call — a NoMic that used
+  // the turn would silence a later real "no audio".
   const bool audio_fault = view.quality == CallPathQuality::NoAudio || view.asymmetry != CallAudioAsymmetry::None;
   if (audio_fault_gate_.Update(presenter_.ActiveCallId(), audio_fault, now_ms)) {
     if (!frame.hint_key.empty()) {

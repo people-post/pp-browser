@@ -68,6 +68,8 @@
 #include "gui/chat/ChatController.h"
 #include "feature/product/MessagingTools.h"
 #include "feature/settings/SettingsTools.h"
+#include "feature/settings/RunLogPrefs.h"
+#include "foundation/platform/PlatformOpenUrl.h"
 #include "feature/settings/SupportThread.h"
 #include "common/runtime/AppRuntime.h"
 #include "feature/product/ProductOwners.h"
@@ -440,6 +442,13 @@ Application::Application() {
   call_ = std::make_unique<CallController>();
   // PIN locked = the vault is not open (the PIN gate is up): a ring on the phone's call screen stays there meanwhile.
   call_->BindPinLocked([this]() { return !secrets_ || !secrets_->IsUnlocked(); });
+  // A call screen coming up closes the recovery phrase page (Settings does not know the call internals; only this fact
+  // crosses).
+  call_->BindCallUiShown([this]() {
+    if (settings_) {
+      settings_->OnCallUiShown();
+    }
+  });
   if constexpr (kDevToolsBuild) {
     // Android merge check for the mic rebuild: `adb shell setprop debug.pp.skip_route_reorder 1` makes the next
     // speaker tap change the route the old way (before the mic closes); set it back to 0 before arming it again.
@@ -1610,6 +1619,16 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
             }
           },
   });
+  // The Chats page's "new version" card: client-compat says what exists, the chat list draws it.
+  chat_->BindUpdateCard(UpdateCardPorts{
+      .advice = [this]() { return client_compat_->SoftUpdate(); },
+      .machine_dir =
+          [this]() {
+            return RunLogPrefs::MachineDir(store_.IsInitialized() ? store_.Snapshot().data_dir : std::string());
+          },
+      .open_url = [](const std::string& url) { PlatformOpenUrl(url); },
+  });
+  client_compat_->BindSoftUpdateChanged([this]() { chat_->RefreshUpdateCard(); });
   badges_->BindShellNavigation(shell_navigation);
   badges_->BindAppBadge([](const int count) { SetAppBadgeCount(count); });
   badges_->BindSource([this, &facade, &shell]() {
@@ -1772,6 +1791,13 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.messaging_initialized = [&messaging]() { return messaging.IsInitialized(); };
   unlock_ports.messaging_ready = [&messaging]() { return messaging.IsMessagingReady(); };
   unlock_ports.ensure_messaging_ready = [this, &messaging]() -> Roe<void> {
+    // LAN discovery (the first multicast use raises iOS's "local network" alert) waits until account setup is done, so
+    // the alert does not cover the setup page; an account that finished setup starts it here as before. Only this
+    // waits: the rest of the mesh comes up now. The setup wizard's end opens it (set_completed below).
+    if (product_) {
+      product_->Mesh().SetLanDiscoveryAllowed(store_.IsInitialized() &&
+                                              store_.Snapshot().profile_prefs.onboarding_completed);
+    }
     auto ready = messaging.EnsureMessagingReady();
     if (ready) {
       return ready;
@@ -1992,6 +2018,9 @@ void Application::WireUnlockPinAndFlow() {
     onboarding_ports.set_completed = [this](const bool completed) {
       if (!store_.IsInitialized()) {
         return;
+      }
+      if (product_) {
+        product_->Mesh().SetLanDiscoveryAllowed(completed); // setup finished: a held LAN discovery starts now
       }
       ProfilePreferences prefs = store_.Snapshot().profile_prefs;
       if (prefs.onboarding_completed == completed) {
@@ -2429,6 +2458,7 @@ bool Application::MountPresenters(ui::Context* context) {
       client_compat_->BindCompatPorts({});
       client_compat_->BindShellFeedback({});
       client_compat_->BindSupportDiscovery({});
+      client_compat_->BindSoftUpdateChanged({});
     }
     if (flow_) {
       flow_->BindShellNavigation({});
@@ -3095,6 +3125,7 @@ void Application::Shutdown() {
     call_->BindPeerLinkRefresh(nullptr);
     call_->BindPeoplePickerNotify({});
     call_->BindPinLocked({});
+    call_->BindCallUiShown({});
   }
   if (chat_) {
     chat_->BindCallActions({});

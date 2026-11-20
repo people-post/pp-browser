@@ -26,6 +26,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -114,6 +115,7 @@ protected:
         "<button id=\"open_ep\" data-event-click=\"open_security_page('ai_endpoint')\">x</button>"
         "<button id=\"open_int\" data-event-click=\"open_security_page('integrations')\">x</button>"
         "<button id=\"open_be\" data-event-click=\"open_security_page('backend_custom')\">x</button>"
+        "<button id=\"open_relays\" data-event-click=\"open_security_page('relays')\">x</button>"
         "<button id=\"close_sub\" data-event-click=\"close_security_page()\">x</button>"
         "<button id=\"sel_dev\" data-event-click=\"select_section('devices')\">x</button>"
         "<div id=\"xrow\" data-event-click=\"open_security_page('transfer')\">"
@@ -426,7 +428,8 @@ TEST_F(SettingsAdvancedSubpageTest, EachEntryOpensItsPageOnTheLocalBackStackAndB
     const char* zh;
   } entries[] = {{"open_ep", "ai_endpoint", "Custom endpoint", "自定义接口"},
                  {"open_int", "integrations", "Integration settings", "集成设置"},
-                 {"open_be", "backend_custom", "Custom addresses", "自定义地址"}};
+                 {"open_be", "backend_custom", "Custom addresses", "自定义地址"},
+                 {"open_relays", "relays", "My relays", "我的中继"}};
   for (const char* language : {"en", "zh-Hans"}) {
     LocalizationService::Instance().SetPreferredLanguage(language);
     for (const auto& entry : entries) {
@@ -492,7 +495,8 @@ TEST_F(SettingsAdvancedSubpageTest, EverySubpageFileIsIncludedOnceInTheDesktopPa
     const char* page;
   } files[] = {{"settings_section_advanced_endpoint", "ai_endpoint"},
                {"settings_section_advanced_integrations", "integrations"},
-               {"settings_section_advanced_backend", "backend_custom"}};
+               {"settings_section_advanced_backend", "backend_custom"},
+               {"settings_section_advanced_relays", "relays"}};
   const auto count = [](const std::string& text, const std::string& needle) {
     size_t n = 0;
     for (size_t at = text.find(needle); at != std::string::npos; at = text.find(needle, at + 1)) {
@@ -775,6 +779,62 @@ TEST_F(SettingsRealViewTest, TheHelpMarksOfTheServiceRowAndTheAutoUpdateRowOnlyS
   EXPECT_EQ(knob->IsClassSet("settings-switch--on"), before) << "the switch did not move";
   RealClick(knob);
   EXPECT_NE(knob->IsClassSet("settings-switch--on"), before) << "control: the switch itself still moves";
+}
+
+// Settings -> Advanced: "My relays" sits right under the Service row. Its "?" asks PP 客服 and never opens the page; a tap
+// on the row opens it with its title; on a phone the relay list is read when the page is entered, not when Advanced opens.
+TEST_F(SettingsRealViewTest, TheMyRelaysRowIsUnderServiceItsHelpMarkOnlyAsksAndItRefreshesOnEntry) {
+  const std::string advanced = ExpandedView("settings_section_advanced");
+  const size_t service = advanced.find("on_choose_backend()");
+  const size_t relays_row = advanced.find("open_security_page('relays')");
+  const size_t run_logs = advanced.find("toggle_collect_run_logs()");
+  ASSERT_NE(service, std::string::npos);
+  ASSERT_NE(relays_row, std::string::npos);
+  ASSERT_NE(run_logs, std::string::npos);
+  EXPECT_LT(service, relays_row) << "My relays comes after the Service row";
+  EXPECT_LT(relays_row, run_logs) << "and before the rows further down";
+
+  AppRuntime::Initialize(); // the relay list is read on a worker
+  std::atomic<int> reads{0};
+  std::vector<std::string> asked;
+  commands.my_relays = [&reads]() -> Roe<MyRelaysView> {
+    ++reads;
+    return MyRelaysView{};
+  };
+  commands.ask_support_panel = [&asked](const std::string& question) {
+    asked.push_back(question);
+    return true;
+  };
+  settings.BindCommands(commands);
+  settings.SyncLayoutMode(); // a phone
+  Click("sel_adv");          // opening Advanced again
+  const size_t stack_before = back_stack.size();
+  AppRuntime::DrainWorkersThenUI();
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(reads.load(), 0) << "opening Advanced does not read the relays on a phone";
+
+  RealClick(ClickTarget("", "ask_setting_help('settings.relays.title')"));
+  ASSERT_EQ(asked.size(), 1u);
+  EXPECT_EQ(asked[0], "What does “My relays” do?");
+  EXPECT_EQ(Text("sp"), "") << "the \"?\" asks; the row's own click never fires (StopPropagation)";
+  AppRuntime::DrainWorkersThenUI();
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(reads.load(), 0);
+
+  RealClick(ClickTarget("", "open_security_page('relays')"));
+  EXPECT_EQ(Text("sp"), "relays") << "a tap on the row itself opens the page";
+  EXPECT_EQ(Text("spt"), "My relays");
+  AppRuntime::DrainWorkersThenUI();
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(reads.load(), 1) << "read once, on entering the page";
+
+  Click("close_sub"); // back returns to Advanced
+  AppRuntime::RunUITasks();
+  context->Update();
+  EXPECT_EQ(Text("sp"), "");
+  EXPECT_EQ(back_stack.size(), stack_before) << "back returns to Advanced, not out of Settings";
+  EXPECT_EQ(back_stack.back().first, "settings_detail");
+  AppRuntime::Shutdown();
 }
 
 // Settings -> Advanced -> AI model and endpoint -> "Preset": the desktop keeps its <select>, a phone gets the app's own

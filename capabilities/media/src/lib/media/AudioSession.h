@@ -98,6 +98,27 @@ int64_t LastRouteChangeMs();
  */
 void NotifyVoiceProcessingStarted(double sample_rate, int channels, int bypass, int agc);
 
+/**
+ * True where the OS microphone permission state is real and a wanted microphone with no open device is a fault of this
+ * call (iOS, Android): the call page then says so (B233). False on desktop, where a machine without a usable
+ * microphone, or with it blocked in the OS privacy settings, looks the same from here and hang-up-and-restart would be
+ * wrong advice; there the page keeps what it said before. Pure platform fact; the call's health still records it.
+ */
+bool MicNotOpenHintApplies();
+
+/**
+ * B233 diagnostics gate: set once at startup by the app (true wherever the QA origin is compiled in, today every iOS
+ * build; see CallKitDiagnostics.h). The platform's diagnostic lines below are written only while it is on. Any thread.
+ */
+void SetDiagnosticsEnabled(bool enabled);
+bool DiagnosticsEnabled();
+/**
+ * A speaker lease released by a tone (holder "ringtone" / "ringback") has had its stream closed, on the device thread,
+ * `since_stop_ms` after the lease was released. iOS, with DiagnosticsEnabled: one developer-log line (timestamps only).
+ * Observation only: it changes nothing and never blocks. No-op elsewhere.
+ */
+void NoteToneStreamClosed(const char* holder, int64_t since_stop_ms);
+
 /** True when the OS exposes earpiece vs loudspeaker routing. */
 bool SupportsSpeakerToggle();
 /** The live session's speaker choice. */

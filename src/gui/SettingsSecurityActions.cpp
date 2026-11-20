@@ -40,7 +40,7 @@ SettingsSecurityActions::SettingsSecurityActions(SettingsHost& host, const Setti
     if (recovery_shown_) {
       HideRecoveryPhrase();
     } else {
-      ++recovery_shown_count_;
+      VoidPendingReveal();
     }
   });
 }
@@ -353,6 +353,7 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
       },
       [this, revealed, request]() {
         if (request != recovery_shown_count_) {
+          revealed->reset(); // a voided reveal: the decoded phrase does not wait for the gate to drop its callbacks
           return;
         }
         if (!*revealed) {

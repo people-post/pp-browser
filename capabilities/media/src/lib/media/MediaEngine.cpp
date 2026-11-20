@@ -15,6 +15,7 @@
 #include "lib/media/VideoArrivalStats.h"
 #include "common/Metrics.h"
 #include "lib/media/IVideoCodec.h"
+#include "lib/media/MicPermission.h"
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/media/NoiseSuppressor.h"
 #include "lib/media/VideoYuv.h"
@@ -248,6 +249,7 @@ struct MediaThreadStageTracker {
     return MediaThreadStageName(static_cast<MediaThreadStage>(stage.load(std::memory_order_relaxed)));
   }
   int64_t MsInStage() const { return SteadyNowMs() - since_ms.load(std::memory_order_relaxed); }
+  bool In(MediaThreadStage s) const { return stage.load(std::memory_order_relaxed) == static_cast<uint8_t>(s); }
 };
 
 /**
@@ -586,6 +588,8 @@ struct MediaEngine::Impl {
   std::atomic<int> route_state{static_cast<int>(IMediaView::AudioRouteChange::None)};
   /** Capture is gone even after a reopen and an audio rebuild (MediaEngineHealth::capture_lost). */
   std::atomic<bool> capture_lost{false};
+  /** B233: how long a wanted microphone has had no open device; read-only, fed by HealthSnapshot (MicMissingClock). */
+  MicMissingClock mic_missing_clock;
   /** The capture thread is reopening / rebuilding the audio devices (IMediaView::AudioDevicesReopening). */
   std::atomic<bool> audio_reopening{false};
   /** Capture thread: audio_reopening for a scope. */
@@ -1453,7 +1457,7 @@ struct MediaEngine::Impl {
       if (auto audio = EnsureAudioLeases(/*reopen=*/false); !audio) {
         SDL_Log("MediaEngine: audio devices: %s", audio.error().message.c_str());
       } else if (!capture_available) {
-        SDL_Log("MediaEngine: started without capture device — sending silence; playback still active");
+        EngineLog().info << "started without capture device — sending silence; playback still active";
       }
       if (!capture_running.load()) {
         capture_stage.Set(MediaThreadStage::Exiting);
@@ -1510,7 +1514,7 @@ struct MediaEngine::Impl {
             last_audio_retry_ms = now;
             // All of it again (not just the missing half), so a duplex call can get its voice pair.
             pending.clear();
-            SDL_Log("MediaEngine: audio devices free again — taking them");
+            EngineLog().info << "audio devices free again — taking them";
             capture_stage.Set(MediaThreadStage::OpenDevices);
             const ReopeningScope reopening(audio_reopening);
             {
@@ -1566,14 +1570,14 @@ struct MediaEngine::Impl {
           // Android speakerphone / SoftMigrate can leave AudioRecord feeding zeros until reopen.
           // Android settle (Moto safety ramp) is the backend's ReopenSettle, on the device thread.
           pending.clear();
-          SDL_Log("MediaEngine: reopening audio devices (speaker route / SoftMigrate)");
+          EngineLog().info << "reopening audio devices (speaker route / SoftMigrate)";
           capture_stage.Set(MediaThreadStage::OpenDevices);
           const ReopeningScope reopening(audio_reopening);
           const bool retry_voice = audio_reopen_retry_voice.exchange(false, std::memory_order_acq_rel);
           if (auto audio = EnsureAudioLeases(/*reopen=*/true, retry_voice); !audio) {
             SDL_Log("MediaEngine: audio reopen failed: %s", audio.error().message.c_str());
           } else if (!capture_available) {
-            SDL_Log("MediaEngine: audio reopen — no capture device; sending silence");
+            EngineLog().info << "audio reopen — no capture device; sending silence";
           }
           // A reopen meant to bring voice processing back that did not get the pair (it failed, or the pair would
           // not open just then) keeps that intent for the next reopen; asking for one is left to the starvation path.
@@ -2857,6 +2861,7 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
   h.video_target_bps = impl->adaptation_target_video_bps.load(std::memory_order_relaxed);
   h.local_level = impl->local_input_level.load(std::memory_order_relaxed);
   h.remote_level = impl->remote_output_level.load(std::memory_order_relaxed);
+  MicWantedInputs mic_inputs;
   {
     Impl::TimedGetterLock lock(*impl, "HealthSnapshot");
     AudioDeviceLease* speaker = impl->speaker_lease.get();
@@ -2868,6 +2873,10 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
     h.packet_mode = impl->packet_mode;
     h.capture_available = impl->capture_available;
     h.capture_lost = impl->capture_lost.load(std::memory_order_acquire);
+    mic_inputs.engine_running = h.engine_running;
+    mic_inputs.capture_wanted = impl->spec.capture;
+    mic_inputs.muted = h.muted;
+    mic_inputs.capture_device_open = impl->mic_lease && impl->mic_lease->HasDevice();
     for (const auto& [id, stats] : impl->video_arrivals) {
       h.video_arrivals.push_back(VideoStreamArrival{.stream_id = id, .arrival = stats.Summary()});
     }
@@ -2889,6 +2898,30 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
       h.jitter_speech_drops += track->jitter.speech_drops();
       h.jitter_late_drops += track->jitter.drops_late();
     }
+  }
+  // B233: watch only. The OS facts are read here, outside the lock, and nothing below touches a device or a thread.
+  mic_inputs.os_has_session = AudioSession::IsInterrupted();
+  mic_inputs.route_change_pending =
+      impl->route_state.load(std::memory_order_acquire) != static_cast<int>(IMediaView::AudioRouteChange::None);
+  if (MicWantedButNotOpen(mic_inputs)) {
+    mic_inputs.permission_granted = MicPermissionState() == MicPermission::Granted;
+  }
+  const bool missing = MicWantedButNotOpen(mic_inputs);
+  const MicMissingClock::Reading mic =
+      impl->mic_missing_clock.Step(missing, mic_inputs.capture_device_open, SteadyNowMs());
+  // The engine itself opening or re-opening audio (read only: the capture thread's stage and its reopen flags) is
+  // not a missing microphone for up to kMicOpenGraceMs; the spell's log lines below keep the raw time.
+  const bool engine_opening = impl->capture_stage.In(MediaThreadStage::OpenDevices) ||
+                              impl->audio_reopening.load(std::memory_order_acquire) ||
+                              impl->audio_reopen_requested.load(std::memory_order_acquire);
+  h.mic_missing_ms = MicMissingReportedMs(mic.missing_ms, engine_opening);
+  h.mic_ever_open = mic.ever_open;
+  if (mic.began) {
+    EngineLog().info << "mic wanted but no capture device is open: began audio_io=" << h.audio_io;
+  }
+  if (mic.ended_after_ms > 0) {
+    EngineLog().info << "mic wanted but no capture device is open: ended after_ms=" << mic.ended_after_ms
+                     << " audio_io=" << h.audio_io << " device_open=" << (mic_inputs.capture_device_open ? 1 : 0);
   }
   return h;
 }

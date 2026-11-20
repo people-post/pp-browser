@@ -68,6 +68,7 @@ TEST_F(SettingsHelpQuestionTest, TheHardSettingsHaveOneBesideThem) {
       {"settings_section_advanced.rml", "settings.network.trusted_relays"},
       {"settings_section_advanced.rml", "settings.network.direct_connections"},
       {"settings_section_advanced.rml", "settings.network.reachable_without_relay"},
+      {"settings_section_advanced.rml", "settings.relays.title"},
       {"settings_section_notifications.rml", "settings.stay_connected"},
       {"settings_section_advanced_integrations.rml", "settings.help.topic.mcp"},
   };
@@ -79,6 +80,33 @@ TEST_F(SettingsHelpQuestionTest, TheHardSettingsHaveOneBesideThem) {
   }
   // "Send diagnostics" and its own "?" are gone (run logs are sent from Advanced, DEV/PLAN-send-run-logs.md).
   EXPECT_EQ(ReadAsset("views/settings_section_help.rml").find("open_diagnostics_help()"), std::string::npos);
+}
+
+// My relays ("?" right after its label, phone row and desktop heading): the ready question names the setting in the
+// UI language and goes to the PP 客服 half-screen panel on a phone.
+TEST_F(SettingsHelpQuestionTest, TheMyRelaysQuestionIsAskedInTheUiLanguage) {
+  const std::string rml = ReadAsset("views/settings_section_advanced.rml");
+  const std::string click = "data-event-click=\"ask_setting_help('settings.relays.title')\"";
+  size_t count = 0;
+  for (size_t at = rml.find(click); at != std::string::npos; at = rml.find(click, at + 1)) {
+    ++count;
+  }
+  EXPECT_EQ(count, 2u) << "the phone row and the desktop heading";
+  std::vector<std::string> to_panel;
+  SettingsCommands commands;
+  commands.ask_support_panel = [&to_panel](const std::string& question) {
+    to_panel.push_back(question);
+    return true;
+  };
+  SettingsController settings;
+  settings.BindCommands(commands);
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  settings.OnAskSettingHelp("settings.relays.title");
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  settings.OnAskSettingHelp("settings.relays.title");
+  ASSERT_EQ(to_panel.size(), 2u);
+  EXPECT_EQ(to_panel[0], "What does “My relays” do?");
+  EXPECT_EQ(to_panel[1], "「我的中继」是什么意思？");
 }
 
 // The crash-report switch is off the Help page, phone and desktop (2026-11-19): its upload endpoint does not exist yet

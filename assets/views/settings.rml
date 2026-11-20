@@ -205,6 +205,9 @@
       <div class="settings-section settings-section--grouped settings-mock stack" data-if="security_page == 'backend_custom'">
 {{include:settings_section_advanced_backend}}
       </div>
+      <div class="settings-section settings-section--grouped settings-mock stack" data-if="security_page == 'relays'">
+{{include:settings_section_advanced_relays}}
+      </div>
       <!-- Pick one value (theme, language, who can call...): one row each, the current one checked; a tap applies it
            and the page goes back (SettingsChoicePage). -->
       <div class="settings-section settings-section--grouped stack settings-choice-page" data-if="security_page == 'choice'">

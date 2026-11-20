@@ -42,6 +42,8 @@ namespace pbr {
 class IMediaView;
 class CallUiBackend;
 
+struct CallControllerTestAccess;
+
 /**
  * Shell-level call ring / in-call chrome: renders CallPresenter's screen (words, avatars, video,
  * chrome modes) and owns the devices around it (ringtone, ringback, levels, metrics). What the call
@@ -49,6 +51,7 @@ class CallUiBackend;
  */
 class CallController : public Module {
 public:
+  friend struct CallControllerTestAccess;
   CallController();
   ~CallController();
   CallController(const CallController&) = delete;
@@ -68,6 +71,11 @@ public:
   void BindOpenThread(std::function<void(const std::string& thread_id)> callback);
   /** PP's PIN gate is up (its vault is not open): a ring the phone's call screen rings stays there meanwhile. */
   void BindPinLocked(std::function<bool()> pin_locked);
+  /**
+   * A call screen has just come up (ring, answer, call, kept failed page, or the phone's own call screen ringing).
+   * Only the fact is told; what to hide because of it is the listener's (Application wires Settings).
+   */
+  void BindCallUiShown(std::function<void()> callback);
 
   void BindToMessaging();
   void Tick();
@@ -386,6 +394,13 @@ private:
   /** The phone ringer's last logged reading. */
   std::string ringer_logged_;
   std::function<bool()> pin_locked_;
+  std::function<void()> call_ui_shown_;
+  /** The ring page / the call page is up: each one's turning on is notified (CallUiShown). Expanding a minimised call
+   * is not an appearance: the page is already up, and nothing is notified. */
+  bool ring_ui_visible_ = false;
+  bool in_call_ui_visible_ = false;
+  /** The ring call id the phone's own call screen is ringing, already notified ("" none). */
+  std::string system_ring_notified_id_;
   /** V060: the call on hold while the OS has its audio, and the camera's rest (hold, background). */
   CallLocalHold local_hold_;
   uint64_t background_listener_ = 0;

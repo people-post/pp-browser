@@ -1,6 +1,6 @@
 <!-- Pictures picked together, looked at before they go (DEV/PLAN-picture-send-preview.md): a full-screen layer over the
      chat. Top bar (back, "n / N", remove), the current picture large (swipe sideways), a strip of small ones, and the
-     bottom: a line of text, the "original" switch and one full-width Send button. The page is a column and the picture
+     bottom: a line of text, the "original" check and one full-width Send button. The page is a column and the picture
      takes what is left, so the bottom stays above the keyboard. -->
 <div class="picture-send" data-model="picture_send">
   <div class="ps-top">
@@ -45,12 +45,13 @@
       <p class="ps-placeholder" data-if="ps_text == ''">{{i18n:picture_send.placeholder}}</p>
     </div>
     <button class="ps-original" type="button" data-event-click="ps_toggle_original()">
+      <!-- A round check: a ring when empty, a filled disc with a tick when chosen; empty each time the page opens. -->
+      <div class="ps-original-check" data-class-ps-original-check--on="ps_original">
+        <div class="ps-original-hole" data-if="!ps_original"></div>
+        <svg class="ps-original-tick" data-if="ps_original" src="../icons/check.svg" width="12" height="12"></svg>
+      </div>
       <span class="ps-original-label">{{i18n:picture_send.original}}</span>
       <span class="ps-original-size" data-if="ps_original">{{ps_size_label}}</span>
-      <span class="ps-spacer"></span>
-      <span class="settings-switch ps-switch" data-class-settings-switch--on="ps_original">
-        <span class="settings-switch-knob"></span>
-      </span>
     </button>
     <button class="ps-send" type="button" data-event-click="ps_send()" data-attrif-disabled="!ps_can_send"
             data-class-ps-send--off="!ps_can_send">{{ps_send_label}}</button>

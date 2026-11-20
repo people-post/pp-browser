@@ -119,6 +119,15 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
     out.quality = CallPathQuality::Excellent;
     out.quality_bars = 4;
   }
+  out.network_quality = out.quality;
+  // B233: the microphone fact is its own: the pill and the short status line follow it, whatever the grade is. The grade
+  // becomes NoMic only where nothing else is wrong (a reconnect, no audio, one-way audio); the bars and the network
+  // grade stay what the network says, because a closed microphone is not a bad line.
+  out.mic_not_open = in.grade_mic_not_open && CallMicNotOpen(in.engine);
+  if (out.mic_not_open && out.asymmetry == CallAudioAsymmetry::None && out.quality != CallPathQuality::Reconnecting &&
+      out.quality != CallPathQuality::NoAudio) {
+    out.quality = CallPathQuality::NoMic;
+  }
   return out;
 }
 
@@ -135,6 +144,8 @@ const char* CallPathQualityLabelKey(CallPathQuality q) {
       return "call.status.reconnecting";
     case CallPathQuality::NoAudio:
       return "call.quality.no_audio";
+    case CallPathQuality::NoMic:
+      return ""; // the network is fine; the status line and the pill say the microphone is not open
   }
   return "";
 }
@@ -153,6 +164,8 @@ const char* CallPathQualityDetailsLabelKey(CallPathQuality q) {
       return "call.status.reconnecting";
     case CallPathQuality::NoAudio:
       return "call.quality.no_audio";
+    case CallPathQuality::NoMic:
+      return "call.quality.no_mic";
   }
   return "call.quality.good";
 }
@@ -263,7 +276,8 @@ std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_m
       << " hop_pressure=" << v.hop.path_pressure << " opus_bps=" << v.engine.opus_target_bps
       << " tx_drops=" << v.engine.outbound_drops << " hop_drops_rate=" << v.hop.drops_rate
       << " hop_drops_queue=" << v.hop.drops_queue << " hop_drops_ceiling=" << v.hop.drops_ceiling
-      << " rx_age_ms=" << rx_age << " mic_lvl=" << v.engine.local_level << " peer_lvl=" << v.engine.remote_level;
+      << " rx_age_ms=" << rx_age << " mic_missing_ms=" << v.engine.mic_missing_ms << " mic_lvl=" << v.engine.local_level
+      << " peer_lvl=" << v.engine.remote_level;
   if (v.link.available) {
     out << " link_rtt_ms=" << v.link.rtt_ms << " link_resend_pct=" << v.link.resend_pct;
   }
