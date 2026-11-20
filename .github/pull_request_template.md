@@ -1,6 +1,7 @@
 ## Summary
 
 <!-- What changed and why, user-visible behaviour first. Link the issue, the decision (projects/*/DECISIONS.md) or the doc. -->
+<!-- A release branch (release/app-X.Y, release/node-X.Y) takes fixes only, and only once they are on main: merge the fix here, then label this PR `backport release/app-X.Y` (one label per branch). A fix only a release branch needs: PR it to the branch with the label `release-branch-only` and a line "Why not on main: …" (docs/ops/RELEASE.md § Release branches and backports). -->
 
 ## Contracts and docs
 
