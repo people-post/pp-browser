@@ -57,6 +57,7 @@ Shapes that peers, relay, older clients, or last year’s disk must understand. 
 | [contracts/AT_REST_ENCRYPTION.md](contracts/AT_REST_ENCRYPTION.md) | PIN vault, DEK, `identity.enc` | vault file version |
 | [contracts/DATA_LAYOUT.md](contracts/DATA_LAYOUT.md) | Paths, profile tree, JSON schema versions | on-disk layout |
 | [contracts/COMPATIBILITY.md](contracts/COMPATIBILITY.md) | Dirty folders; newer peer/API; wipe vs migrate | policy |
+| [contracts/SIGNED_EXTENSIONS.md](contracts/SIGNED_EXTENSIONS.md) | Every signed object's shared rules: outside/inside version, signed-bytes header, the extension area (`ext_b64`), algorithm ids and typed blobs, the receiver's order; the vector files | each object's `*_version`; extension types, algorithm ids (registries) |
 | [contracts/SERVICE_ENDPOINTS.md](contracts/SERVICE_ENDPOINTS.md) | HTTP relay / directory / registration | `/v1/…` surface |
 | [contracts/MESH_DHT.md](contracts/MESH_DHT.md) | AMP Kademlia peer routing (n2 draft) | wire `version` 1, `protocol_id` `/pp-mesh/dht/1.0.0` |
 | [contracts/MESH_DIRECTORY_AMP.md](contracts/MESH_DIRECTORY_AMP.md) | Amp directory twin of HTTP phone book (N029 nd4) | `/pp-mesh/directory/1.0.0`, Amp-first then HTTP |

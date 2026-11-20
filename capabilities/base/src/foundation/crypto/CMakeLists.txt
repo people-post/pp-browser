@@ -21,6 +21,9 @@ pp_browser_add_foundation_library(pp_foundation_crypto
     ProfileSecretsEngine.cpp
     ProfileUnlockGate.cpp
     LinkDeviceCodec.cpp
+    SignedBytes.cpp
+    SignedReceive.cpp
+    TypedBlob.cpp
   PUBLIC_LIBS
     pp_foundation_error
     pp_crypto
