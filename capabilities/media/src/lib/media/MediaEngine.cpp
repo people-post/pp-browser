@@ -1456,7 +1456,7 @@ struct MediaEngine::Impl {
       if (auto audio = EnsureAudioLeases(/*reopen=*/false); !audio) {
         SDL_Log("MediaEngine: audio devices: %s", audio.error().message.c_str());
       } else if (!capture_available) {
-        SDL_Log("MediaEngine: started without capture device — sending silence; playback still active");
+        EngineLog().info << "started without capture device — sending silence; playback still active";
       }
       if (!capture_running.load()) {
         capture_stage.Set(MediaThreadStage::Exiting);
@@ -1513,7 +1513,7 @@ struct MediaEngine::Impl {
             last_audio_retry_ms = now;
             // All of it again (not just the missing half), so a duplex call can get its voice pair.
             pending.clear();
-            SDL_Log("MediaEngine: audio devices free again — taking them");
+            EngineLog().info << "audio devices free again — taking them";
             capture_stage.Set(MediaThreadStage::OpenDevices);
             const ReopeningScope reopening(audio_reopening);
             {
@@ -1569,14 +1569,14 @@ struct MediaEngine::Impl {
           // Android speakerphone / SoftMigrate can leave AudioRecord feeding zeros until reopen.
           // Android settle (Moto safety ramp) is the backend's ReopenSettle, on the device thread.
           pending.clear();
-          SDL_Log("MediaEngine: reopening audio devices (speaker route / SoftMigrate)");
+          EngineLog().info << "reopening audio devices (speaker route / SoftMigrate)";
           capture_stage.Set(MediaThreadStage::OpenDevices);
           const ReopeningScope reopening(audio_reopening);
           const bool retry_voice = audio_reopen_retry_voice.exchange(false, std::memory_order_acq_rel);
           if (auto audio = EnsureAudioLeases(/*reopen=*/true, retry_voice); !audio) {
             SDL_Log("MediaEngine: audio reopen failed: %s", audio.error().message.c_str());
           } else if (!capture_available) {
-            SDL_Log("MediaEngine: audio reopen — no capture device; sending silence");
+            EngineLog().info << "audio reopen — no capture device; sending silence";
           }
           // A reopen meant to bring voice processing back that did not get the pair (it failed, or the pair would
           // not open just then) keeps that intent for the next reopen; asking for one is left to the starvation path.
@@ -2910,6 +2910,13 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
       impl->mic_missing_clock.Step(missing, mic_inputs.capture_device_open, SteadyNowMs());
   h.mic_missing_ms = mic.missing_ms;
   h.mic_ever_open = mic.ever_open;
+  if (mic.began) {
+    EngineLog().info << "mic wanted but no capture device is open: began audio_io=" << h.audio_io;
+  }
+  if (mic.ended_after_ms > 0) {
+    EngineLog().info << "mic wanted but no capture device is open: ended after_ms=" << mic.ended_after_ms
+                     << " audio_io=" << h.audio_io << " device_open=" << (mic_inputs.capture_device_open ? 1 : 0);
+  }
   return h;
 }
 

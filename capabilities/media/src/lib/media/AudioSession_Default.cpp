@@ -31,6 +31,7 @@ bool SpeakerToggleNeedsDeviceReopen() {
 }
 
 void NotifyVoiceProcessingStarted(double /*sample_rate*/, int /*channels*/, int /*bypass*/, int /*agc*/) {}
+void NoteToneStreamClosed(const char* /*holder*/, int64_t /*since_stop_ms*/) {}
 
 int OpusEncoderComplexity() {
   return 8;

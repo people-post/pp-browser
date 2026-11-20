@@ -10,10 +10,12 @@
 
 #include "foundation/platform/IosCallSystemUi.h"
 
+#include "foundation/platform/CallKitDiagnostics.h"
 #include "foundation/platform/CallPushAge.h"
 #include "foundation/platform/CallSystemUi.h"
 #include "common/Diag.h"
 #include "common/IPushDeviceRegistrar.h"
+#include "common/Logger.h"
 #include "common/Utilities.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 
@@ -27,6 +29,7 @@
 #include <chrono>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -92,6 +95,26 @@ void NotePush(const ShareWord what, const CallPushAge& age) {
 
 double UptimeSec() {
   return [NSProcessInfo processInfo].systemUptime;
+}
+
+/**
+ * B233 diagnostics (non-store builds only, CallKitDiagnosticsEnabled): one line in the developer log with the
+ * process's monotonic clock in ms, and `since_ms` from an earlier reading when there is one. Timestamps and flags only.
+ */
+void CallKitDiag(const char* what, const double since_sec = -1, const char* reason = nullptr) {
+  if (!CallKitDiagnosticsEnabled()) {
+    return;
+  }
+  static logging::Logger log = logging::getLogger("Platform.CallKit");
+  std::ostringstream line;
+  line << "callkit " << what << " t_ms=" << static_cast<int64_t>(UptimeSec() * 1000);
+  if (since_sec >= 0) {
+    line << " since_ms=" << static_cast<int64_t>((UptimeSec() - since_sec) * 1000);
+  }
+  if (reason != nullptr) {
+    line << " reason=" << reason;
+  }
+  log.info << line.str();
 }
 
 /** The push's `sent_at` (the relay's send time, Unix ms) when it is a JSON number; else none (an older relay). */
@@ -222,6 +245,8 @@ public:
     } else {
       NotePush("push_locked", age);
     }
+    const double reported_at = UptimeSec();
+    CallKitDiag(stale ? "push_call_reported_stale" : (app_rings ? "shadow_call_reported" : "push_call_reported"));
     [provider_ reportNewIncomingCallWithUUID:uuid
                                       update:Update({}, false)
                                   completion:^(NSError* error) {
@@ -242,6 +267,8 @@ public:
                                         reason = CXCallEndedReasonAnsweredElsewhere;
                                       }
                                       [provider_ reportCallWithUUID:uuid endedAtDate:nil reason:reason];
+                                      CallKitDiag("shadow_call_ended", reported_at,
+                                                  stale ? "unanswered" : (app_rings ? "answered_elsewhere" : "failed"));
                                     }
                                     [uuid release];
                                     if (completion) {
@@ -457,6 +484,7 @@ IosCallSystemUi& Ui() {
   (void)provider;
   (void)audioSession;
   NSLog(@"CallKit: audio session activated");
+  pbr::CallKitDiag("audio_session_activated");
   pbr::Ui().OnAudioSession(true);
 }
 
@@ -464,6 +492,7 @@ IosCallSystemUi& Ui() {
   (void)provider;
   (void)audioSession;
   NSLog(@"CallKit: audio session deactivated");
+  pbr::CallKitDiag("audio_session_deactivated");
   pbr::Ui().OnAudioSession(false);
 }
 

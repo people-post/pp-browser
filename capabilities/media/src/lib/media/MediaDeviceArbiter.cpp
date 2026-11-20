@@ -1,4 +1,5 @@
 #include "lib/media/MediaDeviceArbiter.h"
+#include "lib/media/AudioSession.h"
 #include "lib/media/AutoreleasePool.h"
 #include "lib/media/MediaThreadName.h"
 #include "lib/media/MicEndpoints.h"
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <future>
@@ -443,10 +445,19 @@ struct LeaseSlot {
     }
     live->Unhold(id);
     if (closing) {
-      live->LaneFor(kind).Post(
-          MediaDeviceLane::Task{[closing = std::move(closing)]() mutable { closing.reset(); },
-                                std::string("close ") + MediaDeviceKindName(kind) + " for " + holder,
-                                live->budgets.close, kind, MediaDeviceOp::Close});
+      live->LaneFor(kind).Post(MediaDeviceLane::Task{
+          [closing = std::move(closing), holder = holder, kind = kind,
+           released_at = std::chrono::steady_clock::now()]() mutable {
+            closing.reset();
+            // B233: when the close finished, for the tone holders (iOS diagnostics only).
+            if (kind == MediaDeviceKind::Speaker) {
+              AudioSession::NoteToneStreamClosed(holder.c_str(), std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                                     std::chrono::steady_clock::now() - released_at)
+                                                                     .count());
+            }
+          },
+          std::string("close ") + MediaDeviceKindName(kind) + " for " + holder, live->budgets.close, kind,
+          MediaDeviceOp::Close});
     }
   }
 };

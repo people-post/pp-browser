@@ -98,6 +98,19 @@ int64_t LastRouteChangeMs();
  */
 void NotifyVoiceProcessingStarted(double sample_rate, int channels, int bypass, int agc);
 
+/**
+ * B233 diagnostics gate: set once at startup by the app (true only in builds that can reach the QA backend; the store
+ * build leaves it false). The platform's diagnostic lines below are written only while it is on. Any thread.
+ */
+void SetDiagnosticsEnabled(bool enabled);
+bool DiagnosticsEnabled();
+/**
+ * A speaker lease released by a tone (holder "ringtone" / "ringback") has had its stream closed, on the device thread,
+ * `since_stop_ms` after the lease was released. iOS, with DiagnosticsEnabled: one developer-log line (timestamps only).
+ * Observation only: it changes nothing and never blocks. No-op elsewhere.
+ */
+void NoteToneStreamClosed(const char* holder, int64_t since_stop_ms);
+
 /** True when the OS exposes earpiece vs loudspeaker routing. */
 bool SupportsSpeakerToggle();
 /** The live session's speaker choice. */

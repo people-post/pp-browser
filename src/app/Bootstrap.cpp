@@ -6,7 +6,9 @@
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/BackendProfile.h"
 #include "foundation/data/Config.h"
+#include "foundation/platform/CallKitDiagnostics.h"
 #include "foundation/platform/DeploymentProfile.h"
+#include "lib/media/AudioSession.h"
 #include "foundation/data/ProfileManifest.h"
 #include "feature/product/HubSettingsProjection.h"
 #include "feature/product/UiDemoConfig.h"
@@ -41,6 +43,8 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
     return config.error();
   }
   SetSendContentSha256(config->relay_content_sha256);
+  // B233: the audio-session timing lines exist only in builds that can reach QA (never the store build).
+  AudioSession::SetDiagnosticsEnabled(CallKitDiagnosticsEnabled());
   AppPaths::DataDir(config->data_dir);
 
   auto registry = ProfileRegistry::Load(AppPaths::DataDir());

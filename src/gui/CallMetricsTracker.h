@@ -111,10 +111,14 @@ public:
     call_.was_connected = tick.connected;
     const int64_t dt = call_.last_media_tick_ms ? now_ms - call_.last_media_tick_ms : 0;
     call_.last_media_tick_ms = now_ms;
-    const int q = std::clamp(static_cast<int>(tick.quality), 0, 5);
+    const int q = std::clamp(static_cast<int>(tick.quality), 0, 6);
     call_.quality_ms[q] += dt;
     if (tick.quality == CallPathQuality::NoAudio) {
       call_.no_audio_ms += dt;
+    }
+    // B233: time a wanted microphone had no open device, from when the call says so (the first seconds are an open).
+    if (h.engine_running && CallMicNotOpen(h)) {
+      call_.no_mic_ms += dt;
     }
     if (call_.first_audio_ms < 0 && Delta(h.rx_audio_frames, call_.base.rx_audio_frames) > 0) {
       call_.first_audio_ms = now_ms - call_.connected_ms;
@@ -129,6 +133,8 @@ public:
     if (h.engine_running) {
       call_.last = h;
       call_.have_running_sample = true;
+      call_.mic_ever_open = call_.mic_ever_open || h.mic_ever_open;
+      call_.aec_ever = call_.aec_ever || h.audio_io == "vpio";
     }
     call_.last_sample_stopped = !h.engine_running;
     return out;
@@ -210,8 +216,12 @@ private:
     int path_changes = 0;
     int reconnects = 0;
     bool was_connected = true;
-    int64_t quality_ms[6] = {0, 0, 0, 0, 0, 0};
+    int64_t quality_ms[7] = {0, 0, 0, 0, 0, 0, 0};
     int64_t no_audio_ms = 0;
+    int64_t no_mic_ms = 0;
+    /** A capture device was open at some running sample / the call ran on the voice-processing path at some sample. */
+    bool mic_ever_open = false;
+    bool aec_ever = false;
     int64_t first_audio_ms = -1;
     int64_t first_video_ms = -1;
     int64_t jb_target_max_ms = 0;
@@ -326,6 +336,8 @@ private:
         .Add("first_audio_ms", call_.first_audio_ms)
         .Add("first_video_ms", call_.first_video_ms)
         .Pick("audio_io", l.audio_io, kAudioIo)
+        .Add("aec", call_.aec_ever ? 1 : 0)
+        .Add("mic", call_.mic_ever_open ? 1 : 0)
         .Add("rx_audio", Delta(l.rx_audio_frames, b.rx_audio_frames))
         .Add("tx_audio", Delta(l.tx_audio_frames, b.tx_audio_frames))
         .Add("underrun", Delta(l.playout_underruns, b.playout_underruns))
@@ -343,7 +355,9 @@ private:
         .Add("q_poor_pct", pct(call_.quality_ms[3]))
         .Add("q_reconnecting_pct", pct(call_.quality_ms[4]))
         .Add("q_noaudio_pct", pct(call_.quality_ms[5]))
+        .Add("q_nomic_pct", pct(call_.quality_ms[6]))
         .Add("no_audio_s", static_cast<double>(call_.no_audio_ms) / 1000.0)
+        .Add("no_mic_s", static_cast<double>(call_.no_mic_ms) / 1000.0)
         .Add("ui_stalls", call_.stalls)
         .Add("ui_stall_max_ms", call_.stall_max_ms);
     if (call_.self_tile_ms > 0) {
