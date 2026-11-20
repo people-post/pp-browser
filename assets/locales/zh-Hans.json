@@ -128,7 +128,7 @@
     "compat.update_required.message": "这个版本的 PP 已经不再支持，请更新后继续使用。",
     "compat.update_required.action": "更新",
     "compat.update_card.body": "有新版本，更新后更好用。",
-    "compat.update_card.body_nolink": "请在您安装 PP 的地方更新。",
+    "compat.update_card.body_nolink": "请在你安装 PP 的地方更新。",
     "compat.update_card.action": "更新",
     "compat.update_card.later": "以后再说",
     "support.entry.title": "PP 客服",

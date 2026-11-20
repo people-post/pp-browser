@@ -24,7 +24,8 @@ TEST(UpdateLinkTest, APlaceholderOrNonHttpsLinkCountsAsNoLink) {
     EXPECT_FALSE(IsUsableUpdateUrl(bad)) << bad;
   }
   for (const char* good : {"https://apps.apple.com/app/id123", "https://testflight.apple.com/join/abc",
-                           "https://notexample.com/x", "https://pp.example.dev/x"}) {
+                           "https://notexample.com/x", "https://pp.example.dev/x", "https://xn--mnchen-3ya.de/x",
+                           "https://APPS.Apple.com/app/id1", "https://1password.com/x"}) {
     EXPECT_TRUE(IsUsableUpdateUrl(good)) << good;
   }
 }
@@ -40,6 +41,21 @@ TEST(UpdateLinkTest, APlaceholderGivesNoButtonOnPhonesAndLinuxAndTheReleasesPage
   const ClientCompatDocument sub = Doc("https://dl.example.test/x");
   EXPECT_EQ(UsableUpdateLink(sub, "ios", kFallback), "");
   EXPECT_EQ(UsableUpdateLink(Doc("http://insecure.com/x"), "android", kFallback), "");
+}
+
+TEST(UpdateLinkTest, AnotherSpellingOfTheReleasesPageIsTheFallbackToo) {
+  for (const char* variant :
+       {"HTTPS://GitHub.com/people-post/pp-browser/releases", "https://github.com/people-post/pp-browser/releases/",
+        "https://GITHUB.COM/people-post/pp-browser/releases//"}) {
+    const ClientCompatDocument doc = Doc(variant);
+    for (const char* platform : {"ios", "android", "linux"}) {
+      EXPECT_EQ(UsableUpdateLink(doc, platform, kFallback), "") << variant << " on " << platform;
+    }
+    EXPECT_EQ(UsableUpdateLink(doc, "macos", kFallback), variant);
+  }
+  EXPECT_EQ(UsableUpdateLink(Doc("https://github.com/people-post/pp-browser/releases/tag/v1"), "ios", kFallback),
+            "https://github.com/people-post/pp-browser/releases/tag/v1")
+      << "a different page on the same site is not the fallback";
 }
 
 TEST(UpdateLinkTest, ARealStoreLinkIsOfferedOnItsPlatform) {

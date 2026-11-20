@@ -71,9 +71,9 @@ TEST_F(UpdatePrefsTest, NothingNewIsWrittenUntilLaterWasTapped) {
   EXPECT_FALSE(object.contains("update_card_dismissed_ms"));
 }
 
-TEST_F(UpdatePrefsTest, AFileWithTheKeysIsReadByAKnownKeysOnlyReaderAsBefore) {
-  // What an older build does: it picks the keys it knows and never sees these. Modelled with unknown keys carried next
-  // to the known ones; every known field comes out as written.
+TEST_F(UpdatePrefsTest, AFileWithTheKeysAndAnUnknownKeyStillReadsEveryOtherFieldAsWritten) {
+  // Runs the current reader over a file that also carries a key nobody knows: the other fields come out as written.
+  // (A real older build is not run here; it reads known keys only and so drops these three at its next save.)
   MachinePreferences prefs;
   MachinePrefsFromObject(*TryParseObject(R"({"schema_version":1,"active_profile_id":"qa","collect_crash_logs":true,
       "update_card_version":"1.2.0","update_card_dismissals":1,"update_card_dismissed_ms":5,"a_future_key":{"x":1}})"),

@@ -2,6 +2,7 @@
 
 #include "feature/settings/UpdatePrefs.h"
 #include "gui/RecoveryReminder.h"
+#include "lib/net/ClientCompat.h"
 
 #include <cstdint>
 #include <functional>
@@ -31,26 +32,44 @@ struct UpdateCardPorts {
 };
 
 /**
+ * Versions are compared with CompareSemverCore (lib/net/ClientCompat.h), the comparison that decides the card itself:
+ * a leading "v" is ignored and a pre-release suffix is not looked at, so "v1.2.0" and "1.2.0" are one announcement.
+ * An announcement is "new" only when it is greater than the stored one (or nothing is stored); an equal or lower one
+ * (a rollback of the announced version) is the stored announcement and follows its rhythm.
+ */
+inline bool UpdateCardIsNewAnnouncement(const std::string& latest_version, const UpdateCardState& state) {
+  return state.version.empty() || CompareSemverCore(latest_version, state.version) > 0;
+}
+
+/**
  * The card is up while a newer version exists; "Later" hides it and, on the recovery card's rhythm
- * (kRecoveryReminderRepeatMs, 7 days), it returns once, then never for that version. A still-newer version starts over.
+ * (kRecoveryReminderRepeatMs, 7 days), it returns once, then never for that announcement. A greater announced version
+ * starts over. A clock that went backwards (now before the tap) counts as the 7 days having passed, so the card cannot
+ * stay hidden for good (the recovery reminder has the same property, left as it is).
  */
 inline bool ShouldShowUpdateCard(const std::string& latest_version, const UpdateCardState& state,
                                  const int64_t now_ms) {
   if (latest_version.empty()) {
     return false;
   }
-  if (state.version != latest_version || state.dismissals <= 0) {
+  if (UpdateCardIsNewAnnouncement(latest_version, state) || state.dismissals <= 0) {
     return true;
   }
-  return state.dismissals == 1 && now_ms - state.dismissed_ms >= kRecoveryReminderRepeatMs;
+  return state.dismissals == 1 &&
+         (now_ms < state.dismissed_ms || now_ms - state.dismissed_ms >= kRecoveryReminderRepeatMs);
 }
 
-/** The state after "Later" on `latest_version` at `now_ms`. */
+/** The state after "Later" on `latest_version` at `now_ms`; a lower or equal announcement keeps the stored version. */
 inline UpdateCardState UpdateCardAfterLater(const std::string& latest_version, const UpdateCardState& state,
                                             const int64_t now_ms) {
   UpdateCardState next;
-  next.version = latest_version;
-  next.dismissals = state.version == latest_version ? (state.dismissals >= 2 ? 2 : state.dismissals + 1) : 1;
+  if (UpdateCardIsNewAnnouncement(latest_version, state)) {
+    next.version = latest_version;
+    next.dismissals = 1;
+  } else {
+    next.version = state.version;
+    next.dismissals = state.dismissals >= 2 ? 2 : state.dismissals + 1;
+  }
   next.dismissed_ms = now_ms;
   return next;
 }

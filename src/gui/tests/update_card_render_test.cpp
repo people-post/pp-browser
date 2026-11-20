@@ -211,12 +211,22 @@ TEST_F(UpdateCardRenderTest, TheCardFollowsTheModelAndNeverShowsOverASearchOrThe
   DataModelHost::Instance().Dirty("shell", "showing_archived");
   Apply();
   EXPECT_TRUE(Cards().empty());
+  shell_.showing_archived = false;
+  shell_.sessions_query = "li";
+  DataModelHost::Instance().Dirty("shell", "showing_archived");
+  DataModelHost::Instance().Dirty("shell", "sessions_query");
+  Apply();
+  EXPECT_TRUE(Cards().empty()) << "a search is on";
+  shell_.sessions_query = "";
+  DataModelHost::Instance().Dirty("shell", "sessions_query");
+  Apply();
+  EXPECT_EQ(Cards().size(), 1u) << "back once the search is cleared";
 }
 
 TEST_F(UpdateCardRenderTest, TheLinesAreTranslated) {
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
   EXPECT_EQ(Tr("compat.update_card.body"), "有新版本，更新后更好用。");
-  EXPECT_EQ(Tr("compat.update_card.body_nolink"), "请在您安装 PP 的地方更新。");
+  EXPECT_EQ(Tr("compat.update_card.body_nolink"), "请在你安装 PP 的地方更新。");
   EXPECT_EQ(Tr("compat.update_card.action"), "更新");
   EXPECT_EQ(Tr("compat.update_card.later"), "以后再说");
   LocalizationService::Instance().SetPreferredLanguage("en");

@@ -576,7 +576,7 @@ Unauthenticated public GET (directory-style; no identity unlock required):
 |-------|----------|--------|
 | `schema_version` | yes | **1**; reject unsupported **newer** |
 | `min_client_version` | no | Semver floor; client below → blocking update UX |
-| `latest_client_version` | no | Semver latest; client below (but ≥ min) → soft banner |
+| `latest_client_version` | no | Semver latest; client below (but ≥ min) → the card at the top of the chat list (not a banner; the relay's `message` is not shown on the card, only the blocking dialog uses it) |
 | `min_protocol_gen` | no | Global protocol floor (default 1) |
 | `upgrade_url` | no | Empty → GitHub Releases fallback |
 | `upgrade_urls` | no | `{ ios, android, macos, windows, linux }`, each optional: that platform's update link, **https only** (anything else, and any other key, is dropped). `ResolvedUpgradeUrl` takes this build's (`Platform::OsName()`), else `upgrade_url`, else the fallback |

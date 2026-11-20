@@ -877,6 +877,9 @@ private:
   /** Whether this device holds a recovery phrase: one vault read per messaging session / identity change. */
   std::optional<bool> recovery_phrase_present_;
   UpdateCardPorts update_card_;
+  /** machine.json's memory of "Later", read when the announced version changes (not on every list refresh). */
+  UpdateCardState update_card_state_;
+  std::optional<std::string> update_card_state_for_;
   /**
    * One up per WireMessagingBindings (and when messaging goes away): a messaging-ready task's result is stored only
    * when the session it started in is still this one (MessagingReadyTasks).

@@ -2178,6 +2178,7 @@ void ChatController::OnRecoveryReminderLater() {
 
 void ChatController::BindUpdateCard(UpdateCardPorts ports) {
   update_card_ = std::move(ports);
+  update_card_state_for_.reset();
   RefreshUpdateCard();
 }
 
@@ -2196,8 +2197,11 @@ bool ChatController::UpdateCardShows() {
   if (!advice || !Store().Snapshot().profile_prefs.onboarding_completed) {
     return false;
   }
-  return ShouldShowUpdateCard(advice->latest_version, UpdatePrefs::Read(update_card_.machine_dir()),
-                              UpdateCardNowMs(update_card_));
+  if (update_card_state_for_ != advice->latest_version) {
+    update_card_state_ = UpdatePrefs::Read(update_card_.machine_dir()); // once per announced version
+    update_card_state_for_ = advice->latest_version;
+  }
+  return ShouldShowUpdateCard(advice->latest_version, update_card_state_, UpdateCardNowMs(update_card_));
 }
 
 void ChatController::RefreshUpdateCard() {
@@ -2225,8 +2229,12 @@ void ChatController::OnUpdateCardLater() {
     return;
   }
   const std::string dir = update_card_.machine_dir();
-  (void)UpdatePrefs::Write(
-      dir, UpdateCardAfterLater(advice->latest_version, UpdatePrefs::Read(dir), UpdateCardNowMs(update_card_)));
+  if (update_card_state_for_ != advice->latest_version) {
+    update_card_state_ = UpdatePrefs::Read(dir);
+    update_card_state_for_ = advice->latest_version;
+  }
+  update_card_state_ = UpdateCardAfterLater(advice->latest_version, update_card_state_, UpdateCardNowMs(update_card_));
+  (void)UpdatePrefs::Write(dir, update_card_state_);
   RefreshUpdateCard();
 }
 
