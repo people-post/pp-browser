@@ -225,6 +225,32 @@ TEST_F(PictureSendControllerTest, ALayerClosedByAnyoneIsBack) {
   EXPECT_EQ(fakes_.released, std::vector<std::string>{"a.jpg"});
 }
 
+TEST_F(PictureSendControllerTest, TheOriginalCheckIsOffEachTimeThePageOpensAndOnlyATapSetsIt) {
+  Arrive("a.jpg");
+  EXPECT_FALSE(controller_.OriginalChecked()) << "off when the page opens";
+  controller_.OnToggleOriginal();
+  EXPECT_TRUE(controller_.OriginalChecked());
+  EXPECT_TRUE(queue_->Original());
+  controller_.OnToggleOriginal();
+  EXPECT_FALSE(controller_.OriginalChecked());
+  controller_.OnToggleOriginal();
+  controller_.OnSend();
+  ASSERT_FALSE(controller_.IsOpen());
+  EXPECT_TRUE(fakes_.sent_items.at(0).second) << "that send went as original";
+  // The next pick opens the page again with a new queue: off, whatever the last send was.
+  queue_ = std::make_unique<PictureSendQueue>("chat-origin", AttachmentLimits{}, QueuePorts(fakes_));
+  Arrive("b.jpg");
+  EXPECT_TRUE(controller_.IsOpen());
+  EXPECT_FALSE(controller_.OriginalChecked());
+  EXPECT_FALSE(queue_->Original());
+  // Leaving with it checked and opening again: off too.
+  controller_.OnToggleOriginal();
+  controller_.OnBack();
+  queue_ = std::make_unique<PictureSendQueue>("chat-origin", AttachmentLimits{}, QueuePorts(fakes_));
+  Arrive("c.jpg");
+  EXPECT_FALSE(controller_.OriginalChecked());
+}
+
 TEST_F(PictureSendControllerTest, SendStartsTheQueueWithTheTextAndTheOriginalChoiceAndClosesThePage) {
   Arrive("a.jpg");
   Arrive("b.jpg");
@@ -715,17 +741,24 @@ TEST_P(PictureSendPageTest, TheSendButtonCountsOnlyWhatCanBeSentAndTheTooLargeOn
   EXPECT_EQ(Text(".ps-flag--stage"), "Too large to send");
 }
 
-TEST_P(PictureSendPageTest, TheSizeShowsOnlyWithOriginalOnAndSwitchingItOnMarksAPictureOverTheLimit) {
+TEST_P(PictureSendPageTest, TheSizeShowsOnlyWithOriginalCheckedAndCheckingItMarksAPictureOverTheLimit) {
   Arrive("a.jpg", 3 * kMb);
   Arrive("b.jpg", 4 * kMb);
   Frames();
-  EXPECT_EQ(Width(One(".ps-original-size")), 0.f) << "no size while the switch is off";
-  Tap(".ps-original");
+  EXPECT_EQ(Width(One(".ps-original-size")), 0.f) << "no size while the check is empty";
+  EXPECT_EQ(Count(".ps-original-check.storage-check--on"), 0U) << "empty when the page opens";
+  EXPECT_EQ(Count(".ps-original-check .storage-check-icon"), 0U);
+  EXPECT_GE(Width(One(".ps-original-check")), 22.f - 0.5f) << "a round check, not a switch";
+  EXPECT_EQ(Count(".settings-switch"), 0U);
+  Tap(".ps-original-check"); // the circle itself
   EXPECT_TRUE(queue_->Original());
+  EXPECT_EQ(Count(".ps-original-check.storage-check--on"), 1U) << "filled";
+  EXPECT_EQ(Count(".ps-original-check .storage-check-icon"), 1U) << "with a tick";
   EXPECT_GT(Width(One(".ps-original-size")), 0.f);
   EXPECT_EQ(Text(".ps-original-size"), "7.0 MB total");
-  Tap(".ps-original");
+  Tap(".ps-original-label"); // the label toggles it too
   EXPECT_FALSE(queue_->Original());
+  EXPECT_EQ(Count(".ps-original-check.storage-check--on"), 0U);
   EXPECT_EQ(Width(One(".ps-original-size")), 0.f);
 }
 

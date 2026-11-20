@@ -16489,9 +16489,8 @@ textarea:composing ~ .ps-placeholder {
   font-size: 15dp;
 }
 
-.ps-spacer {
-  flex: 1;
-  min-width: 8dp;
+.ps-original-check {
+  margin-right: 10dp;
 }
 
 .ps-send {
