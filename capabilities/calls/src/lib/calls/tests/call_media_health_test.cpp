@@ -450,6 +450,16 @@ TEST(CallMediaHealthTest, NoMicAfterThreeSecondsOfAWantedMicrophoneThatIsNotOpen
   EXPECT_EQ(EvaluateCallMediaHealth(in).quality, CallPathQuality::Excellent) << "the microphone opened by itself";
 }
 
+// Desktop: a missing or OS-blocked microphone is not graded, as before B233 (the engine's fact is still in the view).
+TEST(CallMediaHealthTest, WhereTheHintDoesNotApplyAMissingMicrophoneIsNotGraded) {
+  auto in = BaseHealthyInput();
+  in.engine.mic_missing_ms = 30'000;
+  in.grade_mic_not_open = false;
+  const auto v = EvaluateCallMediaHealth(in);
+  EXPECT_EQ(v.quality, CallPathQuality::Excellent);
+  EXPECT_EQ(v.engine.mic_missing_ms, 30'000);
+}
+
 TEST(CallMediaHealthTest, NoMicKeepsTheOlderNumbersAndWordsNoNetworkLabel) {
   EXPECT_EQ(static_cast<int>(CallPathQuality::NoAudio), 5);
   EXPECT_EQ(static_cast<int>(CallPathQuality::NoMic), 6) << "appended last: metrics history keeps its meaning";

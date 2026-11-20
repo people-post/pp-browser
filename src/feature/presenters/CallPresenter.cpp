@@ -847,6 +847,7 @@ CallMediaFacts CallPresenter::ReadMediaFacts(CallUiBackend& backend, const CallS
   CallMediaFacts f;
   f.call_id = s.call_id;
   f.now_ms = now;
+  f.mic_not_open_hint = AudioSession::MicNotOpenHintApplies();
   if (auto allowed = backend.VideoAllowedForCall(s.call_id); allowed && allowed->has_value()) {
     f.video_allowed = **allowed;
   }

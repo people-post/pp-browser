@@ -937,6 +937,10 @@ void NotifyVoiceProcessingStarted(const double sample_rate, const int channels, 
   });
 }
 
+bool MicNotOpenHintApplies() {
+  return true;
+}
+
 void NoteToneStreamClosed(const char* holder, const int64_t since_stop_ms) {
   // Developer log only, from the device thread right after the close; no AVAudioSession read, nothing blocks.
   if (!DiagnosticsEnabled() || holder == nullptr || std::strncmp(holder, "ring", 4) != 0) {

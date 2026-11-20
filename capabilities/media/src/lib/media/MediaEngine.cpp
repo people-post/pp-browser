@@ -249,6 +249,7 @@ struct MediaThreadStageTracker {
     return MediaThreadStageName(static_cast<MediaThreadStage>(stage.load(std::memory_order_relaxed)));
   }
   int64_t MsInStage() const { return SteadyNowMs() - since_ms.load(std::memory_order_relaxed); }
+  bool In(MediaThreadStage s) const { return stage.load(std::memory_order_relaxed) == static_cast<uint8_t>(s); }
 };
 
 /**
@@ -2908,7 +2909,12 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
   const bool missing = MicWantedButNotOpen(mic_inputs);
   const MicMissingClock::Reading mic =
       impl->mic_missing_clock.Step(missing, mic_inputs.capture_device_open, SteadyNowMs());
-  h.mic_missing_ms = mic.missing_ms;
+  // The engine itself opening or re-opening audio (read only: the capture thread's stage and its reopen flags) is
+  // not a missing microphone for up to kMicOpenGraceMs; the spell's log lines below keep the raw time.
+  const bool engine_opening = impl->capture_stage.In(MediaThreadStage::OpenDevices) ||
+                              impl->audio_reopening.load(std::memory_order_acquire) ||
+                              impl->audio_reopen_requested.load(std::memory_order_acquire);
+  h.mic_missing_ms = MicMissingReportedMs(mic.missing_ms, engine_opening);
   h.mic_ever_open = mic.ever_open;
   if (mic.began) {
     EngineLog().info << "mic wanted but no capture device is open: began audio_io=" << h.audio_io;

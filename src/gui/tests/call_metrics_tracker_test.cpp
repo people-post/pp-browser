@@ -359,5 +359,33 @@ TEST(CallMetricsTrackerTest, TheFirstThreeSecondsOfAMissingMicrophoneAreNotCount
   EXPECT_TRUE(Has(summary, "no_mic_s=0.0")) << summary;
 }
 
+// Desktop does not grade NoMic (the call page is unchanged there), but the metrics count the engine's own fact.
+TEST(CallMetricsTrackerTest, AMissingMicrophoneIsCountedEvenWhereTheCallIsNotGradedNoMic) {
+  Tracker t;
+  int64_t now = 1000;
+  t.NoteOutbound(kCall, false, now, Vitals());
+  Tracker::MediaTick tick = Media(true, 10, 0, CallPathQuality::Excellent);
+  tick.health.mic_missing_ms = 8000;
+  for (int i = 0; i < 4; ++i) {
+    t.NoteMedia(kCall, tick, now += 1000, Vitals());
+  }
+  const std::string summary = EndCall(t, now);
+  EXPECT_TRUE(Has(summary, "q_nomic_pct=100")) << summary;
+  EXPECT_TRUE(Has(summary, "q_excellent_pct=0")) << summary;
+  EXPECT_TRUE(Has(summary, "no_mic_s=3.0")) << summary;
+}
+
+TEST(CallMetricsTrackerTest, AReconnectComesBeforeNoMicInTheMetricsToo) {
+  Tracker t;
+  int64_t now = 1000;
+  t.NoteOutbound(kCall, false, now, Vitals());
+  Tracker::MediaTick tick = Media(true, 10, 0, CallPathQuality::Reconnecting);
+  tick.health.mic_missing_ms = 8000;
+  for (int i = 0; i < 3; ++i) {
+    t.NoteMedia(kCall, tick, now += 1000, Vitals());
+  }
+  EXPECT_TRUE(Has(EndCall(t, now), "q_nomic_pct=0"));
+}
+
 } // namespace
 } // namespace pbr

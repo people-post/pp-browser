@@ -43,7 +43,8 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
     return config.error();
   }
   SetSendContentSha256(config->relay_content_sha256);
-  // B233: the audio-session timing lines exist only in builds that can reach QA (never the store build).
+  // B233: the audio-session timing lines are written wherever the QA origin is compiled in (today every iOS build, not
+  // a store-build gate); see CallKitDiagnostics.h.
   AudioSession::SetDiagnosticsEnabled(CallKitDiagnosticsEnabled());
   AppPaths::DataDir(config->data_dir);
 

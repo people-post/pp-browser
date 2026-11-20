@@ -98,7 +98,7 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
   if (in.reconnecting) {
     out.quality = CallPathQuality::Reconnecting;
     out.quality_bars = 1;
-  } else if (CallMicNotOpen(in.engine)) {
+  } else if (in.grade_mic_not_open && CallMicNotOpen(in.engine)) {
     // Not the network: the engine has no capture device, so the other side hears silence (B233).
     out.quality = CallPathQuality::NoMic;
     out.quality_bars = 1;

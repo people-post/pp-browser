@@ -65,6 +65,12 @@ struct CallMediaFacts {
   /** This device's hold has lasted too long to be a normal one (CallHoldStuck, fed by CallPresenter; B217). */
   bool hold_stuck = false;
 
+  /**
+   * B233: the platform says a wanted microphone with no open device is this call's fault (AudioSession::
+   * MicNotOpenHintApplies: phones). Where false, the page keeps what it said before: no NoMic grade, line or pill.
+   */
+  bool mic_not_open_hint = true;
+
   // --- What the media health is evaluated from (EvaluateCallMediaHealth).
   MediaEngineHealth engine;
   CallHopHealth hop;
@@ -189,7 +195,7 @@ struct CallHintPrompt {
   bool pill_alarm = false;
 };
 
-/** B233: the sentence for a wanted microphone that is not open — the status line's and the pill's (one text). */
+/** B233: the pill's sentence for a wanted microphone that is not open (the status line says the short call.quality.no_mic). */
 inline constexpr const char* kCallMicNotOpenKey = "call.quality.hint.mic_not_open";
 
 /**

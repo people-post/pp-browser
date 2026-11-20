@@ -126,6 +126,29 @@ TEST(MicMissingClockTest, AnExcludedStateInTheMiddleRestartsTheCount) {
   EXPECT_FALSE(clock.Step(true, false, 6500).ever_open);
 }
 
+// B233: the engine opening or re-opening its own audio is not a missing microphone, for at most kMicOpenGraceMs.
+TEST(MicMissingReportedTest, ASlowFirstOpenOfFourSecondsIsNotReported) {
+  EXPECT_EQ(MicMissingReportedMs(4000, /*engine_opening=*/true), 0);
+}
+
+TEST(MicMissingReportedTest, ADefaultDeviceReopenOfAirPodsIsNotReported) {
+  // The mic closed when the route moved and the reopen took 4.5 s: opening the whole time.
+  EXPECT_EQ(MicMissingReportedMs(4500, /*engine_opening=*/true), 0);
+  EXPECT_EQ(MicMissingReportedMs(kMicOpenGraceMs - 1, true), 0);
+}
+
+TEST(MicMissingReportedTest, AHungOpenOfTwelveSecondsIsReported) {
+  EXPECT_EQ(MicMissingReportedMs(12'000, /*engine_opening=*/true), 12'000);
+  EXPECT_EQ(MicMissingReportedMs(kMicOpenGraceMs, true), kMicOpenGraceMs);
+}
+
+TEST(MicMissingReportedTest, TheConfirmedFailureIsReportedAtOnceWhenTheOpenSequenceHasFinished) {
+  // Lease present with no device, nothing opening any more (B233): the raw time is what the call grades on.
+  EXPECT_EQ(MicMissingReportedMs(3000, /*engine_opening=*/false), 3000);
+  EXPECT_EQ(MicMissingReportedMs(0, true), 0);
+  EXPECT_EQ(MicMissingReportedMs(0, false), 0);
+}
+
 // Asking the engine for its health changes nothing and, muted, never reports a missing microphone (no permission query
 // can matter: muted is excluded first).
 TEST(MediaEngineHealthTest, AMutedEngineReportsNoMissingMicrophone) {

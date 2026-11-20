@@ -150,6 +150,8 @@ struct CallMediaHealthInput {
    * Used when hop is not attached (1:1 Amp also sets engine.packet_mode for capture).
    */
   std::string reach_path_kind;
+  /** B233: grade a wanted microphone with no open device NoMic (phones; desktop keeps grading as before). */
+  bool grade_mic_not_open = true;
   /** The call's link, sampled by the caller (rates need two samples). */
   CallLinkHealth link;
   /** The engine's pressure that grades the call (CallBufferPressureGate); none: engine.path_pressure as it is. */

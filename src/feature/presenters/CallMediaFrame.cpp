@@ -140,7 +140,7 @@ CallStatusLine DecideStatusLine(const CallScreen& screen, const CallMediaFacts& 
   if (health.quality == CallPathQuality::NoMic &&
       (line.kind == LineKind::Timer || line.kind == LineKind::Participants) && !d.on_hold && !d.couldnt_connect &&
       !d.path_lost && !d.reconnect && !facts.playout_stuck) {
-    line = Words(kCallMicNotOpenKey);
+    line = Words("call.quality.no_mic"); // short; the full sentence is the pill's
     line.warning = true;
   }
   line.hint = screen.status == Status::CouldntConnect ? screen.hint : CallScreen::Hint::None;
@@ -331,6 +331,7 @@ const CallMediaScreen& CallMediaFrame::Step(const CallScreen& screen, const Call
   in.hop = facts.hop;
   in.reach_path_kind = facts.reach_path_kind;
   in.now_ms = facts.now_ms;
+  in.grade_mic_not_open = facts.mic_not_open_hint;
   in.reconnecting = d.reconnect || d.couldnt_connect;
   in.link = SampleLink(facts);
   in.engine_pressure_for_quality =
@@ -427,8 +428,7 @@ const CallMediaScreen& CallMediaFrame::Finish(const CallScreen& screen, const Ca
     mic_pill_raised_ = true;
   } else if (mic_pill_raised_ && health.quality != CallPathQuality::NoMic) {
     mic_pill_raised_ = false;
-    view_.pill_withdraw_key = kCallMicNotOpenKey;
-    last_pill_ms_.erase(kCallMicNotOpenKey); // a later spell says it again without waiting out the 30 s
+    view_.pill_withdraw_key = kCallMicNotOpenKey; // the 30 s memory stays: a mic that keeps dropping is not re-pilled
   }
   return view_;
 }

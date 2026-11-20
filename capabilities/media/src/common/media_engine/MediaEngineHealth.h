@@ -96,6 +96,19 @@ inline bool MicWantedButNotOpen(const MicWantedInputs& in) {
          !in.os_has_session && !in.route_change_pending;
 }
 
+/** An engine that is itself opening or re-opening its audio devices is not "missing" the microphone for this long. */
+inline constexpr int64_t kMicOpenGraceMs = 10'000;
+
+/**
+ * What the snapshot reports for a spell of MicWantedButNotOpen that has held `raw_ms`: while the engine is itself
+ * opening or re-opening audio (the first open, a route or default-device change, the end of an interruption, a
+ * starvation reopen) the time does not count — a slow open is not a fault — but only for kMicOpenGraceMs, so an open
+ * that hangs still counts as "not open" after that. 0 stays 0.
+ */
+inline int64_t MicMissingReportedMs(const int64_t raw_ms, const bool engine_opening) {
+  return engine_opening && raw_ms < kMicOpenGraceMs ? 0 : raw_ms;
+}
+
 /**
  * How long MicWantedButNotOpen has held, on a monotonic clock the caller supplies; any thread. Read-only with respect
  * to the audio path: it only watches. Any tick where the state does not hold starts the count over.
