@@ -1779,6 +1779,13 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.messaging_initialized = [&messaging]() { return messaging.IsInitialized(); };
   unlock_ports.messaging_ready = [&messaging]() { return messaging.IsMessagingReady(); };
   unlock_ports.ensure_messaging_ready = [this, &messaging]() -> Roe<void> {
+    // LAN discovery (the first multicast use raises iOS's "local network" alert) waits until account setup is done, so
+    // the alert does not cover the setup page; an account that finished setup starts it here as before. Only this
+    // waits: the rest of the mesh comes up now. The setup wizard's end opens it (set_completed below).
+    if (product_) {
+      product_->Mesh().SetLanDiscoveryAllowed(store_.IsInitialized() &&
+                                              store_.Snapshot().profile_prefs.onboarding_completed);
+    }
     auto ready = messaging.EnsureMessagingReady();
     if (ready) {
       return ready;
@@ -1999,6 +2006,9 @@ void Application::WireUnlockPinAndFlow() {
     onboarding_ports.set_completed = [this](const bool completed) {
       if (!store_.IsInitialized()) {
         return;
+      }
+      if (product_) {
+        product_->Mesh().SetLanDiscoveryAllowed(completed); // setup finished: a held LAN discovery starts now
       }
       ProfilePreferences prefs = store_.Snapshot().profile_prefs;
       if (prefs.onboarding_completed == completed) {
