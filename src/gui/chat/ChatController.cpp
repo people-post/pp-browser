@@ -5302,33 +5302,30 @@ void ChatController::ForgetComposerExtras(const std::string& key) {
 }
 
 void ChatController::RestoreDraftIfEmpty(const std::string& thread_id, const std::string& text) {
-  PutTextBack(thread_id, text, /*prepend=*/false);
+  PutTextBack(thread_id, text, DraftPutBack::IfEmpty);
 }
 
 void ChatController::PutBackDraft(const std::string& thread_id, const std::string& text) {
-  PutTextBack(thread_id, text, /*prepend=*/true);
+  PutTextBack(thread_id, text, DraftPutBack::Prepend);
 }
 
 std::string ChatController::CurrentDraftKey() const {
   return ChromeSnapshot().nav_tab == NavTab::Home ? std::string(ThreadDrafts::kHome) : ActiveThreadId();
 }
 
-void ChatController::PutTextBack(const std::string& key, const std::string& text, const bool prepend) {
+void ChatController::PutTextBack(const std::string& key, const std::string& text, const DraftPutBack mode) {
   SyncDraftOwner(); // so "shown" below is what the user sees now
   if (key.empty() || key != CurrentDraftKey()) {
     // Not the conversation on screen: its own composer gets the text, never the one shown.
-    if (prepend) {
-      drafts_.Prepend(key, text);
-    } else if (drafts_.Peek(key).empty()) {
-      drafts_.Put(key, text);
-    }
+    drafts_.PutBack(key, text, mode);
     return;
   }
   const std::string draft = chat_.draft.c_str();
-  if (!prepend && !draft.empty()) {
+  const std::string merged = MergeDraftText(draft, text, mode);
+  if (merged == draft) {
     return;
   }
-  chat_.draft = (draft.empty() ? text : text + "\n" + draft).c_str();
+  chat_.draft = merged.c_str();
   DataModelHost::Instance().Dirty("chat", "draft");
 }
 
@@ -5405,11 +5402,11 @@ void ChatController::CancelQueuedHere() {
         ShellSelectNavTab(NavTab::Home);
       }
       // The question was asked on Home: it goes back to Home's composer, not to whichever chat opened now.
-      PutTextBack(ThreadDrafts::kHome, item->text, /*prepend=*/false);
+      PutTextBack(ThreadDrafts::kHome, item->text, DraftPutBack::IfEmpty);
       return;
     }
   }
-  PutTextBack(thread_id, item->text, /*prepend=*/false);
+  PutTextBack(thread_id, item->text, DraftPutBack::IfEmpty);
 }
 
 ChatController::ComposerEscape ChatController::OnComposerEscape() {

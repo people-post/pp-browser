@@ -612,8 +612,11 @@ private:
                            const std::optional<std::string>& payload, const std::string& entry_id);
   QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) override;
   void PutBackDraft(const std::string& thread_id, const std::string& text) override;
-  /** Text that did not go out goes back to `key`'s composer (a thread id, or ThreadDrafts::kHome). */
-  void PutTextBack(const std::string& key, const std::string& text, bool prepend);
+  /**
+   * Text that did not go out goes back to `key`'s composer (a thread id, or ThreadDrafts::kHome), merged with what it
+   * holds as `mode` says (MergeDraftText); a conversation not on screen keeps it in drafts_, never the one shown.
+   */
+  void PutTextBack(const std::string& key, const std::string& text, DraftPutBack mode);
   /** The draft key of what the composer shows now: Home, or the open thread ("" = none shown). */
   std::string CurrentDraftKey() const;
   /** An AI send while every turn is taken: confirm "@ai+" sharing first, then queue it (B112). */
