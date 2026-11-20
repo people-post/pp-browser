@@ -462,3 +462,25 @@ leaves for them.
 
 **Rationale:** Part 1 is what code on both sides is written against, or what decides when the relay's old paths can
 go; leaving it open would stall P3. Part 2 changes no format the other side reads, so it can be settled during P3.
+
+## RC019 — P2 starts: one main; the relay deploys from main and tags; no protection on the private relay repos
+
+**Date:** 2026-11-19
+**Status:** Accepted (Hongwei, 2026-11-19). Amends [PHASES § P2](PHASES.md#p2--one-main-release-branches)'s
+protection item for two repos.
+**Decision:**
+1. **`develop` is retired in every repo the same week**, starting 2026-11-19 with the team's work on hold:
+   pp-browser, the pp-cpp-* libraries, pp-ledger and pp-ledger-apps first (`develop` merged into `main` a last time,
+   docs and workflows moved to `main`, then the default branch switched and `develop` deleted), then pp-relay-apis and
+   pp-relay-infra-ansible once their deploys have moved (item 2).
+2. **The relay's deploys:** a push to `main` deploys **qa**; a `v*` release tag deploys **prod**, and Hongwei approves
+   prod by being the one who pushes those tags. qa keeps its name until RC009's dev and staging exist. The deploy
+   roles in pp-relay-infra-terraform trust the refs by name, so they first add `main` (qa) and `v*` tags (prod) beside
+   today's `develop` and `main`, and drop the old two once `develop` is deleted.
+3. **No branch protection on pp-relay-apis and pp-relay-infra-ansible.** They are private and the organization is on
+   GitHub's free plan, which refuses protection there. CODEOWNERS and the prod deploy gate stand in for it. The other
+   repos get protection as PHASES § P2 says.
+**Rationale:** One line is what the rest of P2 builds on; doing every repo in one week, with work on hold, leaves no
+PR on a branch that is about to go. Moving the trust before the workflows means no deploy fails during the switch.
+**Cost:** without protection, a mistaken push to `main` in the relay repos reaches qa unreviewed; prod still needs a
+tag.
