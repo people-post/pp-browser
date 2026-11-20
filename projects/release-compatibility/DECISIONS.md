@@ -445,9 +445,9 @@ leaves for them.
 |------|-------|---------|
 | Update-needed display and words (U1, U2, U11, T14) | Kenneth | one persistent banner with an Update button, a full screen only below `min_client_version`; a per-contact line in the chat header; "relay needs an update" apart from "update the app"; en and zh-Hans |
 | `client-compat` `message` vs translations (U12) | Kenneth | the app's own translated text always; the server's `message` as an extra line |
-| Both deletion confirmations' text (item 1) | Kenneth | plain words as in item 1 |
-| *Delete account…* offline | Kenneth | needs a connection: offline it says so and wipes nothing |
-| Crash-report opt-in (O6) | Kenneth | a switch in Me, off by default, one line on what is sent |
+| Both deletion confirmations' text (item 1) | Kenneth | plain words as in item 1. **Decided (Kenneth, 2026-11-20):** plain words as in item 1; the texts are written with the build. |
+| *Delete account…* offline | Kenneth | needs a connection: offline it says so and wipes nothing. **Decided (Kenneth, 2026-11-20):** the default. |
+| Crash-report opt-in (O6) | Kenneth | a switch in Me, off by default, one line on what is sent. **Decided (Kenneth, 2026-11-20):** met by the existing "Collect crash logs" switch (off by default); crash records go out only in "Send logs", sent by the user to a contact. No relay endpoint is needed for release 1. |
 | Person-level preferences in the locker | Kenneth | none in release 1 (additive later, once INVENTORY T7 lands) |
 | Where versions are counted (O1) | Leo | a CloudWatch metric by product, version and OS; no account id, no table |
 | How `RELAY_VERSION` reaches the functions; an `x-pp-relay-version` header | Leo | injected by the deploy workflow from the tag; header optional |
