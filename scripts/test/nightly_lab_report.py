@@ -11,6 +11,9 @@ error, the commit and the run link — nothing more (the logs stay in the run's 
 
   nightly_lab_report.py --summary app=app.json --summary app-nat=app-nat.json \\
       --sha <commit> --run-url <url> [--dry-run]
+
+With --no-issues (lab smoke, an on-demand run) it writes the summary only, touches no issue, and still exits 1 when a
+scenario failed; --name heads the summary.
 """
 
 import argparse
@@ -50,6 +53,8 @@ def main():
     ap.add_argument("--sha", required=True)
     ap.add_argument("--run-url", required=True)
     ap.add_argument("--dry-run", action="store_true", help="print what would change; read-only gh calls only")
+    ap.add_argument("--no-issues", action="store_true", help="the summary only: no gh calls, no issues")
+    ap.add_argument("--name", default="Nightly lab", help="the summary's heading")
     args = ap.parse_args()
 
     failing, passing, flaky, lines = {}, set(), [], []
@@ -75,15 +80,18 @@ def main():
         passing.add((suite, SUITE))
         lines.append("- **%s**: %d passed, %d flaky, %d failed" % (suite, counts["pass"], counts["flaky"], counts["fail"]))
 
-    open_issues = json.loads(gh("issue", "list", "--label", LABEL, "--state", "open", "--limit", "200",
-                                "--json", "number,title") or "[]")
-    by_title = {i["title"]: i["number"] for i in open_issues}
-    if failing:
+    if args.no_issues:
+        by_title = {}
+    else:
+        open_issues = json.loads(gh("issue", "list", "--label", LABEL, "--state", "open", "--limit", "200",
+                                    "--json", "number,title") or "[]")
+        by_title = {i["title"]: i["number"] for i in open_issues}
+    if failing and not args.no_issues:
         gh("label", "create", LABEL, "--force", "--color", "B60205",
            "--description", "A scenario the nightly lab finds failing", dry_run=args.dry_run)
 
     short = args.sha[:9]
-    for (suite, scenario), detail in sorted(failing.items()):
+    for (suite, scenario), detail in sorted(failing.items()) if not args.no_issues else ():
         title = title_for(suite, scenario)
         if title in by_title:
             gh("issue", "comment", str(by_title[title]), "--body",
@@ -103,7 +111,7 @@ def main():
                    "Passes again on `%s`: %s" % (short, args.run_url), dry_run=args.dry_run)
                 gh("issue", "close", str(number), "--reason", "completed", dry_run=args.dry_run)
 
-    report = ["## Nightly lab on `%s`" % short, ""] + lines
+    report = ["## %s on `%s`" % (args.name, short), ""] + lines
     if failing:
         report += ["", "**Failing**"] + ["- %s: %s" % (title_for(s, n)[len("Nightly lab: "):], d) for (s, n), d in sorted(failing.items())]
     if flaky:

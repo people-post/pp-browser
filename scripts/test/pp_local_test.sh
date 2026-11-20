@@ -16,6 +16,8 @@
 #   relay (pp-relay-apis's local stack, PP_RELAY_APIS_ROOT) — glare, redial storms, restarts, a peer vanishing.
 # --suite app-nat runs the app lab with each user in its own container behind its own NAT gateway
 #   (docker-compose.app-lab-nat.yml): no two users can reach each other directly.
+# --only / --tags / --changed pick app-lab scenarios (by name, by tag, by what a change touches; they add up);
+#   `list` shows them with their tags and needs no lab. Nothing picked: the lab is not started.
 #
 # See docs/ops/TEST_STRATEGY.md, packaging/pp-node/IMAGE_SMOKE.md, packaging/pp-node/HARD_LAB.md
 set -euo pipefail
@@ -32,7 +34,7 @@ HOP_CONTAINER="${PP_LOCAL_HOP_CONTAINER:-pp-node-relay-smoke-hop}"
 STATUS_URL="${PP_NODE_STATUS_URL:-http://127.0.0.1:18518}"
 # Absolute path required: compose treats unprefixed relative mounts as named volumes
 # (e.g. PP_LOCAL_BUILD_DIR=build → "undefined volume build/src/app/node").
-BUILD_DIR="$(cd "${PP_LOCAL_BUILD_DIR:-${ROOT}/build}" && pwd)"
+BUILD_DIR="$(cd "${PP_LOCAL_BUILD_DIR:-${ROOT}/build}" 2>/dev/null && pwd || echo "${PP_LOCAL_BUILD_DIR:-${ROOT}/build}")"  # list needs none
 DOCKER_CONTEXT="${ROOT}/dist/pp-node/docker"
 READY_FILE="${PP_CALL_PROBE_READY_FILE:-/tmp/pp-call-probe.ready}"
 # gtest_discover_tests names are PascalCase fixture names (ctest -R is case-sensitive).
@@ -41,6 +43,7 @@ CTEST_REGEX='CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRela
 SUITE="all"
 DOWN_AFTER=0
 COMPOSE_BUILD=1
+APP_LAB_SELECT=()  # --only / --tags / --changed, for pp_app_lab.py
 
 usage() {
   cat <<EOF
@@ -55,6 +58,8 @@ Commands:
             --images also removes image pp-node:local / pp-hard-peer:local
   status    compose ps + /healthz + /status (relay-smoke; hard if up)
   build     cmake --build probes (pp-node-probe, pp-call-probe)
+  list      the app lab's scenarios, their tags and what --only / --tags / --changed pick
+            (--suite app-nat: what the NAT run takes); needs no lab
 
 Options (run / up):
   --suite unit|call|node|cap|soak|chaos|call-hop|msg-call-hop|conflict|msg-call|mix|hard|hard-w2|hard-w3|hard-w5|dht|ledger|app|app-nat|all
@@ -62,6 +67,12 @@ Options (run / up):
   --down                       after run, compose stop (not clear)
   --no-build                   skip compose --build on up
   --status-url URL             default \$PP_NODE_STATUS_URL or ${STATUS_URL}
+
+App lab selection (run / list with --suite app|app-nat; they add up; default: the suite's whole set):
+  --only NAME                  that scenario (repeat, or a,b)
+  --tags a,b                   every scenario with any of the tags (smoke: the lab-smoke set; list shows them all)
+  --changed SPEC               the scenarios a change touches: a git range (origin/main...HEAD), one revision
+                               (origin/main: this branch and its working tree), or paths (a,b)
 
 Environment:
   PP_LOCAL_COMPOSE_FILE / PP_LOCAL_COMPOSE_PROJECT / PP_LOCAL_BUILD_DIR
@@ -88,6 +99,9 @@ Examples:
   $(basename "$0") run --suite hard-w3
   $(basename "$0") run --suite hard-w5
   $(basename "$0") run --suite dht
+  $(basename "$0") run --suite app --tags smoke
+  $(basename "$0") run --suite app --changed origin/main
+  $(basename "$0") list --tags calls,groups
   $(basename "$0") up && $(basename "$0") status
   $(basename "$0") stop
   $(basename "$0") clear --images
@@ -401,9 +415,45 @@ wait_lab_seeds() {
   done
 }
 
-run_app() {
-  need_cmd cmake
+# The app lab's own arguments: --nat for app-nat, PP_APP_LAB_ARGS, then --only / --tags / --changed.
+app_lab_args() {
+  APP_LAB_ARGV=()
+  if [[ "${APP_LAB_NAT}" -eq 1 ]]; then
+    APP_LAB_ARGV+=(--nat)
+  fi
+  # shellcheck disable=SC2206 # PP_APP_LAB_ARGS is a word list (e.g. "--only redial_storm --repeat 3")
+  APP_LAB_ARGV+=(${PP_APP_LAB_ARGS:-})
+  APP_LAB_ARGV+=(${APP_LAB_SELECT[@]+"${APP_LAB_SELECT[@]}"})
+}
+
+cmd_list() {
   need_cmd python3
+  if [[ "${SUITE}" == "app-nat" ]]; then
+    APP_LAB_NAT=1
+  fi
+  app_lab_args
+  local rc=0
+  python3 "${ROOT}/scripts/test/pp_app_lab.py" --list ${APP_LAB_ARGV[@]+"${APP_LAB_ARGV[@]}"} || rc=$?
+  [[ "${rc}" -eq 0 || "${rc}" -eq 3 ]] || exit "${rc}"
+}
+
+APP_LAB_IDLE=0  # run_app found nothing to run and started no lab
+
+run_app() {
+  need_cmd python3
+  app_lab_args
+  # What runs, before anything starts: a change that touches no scenario (docs, the GUI) needs no lab.
+  local picked rc=0
+  picked="$(python3 "${ROOT}/scripts/test/pp_app_lab.py" --list ${APP_LAB_ARGV[@]+"${APP_LAB_ARGV[@]}"} 2>&1)" || rc=$?
+  if [[ "${rc}" -eq 3 ]]; then
+    python3 "${ROOT}/scripts/test/pp_app_lab.py" ${APP_LAB_ARGV[@]+"${APP_LAB_ARGV[@]}"}  # says so, and writes an empty --summary
+    echo "app lab: nothing selected; the lab was not started"
+    APP_LAB_IDLE=1
+    return 0
+  elif [[ "${rc}" -ne 0 ]]; then
+    die "app lab selection: ${picked}"
+  fi
+  need_cmd cmake
   ensure_docker_context
   lab_hop_advertise  # a seed already running keeps its address (no recreate)
   stage_hop_binary_if_newer
@@ -433,16 +483,13 @@ run_app() {
     app_lab_compose up -d hop hop2
     wait_lab_seeds
   fi
-  local nat_args=()
   if [[ "${APP_LAB_NAT}" -eq 1 ]]; then
     echo "=== suite app-nat (scripted users, each behind its own NAT, over the lab relay and hop) ==="
-    nat_args=(--nat)
   else
     echo "=== suite app (scripted users on pp-app-probe over the lab relay) ==="
   fi
-  # shellcheck disable=SC2086 # PP_APP_LAB_ARGS is a word list (e.g. "--only redial_storm --repeat 3")
   python3 "${ROOT}/scripts/test/pp_app_lab.py" --probe "${BUILD_DIR}/src/app/node/pp-app-probe" \
-    --tls-dir "${APP_LAB_TLS_DIR}" --tls-record-dir "${APP_LAB_TLS_RECORD_DIR}" ${nat_args[@]+"${nat_args[@]}"} ${PP_APP_LAB_ARGS:-}
+    --tls-dir "${APP_LAB_TLS_DIR}" --tls-record-dir "${APP_LAB_TLS_RECORD_DIR}" ${APP_LAB_ARGV[@]+"${APP_LAB_ARGV[@]}"}
 }
 
 run_ledger() {
@@ -606,6 +653,9 @@ run_dht() {
 }
 
 cmd_run() {
+  if [[ ${#APP_LAB_SELECT[@]} -gt 0 && "${SUITE}" != "app" && "${SUITE}" != "app-nat" ]]; then
+    die "--only / --tags / --changed pick app-lab scenarios: use them with --suite app or app-nat"
+  fi
   case "${SUITE}" in
     unit) run_unit ;;
     call) run_call ;;
@@ -638,7 +688,9 @@ cmd_run() {
       ;;
     *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|msg-call-hop|mix|hard|hard-w2|hard-w3|hard-w5|dht|ledger|app|app-nat|all)" ;;
   esac
-  if [[ "${DOWN_AFTER}" -eq 1 ]]; then
+  if [[ "${APP_LAB_IDLE}" -eq 1 ]]; then
+    :  # no lab to stop or leave running
+  elif [[ "${DOWN_AFTER}" -eq 1 ]]; then
     if [[ "${SUITE}" == "app" || "${SUITE}" == "app-nat" ]]; then
       echo "app-lab compose stop project=pp-app-lab"
       app_lab_compose stop || true
@@ -679,6 +731,11 @@ while [[ $# -gt 0 ]]; do
     --down) DOWN_AFTER=1; shift ;;
     --no-build) COMPOSE_BUILD=0; shift ;;
     --status-url) STATUS_URL="$2"; shift 2 ;;
+    --only|--tags|--changed)
+      [[ $# -ge 2 ]] || die "$1 needs a value"
+      APP_LAB_SELECT+=("$1" "$2")
+      shift 2
+      ;;
     --images)
       # forwarded to clear
       break
@@ -700,6 +757,7 @@ case "${CMD}" in
   clear) cmd_clear "$@" ;;
   status) cmd_status ;;
   build) cmd_build ;;
+  list) cmd_list ;;
   -h|--help) usage ;;
   *)
     echo "error: unknown command: ${CMD}" >&2

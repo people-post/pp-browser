@@ -8,6 +8,12 @@ both calling at once, calling again and again, an app restart while ringing. Eve
 by checking nothing is left stuck and the call history says what happened.
 
   scripts/test/pp_app_lab.py --probe build/src/app/node/pp-app-probe [--only first_contact]
+  scripts/test/pp_app_lab.py --probe ... --tags calls,groups      # every scenario with either tag
+  scripts/test/pp_app_lab.py --probe ... --changed origin/main    # the scenarios this branch's change touches
+  scripts/test/pp_app_lab.py --list [--tags smoke] [--nat]        # scenarios, tags, what runs; needs no lab
+
+Every scenario carries capability tags (app_lab_select.py: the vocabulary, and the path → tag table --changed
+uses); `smoke` is the lab-smoke set. --only, --tags and --changed add up; a run prints what it picked and why.
 
 (`pp_local_test.sh run --suite app` brings the lab up and runs this.)
 
@@ -38,6 +44,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+
+import app_lab_select
 
 PIN = "246810"
 # Answer → audio both ways on one machine is ~2 s; past this the call "isn't getting through" for a
@@ -4516,12 +4524,14 @@ def video_measurement(group, profile):
     return run
 
 
-VIDEO_MEASUREMENTS = [("video_%s_%s" % (kind, name), video_measurement(kind == "group", profile))
+VIDEO_MEASUREMENTS = [("video_%s_%s" % (kind, name), video_measurement(kind == "group", profile),
+                       "calls media groups" if kind == "group" else "calls media")
                       for kind in ("group", "pair")
                       for name, profile in (("lossy", PHONE_LOSSY), ("bursty", PHONE_BURSTY),
                                             ("jittery", PHONE_JITTERY), ("narrow", PHONE_NARROW),
                                             ("wide", PHONE_WIDE))] + [
-    ("voice_%s_wide" % kind, voice_measurement(kind == "group", PHONE_WIDE)) for kind in ("group", "pair")]
+    ("voice_%s_wide" % kind, voice_measurement(kind == "group", PHONE_WIDE),
+     "calls media groups" if kind == "group" else "calls media") for kind in ("group", "pair")]
 
 
 def call_link(u):
@@ -4634,7 +4644,7 @@ def call_path_measurement(path, timing, two_hops):
 
 
 CALL_PATH_MATRIX = [("call_path_%s_%s%s" % (path, timing, "_two_hops" if two_hops else ""),
-                     call_path_measurement(path, timing, two_hops))
+                     call_path_measurement(path, timing, two_hops), "calls mesh node" if two_hops else "calls mesh")
                     for two_hops in (False, True) for path in CALL_PATHS for timing in CALL_TIMINGS
                     if not two_hops or path == "one_far"]
 
@@ -4683,110 +4693,120 @@ def scenario_group_call_weak_upload(lab):
     leave_all(users)
 
 
+# Every scenario, in run order: (name, function, tags). The tags (space-separated) say what it checks — the vocabulary
+# and the --tags / --changed rules are in app_lab_select.py (docs/ops/TEST_STRATEGY.md § Scenario tags); `smoke` marks
+# the lab-smoke set (every merge to main, a few minutes). Every run first checks each entry carries known tags and at
+# least one capability tag, so a scenario added without them fails at once.
 SCENARIOS = [
-    ("first_contact", scenario_first_contact),
-    ("chat_list_settings", scenario_chat_list_settings),
-    ("chat_message_actions", scenario_chat_message_actions),
-    ("chat_quote_reply", scenario_chat_quote_reply),
-    ("first_message_brings_keys", scenario_first_message_brings_keys),
-    ("friend_shares_a_contact", scenario_friend_shares_a_contact),
-    ("devices_hand_over_their_cards", scenario_devices_hand_over_their_cards),
-    ("strangers_meet_by_invite", scenario_strangers_meet_by_invite),
-    ("users_on_two_relays_meet", scenario_users_on_two_relays_meet),
-    ("preferred_relay_down_mail_still_arrives", scenario_preferred_relay_down_mail_still_arrives),
-    ("preferred_relay_switched_mail_still_arrives", scenario_preferred_relay_switched_mail_still_arrives),
-    ("invite_names_their_relay", scenario_invite_names_their_relay),
-    ("replayed_calls_refused_at_other_relay", scenario_replayed_calls_refused_at_other_relay),
-    ("relay_not_matching_its_link_unused", scenario_relay_not_matching_its_link_unused),
-    ("group_members_key_each_other", scenario_group_members_key_each_other),
-    ("group_after_member_removed", scenario_group_after_member_removed),
-    ("restored_device_is_heard", scenario_restored_device_is_heard),
-    ("restored_device_hears_first", scenario_restored_device_hears_first),
-    ("recovery_phrase_needs_the_pin", scenario_recovery_phrase_needs_the_pin),
-    ("account_locker_round_trip", scenario_account_locker_round_trip),
-    ("restore_from_phrase", scenario_restore_from_phrase),
-    ("restore_from_a_saved_copy", scenario_restore_from_a_saved_copy),
-    ("main_device_signs_a_device_out", scenario_main_device_signs_a_device_out),
-    ("linked_device_introduces_itself", scenario_linked_device_introduces_itself),
-    ("linked_devices_see_what_each_sent", scenario_linked_devices_see_what_each_sent),
-    ("a_device_asks_for_a_copy_it_missed", scenario_a_device_asks_for_a_copy_it_missed),
-    ("a_call_rings_every_device_and_stops_once_answered", scenario_a_call_rings_every_device_and_stops_once_answered),
-    ("a_call_rings_on_every_device_after_each_called_out", scenario_a_call_rings_on_every_device_after_each_called_out),
-    ("a_restored_device_hears_the_answer_to_its_call", scenario_a_restored_device_hears_the_answer_to_its_call),
-    ("a_newer_device_list_follows_the_messages", scenario_a_newer_device_list_follows_the_messages),
-    ("muted_group_alerts_on_a_mention", scenario_muted_group_alerts_on_a_mention),
-    ("group_owner_appoints_an_admin", scenario_group_owner_appoints_an_admin),
-    ("call_grows_into_a_group", scenario_call_grows_into_a_group),
-    ("group_call_guest", scenario_group_call_guest),
-    ("admin_removes_while_owner_is_away", scenario_admin_removes_while_owner_is_away),
-    ("member_invites_while_owner_is_away", scenario_member_invites_while_owner_is_away),
-    ("managed_group_only_admins_invite", scenario_managed_group_only_admins_invite),
-    ("admin_readmits_a_removed_member", scenario_admin_readmits_a_removed_member),
-    ("remove_everyone_they_added", scenario_remove_everyone_they_added),
-    ("join_by_link", scenario_join_by_link),
-    ("refused_links", scenario_refused_links),
-    ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
-    ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
-    ("linked_devices_both_send", scenario_linked_devices_both_send),
-    ("reset_chats_keeps_linked_devices", scenario_reset_chats_keeps_linked_devices),
-    ("bystander_is_no_relay", scenario_bystander_is_no_relay),
-    ("call_during_seed_churn", scenario_call_during_seed_churn),
-    ("calling_each_other_at_once", scenario_calling_each_other_at_once),
-    ("both_answer_each_other", scenario_both_answer_each_other),
-    ("call_back_while_ringing", scenario_call_back_while_ringing),
-    ("redial_storm", scenario_redial_storm),
-    ("restart_while_ringing", scenario_restart_while_ringing),
-    ("caller_restarts_mid_call", scenario_caller_restarts_mid_call),
-    ("peer_vanishes_mid_call", scenario_peer_vanishes_mid_call),
-    ("decline_then_call_back", scenario_decline_then_call_back),
-    ("minimized_still_rings", scenario_minimized_still_rings),
-    ("push_wakes_background_callee", scenario_push_wakes_background_callee),
-    ("background_mid_call", scenario_background_mid_call),
-    ("peer_hangs_up_while_backgrounded", scenario_peer_hangs_up_while_backgrounded),
-    ("answered_in_background", scenario_answered_in_background),
-    ("background_is_push_only", scenario_background_is_push_only),
-    ("stay_connected_rings_in_background", scenario_stay_connected_rings_in_background),
-    ("network_drops_mid_call", scenario_network_drops_mid_call),
-    ("address_changes_mid_call", scenario_address_changes_mid_call),
-    ("group_member_network_drops", scenario_group_member_network_drops),
-    ("seed_down", scenario_seed_down),
-    ("seed_dies_in_use", scenario_seed_dies_in_use),
-    ("call_again_after_quiet", scenario_call_again_after_quiet),
-    ("full_seed_parks_elsewhere", scenario_full_seed_parks_elsewhere),
-    ("full_hop_hosts_the_call_elsewhere", scenario_full_hop_hosts_the_call_elsewhere),
-    ("full_hop_known_before_the_call", scenario_full_hop_known_before_the_call),
-    ("group_call_three", scenario_group_call_three),
-    ("group_one_declines", scenario_group_one_declines),
-    ("group_leave_one_by_one", scenario_group_leave_one_by_one),
-    ("group_caller_leaves_first", scenario_group_caller_leaves_first),
-    ("group_add_someone_mid_call", scenario_group_add_someone_mid_call),
-    ("group_member_crashes", scenario_group_member_crashes),
-    ("group_member_killed_is_dropped", scenario_group_member_killed_is_dropped),
-    ("group_leave_keeps_audio", scenario_group_leave_keeps_audio),
-    ("group_member_cut_off_rejoins", scenario_group_member_cut_off_rejoins),
-    ("group_member_silently_cut_off_rejoins", scenario_group_member_silently_cut_off_rejoins),
-    ("group_hop_down_mid_call", scenario_group_hop_down_mid_call),
-    ("group_decline_then_join", scenario_group_decline_then_join),
-    ("group_leave_and_rejoin", scenario_group_leave_and_rejoin),
-    ("group_last_one_waits", scenario_group_last_one_waits),
-    ("group_late_starter", scenario_group_late_starter),
-    ("group_member_removed", scenario_group_member_removed),
-    ("group_owner_hands_over", scenario_group_owner_hands_over),
-    ("group_calling_at_once", scenario_group_calling_at_once),
-    ("group_call_one_way_contact", scenario_group_call_one_way_contact),
-    ("group_fourth_answers_late", scenario_group_fourth_answers_late),
-    ("group_restore_checks_members", scenario_group_restore_checks_members),
-    ("group_removed_member_restores", scenario_group_removed_member_restores),
-    ("group_restored_owner_takes_newer_roster", scenario_group_restored_owner_takes_newer_roster),
-    ("group_call_placed_by_stranger", scenario_group_call_placed_by_stranger),
-    ("group_one_way_joins_late", scenario_group_one_way_joins_late),
-    ("group_one_way_network_drops", scenario_group_one_way_network_drops),
-    ("group_two_join_through_drops", scenario_group_two_join_through_drops),
-    ("group_call_on_the_road", scenario_group_call_on_the_road),
-    ("group_call_weak_upload", scenario_group_call_weak_upload),
-    ("group_video_three", scenario_group_video_three),
-    ("group_video_on_the_road", scenario_group_video_on_the_road),
-    ("video_on_the_road", scenario_video_on_the_road),
+    ("first_contact", scenario_first_contact, "calls people smoke"),
+    ("chat_list_settings", scenario_chat_list_settings, "messaging"),
+    ("chat_message_actions", scenario_chat_message_actions, "messaging delivery"),
+    ("chat_quote_reply", scenario_chat_quote_reply, "messaging smoke"),
+    ("first_message_brings_keys", scenario_first_message_brings_keys, "messaging people relay smoke"),
+    ("friend_shares_a_contact", scenario_friend_shares_a_contact, "people messaging"),
+    ("devices_hand_over_their_cards", scenario_devices_hand_over_their_cards, "people calls mesh"),
+    ("strangers_meet_by_invite", scenario_strangers_meet_by_invite, "people messaging mesh"),
+    ("users_on_two_relays_meet", scenario_users_on_two_relays_meet, "people messaging relay"),
+    ("preferred_relay_down_mail_still_arrives", scenario_preferred_relay_down_mail_still_arrives, "net delivery relay"),
+    ("preferred_relay_switched_mail_still_arrives", scenario_preferred_relay_switched_mail_still_arrives,
+     "net delivery relay"),
+    ("invite_names_their_relay", scenario_invite_names_their_relay, "people net relay"),
+    ("replayed_calls_refused_at_other_relay", scenario_replayed_calls_refused_at_other_relay, "net relay"),
+    ("relay_not_matching_its_link_unused", scenario_relay_not_matching_its_link_unused, "net relay smoke"),
+    ("group_members_key_each_other", scenario_group_members_key_each_other, "messaging people groups smoke"),
+    ("group_after_member_removed", scenario_group_after_member_removed, "messaging delivery groups"),
+    ("restored_device_is_heard", scenario_restored_device_is_heard, "delivery devices"),
+    ("restored_device_hears_first", scenario_restored_device_hears_first, "delivery people devices"),
+    ("recovery_phrase_needs_the_pin", scenario_recovery_phrase_needs_the_pin, "people devices"),
+    ("account_locker_round_trip", scenario_account_locker_round_trip, "people devices relay"),
+    ("restore_from_phrase", scenario_restore_from_phrase, "people messaging devices groups relay smoke"),
+    ("restore_from_a_saved_copy", scenario_restore_from_a_saved_copy, "people devices relay"),
+    ("main_device_signs_a_device_out", scenario_main_device_signs_a_device_out, "people devices"),
+    ("linked_device_introduces_itself", scenario_linked_device_introduces_itself, "delivery people devices smoke"),
+    ("linked_devices_see_what_each_sent", scenario_linked_devices_see_what_each_sent, "messaging delivery devices"),
+    ("a_device_asks_for_a_copy_it_missed", scenario_a_device_asks_for_a_copy_it_missed, "delivery devices relay"),
+    ("a_call_rings_every_device_and_stops_once_answered", scenario_a_call_rings_every_device_and_stops_once_answered,
+     "calls devices"),
+    ("a_call_rings_on_every_device_after_each_called_out", scenario_a_call_rings_on_every_device_after_each_called_out,
+     "calls delivery devices"),
+    ("a_restored_device_hears_the_answer_to_its_call", scenario_a_restored_device_hears_the_answer_to_its_call,
+     "calls devices"),
+    ("a_newer_device_list_follows_the_messages", scenario_a_newer_device_list_follows_the_messages,
+     "delivery messaging devices groups"),
+    ("muted_group_alerts_on_a_mention", scenario_muted_group_alerts_on_a_mention, "messaging groups"),
+    ("group_owner_appoints_an_admin", scenario_group_owner_appoints_an_admin, "messaging groups"),
+    ("call_grows_into_a_group", scenario_call_grows_into_a_group, "calls messaging groups"),
+    ("group_call_guest", scenario_group_call_guest, "calls groups"),
+    ("admin_removes_while_owner_is_away", scenario_admin_removes_while_owner_is_away, "messaging groups"),
+    ("member_invites_while_owner_is_away", scenario_member_invites_while_owner_is_away, "messaging groups"),
+    ("managed_group_only_admins_invite", scenario_managed_group_only_admins_invite, "messaging groups"),
+    ("admin_readmits_a_removed_member", scenario_admin_readmits_a_removed_member, "messaging groups"),
+    ("remove_everyone_they_added", scenario_remove_everyone_they_added, "messaging groups"),
+    ("join_by_link", scenario_join_by_link, "messaging groups mesh"),
+    ("refused_links", scenario_refused_links, "messaging groups"),
+    ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices, "people devices"),
+    ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits, "people devices relay"),
+    ("linked_devices_both_send", scenario_linked_devices_both_send, "messaging delivery devices"),
+    ("reset_chats_keeps_linked_devices", scenario_reset_chats_keeps_linked_devices, "messaging devices"),
+    ("bystander_is_no_relay", scenario_bystander_is_no_relay, "calls mesh"),
+    ("call_during_seed_churn", scenario_call_during_seed_churn, "calls node mesh"),
+    ("calling_each_other_at_once", scenario_calling_each_other_at_once, "calls"),
+    ("both_answer_each_other", scenario_both_answer_each_other, "calls"),
+    ("call_back_while_ringing", scenario_call_back_while_ringing, "calls"),
+    ("redial_storm", scenario_redial_storm, "calls"),
+    ("restart_while_ringing", scenario_restart_while_ringing, "calls"),
+    ("caller_restarts_mid_call", scenario_caller_restarts_mid_call, "calls"),
+    ("peer_vanishes_mid_call", scenario_peer_vanishes_mid_call, "calls mesh"),
+    ("decline_then_call_back", scenario_decline_then_call_back, "calls"),
+    ("minimized_still_rings", scenario_minimized_still_rings, "calls"),
+    ("push_wakes_background_callee", scenario_push_wakes_background_callee, "calls push smoke"),
+    ("background_mid_call", scenario_background_mid_call, "calls push"),
+    ("peer_hangs_up_while_backgrounded", scenario_peer_hangs_up_while_backgrounded, "calls push"),
+    ("answered_in_background", scenario_answered_in_background, "calls push"),
+    ("background_is_push_only", scenario_background_is_push_only, "calls push"),
+    ("stay_connected_rings_in_background", scenario_stay_connected_rings_in_background, "calls push mesh"),
+    ("network_drops_mid_call", scenario_network_drops_mid_call, "calls mesh"),
+    ("address_changes_mid_call", scenario_address_changes_mid_call, "calls mesh"),
+    ("group_member_network_drops", scenario_group_member_network_drops, "calls groups mesh"),
+    ("seed_down", scenario_seed_down, "calls node mesh"),
+    ("seed_dies_in_use", scenario_seed_dies_in_use, "calls node mesh"),
+    ("call_again_after_quiet", scenario_call_again_after_quiet, "calls mesh"),
+    ("full_seed_parks_elsewhere", scenario_full_seed_parks_elsewhere, "calls node mesh"),
+    ("full_hop_hosts_the_call_elsewhere", scenario_full_hop_hosts_the_call_elsewhere, "calls node groups mesh"),
+    ("full_hop_known_before_the_call", scenario_full_hop_known_before_the_call, "calls node groups mesh"),
+    ("group_call_three", scenario_group_call_three, "calls node groups smoke"),
+    ("group_one_declines", scenario_group_one_declines, "calls groups"),
+    ("group_leave_one_by_one", scenario_group_leave_one_by_one, "calls groups"),
+    ("group_caller_leaves_first", scenario_group_caller_leaves_first, "calls groups"),
+    ("group_add_someone_mid_call", scenario_group_add_someone_mid_call, "calls groups"),
+    ("group_member_crashes", scenario_group_member_crashes, "calls groups"),
+    ("group_member_killed_is_dropped", scenario_group_member_killed_is_dropped, "calls groups"),
+    ("group_leave_keeps_audio", scenario_group_leave_keeps_audio, "calls media groups"),
+    ("group_member_cut_off_rejoins", scenario_group_member_cut_off_rejoins, "calls groups mesh"),
+    ("group_member_silently_cut_off_rejoins", scenario_group_member_silently_cut_off_rejoins, "calls groups mesh"),
+    ("group_hop_down_mid_call", scenario_group_hop_down_mid_call, "calls node groups mesh"),
+    ("group_decline_then_join", scenario_group_decline_then_join, "calls groups"),
+    ("group_leave_and_rejoin", scenario_group_leave_and_rejoin, "calls groups"),
+    ("group_last_one_waits", scenario_group_last_one_waits, "calls groups"),
+    ("group_late_starter", scenario_group_late_starter, "calls groups"),
+    ("group_member_removed", scenario_group_member_removed, "calls messaging groups"),
+    ("group_owner_hands_over", scenario_group_owner_hands_over, "messaging groups"),
+    ("group_calling_at_once", scenario_group_calling_at_once, "calls groups"),
+    ("group_call_one_way_contact", scenario_group_call_one_way_contact, "calls people groups"),
+    ("group_fourth_answers_late", scenario_group_fourth_answers_late, "calls groups"),
+    ("group_restore_checks_members", scenario_group_restore_checks_members, "messaging devices groups relay"),
+    ("group_removed_member_restores", scenario_group_removed_member_restores, "messaging devices groups relay"),
+    ("group_restored_owner_takes_newer_roster", scenario_group_restored_owner_takes_newer_roster,
+     "messaging devices groups relay"),
+    ("group_call_placed_by_stranger", scenario_group_call_placed_by_stranger, "calls people groups"),
+    ("group_one_way_joins_late", scenario_group_one_way_joins_late, "calls people groups"),
+    ("group_one_way_network_drops", scenario_group_one_way_network_drops, "calls groups mesh"),
+    ("group_two_join_through_drops", scenario_group_two_join_through_drops, "calls groups mesh"),
+    ("group_call_on_the_road", scenario_group_call_on_the_road, "calls media groups mesh"),
+    ("group_call_weak_upload", scenario_group_call_weak_upload, "calls media groups mesh"),
+    ("group_video_three", scenario_group_video_three, "calls media groups"),
+    ("group_video_on_the_road", scenario_group_video_on_the_road, "calls media groups mesh"),
+    ("video_on_the_road", scenario_video_on_the_road, "calls media mesh"),
     *VIDEO_MEASUREMENTS,
     *CALL_PATH_MATRIX,
 ]
@@ -4794,7 +4814,7 @@ SCENARIOS = [
 # Scenarios run only when named (--only).
 # The call-path matrix runs only when named, but for its two rows that guard #502's fixes on every --nat run.
 CALL_PATH_GUARDS = {"call_path_far_mid", "call_path_far_start"}
-OPT_IN = ({name for name, _ in VIDEO_MEASUREMENTS + CALL_PATH_MATRIX} - CALL_PATH_GUARDS) | {"call_again_after_quiet"}
+OPT_IN = ({name for name, *_ in VIDEO_MEASUREMENTS + CALL_PATH_MATRIX} - CALL_PATH_GUARDS) | {"call_again_after_quiet"}
 
 # Scenarios that take the hop away: behind NATs there is then no path between users at all, so with
 # --nat they run only when named.
@@ -4814,12 +4834,55 @@ NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member
              "group_one_way_network_drops", "group_two_join_through_drops", "group_call_on_the_road",
              "group_call_weak_upload", "group_video_on_the_road", "video_on_the_road",
              "bystander_is_no_relay"} | {
-    name for name, _ in VIDEO_MEASUREMENTS + CALL_PATH_MATRIX}
+    name for name, *_ in VIDEO_MEASUREMENTS + CALL_PATH_MATRIX}
+SCENARIO_FNS = {name: fn for name, fn, _ in SCENARIOS}
+
+
+def scenario_entries():
+    """(name, tags) of every scenario, in run order."""
+    return [(name, tags.split()) for name, _, tags in SCENARIOS]
+
+
+def default_skips(nat):
+    """name → why a run in this mode (--nat or not) leaves the scenario out unless it is named (--only)."""
+    skips = {}
+    if nat:
+        for name in NEEDS_DIRECT_PATH:
+            skips[name] = "takes the hop away: no path between users behind NATs"
+        for name in NEEDS_COLD_SEED_LINK:
+            skips[name] = "needs the seed link to go cold, which it does not behind NATs"
+        for name in NEEDS_TLS_RELAYS:
+            skips[name] = "on the TLS relays: host users only (--suite app)"
+    else:
+        for name in NEEDS_NAT:
+            skips[name] = "needs a container per user (--nat, --suite app-nat)"
+    for name in OPT_IN:
+        skips[name] = "opt-in (a measurement): runs only when named"
+    return skips
+
+
+def selection(args):
+    """The rows app_lab_select.select returns for this run's --only / --tags / --changed, and the lines saying
+    what --changed found."""
+    changed, lines = None, []
+    if args.changed:
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        paths = []
+        for spec in args.changed:
+            paths += app_lab_select.changed_paths(spec, root, stdin=sys.stdin)
+        changed, by_rule = app_lab_select.tags_for_paths(paths)
+        lines = ["--changed %s: %d path%s, tags %s" % (" ".join(args.changed), len(paths),
+                                                       "" if len(paths) == 1 else "s", app_lab_select.describe(changed))]
+        lines += ["  " + line for line in by_rule]
+    only = [n for v in args.only for n in v.split(",") if n]
+    rows = app_lab_select.select(scenario_entries(), default_skips(args.nat), only=only,
+                                 tags=app_lab_select.parse_tags(args.tags), changed=changed)
+    return rows, lines
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--probe", required=True)
+    ap.add_argument("--probe", help="pp-app-probe (required unless --list)")
     ap.add_argument("--relay", default="http://127.0.0.1:18719/api/relay", help="lab relay base url")
     ap.add_argument("--hop", help="mesh seed multiaddr (default: the lab hop, from its /status)")
     ap.add_argument("--hop-status", default="http://127.0.0.1:18718")
@@ -4848,13 +4911,44 @@ def main():
                     help="the relay as users behind the NATs reach it")
     ap.add_argument("--nat-share", default=os.environ.get("PP_APP_LAB_NAT_SHARE", "/tmp/pp-app-lab-nat"),
                     help="profile dirs, mounted at the same path in the user containers")
-    ap.add_argument("--only", action="append", default=[])
+    ap.add_argument("--only", action="append", default=[], help="a scenario by name (repeat, or name,name)")
+    ap.add_argument("--tags", action="append", default=[],
+                    help="every scenario with any of these tags (a,b; app_lab_select.py lists them): %s"
+                    % ", ".join(app_lab_select.VOCABULARY))
+    ap.add_argument("--changed", action="append", default=[],
+                    help="the scenarios a change touches: a git range (origin/main...HEAD), one revision (origin/main:"
+                         " this branch and its working tree since it), paths (a,b) or - (paths on stdin)")
+    ap.add_argument("--list", action="store_true",
+                    help="list every scenario with its tags and whether this selection runs it, and run nothing "
+                         "(exit 3 when nothing is selected)")
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--keep", action="store_true", help="keep profile dirs and logs of passing runs")
     ap.add_argument("--retry-failed", action="store_true",
                     help="run each failed scenario once more: passing then is a flake, failing again a failure")
     ap.add_argument("--summary", help="write every scenario's outcome here (JSON), for the nightly lab")
     args = ap.parse_args()
+    problems = app_lab_select.check_registry(scenario_entries())
+    if problems:
+        sys.exit("pp_app_lab.py: scenario tags:\n  " + "\n  ".join(problems))
+    rows, changed_lines = selection(args)
+    for line in changed_lines:
+        print(line)
+    if args.list:
+        for line in app_lab_select.format_selection(rows, everything=True):
+            print(line)
+        sys.exit(0 if any(r[2] for r in rows) else 3)
+    selected = [(name, SCENARIO_FNS[name]) for name, _, chosen, _ in rows if chosen]
+    for line in app_lab_select.format_selection(rows):
+        print(line)
+    if not selected:
+        print("nothing to run for this selection")
+        if args.summary:  # an empty run, not one that did not finish
+            with open(args.summary, "w") as f:
+                json.dump({"nat": bool(args.nat), "results": []}, f, indent=2)
+        sys.exit(0)
+    if not args.probe:
+        ap.error("--probe is required (unless --list)")
+    sys.stdout.flush()
     if not args.hop:
         args.hop = seed_multiaddr(args.hop_status, args.hop_ip)
     if not args.hop2:
@@ -4863,10 +4957,6 @@ def main():
         except OSError:
             args.hop2 = None  # a lab without the second seed: the two-hop rows fail, the rest run
 
-    skipped = OPT_IN | (NEEDS_DIRECT_PATH | NEEDS_COLD_SEED_LINK | NEEDS_TLS_RELAYS if args.nat else NEEDS_NAT)
-    selected = [(n, f) for n, f in SCENARIOS if n in args.only or (not args.only and n not in skipped)]
-    if not selected:
-        sys.exit("no scenario matches %s" % args.only)
     results = []
     for round_no in range(args.repeat):
         for name, fn in selected:
@@ -4874,11 +4964,14 @@ def main():
     if args.retry_failed:
         for result in [r for r in results if r["result"] == "fail"]:
             print("RETRY %s" % result["name"])
-            again = run_scenario(args, result["name"], dict(SCENARIOS)[result["name"]])
+            again = run_scenario(args, result["name"], SCENARIO_FNS[result["name"]])
             if again["result"] == "pass":
                 result.update(result="flaky", retry=again)
             else:
                 result["retry"] = again
+    tags = dict(scenario_entries())
+    for result in results:
+        result["tags"] = tags[result["name"]]
     if args.summary:
         with open(args.summary, "w") as f:
             json.dump({"nat": bool(args.nat), "results": results}, f, indent=2)
