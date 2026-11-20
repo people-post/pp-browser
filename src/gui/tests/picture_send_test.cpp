@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <sstream>
@@ -29,6 +30,11 @@ namespace pbr {
 namespace {
 
 constexpr uint64_t kMb = 1024 * 1024;
+
+/** The first page's folder as the controller builds it (the native separator: a backslash before "1" on Windows). */
+std::string PageDir() {
+  return (std::filesystem::path("/nonexistent/picked/preview") / "1").string();
+}
 
 /** Everything the controller and its queue ask of the app, recorded. */
 struct Fakes {
@@ -197,7 +203,7 @@ TEST_F(PictureSendControllerTest, BackSendsNothingReleasesTheFilesAndPutsTheText
   EXPECT_TRUE(queue_->Ended());
   EXPECT_EQ(fakes_.left, 1);
   EXPECT_GE(fakes_.queue_changed, 1);
-  EXPECT_TRUE(Removed("/nonexistent/picked/preview/1")) << "the page's folder goes";
+  EXPECT_TRUE(Removed(PageDir())) << "the page's folder goes";
 }
 
 TEST_F(PictureSendControllerTest, BackWithNoTextPutsNothingBack) {
@@ -239,7 +245,7 @@ TEST_F(PictureSendControllerTest, SendStartsTheQueueWithTheTextAndTheOriginalCho
   queue_->OnItemFinished(2, AttachmentSendOutcome::Sent);
   ASSERT_EQ(fakes_.texts.size(), 1U);
   EXPECT_EQ(fakes_.texts[0], (std::pair<std::string, std::string>{"chat-origin", "two pictures"}));
-  EXPECT_TRUE(Removed("/nonexistent/picked/preview/1"));
+  EXPECT_TRUE(Removed(PageDir()));
 }
 
 TEST_F(PictureSendControllerTest, SendDoesNothingWhenNothingCanBeSent) {
@@ -263,7 +269,7 @@ TEST_F(PictureSendControllerTest, TheLockWhileOpenClosesThePageAndSendsNothing) 
   EXPECT_TRUE(fakes_.put_back.empty()) << "the text is dropped, not put back";
   EXPECT_TRUE(fakes_.texts.empty());
   EXPECT_EQ(fakes_.released, std::vector<std::string>{"a.jpg"});
-  EXPECT_TRUE(Removed("/nonexistent/picked/preview/1"));
+  EXPECT_TRUE(Removed(PageDir()));
   controller_.CloseForExit();
   EXPECT_EQ(fakes_.closed, 1) << "a second call closes nothing more";
 }
@@ -301,7 +307,7 @@ TEST_F(PictureSendControllerTest, EachTextureIsGivenBackOnceAcrossSwipeRemoveAnd
   for (const auto& entry : seen) {
     EXPECT_EQ(entry.second, 1) << entry.first << " was released more than once";
   }
-  const std::string dir = "/nonexistent/picked/preview/1/";
+  const std::string dir = PageDir() + "/";
   for (const char* name :
        {"a.jpg.big.jpg", "b.jpg.big.jpg", "b.jpg.small.jpg", "c.jpg.big.jpg", "a.jpg.small.jpg", "c.jpg.small.jpg"}) {
     EXPECT_EQ(seen.count(dir + name), 1U) << name << " was never given back";
@@ -335,11 +341,11 @@ TEST_F(PictureSendControllerTest, ThePageFolderOnlyGoesAfterTheWorkerThatMayWrit
   ASSERT_EQ(fakes_.worker.size(), 1U) << "a preview is being made";
   controller_.OnBack();
   EXPECT_TRUE(controller_.WorkerRunning());
-  EXPECT_FALSE(Removed("/nonexistent/picked/preview/1")) << "the worker may still write into it";
+  EXPECT_FALSE(Removed(PageDir())) << "the worker may still write into it";
   RunWorker(); // it sees the stop flag before writing
   RunUi();     // and reports
   EXPECT_FALSE(controller_.WorkerRunning());
-  EXPECT_TRUE(Removed("/nonexistent/picked/preview/1"));
+  EXPECT_TRUE(Removed(PageDir()));
 }
 
 TEST_F(PictureSendControllerTest, PreviewsAreMadeOneAtATimeAndABoundFileIsOneThatExists) {
@@ -350,7 +356,7 @@ TEST_F(PictureSendControllerTest, PreviewsAreMadeOneAtATimeAndABoundFileIsOneTha
   EXPECT_EQ(controller_.CurrentSrc(), "") << "nothing is bound before its file is written";
   RunWorker();
   RunUi();
-  EXPECT_EQ(controller_.CurrentSrc(), "/nonexistent/picked/preview/1/a.jpg.big.jpg");
+  EXPECT_EQ(controller_.CurrentSrc(), PageDir() + "/a.jpg.big.jpg");
   EXPECT_EQ(fakes_.worker.size(), 1U) << "now the second";
   EXPECT_EQ(fakes_.first_preview, 1);
 }
@@ -363,7 +369,7 @@ TEST_F(PictureSendControllerTest, AFileMadeForAPictureRemovedMeanwhileIsDeleted)
   EXPECT_EQ(fakes_.released, std::vector<std::string>{"a.jpg"});
   RunWorker();
   RunUi();
-  EXPECT_TRUE(Removed("/nonexistent/picked/preview/1/a.jpg.big.jpg") || fakes_.worker.size() == 1U)
+  EXPECT_TRUE(Removed(PageDir() + "/a.jpg.big.jpg") || fakes_.worker.size() == 1U)
       << "a stopped worker wrote nothing, or what it wrote is deleted";
   EXPECT_EQ(controller_.Cells().size(), 1U);
 }
@@ -371,7 +377,7 @@ TEST_F(PictureSendControllerTest, AFileMadeForAPictureRemovedMeanwhileIsDeleted)
 TEST_F(PictureSendControllerTest, SwipingAwayGivesTheTextureBackAndASwipeNeedsAFingerMove) {
   Arrive("a.jpg");
   Arrive("b.jpg");
-  const std::string first = "/nonexistent/picked/preview/1/a.jpg.big.jpg";
+  const std::string first = PageDir() + "/a.jpg.big.jpg";
   EXPECT_EQ(controller_.CurrentSrc(), first);
   controller_.OnPress(300);
   controller_.OnRelease(290); // a tap, not a swipe
