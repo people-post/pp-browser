@@ -4040,13 +4040,25 @@ input.checkbox:checked {
   color: {{x-scan-ink}};
 }
 
-.ps-cell {
+.ps-cell-clip {
   background-color: {{bg-card-2}};
   border-color: transparent;
 }
 
-.ps-cell--current {
+.ps-cell--current .ps-cell-clip {
   border-color: {{accent}};
+}
+
+.ps-badge-dot {
+  background-color: {{danger}};
+}
+
+.ps-badge-dot svg {
+  image-color: {{x-scan-ink}};
+}
+
+.ps-badge:active .ps-badge-dot {
+  background-color: {{danger}};
 }
 
 .ps-field {

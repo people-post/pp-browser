@@ -527,6 +527,7 @@ TEST_P(PictureSendPageTest, OneAndNinePicturesFitTheScreenWithTheFieldAndSendIns
     // The page itself never scrolls sideways: the widest thing in it is no wider than the screen.
     EXPECT_LE(Width(One(".picture-send")), static_cast<float>(width()) + 0.5f);
     // Targets of at least 44dp: back, remove, the original row, Send.
+    EXPECT_EQ(Count(".ps-badge"), count > 1 ? 1U : 0U) << "a remove badge only where there is a strip";
     EXPECT_GE(Width(One(".ps-top-btn")), 44.f);
     for (const char* selector : {".ps-top-btn", ".ps-original", ".ps-send", ".ps-field"}) {
       EXPECT_GE(One(selector)->GetBox().GetSize(ui::BoxArea::Border).y, 44.f) << selector;
@@ -594,18 +595,63 @@ TEST_P(PictureSendPageTest, TheSizeShowsOnlyWithOriginalOnAndSwitchingItOnMarksA
   EXPECT_EQ(Width(One(".ps-original-size")), 0.f);
 }
 
-TEST_P(PictureSendPageTest, RemovingThePictureOnShowUpdatesTheCountAndThePosition) {
+TEST_P(PictureSendPageTest, RemovingThePictureOnShowThroughItsBadgeUpdatesTheCountAndThePosition) {
   Fill(3);
   EXPECT_EQ(Text(".ps-send"), "Send (3)");
-  Tap(".ps-top-btn", 1); // remove
+  Tap(".ps-badge");
   EXPECT_EQ(Text(".ps-send"), "Send (2)");
   EXPECT_EQ(Text(".ps-title"), "1 / 2");
   EXPECT_EQ(Count(".ps-cell"), 2U);
-  Tap(".ps-top-btn", 1);
+  EXPECT_EQ(Count(".ps-badge"), 1U) << "the badge follows the selected thumbnail";
+  Tap(".ps-badge");
   EXPECT_EQ(Text(".ps-send"), "Send");
   EXPECT_EQ(Count(".ps-cell"), 0U) << "one left: no strip";
-  Tap(".ps-top-btn", 1);
-  EXPECT_FALSE(controller_.IsOpen()) << "the last one removed: back to the chat";
+  EXPECT_EQ(Count(".ps-badge"), 0U) << "and nothing to remove it with: Back does that";
+  EXPECT_EQ(Count("button.ps-top-btn"), 1U) << "the top bar has the back button only (no trash icon)";
+  EXPECT_TRUE(controller_.IsOpen());
+}
+
+// The red badge belongs to the selected thumbnail only, hangs over its top-right corner inside the strip (not clipped),
+// is a 44dp target, and does not reach the neighbouring thumbnail's centre.
+TEST_P(PictureSendPageTest, TheRemoveBadgeIsOnTheSelectedThumbnailOnlyAndBigEnoughWithoutStealingTheNeighbour) {
+  Fill(4);
+  for (const int selected : {0, 2, 3}) {
+    SCOPED_TRACE("selected: " + std::to_string(selected));
+    Tap(".ps-cell", static_cast<size_t>(selected));
+    ASSERT_EQ(Count(".ps-badge"), 1U);
+    ui::Element* badge = nullptr;
+    ui::ElementList badges;
+    document_->QuerySelectorAll(badges, ".ps-badge");
+    for (ui::Element* candidate : badges) {
+      if (IsShown(candidate)) {
+        badge = candidate;
+      }
+    }
+    ASSERT_NE(badge, nullptr);
+    const Edges edges = BorderEdges(badge);
+    EXPECT_GE(edges.right - edges.left, 44.f);
+    EXPECT_GE(edges.bottom - edges.top, 44.f);
+    EXPECT_GE(edges.top, BorderEdges(One(".ps-strip")).top) << "not clipped at the top of the strip";
+    ui::ElementList cells;
+    document_->QuerySelectorAll(cells, ".ps-cell");
+    std::vector<ui::Element*> shown;
+    for (ui::Element* cell : cells) {
+      if (IsShown(cell)) {
+        shown.push_back(cell);
+      }
+    }
+    ASSERT_EQ(shown.size(), 4U);
+    const Edges mine = BorderEdges(shown[static_cast<size_t>(selected)]);
+    EXPECT_GT(edges.right, mine.right) << "it hangs over the corner";
+    if (selected + 1 < 4) {
+      const Edges next = BorderEdges(shown[static_cast<size_t>(selected) + 1]);
+      const float centre_x = (next.left + next.right) / 2.f;
+      const float centre_y = (next.top + next.bottom) / 2.f;
+      const bool inside =
+          centre_x >= edges.left && centre_x <= edges.right && centre_y >= edges.top && centre_y <= edges.bottom;
+      EXPECT_FALSE(inside) << "the neighbour's centre is its own";
+    }
+  }
 }
 
 TEST_P(PictureSendPageTest, TappingASmallPictureShowsItAndTheBackAndSendButtonsAreTheControllersOwn) {

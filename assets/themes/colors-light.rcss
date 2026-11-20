@@ -3954,13 +3954,25 @@ input.checkbox:checked {
   color: #ffffff;
 }
 
-.ps-cell {
+.ps-cell-clip {
   background-color: #f2f2f7;
   border-color: transparent;
 }
 
-.ps-cell--current {
+.ps-cell--current .ps-cell-clip {
   border-color: #007aff;
+}
+
+.ps-badge-dot {
+  background-color: #ff3b30;
+}
+
+.ps-badge-dot svg {
+  image-color: #ffffff;
+}
+
+.ps-badge:active .ps-badge-dot {
+  background-color: #ff3b30;
 }
 
 .ps-field {

@@ -8,10 +8,7 @@
       <svg src="../icons/v2/back.svg" width="24" height="24"></svg>
     </button>
     <p class="ps-title">{{ps_title}}</p>
-    <button class="ps-top-btn" type="button" data-event-click="ps_remove()" data-if="ps_has_items">
-      <svg src="../icons/v2/trash.svg" width="24" height="24"></svg>
-    </button>
-    <div class="ps-top-btn ps-top-btn--none" data-if="!ps_has_items"></div>
+    <div class="ps-top-btn ps-top-btn--none"></div>
   </div>
   <div class="ps-stage" id="ps-stage" data-event-mousedown="ps_press()" data-event-mouseup="ps_release()">
     <img class="ps-image" data-if="ps_current_ready" data-attr-src="ps_current_src"
@@ -25,10 +22,17 @@
   <div class="ps-strip" data-if="ps_show_strip">
     <div data-for="cell : ps_cells" class="ps-cell" data-class-ps-cell--current="cell.current"
          data-event-click="ps_select(cell.index)">
-      <img class="ps-cell-image" data-if="cell.ready" data-attr-src="cell.thumb_src"
-           data-style-width="cell.iw" data-style-height="cell.ih"
-           data-style-margin-left="cell.ml" data-style-margin-top="cell.mt"/>
-      <p class="ps-flag ps-flag--cell" data-if="cell.too_large">{{i18n:picture_send.too_large}}</p>
+      <div class="ps-cell-clip">
+        <img class="ps-cell-image" data-if="cell.ready" data-attr-src="cell.thumb_src"
+             data-style-width="cell.iw" data-style-height="cell.ih"
+             data-style-margin-left="cell.ml" data-style-margin-top="cell.mt"/>
+        <p class="ps-flag ps-flag--cell" data-if="cell.too_large">{{i18n:picture_send.too_large}}</p>
+      </div>
+      <!-- Only the selected thumbnail carries the remove badge: a 44dp target around a small red circle. -->
+      <button class="ps-badge" type="button" data-if="cell.current" data-event-click="ps_remove()"
+              title="{{i18n:common.remove}}">
+        <span class="ps-badge-dot"><svg src="../icons/v2/close.svg" width="12" height="12"></svg></span>
+      </button>
     </div>
   </div>
   <div class="ps-bottom">
@@ -48,4 +52,6 @@
     <button class="ps-send" type="button" data-event-click="ps_send()" data-attrif-disabled="!ps_can_send"
             data-class-ps-send--off="!ps_can_send">{{ps_send_label}}</button>
   </div>
+  <!-- The bottom safe area, in the page's own colour (ShellHost gives it the height). -->
+  <div class="ps-safe-bottom" id="ps-safe-bottom"></div>
 </div>

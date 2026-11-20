@@ -2349,7 +2349,13 @@ void ShellHost::ApplySafeAreaLayout() {
       const std::string body_id = "overlay-body-" + std::to_string(overlay.id);
       ui::Element* body = doc->GetElementById(body_id.c_str());
       set_dp(body, "padding-top", status_bar_dp);
-      set_dp(body, "padding-bottom", strip_dp);
+      if (overlay.key == "picture_send") {
+        // The page draws its own bottom safe area, so its colour runs to the screen edge (no strip of the shell's).
+        set_dp(body, "padding-bottom", 0.f);
+        set_dp(doc->GetElementById("ps-safe-bottom"), "height", strip_dp);
+      } else {
+        set_dp(body, "padding-bottom", strip_dp);
+      }
       continue;
     }
     if (overlay.page_sheet) {

@@ -16343,27 +16343,67 @@ textarea:composing ~ .prompt-composer-label,
   display: flex;
   flex-direction: row;
   gap: 8dp;
-  height: 88dp;
-  padding: 12dp 16dp 12dp 16dp;
+  height: 96dp;
+  padding: 20dp 24dp 12dp 16dp;
   box-sizing: border-box;
   overflow-x: auto;
   overflow-y: hidden;
 }
 
+/* A cell is a plain 64dp box (the badge hangs over its top-right corner, so it must not clip); the picture is clipped
+   by the box inside it, which also carries the selection ring. */
 .ps-cell {
   position: relative;
   flex-shrink: 0;
+  width: 64dp;
+  height: 64dp;
+  cursor: pointer;
+}
+
+.ps-cell-clip {
+  position: relative;
   width: 64dp;
   height: 64dp;
   border-width: 2dp;
   border-radius: 10dp;
   box-sizing: border-box;
   overflow: hidden;
-  cursor: pointer;
 }
 
 .ps-cell-image {
   display: block;
+}
+
+/* The remove badge of the selected thumbnail: a 44dp target centred 4dp inside the corner, the red circle (22dp) in its
+   middle. It sits before the next thumbnail in paint order, so the neighbour's taps win where they overlap. */
+.ps-badge {
+  position: absolute;
+  top: -18dp;
+  right: -18dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.ps-badge-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22dp;
+  height: 22dp;
+  border-radius: 11dp;
+}
+
+.ps-safe-bottom {
+  flex-shrink: 0;
+  height: 0;
 }
 
 .ps-bottom {
