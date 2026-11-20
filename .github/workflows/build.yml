@@ -1,8 +1,10 @@
 name: build
 
+# Release branches run the same checks as main (projects/release-compatibility DESIGN § Checks by level): their pushes,
+# and PRs to them (backports, release-branch-only fixes) build every platform and run every test, not a PR's subset.
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/**']
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -14,7 +16,7 @@ on:
       - 'LICENSE'
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
+    branches: [main, 'release/**']
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -24,6 +26,9 @@ on:
       - '.cursor/**'
       - '.vscode/**'
       - 'LICENSE'
+  # The backport bot (backport.yml) runs this on its backport/* branch: a PR it opens with the workflow token starts
+  # no pull_request run. A dispatch runs everything, as a push does.
+  workflow_dispatch:
 
 # PB-060: read only. paths-filter lists a PR's files through the API; nothing here writes.
 permissions:
@@ -36,7 +41,8 @@ concurrency:
 
 jobs:
   # Which jobs a PR needs (Kenneth 2026-10-20: every push ran all six jobs and queued behind each other).
-  # Drafts run nothing; marking "ready for review" runs the set below. Pushes to main run everything.
+  # Drafts run nothing; marking "ready for review" runs the set below. Pushes, dispatches and PRs to a release branch
+  # run everything.
   changes:
     runs-on: ubuntu-24.04
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
@@ -179,8 +185,8 @@ jobs:
     runs-on: ${{ matrix.os != 'macos' && matrix.os || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(vars.CI_MAC_BUILD_LABELS || '"macos-15"') || 'macos-15') }}
     env:
       # Asset-only PRs (locales, themes, views) still need the tests, which the Ubuntu build runs; the
-      # Windows and macOS builds add nothing for them. Pushes to main always build everything.
-      PP_RUN_PLATFORM: ${{ github.event_name != 'pull_request' || needs.changes.outputs.src == 'true' || matrix.os == 'ubuntu-24.04' }}
+      # Windows and macOS builds add nothing for them. Pushes, and PRs to a release branch, always build everything.
+      PP_RUN_PLATFORM: ${{ github.event_name != 'pull_request' || github.base_ref != 'main' || needs.changes.outputs.src == 'true' || matrix.os == 'ubuntu-24.04' }}
       CCACHE_COMPRESSLEVEL: 5
 
     steps:
@@ -308,9 +314,10 @@ jobs:
         shell: bash
         env:
           TRACE_DEBUG: "1"
-          # A PR skips the tests of the capability folders it does not touch (CR022); pushes run every test.
+          # A PR to main skips the tests of the capability folders it does not touch (CR022); pushes and PRs to a
+          # release branch run every test.
           # -j (no count, CMake 3.29+): one test per core. Serial took 9 min on macOS; the slow call tests mostly wait on timers.
-          PP_IS_PR: ${{ github.event_name == 'pull_request' }}
+          PP_IS_PR: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' }}
           PP_CHANGED_FILTERS: ${{ needs.changes.outputs.changes }}
         run: |
           if [ "$RUNNER_OS" = macOS ]; then
@@ -411,10 +418,14 @@ jobs:
           cp -r assets "$dest/share/pp-browser/assets"
           tar -C stage -czf "pp-browser-linux-x86_64-${GITHUB_SHA::8}.tar.gz" pp-browser-linux-x86_64
 
+      # An artifact name takes no '/': release/app-1.0 → release-app-1.0.
+      - name: Artifact name
+        run: echo "PP_REF_SLUG=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_ENV"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: pp-browser-linux-${{ github.ref_name }}
+          name: pp-browser-linux-${{ env.PP_REF_SLUG }}
           path: pp-browser-linux-x86_64-*.tar.gz
           if-no-files-found: error
           retention-days: ${{ github.ref_name == 'main' && 90 || 14 }}
@@ -425,7 +436,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           KEEP: ${{ github.ref_name == 'main' && 10 || 5 }}
         run: |
-          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=pp-browser-linux-${GITHUB_REF_NAME}&per_page=100" \
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=pp-browser-linux-${PP_REF_SLUG}&per_page=100" \
             --jq '.artifacts | sort_by(.created_at) | reverse | .[] | .id' \
             | tail -n +$((KEEP + 1)) \
             | while read -r id; do gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"; done
@@ -438,7 +449,7 @@ jobs:
   ios:
     needs: changes
     # Fork PRs never reach the self-hosted Mac: their code would run on it.
-    if: github.event_name != 'pull_request' || (needs.changes.outputs.apple == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
+    if: github.event_name != 'pull_request' || ((github.base_ref != 'main' || needs.changes.outputs.apple == 'true') && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ fromJSON(vars.CI_MAC_BUILD_LABELS || '"macos-15"') }}
     timeout-minutes: 90
     env:
@@ -503,7 +514,7 @@ jobs:
 
   android:
     needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.android == 'true'
+    if: github.event_name != 'pull_request' || github.base_ref != 'main' || needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -609,11 +620,15 @@ jobs:
         if: always()
         run: ccache --show-stats || true
 
+      # An artifact name takes no '/': release/app-1.0 → release-app-1.0.
+      - name: Artifact name
+        run: echo "PP_REF_SLUG=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_ENV"
+
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-          # PR builds keep the shared name and expire fast; main gets a per-branch name to prune.
-          name: ${{ github.event_name == 'push' && format('android-debug-apk-{0}', github.ref_name) || 'android-debug-apk' }}
+          # PR builds keep the shared name and expire fast; pushes get a per-branch name to prune.
+          name: ${{ github.event_name == 'push' && format('android-debug-apk-{0}', env.PP_REF_SLUG) || 'android-debug-apk' }}
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: ${{ github.event_name == 'pull_request' && 3 || github.ref_name == 'main' && 90 || 14 }}
@@ -624,7 +639,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           KEEP: ${{ github.ref_name == 'main' && 10 || 5 }}
         run: |
-          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=android-debug-apk-${GITHUB_REF_NAME}&per_page=100" \
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=android-debug-apk-${PP_REF_SLUG}&per_page=100" \
             --jq '.artifacts | sort_by(.created_at) | reverse | .[] | .id' \
             | tail -n +$((KEEP + 1)) \
             | while read -r id; do gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"; done

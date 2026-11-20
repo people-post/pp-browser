@@ -185,6 +185,31 @@ PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/platform/pp_node_package_lin
 
 - Import Authenticode `.pfx` as a secret; sign NSIS / exe with `signtool`
 
+## Release branches and backports
+
+Each product's release that ships into the field gets a branch cut from `main`, `release/app-X.Y` or `release/node-X.Y`, and it stays open while that release is in the supported range ([release-compatibility DESIGN § Release lines](../../projects/release-compatibility/DESIGN.md#release-lines-are-first-class), [RC014](../../projects/release-compatibility/DECISIONS.md#rc014--backport-and-hotfix-rules-after-leos-second-review), [RC016](../../projects/release-compatibility/DECISIONS.md#rc016--app-pp-node-and-relay-each-have-their-own-version)).
+
+**What a release branch takes:** fixes only. No features and no format changes; an additive change only where a fix needs it; a security cutover may go on. The newest branch takes every fix; older branches still in range take only security fixes and fixes for a break between in-range versions. Release branches are never merged back into `main`.
+
+**Cutting one** (the release owner): `git push origin main:refs/heads/release/app-1.0`. [`release-issue.yml`](../../.github/workflows/release-issue.yml) then opens the issue "Release app 1.0" from [`.github/ISSUE_TEMPLATE/release.md`](../../.github/ISSUE_TEMPLATE/release.md), assigned to whoever pushed the branch, where the checklist is ticked and the go / no-go recorded, and creates the label `backport release/app-1.0`. [Build CI](../../.github/workflows/build.yml) runs on the branch's pushes and on PRs to it, with every platform and every test (not a PR's subset).
+
+**Fixes land on `main` first, then are backported:**
+
+1. Merge the fix to `main` as usual.
+2. Label the PR `backport release/app-1.0`, before or after the merge; one label per branch that needs it (a fix in code app and pp-node share takes one per product's branch).
+3. [`backport.yml`](../../.github/workflows/backport.yml) cherry-picks the PR's commits with `-x` (each keeps its `(cherry picked from commit …)` trailer) onto `backport/pr-<N>-to-release-app-1.0`, cut from the target, and opens a PR to `release/app-1.0` that links the original. It asks the release owner (repo variable `RELEASE_OWNER`; the original author when unset or when the request fails) for review, and comments the link on the original. The commits: a merge commit's PR commits in order (merges inside the PR skipped), a squash merge's one commit, or a rebase merge's commits. Commits already on the target are skipped.
+4. The backport PR runs that branch's checks and needs a human approval (the release owner's may do).
+
+**Checks on the bot's PRs.** A PR opened, or a branch pushed, with the workflow token (`GITHUB_TOKEN`, the only token the bot has) starts no `pull_request` or `push` run, so the bot dispatches `build.yml` on its branch; those check runs land on the PR's head commit. A human push to the branch then runs the normal PR checks. If a run is missing: Actions → build → Run workflow on the backport branch, or close and reopen the PR.
+
+**When it does not apply:** the bot pushes nothing and comments on the original PR with the conflicting commit, its files, and the commands to do the backport by hand. It never resolves a conflict. Whoever does it says what differs on a line `branch-specific backport: …` in the commit message, in a separate commit where the rest picks cleanly. The bot also refuses, with a comment, a label naming anything but an existing `release/app-X.Y` or `release/node-X.Y`, and a backport touching `.github/workflows/` (the workflow token cannot push it): those are done by hand the same way.
+
+**A fix only a release branch needs** (the code is gone from `main`, say) is the exception: a PR straight to the branch with the label `release-branch-only` and a line `Why not on main: …` in its body. [`release-branch-pr.yml`](../../.github/workflows/release-branch-pr.yml) checks every PR to a release branch: either that label and reason, or every commit carries a cherry-pick trailer naming a commit on `main` or a `branch-specific backport` line.
+
+**A hotfix starts from the affected branch**, not only the newest: backport to `release/app-1.1` (or the exception above), and tag `v1.1.Z+1` there, its candidates `-rc.N` first.
+
+**Closing a branch** (the release owner, when the version table says its release has left the range): close its open backport PRs with a note naming the range exit (`gh pr list --base release/app-1.0 --state open --json number --jq '.[].number' | xargs -I{} gh pr close {} --comment "release/app-1.0 left the supported range on <date>; not backported."`); rename the label `backport release/app-1.0` to `closed release/app-1.0`, so the bot no longer takes it and the PRs keep it as a record; then lock the branch against pushes in branch protection. The branch is kept: its tags and history must stay.
+
 ## Deferred
 
 | Item | Notes |
