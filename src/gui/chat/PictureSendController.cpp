@@ -110,6 +110,7 @@ PictureSendQueue* PictureSendController::Queue() const {
 }
 
 void PictureSendController::Dirty() {
+  ++dirty_count_;
   if (context_) {
     DataModelHost::Instance().DirtyAll("picture_send");
   }
@@ -139,11 +140,23 @@ void PictureSendController::NoteTexture(const std::string& path) {
   }
 }
 
-void PictureSendController::ReleaseAllTextures() {
-  if (!textures_.empty() && host_.release_textures) {
-    host_.release_textures(std::move(textures_));
+void PictureSendController::ReleaseTextures(std::vector<std::string> srcs) {
+  // The one way a texture is given back: what is released leaves the held list, so no file is released twice.
+  std::vector<std::string> out;
+  for (std::string& src : srcs) {
+    const auto it = std::find(textures_.begin(), textures_.end(), src);
+    if (it != textures_.end()) {
+      textures_.erase(it);
+      out.push_back(std::move(src));
+    }
   }
-  textures_.clear();
+  if (!out.empty() && host_.release_textures) {
+    host_.release_textures(std::move(out));
+  }
+}
+
+void PictureSendController::ReleaseAllTextures() {
+  ReleaseTextures(std::vector<std::string>(textures_));
 }
 
 std::shared_ptr<std::atomic<bool>> PictureSendController::CancelFlag(const uint64_t id) {
@@ -174,6 +187,7 @@ void PictureSendController::Open() {
   first_shown_ = false;
   current_ = 0;
   shown_src_.clear();
+  press_pending_ = false;
   original_ = false;
   text_ = "";
   PaneSpec spec;
@@ -240,7 +254,11 @@ void PictureSendController::PumpJobs() {
     if (it == items.end()) {
       continue; // removed before its turn
     }
+    if (it->too_large) {
+      continue; // over the limit for how it would go: no preview is made (the cell shows its label)
+    }
     worker_running_ = true;
+    running_id_ = id;
     running_session_ = session_;
     const auto stop = stop_;
     const auto cancel = CancelFlag(id);
@@ -248,13 +266,14 @@ void PictureSendController::PumpJobs() {
     const std::string path = it->path;
     const PictureSendKind kind = it->kind;
     const auto make = host_.make_preview;
+    const uint64_t max_image_bytes = queue->Limits().max_original_image_bytes;
     const auto post_ui = host_.post_ui;
     const uint64_t session = session_;
     const std::weak_ptr<int> alive = alive_;
-    auto work = [make, post_ui, stop, cancel, dir, path, kind, session, id, alive, this]() {
+    auto work = [make, post_ui, stop, cancel, dir, path, kind, max_image_bytes, session, id, alive, this]() {
       PictureSendPreviewFiles files;
       if (make && !stop->load() && !cancel->load()) {
-        files = make(path, kind, dir, [stop, cancel]() { return stop->load() || cancel->load(); });
+        files = make(path, kind, dir, max_image_bytes, [stop, cancel]() { return stop->load() || cancel->load(); });
       }
       auto reply = [alive, this, session, id, files, stop, cancel, dir]() {
         OnPreviewDone(alive, this, session, id, files, stop, cancel, dir);
@@ -282,6 +301,7 @@ void PictureSendController::OnPreviewDone(const std::weak_ptr<int>& alive, Pictu
     return;
   }
   self->worker_running_ = false;
+  self->running_id_ = 0;
   if (stop->load()) {
     // The page this was for is over: whatever was written goes, and the page folder with it now that nobody writes.
     self->RemoveDir(dir);
@@ -294,8 +314,7 @@ void PictureSendController::OnPreviewDone(const std::weak_ptr<int>& alive, Pictu
       self->failed_.push_back(id); // no picture to show for this one: it can still be sent
     }
   } else if (queue && queue->SetPreview(id, files.preview_path, files.thumb_path)) {
-    self->NoteTexture(files.preview_path);
-    self->NoteTexture(files.thumb_path);
+    self->NoteTexture(files.thumb_path); // the large picture is noted when it is shown (Refresh)
     self->dims_.push_back({id, {files.width, files.height}});
     self->any_preview_ = true;
   } else {
@@ -359,16 +378,17 @@ void PictureSendController::Refresh() {
     current_video_ = item.kind == PictureSendKind::Video;
     current_too_large_ = item.too_large;
     const bool failed = std::find(failed_.begin(), failed_.end(), item.id) != failed_.end();
-    current_preparing_ = src.empty() && !failed;
+    current_preparing_ = src.empty() && !failed && !item.too_large;
   } else {
     current_preparing_ = arriving_;
   }
   if (src != shown_src_) {
     // The picture swiped away gives its texture back (two frames later); only the current one is held large.
-    if (!shown_src_.empty() && host_.release_textures) {
-      host_.release_textures({shown_src_});
+    if (!shown_src_.empty()) {
+      ReleaseTextures({shown_src_});
     }
     shown_src_ = src;
+    NoteTexture(src); // held large from now (a swipe back loads it again, so it is held again)
   }
   current_ready_ = !src.empty();
   current_src_ = src.c_str(); // bound only now that the file exists
@@ -395,9 +415,11 @@ void PictureSendController::FitCurrent() {
       if (ui::Element* stage = doc->GetElementById("ps-stage")) {
         const float dpr = std::max(context_->GetDensityIndependentPixelRatio(), 0.5f);
         const ui::Vector2f size = stage->GetBox().GetSize(ui::BoxArea::Content) / dpr; // boxes are in pixels
+        stage_w_ = size.x; // the observed size is kept even when collapsed, so Update() settles on it
+        stage_h_ = size.y;
         if (size.x > 1.f && size.y > 1.f) {
-          box_w = stage_w_ = size.x;
-          box_h = stage_h_ = size.y;
+          box_w = size.x;
+          box_h = size.y;
         }
       }
     }
@@ -453,9 +475,14 @@ void PictureSendController::OnSelect(const int index) {
 
 void PictureSendController::OnPress(const int x) {
   press_x_ = x;
+  press_pending_ = true;
 }
 
 void PictureSendController::OnRelease(const int x) {
+  if (!press_pending_) {
+    return; // a release whose press was not on the stage (a drag that began elsewhere) is not a swipe
+  }
+  press_pending_ = false;
   const int moved = x - press_x_;
   if (moved <= -kSwipeDp) {
     OnSelect(current_ + 1);
@@ -471,6 +498,15 @@ void PictureSendController::OnToggleOriginal() {
   }
   original_ = !original_;
   queue->SetOriginal(original_); // the over-limit marks are decided again for the way they would go now
+  // An item that is no longer over the limit and has no preview (none was made while it was) gets its turn now.
+  for (const PictureSendItem& item : queue->Items()) {
+    const bool queued = std::find(jobs_.begin(), jobs_.end(), item.id) != jobs_.end();
+    const bool failed = std::find(failed_.begin(), failed_.end(), item.id) != failed_.end();
+    if (!item.too_large && item.preview_path.empty() && !queued && !failed && item.id != running_id_ && !dir_.empty()) {
+      jobs_.push_back(item.id);
+    }
+  }
+  PumpJobs();
   Refresh();
 }
 
@@ -510,8 +546,11 @@ void PictureSendController::OnRemove() {
   if (!queue->Remove(id)) {
     return;
   }
-  if (!gone.empty() && host_.release_textures) {
-    host_.release_textures(std::move(gone));
+  if (!gone.empty()) {
+    if (std::find(gone.begin(), gone.end(), shown_src_) != gone.end()) {
+      shown_src_.clear(); // released here: Refresh must not release it again
+    }
+    ReleaseTextures(std::move(gone));
   }
   if (queue->Items().empty() && !arriving_) {
     OnBack(); // nothing left: back to the chat
@@ -578,6 +617,12 @@ void PictureSendController::OnSend() {
 }
 
 void PictureSendController::CloseForExit() {
+  // Called every frame while the vault is locked: acts once (an open page or something left to clear), then not at
+  // all, so the idle chat is not dirtied each frame.
+  if (!IsOpen() && dir_.empty() && textures_.empty() && jobs_.empty() && item_cancel_.empty() && !arriving_ &&
+      !has_items_) {
+    return;
+  }
   if (IsOpen()) {
     const int layer = layer_id_;
     layer_id_ = -1;

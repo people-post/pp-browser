@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -39,6 +40,8 @@ struct Fakes {
   std::vector<std::pair<std::string, bool>> sent_items; // path, original
   std::vector<std::vector<std::string>> textures;
   std::vector<std::string> played;
+  std::vector<std::string> made; // files a preview was made for
+  uint64_t made_limit = 0;       // the byte limit the last preview was given
   int left = 0;
   int queue_changed = 0;
   int first_preview = 0;
@@ -97,8 +100,10 @@ protected:
     PictureSendHost host;
     host.queue = [this]() { return queue_.get(); };
     host.preview_root = []() { return std::string("/nonexistent/picked/preview"); };
-    host.make_preview = [](const std::string& path, PictureSendKind, const std::string& dir,
-                           const std::function<bool()>& cancelled) {
+    host.make_preview = [this](const std::string& path, PictureSendKind, const std::string& dir,
+                               const uint64_t max_image_bytes, const std::function<bool()>& cancelled) {
+      fakes_.made.push_back(path);
+      fakes_.made_limit = max_image_bytes;
       PictureSendPreviewFiles files;
       if (!cancelled()) {
         files.preview_path = dir + "/" + path + ".big.jpg";
@@ -261,6 +266,67 @@ TEST_F(PictureSendControllerTest, TheLockWhileOpenClosesThePageAndSendsNothing) 
   EXPECT_TRUE(Removed("/nonexistent/picked/preview/1"));
   controller_.CloseForExit();
   EXPECT_EQ(fakes_.closed, 1) << "a second call closes nothing more";
+}
+
+TEST_F(PictureSendControllerTest, CloseForExitActsOnceAndAnIdleControllerIsNotDirtiedEveryFrame) {
+  const int never_opened = controller_.DirtyCountForTest();
+  for (int i = 0; i < 5; ++i) {
+    controller_.CloseForExit(); // every frame while locked, nothing open
+  }
+  EXPECT_EQ(controller_.DirtyCountForTest(), never_opened);
+  Arrive("a.jpg");
+  controller_.CloseForExit();
+  const int after_close = controller_.DirtyCountForTest();
+  for (int i = 0; i < 5; ++i) {
+    controller_.CloseForExit();
+  }
+  EXPECT_EQ(controller_.DirtyCountForTest(), after_close) << "the first call cleared everything; later ones do nothing";
+  EXPECT_EQ(fakes_.closed, 1);
+}
+
+TEST_F(PictureSendControllerTest, EachTextureIsGivenBackOnceAcrossSwipeRemoveAndStop) {
+  Arrive("a.jpg");
+  Arrive("b.jpg");
+  Arrive("c.jpg");
+  controller_.OnPress(300);
+  controller_.OnRelease(100); // a -> b: a's large picture goes back
+  controller_.OnRemove();     // b removed (its large picture and thumbnail), c is shown
+  controller_.OnBack();       // the rest goes back at the end
+  std::map<std::string, int> seen;
+  for (const auto& batch : fakes_.textures) {
+    for (const std::string& src : batch) {
+      ++seen[src];
+    }
+  }
+  for (const auto& entry : seen) {
+    EXPECT_EQ(entry.second, 1) << entry.first << " was released more than once";
+  }
+  const std::string dir = "/nonexistent/picked/preview/1/";
+  for (const char* name :
+       {"a.jpg.big.jpg", "b.jpg.big.jpg", "b.jpg.small.jpg", "c.jpg.big.jpg", "a.jpg.small.jpg", "c.jpg.small.jpg"}) {
+    EXPECT_EQ(seen.count(dir + name), 1U) << name << " was never given back";
+  }
+}
+
+TEST_F(PictureSendControllerTest, AReleaseWithoutAPressOnTheStageIsNotASwipe) {
+  Arrive("a.jpg");
+  Arrive("b.jpg");
+  controller_.OnRelease(-500); // a drag that began outside the stage
+  EXPECT_EQ(controller_.CurrentIndex(), 0);
+  controller_.OnPress(300);
+  controller_.OnRelease(100);
+  EXPECT_EQ(controller_.CurrentIndex(), 1);
+  controller_.OnRelease(900); // the same press cannot swipe twice
+  EXPECT_EQ(controller_.CurrentIndex(), 1);
+}
+
+TEST_F(PictureSendControllerTest, AnItemOverTheLimitGetsNoPreviewAndOthersAreReadWithTheBatchLimit) {
+  Arrive("big.mov", 80 * kMb, PictureSendKind::Video); // over the video limit
+  Arrive("a.jpg");
+  EXPECT_EQ(fakes_.made, std::vector<std::string>{"a.jpg"}) << "no decode for what cannot be sent";
+  EXPECT_EQ(fakes_.made_limit, queue_->Limits().max_original_image_bytes);
+  EXPECT_TRUE(controller_.Cells()[0].too_large);
+  EXPECT_FALSE(controller_.Cells()[0].ready);
 }
 
 TEST_F(PictureSendControllerTest, ThePageFolderOnlyGoesAfterTheWorkerThatMayWriteIntoItHasStopped) {
@@ -578,6 +644,23 @@ TEST_P(PictureSendPageTest, OneAndNinePicturesFitTheScreenWithTheFieldAndSendIns
 
 // Boxes are measured in pixels and the stylesheet is in dp: on a 3x phone the fitted picture was 3 times too big and
 // ran out of its stage (the simulator showed an empty stage, 2026-11-20).
+TEST_P(PictureSendPageTest, ACollapsedStageSettlesInsteadOfRefittingEveryFrame) {
+  Fill(1);
+  ui::Element* stage = One("#ps-stage");
+  ASSERT_NE(stage, nullptr);
+  Frames();
+  ASSERT_GT(stage->GetBox().GetSize(ui::BoxArea::Content).y, 1.f) << "laid out first";
+  for (const char* property : {"height", "min-height", "max-height", "flex"}) {
+    stage->SetProperty(property, std::string(property) == "flex" ? "0 0 0dp" : "0dp"); // the stage collapses
+  }
+  Frames();
+  ASSERT_LE(stage->GetBox().GetSize(ui::BoxArea::Content).y, 1.f) << "the stage really collapsed";
+  const int settled = controller_.DirtyCountForTest();
+  Frames();
+  Frames();
+  EXPECT_EQ(controller_.DirtyCountForTest(), settled) << "a stage that stays collapsed is fitted once, not per frame";
+}
+
 TEST_P(PictureSendPageTest, TheFittedPictureStaysInsideItsStageOnADenseScreen) {
   context_->SetDensityIndependentPixelRatio(3.f);
   Frames();
@@ -747,6 +830,31 @@ TEST(PictureSendWiringPinTest, EveryExitClosesThePageBeforeTheQueueLeaves) {
   ASSERT_NE(deleted, std::string::npos);
   EXPECT_NE(source.substr(deleted > 250 ? deleted - 250 : 0, 250).find("picture_send_.CloseForExit();"),
             std::string::npos);
+}
+
+TEST(PictureSendWiringPinTest, PendingRowsAreAddressedByIdDuringABatch) {
+  // A batch keeps several rows at once, an older failed one first: front()-based Upload() / Apply(step) would act on
+  // the wrong row. They are only for adding a new row; every other change goes through the id variant.
+  const std::string source = ControllerSource();
+  size_t at = 0;
+  int upload_calls = 0;
+  while ((at = source.find("pending_uploads_.Upload()", at)) != std::string::npos) {
+    ++upload_calls;
+    at += 10;
+  }
+  EXPECT_EQ(upload_calls, 1) << "only ApplyPendingUpload's thread fallback may read the first row";
+  const size_t apply_step = source.find("pending_uploads_.Apply(std::move(step))");
+  ASSERT_NE(apply_step, std::string::npos);
+  EXPECT_EQ(source.find("pending_uploads_.Apply(std::move(step))", apply_step + 1), std::string::npos)
+      << "Apply(step) is called from ApplyPendingUpload only";
+  at = 0;
+  while ((at = source.find("ApplyPendingUpload(", at)) != std::string::npos) {
+    const std::string call = source.substr(at, 40);
+    const bool is_definition = call.find("ApplyPendingUpload(PendingUploadStep") == 0;
+    const bool adds_row = call.find("ApplyPendingUpload({std::move(") == 0;
+    EXPECT_TRUE(is_definition || adds_row) << "a step for an existing row must use ApplyPendingUploadTo: " << call;
+    at += 10;
+  }
 }
 
 TEST(PictureSendWiringPinTest, EveryPictureOfAPickIsCheckedWhenItArrives) {

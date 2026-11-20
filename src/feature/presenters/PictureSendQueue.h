@@ -106,7 +106,7 @@ bool PictureOverLimit(const PictureSendItem& item, bool original, const Attachme
 enum class PictureSendExit {
   /** Every item had its turn (some may have failed). */
   Finished,
-  /** The person cancelled the rest while sending. */
+  /** Cancel() stopped the rest while sending (no control calls it today; see Cancel). */
   Cancelled,
   /** The device was offline: the rest was given up. */
   Offline,
@@ -181,7 +181,7 @@ struct PictureSendPorts {
  * added (at most kMaxItems), removed, given preview files, and sent as they are or shrunk ("原图"). Start sends them
  * one at a time through `send_item` — the next only after the previous one's OnItemFinished — and the typed line
  * after the last, whatever failed. A pace refusal (RateLimited) is not a failure: the same item goes again after
- * kRateLimitRetryMs, as often as it takes (Cancel stops it). The queue holds the attachment slot from Start until it
+ * kRateLimitRetryMs, as often as it takes (an offline device, a lock or Cancel() stops it). The queue holds the attachment slot from Start until it
  * ends (Active()), gaps between items and pace waits included, so no other attachment slips in between.
  */
 class PictureSendQueue {
@@ -226,7 +226,11 @@ public:
   /** The time asked for by `schedule_tick` may have come: a paced item goes again when it has. */
   void Tick();
 
-  /** The pill's Cancel while sending: the item in flight finishes, the rest is not sent, the text goes back. */
+  /**
+   * Stops the whole batch: the item in flight finishes, the rest is not sent, the text goes back. NOT wired to any
+   * control today: the cancel disc on an uploading bubble cancels only that item (the batch goes on). Kept, with
+   * its tests, for a future "stop all" control.
+   */
   void Cancel();
   /** The preview page was left before Start: nothing is sent, every copy released, the text goes back. */
   void Back();
@@ -246,6 +250,8 @@ public:
   /** Nothing more will happen here: ended, nothing in flight. The owner may let it go. */
   bool Settled() const { return ended_ && in_flight_ == 0; }
   PictureSendProgress Progress() const;
+  /** The limits this batch is checked against (the send path's current ones when the batch began). */
+  const AttachmentLimits& Limits() const { return limits_; }
 
 private:
   PictureSendItem* Find(uint64_t id);

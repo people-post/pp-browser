@@ -26,8 +26,9 @@ namespace pbr {
  * everything), draws their rows with the transcript's own row builder, keeps those rows at the end of the rows shown,
  * deletes the thumbnails it lets go, and writes an item's upload percent into its mounted bubble without drawing the
  * row again. ChatController feeds it the events and redraws the transcript when Apply says a row changed; the rows
- * are never stored. One attachment is sent at a time, so the queue holds at most one item today; Upload() / Apply(step)
- * act on that current item.
+ * are never stored. A batch (several pictures picked together) keeps several rows at once, an older failed one first:
+ * address a row by its id (Apply(id, event)). Upload() / Apply(step) act on the FIRST row and are only for adding a
+ * new row (a step whose `next` is a fresh row); a test pins that no caller uses them on an existing row.
  */
 class PendingUploadRows {
 public:
@@ -36,7 +37,7 @@ public:
   explicit PendingUploadRows(RemoveFile remove_file = {});
 
   const PendingUploadQueue& Queue() const { return queue_; }
-  /** The current item (the first in the queue); an empty one (state None) when there is none. */
+  /** The FIRST item in the queue (with a batch, maybe an older failed row); an empty one when there is none. */
   const PendingUpload& Upload() const;
   /**
    * Takes an event's result for the current item (a result for an id not in the queue that shows is added): keeps

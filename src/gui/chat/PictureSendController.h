@@ -53,11 +53,12 @@ struct PictureSendHost {
   /** The folder the page's own files may go into (empty: no files can be made, the page shows blanks). */
   std::function<std::string()> preview_root;
   /**
-   * Makes the page's two pictures of `path` (long edge 1280 and a small one) into `dir`, on a worker thread. Looks at
-   * `cancelled` before it writes and after, and deletes what it wrote when told to stop.
+   * Makes the page's two pictures of `path` (long edge 1280 and a small one) into `dir`, on a worker thread, reading
+   * a picture of at most `max_image_bytes` (the batch's current limit). Looks at `cancelled` before it writes and
+   * after, and deletes what it wrote when told to stop.
    */
   std::function<PictureSendPreviewFiles(const std::string& path, PictureSendKind kind, const std::string& dir,
-                                        const std::function<bool()>& cancelled)>
+                                        uint64_t max_image_bytes, const std::function<bool()>& cancelled)>
       make_preview;
   /** Picture files the page showed are done with: their textures are released (two frames later, see QueueTextureRelease). */
   std::function<void(std::vector<std::string> srcs)> release_textures;
@@ -131,6 +132,8 @@ public:
 
   /** The text field's current content (for the tests and the Back / Send hand-over). */
   std::string Text() const { return std::string(text_.c_str()); }
+  /** How many times the page's bound state was marked changed (tests: an idle page must not do it every frame). */
+  int DirtyCountForTest() const { return dirty_count_; }
   void SetTextForTest(const std::string& text) { text_ = text.c_str(); }
   int CurrentIndex() const { return current_; }
   const std::vector<PictureSendCell>& Cells() const { return cells_; }
@@ -150,6 +153,7 @@ private:
   void Refresh();
   void PumpJobs();
   void RemovePath(const std::string& path);
+  void ReleaseTextures(std::vector<std::string> srcs);
   void ReleaseAllTextures();
   void NoteTexture(const std::string& path);
   void Dirty();
@@ -181,6 +185,9 @@ private:
   bool first_shown_ = false;
   int current_ = 0;
   int press_x_ = 0;
+  bool press_pending_ = false;
+  int dirty_count_ = 0;
+  uint64_t running_id_ = 0;
   std::string shown_src_;
   std::vector<std::string> textures_;
 

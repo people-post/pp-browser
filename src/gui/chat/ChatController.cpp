@@ -3446,10 +3446,10 @@ namespace {
  * when it says stop.
  */
 PictureSendPreviewFiles MakePicturePreviewFiles(const std::string& path, const PictureSendKind kind,
-                                                const std::string& dir, const std::function<bool()>& cancelled) {
+                                                const std::string& dir, const uint64_t max_bytes,
+                                                const std::function<bool()>& cancelled) {
   constexpr int kPreviewLongEdgePx = 1280;
   constexpr int kThumbLongEdgePx = 144;
-  const uint64_t max_bytes = AttachmentLimits{}.max_original_image_bytes;
   PictureSendPreviewFiles files;
   if (cancelled()) {
     return files;
