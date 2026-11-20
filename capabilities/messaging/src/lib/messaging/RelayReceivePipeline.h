@@ -374,6 +374,22 @@ private:
                                const std::string& local_account, RelayReceiveOutcome* outcome) const;
   RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_account_id,
                                            bool authorized_older_backfill, MessageTransport transport);
+  /**
+   * A higher `envelope_version` (INVENTORY T2), read loosely (ParseRelayEnvelope): unverifiable, so nothing in it is
+   * applied. Its seq in our copy's numbering is closed as empty (never a stored row at it: a genuine message there
+   * would still be taken as a late fill), the chat gets one "update to view" row without a seq, and its sender is
+   * marked — so the thread leaves Gap and no repair asks for it again. Only at the epoch the pair is at now.
+   */
+  RelayReceiveOutcome ProcessNewerEnvelope(const RelayEnvelope& received, const std::string& local_account_id,
+                                           MessageTransport transport);
+  /** The chat a newer envelope's copy files into, and whose numbering it is; none when this device has no such chat. */
+  struct NewerTarget {
+    std::string thread_id;
+    std::string seq_owner;
+    /** The epoch the pair's numbering is at here (a newer envelope never moves it). */
+    std::optional<uint32_t> epoch;
+  };
+  std::optional<NewerTarget> NewerEnvelopeTarget(const RelayEnvelope& envelope, const std::string& local_account_id);
   /** The groups `sender` and we are both on this device's roster of (a group copy names its group only inside). */
   std::vector<std::string> GroupsSharedWith(const std::string& sender, const std::string& local_account) const;
   /**

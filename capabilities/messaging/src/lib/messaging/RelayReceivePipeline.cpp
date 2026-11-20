@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "lib/messaging/ChatSyncLogic.h"
 #include "lib/messaging/EditMessage.h"
 #include "lib/messaging/SentCopy.h"
 
@@ -1205,6 +1206,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& r
                                                           const std::string& local_account_id,
                                                           const bool authorized_older_backfill,
                                                           const MessageTransport transport) {
+  if (received.envelope_version > kRelayEnvelopeVersion) {
+    return ProcessNewerEnvelope(received, local_account_id, transport); // a newer app's (T2)
+  }
   // The copy this device reads (M022): its own, else the account copy. With copies for our other devices
   // only, the message is theirs (or one is missing for us).
   auto self = local_keys_.device_peer_id ? local_keys_.device_peer_id() : Roe<std::string>(Error("no device"));
@@ -2176,6 +2180,130 @@ void RelayReceivePipeline::ConsumeRefusedSeq(const std::string& thread_id, const
     return;
   }
   log().info << "refused message_id=" << envelope.message_id << " seq=" << envelope.sender_seq << " consumed";
+}
+
+std::optional<RelayReceivePipeline::NewerTarget> RelayReceivePipeline::NewerEnvelopeTarget(
+    const RelayEnvelope& envelope, const std::string& local_account_id) {
+  NewerTarget target;
+  if (envelope.route.kind == kRelayRouteGroup) {
+    const auto group_id =
+        GroupOfStream(envelope, GroupsSharedWith(envelope.sender_contact_id, local_account_id), local_account_id);
+    if (!group_id) {
+      return std::nullopt;
+    }
+    auto thread = store_.FindGroupThread(*group_id);
+    if (!thread || !*thread) {
+      return std::nullopt;
+    }
+    target.thread_id = (**thread).id;
+    target.seq_owner = envelope.sender_contact_id;
+    target.epoch = envelope.session_epoch; // a group copy is numbered at its pair's epoch, as sent
+    return target;
+  }
+  auto thread = store_.FindDirectThread(InboundTargetFromEnvelope(envelope));
+  if (!thread || !*thread || !IsEnvelopeFromPeer(**thread, envelope)) {
+    return std::nullopt; // no chat is opened for what this app cannot read
+  }
+  target.thread_id = (**thread).id;
+  const auto& participants = (**thread).participant_contact_ids;
+  target.seq_owner =
+      !participants.empty() && !participants.front().empty() ? participants.front() : envelope.sender_contact_id;
+  if (!envelope.recipient_device.empty()) {
+    const PeerSessionKey key = CopyTargetKey(envelope, InboundTargetFromEnvelope(envelope),
+                                             E2eRelayPayloadCodec::ChannelFromThread(envelope.route.channel));
+    if (auto loaded = psk_store_.Load(key); loaded && loaded->has_value()) {
+      target.epoch = (*loaded)->session_epoch;
+    }
+  } else if (auto loaded = store_.GetChatTargetSessionEpoch(target.thread_id)) {
+    target.epoch = *loaded;
+  }
+  return target;
+}
+
+RelayReceiveOutcome RelayReceivePipeline::ProcessNewerEnvelope(const RelayEnvelope& received,
+                                                               const std::string& local_account_id,
+                                                               const MessageTransport transport) {
+  RelayReceiveOutcome outcome;
+  outcome.decision = IngestDecision::SilentDiscard;
+  if (received.sender_contact_id == local_account_id || SenderBlocked(received.sender_contact_id)) {
+    return outcome;
+  }
+  const std::string detail = "envelope_version " + std::to_string(received.envelope_version);
+  auto self = local_keys_.device_peer_id ? local_keys_.device_peer_id() : Roe<std::string>(Error("no device"));
+  const std::optional<RelayEnvelope> selected = SelectRelayCopy(received, self ? *self : std::string());
+  if (!selected || selected->route.kind == kRelayRouteControl) {
+    // Another device's copy, or signaling (no seq): only who needs the update. Never a copy or card ask.
+    if (selected) {
+      MarkNeedsUpdate(outcome, received.sender_contact_id, detail);
+    }
+    return outcome;
+  }
+  const RelayEnvelope& envelope = *selected;
+  MarkNeedsUpdate(outcome, envelope.sender_contact_id, detail);
+  const std::optional<NewerTarget> target = NewerEnvelopeTarget(envelope, local_account_id);
+  if (!target) {
+    return outcome;
+  }
+  auto seen = store_.HasMessageId(target->thread_id, envelope.message_id);
+  if (!seen || *seen) {
+    outcome.decision = IngestDecision::BenignDuplicate;
+    return outcome; // closed and shown when it first came
+  }
+  const std::string numbering = CopyNumbering(envelope);
+  if (target->epoch && *target->epoch == envelope.session_epoch && envelope.sender_seq > 0 &&
+      !FindMessageIdAtSeq(target->thread_id, envelope.session_epoch, target->seq_owner, envelope.sender_seq,
+                          numbering)) {
+    PeerSyncState state = DefaultPeerSyncState();
+    if (auto loaded = store_.GetPeerSyncState(target->thread_id, envelope.session_epoch, numbering)) {
+      state = *loaded;
+    }
+    if (envelope.sender_seq > state.history_floor_seq) {
+      const bool fresh = state.contiguous_peer_seq == 0 && state.loaded_max_seq == 0;
+      CloseRefusedSeq(state, envelope.sender_seq);
+      if (envelope.sender_seq > state.loaded_max_seq) {
+        state.loaded_max_seq = envelope.sender_seq;
+      }
+      if (state.loaded_min_seq == 0 || envelope.sender_seq < state.loaded_min_seq) {
+        state.loaded_min_seq = envelope.sender_seq;
+      }
+      if (fresh) {
+        state.contiguous_peer_seq = envelope.sender_seq; // the first seen starts the numbering, as a bootstrap does
+      } else if (envelope.sender_seq > state.contiguous_peer_seq + 1) {
+        state.phase = PeerSyncPhase::Gap; // the seqs before it are real messages still to come
+      }
+      // The tail moves through it and whatever was held after it: the thread leaves Gap, no repair asks again.
+      (void)chat_sync::AdvanceContiguous(state, [&](const uint64_t seq) {
+        return FindMessageIdAtSeq(target->thread_id, envelope.session_epoch, target->seq_owner, seq, numbering)
+            .has_value();
+      });
+      if (auto kept = store_.SetPeerSyncState(target->thread_id, envelope.session_epoch, state, numbering); !kept) {
+        log().warning << "newer envelope message_id=" << envelope.message_id
+                      << ": seq not closed: " << kept.error().message;
+      }
+    }
+  }
+  // The one row the user sees: "update to view", at the message's time, with no seq (it holds none).
+  ThreadMessage placeholder = UnreadablePlaceholder(Error(detail));
+  placeholder.id = envelope.message_id;
+  placeholder.thread_id = target->thread_id;
+  placeholder.sender_contact_id = target->seq_owner;
+  placeholder.timestamp = envelope.timestamp;
+  placeholder.delivery = MessageDelivery::Relayed;
+  placeholder.relay_visible = true;
+  placeholder.transport = transport;
+  auto stored = store_.AppendMessage(placeholder);
+  if (!stored) {
+    log().warning << "newer envelope message_id=" << envelope.message_id << " not shown: " << stored.error().message;
+    return outcome;
+  }
+  log().info << "newer envelope message_id=" << envelope.message_id << " sender=" << envelope.sender_contact_id << " ("
+             << detail << ") seq=" << envelope.sender_seq << ": closed, shown as update to view";
+  outcome.decision = IngestDecision::AcceptControl;
+  outcome.persisted = true;
+  outcome.thread_changed = true;
+  outcome.thread_id = target->thread_id;
+  outcome.persisted_message = *stored;
+  return outcome;
 }
 
 std::vector<std::string> RelayReceivePipeline::GroupsSharedWith(const std::string& sender,

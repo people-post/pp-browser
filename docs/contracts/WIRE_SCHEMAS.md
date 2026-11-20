@@ -150,7 +150,7 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `envelope_version` | integer | yes | **3** (no relay id, multi-relay MR001; 2 named the sender's `relay:` id and is refused, as 1 is). Signed (D072). Bump independently of `ChatPayload.payload_version`. |
+| `envelope_version` | integer | yes | **3** (no relay id, multi-relay MR001; 2 named the sender's `relay:` id and is refused, as 1 is). Signed (D072). Bump independently of `ChatPayload.payload_version`. A **higher** one (up to 2³¹−1) is a newer app's: only `message_id`, `sender_contact_id`, `sender_device`, `route.kind` / `channel`, `timestamp`, `stream_key`, `order_key` and each copy's `recipient_device`, `session_epoch` and `sender_seq` are read, loosely — nothing is decrypted or verified. The receiver closes that seq as empty in our copy's numbering (at the epoch the pair is at; it moves no epoch), stores one "update to view" row with no seq, and marks the sender as using a newer app ([COMPATIBILITY § Wire / peer](COMPATIBILITY.md#wire--peer-newer-apps), release-compatibility INVENTORY T2) — on the relay poll, in history answers and over a link alike, so a thread never waits in Gap for it. |
 | `message_id` | string, 1–96 chars of `[A-Za-z0-9_-]` (a UUID in practice) | yes | Dedup key (D034). Inbound envelopes with any other character or length are rejected: the id lands in generated RML and as a SQLite key |
 | `sender_contact_id` | string | yes | Sender **communicating identity value** (D079) — the Account ID |
 | `sender_device` | string | yes | The sending device's PeerId; its key signs the envelope (M021) |

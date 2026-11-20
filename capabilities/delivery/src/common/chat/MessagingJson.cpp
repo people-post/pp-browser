@@ -371,6 +371,77 @@ Object RelayEnvelopeToApplicationJson(const RelayEnvelope& envelope) {
   return json;
 }
 
+namespace {
+
+/**
+ * A higher `envelope_version` (release-compatibility INVENTORY T2): only what routes and numbers it — who sent it, to
+ * which of our devices, at which epoch and seq — read loosely. Its body and signature are a newer app's: nothing in
+ * it is decrypted, verified or acted on. The receiver closes those seqs as empty and shows "update to view".
+ */
+Roe<RelayEnvelope> ParseNewerRelayEnvelope(const Object& json, const int64_t version) {
+  auto message_id = json.getString("message_id");
+  auto sender_contact_id = json.getString("sender_contact_id");
+  auto sender_device = json.getString("sender_device");
+  if (!message_id || !IsSafeMessageId(*message_id) || !sender_contact_id || !IsPlainIdentifier(*sender_contact_id) ||
+      !sender_device || sender_device->empty() || !IsPlainIdentifier(*sender_device)) {
+    return Error("Newer envelope without a readable sender or message_id");
+  }
+  const Object* route = json.getObject("route");
+  const Object* body = json.getObject("body");
+  const Object* e2e = body ? body->getObject("e2e") : nullptr;
+  const Array* copies = e2e ? e2e->getArray("copies") : nullptr;
+  if (!route || !copies || copies->elements.empty() || copies->elements.size() > kMaxRelayCopies) {
+    return Error("Newer envelope without readable routing");
+  }
+  RelayEnvelope envelope;
+  envelope.envelope_version = static_cast<int>(version); // within int32 (checked by the caller)
+  envelope.message_id = *message_id;
+  envelope.sender_contact_id = *sender_contact_id;
+  envelope.sender_device = *sender_device;
+  envelope.route.kind = route->getString("kind").value_or("");
+  if (envelope.route.kind == "direct") {
+    envelope.route.channel = ThreadChannelFromString(route->getString("channel").value_or(""));
+    if (envelope.route.channel == ThreadChannel::None) {
+      return Error("Newer envelope with an unknown route.channel");
+    }
+  } else if (envelope.route.kind == kRelayRouteControl) {
+    envelope.route.channel = ThreadChannel::E2ePublic;
+  } else if (envelope.route.kind != "group") {
+    return Error("Newer envelope with an unknown route.kind");
+  }
+  std::set<std::string> devices;
+  for (const Value& item : copies->elements) {
+    const Object* row = asObject(item);
+    auto epoch = row ? row->getNonNegInt("session_epoch") : std::nullopt;
+    auto seq = row ? row->getNonNegInt("sender_seq") : std::nullopt;
+    if (!epoch || *epoch > UINT32_MAX || !seq) {
+      return Error("Newer envelope copy without its numbering");
+    }
+    RelayCopy copy;
+    copy.recipient_device = row->getString("recipient_device").value_or("");
+    if ((!copy.recipient_device.empty() && !IsPlainIdentifier(copy.recipient_device)) ||
+        !devices.insert(copy.recipient_device).second) {
+      return Error("Newer envelope copy for an unreadable device");
+    }
+    copy.session_epoch = static_cast<uint32_t>(*epoch);
+    copy.sender_seq = *seq;
+    envelope.body.e2e.copies.push_back(std::move(copy)); // no payload: nothing of it is read
+  }
+  if (envelope.body.e2e.copies.size() == 1) {
+    const RelayCopy only = envelope.body.e2e.copies.front();
+    envelope = ViewRelayCopy(std::move(envelope), only);
+  }
+  envelope.timestamp = json.getIf<int64_t>("timestamp").value_or(0);
+  envelope.stream_key = json.getString("stream_key").value_or("");
+  envelope.order_key = json.getNonNegInt("order_key").value_or(0);
+  if (auto recipient = json.getString("recipient_account_id"); recipient && IsPlainIdentifier(*recipient)) {
+    envelope.recipient_account_id = *recipient;
+  }
+  return envelope;
+}
+
+} // namespace
+
 Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (json.contains("thread_id")) {
     return Error("Legacy relay envelope thread_id is not supported");
@@ -383,6 +454,9 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   }
   if (!version_opt) {
     return Error("Missing envelope_version");
+  }
+  if (*version_opt > kRelayEnvelopeVersion && *version_opt <= INT32_MAX) {
+    return ParseNewerRelayEnvelope(json, *version_opt); // a newer app's: routing and numbering only (T2)
   }
   if (*version_opt != kRelayEnvelopeVersion) { // compared before narrowing
     return Error("Unsupported envelope_version");
