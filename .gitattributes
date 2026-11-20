@@ -1,0 +1,3 @@
+# Frozen test vectors are compared byte for byte (the libraries' copies against the pinned tags' files) and copied so
+# into the relay (docs/contracts/SIGNED_EXTENSIONS.md § Vector files): never convert their line endings on checkout.
+*_vectors.json -text
