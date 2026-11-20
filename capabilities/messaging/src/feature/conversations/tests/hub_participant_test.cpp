@@ -27,11 +27,29 @@ private:
   std::vector<std::string>& log_;
 };
 
+/**
+ * A hub freed the way the product frees one: nothing it posted is still queued. OnLocalNetworkChanged posts raw
+ * `this` onto the UI mailbox (RecheckRelayIdentitiesSoon, FeedAttachmentNetwork); the product frees the hub only
+ * after QuiesceForTeardown has closed the runtime gate over those posts (THREADING.md § Teardown quiesce), and
+ * this binary has no runtime to quiesce. So the UI thread runs them while the hub is still alive. Freed with
+ * them queued, the next test's RunUITasks ran them on that test's dead stack frame (crashed about one run in two).
+ */
+class TestHub : public ConversationsHub {
+public:
+  TestHub() = default;
+  TestHub(const TestHub&) = delete;
+  TestHub& operator=(const TestHub&) = delete;
+  ~TestHub() override {
+    AppRuntime::RunUITasks(); // runs what those tasks post too
+    EXPECT_FALSE(AppRuntime::HasPendingUITasks()) << "a post outlives the hub";
+  }
+};
+
 TEST(HubParticipantTest, NetworkChangesReachParticipantsInOrderWithTheMeshsView) {
   std::vector<std::string> log;
   RecordingParticipant calls("calls", log);
   RecordingParticipant broadcast("broadcast", log);
-  ConversationsHub hub;
+  TestHub hub;
   hub.AddParticipant(calls);
   hub.AddParticipant(broadcast);
 
@@ -79,7 +97,7 @@ public:
     ASSERT_TRUE(fn);
     fn();
   }
-  ConversationsHub hub;
+  TestHub hub;
   std::vector<Link> seen;
   std::vector<std::chrono::milliseconds> delays;
   std::function<void()> pending;
@@ -183,7 +201,7 @@ TEST(HubParticipantTest, TheWayDownRunsInReverseAndClearedParticipantsHearNothin
   std::vector<std::string> log;
   RecordingParticipant calls("calls", log);
   RecordingParticipant broadcast("broadcast", log);
-  ConversationsHub hub;
+  TestHub hub;
   hub.AddParticipant(calls);
   hub.AddParticipant(broadcast);
 
