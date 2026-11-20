@@ -1,9 +1,16 @@
 name: ios-testflight
 
-# Manual TestFlight upload — does not run on push/PR. Verify CI stays in build.yml.
-# Uses the same scripts as local: scripts/platform/ios_build.sh ipa + upload-ipa.
+# TestFlight upload; uses the same scripts as local: scripts/platform/ios_build.sh ipa + upload-ipa. Verify CI stays
+# in build.yml. Two ways in (release-compatibility DESIGN § App builds, docs/ops/RELEASE.md):
 #
-# Actions → ios-testflight → Run workflow (pick branch/tag). Requires iOS signing + ASC secrets
+# - By hand (Actions → ios-testflight → Run workflow, any branch or tag): a dev build for internal testers, never
+#   promoted. After the upload succeeds the built commit is tagged internal/<build number>.
+# - From release.yml (workflow_call) for a release candidate tag vX.Y.Z-rc.<n> on release/app-X.Y: built with its
+#   final version X.Y.Z (only the build number differs between candidates). After the upload succeeds the commit is
+#   tagged rc-build/<build number>.
+#
+# Build numbers are one counter across both: the next after the highest internal/<n> or rc-build/<n> tag (and after
+# 143, the last number uploaded before builds were tagged: run 43 + 100). Requires iOS signing + ASC secrets
 # (docs/ops/IOS_BUILD.md § GitHub Actions / TestFlight).
 
 on:
@@ -14,10 +21,23 @@ on:
         required: false
         default: ''
       build_number:
-        description: 'CFBundleVersion (empty → github.run_number + 100; must be new each upload)'
+        description: 'CFBundleVersion (empty → next after the highest internal/<n> or rc-build/<n> tag; must not be taken)'
         required: false
         default: ''
+  workflow_call:
+    inputs:
+      candidate_tag:
+        description: 'Release candidate tag vX.Y.Z-rc.<n> (release.yml has checked it is on release/app-X.Y)'
+        required: true
+        type: string
+    outputs:
+      build_number:
+        description: 'CFBundleVersion the candidate was uploaded with'
+        value: ${{ jobs.testflight.outputs.build }}
 
+# One upload at a time, by hand or from release.yml (a called workflow keeps its own group), and the whole run: the
+# tag job must create internal/<n> or rc-build/<n> before the next run picks its build number. Only one run waits:
+# a newer one cancels the one waiting, so a candidate's upload can need a re-run.
 concurrency:
   group: ios-testflight
   cancel-in-progress: false
@@ -29,6 +49,11 @@ jobs:
   testflight:
     runs-on: ${{ fromJSON(vars.CI_MAC_RELEASE_LABELS || '"macos-15"') }}
     timeout-minutes: 120
+    outputs:
+      build: ${{ steps.ver.outputs.build }}
+      marketing: ${{ steps.ver.outputs.marketing }}
+      commit: ${{ steps.ver.outputs.commit }}
+      tag: ${{ steps.ver.outputs.tag }}
     env:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_BASEDIR: ${{ github.workspace }}
@@ -158,37 +183,77 @@ jobs:
       - name: Resolve version stamps
         id: ver
         shell: bash
-        # PB-009: dispatch inputs arrive as env, never pasted into the script text.
+        # PB-009: inputs arrive as env, never pasted into the script text.
         env:
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_BUILD_NUMBER: ${{ inputs.build_number }}
+          CANDIDATE_TAG: ${{ inputs.candidate_tag }}
         run: |
           set -euo pipefail
-          marketing="${INPUT_VERSION}"
-          if [[ -z "$marketing" ]]; then
-            marketing="$(sed -n 's/^set(PP_BROWSER_VERSION "\([^"]*\)".*/\1/p' CMakeLists.txt | head -1)"
+          # The last build number CI uploaded before every upload was tagged (run 43 + 100, 2026-11-19).
+          build_floor=143
+          if [[ -n "${CANDIDATE_TAG}" ]]; then
+            # A release candidate: its final version exactly (DESIGN § App builds), never an input.
+            if [[ ! "${CANDIDATE_TAG}" =~ ^v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))-rc\.[1-9][0-9]*$ ]]; then
+              echo "::error::candidate tag ${CANDIDATE_TAG} is not vX.Y.Z-rc.<n>"
+              exit 1
+            fi
+            marketing="${BASH_REMATCH[1]}"
+            release_version="${marketing}"
+            tag_prefix="rc-build"
+          else
+            marketing="${INPUT_VERSION}"
+            if [[ -z "$marketing" ]]; then
+              marketing="$(sed -n 's/^set(PP_BROWSER_VERSION "\([^"]*\)".*/\1/p' CMakeLists.txt | head -1)"
+            fi
+            if [[ -z "$marketing" ]]; then
+              echo "::error::Could not resolve PP_BROWSER_VERSION"
+              exit 1
+            fi
+            # A dev build keeps the tree's PP_BROWSER_RELEASE_VERSION (CMakeLists.txt).
+            release_version=""
+            tag_prefix="internal"
           fi
-          if [[ -z "$marketing" ]]; then
-            echo "::error::Could not resolve PP_BROWSER_VERSION"
-            exit 1
-          fi
+          # Every upload's build number is a tag (internal/<n> or rc-build/<n>), so the counter is the highest one.
+          highest="$build_floor"
+          taken=" "
+          while read -r _ ref; do
+            n="${ref##*/}"
+            [[ "$n" =~ ^[0-9]+$ ]] || continue  # skips the peeled "^{}" lines
+            n=$(( 10#$n ))
+            taken+="${n} "
+            if (( n > highest )); then
+              highest="$n"
+            fi
+          done < <(git ls-remote --tags origin 'refs/tags/internal/*' 'refs/tags/rc-build/*')
           build="${INPUT_BUILD_NUMBER}"
           if [[ -z "$build" ]]; then
-            # Offset avoids colliding with early local TestFlight uploads (1, 2, 3, …).
-            build="$(( GITHUB_RUN_NUMBER + 100 ))"
+            build="$(( highest + 1 ))"
           fi
           if [[ ! "$marketing" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$build" =~ ^[0-9]+$ ]]; then
             echo "::error::version must be X.Y.Z and build number digits (got ${marketing} / ${build})"
             exit 1
           fi
+          if [[ "$taken" == *" $(( 10#$build )) "* ]]; then
+            echo "::error::build number ${build} is taken (tag internal/${build} or rc-build/${build}); leave it empty for the next free one"
+            exit 1
+          fi
           echo "marketing=${marketing}" >> "$GITHUB_OUTPUT"
           echo "build=${build}" >> "$GITHUB_OUTPUT"
-          echo "CFBundleShortVersionString=${marketing} CFBundleVersion=${build}"
+          echo "release_version=${release_version}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag_prefix}/${build}" >> "$GITHUB_OUTPUT"
+          echo "CFBundleShortVersionString=${marketing} CFBundleVersion=${build} (tag ${tag_prefix}/${build} after upload)"
 
       - name: Build IPA and upload to App Store Connect
         env:
           PP_BROWSER_VERSION: ${{ steps.ver.outputs.marketing }}
           PP_BROWSER_BUILD_NUMBER: ${{ steps.ver.outputs.build }}
+          # Empty (the tree's default) for a dev build; X.Y.Z for a release candidate.
+          PP_BROWSER_RELEASE_VERSION: ${{ steps.ver.outputs.release_version }}
+          # About and diagnostics name the build (GenBuildInfo.cmake): the candidate tag, else internal/<build number>.
+          PP_BUILD_TAG: ${{ inputs.candidate_tag || steps.ver.outputs.tag }}
+          PP_BUILD_COMMIT: ${{ steps.ver.outputs.commit }}
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
           PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
           PP_RELAY_PEER_ID_PROD: ${{ vars.PP_RELAY_PEER_ID_PROD || secrets.PP_RELAY_PEER_ID_PROD }}
@@ -213,6 +278,8 @@ jobs:
       - name: Summary
         if: success()
         shell: bash
+        env:
+          CANDIDATE_TAG: ${{ inputs.candidate_tag }}
         run: |
           {
             echo "## TestFlight upload"
@@ -221,7 +288,48 @@ jobs:
             echo "|---|---|"
             echo "| Ref | \`${GITHUB_SHA}\` (\`${GITHUB_REF_NAME}\`) |"
             echo "| Version | ${{ steps.ver.outputs.marketing }} (${{ steps.ver.outputs.build }}) |"
+            if [[ -n "${CANDIDATE_TAG}" ]]; then
+              echo "| Build | release candidate \`${CANDIDATE_TAG}\` |"
+            else
+              echo "| Build | dev build (internal testers only; never promoted) |"
+            fi
+            echo "| Tag | \`${{ steps.ver.outputs.tag }}\` (next job) |"
             echo ""
             echo "Wait for processing in App Store Connect, answer export compliance if prompted,"
             echo "then enable the build under **TestFlight → Internal Testing**."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # The upload succeeded: tag the built commit with the build number it used (DESIGN § Builds, tags and deploys), so
+  # "TestFlight <n>" maps to one commit. The only job with write access.
+  tag:
+    needs: [testflight]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the built commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.testflight.outputs.tag }}
+          COMMIT: ${{ needs.testflight.outputs.commit }}
+          MARKETING: ${{ needs.testflight.outputs.marketing }}
+          BUILD: ${{ needs.testflight.outputs.build }}
+          CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+        run: |
+          set -euo pipefail
+          what="dev build"
+          if [[ -n "${CANDIDATE_TAG}" ]]; then
+            what="release candidate ${CANDIDATE_TAG}"
+          fi
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          message="TestFlight ${MARKETING} (${BUILD}), ${what}: ${run_url}"
+          object="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags" \
+            -f tag="${TAG}" -f message="${message}" -f object="${COMMIT}" -f type=commit --jq .sha)"
+          # Creating a ref that exists fails (422): an existing tag is never moved.
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${TAG}" -f sha="${object}" >/dev/null; then
+            echo "::error::Could not create tag ${TAG} on ${COMMIT} (it exists, or the token cannot write tags). The upload itself succeeded; tag it by hand: git tag -a ${TAG} ${COMMIT} -m '${message}'"
+            exit 1
+          fi
+          echo "Tagged ${COMMIT} ${TAG}"
+          echo "Tagged \`${COMMIT}\` **${TAG}**" >> "$GITHUB_STEP_SUMMARY"

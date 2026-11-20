@@ -78,10 +78,17 @@ cmake --build build -j
 
 ### Build identity (commit and tag)
 
-About shows which build this is under the version ("Build a1b2c3d4"; zh "构建 a1b2c3d4"), and every launch logs `app.build version=… commit=… tag=…` ([LOGGING.md](../architecture/LOGGING.md#developer-log-vs-shareable-lines)).
+A build says what it is ([release-compatibility DESIGN § App builds](../../projects/release-compatibility/DESIGN.md#app-builds-internal-external-store)), so a report names the build it came from:
 
-- **Commit**: made on **every build**, not at configure time (`pp_build_info_generate`, CMake script mode in `src/foundation/product/GenBuildInfo.cmake`: no shell, so it is the same on macOS, iOS, Android, Windows and Linux). It writes `BuildInfoGenerated.cpp` into the build tree only when its text changed, so an incremental build recompiles that one file. Value: `git rev-parse --short=8 HEAD`, plus `-dirty` when tracked files have uncommitted changes (`git status --porcelain --untracked-files=no`); `unknown` when git or the repository is not there.
-- **Tag** (e.g. `internal/141`): `-DPP_BUILD_TAG=<tag>`, or the `PP_BUILD_TAG` environment variable of the build when the cache variable is empty (so `scripts/platform/*_build.sh` and Gradle pick it up without passing it). Empty: no tag, About shows only the commit. Only `A-Za-z0-9._/+-` are kept. The release workflows are not ours: they can set `PP_BUILD_TAG` in the environment of their build step.
+- **About** shows it under the version ("Build v1.0.0-rc.3 · a1b2c3d4", or "Build a1b2c3d4" without a tag; zh "构建 …"; `FormatBuildLabel`).
+- **Diagnostics** name it as `<version> · <tag> · <commit>` ("1.0.0 · v1.0.0-rc.3 · a1b2c3d4", "1.0.0 · a1b2c3d4" without a tag; `FormatBuildIdentity` / `BuildIdentity` in `src/foundation/product/BuildInfo.h`): the first line of a Send logs archive, and `commit=` / `tag=` lines in the crash record and its envelope ([DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md)).
+- **Logs**: every app launch logs `app.build version=… commit=… tag=…`, every pp-node start `pp-node.build version=… commit=… tag=…` ([LOGGING.md](../architecture/LOGGING.md#developer-log-vs-shareable-lines)); pp-node's `/metrics` labels `pp_build_info` with `commit` and `tag` ([NODE_METRICS.md](../contracts/NODE_METRICS.md)). What pp-node sends the relay is unchanged (`node_version` only).
+
+Both values are made on **every build**, not at configure time (`pp_build_info_generate`, CMake script mode in `src/foundation/product/GenBuildInfo.cmake`: no shell, so it is the same on macOS, iOS, Android, Windows and Linux). It writes `BuildInfoGenerated.cpp` into the build tree only when its text changed, so an incremental build recompiles that one file. No timestamps: one commit and tag give the same file. A build with no git and no variables configures and builds (commit `unknown`, no tag).
+
+- **Commit**: `-DPP_BUILD_COMMIT=<hash>`, or the `PP_BUILD_COMMIT` environment variable of the build when the cache variable is empty (a hex hash, cut to 8; anything else is ignored with a warning). Otherwise `git rev-parse --short=8 HEAD`, plus `-dirty` when tracked files have uncommitted changes (`git status --porcelain --untracked-files=no`); `unknown` when git or the repository is not there.
+- **Tag** (e.g. `internal/141`): `-DPP_BUILD_TAG=<tag>`, or the `PP_BUILD_TAG` environment variable of the build when the cache variable is empty (so `scripts/platform/*_build.sh` and Gradle pick it up without passing it). Only `A-Za-z0-9._/+-` are kept. Otherwise, on a clean checkout whose commit is HEAD, a build tag on HEAD (`git tag --points-at HEAD`), only one named as [release-compatibility § Builds, tags and deploys](../../projects/release-compatibility/DESIGN.md#builds-tags-and-deploys) names them, first of `vX.Y.Z`, `vX.Y.Z-rc.<n>`, `internal/<n>`, `pp-node/vX.Y.Z`, `pp-node/vX.Y.Z-rc.<n>`, `node-internal/<date>.<n>` (highest version first); any other tag, or a modified tree, means no tag. None: About shows only the commit.
+- **CI**: `release.yml` (`v*` tags) passes the tag and `github.sha`; `release-pp-node.yml` passes them for a `pp-node/v*` tag push (a manual run builds `inputs.ref`, so it leaves both to git); `ios-testflight.yml` passes `github.sha` (its `internal/<build number>` tag is the tagging workflow's). `build.yml` builds nobody installs pass nothing.
 
 ### Owned forks (RmlUi / libp2p)
 
@@ -163,7 +170,7 @@ PP_NODE_AMP_UDP_PORT=18517 ./build/src/app/node/pp-node --pin "$PP_BROWSER_PIN"
 - **Ledger role** (pp-ledger platform-integration pi4): `--ledger-role relay|miner` (or `PP_NODE_LEDGER_ROLE`) runs one pp-ledger role on the node's mesh runtime, with the node's identity and address, from `--ledger-dir` (default `<profile data dir>/ledger`: pp-ledger's own `config.json`, keys and data). A first run with no `config.json` writes pp-ledger's template and exits with what to fill in; the role advertises the ledger's protocols while it serves them, and stops before the mesh. Built when `PP_BROWSER_WITH_LEDGER` is on (the default, but not on mobile): pp-ledger comes from [`cmake/PpLedger.cmake`](../../cmake/PpLedger.cmake) (pinned release; `-DPP_LEDGER_SOURCE_DIR=…` for a local checkout), linked only by `pp_domain_node_ledger`. Smoke: `pp_local_test.sh run --suite ledger` (N-LEDGER).
 - Sketches / release packaging: [`packaging/pp-node/`](../../packaging/pp-node/), [`scripts/platform/pp_node_package_linux.sh`](../../scripts/platform/pp_node_package_linux.sh).
 - **Image smoke (L0/L1/L2 N-FANOUT):** [`packaging/pp-node/IMAGE_SMOKE.md`](../../packaging/pp-node/IMAGE_SMOKE.md). Local lifecycle: [`scripts/test/pp_local_test.sh`](../../scripts/test/pp_local_test.sh) (`run --suite node|cap|soak|chaos|call-hop|msg-call-hop|mix` / `stop` / `clear`). Loopback thin client (no Docker): `--suite call|conflict|msg-call`. Thin smokes: `pp_node_image_smoke.sh`, `pp_node_relay_smoke.sh`, `pp_node_fanout_smoke.sh`, `pp-node-probe`. Strategy / purpose IDs: [`TEST_STRATEGY.md`](TEST_STRATEGY.md). Doctrine (tiers / layers): [`TESTING.md`](../architecture/TESTING.md).
-- **Release trains:** app (`v*` / [`release.yml`](../../.github/workflows/release.yml)) and node (`pp-node/v*` / [`release-pp-node.yml`](../../.github/workflows/release-pp-node.yml)) are independent; cut tags from **`main`**, the only integration line. See [RELEASE.md](RELEASE.md).
+- **Release trains:** app (`v*` / [`release.yml`](../../.github/workflows/release.yml)) and node (`pp-node/v*` / [`release-pp-node.yml`](../../.github/workflows/release-pp-node.yml)) are independent; their tags go on release branches cut from **`main`** (`release/app-X.Y`, `release/node-X.Y`). See [RELEASE.md](RELEASE.md).
 - **Node release CI** builds on Ubuntu 24.04 (same family as `ubuntu:24.04` image), attaches a Linux tarball to the **pp-node** GitHub Release, pushes GHCR, and runs L0 smoke.
 - Local tarball + image smoke (on Ubuntu 24.04):
 
@@ -325,7 +332,7 @@ Build **PP.app** for the iOS Simulator or device with CMake + Xcode. Signing pla
 ./scripts/platform/ios_build.sh run-sim
 ```
 
-Device builds and code signing: [IOS_BUILD.md](IOS_BUILD.md). Manual TestFlight upload from Actions: [ios-testflight.yml](../../.github/workflows/ios-testflight.yml) (`workflow_dispatch`).
+Device builds and code signing: [IOS_BUILD.md](IOS_BUILD.md). TestFlight upload from Actions: [ios-testflight.yml](../../.github/workflows/ios-testflight.yml) (by hand, or for a release candidate from `release.yml`).
 
 The first clean iOS build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../../assets/) are copied into `PP.app/assets/` automatically.
 

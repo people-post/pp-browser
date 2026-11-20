@@ -21,9 +21,11 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <random>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -107,7 +109,14 @@ protected:
     AppRuntime::Initialize();
     ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
     LocalizationService::Instance().SetPreferredLanguage("en");
-    root = std::filesystem::path(PP_BROWSER_ASSETS_DIR) / ".." / "logs" / "recovery_page_test";
+    // Each test has its own data dir: ctest runs these tests in parallel processes, and one's TearDown must not
+    // remove a directory another is still writing ("remove_all: Directory not empty").
+    const auto* info = testing::UnitTest::GetInstance()->current_test_info();
+    std::string name = std::string(info->test_suite_name()) + "_" + info->name();
+    std::replace_if(
+        name.begin(), name.end(), [](const char c) { return !std::isalnum(static_cast<unsigned char>(c)); }, '_');
+    root = std::filesystem::temp_directory_path() /
+           ("pp_recovery_page_" + name + "_" + std::to_string(std::random_device{}()));
     std::filesystem::remove_all(root);
     std::filesystem::create_directories(root / "profile");
     BootstrapResult bootstrap{};

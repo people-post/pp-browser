@@ -3,8 +3,11 @@
 # capabilities and the base values (CrashIdentity, the text layer's {product}); capabilities never include it.
 
 # A tag the build was given (the release workflow or a script passes it, e.g. internal/141). Empty: the
-# PP_BUILD_TAG environment variable at build time; none: About shows only the commit.
-set(PP_BUILD_TAG "" CACHE STRING "Build tag shown in About (e.g. internal/141); empty = none")
+# PP_BUILD_TAG environment variable at build time, then a build tag on a clean HEAD; none: About shows only the commit.
+set(PP_BUILD_TAG "" CACHE STRING "Build tag shown in About (e.g. internal/141); empty = PP_BUILD_TAG env, then git")
+# The commit the build was given (a hex hash, e.g. the workflow's github.sha). Empty: the PP_BUILD_COMMIT environment
+# variable at build time, then git; "unknown" without either.
+set(PP_BUILD_COMMIT "" CACHE STRING "Commit shown in About (hex hash); empty = PP_BUILD_COMMIT env, then git")
 
 # The commit comes from a target that runs on EVERY build (CMake script mode, no shell), not from configure:
 # the generated file is rewritten only when its text changes, so only BuildInfoGenerated.cpp recompiles.
@@ -14,6 +17,7 @@ add_custom_target(pp_build_info_generate
     "-DSOURCE_DIR=${CMAKE_SOURCE_DIR}"
     "-DOUTPUT=${PP_BUILD_INFO_GENERATED}"
     "-DBUILD_TAG=${PP_BUILD_TAG}"
+    "-DBUILD_COMMIT=${PP_BUILD_COMMIT}"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/GenBuildInfo.cmake"
   BYPRODUCTS "${PP_BUILD_INFO_GENERATED}"
   COMMENT "Generating build info"

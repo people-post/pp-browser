@@ -45,9 +45,11 @@ constexpr std::size_t kPathBytes = 1024;
 constexpr std::size_t kBreadcrumbDumpBytes = 24 * 1024;
 
 char g_dump_path[kPathBytes] = {};
-/** The app's slug and version (CrashIdentity), set once by Install; read by the handlers. */
+/** The app's slug, version and build (CrashIdentity), set once by Install; read by the handlers. */
 char g_product[64] = "app";
 char g_version[64] = "0";
+char g_commit[48] = {};
+char g_tag[64] = {};
 #if defined(PP_BROWSER_HAS_EXECINFO_BACKTRACE)
 // Main image load address ("%p"), resolved at Install — lets tools map ASLR frames to the binary.
 char g_image_base[32] = {};
@@ -127,6 +129,14 @@ void WriteSignalDump(int signo) {
   WriteCString(fd, g_product);
   WriteCString(fd, "\nversion=");
   WriteCString(fd, g_version);
+  if (g_commit[0] != '\0') {
+    WriteCString(fd, "\ncommit=");
+    WriteCString(fd, g_commit);
+  }
+  if (g_tag[0] != '\0') {
+    WriteCString(fd, "\ntag=");
+    WriteCString(fd, g_tag);
+  }
   WriteCString(fd, "\nos=");
   WriteCString(fd, CrashOsLabel());
   WriteCString(fd, "\nreason=signal ");
@@ -195,8 +205,14 @@ LONG WINAPI OnUnhandledException(EXCEPTION_POINTERS* /*info*/) {
   if (f == nullptr) {
     return EXCEPTION_CONTINUE_SEARCH;
   }
-  std::fprintf(f, "pp-browser crash dump\nproduct=%s\nversion=%s\nos=%s\nreason=unhandled_exception\n", g_product,
-               g_version, CrashOsLabel());
+  std::fprintf(f, "pp-browser crash dump\nproduct=%s\nversion=%s\n", g_product, g_version);
+  if (g_commit[0] != '\0') {
+    std::fprintf(f, "commit=%s\n", g_commit);
+  }
+  if (g_tag[0] != '\0') {
+    std::fprintf(f, "tag=%s\n", g_tag);
+  }
+  std::fprintf(f, "os=%s\nreason=unhandled_exception\n", CrashOsLabel());
   std::fprintf(f, "--- breadcrumbs ---\n");
   char crumbs[kBreadcrumbDumpBytes];
   CrashBreadcrumbs::CopySignalSafe(crumbs, sizeof(crumbs));
@@ -319,6 +335,8 @@ void CrashDump::Install(const std::string& data_dir, const CrashIdentity& identi
   }
   std::snprintf(g_product, sizeof(g_product), "%s", identity.product.c_str());
   std::snprintf(g_version, sizeof(g_version), "%s", identity.version.c_str());
+  std::snprintf(g_commit, sizeof(g_commit), "%s", identity.commit.c_str());
+  std::snprintf(g_tag, sizeof(g_tag), "%s", identity.tag.c_str());
 
   EnsureDiagnosticsDir(data_dir);
   const std::string path = PendingPath(data_dir);
@@ -385,6 +403,12 @@ void CrashDump::WritePending(const std::string& data_dir, const std::string& rea
   out << "pp-browser crash dump\n";
   out << "product=" << g_product << "\n";
   out << "version=" << g_version << "\n";
+  if (g_commit[0] != '\0') {
+    out << "commit=" << g_commit << "\n";
+  }
+  if (g_tag[0] != '\0') {
+    out << "tag=" << g_tag << "\n";
+  }
   out << "os=" << CrashOsLabel() << "\n";
   out << "reason=" << reason << "\n";
   out << "--- breadcrumbs ---\n";

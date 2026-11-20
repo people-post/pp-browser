@@ -1,7 +1,15 @@
 name: release-pp-node
 
-# Independent train from app installers (release.yml / v* tags).
-# Cut tags from main (release line). See docs/ops/RELEASE.md.
+# pp-node releases, a train independent of the app's (release.yml / v* tags). Release-compatibility DESIGN § Branches
+# and tags, docs/ops/RELEASE.md:
+#
+# - pp-node/vX.Y.Z-rc.<n> on release/node-X.Y: a release candidate. Built once, with its final version X.Y.Z; image
+#   ghcr.io/<owner>/pp-node:X.Y.Z-rc.<n> and a GitHub prerelease with the tarball.
+# - pp-node/vX.Y.Z on the same commit as a candidate: the release. Nothing is rebuilt: the candidate's image gets the
+#   X.Y.Z / vX.Y.Z (and, for the newest release, latest) tags and the GitHub release gets its tarball.
+# - Run workflow (by hand) on a commit on main: an internal build, image 0.0.0-dev.<sha>; tagged
+#   node-internal/<YYYY-MM-DD>.<n> after it passes. Not a release.
+# The guard refuses every other tag, tags whose commit is not on release/node-X.Y, and internal builds off main.
 
 on:
   push:
@@ -10,13 +18,12 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Git ref to build (branch/tag/SHA on or reachable from main)'
+        description: 'Git ref to build: a branch, tag or SHA on main (an internal build, tagged node-internal/<date>.<n>)'
         required: true
         default: 'main'
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 env:
   PP_NODE_IMAGE: ghcr.io/${{ github.repository_owner }}/pp-node
@@ -24,29 +31,131 @@ env:
   CCACHE_BASEDIR: ${{ github.workspace }}
   CCACHE_NOHASHDIR: true
   CCACHE_MAXSIZE: 2G
+  # The build names itself in its log and /metrics (src/foundation/product/GenBuildInfo.cmake). A manual run builds
+  # inputs.ref: empty here, so the commit (and a build tag on it) come from the checkout's git.
+  PP_BUILD_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+  PP_BUILD_COMMIT: ${{ github.event_name == 'push' && github.sha || '' }}
 
 jobs:
-  linux-pp-node:
+  guard:
     runs-on: ubuntu-24.04
-
+    outputs:
+      kind: ${{ steps.check.outputs.kind }}
+      commit: ${{ steps.check.outputs.commit }}
+      release_version: ${{ steps.check.outputs.release_version }}
+      project_version: ${{ steps.check.outputs.project_version }}
+      image_version: ${{ steps.check.outputs.image_version }}
+      candidate: ${{ steps.check.outputs.candidate }}
+      latest: ${{ steps.check.outputs.latest }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
 
-      - name: Require tag commit on main (release line)
-        if: github.event_name == 'push'
+      - name: Release tags only from release/node-X.Y; internal builds only from main (RC007, RC016)
+        id: check
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_REF: ${{ inputs.ref }}  # PB-009: as env, never pasted into the script text
         run: |
           set -euo pipefail
-          git fetch origin main
-          if ! git merge-base --is-ancestor HEAD origin/main; then
-            echo "::error::pp-node release tags must point at a commit on origin/main."
-            echo "HEAD=$(git rev-parse HEAD) main=$(git rev-parse origin/main)"
-            exit 1
+          commit="$(git rev-parse HEAD)"
+          candidate=""
+          latest=false
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+            if ! git merge-base --is-ancestor "$commit" origin/main; then
+              echo "::error::${INPUT_REF} (${commit}) is not on main. Internal pp-node builds are made from main only; a release is a pp-node/vX.Y.Z-rc.<n> tag on release/node-X.Y."
+              exit 1
+            fi
+            kind="internal"
+            release_version="0.0.0-dev.$(git rev-parse --short=8 HEAD)"
+            project_version="0.0.0"
+            image_version="${release_version}"
+            echo "Internal pp-node build of ${INPUT_REF} (${commit})"
+          else
+            tag="${GITHUB_REF_NAME}"
+            num='(0|[1-9][0-9]*)'
+            if [[ ! "$tag" =~ ^pp-node/v(${num}\.${num}\.${num})(-rc\.([1-9][0-9]*))?$ ]]; then
+              echo "::error::${tag} is not a pp-node release tag. Release workflows take pp-node/vX.Y.Z (a release) and pp-node/vX.Y.Z-rc.<n> (a release candidate) only; an internal build is Run workflow on main."
+              exit 1
+            fi
+            version="${BASH_REMATCH[1]}"
+            major="${BASH_REMATCH[2]}"
+            minor="${BASH_REMATCH[3]}"
+            patch="${BASH_REMATCH[4]}"
+            rc="${BASH_REMATCH[6]}"
+            branch="release/node-${major}.${minor}"
+            if ! git fetch --no-tags origin "+refs/heads/${branch}:refs/remotes/origin/${branch}"; then
+              echo "::error::${tag}: there is no branch ${branch}. pp-node release tags go on their release branch; cut it from main first (docs/ops/RELEASE.md)."
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$commit" "origin/${branch}"; then
+              echo "::error::${tag} points at ${commit}, which is not on ${branch}. pp-node release tags are taken only from their release branch (pp-node/v${major}.${minor}.* from ${branch})."
+              exit 1
+            fi
+            echo "OK: ${commit} is on ${branch}"
+            # A candidate is built with its final version, so the release can ship the same binary (build once).
+            release_version="${version}"
+            project_version="${version}"
+            if [[ -n "$rc" ]]; then
+              if git rev-parse -q --verify "refs/tags/pp-node/v${version}" >/dev/null; then
+                echo "::error::pp-node/v${version} is already released; a fix to it is pp-node/v${major}.${minor}.$(( patch + 1 ))-rc.1."
+                exit 1
+              fi
+              kind="candidate"
+              image_version="${version}-rc.${rc}"
+            else
+              re="^pp-node/v${version//./\\.}-rc\\.([1-9][0-9]*)$"
+              best=0
+              while read -r t; do
+                if [[ "$t" =~ $re ]] && (( BASH_REMATCH[1] > best )); then
+                  best="${BASH_REMATCH[1]}"
+                  candidate="$t"
+                fi
+              done < <(git tag --points-at "$commit")
+              if [[ -z "$candidate" ]]; then
+                echo "::error::${tag}: no release candidate pp-node/v${version}-rc.<n> points at ${commit}. A release is never built: tag a candidate, let it build and pass, then tag ${tag} on the same commit."
+                exit 1
+              fi
+              if ! gh release view "$candidate" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null; then
+                echo "::error::${tag}: candidate ${candidate} has no GitHub release, so its build did not finish. Fix it and tag a new candidate."
+                exit 1
+              fi
+              kind="release"
+              image_version="${version}"
+              # The image's latest tag only for the newest release, not for a fix to an older line.
+              newest="$( { git tag --list 'pp-node/v*' | grep -E '^pp-node/v[0-9]+\.[0-9]+\.[0-9]+$' || true; echo "pp-node/v${version}"; } | sort -V | tail -1)"
+              if [[ "$newest" == "pp-node/v${version}" ]]; then
+                latest=true
+              fi
+            fi
+            echo "${tag}: ${kind} of ${version} from ${branch}${candidate:+ (promotes ${candidate})}"
           fi
-          echo "OK: HEAD is on origin/main"
+          {
+            echo "kind=${kind}"
+            echo "commit=${commit}"
+            echo "release_version=${release_version}"
+            echo "project_version=${project_version}"
+            echo "image_version=${image_version}"
+            echo "candidate=${candidate}"
+            echo "latest=${latest}"
+          } >> "$GITHUB_OUTPUT"
+
+  linux-pp-node:
+    needs: [guard]
+    if: needs.guard.outputs.kind != 'release'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.guard.outputs.commit }}
 
       - name: Free disk space
         uses: ./.github/actions/free-disk-space
@@ -83,45 +192,10 @@ jobs:
           ccache --zero-stats || true
           ccache --show-stats || true
 
-      - name: Parse version
-        id: version
-        shell: bash
-        env:
-          INPUT_REF: ${{ inputs.ref }}  # PB-009: as env, never pasted into the script text
-        run: |
-          set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            # Dogfood: no GitHub Release; image tag from short SHA
-            SHORT="$(git rev-parse --short=8 HEAD)"
-            echo "release_version=0.0.0-dev.${SHORT}" >> "$GITHUB_OUTPUT"
-            echo "project_version=0.0.0" >> "$GITHUB_OUTPUT"
-            echo "publish_github_release=false" >> "$GITHUB_OUTPUT"
-            echo "image_latest=false" >> "$GITHUB_OUTPUT"
-            echo "Packaging pp-node dogfood from ${INPUT_REF} (${SHORT})"
-          else
-            # Tag: pp-node/v1.2.3 or pp-node/v1.2.3-rc1
-            REF="${GITHUB_REF_NAME#pp-node/}"
-            RELEASE_VERSION="${REF#v}"
-            if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
-              echo "::error::tag ${GITHUB_REF_NAME} is not pp-node/vX.Y.Z or pp-node/vX.Y.Z-suffix"
-              exit 1
-            fi
-            PROJECT_VERSION="${RELEASE_VERSION%%-*}"
-            echo "release_version=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
-            echo "project_version=${PROJECT_VERSION}" >> "$GITHUB_OUTPUT"
-            echo "publish_github_release=true" >> "$GITHUB_OUTPUT"
-            if [[ "${RELEASE_VERSION}" == *-* ]]; then
-              echo "image_latest=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "image_latest=true" >> "$GITHUB_OUTPUT"
-            fi
-            echo "Packaging pp-node ${RELEASE_VERSION} (Ubuntu 24.04)"
-          fi
-
       - name: Build and package pp-node
         env:
-          PP_BROWSER_VERSION: ${{ steps.version.outputs.project_version }}
-          PP_BROWSER_RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
+          PP_BROWSER_VERSION: ${{ needs.guard.outputs.project_version }}
+          PP_BROWSER_RELEASE_VERSION: ${{ needs.guard.outputs.release_version }}
           # The backend origin is compiled in (no built-in default since the per-backend profiles):
           # a node's registration / directory URLs derive from it.
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
@@ -130,17 +204,17 @@ jobs:
           # to answer to it with the compiled URL.
           PP_RELAY_PEER_ID_PROD: ${{ vars.PP_RELAY_PEER_ID_PROD || secrets.PP_RELAY_PEER_ID_PROD }}
           PP_RELAY_PEER_ID_QA: ${{ vars.PP_RELAY_PEER_ID_QA || secrets.PP_RELAY_PEER_ID_QA }}
-          PUBLISH_RELEASE: ${{ steps.version.outputs.publish_github_release }}
+          KIND: ${{ needs.guard.outputs.kind }}
         run: |
           set -euo pipefail
           if [[ -z "${PP_API_URL_PROD}" ]]; then
-            if [[ "${PUBLISH_RELEASE}" == "true" ]]; then
+            if [[ "${KIND}" == "candidate" ]]; then
               echo "::error::PP_API_URL_PROD secret is empty: a released node would have no registration URL (a publishing node could not register)."
               exit 1
             fi
             echo "::warning::PP_API_URL_PROD is empty: a publishing dogfood node needs registration.base_url in its config or PP_NODE_REGISTRATION_BASE_URL."
           fi
-          if [[ "${PUBLISH_RELEASE}" == "true" ]]; then
+          if [[ "${KIND}" == "candidate" ]]; then
             ./scripts/check/check_relay_peer_ids.sh release
           else
             ./scripts/check/check_relay_peer_ids.sh dogfood
@@ -171,20 +245,18 @@ jobs:
       - name: Build and push pp-node image
         id: image
         env:
-          RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
-          IMAGE_LATEST: ${{ steps.version.outputs.image_latest }}
+          RELEASE_VERSION: ${{ needs.guard.outputs.release_version }}
+          IMAGE_VERSION: ${{ needs.guard.outputs.image_version }}
         run: |
           set -euo pipefail
           ctx=dist/pp-node/docker
           [[ -x "${ctx}/pp-node" ]] || { echo "::error::missing ${ctx}/pp-node"; exit 1; }
 
+          # Named by the tag (X.Y.Z-rc.<n>, or 0.0.0-dev.<sha>); a release adds X.Y.Z / latest without a rebuild.
           tags=(
-            "${PP_NODE_IMAGE}:${RELEASE_VERSION}"
-            "${PP_NODE_IMAGE}:v${RELEASE_VERSION}"
+            "${PP_NODE_IMAGE}:${IMAGE_VERSION}"
+            "${PP_NODE_IMAGE}:v${IMAGE_VERSION}"
           )
-          if [[ "${IMAGE_LATEST}" == "true" ]]; then
-            tags+=("${PP_NODE_IMAGE}:latest")
-          fi
 
           tag_args=()
           for t in "${tags[@]}"; do
@@ -198,11 +270,11 @@ jobs:
             --label "org.opencontainers.image.title=pp-node" \
             --label "org.opencontainers.image.description=Brief mesh headless node (org seed / datacenter)" \
             --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
-            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
             --label "org.opencontainers.image.version=${RELEASE_VERSION}" \
             "${ctx}"
 
-          echo "primary_tag=${PP_NODE_IMAGE}:${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "primary_tag=${PP_NODE_IMAGE}:${IMAGE_VERSION}" >> "$GITHUB_OUTPUT"
           printf 'Pushed:\n'
           printf '  %s\n' "${tags[@]}"
 
@@ -224,22 +296,155 @@ jobs:
             bash scripts/test/pp_node_image_smoke.sh --timeout 60
           docker rm -f pp-node-ci-smoke
 
-      - name: Create GitHub Release
-        if: steps.version.outputs.publish_github_release == 'true'
+  # A candidate's GitHub prerelease, only once its image passed the smoke: a release promotes only a candidate that
+  # has one.
+  release:
+    needs: [guard, linux-pp-node]
+    if: needs.guard.outputs.kind == 'candidate'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download Linux tarball artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-pp-node-tarball
+          path: dist/pp-node
+
+      - name: Create GitHub prerelease
         uses: softprops/action-gh-release@v3
         with:
-          name: pp-node ${{ steps.version.outputs.release_version }}
+          name: pp-node ${{ needs.guard.outputs.image_version }}
           draft: false
-          prerelease: ${{ contains(steps.version.outputs.release_version, '-') }}
+          prerelease: true
           generate_release_notes: true
           files: |
             dist/pp-node/*.tar.gz
           body: |
-            ## Container image
+            ## Release candidate
+
+            Release candidate of pp-node **${{ needs.guard.outputs.release_version }}**, built with that version. Tagging `pp-node/v${{ needs.guard.outputs.release_version }}` on this commit releases this same image and tarball without a rebuild.
 
             ```text
-            ghcr.io/${{ github.repository_owner }}/pp-node:${{ steps.version.outputs.release_version }}
+            ghcr.io/${{ github.repository_owner }}/pp-node:${{ needs.guard.outputs.image_version }}
             ```
 
             Ubuntu 24.04 glibc. L0 HTTP smoke ran in CI. L1/L2: [IMAGE_SMOKE.md](https://github.com/${{ github.repository }}/blob/main/packaging/pp-node/IMAGE_SMOKE.md).
             App installers ship separately via `v*` tags ([RELEASE.md](https://github.com/${{ github.repository }}/blob/main/docs/ops/RELEASE.md)).
+
+  # An internal build passed: tag its commit node-internal/<UTC date>.<n>, n the next free that day
+  # (DESIGN § Builds, tags and deploys). Never moves a tag: creating a ref that exists fails, and n moves on.
+  tag-internal:
+    needs: [guard, linux-pp-node]
+    if: needs.guard.outputs.kind == 'internal'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the built commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ needs.guard.outputs.commit }}
+          IMAGE_VERSION: ${{ needs.guard.outputs.image_version }}
+        run: |
+          set -euo pipefail
+          day="$(date -u +%Y-%m-%d)"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          message="Internal pp-node build, image ${PP_NODE_IMAGE}:${IMAGE_VERSION}: ${run_url}"
+          for attempt in 1 2 3 4 5; do
+            highest=0
+            while read -r ref; do
+              n="${ref##*.}"
+              if [[ "$n" =~ ^[0-9]+$ ]] && (( 10#$n > highest )); then
+                highest=$(( 10#$n ))
+              fi
+            done < <(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/node-internal/${day}." --jq '.[].ref')
+            tag="node-internal/${day}.$(( highest + 1 ))"
+            object="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags" \
+              -f tag="${tag}" -f message="${message}" -f object="${COMMIT}" -f type=commit --jq .sha)"
+            if gh api "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${tag}" -f sha="${object}" >/dev/null; then
+              echo "Tagged ${COMMIT} ${tag}"
+              echo "Tagged \`${COMMIT}\` **${tag}** (image \`${PP_NODE_IMAGE}:${IMAGE_VERSION}\`)" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "::warning::${tag} was taken (attempt ${attempt}); trying the next number"
+          done
+          echo "::error::Could not tag ${COMMIT} node-internal/${day}.<n> after 5 attempts"
+          exit 1
+
+  # pp-node/vX.Y.Z: no build. The candidate's image gets the release's tags and its tarball goes on the release.
+  promote:
+    needs: [guard]
+    if: needs.guard.outputs.kind == 'release'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag the candidate's image
+        shell: bash
+        env:
+          CANDIDATE: ${{ needs.guard.outputs.candidate }}
+          VERSION: ${{ needs.guard.outputs.release_version }}
+          LATEST: ${{ needs.guard.outputs.latest }}
+        run: |
+          set -euo pipefail
+          source="${PP_NODE_IMAGE}:${CANDIDATE#pp-node/v}"
+          tags=(-t "${PP_NODE_IMAGE}:${VERSION}" -t "${PP_NODE_IMAGE}:v${VERSION}")
+          if [[ "${LATEST}" == "true" ]]; then
+            tags+=(-t "${PP_NODE_IMAGE}:latest")
+          fi
+          # Copies the manifest under new names: the same image digest, not a rebuild.
+          docker buildx imagetools create "${tags[@]}" "${source}"
+          docker buildx imagetools inspect "${PP_NODE_IMAGE}:${VERSION}"
+
+      - name: Release the candidate's tarball
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.guard.outputs.release_version }}
+          COMMIT: ${{ needs.guard.outputs.commit }}
+          CANDIDATE: ${{ needs.guard.outputs.candidate }}
+          LATEST: ${{ needs.guard.outputs.latest }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download "$CANDIDATE" --repo "$GITHUB_REPOSITORY" --dir dist --pattern '*.tar.gz'
+          shopt -s nullglob
+          files=(dist/*.tar.gz)
+          if (( ${#files[@]} == 0 )); then
+            echo "::error::candidate ${CANDIDATE}'s GitHub release has no tarball"
+            exit 1
+          fi
+          {
+            echo "## Container image"
+            echo ""
+            echo "pp-node **${VERSION}**, promoted from release candidate **${CANDIDATE}** (commit \`${COMMIT}\`): the candidate's image and tarball, not a rebuild."
+            echo ""
+            echo '```text'
+            echo "${PP_NODE_IMAGE}:${VERSION}"
+            echo '```'
+            echo ""
+            echo "| File | SHA-256 |"
+            echo "|------|---------|"
+            for f in "${files[@]}"; do
+              echo "| $(basename "$f") | \`$(sha256sum "$f" | cut -d' ' -f1)\` |"
+            done
+            echo ""
+            echo "App installers ship separately via \`v*\` tags ([RELEASE.md](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/main/docs/ops/RELEASE.md))."
+          } > notes.md
+          gh release create "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "pp-node ${VERSION}" --notes-file notes.md --generate-notes --latest="${LATEST}"
+          cat notes.md >> "$GITHUB_STEP_SUMMARY"

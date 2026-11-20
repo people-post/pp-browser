@@ -12,6 +12,10 @@ struct CrashReportEnvelope {
   int schema_version = kSchemaVersion;
   std::string product;
   std::string version;
+  /** The build's commit and tag (the dump's `commit=` / `tag=`); omitted from the JSON when empty. Not part of the
+   *  fingerprint: one crash in two builds of a version is one cluster. */
+  std::string commit;
+  std::string tag;
   std::string os;
   std::string reason;
   std::string fingerprint;

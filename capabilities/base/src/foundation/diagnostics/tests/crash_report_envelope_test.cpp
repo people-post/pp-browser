@@ -35,3 +35,26 @@ TEST(CrashReportEnvelopeTest, SampleStopsBeforeBreadcrumbs) {
   ASSERT_EQ(env.breadcrumb_tags.size(), 2u);
   EXPECT_EQ(env.breadcrumb_tags[0], "MeshLink");
 }
+
+// release-compatibility "A build says what it is": the dump's commit and tag reach the envelope, outside the
+// fingerprint (one crash in two builds of a version clusters together); a dump without them sends neither.
+TEST(CrashReportEnvelopeTest, CarriesTheBuildsCommitAndTag) {
+  const std::string head = "product=pp-browser\nversion=1.0.0\n";
+  const std::string tail = "os=ios\nreason=signal 11\n0x7fff1234abcd\n--- breadcrumbs ---\n";
+  const auto env = pbr::BuildCrashReportEnvelope(head + "commit=a1b2c3d4\ntag=v1.0.0-rc.3\n" + tail);
+  EXPECT_EQ(env.version, "1.0.0");
+  EXPECT_EQ(env.commit, "a1b2c3d4");
+  EXPECT_EQ(env.tag, "v1.0.0-rc.3");
+  EXPECT_EQ(env.os, "ios");
+  const std::string json = pbr::CrashReportEnvelopeToJson(env);
+  EXPECT_NE(json.find("\"commit\":\"a1b2c3d4\""), std::string::npos) << json;
+  EXPECT_NE(json.find("\"tag\":\"v1.0.0-rc.3\""), std::string::npos) << json;
+
+  const auto bare = pbr::BuildCrashReportEnvelope(head + tail);
+  EXPECT_TRUE(bare.commit.empty());
+  EXPECT_TRUE(bare.tag.empty());
+  EXPECT_EQ(bare.fingerprint, env.fingerprint);
+  const std::string bare_json = pbr::CrashReportEnvelopeToJson(bare);
+  EXPECT_EQ(bare_json.find("\"commit\""), std::string::npos) << bare_json;
+  EXPECT_EQ(bare_json.find("\"tag\""), std::string::npos) << bare_json;
+}

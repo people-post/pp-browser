@@ -458,6 +458,34 @@ TEST_F(RunLogDirTest, TheCrashRecordSurvivesTheSizeCut) {
   EXPECT_NE(Gunzip(archive->bytes).find("reason=signal 6"), std::string::npos);
 }
 
+// release-compatibility "A build says what it is": the archive opens with the build that sent it, and the size cut
+// that drops old records never drops that line.
+TEST_F(RunLogDirTest, TheArchiveNamesItsBuildFirstAndKeepsItThroughTheSizeCut) {
+  Write(log_path_, Rec("this launch"));
+  const std::string build = "1.0.0 \xC2\xB7 v1.0.0-rc.3 \xC2\xB7 a1b2c3d4";
+  auto archive = RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 4 * 1024 * 1024, 0, nullptr, build);
+  ASSERT_TRUE(archive) << archive.error().message;
+  EXPECT_EQ(Gunzip(archive->bytes), "==== build " + build + " ====\n==== pp-browser.log ====\n" + Rec("this launch"));
+  EXPECT_EQ(archive->first_time, "11-19 10:00");
+
+  std::mt19937 random(11);
+  std::string noise; // does not compress: the archive must be cut
+  while (noise.size() < 300 * 1024) {
+    std::string line = kHead;
+    for (int i = 0; i < 64; ++i) {
+      line += static_cast<char>('!' + random() % 90);
+    }
+    noise += line + "\n";
+  }
+  Write(log_path_, noise + Rec("the newest line"));
+  auto cut = RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 20 * 1024, 0, nullptr, build);
+  ASSERT_TRUE(cut) << cut.error().message;
+  EXPECT_TRUE(cut->truncated);
+  const std::string text = Gunzip(cut->bytes);
+  EXPECT_EQ(text.rfind("==== build " + build + " ====\n", 0), 0u) << text.substr(0, 200);
+  EXPECT_NE(text.find("the newest line"), std::string::npos);
+}
+
 TEST_F(RunLogDirTest, NoLogFilesIsAnError) {
   EXPECT_FALSE(RunLogBundle::Build(log_path_, LogFile::EffectiveRetention(true), 1024 * 1024, 0));
 }
