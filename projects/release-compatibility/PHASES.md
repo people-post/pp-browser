@@ -29,9 +29,10 @@ Written up in [INVENTORY.md](INVENTORY.md) (2026-11-19); its work list is agreed
 
 [DESIGN § Branches and tags](DESIGN.md#branches-and-tags), in every repo, before release 1 is cut:
 
-- [ ] **First, at the start of P2:** develop merged into main a last time; open PRs retargeted to main; develop deleted
+- [x] **First, at the start of P2:** develop merged into main a last time; open PRs retargeted to main; develop deleted
   (pp-browser, pp-cpp-*, pp-ledger; pp-relay-apis with Leo), all repos in the same week; P2's own work lands on main.
-  Started 2026-11-19 ([RC019](DECISIONS.md#rc019--p2-starts-one-main-the-relay-deploys-from-main-and-tags-no-protection-on-the-private-relay-repos)): the relay repos move once their deploys do.
+  Done 2026-11-20 in all ten repos (pp-browser, the five pp-cpp-*, pp-ledger, pp-ledger-apps, pp-relay-apis,
+  pp-relay-infra-ansible); the relay repos deploy qa from main and prod from `v*` tags. Started 2026-11-19 ([RC019](DECISIONS.md#rc019--p2-starts-one-main-the-relay-deploys-from-main-and-tags-no-protection-on-the-private-relay-repos)): the relay repos move once their deploys do.
 - [ ] Branch protection on main in every repo except pp-relay-apis and pp-relay-infra-ansible ([RC019](DECISIONS.md#rc019--p2-starts-one-main-the-relay-deploys-from-main-and-tags-no-protection-on-the-private-relay-repos) item 3): one approval from someone other than the author, code owners on their
   paths.
 - [ ] Every internal build tagged by its workflow: TestFlight, Android and desktop test builds, release candidates,
