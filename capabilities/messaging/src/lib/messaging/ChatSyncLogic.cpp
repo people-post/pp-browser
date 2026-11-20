@@ -80,7 +80,13 @@ void CloseEmptyGap(PeerSyncState& state, const uint64_t min_seq, const uint64_t 
 
 bool AdvanceContiguous(PeerSyncState& state, const std::function<bool(uint64_t)>& stored) {
   bool changed = false;
-  while (state.contiguous_peer_seq < state.loaded_max_seq && stored(state.contiguous_peer_seq + 1)) {
+  const auto closed = [&state](const uint64_t seq) {
+    return std::find(state.empty_closed_seqs.begin(), state.empty_closed_seqs.end(), seq) !=
+           state.empty_closed_seqs.end();
+  };
+  // A seq closed as empty (a refused message's, T5) counts as held: the tail moves past it.
+  while (state.contiguous_peer_seq < state.loaded_max_seq &&
+         (stored(state.contiguous_peer_seq + 1) || closed(state.contiguous_peer_seq + 1))) {
     ++state.contiguous_peer_seq;
     changed = true;
   }

@@ -55,6 +55,23 @@ TEST_F(DeliveryNoticeTextTest, AReceiveFailureNamesThePeerAndTheReason) {
   EXPECT_EQ(DeliveryNoticeText(notice).find("Couldn't"), std::string::npos) << "in the reader's language";
 }
 
+// U1: a newer app's message says who must update (this app), not "couldn't decrypt"; for our own other device, so.
+TEST_F(DeliveryNoticeTextTest, ANeedsUpdateNoticeSaysThisAppNeedsTheUpdate) {
+  DeliveryNotice notice;
+  notice.kind = DeliveryNotice::Kind::ReceiveFailed;
+  notice.receive = ReceiveFailure::NeedsUpdate;
+  notice.peer = "account:lHaEnkO4vSbVnl6A";
+  EXPECT_EQ(DeliveryNoticeText(notice),
+            "account:lHaE… uses a newer version of the app. Update the app to read all of their messages.");
+  notice.peer.clear();
+  EXPECT_EQ(DeliveryNoticeText(notice),
+            "Another of your devices uses a newer version of the app. Update this app to read all messages.");
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(DeliveryNoticeText(notice).find("newer"), std::string::npos) << "in the reader's language";
+  EXPECT_EQ(DeliveryNoticeText(notice).find("chat.notice"), std::string::npos);
+  EXPECT_EQ(LocalizationService::Instance().Tr("chat.subtitle.peer_newer_app").find("chat."), std::string::npos);
+}
+
 TEST_F(DeliveryNoticeTextTest, TheTranscriptWordsAStoredReceiveFailureLine) {
   Object detail;
   detail.set("sender", "account:lHaEnkO4vSbVnl6A");

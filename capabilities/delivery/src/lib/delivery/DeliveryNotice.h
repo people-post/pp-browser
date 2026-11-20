@@ -88,6 +88,12 @@ enum class ReceiveFailure {
   ReactionRejected,
   /** A group invite from someone this device has not added as a contact (the default receiver setting). */
   GroupInviteNeedsContact,
+  /**
+   * The sender's app is newer than this one: what it sent is a version or kind this app does not read (a content
+   * type, a payload, sub, group-copy or blob version, an account card). Not a forgery and not "couldn't decrypt":
+   * this app needs an update. The message is kept as "update to view", its seq consumed (INVENTORY U1).
+   */
+  NeedsUpdate,
 };
 
 /** Stable names (stored in a local receive-failure line's payload). */

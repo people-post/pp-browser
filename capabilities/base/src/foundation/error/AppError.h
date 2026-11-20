@@ -18,6 +18,8 @@ enum class ErrorCategory : int32_t {
   Config = 5,
   Storage = 6,
   Blob = 7,
+  /** A format this app cannot read because a newer app wrote it (release-compatibility, INVENTORY U1). */
+  Format = 8,
 };
 
 /** Fine-grained codes scoped by category (stored as int32_t on Error::code). */
@@ -132,6 +134,17 @@ enum class Blob : int32_t {
   UploadNotConfiguredNoDirect = 9,
 };
 
+/**
+ * A format refused for its version, not because it is broken: the writer is a newer app. Read after the object's
+ * authenticity is known (a verified signature, an opened AEAD), so it is never a forgery or a decryption failure:
+ * the receiver says "update needed" (ReceiveFailure::NeedsUpdate) and moves on.
+ */
+enum class Format : int32_t {
+  Generic = 0,
+  /** A version (or a must-understand kind) higher than this app reads. */
+  Newer = 1,
+};
+
 } // namespace Err
 
 /** Typed constructors and UI/log helpers over low-level Error. */
@@ -143,6 +156,10 @@ struct AppError {
   static Error Storage(Err::Storage code, const std::string& detail);
   static Error Blob(Err::Blob code, const std::string& detail);
   static Error Internal(const std::string& detail);
+  /** Err::Format::Newer: `detail` names the format and the version met (for the log). */
+  static Error NewerFormat(const std::string& detail);
+  /** The error is NewerFormat's: a newer app wrote what was read. */
+  static bool IsNewerFormat(const Error& err);
 
   static ErrorCategory CategoryOf(const Error& err);
   static std::string CatalogMessage(ErrorCategory category, int32_t code);

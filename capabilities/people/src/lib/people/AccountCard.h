@@ -89,6 +89,11 @@ inline constexpr int64_t kAccountCardClockSkewMs = 5 * 60 * 1000;
 
 Object AccountCardToJson(const AccountCard& card);
 Roe<AccountCard> AccountCardFromJson(const Object& json);
+/**
+ * The card names a `card_version` higher than this app reads: a newer app made it, so AccountCardFromJson refuses it
+ * and the owner is marked as needing a newer app here, not asked for the card again and again (INVENTORY U2).
+ */
+bool IsNewerAccountCard(const Object& json);
 
 /** The signing key hashes to `account_id` and the KEM binding verifies. */
 Roe<void> VerifyKeyCard(const KeyCard& card);

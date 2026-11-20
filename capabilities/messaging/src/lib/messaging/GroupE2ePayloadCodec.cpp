@@ -2,6 +2,7 @@
 
 #include "lib/delivery/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "foundation/error/AppError.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/ChatPayloadValidator.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
@@ -89,6 +90,10 @@ Roe<GroupCopyPlaintext> GroupE2ePayloadCodec::DecodeCopyPlaintext(const std::vec
   InputArchive ar(iss);
   uint8_t version = 0;
   ar & version;
+  if (!ar.failed() && version > kGroupCopyVersion) {
+    // A newer app's copy, opened under a good AEAD: "update needed", not "couldn't decrypt" (INVENTORY T3).
+    return AppError::NewerFormat("group copy version " + std::to_string(version));
+  }
   if (ar.failed() || version != kGroupCopyVersion) {
     return Error("Unsupported group copy version");
   }

@@ -10,6 +10,7 @@
 #include "lib/pricing/PaymentPromiseStore.h"
 #include "lib/messaging/CardAsk.h"
 #include "lib/messaging/CardAskGate.h"
+#include "lib/messaging/PeerUpdateMarks.h"
 #include "lib/messaging/CopyAsk.h"
 #include "lib/messaging/IThreadMentionsStore.h"
 #include "lib/messaging/SentCopy.h"
@@ -299,6 +300,11 @@ public:
   void NotifyMessagesChanged();
   void SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback);
   /**
+   * Something `account` sent needs a newer app here (a message kept as "update to view", a newer account card):
+   * its chat says so (INVENTORY U1, U2). In memory, since this run.
+   */
+  bool PeerNeedsNewerApp(const std::string& account) const;
+  /**
    * Fired on UI thread when a background ingest bumps unread (for OS notify). `mentions_us`: a group message
    * that mentions us (G015, MessageMentionsUs) — it alerts even in a muted group, rate-limited.
    */
@@ -398,6 +404,11 @@ private:
   void NotifyDeliveryIssue(const Thread& thread, const std::string& message_id, SendFailure failure,
                            const std::string& detail);
   void MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome);
+  /**
+   * `account` sent what only a newer app reads (ReceiveFailure::NeedsUpdate): it is marked, and the user is told once
+   * per kNeedsUpdateNoticeGapMs (a toast naming the sender; for our own account, "another device").
+   */
+  void NotePeerNeedsUpdate(const std::string& account, const std::string& detail);
   void MaybeEnqueueAttachmentDownload(const RelayReceiveOutcome& outcome);
   void ApplySendSucceeded(const std::string& thread_id, const std::string& message_id, MessageTransport transport);
   /** `detail`: the transport's own text, for the log. */
@@ -558,6 +569,7 @@ private:
   bool InboundMentionsUs(const std::string& thread_id, const ThreadMessage& message, const std::string& local_account);
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
+  PeerUpdateMarks peer_update_marks_; // under receive_failure_mutex_
   /** Our key card for an envelope carrying a key_init (none when the identity is not ready). */
   /** Our account card as envelopes carry it (with a key_init); none when it cannot be issued. */
   std::optional<Object> OwnCardJson();

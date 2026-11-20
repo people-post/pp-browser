@@ -293,6 +293,11 @@ public:
   /** The nickname on the account card kept for `account_id` (a member's own, public); empty if none. */
   std::string KeptCardNickname(const std::string& account_id);
   bool IsOwnerUnreachable(const std::string& group_id);
+  /**
+   * Something `account` sent needs a newer app here (a message kept as "update to view", a newer account card): the
+   * chat with it says so (release-compatibility INVENTORY U1, U2).
+   */
+  bool PeerNeedsNewerApp(const std::string& account);
   Roe<void> RenameGroupShared(const std::string& group_id, const std::string& title);
   Roe<void> RemoveMemberByIdentity(const std::string& group_id, const std::string& member_identity);
   /** G017, owner-only: make a member an admin, or a member again (GroupMembershipWorkflow::SetMemberRole). */

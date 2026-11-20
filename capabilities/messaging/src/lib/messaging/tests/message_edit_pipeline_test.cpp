@@ -15,6 +15,7 @@
 #include "lib/messaging/testing/InMemoryMessagingStores.h"
 #include "lib/messaging/tests/TestAccount.h"
 
+#include "common/Serialize.hpp"
 #include "common/Utilities.h"
 #include "common/chat/RelayStreamKey.h"
 #include "common/directory/DirectoryJson.h"
@@ -29,6 +30,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -517,6 +519,34 @@ TEST_F(SentCopyEditPipelineTest, ACopyNeverReachesAPrivateChat) {
   EXPECT_EQ(mine.text, "see you at 8");
   EXPECT_FALSE(EditMarkOf(mine));
   EXPECT_EQ(phone_->RowsHolding(secure.id, "copied words"), 0u);
+}
+
+// T1 (release-compatibility): our other device runs a newer app; its message of a type this one does not know is
+// filed as "update to view", stored as it came — before, the store refused it and the copy was lost.
+TEST_F(SentCopyEditPipelineTest, OurOtherDevicesMessageOfANewerTypeIsFiledAsUpdateToView) {
+  std::ostringstream oss;
+  {
+    OutputArchive ar(oss);
+    uint8_t version = 1;
+    uint8_t type = 42; // a content type this app does not know
+    ar & version;
+    ar & type;
+    WireLenUtf8 text{"a poll"};
+    ar & text;
+  }
+  const std::string data = oss.str();
+  const std::vector<uint8_t> newer(data.begin(), data.end());
+  ThreadMessage sent = ChatPayloadCodec::DecodeToMessageFields(newer).value();
+  sent.id = "mac-poll";
+  sent.timestamp = sent_;
+  const RelayReceiveOutcome got = phone_->Receive(mac_->SentCopyTo(*phone_, sent, ToBob()));
+  ASSERT_TRUE(got.persisted) << got.receive_failure_detail;
+  EXPECT_TRUE(got.sibling_copy);
+  ASSERT_TRUE(got.receive_failure);
+  EXPECT_EQ(*got.receive_failure, ReceiveFailure::NeedsUpdate);
+  const ThreadMessage filed = phone_->Row(chat_.id, "mac-poll").value();
+  EXPECT_EQ(filed.content_type, ChatContentType::Unsupported);
+  EXPECT_EQ(ChatPayloadCodec::EncodeToRow(filed).value(), newer);
 }
 
 // ---- the public channel (e2e_public, AutoKey) -------------------------------------------------------------------------

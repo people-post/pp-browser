@@ -19,6 +19,7 @@
 
 #include "lib/delivery/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "foundation/error/AppError.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "lib/delivery/ChatPayloadValidator.h"
 #include "lib/delivery/E2ePublicSessionLogic.h"
@@ -137,6 +138,47 @@ void MarkReceiveFailure(RelayReceiveOutcome& outcome, const std::string& sender,
   }
   if (thread_id && !thread_id->empty()) {
     outcome.receive_failure_thread_id = *thread_id;
+  }
+}
+
+/**
+ * A newer app's message, read as Unsupported (or stood in for): "update needed" for its sender. No failure line in
+ * the chat: the stored "update to view" row is the line (INVENTORY U1).
+ */
+void MarkNeedsUpdate(RelayReceiveOutcome& outcome, const std::string& sender, const std::string& detail) {
+  MarkReceiveFailure(outcome, sender, ReceiveFailure::NeedsUpdate, detail);
+}
+
+/** What an Unsupported message is, for the log: its payload's facts without the kept bytes. */
+std::string UnreadableDetail(const ThreadMessage& message) {
+  auto facts = TryParseObject(message.payload_json);
+  if (!facts) {
+    return "unsupported content";
+  }
+  facts->erase("raw_b64");
+  return "unsupported content " + DumpJson(*facts);
+}
+
+/**
+ * The row for a newer app's message nothing readable was kept of (a newer blob or group copy: NewerFormat after a
+ * good verify): "update to view", stored so its seq is consumed (INVENTORY T3).
+ */
+ThreadMessage UnreadablePlaceholder(const Error& error) {
+  ThreadMessage message;
+  message.content_type = ChatContentType::Unsupported;
+  Object facts;
+  facts.set("needs_update", error.message);
+  message.payload_json = DumpJson(facts);
+  return message;
+}
+
+/**
+ * The seq of a refused message closed as empty: a resend is then a late fill (refused or applied again), never a
+ * stall, a repair loop or, in a private chat, a compromise.
+ */
+void CloseRefusedSeq(PeerSyncState& state, const uint64_t seq) {
+  if (std::find(state.empty_closed_seqs.begin(), state.empty_closed_seqs.end(), seq) == state.empty_closed_seqs.end()) {
+    state.empty_closed_seqs.push_back(seq);
   }
 }
 
@@ -1030,6 +1072,11 @@ SenderSignatureCheck RelayReceivePipeline::CheckSignature(const RelayEnvelope& e
       carried = std::move(card.value());
     }
     check.carried_refused = !carried;
+    // A newer app's card (U2): it cannot be read, so asking the device for its card only brings this one back.
+    if (!carried && on_unreadable_sender_card_ && IsNewerAccountCard(*card_json) &&
+        card_json->getString("account_id").value_or(target.peer_identity_value) == target.peer_identity_value) {
+      on_unreadable_sender_card_(target.peer_identity_value);
+    }
   }
   const AccountCard* card = carried ? &*carried : (kept ? &*kept : nullptr);
   if (card) {
@@ -1604,6 +1651,10 @@ void RelayReceivePipeline::FileSentCopy(const SentCopy& copy, const RelayEnvelop
     return;
   }
   ThreadMessage message = copy.message;
+  if (message.content_type == ChatContentType::Unsupported) {
+    // Our other device runs a newer app (T1): its message is filed as "update to view", stored as it came.
+    MarkNeedsUpdate(outcome, envelope.sender_contact_id, UnreadableDetail(message));
+  }
   message.thread_id = thread_id;
   message.sender_contact_id = kLocalSelfContactId; // ours, from another of our devices
   message.sender_device = envelope.sender_device;
@@ -1798,15 +1849,16 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     AutoKeyRead read;
     auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_aad_id, target_key, psk_store_,
                                                            local_kem_private_key, &read);
-    if (!decrypted) {
+    if (!decrypted && !AppError::IsNewerFormat(decrypted.error())) {
       outcome.decision = IngestDecision::HardReject;
       MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::DecryptFailed, decrypted.error().message,
                          resolved_thread_id.empty() ? std::nullopt : std::optional(resolved_thread_id));
       return outcome;
     }
-    message = std::move(*decrypted);
+    // A newer blob byte, after a good verify: stood in for by "update to view", its seq consumed (INVENTORY T3).
+    message = decrypted ? std::move(*decrypted) : UnreadablePlaceholder(decrypted.error());
 
-    if (envelope.route.channel == ThreadChannel::E2ePublic && local_kem_private_key.has_value() &&
+    if (decrypted && envelope.route.channel == ThreadChannel::E2ePublic && local_kem_private_key.has_value() &&
         !PskRotateCodec::IsPskRotateMessage(message)) {
       // Signed by the peer (checked above) and read: keep what that proves about the pair's session.
       if (auto kept = ReconcileE2ePublicSession(psk_store_, target_key, envelope.session_epoch, read,
@@ -1854,6 +1906,10 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     outcome.decision = IngestDecision::SilentDiscard;
     return outcome;
   }
+  if (message.content_type == ChatContentType::Unsupported) {
+    // A newer app's message (T1, T3): stored as "update to view" below, its seq consumed like any other.
+    MarkNeedsUpdate(outcome, envelope.sender_contact_id, UnreadableDetail(message));
+  }
 
   if (auto_create) {
     const std::string fallback_title = ShortPersonId(envelope.sender_contact_id);
@@ -1881,12 +1937,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     return envelope.sender_contact_id;
   }();
 
-  if (auto rotate = ValidateInboundPskRotate(envelope, message); !rotate) {
-    outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::KeyUpdateFailed, rotate.error().message,
-                       resolved_thread_id);
-    return outcome;
-  }
+  // Refused only once the seq is classified, so a refused rotate consumes its seq (T5).
+  const Roe<void> rotate_checked = ValidateInboundPskRotate(envelope, message);
 
   PeerSyncState sync_state;
   uint32_t chat_target_epoch = envelope.session_epoch;
@@ -2021,6 +2073,15 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   if (!classified.persist_message) {
     return outcome;
   }
+  if (!rotate_checked) {
+    outcome.decision = IngestDecision::HardReject;
+    MarkReceiveFailure(
+        outcome, envelope.sender_contact_id,
+        AppError::IsNewerFormat(rotate_checked.error()) ? ReceiveFailure::NeedsUpdate : ReceiveFailure::KeyUpdateFailed,
+        rotate_checked.error().message, resolved_thread_id);
+    ConsumeRefusedSeq(resolved_thread_id, envelope, numbering, classified);
+    return outcome;
+  }
 
   ThreadMessage persisted = message;
   persisted.id = envelope.message_id;
@@ -2038,10 +2099,12 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, MembershipFailure(membership.error()),
                        membership.error().message, resolved_thread_id);
+    ConsumeRefusedSeq(resolved_thread_id, envelope, numbering, classified);
     return outcome;
   }
   if (auto control = ApplyInboundControl(persisted, envelope, &outcome, resolved_thread_id); !control) {
     outcome.decision = IngestDecision::HardReject;
+    ConsumeRefusedSeq(resolved_thread_id, envelope, numbering, classified);
     return outcome;
   }
   MaybeSuppressInboxChrome(outcome, persisted);
@@ -2052,6 +2115,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::ReactionRejected, cap.error().message,
                        resolved_thread_id);
+    ConsumeRefusedSeq(resolved_thread_id, envelope, numbering, classified);
     return outcome;
   }
 
@@ -2098,6 +2162,20 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     log().warning << "psk_rotate apply failed after persist: " << rotate.error().message;
   }
   return outcome;
+}
+
+void RelayReceivePipeline::ConsumeRefusedSeq(const std::string& thread_id, const RelayEnvelope& envelope,
+                                             const std::string& numbering, const IngestClassifierResult& classified) {
+  if (thread_id.empty() || classified.decision == IngestDecision::AcceptEpochAdvance) {
+    return; // the next message at the new epoch advances it; nothing waits on this seq
+  }
+  PeerSyncState state = classified.sync_state;
+  CloseRefusedSeq(state, envelope.sender_seq);
+  if (auto kept = store_.SetPeerSyncState(thread_id, envelope.session_epoch, state, numbering); !kept) {
+    log().warning << "refused message_id=" << envelope.message_id << ": seq not consumed: " << kept.error().message;
+    return;
+  }
+  log().info << "refused message_id=" << envelope.message_id << " seq=" << envelope.sender_seq << " consumed";
 }
 
 std::vector<std::string> RelayReceivePipeline::GroupsSharedWith(const std::string& sender,
@@ -2193,7 +2271,12 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   AutoKeyRead read;
   auto decrypted = GroupE2ePayloadCodec::DecryptForLocalMember(envelope, local_account_id, pair_key, psk_store_,
                                                                *kem_private, &read);
-  if (!decrypted) {
+  // A newer copy or blob version, after a good verify (T3): the group the stream id shows (a hint, unsigned, but
+  // only a group both share) gets the "update to view" row, so the member's seq there is consumed.
+  const std::optional<std::string> newer_in_group = !decrypted && AppError::IsNewerFormat(decrypted.error())
+                                                        ? GroupOfStream(envelope, shared, local_account_id)
+                                                        : std::nullopt;
+  if (!decrypted && !newer_in_group) {
     outcome.decision = IngestDecision::HardReject;
     std::optional<std::string> tid; // the chat to tell, when the stream id shows which group (a hint, unsigned)
     if (auto group_id = GroupOfStream(envelope, shared, local_account_id)) {
@@ -2201,31 +2284,41 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
         tid = (**existing).id;
       }
     }
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::DecryptFailed, decrypted.error().message,
-                       tid);
+    MarkReceiveFailure(
+        outcome, envelope.sender_contact_id,
+        AppError::IsNewerFormat(decrypted.error()) ? ReceiveFailure::NeedsUpdate : ReceiveFailure::DecryptFailed,
+        decrypted.error().message, tid);
     return outcome;
   }
-  const std::string group_id = std::move(decrypted->group_id);
+  const std::string group_id = decrypted ? std::move(decrypted->group_id) : *newer_in_group;
   // Right after reading it: both ends must be on this device's roster for the group it names — us (after leave /
   // dismiss / removal peers may still fan out), and the sender (a member, not blocked: checked above).
   if (std::find(shared.begin(), shared.end(), group_id) == shared.end()) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
-  NoteCopyState(group_id, decrypted->state, envelope.sender_contact_id, outcome); // G018 item 5
-  // G013: while our check of a restored group goes unanswered, a member's message shows it is online.
-  if (auto metadata = group_roster_.LoadMetadata(group_id);
-      metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Checking &&
-      util::NowUnixMs() - (*metadata)->sync_requested_at >= group_roster_sync::kCheckRetryMs) {
-    outcome.restart_roster_check_group_id = group_id;
+  ThreadMessage message;
+  if (decrypted) {
+    NoteCopyState(group_id, decrypted->state, envelope.sender_contact_id, outcome); // G018 item 5
+    // G013: while our check of a restored group goes unanswered, a member's message shows it is online.
+    if (auto metadata = group_roster_.LoadMetadata(group_id);
+        metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Checking &&
+        util::NowUnixMs() - (*metadata)->sync_requested_at >= group_roster_sync::kCheckRetryMs) {
+      outcome.restart_roster_check_group_id = group_id;
+    }
+    message = std::move(decrypted->message);
+    // Signed by the member (checked above) and read: what that proves about the pair's session is kept,
+    // at the pair's epoch, as for a 1:1 message — so the next copy, without the key_init, is read too (G011).
+    if (auto kept = ReconcileE2ePublicSession(psk_store_, pair_key, envelope.session_epoch, read,
+                                              envelope.body.e2e.key_init_b64, envelope.timestamp);
+        !kept) {
+      log().warning << "group: pair session not updated: " << kept.error().message;
+    }
+  } else {
+    message = UnreadablePlaceholder(decrypted.error());
   }
-  ThreadMessage message = std::move(decrypted->message);
-  // Signed by the member (checked above) and read: what that proves about the pair's session is kept,
-  // at the pair's epoch, as for a 1:1 message — so the next copy, without the key_init, is read too (G011).
-  if (auto kept = ReconcileE2ePublicSession(psk_store_, pair_key, envelope.session_epoch, read,
-                                            envelope.body.e2e.key_init_b64, envelope.timestamp);
-      !kept) {
-    log().warning << "group: pair session not updated: " << kept.error().message;
+  if (message.content_type == ChatContentType::Unsupported) {
+    MarkNeedsUpdate(outcome, envelope.sender_contact_id, UnreadableDetail(message));
   }
   if (controls_ && controls_->OnLane(message)) {
     log().info << "drop control-lane message sent in a group stream message_id=" << envelope.message_id;
@@ -2306,6 +2399,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, MembershipFailure(membership.error()),
                        membership.error().message, resolved_thread_id);
+    ConsumeRefusedSeq(resolved_thread_id, envelope, numbering, classified);
     return outcome;
   }
 
@@ -2316,6 +2410,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::ReactionRejected, cap.error().message,
                        resolved_thread_id);
+    ConsumeRefusedSeq(resolved_thread_id, envelope, numbering, classified);
     return outcome;
   }
 

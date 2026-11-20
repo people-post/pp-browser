@@ -58,7 +58,8 @@ bool AuthorizedOlderBackfill(const ChatHistoryRequest& request, const PeerSyncSt
 void CloseEmptyGap(PeerSyncState& state, uint64_t min_seq, uint64_t max_seq);
 
 /**
- * Extend the contiguous run through sequences stored since (`stored(seq)`), and leave Gap once it
+ * Extend the contiguous run through sequences stored since (`stored(seq)`) or closed as empty (a refused
+ * message's, `empty_closed_seqs`), and leave Gap once it
  * reaches the newest loaded message. True when the state changed.
  */
 bool AdvanceContiguous(PeerSyncState& state, const std::function<bool(uint64_t)>& stored);

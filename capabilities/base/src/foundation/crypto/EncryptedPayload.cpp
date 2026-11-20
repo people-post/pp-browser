@@ -2,12 +2,31 @@
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "foundation/error/AppError.h"
 
 #include <algorithm>
 #include <sodium.h>
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+namespace {
+
+/** The leading byte: a higher one is a newer app's blob (NewerFormat, "update needed"), anything else is broken. */
+Roe<void> CheckBlobVersion(const ByteVector& bytes) {
+  if (bytes.empty()) {
+    return Error("Unsupported encrypted payload version");
+  }
+  if (bytes[0] > kEncryptedPayloadVersion) {
+    return AppError::NewerFormat("encrypted payload version " + std::to_string(bytes[0]));
+  }
+  if (bytes[0] != kEncryptedPayloadVersion) {
+    return Error("Unsupported encrypted payload version");
+  }
+  return {};
+}
+
+} // namespace
 
 Roe<ByteVector> EncryptedPayload::EncodeBlob(const EncryptedBlob& blob) {
   if (blob.nonce.size() != kAeadNonceSize) {
@@ -24,8 +43,8 @@ Roe<ByteVector> EncryptedPayload::EncodeBlob(const EncryptedBlob& blob) {
 }
 
 Roe<EncryptedBlob> EncryptedPayload::DecodeBlob(const ByteVector& bytes) {
-  if (bytes.empty() || bytes[0] != kEncryptedPayloadVersion) {
-    return Error("Unsupported encrypted payload version");
+  if (auto version = CheckBlobVersion(bytes); !version) {
+    return version.error();
   }
   if (bytes.size() < 1 + kAeadNonceSize + crypto_aead_xchacha20poly1305_ietf_abytes()) {
     return Error("Encrypted payload too short");
@@ -37,8 +56,8 @@ Roe<EncryptedBlob> EncryptedPayload::DecodeBlob(const ByteVector& bytes) {
 }
 
 Roe<EncryptedBlob> EncryptedPayload::DecodeBlob(ByteVector&& bytes) {
-  if (bytes.empty() || bytes[0] != kEncryptedPayloadVersion) {
-    return Error("Unsupported encrypted payload version");
+  if (auto version = CheckBlobVersion(bytes); !version) {
+    return version.error();
   }
   if (bytes.size() < 1 + kAeadNonceSize + crypto_aead_xchacha20poly1305_ietf_abytes()) {
     return Error("Encrypted payload too short");

@@ -85,5 +85,18 @@ TEST(ChatSyncLogicTest, WatermarksMove) {
   EXPECT_EQ(chat_sync::SeqOwner(thread), "contact-1");
 }
 
+// T5: a refused message's seq, closed as empty, does not stop the tail when the gap before it fills.
+TEST(ChatSyncLogicTest, AdvanceContiguousPassesASeqClosedAsEmpty) {
+  PeerSyncState state = DefaultPeerSyncState();
+  state.contiguous_peer_seq = 3;
+  state.loaded_max_seq = 6;
+  state.phase = PeerSyncPhase::Gap;
+  state.empty_closed_seqs = {5};
+  const std::set<uint64_t> stored = {4, 6};
+  EXPECT_TRUE(chat_sync::AdvanceContiguous(state, [&](uint64_t seq) { return stored.count(seq) > 0; }));
+  EXPECT_EQ(state.contiguous_peer_seq, 6u);
+  EXPECT_EQ(state.phase, PeerSyncPhase::Ok);
+}
+
 } // namespace
 } // namespace pbr
