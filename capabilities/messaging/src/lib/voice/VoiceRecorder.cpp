@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -26,6 +27,20 @@ logging::Logger& RecorderLog() {
 
 constexpr int kFrameBytes = kOggOpusFrameSamples * static_cast<int>(sizeof(int16_t));
 constexpr int kProgressEveryFrames = 5; // 100 ms
+
+/** RMS of a frame of s16 samples, scaled so ordinary speech (RMS about 0.05 of full scale) reads about half: 0..1. */
+float FrameLevel(const int16_t* samples, const int count) {
+  if (count <= 0) {
+    return 0.f;
+  }
+  double sum = 0;
+  for (int i = 0; i < count; ++i) {
+    const double v = samples[i] / 32768.0;
+    sum += v * v;
+  }
+  const double rms = std::sqrt(sum / count);
+  return static_cast<float>(std::min(1.0, std::sqrt(rms * 10.0)));
+}
 
 /** The microphone lease; refused (busy) when a call holds the microphone. */
 class ArbiterVoiceCaptureSource final : public IVoiceCaptureSource {
@@ -250,6 +265,9 @@ void VoiceRecorder::Run(std::shared_ptr<Shared> shared, VoiceRecorderConfig conf
       frames_since_progress = 0;
       if (callbacks_.on_progress) {
         callbacks_.on_progress(static_cast<int64_t>(samples * 1000 / kOggOpusRate));
+      }
+      if (callbacks_.on_level) {
+        callbacks_.on_level(FrameLevel(frame.data(), kOggOpusFrameSamples));
       }
     }
     if (samples >= max_samples) {

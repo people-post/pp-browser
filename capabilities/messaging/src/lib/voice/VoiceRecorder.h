@@ -87,6 +87,8 @@ public:
   using SourceFactory = std::function<std::unique_ptr<IVoiceCaptureSource>()>;
   struct Callbacks {
     std::function<void(int64_t elapsed_ms)> on_progress;
+    /** The loudness of the last 20 ms frame, 0..1 (RMS), about ten times a second with `on_progress`. Optional. */
+    std::function<void(float level)> on_level;
     std::function<void(VoiceRecording)> on_finished;
   };
 

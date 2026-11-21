@@ -607,6 +607,8 @@ private:
   void RestoreWorkingSetsFromActiveThread();
   void SyncShellSessions() override;
   void UpdateThreadChrome();
+  /** The hover bar's reactions follow the recently used emoji (the same row the message menu opens with). */
+  void RefreshBarEmojis();
   void ResetChatPanelState();
   std::string failed_record_id_;
   /** The picture being sent, as a temporary bubble at the end of its chat; one at a time. */

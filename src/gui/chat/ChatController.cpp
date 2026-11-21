@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <filesystem>
 #include <fstream>
+#include "feature/presenters/QuickReactions.h"
 #include "gui/chat/ChatController.h"
 #include "gui/RecoveryReminder.h"
 #include "gui/UpdateCard.h"
@@ -2624,6 +2625,7 @@ void ChatController::OnLockPublicToThisDevice() {
 
 void ChatController::UpdateThreadChrome() {
   chrome_.Update();
+  RefreshBarEmojis();
   RefreshPendingAttachmentChip(/*force=*/false);
   if (const std::string thread_id = ActiveThreadId(); thread_id != voice_thread_) {
     // Another chat is open: a recording in the one before can no longer be followed, and a clip is not its bubble's.
@@ -5093,6 +5095,30 @@ void ChatController::RememberEmoji(const std::string& emoji) {
   }
   prefs.schema_version = ProfilePreferences::kSchemaVersion;
   (void)session_store_->SaveProfilePrefs(prefs);
+  RefreshBarEmojis();
+}
+
+void ChatController::RefreshBarEmojis() {
+  // Eight at most (the bar's width); the defaults fill it to six when nothing was used yet, so never fewer than five.
+  constexpr size_t kBarEmojiCount = 8;
+  std::vector<std::string> row = QuickReactions(RecentEmojis());
+  if (row.size() > kBarEmojiCount) {
+    row.resize(kBarEmojiCount);
+  }
+  bool same = row.size() == chat_.bar_emojis.size();
+  for (size_t i = 0; same && i < row.size(); ++i) {
+    same = row[i] == std::string(chat_.bar_emojis[i].emoji);
+  }
+  if (same) {
+    return;
+  }
+  chat_.bar_emojis.clear();
+  for (const std::string& emoji : row) {
+    BarEmojiRow entry;
+    entry.emoji = emoji.c_str();
+    chat_.bar_emojis.push_back(std::move(entry));
+  }
+  DataModelHost::Instance().Dirty("chat", "bar_emojis");
 }
 
 void ChatController::DeleteMessageForMe(const std::string& message_id) {
@@ -6328,6 +6354,14 @@ bool ChatController::Setup(ui::Context* context) {
                                                         }
                                                         ToggleReaction(message_id, emoji);
                                                       }));
+        ctor.BindEventCallback("msg_bar_emoji", DataEvent<std::string, std::string>(
+                                                    [this](const std::string& message_id, const std::string& emoji) {
+                                                      if (IsPendingUploadRowId(message_id)) {
+                                                        return;
+                                                      }
+                                                      ToggleReaction(message_id, emoji);
+                                                      RememberEmoji(emoji);
+                                                    }));
         ctor.BindEventCallback("open_reactors", DataEvent<std::string>([this](const std::string& message_id) {
                                  if (IsPendingUploadRowId(message_id)) {
                                    return;
@@ -6362,6 +6396,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("voice_mode_toggle", DataEvent([this] { ToggleVoiceMode(); }));
         ctor.BindEventCallback("voice_press", DataEventAt([this](ui::Event& ev) { voice_->OnPress(ev); }));
         ctor.BindEventCallback("voice_click", DataEventAt([this](ui::Event& ev) { voice_->OnClick(ev); }));
+        ctor.BindEventCallback("voice_toggle", DataEvent([this] { voice_->OnToggleButton(); }));
         ctor.BindEventCallback("voice_send", DataEvent([this] { voice_->OnSendButton(); }));
         ctor.BindEventCallback("voice_cancel", DataEvent([this] { voice_->OnCancelButton(); }));
         ctor.BindEventCallback("play_voice", DataEvent<std::string>([this](const std::string& message_id) {

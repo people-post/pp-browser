@@ -227,7 +227,7 @@ TEST_F(ChatWideLayoutTest, TheHoverBarShowsOnlyUnderThePointerOnAMessageThatHasA
     EXPECT_EQ(bar->GetComputedValues().display(), ui::Style::Display::None) << "hidden until hovered: " << i;
     ui::ElementList buttons;
     bar->GetElementsByClassName(buttons, "msg-bar-btn");
-    EXPECT_EQ(buttons.size(), 3u) << "reply, react, more";
+    EXPECT_EQ(buttons.size(), 3u) << "+ (the emoji picker), reply, more";
   }
   for (size_t i = 0; i < 3; ++i) {
     rows[i]->SetPseudoClass("hover", true);
@@ -246,30 +246,78 @@ TEST_F(ChatWideLayoutTest, TheHoverBarShowsOnlyUnderThePointerOnAMessageThatHasA
 }
 
 TEST_F(ChatWideLayoutTest, TheHoverBarOffersExactlyTheMessageMenusItems) {
-  // The three buttons: reply and react run the message menu's own items, more opens that whole menu.
+  // The used reactions (one button repeated over bar_emojis), "+" (the full picker), Reply and More: the reactions and
+  // Reply run the message menu's own items, More opens that whole menu.
   const std::string page = Asset("views/chat_wide.rml");
   const size_t bar = page.find("class=\"msg-bar\"");
   ASSERT_NE(bar, std::string::npos);
   const std::string bar_markup = page.substr(bar, page.find("class=\"chat-row-body\"", bar) - bar);
-  EXPECT_NE(bar_markup.find("msg_bar_reply()"), std::string::npos);
+  EXPECT_NE(bar_markup.find("msg_bar_emoji(row.message_id, e.emoji)"), std::string::npos);
   EXPECT_NE(bar_markup.find("msg_bar_react()"), std::string::npos);
+  EXPECT_NE(bar_markup.find("msg_bar_reply()"), std::string::npos);
   EXPECT_NE(bar_markup.find("msg_bar_more()"), std::string::npos);
-  // No other action in the bar (no forward, no save...).
+  // The order is reactions, +, (Forward later), Reply, More.
+  EXPECT_LT(bar_markup.find("msg_bar_emoji"), bar_markup.find("msg_bar_react"));
+  EXPECT_LT(bar_markup.find("msg_bar_react"), bar_markup.find("TODO(forward)"));
+  EXPECT_LT(bar_markup.find("TODO(forward)"), bar_markup.find("msg_bar_reply"));
+  EXPECT_LT(bar_markup.find("msg_bar_reply"), bar_markup.find("msg_bar_more"));
+  // No other action in the bar (no forward, no save...): four buttons, the first repeated per reaction.
   size_t buttons = 0;
   for (size_t at = bar_markup.find("<button"); at != std::string::npos; at = bar_markup.find("<button", at + 1)) {
     ++buttons;
   }
-  EXPECT_EQ(buttons, 3u);
+  EXPECT_EQ(buttons, 4u);
   EXPECT_STREQ(MessageBarActionId(MessageBarAction::Reply), "reply_message");
   EXPECT_STREQ(MessageBarActionId(MessageBarAction::React), "react_more");
   EXPECT_STREQ(MessageBarActionId(MessageBarAction::More), "");
-  // Both ids are items ChatMenus::ForRequest builds for a message.
+  // The ids are items ChatMenus::ForRequest builds for a message, and the bar's reactions are its quick row.
   const std::string menus = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatMenus.cpp");
   const size_t for_request = menus.find("std::vector<ContextMenuAction> ChatMenus::ForRequest(");
   ASSERT_NE(for_request, std::string::npos);
   EXPECT_NE(menus.find("\"reply_message\"", for_request), std::string::npos);
   EXPECT_NE(menus.find("\"react_more\"", for_request), std::string::npos);
+  EXPECT_NE(menus.find("QuickReactions(host_.RecentEmojis())", for_request), std::string::npos);
   EXPECT_EQ(menus.find("forward", for_request), std::string::npos) << "no forwarding";
+}
+
+TEST_F(ChatWideLayoutTest, TheHoverBarShowsTheUsedReactionsBeforeThePlus) {
+  ShowChat();
+  for (const char* emoji : {"\xF0\x9F\x91\x8D", "\xE2\x9D\xA4", "\xF0\x9F\x98\x82", "\xF0\x9F\x98\xAE",
+                            "\xF0\x9F\x98\xA2", "\xF0\x9F\x99\x8F", "\xF0\x9F\x8E\x89", "\xF0\x9F\x94\xA5"}) {
+    BarEmojiRow row;
+    row.emoji = emoji;
+    state.bar_emojis.push_back(row);
+  }
+  Load(ConversationWidth(900));
+  ui::ElementList all_rows;
+  document->GetElementsByClassName(all_rows, "message-row");
+  ui::Element* mine = nullptr;
+  for (ui::Element* row : all_rows) {
+    if (row->HasAttribute("message-id")) {
+      mine = row;
+      break;
+    }
+  }
+  ASSERT_NE(mine, nullptr);
+  mine->SetPseudoClass("hover", true);
+  context->Update();
+  ui::ElementList emoji_all;
+  mine->GetElementsByClassName(emoji_all, "msg-bar-emoji");
+  ui::ElementList emoji; // the data-for keeps its template element, not shown
+  for (ui::Element* e : emoji_all) {
+    if (e->GetComputedValues().display() != ui::Style::Display::None &&
+        e->GetBox().GetSize(ui::BoxArea::Border).x > 0.f) {
+      emoji.push_back(e);
+    }
+  }
+  ASSERT_EQ(emoji.size(), 8u) << "one button per reaction";
+  ui::ElementList others;
+  mine->GetElementsByClassName(others, "msg-bar-btn");
+  ASSERT_EQ(others.size(), 3u);
+  EXPECT_LT(BoxOf(emoji.back()).right, BoxOf(others[0]).left + 0.5f) << "the + comes after the reactions";
+  EXPECT_LT(BoxOf(others[0]).right, BoxOf(others[1]).left + 0.5f) << "then Reply";
+  EXPECT_LT(BoxOf(others[1]).right, BoxOf(others[2]).left + 0.5f) << "then More";
+  EXPECT_LE(BoxOf(First("msg-bar")).H(), 40.f) << "one row";
 }
 
 TEST_F(ChatWideLayoutTest, TheChatPageRowsKeepTheirBindingsAndTheirOwnChat) {
@@ -338,9 +386,10 @@ TEST_F(ChatWideLayoutTest, TheChatsListRowIsAnAvatarAndTwoLinesAndTheSelectedRow
   EXPECT_FLOAT_EQ(BoxOf(badge[0]).H(), 20.f);
 }
 
-TEST_F(ChatWideLayoutTest, NoBubbleKindDrawsATailElementOnTheDesktop) {
+TEST_F(ChatWideLayoutTest, EveryBubbleKindHasItsTailAnchoredToTheBubblesBottomCorner) {
   // Every kind AddBubbleTail decorates (text, a quoted reply, a picture, a video, a file card, a voice card; received and
-  // sent): the hook element is not drawn in the wide layout, and the bubble just has its one squared corner.
+  // sent): the hook element is drawn, 16 x 20dp, with its bottom on the bubble's bottom edge and 8dp outside its side
+  // (left for received, right for sent), exactly as on the phone (a card's 1dp border moves it in by 1dp, as there).
   const std::string in_tail =
       "<svg class=\"bubble-tail bubble-tail-in\" src=\"../icons/v2/bubble-tail-left.svg\" width=\"16\" "
       "height=\"20\"></svg>";
@@ -384,21 +433,60 @@ TEST_F(ChatWideLayoutTest, NoBubbleKindDrawsATailElementOnTheDesktop) {
     ui::ElementList tails;
     document->GetElementsByClassName(tails, "bubble-tail");
     ASSERT_EQ(tails.size(), 12u);
-    for (ui::Element* tail : tails) {
-      EXPECT_EQ(tail->GetComputedValues().display(), ui::Style::Display::None)
-          << "a tail would be drawn (dark: " << dark << ")";
-    }
     for (int i = 0; i < n; ++i) {
       ui::Element* bubble = document->GetElementById("b" + std::to_string(i));
       ASSERT_NE(bubble, nullptr);
       const bool ours = i % 2 == 1;
-      const auto& cv = bubble->GetComputedValues();
-      EXPECT_FLOAT_EQ(ours ? cv.border_bottom_right_radius() : cv.border_bottom_left_radius(), 5.f)
-          << "the squared corner of bubble " << i;
+      const Box host = BoxOf(bubble);
+      ui::ElementList found;
+      bubble->GetElementsByClassName(found, "bubble-tail");
+      ASSERT_EQ(found.size(), 1u);
+      ui::Element* tail = found[0];
+      EXPECT_NE(tail->GetComputedValues().display(), ui::Style::Display::None) << "bubble " << i;
+      const Box t = BoxOf(tail);
+      EXPECT_FLOAT_EQ(t.W(), 16.f) << "bubble " << i;
+      EXPECT_FLOAT_EQ(t.H(), 20.f) << "bubble " << i;
+      EXPECT_NEAR(t.bottom, host.bottom, 1.5f) << "the tail sits on the bottom edge of bubble " << i;
+      if (ours) {
+        EXPECT_NEAR(t.right, host.right + 8.f, 1.5f) << "bubble " << i << " dark " << dark;
+      } else {
+        EXPECT_NEAR(t.left, host.left - 8.f, 1.5f) << "bubble " << i << " dark " << dark;
+      }
     }
     document->Close();
     context->Update();
   }
+}
+
+TEST_F(ChatWideLayoutTest, SystemLinesAndDatePillsAreSmallPillsSizedToTheirTextAndCentred) {
+  // As on the phone: member joined / left, call records' neighbours and the date strips are grey pills round their text,
+  // centred, at most 80% of the column; never a row stretched over the whole conversation.
+  const std::string body =
+      "<div id=\"col\" style=\"width: 700dp;\">"
+      "<div class=\"chat-system-line muted\"><p id=\"sys\">Ann joined the group</p></div>"
+      "<div class=\"chat-date-strip\"><span id=\"day\" class=\"chat-date-pill\">Today</span></div>"
+      "<div class=\"chat-system-line muted\"><p id=\"long\">" +
+      std::string(400, 'x') + "</p></div></div>";
+  const std::string rml =
+      "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+      Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
+      "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
+      "<div class=\"shell-body shell-body--wide\" style=\"position: absolute; width: 800dp; height: 600dp;\">" +
+      body + "</div></body></rml>";
+  document = context->LoadDocumentFromMemory(rml);
+  ASSERT_NE(document, nullptr);
+  document->Show();
+  context->Update();
+  context->Update();
+  const Box col = BoxOf(document->GetElementById("col"));
+  for (const char* id : {"sys", "day"}) {
+    const Box b = BoxOf(document->GetElementById(id));
+    EXPECT_LT(b.W(), 300.f) << id << " is sized to its text";
+    EXPECT_NEAR((b.left + b.right) / 2.f, (col.left + col.right) / 2.f, 1.f) << id << " is centred";
+    EXPECT_FLOAT_EQ(document->GetElementById(id)->GetComputedValues().border_top_left_radius(), 999.f);
+  }
+  EXPECT_LE(BoxOf(document->GetElementById("long")).W(), col.W() * 0.8f + 20.5f)
+      << "the text is at most 80% of the column (its 10dp side padding comes on top, as on the phone)";
 }
 
 } // namespace

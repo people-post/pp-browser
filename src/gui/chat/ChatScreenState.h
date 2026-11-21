@@ -10,6 +10,11 @@
 
 namespace pbr {
 
+/** One emoji of the wide layout's hover bar on a message (the reactions used most). */
+struct BarEmojiRow {
+  ui::String emoji;
+};
+
 /** One person on a message's reactions sheet: the emoji they reacted with, their name and avatar. */
 struct ReactorDisplayRow {
   ui::String emoji;
@@ -102,6 +107,8 @@ struct ChatScreenState {
   bool voice_countdown = false;
   ui::String voice_timer;
   ui::String voice_hint;
+  /** The recording's loudness as a bar width ("0%".. "100%"): the wide composer's level meter. */
+  ui::String voice_level_width = "0%";
   ui::String voice_title;
   /** AI image chip: an image is being prepared (image_preparing) or waits for the question. */
   bool image_chip = false;
@@ -158,6 +165,8 @@ struct ChatScreenState {
   std::vector<MessageDisplayRow> messages;
   /** The reactions sheet (a tap on a message's emoji): who reacted, grouped by emoji. */
   std::vector<ReactorDisplayRow> reactor_rows;
+  /** The hover bar's reactions: the message menu's quick row, the first kBarEmojiCount of it. */
+  std::vector<BarEmojiRow> bar_emojis;
   bool use_messages_layout = true;
   bool loading = false; // a turn runs in THIS thread (thinking + stop key); other threads keep sending (B112)
   bool has_turns = false;

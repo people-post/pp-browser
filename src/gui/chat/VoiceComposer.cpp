@@ -209,6 +209,13 @@ void VoiceComposer::StartRecording() {
       }
     });
   };
+  callbacks.on_level = [this, alive, generation, post](const float level) {
+    post([this, alive, generation, level]() {
+      if (alive->load()) {
+        OnLevel(generation, level);
+      }
+    });
+  };
   callbacks.on_finished = [this, alive, generation, post](VoiceRecording recording) {
     post([this, alive, generation, recording = std::move(recording)]() mutable {
       if (alive->load()) {
@@ -275,6 +282,14 @@ void VoiceComposer::Apply(const VoiceGesture::Action action) {
     ShowRecording(false);
     ShowFinishing(false);
   }
+}
+
+void VoiceComposer::OnToggleButton() {
+  if (gesture_.Recording()) {
+    OnSendButton(); // the second click: stop and send (a too-short one says so, as every other end does)
+    return;
+  }
+  BeginAt(0.f, nullptr, /*hold=*/false);
 }
 
 void VoiceComposer::OnSendButton() {
@@ -394,7 +409,9 @@ void VoiceComposer::ShowRecording(const bool on) {
   state_.voice_recording = on;
   if (on) {
     state_.voice_timer = ElapsedText(0).c_str();
+    state_.voice_level_width = "0%";
   } else {
+    state_.voice_level_width = "0%";
     state_.voice_cancel_zone = false;
     state_.voice_countdown = false;
   }
@@ -440,6 +457,21 @@ void VoiceComposer::OnProgress(const int generation, const int64_t elapsed_ms) {
   state_.voice_timer = ElapsedText(elapsed_ms).c_str();
   state_.voice_countdown = static_cast<int64_t>(max_seconds_) * 1000 - elapsed_ms <= kCountdownMs;
   SetHint();
+}
+
+void VoiceComposer::OnLevel(const int generation, const float level) {
+  if (generation != generation_ || !in_flight_ || !state_.voice_recording || user_ended_) {
+    return;
+  }
+  const int percent = std::clamp(static_cast<int>(level * 100.f + 0.5f), 0, 100);
+  const std::string width = std::to_string(percent) + "%";
+  if (std::string(state_.voice_level_width) == width) {
+    return;
+  }
+  state_.voice_level_width = width.c_str();
+  if (ports_.dirty) {
+    ports_.dirty();
+  }
 }
 
 void VoiceComposer::OnFinished(const int generation, VoiceRecording recording) {

@@ -59,6 +59,28 @@ TEST(VoiceRecorder, StopKeepsAnOggFileNamedByItsLength) {
   EXPECT_FALSE(recorder.IsRecording());
 }
 
+TEST(VoiceRecorder, TheLevelFollowsTheLoudnessOfTheLastFrames) {
+  TempDir dir;
+  for (const bool loud : {false, true}) {
+    RecorderProbe probe;
+    VoiceRecorder::Callbacks callbacks = probe.Callbacks();
+    auto level = std::make_shared<std::atomic<float>>(-1.f);
+    callbacks.on_level = [level](const float value) { level->store(value); };
+    std::vector<int16_t> pcm = loud ? Tone(1500) : std::vector<int16_t>(48 * 1500, 0);
+    VoiceRecorder recorder(Scripted(std::move(pcm)), std::move(callbacks));
+    ASSERT_TRUE(recorder.Start(ConfigIn(dir)));
+    ASSERT_TRUE(WaitFor([&] { return level->load() >= 0.f; })) << "a level arrives with the progress";
+    recorder.Cancel();
+    ASSERT_TRUE(WaitFor([&] { return probe.Done(); }));
+    if (loud) {
+      EXPECT_GT(level->load(), 0.3f);
+      EXPECT_LE(level->load(), 1.f);
+    } else {
+      EXPECT_EQ(level->load(), 0.f);
+    }
+  }
+}
+
 TEST(VoiceRecorder, ABitUnderASecondIsNotSentAndLeavesNoFile) {
   TempDir dir;
   RecorderProbe probe;

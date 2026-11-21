@@ -88,6 +88,8 @@ public:
   /** The pointer moved / was released while a press is followed (what the document listener forwards). */
   void OnMove(float y);
   void OnRelease();
+  /** The wide layout's microphone: a click starts a recording, the next click stops it and sends it (no hold, no bar). */
+  void OnToggleButton();
   /** The Send / Cancel buttons of a desktop recording. */
   void OnSendButton();
   void OnCancelButton();
@@ -112,6 +114,7 @@ private:
   void LaunchRecorder(int generation, const VoiceRecorderConfig& config);
   void Apply(VoiceGesture::Action action);
   void OnProgress(int generation, int64_t elapsed_ms);
+  void OnLevel(int generation, float level);
   void OnFinished(int generation, VoiceRecording recording);
   void EndWithoutRecorder();
   void CancelRecorder();
