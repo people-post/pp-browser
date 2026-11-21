@@ -57,6 +57,14 @@ struct VoiceComposerPorts {
   std::function<MicPermission()> mic_state;
   std::function<void(std::function<void(bool granted)>)> request_mic;
   std::function<std::unique_ptr<IVoiceCaptureSource>()> make_source;
+  /** Pointer coordinates arrive in pixels; the window's pixels per dp (1 when absent). */
+  std::function<float()> dp_ratio;
+  /** The window's width in dp (the bubble keeps clear of both sides; 393 when absent) and the lowest y, in dp, the
+   *  bubble's top may reach (under the header; 0 when absent). */
+  std::function<float()> viewport_width_dp;
+  std::function<float()> top_limit_dp;
+  /** Only the bubble's box or the level bars changed (a finger move, a progress tick). Falls back to `dirty`. */
+  std::function<void()> dirty_bubble;
 };
 
 /**
@@ -83,11 +91,11 @@ public:
   void OnPress(ui::Event& ev);
   /** `click` on the button (desktop). */
   void OnClick(ui::Event& ev);
-  /** The press / click itself: `y` the pointer's vertical position, `doc` the document to follow the pointer in. */
-  void BeginAt(float y, ui::ElementDocument* doc, bool hold);
-  /** The pointer moved / was released while a press is followed (what the document listener forwards). */
-  void OnMove(float y);
-  void OnRelease();
+  /** The press / click itself: the pointer's position in pixels, `doc` the document to follow the pointer in. */
+  void BeginAt(float x_px, float y_px, ui::ElementDocument* doc, bool hold);
+  /** The pointer moved / was released while a press is followed (what the document listener forwards). Pixels. */
+  void OnMove(float x_px, float y_px);
+  void OnRelease(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
   /** The Send / Cancel buttons of a desktop recording. */
   void OnSendButton();
   void OnCancelButton();
@@ -111,9 +119,16 @@ private:
   void StartRecording();
   void LaunchRecorder(int generation, const VoiceRecorderConfig& config);
   void Apply(VoiceGesture::Action action);
-  void OnProgress(int generation, int64_t elapsed_ms);
+  void OnProgress(int generation, int64_t elapsed_ms, float level);
   void OnFinished(int generation, VoiceRecording recording);
   void EndWithoutRecorder();
+  /** A call (or the OS) took the microphone: the recording is thrown away, one pill, nothing sent. Idempotent. */
+  void DiscardForCall();
+  /** The recorder stopped at its limit under a finger: the file waits for the release. */
+  void HoldAtLimit(VoiceRecording recording);
+  void DropHeldRecording();
+  void UpdateBubble();
+  void DirtyBubble() const;
   void CancelRecorder();
   void ShowRecording(bool on);
   /** The recording was handed over (or ran out) and its file is not ready yet: "Sending…". */
@@ -145,6 +160,18 @@ private:
   int64_t elapsed_ms_ = 0;
   std::string thread_id_;
   std::chrono::steady_clock::time_point last_call_check_{};
+  std::chrono::steady_clock::time_point press_time_{};
+  float press_y_dp_ = 0.f;
+  /** A call or interruption already discarded this recording (its pill was shown). */
+  bool call_discarded_ = false;
+  /** The finished file of a recording that hit its limit under a finger: sent or deleted by the release. */
+  VoiceRecording held_;
+  bool limit_held_ = false;
+  /** UI thread only. The last 12 levels, newest last. */
+  float levels_[ChatScreenState::kVoiceLevelBars] = {};
+  float shown_left_ = -1.f;
+  float shown_top_ = -1.f;
+  float shown_tail_ = -1.f;
   bool shut_down_ = false;
 };
 

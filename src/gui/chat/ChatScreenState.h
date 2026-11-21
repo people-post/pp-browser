@@ -101,8 +101,20 @@ struct ChatScreenState {
   /** The last seconds before the limit: the timer counts down. */
   bool voice_countdown = false;
   ui::String voice_timer;
+  /** The bubble's first line when it is not the timer: the countdown ("N s left") or the limit text. Desktop: the bar's hint. */
   ui::String voice_hint;
   ui::String voice_title;
+  /** Phones: the floating bubble shows (a hold is on). Its box: left / top in dp from the chat overlay's corner ("123dp"),
+   *  and the tail's centre from the bubble's left edge. Strings are tiny; they change by 1dp or more. */
+  bool voice_bubble = false;
+  ui::String voice_bubble_left = "12dp";
+  ui::String voice_bubble_top = "0dp";
+  ui::String voice_tail_left = "88dp";
+  /** The recorder stopped at its limit and the finger is still down: releasing sends, sliding up cancels. */
+  bool voice_limit = false;
+  /** The level bars' heights ("4dp".."20dp"), newest last. Written on the UI thread only. */
+  static constexpr int kVoiceLevelBars = 12;
+  ui::String voice_lv[kVoiceLevelBars];
   /** AI image chip: an image is being prepared (image_preparing) or waits for the question. */
   bool image_chip = false;
   bool image_preparing = false;

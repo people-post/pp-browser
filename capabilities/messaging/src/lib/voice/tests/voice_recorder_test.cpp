@@ -59,6 +59,38 @@ TEST(VoiceRecorder, StopKeepsAnOggFileNamedByItsLength) {
   EXPECT_FALSE(recorder.IsRecording());
 }
 
+TEST(VoiceRecorder, TheLevelIsZeroForSilenceAndNearOneAtFullScale) {
+  EXPECT_FLOAT_EQ(VoiceLevelFromPeak(0), 0.f);
+  EXPECT_FLOAT_EQ(VoiceLevelFromPeak(32768), 1.f);
+  EXPECT_GT(VoiceLevelFromPeak(32767), 0.99f);
+  EXPECT_LT(VoiceLevelFromPeak(50), 0.1f);                      // about -56 dB
+  EXPECT_GT(VoiceLevelFromPeak(3000), VoiceLevelFromPeak(300)); // louder is higher
+  EXPECT_LE(VoiceLevelFromPeak(1 << 20), 1.f);
+
+  {
+    TempDir dir;
+    RecorderProbe probe;
+    VoiceRecorder recorder(Scripted(std::vector<int16_t>(48 * 1500, 0)), probe.Callbacks());
+    ASSERT_TRUE(recorder.Start(ConfigIn(dir)));
+    ASSERT_TRUE(WaitFor([&] { return probe.last_progress_ms.load() >= 1000; }));
+    recorder.Cancel();
+    ASSERT_TRUE(WaitFor([&] { return probe.Done(); }));
+    EXPECT_EQ(probe.max_level.load(), 0.f) << "silence reports level 0";
+  }
+  {
+    TempDir dir;
+    RecorderProbe probe;
+    VoiceRecorder recorder(Scripted(std::vector<int16_t>(48 * 1500, 32767)), probe.Callbacks());
+    ASSERT_TRUE(recorder.Start(ConfigIn(dir)));
+    ASSERT_TRUE(WaitFor([&] { return probe.last_progress_ms.load() >= 1000; }));
+    recorder.Cancel();
+    ASSERT_TRUE(WaitFor([&] { return probe.Done(); }));
+    EXPECT_GT(probe.last_level.load(), 0.99f) << "full scale reports a level near 1";
+    // One report about every 100 ms of audio: the level rides on the progress tick, not on a tick of its own.
+    EXPECT_NEAR(probe.progress_calls.load(), probe.last_progress_ms.load() / 100, 2);
+  }
+}
+
 TEST(VoiceRecorder, ABitUnderASecondIsNotSentAndLeavesNoFile) {
   TempDir dir;
   RecorderProbe probe;

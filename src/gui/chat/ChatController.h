@@ -418,6 +418,7 @@ private:
   /** After a picture is picked: "Send" (shrunk), "Send original", Cancel. */
   void ShowPictureSendChoice(std::string path, const std::string& thread_id);
   void ToggleVoiceMode();
+  float VoiceTopLimitDp() const;
   /** A video was accepted and is being copied out by the system (iOS): the chip says "Sending…" until it arrives. */
   void BeginAttachmentPreparing(const std::string& name);
   /** Every way out of that wait (path arrived, nothing came, cancelled, failed) ends it. */
@@ -1013,6 +1014,8 @@ private:
   std::unique_ptr<VoicePlayback> voice_playback_;
   /** The chat the voice parts last saw: another one cancels a recording and stops a clip. */
   std::string voice_thread_;
+  /** A chat was just opened: put the composer back in the remembered mode once the chat can take a voice message. */
+  bool restore_voice_mode_pending_ = false;
   // AgentTurnHost, ChatMenusHost
   ConversationsFacade* Facade() const override { return facade_; }
   bool MessagingIsReady() const override { return messaging_ready_; }

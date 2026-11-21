@@ -16,5 +16,17 @@ TEST(VoiceSendPolicy, ARefusalBeforeStagingKeepsTheRecording) {
   EXPECT_EQ(DecideVoiceFileFate(false, 2, 2), VoiceFileFate::KeepForRetry); // an older staged send is not this one
 }
 
+// The composer comes back in the mode it had last time, on phones, and never over what the person is doing.
+TEST(VoiceSendPolicy, TheRememberedVoiceModeComesBackOnlyWhereItIsSafe) {
+  EXPECT_TRUE(RestoreVoiceMode(/*remembered_voice=*/true, /*phone=*/true, /*chat_can_voice=*/true, /*has_draft=*/false,
+                               /*editing_message=*/false, /*voice_mode_now=*/false));
+  EXPECT_FALSE(RestoreVoiceMode(false, true, true, false, false, false)) << "the keyboard was the last mode";
+  EXPECT_FALSE(RestoreVoiceMode(true, false, true, false, false, false)) << "the desktop keeps click mode";
+  EXPECT_FALSE(RestoreVoiceMode(true, true, false, false, false, false)) << "a chat that cannot take a voice message";
+  EXPECT_FALSE(RestoreVoiceMode(true, true, true, true, false, false)) << "never over a draft";
+  EXPECT_FALSE(RestoreVoiceMode(true, true, true, false, true, false)) << "never while a message is edited";
+  EXPECT_FALSE(RestoreVoiceMode(true, true, true, false, false, true)) << "already in voice mode";
+}
+
 } // namespace
 } // namespace pbr

@@ -448,6 +448,20 @@ ChatController::ChatController()
     return ids;
   };
   voice_ports.stop_playback_then = [this](std::function<void()> then) { voice_playback_->StopThen(std::move(then)); };
+  voice_ports.dp_ratio = [this]() { return context_ ? context_->GetDensityIndependentPixelRatio() : 1.f; };
+  voice_ports.viewport_width_dp = [this]() {
+    const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
+    return context_ && ratio > 0.f ? static_cast<float>(context_->GetDimensions().x) / ratio : 393.f;
+  };
+  voice_ports.top_limit_dp = [this]() { return VoiceTopLimitDp(); };
+  voice_ports.dirty_bubble = []() {
+    DataModelHost::Instance().Dirty("chat", "voice_bubble_left");
+    DataModelHost::Instance().Dirty("chat", "voice_bubble_top");
+    DataModelHost::Instance().Dirty("chat", "voice_tail_left");
+    for (int i = 0; i < ChatScreenState::kVoiceLevelBars; ++i) {
+      DataModelHost::Instance().Dirty("chat", "voice_lv_" + std::to_string(i));
+    }
+  };
   voice_ = std::make_unique<VoiceComposer>(chat_, std::move(voice_ports));
   group_link_ = std::make_unique<GroupLinkSheet>(MakeGroupLinkPorts());
   join_prompt_ = std::make_unique<GroupJoinPrompt>(MakeJoinPromptPorts());
@@ -2630,8 +2644,18 @@ void ChatController::UpdateThreadChrome() {
     voice_thread_ = thread_id;
     voice_->Lost();
     voice_playback_->Stop();
+    restore_voice_mode_pending_ = true;
   }
   voice_->Refresh();
+  if (restore_voice_mode_pending_ && chat_.show_voice) {
+    restore_voice_mode_pending_ = false; // decided once per opened chat, as soon as it can take a voice message
+    if (session_store_ &&
+        RestoreVoiceMode(Store().Snapshot().profile_prefs.composer_voice_mode_last, Platform::IsMobile(),
+                         chat_.show_voice, std::string(chat_.draft) != "", chat_.editing_message, chat_.voice_mode)) {
+      chat_.voice_mode = true;
+      DataModelHost::Instance().Dirty("chat", "voice_mode");
+    }
+  }
   SyncComposerInputState();
 }
 
@@ -2650,6 +2674,14 @@ void ChatController::ToggleVoiceMode() {
     return;
   }
   chat_.voice_mode = !chat_.voice_mode;
+  restore_voice_mode_pending_ = false; // the person chose
+  if (Platform::IsMobile() && session_store_) {
+    ProfilePreferences prefs = Store().Snapshot().profile_prefs;
+    if (prefs.composer_voice_mode_last != chat_.voice_mode) {
+      prefs.composer_voice_mode_last = chat_.voice_mode; // phones remember the last choice, per device
+      (void)Store().SaveProfilePrefs(prefs);
+    }
+  }
   if (chat_.voice_mode && context_ && context_->GetNumDocuments() > 0) {
     // The text input is going away: let the keyboard go with it.
     if (ui::Element* draft = context_->GetDocument(0)->GetElementById("draft-input")) {
@@ -7074,6 +7106,21 @@ ui::Element* FirstByClass(ui::Element* root, const char* name) {
 }
 
 } // namespace
+
+float ChatController::VoiceTopLimitDp() const {
+  // The voice bubble never rises into the header: the header's lower edge is the lowest y its top may take.
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return 0.f;
+  }
+  ui::Element* overlay = context_->GetDocument(0)->GetElementById("shell-chat-overlay");
+  ui::Element* header = overlay ? FirstByClass(overlay, "shell-chat-overlay-chrome") : nullptr;
+  if (!header) {
+    return 0.f;
+  }
+  const float ratio =
+      context_->GetDensityIndependentPixelRatio() > 0.f ? context_->GetDensityIndependentPixelRatio() : 1.f;
+  return (header->GetAbsoluteOffset(ui::BoxArea::Border).y + header->GetBox().GetSize(ui::BoxArea::Border).y) / ratio;
+}
 
 void ChatController::SyncComposerOverlay() {
   if (context_ && context_->GetNumDocuments() > 0) {

@@ -21,4 +21,14 @@ inline VoiceFileFate DecideVoiceFileFate(const bool sent, const size_t staged_be
   return VoiceFileFate::KeepForRetry;
 }
 
+/**
+ * Opening a chat on a phone puts the composer back in the mode it was in last time on this device (keyboard or the
+ * hold-to-talk bar). Never over text the person already wrote, while a message is being edited, where the chat cannot take
+ * a voice message, or when the bar is up already.
+ */
+inline bool RestoreVoiceMode(const bool remembered_voice, const bool phone, const bool chat_can_voice,
+                             const bool has_draft, const bool editing_message, const bool voice_mode_now) {
+  return remembered_voice && phone && chat_can_voice && !has_draft && !editing_message && !voice_mode_now;
+}
+
 } // namespace pbr

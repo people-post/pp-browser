@@ -5,6 +5,8 @@
 #include "gui/shell/DataModelHost.h"
 #include "gui/chat/ChatWidgetStateBuilder.h"
 
+#include <string>
+
 namespace pbr {
 
 void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state) {
@@ -94,6 +96,14 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("voice_timer", &state.voice_timer);
   ctor.Bind("voice_hint", &state.voice_hint);
   ctor.Bind("voice_title", &state.voice_title);
+  ctor.Bind("voice_bubble", &state.voice_bubble);
+  ctor.Bind("voice_bubble_left", &state.voice_bubble_left);
+  ctor.Bind("voice_bubble_top", &state.voice_bubble_top);
+  ctor.Bind("voice_tail_left", &state.voice_tail_left);
+  ctor.Bind("voice_limit", &state.voice_limit);
+  for (int i = 0; i < ChatScreenState::kVoiceLevelBars; ++i) {
+    ctor.Bind("voice_lv_" + std::to_string(i), &state.voice_lv[i]);
+  }
   ctor.Bind("show_thread_actions", &state.show_thread_actions);
   ctor.Bind("show_peer_sheet", &state.show_peer_sheet);
   ctor.Bind("show_stranger_bar", &state.show_stranger_bar);
@@ -298,6 +308,14 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "voice_timer");
   DataModelHost::Instance().Dirty("chat", "voice_hint");
   DataModelHost::Instance().Dirty("chat", "voice_title");
+  DataModelHost::Instance().Dirty("chat", "voice_bubble");
+  DataModelHost::Instance().Dirty("chat", "voice_bubble_left");
+  DataModelHost::Instance().Dirty("chat", "voice_bubble_top");
+  DataModelHost::Instance().Dirty("chat", "voice_tail_left");
+  DataModelHost::Instance().Dirty("chat", "voice_limit");
+  for (int i = 0; i < ChatScreenState::kVoiceLevelBars; ++i) {
+    DataModelHost::Instance().Dirty("chat", "voice_lv_" + std::to_string(i));
+  }
   DataModelHost::Instance().Dirty("chat", "image_chip");
   DataModelHost::Instance().Dirty("chat", "image_preparing");
   DataModelHost::Instance().Dirty("chat", "image_thumb_ready");

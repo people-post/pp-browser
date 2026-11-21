@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -99,6 +101,14 @@ private:
 
 std::unique_ptr<IVoiceCaptureSource> CreateArbiterVoiceCaptureSource(MediaDeviceArbiter& devices) {
   return std::make_unique<ArbiterVoiceCaptureSource>(devices);
+}
+
+float VoiceLevelFromPeak(const int peak) {
+  if (peak <= 0) {
+    return 0.f;
+  }
+  const float db = 20.f * std::log10(std::min(peak, 32768) / 32768.f);
+  return std::clamp((db + 50.f) / 50.f, 0.f, 1.f);
 }
 
 VoiceRecorder::VoiceRecorder(SourceFactory factory, Callbacks callbacks) : shared_(std::make_shared<Shared>()) {
@@ -194,6 +204,7 @@ void VoiceRecorder::Run(std::shared_ptr<Shared> shared, VoiceRecorderConfig conf
   VoiceEnd end = VoiceEnd::Sent;
   auto last_data = Clock::now();
   int frames_since_progress = 0;
+  int peak = 0; // the largest |sample| since the last progress call
 
   const auto encode_frame = [&]() {
     std::array<unsigned char, 1275> out{};
@@ -242,6 +253,9 @@ void VoiceRecorder::Run(std::shared_ptr<Shared> shared, VoiceRecorderConfig conf
     }
     filled_bytes = 0;
     samples += kOggOpusFrameSamples;
+    for (const int16_t sample : frame) {
+      peak = std::max(peak, std::abs(static_cast<int>(sample)));
+    }
     encode_frame();
     if (failed) {
       break;
@@ -249,8 +263,9 @@ void VoiceRecorder::Run(std::shared_ptr<Shared> shared, VoiceRecorderConfig conf
     if (++frames_since_progress >= kProgressEveryFrames) {
       frames_since_progress = 0;
       if (callbacks_.on_progress) {
-        callbacks_.on_progress(static_cast<int64_t>(samples * 1000 / kOggOpusRate));
+        callbacks_.on_progress(static_cast<int64_t>(samples * 1000 / kOggOpusRate), VoiceLevelFromPeak(peak));
       }
+      peak = 0;
     }
     if (samples >= max_samples) {
       end = VoiceEnd::LimitReached;

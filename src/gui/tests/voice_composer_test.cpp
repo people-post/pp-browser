@@ -15,8 +15,8 @@ namespace pbr {
 
 /** Lets a test deliver a progress tick by hand, as a recorder's late post would. */
 struct VoiceComposerTestAccess {
-  static void Progress(VoiceComposer& composer, int generation, int64_t elapsed_ms) {
-    composer.OnProgress(generation, elapsed_ms);
+  static void Progress(VoiceComposer& composer, int generation, int64_t elapsed_ms, float level = 0.f) {
+    composer.OnProgress(generation, elapsed_ms, level);
   }
 };
 namespace {
@@ -90,6 +90,11 @@ private:
   bool fail_;
 };
 
+/** A moment well past the press: a hold that is not a tap (the scripted microphone is instant, the clock is not). */
+std::chrono::steady_clock::time_point Later() {
+  return std::chrono::steady_clock::now() + 2s;
+}
+
 struct Harness {
   explicit Harness(int max_seconds = 120) {
     VoiceComposerPorts ports;
@@ -118,6 +123,9 @@ struct Harness {
     ports.mic_state = [this]() { return mic; };
     ports.request_mic = [this](std::function<void(bool)> done) { mic_request = std::move(done); };
     ports.make_source = [cfg = source_cfg]() { return (*cfg)(); };
+    ports.dp_ratio = [this]() { return ratio; };
+    ports.viewport_width_dp = [this]() { return viewport_dp; };
+    ports.top_limit_dp = [this]() { return top_limit_dp; };
     composer = std::make_unique<VoiceComposer>(state, std::move(ports), arbiter);
     *source_cfg = [opens = opens_ptr]() {
       ++*opens;
@@ -146,6 +154,10 @@ struct Harness {
   std::string thread = "A";
   std::string keep;
   bool call_live = false;
+  /** The window's pixels per dp, its width in dp, and the lowest y the bubble's top may take (dp). */
+  float ratio = 1.f;
+  float viewport_dp = 393.f;
+  float top_limit_dp = 0.f;
   /** voice_finishing was true at some point (it is cleared again by the time a test looks). */
   bool saw_finishing = false;
   std::vector<uint64_t> fingers;
@@ -171,7 +183,7 @@ TEST(VoiceComposer, NoButtonWherePlatformHasNoVoiceMessages) {
   Harness h;
   h.composer->Refresh();
   EXPECT_FALSE(h.state.show_voice);
-  h.composer->BeginAt(0, nullptr, /*hold=*/false);
+  h.composer->BeginAt(0, 0, nullptr, /*hold=*/false);
   h.ui.RunAll();
   EXPECT_EQ(h.opens.load(), 0);
   EXPECT_TRUE(h.sent.empty());
@@ -180,7 +192,7 @@ TEST(VoiceComposer, NoButtonWherePlatformHasNoVoiceMessages) {
 TEST(VoiceComposer, TheMessageGoesToTheChatItWasRecordedIn) {
   SKIP_WITHOUT_VOICE();
   Harness h;
-  h.composer->BeginAt(0, nullptr, /*hold=*/false);
+  h.composer->BeginAt(0, 0, nullptr, /*hold=*/false);
   ASSERT_TRUE(h.WaitTimer("0:03"));
   h.thread = "B"; // another chat is open by the time it is sent
   h.composer->OnSendButton();
@@ -194,7 +206,7 @@ TEST(VoiceComposer, AHoldWhoseFingerIsGoneIsDiscardedAndNeverSent) {
   SKIP_WITHOUT_VOICE();
   Harness h;
   h.fingers = {7};
-  h.composer->BeginAt(100, nullptr, /*hold=*/true);
+  h.composer->BeginAt(0, 100, nullptr, /*hold=*/true);
   ASSERT_TRUE(h.WaitTimer("0:03"));
   auto now = std::chrono::steady_clock::now();
   h.composer->Tick(now);
@@ -204,8 +216,8 @@ TEST(VoiceComposer, AHoldWhoseFingerIsGoneIsDiscardedAndNeverSent) {
   ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
   EXPECT_TRUE(h.sent.empty());
   EXPECT_EQ(h.dir.FileCount(), 0u);
-  EXPECT_TRUE(h.said.empty()); // a lost press is silent
-  h.composer->OnRelease();     // a late release sends nothing either
+  EXPECT_TRUE(h.said.empty());    // a lost press is silent
+  h.composer->OnRelease(Later()); // a late release sends nothing either
   h.ui.RunAll();
   EXPECT_TRUE(h.sent.empty());
 }
@@ -214,7 +226,7 @@ TEST(VoiceComposer, ASecondFingerComingAndGoingDoesNotEndTheHold) {
   SKIP_WITHOUT_VOICE();
   Harness h;
   h.fingers = {7};
-  h.composer->BeginAt(100, nullptr, true);
+  h.composer->BeginAt(0, 100, nullptr, true);
   ASSERT_TRUE(h.WaitTimer("0:03"));
   auto now = std::chrono::steady_clock::now();
   h.fingers = {7, 9};
@@ -222,80 +234,190 @@ TEST(VoiceComposer, ASecondFingerComingAndGoingDoesNotEndTheHold) {
   h.fingers = {7};
   h.composer->Tick(now + 10ms);
   EXPECT_TRUE(h.composer->Recording());
-  h.composer->OnRelease();
+  h.composer->OnRelease(Later());
   ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.sent.empty(); }));
   EXPECT_EQ(h.sent.size(), 1u);
 }
 
-TEST(VoiceComposer, AtTheLimitItSendsOnlyIfTheFingerIsStillDown) {
+/** A recorder that hits its 1 s limit at once; `h.fingers` already holds the pressing finger. */
+void PressAtTheLimit(Harness& h) {
+  h.source = [opens = h.opens_ptr]() {
+    ++*opens;
+    return std::make_unique<ScriptedSource>(Tone(1000));
+  };
+  h.fingers = {7};
+  h.composer->BeginAt(0, 100, nullptr, true);
+}
+
+// At the limit under a finger the recorder stops and nothing is sent until the person lets go.
+TEST(VoiceComposer, AtTheLimitUnderAFingerItWaitsForTheReleaseAndTheReleaseSends) {
   SKIP_WITHOUT_VOICE();
-  for (const bool finger_still_down : {true, false}) {
+  Harness h(/*max_seconds=*/1);
+  PressAtTheLimit(h);
+  ASSERT_TRUE(h.WaitFile()); // the recorder hit its limit
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return h.state.voice_limit; }));
+  EXPECT_TRUE(h.sent.empty()) << "no send without the release";
+  EXPECT_TRUE(h.state.voice_recording) << "the bar and the bubble still show the hold";
+  EXPECT_FALSE(h.state.voice_finishing) << "nothing is being sent yet";
+  EXPECT_EQ(h.dir.FileCount(), 1u);
+  EXPECT_EQ(std::string(h.state.voice_hint), Tr("chat.voice.limit_reached", {{"minutes", "1"}}));
+  EXPECT_TRUE(h.composer->Active());
+  h.composer->OnRelease(Later());
+  ASSERT_EQ(h.sent.size(), 1u);
+  EXPECT_FALSE(h.state.voice_limit);
+  EXPECT_FALSE(h.state.voice_recording);
+  EXPECT_FALSE(h.composer->Active());
+}
+
+TEST(VoiceComposer, AtTheLimitASlideUpAndReleaseCancelsAndDeletesTheFile) {
+  SKIP_WITHOUT_VOICE();
+  Harness h(/*max_seconds=*/1);
+  PressAtTheLimit(h);
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return h.state.voice_limit; }));
+  h.composer->OnMove(0, 100 - 60); // up past the cancel line
+  EXPECT_TRUE(h.state.voice_cancel_zone);
+  h.composer->OnRelease(Later());
+  EXPECT_TRUE(h.sent.empty());
+  EXPECT_EQ(h.dir.FileCount(), 0u);
+  EXPECT_TRUE(h.said.empty()) << "a cancel is silent";
+  EXPECT_FALSE(h.composer->Active());
+}
+
+TEST(VoiceComposer, AtTheLimitSlidingBackDownAndReleasingSendsAfterAll) {
+  SKIP_WITHOUT_VOICE();
+  Harness h(/*max_seconds=*/1);
+  PressAtTheLimit(h);
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return h.state.voice_limit; }));
+  h.composer->OnMove(0, 40);
+  h.composer->OnMove(0, 95); // back down: the cancel is off again
+  EXPECT_FALSE(h.state.voice_cancel_zone);
+  h.composer->OnRelease(Later());
+  EXPECT_EQ(h.sent.size(), 1u);
+}
+
+TEST(VoiceComposer, AtTheLimitEveryOtherWayOutDeletesTheFileAndSendsNothing) {
+  SKIP_WITHOUT_VOICE();
+  enum class Exit { FingerGone, LostPress, DiscardAll, ACall };
+  for (const Exit exit : {Exit::FingerGone, Exit::LostPress, Exit::DiscardAll, Exit::ACall}) {
     Harness h(/*max_seconds=*/1);
-    h.source = [opens = h.opens_ptr]() {
-      ++*opens;
-      return std::make_unique<ScriptedSource>(Tone(1000));
-    };
-    h.fingers = {7};
-    h.composer->BeginAt(100, nullptr, true);
-    ASSERT_TRUE(h.WaitFile()); // the recorder hit its limit; the UI has not seen it yet
-    if (!finger_still_down) {
-      h.fingers = {};
+    PressAtTheLimit(h);
+    if (exit == Exit::FingerGone) {
+      ASSERT_TRUE(h.WaitFile());
+      h.fingers = {}; // lifted before the UI saw the limit: no release will ever come
+      ASSERT_TRUE(h.ui.PumpUntil([&] { return h.dir.FileCount() == 0 && !h.composer->Active(); }));
+    } else {
+      ASSERT_TRUE(h.ui.PumpUntil([&] { return h.state.voice_limit; }));
+      if (exit == Exit::LostPress) {
+        h.composer->Lost(); // another chat opened, the app went to the background
+      } else if (exit == Exit::DiscardAll) {
+        h.composer->DiscardAll(); // the vault locked
+      } else {
+        h.call_live = true;
+        h.composer->Tick(std::chrono::steady_clock::now() + 1s);
+      }
     }
-    // The press stays swallowed until its release, so "done" is the send, or the file gone.
-    ASSERT_TRUE(h.ui.PumpUntil(
-        [&] { return finger_still_down ? !h.sent.empty() : (h.dir.FileCount() == 0 && !h.composer->Recording()); }));
-    EXPECT_EQ(h.sent.size(), finger_still_down ? 1u : 0u) << "finger down: " << finger_still_down;
-    if (!finger_still_down) {
-      EXPECT_EQ(h.dir.FileCount(), 0u);
-    }
-    h.composer->OnRelease(); // the rest of the press: swallowed, never a second send
-    h.ui.RunAll();
-    EXPECT_EQ(h.sent.size(), finger_still_down ? 1u : 0u);
+    EXPECT_TRUE(h.sent.empty()) << static_cast<int>(exit);
+    EXPECT_EQ(h.dir.FileCount(), 0u) << static_cast<int>(exit);
+    EXPECT_FALSE(h.state.voice_limit) << static_cast<int>(exit);
+    EXPECT_FALSE(h.state.voice_recording) << static_cast<int>(exit);
+    EXPECT_FALSE(h.composer->Active()) << static_cast<int>(exit);
+    EXPECT_EQ(std::count(h.said.begin(), h.said.end(), Tr("chat.voice.interrupted_by_call")),
+              exit == Exit::ACall ? 1 : 0);
+    h.composer->OnRelease(Later()); // the lift that comes later: nothing
+    EXPECT_TRUE(h.sent.empty());
   }
+}
+
+// The desktop's click mode still ends and sends by itself at the limit (no finger to wait for).
+TEST(VoiceComposer, OnTheDesktopTheLimitStillSendsByItself) {
+  SKIP_WITHOUT_VOICE();
+  Harness h(/*max_seconds=*/1);
+  h.source = [opens = h.opens_ptr]() {
+    ++*opens;
+    return std::make_unique<ScriptedSource>(Tone(1000));
+  };
+  h.composer->BeginAt(0, 0, nullptr, /*hold=*/false);
+  EXPECT_FALSE(h.state.voice_bubble) << "no bubble on the desktop";
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.sent.empty(); }));
+  EXPECT_EQ(h.sent.size(), 1u);
+  EXPECT_FALSE(h.state.voice_limit);
 }
 
 TEST(VoiceComposer, AMouseHoldWithNoTouchIsEndedByTheRelease) {
   SKIP_WITHOUT_VOICE();
   Harness h; // no touch fingers listed at all: a mouse on a tablet
-  h.composer->BeginAt(100, nullptr, true);
+  h.composer->BeginAt(0, 100, nullptr, true);
   ASSERT_TRUE(h.WaitTimer("0:03"));
   h.composer->Tick(std::chrono::steady_clock::now());
   h.composer->Tick(std::chrono::steady_clock::now());
   EXPECT_TRUE(h.composer->Recording());
-  h.composer->OnRelease();
+  h.composer->OnRelease(Later());
   ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.sent.empty(); }));
 }
 
-TEST(VoiceComposer, ACallRefusesANewRecordingAndEndsARunningOne) {
+TEST(VoiceComposer, ACallRefusesANewRecording) {
   SKIP_WITHOUT_VOICE();
   {
     Harness h;
     h.call_live = true;
-    h.composer->BeginAt(0, nullptr, false);
+    h.composer->BeginAt(0, 0, nullptr, false);
     EXPECT_TRUE(h.Said("chat.voice.busy_call"));
     EXPECT_EQ(h.opens.load(), 0);
     EXPECT_FALSE(h.composer->Active());
     h.composer->Refresh();
     EXPECT_TRUE(h.state.voice_blocked);
   }
-  {
-    Harness h; // a hold, a call rings meanwhile: what was said is sent, the rest of the press does nothing
+}
+
+// A call that arrives while recording throws the recording away: one pill, no file, nothing sent, whichever of the two
+// paths (the composer's clock tick, the recorder ending as Interrupted) sees it first.
+TEST(VoiceComposer, ACallDuringARecordingDiscardsItOnceWhicheverPathComesFirst) {
+  SKIP_WITHOUT_VOICE();
+  for (const bool tick_first : {true, false}) {
+    Harness h;
+    ScriptedSource* source = nullptr;
+    h.source = [opens = h.opens_ptr, &source]() {
+      ++*opens;
+      auto made = std::make_unique<ScriptedSource>(Tone(3000));
+      source = made.get();
+      return made;
+    };
     h.fingers = {7};
-    h.composer->BeginAt(100, nullptr, true);
+    h.composer->BeginAt(0, 100, nullptr, true);
     ASSERT_TRUE(h.WaitTimer("0:03"));
-    h.call_live = true;
-    h.composer->Tick(std::chrono::steady_clock::now() + 1s);
-    ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.sent.empty(); }));
-    h.composer->OnRelease();
+    ASSERT_NE(source, nullptr);
+    const auto tick = [&]() {
+      h.call_live = true;
+      h.composer->Tick(std::chrono::steady_clock::now() + 1s);
+    };
+    if (tick_first) {
+      tick();
+      ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
+    } else {
+      source->interrupted_by = true; // the OS took the microphone: the recorder ends as Interrupted
+      ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
+      tick(); // the clock tick sees the call afterwards
+    }
     h.ui.RunAll();
-    EXPECT_EQ(h.sent.size(), 1u);
+    std::this_thread::sleep_for(30ms);
+    h.ui.RunAll();
+    EXPECT_EQ(std::count(h.said.begin(), h.said.end(), Tr("chat.voice.interrupted_by_call")), 1)
+        << "tick first: " << tick_first;
+    EXPECT_EQ(h.said.size(), 1u);
+    EXPECT_TRUE(h.sent.empty());
+    EXPECT_EQ(h.dir.FileCount(), 0u);
+    EXPECT_FALSE(h.state.voice_recording);
+    EXPECT_FALSE(h.state.voice_bubble);
+    h.composer->OnRelease(Later()); // the finger comes up later: nothing
+    h.ui.RunAll();
+    EXPECT_TRUE(h.sent.empty());
   }
 }
 
 TEST(VoiceComposer, LockingOrLeavingThrowsAwayARunningRecording) {
   SKIP_WITHOUT_VOICE();
   Harness h;
-  h.composer->BeginAt(0, nullptr, false);
+  h.composer->BeginAt(0, 0, nullptr, false);
   ASSERT_TRUE(h.WaitTimer("0:03"));
   h.composer->DiscardAll();
   ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
@@ -314,7 +436,7 @@ TEST(VoiceComposer, ANewRecordingDoesNotWipeAFailedOneWaitingForRetry) {
   std::ofstream(kept) << "kept";
   std::ofstream(other) << "old";
   h.keep = kept.string();
-  h.composer->BeginAt(0, nullptr, false);
+  h.composer->BeginAt(0, 0, nullptr, false);
   ASSERT_TRUE(h.WaitTimer("0:03"));
   EXPECT_TRUE(std::filesystem::exists(kept));
   EXPECT_FALSE(std::filesystem::exists(other));
@@ -323,7 +445,7 @@ TEST(VoiceComposer, ANewRecordingDoesNotWipeAFailedOneWaitingForRetry) {
 TEST(VoiceComposer, LockingAMomentAfterTheReleaseStillSendsNothingAndDeletesTheFile) {
   SKIP_WITHOUT_VOICE();
   Harness h;
-  h.composer->BeginAt(0, nullptr, false);
+  h.composer->BeginAt(0, 0, nullptr, false);
   ASSERT_TRUE(h.WaitTimer("0:03"));
   h.composer->OnSendButton();
   ASSERT_TRUE(h.WaitFile()); // the file is written; the UI has not yet seen the result
@@ -339,7 +461,7 @@ TEST(VoiceComposer, ACancelIsSilentEvenWhenTheMicrophoneThenFails) {
   auto gate = std::make_shared<std::atomic<bool>>(false);
   auto opens = std::make_shared<std::atomic<int>>(0);
   h.source = [=]() { return std::make_unique<GatedSource>(gate, opens, /*fail=*/true); };
-  h.composer->BeginAt(0, nullptr, false);
+  h.composer->BeginAt(0, 0, nullptr, false);
   ASSERT_TRUE(WaitFor([&] { return opens->load() == 1; }));
   h.composer->OnCancelButton();
   gate->store(true);
@@ -354,7 +476,7 @@ TEST(VoiceComposer, AReleaseBeforeTheMicrophoneIsReadyIsTooShortNotADeviceError)
   auto gate = std::make_shared<std::atomic<bool>>(false);
   auto opens = std::make_shared<std::atomic<int>>(0);
   h.source = [=]() { return std::make_unique<GatedSource>(gate, opens, /*fail=*/true); };
-  h.composer->BeginAt(0, nullptr, false);
+  h.composer->BeginAt(0, 0, nullptr, false);
   ASSERT_TRUE(WaitFor([&] { return opens->load() == 1; }));
   h.composer->OnSendButton();
   gate->store(true);
@@ -367,7 +489,7 @@ TEST(VoiceComposer, ARecordingWaitsForAPlayingClipToLetGoOfTheSpeaker) {
   SKIP_WITHOUT_VOICE();
   Harness h;
   h.defer_playback_stop = true;
-  h.composer->BeginAt(0, nullptr, false);
+  h.composer->BeginAt(0, 0, nullptr, false);
   std::this_thread::sleep_for(50ms);
   EXPECT_EQ(h.opens.load(), 0); // the clip has not let go yet: the microphone is not asked for
   ASSERT_EQ(h.pending_then.size(), 1u);
@@ -380,7 +502,7 @@ TEST(VoiceComposer, CancelledWhileWaitingForTheClipNeverOpensTheMicrophone) {
   SKIP_WITHOUT_VOICE();
   Harness h;
   h.defer_playback_stop = true;
-  h.composer->BeginAt(0, nullptr, false);
+  h.composer->BeginAt(0, 0, nullptr, false);
   h.composer->OnCancelButton();
   h.pending_then[0]();
   ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
@@ -392,7 +514,7 @@ TEST(VoiceComposer, TheFirstPressOnlyAsksForThePermission) {
   SKIP_WITHOUT_VOICE();
   Harness h;
   h.mic = MicPermission::NotDetermined;
-  h.composer->BeginAt(0, nullptr, true);
+  h.composer->BeginAt(0, 0, nullptr, true);
   EXPECT_EQ(h.opens.load(), 0);
   EXPECT_FALSE(h.composer->Active());
   ASSERT_TRUE(h.mic_request != nullptr);
@@ -402,7 +524,7 @@ TEST(VoiceComposer, TheFirstPressOnlyAsksForThePermission) {
   EXPECT_EQ(h.opens.load(), 0);
 
   h.said.clear();
-  h.composer->BeginAt(0, nullptr, true);
+  h.composer->BeginAt(0, 0, nullptr, true);
   h.mic_request(false);
   ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.said.empty(); }));
   EXPECT_EQ(h.said[0], Tr("chat.voice.permission_denied"));
@@ -413,7 +535,7 @@ TEST(VoiceComposer, TheFirstPressOnlyAsksForThePermission) {
 TEST(VoiceComposer, ReleasingToSendShowsSendingUntilTheFileArrives) {
   SKIP_WITHOUT_VOICE();
   Harness h;
-  h.composer->BeginAt(0, nullptr, false);
+  h.composer->BeginAt(0, 0, nullptr, false);
   ASSERT_TRUE(h.WaitTimer("0:03"));
   EXPECT_FALSE(h.state.voice_finishing);
   h.composer->OnSendButton();
@@ -426,7 +548,7 @@ TEST(VoiceComposer, ReleasingToSendShowsSendingUntilTheFileArrives) {
 TEST(VoiceComposer, ACancelNeverShowsSending) {
   SKIP_WITHOUT_VOICE();
   Harness h;
-  h.composer->BeginAt(0, nullptr, false);
+  h.composer->BeginAt(0, 0, nullptr, false);
   ASSERT_TRUE(h.WaitTimer("0:03"));
   h.composer->OnCancelButton();
   EXPECT_FALSE(h.state.voice_finishing);
@@ -439,7 +561,7 @@ TEST(VoiceComposer, ALostPressNeverShowsSending) {
   SKIP_WITHOUT_VOICE();
   Harness h;
   h.fingers = {7};
-  h.composer->BeginAt(100, nullptr, /*hold=*/true);
+  h.composer->BeginAt(0, 100, nullptr, /*hold=*/true);
   ASSERT_TRUE(h.WaitTimer("0:03"));
   h.composer->Lost();
   EXPECT_FALSE(h.state.voice_finishing);
@@ -454,7 +576,7 @@ TEST(VoiceComposer, TooShortClearsSendingWithoutSending) {
   auto gate = std::make_shared<std::atomic<bool>>(false);
   auto opens = std::make_shared<std::atomic<int>>(0);
   h.source = [=]() { return std::make_unique<GatedSource>(gate, opens, /*fail=*/true); };
-  h.composer->BeginAt(0, nullptr, false);
+  h.composer->BeginAt(0, 0, nullptr, false);
   ASSERT_TRUE(WaitFor([&] { return opens->load() == 1; }));
   h.composer->OnSendButton(); // released before the microphone was ready
   gate->store(true);
@@ -466,13 +588,13 @@ TEST(VoiceComposer, TooShortClearsSendingWithoutSending) {
 TEST(VoiceComposer, ALateResultOfAnEarlierRecordingDoesNotLeaveSendingOn) {
   SKIP_WITHOUT_VOICE();
   Harness h;
-  h.composer->BeginAt(0, nullptr, false);
+  h.composer->BeginAt(0, 0, nullptr, false);
   ASSERT_TRUE(h.WaitTimer("0:03"));
   h.composer->OnSendButton();
   ASSERT_TRUE(h.WaitFile()); // its result is queued, not yet seen by the UI
   h.composer->DiscardAll();  // the vault locks: sending is over
   EXPECT_FALSE(h.state.voice_finishing);
-  h.composer->BeginAt(0, nullptr, false); // a new recording: the old result is now a stale generation
+  h.composer->BeginAt(0, 0, nullptr, false); // a new recording: the old result is now a stale generation
   h.ui.RunAll();
   EXPECT_FALSE(h.state.voice_finishing);
   EXPECT_TRUE(h.sent.empty());
@@ -485,7 +607,7 @@ TEST(VoiceComposer, AtTheLimitTheRecorderEndsItselfAndSendingShows) {
     ++*opens;
     return std::make_unique<ScriptedSource>(Tone(1000));
   };
-  h.composer->BeginAt(0, nullptr, /*hold=*/false);
+  h.composer->BeginAt(0, 0, nullptr, /*hold=*/false);
   ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.sent.empty(); }));
   EXPECT_TRUE(h.saw_finishing) << "the limit ended it without a release";
   EXPECT_FALSE(h.state.voice_finishing);
@@ -498,11 +620,159 @@ TEST(VoiceComposer, ALateProgressTickAfterTheResultDoesNotSetSendingAgain) {
     ++*opens;
     return std::make_unique<ScriptedSource>(Tone(1000));
   };
-  h.composer->BeginAt(0, nullptr, /*hold=*/false);
+  h.composer->BeginAt(0, 0, nullptr, /*hold=*/false);
   ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.sent.empty(); }));
   ASSERT_FALSE(h.state.voice_finishing);
   VoiceComposerTestAccess::Progress(*h.composer, 1, 1000); // the recording's own generation, past the limit
   EXPECT_FALSE(h.state.voice_finishing);
+}
+
+// A tap on the bar is not a message: under 250 ms it only says how the bar works; 250 ms to 1 s is "too short". Neither
+// sends and neither leaves a file.
+TEST(VoiceComposer, ATapUnderAQuarterSecondSaysHoldToTalkAndSendsNothing) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.fingers = {7};
+  h.composer->BeginAt(0, 100, nullptr, true);
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  h.composer->OnRelease(std::chrono::steady_clock::now() + 100ms);
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
+  h.ui.RunAll();
+  ASSERT_EQ(h.said.size(), 1u);
+  EXPECT_EQ(h.said[0], Tr("chat.voice.tap_hint"));
+  EXPECT_TRUE(h.sent.empty());
+  EXPECT_EQ(h.dir.FileCount(), 0u);
+}
+
+TEST(VoiceComposer, BetweenAQuarterAndOneSecondItIsTooShortAndNothingIsKept) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.source = [opens = h.opens_ptr]() {
+    ++*opens;
+    return std::make_unique<ScriptedSource>(Tone(500)); // half a second of sound, then nothing more
+  };
+  h.fingers = {7};
+  h.composer->BeginAt(0, 100, nullptr, true);
+  ASSERT_TRUE(WaitFor([&] { return h.opens.load() == 1; }));
+  std::this_thread::sleep_for(60ms);
+  h.composer->OnRelease(std::chrono::steady_clock::now() + 500ms);
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
+  ASSERT_EQ(h.said.size(), 1u);
+  EXPECT_EQ(h.said[0], Tr("chat.voice.too_short"));
+  EXPECT_TRUE(h.sent.empty());
+  EXPECT_EQ(h.dir.FileCount(), 0u);
+}
+
+TEST(VoiceComposer, ATapThatSlidUpFirstIsSilent) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.fingers = {7};
+  h.composer->BeginAt(0, 100, nullptr, true);
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  h.composer->OnMove(0, 20);
+  h.composer->OnRelease(std::chrono::steady_clock::now() + 100ms);
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
+  EXPECT_TRUE(h.said.empty());
+  EXPECT_TRUE(h.sent.empty());
+}
+
+// The pointer arrives in pixels of a 3x screen; the cancel line and the bubble are in dp. The whole path is driven with
+// pixel coordinates (BeginAt -> OnMove -> OnRelease).
+TEST(VoiceComposer, OnA3xScreenThePixelsAreConvertedToDpForTheCancelAndTheBubble) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.ratio = 3.f;
+  h.fingers = {7};
+  h.composer->BeginAt(600, 1500, nullptr, true); // x 200dp, y 500dp
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  EXPECT_TRUE(h.state.voice_bubble);
+  h.composer->OnMove(600, 1335); // 165 px = 55 dp up: not yet
+  EXPECT_FALSE(h.state.voice_cancel_zone);
+  h.composer->OnMove(600, 1332); // 168 px = 56 dp up: armed
+  EXPECT_TRUE(h.state.voice_cancel_zone);
+  h.composer->OnMove(600, 1356); // 144 px = 48 dp up: still armed
+  EXPECT_TRUE(h.state.voice_cancel_zone);
+  h.composer->OnMove(600, 1359); // 141 px = 47 dp up: let go
+  EXPECT_FALSE(h.state.voice_cancel_zone);
+  // 3 px is 1 dp: it is not "168 dp".
+  h.composer->OnMove(600, 1500 - 56);
+  EXPECT_FALSE(h.state.voice_cancel_zone);
+  // The bubble: centred on x = 200dp (left 112), its bottom 98dp above y = 500dp (top 500 - 98 - 64).
+  EXPECT_EQ(std::string(h.state.voice_bubble_left), "112dp");
+  EXPECT_EQ(std::string(h.state.voice_bubble_top), "338dp");
+  EXPECT_EQ(std::string(h.state.voice_tail_left), "88dp");
+  h.composer->OnMove(600, 1332);
+  h.composer->OnRelease(Later());
+  EXPECT_TRUE(h.sent.empty()) << "armed and released: cancelled";
+  EXPECT_FALSE(h.state.voice_bubble);
+}
+
+TEST(VoiceComposer, TheBubbleFollowsTheFingerAndStaysOnTheScreenAtBothEnds) {
+  SKIP_WITHOUT_VOICE();
+  struct Case {
+    float x_px;
+    const char* left;
+    const char* tail;
+  };
+  for (const Case c : {Case{30, "12dp", "20dp"}, Case{600, "112dp", "88dp"}, Case{1170, "205dp", "156dp"}}) {
+    Harness h;
+    h.ratio = 3.f;
+    h.fingers = {7};
+    h.composer->BeginAt(c.x_px, 1500, nullptr, true);
+    ASSERT_TRUE(h.WaitTimer("0:03"));
+    EXPECT_EQ(std::string(h.state.voice_bubble_left), c.left) << c.x_px;
+    EXPECT_EQ(std::string(h.state.voice_tail_left), c.tail) << c.x_px;
+  }
+  // Dragging sideways: inside 24dp of the anchor nothing moves; past it the bubble is dragged along.
+  Harness h;
+  h.ratio = 3.f;
+  h.fingers = {7};
+  h.composer->BeginAt(600, 1500, nullptr, true); // anchor 200dp
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  h.composer->OnMove(600 + 60, 1500); // 20dp aside: inside the dead zone
+  EXPECT_EQ(std::string(h.state.voice_bubble_left), "112dp");
+  h.composer->OnMove(600 + 150, 1500); // 50dp aside: the anchor follows to 226
+  EXPECT_EQ(std::string(h.state.voice_bubble_left), "138dp");
+  h.composer->OnMove(0, 1500); // all the way left: clamped to the margin
+  EXPECT_EQ(std::string(h.state.voice_bubble_left), "12dp");
+}
+
+TEST(VoiceComposer, TheBubbleNeverRisesIntoTheHeader) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.top_limit_dp = 110.f; // the header's lower edge
+  h.fingers = {7};
+  h.composer->BeginAt(0, 150, nullptr, true); // the press is 150dp down: 150 - 98 - 64 would be negative
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  EXPECT_EQ(std::string(h.state.voice_bubble_top), "110dp");
+}
+
+// The level bars: the newest level enters on the right (UI thread only), 4dp for silence and 20dp for full scale.
+TEST(VoiceComposer, TheLevelsFeedTheBarsNewestLast) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.fingers = {7};
+  h.composer->BeginAt(0, 100, nullptr, true);
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  VoiceComposerTestAccess::Progress(*h.composer, 1, 3100, 1.f);
+  VoiceComposerTestAccess::Progress(*h.composer, 1, 3200, 0.5f);
+  EXPECT_EQ(std::string(h.state.voice_lv[11]), "12dp");
+  EXPECT_EQ(std::string(h.state.voice_lv[10]), "20dp");
+  VoiceComposerTestAccess::Progress(*h.composer, 7, 3300, 1.f); // another recording's tick: ignored
+  EXPECT_EQ(std::string(h.state.voice_lv[11]), "12dp");
+}
+
+TEST(VoiceComposer, TheCountdownShowsInTheBubbleAndThePlainHoldHasNoHint) {
+  SKIP_WITHOUT_VOICE();
+  Harness h(/*max_seconds=*/30);
+  h.fingers = {7};
+  h.composer->BeginAt(0, 100, nullptr, true);
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  EXPECT_FALSE(h.state.voice_countdown);
+  EXPECT_EQ(std::string(h.state.voice_hint), "") << "the bubble's own lines say how to cancel";
+  VoiceComposerTestAccess::Progress(*h.composer, 1, 21000, 0.f); // 9 s left
+  EXPECT_TRUE(h.state.voice_countdown);
+  EXPECT_EQ(std::string(h.state.voice_hint), Tr("chat.voice.countdown", {{"seconds", "9"}}));
 }
 
 } // namespace

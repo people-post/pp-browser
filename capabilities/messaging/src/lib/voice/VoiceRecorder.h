@@ -55,6 +55,12 @@ inline bool VoiceEndHasFile(const VoiceEnd end) {
   return end == VoiceEnd::Sent || end == VoiceEnd::LimitReached || end == VoiceEnd::Interrupted;
 }
 
+/**
+ * The loudness shown while recording, 0..1, from the largest absolute sample (int16) of the last stretch of audio:
+ * logarithmic, 0 at -50 dB or quieter (silence) and 1 at full scale.
+ */
+float VoiceLevelFromPeak(int peak);
+
 struct VoiceRecording {
   VoiceEnd end = VoiceEnd::Failed;
   /** The finished file (empty unless VoiceEndHasFile). Named voice-<ms>.ogg. */
@@ -78,7 +84,7 @@ struct VoiceRecorderConfig {
 /**
  * One voice recording at a time: opens the source on its own thread, encodes 20 ms Opus frames and, when
  * it ends, writes one Ogg file. Nothing is written to disk before the end and a cancelled recording
- * leaves nothing. `on_finished` runs once on the recorder's thread; `on_progress` about ten times a second.
+ * leaves nothing. `on_finished` runs once on the recorder's thread; `on_progress` about ten times a second (with the level of the audio since the one before).
  * Nothing waits for that thread on the caller's: it owns what it needs (so destroying the recorder while
  * the OS is still asking about the microphone is safe) and finishes by itself.
  */
@@ -86,7 +92,8 @@ class VoiceRecorder {
 public:
   using SourceFactory = std::function<std::unique_ptr<IVoiceCaptureSource>()>;
   struct Callbacks {
-    std::function<void(int64_t elapsed_ms)> on_progress;
+    /** `level`: how loud the last stretch was (VoiceLevelFromPeak), 0..1. */
+    std::function<void(int64_t elapsed_ms, float level)> on_progress;
     std::function<void(VoiceRecording)> on_finished;
   };
 
