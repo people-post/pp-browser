@@ -72,6 +72,21 @@ TEST(ShellLayoutRmlTest, AWideContactsAndSettingsPageSayWhatToDoUntilSomethingIs
   }
 }
 
+// The wide layout's left rail keeps AI, Chats, Contacts and Settings: no scan entry (scanning is on the Contacts page and
+// in Add contact, where the phone has it).
+TEST(ShellLayoutRmlTest, TheRailHasTheFourSectionsAndNoScanEntry) {
+  const std::string rail = ReadAsset("views/nav_rail.rml");
+  for (const char* tab : {"select_nav_tab('home')", "select_nav_tab('sessions')", "select_nav_tab('contacts')",
+                          "select_nav_tab('me')"}) {
+    EXPECT_TRUE(Has(rail, tab)) << tab;
+  }
+  EXPECT_FALSE(Has(rail, "open_scan_qr")) << "the rail has no scan entry";
+  EXPECT_FALSE(Has(rail, "qr-code.svg"));
+  EXPECT_FALSE(Has(rail, "scan.title"));
+  EXPECT_TRUE(Has(ReadAsset("views/contacts_wide.rml"), "open_scan_qr()")) << "the Contacts page keeps its scan button";
+  EXPECT_TRUE(Has(ReadAsset("views/sidebar.rml"), "open_scan_qr()")) << "the phone's Chats bar is untouched";
+}
+
 TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndSettingsIsItsThirdSegment) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = false;
