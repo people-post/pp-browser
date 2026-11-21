@@ -14,6 +14,8 @@
 #include <cctype>
 #include <chrono>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -135,7 +137,41 @@ bool HonourCancel(const std::shared_ptr<IBlobClient>& blob, const std::string& r
   return false;
 }
 
-/** Direct push of a staged attachment when allowed, else (or on failure) the server, streamed from the file. */
+/**
+ * The two legs of a staged small attachment: the direct push and, once it has run for kDirectHeadStart (or at once on
+ * its failure), the server upload. The first to deliver settles the send (`finish` is called once) and is the only one
+ * to write the staged record; the other's late result is dropped: a server copy uploaded after the push won is deleted,
+ * a push that lands after the server won changes nothing (the caller makes the one message from the one result).
+ */
+struct DeliveryRace {
+  std::mutex mu;
+  bool settled = false;
+  /** A direct push was sent and has not answered. */
+  bool direct_pending = false;
+  bool direct_failed = false;
+  bool server_started = false;
+  /** The server leg failed while the direct push was still out: the push decides, this is the error if it fails. */
+  std::optional<Error> server_error;
+  /** Read by the server upload's progress: once the push has won, the upload stops at its next step. */
+  std::atomic<bool> direct_won{false};
+  const std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+  /** -1: that leg had not answered (or did not run) when the send settled. */
+  int64_t direct_ms = -1;
+  int64_t relay_ms = -1;
+};
+
+/** One INFO line per settled send: which leg delivered it and how long each leg took (sizes and times only). */
+void LogDelivered(const char* won, const uint64_t plaintext_bytes, const int64_t direct_ms, const int64_t relay_ms,
+                  const int64_t total_ms) {
+  logging::getLogger("AttachmentClient").info << "attachment delivered won=" << won << " bytes=" << plaintext_bytes
+                                              << " direct_ms=" << direct_ms << " relay_ms=" << relay_ms
+                                              << " total_ms=" << total_ms;
+}
+
+/**
+ * Direct push of a staged attachment when allowed, the server beside it after the push's head start (or on its
+ * failure), else the server alone, streamed from the file.
+ */
 void DeliverStaged(const std::shared_ptr<IBlobClient>& blob, IdentityStore& identity, OutgoingAttachmentRecord record,
                    std::shared_ptr<PreparedChatAttachment> in_memory, ChatAttachmentUploadOptions options,
                    std::function<void(Roe<ChatAttachmentFields>)> finish, const bool resuming = false) {
@@ -155,19 +191,47 @@ void DeliverStaged(const std::shared_ptr<IBlobClient>& blob, IdentityStore& iden
   if (HonourCancel(blob, relay_id, options, store, record.id, finish, resuming)) {
     return;
   }
-  auto to_server = [blob, relay_id, record, store, dek, progress = options.progress,
-                    finish](const bool direct_failed) mutable {
+  auto race = std::make_shared<DeliveryRace>();
+  std::function<void()> to_server = [blob, relay_id, record, store, dek, progress = options.progress, finish,
+                                     race]() mutable {
     // start → PUT → complete → stored link: all of it, also if the app goes to the background meanwhile.
     const BackgroundActivity background("attachment upload");
     const auto relay_started = std::chrono::steady_clock::now();
-    auto uploaded = UploadRelayFile(*blob, relay_id, store->CipherPath(record.id), record.cipher_bytes, progress);
+    auto progress_unless_direct_won = [race, progress](const uint64_t done, const uint64_t total) {
+      return !race->direct_won.load() && (!progress || progress(done, total));
+    };
+    auto uploaded =
+        UploadRelayFile(*blob, relay_id, store->CipherPath(record.id), record.cipher_bytes, progress_unless_direct_won);
+    const int64_t relay_ms = MsSince(relay_started);
     logging::getLogger("AttachmentClient").info << "attachment server upload bytes=" << record.cipher_bytes
-                                                << " relay_ms=" << MsSince(relay_started)
-                                                << " ok=" << (uploaded ? 1 : 0);
+                                                << " relay_ms=" << relay_ms << " ok=" << (uploaded ? 1 : 0);
+    std::unique_lock lock(race->mu);
+    race->relay_ms = relay_ms;
+    if (race->settled) {
+      lock.unlock();
+      // The direct push delivered first: no message will point at this copy.
+      if (uploaded) {
+        logging::getLogger("AttachmentClient").info << "attachment late server copy deleted, direct push won blob="
+                                                    << uploaded->blob_id;
+        (void)blob->FileDelete(relay_id, uploaded->blob_id);
+      }
+      return;
+    }
     if (!uploaded) {
+      if (race->direct_pending) {
+        race->server_error = uploaded.error(); // the push still out decides
+        return;
+      }
+      race->settled = true;
+      const bool direct_failed = race->direct_failed;
+      lock.unlock();
       finish(direct_failed ? NoteDirectFailed(uploaded.error()) : uploaded.error());
       return;
     }
+    race->settled = true;
+    const int64_t direct_ms = race->direct_ms;
+    lock.unlock();
+    LogDelivered("server", record.fields.byte_length, direct_ms, relay_ms, MsSince(race->started));
     record.fields.url = uploaded->url;
     record.delivered = true;
     if (auto saved = store->Update(record, dek); !saved) {
@@ -192,35 +256,91 @@ void DeliverStaged(const std::shared_ptr<IBlobClient>& blob, IdentityStore& iden
       }
     }
     if (in_memory) {
-      const auto direct_started = std::chrono::steady_clock::now();
-      TryPeerPushAsync(*in_memory, identity, options,
-                       [record, store, dek, finish, to_server = std::move(to_server), in_memory,
-                        direct_started](Roe<void> pushed) mutable {
-                         const int64_t direct_ms = MsSince(direct_started);
-                         auto next = [record, store, dek, finish, to_server = std::move(to_server),
-                                      pushed = std::move(pushed), direct_ms]() mutable {
-                           if (pushed) {
-                             logging::getLogger("AttachmentClient").info
-                                 << "attachment direct push ok bytes=" << record.fields.byte_length
-                                 << " direct_ms=" << direct_ms;
-                             record.delivered = true;
-                             (void)store->Update(record, dek);
-                             finish(record.fields);
-                             return;
-                           }
-                           LogDirectPushFailed(record.fields.byte_length, pushed.error(), direct_ms);
-                           to_server(true);
-                         };
-                         if (AppRuntime::IsRunning()) {
-                           AppRuntime::PostWorkerNormal(std::move(next));
-                         } else {
-                           next();
-                         }
-                       });
+      race->direct_pending = true; // nothing else holds `race` yet
+      TryPeerPushAsync(
+          *in_memory, identity, options,
+          [record, store, dek, finish, to_server, in_memory, race](Roe<void> pushed) mutable {
+            const int64_t direct_ms = MsSince(race->started);
+            auto next = [record, store, dek, finish, to_server, race, pushed = std::move(pushed), direct_ms]() mutable {
+              std::unique_lock lock(race->mu);
+              race->direct_pending = false;
+              race->direct_ms = direct_ms;
+              if (race->settled) {
+                lock.unlock();
+                // The server delivered first: the message carries its link; this answer changes nothing.
+                logging::getLogger("AttachmentClient").info
+                    << "attachment late direct push ignored, server won ok=" << (pushed ? 1 : 0)
+                    << " direct_ms=" << direct_ms;
+                return;
+              }
+              if (pushed) {
+                race->settled = true;
+                race->direct_won.store(true);
+                const int64_t relay_ms = race->relay_ms;
+                lock.unlock();
+                logging::getLogger("AttachmentClient").info
+                    << "attachment direct push ok bytes=" << record.fields.byte_length << " direct_ms=" << direct_ms;
+                LogDelivered("direct", record.fields.byte_length, direct_ms, relay_ms, direct_ms);
+                record.delivered = true;
+                (void)store->Update(record, dek);
+                finish(record.fields);
+                return;
+              }
+              race->direct_failed = true;
+              if (!race->server_started) {
+                race->server_started = true;
+                lock.unlock();
+                LogDirectPushFailed(record.fields.byte_length, pushed.error(), direct_ms);
+                to_server();
+                return;
+              }
+              if (race->server_error) {
+                race->settled = true;
+                const Error server_error = *race->server_error;
+                lock.unlock();
+                LogDirectPushFailed(record.fields.byte_length, pushed.error(), direct_ms);
+                finish(NoteDirectFailed(server_error));
+                return;
+              }
+              lock.unlock();
+              LogDirectPushFailed(record.fields.byte_length, pushed.error(), direct_ms); // the upload under way decides
+            };
+            if (AppRuntime::IsRunning()) {
+              AppRuntime::PostWorkerNormal(std::move(next));
+            } else {
+              next();
+            }
+          });
+      // The head start: a push that has not answered by then gets the server upload beside it.
+      auto start_beside = [race, to_server, cancelled = options.cancelled]() mutable {
+        std::unique_lock lock(race->mu);
+        if (race->settled || race->server_started || !race->direct_pending || (cancelled && cancelled->load())) {
+          return; // answered already (its failure started the server), or cancelled: the push's answer decides
+        }
+        race->server_started = true;
+        lock.unlock();
+        logging::getLogger("AttachmentClient").info << "attachment direct push still out after "
+                                                    << kDirectHeadStart.count()
+                                                    << " ms, server upload starts beside it";
+        to_server();
+      };
+      std::unique_lock lock(race->mu);
+      if (!race->direct_pending) {
+        return; // the push answered at once (not reachable, not addressable): no head start to give
+      }
+      lock.unlock();
+      if (options.run_after) {
+        options.run_after(kDirectHeadStart, std::move(start_beside));
+      } else if (AppRuntime::IsRunning()) {
+        AppRuntime::ScheduleCoordinatorOneShot(kDirectHeadStart, [start_beside]() {
+          AppRuntime::PostWorkerNormal(start_beside); // the upload blocks: never on the coordinator
+        });
+      }
       return;
     }
   }
-  to_server(false);
+  race->server_started = true;
+  to_server();
 }
 
 } // namespace
