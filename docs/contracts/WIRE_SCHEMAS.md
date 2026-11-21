@@ -527,27 +527,65 @@ Chat-shaped response (libp2p / documentation):
 
 ---
 
-## `PeerAnnounceTip` (`/pp/rpc/peer-announce/1.0.0`, `schema_version: 1`)
+## `PeerAnnounceTip` (`/pp/rpc/peer-announce/1.0.0`, `schema_version: 2`)
 
-A program's signed tip under a PeerId-owned topic (peer-scoped broadcast, Spine B). JSON object; codec `capabilities/broadcast/src/lib/broadcast/PeerAnnounceCodec.cpp`.
+A program's signed tip under a PeerId-owned topic (peer-scoped broadcast, Spine B). JSON object; codec `capabilities/broadcast/src/lib/broadcast/PeerAnnounceCodec.cpp`. A signed object of [SIGNED_EXTENSIONS](SIGNED_EXTENSIONS.md) since the signed-format cutover ([SIGNED_FORMATS § 2.9](../../projects/release-compatibility/SIGNED_FORMATS.md#29-broadcast-join-ticket-v2-and-peer-announce-tip-v2)).
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `schema_version` | int | `1`; any other value is rejected |
+| `schema_version` | int | `2`, read first: higher is *update needed* (`AppError::NewerFormat`), lower or missing *made by an older app* |
 | `peer_id`, `topic_id`, `program_id` | string | required |
 | `state` | string | `scheduled` \| `live` \| `ended` |
 | `seq`, `epoch` | int ≥ 0 | |
 | `created_at_ms` | int | |
 | `join_handle` | string | |
-| `hop_peer_id` | string | optional: the `media_relay` hop carrying the show |
-| `l1_hop_peer_ids` | string[] | optional (B007) |
-| `video_levels` | int[] | optional: the video levels the program publishes ([MEDIA_CHANNELS](MEDIA_CHANNELS.md)); decoders keep only `1`–`15` (B009) |
-| `kind` | string | optional: `program` (default) \| `live_chat` |
-| `viewer_peer_id`, `viewer_msg_id` | string | optional (overlay attribution) |
+| `hop_peer_id` | string | the `media_relay` hop carrying the show; absent = `""` |
+| `l1_hop_peer_ids` | string[] | B007; absent = `[]`; signed as listed |
+| `video_levels` | int[] | the video levels the program publishes ([MEDIA_CHANNELS](MEDIA_CHANNELS.md)), each `1`–`15`: any other value is malformed (B009) |
+| `kind` | string | `program` (or absent) \| `live_chat`; signed as received |
+| `viewer_peer_id`, `viewer_msg_id` | string | overlay attribution; absent = `""` |
 | `body`, `content_id_hex` | string | |
-| `signature_b64` | string | ML-DSA over the canonical bytes |
+| `ext_b64` | string | the [extension area](SIGNED_EXTENSIONS.md#the-extension-area)'s entries; absent when empty (always, at release 1) |
+| `signature_b64` | string | the publisher device's typed signature (ML-DSA-65: id `1`, then 3309 bytes) |
 
-**Canonical signed bytes:** `key=value\n` lines in this order — `v`, `peer_id`, `topic_id`, `program_id`, `state`, `seq`, `epoch`, `created_at_ms`, `join_handle`, then `hop_peer_id`, `l1_hop_peer_ids` (comma-joined), `video_levels` (comma-joined), `kind`, `viewer_peer_id`, `viewer_msg_id` **only when non-empty**, then `body`, `content_id_hex`. Every optional field present is signed: a verifier must rebuild the bytes from all of them.
+**Signed bytes** ([SIGNED_EXTENSIONS § Signed bytes](SIGNED_EXTENSIONS.md#signed-bytes)), every field **always**, empty when absent, so a new field never changes what an older verifier rebuilds (new fields go into the extension area):
+
+```
+"pp-browser:peer-announce-tip" 00 ‖ u8 2 ‖ LenUtf8 peer_id ‖ LenUtf8 topic_id ‖ LenUtf8 program_id
+‖ LenUtf8 state ‖ u64 seq ‖ u64 epoch ‖ i64 created_at_ms ‖ LenUtf8 join_handle ‖ LenUtf8 hop_peer_id
+‖ u64 n ‖ n × LenUtf8 l1_hop_peer_id ‖ u64 n ‖ n × u8 video_level ‖ LenUtf8 kind ‖ LenUtf8 viewer_peer_id
+‖ LenUtf8 viewer_msg_id ‖ LenUtf8 body ‖ LenUtf8 content_id_hex ‖ ext area
+```
+
+The receiver checks in [the receiver's order](SIGNED_EXTENSIONS.md#the-receivers-order) (`ReceivePeerAnnounceTip`, `ReceivePeerAnnounceTipJson`): version, fields, the signature's algorithm id, the signature under the publisher's key (its PeerId's), then the extension area. Frozen vectors: `capabilities/broadcast/src/lib/broadcast/tests/data/peer_announce_tip_vectors.json`.
+
+## `BroadcastJoinTicket` (`/pp/rpc/broadcast/1.0.0`, `schema_version: 2`)
+
+The publisher's grant of a show's media key to one viewer (Spine F, B003): the `ticket` of a ticket answer, and the `ticket_json` a viewer presents to a hop. JSON object; codec `capabilities/broadcast/src/lib/broadcast/BroadcastJoinTicket.cpp`. A signed object of [SIGNED_EXTENSIONS](SIGNED_EXTENSIONS.md) since the signed-format cutover ([SIGNED_FORMATS § 2.9](../../projects/release-compatibility/SIGNED_FORMATS.md#29-broadcast-join-ticket-v2-and-peer-announce-tip-v2)).
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `schema_version` | int | `2`, compared before anything is read or verified: higher is *update needed*, lower or missing *made by an older app* |
+| `publisher_peer_id`, `join_handle`, `viewer_peer_id` | string | required; the viewer the ticket is bound to |
+| `program_id`, `media_key_id` | string | |
+| `media_epoch` | int | `1` … `2^32 − 1` |
+| `wrapped_key_b64` | string | the media key wrapped for the viewer (`MediaKeyWrap`, label `broadcast_media_key`): a typed AEAD blob (xchacha20-poly1305: id `1`, nonce, ciphertext, tag) |
+| `key_material_b64` | string | the open path: the raw 32-byte key. One of the two is required |
+| `hop_peer_id` | string | a hop hint; absent = `""` |
+| `expires_at_ms` | int | `0` = none |
+| `ext_b64` | string | the extension area's entries; absent when empty |
+| `signature_b64` | string | the publisher device's typed signature |
+
+**Signed bytes:**
+
+```
+"pp-browser:broadcast-join-ticket" 00 ‖ u8 2 ‖ LenUtf8 publisher_peer_id ‖ LenUtf8 program_id
+‖ LenUtf8 join_handle ‖ LenUtf8 viewer_peer_id ‖ u64 media_epoch ‖ LenUtf8 media_key_id
+‖ LenBytes wrapped_key (the typed AEAD blob, empty if none) ‖ LenBytes key_material (empty if none)
+‖ LenUtf8 hop_peer_id ("" if none) ‖ i64 expires_at_ms ‖ ext area
+```
+
+The receiver (`ReceiveBroadcastJoinTicket`, `ReceiveBroadcastJoinTicketJson`; `VerifyBroadcastJoinTicket` adds expiry and the viewer): version, fields, the signature's and the wrapped key's algorithm ids, the signature under the publisher's key, the extension area. Frozen vectors: `capabilities/broadcast/src/lib/broadcast/tests/data/broadcast_join_ticket_vectors.json`.
 
 ## `media_relay` control (`/pp-mesh/datagram-relay/1.0.0`)
 
@@ -597,6 +635,7 @@ The version changes only when the core, the seal or the nonce changes meaning; a
 | SQLite `thread.db` / `profile.db` | `PRAGMA user_version` | Column/table layout change — **migrate** (D069) |
 | `RelayEnvelope` | `envelope_version` | Outer wire shape or signing canonical set changes |
 | `ChatPayload` | `payload_version` | Body binary layout or required tail fields change (D087) |
+| `PeerAnnounceTip`, `BroadcastJoinTicket` | `schema_version` (outside and inside, [SIGNED_EXTENSIONS](SIGNED_EXTENSIONS.md)) | Signed bytes change; a new field goes into the extension area instead |
 | Binary wire profile | (per-format version byte) | LenUtf8 rules unchanged; bump format version on layout break |
 | E2E AAD | `aad_version` | [e2e-message-crypto DESIGN](../../projects/e2e-message-crypto/DESIGN.md) |
 | libp2p history | protocol id `/pp/rpc/history/1.0.0` | Request/response breaking change → new protocol id |

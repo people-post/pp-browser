@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/ExtArea.h"
+
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -8,7 +10,12 @@
 
 namespace pbr {
 
-inline constexpr int kPeerAnnounceTipSchemaVersion = 1;
+/**
+ * The tip's version, outside (`schema_version`, read first) and inside (the byte after the domain): 2 since the
+ * signed-format cutover (release-compatibility SIGNED_FORMATS § 2.9), the floor and the only version read.
+ */
+inline constexpr int kPeerAnnounceTipSchemaVersion = 2;
+inline constexpr char kPeerAnnounceTipDomain[] = "pp-browser:peer-announce-tip";
 inline constexpr const char* kPeerAnnounceAppNs = "pp-browser/peer-announce/1";
 
 /** Live heartbeat: floor ≥30s, prefer jitter up to 60s (DESIGN). */
@@ -66,7 +73,10 @@ inline std::optional<PeerAnnounceState> PeerAnnounceStateFromString(std::string_
   return std::nullopt;
 }
 
-/** Signed tip under a PeerId-owned topic (Spine B). */
+/**
+ * Signed tip under a PeerId-owned topic (Spine B). Every field is signed, an empty one as empty (wire:
+ * docs/contracts/WIRE_SCHEMAS.md § PeerAnnounceTip); a later field goes into the extension area.
+ */
 struct PeerAnnounceTip {
   int schema_version = kPeerAnnounceTipSchemaVersion;
   std::string peer_id;
@@ -80,23 +90,25 @@ struct PeerAnnounceTip {
   /** Optional media_relay / SFU hop PeerId for Spine C viewers. */
   std::string hop_peer_id;
   /**
-   * B007: publisher help_media whitelist ∩ online (L1 hints only).
-   * Additive — omit when empty so pre-ladder tips keep verifying.
+   * B007: publisher help_media whitelist ∩ online (L1 hints only), signed as listed.
    * hop_peer_id remains the Spine C primary dial target (often l1[0]).
    */
   std::vector<std::string> l1_hop_peer_ids;
-  /** B009: video levels the program publishes on its hop (ascending; empty = audio only). Signed. */
+  /** B009: video levels the program publishes on its hop (ascending, each 1–15; empty = audio only). Signed. */
   std::vector<int> video_levels;
   /**
-   * Tip kind (additive). Empty or "program" = schedule/live/end tips.
+   * Tip kind, signed as received. Empty or "program" = schedule/live/end tips.
    * "live_chat" = publisher-signed on-screen overlay tip.
    */
   std::string kind;
-  /** Attribution for live_chat tips (additive; omit when empty). */
+  /** Attribution for live_chat tips (empty otherwise). */
   std::string viewer_peer_id;
   std::string viewer_msg_id;
   std::string body;
   std::string content_id_hex;
+  /** The signed extension area (`ext_b64`): empty at release 1; unknown non-critical entries are kept. */
+  pp::ExtArea ext;
+  /** The publisher device's typed signature (base64): its algorithm id, then the signature. */
   std::string signature_b64;
 };
 
