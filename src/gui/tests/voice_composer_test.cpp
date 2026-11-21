@@ -126,6 +126,7 @@ struct Harness {
     ports.dp_ratio = [this]() { return ratio; };
     ports.viewport_width_dp = [this]() { return viewport_dp; };
     ports.top_limit_dp = [this]() { return top_limit_dp; };
+    ports.overlay_top_dp = [this]() { return overlay_top_dp; };
     composer = std::make_unique<VoiceComposer>(state, std::move(ports), arbiter);
     *source_cfg = [opens = opens_ptr]() {
       ++*opens;
@@ -158,6 +159,7 @@ struct Harness {
   float ratio = 1.f;
   float viewport_dp = 393.f;
   float top_limit_dp = 0.f;
+  float overlay_top_dp = 0.f;
   /** voice_finishing was true at some point (it is cleared again by the time a test looks). */
   bool saw_finishing = false;
   std::vector<uint64_t> fingers;
@@ -735,6 +737,17 @@ TEST(VoiceComposer, TheBubbleFollowsTheFingerAndStaysOnTheScreenAtBothEnds) {
   EXPECT_EQ(std::string(h.state.voice_bubble_left), "138dp");
   h.composer->OnMove(0, 1500); // all the way left: clamped to the margin
   EXPECT_EQ(std::string(h.state.voice_bubble_left), "12dp");
+}
+
+// The bubble is a child of the chat overlay, which starts under the status bar: its `top` is relative to the overlay.
+TEST(VoiceComposer, TheBubbleTopIsRelativeToTheChatOverlayNotTheWindow) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.overlay_top_dp = 60.f;
+  h.fingers = {7};
+  h.composer->BeginAt(0, 500, nullptr, true);
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  EXPECT_EQ(std::string(h.state.voice_bubble_top), "278dp") << "500 - 98 - 64 in the window, minus the overlay's 60";
 }
 
 TEST(VoiceComposer, TheBubbleNeverRisesIntoTheHeader) {

@@ -518,7 +518,8 @@ void VoiceComposer::UpdateBubble() {
   const float tail = VoiceBubbleTail(anchor, left);
   // The bubble's bottom edge sits above the cancel line; it never rises into the header.
   const float top_limit = ports_.top_limit_dp ? ports_.top_limit_dp() : 0.f;
-  const float top = std::max(top_limit, press_y_dp_ - voice_dp::kBubbleLift - voice_dp::kBubbleHeight);
+  const float overlay_top = ports_.overlay_top_dp ? ports_.overlay_top_dp() : 0.f;
+  const float top = std::max(top_limit, press_y_dp_ - voice_dp::kBubbleLift - voice_dp::kBubbleHeight) - overlay_top;
   if (std::fabs(left - shown_left_) < 1.f && std::fabs(top - shown_top_) < 1.f && std::fabs(tail - shown_tail_) < 1.f) {
     return;
   }

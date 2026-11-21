@@ -11,7 +11,7 @@
 </div>
 <div class="prompt-composer" keep-focus="" data-model="chat"
      data-class-prompt-composer--e2e="thread_is_private"
-     data-class-prompt-composer--disabled="composer_input_disabled">
+     data-class-prompt-composer--disabled="composer_input_disabled &amp;&amp; !voice_recording">
   <!-- Status row above the input, only when something needs saying: an attachment uploading (the card below) /
        preparing / failed (Retry, Cancel), the AI picture, the AI answer's stop key. A picture being sent shows as a
        bubble in the transcript instead (attachment_in_transcript): then no card and no chip here. -->

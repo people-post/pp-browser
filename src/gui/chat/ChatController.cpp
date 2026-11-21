@@ -454,6 +454,7 @@ ChatController::ChatController()
     return context_ && ratio > 0.f ? static_cast<float>(context_->GetDimensions().x) / ratio : 393.f;
   };
   voice_ports.top_limit_dp = [this]() { return VoiceTopLimitDp(); };
+  voice_ports.overlay_top_dp = [this]() { return VoiceOverlayTopDp(); };
   voice_ports.dirty_bubble = []() {
     DataModelHost::Instance().Dirty("chat", "voice_bubble_left");
     DataModelHost::Instance().Dirty("chat", "voice_bubble_top");
@@ -7106,6 +7107,16 @@ ui::Element* FirstByClass(ui::Element* root, const char* name) {
 }
 
 } // namespace
+
+float ChatController::VoiceOverlayTopDp() const {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return 0.f;
+  }
+  ui::Element* overlay = context_->GetDocument(0)->GetElementById("shell-chat-overlay");
+  const float ratio =
+      context_->GetDensityIndependentPixelRatio() > 0.f ? context_->GetDensityIndependentPixelRatio() : 1.f;
+  return overlay ? overlay->GetAbsoluteOffset(ui::BoxArea::Border).y / ratio : 0.f;
+}
 
 float ChatController::VoiceTopLimitDp() const {
   // The voice bubble never rises into the header: the header's lower edge is the lowest y its top may take.

@@ -273,7 +273,14 @@ TEST_F(ComposerVoiceMarkupTest, RecordingOnAPhoneSaysWhatReleasingDoesAndTheBubb
   state.voice_mode = true;
   state.voice_click_mode = false;
   state.voice_recording = true;
+  state.composer_input_disabled = true; // the recording locks the input; the bar must not look dimmed because of it
   Apply();
+  {
+    ui::ElementList composer;
+    document->GetElementsByClassName(composer, "prompt-composer");
+    ASSERT_FALSE(composer.empty());
+    EXPECT_FALSE(composer[0]->IsClassSet("prompt-composer--disabled")) << "no 55% opacity over the accent bar";
+  }
   EXPECT_EQ(Shown("prompt-voice-bar"), 1);
   EXPECT_EQ(Shown("prompt-voice-bar-mic"), 1);
   EXPECT_EQ(Shown("prompt-voice-bar-release"), 1);

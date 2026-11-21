@@ -419,6 +419,7 @@ private:
   void ShowPictureSendChoice(std::string path, const std::string& thread_id);
   void ToggleVoiceMode();
   float VoiceTopLimitDp() const;
+  float VoiceOverlayTopDp() const;
   /** A video was accepted and is being copied out by the system (iOS): the chip says "Sending…" until it arrives. */
   void BeginAttachmentPreparing(const std::string& name);
   /** Every way out of that wait (path arrived, nothing came, cancelled, failed) ends it. */

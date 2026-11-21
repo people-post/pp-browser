@@ -63,6 +63,8 @@ struct VoiceComposerPorts {
    *  bubble's top may reach (under the header; 0 when absent). */
   std::function<float()> viewport_width_dp;
   std::function<float()> top_limit_dp;
+  /** The chat overlay's own top edge in window dp (it starts under the status bar); the bubble's `top` is relative to it. */
+  std::function<float()> overlay_top_dp;
   /** Only the bubble's box or the level bars changed (a finger move, a progress tick). Falls back to `dirty`. */
   std::function<void()> dirty_bubble;
 };

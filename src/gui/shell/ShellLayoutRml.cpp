@@ -64,7 +64,7 @@ std::string ShellLayoutRml::VoiceBubbleRml() {
          "</div>";
   out << "<div class=\"voice-bubble-row voice-bubble-row--armed\" data-if=\"voice_cancel_zone\">"
          "<svg class=\"voice-bubble-bin\" src=\"../icons/v2/trash.svg\" width=\"20\" height=\"20\"></svg>"
-      << Tr("chat.voice.hint_cancel") << "</div>";
+      << "<span>" << Tr("chat.voice.hint_cancel") << "</span></div>";
   out << "<div class=\"voice-bubble-sub\" data-if=\"!voice_cancel_zone &amp;&amp; !voice_limit\">"
       << Tr("chat.voice.hint_slide_up") << "</div>";
   out << "<div class=\"voice-bubble-sub\" data-if=\"!voice_cancel_zone &amp;&amp; voice_limit\">"
