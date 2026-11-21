@@ -7,6 +7,7 @@
 #include "domain/peers/OwnCards.h"
 #include "lib/delivery/RelayClients.h"
 #include "lib/delivery/RelayGrantSigner.h"
+#include "lib/people/HeldKeyForms.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/people/testing/InMemoryPeerCards.h"
@@ -314,6 +315,34 @@ TEST_F(RelayGrantCoordinatorTest, NoUsableGrantFromAGrantedPeerIsAskedForOnlyWhe
   now_ += 11LL * 60 * 1000;
   grants_->NoteHeardFrom("account:stranger");
   EXPECT_EQ(Settled("account:stranger"), 0) << "a stranger is not asked";
+}
+
+// SIGNED_FORMATS § 2.4: a grant this app cannot read is none and no forgery; its grantor runs a newer app and is not
+// asked again (it would send the same grant), until a grant we can read comes from it.
+TEST_F(RelayGrantCoordinatorTest, AGrantANewerAppWroteIsNoneAndItsGrantorIsNotAskedAgain) {
+  Grant(bob_.account_id);
+  EXPECT_TRUE(static_cast<bool>(grants_->OnNotice(
+      relay_grant::Notice{.kind = relay_grant::NoticeKind::Grant, .newer_format = true}, bob_.account_id)))
+      << "not an error: no forgery";
+  RelayGrant critical = BobsGrant(now_.load());
+  critical.ext = pp::ExtArea::FromEntries({{.type = 0x8001, .value = {}}}).value();
+  critical.signature = TypedSignatureB64FromSigner(bob_.Sign(BuildRelayGrantSignBytes(critical)).value()).value();
+  EXPECT_TRUE(static_cast<bool>(grants_->OnNotice(
+      relay_grant::Notice{.kind = relay_grant::NoticeKind::Grant, .grant = critical}, bob_.account_id)))
+      << "an unknown critical entry, signed: update needed, not a forgery";
+  EXPECT_FALSE(grant_store_.Received(bob_.account_id).value()) << "treated as none";
+  EXPECT_TRUE(grants_->NeedsNewerApp(bob_.account_id));
+  EXPECT_EQ(Settled(bob_.account_id), 0) << "nothing acked";
+
+  grants_->NoteHeardFrom(bob_.account_id);
+  now_ += 11LL * 60 * 1000;
+  grants_->NoteHeardFrom(bob_.account_id);
+  grants_->GrantRefused(bob_.account_id);
+  EXPECT_EQ(Settled(bob_.account_id), 0) << "lacking it long, or refused: not asked for again";
+
+  ASSERT_TRUE(static_cast<bool>(grants_->OnNotice(
+      relay_grant::Notice{.kind = relay_grant::NoticeKind::Grant, .grant = BobsGrant(now_.load())}, bob_.account_id)));
+  EXPECT_FALSE(grants_->NeedsNewerApp(bob_.account_id)) << "a grant we read: asked again when one is lacking";
 }
 
 TEST_F(RelayGrantCoordinatorTest, AGrantArrivingReleasesWhatItsGrantorsStrangerQuotaHeldBack) {

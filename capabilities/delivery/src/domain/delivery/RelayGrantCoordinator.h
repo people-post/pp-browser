@@ -13,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "common/PbrCompat.h"
@@ -43,6 +44,9 @@ class IdentityStore;
  *   held to the stranger quota. These are ordinary 30-day grants, but nobody renews them: only a contact or a group
  *   member is renewed (EnsureGranted). A blocked account gets none.
  * - Self-sends need none.
+ * - **A grant this app cannot read** (a newer `grant_version`, algorithm or critical extension, SIGNED_FORMATS § 2.4)
+ *   is none: its grantor runs a newer app (NeedsNewerApp), and is not asked for a grant again while this app runs (it
+ *   would only send the same one).
  *
  * Any thread.
  */
@@ -98,6 +102,8 @@ public:
   void TakeFromLocker(const std::vector<RelayGrant>& grants, bool look_up_keys);
   /** A notice from `sender` (the lane's verified sender). Family's `apply`. */
   Roe<void> OnNotice(const relay_grant::Notice& notice, const std::string& sender);
+  /** `account` gave us a grant this app cannot read: it runs a newer app, and we do not ask it for one. */
+  bool NeedsNewerApp(const std::string& account) const;
 
 private:
   int64_t Now() const;
@@ -112,6 +118,8 @@ private:
   void SendGrants(std::vector<RelayGrant> grants);
   /** Ask `account` for a grant, unless asked lately (`refused`: the relay just refused ours — a shorter wait). */
   void Ask(const std::string& account, bool refused);
+  /** `grantor`'s grant is one this app cannot read (`why`): noted, so it is not asked for again. */
+  void NoteNewerGrant(const std::string& grantor, const std::string& why);
   /** True (and noted) when `key` was not acted on in the last `every_ms` in `when`. */
   bool Due(std::unordered_map<std::string, int64_t>& when, const std::string& key, int64_t every_ms);
 
@@ -132,6 +140,8 @@ private:
   /** Per granted peer: since when we have held no usable grant from it (noted when heard from). */
   std::unordered_map<std::string, int64_t> lacking_since_;
   std::function<void(const std::string&)> on_grant_received_;
+  /** Grantors whose grant this app cannot read (a newer app's): never asked for one. */
+  std::unordered_set<std::string> newer_app_;
 };
 
 } // namespace pbr

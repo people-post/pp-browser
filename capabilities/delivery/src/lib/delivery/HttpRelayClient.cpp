@@ -1,4 +1,5 @@
 #include "lib/delivery/HttpRelayClient.h"
+#include "lib/delivery/RelayGrantSigner.h"
 #include "foundation/tls/RelayClientHeader.h"
 
 #include "common/Diag.h"
@@ -128,9 +129,13 @@ Roe<void> HttpRelayClient::PostSend(RelayWireSendRecord& record, const RelayEnve
   record.signature = signed_send->signature;
 
   const std::string url = base_url_ + "/v1/messages";
-  const auto response = HttpClient::Post(url, DumpJson(RelayWireSendRecordToJson(record)),
-                                         WithRelayClientHeader({{"Content-Type", "application/json"}}),
-                                         kMaxHttpClientBodyBytes, {}, public_only_);
+  Object send_body = RelayWireSendRecordToJson(record);
+  if (record.grant) {
+    send_body.set("grant", RelayGrantToJson(*record.grant)); // grant v2 (SIGNED_FORMATS § 2.4)
+  }
+  const auto response =
+      HttpClient::Post(url, DumpJson(send_body), WithRelayClientHeader({{"Content-Type", "application/json"}}),
+                       kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }

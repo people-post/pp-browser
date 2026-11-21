@@ -2,7 +2,8 @@
 
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
-#include "common/chat/MessagingJson.h"
+#include "lib/delivery/RelayGrantSigner.h"
+#include "foundation/error/AppError.h"
 
 namespace pbr {
 namespace relay_grant {
@@ -62,12 +63,15 @@ Roe<std::optional<Notice>> Parse(const ThreadMessage& message) {
   }
   Notice notice;
   if (type == kGrantControlType) {
+    notice.kind = NoticeKind::Grant;
     auto grant = RelayGrantFromJson(*detail);
-    if (!grant) {
+    if (grant) {
+      notice.grant = std::move(*grant);
+    } else if (AppError::IsNewerFormat(grant.error())) {
+      notice.newer_format = true; // a newer app's grant: a notice still, so its grantor is not asked again
+    } else {
       return grant.error();
     }
-    notice.kind = NoticeKind::Grant;
-    notice.grant = std::move(*grant);
   } else if (type == kAckControlType) {
     notice.kind = NoticeKind::Ack;
     notice.issued_at = detail->getIf<int64_t>("issued_at").value_or(0);

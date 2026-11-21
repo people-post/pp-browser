@@ -82,19 +82,4 @@ TEST(RelayApiSignPayloadTest, BuildClearInboxSignBytesMatchesGoldenVector) {
             "0000000018323032342d30312d30315430303a30303a30302e3030305a");
 }
 
-// MR005: the grant's sign bytes, as the relay checks them (RelayApiAuthVerifier.test.ts "grant sign bytes match the
-// golden vector"): the recipient grants the sender, 30 days from 2025-10-23T16:00:00Z.
-TEST(RelayGrantSignBytesTest, MatchTheRelaysGoldenVector) {
-  constexpr int64_t kDayMs = 24LL * 60 * 60 * 1000;
-  const RelayGrant grant{.recipient_account_id = kGoldenAccount,
-                         .sender_account_id = kGoldenRecipient,
-                         .issued_at = 1761235200000,
-                         .expires_at = 1761235200000 + 30 * kDayMs};
-  EXPECT_EQ(BytesToHex(BuildRelayGrantSignBytes(grant)),
-            "70702d62726f777365723a72656c61792d6772616e742d7631000100000000000000336163636f756e743a47666d6f6c443866"
-            "73534a3446634b31645f36774f6854625a615672305f454c763969695a47305f49646b00000000000000336163636f756e743a72"
-            "58526c385f4375537a704d3146493135534d34687a726379354e6a4a4f703266646d6541366d646d4c300000019a11cc68000000"
-            "019aac4b3000");
-}
-
 } // namespace pbr

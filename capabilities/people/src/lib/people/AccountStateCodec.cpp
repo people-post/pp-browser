@@ -2,6 +2,8 @@
 
 #include "common/ValueJson.h"
 
+#include <algorithm>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -9,7 +11,38 @@
 
 namespace pbr {
 
-Object AccountStateCodec::GroupToJson(const AccountStateGroup& group) {
+namespace {
+
+/** The fields of a `groups` row and of one of its `members` this build reads (and writes). */
+constexpr std::string_view kGroupFields[] = {"group_id",      "title",    "owner",   "roster_epoch",
+                                             "title_version", "policy",   "members", "roster_statement",
+                                             "left",          "dissolved"};
+constexpr std::string_view kMemberFields[] = {"identity", "role", "joined_at", "contact_id"};
+
+} // namespace
+
+void AccountStateCodec::KeepUnknownFields(Object& written, const Object& kept,
+                                          const std::span<const std::string_view> known) {
+  for (const auto& [key, value] : kept.entries()) {
+    if (written.contains(key) || std::find(known.begin(), known.end(), key) != known.end()) {
+      continue;
+    }
+    written.set(key, value);
+  }
+}
+
+Object AccountStateCodec::GroupToJson(const AccountStateGroup& group, const Object* kept) {
+  // The rows the group was read with, by member, so each member's unknown fields go back on it.
+  std::map<std::string, const Object*> kept_members;
+  if (kept != nullptr) {
+    if (const Array* rows = kept->getArray("members")) {
+      for (const Value& item : rows->elements) {
+        if (const Object* row = asObject(item)) {
+          kept_members.emplace(row->getString("identity").value_or(""), row);
+        }
+      }
+    }
+  }
   Object json;
   json.set("group_id", group.group_id);
   json.set("title", group.title);
@@ -24,6 +57,9 @@ Object AccountStateCodec::GroupToJson(const AccountStateGroup& group) {
     row.set("role", m.role);
     row.setJsonUInt("joined_at", static_cast<uint64_t>(m.joined_at < 0 ? 0 : m.joined_at));
     row.set("contact_id", m.contact_id);
+    if (const auto found = kept_members.find(m.identity); found != kept_members.end()) {
+      KeepUnknownFields(row, *found->second, kMemberFields);
+    }
     members.push_back(ObjectValue(std::move(row)));
   }
   json.set("members", ArrayValue(std::move(members)));
@@ -33,6 +69,9 @@ Object AccountStateCodec::GroupToJson(const AccountStateGroup& group) {
   }
   if (group.dissolved) {
     json.set("dissolved", true);
+  }
+  if (kept != nullptr) {
+    KeepUnknownFields(json, *kept, kGroupFields);
   }
   return json;
 }
@@ -66,6 +105,39 @@ std::optional<AccountStateGroup> AccountStateCodec::GroupFromJson(const Object& 
   group.left = json.getIf<bool>("left").value_or(false);
   group.dissolved = json.getIf<bool>("dissolved").value_or(false);
   return group;
+}
+
+Object AccountStateCodec::GrantToJson(const AccountStateGrant& grant) {
+  Object row;
+  row.set("grant_version", kAccountStateGrantVersion);
+  row.set("recipient_account_id", grant.grantor_account_id);
+  row.set("sender_account_id", grant.grantee_account_id);
+  row.set("issued_at", grant.issued_at);
+  row.set("expires_at", grant.expires_at);
+  if (!grant.ext_b64.empty()) {
+    row.set("ext_b64", grant.ext_b64);
+  }
+  row.set("signature", grant.signature);
+  return row;
+}
+
+std::optional<AccountStateGrant> AccountStateCodec::GrantFromJson(const Object& json, const size_t max_field) {
+  // Another version is not this build's to read: dropped here (the device holding it publishes it again).
+  if (json.getIf<int64_t>("grant_version").value_or(0) != kAccountStateGrantVersion) {
+    return std::nullopt;
+  }
+  AccountStateGrant grant{.grantor_account_id = json.getString("recipient_account_id").value_or(""),
+                          .grantee_account_id = json.getString("sender_account_id").value_or(""),
+                          .issued_at = json.getIf<int64_t>("issued_at").value_or(0),
+                          .expires_at = json.getIf<int64_t>("expires_at").value_or(0),
+                          .ext_b64 = json.getString("ext_b64").value_or(""),
+                          .signature = json.getString("signature").value_or("")};
+  const auto fits = [max_field](const std::string& field) { return !field.empty() && field.size() <= max_field; };
+  if (!fits(grant.grantor_account_id) || !fits(grant.grantee_account_id) || !fits(grant.signature) ||
+      grant.ext_b64.size() > max_field || grant.issued_at <= 0 || grant.expires_at <= grant.issued_at) {
+    return std::nullopt;
+  }
+  return grant;
 }
 
 } // namespace pbr

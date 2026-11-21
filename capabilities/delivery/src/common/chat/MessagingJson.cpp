@@ -694,31 +694,6 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   return envelope;
 }
 
-Object RelayGrantToJson(const RelayGrant& grant) {
-  Object json;
-  json.set("recipient_account_id", grant.recipient_account_id);
-  json.set("sender_account_id", grant.sender_account_id);
-  json.set("issued_at", grant.issued_at);
-  json.set("expires_at", grant.expires_at);
-  json.set("signature", grant.signature);
-  return json;
-}
-
-Roe<RelayGrant> RelayGrantFromJson(const Object& json) {
-  RelayGrant grant;
-  grant.recipient_account_id = json.getString("recipient_account_id").value_or("");
-  grant.sender_account_id = json.getString("sender_account_id").value_or("");
-  grant.issued_at = json.getIf<int64_t>("issued_at").value_or(0);
-  grant.expires_at = json.getIf<int64_t>("expires_at").value_or(0);
-  grant.signature = json.getString("signature").value_or("");
-  if (grant.recipient_account_id.empty() || grant.sender_account_id.empty() || grant.issued_at <= 0 ||
-      grant.expires_at <= grant.issued_at || grant.signature.empty() ||
-      !IsPlainIdentifier(grant.recipient_account_id) || !IsPlainIdentifier(grant.sender_account_id)) {
-    return Error("Invalid relay grant");
-  }
-  return grant;
-}
-
 Object RelayWireSendRecordToJson(const RelayWireSendRecord& record) {
   Object json;
   json.set("sender_account_id", record.sender_account_id);
@@ -738,9 +713,6 @@ Object RelayWireSendRecordToJson(const RelayWireSendRecord& record) {
   }
   if (!record.wake_hint.empty()) {
     json.set("wake_hint", record.wake_hint);
-  }
-  if (record.grant) {
-    json.set("grant", RelayGrantToJson(*record.grant));
   }
   if (!record.sender_public_key_b64.empty()) {
     json.set("sender_public_key_b64", record.sender_public_key_b64);

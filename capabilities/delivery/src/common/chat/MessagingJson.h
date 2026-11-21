@@ -38,9 +38,7 @@ pp::common::Object RelayEnvelopeToApplicationJson(const RelayEnvelope& envelope)
  */
 pp::Roe<RelayEnvelope> ParseRelayEnvelope(const pp::common::Object& json);
 
-pp::common::Object RelayGrantToJson(const RelayGrant& grant);
-/** A grant's fields, well-formed (not its signature: RelayGrantSigner checks that). */
-pp::Roe<RelayGrant> RelayGrantFromJson(const pp::common::Object& json);
+/** The send body without its `grant` (grant v2's JSON is lib/delivery's `RelayGrantToJson`; HttpRelayClient adds it). */
 pp::common::Object RelayWireSendRecordToJson(const RelayWireSendRecord& record);
 pp::Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& envelope);
 pp::Roe<RelayEnvelope> RelayEnvelopeFromInboundRecord(const RelayInboundRecord& record);

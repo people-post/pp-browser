@@ -4,15 +4,21 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/crypto/MlDsa.h"
-#include "foundation/crypto/PeerIdForm.h"
+#include "foundation/crypto/SignedBytes.h"
+#include "foundation/crypto/SignedReceive.h"
+#include "foundation/crypto/TypedBlob.h"
+#include "foundation/error/AppError.h"
 
 #include "common/DeviceName.h"
 #include "common/ValueJson.h"
 
 #include <algorithm>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
+#include <span>
+#include <string_view>
 #include <tuple>
 #include "common/PbrCompat.h"
 
@@ -20,27 +26,15 @@ namespace pbr {
 namespace account_locker {
 namespace {
 
-/** Signed-bytes domain (the relay's convention: UTF-8, then a zero byte, then a version byte). */
-constexpr const char kSignDomain[] = "pp-browser:account-locker-v1";
-constexpr uint8_t kSignVersion = 1;
 constexpr size_t kFirstBucket = 4 * 1024;
+constexpr SignedVersions kRecordVersions{.floor = kLockerRecordVersion, .current = kLockerRecordVersion};
+constexpr char kStateVersionKey[] = "state_version";
+constexpr char kRecordVersionKey[] = "record_version";
 
 void AppendU32(ByteVector& out, uint32_t v) {
   for (int shift = 24; shift >= 0; shift -= 8) {
     out.push_back(static_cast<uint8_t>(v >> shift));
   }
-}
-
-void AppendU64(ByteVector& out, uint64_t v) {
-  for (int shift = 56; shift >= 0; shift -= 8) {
-    out.push_back(static_cast<uint8_t>(v >> shift));
-  }
-}
-
-/** LenBytes: u64 BE length, then the bytes (WIRE_SCHEMAS encoding table). */
-void AppendLenBytes(ByteVector& out, const ByteVector& bytes) {
-  AppendU64(out, bytes.size());
-  out.insert(out.end(), bytes.begin(), bytes.end());
 }
 
 /** The AEAD's AAD: the snapshot it belongs to, so a sealed state cannot be replayed under another id or version. */
@@ -71,41 +65,141 @@ Roe<LockerKeys> KeysFrom(const RecoveryKeys& recovery) {
   return keys;
 }
 
-ByteVector SignBytes(const ByteVector& locker_id, const uint64_t version, const ByteVector& sealed) {
-  ByteVector out(kSignDomain, kSignDomain + sizeof(kSignDomain)); // the domain and its terminating zero byte
-  out.push_back(kSignVersion);
-  AppendLenBytes(out, locker_id);
-  AppendU64(out, version);
-  AppendLenBytes(out, sealed);
-  return out;
-}
-
 namespace {
 
-/** One `grants` row of an untrusted copy: every field present and within bounds, else none. */
-std::optional<AccountStateGrant> GrantFromJson(const Object& row) {
-  AccountStateGrant grant{.grantor_account_id = row.getString("recipient_account_id").value_or(""),
-                          .grantee_account_id = row.getString("sender_account_id").value_or(""),
-                          .issued_at = row.getIf<int64_t>("issued_at").value_or(0),
-                          .expires_at = row.getIf<int64_t>("expires_at").value_or(0),
-                          .signature = row.getString("signature").value_or("")};
-  const auto fits = [](const std::string& field) {
-    return !field.empty() && field.size() <= kMaxLockerGrantFieldBytes;
-  };
-  if (!fits(grant.grantor_account_id) || !fits(grant.grantee_account_id) || !fits(grant.signature) ||
-      grant.issued_at <= 0 || grant.expires_at <= grant.issued_at) {
-    return std::nullopt;
-  }
-  return grant;
+ByteVector SignBytesAt(const uint8_t record_version, const ByteVector& locker_id, const uint64_t version,
+                       const ByteVector& sealed, const pp::ExtArea& ext) {
+  return SignedBytesWriter(kLockerRecordDomain, record_version).Bytes(locker_id).U64(version).Bytes(sealed).Finish(ext);
 }
 
 } // namespace
 
+ByteVector SignBytes(const ByteVector& locker_id, const uint64_t version, const ByteVector& sealed,
+                     const pp::ExtArea& ext) {
+  return SignBytesAt(kLockerRecordVersion, locker_id, version, sealed, ext);
+}
+
+Object RecordToJson(const LockerSnapshot& snapshot) {
+  Object json;
+  json.set(kRecordVersionKey, snapshot.record_version);
+  json.set("locker_id", BytesToHex(snapshot.locker_id));
+  json.setJsonUInt("version", snapshot.version);
+  json.set("signing_public_key_b64", Base64Encode(snapshot.signing_public_key));
+  json.set("sealed_b64", Base64Encode(snapshot.sealed));
+  WriteExtB64(json, snapshot.ext);
+  json.set("signature_b64", Base64Encode(snapshot.signature));
+  return json;
+}
+
 namespace {
 
+/** Steps 2 and 3 of a record of `record_version` (read before): the fields, the area, the typed blobs' ids. */
+Roe<LockerSnapshot> ParseRecord(const Object& json, const int64_t record_version) {
+  const std::string locker_id_hex = json.getString("locker_id").value_or("");
+  auto locker_id = HexToBytes(locker_id_hex);
+  const std::optional<uint64_t> version = json.getNonNegInt("version");
+  auto key = Base64Decode(json.getString("signing_public_key_b64").value_or(""));
+  auto sealed = Base64Decode(json.getString("sealed_b64").value_or(""));
+  auto signature = Base64Decode(json.getString("signature_b64").value_or(""));
+  if (!locker_id || locker_id->size() != 32 || BytesToHex(*locker_id) != locker_id_hex || !version || !key || !sealed ||
+      !signature) {
+    return Error("account locker: a malformed record");
+  }
+  auto ext = ReadExtB64(json);
+  if (!ext) {
+    return Error("account locker: a malformed record: " + ext.error().message);
+  }
+  LockerSnapshot snapshot{.record_version = record_version,
+                          .locker_id = std::move(*locker_id),
+                          .version = *version,
+                          .signing_public_key = std::move(*key),
+                          .sealed = std::move(*sealed),
+                          .ext = std::move(ext.value()),
+                          .signature = std::move(*signature)};
+  for (const TypedRead& read :
+       {ReadTypedBlob(pp::BlobKind::kSignaturePublicKey, snapshot.signing_public_key, "locker signing key"),
+        ReadTypedBlob(pp::BlobKind::kAeadSealed, snapshot.sealed, "locker sealed state"),
+        ReadTypedBlob(pp::BlobKind::kSignature, snapshot.signature, "locker signature")}) {
+    if (!read.ok()) {
+      return read.ToError();
+    }
+  }
+  return snapshot;
+}
+
+} // namespace
+
+Roe<LockerSnapshot> RecordFromJson(const Object& json) {
+  // 1. The version, before anything else is read.
+  const std::optional<int64_t> record_version = OutsideVersionOfJson(json, kRecordVersionKey);
+  if (!record_version || *record_version < kLockerRecordVersion) {
+    return Error("account locker: a record made by an older app (no record_version 2)");
+  }
+  if (*record_version > kLockerRecordVersion) {
+    return AppError::NewerFormat("account locker: record version " + std::to_string(*record_version) +
+                                 ", made by a newer app");
+  }
+  // 2. The fields and the extension area; 3. the typed blobs' algorithm ids.
+  return ParseRecord(json, *record_version);
+}
+
+SignedReceipt ReceiveRecord(const Object& json, LockerSnapshot* received) {
+  const std::optional<int64_t> record_version = OutsideVersionOfJson(json, kRecordVersionKey);
+  LockerSnapshot snapshot;
+  TypedRead key;
+  TypedRead signature;
+  const SignedReceipt receipt = ReceiveSigned({
+      .what = "account locker record",
+      .outside_version = record_version,
+      .versions = kRecordVersions,
+      .parse = [&]() -> Roe<void> {
+        auto parsed = ParseRecord(json, *record_version);
+        if (!parsed) {
+          return parsed.error();
+        }
+        snapshot = std::move(parsed.value());
+        return {};
+      },
+      .algorithms = [&]() -> Roe<void> {
+        key = ReadTypedBlob(pp::BlobKind::kSignaturePublicKey, snapshot.signing_public_key, "locker signing key");
+        signature = ReadTypedBlob(pp::BlobKind::kSignature, snapshot.signature, "locker signature");
+        return !key.ok() ? Roe<void>(key.ToError()) : !signature.ok() ? Roe<void>(signature.ToError()) : Roe<void>{};
+      },
+      .verify = [&]() -> Roe<void> {
+        // The locker id is the hash of the raw key: the key is this locker's, or the record is a forgery.
+        if (Blake2b256(key.raw) != snapshot.locker_id) {
+          return Error("the signing key is not this locker's");
+        }
+        return VerifyTyped(key,
+                           SignBytesAt(static_cast<uint8_t>(*record_version), snapshot.locker_id, snapshot.version,
+                                       snapshot.sealed, snapshot.ext),
+                           signature);
+      },
+      .ext = &snapshot.ext,
+  });
+  if (receipt.accepted() && received != nullptr) {
+    *received = std::move(snapshot);
+  }
+  return receipt;
+}
+
+namespace {
+
+/** `relay:` and 43 base64url characters that decode to 32 bytes, one spelling per id (SIGNED_FORMATS § 3.1, Q5). */
+bool IsRelayIdText(const std::string& text) {
+  constexpr std::string_view kPrefix = "relay:";
+  constexpr size_t kChars = 43;
+  if (text.size() != kPrefix.size() + kChars || text.compare(0, kPrefix.size(), kPrefix) != 0) {
+    return false;
+  }
+  const std::string body = text.substr(kPrefix.size());
+  auto raw = Base64UrlDecode(body);
+  return raw && raw->size() == 32 && Base64UrlEncode(*raw) == body;
+}
+
 /**
- * The `relays` of an untrusted copy: at most kMaxLockerRelays, each a non-empty origin with a PeerId (MR008), each
- * origin once.
+ * The `relays` of an untrusted copy: at most kMaxLockerRelays, each a non-empty origin with a relay id, each origin
+ * once.
  */
 AccountStateRelays RelaysFromJson(const Object& json) {
   AccountStateRelays relays;
@@ -114,10 +208,10 @@ AccountStateRelays RelaysFromJson(const Object& json) {
     for (const Value& item : list->elements) {
       const Object* row = asObject(item);
       const AccountStateRelay relay{.origin = row ? row->getString("origin").value_or("") : "",
-                                    .peer_id = row ? row->getString("peer_id").value_or("") : ""};
+                                    .relay_id = row ? row->getString("relay_id").value_or("") : ""};
       const bool listed = std::any_of(relays.list.begin(), relays.list.end(),
                                       [&relay](const AccountStateRelay& kept) { return kept.origin == relay.origin; });
-      if (!relay.origin.empty() && relay.origin.size() <= 256 && IsMlDsaPeerIdForm(relay.peer_id) && !listed &&
+      if (!relay.origin.empty() && relay.origin.size() <= 256 && IsRelayIdText(relay.relay_id) && !listed &&
           relays.list.size() < kMaxLockerRelays) {
         relays.list.push_back(relay);
       }
@@ -128,49 +222,148 @@ AccountStateRelays RelaysFromJson(const Object& json) {
 
 } // namespace
 
+namespace {
+
+/** The fields this build reads (and writes), per row of the state JSON: anything else in a kept row goes back on it. */
+constexpr std::string_view kStateFields[] = {"state_version", "nickname", "contacts",  "groups",        "card_floors",
+                                             "grants",        "relays",   "providers", "contact_clock", "device_names"};
+constexpr std::string_view kContactFields[] = {"id", "local", "remote", "overrides"};
+constexpr std::string_view kContactLocalFields[] = {"display_name", "trust"};
+constexpr std::string_view kContactRemoteFields[] = {"nickname",   "ids",  "endpoints",    "multiaddrs",
+                                                     "fetched_at", "icon", "locator_relay"};
+constexpr std::string_view kCardFloorFields[] = {"account_id", "issued_at"};
+constexpr std::string_view kGrantFields[] = {
+    "grant_version", "recipient_account_id", "sender_account_id", "issued_at", "expires_at", "ext_b64", "signature"};
+constexpr std::string_view kRelaysFields[] = {"list", "card_issued_at"};
+constexpr std::string_view kRelayFields[] = {"origin", "relay_id"};
+constexpr std::string_view kClockFields[] = {"account_id", "at", "present", "digest"};
+constexpr std::string_view kDeviceNameFields[] = {"peer_id", "name", "at", "removed"};
+
+/** The rows of `kept[array_key]` by `key_of(row)`: where each written row finds the one it was read as. */
+std::map<std::string, const Object*> KeptRows(const Object& kept, const std::string& array_key,
+                                              const std::function<std::string(const Object&)>& key_of) {
+  std::map<std::string, const Object*> rows;
+  if (const Array* items = kept.getArray(array_key)) {
+    for (const Value& item : items->elements) {
+      if (const Object* row = asObject(item)) {
+        rows.emplace(key_of(*row), row);
+      }
+    }
+  }
+  return rows;
+}
+
+std::string StringField(const Object& row, const std::string& key) {
+  return row.getString(key).value_or("");
+}
+
+std::string GrantKey(const Object& row) {
+  return StringField(row, "recipient_account_id") + "|" + std::to_string(row.getIf<int64_t>("issued_at").value_or(0));
+}
+
+/** `row` with the unknown fields of `kept_rows[key]`, if that row exists. */
+Value WithKept(Object row, const std::map<std::string, const Object*>& kept_rows, const std::string& key,
+               const std::span<const std::string_view> known) {
+  if (const auto found = kept_rows.find(key); found != kept_rows.end()) {
+    AccountStateCodec::KeepUnknownFields(row, *found->second, known);
+  }
+  return ObjectValue(std::move(row));
+}
+
+/** Each object of the array `rows` with the unknown fields of the kept row of the same `key_field`. */
+Value RowsWithKept(const Value& rows, const std::map<std::string, const Object*>& kept_rows,
+                   const std::string& key_field, const std::span<const std::string_view> known) {
+  std::vector<Value> out;
+  if (const Array* items = asArray(rows)) {
+    for (const Value& item : items->elements) {
+      if (const Object* row = asObject(item)) {
+        out.push_back(WithKept(*row, kept_rows, StringField(*row, key_field), known));
+      }
+    }
+  }
+  return ArrayValue(std::move(out));
+}
+
+/** A contact's row with its kept row's unknown fields, at its top level and in `local` and `remote`. */
+Value ContactWithKept(Object row, const std::map<std::string, const Object*>& kept_rows) {
+  const auto found = kept_rows.find(StringField(row, "id"));
+  if (found == kept_rows.end()) {
+    return ObjectValue(std::move(row));
+  }
+  const Object& kept = *found->second;
+  for (const auto& [key, known] :
+       {std::pair<std::string, std::span<const std::string_view>>{"local", kContactLocalFields},
+        {"remote", kContactRemoteFields}}) {
+    const Object* written = row.getObject(key);
+    const Object* kept_part = kept.getObject(key);
+    if (written != nullptr && kept_part != nullptr) {
+      Object merged = *written;
+      AccountStateCodec::KeepUnknownFields(merged, *kept_part, known);
+      row.set(key, ObjectValue(std::move(merged)));
+    }
+  }
+  AccountStateCodec::KeepUnknownFields(row, kept, kContactFields);
+  return ObjectValue(std::move(row));
+}
+
+} // namespace
+
 std::string StateToJson(const AccountLockerState& state) {
+  const Object& kept = state.kept;
   Object root;
+  root.set(kStateVersionKey, kLockerStateVersion);
   root.set("nickname", state.nickname);
+  const auto kept_contacts = KeptRows(kept, "contacts", [](const Object& row) { return StringField(row, "id"); });
   std::vector<Value> contacts;
   for (const Contact& contact : state.contacts) {
-    contacts.push_back(ObjectValue(ContactToJson(contact)));
+    contacts.push_back(ContactWithKept(ContactToJson(contact), kept_contacts));
   }
   root.set("contacts", ArrayValue(std::move(contacts)));
+  const auto kept_groups = KeptRows(kept, "groups", [](const Object& row) { return StringField(row, "group_id"); });
   std::vector<Value> groups;
   for (const AccountStateGroup& group : state.extras.groups) {
-    groups.push_back(ObjectValue(AccountStateCodec::GroupToJson(group)));
+    const auto found = kept_groups.find(group.group_id);
+    groups.push_back(
+        ObjectValue(AccountStateCodec::GroupToJson(group, found != kept_groups.end() ? found->second : nullptr)));
   }
   root.set("groups", ArrayValue(std::move(groups)));
+  const auto kept_floors =
+      KeptRows(kept, "card_floors", [](const Object& row) { return StringField(row, "account_id"); });
   std::vector<Value> floors;
   for (const AccountCardFloor& floor : state.extras.card_floors) {
     Object row;
     row.set("account_id", floor.account_id);
     row.set("issued_at", floor.issued_at);
-    floors.push_back(ObjectValue(std::move(row)));
+    floors.push_back(WithKept(std::move(row), kept_floors, floor.account_id, kCardFloorFields));
   }
   root.set("card_floors", ArrayValue(std::move(floors)));
+  const auto kept_grants = KeptRows(kept, "grants", GrantKey);
   std::vector<Value> grants;
   for (const AccountStateGrant& grant : state.extras.grants) {
-    Object row;
-    row.set("recipient_account_id", grant.grantor_account_id);
-    row.set("sender_account_id", grant.grantee_account_id);
-    row.set("issued_at", grant.issued_at);
-    row.set("expires_at", grant.expires_at);
-    row.set("signature", grant.signature);
-    grants.push_back(ObjectValue(std::move(row)));
+    Object row = AccountStateCodec::GrantToJson(grant);
+    const std::string key = GrantKey(row);
+    grants.push_back(WithKept(std::move(row), kept_grants, key, kGrantFields));
   }
   root.set("grants", ArrayValue(std::move(grants)));
   if (!state.extras.relays.list.empty()) {
+    const Object* kept_relays = kept.getObject("relays");
+    const auto kept_list =
+        kept_relays != nullptr
+            ? KeptRows(*kept_relays, "list", [](const Object& row) { return StringField(row, "origin"); })
+            : std::map<std::string, const Object*>{};
     std::vector<Value> list;
     for (const AccountStateRelay& relay : state.extras.relays.list) {
       Object row;
       row.set("origin", relay.origin);
-      row.set("peer_id", relay.peer_id);
-      list.push_back(ObjectValue(std::move(row)));
+      row.set("relay_id", relay.relay_id);
+      list.push_back(WithKept(std::move(row), kept_list, relay.origin, kRelayFields));
     }
     Object relays;
     relays.set("list", ArrayValue(std::move(list)));
     relays.set("card_issued_at", state.extras.relays.card_issued_at);
+    if (kept_relays != nullptr) {
+      AccountStateCodec::KeepUnknownFields(relays, *kept_relays, kRelaysFields);
+    }
     root.set("relays", ObjectValue(std::move(relays)));
   }
   std::vector<Value> providers;
@@ -178,8 +371,14 @@ std::string StateToJson(const AccountLockerState& state) {
     providers.emplace_back(provider);
   }
   root.set("providers", ArrayValue(std::move(providers)));
-  root.set("contact_clock", ContactClock::EntriesToJson(state.contact_clock));
-  root.set("device_names", DeviceNamesToJson(state.device_names));
+  const auto kept_clock =
+      KeptRows(kept, "contact_clock", [](const Object& row) { return StringField(row, "account_id"); });
+  root.set("contact_clock",
+           RowsWithKept(ContactClock::EntriesToJson(state.contact_clock), kept_clock, "account_id", kClockFields));
+  const auto kept_names = KeptRows(kept, "device_names", [](const Object& row) { return StringField(row, "peer_id"); });
+  root.set("device_names",
+           RowsWithKept(DeviceNamesToJson(state.device_names), kept_names, "peer_id", kDeviceNameFields));
+  AccountStateCodec::KeepUnknownFields(root, kept, kStateFields);
   return DumpJson(root);
 }
 
@@ -188,13 +387,21 @@ Roe<AccountLockerState> StateFromJson(const std::string& json) {
   if (!root) {
     return Error("account locker: state is not a JSON object");
   }
+  // The state's version first: a newer app's state is not read (nor written over).
+  const std::optional<int64_t> state_version = OutsideVersionOfJson(*root, kStateVersionKey);
+  if (!state_version || *state_version < kLockerStateVersion) {
+    return Error("account locker: a state made by an older app (no state_version 1)");
+  }
+  if (*state_version > kLockerStateVersion) {
+    return AppError::NewerFormat("account locker: state version " + std::to_string(*state_version) +
+                                 ", made by a newer app");
+  }
   AccountLockerState state;
   state.nickname = root->getString("nickname").value_or("");
   if (const Array* contacts = root->getArray("contacts")) {
     for (const Value& item : contacts->elements) {
       if (const Object* row = asObject(item)) {
         state.contacts.push_back(ContactFromJson(*row));
-        DropRetiredRelayIds(state.contacts.back()); // a snapshot from before MR001 may list them
       }
     }
   }
@@ -220,7 +427,7 @@ Roe<AccountLockerState> StateFromJson(const std::string& json) {
   if (const Array* grants = root->getArray("grants")) {
     for (const Value& item : grants->elements) {
       if (const Object* row = asObject(item)) {
-        if (auto grant = GrantFromJson(*row)) {
+        if (auto grant = AccountStateCodec::GrantFromJson(*row, kMaxLockerGrantFieldBytes)) {
           state.extras.grants.push_back(std::move(*grant));
         }
       }
@@ -242,6 +449,7 @@ Roe<AccountLockerState> StateFromJson(const std::string& json) {
   if (const Array* names = root->getArray("device_names")) {
     state.device_names = DeviceNamesFromJson(*names);
   }
+  state.kept = std::move(*root);
   return state;
 }
 
@@ -292,12 +500,17 @@ Roe<LockerSnapshot> Seal(const AccountLockerState& state, const LockerKeys& keys
   if (!sealed) {
     return sealed.error();
   }
+  auto typed_key = TypedSigningPublicKey(keys.signing_public_key);
+  if (!typed_key) {
+    return typed_key.error();
+  }
   LockerSnapshot snapshot;
   snapshot.locker_id = keys.locker_id;
   snapshot.version = version;
-  snapshot.signing_public_key = keys.signing_public_key;
+  snapshot.signing_public_key = std::move(typed_key.value());
   snapshot.sealed = std::move(*sealed);
-  auto signature = MlDsa::Sign(keys.signing_secret_key, SignBytes(snapshot.locker_id, version, snapshot.sealed));
+  auto signature =
+      SignTyped(keys.signing_secret_key, SignBytes(snapshot.locker_id, version, snapshot.sealed, snapshot.ext));
   if (!signature) {
     return signature.error();
   }
@@ -306,15 +519,7 @@ Roe<LockerSnapshot> Seal(const AccountLockerState& state, const LockerKeys& keys
 }
 
 Roe<void> VerifyOwner(const LockerSnapshot& snapshot) {
-  if (snapshot.signing_public_key.empty() || Blake2b256(snapshot.signing_public_key) != snapshot.locker_id) {
-    return Error("account locker: the signing key is not this locker's");
-  }
-  auto verified = MlDsa::Verify(snapshot.signing_public_key,
-                                SignBytes(snapshot.locker_id, snapshot.version, snapshot.sealed), snapshot.signature);
-  if (!verified || !*verified) {
-    return Error("account locker: the snapshot's signature does not verify");
-  }
-  return {};
+  return ReceiveRecord(RecordToJson(snapshot), nullptr).ToRoe();
 }
 
 Roe<AccountLockerState> Open(const LockerSnapshot& snapshot, const LockerKeys& keys) {
@@ -472,6 +677,7 @@ std::vector<AccountStateGrant> CapGrants(std::vector<AccountStateGrant> grants, 
 
 AccountLockerState MergeForPublish(const AccountLockerState& ours, const AccountLockerState& stored) {
   AccountLockerState merged = ours;
+  merged.kept = stored.kept; // what the stored copy holds that this build does not read goes back with it (T7)
   MergeContacts(ours, stored, merged);
   merged.device_names = CapDeviceNames(MergeDeviceNames(ours.device_names, stored.device_names));
   for (const AccountStateGroup& theirs : stored.extras.groups) {
@@ -518,18 +724,21 @@ AccountLockerState MergeForPublish(const AccountLockerState& ours, const Account
   return merged;
 }
 
-std::optional<LockerSnapshot> PickNewest(const std::vector<LockerSnapshot>& snapshots, const LockerKeys& keys,
-                                         const uint64_t at_least) {
-  std::optional<LockerSnapshot> best;
+PickedSnapshot PickNewest(const std::vector<LockerSnapshot>& snapshots, const LockerKeys& keys,
+                          const uint64_t at_least) {
+  PickedSnapshot picked;
   for (const LockerSnapshot& snapshot : snapshots) {
-    if (snapshot.version < at_least || (best && snapshot.version <= best->version)) {
+    if (snapshot.version < at_least || (picked.newest && snapshot.version <= picked.newest->version)) {
       continue;
     }
-    if (Open(snapshot, keys)) {
-      best = snapshot;
+    auto opened = Open(snapshot, keys);
+    if (opened) {
+      picked.newest = snapshot;
+    } else if (AppError::IsNewerFormat(opened.error())) {
+      picked.newer_format = true; // a newer app's: not read, and not written over
     }
   }
-  return best;
+  return picked;
 }
 
 } // namespace account_locker
