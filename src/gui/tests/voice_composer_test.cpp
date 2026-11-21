@@ -107,7 +107,8 @@ struct Harness {
     ports.keep_file = [this]() { return keep; };
     ports.thread_id = [this]() { return thread; };
     ports.send = [this](const std::string& tid, const std::string& path) { sent.emplace_back(tid, path); };
-    ports.eligible = []() { return true; };
+    ports.eligible = [this]() { return eligible; };
+    ports.busy = [this]() { return busy; };
     ports.dirty = [this]() { saw_finishing = saw_finishing || state.voice_finishing; };
     ports.say = [this](const std::string& text) { said.push_back(text); };
     ports.call_live = [this]() { return call_live; };
@@ -155,6 +156,9 @@ struct Harness {
   std::string thread = "A";
   std::string keep;
   bool call_live = false;
+  /** The chat can take voice at all / another attachment is being sent. */
+  bool eligible = true;
+  bool busy = false;
   /** The window's pixels per dp, its width in dp, and the lowest y the bubble's top may take (dp). */
   float ratio = 1.f;
   float viewport_dp = 393.f;
@@ -714,7 +718,7 @@ TEST(VoiceComposer, TheBubbleFollowsTheFingerAndStaysOnTheScreenAtBothEnds) {
     float x_px;
     const char* left;
   };
-  for (const Case c : {Case{30, "12dp"}, Case{600, "112dp"}, Case{1170, "205dp"}}) {
+  for (const Case c : {Case{30, "16dp"}, Case{600, "112dp"}, Case{1170, "201dp"}}) {
     Harness h;
     h.ratio = 3.f;
     h.fingers = {7};
@@ -733,7 +737,7 @@ TEST(VoiceComposer, TheBubbleFollowsTheFingerAndStaysOnTheScreenAtBothEnds) {
   h.composer->OnMove(600 + 150, 1500); // 50dp aside: the anchor follows to 226
   EXPECT_EQ(std::string(h.state.voice_bubble_left), "138dp");
   h.composer->OnMove(0, 1500); // all the way left: clamped to the margin
-  EXPECT_EQ(std::string(h.state.voice_bubble_left), "12dp");
+  EXPECT_EQ(std::string(h.state.voice_bubble_left), "16dp");
 }
 
 // The bubble is a child of the chat overlay, which starts under the status bar: its `top` is relative to the overlay.
@@ -783,6 +787,76 @@ TEST(VoiceComposer, TheCountdownShowsInTheBubbleAndThePlainHoldHasNoHint) {
   VoiceComposerTestAccess::Progress(*h.composer, 1, 21000, 0.f); // 9 s left
   EXPECT_TRUE(h.state.voice_countdown);
   EXPECT_EQ(std::string(h.state.voice_hint), Tr("chat.voice.countdown", {{"seconds", "9"}}));
+}
+
+// Voice mode is the person's choice: only the keyboard key, an edit, or a chat that cannot take voice leave it. A send, a
+// cancel, a too-short hold or a call do not.
+TEST(VoiceComposer, VoiceModeStaysAfterASendACancelATapAndACall) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.state.voice_mode = true;
+  h.fingers = {7};
+  h.composer->Refresh();
+  ASSERT_TRUE(h.state.voice_mode);
+  // send
+  h.composer->BeginAt(0, 100, nullptr, true);
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  h.composer->OnRelease(Later());
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.sent.empty(); }));
+  h.composer->Refresh();
+  EXPECT_TRUE(h.state.voice_mode) << "after a send";
+  // cancel (slide up)
+  h.composer->BeginAt(0, 100, nullptr, true);
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  h.composer->OnMove(0, 20);
+  h.composer->OnRelease(Later());
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
+  EXPECT_TRUE(h.state.voice_mode) << "after a cancel";
+  // tap
+  h.composer->BeginAt(0, 100, nullptr, true);
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  h.composer->OnRelease(std::chrono::steady_clock::now() + 50ms);
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
+  EXPECT_TRUE(h.state.voice_mode) << "after a tap that was too short";
+  // a call
+  h.composer->BeginAt(0, 100, nullptr, true);
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  h.call_live = true;
+  h.composer->Tick(std::chrono::steady_clock::now() + 1s);
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
+  h.composer->Refresh();
+  EXPECT_TRUE(h.state.voice_mode) << "after a recording a call interrupted";
+}
+
+TEST(VoiceComposer, WhileAnotherAttachmentIsBeingSentTheBarStaysButWaits) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.state.voice_mode = true;
+  h.busy = true; // the one-attachment-at-a-time rule
+  h.composer->Refresh();
+  EXPECT_TRUE(h.state.voice_mode) << "the mode is kept";
+  EXPECT_TRUE(h.state.show_voice);
+  EXPECT_TRUE(h.state.voice_busy) << "the bar is drawn disabled";
+  h.composer->BeginAt(0, 100, nullptr, true);
+  EXPECT_TRUE(h.Said("chat.voice.upload_busy"));
+  EXPECT_EQ(h.opens.load(), 0);
+  EXPECT_FALSE(h.composer->Active());
+  h.busy = false; // the upload ended: the same bar records again
+  h.composer->Refresh();
+  EXPECT_FALSE(h.state.voice_busy);
+  EXPECT_TRUE(h.state.voice_mode);
+  h.fingers = {7};
+  h.composer->BeginAt(0, 100, nullptr, true);
+  EXPECT_TRUE(h.WaitTimer("0:03"));
+}
+
+TEST(VoiceComposer, AChatThatCannotTakeVoiceLeavesVoiceModeAndNothingElseDoes) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.state.voice_mode = true;
+  h.eligible = false; // the AI page, a chat with no peer
+  h.composer->Refresh();
+  EXPECT_FALSE(h.state.voice_mode);
 }
 
 } // namespace

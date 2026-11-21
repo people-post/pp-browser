@@ -131,7 +131,7 @@
          bar says what releasing does and the floating bubble (shell-chat-overlay, ShellLayoutRml) shows the rest; the
          desktop's bar shows the dot, the timer and the hint itself. -->
     <button class="prompt-voice-bar" type="button" data-if="voice_mode && show_voice"
-            data-class-prompt-voice-bar--blocked="voice_blocked"
+            data-class-prompt-voice-bar--blocked="voice_blocked || voice_busy"
             data-class-prompt-voice-bar--active="voice_recording"
             data-class-prompt-voice-bar--armed="voice_recording &amp;&amp; voice_cancel_zone"
             data-attr-title="voice_title"

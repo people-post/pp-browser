@@ -14,7 +14,7 @@ inline constexpr float kBubbleHeight = 64.f;
 /** The anchor the bubble aims at only follows the finger once it is this far from it. */
 inline constexpr float kAnchorDeadZone = 24.f;
 /** The bubble keeps this far from both screen sides. */
-inline constexpr float kScreenMargin = 12.f;
+inline constexpr float kScreenMargin = 16.f;
 /** The bubble's bottom edge is this far above the press point: cancel line + finger radius + spare. */
 inline constexpr float kBubbleLift = kCancelArm + 30.f + 12.f;
 } // namespace voice_dp

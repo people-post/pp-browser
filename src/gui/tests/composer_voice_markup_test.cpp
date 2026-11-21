@@ -951,13 +951,13 @@ TEST_F(VoiceBubbleMarkupTest, TheBubbleIs176By64AndSitsWhereTheComposerPutsIt) {
   EXPECT_FLOAT_EQ(bubble->GetAbsoluteOffset(ui::BoxArea::Border).x, 112.f);
   EXPECT_FLOAT_EQ(bubble->GetAbsoluteOffset(ui::BoxArea::Border).y, 338.f);
   // Left end, right end: inside the 393dp screen with the 12dp margins.
-  for (const char* left : {"12dp", "205dp"}) {
+  for (const char* left : {"16dp", "201dp"}) {
     state.voice_bubble_left = left;
     ApplyBubble();
     context->Update();
     const float x = bubble->GetAbsoluteOffset(ui::BoxArea::Border).x;
-    EXPECT_GE(x, 12.f);
-    EXPECT_LE(x + 176.f, 393.f - 12.f + 0.5f);
+    EXPECT_GE(x, 16.f);
+    EXPECT_LE(x + 176.f, 393.f - 16.f + 0.5f);
   }
 }
 

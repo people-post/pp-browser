@@ -417,8 +417,12 @@ ChatController::ChatController()
     StartAttachmentUpload(path, OutgoingPickSource::File, /*voice_file=*/true, thread_id, PendingUploadKind::Voice);
   };
   voice_ports.eligible = [this]() {
-    return messaging_ready_ && facade_ && chat_.show_attach_button && !InAiComposerContext() && !AttachmentBusy() &&
-           !(chat_.attachment_failed && !chat_.attachment_in_transcript) && !ActiveThreadId().empty();
+    return messaging_ready_ && facade_ && chat_.show_attach_button && !InAiComposerContext() &&
+           !ActiveThreadId().empty();
+  };
+  // A send in progress (or a failed one waiting in the chip) only disables the bar: the person stays in voice mode.
+  voice_ports.busy = [this]() {
+    return AttachmentBusy() || (chat_.attachment_failed && !chat_.attachment_in_transcript);
   };
   voice_ports.dirty = [this]() {
     SyncComposerInputState(); // the input is off while recording

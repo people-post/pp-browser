@@ -185,7 +185,7 @@ TEST(AttachmentUploadExit, PictureQueueOneBusyCheckHoldsTheSlotForTheQueue) {
   };
   const Site sites[] = {
       {"voice_ports.send = [this]", "if (AttachmentBusy()) {"},
-      {"voice_ports.eligible = [this]", "!AttachmentBusy() &&"},
+      {"voice_ports.busy = [this]", "AttachmentBusy() ||"}, // the voice bar waits (disabled); voice mode stays
       {"void ChatController::RefreshShowCapture() {", "AttachmentBusy() || (chat_.attachment_failed"},
       {"void ChatController::BeginAttachmentPreparing(", "if (AttachmentBusy() || !preparing_.Begin("},
       {"void ChatController::SyncComposerInputState() {", "chat_.attachment_in_transcript, AttachmentBusy(),"},

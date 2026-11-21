@@ -82,6 +82,7 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("show_voice", &state.show_voice);
   ctor.Bind("voice_entry_off", &state.voice_entry_off);
   ctor.Bind("voice_blocked", &state.voice_blocked);
+  ctor.Bind("voice_busy", &state.voice_busy);
   ctor.Bind("voice_recording", &state.voice_recording);
   ctor.Bind("voice_finishing", &state.voice_finishing);
   ctor.Bind("attachment_preparing", &state.attachment_preparing);
@@ -293,6 +294,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "show_voice");
   DataModelHost::Instance().Dirty("chat", "voice_entry_off");
   DataModelHost::Instance().Dirty("chat", "voice_blocked");
+  DataModelHost::Instance().Dirty("chat", "voice_busy");
   DataModelHost::Instance().Dirty("chat", "voice_recording");
   DataModelHost::Instance().Dirty("chat", "voice_finishing");
   DataModelHost::Instance().Dirty("chat", "attachment_preparing");

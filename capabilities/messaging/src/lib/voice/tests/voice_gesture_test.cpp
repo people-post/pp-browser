@@ -144,11 +144,11 @@ TEST(VoiceGesture, TheAnchorFollowsOnlyPastTheDeadZone) {
 TEST(VoiceBubbleGeometry, TheBubbleStaysOnTheScreenAtBothEnds) {
   const float width = 393.f;
   // Left end, middle, right end of the screen.
-  EXPECT_FLOAT_EQ(VoiceBubbleLeft(20.f, width), 12.f);     // clamped to the left margin
+  EXPECT_FLOAT_EQ(VoiceBubbleLeft(20.f, width), 16.f);     // clamped to the left margin
   EXPECT_FLOAT_EQ(VoiceBubbleLeft(196.5f, width), 108.5f); // centred on the anchor
-  EXPECT_FLOAT_EQ(VoiceBubbleLeft(380.f, width), 205.f);   // clamped: 393 - 176 - 12
+  EXPECT_FLOAT_EQ(VoiceBubbleLeft(380.f, width), 201.f);   // clamped: 393 - 176 - 16
   // A very narrow window does not make the clamp invert.
-  EXPECT_FLOAT_EQ(VoiceBubbleLeft(50.f, 190.f), 12.f);
+  EXPECT_FLOAT_EQ(VoiceBubbleLeft(50.f, 190.f), 16.f);
   // The bubble's bottom is 98dp above the press: the cancel line + finger radius + spare.
   EXPECT_FLOAT_EQ(voice_dp::kBubbleLift, 98.f);
 }

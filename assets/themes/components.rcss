@@ -13056,10 +13056,19 @@ input.checkbox {
   height: 22dp;
 }
 
-/* Voice mode (a people chat): the hold-to-talk bar takes the pill's place; the keyboard key sits inside its right end. */
+/* Voice mode (a people chat): the hold-to-talk bar takes the pill's place. It is a little shorter than the row: 16dp from the
+   left edge and ending 8dp before the 44dp keyboard key, which sits at the row's end (so the bar never runs edge to edge). */
 .shell-chat-overlay .prompt-voice-bar {
-  padding-right: 44dp;
+  margin-left: 4dp;
+  margin-right: 52dp;
   border: 1dp;
+}
+
+/* The two keys of the phone's composer (the microphone in text mode, the keyboard in voice mode): a 26dp glyph (it was
+   18dp) in the 44dp target, so the two states look alike. */
+.shell-chat-overlay .prompt-composer-row .prompt-voice-toggle-btn--end svg {
+  width: 26dp;
+  height: 26dp;
 }
 
 .shell-chat-overlay .prompt-voice-toggle-btn--start {
