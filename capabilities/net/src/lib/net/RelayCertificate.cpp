@@ -341,7 +341,12 @@ std::optional<size_t> OperatorSet::IndexOf(const std::span<const uint8_t> typed_
 }
 
 Roe<OperatorSet> MakeOperatorSet(const uint8_t threshold, std::vector<ByteVector> typed_keys) {
-  std::sort(typed_keys.begin(), typed_keys.end());
+  // By their bytes, as std::vector's `<` orders them; through std::mismatch, since GCC 13's Release build reads the
+  // memcmp that `<` inlines to as unbounded (-Wstringop-overread).
+  std::sort(typed_keys.begin(), typed_keys.end(), [](const ByteVector& a, const ByteVector& b) {
+    const auto [in_a, in_b] = std::mismatch(a.begin(), a.end(), b.begin(), b.end());
+    return in_b != b.end() && (in_a == a.end() || *in_a < *in_b);
+  });
   if (typed_keys.empty() || typed_keys.size() > kMaxOperatorKeys) {
     return Error("operator set: 1 to 8 keys");
   }

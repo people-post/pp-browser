@@ -321,6 +321,13 @@ TEST_F(RelayGrantCoordinatorTest, NoUsableGrantFromAGrantedPeerIsAskedForOnlyWhe
 // asked again (it would send the same grant), until a grant we can read comes from it.
 TEST_F(RelayGrantCoordinatorTest, AGrantANewerAppWroteIsNoneAndItsGrantorIsNotAskedAgain) {
   Grant(bob_.account_id);
+  // Ours to Bob is held and confirmed, so nothing heard from Bob sends it: the relay's count below is asks alone.
+  ASSERT_TRUE(grant_store_.PutIssued(
+      IRelayGrantStore::Issued{.grant = RelayGrant{.recipient_account_id = me_,
+                                                   .sender_account_id = bob_.account_id,
+                                                   .issued_at = now_.load(),
+                                                   .expires_at = now_.load() + kRelayGrantMaxLifetimeMs},
+                               .confirmed = true}));
   EXPECT_TRUE(static_cast<bool>(grants_->OnNotice(
       relay_grant::Notice{.kind = relay_grant::NoticeKind::Grant, .newer_format = true}, bob_.account_id)))
       << "not an error: no forgery";
