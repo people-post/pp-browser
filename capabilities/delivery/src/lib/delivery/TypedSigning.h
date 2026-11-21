@@ -1,7 +1,5 @@
 #pragma once
 
-#include "lib/people/HeldKeyForms.h" // ReadHeldSigningKeyB64: a key as the people layer holds it
-
 #include "foundation/crypto/TypedBlob.h"
 
 #include "common/Error.h"
@@ -16,8 +14,9 @@
 namespace pbr {
 
 /**
- * The seams between the delivery's signed objects (envelope v4, PeerRequestAuth v2: release-compatibility
- * SIGNED_FORMATS § 2.1, § 2.7) and the key holders below them, which still speak raw ML-DSA-65.
+ * The seam between the delivery's signed objects (envelope v4, PeerRequestAuth v2: release-compatibility
+ * SIGNED_FORMATS § 2.1, § 2.7) and the signers below them, which answer raw ML-DSA-65. The keys they are checked with
+ * are held typed (cards and key stores, lib/people/CardKeys.h) and read with `ReadTypedBlobB64`.
  *
  * A signer the identity store gives (`IdentityStore::SignDeviceBytes`, `SignBytes`): the raw ML-DSA-65 signature of
  * the bytes, in standard base64.

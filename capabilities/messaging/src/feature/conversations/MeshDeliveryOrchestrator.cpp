@@ -1,5 +1,6 @@
 #include "lib/people/ContactTypes.h"
 #include "lib/people/ContactIdentity.h"
+#include "lib/people/CardKeys.h"
 #include "lib/delivery/LocalKeysFromIdentity.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
@@ -583,7 +584,7 @@ Roe<void> MeshDeliveryOrchestrator::ResendDirectCopy(const Thread& thread, const
   if (!sender) {
     return sender.error();
   }
-  auto device_kem = Base64Decode(device.kem_public_key_b64);
+  auto device_kem = RawKemPublicKey(device.kem_public_key_b64, "the device KEM key");
   if (!device_kem) {
     return device_kem.error();
   }
@@ -1162,7 +1163,7 @@ Roe<ByteVector> MeshDeliveryOrchestrator::PeerKemPublicKey(const PeerSessionKey&
   if (!device) {
     return Error("The peer's card does not list that device");
   }
-  return Base64Decode(device->kem_public_key_b64);
+  return RawKemPublicKey(device->kem_public_key_b64, "the device KEM key");
 }
 
 Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity, const ThreadMessage& control,
@@ -1747,7 +1748,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
       if (auto restarted = StartNextPairEpochIfRestored(pair); !restarted) {
         log().warning << "device pair restart failed peer=" << amp_peer_key << ": " << restarted.error().message;
       }
-      auto device_kem = Base64Decode(device.kem_public_key_b64);
+      auto device_kem = RawKemPublicKey(device.kem_public_key_b64, "the device KEM key");
       auto copy = device_kem ? SealPairCopy(wire, identity->account_id, options, psk_store_, pair, *device_kem)
                              : Roe<PairCopy>(device_kem.error());
       if (!copy) {

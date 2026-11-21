@@ -192,15 +192,18 @@ TEST(BackendClientSetTest, NoPreferredRelayMeansNoOtherRelaysEither) {
 TEST(BackendClientSetTest, AForeignRelayOutsideThePolicyGetsNoClient) {
   SwitchableDirectoryClient directory;
   BackendClientSet clients(directory);
+  clients.SetPins(std::make_shared<RelayPins>(""));
   clients.Apply(At("https://relay.example", "https://relay.example", "https://relay.example"));
+  const RelayId named = RelayId::FromRaw(ByteVector(kRelayIdBytes, 0x55)).value();
   for (const char* origin : {"https://127.0.0.1", "https://localhost/api", "https://[::1]", "https://169.254.169.254",
                              "https://10.0.0.5:8443", "http://other.example", "https://intranet"}) {
-    EXPECT_EQ(clients.Sender().ClientFor({.origin = origin, .peer_id = "QmPeer"}), nullptr) << origin;
-    EXPECT_EQ(clients.Sender().ClientFor({.origin = origin}), nullptr) << origin << " (a locator's: no PeerId)";
+    EXPECT_EQ(clients.Sender().ClientFor({.origin = origin, .relay_id = named}), nullptr) << origin;
+    EXPECT_EQ(clients.Sender().ClientFor({.origin = origin}), nullptr) << origin << " (no relay id)";
   }
-  EXPECT_NE(clients.Sender().ClientFor({.origin = "https://other.example/api/relay", .peer_id = "QmPeer"}), nullptr);
+  EXPECT_NE(clients.Sender().ClientFor({.origin = "https://other.example/api/relay", .relay_id = named}), nullptr)
+      << "a card's relay: its audience is what that relay id's certificate proves (ContactAudience)";
   EXPECT_EQ(clients.Sender().ClientFor({.origin = "https://unnamed.example/api/relay"}), nullptr)
-      << "MR008: a relay not ours whose address names no PeerId gets nothing signed";
+      << "MR008: a relay not ours whose address names no relay id gets nothing signed";
   EXPECT_NE(clients.Sender().ClientFor({.origin = "https://relay.example"}), nullptr) << "our own relay";
 }
 

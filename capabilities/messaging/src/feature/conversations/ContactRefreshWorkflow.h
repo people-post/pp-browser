@@ -155,11 +155,11 @@ public:
   /** Our relays, preferred first, then our other directories: asked after the contact's own. Any thread. */
   void SetOurRelays(std::vector<std::string> origins);
   /**
-   * Whether the contact's card entry `{origin, peer_id}` does not match the relay (our pins disagree, or a send found
-   * it refused, MR007): the page says *identity doesn't match*. None: never. Any thread.
+   * Whether the contact's card entry `{origin, relay_id}` does not match the relay (our pins disagree, or a send found
+   * its audience refused, MR007/MR008): the page says *identity doesn't match*. None: never. Any thread.
    */
   using IdentityMismatchFn =
-      std::function<bool(const std::string& account_id, const std::string& origin, const std::string& peer_id)>;
+      std::function<bool(const std::string& account_id, const std::string& origin, const RelayId& relay_id)>;
   void SetIdentityMismatch(IdentityMismatchFn mismatch);
 
   /**

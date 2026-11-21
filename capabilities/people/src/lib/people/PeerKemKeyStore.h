@@ -11,10 +11,11 @@
 namespace pbr {
 
 struct PeerKemKeyRecord {
+  /** Typed, standard base64, as the key card carries it (RawKemPublicKey reads what HybridKem takes). */
   std::string kem_public_key_b64;
-  /** The account's ML-DSA key and its signature binding the KEM key to it (foundation/crypto/KemKeyBinding.h). */
+  /** The account's typed ML-DSA key and its KEM binding v2 blob (foundation/crypto/KemKeyBinding.h). */
   std::string signing_public_key_b64;
-  std::string binding_signature_b64;
+  std::string kem_binding_b64;
   std::string source;
   std::optional<std::string> source_ref;
 };

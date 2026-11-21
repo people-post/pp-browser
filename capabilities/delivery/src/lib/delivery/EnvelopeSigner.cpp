@@ -200,7 +200,7 @@ SignedReceipt EnvelopeSigner::Receive(const RelayEnvelope& envelope, const std::
     if (!signature.ok()) {
       return signature.ToError();
     }
-    key = ReadHeldSigningKeyB64(device_key_b64, "sending device key");
+    key = ReadTypedBlobB64(pp::BlobKind::kSignaturePublicKey, device_key_b64, "sending device key");
     if (!key.ok()) {
       return key.ToError();
     }

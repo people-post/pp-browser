@@ -12,9 +12,9 @@ namespace pbr {
 
 namespace {
 
-/** What an entry names its relay by: its relay id (a locator's; the card's from v5), else the card's PeerId. */
+/** What an entry names its relay by: its relay id (a card's or a locator's; "" for one of ours, by origin). */
 std::string EntryName(const AccountCardRelay& relay) {
-  return relay.relay_id.empty() ? relay.peer_id : relay.relay_id.ToString();
+  return relay.relay_id.ToString();
 }
 
 bool IsNetworkCode(const Error& failure, const Err::Network code) {

@@ -43,8 +43,7 @@ public:
 };
 
 /**
- * A PeerId given, not proved by a certificate: tests, and a contact's card entry while the account card still names a
- * PeerId (until card v5 names relay ids, cutover W2). Refusals go to `on_refused` when set.
+ * A PeerId given, not proved by a certificate (tests). Refusals go to `on_refused` when set.
  */
 class FixedRelayAudience : public IRelayAudience {
 public:

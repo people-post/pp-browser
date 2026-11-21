@@ -28,7 +28,7 @@ void AccountKeyResolver::Remember(const PeerCardRecord& record) {
   PeerKemKeyRecord kem;
   kem.kem_public_key_b64 = record.keys.kem_public_key_b64;
   kem.signing_public_key_b64 = record.keys.signing_public_key_b64;
-  kem.binding_signature_b64 = record.keys.kem_binding_signature_b64;
+  kem.kem_binding_b64 = record.keys.kem_binding_b64;
   kem.source = record.source;
   kem.source_ref = record.keys.account_id;
   (void)kem_keys_.Put(kind, record.keys.account_id, std::move(kem));
@@ -118,7 +118,7 @@ Roe<PeerCardRecord> AccountKeyResolver::AddDirectoryHit(const mesh::DirectoryHit
   return AddKeyCard(KeyCard{.account_id = *account_id,
                             .signing_public_key_b64 = *hit.signing_public_key_b64,
                             .kem_public_key_b64 = *hit.kem_public_key_b64,
-                            .kem_binding_signature_b64 = *hit.kem_binding_b64},
+                            .kem_binding_b64 = *hit.kem_binding_b64},
                     "directory");
 }
 

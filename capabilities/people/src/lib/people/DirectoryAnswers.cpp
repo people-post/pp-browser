@@ -49,7 +49,7 @@ bool DirectoryHitKeysVerify(const mesh::DirectoryHit& hit) {
   return static_cast<bool>(VerifyKeyCard(KeyCard{.account_id = *account,
                                                  .signing_public_key_b64 = *hit.signing_public_key_b64,
                                                  .kem_public_key_b64 = *hit.kem_public_key_b64,
-                                                 .kem_binding_signature_b64 = *hit.kem_binding_b64}));
+                                                 .kem_binding_b64 = *hit.kem_binding_b64}));
 }
 
 std::vector<mesh::DirectoryHit> MergeDirectoryAnswers(const std::vector<DirectoryAnswer>& answers) {

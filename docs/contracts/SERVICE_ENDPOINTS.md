@@ -55,15 +55,15 @@ When `registration.base_url` is set (e.g. `https://host/api/relay`), `HttpRegist
 | Step | HTTP | Request body | Response |
 |------|------|--------------|----------|
 | Start | `POST /v1/register/start` | `{ public_key, kem_public_key_b64, nickname?, signature_alg? }` | `{ challenge, signature_alg, expires_at }` |
-| Finish | `POST /v1/register/finish` | `{ challenge, public_key, kem_public_key_b64, kem_binding_signature_b64?, sign_version, audience, signature, timestamp, nickname?, signature_alg?, account_card? }` | `{ success, account_id, registration_id, message, expires_at, llm_token, llm_token_expires_at, kem_bound, account_card_status? }` (the legacy `llm_api_key` beside them is not read; relay 1.0 removes it); `426 client_upgrade_required` for an older sign version or account card ([Client compatibility](#client-compatibility-discovery)) |
+| Finish | `POST /v1/register/finish` | `{ challenge, public_key, kem_public_key_b64, kem_binding_b64?, sign_version, audience, signature, timestamp, nickname?, signature_alg?, account_card? }` | `{ success, account_id, registration_id, message, expires_at, llm_token, llm_token_expires_at, kem_bound, account_card_status? }` (the legacy `llm_api_key` beside them is not read; relay 1.0 removes it); `426 client_upgrade_required` for an older sign version or account card ([Client compatibility](#client-compatibility-discovery)) |
 | Revoke | `POST /v1/register/revoke` | `{ account_id, registration_id, sign_version, audience, timestamp, signature }` | `200`; `409 registration_mismatch` when another registration is held now (nothing removed) |
 
 Finish signs canonical bytes: domain `pp-browser:relay-register-v1\0`, `sign_version=3`, the relay's PeerId (`audience`, len-prefixed UTF-8, [§ The audience](#the-audience-every-signed-command-names-its-relay)), challenge (len-prefixed UTF-8), **1952-byte raw ML-DSA-65** account public key, **1184-byte raw ML-KEM-768** **account** public key (`kem_public_key_b64` — person encapsulate-to, **M015**; not per-device), `signature_alg` u8 (`1=ml-dsa-65`), `timestamp` i64 BE. Pre-release hard cut: Ed25519 register/API auth removed; wipe legacy relay_users.
 
-Brief derives `account_id = account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` and keeps **one row per Account ID** (M006): the Account ID is the row's key and the account's inbox address — the relay issues no ids of its own ([multi-relay MR001](../../projects/multi-relay/DECISIONS.md#mr001--inboxes-are-keyed-by-account-id)). Finish answers with it (`account_id`), and the client refuses a registration answered for another account. It carries the account's signed card (`account_card`, version 4, [ACCOUNT_CARD.md](ACCOUNT_CARD.md); a pp-node sends none): the relay checks it as the app does — a card that does not verify, is another account's, or breaks a bound refuses the registration (`400` `invalid_account_card` / `account_card_mismatch` / `account_card_too_large` / `invalid_card_relays`) — keeps the newest and serves it with the directory row (`account_card_status`: `stored` / `same` / `stale`; `stale` —
+Brief derives `account_id = account:<base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk))>` and keeps **one row per Account ID** (M006): the Account ID is the row's key and the account's inbox address — the relay issues no ids of its own ([multi-relay MR001](../../projects/multi-relay/DECISIONS.md#mr001--inboxes-are-keyed-by-account-id)). Finish answers with it (`account_id`), and the client refuses a registration answered for another account. It carries the account's signed card (`account_card`, version 5, [ACCOUNT_CARD.md](ACCOUNT_CARD.md#account-card); a pp-node sends none): the relay checks it as the app does — a card that does not verify, is another account's, or breaks a bound refuses the registration (`400` `invalid_account_card` / `account_card_mismatch` / `account_card_too_large` / `invalid_card_relays`) — keeps the newest and serves it with the directory row (`account_card_status`: `stored` / `same` / `stale`; `stale` —
 another device of the account stored a newer card — is logged and the card is not sent again for it,
 `AccountCardStale`). A card code at finish is `Err::Auth::AccountCardRefused` naming the code, and My relays words it
-(registration reason `card`). The relay reads the account's **initiation floor** from it (the stranger check below); there is no registration field for the floor ([pricing P001](../../projects/pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet) item 7 as amended by [multi-relay MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)). The app registers again, whatever the auto-renew preference, when its card is newer than the one the relay last answered for (`registered_card_issued_at` in the identity; `ShouldPublishAccountCard`), so a changed floor, relay list or device list reaches the relay on the next start. An id of another shape is refused everywhere with `400 invalid_account_id`. Directory / user lookup include `account_id`, `signature_alg=ml-dsa-65`, and the **account** `kem_public_key_b64` (same key on every linked device) with `kem_binding_signature_b64`: the account's signature binding that KEM key to it ([MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md), `pp-browser:kem-binding-v1`). Finish verifies a binding it is sent and stores it with the KEM key, replacing both (none sent, none kept); `kem_bound` says the entry now carries one. Clients take a directory KEM key only with a valid binding, and a registration from before bindings re-registers once to publish one.
+(registration reason `card`). The relay reads the account's **initiation floor** from it (the stranger check below); there is no registration field for the floor ([pricing P001](../../projects/pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet) item 7 as amended by [multi-relay MR005](../../projects/multi-relay/DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant)). The app registers again, whatever the auto-renew preference, when its card is newer than the one the relay last answered for (`registered_card_issued_at` in the identity; `ShouldPublishAccountCard`), so a changed floor, relay list or device list reaches the relay on the next start. An id of another shape is refused everywhere with `400 invalid_account_id`. Directory / user lookup include `account_id`, `signature_alg=ml-dsa-65`, and the **account** `kem_public_key_b64` (same key on every linked device) with `kem_binding_b64`: the account's KEM binding v2 of that KEM key ([ACCOUNT_CARD § KEM binding](ACCOUNT_CARD.md#kem-binding), `pp-browser:kem-binding`; the directory row's keys are a key card's, typed). Finish verifies a binding it is sent and stores it with the KEM key, replacing both (none sent, none kept); `kem_bound` says the entry now carries one. Clients take a directory KEM key only with a valid binding, and a registration from before bindings re-registers once to publish one.
 
 ## Relay identity and the audience (multi-relay MR007)
 
@@ -170,8 +170,8 @@ for an origin that certificate lists (`Audience`, `HeldAudience`).
   names gets nothing signed (`relay_identity_unavailable`). A fetch that fails pins nothing; it is asked again after 1
   min, doubling to 2 min, and at once when the network comes back, the app comes to the front or the list changes.
 - Our card lists each relay of ours whose pin is in force; while a check pass runs, the card waits for its end and is
-  re-issued once, so a linked device does not follow a list one check at a time. Until card v5 (cutover W2) the card
-  and the locker still name `{origin, peer_id}`: the app writes there the PeerId its held certificate proves.
+  re-issued once, so a linked device does not follow a list one check at a time. The card (v5) and the locker name
+  each relay `{origin, relay_id}`.
 - **pp-node** expects its `registration.base_url` to prove `registration.relay_id` (`PP_NODE_REGISTRATION_RELAY_ID`;
   with the compiled prod registration URL, the compiled `PP_RELAY_ID_PROD`, with the build's prod certificate as its
   floor; [CONFIGURATION](../ops/CONFIGURATION.md#pp-node-relay-identity)), kept in its data directory
@@ -201,7 +201,8 @@ one `400 unsupported_sign_version`, which the app reads the same: it never sends
 `401 { "code": "wrong_audience" }` (before the window, the account lookup, the signature, and for `register/finish`
 before the challenge is spent), then verifies the signature over bytes built with its own PeerId: a body whose
 `audience` was rewritten fails the signature. `register/finish` answers `426 client_upgrade_required` to a person's
-account card older than version 4 as well, and `400 relay_upgrade_required` to a newer one, before anything is spent.
+account card older than version 5 as well, and `400 relay_upgrade_required` to a newer one (or one naming an unknown
+algorithm or carrying an unknown critical entry), before anything is spent.
 
 | Domain | Version | Fields after the audience |
 |---|---|---|
@@ -231,16 +232,17 @@ message.
 **Where each client takes its audience** (`IRelayAudience`; every client signs through `SignRelayCommand` and reports
 refusals through `NoteRelayRefusal`): the clients of a relay of ours (messages, push devices, registration, blobs and
 files) its pin's held certificate; the lockers at the org's `registration.base_url` that origin's (pinned whether or not
-it is ours); a send into a contact's relay the PeerId the certificate of the relay id its QR locator (from card v5: its
-newest card) names for that relay proves (`ContactAudience`; until card v5 a card entry's `peer_id`,
-[Sending by the list](#sending-by-the-list)); pp-node its relay's pin's.
+it is ours); a send into a contact's relay the PeerId the certificate of the relay id its newest card (before one, its QR
+locator) names for that relay proves (`ContactAudience`, [Sending by the list](#sending-by-the-list)); pp-node its relay's
+pin's.
 
 **Golden vectors:** `capabilities/delivery/src/lib/delivery/tests/data/relay_sign_vectors.json`, written by
 `relay_sign_vectors_test.cpp` (`PP_WRITE_RELAY_SIGN_VECTORS=<path>`) and checked there: every domain and relay API op
 signed by one account for relay `a`, with what `a` and `b` answer (`ok`, `wrong_audience`, `bad_signature`,
 `client_upgrade_required`), a poll without `audience` and one whose `audience` names `b`, a poll, a registration, a
 revoke and a heartbeat naming an older `sign_version` and a poll naming none, the relays' keys and PeerIds, MESH_IDENTITY's two fixtures, a
-version 4 account card and five cards that must be refused. pp-relay-apis copies the file byte for byte
+version 5 account card and five cards that must be refused (the whole card set, with each card's verdict, is
+`account_card_vectors.json`, [ACCOUNT_CARD § Account card](ACCOUNT_CARD.md#account-card)). pp-relay-apis copies the file byte for byte
 (`relay-sign-vectors.json`); a change to either side's bytes changes it here first.
 
 ### Commands repeated late
@@ -457,17 +459,16 @@ search asks the relays the user has listed; there is no search across relays bey
 2. **Health:** a relay a send could not reach (a transport failure, a timeout, a 5xx) is tried after the healthy
    ones for **5 minutes** (`RelayHealth`); a send it takes clears it. An answer about the recipient (a price, a quota,
    not registered) says nothing about the relay's health.
-3. **The audience** (MR007) is the PeerId the certificate of the relay id the recipient's locator names for that relay
-   proves (`RelayPins::ContactAudience`, SIGNED_FORMATS § 3.4; until card v5, cutover W2, a card entry still names a
-   `peer_id`, signed for as named); a relay of
+3. **The audience** (MR007) is the PeerId the certificate of the relay id the recipient's card (or locator) names for
+   that relay proves (`RelayPins::ContactAudience`, SIGNED_FORMATS § 3.4); a relay of
    ours with none named is signed for by its pin (our preferred relay for a recipient without a card); a relay not ours
    with none named gets nothing signed ([§ Pins](#pins)). A card
    entry our pins disagree with — our pin for that origin is another relay id, that relay's certificate does not list
-   the origin (until card v5: the PeerId our certificate held for that origin proves is another), or the origin does
+   the origin, or the origin does
    not prove its address — is skipped for that recipient (logged once per entry; the card is still kept; the contact page reads
    *Not used: it doesn't match this contact's card*). A relay that answers `wrong_audience` is skipped for this send, counts like
    `recipient_not_registered` toward the stale-list fetch (step 5: the contact may have re-issued its card), and,
-   while the newest card still names the refused PeerId, is skipped for that recipient for 5 minutes. Neither marks
+   while the newest card still names that relay id, is skipped for that recipient for 5 minutes. Neither marks
    the relay unhealthy; a relay of ours that does not match its address is skipped alike.
 4. **The next relay** is tried on a transport failure or a 5xx, and on `recipient_not_registered`. Any other refusal
    (`payment_required`, `stranger_quota_exceeded`, `rate_limited`, another 4xx) is the send's answer. When every relay

@@ -379,15 +379,11 @@ Roe<std::vector<mesh::MeshNodeHit>> MeshNodeHitsFromDirectoryJson(const std::str
     if (auto seq = obj->getIf<int64_t>("seq")) {
       hit.seq = *seq;
     }
-    if (auto pk = obj->getString("signing_public_key_b64")) {
-      hit.signing_public_key_b64 = *pk;
-    }
-    if (auto kem = obj->getString("kem_public_key_b64")) {
-      hit.kem_public_key_b64 = *kem;
-    }
-    if (auto binding = obj->getString("kem_binding_b64")) {
-      hit.kem_binding_b64 = *binding;
-    }
+    DirectoryRowKeyFields keys = ReadDirectoryRowKeys(*obj); // the mesh's shape rule: drop malformed, flag unknown
+    hit.signing_public_key_b64 = std::move(keys.signing_public_key_b64);
+    hit.kem_public_key_b64 = std::move(keys.kem_public_key_b64);
+    hit.kem_binding_b64 = std::move(keys.kem_binding_b64);
+    hit.keys_update_needed = keys.keys_update_needed;
     if (const Object* caps = obj->getObject("capabilities")) {
       if (auto circuit = caps->getIf<bool>("circuit_relay")) {
         hit.capabilities.circuit_relay = *circuit;
@@ -542,7 +538,7 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
   body.set("signature_alg", signature_alg);
   body.set("kem_public_key_b64", kem_public_key_b64);
   if (!kem_binding_signature_b64.empty()) {
-    body.set("kem_binding_signature_b64", kem_binding_signature_b64);
+    body.set("kem_binding_b64", kem_binding_signature_b64); // KEM binding v2 (SIGNED_FORMATS § 2.3)
   }
   if (kem_public_key_b64.empty()) {
     return Error("kem_public_key_b64 is required");

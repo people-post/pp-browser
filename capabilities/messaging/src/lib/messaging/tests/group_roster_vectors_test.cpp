@@ -54,6 +54,10 @@ public:
   }
   const std::string& id() const { return id_; }
   std::string KeyB64() const { return Base64Encode(keys_.public_key); }
+  /** The key typed, as a card (and the key stores) hold it. */
+  std::string TypedKeyB64() const {
+    return WriteTypedBlobB64(pp::BlobKind::kSignaturePublicKey, keys_.public_key).value();
+  }
   const MlDsaKeyPair& keys() const { return keys_; }
 
 private:
@@ -122,7 +126,8 @@ GroupChange Change(const ExtArea& ext = {}) {
 }
 
 AccountCardDevice Device() {
-  return AccountCardDevice{.peer_id = kDevice, .signing_public_key_b64 = DeviceKey().KeyB64()};
+  return AccountCardDevice{.peer_id = kDevice,
+                           .signing_public_key_b64 = DeviceKey().TypedKeyB64()}; // as a card holds it
 }
 
 /** The app's verdict: accepted, needs_update (NewerFormat), or refused. */
@@ -243,7 +248,7 @@ Object BuildVectors() {
                                         "device u64(at) kind body u64(len(entries)) entries; id = BLAKE2b-256"));
   root.set("known_owner", FormerOwner().id());
   root.set("device", ObjectValue(Set(Set(Object{}, "peer_id", std::string(kDevice)), "signing_public_key_b64",
-                                     DeviceKey().KeyB64())));
+                                     DeviceKey().TypedKeyB64())));
   root.set(
       "sign_bytes",
       ArrayValue(

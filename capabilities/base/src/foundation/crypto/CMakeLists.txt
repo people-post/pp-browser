@@ -13,7 +13,6 @@ pp_browser_add_foundation_library(pp_foundation_crypto
     SealedDek.cpp
     Sha256Hex.cpp
     KemKeyBinding.cpp
-    KemKeyBindingV2.cpp
     MlDsa.cpp
     MessageCipher.cpp
     PinKeyDeriver.cpp

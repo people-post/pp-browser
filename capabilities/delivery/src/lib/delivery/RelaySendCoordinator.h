@@ -64,8 +64,7 @@ public:
   };
   /**
    * A client for a relay not ours, signing for the audience its entry proves: its relay id's certificate
-   * (RelayPins::ContactAudience), or the PeerId a card entry names until card v5 (cutover W2). Neither: none —
-   * nothing is signed for an unnamed relay.
+   * (RelayPins::ContactAudience). None named: no client — nothing is signed for an unnamed relay.
    */
   using ForeignClientFactory = std::function<std::shared_ptr<IRelayClient>(const AccountCardRelay& relay)>;
   using CardRelayCheckFn = std::function<CardRelayCheck(const AccountCardRelay& relay)>;

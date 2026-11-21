@@ -229,13 +229,6 @@ Object BuildVectors() {
   return vectors;
 }
 
-/** The account's key as the key store holds it today (raw: TypedSigning.h's seam until card v5). */
-std::string HeldKeyB64(const std::string& typed_b64) {
-  const TypedRead read = ReadTypedBlobB64(pp::BlobKind::kSignaturePublicKey, typed_b64, "vector key");
-  EXPECT_TRUE(read.ok()) << read.detail;
-  return Base64Encode(read.raw);
-}
-
 /** Decode `json` as a `kind` request and run steps 1–5; with `bytes`, also give its signed bytes. */
 Roe<SignedVerdict> VerdictOf(const std::string& kind, const Object& json, const std::string& key_b64,
                              std::vector<uint8_t>* bytes = nullptr) {
@@ -293,7 +286,7 @@ TEST(PeerRequestVectorsTest, TheCommittedSignBytesRebuildFromTheirJson) {
 
 TEST(PeerRequestVectorsTest, EachCommittedFixtureGetsItsVerdict) {
   const Object file = kFile.Read();
-  const std::string key = HeldKeyB64(file.getString("requester_public_key_b64").value_or(""));
+  const std::string key = file.getString("requester_public_key_b64").value_or(""); // held typed, as the card holds it
   const Array* cases = file.getArray("receive");
   ASSERT_TRUE(cases != nullptr);
   ASSERT_EQ(cases->elements.size(), 12u);

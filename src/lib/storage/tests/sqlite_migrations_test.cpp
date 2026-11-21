@@ -1,5 +1,5 @@
 #include "lib/people/IdentityStore.h"
-#include "foundation/crypto/KemKeyBinding.h"
+#include "lib/people/CardKeys.h"
 #include "lib/storage/SqliteCallSessionStore.h"
 #include "lib/storage/SqliteChatDbLadders.h"
 #include "lib/storage/SqliteChatStoreGate.h"
@@ -209,15 +209,13 @@ TEST_F(SqliteMigrationsTest, BelowTheFloorTheResetLeavesOurCardBesideTheIdentity
     ASSERT_TRUE(identity.SetDek(TestDek()));
     const LocalIdentity me = identity.LoadOrCreate().value();
     AccountCard card;
-    card.keys = KeyCard{
-        .account_id = me.account_id,
-        .signing_public_key_b64 = me.account_signing_public_key_b64,
-        .kem_public_key_b64 = me.kem_public_key_b64,
-        .kem_binding_signature_b64 =
-            identity.SignBytes(KemBindingSignBytes(me.account_signing_public_key_b64, me.kem_public_key_b64)).value()};
-    card.devices = {AccountCardDevice{.peer_id = me.peer_id,
-                                      .signing_public_key_b64 = me.public_key_b64,
-                                      .kem_public_key_b64 = me.device_kem_public_key_b64}};
+    card.keys = MakeKeyCard(me.account_id, me.account_signing_public_key_b64, me.kem_public_key_b64,
+                            [&identity](const ByteVector& bytes) { return identity.SignBytes(bytes); })
+                    .value();
+    card.devices = {AccountCardDevice{
+        .peer_id = me.peer_id,
+        .signing_public_key_b64 = TypedKeyB64(pp::BlobKind::kSignaturePublicKey, me.public_key_b64).value(),
+        .kem_public_key_b64 = TypedKeyB64(pp::BlobKind::kKemPublicKey, me.device_kem_public_key_b64).value()}};
     card.issued_at = 1'761'235'200'000;
     ASSERT_TRUE(identity.KeepOwnCard(
         SignAccountCard(card, [&identity](const ByteVector& bytes) { return identity.SignBytes(bytes); }).value()));

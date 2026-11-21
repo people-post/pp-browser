@@ -4,8 +4,9 @@
 #include "common/chat/MessagingJson.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/TypedBlob.h"
 #include "foundation/error/AppError.h"
-#include "lib/people/HeldKeyForms.h"
+#include "lib/people/CardKeys.h"
 
 #include <gtest/gtest.h>
 
@@ -24,7 +25,8 @@ struct Account {
     Account account;
     account.keys = *MlDsa::GenerateKeyPair();
     account.id = *AccountIdFromMlDsaPublicKey(account.keys.public_key);
-    account.public_key_b64 = Base64Encode(account.keys.public_key);
+    account.public_key_b64 =
+        WriteTypedBlobB64(pp::BlobKind::kSignaturePublicKey, account.keys.public_key).value(); // held typed
     return account;
   }
 
@@ -79,7 +81,7 @@ TEST_F(RelayGrantSignerTest, AGrantLongerThanThirtyDaysIsRefused) {
                    .sender_account_id = alice.id,
                    .issued_at = kNow,
                    .expires_at = kNow + kRelayGrantMaxLifetimeMs + 1};
-  grant.signature = TypedSignatureB64FromSigner(*bob.Signer()(BuildRelayGrantSignBytes(grant))).value();
+  grant.signature = TypedSignatureB64(*bob.Signer()(BuildRelayGrantSignBytes(grant))).value();
   EXPECT_FALSE(CheckRelayGrant(grant, bob.id, alice.id, bob.public_key_b64, kNow));
 }
 
@@ -144,7 +146,7 @@ TEST_F(RelayGrantSignerTest, AGrantIsReceivedInTheReceiversOrder) {
   for (const uint16_t type : {uint16_t{0x0007}, uint16_t{0x8007}}) {
     RelayGrant extended = grant;
     extended.ext = pp::ExtArea::FromEntries({{.type = type, .value = {9}}}).value();
-    extended.signature = TypedSignatureB64FromSigner(*bob.Signer()(BuildRelayGrantSignBytes(extended))).value();
+    extended.signature = TypedSignatureB64(*bob.Signer()(BuildRelayGrantSignBytes(extended))).value();
     auto received = receive(RelayGrantToJson(extended));
     if (type & 0x8000) {
       EXPECT_TRUE(AppError::IsNewerFormat(received.error())) << "an unknown critical entry, signed";
@@ -160,7 +162,7 @@ TEST_F(RelayGrantSignerTest, AGrantIsReceivedInTheReceiversOrder) {
 TEST_F(RelayGrantSignerTest, AGrantGoesThroughTheLockerAsItCame) {
   RelayGrant grant = IssueRelayGrant(bob.id, alice.id, kNow, bob.Signer()).value();
   grant.ext = pp::ExtArea::FromEntries({{.type = 0x0003, .value = {1, 2}}}).value();
-  grant.signature = TypedSignatureB64FromSigner(*bob.Signer()(BuildRelayGrantSignBytes(grant))).value();
+  grant.signature = TypedSignatureB64(*bob.Signer()(BuildRelayGrantSignBytes(grant))).value();
   const AccountStateGrant row = RelayGrantToLocker(grant);
   EXPECT_FALSE(row.ext_b64.empty());
   auto back = RelayGrantFromLocker(row);

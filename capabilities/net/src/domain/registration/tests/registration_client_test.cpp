@@ -1,4 +1,5 @@
 #include "domain/registration/RegistrationClient.h"
+#include "lib/people/CardKeys.h"
 #include "domain/registration/BriefLlmKeyRenewal.h"
 #include "common/directory/IdentityTypes.h"
 #include "common/Utilities.h"
@@ -484,8 +485,9 @@ TEST_F(KemBindingPublishTest, AnOlderRegistrationPublishesItsBindingOnceEvenWith
   const LocalIdentity after = identity_->Get().value();
   EXPECT_TRUE(after.kem_binding_published);
   EXPECT_EQ(client_.last_kem_public_key_b64, after.kem_public_key_b64);
-  EXPECT_TRUE(VerifyKemBinding(after.account_id, after.account_signing_public_key_b64, after.kem_public_key_b64,
-                               client_.last_binding))
+  EXPECT_TRUE(VerifyKemBinding(
+      after.account_id, TypedKeyB64(pp::BlobKind::kSignaturePublicKey, after.account_signing_public_key_b64).value(),
+      TypedKeyB64(pp::BlobKind::kKemPublicKey, after.kem_public_key_b64).value(), client_.last_binding))
       << "register/finish carries the account's own binding";
   EXPECT_EQ(client_.last_audience, MockRegistrationClient::kAudience) << "and is signed for that relay (MR007-AUD)";
   EXPECT_EQ(after.registration_id, "mock-registration") << "the identity keeps the registration's id (MR007-SCOPE)";

@@ -11,6 +11,7 @@
 namespace pbr {
 
 struct PeerSigningKeyRecord {
+  /** Typed, standard base64, as the card carries it (RawSigningPublicKey reads the raw key). */
   std::string signing_public_key_b64;
   std::string source;
   std::optional<std::string> source_ref;

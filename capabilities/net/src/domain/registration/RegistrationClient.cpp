@@ -1,6 +1,6 @@
 #include "domain/registration/RegistrationClient.h"
 
-#include "foundation/crypto/KemKeyBinding.h"
+#include "lib/people/CardKeys.h"
 #include "foundation/error/AppError.h"
 #include "lib/net/RegistrationSignPayload.h"
 #include "lib/net/RelayOrigins.h"
@@ -111,19 +111,17 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
     return signed_finish.error();
   }
 
-  // The account binds its KEM key to itself; the directory hands the binding to peers with the key.
-  const auto binding_bytes = KemBindingSignBytes(loaded->account_signing_public_key_b64, loaded->kem_public_key_b64);
-  if (binding_bytes.empty()) {
-    return Error("Failed to build KEM key binding");
-  }
-  auto kem_binding = identity.SignBytes(binding_bytes);
-  if (!kem_binding) {
-    return kem_binding.error();
+  // The account binds its KEM key to itself (KEM binding v2, over the typed keys); the directory hands the binding to
+  // peers with the key.
+  auto key_card = MakeKeyCard(loaded->account_id, loaded->account_signing_public_key_b64, loaded->kem_public_key_b64,
+                              [&identity](const ByteVector& bytes) { return identity.SignBytes(bytes); });
+  if (!key_card) {
+    return key_card.error();
   }
 
   auto finished = registration.FinishRegistration(start->challenge, loaded->account_signing_public_key_b64, nickname,
                                                   *signed_finish, start->signature_alg, loaded->kem_public_key_b64,
-                                                  *kem_binding, loaded->peer_id, multiaddrs, publish);
+                                                  key_card->kem_binding_b64, loaded->peer_id, multiaddrs, publish);
   if (!finished) {
     return finished;
   }

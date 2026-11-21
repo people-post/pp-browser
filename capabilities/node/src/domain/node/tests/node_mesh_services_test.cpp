@@ -2,7 +2,7 @@
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/KemKeyBindingV2.h"
+#include "foundation/crypto/KemKeyBinding.h"
 #include "foundation/crypto/MlDsa.h"
 #include "foundation/crypto/SignedBytes.h"
 #include "foundation/crypto/TypedBlob.h"
@@ -102,15 +102,18 @@ TEST(NodeMeshServicesTest, RowKeysAreTheAccountsTypedWithABindingV2) {
     // u8 2 ‖ ext area (empty) ‖ LenBytes(typed signature), the signature the account's over the v2 signed bytes.
     const ByteVector blob = Base64Decode(keys->kem_binding_b64).value();
     SignedBlobReader in(blob);
-    EXPECT_EQ(in.U8(), kKemBindingV2Version);
+    EXPECT_EQ(in.U8(), kKemBindingVersion);
     EXPECT_TRUE(in.Ext().empty());
     const ByteVector signature_blob = in.Bytes();
     ASSERT_TRUE(in.Done());
     const TypedRead signature = ReadTypedBlob(pp::BlobKind::kSignature, signature_blob, "binding signature");
     ASSERT_TRUE(signature.ok());
-    const ByteVector signed_bytes = KemBindingV2SignBytes(Base64Decode(keys->signing_public_key_b64).value(),
-                                                          Base64Decode(keys->kem_public_key_b64).value());
+    const ByteVector signed_bytes = KemBindingSignBytes(Base64Decode(keys->signing_public_key_b64).value(),
+                                                        Base64Decode(keys->kem_public_key_b64).value());
     EXPECT_TRUE(VerifyTyped(signing, signed_bytes, signature));
+    EXPECT_TRUE(VerifyKemBinding(local.account_id, keys->signing_public_key_b64, keys->kem_public_key_b64,
+                                 keys->kem_binding_b64))
+        << "the key card's check (KemKeyBinding v2) takes it";
 
     // Through the mesh's row codec: kept, nothing flagged.
     mesh::MeshNodeHit hit;

@@ -56,13 +56,6 @@ const MlDsaKeyPair& Forger() {
   return keys;
 }
 
-/** The sending device's key as the card holds it today (raw: TypedSigning.h's seam until card v5). */
-std::string HeldKeyB64(const std::string& typed_b64) {
-  const TypedRead read = ReadTypedBlobB64(pp::BlobKind::kSignaturePublicKey, typed_b64, "vector key");
-  EXPECT_TRUE(read.ok()) << read.detail;
-  return Base64Encode(read.raw);
-}
-
 std::string TypedB64(const pp::BlobKind kind, const size_t body_bytes, const uint8_t salt) {
   ByteVector body(body_bytes);
   for (size_t i = 0; i < body.size(); ++i) {
@@ -266,7 +259,8 @@ TEST(EnvelopeVectorsTest, TheCommittedSignBytesRebuildFromTheirJson) {
 // Every committed fixture gets its verdict: the signed ones verify with the committed key (signatures are not rebuilt).
 TEST(EnvelopeVectorsTest, EachCommittedFixtureGetsItsVerdict) {
   const Object file = kFile.Read();
-  const std::string key = HeldKeyB64(file.getString("sending_device_public_key_b64").value_or(""));
+  const std::string key =
+      file.getString("sending_device_public_key_b64").value_or(""); // held typed, as the card holds it
   const Array* cases = file.getArray("receive");
   ASSERT_TRUE(cases != nullptr);
   ASSERT_EQ(cases->elements.size(), 11u);

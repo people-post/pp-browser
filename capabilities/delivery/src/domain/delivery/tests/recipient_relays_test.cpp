@@ -98,17 +98,17 @@ TEST_F(RecipientRelaysTest, AnAccountWithoutACardHasNoList) {
 TEST_F(RecipientRelaysTest, TheKeptCardsListInItsOrder) {
   ASSERT_TRUE(keys_->AddAccountCard(BobsCard(1000, {kBobsOld, kOurs}), 10'000, "device"));
   EXPECT_EQ(OriginsOf(relays_->Of(bob_.account_id)), Origins({kBobsOld, kOurs}));
-  // MR007-SEND: each with the PeerId the card signed for it, the audience a send into it names.
+  // SIGNED_FORMATS § 3.3: each with the relay id the card signed for it, whose certificate proves the audience.
   const auto relays = relays_->Of(bob_.account_id);
-  EXPECT_EQ(relays[0].peer_id, test::RelayPeerId(0x10));
-  EXPECT_EQ(relays[1].peer_id, test::RelayPeerId(0x11));
+  EXPECT_EQ(relays[0].relay_id, test::RelayIdOf(0x10));
+  EXPECT_EQ(relays[1].relay_id, test::RelayIdOf(0x11));
 }
 
-TEST_F(RecipientRelaysTest, ALocatorsRelayNamesNoPeerId) {
+TEST_F(RecipientRelaysTest, AStartingRelayNamesNoRelayId) {
   relays_->SetStartingRelays([](const std::string&) { return Origins({kLocators}); });
   const auto relays = relays_->Of(bob_.account_id);
   ASSERT_EQ(relays.size(), 1u);
-  EXPECT_TRUE(relays[0].peer_id.empty()) << "signed for by its pin, fetched (MR007)";
+  EXPECT_TRUE(relays[0].relay_id.empty()) << "signed for by its pin, fetched (MR007)";
 }
 
 TEST_F(RecipientRelaysTest, ARefreshAsksTheDevicesFirst) {

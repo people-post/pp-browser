@@ -80,7 +80,7 @@ SignedReceipt ReceiveImpl(const Request& request, const SigningKeySource& signin
         if (!key_b64) {
           return Error("no signing key for the requester");
         }
-        key = ReadHeldSigningKeyB64(*key_b64, "requester signing key");
+        key = ReadTypedBlobB64(pp::BlobKind::kSignaturePublicKey, *key_b64, "requester signing key");
         if (!key.ok()) {
           return key.ToError();
         }
