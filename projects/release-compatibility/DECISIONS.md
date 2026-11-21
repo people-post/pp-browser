@@ -177,7 +177,7 @@ refuses anything else and tags `vX.Y.Z` when it submits. Store releases are phas
 ## RC009 — Four environments: today's qa becomes staging, dev is new
 
 **Date:** 2026-11-18
-**Status:** Accepted (Hongwei, 2026-11-18); in review with Leo (the infrastructure is his). Amends RC006 item 8. Amended by [RC015](#rc015--client-side-answers-after-kenneths-review): store builds compile in prod only.
+**Status:** Accepted (Hongwei, 2026-11-18); in review with Leo (the infrastructure is his). Amends RC006 item 8. Amended by [RC015](#rc015--client-side-answers-after-kenneths-review): store builds compile in prod only; and by [RC021](#rc021--the-relay-repos-deploy-by-tag-only): the relay deploys by tag, not by branch push.
 Its open items (prod's account, the canary, dev's and staging's data) are recommended to Leo in
 [DESIGN § Decisions taken](DESIGN.md#decisions-taken), items 10–13.
 **Decision:** local (local-stack, the lab), dev (new: main deploys there automatically), staging (today's qa:
@@ -467,7 +467,7 @@ go; leaving it open would stall P3. Part 2 changes no format the other side read
 
 **Date:** 2026-11-19
 **Status:** Accepted (Hongwei, 2026-11-19). Amends [PHASES § P2](PHASES.md#p2--one-main-release-branches)'s
-protection item for two repos.
+protection item for two repos. Item 2 amended by [RC021](#rc021--the-relay-repos-deploy-by-tag-only): deploys by tag only.
 **Decision:**
 1. **`develop` is retired in every repo the same week**, starting 2026-11-19 with the team's work on hold:
    pp-browser, the pp-cpp-* libraries, pp-ledger and pp-ledger-apps first (`develop` merged into `main` a last time,
@@ -513,3 +513,28 @@ reinstall release 1), and its formats move to `docs/contracts/` as each is built
 1, is the only time no older reader exists.
 **Cost:** a tester who restores after release 1 keeps their Account ID but starts with an empty locker and re-adds
 contacts (Q12); every signed object's bytes change at once, so the libraries, the relay and the app land together.
+
+## RC021 — The relay repos deploy by tag only
+
+**Date:** 2026-11-21
+**Status:** Accepted (Leo, 2026-11-21). Amends [RC009](#rc009--four-environments-todays-qa-becomes-staging-dev-is-new)
+(dev takes main automatically; staging takes candidates from `release/*`) and
+[RC019](#rc019--p2-starts-one-main-the-relay-deploys-from-main-and-tags-no-protection-on-the-private-relay-repos)
+item 2 (a push to main deploys qa). Item 8 of [RC006](#rc006--range-lengths-numbering-tags-and-fix-policy) keeps its
+`dev/<date>.<n>` tag, now pushed by hand.
+**Decision:** No branch triggers a release; a git tag decides every relay deploy. This holds in the relay's API repository and in
+the relay node fleet's deploy repository (the playbooks), which use the same scheme:
+1. **dev** (the dev account): tag `dev/<YYYY-MM-DD>.<n>` (UTC date, `n` from 1), pushed by Leo on a commit that is on
+   `main`.
+2. **staging**: release candidates tagged `release/vX.Y.Z-rc.<n>` (for example `release/v1.0.0-rc.1`) on the commit of
+   the release branch `release/X.Y`.
+3. **prod**: `vX.Y.Z` tags on `release/X.Y`; the approval and canary rules are unchanged.
+4. `release/X.Y` stays the fixes-only release line and the backport target. Branches only run checks.
+5. The relay reports `dev.<date>.<n>` (dev), `X.Y.Z-rc.<n>` (staging) and `X.Y.Z` (prod) as its version.
+6. App and pp-node candidate tags (`vX.Y.Z-rc.<n>`, `pp-node/vX.Y.Z-rc.<n>`) are unchanged.
+7. qa is retired from the relay repos' deploy flow; dev, staging and prod are the live relay environments.
+**Rationale:** The tag prefix `release/` with a `v...-rc.<n>` tail never equals a branch name `release/X.Y`, so a
+tag and a branch cannot be confused, and it does not match prod's trust pattern `v*`, so a candidate can never deploy
+prod. A deploy is then one deliberate act on one commit, the same for all three environments.
+**Cost:** a merge to `main` no longer reaches any environment until Leo tags it; the relay repos' deploy workflows
+and the deploy roles' trusted refs change to match.
