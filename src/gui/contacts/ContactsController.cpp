@@ -746,9 +746,69 @@ bool ContactsController::RegisterModel(ui::Context* context) {
                                  OnContactsIndexAt(ev, EventArgAsString(args, 0).value_or("contacts"));
                                });
         ctor.BindEventCallback("contacts_index_end", DataEventAt([this](ui::Event&) { OnContactsIndexEnd(); }));
+        // The wide Contacts list's hover buttons (contacts_wide.rml): what a left swipe does on the phone's New chat
+        // rows (Info, Voice, Video, More), as `contact_row_action('voice', contact.id)`.
+        ctor.BindEventCallback("contact_row_action",
+                               [this](ui::DataModelHandle, ui::Event& ev, const ui::VariantList& args) {
+                                 const std::optional<std::string> action = EventArgAsString(args, 0);
+                                 const std::optional<std::string> id = EventArgAsString(args, 1);
+                                 if (!action || !id) {
+                                   return;
+                                 }
+                                 ev.StopPropagation(); // the button sits in a row that selects the contact
+                                 OnContactRowAction(*id, *action, ev);
+                               });
       });
 
+  if (registered && !row_menu_registered_) {
+    row_menu_registered_ = true;
+    // A right click on a wide Contacts row opens the swipe's four actions as a menu. The phone's long press keeps
+    // doing what it did (nothing on a contact row), so this answers only in the wide layout.
+    ContextMenuHost::Instance().RegisterProvider(
+        [this, token = lifetime_.token(), snapshot = lifetime_.Snapshot()](const ContextMenuRequest& request) {
+          if (!pp::Lifetime::Alive(token, snapshot) || ChromeSnapshot().layout_mode == LayoutMode::Compact) {
+            return std::vector<ContextMenuAction>{};
+          }
+          for (ui::Element* cur = request.target; cur != nullptr; cur = cur->GetParentNode()) {
+            if (cur->HasAttribute("contact-id")) {
+              return ContactRowMenuActions(std::string(cur->GetAttribute("contact-id", ui::String()).c_str()));
+            }
+          }
+          return std::vector<ContextMenuAction>{};
+        });
+  }
+
   return registered;
+}
+
+void ContactsController::OnContactRowAction(const std::string& contact_id, const std::string& action, ui::Event& ev) {
+  if (action != "more") {
+    OnNewChatSwipeAction(contact_id, action);
+    return;
+  }
+  std::string title;
+  std::vector<ContextMenuAction> actions = NewChatMoreActions(contact_id, &title);
+  if (!actions.empty()) {
+    ContextMenuHost::Instance().ShowActions(MenuPositionBelowEvent(ev), std::move(actions), {}, title);
+  }
+}
+
+std::vector<ContextMenuAction> ContactsController::ContactRowMenuActions(const std::string& contact_id) {
+  if (contact_id.empty()) {
+    return {};
+  }
+  std::vector<ContextMenuAction> actions = {
+      {"contact_info", Tr("new_chat.swipe.info"), nullptr,
+       [this, contact_id]() { OnNewChatSwipeAction(contact_id, "info"); }, "../icons/v2/info.svg"},
+      {"contact_voice", Tr("call.start.voice"), nullptr,
+       [this, contact_id]() { OnNewChatSwipeAction(contact_id, "voice"); }, "../icons/v2/phone.svg"},
+      {"contact_video", Tr("call.start.video"), nullptr,
+       [this, contact_id]() { OnNewChatSwipeAction(contact_id, "video"); }, "../icons/v2/video.svg"},
+  };
+  for (ContextMenuAction& more : NewChatMoreActions(contact_id)) {
+    actions.push_back(std::move(more));
+  }
+  return actions;
 }
 
 void ContactsController::SetShowAdvanced(const bool advanced) {

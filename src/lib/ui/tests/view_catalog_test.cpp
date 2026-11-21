@@ -148,4 +148,8 @@ TEST(ViewCatalogKeyTest, TheWideLayoutPicksAPagesWideViewWhenItHasOne) {
   EXPECT_EQ(pbr::ViewCatalog::KeyForLayout("chat", false), "chat");
   EXPECT_EQ(pbr::ViewCatalog::KeyForLayout("sidebar", true), "sidebar");
   EXPECT_EQ(pbr::ViewCatalog::KeyForLayout("chat_wide", false), "chat_wide");
+  EXPECT_EQ(pbr::ViewCatalog::KeyForLayout("contacts", true), "contacts_wide");
+  EXPECT_EQ(pbr::ViewCatalog::KeyForLayout("contact_detail", true), "contact_detail_wide");
+  EXPECT_EQ(pbr::ViewCatalog::KeyForLayout("contacts", false), "contacts");
+  EXPECT_EQ(pbr::ViewCatalog::KeyForLayout("contact_detail", false), "contact_detail");
 }

@@ -101,12 +101,22 @@ std::string ShellLayoutRml::ExpandedBase() const {
     if (const PaneState* pane = FindPane(primary_key.c_str())) {
       out << PaneSlot(pane->spec.key, "shell-pane-primary", pane->spec.provides_composer);
     }
-  } else if (state_.nav_tab == NavTab::Sessions) {
-    // Chats with no chat open: say what to do, where the conversation will be.
-    out << "<div class=\"shell-pane shell-pane-primary shell-empty-state\" id=\"shell-empty-chat\">"
-           "<p class=\"shell-empty-title\">"
-        << Tr("shell.chats.empty_title") << "</p><p class=\"shell-empty-body\">" << Tr("shell.chats.empty_body")
-        << "</p></div>";
+  } else if (state_.nav_tab == NavTab::Sessions || state_.nav_tab == NavTab::Contacts || state_.nav_tab == NavTab::Me) {
+    // Nothing picked in the list: say what to do, where the page will be.
+    const bool chats = state_.nav_tab == NavTab::Sessions;
+    const bool contacts = state_.nav_tab == NavTab::Contacts;
+    const std::string title = chats      ? Tr("shell.chats.empty_title")
+                              : contacts ? Tr("shell.contacts.empty_title")
+                                         : Tr("shell.settings.empty_title");
+    const std::string body = chats      ? Tr("shell.chats.empty_body")
+                             : contacts ? Tr("shell.contacts.empty_body")
+                                        : Tr("shell.settings.empty_body");
+    out << "<div class=\"shell-pane shell-pane-primary shell-empty-state\" id=\"shell-empty-"
+        << (chats      ? "chat"
+            : contacts ? "contacts"
+                       : "settings")
+        << "\">"
+        << "<p class=\"shell-empty-title\">" << title << "</p><p class=\"shell-empty-body\">" << body << "</p></div>";
   }
   if (state_.auxiliary_open) {
     for (const PaneState& pane : state_.panes) {

@@ -249,6 +249,10 @@ public:
    * is no such contact.
    */
   std::vector<ContextMenuAction> NewChatMoreActions(const std::string& contact_id, std::string* title_out = nullptr);
+  /** The wide Contacts list's hover buttons: the New chat row's swipe actions ("info", "voice", "video", "more"). */
+  void OnContactRowAction(const std::string& contact_id, const std::string& action, ui::Event& ev);
+  /** The right-click menu of a wide Contacts row: Info, Voice call, Video call, then More's Block / Remove. */
+  std::vector<ContextMenuAction> ContactRowMenuActions(const std::string& contact_id);
   /** The contact ids the New chat list shows now, in order (what its rows are built from). */
   std::vector<std::string> NewChatRowIds() const;
   void OnSelectContact(const std::string& contact_id);
@@ -636,6 +640,7 @@ private:
   SessionStore* session_store_ = nullptr;
   /** Contacts whose Refresh runs. */
   std::set<std::string> refreshing_contacts_;
+  bool row_menu_registered_ = false; // the wide Contacts row menu is registered once
   /** Last: what was bound to this controller stops first. */
   pp::Lifetime lifetime_;
 

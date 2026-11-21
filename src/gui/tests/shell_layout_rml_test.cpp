@@ -48,6 +48,30 @@ TEST(ShellLayoutRmlTest, AnExpandedWindowHasTheRailTheListAndThePrimaryPane) {
   EXPECT_TRUE(Has(rml, "id=\"pane-composer-chat\"")) << "the chat pane carries the composer";
 }
 
+// Contacts and Settings in the wide layout (design step 3): the list is the left column, and with nothing picked the
+// right column says what to do, as the Chats one does. Picking something replaces it.
+TEST(ShellLayoutRmlTest, AWideContactsAndSettingsPageSayWhatToDoUntilSomethingIsPicked) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  for (const NavTab tab : {NavTab::Contacts, NavTab::Me}) {
+    ShellState state;
+    state.layout_mode = LayoutMode::Expanded;
+    state.nav_tab = tab;
+    const std::string empty = ShellLayoutRml(state, false, "").ShellRoot();
+    EXPECT_TRUE(Has(empty, "shell-nav-content-mount")) << "the list column";
+    EXPECT_TRUE(Has(empty, tab == NavTab::Contacts ? "id=\"pane-body-contacts\"" : "id=\"pane-body-settings\""));
+    EXPECT_TRUE(Has(empty, tab == NavTab::Contacts ? "id=\"shell-empty-contacts\"" : "id=\"shell-empty-settings\""));
+    EXPECT_TRUE(Has(empty, tab == NavTab::Contacts ? "Choose a contact" : "Choose a setting"));
+
+    state.panes.push_back({.spec = {.key = tab == NavTab::Contacts ? "contact_detail" : "settings_detail",
+                                    .rml_path = "views/contact_detail.rml"},
+                           .id = 1});
+    state.primary_pane_key = state.panes.back().spec.key.c_str();
+    const std::string picked = ShellLayoutRml(state, false, "").ShellRoot();
+    EXPECT_FALSE(Has(picked, "shell-empty-state"));
+  }
+}
+
 TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndSettingsIsItsThirdSegment) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = false;
