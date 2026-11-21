@@ -2397,3 +2397,124 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ================= Settings (design step 3, page B; settings_wide.rml) =================
+   The list column is the phone's Settings page (card, three groups) under a title like the other lists; the page of the
+   picked row is settings_detail.rml in the right column, as wide as the phone's page, centred. */
+.shell-body--wide .settings-panel--wide {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+}
+
+.shell-body--wide .settings-wide-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 0 24dp 0;
+  box-sizing: border-box;
+}
+
+.shell-body--wide .settings-panel--wide .group-row {
+  border-radius: 10dp;
+}
+
+/* The phone's card puts the name and Copy / Share / QR code on one row (390dp); the list column is narrower, so the
+   three buttons go on a row of their own under the name. */
+.shell-body--wide .settings-panel--wide .me-home .me-card-row {
+  flex-direction: column;
+  align-items: stretch;
+  padding-bottom: 8dp;
+}
+
+.shell-body--wide .settings-panel--wide .me-home .me-card-main {
+  flex: none;
+}
+
+.shell-body--wide .settings-panel--wide .me-home .me-card-acts {
+  justify-content: space-around;
+  margin: 0 8dp;
+}
+
+.shell-body--wide .settings-detail-panel {
+  align-items: center;
+  padding: 0;
+}
+
+.shell-body--wide .settings-detail-panel .settings-detail-header {
+  flex: none;
+  width: 100%;
+  max-width: 640dp;
+  height: 64dp;
+  margin: 0;
+  padding: 0 16dp;
+  box-sizing: border-box;
+}
+
+.shell-body--wide .settings-detail-panel .settings-header-title {
+  font-size: 22dp;
+  line-height: 28dp;
+}
+
+.shell-body--wide .settings-detail-panel .settings-detail-body {
+  flex: 1 1 0;
+  width: 100%;
+  max-width: 640dp;
+  padding: 0 16dp 32dp 16dp;
+  box-sizing: border-box;
+  gap: 0;
+}
+
+/* Phone-only pieces of a settings page. The phone's pushed pages and pickers (a PIN row that opens a page, ...) need its
+   compact page stack, so the wide layout keeps showing the desktop's inline version of those and hides the phone's:
+   `.group-row`'s own display (above) would otherwise show them. Pieces marked `settings-wide-too` have nothing page-like
+   in them (Appearance: the little assistant's switches, look and size) and show here as on the phone. */
+.shell-body--wide .settings-phone-only {
+  display: none;
+}
+
+.shell-body--wide .settings-wide-too.settings-phone-only {
+  display: block;
+}
+
+.shell-body--wide .ai-look-picker.settings-wide-too.settings-phone-only {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  padding: 12dp 4dp;
+  box-sizing: border-box;
+}
+
+/* The heading of a settings block that has a "?" beside it (Recovery phrase): the phone shows no headings, but without it
+   the "?" would stand alone. */
+.shell-body--wide .settings-q-head {
+  justify-content: flex-start;
+  gap: 4dp;
+}
+
+.shell-body--wide .settings-q-head .group-head {
+  display: block;
+  margin: 20dp 0 6dp 16dp;
+}
+
+.shell-body--wide .settings-section--grouped .group-head.settings-wide-too {
+  display: none;
+}
+
+/* My profile: the phone's rows (nickname that opens its prompt, the account id, the status and Update / Set up) in place
+   of the desktop's field, note and buttons; the card at the top of the list already has Copy / Share / QR code. */
+.shell-body--wide .settings-detail--profile .settings-phone-only {
+  display: block;
+}
+
+.shell-body--wide .settings-detail--profile .group-head.settings-phone-only {
+  display: none;
+}
+
+.shell-body--wide .settings-detail--profile .settings-desktop-only,
+.shell-body--wide .settings-detail--profile .btn.settings-desktop-only {
+  display: none;
+}

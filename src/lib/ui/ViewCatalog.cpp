@@ -68,6 +68,7 @@ const std::unordered_map<std::string, std::string>& KnownKeys() {
       {"onboarding", "views/onboarding.rml"},
       {"emoji_picker", "views/emoji_picker.rml"},
       {"settings", "views/settings.rml"},
+      {"settings_wide", "views/settings_wide.rml"},
       {"settings_detail", "views/settings_detail.rml"},
       {"settings_sections", "views/settings_sections.rml"},
       {"settings_section_profile", "views/settings_section_profile.rml"},
