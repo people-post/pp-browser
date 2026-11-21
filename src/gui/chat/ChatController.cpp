@@ -409,7 +409,8 @@ ChatController::ChatController()
   };
   voice_ports.keep_file = [this]() { return failed_voice_path_; };
   voice_ports.thread_id = [this]() { return ActiveThreadId(); };
-  // Recordings made while another send is on wait in voice_queue_ and go out in order: the bar is never refused.
+  // Recordings made while another send is on wait in voice_queue_ and go out in order: the bar is refused only while
+  // the open chat has kVoiceSendMaxPerChat of them out.
   VoiceSendPorts voice_queue_ports;
   voice_queue_ports.slot_free = [this]() {
     return messaging_ready_ && facade_ && MessagingReady() && !AttachmentBusy();
@@ -470,6 +471,11 @@ ChatController::ChatController()
         .Add("send_ms", timing.send_ms)
         .Emit();
   };
+  voice_queue_ports.changed = [this]() {
+    if (voice_) {
+      voice_->Refresh(); // a chat at kVoiceSendMaxPerChat greys its bar; one ending frees it at once
+    }
+  };
   voice_queue_ = std::make_unique<VoiceSendQueue>(std::move(voice_queue_ports));
   voice_ports.send = [this](const std::string& thread_id, const std::string& path) {
     EnqueueVoiceSend(path, thread_id);
@@ -486,6 +492,9 @@ ChatController::ChatController()
   voice_ports.say = [](const std::string& text) { UserFeedback::Fail(text); };
   // The call stack's own state (a call ringing here or going on), not who happens to hold a device.
   voice_ports.call_live = [this]() { return facade_ && facade_->AnyCallLive(); };
+  voice_ports.queue_full = [this](const std::string& thread_id) {
+    return voice_queue_ && voice_queue_->ChatFull(thread_id);
+  };
   voice_ports.fingers_down = []() {
     // The touch fingers that are down on a touch screen (not a trackpad): the hold is the finger that pressed.
     std::vector<uint64_t> ids;

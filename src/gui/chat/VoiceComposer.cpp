@@ -96,9 +96,13 @@ bool VoiceComposer::Active() const {
 
 void VoiceComposer::Refresh() {
   const bool show = VoiceMessagesSupported() && ports_.eligible && ports_.eligible();
-  const bool blocked = show && ports_.call_live && ports_.call_live();
+  const bool call = show && ports_.call_live && ports_.call_live();
+  queue_full_ = show && !call && ports_.queue_full && ports_.thread_id && ports_.queue_full(ports_.thread_id());
+  const bool blocked = call || queue_full_;
   const bool click_mode = !Platform::IsMobile();
-  const std::string title = Tr(blocked ? "chat.voice.title_call" : "chat.voice.title");
+  const std::string title = Tr(call          ? "chat.voice.title_call"
+                               : queue_full_ ? "chat.voice.queue_full"
+                                             : "chat.voice.title");
   // No microphone here (another chat, a call setup, a send in progress): back to the text input.
   const bool leave_voice_mode = !show && state_.voice_mode;
   if (state_.show_voice == show && state_.voice_blocked == blocked && state_.voice_click_mode == click_mode &&
@@ -147,7 +151,7 @@ void VoiceComposer::BeginAt(const float x_px, const float y_px, ui::ElementDocum
     return;
   }
   if (state_.voice_blocked) {
-    Say(Tr("chat.voice.busy_call"));
+    Say(Tr(queue_full_ ? "chat.voice.queue_full" : "chat.voice.busy_call"));
     return;
   }
   if (ports_.mic_state() != MicPermission::Granted) {

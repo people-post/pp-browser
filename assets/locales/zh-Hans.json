@@ -1201,6 +1201,7 @@
     "chat.voice.try_again_hold": "再按住说话",
     "chat.voice.try_again_click": "再点一下录音条开始录音",
     "chat.voice.permission_denied": "录语音需要用到麦克风。请在设备的设置里允许 PP 使用麦克风，然后再试。",
+    "chat.voice.queue_full": "还有 5 条语音在发送，稍等一下",
     "chat.voice.busy_call": "通话中不能录音",
     "chat.voice.no_mic": "打不开麦克风",
     "chat.voice.failed": "录音没有成功，请再试一次",

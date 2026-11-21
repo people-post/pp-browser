@@ -9,6 +9,7 @@ VoiceSendQueue::VoiceSendQueue(VoiceSendPorts ports) : ports_(std::move(ports)) 
 void VoiceSendQueue::Enqueue(VoiceSendJob job) {
   waiting_.push_back({std::move(job), Now()});
   Pump();
+  Changed();
 }
 
 void VoiceSendQueue::Pump() {
@@ -40,6 +41,7 @@ void VoiceSendQueue::OnFinished(const std::string& row_id, const AttachmentSendO
     ports_.report(done.job, outcome, VoiceSendTiming{done.wait_ms, Now() - done.started_ms});
   }
   Pump(); // whatever the outcome: a failed one never holds the line
+  Changed();
 }
 
 std::optional<VoiceSendJob> VoiceSendQueue::CancelWaiting(const std::string& row_id) {
@@ -48,6 +50,7 @@ std::optional<VoiceSendJob> VoiceSendQueue::CancelWaiting(const std::string& row
       VoiceSendJob job = std::move(it->job);
       waiting_.erase(it);
       Discard(job);
+      Changed();
       return job;
     }
   }
@@ -65,6 +68,9 @@ std::vector<VoiceSendJob> VoiceSendQueue::DropWaiting(const std::optional<std::s
     dropped.push_back(std::move(it->job));
     it = waiting_.erase(it);
   }
+  if (!dropped.empty()) {
+    Changed();
+  }
   return dropped;
 }
 
@@ -75,6 +81,22 @@ bool VoiceSendQueue::IsWaiting(const std::string& row_id) const {
     }
   }
   return false;
+}
+
+size_t VoiceSendQueue::CountForThread(const std::string& thread_id) const {
+  size_t count = in_flight_ && in_flight_->job.thread_id == thread_id ? 1 : 0;
+  for (const Waiting& item : waiting_) {
+    if (item.job.thread_id == thread_id) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+void VoiceSendQueue::Changed() const {
+  if (ports_.changed) {
+    ports_.changed();
+  }
 }
 
 void VoiceSendQueue::Discard(const VoiceSendJob& job) {

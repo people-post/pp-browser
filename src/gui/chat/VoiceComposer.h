@@ -48,6 +48,8 @@ struct VoiceComposerPorts {
   std::function<void(const std::string& text)> say;
   /** A call is ringing here or going on: the call stack's own state, not who holds a device. */
   std::function<bool()> call_live;
+  /** `thread_id` has as many voice messages waiting or being sent as it may: the bar is greyed and takes no press. */
+  std::function<bool(const std::string& thread_id)> queue_full;
   /** The touch fingers down now (ids); empty on desktop. Read on every tick of a hold. */
   std::function<std::vector<uint64_t>()> fingers_down;
   /** Stop a playing clip and run `then` once it has let go of the speaker (at once when nothing plays). */
@@ -164,6 +166,8 @@ private:
   std::chrono::steady_clock::time_point last_call_check_{};
   std::chrono::steady_clock::time_point press_time_{};
   float press_y_dp_ = 0.f;
+  /** The bar is greyed because this chat's voice messages are still going out (`queue_full`), not for a call. */
+  bool queue_full_ = false;
   /** A call or interruption already discarded this recording (its pill was shown). */
   bool call_discarded_ = false;
   /** The finished file of a recording that hit its limit under a finger: sent or deleted by the release. */

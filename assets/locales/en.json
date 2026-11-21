@@ -1223,6 +1223,7 @@
     "chat.voice.try_again_click": "Now click the bar to record.",
     "chat.voice.permission_denied":
         "PP needs the microphone to record a voice message. Allow it in your device's settings, then try again.",
+    "chat.voice.queue_full": "5 voice messages are still sending. Please wait a moment.",
     "chat.voice.busy_call": "You can't record during a call.",
     "chat.voice.no_mic": "No microphone could be opened.",
     "chat.voice.failed": "The recording didn't work — please try again.",

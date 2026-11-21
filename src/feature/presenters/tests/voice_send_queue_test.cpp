@@ -230,5 +230,85 @@ TEST(VoiceSendQueue, TheTimingSaysHowLongAJobWaitedAndHowLongItTook) {
   EXPECT_EQ(rig.fake.timings[1].send_ms, 5000);
 }
 
+// At most kVoiceSendMaxPerChat (5) voice messages of one chat waiting or being sent: the one in flight counts, a failed
+// one does not (it has left the line), and each chat counts its own.
+TEST(VoiceSendQueue, AChatIsFullAtFiveWaitingOrSending) {
+  Rig rig;
+  int changes = 0;
+  // A fresh queue whose `changed` port counts (the chat screen refreshes the bar on it).
+  auto ports = PortsOf(rig.fake);
+  ports.changed = [&changes]() { ++changes; };
+  rig.queue = std::make_unique<VoiceSendQueue>(std::move(ports));
+  rig.fake.queue = rig.queue.get();
+  for (int i = 1; i <= 4; ++i) {
+    rig.Add("a" + std::to_string(i));
+    EXPECT_FALSE(rig.queue->ChatFull("chat-a")) << i;
+  }
+  rig.Add("a5");
+  EXPECT_EQ(rig.queue->CountForThread("chat-a"), 5u);
+  EXPECT_TRUE(rig.queue->ChatFull("chat-a"));
+  EXPECT_EQ(changes, 5);
+}
+
+TEST(VoiceSendQueue, AFinishedOneFreesTheChat) {
+  Rig rig;
+  for (int i = 1; i <= 5; ++i) {
+    rig.Add("a" + std::to_string(i));
+  }
+  ASSERT_TRUE(rig.queue->ChatFull("chat-a"));
+  rig.End("a1");
+  EXPECT_FALSE(rig.queue->ChatFull("chat-a"));
+  EXPECT_EQ(rig.queue->CountForThread("chat-a"), 4u) << "a2 in flight and three waiting";
+}
+
+TEST(VoiceSendQueue, AFailedOneNoLongerCounts) {
+  Rig rig;
+  for (int i = 1; i <= 5; ++i) {
+    rig.Add("a" + std::to_string(i));
+  }
+  rig.End("a1", AttachmentSendOutcome::FailedStaged);
+  EXPECT_FALSE(rig.queue->ChatFull("chat-a"));
+  EXPECT_EQ(rig.queue->CountForThread("chat-a"), 4u);
+}
+
+TEST(VoiceSendQueue, ACancelledOneFreesTheChat) {
+  Rig rig;
+  for (int i = 1; i <= 5; ++i) {
+    rig.Add("a" + std::to_string(i));
+  }
+  ASSERT_TRUE(rig.queue->CancelWaiting("a3"));
+  EXPECT_FALSE(rig.queue->ChatFull("chat-a"));
+  rig.Add("a6");
+  EXPECT_TRUE(rig.queue->ChatFull("chat-a"));
+  rig.End("a1", AttachmentSendOutcome::Cancelled); // the one in flight cancelled by its own send
+  EXPECT_FALSE(rig.queue->ChatFull("chat-a"));
+}
+
+TEST(VoiceSendQueue, EachChatCountsItsOwnAndTheLineStaysInOrder) {
+  Rig rig;
+  for (int i = 1; i <= 5; ++i) {
+    rig.Add("a" + std::to_string(i), "chat-a");
+  }
+  rig.Add("b1", "chat-b");
+  EXPECT_TRUE(rig.queue->ChatFull("chat-a"));
+  EXPECT_FALSE(rig.queue->ChatFull("chat-b"));
+  EXPECT_EQ(rig.queue->CountForThread("chat-b"), 1u);
+  rig.Add("a6", "chat-a"); // not refused by the queue: only the bar is
+  for (const std::string id : {"a1", "a2", "a3", "a4", "a5", "b1"}) {
+    rig.End(id);
+  }
+  EXPECT_EQ(rig.fake.started, (std::vector<std::string>{"a1", "a2", "a3", "a4", "a5", "b1", "a6"}))
+      << "first in, first out across chats";
+}
+
+TEST(VoiceSendQueue, DroppingAChatsWaitingOnesFreesIt) {
+  Rig rig;
+  for (int i = 1; i <= 5; ++i) {
+    rig.Add("a" + std::to_string(i));
+  }
+  rig.queue->DropWaiting(std::string("chat-a"));
+  EXPECT_EQ(rig.queue->CountForThread("chat-a"), 1u) << "only the one in flight";
+}
+
 } // namespace
 } // namespace pbr

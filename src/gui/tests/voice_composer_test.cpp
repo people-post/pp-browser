@@ -111,6 +111,7 @@ struct Harness {
     ports.dirty = [this]() { saw_finishing = saw_finishing || state.voice_finishing; };
     ports.say = [this](const std::string& text) { said.push_back(text); };
     ports.call_live = [this]() { return call_live; };
+    ports.queue_full = [this](const std::string& tid) { return tid == full_thread; };
     ports.fingers_down = [this]() { return fingers; };
     ports.stop_playback_then = [this](std::function<void()> then) {
       if (defer_playback_stop) {
@@ -155,6 +156,8 @@ struct Harness {
   std::string thread = "A";
   std::string keep;
   bool call_live = false;
+  /** The chat whose voice messages are at the most that may wait (none when empty). */
+  std::string full_thread;
   /** The chat can take voice at all. */
   bool eligible = true;
   /** The window's pixels per dp, its width in dp, and the lowest y the bubble's top may take (dp). */
@@ -370,6 +373,35 @@ TEST(VoiceComposer, ACallRefusesANewRecording) {
     EXPECT_FALSE(h.composer->Active());
     h.composer->Refresh();
     EXPECT_TRUE(h.state.voice_blocked);
+  }
+}
+
+// Five voice messages of this chat still going out: the bar is greyed (still shown, still in voice mode), a press says
+// why and records nothing; another chat is not affected, and the bar works again once the count drops.
+TEST(VoiceComposer, AChatWithFiveVoiceMessagesOutRefusesANewOneUntilOneEnds) {
+  SKIP_WITHOUT_VOICE();
+  {
+    Harness h;
+    h.state.voice_mode = true;
+    h.full_thread = "A";
+    h.composer->Refresh();
+    EXPECT_TRUE(h.state.show_voice);
+    EXPECT_TRUE(h.state.voice_mode) << "greyed, not taken out of voice mode";
+    EXPECT_TRUE(h.state.voice_blocked);
+    h.composer->BeginAt(0, 0, nullptr, false);
+    EXPECT_TRUE(h.Said("chat.voice.queue_full"));
+    EXPECT_FALSE(h.Said("chat.voice.busy_call"));
+    EXPECT_EQ(h.opens.load(), 0);
+    EXPECT_FALSE(h.composer->Active());
+
+    h.thread = "B"; // another chat
+    h.composer->Refresh();
+    EXPECT_FALSE(h.state.voice_blocked);
+
+    h.thread = "A";
+    h.full_thread.clear(); // one of A's ended
+    h.composer->Refresh();
+    EXPECT_FALSE(h.state.voice_blocked);
   }
 }
 

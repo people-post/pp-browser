@@ -46,6 +46,9 @@ struct VoiceSendTiming {
   int64_t send_ms = 0;
 };
 
+/** The most voice messages of one chat waiting or being sent: at this number that chat's voice bar is off. */
+inline constexpr size_t kVoiceSendMaxPerChat = 5;
+
 struct VoiceSendPorts {
   /** No other attachment is being prepared or sent, and messaging is up: a job may start. */
   std::function<bool()> slot_free;
@@ -57,6 +60,8 @@ struct VoiceSendPorts {
   std::function<int64_t()> now_ms;
   /** A job ended (any outcome). */
   std::function<void(const VoiceSendJob& job, AttachmentSendOutcome outcome, const VoiceSendTiming& timing)> report;
+  /** A job joined or left the line (so a chat's count changed). Optional. */
+  std::function<void()> changed;
 };
 
 class VoiceSendQueue {
@@ -82,6 +87,10 @@ public:
   std::vector<VoiceSendJob> DropWaiting(const std::optional<std::string>& thread_id = std::nullopt);
 
   bool IsWaiting(const std::string& row_id) const;
+  /** Voice messages of `thread_id` waiting or being sent (a failed one has left the line). */
+  size_t CountForThread(const std::string& thread_id) const;
+  /** `thread_id` has kVoiceSendMaxPerChat voice messages out: its bar takes no new recording until one ends. */
+  bool ChatFull(const std::string& thread_id) const { return CountForThread(thread_id) >= kVoiceSendMaxPerChat; }
   size_t WaitingCount() const { return waiting_.size(); }
   bool InFlight() const { return in_flight_.has_value(); }
 
@@ -97,6 +106,7 @@ private:
   };
   int64_t Now() const { return ports_.now_ms ? ports_.now_ms() : 0; }
   void Discard(const VoiceSendJob& job);
+  void Changed() const;
 
   VoiceSendPorts ports_;
   std::deque<Waiting> waiting_;
