@@ -82,13 +82,15 @@ struct UpdateCardPorts {
 };
 
 /**
- * Versions are compared with CompareSemverCore (lib/net/ClientCompat.h), the comparison that decides the card itself:
- * a leading "v" is ignored and a pre-release suffix is not looked at, so "v1.2.0" and "1.2.0" are one announcement.
+ * Versions are compared with CompareReleaseVersions (lib/net/ClientCompat.h), the comparison that decides the card
+ * itself: a leading "v" and build metadata are ignored, a pre-release is below its release and release candidates
+ * compare by number, so "v1.2.0" and "1.2.0" are one announcement while rc17 after rc16 (or 1.0.0 after 1.0.0-rc16)
+ * is a new one.
  * An announcement is "new" only when it is greater than the stored one (or nothing is stored); an equal or lower one
  * (a rollback of the announced version) is the stored announcement and follows its rhythm.
  */
 inline bool UpdateCardIsNewAnnouncement(const std::string& latest_version, const UpdateCardState& state) {
-  return state.version.empty() || CompareSemverCore(latest_version, state.version) > 0;
+  return state.version.empty() || CompareReleaseVersions(latest_version, state.version) > 0;
 }
 
 /**
