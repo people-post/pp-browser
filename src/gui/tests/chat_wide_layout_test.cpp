@@ -694,6 +694,9 @@ TEST_F(ChatWideLayoutTest, EveryBubbleKindHasItsTailAnchoredToTheBubblesBottomCo
       ASSERT_EQ(found.size(), 1u);
       ui::Element* tail = found[0];
       EXPECT_NE(tail->GetComputedValues().display(), ui::Style::Display::None) << "bubble " << i;
+      // Drawn in front of the pane's surface: a negative z-index (the phone's, behind a picture card) hid the picture
+      // card's hook in the wide transcript.
+      EXPECT_GE(tail->GetComputedValues().z_index().value, 0.f) << "bubble " << i;
       const Box t = BoxOf(tail);
       EXPECT_FLOAT_EQ(t.W(), 16.f) << "bubble " << i;
       EXPECT_FLOAT_EQ(t.H(), 20.f) << "bubble " << i;

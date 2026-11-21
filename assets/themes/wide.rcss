@@ -2715,3 +2715,10 @@
 .shell-body--wide .ai-list-header .sidebar-header-title {
   font-size: 22dp;
 }
+
+/* The tail of a picture card (the last picture of a run): the phone draws it behind the card (z-index -1) so its inner
+   half does not cover the picture's corner; in the wide transcript that put it behind the pane's surface too and no hook
+   showed. The corner it sits on is the card's footer strip (the time under the picture), so the tail is drawn in front. */
+.shell-body--wide .chat-attachment-card--image .bubble-tail {
+  z-index: 0;
+}
