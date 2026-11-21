@@ -28,20 +28,28 @@ std::string ErrorText(const HttpResponse& response) {
 
 Object LockerRecordToJson(const LockerRecord& record) {
   Object json;
+  if (record.record_version != 0) {
+    json.set("record_version", record.record_version);
+  }
   json.set("locker_id", record.locker_id);
   json.setJsonUInt("version", record.version);
   json.set("signing_public_key_b64", record.signing_public_key_b64);
   json.set("sealed_b64", record.sealed_b64);
+  if (!record.ext_b64.empty()) {
+    json.set("ext_b64", record.ext_b64);
+  }
   json.set("signature_b64", record.signature_b64);
   return json;
 }
 
 LockerRecord LockerRecordFromJson(const Object& json) {
   LockerRecord record;
+  record.record_version = json.getIf<int64_t>("record_version").value_or(0);
   record.locker_id = json.getString("locker_id").value_or("");
   record.version = json.getNonNegInt("version").value_or(0);
   record.signing_public_key_b64 = json.getString("signing_public_key_b64").value_or("");
   record.sealed_b64 = json.getString("sealed_b64").value_or("");
+  record.ext_b64 = json.getString("ext_b64").value_or("");
   record.signature_b64 = json.getString("signature_b64").value_or("");
   return record;
 }

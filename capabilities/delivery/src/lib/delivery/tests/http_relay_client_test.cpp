@@ -6,6 +6,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/error/AppError.h"
 #include "lib/delivery/OutboundMessage.h"
+#include "lib/delivery/RelayGrantSigner.h"
 #include "lib/delivery/RelayMessageSignPayload.h"
 
 #include <gtest/gtest.h>
@@ -65,7 +66,7 @@ RelayGrant BobsGrant() {
                     .sender_account_id = kMe,
                     .issued_at = 1761235200000,
                     .expires_at = 1761235200000 + kRelayGrantMaxLifetimeMs,
-                    .signature = "Ym9icy1zaWduYXR1cmU="};
+                    .signature = pp::Base64Encode(pp::ByteVector(3310, 0x01))}; // a typed ML-DSA-65 signature's shape
 }
 
 class HttpRelayClientTest : public ::testing::Test {
@@ -133,6 +134,7 @@ TEST_F(HttpRelayClientTest, ASendNamesBothAccountsAndCarriesTheRecipientsGrant) 
   EXPECT_FALSE(bodies[0].contains("sender_public_key_b64")) << "registered here: the relay holds our key";
   const Object* grant = bodies[0].getObject("grant");
   ASSERT_NE(grant, nullptr);
+  EXPECT_EQ(grant->getIf<int64_t>("grant_version"), 2) << "grant v2 (SIGNED_FORMATS § 2.4)";
   EXPECT_EQ(RelayGrantFromJson(*grant).value(), BobsGrant());
 }
 

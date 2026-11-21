@@ -49,6 +49,19 @@ protected:
   std::unique_ptr<IRelayGrantStore> store_;
 };
 
+// Grant v2 (SIGNED_FORMATS § 2.4): a kept grant keeps its extension entries, so it goes on a send as it was signed.
+TEST_P(RelayGrantStoreContractTest, AGrantKeepsItsExtensionEntries) {
+  RelayGrant grant = Grant("account:bob", "account:me", 20);
+  grant.ext = pp::ExtArea::FromEntries({{.type = 0x0005, .value = {1, 2, 3}}}).value();
+  ASSERT_TRUE(store_->PutReceived(grant));
+  EXPECT_EQ(store_->Received("account:bob").value(), grant);
+  EXPECT_EQ(store_->AllReceived().value(), std::vector<RelayGrant>{grant});
+  RelayGrant issued = Grant("account:me", "account:carol", 30);
+  issued.ext = grant.ext;
+  ASSERT_TRUE(store_->PutIssued(IRelayGrantStore::Issued{.grant = issued}));
+  EXPECT_EQ(store_->IssuedTo("account:carol").value()->grant, issued);
+}
+
 TEST_P(RelayGrantStoreContractTest, AReceivedGrantIsOnePerGrantorAndTheNewestWins) {
   EXPECT_FALSE(store_->Received("account:bob").value());
   ASSERT_TRUE(store_->PutReceived(Grant("account:bob", "account:me", 20)));

@@ -1,7 +1,11 @@
 #include "lib/messaging/GroupChange.h"
 
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/SignedBytes.h"
+#include "foundation/crypto/SignedReceive.h"
+#include "foundation/crypto/TypedBlob.h"
+#include "foundation/error/AppError.h"
+#include "lib/people/HeldKeyForms.h"
 #include "common/ValueJson.h"
 
 #include <algorithm>
@@ -12,7 +16,11 @@ namespace pbr {
 namespace group_change {
 namespace {
 
-constexpr const char kChangeTag[] = "pp-browser:group-roster-change-v1";
+// The signing domain: the version is the byte after it, the JSON's `change_version`. The changes hash is not a
+// signature: its tag keeps its `-v1`.
+constexpr const char kChangeDomain[] = "pp-browser:group-roster-change";
+constexpr const char kChangeVersionKey[] = "change_version";
+constexpr SignedVersions kChangeVersions{.floor = kChangeVersion, .current = kChangeVersion};
 constexpr const char kChangesHashTag[] = "pp-browser:group-changes-v1";
 
 /** u32 big-endian length, then the bytes (as the owner's statement encodes). */
@@ -264,16 +272,15 @@ std::optional<GroupChangeKind> KindFromString(const std::string& value) {
 }
 
 ByteVector SignBytes(const GroupChange& change) {
-  ByteVector out;
-  Put(out, std::string(kChangeTag));
-  Put(out, change.group_id);
-  Put(out, change.base_epoch);
-  Put(out, change.signer);
-  Put(out, change.signer_device);
-  Put(out, static_cast<uint64_t>(change.at));
-  Put(out, KindToString(change.kind));
-  PutBody(out, change);
-  return out;
+  ByteVector fields;
+  Put(fields, change.group_id);
+  Put(fields, change.base_epoch);
+  Put(fields, change.signer);
+  Put(fields, change.signer_device);
+  Put(fields, static_cast<uint64_t>(change.at));
+  Put(fields, KindToString(change.kind)); // a kind read is one of these: its string as received
+  PutBody(fields, change);
+  return SignedBytesWriter(kChangeDomain, kChangeVersion).Raw(fields).Finish(change.ext);
 }
 
 std::string Id(const GroupChange& change) {
@@ -298,7 +305,11 @@ Roe<GroupChange> Sign(GroupChange change, const GroupDeviceSign& sign) {
   if (!signature) {
     return signature.error();
   }
-  change.signature_b64 = std::move(*signature);
+  auto typed = TypedSignatureB64FromSigner(*signature);
+  if (!typed) {
+    return typed.error();
+  }
+  change.signature_b64 = std::move(typed.value());
   return change;
 }
 
@@ -317,23 +328,44 @@ Roe<void> Verify(const GroupChange& change, const AccountCard& card, const int64
 }
 
 Roe<void> VerifyDeviceSignature(const GroupChange& change, const AccountCardDevice& device) {
-  if (device.peer_id != change.signer_device) {
-    return Error("roster change: not the signing device");
-  }
-  auto key = Base64Decode(device.signing_public_key_b64);
-  auto signature = Base64Decode(change.signature_b64);
-  if (!key || !signature) {
-    return Error("roster change: bad key or signature encoding");
-  }
-  auto ok = MlDsa::Verify(*key, SignBytes(change), *signature);
-  if (!ok || !*ok) {
-    return Error("roster change: the signature does not verify for the signing device");
-  }
-  return {};
+  TypedRead key;
+  TypedRead signature;
+  return ReceiveSigned({
+                           .what = "roster change",
+                           .outside_version = kChangeVersion, // FromJson read `change_version`
+                           .versions = kChangeVersions,
+                           .parse = [&]() -> Roe<void> {
+                             if (device.peer_id != change.signer_device) {
+                               return Error("not the signing device");
+                             }
+                             return {};
+                           },
+                           .algorithms = [&]() -> Roe<void> {
+                             key = ReadHeldSigningKeyB64(device.signing_public_key_b64, "roster change device key");
+                             if (!key.ok()) {
+                               return key.ToError();
+                             }
+                             signature = ReadTypedBlobB64(pp::BlobKind::kSignature, change.signature_b64,
+                                                          "roster change signature");
+                             if (!signature.ok()) {
+                               return signature.ToError();
+                             }
+                             return {};
+                           },
+                           .verify = [&]() -> Roe<void> {
+                             if (auto ok = VerifyTyped(key, SignBytes(change), signature); !ok) {
+                               return Error("the signature does not verify for the signing device");
+                             }
+                             return {};
+                           },
+                           .ext = &change.ext,
+                       })
+      .ToRoe();
 }
 
 Object ToJson(const GroupChange& change) {
   Object json;
+  json.set(kChangeVersionKey, int64_t{kChangeVersion});
   json.set("group_id", change.group_id);
   json.setJsonUInt("base_epoch", change.base_epoch);
   json.set("signer", change.signer);
@@ -344,11 +376,21 @@ Object ToJson(const GroupChange& change) {
   json.setJsonUInt("at", static_cast<uint64_t>(std::max<int64_t>(change.at, 0)));
   json.set("change", KindToString(change.kind));
   json.set("body", ObjectValue(BodyToJson(change)));
+  WriteExtB64(json, change.ext);
   json.set("signature", change.signature_b64);
   return json;
 }
 
 Roe<GroupChange> FromJson(const Object& json) {
+  // 1. The version, before anything else is read.
+  const std::optional<int64_t> version = OutsideVersionOfJson(json, kChangeVersionKey);
+  if (!version || *version < kChangeVersion) {
+    return Error("roster change made by an older app (no change_version 2)");
+  }
+  if (*version > kChangeVersion) {
+    return AppError::NewerFormat("roster change version " + std::to_string(*version) + ": made by a newer app");
+  }
+  // 2. The fields and the extension area.
   GroupChange change;
   change.group_id = json.getString("group_id").value_or("");
   change.base_epoch = json.getNonNegInt("base_epoch").value_or(0);
@@ -356,10 +398,15 @@ Roe<GroupChange> FromJson(const Object& json) {
   change.signer_device = json.getString("signer_device").value_or("");
   change.at = static_cast<int64_t>(json.getNonNegInt("at").value_or(0));
   change.signature_b64 = json.getString("signature").value_or("");
-  auto kind = KindFromString(json.getString("change").value_or(""));
+  const std::string kind_text = json.getString("change").value_or("");
+  auto kind = KindFromString(kind_text);
   const Object* body = json.getObject("body");
-  if (!kind || !body || change.signature_b64.empty()) {
+  if (kind_text.empty() || !body || change.signature_b64.empty()) {
     return Error("roster change: missing kind, body or signature");
+  }
+  if (!kind) {
+    // Its body is laid out by its kind, so its signed bytes cannot be rebuilt here: a newer app's change.
+    return AppError::NewerFormat("roster change of kind '" + kind_text + "': made by a newer app");
   }
   change.kind = *kind;
   if (auto read = BodyFromJson(*body, change); !read) {
@@ -372,8 +419,19 @@ Roe<GroupChange> FromJson(const Object& json) {
     }
     change.signer_card = std::move(*parsed);
   }
+  auto ext = ReadExtB64(json);
+  if (!ext) {
+    return Error("roster change: " + ext.error().message);
+  }
+  change.ext = std::move(ext.value());
   if (auto shape = CheckShape(change); !shape) {
     return shape.error();
+  }
+  // 3. The signature's algorithm id.
+  if (const TypedRead signature =
+          ReadTypedBlobB64(pp::BlobKind::kSignature, change.signature_b64, "roster change signature");
+      !signature.ok()) {
+    return signature.ToError();
   }
   return change;
 }

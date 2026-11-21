@@ -23,6 +23,7 @@
 #include "lib/net/RelaySignBytes.h"
 #include "lib/people/AccountCard.h"
 #include "lib/people/AccountLocker.h"
+#include "foundation/crypto/TypedBlob.h"
 
 #include "crypto/PeerId.h"
 
@@ -208,11 +209,16 @@ std::vector<CallSpec> RegistryCalls(const VectorKeys& keys) {
 CallSpec LockerCall(const VectorKeys& keys) {
   const ByteVector locker_id(32, 0xab);
   const ByteVector sealed(48, 0x5e);
-  LockerRecord record{.locker_id = BytesToHex(locker_id),
+  // Locker record v2's shape (its own vectors: lib/people account_locker_vectors.json); only the relay half is signed
+  // for here.
+  LockerRecord record{.record_version = kLockerRecordVersion,
+                      .locker_id = BytesToHex(locker_id),
                       .version = 3,
-                      .signing_public_key_b64 = Base64Encode(keys.account.public_key),
+                      .signing_public_key_b64 = Base64Encode(TypedSigningPublicKey(keys.account.public_key).value()),
                       .sealed_b64 = Base64Encode(sealed)};
-  record.signature_b64 = Sign(keys, account_locker::SignBytes(locker_id, record.version, sealed)); // the owner half
+  record.signature_b64 = Base64Encode(
+      SignTyped(keys.account.secret_key, account_locker::SignBytes(locker_id, record.version, sealed, pp::ExtArea{}))
+          .value()); // the owner half
   Object fields;
   fields.set("account_id", keys.account_id);
   fields.set("locker", ObjectValue(LockerRecordToJson(record)));

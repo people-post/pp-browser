@@ -38,6 +38,7 @@
 #include "feature/conversations/ContactRefreshWorkflow.h"
 #include "lib/messaging/ContactLocator.h"
 #include "lib/delivery/PeerRequestAuth.h"
+#include "lib/delivery/RelayGrantSigner.h"
 #include "lib/people/PeerCards.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
@@ -1632,11 +1633,7 @@ AccountLockerWorkflow::Sources ConversationsHub::LockerSources() {
         }
         std::vector<AccountStateGrant> grants;
         for (const RelayGrant& grant : *held) {
-          grants.push_back(AccountStateGrant{.grantor_account_id = grant.recipient_account_id,
-                                             .grantee_account_id = grant.sender_account_id,
-                                             .issued_at = grant.issued_at,
-                                             .expires_at = grant.expires_at,
-                                             .signature = grant.signature});
+          grants.push_back(RelayGrantToLocker(grant));
         }
         return grants;
       },
@@ -2593,16 +2590,8 @@ Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const SecretText& phrase, 
 
 AccountStateRelays ConversationsHub::LockerRelays() const {
   AccountStateRelays relays;
-  if (our_relays_) {
-    const auto pins = RelayIdentityPins();
-    for (const OurRelayEntry& entry : our_relays_->List().relays) {
-      // Its address: the PeerId we expect of it (the build's for the org's relay), else the one the list kept.
-      std::string peer_id = pins ? pins->PinnedPeerId(entry.origin).value_or(entry.peer_id) : entry.peer_id;
-      if (!peer_id.empty()) {
-        relays.list.push_back(AccountStateRelay{.origin = entry.origin, .peer_id = std::move(peer_id)});
-      }
-    }
-  }
+  // The locker names each relay by its relay id (SIGNED_FORMATS § 2.6), which our relays' list does not hold yet:
+  // the list stays empty until it does.
   const std::string own = OwnAccountId();
   if (account_keys_ && !own.empty()) {
     if (auto kept = account_keys_->Kept(own); kept && *kept) {
@@ -2613,16 +2602,9 @@ AccountStateRelays ConversationsHub::LockerRelays() const {
 }
 
 void ConversationsHub::RestoreOurRelays(const AccountStateRelays& relays) {
-  if (relays.list.empty()) {
-    return; // a locker from before My relays: the deployment's default stays
-  }
-  std::vector<AccountCardRelay> list;
-  for (const AccountStateRelay& relay : relays.list) {
-    list.push_back(AccountCardRelay{.origin = relay.origin, .peer_id = relay.peer_id});
-  }
-  if (const auto workflow = MyRelays()) {
-    workflow->Restore(list);
-  }
+  // The locker's relays are `{origin, relay_id}` (SIGNED_FORMATS § 2.6); My relays restores relay addresses by their
+  // PeerId until our relays' list holds relay ids, so none is restored from it yet and the deployment's default stays.
+  (void)relays;
 }
 
 void ConversationsHub::QueueRestoredState(AccountStateExtras extras) {
@@ -2671,11 +2653,10 @@ void ConversationsHub::TakeLockerGrants(const std::vector<AccountStateGrant>& gr
   std::vector<RelayGrant> taken;
   taken.reserve(grants.size());
   for (const AccountStateGrant& grant : grants) {
-    taken.push_back(RelayGrant{.recipient_account_id = grant.grantor_account_id,
-                               .sender_account_id = grant.grantee_account_id,
-                               .issued_at = grant.issued_at,
-                               .expires_at = grant.expires_at,
-                               .signature = grant.signature});
+    // A row a newer app wrote, or a broken one, is none (SIGNED_FORMATS § 2.4); the rest are checked when taken.
+    if (auto read = RelayGrantFromLocker(grant)) {
+      taken.push_back(std::move(*read));
+    }
   }
   mesh_messaging_->RelayGrants().TakeFromLocker(taken, look_up_keys);
 }

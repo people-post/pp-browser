@@ -332,10 +332,10 @@ TEST_F(SqliteMigrationsTest, NothingIsOpenedOrResetBeforeUnlock) {
   CloseStore();
 }
 
-// Release 1 is every store's start (RC017): the floors are its schemas, profile.db 8 and thread.db 4, and no step
+// Release 1 is every store's start (RC017): the floors are its schemas, profile.db 9 and thread.db 4, and no step
 // from before it is kept. A later change adds a step above the floor; only a milestone moves the floor.
 TEST_F(SqliteMigrationsTest, TheFloorsAreRelease1sSchemas) {
-  EXPECT_EQ(ProfileDbLadder().floor, 8);
+  EXPECT_EQ(ProfileDbLadder().floor, 9) << "the signed-format cutover (SIGNED_FORMATS) moved it";
   EXPECT_EQ(ThreadDbLadder().floor, 4);
   EXPECT_GE(ProfileDbLadder().current, ProfileDbLadder().floor);
   EXPECT_GE(ThreadDbLadder().current, ThreadDbLadder().floor);

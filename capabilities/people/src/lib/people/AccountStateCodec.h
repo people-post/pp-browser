@@ -3,9 +3,12 @@
 #include "common/Error.h"
 #include "common/Value.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <span>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "common/PbrCompat.h"
@@ -62,27 +65,36 @@ struct AccountCardFloor {
 
 /**
  * A grant another account gave this one, as received (multi-relay MR005: it lets this account write to the grantor's
- * relay inboxes past the stranger rules). Signed by the grantor's account key, so it proves itself: a device checks
+ * relay inboxes past the stranger rules): relay grant v2 (release-compatibility SIGNED_FORMATS § 2.4), its fields,
+ * extension area and signature as they came. Signed by the grantor's account key, so it proves itself: a device checks
  * it against the grantor's key before it keeps one (the locker's seal says only that one of our devices wrote it).
  */
 struct AccountStateGrant {
-  /** Who granted: the account whose inboxes it opens. */
+  /** Who granted: the account whose inboxes it opens (`recipient_account_id`). */
   std::string grantor_account_id;
-  /** Who it was given to: this account. */
+  /** Who it was given to: this account (`sender_account_id`). */
   std::string grantee_account_id;
   /** Unix ms. */
   int64_t issued_at = 0;
   int64_t expires_at = 0;
-  /** The grantor's ML-DSA-65 signature, standard base64. */
+  /** The grant's extension entries as received (`ext_b64`; empty for none). */
+  std::string ext_b64;
+  /** The grantor's typed signature, standard base64. */
   std::string signature;
 
   bool operator==(const AccountStateGrant&) const = default;
 };
 
-/** One relay of ours as the locker keeps it: its address, the origin and the PeerId it answers to (MR008). */
+/** The relay grant version a locker's `grants` rows hold (lib/delivery's kRelayGrantVersion; a row of another is dropped). */
+inline constexpr int64_t kAccountStateGrantVersion = 2;
+
+/**
+ * One relay of ours as the locker keeps it: its address, the origin and its relay id (`relay:…`, SIGNED_FORMATS § 3.3:
+ * the relay proves it with its certificate).
+ */
 struct AccountStateRelay {
   std::string origin;
-  std::string peer_id;
+  std::string relay_id;
 
   bool operator==(const AccountStateRelay&) const = default;
 };
@@ -109,12 +121,36 @@ struct AccountStateExtras {
   AccountStateRelays relays;
 };
 
-/** JSON for one group of the account state, as the account locker's `groups` carry it. */
+/**
+ * JSON of the account state's rows (docs/contracts/ACCOUNT_LOCKER.md § State JSON). Writers keep what they do not
+ * know (INVENTORY T7): a row written over one read from the locker (`kept`, the row of the same key) carries back the
+ * fields this build does not read, so a newer device's additions survive an older device's publish.
+ */
 class AccountStateCodec {
 public:
-  static Object GroupToJson(const AccountStateGroup& group);
+  /** One group of the locker's `groups`; `kept` is the row this group was read from, if any. */
+  static Object GroupToJson(const AccountStateGroup& group, const Object* kept = nullptr);
   /** nullopt when the group id or the owner is missing. */
   static std::optional<AccountStateGroup> GroupFromJson(const Object& json);
+
+  /** One row of the locker's `grants`: relay grant v2's JSON (`grant_version: 2`, …, `ext_b64`, `signature`). */
+  static Object GrantToJson(const AccountStateGrant& grant);
+  /**
+   * A `grants` row of an untrusted copy: `grant_version` 2 and every field present and within bounds (`max_field`
+   * bytes at most), else none. The grant's signature is the reader's to check (its grantor's key).
+   */
+  static std::optional<AccountStateGrant> GrantFromJson(const Object& json, size_t max_field);
+
+  /**
+   * Copy into `written` each field of `kept` that is not in `known` and not already in `written`: what this build
+   * does not read goes back as it came.
+   */
+  static void KeepUnknownFields(Object& written, const Object& kept, std::span<const std::string_view> known);
 };
+
+/** `AccountStateCodec::GrantToJson`: the grant's JSON as a relay grant reader takes it. */
+inline Object AccountStateGrantToJson(const AccountStateGrant& grant) {
+  return AccountStateCodec::GrantToJson(grant);
+}
 
 } // namespace pbr

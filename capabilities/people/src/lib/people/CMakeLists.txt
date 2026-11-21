@@ -2,6 +2,7 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   AvatarGlyph.cpp
   ProfileIconCache.cpp
   AccountStateCodec.cpp
+  HeldKeyForms.cpp
   ContactJson.cpp
   ContactIdentity.cpp
   DirectoryAnswers.cpp

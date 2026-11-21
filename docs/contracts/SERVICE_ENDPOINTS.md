@@ -552,7 +552,7 @@ Base path under the org's `registration.base_url` (not the preferred relay's: lo
 
 | HTTP | Purpose |
 |------|---------|
-| `POST /v1/lockers/put` | `{ account_id, audience, timestamp, signature, locker: { locker_id, version, signing_public_key_b64, sealed_b64, signature_b64 } }` → `200 { locker_id, version }`; **409** `{ error, version }` when the stored version is the same or newer (also when two writers race): the client
+| `POST /v1/lockers/put` | `{ account_id, audience, timestamp, signature, locker: { record_version: 2, locker_id, version, signing_public_key_b64, sealed_b64, ext_b64?, signature_b64 } }` → `200 { locker_id, version }`; **409** `{ error, version }` when the stored version is the same or newer (also when two writers race): the client
 reads `version` (`LockerPutRefused::stored_version`) and its next write goes above it — memory only, never the
 rollback floor, which only a verified snapshot raises; **403** `Locker quota reached` past 4 lockers per account; body ≤ 2 MiB |
 | `GET /v1/lockers/:locker_id` | `200 { locker: {…} }` or **404**. By id alone — a restoring device is not registered yet; rate-limited per IP |
@@ -562,7 +562,7 @@ Two signatures on a write:
 | Half | Signed by | Bytes |
 |------|-----------|-------|
 | Relay (quota) | the account key, for the org origin's pinned PeerId | `pp-browser:relay-locker-put-v1` ‖ 0 ‖ u8 2 ‖ LenUtf8 audience ‖ LenUtf8 `account_id` ‖ LenUtf8 `locker_id` ‖ u64 `version` ‖ i64 `timestamp` |
-| Locker (owner) | the locker ML-DSA-65 key; `locker_id` = lowercase hex of BLAKE2b-256(its public key) | `pp-browser:account-locker-v1` ‖ 0 ‖ u8 1 ‖ LenBytes(locker id) ‖ u64 `version` ‖ LenBytes(sealed) |
+| Locker (owner) | the locker ML-DSA-65 key (typed); `locker_id` = lowercase hex of BLAKE2b-256(its raw public key) | locker record v2 ([ACCOUNT_LOCKER § Record](ACCOUNT_LOCKER.md#record-locker-record-v2)): `pp-browser:account-locker` ‖ 0 ‖ u8 2 ‖ LenBytes(locker id) ‖ u64 `version` ‖ LenBytes(sealed) ‖ ext area |
 
 The snapshot (`sealed`, the owner signature, rollback protection) and the state inside it: [ACCOUNT_LOCKER.md](ACCOUNT_LOCKER.md). Golden vectors: the owner half in `account_locker_test`, the relay half in `http_locker_client_test` and `relay_sign_vectors.json`. The relay learns which registered user writes which locker (the write is authenticated for its quota); reads carry no identity.
 

@@ -11,15 +11,23 @@
 namespace pbr {
 
 /**
- * An account locker snapshot as a provider stores it (multi-device M023 §4–5): base64 / hex text, opaque to this
- * layer — sealing and verifying are `lib/people/AccountLocker`'s; the feature layer converts.
+ * An account locker snapshot as a provider stores it (multi-device M023 §4–5; locker record v2, release-compatibility
+ * SIGNED_FORMATS § 2.6): base64 / hex text, opaque to this layer — sealing, reading and verifying are
+ * `lib/people/AccountLocker`'s (`account_locker::RecordFromJson`); the feature layer converts.
  */
 struct LockerRecord {
+  /** The record's format version (`record_version`), as written; 0 when the JSON has none. */
+  int64_t record_version = 0;
   /** Lowercase hex of the 32-byte locker id. */
   std::string locker_id;
+  /** The revision. */
   uint64_t version = 0;
+  /** The typed locker signing key. */
   std::string signing_public_key_b64;
   std::string sealed_b64;
+  /** The signed extension entries (`ext_b64`), as written; empty for none. */
+  std::string ext_b64;
+  /** The typed signature. */
   std::string signature_b64;
 };
 

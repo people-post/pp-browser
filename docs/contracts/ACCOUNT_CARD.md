@@ -329,25 +329,32 @@ the recipient, else as a **stranger's**: the recipient's price, or a small free 
 The relay's side is [www `docs/relay-messages.md`](https://github.com/people-post/www); the send and
 its errors are in [SERVICE_ENDPOINTS § A send](SERVICE_ENDPOINTS.md#a-send-the-recipient-the-senders-key-the-grant).
 
-**The grant** (`RelayGrant`, JSON on the send's `grant` and in the lane notice):
+**The grant** (`RelayGrant`, grant v2: [release-compatibility SIGNED_FORMATS § 2.4](../../projects/release-compatibility/SIGNED_FORMATS.md#24-relay-grant-v2);
+JSON on the send's `grant`, in the lane notice and in the account locker's `grants`):
 
 ```json
-{ "recipient_account_id": "account:bob…", "sender_account_id": "account:alice…",
-  "issued_at": 1761235200000, "expires_at": 1763827200000, "signature": "<base64>" }
+{ "grant_version": 2, "recipient_account_id": "account:bob…", "sender_account_id": "account:alice…",
+  "issued_at": 1761235200000, "expires_at": 1763827200000, "ext_b64": "<optional>", "signature": "<base64>" }
 ```
 
-Signed by the **recipient's** account ML-DSA-65 key over
+`signature` is a **typed** signature ([SIGNED_EXTENSIONS § Typed blobs](SIGNED_EXTENSIONS.md#typed-blobs): algorithm
+id `1`, then ML-DSA-65's 3309 bytes) by the **recipient's** account key over
 
 ```
-"pp-browser:relay-grant-v1" 0x00 | u8 1 | str recipient_account_id | str sender_account_id
-| i64be issued_at | i64be expires_at                       (str = u64be byte length ‖ UTF-8)
+"pp-browser:relay-grant" 00 ‖ u8 2 ‖ LenUtf8 recipient_account_id ‖ LenUtf8 sender_account_id
+‖ i64 issued_at ‖ i64 expires_at ‖ ext area             (u64 BE lengths, big-endian integers)
 ```
 
-`expires_at − issued_at` is at most **30 days**. The relay checks the signature with the recipient's
-registered key; the app checks a grant it receives the same way, with the grantor's key resolved as
-[above](#resolving-keys) (`CheckRelayGrant`: the pair, the lifetime, not expired, the key hashes to the
-grantor's Account ID). Golden vector: `relay_message_sign_payload_test.cpp` (`RelayGrantSignBytesTest`),
-ported from the relay.
+`ext_b64` is the signed extension entries (absent when empty; none is defined at release 1). `expires_at − issued_at`
+is at most **30 days**. A receiver runs [the receiver's order](SIGNED_EXTENSIONS.md#the-receivers-order)
+(`ReceiveRelayGrant`): `grant_version` first, the fields and the area, the signature's algorithm id, the signature by
+the recipient's key (its raw key hashes to the recipient's Account ID), an unknown critical entry; then the terms: the
+pair, the lifetime, not expired. The relay checks it the same way with the recipient's registered key; the app with the
+grantor's key resolved as [above](#resolving-keys). **A grant the app cannot read** (a newer `grant_version`, an
+unknown algorithm, an unknown critical entry) is none, never a forgery: its grantor runs a newer app, and is not asked
+for a grant again (`RelayGrantCoordinator::NeedsNewerApp`). A grant kept or forwarded keeps its entries. Vectors:
+`lib/delivery/tests/data/relay_grant_vectors.json` (the signed bytes of fixed grants, signed fixtures, each refusal's
+verdict), read by the relay byte for byte.
 
 **Who gets one.** Every contact not blocked (added; an opening offer accepted or waived adds the contact)
 and every member of a group we are in (`RelayGrantPeers`). Calls grant too, contacts or not: **answering a

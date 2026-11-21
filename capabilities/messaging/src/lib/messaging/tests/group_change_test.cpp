@@ -217,7 +217,7 @@ TEST(GroupChangeTest, ShapeChecksEachKind) {
   EXPECT_FALSE(grc::Sign(unsigned_by, [](const ByteVector&) -> Roe<std::string> { return std::string("sig"); }));
 }
 
-// Golden vectors: the encoding as DESIGN § Change writes it, computed outside this code.
+// Golden vectors: roster change v2 (SIGNED_FORMATS § 2.5) as DESIGN § Change writes it, computed outside this code.
 TEST(GroupChangeTest, TheChangeIdIsTheHashOfTheDocumentedBytes) {
   GroupChange add;
   add.group_id = "group:g1";
@@ -228,7 +228,7 @@ TEST(GroupChangeTest, TheChangeIdIsTheHashOfTheDocumentedBytes) {
   add.kind = GroupChangeKind::Add;
   add.member = "account:carol";
   add.invite_nonce = "nonce-1";
-  EXPECT_EQ(grc::Id(add), "7d564be96a385768db29f9ba24312ecc62e8bb23cbcb135ba72cec18e6bc56f3");
+  EXPECT_EQ(grc::Id(add), "6fdf3cfe889ed45fad94fb93c0967c74356938f71cb71274b8153e7081c2ab58");
 
   GroupChange remove = add;
   remove.signer = "account:bob";
@@ -236,7 +236,7 @@ TEST(GroupChangeTest, TheChangeIdIsTheHashOfTheDocumentedBytes) {
   remove.invite_nonce.clear();
   remove.adds = {"b2", "a1"};
   remove.keeps = {"k1"};
-  EXPECT_EQ(grc::Id(remove), "c55f2634da645bc202c4d71c99684dd47b49144362cd5c495863ec17f65f1884");
+  EXPECT_EQ(grc::Id(remove), "a7fea17967a064ba1f6e581e5cf78e11f2aad260b99b907900ba5fa645023e6d");
 }
 
 TEST(GroupChangeTest, TheChangesHashIsOfTheSortedDistinctIds) {

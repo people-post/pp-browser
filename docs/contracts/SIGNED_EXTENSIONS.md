@@ -164,6 +164,8 @@ are, and each committed signed fixture must verify.
 | `ext_area_vectors.json` | pp-cpp-common (`tests/data/`) | pp-browser `capabilities/base/src/foundation/crypto/tests/data/`, pp-cpp-mesh, the relay |
 | `alg_id_vectors.json` | pp-cpp-crypto (`tests/data/`) | pp-browser (same folder), the relay |
 | per object (`relay_sign_vectors.json`, `relay_certificate_vectors.json`, …) | pp-browser, beside the object's test | the relay, pp-node |
+| `relay_grant_vectors.json` (grant v2), `account_locker_vectors.json` (locker record v2) | pp-browser `lib/delivery/tests/data/`, `lib/people/tests/data/` | the relay (its grant check, its locker store) |
+| `group_roster_vectors.json` (statement and dissolved v4, owner transfer v2, roster change v2) | pp-browser `lib/messaging/tests/data/` | — (app only) |
 
 - A copy is the pinned tag's bytes exactly (`library_vector_copies_test`); pp-browser's helpers read every case of
   it. After a library bump, `PP_WRITE_EXT_AREA_VECTORS=<path>` / `PP_WRITE_ALG_ID_VECTORS=<path>` write the pinned

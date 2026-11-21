@@ -2,6 +2,11 @@
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/SignedBytes.h"
+#include "foundation/crypto/SignedReceive.h"
+#include "foundation/crypto/TypedBlob.h"
+#include "foundation/error/AppError.h"
+#include "lib/people/HeldKeyForms.h"
 #include "common/ValueJson.h"
 
 #include <algorithm>
@@ -13,11 +18,14 @@ namespace pbr {
 namespace group_roster_statement {
 namespace {
 
-// v3 (G018): added_by, the title, removed, links, folded and the change floor are signed too; v2 (G017) signed the preset. An older
-// statement does not verify as v3 (clean cutover, unreleased product).
-constexpr const char kStatementTag[] = "pp-browser:group-roster-statement-v3";
-constexpr const char kDissolvedTag[] = "pp-browser:group-dissolved-v3";
-constexpr const char kTransferTag[] = "pp-browser:group-owner-transfer-v1";
+// The signing domains (SIGNED_FORMATS § 2.5): the version is the byte after the domain, the same number as the JSON's
+// `statement_version` / `transfer_version`. Nothing older is read (the signed-format cutover is a clean break).
+constexpr const char kStatementDomain[] = "pp-browser:group-roster-statement";
+constexpr const char kDissolvedDomain[] = "pp-browser:group-dissolved";
+constexpr const char kTransferDomain[] = "pp-browser:group-owner-transfer";
+constexpr const char kStatementVersionKey[] = "statement_version";
+constexpr const char kTransferVersionKey[] = "transfer_version";
+constexpr SignedVersions kStatementVersions{.floor = kStatementVersion, .current = kStatementVersion};
 
 /** u32 big-endian length, then the bytes: no field can run into the next. */
 void Put(ByteVector& out, const std::string& field) {
@@ -52,7 +60,7 @@ void PutMembers(ByteVector& out, const std::vector<GroupRosterStatementMember>& 
   Put(out, static_cast<uint64_t>(members.size()));
   for (const GroupRosterStatementMember& m : members) {
     Put(out, m.identity);
-    Put(out, MemberRoleToString(m.role));
+    Put(out, RoleText(m));
     Put(out, static_cast<uint64_t>(m.joined_at));
     Put(out, m.added_by);
   }
@@ -118,23 +126,47 @@ Roe<void> CheckLists(const GroupRosterStatement& statement) {
   return {};
 }
 
-Roe<void> CheckSignature(const std::string& identity, const std::string& public_key_b64, const ByteVector& bytes,
-                         const std::string& signature_b64) {
-  auto key = Base64Decode(public_key_b64);
-  if (!key) {
-    return Error("roster statement: bad key for " + identity);
+/** One typed key and signature pair to verify (step 3 reads them, step 4 checks them). */
+struct SignedBy {
+  std::string identity;
+  TypedRead key;
+  TypedRead signature;
+};
+
+/** Step 3: `key_b64` and `signature_b64` as typed blobs (an unknown id is NewerFormat). */
+Roe<SignedBy> ReadSignedBy(const std::string& identity, const std::string& key_b64, const std::string& signature_b64) {
+  SignedBy by{.identity = identity,
+              .key = ReadTypedBlobB64(pp::BlobKind::kSignaturePublicKey, key_b64, "roster statement key"),
+              .signature = ReadTypedBlobB64(pp::BlobKind::kSignature, signature_b64, "roster statement signature")};
+  if (!by.key.ok()) {
+    return by.key.ToError();
   }
-  auto account = AccountIdFromMlDsaPublicKey(*key);
-  if (!account || *account != identity) {
-    return Error("roster statement: key is not " + identity + "'s");
+  if (!by.signature.ok()) {
+    return by.signature.ToError();
   }
-  auto signature = Base64Decode(signature_b64);
-  if (!signature) {
-    return Error("roster statement: bad signature encoding");
+  return by;
+}
+
+/** Step 4: the raw key hashes to `by.identity`, and the signature over `bytes` is that key's. */
+Roe<void> CheckSignature(const SignedBy& by, const ByteVector& bytes) {
+  auto account = AccountIdFromMlDsaPublicKey(by.key.raw);
+  if (!account || *account != by.identity) {
+    return Error("roster statement: key is not " + by.identity + "'s");
   }
-  auto ok = MlDsa::Verify(*key, bytes, *signature);
-  if (!ok || !*ok) {
-    return Error("roster statement: signature does not verify for " + identity);
+  if (auto verified = VerifyTyped(by.key, bytes, by.signature); !verified) {
+    return Error("roster statement: signature does not verify for " + by.identity);
+  }
+  return {};
+}
+
+/** Step 1 of a nested object: its own version, `current` only. */
+Roe<void> CheckNestedVersion(const Object& json, const char* key, const int64_t current, const std::string& what) {
+  const std::optional<int64_t> version = OutsideVersionOfJson(json, key);
+  if (!version || *version < current) {
+    return Error(what + " made by an older app (no " + key + " " + std::to_string(current) + ")");
+  }
+  if (*version > current) {
+    return AppError::NewerFormat(what + " version " + std::to_string(*version) + ": made by a newer app");
   }
   return {};
 }
@@ -246,37 +278,51 @@ Roe<void> ReadOpenGroupJson(const Object& json, GroupRosterStatement& statement)
 
 } // namespace
 
+std::string RoleText(const GroupRosterStatementMember& member) {
+  if (!member.role_text.empty() && MemberRoleFromString(member.role_text) == member.role) {
+    return member.role_text;
+  }
+  return MemberRoleToString(member.role);
+}
+
+std::string PresetText(const GroupRosterStatement& statement) {
+  if (!statement.preset_text.empty() && GroupPresetFromString(statement.preset_text) == statement.preset) {
+    return statement.preset_text;
+  }
+  return GroupPresetToString(statement.preset);
+}
+
 ByteVector SignBytes(const GroupRosterStatement& statement) {
   GroupRosterStatement sorted = statement;
   SortLists(sorted);
-  ByteVector out;
-  Put(out, std::string(statement.dissolved ? kDissolvedTag : kStatementTag));
-  Put(out, sorted.group_id);
-  Put(out, sorted.roster_epoch);
-  Put(out, sorted.owner_identity);
-  PutMembers(out, sorted.members);
-  Put(out, GroupPresetToString(sorted.preset));
-  Put(out, sorted.title);
-  Put(out, sorted.title_version);
-  PutRemoved(out, sorted.removed);
-  PutLinks(out, sorted.links);
-  Put(out, static_cast<uint64_t>(sorted.folded.size()));
+  ByteVector fields;
+  Put(fields, sorted.group_id);
+  Put(fields, sorted.roster_epoch);
+  Put(fields, sorted.owner_identity);
+  PutMembers(fields, sorted.members);
+  Put(fields, PresetText(sorted));
+  Put(fields, sorted.title);
+  Put(fields, sorted.title_version);
+  PutRemoved(fields, sorted.removed);
+  PutLinks(fields, sorted.links);
+  Put(fields, static_cast<uint64_t>(sorted.folded.size()));
   for (const GroupFoldedChange& f : sorted.folded) {
-    Put(out, f.id);
-    Put(out, f.base_epoch);
+    Put(fields, f.id);
+    Put(fields, f.base_epoch);
   }
-  Put(out, sorted.change_floor_epoch);
-  return out;
+  Put(fields, sorted.change_floor_epoch);
+  return SignedBytesWriter(statement.dissolved ? kDissolvedDomain : kStatementDomain, kStatementVersion)
+      .Raw(fields)
+      .Finish(statement.ext);
 }
 
 ByteVector TransferSignBytes(const std::string& group_id, const GroupOwnerTransfer& transfer) {
-  ByteVector out;
-  Put(out, std::string(kTransferTag));
-  Put(out, group_id);
-  Put(out, transfer.from_identity);
-  Put(out, transfer.to_identity);
-  Put(out, transfer.roster_epoch);
-  return out;
+  ByteVector fields;
+  Put(fields, group_id);
+  Put(fields, transfer.from_identity);
+  Put(fields, transfer.to_identity);
+  Put(fields, transfer.roster_epoch);
+  return SignedBytesWriter(kTransferDomain, kTransferVersion).Raw(fields).Finish(transfer.ext);
 }
 
 Roe<GroupRosterStatement> SignStatement(IAccountSigningAccess& signer, const std::string& public_key_b64,
@@ -285,14 +331,22 @@ Roe<GroupRosterStatement> SignStatement(IAccountSigningAccess& signer, const std
   if (!account) {
     return account.error();
   }
+  auto typed_key = TypedSigningKeyB64FromHeld(public_key_b64);
+  if (!typed_key) {
+    return typed_key.error();
+  }
   SortLists(draft);
   draft.owner_identity = *account;
-  draft.owner_public_key_b64 = public_key_b64;
+  draft.owner_public_key_b64 = std::move(typed_key.value());
   auto signature = signer.SignAccountBytes(SignBytes(draft));
   if (!signature) {
     return signature.error();
   }
-  draft.owner_signature_b64 = *signature;
+  auto typed = TypedSignatureB64FromSigner(*signature);
+  if (!typed) {
+    return typed.error();
+  }
+  draft.owner_signature_b64 = std::move(typed.value());
   return draft;
 }
 
@@ -318,23 +372,80 @@ Roe<GroupOwnerTransfer> SignTransfer(IAccountSigningAccess& signer, const std::s
   if (!account) {
     return account.error();
   }
+  auto typed_key = TypedSigningKeyB64FromHeld(public_key_b64);
+  if (!typed_key) {
+    return typed_key.error();
+  }
   GroupOwnerTransfer transfer;
   transfer.from_identity = *account;
-  transfer.from_public_key_b64 = public_key_b64;
+  transfer.from_public_key_b64 = std::move(typed_key.value());
   transfer.to_identity = to_identity;
   transfer.roster_epoch = roster_epoch;
   auto signature = signer.SignAccountBytes(TransferSignBytes(group_id, transfer));
   if (!signature) {
     return signature.error();
   }
-  transfer.signature_b64 = *signature;
+  auto typed = TypedSignatureB64FromSigner(*signature);
+  if (!typed) {
+    return typed.error();
+  }
+  transfer.signature_b64 = std::move(typed.value());
   return transfer;
 }
 
 Roe<void> Verify(const GroupRosterStatement& statement, const std::string& known_owner) {
-  if (statement.group_id.empty() || statement.owner_identity.empty()) {
-    return Error("roster statement: missing group or owner");
+  // Steps 1–5 of the receiver's order: the statement and every transfer of its chain are signed objects.
+  std::optional<SignedBy> owner;
+  std::vector<SignedBy> chain;
+  const SignedReceipt receipt = ReceiveSigned({
+      .what = statement.dissolved ? "group dissolved statement" : "roster statement",
+      .outside_version = kStatementVersion, // FromJson read `statement_version`: a statement is this version
+      .versions = kStatementVersions,
+      .parse = [&]() -> Roe<void> {
+        if (statement.group_id.empty() || statement.owner_identity.empty()) {
+          return Error("missing group or owner");
+        }
+        return {};
+      },
+      .algorithms = [&]() -> Roe<void> {
+        auto by = ReadSignedBy(statement.owner_identity, statement.owner_public_key_b64, statement.owner_signature_b64);
+        if (!by) {
+          return by.error();
+        }
+        owner = std::move(by.value());
+        for (const GroupOwnerTransfer& t : statement.owner_chain) {
+          auto from = ReadSignedBy(t.from_identity, t.from_public_key_b64, t.signature_b64);
+          if (!from) {
+            return from.error();
+          }
+          chain.push_back(std::move(from.value()));
+        }
+        return {};
+      },
+      .verify = [&]() -> Roe<void> {
+        if (auto ok = CheckSignature(*owner, SignBytes(statement)); !ok) {
+          return ok.error();
+        }
+        for (size_t i = 0; i < chain.size(); ++i) {
+          if (auto ok = CheckSignature(chain[i], TransferSignBytes(statement.group_id, statement.owner_chain[i]));
+              !ok) {
+            return ok.error();
+          }
+        }
+        return {};
+      },
+      .ext = &statement.ext,
+  });
+  if (!receipt.accepted()) {
+    return receipt.ToError();
   }
+  // Step 5 for the transfers, now that each is known to be its signer's.
+  for (const GroupOwnerTransfer& t : statement.owner_chain) {
+    if (const auto unknown = t.ext.FirstUnknownCritical({})) {
+      return AppError::NewerFormat("owner transfer: unknown critical extension " + std::to_string(*unknown));
+    }
+  }
+  // Step 6: the terms.
   std::set<std::string> seen;
   size_t owners = 0;
   bool owner_listed = false;
@@ -353,13 +464,7 @@ Roe<void> Verify(const GroupRosterStatement& statement, const std::string& known
   if (auto lists = CheckLists(statement); !lists) {
     return lists.error();
   }
-  if (auto ok = CheckSignature(statement.owner_identity, statement.owner_public_key_b64, SignBytes(statement),
-                               statement.owner_signature_b64);
-      !ok) {
-    return ok.error();
-  }
-  // The chain: each transfer signed by the owner it moves from, each starting where the last ended,
-  // epochs rising, the last ending at this statement's owner.
+  // The chain: each transfer starting where the last ended, epochs rising, the last ending at this statement's owner.
   uint64_t last_epoch = 0;
   for (size_t i = 0; i < statement.owner_chain.size(); ++i) {
     const GroupOwnerTransfer& t = statement.owner_chain[i];
@@ -370,11 +475,6 @@ Roe<void> Verify(const GroupRosterStatement& statement, const std::string& known
       return Error("roster statement: owner chain epochs out of order");
     }
     last_epoch = t.roster_epoch;
-    if (auto ok = CheckSignature(t.from_identity, t.from_public_key_b64, TransferSignBytes(statement.group_id, t),
-                                 t.signature_b64);
-        !ok) {
-      return ok.error();
-    }
   }
   if (!statement.owner_chain.empty() && statement.owner_chain.back().to_identity != statement.owner_identity) {
     return Error("roster statement: owner chain does not end at its owner");
@@ -430,15 +530,20 @@ std::optional<GroupRosterStatement> Pick(const std::vector<GroupRosterStatement>
 
 Object TransferToJson(const GroupOwnerTransfer& transfer) {
   Object json;
+  json.set(kTransferVersionKey, int64_t{kTransferVersion});
   json.set("from", transfer.from_identity);
   json.set("from_public_key", transfer.from_public_key_b64);
   json.set("to", transfer.to_identity);
   json.setJsonUInt("roster_epoch", transfer.roster_epoch);
+  WriteExtB64(json, transfer.ext);
   json.set("signature", transfer.signature_b64);
   return json;
 }
 
 Roe<GroupOwnerTransfer> TransferFromJson(const Object& json) {
+  if (auto version = CheckNestedVersion(json, kTransferVersionKey, kTransferVersion, "owner transfer"); !version) {
+    return version.error();
+  }
   GroupOwnerTransfer transfer;
   transfer.from_identity = json.getString("from").value_or("");
   transfer.from_public_key_b64 = json.getString("from_public_key").value_or("");
@@ -448,18 +553,28 @@ Roe<GroupOwnerTransfer> TransferFromJson(const Object& json) {
   if (transfer.from_identity.empty() || transfer.to_identity.empty() || transfer.signature_b64.empty()) {
     return Error("owner transfer: missing field");
   }
+  auto ext = ReadExtB64(json);
+  if (!ext) {
+    return Error("owner transfer: " + ext.error().message);
+  }
+  transfer.ext = std::move(ext.value());
+  auto by = ReadSignedBy(transfer.from_identity, transfer.from_public_key_b64, transfer.signature_b64);
+  if (!by) {
+    return by.error();
+  }
   return transfer;
 }
 
 Object ToJson(const GroupRosterStatement& statement) {
   Object json;
+  json.set(kStatementVersionKey, int64_t{kStatementVersion});
   json.set("group_id", statement.group_id);
   json.setJsonUInt("roster_epoch", statement.roster_epoch);
   std::vector<Value> members;
   for (const GroupRosterStatementMember& m : statement.members) {
     Object row;
     row.set("identity", m.identity);
-    row.set("role", MemberRoleToString(m.role));
+    row.set("role", RoleText(m));
     row.setJsonUInt("joined_at", static_cast<uint64_t>(std::max<int64_t>(m.joined_at, 0)));
     if (!m.added_by.empty()) {
       row.set("added_by", m.added_by);
@@ -467,7 +582,7 @@ Object ToJson(const GroupRosterStatement& statement) {
     members.push_back(ObjectValue(std::move(row)));
   }
   json.set("members", ArrayValue(std::move(members)));
-  json.set("preset", GroupPresetToString(statement.preset));
+  json.set("preset", PresetText(statement));
   PutOpenGroupJson(json, statement);
   json.set("owner", statement.owner_identity);
   json.set("owner_public_key", statement.owner_public_key_b64);
@@ -478,6 +593,7 @@ Object ToJson(const GroupRosterStatement& statement) {
     }
     json.set("owner_chain", ArrayValue(std::move(chain)));
   }
+  WriteExtB64(json, statement.ext);
   json.set("owner_signature", statement.owner_signature_b64);
   if (statement.dissolved) {
     json.set("dissolved", true);
@@ -486,6 +602,11 @@ Object ToJson(const GroupRosterStatement& statement) {
 }
 
 Roe<GroupRosterStatement> FromJson(const Object& json) {
+  // 1. The version, a dissolved statement's too, before anything else is read.
+  if (auto version = CheckNestedVersion(json, kStatementVersionKey, kStatementVersion, "roster statement"); !version) {
+    return version.error();
+  }
+  // 2. The fields (the role and preset as received) and the extension area.
   GroupRosterStatement statement;
   statement.group_id = json.getString("group_id").value_or("");
   statement.roster_epoch = json.getNonNegInt("roster_epoch").value_or(0);
@@ -493,7 +614,8 @@ Roe<GroupRosterStatement> FromJson(const Object& json) {
   statement.owner_public_key_b64 = json.getString("owner_public_key").value_or("");
   statement.owner_signature_b64 = json.getString("owner_signature").value_or("");
   statement.dissolved = json.getIf<bool>("dissolved").value_or(false);
-  statement.preset = GroupPresetFromString(json.getString("preset").value_or("open"));
+  statement.preset_text = json.getString("preset").value_or("open");
+  statement.preset = GroupPresetFromString(statement.preset_text);
   const Array* members = json.getArray("members");
   if (statement.group_id.empty() || statement.owner_identity.empty() || !members) {
     return Error("roster statement: missing field");
@@ -505,7 +627,8 @@ Roe<GroupRosterStatement> FromJson(const Object& json) {
     }
     GroupRosterStatementMember m;
     m.identity = row->getString("identity").value_or("");
-    m.role = MemberRoleFromString(row->getString("role").value_or("member"));
+    m.role_text = row->getString("role").value_or("member");
+    m.role = MemberRoleFromString(m.role_text);
     m.joined_at = static_cast<int64_t>(row->getNonNegInt("joined_at").value_or(0));
     m.added_by = row->getString("added_by").value_or("");
     statement.members.push_back(std::move(m));
@@ -525,6 +648,16 @@ Roe<GroupRosterStatement> FromJson(const Object& json) {
       }
       statement.owner_chain.push_back(std::move(*transfer));
     }
+  }
+  auto ext = ReadExtB64(json);
+  if (!ext) {
+    return Error("roster statement: " + ext.error().message);
+  }
+  statement.ext = std::move(ext.value());
+  // 3. The owner's typed key and signature (each transfer's were read with it).
+  if (auto by = ReadSignedBy(statement.owner_identity, statement.owner_public_key_b64, statement.owner_signature_b64);
+      !by) {
+    return by.error();
   }
   return statement;
 }

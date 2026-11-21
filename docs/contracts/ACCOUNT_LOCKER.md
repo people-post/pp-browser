@@ -10,7 +10,7 @@ The same snapshot is how linked devices share contact edits and how an account c
 install from its recovery phrase.
 
 Code: `foundation/crypto/RecoverySeed` (keys), `lib/people/AccountLocker` (seal / open / merge),
-`lib/people/ContactClock` (contact registers), `feature/conversations/AccountLockerWorkflow` (sync),
+`lib/people/ContactClock` (contact registers), `lib/people/AccountStateCodec` (rows, unknown fields kept), `feature/conversations/AccountLockerWorkflow` (sync),
 `ConversationsHub::RestoreFromRecoveryPhrase` (restore). HTTP API: [SERVICE_ENDPOINTS § HTTP account
 lockers](SERVICE_ENDPOINTS.md#http-account-lockers-multi-device-m023). The seed on disk:
 [AT_REST_ENCRYPTION § Identity plaintext](AT_REST_ENCRYPTION.md).
@@ -31,38 +31,67 @@ with checksum) — the seed itself, never BIP-0039's PBKDF2 output. HKDF-SHA256,
 **Locker id** = BLAKE2b-256 of the locker ML-DSA public key (lowercase hex on the wire). Anyone with the
 phrase finds the locker; nobody without it can link the locker to the account.
 
-## Snapshot
+## Record (locker record v2)
+
+What a provider stores and serves, verbatim ([release-compatibility SIGNED_FORMATS § 2.6](../../projects/release-compatibility/SIGNED_FORMATS.md#26-account-locker-record-v2-and-state);
+the shared rules: [SIGNED_EXTENSIONS](SIGNED_EXTENSIONS.md)). The JSON (`POST /v1/lockers/put`'s and `GET
+/v1/lockers/:id`'s `locker`, a saved copy's `locker`):
 
 | Field | Meaning |
 |-------|---------|
-| `locker_id` | as above |
-| `version` | u64; each write picks `max(now ms, highest version seen + 1)` |
-| `signing_public_key` | the locker ML-DSA-65 public key (its hash must be `locker_id`) |
-| `sealed` | ≤ 1 MiB + 256 bytes: XChaCha20-Poly1305 under the locker key, AAD `account-locker\|{locker id hex}\|{version}`, of the state JSON prefixed by its length (u32 BE) and zero-padded to 4 KiB × 4ⁿ |
-| `signature` | locker key over `pp-browser:account-locker-v1` ‖ 0 ‖ u8 1 ‖ LenBytes(locker id) ‖ u64 `version` ‖ LenBytes(`sealed`) |
+| `record_version` | **2**, read first: missing or lower is an older app's (refused), higher a newer app's ("update needed", nothing else read) |
+| `locker_id` | as above (lowercase hex of 32 bytes) |
+| `version` | the revision, u64; each write picks `max(now ms, highest version seen + 1)` |
+| `signing_public_key_b64` | the locker ML-DSA-65 public key, **typed** (algorithm id `1`, then the 1952-byte key); the BLAKE2b-256 of the raw key (without the id) must be `locker_id` |
+| `sealed_b64` | ≤ 1 MiB + 256 bytes: XChaCha20-Poly1305 under the locker key, AAD `account-locker\|{locker id hex}\|{version}`, of the state JSON prefixed by its length (u32 BE) and zero-padded to 4 KiB × 4ⁿ — `FileCipher`'s bytes, whose first byte (`1`) is the AEAD id |
+| `ext_b64` | the signed extension entries (SIGNED_EXTENSIONS § The extension area); absent when empty (none is defined at release 1). Unknown non-critical entries are kept: a record is stored and served as received |
+| `signature_b64` | the locker key's **typed** signature over the signed bytes below |
 
-A reader accepts a snapshot only when the signature verifies, the id matches the key, and the version is
-not below the **highest version this device has seen for that locker** (rollback protection: a provider
-serving an old snapshot is refused). Among several, the newest valid one wins (`PickNewest`). Golden
-vectors: `account_locker_test`, `http_locker_client_test` and www `__tests__/AccountLocker.test.ts`.
+Signed bytes (`account_locker::SignBytes`):
+
+```
+"pp-browser:account-locker" 00 ‖ u8 2 ‖ LenBytes locker_id ‖ u64 version ‖ LenBytes sealed ‖ ext area
+```
+
+(u64 BE lengths; the ext area is the u64 BE length of the entries, then the entries.) The signing key is not in them: the
+locker id it hashes to is.
+
+**The receiver's order** (`account_locker::ReceiveRecord`; the relay's `lockers/put` runs the same): `record_version`;
+the fields and the area (malformed: refused); the algorithm ids of the key, the signature and `sealed` (unknown: update
+needed); the signature — the raw key hashes to `locker_id` and the signature verifies (else a forgery); an unknown
+critical entry (update needed, only after the signature). A device then opens the seal, reads `state_version` first
+(below), and accepts a snapshot only when its revision is not below the **highest version this device has seen for
+that locker** (rollback protection: a provider serving an old snapshot is refused). Among several, the newest valid one
+wins (`PickNewest`); **one a newer app wrote** (a higher `record_version` or `state_version`, an unknown algorithm or
+critical entry) is skipped and noted: the device reads the newest it can and **stops publishing** with "update needed"
+(`AppError::NewerFormat`), never writing over what it cannot read. Vectors: `lib/people/tests/data/account_locker_vectors.json`
+(the signed bytes of fixed inputs, signed fixtures and each refusal's verdict), read by the relay byte for byte.
 
 ## State JSON
 
+Inside the seal (not signed: the seal is the locker key's).
+
 | Key | Content |
 |-----|---------|
+| `state_version` | **1**, read first once a snapshot opens (INVENTORY T7): missing or lower is refused; higher is a newer app's — the device says "update needed" and does not write the locker |
 | `nickname` | the account's nickname |
 | `contacts` | address book rows (`ContactToJson`) |
 | `groups` | per group: metadata, roster as identities with roles, the owner-signed roster statement — no messages ([group-chat G013](../../projects/group-chat/DECISIONS.md)). A group the account is out of (left, or removed — the member check found it out) is a tombstone: `group_id`, `owner`, `roster_epoch`, `left: true`. A group the owner dissolved (group-chat G016) is a terminal tombstone: `left: true, dissolved: true` |
 | `card_floors` | `{account_id, issued_at}`: the newest account card issue time seen per account — a restored device refuses older cards ([ACCOUNT_CARD § Newest wins](ACCOUNT_CARD.md)) |
-| `grants` | the relay grants other accounts gave this one ([ACCOUNT_CARD § Relay grants](ACCOUNT_CARD.md#relay-grants), multi-relay MR005), each as received: `{recipient_account_id, sender_account_id, issued_at, expires_at, signature}` (the grantor, this account, Unix ms, the grantor's signature). A restored or linked device takes them so its first sends to a grantor are not a stranger's (below). Absent in older snapshots |
-| `relays` | our relays (My relays, multi-relay MR006): `{list: [{origin, peer_id}, …], card_issued_at}`, preferred first, as the account card issued at `card_issued_at` lists them, each with the PeerId its address names ([multi-relay MR008](../../projects/multi-relay/DECISIONS.md#mr008--a-relay-address-carries-its-peerid-no-first-use-trust)); at most 4, each origin once (more, and an entry without a PeerId, are dropped on read). A restored device takes them before its first card, so a restore keeps the person's list instead of the deployment's default. Absent when none, and in older snapshots |
+| `grants` | the relay grants other accounts gave this one ([ACCOUNT_CARD § Relay grants](ACCOUNT_CARD.md#relay-grants), multi-relay MR005), each **grant v2** as received: `{grant_version: 2, recipient_account_id, sender_account_id, issued_at, expires_at, ext_b64?, signature}` (the grantor, this account, Unix ms, its extension entries, the grantor's typed signature). A restored or linked device takes them so its first sends to a grantor are not a stranger's (below). A row of another `grant_version` is dropped on read |
+| `relays` | our relays (My relays, multi-relay MR006): `{list: [{origin, relay_id}, …], card_issued_at}`, preferred first, as the account card issued at `card_issued_at` lists them, each with its relay id (`relay:` + 43 base64url characters, [SIGNED_FORMATS § 3.3](../../projects/release-compatibility/SIGNED_FORMATS.md#33-what-carries-the-relay-id-instead-of-peer_id): the relay proves it with its certificate); at most 4, each origin once (more, and an entry without a relay id in its one spelling, are dropped on read). A restored device takes them before its first card, so a restore keeps the person's list instead of the deployment's default. Absent when none |
 | `providers` | provider list (reserved; empty until a second relay exists). pp-nodes are never providers: they keep caches only (M023 §6 amendment) |
 | `contact_clock` | one register per contact account: `{account_id, at, present, digest}` (below) |
 | `device_names` | the display names of the account's devices: `[{peer_id, name, at}]`, or `{peer_id, at, removed: true}` for a removed device (below). Never in the account card, a log or a metric |
 
-Every key is optional on read; unknown keys (and unknown fields inside a row) are ignored. An older build reads a snapshot
-without `device_names` as having no names, and when it writes the locker it drops the key (the next device that knows it
-puts its table back).
+Every key but `state_version` is optional on read. **Writers keep what they do not know** (INVENTORY T7): the state
+remembers the JSON it was read from (`AccountLockerState::kept`), and a write — a merge and publish, or a state written
+back as read — puts back every top-level key this build does not read, and on each row the fields it does not read from
+the stored row of the same key (contacts by `id`, also inside `local` and `remote`; groups by `group_id` and their
+members by `identity`; card floors and clock registers by `account_id`; grants by grantor and `issued_at`; relays by
+`origin`, and the `relays` object's own; device names by `peer_id`). A field this build writes is its own (a kept value
+never overrides it); a row this device no longer writes takes its fields with it. So a newer device's additive fields
+survive an older device's publish within one `state_version`.
 
 ### Grants
 
@@ -144,8 +173,9 @@ checked, before the announce, so its sends carry them), the device announced, th
 
 The user can keep a copy of the locker wherever they like (M023 §6 amendment): `ExportFileJson` seals the state as
 this device has it — no network — at a version above any seen (so the provider's next write goes higher still),
-as JSON `{format: "pp-browser-account-locker-file-v1", exported_at, locker: {locker_id, version,
-signing_public_key_b64, sealed_b64, signature_b64}}` (the record the relay stores). Restore takes the phrase and
+as JSON `{format: "pp-browser-account-locker-file-v1", exported_at, locker: {record_version, locker_id, version,
+signing_public_key_b64, sealed_b64, ext_b64?, signature_b64}}` (the record the relay stores, [§ Record](#record-locker-record-v2);
+the file's own shape and `format` are unchanged by record v2). Restore takes the phrase and
 any saved copies: the newest valid snapshot among them and the provider's wins (same checks as above); with a
 saved copy an unreachable provider is not an error. A file of another phrase, or not a saved account, is refused.
 UI: Me → Security → **Save a copy of my account…** (`pp-account-YYYY-MM-DD.json`, the platform save / export
