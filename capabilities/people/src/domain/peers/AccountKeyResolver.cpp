@@ -1,6 +1,7 @@
 #include "domain/peers/AccountKeyResolver.h"
 
 #include "common/directory/DirectoryJson.h"
+#include "foundation/error/AppError.h"
 #include "lib/people/ContactIdentity.h"
 
 #include <utility>
@@ -107,13 +108,17 @@ Roe<PeerCardRecord> AccountKeyResolver::AddDirectoryHit(const mesh::DirectoryHit
   if (!account_id) {
     return Error("Directory entry has no account");
   }
-  if (!hit.signing_public_key_b64 || !hit.kem_public_key_b64 || !hit.kem_binding_signature_b64) {
+  if (hit.keys_update_needed) {
+    // An algorithm or binding version this build does not read: the account needs a newer app, its keys are not bad.
+    return AppError::NewerFormat("Directory entry for " + *account_id + ": its keys need a newer app");
+  }
+  if (!hit.signing_public_key_b64 || !hit.kem_public_key_b64 || !hit.kem_binding_b64) {
     return Error("Directory entry carries no bound keys");
   }
   return AddKeyCard(KeyCard{.account_id = *account_id,
                             .signing_public_key_b64 = *hit.signing_public_key_b64,
                             .kem_public_key_b64 = *hit.kem_public_key_b64,
-                            .kem_binding_signature_b64 = *hit.kem_binding_signature_b64},
+                            .kem_binding_signature_b64 = *hit.kem_binding_b64},
                     "directory");
 }
 

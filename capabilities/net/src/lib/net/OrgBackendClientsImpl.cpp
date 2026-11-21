@@ -385,8 +385,8 @@ Roe<std::vector<mesh::MeshNodeHit>> MeshNodeHitsFromDirectoryJson(const std::str
     if (auto kem = obj->getString("kem_public_key_b64")) {
       hit.kem_public_key_b64 = *kem;
     }
-    if (auto binding = obj->getString("kem_binding_signature_b64")) {
-      hit.kem_binding_signature_b64 = *binding;
+    if (auto binding = obj->getString("kem_binding_b64")) {
+      hit.kem_binding_b64 = *binding;
     }
     if (const Object* caps = obj->getObject("capabilities")) {
       if (auto circuit = caps->getIf<bool>("circuit_relay")) {
