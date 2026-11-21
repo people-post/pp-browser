@@ -19,8 +19,8 @@ and pp-node 10.0; tag forms and workflows: [RELEASE.md](../RELEASE.md).
 | A relay release this one needs, deployed to prod first | Hongwei | In pp-relay-apis: `git fetch origin && git tag -a v1.0.0 <commit on main> -m "relay 1.0.0" && git push origin v1.0.0`. Its CI's `deploy` job deploys prod (refused if the commit is not on main) | `gh run list -R people-post/pp-relay-apis --workflow ci.yml --branch v1.0.0 --limit 1`, then `gh run watch <run id> -R people-post/pp-relay-apis --exit-status`: `deploy` ran, not skipped |
 | Freeze announced; release owner named | release owner | The team channel | — |
 
-Not yet: a relay release candidate held on staging before prod; today relay qa takes every push to pp-relay-apis
-main ([DESIGN § Environments](../../../projects/release-compatibility/DESIGN.md#environments), PHASES § P2).
+Not yet: a relay release candidate (`release/vX.Y.Z-rc.<n>`) held on staging before prod, and prod tags on `release/X.Y`
+(RC021); today relay qa takes every push to the relay API repository's main ([DESIGN § Environments](../../../projects/release-compatibility/DESIGN.md#environments), PHASES § P2).
 
 ## 2. Cut the branch
 
