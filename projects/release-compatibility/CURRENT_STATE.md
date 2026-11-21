@@ -1,6 +1,6 @@
 # Release compatibility — current state
 
-**As of:** 2026-11-20
+**As of:** 2026-11-21
 
 Design written ([DESIGN.md](DESIGN.md)); RC001–RC016 accepted by Hongwei (2026-11-17/19), in review with Leo
 (the relay's numbering, its dev tags and the environments wait for him; RC007 answers his review of the branch model; RC008 is the app build
@@ -18,7 +18,11 @@ policy in force, but new breaking changes should already be weighed against the 
 **P3, the signed-format cutover:** started 2026-11-20 on the integration branches `cutover/signed-formats` in
 pp-browser and pp-relay-apis ([CUTOVER_PLAN.md](CUTOVER_PLAN.md)): nothing of it lands on `main` before merge day. Done
 so far: pp-cpp-common 1.5.0 (`ExtArea`), pp-cpp-crypto 1.4.0 (`AlgId`, typed blobs, seeded-keygen goldens), pinned
-on main.
+on main. As of 2026-11-21: pp-cpp-mesh v10.0.0 (DHT record v2, typed directory rows) and pp-cpp-crypto v1.4.1 released
+and pinned on pp-browser's integration branch; **pp-browser W0–W6 merged** there (CI green at a452cd116) and **W7 on
+`main`** (#692); pp-relay-apis R1a, R2a, R2b, R3 and R4 merged on its integration branch; **R1b** (relay sign v4) and
+**R5** (Support's formats, an item the plan had missed) in progress; then the lab (L), then merge day, which waits for
+Leo's qa operator set, certificate and secrets ([CUTOVER_PLAN § Leo](CUTOVER_PLAN.md#infrastructure-and-keys-leo)).
 
 ## Open questions for Kenneth and Leo
 
@@ -43,6 +47,14 @@ the date) and the INVENTORY item it names, in one PR, and drop the row from the 
   - Support retention and the S3 lifecycle days (O5);
   - the crash-report endpoint (O6);
   - the support-worker's "not readable" reply (X9), the wake payload version (X10), PITR on every state table.
+
+**For Hongwei** (from the cutover's build; each has a default that stands, none blocks):
+- a group preset this build does not know reads as **Open** (today's behaviour; Managed would be the safer reading);
+- the cutover data job leaves pre-release **Support sessions** (support-store, support-crypto state) in place: Q12 does
+  not list them;
+- registrations from before the cutover that never renew keep bare keys until they expire (90 days); the relay leaves
+  their keys out of directory rows and refuses their signed calls, and the data job does not delete them (it would
+  extend Q12's list).
 
 Also unchecked, because it lives in Leo's infrastructure repo: the S3 lifecycle, TTL and backup settings of the real
 tables and buckets (INVENTORY § 2.5).

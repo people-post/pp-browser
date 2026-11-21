@@ -33,12 +33,39 @@ The integration branches are rebased on (or merge) `main` weekly, so they do not
 | R2 | pp-relay-apis | Card v5 stored verbatim, KEM binding v2, grant v2, locker record v2 (§ 4) | `account-card.ts`, `repos/accounts.ddb.ts`, registration, `grant.ts`, messenger send, `crypto/locker.ts`, lockers | R1, W2, W3 |
 | R3 | pp-relay-apis | The certificate: the registry loads it (`RELAY_CERTIFICATE_SECRET_ID`, `RELAY_SIGNING_KEY_SECRET_ID`), checks it, serves `relay-identity` v2 and `client-compat`'s `relay_certificate_b64`; `scripts/relay-operator.mjs`; the local stack's 1-of-1 set | registry `relay-identity.ts`, `client-compat.ts`, shared `relay-identity.ts`, `scripts/`, `local-stack/` | R1, W5's vectors |
 | R4 | pp-relay-apis | The legacy routes removed (C2, its route half: `blobs/*`, `files/*`, `GET /search`, `llm_api_key`, `keys/rotate`, the pre-cutover sender mapping) and the one-time cutover data job (Q12) | `storage/src/routes.ts`, registry routes, `llm-credentials.ts`, `records.ts`, a job | W7 on main |
+| R5 | pp-relay-apis | Support (the support worker) speaks the release-1 app ↔ app formats: envelope v4, account card v5 (its own and customers'), KEM binding v2, relay grant v2; its own card back on register. Its signed relay calls move to v4 with R1. Missed by the first plan (INVENTORY lists Support on the app's formats) | `packages/support-crypto`, `functions/support-worker` ingest/outbound | R2b, W1, W2 vectors |
 | L | both | The app lab against the local stack on the integration branches, every suite; then against qa after merge day | — | everything |
 
 Infrastructure and keys, **Leo** (asked 2026-11-20; parallel to the work above): the certificate and signing-seed
 secrets and the registry's permission to read them (terraform); a qa operator set (2 of 3, or 1 of 1 until staging
 exists) and its certificate 1 before merge day; prod's set and certificate 1 before release day (§ 7 step 5);
 pp-node's fleet config naming the relay id (ansible) for pp-node 10.0.
+
+How they were split while built: R1 as **R1a** (`ext-area.ts`, `alg-id.ts`) and **R1b** (sign domains v4, after W6);
+R2 as **R2a** (grant v2, locker v2) and **R2b** (card v5, KEM binding v2, after W2). PRs into an integration branch
+run no CI (its items run the full suite locally); merged items land in batches, and the integration branch's push
+builds each batch once.
+
+### Infrastructure and keys, Leo
+
+What the merged R3, R4 and W5 need, exactly (the relay's `docs/operators.md` has the steps and a worked example):
+
+1. Per environment, two new secrets: `pp-relay-api/<env>/relay-signing-key` (standard base64 of a 32-byte seed) and
+   `pp-relay-api/<env>/relay-certificate` (the certificate's standard base64, `relay-operator.mjs combine` output).
+2. Registry variables `RELAY_SIGNING_KEY_SECRET_ID`, `RELAY_CERTIFICATE_SECRET_ID`, `RELAY_ID` (`relay:…`) and
+   `RELAY_ORIGINS` (the API bases exactly as clients use them, `https://<host>/api/relay`); `RELAY_IDENTITY_PEER_ID`
+   equals the certificate's audience. IAM: `secretsmanager:GetSecretValue` on both secrets for the registry role
+   (and `kms:Decrypt` with a customer-managed key).
+3. qa's operator set (2 of 3, or 1 of 1 until staging exists) and its certificate 1 (sequence 1, `expires_at` 0) before
+   merge day: without it qa's registry answers `503 relay_identity_unavailable` to signed calls. Prod's before release
+   day, certifying prod's current transport key and a new signing seed.
+4. pp-browser: the relay ids in CI variables `PP_RELAY_ID_QA` / `PP_RELAY_ID_PROD`, the certificates in
+   `config/relay-certs/{qa,prod}.cert` (until then builds fail closed against qa and prod); pp-node 10.0's fleet config
+   sets `registration.relay_id` (ansible).
+5. The cutover data job (`packages/cutover-data`, dry run unless `--apply`): a role to run it once per environment
+   (qa on merge day, prod on release day) with DynamoDB scan/query/update/delete on `accounts` and `messages`, and S3
+   delete on the locker and message-body prefixes. After merge day the CloudFront behaviours for the removed routes
+   (`keys/rotate`, `/search`, `blobs/*`, `files/*`) and `LLM_LEGACY_KEYS_ACCEPTED_UNTIL` can go.
 
 ## Order
 
