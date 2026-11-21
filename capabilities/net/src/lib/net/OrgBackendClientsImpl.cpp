@@ -77,10 +77,10 @@ Roe<std::string> HttpPushDeviceClient::PostDevice(const char* path, const PushDe
 Roe<void> HttpPushDeviceClient::RegisterDevice(const PushDeviceRegistration& registration) {
   const int64_t timestamp = util::NowUnixMs();
   auto answered = PostDevice("/v1/devices/register", registration, "push_token", registration.push_token, timestamp,
-                             [&registration, timestamp](const std::string& audience) {
+                             [&registration, timestamp](const std::string& audience, const pp::ExtArea& ext) {
                                return BuildRelayApiDeviceRegisterSignBytes(
                                    audience, registration.account_id, registration.platform, registration.device_id,
-                                   registration.push_token, timestamp);
+                                   registration.push_token, timestamp, ext);
                              });
   if (!answered) {
     return answered.error();
@@ -94,12 +94,12 @@ Roe<void> HttpPushDeviceClient::RegisterDevice(const PushDeviceRegistration& reg
 Roe<void> HttpPushDeviceClient::UnregisterOnce(const PushDeviceRegistration& registration,
                                                const std::string& binding_id) {
   const int64_t timestamp = util::NowUnixMs();
-  auto answered = PostDevice("/v1/devices/unregister", registration, "binding_id", binding_id, timestamp,
-                             [&registration, &binding_id, timestamp](const std::string& audience) {
-                               return BuildRelayApiDeviceUnregisterSignBytes(
-                                   audience, registration.account_id, registration.platform, registration.device_id,
-                                   binding_id, timestamp);
-                             });
+  auto answered = PostDevice(
+      "/v1/devices/unregister", registration, "binding_id", binding_id, timestamp,
+      [&registration, &binding_id, timestamp](const std::string& audience, const pp::ExtArea& ext) {
+        return BuildRelayApiDeviceUnregisterSignBytes(audience, registration.account_id, registration.platform,
+                                                      registration.device_id, binding_id, timestamp, ext);
+      });
   if (!answered) {
     return answered.error();
   }
@@ -467,16 +467,14 @@ HttpRegistrationClient::HttpRegistrationClient(std::string base_url, const bool 
     : base_url_(std::move(base_url)), public_only_(public_only) {}
 
 Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(
-    const std::string& public_key_b64, const std::string& nickname, const std::string& signature_alg,
-    const std::string& kem_public_key_b64, const std::string& peer_id, const std::vector<std::string>& multiaddrs,
-    const RegistrationPublishOpts& publish) {
+    const std::string& public_key_b64, const std::string& nickname, const std::string& kem_public_key_b64,
+    const std::string& peer_id, const std::vector<std::string>& multiaddrs, const RegistrationPublishOpts& publish) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
   Object body;
   body.set("public_key", public_key_b64);
   body.set("nickname", nickname);
-  body.set("signature_alg", signature_alg);
   body.set("kem_public_key_b64", kem_public_key_b64);
   if (kem_public_key_b64.empty()) {
     return Error("kem_public_key_b64 is required");
@@ -511,11 +509,6 @@ Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(
 
   RegistrationStartResult result;
   result.challenge = *challenge;
-  if (auto alg = root->getString("signature_alg")) {
-    result.signature_alg = *alg;
-  } else {
-    result.signature_alg = signature_alg;
-  }
   if (auto expires = root->getString("expires_at")) {
     result.expires_at = *expires;
   }
@@ -524,9 +517,8 @@ Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(
 
 Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     const std::string& challenge, const std::string& public_key_b64, const std::string& nickname,
-    const SignedRelayCommand& signed_finish, const std::string& signature_alg, const std::string& kem_public_key_b64,
-    const std::string& kem_binding_signature_b64, const std::string& peer_id,
-    const std::vector<std::string>& multiaddrs, const RegistrationPublishOpts& publish) {
+    const SignedRelayCommand& signed_finish, const std::string& kem_public_key_b64, const std::string& kem_binding_b64,
+    const std::string& peer_id, const std::vector<std::string>& multiaddrs, const RegistrationPublishOpts& publish) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
@@ -535,10 +527,9 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
   body.set("public_key", public_key_b64);
   body.set("nickname", nickname);
   PutSignedRelayCommand(body, signed_finish);
-  body.set("signature_alg", signature_alg);
   body.set("kem_public_key_b64", kem_public_key_b64);
-  if (!kem_binding_signature_b64.empty()) {
-    body.set("kem_binding_b64", kem_binding_signature_b64); // KEM binding v2 (SIGNED_FORMATS § 2.3)
+  if (!kem_binding_b64.empty()) {
+    body.set("kem_binding_b64", kem_binding_b64); // KEM binding v2 (SIGNED_FORMATS § 2.3)
   }
   if (kem_public_key_b64.empty()) {
     return Error("kem_public_key_b64 is required");

@@ -35,11 +35,16 @@ struct HeartbeatIdentity {
   std::string peer_id;
 };
 
-/** A signed heartbeat: the relay it is for (its PeerId, multi-relay MR007) and the account key's signature over it. */
+/**
+ * A signed heartbeat: the relay it is for (its PeerId, multi-relay MR007), the extension area it signed and the
+ * account key's typed signature over it (release-compatibility SIGNED_FORMATS § 2.8).
+ */
 struct HeartbeatSignature {
-  /** The version byte the heartbeat was signed with (`sign_version`). */
+  /** The version byte the heartbeat was signed with (`sign_version`, 4). */
   int sign_version = 0;
   std::string audience;
+  /** The area's entries in standard base64 (`ext_b64`); empty: the empty area, left out of the body. */
+  std::string ext_b64;
   std::string signature;
 };
 

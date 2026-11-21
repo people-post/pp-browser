@@ -3,6 +3,9 @@
 #include "common/ValueJson.h"
 #include "foundation/error/AppError.h"
 #include "lib/net/RelaySignBytes.h"
+#include "lib/people/CardKeys.h"
+
+#include "foundation/crypto/SignedBytes.h"
 
 #include <algorithm>
 #include <iterator>
@@ -23,7 +26,8 @@ void FixedRelayAudience::Refused(const std::string& code) {
 }
 
 Roe<SignedRelayCommand> SignRelayCommand(IRelayAudience* audience, const RelayAuthSigner& signer,
-                                         const int64_t timestamp, const RelayCommandBytes& build) {
+                                         const int64_t timestamp, const RelayCommandBytes& build,
+                                         const pp::ExtArea& ext) {
   if (!signer) {
     return Error("Relay auth signer not configured");
   }
@@ -34,23 +38,34 @@ Roe<SignedRelayCommand> SignRelayCommand(IRelayAudience* audience, const RelayAu
   if (!peer_id) {
     return peer_id.error();
   }
-  const std::vector<uint8_t> bytes = build(*peer_id);
+  const std::vector<uint8_t> bytes = build(*peer_id, ext);
   const int sign_version = RelaySignVersionOf(bytes);
   if (bytes.empty() || sign_version < 0) {
     return Error("Failed to build relay command sign bytes");
+  }
+  if (!RelayCallBytesEndWith(bytes, ext)) {
+    return Error("Relay command sign bytes do not end with the extension area sent");
   }
   auto signature = signer(bytes);
   if (!signature) {
     return signature.error();
   }
-  return SignedRelayCommand{
-      .sign_version = sign_version, .audience = std::move(*peer_id), .timestamp = timestamp, .signature = *signature};
+  auto typed = TypedSignatureB64(*signature);
+  if (!typed) {
+    return typed.error();
+  }
+  return SignedRelayCommand{.sign_version = sign_version,
+                            .audience = std::move(*peer_id),
+                            .timestamp = timestamp,
+                            .ext = ext,
+                            .signature = std::move(*typed)};
 }
 
 void PutSignedRelayCommand(Object& body, const SignedRelayCommand& command) {
   body.set("sign_version", static_cast<int64_t>(command.sign_version));
   body.set("audience", command.audience);
   body.set("timestamp", command.timestamp);
+  WriteExtB64(body, command.ext);
   body.set("signature", command.signature);
 }
 

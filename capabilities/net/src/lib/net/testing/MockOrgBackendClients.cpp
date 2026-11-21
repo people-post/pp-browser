@@ -4,6 +4,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/TypedBlob.h"
 
 #include <algorithm>
 #include <mutex>
@@ -208,24 +209,26 @@ Roe<mesh::DirectoryHit> MockDirectoryClient::LookupByAccount(const std::string& 
   return Error("Account not found");
 }
 
-Roe<RegistrationStartResult> MockRegistrationClient::StartRegistration(
-    const std::string& /*public_key_b64*/, const std::string& /*nickname*/, const std::string& signature_alg,
-    const std::string& /*kem_public_key_b64*/, const std::string& /*peer_id*/,
-    const std::vector<std::string>& /*multiaddrs*/, const RegistrationPublishOpts& /*publish*/) {
-  return RegistrationStartResult{
-      .challenge = "mock-challenge", .signature_alg = signature_alg, .expires_at = "2099-01-01T00:00:00.000Z"};
+Roe<RegistrationStartResult> MockRegistrationClient::StartRegistration(const std::string& /*public_key_b64*/,
+                                                                       const std::string& /*nickname*/,
+                                                                       const std::string& /*kem_public_key_b64*/,
+                                                                       const std::string& /*peer_id*/,
+                                                                       const std::vector<std::string>& /*multiaddrs*/,
+                                                                       const RegistrationPublishOpts& /*publish*/) {
+  return RegistrationStartResult{.challenge = "mock-challenge", .expires_at = "2099-01-01T00:00:00.000Z"};
 }
 
 Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(
     const std::string& /*challenge*/, const std::string& public_key_b64, const std::string& nickname,
-    const SignedRelayCommand& /*signed_finish*/, const std::string& /*signature_alg*/,
-    const std::string& /*kem_public_key_b64*/, const std::string& /*kem_binding_signature_b64*/,
-    const std::string& /*peer_id*/, const std::vector<std::string>& /*multiaddrs*/,
-    const RegistrationPublishOpts& publish) {
+    const SignedRelayCommand& /*signed_finish*/, const std::string& /*kem_public_key_b64*/,
+    const std::string& /*kem_binding_b64*/, const std::string& /*peer_id*/,
+    const std::vector<std::string>& /*multiaddrs*/, const RegistrationPublishOpts& publish) {
   // The relay names the inbox by the Account ID of the key that registered (MR001).
   std::string account_id;
-  if (auto key = Base64Decode(public_key_b64)) {
-    account_id = AccountIdFromMlDsaPublicKey(*key).valueOr("");
+  // The key is typed (SIGNED_FORMATS § 2.8); the Account ID hashes the raw key.
+  if (const TypedRead key = ReadTypedBlobB64(pp::BlobKind::kSignaturePublicKey, public_key_b64, "public_key");
+      key.ok()) {
+    account_id = AccountIdFromMlDsaPublicKey(key.raw).valueOr("");
   }
   return RegistrationResult{.success = true,
                             .account_id = account_id,

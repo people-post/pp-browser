@@ -42,7 +42,7 @@ struct Fixture {
     d.sign = [](const std::string&, const std::string&, const std::string& state,
                 int64_t ts) -> pbr::Roe<pbr::HeartbeatSignature> {
       return pbr::HeartbeatSignature{
-          .sign_version = 2, .audience = "QmRelay", .signature = "sig-" + state + "-" + std::to_string(ts)};
+          .sign_version = 4, .audience = "QmRelay", .signature = "sig-" + state + "-" + std::to_string(ts)};
     };
     d.post = [this](const std::string& url, const std::string& body, const std::map<std::string, std::string>& headers,
                     long timeout_s) -> pbr::Roe<pbr::HttpResponse> {
@@ -99,7 +99,7 @@ TEST(NodeHeartbeatTest, SendsSignedActiveHeartbeatToContractEndpoint) {
   EXPECT_EQ(f.sent[0].body.getString("signature").value_or(""), "sig-active-" + std::to_string(Ts(f.sent[0])));
   // MR007-AUD: the body names the relay the heartbeat was signed for, and the version byte it signed.
   EXPECT_EQ(f.sent[0].body.getString("audience").value_or(""), "QmRelay");
-  EXPECT_EQ(f.sent[0].body.getIf<int64_t>("sign_version"), 2);
+  EXPECT_EQ(f.sent[0].body.getIf<int64_t>("sign_version"), 4);
 }
 
 // MR008-PIN (pp-node): a relay that does not match its address gets no heartbeat — the signer refuses — and the node keeps

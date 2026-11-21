@@ -9,6 +9,7 @@
 #include "app/node/StatusHttpServer.h"
 
 #include "foundation/crypto/ProfileSecretsEngine.h"
+#include "foundation/crypto/SignedBytes.h"
 #include "foundation/platform/PlatformLogDefaults.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "common/runtime/AppRuntime.h"
@@ -272,14 +273,17 @@ pbr::NodeHeartbeatDeps MakeHeartbeatDeps(pbr::NodeBootstrapResult& boot,
                                    int64_t timestamp) -> pbr::Roe<pbr::HeartbeatSignature> {
     auto signed_heartbeat = pbr::SignRelayCommand(
         audience.get(), [identity](const std::vector<uint8_t>& bytes) { return identity->SignBytes(bytes); }, timestamp,
-        [&](const std::string& peer) {
-          return pbr::BuildRelayHeartbeatSignBytes(peer, account_id, peer_id, state, timestamp);
+        [&](const std::string& peer, const pp::ExtArea& ext) {
+          return pbr::BuildRelayHeartbeatSignBytes(peer, account_id, peer_id, state, timestamp, ext);
         });
     if (!signed_heartbeat) {
       return signed_heartbeat.error();
     }
+    pbr::Object ext;
+    pbr::WriteExtB64(ext, signed_heartbeat->ext);
     return pbr::HeartbeatSignature{.sign_version = signed_heartbeat->sign_version,
                                    .audience = signed_heartbeat->audience,
+                                   .ext_b64 = ext.getString(pbr::kExtB64Key).value_or(""),
                                    .signature = signed_heartbeat->signature};
   };
   deps.refused = [audience](const std::string& code) { audience->Refused(code); };
