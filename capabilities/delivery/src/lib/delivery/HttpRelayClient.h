@@ -30,7 +30,10 @@ struct RelaySendHooks {
    * new one. The send goes once more without it, as a stranger's.
    */
   std::function<void(const std::string& recipient_account_id)> grant_refused;
-  /** Our account's ML-DSA public key (base64), sent when the relay asks for it (`sender_key_required`). */
+  /**
+   * Our account's ML-DSA public key as the identity holds it (raw, base64), sent typed (`sender_public_key_b64`, SIGNED_FORMATS
+   * § 2.8) when the relay asks for it (`sender_key_required`).
+   */
   std::function<std::string()> sender_public_key;
 };
 

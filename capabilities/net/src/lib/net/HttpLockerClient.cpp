@@ -11,10 +11,6 @@ namespace pbr {
 
 namespace {
 
-constexpr const char kLockerPutDomain[] = "pp-browser:relay-locker-put-v1";
-// 2 (multi-relay MR007): the audience after the version.
-constexpr uint8_t kLockerPutSignVersion = 2;
-
 std::string ErrorText(const HttpResponse& response) {
   if (auto root = TryParseObject(response.body)) {
     if (auto error = root->getString("error")) {
@@ -56,16 +52,10 @@ LockerRecord LockerRecordFromJson(const Object& json) {
 
 std::vector<uint8_t> BuildLockerPutSignBytes(const std::string& audience, const std::string& account_id,
                                              const std::string& locker_id, const uint64_t version,
-                                             const int64_t timestamp) {
-  std::ostringstream oss;
-  if (!RelaySignAppendCommandHeader(oss, kLockerPutDomain, kLockerPutSignVersion, audience)) {
-    return {};
-  }
-  RelaySignAppendWireLenUtf8(oss, account_id);
-  RelaySignAppendWireLenUtf8(oss, locker_id);
-  RelaySignAppendU64(oss, version);
-  RelaySignAppendI64(oss, timestamp);
-  return RelaySignOssToBytes(oss);
+                                             const int64_t timestamp, const pp::ExtArea& ext) {
+  return BuildRelayCallBytes(kRelayLockerPutDomain, audience, ext, [&](SignedBytesWriter& out) {
+    out.Utf8(account_id).Utf8(locker_id).U64(version).I64(timestamp);
+  });
 }
 
 HttpLockerClient::HttpLockerClient(std::string base_url) : base_url_(std::move(base_url)) {}
@@ -76,9 +66,10 @@ Roe<void> HttpLockerClient::Put(const std::string& account_id, const LockerRecor
     return Error("Locker base_url not configured");
   }
   const int64_t timestamp = util::NowUnixMs();
-  auto signed_put = SignRelayCommand(audience_.get(), auth_signer_, timestamp, [&](const std::string& audience) {
-    return BuildLockerPutSignBytes(audience, account_id, record.locker_id, record.version, timestamp);
-  });
+  auto signed_put = SignRelayCommand(
+      audience_.get(), auth_signer_, timestamp, [&](const std::string& audience, const pp::ExtArea& ext) {
+        return BuildLockerPutSignBytes(audience, account_id, record.locker_id, record.version, timestamp, ext);
+      });
   if (!signed_put) {
     return signed_put.error();
   }

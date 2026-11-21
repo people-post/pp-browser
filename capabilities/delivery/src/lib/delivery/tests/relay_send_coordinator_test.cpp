@@ -6,6 +6,9 @@
 #include "lib/delivery/HttpRelayClient.h"
 #include "lib/net/RelayOrigins.h"
 
+#include "foundation/crypto/TypedBlob.h"
+#include "lib/net/testing/FakeRelaySigner.h"
+
 #include <gtest/gtest.h>
 
 #include <chrono>
@@ -448,14 +451,14 @@ TEST(RelaySendCoordinatorHttpTest, AForeignRelayGetsOurKeyWhenItAsksForIt) {
   });
   const std::string bobs_origin = bobs.Origin() + "/api/relay";
   RelaySendCoordinator coordinator;
-  auto signer = [](const std::vector<uint8_t>&) -> Roe<std::string> { return std::string("c2ln"); };
+  const RelayAuthSigner signer = test::FakeRelaySigner();
+  const std::string held_key = Base64Encode(ByteVector(kMlDsa65PublicKeyBytes, 0x42)); // as the identity holds it
   coordinator.SetOurRelays({{"http://127.0.0.1:9/api/relay", std::make_shared<HttpRelayClient>("")}});
   coordinator.SetForeignClients([&](const AccountCardRelay& relay) {
     auto client = std::make_shared<HttpRelayClient>(relay.origin);
     client->SetAuthSigner(signer);
     client->SetAudience(std::make_shared<FixedRelayAudience>("Qm:" + relay.relay_id.ToString()));
-    client->SetSendHooks(
-        {.grant_for = {}, .grant_refused = {}, .sender_public_key = [] { return std::string("a2V5"); }});
+    client->SetSendHooks({.grant_for = {}, .grant_refused = {}, .sender_public_key = [held_key] { return held_key; }});
     return client;
   });
   coordinator.SetRoutes(
@@ -473,7 +476,9 @@ TEST(RelaySendCoordinatorHttpTest, AForeignRelayGetsOurKeyWhenItAsksForIt) {
   std::lock_guard lock(mu);
   ASSERT_EQ(bodies.size(), 2u);
   EXPECT_FALSE(bodies[0].contains("sender_public_key_b64"));
-  EXPECT_EQ(bodies[1].getString("sender_public_key_b64").value_or(""), "a2V5");
+  EXPECT_EQ(bodies[1].getString("sender_public_key_b64").value_or(""),
+            Base64Encode(TypedSigningPublicKey(Base64Decode(held_key).value()).value()))
+      << "typed (SIGNED_FORMATS § 2.8)";
   EXPECT_EQ(bodies[1].getString("audience").value_or(""), PeerIdOf(bobs_origin)) << "the card's PeerId (MR007)";
 }
 

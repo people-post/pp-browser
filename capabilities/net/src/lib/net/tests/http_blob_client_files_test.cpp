@@ -6,6 +6,8 @@
 #include "lib/net/HttpBlobClient.h"
 #include "lib/net/RelayBlobSignPayload.h"
 
+#include "lib/net/testing/FakeRelaySigner.h"
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -224,7 +226,7 @@ protected:
   HttpBlobClientFilesTest() : relay_(server_), client_(relay_.BaseUrl()) {
     client_.SetAuthSigner([this](const std::vector<uint8_t>& bytes) -> Roe<std::string> {
       signed_.push_back(BytesToHex(bytes));
-      return std::string("sig");
+      return test::FakeRelaySigner()(bytes);
     });
     client_.SetAudience(std::make_shared<FixedRelayAudience>(kAudience));
   }
@@ -261,9 +263,9 @@ TEST_F(HttpBlobClientFilesTest, StartPutCompleteGivesTheShareLinkOnTheRelayOrigi
   ASSERT_EQ(starts.size(), 1u);
   EXPECT_EQ(starts[0].getNonNegInt("byte_length").value_or(0), 5016u) << "the ciphertext length is reserved";
   EXPECT_EQ(starts[0].getString("account_id").value_or(""), "account:u1");
-  EXPECT_EQ(starts[0].getString("signature").value_or(""), "sig");
+  EXPECT_EQ(starts[0].getString("signature").value_or(""), test::FakeRelaySignatureB64()) << "typed";
   EXPECT_EQ(starts[0].getString("audience").value_or(""), kAudience) << "the relay it is signed for (MR007-AUD)";
-  EXPECT_EQ(starts[0].getIf<int64_t>("sign_version"), 2) << "the version byte its bytes carry";
+  EXPECT_EQ(starts[0].getIf<int64_t>("sign_version"), 4) << "the version byte its bytes carry";
   EXPECT_EQ(relay_.PutBytes(), 5016u);
   ASSERT_EQ(relay_.Bodies("complete").size(), 1u);
   EXPECT_EQ(relay_.Bodies("complete")[0].getString("blob_id").value_or(""), uploaded->blob_id);

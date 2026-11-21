@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
+#include "common/ExtArea.h"
 #include "common/Value.h"
 
 #include <cstdint>
@@ -13,7 +14,10 @@
 
 namespace pbr {
 
-/** Signs relay command bytes with the account key (base64 out). */
+/**
+ * Signs relay command bytes with the account key: standard base64 of the raw ML-DSA-65 signature the key holders give
+ * (`IdentityStore::SignBytes`). `SignRelayCommand` sends it typed (lib/people/CardKeys.h `TypedSignatureB64`).
+ */
 using RelayAuthSigner = std::function<Roe<std::string>(const std::vector<uint8_t>&)>;
 
 /**
@@ -75,27 +79,33 @@ inline constexpr const char* kAccountCardRefusalCodes[] = {"invalid_account_card
                                                            "account_card_too_large", "invalid_card_relays"};
 
 /**
- * What a signed command's JSON body carries beside its fields: the version byte it was signed with (`sign_version`),
- * the audience, the timestamp and the signature.
+ * What a signed command's JSON body carries beside its fields (release-compatibility SIGNED_FORMATS § 2.8): the version
+ * byte it was signed with (`sign_version`, 4), the audience, the timestamp, the extension area it signed (`ext_b64`,
+ * left out when empty) and the typed signature (its algorithm id first: no `signature_alg`).
  */
 struct SignedRelayCommand {
   int sign_version = 0;
   std::string audience;
   int64_t timestamp = 0;
+  pp::ExtArea ext;
   std::string signature;
 };
 
-/** The command's bytes for the relay `audience` names (empty: they could not be built). */
-using RelayCommandBytes = std::function<std::vector<uint8_t>(const std::string& audience)>;
+/** The command's bytes for the relay `audience` names, with `ext` as their area (empty: they could not be built). */
+using RelayCommandBytes = std::function<std::vector<uint8_t>(const std::string& audience, const pp::ExtArea& ext)>;
 
 /**
  * Signs one command for the relay `audience` names, at `timestamp`: its PeerId first (the audience's error when none
- * is in force; an error when no audience is set), then the bytes `build` makes for it, signed by `signer`.
+ * is in force; an error when no audience is set), then the bytes `build` makes for it with `ext` as their area (an
+ * error when they do not end with it), signed by `signer` and typed.
  */
 Roe<SignedRelayCommand> SignRelayCommand(IRelayAudience* audience, const RelayAuthSigner& signer, int64_t timestamp,
-                                         const RelayCommandBytes& build);
+                                         const RelayCommandBytes& build, const pp::ExtArea& ext = {});
 
-/** Puts `sign_version`, `audience`, `timestamp` and `signature` into `body` (top level, beside the command's fields). */
+/**
+ * Puts `sign_version`, `audience`, `timestamp`, `ext_b64` (when the area is not empty) and `signature` into `body`
+ * (top level, beside the command's fields).
+ */
 void PutSignedRelayCommand(Object& body, const SignedRelayCommand& command);
 
 /** The relay's machine-readable reason (`code` beside `error`) in an answer body; empty when none. */

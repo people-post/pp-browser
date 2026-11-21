@@ -4,6 +4,8 @@
 #include "common/tests/ScriptedHttpServer.h"
 #include "lib/net/testing/TestRelayCertificates.h"
 
+#include "lib/net/testing/FakeRelaySigner.h"
+
 #include <gtest/gtest.h>
 
 #include <map>
@@ -386,9 +388,9 @@ TEST_F(BackendClientSetOriginTest, AClientTakenBeforeTheSignerSignsWithItAndAppl
   EXPECT_FALSE(relay->PollInbox("account:me", ""));
   EXPECT_EQ(Asked(org_, "/v1/inbox/poll"), 0u) << "nothing goes unsigned";
   int signed_calls = 0;
-  clients_.SetSigner([&signed_calls](const std::vector<uint8_t>&) -> Roe<std::string> {
+  clients_.SetSigner([&signed_calls](const std::vector<uint8_t>& bytes) -> Roe<std::string> {
     ++signed_calls;
-    return std::string("sig");
+    return test::FakeRelaySigner()(bytes);
   });
   (void)relay->PollInbox("account:me", "");
   EXPECT_EQ(signed_calls, 1) << "the client taken before signs with the signer given after";

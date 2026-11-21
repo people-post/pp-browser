@@ -6,9 +6,12 @@
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/IdentityStore.h"
 #include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/KemKeyBinding.h"
+#include "foundation/crypto/TypedBlob.h"
 #include "foundation/error/AppError.h"
 #include "lib/net/OrgBackendClientsImpl.h"
+#include "lib/net/RegistrationSignPayload.h"
 
 #include <filesystem>
 #include <optional>
@@ -136,14 +139,13 @@ class RecordingRegistrationClient : public MockRegistrationClient {
 public:
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
                                              const std::string& nickname, const SignedRelayCommand& signed_finish,
-                                             const std::string& signature_alg, const std::string& kem_public_key_b64,
-                                             const std::string& kem_binding_signature_b64, const std::string& peer_id,
-                                             const std::vector<std::string>& multiaddrs,
+                                             const std::string& kem_public_key_b64, const std::string& kem_binding_b64,
+                                             const std::string& peer_id, const std::vector<std::string>& multiaddrs,
                                              const RegistrationPublishOpts& publish) override {
     ++finish_calls;
-    auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
-                                                             signature_alg, kem_public_key_b64,
-                                                             kem_binding_signature_b64, peer_id, multiaddrs, publish);
+    auto result =
+        MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
+                                                   kem_public_key_b64, kem_binding_b64, peer_id, multiaddrs, publish);
     if (result) {
       result->registration_id = held_id;
     }
@@ -425,18 +427,20 @@ class BindingRecordingClient : public MockRegistrationClient {
 public:
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
                                              const std::string& nickname, const SignedRelayCommand& signed_finish,
-                                             const std::string& signature_alg, const std::string& kem_public_key_b64,
-                                             const std::string& kem_binding_signature_b64, const std::string& peer_id,
-                                             const std::vector<std::string>& multiaddrs,
+                                             const std::string& kem_public_key_b64, const std::string& kem_binding_b64,
+                                             const std::string& peer_id, const std::vector<std::string>& multiaddrs,
                                              const RegistrationPublishOpts& publish) override {
     ++finish_calls;
+    last_challenge = challenge;
+    last_public_key_b64 = public_key_b64;
     last_kem_public_key_b64 = kem_public_key_b64;
-    last_binding = kem_binding_signature_b64;
+    last_binding = kem_binding_b64;
     last_card = publish.account_card;
     last_audience = signed_finish.audience;
-    auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
-                                                             signature_alg, kem_public_key_b64,
-                                                             kem_binding_signature_b64, peer_id, multiaddrs, publish);
+    last_finish = signed_finish;
+    auto result =
+        MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
+                                                   kem_public_key_b64, kem_binding_b64, peer_id, multiaddrs, publish);
     if (result) {
       result->kem_bound = relay_stores_binding;
     }
@@ -444,8 +448,11 @@ public:
   }
   bool relay_stores_binding = true;
   int finish_calls = 0;
+  std::string last_challenge;
+  std::string last_public_key_b64;
   std::string last_kem_public_key_b64;
   std::string last_binding;
+  SignedRelayCommand last_finish;
   std::string last_audience;
   std::optional<Object> last_card;
 };
@@ -484,11 +491,21 @@ TEST_F(KemBindingPublishTest, AnOlderRegistrationPublishesItsBindingOnceEvenWith
 
   const LocalIdentity after = identity_->Get().value();
   EXPECT_TRUE(after.kem_binding_published);
-  EXPECT_EQ(client_.last_kem_public_key_b64, after.kem_public_key_b64);
-  EXPECT_TRUE(VerifyKemBinding(
-      after.account_id, TypedKeyB64(pp::BlobKind::kSignaturePublicKey, after.account_signing_public_key_b64).value(),
-      TypedKeyB64(pp::BlobKind::kKemPublicKey, after.kem_public_key_b64).value(), client_.last_binding))
+  // SIGNED_FORMATS § 2.8: the keys go typed, the binding as its v2 blob, the call signed (typed) over the v4 bytes.
+  const TypedRead signing = ReadTypedBlobB64(pp::BlobKind::kSignaturePublicKey, client_.last_public_key_b64, "key");
+  const TypedRead kem = ReadTypedBlobB64(pp::BlobKind::kKemPublicKey, client_.last_kem_public_key_b64, "kem");
+  ASSERT_TRUE(signing.ok() && kem.ok());
+  EXPECT_EQ(Base64Encode(signing.raw), after.account_signing_public_key_b64);
+  EXPECT_EQ(Base64Encode(kem.raw), after.kem_public_key_b64);
+  EXPECT_TRUE(VerifyKemBinding(after.account_id, client_.last_public_key_b64, client_.last_kem_public_key_b64,
+                               client_.last_binding))
       << "register/finish carries the account's own binding";
+  const ByteVector bytes =
+      BuildRegistrationSignBytes(client_.last_audience, client_.last_challenge, client_.last_public_key_b64,
+                                 client_.last_kem_public_key_b64, client_.last_finish.timestamp);
+  EXPECT_EQ(client_.last_finish.sign_version, 4);
+  EXPECT_TRUE(static_cast<bool>(VerifyTyped(
+      signing, bytes, ReadTypedBlobB64(pp::BlobKind::kSignature, client_.last_finish.signature, "signature"))));
   EXPECT_EQ(client_.last_audience, MockRegistrationClient::kAudience) << "and is signed for that relay (MR007-AUD)";
   EXPECT_EQ(after.registration_id, "mock-registration") << "the identity keeps the registration's id (MR007-SCOPE)";
 
@@ -706,24 +723,22 @@ public:
     }
   };
   Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
-                                                 const std::string& signature_alg,
                                                  const std::string& kem_public_key_b64, const std::string& peer_id,
                                                  const std::vector<std::string>& multiaddrs,
                                                  const RegistrationPublishOpts& publish) override {
     sent.push_back(Record("start", nickname, multiaddrs, peer_id, publish));
-    return MockRegistrationClient::StartRegistration(public_key_b64, nickname, signature_alg, kem_public_key_b64,
-                                                     peer_id, multiaddrs, publish);
+    return MockRegistrationClient::StartRegistration(public_key_b64, nickname, kem_public_key_b64, peer_id, multiaddrs,
+                                                     publish);
   }
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
                                              const std::string& nickname, const SignedRelayCommand& signed_finish,
-                                             const std::string& signature_alg, const std::string& kem_public_key_b64,
-                                             const std::string& kem_binding_signature_b64, const std::string& peer_id,
-                                             const std::vector<std::string>& multiaddrs,
+                                             const std::string& kem_public_key_b64, const std::string& kem_binding_b64,
+                                             const std::string& peer_id, const std::vector<std::string>& multiaddrs,
                                              const RegistrationPublishOpts& publish) override {
     sent.push_back(Record("finish", nickname, multiaddrs, peer_id, publish));
-    return MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish, signature_alg,
-                                                      kem_public_key_b64, kem_binding_signature_b64, peer_id,
-                                                      multiaddrs, publish);
+    return MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
+                                                      kem_public_key_b64, kem_binding_b64, peer_id, multiaddrs,
+                                                      publish);
   }
   std::vector<Sent> sent;
 
@@ -814,8 +829,7 @@ TEST_F(RegistrationJobTest, ANetworkFailureComesBackAsAnErrorAndStoresNothing) {
   class Failing : public MockRegistrationClient {
   public:
     Roe<RegistrationStartResult> StartRegistration(const std::string&, const std::string&, const std::string&,
-                                                   const std::string&, const std::string&,
-                                                   const std::vector<std::string>&,
+                                                   const std::string&, const std::vector<std::string>&,
                                                    const RegistrationPublishOpts&) override {
       return AppError::Network(Err::Network::Timeout, "timed out");
     }
@@ -850,7 +864,6 @@ TEST(RegistrationErrorTest, A4xxButTimeoutAndRateLimitIsARefusal) {
 class CountingRegistrationClient : public MockRegistrationClient {
 public:
   Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
-                                                 const std::string& signature_alg,
                                                  const std::string& kem_public_key_b64, const std::string& peer_id,
                                                  const std::vector<std::string>& multiaddrs,
                                                  const RegistrationPublishOpts& publish) override {
@@ -858,22 +871,21 @@ public:
     if (fail_start_with) {
       return *fail_start_with;
     }
-    return MockRegistrationClient::StartRegistration(public_key_b64, nickname, signature_alg, kem_public_key_b64,
-                                                     peer_id, multiaddrs, publish);
+    return MockRegistrationClient::StartRegistration(public_key_b64, nickname, kem_public_key_b64, peer_id, multiaddrs,
+                                                     publish);
   }
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
                                              const std::string& nickname, const SignedRelayCommand& signed_finish,
-                                             const std::string& signature_alg, const std::string& kem_public_key_b64,
-                                             const std::string& kem_binding_signature_b64, const std::string& peer_id,
-                                             const std::vector<std::string>& multiaddrs,
+                                             const std::string& kem_public_key_b64, const std::string& kem_binding_b64,
+                                             const std::string& peer_id, const std::vector<std::string>& multiaddrs,
                                              const RegistrationPublishOpts& publish) override {
     ++finish_calls;
     if (fail_finish_with) {
       return *fail_finish_with;
     }
-    return MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish, signature_alg,
-                                                      kem_public_key_b64, kem_binding_signature_b64, peer_id,
-                                                      multiaddrs, publish);
+    return MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
+                                                      kem_public_key_b64, kem_binding_b64, peer_id, multiaddrs,
+                                                      publish);
   }
   int start_calls = 0;
   int finish_calls = 0;

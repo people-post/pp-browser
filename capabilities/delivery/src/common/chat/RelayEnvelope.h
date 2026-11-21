@@ -207,7 +207,7 @@ struct RelayWireSendRecord {
   std::string stream_id;
   uint64_t index_key = 0;
   std::string blob_b64;
-  /** The version byte the send was signed with (`sign_version`; set as it is signed). */
+  /** The version byte the send was signed with (`sign_version`, 4; set as it is signed). */
   int sign_version = 0;
   /** The PeerId of the relay the send is signed for (multi-relay MR007; set as it is signed). */
   std::string audience;
@@ -222,8 +222,9 @@ struct RelayWireSendRecord {
   /** The recipient's grant to us (MR005; unsigned by us, signed by the recipient): none — a stranger's send. */
   std::optional<RelayGrant> grant;
   /**
-   * Our account's ML-DSA public key (`sender_public_key_b64`), sent when the relay asked for it (`sender_key_required`:
-   * it does not hold our key — not registered there). Unsigned: it must hash to `sender_account_id`.
+   * Our account's typed ML-DSA public key (`sender_public_key_b64`, SIGNED_FORMATS § 2.8), sent when the relay asked
+   * for it (`sender_key_required`: it does not hold our key — not registered there). Unsigned: its raw key must hash
+   * to `sender_account_id`.
    */
   std::string sender_public_key_b64;
 };

@@ -4911,14 +4911,13 @@ class UnconfiguredRegistrationClient final : public IRegistrationClient {
 public:
   IRelayAudience* Audience() const override { return nullptr; }
   Roe<RegistrationStartResult> StartRegistration(const std::string&, const std::string&, const std::string&,
-                                                 const std::string&, const std::string&,
-                                                 const std::vector<std::string>&,
+                                                 const std::string&, const std::vector<std::string>&,
                                                  const RegistrationPublishOpts&) override {
     return Unavailable();
   }
   Roe<RegistrationResult> FinishRegistration(const std::string&, const std::string&, const std::string&,
                                              const SignedRelayCommand&, const std::string&, const std::string&,
-                                             const std::string&, const std::string&, const std::vector<std::string>&,
+                                             const std::string&, const std::vector<std::string>&,
                                              const RegistrationPublishOpts&) override {
     return Unavailable();
   }

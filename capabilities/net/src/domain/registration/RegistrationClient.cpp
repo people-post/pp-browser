@@ -34,13 +34,24 @@ bool IsScopeMismatch(const Error& error) {
 Roe<void> RevokeOnce(IRegistrationClient& registration, IdentityStore& identity, const std::string& account_id,
                      const std::string& registration_id) {
   const int64_t timestamp = util::NowUnixMs();
-  auto signed_revoke = SignForRegistry(registration, identity, timestamp, [&](const std::string& audience) {
-    return BuildAccountRevokeSignBytes(audience, account_id, registration_id, timestamp);
-  });
+  auto signed_revoke =
+      SignForRegistry(registration, identity, timestamp, [&](const std::string& audience, const pp::ExtArea& ext) {
+        return BuildAccountRevokeSignBytes(audience, account_id, registration_id, timestamp, ext);
+      });
   if (!signed_revoke) {
     return signed_revoke.error();
   }
   return registration.RevokeRegistration(account_id, registration_id, *signed_revoke);
+}
+
+/**
+ * The account's keys as register/start and register/finish carry them (release-compatibility SIGNED_FORMATS § 2.8):
+ * its key card (lib/people/CardKeys.h) — the typed signing and KEM keys, and the KEM binding v2 blob the account signs
+ * over them (§ 2.3).
+ */
+Roe<KeyCard> RegistrationKeys(const LocalIdentity& loaded, IdentityStore& identity) {
+  return MakeKeyCard(loaded.account_id, loaded.account_signing_public_key_b64, loaded.kem_public_key_b64,
+                     [&identity](const ByteVector& bytes) { return identity.SignBytes(bytes); });
 }
 
 } // namespace
@@ -96,32 +107,30 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
     return Error("kem_public_key_b64 not set");
   }
 
-  auto start = registration.StartRegistration(loaded->account_signing_public_key_b64, nickname, "ml-dsa-65",
-                                              loaded->kem_public_key_b64, loaded->peer_id, multiaddrs, publish);
+  auto keys = RegistrationKeys(*loaded, identity);
+  if (!keys) {
+    return keys.error();
+  }
+
+  auto start = registration.StartRegistration(keys->signing_public_key_b64, nickname, keys->kem_public_key_b64,
+                                              loaded->peer_id, multiaddrs, publish);
   if (!start) {
     return start.error();
   }
 
   const int64_t timestamp = util::NowUnixMs();
-  auto signed_finish = SignForRegistry(registration, identity, timestamp, [&](const std::string& audience) {
-    return BuildRegistrationSignBytes(audience, start->challenge, loaded->account_signing_public_key_b64,
-                                      loaded->kem_public_key_b64, start->signature_alg, timestamp);
-  });
+  auto signed_finish =
+      SignForRegistry(registration, identity, timestamp, [&](const std::string& audience, const pp::ExtArea& ext) {
+        return BuildRegistrationSignBytes(audience, start->challenge, keys->signing_public_key_b64,
+                                          keys->kem_public_key_b64, timestamp, ext);
+      });
   if (!signed_finish) {
     return signed_finish.error();
   }
 
-  // The account binds its KEM key to itself (KEM binding v2, over the typed keys); the directory hands the binding to
-  // peers with the key.
-  auto key_card = MakeKeyCard(loaded->account_id, loaded->account_signing_public_key_b64, loaded->kem_public_key_b64,
-                              [&identity](const ByteVector& bytes) { return identity.SignBytes(bytes); });
-  if (!key_card) {
-    return key_card.error();
-  }
-
-  auto finished = registration.FinishRegistration(start->challenge, loaded->account_signing_public_key_b64, nickname,
-                                                  *signed_finish, start->signature_alg, loaded->kem_public_key_b64,
-                                                  key_card->kem_binding_b64, loaded->peer_id, multiaddrs, publish);
+  auto finished = registration.FinishRegistration(start->challenge, keys->signing_public_key_b64, nickname,
+                                                  *signed_finish, keys->kem_public_key_b64, keys->kem_binding_b64,
+                                                  loaded->peer_id, multiaddrs, publish);
   if (!finished) {
     return finished;
   }
@@ -271,9 +280,10 @@ Roe<RegistrationResult> UpdateRegisteredNickname(IRegistrationClient& registrati
   }
 
   const int64_t timestamp = util::NowUnixMs();
-  auto signed_update = SignForRegistry(registration, identity, timestamp, [&](const std::string& audience) {
-    return BuildProfileUpdateSignBytes(audience, loaded->account_id, nickname, timestamp);
-  });
+  auto signed_update =
+      SignForRegistry(registration, identity, timestamp, [&](const std::string& audience, const pp::ExtArea& ext) {
+        return BuildProfileUpdateSignBytes(audience, loaded->account_id, nickname, timestamp, ext);
+      });
   if (!signed_update) {
     return signed_update.error();
   }
@@ -320,9 +330,10 @@ Roe<LlmTokenRenewal> RenewBriefLlmTokenWithIdentity(IRegistrationClient& registr
   }
   const std::string account_id = loaded->account_id;
   const int64_t timestamp = util::NowUnixMs();
-  auto signed_renew = SignForRegistry(registration, identity, timestamp, [&](const std::string& audience) {
-    return BuildLlmTokenRenewSignBytes(audience, account_id, timestamp);
-  });
+  auto signed_renew =
+      SignForRegistry(registration, identity, timestamp, [&](const std::string& audience, const pp::ExtArea& ext) {
+        return BuildLlmTokenRenewSignBytes(audience, account_id, timestamp, ext);
+      });
   if (!signed_renew) {
     return signed_renew.error();
   }
