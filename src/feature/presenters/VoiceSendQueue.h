@@ -62,6 +62,8 @@ struct VoiceSendPorts {
   std::function<void(const VoiceSendJob& job, AttachmentSendOutcome outcome, const VoiceSendTiming& timing)> report;
   /** A job joined or left the line (so a chat's count changed). Optional. */
   std::function<void()> changed;
+  /** Calls Tick() in about `delay_ms` (the wait after a pace refusal). */
+  std::function<void(int64_t delay_ms)> schedule_tick;
 };
 
 /**
@@ -79,8 +81,16 @@ public:
   void Enqueue(VoiceSendJob job);
   /** Starts the next job when none runs and the slot is free. Safe to call at any time, also from inside `start`. */
   void Pump();
-  /** The end of the job `row_id`'s send; anything but the job in flight (a second report, a stale one) is ignored. */
+  /**
+   * The end of the job `row_id`'s send; anything but the job in flight (a second report, a stale one) is ignored.
+   * RateLimited (this device's send pace refused it before staging) is not an end: the job goes back to the head of
+   * the line and the line waits kRetryAfterPaceMs (schedule_tick, then Tick) before it goes again.
+   */
   void OnFinished(const std::string& row_id, AttachmentSendOutcome outcome);
+  /** The pace wait may be over: the line goes on when it is. */
+  void Tick();
+  /** How long the line waits after a pace refusal (as the picture queue does). */
+  static constexpr int64_t kRetryAfterPaceMs = PictureSendQueue::kRateLimitRetryMs;
   /**
    * The person's cancel on a bubble whose job has not started: it leaves the line (a Fresh job's recording is deleted)
    * and is handed back for the caller to fix its bubble. Nothing when it is not waiting (in flight: the send's own
@@ -120,6 +130,8 @@ private:
   VoiceSendPorts ports_;
   std::deque<Waiting> waiting_;
   std::optional<Running> in_flight_;
+  /** After a pace refusal: nothing starts before this time. */
+  std::optional<int64_t> retry_at_ms_;
   bool pumping_ = false;
 };
 

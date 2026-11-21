@@ -52,6 +52,8 @@ struct PendingUpload {
   std::string size_text;
   /** The staged copy a failure kept (Retry resends it, Discard deletes it); empty while none. */
   std::string record_id;
+  /** A voice message that failed before anything was staged: its own recording (Retry sends it again, ✕ deletes it). */
+  std::string voice_path;
   /** The chat it is sent in: the row shows only while that chat is open. */
   std::string thread_id;
   /** The 600px thumbnail (plaintext, in the profile's `picked/`); empty: the grey placeholder. */
@@ -98,6 +100,12 @@ PendingUploadStep OnUploadCancelTapped(const PendingUpload& now);
 /** The send's callback. A failure after a cancel removes the row too (nothing is said). */
 PendingUploadStep OnUploadSendFinished(const PendingUpload& now, UploadSendOutcome outcome);
 /**
+ * A voice message's send failed before anything was staged and its recording `path` is still there: the bubble shows
+ * Failed with that recording behind its own Retry and ✕ (each voice message keeps its own). A failure after a cancel
+ * removes the row, as OnUploadSendFinished does.
+ */
+PendingUploadStep OnVoiceFailedKeepingRecording(const PendingUpload& now, const std::string& path);
+/**
  * A retry's callback (a resume of the item's staged copy). Sent: the row goes. Otherwise — failed, or cancelled by a
  * tap on the disc — the row stays Failed (retry and ✕ again) while that staged copy is still there (`still_staged`):
  * a resume never deletes it. Only when the copy is gone does the row go (the caller says "pick it again").
@@ -107,7 +115,10 @@ PendingUploadStep OnUploadResumeFinished(const PendingUpload& now, bool sent, bo
 PendingUploadStep OnUploadRetryTapped(const PendingUpload& now);
 /** The corner ✕ after a failure: the row goes. */
 PendingUploadStep OnUploadDiscardTapped(const PendingUpload& now);
-/** Another attachment starts while this one shows failed: the row goes (its staged copy is left as it is). */
+/**
+ * Another attachment starts while this one shows failed: the row goes (its staged copy is left as it is); a voice
+ * message holding its own recording (`voice_path`) stays.
+ */
 PendingUploadStep OnOtherAttachmentStarted(const PendingUpload& now);
 /** The app locked: the thumbnail is deleted and forgotten, the rest stays (the row shows the grey placeholder). */
 PendingUploadStep OnAppLocked(const PendingUpload& now);

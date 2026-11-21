@@ -631,7 +631,8 @@ TEST(PendingPictureSourcePinTest, PickEndsEndPreparingStalePostersBuildNothingRe
   EXPECT_NE(start.find("session != messaging_session_"), std::string::npos);
   const size_t refused = start.find("if (voice_file && !thread_id.empty()) {");
   ASSERT_NE(refused, std::string::npos);
-  EXPECT_LT(start.find("KeepVoiceForRetry(path, thread_id);", refused), start.find("release_pick_(path);", refused));
+  EXPECT_LT(start.find("FailVoiceKeepingRecording(reuse_row, path, thread_id);", refused),
+            start.find("release_pick_(path);", refused));
   const std::string retry = Body(source, "void ChatController::OnRetryAttachmentSend(");
   EXPECT_NE(retry.find("if (AttachmentBusy() || chat_.voice_recording) {"), std::string::npos);
   EXPECT_EQ(retry.find("!item->record_id.empty() ? item->record_id : failed_record_id_"), std::string::npos)

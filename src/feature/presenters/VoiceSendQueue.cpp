@@ -32,7 +32,7 @@ void VoiceSendQueue::Pump() {
     return; // a `start` that ended at once: the loop below goes on with the next job
   }
   pumping_ = true;
-  while (!in_flight_ && !waiting_.empty() && ports_.slot_free && ports_.slot_free()) {
+  while (!in_flight_ && !retry_at_ms_ && !waiting_.empty() && ports_.slot_free && ports_.slot_free()) {
     Waiting next = std::move(waiting_.front());
     waiting_.pop_front();
     const int64_t now = Now();
@@ -52,11 +52,36 @@ void VoiceSendQueue::OnFinished(const std::string& row_id, const AttachmentSendO
   }
   const Running done = std::move(*in_flight_);
   in_flight_.reset();
+  if (outcome == AttachmentSendOutcome::RateLimited) {
+    // Not a failure: refused by this device's send pace before anything was staged. The same job goes again, first in
+    // line (the order stays), once the pace allows; its bubble keeps waiting and it still counts toward the cap.
+    waiting_.push_front({done.job, done.started_ms - done.wait_ms});
+    retry_at_ms_ = Now() + kRetryAfterPaceMs;
+    if (ports_.schedule_tick) {
+      ports_.schedule_tick(kRetryAfterPaceMs);
+    }
+    return;
+  }
   if (ports_.report) {
     ports_.report(done.job, outcome, VoiceSendTiming{done.wait_ms, Now() - done.started_ms});
   }
   Pump(); // whatever the outcome: a failed one never holds the line
   Changed();
+}
+
+void VoiceSendQueue::Tick() {
+  if (!retry_at_ms_) {
+    return;
+  }
+  const int64_t now = Now();
+  if (now < *retry_at_ms_) {
+    if (ports_.schedule_tick) {
+      ports_.schedule_tick(*retry_at_ms_ - now);
+    }
+    return;
+  }
+  retry_at_ms_.reset();
+  Pump();
 }
 
 std::optional<VoiceSendJob> VoiceSendQueue::CancelWaiting(const std::string& row_id) {

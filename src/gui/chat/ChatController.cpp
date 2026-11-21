@@ -412,6 +412,11 @@ ChatController::ChatController()
     if (!failed_voice_path_.empty()) {
       files.push_back(failed_voice_path_);
     }
+    for (const PendingUpload& item : pending_uploads_.Queue().Items()) {
+      if (!item.voice_path.empty()) {
+        files.push_back(item.voice_path); // a failed voice message's own recording, behind its Retry
+      }
+    }
     return files;
   };
   voice_ports.thread_id = [this]() { return ActiveThreadId(); };
@@ -486,6 +491,16 @@ ChatController::ChatController()
         .Add("wait_ms", timing.wait_ms)
         .Add("send_ms", timing.send_ms)
         .Emit();
+  };
+  voice_queue_ports.schedule_tick = [this](const int64_t delay_ms) {
+    AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(std::max<int64_t>(delay_ms, 1)),
+                                           [this, alive = std::weak_ptr<int>(send_mark_alive_)]() {
+                                             AppRuntime::PostUI([this, alive]() {
+                                               if (alive.lock() && voice_queue_) {
+                                                 voice_queue_->Tick(); // the send pace may allow the next one now
+                                               }
+                                             });
+                                           });
   };
   voice_queue_ports.changed = [this]() {
     if (voice_) {
@@ -3371,6 +3386,45 @@ void ChatController::KeepVoiceForRetry(const std::string& path, const std::strin
   }
 }
 
+void ChatController::FailVoiceKeepingRecording(const std::string& row_id, const std::string& path,
+                                               const std::string& thread_id) {
+  if (row_id.empty()) {
+    KeepVoiceForRetry(path, thread_id); // no bubble of its own (an older caller): the chip's single Retry
+    return;
+  }
+  const PendingUpload* item = pending_uploads_.Queue().Find(row_id);
+  const bool keep = item && item->state == PendingUploadState::Uploading && VoiceRecordingRetryable(path);
+  if (!keep) {
+    std::error_code ec;
+    std::filesystem::remove(path, ec); // cancelled meanwhile, or empty / gone: nothing a Retry could send
+  }
+  ApplyPendingUploadTo(row_id, [keep, path](const PendingUpload& now) {
+    return keep ? OnVoiceFailedKeepingRecording(now, path)
+                : OnUploadSendFinished(now, UploadSendOutcome::FailedNotStaged);
+  });
+}
+
+void ChatController::EnqueueVoiceResend(const std::string& row_id, const std::string& thread_id,
+                                        const std::string& path) {
+  bubble_tap_guard_until_ = std::chrono::steady_clock::now() + kBubbleTapGuard;
+  ApplyPendingUploadTo(row_id, [](const PendingUpload& now) {
+    PendingUploadStep step = OnUploadRetryTapped(now); // uploading again from 0%, its disc cancels the wait
+    step.next.voice_path.clear();                      // the job holds the recording now
+    return step;
+  });
+  VoiceSendJob job;
+  job.row_id = row_id;
+  job.thread_id = thread_id;
+  job.path = path;
+  std::error_code ec;
+  job.bytes = std::filesystem::file_size(path, ec);
+  if (ec) {
+    job.bytes = 0;
+  }
+  job.duration_ms = ParseVoiceFileName(std::filesystem::path(path).filename().string()).value_or(0);
+  voice_queue_->Enqueue(std::move(job));
+}
+
 void ChatController::NoteVoiceSendWon(const ThreadMessage& sent) {
   // The attachment's link: empty when the contact got it straight from this device, the server's link otherwise.
   auto fields = ChatPayloadCodec::DecodeAttachmentJson(sent.payload_json);
@@ -3423,6 +3477,17 @@ void ChatController::SettleLeftVoiceJob(const VoiceSendJob& job) {
   ApplyPendingUploadTo(job.row_id, [](const PendingUpload& now) { return OnUploadResumeFinished(now, false, true); });
 }
 
+void ChatController::DropFailedVoiceRecordings() {
+  for (const PendingUpload& item : std::vector<PendingUpload>(pending_uploads_.Queue().Items())) {
+    if (item.voice_path.empty() || item.state != PendingUploadState::Failed) {
+      continue;
+    }
+    std::error_code ec;
+    std::filesystem::remove(item.voice_path, ec);
+    ApplyPendingUploadTo(item.row_id, OnUploadDiscardTapped);
+  }
+}
+
 void ChatController::DropWaitingVoice(const std::optional<std::string>& thread_id) {
   if (!voice_queue_ || voice_queue_->WaitingCount() == 0) {
     return;
@@ -3439,10 +3504,14 @@ void ChatController::OnDiscardAttachmentSend(const std::string& item_id) {
     if (!facade_ || !item || item->state != PendingUploadState::Failed || !item->ShowsIn(ActiveThreadId())) {
       return;
     }
-    if (item->record_id.empty()) {
+    if (!item->voice_path.empty()) {
+      std::error_code ec;
+      std::filesystem::remove(item->voice_path, ec); // a voice message's own recording (nothing was staged)
+    } else if (item->record_id.empty()) {
       return; // a bubble acts only on its own staged copy
+    } else {
+      facade_->DiscardOutgoingAttachment(item->record_id);
     }
-    facade_->DiscardOutgoingAttachment(item->record_id);
     pending_uploads_.Apply(item_id, OnUploadDiscardTapped);
     RefreshAttachmentInTranscript();
     SyncDisplayFromThread();
@@ -3537,6 +3606,10 @@ void ChatController::OnRetryAttachmentSend(const std::string& item_id) {
       failed_voice_thread_.clear();
       EnqueueVoiceSend(path, thread_id);
     }
+    return;
+  }
+  if (item && item->kind == PendingUploadKind::Voice && !item->voice_path.empty()) {
+    EnqueueVoiceResend(item_id, item->thread_id, item->voice_path); // its own recording, nothing was staged
     return;
   }
   if (item && item->kind == PendingUploadKind::Voice) {
@@ -3997,15 +4070,10 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   if (!facade_ || thread_id.empty() || !picks_.Accept(pick_serial, busy)) {
     EndPick(pick_serial);
     if (voice_file && !thread_id.empty()) {
-      // A finished recording is never thrown away: it waits behind Retry, and the pill says why.
-      KeepVoiceForRetry(path, thread_id);
+      // A finished recording is never thrown away: it waits behind Retry (the queue's job: its own bubble's), and the
+      // pill says why.
+      FailVoiceKeepingRecording(reuse_row, path, thread_id);
       UserFeedback::Fail(Tr("chat.attach.previous_still_sending"));
-      if (!reuse_row.empty()) {
-        // The queue's job: its bubble goes, the recording waits behind the chip's Retry.
-        ApplyPendingUploadTo(reuse_row, [](const PendingUpload& now) {
-          return OnUploadSendFinished(now, UploadSendOutcome::FailedNotStaged);
-        });
-      }
       finished.Fire(ClassifyUploadOutcome(/*sent=*/false, /*cancelled=*/false, /*staged=*/false, false));
       return;
     }
@@ -4244,7 +4312,7 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
       }
       if (!prepared) {
         finish_uploading();
-        if (with_bubble) {
+        if (with_bubble && !voice_file) {
           // Nothing was staged: the bubble goes; the pill says why unless the person had cancelled.
           ApplyPendingUploadTo(*bubble_row, [](const PendingUpload& now) {
             return OnUploadSendFinished(now, UploadSendOutcome::FailedNotStaged);
@@ -4254,7 +4322,9 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
           UserFeedback::Fail(UserFeedback::UserMessage(prepared.error()));
         }
         if (voice_file) {
-          KeepVoiceForRetry(path, thread_id); // not read: the recording is the only copy
+          // Not read: the recording is the only copy. Its own bubble keeps it behind Retry (it goes when the file is
+          // empty or gone, or the person had cancelled).
+          FailVoiceKeepingRecording(*bubble_row, path, thread_id);
           RefreshPendingAttachmentChip(/*force=*/true);
         }
         finished.Fire(ClassifyUploadOutcome(/*sent=*/false, cancel->load(), /*staged=*/false, false));
@@ -4312,7 +4382,11 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
               NoteVoiceSendWon(*sent);
             }
             finished.Fire(ended);
-            if (with_bubble) {
+            // A voice message refused by the send pace goes again from the queue: its bubble keeps waiting, its file
+            // stays. Any other voice failure with nothing staged keeps its recording behind its own bubble's Retry.
+            const bool voice_waits = voice_file && ended == AttachmentSendOutcome::RateLimited;
+            const bool voice_keeps = voice_file && ended == AttachmentSendOutcome::FailedNotStaged;
+            if (with_bubble && !voice_waits && !voice_keeps) {
               // Sent: the bubble goes here and the real row comes with the display sync below, in this same task.
               const UploadSendOutcome outcome = sent                  ? UploadSendOutcome::Sent
                                                 : cancelled           ? UploadSendOutcome::Cancelled
@@ -4337,13 +4411,14 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
               if (DecideVoiceFileFate(static_cast<bool>(sent), staged_before, staged_after) == VoiceFileFate::Delete) {
                 std::error_code ec;
                 std::filesystem::remove(path, ec);
-              } else {
-                KeepVoiceForRetry(path, thread_id);
+              } else if (!voice_waits) {
+                FailVoiceKeepingRecording(*bubble_row, path, thread_id);
               }
             }
             if (!sent) {
               // A queue's item refused by the send pace says nothing: the queue sends it again shortly.
-              const bool queue_retries = from_picture_queue && ended == AttachmentSendOutcome::RateLimited;
+              const bool queue_retries =
+                  (from_picture_queue || voice_file) && ended == AttachmentSendOutcome::RateLimited;
               if (!cancelled && !queue_retries) {
                 UserFeedback::Fail(UserFeedback::AttachmentFailureMessage(
                     sent.error(), facade_ && facade_->DeviceOffline(), offline_stop->load()));
@@ -7023,6 +7098,7 @@ void ChatController::Update() {
   }
   if (messaging_ready_ && !MessagingReady()) {
     DropWaitingVoice(); // recordings that have not started are plaintext under the lock: they go, as the lock wipes them
+    DropFailedVoiceRecordings(); // the same for failed ones holding their recording: the lock wiped those files
   }
   if (messaging_ready_ && !MessagingReady() && picture_queue_ && !picture_queue_->Ended()) {
     picture_queue_->Locked(); // the rest is released, the text dropped; an item in flight still reports its end

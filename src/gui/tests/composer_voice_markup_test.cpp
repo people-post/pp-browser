@@ -899,7 +899,7 @@ TEST(ComposerCaptureSourceTest, StartAttachmentUploadReleasesTheFileOnEveryExit)
   EXPECT_NE(body.find("    if (!from_picture_queue) {\n      release_pick_(path); // a queue's file stays the queue's"),
             std::string::npos);
   EXPECT_LT(body.find("release_pick_(path); // a queue's file"), body.find("    if (busy) {"));
-  EXPECT_NE(body.find("KeepVoiceForRetry(path, thread_id);"), std::string::npos);
+  EXPECT_NE(body.find("FailVoiceKeepingRecording(reuse_row, path, thread_id);"), std::string::npos);
 }
 
 // The phone's hold-to-talk bubble, the real RML of the chat overlay on the real "chat" model, in a 393dp wide overlay.

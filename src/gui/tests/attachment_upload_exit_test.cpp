@@ -125,8 +125,8 @@ TEST(AttachmentUploadExit, PictureQueueEachSendCarriesItsOwnRow) {
   EXPECT_NE(body.find("*bubble_row = item.row_id;"), std::string::npos);
   EXPECT_EQ(Count(body, "*bubble_row = item.row_id;"), 2u) << "a picture's and a video's";
   EXPECT_NE(body.find("*bubble_row = file.row_id;"), std::string::npos);
-  EXPECT_EQ(Count(body, "ApplyPendingUploadTo("), 6u)
-      << "size, thumbnail, details, not prepared, the end, a queued voice job refused";
+  EXPECT_EQ(Count(body, "ApplyPendingUploadTo("), 5u)
+      << "size, thumbnail, details, not prepared, the end (a voice job's own failure: FailVoiceKeepingRecording)";
   EXPECT_NE(body.find("if (!pending_uploads_.Queue().Find(row_id)) {"), std::string::npos)
       << "a thumbnail for a row that is gone is deleted";
   const std::string apply = Body(Controller(), "void ChatController::ApplyPendingUploadTo(");
@@ -234,8 +234,9 @@ TEST(AttachmentUploadExit, PictureQueueASingleSendWithoutAQueueIsUnchanged) {
   EXPECT_NE(body.find("step.next.record_id = new_record;"), std::string::npos);
   EXPECT_NE(body.find("pending_uploads_.Apply(item.row_id, OnOtherAttachmentStarted)"), std::string::npos);
   EXPECT_NE(body.find("/*redraw=*/!sent);"), std::string::npos);
-  // A failure still says why, the pace refusal included; only a queue's pace refusal is quiet.
-  EXPECT_NE(body.find("const bool queue_retries = from_picture_queue && ended == AttachmentSendOutcome::RateLimited;"),
+  // A failure still says why, the pace refusal included; only a queue's (picture or voice) pace refusal is quiet.
+  EXPECT_NE(body.find("const bool queue_retries =\n                  (from_picture_queue || voice_file) && ended == "
+                      "AttachmentSendOutcome::RateLimited;"),
             std::string::npos);
   EXPECT_NE(body.find("if (!cancelled && !queue_retries) {"), std::string::npos);
   // A video keeps its pick check (a queue's item has none).

@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -104,7 +106,7 @@ TEST(VoiceSendQueue, AFailureDoesNotHoldTheLine) {
   EXPECT_EQ(rig.fake.started.back(), "b");
   rig.End("b", AttachmentSendOutcome::FailedNotStaged);
   EXPECT_EQ(rig.fake.started.back(), "c");
-  rig.End("c", AttachmentSendOutcome::RateLimited);
+  rig.End("c", AttachmentSendOutcome::Cancelled); // (a pace refusal is not an end: ABurstPastTheSendPace...)
   EXPECT_EQ(rig.fake.outcomes.size(), 3u);
   EXPECT_FALSE(rig.queue->InFlight());
   EXPECT_EQ(rig.queue->WaitingCount(), 0u);
@@ -345,6 +347,75 @@ TEST(VoiceRecordingRetryable, OnlyAFileWithBytesIsOfferedARetry) {
   EXPECT_FALSE(VoiceRecordingRetryable(gone));
   EXPECT_FALSE(VoiceRecordingRetryable(""));
   std::filesystem::remove_all(dir);
+}
+
+// A burst past this device's send pace (send_max_per_minute, 10 by default): the refused ones are not failures. Each
+// waits at the head of the line and goes again; all twelve go, in the order recorded, and no recording is deleted.
+TEST(VoiceSendQueue, ABurstPastTheSendPaceAllGoInOrder) {
+  Fake fake;
+  std::vector<int64_t> sent_at;
+  std::vector<int64_t> ticks;
+  std::unique_ptr<VoiceSendQueue> queue;
+  auto ports = PortsOf(fake);
+  ports.start = [&](const VoiceSendJob& job) {
+    // The fake limiter: at most 10 sends in any 60 s.
+    const auto recent =
+        std::count_if(sent_at.begin(), sent_at.end(), [&](const int64_t at) { return fake.now - at < 60000; });
+    if (recent >= 10) {
+      queue->OnFinished(job.row_id, AttachmentSendOutcome::RateLimited);
+      return;
+    }
+    sent_at.push_back(fake.now);
+    fake.started.push_back(job.row_id);
+    queue->OnFinished(job.row_id, AttachmentSendOutcome::Sent);
+  };
+  ports.schedule_tick = [&ticks](const int64_t delay_ms) { ticks.push_back(delay_ms); };
+  queue = std::make_unique<VoiceSendQueue>(std::move(ports));
+  std::vector<std::string> order;
+  for (int i = 1; i <= 12; ++i) {
+    order.push_back("v" + std::to_string(i));
+    VoiceSendJob job;
+    job.row_id = order.back();
+    job.thread_id = "chat-a";
+    job.path = "/rec/" + job.row_id + ".ogg";
+    queue->Enqueue(std::move(job));
+    fake.now += 100; // recorded one after another
+  }
+  EXPECT_EQ(fake.started.size(), 10u);
+  EXPECT_EQ(queue->WaitingCount(), 2u) << "the refused one waits first in line, the last behind it";
+  EXPECT_EQ(queue->CountForThread("chat-a"), 2u) << "still counted toward the cap";
+  ASSERT_FALSE(ticks.empty());
+  for (int guard = 0; guard < 20 && queue->WaitingCount() > 0; ++guard) {
+    fake.now += ticks.back();
+    queue->Tick();
+  }
+  EXPECT_EQ(fake.started, order) << "all twelve, in the order recorded";
+  EXPECT_TRUE(fake.removed.empty()) << "no recording deleted";
+  EXPECT_EQ(fake.reported.size(), 12u) << "a pace refusal is not an end";
+  for (const AttachmentSendOutcome outcome : fake.outcomes) {
+    EXPECT_EQ(outcome, AttachmentSendOutcome::Sent);
+  }
+}
+
+TEST(VoiceSendQueue, NothingStartsBeforeThePaceWaitIsOver) {
+  Rig rig;
+  std::vector<int64_t> ticks;
+  auto ports = PortsOf(rig.fake);
+  ports.schedule_tick = [&ticks](const int64_t delay_ms) { ticks.push_back(delay_ms); };
+  rig.queue = std::make_unique<VoiceSendQueue>(std::move(ports));
+  rig.fake.queue = rig.queue.get();
+  rig.Add("a");
+  rig.Add("b");
+  rig.End("a", AttachmentSendOutcome::RateLimited);
+  ASSERT_EQ(ticks, (std::vector<int64_t>{VoiceSendQueue::kRetryAfterPaceMs}));
+  rig.queue->Pump();
+  rig.queue->Tick(); // too early: waits the rest
+  EXPECT_EQ(rig.fake.started, (std::vector<std::string>{"a"}));
+  EXPECT_EQ(ticks.size(), 2u);
+  rig.fake.now += VoiceSendQueue::kRetryAfterPaceMs;
+  rig.queue->Tick();
+  EXPECT_EQ(rig.fake.started, (std::vector<std::string>{"a", "a"})) << "the same job first, then b";
+  EXPECT_TRUE(rig.queue->CancelWaiting("b"));
 }
 
 } // namespace

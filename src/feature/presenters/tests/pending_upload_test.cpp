@@ -374,5 +374,38 @@ TEST(PendingUploadQueueTest, AFailedRetryWhoseCopyIsGoneRemovesTheBubble) {
   EXPECT_FALSE(gone.next.Shows());
 }
 
+// Two voice messages in a row fail before anything is staged (not the send pace): each bubble shows Failed with its own
+// recording behind its own Retry / ✕; neither is funnelled into one shared slot, and another attachment starting does
+// not take them away.
+TEST(PendingUploadTest, TwoVoiceFailuresWithNothingStagedAreTwoFailedBubblesWithTheirOwnRecordings) {
+  PendingUploadQueue queue;
+  PendingUpload first = StartPendingUpload(1, "chat-a", std::nullopt, PendingUploadKind::Voice);
+  PendingUpload second = StartPendingUpload(2, "chat-a", std::nullopt, PendingUploadKind::Voice);
+  queue.Add(first);
+  queue.Add(second);
+  queue.Apply(first.row_id,
+              [](const PendingUpload& now) { return OnVoiceFailedKeepingRecording(now, "/rec/r1/a.ogg"); });
+  queue.Apply(second.row_id,
+              [](const PendingUpload& now) { return OnVoiceFailedKeepingRecording(now, "/rec/r2/b.ogg"); });
+  ASSERT_EQ(queue.Items().size(), 2u);
+  EXPECT_EQ(queue.Items()[0].state, State::Failed);
+  EXPECT_EQ(queue.Items()[0].voice_path, "/rec/r1/a.ogg");
+  EXPECT_EQ(queue.Items()[1].state, State::Failed);
+  EXPECT_EQ(queue.Items()[1].voice_path, "/rec/r2/b.ogg");
+  EXPECT_TRUE(queue.Items()[0].record_id.empty());
+  queue.ApplyAll(OnOtherAttachmentStarted);
+  EXPECT_EQ(queue.Items().size(), 2u) << "a picture starting does not take a recording away";
+  queue.Apply(first.row_id, OnUploadRetryTapped);
+  EXPECT_EQ(queue.Find(first.row_id)->state, State::Uploading);
+  queue.Apply(second.row_id, OnUploadDiscardTapped);
+  EXPECT_EQ(queue.Find(second.row_id), nullptr);
+}
+
+TEST(PendingUploadTest, AVoiceFailureAfterACancelRemovesTheBubble) {
+  PendingUpload voice = StartPendingUpload(1, "chat-a", std::nullopt, PendingUploadKind::Voice);
+  const PendingUpload cancelling = OnUploadCancelTapped(voice).next;
+  EXPECT_FALSE(OnVoiceFailedKeepingRecording(cancelling, "/rec/a.ogg").next.Shows());
+}
+
 } // namespace
 } // namespace pbr

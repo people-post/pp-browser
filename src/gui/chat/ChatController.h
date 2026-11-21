@@ -499,6 +499,15 @@ private:
   void RefreshAttachmentInTranscript();
   /** A voice recording that could not be sent and was not staged: the chip offers Retry / Discard for the file. */
   void KeepVoiceForRetry(const std::string& path, const std::string& thread_id);
+  /**
+   * A voice send ended with nothing staged: the bubble `row_id` shows Failed with `path` behind its own Retry / ✕; the
+   * bubble goes when the recording is empty or gone or it was cancelled. No bubble: the chip's single Retry.
+   */
+  void FailVoiceKeepingRecording(const std::string& row_id, const std::string& path, const std::string& thread_id);
+  /** A failed voice bubble's Retry when it holds its own recording: a fresh job for that file, at the end of the line. */
+  void EnqueueVoiceResend(const std::string& row_id, const std::string& thread_id, const std::string& path);
+  /** The lock: failed voice bubbles holding their own recording go (the lock wipes the recording folder). */
+  void DropFailedVoiceRecordings();
   /** Which way the voice message just sent went (`voice_send_won_`), for its voice.send line. */
   void NoteVoiceSendWon(const ThreadMessage& sent);
   /**
