@@ -90,13 +90,7 @@ enum class QueuedSendOutcome {
  */
 inline bool ChatPageShows(const ShellChromeSnapshot& chrome, const std::string& active_thread,
                           const std::string& thread_id) {
-  if (thread_id.empty() || thread_id != active_thread) {
-    return false;
-  }
-  if (AiConversationOpenBesideList(chrome)) {
-    return true; // the wide AI tab's open conversation
-  }
-  if (chrome.nav_tab == NavTab::Home) {
+  if (thread_id.empty() || thread_id != active_thread || chrome.nav_tab == NavTab::Home) {
     return false;
   }
   if (chrome.layout_mode == LayoutMode::Compact) {

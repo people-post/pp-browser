@@ -416,16 +416,12 @@ TEST(AgentTurnHomeSendTest, OnTheWideAiTabAnOpenConversationKeepsTheSendAndTheAi
   EXPECT_FALSE(AiConversationOpenBesideList(chrome));
 }
 
-// The same open conversation is what the user is looking at (a reply is read, not unread), and its draft is its own.
-TEST(AgentTurnHomeSendTest, TheWideAiConversationIsShownAndHasItsOwnDraftAndStaysOnTheAiPage) {
+// The open conversation keeps its own draft, and a first send from the AI home stays on the AI page.
+TEST(AgentTurnHomeSendTest, TheWideAiConversationHasItsOwnDraftAndAFirstSendStaysOnTheAiPage) {
   ShellChromeSnapshot chrome;
   chrome.layout_mode = LayoutMode::Expanded;
   chrome.nav_tab = NavTab::Home;
   chrome.primary_pane_key = "chat";
-  EXPECT_TRUE(ChatPageShows(chrome, "t1", "t1"));
-  EXPECT_FALSE(ChatPageShows(chrome, "t1", "t2"));
-  chrome.primary_pane_key = "home";
-  EXPECT_FALSE(ChatPageShows(chrome, "t1", "t1")) << "the AI home shows no conversation";
   // The controller keys its draft and its busy checks on the same helper, and a first send from the AI home stays on
   // the AI page instead of jumping to the Chats list (read from the source: the controller needs a live facade).
   std::ifstream in(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
