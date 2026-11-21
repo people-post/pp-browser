@@ -102,14 +102,16 @@ Roe<ChangeReceived> ReceiveChange(IGroupRosterStore& roster, const GroupChange& 
                                   int64_t now_ms);
 
 /**
- * Our `leave` (G018 item 2), unsigned: `adds` the held adds that brought us in, `keeps` our own held changes; its base
- * epoch the statement we hold. The owner does not leave (G009).
+ * Our `leave` (G018 item 2), unsigned: `adds` the held adds that brought us in and the ids our statement folded (a
+ * receiver that missed that statement may still hold the add that brought us in), `keeps` our own held changes; its
+ * base epoch the statement we hold. The owner does not leave (G009).
  */
 Roe<GroupChange> DraftLeave(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
                             const std::string& local_device, int64_t now_ms);
 /**
- * Our `remove` of `member` (G018, G020), unsigned: `adds` the held adds of the member we saw, `keeps` the member's
- * held changes. Errors when the roster we hold does not let us (GroupAllows: the owner anyone, an admin members).
+ * Our `remove` of `member` (G018, G020), unsigned: `adds` the held adds of the member we saw and the ids our
+ * statement folded (as DraftLeave's), `keeps` the member's held changes. Errors when the roster we hold does not
+ * let us (GroupAllows: the owner anyone, an admin members).
  */
 Roe<GroupChange> DraftRemove(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
                              const std::string& local_device, const std::string& member, int64_t now_ms);
@@ -164,6 +166,14 @@ std::vector<std::string> RemovableAddedBy(IGroupRosterStore& roster, const std::
 /** G020 6, "Re-invite everyone {name} removed": the accounts `account` removed who are still out, sorted. */
 std::vector<std::string> RemovedBy(IGroupRosterStore& roster, const std::string& group_id, const std::string& account,
                                    const GroupCardLookup& cards, int64_t now_ms);
+
+/**
+ * The fields of the receive path's "group change verdict" log line for `change` once `view` (ApplyView's) holds it:
+ * kind, group, the verdict's status and reason, the statement epoch, the change's base epoch, how many adds it names,
+ * and whether the account it is about (the leaver; the one added or removed) is listed. "view=none" without a view
+ * (no statement, or one older than the roster's). No account ids.
+ */
+std::string VerdictLine(const GroupChange& change, const std::optional<GroupRosterView>& view);
 
 /** The roster as this device holds it now: the held statement plus the held changes; none without a statement. */
 std::optional<GroupRosterView> CurrentView(IGroupRosterStore& roster, const std::string& group_id,

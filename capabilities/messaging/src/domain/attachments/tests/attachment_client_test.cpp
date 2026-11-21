@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <memory>
+#include <optional>
 
 namespace {
 
@@ -36,6 +37,9 @@ public:
   int push_calls = 0;
   size_t pushed_bytes = 0;
   std::function<void()> on_push;
+  /** Set: the push does not answer until the test calls `answer` (a dial that takes its time). */
+  bool hold = false;
+  std::function<void(Roe<void>)> answer;
 
   bool IsPeerReachable(const std::string&) const override { return reachable; }
   Roe<std::vector<uint8_t>> FetchChatBlob(const ChatBlobRequest&) override { return Error("not used"); }
@@ -49,6 +53,15 @@ public:
       return Error("peer did not answer");
     }
     return {};
+  }
+  void PushChatBlobAsync(const ChatBlobRequest& request, const std::vector<uint8_t>& ciphertext,
+                         std::function<void(Roe<void>)> on_done) override {
+    if (!hold) {
+      IChatBlobPeerClient::PushChatBlobAsync(request, ciphertext, std::move(on_done));
+      return;
+    }
+    ++push_calls;
+    answer = std::move(on_done);
   }
 };
 
@@ -552,6 +565,325 @@ TEST_F(StagedUploadTest, ACancelledResumeTouchesNoNetwork) {
   EXPECT_FALSE(resumed);
   EXPECT_EQ(blob_->FileStartCallCount(), starts);
   EXPECT_TRUE(store_->HasCipher(staged_.id));
+}
+
+// The head start (kDirectHeadStart): a direct push that has not answered by then gets the server upload beside it,
+// and the first to deliver gives the one result. The test holds the push's answer and fires the head start itself.
+class DirectHeadStartTest : public StagedUploadTest {
+protected:
+  ChatAttachmentUploadOptions Raced(const Thread& thread) {
+    auto options = Staged(thread);
+    options.run_after = [this](const std::chrono::milliseconds delay, std::function<void()> task) {
+      head_start_delay_ = delay;
+      ++head_starts_;
+      head_start_ = std::move(task);
+    };
+    return options;
+  }
+  void Send(ChatAttachmentUploadOptions options, const size_t size = 5000) {
+    const std::vector<uint8_t> bytes(size, 0x42);
+    UploadChatAttachmentAsync(blob_, *identity_, bytes, "voice.ogg", "", std::move(options),
+                              [this](Roe<ChatAttachmentFields> value) {
+                                ++results_;
+                                result_ = std::move(value);
+                              });
+  }
+  void FireHeadStart() {
+    ASSERT_TRUE(head_start_);
+    auto task = std::move(head_start_);
+    head_start_ = nullptr;
+    task();
+  }
+  std::optional<OutgoingAttachmentRecord> Record() {
+    auto loaded = store_->Load(staged_.id, TestDek());
+    if (!loaded) {
+      return std::nullopt;
+    }
+    return *loaded;
+  }
+  std::function<void()> head_start_;
+  std::chrono::milliseconds head_start_delay_{0};
+  int head_starts_ = 0;
+  int results_ = 0;
+  Roe<ChatAttachmentFields> result_ = Error("not called");
+};
+
+TEST_F(DirectHeadStartTest, ASlowPushGetsTheServerBesideItAfterOneSecondAndTheServerResultIsSent) {
+  peer_.hold = true;
+  Send(Raced(direct_));
+  EXPECT_EQ(head_start_delay_, kDirectHeadStart);
+  EXPECT_EQ(results_, 0) << "nothing yet: the push is out";
+  EXPECT_EQ(blob_->FileStartCallCount(), 0u) << "the push runs alone for its head start";
+  FireHeadStart();
+  ASSERT_EQ(results_, 1);
+  ASSERT_TRUE(result_) << result_.error().message;
+  EXPECT_FALSE(result_->url.empty()) << "the server delivered it";
+  EXPECT_EQ(blob_->FileStartCallCount(), 1u);
+  auto record = Record();
+  ASSERT_TRUE(record);
+  EXPECT_TRUE(record->delivered);
+  EXPECT_EQ(record->fields.url, result_->url);
+}
+
+TEST_F(DirectHeadStartTest, APushThatSucceedsAfterTheServerWonChangesNothing) {
+  peer_.hold = true;
+  Send(Raced(direct_));
+  FireHeadStart();
+  ASSERT_EQ(results_, 1);
+  const std::string url = result_->url;
+  ASSERT_TRUE(peer_.answer);
+  peer_.answer(Roe<void>{}); // the contact got the bytes after all, 10 s later
+  EXPECT_EQ(results_, 1) << "one result, so one message";
+  ASSERT_TRUE(result_);
+  EXPECT_EQ(result_->url, url);
+  EXPECT_TRUE(blob_->DeletedFileIds().empty()) << "the server copy the message points at stays";
+  auto record = Record();
+  ASSERT_TRUE(record);
+  EXPECT_EQ(record->fields.url, url) << "the late push does not rewrite the record";
+  EXPECT_TRUE(store_->HasCipher(staged_.id)) << "the staged copy is the caller's to remove, as on any send";
+}
+
+TEST_F(DirectHeadStartTest, APushThatFailsAfterTheServerWonIsIgnored) {
+  peer_.hold = true;
+  Send(Raced(direct_));
+  FireHeadStart();
+  ASSERT_EQ(results_, 1);
+  peer_.answer(Error("handshake timeout"));
+  EXPECT_EQ(results_, 1);
+  EXPECT_TRUE(result_) << "no error after the send succeeded";
+}
+
+TEST_F(DirectHeadStartTest, APushThatWinsWhileTheServerUploadsDeletesTheServerCopy) {
+  peer_.hold = true;
+  auto options = Raced(direct_);
+  options.progress = [this](uint64_t, uint64_t) {
+    if (peer_.answer) {
+      auto answer = std::move(peer_.answer);
+      peer_.answer = nullptr;
+      answer(Roe<void>{}); // the push lands while the PUT is going
+    }
+    return true;
+  };
+  Send(std::move(options));
+  FireHeadStart();
+  ASSERT_EQ(results_, 1);
+  ASSERT_TRUE(result_) << result_.error().message;
+  EXPECT_TRUE(result_->url.empty()) << "the push delivered it";
+  EXPECT_EQ(blob_->DeletedFileIds().size(), blob_->UploadedBodies().size()) << "the server copy is not left behind";
+  auto record = Record();
+  ASSERT_TRUE(record);
+  EXPECT_TRUE(record->delivered);
+  EXPECT_TRUE(record->fields.url.empty()) << "the losing upload does not write the record";
+}
+
+/** A progress port that, on its first call, lets the held push answer "delivered" (the push lands mid-upload). */
+std::function<bool(uint64_t, uint64_t)> PushLandsOnFirstProgress(FakePeerClient& peer) {
+  return [&peer](uint64_t, uint64_t) {
+    if (peer.answer) {
+      auto answer = std::move(peer.answer);
+      peer.answer = nullptr;
+      answer(Roe<void>{});
+    }
+    return true;
+  };
+}
+
+TEST_F(DirectHeadStartTest, AFailedDeleteOfTheLateServerCopyStillLeavesTheSendDeliveredDirect) {
+  peer_.hold = true;
+  blob_->SetFileDeleteError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
+  auto options = Raced(direct_);
+  options.progress = PushLandsOnFirstProgress(peer_);
+  Send(std::move(options));
+  FireHeadStart();
+  ASSERT_EQ(results_, 1);
+  ASSERT_TRUE(result_) << result_.error().message;
+  EXPECT_TRUE(result_->url.empty()) << "delivered by the push";
+  EXPECT_EQ(blob_->DeletedFileIds().size(), 1u) << "the delete was tried";
+  auto record = Record();
+  ASSERT_TRUE(record);
+  EXPECT_TRUE(record->delivered);
+  EXPECT_TRUE(record->fields.url.empty());
+}
+
+TEST_F(DirectHeadStartTest, APushThatWinsDuringCompleteDeletesTheServerCopy) {
+  peer_.hold = true;
+  blob_->SetOnFileComplete([this](const std::string&) {
+    if (peer_.answer) {
+      auto answer = std::move(peer_.answer);
+      peer_.answer = nullptr;
+      answer(Roe<void>{}); // the push lands while /complete is on its way
+    }
+  });
+  Send(Raced(direct_));
+  FireHeadStart();
+  ASSERT_EQ(results_, 1);
+  ASSERT_TRUE(result_) << result_.error().message;
+  EXPECT_TRUE(result_->url.empty());
+  EXPECT_EQ(blob_->CompletedFileIds().size(), 1u);
+  EXPECT_EQ(blob_->DeletedFileIds(), blob_->CompletedFileIds()) << "the completed copy is deleted";
+  auto record = Record();
+  ASSERT_TRUE(record);
+  EXPECT_TRUE(record->fields.url.empty());
+}
+
+TEST_F(DirectHeadStartTest, AnUploadFailingAfterThePushWonChangesNothing) {
+  peer_.hold = true;
+  blob_->SetPutError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
+  auto options = Raced(direct_);
+  options.progress = PushLandsOnFirstProgress(peer_);
+  Send(std::move(options));
+  FireHeadStart();
+  ASSERT_EQ(results_, 1);
+  ASSERT_TRUE(result_) << "no error after the push delivered it";
+  EXPECT_TRUE(result_->url.empty());
+  auto record = Record();
+  ASSERT_TRUE(record);
+  EXPECT_TRUE(record->delivered);
+}
+
+// The abort path: once the push has won, the upload's next progress step answers "stop" (here between the parts of
+// a multipart upload), the upload ends without completing and its started copy is deleted.
+TEST_F(DirectHeadStartTest, APushThatWinsMidUploadStopsTheUploadAtItsNextStep) {
+  peer_.hold = true;
+  blob_->SetFileStartMode("multipart");
+  blob_->SetFilePartBytes(1ULL << 20); // the smallest part the client accepts: three parts for 2.5 MB
+  auto options = Raced(direct_);
+  options.max_plaintext_bytes = 20ULL * 1000ULL * 1000ULL;
+  options.progress = PushLandsOnFirstProgress(peer_);
+  Send(std::move(options), 2500000);
+  FireHeadStart();
+  ASSERT_EQ(results_, 1);
+  ASSERT_TRUE(result_) << result_.error().message;
+  EXPECT_TRUE(result_->url.empty());
+  EXPECT_TRUE(blob_->CompletedFileIds().empty()) << "the upload stopped before /complete";
+  EXPECT_TRUE(blob_->UploadedBodies().empty()) << "no part went after the push won";
+  EXPECT_EQ(blob_->DeletedFileIds().size(), 1u) << "the started copy is deleted";
+}
+
+TEST_F(DirectHeadStartTest, AServerFailureWaitsForThePushStillOut) {
+  peer_.hold = true;
+  blob_->SetFileStartError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
+  Send(Raced(direct_));
+  FireHeadStart();
+  EXPECT_EQ(results_, 0) << "the push may still deliver it";
+  peer_.answer(Roe<void>{});
+  ASSERT_EQ(results_, 1);
+  ASSERT_TRUE(result_) << result_.error().message;
+  EXPECT_TRUE(result_->url.empty());
+}
+
+TEST_F(DirectHeadStartTest, BothFailingGivesOneErrorThatSaysBoth) {
+  peer_.hold = true;
+  blob_->SetFileStartError(AppError::Blob(Err::Blob::UploadNotConfigured, "HTTP 503: Blob upload is not configured"));
+  Send(Raced(direct_));
+  FireHeadStart();
+  peer_.answer(Error("handshake timeout"));
+  ASSERT_EQ(results_, 1);
+  ASSERT_FALSE(result_);
+  EXPECT_EQ(result_.error().code, static_cast<int32_t>(Err::Blob::UploadNotConfiguredNoDirect));
+  EXPECT_TRUE(store_->HasCipher(staged_.id)) << "kept for Retry";
+}
+
+TEST_F(DirectHeadStartTest, APushAnsweredWithinTheHeadStartNeverStartsTheServer) {
+  peer_.hold = true;
+  Send(Raced(direct_));
+  peer_.answer(Roe<void>{});
+  ASSERT_EQ(results_, 1);
+  EXPECT_TRUE(result_->url.empty());
+  FireHeadStart(); // the timer fires later anyway
+  EXPECT_EQ(results_, 1);
+  EXPECT_EQ(blob_->FileStartCallCount(), 0u);
+}
+
+TEST_F(DirectHeadStartTest, APushFailingWithinTheHeadStartStartsTheServerOnce) {
+  peer_.hold = true;
+  Send(Raced(direct_));
+  peer_.answer(Error("not registered"));
+  ASSERT_EQ(results_, 1);
+  ASSERT_TRUE(result_);
+  EXPECT_FALSE(result_->url.empty());
+  FireHeadStart();
+  EXPECT_EQ(results_, 1);
+  EXPECT_EQ(blob_->FileStartCallCount(), 1u) << "the timer does not upload a second copy";
+}
+
+TEST_F(DirectHeadStartTest, AnUnreachableContactGetsNoHeadStart) {
+  peer_.reachable = false;
+  Send(Raced(direct_));
+  ASSERT_EQ(results_, 1);
+  ASSERT_TRUE(result_);
+  EXPECT_EQ(head_starts_, 0) << "the push failed before it was sent: the server went at once";
+}
+
+TEST_F(DirectHeadStartTest, ACancelDuringTheRaceSendsNothingAndLeavesNothingBehind) {
+  peer_.hold = true;
+  auto cancelled = std::make_shared<std::atomic<bool>>(false);
+  auto options = Raced(direct_);
+  options.cancelled = cancelled;
+  options.progress = [cancelled](uint64_t, uint64_t) {
+    cancelled->store(true); // ✕ while both legs are out
+    return true;
+  };
+  Send(std::move(options));
+  FireHeadStart();
+  peer_.answer(Error("handshake timeout"));
+  ASSERT_EQ(results_, 1) << "one result, whichever leg answered last";
+  ASSERT_FALSE(result_);
+  EXPECT_EQ(result_.error().message, "Attachment send cancelled");
+  EXPECT_EQ(blob_->DeletedFileIds().size(), blob_->UploadedBodies().size()) << "whatever went up is deleted";
+  EXPECT_TRUE(store_->ListForThread(direct_.id, TestDek()).empty());
+}
+
+TEST_F(DirectHeadStartTest, ACancelBeforeTheHeadStartKeepsTheServerOut) {
+  peer_.hold = true;
+  auto cancelled = std::make_shared<std::atomic<bool>>(false);
+  auto options = Raced(direct_);
+  options.cancelled = cancelled;
+  Send(std::move(options));
+  cancelled->store(true);
+  FireHeadStart();
+  EXPECT_EQ(blob_->FileStartCallCount(), 0u);
+  peer_.answer(Error("handshake timeout"));
+  ASSERT_EQ(results_, 1);
+  EXPECT_FALSE(result_);
+  EXPECT_TRUE(blob_->UploadedBodies().empty());
+  EXPECT_TRUE(store_->ListForThread(direct_.id, TestDek()).empty());
+}
+
+TEST_F(DirectHeadStartTest, ARetryRacesTheSameWay) {
+  peer_.reachable = false;
+  blob_->SetFileStartError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
+  Send(Raced(direct_));
+  ASSERT_FALSE(result_);
+  blob_->ClearFileStartError();
+  peer_.reachable = true;
+  peer_.hold = true;
+  auto record = Record();
+  ASSERT_TRUE(record);
+  Roe<ChatAttachmentFields> resumed = Error("not called");
+  int resumed_results = 0;
+  ResumeChatAttachmentAsync(blob_, *identity_, *record, Raced(direct_), [&](Roe<ChatAttachmentFields> value) {
+    ++resumed_results;
+    resumed = std::move(value);
+  });
+  EXPECT_EQ(resumed_results, 0);
+  FireHeadStart();
+  ASSERT_EQ(resumed_results, 1);
+  ASSERT_TRUE(resumed) << resumed.error().message;
+  EXPECT_FALSE(resumed->url.empty());
+  peer_.answer(Roe<void>{});
+  EXPECT_EQ(resumed_results, 1);
+}
+
+TEST_F(DirectHeadStartTest, ALargeFileIsUnchangedServerOnlyWithNoHeadStart) {
+  auto options = Raced(direct_);
+  options.max_plaintext_bytes = 20ULL * 1000ULL * 1000ULL;
+  Send(std::move(options), static_cast<size_t>(kMaxDirectAttachmentBytes) + 1);
+  ASSERT_EQ(results_, 1);
+  ASSERT_TRUE(result_);
+  EXPECT_EQ(peer_.push_calls, 0);
+  EXPECT_EQ(head_starts_, 0);
+  EXPECT_EQ(blob_->FileStartCallCount(), 1u);
 }
 
 TEST(AttachmentRoutingTest, OnlyAnE2eDirectThreadUpToTheLimitTriesDirect) {
