@@ -54,7 +54,8 @@ What the merged R3, R4 and W5 need, exactly (the relay's `docs/operators.md` has
    `pp-relay-api/<env>/relay-certificate` (the certificate's standard base64, `relay-operator.mjs combine` output).
 2. Registry variables `RELAY_SIGNING_KEY_SECRET_ID`, `RELAY_CERTIFICATE_SECRET_ID`, `RELAY_ID` (`relay:…`) and
    `RELAY_ORIGINS` (the API bases exactly as clients use them, `https://<host>/api/relay`); `RELAY_IDENTITY_PEER_ID`
-   equals the certificate's audience. IAM: `secretsmanager:GetSecretValue` on both secrets for the registry role
+   equals the certificate's audience. The support worker needs the same `RELAY_ID` (R5: it names its relay on
+   Support's card, and stops at start without it). IAM: `secretsmanager:GetSecretValue` on both secrets for the registry role
    (and `kms:Decrypt` with a customer-managed key).
 3. qa's operator set (2 of 3, or 1 of 1 until staging exists) and its certificate 1 (sequence 1, `expires_at` 0) before
    merge day: without it qa's registry answers `503 relay_identity_unavailable` to signed calls. Prod's before release
