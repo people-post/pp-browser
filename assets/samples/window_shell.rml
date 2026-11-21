@@ -8,6 +8,7 @@
   <link type="text/rcss" href="../themes/colors-dark.rcss"/>
 </head>
 <body data-model="window" class="shell-body" data-class-shell-body--framed="titlebar_visible && !window_maximized"
+      data-class-shell-body--round="titlebar_traffic_lights"
       data-class-shell-body--compact="layout_mode == 'compact'" data-class-shell-body--wide="layout_mode == 'expanded'">
   <div id="shell-titlebar" class="shell-titlebar" data-if="titlebar_visible">
     <div id="shell-titlebar-controls" class="shell-titlebar-controls shell-titlebar-controls--traffic" data-if="titlebar_traffic_lights">

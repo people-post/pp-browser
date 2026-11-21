@@ -712,6 +712,34 @@ TEST_F(ChatWideLayoutTest, EveryBubbleKindHasItsTailAnchoredToTheBubblesBottomCo
   }
 }
 
+// The macOS window's outer corner (borderless, transparent, shaped by WindowChrome_Darwin.mm): the 1dp outline follows
+// an 18dp radius; a maximized or full-screen window (no `framed` class) is square as before, and a window that is not the
+// macOS one (Windows, Linux: no `round` class) keeps its square outline.
+TEST_F(ChatWideLayoutTest, TheMacWindowOutlineFollowsTheRoundedOuterCorner) {
+  const std::string mm =
+      ReadAll(std::string(PP_SOURCE_DIR) + "/src/foundation/platform/desktop/WindowChrome_Darwin.mm");
+  EXPECT_NE(mm.find("kWindowCornerRadiusPt = 18.0"), std::string::npos);
+  EXPECT_NE(Asset("samples/window_shell.rml").find("data-class-shell-body--round=\"titlebar_traffic_lights\""),
+            std::string::npos);
+  const std::string rml =
+      "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+      Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
+      "</style></head><body style=\"padding: 0;\">"
+      "<div id=\"mac\" class=\"shell-body shell-body--framed shell-body--round\" style=\"width: 400dp; height: "
+      "300dp;\"></div>"
+      "<div id=\"win\" class=\"shell-body shell-body--framed\" style=\"width: 400dp; height: 300dp;\"></div>"
+      "<div id=\"max\" class=\"shell-body shell-body--round\" style=\"width: 400dp; height: 300dp;\"></div>"
+      "</body></rml>";
+  document = context->LoadDocumentFromMemory(rml);
+  ASSERT_NE(document, nullptr);
+  document->Show();
+  context->Update();
+  EXPECT_FLOAT_EQ(document->GetElementById("mac")->GetComputedValues().border_top_left_radius(), 18.f);
+  EXPECT_FLOAT_EQ(document->GetElementById("mac")->GetComputedValues().border_bottom_right_radius(), 18.f);
+  EXPECT_FLOAT_EQ(document->GetElementById("win")->GetComputedValues().border_top_left_radius(), 0.f);
+  EXPECT_FLOAT_EQ(document->GetElementById("max")->GetComputedValues().border_top_left_radius(), 0.f);
+}
+
 TEST_F(ChatWideLayoutTest, SystemLinesAndDatePillsAreSmallPillsSizedToTheirTextAndCentred) {
   // As on the phone: member joined / left, call records' neighbours and the date strips are grey pills round their text,
   // centred, at most 80% of the column; never a row stretched over the whole conversation.

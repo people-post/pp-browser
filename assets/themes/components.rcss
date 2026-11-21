@@ -1526,6 +1526,12 @@ select selectbox option {
   border-width: 1dp;
 }
 
+/* The macOS window's own shape (WindowChrome_Darwin.mm kWindowCornerRadiusPt, the same 18): its outline follows the
+   rounded corner. Windows and Linux keep their square window. */
+.shell-body--framed.shell-body--round {
+  border-radius: 18dp;
+}
+
 .shell-titlebar {
   position: absolute;
   top: 0;
