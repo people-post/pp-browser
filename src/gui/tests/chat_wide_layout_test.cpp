@@ -119,6 +119,7 @@ protected:
     MessageDisplayRow notice = theirs;
     notice.message_id = "m3";
     notice.has_actions = false;
+    mine.can_edit = true; // own text the menu offers Edit for
     state.messages = {mine, theirs, notice};
   }
   struct Box {
@@ -227,7 +228,12 @@ TEST_F(ChatWideLayoutTest, TheHoverBarShowsOnlyUnderThePointerOnAMessageThatHasA
     EXPECT_EQ(bar->GetComputedValues().display(), ui::Style::Display::None) << "hidden until hovered: " << i;
     ui::ElementList buttons;
     bar->GetElementsByClassName(buttons, "msg-bar-btn");
-    EXPECT_EQ(buttons.size(), 3u) << "+ (the emoji picker), reply, more";
+    EXPECT_EQ(buttons.size(), 4u) << "+ (the emoji picker), edit, reply, more";
+    ui::ElementList edit;
+    bar->GetElementsByClassName(edit, "msg-bar-edit");
+    ASSERT_EQ(edit.size(), 1u) << i;
+    EXPECT_EQ(edit[0]->GetComputedValues().display() == ui::Style::Display::None, i != 0)
+        << "the pencil is there for our own text only, absent (not greyed) otherwise: " << i;
   }
   for (size_t i = 0; i < 3; ++i) {
     rows[i]->SetPseudoClass("hover", true);
@@ -254,19 +260,21 @@ TEST_F(ChatWideLayoutTest, TheHoverBarOffersExactlyTheMessageMenusItems) {
   const std::string bar_markup = page.substr(bar, page.find("class=\"chat-row-body\"", bar) - bar);
   EXPECT_NE(bar_markup.find("msg_bar_emoji(row.message_id, e.emoji)"), std::string::npos);
   EXPECT_NE(bar_markup.find("msg_bar_react()"), std::string::npos);
+  EXPECT_NE(bar_markup.find("msg_bar_edit(row.message_id)"), std::string::npos);
   EXPECT_NE(bar_markup.find("msg_bar_reply()"), std::string::npos);
   EXPECT_NE(bar_markup.find("msg_bar_more()"), std::string::npos);
-  // The order is reactions, +, (Forward later), Reply, More.
+  // The order is reactions, +, Edit, (Forward later), Reply, More.
   EXPECT_LT(bar_markup.find("msg_bar_emoji"), bar_markup.find("msg_bar_react"));
-  EXPECT_LT(bar_markup.find("msg_bar_react"), bar_markup.find("TODO(forward)"));
+  EXPECT_LT(bar_markup.find("msg_bar_react"), bar_markup.find("msg_bar_edit"));
+  EXPECT_LT(bar_markup.find("msg_bar_edit"), bar_markup.find("TODO(forward)"));
   EXPECT_LT(bar_markup.find("TODO(forward)"), bar_markup.find("msg_bar_reply"));
   EXPECT_LT(bar_markup.find("msg_bar_reply"), bar_markup.find("msg_bar_more"));
-  // No other action in the bar (no forward, no save...): four buttons, the first repeated per reaction.
+  // No other action in the bar (no forward, no save...): five buttons, the first repeated per reaction.
   size_t buttons = 0;
   for (size_t at = bar_markup.find("<button"); at != std::string::npos; at = bar_markup.find("<button", at + 1)) {
     ++buttons;
   }
-  EXPECT_EQ(buttons, 4u);
+  EXPECT_EQ(buttons, 5u);
   EXPECT_STREQ(MessageBarActionId(MessageBarAction::Reply), "reply_message");
   EXPECT_STREQ(MessageBarActionId(MessageBarAction::React), "react_more");
   EXPECT_STREQ(MessageBarActionId(MessageBarAction::More), "");
@@ -277,13 +285,22 @@ TEST_F(ChatWideLayoutTest, TheHoverBarOffersExactlyTheMessageMenusItems) {
   EXPECT_NE(menus.find("\"reply_message\"", for_request), std::string::npos);
   EXPECT_NE(menus.find("\"react_more\"", for_request), std::string::npos);
   EXPECT_NE(menus.find("QuickReactions(host_.RecentEmojis())", for_request), std::string::npos);
+  // Edit: the menu offers it on host_.CanEditMessage (and not while editing); the bar's pencil asks the same of the controller.
+  EXPECT_NE(menus.find("host_.CanEditMessage(message_id)", for_request), std::string::npos);
+  const std::string controller = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
+  const size_t can_edit_at = controller.find("facts.can_edit =");
+  ASSERT_NE(can_edit_at, std::string::npos);
+  const std::string can_edit_body = controller.substr(can_edit_at, 220);
+  EXPECT_NE(can_edit_body.find("!chat_.editing_message"), std::string::npos);
+  EXPECT_NE(can_edit_body.find("CanEditMessage(message_id)"), std::string::npos);
+  EXPECT_NE(controller.find("kBarEmojiCount = 5"), std::string::npos) << "five reactions";
   EXPECT_EQ(menus.find("forward", for_request), std::string::npos) << "no forwarding";
 }
 
 TEST_F(ChatWideLayoutTest, TheHoverBarShowsTheUsedReactionsBeforeThePlus) {
   ShowChat();
-  for (const char* emoji : {"\xF0\x9F\x91\x8D", "\xE2\x9D\xA4", "\xF0\x9F\x98\x82", "\xF0\x9F\x98\xAE",
-                            "\xF0\x9F\x98\xA2", "\xF0\x9F\x99\x8F", "\xF0\x9F\x8E\x89", "\xF0\x9F\x94\xA5"}) {
+  for (const char* emoji :
+       {"\xF0\x9F\x91\x8D", "\xE2\x9D\xA4", "\xF0\x9F\x98\x82", "\xF0\x9F\x98\xAE", "\xF0\x9F\x98\xA2"}) {
     BarEmojiRow row;
     row.emoji = emoji;
     state.bar_emojis.push_back(row);
@@ -310,13 +327,14 @@ TEST_F(ChatWideLayoutTest, TheHoverBarShowsTheUsedReactionsBeforeThePlus) {
       emoji.push_back(e);
     }
   }
-  ASSERT_EQ(emoji.size(), 8u) << "one button per reaction";
+  ASSERT_EQ(emoji.size(), 5u) << "five reactions";
   ui::ElementList others;
   mine->GetElementsByClassName(others, "msg-bar-btn");
-  ASSERT_EQ(others.size(), 3u);
+  ASSERT_EQ(others.size(), 4u) << "+, Edit (our own text row), Reply, More";
   EXPECT_LT(BoxOf(emoji.back()).right, BoxOf(others[0]).left + 0.5f) << "the + comes after the reactions";
-  EXPECT_LT(BoxOf(others[0]).right, BoxOf(others[1]).left + 0.5f) << "then Reply";
-  EXPECT_LT(BoxOf(others[1]).right, BoxOf(others[2]).left + 0.5f) << "then More";
+  EXPECT_LT(BoxOf(others[0]).right, BoxOf(others[1]).left + 0.5f) << "then Edit";
+  EXPECT_LT(BoxOf(others[1]).right, BoxOf(others[2]).left + 0.5f) << "then Reply";
+  EXPECT_LT(BoxOf(others[2]).right, BoxOf(others[3]).left + 0.5f) << "then More";
   EXPECT_LE(BoxOf(First("msg-bar")).H(), 40.f) << "one row";
   // Every slot draws its emoji: a glyph span with the emoji as its text, a box of its own, an opaque text colour, and the
   // same font family as the phone's quick-reaction row (the menu label), so the emoji font fallback applies alike.

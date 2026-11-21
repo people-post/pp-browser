@@ -165,7 +165,7 @@ struct ChatScreenState {
   std::vector<MessageDisplayRow> messages;
   /** The reactions sheet (a tap on a message's emoji): who reacted, grouped by emoji. */
   std::vector<ReactorDisplayRow> reactor_rows;
-  /** The hover bar's reactions: the message menu's quick row, the first kBarEmojiCount of it. */
+  /** The hover bar's reactions: the message menu's quick row, the first five of it. */
   std::vector<BarEmojiRow> bar_emojis;
   bool use_messages_layout = true;
   bool loading = false; // a turn runs in THIS thread (thinking + stop key); other threads keep sending (B112)

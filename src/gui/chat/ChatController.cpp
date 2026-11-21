@@ -4163,6 +4163,10 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   TranscriptFacts facts = facade_->TranscriptFactsFor();
   facts.voice_supported = VoiceMessagesSupported();
   facts.thread_is_group = chat_.thread_is_group;
+  // The menu offers Edit when the message can be edited and no edit is going on (ChatMenus::ForRequest).
+  facts.can_edit = [this](const std::string& message_id) {
+    return !chat_.editing_message && CanEditMessage(message_id);
+  };
   facts.voice_max_seconds = facade_->CurrentAttachmentLimits().voice_max_seconds;
   facts.voice_state = [this](const std::string& message_id) { return voice_playback_->State(message_id); };
   facts.audio_files_play = voice_playback_->PlaysFiles();
@@ -5099,8 +5103,8 @@ void ChatController::RememberEmoji(const std::string& emoji) {
 }
 
 void ChatController::RefreshBarEmojis() {
-  // Eight at most (the bar's width); the defaults fill it to six when nothing was used yet, so never fewer than five.
-  constexpr size_t kBarEmojiCount = 8;
+  // Exactly five: the first of the quick row (recent first), then "+".
+  constexpr size_t kBarEmojiCount = 5;
   std::vector<std::string> row = QuickReactions(RecentEmojis());
   if (row.size() > kBarEmojiCount) {
     row.resize(kBarEmojiCount);
@@ -6362,6 +6366,16 @@ bool ChatController::Setup(ui::Context* context) {
                                                       ToggleReaction(message_id, emoji);
                                                       RememberEmoji(emoji);
                                                     }));
+        ctor.BindEventCallback("msg_bar_edit", DataEvent<std::string>([this](const std::string& message_id) {
+                                 if (IsPendingUploadRowId(message_id)) {
+                                   return;
+                                 }
+                                 if (!CanEditMessage(message_id)) {
+                                   ShowToast(Tr("chat.edit.too_late")); // the window closed while the bar was up
+                                   return;
+                                 }
+                                 StartEditMessage(message_id); // the menu's Edit
+                               }));
         ctor.BindEventCallback("open_reactors", DataEvent<std::string>([this](const std::string& message_id) {
                                  if (IsPendingUploadRowId(message_id)) {
                                    return;

@@ -104,6 +104,8 @@ struct TranscriptFacts {
   bool audio_files_play = false;
   /** The open chat is a group (or a broadcast / AI thread, not a 1:1): its call records are not tappable. The GUI sets this. */
   bool thread_is_group = false;
+  /** "Edit" is offered on this message now (the message menu's own condition); the wide layout's hover bar shows a pencil for it. Optional. The GUI sets this. */
+  std::function<bool(const std::string& message_id)> can_edit;
   /** The send mark on a message (none when unset). The GUI sets this. */
   std::function<SendMark(const ThreadMessage&)> send_mark;
   /**
