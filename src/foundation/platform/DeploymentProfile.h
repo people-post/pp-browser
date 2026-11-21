@@ -9,29 +9,40 @@ namespace pbr {
 inline constexpr const char* kProductDirName = "pp-browser";
 
 /** Which backend the user picked (config `backend.env`). `Custom` uses the URLs saved in the config file. */
-enum class BackendEnv { Prod, Qa, Custom };
+enum class BackendEnv { Prod, Staging, Dev, Custom };
 
-/** Unknown names parse as `Prod`. */
+/** The legacy name `qa` parses as `Staging`; unknown names parse as `Prod`. */
 BackendEnv ParseBackendEnv(std::string_view name);
 const char* BackendEnvName(BackendEnv env);
 
 /**
  * Backend origin (scheme://host, no path, no trailing slash). Precedence: PP_BROWSER_ORIGIN, then the
- * latched backend's compiled origin (`Qa` -> CMake PP_API_URL_QA, otherwise PP_API_URL_PROD); none set
+ * latched backend's compiled origin (`Staging` -> PP_API_URL_STAGING, `Dev` -> PP_API_URL_DEV, otherwise PP_API_URL_PROD); none set
  * yields "". Read on every call. All URLs derived from it are empty when the origin is empty, which
  * disables the backend features.
  */
 std::string BriefOrigin();
 /**
- * The compile-time origins (CMake PP_API_URL_PROD / PP_API_URL_QA) and their relays' PeerIds (PP_RELAY_PEER_ID_PROD /
- * PP_RELAY_PEER_ID_QA, multi-relay MR008: the org relay's address ships with the build); "" where not configured.
+ * The compile-time origins (CMake PP_API_URL_PROD / _STAGING / _DEV) and their relays' PeerIds (PP_RELAY_PEER_ID_PROD /
+ * _STAGING / _DEV, multi-relay MR008: the org relay's address ships with the build); "" where not configured.
+ * The deprecated PP_API_URL_QA / PP_RELAY_PEER_ID_QA only fill in a staging value that is not set.
  */
 struct CompiledOrigins {
   const char* prod = "";
-  const char* qa = "";
+  const char* staging = "";
+  const char* dev = "";
   const char* prod_relay_peer_id = "";
-  const char* qa_relay_peer_id = "";
+  const char* staging_relay_peer_id = "";
+  const char* dev_relay_peer_id = "";
 };
+/** `staging` unless empty, then the deprecated `legacy_qa` value. */
+inline const char* StagingOrLegacyQa(const char* staging, const char* legacy_qa) {
+  return (staging && *staging) ? staging : legacy_qa;
+}
+/** `compiled`'s origin for `env` (`Custom` has none: ""). */
+const char* CompiledOriginFor(BackendEnv env, const CompiledOrigins& compiled);
+/** Whether `env` can run: `Prod` and `Custom` always, `Staging` / `Dev` only with a compiled origin. */
+bool BackendAvailableIn(BackendEnv env, const CompiledOrigins& compiled);
 /** This build's compile-time origins. */
 CompiledOrigins BuildCompiledOrigins();
 /**
@@ -41,8 +52,8 @@ CompiledOrigins BuildCompiledOrigins();
 std::string ResolveBriefOrigin(bool ui_demo, const char* env_origin, BackendEnv backend,
                                const CompiledOrigins& compiled);
 /**
- * The PeerId the org's relay (BriefRelayBaseUrl) must answer to (MR008): `compiled`'s for `backend` (`Qa` → the QA
- * one, otherwise prod's); "" in the UI demo app. When `env_origin` (PP_BROWSER_ORIGIN) replaces the compiled origin,
+ * The PeerId the org's relay (BriefRelayBaseUrl) must answer to (MR008): `compiled`'s for `backend` (its own
+ * for `Staging` / `Dev`, otherwise prod's); "" in the UI demo app. When `env_origin` (PP_BROWSER_ORIGIN) replaces the compiled origin,
  * `env_peer_id` (PP_BROWSER_RELAY_PEER_ID, may be null): none there, a developer build pins that relay on its first
  * answer (warned) and a release build does not use it.
  */
@@ -50,7 +61,7 @@ std::string ResolveRelayPeerId(bool ui_demo, const char* env_origin, BackendEnv 
                                const CompiledOrigins& compiled, const char* env_peer_id = nullptr);
 /**
  * Whether the org's relay may be pinned on its first identity answer when none is named for it (multi-relay MR008
- * item 4): in a developer build, or on a compiled backend (`compiled_backend`: prod / qa, no PP_BROWSER_ORIGIN) — a
+ * item 4): in a developer build, or on a compiled backend (`compiled_backend`: prod / staging / dev, no PP_BROWSER_ORIGIN) — a
  * build that ships no PeerId is a dogfood one (release workflows refuse it). A custom backend or PP_BROWSER_ORIGIN in a
  * release build names its relay's PeerId, or that relay is not used.
  */
@@ -84,7 +95,7 @@ inline bool RunLogsAllowed(bool ui_demo) {
 }
 /** Runs `sender` only when UploadAllowed(ui_demo); returns whether it ran. */
 bool RunIfUploadAllowed(bool ui_demo, const std::function<void()>& sender);
-/** The Me -> Network prod / qa / custom switch: hidden in the UI demo app (its profile key stays `prod`). */
+/** The Me -> Network environment switch (prod / staging / dev / custom): hidden in the UI demo app (its profile key stays `prod`). */
 inline bool BackendSwitchVisible(bool ui_demo) {
   return !ui_demo;
 }
@@ -94,19 +105,20 @@ inline bool ChangePinVisible(bool ui_demo) {
 }
 /** The compile-time prod origin ("" unless configured). */
 const char* CompiledDefaultOrigin();
-/** The compile-time QA origin ("" unless configured); empty hides the QA option. */
-const char* CompiledQaOrigin();
+/** The compile-time staging origin ("" unless configured); empty hides the Staging option. */
+const char* CompiledStagingOrigin();
+/** The compile-time dev origin ("" unless configured); empty hides the Dev option. */
+const char* CompiledDevOrigin();
 /** The compile-time default of `relay.content_sha256` (CMake PP_RELAY_CONTENT_SHA256; false unless set). */
 bool CompiledRelayContentSha256();
-inline bool QaBackendAvailable() {
-  return *CompiledQaOrigin() != '\0';
-}
-/** The rule behind LatchActiveBackend(): `Qa` without a QA origin (`qa_available` false) is `Prod`. */
-BackendEnv ResolveLatchedBackend(BackendEnv requested, bool qa_available);
+/** BackendAvailableIn for this build. */
+bool BackendAvailable(BackendEnv env);
+/** The rule behind LatchActiveBackend(): `Staging` / `Dev` without a compiled origin in `compiled` are `Prod`. */
+BackendEnv ResolveLatchedBackend(BackendEnv requested, const CompiledOrigins& compiled);
 
 /**
  * The backend this process runs against. The first call to `LatchActiveBackend` wins, so a settings
- * change takes effect on the next start only. `Qa` without a compiled QA origin latches as `Prod`.
+ * change takes effect on the next start only. `Staging` / `Dev` without a compiled origin latch as `Prod`.
  */
 BackendEnv ActiveBackend();
 void LatchActiveBackend(BackendEnv requested);

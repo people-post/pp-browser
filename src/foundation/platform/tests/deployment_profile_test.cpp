@@ -57,7 +57,7 @@ TEST(DeploymentProfileTest, EmptyEnvFallsBackToCompiledDefault) {
 // Compile-time origins as each build variant has them: the decisions take them as inputs, so every variant runs here.
 constexpr pbr::CompiledOrigins kNoOrigins{};
 constexpr pbr::CompiledOrigins kProdOnly{.prod = "https://prod.example.test/"};
-constexpr pbr::CompiledOrigins kProdAndQa{.prod = "https://prod.example.test", .qa = "https://qa.example.test"};
+constexpr pbr::CompiledOrigins kProdAndStaging{.prod = "https://prod.example.test", .staging = "https://staging.example.test"};
 
 TEST(DeploymentProfileTest, NoOriginYieldsEmptyUrls) {
   const std::string origin = pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Prod, kNoOrigins);
@@ -78,11 +78,26 @@ TEST(DeploymentProfileTest, ACompiledDefaultOriginIsUsedWithoutTheEnvironment) {
 }
 
 TEST(DeploymentProfileTest, BackendEnvNamesRoundTripAndUnknownIsProd) {
-  for (const auto env : {pbr::BackendEnv::Prod, pbr::BackendEnv::Qa, pbr::BackendEnv::Custom}) {
+  for (const auto env :
+       {pbr::BackendEnv::Prod, pbr::BackendEnv::Staging, pbr::BackendEnv::Dev, pbr::BackendEnv::Custom}) {
     EXPECT_EQ(pbr::ParseBackendEnv(pbr::BackendEnvName(env)), env);
   }
   EXPECT_EQ(pbr::ParseBackendEnv(""), pbr::BackendEnv::Prod);
-  EXPECT_EQ(pbr::ParseBackendEnv("staging"), pbr::BackendEnv::Prod);
+  EXPECT_EQ(pbr::ParseBackendEnv("unknown"), pbr::BackendEnv::Prod);
+}
+
+TEST(DeploymentProfileTest, PersistedQaLoadsAsStagingAndIsSavedAsStaging) {
+  EXPECT_EQ(pbr::ParseBackendEnv("qa"), pbr::BackendEnv::Staging);
+  EXPECT_EQ(pbr::ParseBackendEnv("staging"), pbr::BackendEnv::Staging);
+  EXPECT_EQ(pbr::ParseBackendEnv("dev"), pbr::BackendEnv::Dev);
+  EXPECT_STREQ(pbr::BackendEnvName(pbr::ParseBackendEnv("qa")), "staging");
+}
+
+TEST(DeploymentProfileTest, LegacyQaVariablesOnlyFillAnEmptyStaging) {
+  EXPECT_STREQ(pbr::StagingOrLegacyQa("", "https://qa.example.test"), "https://qa.example.test");
+  EXPECT_STREQ(pbr::StagingOrLegacyQa("https://staging.example.test", "https://qa.example.test"),
+               "https://staging.example.test");
+  EXPECT_STREQ(pbr::StagingOrLegacyQa("", ""), "");
 }
 
 TEST(DeploymentProfileTest, ActiveBackendLatchesOnFirstCall) {
@@ -94,37 +109,54 @@ TEST(DeploymentProfileTest, ActiveBackendLatchesOnFirstCall) {
   pbr::ResetActiveBackendForTest();
 }
 
-TEST(DeploymentProfileTest, QaFallsBackToProdWithoutCompiledQaOrigin) {
-  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Qa, false), pbr::BackendEnv::Prod);
-  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Qa, true), pbr::BackendEnv::Qa);
-  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Custom, false), pbr::BackendEnv::Custom);
-  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Prod, true), pbr::BackendEnv::Prod);
+// A store build compiles no non-prod origin: a saved staging / dev (or legacy qa) runs as prod.
+TEST(DeploymentProfileTest, StagingAndDevFallBackToProdWithoutTheirCompiledOrigin) {
+  constexpr pbr::CompiledOrigins kStagingOnly{.prod = "https://prod.example.test",
+                                              .staging = "https://staging.example.test"};
+  constexpr pbr::CompiledOrigins kAll{
+      .prod = "https://prod.example.test", .staging = "https://staging.example.test", .dev = "https://dev.example.test"};
+  for (const pbr::BackendEnv env : {pbr::BackendEnv::Staging, pbr::BackendEnv::Dev}) {
+    EXPECT_EQ(pbr::ResolveLatchedBackend(env, kProdOnly), pbr::BackendEnv::Prod);
+    EXPECT_EQ(pbr::ResolveLatchedBackend(env, kNoOrigins), pbr::BackendEnv::Prod);
+    EXPECT_EQ(pbr::ResolveLatchedBackend(env, kAll), env);
+  }
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::ParseBackendEnv("qa"), kProdOnly), pbr::BackendEnv::Prod);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Staging, kStagingOnly), pbr::BackendEnv::Staging);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Dev, kStagingOnly), pbr::BackendEnv::Prod);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Custom, kNoOrigins), pbr::BackendEnv::Custom);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Prod, kAll), pbr::BackendEnv::Prod);
 }
 
-// This build's own: the latch applies the rule with its compiled QA origin.
-TEST(DeploymentProfileTest, TheLatchUsesThisBuildsQaOrigin) {
+// This build's own: the latch applies the rule with its compiled origins.
+TEST(DeploymentProfileTest, TheLatchUsesThisBuildsCompiledOrigins) {
   pbr::ResetActiveBackendForTest();
-  pbr::LatchActiveBackend(pbr::BackendEnv::Qa);
-  EXPECT_EQ(pbr::ActiveBackend(), pbr::ResolveLatchedBackend(pbr::BackendEnv::Qa, pbr::QaBackendAvailable()));
+  pbr::LatchActiveBackend(pbr::BackendEnv::Staging);
+  EXPECT_EQ(pbr::ActiveBackend(), pbr::ResolveLatchedBackend(pbr::BackendEnv::Staging, pbr::BuildCompiledOrigins()));
   pbr::ResetActiveBackendForTest();
 }
 
-TEST(DeploymentProfileTest, QaBackendUsesQaOriginAndEnvStillWins) {
-  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Qa, kProdAndQa), "https://qa.example.test");
-  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Prod, kProdAndQa), "https://prod.example.test");
-  EXPECT_EQ(pbr::ResolveBriefOrigin(false, "https://backend.example.test", pbr::BackendEnv::Qa, kProdAndQa),
+TEST(DeploymentProfileTest, StagingAndDevUseTheirOriginsAndEnvStillWins) {
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Staging, kProdAndStaging),
+            "https://staging.example.test");
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Dev, {.dev = "https://dev.example.test"}),
+            "https://dev.example.test");
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Prod, kProdAndStaging), "https://prod.example.test");
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, "https://backend.example.test", pbr::BackendEnv::Staging, kProdAndStaging),
             "https://backend.example.test");
 }
 
 // Multi-relay MR008: the org relay's address carries its PeerId, shipped with the build beside its origin
-// (PP_RELAY_PEER_ID_PROD / PP_RELAY_PEER_ID_QA); a developer's PP_BROWSER_ORIGIN names none (first use, warned).
+// (PP_RELAY_PEER_ID_PROD / _STAGING / _DEV); a developer's PP_BROWSER_ORIGIN names none (first use, warned).
 TEST(DeploymentProfileTest, TheOrgRelaysPeerIdShipsWithItsBackend) {
   const pbr::CompiledOrigins compiled{.prod = "https://prod.example.test",
-                                      .qa = "https://qa.example.test",
+                                      .staging = "https://staging.example.test",
+                                      .dev = "https://dev.example.test",
                                       .prod_relay_peer_id = "QmProd",
-                                      .qa_relay_peer_id = "QmQa"};
+                                      .staging_relay_peer_id = "QmStaging",
+                                      .dev_relay_peer_id = "QmDev"};
   EXPECT_EQ(pbr::ResolveRelayPeerId(false, nullptr, pbr::BackendEnv::Prod, compiled), "QmProd");
-  EXPECT_EQ(pbr::ResolveRelayPeerId(false, nullptr, pbr::BackendEnv::Qa, compiled), "QmQa");
+  EXPECT_EQ(pbr::ResolveRelayPeerId(false, nullptr, pbr::BackendEnv::Staging, compiled), "QmStaging");
+  EXPECT_EQ(pbr::ResolveRelayPeerId(false, nullptr, pbr::BackendEnv::Dev, compiled), "QmDev");
   EXPECT_EQ(pbr::ResolveRelayPeerId(false, "", pbr::BackendEnv::Prod, compiled), "QmProd") << "an empty override";
   EXPECT_EQ(pbr::ResolveRelayPeerId(false, "https://dev.example.test", pbr::BackendEnv::Prod, compiled), "")
       << "another origin: not the build's relay";

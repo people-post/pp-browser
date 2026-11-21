@@ -101,7 +101,8 @@ protected:
     host().UiState().show_advanced_settings = "off";
     host().UiState().show_tester_options = "off";
     host().UiState().backend_env = "prod";
-    host().UiState().backend_qa_available = true; // a build with a QA address
+    host().UiState().backend_staging_available = true; // a build with staging and dev addresses
+    host().UiState().backend_dev_available = true;
     host().PushToView(false);
 
     ASSERT_TRUE(settings.RegisterModel(context));
@@ -236,18 +237,18 @@ TEST_F(SettingsAdvancedTesterServiceTest, TheSwitchesNeverMoveTheSavedServiceAwa
   ExpectSwitchesLeaveTheSavedServiceAlone("custom");
 }
 
-TEST_F(SettingsAdvancedTesterServiceTest, TheSwitchesNeverMoveTheSavedServiceAwayFromQa) {
-  if (!QaBackendAvailable()) {
-    GTEST_SKIP() << "this build has no QA address (-DPP_API_URL_QA), so a saved \"qa\" is read as \"prod\"";
+TEST_F(SettingsAdvancedTesterServiceTest, TheSwitchesNeverMoveTheSavedServiceAwayFromStaging) {
+  if (!BackendAvailable(BackendEnv::Staging)) {
+    GTEST_SKIP() << "this build has no staging address (-DPP_API_URL_STAGING), so a saved \"staging\" is read as \"prod\"";
   }
-  ExpectSwitchesLeaveTheSavedServiceAlone("qa");
+  ExpectSwitchesLeaveTheSavedServiceAlone("staging");
 }
 
 TEST_F(SettingsAdvancedTesterTest, PickingCustomWithTheTesterOptionsOffSavesExactlyCustom) {
   AppConfig config = store.Snapshot().config;
-  config.backend.env = "qa";
+  config.backend.env = "staging";
   ASSERT_TRUE(static_cast<bool>(store.SaveConfig(config)));
-  host().UiState().backend_env = "qa";
+  host().UiState().backend_env = "staging";
   host().PushToView(false);
   Click("toggle_adv");
   ASSERT_EQ(Text("tst"), "0");
@@ -289,30 +290,32 @@ TEST_F(SettingsAdvancedTesterTest, TheTapHintsNameOnlyTheTesterOptions) {
   EXPECT_EQ(Tr("settings.help.tester_off"), "已隐藏测试选项");
 }
 
-TEST_F(SettingsAdvancedTesterTest, QaIsOfferedOnlyWhileTheTesterOptionsAreOnAndWithoutARestart) {
+TEST_F(SettingsAdvancedTesterTest, StagingAndDevAreOfferedOnlyWhileTheTesterOptionsAreOnAndWithoutARestart) {
   EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "custom"}));
   Click("toggle_adv");
-  EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "custom"})) << "Advanced alone does not offer QA";
+  EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "custom"})) << "Advanced alone does not offer staging / dev";
   for (int i = 0; i < 5; ++i) {
     Click("version");
   }
-  EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "qa", "custom"})) << "same session, no restart";
+  EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "staging", "dev", "custom"})) << "same session, no restart";
   for (int i = 0; i < 5; ++i) {
     Click("version");
   }
   EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "custom"}));
 }
 
-// Only the word changes: the stored value stays "qa" (the ids above), the row is offered where it was.
-TEST_F(SettingsAdvancedTesterTest, TheQaChoiceIsCalledStaging) {
-  EXPECT_EQ(Tr("settings.network.backend.qa"), "Staging");
+TEST_F(SettingsAdvancedTesterTest, TheEnvironmentsHaveTheirLabels) {
+  EXPECT_EQ(Tr("settings.network.backend.staging"), "Staging");
+  EXPECT_EQ(Tr("settings.network.backend.dev"), "Dev");
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(Tr("settings.network.backend.qa"), "预发布");
+  EXPECT_EQ(Tr("settings.network.backend.staging"), "预发布");
+  EXPECT_EQ(Tr("settings.network.backend.dev"), "开发");
   LocalizationService::Instance().SetPreferredLanguage("en");
 }
 
-TEST_F(SettingsAdvancedTesterTest, WithoutAQaAddressInTheBuildQaIsNeverOffered) {
-  host().UiState().backend_qa_available = false;
+TEST_F(SettingsAdvancedTesterTest, WithoutAnAddressInTheBuildStagingAndDevAreNeverOffered) {
+  host().UiState().backend_staging_available = false;
+  host().UiState().backend_dev_available = false;
   host().PushToView(false);
   for (int i = 0; i < 5; ++i) {
     Click("version");
@@ -321,11 +324,11 @@ TEST_F(SettingsAdvancedTesterTest, WithoutAQaAddressInTheBuildQaIsNeverOffered) 
   EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "custom"}));
 }
 
-TEST_F(SettingsAdvancedTesterTest, RunningOnQaWithTheTesterOptionsOffStillShowsQaAndTheChooserHasNoSelectedRow) {
-  host().UiState().backend_env = "qa";
+TEST_F(SettingsAdvancedTesterTest, RunningOnStagingWithTheTesterOptionsOffStillShowsStagingAndTheChooserHasNoSelectedRow) {
+  host().UiState().backend_env = "staging";
   host().PushToView(false);
   context->Update();
-  EXPECT_EQ(Text("lbl"), Tr("settings.network.backend.qa")) << "the row tells the truth about the current service";
+  EXPECT_EQ(Text("lbl"), Tr("settings.network.backend.staging")) << "the row tells the truth about the current service";
   const std::vector<SettingsChoicePage::Option> options = settings.BackendChoiceOptions();
   ASSERT_EQ(options.size(), 2u);
   for (const SettingsChoicePage::Option& option : options) {
@@ -681,18 +684,32 @@ TEST_F(SettingsRealViewTest, ResettingTheCustomAddressesClosesThePageAndCancelli
   EXPECT_NE(store.Snapshot().config.backend.env, "custom");
 }
 
-// Picking another service says, in a dialog, that it only switches after PP is quit completely and opened again; the small
-// grey line stays. Nothing is quit by the app, and picking what already runs says nothing.
-TEST_F(SettingsRealViewTest, PickingAnotherServiceTellsTheUserToReopenPP) {
+// Picking another environment asks first and saves nothing until confirmed; confirming saves and quits (or, where the
+// platform has no quit, says to reopen and pins a banner); cancelling keeps the original; the same environment says nothing.
+TEST_F(SettingsRealViewTest, PickingAnotherServiceAsksToConfirmThenSavesAndQuits) {
   ResetActiveBackendForTest();
   LatchActiveBackend(BackendEnv::Prod); // the service this "run" is on
-  struct Alert {
+  struct Confirm {
     std::string title, message, ok;
+    std::function<void(bool)> answer;
   };
-  std::vector<Alert> alerts;
-  ports.show_alert = [&alerts](const std::string& title, const std::string& message, std::function<void()>,
-                               const std::string& ok) { alerts.push_back({title, message, ok}); };
+  std::vector<Confirm> confirms;
+  ports.show_confirm = [&confirms](const std::string& title, const std::string& message,
+                                   std::function<void(bool)> on_result, const std::string& ok) {
+    confirms.push_back({title, message, ok, std::move(on_result)});
+  };
+  std::vector<std::string> alerts;
+  ports.show_alert = [&alerts](const std::string&, const std::string& message, std::function<void()>,
+                               const std::string&) { alerts.push_back(message); };
+  std::vector<std::string> banners;
+  ports.show_banner = [&banners](const std::string& message, bool sticky) {
+    EXPECT_TRUE(sticky);
+    banners.push_back(message);
+  };
+  ports.dismiss_banner = [&banners]() { banners.push_back("<dismissed>"); };
   settings.BindShellFeedback(ports);
+  int quits = 0;
+  settings.SetQuitForTest(true, [&quits]() { ++quits; });
   settings.SyncLayoutMode();
   const auto pick = [&](const char* id) {
     RealClick(ClickTarget("", "on_choose_backend()"));
@@ -717,35 +734,66 @@ TEST_F(SettingsRealViewTest, PickingAnotherServiceTellsTheUserToReopenPP) {
     RealClick(rows[index]);
   };
 
-  pick("prod"); // already the one selected and running
-  EXPECT_TRUE(alerts.empty());
+  pick("prod"); // already the one selected
+  EXPECT_TRUE(confirms.empty());
 
   pick("custom");
-  ASSERT_EQ(alerts.size(), 1u);
-  EXPECT_EQ(alerts[0].title, "Reopen PP to switch");
-  EXPECT_EQ(alerts[0].message, "You chose \"Custom\". Quit PP completely and open it again to switch.");
-  EXPECT_EQ(alerts[0].ok, "OK");
-  EXPECT_EQ(store.Snapshot().config.backend.env, "custom") << "the choice is saved as before";
-  EXPECT_TRUE(host().UiState().backend_restart_pending) << "the small grey line still shows";
+  ASSERT_EQ(confirms.size(), 1u);
+  EXPECT_EQ(confirms[0].message,
+            "You are switching the relay from Production to Custom. The app must restart for this to take effect.");
+  EXPECT_EQ(confirms[0].ok, "Yes");
+  EXPECT_NE(store.Snapshot().config.backend.env, "custom") << "nothing is saved before the answer";
+
+  confirms[0].answer(false); // cancel
+  EXPECT_NE(store.Snapshot().config.backend.env, "custom");
+  EXPECT_EQ(quits, 0);
+
+  pick("custom");
+  ASSERT_EQ(confirms.size(), 2u);
+  confirms[1].answer(true);
+  EXPECT_EQ(store.Snapshot().config.backend.env, "custom");
+  EXPECT_EQ(quits, 1);
+  EXPECT_TRUE(alerts.empty());
+  EXPECT_TRUE(banners.empty());
 
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(Tr("settings.network.backend.reopen_title"), "需要重新打开 PP");
-  EXPECT_EQ(Tr("settings.network.backend.reopen_body", {{"name", "自定义"}}),
-            "已选择「自定义」。完全关闭 PP 再打开后才会切换。");
-  EXPECT_EQ(Tr("settings.network.backend.reopen_ok"), "知道了");
+  EXPECT_EQ(Tr("settings.network.backend.switch_confirm", {{"origEnv", "正式"}, {"destEnv", "自定义"}}),
+            "您正在尝试将线路从正式切换到自定义，应用需要重启后才能生效");
+  EXPECT_EQ(Tr("common.yes"), "是");
   LocalizationService::Instance().SetPreferredLanguage("en");
+}
 
-  pick("custom"); // the option the page shows as selected: no change, no second dialog
-  EXPECT_EQ(alerts.size(), 1u);
-
-  pick("prod"); // back to the one that runs: nothing to reopen for
-  EXPECT_EQ(alerts.size(), 1u);
-
-  pick("custom"); // a real change again: once more
-  EXPECT_EQ(alerts.size(), 2u);
-  pick("custom");
-  EXPECT_EQ(alerts.size(), 2u);
+// No quit on this platform: the confirmed switch is saved, an OK note says to reopen, and a banner stays until the saved
+// service is the running one again.
+TEST_F(SettingsRealViewTest, WithoutAQuitAConfirmedSwitchSaysToReopenAndPinsABanner) {
   ResetActiveBackendForTest();
+  LatchActiveBackend(BackendEnv::Prod);
+  std::vector<std::function<void(bool)>> answers;
+  ports.show_confirm = [&answers](const std::string&, const std::string&, std::function<void(bool)> on_result,
+                                  const std::string&) { answers.push_back(std::move(on_result)); };
+  std::vector<std::string> alerts;
+  ports.show_alert = [&alerts](const std::string&, const std::string& message, std::function<void()>,
+                               const std::string&) { alerts.push_back(message); };
+  std::vector<std::string> banners;
+  ports.show_banner = [&banners](const std::string& message, bool) { banners.push_back(message); };
+  ports.dismiss_banner = [&banners]() { banners.push_back("<dismissed>"); };
+  settings.BindShellFeedback(ports);
+  int quits = 0;
+  settings.SetQuitForTest(false, [&quits]() { ++quits; });
+
+  settings.ChooseBackendForTest("custom");
+  ASSERT_EQ(answers.size(), 1u);
+  answers[0](true);
+  EXPECT_EQ(store.Snapshot().config.backend.env, "custom");
+  EXPECT_EQ(quits, 0);
+  ASSERT_EQ(alerts.size(), 1u);
+  EXPECT_EQ(alerts[0], "The relay is now Custom. Close and reopen the app for it to take effect.");
+  EXPECT_EQ(banners, (std::vector<std::string>{"Restart the app to finish switching the relay."}));
+
+  settings.ChooseBackendForTest("prod"); // back to the running one
+  ASSERT_EQ(answers.size(), 2u);
+  answers[1](true);
+  EXPECT_EQ(banners.back(), "<dismissed>");
 }
 
 // A "?" inside a row that opens a page or toggles a switch only shows its note.

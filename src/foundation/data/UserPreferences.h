@@ -110,7 +110,7 @@ struct ProfilePreferences {
   bool attachment_auto_on_cellular = false;
   /** Me → About: show the technical options (ids, endpoints, MCP, paths). Off for everyone by default. */
   bool show_advanced_settings = false;
-  /** Me → Help, five taps on the version: the internal test options (and the QA service in the service list). Off by default. */
+  /** Me → Help, five taps on the version: the internal test options (and the Staging / Dev services in the service list). Off by default. */
   bool show_tester_options = false;
   /** First-run wizard finished or skipped (or an account was brought over). */
   bool onboarding_completed = false;

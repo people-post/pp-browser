@@ -11,7 +11,7 @@ std::string NormalizeBackendUrl(const std::string& url);
 
 /**
  * Filesystem-safe key naming the backend this process runs against, also the profile id created for it:
- * `prod`, `qa`, or `custom-<12 hex>` (hash of the normalized registration URL, or of the origin when
+ * `prod`, `qa` (staging), `dev`, or `custom-<12 hex>` (hash of the normalized registration URL, or of the origin when
  * PP_BROWSER_ORIGIN is set).
  */
 std::string BackendProfileKey(const AppConfig& config);

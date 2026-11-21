@@ -255,8 +255,14 @@ jobs:
           PP_BUILD_TAG: ${{ inputs.candidate_tag || steps.ver.outputs.tag }}
           PP_BUILD_COMMIT: ${{ steps.ver.outputs.commit }}
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
+          PP_API_URL_STAGING: ${{ secrets.PP_API_URL_STAGING }}
+          PP_API_URL_DEV: ${{ secrets.PP_API_URL_DEV }}
+          # Deprecated fallback for PP_API_URL_STAGING
           PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
           PP_RELAY_PEER_ID_PROD: ${{ vars.PP_RELAY_PEER_ID_PROD || secrets.PP_RELAY_PEER_ID_PROD }}
+          PP_RELAY_PEER_ID_STAGING: ${{ vars.PP_RELAY_PEER_ID_STAGING || secrets.PP_RELAY_PEER_ID_STAGING }}
+          PP_RELAY_PEER_ID_DEV: ${{ vars.PP_RELAY_PEER_ID_DEV || secrets.PP_RELAY_PEER_ID_DEV }}
+          # Deprecated fallback for PP_RELAY_PEER_ID_STAGING
           PP_RELAY_PEER_ID_QA: ${{ vars.PP_RELAY_PEER_ID_QA || secrets.PP_RELAY_PEER_ID_QA }}
           PP_RELAY_CONTENT_SHA256: ${{ vars.PP_RELAY_CONTENT_SHA256 }}
         run: |

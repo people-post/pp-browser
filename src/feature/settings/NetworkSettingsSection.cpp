@@ -26,9 +26,10 @@ SettingsFlushMode NetworkSettingsSection::FlushMode() const {
 
 void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
   state.backend_env = bootstrap.config.backend.env;
-  state.backend_qa_available = QaBackendAvailable();
+  state.backend_staging_available = BackendAvailable(BackendEnv::Staging);
+  state.backend_dev_available = BackendAvailable(BackendEnv::Dev);
   state.backend_restart_pending = ParseBackendEnv(state.backend_env) != ActiveBackend();
-  // Prod / qa derive the URLs from the origin; the fields edit the custom ones.
+  // Prod / staging / dev derive the URLs from the origin; the fields edit the custom ones.
   const BackendConfig& backend = bootstrap.config.backend;
   const bool saved = backend.has_saved_urls;
   // The relay and registration fields show relay links (MR008): the address with the PeerId it must answer to.

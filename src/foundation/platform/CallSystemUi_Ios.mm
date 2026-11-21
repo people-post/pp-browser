@@ -98,7 +98,7 @@ double UptimeSec() {
 }
 
 /**
- * B233 diagnostics (written wherever the QA origin is compiled in, today every iOS build; CallKitDiagnosticsEnabled):
+ * B233 diagnostics (written wherever the staging origin is compiled in, today every iOS build; CallKitDiagnosticsEnabled):
  * one line in the developer log with the process's monotonic clock in ms, and `since_ms` from an earlier reading when
  * there is one. Timestamps and flags of our own call provider only; the line leaves the device only through the user's
  * own "send logs".

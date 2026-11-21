@@ -23,6 +23,15 @@ def ppApiUrlProd = System.getenv('PP_API_URL_PROD') ?: ''
 if (ppApiUrlProd && !ppBrowserUiDemo) {
     ppBrowserCmakeArgs += ["-DPP_API_URL_PROD=${ppApiUrlProd}"]
 }
+def ppApiUrlStaging = System.getenv('PP_API_URL_STAGING') ?: ''
+if (ppApiUrlStaging && !ppBrowserUiDemo) {
+    ppBrowserCmakeArgs += ["-DPP_API_URL_STAGING=${ppApiUrlStaging}"]
+}
+def ppApiUrlDev = System.getenv('PP_API_URL_DEV') ?: ''
+if (ppApiUrlDev && !ppBrowserUiDemo) {
+    ppBrowserCmakeArgs += ["-DPP_API_URL_DEV=${ppApiUrlDev}"]
+}
+// Deprecated: fallback for PP_API_URL_STAGING.
 def ppApiUrlQa = System.getenv('PP_API_URL_QA') ?: ''
 if (ppApiUrlQa && !ppBrowserUiDemo) {
     ppBrowserCmakeArgs += ["-DPP_API_URL_QA=${ppApiUrlQa}"]
@@ -32,6 +41,15 @@ def ppRelayPeerIdProd = System.getenv('PP_RELAY_PEER_ID_PROD') ?: ''
 if (ppRelayPeerIdProd && !ppBrowserUiDemo) {
     ppBrowserCmakeArgs += ["-DPP_RELAY_PEER_ID_PROD=${ppRelayPeerIdProd}"]
 }
+def ppRelayPeerIdStaging = System.getenv('PP_RELAY_PEER_ID_STAGING') ?: ''
+if (ppRelayPeerIdStaging && !ppBrowserUiDemo) {
+    ppBrowserCmakeArgs += ["-DPP_RELAY_PEER_ID_STAGING=${ppRelayPeerIdStaging}"]
+}
+def ppRelayPeerIdDev = System.getenv('PP_RELAY_PEER_ID_DEV') ?: ''
+if (ppRelayPeerIdDev && !ppBrowserUiDemo) {
+    ppBrowserCmakeArgs += ["-DPP_RELAY_PEER_ID_DEV=${ppRelayPeerIdDev}"]
+}
+// Deprecated: fallback for PP_RELAY_PEER_ID_STAGING.
 def ppRelayPeerIdQa = System.getenv('PP_RELAY_PEER_ID_QA') ?: ''
 if (ppRelayPeerIdQa && !ppBrowserUiDemo) {
     ppBrowserCmakeArgs += ["-DPP_RELAY_PEER_ID_QA=${ppRelayPeerIdQa}"]
