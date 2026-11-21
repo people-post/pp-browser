@@ -222,9 +222,9 @@ void CallMediaConnectCoordinator::OpenBundle(const uint64_t seq, const int attem
       return;
     }
   }
-  if (!transport_.IsActive()) {
-    transport_.Detach(request_.params.call_id);
-  }
+  // A prior attempt's dead leg goes; a live one stays — the peer's hello may have been admitted on the
+  // transport's strand while this attempt reached its link (both roles dial at once, V049).
+  transport_.DetachUnlessActive(request_.params.call_id);
   attempt_current_ = attempt;
   log().info << "ConnectAsync attempt=" << attempt << "/" << kConnectAttempts << " call_id=" << request_.params.call_id
              << " peer=" << request_.params.peer_key << " role=" << Role() << " timeout_ms=" << attempt_timeout_ms_
