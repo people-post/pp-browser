@@ -318,6 +318,35 @@ TEST_F(ChatWideLayoutTest, TheHoverBarShowsTheUsedReactionsBeforeThePlus) {
   EXPECT_LT(BoxOf(others[0]).right, BoxOf(others[1]).left + 0.5f) << "then Reply";
   EXPECT_LT(BoxOf(others[1]).right, BoxOf(others[2]).left + 0.5f) << "then More";
   EXPECT_LE(BoxOf(First("msg-bar")).H(), 40.f) << "one row";
+  // Every slot draws its emoji: a glyph span with the emoji as its text, a box of its own, an opaque text colour, and the
+  // same font family as the phone's quick-reaction row (the menu label), so the emoji font fallback applies alike.
+  // The family is compared in a plain document (the app's body font), the bar's glyph beside the phone's menu label.
+  const std::string probe_rml =
+      "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+      Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
+      "</style></head><body><div class=\"shell-body shell-body--wide\"><div class=\"context-menu-quick\">"
+      "<div class=\"context-menu-item\"><span id=\"phone-label\" class=\"context-menu-item-label\">\xF0\x9F\x91\x8D"
+      "</span></div></div><div class=\"msg-bar\"><button class=\"msg-bar-emoji\"><span id=\"bar-glyph\" "
+      "class=\"msg-bar-emoji-glyph\">\xF0\x9F\x91\x8D</span></button></div></div></body></rml>";
+  ui::ElementDocument* probe = context->LoadDocumentFromMemory(probe_rml);
+  ASSERT_NE(probe, nullptr);
+  probe->Show();
+  context->Update();
+  const ui::String phone_family = probe->GetElementById("phone-label")->GetProperty<ui::String>("font-family");
+  EXPECT_FALSE(phone_family.empty());
+  EXPECT_EQ(probe->GetElementById("bar-glyph")->GetProperty<ui::String>("font-family"), phone_family)
+      << "the bar's emoji resolves to the phone quick row's font family";
+  probe->Close();
+  for (ui::Element* slot : emoji) {
+    ui::ElementList glyphs;
+    slot->GetElementsByClassName(glyphs, "msg-bar-emoji-glyph");
+    ASSERT_EQ(glyphs.size(), 1u);
+    ui::Element* glyph = glyphs[0];
+    EXPECT_FALSE(glyph->GetInnerRML().empty()) << "the slot has its emoji as text";
+    EXPECT_GT(glyph->GetBox().GetSize(ui::BoxArea::Border).x, 0.f) << "and a box of its own";
+    EXPECT_EQ(glyph->GetComputedValues().color().alpha, 255) << "an opaque text colour";
+    EXPECT_GT(glyph->GetComputedValues().font_size(), 14.f);
+  }
 }
 
 TEST_F(ChatWideLayoutTest, TheChatPageRowsKeepTheirBindingsAndTheirOwnChat) {

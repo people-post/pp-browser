@@ -178,7 +178,7 @@
              picker), Reply, and "..." (the whole message menu). Same items and handlers as ChatMenus. -->
         <div class="msg-bar" data-if="row.has_actions">
           <button class="msg-bar-emoji" type="button" data-for="e : bar_emojis"
-                  data-event-click="msg_bar_emoji(row.message_id, e.emoji)">{{e.emoji}}</button>
+                  data-event-click="msg_bar_emoji(row.message_id, e.emoji)"><span class="msg-bar-emoji-glyph">{{e.emoji}}</span></button>
           <button class="msg-bar-btn" type="button" data-event-click="msg_bar_react()">
             <svg src="../icons/v2/plus.svg" width="18" height="18"></svg>
           </button>

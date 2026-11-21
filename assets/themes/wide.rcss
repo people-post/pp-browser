@@ -552,9 +552,16 @@
   padding: 0;
   border: 0;
   border-radius: 7dp;
+  cursor: pointer;
+}
+
+/* The emoji sits in a span of its own, as the message menu's quick row (.context-menu-item-label) does: text straight
+   in the flex button was not drawn. */
+.shell-body--wide .msg-bar-emoji-glyph {
+  flex: 0 0 auto;
   font-size: 18dp;
   line-height: 24dp;
-  cursor: pointer;
+  white-space: nowrap;
 }
 
 .shell-body--wide .msg-bar-sep {
