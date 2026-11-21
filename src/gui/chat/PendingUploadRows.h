@@ -60,6 +60,11 @@ public:
    * messages sent now — when the rows end at the chat's newest message (`at_tip`) — so they get the date strip and run
    * as the real rows will, and the row before them loses its tail as it will then. Those rows are kept aside (Rows());
    * only the real rows are returned, so paging and counting never see them.
+   *
+   * An uploading item whose sent message is already among `entries` is not drawn: the send stores its message (and the
+   * transcript is redrawn for it) a moment before its callback takes the item off the queue, and the two must never be
+   * drawn together. Items are sent one at a time, so the Nth uploading item matches the Nth own attachment message
+   * stored since it was added; a failed item (kept for Retry) matches none.
    */
   std::vector<MessageDisplayRow> Render(std::vector<TranscriptRow> entries, TranscriptFacts facts,
                                         const std::optional<MentionRoster>& mentions, const std::string& thread_id,
@@ -96,6 +101,9 @@ private:
   PendingUploadQueue queue_;
   std::vector<MessageDisplayRow> rows_;
   std::map<std::string, int> drawn_percent_;
+  /** When each item was added (ms): the real message it becomes is stored after that (Render hides an item whose
+   *  message is already in the transcript, so the two are never drawn together). */
+  std::map<std::string, int64_t> added_ms_;
 };
 
 } // namespace pbr
