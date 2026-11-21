@@ -308,6 +308,8 @@ struct AudioLeaseRequest {
   AudioDeviceFormat format;
   /** Polled during platform open retries; false abandons the open (lease granted without device). */
   std::function<bool()> still_wanted;
+  /** Whose lease this is (NewOwner; 0: nobody's in particular): LetGo frees what one owner holds. */
+  uint64_t owner = 0;
 };
 
 /**
@@ -362,6 +364,17 @@ public:
   Roe<VoiceDuplexLeases> AcquireVoiceDuplex(const AudioLeaseRequest& request);
   /** Blocking like AcquireAudio. Refused by policy ("camera held by …") or when no camera opens. */
   Roe<std::unique_ptr<CameraDeviceLease>> AcquireCamera(const CameraLeaseRequest& request);
+
+  /** A fresh owner for lease requests (AudioLeaseRequest::owner): never 0, never handed out twice. */
+  uint64_t NewOwner();
+  /**
+   * The owner has ended but cannot release its leases (a thread of it is stuck, maybe inside one of its endpoints):
+   * the devices it holds count as free from now, and whatever it asks for later is refused. Only the holder table
+   * changes — no endpoint, no device thread — so this never blocks. Its endpoints stay open until its leases are
+   * destroyed, then close on the device thread as usual: a new holder of an exclusive kind may meanwhile have a second
+   * endpoint of it open beside the stuck one. Returns the labels of what it held (empty: nothing).
+   */
+  std::vector<std::string> LetGo(uint64_t owner);
 
   /** Current holders of `kind` (empty when free). */
   std::vector<std::string> Holders(MediaDeviceKind kind) const;

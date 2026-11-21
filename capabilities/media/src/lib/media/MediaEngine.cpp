@@ -253,12 +253,12 @@ struct MediaThreadStageTracker {
 };
 
 /**
- * Joins `thread`. If it is still running after kJoinStageWarnAfter, logs the stage it is in
+ * Joins `thread`. If it is still running after kJoinStageWarnAfter, runs `on_slow` (when set) and logs the stage it is in
  * ("<context> join_<name> slow stage=… since_ms=…") and keeps waiting — never detaches: the media
  * threads use Impl, which the caller may free next.
  */
-void JoinThreadWatched(std::thread& thread, const char* context, const char* name,
-                       const MediaThreadStageTracker& stage) {
+void JoinThreadWatched(std::thread& thread, const char* context, const char* name, const MediaThreadStageTracker& stage,
+                       const std::function<void()>& on_slow = {}) {
   if (!thread.joinable()) {
     return;
   }
@@ -284,6 +284,9 @@ void JoinThreadWatched(std::thread& thread, const char* context, const char* nam
   if (!finished) {
     EngineLog().warning << context << " join_" << name << " slow stage=" << stage.Name()
                         << " since_ms=" << stage.MsInStage();
+    if (on_slow) {
+      on_slow();
+    }
   }
   waiter.join();
 }
@@ -353,6 +356,7 @@ struct MediaEngine::Impl {
         adaptation_target_audio_bps(shared->adaptation_target_audio_bps) {
     std::lock_guard lock(shared->mu);
     devices = shared->devices;
+    device_owner = devices ? devices->NewOwner() : 0;
     // Every hardware codec runs behind a guard: a call into it waits at most its budget (L016).
     limits = shared->limits;
     encode_input_for_test = shared->encode_input_for_test;
@@ -463,6 +467,8 @@ struct MediaEngine::Impl {
   OpusEncoder* encoder = nullptr;
   /** Where this session's devices come from (the engine's, when it started). */
   MediaDeviceArbiter* devices = nullptr;
+  /** This session's audio leases, as one owner: let go together when the stopped session cannot release them. */
+  uint64_t device_owner = 0;
   /**
    * Held while the session runs. Acquired / reopened by the capture thread (the only writer while it
    * runs, under `mutex`); the playout thread writes the speaker under `mutex`.
@@ -930,19 +936,32 @@ struct MediaEngine::Impl {
   }
 
   /** `context` names the caller in the slow-join warning ("media stop", "media restart"). */
-  void JoinCaptureThread(const char* context) {
+  void JoinCaptureThread(const char* context, const std::function<void()>& on_slow = {}) {
     capture_running = false;
-    JoinThreadWatched(capture_thread, context, "capture", capture_stage);
+    JoinThreadWatched(capture_thread, context, "capture", capture_stage, on_slow);
   }
 
-  void JoinKeeperThread(const char* context) {
+  void JoinKeeperThread(const char* context, const std::function<void()>& on_slow = {}) {
     keeper_running = false;
-    JoinThreadWatched(keeper_thread, context, "keeper", keeper_stage);
+    JoinThreadWatched(keeper_thread, context, "keeper", keeper_stage, on_slow);
   }
 
-  void JoinPlayoutThread(const char* context) {
+  void JoinPlayoutThread(const char* context, const std::function<void()>& on_slow = {}) {
     playout_running = false;
-    JoinThreadWatched(playout_thread, context, "playout", playout_stage);
+    JoinThreadWatched(playout_thread, context, "playout", playout_stage, on_slow);
+  }
+
+  /**
+   * Retire thread: an audio thread of this stopped session is stuck, so its leases are not released until it returns
+   * (maybe never — an OS endpoint wedged under it). The devices go to whoever asks next (a redial), and this session
+   * can take none again. Its endpoints close once its leases go (MediaDeviceArbiter::LetGo).
+   */
+  void LetGoDevices(const std::string& stopping_session) {
+    const std::vector<std::string> held = DeviceArbiter().LetGo(device_owner);
+    if (!held.empty()) {
+      EngineLog().warning << "media stop: let go of " << held.size() << " device(s) of session=" << stopping_session
+                          << " — a thread of it is stuck";
+    }
   }
 
   /**
@@ -1203,6 +1222,7 @@ struct MediaEngine::Impl {
     request.holder = holder;
     request.format = AudioDeviceFormat{kSampleRate, kChannels};
     request.still_wanted = [this]() { return capture_running.load(std::memory_order_acquire); };
+    request.owner = device_owner;
     auto lease = DeviceArbiter().AcquireAudio(request);
     if (!lease) {
       SDL_Log("MediaEngine: %s refused: %s", MediaDeviceKindName(kind), lease.error().message.c_str());
@@ -1428,6 +1448,7 @@ struct MediaEngine::Impl {
     request.holder = holder;
     request.format = AudioDeviceFormat{kSampleRate, kChannels};
     request.still_wanted = [this]() { return capture_running.load(std::memory_order_acquire); };
+    request.owner = device_owner;
     auto pair = DeviceArbiter().AcquireVoiceDuplex(request);
     if (!pair) {
       EngineLog().info << "audio_io=sdl reason=" << pair.error().message;
@@ -2511,9 +2532,12 @@ struct MediaEngine::Impl {
         EngineLog().info << "media stop step=" << step << " ms=" << ms;
       }
     };
-    timed_step("join_capture", [&] { JoinCaptureThread("media stop"); });
-    timed_step("join_keeper", [&] { JoinKeeperThread("media stop"); });
-    timed_step("join_playout", [&] { JoinPlayoutThread("media stop"); });
+    // The audio devices are released only after these three joins: one that hangs would keep the mic from every later
+    // session until the app is killed (iPhone, 2026-11-19: a redial the other side could not hear).
+    const auto let_go = [&] { LetGoDevices(stopping_session); };
+    timed_step("join_capture", [&] { JoinCaptureThread("media stop", let_go); });
+    timed_step("join_keeper", [&] { JoinKeeperThread("media stop", let_go); });
+    timed_step("join_playout", [&] { JoinPlayoutThread("media stop", let_go); });
     timed_step("release_audio", [&] {
       {
         std::lock_guard lock(mutex);

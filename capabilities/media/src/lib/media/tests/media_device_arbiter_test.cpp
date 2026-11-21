@@ -442,6 +442,57 @@ TEST_F(MediaDeviceArbiterTest, VoiceDuplexIsRefusedWhileTheMicIsHeld) {
   EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Speaker).empty()) << "no speaker hold left behind";
 }
 
+// --- let go: an ended owner that cannot release its leases (a thread of it is stuck) ------------
+
+AudioLeaseRequest OwnedRequest(MediaDeviceKind kind, const std::string& holder, uint64_t owner) {
+  AudioLeaseRequest request = Request(kind, holder);
+  request.owner = owner;
+  return request;
+}
+
+// The mic goes to the next holder at once; the ended owner gets nothing again; its endpoint closes only when its lease
+// goes (a reader may still be inside it), and that late release takes nothing from the new holder.
+TEST_F(MediaDeviceArbiterTest, LettingGoOfAnEndedOwnerFreesItsMicForTheNextHolder) {
+  const uint64_t ended = arbiter_->NewOwner();
+  const uint64_t other = arbiter_->NewOwner();
+  ASSERT_NE(ended, other);
+  auto stuck = arbiter_->AcquireAudio(OwnedRequest(MediaDeviceKind::Mic, "ended-call", ended));
+  ASSERT_TRUE(stuck);
+  auto ringtone = arbiter_->AcquireAudio(OwnedRequest(MediaDeviceKind::Speaker, "ringtone", other));
+  ASSERT_TRUE(ringtone);
+
+  EXPECT_EQ(arbiter_->LetGo(ended), std::vector<std::string>{"mic for ended-call"});
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Mic).empty());
+  EXPECT_EQ(arbiter_->Holders(MediaDeviceKind::Speaker), std::vector<std::string>{"ringtone"})
+      << "other owners keep theirs";
+  EXPECT_TRUE((*stuck)->HasDevice()) << "letting go touches no endpoint";
+
+  auto redial = arbiter_->AcquireAudio(OwnedRequest(MediaDeviceKind::Mic, "redial", other));
+  ASSERT_TRUE(redial) << redial.error().message;
+  auto again = arbiter_->AcquireAudio(OwnedRequest(MediaDeviceKind::Speaker, "ended-call", ended));
+  ASSERT_FALSE(again);
+  EXPECT_EQ(again.error().message, "ended-call has ended (its devices were let go)");
+  EXPECT_TRUE(arbiter_->LetGo(ended).empty()) << "nothing left to let go";
+  EXPECT_TRUE(arbiter_->LetGo(0).empty()) << "no owner, nothing let go";
+
+  stuck->reset(); // the stuck thread returns at last
+  EXPECT_EQ(arbiter_->Holders(MediaDeviceKind::Mic), std::vector<std::string>{"redial"});
+  Settle();
+  EXPECT_EQ(log_.Events(), (std::vector<std::string>{"open mic", "open speaker", "open mic", "close mic"}));
+}
+
+TEST_F(MediaDeviceArbiterTest, LettingGoOfAnEndedOwnersVoicePairFreesBothHalves) {
+  backend_->duplex = true;
+  const uint64_t ended = arbiter_->NewOwner();
+  auto pair = arbiter_->AcquireVoiceDuplex(OwnedRequest(MediaDeviceKind::Mic, "call:1", ended));
+  ASSERT_TRUE(pair) << pair.error().message;
+  EXPECT_EQ(arbiter_->LetGo(ended).size(), 2u);
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Mic).empty());
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Speaker).empty());
+  auto next = arbiter_->AcquireVoiceDuplex(OwnedRequest(MediaDeviceKind::Mic, "call:2", arbiter_->NewOwner()));
+  EXPECT_TRUE(next) << next.error().message;
+}
+
 // --- budgets: a stuck device family is refused at once and recovers by itself (L016) ------------
 
 class StuckDeviceTest : public ::testing::Test {

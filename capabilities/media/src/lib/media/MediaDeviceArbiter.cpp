@@ -331,6 +331,7 @@ struct MediaDeviceArbiter::Core {
   struct Holder {
     uint64_t id = 0;
     std::string label;
+    uint64_t owner = 0;
   };
 
   std::unique_ptr<IMediaDeviceBackend> backend;
@@ -344,6 +345,9 @@ struct MediaDeviceArbiter::Core {
   mutable std::mutex mu;
   std::vector<std::pair<MediaDeviceKind, Holder>> holders;
   uint64_t next_id = 1;
+  uint64_t next_owner = 1;
+  /** Owners let go (LetGo): refused from then on. One per ended session that got stuck, so it stays small. */
+  std::vector<uint64_t> let_go;
 
   MediaDeviceLane& LaneFor(MediaDeviceKind kind) { return kind == MediaDeviceKind::Camera ? camera : audio; }
 
@@ -359,8 +363,11 @@ struct MediaDeviceArbiter::Core {
     return {};
   }
 
-  Roe<uint64_t> Hold(MediaDeviceKind kind, const std::string& label) {
+  Roe<uint64_t> Hold(MediaDeviceKind kind, const std::string& label, const uint64_t owner = 0) {
     std::lock_guard lock(mu);
+    if (owner != 0 && std::find(let_go.begin(), let_go.end(), owner) != let_go.end()) {
+      return Error(label + " has ended (its devices were let go)");
+    }
     if (policy.Exclusive(kind)) {
       for (const auto& [held_kind, holder] : holders) {
         if (held_kind == kind) {
@@ -369,8 +376,27 @@ struct MediaDeviceArbiter::Core {
       }
     }
     const uint64_t id = next_id++;
-    holders.push_back({kind, Holder{id, label}});
+    holders.push_back({kind, Holder{id, label, owner}});
     return id;
+  }
+
+  /** Drops the owner's entries (a lease released later unholds an id that is gone: nothing). */
+  std::vector<std::string> LetGo(const uint64_t owner) {
+    std::vector<std::string> labels;
+    if (owner == 0) {
+      return labels;
+    }
+    std::lock_guard lock(mu);
+    if (std::find(let_go.begin(), let_go.end(), owner) == let_go.end()) {
+      let_go.push_back(owner);
+    }
+    for (const auto& [kind, holder] : holders) {
+      if (holder.owner == owner) {
+        labels.push_back(std::string(MediaDeviceKindName(kind)) + " for " + holder.label);
+      }
+    }
+    std::erase_if(holders, [owner](const auto& entry) { return entry.second.owner == owner; });
+    return labels;
   }
 
   void Unhold(uint64_t id) {
@@ -715,7 +741,7 @@ Roe<std::unique_ptr<AudioDeviceLease>> MediaDeviceArbiter::AcquireAudio(const Au
                          << responsive.error().message;
     return responsive.error();
   }
-  auto held = core_->Hold(request.kind, request.holder);
+  auto held = core_->Hold(request.kind, request.holder, request.owner);
   if (!held) {
     ArbiterLog().info << "refused " << MediaDeviceKindName(request.kind) << " to " << request.holder << ": "
                       << held.error().message;
@@ -745,12 +771,12 @@ Roe<MediaDeviceArbiter::VoiceDuplexLeases> MediaDeviceArbiter::AcquireVoiceDuple
     ArbiterLog().warning << "refused voice duplex to " << request.holder << ": " << responsive.error().message;
     return responsive.error();
   }
-  auto mic_held = core_->Hold(MediaDeviceKind::Mic, request.holder);
+  auto mic_held = core_->Hold(MediaDeviceKind::Mic, request.holder, request.owner);
   if (!mic_held) {
     ArbiterLog().info << "refused voice duplex to " << request.holder << ": " << mic_held.error().message;
     return mic_held.error();
   }
-  auto speaker_held = core_->Hold(MediaDeviceKind::Speaker, request.holder);
+  auto speaker_held = core_->Hold(MediaDeviceKind::Speaker, request.holder, request.owner);
   if (!speaker_held) {
     core_->Unhold(*mic_held);
     ArbiterLog().info << "refused voice duplex to " << request.holder << ": " << speaker_held.error().message;
@@ -853,6 +879,23 @@ Roe<std::unique_ptr<CameraDeviceLease>> MediaDeviceArbiter::AcquireCamera(const 
   }
   lease.reset(); // unholds
   return Error(error);
+}
+
+uint64_t MediaDeviceArbiter::NewOwner() {
+  std::lock_guard lock(core_->mu);
+  return core_->next_owner++;
+}
+
+std::vector<std::string> MediaDeviceArbiter::LetGo(const uint64_t owner) {
+  std::vector<std::string> labels = core_->LetGo(owner);
+  if (!labels.empty()) {
+    std::string text;
+    for (const std::string& label : labels) {
+      text += (text.empty() ? "" : ", ") + label;
+    }
+    ArbiterLog().warning << "let go of " << text << ": its owner ended without releasing them";
+  }
+  return labels;
 }
 
 std::vector<std::string> MediaDeviceArbiter::Holders(MediaDeviceKind kind) const {
