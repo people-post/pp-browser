@@ -1,32 +1,27 @@
 #include "lib/broadcast/BroadcastJoinTicket.h"
 
+#include "lib/broadcast/BroadcastSignedJson.h"
+
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/SignedBytes.h"
+#include "foundation/crypto/SignedReceive.h"
+#include "foundation/crypto/TypedBlob.h"
 
 #include "common/ValueJson.h"
 
 #include <climits>
+#include <limits>
 #include <sodium.h>
-#include <sstream>
 
 #include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {
 
-void AppendField(std::ostringstream& out, const char* key, const std::string& value) {
-  out << key << '=' << value << '\n';
-}
-void AppendField(std::ostringstream& out, const char* key, const int64_t value) {
-  out << key << '=' << value << '\n';
-}
-void AppendField(std::ostringstream& out, const char* key, const uint64_t value) {
-  out << key << '=' << value << '\n';
-}
-
-ByteVector ToBytes(const std::string& text) {
-  return ByteVector(text.begin(), text.end());
-}
+constexpr char kWhat[] = "broadcast join ticket";
+constexpr SignedVersions kTicketVersions{.floor = kBroadcastJoinTicketSchemaVersion,
+                                         .current = kBroadcastJoinTicketSchemaVersion};
 
 Roe<std::string> MintMediaKeyId() {
   EnsureSodiumInit();
@@ -35,24 +30,64 @@ Roe<std::string> MintMediaKeyId() {
   return std::string("mk:") + BytesToHex(rnd);
 }
 
+/** The key fields' bytes, decoded once for the signed bytes and the algorithm step. */
+struct TicketKeyBytes {
+  ByteVector wrapped_key;
+  ByteVector key_material;
+};
+
+Roe<TicketKeyBytes> DecodeKeyBytes(const BroadcastJoinTicket& ticket) {
+  auto wrapped = ReadOptionalBase64(ticket.wrapped_key_b64, "broadcast join ticket wrapped_key_b64");
+  if (!wrapped) {
+    return wrapped.error();
+  }
+  auto material = ReadOptionalBase64(ticket.key_material_b64, "broadcast join ticket key_material_b64");
+  if (!material) {
+    return material.error();
+  }
+  return TicketKeyBytes{.wrapped_key = std::move(*wrapped), .key_material = std::move(*material)};
+}
+
+/** Step 2's bounds, for a ticket decoded or built in memory. */
+Roe<void> CheckTicketFields(const BroadcastJoinTicket& ticket) {
+  if (ticket.publisher_peer_id.empty() || ticket.join_handle.empty() || ticket.viewer_peer_id.empty()) {
+    return Error("broadcast join ticket missing publisher/join_handle/viewer");
+  }
+  if (ticket.media_epoch == 0) {
+    return Error("broadcast join ticket media_epoch must be >= 1");
+  }
+  if (ticket.wrapped_key_b64.empty() && ticket.key_material_b64.empty()) {
+    return Error("broadcast join ticket missing key material");
+  }
+  return {};
+}
+
+ByteVector SignBytesOf(const BroadcastJoinTicket& ticket, const uint8_t version, const TicketKeyBytes& keys) {
+  return SignedBytesWriter(kBroadcastJoinTicketDomain, version)
+      .Utf8(ticket.publisher_peer_id)
+      .Utf8(ticket.program_id)
+      .Utf8(ticket.join_handle)
+      .Utf8(ticket.viewer_peer_id)
+      .U64(ticket.media_epoch)
+      .Utf8(ticket.media_key_id)
+      .Bytes(keys.wrapped_key)
+      .Bytes(keys.key_material)
+      .Utf8(ticket.hop_peer_id)
+      .I64(ticket.expires_at_ms)
+      .Finish(ticket.ext);
+}
+
 } // namespace
 
-std::string BroadcastJoinTicketCanonicalSignBytes(const BroadcastJoinTicket& ticket) {
-  std::ostringstream out;
-  AppendField(out, "v", static_cast<int64_t>(ticket.schema_version));
-  AppendField(out, "publisher_peer_id", ticket.publisher_peer_id);
-  AppendField(out, "program_id", ticket.program_id);
-  AppendField(out, "join_handle", ticket.join_handle);
-  AppendField(out, "viewer_peer_id", ticket.viewer_peer_id);
-  AppendField(out, "media_epoch", static_cast<uint64_t>(ticket.media_epoch));
-  AppendField(out, "media_key_id", ticket.media_key_id);
-  AppendField(out, "wrapped_key_b64", ticket.wrapped_key_b64);
-  AppendField(out, "key_material_b64", ticket.key_material_b64);
-  if (!ticket.hop_peer_id.empty()) {
-    AppendField(out, "hop_peer_id", ticket.hop_peer_id);
+Roe<ByteVector> BroadcastJoinTicketSignBytes(const BroadcastJoinTicket& ticket) {
+  if (ticket.schema_version < 0 || ticket.schema_version > std::numeric_limits<uint8_t>::max()) {
+    return Error("broadcast join ticket schema_version is not a byte");
   }
-  AppendField(out, "expires_at_ms", ticket.expires_at_ms);
-  return out.str();
+  auto keys = DecodeKeyBytes(ticket);
+  if (!keys) {
+    return keys.error();
+  }
+  return SignBytesOf(ticket, static_cast<uint8_t>(ticket.schema_version), *keys);
 }
 
 Roe<std::string> EncodeBroadcastJoinTicketJson(const BroadcastJoinTicket& ticket) {
@@ -74,41 +109,135 @@ Roe<std::string> EncodeBroadcastJoinTicketJson(const BroadcastJoinTicket& ticket
     json.set("hop_peer_id", ticket.hop_peer_id);
   }
   json.set("expires_at_ms", ticket.expires_at_ms);
+  WriteExtB64(json, ticket.ext);
   json.set("signature_b64", ticket.signature_b64);
   return DumpJson(json);
 }
+
+namespace {
+
+/** Step 2 from the wire: the fields of a ticket whose `schema_version` (`version`) is in range. */
+Roe<BroadcastJoinTicket> ParseTicketFields(const Object& o, const int version) {
+  BroadcastJoinTicket ticket;
+  ticket.schema_version = version;
+  for (auto [key, field] :
+       {std::pair{"publisher_peer_id", &ticket.publisher_peer_id}, std::pair{"program_id", &ticket.program_id},
+        std::pair{"join_handle", &ticket.join_handle}, std::pair{"viewer_peer_id", &ticket.viewer_peer_id},
+        std::pair{"media_key_id", &ticket.media_key_id}, std::pair{"wrapped_key_b64", &ticket.wrapped_key_b64},
+        std::pair{"key_material_b64", &ticket.key_material_b64}, std::pair{"hop_peer_id", &ticket.hop_peer_id},
+        std::pair{"signature_b64", &ticket.signature_b64}}) {
+    auto value = ReadOptionalString(o, key, kWhat);
+    if (!value) {
+      return value.error();
+    }
+    *field = std::move(*value);
+  }
+  auto epoch = ReadOptionalInt(o, "media_epoch", 0, kWhat);
+  if (!epoch) {
+    return epoch.error();
+  }
+  if (*epoch < 0 || *epoch > static_cast<int64_t>(UINT32_MAX)) {
+    return Error("broadcast join ticket media_epoch out of range");
+  }
+  ticket.media_epoch = static_cast<uint32_t>(*epoch);
+  auto expires = ReadOptionalInt(o, "expires_at_ms", 0, kWhat);
+  if (!expires) {
+    return expires.error();
+  }
+  ticket.expires_at_ms = *expires;
+  auto ext = ReadExtB64(o);
+  if (!ext) {
+    return Error(std::string(kWhat) + ": " + ext.error().message);
+  }
+  ticket.ext = std::move(*ext);
+  if (auto fields = CheckTicketFields(ticket); !fields) {
+    return fields.error();
+  }
+  if (auto keys = DecodeKeyBytes(ticket); !keys) {
+    return keys.error();
+  }
+  return ticket;
+}
+
+/**
+ * Steps 3–5 for a parsed ticket (`*ticket`, filled by the caller's parse step, which also fills `keys`): the
+ * signature's and the wrapped key's algorithm ids, the publisher's key, the signature, the extension area.
+ */
+struct TicketReceive {
+  const BroadcastJoinTicket* ticket = nullptr;
+  TypedRead publisher_key;
+  TicketKeyBytes keys;
+  TypedRead signature;
+
+  Roe<void> Algorithms() {
+    signature = ReadTypedBlobB64(pp::BlobKind::kSignature, ticket->signature_b64, "broadcast join ticket signature");
+    if (!signature.ok()) {
+      return signature.ToError();
+    }
+    if (!keys.wrapped_key.empty()) {
+      if (const TypedRead wrapped =
+              ReadTypedBlob(pp::BlobKind::kAeadSealed, keys.wrapped_key, "broadcast join ticket wrapped key");
+          !wrapped.ok()) {
+        return wrapped.ToError();
+      }
+    }
+    if (!publisher_key.ok()) {
+      return publisher_key.ToError();
+    }
+    return {};
+  }
+
+  Roe<void> Verify() const {
+    return VerifyTyped(publisher_key, SignBytesOf(*ticket, static_cast<uint8_t>(ticket->schema_version), keys),
+                       signature);
+  }
+};
+
+} // namespace
 
 Roe<BroadcastJoinTicket> DecodeBroadcastJoinTicketJson(const std::string_view json) {
   auto parsed = ParseObject(std::string(json));
   if (!parsed) {
     return parsed.error();
   }
-  const Object& o = *parsed;
+  // 1. The version, before any field is read; 2. the fields.
+  auto version = ReadSchemaVersion(*parsed, kWhat, kBroadcastJoinTicketSchemaVersion);
+  if (!version) {
+    return version.error();
+  }
+  return ParseTicketFields(*parsed, *version);
+}
+
+SignedReceipt ReceiveBroadcastJoinTicketJson(const std::string_view json, const ByteVector& publisher_mldsa_public_key,
+                                             BroadcastJoinTicket* out) {
+  auto parsed = ParseObject(std::string(json));
+  if (!parsed) {
+    return SignedReceipt{.verdict = SignedVerdict::Malformed, .version = 0, .detail = parsed.error().message};
+  }
   BroadcastJoinTicket ticket;
-  ticket.schema_version =
-      static_cast<int>(ObjectInt64(o, "schema_version").value_or(kBroadcastJoinTicketSchemaVersion));
-  ticket.publisher_peer_id = ObjectString(o, "publisher_peer_id").value_or("");
-  ticket.program_id = ObjectString(o, "program_id").value_or("");
-  ticket.join_handle = ObjectString(o, "join_handle").value_or("");
-  ticket.viewer_peer_id = ObjectString(o, "viewer_peer_id").value_or("");
-  const auto epoch = ObjectInt64(o, "media_epoch").value_or(1);
-  if (epoch < 0 || epoch > static_cast<int64_t>(UINT32_MAX)) {
-    return Error("broadcast join ticket media_epoch out of range");
+  TicketReceive receive{.ticket = &ticket, .publisher_key = PublisherSigningKey(publisher_mldsa_public_key)};
+  const std::optional<int64_t> version = OutsideVersionOfJson(*parsed, "schema_version");
+  SignedReceipt receipt = ReceiveSigned({
+      .what = kWhat,
+      .outside_version = version,
+      .versions = kTicketVersions,
+      .parse = [&]() -> Roe<void> {
+        auto fields = ParseTicketFields(*parsed, static_cast<int>(*version));
+        if (!fields) {
+          return fields.error();
+        }
+        ticket = std::move(*fields);
+        receive.keys = DecodeKeyBytes(ticket).value();
+        return {};
+      },
+      .algorithms = [&] { return receive.Algorithms(); },
+      .verify = [&] { return receive.Verify(); },
+      .ext = &ticket.ext,
+  });
+  if (receipt.accepted() && out != nullptr) {
+    *out = std::move(ticket);
   }
-  ticket.media_epoch = static_cast<uint32_t>(epoch);
-  ticket.media_key_id = ObjectString(o, "media_key_id").value_or("");
-  ticket.wrapped_key_b64 = ObjectString(o, "wrapped_key_b64").value_or("");
-  ticket.key_material_b64 = ObjectString(o, "key_material_b64").value_or("");
-  ticket.hop_peer_id = ObjectString(o, "hop_peer_id").value_or("");
-  ticket.expires_at_ms = ObjectInt64(o, "expires_at_ms").value_or(0);
-  ticket.signature_b64 = ObjectString(o, "signature_b64").value_or("");
-  if (ticket.publisher_peer_id.empty() || ticket.join_handle.empty() || ticket.viewer_peer_id.empty()) {
-    return Error("broadcast join ticket missing publisher/join_handle/viewer");
-  }
-  if (ticket.wrapped_key_b64.empty() && ticket.key_material_b64.empty()) {
-    return Error("broadcast join ticket missing key material");
-  }
-  return ticket;
+  return receipt;
 }
 
 Roe<BroadcastJoinTicket> MintBroadcastJoinTicket(BroadcastJoinTicketDraft draft, const ByteVector& media_key_bytes,
@@ -157,8 +286,11 @@ Roe<BroadcastJoinTicket> MintBroadcastJoinTicket(BroadcastJoinTicketDraft draft,
     ticket.key_material_b64 = Base64Encode(media_key_bytes);
   }
 
-  const auto canonical = ToBytes(BroadcastJoinTicketCanonicalSignBytes(ticket));
-  auto signature = MlDsa::Sign(publisher_mldsa_secret_key, canonical);
+  auto sign_bytes = BroadcastJoinTicketSignBytes(ticket);
+  if (!sign_bytes) {
+    return sign_bytes.error();
+  }
+  auto signature = SignTyped(publisher_mldsa_secret_key, *sign_bytes);
   if (!signature) {
     return signature.error();
   }
@@ -166,44 +298,42 @@ Roe<BroadcastJoinTicket> MintBroadcastJoinTicket(BroadcastJoinTicketDraft draft,
   return ticket;
 }
 
+SignedReceipt ReceiveBroadcastJoinTicket(const BroadcastJoinTicket& ticket,
+                                         const ByteVector& publisher_mldsa_public_key) {
+  TicketReceive receive{.ticket = &ticket, .publisher_key = PublisherSigningKey(publisher_mldsa_public_key)};
+  return ReceiveSigned({
+      .what = kWhat,
+      .outside_version = ticket.schema_version,
+      .versions = kTicketVersions,
+      .parse = [&]() -> Roe<void> {
+        if (auto fields = CheckTicketFields(ticket); !fields) {
+          return fields;
+        }
+        auto keys = DecodeKeyBytes(ticket);
+        if (!keys) {
+          return keys.error();
+        }
+        receive.keys = std::move(*keys);
+        return {};
+      },
+      .algorithms = [&] { return receive.Algorithms(); },
+      .verify = [&] { return receive.Verify(); },
+      .ext = &ticket.ext,
+  });
+}
+
 Roe<void> VerifyBroadcastJoinTicket(const BroadcastJoinTicket& ticket, const ByteVector& publisher_mldsa_public_key,
                                     const int64_t now_ms, const std::string_view expected_viewer_peer_id) {
-  if (publisher_mldsa_public_key.size() != kMlDsa65PublicKeyBytes) {
-    return Error("broadcast join ticket verify requires ML-DSA-65 public key");
+  if (const SignedReceipt receipt = ReceiveBroadcastJoinTicket(ticket, publisher_mldsa_public_key);
+      !receipt.accepted()) {
+    return receipt.ToError();
   }
-  if (ticket.publisher_peer_id.empty() || ticket.join_handle.empty() || ticket.viewer_peer_id.empty()) {
-    return Error("broadcast join ticket missing publisher/join_handle/viewer");
-  }
-  if (ticket.media_epoch == 0) {
-    return Error("broadcast join ticket media_epoch must be >= 1");
-  }
-  if (ticket.wrapped_key_b64.empty() && ticket.key_material_b64.empty()) {
-    return Error("broadcast join ticket missing key material");
-  }
-  if (ticket.signature_b64.empty()) {
-    return Error("broadcast join ticket missing signature");
-  }
+  // 6. Semantics.
   if (ticket.expires_at_ms > 0 && now_ms > ticket.expires_at_ms) {
     return Error("broadcast join ticket expired");
   }
   if (!expected_viewer_peer_id.empty() && ticket.viewer_peer_id != expected_viewer_peer_id) {
     return Error("broadcast join ticket viewer mismatch");
-  }
-
-  auto signature = Base64Decode(ticket.signature_b64);
-  if (!signature) {
-    return signature.error();
-  }
-  if (signature->size() != kMlDsa65SignatureBytes) {
-    return Error("broadcast join ticket signature size invalid");
-  }
-  const auto canonical = ToBytes(BroadcastJoinTicketCanonicalSignBytes(ticket));
-  auto ok = MlDsa::Verify(publisher_mldsa_public_key, canonical, *signature);
-  if (!ok) {
-    return ok.error();
-  }
-  if (!*ok) {
-    return Error("broadcast join ticket signature verify failed");
   }
   return {};
 }

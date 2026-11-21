@@ -5,6 +5,7 @@ pp_browser_add_lib_library(pp_lib_broadcast
     AnnounceNotificationInbox.cpp
     AnnounceOverlayReply.cpp
     BroadcastJoinTicket.cpp
+    BroadcastSignedJson.cpp
     BroadcastLadderLogic.cpp
     BroadcastMedia.cpp
     BroadcastRpcCodec.cpp
