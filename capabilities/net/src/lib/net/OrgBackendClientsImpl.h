@@ -139,10 +139,11 @@ public:
   void SetAudience(std::shared_ptr<IRelayAudience> audience) { audience_ = std::move(audience); }
   IRelayAudience* Audience() const override { return audience_.get(); }
   /**
-   * Whether this relay's `llm_api_key` is kept (default yes). The Brief LLM key is the org's (multi-relay MR006):
-   * a relay other than the org's answers with a key its own gateway takes, not the org's, so it is left out.
+   * Whether this relay's `llm_token` is kept (default yes). The Brief LLM token is the org's (multi-relay MR006):
+   * a relay other than the org's answers with a token its own gateway takes, not the org's, so it is left out.
    */
   void SetTakesBriefLlmKey(bool takes) { takes_llm_key_.store(takes, std::memory_order_relaxed); }
+  bool TakesBriefLlmKey() const override { return takes_llm_key_.load(std::memory_order_relaxed); }
   Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
                                                  const std::string& signature_alg = "ml-dsa-65",
                                                  const std::string& kem_public_key_b64 = "",
@@ -161,6 +162,8 @@ public:
                                          const std::string& account_id) override;
   Roe<void> RevokeRegistration(const std::string& account_id, const std::string& registration_id,
                                const SignedRelayCommand& signed_revoke) override;
+  /** `POST <origin>/api/llm/v1/token/renew` on this relay's origin (the registry serves it there, SPECS). */
+  Roe<LlmTokenRenewal> RenewLlmToken(const std::string& account_id, const SignedRelayCommand& signed_renew) override;
 
 private:
   std::string base_url_;

@@ -100,15 +100,16 @@ namespace pbr {
 
 namespace {
 
+/**
+ * The registered slot's token as Me shows it: its first characters, then dots. Never the prefix of a key format
+ * (the relay's tokens are `ppl1.<kid>.<payload>.<signature>`, RC018 item 2): only what the slot holds.
+ */
 std::string MaskBriefLlmApiKey(const std::string& key) {
-  constexpr const char kPrefix[] = "brf_llm_";
+  constexpr size_t kShown = 8;
   if (key.empty()) {
     return "";
   }
-  if (key.size() <= sizeof(kPrefix) - 1 + 4) {
-    return std::string(kPrefix) + "••••";
-  }
-  return key.substr(0, sizeof(kPrefix) - 1 + 4) + "••••";
+  return (key.size() <= kShown * 2 ? std::string() : key.substr(0, kShown)) + "••••";
 }
 
 std::string FormatExpiresDisplay(const std::string& iso) {
@@ -2047,6 +2048,12 @@ void ConversationsHub::StartCoordinatorTimers() {
         std::chrono::milliseconds(kRelayRegistrationCheckIntervalMs), [this]() { RegisterOnOtherRelaysSoon(); });
     RegisterOnOtherRelaysSoon();
   }
+  if (llm_token_timer_id_ == 0) {
+    // The Brief LLM token lasts 7 days: renewed before it expires (RC018 item 2), at once when its expiry is not known.
+    llm_token_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(std::chrono::milliseconds(kLlmTokenCheckIntervalMs),
+                                                                   [this]() { RenewBriefLlmTokenSoon(); });
+    RenewBriefLlmTokenSoon();
+  }
   if (locker_sync_timer_id_ == 0) {
     // What another device of the account changed (a contact removed, a remark) arrives through the locker.
     locker_sync_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(std::chrono::milliseconds(kLockerSyncIntervalMs),
@@ -2078,6 +2085,10 @@ void ConversationsHub::StopCoordinatorTimers() {
   if (relay_registration_timer_id_ != 0) {
     AppRuntime::CancelCoordinatorTimer(relay_registration_timer_id_);
     relay_registration_timer_id_ = 0;
+  }
+  if (llm_token_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(llm_token_timer_id_);
+    llm_token_timer_id_ = 0;
   }
   if (locker_sync_timer_id_ != 0) {
     AppRuntime::CancelCoordinatorTimer(locker_sync_timer_id_);
@@ -2834,7 +2845,7 @@ Roe<BlobQuotaRecoveryPlan> ConversationsHub::PlanRelayQuotaRecovery(const Error&
     return Error("Register on the network before using relay blob storage");
   }
   if (!IsRelayFileQuotaError(quota_error)) {
-    // `/blobs` holds the profile photo alone, under its own limit: nothing there for this device to free.
+    // `cdn/` holds the profile photo alone, under its own limit: nothing there for this device to free.
     return quota_error;
   }
   // An attachment found the files relay full: free the oldest sent files until this one fits.
@@ -3876,79 +3887,84 @@ Roe<ThreadMessage> ConversationsHub::BuildPaymentPromiseControlMessage(const std
   return PaymentPromiseWireCodec::BuildSystemMessage(thread_id, type, promise, body_text);
 }
 
-Roe<void> ConversationsHub::RotateBriefLlmKey(const std::string& llm_base_url) {
+Roe<void> ConversationsHub::RenewBriefLlmToken() {
   if (!IsInitialized()) {
     return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
   }
   if (!IsMessagingReady()) {
-    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to rotate API key");
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to renew the AI access credential");
   }
-
   auto identity = Identity().Get();
   if (!identity) {
     return identity.error();
   }
   if (identity->brief_llm_api_key.empty()) {
-    return AppError::Auth(Err::Auth::NotRegistered, "No Brief API key yet")
+    return AppError::Auth(Err::Auth::NotRegistered, "No Brief LLM token yet")
         .WithUser(Localized("chat.hint.brief_register"));
   }
-
-  if (llm_base_url.empty()) {
-    return AppError::Config(Err::Config::Invalid, "Brief LLM base URL not configured");
+  const std::shared_ptr<IRegistrationClient> registry = BriefLlmTokenRegistry();
+  if (!registry) {
+    return AppError::Config(Err::Config::Invalid, "The org's relay is not one of ours: no Brief LLM token to renew");
   }
-  const std::string url = llm_base_url + "/keys/rotate";
-
-  auto response =
-      HttpClient::Post(url, "{}",
-                       WithRelayClientHeader({{"Authorization", "Bearer " + identity->brief_llm_api_key.Reveal()},
-                                              {"Content-Type", "application/json"}}));
-  if (!response) {
-    return response.error();
+  auto renewed = RenewBriefLlmTokenWithIdentity(*registry, Identity());
+  if (!renewed) {
+    return renewed.error();
   }
-  if (response->status_code == 401 || response->status_code == 403) {
-    LocalIdentity expired = *identity;
-    MarkRegistrationExpired(expired);
-    (void)Identity().Update(expired);
-    const char* renew_hint = response->status_code == 403
-                                 ? "Registration expired — use Renew registration in Settings → Profile."
-                                 : "Brief API key rejected — renew registration in Settings → Profile.";
-    return AppError::Auth(Err::Auth::Forbidden, "Brief key rotate HTTP " + std::to_string(response->status_code))
-        .WithUser(renew_hint);
+  std::function<void()> callback;
+  {
+    std::lock_guard lock(llm_token_renewed_mu_);
+    callback = on_llm_token_renewed_;
   }
-  if (response->status_code < 200 || response->status_code >= 300) {
-    auto json = TryParseObject(response->body);
-    std::string detail = "Brief API key rotate failed (HTTP " + std::to_string(response->status_code) + ")";
-    if (json) {
-      if (auto err_str = json->getString("error")) {
-        detail = *err_str;
-      } else if (const Object* err_obj = json->getObject("error")) {
-        if (auto message = err_obj->getString("message")) {
-          detail = *message;
-        }
-      }
-    }
-    return AppError::Network(Err::Network::HttpError, detail);
-  }
-
-  auto root = TryParseObject(response->body);
-  auto new_key_opt = root ? root->getString("llm_api_key") : std::nullopt;
-  if (!new_key_opt) {
-    return AppError::Auth(Err::Auth::Generic, "Brief API key rotate response missing llm_api_key")
-        .WithUser(Localized("chat.hint.brief_key_save_failed"));
-  }
-  const std::string new_key = *new_key_opt;
-  if (new_key.empty()) {
-    return AppError::Auth(Err::Auth::Generic, "Brief API key rotate returned empty key")
-        .WithUser(Localized("chat.hint.brief_key_save_failed"));
-  }
-
-  LocalIdentity updated = *identity;
-  updated.brief_llm_api_key = new_key;
-  updated.brief_llm_guest_api_key.clear();
-  if (auto saved = Identity().Update(updated); !saved) {
-    return saved.error();
+  if (callback) {
+    callback();
   }
   return {};
+}
+
+void ConversationsHub::SetOnBriefLlmTokenRenewed(std::function<void()> callback) {
+  std::lock_guard lock(llm_token_renewed_mu_);
+  on_llm_token_renewed_ = std::move(callback);
+}
+
+std::shared_ptr<IRegistrationClient> ConversationsHub::BriefLlmTokenRegistry() const {
+  if (std::shared_ptr<IRegistrationClient> preferred = Registration(); preferred->TakesBriefLlmKey()) {
+    return preferred;
+  }
+  for (const BackendClientSet::OurRelay& relay : clients_.OurRelays()) {
+    if (relay.registration && relay.registration->TakesBriefLlmKey()) {
+      return relay.registration;
+    }
+  }
+  return nullptr;
+}
+
+void ConversationsHub::RenewBriefLlmTokenSoon() {
+  if (!IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
+    return;
+  }
+  const int64_t now_ms = util::NowUnixMs();
+  if (now_ms < llm_token_next_try_ms_.load(std::memory_order_relaxed)) {
+    return;
+  }
+  auto identity = Identity().Get();
+  if (!identity || !BriefLlmTokenRenewDue(*identity, now_ms)) {
+    return;
+  }
+  if (llm_token_renewing_.exchange(true)) {
+    return; // one renewal at a time
+  }
+  AppRuntime::PostWorkerNormal([this]() {
+    if (IsMessagingReady() && !shutdown_requested_.load(std::memory_order_acquire)) {
+      if (auto renewed = RenewBriefLlmToken(); renewed) {
+        log().info << "Brief LLM token renewed";
+        llm_token_next_try_ms_.store(0, std::memory_order_relaxed);
+      } else {
+        log().warning << "Brief LLM token not renewed: " << renewed.error().message;
+        llm_token_next_try_ms_.store(util::NowUnixMs() + kLlmTokenRetryMs, std::memory_order_relaxed);
+      }
+    }
+    llm_token_renewing_.store(false);
+  });
 }
 
 void ConversationsHub::TickReachabilityUx() {

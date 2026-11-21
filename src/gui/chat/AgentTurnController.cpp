@@ -1557,20 +1557,24 @@ void AgentTurnController::ApplyConfig(const AgentConfig& config) {
     runtime.llm.require_api_key = true;
     EnsureBriefGuestLlmKey();
     std::string brief_key;
+    bool registered_slot = false;
     if (host_.MessagingInitialized() && host_.MessagingReady()) {
       if (auto identity = host_.Facade()->GetIdentity()) {
         brief_key =
             ResolveBriefLlmApiKey(identity->brief_llm_api_key.Reveal(), identity->brief_llm_guest_api_key.Reveal());
+        registered_slot = !identity->brief_llm_api_key.empty(); // the slot it came from, not its text (RC018)
       }
     }
     if (!brief_key.empty()) {
       runtime.llm.api_key = brief_key;
+      runtime.llm.brief_key_registered = registered_slot;
     } else {
       AppConfig last_probe;
       last_probe.llm = last_agent_runtime_.llm;
       if (ResolvePreset(last_probe) == "brief" && !last_agent_runtime_.llm.api_key.empty()) {
         // Me tab ReloadFromDisk may re-notify while identity is briefly unreadable.
         runtime.llm.api_key = last_agent_runtime_.llm.api_key;
+        runtime.llm.brief_key_registered = last_agent_runtime_.llm.brief_key_registered;
       }
     }
   }

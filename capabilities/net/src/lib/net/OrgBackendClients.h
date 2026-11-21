@@ -48,8 +48,12 @@ struct RegistrationResult {
   bool success = false;
   std::string account_id;
   std::string message;
-  /** Brief LLM API key returned once from register/finish or rotate. */
-  SecretText llm_api_key;
+  /**
+   * The Brief LLM token register/finish answers (`llm_token`; only the org's relay's is kept, MR006), and when it
+   * expires (`llm_token_expires_at`, ISO-8601, 7 days): renewed before then with `token/renew` (RenewLlmToken).
+   */
+  SecretText llm_token;
+  std::string llm_token_expires_at;
   /** ISO-8601 registration expiry from register/finish. */
   std::string expires_at;
   /**
@@ -75,6 +79,12 @@ struct RegistrationResult {
 inline bool AccountCardStale(const RegistrationResult& result) {
   return result.account_card_status == "stale";
 }
+
+/** What `POST /api/llm/v1/token/renew` answers: a fresh Brief LLM token and when it expires (ISO-8601). */
+struct LlmTokenRenewal {
+  SecretText llm_token;
+  std::string llm_token_expires_at;
+};
 
 struct RegistrationStartResult {
   std::string challenge;
@@ -112,6 +122,20 @@ public:
    */
   virtual Roe<void> RevokeRegistration(const std::string& account_id, const std::string& registration_id,
                                        const SignedRelayCommand& signed_revoke) = 0;
+  /**
+   * Whether this relay's Brief LLM token is the account's (the org's relay, MR006): its register/finish token is
+   * kept, and RenewLlmToken renews it.
+   */
+  virtual bool TakesBriefLlmKey() const { return false; }
+  /**
+   * A fresh Brief LLM token from this relay's `POST /api/llm/v1/token/renew` (signed: BuildLlmTokenRenewSignBytes,
+   * RC018 item 2); it does not invalidate the token held now. Not every client can (default: an error).
+   */
+  virtual Roe<LlmTokenRenewal> RenewLlmToken(const std::string& account_id, const SignedRelayCommand& signed_renew) {
+    (void)account_id;
+    (void)signed_renew;
+    return Error("This registry does not renew Brief LLM tokens");
+  }
 };
 
 } // namespace pbr

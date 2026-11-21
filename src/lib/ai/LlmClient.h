@@ -43,7 +43,7 @@ struct ChatCompletionResponse {
 };
 
 /** Which limit a 429 from the AI gateway hit; picks the words the user reads. */
-enum class LlmLimitKind { GuestDaily, PerMinute, Other };
+enum class LlmLimitKind { Daily, PerMinute, Other };
 
 /**
  * brief_AI as a whole is busy (contract section 8), in a 429 body's `code` or an SSE `error` event's: retried once
@@ -60,10 +60,16 @@ public:
   Roe<ChatCompletionResponse> Complete(const ChatCompletionRequest& request) const;
 
   // Maps a non-2xx HTTP status and its body to an app error (shared with SseClient). A 429 whose `code` (top level,
-  // or the error object's) is kServerBusyCode is Err::Auth::ServerBusy; any other 429 is RateLimited.
+  // or the error object's) is kServerBusyCode is Err::Auth::ServerBusy; any other 429 is RateLimited, its words from
+  // the relay's top-level `code` (ClassifyLimitCode), never its text. A 401 `token_expired` / `legacy_key_retired` is
+  // Err::Auth::Expired (the token is renewed, not replaced by a guest key).
   static Error MapHttpError(long http_code, const std::string& response_body);
 
-  // Which limit a 429 hit, from the gateway's message (its code is the same for every limit).
+  // Which limit a 429 hit, from the relay gateway's `code` (`user_rate_limit`, `user_daily_limit`, `guest_*`; SPECS
+  // § llm-gateway, RC018 item 2). Global and mint limits are Other (the catalog's "busy").
+  static LlmLimitKind ClassifyLimitCode(const std::string& code);
+  // Which limit a 429 without a relay `code` hit: an upstream verdict the gateway passes through as it came (the
+  // upstream counts guests), classified by its text.
   static LlmLimitKind ClassifyLimit(const std::string& api_message);
   // A limit message from the Brief gateway (English; never shown as is).
   static bool IsBriefGatewayLimit(const std::string& api_message);

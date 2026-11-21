@@ -78,7 +78,8 @@ protected:
   /** The brief preset with the promoted MCP server on (the fake answers it). */
   static AppConfig McpConfig(const std::string& preset = "brief") {
     AppConfig config = MakeConfig(preset);
-    config.llm.api_key = "brf_llm_test"; // a registered key: three thread turns at once
+    config.llm.api_key = "brf_llm_test"; // a registered slot's key: three thread turns at once
+    config.llm.brief_key_registered = true;
     config.promoted_mcp.id = "brief";
     config.promoted_mcp.enabled = true;
     return config;

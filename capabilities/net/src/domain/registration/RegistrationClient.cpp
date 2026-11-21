@@ -59,8 +59,9 @@ bool ShouldPublishAccountCard(const LocalIdentity& identity, const RegistrationP
 
 void ApplyRegistrationResult(LocalIdentity& identity, const RegistrationResult& result) {
   identity.registered = result.success;
-  if (!result.llm_api_key.empty()) {
-    identity.brief_llm_api_key = result.llm_api_key;
+  if (!result.llm_token.empty()) {
+    identity.brief_llm_api_key = result.llm_token;
+    identity.brief_llm_token_expires_at = result.llm_token_expires_at;
     identity.brief_llm_guest_api_key.clear();
   }
   if (!result.expires_at.empty()) {
@@ -306,6 +307,51 @@ Roe<void> RevokeRegistrationWithIdentity(IRegistrationClient& registration, Iden
     return Error("Registration revoke: the relay answered no registration_id");
   }
   return RevokeOnce(registration, identity, loaded->account_id, renewed->registration_id);
+}
+
+Roe<LlmTokenRenewal> RenewBriefLlmTokenWithIdentity(IRegistrationClient& registration, IdentityStore& identity) {
+  auto loaded = identity.Get();
+  if (!loaded) {
+    return loaded.error();
+  }
+  if (loaded->account_id.empty() || loaded->brief_llm_api_key.empty()) {
+    return AppError::Auth(Err::Auth::NotRegistered, "No Brief LLM token to renew");
+  }
+  if (!registration.TakesBriefLlmKey()) {
+    return Error("Brief LLM token renew: this relay is not the org's");
+  }
+  const std::string account_id = loaded->account_id;
+  const int64_t timestamp = util::NowUnixMs();
+  auto signed_renew = SignForRegistry(registration, identity, timestamp, [&](const std::string& audience) {
+    return BuildLlmTokenRenewSignBytes(audience, account_id, timestamp);
+  });
+  if (!signed_renew) {
+    return signed_renew.error();
+  }
+  auto renewed = registration.RenewLlmToken(account_id, *signed_renew);
+  if (!renewed) {
+    return renewed.error();
+  }
+  // Into the account it was asked for: the registered slot takes the new token (a guest key beside it goes, as at
+  // register/finish).
+  bool other_account = false;
+  auto kept = identity.Modify([&](LocalIdentity& now) {
+    if (now.account_id != account_id) {
+      other_account = true;
+      return false;
+    }
+    now.brief_llm_api_key = renewed->llm_token;
+    now.brief_llm_token_expires_at = renewed->llm_token_expires_at;
+    now.brief_llm_guest_api_key.clear();
+    return true;
+  });
+  if (!kept) {
+    return kept.error();
+  }
+  if (other_account) {
+    return Error("Brief LLM token not kept: the identity is another account now");
+  }
+  return renewed;
 }
 
 } // namespace pbr

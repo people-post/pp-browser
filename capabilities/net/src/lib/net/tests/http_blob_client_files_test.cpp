@@ -45,7 +45,7 @@ public:
   std::vector<Reply> complete_replies;                          // consumed first, one per complete
 
   // Multipart (`start_mode` "multipart"): the plan's part size, the ciphertext each part must match, and the PUT
-  // status of part `part` on its `call`-th `/files/part` URL (1-based); status 0 = no answer at all (a dead URL).
+  // status of part `part` on its `call`-th `blob/part` URL (1-based); status 0 = no answer at all (a dead URL).
   uint64_t part_bytes = 0;
   std::string source;
   std::function<int(uint64_t part, int call)> part_put_status;
@@ -120,7 +120,7 @@ private:
       }
       return Reply{.status = put_status, .headers = {}, .body = ""};
     }
-    const std::string prefix = "/api/relay/v1/files/";
+    const std::string prefix = "/api/relay/v1/blob/";
     if (request.method != "POST" || request.target.rfind(prefix, 0) != 0) {
       return Reply{.status = 404, .headers = {}, .body = R"({"error":"Not found"})"};
     }
@@ -182,7 +182,7 @@ private:
       return Reply{.status = 200,
                    .headers = {},
                    .body = R"({"blob_id":")" + blob_id +
-                           R"(","token":"tok_0123456789abcdef","share_path":"/api/relay/v1/files/)" + blob_id +
+                           R"(","token":"tok_0123456789abcdef","share_path":"/api/relay/v1/blob/)" + blob_id +
                            R"(/download?t=tok_0123456789abcdef","expires_at":"2099-01-08T00:00:00.000Z"})"};
     }
     if (op == "delete") {
@@ -268,7 +268,7 @@ TEST_F(HttpBlobClientFilesTest, StartPutCompleteGivesTheShareLinkOnTheRelayOrigi
   ASSERT_EQ(relay_.Bodies("complete").size(), 1u);
   EXPECT_EQ(relay_.Bodies("complete")[0].getString("blob_id").value_or(""), uploaded->blob_id);
   EXPECT_EQ(uploaded->url,
-            server_.Origin() + "/api/relay/v1/files/" + uploaded->blob_id + "/download?t=tok_0123456789abcdef");
+            server_.Origin() + "/api/relay/v1/blob/" + uploaded->blob_id + "/download?t=tok_0123456789abcdef");
   EXPECT_TRUE(relay_.DeletedIds().empty());
   // The signed bytes are the start domain's, for the timestamp the body carries.
   ASSERT_FALSE(signed_.empty());
@@ -462,7 +462,7 @@ TEST_F(RelayFileMultipartTest, TwoFullPartsAndAShortOneThenComplete) {
   ASSERT_EQ(relay_.Bodies("complete").size(), 1u);
   EXPECT_TRUE(relay_.DeletedIds().empty());
   EXPECT_EQ(uploaded->url,
-            server_.Origin() + "/api/relay/v1/files/" + uploaded->blob_id + "/download?t=tok_0123456789abcdef");
+            server_.Origin() + "/api/relay/v1/blob/" + uploaded->blob_id + "/download?t=tok_0123456789abcdef");
   // The part request names the blob and the part, signed in the part domain.
   const Object first = relay_.Bodies("part")[0];
   EXPECT_EQ(first.getString("blob_id").value_or(""), uploaded->blob_id);

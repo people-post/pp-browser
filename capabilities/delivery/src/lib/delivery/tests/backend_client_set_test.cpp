@@ -1,11 +1,14 @@
 #include "lib/delivery/BackendClientSet.h"
 
+#include "common/ValueJson.h"
 #include "common/tests/ScriptedHttpServer.h"
 
 #include <gtest/gtest.h>
 
+#include <map>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -210,8 +213,13 @@ protected:
         if (request.target.find("/v1/client-compat") != std::string::npos) {
           return Reply{.status = 200, .headers = {}, .body = R"({"schema_version":1})"};
         }
-        if (request.target.find("/v1/search") != std::string::npos) {
-          return Reply{.status = 200, .headers = {}, .body = R"({"hits":[]})"};
+        if (request.target.find("/v1/users/by-account/") != std::string::npos) {
+          return Reply{.status = 404, .headers = {}, .body = R"({"code":"not_registered"})"};
+        }
+        if (request.target == "/api/llm/v1/token/renew") {
+          return Reply{.status = 200,
+                       .headers = {},
+                       .body = R"({"llm_token":"ppl1.renewed","llm_token_expires_at":"2099-01-15T00:00:00.000Z"})"};
         }
         if (request.target.find("/v1/register/start") != std::string::npos) {
           return Reply{.status = 200, .headers = {}, .body = R"({"challenge":"c","signature_alg":"ml-dsa-65"})"};
@@ -219,7 +227,8 @@ protected:
         if (request.target.find("/v1/register/finish") != std::string::npos) {
           return Reply{.status = 200,
                        .headers = {},
-                       .body = R"({"success":true,"account_id":"account:me","llm_api_key":"brf_llm_x"})"};
+                       .body = R"({"success":true,"account_id":"account:me","llm_token":"brf_llm_x",)"
+                               R"("llm_token_expires_at":"2099-01-08T00:00:00.000Z","llm_api_key":"legacy"})"};
         }
         return Reply{.status = 404, .headers = {}, .body = "{}"};
       });
@@ -242,7 +251,7 @@ protected:
   }
   std::string FinishedKey() {
     auto finished = clients_.Registration()->FinishRegistration("c", "pk", "me", kSignedFinish, "ml-dsa-65", "kem");
-    return finished ? finished->llm_api_key.Reveal() : "error: " + finished.error().message;
+    return finished ? finished->llm_token.Reveal() : "error: " + finished.error().message;
   }
 
   test::ScriptedHttpServer org_;
@@ -263,10 +272,33 @@ TEST_F(BackendClientSetOriginTest, ByDefaultEveryServiceIsTheOrgsRelay) {
   ASSERT_EQ(clients_.OurRelays().size(), 1u);
   EXPECT_EQ(clients_.OurRelays()[0].origin, OrgRelay());
   ASSERT_TRUE(clients_.ClientCompat()->Fetch());
-  ASSERT_TRUE(directory_.SearchPeople("bob"));
+  ASSERT_TRUE(directory_.SearchPeople("account:bob"));
   EXPECT_EQ(Asked(org_, "/v1/client-compat"), 1u);
-  EXPECT_EQ(Asked(org_, "/v1/search"), 1u);
-  EXPECT_EQ(FinishedKey(), "brf_llm_x") << "the org's relay gives the Brief LLM key";
+  EXPECT_EQ(Asked(org_, "/v1/users/by-account/"), 1u);
+  EXPECT_EQ(Asked(org_, "/v1/search"), 0u) << "the legacy search is never asked (relay 1.0 removes it)";
+  EXPECT_EQ(FinishedKey(), "brf_llm_x") << "the org's relay gives the Brief LLM token, not the legacy key";
+}
+
+// RC018 item 2: the token is renewed where it was issued, `token/renew` under the LLM prefix of the org's origin.
+TEST_F(BackendClientSetOriginTest, TheOrgsRegistryRenewsTheBriefLlmToken) {
+  Apply({OtherRelay(), OrgRelay()});
+  EXPECT_FALSE(clients_.Registration()->TakesBriefLlmKey()) << "the preferred relay is not the org's";
+  const std::shared_ptr<IRegistrationClient> org = clients_.OurRelays()[1].registration;
+  ASSERT_TRUE(org->TakesBriefLlmKey());
+  auto renewed = org->RenewLlmToken("account:me", kSignedFinish);
+  ASSERT_TRUE(renewed) << renewed.error().message;
+  EXPECT_EQ(renewed->llm_token.Reveal(), "ppl1.renewed");
+  EXPECT_EQ(renewed->llm_token_expires_at, "2099-01-15T00:00:00.000Z");
+  ASSERT_EQ(Asked(org_, "/api/llm/v1/token/renew"), 1u);
+  EXPECT_EQ(Asked(org_, "/keys/rotate"), 0u) << "the legacy rotation is never asked (relay 1.0 removes it)";
+  for (const auto& request : org_.Requests()) {
+    if (request.target == "/api/llm/v1/token/renew") {
+      const auto body = TryParseObject(request.body);
+      ASSERT_TRUE(body);
+      EXPECT_EQ(body->getString("account_id").value_or(""), "account:me");
+      EXPECT_FALSE(body->getString("signature").value_or("").empty()) << "signed with the account key";
+    }
+  }
 }
 
 TEST_F(BackendClientSetOriginTest, TheListGivenWholeIsTheDefaultsSame) {
@@ -291,16 +323,18 @@ TEST_F(BackendClientSetOriginTest, RelayServicesFollowThePreferredRelayAndOrgSer
   EXPECT_EQ(Asked(org_, "/v1/client-compat"), 1u) << "client compatibility is the org's";
   EXPECT_EQ(Asked(other_, "/v1/client-compat"), 0u);
 
-  auto hits = directory_.SearchPeople("bob");
+  auto hits = directory_.SearchPeople("account:bob");
   ASSERT_TRUE(hits) << hits.error().message;
-  EXPECT_EQ(Asked(other_, "/v1/search"), 1u) << "the directory left at the org's relay follows the preferred one";
-  EXPECT_EQ(Asked(org_, "/v1/search"), 1u) << "and asks our other relay too";
+  EXPECT_EQ(Asked(other_, "/v1/users/by-account/"), 1u)
+      << "the directory left at the org's relay follows the preferred one";
+  EXPECT_EQ(Asked(org_, "/v1/users/by-account/"), 1u) << "and asks our other relay too";
 
   EXPECT_EQ(FinishedKey(), "") << "another relay's Brief LLM key is not the org's: not kept";
   auto org_key =
       clients_.OurRelays()[1].registration->FinishRegistration("c", "pk", "me", kSignedFinish, "ml-dsa-65", "kem");
   ASSERT_TRUE(org_key);
-  EXPECT_EQ(org_key->llm_api_key.Reveal(), "brf_llm_x") << "the org's relay, now another of ours, still gives it";
+  EXPECT_EQ(org_key->llm_token.Reveal(), "brf_llm_x") << "the org's relay, now another of ours, still gives it";
+  EXPECT_EQ(org_key->llm_token_expires_at, "2099-01-08T00:00:00.000Z");
 }
 
 // S4: a relay the person added (not configured) is spoken to on public addresses only, outside developer builds: a
@@ -366,7 +400,7 @@ TEST_F(BackendClientSetOriginTest, TheBriefLlmKeyFollowsTheOrgsRelayWhenOnlyTheO
   auto org_key =
       clients_.OurRelays()[1].registration->FinishRegistration("c", "pk", "me", kSignedFinish, "ml-dsa-65", "kem");
   ASSERT_TRUE(org_key) << org_key.error().message;
-  EXPECT_EQ(org_key->llm_api_key.Reveal(), "brf_llm_x") << "the relay that is now the org's keeps it";
+  EXPECT_EQ(org_key->llm_token.Reveal(), "brf_llm_x") << "the relay that is now the org's keeps it";
 }
 
 TEST_F(BackendClientSetOriginTest, StreamHistoryFallsToThePreferredRelayOnceTheOrgsIsNotOurs) {
@@ -377,28 +411,40 @@ TEST_F(BackendClientSetOriginTest, StreamHistoryFallsToThePreferredRelayOnceTheO
   EXPECT_EQ(Asked(org_, "/v1/client-compat"), 1u);
 }
 
-// The directory asks our relays (multi-relay R2): a name search every one of them, merged, the preferred relay's
-// first; a lookup in order; the card a lookup answer carries goes to DirectoryCards.
+// The directory asks our relays (multi-relay R2): an Account ID search every one of them (`users/by-account`, the legacy
+// `GET /search` never), merged, the preferred relay's first; a lookup in order; the card a lookup answer carries goes
+// to DirectoryCards.
 class BackendClientSetDirectoryTest : public ::testing::Test {
 protected:
   using Reply = test::ScriptedHttpServer::Reply;
+  using Rows = std::map<std::string, std::string>; // account → its directory row
 
-  static Reply Hits(const std::string& json_hits) {
-    return Reply{.status = 200, .headers = {}, .body = R"({"hits":[)" + json_hits + "]}"};
+  static std::string Row(const std::string& account, const std::string& nickname) {
+    return R"({"account_id":")" + account + R"(","nickname":")" + nickname + R"("})";
   }
-  static std::string Hit(const std::string& account, const std::string& nickname) {
-    return R"({"hit_id":")" + account + R"(","account_id":")" + account + R"(","nickname":")" + nickname + R"("})";
+  static std::string Encoded(const std::string& account) {
+    return "account%3A" + account.substr(std::string("account:").size());
   }
-  void Serve(test::ScriptedHttpServer& server, Reply search, Reply lookup) {
-    server.SetHandler([search, lookup](const test::ScriptedHttpServer::Request& request) {
-      if (request.target.rfind("/api/relay/v1/search", 0) == 0) {
-        return search;
-      }
-      if (request.target.rfind("/api/relay/v1/users/by-account/", 0) == 0) {
-        return lookup;
+  void Serve(test::ScriptedHttpServer& server, Rows rows) {
+    server.SetHandler([rows = std::move(rows)](const test::ScriptedHttpServer::Request& request) {
+      constexpr std::string_view kLookup = "/api/relay/v1/users/by-account/";
+      if (request.target.rfind(kLookup, 0) == 0) {
+        for (const auto& [account, row] : rows) {
+          if (request.target.substr(kLookup.size()) == Encoded(account)) {
+            return Reply{.status = 200, .headers = {}, .body = row};
+          }
+        }
+        return Reply{.status = 404, .headers = {}, .body = R"({"code":"not_registered"})"};
       }
       return Reply{.status = 404, .headers = {}, .body = "{}"};
     });
+  }
+  static size_t Asked(const test::ScriptedHttpServer& server, const std::string& path) {
+    size_t asked = 0;
+    for (const auto& request : server.Requests()) {
+      asked += request.target.find(path) != std::string::npos ? 1 : 0;
+    }
+    return asked;
   }
   void ApplyBoth() {
     auto endpoints =
@@ -417,31 +463,52 @@ protected:
   }();
 };
 
-TEST_F(BackendClientSetDirectoryTest, ANameSearchAsksOurOtherRelaysTooThePreferredFirst) {
-  Serve(preferred_, Hits(Hit("account:bob", "bob")), Reply{.status = 404, .headers = {}, .body = "{}"});
-  Serve(other_, Hits(Hit("account:cat", "cat") + "," + Hit("account:bob", "bob")),
-        Reply{.status = 404, .headers = {}, .body = "{}"});
+TEST_F(BackendClientSetDirectoryTest, AnAccountSearchAsksOurOtherRelaysTooThePreferredFirst) {
+  Serve(preferred_, {{"account:bob", Row("account:bob", "bob")}});
+  Serve(other_, {{"account:bob", Row("account:bob", "bobby")}, {"account:cat", Row("account:cat", "cat")}});
   ApplyBoth();
-  auto hits = directory_.SearchPeople("b");
+  auto hits = directory_.SearchPeople("account:bob");
   ASSERT_TRUE(hits) << hits.error().message;
-  ASSERT_EQ(hits->size(), 2u);
-  EXPECT_EQ(hits->at(0).nickname, "bob");
-  EXPECT_EQ(hits->at(1).nickname, "cat");
+  ASSERT_EQ(hits->size(), 1u);
+  EXPECT_EQ(hits->at(0).nickname, "bob") << "the preferred relay's row first";
+  hits = directory_.SearchPeople("account:cat");
+  ASSERT_TRUE(hits) << hits.error().message;
+  ASSERT_EQ(hits->size(), 1u) << "not on the preferred relay: another of ours has it";
+  EXPECT_EQ(hits->at(0).nickname, "cat");
 
   auto endpoints =
       At(preferred_.Origin() + "/api/relay", preferred_.Origin() + "/api/relay", preferred_.Origin() + "/api/relay");
   clients_.Apply(endpoints); // the other relay taken out of the config
-  hits = directory_.SearchPeople("b");
+  hits = directory_.SearchPeople("account:cat");
   ASSERT_TRUE(hits);
-  EXPECT_EQ(hits->size(), 1u) << "only the relays of ours are asked";
+  EXPECT_TRUE(hits->empty()) << "only the relays of ours are asked";
+  EXPECT_EQ(Asked(preferred_, "/v1/search") + Asked(other_, "/v1/search"), 0u);
+}
+
+TEST_F(BackendClientSetDirectoryTest, ANameMatchesNothingOnARelayAndIsNotSent) {
+  // The relay's directory matches an exact Account ID only (SPECS): a name has no hit there, so it is asked nowhere.
+  Serve(preferred_, {{"account:bob", Row("account:bob", "bob")}});
+  Serve(other_, {});
+  ApplyBoth();
+  auto hits = directory_.SearchPeople("bob");
+  ASSERT_TRUE(hits) << hits.error().message;
+  EXPECT_TRUE(hits->empty());
+  EXPECT_TRUE(preferred_.Requests().empty());
+  EXPECT_TRUE(other_.Requests().empty());
+}
+
+TEST_F(BackendClientSetDirectoryTest, ANodeIsNoSearchHit) {
+  Serve(preferred_, {{"account:node", R"({"account_id":"account:node","nickname":"n1","entity_kind":"mesh_node"})"}});
+  Serve(other_, {});
+  ApplyBoth();
+  auto hits = directory_.SearchPeople("account:node");
+  ASSERT_TRUE(hits) << hits.error().message;
+  EXPECT_TRUE(hits->empty()) << "a search finds people, as the legacy search did";
 }
 
 TEST_F(BackendClientSetDirectoryTest, ALookupGoesOnToTheNextRelayAndItsCardIsGiven) {
-  Serve(preferred_, Hits(""), Reply{.status = 404, .headers = {}, .body = R"({"code":"not_registered"})"});
-  Serve(other_, Hits(""),
-        Reply{.status = 200,
-              .headers = {},
-              .body = R"({"account_id":"account:cat","nickname":"cat","account_card":{"issued_at":5}})"});
+  Serve(preferred_, {});
+  Serve(other_, {{"account:cat", R"({"account_id":"account:cat","nickname":"cat","account_card":{"issued_at":5}})"}});
   std::mutex mutex;
   std::vector<std::string> given;
   clients_.DirectoryCards().Set([&](const std::string& account_id, const Object& card) {
@@ -463,11 +530,11 @@ TEST_F(BackendClientSetDirectoryTest, ALookupGoesOnToTheNextRelayAndItsCardIsGiv
 }
 
 TEST_F(BackendClientSetDirectoryTest, ADirectoryConfiguredApartReplacesThePreferredRelays) {
-  Serve(preferred_, Hits(Hit("account:bob", "bob")), Reply{.status = 404, .headers = {}, .body = "{}"});
-  Serve(other_, Hits(Hit("account:cat", "cat")), Reply{.status = 404, .headers = {}, .body = "{}"});
+  Serve(preferred_, {{"account:cat", Row("account:cat", "preferred cat")}});
+  Serve(other_, {{"account:cat", Row("account:cat", "cat")}});
   clients_.Apply(
       At(preferred_.Origin() + "/api/relay", other_.Origin() + "/api/relay", preferred_.Origin() + "/api/relay"));
-  auto hits = directory_.SearchPeople("c");
+  auto hits = directory_.SearchPeople("account:cat");
   ASSERT_TRUE(hits);
   ASSERT_EQ(hits->size(), 1u);
   EXPECT_EQ(hits->at(0).nickname, "cat");

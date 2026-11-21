@@ -18,6 +18,7 @@
 #include <cctype>
 #include <limits>
 #include <mutex>
+#include <string_view>
 
 namespace pbr {
 
@@ -147,8 +148,19 @@ bool LlmClient::IsBriefGatewayLimit(const std::string& api_message) {
          api_message.find("Per-user LLM") != std::string::npos || api_message.find("Global LLM") != std::string::npos;
 }
 
+LlmLimitKind LlmClient::ClassifyLimitCode(const std::string& code) {
+  constexpr std::string_view kDaily = "_daily_limit"; // user_daily_limit (and an upstream guest_daily_limit)
+  if (code.size() > kDaily.size() && code.compare(code.size() - kDaily.size(), kDaily.size(), kDaily) == 0) {
+    return LlmLimitKind::Daily;
+  }
+  if (code == "user_rate_limit" || code == "guest_rate_limit") {
+    return LlmLimitKind::PerMinute;
+  }
+  return LlmLimitKind::Other; // global_rate_limit, guest_global_rate_limit, guest_mint_rate_limit, the upstream's
+}
+
 LlmLimitKind LlmClient::ClassifyLimit(const std::string& api_message) {
-  // The gateway sends one `rate_limit_error` code for every limit; only its message tells them apart
+  // A verdict without the relay's code (the upstream's, passed through): its message tells the limits apart
   // ("Guest Brief LLM daily limit exceeded", "Per-user Brief LLM rate limit exceeded", "Guest Brief LLM rate
   // limit exceeded", and the neutral "<Per-user|Guest|Global> LLM ..." wording; the global and mint limits stay
   // "busy").
@@ -157,7 +169,7 @@ LlmLimitKind LlmClient::ClassifyLimit(const std::string& api_message) {
     c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
   }
   if (text.find("daily limit") != std::string::npos) {
-    return LlmLimitKind::GuestDaily;
+    return LlmLimitKind::Daily;
   }
   if (text.rfind("per-user ", 0) == 0 || text.rfind("guest brief llm rate limit", 0) == 0 ||
       text.rfind("guest llm rate limit", 0) == 0) {
@@ -197,24 +209,28 @@ Error LlmClient::MapHttpError(long http_code, const std::string& response_body) 
       return AppError::Auth(Err::Auth::ServerBusy, detail); // the catalog's "service is busy"
     }
     auto err = AppError::Auth(Err::Auth::RateLimited, detail);
-    // The gateway's own text is English; the user reads our wording for the limit that was hit.
-    // Other limits keep the catalog's "service is busy".
-    switch (ClassifyLimit(api_message)) {
-      case LlmLimitKind::GuestDaily:
+    // The user reads our wording for the limit that was hit, chosen by the relay's code (RC018 item 2); a verdict
+    // without one (the upstream's, passed through) by its text. Other limits keep the catalog's "service is busy".
+    switch (!top_code.empty() ? ClassifyLimitCode(top_code) : ClassifyLimit(api_message)) {
+      case LlmLimitKind::Daily:
         err.WithUser(Tr("errors.ai.limit_daily"));
         break;
       case LlmLimitKind::PerMinute:
         err.WithUser(Tr("errors.ai.limit_minute"));
         break;
       case LlmLimitKind::Other:
-        // Another provider's own text says what to fix (quota, billing); the gateway's global / mint
-        // limits keep "busy".
-        if (!api_message.empty() && !IsBriefGatewayLimit(api_message)) {
+        // Another provider's own text says what to fix (quota, billing); a coded limit of the relay's gateway (its
+        // global / mint windows) and its English texts keep "busy".
+        if (top_code.empty() && !api_message.empty() && !IsBriefGatewayLimit(api_message)) {
           err.WithUser(api_message);
         }
         break;
     }
     return err;
+  }
+  if (http_code == 401 && (top_code == "token_expired" || top_code == "legacy_key_retired")) {
+    // The relay's token outlived its lifetime (7 days) or the legacy key went: renewed at token/renew, not a guest's.
+    return AppError::Auth(Err::Auth::Expired, detail);
   }
   if (http_code == 401 || http_code == 403 || api_code == "not_registered" || api_code == "auth_error") {
     auto err = AppError::Auth(Err::Auth::Forbidden, detail);

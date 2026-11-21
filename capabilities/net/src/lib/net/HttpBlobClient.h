@@ -20,13 +20,13 @@ namespace pbr {
 Roe<void> CheckBlobResponse(const HttpResponse& response);
 
 /**
- * The typed error for a failed blob-service answer. The `/files` relay's `code` decides when there is one; else
- * the status code and the server's `error` text (the `/blobs` calls carry no code). The log detail is
+ * The typed error for a failed blob-service answer. The `blob/` routes' `code` decides when there is one; else
+ * the status code and the server's `error` text (the `cdn/` routes carry no code). The log detail is
  * "HTTP <status>: <text>", or "HTTP <status> <CODE>: <text>" with a code (RelayFileErrorCode reads it back).
  */
 Error ClassifyBlobFailure(int status_code, const std::string& detail, const std::string& code = "");
 
-/** The relay origin (`https://host`) the files relay's `share_path` is relative to, from the relay base URL. */
+/** The relay origin (`https://host`) the `blob/complete` answer's `share_path` is relative to, from the relay base URL. */
 std::string RelayOriginOf(const std::string& relay_base_url);
 
 class HttpBlobClient : public IBlobClient {
@@ -61,7 +61,7 @@ public:
 
 private:
   /**
-   * POST a signed body to `path` (`/v1/blobs/presign`, `/v1/files/start`, ...): the audience, timestamp and signature
+   * POST a signed body to `path` (`/v1/cdn/presign`, `/v1/blob/start`, ...): the audience, timestamp and signature
    * over the bytes `build` makes are added here. A refusal is the blob service's typed error (CheckBlobResponse); the
    * audience hears the codes it acts on first.
    */
