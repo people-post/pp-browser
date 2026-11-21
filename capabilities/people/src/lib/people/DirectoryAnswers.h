@@ -21,7 +21,8 @@ struct DirectoryAnswer {
 
 /**
  * The hit carries its account's keys and they prove themselves (VerifyKeyCard: the signing key hashes to the Account
- * ID, the KEM key carries the account's binding). A hit with no account or a key missing does not.
+ * ID, the KEM key carries the account's binding). A hit with no account or a key missing does not, nor one whose keys
+ * need a newer app (`keys_update_needed`).
  */
 bool DirectoryHitKeysVerify(const mesh::DirectoryHit& hit);
 

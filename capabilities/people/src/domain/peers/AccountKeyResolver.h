@@ -65,7 +65,10 @@ public:
    */
   Roe<PeerCardRecord> AddCarriedCard(const Object& json, int64_t now_ms, const std::string& source,
                                      const std::string& account_id = {});
-  /** Keeps the keys a directory entry carries for its account (search hit, contact sync). */
+  /**
+   * Keeps the keys a directory entry carries for its account (search hit, contact sync). An entry whose keys need a
+   * newer app (`keys_update_needed`) is refused as `AppError::NewerFormat`, not as bad keys.
+   */
   Roe<PeerCardRecord> AddDirectoryHit(const mesh::DirectoryHit& hit);
 
   IPeerSigningKeyResolver& Signing() { return signing_; }

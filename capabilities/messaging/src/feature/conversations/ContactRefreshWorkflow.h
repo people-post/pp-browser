@@ -60,6 +60,11 @@ struct ContactRefreshResult {
    * contact's Account ID, or it carried neither. Nothing of it was used (Outcome::Rejected).
    */
   bool relay_keys_rejected = false;
+  /**
+   * A relay's answer named keys of an algorithm (or a KEM binding version) this build does not read (the row's
+   * `keys_update_needed`): the contact needs a newer app here, not a forgery. Nothing of it was used (Rejected).
+   */
+  bool relay_keys_update_needed = false;
   /** The contact as stored after the refresh; empty when it is gone. */
   std::optional<Contact> contact;
 

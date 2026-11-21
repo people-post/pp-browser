@@ -151,7 +151,7 @@ protected:
     hit.ids = {{mesh::ContactIdKind::Account, bob_.account_id, true}};
     hit.signing_public_key_b64 = bob_.SigningPublicB64();
     hit.kem_public_key_b64 = bob_.KemPublicB64();
-    hit.kem_binding_signature_b64 = bob_.KemBindingB64();
+    hit.kem_binding_b64 = bob_.KemBindingB64();
     hit.icon = mesh::ProfileIconRef{"https://cdn.example/avatars/bob.png", "bob-photo", ""};
     hit.endpoints = {mesh::DirectoryEndpoint{
         .peer_id = test::PeerIdOf("QmBobPhone"), .multiaddrs = {"/ip4/192.0.2.7/udp/4001/quic-v1"}, .updated_at = 5}};
@@ -301,13 +301,31 @@ TEST_F(ContactRefreshWorkflowTest, ARelaysStoredCardIsKeptAndBringsItsRelayList)
   EXPECT_EQ(PageRelay(id).origin, kBobsB) << "his newest list's preferred relay";
 }
 
+// A row whose keys this build cannot read (mesh v10's `keys_update_needed`): update needed, not a forgery. Nothing of
+// it is used and the next relay is asked.
+TEST_F(ContactRefreshWorkflowTest, RelayKeysThatNeedANewerAppAreUpdateNeededNotRejected) {
+  const std::string id = AddBobByQr();
+  StoredAccountRow newer = RelayBob();
+  newer.hit.keys_update_needed = true;
+  newer.hit.nickname = "Bob N.";
+  Answers(kOurs, newer);
+
+  const ContactRefreshResult result = Refresh(id);
+  EXPECT_TRUE(result.relay_keys_update_needed);
+  EXPECT_FALSE(result.relay_keys_rejected);
+  EXPECT_EQ(result.relays, (std::vector<Ask>{{kOurs, Ask::Whose::Ours, Ask::Outcome::Rejected},
+                                             {kOurOther, Ask::Whose::Ours, Ask::Outcome::NotFound}}));
+  EXPECT_FALSE(HasKemKey(bob_.account_id));
+  EXPECT_EQ(Stored(id).remote.nickname, "bob") << "nothing of the row is used";
+}
+
 TEST_F(ContactRefreshWorkflowTest, RelayKeysThatDoNotMatchTheAccountIdContributeNothingAndTheNextRelayIsAsked) {
   const std::string id = AddBobByQr();
   StoredAccountRow forged = RelayBob();
   // Mallory's keys under Bob's Account ID: they do not hash to it. The rest of the row is hers too.
   forged.hit.signing_public_key_b64 = mallory_.SigningPublicB64();
   forged.hit.kem_public_key_b64 = mallory_.KemPublicB64();
-  forged.hit.kem_binding_signature_b64 = mallory_.KemBindingB64();
+  forged.hit.kem_binding_b64 = mallory_.KemBindingB64();
   forged.hit.nickname = "Mallory";
   forged.hit.icon = mesh::ProfileIconRef{"https://evil.example/mallory.png", "mallory-photo", ""};
   Answers(kOurs, forged);
@@ -379,7 +397,7 @@ TEST_F(ContactRefreshWorkflowTest, AnAnswerForAnotherAccountIsNotUsedAtAll) {
   other.hit.ids = {{mesh::ContactIdKind::Account, mallory_.account_id, true}};
   other.hit.signing_public_key_b64 = mallory_.SigningPublicB64();
   other.hit.kem_public_key_b64 = mallory_.KemPublicB64();
-  other.hit.kem_binding_signature_b64 = mallory_.KemBindingB64();
+  other.hit.kem_binding_b64 = mallory_.KemBindingB64();
   Answers(kOurs, other);
 
   const ContactRefreshResult result = Refresh(id);
