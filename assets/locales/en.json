@@ -1226,7 +1226,6 @@
     "chat.voice.busy_call": "You can't record during a call.",
     "chat.voice.no_mic": "No microphone could be opened.",
     "chat.voice.failed": "The recording didn't work — please try again.",
-    "chat.voice.upload_busy": "The last attachment is still being sent. Please wait, then record again.",
     "chat.voice.play": "Play",
     "chat.voice.pause": "Pause",
     "chat.voice.cannot_play": "Can't play this voice message",

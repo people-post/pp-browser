@@ -72,7 +72,6 @@ const std::vector<Key>& AttachmentKeys() {
       {"chat.voice.busy_call", {}},
       {"chat.voice.no_mic", {}},
       {"chat.voice.failed", {}},
-      {"chat.voice.upload_busy", {}},
       {"chat.voice.play", {}},
       {"chat.voice.pause", {}},
       {"chat.voice.cannot_play", {}},

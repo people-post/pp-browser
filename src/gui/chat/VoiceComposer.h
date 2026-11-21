@@ -42,8 +42,6 @@ struct VoiceComposerPorts {
   std::function<void(const std::string& thread_id, const std::string& path)> send;
   /** This chat can take a voice message (a peer or group chat, messaging ready). Leaving it takes the person out of voice mode. */
   std::function<bool()> eligible;
-  /** Not now: another attachment is being sent (or failed and waits). The voice bar stays, disabled; voice mode is kept. Optional. */
-  std::function<bool()> busy;
   /** The chat model changed. */
   std::function<void()> dirty;
   /** A line to tell the person (a toast). */

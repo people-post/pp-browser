@@ -108,7 +108,6 @@ struct Harness {
     ports.thread_id = [this]() { return thread; };
     ports.send = [this](const std::string& tid, const std::string& path) { sent.emplace_back(tid, path); };
     ports.eligible = [this]() { return eligible; };
-    ports.busy = [this]() { return busy; };
     ports.dirty = [this]() { saw_finishing = saw_finishing || state.voice_finishing; };
     ports.say = [this](const std::string& text) { said.push_back(text); };
     ports.call_live = [this]() { return call_live; };
@@ -156,9 +155,8 @@ struct Harness {
   std::string thread = "A";
   std::string keep;
   bool call_live = false;
-  /** The chat can take voice at all / another attachment is being sent. */
+  /** The chat can take voice at all. */
   bool eligible = true;
-  bool busy = false;
   /** The window's pixels per dp, its width in dp, and the lowest y the bubble's top may take (dp). */
   float ratio = 1.f;
   float viewport_dp = 393.f;
@@ -826,28 +824,6 @@ TEST(VoiceComposer, VoiceModeStaysAfterASendACancelATapAndACall) {
   ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
   h.composer->Refresh();
   EXPECT_TRUE(h.state.voice_mode) << "after a recording a call interrupted";
-}
-
-TEST(VoiceComposer, WhileAnotherAttachmentIsBeingSentTheBarStaysButWaits) {
-  SKIP_WITHOUT_VOICE();
-  Harness h;
-  h.state.voice_mode = true;
-  h.busy = true; // the one-attachment-at-a-time rule
-  h.composer->Refresh();
-  EXPECT_TRUE(h.state.voice_mode) << "the mode is kept";
-  EXPECT_TRUE(h.state.show_voice);
-  EXPECT_TRUE(h.state.voice_busy) << "the bar is drawn disabled";
-  h.composer->BeginAt(0, 100, nullptr, true);
-  EXPECT_TRUE(h.Said("chat.voice.upload_busy"));
-  EXPECT_EQ(h.opens.load(), 0);
-  EXPECT_FALSE(h.composer->Active());
-  h.busy = false; // the upload ended: the same bar records again
-  h.composer->Refresh();
-  EXPECT_FALSE(h.state.voice_busy);
-  EXPECT_TRUE(h.state.voice_mode);
-  h.fingers = {7};
-  h.composer->BeginAt(0, 100, nullptr, true);
-  EXPECT_TRUE(h.WaitTimer("0:03"));
 }
 
 TEST(VoiceComposer, AChatThatCannotTakeVoiceLeavesVoiceModeAndNothingElseDoes) {

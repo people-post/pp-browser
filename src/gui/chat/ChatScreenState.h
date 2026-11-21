@@ -80,8 +80,8 @@ struct ChatScreenState {
   bool voice_entry_off = false;
   /** A call (or ringing) has the microphone: the button is grey and its tooltip says why. */
   bool voice_blocked = false;
-  /** Another attachment is being sent (or failed and waits in the chip): the voice bar stays, drawn disabled; no recording starts. */
-  bool voice_busy = false;
+  /** The microphone toggle (text mode) is off: recording, a message being edited or the composer disabled. Not for an upload in flight. */
+  bool voice_toggle_disabled = false;
   bool voice_recording = false;
   /** Released to send (or the limit ran out) and the file is still being written: the bar says "Sending…". */
   bool voice_finishing = false;

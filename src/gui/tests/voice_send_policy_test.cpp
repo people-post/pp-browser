@@ -48,12 +48,14 @@ TEST(VoiceSendPolicy, TheKeyboardKeyIsTheOnlyWayOutAndItIsRemembered) {
   EXPECT_NE(source.find("RestoreVoiceMode(Store().Snapshot().profile_prefs.composer_voice_mode_last"),
             std::string::npos)
       << "a reopened chat restores it";
-  // A send in progress only disables the bar: it is a `busy` port, not part of `eligible` (which leaves voice mode).
+  // A send in progress never disables the bar: voice messages queue (VoiceSendQueue); `eligible` only leaves voice mode.
   const size_t eligible = source.find("voice_ports.eligible = [this]() {");
   ASSERT_NE(eligible, std::string::npos);
   const std::string eligible_body = source.substr(eligible, source.find("};", eligible) - eligible);
   EXPECT_EQ(eligible_body.find("AttachmentBusy()"), std::string::npos);
-  EXPECT_NE(source.find("voice_ports.busy = [this]() {"), std::string::npos);
+  EXPECT_EQ(source.find("voice_ports.busy"), std::string::npos)
+      << "no busy port: the bar is never refused for an upload";
+  EXPECT_NE(source.find("voice_queue_ports.slot_free = [this]() {"), std::string::npos);
 }
 
 } // namespace

@@ -78,14 +78,13 @@ TEST(AttachmentUploadExit, PictureQueueOnFinishedIsWrappedOnceAtTheEntry) {
   EXPECT_EQ(Count(body, "on_finished"), 2u) << "the parameter and its one move into the wrapper";
   const std::string header = Header();
   EXPECT_NE(header.find("std::function<void(AttachmentSendOutcome)> on_finished = {},\n"), std::string::npos);
-  EXPECT_NE(header.find("bool from_picture_queue = false);"), std::string::npos);
+  EXPECT_NE(header.find("bool from_picture_queue = false, const std::string& reuse_row = {});"), std::string::npos);
 }
 
 TEST(AttachmentUploadExit, PictureQueueEveryExitFiresTheWrapper) {
   const std::string body = Upload();
   ASSERT_FALSE(body.empty());
   // 1-2: refused (a recording kept for Retry; anything else released unless the queue's).
-  ExpectReportedBeforeReturn(body, "UserFeedback::Fail(Tr(\"chat.voice.upload_busy\"));", "finished.Fire(");
   ExpectReportedBeforeReturn(body, "UserFeedback::Fail(Tr(\"chat.attach.previous_still_sending\"));", "finished.Fire(");
   // 3: let go by the overlay's Cancel before the upload.
   ExpectReportedBeforeReturn(body, "// Let go by the overlay's Cancel (another send may run now)",
@@ -101,10 +100,10 @@ TEST(AttachmentUploadExit, PictureQueueEveryExitFiresTheWrapper) {
   EXPECT_LT(body.find("finish_uploading();\n            const bool cancelled"), ended);
   EXPECT_LT(ended, body.find("            if (!sent) {", ended));
   EXPECT_NE(body.find("IsAttachmentRateLimited(sent.error())"), std::string::npos);
-  EXPECT_EQ(Count(body, "finished.Fire("), 6u);
+  EXPECT_EQ(Count(body, "finished.Fire("), 7u); // + a queued voice job whose bubble is gone
   // A tripwire, not a rule: a new `return;` here may be a new way out, which must report through finished.Fire (the
   // other returns are inside helpers and callbacks that are not ways out). Update the count once that is checked.
-  EXPECT_EQ(Count(body, "return;"), 11u);
+  EXPECT_EQ(Count(body, "return;"), 12u);
 }
 
 TEST(AttachmentUploadExit, PictureQueueTheWrapperRidesInEveryCallback) {
@@ -126,7 +125,8 @@ TEST(AttachmentUploadExit, PictureQueueEachSendCarriesItsOwnRow) {
   EXPECT_NE(body.find("*bubble_row = item.row_id;"), std::string::npos);
   EXPECT_EQ(Count(body, "*bubble_row = item.row_id;"), 2u) << "a picture's and a video's";
   EXPECT_NE(body.find("*bubble_row = file.row_id;"), std::string::npos);
-  EXPECT_EQ(Count(body, "ApplyPendingUploadTo("), 5u) << "size, thumbnail, details, not prepared, the end";
+  EXPECT_EQ(Count(body, "ApplyPendingUploadTo("), 6u)
+      << "size, thumbnail, details, not prepared, the end, a queued voice job refused";
   EXPECT_NE(body.find("if (!pending_uploads_.Queue().Find(row_id)) {"), std::string::npos)
       << "a thumbnail for a row that is gone is deleted";
   const std::string apply = Body(Controller(), "void ChatController::ApplyPendingUploadTo(");
@@ -137,7 +137,7 @@ TEST(AttachmentUploadExit, PictureQueueFailedBubblesGiveWayOnlyWithoutAQueue) {
   const std::string body = Upload();
   const size_t loop = body.find("for (const PendingUpload& item : std::vector<PendingUpload>(pending_uploads_");
   ASSERT_NE(loop, std::string::npos);
-  const size_t skip = body.find("if (from_picture_queue) {\n      break;", loop);
+  const size_t skip = body.find("if (from_picture_queue || voice_file) {\n      break;", loop);
   const size_t give_way = body.find("OnOtherAttachmentStarted", loop);
   ASSERT_NE(skip, std::string::npos);
   EXPECT_LT(skip, give_way);
@@ -184,8 +184,8 @@ TEST(AttachmentUploadExit, PictureQueueOneBusyCheckHoldsTheSlotForTheQueue) {
     const char* check;
   };
   const Site sites[] = {
-      {"voice_ports.send = [this]", "if (AttachmentBusy()) {"},
-      {"voice_ports.busy = [this]", "AttachmentBusy() ||"}, // the voice bar waits (disabled); voice mode stays
+      {"voice_queue_ports.slot_free = [this]",
+       "!AttachmentBusy()"}, // a voice message waits for the slot, never refused
       {"void ChatController::RefreshShowCapture() {", "AttachmentBusy() || (chat_.attachment_failed"},
       {"void ChatController::BeginAttachmentPreparing(", "if (AttachmentBusy() || !preparing_.Begin("},
       {"void ChatController::SyncComposerInputState() {", "chat_.attachment_in_transcript, AttachmentBusy(),"},

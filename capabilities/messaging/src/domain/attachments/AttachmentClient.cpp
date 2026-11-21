@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <memory>
 #include "common/PbrCompat.h"
 
@@ -58,11 +59,18 @@ void TryPeerPushAsync(const PreparedChatAttachment& prepared, IdentityStore& ide
   options.peer_client->PushChatBlobAsync(*request, prepared.ciphertext, std::move(finish));
 }
 
-/** One WARNING per send whose direct push failed: the error text and the size only (no peer, key or file name). */
-void LogDirectPushFailed(const uint64_t plaintext_bytes, const Error& why) {
+int64_t MsSince(const std::chrono::steady_clock::time_point since) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - since).count();
+}
+
+/**
+ * One WARNING per send whose direct push failed: the error text, the size and how long the push took before it gave
+ * up (-1: not measured) (no peer, key or file name).
+ */
+void LogDirectPushFailed(const uint64_t plaintext_bytes, const Error& why, const int64_t direct_ms = -1) {
   logging::getLogger("AttachmentClient").warning
       << "attachment direct push failed, falling back to the server bytes=" << plaintext_bytes
-      << " reason=" << why.message;
+      << " direct_ms=" << direct_ms << " reason=" << why.message;
 }
 
 /** A server answer "uploads not enabled" after a failed direct push says so: the user is told about both. */
@@ -151,7 +159,11 @@ void DeliverStaged(const std::shared_ptr<IBlobClient>& blob, IdentityStore& iden
                     finish](const bool direct_failed) mutable {
     // start → PUT → complete → stored link: all of it, also if the app goes to the background meanwhile.
     const BackgroundActivity background("attachment upload");
+    const auto relay_started = std::chrono::steady_clock::now();
     auto uploaded = UploadRelayFile(*blob, relay_id, store->CipherPath(record.id), record.cipher_bytes, progress);
+    logging::getLogger("AttachmentClient").info << "attachment server upload bytes=" << record.cipher_bytes
+                                                << " relay_ms=" << MsSince(relay_started)
+                                                << " ok=" << (uploaded ? 1 : 0);
     if (!uploaded) {
       finish(direct_failed ? NoteDirectFailed(uploaded.error()) : uploaded.error());
       return;
@@ -180,26 +192,31 @@ void DeliverStaged(const std::shared_ptr<IBlobClient>& blob, IdentityStore& iden
       }
     }
     if (in_memory) {
-      TryPeerPushAsync(
-          *in_memory, identity, options,
-          [record, store, dek, finish, to_server = std::move(to_server), in_memory](Roe<void> pushed) mutable {
-            auto next = [record, store, dek, finish, to_server = std::move(to_server),
-                         pushed = std::move(pushed)]() mutable {
-              if (pushed) {
-                record.delivered = true;
-                (void)store->Update(record, dek);
-                finish(record.fields);
-                return;
-              }
-              LogDirectPushFailed(record.fields.byte_length, pushed.error());
-              to_server(true);
-            };
-            if (AppRuntime::IsRunning()) {
-              AppRuntime::PostWorkerNormal(std::move(next));
-            } else {
-              next();
-            }
-          });
+      const auto direct_started = std::chrono::steady_clock::now();
+      TryPeerPushAsync(*in_memory, identity, options,
+                       [record, store, dek, finish, to_server = std::move(to_server), in_memory,
+                        direct_started](Roe<void> pushed) mutable {
+                         const int64_t direct_ms = MsSince(direct_started);
+                         auto next = [record, store, dek, finish, to_server = std::move(to_server),
+                                      pushed = std::move(pushed), direct_ms]() mutable {
+                           if (pushed) {
+                             logging::getLogger("AttachmentClient").info
+                                 << "attachment direct push ok bytes=" << record.fields.byte_length
+                                 << " direct_ms=" << direct_ms;
+                             record.delivered = true;
+                             (void)store->Update(record, dek);
+                             finish(record.fields);
+                             return;
+                           }
+                           LogDirectPushFailed(record.fields.byte_length, pushed.error(), direct_ms);
+                           to_server(true);
+                         };
+                         if (AppRuntime::IsRunning()) {
+                           AppRuntime::PostWorkerNormal(std::move(next));
+                         } else {
+                           next();
+                         }
+                       });
       return;
     }
   }

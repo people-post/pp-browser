@@ -96,6 +96,7 @@ protected:
                             "attachment_in_transcript",
                             "composer_input_disabled",
                             "attach_disabled",
+                            "voice_toggle_disabled",
                             "voice_entry_off",
                             "picking_busy",
                             "attachment_draft_name",
@@ -674,17 +675,20 @@ TEST_F(ComposerPhoneRowTest, WithoutTextTheMicrophoneEndsTheRow) {
 // A picture uploading as a bubble (device report 2026-11-11: the right end was empty, as if nothing could be sent):
 // the send hides the microphone (show_voice off), but beside the bubble it stays in its place greyed
 // (voice_entry_off); once text is typed Send takes the spot, enabled.
-TEST_F(ComposerPhoneRowTest, BesideAPictureBubbleTheMicrophoneStaysGreyedAndTextBringsAWorkingSend) {
+TEST_F(ComposerPhoneRowTest, BesideAPictureBubbleTheMicrophoneStaysUsableAndTextBringsAWorkingSend) {
   state.thread_is_private = true;
   state.show_attach_button = true;
   state.attachment_here = true;
   state.attachment_uploading = true;
   state.attachment_in_transcript = true;
-  state.show_voice = false; // VoiceComposer: not while a send is in flight
-  state.voice_entry_off = true;
+  state.show_voice = true; // voice messages queue behind the picture: the microphone is not off for an upload
+  state.voice_entry_off = false;
   const ComposerLocks locks = ComposerLocksOf(false, true, true, /*attachment_busy=*/true, false, false);
   state.composer_input_disabled = locks.input;
   state.attach_disabled = locks.attach;
+  state.voice_toggle_disabled = locks.voice;
+  EXPECT_TRUE(locks.attach);
+  EXPECT_FALSE(locks.voice);
   Apply();
   std::vector<std::string> order = RowOrder();
   ASSERT_EQ(order.size(), 3u);
@@ -692,13 +696,13 @@ TEST_F(ComposerPhoneRowTest, BesideAPictureBubbleTheMicrophoneStaysGreyedAndText
   ui::ElementList mics;
   document->GetElementsByClassName(mics, "prompt-voice-toggle-btn--end");
   ASSERT_FALSE(mics.empty());
-  EXPECT_TRUE(mics[0]->HasAttribute("disabled")) << "greyed: no voice message while the picture goes";
+  EXPECT_FALSE(mics[0]->HasAttribute("disabled")) << "a voice message can be recorded while the picture goes";
   EXPECT_EQ(Shown("prompt-send-btn"), 0);
   ui::ElementList composers;
   document->GetElementsByClassName(composers, "prompt-composer");
   ASSERT_FALSE(composers.empty());
-  EXPECT_TRUE(mics[0]->IsClassSet("prompt-entry-off")) << "greyed by a class (the engine's <button> has no :disabled)";
-  EXPECT_LT(mics[0]->GetComputedValues().opacity(), 0.5f);
+  EXPECT_FALSE(mics[0]->IsClassSet("prompt-entry-off"));
+  EXPECT_GT(mics[0]->GetComputedValues().opacity(), 0.5f);
 
   state.draft = "running late";
   Apply();

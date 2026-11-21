@@ -1204,7 +1204,6 @@
     "chat.voice.busy_call": "通话中不能录音",
     "chat.voice.no_mic": "打不开麦克风",
     "chat.voice.failed": "录音没有成功，请再试一次",
-    "chat.voice.upload_busy": "上一个附件还在发送，请稍等再录",
     "chat.voice.play": "播放",
     "chat.voice.pause": "暂停",
     "chat.voice.cannot_play": "无法播放",

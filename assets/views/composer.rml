@@ -72,7 +72,7 @@
   <div class="prompt-composer-row">
     <button class="prompt-voice-toggle-btn prompt-voice-toggle-btn--start" type="button"
             data-if="(show_voice || voice_entry_off) && !voice_mode && !voice_recording"
-            data-event-click="voice_mode_toggle()" data-attrif-disabled="attach_disabled" data-class-prompt-entry-off="attach_disabled"
+            data-event-click="voice_mode_toggle()" data-attrif-disabled="voice_toggle_disabled" data-class-prompt-entry-off="voice_toggle_disabled"
             title="{{i18n:chat.voice.mode_voice}}">
       <svg class="prompt-icon-classic" src="../icons/mic.svg" width="18" height="18" crop-to-content="true"></svg>
     </button>
@@ -131,7 +131,7 @@
          bar says what releasing does and the floating bubble (shell-chat-overlay, ShellLayoutRml) shows the rest; the
          desktop's bar shows the dot, the timer and the hint itself. -->
     <button class="prompt-voice-bar" type="button" data-if="voice_mode && show_voice"
-            data-class-prompt-voice-bar--blocked="voice_blocked || voice_busy"
+            data-class-prompt-voice-bar--blocked="voice_blocked"
             data-class-prompt-voice-bar--active="voice_recording"
             data-class-prompt-voice-bar--armed="voice_recording &amp;&amp; voice_cancel_zone"
             data-attr-title="voice_title"
@@ -171,7 +171,7 @@
          text; in voice mode the keyboard key takes it. Same buttons and handlers as the desktop's leading pair. -->
     <button class="prompt-voice-toggle-btn prompt-voice-toggle-btn--end prompt-mic-btn" type="button"
             data-if="(show_voice || voice_entry_off) && !voice_mode && !voice_recording && draft == ''"
-            data-event-click="voice_mode_toggle()" data-attrif-disabled="attach_disabled" data-class-prompt-entry-off="attach_disabled"
+            data-event-click="voice_mode_toggle()" data-attrif-disabled="voice_toggle_disabled" data-class-prompt-entry-off="voice_toggle_disabled"
             title="{{i18n:chat.voice.mode_voice}}">
       <svg class="prompt-icon-v2" src="../icons/v2/mic.svg" width="20" height="20"></svg>
     </button>

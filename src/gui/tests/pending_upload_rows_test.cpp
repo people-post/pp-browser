@@ -646,11 +646,11 @@ TEST(PendingPictureSourcePinTest, PickEndsEndPreparingStalePostersBuildNothingRe
 TEST(PendingPictureSourcePinTest, OfflineRetriesStayFailedFailFastAndSayNoConnection) {
   const std::string source = Controller();
   const std::string retry = Body(source, "void ChatController::OnRetryAttachmentSend(");
-  EXPECT_NE(retry.find("OnUploadResumeFinished(now, sent, staged)"), std::string::npos);
-  EXPECT_NE(retry.find("if (!sent && !stale_chip) {"), std::string::npos)
-      << "the copy is looked for after a cancel too";
-  EXPECT_NE(retry.find("bubble_tap_guard_until_ ="), std::string::npos);
-  EXPECT_NE(retry.find("offline_stop->load()"), std::string::npos);
+  const std::string run = Body(source, "void ChatController::StartAttachmentRetry(");
+  EXPECT_NE(run.find("OnUploadResumeFinished(now, sent, staged)"), std::string::npos);
+  EXPECT_NE(run.find("if (!sent && !stale_chip) {"), std::string::npos) << "the copy is looked for after a cancel too";
+  EXPECT_NE(run.find("bubble_tap_guard_until_ ="), std::string::npos);
+  EXPECT_NE(run.find("offline_stop->load()"), std::string::npos);
   const std::string progress =
       Body(source, "std::function<bool(uint64_t done, uint64_t total)> ChatController::MakeSendProgress(");
   const size_t held = progress.find("stop = held->hold.Update(facade->DeviceOffline(), SteadyNowMs());");
