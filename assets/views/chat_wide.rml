@@ -174,27 +174,6 @@
            data-class-message-row-search-current="row.search_current"
            data-attr-message-id="row.message_id">
         <div class="chat-date-strip" data-if="row.date_label != ''"><span class="chat-date-pill">{{row.date_label}}</span></div>
-        <!-- Mouse over a message: five used reactions (the message menu's own row, bar_emojis), "+" (the full emoji
-             picker), Edit (where the menu offers it), Reply, and "..." (the whole message menu). Same items and handlers as ChatMenus. -->
-        <div class="msg-bar" data-if="row.has_actions">
-          <button class="msg-bar-emoji" type="button" data-for="e : bar_emojis"
-                  data-event-click="msg_bar_emoji(row.message_id, e.emoji)"><span class="msg-bar-emoji-glyph">{{e.emoji}}</span></button>
-          <button class="msg-bar-btn" type="button" data-event-click="msg_bar_react()">
-            <svg src="../icons/v2/plus.svg" width="18" height="18"></svg>
-          </button>
-          <span class="msg-bar-sep"></span>
-          <!-- Edit: only where the message menu offers it (own text within the edit window), the same action. -->
-          <button class="msg-bar-btn msg-bar-edit" type="button" data-if="row.can_edit" data-event-click="msg_bar_edit(row.message_id)">
-            <svg src="../icons/v2/pencil.svg" width="18" height="18"></svg>
-          </button>
-          <!-- TODO(forward): Forward goes here, between Edit and Reply, once forwarding exists (no platform has it). -->
-          <button class="msg-bar-btn" type="button" data-event-click="msg_bar_reply()">
-            <svg src="../icons/v2/reply.svg" width="18" height="18"></svg>
-          </button>
-          <button class="msg-bar-btn" type="button" data-event-click="msg_bar_more()">
-            <svg src="../icons/v2/more.svg" width="18" height="18"></svg>
-          </button>
-        </div>
         <div class="chat-row-body" data-class-chat-row-body--group="row.group_column">
         <div class="chat-row-avatar-col" data-if="row.group_column">
           <!-- A tap on the avatar opens the member's page; the hit box is 44dp, the avatar 32dp. -->
@@ -227,7 +206,30 @@
         <p class="sender-label muted" data-if="row.sender_label != ''">
           <span>{{row.sender_label}}</span><span class="chat-time-inline muted" data-if="row.time_label != ''"> · <span>{{row.time_label}}</span></span>
         </p>
-        <div selectable="text" data-model="chat" data-rml="row.content_rml"></div>
+        <div class="msg-hover">
+          <div selectable="text" data-model="chat" data-rml="row.content_rml"></div>
+          <!-- Mouse over a message BUBBLE (not the row's empty space, the avatar or the name; wide.rcss .msg-hover): five used reactions (the message menu's own row, bar_emojis), "+" (the full emoji
+               picker), Edit (where the menu offers it), Reply, and "..." (the whole message menu). Same items and handlers as ChatMenus. -->
+          <div class="msg-bar" data-if="row.has_actions">
+            <button class="msg-bar-emoji" type="button" data-for="e : bar_emojis"
+                    data-event-click="msg_bar_emoji(row.message_id, e.emoji)"><span class="msg-bar-emoji-glyph">{{e.emoji}}</span></button>
+            <button class="msg-bar-btn" type="button" data-event-click="msg_bar_react()">
+              <svg src="../icons/v2/plus.svg" width="18" height="18"></svg>
+            </button>
+            <span class="msg-bar-sep"></span>
+            <!-- Edit: only where the message menu offers it (own text within the edit window), the same action. -->
+            <button class="msg-bar-btn msg-bar-edit" type="button" data-if="row.can_edit" data-event-click="msg_bar_edit(row.message_id)">
+              <svg src="../icons/v2/pencil.svg" width="18" height="18"></svg>
+            </button>
+            <!-- TODO(forward): Forward goes here, between Edit and Reply, once forwarding exists (no platform has it). -->
+            <button class="msg-bar-btn" type="button" data-event-click="msg_bar_reply()">
+              <svg src="../icons/v2/reply.svg" width="18" height="18"></svg>
+            </button>
+            <button class="msg-bar-btn" type="button" data-event-click="msg_bar_more()">
+              <svg src="../icons/v2/more.svg" width="18" height="18"></svg>
+            </button>
+          </div>
+        </div>
         </div>
         </div>
       </div>

@@ -503,7 +503,29 @@
   padding-left: 0;
 }
 
-/* The message under the pointer: a small row at its top (the used reactions, +, reply, more). */
+/* The message BUBBLE under the pointer: a small row at its top (the used reactions, +, reply, more). The hover target is
+   .msg-hover (chat_wide.rml): it holds the message's content and the bar, and is hovered only while the pointer is over a
+   bubble or the bar. The empty row space beside a bubble, the avatar and the name are not under it: the wrapper and the
+   content's own full-width block take no pointer events (a hover still counts for them while a bubble below is under the
+   pointer), everything inside the content takes them again, so a bubble keeps its clicks, selection and right click. */
+.shell-body--wide .msg-hover {
+  position: relative;
+  display: block;
+  pointer-events: none;
+}
+
+.shell-body--wide .msg-hover * {
+  pointer-events: auto;
+}
+
+.shell-body--wide .msg-hover > div {
+  pointer-events: none;
+}
+
+.shell-body--wide .msg-hover .msg-bar {
+  pointer-events: auto;
+}
+
 .shell-body--wide .msg-bar {
   display: none;
   position: absolute;
@@ -522,11 +544,17 @@
 
 .shell-body--wide .message-row-peer .msg-bar,
 .shell-body--wide .message-row-ai .msg-bar {
-  left: 44dp;
+  left: 8dp;
 }
 
-.shell-body--wide .message-row:hover > .msg-bar {
+.shell-body--wide .msg-hover:hover > .msg-bar {
   display: flex;
+}
+
+/* While the transcript is scrolled (and for 200 ms after; ChatTranscriptScroller) no bar is drawn: one class on the
+   transcript, nothing per row per scroll event. */
+.shell-body--wide .messages--scrolling .msg-hover:hover > .msg-bar {
+  display: none;
 }
 
 .shell-body--wide .msg-bar-btn {

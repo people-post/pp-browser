@@ -72,6 +72,10 @@ public:
   void RequestScrollToLatest();
   void ApplyPolicy();
   void OnMessagesScroll();
+  /** The wide layout's hover bar is not drawn while the transcript scrolls: `messages--scrolling` is on the transcript
+   *  from a scroll event until this much quiet (200 ms). OnMessagesScroll marks it; Tick (every frame) takes it off. */
+  static constexpr std::chrono::milliseconds kScrollQuiet{200};
+  void TickScrolling(std::chrono::steady_clock::time_point now);
   void OnJumpToLatest();
   /** Jumped: scrolling to it. NotFound: the store has no such message (deleted). Unavailable: no chat / store. */
   enum class JumpResult { Jumped, NotFound, Unavailable };
@@ -194,6 +198,8 @@ private:
   int pending_scroll_attempts_ = 0;
   float settle_scroll_height_ = -1.f;
   bool suppress_scroll_handler_ = false;
+  bool scrolling_marked_ = false;
+  std::chrono::steady_clock::time_point scrolling_until_{};
   bool loading_older_local_ = false;
   bool has_more_local_history_ = false;
   /** The chat switched to has not had its first screen decided (read failed, or not ready): tried on the next sync. */

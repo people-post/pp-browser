@@ -465,6 +465,18 @@ void ChatTranscriptScroller::OnMessagesScroll() {
   if (!el) {
     return;
   }
+  // One class on the transcript, set on the first event of a scroll (not per event, not per row). Only the wide layout
+  // has a hover bar to hide; the phone's transcript is left as it was.
+  scrolling_until_ = std::chrono::steady_clock::now() + kScrollQuiet;
+  if (!scrolling_marked_) {
+    for (ui::Element* up = el; up != nullptr; up = up->GetParentNode()) {
+      if (up->IsClassSet("shell-body--wide")) {
+        scrolling_marked_ = true;
+        el->SetClass("messages--scrolling", true);
+        break;
+      }
+    }
+  }
   const float max_top = std::max(0.f, el->GetScrollHeight() - el->GetClientHeight());
   const float top = el->GetScrollTop();
   constexpr float kNearBottomPx = 64.f;
@@ -480,6 +492,16 @@ void ChatTranscriptScroller::OnMessagesScroll() {
     }
   }
   MaybeLoadOlderLocalHistory();
+}
+
+void ChatTranscriptScroller::TickScrolling(const std::chrono::steady_clock::time_point now) {
+  if (!scrolling_marked_ || now < scrolling_until_) {
+    return;
+  }
+  scrolling_marked_ = false;
+  if (ui::Element* el = FindMessagesScrollElement()) {
+    el->SetClass("messages--scrolling", false);
+  }
 }
 
 void ChatTranscriptScroller::OnJumpToLatest() {

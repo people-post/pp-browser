@@ -6804,7 +6804,8 @@ void ChatController::Update() {
     }
   }
 
-  agent_.Tick();  // the streamed row, a held send, the agent's events
+  scroller_.TickScrolling(std::chrono::steady_clock::now()); // the hover bar is back 200 ms after the last scroll
+  agent_.Tick();                                             // the streamed row, a held send, the agent's events
   ask_ai_.Tick(); // the panel's streamed answer, a one-off waiting to start, focus and scroll
   group_info_.Tick(messaging_ready_ ? ActiveThreadId() : std::string(), std::chrono::steady_clock::now());
   group_leave_.Tick(std::chrono::steady_clock::now());

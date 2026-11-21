@@ -235,8 +235,14 @@ TEST_F(ChatWideLayoutTest, TheHoverBarShowsOnlyUnderThePointerOnAMessageThatHasA
     EXPECT_EQ(edit[0]->GetComputedValues().display() == ui::Style::Display::None, i != 0)
         << "the pencil is there for our own text only, absent (not greyed) otherwise: " << i;
   }
+  auto hover_of = [](ui::Element* row) -> ui::Element* {
+    ui::ElementList found;
+    row->GetElementsByClassName(found, "msg-hover");
+    return found.empty() ? nullptr : found[0];
+  };
   for (size_t i = 0; i < 3; ++i) {
-    rows[i]->SetPseudoClass("hover", true);
+    ASSERT_NE(hover_of(rows[i]), nullptr) << "the hover target wraps the message's content and its bar: " << i;
+    hover_of(rows[i])->SetPseudoClass("hover", true);
     context->Update();
     ui::Element* bar = bar_of(rows[i]);
     if (i < 2) {
@@ -246,9 +252,83 @@ TEST_F(ChatWideLayoutTest, TheHoverBarShowsOnlyUnderThePointerOnAMessageThatHasA
     } else {
       EXPECT_EQ(bar->GetComputedValues().display(), ui::Style::Display::None) << "a notice row has no bar";
     }
-    rows[i]->SetPseudoClass("hover", false);
+    hover_of(rows[i])->SetPseudoClass("hover", false);
     context->Update();
   }
+}
+
+// The bar's hover target is the bubble (owner 2026-11-21): the row's empty space beside it, the avatar and the name do not
+// show it; it stays while the pointer moves from the bubble onto the bar; it is not drawn while the transcript scrolls.
+// Hit testing is the library's own (a pointer position over the laid-out page); a real pointer cannot be tried here.
+TEST_F(ChatWideLayoutTest, TheHoverBarFollowsTheBubbleNotTheRowAndNotWhileScrolling) {
+  ShowChat();
+  Load(ConversationWidth(900));
+  ui::Element* peer = nullptr;
+  ui::ElementList all_rows;
+  document->GetElementsByClassName(all_rows, "message-row");
+  for (ui::Element* row : all_rows) {
+    if (row->GetAttribute("message-id", ui::String()) == "m2") {
+      peer = row;
+    }
+  }
+  ASSERT_NE(peer, nullptr);
+  ui::ElementList found;
+  peer->GetElementsByClassName(found, "bubble");
+  ASSERT_FALSE(found.empty());
+  ui::Element* bubble = found[0];
+  found.clear();
+  peer->GetElementsByClassName(found, "msg-bar");
+  ASSERT_FALSE(found.empty());
+  ui::Element* bar = found[0];
+  auto move_to = [&](const float x, const float y) {
+    context->ProcessMouseMove(static_cast<int>(x), static_cast<int>(y), 0);
+    context->Update();
+    context->Update();
+  };
+  auto shown = [&]() { return bar->GetComputedValues().display() != ui::Style::Display::None; };
+  const Box b = BoxOf(bubble);
+  const Box row = BoxOf(peer);
+  ASSERT_LT(b.right + 60.f, row.right) << "the short message leaves empty row space to its right";
+
+  move_to((b.left + b.right) / 2, (b.top + b.bottom) / 2);
+  EXPECT_TRUE(shown()) << "the pointer is on the bubble";
+  // The bar overlaps the bubble's top edge, so the pointer can go up onto it without leaving the hover area.
+  const Box bar_box = BoxOf(bar);
+  EXPECT_LT(bar_box.top, b.top);
+  EXPECT_GT(bar_box.bottom, b.top) << "no gap between the bubble and the bar";
+  move_to((bar_box.left + bar_box.right) / 2, (bar_box.top + bar_box.bottom) / 2);
+  EXPECT_TRUE(shown()) << "still shown with the pointer on the bar";
+
+  move_to(row.right - 20.f, (b.top + b.bottom) / 2);
+  EXPECT_FALSE(shown()) << "the empty row space beside the bubble does not show it";
+
+  // Scrolling: one class on the transcript hides every bar, whatever the pointer is over.
+  move_to((b.left + b.right) / 2, (b.top + b.bottom) / 2);
+  ASSERT_TRUE(shown());
+  ui::Element* messages = document->GetElementById("chat-messages");
+  ASSERT_NE(messages, nullptr);
+  messages->SetClass("messages--scrolling", true);
+  context->Update();
+  EXPECT_FALSE(shown()) << "no bar while the transcript scrolls";
+  messages->SetClass("messages--scrolling", false);
+  context->Update();
+  EXPECT_TRUE(shown()) << "back when the scroll has been quiet";
+}
+
+// The hover target holds the message's content and its bar only: the name above and the avatar beside it are outside.
+TEST_F(ChatWideLayoutTest, TheHoverTargetHoldsTheContentAndTheBarButNotTheNameOrTheAvatar) {
+  const std::string page = Asset("views/chat_wide.rml");
+  const size_t at = page.find("<div class=\"msg-hover\">");
+  ASSERT_NE(at, std::string::npos);
+  const std::string wrapped = page.substr(at, page.find("class=\"message-group\"", at) - at);
+  EXPECT_NE(wrapped.find("data-rml=\"row.content_rml\""), std::string::npos);
+  EXPECT_NE(wrapped.find("class=\"msg-bar\""), std::string::npos);
+  EXPECT_EQ(wrapped.find("chat-group-name"), std::string::npos);
+  EXPECT_EQ(wrapped.find("chat-row-avatar"), std::string::npos);
+  EXPECT_EQ(wrapped.find("sender-label"), std::string::npos);
+  // The scroll class is the transcript's own, and the bar rule that it hides is more specific than the one that shows it.
+  const std::string css = Asset("themes/wide.rcss");
+  EXPECT_NE(css.find(".shell-body--wide .messages--scrolling .msg-hover:hover > .msg-bar"), std::string::npos);
 }
 
 TEST_F(ChatWideLayoutTest, TheHoverBarOffersExactlyTheMessageMenusItems) {
@@ -257,7 +337,7 @@ TEST_F(ChatWideLayoutTest, TheHoverBarOffersExactlyTheMessageMenusItems) {
   const std::string page = Asset("views/chat_wide.rml");
   const size_t bar = page.find("class=\"msg-bar\"");
   ASSERT_NE(bar, std::string::npos);
-  const std::string bar_markup = page.substr(bar, page.find("class=\"chat-row-body\"", bar) - bar);
+  const std::string bar_markup = page.substr(bar, page.find("class=\"message-group\"", bar) - bar);
   EXPECT_NE(bar_markup.find("msg_bar_emoji(row.message_id, e.emoji)"), std::string::npos);
   EXPECT_NE(bar_markup.find("msg_bar_react()"), std::string::npos);
   EXPECT_NE(bar_markup.find("msg_bar_edit(row.message_id)"), std::string::npos);
@@ -316,7 +396,10 @@ TEST_F(ChatWideLayoutTest, TheHoverBarShowsTheUsedReactionsBeforeThePlus) {
     }
   }
   ASSERT_NE(mine, nullptr);
-  mine->SetPseudoClass("hover", true);
+  ui::ElementList wraps;
+  mine->GetElementsByClassName(wraps, "msg-hover");
+  ASSERT_EQ(wraps.size(), 1u);
+  wraps[0]->SetPseudoClass("hover", true);
   context->Update();
   ui::ElementList emoji_all;
   mine->GetElementsByClassName(emoji_all, "msg-bar-emoji");
