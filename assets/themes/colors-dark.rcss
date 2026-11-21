@@ -4292,4 +4292,147 @@ input.checkbox:checked {
 .shell-body--wide .chat-shell--group .chat-header {
   background-color: transparent;
 }
+
+/* ---- Chat section (design step 2) ---- */
+.shell-body--wide .chat-header {
+  background-color: #1c1c1ef0;
+  border-bottom-color: #54545899;
+}
+
+.shell-body--wide .chat-header-call-btn,
+.shell-body--wide .chat-header-more-btn,
+.shell-body--wide .chat-header-search-btn {
+  background-color: transparent;
+  color: #ffffff;
+}
+
+.shell-body--wide .chat-header-call-btn:hover,
+.shell-body--wide .chat-header-more-btn:hover,
+.shell-body--wide .chat-header-search-btn:hover {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .chat-header-call-btn--join {
+  background-color: #30d158;
+  color: #ffffff;
+}
+
+.shell-body--wide .chat-header-search-btn svg {
+  image-color: #ffffff;
+}
+
+.shell-body--wide .chat-date-pill,
+.shell-body--wide .chat-system-line p {
+  background-color: #7878803d;
+  color: #ebebf599;
+}
+
+.shell-body--wide .msg-bar {
+  background-color: #1c1c1e;
+  box-shadow: 0 6dp 24dp #00000026;
+}
+
+.shell-body--wide .msg-bar-btn {
+  background-color: transparent;
+}
+
+.shell-body--wide .msg-bar-btn:hover {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .msg-bar-btn svg {
+  image-color: #ebebf599;
+}
+
+.shell-body--wide .msg-bar-btn:hover svg {
+  image-color: #0a84ff;
+}
+
+.shell-body--wide .shell-empty-title {
+  color: #ffffff;
+}
+
+.shell-body--wide .shell-empty-body {
+  color: #ebebf599;
+}
+
+.shell-body--wide .chat-search-label {
+  color: #ebebf54c;
+}
+
+/* The phone's picture / file / voice card colours, under the wide root. */
+.shell-body--wide .chat-attachment-card {
+  background-color: #2c2c2e;
+}
+
+.shell-body--wide .message-row-user .chat-attachment-card,
+.shell-body--wide .message-row-user .chat-voice-card {
+  background-color: #2f92ff;
+  color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-attachment-card .muted,
+.shell-body--wide .message-row-user .chat-attachment-card .heading-3,
+.shell-body--wide .message-row-user .chat-voice-time {
+  color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .route-icon {
+  image-color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-play {
+  background-color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-play svg {
+  image-color: #2f92ff;
+}
+
+.shell-body--wide .chat-attachment-card .chat-suggestion {
+  background-color: transparent;
+  color: #0a84ff;
+}
+
+.shell-body--wide .message-row-user .chat-attachment-card .chat-suggestion {
+  color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .chat-voice-play {
+  background-color: transparent;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .chat-voice-play svg {
+  image-color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .chat-voice-bar {
+  background-color: #ffffff80;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .chat-voice-bars--played .chat-voice-bar {
+  background-color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .chat-voice-knob {
+  background-color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .chat-voice-badge {
+  background-color: #ffffff;
+  border: 1.5dp #2f92ff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .chat-voice-badge-mic {
+  image-color: #2f92ff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-fill {
+  background-color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-audio-knob {
+  background-color: #ffffff;
+  border: 1dp rgba(0, 0, 0, 0.2);
+}
 }

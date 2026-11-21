@@ -40,6 +40,8 @@
     "shell.sidebar.expand": "展开列表",
     "shell.chats.link_online": "在线",
     "shell.chats.link_offline": "离线",
+    "shell.chats.empty_title": "选一个聊天",
+    "shell.chats.empty_body": "从左边的列表里选一位联系人或一个群聊，就能在这里看消息、写消息。",
     "shell.chats.link_connecting": "正在连接…",
     "shell.statusbar.direct_off": "直接连接关闭",
     "shell.statusbar.brief_offline": "Brief 离线",

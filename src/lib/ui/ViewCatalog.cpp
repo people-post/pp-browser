@@ -38,6 +38,7 @@ const std::unordered_map<std::string, std::string>& KnownKeys() {
   static const std::unordered_map<std::string, std::string> keys = {
       {"sidebar", "views/sidebar.rml"},
       {"chat", "views/chat.rml"},
+      {"chat_wide", "views/chat_wide.rml"},
       {"home", "views/home.rml"},
       {"ai_drawer", "views/ai_drawer.rml"},
       {"preview", "views/preview.rml"},
@@ -135,6 +136,14 @@ std::vector<std::string> ViewCatalog::KnownViewPaths() {
     out.push_back(path);
   }
   return out;
+}
+
+std::string ViewCatalog::KeyForLayout(const std::string& key, const bool wide) {
+  if (!wide) {
+    return key;
+  }
+  const std::string wide_key = key + "_wide";
+  return KnownKeys().count(wide_key) != 0 ? wide_key : key;
 }
 
 std::string ViewCatalog::ResolvePath(const std::string& key_or_path) {

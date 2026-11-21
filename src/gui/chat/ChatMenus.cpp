@@ -131,6 +131,40 @@ void RemoveActionsWhileEditing(std::vector<ContextMenuAction>& actions) {
   });
 }
 
+const char* MessageBarActionId(const MessageBarAction action) {
+  switch (action) {
+    case MessageBarAction::Reply:
+      return "reply_message";
+    case MessageBarAction::React:
+      return "react_more";
+    case MessageBarAction::More:
+      break;
+  }
+  return "";
+}
+
+void ChatMenus::RunMessageBarAction(ui::Event& ev, const MessageBarAction action) {
+  ui::Element* button = ev.GetCurrentElement();
+  if (!button) {
+    return;
+  }
+  ContextMenuRequest request;
+  request.target = button; // inside the message row: ForRequest finds its message-id upwards
+  request.context = button->GetContext();
+  request.position = MenuPositionBelowRightAlignedEvent(ev);
+  if (action == MessageBarAction::More) {
+    ContextMenuHost::Instance().ShowAt(request);
+    return;
+  }
+  const std::string id = MessageBarActionId(action);
+  for (ContextMenuAction& item : ForRequest(request)) {
+    if (item.id == id && item.run) {
+      item.run();
+      return;
+    }
+  }
+}
+
 std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& request) {
   std::vector<ContextMenuAction> actions;
   ConversationsFacade* facade = host_.Facade();

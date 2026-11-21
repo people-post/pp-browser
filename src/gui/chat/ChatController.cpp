@@ -6471,6 +6471,15 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("open_thread_actions_menu",
                                DataEventAt([this](ui::Event& ev) { menus_.OpenThreadActions(ev); }));
         ctor.BindEventCallback("start_call", DataEventAt([this](ui::Event& ev) { menus_.StartCall(ev); }));
+        ctor.BindEventCallback("msg_bar_reply", DataEventAt([this](ui::Event& ev) {
+                                 menus_.RunMessageBarAction(ev, MessageBarAction::Reply);
+                               }));
+        ctor.BindEventCallback("msg_bar_react", DataEventAt([this](ui::Event& ev) {
+                                 menus_.RunMessageBarAction(ev, MessageBarAction::React);
+                               }));
+        ctor.BindEventCallback("msg_bar_more", DataEventAt([this](ui::Event& ev) {
+                                 menus_.RunMessageBarAction(ev, MessageBarAction::More);
+                               }));
         ctor.BindEventCallback("call_back",
                                DataEvent<std::string>([this](const std::string& video) { menus_.CallBack(video); }));
         ctor.BindEventCallback("join_group_call", DataEvent([this] { OnJoinGroupCall(); }));

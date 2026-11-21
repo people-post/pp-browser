@@ -40,6 +40,8 @@
     "shell.sidebar.expand": "Expand list",
     "shell.chats.link_online": "Online",
     "shell.chats.link_offline": "Offline",
+    "shell.chats.empty_title": "Choose a chat",
+    "shell.chats.empty_body": "Pick a person or a group from the list on the left to read and write here.",
     "shell.chats.link_connecting": "Connecting…",
     "shell.statusbar.direct_off": "Direct link off",
     "shell.statusbar.brief_offline": "Brief offline",

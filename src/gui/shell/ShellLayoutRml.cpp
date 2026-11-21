@@ -101,6 +101,12 @@ std::string ShellLayoutRml::ExpandedBase() const {
     if (const PaneState* pane = FindPane(primary_key.c_str())) {
       out << PaneSlot(pane->spec.key, "shell-pane-primary", pane->spec.provides_composer);
     }
+  } else if (state_.nav_tab == NavTab::Sessions) {
+    // Chats with no chat open: say what to do, where the conversation will be.
+    out << "<div class=\"shell-pane shell-pane-primary shell-empty-state\" id=\"shell-empty-chat\">"
+           "<p class=\"shell-empty-title\">"
+        << Tr("shell.chats.empty_title") << "</p><p class=\"shell-empty-body\">" << Tr("shell.chats.empty_body")
+        << "</p></div>";
   }
   if (state_.auxiliary_open) {
     for (const PaneState& pane : state_.panes) {

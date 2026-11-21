@@ -2689,7 +2689,8 @@ void ShellHost::MountNavContent() {
   if (!target) {
     return;
   }
-  const std::string body = ViewCatalog::LoadBody(key);
+  const std::string body =
+      ViewCatalog::LoadBody(ViewCatalog::KeyForLayout(key, state_.layout_mode == LayoutMode::Expanded));
   if (!body.empty()) {
     RmlMount::MountInner(target, body);
   }
@@ -2889,7 +2890,8 @@ void ShellHost::MountPaneBodies() {
     if (!target) {
       return;
     }
-    const std::string body = ViewCatalog::LoadBody(key);
+    const std::string body =
+        ViewCatalog::LoadBody(ViewCatalog::KeyForLayout(key, state_.layout_mode == LayoutMode::Expanded));
     if (body.empty()) {
       // Avoid silent blank panes (common when packaged asset reads fail).
       ui::Log::Message(ui::Log::LT_ERROR, "ShellHost: failed to load view body for '%s'", key.c_str());
