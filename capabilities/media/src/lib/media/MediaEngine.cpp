@@ -1925,17 +1925,21 @@ struct MediaEngine::Impl {
         GiveUpCamera(kCameraStuckMessage);
         return nullptr;
       }
-      if (!camera_waiting.exchange(true, std::memory_order_acq_rel)) {
+      // The reason is noted before the wait shows (whoever sees CameraWaitingForDevice finds why). Only this
+      // thread sets the wait; the UI only clears it (a turn-off), so the read and the store need no exchange.
+      if (!camera_waiting.load(std::memory_order_acquire)) {
         EngineLog().info << "camera waiting for the device: " << lease.error().message;
         NoteCameraFailure(CameraFailure::Kind::Busy, kCameraBusyMessage);
+        camera_waiting.store(true, std::memory_order_release);
       }
       return nullptr;
     }
     camera_waiting.store(false, std::memory_order_relaxed);
     if (!lease) {
-      camera_enabled.store(false, std::memory_order_relaxed);
-      camera_prefer_front.store(true, std::memory_order_relaxed); // a failed facing is not asked for again
+      // Noted before video goes off, as a refused permission is: whoever sees it off finds why.
       NoteCameraFailure(CameraFailure::Kind::Failed, lease.error().message);
+      camera_prefer_front.store(true, std::memory_order_relaxed); // a failed facing is not asked for again
+      camera_enabled.store(false, std::memory_order_release);
       SDL_Log("MediaEngine: camera: %s", lease.error().message.c_str());
       return nullptr;
     }
@@ -2380,9 +2384,10 @@ struct MediaEngine::Impl {
   /** The camera cannot work this session: off, the person told why (and the roster withdrawn). */
   void GiveUpCamera(const char* message) {
     EngineLog().warning << "camera given up: " << message;
-    camera_enabled.store(false, std::memory_order_relaxed);
-    camera_waiting.store(false, std::memory_order_relaxed);
+    // Noted before video goes off (whoever sees it off finds why).
     NoteCameraFailure(CameraFailure::Kind::NotResponding, message);
+    camera_waiting.store(false, std::memory_order_relaxed);
+    camera_enabled.store(false, std::memory_order_release);
   }
 
   /** A camera that waits for its device gives up once that device has been stuck device_give_up_after. */
@@ -3070,12 +3075,12 @@ std::optional<CameraFailure> MediaEngine::TakeCameraFailure() {
 
 bool MediaEngine::IsCameraEnabled() const {
   const std::shared_ptr<Impl> impl = Session();
-  return impl->camera_enabled.load(std::memory_order_relaxed);
+  return impl->camera_enabled.load(std::memory_order_acquire); // off after a failure: its reason is noted
 }
 
 bool MediaEngine::CameraWaitingForDevice() const {
   const std::shared_ptr<Impl> impl = Session();
-  return impl->camera_enabled.load(std::memory_order_relaxed) && impl->camera_waiting.load(std::memory_order_relaxed);
+  return impl->camera_enabled.load(std::memory_order_relaxed) && impl->camera_waiting.load(std::memory_order_acquire);
 }
 
 bool MediaEngine::HasRemoteVideo() const {
