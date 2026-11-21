@@ -25,7 +25,9 @@ struct HybridKemKeyPair {
 
 /**
  * ML-KEM-768 encaps/decaps for `e2e_public` key_init.
- * Class name kept for call-site stability; wraps pp::MlKem + base64 wire encoding.
+ * Class name kept for call-site stability; wraps pp::MlKem + base64 wire encoding. The key_init is a typed KEM
+ * ciphertext (docs/contracts/SIGNED_EXTENSIONS.md § Typed blobs; envelope v4, release-compatibility SIGNED_FORMATS
+ * § 2.1): the KEM id (1, ml-kem-768), then the 1088-byte ciphertext, in standard base64.
  */
 class HybridKem {
 public:

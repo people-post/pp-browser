@@ -2,6 +2,7 @@
 #include "lib/delivery/EnvelopeSigner.h"
 #include "lib/delivery/RelayWirePayload.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
+#include "lib/delivery/testing/TypedBlobFakes.h"
 #include "foundation/crypto/CryptoUtil.h"
 
 #include <filesystem>
@@ -40,7 +41,11 @@ TEST(P2pRelayWireTest, RelayEnvelopeRoundTripAndPayloadCodec) {
 
   auto payload_b64 = RelayWirePayload::EncodePlaintextText("hello relay");
   ASSERT_TRUE(static_cast<bool>(payload_b64));
+  auto decoded = RelayWirePayload::DecodePlaintextText(*payload_b64);
+  ASSERT_TRUE(static_cast<bool>(decoded));
+  EXPECT_EQ(*decoded, "hello relay");
 
+  // On the wire a copy's payload is an AEAD blob (envelope v4: its first byte the AEAD id), read before verifying.
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "550e8400-e29b-41d4-a716-446655440000";
@@ -48,20 +53,17 @@ TEST(P2pRelayWireTest, RelayEnvelopeRoundTripAndPayloadCodec) {
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
-  envelope.body.e2e.payload_b64 = *payload_b64;
+  envelope.body.e2e.payload_b64 = test::FakePayloadB64();
   envelope.sender_seq = 1;
   envelope.session_epoch = 1;
   envelope.timestamp = 1719662400123;
-  envelope.signature = "sig";
+  envelope.signature = test::FakeSignatureB64();
 
   const auto parsed = ParseRelayEnvelope(RelayEnvelopeToJson(envelope));
   ASSERT_TRUE(static_cast<bool>(parsed));
   EXPECT_EQ(parsed.value().message_id, envelope.message_id);
   EXPECT_EQ(parsed.value().route.channel, ThreadChannel::E2e);
-
-  auto decoded = RelayWirePayload::DecodePlaintextText(parsed.value().body.e2e.payload_b64);
-  ASSERT_TRUE(static_cast<bool>(decoded));
-  EXPECT_EQ(*decoded, "hello relay");
+  EXPECT_EQ(parsed.value().body.e2e.payload_b64, envelope.body.e2e.payload_b64);
 }
 
 TEST(P2pRelayWireTest, TheSendersCardRidesWithAKeyInitAndTheDevicesAreSigned) {
@@ -74,10 +76,10 @@ TEST(P2pRelayWireTest, TheSendersCardRidesWithAKeyInitAndTheDevicesAreSigned) {
   envelope.recipient_device = "QmBobLaptop";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2ePublic;
-  envelope.body.e2e.payload_b64 = "cGF5bG9hZA==";
-  envelope.body.e2e.key_init_b64 = "a2V5X2luaXQ=";
+  envelope.body.e2e.payload_b64 = test::FakePayloadB64();
+  envelope.body.e2e.key_init_b64 = test::FakeKeyInitB64();
   envelope.timestamp = 1719662400123;
-  envelope.signature = "sig";
+  envelope.signature = test::FakeSignatureB64();
   const auto unsigned_bytes = EnvelopeSigner::BuildSignBytes(envelope);
   Object card;
   card.set("account_id", "account:alice");
@@ -133,9 +135,9 @@ TEST(P2pRelayWireTest, EveryEnvelopeMaySayHowNewItsSendersListIs) {
   envelope.recipient_device = "QmBobLaptop";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2ePublic;
-  envelope.body.e2e.payload_b64 = "cGF5bG9hZA==";
+  envelope.body.e2e.payload_b64 = test::FakePayloadB64();
   envelope.timestamp = 1719662400123;
-  envelope.signature = "sig";
+  envelope.signature = test::FakeSignatureB64();
   const auto unsigned_bytes = EnvelopeSigner::BuildSignBytes(envelope);
   envelope.body.e2e.sender_card_at = 1'761'235'200'000;
   EXPECT_EQ(EnvelopeSigner::BuildSignBytes(envelope).value(), unsigned_bytes.value());
@@ -158,11 +160,11 @@ TEST(P2pRelayWireTest, RejectsUnsafeMessageId) {
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
-  envelope.body.e2e.payload_b64 = "ignored";
+  envelope.body.e2e.payload_b64 = test::FakePayloadB64();
   envelope.sender_seq = 1;
   envelope.session_epoch = 1;
   envelope.timestamp = 1719662400123;
-  envelope.signature = "sig";
+  envelope.signature = test::FakeSignatureB64();
 
   // message_id ends up unescaped in generated RML (open_attachment('<id>')); an id carrying
   // quotes/HTML must be rejected at parse time rather than relying on downstream escaping.
@@ -179,11 +181,11 @@ TEST(P2pRelayWireTest, ChatHistoryResponseSkipsOneBadMessageInsteadOfFailingTheP
   good.sender_device = "QmAliceDevice";
   good.route.kind = "direct";
   good.route.channel = ThreadChannel::E2e;
-  good.body.e2e.payload_b64 = "ignored";
+  good.body.e2e.payload_b64 = test::FakePayloadB64();
   good.sender_seq = 1;
   good.session_epoch = 1;
   good.timestamp = 1719662400123;
-  good.signature = "sig";
+  good.signature = test::FakeSignatureB64();
 
   Object bad = RelayEnvelopeToJson(good);
   bad.set("message_id", R"(bad"id)");
@@ -213,12 +215,12 @@ TEST(P2pRelayWireTest, RelayWireRecordRoundTrip) {
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
-  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.body.e2e.payload_b64 = test::FakePayloadB64();
   envelope.sender_seq = 7;
   envelope.order_key = 7;
   envelope.session_epoch = 1;
   envelope.timestamp = 1719662400123;
-  envelope.signature = "sig";
+  envelope.signature = test::FakeSignatureB64();
   envelope.stream_key = "v1:e2e:1:account:alice123:account:bob456";
   envelope.recipient_account_id = "account:bob456";
 
@@ -255,12 +257,12 @@ TEST(P2pRelayWireTest, RelayWireRecordNamesBothAccounts) {
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
-  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.body.e2e.payload_b64 = test::FakePayloadB64();
   envelope.sender_seq = 7;
   envelope.order_key = 7;
   envelope.session_epoch = 1;
   envelope.timestamp = 1719662400123;
-  envelope.signature = "sig";
+  envelope.signature = test::FakeSignatureB64();
   envelope.stream_key = "v1:e2e:1:account:alice123:account:bob456";
   envelope.recipient_account_id = "account:bob456";
 
@@ -293,12 +295,12 @@ TEST(P2pRelayWireTest, UrgentWakeIsARelayHintOutsideTheEnvelope) {
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
-  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.body.e2e.payload_b64 = test::FakePayloadB64();
   envelope.sender_seq = 7;
   envelope.order_key = 7;
   envelope.session_epoch = 1;
   envelope.timestamp = 1719662400123;
-  envelope.signature = "sig";
+  envelope.signature = test::FakeSignatureB64();
   envelope.stream_key = "v1:e2e:1:account:alice123:account:bob456";
   envelope.recipient_account_id = "account:bob456";
 
@@ -326,10 +328,10 @@ TEST(P2pRelayWireTest, HowLongTheRelayKeepsARecordIsAHintOutsideTheEnvelope) {
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "control";
   envelope.route.channel = ThreadChannel::E2ePublic;
-  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.body.e2e.payload_b64 = test::FakePayloadB64();
   envelope.order_key = 9;
   envelope.timestamp = 1719662400123;
-  envelope.signature = "sig";
+  envelope.signature = test::FakeSignatureB64();
   envelope.stream_key = "v1:control:account:alice123:account:bob456";
   envelope.recipient_account_id = "account:bob456";
 
@@ -354,12 +356,12 @@ TEST(P2pRelayWireTest, WakeHintIsARelayHintOutsideTheEnvelope) {
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
-  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.body.e2e.payload_b64 = test::FakePayloadB64();
   envelope.sender_seq = 7;
   envelope.order_key = 7;
   envelope.session_epoch = 1;
   envelope.timestamp = 1719662400123;
-  envelope.signature = "sig";
+  envelope.signature = test::FakeSignatureB64();
   envelope.stream_key = "v1:e2e:1:account:alice123:account:bob456";
   envelope.recipient_account_id = "account:bob456";
 
@@ -390,12 +392,12 @@ TEST(P2pRelayWireTest, NoKindIsSent) {
   envelope.sender_device = "QmAliceDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
-  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.body.e2e.payload_b64 = test::FakePayloadB64();
   envelope.sender_seq = 7;
   envelope.order_key = 7;
   envelope.session_epoch = 1;
   envelope.timestamp = 1719662400123;
-  envelope.signature = "sig";
+  envelope.signature = test::FakeSignatureB64();
   envelope.stream_key = "v1:e2e:1:account:alice123:account:bob456";
   envelope.recipient_account_id = "account:bob456";
   envelope.relay_wake_hint = "m";

@@ -7,6 +7,7 @@
 #include "lib/delivery/PeerRequestAuth.h"
 #include "common/Utilities.h"
 #include "common/chat/MessagingJson.h"
+#include "foundation/error/AppError.h"
 #include "common/chat/MessagingLimits.h"
 #include "amp/L3/ChannelPolicy.h"
 #include "amp/L3/ChannelSession.h"
@@ -102,7 +103,12 @@ struct AmpChatHistoryTransport::Impl {
           [this](const std::vector<uint8_t>& bytes) { return identity.SignDeviceBytes(bytes); }, remote_peer_id,
           signing_keys, util::NowUnixMs());
       if (!response) {
-        return; // refused or failed: the asker gets no answer either way
+        // A request this app cannot read (a newer auth version or critical extension) is told so; any other refusal
+        // or failure gets no answer.
+        if (AppError::IsNewerFormat(response.error())) {
+          reply->Send(JsonToBody(DumpJson(UpdateNeededRefusalToJson())));
+        }
+        return;
       }
       const std::string response_json = DumpJson(ChatHistoryResponseToJson(*response));
       reply->Send(JsonToBody(response_json));
@@ -218,6 +224,10 @@ void AmpChatHistoryTransport::FetchChatHistoryAsync(const ChatHistoryRequest& re
     auto root = TryParseObject(*value);
     if (!root) {
       (*finish_once)(Error("Invalid chat-history response JSON"));
+      return;
+    }
+    if (IsUpdateNeededRefusal(*root)) {
+      (*finish_once)(Error("chat history: the peer's app cannot read the request (update_needed)"));
       return;
     }
     (*finish_once)(ChatHistoryResponseFromJson(*root));

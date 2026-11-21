@@ -122,15 +122,9 @@ Roe<RelayEnvelope> BuildControlLaneEnvelope(const ControlLaneSendParams& params,
       BuildControlRelayStreamKey(params.sender_account_id, params.peer_account_id) + ":from:" + params.sender_device;
   envelope.recipient_account_id = params.peer_account_id;
   envelope.timestamp = control.timestamp;
-  auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
-  if (!sign_bytes) {
-    return sign_bytes.error();
+  if (auto signed_envelope = EnvelopeSigner::Sign(envelope, sign); !signed_envelope) {
+    return signed_envelope.error();
   }
-  auto signature = sign(*sign_bytes);
-  if (!signature) {
-    return signature.error();
-  }
-  envelope.signature = *signature;
   return envelope;
 }
 

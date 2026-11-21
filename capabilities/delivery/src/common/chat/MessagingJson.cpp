@@ -5,8 +5,10 @@
 #include "common/ValueJson.h"
 #include "crypto/SodiumUtil.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <optional>
 #include <map>
 #include <set>
 #include <sstream>
@@ -46,6 +48,67 @@ bool IsSafeMessageId(const std::string& id) {
     }
   }
   return true;
+}
+
+/**
+ * A signed object's outside version (release-compatibility SIGNED_FORMATS § 1.1): the integer at `key`, nullopt when
+ * missing or not one. foundation/crypto's OutsideVersionOfJson, which common/ may not include.
+ */
+std::optional<int64_t> OutsideVersion(const Object& json, const std::string& key) {
+  if (auto value = json.getIf<int64_t>(key)) {
+    return value;
+  }
+  if (auto value = json.getNonNegInt(key)) { // past int64: newer anyway
+    return static_cast<int64_t>(std::min<uint64_t>(*value, static_cast<uint64_t>(INT64_MAX)));
+  }
+  return std::nullopt;
+}
+
+constexpr char kExtB64[] = "ext_b64";
+
+/**
+ * A JSON object's signed extension area (docs/contracts/SIGNED_EXTENSIONS.md § The extension area): `ext_b64`, the
+ * entries in standard base64; absent or "" is the empty area; anything else that does not decode is malformed. The
+ * rule of foundation/crypto's ReadExtB64 / WriteExtB64, with the libraries alone (common/ does not include
+ * foundation/).
+ */
+Roe<pp::ExtArea> ReadExt(const Object& json) {
+  if (!json.contains(kExtB64)) {
+    return pp::ExtArea{};
+  }
+  const std::optional<std::string> text = json.getString(kExtB64);
+  if (!text) {
+    return Error("ext_b64: not a string");
+  }
+  if (text->empty()) {
+    return pp::ExtArea{};
+  }
+  auto entries = ::pp::Base64Decode(*text);
+  if (!entries) {
+    return Error("ext_b64: not base64");
+  }
+  auto ext = pp::ExtArea::DecodeEntries(*entries);
+  if (!ext) {
+    return Error("ext_b64: " + std::string(pp::ExtArea::ErrName(ext.error().GetCode())));
+  }
+  return std::move(ext.value());
+}
+
+void WriteExt(Object& json, const pp::ExtArea& ext) {
+  if (!ext.empty()) {
+    json.set(kExtB64, ::pp::Base64Encode(ext.EncodeEntries()));
+  }
+}
+
+/** PeerRequestAuth v2's version and extension area (SIGNED_FORMATS § 2.7); a bad area is kept for its step 2. */
+template <typename Request>
+void ReadPeerRequestAuthExtras(const Object& json, Request& request) {
+  request.auth_version = OutsideVersion(json, "auth_version");
+  if (auto ext = ReadExt(json)) {
+    request.ext = std::move(*ext);
+  } else {
+    request.ext_error = ext.error().message;
+  }
 }
 
 Value ChatActionsToJson(const std::vector<TranscriptChatAction>& actions) {
@@ -347,6 +410,7 @@ Object RelayEnvelopeToJson(const RelayEnvelope& envelope) {
   json.set("body", body);
   json.set("timestamp", envelope.timestamp);
   json.set("signature", envelope.signature);
+  WriteExt(json, envelope.ext);
   json.set("stream_key", envelope.stream_key);
   json.setJsonUInt("order_key", envelope.order_key);
   if (envelope.recipient_account_id) {
@@ -368,15 +432,16 @@ Object RelayEnvelopeToApplicationJson(const RelayEnvelope& envelope) {
   json.set("body", body);
   json.set("timestamp", envelope.timestamp);
   json.set("signature", envelope.signature);
+  WriteExt(json, envelope.ext);
   return json;
 }
 
 namespace {
 
 /**
- * A higher `envelope_version` (release-compatibility INVENTORY T2): only what routes and numbers it — who sent it, to
- * which of our devices, at which epoch and seq — read loosely. Its body and signature are a newer app's: nothing in
- * it is decrypted, verified or acted on. The receiver closes those seqs as empty and shows "update to view".
+ * A newer app's envelope (release-compatibility INVENTORY T2): a higher `envelope_version`. Only what routes and numbers it — who sent it, to which of our devices, at which epoch and
+ * seq — is read, loosely. Its body and signature are a newer app's: nothing in it is decrypted, verified or acted on.
+ * The receiver closes those seqs as empty and shows "update to view".
  */
 Roe<RelayEnvelope> ParseNewerRelayEnvelope(const Object& json, const int64_t version) {
   auto message_id = json.getString("message_id");
@@ -395,6 +460,7 @@ Roe<RelayEnvelope> ParseNewerRelayEnvelope(const Object& json, const int64_t ver
   }
   RelayEnvelope envelope;
   envelope.envelope_version = static_cast<int>(version); // within int32 (checked by the caller)
+  envelope.needs_update = "envelope_version " + std::to_string(version);
   envelope.message_id = *message_id;
   envelope.sender_contact_id = *sender_contact_id;
   envelope.sender_device = *sender_device;
@@ -446,22 +512,20 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (json.contains("thread_id")) {
     return Error("Legacy relay envelope thread_id is not supported");
   }
-  auto version_opt = json.getIf<int64_t>("envelope_version");
-  if (!version_opt) {
-    if (auto as_u = json.getNonNegInt("envelope_version")) {
-      version_opt = static_cast<int64_t>(*as_u);
+  // 1. The outside version, before anything is parsed (SIGNED_FORMATS § 1.1): release 1 reads only its own.
+  const std::optional<int64_t> version_opt = OutsideVersion(json, "envelope_version");
+  if (!version_opt || *version_opt < kRelayEnvelopeVersion) {
+    return Error("Envelope made by an older app (envelope_version " +
+                 (version_opt ? std::to_string(*version_opt) : std::string("missing")) + ")");
+  }
+  if (*version_opt > kRelayEnvelopeVersion) {
+    if (*version_opt > INT32_MAX) { // compared before narrowing
+      return Error("envelope_version out of range");
     }
-  }
-  if (!version_opt) {
-    return Error("Missing envelope_version");
-  }
-  if (*version_opt > kRelayEnvelopeVersion && *version_opt <= INT32_MAX) {
     return ParseNewerRelayEnvelope(json, *version_opt); // a newer app's: routing and numbering only (T2)
   }
-  if (*version_opt != kRelayEnvelopeVersion) { // compared before narrowing
-    return Error("Unsupported envelope_version");
-  }
   const int version = kRelayEnvelopeVersion;
+  // 2. Its fields.
   auto message_id = json.getString("message_id");
   if (!message_id) {
     return Error("Missing message_id");
@@ -620,6 +684,13 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
     }
     envelope.recipient_account_id = *recipient;
   }
+  auto ext = ReadExt(json);
+  if (!ext) {
+    return Error("Malformed envelope ext_b64: " + ext.error().message);
+  }
+  envelope.ext = std::move(*ext);
+  // The algorithm ids (3), the signature (4) and the area's critical entries (5) are the receiver's
+  // (EnvelopeSigner::UnknownAlgorithm and Receive), with the sender's card.
   return envelope;
 }
 
@@ -773,10 +844,14 @@ Object ChatHistoryRequestToJson(const ChatHistoryRequest& request) {
     json.setJsonUInt("max_sender_seq", *request.max_sender_seq);
   }
   if (!request.signature.empty()) {
+    if (request.auth_version) {
+      json.set("auth_version", *request.auth_version);
+    }
     json.set("requester_account_id", request.requester_account_id);
     json.set("requester_peer_id", request.requester_peer_id);
     json.set("timestamp_ms", request.timestamp_ms);
     json.set("signature", request.signature);
+    WriteExt(json, request.ext);
   }
   return json;
 }
@@ -822,6 +897,7 @@ Roe<ChatHistoryRequest> ChatHistoryRequestFromJson(const Object& json) {
   if (auto signature = json.getString("signature")) {
     request.signature = *signature;
   }
+  ReadPeerRequestAuthExtras(json, request);
   return request;
 }
 
@@ -1005,10 +1081,14 @@ Object ChatBlobRequestToJson(const ChatBlobRequest& request) {
   json.set("content_hash_hex", request.content_hash_hex);
   json.set("channel", ThreadChannelToString(request.channel));
   if (!request.signature.empty()) {
+    if (request.auth_version) {
+      json.set("auth_version", *request.auth_version);
+    }
     json.set("requester_account_id", request.requester_account_id);
     json.set("requester_peer_id", request.requester_peer_id);
     json.set("timestamp_ms", request.timestamp_ms);
     json.set("signature", request.signature);
+    WriteExt(json, request.ext);
   }
   return json;
 }
@@ -1043,6 +1123,7 @@ Roe<ChatBlobRequest> ChatBlobRequestFromJson(const Object& json) {
   if (auto signature = json.getString("signature")) {
     request.signature = *signature;
   }
+  ReadPeerRequestAuthExtras(json, request);
   if (request.op == ChatBlobOp::FetchPublic) {
     if (auto thread_id = json.getString("thread_id")) {
       request.thread_id = *thread_id;
@@ -1071,6 +1152,18 @@ Object ChatBlobAckToJson(const bool ok, const std::string& error) {
     json.set("error", error);
   }
   return json;
+}
+
+Object UpdateNeededRefusalToJson() {
+  Object json;
+  json.set("ok", false);
+  json.set("code", kUpdateNeededCode);
+  return json;
+}
+
+bool IsUpdateNeededRefusal(const Object& answer) {
+  return answer.getIf<bool>("ok") == std::optional<bool>(false) &&
+         answer.getString("code").value_or("") == kUpdateNeededCode;
 }
 
 } // namespace pbr

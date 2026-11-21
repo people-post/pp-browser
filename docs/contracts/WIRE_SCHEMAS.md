@@ -53,7 +53,7 @@ Forward-compat policy for older clients vs newer peers/APIs: [COMPATIBILITY.md](
 | **`RelayWireRecord`** (HTTP relay) | **Reject** unknown top-level keys. Relay is format-blind — only routing + `blob_b64`. |
 | **`ChatPayload` (binary)** | An unknown `content_type`, a higher `payload_version` or a higher `sub_version` of a known type after decrypt: **kept** as "update to view", its bytes stored as received (R018, [§ ChatPayload rules](#binary-layout-payload_version--1)); **reject** malformed tails of known types in v1 (and a lower, retired `sub_version`). |
 | **`ChatHistoryRequest` / `ChatHistoryResponse`** | **Reject** unknown top-level keys (server/client negotiated API). |
-| **Signature input** | Only documented canonical fields participate in signed bytes — unknown envelope keys are **not** signed unless a future `envelope_version` spec says otherwise. **Normative byte layout:** [e2e DESIGN § Ed25519 signing](../../projects/e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes) (E014). |
+| **Signature input** | Only documented canonical fields participate in signed bytes — unknown envelope keys are **not** signed; what a later version adds that an older reader may ignore goes in the signed extension area (`ext_b64`, [SIGNED_EXTENSIONS](SIGNED_EXTENSIONS.md)). **Normative byte layout:** [MESSAGE_ENCRYPTION § Canonical relay-envelope signing bytes](MESSAGE_ENCRYPTION.md#canonical-relay-envelope-signing-bytes-e014). |
 
 ---
 
@@ -103,13 +103,13 @@ The relay **never parses** application envelopes. pp-browser wraps the signed `R
 
 ---
 
-## `RelayEnvelope` (v3 — `envelope_version: 3`)
+## `RelayEnvelope` (v4 — `envelope_version: 4`)
 
 Signed application wrapper **inside `blob_b64`**. **No `thread_id`.** See [DESIGN § Relay envelope](../../projects/chat-storage-and-memory/DESIGN.md#relay--direct-envelope-d056-d063).
 
 ```json
 {
-  "envelope_version": 3,
+  "envelope_version": 4,
   "message_id": "550e8400-e29b-41d4-a716-446655440000",
   "sender_contact_id": "account:…",
   "sender_device": "12D3Koo…",
@@ -127,7 +127,8 @@ Signed application wrapper **inside `blob_b64`**. **No `thread_id`.** See [DESIG
     }
   },
   "timestamp": 1719662400123,
-  "signature": "base64-ed25519"
+  "signature": "base64 of the typed signature (ml-dsa-65)",
+  "ext_b64": "only when the extension area is not empty"
 }
 ```
 
@@ -135,22 +136,26 @@ Signed application wrapper **inside `blob_b64`**. **No `thread_id`.** See [DESIG
 
 **Devices (v2, [M021](../../projects/multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) / [M022](../../projects/multi-device-account/DECISIONS.md#m022--one-relay-record-per-account-carries-every-devices-copy-an-account-writes-to-itself)):** every envelope names the device that sent it (`sender_device`, its PeerId) and is signed once by that device's key, as the sender's account card lists it ([ACCOUNT_CARD](ACCOUNT_CARD.md)). It is **one record per recipient account** carrying a **copy per recipient device** in `body.e2e.copies`: each a message in that device pair's `e2e_public` session, numbered there (`session_epoch`, `sender_seq`). A copy with no `recipient_device` is the **account copy**, in the account-level session, read by every device of the account (a first contact before the sender knows the recipient's devices, a private `e2e` chat, a lane notice to our own account). The control lane goes per device too ([M024](../../projects/multi-device-account/DECISIONS.md#m024--the-control-lane-goes-per-device-a-calls-media-key-rides-the-copy)): an account copy there only for a peer we hold no card for, and — for one release — between two single-device accounts. A device reads its own copy, else the account copy; a record with copies for its siblings only is not its own (a copy missing for it). A device the sender has a live link to gets its copy in an envelope of its own over that link; the others share the relay record. The account's own devices hear from each other through records to their own account (the relay allows sender = recipient): control-lane notices — `device_list` (the sender's card; a nudge to sync the account locker) and `sent_copy` (below).
 
-### Ed25519 canonical signing (E014)
+### Canonical signing (E014; envelope v4, release-compatibility SIGNED_FORMATS § 2.1)
 
-Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `dump()` of the envelope. String fields in sign bytes use **LenUtf8** (D088).
+Implement via **`EnvelopeSigner`** in `lib/delivery`. **Do not** sign JSON `dump()` of the envelope. The signed bytes follow [SIGNED_EXTENSIONS § Signed bytes](SIGNED_EXTENSIONS.md#signed-bytes): a domain without `-vN`, NUL, the version, the fields in the [pp binary wire profile](#pp-binary-wire-profile-d088), the extension area last.
 
-| Topic | v1 rule |
-|-------|---------|
-| Sign bytes | Fixed binary: domain prefix + `sign_version` + fields — full layout in [e2e DESIGN § Ed25519 signing](../../projects/e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes) |
-| Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `route` (kind / channel as enums), `timestamp`, `sender_device`, and every copy: `recipient_device`, `session_epoch`, `sender_seq`, `key_init_b64`, its payload hash (sign v5 — [MESSAGE_ENCRYPTION](MESSAGE_ENCRYPTION.md); a group copy's group is inside its payload) |
+| Topic | Rule |
+|-------|------|
+| Sign bytes | `"pp-browser:relay-envelope"` NUL ‖ `u8 4` ‖ fields ‖ ext area — full layout in [MESSAGE_ENCRYPTION § Canonical relay-envelope signing bytes](MESSAGE_ENCRYPTION.md#canonical-relay-envelope-signing-bytes-e014). One version: `envelope_version` outside, the byte after the domain inside (no separate sign version) |
+| Signed fields | `envelope_version`, `route` (kind / channel as enums), `timestamp`, `message_id`, `sender_contact_id`, `sender_device`, every copy (`recipient_device`, `session_epoch`, `sender_seq`, `key_init_b64`, its payload hash; a group copy's group is inside its payload), the extension area (`ext_b64`, decoded) |
 | Direct channel enum | `0` = `e2e`, `1` = `e2e_public` (D090) |
 | Copy hash | BLAKE2b-256 over exactly what that device decrypts: `0x02` ‖ LenBytes(payload) — no `0x01` public path |
 | Not signed | `thread_id`, `recipient_account_id`, `stream_key`, `order_key`, `signature`, `body.e2e.sender_card` (signed by its account), `body.e2e.sender_card_at` (a hint), relay metadata, unknown keys |
-| `signature` encoding | Standard **base64** (RFC 4648, padded) only in v1 |
+| Typed blobs ([SIGNED_EXTENSIONS § Typed blobs](SIGNED_EXTENSIONS.md#typed-blobs)) | `signature`: the sending device key's id (`1`, ml-dsa-65; 3310 bytes); `copies[].key_init_b64`: KEM id `1` (ml-kem-768), then the ciphertext (1089 bytes); `copies[].payload_b64`: AEAD id `1` (xchacha20-poly1305), the bytes unchanged. All standard **base64** (RFC 4648, padded) |
+| Extension area | `ext_b64` at the top level: standard base64 of the entries; absent when empty (every envelope at release 1). No area per copy: what is per device belongs in the copy's ciphertext |
+| Vectors | `capabilities/delivery/src/lib/delivery/tests/data/envelope_vectors.json`: the signed bytes of a fixed envelope (empty area, one unknown non-critical entry) and fixtures with the receiver's verdict |
+
+**Receiver** ([SIGNED_EXTENSIONS § The receiver's order](SIGNED_EXTENSIONS.md#the-receivers-order)): `envelope_version` first — missing or below 4 is an older app's and refused; above 4 is a newer app's (below). Then the fields and the area (malformed: refused), the typed blobs' algorithm ids (one this build does not know: a newer app's, as a higher version), the signature with the sending device's key from the sender's card (a forgery: refused), and last the area's critical entries: one this build does not understand, once the signature verified, is a newer app's too. Unknown non-critical entries are ignored and kept.
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `envelope_version` | integer | yes | **3** (no relay id, multi-relay MR001; 2 named the sender's `relay:` id and is refused, as 1 is). Signed (D072). Bump independently of `ChatPayload.payload_version`. A **higher** one (up to 2³¹−1) is a newer app's: only `message_id`, `sender_contact_id`, `sender_device`, `route.kind` / `channel`, `timestamp`, `stream_key`, `order_key` and each copy's `recipient_device`, `session_epoch` and `sender_seq` are read, loosely — nothing is decrypted or verified. The receiver closes that seq as empty in our copy's numbering (at the epoch the pair is at; it moves no epoch), stores one "update to view" row with no seq, and marks the sender as using a newer app ([COMPATIBILITY § Wire / peer](COMPATIBILITY.md#wire--peer-newer-apps), release-compatibility INVENTORY T2) — on the relay poll, in history answers and over a link alike, so a thread never waits in Gap for it. |
+| `envelope_version` | integer | yes | **4** (the signed-format cutover, release-compatibility RC020; release 1's floor: 3 and below, made before it, are refused). Signed (D072). Bump independently of `ChatPayload.payload_version`. A **higher** one (up to 2³¹−1) — or an envelope naming an algorithm id this build does not know, or (after its signature verified) holding a critical extension it does not understand — is a newer app's: only `message_id`, `sender_contact_id`, `sender_device`, `route.kind` / `channel`, `timestamp`, `stream_key`, `order_key` and each copy's `recipient_device`, `session_epoch` and `sender_seq` are read, loosely — nothing is decrypted or verified. The receiver closes that seq as empty in our copy's numbering (at the epoch the pair is at; it moves no epoch), stores one "update to view" row with no seq, and marks the sender as using a newer app ([COMPATIBILITY § Wire / peer](COMPATIBILITY.md#wire--peer-newer-apps), release-compatibility INVENTORY T2) — on the relay poll, in history answers and over a link alike, so a thread never waits in Gap for it. |
 | `message_id` | string, 1–96 chars of `[A-Za-z0-9_-]` (a UUID in practice) | yes | Dedup key (D034). Inbound envelopes with any other character or length are rejected: the id lands in generated RML and as a SQLite key |
 | `sender_contact_id` | string | yes | Sender **communicating identity value** (D079) — the Account ID |
 | `sender_device` | string | yes | The sending device's PeerId; its key signs the envelope (M021) |
@@ -158,7 +163,8 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 | `body` | object | yes | **`body.e2e`** — see below (D090) |
 | `body.e2e.copies[]` | array, 1–8 | yes | One per recipient device (at most one with no `recipient_device`: the account copy) — see below |
 | `timestamp` | integer (i64) | yes | Unix **milliseconds**; display metadata; not sort authority (D054). Included in sign bytes (E014). |
-| `signature` | string | yes | ML-DSA-65 by the sending device's key over the canonical sign bytes; **base64** (RFC 4648, padded) |
+| `signature` | string | yes | The typed signature (id `1`, ML-DSA-65) by the sending device's key over the canonical sign bytes; **base64** (RFC 4648, padded) |
+| `ext_b64` | string | no | The signed extension area's entries, standard base64 ([SIGNED_EXTENSIONS](SIGNED_EXTENSIONS.md#the-extension-area)); absent when empty. No type is defined at release 1 |
 
 ### Relay routing metadata (unsigned — v1)
 
@@ -189,8 +195,8 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 | `copies[].recipient_device` | string | no | The recipient's device (PeerId) this copy is for; absent: the account copy |
 | `copies[].session_epoch` | integer (u32) | yes | The copy's device pair's `e2e_public` session epoch (the account-level one for an account copy) |
 | `copies[].sender_seq` | integer (u64) | yes | Our count in that pair (0 on the control lane) |
-| `copies[].key_init_b64` | string | no | **`e2e_public` only** — ML-KEM-768 encapsulation opening the copy's session: to that device's KEM key, or the account KEM for an account copy (M021). `psk_rotate`: wrap to account KEM or conversation KEM (**E027**); authenticity via AEAD `detail.key_init_hash`. Relay may store/forward; must not learn PSK. Signed. Omit on **`e2e` (private)** and when the recipient device already has the session (except `psk_rotate`). |
-| `copies[].payload_b64` | string | yes | RFC 4648 base64 of `[version:1][nonce:24][ciphertext+tag]` (E009) |
+| `copies[].key_init_b64` | string | no | **`e2e_public` only** — a typed KEM ciphertext (id `1`, ML-KEM-768: 1089 bytes) opening the copy's session: to that device's KEM key, or the account KEM for an account copy (M021). `psk_rotate`: wrap to account KEM or conversation KEM (**E027**); authenticity via AEAD `detail.key_init_hash`. Relay may store/forward; must not learn PSK. Signed. Omit on **`e2e` (private)** and when the recipient device already has the session (except `psk_rotate`). |
+| `copies[].payload_b64` | string | yes | RFC 4648 base64 of `[aead id:1][nonce:24][ciphertext+tag]` (E009; the first byte, `1`, is the AEAD id xchacha20-poly1305) |
 | `sender_card` | object | no | Only when a copy carries a `key_init_b64` or is the account copy — or on the control lane, whose sender decides (`ControlLaneCarriesCard`): the sender's account card ([ACCOUNT_CARD](ACCOUNT_CARD.md)) — the device list the receiver verifies the sending device with and answers. Must name `sender_contact_id`. |
 | `sender_card_at` | integer (i64) | no | The `issued_at` of the sender's newest account card, on every envelope (M021 d6). A receiver whose kept card is older asks the sending device for it (`card_ask`, below). Not signed — a false value costs at most a rate-limited ask and never stops a later one (`CardAskGate`, below); the card proves itself |
 
@@ -450,12 +456,23 @@ Example libp2p / client JSON:
 | `max_sender_seq` | integer | no | Inclusive upper bound — mapped to relay `max_index_key` in v1 |
 | `limit` | integer | no | Default **50**, max **100** (D029) |
 | `order` | string | no | `asc` (default) \| `desc` |
+| `auth_version` | integer | peer-direct | **2** (`PeerRequestAuth` v2, release-compatibility SIGNED_FORMATS § 2.7), read first: missing or lower is refused, higher is "update needed" |
 | `requester_account_id` | string | peer-direct | The requesting **account** — the responder serves this account's thread only |
 | `requester_peer_id` | string | peer-direct | The requester's device PeerId — must be the Amp link's authenticated remote peer |
 | `timestamp_ms` | integer | peer-direct | Signing time; refused beyond ±5 min of the responder's clock |
-| `signature` | string | peer-direct | ML-DSA-65 by the requester's account key over `PeerRequestAuth::SignBytes` (domain `"pp-browser:peer-request-sign-v1"`, kind `history`, the three fields above, then every request field LenUtf8 / BE ints) |
+| `signature` | string | peer-direct | The typed signature (id `1`, ML-DSA-65) by the requester's account key over `PeerRequestAuth::SignBytes` (below), base64 |
+| `ext_b64` | string | no | The signed extension area's entries (absent when empty; none defined at release 1) |
 
-**Peer-direct requests are authenticated** (history and `/pp/blob/1.0.0` alike): the Amp link proves a device, not an account, so the body's `requester_identity_*` is never trusted on its own. The responder verifies the signature with the account's known signing key, requires `requester_peer_id` to be the link's peer and the time to be recent, then serves only that account's direct thread. A blob fetch serves only attachments this device sent in that thread. Every refusal answers the same (blob: `{"ok":false,"error":"Not available"}`; history: no answer). The relay's HTTP history path is authenticated by the relay and does not use these fields.
+**`PeerRequestAuth` v2** signed bytes, the same for history, blob and account-card requests:
+
+```
+"pp-browser:peer-request" 00 ‖ u8 2 ‖ LenUtf8 kind ("history" | "blob" | "account-card")
+‖ LenUtf8 requester_account_id ‖ LenUtf8 requester_peer_id ‖ i64 timestamp_ms ‖ (the kind's fields) ‖ ext area
+```
+
+The kind's fields: **history** — `requester_identity_kind`, `requester_identity_value`, `peer_identity_kind`, `peer_identity_value`, `channel` (its string), LenUtf8 each; `session_epoch` u32; `min_sender_seq` u64 (0 when absent), `max_sender_seq` u64 (2⁶⁴−1 when absent), `limit` u64; `order` LenUtf8. **blob** — `op` u8 (0 fetch, 1 push, 2 fetch_public); the four identity fields, `thread_id`, `content_hash_hex`, `channel`, LenUtf8 each. **account-card** — `account_id` LenUtf8 (the card asked for). History and blob requests carry `auth_version`, `ext_b64` and `signature` at the top level beside the other auth fields; an account-card request in its `auth` object (with `requester_keys`, the requester's key card). Vectors: `capabilities/delivery/src/lib/delivery/tests/data/peer_request_vectors.json`.
+
+**Peer-direct requests are authenticated** (history and `/pp/blob/1.0.0` alike): the Amp link proves a device, not an account, so the body's `requester_identity_*` is never trusted on its own. The responder verifies the signature with the account's known signing key, requires `requester_peer_id` to be the link's peer and the time to be recent, then serves only that account's direct thread. A blob fetch serves only attachments this device sent in that thread. The receiver's order comes first ([SIGNED_EXTENSIONS](SIGNED_EXTENSIONS.md#the-receivers-order)): a request this app cannot read — a higher `auth_version`, an unknown algorithm id, or (once verified) an unknown critical extension — is answered **`{"ok":false,"code":"update_needed"}`** (history, blob and account card alike), never a silent close. Every other refusal answers the same (blob: `{"ok":false,"error":"Not available"}`; account card: `{"error":"not_available"}`; history: no answer). The relay's HTTP history path is authenticated by the relay and does not use these fields.
 
 ### Stream history (HTTP relay)
 
@@ -595,7 +612,8 @@ The version changes only when the core, the seal or the nonce changes meaning; a
 | Artifact | Version field | Bump when |
 |----------|---------------|-----------|
 | SQLite `thread.db` / `profile.db` | `PRAGMA user_version` | Column/table layout change — **migrate** (D069) |
-| `RelayEnvelope` | `envelope_version` | Outer wire shape or signing canonical set changes |
+| `RelayEnvelope` | `envelope_version` (4; also the signed byte after the domain) | Outer wire shape or signing canonical set changes; additive signed data goes in `ext_b64` |
+| `PeerRequestAuth` | `auth_version` (2; also the signed byte after the domain) | The signed fields of a history, blob or account-card request change |
 | `ChatPayload` | `payload_version` | Body binary layout or required tail fields change (D087) |
 | Binary wire profile | (per-format version byte) | LenUtf8 rules unchanged; bump format version on layout break |
 | E2E AAD | `aad_version` | [e2e-message-crypto DESIGN](../../projects/e2e-message-crypto/DESIGN.md) |

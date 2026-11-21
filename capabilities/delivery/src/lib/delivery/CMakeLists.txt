@@ -36,6 +36,7 @@ pp_browser_add_lib_library(pp_lib_delivery
     RelayWirePayload.cpp
     IPeerSessionStore.cpp
     TextSpans.cpp
+    TypedSigning.cpp
   PUBLIC_LIBS
     pp_delivery_common
     pp_lib_people

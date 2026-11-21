@@ -1,6 +1,8 @@
 #include "lib/people/AccountCardRequest.h"
 
 #include "common/ValueJson.h"
+#include "foundation/crypto/SignedBytes.h"
+#include "foundation/crypto/SignedReceive.h"
 
 #include <utility>
 
@@ -11,10 +13,14 @@ std::string EncodeAccountCardRequest(const AccountCardRequest& request) {
   json.set("op", "get_card");
   json.set("account_id", request.account_id);
   Object auth;
+  if (request.auth_version) {
+    auth.set("auth_version", *request.auth_version);
+  }
   auth.set("requester_account_id", request.requester_account_id);
   auth.set("requester_peer_id", request.requester_peer_id);
   auth.set("timestamp_ms", request.timestamp_ms);
   auth.set("signature", request.signature);
+  WriteExtB64(auth, request.ext);
   if (request.requester_keys) {
     auth.set("requester_keys", KeyCardToJson(*request.requester_keys));
   }
@@ -33,6 +39,12 @@ Roe<AccountCardRequest> DecodeAccountCardRequest(const std::string& json_text) {
     return Error("account card: get_card names no account");
   }
   if (const Object* auth = json->getObject("auth")) {
+    request.auth_version = OutsideVersionOfJson(*auth, "auth_version");
+    if (auto ext = ReadExtB64(*auth)) {
+      request.ext = std::move(*ext);
+    } else {
+      request.ext_error = ext.error().message;
+    }
     request.requester_account_id = auth->getString("requester_account_id").value_or("");
     request.requester_peer_id = auth->getString("requester_peer_id").value_or("");
     request.timestamp_ms = auth->getIf<int64_t>("timestamp_ms").value_or(0);
@@ -52,6 +64,9 @@ std::string EncodeAccountCardReply(const AccountCardReply& reply) {
     json.set("card", AccountCardToJson(*reply.card));
   } else if (reply.key_card) {
     json.set("key_card", KeyCardToJson(*reply.key_card));
+  } else if (reply.error == kAccountCardUpdateNeeded) {
+    json.set("ok", false); // the coded refusal every peer-direct server answers (PeerRequestAuth v2)
+    json.set("code", reply.error);
   } else {
     json.set("error", reply.error.empty() ? std::string("not_available") : reply.error);
   }
@@ -76,6 +91,8 @@ Roe<AccountCardReply> DecodeAccountCardReply(const std::string& json_text) {
       return decoded.error();
     }
     reply.key_card = std::move(decoded.value());
+  } else if (auto code = json->getString("code")) {
+    reply.error = *code;
   } else {
     reply.error = json->getString("error").value_or("not_available");
   }

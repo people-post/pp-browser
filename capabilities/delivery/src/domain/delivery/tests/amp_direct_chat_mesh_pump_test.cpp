@@ -8,7 +8,7 @@
 #include "amp/link/AmpStack.h"
 #include "mesh/host/MeshHost.h"
 #include "mesh/testing/mesh_harness_support.h"
-#include "lib/delivery/RelayWirePayload.h"
+#include "lib/delivery/testing/TypedBlobFakes.h"
 #include "foundation/crypto/MlDsa.h"
 #include "crypto/PeerId.h"
 
@@ -92,8 +92,7 @@ RelayEnvelope MakeEnvelope() {
   envelope.sender_device = "QmTestDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
-  auto payload_b64 = RelayWirePayload::EncodePlaintextText("hello over MeshPump");
-  envelope.body.e2e.payload_b64 = payload_b64 ? *payload_b64 : "";
+  envelope.body.e2e.payload_b64 = test::FakePayloadOfB64("hello over MeshPump"); // an AEAD blob (envelope v4)
   envelope.timestamp = 1;
   return envelope;
 }
