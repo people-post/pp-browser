@@ -24,9 +24,14 @@ constexpr const char kB[] = "https://b.example/api/relay";
 constexpr const char kC[] = "https://c.example/api/relay";
 constexpr const char kD[] = "https://d.example/api/relay";
 constexpr const char kE[] = "https://e.example/api/relay";
-constexpr const char kPeerA[] = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
-constexpr const char kPeerB[] = "QmeKYz9h9AozszFqAkRzwxx4xGheEMYRVrLHuh7EMG7Bie";
-constexpr const char kPeerC[] = "QmbSD2vbEJTdL9PW5w5mr3pak9EYyoiYfiqCPJJ6AxJBig";
+constexpr const char kIdA[] = "relay:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
+constexpr const char kIdB[] = "relay:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE";
+constexpr const char kIdC[] = "relay:AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI";
+constexpr const char kPeerId[] = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
+
+RelayId Id(const char* text) {
+  return RelayId::Parse(text).value();
+}
 
 using Origins = std::vector<std::string>;
 
@@ -57,33 +62,33 @@ protected:
 
 TEST_F(OurRelaysStoreTest, ANewProfileIsSeededFromTheDeploymentsRelayAndTheConfigsOthers) {
   OurRelaysStore store(dir_.string());
-  EXPECT_EQ(store.LoadOrSeed(kA, "", {kB, "not a url", kA}, true).Origins(), Origins({kA, kB}));
+  EXPECT_EQ(store.LoadOrSeed(kA, RelayId{}, {kB, "not a url", kA}, true).Origins(), Origins({kA, kB}));
   EXPECT_TRUE(std::filesystem::exists(dir_ / "our_relays.json")) << "the seed is kept: the user's list from now on";
 }
 
 TEST_F(OurRelaysStoreTest, OnceKeptTheConfigIsOnlyANewProfilesDefault) {
   {
     OurRelaysStore store(dir_.string());
-    store.LoadOrSeed(kA, "", {}, true);
+    store.LoadOrSeed(kA, RelayId{}, {}, true);
     ASSERT_TRUE(static_cast<bool>(store.Replace(ListOf({kC, kA}))));
   }
   OurRelaysStore again(dir_.string());
-  EXPECT_EQ(again.LoadOrSeed(kA, "", {kB}, true).Origins(), Origins({kC, kA}))
+  EXPECT_EQ(again.LoadOrSeed(kA, RelayId{}, {kB}, true).Origins(), Origins({kC, kA}))
       << "the config's others do not come back";
 }
 
 TEST_F(OurRelaysStoreTest, NoDeploymentRelaySeedsNothingAndKeepsNoFile) {
   OurRelaysStore store(dir_.string());
-  EXPECT_TRUE(store.LoadOrSeed("", "", {kB}, true).relays.empty());
+  EXPECT_TRUE(store.LoadOrSeed("", RelayId{}, {kB}, true).relays.empty());
   EXPECT_FALSE(std::filesystem::exists(dir_ / "our_relays.json"));
 }
 
 TEST_F(OurRelaysStoreTest, AnUnreadableFileIsSeededAgain) {
   std::ofstream(dir_ / "our_relays.json") << "not json";
   OurRelaysStore store(dir_.string());
-  EXPECT_EQ(store.LoadOrSeed(kA, "", {}, true).Origins(), Origins({kA}));
+  EXPECT_EQ(store.LoadOrSeed(kA, RelayId{}, {}, true).Origins(), Origins({kA}));
   OurRelaysStore again(dir_.string());
-  EXPECT_EQ(again.LoadOrSeed(kB, "", {}, true).Origins(), Origins({kA})) << "the seed was kept";
+  EXPECT_EQ(again.LoadOrSeed(kB, RelayId{}, {}, true).Origins(), Origins({kA})) << "the seed was kept";
 }
 
 // D9 (DATA_LAYOUT: a newer file is refused): a newer app's list is never overwritten, and nothing changes it.
@@ -91,7 +96,7 @@ TEST_F(OurRelaysStoreTest, ANewerAppsFileIsRefusedAndNeverWritten) {
   const std::string newer = R"({"schema_version": 9, "relays": [{"origin": "https://z.example/api/relay"}]})";
   std::ofstream(dir_ / "our_relays.json") << newer;
   OurRelaysStore store(dir_.string());
-  EXPECT_EQ(store.LoadOrSeed(kA, "", {}, true).Origins(), Origins({kA})) << "this run uses the deployment's";
+  EXPECT_EQ(store.LoadOrSeed(kA, RelayId{}, {}, true).Origins(), Origins({kA})) << "this run uses the deployment's";
   EXPECT_FALSE(static_cast<bool>(store.Replace(ListOf({kA, kB})))) << "changes are refused";
   store.Record(kA, RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Registered, .at_ms = 1});
   std::ifstream in(dir_ / "our_relays.json");
@@ -102,7 +107,7 @@ TEST_F(OurRelaysStoreTest, ANewerAppsFileIsRefusedAndNeverWritten) {
 // T8: a change works from a snapshot taken before it: a registration answer kept meanwhile is not undone by it.
 TEST_F(OurRelaysStoreTest, AListTakenBeforeARecordNeverUndoesThatRecord) {
   OurRelaysStore store(dir_.string());
-  store.LoadOrSeed(kA, "", {kB}, true);
+  store.LoadOrSeed(kA, RelayId{}, {kB}, true);
   store.Record(kB, RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Failed, .at_ms = 1});
   const OurRelaysList snapshot = store.List();
   const RelayRegistrationRecord answered{.state = RelayRegistrationRecord::State::Registered, .at_ms = 2};
@@ -120,13 +125,13 @@ TEST_F(OurRelaysStoreTest, EachRelaysLastRegistrationIsKeptAcrossARestart) {
       .state = RelayRegistrationRecord::State::Failed, .reason = "HTTP 503", .at_ms = 200};
   {
     OurRelaysStore store(dir_.string());
-    store.LoadOrSeed(kA, "", {kB, kC}, true);
+    store.LoadOrSeed(kA, RelayId{}, {kB, kC}, true);
     store.Record(kB, registered);
     store.Record(kC, failed);
     store.Record(kD, registered); // not ours: nothing
   }
   OurRelaysStore again(dir_.string());
-  const OurRelaysList list = again.LoadOrSeed(kA, "", {}, true);
+  const OurRelaysList list = again.LoadOrSeed(kA, RelayId{}, {}, true);
   ASSERT_EQ(list.relays.size(), 3u);
   EXPECT_EQ(list.relays[0].registration.state, RelayRegistrationRecord::State::Unknown);
   EXPECT_EQ(list.relays[1].registration, registered);
@@ -135,7 +140,7 @@ TEST_F(OurRelaysStoreTest, EachRelaysLastRegistrationIsKeptAcrossARestart) {
 
 TEST_F(OurRelaysStoreTest, AReorderedListKeepsEachRelaysRecord) {
   OurRelaysStore store(dir_.string());
-  store.LoadOrSeed(kA, "", {kB}, true);
+  store.LoadOrSeed(kA, RelayId{}, {kB}, true);
   const RelayRegistrationRecord registered{.state = RelayRegistrationRecord::State::Registered, .at_ms = 1};
   store.Record(kB, registered);
   ASSERT_TRUE(static_cast<bool>(store.Replace(ListOf({kB, kA}))));
@@ -144,20 +149,20 @@ TEST_F(OurRelaysStoreTest, AReorderedListKeepsEachRelaysRecord) {
 
 TEST_F(OurRelaysStoreTest, AnEmptyListIsRefused) {
   OurRelaysStore store(dir_.string());
-  store.LoadOrSeed(kA, "", {}, true);
+  store.LoadOrSeed(kA, RelayId{}, {}, true);
   EXPECT_FALSE(static_cast<bool>(store.Replace(OurRelaysList{})));
   EXPECT_EQ(store.List().Origins(), Origins({kA}));
 }
 
 // The list's rules (MR004 / MR006): at most four, none twice, the preferred one not removable, never empty.
 TEST(OurRelaysListTest, ARelayIsAddedLastOnceAndAtMostFourInAll) {
-  auto added = WithRelayAdded(ListOf({kA, kB}), kC, kPeerC);
+  auto added = WithRelayAdded(ListOf({kA, kB}), kC, Id(kIdC));
   ASSERT_TRUE(added);
   EXPECT_EQ(added->Origins(), Origins({kA, kB, kC}));
-  EXPECT_EQ(added->relays.back().peer_id, kPeerC) << "added by its address: its PeerId with it (MR008)";
-  EXPECT_EQ(ProblemOf(WithRelayAdded(ListOf({kA, kB}), "https://B.example:443/api/relay", kPeerB)),
+  EXPECT_EQ(added->relays.back().relay_id, Id(kIdC)) << "added by its address: its relay id with it (MR008)";
+  EXPECT_EQ(ProblemOf(WithRelayAdded(ListOf({kA, kB}), "https://B.example:443/api/relay", Id(kIdB))),
             "relay_already_listed");
-  EXPECT_EQ(ProblemOf(WithRelayAdded(ListOf({kA, kB, kC, kD}), kE, "")), "relay_list_full");
+  EXPECT_EQ(ProblemOf(WithRelayAdded(ListOf({kA, kB, kC, kD}), kE, RelayId{})), "relay_list_full");
 }
 
 TEST(OurRelaysListTest, ThePreferredRelayAndTheLastAreNotRemovable) {
@@ -181,34 +186,35 @@ TEST(OurRelaysListTest, AProblemCodeNamesItsProblem) {
   EXPECT_EQ(RelayListProblemFromCode("something else"), RelayListProblem::None);
 }
 
-// MR008: a relay of ours is kept with the PeerId its address names; the seed's org relay carries the build's (or the
-// config's), the config's other relays are relay links, and a bare one is seeded in developer builds only.
-TEST_F(OurRelaysStoreTest, TheSeedCarriesEachRelaysPeerIdFromItsAddress) {
+// MR008 (SIGNED_FORMATS § 3.3): a relay of ours is kept with the relay id its address names; the seed's org relay
+// carries the build's (or the config's), the config's other relays are relay links, and a bare one is seeded in
+// developer builds only.
+TEST_F(OurRelaysStoreTest, TheSeedCarriesEachRelaysIdFromItsAddress) {
   OurRelaysStore store(dir_.string());
-  const std::string link_b = std::string(kB) + "#" + kPeerB;
-  const OurRelaysList list = store.LoadOrSeed(kA, kPeerA, {link_b, kC, std::string(kD) + "#nope"}, false);
-  ASSERT_EQ(list.Origins(), Origins({kA, kB})) << "a bare extra outside developer builds, or a bad ID: left out";
-  EXPECT_EQ(list.relays[0].peer_id, kPeerA);
-  EXPECT_EQ(list.relays[1].peer_id, kPeerB);
+  const std::string link_b = std::string(kB) + "#" + kIdB;
+  const OurRelaysList list = store.LoadOrSeed(kA, Id(kIdA), {link_b, kC, std::string(kD) + "#" + kPeerId}, false);
+  ASSERT_EQ(list.Origins(), Origins({kA, kB})) << "a bare extra outside developer builds, or a PeerId: left out";
+  EXPECT_EQ(list.relays[0].relay_id, Id(kIdA));
+  EXPECT_EQ(list.relays[1].relay_id, Id(kIdB));
 
   OurRelaysStore again(dir_.string());
-  const OurRelaysList kept = again.LoadOrSeed(kA, "", {}, false);
+  const OurRelaysList kept = again.LoadOrSeed(kA, RelayId{}, {}, false);
   ASSERT_EQ(kept.relays.size(), 2u);
-  EXPECT_EQ(kept.relays[1].peer_id, kPeerB) << "kept with the list";
+  EXPECT_EQ(kept.relays[1].relay_id, Id(kIdB)) << "kept with the list";
 
   OurRelaysStore developer((dir_ / "dev").string());
-  EXPECT_EQ(developer.LoadOrSeed(kA, "", {kC}, true).Origins(), Origins({kA, kC}))
+  EXPECT_EQ(developer.LoadOrSeed(kA, RelayId{}, {kC}, true).Origins(), Origins({kA, kC}))
       << "a developer build seeds a bare one (checked on first use)";
 }
 
-TEST_F(OurRelaysStoreTest, MR007sListShapeIsNotReadAndAnEntryNamingNoPeerIdIsDropped) {
+TEST_F(OurRelaysStoreTest, ThePeerIdListShapeIsNotReadAndAnEntryNamingNoRelayIdIsDropped) {
   std::ofstream(dir_ / "our_relays.json")
-      << R"({"schema_version":1,"relays":[{"origin":"https://z.example/api/relay"}]})";
+      << R"({"schema_version":2,"relays":[{"origin":"https://z.example/api/relay","peer_id":")" << kPeerId << R"("}]})";
   OurRelaysStore store(dir_.string());
-  EXPECT_EQ(store.LoadOrSeed(kA, kPeerA, {}, false).Origins(), Origins({kA})) << "seeded again (no bridge)";
-  EXPECT_FALSE(OurRelaysFromJson(R"({"schema_version":2,"relays":[{"origin":"https://a.example/api/relay",)"
-                                 R"("peer_id":"QmNotAPeerId"}]})"))
-      << "an address whose PeerId is not one";
+  EXPECT_EQ(store.LoadOrSeed(kA, Id(kIdA), {}, false).Origins(), Origins({kA})) << "seeded again (no bridge)";
+  EXPECT_FALSE(OurRelaysFromJson(R"({"schema_version":3,"relays":[{"origin":"https://a.example/api/relay",)"
+                                 R"("relay_id":"relay:nope"}]})"))
+      << "an address whose relay id is not one";
 }
 
 // What the user types as a relay (My relays' Add): an https origin, or its base URL; nothing else.
@@ -240,23 +246,29 @@ TEST(ParseRelayOriginTest, PlainHttpOnlyInDeveloperBuilds) {
 namespace pbr {
 namespace {
 
-// MR008: a relay link is its base URL and its PeerId after `#` (the fragment never reaches the relay).
-TEST(ParseRelayLinkTest, ALinkNamesTheRelaysBaseUrlAndItsPeerId) {
-  const ParsedRelayOrigin link = ParseRelayLink(std::string("https://Relay.Example.org/api/relay#") + kPeerA, false);
+// MR008, SIGNED_FORMATS § 3.3: a relay link is its base URL and its relay id after `#` (the fragment never reaches the
+// relay); a PeerId after `#` (the links before the cutover) is no relay id.
+TEST(ParseRelayLinkTest, ALinkNamesTheRelaysBaseUrlAndItsRelayId) {
+  const ParsedRelayOrigin link = ParseRelayLink(std::string("https://Relay.Example.org/api/relay#") + kIdA, false);
   EXPECT_EQ(link.problem, RelayOriginProblem::None);
   EXPECT_EQ(link.base_url, "https://relay.example.org/api/relay");
-  EXPECT_EQ(link.peer_id, kPeerA);
-  EXPECT_EQ(RelayLink(link.base_url, link.peer_id), std::string("https://relay.example.org/api/relay#") + kPeerA);
+  EXPECT_EQ(link.relay_id, Id(kIdA));
+  EXPECT_EQ(RelayLink(link.base_url, link.relay_id), std::string("https://relay.example.org/api/relay#") + kIdA);
+  EXPECT_EQ(ParseRelayLink(std::string("https://relay.example.org#") + kIdA + " \n", false).relay_id, Id(kIdA))
+      << "trailing spaces after the id";
   const ParsedRelayOrigin bare = ParseRelayLink("https://relay.example.org", false);
   EXPECT_EQ(bare.problem, RelayOriginProblem::None);
-  EXPECT_TRUE(bare.peer_id.empty()) << "a bare origin: the caller decides (developer builds only)";
-  EXPECT_EQ(ParseRelayLink("https://relay.example.org#Qm123", false).problem, RelayOriginProblem::BadRelayId);
+  EXPECT_TRUE(bare.relay_id.empty()) << "a bare origin: the caller decides (developer builds only)";
+  EXPECT_EQ(RelayLink(bare.base_url, bare.relay_id), "https://relay.example.org/api/relay");
+  EXPECT_EQ(ParseRelayLink(std::string("https://relay.example.org#") + kPeerId, false).problem,
+            RelayOriginProblem::BadRelayId);
+  EXPECT_EQ(ParseRelayLink("https://relay.example.org#relay:short", false).problem, RelayOriginProblem::BadRelayId);
   EXPECT_EQ(ParseRelayLink("https://relay.example.org#", false).problem, RelayOriginProblem::BadRelayId);
-  EXPECT_EQ(ParseRelayLink(std::string("http://relay.example.org#") + kPeerA, false).problem,
+  EXPECT_EQ(ParseRelayLink(std::string("http://relay.example.org#") + kIdA, false).problem,
             RelayOriginProblem::NotHttps);
-  EXPECT_EQ(ParseRelayLink(std::string("http://127.0.0.1:8787/api/relay#") + kPeerA, true).peer_id, kPeerA)
+  EXPECT_EQ(ParseRelayLink(std::string("http://127.0.0.1:8787/api/relay#") + kIdA, true).relay_id, Id(kIdA))
       << "the lab's plain relays, in developer builds";
-  EXPECT_EQ(OurRelayOrigins(kA, {std::string(kB) + "#" + kPeerB}), Origins({kA, kB})) << "a link's origin";
+  EXPECT_EQ(OurRelayOrigins(kA, {std::string(kB) + "#" + kIdB}), Origins({kA, kB})) << "a link's origin";
 }
 
 } // namespace

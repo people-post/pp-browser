@@ -406,10 +406,10 @@ class Lab:
             "b": {"origin": args.relay2_tls.rstrip("/"), "health": args.relay2.rstrip("/").split("/api/")[0] + "/healthz",
                   "containers": [args.relay2_container, args.relay2_tls_container]},
         }
-        # Each stack's plain base URL, where the harness reads the PeerId its relay answers to (MR008: lab users get
-        # relay links and relay.peer_id, as a release build ships the org relay's).
+        # Each stack's plain base URL, where the harness reads the relay id its relay proves (MR008, SIGNED_FORMATS § 3:
+        # lab users get relay links and relay.relay_id, as a release build ships the org relay's).
         self.plain_relays = {"a": self.relay, "b": args.relay2.rstrip("/")}
-        self.peer_ids = {}
+        self.relay_ids = {}
         self.hop_container = args.hop_container
         self.hop_status = args.hop_status
         # Video scenarios set it before their users start: the probes take SyntheticVideo's camera and codec.
@@ -417,30 +417,32 @@ class Lab:
         self.stopped_relays = set()
         self.users = []
 
-    def relay_peer_id(self, relay):
-        """The PeerId relay stack `relay` ("a" / "b") answers to: its local stack's `/_local/status` `relayPeerId`
-        (pp-relay-apis docs/local-stack.md), else its own `GET /v1/relay-identity`. The harness reads it once; the
-        app under test never learns a PeerId from a relay (MR008)."""
-        if relay not in self.peer_ids:
+    def relay_id(self, relay):
+        """The relay id relay stack `relay` ("a" / "b") proves (`relay:…`, the hash of its 1-of-1 operator set): its
+        local stack's `/_local/status` `relayId` (pp-relay-apis docs/local-stack.md), else its own
+        `GET /v1/relay-identity` (v2: `relay_id`). The harness reads it once; the app under test never learns a relay
+        id from a relay (MR008)."""
+        if relay not in self.relay_ids:
             base = self.plain_relays[relay]
             found = ""
-            for url, key in ((base.split("/api/")[0] + "/_local/status", "relayPeerId"),
-                             (base + "/v1/relay-identity", "peer_id")):
+            for url, key in ((base.split("/api/")[0] + "/_local/status", "relayId"),
+                             (base + "/v1/relay-identity", "relay_id")):
                 try:
                     with urllib.request.urlopen(url, timeout=10) as answer:
                         found = json.loads(answer.read() or b"{}").get(key) or ""
                 except (urllib.error.URLError, ValueError, OSError):
                     found = ""
-                if found:
+                if found.startswith("relay:"):
                     break
+                found = ""
             if not found:
-                raise ProbeError("relay %s names no PeerId at %s" % (relay, base))
-            self.peer_ids[relay] = found
-        return self.peer_ids[relay]
+                raise ProbeError("relay %s names no relay id at %s" % (relay, base))
+            self.relay_ids[relay] = found
+        return self.relay_ids[relay]
 
     def relay_link(self, relay):
-        """Relay `relay`'s TLS origin as a person adds it: its relay link, `<base url>#<PeerId>` (MR008)."""
-        return self.tls_relays[relay]["origin"] + "#" + self.relay_peer_id(relay)
+        """Relay `relay`'s TLS origin as a person adds it: its relay link, `<base url>#relay:…` (MR008)."""
+        return self.tls_relays[relay]["origin"] + "#" + self.relay_id(relay)
 
     def config_for(self, data_dir, directory=True, reachable=False, seeds=None):
         return {
@@ -449,11 +451,11 @@ class Lab:
             # The lab relay is a backend of its own: say so (a config without `backend` is on the default one).
             "backend": {"env": "custom"},
             # As deployed builds set it (PP_RELAY_CONTENT_SHA256): the relay's CDN refuses a POST without it.
-            # Its address carries its PeerId (MR008: a custom backend names it, as a release build ships the org's).
-            "relay": {"base_url": self.user_relay, "content_sha256": True, "peer_id": self.relay_peer_id("a")},
+            # Its address carries its relay id (MR008: a custom backend names it, as a release build ships the org's).
+            "relay": {"base_url": self.user_relay, "content_sha256": True, "relay_id": self.relay_id("a")},
             # directory=False: a directory nobody answers (an empty one means the built-in default).
             "directory": {"base_url": self.user_relay if directory else NO_DIRECTORY},
-            "registration": {"base_url": self.user_relay, "peer_id": self.relay_peer_id("a")},
+            "registration": {"base_url": self.user_relay, "relay_id": self.relay_id("a")},
             "mesh": {
                 "node_enabled": False,
                 "mesh_enabled": True,
@@ -470,10 +472,10 @@ class Lab:
         """`config` on the TLS relays `relays` ("a" / "b"), the first preferred, the others `relay.extra_base_urls`
         (multi-relay R2); its directory the first of `directories`, the others its failover providers."""
         origins = [self.tls_relays[r]["origin"] for r in relays]
-        first = self.relay_peer_id(relays[0])
-        config["relay"] = {"base_url": origins[0], "peer_id": first, "content_sha256": True,
+        first = self.relay_id(relays[0])
+        config["relay"] = {"base_url": origins[0], "relay_id": first, "content_sha256": True,
                            "extra_base_urls": [self.relay_link(r) for r in relays[1:]]}  # relay links (MR008)
-        config["registration"] = {"base_url": origins[0], "peer_id": first}
+        config["registration"] = {"base_url": origins[0], "relay_id": first}
         found = [self.tls_relays[r]["origin"] for r in directories]
         config["directory"] = {"base_url": found[0],
                                "providers": [{"base_url": o, "transport": "http"} for o in found]}
@@ -2126,16 +2128,16 @@ def scenario_users_on_two_relays_meet(lab):
 
 
 def locator_relay(locator):
-    """The preferred relay address a contact locator carries (multi-relay R4, MR008): (origin, PeerId), or None."""
+    """The preferred relay address a contact locator carries (multi-relay R4, MR008): (origin, relay id), or None."""
     data = locator.split("pp-browser-contact-v1:", 1)[1]
     body = json.loads(base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)))
     relay = body.get("relay")
-    return (relay.get("origin"), relay.get("peer_id")) if isinstance(relay, dict) else None
+    return (relay.get("origin"), relay.get("relay_id")) if isinstance(relay, dict) else None
 
 
 def scenario_invite_names_their_relay(lab):
     """Multi-relay R3/R4, MR008: Bob is on relay B and sends Alice, on relay A (whose directory does not know him), his
-    invite line: it names B's address, its origin and the PeerId it answers to. She adds him: the card comes from his
+    invite line: it names B's address, its origin and the relay id its certificate proves. She adds him: the card comes from his
     device, or else from B, and her first message goes into B. Her contact page's Refresh asks his relays first (B
     answers), and the page then shows B as reachable."""
     a = lab.user("alice", relays=["a"])
@@ -2144,7 +2146,7 @@ def scenario_invite_names_their_relay(lab):
         u.wait_mesh()
     relay_b = lab.tls_relays["b"]["origin"]
     locator = b.cmd("locator")["locator"]
-    if locator_relay(locator) != (relay_b, lab.relay_peer_id("b")):
+    if locator_relay(locator) != (relay_b, lab.relay_id("b")):
         raise ProbeError("bob's locator names %s, not relay B's address" % (locator_relay(locator),))
     added = a.cmd("add_from_locator", text="Add me on PP: " + locator, timeout=60)
     if not added["keys_known"]:
@@ -2168,18 +2170,18 @@ def scenario_invite_names_their_relay(lab):
 
 
 def scenario_relay_not_matching_its_link_unused(lab):
-    """Multi-relay MR008 (B-RELAY-LINK): a relay address carries its PeerId, and a relay whose identity answer names
-    another is not used. Alice is on relay A. Adding relay B by a link that names a PeerId B does not answer to is
-    refused (`relay_identity_mismatch`), and a link naming A's PeerId at B's origin — a relay fronting one of ours — is
+    """Multi-relay MR008 (B-RELAY-LINK), SIGNED_FORMATS § 3.4: a relay address carries its relay id, and a relay whose
+    certificate proves another is not used. Alice is on relay A. Adding relay B by a link that names a relay id B does
+    not prove is refused (`relay_identity_mismatch`), and a link naming A's relay id at B's origin — relay A twice — is
     refused before B is asked (`relay_identity_taken`): neither is listed, nor on her card. B's real link is added,
-    kept with its PeerId and registered on; her card names it with that PeerId."""
+    kept with its relay id and registered on; her card names it."""
     a = lab.user("alice", relays=["a"])
     a.wait_mesh()
     relay_a, relay_b = lab.tls_relays["a"]["origin"], lab.tls_relays["b"]["origin"]
-    peer_a, peer_b = lab.relay_peer_id("a"), lab.relay_peer_id("b")
-    stranger = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP"  # a PeerId neither lab relay answers to
+    peer_a, peer_b = lab.relay_id("a"), lab.relay_id("b")
+    stranger = "relay:" + "A" * 43  # a relay id neither lab relay proves
     if stranger in (peer_a, peer_b):
-        raise ProbeError("a lab relay's PeerId is the test's stranger")
+        raise ProbeError("a lab relay's relay id is the test's stranger")
     refusals = {}
     for name, link in (("mismatch", relay_b + "#" + stranger), ("taken", relay_b + "#" + peer_a)):
         try:
@@ -2190,7 +2192,7 @@ def scenario_relay_not_matching_its_link_unused(lab):
     if "relay_identity_mismatch" not in refusals["mismatch"]:
         raise ProbeError("alice: a link B does not answer to was refused as %s" % refusals["mismatch"])
     if "relay_identity_taken" not in refusals["taken"]:
-        raise ProbeError("alice: a link naming relay A's PeerId was refused as %s" % refusals["taken"])
+        raise ProbeError("alice: a link naming relay A's relay id was refused as %s" % refusals["taken"])
     listed = [r["origin"] for r in a.cmd("my_relays")["relays"]]
     if listed != [relay_a] or card_relays(a) != [relay_a]:
         raise ProbeError("alice: relays %s, card %s after the refusals" % (listed, card_relays(a)))
@@ -2199,7 +2201,7 @@ def scenario_relay_not_matching_its_link_unused(lab):
     a.cmd("add_relay", text=lab.relay_link("b"), timeout=60)
     mine = wait_for(lambda: (lambda rows: rows if len(rows) == 2 and all(r["registered"] for r in rows) else None)(
         a.cmd("my_relays")["relays"]), 90, "alice: registered on both relays")
-    if [(r["origin"], r["peer_id"]) for r in mine] != [(relay_a, peer_a), (relay_b, peer_b)]:
+    if [(r["origin"], r["relay_id"]) for r in mine] != [(relay_a, peer_a), (relay_b, peer_b)]:
         raise ProbeError("alice's relays are %s" % mine)
     seen = a.cmd("relay_identity", origin=relay_b)
     if seen["pinned"] != peer_b or seen["mismatch"]:

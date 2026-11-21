@@ -115,6 +115,12 @@ struct ClientCompatDocument {
    * kMaxRemoteSwitches). Read through RemoteSwitches, never directly by a feature.
    */
   std::map<std::string, bool> switches;
+  /**
+   * The org relay's certificate (`relay_certificate_b64`, release-compatibility SIGNED_FORMATS § 3.4; standard base64
+   * of the blob, RelayCertificate.h): taken as it came, not checked here — the relay pins check it against the relay
+   * id the build names and keep it when it is higher than the one held. Empty: not sent (a string over 384 KiB too).
+   */
+  std::string relay_certificate_b64;
 };
 
 enum class CompatUiAction {

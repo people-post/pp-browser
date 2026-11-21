@@ -1,5 +1,7 @@
 #pragma once
 
+#include "foundation/crypto/RelayId.h"
+
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -50,14 +52,14 @@ std::vector<std::string> BoundOurRelays(const std::vector<std::string>& list);
 /** The longest relay base URL we list (MR004: the card's bound on an origin). */
 inline constexpr size_t kMaxRelayOriginBytes = 128;
 
-/** What is wrong with a relay the user typed (My relays' Add). BadRelayId: a relay link whose ID is no PeerId. */
+/** What is wrong with a relay the user typed (My relays' Add). BadRelayId: a relay link whose ID is no relay id. */
 enum class RelayOriginProblem { None, Empty, NotAUrl, NotHttps, HasPath, HasQuery, TooLong, BadRelayId };
 
-/** A relay the user typed: its base URL (and, from a relay link, its PeerId), or what is wrong with it. */
+/** A relay the user typed: its base URL (and, from a relay link, its relay id), or what is wrong with it. */
 struct ParsedRelayOrigin {
   std::string base_url;
-  /** The relay link's PeerId (ParseRelayLink); empty: a bare origin, or ParseRelayOrigin. */
-  std::string peer_id;
+  /** The relay link's relay id (ParseRelayLink); none: a bare origin, or ParseRelayOrigin. */
+  RelayId relay_id;
   RelayOriginProblem problem = RelayOriginProblem::None;
 };
 
@@ -71,14 +73,15 @@ struct ParsedRelayOrigin {
 ParsedRelayOrigin ParseRelayOrigin(const std::string& text, bool allow_http);
 
 /**
- * A relay link (multi-relay MR008): a relay address, its base URL as ParseRelayOrigin takes it and the relay's PeerId
- * as the fragment, `https://host[:port][/api/relay]#<PeerId>` (the fragment never reaches the relay). Without a
- * fragment: the bare origin, `peer_id` empty (the caller decides: only developer builds take one). A fragment that is
- * not a PeerId (IsMlDsaPeerIdForm): BadRelayId.
+ * A relay link (multi-relay MR008; docs/architecture/MESH_IDENTITY.md § Relay links): a relay address, its base URL
+ * as ParseRelayOrigin takes it and the relay's id as the fragment, `https://host[:port][/api/relay]#relay:<43>` (the
+ * fragment never reaches the relay). Without a fragment: the bare origin, `relay_id` none (the caller decides: only
+ * developer builds take one). A fragment that is not a relay id's written form (RelayId::Parse; a PeerId, `Qm…`, is
+ * not): BadRelayId.
  */
 ParsedRelayOrigin ParseRelayLink(const std::string& text, bool allow_http);
 
-/** The relay link of the relay at `base_url` named `peer_id`: `<base_url>#<peer_id>` (`base_url` with none). */
-std::string RelayLink(const std::string& base_url, const std::string& peer_id);
+/** The relay link of the relay at `base_url` named `relay_id`: `<base_url>#relay:…` (`base_url` with none). */
+std::string RelayLink(const std::string& base_url, const RelayId& relay_id);
 
 } // namespace pbr

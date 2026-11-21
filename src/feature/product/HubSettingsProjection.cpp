@@ -30,6 +30,13 @@ HubSettings HubSettingsFrom(const AppConfig& config, const ProfilePreferences& p
   // ships no PeerId for it (dogfood); never a release build's custom backend or PP_BROWSER_ORIGIN.
   settings.org_first_use = OrgRelayFirstUseAllowed(kDeveloperRelaysAllowed,
                                                    !OriginEnvOverrideActive() && ActiveBackend() != BackendEnv::Custom);
+  // SIGNED_FORMATS § 3.5: the build's relay id for its backend (a placeholder fails closed) and its certificate, the
+  // floor the pins start from — only for the relay the build names (not a custom backend's).
+  settings.org_relay_pending = IsPendingRelayId(config.relay.relay_id);
+  if (const OrgRelayIdentity built = BriefOrgRelayIdentity();
+      !built.relay_id.empty() && built.relay_id == config.relay.relay_id) {
+    settings.org_relay_certificate_b64 = built.certificate_b64;
+  }
   return settings;
 }
 

@@ -183,9 +183,8 @@ TEST_F(RecipientRelaysTest, ASendToAContactAddedByQrGoesToTheLocatorsRelay) {
   Origins sent_to;
   RelaySendCoordinator sender;
   sender.SetOurRelays({{.origin = kOurs, .client = std::make_shared<RecordingRelay>(kOurs, sent_to)}});
-  sender.SetForeignClients([&sent_to](const std::string& origin, const std::string&) {
-    return std::make_shared<RecordingRelay>(origin, sent_to);
-  });
+  sender.SetForeignClients(
+      [&sent_to](const AccountCardRelay& relay) { return std::make_shared<RecordingRelay>(relay.origin, sent_to); });
   sender.SetRoutes(relays_->Routes());
   RelayEnvelope envelope;
   envelope.sender_contact_id = "account:me";

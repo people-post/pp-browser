@@ -123,6 +123,9 @@ void ClientCompatController::OnResolved(ClientCompatResolution result) {
     }
   }
   fetched_at_unix_ = result.fetched_at_unix;
+  if (!result.document->relay_certificate_b64.empty() && compat_ports_.relay_certificate) {
+    compat_ports_.relay_certificate(result.document->relay_certificate_b64); // the pins keep the highest (§ 3.4)
+  }
   ApplyDocument(*result.document);
 }
 

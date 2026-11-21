@@ -256,13 +256,13 @@ jobs:
           PP_BUILD_COMMIT: ${{ steps.ver.outputs.commit }}
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
           PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
-          PP_RELAY_PEER_ID_PROD: ${{ vars.PP_RELAY_PEER_ID_PROD || secrets.PP_RELAY_PEER_ID_PROD }}
-          PP_RELAY_PEER_ID_QA: ${{ vars.PP_RELAY_PEER_ID_QA || secrets.PP_RELAY_PEER_ID_QA }}
+          PP_RELAY_ID_PROD: ${{ vars.PP_RELAY_ID_PROD || secrets.PP_RELAY_ID_PROD }}
+          PP_RELAY_ID_QA: ${{ vars.PP_RELAY_ID_QA || secrets.PP_RELAY_ID_QA }}
           PP_RELAY_CONTENT_SHA256: ${{ vars.PP_RELAY_CONTENT_SHA256 }}
         run: |
           set -euo pipefail
-          # TestFlight reaches testers: the org relays' PeerIds ship with it (multi-relay MR008).
-          ./scripts/check/check_relay_peer_ids.sh release
+          # TestFlight reaches testers: the org relays' ids and certificates ship with it (SIGNED_FORMATS § 3.5).
+          ./scripts/check/check_relay_ids.sh release
           ./scripts/platform/ios_build.sh ipa
           ./scripts/platform/ios_build.sh upload-ipa
 

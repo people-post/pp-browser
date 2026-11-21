@@ -698,7 +698,7 @@ public:
               row.set("preferred", relay.preferred);
               row.set("registered", relay.registration.state == RelayRegistrationRecord::State::Registered);
               row.set("reason", relay.registration.reason);
-              row.set("peer_id", relay.peer_id);
+              row.set("relay_id", relay.relay_id.ToString());
               row.set("identity_mismatch", relay.identity_mismatch);
               relays.push_back(ObjectValue(std::move(row)));
             }
@@ -1390,11 +1390,13 @@ private:
               return;
             }
             Object out = Reply(id, true);
-            out.set("peer_id", identity->peer_id);
+            out.set("relay_id", identity->relay_id.ToString());
             const auto pins = Hub().RelayIdentityPins();
             const auto pin = pins ? pins->PinFor(origin) : std::nullopt;
-            out.set("pinned", pin ? pin->peer_id : std::string());
+            out.set("pinned", pin ? pin->relay_id.ToString() : std::string());
             out.set("mismatch", pin && pin->Mismatched());
+            // The audience the held certificate proves (empty: none held that lists this origin).
+            out.set("audience", pins ? pins->HeldAudience(origin).value_or("") : std::string());
             Emit(out);
           });
       return;
