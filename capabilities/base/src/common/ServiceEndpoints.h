@@ -13,14 +13,16 @@ struct ServiceEndpointConfig {
   /** http now; amp = MeshHost AmpDirectoryProtocol (N029 nd4; not CreateOrgBackendClients). */
   std::string transport = "http";
   /**
-   * The relay's PeerId (multi-relay MR008: a relay address carries it): what its signed calls name and its
-   * `GET /v1/relay-identity` must answer. `relay` / `registration` only; the build's for prod / qa, the config's
-   * `peer_id` for a custom backend. Empty: none named (the app pins its first answer, with a warning).
+   * The relay's id, `relay:…` (multi-relay MR008 as release-compatibility SIGNED_FORMATS § 3.3 amends it: a relay
+   * address carries it): what its certificate must prove (`GET /v1/relay-identity`); the audience of its signed calls
+   * is that certificate's transport PeerId. `relay` / `registration` only; the build's for prod / qa (`pending` while
+   * that environment's operator set is not made: the relay is not used), the config's `relay_id` for a custom
+   * backend. Empty: none named (where first use is allowed, the app pins its first valid certificate, with a warning).
    */
-  std::string peer_id;
+  std::string relay_id;
 
   bool operator==(const ServiceEndpointConfig& other) const {
-    return base_url == other.base_url && transport == other.transport && peer_id == other.peer_id;
+    return base_url == other.base_url && transport == other.transport && relay_id == other.relay_id;
   }
   bool operator!=(const ServiceEndpointConfig& other) const { return !(*this == other); }
 };

@@ -22,17 +22,18 @@ struct ContactLocator {
   std::string nickname;
   std::vector<std::string> devices;
   /**
-   * The account's preferred relay (multi-relay R4, MR008): its address, an `https://` origin of at most 128 bytes (the
-   * card's bound) and the PeerId it answers to, so a contact added this way can write before it has the card; empty:
-   * none. Optional: a locator without it reads as before, and an app that does not know it ignores it.
+   * The account's preferred relay (multi-relay R4, MR008 as SIGNED_FORMATS § 3.3 amends it): its address, an
+   * `https://` origin of at most 128 bytes (the card's bound) and the relay id its certificate proves, so a contact
+   * added this way can write before it has the card; empty: none. JSON `relay: {"origin", "relay_id": "relay:…"}`.
+   * Optional: a locator without it reads as before, and an app that does not know it ignores it.
    */
-  AccountCardRelay relay;
+  RelayAddress relay;
 
   bool operator==(const ContactLocator&) const = default;
 };
 
 /**
- * `pp-browser-contact-v1:<base64url-unpadded(JSON)>`; a `relay` outside MR004's bounds, or naming no PeerId, is left
+ * `pp-browser-contact-v1:<base64url-unpadded(JSON)>`; a `relay` outside MR004's bounds, or naming no relay id, is left
  * out.
  */
 std::string EncodeContactLocator(const ContactLocator& locator);
@@ -44,7 +45,8 @@ std::string EncodeContactLocator(const ContactLocator& locator);
 std::string ContactShareLocator(const Contact& contact);
 /**
  * The first locator in `text` (an invite line may wrap it in words); an error when there is none. A `relay` outside
- * MR004's bounds, or without a PeerId (MR008), is dropped (the locator still holds).
+ * MR004's bounds, or without a relay id of the `relay:` form (MR008; a `peer_id` is not read), is dropped (the locator
+ * still holds).
  */
 Roe<ContactLocator> FindContactLocator(const std::string& text);
 

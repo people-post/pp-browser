@@ -18,9 +18,9 @@ struct MyRelayFacts {
   RelayRegistrationRecord registration;
   Reach reach = Reach::Unknown;
   int64_t reach_at_ms = 0;
-  /** The PeerId its address names (its link is `origin#peer_id`, MR008); empty: none known. */
-  std::string peer_id;
-  /** Its identity answer names another PeerId than its address (MR008): not used. */
+  /** The relay id its address names (its link is `origin#relay:…`, MR008); none known: none. */
+  RelayId relay_id;
+  /** It does not prove the relay id its address names (MR008, SIGNED_FORMATS § 3.4): not used. */
   bool identity_mismatch = false;
 };
 

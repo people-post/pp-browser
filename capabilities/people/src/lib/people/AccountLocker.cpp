@@ -4,6 +4,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/RelayId.h"
 #include "foundation/crypto/SignedBytes.h"
 #include "foundation/crypto/SignedReceive.h"
 #include "foundation/crypto/TypedBlob.h"
@@ -185,18 +186,6 @@ SignedReceipt ReceiveRecord(const Object& json, LockerSnapshot* received) {
 
 namespace {
 
-/** `relay:` and 43 base64url characters that decode to 32 bytes, one spelling per id (SIGNED_FORMATS § 3.1, Q5). */
-bool IsRelayIdText(const std::string& text) {
-  constexpr std::string_view kPrefix = "relay:";
-  constexpr size_t kChars = 43;
-  if (text.size() != kPrefix.size() + kChars || text.compare(0, kPrefix.size(), kPrefix) != 0) {
-    return false;
-  }
-  const std::string body = text.substr(kPrefix.size());
-  auto raw = Base64UrlDecode(body);
-  return raw && raw->size() == 32 && Base64UrlEncode(*raw) == body;
-}
-
 /**
  * The `relays` of an untrusted copy: at most kMaxLockerRelays, each a non-empty origin with a relay id, each origin
  * once.
@@ -211,7 +200,7 @@ AccountStateRelays RelaysFromJson(const Object& json) {
                                     .relay_id = row ? row->getString("relay_id").value_or("") : ""};
       const bool listed = std::any_of(relays.list.begin(), relays.list.end(),
                                       [&relay](const AccountStateRelay& kept) { return kept.origin == relay.origin; });
-      if (!relay.origin.empty() && relay.origin.size() <= 256 && IsRelayIdText(relay.relay_id) && !listed &&
+      if (!relay.origin.empty() && relay.origin.size() <= 256 && IsRelayIdForm(relay.relay_id) && !listed &&
           relays.list.size() < kMaxLockerRelays) {
         relays.list.push_back(relay);
       }

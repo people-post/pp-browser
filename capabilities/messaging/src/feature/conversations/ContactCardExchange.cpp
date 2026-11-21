@@ -157,7 +157,7 @@ void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::fun
     done(contact.error());
     return;
   }
-  const AccountCardRelay relay = UsableLocatorRelay(locator.relay);
+  const RelayAddress relay = UsableLocatorRelay(locator.relay);
   KeepLocatorRelay(*contact, relay);
   if (stored) {
     stored(*contact);
@@ -177,7 +177,7 @@ void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::fun
   FetchCard(locator.account_id, locator.devices, relay.origin, finish);
 }
 
-AccountCardRelay ContactCardExchange::UsableLocatorRelay(const AccountCardRelay& relay) {
+RelayAddress ContactCardExchange::UsableLocatorRelay(const RelayAddress& relay) {
   if (relay.origin.empty() ||
       IsPublicRelayOrigin(relay.origin, local_relays_allowed_.load(std::memory_order_relaxed))) {
     return relay;
@@ -187,15 +187,15 @@ AccountCardRelay ContactCardExchange::UsableLocatorRelay(const AccountCardRelay&
   return {};
 }
 
-void ContactCardExchange::KeepLocatorRelay(Contact& contact, const AccountCardRelay& relay) {
+void ContactCardExchange::KeepLocatorRelay(Contact& contact, const RelayAddress& relay) {
   // Its relay list until its card is kept (ContactRelays, multi-relay R4): a first message can go to its mailbox,
-  // signed for the PeerId the locator names (MR008).
-  if (relay.origin.empty() || relay.peer_id.empty() ||
-      (contact.remote.locator_relay == relay.origin && contact.remote.locator_relay_peer_id == relay.peer_id)) {
+  // signed for the PeerId the certificate of the relay id the locator names proves (MR008, SIGNED_FORMATS § 3.4).
+  if (relay.origin.empty() || relay.relay_id.empty() ||
+      (contact.remote.locator_relay == relay.origin && contact.remote.locator_relay_id == relay.relay_id)) {
     return;
   }
   contact.remote.locator_relay = relay.origin;
-  contact.remote.locator_relay_peer_id = relay.peer_id;
+  contact.remote.locator_relay_id = relay.relay_id;
   if (auto stored = contacts_.Upsert(contact); stored) {
     contact = std::move(stored.value());
   } else {

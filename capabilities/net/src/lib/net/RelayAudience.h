@@ -18,9 +18,11 @@ using RelayAuthSigner = std::function<Roe<std::string>(const std::vector<uint8_t
 
 /**
  * Who a signed command to one relay is for (multi-relay MR007; docs/contracts/SERVICE_ENDPOINTS.md § The audience):
- * the relay's PeerId, named in the command's bytes and body, and where the relay's refusals that concern its identity
- * or our registration there go. Every client of one relay of ours shares one (RelayPins::AudienceFor); a send into a
- * contact's relay names the PeerId its card signed (FixedRelayAudience). Thread-safe.
+ * the relay's PeerId — the PeerId of the transport key its certificate names (release-compatibility SIGNED_FORMATS
+ * § 3.4; never taken from an unsigned answer) — named in the command's bytes and body, and where the relay's refusals
+ * that concern its identity or our registration there go. Every client of one relay of ours shares one
+ * (RelayPins::AudienceFor); a send into a contact's relay signs for the PeerId that relay's certificate proves for the
+ * relay id the contact names (RelayPins::ContactAudience). Thread-safe.
  */
 class IRelayAudience {
 public:
@@ -40,7 +42,10 @@ public:
   virtual void Refused(const std::string& code) = 0;
 };
 
-/** A PeerId given, not pinned (a contact's card or QR code names it; tests). Refusals go to `on_refused` when set. */
+/**
+ * A PeerId given, not proved by a certificate: tests, and a contact's card entry while the account card still names a
+ * PeerId (until card v5 names relay ids, cutover W2). Refusals go to `on_refused` when set.
+ */
 class FixedRelayAudience : public IRelayAudience {
 public:
   explicit FixedRelayAudience(std::string peer_id, std::function<void(const std::string& code)> on_refused = nullptr)

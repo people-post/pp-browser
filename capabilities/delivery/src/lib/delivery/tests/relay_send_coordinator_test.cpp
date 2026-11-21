@@ -130,12 +130,11 @@ protected:
   void SetUp() override {
     coordinator_.SetClock([this]() { return now_ms_; });
     coordinator_.SetOurRelays({{kOurs, Relay(kOurs)}, {kOurOther, Relay(kOurOther)}});
-    coordinator_.SetForeignClients(
-        [this](const std::string& origin, const std::string& peer_id) -> std::shared_ptr<IRelayClient> {
-          made_.push_back(origin);
-          made_for_.push_back(peer_id);
-          return Relay(origin);
-        });
+    coordinator_.SetForeignClients([this](const AccountCardRelay& relay) -> std::shared_ptr<IRelayClient> {
+      made_.push_back(relay.origin);
+      made_for_.push_back(relay.peer_id);
+      return Relay(relay.origin);
+    });
     RelayRoutes routes;
     routes.relays_of = [this](const std::string& account) {
       return account == kBob ? Card(bobs_relays_) : std::vector<AccountCardRelay>{};
@@ -352,8 +351,8 @@ TEST_F(RelaySendCoordinatorTest, AContactsRelayIsSignedForTheCardsPeerId) {
 // skipped relay is not marked unhealthy; the contact page hears of it.
 TEST_F(RelaySendCoordinatorTest, ACardEntryConflictingWithAPinIsSkipped) {
   bobs_relays_ = {kBobsA, kBobsB};
-  coordinator_.SetCardRelayCheck([](const std::string& origin, const std::string&) {
-    return SameRelay(origin, kBobsA) ? CardRelayCheck::Mismatch : CardRelayCheck::Usable;
+  coordinator_.SetCardRelayCheck([](const AccountCardRelay& relay) {
+    return SameRelay(relay.origin, kBobsA) ? CardRelayCheck::Mismatch : CardRelayCheck::Usable;
   });
   ASSERT_TRUE(coordinator_.Send(EnvelopeTo(kBob)));
   EXPECT_EQ(Tried(), std::vector<std::string>({kBobsB}));
@@ -441,10 +440,10 @@ TEST(RelaySendCoordinatorHttpTest, AForeignRelayGetsOurKeyWhenItAsksForIt) {
   RelaySendCoordinator coordinator;
   auto signer = [](const std::vector<uint8_t>&) -> Roe<std::string> { return std::string("c2ln"); };
   coordinator.SetOurRelays({{"http://127.0.0.1:9/api/relay", std::make_shared<HttpRelayClient>("")}});
-  coordinator.SetForeignClients([&](const std::string& origin, const std::string& peer_id) {
-    auto client = std::make_shared<HttpRelayClient>(origin);
+  coordinator.SetForeignClients([&](const AccountCardRelay& relay) {
+    auto client = std::make_shared<HttpRelayClient>(relay.origin);
     client->SetAuthSigner(signer);
-    client->SetAudience(std::make_shared<FixedRelayAudience>(peer_id));
+    client->SetAudience(std::make_shared<FixedRelayAudience>(relay.peer_id));
     client->SetSendHooks(
         {.grant_for = {}, .grant_refused = {}, .sender_public_key = [] { return std::string("a2V5"); }});
     return client;

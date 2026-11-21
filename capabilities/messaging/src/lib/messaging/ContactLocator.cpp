@@ -2,7 +2,6 @@
 
 #include "common/ValueJson.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/PeerIdForm.h"
 #include "lib/people/AccountCard.h"
 #include "lib/people/ContactIdentity.h"
 
@@ -16,9 +15,9 @@ namespace {
 
 constexpr size_t kMaxLocatorDevices = 16;
 
-/** A locator's relay as the card bounds it, with its PeerId (MR008: a relay address carries it). */
-bool IsLocatorRelay(const AccountCardRelay& relay) {
-  return IsCardRelayOrigin(relay.origin) && IsMlDsaPeerIdForm(relay.peer_id);
+/** A locator's relay as the card bounds it, with its relay id (MR008: a relay address carries it). */
+bool IsLocatorRelay(const RelayAddress& relay) {
+  return IsCardRelayOrigin(relay.origin) && !relay.relay_id.empty();
 }
 
 bool IsBase64UrlChar(const char c) {
@@ -41,7 +40,7 @@ std::string EncodeContactLocator(const ContactLocator& locator) {
   if (IsLocatorRelay(locator.relay)) {
     Object relay;
     relay.set("origin", locator.relay.origin);
-    relay.set("peer_id", locator.relay.peer_id);
+    relay.set("relay_id", locator.relay.relay_id.ToString());
     json.set("relay", ObjectValue(std::move(relay)));
   }
   const std::string text = DumpJson(json);
@@ -95,8 +94,8 @@ Roe<ContactLocator> FindContactLocator(const std::string& text) {
     }
   }
   if (const Object* relay = json->getObject("relay")) {
-    const AccountCardRelay named{.origin = relay->getString("origin").value_or(""),
-                                 .peer_id = relay->getString("peer_id").value_or("")};
+    const RelayAddress named{.origin = relay->getString("origin").value_or(""),
+                             .relay_id = RelayId::Parse(relay->getString("relay_id").value_or("")).value_or(RelayId{})};
     if (IsLocatorRelay(named)) {
       locator.relay = named; // the preferred relay's address (R4, MR008); one out of bounds, or unnamed, is no hint
     }

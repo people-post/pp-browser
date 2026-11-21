@@ -382,8 +382,8 @@ Object ServiceEndpointToObject(const ServiceEndpointConfig& endpoint) {
   Object object;
   object.set("base_url", endpoint.base_url);
   object.set("transport", endpoint.transport);
-  if (!endpoint.peer_id.empty()) {
-    object.set("peer_id", endpoint.peer_id);
+  if (!endpoint.relay_id.empty()) {
+    object.set("relay_id", endpoint.relay_id);
   }
   return object;
 }
@@ -395,8 +395,8 @@ void ServiceEndpointFromObject(const Object& object, ServiceEndpointConfig& endp
   if (auto transport = object.getString("transport")) {
     endpoint.transport = *transport;
   }
-  if (auto peer_id = object.getString("peer_id")) {
-    endpoint.peer_id = *peer_id;
+  if (auto relay_id = object.getString("relay_id")) {
+    endpoint.relay_id = *relay_id;
   }
 }
 

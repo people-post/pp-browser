@@ -228,6 +228,9 @@ std::map<std::string, std::string> ParseUpgradeUrls(const Object* urls) {
   return out;
 }
 
+/** The largest `relay_certificate_b64` kept (a certificate of kMaxRelayCertificateBytes in base64). */
+constexpr size_t kMaxRelayCertificateB64Bytes = 384 * 1024;
+
 std::filesystem::path CachePath(const std::string& profile_data_dir) {
   return std::filesystem::path(profile_data_dir) / "client_compat.json";
 }
@@ -272,6 +275,9 @@ Object ClientCompatDocumentToObject(const ClientCompatDocument& doc) {
     switches.set(name, on);
   }
   document.set("switches", switches);
+  if (!doc.relay_certificate_b64.empty()) {
+    document.set("relay_certificate_b64", doc.relay_certificate_b64);
+  }
   return document;
 }
 
@@ -428,6 +434,10 @@ Roe<ClientCompatDocument> ParseClientCompatDocument(std::string_view json_text) 
   doc.node_range = ParseRange(root->getObject("node_range"));
   doc.min_node_version = root->getString("min_node_version").value_or("");
   doc.switches = ParseSwitches(root->getObject("switches"));
+  if (auto certificate = root->getString("relay_certificate_b64");
+      certificate && certificate->size() <= kMaxRelayCertificateB64Bytes) {
+    doc.relay_certificate_b64 = std::move(*certificate);
+  }
   return doc;
 }
 

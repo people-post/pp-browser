@@ -1,5 +1,6 @@
 #pragma once
 
+#include "foundation/crypto/RelayId.h"
 #include "mesh/types/DirectoryTypes.h"
 #include "common/MeshAlias.h"
 
@@ -28,11 +29,11 @@ struct ContactRemote {
   std::optional<mesh::ProfileIconRef> icon;
   /**
    * The preferred relay the QR locator gave when the contact was added that way (multi-relay R4): its origin and the
-   * PeerId it answers to (MR008, `locator_relay_peer_id`, never empty with an origin); its relay list until its
-   * account's card is kept (ContactRelays). Empty: none given.
+   * relay id its certificate must prove (MR008 as SIGNED_FORMATS § 3.3 amends it, `locator_relay_id`, never none with
+   * an origin); its relay list until its account's card is kept (ContactRelays). Empty: none given.
    */
   std::string locator_relay;
-  std::string locator_relay_peer_id;
+  RelayId locator_relay_id;
 };
 
 /**

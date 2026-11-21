@@ -131,7 +131,7 @@ TEST(MyRelaysTest, ARefusedChangeSaysWhyInWords) {
 TEST(MyRelaysTest, ARelayThatDoesNotMatchItsLinkSaysItIsNotUsed) {
   LoadLocales();
   MyRelayFacts mismatch = Relay("b.example", Registered("2099-01-01T00:00:00Z"), MyRelayFacts::Reach::Failed);
-  mismatch.peer_id = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
+  mismatch.relay_id = pbr::RelayId::Parse("relay:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8").value();
   mismatch.identity_mismatch = true;
   const pbr::MyRelaysView view =
       pbr::MyRelaysViewFor({Relay("a.example"), mismatch}, true, "https://org.example/api/relay");
@@ -146,13 +146,13 @@ TEST(MyRelaysTest, ARelayThatDoesNotMatchItsLinkSaysItIsNotUsed) {
   EXPECT_EQ(view.org_identity_mismatch, "https://org.example/api/relay");
 }
 
-// MR008: each relay of ours with a PeerId has its relay link to copy, on every device; a bare origin has none.
+// MR008: each relay of ours with a relay id has its relay link to copy, on every device; a bare origin has none.
 TEST(MyRelaysTest, EachRelayGivesItsRelayLink) {
   LoadLocales();
   MyRelayFacts named = Relay("a.example");
-  named.peer_id = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
+  named.relay_id = pbr::RelayId::Parse("relay:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8").value();
   const pbr::MyRelaysView view = pbr::MyRelaysViewFor({named, Relay("b.example")}, false);
-  EXPECT_EQ(view.relays[0].link, "https://a.example/api/relay#QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP");
+  EXPECT_EQ(view.relays[0].link, "https://a.example/api/relay#relay:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8");
   EXPECT_TRUE(view.relays[1].link.empty());
 }
 

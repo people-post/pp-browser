@@ -2,6 +2,7 @@
 
 #include "common/ValueJson.h"
 #include "common/tests/ScriptedHttpServer.h"
+#include "lib/net/testing/TestRelayCertificates.h"
 
 #include <gtest/gtest.h>
 
@@ -40,11 +41,14 @@ TEST(BackendClientSetTest, BuildsEveryClientForItsEndpoint) {
   EXPECT_TRUE(directory.Configured());
 }
 
-// MR007, MR008-PIN: every client of a relay signs for the PeerId that relay's address names; the lockers at the org's
-// registration URL for its. Nothing is asked of the relays to sign.
+// MR007, MR008-PIN, SIGNED_FORMATS § 3.4: every client of a relay signs for the PeerId its held certificate proves for
+// the relay id its address names; the lockers at the org's registration URL for its. Nothing is asked of the relays
+// to sign when the certificates are held (the build's, client-compat's).
 TEST(BackendClientSetTest, EachRelaysClientsSignForItsPin) {
-  constexpr const char kRelayA[] = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
-  constexpr const char kRelayB[] = "QmeKYz9h9AozszFqAkRzwxx4xGheEMYRVrLHuh7EMG7Bie";
+  const test::TestRelay relay_a(0x21);
+  const test::TestRelay relay_b(0x22);
+  const std::string kRelayA = test::TestRelay::PeerIdOf(0x31);
+  const std::string kRelayB = test::TestRelay::PeerIdOf(0x32);
   SwitchableDirectoryClient directory;
   BackendClientSet clients(directory);
   auto pins = std::make_shared<RelayPins>("");
@@ -53,8 +57,14 @@ TEST(BackendClientSetTest, EachRelaysClientsSignForItsPin) {
     ++asked;
     return Error("not asked");
   });
-  ASSERT_TRUE(pins->Expect("https://relay.example/api/relay", kRelayA));
-  ASSERT_TRUE(pins->Expect("https://b.example/api/relay", kRelayB));
+  ASSERT_TRUE(pins->Expect("https://relay.example/api/relay", relay_a.Id()));
+  ASSERT_TRUE(pins->Expect("https://b.example/api/relay", relay_b.Id()));
+  ASSERT_TRUE(pins->OfferCertificate(
+      relay_a.Id(),
+      relay_a.Certificate(1, {"https://relay.example/api/relay", "https://registration.example/api/relay"}, 0x31),
+      "the build"));
+  ASSERT_TRUE(pins->OfferCertificate(relay_b.Id(), relay_b.Certificate(1, {"https://b.example/api/relay"}, 0x32),
+                                     "client-compat"));
   clients.SetPins(pins);
   auto endpoints = At("https://relay.example/api/relay", "https://relay.example/api/relay",
                       "https://registration.example/api/relay");
@@ -364,7 +374,9 @@ TEST_F(BackendClientSetOriginTest, ARelayThePersonAddedIsHeldToPublicAddressesOu
 // a signer given later reaches it and an Apply that keeps it changes nothing on it.
 TEST_F(BackendClientSetOriginTest, AClientTakenBeforeTheSignerSignsWithItAndApplyNeverRewritesIt) {
   auto pins = std::make_shared<RelayPins>("");
-  ASSERT_TRUE(pins->Expect(OrgRelay(), "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP")); // the build's
+  const test::TestRelay org(0x23);
+  ASSERT_TRUE(pins->Expect(OrgRelay(), org.Id())); // the build's relay id and certificate
+  ASSERT_TRUE(pins->OfferCertificate(org.Id(), org.Certificate(1, {OrgRelay()}, 0x33), "the build"));
   clients_.SetPins(pins);
   Apply({OrgRelay()});
   const std::shared_ptr<IRelayClient> relay = clients_.Relay();

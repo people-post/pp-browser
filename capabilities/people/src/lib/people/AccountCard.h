@@ -2,6 +2,7 @@
 
 #include "common/directory/KeyCard.h"
 #include "foundation/crypto/CryptoTypes.h"
+#include "foundation/crypto/RelayId.h"
 
 #include "common/Error.h"
 #include "common/Value.h"
@@ -30,10 +31,15 @@ struct AccountCardDevice {
 /**
  * A relay the account receives on (multi-relay MR002 / MR007): named by the HTTPS base URL a client uses and by its
  * PeerId, the audience a sender signs its send into that relay for.
+ *
+ * `relay_id` (release-compatibility SIGNED_FORMATS § 3.3): the relay id an entry names instead, whose certificate
+ * proves the audience (RelayPins::ContactAudience). A QR locator's relay names it already (cutover W5); the card
+ * carries it from card v5 (cutover W2), when `peer_id` goes. Not in the card's bytes before then.
  */
 struct AccountCardRelay {
   std::string origin;
   std::string peer_id;
+  RelayId relay_id;
 
   bool operator==(const AccountCardRelay&) const = default;
 };
