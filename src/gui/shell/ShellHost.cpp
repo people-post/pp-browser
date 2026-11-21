@@ -2289,7 +2289,7 @@ void ShellHost::ApplySafeAreaLayout() {
       float left_dp = kWideRailDp;
       if (ShellLayout::SecondaryPaneShown(state_)) {
         ui::Element* list = doc->GetElementById("shell-nav-content-mount");
-        const float list_dp = list ? list->GetOffsetWidth() : 0.f;
+        const float list_dp = list ? list->GetOffsetWidth() / context_->GetDensityIndependentPixelRatio() : 0.f;
         left_dp += list_dp > 0.f ? list_dp : static_cast<float>(state_.sidebar_width_dp);
       }
       toasts->SetProperty("top", "auto");
