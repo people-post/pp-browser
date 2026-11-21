@@ -523,12 +523,16 @@ TEST(PendingPictureSourcePinTest, ChipEventsHaveNoIdAndBubbleEventsCarryOne) {
   }
 }
 
-// Step 2: a video's bubble waits for its poster and a poster that comes after a cancel is deleted; a voice recording
-// never gets a bubble; a file / video bubble learns its name and size from the preparation.
-TEST(PendingPictureSourcePinTest, VideoPosterFirstLatePosterDeletedVoiceWithoutBubble) {
+// Step 2: a video's bubble waits for its poster and a poster that comes after a cancel is deleted; a file / video
+// bubble learns its name and size from the preparation. A voice recording gets a bubble too (the finished voice bubble
+// with the upload disc over its play button), made at once like a file's; its file fate stays with the voice flag.
+TEST(PendingPictureSourcePinTest, VideoPosterFirstLatePosterDeletedVoiceHasItsOwnBubble) {
   const std::string body = Body(Controller(), "void ChatController::StartAttachmentUpload(");
   ASSERT_FALSE(body.empty());
-  EXPECT_NE(body.find("const bool with_bubble = bubble.has_value() && !voice_file;"), std::string::npos);
+  EXPECT_NE(body.find("const bool with_bubble = bubble.has_value();"), std::string::npos);
+  EXPECT_NE(body.find("with_bubble && *bubble == PendingUploadKind::Voice"), std::string::npos);
+  EXPECT_NE(body.find("DecideVoiceFileFate("), std::string::npos)
+      << "the recording's file still follows the voice flag";
   const size_t poster = body.find("WriteVideoPosterThumbnail(path, scratch_dir)");
   const size_t prepare = body.find("PrepareOutgoingAttachment(path, limits, source, scratch_dir)");
   ASSERT_NE(poster, std::string::npos);

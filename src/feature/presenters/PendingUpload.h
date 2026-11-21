@@ -40,14 +40,14 @@ enum class PendingUploadState {
 };
 
 /** What kind of bubble an item draws. */
-enum class PendingUploadKind { Picture, Video, File };
+enum class PendingUploadKind { Picture, Video, File, Voice };
 
 struct PendingUpload {
   PendingUploadState state = PendingUploadState::None;
   PendingUploadKind kind = PendingUploadKind::Picture;
   /** The item's id and its row's ("pending-upload-<n>"); the bubble's events carry it. */
   std::string row_id;
-  /** A file's name and size line ("2.4 MB"; empty until the preparation knows it). */
+  /** A file's name and size line (a voice message's: its file name, voice-<ms>.ogg, whose length the bubble shows) ("2.4 MB"; empty until the preparation knows it). */
   std::string title;
   std::string size_text;
   /** The staged copy a failure kept (Retry resends it, Discard deletes it); empty while none. */

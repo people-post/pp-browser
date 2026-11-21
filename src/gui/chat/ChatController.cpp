@@ -414,7 +414,7 @@ ChatController::ChatController()
       UserFeedback::Fail(Tr("chat.voice.upload_busy"));
       return;
     }
-    StartAttachmentUpload(path, OutgoingPickSource::File, /*voice_file=*/true, thread_id);
+    StartAttachmentUpload(path, OutgoingPickSource::File, /*voice_file=*/true, thread_id, PendingUploadKind::Voice);
   };
   voice_ports.eligible = [this]() {
     return messaging_ready_ && facade_ && chat_.show_attach_button && !InAiComposerContext() && !AttachmentBusy() &&
@@ -458,7 +458,6 @@ ChatController::ChatController()
   voice_ports.dirty_bubble = []() {
     DataModelHost::Instance().Dirty("chat", "voice_bubble_left");
     DataModelHost::Instance().Dirty("chat", "voice_bubble_top");
-    DataModelHost::Instance().Dirty("chat", "voice_tail_left");
     for (int i = 0; i < ChatScreenState::kVoiceLevelBars; ++i) {
       DataModelHost::Instance().Dirty("chat", "voice_lv_" + std::to_string(i));
     }
@@ -3373,7 +3372,7 @@ void ChatController::OnRetryAttachmentSend(const std::string& item_id) {
       // Refused while another send runs: the recording stays behind Retry and the pill says why.
       const std::string path = failed_voice_path_;
       const std::string thread_id = failed_voice_thread_;
-      StartAttachmentUpload(path, OutgoingPickSource::File, /*voice_file=*/true, thread_id);
+      StartAttachmentUpload(path, OutgoingPickSource::File, /*voice_file=*/true, thread_id, PendingUploadKind::Voice);
     }
     return;
   }
@@ -3807,8 +3806,8 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
                                            const bool from_picture_queue) {
   // Every way out below reports once through this (a second report is ignored; a dropped callback reports at the end).
   const AttachmentSendOnce finished(std::move(on_finished));
-  // A picture, a video or a file shows as a bubble in the transcript; a voice recording keeps its own bar.
-  const bool with_bubble = bubble.has_value() && !voice_file;
+  // A picture, a video, a file or a voice message shows as a bubble in the transcript while it is sent.
+  const bool with_bubble = bubble.has_value();
   const bool picture = with_bubble && *bubble == PendingUploadKind::Picture;
   const bool video = with_bubble && *bubble == PendingUploadKind::Video;
   // Always the chat the caller names (a pick's armed chat, a recording's own): never the one open by the time this
@@ -3896,6 +3895,15 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
     *bubble_row = file.row_id;
     bubble_tap_guard_until_ = std::chrono::steady_clock::now() + kBubbleTapGuard;
     ApplyPendingUpload({std::move(file), {}});
+    scroller_.RequestScrollToLatest();
+  } else if (with_bubble && *bubble == PendingUploadKind::Voice) {
+    // The voice bubble at once, the finished one's size: its length is in the recording's name.
+    PendingUpload voice =
+        StartPendingUpload(++pending_upload_serial_, thread_id, std::nullopt, PendingUploadKind::Voice);
+    voice.title = (std::filesystem::path(path).filename().string()).c_str();
+    *bubble_row = voice.row_id;
+    bubble_tap_guard_until_ = std::chrono::steady_clock::now() + kBubbleTapGuard;
+    ApplyPendingUpload({std::move(voice), {}});
     scroller_.RequestScrollToLatest();
   } else if (video) {
     // A video's bubble waits for its poster (so its size never changes); no card meanwhile, the overlay instead.

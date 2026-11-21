@@ -70,7 +70,8 @@ std::vector<int> VoiceWaveformHeights(const std::string& message_id, const int c
 }
 
 std::string VoiceBubbleRml(const std::string& message_id, const std::string& click_arg, const int64_t duration_ms,
-                           const VoiceBubbleState& state, const VoiceBubbleFace& face) {
+                           const VoiceBubbleState& state, const VoiceBubbleFace& face,
+                           const std::string& pending_overlay_rml) {
   const std::string key = VoiceElementKey(message_id);
   const bool running = state.playing && !state.paused;
   const int percent = VoiceBubbleFillPercent(state);
@@ -101,6 +102,7 @@ std::string VoiceBubbleRml(const std::string& message_id, const std::string& cli
       "<svg class=\"chat-voice-icon-pause\" src=\"../icons/pause.svg\" width=\"22\" height=\"22\" "
       "crop-to-content=\"true\"></svg>";
   html += "</button>";
+  html += pending_overlay_rml;
   // The waveform: the quiet bars, over them a clip as wide as the played part holding the same bars in the played
   // colour, and the knob at its end (VoicePlayback sets both by percent). Seeking by tap is not offered: a voice
   // message is played by the clip player, which cannot seek.

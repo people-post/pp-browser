@@ -42,9 +42,12 @@ struct VoiceBubbleFace {
  * `duration_ms`: the length from the file name, already clamped to the voice limit. `click_arg`: the message id escaped
  * for a click handler's argument (the transcript's JsArgInAttribute). `state`: what is playing now, so a redraw keeps
  * the progress. VoicePlayback moves the played layer (`vf-`) and the knob (`vn-`) by percent.
+ * `pending_overlay_rml`: a voice message being sent: the upload disc (and the ✕ of a failure), laid over the play button's
+ * place and the card's corner without taking any room, so the bubble is the size of the sent one.
  */
 std::string VoiceBubbleRml(const std::string& message_id, const std::string& click_arg, int64_t duration_ms,
-                           const VoiceBubbleState& state, const VoiceBubbleFace& face);
+                           const VoiceBubbleState& state, const VoiceBubbleFace& face,
+                           const std::string& pending_overlay_rml = std::string());
 
 /** Where along a bar (left edge `left`, `width`, same unit as `x`) a pointer at `x` is, 0..1; 0 for an empty bar. */
 double SeekFractionAt(float x, float left, float width);
