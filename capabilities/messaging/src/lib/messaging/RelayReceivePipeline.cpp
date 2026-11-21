@@ -55,70 +55,6 @@ namespace pbr {
 
 namespace {
 
-const char* VerdictStatusName(const GroupChangeStatus status) {
-  switch (status) {
-    case GroupChangeStatus::Applied:
-      return "applied";
-    case GroupChangeStatus::Superseded:
-      return "superseded";
-    case GroupChangeStatus::Undone:
-      return "undone";
-    case GroupChangeStatus::Void:
-      return "void";
-    case GroupChangeStatus::Dropped:
-      return "dropped";
-  }
-  return "?";
-}
-
-const char* VerdictReasonName(const GroupChangeReason reason) {
-  switch (reason) {
-    case GroupChangeReason::None:
-      return "none";
-    case GroupChangeReason::OtherGroup:
-      return "other_group";
-    case GroupChangeReason::Folded:
-      return "folded";
-    case GroupChangeReason::TooOld:
-      return "too_old";
-    case GroupChangeReason::Dissolved:
-      return "dissolved";
-    case GroupChangeReason::Malformed:
-      return "malformed";
-    case GroupChangeReason::BadSignature:
-      return "bad_signature";
-    case GroupChangeReason::NoCard:
-      return "no_card";
-    case GroupChangeReason::SignerNotJoined:
-      return "signer_not_joined";
-    case GroupChangeReason::NoSuchLink:
-      return "no_such_link";
-    case GroupChangeReason::DeviceOffCard:
-      return "device_off_card";
-    case GroupChangeReason::SignerOut:
-      return "signer_out";
-    case GroupChangeReason::NotAllowed:
-      return "not_allowed";
-    case GroupChangeReason::RemovedMember:
-      return "removed_member";
-    case GroupChangeReason::NotReadmitted:
-      return "not_readmitted";
-    case GroupChangeReason::GroupFull:
-      return "group_full";
-    case GroupChangeReason::DuplicateLink:
-      return "duplicate_link";
-    case GroupChangeReason::NamedByLeave:
-      return "named_by_leave";
-    case GroupChangeReason::NamedByRemove:
-      return "named_by_remove";
-    case GroupChangeReason::OlderTitle:
-      return "older_title";
-    case GroupChangeReason::LostRename:
-      return "lost_rename";
-  }
-  return "?";
-}
-
 Roe<void> RejectIfAnnotationCapExceeded(IThreadStore& store, const ThreadMessage& persisted) {
   if (persisted.content_type != ChatContentType::Annotation) {
     return {};
@@ -427,19 +363,8 @@ Roe<void> RelayReceivePipeline::ApplyGroupChange(ThreadMessage& message, const s
   log().info << "group change " << group_change::KindToString(change->kind) << " group_id=" << change->group_id
              << " by=" << change->signer
              << (received->held == group_roster_sync::ChangeHeld::NoCard ? " (no card yet)" : "");
-  // Whether it counted here, and whether the account it is about (the leaver; the one added or removed) is listed
-  // after it: a leave can count while its leaver stays listed (an add it does not name still stands, R1).
-  if (const std::optional<GroupRosterView>& view = received->applied.view; !view) {
-    log().info << "group change verdict kind=" << group_change::KindToString(change->kind)
-               << " group_id=" << change->group_id << " view=none (no statement, or one older than the roster's)";
-  } else if (const GroupChangeVerdict* verdict = view->Verdict(group_change::Id(*change))) {
-    const std::string& about = change->kind == GroupChangeKind::Leave ? change->signer : change->member;
-    log().info << "group change verdict kind=" << group_change::KindToString(change->kind)
-               << " group_id=" << change->group_id << " status=" << VerdictStatusName(verdict->status)
-               << " reason=" << VerdictReasonName(verdict->reason) << " statement_epoch=" << view->statement_epoch
-               << " base_epoch=" << change->base_epoch << " names_adds=" << change->adds.size()
-               << (about.empty() ? "" : (view->Lists(about) ? " listed=1" : " listed=0"));
-  }
+  // Whether it counted here, and whether the account it is about is still listed after it (VerdictLine).
+  log().info << "group change verdict " << group_roster_sync::VerdictLine(*change, received->applied.view);
   FinishView(change->group_id, received->applied, local_account, outcome);
   KeepChangeNewcomer(message, *change, local_account);
   return {};
