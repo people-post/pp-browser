@@ -1,3 +1,7 @@
+# Default owners for every path; a later, more specific line replaces it (the last matching line wins).
+# Any one of the three may approve.
+*                                    @yhw1630 @gzdemon77 @leofreiheit
+
 # Who must look at a change in the risky parts of the tree. GitHub only enforces this when branch
 # protection enables "require review from code owners"; until then it is documentation for reviewers.
 #
@@ -47,7 +51,3 @@ src/gui/SettingsRunLogsActions*      @yhw1630 @gzdemon77
 
 # What the app expects from the relay (pp-relay-apis, Leo's): its side reviews it too (AGENTS.md § Conventions).
 docs/contracts/SERVICE_ENDPOINTS.md  @yhw1630 @gzdemon77 @leofreiheit
-
-# Release process: decisions and runbooks. Any one of the three may approve.
-projects/release-compatibility/      @yhw1630 @gzdemon77 @leofreiheit
-docs/ops/                            @yhw1630 @gzdemon77 @leofreiheit
