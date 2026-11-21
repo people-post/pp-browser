@@ -1053,21 +1053,30 @@ select selectbox option {
   margin-bottom: 4dp;
 }
 
-/* Voice mode: the "hold to talk" bar takes the text input's place; grey while a call has the microphone, red while recording. */
+/* Voice mode: the "hold to talk" bar takes the text input's place. At rest a pill with the microphone (the accent
+   colour is in colors-*.rcss); held it is the accent and says what releasing does; sliding up to the cancel line
+   turns it a soft red. Grey while a call has the microphone. */
 .prompt-voice-bar {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 40dp;
+  gap: 8dp;
+  height: 50dp;
   margin: 0;
   padding: 0 14dp;
   border: 0;
-  border-radius: 20dp;
+  border-radius: 25dp;
   font-family: LatoLatin;
-  font-size: 15dp;
+  font-size: 17dp;
   cursor: pointer;
+}
+
+.prompt-voice-bar-mic {
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
 }
 
 .prompt-voice-bar--blocked {
@@ -1086,7 +1095,7 @@ select selectbox option {
   cursor: pointer;
 }
 
-/* Inside the voice bar while recording (red bar): everything reads white on it. */
+/* Desktop (a click starts it): the bar shows the dot, the timer and the hint while recording. */
 .prompt-voice-status {
   flex: 1;
   min-width: 0;
@@ -1096,30 +1105,16 @@ select selectbox option {
   padding: 0 6dp;
 }
 
-.prompt-voice-bar .prompt-voice-dot {
-  background-color: #ffffff;
-}
-
-.prompt-voice-bar .prompt-voice-timer--countdown,
-.prompt-voice-bar .prompt-voice-hint--cancel {
-  color: #ffffff;
-}
-
 .prompt-voice-dot {
   flex-shrink: 0;
   width: 10dp;
   height: 10dp;
   border-radius: 5dp;
-  background-color: #ef4444;
 }
 
 .prompt-voice-timer {
   flex-shrink: 0;
   font-size: 14dp;
-}
-
-.prompt-voice-timer--countdown {
-  color: #ef4444;
 }
 
 .prompt-voice-hint {
@@ -1131,9 +1126,101 @@ select selectbox option {
   opacity: 0.72;
 }
 
-.prompt-voice-hint--cancel {
-  color: #ef4444;
-  opacity: 1;
+/* The phone's hold-to-talk bubble (a child of .shell-chat-overlay, ShellLayoutRml): 176x64dp, above the press point,
+   its left edge follows the finger (voice_bubble_left, eased). The material child carries the colour and, on the frosted
+   chat overlay, the blur (the engine draws none on an element that has children itself, like .bar-material); the
+   tail is a clipped half diamond under the bubble. */
+.voice-bubble {
+  position: absolute;
+  z-index: 4;
+  width: 176dp;
+  height: 64dp;
+  border-radius: 18dp;
+  transition: left 0.12s cubic-out;
+}
+
+.voice-bubble-material {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  border-radius: 18dp;
+}
+
+.shell-chat-overlay--frost .voice-bubble-material {
+  backdrop-filter: blur(20px);
+}
+
+.voice-bubble-body {
+  position: relative;
+  padding: 8dp 12dp;
+}
+
+.voice-bubble-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7dp;
+  height: 26dp;
+  font-size: 16dp;
+  white-space: nowrap;
+}
+
+.voice-bubble-row--armed .prompt-voice-dot {
+  display: none;
+}
+
+.voice-bubble-timer {
+  flex-shrink: 0;
+  font-size: 16dp;
+}
+
+.voice-bubble-bars {
+  flex: 1;
+  height: 20dp;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.voice-bubble-bar {
+  width: 3dp;
+  border-radius: 1.5dp;
+}
+
+.voice-bubble-bin {
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
+}
+
+.voice-bubble-sub {
+  height: 20dp;
+  margin-top: 2dp;
+  text-align: center;
+  white-space: nowrap;
+  font-size: 13dp;
+  line-height: 20dp;
+}
+
+.voice-bubble-tail {
+  position: absolute;
+  top: 64dp;
+  width: 14dp;
+  height: 7dp;
+  margin-left: -7dp;
+  overflow: hidden;
+}
+
+.voice-bubble-tail-diamond {
+  position: absolute;
+  top: -5dp;
+  left: 2dp;
+  width: 10dp;
+  height: 10dp;
+  transform: rotate(45deg);
 }
 
 .chat-link {
@@ -12945,6 +13032,7 @@ input.checkbox {
 /* Voice mode (a people chat): the hold-to-talk bar takes the pill's place; the keyboard key sits inside its right end. */
 .shell-chat-overlay .prompt-voice-bar {
   padding-right: 44dp;
+  border: 1dp;
 }
 
 .shell-chat-overlay .prompt-voice-toggle-btn--start {

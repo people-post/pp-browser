@@ -28,6 +28,11 @@ PAIRS = (
     + [("label-on-accent", s, 3.0) for s in ["accent", "bubble-out", "danger", "mention"]]
     # group sender names on a received bubble (light variants are darkened avatar colours; dark is the avatar colour)
     + [(f"x-name-{n}", "bubble-in", 3.0) for n in (0, 1, 2, 3, 4, 5, 7)]
+    # the voice bubble (text on its glass, worst case over the plain page; the blur only averages the picture behind)
+    + [("label", m, 4.5) for m in ("x-bar-blur", "x-vbubble-approx")]
+    + [("x-vbubble-ink-2", m, 4.5) for m in ("x-bar-blur", "x-vbubble-approx")]
+    + [("x-vbubble-ink-armed", m, 4.5) for m in ("x-vbubble-armed", "x-vbubble-armed-solid", "x-vbubble-armed-approx")]
+    + [("x-vbar-ink-armed", "x-vbar-armed", 4.5), ("x-vbar-ink-armed", "bg-card", 4.5)]
     + [("x-name-indigo", "bubble-in", 3.0)]  # dark only; light indigo is avatar-6 (5.65:1, not a token pair)
 )
 

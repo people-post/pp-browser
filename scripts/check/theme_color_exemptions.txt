@@ -56,7 +56,6 @@ assets/themes/components.rcss	#2563eb	1
 assets/themes/components.rcss	#6366f1	2
 assets/themes/components.rcss	#818cf8	2
 assets/themes/components.rcss	#b42318	1
-assets/themes/components.rcss	#ef4444	3
 assets/themes/components.rcss	#ffffff	7
 assets/themes/components.rcss	rgba(0,0,0,0.18)	1
 assets/themes/components.rcss	rgba(128,128,128,0.08)	1

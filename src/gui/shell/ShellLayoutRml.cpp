@@ -22,6 +22,12 @@ std::string BarMaterial(bool frosted, bool frost_enabled, bool solid) {
   return out + "\"></div>";
 }
 
+/** The phone voice bubble's material, one switch: true = the real backdrop blur of the app's frosted bars (a childless
+ *  material layer, `shell-chat-overlay--frost`); false = the 88% translucent approximation without a blur
+ *  (`shell-chat-overlay--glass`). Transparency off is an opaque surface either way. The chat view's frame has the header's
+ *  blur and the bubble's, two at most (the composer is a clear bar there). */
+constexpr bool kVoiceBubbleBlur = true;
+
 std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeFrostSurface active, bool frost_enabled,
                                bool solid) {
   std::string cls = "surface-chrome";
@@ -35,6 +41,40 @@ std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeF
 }
 
 } // namespace
+
+/** The hold-to-talk bubble (components.rcss `.voice-bubble`): shown while a phone hold records; its box and the level
+ *  bars are the chat model's (VoiceComposer). It is a child of the overlay, so its dp position is the window's. */
+std::string ShellLayoutRml::VoiceBubbleRml() {
+  std::ostringstream out;
+  out << "<div class=\"voice-bubble\" data-model=\"chat\" data-if=\"voice_bubble\" "
+         "data-class-voice-bubble--armed=\"voice_cancel_zone\" data-style-left=\"voice_bubble_left\" "
+         "data-style-top=\"voice_bubble_top\">";
+  out << "<div class=\"voice-bubble-material\"></div><div class=\"voice-bubble-body\">";
+  out << "<div class=\"voice-bubble-row\" data-if=\"!voice_cancel_zone &amp;&amp; !voice_limit &amp;&amp; "
+         "!voice_countdown\">"
+         "<div class=\"prompt-voice-dot\"></div><span class=\"voice-bubble-timer\">{{voice_timer}}</span>"
+         "<div class=\"voice-bubble-bars\">";
+  for (int i = 0; i < 12; ++i) {
+    out << "<div class=\"voice-bubble-bar\" data-style-height=\"voice_lv_" << i << "\"></div>";
+  }
+  out << "</div></div>";
+  out << "<div class=\"voice-bubble-row\" data-if=\"!voice_cancel_zone &amp;&amp; (voice_limit || voice_countdown)\">"
+         "<span class=\"voice-bubble-timer\" "
+         "data-class-voice-bubble-timer--countdown=\"!voice_limit\">{{voice_hint}}</span>"
+         "</div>";
+  out << "<div class=\"voice-bubble-row voice-bubble-row--armed\" data-if=\"voice_cancel_zone\">"
+         "<svg class=\"voice-bubble-bin\" src=\"../icons/v2/trash.svg\" width=\"20\" height=\"20\"></svg>"
+      << Tr("chat.voice.hint_cancel") << "</div>";
+  out << "<div class=\"voice-bubble-sub\" data-if=\"!voice_cancel_zone &amp;&amp; !voice_limit\">"
+      << Tr("chat.voice.hint_slide_up") << "</div>";
+  out << "<div class=\"voice-bubble-sub\" data-if=\"!voice_cancel_zone &amp;&amp; voice_limit\">"
+      << Tr("chat.voice.hint_send") << "</div>";
+  out << "<div class=\"voice-bubble-sub\" data-if=\"voice_cancel_zone\">" << Tr("chat.voice.hint_slide_down")
+      << "</div>";
+  out << "</div><div class=\"voice-bubble-tail\" data-style-left=\"voice_tail_left\">"
+         "<div class=\"voice-bubble-tail-diamond\"></div></div></div>";
+  return out.str();
+}
 
 ShellLayoutRml::ShellLayoutRml(const ShellState& state, const bool bottom_chrome_open, std::string bottom_chrome_key)
     : state_(state), bottom_chrome_open_(bottom_chrome_open), bottom_chrome_key_(std::move(bottom_chrome_key)) {}
@@ -160,7 +200,11 @@ std::string ShellLayoutRml::CompactBase() const {
   }
 
   if (chat_shown) {
-    out << "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">";
+    out << "<div class=\"shell-chat-overlay";
+    if (!solid && frost_enabled) {
+      out << (kVoiceBubbleBlur ? " shell-chat-overlay--frost" : " shell-chat-overlay--glass");
+    }
+    out << "\" id=\"shell-chat-overlay\">";
     out << "<div class=\"shell-chat-overlay-chrome row "
         << SurfaceChromeClass(CompactChromeFrostSurface::ChatOverlayHeader, frost, frost_enabled, solid) << "\">";
     out << BarMaterial(frost == CompactChromeFrostSurface::ChatOverlayHeader, frost_enabled, solid);
@@ -184,6 +228,7 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "<div class=\"shell-composer-mount surface-chrome" << (solid ? " surface-chrome--solid" : "")
         << "\" id=\"shell-composer-mount\"></div>";
     out << "</div>";
+    out << VoiceBubbleRml();
     out << "</div>";
   }
 
