@@ -175,6 +175,17 @@ public:
    * The peer takes a close without `bye` as a lost path (K014), not as the call ending.
    */
   virtual void Detach(const std::string& call_id) = 0;
+  /**
+   * Detach `call_id` unless its media is live (a hello admitted, a leg connecting or connected) when the
+   * detach runs: a connect attempt's clean start. Decided where the transport keeps its legs, never by the
+   * caller's earlier IsActive(): a peer's hello can be admitted between the two and would be dropped. The
+   * default is for transports whose state is the caller's own.
+   */
+  virtual void DetachUnlessActive(const std::string& call_id) {
+    if (!IsActive()) {
+      Detach(call_id);
+    }
+  }
   /** Device level (shutdown): drop every call's media. */
   virtual void DetachAll() = 0;
   /**
