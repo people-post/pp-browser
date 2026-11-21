@@ -87,7 +87,8 @@ TEST(VoiceRecorder, TheLevelIsZeroForSilenceAndNearOneAtFullScale) {
     ASSERT_TRUE(WaitFor([&] { return probe.Done(); }));
     EXPECT_GT(probe.last_level.load(), 0.99f) << "full scale reports a level near 1";
     // One report about every 100 ms of audio: the level rides on the progress tick, not on a tick of its own.
-    EXPECT_NEAR(probe.progress_calls.load(), probe.last_progress_ms.load() / 100, 2);
+    EXPECT_NEAR(static_cast<double>(probe.progress_calls.load()),
+                static_cast<double>(probe.last_progress_ms.load() / 100), 2.0);
   }
 }
 

@@ -107,7 +107,7 @@ float VoiceLevelFromPeak(const int peak) {
   if (peak <= 0) {
     return 0.f;
   }
-  const float db = 20.f * std::log10(std::min(peak, 32768) / 32768.f);
+  const float db = 20.f * std::log10(static_cast<float>(std::min(peak, 32768)) / 32768.f);
   return std::clamp((db + 50.f) / 50.f, 0.f, 1.f);
 }
 
