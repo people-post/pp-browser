@@ -199,10 +199,16 @@ jobs:
           # The backend origin is compiled in (no built-in default since the per-backend profiles):
           # a node's registration / directory URLs derive from it.
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
+          PP_API_URL_STAGING: ${{ secrets.PP_API_URL_STAGING }}
+          PP_API_URL_DEV: ${{ secrets.PP_API_URL_DEV }}
+          # Deprecated fallback for PP_API_URL_STAGING
           PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
           # The prod relay's PeerId beside its origin (multi-relay MR008): the node's registration relay is expected
           # to answer to it with the compiled URL.
           PP_RELAY_PEER_ID_PROD: ${{ vars.PP_RELAY_PEER_ID_PROD || secrets.PP_RELAY_PEER_ID_PROD }}
+          PP_RELAY_PEER_ID_STAGING: ${{ vars.PP_RELAY_PEER_ID_STAGING || secrets.PP_RELAY_PEER_ID_STAGING }}
+          PP_RELAY_PEER_ID_DEV: ${{ vars.PP_RELAY_PEER_ID_DEV || secrets.PP_RELAY_PEER_ID_DEV }}
+          # Deprecated fallback for PP_RELAY_PEER_ID_STAGING
           PP_RELAY_PEER_ID_QA: ${{ vars.PP_RELAY_PEER_ID_QA || secrets.PP_RELAY_PEER_ID_QA }}
           KIND: ${{ needs.guard.outputs.kind }}
         run: |

@@ -54,9 +54,13 @@ Environment:
   PP_BROWSER_RELEASE_VERSION  Fallback build string if BUILD_NUMBER unset
   PP_BROWSER_IOS_CALLKIT      ON (default) or OFF: CallKit + PushKit for default-PIN incoming calls; OFF for the China storefront
   PP_API_URL_PROD             Prod backend origin compiled into the app (empty = none)
-  PP_API_URL_QA               QA backend origin compiled into the app (empty = QA option hidden)
+  PP_API_URL_STAGING          Staging backend origin compiled into the app (empty = Staging option hidden)
+  PP_API_URL_DEV              Dev backend origin compiled into the app (empty = Dev option hidden)
+  PP_API_URL_QA               Deprecated: fallback for PP_API_URL_STAGING
   PP_RELAY_PEER_ID_PROD       PeerId of the prod backend's relay (multi-relay MR008; empty = pinned on first use)
-  PP_RELAY_PEER_ID_QA         PeerId of the QA backend's relay (empty = pinned on first use)
+  PP_RELAY_PEER_ID_STAGING    PeerId of the staging backend's relay (empty = pinned on first use)
+  PP_RELAY_PEER_ID_DEV        PeerId of the dev backend's relay (empty = pinned on first use)
+  PP_RELAY_PEER_ID_QA         Deprecated: fallback for PP_RELAY_PEER_ID_STAGING
   PP_RELAY_CONTENT_SHA256     ON/OFF: default of relay.content_sha256 (x-amz-content-sha256 on relay POST/PUT); empty = OFF
   IOS_CMAKE_GENERATOR       Ninja (default) or Xcode
   IOS_SIMULATOR_UDID        Target a specific simulator (optional; otherwise newest iPhone)
@@ -138,11 +142,23 @@ common_cmake_args() {
   if [[ -n "${PP_API_URL_PROD:-}" ]]; then
     args+=(-DPP_API_URL_PROD="${PP_API_URL_PROD}")
   fi
+  if [[ -n "${PP_API_URL_STAGING:-}" ]]; then
+    args+=(-DPP_API_URL_STAGING="${PP_API_URL_STAGING}")
+  fi
+  if [[ -n "${PP_API_URL_DEV:-}" ]]; then
+    args+=(-DPP_API_URL_DEV="${PP_API_URL_DEV}")
+  fi
   if [[ -n "${PP_API_URL_QA:-}" ]]; then
     args+=(-DPP_API_URL_QA="${PP_API_URL_QA}")
   fi
   if [[ -n "${PP_RELAY_PEER_ID_PROD:-}" ]]; then
     args+=(-DPP_RELAY_PEER_ID_PROD="${PP_RELAY_PEER_ID_PROD}")
+  fi
+  if [[ -n "${PP_RELAY_PEER_ID_STAGING:-}" ]]; then
+    args+=(-DPP_RELAY_PEER_ID_STAGING="${PP_RELAY_PEER_ID_STAGING}")
+  fi
+  if [[ -n "${PP_RELAY_PEER_ID_DEV:-}" ]]; then
+    args+=(-DPP_RELAY_PEER_ID_DEV="${PP_RELAY_PEER_ID_DEV}")
   fi
   if [[ -n "${PP_RELAY_PEER_ID_QA:-}" ]]; then
     args+=(-DPP_RELAY_PEER_ID_QA="${PP_RELAY_PEER_ID_QA}")

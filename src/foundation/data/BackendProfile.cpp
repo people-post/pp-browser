@@ -25,8 +25,10 @@ std::string CustomKey(const std::string& url) {
 
 std::string KeyFor(const BackendEnv env, const std::string& registration_url) {
   switch (env) {
-    case BackendEnv::Qa:
-      return "qa";
+    case BackendEnv::Staging:
+      return "qa"; // keeps the directory the staging (formerly qa) profile already lives in
+    case BackendEnv::Dev:
+      return "dev";
     case BackendEnv::Custom:
       return CustomKey(registration_url);
     case BackendEnv::Prod:
@@ -67,10 +69,7 @@ std::string SavedBackendKey(const AppConfig& config) {
   if (OriginEnvOverrideActive()) {
     return CustomKey(BriefOrigin());
   }
-  BackendEnv env = ParseBackendEnv(config.backend.env);
-  if (env == BackendEnv::Qa && !QaBackendAvailable()) {
-    env = BackendEnv::Prod;
-  }
+  const BackendEnv env = ResolveLatchedBackend(ParseBackendEnv(config.backend.env), BuildCompiledOrigins());
   return KeyFor(
       env, config.backend.has_saved_urls ? config.backend.saved_registration.base_url : config.registration.base_url);
 }

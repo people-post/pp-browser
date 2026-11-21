@@ -242,22 +242,29 @@ endif()
 
 # Compile-time backend origins (scheme://host, no path); PP_BROWSER_ORIGIN overrides them at runtime.
 # Empty by default: backend-dependent features stay disabled until a prod origin is supplied;
-# an empty QA origin hides the QA backend option.
+# an empty staging / dev origin hides that backend option. PP_API_URL_QA / PP_RELAY_PEER_ID_QA are deprecated
+# fallbacks for staging, used only while the staging variable is empty.
 set(PP_API_URL_PROD "" CACHE STRING "Prod backend origin compiled into the client")
-set(PP_API_URL_QA "" CACHE STRING "QA backend origin compiled into the client")
+set(PP_API_URL_STAGING "" CACHE STRING "Staging backend origin compiled into the client")
+set(PP_API_URL_DEV "" CACHE STRING "Dev backend origin compiled into the client")
+set(PP_API_URL_QA "" CACHE STRING "Deprecated: fallback for PP_API_URL_STAGING")
 if(NOT PP_API_URL_PROD STREQUAL "")
   target_compile_definitions(pp_foundation_platform_core PRIVATE
     PP_API_URL_PROD="${PP_API_URL_PROD}")
 endif()
-if(NOT PP_API_URL_QA STREQUAL "")
-  target_compile_definitions(pp_foundation_platform_core PRIVATE
-    PP_API_URL_QA="${PP_API_URL_QA}")
-endif()
+foreach(origin_var PP_API_URL_STAGING PP_API_URL_DEV PP_API_URL_QA)
+  if(NOT "${${origin_var}}" STREQUAL "")
+    target_compile_definitions(pp_foundation_platform_core PRIVATE
+      ${origin_var}="${${origin_var}}")
+  endif()
+endforeach()
 # The org relays' PeerIds beside their origins (multi-relay MR008: a relay address carries its PeerId; the app never
 # learns it from the relay's own answer). Empty: the relay is pinned on its first answer, with a warning (dogfood).
 set(PP_RELAY_PEER_ID_PROD "" CACHE STRING "PeerId of the prod backend's relay (beside PP_API_URL_PROD)")
-set(PP_RELAY_PEER_ID_QA "" CACHE STRING "PeerId of the QA backend's relay (beside PP_API_URL_QA)")
-foreach(peer_id_var PP_RELAY_PEER_ID_PROD PP_RELAY_PEER_ID_QA)
+set(PP_RELAY_PEER_ID_STAGING "" CACHE STRING "PeerId of the staging backend's relay (beside PP_API_URL_STAGING)")
+set(PP_RELAY_PEER_ID_DEV "" CACHE STRING "PeerId of the dev backend's relay (beside PP_API_URL_DEV)")
+set(PP_RELAY_PEER_ID_QA "" CACHE STRING "Deprecated: fallback for PP_RELAY_PEER_ID_STAGING")
+foreach(peer_id_var PP_RELAY_PEER_ID_PROD PP_RELAY_PEER_ID_STAGING PP_RELAY_PEER_ID_DEV PP_RELAY_PEER_ID_QA)
   if(NOT "${${peer_id_var}}" STREQUAL "" AND NOT "${${peer_id_var}}" MATCHES "^Qm[1-9A-HJ-NP-Za-km-z]+$")
     message(FATAL_ERROR "${peer_id_var} is not a relay PeerId (Qm…, from the relay's link or GET /v1/relay-identity)")
   endif()
@@ -266,10 +273,12 @@ if(NOT PP_RELAY_PEER_ID_PROD STREQUAL "")
   target_compile_definitions(pp_foundation_platform_core PRIVATE
     PP_RELAY_PEER_ID_PROD="${PP_RELAY_PEER_ID_PROD}")
 endif()
-if(NOT PP_RELAY_PEER_ID_QA STREQUAL "")
-  target_compile_definitions(pp_foundation_platform_core PRIVATE
-    PP_RELAY_PEER_ID_QA="${PP_RELAY_PEER_ID_QA}")
-endif()
+foreach(peer_id_var PP_RELAY_PEER_ID_STAGING PP_RELAY_PEER_ID_DEV PP_RELAY_PEER_ID_QA)
+  if(NOT "${${peer_id_var}}" STREQUAL "")
+    target_compile_definitions(pp_foundation_platform_core PRIVATE
+      ${peer_id_var}="${${peer_id_var}}")
+  endif()
+endforeach()
 
 # Compile-time default of `relay.content_sha256`: send x-amz-content-sha256 on relay POST/PUT. Off unless the
 # deployment's relay API sits behind CloudFront origin access control; config.json / PP_NODE_RELAY_CONTENT_SHA256 override.

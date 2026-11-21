@@ -238,7 +238,8 @@ Each backend (Me → Network → Service, `backend.env`) has its own profile, so
 | Backend | Key (and id of a profile created for it) |
 |---------|------------------------------------------|
 | `prod` | `prod` |
-| `qa` | `qa` |
+| `staging` (legacy `qa`) | `qa` |
+| `dev` | `dev` |
 | `custom`, or any run with `PP_BROWSER_ORIGIN` | `custom-<12 hex>`: FNV-1a 64 of the normalized registration URL (origin for `PP_BROWSER_ORIGIN`) |
 
 At startup, after the config is loaded, the registry selects the active profile for the key: the active one when it matches; else the existing profile recorded for the key; else a new profile with the key as its id. An active profile whose manifest records no backend — a fresh install's `default`, or a profile just reset (the reset writes its manifest again without one) — takes the key; no other profile is ever claimed (release 1 starts clean, RC017). `manifest.backend` is never overwritten once set, and a newer manifest is refused, never written. A `--profile` override is not redirected. The backend is chosen once per run; changing it takes effect on the next start.
@@ -262,7 +263,7 @@ its own answer. Per profile, so per backend; a pp-node keeps one in its data dir
 - `origin`: the relay base URL as relays are compared (`RelayOriginKey`: scheme and host lower case, the default port
   dropped, no trailing `/`). One pin per origin and one origin per PeerId (a second of either is dropped on read).
 - `peer_id`: what its address names — the relay link it was added by (and `our_relays.json`), the build
-  (`PP_RELAY_PEER_ID_PROD` / `_QA`) or the config (`relay.peer_id`, `registration.peer_id`) for the org's origins, our
+  (`PP_RELAY_PEER_ID_PROD` / `_STAGING` / `_DEV`) or the config (`relay.peer_id`, `registration.peer_id`) for the org's origins, our
   own card on a linked device; only a developer build's bare origin, and the org's in a build or config that names
   none, take their first identity answer.
 - `presented_peer_id` / `presented_at_ms`: optional — another PeerId the origin's identity answer named when it was
