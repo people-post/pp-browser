@@ -4435,4 +4435,7 @@ input.checkbox:checked {
   background-color: #ffffff;
   border: 1dp rgba(0, 0, 0, 0.2);
 }
+.shell-body--wide .prompt-composer--wide .prompt-composer-hint {
+  color: #8e8e93;
+}
 }

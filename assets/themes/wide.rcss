@@ -704,6 +704,47 @@
   gap: 6dp;
 }
 
+/* Wide row (composer_wide.rml): the paperclip, emoji, microphone and Send sit on the row's centre line; the microphone
+   (the phone's end key, hidden by default) shows here. */
+.shell-body--wide .prompt-composer--wide .prompt-composer-row .prompt-voice-toggle-btn,
+.shell-body--wide .prompt-composer--wide .prompt-composer-row .prompt-emoji-btn,
+.shell-body--wide .prompt-composer--wide .prompt-composer-row .prompt-attach-btn,
+.shell-body--wide .prompt-composer--wide .prompt-composer-row .prompt-send-btn {
+  margin-bottom: 0;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-composer-row .prompt-voice-toggle-btn--end {
+  display: flex;
+  width: 40dp;
+  min-width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-composer-row > .prompt-attach-btn,
+.shell-body--wide .prompt-composer--wide .prompt-composer-row > .prompt-emoji-btn {
+  width: 40dp;
+  min-width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-composer-pill .prompt-capture-btn {
+  margin-bottom: 0;
+  align-self: center;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-composer-row {
+  margin-right: 16dp;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-composer-hint {
+  margin: 6dp 0 0 0;
+  font-size: 12dp;
+  line-height: 16dp;
+  text-align: center;
+}
+
 .shell-body--wide .prompt-composer-input {
   font-size: 15dp;
 }

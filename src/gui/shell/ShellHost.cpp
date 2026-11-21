@@ -2705,6 +2705,8 @@ void ShellHost::MountComposer() {
   if (body.empty()) {
     return;
   }
+  // A pane in the wide layout gets the desktop composer; the Home landing keeps the shared one.
+  const std::string wide_body = ViewCatalog::LoadBody(ViewCatalog::KeyForLayout("composer", true));
 
   // The Home landing mounts the composer inside the home view, centered above the chips (desktop and phone).
   if (state_.nav_tab == NavTab::Home && !state_.compact_chat_open) {
@@ -2729,7 +2731,7 @@ void ShellHost::MountComposer() {
   if (state_.layout_mode == LayoutMode::Expanded) {
     ui::Element* target = doc->GetElementById(("pane-composer-" + composer_pane->spec.key).c_str());
     if (target) {
-      RmlMount::MountInner(target, body);
+      RmlMount::MountInner(target, wide_body);
     }
     return;
   }

@@ -144,6 +144,7 @@ TEST(ViewCatalogAssetsTest, TheRecoveryGridIsExpandedIntoItsTwoHosts) {
 // The wide layout mounts a page's own wide view when it has one; every other page, and the phone, keep their view.
 TEST(ViewCatalogKeyTest, TheWideLayoutPicksAPagesWideViewWhenItHasOne) {
   EXPECT_EQ(pbr::ViewCatalog::KeyForLayout("chat", true), "chat_wide");
+  EXPECT_EQ(pbr::ViewCatalog::KeyForLayout("composer", true), "composer_wide");
   EXPECT_EQ(pbr::ViewCatalog::KeyForLayout("chat", false), "chat");
   EXPECT_EQ(pbr::ViewCatalog::KeyForLayout("sidebar", true), "sidebar");
   EXPECT_EQ(pbr::ViewCatalog::KeyForLayout("chat_wide", false), "chat_wide");

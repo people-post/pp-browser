@@ -1369,6 +1369,7 @@
     "chat.date.this_year": "{month}{day}日",
     "chat.date.older": "{year}年{month}{day}日",
     "chat.composer.placeholder": "消息",
+    "chat.composer.hint_wide": "按 Enter 发送，Shift + Enter 换行",
     "chat.time.yesterday": "昨天 {time}",
     "chat.time.this_year": "{month}{day}日 {time}",
     "chat.time.older": "{year}年{month}{day}日 {time}",

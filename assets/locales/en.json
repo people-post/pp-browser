@@ -1409,6 +1409,7 @@
     "chat.date.this_year": "{month} {day}",
     "chat.date.older": "{month} {day}, {year}",
     "chat.composer.placeholder": "Message",
+    "chat.composer.hint_wide": "Enter to send, Shift + Enter for a new line",
     "chat.time.yesterday": "Yesterday {time}",
     "chat.time.this_year": "{month} {day}, {time}",
     "chat.time.older": "{month} {day}, {year} {time}",
