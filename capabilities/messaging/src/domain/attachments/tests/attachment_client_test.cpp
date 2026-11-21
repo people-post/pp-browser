@@ -676,6 +676,90 @@ TEST_F(DirectHeadStartTest, APushThatWinsWhileTheServerUploadsDeletesTheServerCo
   EXPECT_TRUE(record->fields.url.empty()) << "the losing upload does not write the record";
 }
 
+/** A progress port that, on its first call, lets the held push answer "delivered" (the push lands mid-upload). */
+std::function<bool(uint64_t, uint64_t)> PushLandsOnFirstProgress(FakePeerClient& peer) {
+  return [&peer](uint64_t, uint64_t) {
+    if (peer.answer) {
+      auto answer = std::move(peer.answer);
+      peer.answer = nullptr;
+      answer(Roe<void>{});
+    }
+    return true;
+  };
+}
+
+TEST_F(DirectHeadStartTest, AFailedDeleteOfTheLateServerCopyStillLeavesTheSendDeliveredDirect) {
+  peer_.hold = true;
+  blob_->SetFileDeleteError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
+  auto options = Raced(direct_);
+  options.progress = PushLandsOnFirstProgress(peer_);
+  Send(std::move(options));
+  FireHeadStart();
+  ASSERT_EQ(results_, 1);
+  ASSERT_TRUE(result_) << result_.error().message;
+  EXPECT_TRUE(result_->url.empty()) << "delivered by the push";
+  EXPECT_EQ(blob_->DeletedFileIds().size(), 1u) << "the delete was tried";
+  auto record = Record();
+  ASSERT_TRUE(record);
+  EXPECT_TRUE(record->delivered);
+  EXPECT_TRUE(record->fields.url.empty());
+}
+
+TEST_F(DirectHeadStartTest, APushThatWinsDuringCompleteDeletesTheServerCopy) {
+  peer_.hold = true;
+  blob_->SetOnFileComplete([this](const std::string&) {
+    if (peer_.answer) {
+      auto answer = std::move(peer_.answer);
+      peer_.answer = nullptr;
+      answer(Roe<void>{}); // the push lands while /complete is on its way
+    }
+  });
+  Send(Raced(direct_));
+  FireHeadStart();
+  ASSERT_EQ(results_, 1);
+  ASSERT_TRUE(result_) << result_.error().message;
+  EXPECT_TRUE(result_->url.empty());
+  EXPECT_EQ(blob_->CompletedFileIds().size(), 1u);
+  EXPECT_EQ(blob_->DeletedFileIds(), blob_->CompletedFileIds()) << "the completed copy is deleted";
+  auto record = Record();
+  ASSERT_TRUE(record);
+  EXPECT_TRUE(record->fields.url.empty());
+}
+
+TEST_F(DirectHeadStartTest, AnUploadFailingAfterThePushWonChangesNothing) {
+  peer_.hold = true;
+  blob_->SetPutError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
+  auto options = Raced(direct_);
+  options.progress = PushLandsOnFirstProgress(peer_);
+  Send(std::move(options));
+  FireHeadStart();
+  ASSERT_EQ(results_, 1);
+  ASSERT_TRUE(result_) << "no error after the push delivered it";
+  EXPECT_TRUE(result_->url.empty());
+  auto record = Record();
+  ASSERT_TRUE(record);
+  EXPECT_TRUE(record->delivered);
+}
+
+// The abort path: once the push has won, the upload's next progress step answers "stop" (here between the parts of
+// a multipart upload), the upload ends without completing and its started copy is deleted.
+TEST_F(DirectHeadStartTest, APushThatWinsMidUploadStopsTheUploadAtItsNextStep) {
+  peer_.hold = true;
+  blob_->SetFileStartMode("multipart");
+  blob_->SetFilePartBytes(1ULL << 20); // the smallest part the client accepts: three parts for 2.5 MB
+  auto options = Raced(direct_);
+  options.max_plaintext_bytes = 20ULL * 1000ULL * 1000ULL;
+  options.progress = PushLandsOnFirstProgress(peer_);
+  Send(std::move(options), 2500000);
+  FireHeadStart();
+  ASSERT_EQ(results_, 1);
+  ASSERT_TRUE(result_) << result_.error().message;
+  EXPECT_TRUE(result_->url.empty());
+  EXPECT_TRUE(blob_->CompletedFileIds().empty()) << "the upload stopped before /complete";
+  EXPECT_TRUE(blob_->UploadedBodies().empty()) << "no part went after the push won";
+  EXPECT_EQ(blob_->DeletedFileIds().size(), 1u) << "the started copy is deleted";
+}
+
 TEST_F(DirectHeadStartTest, AServerFailureWaitsForThePushStillOut) {
   peer_.hold = true;
   blob_->SetFileStartError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));

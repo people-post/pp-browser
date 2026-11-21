@@ -213,7 +213,12 @@ void DeliverStaged(const std::shared_ptr<IBlobClient>& blob, IdentityStore& iden
       if (uploaded) {
         logging::getLogger("AttachmentClient").info << "attachment late server copy deleted, direct push won blob="
                                                     << uploaded->blob_id;
-        (void)blob->FileDelete(relay_id, uploaded->blob_id);
+        if (auto deleted = blob->FileDelete(relay_id, uploaded->blob_id); !deleted) {
+          // Left for the relay's own expiry; the send stands (the push delivered it).
+          logging::getLogger("AttachmentClient").warning
+              << "attachment late server copy not deleted blob=" << uploaded->blob_id
+              << " reason=" << deleted.error().message;
+        }
       }
       return;
     }
