@@ -589,6 +589,57 @@ select selectbox option:hover {
 }
 
 
+/* ---- Wide layout (wide.rcss, DEV/DESIGN-desktop-ui.md step 1): every rule is rooted at .shell-body--wide ---- */
+
+/* The result pill: the phone's white pill (above), a hairline instead of a shadow. */
+.shell-body--wide .shell-toast {
+  background-color: #ffffff;
+  border-color: #3c3c434a;
+  box-shadow: none;
+}
+
+.shell-body--wide .shell-toast-text {
+  color: #000000;
+}
+
+
+/* Hover explanation: the small dark label, in both themes. */
+.shell-body--wide .tip {
+  background-color: #2c2c2e;
+  color: #ffffff;
+}
+
+/* Floating menu: a card with a soft shadow; the row under the pointer turns accent blue (red for a destructive
+   one) with white text and icon. */
+.shell-body--wide #context-menu-panel {
+  background-color: #ffffff;
+  border-color: #3c3c434a;
+  box-shadow: 0 6dp 24dp #00000026;
+}
+
+.shell-body--wide .context-menu-layer--bar #context-menu-panel {
+  box-shadow: 0 4dp 16dp #00000026;
+}
+
+.shell-body--wide #context-menu-panel .context-menu-item:hover {
+  background-color: #007aff;
+  color: #ffffff;
+}
+
+.shell-body--wide #context-menu-panel .context-menu-item:hover .context-menu-item-icon svg,
+.shell-body--wide #context-menu-panel .context-menu-item--danger:hover svg {
+  image-color: #ffffff;
+}
+
+.shell-body--wide #context-menu-panel .context-menu-item--danger:hover {
+  background-color: #ff3b30;
+  color: #ffffff;
+}
+
+.shell-body--wide #context-menu-panel .context-menu-item:hover .context-menu-item-check {
+  color: #ffffff;
+}
+
 .shell-activity-strip {
   background-color: #007aff;
 }

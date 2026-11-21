@@ -1119,6 +1119,8 @@
     "chat.search.menu": "搜索",
     "chat.search.placeholder": "搜索",
     "chat.search.cancel": "取消",
+    "chat.header.tip.call": "通话",
+    "chat.header.tip.more": "更多",
     "chat.search.indexing": "搜索中…",
     "chat.search.count": "第 {index} 条，共 {count} 条",
     "chat.search.none": "没有找到",

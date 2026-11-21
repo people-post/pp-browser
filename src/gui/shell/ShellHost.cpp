@@ -86,6 +86,10 @@ NavTab NavTabFromString(const ui::String& value) {
 
 /** Bottom inset at or above this is treated as IME (not home-indicator only). */
 constexpr int kImeLatchMinDp = ShellLayout::kImeLatchMinDp;
+/** Wide layout: the icon rail's width (wide.rcss .shell-nav-rail) and the result pill's distance above the status bar. */
+constexpr float kWideRailDp = 64.f;
+constexpr float kWideToastBottomDp = 96.f;
+
 /** Page push / back slide (DESIGN-pp-ui §7); keep equal to the 0.3s in components.rcss. */
 constexpr int kPageSlideMs = 300;
 constexpr int64_t kSlowSyncLayoutMs = 30; // two 60 Hz frames
@@ -2276,10 +2280,24 @@ void ShellHost::ApplySafeAreaLayout() {
   if (ui::Element* toasts = doc->GetElementById("shell-toast-stack")) {
     if (bottom_surface != CompactBottomSurface::None) {
       // Phone: a centred pill above the tab bar / composer (the chrome fills the body, see components.rcss).
+      toasts->RemoveProperty("left"); // the wide layout's offset, left over after a resize across the breakpoint
       toasts->SetProperty("top", "auto");
       set_dp(toasts, "bottom", layout.toast_bottom_dp);
+    } else if (state_.layout_mode == LayoutMode::Expanded) {
+      // Wide: a centred pill at the bottom of the content area (wide.rcss), over the status bar and the composer.
+      // The columns to its left (icon rail, list) move its left edge so it centres on the conversation.
+      float left_dp = kWideRailDp;
+      if (ShellLayout::SecondaryPaneShown(state_)) {
+        ui::Element* list = doc->GetElementById("shell-nav-content-mount");
+        const float list_dp = list ? list->GetOffsetWidth() : 0.f;
+        left_dp += list_dp > 0.f ? list_dp : static_cast<float>(state_.sidebar_width_dp);
+      }
+      toasts->SetProperty("top", "auto");
+      set_dp(toasts, "left", left_dp);
+      set_dp(toasts, "bottom", statusbar_dp + kWideToastBottomDp);
     } else {
       // Absolute toast stack is positioned from the chrome top edge (ignores padding).
+      toasts->RemoveProperty("left");
       toasts->RemoveProperty("bottom");
       set_dp(toasts, "top", 8.f + layout.content_top_dp);
     }

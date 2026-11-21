@@ -135,7 +135,7 @@ struct ProfilePreferences {
   /** When false, disables the single-surface frost tier (dogfood / perf); opaque chrome remains. */
   bool compact_chrome_frost = true;
   /** Expanded layout: secondary pane (list) width in dp; shell clamps to ShellLayout bounds. */
-  int sidebar_width_dp = 240;
+  int sidebar_width_dp = 320;
   /** Expanded layout: secondary pane (list) hidden by the user. */
   bool sidebar_collapsed = false;
   /** Expanded layout: auxiliary (right-hand) pane width in dp; shell clamps to ShellLayout bounds. */

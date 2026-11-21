@@ -368,10 +368,11 @@ TEST(ShellHostTest, AuxiliaryWidthClamp) {
 TEST(ShellHostTest, SidebarWidthClampAndVisibility) {
   using namespace pbr;
 
-  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(0), 200);
-  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(199), 200);
-  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(200), 200);
-  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(240), 240);
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(0), 280);
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(240), 280) << "a width saved before the 280 floor is clamped up on load";
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(279), 280);
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(280), 280);
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(320), 320);
   EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(480), 480);
   EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(481), 480);
   EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(100000), 480);

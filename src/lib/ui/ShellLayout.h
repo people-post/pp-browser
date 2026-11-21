@@ -35,9 +35,9 @@ struct ShellLayout {
    *  (also under a pushed page, which covers it, and under the AI drawer's scrim). 0 on desktop. */
   static float CompactTabBarDp(const ShellState& state, float bar_height_dp = ShellConfig{}.compact_nav_height_dp);
 
-  static constexpr int kSidebarMinWidthDp = 200;
+  static constexpr int kSidebarMinWidthDp = 280;
   static constexpr int kSidebarMaxWidthDp = 480;
-  static constexpr int kSidebarDefaultWidthDp = 240;
+  static constexpr int kSidebarDefaultWidthDp = 320;
   static int ClampSidebarWidthDp(int width_dp);
   static constexpr int kAuxiliaryMinWidthDp = 280;
   static constexpr int kAuxiliaryMaxWidthDp = 640;

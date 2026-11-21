@@ -16600,3 +16600,10 @@ textarea:composing ~ .ps-placeholder {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* Hover explanation (desktop foundation, DEV/DESIGN-desktop-ui.md step 1): a control carries a hidden `.tip` child
+   with its words; the wide layout shows it on hover (wide.rcss). Everywhere else it stays out of the layout, so adding
+   one to a view that the phone shares changes nothing there. */
+.tip {
+  display: none;
+}

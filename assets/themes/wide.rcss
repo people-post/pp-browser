@@ -1,0 +1,180 @@
+/* Wide-screen (desktop and wide iPad) structure and sizes — DEV/DESIGN-desktop-ui.md step 1.
+ *
+ * RULES (checked by src/gui/tests/wide_stylesheet_test.cpp):
+ *   1. Every selector starts with `.shell-body--wide`, which window_shell.rml sets while layout_mode == 'expanded'
+ *      (RCSS has no :not(), so "wide only" needs a wide root of its own). Nothing here can match under the phone's
+ *      `.shell-body--compact`.
+ *   2. No colours. Colours of wide-only things live in colors.rcss.tmpl / theme_tokens.tsv (generated into
+ *      colors-light.rcss / colors-dark.rcss), under the same `.shell-body--wide` root.
+ *   3. Page layouts that differ get their own `<page>_wide.rml`; this file only holds the sizes, the scale and the
+ *      shared wide components (floating menu, hover explanation, result pill).
+ *
+ * Loaded after components.rcss (equal specificity: this file wins) and before the colour files.
+ */
+
+/* ---- Scale (the mockup's style page, sections 1-3). RCSS has no variables, so the scale is a set of classes. ---- */
+
+/* Spacing: 4 / 8 / 12 / 16 / 24 / 32. Gap between flex children, and padding. */
+.shell-body--wide .w-gap-4 { gap: 4dp; }
+.shell-body--wide .w-gap-8 { gap: 8dp; }
+.shell-body--wide .w-gap-12 { gap: 12dp; }
+.shell-body--wide .w-gap-16 { gap: 16dp; }
+.shell-body--wide .w-gap-24 { gap: 24dp; }
+.shell-body--wide .w-gap-32 { gap: 32dp; }
+.shell-body--wide .w-pad-4 { padding: 4dp; }
+.shell-body--wide .w-pad-8 { padding: 8dp; }
+.shell-body--wide .w-pad-12 { padding: 12dp; }
+.shell-body--wide .w-pad-16 { padding: 16dp; }
+.shell-body--wide .w-pad-24 { padding: 24dp; }
+.shell-body--wide .w-pad-32 { padding: 32dp; }
+
+/* Type: six sizes only. */
+.shell-body--wide .w-type-title { font-size: 24dp; font-weight: bold; }
+.shell-body--wide .w-type-heading { font-size: 17dp; font-weight: bold; }
+.shell-body--wide .w-type-row { font-size: 16dp; }
+.shell-body--wide .w-type-body { font-size: 15dp; }
+.shell-body--wide .w-type-secondary { font-size: 14dp; }
+.shell-body--wide .w-type-small { font-size: 12dp; }
+
+/* Nothing clickable is lower than 32dp. */
+.shell-body--wide .w-target { min-height: 32dp; box-sizing: border-box; }
+
+/* ---- Columns: icon rail 64 | list 280..480 (default 320) | conversation >= 420 ----
+   64 + 280 + 420 = 764, so the 768 window keeps two columns. The list column gives way first (flex-shrink), the
+   conversation never goes below its floor. With the auxiliary (Ask-AI) pane open the three-column arithmetic does not
+   fit below ~1100; until step 3 turns that pane into an overlay drawer, such a row keeps the old floors (200 / 240). */
+.shell-body--wide .shell-nav-rail {
+  flex: 0 0 64dp;
+}
+
+.shell-body--wide .shell-pane-secondary {
+  min-width: 280dp;
+}
+
+.shell-body--wide .shell-pane-primary {
+  min-width: 420dp;
+}
+
+.shell-body--wide .shell-pane-row--aux .shell-pane-secondary {
+  min-width: 200dp;
+}
+
+.shell-body--wide .shell-pane-row--aux .shell-pane-primary {
+  min-width: 240dp;
+}
+
+/* ---- Floating menu (right-click / header "more" / pick lists): one style, contents unchanged ---- */
+.shell-body--wide #context-menu-panel {
+  min-width: 190dp;
+  padding: 6dp;
+  border-radius: 12dp;
+}
+
+.shell-body--wide #context-menu-panel .context-menu-item {
+  min-height: 34dp;
+  gap: 10dp;
+  padding: 0 12dp;
+  border-radius: 6dp;
+}
+
+.shell-body--wide #context-menu-panel .context-menu-item-label {
+  font-size: 15dp;
+  white-space: nowrap;
+}
+
+/* The touch text bar of an input field keeps its own shape. */
+.shell-body--wide .context-menu-layer--bar #context-menu-panel {
+  min-width: 0;
+  padding: 4dp;
+  border-radius: 8dp;
+}
+
+.shell-body--wide .context-menu-layer--bar #context-menu-panel .context-menu-item {
+  min-height: 36dp;
+  padding: 6dp 12dp;
+  border-radius: 6dp;
+}
+
+/* ---- Hover explanation: `<span class="tip">Words</span>` inside a `.tip-host` control (components.rcss hides .tip
+   everywhere; only the wide layout shows it, so a touch iPad, which has no hover, never does). A control takes it
+   with the `.tip-host` class; the two chat-header buttons are listed by name because a test pins their class
+   attribute. Default: right of the
+   control. `.tip--below`: under it, centred; with `.tip--end`: under it, ending at its right edge. ---- */
+.shell-body--wide .tip-host,
+.shell-body--wide .chat-header-call-btn,
+.shell-body--wide .chat-header-more-btn {
+  position: relative;
+}
+
+.shell-body--wide .tip-host:hover > .tip,
+.shell-body--wide .chat-header-call-btn:hover > .tip,
+.shell-body--wide .chat-header-more-btn:hover > .tip {
+  display: block;
+}
+
+.shell-body--wide .tip {
+  position: absolute;
+  z-index: 120;
+  left: 100%;
+  top: 50%;
+  margin-left: 10dp;
+  padding: 8dp 10dp;
+  border-radius: 7dp;
+  font-size: 12dp;
+  line-height: 14dp;
+  font-weight: normal;
+  white-space: nowrap;
+  text-align: left;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.shell-body--wide .tip.tip--below {
+  left: 50%;
+  top: 100%;
+  margin-left: 0;
+  margin-top: 8dp;
+  transform: translateX(-50%);
+}
+
+.shell-body--wide .tip.tip--below.tip--end {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+/* ---- Result pill: a white pill at the bottom of the content area, centred, up to 480dp wide, one at a time.
+   ShellHost sets the stack's left (the columns to its left) and bottom (over the status bar and composer). ---- */
+.shell-body--wide .shell-chrome {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.shell-body--wide .shell-toast-stack {
+  left: 0;
+  right: 0;
+  top: auto;
+  display: block;
+  text-align: center;
+  pointer-events: none;
+}
+
+.shell-body--wide .shell-chrome .shell-toast {
+  display: inline-block;
+  max-width: 480dp;
+  border-width: 1dp;
+  padding: 8dp 16dp;
+  margin: 0;
+  border-radius: 20dp;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.shell-body--wide .shell-toast-text {
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
+}

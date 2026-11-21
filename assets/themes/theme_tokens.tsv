@@ -128,3 +128,4 @@ x-call-unknown-bottom	#0066d9	#0066d9	extra: phone call page, unknown caller ava
 x-picture-placeholder	#d1d1d6	#3a3a3c	extra: chat picture bubble while its preview is being made (B203; opaque: a translucent grey reads as blue on our own bubble)
 x-picture-placeholder-icon	#aeaeb2	#262628	extra: the photo icon on that placeholder, a touch darker than it (static; no animation)
 x-media-pill	#000000a6	#000000a6	extra: the small dark pill carrying a time over a picture or video (white text, readable on any picture)
+x-wide-tip-bg	#2c2c2e	#2c2c2e	extra: wide layout, the dark hover-explanation label (the mockup style page: small tip bar, both themes)
