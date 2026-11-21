@@ -1,8 +1,23 @@
 #include "feature/presenters/VoiceSendQueue.h"
 
+#include <filesystem>
+#include <system_error>
 #include <utility>
 
 namespace pbr {
+
+bool VoiceRecordingRetryable(const std::string& path) {
+  std::error_code ec;
+  if (path.empty() || !std::filesystem::is_regular_file(path, ec)) {
+    return false;
+  }
+  const auto size = std::filesystem::file_size(path, ec);
+  if (!ec && size > 0) {
+    return true;
+  }
+  std::filesystem::remove(path, ec); // empty: a Retry could only fail, and nothing should be left behind
+  return false;
+}
 
 VoiceSendQueue::VoiceSendQueue(VoiceSendPorts ports) : ports_(std::move(ports)) {}
 

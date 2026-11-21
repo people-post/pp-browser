@@ -3356,10 +3356,10 @@ void ChatController::RefreshPendingAttachmentChip(const bool force) {
 }
 
 void ChatController::KeepVoiceForRetry(const std::string& path, const std::string& thread_id) {
-  std::error_code ec;
-  if (path.empty() || !std::filesystem::exists(path, ec)) {
-    return; // already gone (the recordings are wiped at start and on lock): nothing to retry
+  if (!VoiceRecordingRetryable(path)) {
+    return; // gone (wiped at start and on lock) or empty: nothing a Retry could send
   }
+  std::error_code ec;
   if (!failed_voice_path_.empty() && failed_voice_path_ != path) {
     std::filesystem::remove(failed_voice_path_, ec); // only one kept recording: the older one goes, not left behind
   }

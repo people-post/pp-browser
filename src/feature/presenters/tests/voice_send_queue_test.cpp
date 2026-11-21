@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -320,6 +322,29 @@ TEST(VoiceSendQueue, FilesInUseAreTheFreshRecordingsWaitingOrInFlight) {
   EXPECT_EQ(rig.queue->FilesInUse(), (std::vector<std::string>{"/rec/a.ogg", "/rec/b.ogg"}));
   rig.End("a");
   EXPECT_EQ(rig.queue->FilesInUse(), (std::vector<std::string>{"/rec/b.ogg"}));
+}
+
+// A failed prepare offers a Retry only while the recording still exists and has bytes.
+TEST(VoiceRecordingRetryable, OnlyAFileWithBytesIsOfferedARetry) {
+  const auto dir = std::filesystem::temp_directory_path() / "pp-voice-retryable-test";
+  std::filesystem::create_directories(dir);
+  const std::string kept = (dir / "kept.ogg").string();
+  const std::string empty = (dir / "empty.ogg").string();
+  const std::string gone = (dir / "gone.ogg").string();
+  std::filesystem::remove(gone);
+  {
+    std::ofstream(kept, std::ios::binary) << "ogg";
+  }
+  {
+    std::ofstream(empty, std::ios::binary);
+  }
+  EXPECT_TRUE(VoiceRecordingRetryable(kept));
+  EXPECT_TRUE(std::filesystem::exists(kept)) << "a retryable recording is left alone";
+  EXPECT_FALSE(VoiceRecordingRetryable(empty));
+  EXPECT_FALSE(std::filesystem::exists(empty)) << "an empty leftover is deleted, nothing lingers";
+  EXPECT_FALSE(VoiceRecordingRetryable(gone));
+  EXPECT_FALSE(VoiceRecordingRetryable(""));
+  std::filesystem::remove_all(dir);
 }
 
 } // namespace

@@ -64,6 +64,13 @@ struct VoiceSendPorts {
   std::function<void()> changed;
 };
 
+/**
+ * After a voice send failed before anything was staged (its recording could not be read): is there a recording left
+ * worth a Retry? Only a file that exists and has bytes. A leftover empty file can only fail again, so it is deleted
+ * here and no Retry is offered; a file that is gone offers nothing either.
+ */
+bool VoiceRecordingRetryable(const std::string& path);
+
 class VoiceSendQueue {
 public:
   explicit VoiceSendQueue(VoiceSendPorts ports);
