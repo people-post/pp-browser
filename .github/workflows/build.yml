@@ -19,7 +19,9 @@ on:
   # skips the jobs below it through the `code` filter instead of a paths-ignore.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main, 'release/**', 'cutover/**']
+    # Not PRs into the cutover integration branch: its work items run the full suite locally and are merged in
+    # batches; the integration branch's push builds each batch once (CI time is short).
+    branches: [main, 'release/**']
   # The backport bot (backport.yml) runs this on its backport/* branch: a PR it opens with the workflow token starts
   # no pull_request run. A dispatch runs everything, as a push does.
   workflow_dispatch:
