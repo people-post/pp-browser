@@ -117,6 +117,17 @@ protected:
     return next;
   }
 
+  /** The device's roster rows, sorted. */
+  std::vector<std::string> Ids(Device& d) {
+    std::vector<std::string> out;
+    const std::vector<GroupRosterMember> members = d.roster->ListMembers(kGroupId).value();
+    for (const GroupRosterMember& m : members) {
+      out.push_back(m.member_identity);
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+  }
+
   /** What the member list shows: the device's roster rows. */
   bool Lists(Device& d, const Person& p) { return d.roster->IsMember(kGroupId, p.Id()).value(); }
 
@@ -384,6 +395,81 @@ TEST_F(GroupLeaveAfterAddTest, AnAdminRemovesSomeoneWhoseOwnersAddTheReceiverHol
     ASSERT_TRUE(r.applied.view);
     ASSERT_EQ(r.applied.view->removed.size(), 1u);
     EXPECT_EQ(r.applied.view->removed[0].identity, erin.Id());
+  }
+}
+
+// ---- Naming what is not the leaver's (removed member's) add changes nothing ----
+
+// Carol holds statement 6, which folded Bob's add of Zed, and two adds made after it: Carol's of Erin and Dave's of
+// Frank. A leave by Erin, and separately an admin's removal of Erin, that also name Frank's held add and Zed's
+// folded add take out Erin only: Frank and Zed stay, Frank's add still counts.
+TEST_F(GroupLeaveAfterAddTest, NamingAnotherMembersAddHeldOrFoldedDoesNotUndoIt) {
+  const GroupChange zeds = bob.Add("account:zed", "invite-3");
+  const GroupChange erins = carol.Add(erin.Id());
+  const GroupChange franks = dave.Add("account:frank", "invite-2");
+  for (const bool by_removal : {false, true}) {
+    SCOPED_TRACE(by_removal ? "Bob removes Erin" : "Erin leaves");
+    Device alice_d, carol_d;
+    Seed(alice_d, S5());
+    Receive(alice_d, zeds);
+    const GroupRosterStatement s6 = OwnerFolds(alice_d);
+    ASSERT_TRUE(s6.Folded(grc::Id(zeds)));
+    Seed(carol_d, s6);
+    Receive(carol_d, erins);
+    Receive(carol_d, franks);
+
+    const std::vector<std::string> named = {grc::Id(erins), grc::Id(franks), grc::Id(zeds)};
+    const GroupChange change = by_removal ? bob.Remove(erin.Id(), named) : erin.Leave(named);
+    const grs::ChangeReceived r = Receive(carol_d, change);
+    EXPECT_EQ(r.applied.gone, std::vector<std::string>{erin.Id()});
+    EXPECT_TRUE(carol_d.roster->IsMember(kGroupId, "account:frank").value()) << "a held add of another member";
+    EXPECT_TRUE(carol_d.roster->IsMember(kGroupId, "account:zed").value()) << "a folded add of another member";
+    ASSERT_TRUE(Verdict(r, franks));
+    EXPECT_EQ(Verdict(r, franks)->status, GroupChangeStatus::Applied);
+    ASSERT_TRUE(Verdict(r, change));
+    EXPECT_EQ(Verdict(r, change)->status, GroupChangeStatus::Applied);
+  }
+}
+
+// Folded ids that are not adds — Dave's leave and an admin's removal of Yan — named in a leave's `adds` change
+// nothing, whether the receiver holds the statement that folded them or still holds them unfolded.
+TEST_F(GroupLeaveAfterAddTest, NamingAFoldedLeaveOrRemovalIsHarmless) {
+  const GroupChange daves_leave = dave.Leave();
+  const GroupChange yans_removal = bob.Remove("account:yan");
+  const GroupChange erins = carol.Add(erin.Id());
+  Device alice_d;
+  Seed(alice_d, S5());
+  Receive(alice_d, daves_leave);
+  Receive(alice_d, yans_removal);
+  const GroupRosterStatement s6 = OwnerFolds(alice_d);
+  ASSERT_TRUE(s6.Folded(grc::Id(daves_leave)));
+  ASSERT_TRUE(s6.Folded(grc::Id(yans_removal)));
+  const GroupChange leave = erin.Leave({grc::Id(erins), grc::Id(daves_leave), grc::Id(yans_removal)});
+
+  for (const bool holds_s6 : {true, false}) {
+    SCOPED_TRACE(holds_s6 ? "the receiver holds statement 6" : "the receiver holds them unfolded");
+    Device carol_d;
+    if (holds_s6) {
+      Seed(carol_d, s6);
+    } else {
+      Seed(carol_d, S5());
+      Receive(carol_d, daves_leave);
+      Receive(carol_d, yans_removal);
+    }
+    Receive(carol_d, erins);
+    ASSERT_TRUE(Lists(carol_d, erin));
+    const grs::ChangeReceived r = Receive(carol_d, leave);
+    EXPECT_EQ(r.applied.gone, std::vector<std::string>{erin.Id()});
+    std::vector<std::string> expected = {alice.Id(), bob.Id(), carol.Id()};
+    std::sort(expected.begin(), expected.end());
+    EXPECT_EQ(Ids(carol_d), expected) << "Dave still gone, no one else touched";
+    ASSERT_TRUE(r.applied.view);
+    ASSERT_EQ(r.applied.view->removed.size(), 1u);
+    EXPECT_EQ(r.applied.view->removed[0].identity, "account:yan") << "still removed";
+    if (!holds_s6) {
+      EXPECT_EQ(Verdict(r, daves_leave)->status, GroupChangeStatus::Applied);
+      EXPECT_EQ(Verdict(r, yans_removal)->status, GroupChangeStatus::Applied);
+    }
   }
 }
 

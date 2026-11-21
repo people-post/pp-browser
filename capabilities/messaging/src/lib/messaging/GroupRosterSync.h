@@ -110,7 +110,8 @@ Roe<GroupChange> DraftLeave(IGroupRosterStore& roster, const std::string& group_
                             const std::string& local_device, int64_t now_ms);
 /**
  * Our `remove` of `member` (G018, G020), unsigned: `adds` the held adds of the member we saw and the ids our
- * statement folded (as DraftLeave's), `keeps` the member's held changes. Errors when the roster we hold does not let us (GroupAllows: the owner anyone, an admin members).
+ * statement folded (as DraftLeave's), `keeps` the member's held changes. Errors when the roster we hold does not
+ * let us (GroupAllows: the owner anyone, an admin members).
  */
 Roe<GroupChange> DraftRemove(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
                              const std::string& local_device, const std::string& member, int64_t now_ms);
