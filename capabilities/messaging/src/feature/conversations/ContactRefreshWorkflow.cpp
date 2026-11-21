@@ -404,8 +404,8 @@ ContactRelayView ContactRefreshWorkflow::PreferredRelay(const Contact& contact) 
     std::lock_guard lock(mutex_);
     mismatch = identity_mismatch_;
   }
-  if (const std::string& peer_id = list.relays.front().peer_id;
-      !peer_id.empty() && mismatch && mismatch(account_id, view.origin, peer_id)) {
+  if (const RelayId& relay_id = list.relays.front().relay_id;
+      !relay_id.empty() && mismatch && mismatch(account_id, view.origin, relay_id)) {
     view.reach = ContactRelayView::Reach::IdentityMismatch;
     return view;
   }

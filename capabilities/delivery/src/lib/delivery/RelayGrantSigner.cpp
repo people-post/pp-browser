@@ -6,7 +6,7 @@
 #include "foundation/crypto/SignedReceive.h"
 #include "foundation/crypto/TypedBlob.h"
 #include "foundation/error/AppError.h"
-#include "lib/people/HeldKeyForms.h"
+#include "lib/people/CardKeys.h"
 
 namespace pbr {
 
@@ -123,7 +123,7 @@ Roe<RelayGrant> IssueRelayGrant(const std::string& recipient_account_id, const s
   if (!signature) {
     return signature.error();
   }
-  auto typed = TypedSignatureB64FromSigner(*signature);
+  auto typed = TypedSignatureB64(*signature);
   if (!typed) {
     return typed.error();
   }
@@ -154,7 +154,8 @@ SignedReceipt ReadSignedRelayGrant(const Object& json, const std::string& recipi
         if (!signature.ok()) {
           return signature.ToError();
         }
-        key = ReadHeldSigningKeyB64(recipient_public_key_b64, "relay grant recipient key");
+        key =
+            ReadTypedBlobB64(pp::BlobKind::kSignaturePublicKey, recipient_public_key_b64, "relay grant recipient key");
         if (!key.ok()) {
           return key.ToError();
         }

@@ -278,7 +278,7 @@ TEST_F(TolerantReceiveTest, ANewerCardRidingAnEnvelopeMarksItsSender) {
   });
   RelayEnvelope envelope = TextEnvelope(1, "hi");
   Object card = AccountCardToJson(peer_.DeviceCard());
-  card.set("card_version", static_cast<int64_t>(5));
+  card.set("card_version", static_cast<int64_t>(6));
   card.set("account_id", kPeer);
   envelope.body.e2e.sender_card = card;
   envelope.body.e2e.sender_card_at = 1;

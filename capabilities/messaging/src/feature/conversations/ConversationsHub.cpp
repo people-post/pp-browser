@@ -4,6 +4,7 @@
 
 #include "lib/messaging/GroupLinkJoinFamily.h"
 #include "lib/people/DevicePeerId.h"
+#include "lib/people/CardKeys.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "domain/attachments/AttachmentFetch.h"
 #include "common/chat/MessagingLimits.h"
@@ -324,39 +325,15 @@ void ConversationsHub::ExpectRelayIdentities(const HubSettings& settings) {
   }
 }
 
-std::vector<AccountCardRelay> ConversationsHub::CardRelaysWithPeerIds(const std::vector<RelayAddress>& relays) const {
-  // Until the account card names relay ids (card v5, cutover W2), its entries name the audience PeerId: the one the
-  // held certificate proves. A relay whose certificate is not held yet is left off until it is.
-  std::vector<AccountCardRelay> out;
-  const auto pins = RelayIdentityPins();
-  for (const RelayAddress& relay : relays) {
-    if (auto peer_id = pins ? pins->HeldAudience(relay.origin) : std::nullopt) {
-      out.push_back(AccountCardRelay{.origin = relay.origin, .peer_id = std::move(*peer_id)});
-    }
-  }
-  return out;
-}
-
-std::vector<RelayAddress> ConversationsHub::RelayAddressesOf(const std::vector<std::string>& origins) const {
-  // Until our card and the locker name relay ids (cutover W2, W3), an entry's relay id is the one our pins hold for
-  // its origin; none: a bare origin (checked on first use where allowed).
-  std::vector<RelayAddress> out;
-  const auto pins = RelayIdentityPins();
-  for (const std::string& origin : origins) {
-    out.push_back(
-        RelayAddress{.origin = origin, .relay_id = pins ? pins->PinnedRelayId(origin).value_or(RelayId{}) : RelayId{}});
-  }
-  return out;
-}
-
 bool ConversationsHub::SetCardRelays() {
-  // Our card lists the relays we register on (multi-relay MR002), preferred first, each with its pinned PeerId
-  // (MR007: a relay not pinned yet, or whose identity changed, is left off); OwnCards keeps the https ones.
+  // Our card lists the relays we register on (multi-relay MR002), preferred first, each with the relay id its address
+  // names (MR008, SIGNED_FORMATS § 3.3: a relay not pinned yet, or not proving its address, is left off); OwnCards
+  // keeps the https ones.
   const auto pins = RelayIdentityPins();
   if (!mesh_messaging_ || !pins) {
     return false;
   }
-  return mesh_messaging_->OwnAccountCards().SetRelays(CardRelaysWithPeerIds(pins->PinnedRelays(OurRelayOrigins())));
+  return mesh_messaging_->OwnAccountCards().SetRelays(pins->PinnedRelays(OurRelayOrigins()));
 }
 
 void ConversationsHub::OpenRelayPins() {
@@ -1388,14 +1365,12 @@ void ConversationsHub::OpenContactCards() {
   contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
   contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, *contact_cards_);
   contact_refresh_->SetOurRelays(CardDirectories());
-  // The page's *identity doesn't match* (MR007): our pins disagree with the card, or a send found the PeerId refused.
-  // Until the card names relay ids (card v5, cutover W2) its entry names a PeerId: it disagrees when our certificate
-  // held for that origin proves another, or that origin does not prove its address.
+  // The page's *identity doesn't match* (MR007, MR008): our pins disagree with the card's relay id, or a send found
+  // the audience refused.
   contact_refresh_->SetIdentityMismatch(
-      [this](const std::string& account_id, const std::string& origin, const std::string& peer_id) {
+      [this](const std::string& account_id, const std::string& origin, const RelayId& relay_id) {
         const auto pins = RelayIdentityPins();
-        const auto held = pins ? pins->HeldAudience(origin) : std::nullopt;
-        return (pins && pins->IdentityMismatch(origin)) || (held && *held != peer_id) ||
+        return (pins && pins->CheckCardRelay(origin, relay_id) == CardRelayCheck::Mismatch) ||
                clients_.Sender().AudienceMismatch(account_id, origin);
       });
   contact_cards_->SetCardFetcher(
@@ -1719,18 +1694,12 @@ void ConversationsHub::WireMyRelaysHooks() {
   });
   mesh_messaging_->SetOnOwnCardChanged([this](const AccountCard& card) {
     NotifyOwnDevicesChanged();
-    std::vector<std::string> origins;
-    for (const AccountCardRelay& relay : card.relays) {
-      origins.push_back(relay.origin);
-    }
-    AppRuntime::PostWorkerNormal([this, origins = std::move(origins)]() {
+    AppRuntime::PostWorkerNormal([this, relays = card.relays]() {
       if (shutdown_requested_.load(std::memory_order_acquire) || IsMainDevice()) {
         return; // the main device's list and pins are its own
       }
-      // A linked device takes our own card's word on each relay's identity (MR007), then follows its list. Until the
-      // card names relay ids (card v5, cutover W2) its entries name PeerIds, which give no relay id: the list follows
-      // by origin (RelayAddressesOf) and RelayPins::TakeOwnCard takes the card's relay ids once it carries them.
-      const std::vector<RelayAddress> relays = RelayAddressesOf(origins);
+      // A linked device takes our own card's word on each relay's identity (MR007, MR008: its relay id), then follows
+      // its list.
       if (const auto relay_pins = RelayIdentityPins()) {
         relay_pins->TakeOwnCard(relays);
       }
@@ -3656,7 +3625,7 @@ AccountSigningKeyLookup ConversationsHub::AccountSigningKeys() const {
     if (!record) {
       return record.error();
     }
-    return Base64Decode(record->signing_public_key_b64);
+    return RawSigningPublicKey(record->signing_public_key_b64, "the account signing key"); // held typed
   };
 }
 

@@ -41,7 +41,7 @@ std::vector<AccountCardRelay> RecipientRelays::Of(const std::string& account_id)
   auto kept = keys_.Kept(account_id);
   if (!kept || !*kept || !(*kept)->newest_card) {
     // No account card yet (none, or keys only): the relays it started with, if any (a QR locator's origin), each
-    // signed for by its pin (no card names its PeerId, MR007).
+    // signed for by its pin (no card names its relay id, MR007).
     std::function<std::vector<std::string>(const std::string&)> starting;
     {
       std::lock_guard lock(mutex_);

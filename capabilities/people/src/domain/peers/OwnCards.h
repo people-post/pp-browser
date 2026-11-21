@@ -12,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <utility>
 #include <optional>
 #include <string>
 #include <vector>
@@ -134,9 +135,9 @@ public:
   /** This device's PeerId (its mesh identity, from the device key). */
   Roe<std::string> DevicePeerId();
   /**
-   * The relays this device registers on, preferred first, each with the PeerId pinned for it (multi-relay MR007; the
-   * caller leaves out a relay not pinned yet or whose identity changed): the master's card lists the ones within
-   * MR004's and MR007's bounds (an `http://` lab relay is left out), and its next Card() re-issues when they changed.
+   * The relays this device registers on, preferred first, each with the relay id its address names (multi-relay MR008,
+   * SIGNED_FORMATS § 3.3; the caller leaves out a relay whose address is not proved yet): the master's card lists the
+   * ones within MR004's bounds (an `http://` lab relay is left out), and its next Card() re-issues when they changed.
    * True when the card's relays changed.
    */
   bool SetRelays(const std::vector<AccountCardRelay>& relays);
@@ -197,6 +198,7 @@ private:
   std::mutex mutex_; // issuing a card
   std::mutex keys_mutex_;
   std::optional<KeyCard> keys_;
+  std::pair<std::string, std::string> keys_of_; // under keys_mutex_: the identity's raw keys keys_ was made of
   std::function<void(const AccountCard&)> on_changed_;
   std::function<void(const AccountCard&)> on_joined_;
   int64_t join_expected_until_ms_ = 0;   // under mutex_

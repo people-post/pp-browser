@@ -23,6 +23,7 @@
 #include "gui/QrDisplay.h"
 #include "common/thread/ThreadTypes.h"
 #include "lib/people/AvatarGlyph.h"
+#include "lib/people/CardKeys.h"
 #include "lib/people/ContactJson.h"
 #include "lib/people/ContactTypes.h"
 #include "common/runtime/AppRuntime.h"
@@ -313,7 +314,7 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
     const std::string account_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account);
     if (!account_id.empty() && ports.get_signing_key) {
       if (auto key = ports.get_signing_key(ContactIdKindToString(mesh::ContactIdKind::Account), account_id)) {
-        if (auto bytes = Base64Decode(key->signing_public_key_b64)) {
+        if (auto bytes = RawSigningPublicKey(key->signing_public_key_b64)) {
           if (auto digest = PskFingerprint::Compute(*bytes)) {
             detail.signing_fingerprint = PskFingerprint::FormatDisplay(*digest).c_str();
           }

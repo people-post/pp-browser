@@ -52,8 +52,8 @@ public:
   void SetStoredCardFetch(StoredCardFetch fetch) { fetch_stored_ = std::move(fetch); }
 
   /**
-   * The relays of `account_id`'s kept card, preferred first, each with the PeerId the card names (before one, its
-   * starting relays, no PeerId); empty: none known.
+   * The relays of `account_id`'s kept card, preferred first, each with the relay id the card names (before one, its
+   * starting relays, none named); empty: none known.
    */
   std::vector<AccountCardRelay> Of(const std::string& account_id);
   /** Fetch `account_id`'s newest card and give its relays (blocking, bounded). */

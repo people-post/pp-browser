@@ -149,8 +149,8 @@ protected:
     hit.account_id = bob_.account_id;
     hit.nickname = "Bob D.";
     hit.ids = {{mesh::ContactIdKind::Account, bob_.account_id, true}};
-    hit.signing_public_key_b64 = bob_.SigningPublicB64();
-    hit.kem_public_key_b64 = bob_.KemPublicB64();
+    hit.signing_public_key_b64 = bob_.TypedSigningPublicB64();
+    hit.kem_public_key_b64 = bob_.TypedKemPublicB64();
     hit.kem_binding_b64 = bob_.KemBindingB64();
     hit.icon = mesh::ProfileIconRef{"https://cdn.example/avatars/bob.png", "bob-photo", ""};
     hit.endpoints = {mesh::DirectoryEndpoint{
@@ -323,8 +323,8 @@ TEST_F(ContactRefreshWorkflowTest, RelayKeysThatDoNotMatchTheAccountIdContribute
   const std::string id = AddBobByQr();
   StoredAccountRow forged = RelayBob();
   // Mallory's keys under Bob's Account ID: they do not hash to it. The rest of the row is hers too.
-  forged.hit.signing_public_key_b64 = mallory_.SigningPublicB64();
-  forged.hit.kem_public_key_b64 = mallory_.KemPublicB64();
+  forged.hit.signing_public_key_b64 = mallory_.TypedSigningPublicB64();
+  forged.hit.kem_public_key_b64 = mallory_.TypedKemPublicB64();
   forged.hit.kem_binding_b64 = mallory_.KemBindingB64();
   forged.hit.nickname = "Mallory";
   forged.hit.icon = mesh::ProfileIconRef{"https://evil.example/mallory.png", "mallory-photo", ""};
@@ -354,7 +354,7 @@ TEST_F(ContactRefreshWorkflowTest, TheirRelayAnsweringUnverifiablyShowsAsNotReac
   const std::string id = AddBobByQr();
   KeepBobsCard({kBobsA});
   StoredAccountRow forged = RelayBob();
-  forged.hit.signing_public_key_b64 = mallory_.SigningPublicB64();
+  forged.hit.signing_public_key_b64 = mallory_.TypedSigningPublicB64();
   Answers(kBobsA, forged);
 
   const ContactRefreshResult result = Refresh(id);
@@ -381,7 +381,7 @@ TEST_F(ContactRefreshWorkflowTest, ARelaysCardThatDoesNotVerifyIsNotKept) {
 TEST_F(ContactRefreshWorkflowTest, AKemKeyTheAccountDidNotBindIsNotKept) {
   const std::string id = AddBobByQr();
   StoredAccountRow swapped = RelayBob();
-  swapped.hit.kem_public_key_b64 = mallory_.KemPublicB64(); // Bob's signing key, someone else's KEM key
+  swapped.hit.kem_public_key_b64 = mallory_.TypedKemPublicB64(); // Bob's signing key, someone else's KEM key
   Answers(kOurs, swapped);
 
   const ContactRefreshResult result = Refresh(id);
@@ -395,8 +395,8 @@ TEST_F(ContactRefreshWorkflowTest, AnAnswerForAnotherAccountIsNotUsedAtAll) {
   StoredAccountRow other = RelayBob();
   other.hit.account_id = mallory_.account_id;
   other.hit.ids = {{mesh::ContactIdKind::Account, mallory_.account_id, true}};
-  other.hit.signing_public_key_b64 = mallory_.SigningPublicB64();
-  other.hit.kem_public_key_b64 = mallory_.KemPublicB64();
+  other.hit.signing_public_key_b64 = mallory_.TypedSigningPublicB64();
+  other.hit.kem_public_key_b64 = mallory_.TypedKemPublicB64();
   other.hit.kem_binding_b64 = mallory_.KemBindingB64();
   Answers(kOurs, other);
 
@@ -496,22 +496,24 @@ TEST_F(ContactRefreshWorkflowTest, ThePreferredRelaysReachabilityIsWhatItLastAns
   EXPECT_EQ(PageRelay(id).reach, ContactRelayView::Reach::NotRegistered);
 }
 
-// MR007 § Pins (what the user sees): the page says *identity doesn't match* when the PeerId the contact's card names for
-// its preferred relay disagrees with our pins (or a send found it refused) — whatever the relay last answered.
+// MR007 § Pins (what the user sees): the page says *identity doesn't match* when the relay id the contact's card names
+// for its preferred relay disagrees with our pins (or a send found its audience refused) — whatever the relay last
+// answered.
 TEST_F(ContactRefreshWorkflowTest, APreferredRelayWhoseIdentityDoesNotMatchSaysSo) {
   const std::string id = AddBobByQr();
   KeepBobsCard({kBobsA, kBobsB});
   std::vector<std::string> asked;
   workflow_->SetIdentityMismatch(
-      [&asked](const std::string& account, const std::string& origin, const std::string& peer_id) {
-        asked.push_back(account + " " + origin + " " + peer_id);
+      [&asked](const std::string& account, const std::string& origin, const RelayId& relay_id) {
+        asked.push_back(account + " " + origin + " " + relay_id.ToString());
         return origin == kBobsA;
       });
   Answers(kBobsA, RelayBob());
   Refresh(id);
   EXPECT_EQ(PageRelay(id).reach, ContactRelayView::Reach::IdentityMismatch);
   ASSERT_FALSE(asked.empty());
-  EXPECT_EQ(asked.back(), bob_.account_id + " " + kBobsA + " " + test::RelayPeerId(0x50)) << "the card's PeerId";
+  EXPECT_EQ(asked.back(), bob_.account_id + " " + kBobsA + " " + test::RelayIdOf(0x50).ToString())
+      << "the card's relay id";
   workflow_->SetIdentityMismatch(nullptr);
   EXPECT_EQ(PageRelay(id).reach, ContactRelayView::Reach::Reachable);
 }

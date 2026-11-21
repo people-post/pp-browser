@@ -34,7 +34,7 @@ TEST(AmpAccountCardTransportTest, OneRequestOneAnswerNamingTheAskingDevice) {
     return AccountCardReply{.key_card = KeyCard{.account_id = request.account_id,
                                                 .signing_public_key_b64 = "s",
                                                 .kem_public_key_b64 = "k",
-                                                .kem_binding_signature_b64 = "b"}};
+                                                .kem_binding_b64 = "b"}};
   });
 
   std::mutex mu;

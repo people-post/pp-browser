@@ -5,7 +5,7 @@
 #include "foundation/crypto/SignedReceive.h"
 #include "foundation/crypto/TypedBlob.h"
 #include "foundation/error/AppError.h"
-#include "lib/people/HeldKeyForms.h"
+#include "lib/people/CardKeys.h"
 #include "common/ValueJson.h"
 
 #include <algorithm>
@@ -305,7 +305,7 @@ Roe<GroupChange> Sign(GroupChange change, const GroupDeviceSign& sign) {
   if (!signature) {
     return signature.error();
   }
-  auto typed = TypedSignatureB64FromSigner(*signature);
+  auto typed = TypedSignatureB64(*signature);
   if (!typed) {
     return typed.error();
   }
@@ -341,7 +341,8 @@ Roe<void> VerifyDeviceSignature(const GroupChange& change, const AccountCardDevi
                              return {};
                            },
                            .algorithms = [&]() -> Roe<void> {
-                             key = ReadHeldSigningKeyB64(device.signing_public_key_b64, "roster change device key");
+                             key = ReadTypedBlobB64(pp::BlobKind::kSignaturePublicKey, device.signing_public_key_b64,
+                                                    "roster change device key");
                              if (!key.ok()) {
                                return key.ToError();
                              }

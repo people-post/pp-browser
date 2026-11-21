@@ -42,7 +42,7 @@ struct Keys {
   PeerSigningKeyResolver resolver{store};
   Keys() {
     PeerSigningKeyRecord record;
-    record.signing_public_key_b64 = Asker().SigningPublicB64();
+    record.signing_public_key_b64 = Asker().TypedSigningPublicB64();
     record.source = "test";
     EXPECT_TRUE(store.Put("account", Asker().account_id, record));
   }
@@ -109,8 +109,9 @@ TEST(PeerRequestAuthTest, AMissingOrOlderVersionIsRefused) {
     auto verified = PeerRequestAuth::Verify(request, "QmAsker", kNow, keys.resolver);
     ASSERT_FALSE(verified);
     EXPECT_FALSE(AppError::IsNewerFormat(verified.error()));
-    EXPECT_EQ(PeerRequestAuth::Receive(request, [] { return Roe<std::string>(Asker().SigningPublicB64()); }).verdict,
-              SignedVerdict::Older);
+    EXPECT_EQ(
+        PeerRequestAuth::Receive(request, [] { return Roe<std::string>(Asker().TypedSigningPublicB64()); }).verdict,
+        SignedVerdict::Older);
   }
 }
 
@@ -121,7 +122,7 @@ TEST(PeerRequestAuthTest, AMalformedAreaIsRefusedAfterTheVersion) {
   auto request = ChatHistoryRequestFromJson(json);
   ASSERT_TRUE(request);
   EXPECT_FALSE(request->ext_error.empty());
-  const PeerRequestAuth::SigningKeySource key = [] { return Roe<std::string>(Asker().SigningPublicB64()); };
+  const PeerRequestAuth::SigningKeySource key = [] { return Roe<std::string>(Asker().TypedSigningPublicB64()); };
   EXPECT_EQ(PeerRequestAuth::Receive(*request, key).verdict, SignedVerdict::Malformed);
   request->auth_version = 3;
   EXPECT_EQ(PeerRequestAuth::Receive(*request, key).verdict, SignedVerdict::NeedsUpdate) << "the version comes first";
@@ -145,7 +146,7 @@ TEST(PeerRequestAuthTest, ARequestThatDoesNotVerifyIsRefused) {
   auto verified = PeerRequestAuth::Verify(changed, "QmAsker", kNow, keys.resolver);
   ASSERT_FALSE(verified);
   EXPECT_FALSE(AppError::IsNewerFormat(verified.error()));
-  const PeerRequestAuth::SigningKeySource key = [] { return Roe<std::string>(Asker().SigningPublicB64()); };
+  const PeerRequestAuth::SigningKeySource key = [] { return Roe<std::string>(Asker().TypedSigningPublicB64()); };
   EXPECT_EQ(PeerRequestAuth::Receive(changed, key).verdict, SignedVerdict::Forged);
 }
 

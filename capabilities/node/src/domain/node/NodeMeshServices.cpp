@@ -11,8 +11,7 @@
 #include "common/DialWorthyMultiaddrs.h"
 #include "common/MultiaddrPeerId.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/KemKeyBindingV2.h"
-#include "foundation/crypto/TypedBlob.h"
+#include "lib/people/CardKeys.h"
 
 #include <algorithm>
 #include <unordered_set>
@@ -125,34 +124,15 @@ Roe<DirectoryRowKeys> LocalDirectoryRowKeys(IdentityStore& identity) {
   if (loaded->account_signing_public_key_b64.empty() || loaded->kem_public_key_b64.empty()) {
     return Error("directory row keys: the account keys are not set");
   }
-  auto signing_raw = Base64Decode(loaded->account_signing_public_key_b64);
-  auto kem_raw = Base64Decode(loaded->kem_public_key_b64);
-  if (!signing_raw || !kem_raw) {
-    return Error("directory row keys: the account keys do not decode");
+  // The account's key card: its keys typed and its KEM binding v2 (ACCOUNT_CARD § Key card), as a row carries it.
+  auto keys = MakeKeyCard(loaded->account_id, loaded->account_signing_public_key_b64, loaded->kem_public_key_b64,
+                          [&identity](const ByteVector& bytes) { return identity.SignAccountBytes(bytes); });
+  if (!keys) {
+    return Error("directory row keys: " + keys.error().message);
   }
-  auto signing = TypedSigningPublicKey(*signing_raw);
-  if (!signing) {
-    return signing.error();
-  }
-  auto kem = TypedKemPublicKey(*kem_raw);
-  if (!kem) {
-    return kem.error();
-  }
-  auto signature_b64 = identity.SignAccountBytes(KemBindingV2SignBytes(*signing, *kem));
-  if (!signature_b64) {
-    return signature_b64.error();
-  }
-  auto signature_raw = Base64Decode(*signature_b64);
-  if (!signature_raw) {
-    return signature_raw.error();
-  }
-  auto signature = TypedSignature(*signature_raw);
-  if (!signature) {
-    return signature.error();
-  }
-  return DirectoryRowKeys{.signing_public_key_b64 = Base64Encode(*signing),
-                          .kem_public_key_b64 = Base64Encode(*kem),
-                          .kem_binding_b64 = Base64Encode(KemBindingV2Blob(*signature))};
+  return DirectoryRowKeys{.signing_public_key_b64 = std::move(keys->signing_public_key_b64),
+                          .kem_public_key_b64 = std::move(keys->kem_public_key_b64),
+                          .kem_binding_b64 = std::move(keys->kem_binding_b64)};
 }
 
 mesh::MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, mesh::MeshHost& mesh, const MeshConfig& config,

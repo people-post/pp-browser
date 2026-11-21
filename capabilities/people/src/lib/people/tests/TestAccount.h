@@ -5,12 +5,15 @@
 // (lib/messaging/tests/TestAccount.h).
 
 #include "lib/people/AccountCard.h"
+#include "crypto/AlgId.h"
 #include "crypto/PeerId.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
 #include "common/directory/KeyCard.h"
 #include "foundation/crypto/KemKeyBinding.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/RelayId.h"
+#include "foundation/crypto/TypedBlob.h"
 
 #include <gtest/gtest.h>
 
@@ -22,17 +25,22 @@
 
 namespace pbr::test {
 
-/**
- * A relay's PeerId for tests (multi-relay MR007): the one a 1952-byte key of `fill` derives (0x42, 0x01: MESH_IDENTITY's
- * fixtures). A card's relay entry must name one of this form.
- */
-inline std::string RelayPeerId(uint8_t fill) {
-  return pp::PeerIdFromMlDsaPublicKey(ByteVector(kMlDsa65PublicKeyBytes, fill)).value();
+/** A relay id for tests (SIGNED_FORMATS § 3.1): 32 bytes of `fill`. A card's relay entry must name one. */
+inline RelayId RelayIdOf(uint8_t fill) {
+  return RelayId::FromRaw(ByteVector(kRelayIdBytes, fill)).value();
 }
 
-/** A card relay entry `{origin, the PeerId of fill}`. */
+/** A card relay entry `{origin, the relay id of fill}`. */
 inline AccountCardRelay CardRelay(const std::string& origin, uint8_t fill) {
-  return AccountCardRelay{.origin = origin, .peer_id = RelayPeerId(fill)};
+  return AccountCardRelay{.origin = origin, .relay_id = RelayIdOf(fill)};
+}
+
+/** A raw key, typed as a card carries it (lib/people/CardKeys.h), base64. */
+inline std::string TypedSigningB64(const ByteVector& raw) {
+  return WriteTypedBlobB64(pp::BlobKind::kSignaturePublicKey, raw).value();
+}
+inline std::string TypedKemB64(const ByteVector& raw) {
+  return WriteTypedBlobB64(pp::BlobKind::kKemPublicKey, raw).value();
 }
 
 /** One device of an account (M021): its own signing key (its PeerId comes from it) and its own KEM key. */
@@ -57,11 +65,11 @@ struct TestDevice {
     return d;
   }
 
-  /** The device as an account card lists it. */
+  /** The device as an account card lists it (typed keys). */
   AccountCardDevice Entry() const {
     return AccountCardDevice{.peer_id = peer_id,
-                             .signing_public_key_b64 = Base64Encode(signing_public),
-                             .kem_public_key_b64 = Base64Encode(kem_public)};
+                             .signing_public_key_b64 = TypedSigningB64(signing_public),
+                             .kem_public_key_b64 = TypedKemB64(kem_public)};
   }
 
   /** The device key's signature over `bytes`, base64 (as a device signs its envelopes). */
@@ -125,19 +133,27 @@ struct TestAccount {
     return a;
   }
 
+  /** The raw keys, base64, as an identity holds them (LocalIdentity). */
   std::string SigningPublicB64() const { return Base64Encode(signing_public); }
   std::string KemPublicB64() const { return Base64Encode(kem_public); }
   std::string DevicePublicB64() const { return Base64Encode(device_public); }
+  /** The keys typed, base64, as a key card carries them (and the key stores hold them). */
+  std::string TypedSigningPublicB64() const { return TypedSigningB64(signing_public); }
+  std::string TypedKemPublicB64() const { return TypedKemB64(kem_public); }
 
-  /** The account's binding of its KEM key to itself, base64 (as the directory carries it). */
-  std::string KemBindingB64() const { return Sign(KemBindingSignBytes(SigningPublicB64(), KemPublicB64())).value(); }
+  /** The account's KEM binding v2 of its KEM key, base64 (as the directory carries it). */
+  std::string KemBindingB64() const {
+    return SignKemBindingB64(TypedSigningPublicB64(), TypedKemPublicB64(),
+                             [this](const ByteVector& bytes) { return Sign(bytes); })
+        .value();
+  }
 
   /** The account's key card (as the directory or a first message carries it). */
   KeyCard Card() const {
     return KeyCard{.account_id = account_id,
-                   .signing_public_key_b64 = SigningPublicB64(),
-                   .kem_public_key_b64 = KemPublicB64(),
-                   .kem_binding_signature_b64 = KemBindingB64()};
+                   .signing_public_key_b64 = TypedSigningPublicB64(),
+                   .kem_public_key_b64 = TypedKemPublicB64(),
+                   .kem_binding_b64 = KemBindingB64()};
   }
 
   /** The account key's signature over `bytes`, base64 (as an envelope carries it). */

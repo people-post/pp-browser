@@ -7,6 +7,7 @@
 #include "mesh/testing/mesh_test_harness.h"
 
 #include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/TypedBlob.h"
 #include "foundation/crypto/MlDsa.h"
 #include "crypto/PeerId.h"
 
@@ -140,7 +141,7 @@ TEST_F(AmpPeerAnnounceTransportTest, PushTipRoundTripWithStoreBackedResolver) {
 
   PeerSigningKeyStore store;
   PeerSigningKeyRecord record;
-  record.signing_public_key_b64 = Base64Encode(keys->public_key);
+  record.signing_public_key_b64 = WriteTypedBlobB64(pp::BlobKind::kSignaturePublicKey, keys->public_key).value();
   record.source = "test";
   store.Put(ContactIdKindToString(mesh::ContactIdKind::PeerId), *peer_id, record);
 
@@ -148,7 +149,13 @@ TEST_F(AmpPeerAnnounceTransportTest, PushTipRoundTripWithStoreBackedResolver) {
     return ResolvePeerAnnouncePublisherKey(
         tip_peer_id, "", {}, [&store](const std::string& kind, const std::string& value) -> std::optional<std::string> {
           auto stored = store.Get(kind, value);
-          return stored ? std::optional<std::string>(stored->signing_public_key_b64) : std::nullopt;
+          // The store holds the key typed; the announce resolver takes it raw (BroadcastParticipant does the same).
+          if (!stored) {
+            return std::nullopt;
+          }
+          const TypedRead key =
+              ReadTypedBlobB64(pp::BlobKind::kSignaturePublicKey, stored->signing_public_key_b64, "key");
+          return key.ok() ? std::optional<std::string>(Base64Encode(key.raw)) : std::nullopt;
         });
   });
 

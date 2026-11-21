@@ -801,10 +801,6 @@ private:
    * list. Before the card lists them.
    */
   void ExpectRelayIdentities(const HubSettings& settings);
-  /** Our card's entries, `{origin, peer_id}` until card v5 (cutover W2): each relay's held audience PeerId. */
-  std::vector<AccountCardRelay> CardRelaysWithPeerIds(const std::vector<RelayAddress>& relays) const;
-  /** `origins` with the relay id our pins hold for each (none: not pinned): until the card and locker name them. */
-  std::vector<RelayAddress> RelayAddressesOf(const std::vector<std::string>& origins) const;
   /**
    * A pin changed (any thread): our card's relays follow, the card goes out when it changed (once a pinning pass in
    * progress ends), the page reads again.

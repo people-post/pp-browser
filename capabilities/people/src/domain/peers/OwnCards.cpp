@@ -1,7 +1,7 @@
 #include "domain/peers/OwnCards.h"
 
+#include "lib/people/CardKeys.h"
 #include "lib/people/DevicePeerId.h"
-#include "foundation/crypto/KemKeyBinding.h"
 
 #include <algorithm>
 #include <chrono>
@@ -38,24 +38,17 @@ Roe<KeyCard> OwnCards::Keys() {
     return Error("account keys not set");
   }
   std::lock_guard lock(keys_mutex_);
-  if (keys_ && keys_->account_id == identity->account_id &&
-      keys_->signing_public_key_b64 == identity->account_signing_public_key_b64 &&
-      keys_->kem_public_key_b64 == identity->kem_public_key_b64) {
+  if (keys_ && keys_of_ == std::make_pair(identity->account_signing_public_key_b64, identity->kem_public_key_b64) &&
+      keys_->account_id == identity->account_id) {
     return *keys_;
   }
-  const auto binding_bytes =
-      KemBindingSignBytes(identity->account_signing_public_key_b64, identity->kem_public_key_b64);
-  if (binding_bytes.empty()) {
-    return Error("account keys do not decode");
+  auto made = MakeKeyCard(identity->account_id, identity->account_signing_public_key_b64, identity->kem_public_key_b64,
+                          [this](const ByteVector& bytes) { return identity_.SignBytes(bytes); });
+  if (!made) {
+    return made.error();
   }
-  auto binding = identity_.SignBytes(binding_bytes);
-  if (!binding) {
-    return binding.error();
-  }
-  keys_ = KeyCard{.account_id = identity->account_id,
-                  .signing_public_key_b64 = identity->account_signing_public_key_b64,
-                  .kem_public_key_b64 = identity->kem_public_key_b64,
-                  .kem_binding_signature_b64 = *binding};
+  keys_ = std::move(made.value());
+  keys_of_ = {identity->account_signing_public_key_b64, identity->kem_public_key_b64};
   return *keys_;
 }
 
@@ -79,9 +72,13 @@ Roe<AccountCardDevice> OwnCards::Self() {
   if (identity->device_kem_public_key_b64.empty()) {
     return Error("device KEM key not set");
   }
-  return AccountCardDevice{.peer_id = *peer_id,
-                           .signing_public_key_b64 = identity->public_key_b64,
-                           .kem_public_key_b64 = identity->device_kem_public_key_b64};
+  auto signing = TypedKeyB64(pp::BlobKind::kSignaturePublicKey, identity->public_key_b64);
+  auto kem = TypedKeyB64(pp::BlobKind::kKemPublicKey, identity->device_kem_public_key_b64);
+  if (!signing || !kem) {
+    return Error("device keys do not decode");
+  }
+  return AccountCardDevice{
+      .peer_id = *peer_id, .signing_public_key_b64 = std::move(*signing), .kem_public_key_b64 = std::move(*kem)};
 }
 
 Roe<std::optional<AccountCard>> OwnCards::NewestLocked(const int64_t now_ms) {
@@ -142,7 +139,7 @@ bool OwnCards::SetRelays(const std::vector<AccountCardRelay>& given) {
   for (const AccountCardRelay& relay : given) {
     relays.push_back(relay);
     if (!VerifyCardRelays(relays)) {
-      relays.pop_back(); // outside the bounds (not https, too long, no PeerId, a duplicate, a fifth): not on the card
+      relays.pop_back(); // outside the bounds (not https, too long, no relay id, a duplicate, a fifth): not on the card
     }
   }
   std::lock_guard lock(mutex_);
@@ -396,9 +393,14 @@ std::optional<AccountCard> OwnCards::OursAmong(const OwnCardAnswers& answers, co
   if (!identity) {
     return std::nullopt;
   }
+  auto signing = TypedKeyB64(pp::BlobKind::kSignaturePublicKey, identity->account_signing_public_key_b64);
+  auto kem = TypedKeyB64(pp::BlobKind::kKemPublicKey, identity->kem_public_key_b64);
+  if (!signing || !kem) {
+    return std::nullopt;
+  }
   const KeyCard ours{.account_id = identity->account_id,
-                     .signing_public_key_b64 = identity->account_signing_public_key_b64,
-                     .kem_public_key_b64 = identity->kem_public_key_b64};
+                     .signing_public_key_b64 = std::move(*signing),
+                     .kem_public_key_b64 = std::move(*kem)};
   std::optional<AccountCard> best;
   for (const Object& json : answers.cards) {
     auto card = AccountCardFromJson(json);

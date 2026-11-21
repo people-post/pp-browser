@@ -1,6 +1,6 @@
 // Cross-implementation vectors for every signed relay command (multi-relay MR007; docs/contracts/SERVICE_ENDPOINTS.md
 // § Signed relay commands): each domain and relay API op signed by one account for relay `a`, with what relays `a` and
-// `b` must answer, the PeerIds of a fixed relay key, an account card of version 4 and cards that must be refused. The
+// `b` must answer, the PeerIds of a fixed relay key, an account card of version 5 and cards that must be refused. The
 // relay (pp-relay-apis `relay-sign-vectors.json`) copies the committed file byte for byte; a change to either side's
 // bytes changes it here first. The file is checked here; PP_WRITE_RELAY_SIGN_VECTORS=<path> writes a fresh one (keys
 // from fixed seeds; ML-DSA signatures are randomized, so only they differ between runs). Delivery sits above net and
@@ -22,6 +22,7 @@
 #include "lib/net/RelayBlobSignPayload.h"
 #include "lib/net/RelaySignBytes.h"
 #include "lib/people/AccountCard.h"
+#include "lib/people/CardKeys.h"
 #include "lib/people/AccountLocker.h"
 #include "foundation/crypto/TypedBlob.h"
 
@@ -86,6 +87,18 @@ std::string Sign(const VectorKeys& keys, const ByteVector& bytes) {
   return Base64Encode(MlDsa::Sign(keys.account.secret_key, bytes).value());
 }
 
+/** The account's key card: its keys typed and its KEM binding v2 (ACCOUNT_CARD § Key card). */
+KeyCard KeyCardOf(const VectorKeys& keys) {
+  return MakeKeyCard(keys.account_id, Base64Encode(keys.account.public_key), Base64Encode(keys.kem.public_key),
+                     [&keys](const ByteVector& bytes) -> Roe<std::string> { return Sign(keys, bytes); })
+      .value();
+}
+
+/** The relay ids of relays `a` and `b` in these vectors (32 bytes of their seeds' fill). */
+RelayId RelayIdOfSeed(const uint8_t seed) {
+  return RelayId::FromRaw(ByteVector(kRelayIdBytes, seed)).value();
+}
+
 std::string Str(const Object& body, const char* key) {
   return body.getString(key).value_or("");
 }
@@ -139,7 +152,7 @@ std::vector<CallSpec> RegistryCalls(const VectorKeys& keys) {
   finish.set("nickname", std::string("alice"));
   finish.set("signature_alg", std::string("ml-dsa-65"));
   finish.set("kem_public_key_b64", kem);
-  finish.set("kem_binding_signature_b64", Sign(keys, KemBindingSignBytes(pk, kem)));
+  finish.set("kem_binding_b64", KeyCardOf(keys).kem_binding_b64);
   Object revoke;
   revoke.set("account_id", keys.account_id);
   revoke.set("registration_id", std::string("golden_registration_01"));
@@ -490,21 +503,20 @@ Object RelayRow(const MlDsaKeyPair& keys, uint8_t seed, const std::string& peer_
   relay.set("seed_hex", BytesToHex(ByteVector(kMlDsa65SeedBytes, seed)));
   relay.set("public_key_b64", Base64Encode(keys.public_key));
   relay.set("peer_id", peer_id);
+  relay.set("relay_id", RelayIdOfSeed(seed).ToString()); // what an account card names it by (card v5)
   relay.set("origin", origin);
   return relay;
 }
 
 AccountCard VectorCard(const VectorKeys& keys, std::vector<AccountCardRelay> relays) {
-  const std::string pk = Base64Encode(keys.account.public_key);
-  const std::string kem = Base64Encode(keys.kem.public_key);
-  AccountCard card{.keys = KeyCard{.account_id = keys.account_id,
-                                   .signing_public_key_b64 = pk,
-                                   .kem_public_key_b64 = kem,
-                                   .kem_binding_signature_b64 = Sign(keys, KemBindingSignBytes(pk, kem))},
+  AccountCard card{.keys = KeyCardOf(keys),
                    .nickname = "alice",
-                   .devices = {AccountCardDevice{.peer_id = keys.device_peer_id,
-                                                 .signing_public_key_b64 = Base64Encode(keys.device.public_key),
-                                                 .kem_public_key_b64 = Base64Encode(keys.device_kem.public_key)}},
+                   .devices = {AccountCardDevice{
+                       .peer_id = keys.device_peer_id,
+                       .signing_public_key_b64 =
+                           TypedKeyB64(pp::BlobKind::kSignaturePublicKey, Base64Encode(keys.device.public_key)).value(),
+                       .kem_public_key_b64 =
+                           TypedKeyB64(pp::BlobKind::kKemPublicKey, Base64Encode(keys.device_kem.public_key)).value()}},
                    .relays = std::move(relays),
                    .initiation_floor = 250,
                    .issued_at = kNowMs};
@@ -513,8 +525,8 @@ AccountCard VectorCard(const VectorKeys& keys, std::vector<AccountCardRelay> rel
       .value();
 }
 
-std::vector<AccountCardRelay> TwoRelays(const VectorKeys& keys) {
-  return {{.origin = kOriginA, .peer_id = keys.peer_a}, {.origin = kOriginB, .peer_id = keys.peer_b}};
+std::vector<AccountCardRelay> TwoRelays(const VectorKeys&) {
+  return {{.origin = kOriginA, .relay_id = RelayIdOfSeed(0x07)}, {.origin = kOriginB, .relay_id = RelayIdOfSeed(0x08)}};
 }
 
 Object RefusedCard(const std::string& name, Object card) {
@@ -524,13 +536,17 @@ Object RefusedCard(const std::string& name, Object card) {
   return row;
 }
 
-/** The card's JSON with relay `index`'s `peer_id` key left out. */
-Object WithoutPeerId(Object card, size_t index) {
+/** The card's JSON with relay `index`'s `relay_id` set to `value`, or left out when it is empty. */
+Object WithRelayId(Object card, size_t index, const std::string& value) {
   const Array* relays = card.getArray("relays");
   Array rows = relays ? *relays : Array{};
   if (index < rows.elements.size()) {
     Object relay = *asObject(rows.elements[index]);
-    relay.erase("peer_id");
+    if (value.empty()) {
+      relay.erase("relay_id");
+    } else {
+      relay.set("relay_id", value);
+    }
     rows.elements[index] = ObjectValue(std::move(relay));
   }
   card.set("relays", ArrayValue(std::move(rows.elements)));
@@ -538,28 +554,23 @@ Object WithoutPeerId(Object card, size_t index) {
 }
 
 Array RefusedCards(const VectorKeys& keys) {
-  Object version_3 = AccountCardToJson(VectorCard(keys, TwoRelays(keys)));
-  version_3.set("card_version", int64_t{3});
-  std::vector<AccountCardRelay> no_peer = TwoRelays(keys);
-  no_peer[1].peer_id.clear();
-  std::vector<AccountCardRelay> one_peer = TwoRelays(keys);
-  one_peer[1].peer_id = keys.peer_a;
-  std::vector<AccountCardRelay> not_a_peer = TwoRelays(keys);
-  not_a_peer[1].peer_id = "12D3KooWD3eckifWpRn9wQpMG9R9hX3sD158z7EqHWmweQAJU5SA";
+  // Card v5 (account_card_vectors.json holds the whole set, with each one's verdict).
+  Object version_4 = AccountCardToJson(VectorCard(keys, TwoRelays(keys)));
+  version_4.set("card_version", int64_t{4});
+  std::vector<AccountCardRelay> one_id = TwoRelays(keys);
+  one_id[1].relay_id = one_id[0].relay_id;
   std::vector<AccountCardRelay> five;
   for (uint8_t i = 0; i < 5; ++i) {
-    const MlDsaKeyPair relay = KeysOfSeed(static_cast<uint8_t>(0x20 + i));
     five.push_back({.origin = "https://relay-" + std::to_string(i) + ".example/api/relay",
-                    .peer_id = pp::PeerIdFromMlDsaPublicKey(relay.public_key).value()});
+                    .relay_id = RelayIdOfSeed(static_cast<uint8_t>(0x20 + i))});
   }
+  const Object card = AccountCardToJson(VectorCard(keys, TwoRelays(keys)));
   Array rows;
-  rows.elements.push_back(ObjectValue(RefusedCard("version_3", std::move(version_3))));
-  rows.elements.push_back(ObjectValue(
-      RefusedCard("relay_without_peer_id", WithoutPeerId(AccountCardToJson(VectorCard(keys, no_peer)), 1))));
+  rows.elements.push_back(ObjectValue(RefusedCard("version_4", std::move(version_4))));
+  rows.elements.push_back(ObjectValue(RefusedCard("relay_without_relay_id", WithRelayId(card, 1, ""))));
   rows.elements.push_back(
-      ObjectValue(RefusedCard("two_relays_one_peer_id", AccountCardToJson(VectorCard(keys, one_peer)))));
-  rows.elements.push_back(
-      ObjectValue(RefusedCard("peer_id_not_an_ml_dsa_peer_id", AccountCardToJson(VectorCard(keys, not_a_peer)))));
+      ObjectValue(RefusedCard("two_relays_one_relay_id", AccountCardToJson(VectorCard(keys, one_id)))));
+  rows.elements.push_back(ObjectValue(RefusedCard("relay_named_by_peer_id", WithRelayId(card, 1, keys.peer_b))));
   rows.elements.push_back(ObjectValue(RefusedCard("five_relays", AccountCardToJson(VectorCard(keys, five)))));
   return rows;
 }
@@ -593,7 +604,7 @@ Object BuildVectors() {
   account.set("seed_hex", BytesToHex(ByteVector(kMlDsa65SeedBytes, 0x09)));
   account.set("public_key_b64", pk);
   account.set("kem_public_key_b64", kem);
-  account.set("kem_binding_signature_b64", Sign(keys, KemBindingSignBytes(pk, kem)));
+  account.set("kem_binding_b64", KeyCardOf(keys).kem_binding_b64); // KEM binding v2, over the keys typed
   account.set("account_id", keys.account_id);
   Object root;
   root.set("format", std::string(kFormat));
@@ -610,7 +621,7 @@ Object BuildVectors() {
 /** `value` with every signature left out (ML-DSA signing is randomized): what must be the same on every run. */
 Value WithoutSignatures(const Value& value) {
   static const std::set<std::string> kSignatures = {"signature", "signature_b64", "card_signature_b64",
-                                                    "kem_binding_signature_b64"};
+                                                    "kem_binding_b64"};
   if (const Object* object = asObject(value)) {
     Object out;
     for (const auto& [key, item] : object->entries()) {
@@ -742,11 +753,13 @@ TEST(RelaySignVectorsTest, TheRelaysKeysDeriveTheirPeerIds) {
   EXPECT_EQ(Str(*asObject(fixtures->elements[1]), "peer_id"), "QmeKYz9h9AozszFqAkRzwxx4xGheEMYRVrLHuh7EMG7Bie");
   const Object* account = committed.getObject("account");
   ASSERT_NE(account, nullptr);
-  EXPECT_TRUE(VerifyKemBinding(Str(*account, "account_id"), Str(*account, "public_key_b64"),
-                               Str(*account, "kem_public_key_b64"), Str(*account, "kem_binding_signature_b64")));
+  EXPECT_TRUE(VerifyKemBinding(Str(*account, "account_id"),
+                               TypedKeyB64(pp::BlobKind::kSignaturePublicKey, Str(*account, "public_key_b64")).value(),
+                               TypedKeyB64(pp::BlobKind::kKemPublicKey, Str(*account, "kem_public_key_b64")).value(),
+                               Str(*account, "kem_binding_b64")));
 }
 
-// MR007-CARD: the vector card (version 4) verifies with its bytes; every refused card is refused.
+// The vector card (version 5) verifies with its bytes; every refused card is refused.
 TEST(RelaySignVectorsTest, TheCardVerifiesAndTheRefusedCardsAreRefused) {
   const Object committed = Committed();
   const Object* vector = committed.getObject("account_card");

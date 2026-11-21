@@ -42,6 +42,11 @@ const MlDsaKeyPair& DeviceKeys() {
   return keys;
 }
 
+/** A device key as its account card lists it: typed, base64. */
+std::string TypedKey(const MlDsaKeyPair& keys) {
+  return WriteTypedBlobB64(pp::BlobKind::kSignaturePublicKey, keys.public_key).value();
+}
+
 pp::ExtArea Area(const uint16_t type) {
   return pp::ExtArea::FromEntries({{.type = type, .value = {9}}}).value();
 }
@@ -102,14 +107,14 @@ TEST(EnvelopeSignerTest, SignAndReceiveRoundTrip) {
   EXPECT_EQ(signature->size(), 3310u) << "a typed signature";
   EXPECT_EQ(signature->front(), 1u) << "ml-dsa-65";
 
-  const SignedReceipt receipt = EnvelopeSigner::Receive(envelope, Base64Encode(DeviceKeys().public_key));
+  const SignedReceipt receipt = EnvelopeSigner::Receive(envelope, TypedKey(DeviceKeys()));
   EXPECT_TRUE(receipt.accepted()) << receipt.detail;
 }
 
 // The receiver's order (SIGNED_FORMATS § 1.1) for an envelope: each refusal its own verdict, "update needed" never a
 // forgery, the extension area read only after the signature.
 TEST(EnvelopeSignerTest, ReceiveRunsTheReceiversOrder) {
-  const std::string key = Base64Encode(DeviceKeys().public_key);
+  const std::string key = TypedKey(DeviceKeys());
   RelayEnvelope envelope = MakeE2eVectorEnvelope();
   ASSERT_TRUE(EnvelopeSigner::Sign(envelope, RawSigner(DeviceKeys())));
   ASSERT_TRUE(EnvelopeSigner::Receive(envelope, key).accepted());
@@ -136,7 +141,7 @@ TEST(EnvelopeSignerTest, ReceiveRunsTheReceiversOrder) {
   EXPECT_EQ(EnvelopeSigner::Receive(changed, key).verdict, SignedVerdict::Forged);
   auto other = MlDsa::GenerateKeyPair();
   ASSERT_TRUE(other);
-  EXPECT_EQ(EnvelopeSigner::Receive(envelope, Base64Encode(other->public_key)).verdict, SignedVerdict::Forged);
+  EXPECT_EQ(EnvelopeSigner::Receive(envelope, TypedKey(*other)).verdict, SignedVerdict::Forged);
 
   // An unknown critical entry: update needed once signed; a forgery when added after signing.
   RelayEnvelope critical = envelope;
@@ -295,7 +300,7 @@ TEST(PeerSigningKeyStoreTest, AKeyIsKeptOnlyUnderTheAccountItHashesTo) {
   auto other_account = AccountIdFromMlDsaPublicKey(other->public_key);
   ASSERT_TRUE(my_account && other_account);
   PeerSigningKeyRecord record;
-  record.signing_public_key_b64 = Base64Encode(mine->public_key);
+  record.signing_public_key_b64 = WriteTypedBlobB64(pp::BlobKind::kSignaturePublicKey, mine->public_key).value();
   record.source = "test";
 
   PeerSigningKeyStore store;

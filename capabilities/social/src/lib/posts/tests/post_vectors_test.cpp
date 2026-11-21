@@ -9,6 +9,7 @@
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/KemKeyBinding.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/TypedBlob.h"
 
 #include "common/ValueJson.h"
 
@@ -40,15 +41,23 @@ Object BuildVectors() {
   const auto keys = MlDsa::GenerateKeyPairFromSeed(ByteVector(32, 0x01)).value();
   const auto kem = HybridKem::GenerateKeyPairFromSeed(ByteVector(64, 0x02)).value();
   const std::string account = AccountIdFromMlDsaPublicKey(keys.public_key).value();
-  const std::string signing_b64 = Base64Encode(keys.public_key);
-  const std::string kem_b64 = Base64Encode(kem.public_key);
+  // The key card's keys are typed (ACCOUNT_CARD § Key card), its binding v2.
+  const std::string signing_b64 = WriteTypedBlobB64(pp::BlobKind::kSignaturePublicKey, keys.public_key).value();
+  const std::string kem_b64 = WriteTypedBlobB64(pp::BlobKind::kKemPublicKey, kem.public_key).value();
   const PostSigner signer = [&](const ByteVector& message) { return MlDsa::Sign(keys.secret_key, message); };
 
   Object key_card;
   key_card.set("account_id", account);
   key_card.set("signing_public_key_b64", signing_b64);
   key_card.set("kem_public_key_b64", kem_b64);
-  key_card.set("kem_binding_signature_b64", Base64Encode(signer(KemBindingSignBytes(signing_b64, kem_b64)).value()));
+  key_card.set("kem_binding_b64",
+               SignKemBindingB64(signing_b64, kem_b64, [&](const ByteVector& message) -> Roe<std::string> {
+                 auto signature = signer(message);
+                 if (!signature) {
+                   return signature.error();
+                 }
+                 return Base64Encode(*signature);
+               }).value());
 
   const PostLane lane{0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11};
   std::vector<Value> entries;
@@ -184,9 +193,16 @@ TEST(PostVectorsTest, TheCommittedVectorsVerify) {
   ASSERT_TRUE(root);
   const Object* key_card = root->getObject("key_card");
   ASSERT_NE(key_card, nullptr);
-  const ByteVector key = Base64Decode(key_card->getString("signing_public_key_b64").value_or("")).value();
+  const TypedRead typed_key = ReadTypedBlobB64(pp::BlobKind::kSignaturePublicKey,
+                                               key_card->getString("signing_public_key_b64").value_or(""), "key");
+  ASSERT_TRUE(typed_key.ok()) << typed_key.detail;
+  const ByteVector& key = typed_key.raw;
   const std::string account = root->getString("account_id").value_or("");
   EXPECT_EQ(AccountIdFromMlDsaPublicKey(key).value(), account);
+  EXPECT_TRUE(VerifyKemBinding(account, key_card->getString("signing_public_key_b64").value_or(""),
+                               key_card->getString("kem_public_key_b64").value_or(""),
+                               key_card->getString("kem_binding_b64").value_or("")))
+      << "the key card's KEM binding v2";
 
   const Array* entries = root->getArray("entries");
   ASSERT_NE(entries, nullptr);

@@ -6,7 +6,7 @@
 #include "foundation/crypto/SignedReceive.h"
 #include "foundation/crypto/TypedBlob.h"
 #include "foundation/error/AppError.h"
-#include "lib/people/HeldKeyForms.h"
+#include "lib/people/CardKeys.h"
 #include "common/ValueJson.h"
 
 #include <algorithm>
@@ -331,7 +331,7 @@ Roe<GroupRosterStatement> SignStatement(IAccountSigningAccess& signer, const std
   if (!account) {
     return account.error();
   }
-  auto typed_key = TypedSigningKeyB64FromHeld(public_key_b64);
+  auto typed_key = TypedKeyB64(pp::BlobKind::kSignaturePublicKey, public_key_b64);
   if (!typed_key) {
     return typed_key.error();
   }
@@ -342,7 +342,7 @@ Roe<GroupRosterStatement> SignStatement(IAccountSigningAccess& signer, const std
   if (!signature) {
     return signature.error();
   }
-  auto typed = TypedSignatureB64FromSigner(*signature);
+  auto typed = TypedSignatureB64(*signature);
   if (!typed) {
     return typed.error();
   }
@@ -372,7 +372,7 @@ Roe<GroupOwnerTransfer> SignTransfer(IAccountSigningAccess& signer, const std::s
   if (!account) {
     return account.error();
   }
-  auto typed_key = TypedSigningKeyB64FromHeld(public_key_b64);
+  auto typed_key = TypedKeyB64(pp::BlobKind::kSignaturePublicKey, public_key_b64);
   if (!typed_key) {
     return typed_key.error();
   }
@@ -385,7 +385,7 @@ Roe<GroupOwnerTransfer> SignTransfer(IAccountSigningAccess& signer, const std::s
   if (!signature) {
     return signature.error();
   }
-  auto typed = TypedSignatureB64FromSigner(*signature);
+  auto typed = TypedSignatureB64(*signature);
   if (!typed) {
     return typed.error();
   }

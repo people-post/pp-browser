@@ -56,16 +56,26 @@ Error IdentityChanged() {
   return AppError::Auth(Err::Auth::RelayIdentityMismatch, "presented another identity");
 }
 
-/** The PeerId a card names for `origin` in these tests (MR007). */
-std::string PeerIdOf(const std::string& origin) {
-  return "Qm:" + RelayOriginKey(origin);
+/** The relay id a card names for `origin` (each origin its own). */
+RelayId RelayIdOf(const std::string& origin) {
+  ByteVector raw(kRelayIdBytes, 0);
+  const std::string key = RelayOriginKey(origin);
+  for (size_t i = 0; i < key.size(); ++i) {
+    raw[i % raw.size()] = static_cast<uint8_t>(raw[i % raw.size()] * 31 + static_cast<uint8_t>(key[i]));
+  }
+  return RelayId::FromRaw(raw).value();
 }
 
-/** A card's relay list: each origin with the PeerId the card names for it. */
+/** The audience a test client signs for: named after the card's relay id. */
+std::string PeerIdOf(const std::string& origin) {
+  return "Qm:" + RelayIdOf(origin).ToString();
+}
+
+/** A card's relay list: each origin with the relay id the card names for it. */
 std::vector<AccountCardRelay> Card(const std::vector<std::string>& origins) {
   std::vector<AccountCardRelay> relays;
   for (const std::string& origin : origins) {
-    relays.push_back(AccountCardRelay{.origin = origin, .peer_id = PeerIdOf(origin)});
+    relays.push_back(AccountCardRelay{.origin = origin, .relay_id = RelayIdOf(origin)});
   }
   return relays;
 }
@@ -132,7 +142,7 @@ protected:
     coordinator_.SetOurRelays({{kOurs, Relay(kOurs)}, {kOurOther, Relay(kOurOther)}});
     coordinator_.SetForeignClients([this](const AccountCardRelay& relay) -> std::shared_ptr<IRelayClient> {
       made_.push_back(relay.origin);
-      made_for_.push_back(relay.peer_id);
+      made_for_.push_back("Qm:" + relay.relay_id.ToString());
       return Relay(relay.origin);
     });
     RelayRoutes routes;
@@ -340,8 +350,8 @@ TEST_F(RelaySendCoordinatorTest, ARelayOfOursOnAContactsListIsSentAsOurs) {
   EXPECT_TRUE(made_.empty()) << "the same relay, written differently: our registered client";
 }
 
-// MR007-SEND: a send into a contact's relay is signed for the PeerId its card names.
-TEST_F(RelaySendCoordinatorTest, AContactsRelayIsSignedForTheCardsPeerId) {
+// MR007-SEND, SIGNED_FORMATS § 3.4: a send into a contact's relay gets a client for the relay id its card names.
+TEST_F(RelaySendCoordinatorTest, AContactsRelayIsSignedForTheCardsRelayId) {
   bobs_relays_ = {kBobsA};
   ASSERT_TRUE(coordinator_.Send(EnvelopeTo(kBob)));
   EXPECT_EQ(made_for_, std::vector<std::string>({PeerIdOf(kBobsA)}));
@@ -443,7 +453,7 @@ TEST(RelaySendCoordinatorHttpTest, AForeignRelayGetsOurKeyWhenItAsksForIt) {
   coordinator.SetForeignClients([&](const AccountCardRelay& relay) {
     auto client = std::make_shared<HttpRelayClient>(relay.origin);
     client->SetAuthSigner(signer);
-    client->SetAudience(std::make_shared<FixedRelayAudience>(relay.peer_id));
+    client->SetAudience(std::make_shared<FixedRelayAudience>("Qm:" + relay.relay_id.ToString()));
     client->SetSendHooks(
         {.grant_for = {}, .grant_refused = {}, .sender_public_key = [] { return std::string("a2V5"); }});
     return client;
