@@ -910,8 +910,7 @@ protected:
     ComposerVoiceMarkupTest::SetUp();
   }
   void ApplyBubble() {
-    for (const char* key :
-         {"voice_bubble", "voice_bubble_left", "voice_bubble_top", "voice_tail_left", "voice_limit"}) {
+    for (const char* key : {"voice_bubble", "voice_bubble_left", "voice_bubble_top", "voice_limit"}) {
       DataModelHost::Instance().Dirty("chat", key);
     }
     for (int i = 0; i < ChatScreenState::kVoiceLevelBars; ++i) {
@@ -943,7 +942,6 @@ TEST_F(VoiceBubbleMarkupTest, TheBubbleIs176By64AndSitsWhereTheComposerPutsIt) {
   state.voice_bubble = true;
   state.voice_bubble_left = "112dp";
   state.voice_bubble_top = "338dp";
-  state.voice_tail_left = "88dp";
   ApplyBubble();
   context->Update();
   ui::Element* bubble = Bubble();

@@ -15,8 +15,6 @@ inline constexpr float kBubbleHeight = 64.f;
 inline constexpr float kAnchorDeadZone = 24.f;
 /** The bubble keeps this far from both screen sides. */
 inline constexpr float kScreenMargin = 12.f;
-/** The tail's centre stays this far from the bubble's sides. */
-inline constexpr float kTailMargin = 20.f;
 /** The bubble's bottom edge is this far above the press point: cancel line + finger radius + spare. */
 inline constexpr float kBubbleLift = kCancelArm + 30.f + 12.f;
 } // namespace voice_dp
@@ -25,11 +23,6 @@ inline constexpr float kBubbleLift = kCancelArm + 30.f + 12.f;
 inline float VoiceBubbleLeft(const float anchor, const float width) {
   const float high = std::max(voice_dp::kScreenMargin, width - voice_dp::kBubbleWidth - voice_dp::kScreenMargin);
   return std::clamp(anchor - voice_dp::kBubbleWidth / 2.f, voice_dp::kScreenMargin, high);
-}
-
-/** The tail's centre, relative to the bubble's left edge. */
-inline float VoiceBubbleTail(const float anchor, const float bubble_left) {
-  return std::clamp(anchor - bubble_left, voice_dp::kTailMargin, voice_dp::kBubbleWidth - voice_dp::kTailMargin);
 }
 
 /**

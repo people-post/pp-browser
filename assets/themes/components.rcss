@@ -1128,14 +1128,14 @@ select selectbox option {
 
 /* The phone's hold-to-talk bubble (a child of .shell-chat-overlay, ShellLayoutRml): 176x64dp, above the press point,
    its left edge follows the finger (voice_bubble_left, eased). The material child carries the colour and, on the frosted
-   chat overlay, the blur (the engine draws none on an element that has children itself, like .bar-material); the
-   tail is a clipped half diamond under the bubble. */
+   chat overlay, the blur (the engine draws none on an element that has children itself, like .bar-material). No edge
+   line and no tail: a soft shadow separates it, so it reads as glass and not as a drawn box. */
 .voice-bubble {
   position: absolute;
   z-index: 4;
   width: 176dp;
   height: 64dp;
-  border-radius: 18dp;
+  border-radius: 28dp;
   transition: left 0.12s cubic-out;
 }
 
@@ -1146,7 +1146,7 @@ select selectbox option {
   right: 0;
   bottom: 0;
   box-sizing: border-box;
-  border-radius: 18dp;
+  border-radius: 28dp;
 }
 
 .shell-chat-overlay--frost .voice-bubble-material {
@@ -1155,7 +1155,7 @@ select selectbox option {
 
 .voice-bubble-body {
   position: relative;
-  padding: 8dp 12dp;
+  padding: 8dp 18dp;
 }
 
 .voice-bubble-row {
@@ -1203,24 +1203,6 @@ select selectbox option {
   white-space: nowrap;
   font-size: 13dp;
   line-height: 20dp;
-}
-
-.voice-bubble-tail {
-  position: absolute;
-  top: 64dp;
-  width: 14dp;
-  height: 7dp;
-  margin-left: -7dp;
-  overflow: hidden;
-}
-
-.voice-bubble-tail-diamond {
-  position: absolute;
-  top: -5dp;
-  left: 2dp;
-  width: 10dp;
-  height: 10dp;
-  transform: rotate(45deg);
 }
 
 .chat-link {
@@ -12672,6 +12654,51 @@ input.checkbox {
   height: 28dp;
   border-radius: 14dp;
   background-color: rgba(0, 0, 0, 128);
+}
+
+/* A voice message being sent: the sent bubble itself, the 36dp upload disc laid over the 28dp play button (it takes no
+   room: the bubble is the size of the sent one), the percent in its small core, and after a failure the ✕ at the card's
+   corner. Same translucent black and white as a picture's disc. */
+.chat-voice-card {
+  position: relative;
+}
+
+.chat-voice-pending {
+  position: absolute;
+  top: 4dp;
+  left: 48dp;
+  width: 36dp;
+  height: 36dp;
+}
+
+.chat-voice-pending .chat-pending-disc {
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
+}
+
+.chat-voice-pending .chat-pending-ring {
+  top: 3dp;
+  left: 3dp;
+  width: 30dp;
+  height: 30dp;
+  border-radius: 15dp;
+}
+
+.chat-voice-pending .chat-pending-core {
+  width: 24dp;
+  height: 24dp;
+  border-radius: 12dp;
+}
+
+.chat-voice-pending .chat-file-percent {
+  font-size: 9dp;
+  line-height: 12dp;
+}
+
+.chat-pending-discard.chat-voice-discard {
+  top: -14dp;
+  right: -14dp;
 }
 
 /* A file card, sent or being sent (DEV/PLAN-attachment-bubbles-multi-pick.md): a 72dp type tile on the left, the name

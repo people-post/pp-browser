@@ -99,7 +99,6 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("voice_bubble", &state.voice_bubble);
   ctor.Bind("voice_bubble_left", &state.voice_bubble_left);
   ctor.Bind("voice_bubble_top", &state.voice_bubble_top);
-  ctor.Bind("voice_tail_left", &state.voice_tail_left);
   ctor.Bind("voice_limit", &state.voice_limit);
   for (int i = 0; i < ChatScreenState::kVoiceLevelBars; ++i) {
     ctor.Bind("voice_lv_" + std::to_string(i), &state.voice_lv[i]);
@@ -311,7 +310,6 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "voice_bubble");
   DataModelHost::Instance().Dirty("chat", "voice_bubble_left");
   DataModelHost::Instance().Dirty("chat", "voice_bubble_top");
-  DataModelHost::Instance().Dirty("chat", "voice_tail_left");
   DataModelHost::Instance().Dirty("chat", "voice_limit");
   for (int i = 0; i < ChatScreenState::kVoiceLevelBars; ++i) {
     DataModelHost::Instance().Dirty("chat", "voice_lv_" + std::to_string(i));

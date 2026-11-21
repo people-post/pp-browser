@@ -702,7 +702,6 @@ TEST(VoiceComposer, OnA3xScreenThePixelsAreConvertedToDpForTheCancelAndTheBubble
   // The bubble: centred on x = 200dp (left 112), its bottom 98dp above y = 500dp (top 500 - 98 - 64).
   EXPECT_EQ(std::string(h.state.voice_bubble_left), "112dp");
   EXPECT_EQ(std::string(h.state.voice_bubble_top), "338dp");
-  EXPECT_EQ(std::string(h.state.voice_tail_left), "88dp");
   h.composer->OnMove(600, 1332);
   h.composer->OnRelease(Later());
   EXPECT_TRUE(h.sent.empty()) << "armed and released: cancelled";
@@ -714,16 +713,14 @@ TEST(VoiceComposer, TheBubbleFollowsTheFingerAndStaysOnTheScreenAtBothEnds) {
   struct Case {
     float x_px;
     const char* left;
-    const char* tail;
   };
-  for (const Case c : {Case{30, "12dp", "20dp"}, Case{600, "112dp", "88dp"}, Case{1170, "205dp", "156dp"}}) {
+  for (const Case c : {Case{30, "12dp"}, Case{600, "112dp"}, Case{1170, "205dp"}}) {
     Harness h;
     h.ratio = 3.f;
     h.fingers = {7};
     h.composer->BeginAt(c.x_px, 1500, nullptr, true);
     ASSERT_TRUE(h.WaitTimer("0:03"));
     EXPECT_EQ(std::string(h.state.voice_bubble_left), c.left) << c.x_px;
-    EXPECT_EQ(std::string(h.state.voice_tail_left), c.tail) << c.x_px;
   }
   // Dragging sideways: inside 24dp of the anchor nothing moves; past it the bubble is dragged along.
   Harness h;

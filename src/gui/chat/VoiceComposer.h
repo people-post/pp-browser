@@ -173,7 +173,6 @@ private:
   float levels_[ChatScreenState::kVoiceLevelBars] = {};
   float shown_left_ = -1.f;
   float shown_top_ = -1.f;
-  float shown_tail_ = -1.f;
   bool shut_down_ = false;
 };
 

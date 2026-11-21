@@ -71,8 +71,7 @@ std::string ShellLayoutRml::VoiceBubbleRml() {
       << Tr("chat.voice.hint_send") << "</div>";
   out << "<div class=\"voice-bubble-sub\" data-if=\"voice_cancel_zone\">" << Tr("chat.voice.hint_slide_down")
       << "</div>";
-  out << "</div><div class=\"voice-bubble-tail\" data-style-left=\"voice_tail_left\">"
-         "<div class=\"voice-bubble-tail-diamond\"></div></div></div>";
+  out << "</div></div>";
   return out.str();
 }
 

@@ -159,7 +159,7 @@ selection {
 
 .shell-chat-overlay .prompt-voice-bar--armed, .shell-chat-overlay .prompt-voice-bar--armed:hover {
   background-color: {{x-vbar-armed}};
-  border-color: {{x-vbubble-line-armed}};
+  border-color: transparent;
 }
 
 .prompt-voice-dot {
@@ -178,31 +178,18 @@ selection {
    bar colour with the blur on the frosted overlay, or the 88% colour without blur (the fallback). */
 .voice-bubble {
   color: {{label}};
-  box-shadow: 0 4dp 16dp {{x-vbubble-shadow}};
+  box-shadow: 0 8dp 28dp {{x-vbubble-shadow}};
 }
 
 .voice-bubble-material {
   background-color: {{x-bar}};
-  border: 1dp {{x-vbubble-line}};
-}
-
-.voice-bubble-tail-diamond {
-  background-color: {{x-bar}};
 }
 
 .shell-chat-overlay--frost .voice-bubble-material {
-  background-color: {{x-bar-blur}};
-}
-
-.shell-chat-overlay--frost .voice-bubble-tail-diamond {
-  background-color: {{x-bar-blur}};
+  background-color: {{x-vbubble-glass}};
 }
 
 .shell-chat-overlay--glass .voice-bubble-material {
-  background-color: {{x-vbubble-approx}};
-}
-
-.shell-chat-overlay--glass .voice-bubble-tail-diamond {
   background-color: {{x-vbubble-approx}};
 }
 
@@ -220,26 +207,13 @@ selection {
 
 .voice-bubble--armed .voice-bubble-material {
   background-color: {{x-vbubble-armed-solid}};
-  border-color: {{x-vbubble-line-armed}};
-}
-
-.voice-bubble--armed .voice-bubble-tail-diamond {
-  background-color: {{x-vbubble-armed-solid}};
 }
 
 .shell-chat-overlay--frost .voice-bubble--armed .voice-bubble-material {
   background-color: {{x-vbubble-armed}};
 }
 
-.shell-chat-overlay--frost .voice-bubble--armed .voice-bubble-tail-diamond {
-  background-color: {{x-vbubble-armed}};
-}
-
 .shell-chat-overlay--glass .voice-bubble--armed .voice-bubble-material {
-  background-color: {{x-vbubble-armed-approx}};
-}
-
-.shell-chat-overlay--glass .voice-bubble--armed .voice-bubble-tail-diamond {
   background-color: {{x-vbubble-armed-approx}};
 }
 

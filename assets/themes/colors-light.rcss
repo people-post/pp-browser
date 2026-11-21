@@ -156,7 +156,7 @@ selection {
 
 .shell-chat-overlay .prompt-voice-bar--armed, .shell-chat-overlay .prompt-voice-bar--armed:hover {
   background-color: #ff3b301a;
-  border-color: #ff3b3059;
+  border-color: transparent;
 }
 
 .prompt-voice-dot {
@@ -175,31 +175,18 @@ selection {
    bar colour with the blur on the frosted overlay, or the 88% colour without blur (the fallback). */
 .voice-bubble {
   color: #000000;
-  box-shadow: 0 4dp 16dp #00000024;
+  box-shadow: 0 8dp 28dp #0000002e;
 }
 
 .voice-bubble-material {
   background-color: #f2f2f7;
-  border: 1dp #00000014;
-}
-
-.voice-bubble-tail-diamond {
-  background-color: #f2f2f7;
 }
 
 .shell-chat-overlay--frost .voice-bubble-material {
-  background-color: #f2f2f7c7;
-}
-
-.shell-chat-overlay--frost .voice-bubble-tail-diamond {
-  background-color: #f2f2f7c7;
+  background-color: #f2f2f794;
 }
 
 .shell-chat-overlay--glass .voice-bubble-material {
-  background-color: #f2f2f7e0;
-}
-
-.shell-chat-overlay--glass .voice-bubble-tail-diamond {
   background-color: #f2f2f7e0;
 }
 
@@ -208,7 +195,7 @@ selection {
 }
 
 .voice-bubble-sub {
-  color: #3c3c43d9;
+  color: #000000bf;
 }
 
 .voice-bubble-timer--countdown {
@@ -217,35 +204,22 @@ selection {
 
 .voice-bubble--armed .voice-bubble-material {
   background-color: #ffe4e2;
-  border-color: #ff3b3059;
-}
-
-.voice-bubble--armed .voice-bubble-tail-diamond {
-  background-color: #ffe4e2;
 }
 
 .shell-chat-overlay--frost .voice-bubble--armed .voice-bubble-material {
-  background-color: #ffe4e2e0;
-}
-
-.shell-chat-overlay--frost .voice-bubble--armed .voice-bubble-tail-diamond {
-  background-color: #ffe4e2e0;
+  background-color: #ffc8c4c7;
 }
 
 .shell-chat-overlay--glass .voice-bubble--armed .voice-bubble-material {
   background-color: #ffe4e2f0;
 }
 
-.shell-chat-overlay--glass .voice-bubble--armed .voice-bubble-tail-diamond {
-  background-color: #ffe4e2f0;
-}
-
 .voice-bubble--armed .voice-bubble-row, .voice-bubble--armed .voice-bubble-sub {
-  color: #960a10;
+  color: #7a0008;
 }
 
 .voice-bubble-bin {
-  image-color: #960a10;
+  image-color: #7a0008;
 }
 
 .prompt-emoji-btn svg {

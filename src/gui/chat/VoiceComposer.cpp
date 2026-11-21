@@ -182,7 +182,7 @@ void VoiceComposer::BeginAt(const float x_px, const float y_px, ui::ElementDocum
   hold_mode_ = hold;
   press_time_ = std::chrono::steady_clock::now();
   press_y_dp_ = y;
-  shown_left_ = shown_top_ = shown_tail_ = -1000.f;
+  shown_left_ = shown_top_ = -1000.f;
   pointer_down_ = hold;
   touch_ = VoiceTouchHold();
   if (hold) {
@@ -515,20 +515,17 @@ void VoiceComposer::UpdateBubble() {
   const float width = ports_.viewport_width_dp ? ports_.viewport_width_dp() : 393.f;
   const float anchor = gesture_.anchor_x();
   const float left = VoiceBubbleLeft(anchor, width);
-  const float tail = VoiceBubbleTail(anchor, left);
   // The bubble's bottom edge sits above the cancel line; it never rises into the header.
   const float top_limit = ports_.top_limit_dp ? ports_.top_limit_dp() : 0.f;
   const float overlay_top = ports_.overlay_top_dp ? ports_.overlay_top_dp() : 0.f;
   const float top = std::max(top_limit, press_y_dp_ - voice_dp::kBubbleLift - voice_dp::kBubbleHeight) - overlay_top;
-  if (std::fabs(left - shown_left_) < 1.f && std::fabs(top - shown_top_) < 1.f && std::fabs(tail - shown_tail_) < 1.f) {
+  if (std::fabs(left - shown_left_) < 1.f && std::fabs(top - shown_top_) < 1.f) {
     return;
   }
   shown_left_ = left;
   shown_top_ = top;
-  shown_tail_ = tail;
   state_.voice_bubble_left = Dp(left).c_str();
   state_.voice_bubble_top = Dp(top).c_str();
-  state_.voice_tail_left = Dp(tail).c_str();
   DirtyBubble();
 }
 
