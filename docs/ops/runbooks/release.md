@@ -16,11 +16,10 @@ and pp-node 10.0; tag forms and workflows: [RELEASE.md](../RELEASE.md).
 | Step | Who | How | Verify |
 |------|-----|-----|--------|
 | Format changes since the last release listed, each with its class; the version table updated | release owner | `git log --oneline <last release tag>..origin/main`; the table: [DESIGN § The version table](../../../projects/release-compatibility/DESIGN.md#the-version-table) | Listed in the release issue |
-| A relay release this one needs, deployed to prod first | Hongwei | In pp-relay-apis: `git fetch origin && git tag -a v1.0.0 <commit on main> -m "relay 1.0.0" && git push origin v1.0.0`. Its CI's `deploy` job deploys prod (refused if the commit is not on main) | `gh run list -R people-post/pp-relay-apis --workflow ci.yml --branch v1.0.0 --limit 1`, then `gh run watch <run id> -R people-post/pp-relay-apis --exit-status`: `deploy` ran, not skipped |
+| A relay release this one needs, deployed to prod first | Hongwei | In the relay API repository: `git fetch origin && git tag -a vX.Y.Z <commit on release/X.Y> -m "relay X.Y.Z" && git push origin vX.Y.Z`. Its CI's `deploy` job deploys prod (refused if the commit is not on `release/X.Y` or the pusher is not a listed deployer) | `gh run list -R <relay API repository> --workflow ci.yml --branch vX.Y.Z --limit 1`, then `gh run watch <run id> -R <relay API repository> --exit-status`: `deploy` ran, not skipped |
 | Freeze announced; release owner named | release owner | The team channel | — |
 
-Not yet: a relay release candidate (`release/vX.Y.Z-rc.<n>`) held on staging before prod, and prod tags on `release/X.Y`
-(RC021); today relay qa takes every push to the relay API repository's main ([DESIGN § Environments](../../../projects/release-compatibility/DESIGN.md#environments), PHASES § P2).
+A relay release candidate is held on staging before prod: tag `release/vX.Y.Z-rc.<n>` on `release/X.Y` (a dev tag `dev/<date>.<n>` on a commit of main deploys the dev environment); the relay repositories deploy only from tags ([RC021](../../../projects/release-compatibility/DECISIONS.md#rc021--the-relay-repos-deploy-by-tag-only)).
 
 ## 2. Cut the branch
 
