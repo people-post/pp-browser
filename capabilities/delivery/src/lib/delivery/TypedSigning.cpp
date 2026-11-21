@@ -25,22 +25,4 @@ Roe<std::string> SignTypedB64(const RawSignFn& sign, const std::vector<uint8_t>&
   return Base64Encode(*typed);
 }
 
-TypedRead ReadHeldSigningKeyB64(const std::string& key_b64, const std::string_view what) {
-  auto raw = Base64Decode(key_b64);
-  if (!raw) {
-    TypedRead read;
-    read.status = TypedBlobStatus::Malformed;
-    read.detail = std::string(what) + ": not base64";
-    return read;
-  }
-  auto typed = TypedSigningPublicKey(*raw); // the size of an ML-DSA-65 key, else malformed
-  if (!typed) {
-    TypedRead read;
-    read.status = TypedBlobStatus::Malformed;
-    read.detail = std::string(what) + ": not an ML-DSA-65 key";
-    return read;
-  }
-  return ReadTypedBlob(pp::BlobKind::kSignaturePublicKey, *typed, what);
-}
-
 } // namespace pbr
