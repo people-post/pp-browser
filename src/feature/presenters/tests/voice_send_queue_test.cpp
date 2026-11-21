@@ -418,5 +418,23 @@ TEST(VoiceSendQueue, NothingStartsBeforeThePaceWaitIsOver) {
   EXPECT_TRUE(rig.queue->CancelWaiting("b"));
 }
 
+// A Retry job's completion reports exactly once, also when the resume drops its callback without calling it.
+TEST(VoiceSendQueue, ARetrysCompletionReportsOnceEvenWhenDropped) {
+  std::vector<AttachmentSendOutcome> got;
+  {
+    auto done = VoiceRetryCompletion([&got](const AttachmentSendOutcome outcome) { got.push_back(outcome); });
+  } // dropped uncalled
+  ASSERT_EQ(got.size(), 1u);
+  EXPECT_EQ(got[0], AttachmentSendOutcome::FailedStaged);
+  got.clear();
+  {
+    auto done = VoiceRetryCompletion([&got](const AttachmentSendOutcome outcome) { got.push_back(outcome); });
+    auto copy = done;
+    done(true);
+    copy(false);
+  }
+  EXPECT_EQ(got, (std::vector<AttachmentSendOutcome>{AttachmentSendOutcome::Sent}));
+}
+
 } // namespace
 } // namespace pbr

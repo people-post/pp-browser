@@ -73,6 +73,13 @@ struct VoiceSendPorts {
  */
 bool VoiceRecordingRetryable(const std::string& path);
 
+/**
+ * The completion a voice Retry job hands to the resume (true: sent). It reports to `on_finished` exactly once:
+ * Sent / FailedStaged when called, FailedStaged when every copy is dropped uncalled (a lost callback never leaves the
+ * line waiting on its job forever).
+ */
+std::function<void(bool sent)> VoiceRetryCompletion(std::function<void(AttachmentSendOutcome)> on_finished);
+
 class VoiceSendQueue {
 public:
   explicit VoiceSendQueue(VoiceSendPorts ports);

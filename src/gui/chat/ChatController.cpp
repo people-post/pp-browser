@@ -447,9 +447,7 @@ ChatController::ChatController()
       on_finished(AttachmentSendOutcome::Cancelled); // its bubble is gone (lock, reset): nothing to resend
       return;
     }
-    StartAttachmentRetry(job.row_id, item->record_id, job.thread_id, [on_finished](const bool sent) {
-      on_finished(sent ? AttachmentSendOutcome::Sent : AttachmentSendOutcome::FailedStaged);
-    });
+    StartAttachmentRetry(job.row_id, item->record_id, job.thread_id, VoiceRetryCompletion(std::move(on_finished)));
   };
   voice_queue_ports.remove_file = [](const std::string& path) {
     std::error_code ec;

@@ -19,6 +19,12 @@ bool VoiceRecordingRetryable(const std::string& path) {
   return false;
 }
 
+std::function<void(bool sent)> VoiceRetryCompletion(std::function<void(AttachmentSendOutcome)> on_finished) {
+  const AttachmentSendOnce once(std::move(on_finished), AttachmentSendOutcome::FailedStaged);
+  return
+      [once](const bool sent) { once.Fire(sent ? AttachmentSendOutcome::Sent : AttachmentSendOutcome::FailedStaged); };
+}
+
 VoiceSendQueue::VoiceSendQueue(VoiceSendPorts ports) : ports_(std::move(ports)) {}
 
 void VoiceSendQueue::Enqueue(VoiceSendJob job) {
