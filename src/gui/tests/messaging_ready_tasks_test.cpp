@@ -101,7 +101,11 @@ protected:
       return {};
     };
     ports.brief_key_done = [this](const BriefKeyMintEnd& end) {
-      EXPECT_FALSE(brief_run_->InFlight()) << "the end is told once the run is free (the banner reads it)";
+      // A 401 renewal waiting on another thread (run_shared_) may take the run the moment the mint frees it, before
+      // its end is told: then the run reads in flight again, rightly (the banner keeps "a key is on its way").
+      if (!run_shared_) {
+        EXPECT_FALSE(brief_run_->InFlight()) << "the end is told once the run is free (the banner reads it)";
+      }
       brief_ends_.push_back(end.outcome);
     };
     ports.after_identity_changed = [this] { ++identity_changed_; };
@@ -160,6 +164,8 @@ protected:
   std::vector<BriefKeyMintOutcome> brief_ends_;
   int identity_changed_ = 0;
   std::shared_ptr<CoalescedRun> brief_run_ = std::make_shared<CoalescedRun>();
+  /** A renewal on another thread waits for the run: it may hold it again by the time a mint's end is told. */
+  bool run_shared_ = false;
   std::unique_ptr<MessagingReadyTasks> tasks_;
 };
 
@@ -336,6 +342,7 @@ TEST_F(MessagingReadyTasksTest, BriefKeyMintSuccessTellsTheIdentityChangedOnce) 
 TEST_F(MessagingReadyTasksTest, The401RenewalWaitsForTheMintInFlightAndMintsNothing) {
   tasks_->MintBriefKey("u");
   ASSERT_TRUE(brief_run_->InFlight());
+  run_shared_ = true; // the renewal below takes the run as soon as the mint frees it (CI, windows-2022)
 
   std::atomic<int> renew_mints{0};
   std::atomic<bool> renewal_started{false};
@@ -362,6 +369,7 @@ TEST_F(MessagingReadyTasksTest, The401RenewalWaitsForTheMintInFlightAndMintsNoth
   EXPECT_EQ(*got, "reused:brf_guest_new");
   EXPECT_EQ(renew_mints.load(), 0);
   EXPECT_EQ(mint_calls_, 1) << "one mint in all";
+  EXPECT_EQ(brief_ends_, (std::vector<BriefKeyMintOutcome>{BriefKeyMintOutcome::Stored}));
   EXPECT_EQ(identity_changed_, 1);
   EXPECT_TRUE(jobs_.empty()) << "the renewal waiting asked for no further mint";
   EXPECT_FALSE(brief_run_->InFlight());
