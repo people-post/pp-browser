@@ -11,9 +11,27 @@ Derives libp2p-shaped base58 PeerIds from ML-DSA-65 device public keys (1952 byt
 
 - Multiaddr segment: `/p2p/<PeerId>`
 - JSON call control field: `libp2p_peer_id` (name retained for compat)
-- An HTTPS relay's identity: its own ML-DSA-65 key's PeerId, derived the same way, is the audience every signed relay
-  command names, and part of the relay's address — its relay link `https://host#<PeerId>`, as a node's multiaddr ends
-  in `/p2p/<PeerId>` (multi-relay MR007, MR008, [SERVICE_ENDPOINTS § Relay identity](../contracts/SERVICE_ENDPOINTS.md#relay-identity))
+- An HTTPS relay's transport key: its PeerId, derived the same way, is the audience every signed relay command names
+  (multi-relay MR007). It is **not** the relay's address: that is its relay id ([§ Relay links](#relay-links)), and its
+  certificate proves which PeerId is the audience ([SERVICE_ENDPOINTS § Relay identity](../contracts/SERVICE_ENDPOINTS.md#relay-identity))
+
+## Relay links
+
+A relay's address is its origin and its **relay id** (release-compatibility
+[SIGNED_FORMATS § 3](../../projects/release-compatibility/SIGNED_FORMATS.md#3-the-relay-operator-set-and-certificate),
+amending multi-relay MR008, where it was the PeerId): `relay:` + base64url-unpadded of BLAKE2b-256 of the relay's
+founding operator set, 49 characters, as an Account ID is `account:` + the same encoding of its key's hash. Its
+written form, the **relay link**, is
+
+```
+https://host[:port][/api/relay]#relay:<43 base64url characters>
+```
+
+(`ParseRelayLink`, `RelayLink`, `lib/net/RelayOrigins.h`; `RelayId`, `foundation/crypto/RelayId.h`). The fragment never
+reaches the relay. A fragment that is not a relay id's one spelling — a PeerId (`#Qm…`, a link from before the
+cutover) included — is refused (`relay_origin_bad_relay_id`); no link names a PeerId. The same `{origin, relay_id}`
+is a contact locator's `relay` entry and, from card v5, an account card's relay entry. The PeerId a client signs for is
+the one the relay's certificate names, never one a link or an answer gives.
 
 ## Derivation pipeline (frozen)
 

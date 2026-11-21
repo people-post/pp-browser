@@ -21,7 +21,7 @@ Platform defaults (`PlatformDefaults`) set all three to `<origin>/api/relay` (e.
 
 ```json
 {
-  "relay": { "base_url": "https://backend.example.test/api/relay", "transport": "http", "peer_id": "Qm…" },
+  "relay": { "base_url": "https://backend.example.test/api/relay", "transport": "http", "relay_id": "relay:…" },
   "directory": {
     "base_url": "https://backend.example.test/api/relay",
     "transport": "http",
@@ -29,18 +29,20 @@ Platform defaults (`PlatformDefaults`) set all three to `<origin>/api/relay` (e.
       { "base_url": "https://backend.example.test/api/relay", "transport": "http" }
     ]
   },
-  "registration": { "base_url": "https://backend.example.test/api/relay", "peer_id": "Qm…" }
+  "registration": { "base_url": "https://backend.example.test/api/relay", "relay_id": "relay:…" }
 }
 ```
 
-`peer_id` (relay and registration; multi-relay [MR008](../../projects/multi-relay/DECISIONS.md#mr008--a-relay-address-carries-its-peerid-no-first-use-trust)):
-the PeerId that relay must answer to — its address carries it. `prod` / `qa` take the build's
-(`PP_RELAY_PEER_ID_PROD` / `PP_RELAY_PEER_ID_QA`, [BUILD](../ops/BUILD.md#backend-origin)) and ignore the saved
-ones; `custom` takes the config's, `PP_BROWSER_ORIGIN` takes `PP_BROWSER_RELAY_PEER_ID`. Me → Network's custom relay
-and registration fields show and take relay links (`<base_url>#<peer_id>`); a bare URL there names none. A custom
-relay (or `PP_BROWSER_ORIGIN`'s) none names is not used in a release build — Me → Network says its link has no relay
-ID, and an ERROR names the missing setting — and pinned on its first identity answer, warned, in a developer build
-([§ Pins](#pins)). The directory is unsigned and needs none.
+`relay_id` (relay and registration; multi-relay [MR008](../../projects/multi-relay/DECISIONS.md#mr008--a-relay-address-carries-its-peerid-no-first-use-trust)
+as release-compatibility [SIGNED_FORMATS § 3.3](../../projects/release-compatibility/SIGNED_FORMATS.md#33-what-carries-the-relay-id-instead-of-peer_id)
+amends it): the relay id that relay must prove with its certificate — its address carries it. `prod` / `qa` take the
+build's (`PP_RELAY_ID_PROD` / `PP_RELAY_ID_QA`, [BUILD](../ops/BUILD.md#backend-origin); `pending` while that
+environment's operator set is not made: the relay is not used) and ignore the saved ones; `custom` takes the config's,
+`PP_BROWSER_ORIGIN` takes `PP_BROWSER_RELAY_ID`. Me → Network's custom relay and registration fields show and take
+relay links (`<base_url>#relay:…`); a bare URL there names none. A custom relay (or `PP_BROWSER_ORIGIN`'s) none names
+is not used in a release build — Me → Network says its link has no relay ID, and an ERROR names the missing setting —
+and pinned on its first valid certificate, warned, in a developer build ([§ Pins](#pins)). The directory is unsigned
+and needs none.
 
 `directory.providers[]` (N029 nd3) is an **ordered failover list**. When present and non-empty, `CreateOrgBackendClients` builds HTTP clients for each `transport: http` entry and wraps them in `FailoverDirectoryClient`. When `providers` is omitted/empty, behavior matches legacy single `directory.base_url`. Non-`http` transports (e.g. future `amp`) are skipped with a warning until Phase B.
 
@@ -71,87 +73,124 @@ the threat: a relay, honest-but-curious or hostile, not the network — TLS cove
 
 ### Relay identity
 
-Each relay deployment holds its own ML-DSA-65 key; its **PeerId** is `pp::PeerIdFromMlDsaPublicKey(key)`, exactly a
-pp-node's ([MESH_IDENTITY](../architecture/MESH_IDENTITY.md): base58btc of `12 20 ‖ SHA-256(08 04 12 A0 0F ‖ key)`,
-`Qm…`, 46 characters). A new key is a new relay identity — and so a new relay address.
+Each relay deployment holds an ML-DSA-65 **transport key**; its **PeerId** is `pp::PeerIdFromMlDsaPublicKey(key)`,
+exactly a pp-node's ([MESH_IDENTITY](../architecture/MESH_IDENTITY.md): `Qm…`, 46 characters), and is the
+**audience** every signed call names. It is not what clients pin. Release-compatibility
+[SIGNED_FORMATS § 3](../../projects/release-compatibility/SIGNED_FORMATS.md#3-the-relay-operator-set-and-certificate)
+(RC018 item 7, after pp-ledger's beacon authority): an offline **operator set** certifies the transport key (and a
+second hot **signing key**, which signs nothing in release 1); the relay's own keys certify nothing.
 
-**A relay address is its origin and its PeerId** ([MR008](../../projects/multi-relay/DECISIONS.md#mr008--a-relay-address-carries-its-peerid-no-first-use-trust)),
-as a node's multiaddr ends in `/p2p/<PeerId>`. Its written form, the **relay link**, is
-`https://host[:port][/api/relay]#<PeerId>` (`ParseRelayLink`, `RelayLink`): the fragment is the base58 PeerId and is
-never sent to the relay. An operator publishes it (pp-relay-apis' `scripts/relay-identity-keygen.mjs <origin>` prints
-it; a local stack's `/_local/status` names it, `relayLink`). The app never learns a PeerId from a relay's own answer.
+| Name | Form |
+|------|------|
+| Operator set | `u8 threshold ‖ u8 n ‖ n × LenBytes(typed ML-DSA-65 key)`, keys sorted by their bytes, distinct, `1 ≤ threshold ≤ n ≤ 8` |
+| **Relay id** | `BLAKE2b-256("pp-browser:relay-id" 00 ‖ u8 1 ‖ founding operator set)`, written `relay:` + base64url-unpadded (49 characters; `RelayId`, `foundation/crypto/RelayId.h`). It never changes for the relay: an operator-set change keeps it |
+| Relay certificate | `u8 1 ‖ LenBytes body ‖ u8 m ‖ m × (u8 signer_index ‖ LenBytes typed signature)`; signed bytes `"pp-browser:relay-certificate" 00 ‖ u8 1 ‖ body`; body = `LenBytes founding set ‖ u64 k ‖ k × LenBytes set change ‖ u64 sequence ‖ i64 issued_at ‖ i64 expires_at ‖ u64 o ‖ o × LenUtf8 origin ‖ LenBytes transport key ‖ LenBytes signing key ‖ ext area` (`RelayCertificate`, `lib/net/RelayCertificate.h`) |
+| Operator-set change | `u8 1 ‖ LenBytes body ‖ u8 m ‖ signatures`; signed bytes `"pp-browser:relay-operator-set-change" 00 ‖ u8 1 ‖ relay id (32) ‖ body`; body = `u64 set_generation ‖ LenBytes new set ‖ ext area`, signed by the set it replaces |
+
+**A relay address is its origin and its relay id** (MR008 as § 3.3 amends it; `RelayAddress`). Its written form, the
+**relay link**, is `https://host[:port][/api/relay]#relay:…` (`ParseRelayLink`, `RelayLink`;
+[MESH_IDENTITY § Relay links](../architecture/MESH_IDENTITY.md#relay-links)): the fragment is never sent to the relay.
+An operator publishes it (pp-relay-apis' `scripts/relay-operator.mjs link`; a local stack's `/_local/status` names
+it). The app never learns a relay id from a relay's own answer; a new PeerId (a new host, a leaked key) is a **new
+certificate** of the same relay, not a new address.
+
+**A certificate is valid** (`ReceiveRelayCertificate`, the receiver's order of
+[SIGNED_EXTENSIONS](SIGNED_EXTENSIONS.md#the-receivers-order)) when: version 1 (a higher one: update needed, nothing
+verified; 0 or none: older); it parses (sizes, 1–4 origins, at most 16 set changes, each set's bounds and order, every
+signer index inside the set it points into and none twice — else malformed); every typed key and signature has a
+known algorithm id; its founding set hashes to the relay id expected (else *another relay's*); each set change, in
+order, carries `set_generation` one above the last (the founding set is 1) and `threshold` valid signatures of the set
+it replaces; the certificate carries at least `threshold` signatures of the **set in force** (the founding set after
+the changes) and every one it carries verifies (else forged); no unknown critical entry in its area or a change's
+(update needed); then `sequence ≥ 1`, its origins within the card's origin bounds (`IsCardRelayOrigin`; `http://` too,
+for the local stack and the lab) and none twice, transport and signing keys distinct and neither an operator key of any
+set in it, and `expires_at` 0 or in the future (release 1's operators write 0; the reader ships, Q7). Frozen vectors:
+`capabilities/net/src/lib/net/tests/data/relay_certificate_vectors.json` (written by `relay_certificate_test.cpp`,
+`PP_WRITE_RELAY_CERTIFICATE_VECTORS=<path>`; pp-relay-apis and pp-node read it byte for byte).
 
 `GET {base}/v1/relay-identity` (unauthenticated, rate-limited per address) answers
-`{ "schema_version": 1, "peer_id": "Qm…", "public_key_b64": "…", "signature_alg": "ml-dsa-65" }` with
-`Cache-Control: public, max-age=300`; a relay without a valid identity answers it, and every signed call, `503
-relay_identity_unavailable`. The client (`FetchRelayIdentity` / `ParseRelayIdentity`) takes it only when
-`schema_version` is 1 or above (a newer one is read for the fields this reader knows: the relay only adds fields;
-release-compatibility T15), `signature_alg` is `ml-dsa-65`, `public_key_b64` is canonical base64 of 1952 bytes and the key
-derives `peer_id`; anything else (and unreachable, any other status) is no identity. Unknown keys are ignored. The
-answer is **checked, not trusted**: its `peer_id` must be the one the relay's address names, else the relay is not
-used. It is not signed: a static signature is copied by whoever serves it, and a relay proxying another answers its
-nonce through.
+`{ "schema_version": 2, "relay_id": "relay:…", "certificate_b64": "…" }` with `Cache-Control: public, max-age=300`; a
+relay without a valid certificate for its keys answers it, and every signed call, `503 relay_identity_unavailable`.
+The client (`FetchRelayIdentity` / `ParseRelayIdentity`) takes `schema_version` 2 or above (a newer one is read for the
+fields this reader knows, T15), `relay_id` of the `relay:` form and a non-empty `certificate_b64`; version 1 (a relay
+from before the certificate), unreachable or any other status is no identity. Unknown keys are ignored. The answer is
+unsigned and needs no signature: its certificate proves itself against the relay id the client expects, and must
+**list the origin the client asked** (a relay fronting another serves a certificate that does not list its origin).
+`client-compat` carries the org relay's certificate too (`relay_certificate_b64`,
+[§ Client compatibility](#client-compatibility-discovery)), and each build carries its environments' as a floor.
 
 ### Pins
 
-The pins are the identities we expect (`RelayPins` over `RelayPinStore`, `relay_pins.json`
-[DATA_LAYOUT](DATA_LAYOUT.md#relay_pinsjson)): each relay of ours and each of the org's origins with the PeerId its
-address names. One PeerId per origin, one origin per PeerId, at most 32 (the oldest pin that is neither ours nor the
-org's origins goes first). The app signs for a relay only the PeerId its pin holds.
+The pins (`RelayPins` over `RelayPinStore`, `relay_pins.json` [DATA_LAYOUT](DATA_LAYOUT.md#relay_pinsjson)) hold
+two things: **per origin**, the relay id its address names (each relay of ours and each of the org's origins; one
+relay id per origin, at most 32 pins, the oldest that is neither ours nor the org's going first); **per relay id**, the
+**highest valid certificate seen** from any channel (ours, the org's and contacts' relays alike, at most 32, the oldest
+of a relay no pin names going first). The app signs for a relay only the PeerId of the held certificate's transport key,
+for an origin that certificate lists (`Audience`, `HeldAudience`).
 
-- **Where the PeerId comes from** (MR008 item 2), never from the relay's answer:
+- **Where the relay id comes from** (MR008 item 2), never from the relay's answer:
   - the org's relay (`relay`, and `registration` where it is another origin): the build's beside its origin
-    (`PP_RELAY_PEER_ID_PROD` / `PP_RELAY_PEER_ID_QA`) for `prod` / `qa`, the config's `peer_id` for `custom`;
-  - a relay of ours: the address it is kept with in My relays (`our_relays.json` `peer_id`) — the relay link it was
+    (`PP_RELAY_ID_PROD` / `PP_RELAY_ID_QA`) for `prod` / `qa`, the config's `relay_id` for `custom`. The build's
+    placeholder `pending` fails closed: that relay is not used and never pinned on first use, in any build;
+  - a relay of ours: the address it is kept with in My relays (`our_relays.json` `relay_id`) — the relay link it was
     added by, the org's above for the seeded one, the relay links of `relay.extra_base_urls`, our own verified card's
-    entries on a linked device (which also replace a pin that disagrees and drop another origin's pin of that PeerId),
-    the account locker's on a restored device;
-  - a contact's relay: its newest card's `{origin, peer_id}` (version 4); a contact added by QR code before its card:
-    the locator's `relay` `{origin, peer_id}`. These are signed for as they name them and never pinned
-    (`CheckCardRelay`, [§ Sending by the list](#sending-by-the-list)).
-- **Uniqueness stops a relay fronting another:** an address naming a PeerId one of our pins holds at another origin is
-  refused — at Add (`relay_identity_taken` / `relay_identity_taken_known`), when the list or config names it
-  (`Expect`: that relay is not used, logged), and for a contact's entry (skipped). The org's pins are written first,
-  so a link naming the org's PeerId can never take it, and a hostile relay that answered first wins nothing.
+    entries on a linked device (which replace a pin that disagrees), the account locker's on a restored device;
+  - a contact's relay: its newest card's `{origin, relay_id}` (card v5), or the QR locator's `relay`
+    `{origin, relay_id}` before its card. Never pinned: its certificate is checked as ours are and cached under its
+    relay id (`ContactAudience`, `CheckCardRelay`, [§ Sending by the list](#sending-by-the-list)).
+- **Where the certificate comes from** (§ 3.4, Q10): the build's (`config/relay-certs/<env>.cert`, offered at start: a
+  fresh install knows the audience before its first fetch), `client-compat`'s `relay_certificate_b64` (each check),
+  and the relay's own `relay-identity` (once per run, at Add, after a `wrong_audience`, or before a signed call when
+  none held lists the origin). Each is checked against the relay id expected and kept only when its `sequence` is
+  above the one held (`OfferCertificate`, `CompareRelayCertificates`): a lower one is **never** accepted (logged, the
+  held one stays and is signed for), and another certificate at the held sequence is refused and logged as an error
+  (the first stays; operators never sign two). An expired held certificate gives no audience: the relay is asked again.
 - **Checked, not learned:** at start, a list change, the network back and the app in front, each relay of ours and
-  each of the org's origins is asked for its identity once per run (`CheckIdentities`; nothing waits for it: the
-  expected PeerId is signed for meanwhile). So is a relay that answered `401 wrong_audience` (at most once per origin
-  per 5 min). An answer naming another PeerId: the relay **does not match its address** — kept as
-  `presented_peer_id`, logged as an error; nothing is signed for it (it is not polled, registered on or sent to, and
-  left off our card, re-issued at once) until a later check finds it answering to its address again. There is no
-  "accept": a rotated key is a new address, which the person adds by its new link (and the org's ships with a new
-  build). The same PeerId after `wrong_audience`: a misbehaving relay — the call fails like a 5xx, logged.
+  each of the org's origins is asked for its certificate once per run (`CheckIdentities`; nothing waits for it: the
+  held certificate is signed for meanwhile). A relay serving the certificate (or naming the relay id) of **another
+  relay**, **no valid certificate**, or one that **does not list its origin** does not match its address: kept as
+  the pin's `mismatch` (`other_relay`, `no_valid_certificate`, `origin_not_listed`), logged as an error, and nothing
+  is signed for it (not polled, registered on or sent to, left off our card, re-issued at once) until a later check
+  finds it proving its address again. An unreachable relay, or one serving a certificate newer than this app reads, is
+  no mismatch: nothing changes. There is no "accept".
+- **`401 wrong_audience`**: the certificate is fetched again (at most once per relay per 5 min), a higher one adopted
+  (its new PeerId signed for from then on: a host move, a rotated key), and the next call is signed for it; the same
+  certificate: a misbehaving relay — the call fails like a 5xx, logged.
+- **The same relay twice:** at Add, a link whose relay id is already ours (or the org's) at another origin is refused
+  (`relay_identity_taken` / `relay_identity_taken_known`). A relay may legitimately answer at several origins (its
+  certificate lists up to four); one that does not list an origin cannot be used there, so binding origins is what stops
+  a hostile relay fronting another (MR008 item 6, closed).
 - **First use, developer builds only** (MR008 item 4): a developer build (`developer_relays`) may add a bare origin,
-  and seed one from `relay.extra_base_urls`; such an origin is pinned on its first identity answer (logged as a
-  warning), at Add or before its first signed call; so are the org's origins with none named. Outside developer
-  builds only the compiled `prod` / `qa` backend of a build that ships no PeerId (a dogfood build: a release workflow
-  refuses an empty `PP_RELAY_PEER_ID_PROD`) is pinned so, warned (`OrgRelayFirstUseAllowed`); a release build's custom
-  backend or `PP_BROWSER_ORIGIN` without `relay.peer_id` (or `registration.peer_id` / `PP_BROWSER_RELAY_PEER_ID`) is
-  not used (an ERROR names the setting; Me → Network says so). Any other origin no address names gets nothing signed
-  (`relay_identity_unavailable`). A first-use
-  fetch that fails pins nothing; it is asked again after 1 min, doubling to 2 min, and at once when the network comes
-  back, the app comes to the front or the list changes.
+  and seed one from `relay.extra_base_urls`; such an origin is pinned to the relay id of its first valid certificate
+  that lists it (logged as a warning), at Add or before its first signed call; so are the org's origins with none
+  named. Outside developer builds only the compiled `prod` / `qa` backend of a build that names an empty relay id (a
+  dogfood build made by hand: release workflows refuse it) is pinned so, warned (`OrgRelayFirstUseAllowed`); a release
+  build's custom backend or `PP_BROWSER_ORIGIN` without `relay.relay_id` (or `registration.relay_id` /
+  `PP_BROWSER_RELAY_ID`) is not used (an ERROR names the setting; Me → Network says so). Any other origin no address
+  names gets nothing signed (`relay_identity_unavailable`). A fetch that fails pins nothing; it is asked again after 1
+  min, doubling to 2 min, and at once when the network comes back, the app comes to the front or the list changes.
 - Our card lists each relay of ours whose pin is in force; while a check pass runs, the card waits for its end and is
-  re-issued once, so a linked device does not follow a list one check at a time.
-- **pp-node** expects its `registration.base_url` to answer to `registration.peer_id` (`PP_NODE_REGISTRATION_PEER_ID`;
-  with the compiled prod registration URL, the compiled `PP_RELAY_PEER_ID_PROD`; [CONFIGURATION](../ops/CONFIGURATION.md#pp-node-relay-identity)),
-  kept in its data directory (`relay_pins.json`, the same format); the compiled URL is matched however it is spelled
-  (trailing `/`, case, default port). With none named a release build does not register there or send heartbeats (an
-  ERROR names `registration.peer_id (PP_NODE_REGISTRATION_PEER_ID)`, and each publish fails with it); a developer
-  build pins that relay's first answer, logged as a warning. An identity answer naming another PeerId (after a `wrong_audience`) stops its relay calls
-  (registration, heartbeat) and is logged as an ERROR (`relay identity mismatch: expected <X>, presented <Y>`) until
-  the relay answers to its address again or the operator names its new PeerId; the mesh keeps running.
+  re-issued once, so a linked device does not follow a list one check at a time. Until card v5 (cutover W2) the card
+  and the locker still name `{origin, peer_id}`: the app writes there the PeerId its held certificate proves.
+- **pp-node** expects its `registration.base_url` to prove `registration.relay_id` (`PP_NODE_REGISTRATION_RELAY_ID`;
+  with the compiled prod registration URL, the compiled `PP_RELAY_ID_PROD`, with the build's prod certificate as its
+  floor; [CONFIGURATION](../ops/CONFIGURATION.md#pp-node-relay-identity)), kept in its data directory
+  (`relay_pins.json`, the same format), and keeps the highest certificate from `relay-identity`, `client-compat` and
+  the build. The compiled URL is matched however it is spelled (trailing `/`, case, default port). With none named a
+  release build does not register there or send heartbeats (an ERROR names
+  `registration.relay_id (PP_NODE_REGISTRATION_RELAY_ID)`); the placeholder `pending` or a value not of the form is
+  refused in every build; a developer build pins an unnamed relay's first valid certificate, logged as a warning. A
+  relay that does not prove its address stops its relay calls (registration, heartbeat) and is logged as an ERROR
+  (`relay identity mismatch: expected <relay id>, <why>`) until it proves it again; the mesh keeps running.
 
-**What remains trusted** (MR008 item 6): a link's source. A relay operator controls what it publishes, so a hostile
-operator can publish its own origin with another relay's PeerId and pass that relay's answers through. Uniqueness keeps
-it from fronting the org or any relay of ours (no org secrets reach it: the Brief LLM key comes only from a registration
-at the org's pinned origin); it can at most front an unrelated relay we hold no identity for, until requests are sealed
-to the relay's key (Amp, MR007 item 6).
+**What remains trusted** (MR008 item 6): a link's source, as an Account ID's. A relay link (or a card's entry) names a
+relay id; whoever controls the link chooses which relay. What a hostile relay operator can no longer do is front
+another relay: it cannot make a certificate of that relay id that lists its own origin without that relay's operators.
 
 ### The audience: every signed command names its relay
 
 Each command's sign bytes are `domain ‖ 0x00 ‖ u8 version ‖ LenUtf8(audience) ‖ …its fields…`, the audience the
-relay's PeerId string (`LenUtf8` = `u64be(len) ‖ utf8`, as every string here; integers big-endian). The JSON body
+relay's PeerId string — its certificate's transport key's, never taken from an unsigned answer (`LenUtf8` = `u64be(len) ‖ utf8`, as every string here; integers big-endian). The JSON body
 carries it as a top-level `"audience"` beside `sign_version` (the version byte the bytes carry; `SignRelayCommand`
 reads it from them, `PutSignedRelayCommand` writes it), `timestamp` and `signature`. The relay checks the sign version
 **first**, from the body alone: none, or one older than the table's, answers `426 { "code": "client_upgrade_required" }`
@@ -191,9 +230,10 @@ message.
 
 **Where each client takes its audience** (`IRelayAudience`; every client signs through `SignRelayCommand` and reports
 refusals through `NoteRelayRefusal`): the clients of a relay of ours (messages, push devices, registration, blobs and
-files) its pin; the lockers at the org's `registration.base_url` that origin's pin (pinned whether or not it is ours);
-a send into a contact's relay the `peer_id` its newest card (or its QR locator) names for that relay
-([Sending by the list](#sending-by-the-list)); pp-node its relay's pin.
+files) its pin's held certificate; the lockers at the org's `registration.base_url` that origin's (pinned whether or not
+it is ours); a send into a contact's relay the PeerId the certificate of the relay id its QR locator (from card v5: its
+newest card) names for that relay proves (`ContactAudience`; until card v5 a card entry's `peer_id`,
+[Sending by the list](#sending-by-the-list)); pp-node its relay's pin's.
 
 **Golden vectors:** `capabilities/delivery/src/lib/delivery/tests/data/relay_sign_vectors.json`, written by
 `relay_sign_vectors_test.cpp` (`PP_WRITE_RELAY_SIGN_VECTORS=<path>`) and checked there: every domain and relay API op
@@ -364,7 +404,7 @@ of ours (its list becomes the card's). Every change is kept first, then:
 
 | Change | Rules | Also |
 |---|---|---|
-| **Add** | A **relay link** (MR008), pasted or scanned from a QR code: `https://host[:port]`, or that and `/api/relay`, then `#<PeerId>` (no other path, query or user info; the origin at most 128 bytes): a link with no PeerId is `relay_link_no_id`, one whose fragment is no PeerId `relay_origin_bad_relay_id`. A bare origin (no `#`), `http://`, and a host that is not public (on this device or a private network: `IsPublicRelayOrigin`, the card relays' policy, [ACCOUNT_CARD](ACCOUNT_CARD.md); refused with `relay_origin_local` before it is asked), only in developer builds (never on the card; a bare origin is pinned on its first answer, [§ Pins](#pins)). Outside developer builds every request to it — Add's two asks and, once added, all its clients' (and its identity checks) — goes over https to a public address only, checked at connect time, so a name that resolves inside later is refused; the relays the deployment configures are not held to it. A link naming a PeerId one of our pins holds at another origin is refused before it is asked: `relay_identity_taken` (a relay on our list) or `relay_identity_taken_known` (the org's origin); an origin we expect to answer to another PeerId (the org's) is `relay_identity_mismatch`. It must answer `GET <base>/v1/client-compat` (the cheapest unauthenticated GET every relay serves) and `GET <base>/v1/relay-identity` with the link's PeerId: no identity is `relay_identity_unavailable`, another PeerId `relay_identity_mismatch` (nothing kept). At most 4. | Added last, kept with the link's PeerId (`our_relays.json` `peer_id`), which is expected from then on |
+| **Add** | A **relay link** (MR008), pasted or scanned from a QR code: `https://host[:port]`, or that and `/api/relay`, then `#relay:…` (no other path, query or user info; the origin at most 128 bytes): a link with no relay id is `relay_link_no_id`, one whose fragment is no relay id (a PeerId, `Qm…`, included) `relay_origin_bad_relay_id`. A bare origin (no `#`), `http://`, and a host that is not public (on this device or a private network: `IsPublicRelayOrigin`, the card relays' policy, [ACCOUNT_CARD](ACCOUNT_CARD.md); refused with `relay_origin_local` before it is asked), only in developer builds (never on the card; a bare origin is pinned to its first valid certificate's relay id, [§ Pins](#pins)). Outside developer builds every request to it — Add's two asks and, once added, all its clients' (and its identity checks) — goes over https to a public address only, checked at connect time, so a name that resolves inside later is refused; the relays the deployment configures are not held to it. A link naming a relay id that is ours (or the org's) at another origin is refused before it is asked: `relay_identity_taken` (a relay on our list) or `relay_identity_taken_known` (the org's origin); an origin we expect to prove another relay id (the org's) is `relay_identity_mismatch`. It must answer `GET <base>/v1/client-compat` (the cheapest unauthenticated GET every relay serves) and `GET <base>/v1/relay-identity` with a valid certificate of the link's relay id that lists the origin: no identity is `relay_identity_unavailable`; another relay's certificate, none valid, or one not listing the origin `relay_identity_mismatch` (nothing kept). At most 4. | Added last, kept with the link's relay id (`our_relays.json` `relay_id`), which is expected from then on; its certificate is held |
 | **Remove** | Not the preferred relay (make another preferred first), never the last (mesh-only is not offered in this step) | Our push binding (`/v1/devices/unregister`) and our registration (`/v1/register/revoke`, which also drops the account's push devices there) go first, best effort — none for a relay that does not match its address (nothing is signed for it; its registration expires there); once the services left it its pin goes (its PeerId is free for another address), unless it is the org's origin, whose services still sign for it; its inbox cursor goes. When the services do not follow (the change is undone), the relay is ours again and registered on again |
 | **Make preferred** | A relay of ours | The identity's registration renews there at once (the card is newer, so it goes whatever the auto-renew preference; the registration records the relay it was made at, so the Me page reads it as the current one); push binds there; the old preferred relay is registered on as another of ours |
 
@@ -375,7 +415,7 @@ A refused change answers with a code the page words (`relay_origin_not_https`, `
 `relay_list_not_main_device`, `relay_list_not_applied`, …). A profile closing (a reset, the app stopping) waits for a
 change in progress and refuses any after it.
 
-**Our relay links:** each relay of ours with a PeerId shows its link, `<origin>#<PeerId>`, with **Copy link** (any
+**Our relay links:** each relay of ours with a relay id shows its link, `<origin>#relay:…`, with **Copy link** (any
 device): what another person, or another app of ours, adds it by.
 
 ### The directory on each
@@ -417,11 +457,14 @@ search asks the relays the user has listed; there is no search across relays bey
 2. **Health:** a relay a send could not reach (a transport failure, a timeout, a 5xx) is tried after the healthy
    ones for **5 minutes** (`RelayHealth`); a send it takes clears it. An answer about the recipient (a price, a quota,
    not registered) says nothing about the relay's health.
-3. **The audience** (MR007) is the `peer_id` the recipient's card (or locator, MR008) names for that relay; a relay of
+3. **The audience** (MR007) is the PeerId the certificate of the relay id the recipient's locator names for that relay
+   proves (`RelayPins::ContactAudience`, SIGNED_FORMATS § 3.4; until card v5, cutover W2, a card entry still names a
+   `peer_id`, signed for as named); a relay of
    ours with none named is signed for by its pin (our preferred relay for a recipient without a card); a relay not ours
    with none named gets nothing signed ([§ Pins](#pins)). A card
-   entry our pins disagree with — our pin for that origin is another PeerId, or that PeerId is pinned to another
-   origin — is skipped for that recipient (logged once per entry; the card is still kept; the contact page reads
+   entry our pins disagree with — our pin for that origin is another relay id, that relay's certificate does not list
+   the origin (until card v5: the PeerId our certificate held for that origin proves is another), or the origin does
+   not prove its address — is skipped for that recipient (logged once per entry; the card is still kept; the contact page reads
    *Not used: it doesn't match this contact's card*). A relay that answers `wrong_audience` is skipped for this send, counts like
    `recipient_not_registered` toward the stale-list fetch (step 5: the contact may have re-issued its card), and,
    while the newest card still names the refused PeerId, is skipped for that recipient for 5 minutes. Neither marks
@@ -597,6 +640,7 @@ Unauthenticated public GET (directory-style; no identity unlock required):
 | `relay_version` | no | The relay's build version (`X.Y.Z`, `dev.<date>.<n>`, `0.0.0-local`); kept, not acted on (A1) |
 | `app_range`, `node_range` | no | `{ min, max }`, each a release version `X.Y.Z` or `null` (no bound; anything else is read as `null`); kept, not acted on yet (A1) |
 | `min_node_version` | no | The oldest pp-node the relay serves; **pp-node** reads it (below, A2). Compared by the core, as the relay does; empty or not a version: no floor |
+| `relay_certificate_b64` | no | The org relay's certificate (standard base64 of the blob, [§ Relay identity](#relay-identity); additive at `schema_version` 1, RC018 item 3): kept with the document (up to 384 KiB of text) and offered to the relay pins, which check it against the relay id the build names and keep it when it is higher than the one held (the app and pp-node). Not checked here |
 | `switches` | no | Remote switches `{ name: true \| false }` (O2): names of 1–64 of `a-z0-9_.-` starting with a letter or digit, booleans only, at most 64 (anything else dropped). Read through `RemoteSwitches::IsOn(name, default)`: the run takes the switches of the **first** document its start-up check resolves (a fresh cache, else the relay's answer); a later fetch is cached and applies at the next start, so a switch never flips under a running feature. A switch the document does not name is the caller's built-in default; one the app does not know is never asked for. **No product switch is defined in release 1** |
 
 Unknown keys are ignored. Network failure: fail open (no gate); use last good profile cache (`client_compat.json`, TTL 6h) when present. The cache keeps every field above and names its own file version (`schema_version` 1, [DATA_LAYOUT](DATA_LAYOUT.md)); a newer app's file is no cache here and is never written over.
