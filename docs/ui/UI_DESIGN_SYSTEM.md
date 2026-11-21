@@ -321,7 +321,7 @@ assets/themes/
   colors-dark.rcss    # @media (theme: dark) { ... }
 ```
 
-**Wide-screen rules** (desktop refresh, `DEV/DESIGN-desktop-ui-split-rules.md`): `window_shell.rml` sets `shell-body--wide` while `layout_mode == 'expanded'` (and `shell-body--compact` otherwise; RCSS has no `:not()`). Every rule in `wide.rcss` starts with `.shell-body--wide` (`wide_stylesheet_test` checks it and that the phone root renders identically with and without the file). Colours of wide-only rules go in `colors.rcss.tmpl` / `theme_tokens.tsv` under the same root. Shared hover explanation: a `.tip-host` control with a hidden `<span class="tip">` child (`.tip` is `display: none` in `components.rcss`; wide shows it on hover; `.tip--below`, `.tip--end` place it). Scale classes: `w-gap-*`, `w-pad-*` (4/8/12/16/24/32), `w-type-*` (24/17/16/15/14/12), `w-target` (min 32dp). Columns: icon rail 64, list 280-480 (default 320), conversation >= 420.
+**Wide-screen rules** (desktop refresh, `DEV/DESIGN-desktop-ui-split-rules.md`): `window_shell.rml` sets `shell-body--wide` while `layout_mode == 'expanded'` (and `shell-body--compact` otherwise; RCSS has no `:not()`). Every rule in `wide.rcss` starts with `.shell-body--wide` (`wide_stylesheet_test` checks it and that the phone root renders identically with and without the file). Colours of wide-only rules go in `colors.rcss.tmpl` / `theme_tokens.tsv` under the same root. Scale classes: `w-gap-*`, `w-pad-*` (4/8/12/16/24/32), `w-type-*` (24/17/16/15/14/12), `w-target` (min 32dp). Columns: icon rail 64, list 280-480 (default 320), conversation >= 420.
 
 Runtime: `Theme::ApplyAppearance` activates `light` or `dark` on the RmlUi context. Default user preference: **System** (follows `SDL_GetSystemTheme`).
 

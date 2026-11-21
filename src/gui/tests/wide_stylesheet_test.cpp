@@ -55,8 +55,10 @@ std::string Scene(const std::string& root_class, int width_dp) {
          "<div id=\"rail\" class=\"shell-nav-rail\"></div>"
          "<div id=\"list\" class=\"shell-pane shell-pane-secondary\" style=\"flex: 0 1 320dp;\"></div>"
          "<div id=\"conv\" class=\"shell-pane shell-pane-primary\">"
-         "<button id=\"host\" class=\"tip-host\" type=\"button\">Go<span id=\"tip\" "
-         "class=\"tip\">Explain</span></button>"
+         "<div id=\"row1\" class=\"sidebar-session\"></div><div id=\"set1\" class=\"settings-row\"></div>"
+         "<div id=\"card1\" class=\"card\"></div><div id=\"bub1\" class=\"bubble-peer\"></div>"
+         "<div id=\"pill1\" class=\"prompt-composer-pill\"></div>"
+         "<input id=\"field1\" class=\"field\" type=\"text\"/>"
          "<div id=\"gap\" class=\"w-gap-8 w-type-small w-target\" style=\"display: "
          "flex;\"><span>a</span><span>b</span></div>"
          "</div></div></div>"
@@ -66,8 +68,8 @@ std::string Scene(const std::string& root_class, int width_dp) {
          "</div>";
 }
 
-const char* const kIds[] = {"rail", "list", "conv", "host", "tip", "gap", "stack", "toast", "context-menu-panel",
-                            "item"};
+const char* const kIds[] = {"rail", "list", "conv", "gap",   "stack", "toast", "context-menu-panel",
+                            "item", "row1", "set1", "card1", "bub1",  "pill1", "field1"};
 
 class WideStylesheetTest : public testing::Test {
 protected:
@@ -121,6 +123,8 @@ protected:
         const ui::Property* value = element->GetProperty(property);
         out << ' ' << (value ? value->ToString() : ui::String("-"));
       }
+      const auto& cv = element->GetComputedValues();
+      out << ' ' << cv.border_top_width() << ' ' << cv.border_right_width() << ' ' << cv.border_top_left_radius();
       out << '\n';
     }
     measured_width_ = {};
@@ -130,6 +134,33 @@ protected:
     document->Close();
     context->Update();
     return out.str();
+  }
+
+  /** Border width and corner radius (dp, density 1) of `id` in a wide-root scene 1280 wide. */
+  struct Look {
+    float top_width = -1, right_width = -1, radius = -1;
+  };
+  Look LookOf(const char* id, float dp_ratio = 1.f) {
+    context->SetDensityIndependentPixelRatio(dp_ratio);
+    const std::string rml = "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+                            Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
+                            "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">" +
+                            Scene("shell-body--wide", 1280) + "</body></rml>";
+    ui::ElementDocument* document = context->LoadDocumentFromMemory(rml);
+    Look look;
+    if (!document) {
+      return look;
+    }
+    document->Show();
+    context->Update();
+    context->Update();
+    if (ui::Element* element = document->GetElementById(id)) {
+      const auto& cv = element->GetComputedValues();
+      look = {cv.border_top_width(), cv.border_right_width(), cv.border_top_left_radius()};
+    }
+    document->Close();
+    context->Update();
+    return look;
   }
 
   NullRender renderer;
@@ -191,6 +222,24 @@ TEST_F(WideStylesheetTest, TheColumnsGiveWayAt768And900And1280) {
   EXPECT_FLOAT_EQ(measured_width_[1], 320.f) << "at 900 the list keeps its default 320";
   Measure("shell-body--wide", 768, true);
   EXPECT_LT(measured_width_[1], 320.f) << "at 768 the list is the one that gives way";
+}
+
+TEST_F(WideStylesheetTest, TheBaseLookIsSoftSurfacesLargeCornersAndHairlines) {
+  // The mockup's scale: rows 10, cards 14, bubbles 18, the input pill 21; a box is a fill (no border), a line is 0.5.
+  EXPECT_EQ(LookOf("row1").top_width, 0.f);
+  EXPECT_EQ(LookOf("row1").radius, 10.f);
+  EXPECT_EQ(LookOf("set1").top_width, 0.f);
+  EXPECT_EQ(LookOf("set1").radius, 10.f);
+  EXPECT_EQ(LookOf("card1").top_width, 0.f);
+  EXPECT_EQ(LookOf("card1").radius, 14.f);
+  EXPECT_EQ(LookOf("bub1").top_width, 0.f);
+  EXPECT_EQ(LookOf("bub1").radius, 18.f);
+  EXPECT_EQ(LookOf("pill1").radius, 21.f);
+  // A hairline is 0.5dp: RmlUi lays borders out in whole device pixels, so on a 2x screen it is 1 pixel (a 1dp line
+  // is 2), and on a 1x screen it stays the 1 pixel it was.
+  EXPECT_FLOAT_EQ(LookOf("pill1", 2.f).top_width, 1.f);
+  EXPECT_FLOAT_EQ(LookOf("rail", 2.f).right_width, 1.f) << "the column divider is a hairline";
+  EXPECT_EQ(LookOf("field1").radius, 10.f);
 }
 
 } // namespace

@@ -1140,8 +1140,6 @@
     "chat.search.menu": "Search",
     "chat.search.placeholder": "Search",
     "chat.search.cancel": "Cancel",
-    "chat.header.tip.call": "Call",
-    "chat.header.tip.more": "More",
     "chat.search.indexing": "Searching…",
     "chat.search.count": "{index} of {count}",
     "chat.search.none": "No results",

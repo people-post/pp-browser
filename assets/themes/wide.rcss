@@ -7,7 +7,7 @@
  *   2. No colours. Colours of wide-only things live in colors.rcss.tmpl / theme_tokens.tsv (generated into
  *      colors-light.rcss / colors-dark.rcss), under the same `.shell-body--wide` root.
  *   3. Page layouts that differ get their own `<page>_wide.rml`; this file only holds the sizes, the scale and the
- *      shared wide components (floating menu, hover explanation, result pill).
+ *      shared wide components (floating menu, result pill) and the base look (soft surfaces).
  *
  * Loaded after components.rcss (equal specificity: this file wins) and before the colour files.
  */
@@ -95,54 +95,6 @@
   border-radius: 6dp;
 }
 
-/* ---- Hover explanation: `<span class="tip">Words</span>` inside a `.tip-host` control (components.rcss hides .tip
-   everywhere; only the wide layout shows it, so a touch iPad, which has no hover, never does). A control takes it
-   with the `.tip-host` class; the two chat-header buttons are listed by name because a test pins their class
-   attribute. Default: right of the
-   control. `.tip--below`: under it, centred; with `.tip--end`: under it, ending at its right edge. ---- */
-.shell-body--wide .tip-host,
-.shell-body--wide .chat-header-call-btn,
-.shell-body--wide .chat-header-more-btn {
-  position: relative;
-}
-
-.shell-body--wide .tip-host:hover > .tip,
-.shell-body--wide .chat-header-call-btn:hover > .tip,
-.shell-body--wide .chat-header-more-btn:hover > .tip {
-  display: block;
-}
-
-.shell-body--wide .tip {
-  position: absolute;
-  z-index: 120;
-  left: 100%;
-  top: 50%;
-  margin-left: 10dp;
-  padding: 8dp 10dp;
-  border-radius: 7dp;
-  font-size: 12dp;
-  line-height: 14dp;
-  font-weight: normal;
-  white-space: nowrap;
-  text-align: left;
-  pointer-events: none;
-  transform: translateY(-50%);
-}
-
-.shell-body--wide .tip.tip--below {
-  left: 50%;
-  top: 100%;
-  margin-left: 0;
-  margin-top: 8dp;
-  transform: translateX(-50%);
-}
-
-.shell-body--wide .tip.tip--below.tip--end {
-  left: auto;
-  right: 0;
-  transform: none;
-}
-
 /* ---- Result pill: a white pill at the bottom of the content area, centred, up to 480dp wide, one at a time.
    ShellHost sets the stack's left (the columns to its left) and bottom (over the status bar and composer). ---- */
 .shell-body--wide .shell-chrome {
@@ -177,4 +129,94 @@
   font-size: 15dp;
   line-height: 20dp;
   text-align: center;
+}
+
+/* ---- Base look (the mockup's style page): soft surfaces, large corners, hairlines instead of outlines ----
+   Radius scale from the mockup: 6 menu row, 9-10 buttons / fields / list rows, 12 menus and tabs, 14 cards, 18
+   bubbles, 20-21 the input pill. A line is a 0.5dp hairline; a box is a filled surface, not an outline. Colours: the
+   end of colors.rcss.tmpl (same wide root). Shared rules that draw the heavy outlines (components.rcss, colors) are
+   not edited: these override them under the wide root. */
+
+/* Column frame and dividers: a hairline, not a 1dp line. */
+.shell-body--wide .shell-nav-rail {
+  border-right-width: 0.5dp;
+}
+
+.shell-body--wide .shell-pane-secondary {
+  border-right-width: 0.5dp;
+}
+
+.shell-body--wide .shell-pane-auxiliary {
+  border-left-width: 0.5dp;
+}
+
+.shell-body--wide .shell-statusbar,
+.shell-body--wide .shell-toolbar,
+.shell-body--wide .sidebar-footer,
+.shell-body--wide .surface-chrome {
+  border-top-width: 0.5dp;
+}
+
+.shell-body--wide .shell-nav-tab {
+  border-radius: 12dp;
+}
+
+/* List rows (chats, settings, contacts): no outline; the hover and the selected row are rounded fills. */
+.shell-body--wide .sidebar-session,
+.shell-body--wide .settings-row,
+.shell-body--wide .contacts-row,
+.shell-body--wide .contacts-thread-row {
+  border-width: 0;
+  border-radius: 10dp;
+}
+
+/* Cards and group boxes: a filled surface with a large corner, no outline. */
+.shell-body--wide .card,
+.shell-body--wide .me-profile-card,
+.shell-body--wide .contact-profile-card,
+.shell-body--wide .chat-card,
+.shell-body--wide .chat-form,
+.shell-body--wide .chat-empty {
+  border-width: 0;
+  border-radius: 14dp;
+}
+
+/* Fields and search: filled and rounded; the border is kept (transparent, a colour) so focus does not move anything. */
+.shell-body--wide .field,
+.shell-body--wide .chat-form-field {
+  border-radius: 10dp;
+}
+
+.shell-body--wide .chat-search {
+  border-radius: 10dp;
+}
+
+/* The input pill keeps its large corner and gets a hairline. */
+.shell-body--wide .prompt-composer-pill {
+  border-width: 0.5dp;
+  border-radius: 21dp;
+}
+
+/* Messages: bubbles are fills (the content area is tonal), no outline. */
+.shell-body--wide .bubble-user,
+.shell-body--wide .bubble-peer,
+.shell-body--wide .bubble-assistant {
+  border-width: 0;
+  border-radius: 18dp;
+}
+
+/* Chat header: no coloured side bar and tint; a hairline under it. */
+.shell-body--wide .chat-shell--e2e .chat-header,
+.shell-body--wide .chat-shell--ai .chat-header,
+.shell-body--wide .chat-shell--public .chat-header,
+.shell-body--wide .chat-shell--group .chat-header {
+  border-left-width: 0;
+  padding-left: 0;
+  border-radius: 0;
+}
+
+/* Menus and the result pill: the same hairline. */
+.shell-body--wide #context-menu-panel,
+.shell-body--wide .shell-chrome .shell-toast {
+  border-width: 0.5dp;
 }
