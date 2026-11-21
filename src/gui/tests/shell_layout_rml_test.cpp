@@ -76,8 +76,8 @@ TEST(ShellLayoutRmlTest, AWideContactsAndSettingsPageSayWhatToDoUntilSomethingIs
 // in Add contact, where the phone has it).
 TEST(ShellLayoutRmlTest, TheRailHasTheFourSectionsAndNoScanEntry) {
   const std::string rail = ReadAsset("views/nav_rail.rml");
-  for (const char* tab : {"select_nav_tab('home')", "select_nav_tab('sessions')", "select_nav_tab('contacts')",
-                          "select_nav_tab('me')"}) {
+  for (const char* tab :
+       {"select_nav_tab('home')", "select_nav_tab('sessions')", "select_nav_tab('contacts')", "select_nav_tab('me')"}) {
     EXPECT_TRUE(Has(rail, tab)) << tab;
   }
   EXPECT_FALSE(Has(rail, "open_scan_qr")) << "the rail has no scan entry";
