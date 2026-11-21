@@ -78,6 +78,9 @@ struct MessageDisplayRow {
   bool has_actions = false;
   /** The message menu would offer Edit for it: the wide layout's hover bar shows a pencil. */
   bool can_edit = false;
+  /** The message menu would offer a reaction row (with its "+") / Reply: the wide layout's hover bar shows them. */
+  bool bar_react = false;
+  bool bar_reply = false;
   /** Search inside the chat: the row contains the query, and the row the search is on (its matches are marked). */
   bool search_hit = false;
   bool search_current = false;

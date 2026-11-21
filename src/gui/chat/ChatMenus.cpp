@@ -12,6 +12,7 @@
 #include "common/PbrCompat.h"
 #include "gui/UserFeedback.h"
 #include "gui/chat/ChatPeerSheet.h"
+#include "gui/chat/MessageMenuSlots.h"
 #include "lib/delivery/SendRelayOptions.h"
 
 #include <ui/base/SystemInterface.h>
@@ -224,27 +225,6 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   if (host_.IsCallRecord(message_id)) {
     return actions; // a call record is one tap (call back) and no menu (Kenneth 2026-11-12)
   }
-  // Reactions sit in the row above the message, the rest in the list below it: the user's last-used first.
-  for (const std::string& emoji : QuickReactions(host_.RecentEmojis())) {
-    ContextMenuAction react{"react_" + emoji, emoji, nullptr, [this, message_id, emoji]() {
-                              host_.ToggleReaction(message_id, emoji);
-                              host_.RememberEmoji(emoji);
-                            }};
-    react.quick = true;
-    actions.push_back(std::move(react));
-  }
-  ContextMenuAction more{"react_more", "+", nullptr, [this, message_id]() { OpenReactionMore(message_id); }};
-  more.quick = true;
-  more.pinned = true; // stays put while the recent emoji scroll (Kenneth 2026-11-05 原话 93)
-  // Every emoji in a sheet of its own, about a third of the screen (Kenneth 2026-11-05 原话 81; EmojiPickerController).
-  actions.push_back(std::move(more));
-
-  // A contact card: its person can be added (the card is checked first).
-  if (host_.IsContactCard(message_id)) {
-    actions.push_back({"add_contact_from_card", Tr("chat.menu.add_to_contacts"), nullptr,
-                       [this, message_id]() { host_.AddContactFromCard(message_id); }, "../icons/v2/user-plus.svg"});
-  }
-
   // Copy takes the pointer selection when there is one (desktop), otherwise the whole message.
   std::string text;
   if (request.context) {
@@ -255,14 +235,46 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   if (text.empty()) {
     text = host_.MessagePlainText(message_id);
   }
-  if (!text.empty()) {
+  // What this menu offers is decided once (MessageMenuSlots.h): the wide layout's hover bar draws the same slots. A
+  // conversation takes reactions only when there is someone to send them to; an AI conversation offers none.
+  auto open_thread = facade->GetActiveThread();
+  const MessageMenuSlots slots =
+      DecideMessageMenuSlots(open_thread && ThreadTakesReactions(open_thread->kind), !text.empty(),
+                             host_.CanEditMessage(message_id), chat_.editing_message);
+
+  // Reactions sit in the row above the message, the rest in the list below it: the user's last-used first.
+  if (slots.react) {
+    for (const std::string& emoji : QuickReactions(host_.RecentEmojis())) {
+      ContextMenuAction react{"react_" + emoji, emoji, nullptr, [this, message_id, emoji]() {
+                                host_.ToggleReaction(message_id, emoji);
+                                host_.RememberEmoji(emoji);
+                              }};
+      react.quick = true;
+      actions.push_back(std::move(react));
+    }
+    ContextMenuAction more{"react_more", "+", nullptr, [this, message_id]() { OpenReactionMore(message_id); }};
+    more.quick = true;
+    more.pinned = true; // stays put while the recent emoji scroll (Kenneth 2026-11-05 原话 93)
+    // Every emoji in a sheet of its own, about a third of the screen (Kenneth 2026-11-05 原话 81; EmojiPickerController).
+    actions.push_back(std::move(more));
+  }
+
+  // A contact card: its person can be added (the card is checked first).
+  if (host_.IsContactCard(message_id)) {
+    actions.push_back({"add_contact_from_card", Tr("chat.menu.add_to_contacts"), nullptr,
+                       [this, message_id]() { host_.AddContactFromCard(message_id); }, "../icons/v2/user-plus.svg"});
+  }
+
+  if (slots.copy) {
     // Reply: the message shows as a quote bar above the composer and is attached to the next send.
-    actions.push_back({"reply_message", Tr("chat.menu.reply"), nullptr, [this, text]() { host_.StartQuoteReply(text); },
-                       "../icons/v2/reply.svg"});
+    if (slots.reply) {
+      actions.push_back({"reply_message", Tr("chat.menu.reply"), nullptr,
+                         [this, text]() { host_.StartQuoteReply(text); }, "../icons/v2/reply.svg"});
+    }
     actions.push_back(
         {"copy_message", Tr("common.copy"), nullptr, [text]() { CopyToClipboard(text); }, "../icons/v2/copy.svg"});
     // Ask AI: the message goes into the quote bar and "@ai " into the input; the user adds the question.
-    if (auto active = facade->GetActiveThread(); active && active->kind == ThreadKind::Direct) {
+    if (open_thread && open_thread->kind == ThreadKind::Direct && !chat_.editing_message) {
       actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr,
                          [this, text]() { host_.StartQuoteReply(text, "@ai "); }, "../icons/v2/sparkle.svg"});
     }
@@ -271,7 +283,7 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   // message, nothing that would start another edit or a reply (the words being edited stay as typed).
   if (chat_.editing_message) {
     RemoveActionsWhileEditing(actions);
-  } else if (host_.CanEditMessage(message_id)) {
+  } else if (slots.edit) {
     InsertEditAction(actions, [this, message_id]() { host_.StartEditMessage(message_id); });
   }
   // A received attachment's way out of the app (DEV/PLAN-received-file-save-as.md): opened after this menu is gone.

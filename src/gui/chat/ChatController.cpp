@@ -16,6 +16,7 @@
 
 #include "gui/chat/ActionNoticeText.h"
 #include "gui/chat/AiDrawerCount.h"
+#include "gui/chat/MessageMenuSlots.h"
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
@@ -4167,6 +4168,18 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   facts.can_edit = [this](const std::string& message_id) {
     return !chat_.editing_message && CanEditMessage(message_id);
   };
+  // The hover bar offers what the menu does (MessageMenuSlots.h): the reaction row only in a conversation that takes
+  // reactions, Reply only for a message with words (and not while one is being edited).
+  facts.bar_offer = [this, thread_id](const std::string& message_id) {
+    TranscriptFacts::MessageBarOffer offer;
+    auto thread = facade_->GetThread(thread_id);
+    const bool takes_reactions = thread && *thread && ThreadTakesReactions((*thread)->kind);
+    const MessageMenuSlots slots = DecideMessageMenuSlots(takes_reactions, !MessagePlainText(message_id).empty(),
+                                                          /*can_edit_now=*/false, chat_.editing_message);
+    offer.react = slots.react;
+    offer.reply = slots.reply;
+    return offer;
+  };
   facts.voice_max_seconds = facade_->CurrentAttachmentLimits().voice_max_seconds;
   facts.voice_state = [this](const std::string& message_id) { return voice_playback_->State(message_id); };
   facts.audio_files_play = voice_playback_->PlaysFiles();
@@ -5073,10 +5086,15 @@ void ChatController::ToggleReaction(const std::string& message_id, const std::st
   if (!messaging_ready_) {
     return;
   }
+  // No reactions where there is nobody to send them to (an AI conversation): the menus and the bar do not offer them;
+  // a stray call does nothing, quietly.
+  if (auto open_thread = facade_ ? facade_->GetActiveThread() : Roe<Thread>(Error("no chat"));
+      open_thread && !ThreadTakesReactions(open_thread->kind)) {
+    return;
+  }
   if (auto sent = presenter_.ToggleReaction(message_id, emoji); !sent) {
-    if (shell_feedback_.show_toast) {
-      shell_feedback_.show_toast(sent.error().message, ToastDuration::Short);
-    }
+    // The reason is a protocol-level sentence ("Not a direct thread"), not words for the user: logged, not shown.
+    log().warning << "reaction not sent: " << sent.error().message;
     return;
   }
   SyncDisplayFromThread();

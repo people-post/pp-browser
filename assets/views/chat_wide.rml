@@ -211,18 +211,18 @@
           <!-- Mouse over a message BUBBLE (not the row's empty space, the avatar or the name; wide.rcss .msg-hover): five used reactions (the message menu's own row, bar_emojis), "+" (the full emoji
                picker), Edit (where the menu offers it), Reply, and "..." (the whole message menu). Same items and handlers as ChatMenus. -->
           <div class="msg-bar" data-if="row.has_actions">
-            <button class="msg-bar-emoji" type="button" data-for="e : bar_emojis"
+            <button class="msg-bar-emoji" type="button" data-for="e : bar_emojis" data-if="row.bar_react"
                     data-event-click="msg_bar_emoji(row.message_id, e.emoji)"><span class="msg-bar-emoji-glyph">{{e.emoji}}</span></button>
-            <button class="msg-bar-btn" type="button" data-event-click="msg_bar_react()">
+            <button class="msg-bar-btn" type="button" data-if="row.bar_react" data-event-click="msg_bar_react()">
               <svg src="../icons/v2/plus.svg" width="18" height="18"></svg>
             </button>
-            <span class="msg-bar-sep"></span>
+            <span class="msg-bar-sep" data-if="row.bar_react"></span>
             <!-- Edit: only where the message menu offers it (own text within the edit window), the same action. -->
             <button class="msg-bar-btn msg-bar-edit" type="button" data-if="row.can_edit" data-event-click="msg_bar_edit(row.message_id)">
               <svg src="../icons/v2/pencil.svg" width="18" height="18"></svg>
             </button>
             <!-- TODO(forward): Forward goes here, between Edit and Reply, once forwarding exists (no platform has it). -->
-            <button class="msg-bar-btn" type="button" data-event-click="msg_bar_reply()">
+            <button class="msg-bar-btn" type="button" data-if="row.bar_reply" data-event-click="msg_bar_reply()">
               <svg src="../icons/v2/reply.svg" width="18" height="18"></svg>
             </button>
             <button class="msg-bar-btn" type="button" data-event-click="msg_bar_more()">

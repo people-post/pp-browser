@@ -86,6 +86,8 @@ void RegisterChatWidgetDataTypes(ui::DataModelConstructor& ctor) {
     message_handle.RegisterMember("has_reactions", &MessageDisplayRow::has_reactions);
     message_handle.RegisterMember("has_actions", &MessageDisplayRow::has_actions);
     message_handle.RegisterMember("can_edit", &MessageDisplayRow::can_edit);
+    message_handle.RegisterMember("bar_react", &MessageDisplayRow::bar_react);
+    message_handle.RegisterMember("bar_reply", &MessageDisplayRow::bar_reply);
     message_handle.RegisterMember("search_hit", &MessageDisplayRow::search_hit);
     message_handle.RegisterMember("search_current", &MessageDisplayRow::search_current);
     message_handle.RegisterMember("time_label", &MessageDisplayRow::time_label);

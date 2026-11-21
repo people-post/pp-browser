@@ -3,6 +3,7 @@
 // list row, measured; plus the hover bar offering exactly what the message menu offers.
 #include "gui/chat/ChatDataModel.h"
 #include "gui/chat/ChatMenus.h"
+#include "gui/chat/MessageMenuSlots.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
 
@@ -112,6 +113,9 @@ protected:
     mine.row_class = "message-row-user";
     mine.content_rml = "<div class=\"bubble bubble-user\"><p class=\"bubble-text\">Hello there</p></div>";
     mine.has_actions = true;
+    mine.bar_react =
+        true; // a 1:1 chat takes reactions; the bar draws what the message menu offers (MessageMenuSlots.h)
+    mine.bar_reply = true;
     MessageDisplayRow theirs = mine;
     theirs.message_id = "m2";
     theirs.row_class = "message-row-peer";
@@ -329,6 +333,123 @@ TEST_F(ChatWideLayoutTest, TheHoverTargetHoldsTheContentAndTheBarButNotTheNameOr
   // The scroll class is the transcript's own, and the bar rule that it hides is more specific than the one that shows it.
   const std::string css = Asset("themes/wide.rcss");
   EXPECT_NE(css.find(".shell-body--wide .messages--scrolling .msg-hover:hover > .msg-bar"), std::string::npos);
+}
+
+// The bar draws what the menu offers (MessageMenuSlots.h): by conversation kind, and by the message.
+TEST(MessageMenuSlotsTest, ReactionsOnlyWhereThereIsSomeoneToSendThemTo) {
+  EXPECT_TRUE(ThreadTakesReactions(ThreadKind::Direct));
+  EXPECT_TRUE(ThreadTakesReactions(ThreadKind::Group));
+  EXPECT_FALSE(ThreadTakesReactions(ThreadKind::Ai)) << "the AI would not see them";
+  // Direct and group: the whole set; AI: Reply, Copy, Edit but no reactions.
+  for (const ThreadKind kind : {ThreadKind::Direct, ThreadKind::Group}) {
+    const MessageMenuSlots slots = DecideMessageMenuSlots(ThreadTakesReactions(kind), true, true, false);
+    EXPECT_TRUE(slots.react);
+    EXPECT_TRUE(slots.reply);
+    EXPECT_TRUE(slots.copy);
+    EXPECT_TRUE(slots.edit);
+  }
+  const MessageMenuSlots ai = DecideMessageMenuSlots(ThreadTakesReactions(ThreadKind::Ai), true, false, false);
+  EXPECT_FALSE(ai.react);
+  EXPECT_TRUE(ai.reply);
+  EXPECT_TRUE(ai.copy);
+  EXPECT_FALSE(ai.edit);
+  // A message with no words (a picture, a file): no Reply or Copy; reactions as the conversation allows.
+  const MessageMenuSlots picture = DecideMessageMenuSlots(true, false, false, false);
+  EXPECT_TRUE(picture.react);
+  EXPECT_FALSE(picture.reply);
+  EXPECT_FALSE(picture.copy);
+  const MessageMenuSlots ai_picture = DecideMessageMenuSlots(false, false, false, false);
+  EXPECT_FALSE(ai_picture.react || ai_picture.reply || ai_picture.copy || ai_picture.edit) << "only More is left";
+  // While a message is being edited: no Reply or Edit; reactions and Copy stay.
+  const MessageMenuSlots editing = DecideMessageMenuSlots(true, true, true, true);
+  EXPECT_TRUE(editing.react);
+  EXPECT_TRUE(editing.copy);
+  EXPECT_FALSE(editing.reply);
+  EXPECT_FALSE(editing.edit);
+}
+
+// The menu and the bar are built from the one decision: the menu's reaction row, Reply, Copy and Edit follow `slots`, and
+// the bar's rows are filled from the same function (ChatController's bar_offer), so no slot is drawn that the menu lacks.
+TEST_F(ChatWideLayoutTest, TheMenuAndTheBarShareTheOneDecision) {
+  const std::string menus = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatMenus.cpp");
+  const size_t for_request = menus.find("std::vector<ContextMenuAction> ChatMenus::ForRequest(");
+  ASSERT_NE(for_request, std::string::npos);
+  const size_t decide = menus.find("DecideMessageMenuSlots(", for_request);
+  ASSERT_NE(decide, std::string::npos);
+  EXPECT_NE(menus.find("if (slots.react)", decide), std::string::npos);
+  EXPECT_NE(menus.find("if (slots.reply)", decide), std::string::npos);
+  EXPECT_NE(menus.find("if (slots.copy)", decide), std::string::npos);
+  EXPECT_NE(menus.find("} else if (slots.edit)", decide), std::string::npos);
+  const std::string controller = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
+  const size_t offer = controller.find("facts.bar_offer =");
+  ASSERT_NE(offer, std::string::npos);
+  EXPECT_NE(controller.find("DecideMessageMenuSlots(takes_reactions", offer), std::string::npos);
+  // The picker path and a stray call do nothing in an AI conversation, quietly, and no protocol sentence is shown.
+  const size_t toggle = controller.find("void ChatController::ToggleReaction(");
+  ASSERT_NE(toggle, std::string::npos);
+  const std::string body = controller.substr(toggle, 900);
+  EXPECT_NE(body.find("!ThreadTakesReactions(open_thread->kind)"), std::string::npos);
+  EXPECT_EQ(body.find("sent.error().message, ToastDuration"), std::string::npos) << "the raw error is not a pill";
+}
+
+// An AI conversation's bar: no reaction row, no "+", no separator; Reply and More (and Edit where offered). A message
+// with nothing but More left shows only More; a conversation that takes reactions keeps the whole bar.
+TEST_F(ChatWideLayoutTest, TheHoverBarShrinksToWhatTheMenuOffersInAnAiConversation) {
+  ShowChat();
+  for (const char* emoji : {"\xF0\x9F\x91\x8D", "\xE2\x9D\xA4", "\xF0\x9F\x98\x82"}) {
+    BarEmojiRow row;
+    row.emoji = emoji;
+    state.bar_emojis.push_back(row);
+  }
+  state.messages[0].bar_react = false; // mine, AI conversation: Reply and Edit, no reactions
+  state.messages[1].bar_react = false; // theirs: Reply and More
+  state.messages[1].bar_reply = false; // ... and one with no words: only More
+  Load(ConversationWidth(900));
+  ui::ElementList wraps;
+  document->GetElementsByClassName(wraps, "msg-hover");
+  ASSERT_GE(wraps.size(), 2u);
+  auto shown_in = [&](ui::Element* wrap, const char* cls) {
+    ui::ElementList found;
+    wrap->GetElementsByClassName(found, cls);
+    size_t drawn = 0;
+    for (ui::Element* e : found) {
+      if (e->GetComputedValues().display() != ui::Style::Display::None && BoxOf(e).W() > 0.f) {
+        ++drawn;
+      }
+    }
+    return drawn;
+  };
+  for (size_t i = 0; i < 2; ++i) {
+    wraps[i]->SetPseudoClass("hover", true);
+  }
+  context->Update();
+  EXPECT_EQ(shown_in(wraps[0], "msg-bar-emoji"), 0u) << "no emoji in an AI conversation";
+  EXPECT_EQ(shown_in(wraps[0], "msg-bar-sep"), 0u);
+  EXPECT_EQ(shown_in(wraps[0], "msg-bar-btn"), 3u) << "Edit, Reply, More: the plus is gone";
+  EXPECT_EQ(shown_in(wraps[1], "msg-bar-emoji"), 0u);
+  EXPECT_EQ(shown_in(wraps[1], "msg-bar-btn"), 1u) << "nothing but More";
+  const Box full_less = BoxOf(First("msg-bar"));
+  EXPECT_LE(full_less.H(), 40.f);
+  // A conversation that takes reactions: the whole bar.
+  document->Close();
+  context->Update();
+  ShowChat();
+  state.bar_emojis.clear();
+  for (const char* emoji : {"\xF0\x9F\x91\x8D", "\xE2\x9D\xA4", "\xF0\x9F\x98\x82"}) {
+    BarEmojiRow row;
+    row.emoji = emoji;
+    state.bar_emojis.push_back(row);
+  }
+  Load(ConversationWidth(900));
+  document->GetElementsByClassName(wraps, "msg-hover");
+  ui::ElementList direct_wraps;
+  document->GetElementsByClassName(direct_wraps, "msg-hover");
+  ASSERT_GE(direct_wraps.size(), 1u);
+  direct_wraps[0]->SetPseudoClass("hover", true);
+  context->Update();
+  EXPECT_EQ(shown_in(direct_wraps[0], "msg-bar-emoji"), 3u);
+  EXPECT_EQ(shown_in(direct_wraps[0], "msg-bar-btn"), 4u) << "+, Edit, Reply, More";
+  EXPECT_GE(BoxOf(First("msg-bar")).W(), full_less.W()) << "the AI bar is the shorter one";
 }
 
 TEST_F(ChatWideLayoutTest, TheHoverBarOffersExactlyTheMessageMenusItems) {
