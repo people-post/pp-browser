@@ -499,6 +499,8 @@ private:
   void RefreshAttachmentInTranscript();
   /** A voice recording that could not be sent and was not staged: the chip offers Retry / Discard for the file. */
   void KeepVoiceForRetry(const std::string& path, const std::string& thread_id);
+  /** Which way the voice message just sent went (`voice_send_won_`), for its voice.send line. */
+  void NoteVoiceSendWon(const ThreadMessage& sent);
   /**
    * A finished recording: its bubble goes up at once and its send joins voice_queue_, which sends the recordings one
    * at a time in the order they were made, behind any other attachment in flight. Never refused for being busy.
@@ -667,6 +669,8 @@ private:
   std::shared_ptr<std::atomic<bool>> send_cancel_;
   /** A voice recording waiting for Retry / Discard (nothing was staged), and the chat it is for. */
   std::string failed_voice_path_;
+  /** "direct" or "server": the last voice send's winning leg, read once by the voice.send line. */
+  std::string voice_send_won_;
   std::string failed_voice_thread_;
   std::chrono::steady_clock::time_point last_voice_call_check_{};
   /** Where the attach menu ends: just above the attach button (B90), refreshed on each tap. */

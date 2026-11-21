@@ -35,6 +35,21 @@ std::string ElapsedText(const int64_t elapsed_ms) {
   return std::to_string(seconds / 60) + ":" + (seconds % 60 < 10 ? "0" : "") + std::to_string(seconds % 60);
 }
 
+/** `entry` (a file or folder inside the recording folder) is, or holds, one of `files`. */
+bool HoldsAny(const std::filesystem::path& entry, const std::vector<std::string>& files) {
+  const std::filesystem::path base = entry.lexically_normal();
+  for (const std::string& file : files) {
+    if (file.empty()) {
+      continue;
+    }
+    const std::filesystem::path inside = std::filesystem::path(file).lexically_normal().lexically_relative(base);
+    if (!inside.empty() && *inside.begin() != "..") {
+      return true;
+    }
+  }
+  return false;
+}
+
 void RemoveQuietly(const std::string& path) {
   if (!path.empty()) {
     std::error_code ec;
@@ -211,20 +226,21 @@ void VoiceComposer::StartRecording() {
 
   VoiceRecorderConfig config;
   config.max_seconds = max_seconds_;
-  config.out_dir = ports_.out_dir();
   std::error_code ec;
-  // Nothing from an earlier recording is left to be sent by mistake; a failed one that waits for Retry stays.
-  const std::string keep = ports_.keep_file ? ports_.keep_file() : std::string();
-  if (keep.empty()) {
-    std::filesystem::remove_all(config.out_dir, ec);
-  } else {
-    const std::filesystem::path keep_path = std::filesystem::path(keep).lexically_normal();
-    for (const auto& entry : std::filesystem::directory_iterator(config.out_dir, ec)) {
-      if (entry.path().lexically_normal() != keep_path) {
-        std::filesystem::remove_all(entry.path(), ec);
-      }
+  // Nothing from an earlier recording is left to be sent by mistake; the recordings still needed stay (a failed one
+  // waiting for Retry, the ones waiting in the send line or being sent: wiping those lost them).
+  const std::filesystem::path root = ports_.out_dir();
+  const std::vector<std::string> keep = ports_.keep_files ? ports_.keep_files() : std::vector<std::string>();
+  for (const auto& entry : std::filesystem::directory_iterator(root, ec)) {
+    if (!HoldsAny(entry.path(), keep)) {
+      std::filesystem::remove_all(entry.path(), ec);
     }
   }
+  // Each recording in a folder of its own: the file is named after its length (the recipient reads it from the name),
+  // and two of the same length waiting at once must not be one file.
+  config.out_dir = (root / ("r" + std::to_string(++recording_serial_) + "-" +
+                            std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())))
+                       .string();
 
   const auto alive = alive_;
   const int generation = generation_;

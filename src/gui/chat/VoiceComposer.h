@@ -34,8 +34,11 @@ struct VoiceComposerPorts {
   std::function<AttachmentLimits()> limits;
   /** Where the temporary recording goes (`.../blobs_view/voice-rec`). */
   std::function<std::string()> out_dir;
-  /** A failed recording that waits for Retry (a file inside `out_dir`): a new recording does not wipe it. Optional. */
-  std::function<std::string()> keep_file;
+  /**
+   * Recordings inside `out_dir` that are still needed (a failed one waiting for Retry, the ones waiting in the send line
+   * or being sent): a new recording does not wipe them. Optional.
+   */
+  std::function<std::vector<std::string>()> keep_files;
   /** The chat that is open now. Read once, when a recording starts: that chat gets the message, whatever is open later. */
   std::function<std::string()> thread_id;
   /** A finished recording to send to `thread_id` as an attachment. The owner deletes the file when it is done with it. */
@@ -152,6 +155,8 @@ private:
   std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);
   ui::ElementDocument* document_ = nullptr;
   int generation_ = 0;
+  /** Names each recording's own folder inside `out_dir`. */
+  uint64_t recording_serial_ = 0;
   int max_seconds_ = 120;
   bool pointer_down_ = false;
   /** This recording is a hold (a phone's press), not a desktop click. */

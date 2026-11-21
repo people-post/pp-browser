@@ -310,5 +310,17 @@ TEST(VoiceSendQueue, DroppingAChatsWaitingOnesFreesIt) {
   EXPECT_EQ(rig.queue->CountForThread("chat-a"), 1u) << "only the one in flight";
 }
 
+// The recorder must not wipe a recording still in the line: the waiting ones and the one in flight, never a Retry's
+// (it has no file of its own) and never one that has ended.
+TEST(VoiceSendQueue, FilesInUseAreTheFreshRecordingsWaitingOrInFlight) {
+  Rig rig;
+  rig.Add("a");
+  rig.Add("b");
+  rig.Add("r", "chat-a", VoiceJobKind::Retry);
+  EXPECT_EQ(rig.queue->FilesInUse(), (std::vector<std::string>{"/rec/a.ogg", "/rec/b.ogg"}));
+  rig.End("a");
+  EXPECT_EQ(rig.queue->FilesInUse(), (std::vector<std::string>{"/rec/b.ogg"}));
+}
+
 } // namespace
 } // namespace pbr

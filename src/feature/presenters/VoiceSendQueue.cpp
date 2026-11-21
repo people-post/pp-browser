@@ -83,6 +83,22 @@ bool VoiceSendQueue::IsWaiting(const std::string& row_id) const {
   return false;
 }
 
+std::vector<std::string> VoiceSendQueue::FilesInUse() const {
+  std::vector<std::string> files;
+  auto add = [&files](const VoiceSendJob& job) {
+    if (job.kind == VoiceJobKind::Fresh && !job.path.empty()) {
+      files.push_back(job.path);
+    }
+  };
+  if (in_flight_) {
+    add(in_flight_->job);
+  }
+  for (const Waiting& item : waiting_) {
+    add(item.job);
+  }
+  return files;
+}
+
 size_t VoiceSendQueue::CountForThread(const std::string& thread_id) const {
   size_t count = in_flight_ && in_flight_->job.thread_id == thread_id ? 1 : 0;
   for (const Waiting& item : waiting_) {

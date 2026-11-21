@@ -407,7 +407,13 @@ ChatController::ChatController()
                      .string()
                : std::string();
   };
-  voice_ports.keep_file = [this]() { return failed_voice_path_; };
+  voice_ports.keep_files = [this]() {
+    std::vector<std::string> files = voice_queue_ ? voice_queue_->FilesInUse() : std::vector<std::string>();
+    if (!failed_voice_path_.empty()) {
+      files.push_back(failed_voice_path_);
+    }
+    return files;
+  };
   voice_ports.thread_id = [this]() { return ActiveThreadId(); };
   // Recordings made while another send is on wait in voice_queue_ and go out in order: the bar is refused only while
   // the open chat has kVoiceSendMaxPerChat of them out.
@@ -445,8 +451,8 @@ ChatController::ChatController()
     std::filesystem::remove(path, ec);
   };
   voice_queue_ports.now_ms = []() { return SteadyNowMs(); };
-  voice_queue_ports.report = [](const VoiceSendJob& job, const AttachmentSendOutcome outcome,
-                                const VoiceSendTiming& timing) {
+  voice_queue_ports.report = [this](const VoiceSendJob& job, const AttachmentSendOutcome outcome,
+                                    const VoiceSendTiming& timing) {
     // Content-free: sizes, lengths and times only (the first stage numbers are the send's own: direct_ms / relay_ms
     // in the AttachmentClient line).
     MetricsLine line("voice.send");
@@ -464,6 +470,16 @@ ChatController::ChatController()
         line.Add("result", "failed");
         break;
     }
+    if (outcome == AttachmentSendOutcome::Sent) {
+      if (voice_send_won_ == "direct") {
+        line.Add("won", "direct");
+      } else if (voice_send_won_ == "server") {
+        line.Add("won", "server");
+      } else {
+        line.Add("won", "-");
+      }
+    }
+    voice_send_won_.clear();
     line.Add("retry", job.kind == VoiceJobKind::Retry)
         .Add("bytes", job.bytes)
         .Add("duration_ms", job.duration_ms)
@@ -3355,6 +3371,12 @@ void ChatController::KeepVoiceForRetry(const std::string& path, const std::strin
   }
 }
 
+void ChatController::NoteVoiceSendWon(const ThreadMessage& sent) {
+  // The attachment's link: empty when the contact got it straight from this device, the server's link otherwise.
+  auto fields = ChatPayloadCodec::DecodeAttachmentJson(sent.payload_json);
+  voice_send_won_ = !fields ? std::string() : fields->url.empty() ? "direct" : "server";
+}
+
 void ChatController::EnqueueVoiceSend(const std::string& path, const std::string& thread_id) {
   if (!facade_ || thread_id.empty()) {
     if (!thread_id.empty()) {
@@ -3566,6 +3588,9 @@ void ChatController::StartAttachmentRetry(const std::string& item_id, const std:
       },
       [this, cancel, thread_id, record_id, picture, item_id, offline_stop,
        on_done = std::move(on_done)](Roe<ThreadMessage> sent) {
+        if (sent) {
+          NoteVoiceSendWon(*sent);
+        }
         if (on_done) {
           on_done(static_cast<bool>(sent)); // the voice queue goes on (its own later UI task: after this one)
         }
@@ -4283,6 +4308,9 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
             const AttachmentSendOutcome ended =
                 ClassifyUploadOutcome(static_cast<bool>(sent), cancelled, !new_record.empty(),
                                       !sent && IsAttachmentRateLimited(sent.error()));
+            if (voice_file && sent) {
+              NoteVoiceSendWon(*sent);
+            }
             finished.Fire(ended);
             if (with_bubble) {
               // Sent: the bubble goes here and the real row comes with the display sync below, in this same task.

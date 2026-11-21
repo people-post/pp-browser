@@ -1,4 +1,5 @@
 #include "gui/chat/VoiceComposer.h"
+#include "feature/presenters/VoiceSendQueue.h"
 #include "lib/voice/VoiceSupport.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/voice/tests/voice_test_support.h"
@@ -7,6 +8,7 @@
 
 #include <deque>
 #include <filesystem>
+#include <set>
 #include <fstream>
 
 // The microphone button's logic with a scripted microphone and fake ports: no device, no UI, no OS prompt.
@@ -104,9 +106,20 @@ struct Harness {
       return limits;
     };
     ports.out_dir = [this]() { return (dir.path / "voice-rec").string(); };
-    ports.keep_file = [this]() { return keep; };
+    ports.keep_files = [this]() {
+      std::vector<std::string> files = waiting();
+      if (!keep.empty()) {
+        files.push_back(keep);
+      }
+      return files;
+    };
     ports.thread_id = [this]() { return thread; };
-    ports.send = [this](const std::string& tid, const std::string& path) { sent.emplace_back(tid, path); };
+    ports.send = [this](const std::string& tid, const std::string& path) {
+      sent.emplace_back(tid, path);
+      if (on_send) {
+        on_send(tid, path);
+      }
+    };
     ports.eligible = [this]() { return eligible; };
     ports.dirty = [this]() { saw_finishing = saw_finishing || state.voice_finishing; };
     ports.say = [this](const std::string& text) { said.push_back(text); };
@@ -155,6 +168,8 @@ struct Harness {
   MediaDeviceArbiter arbiter{CreateNullMediaDeviceBackend()};
   std::string thread = "A";
   std::string keep;
+  /** The recordings the send line still holds (the chat screen's VoiceSendQueue::FilesInUse). */
+  std::function<std::vector<std::string>()> waiting = []() { return std::vector<std::string>(); };
   bool call_live = false;
   /** The chat whose voice messages are at the most that may wait (none when empty). */
   std::string full_thread;
@@ -178,6 +193,7 @@ struct Harness {
   std::shared_ptr<std::atomic<int>> opens_ptr = std::make_shared<std::atomic<int>>(0);
   std::atomic<int>& opens = *opens_ptr;
   std::vector<std::pair<std::string, std::string>> sent;
+  std::function<void(const std::string& tid, const std::string& path)> on_send;
   std::vector<std::string> said;
   std::unique_ptr<VoiceComposer> composer;
 };
@@ -476,6 +492,82 @@ TEST(VoiceComposer, ANewRecordingDoesNotWipeAFailedOneWaitingForRetry) {
   ASSERT_TRUE(h.WaitTimer("0:03"));
   EXPECT_TRUE(std::filesystem::exists(kept));
   EXPECT_FALSE(std::filesystem::exists(other));
+}
+
+// Device test of 66b4bede: recordings made while an earlier voice message was still uploading failed with "cannot read
+// this file" when their turn came: starting the next recording wiped the recording folder, taking the ones still
+// waiting in the send line with it. Recorded one after another and handed to a real VoiceSendQueue whose slot is busy,
+// each must still be on disk, with its own bytes, when its turn comes.
+struct WaitingLine {
+  explicit WaitingLine(Harness& h) {
+    VoiceSendPorts ports;
+    ports.slot_free = []() { return false; }; // an earlier voice message is still uploading
+    line = std::make_unique<VoiceSendQueue>(std::move(ports));
+    h.on_send = [this](const std::string& tid, const std::string& path) {
+      VoiceSendJob job;
+      job.row_id = "pending-upload-" + std::to_string(++rows);
+      job.thread_id = tid;
+      job.path = path;
+      std::ifstream in(path, std::ios::binary);
+      bytes.emplace_back(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+      line->Enqueue(std::move(job));
+    };
+    h.waiting = [this]() { return line->FilesInUse(); };
+  }
+  /** Every recording handed over is still there with the bytes it had then. */
+  void ExpectAllIntact(const Harness& h) const {
+    ASSERT_EQ(h.sent.size(), bytes.size());
+    std::set<std::string> paths;
+    for (size_t i = 0; i < h.sent.size(); ++i) {
+      const std::string& path = h.sent[i].second;
+      std::ifstream in(path, std::ios::binary);
+      const std::string now((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+      EXPECT_TRUE(std::filesystem::exists(path)) << "recording " << i + 1 << " was deleted before its turn";
+      EXPECT_EQ(now, bytes[i]) << "recording " << i + 1 << " is not the bytes that were recorded";
+      paths.insert(path);
+    }
+    EXPECT_EQ(paths.size(), h.sent.size()) << "each recording is its own file";
+  }
+  std::unique_ptr<VoiceSendQueue> line;
+  std::vector<std::string> bytes;
+  int rows = 0;
+};
+
+void RecordAndSend(Harness& h, const int seconds) {
+  h.source = [opens = h.opens_ptr, seconds]() {
+    ++*opens;
+    return std::make_unique<ScriptedSource>(Tone(seconds * 1000));
+  };
+  const size_t before = h.sent.size();
+  h.composer->BeginAt(0, 0, nullptr, /*hold=*/false);
+  ASSERT_TRUE(h.WaitTimer("0:0" + std::to_string(seconds)));
+  h.composer->OnSendButton();
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return h.sent.size() == before + 1 && !h.composer->Active(); }));
+}
+
+TEST(VoiceComposer, RecordingsWaitingToBeSentSurviveTheNextRecording) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  WaitingLine waiting(h);
+  RecordAndSend(h, 3);
+  RecordAndSend(h, 2);
+  RecordAndSend(h, 1);
+  ASSERT_EQ(waiting.line->WaitingCount(), 3u);
+  waiting.ExpectAllIntact(h);
+}
+
+// The file is named after its length (the recipient reads the length from it): two recordings of the same length
+// waiting at once must not be one file, the second overwriting the first.
+TEST(VoiceComposer, TwoWaitingRecordingsOfTheSameLengthAreTwoFiles) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  WaitingLine waiting(h);
+  RecordAndSend(h, 2);
+  RecordAndSend(h, 2);
+  ASSERT_EQ(waiting.line->WaitingCount(), 2u);
+  waiting.ExpectAllIntact(h);
+  EXPECT_EQ(std::filesystem::path(h.sent[0].second).filename(), std::filesystem::path(h.sent[1].second).filename())
+      << "the name the recipient sees is unchanged";
 }
 
 TEST(VoiceComposer, LockingAMomentAfterTheReleaseStillSendsNothingAndDeletesTheFile) {

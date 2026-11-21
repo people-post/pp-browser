@@ -87,6 +87,8 @@ public:
   std::vector<VoiceSendJob> DropWaiting(const std::optional<std::string>& thread_id = std::nullopt);
 
   bool IsWaiting(const std::string& row_id) const;
+  /** The recordings of the Fresh jobs waiting or being sent: the files the recorder must not wipe. */
+  std::vector<std::string> FilesInUse() const;
   /** Voice messages of `thread_id` waiting or being sent (a failed one has left the line). */
   size_t CountForThread(const std::string& thread_id) const;
   /** `thread_id` has kVoiceSendMaxPerChat voice messages out: its bar takes no new recording until one ends. */
