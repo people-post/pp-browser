@@ -286,7 +286,8 @@ TEST(PeerRequestVectorsTest, TheCommittedSignBytesRebuildFromTheirJson) {
     std::vector<uint8_t> bytes;
     ASSERT_TRUE(VerdictOf(row.getString("kind").value_or(""), *row.getObject("request"), "", &bytes)) << name;
     EXPECT_EQ(BytesToHex(bytes), row.getString("sign_bytes_hex").value_or("")) << name;
-    EXPECT_EQ(SignedBytesVersion(bytes), std::optional<uint8_t>(PeerRequestAuth::kVersion)) << name;
+    EXPECT_EQ(SignedBytesVersion(bytes), std::optional<uint8_t>(static_cast<uint8_t>(PeerRequestAuth::kVersion)))
+        << name;
   }
 }
 

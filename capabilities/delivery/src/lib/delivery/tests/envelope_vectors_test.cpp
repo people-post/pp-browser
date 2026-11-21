@@ -257,7 +257,7 @@ TEST(EnvelopeVectorsTest, TheCommittedSignBytesRebuildFromTheirJson) {
     auto bytes = EnvelopeSigner::BuildSignBytes(*envelope);
     ASSERT_TRUE(bytes) << name;
     EXPECT_EQ(BytesToHex(*bytes), row.getString("sign_bytes_hex").value_or("")) << name;
-    EXPECT_EQ(SignedBytesVersion(*bytes), std::optional<uint8_t>(kRelayEnvelopeVersion)) << name;
+    EXPECT_EQ(SignedBytesVersion(*bytes), std::optional<uint8_t>(static_cast<uint8_t>(kRelayEnvelopeVersion))) << name;
     // The area is kept as it came: written back, the JSON's ext_b64 is the one read.
     EXPECT_EQ(Json(*envelope).getString(kExtB64Key), row.getObject("envelope")->getString(kExtB64Key)) << name;
   }
