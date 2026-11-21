@@ -235,7 +235,7 @@ TEST_F(DemoDataSeederTest, HomeWidgetsGetTwoMissedCallsAMentionAndTwoStars) {
   EXPECT_EQ(starred.size(), 2u);
 }
 
-TEST_F(DemoDataSeederTest, FirstGroupShowsReactionsPicturesAFileAVideoAndANonContact) {
+TEST_F(DemoDataSeederTest, FirstGroupShowsReactionsPicturesAFileAVideoVoiceAndANonContact) {
   DemoDataSeeder seeder;
   ASSERT_TRUE(seeder.SeedOnce(Deps()));
   auto messages = threads_->GetMessages("demo-thread-group-1");
@@ -258,7 +258,7 @@ TEST_F(DemoDataSeederTest, FirstGroupShowsReactionsPicturesAFileAVideoAndANonCon
     stranger = stranger || m.sender_contact_id == "demo-acct-guest-01";
   }
   EXPECT_GE(reactions, 5u);
-  EXPECT_EQ(mimes, (std::set<std::string>{"image/png", "application/pdf", "video/mp4"}));
+  EXPECT_EQ(mimes, (std::set<std::string>{"image/png", "application/pdf", "video/mp4", "audio/ogg"}));
   EXPECT_TRUE(stranger);
 }
 

@@ -174,7 +174,6 @@
 .shell-body--wide .card,
 .shell-body--wide .me-profile-card,
 .shell-body--wide .contact-profile-card,
-.shell-body--wide .chat-card,
 .shell-body--wide .chat-form,
 .shell-body--wide .chat-empty {
   border-width: 0;
@@ -195,14 +194,6 @@
 .shell-body--wide .prompt-composer-pill {
   border-width: 0.5dp;
   border-radius: 21dp;
-}
-
-/* Messages: bubbles are fills (the content area is tonal), no outline. */
-.shell-body--wide .bubble-user,
-.shell-body--wide .bubble-peer,
-.shell-body--wide .bubble-assistant {
-  border-width: 0;
-  border-radius: 18dp;
 }
 
 /* Chat header: no coloured side bar and tint; a hairline under it. */
@@ -512,143 +503,7 @@
   padding-left: 0;
 }
 
-.shell-body--wide .sender-label {
-  display: none;
-}
-
-.shell-body--wide .chat-date-strip {
-  display: block;
-  margin: 12dp 0;
-  text-align: center;
-}
-
-.shell-body--wide .chat-date-pill,
-.shell-body--wide .chat-system-line p {
-  display: inline-block;
-  margin: 0;
-  padding: 3dp 12dp;
-  max-width: 80%;
-  border-radius: 10dp;
-  font-size: 12dp;
-  line-height: 18dp;
-}
-
-.shell-body--wide .chat-group-name {
-  display: block;
-  margin: 0 0 2dp 0;
-  max-width: 72%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 13dp;
-  font-weight: bold;
-  text-align: left;
-}
-
-.shell-body--wide .bubble .chat-group-name {
-  margin: 0 0 3dp 0;
-  max-width: none;
-}
-
-.shell-body--wide .chat-row-body--group {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-}
-
-.shell-body--wide .chat-row-avatar-col {
-  display: block;
-  flex-shrink: 0;
-  width: 32dp;
-  margin-right: 8dp;
-  align-self: flex-end;
-}
-
-.shell-body--wide .chat-row-avatar-hit {
-  display: block;
-}
-
-.shell-body--wide .chat-row-avatar-col-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32dp;
-  height: 32dp;
-  border-radius: 16dp;
-  overflow: hidden;
-}
-
-.shell-body--wide .chat-row-avatar-col-avatar .avatar-photo {
-  width: 32dp;
-  height: 32dp;
-}
-
-.shell-body--wide .chat-row-avatar-col-avatar .chat-row-avatar-letter {
-  font-size: 15dp;
-  line-height: 20dp;
-}
-
-.shell-body--wide .chat-row-body--group .chat-row-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.shell-body--wide .bubble {
-  padding: 9dp 14dp;
-  border-radius: 18dp;
-}
-
-.shell-body--wide .bubble-user,
-.shell-body--wide .bubble-assistant {
-  max-width: 62%;
-}
-
-.shell-body--wide .bubble-text,
-.shell-body--wide .bubble-text-peer {
-  font-size: 15dp;
-  line-height: 22dp;
-}
-
-.shell-body--wide .bubble.bubble-emoji {
-  padding: 0 2dp;
-  border-width: 0;
-  background-color: transparent;
-}
-
-/* No hook tail on the desktop (the mockup draws none): the last bubble of a run just has one squared corner, 5dp, on the
-   side it grows from. The tail element the transcript writes for the phone is not drawn, so nothing is left behind. */
-.shell-body--wide .bubble-tail {
-  display: none;
-}
-
-.shell-body--wide .bubble-tail-host.bubble-tail-host--in {
-  border-bottom-left-radius: 5dp;
-}
-
-.shell-body--wide .bubble-tail-host.bubble-tail-host--out {
-  border-bottom-right-radius: 5dp;
-}
-
-.shell-body--wide .bubble-time {
-  display: block;
-  margin-top: 2dp;
-  font-size: 12dp;
-  line-height: 14dp;
-  text-align: right;
-}
-
-.shell-body--wide .bubble-emoji .bubble-time,
-.shell-body--wide .bubble-deleted .bubble-time {
-  display: none;
-}
-
-.shell-body--wide .chat-quote {
-  margin-top: 0;
-  padding: 5dp 8dp;
-  border-radius: 6dp;
-}
-
-/* The message under the pointer: a small row of buttons at its top (reply, react, more). */
+/* The message under the pointer: a small row at its top (the used reactions, +, reply, more). */
 .shell-body--wide .msg-bar {
   display: none;
   position: absolute;
@@ -685,6 +540,27 @@
   border: 0;
   border-radius: 7dp;
   cursor: pointer;
+}
+
+.shell-body--wide .msg-bar-emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30dp;
+  height: 28dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 7dp;
+  font-size: 18dp;
+  line-height: 24dp;
+  cursor: pointer;
+}
+
+.shell-body--wide .msg-bar-sep {
+  width: 1dp;
+  height: 18dp;
+  margin: 0 3dp;
 }
 
 .shell-body--wide .msg-bar-btn svg {
@@ -793,13 +669,272 @@
   line-height: 22dp;
 }
 
-/* ---- Pictures, files and voice notes in the conversation: the phone's card rules (components.rcss, the block that
-   starts "Pictures, files and voice notes take the bubble colours") under the wide root; same sizes and corners, so a
-   picture or a file looks the same on every screen. Keep the two in step. ---- */
-/* Pictures, files and voice notes take the bubble colours and corners. Files and videos are compact cards (at most
-   240dp, small display text, a 44dp-tall plain "Open" row); a picture card is a 3dp frame around the picture, which
-   keeps its own shape inside a 200 x 240dp box: TranscriptRml gives the picture its fitted size (width / height), so
-   the frame is laid out for it on every shape (left to max-width / max-height, a very tall one spilled out). */
+/* A message that mentions you: a tinted row with a soft corner, no side bar. */
+.shell-body--wide .message-row-mentions-me {
+  border-left-width: 0;
+  border-radius: 12dp;
+}
+
+/* ---- Voice recording in the wide composer: click the microphone (lit while it records), click again to send ---- */
+.shell-body--wide .prompt-composer--wide .prompt-voice-live-pill {
+  align-items: center;
+  gap: 10dp;
+  padding: 0 16dp;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-voice-live-pill .prompt-voice-timer {
+  min-width: 36dp;
+  font-size: 15dp;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-voice-level {
+  flex: 1;
+  min-width: 40dp;
+  height: 6dp;
+  border-radius: 3dp;
+  overflow: hidden;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-voice-level-fill {
+  width: 0%;
+  height: 6dp;
+  border-radius: 3dp;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-voice-live-pill .prompt-voice-bar-sending {
+  font-size: 15dp;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-voice-cancel-x {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40dp;
+  min-width: 40dp;
+  height: 40dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 20dp;
+  cursor: pointer;
+}
+
+/* BEGIN phone message rules (generated by scripts/ui/gen_wide_phone_rules.py, do not edit) */
+.shell-body--wide .chat-call-row {
+  padding: 9dp 14dp;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-body--wide .chat-call-row-icon {
+  width: 24dp;
+  height: 24dp;
+  margin: -1dp 8dp -1dp 0;
+}
+
+.shell-body--wide .chat-call-row-time {
+  font-size: 13dp;
+}
+
+.shell-body--wide .bubble.bubble-user--picture {
+  max-width: none;
+  padding: 3dp;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.shell-body--wide .chat-attachment-video {
+  display: block;
+}
+
+.shell-body--wide .chat-attachment-video-badge {
+  padding: 0;
+}
+
+.shell-body--wide .sender-label {
+  display: none;
+}
+
+.shell-body--wide .chat-date-strip {
+  display: block;
+  margin: 8dp 0;
+  text-align: center;
+}
+
+.shell-body--wide .chat-date-pill,
+.shell-body--wide .chat-system-line p {
+  display: inline-block;
+  margin: 0;
+  padding: 4dp 10dp;
+  max-width: 80%;
+  border-radius: 999dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-body--wide .chat-group-invite {
+  display: inline-block;
+  width: 72%;
+  max-width: 280dp;
+  margin: 0;
+  padding: 10dp 12dp 0 12dp;
+  border-width: 0;
+  border-radius: 18dp;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.shell-body--wide .chat-group-invite .heading-3 {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+}
+
+.shell-body--wide .chat-group-invite .text {
+  margin: 2dp 0 4dp 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-body--wide .chat-group-invite .chat-suggestion {
+  display: block;
+  width: 100%;
+  height: 44dp;
+  min-height: 44dp;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  text-align: left;
+}
+
+.shell-body--wide .chat-group-name {
+  display: block;
+  margin: 0 0 2dp 12dp;
+  max-width: 72%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13dp;
+  font-weight: bold;
+  text-align: left;
+}
+
+.shell-body--wide .bubble .chat-group-name {
+  margin: -16dp -14dp -13dp -14dp;
+  padding: 16dp 14dp 15dp 14dp;
+  max-width: none;
+}
+
+.shell-body--wide .chat-row-body--group {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+.shell-body--wide .chat-row-avatar-col {
+  display: block;
+  flex-shrink: 0;
+  width: 32dp;
+  margin-right: 6dp;
+  align-self: flex-end;
+}
+
+.shell-body--wide .chat-row-avatar-hit {
+  display: block;
+  margin: -12dp -6dp 0 -6dp;
+  padding: 12dp 6dp 0 6dp;
+}
+
+.shell-body--wide .chat-row-avatar-col-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  border-radius: 16dp;
+  overflow: hidden;
+}
+
+.shell-body--wide .chat-row-avatar-col-avatar .avatar-photo {
+  width: 32dp;
+  height: 32dp;
+}
+
+.shell-body--wide .chat-row-avatar-col-avatar .chat-row-avatar-letter {
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-body--wide .chat-row-body--group .chat-row-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-body--wide .bubble {
+  padding: 10dp 14dp;
+  border-radius: 18dp;
+}
+
+.shell-body--wide .bubble-text,
+.shell-body--wide .bubble-text-peer {
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-body--wide .bubble.bubble-emoji {
+  padding: 0 2dp;
+  border-width: 0;
+  background-color: transparent;
+}
+
+.shell-body--wide .bubble-emoji .bubble-text,
+.shell-body--wide .bubble-emoji .bubble-text-peer {
+  font-size: 28dp;
+  line-height: 36dp;
+}
+
+.shell-body--wide .bubble-emoji--xl .bubble-text,
+.shell-body--wide .bubble-emoji--xl .bubble-text-peer {
+  font-size: 36dp;
+  line-height: 44dp;
+}
+
+.shell-body--wide .bubble-emoji .bubble-time,
+.shell-body--wide .bubble-emoji .bubble-tail {
+  display: none;
+}
+
+.shell-body--wide .bubble-user,
+.shell-body--wide .bubble-assistant {
+  max-width: 72%;
+}
+
+.shell-body--wide .bubble-assistant {
+  border-width: 0;
+}
+
+.shell-body--wide .bubble-time {
+  display: block;
+  margin-top: 2dp;
+  font-size: 12dp;
+  line-height: 14dp;
+  text-align: right;
+}
+
+.shell-body--wide .bubble-deleted .bubble-time {
+  display: none;
+}
+
+.shell-body--wide .chat-quote {
+  margin-top: 0;
+  padding: 5dp 8dp;
+  border-radius: 6dp;
+}
+
 .shell-body--wide .chat-attachment-card {
   display: inline-block;
   min-width: 160dp;
@@ -824,9 +959,6 @@
   line-height: 16dp;
 }
 
-/* A status line last on a file card ("Downloading 40%", "Couldn't download") keeps 8dp under it, like the top; only
-   when reactions hang on that card does it grow by the pills' overlap, so they sit under the line, not on it. A card
-   ending in its 44dp action row needs nothing: the pills land in the row's empty lower part (Kenneth 2026-11-05). */
 .shell-body--wide .chat-attachment-card .muted:last-child {
   margin-bottom: 8dp;
 }
@@ -839,8 +971,6 @@
   max-width: 292dp;
 }
 
-/* A video card (sent or being sent) is a 3dp frame round its poster like a picture card: as wide as the poster (up to
-   292dp), not held to the file card's 240dp (the poster ran past the card's right edge). */
 .shell-body--wide .chat-attachment-card--video {
   min-width: 0;
   max-width: 298dp;
@@ -852,15 +982,12 @@
   border-radius: 9dp;
 }
 
-/* The music card is one width on the phone, inside the 240dp card limit, with room under its controls. */
 .shell-body--wide .chat-audio-card {
   width: 240dp;
   min-width: 0;
   padding-bottom: 10dp;
 }
 
-/* Its subtitle is not a card's status line: no room under it (the card's own padding ends it); reactions hang under
-   the controls instead. */
 .shell-body--wide .chat-audio-card .chat-audio-meta .chat-audio-sub,
 .shell-body--wide .chat-audio-card.chat-reaction-host .chat-audio-meta .chat-audio-sub {
   margin-bottom: 0;
@@ -883,7 +1010,6 @@
   text-align: left;
 }
 
-/* 12dp corners: the engine does not round the picture itself, so a tighter frame corner keeps its square corner inside. */
 .shell-body--wide .chat-attachment-card--image {
   min-width: 0;
   max-width: none;
@@ -891,9 +1017,6 @@
   border-radius: 12dp;
 }
 
-/* The engine does not round an <img> itself, so the picture sits in a clip box (size set inline from the fitted size)
-   whose rounded corners and overflow:hidden cut it: 12dp frame minus the 3dp padding = 9dp. The box is inline, so the
-   card's shrink-to-fit width counts it (a block one counted as 0 and spilled out of its frame). */
 .shell-body--wide .chat-attachment-card--image .chat-attachment-clip {
   display: inline-block;
   vertical-align: top;
@@ -903,8 +1026,6 @@
   border-radius: 9dp;
 }
 
-/* No max-height on the picture: when it is taller than the clip (cropped) a height cap would shrink the whole picture
-   by its ratio and leave it narrower than the clip. The clip crops. */
 .shell-body--wide .chat-attachment-card--image .chat-attachment-image {
   display: block;
   max-width: 292dp;
@@ -913,8 +1034,6 @@
   border-radius: 9dp;
 }
 
-/* The file's size could not be read (no inline size): the picture is the box wide, its height follows its ratio, and
-   the clip (box wide too) shows at most 360dp of it from the top. */
 .shell-body--wide .chat-attachment-card--image .chat-attachment-clip--auto {
   width: 292dp;
 }
@@ -923,23 +1042,16 @@
   width: 292dp;
 }
 
-/* On a picture card the tail goes behind the card, so its inner half does not cover the picture's corner; the hook
-   outside the card still shows. */
 .shell-body--wide .chat-attachment-card--image .bubble-tail {
   z-index: -1;
 }
 
-/* A file card, sent or being sent (DEV/PLAN-attachment-bubbles-multi-pick.md): a 72dp type tile on the left, the name
-   (two lines at most) and the size on the right, 220-292dp wide (292 as a picture bubble). The whole sent card opens
-   the file. While it uploads the disc sits on the tile, the percent in its middle; after a failure the ✕ sits at the
-   tile's top-right corner. One generator draws both, so the bubble and the card it turns into have the same size. */
 .shell-body--wide .chat-file-card {
   min-width: 220dp;
   max-width: 292dp;
   padding: 0;
 }
 
-/* Reactions hang over the card's bottom edge: the row grows by their overlap, so they sit under the size line. */
 .shell-body--wide .chat-file-card.chat-reaction-host .chat-file-row {
   padding-bottom: 24dp;
 }
@@ -960,8 +1072,61 @@
   opacity: 0.8;
 }
 
-/* A message that mentions you: a tinted row with a soft corner, no side bar. */
-.shell-body--wide .message-row-mentions-me {
-  border-left-width: 0;
-  border-radius: 12dp;
+.shell-body--wide .bubble-tail-host {
+  position: relative;
 }
+
+.shell-body--wide .bubble-tail-host--in {
+  border-bottom-left-radius: 4dp;
+}
+
+.shell-body--wide .bubble-tail-host--out {
+  border-bottom-right-radius: 4dp;
+}
+
+.shell-body--wide .bubble-tail {
+  position: absolute;
+  bottom: 0;
+  width: 16dp;
+  height: 20dp;
+}
+
+.shell-body--wide .bubble-tail-in {
+  left: -8dp;
+}
+
+.shell-body--wide .bubble-tail-out {
+  right: -8dp;
+}
+
+.shell-body--wide .chat-attachment-clock {
+  display: block;
+  min-height: 14dp;
+  margin-top: 2dp;
+  font-size: 12dp;
+  line-height: 14dp;
+  text-align: right;
+}
+
+.shell-body--wide .chat-file-card .chat-attachment-clock {
+  padding: 0 14dp 6dp 14dp;
+  margin-top: -2dp;
+}
+
+.shell-body--wide .chat-audio-card .chat-attachment-clock {
+  margin-top: 4dp;
+}
+
+.shell-body--wide .chat-file-card.chat-reaction-host .chat-file-row {
+  padding-bottom: 8dp;
+}
+
+.shell-body--wide .chat-attachment-foot {
+  min-height: 14dp;
+  padding: 3dp 6dp 3dp 6dp;
+}
+
+.shell-body--wide .chat-foot-time {
+  display: inline;
+}
+/* END phone message rules */

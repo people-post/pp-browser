@@ -56,7 +56,7 @@ std::string Scene(const std::string& root_class, int width_dp) {
          "<div id=\"list\" class=\"shell-pane shell-pane-secondary\" style=\"flex: 0 1 320dp;\"></div>"
          "<div id=\"conv\" class=\"shell-pane shell-pane-primary\">"
          "<div id=\"row1\" class=\"sidebar-session\"></div><div id=\"set1\" class=\"settings-row\"></div>"
-         "<div id=\"card1\" class=\"card\"></div><div id=\"bub1\" class=\"bubble-peer\"></div>"
+         "<div id=\"card1\" class=\"card\"></div><div id=\"bub1\" class=\"bubble bubble-peer\"></div>"
          "<div id=\"pill1\" class=\"prompt-composer-pill\"></div>"
          "<input id=\"field1\" class=\"field\" type=\"text\"/>"
          "<div id=\"gap\" class=\"w-gap-8 w-type-small w-target\" style=\"display: "
