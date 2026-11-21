@@ -1,5 +1,7 @@
 #pragma once
 
+#include "feature/presenters/PictureSendQueue.h"
+
 #include <cstddef>
 
 namespace pbr {
@@ -19,6 +21,27 @@ inline VoiceFileFate DecideVoiceFileFate(const bool sent, const size_t staged_be
     return VoiceFileFate::Delete;
   }
   return VoiceFileFate::KeepForRetry;
+}
+
+/** What a voice send's end (not a cancel) does to its recording and its bubble. */
+enum class VoiceSendSettle {
+  QueueKeeps,             // refused by the send pace: the queue sends it again, file and bubble stay as they are
+  DeleteFile,             // sent or staged: the file goes, the bubble is settled by the send's own outcome
+  DeleteFileRemoveBubble, // reported as not staged, yet the chat holds one more staged send: the file goes and so
+                          // does the bubble (it has no Retry of its own), never left "Uploading"
+  KeepBehindRetry,        // nothing staged: the recording stays behind its own bubble's Retry
+};
+
+inline VoiceSendSettle DecideVoiceSendSettle(const AttachmentSendOutcome ended, const bool sent,
+                                             const size_t staged_before, const size_t staged_after) {
+  if (ended == AttachmentSendOutcome::RateLimited) {
+    return VoiceSendSettle::QueueKeeps; // refused before staging: a count that grew is another send's
+  }
+  if (DecideVoiceFileFate(sent, staged_before, staged_after) == VoiceFileFate::Delete) {
+    return ended == AttachmentSendOutcome::FailedNotStaged ? VoiceSendSettle::DeleteFileRemoveBubble
+                                                           : VoiceSendSettle::DeleteFile;
+  }
+  return VoiceSendSettle::KeepBehindRetry;
 }
 
 /**

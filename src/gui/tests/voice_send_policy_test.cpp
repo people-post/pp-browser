@@ -20,6 +20,19 @@ TEST(VoiceSendPolicy, ARefusalBeforeStagingKeepsTheRecording) {
   EXPECT_EQ(DecideVoiceFileFate(false, 2, 2), VoiceFileFate::KeepForRetry); // an older staged send is not this one
 }
 
+// What a voice send's end does to its recording and bubble. A "not staged" end while the chat's staged count grew
+// (another send staged meanwhile) deletes the file and removes the bubble: it is never left "Uploading" (F3).
+TEST(VoiceSendPolicy, EveryVoiceSendEndSettlesItsFileAndBubble) {
+  using O = AttachmentSendOutcome;
+  EXPECT_EQ(DecideVoiceSendSettle(O::Sent, true, 0, 0), VoiceSendSettle::DeleteFile);
+  EXPECT_EQ(DecideVoiceSendSettle(O::FailedStaged, false, 0, 1), VoiceSendSettle::DeleteFile);
+  EXPECT_EQ(DecideVoiceSendSettle(O::FailedNotStaged, false, 0, 0), VoiceSendSettle::KeepBehindRetry);
+  EXPECT_EQ(DecideVoiceSendSettle(O::FailedNotStaged, false, 1, 2), VoiceSendSettle::DeleteFileRemoveBubble);
+  EXPECT_EQ(DecideVoiceSendSettle(O::RateLimited, false, 0, 0), VoiceSendSettle::QueueKeeps);
+  EXPECT_EQ(DecideVoiceSendSettle(O::RateLimited, false, 1, 2), VoiceSendSettle::QueueKeeps)
+      << "refused before staging: the job keeps its file whatever else was staged";
+}
+
 // The composer comes back in the mode it had last time, on phones, and never over what the person is doing.
 TEST(VoiceSendPolicy, TheRememberedVoiceModeComesBackOnlyWhereItIsSafe) {
   EXPECT_TRUE(RestoreVoiceMode(/*remembered_voice=*/true, /*phone=*/true, /*chat_can_voice=*/true, /*has_draft=*/false,

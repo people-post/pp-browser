@@ -43,6 +43,7 @@ void VoiceSendQueue::Pump() {
     waiting_.pop_front();
     const int64_t now = Now();
     in_flight_ = Running{next.job, now - next.enqueued_ms, now};
+    in_flight_abandoned_ = false;
     if (ports_.start) {
       ports_.start(next.job);
     } else {
@@ -58,6 +59,21 @@ void VoiceSendQueue::OnFinished(const std::string& row_id, const AttachmentSendO
   }
   const Running done = std::move(*in_flight_);
   in_flight_.reset();
+  const bool abandoned = std::exchange(in_flight_abandoned_, false);
+  if (outcome == AttachmentSendOutcome::RateLimited && abandoned) {
+    // Its owner went while it was out (lock, sign-out, deleted chat): it is not tried again. Its recording goes, the
+    // caller settles its bubble (nothing is said), and it no longer counts toward the cap.
+    Discard(done.job);
+    if (ports_.report) {
+      ports_.report(done.job, AttachmentSendOutcome::Cancelled, VoiceSendTiming{done.wait_ms, Now() - done.started_ms});
+    }
+    if (ports_.abandoned) {
+      ports_.abandoned(done.job);
+    }
+    Pump();
+    Changed();
+    return;
+  }
   if (outcome == AttachmentSendOutcome::RateLimited) {
     // Not a failure: refused by this device's send pace before anything was staged. The same job goes again, first in
     // line (the order stays), once the pace allows; its bubble keeps waiting and it still counts toward the cap.
@@ -113,6 +129,9 @@ std::vector<VoiceSendJob> VoiceSendQueue::DropWaiting(const std::optional<std::s
     Discard(it->job);
     dropped.push_back(std::move(it->job));
     it = waiting_.erase(it);
+  }
+  if (in_flight_ && (!thread_id || in_flight_->job.thread_id == *thread_id)) {
+    in_flight_abandoned_ = true; // its own send still ends it; a pace refusal then no longer puts it back in line
   }
   if (!dropped.empty()) {
     Changed();

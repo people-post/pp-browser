@@ -506,8 +506,11 @@ private:
   void FailVoiceKeepingRecording(const std::string& row_id, const std::string& path, const std::string& thread_id);
   /** A failed voice bubble's Retry when it holds its own recording: a fresh job for that file, at the end of the line. */
   void EnqueueVoiceResend(const std::string& row_id, const std::string& thread_id, const std::string& path);
-  /** The lock: failed voice bubbles holding their own recording go (the lock wipes the recording folder). */
-  void DropFailedVoiceRecordings();
+  /**
+   * Failed voice bubbles holding their own recording go, rows and files: all of them on the lock (it wipes the
+   * recording folder), or `thread_id`'s when that chat is deleted.
+   */
+  void DropFailedVoiceRecordings(const std::optional<std::string>& thread_id = std::nullopt);
   /** Which way the voice message just sent went (`voice_send_won_`), for its voice.send line. */
   void NoteVoiceSendWon(const ThreadMessage& sent);
   /**

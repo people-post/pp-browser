@@ -130,6 +130,14 @@ PendingUploadStep OnAppLocked(const PendingUpload& now);
 bool FailedVoiceTakesTheTap(bool voice_failed, const std::string& voice_thread, const std::string& active_thread,
                             bool picture_bubble_here);
 
+class PendingUploadQueue;
+/**
+ * The failed voice bubbles holding their own recording (`voice_path`), all of them or only `thread_id`'s: what a lock
+ * (the recording folder is wiped) or a deleted chat drops, rows and files.
+ */
+std::vector<PendingUpload> FailedVoiceRecordings(const PendingUploadQueue& queue,
+                                                 const std::optional<std::string>& thread_id);
+
 /** The progress the bubble shows is redrawn in steps of this many percent (and at 100). */
 inline constexpr int kPendingProgressStep = 5;
 /** Whether `percent` is to be drawn when `drawn` is shown now. */

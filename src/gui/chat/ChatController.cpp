@@ -500,6 +500,9 @@ ChatController::ChatController()
                                              });
                                            });
   };
+  voice_queue_ports.abandoned = [this](const VoiceSendJob& job) {
+    SettleLeftVoiceJob(job); // its bubble goes quietly (or, for a retry, shows Failed with its staged copy)
+  };
   voice_queue_ports.changed = [this]() {
     if (voice_) {
       voice_->Refresh(); // a chat at kVoiceSendMaxPerChat greys its bar; one ending frees it at once
@@ -1488,7 +1491,8 @@ void ChatController::CloseChatWith(const std::string& thread_id, const std::func
   if (picks_.State().serial != 0 && picks_.State().thread_id == thread_id) {
     AbandonPick(); // a pick of the deleted chat: its late results are dropped and released
   }
-  DropWaitingVoice(thread_id); // voice messages of the deleted chat that have not started: gone with it
+  DropWaitingVoice(thread_id);          // voice messages of the deleted chat that have not started: gone with it
+  DropFailedVoiceRecordings(thread_id); // and its failed ones holding their recording: rows and files
   if (picture_queue_ && picture_queue_->ThreadId() == thread_id) {
     picture_send_.CloseForExit();  // the page goes first, so its close is not a "Back" that would revive the draft
     picture_queue_->ChatDeleted(); // never revived in its draft
@@ -3475,11 +3479,8 @@ void ChatController::SettleLeftVoiceJob(const VoiceSendJob& job) {
   ApplyPendingUploadTo(job.row_id, [](const PendingUpload& now) { return OnUploadResumeFinished(now, false, true); });
 }
 
-void ChatController::DropFailedVoiceRecordings() {
-  for (const PendingUpload& item : std::vector<PendingUpload>(pending_uploads_.Queue().Items())) {
-    if (item.voice_path.empty() || item.state != PendingUploadState::Failed) {
-      continue;
-    }
+void ChatController::DropFailedVoiceRecordings(const std::optional<std::string>& thread_id) {
+  for (const PendingUpload& item : FailedVoiceRecordings(pending_uploads_.Queue(), thread_id)) {
     std::error_code ec;
     std::filesystem::remove(item.voice_path, ec);
     ApplyPendingUploadTo(item.row_id, OnUploadDiscardTapped);
@@ -3487,7 +3488,7 @@ void ChatController::DropFailedVoiceRecordings() {
 }
 
 void ChatController::DropWaitingVoice(const std::optional<std::string>& thread_id) {
-  if (!voice_queue_ || voice_queue_->WaitingCount() == 0) {
+  if (!voice_queue_) {
     return;
   }
   for (const VoiceSendJob& job : voice_queue_->DropWaiting(thread_id)) {
@@ -4406,11 +4407,22 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
               // The recording's file goes once the message is out or its encrypted copy is staged for a retry; a send
               // refused before staging (the rate limit, for one) keeps it, with a Retry / Discard of its own.
               const size_t staged_after = facade_->PendingOutgoingAttachments(thread_id).size();
-              if (DecideVoiceFileFate(static_cast<bool>(sent), staged_before, staged_after) == VoiceFileFate::Delete) {
-                std::error_code ec;
-                std::filesystem::remove(path, ec);
-              } else if (!voice_waits) {
-                FailVoiceKeepingRecording(*bubble_row, path, thread_id);
+              switch (DecideVoiceSendSettle(ended, static_cast<bool>(sent), staged_before, staged_after)) {
+                case VoiceSendSettle::QueueKeeps:
+                  break;
+                case VoiceSendSettle::DeleteFileRemoveBubble:
+                  ApplyPendingUploadTo(*bubble_row, [](const PendingUpload& now) {
+                    return OnUploadSendFinished(now, UploadSendOutcome::FailedNotStaged);
+                  });
+                  [[fallthrough]];
+                case VoiceSendSettle::DeleteFile: {
+                  std::error_code ec;
+                  std::filesystem::remove(path, ec);
+                  break;
+                }
+                case VoiceSendSettle::KeepBehindRetry:
+                  FailVoiceKeepingRecording(*bubble_row, path, thread_id);
+                  break;
               }
             }
             if (!sent) {

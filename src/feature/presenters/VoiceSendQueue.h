@@ -64,6 +64,11 @@ struct VoiceSendPorts {
   std::function<void()> changed;
   /** Calls Tick() in about `delay_ms` (the wait after a pace refusal). */
   std::function<void(int64_t delay_ms)> schedule_tick;
+  /**
+   * The job in flight when its owner went (DropWaiting: lock, sign-out, deleted chat) came back refused by the pace:
+   * it ended unsent instead of going back in line (its recording is deleted); the caller settles its bubble quietly.
+   */
+  std::function<void(const VoiceSendJob& job)> abandoned;
 };
 
 /**
@@ -106,7 +111,8 @@ public:
   std::optional<VoiceSendJob> CancelWaiting(const std::string& row_id);
   /**
    * Every job still waiting leaves (the vault locked, signed out, a profile reset), or only those of `thread_id`
-   * (the chat was deleted). Recordings are deleted; the jobs are handed back. The one in flight is not touched.
+   * (the chat was deleted). Recordings are deleted; the jobs are handed back. The one in flight is not stopped (its
+   * send still reports its end), but it is marked: a pace refusal then ends it instead of putting it back in line.
    */
   std::vector<VoiceSendJob> DropWaiting(const std::optional<std::string>& thread_id = std::nullopt);
 
@@ -139,6 +145,8 @@ private:
   std::optional<Running> in_flight_;
   /** After a pace refusal: nothing starts before this time. */
   std::optional<int64_t> retry_at_ms_;
+  /** The job in flight was dropped by its owner (DropWaiting) while it was out. */
+  bool in_flight_abandoned_ = false;
   bool pumping_ = false;
 };
 

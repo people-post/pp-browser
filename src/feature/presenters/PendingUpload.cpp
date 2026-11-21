@@ -225,4 +225,15 @@ std::vector<std::string> PendingUploadQueue::Clear() {
   return files;
 }
 
+std::vector<PendingUpload> FailedVoiceRecordings(const PendingUploadQueue& queue,
+                                                 const std::optional<std::string>& thread_id) {
+  std::vector<PendingUpload> found;
+  for (const PendingUpload& item : queue.Items()) {
+    if (!item.voice_path.empty() && item.state == State::Failed && (!thread_id || item.thread_id == *thread_id)) {
+      found.push_back(item);
+    }
+  }
+  return found;
+}
+
 } // namespace pbr

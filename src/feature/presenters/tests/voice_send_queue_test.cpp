@@ -436,5 +436,65 @@ TEST(VoiceSendQueue, ARetrysCompletionReportsOnceEvenWhenDropped) {
   EXPECT_EQ(got, (std::vector<AttachmentSendOutcome>{AttachmentSendOutcome::Sent}));
 }
 
+// The vault locks (or the account signs out) while a job is out, and its send then comes back refused by the pace:
+// it is not put back in line (a ghost that would count toward the cap and fail later with a stray pill). It ends
+// unsent, its recording goes, the caller settles its bubble, and the chat's cap is free again.
+TEST(VoiceSendQueue, AJobDroppedWhileOutIsNotPutBackByAPaceRefusal) {
+  Rig rig;
+  std::vector<std::string> abandoned;
+  auto ports = PortsOf(rig.fake);
+  ports.abandoned = [&abandoned](const VoiceSendJob& job) { abandoned.push_back(job.row_id); };
+  ports.schedule_tick = [](int64_t) {};
+  rig.queue = std::make_unique<VoiceSendQueue>(std::move(ports));
+  rig.fake.queue = rig.queue.get();
+  rig.Add("a");
+  rig.Add("b");
+  EXPECT_EQ(rig.queue->DropWaiting().size(), 1u); // the lock: b goes, a is out
+  rig.End("a", AttachmentSendOutcome::RateLimited);
+  EXPECT_EQ(rig.queue->WaitingCount(), 0u) << "nothing put back";
+  EXPECT_FALSE(rig.queue->InFlight());
+  EXPECT_EQ(rig.queue->CountForThread("chat-a"), 0u) << "the cap is free";
+  EXPECT_EQ(abandoned, (std::vector<std::string>{"a"}));
+  EXPECT_EQ(rig.fake.removed, (std::vector<std::string>{"/rec/b.ogg", "/rec/a.ogg"}));
+  ASSERT_EQ(rig.fake.outcomes.size(), 1u);
+  EXPECT_EQ(rig.fake.outcomes[0], AttachmentSendOutcome::Cancelled);
+  rig.Add("c"); // after unlocking: a new one goes at once (no pace wait was set for the ghost)
+  EXPECT_EQ(rig.fake.started.back(), "c");
+}
+
+TEST(VoiceSendQueue, AJobOfADeletedChatIsNotPutBackButAnotherChatsIs) {
+  Rig rig;
+  std::vector<std::string> abandoned;
+  std::vector<int64_t> ticks;
+  auto ports = PortsOf(rig.fake);
+  ports.abandoned = [&abandoned](const VoiceSendJob& job) { abandoned.push_back(job.row_id); };
+  ports.schedule_tick = [&ticks](const int64_t delay_ms) { ticks.push_back(delay_ms); };
+  rig.queue = std::make_unique<VoiceSendQueue>(std::move(ports));
+  rig.fake.queue = rig.queue.get();
+  rig.Add("a", "chat-a");
+  rig.queue->DropWaiting(std::string("chat-b")); // another chat deleted: a is not touched
+  rig.End("a", AttachmentSendOutcome::RateLimited);
+  EXPECT_TRUE(rig.queue->IsWaiting("a")) << "a pace refusal of a live job still waits and goes again";
+  EXPECT_TRUE(abandoned.empty());
+  rig.fake.now += VoiceSendQueue::kRetryAfterPaceMs;
+  rig.queue->Tick();
+  ASSERT_TRUE(rig.queue->InFlight());
+  rig.queue->DropWaiting(std::string("chat-a")); // now a's own chat is deleted while it is out
+  rig.End("a", AttachmentSendOutcome::RateLimited);
+  EXPECT_FALSE(rig.queue->IsWaiting("a"));
+  EXPECT_EQ(rig.queue->CountForThread("chat-a"), 0u);
+  EXPECT_EQ(abandoned, (std::vector<std::string>{"a"}));
+}
+
+TEST(VoiceSendQueue, ADroppedJobThatEndsAnyOtherWayEndsAsItsSendSays) {
+  Rig rig;
+  rig.Add("a");
+  rig.queue->DropWaiting();
+  rig.End("a", AttachmentSendOutcome::Sent);
+  ASSERT_EQ(rig.fake.outcomes.size(), 1u);
+  EXPECT_EQ(rig.fake.outcomes[0], AttachmentSendOutcome::Sent);
+  EXPECT_TRUE(rig.fake.removed.empty()) << "a sent recording is the send's to delete";
+}
+
 } // namespace
 } // namespace pbr

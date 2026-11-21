@@ -401,6 +401,25 @@ TEST(PendingUploadTest, TwoVoiceFailuresWithNothingStagedAreTwoFailedBubblesWith
   EXPECT_EQ(queue.Find(second.row_id), nullptr);
 }
 
+// A deleted chat drops its own failed voice bubbles (and their recordings), never another chat's; the lock drops all.
+TEST(PendingUploadTest, FailedVoiceRecordingsAreFoundPerChatOrAll) {
+  PendingUploadQueue queue;
+  auto failed = [&queue](const uint64_t serial, const std::string& thread, const std::string& path) {
+    PendingUpload voice = StartPendingUpload(serial, thread, std::nullopt, PendingUploadKind::Voice);
+    queue.Add(voice);
+    queue.Apply(voice.row_id, [&path](const PendingUpload& now) { return OnVoiceFailedKeepingRecording(now, path); });
+    return voice.row_id;
+  };
+  failed(1, "chat-a", "/rec/r1/a.ogg");
+  failed(2, "chat-b", "/rec/r2/b.ogg");
+  queue.Add(StartPendingUpload(3, "chat-a", std::nullopt, PendingUploadKind::Voice)); // still uploading: not dropped
+  const auto of_a = FailedVoiceRecordings(queue, std::string("chat-a"));
+  ASSERT_EQ(of_a.size(), 1u);
+  EXPECT_EQ(of_a[0].voice_path, "/rec/r1/a.ogg");
+  EXPECT_EQ(FailedVoiceRecordings(queue, std::nullopt).size(), 2u);
+  EXPECT_TRUE(FailedVoiceRecordings(queue, std::string("chat-c")).empty());
+}
+
 TEST(PendingUploadTest, AVoiceFailureAfterACancelRemovesTheBubble) {
   PendingUpload voice = StartPendingUpload(1, "chat-a", std::nullopt, PendingUploadKind::Voice);
   const PendingUpload cancelling = OnUploadCancelTapped(voice).next;

@@ -125,8 +125,9 @@ TEST(AttachmentUploadExit, PictureQueueEachSendCarriesItsOwnRow) {
   EXPECT_NE(body.find("*bubble_row = item.row_id;"), std::string::npos);
   EXPECT_EQ(Count(body, "*bubble_row = item.row_id;"), 2u) << "a picture's and a video's";
   EXPECT_NE(body.find("*bubble_row = file.row_id;"), std::string::npos);
-  EXPECT_EQ(Count(body, "ApplyPendingUploadTo("), 5u)
-      << "size, thumbnail, details, not prepared, the end (a voice job's own failure: FailVoiceKeepingRecording)";
+  EXPECT_EQ(Count(body, "ApplyPendingUploadTo("), 6u)
+      << "size, thumbnail, details, not prepared, the end, a voice end with no Retry of its own (a voice job's own "
+         "failure: FailVoiceKeepingRecording)";
   EXPECT_NE(body.find("if (!pending_uploads_.Queue().Find(row_id)) {"), std::string::npos)
       << "a thumbnail for a row that is gone is deleted";
   const std::string apply = Body(Controller(), "void ChatController::ApplyPendingUploadTo(");

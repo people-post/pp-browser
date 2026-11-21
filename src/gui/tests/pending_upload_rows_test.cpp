@@ -531,7 +531,7 @@ TEST(PendingPictureSourcePinTest, VideoPosterFirstLatePosterDeletedVoiceHasItsOw
   ASSERT_FALSE(body.empty());
   EXPECT_NE(body.find("const bool with_bubble = bubble.has_value();"), std::string::npos);
   EXPECT_NE(body.find("with_bubble && *bubble == PendingUploadKind::Voice"), std::string::npos);
-  EXPECT_NE(body.find("DecideVoiceFileFate("), std::string::npos)
+  EXPECT_NE(body.find("DecideVoiceSendSettle("), std::string::npos)
       << "the recording's file still follows the voice flag";
   const size_t poster = body.find("WriteVideoPosterThumbnail(path, scratch_dir)");
   const size_t prepare = body.find("PrepareOutgoingAttachment(path, limits, source, scratch_dir)");
