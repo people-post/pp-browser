@@ -2,7 +2,7 @@
 #include "DirectSendWait.h"
 
 #include "common/chat/MessagingJson.h"
-#include "lib/delivery/RelayWirePayload.h"
+#include "lib/delivery/testing/TypedBlobFakes.h"
 #include "mesh/testing/mesh_test_harness.h"
 #include "common/MeshAlias.h"
 
@@ -25,8 +25,7 @@ RelayEnvelope MakeTestEnvelope(const std::string& message_id, const std::string&
   envelope.sender_device = "QmTestDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
-  auto payload_b64 = RelayWirePayload::EncodePlaintextText(text);
-  envelope.body.e2e.payload_b64 = payload_b64 ? *payload_b64 : "";
+  envelope.body.e2e.payload_b64 = test::FakePayloadOfB64(text); // an AEAD blob, as the wire carries (envelope v4)
   envelope.timestamp = 1;
   return envelope;
 }

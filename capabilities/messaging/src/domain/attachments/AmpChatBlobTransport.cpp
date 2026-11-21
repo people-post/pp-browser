@@ -10,6 +10,7 @@
 #include "lib/messaging/ChatBlobResponder.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "common/chat/MessagingJson.h"
+#include "foundation/error/AppError.h"
 #include "mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/LinkIdentity.h"
@@ -69,6 +70,9 @@ Roe<std::vector<uint8_t>> ParseFetchResponseBody(const std::vector<uint8_t>& bod
       if (root->getIf<bool>("ok").value_or(false)) {
         return Error("Unexpected chat-blob ack on fetch");
       }
+      if (IsUpdateNeededRefusal(*root)) {
+        return Error("chat-blob: the peer's app cannot read the request (update_needed)");
+      }
       if (auto err = root->getString("error")) {
         return Error(*err);
       }
@@ -88,6 +92,9 @@ Roe<void> ParsePushAckBody(const std::vector<uint8_t>& body) {
     return Error("Invalid chat-blob push ack");
   }
   if (!root->getIf<bool>("ok").value_or(false)) {
+    if (IsUpdateNeededRefusal(*root)) {
+      return Error("chat-blob: the peer's app cannot read the request (update_needed)");
+    }
     if (auto err = root->getString("error")) {
       return Error(*err);
     }
@@ -98,6 +105,11 @@ Roe<void> ParsePushAckBody(const std::vector<uint8_t>& body) {
 
 /** The one refusal a peer sees (the reason is logged here, not told to the asker). */
 constexpr const char* kChatBlobRefused = "Not available";
+
+/** That refusal — or, for a request this app cannot read (PeerRequestAuth v2), `update_needed`. */
+Object RefusalFor(const Error& error) {
+  return AppError::IsNewerFormat(error) ? UpdateNeededRefusalToJson() : ChatBlobAckToJson(false, kChatBlobRefused);
+}
 
 /** Sign a peer request as this device's account, for this device's link (PeerRequestAuth). */
 Roe<ChatBlobRequest> SignedForSend(ChatBlobRequest request, IdentityStore& identity, const std::string& peer_override) {
@@ -228,7 +240,7 @@ struct AmpChatBlobTransport::Impl {
                 // One answer to the peer whatever the reason (no existence oracle); the reason stays here.
                 logging::getLogger("AmpChatBlobTransport").info << "chat-blob fetch refused: "
                                                                 << ciphertext.error().message;
-                const std::string ack_json = DumpJson(ChatBlobAckToJson(false, kChatBlobRefused));
+                const std::string ack_json = DumpJson(RefusalFor(ciphertext.error()));
                 reply->Send(JsonToBody(ack_json));
               }
               reply->Close();
@@ -258,7 +270,7 @@ struct AmpChatBlobTransport::Impl {
               logging::getLogger("AmpChatBlobTransport").info << "chat-blob push refused: " << pushed.error().message;
             }
             const std::string ack_json =
-                pushed ? DumpJson(ChatBlobAckToJson(true)) : DumpJson(ChatBlobAckToJson(false, kChatBlobRefused));
+                pushed ? DumpJson(ChatBlobAckToJson(true)) : DumpJson(RefusalFor(pushed.error()));
             reply->Send(JsonToBody(ack_json));
             reply->Close();
           });

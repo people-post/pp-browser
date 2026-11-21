@@ -6,6 +6,7 @@
 #include "common/directory/DirectoryJson.h"
 #include "common/directory/PeopleDiscoveryBlocks.h"
 #include "lib/delivery/RelayWirePayload.h"
+#include "lib/delivery/testing/TypedBlobFakes.h"
 
 #include <functional>
 #include "lib/messaging/tests/TestAccount.h"
@@ -45,7 +46,7 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   envelope.sender_device = "QmTestDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
-  envelope.body.e2e.payload_b64 = *payload_b64;
+  envelope.body.e2e.payload_b64 = test::FakePayloadB64(); // the wire carries AEAD blobs only (envelope v4)
   envelope.timestamp = 1;
   const auto roundtrip = ParseRelayEnvelope(RelayEnvelopeToJson(envelope));
   ASSERT_TRUE(static_cast<bool>(roundtrip));
@@ -144,7 +145,7 @@ TEST(MessagingFoundationTest, RelayEnvelopeParserRefusesMixedShapes) {
   direct.sender_device = "QmTestDevice";
   direct.route.kind = kRelayRouteDirect;
   direct.route.channel = ThreadChannel::E2ePublic;
-  direct.body.e2e.payload_b64 = "AQID";
+  direct.body.e2e.payload_b64 = test::FakePayloadB64();
   direct.timestamp = 1;
   ASSERT_TRUE(static_cast<bool>(ParseRelayEnvelope(RelayEnvelopeToJson(direct))));
 
@@ -207,7 +208,7 @@ TEST(MessagingFoundationTest, RelayEnvelopeParserRejectsOutOfRangeFields) {
   direct.sender_device = "QmTestDevice";
   direct.route.kind = kRelayRouteDirect;
   direct.route.channel = ThreadChannel::E2ePublic;
-  direct.body.e2e.payload_b64 = "AQID";
+  direct.body.e2e.payload_b64 = test::FakePayloadB64();
   direct.timestamp = 1;
   const auto with = [&](const std::function<void(Object&)>& edit) {
     Object json = RelayEnvelopeToJson(direct);

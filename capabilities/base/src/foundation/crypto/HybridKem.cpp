@@ -1,6 +1,7 @@
 #include "foundation/crypto/HybridKem.h"
 
 #include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/TypedBlob.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -32,16 +33,20 @@ Roe<ByteVector> HybridKem::Encapsulate(const ByteVector& peer_public_key, std::s
   if (!encap) {
     return encap.error();
   }
-  key_init_b64_out = Base64Encode(encap->ciphertext);
+  auto key_init = TypedKemCiphertext(encap->ciphertext);
+  if (!key_init) {
+    return key_init.error();
+  }
+  key_init_b64_out = Base64Encode(*key_init);
   return encap->shared_secret;
 }
 
 Roe<ByteVector> HybridKem::Decapsulate(const ByteVector& private_key, const std::string& key_init_b64) {
-  auto ciphertext = Base64Decode(key_init_b64);
-  if (!ciphertext) {
-    return ciphertext.error();
+  const TypedRead ciphertext = ReadTypedBlobB64(::pp::BlobKind::kKemCiphertext, key_init_b64, "key_init");
+  if (!ciphertext.ok()) {
+    return ciphertext.ToError(); // an unknown KEM id is "update needed" (AppError::NewerFormat)
   }
-  return ::pp::MlKem::Decapsulate(private_key, *ciphertext);
+  return ::pp::MlKem::Decapsulate(private_key, ciphertext.raw);
 }
 
 } // namespace pbr

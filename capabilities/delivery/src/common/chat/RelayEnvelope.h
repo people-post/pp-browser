@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/ExtArea.h"
 #include "common/Value.h"
 #include "common/chat/RelayGrant.h"
 #include "common/thread/ThreadChannel.h"
@@ -14,10 +15,12 @@
 namespace pbr {
 
 /**
- * 3: no relay id — the sender's Account ID is its relay address (multi-relay MR001; sign v5). 2 brought the sender
- * and recipient devices, signed by the sending device (M021); sign v4 dropped the group id (G018).
+ * 4: the signed-format cutover (release-compatibility SIGNED_FORMATS § 2.1, RC020): one version, outside
+ * (`envelope_version`) and inside (the byte after the domain); typed `signature` and `key_init_b64`; the signed
+ * extension area (`ext_b64`). Release 1's floor and only version: an older one is refused, a newer one is a newer
+ * app's (INVENTORY T2).
  */
-inline constexpr int kRelayEnvelopeVersion = 3;
+inline constexpr int kRelayEnvelopeVersion = 4;
 
 /** Route kinds: a 1:1 chat stream, a group stream, the control lane (signaling off the stream). */
 inline constexpr const char* kRelayRouteDirect = "direct";
@@ -109,6 +112,18 @@ struct RelayEnvelope {
   /** Unix ms relay clock from the poll response that delivered this envelope. */
   std::optional<int64_t> relay_server_time_ms;
   /**
+   * The signed extension area (docs/contracts/SIGNED_EXTENSIONS.md): `ext_b64` on the wire, the last field of the
+   * signed bytes. Empty at release 1; a received one is kept as it came (unknown non-critical entries included).
+   */
+  pp::ExtArea ext;
+  /**
+   * Not on the wire: why this build cannot read the envelope, set as it is read — empty for one it reads; else a
+   * newer `envelope_version` (ParseRelayEnvelope), an unknown algorithm id (the receiver, before verifying) or, once
+   * the signature verified, an unknown critical extension. Such an envelope is a newer app's (INVENTORY T2): only its routing and
+   * numbering are read, nothing in it is decrypted or acted on.
+   */
+  std::string needs_update;
+  /**
    * P012 — a hint to the relay, not part of the envelope (neither its wire form nor its
    * signature): wake the recipient at once, the platform's most urgent push (an incoming call's).
    */
@@ -124,6 +139,11 @@ struct RelayEnvelope {
    */
   std::string relay_wake_hint;
 };
+
+/** A newer app's envelope (INVENTORY T2): a newer version, or something in it this build cannot read. */
+inline bool RelayEnvelopeNeedsUpdate(const RelayEnvelope& envelope) {
+  return envelope.envelope_version > kRelayEnvelopeVersion || !envelope.needs_update.empty();
+}
 
 /**
  * The copies `envelope` carries: its copy list, or — none listed — its read view as its one copy (an

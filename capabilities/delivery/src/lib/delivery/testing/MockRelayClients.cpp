@@ -4,6 +4,7 @@
 #include "common/chat/RelayStreamKey.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/TypedBlob.h"
 
 #include <algorithm>
 #include <mutex>
@@ -36,7 +37,7 @@ Roe<void> MockRelayClient::Send(const RelayEnvelope& envelope) {
     }
     auto sign_bytes = build_sign_bytes_(reply);
     if (sign_bytes) {
-      auto signature = MlDsa::Sign(reply_signing_private_key_, *sign_bytes);
+      auto signature = SignTyped(reply_signing_private_key_, *sign_bytes);
       if (signature) {
         reply.signature = Base64Encode(*signature);
       }

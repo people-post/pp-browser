@@ -110,11 +110,11 @@ Binary inside `body.e2e.payload_b64` (RFC 4648 base64):
 
 | Offset | Size | Field |
 |--------|------|-------|
-| 0 | 1 | `payload_version` = `1` |
+| 0 | 1 | `payload_version` = `1` — also the blob's AEAD id (`1`, xchacha20-poly1305: a typed blob, [SIGNED_EXTENSIONS § Typed blobs](SIGNED_EXTENSIONS.md#typed-blobs)) |
 | 1 | 24 | `nonce` (random in production) |
 | 25 | var | ciphertext + Poly1305 tag |
 
-A `payload_version` byte above `1` in a verified envelope (the blob is in the signed copy hash) is a newer app's, not a broken one: the receiver stores an "update to view" row in its place, consumes its `sender_seq` and marks the sender as using a newer app (`AppError::NewerFormat` → `ReceiveFailure::NeedsUpdate`). So is a higher `group_copy_version`, or a higher ChatPayload `payload_version` / `sub_version`, once the AEAD opened. Anything else that fails — `0`, a short blob, the AEAD tag, the signature — is a hard refusal, as before: crypto stays strict.
+The receiver reads that first byte as the AEAD id before it verifies (envelope v4, the receiver's order): an id this build does not know is a newer app's envelope, read as a higher `envelope_version` is ([WIRE_SCHEMAS § Envelope](WIRE_SCHEMAS.md)). A `payload_version` byte above `1` met after that (the blob is in the signed copy hash) is a newer app's, not a broken one: the receiver stores an "update to view" row in its place, consumes its `sender_seq` and marks the sender as using a newer app (`AppError::NewerFormat` → `ReceiveFailure::NeedsUpdate`). So is a higher `group_copy_version`, or a higher ChatPayload `payload_version` / `sub_version`, once the AEAD opened. Anything else that fails — `0`, a short blob, the AEAD tag, the signature — is a hard refusal, as before: crypto stays strict.
 
 API: `crypto_aead_xchacha20poly1305_ietf_encrypt` / `_decrypt` with `npub` = nonce, `ad` = AAD, `k` = session_key.
 
@@ -122,7 +122,7 @@ API: `crypto_aead_xchacha20poly1305_ietf_encrypt` / `_decrypt` with `npub` = non
 
 ```json
 {
-  "envelope_version": 3,
+  "envelope_version": 4,
   "message_id": "uuid",
   "sender_contact_id": "account:alice…",
   "route": { "kind": "direct", "channel": "e2e" },
@@ -139,15 +139,25 @@ API: `crypto_aead_xchacha20poly1305_ietf_encrypt` / `_decrypt` with `npub` = non
 
 `sender_card` appears only with `key_init_b64`, must be the account card of `sender_contact_id`, and is checked on its own (it is signed by the account it names), so it is not part of the envelope signing bytes. It speaks for the sender only when newer than the card the receiver keeps: an older card cannot bring back a device taken off the list.
 
-Reject envelopes with `thread_id`, `public_relay`, `body.content_b64`, or an older `envelope_version`. A higher one is a newer app's and is not verified — its signed bytes are a layout this app does not know: its routing and numbering are read loosely, its seq is closed as empty (never filled with a row, so a verified message at that seq is still taken as a late fill) and the chat shows "update to view" ([WIRE_SCHEMAS § Envelope](WIRE_SCHEMAS.md)). Nothing it carries is decrypted, kept or acted on: crypto stays strict.
+Reject envelopes with `thread_id`, `public_relay`, `body.content_b64`, or an older (or missing) `envelope_version`. A higher one is a newer app's and is not verified — its signed bytes are a layout this app does not know: its routing and numbering are read loosely, its seq is closed as empty (never filled with a row, so a verified message at that seq is still taken as a late fill) and the chat shows "update to view" ([WIRE_SCHEMAS § Envelope](WIRE_SCHEMAS.md)). Nothing it carries is decrypted, kept or acted on: crypto stays strict. The same holds for an envelope of this version that names an algorithm id this build does not know (its `signature`, a `key_init_b64` or a `payload_b64`), and for one whose signature verified but whose extension area holds a critical entry this build does not understand.
 
 ## Canonical relay-envelope signing bytes (E014)
 
-Do **not** sign JSON dump. Build fixed binary bytes, then sign them with ML-DSA-65 (`EnvelopeSigner::BuildSignBytes`, `MlDsa::Sign`). String fields use **LenUtf8** (D088).
+Do **not** sign JSON dump. Build fixed binary bytes, then sign them with ML-DSA-65 (`EnvelopeSigner::BuildSignBytes`, `EnvelopeSigner::Sign`). String fields use **LenUtf8** (D088). Envelope **v4** (release-compatibility SIGNED_FORMATS § 2.1; [SIGNED_EXTENSIONS § Signed bytes](SIGNED_EXTENSIONS.md#signed-bytes)):
 
-**Domain prefix** (34 bytes): `"pp-browser:relay-envelope-sign-v5"` + NUL.
+```
+"pp-browser:relay-envelope" 00 ‖ u8 4
+‖ u8 route_kind ‖ u8 channel ‖ i64 timestamp
+‖ LenUtf8 message_id ‖ LenUtf8 sender_contact_id ‖ LenUtf8 sender_device
+‖ u64 copies, by recipient_device: LenUtf8 recipient_device ‖ u32 session_epoch ‖ u64 sender_seq
+                                   ‖ LenUtf8 key_init_b64 ("" when none) ‖ copy hash (32)
+‖ ext area
+```
 
-Then: `sign_version=5`, `envelope_version=3`, `route_kind`, `channel`, `timestamp` (i64 BE), `message_id` LenUtf8, `sender_contact_id` LenUtf8, `sender_device` LenUtf8, the copy count (u64 BE), then for each copy in `recipient_device` byte order: `recipient_device` LenUtf8 (empty for the account copy), `session_epoch` (u32 BE), `sender_seq` (u64 BE), `key_init_b64` LenUtf8 (empty when none), its copy hash (32 bytes).
+- **Domain** (25 bytes, then NUL): no `-vN`. The `u8` after it is `envelope_version` (one version: no separate sign version).
+- `route_kind`: `0` direct, `1` group, `2` control; `channel`: `0` `e2e`, `1` `e2e_public` (the control lane: `1`), `0xFF` none (a group).
+- Copies in `recipient_device` byte order; the account copy's `recipient_device` is empty. `key_init_b64` is signed as its base64 text (the typed KEM ciphertext's).
+- **ext area**: u64 BE length of the entries, then the entries (`ext_b64` decoded; empty: eight zero bytes). Last.
 
 **Signer:** the sending device's ML-DSA-65 key (its PeerId's), not the account's (M021). The receiver takes that key from the sender's account card — the carried `sender_card` when it proves itself and is newer than the one kept, else the kept one — and refuses a device the card does not list.
 
@@ -165,7 +175,9 @@ copy_hash = BLAKE2b-256( 0x02 || LenBytes(decoded copies[i].payload_b64) )
 
 Only **`body_kind = 0x02`** (E2E ciphertext blob) — no plaintext path (D090).
 
-`signature` on wire: base64 over the 3309-byte ML-DSA-65 signature. Signing is hedged (randomized), so there is no frozen signature vector: tests sign and verify; the sign bytes below are frozen.
+`signature` on wire: base64 of the typed signature — the algorithm id `1` (ml-dsa-65), then the 3309-byte signature (3310 bytes). A signature verifies only with a key of the same id. Signing is hedged (randomized), so there is no frozen signature vector: tests sign and verify; the sign bytes are frozen (`envelope_vectors.json`, [§ Frozen test vectors](#frozen-test-vectors)).
+
+**Receiving** (the receiver's order, [SIGNED_EXTENSIONS](SIGNED_EXTENSIONS.md#the-receivers-order)): `ParseRelayEnvelope` reads the version (older: refused; newer: a newer app's, read loosely), then the fields and the area (malformed: refused); the receive pipeline reads every typed blob's id (`EnvelopeSigner::UnknownAlgorithm`; unknown: a newer app's, nothing verified); `EnvelopeSigner::Receive` then verifies with the sending device's key (a forgery: refused) and reads the area's critical entries last (none understood at release 1: a newer app's, shown as "update to view" with its seq closed).
 
 Peer verify keys: `PeerSigningKeyStore` / `PeerKemKeyStore`, filled from account cards ([ACCOUNT_CARD.md](ACCOUNT_CARD.md#resolving-keys), E028). Inbound verify before decrypt. An account's signing key is kept only if it hashes to the Account ID it is filed under (self-certifying; `AccountIdFromMlDsaPublicKey`), whichever source offers it (card store, `sender_keys`, the peer's devices, a contact card, the directory), and a directory answer must be for the account asked. The account KEM key is kept only with the account's own binding (`foundation/crypto/KemKeyBinding.h`): its ML-DSA signature over domain `pp-browser:kem-binding-v1\0`, version u8 `1`, the raw ML-DSA-65 account public key and the raw ML-KEM-768 public key. The relay stores the binding from `register/finish` and returns it with every directory entry (`kem_binding_signature_b64`); a key without a valid binding is refused, so no carrier, the relay included, can substitute one.
 
@@ -198,7 +210,7 @@ Implementation: [projects/e2e-message-crypto/PHASES.md](../../projects/e2e-messa
 
 ## Frozen test vectors
 
-The envelope signing bytes of today (sign v5) are frozen by hash in `envelope_signer_test.cpp` (`a52a0d86…fc0f`); the `e2e` sign-bytes table below is the v1 layout, kept for its body hash. Identity strings in these vectors (`relay:alice123`, …) are test inputs only — any string works there.
+The envelope v4 signing bytes are frozen in `capabilities/delivery/src/lib/delivery/tests/data/envelope_vectors.json` (`envelope_vectors_test`: a fixed envelope with an empty area and with one unknown non-critical entry, and signed fixtures with the receiver's verdict: accepted, older, update needed before and after verifying, forged, malformed) and by hash in `envelope_signer_test.cpp`; the `e2e` sign-bytes table below is the v1 layout, kept for its body hash. Identity strings in these vectors (`relay:alice123`, …) are test inputs only — any string works there.
 
 Regenerate: `projects/e2e-message-crypto/tools/gen_sign_vectors.py`, `gen_aead_vectors.py`, `chatpayload_codec.py`.
 

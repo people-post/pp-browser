@@ -55,10 +55,11 @@ std::string StatusName(const TypedBlobStatus status) {
 TEST(TypedBlobTest, TheFourTypedBlobsAreTheirIdThenTheRawBytes) {
   const MlDsaKeyPair keys = Keys(0x01);
   const HybridKemKeyPair kem = HybridKem::GenerateKeyPairFromSeed(ByteVector(64, 0x02)).value();
-  std::string key_init_b64;
+  std::string key_init_b64; // the envelope's key_init: already a typed KEM ciphertext (envelope v4)
   ASSERT_TRUE(HybridKem::Encapsulate(kem.public_key, key_init_b64));
-  const ByteVector ciphertext = Base64Decode(key_init_b64).value();
-  ASSERT_EQ(ciphertext.size(), kHybridKemCiphertextBytes);
+  const ByteVector key_init = Base64Decode(key_init_b64).value();
+  ASSERT_EQ(key_init.size(), kHybridKemCiphertextBytes + 1);
+  const ByteVector ciphertext(key_init.begin() + 1, key_init.end());
   const ByteVector signature = MlDsa::Sign(keys.secret_key, ByteVector{1, 2, 3}).value();
 
   const ByteVector typed_key = TypedSigningPublicKey(keys.public_key).value();
@@ -73,6 +74,7 @@ TEST(TypedBlobTest, TheFourTypedBlobsAreTheirIdThenTheRawBytes) {
     EXPECT_EQ(blob->front(), 1);
   }
   EXPECT_EQ(ByteVector(typed_key.begin() + 1, typed_key.end()), keys.public_key);
+  EXPECT_EQ(typed_ciphertext, key_init);
 
   const TypedRead read = ReadTypedBlob(BlobKind::kKemCiphertext, typed_ciphertext, "key_init");
   ASSERT_TRUE(read.ok()) << read.detail;

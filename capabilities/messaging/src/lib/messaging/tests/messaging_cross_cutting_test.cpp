@@ -442,7 +442,8 @@ TEST(MessagingCrossCuttingTest, OversizeEnvelopeHardRejected) {
   PipelineHarness harness("oversize", ThreadChannel::E2ePublic);
 
   RelayEnvelope envelope = harness.MakeSignedEnvelope("oversize-msg", 1, "x", ThreadChannel::E2ePublic);
-  const ByteVector huge(kMaxRelayEnvelopeBytes + 1, static_cast<uint8_t>('a'));
+  ByteVector huge(kMaxRelayEnvelopeBytes + 1, static_cast<uint8_t>('a'));
+  huge.front() = 1; // an AEAD blob (envelope v4: the first byte is its algorithm id), only too large
   envelope.body.e2e.copies.front().payload_b64 = Base64Encode(huge);
 
   const RelayReceiveOutcome outcome = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
@@ -928,11 +929,7 @@ TEST(MessagingCrossCuttingTest, LaneFromADeviceNotOnTheKeptCardAsksForTheCard) {
   auto envelope = lane.harness.MakeControlEnvelope("lane-unknown", TestControl("test_signal"), util::NowUnixMs());
   envelope.sender_device = other.peer_id;
   envelope.body.e2e.sender_card_at = 5; // newer than the kept card (issued_at 1)
-  auto bytes = EnvelopeSigner::BuildSignBytes(envelope);
-  ASSERT_TRUE(bytes);
-  auto signature = other.Sign(*bytes);
-  ASSERT_TRUE(signature);
-  envelope.signature = *signature;
+  ASSERT_TRUE(EnvelopeSigner::Sign(envelope, [&](const std::vector<uint8_t>& bytes) { return other.Sign(bytes); }));
 
   EXPECT_NE(lane.Ingest(envelope).decision, IngestDecision::AcceptControl);
   EXPECT_EQ(family.applied, 0);

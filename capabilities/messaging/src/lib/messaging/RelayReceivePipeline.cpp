@@ -1045,6 +1045,8 @@ Roe<bool> RelayReceivePipeline::VerifySignature(const RelayEnvelope& envelope, c
       return Error("No account card for the sender");
     case SenderSignatureCheck::Result::DeviceNotOnCard:
       return Error("The sending device is not on the sender's account card");
+    case SenderSignatureCheck::Result::NeedsUpdate:
+      return AppError::NewerFormat(check.error);
     case SenderSignatureCheck::Result::Invalid:
       break;
   }
@@ -1094,14 +1096,13 @@ SenderSignatureCheck RelayReceivePipeline::CheckSignature(const RelayEnvelope& e
     check.result = card ? SenderSignatureCheck::Result::DeviceNotOnCard : SenderSignatureCheck::Result::NoCard;
     return check;
   }
-  auto verified = EnvelopeSigner::Verify(envelope, device->signing_public_key_b64);
-  if (!verified) {
-    check.error = verified.error().message;
-    return check;
-  }
-  if (!*verified) {
-    check.result = SenderSignatureCheck::Result::Mismatch;
-    return check;
+  const SignedReceipt receipt = EnvelopeSigner::Receive(envelope, device->signing_public_key_b64);
+  if (!receipt.accepted()) {
+    check.error = receipt.detail;
+    check.result = receipt.verdict == SignedVerdict::Forged        ? SenderSignatureCheck::Result::Mismatch
+                   : receipt.verdict == SignedVerdict::NeedsUpdate ? SenderSignatureCheck::Result::NeedsUpdate
+                                                                   : SenderSignatureCheck::Result::Invalid;
+    return check; // nothing in it is acted on: not even a card that rode it
   }
   check.result = SenderSignatureCheck::Result::Verified;
   if (carried && on_sender_card_) {
@@ -1206,8 +1207,32 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& r
                                                           const std::string& local_account_id,
                                                           const bool authorized_older_backfill,
                                                           const MessageTransport transport) {
-  if (received.envelope_version > kRelayEnvelopeVersion) {
+  if (RelayEnvelopeNeedsUpdate(received)) {
     return ProcessNewerEnvelope(received, local_account_id, transport); // a newer app's (T2)
+  }
+  // The typed blobs' algorithm ids, before anything is verified (SIGNED_FORMATS § 1.1 step 3): one this build does not
+  // know is a newer app's, read as a higher version is; a malformed one is refused.
+  if (auto unknown = EnvelopeSigner::UnknownAlgorithm(received); !unknown) {
+    RelayReceiveOutcome refused;
+    refused.decision = IngestDecision::HardReject;
+    return refused;
+  } else if (*unknown) {
+    RelayEnvelope newer = received;
+    newer.needs_update = **unknown;
+    return ProcessNewerEnvelope(newer, local_account_id, transport);
+  }
+  if (received.ext.HasUnknownCritical({})) {
+    // A critical extension this build does not understand (SIGNED_FORMATS § 2.1): a newer app's like a newer
+    // version — but only once the signature verified (step 5: an unsigned envelope must not raise "update needed").
+    const SenderSignatureCheck check = CheckSignature(received, InboundTargetFromEnvelope(received));
+    if (check.result != SenderSignatureCheck::Result::NeedsUpdate) {
+      RelayReceiveOutcome refused;
+      refused.decision = IngestDecision::HardReject;
+      return refused;
+    }
+    RelayEnvelope newer = received;
+    newer.needs_update = check.error;
+    return ProcessNewerEnvelope(newer, local_account_id, transport);
   }
   // The copy this device reads (M022): its own, else the account copy. With copies for our other devices
   // only, the message is theirs (or one is missing for us).
@@ -1448,6 +1473,8 @@ ShareWord UnverifiedReasonWord(const SenderSignatureCheck::Result result) {
       return "device_not_on_card";
     case SenderSignatureCheck::Result::Mismatch:
       return "signature_mismatch";
+    case SenderSignatureCheck::Result::NeedsUpdate:
+      return "needs_update";
     case SenderSignatureCheck::Result::Verified:
     case SenderSignatureCheck::Result::Invalid:
       break;
@@ -2228,7 +2255,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessNewerEnvelope(const RelayEnvelo
   if (received.sender_contact_id == local_account_id || SenderBlocked(received.sender_contact_id)) {
     return outcome;
   }
-  const std::string detail = "envelope_version " + std::to_string(received.envelope_version);
+  const std::string detail = !received.needs_update.empty()
+                                 ? received.needs_update
+                                 : "envelope_version " + std::to_string(received.envelope_version);
   auto self = local_keys_.device_peer_id ? local_keys_.device_peer_id() : Roe<std::string>(Error("no device"));
   const std::optional<RelayEnvelope> selected = SelectRelayCopy(received, self ? *self : std::string());
   if (!selected || selected->route.kind == kRelayRouteControl) {

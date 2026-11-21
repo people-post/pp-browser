@@ -710,16 +710,8 @@ std::vector<AccountCardDevice> MeshDeliveryOrchestrator::PeerDevices(const std::
 }
 
 Roe<void> MeshDeliveryOrchestrator::SignEnvelope(RelayEnvelope& envelope) {
-  auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
-  if (!sign_bytes) {
-    return sign_bytes.error();
-  }
-  auto signature = identity_.SignDeviceBytes(*sign_bytes);
-  if (!signature) {
-    return signature.error();
-  }
-  envelope.signature = *signature;
-  return {};
+  return EnvelopeSigner::Sign(envelope,
+                              [this](const std::vector<uint8_t>& bytes) { return identity_.SignDeviceBytes(bytes); });
 }
 
 void MeshDeliveryOrchestrator::RegisterPeerKeysFromDirectory(const mesh::DirectoryHit& hit) {

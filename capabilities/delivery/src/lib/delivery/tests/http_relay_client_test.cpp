@@ -4,6 +4,7 @@
 #include "common/chat/MessagingJson.h"
 #include "common/tests/ScriptedHttpServer.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "lib/delivery/testing/TypedBlobFakes.h"
 #include "foundation/error/AppError.h"
 #include "lib/delivery/OutboundMessage.h"
 #include "lib/delivery/RelayMessageSignPayload.h"
@@ -52,11 +53,11 @@ RelayEnvelope EnvelopeTo(const std::string& recipient) {
   envelope.sender_device = "QmMyPhone";
   envelope.route.kind = kRelayRouteDirect;
   envelope.route.channel = ThreadChannel::E2ePublic;
-  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.body.e2e.payload_b64 = test::FakePayloadB64();
   envelope.order_key = 7;
   envelope.stream_key = "v2:e2e_public:account:bob:account:me:from:QmMyPhone";
   envelope.recipient_account_id = recipient;
-  envelope.signature = "envelope-sig";
+  envelope.signature = test::FakeSignatureB64();
   return envelope;
 }
 
