@@ -2538,7 +2538,7 @@ ui::Element* ChatController::AiSessionListElement() const {
     return nullptr;
   }
   ui::ElementDocument* doc = context_->GetDocument(0);
-  for (const char* id : {"ai-drawer-sessions", "home-ai-sessions"}) {
+  for (const char* id : {"ai-drawer-sessions", "ai-list-sessions", "home-ai-sessions"}) {
     if (ui::Element* el = doc->GetElementById(id); el && el->GetClientHeight() > 0.5f) {
       return el; // the one laid out (the desktop list stays in the DOM, hidden, on a phone)
     }

@@ -387,17 +387,19 @@ TEST(ShellHostTest, SidebarWidthClampAndVisibility) {
   EXPECT_FALSE(ShellLayout::SecondaryPaneShown(state));
   state.sidebar_collapsed = false;
   state.nav_tab = NavTab::Home;
-  EXPECT_FALSE(ShellLayout::SecondaryPaneShown(state));
+  EXPECT_TRUE(ShellLayout::SecondaryPaneShown(state)) << "AI has its conversation list beside it in the wide layout";
+  EXPECT_STREQ(ShellLayout::ExpandedNavContentKey(NavTab::Home), "ai_list");
+  EXPECT_EQ(ShellLayout::NavContentKey(NavTab::Home), nullptr) << "the phone's Home has no list column";
   state.nav_tab = NavTab::Me;
   EXPECT_TRUE(ShellLayout::SecondaryPaneShown(state));
   state.layout_mode = LayoutMode::Compact;
   EXPECT_FALSE(ShellLayout::SecondaryPaneShown(state));
 
-  // Collapsed lists come back on tabs that have one; Home leaves the flag alone.
+  // Collapsed lists come back on tabs that have one (AI too, since its conversations are a list beside it).
   EXPECT_FALSE(ShellLayout::SidebarCollapsedAfterNavSelect(true, NavTab::Sessions));
   EXPECT_FALSE(ShellLayout::SidebarCollapsedAfterNavSelect(true, NavTab::Contacts));
   EXPECT_FALSE(ShellLayout::SidebarCollapsedAfterNavSelect(true, NavTab::Me));
-  EXPECT_TRUE(ShellLayout::SidebarCollapsedAfterNavSelect(true, NavTab::Home));
+  EXPECT_FALSE(ShellLayout::SidebarCollapsedAfterNavSelect(true, NavTab::Home));
   EXPECT_FALSE(ShellLayout::SidebarCollapsedAfterNavSelect(false, NavTab::Home));
 }
 
@@ -614,6 +616,34 @@ TEST(ShellHostHiddenTabTest, TheDesktopIsUnchangedByTheSettingsSegment) {
   EXPECT_EQ(desktop.State().nav_tab, NavTab::Me);
   EXPECT_FALSE(ShellLayout::HiddenTabHasBack(desktop.State()));
   EXPECT_EQ(desktop.BackTarget(), DismissTarget::None);
+}
+
+// The wide layout's AI tab: with a conversation open beside its list, picking AI again goes back to the AI home (the
+// tab is reported as activated, which resets the page); in the phone layout a second tap is the drawer's, untouched.
+TEST(ShellHostHiddenTabTest, ASecondPickOfAiOnTheWideLayoutLeavesTheConversationForTheAiHome) {
+  ShellHost& wide = KeptHost();
+  wide.State().layout_mode = LayoutMode::Expanded;
+  ShellLayout::SyncLayoutModeString(wide.State());
+  wide.SelectNavTab(NavTab::Home);
+  wide.RegisterPane({.key = "chat", .rml_path = "views/chat.rml", .provides_composer = true});
+  std::vector<NavTab> activated;
+  wide.SetOnNavTabChanged([&activated](const NavTab tab) { activated.push_back(tab); });
+  wide.SelectNavTab(NavTab::Home); // nothing open: not a new activation
+  EXPECT_TRUE(activated.empty());
+  wide.SetPrimaryPane("chat");
+  wide.SelectNavTab(NavTab::Home);
+  EXPECT_EQ(activated, std::vector<NavTab>{NavTab::Home}) << "the AI home is activated again";
+  wide.SetPrimaryPane("home");
+  wide.SelectNavTab(NavTab::Home);
+  EXPECT_EQ(activated.size(), 1u) << "already on the AI home";
+
+  ShellHost& phone = PhoneHost(NavTab::Home);
+  std::vector<NavTab> phone_activated;
+  phone.SetOnNavTabChanged([&phone_activated](const NavTab tab) { phone_activated.push_back(tab); });
+  phone.RegisterPane({.key = "chat", .rml_path = "views/chat.rml", .provides_composer = true});
+  phone.SetPrimaryPane("chat");
+  phone.SelectNavTab(NavTab::Home);
+  EXPECT_TRUE(phone_activated.empty());
 }
 
 // A tab switch closes the pushed pages one by one, each reported to its owner (ContactsController's open flags follow).

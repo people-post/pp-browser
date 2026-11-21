@@ -41,7 +41,7 @@ PAGE_END = "/* END phone page rules */"
 PAGE_KEEP = re.compile(
     r"^\.(contacts-(row|section-header|trust-badge|unread|empty|detail|actions|index|list)|contact-detail-|cd-|"
     r"group-|me-card|me-home|me-invite-qr|me-profile-avatar|settings-(section|mock|q-btn|choice|pill|copied|dev|device|"
-    r"step|label|note-row|text-btn|transfer|improve)|ai-look-picker|storage-section)")
+    r"step|label|note-row|text-btn|transfer|improve)|ai-look-picker|storage-section|home-composer-mount)")
 # ...except these (the visibility classes, and the page's own scroll and padding which wide.rcss lays out itself).
 # The Contacts row itself (its box, its separators, its pressed and selected fills) is wide.rcss's: a rounded row like the
 # Chats list, not the phone's flat row with a hairline.

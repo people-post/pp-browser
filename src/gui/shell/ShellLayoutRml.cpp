@@ -78,8 +78,8 @@ std::string ShellLayoutRml::ExpandedBase() const {
   // `shell-pane-row--aux`: the auxiliary pane is open; wide.rcss keeps the older column floors for such a row.
   out << "<div class=\"shell-pane-row" << (state_.auxiliary_open ? " shell-pane-row--aux" : "") << "\">";
   out << "<div class=\"shell-nav-rail\" id=\"shell-nav-rail-mount\"></div>";
-  if (ShellLayout::TabHasSecondary(state_.nav_tab)) {
-    const char* nav_content = ShellLayout::NavContentKey(state_.nav_tab);
+  if (ShellLayout::ExpandedTabHasSecondary(state_.nav_tab)) {
+    const char* nav_content = ShellLayout::ExpandedNavContentKey(state_.nav_tab);
     const bool collapsed = state_.sidebar_collapsed;
     out << "<div class=\"shell-pane shell-pane-secondary";
     if (collapsed) {

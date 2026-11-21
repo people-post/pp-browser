@@ -4530,6 +4530,42 @@ input.checkbox:checked {
   background-color: #f2f2f7;
 }
 
+.shell-body--wide .home-composer-mount .prompt-composer {
+  background-color: #f2f2f7;
+  border: 1dp #3c3c434a;
+  box-shadow: 0 2dp 8dp #00000026;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-pill {
+  background-color: transparent;
+  border-width: 0;
+  box-shadow: none;
+}
+
+.shell-body--wide .home-composer-mount .prompt-icon-home {
+  image-color: #3c3c4399;
+}
+
+.shell-body--wide .home-composer-mount .prompt-emoji-btn .prompt-icon-home-emoji {
+  background-color: #007aff1f;
+}
+
+.shell-body--wide .home-composer-mount .prompt-emoji-btn svg {
+  image-color: #007aff;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-row .prompt-send-btn {
+  background-color: transparent;
+}
+
+.shell-body--wide .home-composer-mount .prompt-send-disc {
+  background-color: #007aff;
+}
+
+.shell-body--wide .home-composer-mount .prompt-send-btn--idle .prompt-send-disc {
+  background-color: #c7c7cc;
+}
+
 .shell-body--wide .group-id-btn {
   background-color: transparent;
 }

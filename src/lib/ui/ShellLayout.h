@@ -18,6 +18,10 @@ struct ShellLayout {
   static PaneVisibility WhichPanesVisible(const ShellState& state);
   static const char* NavContentKey(NavTab tab);
   static bool TabHasSecondary(NavTab tab);
+  /** The list column of a tab in the wide layout: NavContentKey's, and for AI (Home) the AI conversations ("ai_list"),
+   *  which the phone shows in a drawer. The phone layout keeps NavContentKey (Home has no list there). */
+  static const char* ExpandedNavContentKey(NavTab tab);
+  static bool ExpandedTabHasSecondary(NavTab tab);
   /** Phones: Me and Contacts are tabs with no button in the tab bar (DEV/PLAN-minimal-nav.md A). They are entered
    *  from an avatar or an invite, show no tab bar, and their root page's back returns to the tab they came from. */
   static bool IsHiddenTabOnCompact(NavTab tab);

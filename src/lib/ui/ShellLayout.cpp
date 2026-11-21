@@ -54,6 +54,14 @@ bool ShellLayout::TabHasSecondary(NavTab tab) {
   return NavContentKey(tab) != nullptr;
 }
 
+const char* ShellLayout::ExpandedNavContentKey(NavTab tab) {
+  return tab == NavTab::Home ? "ai_list" : NavContentKey(tab);
+}
+
+bool ShellLayout::ExpandedTabHasSecondary(NavTab tab) {
+  return ExpandedNavContentKey(tab) != nullptr;
+}
+
 bool ShellLayout::IsHiddenTabOnCompact(const NavTab tab) {
   return tab == NavTab::Me || tab == NavTab::Contacts;
 }
@@ -98,11 +106,12 @@ int ShellLayout::ClampAuxiliaryWidthDp(int width_dp) {
 }
 
 bool ShellLayout::SecondaryPaneShown(const ShellState& state) {
-  return state.layout_mode == LayoutMode::Expanded && TabHasSecondary(state.nav_tab) && !state.sidebar_collapsed;
+  return state.layout_mode == LayoutMode::Expanded && ExpandedTabHasSecondary(state.nav_tab) &&
+         !state.sidebar_collapsed;
 }
 
 bool ShellLayout::SidebarCollapsedAfterNavSelect(bool collapsed, NavTab tab) {
-  return TabHasSecondary(tab) ? false : collapsed;
+  return ExpandedTabHasSecondary(tab) ? false : collapsed;
 }
 
 bool ShellLayout::OpenChatSwitchesToChats(const LayoutMode mode, const NavTab tab) {

@@ -2245,6 +2245,133 @@
   cursor: pointer;
 }
 
+.shell-body--wide .home-composer-mount {
+  display: block;
+  padding: 0 40dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer {
+  flex: none;
+  margin: 0 0 8dp 0;
+  border-radius: 20dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-status {
+  margin: 12dp 16dp 0 16dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-pill {
+  min-height: 106dp; /* + the box's 1dp border each side = the 108dp card */
+  padding: 0 16dp 48dp 16dp;
+  border-radius: 20dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-input {
+  align-self: stretch;
+  min-height: 36dp;
+  padding: 12dp 0 0 0;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-row {
+  position: relative;
+}
+
+.shell-body--wide .home-composer-mount .prompt-icon-classic,
+.shell-body--wide .home-composer-mount .prompt-icon-v2,
+.shell-body--wide .home-composer-mount .prompt-capture-btn,
+.shell-body--wide .home-composer-mount .prompt-voice-toggle-btn {
+  display: none;
+}
+
+.shell-body--wide .home-composer-mount .prompt-icon-home {
+  display: block;
+  flex-shrink: 0;
+  width: 24dp;
+  height: 24dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-attach-btn {
+  display: none;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-pill .prompt-home-plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  left: 4dp;
+  bottom: 6dp;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-row .prompt-emoji-btn {
+  position: absolute;
+  right: 50dp; /* the tinted circle 10dp before the Send disc (Kenneth 2026-11-10: emoji moved right, next to Send) */
+  bottom: 6dp;
+  z-index: 1;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0;
+  padding: 6dp;
+  box-sizing: border-box;
+  border-radius: 22dp;
+  background-color: transparent;
+}
+
+.shell-body--wide .home-composer-mount .prompt-emoji-btn .prompt-icon-home-emoji {
+  display: block;
+  width: 32dp;
+  height: 32dp;
+  padding: 4dp;
+  box-sizing: border-box;
+  border-radius: 16dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-row .prompt-send-btn {
+  display: flex;
+  position: absolute;
+  right: 10dp;
+  bottom: 10dp;
+  z-index: 1;
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
+  margin: 0;
+  border-radius: 18dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-send-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-label--thread {
+  display: none;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-label--home {
+  display: block;
+  position: absolute;
+  top: 12dp;
+  left: 16dp;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 24dp;
+  pointer-events: none;
+}
+
 .shell-body--wide .storage-section .settings-danger-zone .settings-action-bar {
   width: auto;
   margin: 12dp 16dp 0 16dp;
@@ -2517,4 +2644,74 @@
 .shell-body--wide .settings-detail--profile .settings-desktop-only,
 .shell-body--wide .settings-detail--profile .btn.settings-desktop-only {
   display: none;
+}
+
+/* ================= AI (design step 3, page C; ai_list_wide.rml, the AI home in home.rml) =================
+   The list column is the phone's "Conversation history" drawer; the right column is the AI home (the mascot over the
+   phone's two-line ask-AI card, then the chips) or the picked conversation. The composer card itself is the phone's
+   (generated above). */
+.shell-body--wide .ai-list-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+}
+
+.shell-body--wide .ai-list-sessions {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.shell-body--wide .ai-list-count {
+  flex: none;
+  padding: 8dp 16dp 12dp 16dp;
+  text-align: center;
+}
+
+.shell-body--wide .ai-list-count .ai-drawer-count-text {
+  margin: 0;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+/* The AI home: no "PP" heading (the phone has none); the mascot, the card, the chips, as a centred column. */
+.shell-body--wide .home-header {
+  display: none;
+}
+
+.shell-body--wide .home-landing--minimal .home-logo {
+  display: block;
+  flex: none;
+  height: 116dp;
+  margin: 0 0 4dp 0;
+  text-align: center;
+}
+
+.shell-body--wide .home-landing--minimal .home-logo img {
+  width: 100dp;
+  height: 100dp;
+  border-radius: 22dp;
+}
+
+.shell-body--wide .home-landing--minimal .home-logo--mascot .home-mascot.ai-dot {
+  position: relative;
+  display: block;
+  width: 96dp;
+  height: 96dp;
+  margin: 10dp auto 0 auto;
+}
+
+.shell-body--wide .home-landing-inner {
+  max-width: 560dp;
+}
+
+.shell-body--wide .home-composer-mount {
+  padding: 0;
+}
+
+/* The AI list's own header is "Conversation history": a little smaller than the other columns' one-word titles. */
+.shell-body--wide .ai-list-header .sidebar-header-title {
+  font-size: 22dp;
 }

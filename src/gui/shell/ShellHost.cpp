@@ -669,12 +669,16 @@ void ShellHost::SelectNavTab(NavTab tab) {
     // The new root page opens at its top, large title showing.
     SetLargeTitleCollapsed(false);
   }
+  // The wide layout's AI tab with a conversation open: picking AI again goes back to the AI home (the phone's second tap
+  // on AI opens its conversation drawer; here the list is always beside the page, so the tap leaves the conversation).
+  const bool back_to_ai_home = !tab_changed && tab == NavTab::Home && state_.layout_mode == LayoutMode::Expanded &&
+                               !state_.primary_pane_key.empty() && state_.primary_pane_key != "home";
   state_.nav_tab = tab;
   ShellLayout::SyncNavTabString(state_);
   // The tab bar highlights the tab a hidden tab's page (Settings) was entered from.
   state_.nav_bar_tab_str = ShellLayout::NavTabString(tab == NavTab::Contacts ? tab_before_hidden_ : tab);
   DataModelHost::Instance().Dirty("window", "nav_bar_tab");
-  if (tab_changed && on_nav_tab_changed_) {
+  if ((tab_changed || back_to_ai_home) && on_nav_tab_changed_) {
     on_nav_tab_changed_(tab);
   }
   if (chat_shown_again && on_compact_chat_shown_again_) {
@@ -956,7 +960,7 @@ void ShellHost::NotifySidebarChanged() {
 }
 
 void ShellHost::ToggleSidebarCollapsed() {
-  if (state_.layout_mode != LayoutMode::Expanded || !ShellLayout::TabHasSecondary(state_.nav_tab)) {
+  if (state_.layout_mode != LayoutMode::Expanded || !ShellLayout::ExpandedTabHasSecondary(state_.nav_tab)) {
     return;
   }
   state_.sidebar_collapsed = !state_.sidebar_collapsed;
@@ -2660,7 +2664,8 @@ ShellLayoutRml ShellHost::Rml() const {
 }
 
 const char* ShellHost::NavContentKey() const {
-  return ShellLayout::NavContentKey(state_.nav_tab);
+  return state_.layout_mode == LayoutMode::Expanded ? ShellLayout::ExpandedNavContentKey(state_.nav_tab)
+                                                    : ShellLayout::NavContentKey(state_.nav_tab);
 }
 
 void ShellHost::MountNavRail() {
@@ -2709,7 +2714,9 @@ void ShellHost::MountComposer() {
   const std::string wide_body = ViewCatalog::LoadBody(ViewCatalog::KeyForLayout("composer", true));
 
   // The Home landing mounts the composer inside the home view, centered above the chips (desktop and phone).
-  if (state_.nav_tab == NavTab::Home && !state_.compact_chat_open) {
+  // In the wide layout an AI conversation opened from the AI list is the primary pane; its composer is that pane's.
+  const bool wide_ai_chat_open = state_.layout_mode == LayoutMode::Expanded && state_.primary_pane_key == "chat";
+  if (state_.nav_tab == NavTab::Home && !state_.compact_chat_open && !wide_ai_chat_open) {
     if (ui::Element* target = doc->GetElementById("home-composer-mount")) {
       RmlMount::MountInner(target, body);
     }
