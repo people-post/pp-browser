@@ -24,6 +24,11 @@ struct BriefLlmKeyStore {
    */
   std::function<Roe<void>(const std::function<bool(LocalIdentity& identity)>& change)> modify;
   std::function<Roe<BriefGuestLlmMintResult>(const std::string& llm_base_url)> mint;
+  /**
+   * Optional: renews the registered slot's token at the org's relay (`token/renew`, RC018 item 2) and stores it
+   * (RenewBriefLlmTokenWithIdentity); returns the new token. Unset: a refused registered token is not renewed.
+   */
+  std::function<Roe<std::string>()> renew_token;
 };
 
 struct BriefLlmKeyRenewal {
@@ -44,7 +49,8 @@ Roe<std::string> StoreBriefGuestKeyIfNone(const BriefLlmKeyStore& store, const S
 
 /**
  * The gateway refused `rejected`. When the stored key is another one, that one (reused); when the refused one is the
- * registered key and a different guest key is stored beside it, the guest key (reused, nothing minted). Else mint a guest key at
+ * registered token, first that token renewed (`renew_token`: a registered user stays registered; a renewal another
+ * caller made meanwhile is reused); then a different guest key stored beside it (reused, nothing minted). Else mint a guest key at
  * `llm_base_url` and store it beside the registered key, which is kept until a retry with the guest key is answered
  * (CommitBriefLlmKey). One modify after the mint: the stored key is never empty meanwhile; a key other than
  * `rejected` stored during the mint is kept (reused), and an identity of another account then is refused.

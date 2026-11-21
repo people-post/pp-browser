@@ -484,7 +484,10 @@ public:
   /** View file of a stored AI image, materialized from the CAS when missing; nullopt while locked or gone. */
   std::optional<std::string> AiImageViewPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                                              const std::string& mime);
-  Roe<void> RotateBriefLlmKey(const std::string& llm_base_url);
+  /** The Brief LLM token renewed at the org's relay (ConversationsHub::RenewBriefLlmToken). Blocks. */
+  Roe<void> RenewBriefLlmToken();
+  /** ConversationsHub::SetOnBriefLlmTokenRenewed. */
+  void SetOnBriefLlmTokenRenewed(std::function<void()> callback);
   mesh::ReachabilitySnapshot Reachability();
   void RunReachabilityProbe(bool try_upnp);
   void TryUpnpPortMapping();

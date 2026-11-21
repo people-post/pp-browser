@@ -11,19 +11,13 @@
 
 namespace pbr {
 
-namespace {
-
-/** A registered user's brief_AI key (BriefGuestLlmClient; a guest's starts brf_guest_). */
-constexpr const char* kBriefRegisteredKeyPrefix = "brf_llm_";
-
-} // namespace
-
 size_t MaxConcurrentTurnsFor(const AppConfig& config) {
-  const std::string& key = config.llm.api_key.Reveal();
+  const bool keyed = !config.llm.api_key.empty();
   if (ResolvePreset(config) == "brief") {
-    return key.rfind(kBriefRegisteredKeyPrefix, 0) == 0 ? kMaxConcurrentTurns : kMaxConcurrentGuestTurns;
+    // Registered or guest by the slot the key came from, never by its text (RC018 item 2).
+    return keyed && config.llm.brief_key_registered ? kMaxConcurrentTurns : kMaxConcurrentGuestTurns;
   }
-  return key.empty() ? kMaxConcurrentGuestTurns : kMaxConcurrentTurns;
+  return keyed ? kMaxConcurrentTurns : kMaxConcurrentGuestTurns;
 }
 
 AgentSessions::AgentSessions(const std::optional<size_t> max_concurrent_turns, Clock clock)

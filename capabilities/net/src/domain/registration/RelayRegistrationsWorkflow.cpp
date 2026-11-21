@@ -170,14 +170,16 @@ void RelayRegistrationsWorkflow::Register(const Relay& relay, const std::string&
 void RelayRegistrationsWorkflow::KeepBriefLlmKey(const RegistrationResult& result) {
   // Only the org's relay answers with one (HttpRegistrationClient::SetTakesBriefLlmKey, MR006): the key is the
   // org's, wherever our preferred relay is.
-  if (result.llm_api_key.empty()) {
+  if (result.llm_token.empty()) {
     return;
   }
   if (auto kept = identity_.Modify([&result](LocalIdentity& identity) {
-        if (identity.brief_llm_api_key.Reveal() == result.llm_api_key.Reveal()) {
+        if (identity.brief_llm_api_key == result.llm_token &&
+            identity.brief_llm_token_expires_at == result.llm_token_expires_at) {
           return false;
         }
-        identity.brief_llm_api_key = result.llm_api_key;
+        identity.brief_llm_api_key = result.llm_token;
+        identity.brief_llm_token_expires_at = result.llm_token_expires_at;
         identity.brief_llm_guest_api_key.clear();
         return true;
       });

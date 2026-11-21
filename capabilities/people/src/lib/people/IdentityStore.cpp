@@ -196,6 +196,9 @@ LocalIdentity IdentityFromJson(const Object& root) {
   if (auto v = root.getString("brief_llm_api_key")) {
     identity.brief_llm_api_key = *v;
   }
+  if (auto v = root.getString("brief_llm_token_expires_at")) {
+    identity.brief_llm_token_expires_at = *v;
+  }
   if (auto v = root.getString("brief_llm_guest_api_key")) {
     identity.brief_llm_guest_api_key = *v;
   }
@@ -261,6 +264,9 @@ Object IdentityToJson(const LocalIdentity& identity) {
   }
   root.set("nickname", identity.nickname);
   root.set("brief_llm_api_key", identity.brief_llm_api_key.Reveal());
+  if (!identity.brief_llm_token_expires_at.empty()) {
+    root.set("brief_llm_token_expires_at", identity.brief_llm_token_expires_at);
+  }
   root.set("brief_llm_guest_api_key", identity.brief_llm_guest_api_key.Reveal());
   root.set("registered", identity.registered);
   root.set("registration_expires_at", identity.registration_expires_at);
@@ -392,6 +398,7 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     identity_.private_key_b64 = Base64Encode(keys->secret_key);
     identity_.nickname = "user";
     identity_.brief_llm_api_key.clear();
+    identity_.brief_llm_token_expires_at.clear();
     identity_.brief_llm_guest_api_key.clear();
     identity_.registered = false;
     identity_.registration_expires_at.clear();

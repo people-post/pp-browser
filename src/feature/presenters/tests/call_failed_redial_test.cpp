@@ -126,14 +126,27 @@ protected:
         return;
       }
       params.peer_key = dialer.side.local_identity;
+      // As the leg coordinator does: the accepting transport is active while the hello is answered, and a hello
+      // refused (no key: a call this phone no longer has) tears that stream down again. Left active, a late retry of
+      // the failed call — its backoff runs out on a slow runner after the call was left — was a stream the next call
+      // took as its own ("Media started with existing inbound stream"): that call connected on this phone, which
+      // then never offered Call again (CI, macOS).
       peer.side.transport->active = true;
       peer.side.transport->active_params = params;
-      peer.side.transport->inbound.DeliverThen(std::move(params),
-                                               [](CallMediaDirectConnectParams, CallMediaDirectCallbacks cbs) {
-                                                 if (cbs.on_connected) {
-                                                   cbs.on_connected();
-                                                 }
-                                               });
+      test::FakeCallMediaTransport* transport = peer.side.transport.get();
+      peer.side.transport->inbound.DeliverThen(
+          std::move(params), [transport](CallMediaDirectConnectParams answered, CallMediaDirectCallbacks cbs) {
+            if (answered.media_key.empty()) {
+              if (transport->active_params.call_id == answered.call_id) {
+                transport->active = false;
+                transport->active_params = {};
+              }
+              return;
+            }
+            if (cbs.on_connected) {
+              cbs.on_connected();
+            }
+          });
     };
   }
 

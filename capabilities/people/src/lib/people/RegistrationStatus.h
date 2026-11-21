@@ -32,6 +32,15 @@ std::string RegistrationStatusLabel(RegistrationStatus status);
 /** Human label for UI button: "Register on network" vs "Renew registration". */
 std::string RegistrationActionLabel(RegistrationStatus status);
 
+/** How long before its expiry the registered slot's Brief LLM token is renewed (the relay issues 7 days). */
+inline constexpr int64_t kBriefLlmTokenRenewWindowMs = 3LL * 24 * 60 * 60 * 1000;
+/**
+ * The registered slot holds a token due `token/renew` (RC018 item 2): within kBriefLlmTokenRenewWindowMs of its
+ * `brief_llm_token_expires_at`, past it, or with no expiry known (a key kept before the app read one). False with no
+ * registered token (a guest key is minted, not renewed).
+ */
+bool BriefLlmTokenRenewDue(const LocalIdentity& identity, int64_t now_ms = 0);
+
 /** Mark registration as expired locally (does not Update store). */
 void MarkRegistrationExpired(LocalIdentity& identity);
 

@@ -1443,8 +1443,12 @@ bool ConversationsFacade::AttachmentOpenNeedsConfirmForMessage(const std::string
   return true;
 }
 
-Roe<void> ConversationsFacade::RotateBriefLlmKey(const std::string& llm_base_url) {
-  return hub_.RotateBriefLlmKey(llm_base_url);
+Roe<void> ConversationsFacade::RenewBriefLlmToken() {
+  return hub_.RenewBriefLlmToken();
+}
+
+void ConversationsFacade::SetOnBriefLlmTokenRenewed(std::function<void()> callback) {
+  hub_.SetOnBriefLlmTokenRenewed(std::move(callback));
 }
 
 mesh::ReachabilitySnapshot ConversationsFacade::Reachability() {

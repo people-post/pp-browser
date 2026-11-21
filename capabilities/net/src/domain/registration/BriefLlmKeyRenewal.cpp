@@ -62,6 +62,20 @@ Roe<BriefLlmKeyRenewal> RenewBriefLlmKey(const BriefLlmKeyStore& store, const st
   if (std::string current = Resolved(*before); !current.empty() && !(SecretText(current) == SecretText(rejected))) {
     return BriefLlmKeyRenewal{.key = std::move(current), .reused = true}; // another turn already replaced it
   }
+  // The registered token was refused (expired, an older epoch, the legacy key retired): renewed at the org's relay
+  // first, so a registered user keeps the registered limits; a guest key only when that fails.
+  if (store.renew_token && !before->brief_llm_api_key.empty() && before->brief_llm_api_key == SecretText(rejected)) {
+    auto renewed = store.renew_token();
+    if (renewed && !renewed->empty() && !(SecretText(*renewed) == SecretText(rejected))) {
+      return BriefLlmKeyRenewal{.key = std::move(*renewed), .reused = false};
+    }
+    // Refused, or another renewal ran meanwhile (one per 10 s per account): a token stored since is the one to use.
+    if (const std::optional<LocalIdentity> now = store.get(); now && now->account_id == before->account_id &&
+                                                              !now->brief_llm_api_key.empty() &&
+                                                              !(now->brief_llm_api_key == SecretText(rejected))) {
+      return BriefLlmKeyRenewal{.key = now->brief_llm_api_key.Reveal(), .reused = true};
+    }
+  }
   // The registered key was refused and a guest key is stored beside it: ask with that one first; mint only when there
   // is no other key to try.
   if (!before->brief_llm_guest_api_key.empty() && !(before->brief_llm_guest_api_key == SecretText(rejected))) {
@@ -119,6 +133,7 @@ Roe<void> CommitBriefLlmKey(const BriefLlmKeyStore& store, const std::string& re
       return false;
     }
     identity.brief_llm_api_key.clear();
+    identity.brief_llm_token_expires_at.clear();
     return true;
   });
 }

@@ -121,6 +121,7 @@ TEST_F(IdentityStoreTest, KeepsTheRegistration) {
   identity.nickname = "alice";
   identity.registered = true;
   identity.brief_llm_api_key = "brf_llm_testkeyABCDEFGHIJKLMNOP";
+  identity.brief_llm_token_expires_at = "2099-01-08T00:00:00.000Z";
   identity.brief_llm_guest_api_key = "brf_guest_testkeyABCDEFGHIJKLMNOP";
   identity.registered = true;
   identity.registration_expires_at = "2099-06-01T00:00:00.000Z";
@@ -133,6 +134,7 @@ TEST_F(IdentityStoreTest, KeepsTheRegistration) {
   auto loaded = reloaded.LoadOrCreate();
   ASSERT_TRUE(static_cast<bool>(loaded)) << loaded.error().message;
   EXPECT_EQ(loaded->brief_llm_api_key, "brf_llm_testkeyABCDEFGHIJKLMNOP");
+  EXPECT_EQ(loaded->brief_llm_token_expires_at, "2099-01-08T00:00:00.000Z") << "renewed before it, RC018 item 2";
   EXPECT_EQ(loaded->brief_llm_guest_api_key, "brf_guest_testkeyABCDEFGHIJKLMNOP");
   EXPECT_TRUE(loaded->registered);
   EXPECT_EQ(loaded->registration_expires_at, "2099-06-01T00:00:00.000Z");

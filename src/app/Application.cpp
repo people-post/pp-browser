@@ -192,6 +192,13 @@ BriefLlmKeyStore MakeBriefLlmKeyStore(ConversationsFacade& facade) {
         return {};
       },
       .mint = [](const std::string& llm_base_url) { return MintBriefGuestLlmKey(llm_base_url); },
+      .renew_token = [&facade]() -> Roe<std::string> {
+        if (auto renewed = facade.RenewBriefLlmToken(); !renewed) {
+          return renewed.error();
+        }
+        const std::optional<LocalIdentity> identity = facade.GetIdentity();
+        return identity ? identity->brief_llm_api_key.Reveal() : std::string();
+      },
   };
 }
 
@@ -1080,12 +1087,8 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     };
     AppRuntime::PostWorkerAndReplyOnUI<Roe<RegistrationResult>>(WorkerLane::Normal, std::move(work), std::move(reply));
   };
-  settings_commands.rotate_brief_llm_key = [this, &facade]() {
-    auto result = facade.RotateBriefLlmKey(BriefLlmServiceBaseUrl(store_.Snapshot().config));
-    if (result) {
-      chat_->ReloadAgentConfig();
-    }
-    return result;
+  settings_commands.rotate_brief_llm_key = [&facade]() {
+    return facade.RenewBriefLlmToken(); // the assistant takes the new token (SetOnBriefLlmTokenRenewed)
   };
   settings_commands.clear_undelivered_older_than = [&facade](int days) -> Roe<void> {
     if (!facade.IsInitialized() || !facade.IsMessagingReady()) {
@@ -2166,6 +2169,8 @@ void Application::WireAgentAndConfig() {
             },
         .stored_key = [key_store]() { return StoredBriefLlmKey(key_store); },
     });
+    // The org's relay renewed the Brief LLM token (before it expired, or Me asked): the sessions take the new one.
+    facade.SetOnBriefLlmTokenRenewed([this]() { AppRuntime::PostUI([this] { chat_->ReloadAgentConfigWhenIdle(); }); });
   }
   if (messaging_facade_) {
     // MessageRouter checks is_busy before it routes, so these start; anything else would be a send that slipped past.

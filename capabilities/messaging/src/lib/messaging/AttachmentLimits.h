@@ -121,7 +121,7 @@ private:
   std::unordered_map<std::string, std::deque<Entry>> by_sender_;
 };
 
-/** The files relay's space (`/files/list` usage): attachments, the space that fills. */
+/** The files relay's space (`/blob/list` usage): attachments, the space that fills. */
 struct BlobSpaceUse {
   uint64_t bytes_used = 0;
   uint64_t quota_bytes = 0;

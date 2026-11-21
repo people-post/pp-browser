@@ -4,13 +4,13 @@
 Serves what `HttpBlobClient` (upload) and `AttachmentFetch` (download) call, as
 docs/contracts/SERVICE_ENDPOINTS.md (relay files) describes them:
 
-  POST /v1/files/start      { blob_id, mode, part_bytes, part_count, upload_url?, expires_in, pending_expires_at }
-  POST /v1/files/part       { upload_url, part_bytes, expires_in }
+  POST /v1/blob/start      { blob_id, mode, part_bytes, part_count, upload_url?, expires_in, pending_expires_at }
+  POST /v1/blob/part       { upload_url, part_bytes, expires_in }
   PUT  /storage/<id>[/<n>]  the ciphertext (single) or part n (multipart)
-  POST /v1/files/complete   { blob_id, token, share_path, expires_at }, once
-  POST /v1/files/delete     { success: true }
-  POST /v1/files/list       { files: [...], usage: {...} }
-  GET  /api/relay/v1/files/<id>/download?t=<token>   302 to /storage/<id>, then the bytes
+  POST /v1/blob/complete   { blob_id, token, share_path, expires_at }, once
+  POST /v1/blob/delete     { success: true }
+  POST /v1/blob/list       { files: [...], usage: {...} }
+  GET  /api/relay/v1/blob/<id>/download?t=<token>   302 to /storage/<id>, then the bytes
 
 The `/v1/...` routes are also answered under `/api/relay` (the real relay base URL ends in it). Signatures are
 not checked; nothing is retained beyond this process (blobs live in --dir, a temp dir by default). Single PUT up
@@ -88,11 +88,11 @@ class Handler(BaseHTTPRequestHandler):
         if body is None:
             return self.fail(400, "Invalid JSON")
         handlers = {
-            "/v1/files/start": self.start,
-            "/v1/files/part": self.part,
-            "/v1/files/complete": self.complete,
-            "/v1/files/delete": self.delete,
-            "/v1/files/list": self.list,
+            "/v1/blob/start": self.start,
+            "/v1/blob/part": self.part,
+            "/v1/blob/complete": self.complete,
+            "/v1/blob/delete": self.delete,
+            "/v1/blob/list": self.list,
         }
         handler = handlers.get(self.route())
         if not handler:
@@ -155,7 +155,7 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, {
             "blob_id": blob_id,
             "token": meta["token"],
-            "share_path": f"/api/relay/v1/files/{blob_id}/download?t={meta['token']}",
+            "share_path": f"/api/relay/v1/blob/{blob_id}/download?t={meta['token']}",
             "expires_at": "2099-01-01T00:00:00.000Z",
         })
 
@@ -195,7 +195,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         url = urlsplit(self.path)
-        download = re.fullmatch(r"/api/relay/v1/files/([0-9a-f]+)/download", url.path)
+        download = re.fullmatch(r"/api/relay/v1/blob/([0-9a-f]+)/download", url.path)
         if download:
             meta = self.blobs.meta.get(download.group(1))
             token = parse_qs(url.query).get("t", [""])[0]

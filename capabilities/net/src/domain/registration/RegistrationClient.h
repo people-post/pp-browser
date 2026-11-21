@@ -116,4 +116,12 @@ Roe<RegistrationResult> UpdateRegisteredNickname(IRegistrationClient& registrati
 Roe<void> RevokeRegistrationWithIdentity(IRegistrationClient& registration, IdentityStore& identity,
                                          const std::string& registration_id);
 
+/**
+ * Renews the account's Brief LLM token at `registration`'s relay (`token/renew`, signed with the account key; RC018
+ * item 2) and keeps the new one and its expiry in the registered slot, in one modify into the account it was asked
+ * for. Needs a registered token held now (Err::Auth::NotRegistered otherwise) and the org's relay
+ * (TakesBriefLlmKey). Blocks (HTTP); may run off the UI thread.
+ */
+Roe<LlmTokenRenewal> RenewBriefLlmTokenWithIdentity(IRegistrationClient& registration, IdentityStore& identity);
+
 } // namespace pbr
