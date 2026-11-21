@@ -5027,7 +5027,8 @@ void ChatController::RegisterMentionPickerKeys() {
 }
 
 bool ChatController::ComposerSendAllowed(const std::string& text) {
-  if (!messaging_ready_ || !facade_ || !facade_->HasRouter() || ChromeSnapshot().nav_tab == NavTab::Home) {
+  if (!messaging_ready_ || !facade_ || !facade_->HasRouter() ||
+      (ChromeSnapshot().nav_tab == NavTab::Home && !AiConversationOpenBesideList(ChromeSnapshot()))) {
     return true; // a Home question opens its own thread; SendUserText decides there
   }
   const std::string thread_id = ActiveThreadId();
@@ -5579,10 +5580,10 @@ bool ChatController::EnsureHomeOutboundSession(const std::string& chip_message) 
     log().warning << "Home: could not create an AI thread: " << created.error().message;
     return false;
   }
-  // The phone keeps the new AI conversation on the AI 助手 page (Home): the chat overlay opens over it and Back
-  // returns to the AI list. The desktop shows the chat in its panes, so it still moves to the Chats surface.
-  if (ChromeSnapshot().layout_mode != LayoutMode::Compact) {
-    ShellSelectNavTab(NavTab::Sessions);
+  // The AI conversation stays on the AI page (Home): on the phone the chat overlay opens over it and Back returns to the
+  // AI list; in the wide layout it opens in the right column beside the AI list. Neither goes to the Chats list.
+  if (ChromeSnapshot().layout_mode != LayoutMode::Compact && ChromeSnapshot().nav_tab != NavTab::Home) {
+    ShellSelectNavTab(NavTab::Home);
   }
   ShellSetPrimaryPane("chat");
   FinalizeThreadDisplay();
@@ -5879,7 +5880,10 @@ void ChatController::PutBackDraft(const std::string& thread_id, const std::strin
 }
 
 std::string ChatController::CurrentDraftKey() const {
-  return ChromeSnapshot().nav_tab == NavTab::Home ? std::string(ThreadDrafts::kHome) : ActiveThreadId();
+  // The AI page's own composer has Home's draft; an AI conversation open beside the AI list (wide layout) has its own.
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  return chrome.nav_tab == NavTab::Home && !AiConversationOpenBesideList(chrome) ? std::string(ThreadDrafts::kHome)
+                                                                                 : ActiveThreadId();
 }
 
 void ChatController::PutTextBack(const std::string& key, const std::string& text, const DraftPutBack mode) {
@@ -7787,7 +7791,10 @@ void ChatController::ShowThreadInChat(const std::string& thread_id) {
     log().warning << "Ask AI: could not open the AI chat: " << opened.error().message;
     return;
   }
-  ShellSelectNavTab(NavTab::Sessions);
+  // An AI conversation belongs to the AI page; on the phone it opens over the Chats list as before.
+  const auto opened_thread = facade_->GetThread(thread_id);
+  const bool is_ai = opened_thread && *opened_thread && (*opened_thread)->kind == ThreadKind::Ai;
+  ShellSelectNavTab(is_ai && ChromeSnapshot().layout_mode != LayoutMode::Compact ? NavTab::Home : NavTab::Sessions);
   ShellSetPrimaryPane("chat");
   FinalizeThreadDisplay();
   NotifySurfaceChanged();
