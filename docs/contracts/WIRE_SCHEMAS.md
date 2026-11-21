@@ -87,7 +87,7 @@ The relay **never parses** application envelopes. pp-browser wraps the signed `R
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `sender_account_id` | string | yes | The sending account (it signs the record, relay API sign version 2). Inbound: the envelope inside must name the same `sender_contact_id`, else the record is skipped |
+| `sender_account_id` | string | yes | The sending account (it signs the record, relay API sign version 4). Inbound: the envelope inside must name the same `sender_contact_id`, else the record is skipped |
 | `recipient_account_id` | string | send only | The inbox owner's Account ID |
 | `grant` | object | send only, optional | The recipient's grant to the sender ([ACCOUNT_CARD § Relay grants](ACCOUNT_CARD.md#relay-grants)): a contact's send. Absent: a stranger's. Never on a send to our own mailbox |
 | `sender_public_key_b64` | string | send only, optional | Our account's ML-DSA key, sent once the relay asked for it (`sender_key_required`: we are not registered there). Must hash to `sender_account_id` |
@@ -484,7 +484,7 @@ GET /api/relay/v1/streams/messages?requester_account_id=account%3Abob…&sender_
 
 | Query param | Type | Required | Notes |
 |-------------|------|----------|-------|
-| `requester_account_id` | string | yes | Inbox owner's Account ID (must differ from `sender_account_id`); signs the request (relay API sign version 2) |
+| `requester_account_id` | string | yes | Inbox owner's Account ID (must differ from `sender_account_id`); signs the request (relay API sign version 4) |
 | `sender_account_id` | string | yes | Stream sender whose messages are fetched |
 | `stream_id` | string | yes | Opaque stream id (the `RelayEnvelope.stream_id` form above) |
 | `min_index_key` | integer | no | Inclusive lower bound |
