@@ -138,6 +138,11 @@ void CallMediaAmpTransport::Detach(const std::string& call_id) {
   ForgetCall(call_id);
 }
 
+void CallMediaAmpTransport::DetachUnlessActive(const std::string& call_id) {
+  // The bundle's phase is read on the IO strand, where a peer's hello is admitted (CallMediaLegCoordinator).
+  coordinator_.DetachCallUnlessActive(call_id);
+}
+
 void CallMediaAmpTransport::DetachAll() {
   coordinator_.DetachAll();
   std::lock_guard lock(mu_);
