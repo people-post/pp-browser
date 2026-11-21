@@ -406,6 +406,20 @@ lab_hop_advertise() {
   fi
 }
 
+# The lab relay's relay id (its /_local/status relayId, SIGNED_FORMATS § 3): the seeds register there under it, as the
+# fleet's config names its relay (PP_NODE_REGISTRATION_RELAY_ID). Each relay container has its own (a new container is
+# a new relay), so it is read again once the relays are up.
+lab_relay_id() {
+  local id
+  id="$(curl -fsS -m 2 http://127.0.0.1:18719/_local/status 2>/dev/null |
+    python3 -c 'import json,sys; print(json.load(sys.stdin).get("relayId",""))' 2>/dev/null || true)"
+  if [[ "${id}" == relay:* ]]; then
+    export PP_APP_LAB_RELAY_ID="${id}"
+  else
+    unset PP_APP_LAB_RELAY_ID
+  fi
+}
+
 wait_lab_seeds() {
   local i
   for i in $(seq 1 60); do
@@ -456,6 +470,8 @@ run_app() {
   need_cmd cmake
   ensure_docker_context
   lab_hop_advertise  # a seed already running keeps its address (no recreate)
+  lab_relay_id       # and its relay's id, while that relay is not recreated
+  local seeds_relay_id="${PP_APP_LAB_RELAY_ID:-}"
   stage_hop_binary_if_newer
   cmake --build "${BUILD_DIR}" --target pp-app-probe pp-node-load -j  # pp-node-load: the full-seed scenarios
   local args=(up -d)
@@ -477,8 +493,11 @@ run_app() {
     sleep 1
   done
   wait_lab_seeds
-  if [[ -z "${PP_APP_LAB_HOP_ADVERTISE:-}" || -z "${PP_APP_LAB_HOP2_ADVERTISE:-}" ]]; then
-    # A new seed has just minted its PeerId: start the seeds again listed in the lab directory, as prod's are.
+  lab_relay_id
+  if [[ -z "${PP_APP_LAB_HOP_ADVERTISE:-}" || -z "${PP_APP_LAB_HOP2_ADVERTISE:-}" ||
+    "${PP_APP_LAB_RELAY_ID:-}" != "${seeds_relay_id}" ]]; then
+    # A new seed has just minted its PeerId, or a new relay its relay id: start the seeds again listed in the lab
+    # directory, as prod's are, and naming the relay they register at.
     lab_hop_advertise
     app_lab_compose up -d hop hop2
     wait_lab_seeds

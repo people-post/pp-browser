@@ -440,6 +440,19 @@ class Lab:
             self.relay_ids[relay] = found
         return self.relay_ids[relay]
 
+    def relay_peer_id(self, relay):
+        """The PeerId of the transport key relay stack `relay`'s certificate names: the audience of the signed calls it
+        takes (its local stack's `/_local/status` `relayPeerId`)."""
+        url = self.plain_relays[relay].split("/api/")[0] + "/_local/status"
+        try:
+            with urllib.request.urlopen(url, timeout=10) as answer:
+                found = json.loads(answer.read() or b"{}").get("relayPeerId") or ""
+        except (urllib.error.URLError, ValueError, OSError):
+            found = ""
+        if not found:
+            raise ProbeError("relay %s names no PeerId at %s" % (relay, url))
+        return found
+
     def relay_link(self, relay):
         """Relay `relay`'s TLS origin as a person adds it: its relay link, `<base url>#relay:…` (MR008)."""
         return self.tls_relays[relay]["origin"] + "#" + self.relay_id(relay)
@@ -2319,16 +2332,21 @@ def scenario_replayed_calls_refused_at_other_relay(lab):
     for u in (a, b):
         u.wait_mesh()
     relay_a, relay_b = lab.tls_relays["a"]["origin"], lab.tls_relays["b"]["origin"]
+    # Each relay's audience: the PeerId of the transport key its certificate names (SIGNED_FORMATS § 3.5), as Alice's
+    # app holds it once it has kept that relay's certificate, and as the stack says it is.
     peers = {}
     for name, origin in (("a", relay_a), ("b", relay_b)):
         status, identity = lab.relay_get(name, "/v1/relay-identity")
-        if status != 200 or not identity.get("peer_id"):
-            raise ProbeError("relay %s names no identity (%s)" % (name, status))
-        peers[name] = identity["peer_id"]
-        seen = wait_for(lambda origin=origin: (lambda r: r if r["pinned"] else None)(
-            a.cmd("relay_identity", origin=origin)), 30, "alice: relay %s pinned" % name)
-        if seen["pinned"] != peers[name]:
-            raise ProbeError("alice pinned %s to %s, it says %s" % (name, seen["pinned"], peers[name]))
+        if status != 200 or identity.get("relay_id") != lab.relay_id(name) or not identity.get("certificate_b64"):
+            raise ProbeError("relay %s names no identity (%s %s)" % (name, status, identity.get("relay_id")))
+        seen = wait_for(lambda origin=origin: (lambda r: r if r["pinned"] and r["audience"] else None)(
+            a.cmd("relay_identity", origin=origin)), 30, "alice: relay %s pinned, its certificate held" % name)
+        if seen["pinned"] != lab.relay_id(name):
+            raise ProbeError("alice pinned %s to %s, it is %s" % (name, seen["pinned"], lab.relay_id(name)))
+        if seen["audience"] != lab.relay_peer_id(name):
+            raise ProbeError("alice holds %s's audience as %s, its certificate names %s"
+                             % (name, seen["audience"], lab.relay_peer_id(name)))
+        peers[name] = seen["audience"]
     if peers["a"] == peers["b"]:
         raise ProbeError("the two lab relays share one identity key")
     wait_for(lambda: all(r["registered"] for r in a.cmd("my_relays")["relays"]) or None, 90,
