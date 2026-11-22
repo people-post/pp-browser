@@ -307,14 +307,15 @@ TEST_F(MessageResendTest, AResentMessageIsToldWhenItTurnsRedAgain) {
   EXPECT_FALSE(FirstResentTurnedRed(resent, "t1", {tap.new_id})) << "once";
 }
 
-// The red mark at the clock's limit, with no failure reported, is red for the drawing that tells it.
-TEST_F(MessageResendTest, TheClocksLimitTurnsAResentMessageRedWithoutAFailure) {
+// B236: a re-sent message shows the clock for as long as its send is tried, and turns red, with no failure reported,
+// once nothing of it is being tried (a restart that could not send it again).
+TEST_F(MessageResendTest, AResentMessageIsQueuedWhileTriedAndRedOnceNothingIsTried) {
   Add(Unsent("m1"));
   const SendMarkTap tap = Tap("m1");
   ThreadMessage fresh = *Row(tap.new_id);
   ASSERT_EQ(fresh.delivery, MessageDelivery::Pending) << "no outcome ever came";
-  EXPECT_EQ(MarkOf(fresh, kNow, kNow + 60'000), SendMark::Queued);
-  EXPECT_EQ(MarkOf(fresh, kNow, kNow + 60'001), SendMark::Failed);
+  EXPECT_EQ(MarkOf(fresh, kNow, kNow + 60'001), SendMark::Queued);
+  EXPECT_EQ(MarkOf(fresh, std::nullopt, kNow + 60'001), SendMark::Failed);
 }
 
 TEST_F(MessageResendTest, AFailureNoticeOfAResentMessageIsAppliedAsAnyOther) {

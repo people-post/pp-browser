@@ -174,7 +174,9 @@ TEST(EditSendMarkTest, TheEditedMessageReadsItsEditsSend) {
 
 TEST(EditSendMarkTest, AClockWhileQueuedRedWhenItFailedNothingOnceOut) {
   EXPECT_EQ(EditSendMark(EditRow(MessageDelivery::Pending), kAt, kAt + 10'000), SendMark::Queued);
-  EXPECT_EQ(EditSendMark(EditRow(MessageDelivery::Pending), kAt, kAt + kQueuedMarkLimitMs + 1), SendMark::Failed);
+  EXPECT_EQ(EditSendMark(EditRow(MessageDelivery::Pending), kAt, kAt + 60'001), SendMark::Queued)
+      << "still being tried (B236)";
+  EXPECT_EQ(EditSendMark(EditRow(MessageDelivery::Pending), std::nullopt, kAt + 60'001), SendMark::Failed);
   EXPECT_EQ(EditSendMark(EditRow(MessageDelivery::Failed), std::nullopt, kAt + 10'000), SendMark::Failed);
   EXPECT_EQ(EditSendMark(EditRow(MessageDelivery::Relayed), std::nullopt, kAt + 10'000), SendMark::None);
 }

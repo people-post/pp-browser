@@ -43,6 +43,14 @@ DeliveryOutcome DeliveryOutbox::RelayFailureOutcome(DeliveryOutcome outcome, con
   return outcome;
 }
 
+DeliveryOutcome DeliveryOutbox::DroppedOutcome(const Pending& item) {
+  return RelayFailureOutcome(DeliveryOutcome{.thread_id = item.thread_id,
+                                             .message_id = item.message_id,
+                                             .group_member = item.group_member,
+                                             .copy_device = item.copy_device},
+                             item.relay_recipient, item.last_failure);
+}
+
 void DeliveryOutbox::Report(DeliveryOutcome outcome) {
   if (on_outcome_) {
     on_outcome_(outcome);
@@ -176,7 +184,8 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
                         .group_member = request.group_member,
                         .copy_device = request.copy_device,
                         .relay_recipient = *request.relay_recipient,
-                        .serial = serial};
+                        .serial = serial,
+                        .last_failure = sent.error()};
         if (RelayStrangerQuota(sent.error())) {
           pending.not_before_ms = util::NowUnixMs() + StrangerQuotaRetryAfter(1).count();
         }
@@ -193,8 +202,9 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
                           : control_lane ? " (retrying shortly)"
                                          : " (queued for retry)");
         outcome = RelayFailureOutcome(std::move(outcome), *request.relay_recipient, sent.error());
-        // Queued for a retry: the send goes on, so the failure is reported without ending it.
+        // Queued for a retry: the send goes on, so the failure is reported without ending it (its row stays queued).
         if (again) {
+          outcome.retrying = true;
           Report(std::move(outcome));
         } else {
           Finish(std::move(outcome));
@@ -441,22 +451,19 @@ void DeliveryOutbox::Retry() {
     std::move(due, pending.end(), std::back_inserter(queue_));
     pending.erase(due, pending.end());
   }
-  std::vector<std::string> dropped; // rows whose request ends here (not sent again)
+  std::vector<Pending> dropped; // rows whose request ends here (not sent again)
   std::erase_if(pending, [this, now_ms, &dropped](const Pending& item) {
     const bool control_lane = item.thread_id.empty();
     if (OutboxSendStillWanted(control_lane, now_ms - item.envelope.timestamp, Paused(item.thread_id))) {
       return false;
     }
     if (!control_lane) {
-      dropped.push_back(item.message_id);
+      dropped.push_back(item);
     }
     return true;
   });
-  if (!dropped.empty()) {
-    std::lock_guard lock(mutex_);
-    for (const std::string& message_id : dropped) {
-      EndActiveLocked(message_id);
-    }
+  for (const Pending& item : dropped) {
+    Finish(DroppedOutcome(item)); // its row was queued until now: the last failure is its end (B236)
   }
   if (pending.empty()) {
     return;
@@ -490,10 +497,7 @@ void DeliveryOutbox::Retry() {
       }
       Pending item = std::move(pending[index]);
       if (Paused(item.thread_id)) {
-        {
-          std::lock_guard lock(mutex_); // dropped, not queued again: its request ends
-          EndActiveLocked(item.message_id);
-        }
+        Finish(DroppedOutcome(item)); // dropped, not queued again: its request ends with its last failure
         (*process)(index + 1);
         return;
       }
@@ -518,6 +522,7 @@ void DeliveryOutbox::Retry() {
                                  .relay_recipient = item.envelope.recipient_account_id.value_or("")});
         } else if (OutboxRetryAgain(item.attempt_count, result.error())) {
           item.attempt_count += 1;
+          item.last_failure = result.error();
           if (RelayStrangerQuota(result.error())) {
             item.not_before_ms = util::NowUnixMs() + StrangerQuotaRetryAfter(item.attempt_count).count();
           }
