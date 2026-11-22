@@ -96,6 +96,16 @@ public:
     ++detach_calls;
   }
   void DetachAll() override { Detach({}); }
+  /** Decided here, as the Amp transport decides on its IO strand: a leg live by now stays. */
+  void DetachUnlessActive(const std::string& call_id) override {
+    ++detach_unless_active_calls;
+    if (hello_admitted_before_detach) {
+      active = true; // the peer's hello, admitted on the transport's strand just before the detach runs there
+    }
+    if (!active) {
+      Detach(call_id);
+    }
+  }
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks /*cbs*/,
                     std::function<void(CallMediaRoe)> on_done, int /*timeout_ms*/) override {
     ++connect_calls;
@@ -126,6 +136,9 @@ public:
   CallMediaDirectConnectParams active_params;
   int connect_calls = 0;
   int detach_calls = 0;
+  int detach_unless_active_calls = 0;
+  /** A hello lands after the attempt could read IsActive() and before its clean start runs on the transport. */
+  bool hello_admitted_before_detach = false;
   int fail_first_n = 0;
   int hang_first_n = 0;
   std::string fail_message = "amp call-media: hello rejected";
@@ -253,6 +266,19 @@ TEST_F(CallMediaConnectCoordinatorTest, ConnectsOnFirstAttempt) {
   EXPECT_EQ(before_attempts_, 1);
   EXPECT_EQ(last_kind_, mesh::PeerLinkKind::Direct);
   EXPECT_FALSE(connect_->InFlight());
+}
+
+// Both roles dial at once (V049): the peer's hello can be admitted on the transport's strand while this attempt
+// reaches its link. The attempt's clean start leaves that decision to the transport, so the admitted leg stays — it
+// used to read IsActive() first and then Detach, dropping a hello admitted in between (both sides then failed with
+// "call-media stream closed (peer_close)").
+TEST_F(CallMediaConnectCoordinatorTest, AttemptKeepsAHelloAdmittedWhileItReached) {
+  transport_->hello_admitted_before_detach = true;
+  OnCallsOwner([&] { connect_->Start(Request(), Hooks()); });
+  ASSERT_TRUE(PumpUntil([&] { return finished_ > 0; }, std::chrono::seconds(5)));
+  ASSERT_TRUE(result_ && *result_) << result_->error().message;
+  EXPECT_EQ(transport_->detach_unless_active_calls, 1);
+  EXPECT_EQ(transport_->detach_calls, 0) << "the admitted leg must not be detached";
 }
 
 // B39: an attempt that failed on a reused "connected" link makes the next reach drop it and redial.

@@ -1186,6 +1186,59 @@ TEST_F(CallMediaLegCoordinatorTest, YieldedOutboundFailureKeepsInboundMediaReady
   harness_->PumpBoth();
 }
 
+// A connect attempt's clean start (DetachCallUnlessActive) runs on the IO strand, where hellos are admitted: a hello
+// admitted before it ran — the answerer dialing at the same time as the offerer — keeps its bundle, and the call
+// connects on it. Its own call's live bundle is kept whatever phase it is in.
+TEST_F(CallMediaLegCoordinatorTest, DetachUnlessActiveKeepsAnAdmittedHello) {
+  const std::string call_id = "call-detach-unless-active";
+  ByteVector media_key(32, 0x5a);
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+  }));
+  std::atomic<bool> a_assoc{false};
+  harness_->mgr_a().EnsureAssociation("b", [&](pp::amp::PeerLinkManager::LinkRoe r) {
+    a_assoc.store(static_cast<bool>(r), std::memory_order_release);
+  });
+  harness_->PumpUntil([&] { return a_assoc.load(std::memory_order_acquire); }, 2000);
+  ASSERT_TRUE(a_assoc.load(std::memory_order_acquire));
+
+  CallMediaDirectConnectParams a_params;
+  a_params.peer_key = "b";
+  a_params.call_id = call_id;
+  a_params.media_epoch = 1;
+  a_params.media_key = media_key;
+  a_params.offerer = true;
+  auto a_done = std::make_shared<LegCompletion>();
+  ASSERT_TRUE(a_call_->StartLeg(a_params, {}, a_done->Fn(), 8000));
+
+  // B has admitted A's hello: its attempt's clean start for the same call leaves the bundle alone.
+  harness_->PumpUntil([&] { return b_call_->IsActive(); }, 4000);
+  ASSERT_TRUE(b_call_->IsActive());
+  b_call_->DetachCallUnlessActive(call_id);
+  b_call_->DetachCallUnlessActive("call-not-here"); // no bundle: nothing
+  harness_->PumpUntil(
+      [&] {
+        return a_done->finished.load(std::memory_order_acquire) &&
+               b_call_->Phase() == CallMediaSessionPhase::MediaReady;
+      },
+      20000);
+  ASSERT_TRUE(a_done->result) << a_done->result.error().message;
+  EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+
+  // Ready is active too: still kept.
+  b_call_->DetachCallUnlessActive(call_id);
+  harness_->PumpBoth();
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+
+  a_call_->DetachAll();
+  b_call_->DetachAll();
+  harness_->PumpBoth();
+}
+
 /** B-CONFLICT: while A–B is MediaReady, C's inbound is rejected; after A leaves, C can connect. */
 struct AmpTripleMeshHarness {
   std::shared_ptr<pp::adp::VirtualClock> clock;

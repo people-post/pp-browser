@@ -44,6 +44,7 @@ public:
   void SetAutoMigrateToDirect(bool allow) override;
   void AddStandby(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override;
   void Detach(const std::string& call_id) override;
+  void DetachUnlessActive(const std::string& call_id) override;
   void DetachAll() override;
   void HangUp(const std::string& call_id) override;
 

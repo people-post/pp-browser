@@ -298,7 +298,7 @@ Owners post raw `this` onto the worker pool, coordinator and UI mailbox, but tea
 - Quit (`Application::Shutdown`): 2 s budget (inside the 3 s watchdog). On false: `ConversationsHub::FlushForExit` and leak messaging until exit.
 - Profile reset: 10 s budget, then `ShutdownMessaging` and `ReopenAfterTeardown` before re-initializing. On false: reopen, `CancelShutdownRequest`, report "try again" — nothing freed.
 - `ReopenAfterTeardown` bumps an epoch: posts and one-shot timers from before the quiesce stay dead; repeating timers resume (GUI timers must survive a reset — owners cancel their own).
-- `DrainWorkersThenUI` is a no-op once quiesced (the quiesce already drained). Otherwise it sits behind Critical → Normal → each owner thread → UI.
+- `DrainWorkersThenUI` is a no-op once quiesced (the quiesce already drained). Otherwise it waits until every Critical / Normal worker task posted before it has **finished** — and what those tasks posted onto those lanes while they ran — then sits behind each owner thread → UI (pp-cpp-common v1.5.1; before, a marker task could run on a free pool thread beside an earlier task still running). Work posted after it began is not waited for, nor is the Background lane. From a worker task it does not wait for the calling task itself.
 - A post a mailbox drops unrun (stopped pool / owner) settles its gate count on destruction, so it cannot stall a later quiesce.
 - Per-owner guards remain only for owners that die **mid-life** on their own strand (`pp::Lifetime`, [OWNERSHIP.md](OWNERSHIP.md#lifetime-ticket--invalidate)); do not add per-owner gates for teardown.
 

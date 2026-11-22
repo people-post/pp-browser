@@ -2492,6 +2492,19 @@ void CallMediaLegCoordinator::DetachCall(const std::string& call_id) {
   runtime_.Pump();
 }
 
+void CallMediaLegCoordinator::DetachCallUnlessActive(const std::string& call_id) {
+  if (call_id.empty() || IsPendingCallId(call_id)) {
+    return;
+  }
+  impl_->PostIo([impl = impl_, call_id]() {
+    Impl::CallbackLock lock(*impl);
+    if (auto* b = impl->FindByCallId(call_id); b && !CallMediaBundlePhaseIsActive(b->phase)) {
+      impl->TearDownBundle(*b, true, false, Aborted());
+    }
+  });
+  runtime_.Pump();
+}
+
 void CallMediaLegCoordinator::DetachAll() {
   impl_->PostIo([impl = impl_]() {
     Impl::CallbackLock lock(*impl);
