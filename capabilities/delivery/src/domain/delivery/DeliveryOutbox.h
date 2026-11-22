@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -20,6 +21,7 @@
 
 namespace pbr {
 
+class BackgroundActivity;
 class IRelayClient;
 
 /** One envelope to get to a peer. */
@@ -180,7 +182,8 @@ private:
    * The relay does not know `request`'s recipient (`relay_failure`): its `amp_fallback_key` over a link, when one can
    * be had — then true, and the outcome is reported when that send ends.
    */
-  bool TryAmpFallback(const DeliveryRequest& request, uint64_t serial, const Error& relay_failure);
+  bool TryAmpFallback(const DeliveryRequest& request, uint64_t serial, const Error& relay_failure,
+                      std::shared_ptr<BackgroundActivity> background);
   /** Schedule the control-lane send again after `failure` (ControlRetryAfter); false: given up. */
   bool RetryControlLater(Pending item, const Error& failure);
   /** A control-lane retry's turn: over the relay, again later when that fails. */

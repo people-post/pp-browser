@@ -46,6 +46,7 @@
 #include "lib/messaging/GroupInviteGate.h"
 #include "mesh/host/MeshPorts.h"
 #include "lib/net/OrgBackendClients.h"
+#include "common/Utilities.h"
 
 #include <atomic>
 #include <chrono>
@@ -135,6 +136,18 @@ public:
   std::optional<int64_t> SendStartedMs(const std::string& message_id) const {
     return outbox_.SendStartedMs(message_id);
   }
+  /**
+   * Sends our stored message `message_id` again as itself — the same message id, sealed again for the peer's (or each
+   * member's) devices as a first send is — so a recipient that has it already drops the copy (the receive pipeline's
+   * dedup by message id, RelayReceivePipeline: BenignDuplicate) and one that does not gets it (B236). Its row is queued
+   * again first (a restart before it is through finds it in the outbox). For a message of ours, from this device,
+   * carrying a send mark (text, picture / file / voice, card, payment), in a public 1:1 chat or a group
+   * (StoredResendAllowed, QueuedResend.h); a private (e2e) chat's numbering is not re-sealed. true: on its way; false:
+   * something of it is still under way, nothing done; an error: not sent (not one of those, delivered, or its send
+   * failed — then its row is failed again). Blocking (sealing, the store): a worker or the UI thread, as a composer
+   * send.
+   */
+  Roe<bool> ResendStoredMessage(const std::string& thread_id, const std::string& message_id);
   Roe<ThreadMessage> ClearReaction(const std::string& thread_id, const std::string& target_message_id,
                                    const std::string& emoji);
   void PollAndMerge();
@@ -143,6 +156,13 @@ public:
    * `force` (a push, a wake) polls every one.
    */
   void SyncInboxFromWake(bool force = true);
+  /**
+   * After a start (B236): what was still queued when the app last stopped — our rows still pending in the store's
+   * outbox — is sent again as itself (ResendStoredMessage), once per process, at the first inbox sync with a relay;
+   * one queued longer than kResumeQueuedMaxAgeMs is failed instead (the red mark: a tap sends it). Rows already failed
+   * are left as they are (PlanQueuedResume). Blocking: on a worker.
+   */
+  void ResumeQueuedSends();
   /**
    * Holds every inbox poll (none goes until released): mail waits on the relays. The app lab's probe uses it to keep
    * messages on a relay while it replays requests (multi-relay MR007); nothing in the product holds. Any thread.
@@ -415,6 +435,17 @@ private:
    * when nothing of it is still being tried), and the reason told when it failed now.
    */
   void ApplySendOutcome(const DeliveryOutcome& outcome);
+  /**
+   * The send of the stored 1:1 row `appended` (`wire`: what goes on the wire) in `thread`: a copy for each of the
+   * peer's devices (M021/M022), or the account copy, handed to the outbox. An error when nothing could be handed over
+   * (the caller fails the row).
+   */
+  Roe<void> DispatchDirect(const Thread& thread, const ThreadMessage& appended, const ThreadMessage& wire,
+                           const SendRelayOptions& options);
+  /** The send of the stored group row `message` to each other member's devices (`members`), as DispatchDirect. */
+  Roe<void> DispatchGroup(const Thread& thread, const ThreadMessage& message, const std::string& text,
+                          const SendRelayOptions& options, const std::vector<GroupRosterMember>& members,
+                          const LocalIdentity& identity);
   /** A pair whose session came back without this device's numbering starts its next epoch (D014, #378). */
   Roe<void> StartNextEpochIfRestored(const Thread& thread);
   /** A pair this device lost its numbering in starts its next epoch (D014): 1:1 sends and group copies. */
@@ -601,6 +632,12 @@ private:
   RecipientRelays recipient_relays_;
   uint64_t last_relay_poll_ms_ = 0;
   std::atomic<bool> inbox_sync_held_{false};
+  /** When this orchestrator was made: a row written since is sent by its own send, never by ResumeQueuedSends. */
+  const int64_t created_ms_ = util::NowUnixMs();
+  /** ResumeQueuedSends ran (or is running) in this process. */
+  std::atomic<bool> queued_sends_resumed_{false};
+  /** One ResendStoredMessage at a time: a tap and the start's resume never both send a message. */
+  std::mutex stored_resend_mu_;
   /** 0 = Unknown, 1 = Ok, 2 = Failed — see BriefRelayHealthState. */
   std::atomic<int> brief_relay_health_{0};
   void StoreBriefRelayHealth(BriefRelayHealthState state);

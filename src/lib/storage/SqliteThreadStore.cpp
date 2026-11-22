@@ -935,6 +935,12 @@ Roe<bool> SqliteThreadStore::UpdateMessageDelivery(const std::string& thread_id,
   sqlite3_finalize(stmt);
   if (updated && delivery != MessageDelivery::Pending) {
     (void)RemoveOutboxRow(message_id); // as UpdateMessage does
+  } else if (updated) {
+    // Queued again (sent again with its own id, B236): kept in the outbox as an appended pending row is, so a restart
+    // before it is through finds it to send again.
+    if (auto outbox = UpsertOutboxRow(message_id, thread_id); !outbox) {
+      return outbox.error();
+    }
   }
   return updated;
 }

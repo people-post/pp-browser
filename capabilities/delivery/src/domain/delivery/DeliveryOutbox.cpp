@@ -6,6 +6,7 @@
 #include "lib/delivery/OutboundMessage.h"
 #include "lib/net/OrgBackendClients.h"
 #include "common/Utilities.h"
+#include "foundation/runtime/BackgroundActivity.h"
 
 #include <algorithm>
 #include <iterator>
@@ -141,6 +142,10 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
     if (EndIfCancelled(request.thread_id, request.message_id, serial)) {
       return;
     }
+    // From the attempt's start until its outcome is written (the row marked, in the outcome handler): an app going to
+    // the background meanwhile is given the time to hear the answer and record it (B236: a relay that took the message
+    // while the app was being suspended left the row unsent for good).
+    auto background = std::make_shared<BackgroundActivity>("message send");
     auto post_continue = [critical = request.critical_lane](std::function<void()> fn) {
       if (critical) {
         AppRuntime::PostWorkerCritical(std::move(fn));
@@ -150,7 +155,7 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
     };
     // `direct`: the direct send's failure when it was tried — what the notice says when the relay
     // cannot carry the envelope either.
-    auto finish_relay = [this, serial, request](std::optional<DirectSendFailure> direct) {
+    auto finish_relay = [this, serial, request, background](std::optional<DirectSendFailure> direct) {
       // After a direct failure the relay is a new attempt.
       if (direct && EndIfCancelled(request.thread_id, request.message_id, serial)) {
         return;
@@ -173,7 +178,7 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
         return;
       }
       if (auto sent = relay->Send(request.envelope); !sent) {
-        if (RelayRecipientNotRegistered(sent.error()) && TryAmpFallback(request, serial, sent.error())) {
+        if (RelayRecipientNotRegistered(sent.error()) && TryAmpFallback(request, serial, sent.error(), background)) {
           return; // not on our relay: over a link to it, if one can be had
         }
         Pending pending{.envelope = request.envelope,
@@ -267,7 +272,8 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
   }
 }
 
-bool DeliveryOutbox::TryAmpFallback(const DeliveryRequest& request, const uint64_t serial, const Error& relay_failure) {
+bool DeliveryOutbox::TryAmpFallback(const DeliveryRequest& request, const uint64_t serial, const Error& relay_failure,
+                                    std::shared_ptr<BackgroundActivity> background) {
   IDirectMessageClient* chat = direct_chat_ ? direct_chat_() : nullptr;
   if (request.amp_fallback_key.empty() || !chat || !chat->IsPeerReachable(request.amp_fallback_key)) {
     return false;
@@ -275,8 +281,9 @@ bool DeliveryOutbox::TryAmpFallback(const DeliveryRequest& request, const uint64
   log().info << "relay does not know the recipient message_id=" << request.message_id << "; over a link to "
              << request.amp_fallback_key;
   chat->SendEnvelopeAsync(
-      request.amp_fallback_key, request.envelope, [this, request, serial, relay_failure](DirectSendRoe direct) {
-        AppRuntime::PostWorkerNormal([this, request, serial, relay_failure, direct = std::move(direct)]() {
+      request.amp_fallback_key, request.envelope,
+      [this, request, serial, relay_failure, background = std::move(background)](DirectSendRoe direct) {
+        AppRuntime::PostWorkerNormal([this, request, serial, relay_failure, background, direct = std::move(direct)]() {
           if (EndIfCancelled(request.thread_id, request.message_id, serial)) {
             return;
           }
@@ -469,6 +476,8 @@ void DeliveryOutbox::Retry() {
     return;
   }
   AppRuntime::PostWorkerNormal([this, pending = std::move(pending)]() mutable {
+    // As a first send's: the batch's outcomes are written before the app may be suspended (B236).
+    auto background = std::make_shared<BackgroundActivity>("message retry");
     if (!relay_.load(std::memory_order_acquire)) {
       std::lock_guard lock(mutex_);
       for (Pending& item : pending) {
@@ -480,7 +489,7 @@ void DeliveryOutbox::Retry() {
     // Held by this call and by each send still in flight; it reaches itself only weakly. A strong
     // self-capture was a cycle that kept every batch's closure alive after it ended.
     auto process = std::make_shared<std::function<void(size_t)>>();
-    *process = [this, pending = std::move(pending), still_pending,
+    *process = [this, pending = std::move(pending), still_pending, background,
                 weak_process = std::weak_ptr<std::function<void(size_t)>>(process)](size_t index) mutable {
       const auto process = weak_process.lock();
       if (!process) {
