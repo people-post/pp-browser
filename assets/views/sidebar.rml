@@ -169,7 +169,12 @@
         </div>
       </div>
     </div>
-    <div class="sidebar-empty" data-if="sessions.size == 0 && sessions_query == '' && !showing_archived">
+    <div class="sync-pending" data-if="sessions.size == 0 && sessions_query == '' && !showing_archived && (account_sync_syncing || account_sync_delayed)">
+      <div class="sync-pending-spinner" data-if="account_sync_syncing"></div>
+      <p class="text muted" data-if="account_sync_syncing">{{i18n:account_sync.pending}}</p>
+      <p class="text muted" data-if="!account_sync_syncing && account_sync_delayed">{{i18n:account_sync.delayed}}</p>
+    </div>
+    <div class="sidebar-empty" data-if="sessions.size == 0 && sessions_query == '' && !showing_archived && !account_sync_syncing && !account_sync_delayed">
       <p class="text muted">{{i18n:sidebar.empty_start}}</p>
       <button class="btn btn-primary" type="button" data-event-click="empty_add_contact()">{{i18n:contacts.add}}</button>
     </div>

@@ -1782,6 +1782,16 @@ void ChatController::RefreshFromMessaging() {
   }
 }
 
+void ChatController::SetAccountSync(const bool syncing, const bool delayed) {
+  if (shell_.account_sync_syncing == syncing && shell_.account_sync_delayed == delayed) {
+    return;
+  }
+  shell_.account_sync_syncing = syncing;
+  shell_.account_sync_delayed = delayed;
+  DataModelHost::Instance().Dirty("shell", "account_sync_syncing");
+  DataModelHost::Instance().Dirty("shell", "account_sync_delayed");
+}
+
 void ChatController::OnPeerIconsChanged() {
   if (!messaging_ready_) {
     return;

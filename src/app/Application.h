@@ -1,6 +1,7 @@
 #pragma once
 
 #include "feature/ai/AgentSessions.h"
+#include "feature/presenters/AccountSyncState.h"
 #include "gui/ChatStoreRecovery.h"
 #include "app/ChatShellBridge.h"
 #include "app/ContactsShellBridge.h"
@@ -91,6 +92,11 @@ private:
                         ui::Context*& context);
   SettingsToolPorts WireSettings(ui::Context* context);
   void WireShellPresenters(const SettingsToolPorts& settings_tool_ports);
+  /** The first sync after "I already have an account" (AccountSyncState). All on the UI thread. */
+  void PersistAccountSyncPending(bool pending);
+  void ApplyAccountSyncView();
+  void ArmAccountSyncTimeout();
+  void OnAccountSyncResult(bool ok);
   /** One info line per new call-alert tap: when it was recorded against the first presented frame. Any thread. */
   void LogCallTapTiming();
   /**
@@ -166,6 +172,8 @@ private:
   std::unique_ptr<ChatController> chat_;
   std::atomic<bool> peer_icons_refresh_posted_{false}; // a peer-icon refresh is queued on the UI thread
   std::atomic<bool> contacts_sync_posted_{false};      // a contact-list rebuild is queued on the UI thread
+  AccountSyncState account_sync_{[this](const bool pending) { PersistAccountSyncPending(pending); }};
+  int account_sync_retries_ = 0;
   /** Milliseconds from StartupEpoch to the first presented frame; -1 until it is up. */
   std::atomic<int64_t> first_present_ms_{-1};
   std::atomic<uint64_t> logged_call_tap_seq_{0};

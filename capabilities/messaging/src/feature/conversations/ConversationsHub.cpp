@@ -2745,8 +2745,17 @@ void ConversationsHub::PublishAccountLockerSoon() {
       if (mesh_messaging_ && mesh_messaging_->OwnAccountCards().SignedOut()) {
         return; // M021 d4: a signed-out device no longer speaks for the account
       }
-      if (auto published = account_locker_->Publish(); !published) {
+      auto published = account_locker_->Publish();
+      if (!published) {
         log().info << "Account locker not published: " << published.error().message;
+      }
+      std::function<void(bool)> on_result;
+      {
+        std::lock_guard lock(account_sync_result_mu_);
+        on_result = on_account_sync_result_;
+      }
+      if (on_result) {
+        on_result(static_cast<bool>(published));
       }
     });
   });
@@ -4486,6 +4495,11 @@ void ConversationsHub::SetDeviceRemovedWatch(std::function<void()> callback) {
 void ConversationsHub::SetOnContactsChanged(std::function<void()> callback) {
   std::lock_guard lock(contacts_changed_mu_);
   on_contacts_changed_ = std::move(callback);
+}
+
+void ConversationsHub::SetOnAccountSyncResult(std::function<void(bool ok)> callback) {
+  std::lock_guard lock(account_sync_result_mu_);
+  on_account_sync_result_ = std::move(callback);
 }
 
 void ConversationsHub::NotifyOwnDevicesChanged() {

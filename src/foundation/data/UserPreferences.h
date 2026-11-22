@@ -79,6 +79,13 @@ struct ProfilePreferences {
   /** Phone chat composer: the last input mode was voice (true) rather than keyboard (false). Optional on disk; device-only, never synced. */
   bool composer_voice_mode_last = false;
   /**
+   * An account was brought over (linking code or recovery phrase) and its first account-data sync has not finished:
+   * the Contacts and Chats pages show "Syncing…" instead of the empty state. Set when the import ends, cleared when
+   * the first locker sync succeeds. Optional on disk (absent = false = not pending; no schema bump); device-only,
+   * never synced.
+   */
+  bool account_sync_pending = false;
+  /**
    * PIN grace window (#21): minutes after the last foreground use during which a cold start or call skips the PIN.
    * One of 0 (every time), 5, 15, 60, or -1 (kUnlockGraceAlways: until the phone restarts, A015); anything else reads back as 15. Device-only, never synced.
    */

@@ -1099,6 +1099,11 @@ select selectbox option:hover {
   border-top-color: #ffffff;
 }
 
+.sync-pending-spinner {
+  border-color: #78788033;
+  border-top-color: #007aff;
+}
+
 .shell-startup-cover {
   background-color: #ffffff;
 }
