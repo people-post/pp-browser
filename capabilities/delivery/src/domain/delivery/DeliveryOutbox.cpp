@@ -246,8 +246,8 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
       return;
     }
     // Fire and forget: this worker is free while the mesh pump drives the open + ack.
-    chat->SendEnvelopeAsync(
-        request.amp_peer_key, request.envelope,
+    SendDirect(
+        chat, request.amp_peer_key, request.envelope,
         [this, request, post_continue, finish_relay = std::move(finish_relay)](DirectSendRoe direct) mutable {
           post_continue([this, request, direct = std::move(direct), finish_relay = std::move(finish_relay)]() mutable {
             if (direct) {
@@ -272,6 +272,37 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
   }
 }
 
+void DeliveryOutbox::SendDirect(IDirectMessageClient* chat, const std::string& peer_key, const RelayEnvelope& envelope,
+                                std::function<void(DirectSendRoe)> on_done) {
+  // B236 R4: whatever the transport does, the attempt ends — its answer, or after direct_send_timeout_ a retryable
+  // "not confirmed" (the relay next, or the queue). Whichever comes first is the one; the other is dropped. A
+  // transport that drops the callback unanswered leaves the timer's copy to end it.
+  struct Once {
+    std::atomic<bool> done{false};
+    std::function<void(DirectSendRoe)> on_done;
+  };
+  auto once = std::make_shared<Once>();
+  once->on_done = std::move(on_done);
+  const uint64_t timer =
+      AppRuntime::ScheduleCoordinatorOneShot(direct_send_timeout_, lifetime_.Bind([this, once, peer_key]() {
+        if (once->done.exchange(true)) {
+          return;
+        }
+        log().info << "direct send unanswered peer=" << peer_key << " after "
+                   << std::chrono::duration_cast<std::chrono::seconds>(direct_send_timeout_).count() << " s";
+        auto finish = std::move(once->on_done);
+        finish(DirectSendFailure::Of(DirectSendErr::NotConfirmed, "Direct send unanswered"));
+      }));
+  chat->SendEnvelopeAsync(peer_key, envelope, [once, timer](DirectSendRoe direct) {
+    if (once->done.exchange(true)) {
+      return;
+    }
+    AppRuntime::CancelCoordinatorTimer(timer);
+    auto finish = std::move(once->on_done);
+    finish(std::move(direct));
+  });
+}
+
 bool DeliveryOutbox::TryAmpFallback(const DeliveryRequest& request, const uint64_t serial, const Error& relay_failure,
                                     std::shared_ptr<BackgroundActivity> background) {
   IDirectMessageClient* chat = direct_chat_ ? direct_chat_() : nullptr;
@@ -280,8 +311,8 @@ bool DeliveryOutbox::TryAmpFallback(const DeliveryRequest& request, const uint64
   }
   log().info << "relay does not know the recipient message_id=" << request.message_id << "; over a link to "
              << request.amp_fallback_key;
-  chat->SendEnvelopeAsync(
-      request.amp_fallback_key, request.envelope,
+  SendDirect(
+      chat, request.amp_fallback_key, request.envelope,
       [this, request, serial, relay_failure, background = std::move(background)](DirectSendRoe direct) {
         AppRuntime::PostWorkerNormal([this, request, serial, relay_failure, background, direct = std::move(direct)]() {
           if (EndIfCancelled(request.thread_id, request.message_id, serial)) {
@@ -478,13 +509,8 @@ void DeliveryOutbox::Retry() {
   AppRuntime::PostWorkerNormal([this, pending = std::move(pending)]() mutable {
     // As a first send's: the batch's outcomes are written before the app may be suspended (B236).
     auto background = std::make_shared<BackgroundActivity>("message retry");
-    if (!relay_.load(std::memory_order_acquire)) {
-      std::lock_guard lock(mutex_);
-      for (Pending& item : pending) {
-        EnqueueLocked(std::move(item));
-      }
-      return;
-    }
+    // No relay set (yet): each item still counts the try (try_relay: "Relay client not configured"), so one never
+    // waits forever on a relay that does not come — it fails once its retries are used up (B236 R4).
     auto still_pending = std::make_shared<std::vector<Pending>>();
     // Held by this call and by each send still in flight; it reaches itself only weakly. A strong
     // self-capture was a cycle that kept every batch's closure alive after it ended.
@@ -550,8 +576,8 @@ void DeliveryOutbox::Retry() {
           !item.amp_peer_key.empty() ? item.amp_peer_key : item.envelope.recipient_account_id.value_or("");
       if (!peer_key.empty() && chat && chat->IsPeerReachable(peer_key)) {
         const RelayEnvelope envelope = item.envelope;
-        chat->SendEnvelopeAsync(
-            peer_key, envelope,
+        SendDirect(
+            chat, peer_key, envelope,
             [this, process, index, item = std::move(item),
              try_relay = std::move(try_relay)](DirectSendRoe direct) mutable {
               AppRuntime::PostWorkerNormal([this, process, index, item = std::move(item),

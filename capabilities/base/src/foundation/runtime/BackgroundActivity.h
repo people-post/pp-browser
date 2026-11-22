@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 
@@ -23,7 +24,15 @@ public:
   /** Per-backend state (the iOS task id); opaque here. */
   struct State;
 
+  /** How many are held now, on every backend (tests: each one is let go once its work ends). */
+  static int HeldCount() { return Held().load(); }
+
 private:
+  static std::atomic<int>& Held() {
+    static std::atomic<int> held{0};
+    return held;
+  }
+
   std::shared_ptr<State> state_;
 };
 

@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -123,6 +124,8 @@ public:
    * restart); the control lane is not tracked. It changes nothing that is reported or retried. Any thread.
    */
   std::optional<int64_t> SendStartedMs(const std::string& message_id) const;
+  /** How long a direct (Amp) send may go unanswered before it counts as a retryable failure (tests: shorter). */
+  void SetDirectSendTimeoutForTest(const std::chrono::milliseconds timeout) { direct_send_timeout_ = timeout; }
   /** How many messages are remembered as cancelled (tests: the record stays bounded). */
   size_t CancelledCountForTest() const {
     std::lock_guard lock(mutex_);
@@ -184,6 +187,9 @@ private:
    */
   bool TryAmpFallback(const DeliveryRequest& request, uint64_t serial, const Error& relay_failure,
                       std::shared_ptr<BackgroundActivity> background);
+  /** `chat`'s SendEnvelopeAsync, ended by `direct_send_timeout_` when the transport never answers (B236 R4). */
+  void SendDirect(IDirectMessageClient* chat, const std::string& peer_key, const RelayEnvelope& envelope,
+                  std::function<void(DirectSendRoe)> on_done);
   /** Schedule the control-lane send again after `failure` (ControlRetryAfter); false: given up. */
   bool RetryControlLater(Pending item, const Error& failure);
   /** A control-lane retry's turn: over the relay, again later when that fails. */
@@ -191,6 +197,8 @@ private:
   bool Paused(const std::string& thread_id) const { return !thread_id.empty() && paused_ && paused_(thread_id); }
 
   std::function<IDirectMessageClient*()> direct_chat_;
+  /** A direct send's answer is waited for this long (the transport's own deadline is a few seconds). */
+  std::chrono::milliseconds direct_send_timeout_{30000};
   std::atomic<IRelayClient*> relay_{nullptr};
   std::function<void(const DeliveryOutcome&)> on_outcome_;
   std::function<bool(const std::string&)> paused_;
