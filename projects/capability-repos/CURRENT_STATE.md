@@ -1,6 +1,6 @@
 # Capability repos — current state
 
-**Updated:** 2026-11-01  
+**Updated:** 2026-11-22  
 **Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready (CR023) in progress, steps 1–3 of 5 done; storage in the app (CR024) done
 
 ## Done
@@ -145,3 +145,24 @@
 1. CR023 steps 4–5 for calls (a standalone build and its CI job, the host contract).
 2. Contracts repo (CR010) when convenient.
 3. P3's namespaces when a second app needs a capability.
+
+## A second app is waiting (2026-11-22)
+
+**pp-ledger-apps' operator app** needs the relay id, operator set and relay certificate code: net's
+`capabilities/net/src/lib/net/RelayCertificate.*` and base's `capabilities/base/src/foundation/crypto/RelayId.*`,
+with `capabilities/net/src/lib/net/tests/data/relay_certificate_vectors.json`
+([pp-ledger-apps OP008](https://github.com/people-post/pp-ledger-apps/blob/main/projects/operator-app/DECISIONS.md)).
+It is P4's first move (CR005), after release 1: not earlier, because pp-browser keeps its pins during the freeze.
+Not pp-cpp-crypto: its README keeps product wire formats in the apps, and only the hashing, signatures, typed blobs
+and PeerId in this code are crypto.
+
+- **Before it:** CR012's prerequisites (one pin list per app and a sibling-build mode; one home for vendored deps).
+  The vectors go to the contracts repo (CR010) in the same step if it exists by then, since the relay reads them too.
+- **A reference port:** pp-cpp-crypto branch `feat/relay-certificate` (commit 402421f; not merged, not to be released
+  from there) carries the code with these vectors byte for byte, every case with the same verdict. Moving it here:
+  - origin policy becomes the caller's: the shared code keeps the structural rules and takes an origin predicate, and
+    pp-browser passes its card rule (`IsCertificateOrigin`: 128 bytes among other bounds), or it accepts certificates
+    it refuses today;
+  - errors become the shared code's own category (the verdict as the code), mapped here to `AppError::NewerFormat` and
+    `Err::Network::RelayIdentityUnavailable` as `RelayCertificateCheck::ToError` does today;
+  - it needs pp-cpp-common 1.5.0 or later (`ExtArea`).
