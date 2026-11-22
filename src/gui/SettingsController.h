@@ -181,6 +181,11 @@ public:
   void BindRunWhenRegistrationIdle(std::function<void(SettingsProfileActions::RegistrationSlotRun)> run);
   /** Messaging was torn down (profile reset): the update button and the callers waiting for a registration let go. */
   void OnMessagingTornDown();
+  /**
+   * Reset my profile succeeded: nothing of the old account stays on the Me card (name, ids, picture, registration) —
+   * the fields go back to a fresh install's, before the first-run page shows over them.
+   */
+  void OnProfileReset();
   /** The Me card's "QR code" button opens the full-page My QR code. */
   void BindShowMyQr(std::function<void()> show);
   /** The rows "Service" offers now (prod, custom, and staging / dev only with that address in the build and the tester options on); `OnChooseBackend` shows exactly these. */

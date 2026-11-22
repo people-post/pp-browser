@@ -246,6 +246,30 @@ void SettingsController::OnMessagingTornDown() {
   profile_actions_.OnMessagingTornDown();
 }
 
+void SettingsController::OnProfileReset() {
+  const SettingsUiState fresh;
+  ui_state_.profile_nickname = fresh.profile_nickname;
+  ui_state_.profile_peer_id = fresh.profile_peer_id;
+  ui_state_.profile_account_id = fresh.profile_account_id;
+  ui_state_.profile_registered = fresh.profile_registered;
+  ui_state_.profile_registration_status = fresh.profile_registration_status;
+  ui_state_.profile_registration_expires = fresh.profile_registration_expires;
+  ui_state_.profile_register_label = fresh.profile_register_label;
+  ui_state_.profile_show_register = fresh.profile_show_register;
+  ui_state_.profile_register_primary = fresh.profile_register_primary;
+  ui_state_.profile_show_rotate = fresh.profile_show_rotate;
+  ui_state_.profile_icon_src = fresh.profile_icon_src;
+  ui_state_.profile_has_icon = fresh.profile_has_icon;
+  ui_state_.profile_icon_uploading = fresh.profile_icon_uploading;
+  ui_state_.profile_show_clear_icon = fresh.profile_show_clear_icon;
+  ui_state_.profile_avatar_letter = fresh.profile_avatar_letter;
+  ui_state_.profile_avatar_tone = fresh.profile_avatar_tone;
+  // The name field's baseline too, so the next load (the new account's) is not taken for an edit of the old name.
+  UiEditSession::Instance().OnLoaded(kUiFieldProfileNickname, "");
+  PushUiStateToBindings();
+  DirtyAll(/*include_profile_nickname=*/true);
+}
+
 void SettingsController::BindShowMyQr(std::function<void()> show) {
   profile_actions_.BindShowMyQr(std::move(show));
 }
