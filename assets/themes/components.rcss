@@ -8151,7 +8151,6 @@ input.checkbox {
   width: 28dp;
   height: 28dp;
   border-width: 3dp;
-  border-style: solid;
   border-radius: 17dp;
   animation: 0.9s linear infinite sync-pending-spin;
 }
