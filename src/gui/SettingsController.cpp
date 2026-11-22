@@ -1939,7 +1939,8 @@ void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {
 std::vector<SettingsChoicePage::Option> SettingsController::BackendChoiceOptions() const {
   const std::string current = bindings_.backend_env.c_str();
   std::vector<SettingsChoicePage::Option> options;
-  for (const char* id : BackendChoicesOffered(ui_state_.backend_qa_available, ui_state_.show_tester_options == "on")) {
+  for (const char* id : BackendChoicesOffered(ui_state_.backend_staging_available, ui_state_.backend_dev_available,
+                                    ui_state_.show_tester_options == "on")) {
     options.push_back({id, BackendDisplayLabel(id).c_str(), current == id});
   }
   return options;
@@ -1950,24 +1951,76 @@ void SettingsController::OnChooseBackend(ui::Event& ev) {
              BackendChoiceOptions(), [this](const std::string& id) { ApplyBackendChoice(id); });
 }
 
-void SettingsController::ApplyBackendChoice(const std::string& env) {
-  if (suppress_auto_save_) {
+bool SettingsController::CanQuit() const {
+  return quit_override_ ? quit_override_->can_quit : !Platform::IsMobile();
+}
+
+void SettingsController::QuitApp() {
+  if (quit_override_) {
+    if (quit_override_->quit) {
+      quit_override_->quit();
+    }
     return;
   }
-  // Against what the choice page shows as selected (bindings_.backend_env, see BackendChoiceOptions).
-  const bool changed = std::string(bindings_.backend_env.c_str()) != env;
+  Backend::RequestExit();
+}
+
+void SettingsController::SaveBackendChoice(const std::string& env) {
   ui_state_.backend_env = env;
   PushUiStateToBindings();
   MarkSectionDirty("network");
   FlushPending();
   DirtyAll();
-  // The choice only takes effect on the next start, and the small grey line under the row is easy to miss: say it once
-  // in a dialog (only for a pick that leaves the app on a different service than the one running).
-  if (changed && ParseBackendEnv(env) != ActiveBackend() && shell_feedback_.show_alert) {
-    shell_feedback_.show_alert(Tr("settings.network.backend.reopen_title"),
-                               Tr("settings.network.backend.reopen_body", {{"name", BackendDisplayLabel(env)}}), {},
-                               Tr("settings.network.backend.reopen_ok"));
+  if (CanQuit()) {
+    return;
   }
+  // No quit here: pin a banner while the saved service differs from the one this run started on.
+  const bool pending = ParseBackendEnv(Store().Snapshot().config.backend.env) != ActiveBackend();
+  if (pending && shell_feedback_.show_banner) {
+    shell_feedback_.show_banner(Tr("settings.network.backend.restart_banner"), true);
+    restart_banner_shown_ = true;
+  } else if (!pending && restart_banner_shown_ && shell_feedback_.dismiss_banner) {
+    shell_feedback_.dismiss_banner();
+    restart_banner_shown_ = false;
+  }
+}
+
+void SettingsController::ApplyBackendChoice(const std::string& env) {
+  if (suppress_auto_save_) {
+    return;
+  }
+  // Against what the choice page shows as selected (bindings_.backend_env, see BackendChoiceOptions).
+  const std::string original = bindings_.backend_env.c_str();
+  if (!BackendSwitchNeedsConfirm(original, env)) {
+    return;
+  }
+  if (!shell_feedback_.show_confirm) {
+    SaveBackendChoice(env);
+    return;
+  }
+  // Nothing is saved until confirmed, so a cancel leaves the original selected.
+  const std::string orig_label = BackendDisplayLabel(original);
+  const std::string dest_label = BackendDisplayLabel(env);
+  shell_feedback_.show_confirm(
+      Tr("settings.network.backend.switch_title"),
+      Tr("settings.network.backend.switch_confirm", {{"origEnv", orig_label}, {"destEnv", dest_label}}),
+      [this, env, dest_label](const bool ok) {
+        if (!ok) {
+          return;
+        }
+        SaveBackendChoice(env);
+        if (ParseBackendEnv(Store().Snapshot().config.backend.env) != ParseBackendEnv(env)) {
+          return; // the save failed (reported by the flush): do not quit or claim a switch
+        }
+        if (CanQuit()) {
+          QuitApp();
+        } else if (shell_feedback_.show_alert) {
+          shell_feedback_.show_alert(Tr("settings.network.backend.switch_title"),
+                                     Tr("settings.network.backend.switched_reopen", {{"destEnv", dest_label}}), {},
+                                     Tr("common.ok"));
+        }
+      },
+      Tr("common.yes"));
 }
 
 void SettingsController::OnChooseDirectConnections(ui::Event& ev) {

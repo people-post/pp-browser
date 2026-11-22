@@ -13,22 +13,30 @@
 #define PP_API_URL_PROD ""
 #endif
 
-// The org relays' ids (CMake PP_RELAY_ID_PROD / PP_RELAY_ID_QA; kPendingRelayId by default) and their certificates
-// at build time (config/relay-certs/<env>.cert, generated: kCompiledRelayCertificateProd / …Qa).
+// The org relays' ids (CMake PP_RELAY_ID_PROD / _STAGING / _DEV; kPendingRelayId by default) and their certificates
+// at build time (config/relay-certs/<env>.cert, generated: kCompiledRelayCertificateProd / …Staging / …Dev).
 #ifndef PP_RELAY_ID_PROD
 #define PP_RELAY_ID_PROD ""
 #endif
 
-#ifndef PP_RELAY_ID_QA
-#define PP_RELAY_ID_QA ""
+#ifndef PP_RELAY_ID_STAGING
+#define PP_RELAY_ID_STAGING ""
+#endif
+
+#ifndef PP_RELAY_ID_DEV
+#define PP_RELAY_ID_DEV ""
 #endif
 
 #include "CompiledRelayCertificates.inc"
 
 namespace pbr {
 
-#ifndef PP_API_URL_QA
-#define PP_API_URL_QA ""
+#ifndef PP_API_URL_STAGING
+#define PP_API_URL_STAGING ""
+#endif
+
+#ifndef PP_API_URL_DEV
+#define PP_API_URL_DEV ""
 #endif
 
 namespace {
@@ -48,8 +56,12 @@ const char* CompiledDefaultOrigin() {
   return PP_API_URL_PROD;
 }
 
-const char* CompiledQaOrigin() {
-  return PP_API_URL_QA;
+const char* CompiledStagingOrigin() {
+  return PP_API_URL_STAGING;
+}
+
+const char* CompiledDevOrigin() {
+  return PP_API_URL_DEV;
 }
 
 bool CompiledRelayContentSha256() {
@@ -66,16 +78,47 @@ const char* CompiledDefaultRelayCertificate() {
 
 CompiledOrigins BuildCompiledOrigins() {
   return {.prod = CompiledDefaultOrigin(),
-          .qa = CompiledQaOrigin(),
+          .staging = CompiledStagingOrigin(),
+          .dev = CompiledDevOrigin(),
           .prod_relay_id = PP_RELAY_ID_PROD,
-          .qa_relay_id = PP_RELAY_ID_QA,
+          .staging_relay_id = PP_RELAY_ID_STAGING,
+          .dev_relay_id = PP_RELAY_ID_DEV,
           .prod_relay_certificate = kCompiledRelayCertificateProd,
-          .qa_relay_certificate = kCompiledRelayCertificateQa};
+          .staging_relay_certificate = kCompiledRelayCertificateStaging,
+          .dev_relay_certificate = kCompiledRelayCertificateDev};
+}
+
+const char* CompiledOriginFor(const BackendEnv env, const CompiledOrigins& compiled) {
+  switch (env) {
+    case BackendEnv::Staging:
+      return compiled.staging;
+    case BackendEnv::Dev:
+      return compiled.dev;
+    case BackendEnv::Prod:
+      return compiled.prod;
+    case BackendEnv::Custom:
+      break;
+  }
+  return "";
+}
+
+bool BackendAvailableIn(const BackendEnv env, const CompiledOrigins& compiled) {
+  if (env == BackendEnv::Staging || env == BackendEnv::Dev) {
+    return *CompiledOriginFor(env, compiled) != '\0';
+  }
+  return true;
+}
+
+bool BackendAvailable(const BackendEnv env) {
+  return BackendAvailableIn(env, BuildCompiledOrigins());
 }
 
 BackendEnv ParseBackendEnv(const std::string_view name) {
-  if (name == "qa") {
-    return BackendEnv::Qa;
+  if (name == "staging" || name == "qa") {
+    return BackendEnv::Staging;
+  }
+  if (name == "dev") {
+    return BackendEnv::Dev;
   }
   if (name == "custom") {
     return BackendEnv::Custom;
@@ -85,8 +128,10 @@ BackendEnv ParseBackendEnv(const std::string_view name) {
 
 const char* BackendEnvName(const BackendEnv env) {
   switch (env) {
-    case BackendEnv::Qa:
-      return "qa";
+    case BackendEnv::Staging:
+      return "staging";
+    case BackendEnv::Dev:
+      return "dev";
     case BackendEnv::Custom:
       return "custom";
     case BackendEnv::Prod:
@@ -103,11 +148,11 @@ void LatchActiveBackend(BackendEnv requested) {
   if (Latched()) {
     return;
   }
-  Latched() = ResolveLatchedBackend(requested, QaBackendAvailable());
+  Latched() = ResolveLatchedBackend(requested, BuildCompiledOrigins());
 }
 
-BackendEnv ResolveLatchedBackend(const BackendEnv requested, const bool qa_available) {
-  return requested == BackendEnv::Qa && !qa_available ? BackendEnv::Prod : requested;
+BackendEnv ResolveLatchedBackend(const BackendEnv requested, const CompiledOrigins& compiled) {
+  return BackendAvailableIn(requested, compiled) ? requested : BackendEnv::Prod;
 }
 
 bool ActiveBackendLatched() {
@@ -132,8 +177,8 @@ std::string ResolveBriefOrigin(const bool ui_demo, const char* env_origin, const
   std::string origin;
   if (env_origin && *env_origin) {
     origin = env_origin;
-  } else if (backend == BackendEnv::Qa) {
-    origin = compiled.qa;
+  } else if (backend == BackendEnv::Staging || backend == BackendEnv::Dev) {
+    origin = CompiledOriginFor(backend, compiled);
   } else {
     origin = compiled.prod;
   }
@@ -152,9 +197,16 @@ OrgRelayIdentity ResolveOrgRelayIdentity(const bool ui_demo, const char* env_ori
     // The override's relay: its own relay id, or none; its certificate is fetched (the build's are other relays').
     return {.relay_id = env_relay_id ? std::string(env_relay_id) : std::string()};
   }
-  const bool qa = backend == BackendEnv::Qa;
-  return {.relay_id = qa ? compiled.qa_relay_id : compiled.prod_relay_id,
-          .certificate_b64 = qa ? compiled.qa_relay_certificate : compiled.prod_relay_certificate};
+  switch (backend) {
+    case BackendEnv::Staging:
+      return {.relay_id = compiled.staging_relay_id, .certificate_b64 = compiled.staging_relay_certificate};
+    case BackendEnv::Dev:
+      return {.relay_id = compiled.dev_relay_id, .certificate_b64 = compiled.dev_relay_certificate};
+    case BackendEnv::Prod:
+    case BackendEnv::Custom:
+      break;
+  }
+  return {.relay_id = compiled.prod_relay_id, .certificate_b64 = compiled.prod_relay_certificate};
 }
 
 OrgRelayIdentity BriefOrgRelayIdentity() {

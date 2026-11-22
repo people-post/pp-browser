@@ -115,9 +115,11 @@ jobs:
         if: steps.tag.outputs.kind == 'candidate'
         shell: bash
         env:
-          PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
+          PP_API_URL_STAGING: ${{ secrets.PP_API_URL_STAGING }}
+          PP_API_URL_DEV: ${{ secrets.PP_API_URL_DEV }}
           PP_RELAY_ID_PROD: ${{ vars.PP_RELAY_ID_PROD || secrets.PP_RELAY_ID_PROD }}
-          PP_RELAY_ID_QA: ${{ vars.PP_RELAY_ID_QA || secrets.PP_RELAY_ID_QA }}
+          PP_RELAY_ID_STAGING: ${{ vars.PP_RELAY_ID_STAGING || secrets.PP_RELAY_ID_STAGING }}
+          PP_RELAY_ID_DEV: ${{ vars.PP_RELAY_ID_DEV || secrets.PP_RELAY_ID_DEV }}
         run: ./scripts/check/check_relay_ids.sh release
 
   macos:
@@ -186,9 +188,11 @@ jobs:
         shell: bash
         env:
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
-          PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
+          PP_API_URL_STAGING: ${{ secrets.PP_API_URL_STAGING }}
+          PP_API_URL_DEV: ${{ secrets.PP_API_URL_DEV }}
           PP_RELAY_ID_PROD: ${{ vars.PP_RELAY_ID_PROD || secrets.PP_RELAY_ID_PROD }}
-          PP_RELAY_ID_QA: ${{ vars.PP_RELAY_ID_QA || secrets.PP_RELAY_ID_QA }}
+          PP_RELAY_ID_STAGING: ${{ vars.PP_RELAY_ID_STAGING || secrets.PP_RELAY_ID_STAGING }}
+          PP_RELAY_ID_DEV: ${{ vars.PP_RELAY_ID_DEV || secrets.PP_RELAY_ID_DEV }}
           PP_RELAY_CONTENT_SHA256: ${{ vars.PP_RELAY_CONTENT_SHA256 }}
         run: |
           cmake -B build -S . \
@@ -199,9 +203,11 @@ jobs:
             -DPP_BROWSER_RELEASE_VERSION="${PP_RELEASE_VERSION}" \
             -DPP_BROWSER_PACKAGED_BUILD=ON \
             -DPP_API_URL_PROD="${PP_API_URL_PROD}" \
-            -DPP_API_URL_QA="${PP_API_URL_QA}" \
+            -DPP_API_URL_STAGING="${PP_API_URL_STAGING}" \
+            -DPP_API_URL_DEV="${PP_API_URL_DEV}" \
             -DPP_RELAY_ID_PROD="${PP_RELAY_ID_PROD:-pending}" \
-            -DPP_RELAY_ID_QA="${PP_RELAY_ID_QA:-pending}" \
+            -DPP_RELAY_ID_STAGING="${PP_RELAY_ID_STAGING:-pending}" \
+            -DPP_RELAY_ID_DEV="${PP_RELAY_ID_DEV:-pending}" \
             -DPP_RELAY_CONTENT_SHA256="${PP_RELAY_CONTENT_SHA256:-OFF}"
 
       - name: Build
@@ -369,9 +375,11 @@ jobs:
         shell: bash
         env:
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
-          PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
+          PP_API_URL_STAGING: ${{ secrets.PP_API_URL_STAGING }}
+          PP_API_URL_DEV: ${{ secrets.PP_API_URL_DEV }}
           PP_RELAY_ID_PROD: ${{ vars.PP_RELAY_ID_PROD || secrets.PP_RELAY_ID_PROD }}
-          PP_RELAY_ID_QA: ${{ vars.PP_RELAY_ID_QA || secrets.PP_RELAY_ID_QA }}
+          PP_RELAY_ID_STAGING: ${{ vars.PP_RELAY_ID_STAGING || secrets.PP_RELAY_ID_STAGING }}
+          PP_RELAY_ID_DEV: ${{ vars.PP_RELAY_ID_DEV || secrets.PP_RELAY_ID_DEV }}
           PP_RELAY_CONTENT_SHA256: ${{ vars.PP_RELAY_CONTENT_SHA256 }}
         run: |
           cmake -B build -S . \
@@ -383,9 +391,11 @@ jobs:
             -DPP_BROWSER_RELEASE_VERSION="${PP_RELEASE_VERSION}" \
             -DPP_BROWSER_PACKAGED_BUILD=ON \
             -DPP_API_URL_PROD="${PP_API_URL_PROD}" \
-            -DPP_API_URL_QA="${PP_API_URL_QA}" \
+            -DPP_API_URL_STAGING="${PP_API_URL_STAGING}" \
+            -DPP_API_URL_DEV="${PP_API_URL_DEV}" \
             -DPP_RELAY_ID_PROD="${PP_RELAY_ID_PROD:-pending}" \
-            -DPP_RELAY_ID_QA="${PP_RELAY_ID_QA:-pending}" \
+            -DPP_RELAY_ID_STAGING="${PP_RELAY_ID_STAGING:-pending}" \
+            -DPP_RELAY_ID_DEV="${PP_RELAY_ID_DEV:-pending}" \
             -DPP_RELAY_CONTENT_SHA256="${PP_RELAY_CONTENT_SHA256:-OFF}"
 
       - name: Build
@@ -543,9 +553,11 @@ jobs:
           PP_BROWSER_VERSION: ${{ steps.version.outputs.project_version }}
           PP_BROWSER_RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
-          PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
+          PP_API_URL_STAGING: ${{ secrets.PP_API_URL_STAGING }}
+          PP_API_URL_DEV: ${{ secrets.PP_API_URL_DEV }}
           PP_RELAY_ID_PROD: ${{ vars.PP_RELAY_ID_PROD || secrets.PP_RELAY_ID_PROD }}
-          PP_RELAY_ID_QA: ${{ vars.PP_RELAY_ID_QA || secrets.PP_RELAY_ID_QA }}
+          PP_RELAY_ID_STAGING: ${{ vars.PP_RELAY_ID_STAGING || secrets.PP_RELAY_ID_STAGING }}
+          PP_RELAY_ID_DEV: ${{ vars.PP_RELAY_ID_DEV || secrets.PP_RELAY_ID_DEV }}
           PP_RELAY_CONTENT_SHA256: ${{ vars.PP_RELAY_CONTENT_SHA256 }}
         run: ./scripts/platform/android_build.sh apk-release
 

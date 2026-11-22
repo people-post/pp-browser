@@ -33,11 +33,13 @@ Environment:
   PP_NODE_JOBS        parallel compile jobs
   PP_API_URL_PROD     prod backend origin compiled in (registration / directory URLs derive
                       from it; empty = none, so set it or the node's config / env for a release)
-  PP_API_URL_QA       QA backend origin compiled in (empty = none)
+  PP_API_URL_STAGING  staging backend origin compiled in (empty = none)
+  PP_API_URL_DEV      dev backend origin compiled in (empty = none)
   PP_RELAY_ID_PROD    relay id of the prod relay (relay:…, SIGNED_FORMATS § 3.3): the registration relay's with
                       the compiled URL (unset or empty = pending: not used; or registration.relay_id); its
                       certificate, the node's floor, is config/relay-certs/prod.cert
-  PP_RELAY_ID_QA      relay id of the QA relay (unset or empty = pending)
+  PP_RELAY_ID_STAGING relay id of the staging relay (unset or empty = pending); config/relay-certs/staging.cert
+  PP_RELAY_ID_DEV     relay id of the dev relay (unset or empty = pending); config/relay-certs/dev.cert
 EOF
 }
 
@@ -63,9 +65,11 @@ do_configure() {
     -DPP_BROWSER_VERSION="${PROJECT_VERSION}" \
     -DPP_BROWSER_RELEASE_VERSION="${RELEASE_VERSION}" \
     -DPP_API_URL_PROD="${PP_API_URL_PROD:-}" \
-    -DPP_API_URL_QA="${PP_API_URL_QA:-}" \
+    -DPP_API_URL_STAGING="${PP_API_URL_STAGING:-}" \
+    -DPP_API_URL_DEV="${PP_API_URL_DEV:-}" \
     -DPP_RELAY_ID_PROD="${PP_RELAY_ID_PROD:-pending}" \
-    -DPP_RELAY_ID_QA="${PP_RELAY_ID_QA:-pending}"
+    -DPP_RELAY_ID_STAGING="${PP_RELAY_ID_STAGING:-pending}" \
+    -DPP_RELAY_ID_DEV="${PP_RELAY_ID_DEV:-pending}"
 }
 
 do_build() {

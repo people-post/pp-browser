@@ -23,7 +23,7 @@ namespace pbr {
 
 namespace {
 
-// Prod / qa (and PP_BROWSER_ORIGIN) replace the saved backend URLs with ones derived from the origin;
+// Prod / staging / dev (and PP_BROWSER_ORIGIN) replace the saved backend URLs with ones derived from the origin;
 // the saved values are kept so a save does not overwrite the custom URLs. A custom LLM endpoint is left alone.
 void ApplyBackendOverride(AppConfig& config) {
   config.backend.saved_relay = config.relay;
@@ -145,9 +145,8 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path, const bool ui_demo)
   }
 
   AppConfig config = MergeConfig(DefaultAppConfig(ui_demo), *root);
-  if (ParseBackendEnv(config.backend.env) == BackendEnv::Qa && !QaBackendAvailable()) {
-    config.backend.env = BackendEnvName(BackendEnv::Prod);
-  }
+  config.backend.env =
+      BackendEnvName(ResolveLatchedBackend(ParseBackendEnv(config.backend.env), BuildCompiledOrigins()));
   LatchActiveBackend(ParseBackendEnv(config.backend.env));
   if (OriginEnvOverrideActive() || ActiveBackend() != BackendEnv::Custom) {
     ApplyBackendOverride(config);

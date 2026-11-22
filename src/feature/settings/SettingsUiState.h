@@ -16,7 +16,7 @@ struct McpServerUiState {
 struct SettingsUiState {
   /** UI switch value: "on" or "off" (Me → About). Hides ids, endpoints, MCP and paths when off. */
   std::string show_advanced_settings = "off";
-  /** UI switch value: "on" or "off" (Me → Help, five taps on the version). Shows the Test options page and the QA service. */
+  /** UI switch value: "on" or "off" (Me → Help, five taps on the version). Shows the Test options page and the Staging / Dev services. */
   std::string show_tester_options = "off";
   std::string llm_preset = "brief";
   std::string llm_base_url;
@@ -26,10 +26,11 @@ struct SettingsUiState {
   std::string promoted_mcp_url;
   std::string search_provider = "duckduckgo";
   std::vector<McpServerUiState> mcp_servers;
-  /** Backend picked in Me -> Network: prod | qa | custom (config `backend.env`). */
+  /** Backend picked in Me -> Network: prod | staging | dev | custom (config `backend.env`). */
   std::string backend_env = "prod";
-  /** False when the build has no QA origin: the QA choice is not offered. */
-  bool backend_qa_available = false;
+  /** False when the build has no staging / dev origin: that choice is not offered. */
+  bool backend_staging_available = false;
+  bool backend_dev_available = false;
   /** The pick differs from the backend this run started with; applies after a restart. */
   bool backend_restart_pending = false;
   std::string relay_base_url;
