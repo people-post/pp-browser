@@ -7,8 +7,8 @@ Shipping a new app or pp-node release, from the cut to the store. The checklist 
 and pp-node 10.0; tag forms and workflows: [RELEASE.md](../RELEASE.md).
 
 - **When:** every new X.Y of the app or pp-node. A fix to a release already cut is a [hotfix](hotfix.md).
-- **Who:** the release owner ([README § Who](README.md#who)) does every step unless one names Hongwei (relay prod
-  tags) or Leo (relay settings).
+- **Who:** the release owner ([README § Who](README.md#who)) does every step unless one names the relay prod
+  deployer (relay prod tags) or Leo (relay settings).
 - **Record:** the release issue; link each workflow run there.
 
 ## 1. Before the cut
@@ -16,7 +16,7 @@ and pp-node 10.0; tag forms and workflows: [RELEASE.md](../RELEASE.md).
 | Step | Who | How | Verify |
 |------|-----|-----|--------|
 | Format changes since the last release listed, each with its class; the version table updated | release owner | `git log --oneline <last release tag>..origin/main`; the table: [DESIGN § The version table](../../../projects/release-compatibility/DESIGN.md#the-version-table) | Listed in the release issue |
-| A relay release this one needs, deployed to prod first | Hongwei | In the relay API repository: `git fetch origin && git tag -a vX.Y.Z <commit on release/X.Y> -m "relay X.Y.Z" && git push origin vX.Y.Z`. Its CI's `deploy` job deploys prod (refused if the commit is not on `release/X.Y` or the pusher is not a listed deployer) | `gh run list -R <relay API repository> --workflow ci.yml --branch vX.Y.Z --limit 1`, then `gh run watch <run id> -R <relay API repository> --exit-status`: `deploy` ran, not skipped |
+| A relay release this one needs, deployed to prod first | relay prod deployer | In the relay API repository: `git fetch origin && git tag -a vX.Y.Z <commit on release/X.Y> -m "relay X.Y.Z" && git push origin vX.Y.Z`. Its CI's `deploy` job deploys prod (refused if the commit is not on `release/X.Y` or the pusher is not a listed deployer) | `gh run list -R <relay API repository> --workflow ci.yml --branch vX.Y.Z --limit 1`, then `gh run watch <run id> -R <relay API repository> --exit-status`: `deploy` ran, not skipped |
 | Freeze announced; release owner named | release owner | The team channel | — |
 
 A relay release candidate is held on staging before prod: tag `release/vX.Y.Z-rc.<n>` on `release/X.Y` (a dev tag `dev/<date>.<n>` on a commit of main deploys the dev environment); the relay repositories deploy only from tags ([RC021](../../../projects/release-compatibility/DECISIONS.md#rc021--the-relay-repos-deploy-by-tag-only)).

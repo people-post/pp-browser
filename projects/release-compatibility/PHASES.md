@@ -40,10 +40,10 @@ Written up in [INVENTORY.md](INVENTORY.md) (2026-11-19); its work list is agreed
   internal pp-node builds, the relay's dev deploys. Done 2026-11-20 (`internal/<n>`, `rc-build/<n>`,
   `node-internal/<date>.<n>`, relay `dev/<date>.<n>`); there is no Android or desktop test build people install yet.
 - [x] Release workflows take release tags only from `release/*` branches, build once, and promote the artifact.
-  Done 2026-11-20: app and pp-node (`release/app-X.Y`, `release/node-X.Y`), relay (`release/X.Y`, Hongwei's tags).
+  Done 2026-11-20: app and pp-node (`release/app-X.Y`, `release/node-X.Y`), relay (`release/X.Y`, the relay prod deployer's tags).
 - [ ] GitHub environments, by tag only ([RC021](DECISIONS.md#rc021--the-relay-repos-deploy-by-tag-only)):
   `dev/<date>.<n>` → dev; `release/vX.Y.Z-rc.<n>` → staging; only `v*` tags → production, behind an approval.
-  So far: the relay's main → qa and `v*` tags → prod (only Hongwei); the relay repos move to tags, and dev and
+  So far: the relay's main → qa and `v*` tags → prod (the relay prod deployer only); the relay repos move to tags, and dev and
   staging wait for Environments below.
 - [x] The backport bot ([DESIGN § Release lines](DESIGN.md#release-lines-are-first-class), RC014): a label opens a PR
   to that exact release branch, running its checks and needing approval; trailer and link to the original kept;
