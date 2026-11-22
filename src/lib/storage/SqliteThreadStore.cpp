@@ -921,6 +921,14 @@ Roe<bool> SqliteThreadStore::UpdateMessageDelivery(const std::string& thread_id,
   if (!thread_db) {
     return thread_db.error();
   }
+  // Queued again (sent again with its own id, B236): its outbox record first — the outbox (profile.db) and the row (the
+  // thread's db) are two databases, so no one transaction holds both. A failure here leaves the row as it was; a
+  // record left over by a row that did not change is dropped below (or by the next start's ReconcileOutbox).
+  if (delivery == MessageDelivery::Pending) {
+    if (auto outbox = UpsertOutboxRow(message_id, thread_id); !outbox) {
+      return outbox.error();
+    }
+  }
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "UPDATE messages SET delivery = ?, transport = COALESCE(?, transport) WHERE id = ? "
@@ -941,11 +949,11 @@ Roe<bool> SqliteThreadStore::UpdateMessageDelivery(const std::string& thread_id,
   sqlite3_finalize(stmt);
   if (updated && delivery != MessageDelivery::Pending) {
     (void)RemoveOutboxRow(message_id); // as UpdateMessage does
-  } else if (updated) {
-    // Queued again (sent again with its own id, B236): kept in the outbox as an appended pending row is, so a restart
-    // before it is through finds it to send again.
-    if (auto outbox = UpsertOutboxRow(message_id, thread_id); !outbox) {
-      return outbox.error();
+  } else if (!updated && delivery == MessageDelivery::Pending) {
+    // Not queued again (delivered meanwhile, or no such row): its record goes unless the row is still pending.
+    auto row = GetMessage(thread_id, message_id);
+    if (row && (!*row || (*row)->delivery != MessageDelivery::Pending)) {
+      (void)RemoveOutboxRow(message_id);
     }
   }
   return updated;
@@ -2098,8 +2106,8 @@ Roe<void> SqliteThreadStore::ReconcileOutbox() {
     return threads.error();
   }
   for (const Thread& thread : *threads) {
-    if (thread.kind != ThreadKind::Direct) {
-      continue;
+    if (thread.kind != ThreadKind::Direct && thread.kind != ThreadKind::Group) {
+      continue; // a group's pending row too: one queued again by a resend (B236) is resumed after a start
     }
     auto messages = GetMessagesPage(thread.id, std::nullopt, 10000);
     if (!messages) {
