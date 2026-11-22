@@ -877,6 +877,41 @@ TEST_F(OutboxRowTest, AQueuedSendDroppedForAPausedChatFailsWithItsLastReason) {
   EXPECT_EQ(FailedReasons(), (std::vector<SendFailure>{SendFailure::RelayRateLimited}));
 }
 
+// B236: a relay that takes the message while the app is going to the background. The send already on its way holds the
+// app awake (BackgroundActivity) and its answer is written on the worker that sent it — no later task, which a paused
+// app would not run, is needed to record it.
+TEST_F(OutboxRowTest, AnAnswerThatComesAfterTheAppWentToTheBackgroundIsRecorded) {
+  GatedRelay relay;
+  relay.Hold();
+  auto outbox = MakeRowOutbox(relay);
+  outbox->Send(Request());
+  ASSERT_TRUE(relay.WaitForSends(1));
+  AppRuntime::PauseBackgroundWork(); // "Background: work paused (push only)"
+  relay.Release(/*fail=*/false);     // the relay's answer, late
+  EXPECT_TRUE(WaitFor([&] { return Delivery() == MessageDelivery::Relayed; }, std::chrono::seconds(5)))
+      << "recorded while the app's work is paused";
+  AppRuntime::ResumeBackgroundWork();
+  Drain();
+  EXPECT_EQ(Delivery(), MessageDelivery::Relayed);
+}
+
+TEST_F(OutboxRowTest, ARetryAnsweredAfterTheAppWentToTheBackgroundIsRecorded) {
+  GatedRelay relay;
+  auto outbox = MakeRowOutbox(relay);
+  outbox->Send(Request());
+  Drain();
+  ASSERT_EQ(Delivery(), MessageDelivery::Pending) << "the first try failed: queued";
+  relay.Hold();
+  outbox->Retry();
+  ASSERT_TRUE(relay.WaitForSends(2));
+  AppRuntime::PauseBackgroundWork();
+  relay.Release(/*fail=*/false);
+  EXPECT_TRUE(WaitFor([&] { return Delivery() == MessageDelivery::Relayed; }, std::chrono::seconds(5)));
+  AppRuntime::ResumeBackgroundWork();
+  Drain();
+  EXPECT_FALSE(EverFailed(States()));
+}
+
 // M022: a message goes as several records (a device's copy over its link, the relay record for the rest). One ending
 // in failure while another is still tried leaves it queued; the last one decides.
 TEST_F(OutboxRowTest, OneCopyFailingWhileAnotherIsTriedLeavesTheRowQueued) {
