@@ -1,5 +1,5 @@
 // "Show advanced settings" (Me → Help) and the tester switch (five taps on the version row) are two switches: the first
-// shows the Advanced page and the technical rows, the second the Test options page and the QA entry of the Service row
+// shows the Advanced page and the technical rows, the second the Test options page and the Staging and Dev entries of the Service row
 // (DEV/PLAN-advanced-switch-and-tester-mode.md). Driven through the real model: events dispatched on a small document
 // bound to the settings model, the session store on a temporary profile.
 #include "common/runtime/AppRuntime.h"
@@ -205,8 +205,8 @@ TEST_F(SettingsAdvancedTesterTest, FiveTapsOnTheVersionSwitchOnlyTheTesterOption
 }
 
 // Whatever service is saved, the two switches never change it or the restart-pending state.
-// "prod" and "custom" exist in every build; "qa" is saved as "prod" by a build without a QA
-// address, so its variant runs only where the build has one.
+// "prod" and "custom" exist in every build; "staging" / "dev" are saved as "prod" by a build without that
+// address, so their variants run only where the build has one.
 class SettingsAdvancedTesterServiceTest : public SettingsAdvancedTesterTest {
 protected:
   void ExpectSwitchesLeaveTheSavedServiceAlone(const char* env) {
@@ -242,6 +242,13 @@ TEST_F(SettingsAdvancedTesterServiceTest, TheSwitchesNeverMoveTheSavedServiceAwa
     GTEST_SKIP() << "this build has no staging address (-DPP_API_URL_STAGING), so a saved \"staging\" is read as \"prod\"";
   }
   ExpectSwitchesLeaveTheSavedServiceAlone("staging");
+}
+
+TEST_F(SettingsAdvancedTesterServiceTest, TheSwitchesNeverMoveTheSavedServiceAwayFromDev) {
+  if (!BackendAvailable(BackendEnv::Dev)) {
+    GTEST_SKIP() << "this build has no dev address (-DPP_API_URL_DEV), so a saved \"dev\" is read as \"prod\"";
+  }
+  ExpectSwitchesLeaveTheSavedServiceAlone("dev");
 }
 
 TEST_F(SettingsAdvancedTesterTest, PickingCustomWithTheTesterOptionsOffSavesExactlyCustom) {
@@ -761,6 +768,7 @@ TEST_F(SettingsRealViewTest, PickingAnotherServiceAsksToConfirmThenSavesAndQuits
             "您正在尝试将线路从正式切换到自定义，应用需要重启后才能生效");
   EXPECT_EQ(Tr("common.yes"), "是");
   LocalizationService::Instance().SetPreferredLanguage("en");
+  ResetActiveBackendForTest();
 }
 
 // No quit on this platform: the confirmed switch is saved, an OK note says to reopen, and a banner stays until the saved
@@ -794,6 +802,9 @@ TEST_F(SettingsRealViewTest, WithoutAQuitAConfirmedSwitchSaysToReopenAndPinsABan
   ASSERT_EQ(answers.size(), 2u);
   answers[1](true);
   EXPECT_EQ(banners.back(), "<dismissed>");
+  EXPECT_EQ(alerts.size(), 1u) << "nothing to reopen for";
+  EXPECT_EQ(quits, 0);
+  ResetActiveBackendForTest();
 }
 
 // A "?" inside a row that opens a page or toggles a switch only shows its note.

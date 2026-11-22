@@ -2014,7 +2014,8 @@ void SettingsController::ApplyBackendChoice(const std::string& env) {
         }
         if (CanQuit()) {
           QuitApp();
-        } else if (shell_feedback_.show_alert) {
+        } else if (ParseBackendEnv(env) != ActiveBackend() && shell_feedback_.show_alert) {
+          // Only a switch away from the running service needs a reopen; back to it, the banner is gone and that is all.
           shell_feedback_.show_alert(Tr("settings.network.backend.switch_title"),
                                      Tr("settings.network.backend.switched_reopen", {{"destEnv", dest_label}}), {},
                                      Tr("common.ok"));
