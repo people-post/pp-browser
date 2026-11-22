@@ -40,6 +40,20 @@ RelayFileListResult Files(const std::vector<std::string>& blob_ids) {
   return listed;
 }
 
+// R6: the relay's own `expires_at` decides for a file it lists (the token lasts 7 days / 10 downloads,
+// WIRE_SCHEMAS.md), not our guess from the send time.
+TEST(SentRelayFileTest, AListedFileIsGoneOnceItsExpiryHasPassed) {
+  RelayFileListResult ours = Files({kBlobId});
+  ours.files[0].expires_at = "2001-09-09T01:46:40Z"; // 1'000'000'000'000 ms
+  const int64_t expires_ms = 1'000'000'000'000;
+  EXPECT_FALSE(SentRelayFileGone(Payload(Link(kBlobId)), expires_ms - kRelayFileLifetimeMs * 3, expires_ms - 1, &ours))
+      << "listed and not expired: kept, however long ago it was sent";
+  EXPECT_TRUE(SentRelayFileGone(Payload(Link(kBlobId)), expires_ms - 1000, expires_ms, &ours)) << "its expiry passed";
+  ours.files[0].expires_at.clear();
+  EXPECT_FALSE(SentRelayFileGone(Payload(Link(kBlobId)), kSentAt, kSentAt + kRelayFileLifetimeMs * 2, &ours))
+      << "listed with no expiry stated: kept";
+}
+
 TEST(SentRelayFileTest, OnTheServerStillIsNotGone) {
   const RelayFileListResult ours = Files({"other", kBlobId});
   EXPECT_FALSE(SentRelayFileGone(Payload(Link(kBlobId)), kSentAt, kSentAt + 60'000, &ours));
