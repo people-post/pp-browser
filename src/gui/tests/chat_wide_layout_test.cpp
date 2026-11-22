@@ -4,6 +4,9 @@
 #include "gui/chat/ChatDataModel.h"
 #include "gui/chat/ChatMenus.h"
 #include "gui/chat/MessageMenuSlots.h"
+#include "gui/chat/TranscriptRml.h"
+#include "lib/delivery/DeliveryNotice.h"
+#include "lib/ui/ViewCatalog.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
 
@@ -16,8 +19,10 @@
 
 #include <algorithm>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace pbr {
 namespace {
@@ -152,6 +157,7 @@ protected:
   ui::Context* context = nullptr;
   ui::ElementDocument* document = nullptr;
   ChatScreenState state;
+  ChatShellState shell; ///< the Chats list column's model ("shell"), for the tests that mount sidebar.rml
 };
 
 TEST_F(ChatWideLayoutTest, TheHeaderHasCallSearchAndMoreInsideItAtEveryWidth) {
@@ -856,6 +862,132 @@ TEST_F(ChatWideLayoutTest, SystemLinesAndDatePillsAreSmallPillsSizedToTheirTextA
   }
   EXPECT_LE(BoxOf(document->GetElementById("long")).W(), col.W() * 0.8f + 20.5f)
       << "the text is at most 80% of the column (its 10dp side padding comes on top, as on the phone)";
+}
+
+// B236 in the wide conversation pane: the "held" line (a chat the recipient has not added) is the phone's small centred
+// pill, and our messages' marks (a clock while sending, the 44dp red mark when it did not go out) sit just left of their
+// bubbles, inside the column. The rows are the real transcript's (RenderTranscript), not hand-written markup.
+TEST_F(ChatWideLayoutTest, TheHeldLineAndTheSendMarksShowInTheWideConversation) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  const auto ours = [](const std::string& id, const int64_t at) {
+    TranscriptRow row;
+    row.message.id = id;
+    row.message.thread_id = "t";
+    row.message.sender_contact_id = kLocalSelfContactId;
+    row.message.content_type = ChatContentType::Text;
+    row.message.text = "hello";
+    row.message.timestamp = at;
+    return row;
+  };
+  TranscriptRow held;
+  held.message = MakeStrangerHeldRow("t", "queued", 3);
+  const std::vector<TranscriptRow> entries = {ours("failed", 1), ours("queued", 2), held};
+  const std::map<std::string, SendMark> marks = {{"failed", SendMark::Failed}, {"queued", SendMark::Queued}};
+  TranscriptFacts facts;
+  facts.send_mark = [marks](const ThreadMessage& message) {
+    const auto it = marks.find(message.id);
+    return it == marks.end() ? SendMark::None : it->second;
+  };
+  for (const int window : {768, 1280}) {
+    SCOPED_TRACE(window);
+    const int column = ConversationWidth(window);
+    ShowChat();
+    state.messages = RenderTranscript(entries, facts);
+    ASSERT_EQ(state.messages.size(), 3u);
+    Load(column);
+    const Box col = BoxOf(document->GetElementById("col"));
+
+    ui::ElementList lines;
+    document->QuerySelectorAll(lines, ".chat-system-line p");
+    ASSERT_EQ(lines.size(), 1u) << "one held line";
+    EXPECT_EQ(lines[0]->GetInnerRML(), Tr("chat.send.held_line"));
+    const Box line = BoxOf(lines[0]);
+    EXPECT_GT(line.H(), 0.f) << "drawn";
+    EXPECT_GE(line.left, col.left);
+    EXPECT_LE(line.right, col.right);
+    EXPECT_FLOAT_EQ(lines[0]->GetComputedValues().border_top_left_radius(), 999.f) << "the phone's pill";
+
+    for (const char* cls : {"send-mark--failed", "send-mark--queued"}) {
+      SCOPED_TRACE(cls);
+      ui::Element* mark = First(cls);
+      ASSERT_NE(mark, nullptr);
+      const Box m = BoxOf(mark);
+      ui::ElementList bubbles;
+      mark->GetParentNode()->GetElementsByClassName(bubbles, "bubble");
+      ASSERT_EQ(bubbles.size(), 1u) << "the mark sits beside its own bubble";
+      const Box b = BoxOf(bubbles[0]);
+      ui::ElementList icons;
+      mark->GetElementsByClassName(icons, "send-mark-icon");
+      ASSERT_EQ(icons.size(), 1u);
+      // The icon is left of the bubble (the red mark's 44dp target may reach 6dp under the bubble's edge, as on the phone).
+      EXPECT_LE(BoxOf(icons[0]).right, b.left + 0.5f) << "left of the bubble";
+      EXPECT_GT(BoxOf(icons[0]).W(), 0.f);
+      EXPECT_GE(m.left, col.left);
+      EXPECT_LE(b.right, col.right);
+      EXPECT_GT(m.bottom, b.top) << "level with the bubble, not on a line of its own";
+    }
+    EXPECT_FLOAT_EQ(BoxOf(First("send-mark--failed")).W(), 44.f) << "a 44dp tap target";
+    EXPECT_FLOAT_EQ(BoxOf(First("send-mark--failed")).H(), 44.f);
+    EXPECT_FLOAT_EQ(BoxOf(First("send-mark--queued")).W(), 24.f);
+    document->Close();
+    context->Update();
+  }
+}
+
+// The Chats list column of the wide layout is sidebar.rml: an imported account with no chats yet shows the spinner and
+// "Syncing..." line there (not the "start a chat" empty state), inside the column, as on the phone.
+TEST_F(ChatWideLayoutTest, TheChatsColumnShowsTheSyncIndicatorWhileTheAccountIsSyncing) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  ASSERT_TRUE(DataModelHost::Instance().Register(
+      context, "shell", [this](ui::DataModelConstructor& ctor) { BindChatShellState(ctor, shell); }));
+  const auto load = [this]() {
+    const std::string list = ViewCatalog::LoadBody(ViewCatalog::KeyForLayout("sidebar", /*wide=*/true));
+    const std::string rml =
+        "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+        Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
+        "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
+        "<div class=\"shell-body shell-body--wide\" style=\"position: absolute; width: 1280dp; height: 700dp;\">"
+        "<div class=\"shell-layer shell-layer-base\"><div id=\"list\" class=\"shell-pane shell-pane-secondary\" "
+        "style=\"position: absolute; left: 64dp; width: 320dp; height: 700dp;\"><div class=\"shell-pane-body\">" +
+        list + "</div></div></div></div></body></rml>";
+    document = context->LoadDocumentFromMemory(rml);
+    ASSERT_NE(document, nullptr);
+    document->Show();
+    context->Update();
+    context->Update();
+  };
+  const auto drawn = [this](const char* selector) {
+    ui::ElementList found;
+    document->QuerySelectorAll(found, selector);
+    ui::ElementList shown;
+    for (ui::Element* element : found) {
+      if (BoxOf(element).H() > 0.f) {
+        shown.push_back(element);
+      }
+    }
+    return shown;
+  };
+  shell.account_sync_syncing = true;
+  load();
+  const Box column = BoxOf(document->GetElementById("list"));
+  const ui::ElementList pending = drawn(".sync-pending");
+  ASSERT_EQ(pending.size(), 1u);
+  EXPECT_GE(BoxOf(pending[0]).left, column.left);
+  EXPECT_LE(BoxOf(pending[0]).right, column.right);
+  ASSERT_EQ(drawn(".sync-pending-spinner").size(), 1u);
+  const ui::ElementList line = drawn(".sync-pending p");
+  ASSERT_EQ(line.size(), 1u);
+  EXPECT_EQ(line[0]->GetInnerRML(), Tr("account_sync.pending"));
+  EXPECT_EQ(drawn(".sidebar-empty").size(), 0u);
+  document->Close();
+  context->Update();
+
+  shell.account_sync_syncing = false;
+  load();
+  EXPECT_EQ(drawn(".sync-pending").size(), 0u);
+  EXPECT_EQ(drawn(".sidebar-empty").size(), 1u) << "the empty state once the sync is over";
 }
 
 } // namespace
