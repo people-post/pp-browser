@@ -11,8 +11,10 @@ namespace pbr {
  */
 std::vector<const char*> BackendChoicesOffered(bool staging_compiled, bool dev_compiled, bool tester);
 
-/** Whether picking `picked` while `current` is selected asks to confirm: only a different environment does (a saved `qa` is
- * `staging`). */
+/**
+ * Whether picking `picked` while `current` is selected asks to confirm: only a different environment does (a saved
+ * `qa` is `staging`).
+ */
 bool BackendSwitchNeedsConfirm(std::string_view current, std::string_view picked);
 
 } // namespace pbr

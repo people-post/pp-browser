@@ -239,7 +239,8 @@ TEST_F(SettingsAdvancedTesterServiceTest, TheSwitchesNeverMoveTheSavedServiceAwa
 
 TEST_F(SettingsAdvancedTesterServiceTest, TheSwitchesNeverMoveTheSavedServiceAwayFromStaging) {
   if (!BackendAvailable(BackendEnv::Staging)) {
-    GTEST_SKIP() << "this build has no staging address (-DPP_API_URL_STAGING), so a saved \"staging\" is read as \"prod\"";
+    GTEST_SKIP()
+        << "this build has no staging address (-DPP_API_URL_STAGING), so a saved \"staging\" is read as \"prod\"";
   }
   ExpectSwitchesLeaveTheSavedServiceAlone("staging");
 }
@@ -300,7 +301,8 @@ TEST_F(SettingsAdvancedTesterTest, TheTapHintsNameOnlyTheTesterOptions) {
 TEST_F(SettingsAdvancedTesterTest, StagingAndDevAreOfferedOnlyWhileTheTesterOptionsAreOnAndWithoutARestart) {
   EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "custom"}));
   Click("toggle_adv");
-  EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "custom"})) << "Advanced alone does not offer staging / dev";
+  EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "custom"}))
+      << "Advanced alone does not offer staging / dev";
   for (int i = 0; i < 5; ++i) {
     Click("version");
   }
@@ -331,7 +333,8 @@ TEST_F(SettingsAdvancedTesterTest, WithoutAnAddressInTheBuildStagingAndDevAreNev
   EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"prod", "custom"}));
 }
 
-TEST_F(SettingsAdvancedTesterTest, RunningOnStagingWithTheTesterOptionsOffStillShowsStagingAndTheChooserHasNoSelectedRow) {
+TEST_F(SettingsAdvancedTesterTest,
+       RunningOnStagingWithTheTesterOptionsOffStillShowsStagingAndTheChooserHasNoSelectedRow) {
   host().UiState().backend_env = "staging";
   host().PushToView(false);
   context->Update();

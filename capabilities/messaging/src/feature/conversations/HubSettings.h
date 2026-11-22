@@ -37,8 +37,8 @@ struct HubSettings {
   bool developer_relays = false;
   /**
    * The org's relay (and registration URL) may be pinned on its first valid certificate when the build or config names
-   * no relay id for it (multi-relay MR008 item 4): a developer build, or the compiled prod / staging / dev backend of a build that
-   * ships none (dogfood, warned). Off — a release build's custom backend or PP_BROWSER_ORIGIN without `relay.relay_id`
+   * no relay id for it (multi-relay MR008 item 4): a developer build, or the compiled prod / staging / dev backend of a
+   * build that ships none (dogfood, warned). Off — a release build's custom backend or PP_BROWSER_ORIGIN without `relay.relay_id`
    * (`registration.relay_id`): that relay is not used.
    */
   bool org_first_use = false;

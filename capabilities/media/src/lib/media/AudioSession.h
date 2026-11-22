@@ -107,8 +107,9 @@ void NotifyVoiceProcessingStarted(double sample_rate, int channels, int bypass, 
 bool MicNotOpenHintApplies();
 
 /**
- * B233 diagnostics gate: set once at startup by the app (true wherever the staging origin is compiled in, today every iOS
- * build; see CallKitDiagnostics.h). The platform's diagnostic lines below are written only while it is on. Any thread.
+ * B233 diagnostics gate: set once at startup by the app (true wherever the staging origin is compiled in, today every
+ * iOS build; see CallKitDiagnostics.h). The platform's diagnostic lines below are written only while it is on. Any
+ * thread.
  */
 void SetDiagnosticsEnabled(bool enabled);
 bool DiagnosticsEnabled();

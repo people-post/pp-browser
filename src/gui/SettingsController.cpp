@@ -1940,7 +1940,7 @@ std::vector<SettingsChoicePage::Option> SettingsController::BackendChoiceOptions
   const std::string current = bindings_.backend_env.c_str();
   std::vector<SettingsChoicePage::Option> options;
   for (const char* id : BackendChoicesOffered(ui_state_.backend_staging_available, ui_state_.backend_dev_available,
-                                    ui_state_.show_tester_options == "on")) {
+                                              ui_state_.show_tester_options == "on")) {
     options.push_back({id, BackendDisplayLabel(id).c_str(), current == id});
   }
   return options;
