@@ -177,7 +177,7 @@ refuses anything else and tags `vX.Y.Z` when it submits. Store releases are phas
 ## RC009 — Four environments: today's qa becomes staging, dev is new
 
 **Date:** 2026-11-18
-**Status:** Accepted (Hongwei, 2026-11-18); in review with Leo (the infrastructure is his). Amends RC006 item 8. Amended by [RC015](#rc015--client-side-answers-after-kenneths-review): store builds compile in prod only; and by [RC021](#rc021--the-relay-repos-deploy-by-tag-only): the relay deploys by tag, not by branch push.
+**Status:** Accepted (Hongwei, 2026-11-18); in review with Leo (the infrastructure is his). Amends RC006 item 8. Amended by [RC015](#rc015--client-side-answers-after-kenneths-review): store builds compile in prod only; and by [RC021](#rc021--the-relay-repos-deploy-by-tag-only): the relay deploys by tag, not by branch push. Amended 2026-11-21 (Hongwei): staging is a **new** environment (its own origin, relay id and data) rather than today's qa renamed; qa is retired (RC021), and the apps read a saved `backend.env: "qa"` as staging. Keeping qa's identity was only to spare users' `config.json` a format change; release 1's clean start (RC017) and the signed-format cutover (relays named by relay id and certificate, RC020) change that file anyway.
 Its open items (prod's account, the canary, dev's and staging's data) are recommended to Leo in
 [DESIGN § Decisions taken](DESIGN.md#decisions-taken), items 10–13.
 **Decision:** local (local-stack, the lab), dev (new: main deploys there automatically), staging (today's qa:
