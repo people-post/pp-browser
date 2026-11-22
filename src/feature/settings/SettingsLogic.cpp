@@ -93,7 +93,7 @@ AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState
   if (!state.backend_env.empty()) {
     config.backend.env = BackendEnvName(ParseBackendEnv(state.backend_env));
   }
-  // The URL fields are the custom backend's; prod / qa derive theirs from the origin and leave them alone.
+  // The URL fields are the custom backend's; prod / staging / dev derive theirs from the origin and leave them alone.
   if (state.backend_env.empty() || state.backend_env == "custom") {
     // When an origin replaced the loaded URLs, the saved copies are what the fields show and what a save writes.
     ServiceEndpointConfig& relay = config.backend.has_saved_urls ? config.backend.saved_relay : config.relay;

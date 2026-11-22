@@ -178,10 +178,14 @@ public:
   void OnMessagingTornDown();
   /** The Me card's "QR code" button opens the full-page My QR code. */
   void BindShowMyQr(std::function<void()> show);
-  /** The rows "Service" offers now (prod, custom, and QA only with a QA build and the tester options on); `OnChooseBackend` shows exactly these. */
+  /** The rows "Service" offers now (prod, custom, and staging / dev only with that address in the build and the tester options on); `OnChooseBackend` shows exactly these. */
   std::vector<SettingsChoicePage::Option> BackendChoiceOptions() const;
   /** Test seam: what the Service chooser does for a picked row id (a public forwarder; tests must not widen access with `#define private public`, which breaks the MSVC link). */
   void ChooseBackendForTest(const std::string& id) { ApplyBackendChoice(id); }
+  /** Test seam: replaces the platform's quit (`can_quit` false = the platform has none: a "reopen the app" note instead). */
+  void SetQuitForTest(bool can_quit, std::function<void()> quit) {
+    quit_override_ = QuitOverride{can_quit, std::move(quit)};
+  }
   /** Test seam: the security actions (the recovery phrase's bound words and private copy). */
   SettingsSecurityActions& SecurityActionsForTest() { return security_actions_; }
   /** Test seam: the phone's Preset chooser, by preset id (as `ShowChoice` would call it). */
@@ -456,6 +460,8 @@ private:
   void OnChooseUnlockGrace(ui::Event& ev);
   void ApplyUnlockGraceChoice(const std::string& minutes_id);
   void ApplyBackendChoice(const std::string& env);
+  /** Persists `env` as the saved service (Me → Network). */
+  void SaveBackendChoice(const std::string& env);
   void ApplyLlmPresetChoice(const std::string& preset);
   void ApplyDirectConnectionsChoice(const std::string& audience);
   void ApplyGroupInvitePolicyChoice(const std::string& policy);
@@ -511,6 +517,15 @@ private:
   SettingsCommands commands_;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
+  struct QuitOverride {
+    bool can_quit = true;
+    std::function<void()> quit;
+  };
+  std::optional<QuitOverride> quit_override_;
+  /** Mobile has no sanctioned programmatic quit: a confirmed environment switch asks the user to reopen the app. */
+  bool CanQuit() const;
+  void QuitApp();
+  bool restart_banner_shown_ = false;
   std::function<void()> open_ui_perf_test_;
   std::function<void(const std::string& state)> simulate_chats_link_; // "online" / "connecting" / "offline"
   std::function<void()> open_home_edit_;

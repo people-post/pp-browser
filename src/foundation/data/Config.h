@@ -32,7 +32,7 @@ struct SearchConfig {
 };
 
 /**
- * Which backend the app talks to (`backend.env`: prod | qa | custom). `prod` / `qa` derive every
+ * Which backend the app talks to (`backend.env`: prod | staging | dev | custom). `prod` / `staging` / `dev` derive every
  * backend URL from the compiled origin; `custom` uses the relay / directory / registration URLs
  * saved in the config file. A change applies on the next start.
  */
@@ -40,7 +40,7 @@ struct BackendConfig {
   std::string env = "prod";
   /**
    * The relay / directory / registration URLs as saved in the file, kept when the loaded values were
-   * replaced by an origin (prod / qa / PP_BROWSER_ORIGIN) so a save does not overwrite the custom URLs.
+   * replaced by an origin (prod / staging / dev / PP_BROWSER_ORIGIN) so a save does not overwrite the custom URLs.
    */
   bool has_saved_urls = false;
   ServiceEndpointConfig saved_relay;

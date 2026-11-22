@@ -13,7 +13,7 @@ For each of `relay`, `directory`, and `registration`:
 | 1 | `base_url` non-empty (platform default or `config.json`) | `Http*Client` |
 | 2 | otherwise | Client not created (left unset); production defaults always fill Brief URLs |
 
-With `backend.env` `prod` or `qa` the three are derived from that backend's compiled origin and the saved values are ignored; `custom` uses the saved ones ([CONFIGURATION.md](../ops/CONFIGURATION.md)). Push tokens are registered with the running backend's `/v1/devices/register` under the active profile's identity, so a backend switch (applied on restart) registers with the new one; when a switch is saved the device's bindings are removed from the running backend at once (`/v1/devices/unregister`, signed by the running profile, whose key is not usable after the restart) and registration stays off until the switch is undone, which registers again. An unreachable old backend keeps its binding: the removal is best effort and is retried when a switch is saved again.
+With `backend.env` `prod`, `staging` or `dev` the three are derived from that backend's compiled origin and the saved values are ignored; `custom` uses the saved ones ([CONFIGURATION.md](../ops/CONFIGURATION.md)). Push tokens are registered with the running backend's `/v1/devices/register` under the active profile's identity, so a backend switch (applied on restart) registers with the new one; when a switch is saved the device's bindings are removed from the running backend at once (`/v1/devices/unregister`, signed by the running profile, whose key is not usable after the restart) and registration stays off until the switch is undone, which registers again. An unreachable old backend keeps its binding: the removal is best effort and is retried when a switch is saved again.
 
 Platform defaults (`PlatformDefaults`) set all three to `<origin>/api/relay` (e.g. `https://backend.example.test/api/relay`); the origin is empty, and the services disabled, unless supplied. Empty values in settings/config coalesce back to those defaults. `Mock*Client` implementations remain for **unit tests only** (construct directly); they are not selected by the factory.
 
@@ -35,8 +35,8 @@ Platform defaults (`PlatformDefaults`) set all three to `<origin>/api/relay` (e.
 
 `relay_id` (relay and registration; multi-relay [MR008](../../projects/multi-relay/DECISIONS.md#mr008--a-relay-address-carries-its-peerid-no-first-use-trust)
 as release-compatibility [SIGNED_FORMATS § 3.3](../../projects/release-compatibility/SIGNED_FORMATS.md#33-what-carries-the-relay-id-instead-of-peer_id)
-amends it): the relay id that relay must prove with its certificate — its address carries it. `prod` / `qa` take the
-build's (`PP_RELAY_ID_PROD` / `PP_RELAY_ID_QA`, [BUILD](../ops/BUILD.md#backend-origin); `pending` while that
+amends it): the relay id that relay must prove with its certificate — its address carries it. `prod` / `staging` /
+`dev` take the build's (`PP_RELAY_ID_PROD` / `_STAGING` / `_DEV`, [BUILD](../ops/BUILD.md#backend-origin); `pending` while that
 environment's operator set is not made: the relay is not used) and ignore the saved ones; `custom` takes the config's,
 `PP_BROWSER_ORIGIN` takes `PP_BROWSER_RELAY_ID`. Me → Network's custom relay and registration fields show and take
 relay links (`<base_url>#relay:…`); a bare URL there names none. A custom relay (or `PP_BROWSER_ORIGIN`'s) none names
@@ -130,7 +130,7 @@ for an origin that certificate lists (`Audience`, `HeldAudience`).
 
 - **Where the relay id comes from** (MR008 item 2), never from the relay's answer:
   - the org's relay (`relay`, and `registration` where it is another origin): the build's beside its origin
-    (`PP_RELAY_ID_PROD` / `PP_RELAY_ID_QA`) for `prod` / `qa`, the config's `relay_id` for `custom`. The build's
+    (`PP_RELAY_ID_PROD` / `_STAGING` / `_DEV`) for `prod` / `staging` / `dev`, the config's `relay_id` for `custom`. The build's
     placeholder `pending` fails closed: that relay is not used and never pinned on first use, in any build;
   - a relay of ours: the address it is kept with in My relays (`our_relays.json` `relay_id`) — the relay link it was
     added by, the org's above for the seeded one, the relay links of `relay.extra_base_urls`, our own verified card's
@@ -163,7 +163,7 @@ for an origin that certificate lists (`Audience`, `HeldAudience`).
 - **First use, developer builds only** (MR008 item 4): a developer build (`developer_relays`) may add a bare origin,
   and seed one from `relay.extra_base_urls`; such an origin is pinned to the relay id of its first valid certificate
   that lists it (logged as a warning), at Add or before its first signed call; so are the org's origins with none
-  named. Outside developer builds only the compiled `prod` / `qa` backend of a build that names an empty relay id (a
+  named. Outside developer builds only the compiled `prod` / `staging` / `dev` backend of a build that names an empty relay id (a
   dogfood build made by hand: release workflows refuse it) is pinned so, warned (`OrgRelayFirstUseAllowed`); a release
   build's custom backend or `PP_BROWSER_ORIGIN` without `relay.relay_id` (or `registration.relay_id` /
   `PP_BROWSER_RELAY_ID`) is not used (an ERROR names the setting; Me → Network says so). Any other origin no address
@@ -357,7 +357,7 @@ config is only a new profile's default. Our account card lists the `https://` on
 ### Relay services and org services
 
 Two origins ([multi-relay MR006](../../projects/multi-relay/DECISIONS.md#mr006--the-preferred-relay-carries-the-users-relay-services-org-services-stay-on-the-orgs-origin);
-`BackendClientSet`): the **org's** (the deployment's origin: the compiled one for `prod` / `qa`, the config's
+`BackendClientSet`): the **org's** (the deployment's origin: the compiled one for `prod` / `staging` / `dev`, the config's
 `relay` / `registration` for `custom`) and **the preferred relay** (the first of My relays). They are the same until the
 user changes the list.
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # The org relays' ids and certificates a build ships beside their origins (release-compatibility SIGNED_FORMATS § 3.3,
 # § 3.5: a relay address is its origin and its relay id; the build's certificate is the floor a fresh install starts
-# from). Reads PP_API_URL_QA, PP_RELAY_ID_PROD / PP_RELAY_ID_QA from the environment, and the certificate files
-# config/relay-certs/prod.cert / qa.cert (PP_RELAY_CERT_FILE_PROD / _QA override the paths).
+# from). Reads PP_API_URL_STAGING / PP_API_URL_DEV and PP_RELAY_ID_PROD / _STAGING / _DEV from the environment, and
+# the certificate files config/relay-certs/prod.cert / staging.cert / dev.cert (PP_RELAY_CERT_FILE_PROD / _STAGING /
+# _DEV override the paths). The environments are dev, staging and prod (release-compatibility RC009, RC021).
 #
 # An unset or empty PP_RELAY_ID_<ENV> (a CI variable not set reads as empty) is what the build scripts pass as the
 # build's default, "pending": that environment's operator set is not made yet, and the relay is not used (it fails
@@ -10,7 +11,9 @@
 #
 #   check_relay_ids.sh release   a release (tagged installers, TestFlight, a published pp-node): fails when
 #                                PP_RELAY_ID_PROD is not a relay id (empty, pending, malformed) or prod.cert holds no
-#                                certificate; when PP_API_URL_QA is set, the same for PP_RELAY_ID_QA and qa.cert
+#                                certificate; when PP_API_URL_STAGING (PP_API_URL_DEV) is set, the same for
+#                                PP_RELAY_ID_STAGING and staging.cert (PP_RELAY_ID_DEV and dev.cert): the build
+#                                ships that environment
 #   check_relay_ids.sh dogfood   warns instead
 #   check_relay_ids.sh --self-test
 set -euo pipefail
@@ -48,12 +51,17 @@ check() {
   local mode="$1" problems=() line
   while IFS= read -r line; do
     [[ -n "${line}" ]] && problems+=("${line}")
-  done < <(check_env PROD "${PP_RELAY_ID_PROD:-pending}" "${PP_RELAY_CERT_FILE_PROD:-${root}/config/relay-certs/prod.cert}")
-  if [[ -n "${PP_API_URL_QA:-}" ]]; then
-    while IFS= read -r line; do
-      [[ -n "${line}" ]] && problems+=("${line}")
-    done < <(check_env QA "${PP_RELAY_ID_QA:-pending}" "${PP_RELAY_CERT_FILE_QA:-${root}/config/relay-certs/qa.cert}")
-  fi
+  done < <(
+    check_env PROD "${PP_RELAY_ID_PROD:-pending}" "${PP_RELAY_CERT_FILE_PROD:-${root}/config/relay-certs/prod.cert}"
+    # Staging and dev only where the build compiles their origin (a store build ships prod only, RC015).
+    if [[ -n "${PP_API_URL_STAGING:-}" ]]; then
+      check_env STAGING "${PP_RELAY_ID_STAGING:-pending}" \
+        "${PP_RELAY_CERT_FILE_STAGING:-${root}/config/relay-certs/staging.cert}"
+    fi
+    if [[ -n "${PP_API_URL_DEV:-}" ]]; then
+      check_env DEV "${PP_RELAY_ID_DEV:-pending}" "${PP_RELAY_CERT_FILE_DEV:-${root}/config/relay-certs/dev.cert}"
+    fi
+  )
   local problem
   for problem in "${problems[@]+"${problems[@]}"}"; do
     if [[ "${mode}" == "release" ]]; then
@@ -71,32 +79,66 @@ self_test() {
   printf '# a comment\nAQID\nBA==\n' >"${dir}/good.cert"
   printf '# placeholder\npending\n' >"${dir}/pending.cert"
   printf 'not base64!\n' >"${dir}/bad.cert"
-  expect() { # expect <0|1> <mode> <prod id|UNSET> <prod cert> <qa url> <qa id|UNSET> <qa cert>
-    local want="$1" got=0
+  # expect <0|1> <mode> <prod id|UNSET> <prod cert> [<ENV> <url> <id|UNSET> <cert>]...: ENV is STAGING or DEV
+  expect() {
+    local want="$1" mode="$2" got=0 args="$*"
     (
-      [[ "$3" == UNSET ]] && unset PP_RELAY_ID_PROD || export PP_RELAY_ID_PROD="$3"
-      [[ "$6" == UNSET ]] && unset PP_RELAY_ID_QA || export PP_RELAY_ID_QA="$6"
-      PP_RELAY_CERT_FILE_PROD="${dir}/$4" PP_API_URL_QA="$5" PP_RELAY_CERT_FILE_QA="${dir}/$7" check "$2"
+      unset PP_RELAY_ID_PROD PP_RELAY_ID_STAGING PP_RELAY_ID_DEV PP_API_URL_STAGING PP_API_URL_DEV
+      [[ "$3" == UNSET ]] || export PP_RELAY_ID_PROD="$3"
+      export PP_RELAY_CERT_FILE_PROD="${dir}/$4"
+      shift 4
+      while [[ $# -ge 4 ]]; do
+        export "PP_API_URL_$1=$2" "PP_RELAY_CERT_FILE_$1=${dir}/$4"
+        [[ "$3" == UNSET ]] || export "PP_RELAY_ID_$1=$3"
+        shift 4
+      done
+      check "${mode}"
     ) >/dev/null || got=1
     if [[ "${got}" != "${want}" ]]; then
-      echo "self-test: check $2 prod='$3' ($4) qa_url='$5' qa='$6' ($7) exited ${got}, wanted ${want}" >&2
+      echo "self-test: check ${args} exited ${got}, wanted ${want}" >&2
       failures=$((failures + 1))
     fi
   }
-  expect 0 release "${good}" good.cert "" UNSET pending.cert
-  expect 1 release UNSET good.cert "" UNSET pending.cert             # the placeholder fails closed
-  expect 1 release pending good.cert "" UNSET pending.cert
-  expect 1 release "" good.cert "" UNSET pending.cert                # empty: what CI passes, pending
-  expect 1 release "relay:short" good.cert "" UNSET pending.cert
-  expect 1 release "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP" good.cert "" UNSET pending.cert
-  expect 1 release "relay:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh9" good.cert "" UNSET pending.cert # spare bits
-  expect 1 release "${good}" pending.cert "" UNSET pending.cert      # no certificate floor
-  expect 1 release "${good}" bad.cert "" UNSET pending.cert
-  expect 1 release "${good}" missing.cert "" UNSET pending.cert
-  expect 1 release "${good}" good.cert "https://qa.example.test" UNSET good.cert
-  expect 1 release "${good}" good.cert "https://qa.example.test" "${good}" pending.cert
-  expect 0 release "${good}" good.cert "https://qa.example.test" "${good}" good.cert
-  expect 0 dogfood UNSET pending.cert "https://qa.example.test" "" pending.cert
+  local staging="https://staging.example.test" dev="https://dev.example.test"
+  expect 0 release "${good}" good.cert
+  expect 1 release UNSET good.cert             # the placeholder fails closed
+  expect 1 release pending good.cert
+  expect 1 release "" good.cert                # empty: what CI passes, pending
+  expect 1 release "relay:short" good.cert
+  expect 1 release "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP" good.cert # a PeerId is no relay id
+  expect 1 release "relay:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh9" good.cert # spare bits
+  expect 1 release "${good}" pending.cert      # no certificate floor
+  expect 1 release "${good}" bad.cert
+  expect 1 release "${good}" missing.cert
+  # Staging and dev count only where the build compiles their origin; then each needs its own id and certificate.
+  expect 0 release "${good}" good.cert STAGING "" UNSET pending.cert DEV "" UNSET missing.cert
+  for env in STAGING DEV; do
+    local url="${staging}"
+    [[ "${env}" == DEV ]] && url="${dev}"
+    expect 0 release "${good}" good.cert "${env}" "${url}" "${good}" good.cert
+    expect 1 release "${good}" good.cert "${env}" "${url}" UNSET good.cert
+    expect 1 release "${good}" good.cert "${env}" "${url}" pending good.cert
+    expect 1 release "${good}" good.cert "${env}" "${url}" "" good.cert
+    expect 1 release "${good}" good.cert "${env}" "${url}" "relay:short" good.cert
+    expect 1 release "${good}" good.cert "${env}" "${url}" "${good}" pending.cert
+    expect 1 release "${good}" good.cert "${env}" "${url}" "${good}" bad.cert
+    expect 1 release "${good}" good.cert "${env}" "${url}" "${good}" missing.cert
+  done
+  expect 0 release "${good}" good.cert STAGING "${staging}" "${good}" good.cert DEV "${dev}" "${good}" good.cert
+  expect 1 release "${good}" good.cert STAGING "${staging}" "${good}" good.cert DEV "${dev}" UNSET good.cert
+  expect 1 release "${good}" good.cert STAGING "${staging}" UNSET good.cert DEV "${dev}" "${good}" good.cert
+  expect 1 release UNSET good.cert STAGING "${staging}" "${good}" good.cert DEV "${dev}" "${good}" good.cert
+  expect 0 dogfood UNSET pending.cert STAGING "${staging}" "" pending.cert DEV "${dev}" UNSET missing.cert
+  # The files in the tree: each environment's exists and holds a certificate or the placeholder (dev's is made, 1 of 1;
+  # prod's and staging's are pending until Leo makes them).
+  local name text
+  for name in prod staging dev; do
+    text="$(certificate_text "${root}/config/relay-certs/${name}.cert")"
+    if [[ ! -f "${root}/config/relay-certs/${name}.cert" ]] || ! [[ "${text}" == pending || "${text}" =~ ^[A-Za-z0-9+/]+=*$ ]]; then
+      echo "self-test: config/relay-certs/${name}.cert is missing, or neither a certificate's base64 nor pending" >&2
+      failures=$((failures + 1))
+    fi
+  done
   rm -rf "${dir}"
   [[ ${failures} -eq 0 ]] && echo "check_relay_ids self-test: ok"
   [[ ${failures} -eq 0 ]]

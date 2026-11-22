@@ -15,9 +15,9 @@ struct ServiceEndpointConfig {
   /**
    * The relay's id, `relay:…` (multi-relay MR008 as release-compatibility SIGNED_FORMATS § 3.3 amends it: a relay
    * address carries it): what its certificate must prove (`GET /v1/relay-identity`); the audience of its signed calls
-   * is that certificate's transport PeerId. `relay` / `registration` only; the build's for prod / qa (`pending` while
-   * that environment's operator set is not made: the relay is not used), the config's `relay_id` for a custom
-   * backend. Empty: none named (where first use is allowed, the app pins its first valid certificate, with a warning).
+   * is that certificate's transport PeerId. `relay` / `registration` only; the build's for prod / staging / dev
+   * (`pending` while that environment's operator set is not made: the relay is not used), the config's `relay_id` for
+   * a custom backend. Empty: none named (where first use is allowed, the app pins its first valid certificate, with a warning).
    */
   std::string relay_id;
 

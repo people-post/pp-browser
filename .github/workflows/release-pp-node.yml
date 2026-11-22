@@ -199,11 +199,13 @@ jobs:
           # The backend origin is compiled in (no built-in default since the per-backend profiles):
           # a node's registration / directory URLs derive from it.
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
-          PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
+          PP_API_URL_STAGING: ${{ secrets.PP_API_URL_STAGING }}
+          PP_API_URL_DEV: ${{ secrets.PP_API_URL_DEV }}
           # The prod relay's id beside its origin (SIGNED_FORMATS § 3.3): the node's registration relay is expected
           # to prove it with the compiled URL (its certificate: config/relay-certs/prod.cert).
           PP_RELAY_ID_PROD: ${{ vars.PP_RELAY_ID_PROD || secrets.PP_RELAY_ID_PROD }}
-          PP_RELAY_ID_QA: ${{ vars.PP_RELAY_ID_QA || secrets.PP_RELAY_ID_QA }}
+          PP_RELAY_ID_STAGING: ${{ vars.PP_RELAY_ID_STAGING || secrets.PP_RELAY_ID_STAGING }}
+          PP_RELAY_ID_DEV: ${{ vars.PP_RELAY_ID_DEV || secrets.PP_RELAY_ID_DEV }}
           KIND: ${{ needs.guard.outputs.kind }}
         run: |
           set -euo pipefail

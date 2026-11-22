@@ -255,14 +255,21 @@ jobs:
           PP_BUILD_TAG: ${{ inputs.candidate_tag || steps.ver.outputs.tag }}
           PP_BUILD_COMMIT: ${{ steps.ver.outputs.commit }}
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
-          PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
+          PP_API_URL_STAGING: ${{ inputs.candidate_tag == '' && (secrets.PP_API_URL_STAGING) || '' }}
+          PP_API_URL_DEV: ${{ inputs.candidate_tag == '' && (secrets.PP_API_URL_DEV) || '' }}
           PP_RELAY_ID_PROD: ${{ vars.PP_RELAY_ID_PROD || secrets.PP_RELAY_ID_PROD }}
-          PP_RELAY_ID_QA: ${{ vars.PP_RELAY_ID_QA || secrets.PP_RELAY_ID_QA }}
+          PP_RELAY_ID_STAGING: ${{ inputs.candidate_tag == '' && (vars.PP_RELAY_ID_STAGING || secrets.PP_RELAY_ID_STAGING) || '' }}
+          PP_RELAY_ID_DEV: ${{ inputs.candidate_tag == '' && (vars.PP_RELAY_ID_DEV || secrets.PP_RELAY_ID_DEV) || '' }}
           PP_RELAY_CONTENT_SHA256: ${{ vars.PP_RELAY_CONTENT_SHA256 }}
         run: |
           set -euo pipefail
-          # TestFlight reaches testers: the org relays' ids and certificates ship with it (SIGNED_FORMATS § 3.5).
-          ./scripts/check/check_relay_ids.sh release
+          # A release candidate compiles prod only (RC015) and needs its id and certificate; a tester build also compiles
+          # staging and dev, and an environment whose operator set is not made yet stays unusable (fails closed).
+          if [[ -n "${{ inputs.candidate_tag }}" ]]; then
+            ./scripts/check/check_relay_ids.sh release
+          else
+            ./scripts/check/check_relay_ids.sh dogfood
+          fi
           ./scripts/platform/ios_build.sh ipa
           ./scripts/platform/ios_build.sh upload-ipa
 

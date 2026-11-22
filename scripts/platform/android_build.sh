@@ -70,10 +70,12 @@ Optional environment variables:
   PP_BROWSER_VERSION          Numeric version passed to CMake (e.g. 0.1.0)
   PP_BROWSER_RELEASE_VERSION  Full release version (e.g. 0.1.0-rc1)
   PP_API_URL_PROD             Prod backend origin compiled into the app (read by Gradle; empty = none)
-  PP_API_URL_QA               QA backend origin compiled into the app (empty = QA option hidden)
+  PP_API_URL_STAGING          Staging backend origin compiled into the app (empty = Staging option hidden)
+  PP_API_URL_DEV              Dev backend origin compiled into the app (empty = Dev option hidden)
   PP_RELAY_ID_PROD            relay id of the prod backend's relay (relay:…, SIGNED_FORMATS § 3.5; unset = pending:
                               not used); its certificate is config/relay-certs/prod.cert
-  PP_RELAY_ID_QA              relay id of the QA backend's relay (unset = pending); config/relay-certs/qa.cert
+  PP_RELAY_ID_STAGING         relay id of the staging backend's relay (unset = pending); config/relay-certs/staging.cert
+  PP_RELAY_ID_DEV             relay id of the dev backend's relay (unset = pending); config/relay-certs/dev.cert
   PP_RELAY_CONTENT_SHA256     ON/OFF: default of relay.content_sha256 (x-amz-content-sha256 on relay POST/PUT); empty = OFF
   PP_ANDROID_ABIS             ABIs for \`apk\` (comma-separated, e.g. arm64-v8a,x86_64; default arm64-v8a). apk-release and
                               install build every ABI (android/app/build.gradle ppBrowserAbiFilters)
