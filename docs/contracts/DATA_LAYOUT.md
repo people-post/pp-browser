@@ -238,9 +238,11 @@ Each backend (Me → Network → Service, `backend.env`) has its own profile, so
 | Backend | Key (and id of a profile created for it) |
 |---------|------------------------------------------|
 | `prod` | `prod` |
-| `staging` (legacy `qa`) | `qa` |
+| `staging` (and a saved `qa`) | `staging` |
 | `dev` | `dev` |
 | `custom`, or any run with `PP_BROWSER_ORIGIN` | `custom-<12 hex>`: FNV-1a 64 of the normalized registration URL (origin for `PP_BROWSER_ORIGIN`) |
+
+qa is retired (release-compatibility RC021) and staging is a new environment, not qa renamed (RC009 as amended): a saved `backend.env: "qa"` runs on staging with a new `staging` profile, and a profile recorded for `qa` is left as it is, never selected again.
 
 At startup, after the config is loaded, the registry selects the active profile for the key: the active one when it matches; else the existing profile recorded for the key; else a new profile with the key as its id. An active profile whose manifest records no backend — a fresh install's `default`, or a profile just reset (the reset writes its manifest again without one) — takes the key; no other profile is ever claimed (release 1 starts clean, RC017). `manifest.backend` is never overwritten once set, and a newer manifest is refused, never written. A `--profile` override is not redirected. The backend is chosen once per run; changing it takes effect on the next start.
 

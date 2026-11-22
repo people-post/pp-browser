@@ -26,7 +26,7 @@ std::string CustomKey(const std::string& url) {
 std::string KeyFor(const BackendEnv env, const std::string& registration_url) {
   switch (env) {
     case BackendEnv::Staging:
-      return "qa"; // keeps the directory the staging (formerly qa) profile already lives in
+      return "staging"; // a new environment (release-compatibility RC009 as amended): no profile made for qa is reused
     case BackendEnv::Dev:
       return "dev";
     case BackendEnv::Custom:
