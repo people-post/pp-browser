@@ -169,6 +169,31 @@ TEST_P(UnsentMessageStoreTest, ARowQueuedAgainWaitsInTheOutboxUntilItIsThrough) 
   EXPECT_FALSE(InOutbox("m1"));
 }
 
+// B236 R5: a group's pending row missing its outbox record gets it back at the start (as a direct one does), and a
+// queue-again of a row that is not there leaves no record behind.
+TEST_P(UnsentMessageStoreTest, TheStartKeepsAGroupsPendingRowInTheOutboxAndNoRecordForNothing) {
+  Thread group;
+  group.id = "g1";
+  group.kind = ThreadKind::Group;
+  group.group_id = "group-1";
+  group.title = "Group";
+  group.updated_at = 1;
+  ASSERT_TRUE(store().UpsertThread(group));
+  ThreadMessage row = Message("gm1", kLocalSelfContactId, MessageDelivery::Failed, 3);
+  row.thread_id = "g1";
+  Add(row);
+  // Pending again with no record (as an interrupted queue-again might leave it), then a start.
+  row.delivery = MessageDelivery::Pending;
+  ASSERT_TRUE(store().UpdateMessage(row));
+  ASSERT_TRUE(store().ReconcileOutbox());
+  EXPECT_TRUE(InOutbox("gm1")) << "a group's row is found again at the start";
+
+  auto none = store().UpdateMessageDelivery("t1", "no-such-row", MessageDelivery::Pending, std::nullopt, true);
+  ASSERT_TRUE(none);
+  EXPECT_FALSE(*none);
+  EXPECT_FALSE(InOutbox("no-such-row")) << "no record for a row that is not there";
+}
+
 INSTANTIATE_TEST_SUITE_P(Impls, UnsentMessageStoreTest, ::testing::Values(Impl::Sqlite, Impl::Memory),
                          [](const ::testing::TestParamInfo<Impl>& info) {
                            return info.param == Impl::Sqlite ? std::string("Sqlite") : std::string("Memory");

@@ -539,7 +539,8 @@ Roe<uint32_t> InMemoryDeliveryStore::BumpLocalChatTargetEpoch(const std::string&
 
 Roe<void> InMemoryDeliveryStore::ReconcileOutbox() {
   std::lock_guard lock(mutex_);
-  // As SQLite's: a row whose message is gone or no longer pending leaves; a pending direct message missing one gets it.
+  // As SQLite's: a row whose message is gone or no longer pending leaves; a pending direct or group message missing one
+  // gets it.
   std::erase_if(outbox_, [&](const auto& entry) {
     auto rows = messages_.find(entry.second);
     if (rows == messages_.end()) {
@@ -550,7 +551,7 @@ Roe<void> InMemoryDeliveryStore::ReconcileOutbox() {
     return message == rows->second.end() || message->delivery != MessageDelivery::Pending;
   });
   for (const auto& [thread_id, thread] : threads_) {
-    if (thread.kind != ThreadKind::Direct) {
+    if (thread.kind != ThreadKind::Direct && thread.kind != ThreadKind::Group) {
       continue;
     }
     if (auto rows = messages_.find(thread_id); rows != messages_.end()) {
