@@ -339,6 +339,10 @@ Roe<ThreadMessage> ConversationsFacade::ResendEdit(const std::string& thread_id,
   return hub_.ResendEdit(thread_id, message_id);
 }
 
+bool ConversationsFacade::ChatSendHeld(const std::string& thread_id) {
+  return hub_.IsMessagingReady() && hub_.MeshMessaging().ChatSendHeld(thread_id);
+}
+
 void ConversationsFacade::ResendMessageAsync(const std::string& thread_id, const std::string& message_id,
                                              std::function<void(Roe<StoredResendAnswer>)> on_done) {
   hub_.ResendMessageAsync(thread_id, message_id, std::move(on_done));

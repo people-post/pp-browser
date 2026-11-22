@@ -162,6 +162,11 @@ public:
                                  const std::string& new_text, int64_t tapped_at_ms);
   /** Send again the edit of our message that did not go out (ConversationsHub::ResendEdit). */
   Roe<ThreadMessage> ResendEdit(const std::string& thread_id, const std::string& message_id);
+  /**
+   * B236: whether the 1:1 chat `thread_id` is held — the recipient has not added us and a refused message of ours is
+   * still queued — so nothing more is sent for now (MeshDeliveryOrchestrator::ChatSendHeld). Blocking (the store).
+   */
+  bool ChatSendHeld(const std::string& thread_id);
   /** Send our failed message again as itself, after a tap on its red mark (ConversationsHub::ResendMessageAsync). */
   void ResendMessageAsync(const std::string& thread_id, const std::string& message_id,
                           std::function<void(Roe<StoredResendAnswer>)> on_done);

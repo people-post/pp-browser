@@ -964,6 +964,11 @@ private:
   void OnSendMarkTapped(const std::string& message_id);
   /** What a tap (or a resend after a card update) came to, told as the composer says it. */
   void ApplySendMarkTap(const std::string& thread_id, const std::string& message_id, const SendMarkTap& tap);
+  /**
+   * B236: the chat `thread_id` is held (the recipient has not added us; ChatPresenter::SendHeld): the pill says so, every
+   * time, and true — the caller sends nothing (the typed text stays). False: send as usual.
+   */
+  bool RefuseSendWhileHeld(const std::string& thread_id);
   /** A message sent again as itself after a tap (ConversationsFacade::ResendMessageAsync). */
   void ResendSameMessage(const std::string& thread_id, const std::string& message_id);
   /**

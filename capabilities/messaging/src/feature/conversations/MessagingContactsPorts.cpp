@@ -88,6 +88,9 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
     }
     return {};
   };
+  ports.send_held = [&hub](const std::string& thread_id) {
+    return hub.IsMessagingReady() && hub.MeshMessaging().ChatSendHeld(thread_id);
+  };
   ports.register_peer_keys_from_directory = [&hub](const mesh::DirectoryHit& hit) {
     hub.MeshMessaging().RegisterPeerKeysFromDirectory(hit);
   };

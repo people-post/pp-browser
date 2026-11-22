@@ -1278,6 +1278,8 @@
     "chat.notice.send.relay_not_configured": "No message server is set up, so this message wasn't sent.",
     "chat.notice.send.relay_busy":
         "The server is busy right now. This message wasn't sent — please send it again later.",
+    "chat.notice.send.not_added_yet":
+        "They haven't added you as a contact yet, so this wasn't sent. Once they add you, tap the red mark to send it again.",
     "chat.notice.send.relay_rate_limited":
         "Too many messages to new contacts. This message wasn't sent — wait a little, then send it again.",
     "chat.notice.send.relay_unreachable":
@@ -1291,6 +1293,9 @@
     "chat.send.mark.failed": "Not sent",
     "chat.send.still_trying": "Still trying to send. Please wait.",
     "chat.send.not_resendable": "This message can't be re-sent with a tap. Please send it again.",
+    "chat.send.held_line":
+        "They haven't added you as a contact yet, so you can't send more for now. You can continue once they add you.",
+    "chat.send.held": "They haven't added you yet, so this can't be sent right now.",
     "chat.send.file_gone":
         "This picture, file or voice message is no longer saved, so it can't be re-sent. Please send it again.",
     "chat.send.reason_then": "{reason} {then}",

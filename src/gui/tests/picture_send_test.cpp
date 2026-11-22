@@ -54,6 +54,9 @@ struct Fakes {
   int pushed = 0;
   int closed = 0;
   int ended = 0;
+  /** B236: whether the host lets Send go (a held chat: no), and how often it was asked. */
+  bool may_send = true;
+  int send_asks = 0;
   int next_layer = 7;
   std::function<void()> on_cancel;
   std::vector<PictureSendReport> reports;
@@ -123,6 +126,10 @@ protected:
     host.queue_changed = [this]() { ++fakes_.queue_changed; };
     host.left = [this]() { ++fakes_.left; };
     host.first_preview_shown = [this]() { ++fakes_.first_preview; };
+    host.may_send = [this]() {
+      ++fakes_.send_asks;
+      return fakes_.may_send;
+    };
     host.send_label = [](size_t n) { return n <= 1 ? std::string("Send") : "Send (" + std::to_string(n) + ")"; };
     host.size_label = [](uint64_t bytes) { return FormatPickedSize(bytes) + " total"; };
     host.post_worker = [this](std::function<void()> work) {
@@ -272,6 +279,25 @@ TEST_F(PictureSendControllerTest, SendStartsTheQueueWithTheTextAndTheOriginalCho
   ASSERT_EQ(fakes_.texts.size(), 1U);
   EXPECT_EQ(fakes_.texts[0], (std::pair<std::string, std::string>{"chat-origin", "two pictures"}));
   EXPECT_TRUE(Removed(PageDir()));
+}
+
+// B236: in a held chat the page's Send queues nothing and the page stays open with its pictures and text (the host shows
+// the pill each time); once the chat may send again, the same Send goes.
+TEST_F(PictureSendControllerTest, SendInAHeldChatQueuesNothingAndThePageStays) {
+  Arrive("a.jpg");
+  controller_.SetTextForTest("hi");
+  fakes_.may_send = false;
+  controller_.OnSend();
+  controller_.OnSend();
+  EXPECT_EQ(fakes_.send_asks, 2) << "asked on every tap";
+  EXPECT_TRUE(controller_.IsOpen());
+  EXPECT_FALSE(queue_->Started());
+  EXPECT_TRUE(fakes_.sent_items.empty());
+  EXPECT_EQ(fakes_.closed, 0);
+  fakes_.may_send = true;
+  controller_.OnSend();
+  EXPECT_TRUE(queue_->Started());
+  EXPECT_FALSE(controller_.IsOpen());
 }
 
 TEST_F(PictureSendControllerTest, SendDoesNothingWhenNothingCanBeSent) {

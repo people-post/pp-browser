@@ -89,6 +89,28 @@ TEST(DeliveryNoticeTest, ARateLimitReadsAsBusyForATrustedPeer) {
   EXPECT_EQ(SendFailureForThread(SendFailure::PeerNoAnswer, true), SendFailure::PeerNoAnswer);
 }
 
+// B236: the stranger quota is its own reason — the recipient has not added us — for a contact too (never "busy").
+TEST(DeliveryNoticeTest, TheStrangerQuotaReadsAsNotAddedYet) {
+  const SendFailure quota =
+      SendFailureFromRelay(AppError::Auth(Err::Auth::StrangerQuota, "Relay send: the recipient's quota for strangers"));
+  EXPECT_EQ(quota, SendFailure::NotAddedYet);
+  EXPECT_EQ(SendFailureForThread(quota, /*trusted_peer=*/true), SendFailure::NotAddedYet);
+  EXPECT_EQ(SendFailureFromWire(SendFailureWord(quota).c_str()), SendFailure::NotAddedYet) << "stored and read back";
+}
+
+// The "held" line: local, never on the wire, naming its probe.
+TEST(DeliveryNoticeTest, AHeldLineIsALocalRowNamingItsProbe) {
+  const ThreadMessage line = MakeStrangerHeldRow("t1", "m1", 5);
+  EXPECT_EQ(line.id, StrangerHeldRowId("m1"));
+  EXPECT_FALSE(line.relay_visible);
+  EXPECT_EQ(line.delivery, MessageDelivery::Local);
+  EXPECT_EQ(line.content_type, ChatContentType::System);
+  EXPECT_TRUE(line.text.empty()) << "worded by the transcript";
+  EXPECT_EQ(StrangerHeldRowProbe(line), std::optional<std::string>("m1"));
+  EXPECT_FALSE(StrangerHeldRowProbe(MakeSendFailureRow("t1", "m1", "relay_busy", 5)));
+  EXPECT_FALSE(SendFailureRowReason(line)) << "not a did-not-go-out line";
+}
+
 TEST(DeliveryNoticeTest, ReceiveReasonsRoundTripTheirStoredNames) {
   for (const ReceiveFailure reason :
        {ReceiveFailure::ApplyFailed, ReceiveFailure::ThreadLookupFailed, ReceiveFailure::SenderMismatch,

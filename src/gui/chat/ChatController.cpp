@@ -3876,6 +3876,8 @@ PictureSendHost ChatController::MakePictureSendHost() {
       picture_picker_done_ms_ = 0;
     }
   };
+  // B236: the preview's Send in a held chat says why and leaves the page open (nothing is queued).
+  host.may_send = [this]() { return !RefuseSendWhileHeld(ActiveThreadId()); };
   host.send_label = [](const size_t sendable) {
     return sendable <= 1 ? Tr("picture_send.send_one") : Tr("picture_send.send_n", {{"n", std::to_string(sendable)}});
   };
@@ -4066,6 +4068,18 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   const std::string& thread_id = to_thread;
   // A picture queue holds the slot between its items: anyone else waits, its own next item only for a running send.
   const bool busy = from_picture_queue ? chat_.attachment_uploading || chat_.attachment_preparing : AttachmentBusy();
+  if (!from_picture_queue && !thread_id.empty() && RefuseSendWhileHeld(thread_id)) {
+    // B236: the chat sends nothing for now. A recording already made is kept behind Retry (never thrown away); a picked
+    // file is let go.
+    EndPick(pick_serial);
+    if (voice_file) {
+      FailVoiceKeepingRecording(reuse_row, path, thread_id);
+    } else {
+      release_pick_(path);
+    }
+    finished.Fire(ClassifyUploadOutcome(/*sent=*/false, /*cancelled=*/false, /*staged=*/false, false));
+    return;
+  }
   if (!facade_ || thread_id.empty() || !picks_.Accept(pick_serial, busy)) {
     EndPick(pick_serial);
     if (voice_file && !thread_id.empty()) {
@@ -4638,9 +4652,19 @@ void ChatController::ApplySendMarkTap(const std::string& thread_id, const std::s
       RefreshFromMessaging();
       return;
     case SendMarkTap::Kind::ResendSameMessage:
-      ResendSameMessage(thread_id, message_id);
+      if (!RefuseSendWhileHeld(thread_id)) { // B236: a held chat sends nothing, a tap neither
+        ResendSameMessage(thread_id, message_id);
+      }
       return;
   }
+}
+
+bool ChatController::RefuseSendWhileHeld(const std::string& thread_id) {
+  if (!messaging_ready_ || !presenter_.SendHeld(thread_id)) {
+    return false;
+  }
+  ShowToast(Tr("chat.send.held"));
+  return true;
 }
 
 void ChatController::ResendSameMessage(const std::string& thread_id, const std::string& message_id) {
@@ -5279,6 +5303,9 @@ void ChatController::OnSendMessage() {
   const bool with_image = agent_.HasPendingImage() && InAiComposerContext();
   if (text.empty() && !with_image) {
     return;
+  }
+  if (RefuseSendWhileHeld(ActiveThreadId())) {
+    return; // B236: the typed text stays in the box
   }
 
   // Sending keeps the draft focused, so the keyboard stays up for the next line (#90); a tap on the transcript
@@ -6708,8 +6735,17 @@ bool ChatController::Setup(ui::Context* context) {
             }));
         ctor.BindEventCallback("attach_capture", DataEventAt([this](ui::Event& ev) { OnAttachCapture(&ev); }));
         ctor.BindEventCallback("voice_mode_toggle", DataEvent([this] { ToggleVoiceMode(); }));
-        ctor.BindEventCallback("voice_press", DataEventAt([this](ui::Event& ev) { voice_->OnPress(ev); }));
-        ctor.BindEventCallback("voice_click", DataEventAt([this](ui::Event& ev) { voice_->OnClick(ev); }));
+        // B236: in a held chat nothing is recorded at all; the pill says why on each press.
+        ctor.BindEventCallback("voice_press", DataEventAt([this](ui::Event& ev) {
+                                 if (!RefuseSendWhileHeld(ActiveThreadId())) {
+                                   voice_->OnPress(ev);
+                                 }
+                               }));
+        ctor.BindEventCallback("voice_click", DataEventAt([this](ui::Event& ev) {
+                                 if (!RefuseSendWhileHeld(ActiveThreadId())) {
+                                   voice_->OnClick(ev);
+                                 }
+                               }));
         ctor.BindEventCallback("voice_send", DataEvent([this] { voice_->OnSendButton(); }));
         ctor.BindEventCallback("voice_cancel", DataEvent([this] { voice_->OnCancelButton(); }));
         ctor.BindEventCallback("play_voice", DataEvent<std::string>([this](const std::string& message_id) {

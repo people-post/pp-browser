@@ -564,6 +564,10 @@ SendMark ChatPresenter::SendMarkOf(const ThreadMessage& message, const int64_t n
   return SendMark::None;
 }
 
+bool ChatPresenter::SendHeld(const std::string& thread_id) const {
+  return facade_ != nullptr && !thread_id.empty() && facade_->ChatSendHeld(thread_id);
+}
+
 SendMarkTap ChatPresenter::TapSendMark(const std::string& thread_id, const std::string& message_id) {
   return TapSendMarkWith(thread_id, message_id, /*offer_fix=*/true);
 }

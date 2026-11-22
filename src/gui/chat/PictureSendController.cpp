@@ -597,6 +597,9 @@ void PictureSendController::OnSend() {
   if (!queue || !IsOpen() || queue->Started() || queue->SendableCount() == 0) {
     return;
   }
+  if (host_.may_send && !host_.may_send()) {
+    return; // the host said why (B236: a held chat); the page stays open with its pictures
+  }
   queue->SetText(Text());
   if (!queue->Start()) {
     return;

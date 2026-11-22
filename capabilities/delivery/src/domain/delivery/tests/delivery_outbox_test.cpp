@@ -484,7 +484,8 @@ TEST_F(DeliveryOutboxTest, AStrangerQuotaRefusalWaitsOutItsBackoff) {
   outbox->Send(ToRelay("t1", "m1"));
   Drain();
   ASSERT_EQ(Outcomes().size(), 1u);
-  EXPECT_EQ(Outcomes()[0].failure, SendFailure::RelayRateLimited);
+  EXPECT_EQ(Outcomes()[0].failure, SendFailure::NotAddedYet);
+  EXPECT_TRUE(Outcomes()[0].stranger_quota);
   EXPECT_TRUE(outbox->SendStartedMs("m1")) << "queued: still under way";
   outbox->Retry();
   Drain();
@@ -835,7 +836,7 @@ TEST_F(OutboxRowTest, AStrangerQuotaUntilTheRetriesAreUsedUpFailsTheRowOnceWithI
   EXPECT_GE(relay.SentCount(), static_cast<size_t>(kMaxStrangerQuotaAttempts));
   EXPECT_EQ(Delivery(), MessageDelivery::Failed) << "the outbox gave up";
   EXPECT_FALSE(outbox->SendStartedMs("m1"));
-  EXPECT_EQ(FailedReasons(), (std::vector<SendFailure>{SendFailure::RelayRateLimited})) << "failed once, with why";
+  EXPECT_EQ(FailedReasons(), (std::vector<SendFailure>{SendFailure::NotAddedYet})) << "failed once, with why";
   const std::vector<MessageDelivery> states = States();
   EXPECT_EQ(std::count(states.begin(), states.end(), MessageDelivery::Failed), 1);
   EXPECT_EQ(states.back(), MessageDelivery::Failed);
@@ -875,7 +876,7 @@ TEST_F(OutboxRowTest, AQueuedSendDroppedForAPausedChatFailsWithItsLastReason) {
   outbox->ReleaseHeldFor("account:bob");
   Drain();
   EXPECT_EQ(Delivery(), MessageDelivery::Failed) << "dropped: not left queued forever";
-  EXPECT_EQ(FailedReasons(), (std::vector<SendFailure>{SendFailure::RelayRateLimited}));
+  EXPECT_EQ(FailedReasons(), (std::vector<SendFailure>{SendFailure::NotAddedYet}));
 }
 
 // B236: a relay that takes the message while the app is going to the background. The send already on its way holds the

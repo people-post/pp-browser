@@ -72,6 +72,8 @@ struct DeliveryOutcome {
    * request's end, so its row stays queued (B236). False on every outcome that ends the request.
    */
   bool retrying = false;
+  /** The relay refused it for its stranger quota (the recipient has not added us): the chat is held (B236). */
+  bool stranger_quota = false;
 };
 
 /**
