@@ -185,6 +185,12 @@ CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& c
   return layout;
 }
 
+void ShellLayout::ExtendExpandedToWindowBottom(CompactChromeLayout& layout, int safe_area_bottom_dp) {
+  const float safe_bottom = static_cast<float>(std::max(0, safe_area_bottom_dp));
+  layout.shell_bottom_dp = 0.f;
+  layout.content_bottom_inset_dp = std::max(layout.content_bottom_inset_dp, safe_bottom);
+}
+
 bool ShellLayout::PinGatePayloadTooBigToRender(bool phrase_flow, size_t payload_len) {
   // A normal 24-word recovery phrase is well under this; anything larger is a transfer code dropped in the wrong box.
   constexpr size_t kPinGateRenderMax = 512;

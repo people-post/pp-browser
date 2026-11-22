@@ -63,6 +63,11 @@ struct ShellLayout {
   static CompactChromeLayout ComputeCompactChromeLayout(
       const ShellConfig& config, int safe_area_top_dp, int safe_area_bottom_dp, float titlebar_height_dp = 0.f,
       CompactBottomSurface bottom_surface = CompactBottomSurface::None, bool bottom_chrome_open = false);
+  /** The wide layout on a touch device (iPad): a bottom safe-area inset (home indicator; on an iPad window the
+   *  system's rounded bottom edge) must not shrink the document, or the window's black clear colour shows as a band
+   *  under the page. The document runs to the window's bottom edge and #shell-root clears the inset instead (the
+   *  keyboard branch of ComputeCompactChromeLayout does the same). No inset (desktop): nothing changes. */
+  static void ExtendExpandedToWindowBottom(CompactChromeLayout& layout, int safe_area_bottom_dp);
 };
 
 } // namespace pbr

@@ -333,6 +333,29 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_FLOAT_EQ(titlebar_and_safe.shell_bottom_dp, 34.f);
 }
 
+// iPad window / full screen: a bottom safe-area inset must not leave a black band under the wide layout.
+TEST(ShellHostTest, ExpandedLayoutRunsToTheWindowBottom) {
+  const pbr::ShellConfig config{};
+  pbr::CompactChromeLayout layout = pbr::ShellLayout::ComputeCompactChromeLayout(config, 24, 20);
+  EXPECT_FLOAT_EQ(layout.shell_bottom_dp, 20.f); // the phone-style result: the document would end above the inset
+  pbr::ShellLayout::ExtendExpandedToWindowBottom(layout, 20);
+  EXPECT_FLOAT_EQ(layout.shell_bottom_dp, 0.f);
+  EXPECT_FLOAT_EQ(layout.content_bottom_inset_dp, 20.f); // #shell-root clears the inset instead
+  EXPECT_FLOAT_EQ(layout.content_top_dp, 24.f);
+
+  // Desktop (no inset): unchanged.
+  pbr::CompactChromeLayout desktop = pbr::ShellLayout::ComputeCompactChromeLayout(config, 0, 0, 38.f);
+  pbr::ShellLayout::ExtendExpandedToWindowBottom(desktop, 0);
+  EXPECT_FLOAT_EQ(desktop.shell_bottom_dp, 0.f);
+  EXPECT_FLOAT_EQ(desktop.content_bottom_inset_dp, 0.f);
+
+  // Keyboard up: the keyboard inset already lifts #shell-root; it is not added twice.
+  pbr::CompactChromeLayout keyboard = pbr::ShellLayout::ComputeCompactChromeLayout(config, 24, 336);
+  pbr::ShellLayout::ExtendExpandedToWindowBottom(keyboard, 336);
+  EXPECT_FLOAT_EQ(keyboard.shell_bottom_dp, 0.f);
+  EXPECT_FLOAT_EQ(keyboard.content_bottom_inset_dp, 336.f);
+}
+
 TEST(ShellHostTest, ProjectShellChromeSnapshot) {
   using namespace pbr;
 

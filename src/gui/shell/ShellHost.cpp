@@ -2226,8 +2226,11 @@ void ShellHost::ApplySafeAreaLayout() {
                      : state_.compact_chat_open ? CompactBottomSurface::Composer
                                                 : CompactBottomSurface::TabBar;
   }
-  const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
+  CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
       config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface, bottom_chrome_open_);
+  if (state_.layout_mode == LayoutMode::Expanded) {
+    ShellLayout::ExtendExpandedToWindowBottom(layout, layout_bottom);
+  }
   ui::ElementDocument* doc = context_->GetDocument(0);
   // The layers under a full-screen phone call page: from the call page now, every time the shell is synced or the call
   // remounted (never toggled on events).
@@ -2298,7 +2301,7 @@ void ShellHost::ApplySafeAreaLayout() {
       }
       toasts->SetProperty("top", "auto");
       set_dp(toasts, "left", left_dp);
-      set_dp(toasts, "bottom", statusbar_dp + kWideToastBottomDp);
+      set_dp(toasts, "bottom", statusbar_dp + kWideToastBottomDp + layout.content_bottom_inset_dp);
     } else {
       // Absolute toast stack is positioned from the chrome top edge (ignores padding).
       toasts->RemoveProperty("left");
