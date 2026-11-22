@@ -1992,6 +1992,8 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
   mesh_messaging_->OwnAccountCards().Reconcile(util::NowUnixMs());
   // Before the first poll: a restored device refuses cards older than the ones it knew.
   ApplyRestoredCardFloors();
+  // What was still queued when the app stopped shows queued from the first frame; it goes at the first sync (B236).
+  mesh_messaging_->PrimeQueuedResume();
   messaging_ready_ = true;
   mesh_ready_ = false;
   StartCoordinatorTimers();

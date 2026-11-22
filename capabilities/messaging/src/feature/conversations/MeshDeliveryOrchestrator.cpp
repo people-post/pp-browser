@@ -2310,11 +2310,30 @@ Roe<bool> MeshDeliveryOrchestrator::ResendStoredMessage(const std::string& threa
   return true;
 }
 
-void MeshDeliveryOrchestrator::ResumeQueuedSends() {
+std::optional<int64_t> MeshDeliveryOrchestrator::SendStartedMs(const std::string& message_id) const {
+  if (auto started = outbox_.SendStartedMs(message_id)) {
+    return started;
+  }
+  std::lock_guard lock(resume_mu_);
+  for (const QueuedRow& row : awaiting_resume_) {
+    if (row.message_id == message_id) {
+      return created_ms_; // the start sends it again: queued, not red, before it is handed over
+    }
+  }
+  return std::nullopt;
+}
+
+void MeshDeliveryOrchestrator::PrimeQueuedResume() {
+  {
+    std::lock_guard lock(resume_mu_);
+    if (resume_primed_) {
+      return;
+    }
+    resume_primed_ = true;
+  }
   const QueuedResumePlan plan =
       PlanQueuedResume(store_, util::NowUnixMs(), created_ms_,
-                       [this](const std::string& message_id) { return SendStartedMs(message_id).has_value(); });
-  size_t resent = 0;
+                       [this](const std::string& message_id) { return outbox_.SendStartedMs(message_id).has_value(); });
   size_t given_up = 0;
   for (const QueuedRow& row : plan.give_up) {
     // Too old to turn up by itself now: failed (the red mark; a tap sends it).
@@ -2324,15 +2343,37 @@ void MeshDeliveryOrchestrator::ResumeQueuedSends() {
       ++given_up;
     }
   }
-  for (const QueuedRow& row : plan.resend) {
-    if (auto sent = ResendStoredMessage(row.thread_id, row.message_id); sent && *sent) {
+  {
+    std::lock_guard lock(resume_mu_);
+    awaiting_resume_ = plan.resend;
+  }
+  if (!plan.resend.empty() || given_up > 0) {
+    log().info << "after the start: " << plan.resend.size() << " queued message(s) to send again, " << given_up
+               << " too old (failed)";
+  }
+}
+
+void MeshDeliveryOrchestrator::ResumeQueuedSends() {
+  PrimeQueuedResume();
+  std::vector<QueuedRow> rows;
+  {
+    std::lock_guard lock(resume_mu_);
+    rows = awaiting_resume_;
+  }
+  size_t resent = 0;
+  for (const QueuedRow& row : rows) {
+    auto sent = ResendStoredMessage(row.thread_id, row.message_id);
+    if (sent && *sent) {
       ++resent;
     } else if (!sent) {
       log().info << "queued message not sent again message_id=" << row.message_id << ": " << sent.error().message;
     }
+    // Handed to the outbox (its own clock from now on), already under way, or not sent (red): no longer awaited.
+    std::lock_guard lock(resume_mu_);
+    std::erase(awaiting_resume_, row);
   }
-  if (resent > 0 || given_up > 0) {
-    log().info << "after the start: " << resent << " queued message(s) sent again, " << given_up << " too old (failed)";
+  if (!rows.empty()) {
+    log().info << "after the start: " << resent << " of " << rows.size() << " queued message(s) sent again";
     if (on_messages_changed_) {
       AppRuntime::PostUI([this]() { on_messages_changed_(); });
     }
