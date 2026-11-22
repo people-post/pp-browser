@@ -11,16 +11,15 @@
 namespace pbr {
 
 /**
- * The mark beside a message we sent (#210, DEV/PLAN-message-send-status.md): a clock while a send attempt of it is
- * under way and started at most kQueuedMarkLimitMs ago; the red mark when it did not go out — retries used up, the
- * clock's time over, failed before it was sent, a restart since (nothing is under way then), a group message no
- * member got; nothing once it is out. Messages of others, AI / local rows, system lines and anything that never goes
- * on the wire carry none, and so does a group message that had nobody to go to (we were alone in the group): the red
- * mark means it was meant for someone and did not reach them.
+ * The mark beside a message we sent (#210, DEV/PLAN-message-send-status.md; B236): a clock while a send of it is still
+ * being tried (a first attempt, or a retry the outbox still has queued: a stranger quota's backoff can last about two
+ * hours); the red mark once it did not go out — the outbox gave up, it failed before it was sent, a group message no
+ * member got, or nothing of it is being tried any more (a restart that could not send it again); nothing once it is
+ * out. Messages of others, AI / local rows, system lines and anything that never goes on the wire carry none, and so
+ * does a group message that had nobody to go to (we were alone in the group): the red mark means it was meant for
+ * someone and did not reach them.
  */
 
-/** A clock shows at most this long after the send started; past it, the red mark (retries may still run). */
-inline constexpr int64_t kQueuedMarkLimitMs = 60'000;
 /** A new row whose send is not registered yet shows the clock this long, so it does not flash red. */
 inline constexpr int64_t kQueuedMarkGraceMs = 5'000;
 
@@ -35,8 +34,9 @@ SendMark MarkOf(const ThreadMessage& message, std::optional<int64_t> started_ms,
                 bool no_recipients = false);
 
 /**
- * Folds `message` into `earliest`, the soonest time a mark shown at `now_ms` changes on its own (a clock turning red):
- * `earliest` keeps the sooner of the two. The chat redraws then.
+ * Folds `message` into `earliest`, the soonest time a mark shown at `now_ms` changes on its own (a new row's clock that
+ * no send took up turning red): `earliest` keeps the sooner of the two. The chat redraws then. A clock of a send still
+ * under way changes only when the outbox reports, which redraws the chat itself.
  */
 void NoteMarkChange(std::optional<int64_t>& earliest, const ThreadMessage& message, std::optional<int64_t> started_ms,
                     int64_t now_ms, bool no_recipients = false);

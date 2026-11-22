@@ -6,6 +6,7 @@
 #include "domain/attachments/AmpChatBlobTransport.h"
 #include "feature/conversations/AmpChatHistoryTransport.h"
 #include "domain/delivery/AmpDirectChatTransport.h"
+#include "domain/delivery/DeliveryRowMark.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "lib/messaging/EditMessage.h"
 
@@ -267,18 +268,17 @@ void MeshDeliveryOrchestrator::WireOutbox() {
   outbox_.SetRelayClient(relay_.get()); // until SetRelayClients gives the sender (stable for the hub's life)
   // On the worker that finished the send: the row is marked before the UI hears of it.
   outbox_.SetOnOutcome([this](const DeliveryOutcome& outcome) {
+    if (!outcome.ok && outcome.retrying) {
+      // B236: the outbox tries again (a stranger quota's backoff, a relay that did not answer): the row stays queued,
+      // nothing is told yet — only the outbox giving up fails it.
+      log().info << "send not through yet message_id=" << outcome.message_id << " (" << outcome.detail
+                 << "): it stays queued";
+      return;
+    }
     if (!outcome.group_member.empty()) {
       ApplyGroupMemberOutcome(outcome);
-    } else if (!outcome.copy_device.empty() && !outcome.ok) {
-      // One copy of several (M021): the message stands delivered when another copy is.
-      if (MarkDelivery(outcome.thread_id, outcome.message_id, false, MessageTransport::Relay, true) &&
-          on_messages_changed_) {
-        AppRuntime::PostUI([this]() { on_messages_changed_(); });
-      }
-    } else if (outcome.ok) {
-      ApplySendSucceeded(outcome.thread_id, outcome.message_id, outcome.transport);
     } else {
-      ApplySendFailed(outcome.thread_id, outcome.message_id, outcome.failure, outcome.detail);
+      ApplySendOutcome(outcome);
     }
     if (outcome.failure == SendFailure::PaymentRequired && !outcome.ok) {
       NotePaymentRequired(outcome.relay_recipient, outcome.initiation_floor);
@@ -1576,41 +1576,18 @@ void MeshDeliveryOrchestrator::MaybeRepairGap(const std::string& thread_id, cons
   });
 }
 
-bool MeshDeliveryOrchestrator::MarkDelivery(const std::string& thread_id, const std::string& message_id,
-                                            const bool success, const MessageTransport transport,
-                                            const bool unless_delivered) {
-  if (thread_id.empty()) {
-    return false; // a control-lane send: no transcript row to update
+void MeshDeliveryOrchestrator::ApplySendOutcome(const DeliveryOutcome& outcome) {
+  // The outbox ends a request before it reports it: anything of the message still known to it is another request
+  // (another copy, M022), which then decides. The delivery state only is written: a whole row read earlier would write
+  // back words blanked since (a voided edit of ours).
+  const bool still_under_way = outbox_.SendStartedMs(outcome.message_id).has_value();
+  const RowMarkResult row = ApplyOutcomeToRow(store_, outcome, still_under_way);
+  if (row.failed) {
+    if (auto thread = store_.GetThread(outcome.thread_id); thread && *thread) {
+      NotifyDeliveryIssue(**thread, outcome.message_id, outcome.failure, outcome.detail);
+    }
   }
-  // The delivery state only: a whole row read earlier would write back words blanked since (a voided edit of ours).
-  auto marked = store_.UpdateMessageDelivery(
-      thread_id, message_id, success ? MessageDelivery::Relayed : MessageDelivery::Failed,
-      success ? std::optional<MessageTransport>(transport) : std::nullopt, unless_delivered);
-  if (!marked) {
-    return false;
-  }
-  return *marked || !unless_delivered;
-}
-
-void MeshDeliveryOrchestrator::ApplySendSucceeded(const std::string& thread_id, const std::string& message_id,
-                                                  const MessageTransport transport) {
-  if (!MarkDelivery(thread_id, message_id, true, transport)) {
-    return;
-  }
-  if (on_messages_changed_) {
-    AppRuntime::PostUI([this]() { on_messages_changed_(); });
-  }
-}
-
-void MeshDeliveryOrchestrator::ApplySendFailed(const std::string& thread_id, const std::string& message_id,
-                                               const SendFailure failure, const std::string& detail) {
-  if (!MarkDelivery(thread_id, message_id, false, MessageTransport::Relay)) {
-    return;
-  }
-  if (auto thread = store_.GetThread(thread_id); thread && *thread) {
-    NotifyDeliveryIssue(**thread, message_id, failure, detail);
-  }
-  if (on_messages_changed_) {
+  if (row.changed && on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
 }
@@ -2118,13 +2095,18 @@ void MeshDeliveryOrchestrator::ApplyGroupMemberOutcome(const DeliveryOutcome& ou
       MarkGroupMemberMissed(*group_id, outcome.group_member);
     }
     NotifyGroupMembersMissed(outcome.thread_id, outcome.message_id);
+    // The last member's copy to end, with none out: the message failed (B236; a group's reason is not told per row).
+    if (ApplyOutcomeToRow(store_, outcome, outbox_.SendStartedMs(outcome.message_id).has_value()).changed &&
+        on_messages_changed_) {
+      AppRuntime::PostUI([this]() { on_messages_changed_(); });
+    }
     return;
   }
   if (groups_ && group_id) {
     groups_->ClearMemberUnreachable(*group_id, outcome.group_member);
   }
   // The first copy out marks the row; one member's failure does not unmark it.
-  if (MarkDelivery(outcome.thread_id, outcome.message_id, true, outcome.transport) && on_messages_changed_) {
+  if (ApplyOutcomeToRow(store_, outcome, false).changed && on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
 }

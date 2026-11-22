@@ -410,21 +410,22 @@ private:
    */
   void NotePeerNeedsUpdate(const std::string& account, const std::string& detail);
   void MaybeEnqueueAttachmentDownload(const RelayReceiveOutcome& outcome);
-  void ApplySendSucceeded(const std::string& thread_id, const std::string& message_id, MessageTransport transport);
-  /** `detail`: the transport's own text, for the log. */
-  void ApplySendFailed(const std::string& thread_id, const std::string& message_id, SendFailure failure,
-                       const std::string& detail);
+  /**
+   * A 1:1 message's request (or one of its copies) ended: its row as ApplyOutcomeToRow marks it (B236: failed only
+   * when nothing of it is still being tried), and the reason told when it failed now.
+   */
+  void ApplySendOutcome(const DeliveryOutcome& outcome);
   /** A pair whose session came back without this device's numbering starts its next epoch (D014, #378). */
   Roe<void> StartNextEpochIfRestored(const Thread& thread);
   /** A pair this device lost its numbering in starts its next epoch (D014): 1:1 sends and group copies. */
   Roe<void> StartNextPairEpochIfRestored(const PeerSessionKey& key);
-  /** One member's copy of a group message: that member's reachability, and the row once any copy is out. */
+  /**
+   * One member's copy of a group message ended: that member's reachability, the row once any copy is out, and failed
+   * once the last copy ends with none out.
+   */
   void ApplyGroupMemberOutcome(const DeliveryOutcome& outcome);
   void MarkGroupMemberMissed(const std::string& group_id, const std::string& member);
   void NotifyGroupMembersMissed(const std::string& thread_id, const std::string& message_id);
-  /** The message row's delivery state; false when there is no row (a control-lane send). */
-  bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success,
-                    MessageTransport transport, bool unless_delivered = false);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);
   void RunSyncOnIo(const std::string& thread_id, std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,
                    std::function<void(Roe<ChatSyncResult>)> on_complete);

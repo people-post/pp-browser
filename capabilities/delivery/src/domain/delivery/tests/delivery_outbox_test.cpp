@@ -1,6 +1,8 @@
 #include "lib/delivery/OutboundMessage.h"
 #include "lib/delivery/RelayClients.h"
 #include "domain/delivery/DeliveryOutbox.h"
+#include "domain/delivery/DeliveryRowMark.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
@@ -13,6 +15,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -252,7 +255,8 @@ TEST_F(DeliveryOutboxTest, ARefusedSendIsReportedFailedThenDeliveredByARetry) {
   outbox->Send(ToRelay("t1", "m1"));
   Drain();
   ASSERT_EQ(Outcomes().size(), 1u);
-  EXPECT_FALSE(Outcomes()[0].ok) << "the row shows Failed while the retry is queued";
+  EXPECT_FALSE(Outcomes()[0].ok);
+  EXPECT_TRUE(Outcomes()[0].retrying) << "queued for a retry: the row stays queued (B236)";
   outbox->Retry();
   Drain();
   ASSERT_EQ(Outcomes().size(), 2u);
@@ -727,6 +731,188 @@ TEST_F(DeliveryOutboxTest, CancelOfAMessageWithNothingUnderWayRemembersNothing) 
   outbox->Cancel("m1");
   outbox->Cancel("never-sent");
   EXPECT_EQ(outbox->CancelledCountForTest(), 0u);
+}
+
+// B236: a message shows "queued" while the outbox still tries and "failed" only once it gives up. The row is marked
+// as the app marks it (ApplyOutcomeToRow, from the outcome handler, the outbox asked whether anything of the message is
+// still under way), and every state it takes is recorded.
+
+class OutboxRowTest : public DeliveryOutboxTest {
+protected:
+  void SetUp() override {
+    DeliveryOutboxTest::SetUp();
+    DirectChatTarget target{.peer_identity_kind = "account", .peer_identity_value = "account:bob"};
+    auto thread = store_.FindOrCreateDirectThread(target, "", "Bob");
+    ASSERT_TRUE(thread);
+    thread_id_ = thread->id;
+    ThreadMessage row;
+    row.id = "m1";
+    row.thread_id = thread_id_;
+    row.sender_contact_id = kLocalSelfContactId;
+    row.content_type = ChatContentType::Attachment;
+    row.text = "photo.jpg";
+    row.timestamp = util::NowUnixMs();
+    row.delivery = MessageDelivery::Pending;
+    row.relay_visible = true;
+    ASSERT_TRUE(store_.AppendMessage(row));
+  }
+
+  test::TestOwner<DeliveryOutbox> MakeRowOutbox(IRelayClient& relay) {
+    test::TestOwner<DeliveryOutbox> outbox([]() -> IDirectMessageClient* { return nullptr; });
+    outbox->SetRelayClient(&relay);
+    DeliveryOutbox* raw = &*outbox;
+    outbox->SetOnOutcome([this, raw](const DeliveryOutcome& outcome) {
+      const RowMarkResult marked =
+          ApplyOutcomeToRow(store_, outcome, raw->SendStartedMs(outcome.message_id).has_value());
+      std::lock_guard lock(mu_);
+      outcomes_.push_back(outcome);
+      if (marked.failed) {
+        failed_reasons_.push_back(outcome.failure);
+      }
+      states_.push_back(Delivery());
+    });
+    return outbox;
+  }
+
+  DeliveryRequest Request(const std::string& copy_device = {}) const {
+    DeliveryRequest request = ToRelay(thread_id_, "m1");
+    request.copy_device = copy_device;
+    return request;
+  }
+
+  MessageDelivery Delivery() const {
+    auto row = store_.GetMessage(thread_id_, "m1");
+    return row && *row ? (*row)->delivery : MessageDelivery::Local;
+  }
+
+  std::vector<MessageDelivery> States() {
+    std::lock_guard lock(mu_);
+    return states_;
+  }
+
+  std::vector<SendFailure> FailedReasons() {
+    std::lock_guard lock(mu_);
+    return failed_reasons_;
+  }
+
+  static bool EverFailed(const std::vector<MessageDelivery>& states) {
+    return std::find(states.begin(), states.end(), MessageDelivery::Failed) != states.end();
+  }
+
+  InMemoryDeliveryStore store_;
+  std::string thread_id_;
+  std::vector<MessageDelivery> states_;
+  std::vector<SendFailure> failed_reasons_;
+};
+
+TEST_F(OutboxRowTest, AStrangerQuotaRefusalStaysQueuedUntilARetryDeliversIt) {
+  FakeRelay relay(1, AppError::Auth(Err::Auth::StrangerQuota, "stranger_quota_exceeded"));
+  auto outbox = MakeRowOutbox(relay);
+  outbox->Send(Request("relay"));
+  Drain();
+  ASSERT_EQ(Outcomes().size(), 1u);
+  EXPECT_TRUE(Outcomes()[0].retrying);
+  EXPECT_EQ(Delivery(), MessageDelivery::Pending) << "the 429 is not the end: queued, not failed";
+  EXPECT_TRUE(outbox->SendStartedMs("m1")) << "the chat shows the clock (under way)";
+  outbox->ReleaseHeldFor("account:bob"); // its backoff over (here: the grant), the retry goes
+  Drain();
+  EXPECT_EQ(Delivery(), MessageDelivery::Relayed);
+  EXPECT_FALSE(EverFailed(States())) << "never shown failed on the way";
+  EXPECT_TRUE(FailedReasons().empty()) << "nothing told";
+}
+
+TEST_F(OutboxRowTest, AStrangerQuotaUntilTheRetriesAreUsedUpFailsTheRowOnceWithItsReason) {
+  FakeRelay relay(1000, AppError::Auth(Err::Auth::StrangerQuota, "stranger_quota_exceeded"));
+  auto outbox = MakeRowOutbox(relay);
+  outbox->Send(Request());
+  Drain();
+  for (int backoff = 0; backoff < 20 && outbox->SendStartedMs("m1"); ++backoff) {
+    EXPECT_EQ(Delivery(), MessageDelivery::Pending) << "after backoff " << backoff << ": still queued";
+    outbox->ReleaseHeldFor("account:bob"); // each backoff over
+    Drain();
+  }
+  EXPECT_GE(relay.SentCount(), static_cast<size_t>(kMaxStrangerQuotaAttempts));
+  EXPECT_EQ(Delivery(), MessageDelivery::Failed) << "the outbox gave up";
+  EXPECT_FALSE(outbox->SendStartedMs("m1"));
+  EXPECT_EQ(FailedReasons(), (std::vector<SendFailure>{SendFailure::RelayRateLimited})) << "failed once, with why";
+  const std::vector<MessageDelivery> states = States();
+  EXPECT_EQ(std::count(states.begin(), states.end(), MessageDelivery::Failed), 1);
+  EXPECT_EQ(states.back(), MessageDelivery::Failed);
+}
+
+TEST_F(OutboxRowTest, ARelayThatDoesNotAnswerStaysQueuedThroughItsRetries) {
+  FakeRelay relay(1000); // a network error: retried on each inbox sync
+  auto outbox = MakeRowOutbox(relay);
+  outbox->Send(Request());
+  Drain();
+  for (int retry = 1; retry <= kMaxOutboxRetryAttempts; ++retry) {
+    EXPECT_EQ(Delivery(), MessageDelivery::Pending) << "before retry " << retry;
+    outbox->Retry();
+    Drain();
+  }
+  EXPECT_FALSE(outbox->SendStartedMs("m1"));
+  EXPECT_EQ(Delivery(), MessageDelivery::Failed);
+  EXPECT_EQ(FailedReasons().size(), 1u);
+}
+
+TEST_F(OutboxRowTest, AFinalRefusalFailsAtOnce) {
+  FakeRelay relay(1, AppError::Network(Err::Network::HttpRejected, "400"));
+  auto outbox = MakeRowOutbox(relay);
+  outbox->Send(Request());
+  Drain();
+  EXPECT_EQ(Delivery(), MessageDelivery::Failed) << "refused for good: nothing more is tried";
+  EXPECT_EQ(FailedReasons().size(), 1u);
+}
+
+TEST_F(OutboxRowTest, AQueuedSendDroppedForAPausedChatFailsWithItsLastReason) {
+  FakeRelay relay(1, AppError::Auth(Err::Auth::StrangerQuota, "stranger_quota_exceeded"));
+  auto outbox = MakeRowOutbox(relay);
+  outbox->Send(Request());
+  Drain();
+  EXPECT_EQ(Delivery(), MessageDelivery::Pending);
+  outbox->SetThreadPaused([](const std::string&) { return true; });
+  outbox->ReleaseHeldFor("account:bob");
+  Drain();
+  EXPECT_EQ(Delivery(), MessageDelivery::Failed) << "dropped: not left queued forever";
+  EXPECT_EQ(FailedReasons(), (std::vector<SendFailure>{SendFailure::RelayRateLimited}));
+}
+
+// M022: a message goes as several records (a device's copy over its link, the relay record for the rest). One ending
+// in failure while another is still tried leaves it queued; the last one decides.
+TEST_F(OutboxRowTest, OneCopyFailingWhileAnotherIsTriedLeavesTheRowQueued) {
+  for (const bool second_gets_through : {false, true}) {
+    ASSERT_TRUE(store_.UpdateMessageDelivery(thread_id_, "m1", MessageDelivery::Pending, std::nullopt, false));
+    {
+      std::lock_guard lock(mu_);
+      states_.clear();
+      failed_reasons_.clear();
+    }
+    FakeRelay relay(1000); // the relay record: refused (network) on every try until it is let through
+    auto outbox = MakeRowOutbox(relay);
+    DeliveryRequest no_route = Request("device-1"); // a copy that fails for good at once
+    no_route.relay_recipient.reset();
+    outbox->Send(Request("relay"));
+    outbox->Send(std::move(no_route));
+    Drain();
+    EXPECT_EQ(Delivery(), MessageDelivery::Pending) << "one copy failed, the other is still tried";
+    EXPECT_TRUE(FailedReasons().empty());
+    FakeRelay through(0);
+    for (int retry = 1; retry <= kMaxOutboxRetryAttempts; ++retry) {
+      if (second_gets_through && retry == kMaxOutboxRetryAttempts) {
+        outbox->SetRelayClient(&through);
+      }
+      outbox->Retry();
+      Drain();
+    }
+    if (second_gets_through) {
+      EXPECT_EQ(Delivery(), MessageDelivery::Relayed);
+      EXPECT_FALSE(EverFailed(States()));
+      EXPECT_TRUE(FailedReasons().empty());
+    } else {
+      EXPECT_EQ(Delivery(), MessageDelivery::Failed);
+      EXPECT_EQ(FailedReasons().size(), 1u) << "told once, not per copy";
+    }
+  }
 }
 
 } // namespace

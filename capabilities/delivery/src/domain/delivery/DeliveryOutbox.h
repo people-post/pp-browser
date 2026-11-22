@@ -64,6 +64,11 @@ struct DeliveryOutcome {
   std::string relay_recipient;
   /** `failure` PaymentRequired: the recipient's initiation floor the relay named (pp_credit minor units). */
   int64_t initiation_floor = 0;
+  /**
+   * A failure after which the outbox tries again (queued for a retry, or a control-lane retry scheduled): not the
+   * request's end, so its row stays queued (B236). False on every outcome that ends the request.
+   */
+  bool retrying = false;
 };
 
 /**
@@ -138,6 +143,8 @@ private:
     int64_t not_before_ms = 0;
     /** Its request's (BeginActive): a Cancel after the Send stops it. */
     uint64_t serial = 0;
+    /** Why its last attempt failed: what is reported if it is dropped without another try (a paused thread). */
+    Error last_failure;
   };
 
   /** A control-lane retry waiting on its timer: the item it sends (taken by the timer, or by ReleaseHeldFor). */
@@ -167,6 +174,8 @@ private:
   /** The outcome of a failed relay send to `recipient`: its notice, and the floor a `payment_required` named. */
   static DeliveryOutcome RelayFailureOutcome(DeliveryOutcome outcome, const std::string& recipient,
                                              const Error& failure);
+  /** A queued item dropped without another try (its thread paused): its last failure, final. */
+  static DeliveryOutcome DroppedOutcome(const Pending& item);
   /**
    * The relay does not know `request`'s recipient (`relay_failure`): its `amp_fallback_key` over a link, when one can
    * be had — then true, and the outcome is reported when that send ends.
