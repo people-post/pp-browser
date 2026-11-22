@@ -4626,16 +4626,12 @@ void ChatController::ApplySendMarkTap(const std::string& thread_id, const std::s
     case SendMarkTap::Kind::ReasonOnly:
       ShowToast(SendFailureReasonText(presenter_.SendFailureReasonOf(thread_id, message_id), tap.refusal));
       return;
-    case SendMarkTap::Kind::RemovalFailed:
-      // Its new copy already went out on an earlier tap; nothing is sent a third time.
-      ShowToast(Tr("chat.send.not_sent"));
-      return;
     case SendMarkTap::Kind::SendFailed:
       // As the composer says it; the old bubble stays as it was.
       UserFeedback::Fail(PaymentErrorUserMessage(tap.error.value_or(Error("Send failed"))));
       return;
     case SendMarkTap::Kind::Resent:
-      // The new message is at the bottom (the draft untouched); the old row is gone unless it was delivered meanwhile.
+      // An edit sent again (MessageEdit): its new edit row went out; the unsent one is gone.
       if (thread_id == ActiveThreadId()) {
         scroller_.RequestScrollToLatest(); // only the chat that is open (a resend after a card update may be another)
       }
@@ -4648,13 +4644,14 @@ void ChatController::ApplySendMarkTap(const std::string& thread_id, const std::s
 }
 
 void ChatController::ResendSameMessage(const std::string& thread_id, const std::string& message_id) {
-  // B236: the picture / file / voice / card goes again as itself, where it is in the chat; its mark turns to the clock
-  // once it is on its way. Off this thread (our files may be listed on the server first); the answer comes back here.
+  // B236: the message (text, picture, file, voice, card) goes again as itself, where it is in the chat; its mark turns
+  // to the clock once it is on its way. Off this thread (a picture's file may be looked up on the server first); the
+  // answer comes back here.
   facade_->ResendMessageAsync(
       thread_id, message_id,
-      [this, alive = std::weak_ptr<int>(send_mark_alive_),
+      [this, thread_id, message_id, alive = std::weak_ptr<int>(send_mark_alive_),
        session = messaging_session_](Roe<StoredResendAnswer> answer) {
-        AppRuntime::PostUI([this, alive, session, answer = std::move(answer)]() {
+        AppRuntime::PostUI([this, alive, session, thread_id, message_id, answer = std::move(answer)]() {
           if (!alive.lock() || !messaging_ready_ || session != messaging_session_) {
             return; // a lock / unlock since: the tap belongs to no session now
           }
@@ -4664,6 +4661,8 @@ void ChatController::ResendSameMessage(const std::string& thread_id, const std::
             ShowToast(Tr("chat.send.still_trying"));
           } else if (*answer == StoredResendAnswer::AttachmentGone) {
             ShowToast(Tr("chat.send.file_gone"));
+          } else {
+            presenter_.NoteResent(thread_id, message_id); // told once if it turns red again
           }
           RefreshFromMessaging();
         });
