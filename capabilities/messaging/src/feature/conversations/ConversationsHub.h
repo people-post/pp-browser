@@ -99,6 +99,7 @@ namespace pbr {
 class IPeerSessionStore;
 class ProfileSecretsEngine;
 class ContactProfileRefresh;
+class OwnProfileIconSync;
 
 /**
  * App-only messaging composition root (also known as ConversationsCore).
@@ -354,13 +355,13 @@ public:
    * directory), whoever changed it: lists of people read it again. Runs on the thread that changed it.
    */
   void SetOnContactsChanged(std::function<void()> callback);
-  /** Me → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
   /**
    * An account-locker sync (the account's contacts and groups across its devices) ended: true when it completed (with
    * changes or without), false when it failed (the locker could not be read or written). Not called when the sync did
    * not run (messaging down, no recovery seed, not registered, signed out). Runs on a worker thread.
    */
   void SetOnAccountSyncResult(std::function<void(bool ok)> callback);
+  /** Me → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
   Roe<OurRelaysStatus> OurRelays();
   /**
    * Adds the relay the user pasted: its relay link (`https://host#<PeerId>`, MR008; a bare origin, plain http:// or a
@@ -713,6 +714,8 @@ private:
   void ScheduleDirectoryHitIconFetch(const mesh::DirectoryHit& hit);
   void ScheduleContactIconFetch(const Contact& contact);
   void NotifyPeerIconsChanged();
+  /** After a locker sync: fetch our own photo when another device of the account set a new one (off the UI thread). */
+  void RefreshOwnProfileIconSoon();
   /** Blocking (a worker): refreshes one contact; true when a directory lookup was made. */
   bool RefreshContactProfileNow(const std::string& contact_id, bool force = false);
   void ContinueContactProfileSweep(std::shared_ptr<const std::vector<std::string>> contact_ids, size_t index);
@@ -864,11 +867,11 @@ private:
   std::function<void()> on_own_devices_changed_;
   std::mutex contacts_changed_mu_;
   std::function<void()> on_contacts_changed_;
+  std::mutex account_sync_result_mu_;
+  std::function<void(bool ok)> on_account_sync_result_;
   std::mutex our_relays_changed_mu_;
   std::function<void()> on_our_relays_changed_;
   /** Read with MyRelays (any thread: the page's worker); Shutdown closes it before what its ports touch goes. */
-  std::mutex account_sync_result_mu_;
-  std::function<void(bool ok)> on_account_sync_result_;
   std::shared_ptr<MyRelaysWorkflow> my_relays_;
   mutable std::mutex my_relays_mu_;
   std::shared_ptr<MyRelaysWorkflow> MyRelays() const;
@@ -930,6 +933,8 @@ private:
   /** Contacts passed hand to hand (contact cards). */
   std::unique_ptr<ContactCardExchange> contact_cards_;
   std::unique_ptr<ContactProfileRefresh> contact_profile_refresh_;
+  /** Our own photo when it was set on another device of the account (after a locker sync). */
+  std::unique_ptr<OwnProfileIconSync> own_icon_sync_;
   std::unique_ptr<ContactRefreshWorkflow> contact_refresh_;
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;

@@ -2766,6 +2766,9 @@ void Application::WireHubCallbacks() {
     }
     AppRuntime::PostUI([this]() {
       peer_icons_refresh_posted_ = false;
+      if (settings_) {
+        settings_->OnOwnIconChanged(); // our own photo, when another device of the account set it
+      }
       if (contacts_) {
         contacts_->Refresh();
         contacts_->RefreshMemberIcon(
@@ -2779,12 +2782,12 @@ void Application::WireHubCallbacks() {
       }
     });
   });
-  messaging.SetOnContactsChanged([this]() {
-    // Whoever changed the address book, on whatever thread: every list of people on screen (New chat, Contacts, the
-    // blocked list) shows it at once. A burst (an import, a card and its profile) is one rebuild.
   messaging.SetOnAccountSyncResult([this](const bool ok) {
     AppRuntime::PostUI([this, ok]() { OnAccountSyncResult(ok); }); // a worker thread → the UI thread
   });
+  messaging.SetOnContactsChanged([this]() {
+    // Whoever changed the address book, on whatever thread: every list of people on screen (New chat, Contacts, the
+    // blocked list) shows it at once. A burst (an import, a card and its profile) is one rebuild.
     if (contacts_sync_posted_.exchange(true)) {
       return;
     }
@@ -3260,10 +3263,10 @@ void Application::Shutdown() {
     messaging_->SetOnLinkStateChanged(nullptr);
     messaging_->SetOnPeerIconsChanged(nullptr);
     messaging_->SetOnContactsChanged(nullptr);
+    messaging_->SetOnAccountSyncResult(nullptr);
     messaging_->SetOnCallWake(nullptr);
   }
 
-    messaging_->SetOnAccountSyncResult(nullptr);
   // Join notification watcher first so it cannot PostTask during teardown, and
   // so process exit does not std::terminate on an unjoined std::thread.
   {

@@ -2630,6 +2630,10 @@ void SettingsController::OnProfileUnlocked() {
   Resync(/*include_profile_nickname=*/true);
 }
 
+void SettingsController::OnOwnIconChanged() {
+  Resync(/*include_profile_nickname=*/false); // an edit of the name in progress is left alone
+}
+
 void SettingsController::Resync(const bool include_profile_nickname) {
   SyncBindingsFromSession();
   DirtyAll(include_profile_nickname);

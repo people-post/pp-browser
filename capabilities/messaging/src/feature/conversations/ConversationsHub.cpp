@@ -36,6 +36,7 @@
 #include "domain/peers/AccountKeyResolver.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "feature/conversations/ContactProfileRefresh.h"
+#include "feature/conversations/OwnProfileIconSync.h"
 #include "feature/conversations/ContactRefreshWorkflow.h"
 #include "lib/messaging/ContactLocator.h"
 #include "lib/delivery/PeerRequestAuth.h"
@@ -1328,6 +1329,16 @@ void ConversationsHub::OpenContactCards() {
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
   contact_cards_->SetLocalRelaysAllowed(config_.developer_relays); // a QR code's relay not on a public host: the lab's
   contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
+  own_icon_sync_ = std::make_unique<OwnProfileIconSync>(
+      data_dir_, directory_,
+      [this]() -> std::string {
+        auto identity = Identity().Get();
+        return identity && identity->registered ? identity->account_id : std::string();
+      },
+      [](const std::string& profile_dir, const std::string& key, const mesh::ProfileIconRef& icon) {
+        return FetchProfileIcon(profile_dir, key, icon);
+      },
+      []() { return util::NowUnixMs(); });
   contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, *contact_cards_);
   contact_refresh_->SetOurRelays(CardDirectories());
   // The page's *identity doesn't match* (MR007): our pins disagree with the card, or a send found the PeerId refused.
@@ -2709,6 +2720,17 @@ void ConversationsHub::PublishAccountLockerSoon() {
       if (!published) {
         log().info << "Account locker not published: " << published.error().message;
       }
+      std::function<void(bool)> on_result;
+      {
+        std::lock_guard lock(account_sync_result_mu_);
+        on_result = on_account_sync_result_;
+      }
+      if (on_result) {
+        on_result(static_cast<bool>(published));
+      }
+      if (published) {
+        RefreshOwnProfileIconSoon(); // a photo set on another device of the account: ours has none yet
+      }
     });
   });
 }
@@ -2720,14 +2742,6 @@ void ConversationsHub::ApplyRestoredCardFloors() {
     restored.swap(restored_.card_floors);
   }
   if (restored.empty() || !peer_cards_) {
-      std::function<void(bool)> on_result;
-      {
-        std::lock_guard lock(account_sync_result_mu_);
-        on_result = on_account_sync_result_;
-      }
-      if (on_result) {
-        on_result(static_cast<bool>(published));
-      }
     return;
   }
   std::vector<PeerCardFloor> floors;
@@ -2811,6 +2825,9 @@ Roe<void> ConversationsHub::UploadProfileIcon(const PreparedProfileIcon& prepare
   if (!uploaded) {
     return uploaded.error();
   }
+  if (mesh_messaging_) {
+    mesh_messaging_->NudgeSiblings(); // our other devices look our photo up again (only with more than one device)
+  }
   return {};
 }
 
@@ -2825,7 +2842,11 @@ Roe<void> ConversationsHub::ClearProfileIcon() {
   if (!blob) {
     return Error("Blob client not configured");
   }
-  return ClearHostedProfileIcon(*blob, Identity(), data_dir_);
+  auto cleared = ClearHostedProfileIcon(*blob, Identity(), data_dir_);
+  if (cleared && mesh_messaging_) {
+    mesh_messaging_->NudgeSiblings();
+  }
+  return cleared;
 }
 
 namespace {
@@ -4343,6 +4364,7 @@ void ConversationsHub::Shutdown() {
   contact_refresh_.reset();
   contact_cards_.reset();
   contact_profile_refresh_.reset();
+  own_icon_sync_.reset();
   UnwireCardReaders();
   account_keys_.reset();
   peer_cards_.reset();
@@ -4515,6 +4537,26 @@ void ConversationsHub::SetOnContactsChanged(std::function<void()> callback) {
   on_contacts_changed_ = std::move(callback);
 }
 
+void ConversationsHub::RefreshOwnProfileIconSoon() {
+  if (!own_icon_sync_ || !HasDirectory() || shutdown_requested_.load(std::memory_order_acquire)) {
+    return;
+  }
+  AppRuntime::PostWorkerBackground([this]() {
+    if (!own_icon_sync_ || shutdown_requested_.load(std::memory_order_acquire)) {
+      return;
+    }
+    const auto outcome = own_icon_sync_->Refresh();
+    if (outcome == OwnProfileIconSync::Outcome::Fetched || outcome == OwnProfileIconSync::Outcome::Cleared) {
+      AppRuntime::PostUI([this]() { NotifyPeerIconsChanged(); }); // the Me page, Contacts and chats redraw our avatar
+    }
+  });
+}
+
+void ConversationsHub::SetOnAccountSyncResult(std::function<void(bool ok)> callback) {
+  std::lock_guard lock(account_sync_result_mu_);
+  on_account_sync_result_ = std::move(callback);
+}
+
 void ConversationsHub::NotifyOwnDevicesChanged() {
   std::function<void()> callback;
   {
@@ -4537,11 +4579,6 @@ void ConversationsHub::RetryOwnCardRecoverySoon() {
 void ConversationsHub::WireOwnCardRecovery() {
   OwnCards& own = mesh_messaging_->OwnAccountCards();
   own.SetOwnCardLookup([this](const std::string& account_id, std::function<void(OwnCardAnswers)> done) {
-void ConversationsHub::SetOnAccountSyncResult(std::function<void(bool ok)> callback) {
-  std::lock_guard lock(account_sync_result_mu_);
-  on_account_sync_result_ = std::move(callback);
-}
-
     AppRuntime::PostWorkerNormal([this, account_id, done = std::move(done)]() {
       done(shutdown_requested_.load(std::memory_order_acquire) ? OwnCardAnswers{} : AskOurRelaysForOwnCard(account_id));
     });
