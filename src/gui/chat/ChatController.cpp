@@ -3072,8 +3072,8 @@ void ChatController::OnAttachFile(ui::Event* ev) {
     return;
   }
   const std::string thread_id = ActiveThreadId();
-  if (thread_id.empty()) {
-    return;
+  if (thread_id.empty() || RefuseSendWhileHeld(thread_id)) {
+    return; // B236: a held chat opens no picker (the wide layout's +, the phone's attach); the pill says why
   }
 
   // Where the file came from decides what is done to a picture (see OutgoingPickSource). Each picker opening is a pick
@@ -3254,6 +3254,9 @@ void ChatController::OnAttachCapture(ui::Event* ev) {
   if (!messaging_ready_ || !facade_ || !chat_.show_capture || chat_.composer_input_disabled || AttachmentBusy() ||
       InAiComposerContext() || ActiveThreadId().empty() || chat_.editing_message) {
     return;
+  }
+  if (RefuseSendWhileHeld(ActiveThreadId())) {
+    return; // B236: a held chat opens no camera; the pill says why
   }
   if (ev) {
     const ui::Vector2i anchor = MenuPositionAboveEvent(*ev);

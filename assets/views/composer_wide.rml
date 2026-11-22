@@ -119,7 +119,7 @@
     <button class="prompt-voice-toggle-btn prompt-voice-toggle-btn--end prompt-mic-btn" type="button"
             data-if="(show_voice || voice_entry_off) && (draft == '' || voice_recording)"
             data-class-prompt-voice-live="voice_recording" data-attrif-disabled="voice_finishing"
-            data-event-click="voice_toggle()" data-class-prompt-entry-off="attach_disabled &amp;&amp; !voice_recording"
+            data-event-click="voice_toggle()" data-class-prompt-entry-off="(attach_disabled || voice_blocked) &amp;&amp; !voice_recording"
             title="{{i18n:chat.voice.title}}">
       <svg src="../icons/mic.svg" width="18" height="18" crop-to-content="true"></svg>
     </button>
