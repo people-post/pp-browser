@@ -13,7 +13,7 @@ enum class AccountSyncView {
 
 /**
  * The first account-data sync after "I already have an account" (a linking code or a recovery phrase): the contacts
- * (and, after a phrase restore, the groups) arrive through the account locker a few seconds after the import ends, so
+ * and groups arrive through the account locker a few seconds after the import ends, so
  * until that sync has completed an empty list means "not here yet", not "nothing". A new account is never pending.
  *
  * Pending is stored by the owner (ProfilePreferences::account_sync_pending, device-only) so a relaunch before the
