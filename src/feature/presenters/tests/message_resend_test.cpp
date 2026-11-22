@@ -230,12 +230,15 @@ TEST_F(MessageResendTest, WhatIsNotResentWithATap) {
   ThreadMessage shared_ai = Unsent("m1", "what time is it in Paris?");
   shared_ai.ai_invoke_mode = "shared_full";
   EXPECT_EQ(decide(shared_ai, PublicChat()).refusal, Refusal::ThisKind);
+  // B236: a picture, file, voice message or card goes again as itself, in a public chat or a group; not in a private
+  // chat; and never while a send of it is still tried.
   for (const ChatContentType type : {ChatContentType::Attachment, ChatContentType::ContactCard}) {
     ThreadMessage other = Unsent("m1");
     other.content_type = type;
-    const SendMarkTap tap = decide(other, PublicChat());
-    EXPECT_EQ(tap.kind, Kind::ReasonOnly);
-    EXPECT_EQ(tap.refusal, Refusal::NotText);
+    EXPECT_EQ(decide(other, PublicChat()).kind, Kind::ResendSameMessage);
+    EXPECT_EQ(decide(other, PublicChat(ThreadKind::Group)).kind, Kind::ResendSameMessage);
+    EXPECT_EQ(decide(other, private_chat).refusal, Refusal::ThisKind);
+    EXPECT_EQ(decide(other, PublicChat(), kNow - 1'000).kind, Kind::StillTrying);
   }
 
   ThreadMessage sent = Unsent("m1");
@@ -257,14 +260,17 @@ TEST_F(MessageResendTest, WhatIsNotResentWithATap) {
   EXPECT_EQ(DecideSendMarkTap(gone).kind, Kind::Nothing);
 }
 
-TEST_F(MessageResendTest, ANonTextRedMarkSendsNothing) {
+// B236: the tap on a picture's red mark only decides; the controller sends it again as itself (the same id), so
+// nothing goes as a new message here and its row stays where it is.
+TEST_F(MessageResendTest, ANonTextRedMarkIsSentAgainAsItselfNotAsANewMessage) {
   ThreadMessage picture = Unsent("m1");
   picture.content_type = ChatContentType::Attachment;
   Add(picture);
   const SendMarkTap tap = Tap("m1");
-  EXPECT_EQ(tap.kind, SendMarkTap::Kind::ReasonOnly);
-  EXPECT_EQ(sends_, 0);
-  EXPECT_TRUE(Row("m1"));
+  EXPECT_EQ(tap.kind, SendMarkTap::Kind::ResendSameMessage);
+  EXPECT_TRUE(tap.new_id.empty());
+  EXPECT_EQ(sends_, 0) << "no new message";
+  EXPECT_TRUE(Row("m1")) << "the same row goes again";
 }
 
 // --- the outcomes that come after a re-send (ApplyDeliveryNoticeTo) -----------------------------------------------
@@ -433,8 +439,8 @@ TEST_F(MessageResendTest, AMessageThatCannotBeResentSaysSoInTheFlag) {
   Add(voice);
   SendMarkTap tap = ResendAfterTap(GuidedFacts(Facts("m1"), SendFailure::RecipientNotOnRelay), Ports());
   EXPECT_EQ(tap.kind, SendMarkTap::Kind::UpdateTheirCard);
-  EXPECT_FALSE(tap.resendable);
-  EXPECT_EQ(AdviceOf(tap), SendAdvice::UpdateTheirCardOnly);
+  EXPECT_TRUE(tap.resendable) << "B236: a voice message is sent again as itself after the card update";
+  EXPECT_EQ(AdviceOf(tap), SendAdvice::UpdateTheirCardAndResend);
 
   thread_.channel = ThreadChannel::E2e; // a private chat's message is not re-sent with a tap either
   Add(Unsent("m2"));
@@ -496,13 +502,18 @@ TEST_F(MessageResendTest, EveryOtherReasonGoesTheOldWay) {
     EXPECT_EQ(DecideSendMarkTap(guided).kind, SendMarkTap::Kind::Resent);
     EXPECT_EQ(AdviceOf(DecideSendMarkTap(guided)), SendAdvice::None);
   }
-  // Not-text with another reason: the old reason-only result.
+  // Not-text with another reason: sent again as itself, no guidance.
   ThreadMessage picture = Unsent("pic");
   picture.content_type = ChatContentType::Attachment;
   Add(picture);
   const SendMarkTap tap = DecideSendMarkTap(GuidedFacts(Facts("pic"), SendFailure::RelayUnreachable));
-  EXPECT_EQ(tap.kind, SendMarkTap::Kind::ReasonOnly);
-  EXPECT_EQ(tap.refusal, SendMarkTap::Refusal::NotText);
+  EXPECT_EQ(tap.kind, SendMarkTap::Kind::ResendSameMessage);
+  EXPECT_EQ(AdviceOf(tap), SendAdvice::None);
+  // The server cannot find them: their card is updated first, and the picture is sent again after it.
+  const SendMarkTap fix = DecideSendMarkTap(GuidedFacts(Facts("pic"), SendFailure::RecipientNotOnRelay));
+  EXPECT_EQ(fix.kind, SendMarkTap::Kind::UpdateTheirCard);
+  EXPECT_TRUE(fix.resendable);
+  EXPECT_EQ(AdviceOf(fix), SendAdvice::UpdateTheirCardAndResend);
 }
 
 TEST_F(MessageResendTest, AMessageStillTryingOrAlreadyResentIsNotGuided) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "feature/conversations/QueuedResend.h"
 #include "common/Secret.h"
 
 #include "foundation/crypto/CryptoTypes.h"
@@ -166,6 +167,9 @@ public:
                                  const std::string& new_text, int64_t tapped_at_ms);
   /** Send again the edit of our message that did not go out (ConversationsHub::ResendEdit). */
   Roe<ThreadMessage> ResendEdit(const std::string& thread_id, const std::string& message_id);
+  /** Send our failed message again as itself, after a tap on its red mark (ConversationsHub::ResendMessageAsync). */
+  void ResendMessageAsync(const std::string& thread_id, const std::string& message_id,
+                          std::function<void(Roe<StoredResendAnswer>)> on_done);
   void MarkThreadRead(const std::string& thread_id);
   /** Per-thread local settings (pin / mute / archive); rows that differ from the defaults. */
   Roe<std::vector<ThreadLocalPrefs>> ListThreadLocalPrefs();

@@ -4641,7 +4641,33 @@ void ChatController::ApplySendMarkTap(const std::string& thread_id, const std::s
       }
       RefreshFromMessaging();
       return;
+    case SendMarkTap::Kind::ResendSameMessage:
+      ResendSameMessage(thread_id, message_id);
+      return;
   }
+}
+
+void ChatController::ResendSameMessage(const std::string& thread_id, const std::string& message_id) {
+  // B236: the picture / file / voice / card goes again as itself, where it is in the chat; its mark turns to the clock
+  // once it is on its way. Off this thread (our files may be listed on the server first); the answer comes back here.
+  facade_->ResendMessageAsync(
+      thread_id, message_id,
+      [this, alive = std::weak_ptr<int>(send_mark_alive_),
+       session = messaging_session_](Roe<StoredResendAnswer> answer) {
+        AppRuntime::PostUI([this, alive, session, answer = std::move(answer)]() {
+          if (!alive.lock() || !messaging_ready_ || session != messaging_session_) {
+            return; // a lock / unlock since: the tap belongs to no session now
+          }
+          if (!answer) {
+            UserFeedback::Fail(PaymentErrorUserMessage(answer.error())); // as the composer says it; the row stays red
+          } else if (*answer == StoredResendAnswer::StillTrying) {
+            ShowToast(Tr("chat.send.still_trying"));
+          } else if (*answer == StoredResendAnswer::AttachmentGone) {
+            ShowToast(Tr("chat.send.file_gone"));
+          }
+          RefreshFromMessaging();
+        });
+      });
 }
 
 void ChatController::OpenGroupSender(const std::string& message_id) {

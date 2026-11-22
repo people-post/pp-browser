@@ -1291,8 +1291,8 @@
     "chat.send.mark.failed": "Not sent",
     "chat.send.still_trying": "Still trying to send. Please wait.",
     "chat.send.not_resendable": "This message can't be re-sent with a tap. Please send it again.",
-    "chat.send.not_sent_other":
-        "This message wasn't sent. Pictures, files, voice messages and cards can't be re-sent with a tap yet. Please send it again.",
+    "chat.send.file_gone":
+        "This picture, file or voice message is no longer saved, so it can't be re-sent. Please send it again.",
     "chat.send.reason_then": "{reason} {then}",
     "chat.notice.send.recipient_not_found": "The server can't find them, so this message wasn't sent.",
     "chat.notice.send.recipient_not_found_update":

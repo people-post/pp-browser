@@ -83,8 +83,6 @@ std::string SendFailureReasonText(const std::optional<SendFailure>& reason, cons
   switch (refusal) {
     case SendMarkTap::Refusal::None:
       break;
-    case SendMarkTap::Refusal::NotText:
-      return reason ? SendFailureText(*reason, advice) : Tr("chat.send.not_sent_other");
     case SendMarkTap::Refusal::ThisKind:
       return reason ? Tr("chat.send.reason_then",
                          {{"reason", SendFailureText(*reason, advice)}, {"then", Tr("chat.send.not_resendable")}})

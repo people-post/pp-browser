@@ -26,19 +26,17 @@ SendMarkTap DecideResendOnly(const SendMarkTapFacts& facts) {
   if (thread.kind != ThreadKind::Direct && thread.kind != ThreadKind::Group) {
     return tap;
   }
-  if (row.content_type != ChatContentType::Text) {
-    tap.kind = SendMarkTap::Kind::ReasonOnly;
-    tap.refusal = SendMarkTap::Refusal::NotText;
-    return tap;
-  }
-  // A private chat's numbering cannot skip the removed row; an "@ai++" question sent again as plain text would no
-  // longer ask the AI.
+  // A private chat's numbering cannot skip the removed row (nor be sealed again); an "@ai++" question sent again as
+  // plain text would no longer ask the AI.
   if ((thread.kind == ThreadKind::Direct && thread.channel == ThreadChannel::E2e) || row.ai_invoke_mode) {
     tap.kind = SendMarkTap::Kind::ReasonOnly;
     tap.refusal = SendMarkTap::Refusal::ThisKind;
     return tap;
   }
-  tap.kind = SendMarkTap::Kind::Resent;
+  // B236: a picture, file, voice message or card goes again as itself (nothing uploaded again: the message points at
+  // the file already on the server); a text keeps going as a new message.
+  tap.kind =
+      row.content_type == ChatContentType::Text ? SendMarkTap::Kind::Resent : SendMarkTap::Kind::ResendSameMessage;
   return tap;
 }
 
@@ -51,10 +49,11 @@ SendMarkTap DecideSendMarkTap(const SendMarkTapFacts& facts) {
     return tap;
   }
   // Only a message that is red now: not still trying, not gone.
-  if (tap.kind != SendMarkTap::Kind::Resent && tap.kind != SendMarkTap::Kind::ReasonOnly) {
+  if (tap.kind != SendMarkTap::Kind::Resent && tap.kind != SendMarkTap::Kind::ResendSameMessage &&
+      tap.kind != SendMarkTap::Kind::ReasonOnly) {
     return tap;
   }
-  const bool resendable = tap.kind == SendMarkTap::Kind::Resent;
+  const bool resendable = tap.kind == SendMarkTap::Kind::Resent || tap.kind == SendMarkTap::Kind::ResendSameMessage;
   if (*facts.failure == SendFailure::RecipientNotOnRelay) {
     SendMarkTap fix;
     fix.kind = SendMarkTap::Kind::UpdateTheirCard;

@@ -344,6 +344,11 @@ Roe<ThreadMessage> ConversationsFacade::ResendEdit(const std::string& thread_id,
   return hub_.ResendEdit(thread_id, message_id);
 }
 
+void ConversationsFacade::ResendMessageAsync(const std::string& thread_id, const std::string& message_id,
+                                             std::function<void(Roe<StoredResendAnswer>)> on_done) {
+  hub_.ResendMessageAsync(thread_id, message_id, std::move(on_done));
+}
+
 Roe<void> ConversationsFacade::ClearThreadHistory(const std::string& thread_id, const bool forget_memory) {
   if (auto cleared = hub_.Inbox().ClearThreadHistory(thread_id, forget_memory); !cleared) {
     return cleared.error();

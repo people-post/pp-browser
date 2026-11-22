@@ -1,4 +1,5 @@
 #include "feature/conversations/ConversationsHub.h"
+#include "domain/attachments/SentRelayFile.h"
 
 #include "foundation/tls/RelayClientHeader.h"
 
@@ -2929,6 +2930,69 @@ Roe<ThreadMessage> ConversationsHub::EditMessage(const std::string& thread_id, c
   }
   Inbox().AfterMessageEdited(thread_id, target, edited->row);
   return edited->row;
+}
+
+void ConversationsHub::ResendMessageAsync(const std::string& thread_id, const std::string& message_id,
+                                          std::function<void(Roe<StoredResendAnswer>)> on_done) {
+  auto finish = [on_done = std::move(on_done)](Roe<StoredResendAnswer> answer) {
+    if (on_done) {
+      on_done(std::move(answer));
+    }
+  };
+  if (!IsInitialized() || !mesh_messaging_) {
+    finish(Error("Messaging hub not initialized"));
+    return;
+  }
+  {
+    std::lock_guard lock(tap_resends_mu_);
+    if (!tap_resends_.insert(message_id).second) {
+      finish(StoredResendAnswer::StillTrying);
+      return;
+    }
+  }
+  // Off the UI thread: our files may be listed on the relay, and the copies are sealed again.
+  auto body = [this, thread_id, message_id, finish = std::move(finish)]() {
+    Roe<StoredResendAnswer> answer = [&]() -> Roe<StoredResendAnswer> {
+      auto row = Store().GetMessage(thread_id, message_id);
+      if (!row) {
+        return row.error();
+      }
+      if (!*row) {
+        return Error("Message not found");
+      }
+      if ((*row)->content_type == ChatContentType::Attachment && !MeshMessaging().SendStartedMs(message_id)) {
+        std::optional<RelayFileListResult> ours;
+        const std::shared_ptr<IBlobClient> blob = BlobClient();
+        auto identity = Identity().Get();
+        if (blob && identity && identity->registered && !identity->account_id.empty()) {
+          if (auto listed = blob->FileList(identity->account_id, "complete")) {
+            ours = std::move(*listed);
+          } else {
+            log().info << "own relay files not listed before a resend: " << listed.error().message;
+          }
+        }
+        if (SentRelayFileGone((*row)->payload_json, (*row)->timestamp, util::NowUnixMs(), ours ? &*ours : nullptr)) {
+          log().info << "not sent again: its file is no longer on the server message_id=" << message_id;
+          return StoredResendAnswer::AttachmentGone;
+        }
+      }
+      auto sent = MeshMessaging().ResendStoredMessage(thread_id, message_id);
+      if (!sent) {
+        return sent.error();
+      }
+      return *sent ? StoredResendAnswer::Sent : StoredResendAnswer::StillTrying;
+    }();
+    {
+      std::lock_guard lock(tap_resends_mu_);
+      tap_resends_.erase(message_id);
+    }
+    finish(std::move(answer));
+  };
+  if (AppRuntime::IsRunning()) {
+    AppRuntime::PostWorkerNormal(std::move(body));
+  } else {
+    body();
+  }
 }
 
 Roe<ThreadMessage> ConversationsHub::ResendEdit(const std::string& thread_id, const std::string& message_id) {
