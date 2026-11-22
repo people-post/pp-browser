@@ -333,12 +333,16 @@ user changes the list.
   after a failure (1 min, doubling to 30 min) — `RelayRegistrationsWorkflow`, checked every minute while messaging
   runs. What each relay answered (registered until, or failed and why) is kept with the list (`our_relays.json`) and
   given back at the next start: a relay that holds our registration for the current card is not asked again, and its
-  inbox is polled at once. Revoking (a profile reset) revokes on each.
+  inbox is polled at once. Revoking (a profile reset on the account's only device) revokes on each.
 - **Polling.** Each inbox has its own cursor (`relay_inbox_cursor.json`, [DATA_LAYOUT](DATA_LAYOUT.md)) and one poll
   at a time (`RelayInboxCoordinator`). The preferred relay is polled at the app's pace
   ([THREADING](../architecture/THREADING.md): ~2 s in the foreground); the others at every **4th** sync (~8 s), and
   only once they hold our registration. A forced sync — a push or a wake — polls every relay: any of them may hold
-  the mail that woke us. A batch is acked on the relay it came from; `clear` clears every inbox.
+  the mail that woke us. A batch is acked on the relay it came from; `clear` clears every inbox. A cursor counts in
+  one mailbox: the registration we held there when it was kept (`registration_id`, kept beside it). A fresh
+  registration (after a revoke or a lapse) is a new mailbox the relay numbers from the start, so a cursor kept for
+  another registration, or while it was not known, is dropped and that inbox read from its start (a cursor file that
+  noted none at all, an older app's, drops every cursor once); what was taken already is dropped as below. The relay's poll answer says nothing of this (an empty page carries no cursor).
 - **Twice.** A message that reaches us through two relays (a sender that tried a second after a timeout, a copy
   for our other devices) is taken in twice: the receive pipeline drops the second by its message id, as any
   redelivery. One relay batch is taken in at a time.
@@ -456,7 +460,7 @@ is the reachability the page shows for the contact's preferred relay (in memory,
 | `POST /v1/profile/nickname` | Update nickname (`relay-profile-v1` sign bytes + signature) |
 | `POST /v1/register/start` | Start registration (`public_key`, `kem_public_key_b64`, optional `nickname`, `peer_id`, `multiaddrs`, optional `entity_kind` / `capabilities`) |
 | `POST /v1/register/finish` | Finish/renew (`entity_kind` default `person`; `mesh_node` for pp-node). Upserts `endpoints[]` by Peer ID; persists capabilities for mesh nodes, and the node's `amp_wire` (int), `node_version` (string) and `features` (string[]) when sent (N032); echoes **`account_id`** |
-| `POST /v1/register/revoke` | Remove this account's registration and its push devices (profile reset / delete account, #328). Body `{ account_id, timestamp, signature }`; signature over `pp-browser:relay-revoke-v1\0`, `u8 1`, `account_id` (len-prefixed UTF-8), `i64 timestamp`, by the account key. Best effort on the client: a failure does not block the local reset |
+| `POST /v1/register/revoke` | Remove this account's registration and its push devices (profile reset / delete account, #328) — sent only by the account's only device (the newest card lists it alone, `OwnCards::OnlyDevice`): the next registration gets a new, empty mailbox, so a device that resets while another is on the account sends none and unbinds only its own push (`devices/unregister`, `PushDeviceCoordinator::UnregisterEverywhere`), staying on the device list until the main device takes it off. Body `{ account_id, timestamp, signature }`; signature over `pp-browser:relay-revoke-v1\0`, `u8 1`, `account_id` (len-prefixed UTF-8), `i64 timestamp`, by the account key. Best effort on the client: a failure does not block the local reset |
 
 **Directory providers:** Brief HTTP is the default (`directory.base_url`). Clients should treat directory as pluggable (N027); bootstrap peers remain L0 cold-start / emergency dial, not the long-term sole mesh-service discovery path.
 

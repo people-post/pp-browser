@@ -598,6 +598,27 @@ bool OwnCards::SignedOut() {
   return list && list->signed_out;
 }
 
+bool OwnCards::OnlyDevice() {
+  auto identity = identity_.Get();
+  if (!identity) {
+    return false;
+  }
+  auto self = Self();
+  if (!self) {
+    return false;
+  }
+  std::lock_guard lock(mutex_);
+  auto newest = NewestLocked(NowMs());
+  if (!newest) {
+    return false;
+  }
+  if (!*newest) {
+    return identity->card_intent == kCardIntentFresh; // a new account's first device, before its first card
+  }
+  const std::vector<AccountCardDevice>& devices = (*newest)->devices;
+  return devices.size() == 1 && devices.front().peer_id == self->peer_id;
+}
+
 Roe<AccountCard> OwnCards::ChangeList(const std::string& peer_id, const bool make_master, const int64_t now_ms) {
   auto identity = identity_.Get();
   if (!identity) {

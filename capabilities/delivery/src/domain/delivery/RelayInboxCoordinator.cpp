@@ -55,6 +55,7 @@ void RelayInboxCoordinator::SetInboxes(std::vector<RelayInbox> inboxes, std::str
       profile_data_dir_ = std::move(profile_data_dir);
       cursors_account_.clear(); // read again for the next sync
       cursors_.clear();
+      mailboxes_.clear();
     }
   }
   if (save) {
@@ -143,7 +144,8 @@ void RelayInboxCoordinator::Poll(const std::shared_ptr<Inbox>& inbox, const std:
 }
 
 bool RelayInboxCoordinator::PollOnce(const std::shared_ptr<Inbox>& inbox, const std::string& account_id) {
-  auto poll = inbox->relay.client->PollInbox(account_id, CursorOf(*inbox, account_id));
+  const std::string mailbox = ports_.mailbox ? ports_.mailbox(inbox->relay.origin, inbox->preferred) : std::string();
+  auto poll = inbox->relay.client->PollInbox(account_id, CursorOf(*inbox, account_id, mailbox));
   NoteRefusal(*inbox, !poll && IsPermanentRelayRefusal(poll.error()));
   if (!poll) {
     log().warning << "PollInbox failed relay=" << RelayOriginKey(inbox->relay.origin) << ": " << poll.error().message;
@@ -199,11 +201,13 @@ void RelayInboxCoordinator::LoadCursorsLocked(const std::string& account_id) {
   }
   cursors_account_ = account_id;
   cursors_.clear();
+  mailboxes_.clear();
   if (profile_data_dir_.empty()) {
     return;
   }
   const RelayInboxCursors kept = LoadRelayInboxCursors(profile_data_dir_, account_id);
   cursors_ = kept.others;
+  mailboxes_ = kept.registrations.value_or(std::map<std::string, std::string>{});
   if (!kept.preferred.empty()) {
     // A file from before My relays names no relay for it: the preferred one's.
     std::string relay = kept.preferred_relay;
@@ -213,6 +217,15 @@ void RelayInboxCoordinator::LoadCursorsLocked(const std::string& account_id) {
     if (!relay.empty()) {
       cursors_[relay] = kept.preferred;
     }
+  }
+  if (!kept.registrations && !cursors_.empty()) {
+    // Kept by an app that did not note their mailbox: one may be gone (a revoke or a lapse, then a fresh registration:
+    // a new mailbox numbered from the start, which the old cursor skips until its numbers pass it). Every inbox is read
+    // from its start, once — the file says from now on — and what was taken already is dropped as seen.
+    log().warning << "relay inbox cursors kept without their mailbox: reading every inbox from its start once";
+    DiagLine("relay.inbox_restart").Add("reason", "file").Emit();
+    cursors_.clear();
+    SaveCursorsLocked();
   }
 }
 
@@ -230,15 +243,18 @@ void RelayInboxCoordinator::SaveCursorsSoon() {
 }
 
 void RelayInboxCoordinator::SaveCursorsLocked() {
-  std::erase_if(cursors_, [this](const auto& entry) {
+  const auto not_ours = [this](const auto& entry) {
     return std::none_of(inboxes_.begin(), inboxes_.end(), [&entry](const std::shared_ptr<Inbox>& known) {
       return RelayOriginKey(known->relay.origin) == entry.first;
     });
-  });
+  };
+  std::erase_if(cursors_, not_ours);
+  std::erase_if(mailboxes_, not_ours);
   if (profile_data_dir_.empty() || cursors_account_.empty()) {
     return;
   }
   RelayInboxCursors file;
+  file.registrations = mailboxes_;
   for (const auto& [relay, cursor] : cursors_) {
     if (!inboxes_.empty() && relay == RelayOriginKey(inboxes_.front()->relay.origin)) {
       file.preferred = cursor;
@@ -250,10 +266,33 @@ void RelayInboxCoordinator::SaveCursorsLocked() {
   SaveRelayInboxCursors(profile_data_dir_, cursors_account_, file);
 }
 
-std::string RelayInboxCoordinator::CursorOf(const Inbox& inbox, const std::string& account_id) {
+std::string RelayInboxCoordinator::CursorOf(const Inbox& inbox, const std::string& account_id,
+                                            const std::string& mailbox) {
   std::lock_guard lock(mutex_);
   LoadCursorsLocked(account_id);
-  const auto it = cursors_.find(RelayOriginKey(inbox.relay.origin));
+  const std::string relay = RelayOriginKey(inbox.relay.origin);
+  if (!mailbox.empty()) {
+    std::string& kept_for = mailboxes_[relay];
+    if (kept_for != mailbox) {
+      // A fresh registration there (a new mailbox, numbered from the start: a cursor from the old one skips it until
+      // its numbers pass it), or a cursor kept while the registration there was not known. Read it from its start.
+      if (cursors_.erase(relay) > 0) {
+        log().warning << "relay inbox " << relay << ": its cursor was kept for "
+                      << (kept_for.empty() ? "a registration not known then" : "another registration")
+                      << "; reading the inbox from its start";
+        DiagLine restart("relay.inbox_restart");
+        if (kept_for.empty()) {
+          restart.Add("reason", "unknown");
+        } else {
+          restart.Add("reason", "changed");
+        }
+        restart.Add("preferred", inbox.preferred).Emit();
+      }
+      kept_for = mailbox;
+      SaveCursorsLocked();
+    }
+  }
+  const auto it = cursors_.find(relay);
   return it == cursors_.end() ? std::string() : it->second;
 }
 

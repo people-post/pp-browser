@@ -49,8 +49,12 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # cursors (the card already names these relays); written atomically on every change and every registration answer
   preferences.json
   relay_pins.json           # the PeerId each relay origin of ours must answer to (multi-relay MR007, MR008, § relay_pins.json below); plaintext, written atomically
-  relay_inbox_cursor.json   # poll watermarks {schema_version: 1, account_id, cursor, cursor_relay?, relays?: {origin: cursor}}: the preferred relay's (cursor_relay
-                            # names it, additive; absent: the preferred one's), then our others'; a relay leaving My relays loses its cursor;
+  relay_inbox_cursor.json   # poll watermarks {schema_version: 1, account_id, cursor, cursor_relay?, relays?: {origin: cursor}, registrations?: {origin: registration_id}}:
+                            # the preferred relay's (cursor_relay names it, additive; absent: the preferred one's), then our others'; a relay leaving My relays loses its cursor;
+                            # registrations (additive, 2026-11-22, INVENTORY S3; always written, empty too; an older app ignores it and drops it when it writes): the
+                            # registration each relay's cursor counts in — a fresh registration is a new mailbox numbered from the start, so a cursor kept for another one,
+                            # or while it was not known, is dropped and that inbox read from its start; a file without the key drops every cursor once
+                            # (RelayInboxCoordinator; the receive pipeline drops what it took already);
                             # no schema_version (a file from before it): 1; a newer one is not read (those inboxes fetch from their oldest message) and never written over
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
   grace.bin                 # PIN grace window: DEK under K_grace, AAD "grace|{id}" (iOS, Android 9+; only within a window — AT_REST_ENCRYPTION § PIN grace window)

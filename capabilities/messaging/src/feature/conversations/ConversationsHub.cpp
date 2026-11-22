@@ -1726,6 +1726,20 @@ void ConversationsHub::BuildMessagingObjects() {
     const auto registrations = OtherRelayRegistrations();
     return registrations && registrations->Registered(origin);
   });
+  // The mailbox each inbox's cursor counts in: the registration we hold there (a fresh one is a new mailbox) — the
+  // identity's at the preferred relay, the one each other relay answered there.
+  mesh_messaging_->SetInboxMailbox([this](const std::string& origin, const bool preferred) -> std::string {
+    if (!preferred) {
+      const auto registrations = OtherRelayRegistrations();
+      return registrations ? registrations->RegistrationId(origin) : std::string();
+    }
+    auto identity = Identity().Get();
+    if (!identity ||
+        (!identity->registered_backend_url.empty() && !SameRelay(identity->registered_backend_url, origin))) {
+      return {}; // made at another relay (the preferred one is changing): unknown, the cursor kept stays
+    }
+    return identity->registration_id;
+  });
   mesh_messaging_->SetSystemControls(&system_controls_);
   // The relay's poll results feed the status line (#175); a fresh orchestrator starts with no result.
   mesh_messaging_->SetOnBriefRelayHealthChanged(
@@ -4643,6 +4657,10 @@ Roe<void> ConversationsHub::MakeMainDevice(const std::string& peer_id) {
   log().info << "Main device handed to " << peer_id;
   AppRuntime::PostWorkerNormal([this]() { SyncLockerThenAnnounceOwnDevices(); });
   return {};
+}
+
+bool ConversationsHub::OnlyDeviceOnAccount() {
+  return mesh_messaging_ && mesh_messaging_->OwnAccountCards().OnlyDevice();
 }
 
 bool ConversationsHub::IsMainDevice() {
