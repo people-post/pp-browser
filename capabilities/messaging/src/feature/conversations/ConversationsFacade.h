@@ -510,8 +510,14 @@ public:
   Roe<LocalIdentity> ModifyLocalIdentity(const std::function<bool(LocalIdentity& identity)>& change);
   Roe<LocalIdentity> FinishAndPersistRegistration(const std::string& nickname);
   Roe<RegistrationResult> UpdateRegisteredNickname(const std::string& nickname);
-  /** #328: take this account off the directory (profile reset / delete account). */
-  Roe<void> RevokeRegistration();
+  /**
+   * A profile reset leaves our relays (#328). On the account's only device (OwnCards::OnlyDevice) the account's
+   * registration goes — off the directory, with every push binding; its mailbox is gone. While another device is on
+   * the account (or that cannot be told) the registration stays, for the others: only this device's push bindings go
+   * (M019 phase 1). It stays on the account's device list until the main device takes it off (no device can take
+   * itself off, OwnCards::RemoveDevice).
+   */
+  Roe<void> LeaveRelaysOnReset();
 
   /**
    * Escape hatch for lifecycle / bridges that legitimately need the hub

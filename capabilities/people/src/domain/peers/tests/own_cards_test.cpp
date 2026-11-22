@@ -210,6 +210,35 @@ TEST_F(OwnCardsTest, TheMasterSignsADeviceOutAndItCannotSignItselfBackIn) {
   EXPECT_EQ(phone.own->Card(kNow + 100).value(), *revoked) << "nothing put the laptop back";
 }
 
+// A profile reset takes the account's registration off the relays only on the account's last device (the relay gives
+// the next registration a new, empty mailbox): never on a linked device, nor on the master while another is listed.
+TEST_F(OwnCardsTest, OnlyADeviceTheNewestListHoldsAloneIsTheAccountsOnlyDevice) {
+  Device phone(dir_ / "phone");
+  EXPECT_TRUE(phone.own->OnlyDevice()) << "a new account's first device, before its first card";
+  ASSERT_TRUE(phone.own->Card(kNow));
+  EXPECT_TRUE(phone.own->OnlyDevice()) << "a single-device account";
+
+  Device laptop(dir_ / "laptop");
+  LinkLaptop(phone, laptop, kNow + 100);
+  EXPECT_FALSE(phone.own->OnlyDevice()) << "the master, with a linked device";
+  EXPECT_FALSE(laptop.own->OnlyDevice()) << "a linked device";
+
+  auto revoked = phone.own->RemoveDevice(laptop.PeerId(), kNow + 200);
+  ASSERT_TRUE(revoked) << revoked.error().message;
+  ASSERT_TRUE(laptop.own->Learn(*revoked, kNow + 210));
+  EXPECT_TRUE(phone.own->OnlyDevice()) << "the master alone again";
+  EXPECT_FALSE(laptop.own->OnlyDevice()) << "signed out: the account is the phone's";
+}
+
+TEST_F(OwnCardsTest, ADeviceWithoutItsCardIsNotTheAccountsOnlyDevice) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  LinkLaptop(phone, laptop, kNow);
+  laptop.ForgetOwnCardBesideIdentity();
+  laptop.ResetChats(); // no card of ours anywhere on the laptop, and no intent: it cannot tell
+  EXPECT_FALSE(laptop.own->OnlyDevice());
+}
+
 TEST_F(OwnCardsTest, TheMasterHandsItsRoleOn) {
   Device phone(dir_ / "phone");
   Device laptop(dir_ / "laptop");

@@ -25,6 +25,12 @@ public:
   static Roe<void> UnregisterOn(ConversationsHub& hub, const std::string& origin);
   /** Removes this device's bindings from the running backend (a failed one leaves them there). */
   static Roe<void> Unregister(ConversationsHub& hub);
+  /**
+   * Removes this device's bindings (and its VoIP binding) from every relay of ours that holds our registration — the
+   * preferred relay's answer is the one returned; another's failure is logged. A linked device's profile reset: the
+   * account stays registered for its other devices, this device stops being woken for it. Blocks (HTTP).
+   */
+  static Roe<void> UnregisterEverywhere(ConversationsHub& hub);
   /** A saved backend switch (applied on restart) removes the binding now; undoing it registers again. */
   static void OnBackendSwitchPending(ConversationsHub& hub, bool pending);
 
