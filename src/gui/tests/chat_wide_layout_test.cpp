@@ -610,6 +610,54 @@ TEST_F(ChatWideLayoutTest, TheFloatingMenuIsOneRaisedCardWithOneLineAboveTheDest
   menu->Close();
 }
 
+// The full emoji picker (the plus in the reaction row) opens in the shell's frame with the key emoji_picker: on the wide
+// layout it is the same raised card as the floating menus (large corners, a shadow, a raised surface in dark); under
+// the phone root the frame is left alone.
+TEST_F(ChatWideLayoutTest, TheEmojiPickerFrameIsARaisedCardOnTheWideLayoutOnly) {
+  auto frame_of = [&](const char* root_class, const char* theme) {
+    context->ActivateTheme("light", theme == std::string("light")); // the colours live under @media (theme: ...)
+    context->ActivateTheme("dark", theme == std::string("dark"));
+    const std::string colors = std::string("themes/colors-") + theme + ".rcss";
+    const std::string rml = "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+                            Asset("themes/wide.rcss") + Asset(colors.c_str()) + "</style></head><body><div class=\"" +
+                            root_class +
+                            "\" style=\"width: 900px; height: 600px;\"><div class=\"shell-layer shell-layer-overlay\">"
+                            "<div class=\"shell-frame shell-frame--emoji_picker\" id=\"frame\"></div></div></div>"
+                            "</body></rml>";
+    ui::ElementDocument* doc = context->LoadDocumentFromMemory(rml);
+    EXPECT_NE(doc, nullptr);
+    doc->Show();
+    context->Update();
+    return doc;
+  };
+  const float dp = context->GetDensityIndependentPixelRatio();
+  ui::ElementDocument* wide = frame_of("shell-body shell-body--wide", "light");
+  ASSERT_NE(wide, nullptr);
+  ui::Element* wide_frame = wide->GetElementById("frame");
+  ASSERT_NE(wide_frame, nullptr);
+  EXPECT_GE(wide_frame->GetComputedValues().border_top_left_radius(), 16.f * dp - 0.5f);
+  const ui::String wide_shadow = wide_frame->GetProperty<ui::String>("box-shadow");
+  EXPECT_FALSE(wide_shadow.empty() || wide_shadow == "none") << "a shadow under the card";
+  const ui::Colourb light_bg = wide_frame->GetComputedValues().background_color();
+  wide->Close();
+
+  ui::ElementDocument* dark = frame_of("shell-body shell-body--wide", "dark");
+  ASSERT_NE(dark, nullptr);
+  const ui::Colourb dark_bg = dark->GetElementById("frame")->GetComputedValues().background_color();
+  EXPECT_NE(dark_bg, light_bg);
+  dark->Close();
+
+  ui::ElementDocument* phone = frame_of("shell-body", "light");
+  ASSERT_NE(phone, nullptr);
+  ui::Element* phone_frame = phone->GetElementById("frame");
+  ASSERT_NE(phone_frame, nullptr);
+  EXPECT_LT(phone_frame->GetComputedValues().border_top_left_radius(), 16.f * dp - 0.5f)
+      << "unchanged under the phone root";
+  const ui::String phone_shadow = phone_frame->GetProperty<ui::String>("box-shadow");
+  EXPECT_TRUE(phone_shadow.empty() || phone_shadow == "none") << "no shadow under the phone root";
+  phone->Close();
+}
+
 TEST_F(ChatWideLayoutTest, TheChatPageRowsKeepTheirBindingsAndTheirOwnChat) {
   // chat_wide.rml is chat.rml plus the header's search button and the hover bar: every binding of the phone page is
   // still there, so the two pages stay one logic.
