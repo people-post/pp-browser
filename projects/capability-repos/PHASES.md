@@ -93,3 +93,5 @@ Not scheduled. Before it: one pin list per app and a sibling-build mode; one hom
       their contracts and tests; release; pin in every app; pp-browser drops its copy.
 - [ ] Expected first: pp-node as its own app (people, net, node; with `packaging/pp-node`, the N-* smokes,
       the hard lab and `pp_node_closure.sh`).
+- [ ] Waiting first (2026-11-22): pp-ledger-apps' operator app needs the relay certificate code (net, with RelayId
+      from base) after release 1 ([CURRENT_STATE § A second app is waiting](CURRENT_STATE.md#a-second-app-is-waiting-2026-11-22)).
