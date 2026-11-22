@@ -602,3 +602,47 @@ Versions and features are a node's own claims, and a dishonest node gains by loo
 **Later:** uplink / queue-delay pressures from pp-node, calibrated in the Phase 1 lab; a directory field for org seeds' levels; spreading load across equal candidates (pick two at random, keep the better) where a client has many.
 **Alternatives rejected:** raw counts or percentages for clients to interpret (each client would read them differently, and the node's bottleneck differs by machine); a public load record in the directory for every node (P011).
 
+## N034 — One operator for relays, pp-nodes and ledger relays
+
+**Date:** 2026-11-22  
+**Status:** Proposed (design: [NODE_OPERATORS.md](NODE_OPERATORS.md)); after release 1, with N031. No code.  
+**Amends (when accepted):** N031 (the node record carries the operator's certificate), N032 rule 7 (count by operator id
+where one is certified).  
+**Cross-link:** [release-compatibility RC018](../release-compatibility/DECISIONS.md#rc018--the-release-1-answers-for-kenneths-and-leos-rows)
+item 7 and [SIGNED_FORMATS § 3](../release-compatibility/SIGNED_FORMATS.md#3-the-relay-operator-set-and-certificate) (the
+relay operator set and certificate, reused unchanged); pp-ledger-apps fee app FD004.
+
+**Context:** The org relay has an operator (an offline set with a threshold, its hash the relay id) and a certificate
+binding its hot keys. A pp-node has none: each node is its own account, so N032's "one relay per account" does not group
+one person's nodes. A ledger relay, inside pp-node or pp-ledger's `pp-relay`, has none either, and the fee app pays relays
+from a recipients list the holders keep by hand.
+
+**Decision (proposed):**
+1. **One operator format:** SIGNED_FORMATS § 3's operator set, for every host. Its hash is the operator id; the org relay's
+   is its relay id, unchanged.
+2. **A node certificate,** the relay certificate's envelope under its own signing domain: the host's transport key, a
+   signing key (pp-node's account key; empty for a host that signs nothing), roles (`circuit_relay`, `media_relay`,
+   `directory`, `ledger_relay`, `ledger_miner`), a required `expires_at`, and optionally a payout account. Keys only, no
+   addresses. One certificate covers a pp-node's mesh roles and its ledger relay role.
+3. **Accountability, never trust.** The org relay's certificate stays the only one clients pin. A node certificate groups
+   (N032 rule 7 by operator id) and attributes (rule 6 demotion reaches the operator); it never ranks a node higher. A
+   ledger relay's certificate carries no ledger trust: the chain trusts the beacon certificate.
+4. **Optional:** an uncertified node works as today, counted by its own account.
+5. **One tool:** pp-ledger-apps' Signer signs relay certificates, node certificates and operator-set changes as operation
+   files; pp-node and `pp-relay` print requests and install certificates.
+
+**Rationale:** The operator set and certificate are already frozen, coded twice (C++ and TypeScript) and modelled on
+pp-ledger's beacon authority; a second format would be a second thing to audit and to teach. Binding keys rather than
+addresses follows pp-ledger's unsigned dial hint. Keeping certificates out of ranking keeps N032's rule that claims only
+exclude.
+
+**Alternatives considered:**
+- An operator per host kind (relay, node, ledger relay): three formats and three tools for what is one person's keys.
+- Extending the relay certificate with roles and optional origins: changes a frozen format, and lets a node certificate
+  be read as a relay one.
+- A pp-ledger account as the operator: set changes become ledger operations, but checking a certificate would need
+  ledger proofs, and the relay id is frozen as a founding set's hash. Left open for later.
+
+**Open (defaults until decided):** the operator id's prefix (`operator:`; the relay keeps `relay:`); certificates optional
+(yes); payout account in the certificate (yes); expiry (90 days, renewed from 14 days before); org seeds' signer (a
+separate org node operator set, 2 of 3, Leo's custody).
