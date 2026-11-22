@@ -2,6 +2,8 @@
 // The same message id, its copy sealed again in the device pair as a first send seals it: the recipient keeps it once
 // (its receive pipeline drops an id it holds), and gets it when the first copy never arrived.
 #include "feature/conversations/QueuedResend.h"
+#include "feature/conversations/StrangerHold.h"
+#include "lib/delivery/DeliveryNotice.h"
 
 #include "common/runtime/AppRuntime.h"
 #include "foundation/error/AppError.h"
@@ -339,7 +341,15 @@ public:
     if (fail_) {
       return AppError::Network(Err::Network::HttpRejected, "400");
     }
+    if (refusal_) {
+      return *refusal_;
+    }
     return {};
+  }
+  /** Every send refused with `refusal` (a 429 for the stranger quota, say) until cleared. */
+  void SetRefusal(std::optional<Error> refusal) {
+    std::lock_guard lock(mu_);
+    refusal_ = std::move(refusal);
   }
   void Hold() {
     std::lock_guard lock(mu_);
@@ -395,6 +405,7 @@ public:
   }
 
 private:
+  std::optional<Error> refusal_;
   std::vector<RelayEnvelope> inbox_;
   std::vector<ChatHistoryRequest> history_asks_;
   int polls_ = 0;
@@ -696,6 +707,98 @@ TEST_F(StoredResendTest, ADevicePairHoleIsAskedAboutOnEveryLaterMessageAndNeverC
   EXPECT_EQ(asks_after_each.back(), 5u) << "one history ask per message after the hole";
   EXPECT_EQ(pair_state->contiguous_peer_seq, 1u) << "the empty answers do not close the device pair's hole";
   EXPECT_EQ(pair_state->phase, PeerSyncPhase::Gap);
+}
+
+// --- B236: a chat held while the recipient has not added us -----------------------------------------------------
+
+TEST(StrangerHoldTest, AHeldLineHoldsOnlyWhileItsProbeIsQueued) {
+  const ThreadMessage line = MakeStrangerHeldRow("t1", "probe", 1);
+  ThreadMessage probe = Ours("probe", MessageDelivery::Pending, 1);
+  EXPECT_TRUE(StrangerHoldActive(line, probe));
+  probe.delivery = MessageDelivery::Relayed; // the grant came, or the quota refreshed: accepted
+  EXPECT_FALSE(StrangerHoldActive(line, probe));
+  probe.delivery = MessageDelivery::Failed; // the outbox gave up: the next send may try
+  EXPECT_FALSE(StrangerHoldActive(line, probe));
+  EXPECT_FALSE(StrangerHoldActive(line, std::nullopt)) << "deleted";
+  EXPECT_FALSE(StrangerHoldActive(line, Ours("other", MessageDelivery::Pending, 1)));
+  EXPECT_FALSE(StrangerHoldActive(Ours("m", MessageDelivery::Pending, 1), probe)) << "not a held line";
+}
+
+const Error kStrangerQuota = AppError::Auth(Err::Auth::StrangerQuota, "stranger_quota_exceeded");
+
+size_t HeldLines(InMemoryDeliveryStore& store, const std::string& thread_id) {
+  auto rows = store.GetMessagesPage(thread_id, std::nullopt, 1000);
+  size_t count = 0;
+  for (const ThreadMessage& row : rows ? *rows : std::vector<ThreadMessage>{}) {
+    count += StrangerHeldRowProbe(row) ? 1 : 0;
+  }
+  return count;
+}
+
+TEST_F(StoredResendTest, AStrangerQuotaRefusalHoldsTheChatWithOneLineAndTheGrantFreesIt) {
+  relay_->SetRefusal(kStrangerQuota);
+  for (const char* id : {"m1", "m2", "m3", "m4"}) {
+    Add(chat_.id, id, MessageDelivery::Failed); // a burst already on its way when the first refusal came
+  }
+  ASSERT_TRUE(mesh_->ResendStoredMessage(chat_.id, "m1"));
+  Drain();
+  EXPECT_TRUE(mesh_->ChatSendHeld(chat_.id)) << "held: the recipient has not added us";
+  EXPECT_EQ(HeldLines(store_, chat_.id), 1u);
+  EXPECT_EQ(Delivery(chat_.id, "m1"), MessageDelivery::Pending) << "the probe stays queued (clock)";
+  for (const char* id : {"m2", "m3", "m4"}) {
+    ASSERT_TRUE(mesh_->ResendStoredMessage(chat_.id, id));
+  }
+  Drain();
+  EXPECT_EQ(HeldLines(store_, chat_.id), 1u) << "three more refusals: still one line";
+  auto line = store_.GetMessage(chat_.id, StrangerHeldRowId("m1"));
+  ASSERT_TRUE(line && *line);
+  EXPECT_FALSE((*line)->relay_visible) << "local: never sent";
+  EXPECT_TRUE(StrangerHeldLineShown(store_, **line));
+
+  // A restart while held: the state is read back from the store, from the first frame.
+  {
+    MeshDeliveryOrchestrator restarted(store_, contacts_, identity_, relay_, inbox_, keys_, psk_, roster_);
+    EXPECT_TRUE(restarted.ChatSendHeld(chat_.id));
+  }
+
+  // Their grant arrives: what was held back goes at once, the chat is free and the line gone.
+  relay_->SetRefusal(std::nullopt);
+  const size_t before = relay_->Sent().size();
+  mesh_->OnGrantReceived(bob_.account_id);
+  Drain();
+  EXPECT_GE(relay_->Sent().size(), before + 4) << "the probe and the others, at once";
+  EXPECT_EQ(Delivery(chat_.id, "m1"), MessageDelivery::Relayed);
+  EXPECT_FALSE(mesh_->ChatSendHeld(chat_.id));
+  EXPECT_FALSE(StrangerHeldLineShown(store_, **line));
+}
+
+TEST_F(StoredResendTest, WhenTheRetriesRunOutTheProbeFailsWithItsPlainReasonAndTheChatIsFree) {
+  std::vector<DeliveryNotice> notices;
+  mesh_->SetOnDeliveryNotice([&notices](const DeliveryNotice& notice) { notices.push_back(notice); });
+  relay_->SetRefusal(kStrangerQuota);
+  Add(chat_.id, "m1", MessageDelivery::Failed);
+  ASSERT_TRUE(mesh_->ResendStoredMessage(chat_.id, "m1"));
+  Drain();
+  ASSERT_TRUE(mesh_->ChatSendHeld(chat_.id));
+  // Each backoff over (a grant that is not one, as far as the relay is concerned: it still refuses).
+  for (int round = 0; round < 20 && Delivery(chat_.id, "m1") == MessageDelivery::Pending; ++round) {
+    mesh_->OnGrantReceived(bob_.account_id);
+    Drain();
+  }
+  EXPECT_EQ(Delivery(chat_.id, "m1"), MessageDelivery::Failed);
+  EXPECT_FALSE(mesh_->ChatSendHeld(chat_.id)) << "the next send may try again";
+  ASSERT_EQ(notices.size(), 1u);
+  EXPECT_EQ(notices[0].send, SendFailure::NotAddedYet) << "the red mark says why, plainly";
+}
+
+TEST_F(StoredResendTest, AnotherRefusalReasonDoesNotHoldTheChat) {
+  relay_->SetRefusal(AppError::Auth(Err::Auth::RateLimited, "Relay rate limit exceeded"));
+  Add(chat_.id, "m1", MessageDelivery::Failed);
+  ASSERT_TRUE(mesh_->ResendStoredMessage(chat_.id, "m1"));
+  Drain();
+  EXPECT_EQ(Delivery(chat_.id, "m1"), MessageDelivery::Pending) << "queued, as any retryable refusal";
+  EXPECT_FALSE(mesh_->ChatSendHeld(chat_.id));
+  EXPECT_EQ(HeldLines(store_, chat_.id), 0u);
 }
 
 } // namespace

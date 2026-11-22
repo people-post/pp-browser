@@ -2440,6 +2440,10 @@ void ContactsController::ShareContactTo(const std::string& thread_id, const std:
   if (!contacts_ports_.share_contact) {
     return;
   }
+  if (contacts_ports_.send_held && contacts_ports_.send_held(thread_id)) {
+    ShowToast(Tr("chat.send.held")); // B236: that chat sends nothing until they add us
+    return;
+  }
   const auto share = [share = contacts_ports_.share_contact, thread_id, contact_id]() {
     auto sent = share(thread_id, contact_id);
     if (!sent) {

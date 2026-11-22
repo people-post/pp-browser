@@ -51,6 +51,8 @@ const char* SendKey(const SendFailure failure, const SendAdvice advice) {
       return "chat.notice.send.payment_required";
     case SendFailure::VersionMismatch:
       return "chat.notice.send.version_mismatch";
+    case SendFailure::NotAddedYet:
+      return "chat.notice.send.not_added_yet";
     case SendFailure::Unknown:
       break;
   }

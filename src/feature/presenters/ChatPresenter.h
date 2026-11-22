@@ -444,6 +444,11 @@ public:
    * what to tell. The composer's draft is not touched.
    */
   SendMarkTap TapSendMark(const std::string& thread_id, const std::string& message_id);
+  /**
+   * B236: the 1:1 chat `thread_id` sends nothing for now — the recipient has not added us and a refused message of ours
+   * is still queued (ConversationsFacade::ChatSendHeld, StrangerHold). Blocking (the store).
+   */
+  bool SendHeld(const std::string& thread_id) const;
   /** `message_id` was sent again by a tap (ResendSameMessage): told once if it is drawn red again (ResentTurnedRed). */
   void NoteResent(const std::string& thread_id, const std::string& message_id) { resent_ids_[message_id] = thread_id; }
   /**

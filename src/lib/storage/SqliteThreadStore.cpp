@@ -327,8 +327,8 @@ Roe<void> SqliteThreadStore::UpdateThreadCatalogFromMessage(const ThreadMessage&
                                                             const bool increment_unread) const {
   // A local "this message did not go out" line is a note under the message, not a new message: the chat's
   // preview and place in the list stay as the failed message left them.
-  if (SendFailureRowReason(message)) {
-    return {};
+  if (SendFailureRowReason(message) || StrangerHeldRowProbe(message)) {
+    return {}; // ... and a "held" line (B236) is a note too
   }
   // An edit is not a new message (DEV/PLAN-message-edit.md): the chat keeps its place, and its preview changes only
   // when the edited message is the newest (InboxController::AfterMessageEdited).
@@ -615,6 +615,9 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesForContext(const s
       return message.error();
     }
     message->thread_id = thread_id;
+    if (StrangerHeldRowProbe(*message)) {
+      continue; // a local "held" line (B236) is this device's note, never something the AI is given
+    }
     fetched.push_back(std::move(*message));
   }
   sqlite3_finalize(stmt);

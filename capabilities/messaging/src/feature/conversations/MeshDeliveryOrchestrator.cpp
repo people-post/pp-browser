@@ -10,6 +10,7 @@
 #include "domain/delivery/DeliveryRowMark.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "feature/conversations/QueuedResend.h"
+#include "feature/conversations/StrangerHold.h"
 #include "lib/messaging/EditMessage.h"
 
 #include "common/Localized.h"
@@ -153,9 +154,7 @@ void MeshDeliveryOrchestrator::WireCardHooks() {
     auto contact = contacts_.FindByIdentity(account_id, mesh::ContactIdKind::Account);
     return contact && *contact ? ContactRelays(**contact, std::nullopt).origins : std::vector<std::string>{};
   });
-  relay_grants_.SetOnGrantReceived([this](const std::string& grantor) {
-    AppRuntime::PostWorkerNormal([this, grantor]() { outbox_.ReleaseHeldFor(grantor); });
-  });
+  relay_grants_.SetOnGrantReceived([this](const std::string& grantor) { OnGrantReceived(grantor); });
   // Our device list changed here (a device linked in, a sibling's newer list, the nickname): our other devices
   // hear, through our own mailbox (M022).
   own_cards_.SetOnChanged([this](const AccountCard& card) {
@@ -275,6 +274,9 @@ void MeshDeliveryOrchestrator::WireOutbox() {
       // nothing is told yet — only the outbox giving up fails it.
       log().info << "send not through yet message_id=" << outcome.message_id << " (" << outcome.detail
                  << "): it stays queued";
+      if (outcome.stranger_quota && outcome.group_member.empty()) {
+        NoteStrangerHeld(outcome.thread_id, outcome.message_id);
+      }
       return;
     }
     if (!outcome.group_member.empty()) {
@@ -1579,6 +1581,51 @@ void MeshDeliveryOrchestrator::MaybeRepairGap(const std::string& thread_id, cons
       }
     });
   });
+}
+
+void MeshDeliveryOrchestrator::OnGrantReceived(const std::string& grantor) {
+  // The sends its stranger quota held back go at once (a held chat's probe among them: accepted, the chat is free).
+  AppRuntime::PostWorkerNormal([this, grantor]() { outbox_.ReleaseHeldFor(grantor); });
+}
+
+void MeshDeliveryOrchestrator::NoteStrangerHeld(const std::string& thread_id, const std::string& message_id) {
+  if (thread_id.empty() || message_id.empty()) {
+    return;
+  }
+  auto thread = store_.GetThread(thread_id);
+  auto row = store_.GetMessage(thread_id, message_id);
+  if (!thread || !*thread || (*thread)->kind != ThreadKind::Direct || !row || !*row ||
+      (*row)->sender_contact_id != kLocalSelfContactId) {
+    return;
+  }
+  switch ((*row)->content_type) {
+    case ChatContentType::Text:
+    case ChatContentType::Attachment:
+    case ChatContentType::ContactCard:
+    case ChatContentType::CryptoTx:
+      break;
+    default:
+      return; // a reaction, an edit, a deletion: it waits as before, the chat is not held for it
+  }
+  bool added = false;
+  {
+    // One line per held chat: a burst refused at once (several messages already on their way) makes one, for the
+    // first; the others wait behind it and go with it.
+    std::lock_guard lock(stranger_hold_mu_);
+    if (!ActiveStrangerHold(store_, thread_id)) {
+      added = static_cast<bool>(store_.AppendMessage(MakeStrangerHeldRow(thread_id, message_id, util::NowUnixMs())));
+    }
+  }
+  if (added) {
+    log().info << "chat held: the recipient has not added us yet (probe message_id=" << message_id << ")";
+    if (on_messages_changed_) {
+      AppRuntime::PostUI([this]() { on_messages_changed_(); });
+    }
+  }
+}
+
+bool MeshDeliveryOrchestrator::ChatSendHeld(const std::string& thread_id) const {
+  return ActiveStrangerHold(store_, thread_id).has_value();
 }
 
 void MeshDeliveryOrchestrator::ApplySendOutcome(const DeliveryOutcome& outcome) {

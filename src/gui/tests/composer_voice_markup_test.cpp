@@ -893,7 +893,7 @@ TEST(ComposerCaptureSourceTest, StartAttachmentUploadReleasesTheFileOnEveryExit)
     }
     return n;
   };
-  EXPECT_EQ(count("release_pick_(path);"), 2u) << "the refusal and the worker's own release";
+  EXPECT_EQ(count("release_pick_(path);"), 3u) << "the refusal, a held chat's (B236), and the worker's own release";
   // A refused send releases a picked file before it returns (a picture queue's file stays the queue's, which releases
   // it once); a refused voice recording is kept for Retry instead.
   EXPECT_NE(body.find("    if (!from_picture_queue) {\n      release_pick_(path); // a queue's file stays the queue's"),

@@ -20,6 +20,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     MessagingCompatPorts.cpp
     MeshDeliveryOrchestrator.cpp
     QueuedResend.cpp
+    StrangerHold.cpp
     MyRelaysWorkflow.cpp
     PeerTransports.cpp
     PeerWarmMarks.cpp

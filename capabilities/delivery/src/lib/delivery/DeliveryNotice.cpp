@@ -69,8 +69,9 @@ SendFailure SendFailureFromRelay(const Error& error) {
     case ErrorCategory::Auth:
       switch (static_cast<Err::Auth>(error.code)) {
         case Err::Auth::RateLimited:
-        case Err::Auth::StrangerQuota:
           return SendFailure::RelayRateLimited;
+        case Err::Auth::StrangerQuota:
+          return SendFailure::NotAddedYet;
         case Err::Auth::NotRegistered:
           return SendFailure::SenderNotRegistered;
         default:
@@ -148,6 +149,8 @@ ShareWord SendFailureWord(const SendFailure failure) {
       return "sender_not_registered";
     case SendFailure::VersionMismatch:
       return "version_mismatch";
+    case SendFailure::NotAddedYet:
+      return "not_added_yet";
   }
   return "unknown";
 }
@@ -178,7 +181,8 @@ std::optional<SendFailure> SendFailureFromWire(const std::string& wire) {
                                          SendFailure::RecipientNotOnRelay,
                                          SendFailure::PaymentRequired,
                                          SendFailure::SenderNotRegistered,
-                                         SendFailure::VersionMismatch};
+                                         SendFailure::VersionMismatch,
+                                         SendFailure::NotAddedYet};
   for (const SendFailure failure : kAll) {
     if (wire == SendFailureWord(failure).view()) {
       return failure;
@@ -226,6 +230,50 @@ std::optional<std::string> SendFailureRowReason(const ThreadMessage& message) {
     return std::nullopt;
   }
   return detail->getString("reason").value_or("");
+}
+
+std::string StrangerHeldRowId(const std::string& probe_message_id) {
+  return std::string("stranger-held-") + probe_message_id;
+}
+
+ThreadMessage MakeStrangerHeldRow(const std::string& thread_id, const std::string& probe_message_id,
+                                  const int64_t timestamp_ms) {
+  ThreadMessage row;
+  row.id = StrangerHeldRowId(probe_message_id);
+  row.thread_id = thread_id;
+  row.sender_contact_id = kLocalSelfContactId;
+  row.content_type = ChatContentType::System;
+  Object detail;
+  detail.set("message_id", probe_message_id);
+  Object payload;
+  payload.set("control_type", kStrangerHeldControlType);
+  payload.set("detail", DumpJson(detail));
+  row.payload_json = DumpJson(payload);
+  row.timestamp = timestamp_ms;
+  row.delivery = MessageDelivery::Local;
+  row.relay_visible = false;
+  row.generation = "local";
+  return row;
+}
+
+std::optional<std::string> StrangerHeldRowProbe(const ThreadMessage& message) {
+  if (message.content_type != ChatContentType::System || message.payload_json.empty() ||
+      message.sender_contact_id != kLocalSelfContactId) {
+    return std::nullopt;
+  }
+  auto payload = TryParseObject(message.payload_json);
+  if (!payload || payload->getString("control_type").value_or("") != kStrangerHeldControlType) {
+    return std::nullopt;
+  }
+  auto detail = TryParseObject(payload->getString("detail").value_or(""));
+  if (!detail) {
+    return std::nullopt;
+  }
+  auto probe = detail->getString("message_id");
+  if (!probe || probe->empty()) {
+    return std::nullopt;
+  }
+  return *probe;
 }
 
 std::optional<std::string> SendFailureRowMessageId(const ThreadMessage& message) {

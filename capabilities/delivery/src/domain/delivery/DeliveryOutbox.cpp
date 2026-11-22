@@ -41,6 +41,7 @@ DeliveryOutcome DeliveryOutbox::RelayFailureOutcome(DeliveryOutcome outcome, con
   outcome.detail = failure.message;
   outcome.relay_recipient = recipient;
   outcome.initiation_floor = RelayPaymentRequiredFloor(failure);
+  outcome.stranger_quota = RelayStrangerQuota(failure);
   return outcome;
 }
 

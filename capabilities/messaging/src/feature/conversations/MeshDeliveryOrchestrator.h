@@ -173,6 +173,13 @@ public:
    */
   void PrimeQueuedResume();
   /**
+   * B236: whether the 1:1 chat `thread_id` is held — the recipient has not added us and its probe is still queued
+   * (StrangerHold) — so it sends nothing more for now. Blocking (the store); any thread.
+   */
+  bool ChatSendHeld(const std::string& thread_id) const;
+  /** A grant from `grantor` was kept: what its stranger quota held back is sent at once (the outbox). Any thread. */
+  void OnGrantReceived(const std::string& grantor);
+  /**
    * Holds every inbox poll (none goes until released): mail waits on the relays. The app lab's probe uses it to keep
    * messages on a relay while it replays requests (multi-relay MR007); nothing in the product holds. Any thread.
    */
@@ -449,6 +456,8 @@ private:
    * when nothing of it is still being tried), and the reason told when it failed now.
    */
   void ApplySendOutcome(const DeliveryOutcome& outcome);
+  /** A send of ours in a 1:1 chat refused for the stranger quota and queued: the chat is held, one line says so. */
+  void NoteStrangerHeld(const std::string& thread_id, const std::string& message_id);
   /**
    * The send of the stored 1:1 row `appended` (`wire`: what goes on the wire) in `thread`: a copy for each of the
    * peer's devices (M021/M022), or the account copy, handed to the outbox. An error when nothing could be handed over
@@ -660,6 +669,8 @@ private:
   mutable std::mutex resume_mu_;
   bool resume_primed_ = false;
   std::vector<QueuedRow> awaiting_resume_;
+  /** One "held" line per chat (NoteStrangerHeld): outcomes on several workers never both add one. */
+  std::mutex stranger_hold_mu_;
   /** One ResendStoredMessage at a time: a tap and the start's resume never both send a message. */
   std::mutex stored_resend_mu_;
   /** 0 = Unknown, 1 = Ok, 2 = Failed — see BriefRelayHealthState. */

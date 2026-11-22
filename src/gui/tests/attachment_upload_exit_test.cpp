@@ -100,10 +100,12 @@ TEST(AttachmentUploadExit, PictureQueueEveryExitFiresTheWrapper) {
   EXPECT_LT(body.find("finish_uploading();\n            const bool cancelled"), ended);
   EXPECT_LT(ended, body.find("            if (!sent) {", ended));
   EXPECT_NE(body.find("IsAttachmentRateLimited(sent.error())"), std::string::npos);
-  EXPECT_EQ(Count(body, "finished.Fire("), 7u); // + a queued voice job whose bubble is gone
+  // 7: a held chat (B236: the recipient has not added us) sends nothing, before anything else is touched.
+  ExpectReportedBeforeReturn(body, "RefuseSendWhileHeld(thread_id)) {", "finished.Fire(");
+  EXPECT_EQ(Count(body, "finished.Fire("), 8u); // + a queued voice job whose bubble is gone
   // A tripwire, not a rule: a new `return;` here may be a new way out, which must report through finished.Fire (the
   // other returns are inside helpers and callbacks that are not ways out). Update the count once that is checked.
-  EXPECT_EQ(Count(body, "return;"), 12u);
+  EXPECT_EQ(Count(body, "return;"), 13u);
 }
 
 TEST(AttachmentUploadExit, PictureQueueTheWrapperRidesInEveryCallback) {
