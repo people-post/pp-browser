@@ -68,7 +68,7 @@ relay id** (release-compatibility [SIGNED_FORMATS § 3](../../projects/release-c
 certificate names; the node keeps the highest certificate it sees (the build's, `client-compat`'s, the relay's
 `relay-identity`). With the compiled prod registration URL and no `relay_id`, the compiled `PP_RELAY_ID_PROD` is used,
 and the build's prod certificate (`config/relay-certs/prod.cert`) is the floor, so the node can sign before its first
-fetch; a node on another relay (QA, a lab) names that relay's id (from its relay link, the part after `#`, or
+fetch; a node on another relay (staging, dev, a lab) names that relay's id (from its relay link, the part after `#`, or
 `GET <base>/v1/relay-identity` read once by the operator). The compiled URL is matched however it is spelled (a
 trailing `/`, case, `:443`): e.g. `PP_NODE_REGISTRATION_BASE_URL=https://api.pp.peoplepost.org/api/relay` takes the
 compiled relay id when that build's `PP_API_URL_PROD` is `https://api.pp.peoplepost.org`. A release build with no relay
