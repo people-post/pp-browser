@@ -2,10 +2,13 @@
 
 #include "foundation/error/AppError.h"
 #include "lib/net/RelayInboxCursor.h"
+#include "lib/net/RelayOrigins.h"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <map>
 #include <memory>
@@ -118,6 +121,10 @@ protected:
     };
     ports.ready = [this](const std::string& origin) { return registered_.contains(origin); };
     ports.now_ms = [this]() { return now_ms_; };
+    ports.mailbox = [this](const std::string& origin, bool) {
+      const auto it = mailboxes_.find(origin);
+      return it == mailboxes_.end() ? std::string() : it->second;
+    };
     return ports;
   }
 
@@ -125,6 +132,8 @@ protected:
   std::shared_ptr<FakeInbox> preferred_ = std::make_shared<FakeInbox>();
   std::shared_ptr<FakeInbox> other_ = std::make_shared<FakeInbox>();
   std::set<std::string> registered_{kOther};
+  /** The registration held at each relay (Ports::mailbox); none: unknown. */
+  std::map<std::string, std::string> mailboxes_;
   std::vector<std::string> taken_;
   std::vector<std::string> outcomes_;
   int64_t now_ms_ = 1'000'000;
@@ -303,6 +312,85 @@ TEST_F(RelayInboxCoordinatorTest, ACursorFromBeforeMyRelaysIsThePreferredRelays)
   again.SetInboxes({{kPreferred, preferred_}}, dir_.string());
   again.Sync(false, kMe);
   EXPECT_EQ(preferred_->polled_with.back(), "a-old");
+}
+
+// A fresh registration is a new mailbox at the relay, numbered from the start (2026-11-22: after a revoke the account's
+// devices polled the new mailbox with the old one's cursor and received nothing): a cursor counts in the registration
+// it was kept for; the same registration (a renewal) keeps it.
+TEST_F(RelayInboxCoordinatorTest, ANewRegistrationIsANewMailboxReadFromItsStart) {
+  mailboxes_[kPreferred] = "reg-1";
+  preferred_->Queue({"m1"}, "c1:1684");
+  coordinator_->Sync(false, kMe);
+  coordinator_->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:1684") << "the same registration keeps its cursor";
+
+  mailboxes_[kPreferred] = "reg-2"; // registered again: the relay's new mailbox
+  preferred_->Queue({"n1"}, "c1:1");
+  coordinator_->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "") << "the new mailbox from its start";
+  coordinator_->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:1") << "then on in it";
+  EXPECT_EQ(taken_, std::vector<std::string>({std::string(kPreferred) + " m1", std::string(kPreferred) + " n1"}));
+
+  RelayInboxCoordinator again(Ports());
+  again.SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
+  again.Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:1") << "kept across a restart, with its registration";
+  const RelayInboxCursors kept = LoadRelayInboxCursors(dir_.string(), kMe);
+  EXPECT_EQ(kept.preferred, "c1:1");
+  ASSERT_TRUE(kept.registrations);
+  EXPECT_EQ(kept.registrations->at(RelayOriginKey(kPreferred)), "reg-2");
+}
+
+TEST_F(RelayInboxCoordinatorTest, EachRelaysCursorFollowsItsOwnRegistration) {
+  mailboxes_ = {{kPreferred, "reg-a"}, {kOther, "reg-b1"}};
+  preferred_->Queue({"m1"}, "a-1");
+  other_->Queue({"m2"}, "b-1");
+  coordinator_->Sync(true, kMe);
+  mailboxes_[kOther] = "reg-b2";
+  coordinator_->Sync(true, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "a-1");
+  EXPECT_EQ(other_->polled_with.back(), "") << "only the relay that registered us again starts over";
+}
+
+// The devices already deaf when this shipped: their cursors were kept by an app that noted no mailbox — whether the
+// registration there is known now or not, each inbox is read once from its start (the receive pipeline drops what was
+// taken already), then on from there, across restarts too.
+TEST_F(RelayInboxCoordinatorTest, CursorsFromAFileThatNotedNoMailboxAreReadFromTheStartOnce) {
+  std::ofstream(dir_ / "relay_inbox_cursor.json")
+      << R"({"schema_version":1,"account_id":")" << kMe << R"(","cursor":"c1:1684","cursor_relay":")"
+      << RelayOriginKey(kPreferred) << R"(","relays":{")" << RelayOriginKey(kOther) << R"(":"b-9"}})";
+  mailboxes_[kPreferred] = "reg-now"; // the other relay's: not known
+  RelayInboxCoordinator again(Ports());
+  again.SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
+  preferred_->Queue({"m1", "m2"}, "c1:2");
+  other_->Queue({"m3"}, "b-1");
+  again.Sync(true, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "");
+  EXPECT_EQ(other_->polled_with.back(), "") << "every cursor of that file";
+  again.Sync(true, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:2") << "once";
+  EXPECT_EQ(other_->polled_with.back(), "b-1");
+
+  RelayInboxCoordinator third(Ports());
+  third.SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
+  third.Sync(true, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:2") << "not again after a restart";
+  EXPECT_EQ(other_->polled_with.back(), "b-1");
+  EXPECT_EQ(std::count(preferred_->polled_with.begin(), preferred_->polled_with.end(), ""), 1);
+  EXPECT_EQ(std::count(other_->polled_with.begin(), other_->polled_with.end(), ""), 1);
+}
+
+// A cursor kept while the registration there was not known (no id answered yet) is used as it is; once a registration
+// is known it counts in that one, and when it changes the inbox starts over.
+TEST_F(RelayInboxCoordinatorTest, ACursorKeptWhileTheRegistrationWasNotKnownStartsOverOnceItIs) {
+  preferred_->Queue({"m1"}, "c1:40");
+  coordinator_->Sync(false, kMe);
+  coordinator_->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:40") << "not known: kept";
+  mailboxes_[kPreferred] = "reg-1"; // registered (again): the relay's answer names it
+  coordinator_->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "");
 }
 
 TEST_F(RelayInboxCoordinatorTest, NoInboxesPollsNothing) {

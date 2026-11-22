@@ -219,6 +219,13 @@ bool RelayRegistrationsWorkflow::Registered(const std::string& origin) const {
                      [&origin](const State& s) { return s.registered && !s.leaving && s.relay.origin == origin; });
 }
 
+std::string RelayRegistrationsWorkflow::RegistrationId(const std::string& origin) const {
+  std::lock_guard lock(mutex_);
+  const auto state =
+      std::find_if(states_.begin(), states_.end(), [&origin](const State& s) { return s.relay.origin == origin; });
+  return state == states_.end() ? std::string() : state->registration_id;
+}
+
 std::vector<std::string> RelayRegistrationsWorkflow::RegisteredOrigins() const {
   std::lock_guard lock(mutex_);
   std::vector<std::string> out;

@@ -217,6 +217,23 @@ TEST_F(RelayRegistrationsWorkflowTest, ARevokeNamesTheRegistrationItRemoves) {
   EXPECT_EQ(client_->revoked_ids.back(), "reg-kept");
 }
 
+// The inbox's cursor counts in the registration each relay answered last (a fresh one is a new mailbox there).
+TEST_F(RelayRegistrationsWorkflowTest, TheRegistrationIdEachRelayAnsweredIsKnown) {
+  EXPECT_EQ(workflow_->RegistrationId(kOther), "") << "none answered yet";
+  RegisterOnPreferred();
+  workflow_->RunDue(kNow);
+  EXPECT_EQ(workflow_->RegistrationId(kOther), "reg-1");
+  EXPECT_EQ(workflow_->RegistrationId("https://not-ours.example/api/relay"), "");
+
+  RelayRegistrationsWorkflow restarted(*identity_);
+  restarted.SetRelays({{kOther, client_,
+                        RelayRegistrationRecord{.state = RelayRegistrationRecord::State::Registered,
+                                                .expires_at = "2099-01-01T00:00:00.000Z",
+                                                .card_issued_at = 1000,
+                                                .registration_id = "reg-kept"}}});
+  EXPECT_EQ(restarted.RegistrationId(kOther), "reg-kept") << "kept across a restart";
+}
+
 // MR007-HEAL: a relay of ours that answers not_registered while it held our registration is registered on again at
 // once; lost again soon after, after a backoff that doubles.
 TEST_F(RelayRegistrationsWorkflowTest, ALostRegistrationIsMadeAgainWithABackoff) {

@@ -760,6 +760,17 @@ bool MeshDeliveryOrchestrator::InboxReady(const std::string& origin) const {
   return !inbox_ready_ || inbox_ready_(origin);
 }
 
+void MeshDeliveryOrchestrator::SetInboxMailbox(
+    std::function<std::string(const std::string& origin, bool preferred)> mailbox) {
+  std::lock_guard lock(inbox_ready_mu_);
+  inbox_mailbox_ = std::move(mailbox);
+}
+
+std::string MeshDeliveryOrchestrator::InboxMailbox(const std::string& origin, const bool preferred) const {
+  std::lock_guard lock(inbox_ready_mu_);
+  return inbox_mailbox_ ? inbox_mailbox_(origin, preferred) : std::string();
+}
+
 void MeshDeliveryOrchestrator::SetInitiationBillingStore(InitiationBillingStore* store) {
   initiation_billing_ = store;
 }
@@ -2335,6 +2346,7 @@ RelayInboxCoordinator::Ports MeshDeliveryOrchestrator::InboxPorts() {
     }
   };
   ports.ready = [this](const std::string& origin) { return InboxReady(origin); };
+  ports.mailbox = [this](const std::string& origin, const bool preferred) { return InboxMailbox(origin, preferred); };
   return ports;
 }
 

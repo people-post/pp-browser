@@ -57,6 +57,14 @@ RelayInboxCursors LoadRelayInboxCursors(const std::string& profile_data_dir, con
       }
     }
   }
+  if (const Object* registrations = root->getObject("registrations")) {
+    cursors.registrations.emplace();
+    for (const auto& [origin, value] : registrations->entries()) {
+      if (auto id = asString(value); id && !origin.empty() && !id->empty()) {
+        (*cursors.registrations)[origin] = *id;
+      }
+    }
+  }
   return cursors;
 }
 
@@ -86,6 +94,13 @@ void SaveRelayInboxCursors(const std::string& profile_data_dir, const std::strin
     }
     root.set("relays", std::move(relays));
   }
+  // Added beside the cursors (an older app reads the file as before), and always: its presence says the cursors were
+  // kept by an app that notes their mailbox.
+  Object registrations;
+  for (const auto& [origin, id] : cursors.registrations.value_or(std::map<std::string, std::string>{})) {
+    registrations.set(origin, id);
+  }
+  root.set("registrations", std::move(registrations));
   // Replaced whole, not synced: written at every sync, and a cursor lost to a crash only fetches again what the
   // inbox drops as already seen.
   (void)AtomicFileWrite::Write(CursorPath(profile_data_dir).string(), DumpJson(root), AtomicFileWrite::Sync::None);
