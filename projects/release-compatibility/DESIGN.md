@@ -576,7 +576,7 @@ The release is the most common action, not the only one; the rare, stressful one
 | **Range exit** | raising `min_client_version` or the node floor; closing a compatibility window. A release that raises the minimum iOS or Android version strands users who cannot update: before their last supported release leaves the range, the version counts by OS are checked and that release kept longer or its users warned | release owner | pp-browser | before the first window closes |
 | **Security release** | a vulnerability: every in-range branch fixed, embargoed until all publish together | Hongwei | pp-browser | before the first window closes |
 | **Key rotation** | scheduled, not an emergency | Leo | pp-relay-apis | later |
-| **pp-node fleet rollback** | a bad node release (ansible) | Leo | pp-relay-infra-ansible | later |
+| **pp-node fleet rollback** | a bad node release (ansible) | Leo | the relay's infrastructure | later |
 | **Environment resets** | dev at will, staging rarely | Leo | pp-relay-apis | later |
 
 **Each runbook has the same shape:**

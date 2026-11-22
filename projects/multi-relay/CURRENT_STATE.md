@@ -138,11 +138,11 @@ Not yet:
 - A card with no https relay of ours (an `http://` dev relay) still says the mesh only, so senders fall back to
   their own preferred relay.
 
-Deploy: the relays (R1 and step 2) and the pp-node fleet on 8.0.0 (pp-relay-infra-ansible#20) are deployed. Steps 3,
+Deploy: the relays (R1 and step 2) and the pp-node fleet on 8.0.0 (the relay's infrastructure) are deployed. Steps 3,
 R3 and R4 need no relay change; they ship with the app. R5/R6 before the prod window: the repository variables
 `PP_RELAY_PEER_ID_PROD` and `PP_RELAY_PEER_ID_QA` (each environment's relay PeerId, from infra's record of its key) for
 `release.yml`, `ios-testflight.yml` and `release-pp-node.yml`; QA pp-nodes need `PP_NODE_REGISTRATION_PEER_ID` set to
-the QA relay's PeerId (`pp-relay-infra-ansible`, Leo); prod nodes take the compiled one. A user-run node (the g-ipfs
+the QA relay's PeerId (the relay's infrastructure, Leo); prod nodes take the compiled one. A user-run node (the g-ipfs
 Pi) built without `PP_API_URL_PROD` / `PP_RELAY_PEER_ID_PROD` needs `PP_NODE_REGISTRATION_PEER_ID` in its env before it
 runs an R6 build, or it stops registering.
 

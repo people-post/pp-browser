@@ -31,7 +31,7 @@ The integration branches are rebased on (or merge) `main` weekly, so they do not
 | W7 | pp-browser | Leave the relay's legacy routes (INVENTORY C1, RC018 item 2): `GET /v1/search` → by-account, `blobs/*` → `cdn/*`, `files/*` → `blob/*`, `keys/rotate` + `llm_api_key` → `llm_token` + `token/renew`, the relay's LLM codes, registered-or-guest by the key's slot | `HttpBlobClient`, `RelayFileUrl`, search, `ConversationsHub` key rotation, `lib/ai` limits, `AgentSessions` | none (lands on main before merge day: today's relay serves both) |
 | R1 | pp-relay-apis | `ext-area.ts`, `alg-id.ts` (the libraries' vectors byte for byte); sign domains v4 (§ 2.8, § 4), `relay_upgrade_required`, the legacy sign window and `LEGACY` builders removed (C2, its sign half) | `packages/shared/src/sign-payload/`, `crypto/alg-id.ts`, `auth.ts` | W0's vector copies; W6's `relay_sign_vectors.json` v2 |
 | R2 | pp-relay-apis | Card v5 stored verbatim, KEM binding v2, grant v2, locker record v2 (§ 4) | `account-card.ts`, `repos/accounts.ddb.ts`, registration, `grant.ts`, messenger send, `crypto/locker.ts`, lockers | R1, W2, W3 |
-| R3 | pp-relay-apis | The certificate: the registry loads it (`RELAY_CERTIFICATE_SECRET_ID`, `RELAY_SIGNING_KEY_SECRET_ID`), checks it, serves `relay-identity` v2 and `client-compat`'s `relay_certificate_b64`; `scripts/relay-operator.mjs`; the local stack's 1-of-1 set | registry `relay-identity.ts`, `client-compat.ts`, shared `relay-identity.ts`, `scripts/`, `local-stack/` | R1, W5's vectors |
+| R3 | pp-relay-apis | The certificate: the registry loads it (and the signing seed) from the deployment's secrets, checks it, serves `relay-identity` v2 and `client-compat`'s `relay_certificate_b64`; `scripts/relay-operator.mjs`; the local stack's 1-of-1 set | registry `relay-identity.ts`, `client-compat.ts`, shared `relay-identity.ts`, `scripts/`, `local-stack/` | R1, W5's vectors |
 | R4 | pp-relay-apis | The legacy routes removed (C2, its route half: `blobs/*`, `files/*`, `GET /search`, `llm_api_key`, `keys/rotate`, the pre-cutover sender mapping) and the one-time cutover data job (Q12) | `storage/src/routes.ts`, registry routes, `llm-credentials.ts`, `records.ts`, a job | W7 on main |
 | R5 | pp-relay-apis | Support (the support worker) speaks the release-1 app ↔ app formats: envelope v4, account card v5 (its own and customers'), KEM binding v2, relay grant v2; its own card back on register. Its signed relay calls move to v4 with R1. Missed by the first plan (INVENTORY lists Support on the app's formats) | `packages/support-crypto`, `functions/support-worker` ingest/outbound | R2b, W1, W2 vectors |
 | L | both | The app lab against the local stack on the integration branches, every suite; then against dev after merge day and staging after its rc | — | everything |
@@ -49,16 +49,14 @@ The environments are RC009's, deployed by tag (RC021): **dev** (the relay's `mai
 `dev/<date>.<n>` on `main`), **staging** (`release/vX.Y.Z-rc.<n>` on `release/X.Y`) and **prod** (`vX.Y.Z`). qa is
 retired. dev and staging are new and have no testers, so either is reset whenever the cutover needs it.
 
-What the merged R3, R4, R5 and W5 need, exactly (the relay's `docs/operators.md` has the steps and a worked example),
-in each of the relay's `main`, `staging` and `prod` envs (`modules/relay-env`):
+What the merged R3, R4, R5 and W5 need in each of the relay's `main`, `staging` and `prod` environments; the relay's
+`docs/operators.md` has the exact secrets and configuration, the steps and a worked example:
 
-1. Per environment, two new secrets: `pp-relay-api/<env>/relay-signing-key` (standard base64 of a 32-byte seed) and
-   `pp-relay-api/<env>/relay-certificate` (the certificate's standard base64, `relay-operator.mjs combine` output).
-2. Registry variables `RELAY_SIGNING_KEY_SECRET_ID`, `RELAY_CERTIFICATE_SECRET_ID`, `RELAY_ID` (`relay:…`) and
-   `RELAY_ORIGINS` (the API bases exactly as clients use them, `https://<host>/api/relay`); `RELAY_IDENTITY_PEER_ID`
-   equals the certificate's audience. The support worker needs the same `RELAY_ID` (R5: it names its relay on
-   Support's card, and stops at start without it). IAM: `secretsmanager:GetSecretValue` on both secrets for the registry role
-   (and `kms:Decrypt` with a customer-managed key).
+1. Per environment, the relay's signing seed and its certificate (`relay-operator.mjs combine` output) as secrets of
+   the deployment, readable by the registry only.
+2. The registry's configuration: the relay id it must prove (`relay:…`) and its origins exactly as clients use them
+   (`https://<host>/api/relay`); `RELAY_IDENTITY_PEER_ID` equals the certificate's audience. The support worker needs
+   the same relay id (R5: it names its relay on Support's card, and stops at start without it).
 3. Each environment's operator set and its certificate 1 (sequence 1, `expires_at` 0), in this order: **dev's** (1 of
    1) before merge day; **staging's** (2 of 3, like prod's: it rehearses prod's ceremony) before the re-cut
    `release/1.0`'s first candidate; **prod's** (2 of 3) before release day, certifying prod's current transport key and
