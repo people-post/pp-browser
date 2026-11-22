@@ -52,7 +52,7 @@ version counts by version and OS at the relay (INVENTORY O1), to say how many us
 | App Store, not yet released | release owner | Do not release it: App Store Connect → the version → remove it from review, or leave it waiting for a manual release | The version's status |
 | TestFlight external testers | release owner | TestFlight → the build → **Expire Build** | Testers no longer get it |
 | Desktop and Android APK (GitHub release) | release owner | `gh release edit <last good vX.Y.Z> --latest`; a warning line at the top of the bad release's notes (`gh release view <tag> --json body -q .body > notes.md`, add the line, `gh release edit <tag> --notes-file notes.md`). Never delete a release tag or its files | The Releases page leads with the last good one |
-| Relay-side mitigation (the relay refusing or working around what the bad version sends) | Leo writes it; Hongwei tags the relay release | [release.md § 1](release.md#1-before-the-cut)'s relay step | Its `deploy` run passed; the symptom stops |
+| Relay-side mitigation (the relay refusing or working around what the bad version sends) | Leo writes it; the relay prod deployer tags the relay release | [release.md § 1](release.md#1-before-the-cut)'s relay step | Its `deploy` run passed; the symptom stops |
 
 Not yet: remote switches, to turn a feature off in the field without a release (`switches` in `client-compat`,
 INVENTORY O2); Play staged rollout (no Play upload yet).
