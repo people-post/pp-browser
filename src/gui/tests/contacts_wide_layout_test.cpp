@@ -301,6 +301,46 @@ TEST_F(ContactsWideLayoutTest, TheSwipeActionsAreHoverButtonsAndARightClickMenu)
   EXPECT_TRUE(controller_.ContactRowMenuActions("").empty());
 }
 
+// A linked or restored account whose contacts have not come over yet: the list column shows the phone's spinner and line
+// in place of the empty state (AccountSyncState), then "Still syncing" once it is late, and the empty state again after.
+TEST_F(ContactsWideLayoutTest, AnAccountStillSyncingShowsTheSpinnerAndLineInsteadOfTheEmptyState) {
+  store_.clear();
+  controller_.Refresh();
+  controller_.SetAccountSync(/*syncing=*/true, /*delayed=*/false);
+  for (const int window : {768, 1280}) {
+    SCOPED_TRACE(window);
+    Load(window);
+    const Box column = BoxOf(One("#list"));
+    ui::Element* pending = One(".contacts-panel--wide .sync-pending");
+    ASSERT_NE(pending, nullptr) << "the indicator is drawn in the wide list column";
+    EXPECT_GE(BoxOf(pending).left, column.left);
+    EXPECT_LE(BoxOf(pending).right, column.right);
+    ui::Element* spinner = One(".sync-pending-spinner");
+    ASSERT_NE(spinner, nullptr);
+    EXPECT_FLOAT_EQ(BoxOf(spinner).W(), 34.f) << "28dp inside a 3dp ring, as on the phone";
+    EXPECT_FLOAT_EQ(BoxOf(spinner).H(), 34.f);
+    const ui::ElementList lines = All(".sync-pending p");
+    ASSERT_EQ(lines.size(), 1u);
+    EXPECT_EQ(lines[0]->GetInnerRML(), Tr("account_sync.pending"));
+    EXPECT_GT(BoxOf(lines[0]).top, BoxOf(spinner).bottom - 0.5f) << "the line under the spinner";
+    EXPECT_EQ(All(".contacts-empty").size(), 0u) << "no \"add someone\" while the contacts are still coming";
+    document_->Close();
+    context_->Update();
+  }
+  controller_.SetAccountSync(/*syncing=*/false, /*delayed=*/true);
+  Load(900);
+  EXPECT_EQ(All(".sync-pending-spinner").size(), 0u);
+  const ui::ElementList late = All(".sync-pending p");
+  ASSERT_EQ(late.size(), 1u);
+  EXPECT_EQ(late[0]->GetInnerRML(), Tr("account_sync.delayed"));
+  document_->Close();
+  context_->Update();
+  controller_.SetAccountSync(false, false);
+  Load(900);
+  EXPECT_EQ(All(".sync-pending").size(), 0u);
+  EXPECT_EQ(All(".contacts-empty").size(), 1u) << "the empty state is back once the sync is over";
+}
+
 TEST_F(ContactsWideLayoutTest, ALongNameDoesNotPushTheRowOrThePageOutOfTheirColumns) {
   Load(768);
   Pick(0); // sorted: "Alexander Maximilian von Hohenzollern-Sigmaringen III" first
