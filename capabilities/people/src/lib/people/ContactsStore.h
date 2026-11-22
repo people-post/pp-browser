@@ -62,6 +62,12 @@ public:
    */
   void SetOnChanged(std::function<void()> on_changed);
 
+  /**
+   * `contact` was added again on purpose (a search result, a QR code, a contact card, the stranger banner's Add): a
+   * block on it ends, so its messages arrive again; stored and returned. Any other contact comes back as it is.
+   */
+  Roe<Contact> ClearBlockOnAdd(Contact contact);
+
   Roe<bool> IsAccountBlocked(const std::string& account_id) const override;
   Roe<void> BlockAccountIfPresent(const std::string& account_id) override;
 
