@@ -8124,6 +8124,34 @@ input.checkbox {
   text-align: center;
 }
 
+/* An imported account's contacts have not come over yet (AccountSyncState): a spinner and one line, centred in the
+   empty list. Shared by the Contacts page and the Chats list; the arc's colours are in the colour template. */
+@keyframes sync-pending-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sync-pending {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 320dp;
+  padding: 24dp 16dp;
+  gap: 14dp;
+  text-align: center;
+}
+
+.sync-pending-spinner {
+  flex-shrink: 0;
+  width: 28dp;
+  height: 28dp;
+  border-width: 3dp;
+  border-style: solid;
+  border-radius: 17dp;
+  animation: 0.9s linear infinite sync-pending-spin;
+}
+
 .sidebar-empty .btn {
   margin-top: 16dp;
 }

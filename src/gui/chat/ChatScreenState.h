@@ -229,6 +229,9 @@ struct ChatShellState {
   bool show_reconnect_banner = false;
   /** Rows remain beyond the window the sidebar draws (the "Loading…" line). */
   bool sessions_more = false;
+  /** An imported account's contacts have not come over yet (spinner line) / the first sync is late (plain line). */
+  bool account_sync_syncing = false;
+  bool account_sync_delayed = false;
   /** The search box above the list: rows are kept when their title or preview contains it. */
   ui::String sessions_query;
   /** The phone AI drawer's search box: the same match on the AI conversations (ai_sessions). */

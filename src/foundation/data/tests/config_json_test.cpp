@@ -363,6 +363,24 @@ TEST(ConfigJsonTest, ProfilePrefsComposerVoiceModeLastRoundTripsAndDefaultsOff) 
   EXPECT_FALSE(loaded.composer_voice_mode_last);
 }
 
+TEST(ConfigJsonTest, ProfilePrefsAccountSyncPendingRoundTripsAndAbsentMeansNotPending) {
+  pbr::ProfilePreferences fresh;
+  EXPECT_FALSE(fresh.account_sync_pending);
+
+  pbr::ProfilePreferences edited;
+  edited.account_sync_pending = true;
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_TRUE(parsed.account_sync_pending);
+
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 16 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.account_sync_pending = true;
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_FALSE(loaded.account_sync_pending);
+}
+
 TEST(ConfigJsonTest, ProfilePrefsOldFileWithoutComposerVoiceModeReadsUnchanged) {
   auto old_file = pbr::TryParseObject(R"({ "schema_version": 16, "theme": "themes/base.rcss", "language": "en",
                                            "pin_digits": 6, "show_notifications": false })");
