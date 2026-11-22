@@ -91,6 +91,41 @@ TEST_F(ProfileUnlockGateTest, CancelWithoutVaultReturnsToIdentityFork) {
   EXPECT_FALSE(dismissed);
 }
 
+// Me → Storage → Reset my data wipes the profile in the running app. The first-frame decision does not run again, so
+// the reset asks the gate itself (Application::ResetActiveProfile): with no vault left that is the identity fork, the
+// same page a fresh install shows, never the PIN door.
+TEST_F(ProfileUnlockGateTest, AProfileResetInTheRunningAppShowsTheIdentityFork) {
+  ASSERT_TRUE(static_cast<bool>(engine_.Vault()->CreateWithDek("4321", ByteVector(kDataEncryptionKeySize, 0x52))));
+  bool ready = true;
+  int fork_shown = 0;
+  int unlock_shown = 0;
+  ProfileUnlockPorts ports;
+  ports.messaging_initialized = []() { return true; };
+  ports.messaging_ready = [&ready]() { return ready; };
+  ports.ui.show_identity_fork = [&]() { ++fork_shown; };
+  ports.ui.show_unlock = [&]() { ++unlock_shown; };
+  gate_.BindPorts(std::move(ports));
+  gate_.BeginDeferredUnlockAfterFirstPresent(); // an account in use
+  ASSERT_EQ(fork_shown, 0);
+
+  // The reset, as Application does it: secrets shut down, the directory deleted and made again, secrets re-initialized;
+  // messaging comes back initialized but not ready.
+  engine_.Shutdown();
+  std::filesystem::remove_all(dir_);
+  std::filesystem::create_directories(dir_);
+  ASSERT_TRUE(static_cast<bool>(engine_.Initialize(dir_.string())));
+  ready = false;
+  ASSERT_FALSE(engine_.HasVault());
+
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  EXPECT_EQ(fork_shown, 0) << "the first-frame decision runs once per process";
+
+  gate_.EnsureUnlocked(nullptr);
+  EXPECT_EQ(fork_shown, 1);
+  EXPECT_EQ(unlock_shown, 0);
+  EXPECT_FALSE(gate_.IsUnlockInProgress());
+}
+
 // "Restore with my recovery phrase" (multi-device M023): the phrase restored under the PIN chosen for this device,
 // then unlocked; no first-run wizard (as after a link). A phrase that finds no account leaves the vault absent.
 TEST_F(ProfileUnlockGateTest, APhraseRestoreUnlocksUnderThePinChosenHere) {
