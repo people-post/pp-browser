@@ -571,6 +571,45 @@ TEST_F(ChatWideLayoutTest, TheHoverBarShowsTheUsedReactionsBeforeThePlus) {
   }
 }
 
+// The floating menu is one raised card on the wide layout: large corners, a clear surface, and one line (with a little
+// air) above the destructive group only; the phone's own menus are left alone.
+TEST_F(ChatWideLayoutTest, TheFloatingMenuIsOneRaisedCardWithOneLineAboveTheDestructiveGroup) {
+  const std::string menu_rml =
+      "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+      Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
+      "</style></head><body><div class=\"shell-body shell-body--wide\"><div class=\"context-menu-layer\">"
+      "<div class=\"context-menu-panel\" id=\"context-menu-panel\" style=\"left: 40px; top: 40px;\">"
+      "<button class=\"context-menu-item\" id=\"m-plain\"><span "
+      "class=\"context-menu-item-label\">Search</span></button>"
+      "<button class=\"context-menu-item context-menu-item--danger\" id=\"m-danger1\"><span "
+      "class=\"context-menu-item-label\">Clear</span></button>"
+      "<button class=\"context-menu-item context-menu-item--danger\" id=\"m-danger2\"><span "
+      "class=\"context-menu-item-label\">Forget</span></button>"
+      "</div></div></div></body></rml>";
+  ui::ElementDocument* menu = context->LoadDocumentFromMemory(menu_rml);
+  ASSERT_NE(menu, nullptr);
+  menu->Show();
+  context->Update();
+  ui::Element* panel = menu->GetElementById("context-menu-panel");
+  ui::Element* plain = menu->GetElementById("m-plain");
+  ui::Element* danger1 = menu->GetElementById("m-danger1");
+  ui::Element* danger2 = menu->GetElementById("m-danger2");
+  ASSERT_TRUE(panel && plain && danger1 && danger2);
+  const float dp = context->GetDensityIndependentPixelRatio();
+  EXPECT_GE(panel->GetComputedValues().border_top_left_radius(), 16.f * dp - 0.5f) << "large corners";
+  const Box a = BoxOf(plain);
+  const Box b = BoxOf(danger1);
+  const Box c = BoxOf(danger2);
+  EXPECT_GE(b.top - a.bottom, 5.f * dp - 0.5f) << "air above the destructive group";
+  EXPECT_NEAR(c.top, b.bottom, 0.5f) << "no gap inside the group";
+  EXPECT_GT(danger1->GetComputedValues().border_top_width(), 0.f) << "a line above the group";
+  EXPECT_EQ(danger2->GetComputedValues().border_top_width(), 0.f) << "none inside it";
+  EXPECT_EQ(plain->GetComputedValues().border_top_width(), 0.f);
+  const ui::String shadow = panel->GetProperty<ui::String>("box-shadow");
+  EXPECT_FALSE(shadow.empty() || shadow == "none") << "a shadow under the card";
+  menu->Close();
+}
+
 TEST_F(ChatWideLayoutTest, TheChatPageRowsKeepTheirBindingsAndTheirOwnChat) {
   // chat_wide.rml is chat.rml plus the header's search button and the hover bar: every binding of the phone page is
   // still there, so the two pages stay one logic.

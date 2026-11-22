@@ -67,14 +67,41 @@
 .shell-body--wide #context-menu-panel {
   min-width: 190dp;
   padding: 6dp;
-  border-radius: 12dp;
+  border-radius: 16dp;
+}
+
+/* The status bar's pop-over (desktop): the same card. */
+.shell-body--wide .shell-statusbar-popover {
+  border-radius: 16dp;
+}
+
+/* The reaction row above a message: the same card, a pill. */
+.shell-body--wide .context-menu-quick {
+  padding: 4dp;
+  border-radius: 26dp;
+}
+
+/* The destructive row (Delete, Clear chat, Leave) is the one group the phone sheet also sets apart: a thin line and a
+   little air above it. */
+.shell-body--wide #context-menu-panel .context-menu-item--danger {
+  margin-top: 5dp;
+  border-top-width: 0.5dp;
+  border-radius: 0 0 8dp 8dp;
+}
+
+/* Only one line for the group: none above a second destructive row, none when it is the first row. */
+.shell-body--wide #context-menu-panel .context-menu-item--danger + .context-menu-item--danger,
+.shell-body--wide #context-menu-panel .context-menu-item--danger:first-child {
+  margin-top: 0;
+  border-top-width: 0;
+  border-radius: 8dp;
 }
 
 .shell-body--wide #context-menu-panel .context-menu-item {
   min-height: 34dp;
   gap: 10dp;
   padding: 0 12dp;
-  border-radius: 6dp;
+  border-radius: 8dp;
 }
 
 .shell-body--wide #context-menu-panel .context-menu-item-label {
@@ -535,7 +562,7 @@
   align-items: center;
   gap: 2dp;
   padding: 3dp;
-  border-radius: 12dp;
+  border-radius: 14dp;
 }
 
 .shell-body--wide .message-row-user .msg-bar {
