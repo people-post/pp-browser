@@ -47,6 +47,7 @@ Hard rules:
 | `foundation/platform/PlatformLogDefaults.*` | Startup root log level + emit floor defaults per platform |
 | `foundation/platform/PlatformStartupHints.*` | User-facing init failure hints (legacy English string_view) |
 | `foundation/platform/PlatformUserHints.*` | Catalog keys for OS tips (Local Network, firewall, mic); UI resolves with `Tr()`. Capabilities name the shared key (`common/Localized.h` `kPlatformNetworkHintKey`), which the app aliases to its platform's (`LocalizationService::SetKeyAlias`) |
+| `foundation/platform/os/OsRestart.*` + `OsRestart_{Linux,Darwin,Win32,Default}` | Starting the program again with the same arguments and environment (Reset my profile on desktop): portable argument capture and plan, per-OS process start (execve / posix_spawn / CreateProcessW); iOS and Android `_Default` say unsupported |
 | `foundation/platform/NetworkMonitor.*` + `NetworkMonitor_{Linux,Darwin,Win32,Android}` | OS network-change events (portable core de-duplicates; `NetworkMonitorBackend.h` private); Android side `PpNetworkMonitor.java` |
 | `lib/media/VideoCodec_*.cpp` | Platform HW H264 (`IVideoCodec` / `CreateOsVideoCodec`) |
 | `lib/media/AudioSession_*.{cpp,mm}` | VoIP audio session + capture-open policy |

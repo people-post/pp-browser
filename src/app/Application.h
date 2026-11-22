@@ -13,6 +13,7 @@
 #include "common/Module.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/product/ProductStack.h"
+#include "foundation/platform/os/OsRestart.h"
 #include "foundation/runtime/AppLifecycle.h"
 
 #include <atomic>
@@ -78,6 +79,11 @@ public:
   Roe<void> ResetActiveProfile();
   /** The desktop title strip: `PP · <nickname>` while an account with a name is open, `PP` otherwise. */
   void RefreshWindowTitle();
+  /**
+   * Set once by a successful Reset my profile on a desktop that can restart: main starts the program again after the
+   * normal shutdown (os::RestartProcess). Never set at startup, and not twice for one process.
+   */
+  std::optional<os::RestartPlan> TakeRestartPlan();
   /**
    * Wipe the active profile's chat data ({profile}/threads/: chats, outbox, peer sessions) and
    * reinitialize the hub; the account, keys, contacts and settings stay, and the vault stays open.
@@ -158,6 +164,7 @@ private:
   /** product_'s hub (non-owning; null once the stack is gone). */
   ConversationsHub* messaging_ = nullptr;
   std::unique_ptr<ConversationsFacade> messaging_facade_;
+  std::optional<os::RestartPlan> restart_plan_; // see TakeRestartPlan
   std::unique_ptr<ConfigApplyBridge> config_apply_;
   std::unique_ptr<ClientCompatController> client_compat_;
   std::optional<ClientCompatSupport> support_discovery_;

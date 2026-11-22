@@ -124,6 +124,9 @@
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/DeferredStartup.h"
 #include "gui/shell/WindowTitle.h"
+#include "gui/ProfileResetFollowUp.h"
+#include "foundation/platform/os/OsExecutablePath.h"
+#include "foundation/platform/os/OsRestart.h"
 #include "gui/FlowCoordinator.h"
 #include "gui/PinGateController.h"
 #include "gui/UnlockEnsurePorts.h"
@@ -603,6 +606,21 @@ Roe<void> Application::ResetActiveProfile() {
 
   chat_->OnProfileDataReset();
   contacts_->Refresh();
+  // Desktop: the whole process starts again on the empty profile (main does it after the normal shutdown), so nothing of
+  // the old account can be left in memory or on screen. A plan that cannot be made now (no program file, no arguments)
+  // keeps the app running: it cannot come back after its shutdown, so that is decided here, before it quits.
+  const os::RestartPlan restart_plan = os::PlanRestart(os::ExecutablePathImpl().string(), os::StartArguments());
+  if (ChooseResetFollowUp(/*reset_succeeded=*/true, os::RestartSupported(), restart_plan.Ready()) ==
+          ResetFollowUp::RestartProcess &&
+      !restart_plan_) {
+    log().warning << "profile reset: restarting the app on the empty profile";
+    restart_plan_ = restart_plan;
+    Backend::RequestExit();
+    return {};
+  }
+  if (os::RestartSupported()) {
+    log().warning << "profile reset: cannot restart the app (no program file or arguments); clearing in place";
+  }
   // A clean slate behind the first-run page, as a fresh install's first frame has it: the home tab with nothing open
   // over it, and nothing of the old account on the Me card (the lists read the empty stores above).
   // The old account's Me card, open contact and unsaved edits go first, so leaving the Me tab below flushes nothing of
@@ -618,6 +636,12 @@ Roe<void> Application::ResetActiveProfile() {
   // decision, BeginDeferredUnlockAfterFirstPresent, runs once per process).
   unlock_gate_->EnsureUnlocked(nullptr);
   return {};
+}
+
+std::optional<os::RestartPlan> Application::TakeRestartPlan() {
+  std::optional<os::RestartPlan> plan = std::move(restart_plan_);
+  restart_plan_.reset();
+  return plan;
 }
 
 void Application::RefreshWindowTitle() {
