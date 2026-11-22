@@ -2749,3 +2749,62 @@
 .shell-body--wide .chat-attachment-card--image .bubble-tail {
   z-index: 0;
 }
+
+/* ---- The send-preview page (picture_send_wide.rml): a card centred over the conversation, in the shell's frame ---- */
+.shell-body--wide .shell-frame--picture_send {
+  top: 6%;
+  bottom: 6%;
+  left: 12%;
+  right: 12%;
+  padding: 0;
+  border-radius: 16dp;
+}
+
+.shell-body--wide .picture-send--wide .ps-top {
+  justify-content: center;
+  padding: 0 56dp;
+}
+
+.shell-body--wide .picture-send--wide .ps-stage {
+  margin: 0 20dp;
+}
+
+.shell-body--wide .picture-send--wide .ps-bottom {
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+  padding: 12dp 20dp 20dp 20dp;
+}
+
+.shell-body--wide .picture-send--wide .ps-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-body--wide .picture-send--wide .ps-original {
+  flex-shrink: 0;
+  width: auto;
+  min-height: 44dp;
+  padding: 0 4dp;
+}
+
+.shell-body--wide .picture-send--wide .ps-cancel {
+  flex-shrink: 0;
+  height: 44dp;
+  margin: 0;
+  padding: 0 18dp;
+  border: 0;
+  border-radius: 22dp;
+  line-height: 44dp;
+  font-size: 16dp;
+  text-align: center;
+  cursor: pointer;
+}
+
+.shell-body--wide .picture-send--wide .ps-send {
+  flex-shrink: 0;
+  width: 140dp;
+  height: 44dp;
+  line-height: 44dp;
+  border-radius: 22dp;
+}

@@ -76,7 +76,7 @@
     <button class="prompt-attach-btn" type="button" data-if="show_attach_button && !voice_recording && !voice_finishing"
             data-event-click="attach_file()" data-attrif-disabled="attach_disabled" data-class-prompt-entry-off="attach_disabled"
             title="{{i18n:chat.attach_file}}">
-      <svg src="../icons/v2/paperclip.svg" width="20" height="20"></svg>
+      <svg src="../icons/v2/plus-bold.svg" width="20" height="20"></svg>
     </button>
     <button class="prompt-emoji-btn" type="button" data-if="!voice_recording && !voice_finishing" data-event-click="open_emoji_insert()"
             data-attrif-disabled="composer_input_disabled" title="{{i18n:chat.insert_emoji}}">

@@ -57,7 +57,7 @@ void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callba
 }
 
 void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback callback,
-                                std::function<void(const std::string& name)> /*on_preparing*/, const int /*max_count*/,
+                                std::function<void(const std::string& name)> /*on_preparing*/, const int max_count,
                                 NativePhotoItemCallback /*on_item*/) {
   if (!callback) {
     return;
@@ -67,7 +67,9 @@ void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback cal
       {"All files", "*"},
   };
   auto* state = new DialogState{.callback = std::move(callback)};
-  SDL_ShowOpenFileDialog(OnDialogComplete, state, window, filters, 2, nullptr, false);
+  // More than one asked for (the desktop's send-preview page takes up to nine): the dialog lets several be chosen and
+  // the callback gets all their paths, in the order the system lists them.
+  SDL_ShowOpenFileDialog(OnDialogComplete, state, window, filters, 2, nullptr, max_count > 1);
 }
 
 // The dialog returns the user's own file; only what the camera wrote under CaptureScratchDir() (Android's cache

@@ -2968,6 +2968,23 @@ void ChatController::OnAttachFile(ui::Event* ev) {
             });
         return;
       }
+      if (!Platform::IsMobile()) {
+        // The computer: the system dialog, several at once, into the same send-preview page the phone uses.
+        picks_.EndCurrent(); // the page takes over from the pick's wait
+        RefreshPickOverlay();
+        ShowOpenPhotoLibraryDialog(
+            Backend::GetWindow(),
+            [this, thread_id](std::vector<std::string> paths) {
+              AppRuntime::PostUI([this, thread_id, paths = std::move(paths)]() mutable {
+                if (paths.empty() || thread_id != ActiveThreadId()) {
+                  return; // cancelled, or its chat is no longer the open one
+                }
+                OpenPictureSendWithPaths(std::move(paths));
+              });
+            },
+            nullptr, static_cast<int>(PictureSendQueue::kMaxItems));
+        return;
+      }
       ShowOpenPhotoLibraryDialog(Backend::GetWindow(), picked_picture(serial), [this, serial](const std::string& name) {
         AppRuntime::PostUI([this, serial, name]() {
           if (!picks_.IsCurrent(serial)) {
@@ -2995,6 +3012,21 @@ void ChatController::OnAttachFile(ui::Event* ev) {
         AgentTurnController::HomeAttachActions([this]() { OnAttachCapture(nullptr); }, pick_photo_or_video(),
                                                pick_file()),
         {}, /*above=*/true);
+    return;
+  }
+  // The wide layout (a computer, an iPad window): the same "+" and the same choices as the phone's card, those that apply
+  // here: the camera only where the composer offers one (ShowCaptureEntry), Photos and videos, File.
+  if (ev && ChromeSnapshot().layout_mode == LayoutMode::Expanded) {
+    std::vector<ContextMenuAction> wide_actions;
+    if (chat_.show_capture) {
+      wide_actions.push_back({"home_attach_camera", Tr("home.attach.camera"), nullptr,
+                              [this]() { OnAttachCapture(nullptr); }, "../icons/v2/camera.svg"});
+    }
+    wide_actions.push_back(
+        {"home_attach_photo", Tr("home.attach.photo"), nullptr, pick_photo_or_video(), "../icons/v2/photo.svg"});
+    wide_actions.push_back({"home_attach_file", Tr("chat.attach.file"), nullptr, pick_file(), "../icons/v2/file.svg"});
+    ContextMenuHost::Instance().ShowActionsPopoverLeftAligned(ev->GetCurrentElement(), std::move(wide_actions), {},
+                                                              /*above=*/true);
     return;
   }
   // A phone keeps photos and files apart; the desktop dialog shows both at once, so there a picture and a file
@@ -3682,6 +3714,28 @@ void ChatController::OnPhotoBatchItem(const uint64_t pick_serial, const size_t /
     }
   }
   SettlePictureQueue();
+}
+
+void ChatController::OpenPictureSendWithPaths(std::vector<std::string> paths) {
+  if (!messaging_ready_ || !facade_ || paths.empty() || chat_.composer_input_disabled || AttachmentBusy() ||
+      chat_.editing_message) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  if (thread_id.empty() || InAiComposerContext()) {
+    return;
+  }
+  if (paths.size() > PictureSendQueue::kMaxItems) {
+    paths.resize(PictureSendQueue::kMaxItems);
+  }
+  const uint64_t serial = ArmPick();
+  photo_batch_ = PhotoBatch{.pick_serial = serial, .thread_id = thread_id, .session = messaging_session_};
+  picture_picker_done_ms_ = 0;
+  const size_t total = paths.size();
+  for (size_t index = 0; index < total; ++index) {
+    OnPhotoBatchItem(serial, index, total, std::move(paths[index]));
+  }
+  OnPhotoBatchDone(serial);
 }
 
 void ChatController::OnPhotoBatchDone(const uint64_t pick_serial) {
@@ -6322,6 +6376,29 @@ bool ChatController::Setup(ui::Context* context) {
   };
   register_enter_send(ui::Input::KI_RETURN);
   register_enter_send(ui::Input::KI_NUMPADENTER);
+  // The send-preview page on the wide layout: Enter in its text sends the pictures, Shift+Enter is a new line (a phone's
+  // Enter key stays a new line there).
+  for (const ui::Input::KeyIdentifier key : {ui::Input::KI_RETURN, ui::Input::KI_NUMPADENTER}) {
+    if (!input_) {
+      break;
+    }
+    input_->Register(KeyBinding{
+        .key = key,
+        .forbidden_modifiers = ui::Input::KM_SHIFT,
+        .when =
+            [this](ui::Context* ctx) {
+              ui::Element* focus = ctx ? ctx->GetFocusElement() : nullptr;
+              return focus && focus->GetId() == "ps-text" && picture_send_.IsOpen() &&
+                     ChromeSnapshot().layout_mode == LayoutMode::Expanded;
+            },
+        .action =
+            [this]() {
+              picture_send_.OnSend();
+              return false;
+            },
+        .priority = 50,
+    });
+  }
   RegisterMentionPickerKeys();
   // Enter in the chat's search box: the next older hit (the query just typed is searched first).
   for (const ui::Input::KeyIdentifier key : {ui::Input::KI_RETURN, ui::Input::KI_NUMPADENTER}) {

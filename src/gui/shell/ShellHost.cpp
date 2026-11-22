@@ -2966,7 +2966,11 @@ void ShellHost::MountPaneBodies() {
     if (!target) {
       continue;
     }
-    const std::string body = ViewCatalog::LoadBody(overlay.rml_path);
+    // The send-preview page has its own layout for the wide window (a centred card); same model, same events.
+    const std::string body = ViewCatalog::LoadBody(
+        overlay.key == "picture_send"
+            ? ViewCatalog::KeyForLayout(overlay.rml_path, state_.layout_mode == LayoutMode::Expanded)
+            : overlay.rml_path);
     if (!body.empty()) {
       RmlMount::MountInner(target, body);
     }
