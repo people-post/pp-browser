@@ -14,9 +14,10 @@
 namespace pbr {
 
 /**
- * A tap on the red mark of a message we sent (#210 step 2, DEV/PLAN-message-resend.md): an own text in a public chat
- * (1:1 or group) whose automatic sending has completely stopped is sent again as a new message, and the unsent row
- * goes; anything else only says why. Nothing in delivery changes: the new message is an ordinary one.
+ * A tap on the red mark of a message we sent (#210 step 2, DEV/PLAN-message-resend.md; B236): an own text in a public
+ * chat (1:1 or group) whose automatic sending has completely stopped is sent again as a new message, and the unsent row
+ * goes; a picture, file, voice message, card or payment is sent again as itself (the same message id: a recipient that
+ * has it keeps it once); anything else only says why.
  */
 struct SendMarkTap {
   enum class Kind {
@@ -30,6 +31,11 @@ struct SendMarkTap {
     SendFailed,
     /** Sent as `new_id`; the old row is gone (`old_removed`), or kept because it was delivered meanwhile. */
     Resent,
+    /**
+     * To be sent again as itself — a picture, file, voice message, card or payment (B236): decided only; the caller
+     * starts it (ConversationsFacade::ResendMessageAsync), which may still find its file gone from the server.
+     */
+    ResendSameMessage,
     /** Sent again earlier, but its old row could not be taken away then, nor now: nothing is sent a third time. */
     RemovalFailed,
     /**
@@ -45,8 +51,6 @@ struct SendMarkTap {
     None,
     /** A private (e2e) chat, or an "@ai++" question shared with the peer. */
     ThisKind,
-    /** A picture, file, voice message or card (it would be uploaded again). */
-    NotText,
   };
   Kind kind = Kind::Nothing;
   Refusal refusal = Refusal::None;
@@ -95,7 +99,10 @@ struct SendMarkTapFacts {
   bool offer_fix = true;
 };
 
-/** The decision alone: Nothing, StillTrying, ReasonOnly, or — kind Resent, nothing done yet — that it is re-sent. */
+/**
+ * The decision alone: Nothing, StillTrying, ReasonOnly, ResendSameMessage, or — kind Resent, nothing done yet — that it
+ * is re-sent.
+ */
 SendMarkTap DecideSendMarkTap(const SendMarkTapFacts& facts);
 
 /** What re-sending reads and does: the facade's, or a test's. */

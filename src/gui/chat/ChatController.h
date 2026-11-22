@@ -968,11 +968,14 @@ private:
   void RedrawSendMarks();
   /**
    * A tap on a message's red mark (ChatPresenter::TapSendMark): our text sent again as a new message once its
-   * automatic sending has stopped, else the bottom pill says why (still trying, or why it did not go out).
+   * automatic sending has stopped, a picture / file / voice / card sent again as itself (B236), else the bottom pill
+   * says why (still trying, or why it did not go out).
    */
   void OnSendMarkTapped(const std::string& message_id);
   /** What a tap (or a resend after a card update) came to, told as the composer says it. */
   void ApplySendMarkTap(const std::string& thread_id, const std::string& message_id, const SendMarkTap& tap);
+  /** A picture / file / voice / card message sent again as itself after a tap (ConversationsFacade::ResendMessageAsync). */
+  void ResendSameMessage(const std::string& thread_id, const std::string& message_id);
   /**
    * Step 0 of DEV/PLAN-chat-picture-previews.md, measurement only. Opening a chat (FinalizeThreadDisplay) arms
    * `armed`; the next display sync records its rows, pictures and build time and sets `layout_pending`; the next

@@ -50,6 +50,7 @@
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "feature/conversations/QueuedResend.h"
 #include "feature/conversations/RelayRegistrationSignal.h"
 #include "lib/net/BlobClient.h"
 #include "lib/net/BlobQuota.h"
@@ -87,6 +88,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <unordered_set>
 #include "common/PbrCompat.h"
@@ -448,6 +450,14 @@ public:
    * as a new edit with the same words and the same send time, and the unsent one goes. Returns the new edit's row.
    */
   Roe<ThreadMessage> ResendEdit(const std::string& thread_id, const std::string& message_id);
+  /**
+   * The red mark of our message `message_id` tapped (B236): it is sent again as itself
+   * (MeshDeliveryOrchestrator::ResendStoredMessage), unless what it carries is known to be gone from the server (its
+   * share link past the relay's file lifetime, or missing from our files there). Off the caller's thread; `on_done`
+   * on a worker. An error: not sent (not one that can be, or its send failed).
+   */
+  void ResendMessageAsync(const std::string& thread_id, const std::string& message_id,
+                          std::function<void(Roe<StoredResendAnswer>)> on_done);
   /**
    * Send prepared bytes. Checked here, before anything is encrypted: the size against CurrentAttachmentLimits(),
    * and the send pace (AttachmentLimits::send_max_per_minute).
@@ -1000,6 +1010,9 @@ private:
    * Registration, PushDevices, ClientCompat and BlobClient (copies, under clients_mu_).
    */
   mutable std::mutex clients_mu_;
+  /** Messages whose tap-resend (ResendMessageAsync) is being started: a second tap meanwhile sends nothing. */
+  std::mutex tap_resends_mu_;
+  std::set<std::string> tap_resends_;
   std::shared_ptr<IRegistrationClient> registration_;
   std::shared_ptr<IPushDeviceClient> push_devices_;
   std::shared_ptr<IClientCompatClient> client_compat_;
