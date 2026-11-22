@@ -89,10 +89,10 @@ TEST(AccountSyncPageTest, TheBothModelsBindTheTwoFlags) {
 TEST(AccountSyncPageTest, TheLinesAreTranslatedAndPlain) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(Tr("account_sync.pending"), "正在同步你的联系人…");
+  EXPECT_EQ(Tr("account_sync.pending"), "正在同步你的联系人和群…");
   EXPECT_EQ(Tr("account_sync.delayed"), "同步还没完成，稍后会自动再试。");
   LocalizationService::Instance().SetPreferredLanguage("en");
-  EXPECT_EQ(Tr("account_sync.pending"), "Syncing your contacts…");
+  EXPECT_EQ(Tr("account_sync.pending"), "Syncing your contacts and groups…");
   EXPECT_EQ(Tr("account_sync.delayed"), "Still syncing. It will try again on its own.");
 }
 

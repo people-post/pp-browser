@@ -167,6 +167,80 @@ TEST_F(AccountLockerWorkflowTest, GrantsGoIntoTheLockerAndAnotherDeviceTakesThem
       << "a device holding none does not drop it from the locker";
 }
 
+AccountStateGroup LiveGroup(const std::string& id) {
+  AccountStateGroup group;
+  group.group_id = id;
+  group.title = "team";
+  group.owner_identity = "account:bob";
+  group.roster_epoch = 3;
+  group.members = {{"account:bob", "owner", 1, "c1"}, {"account:alice", "member", 2, ""}};
+  group.roster_statement_json = "{\"statement\":true}";
+  return group;
+}
+
+AccountStateGroup LeftGroup(const std::string& id) {
+  AccountStateGroup group;
+  group.group_id = id;
+  group.owner_identity = "account:bob";
+  group.roster_epoch = 4;
+  group.left = true;
+  return group;
+}
+
+// A linked device's first sync brings the account's groups, as a phrase restore does: live ones with their rosters and
+// the owner-signed statement; a tombstone is skipped; a second sync takes nothing it already has.
+TEST_F(AccountLockerWorkflowTest, ALinkedDevicesFirstSyncTakesTheGroupsAndALaterOneNoneAgain) {
+  AccountLockerWorkflow holder(*identity_, *contacts_,
+                               AccountLockerWorkflow::Sources{.groups = [&]() -> Roe<std::vector<AccountStateGroup>> {
+                                 return std::vector<AccountStateGroup>{LiveGroup("g1"), LeftGroup("g2")};
+                               }});
+  holder.SetClient(provider_);
+  ASSERT_TRUE(holder.Publish());
+
+  std::vector<AccountStateGroup> local; // what the linked device holds: nothing yet
+  std::vector<std::vector<AccountStateGroup>> taken;
+  AccountLockerWorkflow linked(
+      *identity_, *contacts_,
+      AccountLockerWorkflow::Sources{.groups = [&]() -> Roe<std::vector<AccountStateGroup>> { return local; },
+                                     .take_groups =
+                                         [&](const std::vector<AccountStateGroup>& groups) {
+                                           taken.push_back(groups);
+                                           local.insert(local.end(), groups.begin(),
+                                                        groups.end()); // the hub recreates them
+                                         }});
+  linked.SetClient(provider_);
+  ASSERT_TRUE(linked.Publish());
+  ASSERT_EQ(taken.size(), 1u);
+  ASSERT_EQ(taken[0].size(), 1u) << "the tombstone is not recreated";
+  EXPECT_EQ(taken[0][0].group_id, "g1");
+  EXPECT_EQ(taken[0][0].members.size(), 2u) << "with its roster";
+  EXPECT_EQ(taken[0][0].roster_statement_json, "{\"statement\":true}") << "and the owner-signed statement";
+
+  ASSERT_TRUE(linked.Publish());
+  EXPECT_EQ(taken.size(), 1u) << "a second sync recreates nothing: no duplicates";
+}
+
+// A group this device has left (its own tombstone) is not brought back by a locker copy that still lists it live.
+TEST_F(AccountLockerWorkflowTest, AGroupTheDeviceLeftStaysGone) {
+  AccountLockerWorkflow holder(*identity_, *contacts_,
+                               AccountLockerWorkflow::Sources{.groups = [&]() -> Roe<std::vector<AccountStateGroup>> {
+                                 return std::vector<AccountStateGroup>{LiveGroup("g1")};
+                               }});
+  holder.SetClient(provider_);
+  ASSERT_TRUE(holder.Publish());
+
+  int taken = 0;
+  AccountLockerWorkflow other(
+      *identity_, *contacts_,
+      AccountLockerWorkflow::Sources{.groups = [&]() -> Roe<std::vector<AccountStateGroup>> {
+                                       return std::vector<AccountStateGroup>{LeftGroup("g1")};
+                                     },
+                                     .take_groups = [&](const std::vector<AccountStateGroup>&) { ++taken; }});
+  other.SetClient(provider_);
+  ASSERT_TRUE(other.Publish());
+  EXPECT_EQ(taken, 0);
+}
+
 // X12: the relay's 409 names the version it holds; the next write goes above it instead of meeting the 409 again.
 TEST_F(AccountLockerWorkflowTest, ANotNewerAnswerNamingTheStoredVersionPutsTheNextWriteAboveIt) {
   ASSERT_TRUE(workflow_->Publish());

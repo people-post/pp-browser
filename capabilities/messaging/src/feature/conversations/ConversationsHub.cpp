@@ -1634,6 +1634,29 @@ AccountLockerWorkflow::Sources ConversationsHub::LockerSources() {
               }
             }
           },
+      .take_groups =
+          [this](const std::vector<AccountStateGroup>& groups) {
+            if (!group_membership_) {
+              return;
+            }
+            std::vector<std::string> restored;
+            for (const AccountStateGroup& group : groups) {
+              if (auto recreated = group_membership_->RestoreGroup(group); recreated) {
+                restored.push_back(group.group_id);
+              } else {
+                log().warning << "Group not taken from the locker group=" << group.group_id << ": "
+                              << recreated.error().message;
+              }
+            }
+            // Their members are checked (the roster statement is verified) and their message flow starts from now.
+            AppRuntime::PostWorkerNormal([this, restored]() {
+              for (const std::string& group_id : restored) {
+                if (group_membership_ && !shutdown_requested_.load(std::memory_order_acquire)) {
+                  (void)group_membership_->StartRosterCheck(group_id);
+                }
+              }
+            });
+          },
       .grants = [this]() -> Roe<std::vector<AccountStateGrant>> {
         if (!mesh_messaging_) {
           return std::vector<AccountStateGrant>{};
