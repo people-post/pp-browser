@@ -112,8 +112,7 @@ struct Side {
   RelayEnvelope Seal(const ThreadMessage& message, const Side& peer, const bool resend) {
     SendRelayOptions options;
     if (resend) {
-      options = copy_ask::ResendOptions(message);
-      options.wake.reset();
+      options = copy_ask::ResendOptions(message); // wakes nobody (P022)
     }
     const AccountCardDevice device = peer.keys.device.Entry();
     const PeerSessionKey pair = GroupE2ePayloadCodec::PairTargetKey(peer.keys.account_id, device.peer_id);
@@ -485,6 +484,7 @@ TEST_F(StoredResendTest, AFailedMessageGoesAgainAsItselfAndIsMarkedSent) {
   Drain();
   ASSERT_EQ(relay_->SentWithId("m1"), 1u) << "the same message id";
   EXPECT_EQ(relay_->Sent().front().recipient_account_id.value_or(""), bob_.account_id);
+  EXPECT_TRUE(relay_->Sent().front().relay_wake_hint.empty()) << "P022: a re-sent copy wakes nobody";
   EXPECT_EQ(Delivery(chat_.id, "m1"), MessageDelivery::Relayed);
   auto again = mesh_->ResendStoredMessage(chat_.id, "m1");
   EXPECT_FALSE(again) << "delivered: never sent again";
@@ -570,6 +570,9 @@ TEST_F(StoredResendTest, AfterAStartTheQueuedRowsShowQueuedThenGoOnceEvenWithATa
   relay_->Release();
   Drain();
   EXPECT_EQ(relay_->SentWithId("q1"), 1u) << "the tap and the resume: one copy";
+  for (const RelayEnvelope& envelope : relay_->Sent()) {
+    EXPECT_TRUE(envelope.relay_wake_hint.empty()) << "the start's resend wakes nobody either (P022)";
+  }
   EXPECT_EQ(relay_->SentWithId("q2"), 1u);
   EXPECT_EQ(relay_->SentWithId("old"), 0u);
   EXPECT_EQ(relay_->SentWithId("failed-by-old-app"), 0u);

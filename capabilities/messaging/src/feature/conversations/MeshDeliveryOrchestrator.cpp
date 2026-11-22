@@ -2291,10 +2291,10 @@ Roe<bool> MeshDeliveryOrchestrator::ResendStoredMessage(const std::string& threa
     return Error("Already delivered");
   }
   message.delivery = MessageDelivery::Pending;
-  // What the stored row's send carried (its content beyond the text), as a copy asked for is sealed again; it wakes
-  // the recipient as a first send does (it may well be the first they hear of it).
+  // What the stored row's send carried (its content beyond the text), as a copy asked for is sealed again. It wakes
+  // nobody (P022: a re-sent copy does not wake): a recipient that has it would get a second "new message" alert; one
+  // that does not gets it at its next poll, when the app opens, or with the next message that wakes it.
   SendRelayOptions options = copy_ask::ResendOptions(message);
-  options.wake.reset();
   options.update_preview = false;
   const Roe<void> dispatched = (*thread)->kind == ThreadKind::Group
                                    ? DispatchGroup(**thread, message, message.text, options, members, *identity)
