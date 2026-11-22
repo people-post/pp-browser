@@ -21,7 +21,9 @@
 #include <chrono>
 #include <condition_variable>
 #include <functional>
+#include <map>
 #include <memory>
+#include <optional>
 #include <mutex>
 #include <set>
 #include <thread>
@@ -679,12 +681,12 @@ TEST_F(DeliveryOutboxTest, CancelOfALaterItemInARetrySkipsItAndLeavesTheOthers) 
   auto outbox = MakeOutbox(relay);
   outbox->Send(ToRelay("t1", "m1"));
   Drain();
-  outbox->Send(ToRelay("t1", "m2"));
+  outbox->Send(ToRelay("t2", "m2")); // another chat: within one chat m2 would wait behind m1, untried (B236)
   Drain();
   ASSERT_EQ(relay.Sent(), (std::vector<std::string>{"m1", "m2"}));
   relay.Hold();
   outbox->Retry();
-  ASSERT_TRUE(relay.WaitForSends(3)); // m1's retry, m2 behind it
+  ASSERT_TRUE(relay.WaitForSends(3)); // m1's retry, m2 behind it in the batch
   outbox->Cancel("m2");
   relay.Release(/*fail=*/true);
   Drain();
@@ -1107,6 +1109,173 @@ TEST_F(OutboxRowTest, OneCopyFailingWhileAnotherIsTriedLeavesTheRowQueued) {
       EXPECT_EQ(FailedReasons().size(), 1u) << "told once, not per copy";
     }
   }
+}
+
+// --- B236: a chat's messages arrive in the order they were sent ---------------------------------------------------
+
+/**
+ * A relay that records each send in order; a message named in `refusals` is refused (with its error) that many times
+ * first; while held, sends wait.
+ */
+class ScriptedRelay final : public IRelayClient {
+public:
+  Roe<void> Send(const RelayEnvelope& envelope) override {
+    std::unique_lock lock(mu_);
+    sent_.push_back(envelope.message_id);
+    released_.wait(lock, [this] { return !held_; });
+    auto refusal = refusals_.find(envelope.message_id);
+    if (refusal != refusals_.end() && refusal->second.first > 0) {
+      --refusal->second.first;
+      return refusal->second.second;
+    }
+    if (all_refused_) {
+      return *all_refused_;
+    }
+    return {};
+  }
+  void Refuse(const std::string& id, int times, Error error) {
+    std::lock_guard lock(mu_);
+    refusals_[id] = {times, std::move(error)};
+  }
+  void RefuseAll(std::optional<Error> error) {
+    std::lock_guard lock(mu_);
+    all_refused_ = std::move(error);
+  }
+  void Hold(const bool held) {
+    std::lock_guard lock(mu_);
+    held_ = held;
+    released_.notify_all();
+  }
+  std::vector<std::string> Sent() {
+    std::lock_guard lock(mu_);
+    return sent_;
+  }
+  /** The ids in the order they were last sent, each once (what the recipient stores, in its order of arrival). */
+  std::vector<std::string> Accepted() {
+    std::lock_guard lock(mu_);
+    return accepted_order_;
+  }
+  void NoteAccepted(const std::string& id) {
+    std::lock_guard lock(mu_);
+    accepted_order_.push_back(id);
+  }
+  Roe<RelayPollResult> PollInbox(const std::string&, const std::string&) override { return Error("unused"); }
+  Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override { return Error("unused"); }
+  Roe<RelayDeleteResult> ClearInbox(const std::string&, const std::string&) override { return Error("unused"); }
+  Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest&) override { return Error("unused"); }
+
+private:
+  std::mutex mu_;
+  std::condition_variable released_;
+  bool held_ = false;
+  std::optional<Error> all_refused_;
+  std::map<std::string, std::pair<int, Error>> refusals_;
+  std::vector<std::string> sent_;
+  std::vector<std::string> accepted_order_;
+};
+
+class OutboxOrderTest : public DeliveryOutboxTest {
+protected:
+  test::TestOwner<DeliveryOutbox> MakeOrderedOutbox(ScriptedRelay& relay) {
+    test::TestOwner<DeliveryOutbox> outbox([]() -> IDirectMessageClient* { return nullptr; });
+    outbox->SetRelayClient(&relay);
+    outbox->SetOnOutcome([this, &relay](const DeliveryOutcome& outcome) {
+      if (outcome.ok) {
+        relay.NoteAccepted(outcome.message_id);
+      }
+      std::lock_guard lock(mu_);
+      outcomes_.push_back(outcome);
+    });
+    return outbox;
+  }
+  static std::vector<std::string> Ids(const std::string& prefix, int n) {
+    std::vector<std::string> ids;
+    for (int i = 1; i <= n; ++i) {
+      ids.push_back(prefix + std::to_string(i));
+    }
+    return ids;
+  }
+};
+
+TEST_F(OutboxOrderTest, FiveMessagesHeldByTheStrangerQuotaGoInTheOrderSentOnceTheGrantComes) {
+  ScriptedRelay relay;
+  auto outbox = MakeOrderedOutbox(relay);
+  relay.RefuseAll(AppError::Auth(Err::Auth::StrangerQuota, "stranger_quota_exceeded"));
+  for (const std::string& id : Ids("m", 5)) {
+    outbox->Send(ToRelay("t1", id));
+  }
+  Drain();
+  EXPECT_EQ(relay.Sent(), (std::vector<std::string>{"m1"})) << "the later ones wait behind the first, untried";
+  for (const std::string& id : Ids("m", 5)) {
+    EXPECT_TRUE(outbox->SendStartedMs(id)) << id << " still queued (a clock)";
+  }
+  relay.RefuseAll(std::nullopt);
+  outbox->ReleaseHeldFor("account:bob"); // their grant
+  Drain();
+  EXPECT_EQ(relay.Accepted(), Ids("m", 5)) << "accepted, so stored by the recipient, in the order sent";
+}
+
+TEST_F(OutboxOrderTest, ARetryableFailureOfTheFirstKeepsTheOthersWaitingUntilItIsThrough) {
+  ScriptedRelay relay;
+  auto outbox = MakeOrderedOutbox(relay);
+  relay.Refuse("m1", 2, Error("relay unreachable")); // its first send and its first retry
+  for (const std::string& id : Ids("m", 5)) {
+    outbox->Send(ToRelay("t1", id));
+  }
+  Drain();
+  outbox->Retry();
+  Drain();
+  EXPECT_EQ(relay.Sent(), (std::vector<std::string>{"m1", "m1"})) << "m2..m5 never overtook it";
+  EXPECT_TRUE(relay.Accepted().empty());
+  outbox->Retry();
+  Drain();
+  EXPECT_EQ(relay.Accepted(), Ids("m", 5));
+}
+
+TEST_F(OutboxOrderTest, AFinalFailureOfTheFirstLetsTheOthersGoInOrder) {
+  ScriptedRelay relay;
+  auto outbox = MakeOrderedOutbox(relay);
+  relay.Hold(true);
+  relay.Refuse("m1", 1, AppError::Network(Err::Network::HttpRejected, "400"));
+  for (const std::string& id : Ids("m", 5)) {
+    outbox->Send(ToRelay("t1", id));
+  }
+  relay.Hold(false);
+  ASSERT_TRUE(WaitFor([&] { return relay.Accepted().size() == 4u; }, std::chrono::seconds(5)))
+      << "the first's end sends the rest at once, no retry needed";
+  EXPECT_EQ(relay.Accepted(), (std::vector<std::string>{"m2", "m3", "m4", "m5"}));
+  Drain();
+  EXPECT_FALSE(outbox->SendStartedMs("m1"));
+}
+
+TEST_F(OutboxOrderTest, AnotherChatIsNotHeldBackByThisOnesQueue) {
+  ScriptedRelay relay;
+  auto outbox = MakeOrderedOutbox(relay);
+  relay.Refuse("a1", 100, AppError::Auth(Err::Auth::StrangerQuota, "stranger_quota_exceeded"));
+  outbox->Send(ToRelay("chat-a", "a1"));
+  outbox->Send(ToRelay("chat-a", "a2"));
+  Drain();
+  outbox->Send(ToRelay("chat-b", "b1"));
+  outbox->Send(ToRelay("chat-b", "b2"));
+  Drain();
+  outbox->Retry(); // a1 not due yet: chat-a waits, chat-b is not touched by that
+  Drain();
+  EXPECT_EQ(relay.Accepted(), (std::vector<std::string>{"b1", "b2"}));
+  EXPECT_TRUE(outbox->SendStartedMs("a1"));
+  EXPECT_TRUE(outbox->SendStartedMs("a2"));
+}
+
+TEST_F(OutboxOrderTest, ALaterMessageSentWhileTheFirstIsOnItsWayGoesRightAfterIt) {
+  ScriptedRelay relay;
+  auto outbox = MakeOrderedOutbox(relay);
+  relay.Hold(true);
+  outbox->Send(ToRelay("t1", "m1"));
+  ASSERT_TRUE(WaitFor([&] { return relay.Sent().size() == 1u; }, std::chrono::seconds(5)));
+  outbox->Send(ToRelay("t1", "m2"));
+  outbox->Send(ToRelay("t1", "m3"));
+  relay.Hold(false);
+  ASSERT_TRUE(WaitFor([&] { return relay.Accepted().size() == 3u; }, std::chrono::seconds(5)));
+  EXPECT_EQ(relay.Accepted(), Ids("m", 3));
 }
 
 } // namespace

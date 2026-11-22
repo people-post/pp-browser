@@ -17,6 +17,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -102,8 +103,12 @@ public:
   void SetThreadPaused(std::function<bool(const std::string& thread_id)> paused) { paused_ = std::move(paused); }
 
   void Send(DeliveryRequest request);
-  /** Send what is queued again (when the inbox is synced: the relay is likely reachable). */
-  void Retry();
+  /**
+   * Send what is queued again (when the inbox is synced: the relay is likely reachable) — only `only_thread`'s when
+   * named. In the order the messages were first sent, one after another per 1:1 chat (or group member): an item not
+   * due, or failing and queued again, holds back the later ones of its chat (B236: they arrive in the order sent).
+   */
+  void Retry(const std::string& only_thread = {});
   /**
    * `recipient`'s grant to us just arrived: what its stranger quota held back is due now (a contact's send) — the
    * control-lane retries first, in the order they were refused (a call invite before its later `call_ended`), then
@@ -168,7 +173,13 @@ private:
   /** A request's last outcome: it leaves `active_` first, then is reported as Report does. */
   void Finish(DeliveryOutcome outcome);
   /** A request starts (Send): its serial. The control lane (no thread) is not tracked. */
-  uint64_t BeginActive(const std::string& thread_id, const std::string& message_id);
+  uint64_t BeginActive(const std::string& thread_id, const std::string& message_id, bool group = false);
+  /** A 1:1 message of `thread_id` sent earlier than `message_id` is still on its way or queued. Holds `mutex_`. */
+  bool WaitsBehindEarlierLocked(const std::string& thread_id, const std::string& message_id) const;
+  /** The lane an item keeps its order in: its 1:1 chat, or its group member in a group. */
+  static std::string OrderLane(const Pending& item);
+  /** A retry batch ended: its lanes free, what it queued again back in the queue, waiting followers sent. */
+  void EndBatch(const std::vector<std::string>& lanes, std::vector<Pending> still_pending);
   /** One request of `message_id` ended (with its last, the record of a cancel). Holds `mutex_`. */
   void EndActiveLocked(const std::string& message_id);
   /** A transcript row's request cancelled after it was sent (Cancel). Holds `mutex_`. */
@@ -208,12 +219,18 @@ private:
   struct ActiveSend {
     int64_t started_ms = 0;
     int requests = 0;
+    /** Its chat, and its first request's serial (its place in the chat's order); a group's message keeps none. */
+    std::string thread_id;
+    uint64_t first_serial = 0;
+    bool group = false;
   };
 
   mutable std::mutex mutex_;
   std::vector<Pending> queue_;
   /** By message id (SendStartedMs). */
   std::unordered_map<std::string, ActiveSend> active_;
+  /** Order lanes a retry batch is sending now: another batch leaves them alone (B236). */
+  std::unordered_set<std::string> batch_lanes_;
   /**
    * A cancelled message's requests up to this serial: none of them starts another attempt. Only while the message is
    * in `active_` (it goes with its last request), so it holds no more ids than `active_` does.

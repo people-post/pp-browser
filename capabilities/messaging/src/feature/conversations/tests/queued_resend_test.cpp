@@ -800,5 +800,31 @@ TEST_F(StoredResendTest, AnotherRefusalReasonDoesNotHoldTheChat) {
   EXPECT_EQ(HeldLines(store_, chat_.id), 0u);
 }
 
+// B236: after a restart the queued messages of a chat go again in the order they were written — whatever order the
+// store lists them in — and, refused for the stranger quota, still in that order once the grant comes.
+TEST_F(StoredResendTest, AfterARestartAChatsQueuedMessagesGoInTheOrderWritten) {
+  const std::vector<std::string> written = {"w1", "w2", "w3", "w4", "w5"};
+  // Stored out of order (the outbox lists by when each record was last written).
+  for (const int i : {3, 0, 4, 1, 2}) {
+    Add(chat_.id, written[static_cast<size_t>(i)], MessageDelivery::Pending, 60'000 - i * 1000);
+  }
+  relay_->SetRefusal(kStrangerQuota);
+  mesh_->ResumeQueuedSends();
+  Drain();
+  relay_->SetRefusal(std::nullopt);
+  const size_t refused = relay_->Sent().size();
+  mesh_->OnGrantReceived(bob_.account_id);
+  Drain();
+  std::vector<std::string> accepted;
+  const std::vector<RelayEnvelope> sent = relay_->Sent();
+  for (size_t i = refused; i < sent.size(); ++i) {
+    accepted.push_back(sent[i].message_id);
+  }
+  EXPECT_EQ(accepted, written) << "what the recipient stores, in its order of arrival";
+  for (const std::string& id : written) {
+    EXPECT_EQ(Delivery(chat_.id, id), MessageDelivery::Relayed);
+  }
+}
+
 } // namespace
 } // namespace pbr

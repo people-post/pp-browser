@@ -56,7 +56,8 @@ struct QueuedResumePlan {
 /**
  * The store's outbox after a start (our rows still pending, oldest first): each one StoredResendAllowed, written before
  * this process started (`started_ms`: a newer one is on its way by its own send), that nothing of is under way now
- * (`under_way`: DeliveryOutbox::SendStartedMs) is sent again, or given up when too old at `now_ms`. Anything else is
+ * (`under_way`: DeliveryOutbox::SendStartedMs) is sent again — in the order the messages were written — or given up
+ * when too old at `now_ms`. Anything else is
  * left as it is: a row already failed (not in the outbox: no migration of the old marks), delivered, gone, a system
  * line, a private chat's.
  */
