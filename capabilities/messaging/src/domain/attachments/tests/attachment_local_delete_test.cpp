@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <future>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <thread>
@@ -762,40 +763,62 @@ TEST_F(AttachmentLocalDeleteTest, TheListReadsEveryMessageOfALongChatAndSkipsWha
   EXPECT_FALSE(by_message["direct"].has_server_copy);
 }
 
-// The storage screen lists on open: 200 ms in an optimized build, as CI's. A Debug build takes ~1.3x as long here
-// (~265 ms), so it gets twice the bound instead of failing every local run.
+// The storage screen lists on open. Two checks, neither tied to how fast one machine happens to be:
+// - it scales linearly: ten times the items (and chats) list in at most 20x the time of the small set (a quadratic
+//   regression would take ~100x);
+// - an outer budget with room for a shared CI runner: about 200 ms is usual in an optimized build (Debug ~1.3x), so
+//   2x that, rather than a bound at the usual time that a busy runner crosses now and then (Windows, 212 ms).
 #ifdef NDEBUG
-constexpr int64_t kListBoundMs = 200;
-#else
 constexpr int64_t kListBoundMs = 400;
+#else
+constexpr int64_t kListBoundMs = 800;
 #endif
+constexpr int64_t kListScaleBound = 20;
 
 TEST_F(AttachmentLocalDeleteTest, ListingThreeThousandItemsInFiftyChatsIsQuick) {
-  for (int chat = 0; chat < 50; ++chat) {
-    Thread thread;
-    thread.id = "chat" + std::to_string(chat);
-    thread.kind = ThreadKind::Direct;
-    ASSERT_TRUE(threads_.UpsertThread(thread));
-    for (int i = 0; i < 60; ++i) {
-      std::vector<uint8_t> plain(64, 0);
-      plain[0] = static_cast<uint8_t>(chat);
-      plain[1] = static_cast<uint8_t>(i);
-      auto prepared = PrepareChatAttachmentFromBytes(plain, "f" + std::to_string(i) + ".bin", "", 1'000'000);
-      ASSERT_TRUE(prepared);
-      ChatAttachmentFields fields = prepared->fields;
-      fields.mime = i % 3 == 0 ? "video/mp4" : (i % 3 == 1 ? "image/jpeg" : "application/pdf");
-      fields.url = "https://example.invalid/f";
-      ASSERT_TRUE(SaveAttachmentPlaintext(*content_, fields.content_hash, fields.mime, plain, fields.filename, Dek()));
-      Post(thread.id, "m" + std::to_string(i), fields);
+  const auto add_chats = [&](const int first, const int last) {
+    for (int chat = first; chat < last; ++chat) {
+      Thread thread;
+      thread.id = "chat" + std::to_string(chat);
+      thread.kind = ThreadKind::Direct;
+      ASSERT_TRUE(threads_.UpsertThread(thread));
+      for (int i = 0; i < 60; ++i) {
+        std::vector<uint8_t> plain(64, 0);
+        plain[0] = static_cast<uint8_t>(chat);
+        plain[1] = static_cast<uint8_t>(i);
+        auto prepared = PrepareChatAttachmentFromBytes(plain, "f" + std::to_string(i) + ".bin", "", 1'000'000);
+        ASSERT_TRUE(prepared);
+        ChatAttachmentFields fields = prepared->fields;
+        fields.mime = i % 3 == 0 ? "video/mp4" : (i % 3 == 1 ? "image/jpeg" : "application/pdf");
+        fields.url = "https://example.invalid/f";
+        ASSERT_TRUE(
+            SaveAttachmentPlaintext(*content_, fields.content_hash, fields.mime, plain, fields.filename, Dek()));
+        Post(thread.id, "m" + std::to_string(i), fields);
+      }
     }
-  }
-  const auto started = std::chrono::steady_clock::now();
-  const auto items = workflow_->ListStoredAttachments(threads_);
-  const auto took =
-      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
-  EXPECT_EQ(items.size(), 3000u);
-  EXPECT_LT(took, kListBoundMs) << "listing took " << took << " ms";
-  std::cout << "[ list ] 3000 items / 50 chats in " << took << " ms\n";
+  };
+  // The fastest of three listings, so one stall on a busy machine is not the measurement.
+  const auto fastest_listing = [&](const size_t expected) {
+    int64_t fastest = std::numeric_limits<int64_t>::max();
+    for (int run = 0; run < 3; ++run) {
+      const auto started = std::chrono::steady_clock::now();
+      const auto items = workflow_->ListStoredAttachments(threads_);
+      const auto took =
+          std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count();
+      EXPECT_EQ(items.size(), expected);
+      fastest = std::min(fastest, took);
+    }
+    return fastest;
+  };
+  add_chats(0, 5);
+  const int64_t small_us = fastest_listing(300);
+  add_chats(5, 50);
+  const int64_t large_us = fastest_listing(3000);
+  std::cout << "[ list ] 300 items / 5 chats in " << small_us / 1000 << " ms, 3000 items / 50 chats in "
+            << large_us / 1000 << " ms\n";
+  EXPECT_LT(large_us, kListBoundMs * 1000) << "listing 3000 items took " << large_us / 1000 << " ms";
+  EXPECT_LT(large_us, kListScaleBound * std::max<int64_t>(small_us, 1000))
+      << "listing grew more than linearly: " << small_us / 1000 << " ms -> " << large_us / 1000 << " ms";
 }
 
 } // namespace
