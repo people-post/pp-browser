@@ -5,6 +5,7 @@
 #include "gui/PinPromptPorts.h"
 #include "gui/UnlockGateCompletePorts.h"
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -33,6 +34,14 @@ struct PinGateKeypadPorts {
 class PinGateController {
 public:
   PinGateController() = default;
+
+  /**
+   * A choice page (the identity fork, "set a PIN?") ignores a choice this long after it appeared: the tap that brought
+   * it up (the reset's confirm, the fork's own button) can be delivered twice — a trackpad's touch and the mouse click
+   * made from it — and the second copy must not pick the button drawn under it on the new page.
+   */
+  static constexpr std::chrono::milliseconds kChoiceTapGuard{600};
+  void SetClockForTest(std::function<std::chrono::steady_clock::time_point()> now) { now_ = std::move(now); }
 
   void BindGateComplete(UnlockGateCompletePorts ports);
   /** Shell PIN chrome. Clear via BindShellPinGate({}). */
@@ -133,6 +142,14 @@ private:
   ShellPinGatePorts shell_pin_gate_;
   PinGateKeypadPorts keypad_ports_;
   PinGateState pin_state_;
+  /** When the choice page now showing appeared (kChoiceTapGuard). */
+  std::chrono::steady_clock::time_point choice_shown_at_{};
+  std::function<std::chrono::steady_clock::time_point()> now_;
+  std::chrono::steady_clock::time_point Now() const { return now_ ? now_() : std::chrono::steady_clock::now(); }
+  /** A choice page just appeared: its buttons wait out kChoiceTapGuard. */
+  void NoteChoiceShown() { choice_shown_at_ = Now(); }
+  /** The choice came within kChoiceTapGuard of its page appearing: the tap that brought the page, again. */
+  bool ChoiceTooSoon() const;
   bool link_flow_ = false;
   /** Within the link flow: the paste page takes a recovery phrase (M023), not a transfer code. */
   bool phrase_flow_ = false;
