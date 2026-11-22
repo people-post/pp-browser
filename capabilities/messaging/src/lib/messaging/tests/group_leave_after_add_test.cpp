@@ -4,6 +4,7 @@
 // folded it but the receiver did not. Device-level, as the receive path runs it: ReceiveChange on each device's own
 // store, the leave (removal) drafted by its signer's device from what it holds (DraftLeave, DraftRemove).
 #include "lib/messaging/GroupRosterSync.h"
+#include "common/ValueJson.h"
 #include "lib/messaging/testing/InMemoryMessagingStores.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/messaging/tests/GroupChangeTestKit.h"
@@ -209,6 +210,37 @@ TEST_F(GroupLeaveAfterAddTest, AnOwnersFoldedAddThenTheLeaveAMemberDropsTheLeave
   EXPECT_FALSE(Lists(carol_d, erin));
   ASSERT_TRUE(Verdict(r, leave));
   EXPECT_EQ(Verdict(r, leave)->status, GroupChangeStatus::Applied);
+}
+
+// Cutover check: the drafted leave with the longer `adds` list survives the v2 framing end to end: signed with
+// `change_version` 2, through its JSON, the receiver's shape check and receive path.
+TEST_F(GroupLeaveAfterAddTest, ADraftedLongerLeaveSurvivesTheV2WireAndIsAppliedByTheReceivePath) {
+  static_assert(grc::kChangeVersion == 2);
+  Device alice_d, carol_d, erin_d;
+  Seed(alice_d, S5());
+  Seed(carol_d, S5());
+  const GroupChange add = alice.Add(erin.Id());
+  Receive(alice_d, add);
+  Receive(carol_d, add);
+  Join(erin_d, S5(), {add});
+  const GroupRosterStatement s6 = OwnerFolds(alice_d);
+  ASSERT_TRUE(*grs::KeepAndCatchUp(*erin_d.roster, s6, Cards(), kNowMs));
+
+  const GroupChange drafted = ErinLeaves(erin_d);
+  ASSERT_FALSE(drafted.adds.empty());
+  const std::string wire = DumpJson(grc::ToJson(drafted));
+  EXPECT_NE(wire.find("change_version"), std::string::npos);
+  auto parsed = ParseObject(wire);
+  ASSERT_TRUE(parsed);
+  auto back = grc::FromJson(*parsed);
+  ASSERT_TRUE(back) << back.error().message;
+  EXPECT_TRUE(grc::CheckShape(*back));
+  EXPECT_EQ(grc::Id(*back), grc::Id(drafted));
+
+  const grs::ChangeReceived r = Receive(carol_d, *back);
+  EXPECT_FALSE(Lists(carol_d, erin));
+  ASSERT_TRUE(Verdict(r, *back));
+  EXPECT_EQ(Verdict(r, *back)->status, GroupChangeStatus::Applied);
 }
 
 // (d) The add was folded into statement 6, which reached Erin but not Carol (the owner's SignAndSendRoster is
