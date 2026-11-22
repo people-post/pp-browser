@@ -5,8 +5,8 @@
 # in the private repositories. AGENTS.md § Documentation authority.
 #
 # Fails on a tracked file that names one (PATTERN below), unless the file is in private_infra_allowlist.txt with
-# exactly that many matching lines: the files from before this check, to move out (lower a count, or drop the line,
-# as they are moved; never raise one).
+# exactly that many matching lines. The list is empty since the detail moved to pp-relay-apis; a line added there
+# needs a reason in its PR, and the count can only fall.
 #
 #   check_private_infra.sh               check the tree
 #   check_private_infra.sh --self-test

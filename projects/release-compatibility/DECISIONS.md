@@ -463,7 +463,7 @@ leaves for them.
 **Rationale:** Part 1 is what code on both sides is written against, or what decides when the relay's old paths can
 go; leaving it open would stall P3. Part 2 changes no format the other side reads, so it can be settled during P3.
 
-## RC019 — P2 starts: one main; the relay deploys from main and tags; no protection on the private relay repos
+## RC019 — P2 starts: one main; the relay deploys from main and tags
 
 **Date:** 2026-11-19
 **Status:** Accepted (Hongwei, 2026-11-19). Amends [PHASES § P2](PHASES.md#p2--one-main-release-branches)'s
@@ -471,19 +471,17 @@ protection item for two repos. Item 2 amended by [RC021](#rc021--the-relay-repos
 **Decision:**
 1. **`develop` is retired in every repo the same week**, starting 2026-11-19 with the team's work on hold:
    pp-browser, the pp-cpp-* libraries, pp-ledger and pp-ledger-apps first (`develop` merged into `main` a last time,
-   docs and workflows moved to `main`, then the default branch switched and `develop` deleted), then pp-relay-apis and
-   pp-relay-infra-ansible once their deploys have moved (item 2).
+   docs and workflows moved to `main`, then the default branch switched and `develop` deleted), then the relay's private
+   repositories once their deploys have moved (item 2).
 2. **The relay's deploys:** a push to `main` deploys **qa**; a `v*` release tag deploys **prod**, and Hongwei approves
    prod by being the one who pushes those tags. qa keeps its name until RC009's dev and staging exist. The deploy
-   roles in pp-relay-infra-terraform trust the refs by name, so they first add `main` (qa) and `v*` tags (prod) beside
+   roles in the relay's infrastructure trust the refs by name, so they first add `main` (qa) and `v*` tags (prod) beside
    today's `develop` and `main`, and drop the old two once `develop` is deleted.
-3. **No branch protection on pp-relay-apis and pp-relay-infra-ansible.** They are private and the organization is on
-   GitHub's free plan, which refuses protection there. CODEOWNERS and the prod deploy gate stand in for it. The other
-   repos get protection as PHASES § P2 says.
+3. **Branch protection on the public repos** as PHASES § P2 says. The relay's private repositories keep their own rules,
+   recorded in pp-relay-apis (`docs/conventions.md`).
 **Rationale:** One line is what the rest of P2 builds on; doing every repo in one week, with work on hold, leaves no
 PR on a branch that is about to go. Moving the trust before the workflows means no deploy fails during the switch.
-**Cost:** without protection, a mistaken push to `main` in the relay repos reaches qa unreviewed; prod still needs a
-tag.
+**Cost:** recorded with the private repositories' rules in pp-relay-apis.
 
 ## RC020 — The signed formats for the release-1 cutover
 
@@ -519,7 +517,7 @@ contacts (Q12); every signed object's bytes change at once, so the libraries, th
 **Date:** 2026-11-21
 **Status:** Accepted (Leo, 2026-11-21). Amends [RC009](#rc009--four-environments-todays-qa-becomes-staging-dev-is-new)
 (dev takes main automatically; staging takes candidates from `release/*`) and
-[RC019](#rc019--p2-starts-one-main-the-relay-deploys-from-main-and-tags-no-protection-on-the-private-relay-repos)
+[RC019](#rc019--p2-starts-one-main-the-relay-deploys-from-main-and-tags)
 item 2 (a push to main deploys qa). Item 8 of [RC006](#rc006--range-lengths-numbering-tags-and-fix-policy) keeps its
 `dev/<date>.<n>` tag, now pushed by hand.
 **Decision:** No branch triggers a release; a git tag decides every relay deploy. This holds in the relay's API repository and in

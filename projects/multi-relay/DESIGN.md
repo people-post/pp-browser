@@ -144,12 +144,12 @@ work, the rollout and the tests, as planned.
 
 ### The relay's side (pp-relay-apis)
 
-**Key.** Each relay deployment (`qa`, `prod`, each lab stack) has its own ML-DSA-65 key pair. The secret is the 32-byte FIPS 204 key-generation seed (ξ), stored as plain text base64 in the relay's Secrets Manager secret. Its PeerId is `pp::PeerIdFromMlDsaPublicKey(public key)` ([MESH_IDENTITY](../../docs/architecture/MESH_IDENTITY.md#derivation-pipeline-frozen): `08 04 12 A0 0F ‖ key` → `12 20 ‖ SHA-256` → base58btc, `Qm…`); pp-relay-apis' `peerIdFromMlDsaPublicKey` already matches it.
+**Key.** Each relay deployment (`qa`, `prod`, each lab stack) has its own ML-DSA-65 key pair. The secret is the 32-byte FIPS 204 key-generation seed (ξ), kept as a secret of the relay's deployment (pp-relay-apis' `docs/operators.md`). Its PeerId is `pp::PeerIdFromMlDsaPublicKey(public key)` ([MESH_IDENTITY](../../docs/architecture/MESH_IDENTITY.md#derivation-pipeline-frozen): `08 04 12 A0 0F ‖ key` → `12 20 ‖ SHA-256` → base58btc, `Qm…`); pp-relay-apis' `peerIdFromMlDsaPublicKey` already matches it.
 
 | Variable | Functions | Value |
 |---|---|---|
 | `RELAY_IDENTITY_PEER_ID` | registry, messenger, storage, push, support-worker (every function that verifies or makes a signed relay call) | the relay's PeerId (46 characters, public, a plain variable): the audience each checks. Not the public key: its 2.6 KB of base64 would fill a Lambda's 4 KB environment (pp-relay-apis c352fff) |
-| `RELAY_IDENTITY_KEY_SECRET_ID` | registry only | Secrets Manager id of the seed (`secretsmanager:GetSecretValue` on it, registry only; cached 15 min per instance like the LLM token key) |
+| the identity seed (a secret of the deployment) | registry only | readable by the registry only; cached per instance like the LLM token key |
 
 - The registry derives the public key from the secret's seed once per instance, checks that it is `RELAY_IDENTITY_PEER_ID`'s, and serves it at `GET /v1/relay-identity`. Nothing else uses the private key in this step; it exists now so that the identity is real when sealing (MR007 item 6) or Amp needs it, and so no function but the registry can read it.
 - **Missing or inconsistent configuration fails closed:** a function without a valid `RELAY_IDENTITY_PEER_ID` (or a registry whose seed does not give it) answers every signed call, and the registry `GET /v1/relay-identity` too, with `503 relay_identity_unavailable` (and the config check reports the missing variable as the others do, `ConfigError`). A relay never accepts a call without checking its audience.
@@ -168,10 +168,10 @@ An old client (no `audience` in the body) gets `wrong_audience`, never a confusi
 ### Cutover
 
 1. **pp-relay-apis PR** (Leo reviews): identity config and endpoint, audience in every builder and the verifier, `registration_id` / `binding_id`, card version 4 (version 3 refused, stored ones not served), the support worker, the keygen script, `openapi/relay.yaml` + `SPECS.md`, the vectors copied from the pp-browser branch.
-2. **Infra** (Leo, `pp-relay-infra-terraform`): per environment (`qa`, `prod`, different keys) a secret with the seed, `RELAY_IDENTITY_PEER_ID` on registry, messenger, storage, push and support-worker, `RELAY_IDENTITY_KEY_SECRET_ID` and `GetSecretValue` on the registry. Before the relay deploys: without them every signed call is `503`.
+2. **Infra** (Leo, the relay's infrastructure): per environment (`qa`, `prod`, different keys) the seed as a secret only the registry reads, and `RELAY_IDENTITY_PEER_ID` on registry, messenger, storage, push and support-worker. Before the relay deploys: without them every signed call is `503`.
 3. **Relay on `qa`** (merge to `develop`). From here every app and pp-node on `qa` built before MR007 is refused on every signed call (`wrong_audience`; old cards `invalid_account_card`): no registration, mail through the qa relay, push or heartbeat (the mesh, search, lookups and `client-compat` still work). Dogfood on qa uses the R5 branch builds.
 4. **App and pp-node** (pp-browser PR, R5): built and tested against qa, the app lab green ([below](#tests)).
-5. **Prod together, one window:** the app build available to testers (Hongwei triggers TestFlight / the stores), then the relay's release PR to `main` (prod) with `client-compat`'s `min_client_version` raised to the R5 build in the same deploy (old apps show the blocking update instead of failing silently), then the pp-node fleet (`pp-relay-infra-ansible`, Leo) at once: an old node's heartbeats are refused, so it goes stale and drops out of `GET /v1/mesh/nodes` after the stale threshold. Between the prod deploy and a user's update, that user's relays refuse its calls and its mail waits on the relay (nothing is lost; sends to it still store).
+5. **Prod together, one window:** the app build available to testers (Hongwei triggers TestFlight / the stores), then the relay's release PR to `main` (prod) with `client-compat`'s `min_client_version` raised to the R5 build in the same deploy (old apps show the blocking update instead of failing silently), then the pp-node fleet (the relay's infrastructure, Leo) at once: an old node's heartbeats are refused, so it goes stale and drops out of `GET /v1/mesh/nodes` after the stale threshold. Between the prod deploy and a user's update, that user's relays refuse its calls and its mail waits on the relay (nothing is lost; sends to it still store).
 
 ### Tests
 

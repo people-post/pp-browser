@@ -46,7 +46,7 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 [MR007](DECISIONS.md#mr007--relays-have-a-node-style-identity-every-signed-relay-command-names-it-as-its-audience); spec [DESIGN § Relay identity and audience](DESIGN.md#relay-identity-and-audience-mr007). Clean cutover: relay on qa first, then the app, pp-node and prod together.
 
 **Relay (pp-relay-apis; Leo reviews)**
-- [ ] Identity: `RELAY_IDENTITY_PEER_ID` on every signing / verifying function, `RELAY_IDENTITY_KEY_SECRET_ID` on the registry (the public key derived from the seed and checked against the PeerId); `GET /v1/relay-identity`; `503 relay_identity_unavailable` on everything signed when misconfigured; `scripts/relay-identity-keygen.mjs`.
+- [ ] Identity: `RELAY_IDENTITY_PEER_ID` on every signing / verifying function, the identity seed readable by the registry only (the public key derived from the seed and checked against the PeerId); `GET /v1/relay-identity`; `503 relay_identity_unavailable` on everything signed when misconfigured; `scripts/relay-identity-keygen.mjs`.
 - [ ] Audience in `versioned()`, `relayApiHeader()` and the registration builder (the version table); the body's `audience` checked first in the verifier and in `registerFinish` (before the challenge is consumed): `401 wrong_audience`.
 - [ ] `registration_id` answered by `register/finish`; revoke v2 names it, removes conditionally on a consistent read, `409 registration_mismatch` otherwise.
 - [ ] `binding_id` answered by `devices/register`; unregister (op 4) names it, removes conditionally, `409 binding_mismatch` otherwise.
@@ -54,8 +54,8 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 - [ ] Support worker: its relay's PeerId from `RELAY_IDENTITY_PEER_ID` as audience; its card v4.
 - [ ] `relay-sign-vectors.json` copied from pp-browser; the tests of DESIGN § Tests; `openapi/relay.yaml`, `SPECS.md`, `docs/architecture.md` updated.
 
-**Infra (Leo, pp-relay-infra-terraform)**
-- [ ] A key per environment (`qa`, `prod`) from the keygen script: the seed in Secrets Manager, the PeerId (`RELAY_IDENTITY_PEER_ID`) and public key recorded in the repo; the variables on the functions and `GetSecretValue` for the registry. In place before the relay deploys.
+**Infra (Leo, the relay's infrastructure)**
+- [ ] A key per environment (`qa`, `prod`) from the keygen script: the seed as a secret of the deployment, the PeerId (`RELAY_IDENTITY_PEER_ID`) and public key recorded in the infrastructure; the variables on the functions, and the seed readable by the registry. In place before the relay deploys.
 
 **App (pp-browser)**
 - [x] Builders for every domain at its new version with the audience (registration, revoke, profile, icon, heartbeat, LLM token, locker put, blobs, files incl. status, relay API v3 incl. unregister's `binding_id`); `relay_sign_vectors_test.cpp` writes and checks `relay_sign_vectors.json`.
@@ -79,7 +79,7 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 
 **Deploy**
 - [ ] Relay to `qa` (after infra); app and pp-node branch builds tested against it.
-- [ ] Prod window: app build available, relay release to `main` with `client-compat` `min_client_version` raised to the R5 build, pp-node fleet (`pp-relay-infra-ansible`, Leo).
+- [ ] Prod window: app build available, relay release to `main` with `client-compat` `min_client_version` raised to the R5 build, pp-node fleet (the relay's infrastructure, Leo).
 
 ## R6 — A relay address carries its PeerId
 
@@ -100,7 +100,7 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 
 **pp-node**
 - [x] `registration.peer_id` / `PP_NODE_REGISTRATION_PEER_ID`, defaulting to the compiled prod PeerId with the compiled URL (however spelled); none: a release build refuses to register (an error naming the setting), a developer build first-uses it, warned.
-- [ ] QA nodes' environment names the QA relay's PeerId (`pp-relay-infra-ansible`, Leo).
+- [ ] QA nodes' environment names the QA relay's PeerId (the relay's infrastructure, Leo).
 
 **Relay (pp-relay-apis)**
 - [x] `scripts/relay-identity-keygen.mjs [<origin>]` prints the relay link; the local stack's `/_local/status` names `relayLink`; SPECS / openapi / architecture: clients take the PeerId from the link, the identity endpoint is checked.
