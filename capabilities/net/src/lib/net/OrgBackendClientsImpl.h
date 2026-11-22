@@ -145,17 +145,14 @@ public:
   void SetTakesBriefLlmKey(bool takes) { takes_llm_key_.store(takes, std::memory_order_relaxed); }
   bool TakesBriefLlmKey() const override { return takes_llm_key_.load(std::memory_order_relaxed); }
   Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
-                                                 const std::string& signature_alg = "ml-dsa-65",
                                                  const std::string& kem_public_key_b64 = "",
                                                  const std::string& peer_id = "",
                                                  const std::vector<std::string>& multiaddrs = {},
                                                  const RegistrationPublishOpts& publish = {}) override;
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
                                              const std::string& nickname, const SignedRelayCommand& signed_finish,
-                                             const std::string& signature_alg = "ml-dsa-65",
                                              const std::string& kem_public_key_b64 = "",
-                                             const std::string& kem_binding_signature_b64 = "",
-                                             const std::string& peer_id = "",
+                                             const std::string& kem_binding_b64 = "", const std::string& peer_id = "",
                                              const std::vector<std::string>& multiaddrs = {},
                                              const RegistrationPublishOpts& publish = {}) override;
   Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const SignedRelayCommand& signed_update,

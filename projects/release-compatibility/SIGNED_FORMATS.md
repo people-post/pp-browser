@@ -17,6 +17,10 @@ Questions for Hongwei are marked **Q1 … Q16**; [§ Open questions](#open-quest
 
 ## 1. The shared rules
 
+Promoted to [docs/contracts/SIGNED_EXTENSIONS.md](../../docs/contracts/SIGNED_EXTENSIONS.md) (cutover W0), which
+holds the registry (extension types, algorithm ids) and names the app's helpers; this section stays as the design's
+record, and the contract wins where they differ.
+
 ### 1.1 Version outside and inside; the receiver's order
 
 Every signed object carries one version number, written twice: **outside** (readable without verifying) and
@@ -470,7 +474,7 @@ One PR series on main, each object with its vectors: the shared helpers (pp-cpp-
 `DeploymentProfile` and the build scripts, pp-node's `registration.relay_id`. Contracts updated in the same series:
 ACCOUNT_CARD, WIRE_SCHEMAS (envelope, announce tip, versioning matrix), MESSAGE_ENCRYPTION, ACCOUNT_LOCKER,
 SERVICE_ENDPOINTS (relay identity, pins, the audience table), MESH_IDENTITY (the relay link), and a new
-`docs/contracts/SIGNED_EXTENSIONS.md` holding § 1's registry (P4 folds it into the version table).
+[`docs/contracts/SIGNED_EXTENSIONS.md`](../../docs/contracts/SIGNED_EXTENSIONS.md) holding § 1's registry (P4 folds it into the version table).
 
 ## 6. Frozen test vectors
 

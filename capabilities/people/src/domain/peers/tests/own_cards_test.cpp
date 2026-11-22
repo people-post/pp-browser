@@ -305,7 +305,7 @@ TEST_F(OwnCardsTest, AKeptCardThatDoesNotVerifyIsReissuedWithItsList) {
   Device laptop(dir_ / "laptop");
   const AccountCard joined = LinkLaptop(phone, laptop, kNow);
   PeerCardRecord stepped = phone.rows->Get(joined.keys.account_id).value().value();
-  stepped.newest_card->card_signature_b64 = laptop.own->Card(kNow + 40).value().keys.kem_binding_signature_b64;
+  stepped.newest_card->card_signature_b64 = laptop.own->Card(kNow + 40).value().keys.kem_binding_b64;
   ASSERT_TRUE(phone.rows->Put(stepped));
 
   const AccountCard reissued = phone.own->Card(kNow + 50).value();
@@ -324,7 +324,7 @@ TEST_F(OwnCardsTest, ALinkedDeviceDoesNotReissueAKeptCardThatDoesNotVerify) {
   const AccountCard joined = LinkLaptop(phone, laptop, kNow);
   PeerCardRecord stepped = laptop.rows->Get(joined.keys.account_id).value().value();
   stepped.newest_card->relays.clear();
-  stepped.newest_card->card_signature_b64 = joined.keys.kem_binding_signature_b64;
+  stepped.newest_card->card_signature_b64 = joined.keys.kem_binding_b64;
   ASSERT_TRUE(laptop.rows->Put(stepped));
 
   auto waiting = laptop.own->Card(kNow + 50);
@@ -406,7 +406,7 @@ AccountCard SteppedOnTheLaptop(Device& phone, Device& laptop) {
   const AccountCard joined = LinkLaptop(phone, laptop, kNow);
   PeerCardRecord stepped = laptop.rows->Get(joined.keys.account_id).value().value();
   stepped.newest_card->relays.clear();
-  stepped.newest_card->card_signature_b64 = joined.keys.kem_binding_signature_b64;
+  stepped.newest_card->card_signature_b64 = joined.keys.kem_binding_b64;
   EXPECT_TRUE(laptop.rows->Put(stepped));
   return joined;
 }

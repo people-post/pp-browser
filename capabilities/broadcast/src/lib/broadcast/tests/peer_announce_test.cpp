@@ -286,11 +286,18 @@ TEST(PeerAnnounceHopPeerIdTest, JsonAndSignRoundTripWithHop) {
   ASSERT_TRUE(VerifyPeerAnnounceTip(*decoded, keys->public_key));
 }
 
-TEST(PeerAnnounceHopPeerIdTest, AnEmptyHopStaysOutOfTheSignedBytes) {
+// Every field is signed, an empty one as empty (SIGNED_FORMATS § 2.9): a hop added to a tip signed without one does
+// not verify.
+TEST(PeerAnnounceHopPeerIdTest, AnEmptyHopIsSignedAsEmpty) {
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(keys);
   auto tip = SampleTip("topic-hop");
   tip.hop_peer_id.clear();
-  const std::string with_empty = PeerAnnounceCanonicalSignBytes(tip);
-  EXPECT_EQ(with_empty.find("hop_peer_id="), std::string::npos);
+  auto signed_tip = SignPeerAnnounceTip(tip, keys->secret_key);
+  ASSERT_TRUE(signed_tip) << signed_tip.error().message;
+  ASSERT_TRUE(VerifyPeerAnnounceTip(*signed_tip, keys->public_key));
+  signed_tip->hop_peer_id = "12D3KooWInserted";
+  EXPECT_EQ(ReceivePeerAnnounceTip(*signed_tip, keys->public_key).verdict, SignedVerdict::Forged);
 }
 
 TEST(PeerAnnounceKindTest, LiveChatJsonAndSignRoundTripAdditive) {
@@ -316,14 +323,21 @@ TEST(PeerAnnounceKindTest, LiveChatJsonAndSignRoundTripAdditive) {
   ASSERT_TRUE(VerifyPeerAnnounceTip(*decoded, keys->public_key));
 }
 
-TEST(PeerAnnounceKindTest, AnEmptyKindStaysOutOfTheSignedBytes) {
+TEST(PeerAnnounceKindTest, AnEmptyKindIsSignedAsEmpty) {
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(keys);
   auto tip = SampleTip("topic");
   tip.kind.clear();
   tip.viewer_peer_id.clear();
   tip.viewer_msg_id.clear();
-  const std::string canonical = PeerAnnounceCanonicalSignBytes(tip);
-  EXPECT_EQ(canonical.find("kind="), std::string::npos);
-  EXPECT_EQ(canonical.find("viewer_peer_id="), std::string::npos);
+  auto signed_tip = SignPeerAnnounceTip(tip, keys->secret_key);
+  ASSERT_TRUE(signed_tip) << signed_tip.error().message;
+  for (std::string PeerAnnounceTip::* field :
+       {&PeerAnnounceTip::kind, &PeerAnnounceTip::viewer_peer_id, &PeerAnnounceTip::viewer_msg_id}) {
+    PeerAnnounceTip changed = *signed_tip;
+    changed.*field = "x";
+    EXPECT_EQ(ReceivePeerAnnounceTip(changed, keys->public_key).verdict, SignedVerdict::Forged);
+  }
 }
 
 TEST(PeerAnnounceFeedKindTest, LiveChatDoesNotClobberProgramLatest) {
@@ -429,10 +443,9 @@ TEST(PeerAnnounceL1HopPeerIdsTest, JsonAndSignRoundTripAdditive) {
   EXPECT_EQ(decoded->l1_hop_peer_ids[1], "12D3KooWL1b");
   ASSERT_TRUE(VerifyPeerAnnounceTip(*decoded, keys->public_key));
 
-  tip.l1_hop_peer_ids.clear();
-  tip.hop_peer_id.clear();
-  const std::string canonical = PeerAnnounceCanonicalSignBytes(tip);
-  EXPECT_EQ(canonical.find("l1_hop_peer_ids="), std::string::npos);
+  decoded->l1_hop_peer_ids.pop_back();
+  EXPECT_EQ(ReceivePeerAnnounceTip(*decoded, keys->public_key).verdict, SignedVerdict::Forged)
+      << "the list is signed as listed";
 }
 
 // B009: the levels a program publishes travel in the tip and are signed — a viewer trusts them.
@@ -455,19 +468,22 @@ TEST(PeerAnnounceVideoLevelsTest, JsonRoundTripAndSigned) {
   EXPECT_FALSE(VerifyPeerAnnounceTip(*decoded, keys->public_key)) << "levels are covered by the signature";
 }
 
-// A tip's levels feed VideoChannel(level): values outside 1..15 would wrap into unannounced channels.
-TEST(PeerAnnounceVideoLevelsTest, DecodeKeepsOnlyRealLevels) {
+// A tip's levels feed VideoChannel(level): values outside 1..15 would wrap into unannounced channels. Every level is
+// signed, so a decoder cannot drop one: a tip with any other value is malformed.
+TEST(PeerAnnounceVideoLevelsTest, DecodeRefusesALevelOutsideOneToFifteen) {
   auto tip = SampleTip("topic-levels");
   tip.video_levels = {1, 2};
   auto json = EncodePeerAnnounceTipJson(tip);
   ASSERT_TRUE(json);
-  std::string text = *json;
-  const auto at = text.find("[1,2]");
-  ASSERT_NE(at, std::string::npos) << text;
-  text.replace(at, 5, "[1,300,-1,0,16,4294967297,2]");
-  auto decoded = DecodePeerAnnounceTipJson(text);
-  ASSERT_TRUE(decoded) << decoded.error().message;
-  EXPECT_EQ(decoded->video_levels, (std::vector<int>{1, 2}));
+  const auto at = json->find("[1,2]");
+  ASSERT_NE(at, std::string::npos) << *json;
+  for (const char* bad : {"[1,300]", "[-1]", "[0]", "[16]", "[4294967297]", "[\"1\"]", "7"}) {
+    std::string text = *json;
+    text.replace(at, 5, bad);
+    EXPECT_FALSE(DecodePeerAnnounceTipJson(text)) << bad;
+  }
+  tip.video_levels = {16};
+  EXPECT_FALSE(PeerAnnounceTipSignBytes(tip)) << "nor is one signed";
 }
 
 } // namespace pbr

@@ -1,8 +1,10 @@
 #pragma once
 
+#include "lib/net/RelaySignBytes.h"
+
+#include "common/ExtArea.h"
+
 #include <cstdint>
-#include <optional>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -19,16 +21,21 @@ enum class RelayApiOp : uint8_t {
 };
 
 /**
- * The relay API's signed header: domain `pp-browser:relay-api-v1`, version 3, the relay it is for (`audience`, its
- * PeerId, multi-relay MR007), `op`, `timestamp`. Each call's fields follow it (messaging's:
- * lib/delivery/RelayMessageSignPayload.h; push devices': below). False, nothing written, for an empty audience.
+ * The relay API's signed bytes (release-compatibility SIGNED_FORMATS § 2.8): domain `pp-browser:relay-api`, sign
+ * version 4, the relay it is for (`audience`, its PeerId), `op`, `timestamp`, the op's fields, the extension area:
+ *
+ *   "pp-browser:relay-api" 00 ‖ u8 4 ‖ LenUtf8 audience ‖ u8 op ‖ i64 timestamp ‖ …the op's fields… ‖ ext area
+ *
+ * Messaging's ops: lib/delivery/RelayMessageSignPayload.h; push devices': below. Empty for an empty audience.
  */
-bool AppendRelayApiHeader(std::ostringstream& oss, const std::string& audience, RelayApiOp op, int64_t timestamp);
+std::vector<uint8_t> BuildRelayApiBytes(const std::string& audience, RelayApiOp op, int64_t timestamp,
+                                        const pp::ExtArea& ext, const RelayCallFields& fields);
 
 /** `POST /v1/devices/register` (op 3): the device's push token. */
 std::vector<uint8_t> BuildRelayApiDeviceRegisterSignBytes(const std::string& audience, const std::string& account_id,
                                                           const std::string& platform, const std::string& device_id,
-                                                          const std::string& push_token, int64_t timestamp);
+                                                          const std::string& push_token, int64_t timestamp,
+                                                          const pp::ExtArea& ext = {});
 
 /**
  * `POST /v1/devices/unregister` (op 4): the binding it removes, by the id `devices/register` answered (MR007 item 5:
@@ -36,6 +43,7 @@ std::vector<uint8_t> BuildRelayApiDeviceRegisterSignBytes(const std::string& aud
  */
 std::vector<uint8_t> BuildRelayApiDeviceUnregisterSignBytes(const std::string& audience, const std::string& account_id,
                                                             const std::string& platform, const std::string& device_id,
-                                                            const std::string& binding_id, int64_t timestamp);
+                                                            const std::string& binding_id, int64_t timestamp,
+                                                            const pp::ExtArea& ext = {});
 
 } // namespace pbr

@@ -11,7 +11,13 @@ Finding someone new by name is not this contract's job: the relay directory answ
 chain name registry later ([N029](../../projects/p2p-mesh/NAME_DIRECTORY_NORTH_STAR.md)); without
 either, a person is added from a card or invite handed over out of band.
 
-**Related:** [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md) (where the keys are used),
+**Status:** Card v5, the key card and KEM binding v2 are release 1's forms, from the signed-format cutover
+([release-compatibility RC020](../../projects/release-compatibility/DECISIONS.md#rc020--the-signed-formats-for-the-release-1-cutover),
+SIGNED_FORMATS § 2.2–2.3; on `cutover/signed-formats` until merge day): typed keys, relays by relay id, an extension
+area, the domains without `-vN`. Nothing older is read ([COMPATIBILITY](COMPATIBILITY.md)).
+
+**Related:** [SIGNED_EXTENSIONS.md](SIGNED_EXTENSIONS.md) (versions, typed blobs, the extension area, the receiver's
+order), [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md) (where the keys are used),
 [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md) (the directory returns the same keys),
 [P2P_MESSAGING.md](../architecture/P2P_MESSAGING.md#finding-and-reaching-people) (discovery and reach).
 
@@ -33,19 +39,47 @@ The keys a sender needs to verify an account's envelopes and to encrypt to it.
   "account_id": "account:…",
   "signing_public_key_b64": "…",
   "kem_public_key_b64": "…",
-  "kem_binding_signature_b64": "…"
+  "kem_binding_b64": "…"
 }
 ```
 
-A key card is valid when:
+The keys are **typed blobs** ([SIGNED_EXTENSIONS § Typed blobs](SIGNED_EXTENSIONS.md#typed-blobs)): the algorithm id,
+then the key — ML-DSA-65 `01 ‖ 1952 bytes` (1953), ML-KEM-768 `01 ‖ 1184 bytes` (1185), standard base64. The Account ID
+hashes the raw key after the id, so it does not change with typing. A key card is valid when:
 
-1. `signing_public_key_b64` decodes to a 1952-byte ML-DSA-65 key that hashes to `account_id`;
-2. `kem_binding_signature_b64` verifies with that key over the **KEM binding** bytes
-   (`foundation/crypto/KemKeyBinding.h`): domain `pp-browser:kem-binding-v1` + NUL, version u8 `1`,
-   the raw ML-DSA-65 account key, the raw 1184-byte ML-KEM-768 key.
+1. `signing_public_key_b64` reads as a signing key of an algorithm this build knows and its raw key hashes to
+   `account_id`;
+2. `kem_binding_b64` is a **KEM binding** ([below](#kem-binding)) that the account made over that signing key and
+   `kem_public_key_b64`.
 
-The relay directory returns exactly these four fields with every entry, so a directory answer and a
-card are checked the same way.
+A key of an algorithm this build does not know, or a binding of a newer version, is *update needed* (the account needs a
+newer app here, `AppError::NewerFormat`), never "bad keys". The relay directory returns exactly these four fields with
+every entry, so a directory answer and a card are checked the same way; the app's row readers (`DirectoryJson`,
+the HTTP mesh-node list) read the fields by their shape as the mesh does (pp-cpp-mesh `MeshNodeHitCodec.h`): a malformed
+field or a binding older than v2 is dropped, one of an unknown algorithm or a newer binding is kept and marks the row
+`keys_update_needed`.
+
+The app holds the keys of a card typed (the card store, `PeerSigningKeyStore`, `PeerKemKeyStore`); an identity holds its
+own raw (`LocalIdentity`). The crossings are `lib/people/CardKeys.h`: `TypedKeyB64` (raw → typed), `RawSigningPublicKey`
+/ `RawKemPublicKey` (typed → what `MlDsa`, `HybridKem::Encapsulate` and fingerprints take), `MakeKeyCard` (an identity's
+key card, its binding signed).
+
+### KEM binding
+
+The account's statement that a KEM key is its own (`foundation/crypto/KemKeyBinding.h`), v2:
+
+```
+signed: "pp-browser:kem-binding" 00 ‖ u8 2 ‖ LenBytes signing key (typed) ‖ LenBytes KEM key (typed) ‖ ext area
+blob:   u8 2 ‖ ext area ‖ LenBytes signature (typed)                                  → kem_binding_b64 (standard base64)
+```
+
+The binding rides other objects (key cards, account cards, directory rows, register/finish), so its version is the
+blob's first byte. A receiver (`ReceiveKemBinding`, then `VerifyKemBinding` for the account) takes, in the receiver's
+order: the version (none or 1: older, refused; above 2: update needed, nothing after it read), the area and the
+signature's length with no byte after it (malformed), the three typed blobs (an unknown algorithm: update needed), the
+signature over the rebuilt bytes (a forgery), the area's critical entries (update needed); then the signing key's hash
+is the Account ID. The blob is kept as received, its area too. Vectors: `kem_binding_vectors.json`
+(`capabilities/base/src/foundation/crypto/tests/data/`, `kem_key_binding_test.cpp`), which the relay reads byte for byte.
 
 ## Account card
 
@@ -53,24 +87,28 @@ A key card plus what the account says about itself, signed as a whole.
 
 ```json
 {
-  "card_version": 4,
+  "card_version": 5,
   "account_id": "account:…",
   "signing_public_key_b64": "…",
   "kem_public_key_b64": "…",
-  "kem_binding_signature_b64": "…",
+  "kem_binding_b64": "…",
   "nickname": "alice",
   "devices": [
     { "peer_id": "Qm…", "signing_public_key_b64": "…", "kem_public_key_b64": "…" },
     { "peer_id": "Qm…", "signing_public_key_b64": "…", "kem_public_key_b64": "…" }
   ],
   "relays": [
-    { "origin": "https://www.brief.global/api/relay", "peer_id": "Qm…" }
+    { "origin": "https://www.brief.global/api/relay", "relay_id": "relay:…" }
   ],
   "initiation_floor": 0,
   "issued_at": 1761235200000,
+  "ext_b64": "…",
   "card_signature_b64": "…"
 }
 ```
+
+Every key and the signature are typed ([Key card](#key-card)); a device's keys may be of another algorithm than another
+device's (an algorithm migration happens per device). `nickname` and `ext_b64` are left out when empty.
 
 - `nickname` — the account's own name for itself: a hint, shown as such; never an identity
   ([N029](../../projects/p2p-mesh/NAME_DIRECTORY_NORTH_STAR.md): no second name system).
@@ -79,20 +117,22 @@ A key card plus what the account says about itself, signed as a whole.
   ML-KEM-768 key. This is the account's standing statement that those devices speak for it; nothing else
   in the system makes it.
 - `relays` — **the relays the account receives on**, preferred first ([multi-relay MR002](../../projects/multi-relay/DECISIONS.md#mr002--the-relay-list-lives-in-the-account-card)):
-  each named by its origin, the HTTPS base URL a client uses, and by its **PeerId** (`peer_id`,
-  [MR007](../../projects/multi-relay/DECISIONS.md#mr007--relays-have-a-node-style-identity-every-signed-relay-command-names-it-as-its-audience)):
-  the audience a sender signs its send into that relay for ([SERVICE_ENDPOINTS § The audience](SERVICE_ENDPOINTS.md#the-audience-every-signed-command-names-its-relay)).
+  each named by its origin, the HTTPS base URL a client uses, and by its **relay id** (`relay_id`, `relay:` +
+  base64url of 32 bytes, [SERVICE_ENDPOINTS § Relay identity](SERVICE_ENDPOINTS.md#relay-identity); release-compatibility
+  SIGNED_FORMATS § 3.3): the relay's certificate under that id proves the PeerId a sender signs its send into that relay
+  for ([SERVICE_ENDPOINTS § The audience](SERVICE_ENDPOINTS.md#the-audience-every-signed-command-names-its-relay),
+  `RelayPins::ContactAudience`).
   Required; an empty list names no relay
   (the account's mailboxes are not known: a sender sends through its own preferred relay, [SERVICE_ENDPOINTS § Sending by the list](SERVICE_ENDPOINTS.md#sending-by-the-list)). Bounds ([MR004](../../projects/multi-relay/DECISIONS.md#mr004--a-relay-list-is-small-and-bounded)):
   at most 4 entries; each `origin` an absolute `https://` URL of at most 128 bytes with a host, and no query,
-  fragment, credentials, spaces or control characters; each `peer_id` required, a string of an ML-DSA PeerId's form
-  (base58btc decoding to exactly `0x12 0x20 ‖ 32 bytes` and re-encoding to itself: 46 characters, `Qm…`,
-  `IsMlDsaPeerIdForm`); no two the same relay by origin (scheme and host compared without
-  case, `:443` as no port, an empty path as `/`) or by `peer_id`. The card cannot show that a relay's key derives its
-  PeerId (it carries no relay key): the relay itself refuses a wrong one (`wrong_audience`). The list holds the relays
-  the app registers on whose pin is in force (`OwnCards::SetRelays` from `RelayPins::PinnedRelays`: a relay whose
-  address names no PeerId, or whose identity answer does not match it, is left off and the card re-issued once it is in
-  force): My relays in their order, the preferred first, each with the PeerId its address names (multi-relay MR008). A card from anyone else never writes a pin
+  fragment, credentials, spaces or control characters; each `relay_id` required, of the relay id's one written form
+  (`IsRelayIdForm`: `relay:` and 43 base64url characters that decode to 32 bytes and encode back to themselves); no two
+  the same relay by origin (scheme and host compared without case, `:443` as no port, an empty path as `/`) or by
+  `relay_id`. The card carries no relay key: the sender checks the relay's certificate against the relay id, and the
+  relay refuses a wrong audience (`wrong_audience`). The list holds the relays the app registers on whose pin is in
+  force (`OwnCards::SetRelays` from `RelayPins::PinnedRelays`: a relay whose address names no relay id, or that does not
+  prove it, is left off and the card re-issued once it is in force): My relays in their order, the preferred first, each
+  with the relay id its address names (multi-relay MR008). A card from anyone else never writes a pin
   ([SERVICE_ENDPOINTS § Pins](SERVICE_ENDPOINTS.md#pins)); a linked device takes our own newer card's entries as
   pins. My relays is the profile's list, seeded from the
   deployment's relay and `relay.extra_base_urls` — [CONFIGURATION](../ops/CONFIGURATION.md),
@@ -122,25 +162,44 @@ A key card plus what the account says about itself, signed as a whole.
 - No addresses: multiaddrs go stale and disclose IPs ([privacy](../../projects/privacy/DECISIONS.md));
   devices are reached through the mesh (below).
 
-**Card signature:** ML-DSA-65 with the account key over: domain `pp-browser:account-card-v4` + NUL,
-version u8 `4`, the raw account ML-DSA-65 key, the raw ML-KEM-768 key, `nickname` LenUtf8, device count
-u64 BE, then for each device in `peer_id` byte order: `peer_id` LenUtf8, the raw device ML-DSA-65 key, the
-raw device ML-KEM-768 key; then relay count u64 BE and each relay's `origin` LenUtf8 and `peer_id` LenUtf8 **in list
-order** (the preferred relay is signed as the first); then `initiation_floor` i64 BE and `issued_at` i64 BE (LenUtf8 /
-u64 BE as in [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088)). Golden vectors: the SHA-256 of a card's
-bytes (9782 of them) in `AccountCardSignBytesTest.MatchTheGoldenVector` (`account_card_test.cpp`), and a signed card
-with the cards that must be refused in `relay_sign_vectors.json`
-([SERVICE_ENDPOINTS § The audience](SERVICE_ENDPOINTS.md#the-audience-every-signed-command-names-its-relay)), which the
-relay's `account-card.test.ts` reads.
+**Card signature:** the account key's typed signature (`card_signature_b64`) over (`AccountCardSignBytes`, the
+[pp binary wire profile](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088): LenUtf8 / LenBytes with a u64 BE length, i64 BE):
 
-An account card is valid when its key card is valid, `card_signature_b64` verifies with the signing key,
-`devices` holds 1–5 entries with no duplicate PeerId, every entry's keys decode to their sizes and its
-`peer_id` is the one its device ML-DSA key derives, `relays` and `initiation_floor` are present and within their
-bounds, and `issued_at` is not more than 5 minutes ahead of the receiver's clock. A card breaking any bound is
-refused whole, by the app and the relay alike (`invalid_card_relays` at the relay). Cards of any other `card_version`
-(1: PeerIds only; 2: no relays or floor; 3: relays by origin only) are refused everywhere — registration
-(`invalid_account_card`), directory answers, the card exchange, envelopes, group bundles, contact cards — and a relay
-does not serve a stored version 3 card.
+```
+"pp-browser:account-card" 00 ‖ u8 5
+‖ LenBytes account signing key (typed) ‖ LenBytes account KEM key (typed)
+‖ LenUtf8 nickname
+‖ u64 devices, by peer_id bytes: LenUtf8 peer_id ‖ LenBytes signing key (typed) ‖ LenBytes KEM key (typed)
+‖ u64 relays, in list order:     LenUtf8 origin ‖ relay_id (32 raw)
+‖ i64 initiation_floor ‖ i64 issued_at
+‖ ext area                                                       (SIGNED_EXTENSIONS § The extension area)
+```
+
+The preferred relay is signed as the first. The KEM binding is not in these bytes: it is its own signature. Golden
+vectors: the SHA-256 of a fixed card's bytes (9797 of them) in `AccountCardSignBytesTest.MatchTheGoldenVector`
+(`account_card_test.cpp`), and `account_card_vectors.json` (`capabilities/people/src/lib/people/tests/data/`,
+`account_card_vectors_test.cpp`): a signed card of keys from fixed seeds with its signed bytes, the same with one
+unknown non-critical entry, its key card, and the cards that must be refused, each with its verdict. The relay
+(`account-card.ts`) reads it byte for byte; `relay_sign_vectors.json` carries a card v5 too.
+
+**Receiving a card** (`AccountCardFromJson` then `VerifyAccountCard`; `ReceiveAccountCard` runs both), in the
+receiver's order ([SIGNED_EXTENSIONS § The receiver's order](SIGNED_EXTENSIONS.md#the-receivers-order)):
+
+1. `card_version`: missing or below 5 — made by an older app, refused; above 5 — **update needed**, nothing else read
+   (`IsNewerAccountCard`: the peer *needs a newer app*, U2; the card-ask gate stops asking for a version it cannot read);
+2. the v5 fields and `ext_b64` (malformed: refused);
+3. every typed blob — the account's keys, each device's, the signature (an unknown algorithm: update needed);
+4. the signature over the rebuilt bytes, its area included (a forgery: refused);
+5. an unknown critical entry in the area: update needed, the card is not acted on; unknown non-critical entries are
+   ignored and kept (a stored or forwarded card keeps them, so its signature still verifies);
+6. the key card (its binding's own order, then its signing key is the Account ID's), `devices` 1–5 entries with no
+   duplicate PeerId and each `peer_id` the one its raw device signing key derives, `relays` and `initiation_floor`
+   within their bounds, and `issued_at` not more than 5 minutes ahead of the receiver's clock.
+
+A card breaking any of them is refused whole, by the app and the relay alike (`invalid_card_relays` at the relay for
+the relay bounds). Cards of any other `card_version` are refused everywhere — registration (`invalid_account_card`),
+directory answers, the card exchange, envelopes, group bundles, contact cards. An update-needed card is not a forgery:
+the app marks the account as using a newer app; the relay answers `relay_upgrade_required`.
 
 **Newest wins:** the newest valid card (`issued_at`) is the account's word on its keys, nickname,
 device list, relays and floor; an older card changes nothing. A restored install keeps no cards but knows each account's newest
@@ -179,7 +238,7 @@ app comes to the front). When every relay asked answered and none keeps a card o
 *Start a new device list…* — its confirm says that the account's other devices are signed out — sets `fresh`.
 (A registration while the card is still being got back carries none.)
 
-**Size:** a key card is about 13 KB as JSON (two 3309-byte signatures and two public keys in base64);
+**Size:** a key card is about 13 KB as JSON (a 3310-byte signature and two public keys, typed, in base64);
 each device adds about 4 KB to an account card. Too large for a QR code, which is why invites carry a
 locator.
 
@@ -190,7 +249,7 @@ What fits in a QR code: who to look for and where.
 ```
 pp-browser-contact-v1:<base64url-unpadded(JSON)>
 { "account_id": "account:…", "nickname": "alice", "devices": ["Qm…", "Qm…"],
-  "relay": { "origin": "https://www.brief.global/api/relay", "peer_id": "Qm…" } }
+  "relay": { "origin": "https://www.brief.global/api/relay", "relay_id": "relay:…" } }
 ```
 
 Unsigned: the Account ID is what the person showed or sent. The receiver fetches the account's card
@@ -199,19 +258,21 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
 
 - **`relay`** (optional; multi-relay R4, [MR004](../../projects/multi-relay/DECISIONS.md#mr004--a-relay-list-is-small-and-bounded),
   [MR008](../../projects/multi-relay/DECISIONS.md#mr008--a-relay-address-carries-its-peerid-no-first-use-trust)):
-  the account's preferred relay's address — the relay the app registers on: its `origin` and the `peer_id` it answers
-  to, about 100 bytes — and nothing else of the card's list. The origin within the card's bounds (an absolute
-  `https://` URL of at most 128 bytes with no query or fragment) and the PeerId of a PeerId's form; one outside them,
-  or without its PeerId (an origin alone, as R4 wrote it before MR008), is left out when writing and dropped when
-  reading (the locator still holds), so a lab's `http://` relay is never on it, as it is never on the card. It is
-  optional, not a new version: an app that does not know it ignores it, and a locator without it reads as before.
-- A contact added from a locator keeps that address (`contacts.json` `remote.locator_relay`, `{origin, peer_id}`) as
-  its relay list until its account's card is kept: a first message goes into that relay, signed for the locator's
-  PeerId as a card entry's ([SERVICE_ENDPOINTS § Sending by the list](SERVICE_ENDPOINTS.md#sending-by-the-list)), and
+  the account's preferred relay's address — the relay the app registers on: its `origin` and its `relay_id` (the
+  relay id its address names, SIGNED_FORMATS § 3.3), about 100 bytes — and nothing else of the card's list. The origin
+  within the card's bounds (an absolute `https://` URL of at most 128 bytes with no query or fragment) and the relay id
+  of its written form (`IsRelayIdForm`); one outside them, or without its relay id (an origin alone, or a `peer_id`
+  entry of before the cutover), is left out when writing and dropped when reading (the locator still holds), so a lab's
+  `http://` relay is never on it, as it is never on the card. It is optional: an app that does not know it ignores it,
+  and a locator without it reads as before.
+- A contact added from a locator keeps that address (`contacts.json` `remote.locator_relay`, `{origin, relay_id}`) as
+  its relay list until its account's card is kept: a first message goes into that relay, signed for the PeerId that
+  relay's certificate proves for the locator's relay id, as for a card entry's
+  ([SERVICE_ENDPOINTS § Sending by the list](SERVICE_ENDPOINTS.md#sending-by-the-list)), and
   the contact page names it. From then on the card's list is the contact's
   ([`ContactRelays`](../../capabilities/people/src/lib/people/ContactIdentity.h)). A release build leaves out a
   `relay` outside the public-relay policy above (`IsPublicRelayOrigin`: on this device or a private network): it is
-  neither kept nor asked for the card (developer builds take it, for the lab). The person is still added. The PeerId
+  neither kept nor asked for the card (developer builds take it, for the lab). The person is still added. The relay id
   is only the inviter's word, as a card's is: it names whom the first send is for, never a pin of ours.
 
 - **Sharing:** the invite text (*Me → Profile → Invite*, and the share at the end of onboarding) ends
@@ -243,7 +304,7 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
 | Link bundle | the linking device's account card | linking a device: the new one signs itself in (M021) |
 | Sibling notice | the account card, on the control lane to our own mailbox (M022) | when a device's list changes (it linked in, a sibling's newer list, the name), and once a start while it has siblings: they take it |
 | Contact card message | someone's account card (or key card, when that is all the sharer has), plus the sharer's name for them | "Share" on a contact; *Add to contacts* on the card |
-| Locator | account id, nickname, devices, the preferred relay's address `{origin, peer_id}` (no card) | QR code, invite link, onboarding share |
+| Locator | account id, nickname, devices, the preferred relay's address `{origin, relay_id}` (no card) | QR code, invite link, onboarding share |
 | Card exchange over Amp | an account card or key card | on request, device to device |
 | Roster add (`member_joined`) | members' cards | from the group owner, so members key pairwise ([Groups](#groups)) |
 
@@ -329,25 +390,32 @@ the recipient, else as a **stranger's**: the recipient's price, or a small free 
 The relay's side is [www `docs/relay-messages.md`](https://github.com/people-post/www); the send and
 its errors are in [SERVICE_ENDPOINTS § A send](SERVICE_ENDPOINTS.md#a-send-the-recipient-the-senders-key-the-grant).
 
-**The grant** (`RelayGrant`, JSON on the send's `grant` and in the lane notice):
+**The grant** (`RelayGrant`, grant v2: [release-compatibility SIGNED_FORMATS § 2.4](../../projects/release-compatibility/SIGNED_FORMATS.md#24-relay-grant-v2);
+JSON on the send's `grant`, in the lane notice and in the account locker's `grants`):
 
 ```json
-{ "recipient_account_id": "account:bob…", "sender_account_id": "account:alice…",
-  "issued_at": 1761235200000, "expires_at": 1763827200000, "signature": "<base64>" }
+{ "grant_version": 2, "recipient_account_id": "account:bob…", "sender_account_id": "account:alice…",
+  "issued_at": 1761235200000, "expires_at": 1763827200000, "ext_b64": "<optional>", "signature": "<base64>" }
 ```
 
-Signed by the **recipient's** account ML-DSA-65 key over
+`signature` is a **typed** signature ([SIGNED_EXTENSIONS § Typed blobs](SIGNED_EXTENSIONS.md#typed-blobs): algorithm
+id `1`, then ML-DSA-65's 3309 bytes) by the **recipient's** account key over
 
 ```
-"pp-browser:relay-grant-v1" 0x00 | u8 1 | str recipient_account_id | str sender_account_id
-| i64be issued_at | i64be expires_at                       (str = u64be byte length ‖ UTF-8)
+"pp-browser:relay-grant" 00 ‖ u8 2 ‖ LenUtf8 recipient_account_id ‖ LenUtf8 sender_account_id
+‖ i64 issued_at ‖ i64 expires_at ‖ ext area             (u64 BE lengths, big-endian integers)
 ```
 
-`expires_at − issued_at` is at most **30 days**. The relay checks the signature with the recipient's
-registered key; the app checks a grant it receives the same way, with the grantor's key resolved as
-[above](#resolving-keys) (`CheckRelayGrant`: the pair, the lifetime, not expired, the key hashes to the
-grantor's Account ID). Golden vector: `relay_message_sign_payload_test.cpp` (`RelayGrantSignBytesTest`),
-ported from the relay.
+`ext_b64` is the signed extension entries (absent when empty; none is defined at release 1). `expires_at − issued_at`
+is at most **30 days**. A receiver runs [the receiver's order](SIGNED_EXTENSIONS.md#the-receivers-order)
+(`ReceiveRelayGrant`): `grant_version` first, the fields and the area, the signature's algorithm id, the signature by
+the recipient's key (its raw key hashes to the recipient's Account ID), an unknown critical entry; then the terms: the
+pair, the lifetime, not expired. The relay checks it the same way with the recipient's registered key; the app with the
+grantor's key resolved as [above](#resolving-keys). **A grant the app cannot read** (a newer `grant_version`, an
+unknown algorithm, an unknown critical entry) is none, never a forgery: its grantor runs a newer app, and is not asked
+for a grant again (`RelayGrantCoordinator::NeedsNewerApp`). A grant kept or forwarded keeps its entries. Vectors:
+`lib/delivery/tests/data/relay_grant_vectors.json` (the signed bytes of fixed grants, signed fixtures, each refusal's
+verdict), read by the relay byte for byte.
 
 **Who gets one.** Every contact not blocked (added; an opening offer accepted or waived adds the contact)
 and every member of a group we are in (`RelayGrantPeers`). Calls grant too, contacts or not: **answering a

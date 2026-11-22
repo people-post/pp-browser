@@ -30,8 +30,13 @@ enum class NoticeKind { Grant, Ack, Ask };
 
 struct Notice {
   NoticeKind kind = NoticeKind::Ask;
-  /** Grant: the grant itself. */
+  /** Grant: the grant itself, read (RelayGrantFromJson); its signature is the receiver's to check. */
   std::optional<RelayGrant> grant;
+  /**
+   * Grant: one this app cannot read (a newer version or algorithm, SIGNED_FORMATS § 2.4): no `grant`. It is treated
+   * as none, and its grantor as an app newer than ours.
+   */
+  bool newer_format = false;
   /** Ack: the `issued_at` of the grant kept. */
   int64_t issued_at = 0;
 };

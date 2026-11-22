@@ -23,7 +23,8 @@ public:
   /**
    * @param local_account_id Our Account ID: the stream the request must target, the E2E AAD and envelope sender.
    * @param local_device This device's PeerId: the served envelopes are its account copies (M021).
-   * @param sign_bytes Signs EnvelopeSigner::BuildSignBytes output with this device's key.
+   * @param sign_bytes Signs EnvelopeSigner::BuildSignBytes output with this device's key (raw; EnvelopeSigner::Sign
+   *        types it).
    * @param remote_peer_id The authenticated Amp peer the request came from: the request must be
    *        signed by its `requester_account_id` for this peer (PeerRequestAuth); that account's
    *        thread is served.

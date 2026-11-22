@@ -1,5 +1,7 @@
 #include "lib/people/PeerSigningKeyStore.h"
 
+#include "lib/people/CardKeys.h"
+
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
 #include "crypto/PeerId.h"
@@ -15,7 +17,7 @@ std::string PeerSigningKeyStore::MakeKey(const std::string& kind, const std::str
 
 bool PeerSigningKeyStore::Put(const std::string& peer_identity_kind, const std::string& peer_identity_value,
                               PeerSigningKeyRecord record) {
-  auto public_key = Base64Decode(record.signing_public_key_b64);
+  auto public_key = RawSigningPublicKey(record.signing_public_key_b64); // typed; identities hash the raw key
   if (!public_key) {
     return false;
   }

@@ -437,21 +437,22 @@ The statement as built, with these fields added inside what the owner signs. **B
 
 JSON omits `added_by`, `title`/`title_version`, `removed`, `links`, `folded` and `change_floor_epoch` when empty or 0.
 
-**Sign bytes v3** — the account key (ML-DSA-65) signs, every string a u32 BE length then its bytes, every integer u64 BE, every list sorted (members and removed by identity, links by `link_id`, folded by id):
+**Sign bytes (statement v4**, [release-compatibility SIGNED_FORMATS § 2.5](../release-compatibility/SIGNED_FORMATS.md#25-group-roster-statement-v4-dissolved-owner-transfer-v2-roster-change-v2); JSON `statement_version: 4`, `ext_b64`, a typed `owner_public_key` and `owner_signature`) — the account key (ML-DSA-65) signs; after the header every string a u32 BE length then its bytes, every integer u64 BE, every list sorted (members and removed by identity, links by `link_id`, folded by id):
 
 ```
-"pp-browser:group-roster-statement-v3"   ("pp-browser:group-dissolved-v3" for a dissolve, G016)
+"pp-browser:group-roster-statement" 00 u8(4)   ("pp-browser:group-dissolved" 00 u8(4) for a dissolve, G016)
 group_id, roster_epoch, owner,
-member count, then per member: identity, role, joined_at, added_by
-preset
+member count, then per member: identity, role (as received), joined_at, added_by
+preset (as received)
 title, title_version
 removed count, then per entry: identity, removal, by
 link count, then per link: link_id, secret_hash, maker, expires_at, max_uses (0: none), uses
 folded count, then per entry: id, base_epoch
 change_floor_epoch
+ext area   (u64 BE length of the entries, then the entries: SIGNED_EXTENSIONS)
 ```
 
-Verify also refuses a removed account that is also a member, a repeated removed account, link id or folded id, a folded entry below the floor, and a floor above the epoch. v2 statements no longer verify (clean cutover).
+Verify also refuses a removed account that is also a member, a repeated removed account, link id or folded id, a folded entry below the floor, and a floor above the epoch. Nothing older verifies (the signed-format cutover is a clean break). An owner transfer is v2: `"pp-browser:group-owner-transfer" 00 u8(2)`, group_id, from, to, roster_epoch, ext area (JSON `transfer_version: 2`).
 
 **Why 32 (`kChangeFloorLag`).** Every statement is one act of the owner (an add, a removal, a role, a fold), so 32 statements is weeks of a busy group's life — far longer than a change spends in flight from a device that was offline — while `folded`, which rides every statement (every roster event and `member_joined`), names only the changes of the last 32 statements: about 80 bytes each, so a few kilobytes even for a group folding several changes a statement. A larger lag makes `folded` grow with it for no gain a user would notice; a smaller one turns a device offline over a few owner acts into lost changes.
 
@@ -461,6 +462,7 @@ Verify also refuses a removed account that is also a member, a repeated removed 
 
 ```json
 {
+  "change_version": 2,
   "group_id": "group:…",
   "base_epoch": 7,
   "signer": "account:…",
@@ -469,15 +471,16 @@ Verify also refuses a removed account that is also a member, a repeated removed 
   "at": 1767225600000,
   "change": "add",
   "body": { "member": "account:…", "invite_nonce": "uuid" },
-  "signature": "<base64 ML-DSA-65 by the device key over the sign bytes below>"
+  "ext_b64": "<optional: the signed extension entries>",
+  "signature": "<base64 typed ML-DSA-65 signature by the device key over the sign bytes below>"
 }
 ```
 
 - **Keys (G018 item 9):** a change is signed by the signing device's key, which must be on the signer's card (signed by the account key). The owner's statement stays signed by the account key. **Verify:** the card proves itself (`VerifyAccountCard`; its account id derives from its account key) and is the signer's, lists `signer_device`, and that device's signing key verifies the signature. `signer_card` is not signed: it proves itself.
-- **Sign bytes:** strings u32 BE length then bytes, integers u64 BE, id lists a u64 BE count then each id sorted:
+- **Sign bytes (change v2):** after the header strings u32 BE length then bytes, integers u64 BE, id lists a u64 BE count then each id sorted; the extension area last. A `change` this build does not know is "update needed" (its body cannot be rebuilt):
 
 ```
-"pp-browser:group-roster-change-v1", group_id, base_epoch, signer, signer_device, at, change,
+"pp-browser:group-roster-change" 00 u8(2), group_id, base_epoch, signer, signer_device, at, change,
 then the body by change:
   add          member, invite_nonce, link_id, readmits          (absent fields as empty strings)
   leave        adds (list), keeps (list)
@@ -485,6 +488,7 @@ then the body by change:
   rename       title, title_version
   link_add     link_id, secret_hash, expires_at, max_uses (0: none)
   link_revoke  link_id
+then the ext area
 ```
 
 - **Change id:** lowercase hex of BLAKE2b-256(sign bytes). Two copies of one change (re-signed, or carrying a card) share it; a forged copy shares it too, so a copy whose signature fails is dropped, never held or folded, and a proved copy wins. `base_epoch` (the statement the signer held) and `at` are for display and diagnosis; validity is R1–R6 against the latest statement and the signers' newest cards.

@@ -15,6 +15,7 @@
 #include "common/Utilities.h"
 #include "common/tests/TeardownLikeTheApp.h"
 #include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/TypedBlob.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
 
@@ -53,7 +54,7 @@ public:
   AnyPeerKem() : public_key_(HybridKem::GenerateKeyPair().value().public_key) {}
   Roe<PeerKemKeyRecord> Resolve(const std::string&, const std::string&) override {
     PeerKemKeyRecord record;
-    record.kem_public_key_b64 = Base64Encode(public_key_);
+    record.kem_public_key_b64 = WriteTypedBlobB64(pp::BlobKind::kKemPublicKey, public_key_).value(); // held typed
     return record;
   }
 

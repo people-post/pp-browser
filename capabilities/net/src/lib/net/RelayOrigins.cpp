@@ -2,8 +2,6 @@
 
 #include "lib/people/RegistrationStatus.h"
 
-#include "foundation/crypto/PeerIdForm.h"
-
 #include "common/MeshAlias.h"
 #include "mesh/types/PublicAddress.h"
 
@@ -309,27 +307,30 @@ ParsedRelayOrigin ParseRelayOrigin(const std::string& text, const bool allow_htt
 
 ParsedRelayOrigin ParseRelayLink(const std::string& text, const bool allow_http) {
   std::string url = text;
-  std::string peer_id;
+  std::string fragment;
   if (const size_t hash = url.find('#'); hash != std::string::npos) {
-    peer_id = url.substr(hash + 1);
+    fragment = url.substr(hash + 1);
     url.resize(hash);
-    while (!peer_id.empty() && std::isspace(static_cast<unsigned char>(peer_id.back())) != 0) {
-      peer_id.pop_back();
+    while (!fragment.empty() && std::isspace(static_cast<unsigned char>(fragment.back())) != 0) {
+      fragment.pop_back();
     }
   }
   ParsedRelayOrigin parsed = ParseRelayOrigin(url, allow_http);
   if (parsed.problem != RelayOriginProblem::None) {
     return parsed;
   }
-  if (text.find('#') != std::string::npos && !IsMlDsaPeerIdForm(peer_id)) {
-    return {.problem = RelayOriginProblem::BadRelayId};
+  if (text.find('#') != std::string::npos) {
+    const auto relay_id = RelayId::Parse(fragment);
+    if (!relay_id) {
+      return {.problem = RelayOriginProblem::BadRelayId};
+    }
+    parsed.relay_id = *relay_id;
   }
-  parsed.peer_id = std::move(peer_id);
   return parsed;
 }
 
-std::string RelayLink(const std::string& base_url, const std::string& peer_id) {
-  return peer_id.empty() ? base_url : base_url + "#" + peer_id;
+std::string RelayLink(const std::string& base_url, const RelayId& relay_id) {
+  return relay_id.empty() ? base_url : base_url + "#" + relay_id.ToString();
 }
 
 } // namespace pbr

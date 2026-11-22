@@ -1,0 +1,10 @@
+# PLACEHOLDER: the qa relay's certificate is not made yet. It fails closed: a build of this file ships no
+# certificate for the qa relay, and PP_RELAY_ID_QA's default ("pending") leaves that relay unused (nothing is
+# signed for it, it is never pinned on first use, release checks refuse it).
+#
+# Leo makes the qa operator set and its certificate 1 (release-compatibility CUTOVER_PLAN, "Infrastructure and
+# keys"; SIGNED_FORMATS § 3.5, § 7). Then: replace "pending" below with the certificate's standard base64 (one line or
+# wrapped, as pp-relay-apis' scripts/relay-operator.mjs prints it), and set PP_RELAY_ID_QA (CI variable) to its
+# relay id. Each new certificate (a higher sequence) replaces this file in the next build: it is the floor a fresh
+# install starts from (docs/ops/BUILD.md).
+pending

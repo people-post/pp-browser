@@ -12,6 +12,11 @@ namespace pbr {
 
 namespace {
 
+/** What an entry names its relay by: its relay id (a card's or a locator's; "" for one of ours, by origin). */
+std::string EntryName(const AccountCardRelay& relay) {
+  return relay.relay_id.ToString();
+}
+
 bool IsNetworkCode(const Error& failure, const Err::Network code) {
   return AppError::CategoryOf(failure) == ErrorCategory::Network && static_cast<Err::Network>(failure.code) == code;
 }
@@ -117,14 +122,14 @@ std::shared_ptr<IRelayClient> RelaySendCoordinator::ClientFor(const AccountCardR
       return ours.client; // its pin is the card's PeerId (Unusable ruled out any other)
     }
   }
-  const std::string key = RelayOriginKey(relay.origin) + "|" + relay.peer_id;
+  const std::string key = RelayOriginKey(relay.origin) + "|" + EntryName(relay);
   if (auto it = foreign_.find(key); it != foreign_.end()) {
     return it->second;
   }
   if (!factory_) {
     return nullptr;
   }
-  std::shared_ptr<IRelayClient> client = factory_(relay.origin, relay.peer_id);
+  std::shared_ptr<IRelayClient> client = factory_(relay);
   if (!client) {
     return nullptr;
   }
@@ -136,12 +141,12 @@ std::shared_ptr<IRelayClient> RelaySendCoordinator::ClientFor(const AccountCardR
 }
 
 bool RelaySendCoordinator::Unusable(const std::string& recipient, const AccountCardRelay& relay) {
-  if (relay.peer_id.empty() || recipient.empty()) {
+  if (EntryName(relay).empty() || recipient.empty()) {
     return false; // signed for by its pin: the client says when that is not in force
   }
   CardRelayCheckFn check;
   const int64_t now_ms = Now();
-  const auto entry = std::make_tuple(recipient, RelayOriginKey(relay.origin), relay.peer_id);
+  const auto entry = std::make_tuple(recipient, RelayOriginKey(relay.origin), EntryName(relay));
   {
     std::lock_guard lock(mutex_);
     check = card_relay_check_;
@@ -150,7 +155,7 @@ bool RelaySendCoordinator::Unusable(const std::string& recipient, const AccountC
       return true; // it refused this PeerId a moment ago, and the newest card still names it
     }
   }
-  if (!check || check(relay.origin, relay.peer_id) == CardRelayCheck::Usable) {
+  if (!check || check(relay) == CardRelayCheck::Usable) {
     return false;
   }
   bool first = false;
@@ -165,7 +170,7 @@ bool RelaySendCoordinator::Unusable(const std::string& recipient, const AccountC
   }
   if (first) {
     log().warning << "relay send: " << recipient << "'s card names " << RelayOriginKey(relay.origin) << " as "
-                  << relay.peer_id << ", which our pins disagree with; that relay is skipped for them";
+                  << EntryName(relay) << ", which our pins disagree with; that relay is skipped for them";
   }
   return true;
 }
@@ -186,7 +191,7 @@ RelaySendCoordinator::Try RelaySendCoordinator::TryRelay(const AccountCardRelay&
     // The relay is not the one the card's PeerId names (it rotated, or the card is wrong): not unhealthy (MR007).
     const std::string recipient = envelope.recipient_account_id.value_or("");
     std::lock_guard lock(mutex_);
-    mismatched_[std::make_tuple(recipient, RelayOriginKey(relay.origin), relay.peer_id)] =
+    mismatched_[std::make_tuple(recipient, RelayOriginKey(relay.origin), EntryName(relay))] =
         Mismatch{.at_ms = Now(), .refused = true};
     return Try::Stale;
   }

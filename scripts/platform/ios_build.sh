@@ -55,8 +55,9 @@ Environment:
   PP_BROWSER_IOS_CALLKIT      ON (default) or OFF: CallKit + PushKit for default-PIN incoming calls; OFF for the China storefront
   PP_API_URL_PROD             Prod backend origin compiled into the app (empty = none)
   PP_API_URL_QA               QA backend origin compiled into the app (empty = QA option hidden)
-  PP_RELAY_PEER_ID_PROD       PeerId of the prod backend's relay (multi-relay MR008; empty = pinned on first use)
-  PP_RELAY_PEER_ID_QA         PeerId of the QA backend's relay (empty = pinned on first use)
+  PP_RELAY_ID_PROD            relay id of the prod backend's relay (relay:…, SIGNED_FORMATS § 3.5; unset = pending:
+                              not used); its certificate is config/relay-certs/prod.cert
+  PP_RELAY_ID_QA              relay id of the QA backend's relay (unset = pending); config/relay-certs/qa.cert
   PP_RELAY_CONTENT_SHA256     ON/OFF: default of relay.content_sha256 (x-amz-content-sha256 on relay POST/PUT); empty = OFF
   IOS_CMAKE_GENERATOR       Ninja (default) or Xcode
   IOS_SIMULATOR_UDID        Target a specific simulator (optional; otherwise newest iPhone)
@@ -141,11 +142,11 @@ common_cmake_args() {
   if [[ -n "${PP_API_URL_QA:-}" ]]; then
     args+=(-DPP_API_URL_QA="${PP_API_URL_QA}")
   fi
-  if [[ -n "${PP_RELAY_PEER_ID_PROD:-}" ]]; then
-    args+=(-DPP_RELAY_PEER_ID_PROD="${PP_RELAY_PEER_ID_PROD}")
+  if [[ -n "${PP_RELAY_ID_PROD:-}" ]]; then
+    args+=(-DPP_RELAY_ID_PROD="${PP_RELAY_ID_PROD}")
   fi
-  if [[ -n "${PP_RELAY_PEER_ID_QA:-}" ]]; then
-    args+=(-DPP_RELAY_PEER_ID_QA="${PP_RELAY_PEER_ID_QA}")
+  if [[ -n "${PP_RELAY_ID_QA:-}" ]]; then
+    args+=(-DPP_RELAY_ID_QA="${PP_RELAY_ID_QA}")
   fi
   local relay_sha="${PP_RELAY_CONTENT_SHA256:-OFF}"
   relay_sha="$(printf '%s' "${relay_sha}" | tr '[:lower:]' '[:upper:]')"

@@ -278,7 +278,7 @@ TEST_F(TolerantReceiveTest, ANewerCardRidingAnEnvelopeMarksItsSender) {
   });
   RelayEnvelope envelope = TextEnvelope(1, "hi");
   Object card = AccountCardToJson(peer_.DeviceCard());
-  card.set("card_version", static_cast<int64_t>(5));
+  card.set("card_version", static_cast<int64_t>(6));
   card.set("account_id", kPeer);
   envelope.body.e2e.sender_card = card;
   envelope.body.e2e.sender_card_at = 1;
@@ -479,6 +479,93 @@ TEST_F(NewerEnvelopeTest, AtAnotherEpochOnlyTheRowIsShown) {
   EXPECT_TRUE(outcome.persisted);
   EXPECT_EQ(store_.GetChatTargetSessionEpoch(thread_.id).value(), 1u) << "an unverified envelope moves no epoch";
   EXPECT_EQ(Sync().contiguous_peer_seq, 1u);
+}
+
+// ---- Envelope v4 (release-compatibility SIGNED_FORMATS § 2.1): algorithm ids, the extension area --------------------
+
+pp::ExtArea Area(const uint16_t type) {
+  return pp::ExtArea::FromEntries({{.type = type, .value = {1, 2}}}).value();
+}
+
+// Step 3: an algorithm id this build does not know (here the copy's AEAD) is a newer app's, before anything verifies:
+// its seq closed, one "update to view" row, nothing of it verified or applied.
+TEST_F(NewerEnvelopeTest, AnUnknownAlgorithmIdReadsAsANewerAppsEnvelope) {
+  ASSERT_EQ(pipeline_->ProcessEnvelope(TextEnvelope(1, "one"), local_.account_id).decision,
+            IngestDecision::AcceptBootstrap);
+  RelayEnvelope envelope = TextEnvelope(2, "two");
+  envelope.signature = Base64Encode(ByteVector{0x02, 0x00, 0x01}); // signature algorithm 2: unknown, unverifiable
+  const RelayReceiveOutcome outcome = pipeline_->ProcessEnvelope(envelope, local_.account_id);
+  ASSERT_TRUE(outcome.receive_failure);
+  EXPECT_EQ(*outcome.receive_failure, ReceiveFailure::NeedsUpdate);
+  EXPECT_FALSE(outcome.sender_verified);
+  EXPECT_TRUE(Closed(Sync(), 2));
+  EXPECT_EQ(Sync().contiguous_peer_seq, 2u);
+
+  RelayEnvelope malformed = TextEnvelope(3, "three");
+  malformed.signature = Base64Encode(ByteVector{0x01, 0x00}); // ml-dsa-65 of the wrong size
+  EXPECT_EQ(pipeline_->ProcessEnvelope(malformed, local_.account_id).decision, IngestDecision::HardReject);
+}
+
+// Step 5: a critical extension this build does not understand is a newer app's once the signature verified — and a
+// forgery when it was added after signing (an unsigned envelope never raises "update needed").
+TEST_F(NewerEnvelopeTest, ACriticalExtensionIsReadOnlyAfterTheSignature) {
+  ASSERT_EQ(pipeline_->ProcessEnvelope(TextEnvelope(1, "one"), local_.account_id).decision,
+            IngestDecision::AcceptBootstrap);
+  RelayEnvelope added_after = TextEnvelope(2, "two");
+  added_after.ext = Area(0x8001);
+  const RelayReceiveOutcome forged = pipeline_->ProcessEnvelope(added_after, local_.account_id);
+  EXPECT_EQ(forged.decision, IngestDecision::HardReject);
+  EXPECT_FALSE(forged.receive_failure);
+  EXPECT_FALSE(Closed(Sync(), 2));
+
+  RelayEnvelope critical = TextEnvelope(2, "two");
+  critical.ext = Area(0x8001);
+  test::SignEnvelopeAs(peer_, critical);
+  const RelayReceiveOutcome outcome = pipeline_->ProcessEnvelope(critical, local_.account_id);
+  ASSERT_TRUE(outcome.receive_failure);
+  EXPECT_EQ(*outcome.receive_failure, ReceiveFailure::NeedsUpdate);
+  EXPECT_TRUE(Closed(Sync(), 2));
+  const auto rows = Rows();
+  ASSERT_EQ(rows.size(), 2u);
+  EXPECT_TRUE(std::any_of(rows.begin(), rows.end(), [](const ThreadMessage& row) {
+    return row.content_type == ChatContentType::Unsupported;
+  })) << "update to view";
+}
+
+// An unknown non-critical entry is ignored (and signed): the message is read as any other.
+TEST_F(NewerEnvelopeTest, ANonCriticalExtensionIsIgnored) {
+  RelayEnvelope envelope = TextEnvelope(1, "one");
+  envelope.ext = Area(0x0001);
+  test::SignEnvelopeAs(peer_, envelope);
+  auto parsed = ParseRelayEnvelope(RelayEnvelopeToJson(envelope));
+  ASSERT_TRUE(parsed) << parsed.error().message;
+  EXPECT_EQ(parsed->ext, envelope.ext) << "kept as received";
+  const RelayReceiveOutcome outcome = pipeline_->ProcessEnvelope(*parsed, local_.account_id);
+  EXPECT_EQ(outcome.decision, IngestDecision::AcceptBootstrap);
+  EXPECT_TRUE(outcome.sender_verified);
+}
+
+// Step 1: an envelope before this version (or with none) is an older app's: refused as it is read.
+TEST(TolerantEnvelopeParseTest, AnOlderOrMissingVersionIsRefused) {
+  RelayEnvelope sent;
+  sent.message_id = "older-1";
+  sent.sender_contact_id = kPeer;
+  sent.sender_device = "QmPeerDevice";
+  sent.route.kind = kRelayRouteDirect;
+  sent.route.channel = ThreadChannel::E2ePublic;
+  sent.body.e2e.copies = {RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "AQ"}};
+  Object json = RelayEnvelopeToJson(sent);
+  ASSERT_TRUE(ParseRelayEnvelope(json));
+  json.set("envelope_version", int64_t{kRelayEnvelopeVersion - 1});
+  auto older = ParseRelayEnvelope(json);
+  ASSERT_FALSE(older);
+  EXPECT_NE(older.error().message.find("older app"), std::string::npos) << older.error().message;
+  EXPECT_FALSE(AppError::IsNewerFormat(older.error()));
+  json.erase("envelope_version");
+  EXPECT_FALSE(ParseRelayEnvelope(json)) << "no version: an older app's";
+  json = RelayEnvelopeToJson(sent);
+  json.set("ext_b64", "AAAA"); // three zero bytes: bytes left over
+  EXPECT_FALSE(ParseRelayEnvelope(json)) << "a malformed area";
 }
 
 } // namespace

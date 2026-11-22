@@ -3,6 +3,7 @@
 #include "lib/messaging/GroupTypes.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "common/Error.h"
+#include "common/ExtArea.h"
 #include "common/Value.h"
 #include "common/directory/IAccountSigningAccess.h"
 
@@ -17,10 +18,16 @@ namespace pbr {
 /** One member as the owner states it (G012). */
 struct GroupRosterStatementMember {
   std::string identity;
+  /** Read from `role` (an unknown role reads as Member); RoleText is what is signed and written. */
   MemberRole role = MemberRole::Member;
   int64_t joined_at = 0;
   /** G019: who brought them in (the signer of the `add` the owner folded); empty for the group's first members. */
   std::string added_by;
+  /**
+   * The role as received (SIGNED_FORMATS § 2.5, T6): signed as it came, so a role this build does not know still
+   * verifies. Empty for a member built here; ignored once `role` no longer reads from it.
+   */
+  std::string role_text;
 };
 
 /** G018 R2 / G020: an account removed and not re-admitted; a re-admit names `removal`. */
@@ -61,30 +68,37 @@ struct GroupFoldedChange {
 
 /**
  * A transfer of ownership, signed by the owner who gave it up (G012 amendment: the owner chain). It
- * lets a device that knows only an earlier owner trust a statement the later owner signed.
+ * lets a device that knows only an earlier owner trust a statement the later owner signed. Owner transfer v2
+ * (SIGNED_FORMATS § 2.5): JSON `transfer_version: 2`.
  */
 struct GroupOwnerTransfer {
   std::string from_identity;
-  /** `from_identity`'s account ML-DSA-65 public key (base64); its account id is derived from it. */
+  /** `from_identity`'s typed account signing key (base64); its account id is derived from the raw key. */
   std::string from_public_key_b64;
   std::string to_identity;
   /** The roster epoch the transfer took effect at. */
   uint64_t roster_epoch = 0;
+  /** Typed signature by `from_identity`'s account key. */
   std::string signature_b64;
+  /** The signed extension area (`ext_b64`): none is defined at release 1; a received transfer keeps its entries. */
+  pp::ExtArea ext;
 };
 
 /**
  * The owner-signed roster of a group (G012): every member stores the latest one and any of them can
  * hand it to a member who lost the group, who checks it offline — the owner's key hashes to the
- * owner's account id, and the chain leads from the owner it knew to this one.
+ * owner's account id, and the chain leads from the owner it knew to this one. Roster statement v4 (SIGNED_FORMATS
+ * § 2.5): JSON `statement_version: 4`, a dissolved one too.
  */
 struct GroupRosterStatement {
   std::string group_id;
   uint64_t roster_epoch = 0;
   /** Sorted by identity; exactly one has role owner, the signer; any number admin (G017). */
   std::vector<GroupRosterStatementMember> members;
-  /** G017: who brings people in and renames, as the owner set it. */
+  /** G017: who brings people in and renames, as the owner set it (read from `preset`; unknown reads as Open). */
   GroupPreset preset = GroupPreset::Open;
+  /** The preset as received (T6): signed as it came. Empty when built here; ignored once `preset` no longer reads it. */
+  std::string preset_text;
   /** The group's name and its version (G018 R4: a rename wins on the higher version). */
   std::string title;
   uint64_t title_version = 0;
@@ -104,9 +118,13 @@ struct GroupRosterStatement {
    */
   uint64_t change_floor_epoch = 0;
   std::string owner_identity;
+  /** The owner's typed account signing key (base64). */
   std::string owner_public_key_b64;
   /** Every transfer since the group began, oldest first; empty while its creator owns it. */
   std::vector<GroupOwnerTransfer> owner_chain;
+  /** The signed extension area (`ext_b64`): none is defined at release 1; a received statement keeps its entries. */
+  pp::ExtArea ext;
+  /** Typed signature by the owner's account key. */
   std::string owner_signature_b64;
   /**
    * G016: the owner's statement that it ended the group, carried by `group_dissolved`. Signed under its own
@@ -121,13 +139,25 @@ struct GroupRosterStatement {
 
 namespace group_roster_statement {
 
+/** The statement's version (a dissolved one's too) and the transfer's: outside and inside, release 1's only ones. */
+inline constexpr uint8_t kStatementVersion = 4;
+inline constexpr uint8_t kTransferVersion = 2;
+
+/** The role and the preset as signed and written: as received while the enum still reads from it, else the enum's. */
+std::string RoleText(const GroupRosterStatementMember& member);
+std::string PresetText(const GroupRosterStatement& statement);
+
 /**
- * The bytes the owner signs (v3, G018): domain tag, group, epoch, owner, members (with `added_by`), preset, title
- * and its version, removed, links, folded (each id with its base epoch), the change floor (length-prefixed fields;
- * every list sorted).
+ * The bytes the owner signs (SIGNED_FORMATS § 2.5): `"pp-browser:group-roster-statement" 00 ‖ u8 4` (a dissolved
+ * one: `"pp-browser:group-dissolved"`), then group, epoch, owner, members (with the role as received and `added_by`),
+ * the preset as received, title and its version, removed, links, folded (each id with its base epoch), the change
+ * floor (strings a u32 BE length then the bytes, integers u64 BE; every list sorted), then the extension area.
  */
 ByteVector SignBytes(const GroupRosterStatement& statement);
-/** The bytes a transferring owner signs: domain tag, group, from, to, epoch. */
+/**
+ * The bytes a transferring owner signs: `"pp-browser:group-owner-transfer" 00 ‖ u8 2 ‖ group ‖ from ‖ to ‖ u64 epoch ‖
+ * ext area` (u32-length strings).
+ */
 ByteVector TransferSignBytes(const std::string& group_id, const GroupOwnerTransfer& transfer);
 
 /**
@@ -153,12 +183,14 @@ Roe<GroupOwnerTransfer> SignTransfer(IAccountSigningAccess& signer, const std::s
                                      uint64_t roster_epoch);
 
 /**
- * Valid for a device that knows `known_owner` (empty: knows none): the one owner member signed it with
- * the key its account id comes from, members are unique, the removed are unique and not members, link ids and
- * folded ids are unique, no folded change is below the change floor (nor the floor above the epoch), every transfer
- * in the chain is signed by the
- * owner it moves from, links to the next, and its epochs rise to at most the statement's; and, when
- * `known_owner` is not the statement's owner, the chain moves ownership away from `known_owner`.
+ * Valid for a device that knows `known_owner` (empty: knows none), in the receiver's order
+ * (docs/contracts/SIGNED_EXTENSIONS.md): the typed keys' and signatures' algorithm ids; the owner's signature with
+ * the key its account id comes from and each transfer's by the owner it moves from (a forgery otherwise); no unknown
+ * critical entry in the statement's or a transfer's area (else `AppError::NewerFormat`); then the terms: the one
+ * owner member is its signer, members are unique, the removed are unique and not members, link ids and folded ids
+ * are unique, no folded change is below the change floor (nor the floor above the epoch), the chain links each
+ * transfer to the next with epochs rising to at most the statement's; and, when `known_owner` is not the
+ * statement's owner, the chain moves ownership away from `known_owner`.
  */
 Roe<void> Verify(const GroupRosterStatement& statement, const std::string& known_owner);
 
@@ -178,8 +210,14 @@ bool OwnerHandedOn(const std::vector<GroupOwnerTransfer>& known, const GroupRost
 std::optional<GroupRosterStatement> Pick(const std::vector<GroupRosterStatement>& valid);
 
 Object ToJson(const GroupRosterStatement& statement);
+/**
+ * Steps 1–3 of the receiver's order: `statement_version` first (missing or older: refused; newer:
+ * `AppError::NewerFormat`, nothing else read), the fields and the area (each transfer's the same, by its
+ * `transfer_version`), the typed blobs' algorithm ids (unknown: NewerFormat). Verify checks the signatures.
+ */
 Roe<GroupRosterStatement> FromJson(const Object& json);
 Object TransferToJson(const GroupOwnerTransfer& transfer);
+/** The transfer's steps 1–3, as FromJson's. */
 Roe<GroupOwnerTransfer> TransferFromJson(const Object& json);
 
 } // namespace group_roster_statement

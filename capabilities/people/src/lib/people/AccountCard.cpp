@@ -1,10 +1,12 @@
 #include "lib/people/AccountCard.h"
 
+#include "lib/people/CardKeys.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/KemKeyBinding.h"
 #include "foundation/crypto/MlDsa.h"
-#include "foundation/crypto/PeerIdForm.h"
+#include "foundation/crypto/SignedBytes.h"
+#include "foundation/crypto/TypedBlob.h"
+#include "foundation/error/AppError.h"
 #include "crypto/PeerId.h"
 
 #include <algorithm>
@@ -17,27 +19,13 @@ namespace pbr {
 
 namespace {
 
-// 4 (multi-relay MR007): each relay is `{origin, peer_id}`; every other version is refused (clean cutover).
-constexpr char kAccountCardDomain[] = "pp-browser:account-card-v4";
-constexpr uint8_t kAccountCardSignVersion = 4;
-constexpr int64_t kAccountCardVersion = 4;
 constexpr std::string_view kHttpsScheme = "https://";
-
-void AppendU64(ByteVector& out, uint64_t value) {
-  for (int shift = 56; shift >= 0; shift -= 8) {
-    out.push_back(static_cast<uint8_t>(value >> shift));
-  }
-}
-
-void AppendLenUtf8(ByteVector& out, const std::string& value) {
-  AppendU64(out, value.size());
-  out.insert(out.end(), value.begin(), value.end());
-}
+constexpr char kWhat[] = "account card";
 
 Roe<std::string> RequiredString(const Object& json, const char* key) {
   auto value = json.getString(key);
   if (!value || value->empty()) {
-    return Error(std::string("account card: missing ") + key);
+    return Error(std::string("missing ") + key);
   }
   return *value;
 }
@@ -48,14 +36,14 @@ Roe<std::vector<AccountCardDevice>> DevicesFromJson(const Object& json) {
     for (const Value& item : devices->elements) {
       const Object* row = asObject(item);
       if (!row) {
-        return Error("account card: bad device");
+        return Error("bad device");
       }
       AccountCardDevice device;
       device.peer_id = row->getString("peer_id").value_or("");
       device.signing_public_key_b64 = row->getString("signing_public_key_b64").value_or("");
       device.kem_public_key_b64 = row->getString("kem_public_key_b64").value_or("");
       if (device.peer_id.empty() || device.signing_public_key_b64.empty() || device.kem_public_key_b64.empty()) {
-        return Error("account card: bad device");
+        return Error("bad device");
       }
       out.push_back(std::move(device));
     }
@@ -64,28 +52,197 @@ Roe<std::vector<AccountCardDevice>> DevicesFromJson(const Object& json) {
 }
 
 /**
- * `relays` is required (an empty list is the mesh only), and each entry names an origin and a PeerId: a card without
- * them is refused, as the relay does.
+ * `relays` is required (an empty list is the mesh only), and each entry names an origin and a relay id of the `relay:`
+ * form: a card without them is refused, as the relay does.
  */
 Roe<std::vector<AccountCardRelay>> RelaysFromJson(const Object& json) {
   const Array* relays = json.getArray("relays");
   if (!relays) {
-    return Error("account card: missing relays");
+    return Error("missing relays");
   }
   std::vector<AccountCardRelay> out;
   for (const Value& item : relays->elements) {
     const Object* row = asObject(item);
     auto origin = row ? row->getString("origin") : std::nullopt;
-    auto peer_id = row ? row->getString("peer_id") : std::nullopt;
+    auto relay_id = row ? row->getString("relay_id") : std::nullopt;
     if (!origin) {
-      return Error("account card: a relay needs an origin");
+      return Error("a relay needs an origin");
     }
-    if (!peer_id) {
-      return Error("account card: a relay needs a peer_id");
+    if (!relay_id) {
+      return Error("a relay needs a relay_id");
     }
-    out.push_back(AccountCardRelay{.origin = *origin, .peer_id = *peer_id});
+    auto parsed = RelayId::Parse(*relay_id);
+    if (!parsed) {
+      return Error("a relay's relay_id is not a relay id");
+    }
+    out.push_back(AccountCardRelay{.origin = *origin, .relay_id = *parsed});
   }
   return out;
+}
+
+/** Step 2: the v5 fields, the extension area included. */
+Roe<AccountCard> FieldsFromJson(const Object& json) {
+  AccountCard card;
+  auto keys = KeyCardFromJson(json);
+  if (!keys) {
+    return keys.error();
+  }
+  card.keys = std::move(keys.value());
+  card.nickname = json.getString("nickname").value_or("");
+  auto devices = DevicesFromJson(json);
+  if (!devices) {
+    return devices.error();
+  }
+  card.devices = std::move(devices.value());
+  auto relays = RelaysFromJson(json);
+  if (!relays) {
+    return relays.error();
+  }
+  card.relays = std::move(relays.value());
+  auto floor = json.getIf<int64_t>("initiation_floor");
+  if (!floor) {
+    return Error("missing initiation_floor");
+  }
+  card.initiation_floor = *floor;
+  card.issued_at = json.getIf<int64_t>("issued_at").value_or(0);
+  auto ext = ReadExtB64(json);
+  if (!ext) {
+    return ext.error();
+  }
+  card.ext = std::move(ext.value());
+  auto signature = RequiredString(json, "card_signature_b64");
+  if (!signature) {
+    return signature.error();
+  }
+  card.card_signature_b64 = std::move(signature.value());
+  return card;
+}
+
+/** The typed blobs step 4 verifies with. */
+struct CardBlobs {
+  TypedRead signing;
+  TypedRead signature;
+};
+
+/** Step 3: every typed blob names an algorithm this build knows (else NewerFormat) and is of its size. */
+Roe<void> ReadCardBlobs(const AccountCard& card, CardBlobs& blobs) {
+  blobs.signing =
+      ReadTypedBlobB64(pp::BlobKind::kSignaturePublicKey, card.keys.signing_public_key_b64, "the account signing key");
+  if (!blobs.signing.ok()) {
+    return blobs.signing.ToError();
+  }
+  if (auto kem = RawKemPublicKey(card.keys.kem_public_key_b64, "the account KEM key"); !kem) {
+    return kem.error();
+  }
+  blobs.signature = ReadTypedBlobB64(pp::BlobKind::kSignature, card.card_signature_b64, "the card signature");
+  if (!blobs.signature.ok()) {
+    return blobs.signature.ToError();
+  }
+  for (const AccountCardDevice& device : card.devices) {
+    if (auto signing = RawSigningPublicKey(device.signing_public_key_b64, "a device's signing key"); !signing) {
+      return signing.error();
+    }
+    if (auto kem = RawKemPublicKey(device.kem_public_key_b64, "a device's KEM key"); !kem) {
+      return kem.error();
+    }
+  }
+  return {};
+}
+
+/** Step 4: the account's signature over the rebuilt bytes, its area included. */
+Roe<void> VerifyCardSignature(const AccountCard& card, const CardBlobs& blobs) {
+  const ByteVector message = AccountCardSignBytes(card);
+  if (message.empty()) {
+    return Error("its keys do not decode");
+  }
+  if (auto verified = VerifyTyped(blobs.signing, message, blobs.signature); !verified) {
+    return Error("the account did not sign it");
+  }
+  return {};
+}
+
+SignedReceipt Refused(const SignedVerdict verdict, const std::string& why) {
+  return SignedReceipt{.verdict = verdict,
+                       .version = kAccountCardVersion,
+                       .detail = std::string(kWhat) + " v" + std::to_string(kAccountCardVersion) + ": " + why};
+}
+
+/** Step 6: the key card, the device list, the relays, the floor and the clock. */
+SignedReceipt CheckSemantics(const AccountCard& card, const int64_t now_ms) {
+  const SignedReceipt binding =
+      ReceiveKemBinding(card.keys.signing_public_key_b64, card.keys.kem_public_key_b64, card.keys.kem_binding_b64);
+  if (!binding.accepted()) {
+    return Refused(binding.verdict, "key card: " + binding.detail);
+  }
+  auto signing = RawSigningPublicKey(card.keys.signing_public_key_b64);
+  auto account = signing ? AccountIdFromMlDsaPublicKey(*signing) : Roe<std::string>(signing.error());
+  if (!account || *account != card.keys.account_id) {
+    return Refused(SignedVerdict::Forged, "key card: the signing key is not the account's");
+  }
+  if (card.devices.empty()) {
+    return Refused(SignedVerdict::Malformed, "no device");
+  }
+  if (card.devices.size() > kMaxAccountCardDevices) {
+    return Refused(SignedVerdict::Malformed, "too many devices");
+  }
+  const std::vector<std::string> peer_ids = CardDevicePeerIds(card);
+  if (std::set<std::string>(peer_ids.begin(), peer_ids.end()).size() != peer_ids.size()) {
+    return Refused(SignedVerdict::Malformed, "duplicate device");
+  }
+  for (const AccountCardDevice& device : card.devices) {
+    if (auto checked = VerifyCardDevice(device); !checked) {
+      return Refused(AppError::IsNewerFormat(checked.error()) ? SignedVerdict::NeedsUpdate : SignedVerdict::Malformed,
+                     checked.error().message);
+    }
+  }
+  if (auto relays = VerifyCardRelays(card.relays); !relays) {
+    return Refused(SignedVerdict::Malformed, relays.error().message);
+  }
+  if (card.initiation_floor < 0 || card.initiation_floor > kMaxCardInitiationFloor) {
+    return Refused(SignedVerdict::Malformed, "initiation_floor out of range");
+  }
+  if (card.issued_at <= 0 || card.issued_at > now_ms + kAccountCardClockSkewMs) {
+    return Refused(SignedVerdict::Malformed, "issued in the future");
+  }
+  return SignedReceipt{.verdict = SignedVerdict::Accepted, .version = kAccountCardVersion};
+}
+
+/** Steps 1–3 for a card's JSON (AccountCardFromJson); `card` gets its fields. */
+SignedReceipt ReadCard(const Object& json, AccountCard& card) {
+  CardBlobs blobs;
+  return ReceiveSigned(SignedReceiveSteps{
+      .what = kWhat,
+      .outside_version = OutsideVersionOfJson(json, "card_version"),
+      .versions = {.floor = kAccountCardVersion, .current = kAccountCardVersion},
+      .parse = [&]() -> Roe<void> {
+        auto fields = FieldsFromJson(json);
+        if (!fields) {
+          return fields.error();
+        }
+        card = std::move(fields.value());
+        return {};
+      },
+      .algorithms = [&]() { return ReadCardBlobs(card, blobs); },
+      // Steps 4 and 5 are VerifyAccountCard's: reading a card checks nothing it says.
+      .verify = []() -> Roe<void> { return {}; },
+  });
+}
+
+/** Steps 3–6 for a card read or made here. */
+SignedReceipt CheckCard(const AccountCard& card, const int64_t now_ms) {
+  CardBlobs blobs;
+  const SignedReceipt received = ReceiveSigned(SignedReceiveSteps{
+      .what = kWhat,
+      .outside_version = kAccountCardVersion, // a card in memory is of the version this build writes
+      .versions = {.floor = kAccountCardVersion, .current = kAccountCardVersion},
+      .algorithms = [&]() { return ReadCardBlobs(card, blobs); },
+      .verify = [&]() { return VerifyCardSignature(card, blobs); },
+      .ext = &card.ext,
+  });
+  if (!received.accepted()) {
+    return received;
+  }
+  return CheckSemantics(card, now_ms);
 }
 
 std::string LowerAscii(std::string_view text) {
@@ -160,15 +317,15 @@ Roe<void> VerifyCardRelays(const std::vector<AccountCardRelay>& relays) {
     return Error("account card: more than " + std::to_string(kMaxAccountCardRelays) + " relays");
   }
   std::set<std::string> seen;
-  std::set<std::string> peer_ids;
+  std::set<RelayId> relay_ids;
   for (const AccountCardRelay& relay : relays) {
     if (!IsCardRelayOrigin(relay.origin)) {
       return Error("account card: a relay origin is not an https:// URL within the bounds");
     }
-    if (!IsMlDsaPeerIdForm(relay.peer_id)) {
-      return Error("account card: a relay's peer_id is not a PeerId");
+    if (relay.relay_id.empty()) {
+      return Error("account card: a relay names no relay id");
     }
-    if (!seen.insert(CardRelayKey(relay.origin)).second || !peer_ids.insert(relay.peer_id).second) {
+    if (!seen.insert(CardRelayKey(relay.origin)).second || !relay_ids.insert(relay.relay_id).second) {
       return Error("account card: duplicate relay");
     }
   }
@@ -196,52 +353,27 @@ Object AccountCardToJson(const AccountCard& card) {
   for (const AccountCardRelay& relay : card.relays) {
     Object row;
     row.set("origin", relay.origin);
-    row.set("peer_id", relay.peer_id);
+    row.set("relay_id", relay.relay_id.ToString());
     relays.push_back(ObjectValue(std::move(row)));
   }
   json.set("relays", ArrayValue(std::move(relays)));
   json.set("initiation_floor", card.initiation_floor);
   json.set("issued_at", card.issued_at);
+  WriteExtB64(json, card.ext);
   json.set("card_signature_b64", card.card_signature_b64);
   return json;
 }
 
 bool IsNewerAccountCard(const Object& json) {
-  return json.getIf<int64_t>("card_version").value_or(0) > kAccountCardVersion;
+  AccountCard card;
+  return ReadCard(json, card).needs_update();
 }
 
 Roe<AccountCard> AccountCardFromJson(const Object& json) {
-  if (json.getIf<int64_t>("card_version").value_or(0) != kAccountCardVersion) {
-    return Error("account card: unsupported card_version");
-  }
   AccountCard card;
-  auto keys = KeyCardFromJson(json);
-  if (!keys) {
-    return keys.error();
+  if (const SignedReceipt read = ReadCard(json, card); !read.accepted()) {
+    return read.ToError();
   }
-  card.keys = std::move(keys.value());
-  card.nickname = json.getString("nickname").value_or("");
-  auto devices = DevicesFromJson(json);
-  if (!devices) {
-    return devices.error();
-  }
-  card.devices = std::move(devices.value());
-  auto relays = RelaysFromJson(json);
-  if (!relays) {
-    return relays.error();
-  }
-  card.relays = std::move(relays.value());
-  auto floor = json.getIf<int64_t>("initiation_floor");
-  if (!floor) {
-    return Error("account card: missing initiation_floor");
-  }
-  card.initiation_floor = *floor;
-  card.issued_at = json.getIf<int64_t>("issued_at").value_or(0);
-  auto signature = RequiredString(json, "card_signature_b64");
-  if (!signature) {
-    return signature.error();
-  }
-  card.card_signature_b64 = std::move(signature.value());
   return card;
 }
 
@@ -264,13 +396,14 @@ std::vector<std::string> CardDevicePeerIds(const AccountCard& card) {
 }
 
 Roe<void> VerifyCardDevice(const AccountCardDevice& device) {
-  auto signing = Base64Decode(device.signing_public_key_b64);
-  auto kem = Base64Decode(device.kem_public_key_b64);
-  if (!signing || signing.value().size() != kMlDsa65PublicKeyBytes || !kem ||
-      kem.value().size() != kHybridKemPublicKeyBytes) {
-    return Error("account card: a device's keys do not decode");
+  auto signing = RawSigningPublicKey(device.signing_public_key_b64, "account card: a device's signing key");
+  if (!signing) {
+    return signing.error();
   }
-  auto peer_id = pp::PeerIdFromMlDsaPublicKey(signing.value());
+  if (auto kem = RawKemPublicKey(device.kem_public_key_b64, "account card: a device's KEM key"); !kem) {
+    return kem.error();
+  }
+  auto peer_id = pp::PeerIdFromMlDsaPublicKey(*signing); // the raw key: PeerIds do not change with typing
   if (!peer_id || *peer_id != device.peer_id) {
     return Error("account card: a device's PeerId is not its signing key's");
   }
@@ -278,86 +411,58 @@ Roe<void> VerifyCardDevice(const AccountCardDevice& device) {
 }
 
 Roe<void> VerifyKeyCard(const KeyCard& card) {
-  return VerifyKemBinding(card.account_id, card.signing_public_key_b64, card.kem_public_key_b64,
-                          card.kem_binding_signature_b64);
+  return VerifyKemBinding(card.account_id, card.signing_public_key_b64, card.kem_public_key_b64, card.kem_binding_b64);
 }
 
 ByteVector AccountCardSignBytes(const AccountCard& card) {
-  auto signing = Base64Decode(card.keys.signing_public_key_b64);
-  auto kem = Base64Decode(card.keys.kem_public_key_b64);
-  if (!signing || signing.value().size() != kMlDsa65PublicKeyBytes || !kem ||
-      kem.value().size() != kHybridKemPublicKeyBytes) {
+  const auto typed = [](const std::string& b64) -> std::optional<ByteVector> {
+    if (b64.empty()) {
+      return std::nullopt;
+    }
+    auto bytes = Base64Decode(b64);
+    return bytes ? std::optional<ByteVector>(std::move(bytes.value())) : std::nullopt;
+  };
+  const auto signing = typed(card.keys.signing_public_key_b64);
+  const auto kem = typed(card.keys.kem_public_key_b64);
+  if (!signing || !kem) {
     return {};
   }
-  ByteVector bytes(kAccountCardDomain, kAccountCardDomain + sizeof(kAccountCardDomain)); // with its NUL
-  bytes.push_back(kAccountCardSignVersion);
-  bytes.insert(bytes.end(), signing.value().begin(), signing.value().end());
-  bytes.insert(bytes.end(), kem.value().begin(), kem.value().end());
-  AppendLenUtf8(bytes, card.nickname);
+  SignedBytesWriter out(kAccountCardDomain, static_cast<uint8_t>(kAccountCardVersion));
+  out.Typed(*signing).Typed(*kem).Utf8(card.nickname);
   std::vector<AccountCardDevice> devices = card.devices;
   std::sort(devices.begin(), devices.end(),
             [](const AccountCardDevice& a, const AccountCardDevice& b) { return a.peer_id < b.peer_id; });
-  AppendU64(bytes, devices.size());
+  out.U64(devices.size());
   for (const AccountCardDevice& device : devices) {
-    auto device_signing = Base64Decode(device.signing_public_key_b64);
-    auto device_kem = Base64Decode(device.kem_public_key_b64);
-    if (!device_signing || device_signing.value().size() != kMlDsa65PublicKeyBytes || !device_kem ||
-        device_kem.value().size() != kHybridKemPublicKeyBytes) {
+    const auto device_signing = typed(device.signing_public_key_b64);
+    const auto device_kem = typed(device.kem_public_key_b64);
+    if (!device_signing || !device_kem) {
       return {};
     }
-    AppendLenUtf8(bytes, device.peer_id);
-    bytes.insert(bytes.end(), device_signing.value().begin(), device_signing.value().end());
-    bytes.insert(bytes.end(), device_kem.value().begin(), device_kem.value().end());
+    out.Utf8(device.peer_id).Typed(*device_signing).Typed(*device_kem);
   }
-  AppendU64(bytes, card.relays.size()); // in list order: the first is the preferred relay
+  out.U64(card.relays.size()); // in list order: the first is the preferred relay
   for (const AccountCardRelay& relay : card.relays) {
-    AppendLenUtf8(bytes, relay.origin);
-    AppendLenUtf8(bytes, relay.peer_id);
+    out.Utf8(relay.origin).Raw(relay.relay_id.raw());
   }
-  AppendU64(bytes, static_cast<uint64_t>(card.initiation_floor));
-  AppendU64(bytes, static_cast<uint64_t>(card.issued_at));
-  return bytes;
+  out.I64(card.initiation_floor).I64(card.issued_at);
+  return out.Finish(card.ext);
 }
 
-Roe<void> VerifyAccountCard(const AccountCard& card, int64_t now_ms) {
-  if (auto keys = VerifyKeyCard(card.keys); !keys) {
-    return keys.error();
+Roe<void> VerifyAccountCard(const AccountCard& card, const int64_t now_ms) {
+  return CheckCard(card, now_ms).ToRoe();
+}
+
+SignedReceipt ReceiveAccountCard(const Object& json, const int64_t now_ms, AccountCard* card) {
+  AccountCard read_card;
+  if (const SignedReceipt read = ReadCard(json, read_card); !read.accepted()) {
+    return read;
   }
-  if (card.devices.size() > kMaxAccountCardDevices) {
-    return Error("account card: too many devices");
+  const SignedReceipt checked = CheckCard(read_card, now_ms);
+  if (checked.accepted() && card != nullptr) {
+    *card = std::move(read_card);
   }
-  if (card.devices.empty()) {
-    return Error("account card: no device");
-  }
-  const std::vector<std::string> peer_ids = CardDevicePeerIds(card);
-  if (std::set<std::string>(peer_ids.begin(), peer_ids.end()).size() != peer_ids.size()) {
-    return Error("account card: duplicate device");
-  }
-  for (const AccountCardDevice& device : card.devices) {
-    if (auto checked = VerifyCardDevice(device); !checked) {
-      return checked.error();
-    }
-  }
-  if (auto relays = VerifyCardRelays(card.relays); !relays) {
-    return relays.error();
-  }
-  if (card.initiation_floor < 0 || card.initiation_floor > kMaxCardInitiationFloor) {
-    return Error("account card: initiation_floor out of range");
-  }
-  if (card.issued_at <= 0 || card.issued_at > now_ms + kAccountCardClockSkewMs) {
-    return Error("account card: issued in the future");
-  }
-  const ByteVector message = AccountCardSignBytes(card);
-  auto signing = Base64Decode(card.keys.signing_public_key_b64);
-  auto signature = Base64Decode(card.card_signature_b64);
-  if (message.empty() || !signing || !signature || signature.value().size() != kMlDsa65SignatureBytes) {
-    return Error("account card: malformed");
-  }
-  auto verified = MlDsa::Verify(signing.value(), message, signature.value());
-  if (!verified || !verified.value()) {
-    return Error("account card: the account did not sign it");
-  }
-  return {};
+  return checked;
 }
 
 Roe<AccountCard> SignAccountCard(AccountCard card, const std::function<Roe<std::string>(const ByteVector&)>& sign) {
@@ -369,7 +474,15 @@ Roe<AccountCard> SignAccountCard(AccountCard card, const std::function<Roe<std::
   if (!signature) {
     return signature.error();
   }
-  card.card_signature_b64 = std::move(signature.value());
+  auto raw = Base64Decode(*signature);
+  if (!raw) {
+    return Error("account card: the signature is not base64");
+  }
+  auto typed = WriteTypedBlobB64(pp::BlobKind::kSignature, *raw);
+  if (!typed) {
+    return typed.error();
+  }
+  card.card_signature_b64 = std::move(typed.value());
   return card;
 }
 

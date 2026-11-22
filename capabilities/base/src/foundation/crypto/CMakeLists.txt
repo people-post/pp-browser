@@ -17,10 +17,14 @@ pp_browser_add_foundation_library(pp_foundation_crypto
     MessageCipher.cpp
     PinKeyDeriver.cpp
     PeerIdForm.cpp
+    RelayId.cpp
     PinResolver.cpp
     ProfileSecretsEngine.cpp
     ProfileUnlockGate.cpp
     LinkDeviceCodec.cpp
+    SignedBytes.cpp
+    SignedReceive.cpp
+    TypedBlob.cpp
   PUBLIC_LIBS
     pp_foundation_error
     pp_crypto

@@ -1,67 +1,32 @@
 #include "lib/net/RelaySignBytes.h"
 
-#include "common/Serialize.hpp"
-#include "common/PbrCompat.h"
+#include <algorithm>
+#include <cstddef>
 
 namespace pbr {
 
-void RelaySignAppendDomain(std::ostringstream& oss, const char* domain_with_nul) {
-  for (const char* p = domain_with_nul; *p != '\0'; ++p) {
-    oss.put(*p);
-  }
-  oss.put('\0');
-}
-
-bool RelaySignAppendCommandHeader(std::ostringstream& oss, const char* domain, const uint8_t version,
-                                  const std::string& audience) {
+std::vector<uint8_t> BuildRelayCallBytes(const std::string_view domain, const std::string& audience,
+                                         const pp::ExtArea& ext, const RelayCallFields& fields) {
   if (audience.empty()) {
-    return false;
+    return {};
   }
-  RelaySignAppendDomain(oss, domain);
-  RelaySignAppendU8(oss, version);
-  RelaySignAppendWireLenUtf8(oss, audience);
-  return true;
+  SignedBytesWriter writer(domain, kRelaySignVersion);
+  writer.Utf8(audience);
+  if (fields) {
+    fields(writer);
+  }
+  return writer.Finish(ext);
 }
 
 int RelaySignVersionOf(const std::vector<uint8_t>& bytes) {
-  for (size_t i = 0; i + 1 < bytes.size(); ++i) {
-    if (bytes[i] == 0) {
-      return i == 0 ? -1 : bytes[i + 1]; // a domain is never empty
-    }
-  }
-  return -1;
+  const auto version = SignedBytesVersion(bytes);
+  return version ? static_cast<int>(*version) : -1;
 }
 
-void RelaySignAppendU8(std::ostringstream& oss, const uint8_t value) {
-  oss.write(reinterpret_cast<const char*>(&value), 1);
-}
-
-void RelaySignAppendI64(std::ostringstream& oss, const int64_t value) {
-  OutputArchive ar(oss);
-  ar & value;
-}
-
-void RelaySignAppendU64(std::ostringstream& oss, const uint64_t value) {
-  OutputArchive ar(oss);
-  ar & value;
-}
-
-void RelaySignAppendWireLenUtf8(std::ostringstream& oss, const std::string& value) {
-  WireLenUtf8 wire{value};
-  OutputArchive ar(oss);
-  ar & wire;
-}
-
-std::vector<uint8_t> RelaySignOssToBytes(std::ostringstream& oss) {
-  const std::string packed = oss.str();
-  return std::vector<uint8_t>(packed.begin(), packed.end());
-}
-
-uint8_t SignatureAlgToWire(const std::string& signature_alg) {
-  if (signature_alg == "ml-dsa-65") {
-    return 1;
-  }
-  return 0xFF;
+bool RelayCallBytesEndWith(const std::vector<uint8_t>& bytes, const pp::ExtArea& ext) {
+  const std::vector<uint8_t> area = ext.Encode();
+  return bytes.size() >= area.size() &&
+         std::equal(area.begin(), area.end(), bytes.end() - static_cast<std::ptrdiff_t>(area.size()));
 }
 
 } // namespace pbr

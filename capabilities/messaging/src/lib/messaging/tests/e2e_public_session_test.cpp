@@ -15,6 +15,7 @@
 #include "lib/delivery/OutboundMessage.h"
 #include "lib/messaging/testing/InMemoryMessagingStores.h"
 #include "lib/people/PeerSigningKeyStore.h"
+#include "lib/people/CardKeys.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -197,7 +198,7 @@ struct Side {
       for (const AccountCardDevice& device : card->second.devices) {
         auto session =
             ResolveE2ePublicSendSession(*psk, GroupE2ePayloadCodec::PairTargetKey(peer_account, device.peer_id),
-                                        [&device]() { return Base64Decode(device.kem_public_key_b64); });
+                                        [&device]() { return RawKemPublicKey(device.kem_public_key_b64); });
         EXPECT_TRUE(session) << session.error().message;
         copies.push_back(ControlLaneCopy{.recipient_device = device.peer_id,
                                          .session_epoch = session->epoch,
@@ -291,7 +292,7 @@ struct Side {
         EXPECT_TRUE(RestartE2ePublicSession(*psk, pair, old_epoch, old_epoch + 1, util::NowUnixMs()));
       }
       auto copy = SealPairCopy(message, account, SendRelayOptions{}, *psk, pair,
-                               Base64Decode(device.kem_public_key_b64).value());
+                               RawKemPublicKey(device.kem_public_key_b64).value());
       EXPECT_TRUE(copy) << copy.error().message;
       RelayEnvelope envelope = BuildDirectEnvelope(message, SendRelayOptions{}, Sender(), ThreadChannel::E2ePublic,
                                                    "account:" + peer_account,
@@ -410,7 +411,8 @@ struct Side {
         text, group_id, account, message.id, message.timestamp, targets, *psk,
         [this](const PeerSessionKey& key) {
           if (!key.peer_device.empty()) {
-            return Base64Decode(FindCardDevice(cards.at(key.peer_identity_value), key.peer_device)->kem_public_key_b64);
+            return RawKemPublicKey(
+                FindCardDevice(cards.at(key.peer_identity_value), key.peer_device)->kem_public_key_b64);
           }
           return Base64Decode(peer_kem.at(key.peer_identity_value));
         },

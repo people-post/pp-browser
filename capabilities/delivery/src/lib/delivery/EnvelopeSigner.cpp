@@ -1,16 +1,16 @@
 #include "lib/delivery/EnvelopeSigner.h"
 
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/SignedBytes.h"
+#include "foundation/crypto/TypedBlob.h"
+#include "foundation/error/AppError.h"
 
 #include "common/Serialize.hpp"
 
 #include <sodium.h>
 
 #include <algorithm>
-#include <array>
 #include <set>
-#include <cstring>
 #include <sstream>
 #include "common/PbrCompat.h"
 
@@ -18,28 +18,22 @@ namespace pbr {
 
 namespace {
 
-constexpr std::array<char, 34> kSignDomain = {'p', 'p', '-', 'b', 'r', 'o', 'w', 's', 'e', 'r', ':', 'r',
-                                              'e', 'l', 'a', 'y', '-', 'e', 'n', 'v', 'e', 'l', 'o', 'p',
-                                              'e', '-', 's', 'i', 'g', 'n', '-', 'v', '5', '\0'};
-
-// 5: no relay id (multi-relay MR001 — the sender's Account ID is its relay address); 4 dropped the group id
-// (group-chat G018 item 7 — a group copy carries it inside its ciphertext).
-constexpr uint8_t kSignVersion = 5;
 constexpr uint8_t kBodyKindE2e = 0x02;
 
-void AppendBigEndianInt64(std::ostringstream& oss, const int64_t value) {
-  OutputArchive ar(oss);
-  ar & value;
-}
+/** Envelope v4 is release 1's floor and only version. */
+constexpr SignedVersions kEnvelopeVersions{.floor = kRelayEnvelopeVersion, .current = kRelayEnvelopeVersion};
 
-void AppendBigEndianUInt64(std::ostringstream& oss, const uint64_t value) {
-  OutputArchive ar(oss);
-  ar & value;
-}
-
-void AppendBigEndianUInt32(std::ostringstream& oss, const uint32_t value) {
-  OutputArchive ar(oss);
-  ar & value;
+/** One typed blob's id: known → nullopt; unknown → why; malformed → an error. */
+Roe<std::optional<std::string>> UnknownAlgorithmOf(const pp::BlobKind kind, const std::string& blob_b64,
+                                                   const std::string_view what) {
+  const TypedRead read = ReadTypedBlobB64(kind, blob_b64, what);
+  if (read.ok()) {
+    return std::optional<std::string>{};
+  }
+  if (read.status == TypedBlobStatus::UnknownAlgorithm) {
+    return std::optional<std::string>{read.detail};
+  }
+  return Error(read.detail);
 }
 
 } // namespace
@@ -125,18 +119,9 @@ Roe<std::vector<uint8_t>> EnvelopeSigner::BuildSignBytes(const RelayEnvelope& en
   if (auto shape = CheckBodyShape(envelope); !shape) {
     return shape.error();
   }
-
-  std::ostringstream oss;
-  oss.write(kSignDomain.data(), static_cast<std::streamsize>(kSignDomain.size()));
-  const uint8_t sign_version = kSignVersion;
-  const uint8_t envelope_version = static_cast<uint8_t>(envelope.envelope_version);
-  const uint8_t route_kind = RouteKindByte(envelope.route);
-  const uint8_t channel = ChannelByte(envelope.route);
-  oss.write(reinterpret_cast<const char*>(&sign_version), 1);
-  oss.write(reinterpret_cast<const char*>(&envelope_version), 1);
-  oss.write(reinterpret_cast<const char*>(&route_kind), 1);
-  oss.write(reinterpret_cast<const char*>(&channel), 1);
-  AppendBigEndianInt64(oss, envelope.timestamp);
+  SignedBytesWriter out(kDomain, static_cast<uint8_t>(envelope.envelope_version));
+  out.U8(RouteKindByte(envelope.route)).U8(ChannelByte(envelope.route)).I64(envelope.timestamp);
+  out.Utf8(envelope.message_id).Utf8(envelope.sender_contact_id).Utf8(envelope.sender_device);
 
   // Each copy (M022), by recipient device: who it is for, its numbering in that pair, the session it may
   // open, and exactly what that device decrypts. Copies for one device cannot be moved to another.
@@ -147,60 +132,94 @@ Roe<std::vector<uint8_t>> EnvelopeSigner::BuildSignBytes(const RelayEnvelope& en
   }
   std::sort(copies.begin(), copies.end(),
             [](const RelayCopy* a, const RelayCopy* b) { return a->recipient_device < b->recipient_device; });
-  {
-    OutputArchive ar(oss);
-    WireLenUtf8 message_id{envelope.message_id};
-    ar & message_id;
-    WireLenUtf8 sender_contact_id{envelope.sender_contact_id};
-    ar & sender_contact_id;
-    WireLenUtf8 sender_device{envelope.sender_device};
-    ar & sender_device;
-  }
-  AppendBigEndianUInt64(oss, copies.size());
+  out.U64(copies.size());
   for (const RelayCopy* copy : copies) {
     auto hash = CopyHash(*copy);
     if (!hash) {
       return hash.error();
     }
-    {
-      OutputArchive ar(oss);
-      WireLenUtf8 device{copy->recipient_device};
-      ar & device;
-    }
-    AppendBigEndianUInt32(oss, copy->session_epoch);
-    AppendBigEndianUInt64(oss, copy->sender_seq);
-    {
-      OutputArchive ar(oss);
-      WireLenUtf8 key_init{copy->key_init_b64.value_or(std::string{})};
-      ar & key_init;
-    }
-    oss.write(reinterpret_cast<const char*>(hash->data()), static_cast<std::streamsize>(hash->size()));
+    out.Utf8(copy->recipient_device).U32(copy->session_epoch).U64(copy->sender_seq);
+    out.Utf8(copy->key_init_b64.value_or(std::string{})).Raw(*hash);
   }
-
-  const std::string packed = oss.str();
-  return std::vector<uint8_t>(packed.begin(), packed.end());
+  return out.Finish(envelope.ext);
 }
 
-Roe<bool> EnvelopeSigner::Verify(const RelayEnvelope& envelope, const std::string& public_key_b64) {
-  if (envelope.signature.empty()) {
-    return Error("Missing envelope signature");
+Roe<void> EnvelopeSigner::Sign(RelayEnvelope& envelope, const RawSignFn& sign) {
+  auto bytes = BuildSignBytes(envelope);
+  if (!bytes) {
+    return bytes.error();
   }
-  auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
-  if (!sign_bytes) {
-    return sign_bytes.error();
-  }
-  auto public_key = Base64Decode(public_key_b64);
-  if (!public_key) {
-    return public_key.error();
-  }
-  if (public_key.value().size() != kMlDsa65PublicKeyBytes) {
-    return Error("Invalid ML-DSA-65 public key size");
-  }
-  auto signature = Base64Decode(envelope.signature);
+  auto signature = SignTypedB64(sign, *bytes);
   if (!signature) {
     return signature.error();
   }
-  return MlDsa::Verify(public_key.value(), sign_bytes.value(), signature.value());
+  envelope.signature = std::move(*signature);
+  return {};
+}
+
+Roe<std::optional<std::string>> EnvelopeSigner::UnknownAlgorithm(const RelayEnvelope& envelope) {
+  if (!envelope.signature.empty()) {
+    auto signature = UnknownAlgorithmOf(pp::BlobKind::kSignature, envelope.signature, "envelope signature");
+    if (!signature || *signature) {
+      return signature;
+    }
+  }
+  for (const RelayCopy& copy : RelayCopiesOf(envelope)) {
+    if (copy.key_init_b64) {
+      auto key_init = UnknownAlgorithmOf(pp::BlobKind::kKemCiphertext, *copy.key_init_b64, "copy key_init");
+      if (!key_init || *key_init) {
+        return key_init;
+      }
+    }
+    auto payload = UnknownAlgorithmOf(pp::BlobKind::kAeadSealed, copy.payload_b64, "copy payload");
+    if (!payload || *payload) {
+      return payload;
+    }
+  }
+  return std::optional<std::string>{};
+}
+
+SignedReceipt EnvelopeSigner::Receive(const RelayEnvelope& envelope, const std::string& device_key_b64) {
+  TypedRead key;
+  TypedRead signature;
+  const auto parse = [&]() -> Roe<void> {
+    if (envelope.signature.empty()) {
+      return Error("no signature");
+    }
+    return CheckBodyShape(envelope);
+  };
+  const auto algorithms = [&]() -> Roe<void> {
+    auto unknown = UnknownAlgorithm(envelope); // the copies' key_init and payload too
+    if (!unknown) {
+      return unknown.error();
+    }
+    if (*unknown) {
+      return AppError::NewerFormat(**unknown);
+    }
+    signature = ReadTypedBlobB64(pp::BlobKind::kSignature, envelope.signature, "envelope signature");
+    if (!signature.ok()) {
+      return signature.ToError();
+    }
+    key = ReadTypedBlobB64(pp::BlobKind::kSignaturePublicKey, device_key_b64, "sending device key");
+    if (!key.ok()) {
+      return key.ToError();
+    }
+    return {};
+  };
+  const auto verify = [&]() -> Roe<void> {
+    auto bytes = BuildSignBytes(envelope);
+    if (!bytes) {
+      return bytes.error();
+    }
+    return VerifyTyped(key, *bytes, signature);
+  };
+  return ReceiveSigned(SignedReceiveSteps{.what = "envelope",
+                                          .outside_version = envelope.envelope_version,
+                                          .versions = kEnvelopeVersions,
+                                          .parse = parse,
+                                          .algorithms = algorithms,
+                                          .verify = verify,
+                                          .ext = &envelope.ext});
 }
 
 } // namespace pbr

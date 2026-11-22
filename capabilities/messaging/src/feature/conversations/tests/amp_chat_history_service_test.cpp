@@ -1,4 +1,5 @@
 #include "lib/people/PeerSigningKeyStore.h"
+#include "lib/people/CardKeys.h"
 #include "feature/conversations/AmpChatHistoryTransport.h"
 
 #include "foundation/crypto/CryptoConstants.h"
@@ -127,7 +128,8 @@ protected:
         keys_resolver_, AmpChatHistoryTransport::WorkerPost{}, mesh_->MakePostIoA(), mesh_->MakePostAfterA());
     client_history_->SetLocalPeerIdForTest(mesh_->peer_id_a);
     PeerSigningKeyRecord key;
-    key.signing_public_key_b64 = data_->identity->Get()->account_signing_public_key_b64;
+    key.signing_public_key_b64 =
+        TypedKeyB64(pp::BlobKind::kSignaturePublicKey, data_->identity->Get()->account_signing_public_key_b64).value();
     key.source = "test";
     keys_.Put("account", data_->identity->Get()->account_id, key);
 

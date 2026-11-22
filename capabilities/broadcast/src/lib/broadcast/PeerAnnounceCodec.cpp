@@ -1,15 +1,20 @@
 #include "lib/broadcast/PeerAnnounceCodec.h"
 
+#include "lib/broadcast/BroadcastSignedJson.h"
+
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/SignedBytes.h"
+#include "foundation/crypto/SignedReceive.h"
+#include "foundation/crypto/TypedBlob.h"
 
 #include "common/ValueJson.h"
 #include "mesh/types/MediaChannel.h"
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <sodium.h>
-#include <sstream>
 #include <vector>
 
 #include "common/PbrCompat.h"
@@ -18,82 +23,96 @@
 namespace pbr {
 namespace {
 
-void AppendField(std::ostringstream& out, const char* key, const std::string& value) {
-  out << key << '=' << value << '\n';
-}
-void AppendField(std::ostringstream& out, const char* key, const int64_t value) {
-  out << key << '=' << value << '\n';
-}
-void AppendField(std::ostringstream& out, const char* key, const uint64_t value) {
-  out << key << '=' << value << '\n';
+constexpr char kWhat[] = "peer announce tip";
+constexpr SignedVersions kTipVersions{.floor = kPeerAnnounceTipSchemaVersion, .current = kPeerAnnounceTipSchemaVersion};
+
+bool IsVideoLevelValue(const int level) {
+  return level >= mesh::kMinVideoLevel && level <= mesh::kMaxVideoLevel;
 }
 
-ByteVector ToBytes(const std::string& text) {
-  return ByteVector(text.begin(), text.end());
-}
-
-std::string JoinL1HopPeerIds(const std::vector<std::string>& ids) {
-  std::string out;
-  for (const std::string& id : ids) {
-    if (id.empty()) {
-      continue;
-    }
-    if (!out.empty()) {
-      out.push_back(',');
-    }
-    out += id;
-  }
-  return out;
-}
-
-std::string JoinVideoLevels(const std::vector<int>& levels) {
-  std::string out;
-  for (const int level : levels) {
-    if (!out.empty()) {
-      out.push_back(',');
-    }
-    out += std::to_string(level);
-  }
-  return out;
-}
-
-std::vector<int> ReadVideoLevels(const Object& o) {
+/** Each a real level (1..15): anything else would wrap into a channel that was never announced. */
+Roe<std::vector<int>> ReadVideoLevels(const Object& o) {
   std::vector<int> out;
-  if (const Array* arr = o.getArray("video_levels")) {
-    for (const auto& item : arr->elements) {
-      // Only real levels (1..15): anything else would wrap into a channel that was never announced.
-      const auto* level = std::get_if<int64_t>(&item);
-      if (level && *level >= mesh::kMinVideoLevel && *level <= mesh::kMaxVideoLevel) {
-        out.push_back(static_cast<int>(*level));
-      }
+  if (!o.contains("video_levels")) {
+    return out;
+  }
+  const Array* arr = o.getArray("video_levels");
+  if (arr == nullptr) {
+    return Error("peer announce tip: video_levels is not a list");
+  }
+  for (const auto& item : arr->elements) {
+    const auto* level = std::get_if<int64_t>(&item);
+    if (level == nullptr || *level < mesh::kMinVideoLevel || *level > mesh::kMaxVideoLevel) {
+      return Error("peer announce tip: a video level is not 1-15");
     }
+    out.push_back(static_cast<int>(*level));
   }
   return out;
 }
 
-std::vector<std::string> ReadL1HopPeerIds(const Object& o) {
+Roe<std::vector<std::string>> ReadL1HopPeerIds(const Object& o) {
   std::vector<std::string> out;
-  if (const Array* arr = o.getArray("l1_hop_peer_ids")) {
-    for (const auto& item : arr->elements) {
-      if (auto s = asString(item)) {
-        if (!s->empty()) {
-          out.push_back(*s);
-        }
-      }
+  if (!o.contains("l1_hop_peer_ids")) {
+    return out;
+  }
+  const Array* arr = o.getArray("l1_hop_peer_ids");
+  if (arr == nullptr) {
+    return Error("peer announce tip: l1_hop_peer_ids is not a list");
+  }
+  for (const auto& item : arr->elements) {
+    auto id = asString(item);
+    if (!id) {
+      return Error("peer announce tip: an l1_hop_peer_ids entry is not a string");
     }
+    out.push_back(*id);
   }
   return out;
 }
 
-Value L1HopPeerIdsArray(const std::vector<std::string>& ids) {
+Value StringsArray(const std::vector<std::string>& ids) {
   std::vector<Value> items;
   items.reserve(ids.size());
   for (const std::string& id : ids) {
-    if (!id.empty()) {
-      items.emplace_back(id);
-    }
+    items.emplace_back(id);
   }
   return ArrayValue(std::move(items));
+}
+
+Roe<void> CheckTipFields(const PeerAnnounceTip& tip) {
+  if (tip.peer_id.empty() || tip.topic_id.empty() || tip.program_id.empty()) {
+    return Error("peer announce tip missing peer_id/topic_id/program_id");
+  }
+  if (!std::all_of(tip.video_levels.begin(), tip.video_levels.end(), IsVideoLevelValue)) {
+    return Error("peer announce tip: a video level is not 1-15");
+  }
+  return {};
+}
+
+ByteVector SignBytesOf(const PeerAnnounceTip& tip, const uint8_t version) {
+  SignedBytesWriter out(kPeerAnnounceTipDomain, version);
+  out.Utf8(tip.peer_id)
+      .Utf8(tip.topic_id)
+      .Utf8(tip.program_id)
+      .Utf8(PeerAnnounceStateToString(tip.state))
+      .U64(tip.seq)
+      .U64(tip.epoch)
+      .I64(tip.created_at_ms)
+      .Utf8(tip.join_handle)
+      .Utf8(tip.hop_peer_id)
+      .U64(tip.l1_hop_peer_ids.size());
+  for (const std::string& id : tip.l1_hop_peer_ids) {
+    out.Utf8(id);
+  }
+  out.U64(tip.video_levels.size());
+  for (const int level : tip.video_levels) {
+    out.U8(static_cast<uint8_t>(level)); // 1..15 (CheckTipFields)
+  }
+  return out.Utf8(tip.kind)
+      .Utf8(tip.viewer_peer_id)
+      .Utf8(tip.viewer_msg_id)
+      .Utf8(tip.body)
+      .Utf8(tip.content_id_hex)
+      .Finish(tip.ext);
 }
 
 } // namespace
@@ -119,39 +138,14 @@ Roe<std::string> MakePeerAnnounceTopicId(const std::string_view peer_id, const s
   return BytesToHex(digest);
 }
 
-std::string PeerAnnounceCanonicalSignBytes(const PeerAnnounceTip& tip) {
-  std::ostringstream out;
-  AppendField(out, "v", static_cast<int64_t>(tip.schema_version));
-  AppendField(out, "peer_id", tip.peer_id);
-  AppendField(out, "topic_id", tip.topic_id);
-  AppendField(out, "program_id", tip.program_id);
-  AppendField(out, "state", std::string(PeerAnnounceStateToString(tip.state)));
-  AppendField(out, "seq", tip.seq);
-  AppendField(out, "epoch", tip.epoch);
-  AppendField(out, "created_at_ms", tip.created_at_ms);
-  AppendField(out, "join_handle", tip.join_handle);
-  // Optional fields are signed when present, in this order (WIRE_SCHEMAS § PeerAnnounceTip).
-  if (!tip.hop_peer_id.empty()) {
-    AppendField(out, "hop_peer_id", tip.hop_peer_id);
+Roe<ByteVector> PeerAnnounceTipSignBytes(const PeerAnnounceTip& tip) {
+  if (tip.schema_version < 0 || tip.schema_version > std::numeric_limits<uint8_t>::max()) {
+    return Error("peer announce tip schema_version is not a byte");
   }
-  if (const std::string joined = JoinL1HopPeerIds(tip.l1_hop_peer_ids); !joined.empty()) {
-    AppendField(out, "l1_hop_peer_ids", joined);
+  if (!std::all_of(tip.video_levels.begin(), tip.video_levels.end(), IsVideoLevelValue)) {
+    return Error("peer announce tip: a video level is not 1-15");
   }
-  if (!tip.video_levels.empty()) {
-    AppendField(out, "video_levels", JoinVideoLevels(tip.video_levels));
-  }
-  if (!tip.kind.empty()) {
-    AppendField(out, "kind", tip.kind);
-  }
-  if (!tip.viewer_peer_id.empty()) {
-    AppendField(out, "viewer_peer_id", tip.viewer_peer_id);
-  }
-  if (!tip.viewer_msg_id.empty()) {
-    AppendField(out, "viewer_msg_id", tip.viewer_msg_id);
-  }
-  AppendField(out, "body", tip.body);
-  AppendField(out, "content_id_hex", tip.content_id_hex);
-  return out.str();
+  return SignBytesOf(tip, static_cast<uint8_t>(tip.schema_version));
 }
 
 Roe<std::string> EncodePeerAnnounceTipJson(const PeerAnnounceTip& tip) {
@@ -165,11 +159,12 @@ Roe<std::string> EncodePeerAnnounceTipJson(const PeerAnnounceTip& tip) {
   json.set("epoch", static_cast<int64_t>(tip.epoch));
   json.set("created_at_ms", tip.created_at_ms);
   json.set("join_handle", tip.join_handle);
+  // Empty fields are left out: absent reads as empty, which is what is signed.
   if (!tip.hop_peer_id.empty()) {
     json.set("hop_peer_id", tip.hop_peer_id);
   }
   if (!tip.l1_hop_peer_ids.empty()) {
-    json.set("l1_hop_peer_ids", L1HopPeerIdsArray(tip.l1_hop_peer_ids));
+    json.set("l1_hop_peer_ids", StringsArray(tip.l1_hop_peer_ids));
   }
   if (!tip.video_levels.empty()) {
     std::vector<Value> levels;
@@ -189,54 +184,149 @@ Roe<std::string> EncodePeerAnnounceTipJson(const PeerAnnounceTip& tip) {
   }
   json.set("body", tip.body);
   json.set("content_id_hex", tip.content_id_hex);
+  WriteExtB64(json, tip.ext);
   json.set("signature_b64", tip.signature_b64);
   return DumpJson(json);
 }
+
+namespace {
+
+/** Step 2 from the wire: the fields of a tip whose `schema_version` (`version`) is in range. */
+Roe<PeerAnnounceTip> ParseTipFields(const Object& o, const int version) {
+  PeerAnnounceTip tip;
+  tip.schema_version = version;
+  std::string state;
+  for (auto [key, field] :
+       {std::pair{"peer_id", &tip.peer_id}, std::pair{"topic_id", &tip.topic_id},
+        std::pair{"program_id", &tip.program_id}, std::pair{"state", &state},
+        std::pair{"join_handle", &tip.join_handle}, std::pair{"hop_peer_id", &tip.hop_peer_id},
+        std::pair{"kind", &tip.kind}, std::pair{"viewer_peer_id", &tip.viewer_peer_id},
+        std::pair{"viewer_msg_id", &tip.viewer_msg_id}, std::pair{"body", &tip.body},
+        std::pair{"content_id_hex", &tip.content_id_hex}, std::pair{"signature_b64", &tip.signature_b64}}) {
+    auto value = ReadOptionalString(o, key, kWhat);
+    if (!value) {
+      return value.error();
+    }
+    *field = std::move(*value);
+  }
+  const auto parsed_state = PeerAnnounceStateFromString(state);
+  if (!parsed_state) {
+    return Error("invalid peer announce state");
+  }
+  tip.state = *parsed_state;
+  for (auto [key, field] : {std::pair{"seq", &tip.seq}, std::pair{"epoch", &tip.epoch}}) {
+    if (!o.contains(key)) {
+      continue;
+    }
+    const auto value = ObjectNonNegInt(o, key);
+    if (!value) {
+      return Error(std::string(kWhat) + ": " + key + " is not a non-negative integer");
+    }
+    *field = *value;
+  }
+  auto created = ReadOptionalInt(o, "created_at_ms", 0, kWhat);
+  if (!created) {
+    return created.error();
+  }
+  tip.created_at_ms = *created;
+  auto l1 = ReadL1HopPeerIds(o);
+  if (!l1) {
+    return l1.error();
+  }
+  tip.l1_hop_peer_ids = std::move(*l1);
+  auto levels = ReadVideoLevels(o);
+  if (!levels) {
+    return levels.error();
+  }
+  tip.video_levels = std::move(*levels);
+  auto ext = ReadExtB64(o);
+  if (!ext) {
+    return Error(std::string(kWhat) + ": " + ext.error().message);
+  }
+  tip.ext = std::move(*ext);
+  if (auto fields = CheckTipFields(tip); !fields) {
+    return fields.error();
+  }
+  return tip;
+}
+
+/** Steps 3–5 for a parsed tip: the signature's algorithm id, the publisher's key, the signature, the area. */
+struct TipReceive {
+  const PeerAnnounceTip* tip = nullptr;
+  TypedRead publisher_key;
+  TypedRead signature;
+
+  Roe<void> Algorithms() {
+    signature = ReadTypedBlobB64(pp::BlobKind::kSignature, tip->signature_b64, "peer announce tip signature");
+    if (!signature.ok()) {
+      return signature.ToError();
+    }
+    if (!publisher_key.ok()) {
+      return publisher_key.ToError();
+    }
+    return {};
+  }
+
+  Roe<void> Verify() const {
+    return VerifyTyped(publisher_key, SignBytesOf(*tip, static_cast<uint8_t>(tip->schema_version)), signature);
+  }
+};
+
+} // namespace
 
 Roe<PeerAnnounceTip> DecodePeerAnnounceTipJson(const std::string_view json) {
   auto parsed = ParseObject(std::string(json));
   if (!parsed) {
     return parsed.error();
   }
-  const Object& o = *parsed;
+  // 1. The version, before any field is read; 2. the fields.
+  auto version = ReadSchemaVersion(*parsed, kWhat, kPeerAnnounceTipSchemaVersion);
+  if (!version) {
+    return version.error();
+  }
+  return ParseTipFields(*parsed, *version);
+}
+
+SignedReceipt ReceivePeerAnnounceTipJson(const std::string_view json, const std::vector<uint8_t>& mldsa_public_key,
+                                         PeerAnnounceTip* out) {
+  auto parsed = ParseObject(std::string(json));
+  if (!parsed) {
+    return SignedReceipt{.verdict = SignedVerdict::Malformed, .version = 0, .detail = parsed.error().message};
+  }
   PeerAnnounceTip tip;
-  tip.schema_version = static_cast<int>(ObjectInt64(o, "schema_version").value_or(kPeerAnnounceTipSchemaVersion));
-  if (tip.schema_version != kPeerAnnounceTipSchemaVersion) {
-    return Error("unsupported peer announce schema_version");
+  TipReceive receive{.tip = &tip, .publisher_key = PublisherSigningKey(mldsa_public_key)};
+  const std::optional<int64_t> version = OutsideVersionOfJson(*parsed, "schema_version");
+  SignedReceipt receipt = ReceiveSigned({
+      .what = kWhat,
+      .outside_version = version,
+      .versions = kTipVersions,
+      .parse = [&]() -> Roe<void> {
+        auto fields = ParseTipFields(*parsed, static_cast<int>(*version));
+        if (!fields) {
+          return fields.error();
+        }
+        tip = std::move(*fields);
+        return {};
+      },
+      .algorithms = [&] { return receive.Algorithms(); },
+      .verify = [&] { return receive.Verify(); },
+      .ext = &tip.ext,
+  });
+  if (receipt.accepted() && out != nullptr) {
+    *out = std::move(tip);
   }
-  tip.peer_id = ObjectString(o, "peer_id").value_or("");
-  tip.topic_id = ObjectString(o, "topic_id").value_or("");
-  tip.program_id = ObjectString(o, "program_id").value_or("");
-  const auto state = PeerAnnounceStateFromString(ObjectString(o, "state").value_or(""));
-  if (!state) {
-    return Error("invalid peer announce state");
-  }
-  tip.state = *state;
-  tip.seq = ObjectNonNegInt(o, "seq").value_or(0);
-  tip.epoch = ObjectNonNegInt(o, "epoch").value_or(0);
-  tip.created_at_ms = ObjectInt64(o, "created_at_ms").value_or(0);
-  tip.join_handle = ObjectString(o, "join_handle").value_or("");
-  tip.hop_peer_id = ObjectString(o, "hop_peer_id").value_or("");
-  tip.l1_hop_peer_ids = ReadL1HopPeerIds(o);
-  tip.video_levels = ReadVideoLevels(o);
-  tip.kind = ObjectString(o, "kind").value_or("");
-  tip.viewer_peer_id = ObjectString(o, "viewer_peer_id").value_or("");
-  tip.viewer_msg_id = ObjectString(o, "viewer_msg_id").value_or("");
-  tip.body = ObjectString(o, "body").value_or("");
-  tip.content_id_hex = ObjectString(o, "content_id_hex").value_or("");
-  tip.signature_b64 = ObjectString(o, "signature_b64").value_or("");
-  if (tip.peer_id.empty() || tip.topic_id.empty() || tip.program_id.empty()) {
-    return Error("peer announce tip missing peer_id/topic_id/program_id");
-  }
-  return tip;
+  return receipt;
 }
 
 Roe<PeerAnnounceTip> SignPeerAnnounceTip(PeerAnnounceTip tip, const std::vector<uint8_t>& mldsa_secret_key) {
   if (mldsa_secret_key.size() != kMlDsa65SecretKeyBytes) {
     return Error("peer announce sign requires ML-DSA-65 secret key");
   }
-  const auto canonical = ToBytes(PeerAnnounceCanonicalSignBytes(tip));
-  auto signature = MlDsa::Sign(mldsa_secret_key, canonical);
+  auto sign_bytes = PeerAnnounceTipSignBytes(tip);
+  if (!sign_bytes) {
+    return sign_bytes.error();
+  }
+  auto signature = SignTyped(mldsa_secret_key, *sign_bytes);
   if (!signature) {
     return signature.error();
   }
@@ -244,29 +334,21 @@ Roe<PeerAnnounceTip> SignPeerAnnounceTip(PeerAnnounceTip tip, const std::vector<
   return tip;
 }
 
+SignedReceipt ReceivePeerAnnounceTip(const PeerAnnounceTip& tip, const std::vector<uint8_t>& mldsa_public_key) {
+  TipReceive receive{.tip = &tip, .publisher_key = PublisherSigningKey(mldsa_public_key)};
+  return ReceiveSigned({
+      .what = kWhat,
+      .outside_version = tip.schema_version,
+      .versions = kTipVersions,
+      .parse = [&] { return CheckTipFields(tip); },
+      .algorithms = [&] { return receive.Algorithms(); },
+      .verify = [&] { return receive.Verify(); },
+      .ext = &tip.ext,
+  });
+}
+
 Roe<void> VerifyPeerAnnounceTip(const PeerAnnounceTip& tip, const std::vector<uint8_t>& mldsa_public_key) {
-  if (mldsa_public_key.size() != kMlDsa65PublicKeyBytes) {
-    return Error("peer announce verify requires ML-DSA-65 public key");
-  }
-  if (tip.signature_b64.empty()) {
-    return Error("peer announce tip missing signature");
-  }
-  auto signature = Base64Decode(tip.signature_b64);
-  if (!signature) {
-    return signature.error();
-  }
-  if (signature->size() != kMlDsa65SignatureBytes) {
-    return Error("peer announce signature size invalid");
-  }
-  const auto canonical = ToBytes(PeerAnnounceCanonicalSignBytes(tip));
-  auto ok = MlDsa::Verify(mldsa_public_key, canonical, *signature);
-  if (!ok) {
-    return ok.error();
-  }
-  if (!*ok) {
-    return Error("peer announce signature verify failed");
-  }
-  return {};
+  return ReceivePeerAnnounceTip(tip, mldsa_public_key).ToRoe();
 }
 
 int64_t PeerAnnounceNextHeartbeatAtMs(const int64_t last_emit_ms, const double jitter_unit) {

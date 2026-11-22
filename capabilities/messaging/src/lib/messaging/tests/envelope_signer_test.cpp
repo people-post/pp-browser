@@ -1,5 +1,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/SignedBytes.h"
+#include "foundation/crypto/TypedBlob.h"
 #include "lib/delivery/EnvelopeSigner.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "common/chat/MessagingJson.h"
@@ -25,6 +27,30 @@ RelayEnvelope MakeE2eVectorEnvelope() {
                 .payload_b64 = "AQABAgMEBQYHCAkKCwwNDg8QERITFBUWF1vPScnCPAVe+dnJiV9kKBztMM3qj/Hi+RhfLy6wlhU="});
 }
 
+RawSignFn RawSigner(const MlDsaKeyPair& keys) {
+  return [&keys](const std::vector<uint8_t>& bytes) -> Roe<std::string> {
+    auto signature = MlDsa::Sign(keys.secret_key, bytes);
+    if (!signature) {
+      return signature.error();
+    }
+    return Base64Encode(*signature);
+  };
+}
+
+const MlDsaKeyPair& DeviceKeys() {
+  static const MlDsaKeyPair keys = MlDsa::GenerateKeyPair().value();
+  return keys;
+}
+
+/** A device key as its account card lists it: typed, base64. */
+std::string TypedKey(const MlDsaKeyPair& keys) {
+  return WriteTypedBlobB64(pp::BlobKind::kSignaturePublicKey, keys.public_key).value();
+}
+
+pp::ExtArea Area(const uint16_t type) {
+  return pp::ExtArea::FromEntries({{.type = type, .value = {9}}}).value();
+}
+
 } // namespace
 
 TEST(EnvelopeSignerTest, CopyHashMatchesFrozenVector) {
@@ -38,9 +64,9 @@ TEST(EnvelopeSignerTest, CopyHashMatchesFrozenVector) {
 // A receiver checks `envelope_version` before it verifies, so changing what is signed — the sign domain or version,
 // a field covered, its order or encoding — without bumping a version the receiver checks makes every older peer see
 // forgeries instead of "update" (docs/contracts/COMPATIBILITY.md, "Changing what is signed"; #555). If this hash
-// changes, bump such a version in the same change and update both expectations here.
+// changes, bump such a version in the same change and update both expectations here (and envelope_vectors.json).
 TEST(EnvelopeSignerTest, SignBytesMatchFrozenHash) {
-  EXPECT_EQ(kRelayEnvelopeVersion, 3) << "the version a receiver checks before it verifies";
+  EXPECT_EQ(kRelayEnvelopeVersion, 4) << "the version a receiver checks before it verifies";
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "8d7f6e5c-4b3a-4291-8f0e-1d2c3b4a5968";
@@ -59,33 +85,76 @@ TEST(EnvelopeSignerTest, SignBytesMatchFrozenHash) {
   };
   auto bytes = EnvelopeSigner::BuildSignBytes(envelope);
   ASSERT_TRUE(bytes) << bytes.error().message;
-  EXPECT_EQ(BytesToHex(Blake2b256(*bytes)), "a52a0d86e03c26ad1888b106459fe011022d050d3faa9305d4c04dcdd5f0fc0f");
+  EXPECT_EQ(BytesToHex(Blake2b256(*bytes)), "3654d3876dcd1aa9a781b1ec617912f0ba0dff17bbac8f7a836b49ee0b1bff45");
 }
 
+// "pp-browser:relay-envelope" (25) 00 ‖ u8 version ‖ u8 route_kind ‖ u8 channel: the route kind and channel at 27, 28.
 TEST(EnvelopeSignerTest, BuildSignBytesUsesE2eChannelZero) {
   const RelayEnvelope envelope = MakeE2eVectorEnvelope();
   auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
   ASSERT_TRUE(sign_bytes);
-  ASSERT_GE(sign_bytes->size(), 38u);
-  EXPECT_EQ((*sign_bytes)[36], 0u);
-  EXPECT_EQ((*sign_bytes)[37], 0u);
+  ASSERT_GE(sign_bytes->size(), 29u);
+  EXPECT_EQ((*sign_bytes)[27], 0u);
+  EXPECT_EQ((*sign_bytes)[28], 0u);
 }
 
-TEST(EnvelopeSignerTest, SignAndVerifyRoundTrip) {
+TEST(EnvelopeSignerTest, SignAndReceiveRoundTrip) {
   RelayEnvelope envelope = MakeE2eVectorEnvelope();
   envelope.message_id = "770e8400-e29b-41d4-a716-446655440002";
-
-  auto keys = MlDsa::GenerateKeyPair();
-  ASSERT_TRUE(static_cast<bool>(keys));
-  auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
-  ASSERT_TRUE(sign_bytes);
-  auto signature = MlDsa::Sign(keys->secret_key, *sign_bytes);
+  ASSERT_TRUE(EnvelopeSigner::Sign(envelope, RawSigner(DeviceKeys())));
+  auto signature = Base64Decode(envelope.signature);
   ASSERT_TRUE(signature);
-  envelope.signature = Base64Encode(*signature);
+  EXPECT_EQ(signature->size(), 3310u) << "a typed signature";
+  EXPECT_EQ(signature->front(), 1u) << "ml-dsa-65";
 
-  const auto verified = EnvelopeSigner::Verify(envelope, Base64Encode(keys->public_key));
-  ASSERT_TRUE(verified);
-  EXPECT_TRUE(*verified);
+  const SignedReceipt receipt = EnvelopeSigner::Receive(envelope, TypedKey(DeviceKeys()));
+  EXPECT_TRUE(receipt.accepted()) << receipt.detail;
+}
+
+// The receiver's order (SIGNED_FORMATS § 1.1) for an envelope: each refusal its own verdict, "update needed" never a
+// forgery, the extension area read only after the signature.
+TEST(EnvelopeSignerTest, ReceiveRunsTheReceiversOrder) {
+  const std::string key = TypedKey(DeviceKeys());
+  RelayEnvelope envelope = MakeE2eVectorEnvelope();
+  ASSERT_TRUE(EnvelopeSigner::Sign(envelope, RawSigner(DeviceKeys())));
+  ASSERT_TRUE(EnvelopeSigner::Receive(envelope, key).accepted());
+
+  RelayEnvelope older = envelope;
+  older.envelope_version = kRelayEnvelopeVersion - 1;
+  EXPECT_EQ(EnvelopeSigner::Receive(older, key).verdict, SignedVerdict::Older);
+  RelayEnvelope newer = envelope;
+  newer.envelope_version = kRelayEnvelopeVersion + 1;
+  EXPECT_EQ(EnvelopeSigner::Receive(newer, key).verdict, SignedVerdict::NeedsUpdate);
+
+  RelayEnvelope unsigned_envelope = envelope;
+  unsigned_envelope.signature.clear();
+  EXPECT_EQ(EnvelopeSigner::Receive(unsigned_envelope, key).verdict, SignedVerdict::Malformed);
+  RelayEnvelope short_signature = envelope;
+  short_signature.signature = Base64Encode(ByteVector{1, 2, 3});
+  EXPECT_EQ(EnvelopeSigner::Receive(short_signature, key).verdict, SignedVerdict::Malformed);
+  RelayEnvelope unknown_algorithm = envelope;
+  unknown_algorithm.signature = Base64Encode(ByteVector{2, 2, 3});
+  EXPECT_EQ(EnvelopeSigner::Receive(unknown_algorithm, key).verdict, SignedVerdict::NeedsUpdate);
+
+  RelayEnvelope changed = envelope;
+  changed.timestamp += 1;
+  EXPECT_EQ(EnvelopeSigner::Receive(changed, key).verdict, SignedVerdict::Forged);
+  auto other = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(other);
+  EXPECT_EQ(EnvelopeSigner::Receive(envelope, TypedKey(*other)).verdict, SignedVerdict::Forged);
+
+  // An unknown critical entry: update needed once signed; a forgery when added after signing.
+  RelayEnvelope critical = envelope;
+  critical.ext = Area(0x8001);
+  EXPECT_EQ(EnvelopeSigner::Receive(critical, key).verdict, SignedVerdict::Forged);
+  ASSERT_TRUE(EnvelopeSigner::Sign(critical, RawSigner(DeviceKeys())));
+  EXPECT_EQ(EnvelopeSigner::Receive(critical, key).verdict, SignedVerdict::NeedsUpdate);
+  // A non-critical one is ignored, and it is signed.
+  RelayEnvelope non_critical = envelope;
+  non_critical.ext = Area(0x0001);
+  EXPECT_EQ(EnvelopeSigner::Receive(non_critical, key).verdict, SignedVerdict::Forged);
+  ASSERT_TRUE(EnvelopeSigner::Sign(non_critical, RawSigner(DeviceKeys())));
+  EXPECT_TRUE(EnvelopeSigner::Receive(non_critical, key).accepted());
 }
 
 // Everything that decides something on receipt is signed — the decrypted blob (and, inside it, a group copy's
@@ -125,6 +194,9 @@ TEST(EnvelopeSignerTest, SignBytesCoverEveryFieldTheReceiverActsOn) {
   changed = base;
   changed.sender_device = "QmOtherDevice";
   EXPECT_TRUE(differs(changed)) << "the sending device";
+  changed = base;
+  changed.ext = Area(0x0001);
+  EXPECT_TRUE(differs(changed)) << "the extension area";
 
   // Every copy of the envelope is signed, in device order whatever the list's order.
   RelayCopy phone = copy;
@@ -149,22 +221,23 @@ TEST(EnvelopeSignerTest, SignBytesCoverEveryFieldTheReceiverActsOn) {
   EXPECT_NE(*group_bytes, *base_bytes) << "the route kind";
 }
 
-// Sign v5 (multi-relay MR001): the bytes name no relay id; v4 (group-chat G018 item 7) dropped the group — a group copy
-// carries its group id inside its ciphertext, bound there by the AEAD and by the copy hash these bytes sign.
-TEST(EnvelopeSignerTest, SignBytesAreV5AndNameNoGroupNorRelayId) {
+// Envelope v4 (SIGNED_FORMATS § 2.1): one version, after a domain without -vN; the bytes name no relay id (MR001) nor
+// group (G018 item 7) — a group copy carries its group id inside its ciphertext, bound there by the AEAD and by the
+// copy hash these bytes sign. The extension area is the last field (empty: its u64 length 0).
+TEST(EnvelopeSignerTest, SignBytesAreV4AndNameNoGroupNorRelayId) {
   RelayEnvelope group = MakeE2eVectorEnvelope();
   group.route.kind = kRelayRouteGroup;
   auto bytes = EnvelopeSigner::BuildSignBytes(group);
   ASSERT_TRUE(bytes) << bytes.error().message;
-  const std::string domain = "pp-browser:relay-envelope-sign-v5";
+  const std::string domain = "pp-browser:relay-envelope";
   ASSERT_GE(bytes->size(), domain.size() + 6);
+  EXPECT_TRUE(IsSignedDomain(domain));
   EXPECT_EQ(std::string(bytes->begin(), bytes->begin() + static_cast<std::ptrdiff_t>(domain.size())), domain);
   EXPECT_EQ((*bytes)[domain.size()], 0u) << "NUL after the domain";
-  EXPECT_EQ((*bytes)[34], 5u) << "sign_version";
-  EXPECT_EQ((*bytes)[35], 3u) << "envelope_version";
-  EXPECT_EQ((*bytes)[36], 1u) << "route kind group";
-  EXPECT_EQ((*bytes)[37], 0xFFu) << "a group has no channel";
-  // After the timestamp: message_id, sender_contact_id, then straight to sender_device.
+  EXPECT_EQ((*bytes)[26], 4u) << "envelope_version, the only version byte";
+  EXPECT_EQ((*bytes)[27], 1u) << "route kind group";
+  EXPECT_EQ((*bytes)[28], 0xFFu) << "a group has no channel";
+  EXPECT_EQ(std::vector<uint8_t>(bytes->end() - 8, bytes->end()), std::vector<uint8_t>(8, 0)) << "an empty area";
   const auto len_utf8 = [](const std::string& value) {
     std::vector<uint8_t> out(8, 0);
     const uint64_t size = value.size();
@@ -179,9 +252,10 @@ TEST(EnvelopeSignerTest, SignBytesAreV5AndNameNoGroupNorRelayId) {
     const std::vector<uint8_t> encoded = len_utf8(*field);
     expected.insert(expected.end(), encoded.begin(), encoded.end());
   }
-  ASSERT_GE(bytes->size(), 46 + expected.size());
+  // After the timestamp (29..36): message_id, sender_contact_id, then straight to sender_device.
+  ASSERT_GE(bytes->size(), 37 + expected.size());
   EXPECT_EQ(
-      std::vector<uint8_t>(bytes->begin() + 46, bytes->begin() + 46 + static_cast<std::ptrdiff_t>(expected.size())),
+      std::vector<uint8_t>(bytes->begin() + 37, bytes->begin() + 37 + static_cast<std::ptrdiff_t>(expected.size())),
       expected)
       << "no group id (G018) nor relay id (MR001) between the sender's account and its device";
 }
@@ -226,7 +300,7 @@ TEST(PeerSigningKeyStoreTest, AKeyIsKeptOnlyUnderTheAccountItHashesTo) {
   auto other_account = AccountIdFromMlDsaPublicKey(other->public_key);
   ASSERT_TRUE(my_account && other_account);
   PeerSigningKeyRecord record;
-  record.signing_public_key_b64 = Base64Encode(mine->public_key);
+  record.signing_public_key_b64 = WriteTypedBlobB64(pp::BlobKind::kSignaturePublicKey, mine->public_key).value();
   record.source = "test";
 
   PeerSigningKeyStore store;

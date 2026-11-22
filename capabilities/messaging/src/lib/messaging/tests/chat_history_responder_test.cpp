@@ -44,7 +44,7 @@ public:
     }
     requester_account = requester.account_id;
     PeerSigningKeyRecord record;
-    record.signing_public_key_b64 = requester.SigningPublicB64();
+    record.signing_public_key_b64 = requester.TypedSigningPublicB64();
     record.source = "test";
     keys.Put("account", requester_account, record);
 
@@ -140,9 +140,9 @@ TEST(ChatHistoryResponderTest, ServesSignedOutboundRows) {
   ASSERT_EQ(response->messages.size(), 2u);
   EXPECT_EQ(response->messages[0].sender_seq, 1u);
   EXPECT_EQ(response->messages[1].sender_seq, 2u);
-  auto verified = EnvelopeSigner::Verify(response->messages[0], Base64Encode(harness.local.device.signing_public));
-  ASSERT_TRUE(static_cast<bool>(verified));
-  EXPECT_TRUE(*verified);
+  const SignedReceipt verified =
+      EnvelopeSigner::Receive(response->messages[0], test::TypedSigningB64(harness.local.device.signing_public));
+  EXPECT_TRUE(verified.accepted()) << verified.detail;
 }
 
 // A message deleted on this device is never served again: its seq carries a retract aimed at itself, so the

@@ -10,6 +10,8 @@
 #include "mesh/reachability/AmpObservedAddrs.h"
 #include "common/DialWorthyMultiaddrs.h"
 #include "common/MultiaddrPeerId.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "lib/people/CardKeys.h"
 
 #include <algorithm>
 #include <unordered_set>
@@ -114,6 +116,25 @@ void ConfigureNodeAmpDirectory(
   mesh.RefreshAmpDirectoryHosting(node_role);
 }
 
+Roe<DirectoryRowKeys> LocalDirectoryRowKeys(IdentityStore& identity) {
+  auto loaded = identity.Get();
+  if (!loaded) {
+    return loaded.error();
+  }
+  if (loaded->account_signing_public_key_b64.empty() || loaded->kem_public_key_b64.empty()) {
+    return Error("directory row keys: the account keys are not set");
+  }
+  // The account's key card: its keys typed and its KEM binding v2 (ACCOUNT_CARD § Key card), as a row carries it.
+  auto keys = MakeKeyCard(loaded->account_id, loaded->account_signing_public_key_b64, loaded->kem_public_key_b64,
+                          [&identity](const ByteVector& bytes) { return identity.SignAccountBytes(bytes); });
+  if (!keys) {
+    return Error("directory row keys: " + keys.error().message);
+  }
+  return DirectoryRowKeys{.signing_public_key_b64 = std::move(keys->signing_public_key_b64),
+                          .kem_public_key_b64 = std::move(keys->kem_public_key_b64),
+                          .kem_binding_b64 = std::move(keys->kem_binding_b64)};
+}
+
 mesh::MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, mesh::MeshHost& mesh, const MeshConfig& config,
                                         const std::string& node_version) {
   mesh::MeshNodeHit hit;
@@ -125,12 +146,12 @@ mesh::MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, mesh::MeshHost&
     if (!loaded->nickname.empty()) {
       hit.nickname = loaded->nickname;
     }
-    if (!loaded->public_key_b64.empty()) {
-      hit.signing_public_key_b64 = loaded->public_key_b64;
-    }
-    if (!loaded->kem_public_key_b64.empty()) {
-      hit.kem_public_key_b64 = loaded->kem_public_key_b64;
-    }
+  }
+  // The account's keys (the row's key is its Account ID), typed, with the binding (mesh v10 drops untyped ones).
+  if (auto keys = LocalDirectoryRowKeys(identity)) {
+    hit.signing_public_key_b64 = std::move(keys->signing_public_key_b64);
+    hit.kem_public_key_b64 = std::move(keys->kem_public_key_b64);
+    hit.kem_binding_b64 = std::move(keys->kem_binding_b64);
   }
   hit.capabilities.circuit_relay = config.capabilities.circuit_relay;
   hit.capabilities.media_relay = config.capabilities.media_relay;

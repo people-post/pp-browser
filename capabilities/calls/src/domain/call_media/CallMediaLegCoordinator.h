@@ -74,6 +74,11 @@ public:
   void DetachLeg(CallMediaLegId id);
   /** Drop `call_id`'s bundle; another call's is untouched. Empty id: nothing. */
   void DetachCall(const std::string& call_id);
+  /**
+   * DetachCall unless `call_id`'s bundle is active (a hello admitted, connecting, ready) when it runs on the
+   * IO strand — where inbound hellos are admitted, so one that lands after a caller's IsActive() is kept.
+   */
+  void DetachCallUnlessActive(const std::string& call_id);
   /** Device level (shutdown): drop every call's bundle. */
   void DetachAll();
   /**

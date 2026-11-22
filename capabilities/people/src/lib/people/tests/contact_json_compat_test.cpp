@@ -1,5 +1,9 @@
 #include "lib/people/ContactJson.h"
 #include "common/ValueJson.h"
+#include "common/directory/DirectoryJson.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/KemKeyBinding.h"
+#include "foundation/crypto/TypedBlob.h"
 
 #include <gtest/gtest.h>
 #include "common/PbrCompat.h"
@@ -8,6 +12,25 @@
 namespace {
 
 using namespace pbr;
+
+/** Typed keys of the right sizes (shape only: a row's keys are checked by the key card, not here). */
+std::string TypedSigning(uint8_t fill = 0x42, uint8_t id = 1) {
+  ByteVector blob = WriteTypedBlob(pp::BlobKind::kSignaturePublicKey, ByteVector(1952, fill)).value();
+  blob[0] = id;
+  return Base64Encode(blob);
+}
+std::string TypedKem(uint8_t fill = 0x43, uint8_t id = 1) {
+  ByteVector blob = WriteTypedBlob(pp::BlobKind::kKemPublicKey, ByteVector(1184, fill)).value();
+  blob[0] = id;
+  return Base64Encode(blob);
+}
+std::string Binding(uint8_t version = 2, uint8_t signature_id = 1) {
+  ByteVector signature = WriteTypedBlob(pp::BlobKind::kSignature, ByteVector(3309, 0x44)).value();
+  signature[0] = signature_id;
+  ByteVector blob = KemBindingBlob(signature);
+  blob[0] = version;
+  return Base64Encode(blob);
+}
 
 Object MustParseObject(const std::string& json_utf8) {
   auto parsed = TryParseObject(json_utf8);
@@ -63,13 +86,14 @@ TEST(ContactJsonCompat, NestedRoundTripPreservesLocalRemote) {
 
 // The relay's lookup row (`GET /users/by-account`, multi-relay MR001) names its account and nothing else.
 TEST(ContactJsonCompat, ParsesTheLookupRowByItsAccountId) {
-  const Object json = MustParseObject(R"({
+  Object json = MustParseObject(R"({
     "account_id": "account:demon",
     "relay_user_id": "relay:retired",
-    "nickname": "demon",
-    "signing_public_key_b64": "sigkey",
-    "kem_public_key_b64": "kemkey"
+    "nickname": "demon"
   })");
+  json.set("signing_public_key_b64", TypedSigning());
+  json.set("kem_public_key_b64", TypedKem());
+  json.set("kem_binding_b64", Binding());
 
   const mesh::DirectoryHit hit = DirectoryHitFromJson(json);
   EXPECT_EQ(hit.hit_id, "account:demon");
@@ -79,10 +103,45 @@ TEST(ContactJsonCompat, ParsesTheLookupRowByItsAccountId) {
   EXPECT_EQ(hit.ids[0].kind, mesh::ContactIdKind::Account);
   EXPECT_EQ(hit.ids[0].value, "account:demon");
   EXPECT_TRUE(hit.ids[0].primary);
-  ASSERT_TRUE(hit.signing_public_key_b64.has_value());
-  EXPECT_EQ(*hit.signing_public_key_b64, "sigkey");
-  ASSERT_TRUE(hit.kem_public_key_b64.has_value());
-  EXPECT_EQ(*hit.kem_public_key_b64, "kemkey");
+  EXPECT_EQ(hit.signing_public_key_b64, TypedSigning());
+  EXPECT_EQ(hit.kem_public_key_b64, TypedKem());
+  EXPECT_EQ(hit.kem_binding_b64, Binding());
+  EXPECT_FALSE(hit.keys_update_needed);
+}
+
+// A row's keys by the mesh's shape rule (pp-cpp-mesh MeshNodeHitCodec.h): a malformed or older field is dropped, one
+// of an algorithm or binding version this build does not know is kept and flags the row "update needed".
+TEST(ContactJsonCompat, ARowsKeysAreReadByTheirShape) {
+  const auto read = [](const std::string& signing, const std::string& kem, const std::string& binding) {
+    Object row;
+    row.set("account_id", std::string("account:x"));
+    row.set("signing_public_key_b64", signing);
+    row.set("kem_public_key_b64", kem);
+    row.set("kem_binding_b64", binding);
+    return DirectoryHitFromJson(row);
+  };
+  const mesh::DirectoryHit ok = read(TypedSigning(), TypedKem(), Binding());
+  EXPECT_TRUE(ok.signing_public_key_b64 && ok.kem_public_key_b64 && ok.kem_binding_b64);
+  EXPECT_FALSE(ok.keys_update_needed);
+
+  const mesh::DirectoryHit raw = read(Base64Encode(ByteVector(1952, 0x01)), "kemkey", Binding(1));
+  EXPECT_FALSE(raw.signing_public_key_b64) << "an untyped key (id 1, the wrong size): malformed, dropped";
+  EXPECT_FALSE(raw.kem_public_key_b64) << "not base64 of a key: dropped";
+  EXPECT_FALSE(raw.kem_binding_b64) << "binding v1: older, dropped";
+  EXPECT_FALSE(raw.keys_update_needed);
+
+  for (const auto& [hit, what] :
+       {std::pair{read(TypedSigning(0x42, 0x7f), TypedKem(), Binding()), "a signing key's algorithm"},
+        std::pair{read(TypedSigning(), TypedKem(0x43, 0x7f), Binding()), "a KEM key's algorithm"},
+        std::pair{read(TypedSigning(), TypedKem(), Binding(3)), "the binding's version"},
+        std::pair{read(TypedSigning(), TypedKem(), Binding(2, 0x7f)), "the binding signature's algorithm"}}) {
+    EXPECT_TRUE(hit.keys_update_needed) << what;
+    EXPECT_TRUE(hit.signing_public_key_b64 && hit.kem_public_key_b64 && hit.kem_binding_b64)
+        << what << ": kept as received";
+  }
+  const mesh::DirectoryHit zero = read(TypedSigning(0x42, 0), TypedKem(), Binding(2, 0));
+  EXPECT_FALSE(zero.signing_public_key_b64 || zero.kem_binding_b64) << "id 0: malformed";
+  EXPECT_FALSE(zero.keys_update_needed);
 }
 
 TEST(ContactJsonCompat, DirectoryHitRoundTripPreservesKeys) {
@@ -91,17 +150,15 @@ TEST(ContactJsonCompat, DirectoryHitRoundTripPreservesKeys) {
   hit.display_name = "X";
   hit.nickname = "x";
   hit.ids = {{mesh::ContactIdKind::Account, "account:x", true}};
-  hit.signing_public_key_b64 = "sig";
-  hit.kem_public_key_b64 = "kem";
+  hit.signing_public_key_b64 = TypedSigning();
+  hit.kem_public_key_b64 = TypedKem();
   hit.initiation_floor = 55;
   hit.endpoints = {{"12D3KooWX", {"/ip4/1.2.3.4/tcp/1/p2p/12D3KooWX"}, 99}};
 
   const mesh::DirectoryHit again = DirectoryHitFromJson(DirectoryHitToJson(hit));
   EXPECT_EQ(again.hit_id, hit.hit_id);
-  ASSERT_TRUE(again.signing_public_key_b64.has_value());
-  EXPECT_EQ(*again.signing_public_key_b64, "sig");
-  ASSERT_TRUE(again.kem_public_key_b64.has_value());
-  EXPECT_EQ(*again.kem_public_key_b64, "kem");
+  EXPECT_EQ(again.signing_public_key_b64, TypedSigning());
+  EXPECT_EQ(again.kem_public_key_b64, TypedKem());
   EXPECT_EQ(again.initiation_floor, 55);
   ASSERT_EQ(again.endpoints.size(), 1u);
   EXPECT_EQ(again.endpoints[0].peer_id, "12D3KooWX");

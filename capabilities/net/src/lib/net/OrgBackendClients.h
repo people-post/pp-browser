@@ -86,9 +86,9 @@ struct LlmTokenRenewal {
   std::string llm_token_expires_at;
 };
 
+/** What `POST /v1/register/start` answers (no `signature_alg`: the typed key names its algorithm). */
 struct RegistrationStartResult {
   std::string challenge;
-  std::string signature_alg;
   std::string expires_at;
 };
 
@@ -101,18 +101,20 @@ public:
   /** Who this relay's commands are signed for (its pin); none: nothing can be signed for it. */
   virtual IRelayAudience* Audience() const = 0;
   virtual Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
-                                                         const std::string& signature_alg = "ml-dsa-65",
                                                          const std::string& kem_public_key_b64 = "",
                                                          const std::string& peer_id = "",
                                                          const std::vector<std::string>& multiaddrs = {},
                                                          const RegistrationPublishOpts& publish = {}) = 0;
-  /** `signed_finish`: the audience, timestamp and signature over BuildRegistrationSignBytes. */
+  /**
+   * `signed_finish`: the audience, timestamp, area and typed signature over BuildRegistrationSignBytes. The keys are
+   * typed (`public_key`, `kem_public_key_b64`); `kem_binding_b64` is the account's KEM binding v2 blob (SIGNED_FORMATS
+   * § 2.3, § 2.8).
+   */
   virtual Roe<RegistrationResult> FinishRegistration(
       const std::string& challenge, const std::string& public_key_b64, const std::string& nickname,
-      const SignedRelayCommand& signed_finish, const std::string& signature_alg = "ml-dsa-65",
-      const std::string& kem_public_key_b64 = "", const std::string& kem_binding_signature_b64 = "",
-      const std::string& peer_id = "", const std::vector<std::string>& multiaddrs = {},
-      const RegistrationPublishOpts& publish = {}) = 0;
+      const SignedRelayCommand& signed_finish, const std::string& kem_public_key_b64 = "",
+      const std::string& kem_binding_b64 = "", const std::string& peer_id = "",
+      const std::vector<std::string>& multiaddrs = {}, const RegistrationPublishOpts& publish = {}) = 0;
   virtual Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname,
                                                  const SignedRelayCommand& signed_update,
                                                  const std::string& account_id) = 0;

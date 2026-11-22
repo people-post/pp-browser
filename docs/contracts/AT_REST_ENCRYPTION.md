@@ -40,7 +40,7 @@ profiles/{id}/
   own_card.enc    # AEAD(our account's newest card) under DEK, AAD own-card|{profile_id}|1
   contacts.json   # plaintext (atomic write)
   threads/
-    profile.db    # PSK columns + preview_enc ciphertext; other columns plaintext (user_version 8 — DATA_LAYOUT § Schema versions)
+    profile.db    # PSK columns + preview_enc ciphertext; other columns plaintext (user_version 9 — DATA_LAYOUT § Schema versions)
     {thread_id}/thread.db   # content_enc + value_enc ciphertext; metadata plaintext (user_version 4 — D102)
 ```
 

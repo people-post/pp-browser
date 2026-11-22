@@ -2,6 +2,7 @@
 
 #include "common/Utilities.h"
 #include "common/runtime/AppRuntime.h"
+#include "foundation/error/AppError.h"
 #include "domain/delivery/ControlLane.h"
 #include "domain/peers/AccountKeyResolver.h"
 #include "lib/delivery/RelayGrantSigner.h"
@@ -284,7 +285,25 @@ void RelayGrantCoordinator::GrantRefused(const std::string& recipient) {
   Ask(recipient, true);
 }
 
+bool RelayGrantCoordinator::NeedsNewerApp(const std::string& account) const {
+  std::lock_guard lock(mutex_);
+  return newer_app_.contains(account);
+}
+
+void RelayGrantCoordinator::NoteNewerGrant(const std::string& grantor, const std::string& why) {
+  {
+    std::lock_guard lock(mutex_);
+    if (!newer_app_.insert(grantor).second) {
+      return;
+    }
+  }
+  log().info << "relay grant from " << grantor << " not readable here (a newer app's): " << why;
+}
+
 void RelayGrantCoordinator::Ask(const std::string& account, const bool refused) {
+  if (NeedsNewerApp(account)) {
+    return; // it would send the grant we cannot read again
+  }
   if (!Due(asked_at_, account, refused ? kAskAfterRefusalMs : kAskEveryMs)) {
     return;
   }
@@ -333,7 +352,11 @@ void RelayGrantCoordinator::TakeFromLocker(const std::vector<RelayGrant>& grants
       continue;
     }
     if (auto checked = CheckRelayGrant(grant, grantor, own, key->signing_public_key_b64, Now()); !checked) {
-      log().warning << "relay grant from the locker not kept: " << checked.error().message;
+      if (AppError::IsNewerFormat(checked.error())) {
+        NoteNewerGrant(grantor, checked.error().message);
+      } else {
+        log().warning << "relay grant from the locker not kept: " << checked.error().message;
+      }
       continue;
     }
     if (auto kept = store->PutReceived(grant); !kept) {
@@ -362,6 +385,11 @@ Roe<void> RelayGrantCoordinator::OnNotice(const relay_grant::Notice& notice, con
   }
   switch (notice.kind) {
     case relay_grant::NoticeKind::Grant: {
+      // A grant this app cannot read is none, and not a forgery: its grantor runs a newer app.
+      if (notice.newer_format || !notice.grant) {
+        NoteNewerGrant(sender, "a newer grant format");
+        return {};
+      }
       // Only the grantor sends its grant, and only to us; it must be its account's signature.
       const RelayGrant& grant = *notice.grant;
       auto key = peer_keys_.KeptSigning().Resolve("account", sender);
@@ -369,6 +397,10 @@ Roe<void> RelayGrantCoordinator::OnNotice(const relay_grant::Notice& notice, con
         return Error("relay grant: no key for " + sender);
       }
       if (auto checked = CheckRelayGrant(grant, sender, own, key->signing_public_key_b64, Now()); !checked) {
+        if (AppError::IsNewerFormat(checked.error())) {
+          NoteNewerGrant(sender, checked.error().message);
+          return {};
+        }
         return checked.error();
       }
       if (auto kept = store->PutReceived(grant); !kept) {
@@ -378,6 +410,7 @@ Roe<void> RelayGrantCoordinator::OnNotice(const relay_grant::Notice& notice, con
       {
         std::lock_guard lock(mutex_);
         lacking_since_.erase(sender);
+        newer_app_.erase(sender); // it sends one we read now
         on_received = on_grant_received_;
       }
       if (auto ack = relay_grant::BuildAck(grant.issued_at)) {

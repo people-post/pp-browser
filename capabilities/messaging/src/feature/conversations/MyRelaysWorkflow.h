@@ -28,12 +28,12 @@ struct OurRelayStatus {
   /** Its inbox's last poll (this run). */
   Reach reach = Reach::Unknown;
   int64_t reach_at_ms = 0;
-  /** The PeerId its address names (MR008; its relay link is `origin#peer_id`); empty: none known (a bare origin). */
-  std::string peer_id;
+  /** The relay id its address names (MR008; its relay link is `origin#relay:…`); none known: a bare origin. */
+  RelayId relay_id;
   /**
-   * Its identity answer names another PeerId than its address (MR008): not used — not polled, registered on or sent
-   * to, left off our card — until it answers to its address again (a new key is a new address: remove it, add its new
-   * link).
+   * It does not prove the relay id its address names (SIGNED_FORMATS § 3.4: another relay's certificate, none valid,
+   * or one not listing its origin): not used — not polled, registered on or sent to, left off our card — until it
+   * proves it again (a new key is a new certificate of the same relay, read at the next check).
    */
   bool identity_mismatch = false;
 };
@@ -54,10 +54,11 @@ struct OurRelaysStatus {
  * list (OurRelaysStore), then the services follow it (`apply`: clients, inboxes, the card's relays), our registration
  * goes where it is new, and the card, re-signed with the new list, is announced to our contacts and siblings:
  *
- * - **Add:** a relay link (ParseRelayLink, MR008: `https://host#<PeerId>`; a bare origin only in developer builds) on a
+ * - **Add:** a relay link (ParseRelayLink, MR008: `https://host#relay:…`; a bare origin only in developer builds) on a
  *   public host (IsPublicRelayOrigin) outside developer builds; the relay must answer (`probe`) and answer to the
- *   link's PeerId (`check_identity`: expected from now on; refused when it names no identity or another PeerId, or
- *   when another origin holds that PeerId); it is added last and registered on like any other relay of ours.
+ *   link's relay id (`check_identity`: its certificate checked, expected from now on; refused when it proves no
+ *   identity or another relay id, or when that relay is ours at another origin); it is added last and registered on
+ *   like any other relay of ours.
  * - **Remove:** never the preferred one nor the last; our registration there is revoked first (`leave`: with its push
  *   bindings; best effort — a relay that is down does not keep us on it; none for a relay that does not match its
  *   address: we never sign for it); once the services left it its pin goes (`drop_pin`; kept while the org's
@@ -96,21 +97,21 @@ public:
     /** Our card goes to our contacts and siblings (it is re-issued with the new list first). */
     std::function<void()> announce;
     /**
-     * Asks `base_url` for its identity and checks it against `peer_id`, its link's (expected from now on when nothing
-     * stands against it; empty: a developer build's bare origin, pinned on first use — RelayPins::CheckForAdd).
+     * Asks `base_url` for its certificate and checks it against `relay_id`, its link's (expected from now on when
+     * nothing stands against it; none: a developer build's bare origin, pinned on first use — RelayPins::CheckForAdd).
      */
-    std::function<AddIdentityCheck(const std::string& base_url, const std::string& peer_id)> check_identity;
+    std::function<AddIdentityCheck(const std::string& base_url, const RelayId& relay_id)> check_identity;
     /** `origin`'s pin goes (Remove…, once the services left it), unless the org's services still use it. */
     std::function<void(const std::string& origin)> drop_pin;
     /** A Remove the services did not follow: `origin`, left already, is ours again (registered on again soon). */
     std::function<void(const std::string& origin)> rejoin;
-    /** `origin`'s identity answer names another PeerId than its address (not used). */
+    /** `origin` does not prove the relay id its address names (not used). */
     std::function<bool(const std::string& origin)> identity_mismatch;
     /**
-     * The PeerId `origin` is expected to answer to now, in force (the build's for the org's relay; a developer build's
-     * bare origin: learned on first use); empty: none.
+     * The relay id `origin` is expected to prove now, in force (the build's for the org's relay; a developer build's
+     * bare origin: learned on first use); none: none.
      */
-    std::function<std::string(const std::string& origin)> peer_id_of;
+    std::function<RelayId(const std::string& origin)> relay_id_of;
     /** The org's origin when it is not ours and does not match its address (OurRelaysStatus::org_identity_mismatch). */
     std::function<std::string()> org_identity_mismatch;
     /** The page reads the list again. */
@@ -124,20 +125,20 @@ public:
   /**
    * Adds the relay `typed` names: its relay link (MR008). `developer_build`: a bare origin (no relay ID: checked on
    * first use), a plain `http://` relay, or one not on a public host (IsPublicRelayOrigin), may be added (the lab's);
-   * else none of them. The error's message is a code (below); kIdentityTaken is followed by `|` and the host that
-   * holds the PeerId.
+   * else none of them. The error's message is a code (below); kIdentityTaken is followed by `|` and the host the relay
+   * is ours at already.
    */
   Roe<void> Add(const std::string& typed, bool developer_build);
   Roe<void> Remove(const std::string& origin);
   Roe<void> MakePreferred(const std::string& origin);
-  /** A linked device: the card's list (preferred first, each with its PeerId) becomes ours when it differs. */
-  void FollowCard(const std::vector<AccountCardRelay>& card_relays);
+  /** A linked device: the card's list (preferred first, each with its relay id) becomes ours when it differs. */
+  void FollowCard(const std::vector<RelayAddress>& card_relays);
   /**
    * A restore from the account locker (any device: it is the account's own list): `relays` (preferred first) become
    * ours and the services follow; registering and the announce are the restore's own steps. Kept even when the
    * services do not follow now (the next start builds them from it).
    */
-  void Restore(const std::vector<AccountCardRelay>& relays);
+  void Restore(const std::vector<RelayAddress>& relays);
   /** An inbox of ours was polled. Any thread. */
   void NotePolled(const std::string& origin, bool ok, int64_t now_ms);
   /** The list as the page shows it; empty once closed. */
@@ -156,17 +157,17 @@ public:
   static constexpr const char* kNotApplied = "relay_list_not_applied";
   /** The profile is closing. */
   static constexpr const char* kClosed = "Messaging is not ready";
-  /** Add: a release build takes a relay only by its link, which names its PeerId (MR008). */
+  /** Add: a release build takes a relay only by its link, which names its relay id (MR008). */
   static constexpr const char* kLinkHasNoId = "relay_link_no_id";
   /** Add: the server answers no relay identity (MR007). */
   static constexpr const char* kIdentityUnavailable = "relay_identity_unavailable";
   /**
-   * Add: the link names the PeerId of a relay on our list at another address (`|host` follows), or of one we know
-   * (kIdentityTakenKnown: the org's): it would front that relay (MR008).
+   * Add: the link names a relay on our list at another address (`|host` follows), or one we know (kIdentityTakenKnown:
+   * the org's): the same relay twice.
    */
   static constexpr const char* kIdentityTaken = "relay_identity_taken";
   static constexpr const char* kIdentityTakenKnown = "relay_identity_taken_known";
-  /** Add: the relay answers to another PeerId than its link names, or its origin is expected to answer to another. */
+  /** Add: the relay proves another relay id than its link names (or none), or its origin is expected to prove another. */
   static constexpr const char* kIdentityMismatch = "relay_identity_mismatch";
   /** "relay_origin_" and the problem's name (not_a_url, not_https, has_path, has_query, too_long, empty, bad_relay_id). */
   static std::string OriginProblemCode(RelayOriginProblem problem);
@@ -195,10 +196,10 @@ private:
                                                    const std::optional<RelayRegistrationRecord>& preferred,
                                                    int64_t now_ms);
   /**
-   * Add's identity step for `base_url` named `peer_id` (expected now, or why not); `pinned_now`: this step wrote the
-   * pin; `peer_id` becomes what it answers to (a developer build's bare origin: its first answer).
+   * Add's identity step for `base_url` named `relay_id` (expected now, or why not); `pinned_now`: this step wrote the
+   * pin; `relay_id` becomes the one it proves (a developer build's bare origin: its first certificate's).
    */
-  Roe<void> CheckIdentity(const std::string& base_url, std::string& peer_id, bool& pinned_now);
+  Roe<void> CheckIdentity(const std::string& base_url, RelayId& relay_id, bool& pinned_now);
   /** Keeps `next`, the services follow, the registrations and the card go. */
   Roe<void> Commit(const OurRelaysList& next, bool preferred_changed);
   void RegisterPreferred(const std::string& preferred);

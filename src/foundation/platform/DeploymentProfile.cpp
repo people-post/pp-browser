@@ -13,13 +13,17 @@
 #define PP_API_URL_PROD ""
 #endif
 
-#ifndef PP_RELAY_PEER_ID_PROD
-#define PP_RELAY_PEER_ID_PROD ""
+// The org relays' ids (CMake PP_RELAY_ID_PROD / PP_RELAY_ID_QA; kPendingRelayId by default) and their certificates
+// at build time (config/relay-certs/<env>.cert, generated: kCompiledRelayCertificateProd / …Qa).
+#ifndef PP_RELAY_ID_PROD
+#define PP_RELAY_ID_PROD ""
 #endif
 
-#ifndef PP_RELAY_PEER_ID_QA
-#define PP_RELAY_PEER_ID_QA ""
+#ifndef PP_RELAY_ID_QA
+#define PP_RELAY_ID_QA ""
 #endif
+
+#include "CompiledRelayCertificates.inc"
 
 namespace pbr {
 
@@ -52,15 +56,21 @@ bool CompiledRelayContentSha256() {
   return PP_RELAY_CONTENT_SHA256 != 0;
 }
 
-const char* CompiledDefaultRelayPeerId() {
-  return PP_RELAY_PEER_ID_PROD;
+const char* CompiledDefaultRelayId() {
+  return PP_RELAY_ID_PROD;
+}
+
+const char* CompiledDefaultRelayCertificate() {
+  return kCompiledRelayCertificateProd;
 }
 
 CompiledOrigins BuildCompiledOrigins() {
   return {.prod = CompiledDefaultOrigin(),
           .qa = CompiledQaOrigin(),
-          .prod_relay_peer_id = PP_RELAY_PEER_ID_PROD,
-          .qa_relay_peer_id = PP_RELAY_PEER_ID_QA};
+          .prod_relay_id = PP_RELAY_ID_PROD,
+          .qa_relay_id = PP_RELAY_ID_QA,
+          .prod_relay_certificate = kCompiledRelayCertificateProd,
+          .qa_relay_certificate = kCompiledRelayCertificateQa};
 }
 
 BackendEnv ParseBackendEnv(const std::string_view name) {
@@ -133,20 +143,27 @@ std::string ResolveBriefOrigin(const bool ui_demo, const char* env_origin, const
   return origin;
 }
 
-std::string ResolveRelayPeerId(const bool ui_demo, const char* env_origin, const BackendEnv backend,
-                               const CompiledOrigins& compiled, const char* env_peer_id) {
+OrgRelayIdentity ResolveOrgRelayIdentity(const bool ui_demo, const char* env_origin, const BackendEnv backend,
+                                         const CompiledOrigins& compiled, const char* env_relay_id) {
   if (ui_demo) {
     return {};
   }
   if (env_origin && *env_origin) {
-    return env_peer_id ? std::string(env_peer_id) : std::string(); // the override's relay: its own PeerId, or none
+    // The override's relay: its own relay id, or none; its certificate is fetched (the build's are other relays').
+    return {.relay_id = env_relay_id ? std::string(env_relay_id) : std::string()};
   }
-  return backend == BackendEnv::Qa ? compiled.qa_relay_peer_id : compiled.prod_relay_peer_id;
+  const bool qa = backend == BackendEnv::Qa;
+  return {.relay_id = qa ? compiled.qa_relay_id : compiled.prod_relay_id,
+          .certificate_b64 = qa ? compiled.qa_relay_certificate : compiled.prod_relay_certificate};
 }
 
-std::string BriefRelayPeerId() {
-  return ResolveRelayPeerId(kUiDemoBuild, std::getenv("PP_BROWSER_ORIGIN"), ActiveBackend(), BuildCompiledOrigins(),
-                            std::getenv("PP_BROWSER_RELAY_PEER_ID"));
+OrgRelayIdentity BriefOrgRelayIdentity() {
+  return ResolveOrgRelayIdentity(kUiDemoBuild, std::getenv("PP_BROWSER_ORIGIN"), ActiveBackend(),
+                                 BuildCompiledOrigins(), std::getenv("PP_BROWSER_RELAY_ID"));
+}
+
+std::string BriefRelayId() {
+  return BriefOrgRelayIdentity().relay_id;
 }
 
 std::string BriefOrigin() {

@@ -18,8 +18,10 @@ namespace pbr {
  * is a step of the ladder (SqliteChatDbLadders.h): bump the version, add the step, keep the floor unless a milestone
  * moves it.
  */
-inline constexpr int kSqliteThreadProfileUserVersion = 8;
-inline constexpr int kSqliteThreadProfileFloorVersion = 8;
+// 9: the signed-format cutover (release-compatibility SIGNED_FORMATS § 2.4–2.5): roster statements and changes v4 /
+// v2, relay grants v2 (`relay_grants.ext_b64`). A milestone: the floor moves with it, and an older file starts clean.
+inline constexpr int kSqliteThreadProfileUserVersion = 9;
+inline constexpr int kSqliteThreadProfileFloorVersion = 9;
 inline constexpr int kSqliteThreadUserVersion = 4;
 inline constexpr int kSqliteThreadFloorVersion = 4;
 

@@ -1,5 +1,11 @@
 #include "common/directory/DirectoryJson.h"
 
+#include "common/ExtArea.h"
+#include "crypto/AlgId.h"
+#include "crypto/SodiumUtil.h"
+
+#include <span>
+
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
@@ -171,6 +177,95 @@ bool HasAccountId(const std::vector<mesh::ContactId>& ids, const std::string& ac
 
 } // namespace
 
+namespace {
+
+/** The KEM binding blob's version (foundation/crypto/KemKeyBinding.h): its first byte. */
+constexpr uint8_t kRowKemBindingVersion = 2;
+
+enum class KeyShape : uint8_t { Ok, UpdateNeeded, Dropped };
+
+KeyShape TypedShape(const pp::BlobKind kind, const std::span<const uint8_t> bytes) {
+  auto blob = pp::DecodeTypedBlob(kind, bytes);
+  if (blob) {
+    return KeyShape::Ok;
+  }
+  return pp::IsUnknownAlgorithm(blob.error()) ? KeyShape::UpdateNeeded : KeyShape::Dropped;
+}
+
+std::optional<std::vector<uint8_t>> DecodeKeyB64(const std::string& b64) {
+  if (b64.empty()) {
+    return std::nullopt;
+  }
+  auto bytes = pp::Base64Decode(b64);
+  if (!bytes || bytes->empty()) {
+    return std::nullopt;
+  }
+  return std::move(*bytes);
+}
+
+KeyShape SigningKeyShape(const std::string& b64) {
+  auto bytes = DecodeKeyB64(b64);
+  return bytes ? TypedShape(pp::BlobKind::kSignaturePublicKey, *bytes) : KeyShape::Dropped;
+}
+
+KeyShape KemKeyShape(const std::string& b64) {
+  auto bytes = DecodeKeyB64(b64);
+  return bytes ? TypedShape(pp::BlobKind::kKemPublicKey, *bytes) : KeyShape::Dropped;
+}
+
+/** `u8 2 ‖ ext area ‖ LenBytes signature (typed)`, nothing after it; a version below 2 is dropped as older. */
+KeyShape KemBindingShape(const std::string& b64) {
+  auto bytes = DecodeKeyB64(b64);
+  if (!bytes) {
+    return KeyShape::Dropped;
+  }
+  const uint8_t version = (*bytes)[0];
+  if (version != kRowKemBindingVersion) {
+    return version > kRowKemBindingVersion ? KeyShape::UpdateNeeded : KeyShape::Dropped;
+  }
+  size_t offset = 1;
+  if (!pp::ExtArea::DecodeAt(*bytes, &offset) || bytes->size() - offset < 8) {
+    return KeyShape::Dropped;
+  }
+  uint64_t length = 0;
+  for (size_t i = 0; i < 8; ++i) {
+    length = (length << 8) | (*bytes)[offset + i];
+  }
+  offset += 8;
+  if (length != bytes->size() - offset) {
+    return KeyShape::Dropped;
+  }
+  return TypedShape(pp::BlobKind::kSignature, std::span<const uint8_t>(*bytes).subspan(offset));
+}
+
+std::optional<std::string> ReadKeyField(const Object& row, const char* field, KeyShape (*shape_of)(const std::string&),
+                                        bool& update_needed) {
+  std::optional<std::string> value = row.getString(field);
+  if (!value) {
+    return std::nullopt;
+  }
+  switch (shape_of(*value)) {
+    case KeyShape::Ok:
+      return value;
+    case KeyShape::UpdateNeeded:
+      update_needed = true;
+      return value;
+    case KeyShape::Dropped:
+      return std::nullopt;
+  }
+  return std::nullopt;
+}
+
+} // namespace
+
+DirectoryRowKeyFields ReadDirectoryRowKeys(const Object& row) {
+  DirectoryRowKeyFields keys;
+  keys.signing_public_key_b64 = ReadKeyField(row, "signing_public_key_b64", SigningKeyShape, keys.keys_update_needed);
+  keys.kem_public_key_b64 = ReadKeyField(row, "kem_public_key_b64", KemKeyShape, keys.keys_update_needed);
+  keys.kem_binding_b64 = ReadKeyField(row, "kem_binding_b64", KemBindingShape, keys.keys_update_needed);
+  return keys;
+}
+
 Object DirectoryHitToJson(const mesh::DirectoryHit& hit) {
   Object out;
   out.set("hit_id", hit.hit_id);
@@ -188,8 +283,8 @@ Object DirectoryHitToJson(const mesh::DirectoryHit& hit) {
   if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
     out.set("kem_public_key_b64", *hit.kem_public_key_b64);
   }
-  if (hit.kem_binding_signature_b64 && !hit.kem_binding_signature_b64->empty()) {
-    out.set("kem_binding_signature_b64", *hit.kem_binding_signature_b64);
+  if (hit.kem_binding_b64 && !hit.kem_binding_b64->empty()) {
+    out.set("kem_binding_b64", *hit.kem_binding_b64);
   }
   if (hit.icon && !hit.icon->empty()) {
     out.set("icon", ProfileIconRefToJson(*hit.icon));
@@ -226,15 +321,11 @@ mesh::DirectoryHit DirectoryHitFromJson(const Object& json) {
   if (hit.display_name.empty() && !hit.nickname.empty()) {
     hit.display_name = hit.nickname;
   }
-  if (auto signing = json.getString("signing_public_key_b64")) {
-    hit.signing_public_key_b64 = *signing;
-  }
-  if (auto kem = json.getString("kem_public_key_b64")) {
-    hit.kem_public_key_b64 = *kem;
-  }
-  if (auto binding = json.getString("kem_binding_signature_b64")) {
-    hit.kem_binding_signature_b64 = *binding;
-  }
+  DirectoryRowKeyFields keys = ReadDirectoryRowKeys(json); // the mesh's shape rule: drop malformed, flag unknown
+  hit.signing_public_key_b64 = std::move(keys.signing_public_key_b64);
+  hit.kem_public_key_b64 = std::move(keys.kem_public_key_b64);
+  hit.kem_binding_b64 = std::move(keys.kem_binding_b64);
+  hit.keys_update_needed = keys.keys_update_needed;
   if (const Array* endpoints = json.getArray("endpoints")) {
     ParseDirectoryEndpointsArray(*endpoints, hit.endpoints);
   }

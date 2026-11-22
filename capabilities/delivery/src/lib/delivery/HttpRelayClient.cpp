@@ -1,4 +1,5 @@
 #include "lib/delivery/HttpRelayClient.h"
+#include "lib/delivery/RelayGrantSigner.h"
 #include "foundation/tls/RelayClientHeader.h"
 
 #include "common/Diag.h"
@@ -6,8 +7,10 @@
 #include "common/ValueJson.h"
 #include "common/chat/MessagingJson.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/SignedBytes.h"
 #include "foundation/error/AppError.h"
 #include "lib/delivery/RelayMessageSignPayload.h"
+#include "lib/people/CardKeys.h"
 #include "lib/net/HttpClient.h"
 
 #include "common/Logger.h"
@@ -116,8 +119,8 @@ RelaySendHooks HttpRelayClient::SendHooks() const {
 Roe<void> HttpRelayClient::PostSend(RelayWireSendRecord& record, const RelayEnvelope& envelope, SendRetry& retry) {
   retry = SendRetry::None;
   const int64_t timestamp = util::NowUnixMs();
-  auto signed_send = Sign(timestamp, [&record, timestamp](const std::string& audience) {
-    return BuildRelayApiSendSignBytes(audience, record, timestamp);
+  auto signed_send = Sign(timestamp, [&record, timestamp](const std::string& audience, const pp::ExtArea& ext) {
+    return BuildRelayApiSendSignBytes(audience, record, timestamp, ext);
   });
   if (!signed_send) {
     return signed_send.error();
@@ -128,9 +131,14 @@ Roe<void> HttpRelayClient::PostSend(RelayWireSendRecord& record, const RelayEnve
   record.signature = signed_send->signature;
 
   const std::string url = base_url_ + "/v1/messages";
-  const auto response = HttpClient::Post(url, DumpJson(RelayWireSendRecordToJson(record)),
-                                         WithRelayClientHeader({{"Content-Type", "application/json"}}),
-                                         kMaxHttpClientBodyBytes, {}, public_only_);
+  Object send_body = RelayWireSendRecordToJson(record);
+  WriteExtB64(send_body, signed_send->ext); // the area it signed (SIGNED_FORMATS § 2.8)
+  if (record.grant) {
+    send_body.set("grant", RelayGrantToJson(*record.grant)); // grant v2 (SIGNED_FORMATS § 2.4)
+  }
+  const auto response =
+      HttpClient::Post(url, DumpJson(send_body), WithRelayClientHeader({{"Content-Type", "application/json"}}),
+                       kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {
     return response.error();
   }
@@ -173,10 +181,13 @@ Roe<void> HttpRelayClient::Send(const RelayEnvelope& envelope) {
       return sent;
     }
     if (retry == SendRetry::WithKey) {
-      record->sender_public_key_b64 = hooks.sender_public_key ? hooks.sender_public_key() : std::string();
-      if (record->sender_public_key_b64.empty()) {
+      const std::string held = hooks.sender_public_key ? hooks.sender_public_key() : std::string();
+      auto typed = held.empty() ? Roe<std::string>(Error("no account key"))
+                                : TypedKeyB64(pp::BlobKind::kSignaturePublicKey, held);
+      if (!typed) {
         return sent;
       }
+      record->sender_public_key_b64 = std::move(*typed);
     } else {
       // A grant the relay does not take: ask for a new one, and send this once as a stranger meanwhile.
       if (hooks.grant_refused) {
@@ -193,8 +204,8 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_acc
     return Error("Relay base_url not configured");
   }
   const int64_t timestamp = util::NowUnixMs();
-  auto signed_poll = Sign(timestamp, [&](const std::string& audience) {
-    return BuildRelayApiPollInboxSignBytes(audience, requester_account_id, cursor, timestamp);
+  auto signed_poll = Sign(timestamp, [&](const std::string& audience, const pp::ExtArea& ext) {
+    return BuildRelayApiPollInboxSignBytes(audience, requester_account_id, cursor, timestamp, ext);
   });
   if (!signed_poll) {
     return signed_poll.error();
@@ -279,8 +290,8 @@ Roe<RelayDeleteResult> HttpRelayClient::AckInbox(const std::string& requester_ac
     return Error("Missing inbox cursor");
   }
   const int64_t timestamp = util::NowUnixMs();
-  auto signed_ack = Sign(timestamp, [&](const std::string& audience) {
-    return BuildRelayApiAckInboxSignBytes(audience, requester_account_id, cursor, timestamp);
+  auto signed_ack = Sign(timestamp, [&](const std::string& audience, const pp::ExtArea& ext) {
+    return BuildRelayApiAckInboxSignBytes(audience, requester_account_id, cursor, timestamp, ext);
   });
   if (!signed_ack) {
     return signed_ack.error();
@@ -321,8 +332,8 @@ Roe<RelayDeleteResult> HttpRelayClient::ClearInbox(const std::string& requester_
     return Error("Missing before_created_at");
   }
   const int64_t timestamp = util::NowUnixMs();
-  auto signed_clear = Sign(timestamp, [&](const std::string& audience) {
-    return BuildRelayApiClearInboxSignBytes(audience, requester_account_id, before_created_at, timestamp);
+  auto signed_clear = Sign(timestamp, [&](const std::string& audience, const pp::ExtArea& ext) {
+    return BuildRelayApiClearInboxSignBytes(audience, requester_account_id, before_created_at, timestamp, ext);
   });
   if (!signed_clear) {
     return signed_clear.error();
@@ -359,8 +370,8 @@ Roe<ChatHistoryResponse> HttpRelayClient::FetchChatHistory(const ChatHistoryRequ
     return Error("Relay base_url not configured");
   }
   const int64_t timestamp = util::NowUnixMs();
-  auto signed_query = Sign(timestamp, [&](const std::string& audience) {
-    return BuildRelayApiStreamHistorySignBytes(audience, request, timestamp);
+  auto signed_query = Sign(timestamp, [&](const std::string& audience, const pp::ExtArea& ext) {
+    return BuildRelayApiStreamHistorySignBytes(audience, request, timestamp, ext);
   });
   if (!signed_query) {
     return signed_query.error();

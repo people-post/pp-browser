@@ -398,7 +398,7 @@ void WireMyRelaysCommands(SettingsCommands& commands, ConversationsFacade& facad
                                                  ? MyRelayFacts::Reach::Failed
                                                  : MyRelayFacts::Reach::Unknown,
                                     .reach_at_ms = relay.reach_at_ms,
-                                    .peer_id = relay.peer_id,
+                                    .relay_id = relay.relay_id,
                                     .identity_mismatch = relay.identity_mismatch});
     }
     return MyRelaysViewFor(relays, status->editable, status->org_identity_mismatch);

@@ -12,6 +12,9 @@ MessagingCompatPorts MakeMessagingCompatPorts(ConversationsHub& hub) {
   ports.watch_upgrade_required = [&hub](std::function<void()> upgrade_required) {
     hub.SetOnOrgRelayRequiresUpgrade(std::move(upgrade_required));
   };
+  ports.relay_certificate = [&hub](const std::string& certificate_b64) {
+    hub.OfferOrgRelayCertificate(certificate_b64);
+  };
   return ports;
 }
 

@@ -111,14 +111,14 @@ jobs:
             echo "latest=${latest}"
           } >> "$GITHUB_OUTPUT"
           echo "${tag}: ${kind} of ${version} from ${branch}${candidate:+ (promotes ${candidate})}"
-      - name: Require the org relays' PeerIds (multi-relay MR008)
+      - name: Require the org relays' ids and certificates (SIGNED_FORMATS § 3.5)
         if: steps.tag.outputs.kind == 'candidate'
         shell: bash
         env:
           PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
-          PP_RELAY_PEER_ID_PROD: ${{ vars.PP_RELAY_PEER_ID_PROD || secrets.PP_RELAY_PEER_ID_PROD }}
-          PP_RELAY_PEER_ID_QA: ${{ vars.PP_RELAY_PEER_ID_QA || secrets.PP_RELAY_PEER_ID_QA }}
-        run: ./scripts/check/check_relay_peer_ids.sh release
+          PP_RELAY_ID_PROD: ${{ vars.PP_RELAY_ID_PROD || secrets.PP_RELAY_ID_PROD }}
+          PP_RELAY_ID_QA: ${{ vars.PP_RELAY_ID_QA || secrets.PP_RELAY_ID_QA }}
+        run: ./scripts/check/check_relay_ids.sh release
 
   macos:
     needs: [guard]
@@ -187,8 +187,8 @@ jobs:
         env:
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
           PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
-          PP_RELAY_PEER_ID_PROD: ${{ vars.PP_RELAY_PEER_ID_PROD || secrets.PP_RELAY_PEER_ID_PROD }}
-          PP_RELAY_PEER_ID_QA: ${{ vars.PP_RELAY_PEER_ID_QA || secrets.PP_RELAY_PEER_ID_QA }}
+          PP_RELAY_ID_PROD: ${{ vars.PP_RELAY_ID_PROD || secrets.PP_RELAY_ID_PROD }}
+          PP_RELAY_ID_QA: ${{ vars.PP_RELAY_ID_QA || secrets.PP_RELAY_ID_QA }}
           PP_RELAY_CONTENT_SHA256: ${{ vars.PP_RELAY_CONTENT_SHA256 }}
         run: |
           cmake -B build -S . \
@@ -200,8 +200,8 @@ jobs:
             -DPP_BROWSER_PACKAGED_BUILD=ON \
             -DPP_API_URL_PROD="${PP_API_URL_PROD}" \
             -DPP_API_URL_QA="${PP_API_URL_QA}" \
-            -DPP_RELAY_PEER_ID_PROD="${PP_RELAY_PEER_ID_PROD}" \
-            -DPP_RELAY_PEER_ID_QA="${PP_RELAY_PEER_ID_QA}" \
+            -DPP_RELAY_ID_PROD="${PP_RELAY_ID_PROD:-pending}" \
+            -DPP_RELAY_ID_QA="${PP_RELAY_ID_QA:-pending}" \
             -DPP_RELAY_CONTENT_SHA256="${PP_RELAY_CONTENT_SHA256:-OFF}"
 
       - name: Build
@@ -370,8 +370,8 @@ jobs:
         env:
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
           PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
-          PP_RELAY_PEER_ID_PROD: ${{ vars.PP_RELAY_PEER_ID_PROD || secrets.PP_RELAY_PEER_ID_PROD }}
-          PP_RELAY_PEER_ID_QA: ${{ vars.PP_RELAY_PEER_ID_QA || secrets.PP_RELAY_PEER_ID_QA }}
+          PP_RELAY_ID_PROD: ${{ vars.PP_RELAY_ID_PROD || secrets.PP_RELAY_ID_PROD }}
+          PP_RELAY_ID_QA: ${{ vars.PP_RELAY_ID_QA || secrets.PP_RELAY_ID_QA }}
           PP_RELAY_CONTENT_SHA256: ${{ vars.PP_RELAY_CONTENT_SHA256 }}
         run: |
           cmake -B build -S . \
@@ -384,8 +384,8 @@ jobs:
             -DPP_BROWSER_PACKAGED_BUILD=ON \
             -DPP_API_URL_PROD="${PP_API_URL_PROD}" \
             -DPP_API_URL_QA="${PP_API_URL_QA}" \
-            -DPP_RELAY_PEER_ID_PROD="${PP_RELAY_PEER_ID_PROD}" \
-            -DPP_RELAY_PEER_ID_QA="${PP_RELAY_PEER_ID_QA}" \
+            -DPP_RELAY_ID_PROD="${PP_RELAY_ID_PROD:-pending}" \
+            -DPP_RELAY_ID_QA="${PP_RELAY_ID_QA:-pending}" \
             -DPP_RELAY_CONTENT_SHA256="${PP_RELAY_CONTENT_SHA256:-OFF}"
 
       - name: Build
@@ -544,8 +544,8 @@ jobs:
           PP_BROWSER_RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
           PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
-          PP_RELAY_PEER_ID_PROD: ${{ vars.PP_RELAY_PEER_ID_PROD || secrets.PP_RELAY_PEER_ID_PROD }}
-          PP_RELAY_PEER_ID_QA: ${{ vars.PP_RELAY_PEER_ID_QA || secrets.PP_RELAY_PEER_ID_QA }}
+          PP_RELAY_ID_PROD: ${{ vars.PP_RELAY_ID_PROD || secrets.PP_RELAY_ID_PROD }}
+          PP_RELAY_ID_QA: ${{ vars.PP_RELAY_ID_QA || secrets.PP_RELAY_ID_QA }}
           PP_RELAY_CONTENT_SHA256: ${{ vars.PP_RELAY_CONTENT_SHA256 }}
         run: ./scripts/platform/android_build.sh apk-release
 

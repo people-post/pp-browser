@@ -2,6 +2,7 @@
 
 #include "domain/peers/AccountCardPolicy.h"
 #include "lib/delivery/PeerRequestAuth.h"
+#include "foundation/error/AppError.h"
 
 #include "common/Utilities.h"
 #include "common/runtime/AppRuntime.h"
@@ -50,8 +51,11 @@ AccountCardReply AccountCardService::Answer(const AccountCardRequest& request, c
   context.own_account_id = identity->account_id;
   context.own_card = [this]() { return own_.Card(util::NowUnixMs()); };
   context.own_keys = [this]() { return own_.Keys(); };
-  context.authenticate = [this](const AccountCardRequest& asked, const std::string& remote) -> Roe<void> {
+  bool update_needed = false;
+  context.authenticate = [this, &update_needed](const AccountCardRequest& asked,
+                                                const std::string& remote) -> Roe<void> {
     if (auto verified = PeerRequestAuth::Verify(asked, remote, util::NowUnixMs(), keys_.KeptSigning()); !verified) {
+      update_needed = AppError::IsNewerFormat(verified.error());
       return verified.error();
     }
     // The asker proved its account on this link: its key card is worth keeping.
@@ -66,6 +70,10 @@ AccountCardReply AccountCardService::Answer(const AccountCardRequest& request, c
   };
   context.audience_everyone = audience_everyone_;
   AccountCardReply reply = AnswerCardRequest(request, remote_peer_id, context);
+  if (update_needed) {
+    // A request this app cannot read (SIGNED_FORMATS § 2.7): told so, not answered as a stranger's.
+    reply = AccountCardReply{.error = kAccountCardUpdateNeeded};
+  }
   log().info << "card asked by " << remote_peer_id << ": "
              << (reply.card       ? "card"
                  : reply.key_card ? "key card"

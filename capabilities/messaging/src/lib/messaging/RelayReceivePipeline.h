@@ -177,10 +177,15 @@ struct SenderSignatureCheck {
     /** The card checked with does not list the sending device (a device linked since). */
     DeviceNotOnCard,
     /**
-     * Checked with the sending device's key from the card, and the signature does not verify: a forgery, a changed
-     * record — or a sender whose signed bytes differ (an app before sign v4, 2026-11-06).
+     * Checked with the sending device's key from the card, and the signature does not verify: a forgery or a changed
+     * record.
      */
     Mismatch,
+    /**
+     * A newer app's (SIGNED_FORMATS § 1.1): the key or signature names an algorithm this build does not know, or the
+     * signature verified and the extension area holds a critical entry it does not understand. Not acted on.
+     */
+    NeedsUpdate,
     /** Not checkable at all: no sending device of an account, a malformed signature or key (`error` says). */
     Invalid,
   };

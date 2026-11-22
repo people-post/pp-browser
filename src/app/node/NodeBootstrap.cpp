@@ -39,9 +39,9 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   }
 
   ApplyPpNodeConfigEnvOverlays(*config);
-  // The relay it registers at answers to a PeerId its address names (multi-relay MR008): the compiled prod relay's.
-  DefaultNodeRegistrationPeerId(config->registration, BriefRelayBaseUrlFor(CompiledDefaultOrigin()),
-                                CompiledDefaultRelayPeerId());
+  // The relay it registers at proves the relay id its address names (multi-relay MR008): the compiled prod relay's.
+  DefaultNodeRegistrationRelayId(config->registration, BriefRelayBaseUrlFor(CompiledDefaultOrigin()),
+                                 CompiledDefaultRelayId());
   SetSendContentSha256(config->relay_content_sha256);
   // Every relay call names this build (O1): its registration, heartbeat and directory calls.
   SetRelayClientHeader(RelayClientHeaderValue("pp-node", AppVersionString(), Platform::OsName()));

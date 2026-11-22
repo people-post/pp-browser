@@ -51,8 +51,22 @@ void ConfigureNodeAmpDirectory(
     std::function<std::vector<std::string>(const std::vector<std::string>&)> choose_query_peers = {});
 
 /**
- * This node's directory row: identity, capabilities, advertised (then listen, then configured) addrs, and what it
- * runs (N032: its amp wire version and `node_version`, the build's).
+ * The account's keys as a directory row carries them (a key card's, pp-cpp-mesh docs/DIRECTORY.md): the account's
+ * signing and KEM public keys as typed blobs, and the KEM binding v2 blob the account signs (base64 each).
+ */
+struct DirectoryRowKeys {
+  std::string signing_public_key_b64;
+  std::string kem_public_key_b64;
+  std::string kem_binding_b64;
+};
+
+/** This identity's row keys; an error when its account keys are not set or do not decode. */
+Roe<DirectoryRowKeys> LocalDirectoryRowKeys(IdentityStore& identity);
+
+/**
+ * This node's directory row: identity (its account's keys, `LocalDirectoryRowKeys`; none when they cannot be made),
+ * capabilities, advertised (then listen, then configured) addrs, and what it runs (N032: its amp wire version and
+ * `node_version`, the build's).
  */
 mesh::MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, mesh::MeshHost& mesh, const MeshConfig& config,
                                         const std::string& node_version);
