@@ -103,7 +103,7 @@ Roe<Contact> ContactCardExchange::Add(const ChatContactCardFields& card, int64_t
     return existing.error();
   }
   if (*existing) {
-    return **existing; // known already: its keys are refreshed above
+    return contacts_.ClearBlockOnAdd(**existing); // known already (its keys are refreshed above); adding ends a block
   }
   mesh::DirectoryHit hit;
   hit.hit_id = account_id;
@@ -152,7 +152,7 @@ void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::fun
     done(existing.error());
     return;
   }
-  auto contact = *existing ? Roe<Contact>(**existing) : contacts_.AddFromDirectoryHit(hit);
+  auto contact = *existing ? contacts_.ClearBlockOnAdd(**existing) : contacts_.AddFromDirectoryHit(hit);
   if (!contact) {
     done(contact.error());
     return;
