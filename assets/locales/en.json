@@ -767,7 +767,7 @@
     "contacts.block_confirm_body":
         "You won't get messages or calls from {name}. They are not told. You can undo this any time.",
     "contacts.empty_hint": "No contacts yet. Tap + to add one, find people on the network, or ask the assistant.",
-    "account_sync.pending": "Syncing your contacts…",
+    "account_sync.pending": "Syncing your contacts and groups…",
     "account_sync.delayed": "Still syncing. It will try again on its own.",
     "contacts.find_someone": "Find someone",
     "contacts.you": "You",

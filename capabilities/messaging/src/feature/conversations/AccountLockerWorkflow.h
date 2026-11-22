@@ -37,6 +37,12 @@ public:
      * a device that missed the dissolve (it was off) ends the group too. Null: not taken.
      */
     std::function<void(const std::vector<AccountStateGroup>&)> take_dissolved;
+    /**
+     * Live groups the locker holds that this device knows nothing of (neither as a member nor as a left / dissolved
+     * tombstone), taken here at a sync: a linked device's first sync brings the account's groups (rosters and the
+     * owner-signed statements, no messages), as a phrase restore does. Null: not taken.
+     */
+    std::function<void(const std::vector<AccountStateGroup>&)> take_groups;
     /** The grants given to us that this device holds (multi-relay MR005), for the locker. Null: none published. */
     std::function<Roe<std::vector<AccountStateGrant>>()> grants;
     /**

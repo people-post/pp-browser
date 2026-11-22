@@ -1,4 +1,6 @@
 #include "feature/conversations/AccountLockerWorkflow.h"
+
+#include <set>
 #include "common/PlatformLimits.h"
 #include "common/BoundedRead.h"
 
@@ -328,6 +330,24 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
       }
       if (!dissolved.empty()) {
         sources_.take_dissolved(dissolved);
+      }
+    }
+    if (sources_.take_groups && sources_.groups) {
+      // Groups this device has never heard of (a linked device's first sync); one it has, or has left, stays as it is.
+      std::set<std::string> known;
+      if (auto local_groups = sources_.groups()) {
+        for (const AccountStateGroup& group : *local_groups) {
+          known.insert(group.group_id);
+        }
+        std::vector<AccountStateGroup> unknown;
+        for (const AccountStateGroup& group : (*stored)->state.extras.groups) {
+          if (!group.left && !group.dissolved && known.count(group.group_id) == 0) {
+            unknown.push_back(group);
+          }
+        }
+        if (!unknown.empty()) {
+          sources_.take_groups(unknown);
+        }
       }
     }
     if (sources_.take_grants && !(*stored)->state.extras.grants.empty()) {
