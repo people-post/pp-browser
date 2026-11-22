@@ -161,6 +161,8 @@ public:
    */
   void OpenAiDrawer();
   void CloseAiDrawer();
+  /** Closes every overlay layer (dialogs excluded), top first: a reset of the profile leaves none of the old account's. */
+  void CloseAllLayers();
   /** The drawer's rows have their swipe listeners (only while it is mounted). */
   bool AiDrawerRowSwipesAttached() const { return drawer_session_swipe_.Attached(); }
   /** Phone layout: the AI page (Home) shows with nothing over it (no chat, pushed page, layer or drawer). */

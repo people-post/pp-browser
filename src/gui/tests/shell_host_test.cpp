@@ -669,6 +669,31 @@ TEST(ShellHostHiddenTabTest, ASecondPickOfAiOnTheWideLayoutLeavesTheConversation
   EXPECT_TRUE(phone_activated.empty());
 }
 
+// Reset my profile on the wide layout (Settings with a section open in the right pane, a page sheet over it): the shell
+// goes to the AI tab with nothing of the old account beside the list, nothing pushed and no layer over the first-run page.
+TEST(ShellHostHiddenTabTest, AProfileResetOnTheWideLayoutLeavesNoPaneOrLayerOfTheOldAccount) {
+  ShellHost& wide = KeptHost();
+  wide.State().layout_mode = LayoutMode::Expanded;
+  ShellLayout::SyncLayoutModeString(wide.State());
+  wide.SelectNavTab(NavTab::Me);
+  wide.RegisterPane({.key = "settings_detail", .rml_path = "views/settings_detail.rml"});
+  wide.SetPrimaryPane("settings_detail");
+  wide.PushLayer({.key = "avatar_view", .full_screen = true});
+  ASSERT_EQ(wide.State().nav_tab, NavTab::Me);
+  ASSERT_FALSE(wide.State().overlay_stack.empty());
+
+  wide.SelectNavTab(NavTab::Home);
+  wide.ClearTabContext();
+  wide.CloseAllLayers();
+
+  EXPECT_EQ(wide.State().nav_tab, NavTab::Home);
+  EXPECT_STREQ(ShellLayout::ExpandedNavContentKey(wide.State().nav_tab), "ai_list") << "the list column is the AI list again";
+  EXPECT_TRUE(wide.State().primary_pane_key.empty()) << "the right pane is closed";
+  EXPECT_FALSE(wide.State().auxiliary_open);
+  EXPECT_TRUE(wide.State().transient_stack.empty());
+  EXPECT_TRUE(wide.State().overlay_stack.empty());
+}
+
 // A tab switch closes the pushed pages one by one, each reported to its owner (ContactsController's open flags follow).
 TEST(ShellHostHiddenTabTest, ATabSwitchTellsEveryPushedPageItWasClosed) {
   ShellHost& host = PhoneHost(NavTab::Sessions);

@@ -1075,6 +1075,12 @@ void ShellHost::CloseLayer(int layer_id) {
   RequestSyncLayout(true);
 }
 
+void ShellHost::CloseAllLayers() {
+  while (!state_.overlay_stack.empty()) {
+    CloseLayer(-1);
+  }
+}
+
 void ShellHost::WatchLayerClosed(const int layer_id, std::function<void()> closed) {
   if (HasLayer(layer_id) && closed) {
     layer_closed_watchers_.emplace(layer_id, std::move(closed));

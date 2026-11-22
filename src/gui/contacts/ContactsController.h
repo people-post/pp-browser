@@ -298,6 +298,8 @@ public:
   void OnGroupAdminSetAdmin();
   void OnGroupAdminReinvite();
   void OnDetailDismissed();
+  /** Reset my profile: the open contact, its unsaved edits and the search belong to the old account; nothing is saved. */
+  void OnProfileReset();
   /** The page's photo (the view's tap_contact_avatar, and tests): opens it large; a letter avatar does nothing. */
   void OnTapAvatar();
   /** The page's star button (the view's toggle_star, and tests): stars or unstars the contact shown. */

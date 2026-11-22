@@ -1539,6 +1539,16 @@ void ContactsController::OnDetailDismissed() {
   NotifySurfaceChanged();
 }
 
+void ContactsController::OnProfileReset() {
+  selected_ = {};
+  contact_dirty_ = false;
+  debounce_deadline_ms_ = 0;
+  search_query_ = "";
+  SyncFromStore();
+  DirtyAll();
+  NotifySurfaceChanged();
+}
+
 void ContactsController::NewChatPickCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
                                              const ui::VariantList& args) {
   if (args.empty() || args[0].GetType() != ui::Variant::STRING) {

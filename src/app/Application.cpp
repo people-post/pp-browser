@@ -604,9 +604,13 @@ Roe<void> Application::ResetActiveProfile() {
   contacts_->Refresh();
   // A clean slate behind the first-run page, as a fresh install's first frame has it: the home tab with nothing open
   // over it, and nothing of the old account on the Me card (the lists read the empty stores above).
+  // The old account's Me card, open contact and unsaved edits go first, so leaving the Me tab below flushes nothing of
+  // them into the new profile (the desktop's name field is edited in place).
+  settings_->OnProfileReset();
+  contacts_->OnProfileReset();
   shell_->SelectNavTab(NavTab::Home);
   shell_->ClearTabContext();
-  settings_->OnProfileReset();
+  shell_->CloseAllLayers();
   // No account any more: the "I'm new / I already have an account" page comes up now, over every screen the old account
   // left, as on a fresh install's first frame — not at the next relaunch or the next action that needs messaging (that
   // decision, BeginDeferredUnlockAfterFirstPresent, runs once per process).
